@@ -27,7 +27,7 @@ service cloud.firestore {
 
     // vvv  REPLACE THIS with your admin account's UID  vvv
     function adminUids() {
-      return ['REPLACE_WITH_ADMIN_UID'];
+      return ['gpz41RIE02U2Jxteu8H6AGCUjCx1'];
     }
     // ^^^ You can list more than one: ['uid1', 'uid2']
 
