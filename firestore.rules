@@ -104,6 +104,7 @@ service cloud.firestore {
 
       match /chunks/{chunkId} {
         allow get: if isAdmin() || isOwnClient(clientKey);
+        allow list: if isAdmin();
         allow write: if isAdmin();
       }
     }
@@ -131,6 +132,7 @@ service cloud.firestore {
       match /chunks/{chunkId} {
         function doc() { return get(/databases/$(db)/documents/documents/$(docId)).data; }
         allow get: if isAdmin() || (isSignedIn() && (doc().audienceClientKey == null || isOwnClient(doc().audienceClientKey)));
+        allow list: if isAdmin();
         allow write: if isAdmin();
       }
     }
