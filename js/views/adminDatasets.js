@@ -31,7 +31,10 @@ export async function render(main, { flash }) {
         const dataset = buildDataset(table, idColumn.value.trim() || "client_id");
         submit.textContent = `Uploading (${dataset.byClient.size} people)\u2026`;
         const displayName = name.value.trim() || f.name.replace(/\.(csv|parquet)$/i, "");
-        const result = await uploadDataset(displayName, description.value.trim(), dataset);
+        const people = dataset.byClient.size;
+        const result = await uploadDataset(displayName, description.value.trim(), dataset, (done, total) => {
+          submit.textContent = `Uploading (${people} people)\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`;
+        });
 
         let msg = `Added "${displayName}": ${num(dataset.rowCount)} rows for ${num(result.clients)} ${result.clients === 1 ? "person" : "people"}.`;
         if (dataset.blankIdRows) msg += ` ${num(dataset.blankIdRows)} rows have no value in "${dataset.idColumn}" and won't be shown to anyone.`;

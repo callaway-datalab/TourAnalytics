@@ -3,7 +3,7 @@ import {
   getAuth, connectAuthEmulator,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import {
-  initializeFirestore, connectFirestoreEmulator, persistentLocalCache, persistentSingleTabManager,
+  initializeFirestore, connectFirestoreEmulator, memoryLocalCache,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
 const cfg = window.PORTAL_CONFIG;
@@ -21,11 +21,10 @@ export const adminUids = cfg.adminUids || [];
 export const app = initializeApp(cfg.firebase);
 export const auth = getAuth(app);
 
-// Offline persistence: a huge quality-of-life win on a data-heavy portal, and it means
-// the client library batches/coalesces reads instead of re-fetching on every navigation.
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
-});
+// In-memory cache only. The on-disk cache also kept a queue of unsent writes that survived page
+// reloads, so one big upload that got stuck could quietly block every later save from that
+// browser. With a memory cache, reloading the page always starts clean.
+export const db = initializeFirestore(app, { localCache: memoryLocalCache() });
 
 // Optional local emulator support for development/testing:
 // add ?emulators=1 to the URL while running `firebase emulators:start`.

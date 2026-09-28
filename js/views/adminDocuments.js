@@ -63,7 +63,8 @@ export async function render(main, { flash }) {
       submit.disabled = true; submit.textContent = "Uploading\u2026";
       try {
         const teamRoles = audience.value ? [...teamBox.querySelectorAll("input:checked")].map((c) => c.value) : [];
-        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, file: f });
+        const onProgress = (done, total) => { submit.textContent = `Uploading\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`; };
+        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, file: f, onProgress });
         flash("Document uploaded.", "ok");
         form.reset(); drawTeamChecks();
       } catch (err) {

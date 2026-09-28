@@ -193,22 +193,37 @@ export function watchAdminDatasets(cb) {
 }
 
 const BATCH_LIMIT = 450;            // Firestore hard limit is 500 writes per batch
-const BATCH_BYTES = 6 * 1024 * 1024; // ...and about 10 MiB per request, so stay well under it
+const BATCH_BYTES = 2 * 1024 * 1024; // ...and ~10 MiB per request; small batches upload more reliably
+const STALL_MS = 120000;             // a single batch taking longer than this is treated as stuck
 
 /** Tag a batch op with roughly how many bytes it writes, so big uploads get split up. */
 const sized = (op, bytes) => Object.assign(op, { bytes });
 
-async function commitInChunks(ops) {
-  let batch = writeBatch(db), count = 0, bytes = 0;
+function commitWithWatchdog(batch) {
+  let timer;
+  const stalled = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new UserError(
+      "The upload stopped making progress. Check your internet connection, reload the page, and try again. " +
+      "If it keeps happening, try from a different network (some work or hotel networks block large uploads).")), STALL_MS);
+  });
+  return Promise.race([batch.commit(), stalled]).finally(() => clearTimeout(timer));
+}
+
+/** Commits ops in batches small enough for Firestore. onProgress(doneBytes, totalBytes) after each. */
+async function commitInChunks(ops, onProgress) {
+  const total = ops.reduce((n, op) => n + (op.bytes || 1000), 0);
+  let batch = writeBatch(db), count = 0, bytes = 0, done = 0;
+  const flush = async () => {
+    await commitWithWatchdog(batch);
+    done += bytes; if (onProgress) onProgress(done, total);
+    batch = writeBatch(db); count = 0; bytes = 0;
+  };
   for (const op of ops) {
     const b = op.bytes || 1000;
-    if (count && (count >= BATCH_LIMIT || bytes + b > BATCH_BYTES)) {
-      await batch.commit();
-      batch = writeBatch(db); count = 0; bytes = 0;
-    }
+    if (count && (count >= BATCH_LIMIT || bytes + b > BATCH_BYTES)) await flush();
     op(batch); count++; bytes += b;
   }
-  if (count) await batch.commit();
+  if (count) await flush();
 }
 
 async function deleteCollection(colRef) {
@@ -220,7 +235,7 @@ async function deleteCollection(colRef) {
  * dataset: { idColumn, columns, byClient: Map<clientKey, {label, rows}>, rowCount, blankIdRows }
  * name/description as entered by the admin. Uploading the same name again replaces it.
  */
-export async function uploadDataset(name, description, dataset) {
+export async function uploadDataset(name, description, dataset, onProgress) {
   const existing = await getDocs(query(collection(db, "datasets"), where("name", "==", name)));
   const datasetId = existing.empty ? doc(collection(db, "datasets")).id : existing.docs[0].id;
   const oldClientKeys = existing.empty ? [] : existing.docs[0].data().clientKeys || [];
@@ -249,7 +264,7 @@ export async function uploadDataset(name, description, dataset) {
     chunks.forEach((data, i) => ops.push(sized((batch) =>
       batch.set(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)), { data }), data.length * 2)));
   }
-  await commitInChunks(ops);
+  await commitInChunks(ops, onProgress);
   return { datasetId, clients: newClientKeys.length };
 }
 
@@ -349,7 +364,7 @@ export function watchDocumentsFor(clientKey, teamRole, cb) {
   return teamRole ? watchTeamDocuments(clientKey, teamRole, cb) : watchVisibleDocuments(clientKey, cb);
 }
 
-export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], file }) {
+export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], file, onProgress }) {
   const base64 = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(",")[1]);
@@ -367,7 +382,7 @@ export async function uploadDocument({ title, description, audienceClientKey, te
   // Chunks first, the visible records last, so nobody ever sees a document whose file isn't there yet.
   // Big files go up in several batches; if something fails part-way, clear out what was written.
   try {
-    await commitInChunks(chunks.map((data, i) => sized((batch) => batch.set(doc(docRef, "chunks", String(i)), { data }), data.length)));
+    await commitInChunks(chunks.map((data, i) => sized((batch) => batch.set(doc(docRef, "chunks", String(i)), { data }), data.length)), onProgress);
     await commitInChunks([
       (batch) => batch.set(docRef, meta),
       ...roles.map((role) => (batch) => batch.set(doc(db, "teamDocs", audienceClientKey, "roles", role, "docs", docRef.id), meta)),
