@@ -84,7 +84,13 @@ async function render() {
     main = root;
   } else {
     main = renderShell(root, { previewClient, currentRoute: routeId });
-    if (previewClient && guard === "client") main.before(el_previewBar());
+    if (previewClient && guard === "client") {
+      // The bar goes INSIDE <main> (placing it beside <main> breaks the two-column layout and
+      // pushes the page off-screen). Views clear their container, so give them an inner one.
+      const inner = document.createElement("div");
+      main.append(el_previewBar(), inner);
+      main = inner;
+    }
   }
 
   try {
