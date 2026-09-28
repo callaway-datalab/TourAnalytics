@@ -4,7 +4,7 @@ export class UserError extends Error {}
 
 export const MAX_CHUNK_CHARS = 300000;        // JSON characters per Firestore chunk (limit is ~1 MiB per document)
 export const DOC_CHUNK_CHARS = 600000;        // base64 characters per document chunk
-export const MAX_DOC_BYTES = 10 * 1024 * 1024;
+export const MAX_DOC_BYTES = 25 * 1024 * 1024;
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L
 
 /* ---------- IDs and access codes ---------- */
