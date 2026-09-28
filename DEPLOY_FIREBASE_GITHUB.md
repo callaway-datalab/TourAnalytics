@@ -1,77 +1,180 @@
 # Set up: GitHub Pages + Firebase
 
-Everything below happens in your browser — GitHub's website and Firebase's console. No installs
-required. About 20 minutes.
+Everything below happens in your browser (GitHub's website and the Firebase console). No installs.
+Budget about 30 minutes.
+
+> **Heads-up about the Firebase console.** Google reorganized the console's left sidebar in 2026.
+> Products are no longer listed one by one; they're grouped into **flyout menus** you click to open.
+> The two you need:
+>
+> | You're looking for   | Where it lives now                                          |
+> | -------------------- | ----------------------------------------------------------- |
+> | Authentication       | Sidebar → **Security** → **Authentication**                 |
+> | Firestore Database   | Sidebar → **Databases & Storage** → under NoSQL, **Firestore** |
+>
+> After you've opened a product once, it also appears under **Project shortcuts** at the top of
+> the sidebar, which is the quickest way back to it.
+>
+> Consoles keep changing. If a label below doesn't match what you see, look for the closest thing
+> — the steps themselves don't change.
+
+---
 
 ## 1. Create the Firebase project
 
-1. Go to [console.firebase.google.com](https://console.firebase.google.com) and **Add project**.
-   Give it any name; Google Analytics isn't needed, you can decline it.
-2. **Authentication** (left sidebar) → **Get started** → under "Sign-in method", enable
-   **Email/Password**.
-3. **Firestore Database** (left sidebar) → **Create database** → start in **production mode** →
-   pick any region close to you.
+1. Go to [console.firebase.google.com](https://console.firebase.google.com) and sign in with a
+   **personal** Google account (work/school accounts are often blocked from creating projects).
+2. Start a new project:
+   - If you've never used Firebase: click the big card **"Get started by setting up a Firebase
+     project."**
+   - If you already have projects: click **Create a project** (or **Add project**).
+3. **Name screen.** Type any name (e.g. `acme-client-portal`). Leave the auto-generated project ID
+   underneath alone.
+   - Leave **I accept the Firebase terms** ticked.
+   - "Join the Google Developer Program" is optional — turn it off if you don't want emails.
+   - Click **Continue**.
+4. **Gemini / AI assistance screen.** Not needed for this app — turn it off and click **Continue**.
+5. **Google Analytics screen.** Turn it **off** (not needed). Click **Continue** / **Create project**.
+6. Wait for "Your Firebase project is ready" and click **Continue**. You're now on the project
+   overview, on the free **Spark** plan (shown next to the project name). Don't upgrade.
 
-## 2. Create your admin account
+## 2. Turn on email/password login
 
-1. Still in **Authentication** → **Users** tab → **Add user**. Enter your own email and a password
-   — this is how you'll log in as the administrator.
-2. Click the user you just created and copy their **User UID** (a long string like
-   `a1B2c3D4e5F6...`). You'll need it twice, in the next two steps.
+1. Left sidebar → **Security** → **Authentication**.
+2. Click **Get started**.
+3. You land on the **Sign-in method** tab. Under "Native providers" click **Email/Password**.
+4. Turn on the **first** toggle ("Email/Password"). Leave the second one ("Email link
+   (passwordless sign-in)") **off**. Click **Save**.
+5. Email/Password now shows **Enabled** in the list.
 
-## 3. Set the security rules
+## 3. Create the database
 
-1. In this project's files, open `firestore.rules`, and near the top find the line:
+1. Left sidebar → **Databases & Storage** → under **NoSQL**, click **Firestore**.
+   (Not "Realtime Database" — that's a different product listed nearby.)
+2. Click **Create database**. The wizard has three steps:
+   1. **Select edition** — leave **Standard** selected → **Next**.
+   2. **Database ID & location** — leave the ID as `(default)`. Pick a location near you
+      (e.g. `us-west1` for California). This can't be changed later. → **Next**.
+   3. **Configure** — choose **Start in production mode** (not test mode) → **Create**.
+3. You'll land on the Data tab of an empty database. That's expected.
+
+## 4. Create your admin account and copy its UID
+
+1. Sidebar → **Security** → **Authentication** (or use **Project shortcuts**) → **Users** tab →
+   **Add user**.
+2. Enter your own email and a password. This is how you'll log in as the administrator.
+3. Your new user appears in the table. Find the **User UID** column (a long string like
+   `a1B2c3D4e5F6...`). Hover over it and click the copy icon.
+   Paste it into a notepad for now — you'll need it in **two** places (steps 5 and 7).
+
+## 5. Publish the security rules
+
+1. On your computer, open this project's `firestore.rules` in any text editor. Near the top, find:
    ```
    return ['REPLACE_WITH_ADMIN_UID'];
    ```
-   Replace `REPLACE_WITH_ADMIN_UID` with the UID you copied (keep the quotes), e.g.
-   `return ['a1B2c3D4e5F6...'];`.
-2. In the Firebase Console: **Firestore Database** → **Rules** tab. Delete what's there and paste
-   in the whole edited file. Click **Publish**.
+   Replace `REPLACE_WITH_ADMIN_UID` with your UID, **keeping the quotes**:
+   ```
+   return ['a1B2c3D4e5F6...'];
+   ```
+   Save the file.
+2. In the Firebase console: **Firestore** → **Rules** tab. Select everything in the editor and
+   delete it, then paste in the **entire** edited file. Click **Publish**.
 
-## 4. Register a web app and get your config
+## 6. Register the web app and get your config values
 
-1. Firebase Console → the gear icon (top left) → **Project settings**.
-2. Under "Your apps", click the **</>** (web) icon → give it any nickname → **Register app**.
-   (Skip the "Firebase Hosting" checkbox — you're using GitHub Pages instead.)
-3. You'll see a code block with a `firebaseConfig` object (`apiKey`, `authDomain`, etc.). Keep this
-   page open, you'll copy from it in the next step.
+1. Click the **gear icon** next to "Project Overview" (top of the sidebar) → **Project settings** →
+   **General** tab.
+2. Scroll down to **Your apps** and click the web icon **`</>`**.
+3. Enter any nickname. Leave **"Also set up Firebase Hosting"** unticked (you're using GitHub Pages).
+   Click **Register app**.
+4. On the "Add Firebase SDK" step, pick either option ("Use npm" or "Use a `<script>` tag"; it
+   doesn't matter, you won't use the rest of that code). Somewhere in the code block is a
+   `firebaseConfig` object. That's the only part you need. It looks like:
+   ```js
+   const firebaseConfig = {
+     apiKey: "AIza...",
+     authDomain: "your-project.firebaseapp.com",
+     projectId: "your-project",
+     storageBucket: "your-project.firebasestorage.app",
+     messagingSenderId: "1234567890",
+     appId: "1:1234567890:web:abc123"
+   };
+   ```
+   Keep this page open, then click **Continue to console** when you're done. (To see these values
+   again later: Project settings → General → scroll to **Your apps** → under "SDK setup and
+   configuration", choose **Config**, which shows just the object.)
 
-## 5. Fill in config.js
+## 7. Create config.js
 
-1. In this project's files, copy `config.example.js` to a new file named `config.js`, in the same
-   folder as `index.html`.
-2. Open `config.js` and fill in:
-   - `portalName`: whatever you want shown in the sidebar and browser tab.
-   - `firebase`: paste in the values from the `firebaseConfig` object in step 4.
-   - `adminUids`: `["your-uid-here"]` — the **same** UID you put in `firestore.rules`.
+1. In the project folder, make a copy of `config.example.js` and name the copy `config.js`
+   (same folder as `index.html`).
+2. Open `config.js`. Fill in three things:
+   - **`portalName`** — whatever you want shown in the sidebar and browser tab.
+   - **`firebase`** — replace the six `REPLACE_ME` lines with the six lines from the console.
 
-## 6. Put it on GitHub Pages
+     ⚠️ **Only copy the lines *inside* the curly braces.** Don't paste the console's
+     `const firebaseConfig = {` line into `config.js` — the file must keep its own
+     `firebase: {` line, or the app won't find your settings and will show "Setup needed."
+     Use whatever `storageBucket` value the console gives you, even if it ends in
+     `.firebasestorage.app` instead of `.appspot.com`.
+   - **`adminUids`** — `["your-uid-here"]`, the **same** UID you put in `firestore.rules`.
 
-1. Create a new repository on GitHub (public or private both work; Pages on a private repo needs
-   GitHub Pro, Team, or Enterprise — public is free either way).
-2. Upload every file from this project into the repository, **including your edited `config.js`
-   and `firestore.rules`**, keeping the folder structure (`css/`, `js/`, `js/views/`, etc.) intact.
-   The easiest way with no command line: on the repository's page, **Add file → Upload files**,
-   then drag the whole unzipped folder's contents in.
-3. Repository **Settings → Pages**. Under "Build and deployment", set **Source** to
-   **Deploy from a branch**, branch **main** (or whichever you used), folder **/ (root)**. Save.
-4. GitHub shows a link like `https://yourname.github.io/your-repo/` — that's your site. It takes a
-   minute or two to go live the first time.
+   When you're done it should look like this:
+   ```js
+   window.PORTAL_CONFIG = {
+     portalName: "Acme Client Portal",
 
-## 7. Try it
+     firebase: {
+       apiKey: "AIza...",
+       authDomain: "your-project.firebaseapp.com",
+       projectId: "your-project",
+       storageBucket: "your-project.firebasestorage.app",
+       messagingSenderId: "1234567890",
+       appId: "1:1234567890:web:abc123",
+     },
 
-1. Open your GitHub Pages link and log in with the admin email/password from step 2.
-2. **Data** → upload `sample_data.csv` (included in this project) with ID column `client_id`, to
-   see the portal working end to end.
-3. **Clients & codes** → create a code for `C1001` (one of the IDs in the sample data) → copy the
-   code.
+     adminUids: ["a1B2c3D4e5F6..."],
+   };
+   ```
+3. Double-check: search the file for `REPLACE` — there should be no matches left.
+
+## 8. Put it on GitHub Pages
+
+1. On GitHub, create a new repository. Public is simplest (Pages on a private repo needs GitHub
+   Pro, Team, or Enterprise).
+2. Upload every file from this project, **including your edited `config.js` and
+   `firestore.rules`**, keeping the folders (`css/`, `js/`, `js/views/`, etc.) intact.
+   No command line needed: on the repo page, **Add file → Upload files**, then drag the **contents**
+   of the unzipped `portal-web` folder in (so `index.html` ends up at the top level of the repo,
+   not inside a `portal-web/` subfolder). Click **Commit changes**.
+   - `.nojekyll` is a hidden file and may not get dragged in. If it's missing afterwards, use
+     **Add file → Create new file**, name it `.nojekyll`, leave it empty, and commit.
+3. Repo **Settings → Pages**. Under "Build and deployment": **Source** = **Deploy from a branch**,
+   branch **main**, folder **/ (root)**. Click **Save**.
+4. After a minute or two, the Pages settings page shows your link, like
+   `https://yourname.github.io/your-repo/`.
+
+## 9. Tell Firebase about your site's address
+
+1. Firebase console → **Security** → **Authentication** → **Settings** tab → **Authorized domains**.
+2. Click **Add domain** and enter `yourname.github.io` (just the domain — no `https://`, no repo
+   name). Save.
+
+This keeps Firebase's login features (like password-reset links) working from your GitHub Pages
+site.
+
+## 10. Try it
+
+1. Open your GitHub Pages link and log in with the admin email/password from step 4.
+2. **Data** → upload `sample_data.csv` (included in this project) with ID column `client_id`.
+3. **Clients & codes** → create a code for `C1001` (one of the IDs in the sample data) → copy it.
 4. Open a private/incognito window, go to `your-site-url/#/signup?code=THECODE`, and create a test
-   account. You should see that person's 20 rows of sample data, a chart, and be able to ask a
+   account. You should see that person's 20 rows of sample data and a chart, and be able to ask a
    question that shows up in your admin inbox with an alert.
-5. Once you've confirmed it works, delete the sample data from the **Data** page and start
-   uploading your own.
+5. Once it works, delete the sample data from the **Data** page and start uploading your own.
+
+---
 
 ## Using it day to day
 
@@ -79,35 +182,55 @@ required. About 20 minutes.
   belongs to. Uploading again with the same name replaces that dataset.
 - **Invite someone**: Clients & codes → type their ID exactly as it appears in your data (matching
   ignores capitals and spaces) → Create code → send them the code and your site's `#/signup` link.
-- **Share a document**: Documents page → upload a PDF or PowerPoint → choose Everyone or one client.
+- **Share a document**: Documents page → upload a PDF or PowerPoint → choose Everyone or one player.
+  When you pick one player, tick any roles on their team (Coach, Caddy, ...) that should also see
+  it. Leave them all unticked to share with the player only.
+- **Coaches, caddies and other team members** come from one file you keep: your **team roster**,
+  a CSV with the columns `email, name, role, player_id` and one row per team member per player
+  (several players can share a cell, separated by `;`). `team_members_template.csv` in this project
+  is an example. On **Clients & codes → Team roster**, upload the file whenever it changes:
+  - Each uploaded roster **replaces** the previous one. Anyone you take out loses access to those
+    players immediately; players who aren't in the file have no team, so only they see their data.
+  - Anyone listed who doesn't have a login yet gets an access code, shown in the roster table.
+    Send it with your `#/signup` link. It only works with the email address in the roster, and
+    their players are already set up when they sign up.
+  - A file with a mistake (a bad email, missing role or player) is rejected as a whole and
+    nothing changes, so a typo never silently removes someone.
+  - "Download current roster" gives you back exactly what's live, if you ever lose your copy.
+  - Team members see their players' data and team-shared documents, can't add or change
+    anything, and can send you questions. A team member needs a different email address from any
+    player account.
 - **Answer a question**: a badge appears in your sidebar and browser tab; click Questions, open the
   thread, reply.
 - **See what a client sees**: Clients & codes → "See their portal" next to their name.
-- **Reset a client's password**: Clients & codes → "Send password reset" next to their account —
-  Firebase emails them a reset link directly; nothing to configure.
+- **Reset a client's password**: Clients & codes → "Send password reset" — Firebase emails them a
+  reset link directly.
 - **Remove someone's access**: Clients & codes → "Remove access". This deletes their profile, which
-  immediately blocks them from all client data (Firestore rules check for that profile on every
-  read). Their login technically still exists; to remove it completely, delete them in Firebase
-  Console → Authentication → Users as well.
+  immediately blocks them from all client data. Their login technically still exists; to remove it
+  completely, also delete them in Firebase console → Security → Authentication → Users.
 
 ## Costs
 
-Firebase's free "Spark" plan covers Authentication and Firestore with no billing account attached.
-Free-tier limits (check [firebase.google.com/pricing](https://firebase.google.com/pricing) for
-current numbers) are generous for a personal or small-business portal — on the order of tens of
-thousands of reads/writes per day and 1 GiB of storage — but if you significantly outgrow that,
-Firebase will prompt you to add a billing account (Blaze plan) rather than silently charging you.
-GitHub Pages is free for public repositories, and for private repositories on GitHub Pro, Team, or
-Enterprise.
+Firebase's free **Spark** plan covers Authentication and Firestore with no billing account. The
+free limits (see [firebase.google.com/pricing](https://firebase.google.com/pricing)) are generous
+for a personal or small-business portal. If you outgrow them, Firebase asks you to add billing
+rather than silently charging you. GitHub Pages is free for public repositories.
 
 ## If something's wrong
 
-- **Blank page / "Setup needed" message**: `config.js` is missing or still has placeholder values.
-  Re-check step 5.
-- **"Missing or insufficient permissions" in the browser console**: usually the UID in
-  `firestore.rules` doesn't match the one in `config.js`, or the rules weren't published (step 3).
-- **A page asks you to create a Firestore index**: rare with this app's design, but if you see a
-  link in the browser console error, clicking it creates the index in one step and the page will
-  work a minute later.
-- **Changes not showing up on your Pages site**: GitHub Pages can take a minute or two to rebuild
-  after you push changes; also try a hard refresh (Ctrl/Cmd+Shift+R).
+- **Can't find a menu item in the Firebase console**: check the flyouts — **Security** (for
+  Authentication) and **Databases & Storage** (for Firestore). Also check **Project shortcuts** at
+  the top of the sidebar.
+- **Blank page or "Setup needed"**: `config.js` is missing, is still named `config.example.js`, still
+  contains `REPLACE_ME`, or you pasted the console's `const firebaseConfig = {` line over the
+  `firebase: {` line. Re-check step 7.
+- **Page loads but everything 404s / no styling**: the files ended up inside a `portal-web/`
+  subfolder in your repo. `index.html` must be at the top level of the repo.
+- **Login says the operation isn't allowed**: Email/Password isn't enabled. Re-check step 2.
+- **"Missing or insufficient permissions" in the browser console**: the UID in `firestore.rules`
+  doesn't match the one in `config.js`, or the rules weren't published. Re-check steps 5 and 7.
+- **Admin screens look empty**: same cause as above — the UID doesn't match in both places.
+- **A page asks you to create a Firestore index**: click the link in the browser console error; it
+  creates the index in one step and the page works a minute later.
+- **Changes not showing up**: GitHub Pages takes a minute or two to rebuild after you upload.
+  Then hard-refresh (Ctrl/Cmd+Shift+R).

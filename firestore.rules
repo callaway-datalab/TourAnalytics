@@ -27,7 +27,7 @@ service cloud.firestore {
 
     // vvv  REPLACE THIS with your admin account's UID  vvv
     function adminUids() {
-      return ['gpz41RIE02U2Jxteu8H6AGCUjCx1'];
+      return ['REPLACE_WITH_ADMIN_UID'];
     }
     // ^^^ You can list more than one: ['uid1', 'uid2']
 
@@ -43,6 +43,22 @@ service cloud.firestore {
         : null;
     }
     function isOwnClient(clientKey) { return isSignedIn() && myClientKey() == clientKey; }
+
+    // Team members (coaches, caddies, ...). Their profile carries
+    //   access: { <playerKey>: { role: 'coach', label: 'C1001' }, ... }
+    // which ONLY the admin can write (see the users rules). teamRoleFor()
+    // returns the caller's role for that player, or '' if they have none.
+    function myAccess() { return get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('access', {}); }
+    function teamRoleFor(clientKey) {
+      return isSignedIn() ? myAccess().get(clientKey, {'role': ''}).get('role', '') : '';
+    }
+    // May the caller READ this player's data? The player themselves, or someone on their team.
+    function canView(clientKey) { return isOwnClient(clientKey) || teamRoleFor(clientKey) != ''; }
+    // A player's document opened up to the caller's role on that player's team.
+    function teamCanSeeDoc(d) {
+      return d.audienceClientKey != null && teamRoleFor(d.audienceClientKey) != ''
+        && teamRoleFor(d.audienceClientKey) in d.get('teamRoles', []);
+    }
     function changedOnly(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields); }
 
     // ------------------------------------------------------------------ //
@@ -54,9 +70,12 @@ service cloud.firestore {
     match /invites/{code} {
       allow get: if true;
       allow list: if isAdmin();
+      // Team-member codes made from the roster also carry `email` (the only
+      // address that may sign up with it) and `access` (their players).
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly(
-             ['clientKey', 'clientLabel', 'note', 'createdAt', 'expiresAt', 'usedBy', 'usedAt', 'revoked'])
+             ['clientKey', 'clientLabel', 'note', 'createdAt', 'expiresAt', 'usedBy', 'usedAt', 'revoked', 'email', 'access'])
+        && request.resource.data.get('access', {}) is map
         && request.resource.data.clientKey is string && request.resource.data.clientKey.size() > 0
         && request.resource.data.usedBy == null
         && request.resource.data.revoked == false;
@@ -81,14 +100,23 @@ service cloud.firestore {
     // in the same batch — the client cannot invent a clientKey.
     // ------------------------------------------------------------------ //
     match /users/{uid} {
+      function claimedInvite() { return get(/databases/$(db)/documents/invites/$(request.resource.data.inviteCode)).data; }
       allow get: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
       allow list: if isAdmin();
+      // clientKey and (for team members) access must be copied exactly from
+      // the invite being claimed; a code tied to an email only works for
+      // an account with that email.
       allow create: if isSignedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['email', 'name', 'clientKey', 'clientLabel', 'inviteCode', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['email', 'name', 'clientKey', 'clientLabel', 'inviteCode', 'createdAt', 'access'])
         && request.resource.data.name is string && request.resource.data.name.size() > 0
-        && request.resource.data.clientKey ==
-             get(/databases/$(db)/documents/invites/$(request.resource.data.inviteCode)).data.clientKey;
-      allow update: if isSignedIn() && request.auth.uid == uid && changedOnly(['name']);
+        && request.resource.data.clientKey == claimedInvite().clientKey
+        && request.resource.data.get('access', null) == claimedInvite().get('access', null)
+        && (claimedInvite().get('email', null) == null || request.auth.token.email == claimedInvite().email);
+      // A user may change only their own name. The admin may change only
+      // `access` (which players a team member can see, set from the roster).
+      // Nobody else can change `access`.
+      allow update: if (isSignedIn() && request.auth.uid == uid && changedOnly(['name']))
+        || (isAdmin() && changedOnly(['access']) && request.resource.data.access is map);
       allow delete: if isAdmin(); // removes their access to client data; see README for the Auth-account caveat
     }
 
@@ -99,12 +127,12 @@ service cloud.firestore {
     // so only `get` needs to be considered for them.
     // ------------------------------------------------------------------ //
     match /clientData/{clientKey}/datasets/{datasetId} {
-      allow read: if isAdmin() || isOwnClient(clientKey);
+      allow read: if isAdmin() || canView(clientKey);
       allow write: if isAdmin();
 
       match /chunks/{chunkId} {
-        allow get: if isAdmin() || isOwnClient(clientKey);
-        allow list: if isAdmin();
+        allow get: if isAdmin() || canView(clientKey);
+        allow list: if isAdmin(); // admin lists chunks to delete/replace them
         allow write: if isAdmin();
       }
     }
@@ -123,7 +151,8 @@ service cloud.firestore {
     // ------------------------------------------------------------------ //
     match /documents/{docId} {
       allow read: if isAdmin()
-        || (isSignedIn() && (resource.data.audienceClientKey == null || isOwnClient(resource.data.audienceClientKey)));
+        || (isSignedIn() && (resource.data.audienceClientKey == null || isOwnClient(resource.data.audienceClientKey)))
+        || (isSignedIn() && teamCanSeeDoc(resource.data));
       allow write: if isAdmin();
 
       // Chunk docs are fetched by known sequential ID, never listed, so this
@@ -131,8 +160,9 @@ service cloud.firestore {
       // (it's a path segment here, not a queried field), so this is decidable.
       match /chunks/{chunkId} {
         function doc() { return get(/databases/$(db)/documents/documents/$(docId)).data; }
-        allow get: if isAdmin() || (isSignedIn() && (doc().audienceClientKey == null || isOwnClient(doc().audienceClientKey)));
-        allow list: if isAdmin();
+        allow get: if isAdmin() || (isSignedIn() && (doc().audienceClientKey == null || isOwnClient(doc().audienceClientKey)))
+          || (isSignedIn() && teamCanSeeDoc(doc()));
+        allow list: if isAdmin(); // admin lists chunks to delete them
         allow write: if isAdmin();
       }
     }
@@ -172,6 +202,25 @@ service cloud.firestore {
               && request.resource.data.authorUid == request.auth.uid);
         allow update, delete: if false; // messages are permanent once sent
       }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Team document index. For each player document the admin opens up to
+    // a role, a copy of its details lives at
+    //   teamDocs/{playerKey}/roles/{role}/docs/{docId}
+    // so a team member can list "documents for my player and my role" with
+    // a query the rules can approve up front (path segments are fixed for
+    // the whole collection). The file itself is still read from
+    // documents/{docId}/chunks, which checks teamRoles above.
+    // ------------------------------------------------------------------ //
+    match /teamDocs/{clientKey}/roles/{role}/docs/{docId} {
+      allow read: if isAdmin() || (teamRoleFor(clientKey) != '' && teamRoleFor(clientKey) == role);
+      allow write: if isAdmin();
+    }
+
+    // Admin-only settings, e.g. config/teamRoster (the uploaded roster file).
+    match /config/{id} {
+      allow read, write: if isAdmin();
     }
 
     // Nothing else is readable or writable.

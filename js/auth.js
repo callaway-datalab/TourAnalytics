@@ -3,10 +3,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { auth, db, adminUids } from "./firebase-init.js";
+import { isTeamKey } from "./data.js";
 
 // state.status: 'loading' | 'signed-out' | 'ready'
 // state.profile: the user's users/{uid} document data, once loaded (admins may have none)
-const state = { status: "loading", user: null, profile: null, isAdmin: false };
+// state.isTeam: a team member (coach, caddy, ...) rather than a player
+// state.teamAccess: for team members, { [playerKey]: { role, label } }
+const state = { status: "loading", user: null, profile: null, isAdmin: false, isTeam: false, teamAccess: {} };
 const listeners = new Set();
 let profileUnsub = null;
 
@@ -28,6 +31,8 @@ onAuthStateChanged(auth, (user) => {
   if (profileUnsub) { profileUnsub(); profileUnsub = null; }
   state.user = user;
   state.profile = null;
+  state.isTeam = false;
+  state.teamAccess = {};
   state.isAdmin = !!user && adminUids.includes(user.uid);
 
   if (!user) {
@@ -35,14 +40,23 @@ onAuthStateChanged(auth, (user) => {
     notify();
     return;
   }
-  state.status = "ready";
+  // Stay "loading" until the profile has arrived, so pages never render for a signed-in
+  // player before we know which player they are.
+  state.status = "loading";
   notify();
 
   // Admins don't strictly need a profile doc; clients do, to know their clientKey.
+  const setProfile = (profile) => {
+    state.profile = profile;
+    state.isTeam = !state.isAdmin && !!profile && isTeamKey(profile.clientKey);
+    state.teamAccess = (state.isTeam && profile.access) || {};
+    state.status = "ready";
+    notify();
+  };
   profileUnsub = onSnapshot(
     doc(db, "users", user.uid),
-    (snap) => { state.profile = snap.exists() ? snap.data() : null; notify(); },
-    () => { state.profile = null; notify(); },
+    (snap) => setProfile(snap.exists() ? snap.data() : null),
+    () => setProfile(null),
   );
 });
 

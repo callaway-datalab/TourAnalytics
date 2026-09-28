@@ -1,11 +1,12 @@
 import { el, mount, formatWhen, num, icon } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchClientDatasets, watchVisibleDocuments, watchMyThreads } from "../store.js";
+import { watchClientDatasets, watchDocumentsFor, watchMyThreads } from "../store.js";
 
 export async function render(main, { previewClient }) {
   const state = getState();
   const clientKey = previewClient ? previewClient.key : state.profile.clientKey;
   const firstName = (state.profile?.name || "").split(" ")[0];
+  const teamRole = previewClient?.role || null; // set when a coach, caddy, ... is viewing a player
 
   const datasetsBox = el("ul", { class: "rows" });
   const docsBox = el("ul", { class: "rows" });
@@ -16,10 +17,12 @@ export async function render(main, { previewClient }) {
 
   mount(main, [
     el("header", { class: "page-head" }, [
-      el("h1", {}, previewClient ? "Client view" : `Hello, ${firstName}`),
-      el("p", { class: "muted" }, "Everything on this page belongs to you and is private to your account."),
+      el("h1", {}, teamRole ? previewClient.label : previewClient ? "Client view" : `Hello, ${firstName}`),
+      el("p", { class: "muted" }, teamRole
+        ? `${previewClient.label}'s data and the documents shared with their team.`
+        : "Everything on this page belongs to you and is private to your account."),
     ]),
-    el("section", {}, [el("h2", {}, "Your data"), datasetsBox]),
+    el("section", {}, [el("h2", {}, teamRole ? "Data" : "Your data"), datasetsBox]),
     el("section", {}, [
       el("div", { class: "section-head" }, [el("h2", {}, "Latest documents"), el("a", { href: "#/documents" }, "See all documents")]),
       docsBox,
@@ -36,10 +39,11 @@ export async function render(main, { previewClient }) {
           ]),
           el("span", { class: "row-meta" }, [num(d.rowCount) + " rows", el("br"), el("span", { class: "muted" }, `Updated ${formatWhen(d.uploadedAt)}`)]),
         ]))
-      : el("p", { class: "empty" }, "No data has been added to your account yet. It will appear here as soon as it's uploaded."));
+      : el("p", { class: "empty" }, teamRole ? "No data has been added for this player yet."
+          : "No data has been added to your account yet. It will appear here as soon as it's uploaded."));
   });
 
-  const un2 = watchVisibleDocuments(clientKey, (docs) => {
+  const un2 = watchDocumentsFor(clientKey, teamRole, (docs) => {
     const latest = docs.slice(0, 4);
     mount(docsBox, latest.length
       ? latest.map((d) => el("li", {}, [

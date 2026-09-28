@@ -1,6 +1,6 @@
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchVisibleDocuments, getDocumentBlobUrl } from "../store.js";
+import { watchDocumentsFor, getDocumentBlobUrl } from "../store.js";
 
 export async function render(main, { previewClient, flash }) {
   const state = getState();
@@ -39,7 +39,7 @@ export async function render(main, { previewClient, flash }) {
     }
   };
 
-  const unsub = watchVisibleDocuments(clientKey, (docs) => {
+  const unsub = watchDocumentsFor(clientKey, previewClient?.role || null, (docs) => {
     mount(list, docs.length ? docs.map((d) => {
       const isPdf = d.mimeType === "application/pdf";
       const link = el("a", { class: "row-main", href: "#" }, [

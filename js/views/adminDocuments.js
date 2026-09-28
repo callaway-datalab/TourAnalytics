@@ -1,6 +1,6 @@
 import { el, mount, formatWhen, confirmAction } from "../ui.js";
-import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients } from "../store.js";
-import { MAX_DOC_BYTES, readableSize } from "../data.js";
+import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster } from "../store.js";
+import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel } from "../data.js";
 
 export async function render(main, { flash }) {
   const file = el("input", { type: "file", accept: ".pdf,.ppt,.pptx", required: true });
@@ -10,11 +10,44 @@ export async function render(main, { flash }) {
   const submit = el("button", { class: "btn", type: "submit" }, "Upload document");
   const listBox = el("div");
 
+  // "Also share with their team": one checkbox per role, shown once a single player is chosen.
+  // Next to each role we name who on that player's team currently holds it.
+  const teamBox = el("fieldset", { class: "check-group", hidden: true });
+  let teamByPlayer = new Map(); // playerKey -> Map(role -> [names])
+  const drawTeamChecks = () => {
+    const key = audience.value;
+    teamBox.hidden = !key;
+    if (!key) return;
+    const onTeam = teamByPlayer.get(key) || new Map();
+    const roles = [...new Set([...onTeam.keys(), ...DEFAULT_ROLES])];
+    mount(teamBox, [
+      el("legend", {}, "Also let their team see it"),
+      el("p", { class: "muted", style: "margin:0 0 .3rem" }, "Leave everything unticked to share with the player only."),
+      ...roles.map((r) => el("label", {}, [
+        el("input", { type: "checkbox", value: r }),
+        roleLabel(r),
+        onTeam.get(r) ? el("span", { class: "muted" }, ` (${onTeam.get(r).join(", ")})`) : el("span", { class: "muted" }, " (nobody yet)"),
+      ])),
+    ]);
+  };
+  audience.addEventListener("change", drawTeamChecks);
+
   let clientLabels = new Map();
+  // Who is on each player's team comes from the uploaded team roster.
+  getTeamRoster().then(({ entries = [] }) => {
+    teamByPlayer = new Map();
+    for (const e of entries) {
+      if (!teamByPlayer.has(e.playerKey)) teamByPlayer.set(e.playerKey, new Map());
+      const m = teamByPlayer.get(e.playerKey);
+      if (!m.has(e.role)) m.set(e.role, []);
+      m.get(e.role).push(e.name);
+    }
+    drawTeamChecks();
+  }).catch(() => {});
   adminAllClients().then(({ labels }) => {
     clientLabels = labels;
     mount(audience, [el("option", { value: "" }, "Everyone"),
-      ...[...labels.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([key, label]) => el("option", { value: key }, `Only ${label}`))]);
+      ...[...labels.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([key, label]) => el("option", { value: key }, label))]);
   });
 
   const form = el("form", {
@@ -29,9 +62,10 @@ export async function render(main, { flash }) {
 
       submit.disabled = true; submit.textContent = "Uploading\u2026";
       try {
-        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, file: f });
+        const teamRoles = audience.value ? [...teamBox.querySelectorAll("input:checked")].map((c) => c.value) : [];
+        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, file: f });
         flash("Document uploaded.", "ok");
-        form.reset();
+        form.reset(); drawTeamChecks();
       } catch {
         flash("Couldn't upload that file. Try again.", "error");
       } finally {
@@ -43,13 +77,14 @@ export async function render(main, { flash }) {
     el("label", {}, ["Title", title]),
     el("label", {}, ["Description (optional)", description]),
     el("label", {}, ["Who can see it", audience]),
+    teamBox,
     el("div", {}, submit),
   ]);
 
   mount(main, [
     el("header", { class: "page-head" }, [
       el("h1", {}, "Documents"),
-      el("p", { class: "muted" }, "Share PDFs and PowerPoint files with everyone, or with one client."),
+      el("p", { class: "muted" }, "Share PDFs and PowerPoint files with everyone, or with one player and, if you choose, members of their team."),
     ]),
     el("section", {}, [el("h2", {}, "Upload a document"), form]),
     el("section", {}, [el("h2", {}, "Library"), listBox]),
@@ -80,7 +115,10 @@ export async function render(main, { flash }) {
         });
         return el("tr", {}, [
           el("td", {}, openLink), el("td", {}, d.originalName),
-          el("td", {}, d.audienceClientKey ? (clientLabels.get(d.audienceClientKey) || d.audienceClientKey.replace(/^c_/, "")) : "Everyone"),
+          el("td", {}, d.audienceClientKey
+            ? (clientLabels.get(d.audienceClientKey) || d.audienceClientKey.replace(/^c_/, ""))
+              + ((d.teamRoles || []).length ? ` + their ${d.teamRoles.map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only")
+            : "Everyone"),
           el("td", {}, formatWhen(d.uploadedAt)), el("td", { class: "actions" }, del),
         ]);
       })),

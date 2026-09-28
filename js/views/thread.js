@@ -1,3 +1,4 @@
+import { isTeamKey } from "../data.js";
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
 import { watchThread, watchMessages, replyToThread, markThreadReadByAdmin, markThreadReadByUser } from "../store.js";
@@ -52,10 +53,12 @@ export async function render(main, { params, routeId, flash }) {
     }
     titleEl.textContent = t.subject;
     if (isAdmin) {
-      mount(metaEl, [
-        `From ${t.askerName} \u00b7 ${t.askerEmail} \u00b7 client ID `, el("strong", {}, t.clientLabel), " \u00b7 ",
-        el("a", { href: `#/view-as/${encodeURIComponent(t.clientKey)}?label=${encodeURIComponent(t.clientLabel)}` }, "See their portal"),
-      ]);
+      mount(metaEl, isTeamKey(t.clientKey)
+        ? [`From ${t.askerName} \u00b7 ${t.askerEmail} \u00b7 `, el("strong", {}, "team member")]
+        : [
+          `From ${t.askerName} \u00b7 ${t.askerEmail} \u00b7 client ID `, el("strong", {}, t.clientLabel), " \u00b7 ",
+          el("a", { href: `#/view-as/${encodeURIComponent(t.clientKey)}?label=${encodeURIComponent(t.clientLabel)}` }, "See their portal"),
+        ]);
     }
     if (firstLoad) {
       firstLoad = false;

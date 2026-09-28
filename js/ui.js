@@ -92,11 +92,22 @@ export function setUnreadCount(n) {
   document.title = n > 0 ? `(${n}) ${base}` : base;
 }
 
+function teamNav(previewClient) {
+  const items = [["#/team", "people", "My players", ["team"]]];
+  if (previewClient) {
+    items.push(["#/dashboard", "data", `${previewClient.label}: data`, ["dashboard", "dataset"]]);
+    items.push(["#/documents", "doc", `${previewClient.label}: documents`, ["documents"]]);
+  }
+  items.push(NAV.client[2]); // Questions
+  return items;
+}
+
 export function renderShell(root, { previewClient, currentRoute }) {
   const state = window.__authState;
   const admin = state.isAdmin && !previewClient;
-  const items = admin ? NAV.admin : NAV.client;
-  const showQuestions = !previewClient || admin;
+  const team = !state.isAdmin && state.isTeam;
+  const items = admin ? NAV.admin : team ? teamNav(previewClient) : NAV.client;
+  const showQuestions = !previewClient || admin || team;
 
   const nav = el("nav", { "aria-label": "Main" },
     items
@@ -111,14 +122,14 @@ export function renderShell(root, { previewClient, currentRoute }) {
       }));
 
   const footItems = [];
-  if (!previewClient) {
+  if (!previewClient || team) {
     footItems.push(el("a", { href: "#/account" }, [icon("user"), text(" " + (state.user?.displayName || state.profile?.name || state.user?.email || "Account"))]));
   }
   footItems.push(el("button", { class: "link", type: "button", onClick: () => signOut() }, "Log out"));
 
   mount(root, el("div", { class: "shell" }, [
     el("aside", { class: "rail" }, [
-      el("a", { class: "brand", href: admin ? "#/admin" : "#/dashboard" }, portalName),
+      el("a", { class: "brand", href: admin ? "#/admin" : team ? "#/team" : "#/dashboard" }, portalName),
       nav,
       el("div", { class: "rail-foot" }, footItems),
     ]),

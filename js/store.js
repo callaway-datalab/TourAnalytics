@@ -7,7 +7,9 @@ import {
   updatePassword, reauthenticateWithCredential, EmailAuthProvider,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, db } from "./firebase-init.js";
-import { chunkRows, splitString, DOC_CHUNK_CHARS, UserError, makeCode } from "./data.js";
+import {
+  chunkRows, splitString, DOC_CHUNK_CHARS, UserError, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
+} from "./data.js";
 
 export { UserError };
 
@@ -23,6 +25,13 @@ export async function fetchInvite(code) {
  *  created Auth account is left signed out and unlinked to any client; see README for the caveat
  *  that its email address stays reserved (Firebase has no client-side "delete this stranger" call). */
 export async function signUpWithCode({ code, name, email, password }) {
+  email = String(email).trim().toLowerCase();
+  // Team-member codes from the roster are tied to one email address. Check before creating the
+  // login, so a mismatch doesn't leave an orphaned account behind.
+  const pre = await fetchInvite(code);
+  if (pre?.email && pre.email !== email) {
+    throw new UserError("This access code was issued for a different email address. Sign up with the email address the administrator has for you.");
+  }
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   const uid = cred.user.uid;
   try {
@@ -34,10 +43,12 @@ export async function signUpWithCode({ code, name, email, password }) {
         throw new UserError("That access code isn't valid anymore. Ask for a new one.");
       }
       tx.update(inviteRef, { usedBy: uid, usedAt: serverTimestamp() });
-      tx.set(doc(db, "users", uid), {
+      const profile = {
         email, name, clientKey: invite.data().clientKey, clientLabel: invite.data().clientLabel,
         inviteCode: code, createdAt: serverTimestamp(),
-      });
+      };
+      if (invite.data().access) profile.access = invite.data().access; // team member: players from the roster
+      tx.set(doc(db, "users", uid), profile);
     });
   } catch (err) {
     await auth.signOut();
@@ -79,6 +90,75 @@ export function revokeInvite(code) {
 
 export function watchUsers(cb) {
   return onSnapshot(collection(db, "users"), (snap) => cb(snap.docs.map((d) => ({ uid: d.id, ...d.data() }))));
+}
+
+/* ============================== Team roster ============================== */
+
+const ROSTER_REF = () => doc(db, "config", "teamRoster");
+
+export function watchTeamRoster(cb) {
+  return onSnapshot(ROSTER_REF(), (snap) => cb(snap.exists() ? snap.data() : { entries: [], uploadedAt: null }));
+}
+export async function getTeamRoster() {
+  const snap = await getDoc(ROSTER_REF());
+  return snap.exists() ? snap.data() : { entries: [], uploadedAt: null };
+}
+
+/**
+ * Makes the roster the single source of truth for team access:
+ *  - saves it (so the admin can download it back and so other pages can show it),
+ *  - sets every team member's account to exactly the players listed for their email
+ *    (someone removed from the file loses all their players),
+ *  - makes sure everyone listed who hasn't signed up yet has one open access code, tied to
+ *    their email and carrying their players, and retires codes nobody needs any more.
+ * Player accounts are never touched.
+ */
+export async function applyTeamRoster(entries) {
+  const byEmail = rosterByEmail(entries);
+  const [usersSnap, invitesSnap] = await Promise.all([getDocs(collection(db, "users")), getDocs(collection(db, "invites"))]);
+  const ops = [(b) => b.set(ROSTER_REF(), { entries, uploadedAt: serverTimestamp() })];
+
+  const hasAccount = new Set();
+  let updated = 0;
+  usersSnap.forEach((d) => {
+    const u = d.data();
+    if (!isTeamKey(u.clientKey)) return;
+    const email = norm(u.email);
+    hasAccount.add(email);
+    const next = byEmail.get(email)?.access || {};
+    if (!sameAccess(u.access || {}, next)) { ops.push((b) => b.update(d.ref, { access: next })); updated++; }
+  });
+
+  const now = Date.now();
+  const openCode = new Map();
+  invitesSnap.forEach((d) => {
+    const v = d.data();
+    if (!isTeamKey(v.clientKey) || !v.email || v.usedBy || v.revoked || (v.expiresAt && v.expiresAt.toMillis() < now)) return;
+    const email = norm(v.email);
+    if (byEmail.has(email) && !hasAccount.has(email) && !openCode.has(email)) openCode.set(email, d);
+    else ops.push((b) => b.update(d.ref, { revoked: true })); // removed from roster, already signed up, or a duplicate
+  });
+
+  let newCodes = 0;
+  for (const [email, person] of byEmail) {
+    if (hasAccount.has(email)) continue;
+    const existing = openCode.get(email);
+    if (existing) {
+      const v = existing.data();
+      if (!sameAccess(v.access || {}, person.access) || v.clientLabel !== person.name) {
+        ops.push((b) => b.update(existing.ref, { access: person.access, clientLabel: person.name }));
+      }
+    } else {
+      const code = makeCode();
+      ops.push((b) => b.set(doc(db, "invites", code), {
+        clientKey: teamKey(), clientLabel: person.name, note: "From team roster", email, access: person.access,
+        createdAt: serverTimestamp(), expiresAt: null, usedBy: null, usedAt: null, revoked: false,
+      }));
+      newCodes++;
+    }
+  }
+  await commitInChunks(ops);
+  return { people: byEmail.size, links: entries.length, updated, newCodes };
 }
 
 export const sendPasswordReset = (email) => sendPasswordResetEmail(auth, email);
@@ -182,8 +262,12 @@ export async function adminAllClients() {
     getDocs(collection(db, "users")), getDocs(collection(db, "invites")), getDocs(collection(db, "datasets")),
   ]);
   const labels = new Map();
-  usersSnap.forEach((d) => labels.set(d.data().clientKey, d.data().clientLabel));
-  invitesSnap.forEach((d) => { if (!labels.has(d.data().clientKey)) labels.set(d.data().clientKey, d.data().clientLabel); });
+  // Players only: team members (coaches, caddies, ...) have "t_" keys and no data of their own.
+  usersSnap.forEach((d) => { if (!isTeamKey(d.data().clientKey)) labels.set(d.data().clientKey, d.data().clientLabel); });
+  invitesSnap.forEach((d) => {
+    const k = d.data().clientKey;
+    if (!isTeamKey(k) && !labels.has(k)) labels.set(k, d.data().clientLabel);
+  });
   datasetsSnap.forEach((d) => (d.data().clientKeys || []).forEach((k) => { if (!labels.has(k)) labels.set(k, k.replace(/^c_/, "")); }));
   return { labels, usersSnap, invitesSnap, datasetsSnap };
 }
@@ -219,7 +303,29 @@ export function watchVisibleDocuments(clientKey, cb) {
   return () => { un1(); un2(); };
 }
 
-export async function uploadDocument({ title, description, audienceClientKey, file }) {
+/** What a team member sees for one player: documents shared with everyone, plus that player's
+ *  documents opened up to the team member's role. The latter are read from small pointer records
+ *  at teamDocs/{player}/roles/{role}/docs/{docId}, because Firestore rules can only approve a
+ *  query they can check up front, and "is my role in this document's list?" isn't one of those. */
+export function watchTeamDocuments(clientKey, role, cb) {
+  const state = { shared: [], team: [] };
+  const emit = () => cb([...state.shared, ...state.team].sort((a, b) => (b.uploadedAt?.toMillis() ?? 0) - (a.uploadedAt?.toMillis() ?? 0)));
+  const un1 = onSnapshot(query(collection(db, "documents"), where("audienceClientKey", "==", null)), (s) => {
+    state.shared = s.docs.map((d) => ({ id: d.id, ...d.data() })); emit();
+  });
+  const un2 = onSnapshot(collection(db, "teamDocs", clientKey, "roles", role, "docs"), (s) => {
+    state.team = s.docs.map((d) => ({ id: d.id, ...d.data() })); emit();
+  }, () => { state.team = []; emit(); });
+  return () => { un1(); un2(); };
+}
+
+/** Pick the right document feed for whoever is looking: a team member viewing a player, or the
+ *  player themselves (also used for the admin's preview, which shows exactly what the player sees). */
+export function watchDocumentsFor(clientKey, teamRole, cb) {
+  return teamRole ? watchTeamDocuments(clientKey, teamRole, cb) : watchVisibleDocuments(clientKey, cb);
+}
+
+export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], file }) {
   const base64 = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(",")[1]);
@@ -228,17 +334,28 @@ export async function uploadDocument({ title, description, audienceClientKey, fi
   });
   const chunks = splitString(base64, DOC_CHUNK_CHARS);
   const docRef = doc(collection(db, "documents"));
-  const ops = [(batch) => batch.set(docRef, {
-    title, description: description || "", audienceClientKey: audienceClientKey || null,
+  const roles = audienceClientKey ? [...new Set(teamRoles.map(normRole).filter(Boolean))] : [];
+  const meta = {
+    title, description: description || "", audienceClientKey: audienceClientKey || null, teamRoles: roles,
     originalName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size,
     chunkCount: chunks.length, uploadedAt: serverTimestamp(),
-  })];
-  chunks.forEach((data, i) => ops.push((batch) => batch.set(doc(docRef, "chunks", String(i)), { data })));
+  };
+  // Chunks first, the visible records last, so nobody ever sees a document whose file isn't there yet.
+  const ops = chunks.map((data, i) => (batch) => batch.set(doc(docRef, "chunks", String(i)), { data }));
+  ops.push((batch) => batch.set(docRef, meta));
+  for (const role of roles) {
+    ops.push((batch) => batch.set(doc(db, "teamDocs", audienceClientKey, "roles", role, "docs", docRef.id), meta));
+  }
   await commitInChunks(ops);
   return docRef.id;
 }
 
 export async function deleteDocumentFile(docId) {
+  const snap = await getDoc(doc(db, "documents", docId));
+  const { audienceClientKey, teamRoles = [] } = snap.exists() ? snap.data() : {};
+  for (const role of audienceClientKey ? teamRoles : []) {
+    await deleteDoc(doc(db, "teamDocs", audienceClientKey, "roles", role, "docs", docId));
+  }
   await deleteCollection(collection(db, "documents", docId, "chunks"));
   await deleteDoc(doc(db, "documents", docId));
 }
