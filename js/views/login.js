@@ -1,4 +1,4 @@
-import { el, mount } from "../ui.js";
+import { el, mount, logoImg } from "../ui.js";
 import { logIn } from "../store.js";
 import { portalName } from "../firebase-init.js";
 
@@ -39,7 +39,7 @@ export async function render(main) {
 
   mount(main, el("div", { class: "auth" }, [
     el("section", { class: "auth-intro" }, [
-      el("p", { class: "auth-name" }, portalName),
+      el("p", { class: "auth-name" }, [logoImg(), portalName]),
       el("h1", {}, "Your numbers and documents, just for you."),
       el("p", {}, "Log in to see your data, download your files and ask a question."),
     ]),

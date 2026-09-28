@@ -1,4 +1,4 @@
-import { el, mount } from "../ui.js";
+import { el, mount, logoImg } from "../ui.js";
 import { fetchInvite, signUpWithCode, UserError } from "../store.js";
 import { normalizeCode } from "../data.js";
 import { portalName } from "../firebase-init.js";
@@ -63,7 +63,7 @@ export async function render(main) {
 
   mount(main, el("div", { class: "auth" }, [
     el("section", { class: "auth-intro" }, [
-      el("p", { class: "auth-name" }, portalName),
+      el("p", { class: "auth-name" }, [logoImg(), portalName]),
       el("h1", {}, "Welcome. Let's set up your account."),
       el("p", {}, "You'll need the access code you were sent. It links your account to your own data."),
     ]),

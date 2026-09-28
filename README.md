@@ -21,7 +21,7 @@ and reference once it's running.
   can read or write. Read the comments at the top of that file before you trust it with real data.
 - Cloud Storage now requires a billing account even for a few small files, so documents (PDFs,
   PowerPoints) are stored as base64 chunks in Firestore instead, keeping the whole app on Firebase's
-  free tier. This caps individual file size (see `MAX_DOC_BYTES` in `js/data.js`, default 10 MB)
+  free tier. This caps individual file size (see `MAX_DOC_BYTES` in `js/data.js`, default 25 MB)
   and counts against Firestore's free storage quota — fine for a personal or small-business tool,
   not for a large document archive.
 - There's no server to reset a client's password directly. "Send password reset email" (on the

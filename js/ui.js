@@ -3,6 +3,17 @@ import { subscribe, signOut } from "./auth.js";
 
 /** Builds a DOM element without ever touching innerHTML, so nothing here can be an XSS vector.
  *  el('div', {class: 'x', onClick: fn}, ['text', childEl]) */
+/* Optional logo: put an image at media/logo.png and it shows in the banner and on the login page. */
+const LOGO_URL = "media/logo.png";
+let logoMissing = false;
+export function logoImg(cls = "brand-logo") {
+  if (logoMissing) return null;
+  const img = document.createElement("img");
+  img.src = LOGO_URL; img.alt = ""; img.className = cls;
+  img.addEventListener("error", () => { logoMissing = true; img.remove(); });
+  return img;
+}
+
 export function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -129,7 +140,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
 
   mount(root, el("div", { class: "shell" }, [
     el("aside", { class: "rail" }, [
-      el("a", { class: "brand", href: admin ? "#/admin" : team ? "#/team" : "#/dashboard" }, portalName),
+      el("a", { class: "brand", href: admin ? "#/admin" : team ? "#/team" : "#/dashboard" }, [logoImg(), portalName]),
       nav,
       el("div", { class: "rail-foot" }, footItems),
     ]),
