@@ -1,5 +1,5 @@
 import { el, mount, formatWhen, confirmAction } from "../ui.js";
-import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster } from "../store.js";
+import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage } from "../store.js";
 import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel } from "../data.js";
 
 export async function render(main, { flash }) {
@@ -66,8 +66,8 @@ export async function render(main, { flash }) {
         await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, file: f });
         flash("Document uploaded.", "ok");
         form.reset(); drawTeamChecks();
-      } catch {
-        flash("Couldn't upload that file. Try again.", "error");
+      } catch (err) {
+        flash(uploadErrorMessage(err, "that document"), "error");
       } finally {
         submit.disabled = false; submit.textContent = "Upload document";
       }

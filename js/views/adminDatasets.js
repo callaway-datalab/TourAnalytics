@@ -1,5 +1,5 @@
 import { el, mount, formatWhen, num, confirmAction } from "../ui.js";
-import { watchAdminDatasets, uploadDataset, deleteDataset, UserError } from "../store.js";
+import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage } from "../store.js";
 import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
 
 export async function render(main, { flash }) {
@@ -38,7 +38,7 @@ export async function render(main, { flash }) {
         flash(msg, "ok");
         form.reset(); idColumn.value = "client_id";
       } catch (err) {
-        flash(err instanceof UserError ? err.message : "Something went wrong reading or uploading that file.", "error");
+        flash(uploadErrorMessage(err, "that data file"), "error");
       } finally {
         submit.disabled = false; submit.textContent = "Upload data";
       }

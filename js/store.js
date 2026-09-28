@@ -13,6 +13,21 @@ import {
 
 export { UserError };
 
+/** A readable reason for a failed upload, for the admin. Also logs the raw error to the console. */
+export function uploadErrorMessage(err, what = "that file") {
+  console.error(err);
+  if (err instanceof UserError) return err.message;
+  const code = err?.code || "";
+  if (code.includes("permission-denied")) {
+    return `Firebase refused to save ${what}. The security rules published in Firebase are probably out of date or have a different admin UID: paste in the latest firestore.rules (with your UID) and click Publish, then try again.`;
+  }
+  if (code.includes("invalid-argument") || code.includes("resource-exhausted")) {
+    return `Firebase rejected ${what} (${code.replace("firestore/", "")}). If it's a large file, try a smaller one.`;
+  }
+  if (code.includes("unavailable")) return "Couldn't reach Firebase. Check your internet connection and try again.";
+  return `Couldn't upload ${what}${code ? ` (${code.replace("firestore/", "")})` : ""}. Try again.`;
+}
+
 /* ============================== Invites ============================== */
 
 export async function fetchInvite(code) {
@@ -177,14 +192,23 @@ export function watchAdminDatasets(cb) {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
 
-const BATCH_LIMIT = 450; // Firestore hard limit is 500 writes per batch
+const BATCH_LIMIT = 450;            // Firestore hard limit is 500 writes per batch
+const BATCH_BYTES = 6 * 1024 * 1024; // ...and about 10 MiB per request, so stay well under it
+
+/** Tag a batch op with roughly how many bytes it writes, so big uploads get split up. */
+const sized = (op, bytes) => Object.assign(op, { bytes });
 
 async function commitInChunks(ops) {
-  for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
-    const batch = writeBatch(db);
-    for (const op of ops.slice(i, i + BATCH_LIMIT)) op(batch);
-    await batch.commit();
+  let batch = writeBatch(db), count = 0, bytes = 0;
+  for (const op of ops) {
+    const b = op.bytes || 1000;
+    if (count && (count >= BATCH_LIMIT || bytes + b > BATCH_BYTES)) {
+      await batch.commit();
+      batch = writeBatch(db); count = 0; bytes = 0;
+    }
+    op(batch); count++; bytes += b;
   }
+  if (count) await batch.commit();
 }
 
 async function deleteCollection(colRef) {
@@ -222,8 +246,8 @@ export async function uploadDataset(name, description, dataset) {
       name, description: description || "", idColumn: dataset.idColumn, columns: dataset.columns,
       clientLabel: group.label, rowCount: group.rows.length, chunkCount: chunks.length, uploadedAt: serverTimestamp(),
     }));
-    chunks.forEach((data, i) => ops.push((batch) =>
-      batch.set(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)), { data })));
+    chunks.forEach((data, i) => ops.push(sized((batch) =>
+      batch.set(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)), { data }), data.length * 2)));
   }
   await commitInChunks(ops);
   return { datasetId, clients: newClientKeys.length };
@@ -341,12 +365,17 @@ export async function uploadDocument({ title, description, audienceClientKey, te
     chunkCount: chunks.length, uploadedAt: serverTimestamp(),
   };
   // Chunks first, the visible records last, so nobody ever sees a document whose file isn't there yet.
-  const ops = chunks.map((data, i) => (batch) => batch.set(doc(docRef, "chunks", String(i)), { data }));
-  ops.push((batch) => batch.set(docRef, meta));
-  for (const role of roles) {
-    ops.push((batch) => batch.set(doc(db, "teamDocs", audienceClientKey, "roles", role, "docs", docRef.id), meta));
+  // Big files go up in several batches; if something fails part-way, clear out what was written.
+  try {
+    await commitInChunks(chunks.map((data, i) => sized((batch) => batch.set(doc(docRef, "chunks", String(i)), { data }), data.length)));
+    await commitInChunks([
+      (batch) => batch.set(docRef, meta),
+      ...roles.map((role) => (batch) => batch.set(doc(db, "teamDocs", audienceClientKey, "roles", role, "docs", docRef.id), meta)),
+    ]);
+  } catch (err) {
+    deleteCollection(collection(db, "documents", docRef.id, "chunks")).catch(() => {});
+    throw err;
   }
-  await commitInChunks(ops);
   return docRef.id;
 }
 
