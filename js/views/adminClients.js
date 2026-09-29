@@ -211,11 +211,17 @@ export async function render(main, { flash }) {
     ])));
   }
 
+  // Preview anyone's portal: players open their own view, team members and analysts their My players page.
+  const portalHref = (u) => (isTeamKey(u.clientKey)
+    ? `#/view-as-member/${encodeURIComponent(u.uid)}`
+    : `#/view-as/${encodeURIComponent(u.clientKey)}?label=${encodeURIComponent(u.clientLabel)}`);
+
   function renderAccounts() {
     if (!usersCache.length) { mount(accountsBox, el("p", { class: "empty" }, "Nobody has signed up yet.")); return; }
     mount(accountsBox, el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Name", "Email", "Client ID", "Joined", "", ""].map((h) => el("th", {}, h)))),
+      el("thead", {}, el("tr", {}, ["Name", "Email", "Client ID", "Joined", "", "", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, usersCache.map((u) => {
+        const portal = el("a", { href: portalHref(u) }, "See their portal");
         const resetBtn = el("button", { class: "link", type: "button" }, "Send password reset");
         resetBtn.addEventListener("click", async () => {
           resetBtn.disabled = true;
@@ -232,7 +238,7 @@ export async function render(main, { flash }) {
         });
         return el("tr", {}, [
           el("td", {}, u.name), el("td", {}, u.email), el("td", {}, u.kind === "analyst" ? el("span", { class: "muted" }, "Callaway Access") : isTeamKey(u.clientKey) ? el("span", { class: "muted" }, "Team member") : u.clientLabel),
-          el("td", {}, formatWhen(u.createdAt)), el("td", {}, resetBtn), el("td", { class: "actions" }, delBtn),
+          el("td", {}, formatWhen(u.createdAt)), el("td", {}, portal), el("td", {}, resetBtn), el("td", { class: "actions" }, delBtn),
         ]);
       })),
     ])));
@@ -260,7 +266,7 @@ export async function render(main, { flash }) {
     const signupUrl = location.origin + location.pathname + "#/signup";
     const rows = [...people.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([email, p]) => {
       let status;
-      if (accounts.has(email)) status = el("span", { class: "tag" }, "Signed up");
+      if (accounts.has(email)) status = [el("span", { class: "tag" }, "Signed up"), el("br"), el("a", { href: portalHref(accounts.get(email)) }, "See their portal")];
       else if (codes.has(email)) status = [el("code", {}, formatCode(codes.get(email))), el("br"), el("span", { class: "muted" }, "Not signed up yet: send them this code")];
       else status = el("span", { class: "muted" }, "Upload the roster again to make a code");
       const unknown = (key) => clientsCache.labels.size && !clientsCache.labels.has(key);
@@ -342,7 +348,8 @@ export async function render(main, { flash }) {
     // Everyone with Callaway Access: signed-up accounts and codes still waiting to be used.
     const now = Date.now();
     const people = [
-      ...usersCache.filter((u) => u.kind === "analyst").map((u) => ({ target: { uid: u.uid }, name: u.name, email: u.email, access: u.access, allPlayers: u.allPlayers, status: el("span", { class: "tag" }, "Signed up") })),
+      ...usersCache.filter((u) => u.kind === "analyst").map((u) => ({ target: { uid: u.uid }, name: u.name, email: u.email, access: u.access, allPlayers: u.allPlayers,
+        status: [el("span", { class: "tag" }, "Signed up"), el("br"), el("a", { href: portalHref(u) }, "See their portal")] })),
       ...invitesCache.filter((v) => v.kind === "analyst" && !v.usedBy && !v.revoked && (!v.expiresAt || v.expiresAt.toMillis() > now))
         .map((v) => ({ target: { code: v.code }, name: v.clientLabel, email: v.email, access: v.access, allPlayers: v.allPlayers, status: [el("code", {}, formatCode(v.code)), el("br"), el("span", { class: "muted" }, "Not signed up yet")] })),
     ];

@@ -1,6 +1,7 @@
 import { el, mount } from "../ui.js";
 import { getState, subscribe } from "../auth.js";
 import { roleLabel } from "../data.js";
+import { effectiveTeam } from "../preview.js";
 
 // Landing page for a team member (coach, caddy, ...): the players they've been given access to.
 export async function render(main) {
@@ -13,7 +14,7 @@ export async function render(main) {
 
   // Re-draw whenever the administrator changes who this person can see.
   const draw = (state) => {
-    const players = Object.entries(state.teamAccess || {})
+    const players = Object.entries(effectiveTeam(state).teamAccess)
       .map(([key, v]) => ({ key, label: v.label || key.replace(/^c_/, ""), role: v.role }))
       .sort((a, b) => a.label.localeCompare(b.label));
     mount(list, players.length

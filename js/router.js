@@ -1,3 +1,6 @@
+import { getPreviewTeam, setPreviewTeam, effectiveTeam } from "./preview.js";
+import { isTeamKey } from "./data.js";
+import { getUserProfile } from "./store.js";
 import { whenReady, getState, subscribe } from "./auth.js";
 import { renderShell, flash } from "./ui.js";
 
@@ -54,6 +57,26 @@ async function render() {
   const raw = location.hash.slice(1) || "/login";
 
   const state = await whenReady();
+  const team = effectiveTeam(state); // a real team member, or the admin previewing one
+
+  // Admin: preview any account's portal. Players go to their own view; team members and
+  // Callaway analysts go to their My players page.
+  if (raw.startsWith("/view-as-member/")) {
+    if (!state.isAdmin) { navigate(homeFor(state)); return; }
+    const u = await getUserProfile(decodeURIComponent(raw.slice("/view-as-member/".length).split("?")[0])).catch(() => null);
+    if (!u) { navigate(homeFor(state)); return; }
+    if (isTeamKey(u.clientKey)) {
+      setPreviewTeam({ uid: u.uid, name: u.name, email: u.email, kind: u.kind || null, access: u.access || {} });
+      previewClient = null;
+      navigate("/team");
+    } else {
+      setPreviewTeam(null);
+      previewClient = { key: u.clientKey, label: u.clientLabel };
+      navigate("/dashboard");
+    }
+    return;
+  }
+  if (raw === "/back-to-players") { previewClient = null; navigate(team.isTeam ? "/team" : homeFor(state)); return; }
 
   if (raw.startsWith("/view-as/")) {
     const [keyPart, queryPart] = raw.slice("/view-as/".length).split("?");
@@ -62,10 +85,11 @@ async function render() {
     const label = qs.get("label") || key;
     // Optional page to land on (the player dropdown keeps you on Data or Reports).
     const to = ["/dashboard", "/documents"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
-    if (state.isAdmin) {
+    if (team.isTeam && team.teamAccess[key]) {
+      previewClient = { key, label: team.teamAccess[key].label || label, role: team.teamAccess[key].role };
+    } else if (state.isAdmin) {
+      setPreviewTeam(null); // "See their portal" on a player: a plain player preview
       previewClient = { key, label };
-    } else if (state.isTeam && state.teamAccess[key]) {
-      previewClient = { key, label: state.teamAccess[key].label || label, role: state.teamAccess[key].role };
     } else {
       previewClient = null;
       navigate(homeFor(state));
@@ -76,11 +100,12 @@ async function render() {
   }
   if (raw === "/exit-preview") {
     previewClient = null;
+    setPreviewTeam(null);
     navigate(homeFor(state));
     return;
   }
   // A team member whose access to this player was just removed goes back to their list.
-  if (previewClient && state.isTeam && !state.teamAccess[previewClient.key]) previewClient = null;
+  if (previewClient && team.isTeam && !team.teamAccess[previewClient.key]) previewClient = null;
   const path = raw.split("?")[0];
   const found = match(path);
 
@@ -89,10 +114,12 @@ async function render() {
 
   if (guard !== "public" && !state.user) { navigate(`/login?next=${encodeURIComponent(raw)}`); return; }
   if (guard === "public" && state.user) { navigate(homeFor(state)); return; }
-  if (guard === "team" && !state.isTeam) { navigate(homeFor(state)); return; }
-  if (guard === "client" && state.isTeam && !previewClient && PLAYER_PAGES.includes(routeId)) { navigate("/team"); return; }
+  if (guard === "team" && !team.isTeam) { navigate(homeFor(state)); return; }
+  if (guard === "client" && team.isTeam && !previewClient && PLAYER_PAGES.includes(routeId)) { navigate("/team"); return; }
   if (guard === "admin" && !state.isAdmin) { navigate("/dashboard"); return; }
-  if (guard === "client" && state.isAdmin && !previewClient) { navigate("/admin/clients"); return; }
+  // Going back to an admin page (e.g. opening a question from a preview) ends any preview.
+  if (guard === "admin" && (previewClient || getPreviewTeam())) { previewClient = null; setPreviewTeam(null); }
+  if (guard === "client" && state.isAdmin && !previewClient && !team.preview) { navigate("/admin/clients"); return; }
   if (guard === "client" && !state.isAdmin && !state.profile && state.status === "ready") {
     // Signed in, but no profile doc (e.g. access was removed by the admin).
     document.getElementById("app").textContent =
@@ -109,7 +136,7 @@ async function render() {
     main = root;
   } else {
     main = renderShell(root, { previewClient, currentRoute: routeId });
-    if (previewClient && (PLAYER_PAGES.includes(routeId) || (state.isAdmin && guard === "client"))) {
+    if ((previewClient && (PLAYER_PAGES.includes(routeId) || (state.isAdmin && guard === "client"))) || (team.preview && guard !== "admin")) {
       // The bar goes INSIDE <main> (placing it beside <main> breaks the two-column layout and
       // pushes the page off-screen). Views clear their container, so give them an inner one.
       const inner = document.createElement("div");
@@ -132,11 +159,27 @@ function el_previewBar() {
   bar.className = "preview-bar";
   bar.setAttribute("role", "status");
   const span = document.createElement("span");
-  const who = Object.assign(document.createElement("strong"), { textContent: previewClient.label });
   const link = document.createElement("a");
   link.href = "#/exit-preview";
+  const pt = getPreviewTeam();
+  if (pt) {
+    // Admin previewing a coach / caddy / analyst.
+    const kind = pt.kind === "analyst" ? "Callaway Access" : "team member";
+    span.append("Previewing ", Object.assign(document.createElement("strong"), { textContent: pt.name }), `'s portal (${kind})`);
+    if (previewClient) span.append(" \u00b7 viewing ", Object.assign(document.createElement("strong"), { textContent: previewClient.label }));
+    span.append(".");
+    const links = document.createElement("span");
+    links.className = "thread-actions";
+    if (previewClient) links.append(Object.assign(document.createElement("a"), { href: "#/back-to-players", textContent: "Back to their players" }));
+    link.textContent = "Exit preview";
+    links.append(link);
+    bar.append(span, links);
+    return bar;
+  }
+  const who = Object.assign(document.createElement("strong"), { textContent: previewClient.label });
   if (previewClient.role) {
     span.append("Viewing ", who, previewClient.role === "analyst" ? "'s portal with Callaway Access. View only." : `'s portal as their ${previewClient.role}. View only.`);
+    link.href = "#/back-to-players";
     link.textContent = "Back to my players";
   } else {
     span.append("Previewing what ", who, " sees.");
@@ -153,7 +196,7 @@ export function startRouter() {
     if (state.status === "loading") return;
     const uid = state.user?.uid ?? null;
     if (uid !== lastUid) {
-      if (lastUid !== undefined && uid !== lastUid) previewClient = null; // different person
+      if (lastUid !== undefined && uid !== lastUid) { previewClient = null; setPreviewTeam(null); } // different person
       lastUid = uid;
       render();
     }

@@ -2,11 +2,12 @@
 // Reports pages to switch player without going back to My players.
 import { el } from "./ui.js";
 import { getState } from "./auth.js";
+import { effectiveTeam } from "./preview.js";
 
 export function teamPlayerSelect(previewClient, page) {
-  const state = getState();
-  if (!state.isTeam || !previewClient) return null;
-  const players = Object.entries(state.teamAccess || {})
+  const team = effectiveTeam(getState());
+  if (!team.isTeam || !previewClient) return null;
+  const players = Object.entries(team.teamAccess)
     .map(([key, v]) => ({ key, label: v.label || key.replace(/^c_/, "") }))
     .sort((a, b) => a.label.localeCompare(b.label));
   if (players.length < 2) return null;

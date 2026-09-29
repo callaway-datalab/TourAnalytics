@@ -159,6 +159,12 @@ export async function syncAllPlayersAnalysts(users, invites, labels) {
   return jobs.length;
 }
 
+/** Admin: one account's profile (used to preview a team member's portal). */
+export async function getUserProfile(uid) {
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? { uid, ...snap.data() } : null;
+}
+
 export function watchUsers(cb) {
   return onSnapshot(collection(db, "users"), (snap) => cb(snap.docs.map((d) => ({ uid: d.id, ...d.data() }))));
 }

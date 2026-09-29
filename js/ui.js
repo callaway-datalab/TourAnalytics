@@ -1,3 +1,4 @@
+import { getPreviewTeam } from "./preview.js";
 import { portalName } from "./firebase-init.js";
 import { subscribe, signOut } from "./auth.js";
 
@@ -120,11 +121,12 @@ function teamNav(previewClient) {
 
 export function renderShell(root, { previewClient, currentRoute }) {
   const state = window.__authState;
-  const admin = state.isAdmin && !previewClient;
-  const team = !state.isAdmin && state.isTeam;
+  const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
+  const admin = state.isAdmin && !previewClient && !previewingTeam;
+  const team = (!state.isAdmin && state.isTeam) || previewingTeam;
   const items = admin ? NAV.admin : team ? teamNav(previewClient) : NAV.client;
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
-  const showBadge = !(state.isAdmin && previewClient);
+  const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 
   const nav = el("nav", { "aria-label": "Main" },
     items
@@ -138,7 +140,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
       }));
 
   const footItems = [];
-  if (!previewClient || team) {
+  if ((!previewClient || team) && !previewingTeam) {
     footItems.push(el("a", { href: "#/account" }, [icon("user"), text(" " + (state.user?.displayName || state.profile?.name || state.user?.email || "Account"))]));
   }
   footItems.push(el("button", { class: "link", type: "button", onClick: () => signOut() }, "Log out"));
