@@ -97,10 +97,7 @@ export async function render(main, { flash }) {
   const teamBox = el("div");
 
   mount(main, [
-    el("header", { class: "page-head" }, [
-      el("h1", {}, "Player Access"),
-      el("p", { class: "muted" }, "A code lets one player create an account tied to their ID. Each code works once. Coaches, caddies and other team members get their codes from the team roster below."),
-    ]),
+    el("p", { class: "muted intro" }, "A code lets one player create an account tied to their ID. Each code works once. Coaches, caddies and other team members get their codes from the team roster below."),
     el("section", {}, [el("h2", {}, "Create a player access code"), form,
       el("p", { class: "muted" }, ["Sign-up page: ", el("strong", {}, location.origin + location.pathname + "#/signup")])]),
     el("section", {}, [el("h2", {}, "Players"), clientsBox]),

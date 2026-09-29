@@ -1,4 +1,4 @@
-import { el, mount, formatWhen, num, confirmAction } from "../ui.js";
+import { el, mount, formatWhen, num, confirmAction, subNav } from "../ui.js";
 import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage } from "../store.js";
 import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
 
@@ -56,10 +56,8 @@ export async function render(main, { flash }) {
   ]);
 
   mount(main, [
-    el("header", { class: "page-head" }, [
-      el("h1", {}, "Data"),
-      el("p", { class: "muted" }, "Upload one file that covers many people. Each person only sees the rows that belong to them."),
-    ]),
+    subNav([["#/admin/datasets", "Upload"], ["#/admin/analyze", "Analyze"]], "#/admin/datasets"),
+    el("p", { class: "muted intro" }, "Upload one file that covers many people. Each person only sees the rows that belong to them."),
     el("section", {}, [el("h2", {}, "Upload a data file"), form]),
     el("section", {}, [el("h2", {}, "Uploaded files"), listBox]),
   ]);

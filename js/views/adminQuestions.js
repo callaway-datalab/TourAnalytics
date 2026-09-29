@@ -5,14 +5,15 @@ import { threadActions } from "../threadActions.js";
 export async function render(main, { flash }) {
   const list = el("ul", { class: "rows" });
   const archivedList = el("ul", { class: "rows" });
+  const archivedCount = el("span", { class: "muted" });
 
   mount(main, [
-    el("header", { class: "page-head row-head" }, [
-      el("div", {}, [el("h1", {}, "Questions"), el("p", { class: "muted" }, "Waiting-for-reply conversations are listed first.")]),
-    ]),
     list,
-    el("section", {}, [el("h2", {}, "Archived questions"),
-      el("p", { class: "muted" }, "Questions marked as completed, by you or the player. A new message moves one back up."), archivedList]),
+    el("details", { class: "archive" }, [
+      el("summary", {}, ["Archived questions ", archivedCount]),
+      el("p", { class: "muted" }, "Questions marked as completed, by you or the player. A new message moves one back up."),
+      archivedList,
+    ]),
   ]);
 
   const unsub = watchAdminThreads((threads) => {
@@ -34,6 +35,7 @@ export async function render(main, { flash }) {
     const active = threads.filter((t) => !t.archived)
       .sort((a, b) => (a.adminUnread === b.adminUnread ? 0 : a.adminUnread ? -1 : 1));
     const archived = threads.filter((t) => t.archived);
+    archivedCount.textContent = `(${archived.length})`;
     mount(list, active.length ? active.map(row)
       : el("p", { class: "empty" }, "No open questions. New ones appear here and in the alert badge."));
     mount(archivedList, archived.length ? archived.map(row) : el("p", { class: "empty" }, "Nothing archived yet."));

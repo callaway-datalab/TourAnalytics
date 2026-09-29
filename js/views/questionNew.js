@@ -75,7 +75,7 @@ export async function render(main, { flash, previewClient }) {
   ]);
 
   mount(main, [
-    el("header", { class: "page-head" }, [el("p", { class: "crumb" }, el("a", { href: "#/questions" }, "My Questions")), el("h1", {}, adminPreview ? "Send a sample question" : "Ask a question"),
+    el("header", { class: "page-head" }, [el("p", { class: "crumb" }, el("a", { href: "#/questions" }, "My Questions")), el("h1", {}, "Ask a new question"),
       adminPreview ? el("p", { class: "muted" }, `This is what ${previewClient.label} sees when asking a question. Your sample lands in your own Questions inbox, marked "Sample", so you can reply and see the whole round trip.`) : null]),
     form,
   ]);

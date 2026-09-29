@@ -7,7 +7,7 @@ const PALETTE = ["#44ce1b", "#ffc703", "#4fc3f7", "#ff6b4d", "#ffffff", "#c38bff
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 });
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 });
 
-export async function render(main, { params, previewClient, flash }) {
+export async function render(main, { params, previewClient, flash, embedded = false }) {
   const state = getState();
   const clientKey = previewClient ? previewClient.key : state.profile.clientKey;
   let meta;
@@ -20,8 +20,8 @@ export async function render(main, { params, previewClient, flash }) {
 
   mount(main, [
     el("header", { class: "page-head" }, [
-      el("p", { class: "crumb" }, el("a", { href: "#/dashboard" }, previewClient?.role ? `${previewClient.label}: Data` : "My Data")),
-      el("h1", {}, meta.name),
+      embedded ? null : el("p", { class: "crumb" }, el("a", { href: "#/dashboard" }, previewClient?.role ? `${previewClient.label}: Data` : "My Data")),
+      embedded ? el("h2", {}, meta.name) : el("h1", {}, meta.name),
       el("p", { class: "muted" }, `${num(meta.rowCount)} rows \u00b7 Updated ${formatWhen(meta.uploadedAt)}` + (meta.description ? ` \u00b7 ${meta.description}` : "")),
     ]),
     el("p", { id: "status", class: "empty", role: "status" }, "Loading your data\u2026"),

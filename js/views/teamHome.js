@@ -5,14 +5,10 @@ import { roleLabel } from "../data.js";
 // Landing page for a team member (coach, caddy, ...): the players they've been given access to.
 export async function render(main) {
   const list = el("ul", { class: "rows" });
-  const firstName = (getState().profile?.name || "").split(" ")[0];
 
   mount(main, [
-    el("header", { class: "page-head" }, [
-      el("h1", {}, firstName ? `Hello, ${firstName}` : "My players"),
-      el("p", { class: "muted" }, "Choose a player to see their data and reports. You can look, but not change anything."),
-    ]),
-    el("section", {}, [el("h2", {}, "My players"), list]),
+    el("p", { class: "muted intro" }, "Choose a player to see their data and reports. You can look, but not change anything."),
+    list,
   ]);
 
   // Re-draw whenever the administrator changes who this person can see.

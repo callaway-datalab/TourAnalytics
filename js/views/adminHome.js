@@ -7,7 +7,6 @@ export async function render(main) {
   const gettingStarted = el("div");
 
   mount(main, [
-    el("header", { class: "page-head" }, el("h1", {}, "Overview")),
     el("section", {}, [
       el("div", { class: "section-head" }, [el("h2", {}, "Waiting for you"), el("a", { href: "#/admin/questions" }, "Open inbox")]),
       waitingBox,

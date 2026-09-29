@@ -15,8 +15,10 @@ const ROUTES = [
   ["/team", "team", () => import("./views/teamHome.js"), "team"],
   ["/admin", "admin", () => import("./views/adminHome.js"), "admin"],
   ["/admin/datasets", "admin", () => import("./views/adminDatasets.js"), "admin-datasets"],
+  ["/admin/analyze", "admin", () => import("./views/adminAnalyze.js"), "admin-analyze"],
   ["/admin/clients", "admin", () => import("./views/adminClients.js"), "admin-clients"],
   ["/admin/documents", "admin", () => import("./views/adminDocuments.js"), "admin-documents"],
+  ["/admin/reports/view", "admin", () => import("./views/adminReportsView.js"), "admin-reports-view"],
   ["/admin/questions", "admin", () => import("./views/adminQuestions.js"), "admin-questions"],
   ["/admin/questions/:id", "admin", () => import("./views/thread.js"), "admin-thread"],
 ];

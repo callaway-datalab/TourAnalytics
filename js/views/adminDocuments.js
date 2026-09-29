@@ -1,4 +1,4 @@
-import { el, mount, formatWhen, confirmAction } from "../ui.js";
+import { el, mount, formatWhen, confirmAction, subNav } from "../ui.js";
 import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage, setReportCategory } from "../store.js";
 import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel, REPORT_CATEGORIES, reportCategory } from "../data.js";
 
@@ -85,10 +85,8 @@ export async function render(main, { flash }) {
   ]);
 
   mount(main, [
-    el("header", { class: "page-head" }, [
-      el("h1", {}, "Reports"),
-      el("p", { class: "muted" }, "Share PDF and PowerPoint reports with everyone, or with one player and, if you choose, members of their team."),
-    ]),
+    subNav([["#/admin/documents", "Upload"], ["#/admin/reports/view", "View"]], "#/admin/documents"),
+    el("p", { class: "muted intro" }, "Share PDF and PowerPoint reports with everyone, or with one player and, if you choose, members of their team."),
     el("section", {}, [el("h2", {}, "Upload a report"), form]),
     el("section", {}, [el("h2", {}, "Library"), listBox]),
   ]);

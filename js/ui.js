@@ -14,6 +14,12 @@ export function logoImg(cls = "brand-logo") {
   return img;
 }
 
+/** Second row of pill buttons inside a section, e.g. Data: Upload | Analyze. items: [[href, label]]. */
+export function subNav(items, currentHref) {
+  return el("nav", { class: "subnav", "aria-label": "Section" }, items.map(([href, label]) =>
+    el("a", { href, "aria-current": href === currentHref ? "page" : null }, label)));
+}
+
 export function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -85,9 +91,9 @@ const NAV = {
   ],
   admin: [
     ["#/admin", "home", "Overview", ["admin"]],
-    ["#/admin/datasets", "data", "Data", ["admin-datasets"]],
+    ["#/admin/datasets", "data", "Data", ["admin-datasets", "admin-analyze"]],
     ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
-    ["#/admin/documents", "doc", "Reports", ["admin-documents"]],
+    ["#/admin/documents", "doc", "Reports", ["admin-documents", "admin-reports-view"]],
     ["#/admin/questions", "chat", "Questions", ["admin-questions", "admin-thread"]],
   ],
 };

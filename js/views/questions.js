@@ -9,6 +9,13 @@ export async function render(main, { previewClient, flash }) {
   const adminPreview = state.isAdmin && previewClient;
   const list = el("ul", { class: "rows" });
   const archivedList = el("ul", { class: "rows" });
+  // Archived questions: collapsed until opened. Created once, so it stays open or closed as the lists update.
+  const archivedCount = el("span", { class: "muted" });
+  const archived = el("details", { class: "archive" }, [
+    el("summary", {}, ["Archived questions ", archivedCount]),
+    el("p", { class: "muted" }, "Completed questions. A new message on one moves it back up."),
+    archivedList,
+  ]);
   // Team members also see questions their players shared with them.
   const sharedList = el("ul", { class: "rows" });
   const sharedSection = state.isTeam
@@ -16,16 +23,13 @@ export async function render(main, { previewClient, flash }) {
     : null;
 
   mount(main, [
-    el("header", { class: "page-head" }, [
-      el("h1", {}, "My Questions"),
-      el("p", { class: "muted" }, adminPreview
-        ? `Sample questions you've sent while previewing ${previewClient.label}. They go to your own inbox; ${previewClient.label} never sees them.`
-        : "Ask about your data or reports. The reply arrives here."),
-      el("p", {}, el("a", { class: "btn", href: "#/questions/new" }, adminPreview ? "Send a sample question" : "Ask a question")),
+    el("div", { class: "page-actions" }, [
+      el("a", { class: "btn", href: "#/questions/new" }, "Ask a new question"),
+      adminPreview ? el("p", { class: "muted" },
+        `Questions you ask while previewing ${previewClient.label} are samples: they go to your own inbox, and ${previewClient.label} never sees them.`) : null,
     ]),
     list,
-    el("section", {}, [el("h2", {}, "Archived questions"),
-      el("p", { class: "muted" }, "Completed questions. A new message on one moves it back up."), archivedList]),
+    archived,
     sharedSection,
   ]);
 
@@ -44,10 +48,11 @@ export async function render(main, { previewClient, flash }) {
         threadActions(t, { asAdmin: false, flash }),
       ]),
     ]);
-    const active = threads.filter((t) => !t.archived), archived = threads.filter((t) => t.archived);
+    const active = threads.filter((t) => !t.archived), done = threads.filter((t) => t.archived);
+    archivedCount.textContent = `(${done.length})`;
     mount(list, active.length ? active.map(row)
       : el("p", { class: "empty" }, adminPreview ? "No sample questions yet." : threads.length ? "No open questions." : "You haven't asked anything yet."));
-    mount(archivedList, archived.length ? archived.map(row) : el("p", { class: "empty" }, "Nothing archived yet."));
+    mount(archivedList, done.length ? done.map(row) : el("p", { class: "empty" }, "Nothing archived yet."));
   });
   const unShared = state.isTeam
     ? watchSharedWithMe(Object.keys(state.teamAccess || {}), state.user.email, (items) => {

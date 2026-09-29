@@ -10,10 +10,6 @@ export async function render(main, { previewClient, flash }) {
   const lists = new Map(REPORT_CATEGORIES.map(([cat]) => [cat, el("ul", { class: "rows" })]));
 
   mount(main, [
-    el("header", { class: "page-head" }, [
-      el("h1", {}, previewClient?.role ? `${previewClient.label}: Reports` : "My Reports"),
-      el("p", { class: "muted" }, "PDFs open in a new tab. PowerPoint files download to your computer."),
-    ]),
     ...REPORT_CATEGORIES.map(([cat, label]) => el("section", {}, [el("h2", {}, label), lists.get(cat)])),
   ]);
 
