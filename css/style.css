@@ -506,3 +506,31 @@ main > .subnav:first-child { margin-top: -1rem; }
 .analyze-compare { margin-top: 1.5rem; padding-top: 1.25rem; }
 .analyze-player[hidden] + .analyze-compare { border-top: 0; padding-top: 0; margin-top: 0.5rem; }
 .analyze-compare .chart-panel + div .table-scroll { margin-top: 1rem; }
+
+/* --- Access codes: search, type filters, players pop-up --- */
+.code-tools { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.9rem; }
+.code-tools input[type=search] { margin: 0; max-width: 34rem; border-radius: 999px; padding: 0.6rem 1rem; }
+.type-filters { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; }
+.type-filters label { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 400; cursor: pointer; }
+.type-filters input { width: auto; margin: 0; accent-color: var(--brand); }
+.players-dialog { background: var(--surface-solid); color: #fff; border: 2px solid var(--panel-border); border-radius: 15px; padding: 1.25rem 1.5rem; min-width: 16rem; max-width: 90vw; }
+.players-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.players-dialog h3 { margin: 0 0 0.75rem; }
+.players-dialog ul { margin: 0 0 1rem; padding-left: 1.1rem; }
+.players-dialog li { margin: 0.25rem 0; }
+
+/* --- Analyst player picker --- */
+.player-adder { margin-top: 0.4rem; }
+.player-adder[hidden] { display: none; }
+.player-adder input[type=search] { max-width: 26rem; border-radius: 999px; margin: 0; }
+.chosen-players li.none-yet { border: 0; background: none; padding-left: 0; }
+
+/* --- Roster file button --- */
+.file-row { flex: 1 1 18rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.field-label { font-weight: 500; font-size: 0.95rem; }
+.file-line { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.file-pick { display: inline-block; cursor: pointer; margin: 0; }
+.file-pick .btn { pointer-events: none; }
+.file-pick:focus-within .btn { outline: 3px solid var(--brand); outline-offset: 2px; }
+.file-name { font-size: 0.95rem; }
+.inline-form .file-pick { flex: none; }

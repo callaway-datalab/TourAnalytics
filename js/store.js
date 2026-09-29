@@ -190,12 +190,12 @@ export async function getTeamRoster() {
  *    their email and carrying their players, and retires codes nobody needs any more.
  * Player accounts are never touched.
  */
-export async function applyTeamRoster(entries) {
+export async function applyTeamRoster(entries, fileName = "") {
   const byEmail = rosterByEmail(entries);
   const [usersSnap, invitesSnap, previous] = await Promise.all([
     getDocs(collection(db, "users")), getDocs(collection(db, "invites")), getTeamRoster(),
   ]);
-  const ops = [(b) => b.set(ROSTER_REF(), { entries, uploadedAt: serverTimestamp() })];
+  const ops = [(b) => b.set(ROSTER_REF(), { entries, fileName, uploadedAt: serverTimestamp() })];
 
   // Each player's team, readable by that player: it's what the question form's checkboxes list.
   const byPlayer = new Map();
