@@ -90,9 +90,8 @@ const NAV = {
     ["#/questions", "chat", "My Questions", ["questions", "question-new", "thread"]],
   ],
   admin: [
-    ["#/admin", "home", "Overview", ["admin"]],
-    ["#/admin/datasets", "data", "Data", ["admin-datasets", "admin-analyze"]],
     ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
+    ["#/admin/datasets", "data", "Data", ["admin-datasets", "admin-analyze"]],
     ["#/admin/documents", "doc", "Reports", ["admin-documents", "admin-reports-view"]],
     ["#/admin/questions", "chat", "Questions", ["admin-questions", "admin-thread"]],
   ],
@@ -146,7 +145,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
 
   mount(root, el("div", { class: "shell" }, [
     el("aside", { class: "rail" }, [
-      el("a", { class: "brand", href: admin ? "#/admin" : team ? "#/team" : "#/dashboard" }, [logoImg(), portalName]),
+      el("a", { class: "brand", href: admin ? "#/admin/clients" : team ? "#/team" : "#/dashboard" }, [logoImg(), portalName]),
       nav,
       el("div", { class: "rail-foot" }, footItems),
     ]),

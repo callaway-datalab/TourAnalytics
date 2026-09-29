@@ -20,7 +20,7 @@ export async function render(main) {
       ? players.map((p) => el("li", {}, [
           el("a", { class: "row-main", href: `#/view-as/${encodeURIComponent(p.key)}?label=${encodeURIComponent(p.label)}` }, [
             el("span", { class: "row-title" }, p.label),
-            el("span", { class: "muted" }, `You're their ${roleLabel(p.role).toLowerCase() || "team member"}`),
+            el("span", { class: "muted" }, p.role === "analyst" ? "Callaway Access" : `You're their ${roleLabel(p.role).toLowerCase() || "team member"}`),
           ]),
           el("span", { class: "row-meta" }, el("span", { class: "tag" }, roleLabel(p.role))),
         ]))

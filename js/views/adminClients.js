@@ -1,7 +1,8 @@
-import { el, mount, formatWhen, confirmAction } from "../ui.js";
+import { el, mount, formatWhen, confirmAction, num } from "../ui.js";
 import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
-  watchTeamRoster, applyTeamRoster, UserError,
+  watchTeamRoster, applyTeamRoster, UserError, adminStats,
+  refreshInvite, deleteInvite, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, parseTeamRoster, toCsv, ROSTER_COLUMNS, norm } from "../data.js";
 
@@ -92,11 +93,22 @@ export async function render(main, { flash }) {
   ]);
 
   const clientsBox = el("div");
+  const analystBox = el("div");
   const invitesBox = el("div");
   const accountsBox = el("div");
   const teamBox = el("div");
 
+  // At a glance: the numbers that used to be on the Overview page.
+  const statsBox = el("dl", { class: "facts glance" }, el("p", { class: "muted" }, "Loading\u2026"));
+  const loadStats = () => adminStats().then((stats) => mount(statsBox, [
+    ["Players in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
+    ["Data files", stats.datasets], ["Reports", stats.documents],
+  ].map(([label, value]) => el("div", {}, [el("dt", {}, label), el("dd", {}, num(value))])))).catch(() => {});
+  loadStats();
+  const statsInterval = setInterval(loadStats, 60000);
+
   mount(main, [
+    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox]),
     el("p", { class: "muted intro" }, "A code lets one player create an account tied to their ID. Each code works once. Coaches, caddies and other team members get their codes from the team roster below."),
     el("section", {}, [el("h2", {}, "Create a player access code"), form,
       el("p", { class: "muted" }, ["Sign-up page: ", el("strong", {}, location.origin + location.pathname + "#/signup")])]),
@@ -104,6 +116,9 @@ export async function render(main, { flash }) {
     el("section", {}, [el("h2", {}, "Team roster"), rosterForm, rosterNotes, teamBox]),
     el("section", {}, [el("h2", {}, "Access codes"), invitesBox]),
     el("section", {}, [el("h2", {}, "Accounts"), accountsBox]),
+    el("section", {}, [el("h2", {}, "Callaway Access"),
+      el("p", { class: "muted" }, "Access for internal Callaway analysts. They can view the data and every report of the players you choose, but can't change anything."),
+      analystBox]),
   ]);
 
   let invitesCache = [];
@@ -112,7 +127,10 @@ export async function render(main, { flash }) {
 
   async function refreshClients() {
     const { labels, usersSnap, invitesSnap } = await adminAllClients();
+    const labelsChanged = [...labels.keys()].sort().join("|") !== [...clientsCache.labels.keys()].sort().join("|");
     clientsCache = { labels };
+    syncAllPlayersAnalysts(usersCache, invitesCache, labels).catch(() => {});
+    if (labelsChanged) renderAnalysts();
     const perClient = new Map([...labels.keys()].map((k) => [k, { accounts: 0, openInvites: 0 }]));
     const teamOf = new Map();
     for (const e of rosterCache.entries || []) {
@@ -158,7 +176,24 @@ export async function render(main, { flash }) {
           if (inv.expiresAt) status.push(" ", el("span", { class: "muted" }, `expires ${formatWhen(inv.expiresAt)}`));
         }
         let action = null;
-        if (!inv.usedBy && !inv.revoked) {
+        const expired = !!inv.expiresAt && inv.expiresAt.toMillis() < now;
+        if (!inv.usedBy && (inv.revoked || expired)) {
+          // A dead code: bring it back to life, or get rid of it.
+          const refresh = el("button", { class: "link", type: "button" }, "Refresh access");
+          refresh.addEventListener("click", async () => {
+            refresh.disabled = true;
+            try { await refreshInvite(inv); flash(`Code ${formatCode(inv.code)} works again.`, "ok"); }
+            catch { flash("Couldn't refresh that code.", "error"); refresh.disabled = false; }
+          });
+          const del = el("button", { class: "link danger", type: "button" }, "Delete");
+          del.addEventListener("click", async () => {
+            if (!confirmAction(`Delete code ${formatCode(inv.code)}?`)) return;
+            del.disabled = true;
+            try { await deleteInvite(inv.code); flash("Code deleted.", "ok"); }
+            catch { flash("Couldn't delete that code.", "error"); del.disabled = false; }
+          });
+          action = el("span", { class: "thread-actions" }, [refresh, del]);
+        } else if (!inv.usedBy) {
           const btn = el("button", { class: "link danger", type: "button" }, "Revoke");
           btn.addEventListener("click", async () => {
             btn.disabled = true;
@@ -169,7 +204,7 @@ export async function render(main, { flash }) {
         }
         return el("tr", {}, [
           el("td", {}, el("code", {}, formatCode(inv.code))),
-          el("td", {}, isTeamKey(inv.clientKey) ? `${inv.clientLabel} (team member)` : inv.clientLabel), el("td", {}, inv.note || ""),
+          el("td", {}, inv.kind === "analyst" ? `${inv.clientLabel} (Callaway Access)` : isTeamKey(inv.clientKey) ? `${inv.clientLabel} (team member)` : inv.clientLabel), el("td", {}, inv.note || ""),
           el("td", {}, status), el("td", { class: "actions" }, action),
         ]);
       })),
@@ -196,7 +231,7 @@ export async function render(main, { flash }) {
           catch { flash("Couldn't remove that account.", "error"); delBtn.disabled = false; }
         });
         return el("tr", {}, [
-          el("td", {}, u.name), el("td", {}, u.email), el("td", {}, isTeamKey(u.clientKey) ? el("span", { class: "muted" }, "Team member") : u.clientLabel),
+          el("td", {}, u.name), el("td", {}, u.email), el("td", {}, u.kind === "analyst" ? el("span", { class: "muted" }, "Callaway Access") : isTeamKey(u.clientKey) ? el("span", { class: "muted" }, "Team member") : u.clientLabel),
           el("td", {}, formatWhen(u.createdAt)), el("td", {}, resetBtn), el("td", { class: "actions" }, delBtn),
         ]);
       })),
@@ -210,10 +245,10 @@ export async function render(main, { flash }) {
       if (!people.has(e.email)) people.set(e.email, { name: e.name, grants: [] });
       people.get(e.email).grants.push(e);
     }
-    const accounts = new Map(usersCache.filter((u) => isTeamKey(u.clientKey)).map((u) => [norm(u.email), u]));
+    const accounts = new Map(usersCache.filter((u) => isTeamKey(u.clientKey) && u.kind !== "analyst").map((u) => [norm(u.email), u]));
     const now = Date.now();
     const codes = new Map(invitesCache
-      .filter((v) => isTeamKey(v.clientKey) && v.email && !v.usedBy && !v.revoked && (!v.expiresAt || v.expiresAt.toMillis() > now))
+      .filter((v) => isTeamKey(v.clientKey) && v.kind !== "analyst" && v.email && !v.usedBy && !v.revoked && (!v.expiresAt || v.expiresAt.toMillis() > now))
       .map((v) => [norm(v.email), v.code]));
     // Team logins that exist but aren't in the roster any more: they can log in but see no players.
     const offRoster = [...accounts.entries()].filter(([email]) => !people.has(email));
@@ -254,11 +289,101 @@ export async function render(main, { flash }) {
     ]);
   }
 
-  const unInv = watchInvites((invites) => { invitesCache = invites; renderInvites(); renderTeam(); });
-  const unUsers = watchUsers((users) => { usersCache = users; renderAccounts(); renderInvites(); renderTeam(); });
+  /* ---------------- Callaway Access ---------------- */
+  // A checklist of players with an "All players" switch; used to create access and to edit it.
+  function playerChecklist(selected = [], all = false) {
+    const players = [...clientsCache.labels.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    const allBox = el("input", { type: "checkbox", checked: all });
+    const boxes = players.map(([key, label]) => el("label", {}, [el("input", { type: "checkbox", value: key, checked: all || selected.includes(key) }), label]));
+    const sync = () => boxes.forEach((l) => { const c = l.querySelector("input"); c.disabled = allBox.checked; if (allBox.checked) c.checked = true; });
+    allBox.addEventListener("change", sync);
+    sync();
+    const node = el("fieldset", { class: "check-group player-checklist" }, [
+      el("legend", {}, "Players they can see"),
+      el("label", { class: "all-players" }, [allBox, "All players (including players added later)"]),
+      el("div", { class: "checklist-grid" }, players.length ? boxes : el("p", { class: "empty" }, "No players yet.")),
+    ]);
+    return {
+      node,
+      value: () => ({ allPlayers: allBox.checked, playerKeys: boxes.map((l) => l.querySelector("input")).filter((c) => c.checked).map((c) => c.value) }),
+    };
+  }
+
+  function renderAnalysts() {
+    const nameIn = el("input", { required: true, placeholder: "e.g. Jordan Lee", maxLength: 80 });
+    const emailIn = el("input", { type: "email", required: true, placeholder: "name@callawaygolf.com" });
+    const daysIn = el("select", {}, [["14", "14 days"], ["30", "30 days"], ["90", "90 days"], ["0", "Never"]].map(([v, l]) => el("option", { value: v }, l)));
+    const list = playerChecklist();
+    const createBtn = el("button", { class: "btn", type: "submit" }, "Create access");
+    const form = el("form", {
+      class: "stack",
+      onSubmit: async (e) => {
+        e.preventDefault();
+        const { allPlayers, playerKeys } = list.value();
+        if (!allPlayers && !playerKeys.length) { flash("Choose at least one player, or All players.", "error"); return; }
+        createBtn.disabled = true;
+        try {
+          const code = await createAnalystAccess({
+            name: nameIn.value.trim(), email: emailIn.value.trim(), playerKeys, allPlayers, labels: clientsCache.labels, days: Number(daysIn.value),
+          });
+          flash(`Callaway Access for ${nameIn.value.trim()}: ${formatCode(code)}. It only works with ${emailIn.value.trim().toLowerCase()}. Send it with the sign-up link.`, "ok");
+          renderAnalysts();
+        } catch (err) {
+          flash(err instanceof UserError ? err.message : "Couldn't create that access. Try again.", "error");
+          createBtn.disabled = false;
+        }
+      },
+    }, [
+      el("div", { class: "inline-form" }, [el("label", {}, ["Name", nameIn]), el("label", {}, ["Email", emailIn]), el("label", {}, ["Code expires after", daysIn])]),
+      list.node,
+      el("div", {}, createBtn),
+    ]);
+
+    // Everyone with Callaway Access: signed-up accounts and codes still waiting to be used.
+    const now = Date.now();
+    const people = [
+      ...usersCache.filter((u) => u.kind === "analyst").map((u) => ({ target: { uid: u.uid }, name: u.name, email: u.email, access: u.access, allPlayers: u.allPlayers, status: el("span", { class: "tag" }, "Signed up") })),
+      ...invitesCache.filter((v) => v.kind === "analyst" && !v.usedBy && !v.revoked && (!v.expiresAt || v.expiresAt.toMillis() > now))
+        .map((v) => ({ target: { code: v.code }, name: v.clientLabel, email: v.email, access: v.access, allPlayers: v.allPlayers, status: [el("code", {}, formatCode(v.code)), el("br"), el("span", { class: "muted" }, "Not signed up yet")] })),
+    ];
+    const rows = people.map((p) => {
+      const keys = Object.keys(p.access || {});
+      const edit = el("details", { class: "edit-players" }, [el("summary", {}, "Change players")]);
+      edit.addEventListener("toggle", () => {
+        if (!edit.open || edit.querySelector("form")) return;
+        const cl = playerChecklist(keys, p.allPlayers);
+        const save = el("button", { class: "btn", type: "submit" }, "Save");
+        edit.appendChild(el("form", { class: "stack", onSubmit: async (e) => {
+          e.preventDefault();
+          const v = cl.value();
+          if (!v.allPlayers && !v.playerKeys.length) { flash("Choose at least one player, or All players.", "error"); return; }
+          save.disabled = true;
+          try { await setAnalystPlayers(p.target, { ...v, labels: clientsCache.labels }); flash(`Updated ${p.name}'s players.`, "ok"); refreshClients(); }
+          catch { flash("Couldn't save that change.", "error"); save.disabled = false; }
+        } }, [cl.node, el("div", {}, save)]));
+      });
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, p.name)), el("td", {}, p.email),
+        el("td", {}, [p.allPlayers ? "All players" : keys.map((k) => p.access[k].label).sort().join(", ") || el("span", { class: "muted" }, "None"), edit]),
+        el("td", {}, p.status),
+      ]);
+    });
+    mount(analystBox, [
+      rows.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
+        el("thead", {}, el("tr", {}, ["Name", "Email", "Players", "Access"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, rows),
+      ])) : el("p", { class: "empty" }, "Nobody has Callaway Access yet."),
+      el("h3", { class: "subhead" }, "Add Callaway Access"),
+      form,
+      el("p", { class: "muted" }, "To remove someone, revoke their code under Access codes, or use Remove access under Accounts once they've signed up."),
+    ]);
+  }
+
+  const unInv = watchInvites((invites) => { invitesCache = invites; renderInvites(); renderTeam(); renderAnalysts(); });
+  const unUsers = watchUsers((users) => { usersCache = users; renderAccounts(); renderInvites(); renderTeam(); renderAnalysts(); });
   const unRoster = watchTeamRoster((r) => { rosterCache = r; renderTeam(); refreshClients(); });
   refreshClients();
   const clientsInterval = setInterval(refreshClients, 15000); // no realtime listener for this derived summary
 
-  return () => { unInv(); unUsers(); unRoster(); clearInterval(clientsInterval); };
+  return () => { unInv(); unUsers(); unRoster(); clearInterval(clientsInterval); clearInterval(statsInterval); };
 }

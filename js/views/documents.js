@@ -2,14 +2,17 @@ import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
 import { watchDocumentsFor, getDocumentBlobUrl } from "../store.js";
 import { REPORT_CATEGORIES, reportCategory } from "../data.js";
+import { teamPlayerSelect } from "../teamPlayerSelect.js";
 
 export async function render(main, { previewClient, flash }) {
   const state = getState();
-  const clientKey = previewClient ? previewClient.key : state.profile.clientKey;
+  const clientKey = previewClient ? previewClient.key : state.profile?.clientKey;
+  if (!clientKey) return; // signed out or profile gone mid-navigation
   // One list per report type: Performance Reports, then Course Reports.
   const lists = new Map(REPORT_CATEGORIES.map(([cat]) => [cat, el("ul", { class: "rows" })]));
 
   mount(main, [
+    teamPlayerSelect(previewClient, "/documents"),
     ...REPORT_CATEGORIES.map(([cat, label]) => el("section", {}, [el("h2", {}, label), lists.get(cat)])),
   ]);
 

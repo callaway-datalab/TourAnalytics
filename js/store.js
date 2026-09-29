@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, db } from "./firebase-init.js";
 import {
-  chunkRows, splitString, DOC_CHUNK_CHARS, UserError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, readableSize, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
+  chunkRows, splitString, DOC_CHUNK_CHARS, UserError, ANALYST_ROLE, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, readableSize, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
 } from "./data.js";
 
 export { UserError };
@@ -63,6 +63,8 @@ export async function signUpWithCode({ code, name, email, password }) {
         inviteCode: code, createdAt: serverTimestamp(),
       };
       if (invite.data().access) profile.access = invite.data().access; // team member: players from the roster
+      if (invite.data().kind) profile.kind = invite.data().kind;         // "analyst" for Callaway Access
+      if (invite.data().allPlayers !== undefined) profile.allPlayers = invite.data().allPlayers;
       tx.set(doc(db, "users", uid), profile);
     });
   } catch (err) {
@@ -101,6 +103,60 @@ export async function createInvite({ clientKey, clientLabel, note, days }) {
 
 export function revokeInvite(code) {
   return updateDoc(doc(db, "invites", code), { revoked: true });
+}
+
+/** Re-open an expired or revoked code, for as long as it was first given (or with no expiry). */
+export function refreshInvite(inv) {
+  const span = inv.expiresAt && inv.createdAt ? inv.expiresAt.toMillis() - inv.createdAt.toMillis() : null;
+  return updateDoc(doc(db, "invites", inv.code), {
+    revoked: false,
+    createdAt: serverTimestamp(),
+    expiresAt: span ? Timestamp.fromMillis(Date.now() + span) : null,
+  });
+}
+
+export function deleteInvite(code) {
+  return deleteDoc(doc(db, "invites", code));
+}
+
+/* ---------------- Callaway Access (internal analysts) ---------------- */
+
+const analystAccess = (keys, labels) =>
+  Object.fromEntries(keys.map((k) => [k, { role: ANALYST_ROLE, label: labels.get(k) || k.replace(/^c_/, "") }]));
+
+/** A code for an internal analyst: tied to their email, carrying the players they can see. */
+export async function createAnalystAccess({ name, email, playerKeys, allPlayers, labels, days }) {
+  const code = makeCode();
+  await setDoc(doc(db, "invites", code), {
+    clientKey: teamKey(), clientLabel: name, note: "Callaway Access", email: norm(email),
+    kind: "analyst", allPlayers: !!allPlayers,
+    access: analystAccess(allPlayers ? [...labels.keys()] : playerKeys, labels),
+    createdAt: serverTimestamp(), expiresAt: days > 0 ? Timestamp.fromMillis(Date.now() + days * 86400000) : null,
+    usedBy: null, usedAt: null, revoked: false,
+  });
+  return code;
+}
+
+/** Change which players an analyst (their account, or their unused code) can see. */
+export function setAnalystPlayers(target, { playerKeys, allPlayers, labels }) {
+  const access = analystAccess(allPlayers ? [...labels.keys()] : playerKeys, labels);
+  return target.uid
+    ? updateDoc(doc(db, "users", target.uid), { access, allPlayers: !!allPlayers })
+    : updateDoc(doc(db, "invites", target.code), { access, allPlayers: !!allPlayers });
+}
+
+/** Analysts set to "all players" pick up players added since (called when the admin loads Player Access). */
+export async function syncAllPlayersAnalysts(users, invites, labels) {
+  const want = analystAccess([...labels.keys()], labels);
+  const jobs = [];
+  for (const u of users) {
+    if (u.kind === "analyst" && u.allPlayers && !sameAccess(u.access || {}, want)) jobs.push(updateDoc(doc(db, "users", u.uid), { access: want }));
+  }
+  for (const v of invites) {
+    if (v.kind === "analyst" && v.allPlayers && !v.usedBy && !sameAccess(v.access || {}, want)) jobs.push(updateDoc(doc(db, "invites", v.code), { access: want }));
+  }
+  await Promise.all(jobs);
+  return jobs.length;
 }
 
 export function watchUsers(cb) {
@@ -152,7 +208,7 @@ export async function applyTeamRoster(entries) {
   let updated = 0;
   usersSnap.forEach((d) => {
     const u = d.data();
-    if (!isTeamKey(u.clientKey)) return;
+    if (!isTeamKey(u.clientKey) || u.kind === "analyst") return; // analysts aren't managed by the roster
     const email = norm(u.email);
     hasAccount.add(email);
     const next = byEmail.get(email)?.access || {};
@@ -163,7 +219,7 @@ export async function applyTeamRoster(entries) {
   const openCode = new Map();
   invitesSnap.forEach((d) => {
     const v = d.data();
-    if (!isTeamKey(v.clientKey) || !v.email || v.usedBy || v.revoked || (v.expiresAt && v.expiresAt.toMillis() < now)) return;
+    if (!isTeamKey(v.clientKey) || v.kind === "analyst" || !v.email || v.usedBy || v.revoked || (v.expiresAt && v.expiresAt.toMillis() < now)) return;
     const email = norm(v.email);
     if (byEmail.has(email) && !hasAccount.has(email) && !openCode.has(email)) openCode.set(email, d);
     else ops.push((b) => b.update(d.ref, { revoked: true })); // removed from roster, already signed up, or a duplicate
@@ -399,7 +455,8 @@ export async function uploadDocument({ title, description, audienceClientKey, te
   const base64 = await fileToBase64(file);
   const chunks = splitString(base64, DOC_CHUNK_CHARS);
   const docRef = doc(collection(db, "documents"));
-  const roles = audienceClientKey ? [...new Set(teamRoles.map(normRole).filter(Boolean))] : [];
+  // Callaway analysts always see every report sent to their players.
+  const roles = audienceClientKey ? [...new Set([...teamRoles.map(normRole).filter(Boolean), ANALYST_ROLE])] : [];
   const meta = {
     title, description: description || "", audienceClientKey: audienceClientKey || null, teamRoles: roles, category,
     originalName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size,
@@ -418,6 +475,21 @@ export async function uploadDocument({ title, description, audienceClientKey, te
     throw err;
   }
   return docRef.id;
+}
+
+/** One-off catch-up: give Callaway analysts access to player reports uploaded before they existed. */
+export async function ensureAnalystReportAccess() {
+  const snap = await getDocs(collection(db, "documents"));
+  const ops = [];
+  snap.forEach((d) => {
+    const v = d.data();
+    if (!v.audienceClientKey || (v.teamRoles || []).includes(ANALYST_ROLE)) return;
+    const teamRoles = [...(v.teamRoles || []), ANALYST_ROLE];
+    ops.push((b) => b.update(d.ref, { teamRoles }));
+    ops.push((b) => b.set(doc(db, "teamDocs", v.audienceClientKey, "roles", ANALYST_ROLE, "docs", d.id), { ...v, teamRoles }));
+  });
+  if (ops.length) await commitInChunks(ops);
+  return ops.length / 2;
 }
 
 /** Admin: move a report between Performance and Course (also updates the team copies). */

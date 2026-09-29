@@ -13,7 +13,7 @@ const ROUTES = [
   ["/questions/:id", "client", () => import("./views/thread.js"), "thread"],
   ["/account", "signed-in", () => import("./views/account.js"), "account"],
   ["/team", "team", () => import("./views/teamHome.js"), "team"],
-  ["/admin", "admin", () => import("./views/adminHome.js"), "admin"],
+  ["/admin", "admin", () => import("./views/adminClients.js"), "admin-clients"], // Player Access is the admin's home
   ["/admin/datasets", "admin", () => import("./views/adminDatasets.js"), "admin-datasets"],
   ["/admin/analyze", "admin", () => import("./views/adminAnalyze.js"), "admin-analyze"],
   ["/admin/clients", "admin", () => import("./views/adminClients.js"), "admin-clients"],
@@ -30,7 +30,7 @@ let currentCleanup = null;
 let previewClient = null;
 // Pages that show one player's data and need to know which player.
 const PLAYER_PAGES = ["dashboard", "dataset", "documents"];
-const homeFor = (state) => (!state.user ? "/login" : state.isAdmin ? "/admin" : state.isTeam ? "/team" : "/dashboard");
+const homeFor = (state) => (!state.user ? "/login" : state.isAdmin ? "/admin/clients" : state.isTeam ? "/team" : "/dashboard");
 
 function match(path) {
   for (const [pattern, guard, loader, routeId] of ROUTES) {
@@ -58,7 +58,10 @@ async function render() {
   if (raw.startsWith("/view-as/")) {
     const [keyPart, queryPart] = raw.slice("/view-as/".length).split("?");
     const key = decodeURIComponent(keyPart);
-    const label = new URLSearchParams(queryPart || "").get("label") || key;
+    const qs = new URLSearchParams(queryPart || "");
+    const label = qs.get("label") || key;
+    // Optional page to land on (the player dropdown keeps you on Data or Reports).
+    const to = ["/dashboard", "/documents"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
     if (state.isAdmin) {
       previewClient = { key, label };
     } else if (state.isTeam && state.teamAccess[key]) {
@@ -68,7 +71,7 @@ async function render() {
       navigate(homeFor(state));
       return;
     }
-    navigate("/dashboard");
+    navigate(to);
     return;
   }
   if (raw === "/exit-preview") {
@@ -89,7 +92,7 @@ async function render() {
   if (guard === "team" && !state.isTeam) { navigate(homeFor(state)); return; }
   if (guard === "client" && state.isTeam && !previewClient && PLAYER_PAGES.includes(routeId)) { navigate("/team"); return; }
   if (guard === "admin" && !state.isAdmin) { navigate("/dashboard"); return; }
-  if (guard === "client" && state.isAdmin && !previewClient) { navigate("/admin"); return; }
+  if (guard === "client" && state.isAdmin && !previewClient) { navigate("/admin/clients"); return; }
   if (guard === "client" && !state.isAdmin && !state.profile && state.status === "ready") {
     // Signed in, but no profile doc (e.g. access was removed by the admin).
     document.getElementById("app").textContent =
@@ -133,7 +136,7 @@ function el_previewBar() {
   const link = document.createElement("a");
   link.href = "#/exit-preview";
   if (previewClient.role) {
-    span.append("Viewing ", who, `'s portal as their ${previewClient.role}. View only.`);
+    span.append("Viewing ", who, previewClient.role === "analyst" ? "'s portal with Callaway Access. View only." : `'s portal as their ${previewClient.role}. View only.`);
     link.textContent = "Back to my players";
   } else {
     span.append("Previewing what ", who, " sees.");

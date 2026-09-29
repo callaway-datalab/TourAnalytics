@@ -1,7 +1,7 @@
 // Reports → View: pick a player and see every report they can see, by type.
 import { el, mount, formatWhen, subNav } from "../ui.js";
 import { adminAllClients, watchVisibleDocuments, getDocumentBlobUrl } from "../store.js";
-import { REPORT_CATEGORIES, reportCategory, roleLabel } from "../data.js";
+import { REPORT_CATEGORIES, reportCategory, roleLabel, ANALYST_ROLE } from "../data.js";
 import { playerPicker } from "../playerPicker.js";
 
 export async function render(main, { flash }) {
@@ -40,10 +40,11 @@ export async function render(main, { flash }) {
                 el("tbody", {}, items.map((d) => {
                   const link = el("a", { href: "#" }, el("strong", {}, d.title));
                   link.addEventListener("click", (e) => { e.preventDefault(); open(d, link); });
+                  const team = (d.teamRoles || []).filter((r) => r !== ANALYST_ROLE);
                   return el("tr", {}, [
                     el("td", {}, [link, d.description ? el("div", { class: "muted" }, d.description) : null]),
                     el("td", {}, d.audienceClientKey
-                      ? `${player.label}${(d.teamRoles || []).length ? ` + their ${d.teamRoles.map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only"}`
+                      ? `${player.label}${team.length ? ` + their ${team.map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only"}`
                       : "Everyone"),
                     el("td", {}, formatWhen(d.uploadedAt)),
                   ]);

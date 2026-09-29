@@ -42,7 +42,11 @@ export const DEFAULT_ROLES = ['coach', 'caddy', 'trainer', 'physio', 'manager', 
 export function normRole(r) {
   return String(r ?? '').trim().replace(/\s+/g, ' ').replace(/[\/.]/g, '').replace(/^_+|_+$/g, '').slice(0, 30).toLowerCase();
 }
-export const roleLabel = (r) => (r ? r.charAt(0).toUpperCase() + r.slice(1) : '');
+export const roleLabel = (r) => (r === ANALYST_ROLE ? 'Callaway Analyst' : r ? r.charAt(0).toUpperCase() + r.slice(1) : '');
+/* Internal Callaway analysts: team-member accounts marked kind "analyst", with role "analyst" for each
+   player they can see. They're managed on Player Access, never by the roster, and always see every
+   report sent to their players. */
+export const ANALYST_ROLE = 'analyst';
 
 /* ---------- Team roster file ---------- */
 // The roster is a CSV the admin keeps: one row per team member per player.

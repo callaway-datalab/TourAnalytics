@@ -1,6 +1,6 @@
 import { el, mount, formatWhen, confirmAction, subNav } from "../ui.js";
-import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage, setReportCategory } from "../store.js";
-import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel, REPORT_CATEGORIES, reportCategory } from "../data.js";
+import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage, setReportCategory, ensureAnalystReportAccess } from "../store.js";
+import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel, REPORT_CATEGORIES, reportCategory, ANALYST_ROLE } from "../data.js";
 
 export async function render(main, { flash }) {
   const file = el("input", { type: "file", accept: ".pdf,.ppt,.pptx", required: true });
@@ -24,6 +24,7 @@ export async function render(main, { flash }) {
     mount(teamBox, [
       el("legend", {}, "Also let their team see it"),
       el("p", { class: "muted", style: "margin:0 0 .3rem" }, "Leave everything unticked to share with the player only."),
+      el("label", {}, [el("input", { type: "checkbox", checked: true, disabled: true }), "Callaway Analysts (always)"]),
       ...roles.map((r) => el("label", {}, [
         el("input", { type: "checkbox", value: r }),
         roleLabel(r),
@@ -34,6 +35,8 @@ export async function render(main, { flash }) {
   audience.addEventListener("change", drawTeamChecks);
 
   let clientLabels = new Map();
+  const teamOnly = (d) => (d.teamRoles || []).filter((r) => r !== ANALYST_ROLE); // analysts always see player reports
+  ensureAnalystReportAccess().catch(() => {}); // older reports: make sure Callaway analysts can see them
   // Who is on each player's team comes from the uploaded team roster.
   getTeamRoster().then(({ entries = [] }) => {
     teamByPlayer = new Map();
@@ -63,7 +66,7 @@ export async function render(main, { flash }) {
 
       submit.disabled = true; submit.textContent = "Uploading\u2026";
       try {
-        const teamRoles = audience.value ? [...teamBox.querySelectorAll("input:checked")].map((c) => c.value) : [];
+        const teamRoles = audience.value ? [...teamBox.querySelectorAll("input[value]:checked:not([disabled])")].map((c) => c.value) : [];
         const onProgress = (done, total) => { submit.textContent = `Uploading\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`; };
         await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, category: category.value, file: f, onProgress });
         flash("Report uploaded.", "ok");
@@ -126,7 +129,7 @@ export async function render(main, { flash }) {
           el("td", {}, openLink), el("td", {}, d.originalName),
           el("td", {}, d.audienceClientKey
             ? (clientLabels.get(d.audienceClientKey) || d.audienceClientKey.replace(/^c_/, ""))
-              + ((d.teamRoles || []).length ? ` + their ${d.teamRoles.map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only")
+              + (teamOnly(d).length ? ` + their ${teamOnly(d).map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only")
             : "Everyone"),
           el("td", {}, formatWhen(d.uploadedAt)), el("td", {}, typeSel), el("td", { class: "actions" }, del),
         ]);
