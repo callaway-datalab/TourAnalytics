@@ -109,14 +109,13 @@ export function setUnreadCount(n) {
   document.title = n > 0 ? `(${n}) ${base}` : base;
 }
 
-function teamNav(previewClient) {
-  const items = [["#/team", "people", "My players", ["team"]]];
-  if (previewClient) {
-    items.push(["#/dashboard", "data", `${previewClient.label}: Data`, ["dashboard", "dataset"]]);
-    items.push(["#/documents", "doc", `${previewClient.label}: Reports`, ["documents"]]);
-  }
-  items.push(NAV.client[2]); // Questions
-  return items;
+function teamNav() {
+  // Coaches, caddies and analysts: the player is picked with the dropdown on Data and Reports.
+  return [
+    ["#/dashboard", "data", "Data", ["dashboard", "dataset"]],
+    ["#/documents", "doc", "Reports", ["documents"]],
+    NAV.client[2], // My Questions
+  ];
 }
 
 export function renderShell(root, { previewClient, currentRoute }) {
@@ -124,7 +123,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
   const admin = state.isAdmin && !previewClient && !previewingTeam;
   const team = (!state.isAdmin && state.isTeam) || previewingTeam;
-  const items = admin ? NAV.admin : team ? teamNav(previewClient) : NAV.client;
+  const items = admin ? NAV.admin : team ? teamNav() : NAV.client;
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 

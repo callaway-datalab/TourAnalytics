@@ -31,6 +31,7 @@ let currentCleanup = null;
 // of their players. { key, label, role? }. Set by #/view-as/:key, cleared by #/exit-preview.
 // This only decides what the screen shows; the Firestore rules decide what can actually be read.
 let previewClient = null;
+let lastTeamPlayer = null; // the player a team member last looked at
 // Pages that show one player's data and need to know which player.
 const PLAYER_PAGES = ["dashboard", "dataset", "documents"];
 const homeFor = (state) => (!state.user ? "/login" : state.isAdmin ? "/admin/clients" : state.isTeam ? "/team" : "/dashboard");
@@ -120,6 +121,7 @@ async function render() {
   }
   if (raw === "/exit-preview") {
     previewClient = null;
+    lastTeamPlayer = null;
     setPreviewTeam(null);
     navigate(homeFor(state));
     return;
@@ -135,6 +137,20 @@ async function render() {
   if (guard !== "public" && !state.user) { navigate(`/login?next=${encodeURIComponent(raw)}`); return; }
   if (guard === "public" && state.user) { navigate(homeFor(state)); return; }
   if (guard === "team" && !team.isTeam) { navigate(homeFor(state)); return; }
+  // Team members (and the admin previewing one) skip the players list: open a player's data straight
+  // away, keeping the last player chosen. The Data/Reports dropdown switches players. Only someone
+  // with no players yet sees the /team page, which explains that.
+  if (routeId === "team") {
+    const keys = Object.keys(team.teamAccess).sort((a, b) =>
+      (team.teamAccess[a].label || a).localeCompare(team.teamAccess[b].label || b));
+    if (keys.length) {
+      const key = lastTeamPlayer && team.teamAccess[lastTeamPlayer] ? lastTeamPlayer : keys[0];
+      previewClient = { key, label: team.teamAccess[key].label || key.replace(/^c_/, ""), role: team.teamAccess[key].role };
+      navigate("/dashboard");
+      return;
+    }
+  }
+  if (previewClient?.role) lastTeamPlayer = previewClient.key;
   if (guard === "client" && team.isTeam && !previewClient && PLAYER_PAGES.includes(routeId)) { navigate("/team"); return; }
   if (guard === "admin" && !state.isAdmin) { navigate("/dashboard"); return; }
   // Going back to an admin page (e.g. opening a question from a preview) ends any preview.
@@ -190,7 +206,6 @@ function el_previewBar() {
     span.append(".");
     const links = document.createElement("span");
     links.className = "thread-actions";
-    if (previewClient) links.append(Object.assign(document.createElement("a"), { href: "#/back-to-players", textContent: "Back to their players" }));
     link.textContent = "Exit preview";
     links.append(link);
     bar.append(span, links);
@@ -199,8 +214,8 @@ function el_previewBar() {
   const who = Object.assign(document.createElement("strong"), { textContent: previewClient.label });
   if (previewClient.role) {
     span.append("Viewing ", who, previewClient.role === "analyst" ? "'s portal with Callaway Access. View only." : `'s portal as their ${previewClient.role}. View only.`);
-    link.href = "#/back-to-players";
-    link.textContent = "Back to my players";
+    bar.append(span);
+    return bar;
   } else {
     span.append("Previewing what ", who, " sees.");
     link.textContent = "Exit preview";
@@ -216,7 +231,7 @@ export function startRouter() {
     if (state.status === "loading") return;
     const uid = state.user?.uid ?? null;
     if (uid !== lastUid) {
-      if (lastUid !== undefined && uid !== lastUid) { previewClient = null; setPreviewTeam(null); } // different person
+      if (lastUid !== undefined && uid !== lastUid) { previewClient = null; lastTeamPlayer = null; setPreviewTeam(null); } // different person
       lastUid = uid;
       render();
     }

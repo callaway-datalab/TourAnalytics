@@ -21,7 +21,7 @@ export async function render(main, { params, previewClient, flash, embedded = fa
 
   mount(main, [
     el("header", { class: "page-head" }, [
-      embedded ? null : el("p", { class: "crumb" }, el("a", { href: "#/dashboard" }, previewClient?.role ? `${previewClient.label}: Data` : "My Data")),
+      embedded ? null : el("p", { class: "crumb" }, el("a", { href: "#/dashboard" }, previewClient?.role ? "Data" : "My Data")),
       hideTitle ? null : embedded ? el("h2", {}, meta.name) : el("h1", {}, meta.name),
       el("p", { class: "muted" }, `${num(meta.rowCount)} rows \u00b7 Updated ${formatWhen(meta.uploadedAt)}` + (meta.description ? ` \u00b7 ${meta.description}` : "")),
     ]),
