@@ -3,6 +3,7 @@ import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
 import { watchThread, watchMessages, replyToThread, markThreadReadByAdmin, markThreadReadByUser, uploadErrorMessage } from "../store.js";
 import { attachPicker, attachmentLinks } from "../attachments.js";
+import { threadActions } from "../threadActions.js";
 
 export async function render(main, { params, routeId, flash }) {
   const state = getState();
@@ -13,6 +14,7 @@ export async function render(main, { params, routeId, flash }) {
   const crumb = el("p", { class: "crumb" }, el("a", { href: backHref }, isAdmin ? "All questions" : "My Questions"));
   const titleEl = el("h1", {}, "\u00a0");
   const metaEl = el("p", { class: "muted" });
+  const actionsEl = el("div");
   const messagesList = el("ol", { class: "messages" });
   const body = el("textarea", { rows: 5, maxLength: 5000 });
   const picker = attachPicker();
@@ -44,7 +46,7 @@ export async function render(main, { params, routeId, flash }) {
   ]);
 
   mount(main, [
-    el("header", { class: "page-head" }, [crumb, titleEl, metaEl]),
+    el("header", { class: "page-head" }, [crumb, titleEl, metaEl, actionsEl]),
     messagesList,
     form,
   ]);
@@ -62,6 +64,11 @@ export async function render(main, { params, routeId, flash }) {
       return;
     }
     titleEl.textContent = t.subject;
+    // The person who asked, and the admin, can complete or delete the question.
+    mount(actionsEl, (isAdmin || mine) ? [
+      t.archived ? el("span", { class: "tag muted-tag" }, "Completed") : null, t.archived ? " " : null,
+      threadActions(t, { asAdmin: isAdmin, flash, onDeleted: () => { location.hash = backHref; } }),
+    ] : null);
     if (sharedWithMe) {
       // A team member reading a question their player shared: read-only.
       mount(metaEl, `Asked by ${t.askerName} (${t.clientLabel}) and shared with you. Only they and Callaway Analysts can reply.`);

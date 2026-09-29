@@ -1,18 +1,20 @@
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
 import { watchDocumentsFor, getDocumentBlobUrl } from "../store.js";
+import { REPORT_CATEGORIES, reportCategory } from "../data.js";
 
 export async function render(main, { previewClient, flash }) {
   const state = getState();
   const clientKey = previewClient ? previewClient.key : state.profile.clientKey;
-  const list = el("ul", { class: "rows" });
+  // One list per report type: Performance Reports, then Course Reports.
+  const lists = new Map(REPORT_CATEGORIES.map(([cat]) => [cat, el("ul", { class: "rows" })]));
 
   mount(main, [
     el("header", { class: "page-head" }, [
       el("h1", {}, previewClient?.role ? `${previewClient.label}: Reports` : "My Reports"),
       el("p", { class: "muted" }, "PDFs open in a new tab. PowerPoint files download to your computer."),
     ]),
-    list,
+    ...REPORT_CATEGORIES.map(([cat, label]) => el("section", {}, [el("h2", {}, label), lists.get(cat)])),
   ]);
 
   const openFile = async (doc, link) => {
@@ -39,19 +41,23 @@ export async function render(main, { previewClient, flash }) {
     }
   };
 
+  const row = (d) => {
+    const isPdf = d.mimeType === "application/pdf";
+    const link = el("a", { class: "row-main", href: "#" }, [
+      el("span", { class: "row-title" }, d.title),
+      d.description ? el("span", { class: "muted" }, d.description) : null,
+    ]);
+    link.addEventListener("click", (e) => { e.preventDefault(); openFile(d, link); });
+    return el("li", {}, [
+      link,
+      el("span", { class: "row-meta" }, [el("span", { class: "tag" }, isPdf ? "PDF" : "PowerPoint"), el("br"), el("span", { class: "muted" }, formatWhen(d.uploadedAt))]),
+    ]);
+  };
   const unsub = watchDocumentsFor(clientKey, previewClient?.role || null, (docs) => {
-    mount(list, docs.length ? docs.map((d) => {
-      const isPdf = d.mimeType === "application/pdf";
-      const link = el("a", { class: "row-main", href: "#" }, [
-        el("span", { class: "row-title" }, d.title),
-        d.description ? el("span", { class: "muted" }, d.description) : null,
-      ]);
-      link.addEventListener("click", (e) => { e.preventDefault(); openFile(d, link); });
-      return el("li", {}, [
-        link,
-        el("span", { class: "row-meta" }, [el("span", { class: "tag" }, isPdf ? "PDF" : "PowerPoint"), el("br"), el("span", { class: "muted" }, formatWhen(d.uploadedAt))]),
-      ]);
-    }) : el("p", { class: "empty" }, "No reports have been shared with you yet."));
+    for (const [cat, label] of REPORT_CATEGORIES) {
+      const items = docs.filter((d) => reportCategory(d) === cat);
+      mount(lists.get(cat), items.length ? items.map(row) : el("p", { class: "empty" }, `No ${label.toLowerCase()} yet.`));
+    }
   });
 
   return unsub;

@@ -1,12 +1,13 @@
 import { el, mount, formatWhen, confirmAction } from "../ui.js";
-import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage } from "../store.js";
-import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel } from "../data.js";
+import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage, setReportCategory } from "../store.js";
+import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel, REPORT_CATEGORIES, reportCategory } from "../data.js";
 
 export async function render(main, { flash }) {
   const file = el("input", { type: "file", accept: ".pdf,.ppt,.pptx", required: true });
   const title = el("input", { placeholder: "Defaults to the file name" });
   const description = el("input", { maxLength: 200 });
   const audience = el("select", {}, el("option", { value: "" }, "Everyone"));
+  const category = el("select", {}, REPORT_CATEGORIES.map(([v, label]) => el("option", { value: v }, label.replace(/s$/, ""))));
   const submit = el("button", { class: "btn", type: "submit" }, "Upload report");
   const listBox = el("div");
 
@@ -64,7 +65,7 @@ export async function render(main, { flash }) {
       try {
         const teamRoles = audience.value ? [...teamBox.querySelectorAll("input:checked")].map((c) => c.value) : [];
         const onProgress = (done, total) => { submit.textContent = `Uploading\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`; };
-        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, file: f, onProgress });
+        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, category: category.value, file: f, onProgress });
         flash("Report uploaded.", "ok");
         form.reset(); drawTeamChecks();
       } catch (err) {
@@ -75,6 +76,7 @@ export async function render(main, { flash }) {
     },
   }, [
     el("label", {}, ["File (.pdf, .pptx or .ppt)", file]),
+    el("label", {}, ["Report type", category]),
     el("label", {}, ["Title", title]),
     el("label", {}, ["Description (optional)", description]),
     el("label", {}, ["Who can see it", audience]),
@@ -93,9 +95,9 @@ export async function render(main, { flash }) {
 
   const unsub = watchAdminDocuments((docs) => {
     if (!docs.length) { mount(listBox, el("p", { class: "empty" }, "No reports yet.")); return; }
-    mount(listBox, el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Title", "File", "Visible to", "Uploaded", ""].map((h) => el("th", {}, h)))),
-      el("tbody", {}, docs.map((d) => {
+    const table = (items) => el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
+      el("thead", {}, el("tr", {}, ["Title", "File", "Visible to", "Uploaded", "Type", ""].map((h) => el("th", {}, h)))),
+      el("tbody", {}, items.map((d) => {
         const openLink = el("a", { href: "#" }, el("strong", {}, d.title));
         openLink.addEventListener("click", async (e) => {
           e.preventDefault();
@@ -114,16 +116,29 @@ export async function render(main, { flash }) {
           try { await deleteDocumentFile(d.id); flash(`Deleted "${d.title}".`, "ok"); }
           catch { flash("Couldn't delete that report.", "error"); del.disabled = false; }
         });
+        // Move a report between the two sections.
+        const typeSel = el("select", { class: "compact", "aria-label": `Type of ${d.title}` },
+          REPORT_CATEGORIES.map(([v, label]) => el("option", { value: v, selected: reportCategory(d) === v }, label.replace(/ Reports$/, ""))));
+        typeSel.addEventListener("change", async () => {
+          typeSel.disabled = true;
+          try { await setReportCategory(d.id, typeSel.value); }
+          catch { flash("Couldn't change that report's type.", "error"); typeSel.disabled = false; }
+        });
         return el("tr", {}, [
           el("td", {}, openLink), el("td", {}, d.originalName),
           el("td", {}, d.audienceClientKey
             ? (clientLabels.get(d.audienceClientKey) || d.audienceClientKey.replace(/^c_/, ""))
               + ((d.teamRoles || []).length ? ` + their ${d.teamRoles.map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only")
             : "Everyone"),
-          el("td", {}, formatWhen(d.uploadedAt)), el("td", { class: "actions" }, del),
+          el("td", {}, formatWhen(d.uploadedAt)), el("td", {}, typeSel), el("td", { class: "actions" }, del),
         ]);
       })),
-    ])));
+    ]));
+    mount(listBox, REPORT_CATEGORIES.map(([cat, label]) => {
+      const items = docs.filter((d) => reportCategory(d) === cat);
+      return el("div", { class: "report-group" }, [el("h3", {}, label),
+        items.length ? table(items) : el("p", { class: "empty" }, `No ${label.toLowerCase()} yet.`)]);
+    }));
   });
   return unsub;
 }

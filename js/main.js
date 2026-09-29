@@ -17,9 +17,9 @@ subscribe((state) => {
   if (!state.user) { setUnreadCount(0); return; }
 
   if (state.isAdmin) {
-    unsubThreads = watchAdminThreads((threads) => updateBadge(threads.filter((t) => t.adminUnread), threads));
+    unsubThreads = watchAdminThreads((threads) => updateBadge(threads.filter((t) => t.adminUnread && !t.archived), threads));
   } else if (state.profile) {
-    unsubThreads = watchMyThreads(state.user.uid, (threads) => updateBadge(threads.filter((t) => t.userUnread), threads));
+    unsubThreads = watchMyThreads(state.user.uid, (threads) => updateBadge(threads.filter((t) => t.userUnread && !t.archived), threads));
   }
 });
 

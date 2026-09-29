@@ -395,13 +395,13 @@ async function base64ChunksToBlobUrl(getChunk, chunkCount, mimeType) {
   return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
 }
 
-export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], file, onProgress }) {
+export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], category = "performance", file, onProgress }) {
   const base64 = await fileToBase64(file);
   const chunks = splitString(base64, DOC_CHUNK_CHARS);
   const docRef = doc(collection(db, "documents"));
   const roles = audienceClientKey ? [...new Set(teamRoles.map(normRole).filter(Boolean))] : [];
   const meta = {
-    title, description: description || "", audienceClientKey: audienceClientKey || null, teamRoles: roles,
+    title, description: description || "", audienceClientKey: audienceClientKey || null, teamRoles: roles, category,
     originalName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size,
     chunkCount: chunks.length, uploadedAt: serverTimestamp(),
   };
@@ -418,6 +418,19 @@ export async function uploadDocument({ title, description, audienceClientKey, te
     throw err;
   }
   return docRef.id;
+}
+
+/** Admin: move a report between Performance and Course (also updates the team copies). */
+export async function setReportCategory(docId, category) {
+  const snap = await getDoc(doc(db, "documents", docId));
+  if (!snap.exists()) return;
+  const { audienceClientKey, teamRoles = [] } = snap.data();
+  const batch = writeBatch(db);
+  batch.update(snap.ref, { category });
+  for (const role of audienceClientKey ? teamRoles : []) {
+    batch.update(doc(db, "teamDocs", audienceClientKey, "roles", role, "docs", docId), { category });
+  }
+  await batch.commit();
 }
 
 export async function deleteDocumentFile(docId) {
@@ -548,8 +561,36 @@ export async function replyToThread(threadId, { fromAdmin, body, authorUid, file
   batch.set(doc(collection(db, "threads", threadId, "messages")), { fromAdmin, body, authorUid, createdAt: serverTimestamp(), attachments });
   batch.update(doc(db, "threads", threadId), {
     updatedAt: serverTimestamp(), adminUnread: !fromAdmin, userUnread: fromAdmin, lastFromAdmin: fromAdmin,
+    archived: false, // a new message brings a completed question back
   });
   await batch.commit();
+}
+
+/** Mark a question completed (moves it to Archived) or reopen it. Completing also clears
+ *  its "new" flag for whoever did it. */
+export function setThreadArchived(threadId, archived, { asAdmin }) {
+  const update = { archived, archivedAt: archived ? serverTimestamp() : null };
+  if (archived) update[asAdmin ? "adminUnread" : "userUnread"] = false;
+  return updateDoc(doc(db, "threads", threadId), update);
+}
+
+/** Delete a question for everyone: its messages, attachments and team shares, then the question. */
+export async function deleteThread(threadId) {
+  const ref = doc(db, "threads", threadId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const t = snap.data();
+  const ops = (t.sharedWith || []).map((email) => (b) =>
+    b.delete(doc(db, "threadShares", t.clientKey, "members", email, "threads", threadId)));
+  const atts = await getDocs(collection(ref, "attachments"));
+  atts.forEach((a) => {
+    for (let i = 0; i < (a.data().chunkCount || 0); i++) ops.push((b) => b.delete(doc(a.ref, "chunks", String(i))));
+    ops.push((b) => b.delete(a.ref));
+  });
+  const msgs = await getDocs(collection(ref, "messages"));
+  msgs.forEach((m) => ops.push((b) => b.delete(m.ref)));
+  await commitInChunks(ops);
+  await deleteDoc(ref); // last: the rules above check ownership against it
 }
 
 export function markThreadReadByAdmin(threadId) {
