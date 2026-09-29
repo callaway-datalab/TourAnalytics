@@ -19,8 +19,11 @@
   --ok: #44ce1b;
   --ok-soft: rgba(68, 206, 27, 0.14);
   --danger-soft: rgba(210, 41, 9, 0.22);
-  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-head: "Righteous", "Public Sans", system-ui, sans-serif;
+  /* Forum (elegant serif) for large headings and the portal name only; Lato for everything else:
+     body text, buttons, navigation, tables, numbers and charts. */
+  --font-body: "Lato", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Forum", Georgia, "Times New Roman", serif;
+  --font-head: var(--font-body); /* UI labels (buttons, pills, tags, table headers) */
   --rail: 15rem;
 }
 * { box-sizing: border-box; }
@@ -465,3 +468,33 @@ tr.highlight td { background: rgba(255, 199, 3, 0.18) !important; font-weight: 6
 .facts.glance dd { font-size: 1.8rem; margin: 0.2rem 0 0; font-family: var(--font-head); }
 .facts.glance dt { font-size: 0.85rem; color: var(--muted); }
 .glance-section + .intro { margin-top: 1.25rem; }
+
+
+/* ================================================================== */
+/*  Typography: Forum headings, Lato everything else                   */
+/* ================================================================== */
+h1, h2, h3, .brand, .auth-name, .auth-intro h1 {
+  font-family: var(--font-display); font-weight: 400; letter-spacing: 0.015em;
+}
+h1 { font-size: clamp(2.1rem, 4.2vw, 3.2rem); line-height: 1.1; }
+h2 { font-size: 1.65rem; line-height: 1.2; }
+h3 { font-size: 1.3rem; }
+.report-group h3, .subhead { font-size: 1.3rem; }
+.brand { font-size: 1.6rem; letter-spacing: 0.03em; }
+.auth-name { font-size: 1.75rem; }
+.auth-intro h1 { font-size: clamp(2.4rem, 5vw, 3.6rem); }
+
+/* Buttons, pills, tags and table headers: Lato, bold, a touch of tracking */
+.rail nav a, .rail-foot a, .subnav a, details.archive > summary { font-family: var(--font-body); font-weight: 700; letter-spacing: 0.02em; }
+.rail nav a, .rail-foot a { font-size: 0.9rem; }
+.rail-foot .link { font-family: var(--font-body); font-weight: 700; }
+.btn { font-family: var(--font-body); font-weight: 700; letter-spacing: 0.03em; }
+.tag { font-family: var(--font-body); font-weight: 700; letter-spacing: 0.03em; }
+th { font-family: var(--font-body); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.04em; text-transform: uppercase; text-decoration: none; }
+.row-title { font-family: var(--font-body); font-weight: 700; font-size: 1.08rem; }
+.boot-msg { font-family: var(--font-body); }
+details.archive > summary { font-size: 1rem; }
+
+/* Numbers line up in columns */
+table, .num, .facts dd, .row-meta, .compare-chart { font-variant-numeric: tabular-nums; }
+.facts dd, .facts.glance dd { font-family: var(--font-body); font-weight: 900; letter-spacing: -0.01em; }
