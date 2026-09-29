@@ -1,4 +1,5 @@
-import "./firebase-init.js"; // validates config.js and initializes Firebase first
+import { portalName } from "./firebase-init.js"; // validates config.js and initializes Firebase first
+document.title = portalName; // browser tab shows the portal name from config.js
 import { startRouter } from "./router.js";
 import { subscribe } from "./auth.js";
 import { setUnreadCount } from "./ui.js";

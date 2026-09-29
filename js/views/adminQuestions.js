@@ -19,6 +19,7 @@ export async function render(main) {
         el("span", { class: "muted" }, `${t.askerName} \u00b7 client ${t.clientLabel}`),
       ]),
       el("span", { class: "row-meta" }, [
+        t.sample ? el("span", { class: "tag muted-tag" }, "Sample") : null, t.sample ? " " : null,
         t.adminUnread ? el("span", { class: "tag hot" }, "New")
           : !t.lastFromAdmin ? el("span", { class: "tag" }, "Needs reply")
           : el("span", { class: "tag muted-tag" }, "Answered"),

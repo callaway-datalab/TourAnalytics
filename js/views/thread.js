@@ -9,7 +9,7 @@ export async function render(main, { params, routeId, flash }) {
   const threadId = params.id;
 
   const backHref = isAdmin ? "#/admin/questions" : "#/questions";
-  const crumb = el("p", { class: "crumb" }, el("a", { href: backHref }, isAdmin ? "All questions" : "Questions"));
+  const crumb = el("p", { class: "crumb" }, el("a", { href: backHref }, isAdmin ? "All questions" : "My Questions"));
   const titleEl = el("h1", {}, "\u00a0");
   const metaEl = el("p", { class: "muted" });
   const messagesList = el("ol", { class: "messages" });

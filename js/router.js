@@ -104,7 +104,7 @@ async function render() {
     main = root;
   } else {
     main = renderShell(root, { previewClient, currentRoute: routeId });
-    if (previewClient && PLAYER_PAGES.includes(routeId)) {
+    if (previewClient && (PLAYER_PAGES.includes(routeId) || (state.isAdmin && guard === "client"))) {
       // The bar goes INSIDE <main> (placing it beside <main> breaks the two-column layout and
       // pushes the page off-screen). Views clear their container, so give them an inner one.
       const inner = document.createElement("div");

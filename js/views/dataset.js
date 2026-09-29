@@ -20,7 +20,7 @@ export async function render(main, { params, previewClient, flash }) {
 
   mount(main, [
     el("header", { class: "page-head" }, [
-      el("p", { class: "crumb" }, el("a", { href: "#/dashboard" }, previewClient?.role ? `${previewClient.label}: data` : "My data")),
+      el("p", { class: "crumb" }, el("a", { href: "#/dashboard" }, previewClient?.role ? `${previewClient.label}: Data` : "My Data")),
       el("h1", {}, meta.name),
       el("p", { class: "muted" }, `${num(meta.rowCount)} rows \u00b7 Updated ${formatWhen(meta.uploadedAt)}` + (meta.description ? ` \u00b7 ${meta.description}` : "")),
     ]),

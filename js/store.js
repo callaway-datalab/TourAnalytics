@@ -434,7 +434,9 @@ export function watchMessages(threadId, cb) {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
 
-export async function askQuestion({ uid, clientKey, clientLabel, askerName, askerEmail, subject, body }) {
+/** sample: true marks a test question the admin sends from the player preview. It's stored under the
+ *  admin's own account, so the real player never sees it. */
+export async function askQuestion({ uid, clientKey, clientLabel, askerName, askerEmail, subject, body, sample = false }) {
   // Two sequential writes, not one batch: the message-create rule reads the parent thread to
   // confirm ownership, and a sibling document created in the same batch isn't guaranteed visible
   // to that read yet. Awaiting the thread's creation first makes the second write unambiguous.
@@ -442,6 +444,7 @@ export async function askQuestion({ uid, clientKey, clientLabel, askerName, aske
   await setDoc(threadRef, {
     uid, clientKey, clientLabel, askerName, askerEmail, subject,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(), adminUnread: true, userUnread: false, lastFromAdmin: false,
+    ...(sample ? { sample: true } : {}),
   });
   await addDoc(collection(db, "threads", threadRef.id, "messages"), {
     fromAdmin: false, body, authorUid: uid, createdAt: serverTimestamp(),

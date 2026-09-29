@@ -9,7 +9,7 @@ export async function render(main, { previewClient, flash }) {
 
   mount(main, [
     el("header", { class: "page-head" }, [
-      el("h1", {}, "Documents"),
+      el("h1", {}, previewClient?.role ? `${previewClient.label}: Reports` : "My Reports"),
       el("p", { class: "muted" }, "PDFs open in a new tab. PowerPoint files download to your computer."),
     ]),
     list,
@@ -51,7 +51,7 @@ export async function render(main, { previewClient, flash }) {
         link,
         el("span", { class: "row-meta" }, [el("span", { class: "tag" }, isPdf ? "PDF" : "PowerPoint"), el("br"), el("span", { class: "muted" }, formatWhen(d.uploadedAt))]),
       ]);
-    }) : el("p", { class: "empty" }, "No documents have been shared with you yet."));
+    }) : el("p", { class: "empty" }, "No reports have been shared with you yet."));
   });
 
   return unsub;

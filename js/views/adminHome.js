@@ -19,7 +19,7 @@ export async function render(main) {
   adminStats().then((stats) => {
     mount(statsBox, [
       ["People in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
-      ["Data files", stats.datasets], ["Documents", stats.documents],
+      ["Data files", stats.datasets], ["Reports", stats.documents],
     ].map(([label, value]) => el("div", {}, [el("dt", {}, label), el("dd", {}, num(value))])));
 
     if (!stats.datasets) {

@@ -7,7 +7,7 @@ export async function render(main, { flash }) {
   const title = el("input", { placeholder: "Defaults to the file name" });
   const description = el("input", { maxLength: 200 });
   const audience = el("select", {}, el("option", { value: "" }, "Everyone"));
-  const submit = el("button", { class: "btn", type: "submit" }, "Upload document");
+  const submit = el("button", { class: "btn", type: "submit" }, "Upload report");
   const listBox = el("div");
 
   // "Also share with their team": one checkbox per role, shown once a single player is chosen.
@@ -57,7 +57,7 @@ export async function render(main, { flash }) {
       const f = file.files[0];
       if (!f) { flash("Choose a PDF or PowerPoint file.", "error"); return; }
       const ext = f.name.toLowerCase().split(".").pop();
-      if (!["pdf", "ppt", "pptx"].includes(ext)) { flash("Documents must be .pdf, .ppt or .pptx.", "error"); return; }
+      if (!["pdf", "ppt", "pptx"].includes(ext)) { flash("Reports must be .pdf, .ppt or .pptx.", "error"); return; }
       if (f.size > MAX_DOC_BYTES) { flash(`That file is larger than the ${readableSize(MAX_DOC_BYTES)} limit for this portal.`, "error"); return; }
 
       submit.disabled = true; submit.textContent = "Uploading\u2026";
@@ -65,12 +65,12 @@ export async function render(main, { flash }) {
         const teamRoles = audience.value ? [...teamBox.querySelectorAll("input:checked")].map((c) => c.value) : [];
         const onProgress = (done, total) => { submit.textContent = `Uploading\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`; };
         await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, file: f, onProgress });
-        flash("Document uploaded.", "ok");
+        flash("Report uploaded.", "ok");
         form.reset(); drawTeamChecks();
       } catch (err) {
-        flash(uploadErrorMessage(err, "that document"), "error");
+        flash(uploadErrorMessage(err, "that report"), "error");
       } finally {
-        submit.disabled = false; submit.textContent = "Upload document";
+        submit.disabled = false; submit.textContent = "Upload report";
       }
     },
   }, [
@@ -84,15 +84,15 @@ export async function render(main, { flash }) {
 
   mount(main, [
     el("header", { class: "page-head" }, [
-      el("h1", {}, "Documents"),
-      el("p", { class: "muted" }, "Share PDFs and PowerPoint files with everyone, or with one player and, if you choose, members of their team."),
+      el("h1", {}, "Reports"),
+      el("p", { class: "muted" }, "Share PDF and PowerPoint reports with everyone, or with one player and, if you choose, members of their team."),
     ]),
-    el("section", {}, [el("h2", {}, "Upload a document"), form]),
+    el("section", {}, [el("h2", {}, "Upload a report"), form]),
     el("section", {}, [el("h2", {}, "Library"), listBox]),
   ]);
 
   const unsub = watchAdminDocuments((docs) => {
-    if (!docs.length) { mount(listBox, el("p", { class: "empty" }, "No documents yet.")); return; }
+    if (!docs.length) { mount(listBox, el("p", { class: "empty" }, "No reports yet.")); return; }
     mount(listBox, el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
       el("thead", {}, el("tr", {}, ["Title", "File", "Visible to", "Uploaded", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, docs.map((d) => {
@@ -112,7 +112,7 @@ export async function render(main, { flash }) {
           if (!confirmAction(`Delete "${d.title}"?`)) return;
           del.disabled = true;
           try { await deleteDocumentFile(d.id); flash(`Deleted "${d.title}".`, "ok"); }
-          catch { flash("Couldn't delete that document.", "error"); del.disabled = false; }
+          catch { flash("Couldn't delete that report.", "error"); del.disabled = false; }
         });
         return el("tr", {}, [
           el("td", {}, openLink), el("td", {}, d.originalName),

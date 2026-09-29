@@ -19,12 +19,12 @@ export async function render(main, { previewClient }) {
     el("header", { class: "page-head" }, [
       el("h1", {}, teamRole ? previewClient.label : previewClient ? "Client view" : `Hello, ${firstName}`),
       el("p", { class: "muted" }, teamRole
-        ? `${previewClient.label}'s data and the documents shared with their team.`
+        ? `${previewClient.label}'s data and the reports shared with their team.`
         : "Everything on this page belongs to you and is private to your account."),
     ]),
     el("section", {}, [el("h2", {}, teamRole ? "Data" : "Your data"), datasetsBox]),
     el("section", {}, [
-      el("div", { class: "section-head" }, [el("h2", {}, "Latest documents"), el("a", { href: "#/documents" }, "See all documents")]),
+      el("div", { class: "section-head" }, [el("h2", {}, "Latest reports"), el("a", { href: "#/documents" }, "See all reports")]),
       docsBox,
     ]),
     questionsSection,
@@ -53,7 +53,7 @@ export async function render(main, { previewClient }) {
           ]),
           el("span", { class: "row-meta" }, el("span", { class: "tag" }, d.originalName.split(".").pop().toUpperCase())),
         ]))
-      : el("p", { class: "empty" }, "No documents yet."));
+      : el("p", { class: "empty" }, "No reports yet."));
   });
 
   let un3 = () => {};

@@ -10,7 +10,7 @@ export async function render(main) {
   mount(main, [
     el("header", { class: "page-head" }, [
       el("h1", {}, firstName ? `Hello, ${firstName}` : "My players"),
-      el("p", { class: "muted" }, "Choose a player to see their data and documents. You can look, but not change anything."),
+      el("p", { class: "muted" }, "Choose a player to see their data and reports. You can look, but not change anything."),
     ]),
     el("section", {}, [el("h2", {}, "My players"), list]),
   ]);

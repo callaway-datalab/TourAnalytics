@@ -352,3 +352,16 @@ select option { background: var(--surface-solid); color: #fff; }
 .rows { background: var(--surface); border: 2px solid var(--panel-border); border-radius: 15px; padding: 0.35rem; }
 .rows li:last-child { border-bottom: 0; }
 .rows > .empty { padding: 1rem 0.9rem; margin: 0; }
+
+/* Banner: three columns so the pill buttons sit in the exact centre of the page,
+   however many there are and however wide the name or account area is. */
+.rail { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
+.rail .brand { justify-self: start; min-width: 0; }
+.rail nav { justify-self: center; justify-content: center; max-width: min(100%, 60rem); }
+.rail-foot { justify-self: end; }
+@media (max-width: 1100px) {
+  /* Not enough room for three columns: stack name, buttons, account, all centred. */
+  .rail { grid-template-columns: 1fr; justify-items: center; }
+  .rail .brand, .rail-foot { justify-self: center; }
+  .rail nav { flex-basis: auto; }
+}

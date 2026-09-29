@@ -79,15 +79,15 @@ export function confirmAction(message) {
 
 const NAV = {
   client: [
-    ["#/dashboard", "data", "My data", ["dashboard", "dataset"]],
-    ["#/documents", "doc", "Documents", ["documents"]],
-    ["#/questions", "chat", "Questions", ["questions", "question-new", "thread"]],
+    ["#/dashboard", "data", "My Data", ["dashboard", "dataset"]],
+    ["#/documents", "doc", "My Reports", ["documents"]],
+    ["#/questions", "chat", "My Questions", ["questions", "question-new", "thread"]],
   ],
   admin: [
     ["#/admin", "home", "Overview", ["admin"]],
     ["#/admin/datasets", "data", "Data", ["admin-datasets"]],
-    ["#/admin/clients", "people", "Clients & codes", ["admin-clients"]],
-    ["#/admin/documents", "doc", "Documents", ["admin-documents"]],
+    ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
+    ["#/admin/documents", "doc", "Reports", ["admin-documents"]],
     ["#/admin/questions", "chat", "Questions", ["admin-questions", "admin-thread"]],
   ],
 };
@@ -106,8 +106,8 @@ export function setUnreadCount(n) {
 function teamNav(previewClient) {
   const items = [["#/team", "people", "My players", ["team"]]];
   if (previewClient) {
-    items.push(["#/dashboard", "data", `${previewClient.label}: data`, ["dashboard", "dataset"]]);
-    items.push(["#/documents", "doc", `${previewClient.label}: documents`, ["documents"]]);
+    items.push(["#/dashboard", "data", `${previewClient.label}: Data`, ["dashboard", "dataset"]]);
+    items.push(["#/documents", "doc", `${previewClient.label}: Reports`, ["documents"]]);
   }
   items.push(NAV.client[2]); // Questions
   return items;
@@ -118,15 +118,15 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const admin = state.isAdmin && !previewClient;
   const team = !state.isAdmin && state.isTeam;
   const items = admin ? NAV.admin : team ? teamNav(previewClient) : NAV.client;
-  const showQuestions = !previewClient || admin || team;
+  // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
+  const showBadge = !(state.isAdmin && previewClient);
 
   const nav = el("nav", { "aria-label": "Main" },
     items
-      .filter(([href]) => showQuestions || !href.includes("questions"))
       .map(([href, ic, label, matches]) => {
         const isCurrent = matches.includes(currentRoute);
         const link = el("a", { href, "aria-current": isCurrent ? "page" : null }, [icon(ic), text(" " + label)]);
-        if (label === "Questions") {
+        if (href.endsWith("/questions") && showBadge) {
           link.appendChild(el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)));
         }
         return link;
