@@ -5,7 +5,7 @@
 // configuration -> Config. These values are not secret — they identify your project to the browser;
 // the Firestore rules are what actually protect the data.
 window.PORTAL_CONFIG = {
-  portalName: "tour-analytics",
+  portalName: "Tour Analytics",
 
   firebase: {
     apiKey: "AIzaSyBdmwPyvexzKEpPIpcq5V5n6upEz5w8YpE",
