@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, db } from "./firebase-init.js";
 import {
-  chunkRows, splitString, DOC_CHUNK_CHARS, UserError, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
+  chunkRows, splitString, DOC_CHUNK_CHARS, UserError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, readableSize, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
 } from "./data.js";
 
 export { UserError };
@@ -45,7 +45,7 @@ export async function signUpWithCode({ code, name, email, password }) {
   // login, so a mismatch doesn't leave an orphaned account behind.
   const pre = await fetchInvite(code);
   if (pre?.email && pre.email !== email) {
-    throw new UserError("This access code was issued for a different email address. Sign up with the email address the administrator has for you.");
+    throw new UserError("This access code was issued for a different email address. Sign up with the email address Callaway Analysts has for you.");
   }
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   const uid = cred.user.uid;
@@ -130,8 +130,23 @@ export async function getTeamRoster() {
  */
 export async function applyTeamRoster(entries) {
   const byEmail = rosterByEmail(entries);
-  const [usersSnap, invitesSnap] = await Promise.all([getDocs(collection(db, "users")), getDocs(collection(db, "invites"))]);
+  const [usersSnap, invitesSnap, previous] = await Promise.all([
+    getDocs(collection(db, "users")), getDocs(collection(db, "invites")), getTeamRoster(),
+  ]);
   const ops = [(b) => b.set(ROSTER_REF(), { entries, uploadedAt: serverTimestamp() })];
+
+  // Each player's team, readable by that player: it's what the question form's checkboxes list.
+  const byPlayer = new Map();
+  for (const e of entries) {
+    if (!byPlayer.has(e.playerKey)) byPlayer.set(e.playerKey, []);
+    byPlayer.get(e.playerKey).push({ email: e.email, name: e.name, role: e.role });
+  }
+  for (const [key, members] of byPlayer) {
+    ops.push((b) => b.set(doc(db, "teams", key), { members, updatedAt: serverTimestamp() }));
+  }
+  for (const key of new Set((previous.entries || []).map((e) => e.playerKey))) {
+    if (!byPlayer.has(key)) ops.push((b) => b.delete(doc(db, "teams", key)));
+  }
 
   const hasAccount = new Set();
   let updated = 0;
@@ -364,13 +379,24 @@ export function watchDocumentsFor(clientKey, teamRole, cb) {
   return teamRole ? watchTeamDocuments(clientKey, teamRole, cb) : watchVisibleDocuments(clientKey, cb);
 }
 
-export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], file, onProgress }) {
-  const base64 = await new Promise((resolve, reject) => {
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(",")[1]);
-    reader.onerror = () => reject(new UserError("Couldn't read that file."));
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(new UserError(`Couldn't read ${file.name}.`));
     reader.readAsDataURL(file);
   });
+}
+
+async function base64ChunksToBlobUrl(getChunk, chunkCount, mimeType) {
+  const chunks = await Promise.all(Array.from({ length: chunkCount }, (_, i) => getChunk(i)));
+  const base64 = chunks.map((snap) => snap.data().data).join("");
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
+
+export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], file, onProgress }) {
+  const base64 = await fileToBase64(file);
   const chunks = splitString(base64, DOC_CHUNK_CHARS);
   const docRef = doc(collection(db, "documents"));
   const roles = audienceClientKey ? [...new Set(teamRoles.map(normRole).filter(Boolean))] : [];
@@ -404,15 +430,68 @@ export async function deleteDocumentFile(docId) {
   await deleteDoc(doc(db, "documents", docId));
 }
 
-export async function getDocumentBlobUrl(docMeta) {
-  const chunks = await Promise.all(
-    Array.from({ length: docMeta.chunkCount }, (_, i) => getDoc(doc(db, "documents", docMeta.id, "chunks", String(i)))));
-  const base64 = chunks.map((snap) => snap.data().data).join("");
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  return URL.createObjectURL(new Blob([bytes], { type: docMeta.mimeType }));
+export function getDocumentBlobUrl(docMeta) {
+  return base64ChunksToBlobUrl(
+    (i) => getDoc(doc(db, "documents", docMeta.id, "chunks", String(i))), docMeta.chunkCount, docMeta.mimeType);
+}
+
+/* ============================== Attachments ============================== */
+// Files attached to a question or reply live with the conversation:
+//   threads/{threadId}/attachments/{id}           details
+//   threads/{threadId}/attachments/{id}/chunks/n  the file, in pieces
+// and the message lists them, so anyone who can read the conversation can open them.
+
+export function checkAttachments(files) {
+  if (files.length > MAX_ATTACHMENTS) throw new UserError(`You can attach up to ${MAX_ATTACHMENTS} files at a time.`);
+  const big = files.find((f) => f.size > MAX_ATTACHMENT_BYTES);
+  if (big) throw new UserError(`${big.name} is larger than the ${readableSize(MAX_ATTACHMENT_BYTES)} limit for attachments.`);
+}
+
+async function uploadAttachments(threadId, files, uid, onProgress) {
+  const out = [];
+  const total = files.reduce((n, f) => n + f.size, 0) || 1;
+  let before = 0;
+  for (const file of files) {
+    const chunks = splitString(await fileToBase64(file), DOC_CHUNK_CHARS);
+    const ref = doc(collection(db, "threads", threadId, "attachments"));
+    await commitInChunks(
+      chunks.map((data, i) => sized((b) => b.set(doc(ref, "chunks", String(i)), { data }), data.length)),
+      onProgress && ((done, all) => onProgress(before + (file.size * done) / all, total)),
+    );
+    const meta = { name: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size, chunkCount: chunks.length };
+    await setDoc(ref, { ...meta, uploaderUid: uid, createdAt: serverTimestamp() });
+    out.push({ id: ref.id, ...meta });
+    before += file.size;
+    if (onProgress) onProgress(before, total);
+  }
+  return out;
+}
+
+export function getAttachmentBlobUrl(threadId, att) {
+  return base64ChunksToBlobUrl(
+    (i) => getDoc(doc(db, "threads", threadId, "attachments", att.id, "chunks", String(i))), att.chunkCount, att.mimeType);
 }
 
 /* ============================== Questions ============================== */
+
+/** The team listed for a player in the roster: [{ email, name, role }]. */
+export async function getPlayerTeam(clientKey) {
+  const snap = await getDoc(doc(db, "teams", clientKey));
+  return snap.exists() ? snap.data().members || [] : [];
+}
+
+/** For a team member: questions their players chose to share with them, across all their players. */
+export function watchSharedWithMe(playerKeys, email, cb) {
+  const byPlayer = new Map();
+  const emit = () => cb([...byPlayer.values()].flat().sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)));
+  const unsubs = playerKeys.map((key) => onSnapshot(
+    collection(db, "threadShares", key, "members", norm(email), "threads"),
+    (snap) => { byPlayer.set(key, snap.docs.map((d) => ({ id: d.id, ...d.data() }))); emit(); },
+    () => { byPlayer.set(key, []); emit(); },
+  ));
+  if (!playerKeys.length) cb([]);
+  return () => unsubs.forEach((u) => u());
+}
 
 export function watchAdminThreads(cb) {
   return onSnapshot(query(collection(db, "threads"), orderBy("updatedAt", "desc")), (snap) =>
@@ -436,7 +515,8 @@ export function watchMessages(threadId, cb) {
 
 /** sample: true marks a test question the admin sends from the player preview. It's stored under the
  *  admin's own account, so the real player never sees it. */
-export async function askQuestion({ uid, clientKey, clientLabel, askerName, askerEmail, subject, body, sample = false }) {
+export async function askQuestion({ uid, clientKey, clientLabel, askerName, askerEmail, subject, body, sample = false, shareWith = [], files = [], onProgress }) {
+  checkAttachments(files);
   // Two sequential writes, not one batch: the message-create rule reads the parent thread to
   // confirm ownership, and a sibling document created in the same batch isn't guaranteed visible
   // to that read yet. Awaiting the thread's creation first makes the second write unambiguous.
@@ -445,16 +525,27 @@ export async function askQuestion({ uid, clientKey, clientLabel, askerName, aske
     uid, clientKey, clientLabel, askerName, askerEmail, subject,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(), adminUnread: true, userUnread: false, lastFromAdmin: false,
     ...(sample ? { sample: true } : {}),
+    // Team members the player chose to include. They can read the conversation; the admin always gets it.
+    sharedWith: shareWith.map((m) => norm(m.email)),
+    sharedWithNames: shareWith.map((m) => ({ name: m.name, role: m.role })),
   });
+  const attachments = await uploadAttachments(threadRef.id, files, uid, onProgress);
   await addDoc(collection(db, "threads", threadRef.id, "messages"), {
-    fromAdmin: false, body, authorUid: uid, createdAt: serverTimestamp(),
+    fromAdmin: false, body, authorUid: uid, createdAt: serverTimestamp(), attachments,
   });
+  // A small pointer per team member so it shows up in their My Questions list.
+  const shares = await Promise.allSettled(shareWith.map((m) => setDoc(
+    doc(db, "threadShares", clientKey, "members", norm(m.email), "threads", threadRef.id),
+    { subject, clientLabel, askerName, createdAt: serverTimestamp() })));
+  shares.filter((r) => r.status === "rejected").forEach((r) => console.error("Couldn't share question:", r.reason));
   return threadRef.id;
 }
 
-export async function replyToThread(threadId, { fromAdmin, body, authorUid }) {
+export async function replyToThread(threadId, { fromAdmin, body, authorUid, files = [], onProgress }) {
+  checkAttachments(files);
+  const attachments = await uploadAttachments(threadId, files, authorUid, onProgress);
   const batch = writeBatch(db);
-  batch.set(doc(collection(db, "threads", threadId, "messages")), { fromAdmin, body, authorUid, createdAt: serverTimestamp() });
+  batch.set(doc(collection(db, "threads", threadId, "messages")), { fromAdmin, body, authorUid, createdAt: serverTimestamp(), attachments });
   batch.update(doc(db, "threads", threadId), {
     updatedAt: serverTimestamp(), adminUnread: !fromAdmin, userUnread: fromAdmin, lastFromAdmin: fromAdmin,
   });

@@ -4,6 +4,8 @@ export class UserError extends Error {}
 
 export const MAX_CHUNK_CHARS = 300000;        // JSON characters per Firestore chunk (limit is ~1 MiB per document)
 export const DOC_CHUNK_CHARS = 600000;        // base64 characters per document chunk
+export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024; // per file attached to a question or reply
+export const MAX_ATTACHMENTS = 5;                      // files per message
 export const MAX_DOC_BYTES = 25 * 1024 * 1024; // uploads are split into ~6 MB batches, so this is a storage-budget choice, not a Firestore limit
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L
 

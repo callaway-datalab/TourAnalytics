@@ -365,3 +365,15 @@ select option { background: var(--surface-solid); color: #fff; }
   .rail .brand, .rail-foot { justify-self: center; }
   .rail nav { flex-basis: auto; }
 }
+
+/* --- Attachments on questions --- */
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.attach-btn { display: inline-block; font-weight: 400; }
+.attach-btn:focus-within { outline: 3px solid var(--brand); outline-offset: 2px; }
+.attach-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.attach-list li { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.6rem 0.25rem 0.75rem;
+  border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.06); font-size: 0.9rem; }
+.attach-list button { padding: 0 0.3rem; text-decoration: none; font-size: 1.1rem; line-height: 1; }
+.attach-list.in-message { margin-top: 0.7rem; }
+.attach-list.in-message a { color: var(--brand); text-decoration: none; }
+.attach-list.in-message a:hover { text-decoration: underline; }

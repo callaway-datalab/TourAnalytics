@@ -28,7 +28,7 @@ export async function render(main) {
           ]),
           el("span", { class: "row-meta" }, el("span", { class: "tag" }, roleLabel(p.role))),
         ]))
-      : el("p", { class: "empty" }, "You haven't been given access to any players yet. The administrator will add them for you."));
+      : el("p", { class: "empty" }, "You haven't been given access to any players yet. Callaway Analysts will add them for you."));
   };
   return subscribe(draw);
 }

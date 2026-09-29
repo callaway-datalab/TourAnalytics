@@ -91,7 +91,7 @@ async function render() {
   if (guard === "client" && !state.isAdmin && !state.profile && state.status === "ready") {
     // Signed in, but no profile doc (e.g. access was removed by the admin).
     document.getElementById("app").textContent =
-      "Your access to this portal has been removed. Contact the administrator if you think this is a mistake.";
+      "Your access to this portal has been removed. Contact Callaway Analysts if you think this is a mistake.";
     return;
   }
 
