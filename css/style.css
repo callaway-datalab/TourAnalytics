@@ -548,3 +548,16 @@ main > .subnav:first-child { margin-top: -1rem; }
 .table-scroll.five-rows { max-height: 20.5rem; }
 .table-scroll.five-rows { max-height: 16.5rem; }          /* Players: ~5 rows */
 .table-scroll.five-rows.codes-rows { max-height: 23rem; } /* Access codes rows are taller */
+
+/* --- Access codes: user type tags, create panel --- */
+.type-tags { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+.tag.type-player { background: var(--brand-deep); color: #fff; }
+.tag.type-coach { background: #1f6fb2; color: #fff; }
+.tag.type-caddy { background: #7b4bb5; color: #fff; }
+.tag.type-analyst { background: #fff; color: #000; }
+.tag.type-other { background: #5c6670; color: #fff; }
+.create-toggle { margin-top: 1rem; }
+.create-panel[hidden] { display: none; }
+.create-panel { margin-top: 0.5rem; }
+.codes-rows td:nth-child(1), .codes-rows td:nth-child(2), .codes-rows .tag { white-space: nowrap; }
+.codes-rows .tag { display: inline-block; }

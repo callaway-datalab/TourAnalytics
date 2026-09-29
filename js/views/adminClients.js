@@ -155,6 +155,7 @@ export async function render(main, { flash }) {
           flash(`Access code for ${name}: ${formatCode(code)}. It only works with ${email.toLowerCase()}. Send it with the sign-up link.`, "ok");
         }
         drawFields();
+        setCreateOpen(false);
       } catch (err) {
         flash(err instanceof UserError ? err.message : "Couldn't create that code. Try again.", "error");
       } finally {
@@ -167,6 +168,20 @@ export async function render(main, { flash }) {
     el("div", {}, createBtn),
   ]);
   drawFields();
+
+  // The create form is tucked away behind a button until needed.
+  const createPanel = el("div", { class: "create-panel", hidden: true }, [
+    el("h3", { class: "subhead" }, "Create an access code"),
+    createForm,
+    el("p", { class: "muted" }, ["Sign-up page: ", el("strong", {}, location.origin + location.pathname + "#/signup")]),
+  ]);
+  const createToggle = linkButton("Create New Access Code", () => setCreateOpen(createPanel.hidden), "btn create-toggle");
+  const setCreateOpen = (open) => {
+    createPanel.hidden = !open;
+    createToggle.textContent = open ? "Cancel" : "Create New Access Code";
+    createToggle.classList.toggle("ghost", open);
+    if (open) createPanel.querySelector("select")?.focus();
+  };
 
   /* ============================ Access codes ============================ */
   const invitesBox = el("div");
@@ -254,14 +269,17 @@ export async function render(main, { flash }) {
       const grants = Object.entries(access).map(([key, g]) => ({ key, role: g.role, label: g.label || key.replace(/^c_/, "") }))
         .sort((a, b) => a.label.localeCompare(b.label));
       const roles = [...new Set(grants.map((g) => g.role))];
-      let types, note;
-      if (!isTeamKey(inv.clientKey)) { types = ["player"]; note = inv.note || ""; }
-      else if (inv.kind === "analyst") { types = ["analyst"]; note = "Callaway Analyst"; }
+      // User type: one tag per type (a team member can be e.g. a coach for one player, caddy for another).
+      let types, typeLabels;
+      if (!isTeamKey(inv.clientKey)) { types = ["player"]; typeLabels = [["player", "Player"]]; }
+      else if (inv.kind === "analyst") { types = ["analyst"]; typeLabels = [["analyst", "Callaway Analyst"]]; }
       else {
         types = roles.map((r) => (r === "coach" || r === "caddy" ? r : "other"));
         if (!types.length) types = ["other"];
-        note = roles.map((r) => roleLabel(r)).join(", ") || "Team member";
+        typeLabels = roles.length ? roles.map((r) => [r === "coach" || r === "caddy" ? r : "other", roleLabel(r)]) : [["other", "Team member"]];
       }
+      const note = typeLabels.map(([, l]) => l).join(" ");
+      const email = user?.email || inv.email || "";
       let status, statusText;
       if (inv.usedBy && user) { status = el("span", { class: "tag" }, "Active"); statusText = "active"; }
       else if (inv.usedBy) { status = el("span", { class: "tag muted-tag" }, "Removed"); statusText = "removed"; }
@@ -273,18 +291,19 @@ export async function render(main, { flash }) {
         : grants.length === 0 ? el("span", { class: "muted" }, "\u2014")
         : grants.length === 1 ? grants[0].label
         : linkButton(`${grants.length} players`, () => showPlayers(inv.clientLabel, grants));
-      const haystack = [inv.code, formatCode(inv.code), inv.clientLabel, inv.email, user?.email, user?.name, note, statusText, ...grants.map((g) => g.label)]
+      const haystack = [inv.code, formatCode(inv.code), inv.clientLabel, email, user?.name, isTeamKey(inv.clientKey) ? "" : inv.note, note, statusText, ...grants.map((g) => g.label)]
         .filter(Boolean).join(" ").toLowerCase();
-      return { inv, user, grants, types, note, status, teamOf, haystack };
+      return { inv, user, grants, types, typeLabels, email, status, teamOf, haystack };
     }).filter((r) => r.types.some((t) => shown.has(t)) && (!q || r.haystack.includes(q)));
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Code", "Name", "Note", "Team of", "Status", ""].map((h) => el("th", {}, h)))),
-      el("tbody", {}, rows.map(({ inv, user, grants, note, status, teamOf }) => el("tr", {}, [
+      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", ""].map((h) => el("th", {}, h)))),
+      el("tbody", {}, rows.map(({ inv, user, grants, typeLabels, email, status, teamOf }) => el("tr", {}, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
-        el("td", {}, [user?.name || inv.clientLabel, user?.email || inv.email ? el("div", { class: "muted small" }, user?.email || inv.email) : null]),
-        el("td", {}, note),
+        el("td", {}, [user?.name || inv.clientLabel, inv.note && !isTeamKey(inv.clientKey) ? el("div", { class: "muted small" }, inv.note) : null]),
+        el("td", {}, email || el("span", { class: "muted" }, "\u2014")),
+        el("td", {}, el("span", { class: "type-tags" }, typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)))),
         el("td", {}, teamOf),
         el("td", {}, status),
         el("td", { class: "actions" }, codeActions(inv, user, grants)),
@@ -345,60 +364,12 @@ export async function render(main, { flash }) {
     },
   }, [el("div", { class: "file-row" }, [el("div", { class: "file-line" }, [rosterPicker, rosterFileName])]), rosterBtn]);
 
-  /* ============================== Players ============================== */
-  const clientsBox = el("div");
-  const playerSearch = el("input", { type: "search", placeholder: "Search players or their team\u2026", "aria-label": "Search players" });
-  playerSearch.addEventListener("input", () => drawPlayers());
-  let playersData = null; // last fetch, so typing in the search doesn't re-read the database
-
+  /* ========================= Known players (for the forms) ========================= */
   async function refreshClients() {
-    const { labels, usersSnap, invitesSnap } = await adminAllClients();
+    const { labels } = await adminAllClients();
     clientsCache = { labels };
     syncAllPlayersAnalysts(usersCache, invitesCache, labels).catch(() => {});
     mount(knownIds, [...labels.values()].map((label) => el("option", { value: label })));
-    playersData = { labels, usersSnap, invitesSnap };
-    drawPlayers();
-  }
-
-  function drawPlayers() {
-    if (!playersData) return;
-    const { labels, usersSnap, invitesSnap } = playersData;
-
-    const perClient = new Map([...labels.keys()].map((k) => [k, { accounts: 0, openInvites: 0 }]));
-    usersSnap.forEach((d) => { const s = perClient.get(d.data().clientKey); if (s) s.accounts++; });
-    invitesSnap.forEach((d) => {
-      const v = d.data(); const s = perClient.get(v.clientKey);
-      if (s && !v.usedBy && !v.revoked) s.openInvites++;
-    });
-    // Each player's team: roster entries plus hand-made coach/caddy/other codes and accounts.
-    const teamOf = new Map();
-    const addTeam = (key, t) => { if (!teamOf.has(key)) teamOf.set(key, []); if (!teamOf.get(key).some((x) => x.email === t.email)) teamOf.get(key).push(t); };
-    for (const e of rosterCache.entries || []) {
-      const acct = usersCache.find((u) => isTeamKey(u.clientKey) && !u.kind && norm(u.email) === e.email);
-      addTeam(e.playerKey, { name: e.name, email: e.email, role: e.role, href: acct ? portalHref(acct) : `#/view-as-roster/${encodeURIComponent(e.email)}` });
-    }
-    for (const u of usersCache.filter((x) => x.kind === "team")) {
-      for (const [k, g] of Object.entries(u.access || {})) addTeam(k, { name: u.name, email: norm(u.email), role: g.role, href: portalHref(u) });
-    }
-    for (const v of invitesCache.filter((x) => x.kind === "team" && !x.usedBy && !x.revoked)) {
-      for (const [k, g] of Object.entries(v.access || {})) addTeam(k, { name: v.clientLabel, email: norm(v.email), role: g.role, href: `#/view-as-code/${v.code}` });
-    }
-    const teamLinks = (list) => list.flatMap((t, i) => [i ? ", " : null, el("a", { href: t.href, title: `See ${t.name}'s portal` }, t.name), ` (${roleLabel(t.role)})`]);
-
-    if (!labels.size) { mount(clientsBox, el("p", { class: "empty" }, "No players yet. Upload data or create a code to add one.")); return; }
-    const q = playerSearch.value.trim().toLowerCase();
-    const rows = [...labels.entries()].sort((a, b) => a[1].localeCompare(b[1]))
-      .filter(([key, label]) => !q || [label, ...(teamOf.get(key) || []).map((t) => `${t.name} ${t.role}`)].join(" ").toLowerCase().includes(q));
-    mount(clientsBox, rows.length ? el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Player ID", "Accounts", "Unused codes", "Team", ""].map((h) => el("th", {}, h)))),
-      el("tbody", {}, rows.map(([key, label]) => el("tr", {}, [
-        el("td", {}, el("strong", {}, label)),
-        el("td", {}, String(perClient.get(key)?.accounts || 0)),
-        el("td", {}, String(perClient.get(key)?.openInvites || 0)),
-        el("td", {}, (teamOf.get(key) || []).length ? teamLinks(teamOf.get(key)) : el("span", { class: "muted" }, "\u2014")),
-        el("td", { class: "actions" }, el("a", { href: `#/view-as/${encodeURIComponent(key)}?label=${encodeURIComponent(label)}` }, "See their portal")),
-      ]))),
-    ])) : el("p", { class: "empty" }, "No players match."));
   }
 
   /* ============================== Page ============================== */
@@ -411,16 +382,14 @@ export async function render(main, { flash }) {
         el("fieldset", { class: "type-filters" }, [el("legend", { class: "visually-hidden" }, "Show"), ...typeBoxes]),
       ]),
       invitesBox,
-      el("h3", { class: "subhead" }, "Create an access code"),
-      createForm,
-      el("p", { class: "muted" }, ["Sign-up page: ", el("strong", {}, location.origin + location.pathname + "#/signup")]),
+      createToggle,
+      createPanel,
     ]),
     el("section", {}, [
       el("h2", {}, "Team roster"),
       rosterForm,
       el("p", { class: "muted" }, ["Uploading replaces the previous roster completely: anyone you remove loses access. ", downloadBtn, " \u00b7 ", templateBtn]),
     ]),
-    el("section", {}, [el("h2", {}, "Players"), el("div", { class: "code-tools" }, playerSearch), clientsBox]),
   ]);
 
   const unInv = watchInvites((invites) => {
