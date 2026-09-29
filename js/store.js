@@ -419,6 +419,12 @@ export function watchVisibleDocuments(clientKey, cb) {
   return () => { un1(); un2(); };
 }
 
+/** Reports shared with everyone (no specific player). */
+export function watchEveryoneDocuments(cb) {
+  return onSnapshot(query(collection(db, "documents"), where("audienceClientKey", "==", null)), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.uploadedAt?.toMillis() ?? 0) - (a.uploadedAt?.toMillis() ?? 0))));
+}
+
 /** What a team member sees for one player: documents shared with everyone, plus that player's
  *  documents opened up to the team member's role. The latter are read from small pointer records
  *  at teamDocs/{player}/roles/{role}/docs/{docId}, because Firestore rules can only approve a

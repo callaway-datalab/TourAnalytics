@@ -1,6 +1,6 @@
 // Reports → View: pick a player and see every report they can see, by type.
 import { el, mount, formatWhen, subNav } from "../ui.js";
-import { adminAllClients, watchVisibleDocuments, getDocumentBlobUrl } from "../store.js";
+import { adminAllClients, watchVisibleDocuments, watchEveryoneDocuments, getDocumentBlobUrl } from "../store.js";
 import { REPORT_CATEGORIES, reportCategory, roleLabel, ANALYST_ROLE } from "../data.js";
 import { playerPicker } from "../playerPicker.js";
 
@@ -27,11 +27,14 @@ export async function render(main, { flash }) {
 
   const show = (player) => {
     unsub(); unsub = () => {};
-    if (!player) { mount(results, el("p", { class: "empty center" }, "Choose a player to see every report they've been sent.")); return; }
     mount(results, el("p", { class: "empty center" }, "Loading\u2026"));
-    unsub = watchVisibleDocuments(player.key, (docs) => {
+    // No player picked: the reports shared with everyone. A player: everything they can see.
+    const watch = player ? (cb) => watchVisibleDocuments(player.key, cb) : watchEveryoneDocuments;
+    unsub = watch((docs) => {
       mount(results, [
-        el("p", { class: "muted center" }, `${docs.length} ${docs.length === 1 ? "report" : "reports"} visible to ${player.label}, exactly as they see them on My Reports.`),
+        el("p", { class: "muted center" }, player
+          ? `${docs.length} ${docs.length === 1 ? "report" : "reports"} visible to ${player.label}, exactly as they see them on My Reports.`
+          : `${docs.length} ${docs.length === 1 ? "report" : "reports"} shared with everyone. Pick a player to see everything they've been sent.`),
         ...REPORT_CATEGORIES.map(([cat, label]) => {
           const items = docs.filter((d) => reportCategory(d) === cat);
           return el("section", {}, [el("h2", {}, label), items.length
@@ -44,13 +47,13 @@ export async function render(main, { flash }) {
                   return el("tr", {}, [
                     el("td", {}, [link, d.description ? el("div", { class: "muted" }, d.description) : null]),
                     el("td", {}, d.audienceClientKey
-                      ? `${player.label}${team.length ? ` + their ${team.map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only"}`
+                      ? `${player?.label}${team.length ? ` + their ${team.map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only"}`
                       : "Everyone"),
                     el("td", {}, formatWhen(d.uploadedAt)),
                   ]);
                 })),
               ]))
-            : el("p", { class: "empty" }, `No ${label.toLowerCase()} for ${player.label}.`)]);
+            : el("p", { class: "empty" }, player ? `No ${label.toLowerCase()} for ${player.label}.` : `No ${label.toLowerCase()} shared with everyone.`)]);
         }),
       ]);
     });

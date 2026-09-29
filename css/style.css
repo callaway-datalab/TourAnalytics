@@ -497,3 +497,12 @@ details.archive > summary { font-size: 1rem; }
 /* Numbers line up in columns */
 table, .num, .facts dd, .row-meta, .compare-chart { font-variant-numeric: tabular-nums; }
 .facts dd, .facts.glance dd { font-family: var(--font-body); font-weight: 900; letter-spacing: -0.01em; }
+
+/* Tighter spacing around the Upload | Analyze and Upload | View buttons */
+main > .subnav:first-child { margin-top: -1rem; }
+.subnav { margin-bottom: 0.9rem; }
+.subnav + .intro, .subnav + div > .player-picker { margin-top: 0; }
+.player-picker { margin-bottom: 0.75rem; }
+.analyze-compare { margin-top: 1.5rem; padding-top: 1.25rem; }
+.analyze-player[hidden] + .analyze-compare { border-top: 0; padding-top: 0; margin-top: 0.5rem; }
+.analyze-compare .chart-panel + div .table-scroll { margin-top: 1rem; }

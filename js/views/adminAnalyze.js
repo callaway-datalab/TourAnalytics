@@ -47,10 +47,8 @@ export async function render(main, { flash }) {
     stopPlayer(); stopDataset();
     stopPlayer = () => {}; stopDataset = () => {};
     redrawComparison(); // re-highlight
-    if (!p) {
-      mount(playerSection, el("p", { class: "empty center" }, "Choose a player to see their data exactly as they see it."));
-      return;
-    }
+    playerSection.hidden = !p; // nothing between the search and "Compare players" until a player is picked
+    if (!p) { mount(playerSection, null); return; }
     const tabs = el("nav", { class: "subnav small", "aria-label": "Data files" });
     mount(playerSection, [
       el("h2", {}, `What ${p.label} sees`),
