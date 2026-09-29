@@ -135,8 +135,14 @@ export async function render(main, { flash }) {
     const teamOf = new Map();
     for (const e of rosterCache.entries || []) {
       if (!teamOf.has(e.playerKey)) teamOf.set(e.playerKey, []);
-      teamOf.get(e.playerKey).push(`${e.name} (${roleLabel(e.role)})`);
+      teamOf.get(e.playerKey).push(e);
     }
+    // Each team member's name opens their portal (their account if they've signed up, else a roster preview).
+    const teamLinks = (entries) => entries.flatMap((e, i) => {
+      const acct = usersCache.find((u) => isTeamKey(u.clientKey) && u.kind !== "analyst" && norm(u.email) === e.email);
+      const href = acct ? portalHref(acct) : `#/view-as-roster/${encodeURIComponent(e.email)}`;
+      return [i ? ", " : null, el("a", { href, title: `See ${e.name}'s portal` }, e.name), ` (${roleLabel(e.role)})`];
+    });
     usersSnap.forEach((d) => { const s = perClient.get(d.data().clientKey); if (s) s.accounts++; });
     const now = Date.now();
     invitesSnap.forEach((d) => {
@@ -154,7 +160,7 @@ export async function render(main, { flash }) {
         el("td", {}, el("strong", {}, label)),
         el("td", {}, String(perClient.get(key)?.accounts || 0)),
         el("td", {}, String(perClient.get(key)?.openInvites || 0)),
-        el("td", {}, (teamOf.get(key) || []).join(", ") || el("span", { class: "muted" }, "\u2014")),
+        el("td", {}, (teamOf.get(key) || []).length ? teamLinks(teamOf.get(key)) : el("span", { class: "muted" }, "\u2014")),
         el("td", { class: "actions" }, el("a", { href: `#/view-as/${encodeURIComponent(key)}?label=${encodeURIComponent(label)}` }, "See their portal")),
       ]))),
     ])));
@@ -266,9 +272,10 @@ export async function render(main, { flash }) {
     const signupUrl = location.origin + location.pathname + "#/signup";
     const rows = [...people.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([email, p]) => {
       let status;
-      if (accounts.has(email)) status = [el("span", { class: "tag" }, "Signed up"), el("br"), el("a", { href: portalHref(accounts.get(email)) }, "See their portal")];
-      else if (codes.has(email)) status = [el("code", {}, formatCode(codes.get(email))), el("br"), el("span", { class: "muted" }, "Not signed up yet: send them this code")];
-      else status = el("span", { class: "muted" }, "Upload the roster again to make a code");
+      const see = el("a", { href: accounts.has(email) ? portalHref(accounts.get(email)) : `#/view-as-roster/${encodeURIComponent(email)}` }, "See their portal");
+      if (accounts.has(email)) status = [el("span", { class: "tag" }, "Signed up"), el("br"), see];
+      else if (codes.has(email)) status = [el("code", {}, formatCode(codes.get(email))), el("br"), el("span", { class: "muted" }, "Not signed up yet: send them this code"), el("br"), see];
+      else status = [el("span", { class: "muted" }, "Upload the roster again to make a code"), el("br"), see];
       const unknown = (key) => clientsCache.labels.size && !clientsCache.labels.has(key);
       return el("tr", {}, [
         el("td", {}, el("strong", {}, p.name)), el("td", {}, email),
@@ -351,7 +358,8 @@ export async function render(main, { flash }) {
       ...usersCache.filter((u) => u.kind === "analyst").map((u) => ({ target: { uid: u.uid }, name: u.name, email: u.email, access: u.access, allPlayers: u.allPlayers,
         status: [el("span", { class: "tag" }, "Signed up"), el("br"), el("a", { href: portalHref(u) }, "See their portal")] })),
       ...invitesCache.filter((v) => v.kind === "analyst" && !v.usedBy && !v.revoked && (!v.expiresAt || v.expiresAt.toMillis() > now))
-        .map((v) => ({ target: { code: v.code }, name: v.clientLabel, email: v.email, access: v.access, allPlayers: v.allPlayers, status: [el("code", {}, formatCode(v.code)), el("br"), el("span", { class: "muted" }, "Not signed up yet")] })),
+        .map((v) => ({ target: { code: v.code }, name: v.clientLabel, email: v.email, access: v.access, allPlayers: v.allPlayers,
+          status: [el("code", {}, formatCode(v.code)), el("br"), el("span", { class: "muted" }, "Not signed up yet"), el("br"), el("a", { href: `#/view-as-code/${v.code}` }, "See their portal")] })),
     ];
     const rows = people.map((p) => {
       const keys = Object.keys(p.access || {});

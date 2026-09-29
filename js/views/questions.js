@@ -74,7 +74,7 @@ export async function render(main, { previewClient, flash }) {
 
   const unsubs = [];
   if (readOnly) {
-    unsubs.push(watchAdminThreads((all) => showOwn(all.filter((t) => t.uid === team.uid))));
+    unsubs.push(watchAdminThreads((all) => showOwn(team.uid ? all.filter((t) => t.uid === team.uid) : [])));
   } else {
     unsubs.push(watchMyThreads(state.user.uid, (all) =>
       showOwn(previewingPlayer ? all.filter((t) => t.sample && t.clientKey === previewClient.key) : all)));

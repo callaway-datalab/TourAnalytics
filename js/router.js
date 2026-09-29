@@ -1,6 +1,6 @@
 import { getPreviewTeam, setPreviewTeam, effectiveTeam } from "./preview.js";
-import { isTeamKey } from "./data.js";
-import { getUserProfile } from "./store.js";
+import { isTeamKey, rosterByEmail } from "./data.js";
+import { getUserProfile, getTeamRoster, fetchInvite } from "./store.js";
 import { whenReady, getState, subscribe } from "./auth.js";
 import { renderShell, flash } from "./ui.js";
 
@@ -74,6 +74,26 @@ async function render() {
       previewClient = { key: u.clientKey, label: u.clientLabel };
       navigate("/dashboard");
     }
+    return;
+  }
+  // Admin: preview a roster team member or a Callaway Access code before (or without) them signing up,
+  // using the players the roster / code gives them.
+  if (raw.startsWith("/view-as-roster/") || raw.startsWith("/view-as-code/")) {
+    if (!state.isAdmin) { navigate(homeFor(state)); return; }
+    const id = decodeURIComponent(raw.split("/")[2].split("?")[0]);
+    let t = null;
+    if (raw.startsWith("/view-as-roster/")) {
+      const { entries = [] } = await getTeamRoster().catch(() => ({}));
+      const person = rosterByEmail(entries).get(id);
+      if (person) t = { uid: null, name: person.name, email: id, kind: null, access: person.access };
+    } else {
+      const inv = await fetchInvite(id).catch(() => null);
+      if (inv) t = { uid: null, name: inv.clientLabel, email: inv.email, kind: inv.kind || null, access: inv.access || {} };
+    }
+    if (!t) { navigate(homeFor(state)); return; }
+    setPreviewTeam(t);
+    previewClient = null;
+    navigate("/team");
     return;
   }
   if (raw === "/back-to-players") { previewClient = null; navigate(team.isTeam ? "/team" : homeFor(state)); return; }
