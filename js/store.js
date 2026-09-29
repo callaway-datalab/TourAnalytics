@@ -106,13 +106,36 @@ export function revokeInvite(code) {
 }
 
 /** Re-open an expired or revoked code, for as long as it was first given (or with no expiry). */
+/** Re-open a revoked code. Codes never expire; they work until revoked. */
 export function refreshInvite(inv) {
-  const span = inv.expiresAt && inv.createdAt ? inv.expiresAt.toMillis() - inv.createdAt.toMillis() : null;
-  return updateDoc(doc(db, "invites", inv.code), {
-    revoked: false,
-    createdAt: serverTimestamp(),
-    expiresAt: span ? Timestamp.fromMillis(Date.now() + span) : null,
+  return updateDoc(doc(db, "invites", inv.code), { revoked: false, expiresAt: null });
+}
+
+/** Codes no longer expire: clear any expiry left on codes nobody has used yet. */
+export async function clearInviteExpiry(invites) {
+  const stale = invites.filter((v) => v.expiresAt && !v.usedBy);
+  await Promise.all(stale.map((v) => updateDoc(doc(db, "invites", v.code), { expiresAt: null })));
+  return stale.length;
+}
+
+/** A code for a coach, caddy or other team member made by hand (not from the roster file). It's tied
+ *  to their email and carries the players they work with. Marked kind "team" so roster uploads leave
+ *  it (and the account made from it) alone. */
+export async function createTeamAccess({ name, email, role, playerKeys, labels }) {
+  const code = makeCode();
+  const r = normRole(role);
+  await setDoc(doc(db, "invites", code), {
+    clientKey: teamKey(), clientLabel: name, note: "", email: norm(email), kind: "team",
+    access: Object.fromEntries(playerKeys.map((k) => [k, { role: r, label: labels.get(k) || k.replace(/^c_/, "") }])),
+    createdAt: serverTimestamp(), expiresAt: null, usedBy: null, usedAt: null, revoked: false,
   });
+  return code;
+}
+
+/** Change which players a hand-made team member (account or unused code) works with. */
+export function setTeamPlayers(target, { role, playerKeys, labels }) {
+  const access = Object.fromEntries(playerKeys.map((k) => [k, { role: normRole(role), label: labels.get(k) || k.replace(/^c_/, "") }]));
+  return target.uid ? updateDoc(doc(db, "users", target.uid), { access }) : updateDoc(doc(db, "invites", target.code), { access });
 }
 
 export function deleteInvite(code) {
@@ -131,7 +154,7 @@ export async function createAnalystAccess({ name, email, playerKeys, allPlayers,
     clientKey: teamKey(), clientLabel: name, note: "Callaway Access", email: norm(email),
     kind: "analyst", allPlayers: !!allPlayers,
     access: analystAccess(allPlayers ? [...labels.keys()] : playerKeys, labels),
-    createdAt: serverTimestamp(), expiresAt: days > 0 ? Timestamp.fromMillis(Date.now() + days * 86400000) : null,
+    createdAt: serverTimestamp(), expiresAt: null,
     usedBy: null, usedAt: null, revoked: false,
   });
   return code;
@@ -214,7 +237,7 @@ export async function applyTeamRoster(entries, fileName = "") {
   let updated = 0;
   usersSnap.forEach((d) => {
     const u = d.data();
-    if (!isTeamKey(u.clientKey) || u.kind === "analyst") return; // analysts aren't managed by the roster
+    if (!isTeamKey(u.clientKey) || u.kind) return; // analysts and hand-made team codes aren't managed by the roster
     const email = norm(u.email);
     hasAccount.add(email);
     const next = byEmail.get(email)?.access || {};
@@ -225,7 +248,7 @@ export async function applyTeamRoster(entries, fileName = "") {
   const openCode = new Map();
   invitesSnap.forEach((d) => {
     const v = d.data();
-    if (!isTeamKey(v.clientKey) || v.kind === "analyst" || !v.email || v.usedBy || v.revoked || (v.expiresAt && v.expiresAt.toMillis() < now)) return;
+    if (!isTeamKey(v.clientKey) || v.kind || !v.email || v.usedBy || v.revoked || (v.expiresAt && v.expiresAt.toMillis() < now)) return;
     const email = norm(v.email);
     if (byEmail.has(email) && !hasAccount.has(email) && !openCode.has(email)) openCode.set(email, d);
     else ops.push((b) => b.update(d.ref, { revoked: true })); // removed from roster, already signed up, or a duplicate

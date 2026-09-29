@@ -534,3 +534,17 @@ main > .subnav:first-child { margin-top: -1rem; }
 .file-pick:focus-within .btn { outline: 3px solid var(--brand); outline-offset: 2px; }
 .file-name { font-size: 0.95rem; }
 .inline-form .file-pick { flex: none; }
+
+/* --- Player Access: tables show about five rows, then scroll --- */
+.table-scroll.five-rows { max-height: 21rem; overflow-y: auto; }
+.table-scroll.five-rows thead th { position: sticky; top: 0; z-index: 1; background: #1c201c; }
+.row-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; white-space: nowrap; font-size: 0.9rem; }
+.small { font-size: 0.82rem; }
+.create-code .type-pick { flex: 0 1 14rem; }
+.create-code .inline-form { margin: 0; }
+.code-fields { display: flex; flex-direction: column; gap: 0.8rem; }
+.tag.hot { background: var(--signal); color: #000; }
+.row-actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 0.15rem 0.9rem; max-width: 17rem; margin-left: auto; }
+.table-scroll.five-rows { max-height: 20.5rem; }
+.table-scroll.five-rows { max-height: 16.5rem; }          /* Players: ~5 rows */
+.table-scroll.five-rows.codes-rows { max-height: 23rem; } /* Access codes rows are taller */
