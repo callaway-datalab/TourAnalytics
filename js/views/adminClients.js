@@ -10,7 +10,7 @@ import {
 import { clientKey, formatCode, isTeamKey, roleLabel, parseTeamRoster, toCsv, ROSTER_COLUMNS, norm } from "../data.js";
 
 const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["other", "Other"]];
-const CODE_FILTERS = [["player", "Players"], ["coach", "Coaches"], ["caddy", "Caddies"], ["analyst", "Analysts"], ["other", "Other"]];
+const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["other", "Other"]];
 
 export async function render(main, { flash }) {
   let clientsCache = { labels: new Map() };
