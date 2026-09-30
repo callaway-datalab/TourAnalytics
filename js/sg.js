@@ -173,6 +173,7 @@ const monthLabel = (ym) => {
 /** Stat definitions shown in each category's "Stat Averages" table. */
 const STATS = {
   OTT: [
+    { label: "SG / Round", kind: "sgPerRound", higher: true, dp: 2 },
     { label: "SG / Attempt", kind: "sgPerAttempt", higher: true, dp: 3 },
     { label: "Attempts / Round", kind: "perRound", higher: null, dp: 1 },
     { label: "Driver Use %", kind: "driverPct", higher: null },
@@ -185,6 +186,7 @@ const STATS = {
     { label: "Back Spin (rpm)", field: "spin", kind: "mean", higher: null, dp: 0 },
   ],
   APP: [
+    { label: "SG / Round", kind: "sgPerRound", higher: true, dp: 2 },
     { label: "SG / Attempt", kind: "sgPerAttempt", higher: true, dp: 3 },
     { label: "Hit Green %", field: "onGreen", kind: "pct", higher: true },
     { label: "Avg Proximity (ft)", field: "proximity", kind: "mean", higher: false, dp: 1, onlyNotHoled: true },
@@ -192,6 +194,7 @@ const STATS = {
     { label: "Attempts / Round", kind: "perRound", higher: null, dp: 1 },
   ],
   ARG: [
+    { label: "SG / Round", kind: "sgPerRound", higher: true, dp: 2 },
     { label: "SG / Attempt", kind: "sgPerAttempt", higher: true, dp: 3 },
     { label: "Up & Down %", field: "upDown", kind: "pct", higher: true },
     { label: "Avg Proximity (ft)", field: "proximity", kind: "mean", higher: false, dp: 1, onlyNotHoled: true },
@@ -199,6 +202,7 @@ const STATS = {
     { label: "Attempts / Round", kind: "perRound", higher: null, dp: 1 },
   ],
   PUTT: [
+    { label: "SG / Round", kind: "sgPerRound", higher: true, dp: 2 },
     { label: "SG / Attempt", kind: "sgPerAttempt", higher: true, dp: 3 },
     { label: "Putts / Round", kind: "perRound", higher: false, dp: 1 },
     { label: "1-Putt %", kind: "onePutt", higher: true },
@@ -231,6 +235,8 @@ function statValue(def, rounds, idx, cat) {
       return shots.filter((s) => truthy(col(s, def.field)) === true).length;
     case "perRound":
       return rounds.length ? shots.reduce((a, s) => a + s.w, 0) / rounds.length : undefined;
+    case "sgPerRound":
+      return rounds.length ? shots.reduce((a, s) => a + s.sg, 0) / rounds.length : undefined;
     case "sgPerAttempt": {
       const w = shots.reduce((a, s) => a + s.w, 0);
       return w ? shots.reduce((a, s) => a + s.sg, 0) / w : undefined;
@@ -328,7 +334,8 @@ export const fmtSG = (v) => (v === null || v === undefined || isNaN(v) ? "\u2014
 /** Values present for each filter, for the dropdowns. Lie and distance follow the chosen category. */
 export function filterOptions(rounds, cat) {
   const uniq = (vals) => [...new Set(vals.filter((v) => v !== null && v !== undefined && v !== ""))];
-  const shots = rounds.flatMap((rd) => rd.shots.filter((s) => !cat || s.cat === cat));
+  const cats = !cat ? null : Array.isArray(cat) ? (cat.length ? cat : null) : [cat];
+  const shots = rounds.flatMap((rd) => rd.shots.filter((s) => !cats || cats.includes(s.cat)));
   const byNum = (a, b) => lead(a) - lead(b) || a.localeCompare(b);
   const lieRank = (l) => { const i = LIE_ORDER.indexOf(squash(l)); return i < 0 ? 99 : i; };
   const dists = uniq(shots.map((s) => s.dist));
@@ -343,12 +350,13 @@ export function filterOptions(rounds, cat) {
 
 /**
  * Apply filters. Year / tournament / round pick which rounds count (the "per round" denominator);
- * category / lie / distance pick which shots count. f = { year, event, roundNo, cat, lie, dist, span }.
+ * category / lie / distance pick which shots count. f = { year, event, roundNo, cats: [...], lie, dist, span }.
  */
 export function applyFilters(rounds, f = {}) {
   let rs = rounds.filter((rd) => (!f.year || rd.year === f.year) && (!f.event || rd.event === f.event) && (!f.roundNo || rd.roundNo === f.roundNo));
   if (f.span > 0) rs = rs.slice(-f.span);
-  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!f.cat || s.cat === f.cat) && (!f.lie || s.lie === f.lie) && (!f.dist || s.dist === f.dist)) }));
+  const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
+  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!f.lie || s.lie === f.lie) && (!f.dist || s.dist === f.dist)) }));
 }
 
 /** Strokes gained per round, attempts per round and SG per attempt for a (filtered) set of rounds. */

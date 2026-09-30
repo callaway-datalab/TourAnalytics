@@ -40,7 +40,7 @@ const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || "All categories
 export function sgDashboard(container, opts) {
   const { idx, mode } = opts;
   const st = opts.state || {};
-  Object.assign(st, { span: st.span ?? 0, year: st.year ?? "", event: st.event ?? "", roundNo: st.roundNo ?? "", cat: st.cat ?? "", lie: st.lie ?? "", dist: st.dist ?? "", trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "" });
+  Object.assign(st, { span: st.span ?? 0, year: st.year ?? "", event: st.event ?? "", roundNo: st.roundNo ?? "", cats: st.cats ?? [], lie: st.lie ?? "", dist: st.dist ?? "", trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "" });
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
   let me = opts.me;
@@ -52,10 +52,12 @@ export function sgDashboard(container, opts) {
   function draw() {
     destroyCharts();
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
-    const opt = filterOptions(base, st.cat || null);
+    // A distance belongs to one category; it only applies while that's the one category picked.
+    if (st.dist && !(st.cats.length === 1 && st.cats[0] === st.distCat)) st.dist = "";
+    const opt = filterOptions(base, st.cats);
     if (st.lie && !opt.lie.includes(st.lie)) st.lie = "";
     if (st.dist && !opt.dist.includes(st.dist)) st.dist = "";
-    const f = { span: Number(st.span), year: st.year, event: st.event, roundNo: st.roundNo, cat: st.cat, lie: st.lie, dist: st.dist };
+    const f = { span: Number(st.span), year: st.year, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist };
     // Rankings from the shared summary can't follow lie / distance.
     const rankF = fieldIsSummary() ? { ...f, lie: "", dist: "" } : f;
     const slicedField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, rankF) }));
@@ -98,17 +100,17 @@ export function sgDashboard(container, opts) {
   // Picking a distance also picks its category; with a category chosen, only its distances show.
   function distanceSelect() {
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
-    const groups = CATEGORIES.filter(([k]) => !st.cat || st.cat === k)
+    const groups = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
       .map(([k, label]) => ({ k, label, dists: filterOptions(base, k).dist }))
       .filter((g) => g.dists.length);
     const s = el("select", { "aria-label": "Distance" }, [
       el("option", { value: "" }, "All distances"),
       ...groups.map((g) => el("optgroup", { label: g.label }, g.dists.map((d) =>
-        el("option", { value: `${g.k}|${d}`, selected: st.cat === g.k && st.dist === d }, d)))),
+        el("option", { value: `${g.k}|${d}`, selected: st.distCat === g.k && st.dist === d }, d)))),
     ]);
     s.addEventListener("change", () => {
       if (!s.value) st.dist = "";
-      else { const [k, ...rest] = s.value.split("|"); st.cat = k; st.dist = rest.join("|"); }
+      else { const [k, ...rest] = s.value.split("|"); st.cats = [k]; st.distCat = k; st.dist = rest.join("|"); }
       draw();
     });
     return el("label", {}, ["Distance", s]);
@@ -130,15 +132,31 @@ export function sgDashboard(container, opts) {
       reset,
     ]);
   }
+  // Category pills: pick one or several (e.g. Off-the-Tee + Approach + Around-the-Green = tee to green).
+  // "All" clears the choice; picking all four is the same as All.
   function catPills() {
-    return el("nav", { class: "subnav sg-tabs", "aria-label": "Category" }, [["", "All"], ...CATEGORIES].map(([k, label]) => {
-      const a = el("a", { href: "#", "aria-current": k === st.cat ? "page" : null }, label);
-      a.addEventListener("click", (e) => { e.preventDefault(); st.cat = k; draw(); });
+    const allOn = !st.cats.length;
+    const all = el("a", { href: "#", "aria-current": allOn ? "page" : null }, "All");
+    all.addEventListener("click", (e) => { e.preventDefault(); st.cats = []; draw(); });
+    return el("nav", { class: "subnav sg-tabs", "aria-label": "Categories (pick one or more)" }, [all, ...CATEGORIES.map(([k, label]) => {
+      const on = st.cats.includes(k);
+      const a = el("a", { href: "#", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false" }, label);
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        st.cats = on ? st.cats.filter((x) => x !== k) : [...st.cats, k];
+        if (st.cats.length === CATEGORIES.length) st.cats = [];
+        st.cats.sort((x, y) => CATEGORIES.findIndex(([c]) => c === x) - CATEGORIES.findIndex(([c]) => c === y));
+        draw();
+      });
       return a;
-    }));
+    })]);
   }
+  const T2G = ["OTT", "APP", "ARG"];
+  const catsName = () => (!st.cats.length ? "All categories"
+    : st.cats.length === 3 && T2G.every((k) => st.cats.includes(k)) ? "Tee to Green"
+    : st.cats.map(catName).join(" + "));
   const describe = () => [
-    st.cat ? catName(st.cat) : "All categories",
+    catsName(),
     st.year, st.event, st.roundNo ? `Round ${st.roundNo}` : "", st.lie, st.dist,
     Number(st.span) > 0 ? `last ${st.span} rounds` : "",
   ].filter(Boolean).join(" \u00b7 ");
@@ -155,7 +173,7 @@ export function sgDashboard(container, opts) {
         cell("Attempts / Round", t.attemptsPerRound === null ? "\u2014" : nf1.format(t.attemptsPerRound)),
         cell("SG / Attempt", t.sgPerAttempt === null ? "\u2014" : `${t.sgPerAttempt >= 0 ? "+" : ""}${t.sgPerAttempt.toFixed(3)}`),
         cell("Rounds", String(t.rounds)),
-        cell(fieldIsSummary() && (st.lie || st.dist) ? `Rank \u00b7 ${catName(st.cat)}` : "Rank", r ? `${r.rank} of ${r.of}` : "\u2014"),
+        cell(fieldIsSummary() && (st.lie || st.dist) ? `Rank \u00b7 ${catsName()}` : "Rank", r ? `${r.rank} of ${r.of}` : "\u2014"),
       ]),
       fieldIsSummary() && (st.lie || st.dist) ? el("p", { class: "muted small center" }, "Rank uses the category and rounds you've picked; rankings don't break down by lie or distance.") : null,
     ]);
@@ -181,12 +199,14 @@ export function sgDashboard(container, opts) {
       if (!me) return el("div", { class: "sg-card" }, [el("h3", {}, label), el("p", { class: "sg-value muted" }, "\u2014")]);
       const r = rankOf(fieldAll, me.key, (rs) => sgPerRound(rs)[k]);
       const pct = r && r.of > 1 ? 1 - (r.rank - 1) / (r.of - 1) : 1;
-      const card = el("div", { class: "sg-card" + (st.cat === k ? " on" : ""), role: "button", tabindex: "0", title: `Show ${label.replace("SG: ", "")}` }, [
+      const pick = k === "TOTAL" ? [] : k === "T2G" ? T2G : [k];
+      const on = pick.length === st.cats.length && pick.every((x) => st.cats.includes(x));
+      const card = el("div", { class: "sg-card" + (on ? " on" : ""), role: "button", tabindex: "0", title: `Show ${label.replace("SG: ", "")}` }, [
         el("h3", {}, label),
         el("p", { class: "sg-value", style: `color:${gradeColor(pct)}` }, fmtSG(mySG[k])),
         el("p", { class: "sg-rank" }, r ? `Rank ${r.rank} of ${r.of}` : ""),
       ]);
-      const go = () => { st.cat = ["OTT", "APP", "ARG", "PUTT"].includes(k) ? k : ""; draw(); };
+      const go = () => { st.cats = [...pick]; draw(); };
       card.addEventListener("click", go);
       card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
       return card;
@@ -196,11 +216,17 @@ export function sgDashboard(container, opts) {
   /* ------------------------------ category detail ------------------------------ */
   function detailBlocks(mine, slicedField) {
     const blocks = [];
-    const cat = st.cat;
+    const cat = st.cats.length === 1 ? st.cats[0] : ""; // one category: its full detail
     if (!cat) {
-      // All categories: where the strokes are gained and lost.
-      const bars = CATEGORIES.map(([k, l]) => ({ label: l, value: sliceTotals(mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === k) }))).sgPerRound ?? 0 }));
-      blocks.push(panelBox("SG / Round by Category", chartBox((c) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), { title: "SG / round" }))));
+      // All, or several categories: where the strokes are gained and lost among the ones picked.
+      const shown = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k));
+      const bars = shown.map(([k, l]) => ({ label: l, value: sliceTotals(mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === k) }))).sgPerRound ?? 0 }));
+      const byCat = panelBox("SG / Round by Category", chartBox((c) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), { title: "SG / round" })));
+      const lies = sgBy(mine, idx, null, "lie");
+      blocks.push(lies && lies.length > 1
+        ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), {
+            title: "SG / round", tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` })))])
+        : byCat);
     } else {
       const comparable = !(fieldIsSummary() && (st.lie || st.dist)); // the field summary has no lie / distance detail
       const stats = statTable(cat, mine, comparable ? slicedField.map((p) => p.rounds) : [], idx);
@@ -208,7 +234,8 @@ export function sgDashboard(container, opts) {
       blocks.push(panelBox("Stat Averages", stats.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain stats" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, "Stat"), el("th", { class: "num" }, me.label), el("th", { class: "num" }, others)])),
         el("tbody", {}, stats.map((s) => {
-          const fmt = (v) => (v === null || v === undefined ? "\u2014" : ["pct", "onePutt", "driverPct"].includes(s.kind) ? `${nf1.format(v)}%` : v.toFixed(s.dp ?? 1));
+          const fmt = (v) => (v === null || v === undefined ? "\u2014" : ["pct", "onePutt", "driverPct"].includes(s.kind) ? `${nf1.format(v)}%`
+            : s.kind === "sgPerRound" || s.kind === "sgPerAttempt" ? `${v >= 0 ? "+" : ""}${v.toFixed(s.dp ?? 2)}` : v.toFixed(s.dp ?? 1));
           const better = s.higher === null || s.field === null ? null : s.higher ? s.value >= s.field : s.value <= s.field;
           return el("tr", {}, [el("td", {}, s.label), el("td", { class: "num" + (better === null ? "" : better ? " good" : " bad") }, fmt(s.value)), el("td", { class: "num muted" }, fmt(s.field))]);
         })),

@@ -3,6 +3,8 @@ import { getState } from "../auth.js";
 import { watchClientDatasets, getDatasetRows, getFieldStats } from "../store.js";
 import { detectColumns, isShotData, prepare, summaryPlayers } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
+import { plainName, teamLabels } from "../names.js";
+import { effectiveTeam } from "../preview.js";
 import { render as renderDataset } from "./dataset.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
 
@@ -34,8 +36,11 @@ export async function render(main, { previewClient, flash }) {
       mount(box, el("p", { class: "empty center" }, "Loading\u2026"));
       const [rows, summary] = await Promise.all([getDatasetRows(clientKey, d.id, d.chunkCount), getFieldStats(d.id).catch(() => null)]);
       if (shownVersion !== version) return;
-      const field = summaryPlayers(summary).map((p) => ({ ...p, label: p.name || p.key.replace(/^c_/, "") }));
-      const label = field.find((p) => p.key === clientKey)?.label || d.playerName || previewClient?.label || d.clientLabel;
+      // Names without "(ID)": a coach keeps the ID only for their own players who share a name.
+      const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
+      const shown = (key, name) => tl.get(key) ?? plainName(name || key.replace(/^c_/, ""));
+      const field = summaryPlayers(summary).map((p) => ({ ...p, label: shown(p.key, p.name) }));
+      const label = field.find((p) => p.key === clientKey)?.label || shown(clientKey, d.playerName || previewClient?.label || d.clientLabel);
       const me = { key: clientKey, label, rounds: prepare(rows, idx) };
       const inner = el("div");
       mount(box, inner);

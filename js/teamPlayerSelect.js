@@ -3,12 +3,14 @@
 import { el } from "./ui.js";
 import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
+import { teamLabels } from "./names.js";
 
 export function teamPlayerSelect(previewClient, page) {
   const team = effectiveTeam(getState());
   if (!team.isTeam || !previewClient) return null;
-  const players = Object.entries(team.teamAccess)
-    .map(([key, v]) => ({ key, label: v.label || key.replace(/^c_/, "") }))
+  const names = teamLabels(team.teamAccess);
+  const players = Object.keys(team.teamAccess)
+    .map((key) => ({ key, label: names.get(key) }))
     .sort((a, b) => a.label.localeCompare(b.label));
   if (players.length < 2) return null;
   const sel = el("select", { "aria-label": "Player" }, players.map((p) =>

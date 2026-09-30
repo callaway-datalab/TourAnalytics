@@ -1,5 +1,6 @@
 import { getPreviewTeam, setPreviewTeam, effectiveTeam } from "./preview.js";
 import { isTeamKey, rosterByEmail } from "./data.js";
+import { teamLabels } from "./names.js";
 import { getUserProfile, getTeamRoster, fetchInvite } from "./store.js";
 import { whenReady, getState, subscribe } from "./auth.js";
 import { renderShell, flash } from "./ui.js";
@@ -113,7 +114,7 @@ async function render() {
     // Optional page to land on (the player dropdown keeps you on Data or Reports).
     const to = ["/dashboard", "/documents"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
     if (team.isTeam && team.teamAccess[key]) {
-      previewClient = { key, label: team.teamAccess[key].label || label, role: team.teamAccess[key].role };
+      previewClient = { key, label: teamLabels(team.teamAccess).get(key) || label, role: team.teamAccess[key].role };
     } else if (state.isAdmin) {
       setPreviewTeam(null); // "See their portal" on a player: a plain player preview
       previewClient = { key, label };
@@ -151,7 +152,7 @@ async function render() {
       (team.teamAccess[a].label || a).localeCompare(team.teamAccess[b].label || b));
     if (keys.length) {
       const key = lastTeamPlayer && team.teamAccess[lastTeamPlayer] ? lastTeamPlayer : keys[0];
-      previewClient = { key, label: team.teamAccess[key].label || key.replace(/^c_/, ""), role: team.teamAccess[key].role };
+      previewClient = { key, label: teamLabels(team.teamAccess).get(key) || key.replace(/^c_/, ""), role: team.teamAccess[key].role };
       navigate("/dashboard");
       return;
     }

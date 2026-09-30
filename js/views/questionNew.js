@@ -4,6 +4,7 @@ import { getState } from "../auth.js";
 import { askQuestion, getPlayerTeam, uploadErrorMessage } from "../store.js";
 import { attachPicker } from "../attachments.js";
 import { effectiveTeam } from "../preview.js";
+import { teamLabels } from "../names.js";
 
 export async function render(main, { flash, previewClient }) {
   const state = getState();
@@ -13,15 +14,14 @@ export async function render(main, { flash, previewClient }) {
 
   // Team members: which of their players is this about? (Or none in particular.)
   const aboutSel = team.isTeam ? el("select", {}, [
-    ...Object.entries(team.teamAccess)
-      .map(([key, g]) => ({ key, label: g.label || key.replace(/^c_/, "") }))
+    ...[...teamLabels(team.teamAccess)].map(([key, label]) => ({ key, label }))
       .sort((a, b) => a.label.localeCompare(b.label))
       .map((p) => el("option", { value: p.key, selected: previewClient?.key === p.key }, p.label)),
     el("option", { value: "" }, "General (not about one player)"),
   ]) : null;
   const about = () => {
     if (!aboutSel || !aboutSel.value) return null;
-    return { key: aboutSel.value, label: team.teamAccess[aboutSel.value]?.label || aboutSel.value.replace(/^c_/, "") };
+    return { key: aboutSel.value, label: teamLabels(team.teamAccess).get(aboutSel.value) || aboutSel.value.replace(/^c_/, "") };
   };
   const subject = el("input", { maxLength: 150, placeholder: "What is this about?", required: true, autofocus: true });
   const body = el("textarea", { rows: 8, maxLength: 5000, placeholder: "Include the table, month or figure you're asking about.", required: true });
