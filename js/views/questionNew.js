@@ -3,10 +3,26 @@ import { roleLabel } from "../data.js";
 import { getState } from "../auth.js";
 import { askQuestion, getPlayerTeam, uploadErrorMessage } from "../store.js";
 import { attachPicker } from "../attachments.js";
+import { effectiveTeam } from "../preview.js";
 
 export async function render(main, { flash, previewClient }) {
   const state = getState();
-  const adminPreview = state.isAdmin && previewClient;
+  const team = effectiveTeam(state);         // a coach/caddy/analyst/other (or the admin previewing one)
+  const adminPreview = state.isAdmin && (!!previewClient || team.preview);
+  const playerPreview = state.isAdmin && !!previewClient && !team.preview;
+
+  // Team members: which of their players is this about? (Or none in particular.)
+  const aboutSel = team.isTeam ? el("select", {}, [
+    ...Object.entries(team.teamAccess)
+      .map(([key, g]) => ({ key, label: g.label || key.replace(/^c_/, "") }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((p) => el("option", { value: p.key, selected: previewClient?.key === p.key }, p.label)),
+    el("option", { value: "" }, "General (not about one player)"),
+  ]) : null;
+  const about = () => {
+    if (!aboutSel || !aboutSel.value) return null;
+    return { key: aboutSel.value, label: team.teamAccess[aboutSel.value]?.label || aboutSel.value.replace(/^c_/, "") };
+  };
   const subject = el("input", { maxLength: 150, placeholder: "What is this about?", required: true, autofocus: true });
   const body = el("textarea", { rows: 8, maxLength: 5000, placeholder: "Include the table, month or figure you're asking about.", required: true });
   const submit = el("button", { class: "btn", type: "submit" }, "Send question");
@@ -16,12 +32,12 @@ export async function render(main, { flash, previewClient }) {
   // Who else gets it: the administrator always; team members (from the roster) unless unticked.
   // Shown to players, and to the admin previewing a player. Team members asking their own
   // questions don't get this choice.
-  const playerKey = adminPreview ? previewClient.key : (!state.isTeam && !state.isAdmin ? state.profile?.clientKey : null);
+  const playerKey = playerPreview ? previewClient.key : (!state.isTeam && !state.isAdmin ? state.profile?.clientKey : null);
   const teamBox = el("fieldset", { class: "check-group", hidden: true });
-  let team = [];
+  let teamList = [];
   if (playerKey) {
     getPlayerTeam(playerKey).then((members) => {
-      team = members;
+      teamList = members;
       mount(teamBox, [
         el("legend", {}, "Who gets this question"),
         el("label", {}, [el("input", { type: "checkbox", checked: true, disabled: true }), "Callaway Analysts (always)"]),
@@ -46,19 +62,23 @@ export async function render(main, { flash, previewClient }) {
       if (!subject.value.trim() || !body.value.trim()) { flash("Add a subject and your question.", "error"); return; }
       submit.disabled = true; submit.textContent = "Sending\u2026";
       try {
+        const a = about();
         const id = await askQuestion(adminPreview
           ? {
-            uid: state.user.uid, clientKey: previewClient.key, clientLabel: previewClient.label,
-            askerName: "Sample (admin preview)", askerEmail: state.user.email || "",
-            subject: subject.value.trim(), body: body.value.trim(), sample: true, // never shared with the team
+            // A sample from your preview: stored under your account, never sent to anyone else.
+            uid: state.user.uid,
+            clientKey: team.preview ? (a?.key || previewClient?.key || "t_preview") : previewClient.key,
+            clientLabel: team.preview ? (a?.label || team.name) : previewClient.label,
+            askerName: team.preview ? `Sample (preview of ${team.name})` : "Sample (admin preview)", askerEmail: state.user.email || "",
+            subject: subject.value.trim(), body: body.value.trim(), sample: true, about: team.preview ? a : null,
             files: picker.files(), onProgress,
           }
           : {
             uid: state.user.uid, clientKey: state.profile.clientKey, clientLabel: state.profile.clientLabel,
             askerName: state.profile.name, askerEmail: state.profile.email,
             subject: subject.value.trim(), body: body.value.trim(),
-            shareWith: [...teamBox.querySelectorAll("input[value]:checked")].map((c) => team[Number(c.value)]),
-            files: picker.files(), onProgress,
+            shareWith: [...teamBox.querySelectorAll("input[value]:checked")].map((c) => teamList[Number(c.value)]),
+            files: picker.files(), onProgress, about: a,
           });
         location.hash = `#/questions/${id}`;
       } catch (err) {
@@ -67,6 +87,7 @@ export async function render(main, { flash, previewClient }) {
       }
     },
   }, [
+    aboutSel ? el("label", {}, ["Which player is this about?", aboutSel]) : null,
     el("label", {}, ["Subject", subject]),
     el("label", {}, ["Your question", body]),
     picker.node,
@@ -76,7 +97,7 @@ export async function render(main, { flash, previewClient }) {
 
   mount(main, [
     el("header", { class: "page-head" }, [el("p", { class: "crumb" }, el("a", { href: "#/questions" }, "My Questions")), el("h1", {}, "Ask a new question"),
-      adminPreview ? el("p", { class: "muted" }, `This is what ${previewClient.label} sees when asking a question. Your sample lands in your own Questions inbox, marked "Sample", so you can reply and see the whole round trip.`) : null]),
+      adminPreview ? el("p", { class: "muted" }, `This is what ${team.preview ? team.name : previewClient.label} sees when asking a question. Your sample lands in your own Questions inbox, marked "Sample", so you can reply and see the whole round trip.`) : null]),
     form,
   ]);
   return () => {};

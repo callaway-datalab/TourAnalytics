@@ -20,7 +20,7 @@ export async function render(main, { flash }) {
     const row = (t) => el("li", {}, [
       el("a", { class: "row-main", href: `#/admin/questions/${t.id}` }, [
         el("span", { class: "row-title" }, t.subject),
-        el("span", { class: "muted" }, `${t.askerName} \u00b7 client ${t.clientLabel}`),
+        el("span", { class: "muted" }, t.aboutLabel ? `${t.askerName} \u00b7 about ${t.aboutLabel}` : `${t.askerName} \u00b7 client ${t.clientLabel}`),
       ]),
       el("span", { class: "row-meta" }, [
         t.sample ? el("span", { class: "tag muted-tag" }, "Sample") : null, t.sample ? " " : null,

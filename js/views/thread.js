@@ -78,7 +78,7 @@ export async function render(main, { params, routeId, flash }) {
     }
     if (isAdmin) {
       mount(metaEl, isTeamKey(t.clientKey)
-        ? [`From ${t.askerName} \u00b7 ${t.askerEmail} \u00b7 `, el("strong", {}, "team member")]
+        ? [`From ${t.askerName} \u00b7 ${t.askerEmail} \u00b7 `, el("strong", {}, "team member"), t.aboutLabel ? ` \u00b7 about ${t.aboutLabel}` : ""]
         : [
           `From ${t.askerName} \u00b7 ${t.askerEmail} \u00b7 client ID `, el("strong", {}, t.clientLabel), " \u00b7 ",
           el("a", { href: `#/view-as/${encodeURIComponent(t.clientKey)}?label=${encodeURIComponent(t.clientLabel)}` }, "See their portal"),

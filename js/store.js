@@ -635,7 +635,7 @@ export function watchMessages(threadId, cb) {
 
 /** sample: true marks a test question the admin sends from the player preview. It's stored under the
  *  admin's own account, so the real player never sees it. */
-export async function askQuestion({ uid, clientKey, clientLabel, askerName, askerEmail, subject, body, sample = false, shareWith = [], files = [], onProgress }) {
+export async function askQuestion({ uid, clientKey, clientLabel, askerName, askerEmail, subject, body, sample = false, shareWith = [], files = [], onProgress, about = null }) {
   checkAttachments(files);
   // Two sequential writes, not one batch: the message-create rule reads the parent thread to
   // confirm ownership, and a sibling document created in the same batch isn't guaranteed visible
@@ -645,6 +645,8 @@ export async function askQuestion({ uid, clientKey, clientLabel, askerName, aske
     uid, clientKey, clientLabel, askerName, askerEmail, subject,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(), adminUnread: true, userUnread: false, lastFromAdmin: false,
     ...(sample ? { sample: true } : {}),
+    // A coach / caddy / other can say which of their players the question is about.
+    ...(about ? { aboutKey: about.key, aboutLabel: about.label } : {}),
     // Team members the player chose to include. They can read the conversation; the admin always gets it.
     sharedWith: shareWith.map((m) => norm(m.email)),
     sharedWithNames: shareWith.map((m) => ({ name: m.name, role: m.role })),

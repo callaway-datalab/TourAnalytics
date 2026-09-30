@@ -35,14 +35,14 @@ export async function render(main, { previewClient, flash }) {
       el("p", { class: "muted" }, "What the player has actually asked. Opening one takes you to it in your Questions inbox."), theirList])
     : null;
 
+  const previewName = previewingTeam ? team.name : previewClient?.label;
   mount(main, [
-    readOnly
-      ? el("p", { class: "muted intro" }, `${team.name}'s questions, read-only. Opening one takes you to it in your Questions inbox.`)
-      : el("div", { class: "page-actions" }, [
-        el("a", { class: "btn", href: "#/questions/new" }, "Ask a new question"),
-        previewingPlayer ? el("p", { class: "muted" },
-          `Questions you ask while previewing ${previewClient.label} are samples: they go to your own inbox, and ${previewClient.label} never sees them.`) : null,
-      ]),
+    el("div", { class: "page-actions" }, [
+      el("a", { class: "btn", href: "#/questions/new" }, "Ask a new question"),
+      previewingPlayer || previewingTeam ? el("p", { class: "muted" },
+        `Questions you ask while previewing ${previewName} are samples: they go to your own inbox, and ${previewName} never sees them.`) : null,
+    ]),
+    readOnly ? el("h2", {}, `${team.name}'s questions`) : null,
     theirSection,
     // In a player preview only the player's own questions are shown (samples go to your inbox).
     previewingPlayer ? null : list,
