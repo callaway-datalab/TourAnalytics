@@ -19,7 +19,7 @@ export async function render(main, { flash }) {
   let displayLabels = new Map();   // player key -> name (the ID when there's no name)
 
   const pickerBox = el("div");
-  const fileSel = el("select", { "aria-label": "Data file" });
+  let fileId = "";                 // the file being analyzed: the newest strokes-gained file
   const status = el("p", { class: "muted center", role: "status" });
   const portalLink = el("p", { class: "center" });
   const body = el("div", { class: "sg-body" });
@@ -27,7 +27,6 @@ export async function render(main, { flash }) {
   mount(main, [
     subNav([["#/admin/datasets", "Upload"], ["#/admin/analyze", "Analyze"]], "#/admin/analyze"),
     pickerBox,
-    el("div", { class: "analyze-controls" }, [el("label", {}, ["Data file", fileSel])]),
     portalLink,
     status,
     body,
@@ -57,7 +56,7 @@ export async function render(main, { flash }) {
   const meFrom = () => (player && fieldPlayers.find((p) => p.key === player.key)) || null;
 
   async function refresh() {
-    const ds = datasets.find((d) => d.id === fileSel.value);
+    const ds = datasets.find((d) => d.id === fileId);
     dash?.destroy(); dash = null;
     if (!ds) { status.textContent = ""; mount(body, el("p", { class: "empty center" }, "Upload a data file to analyze.")); return; }
     const token = ++loadToken;
@@ -118,16 +117,10 @@ export async function render(main, { flash }) {
     ? el("a", { href: `#/view-as/${encodeURIComponent(player.key)}?label=${encodeURIComponent(player.label)}` }, `See ${player.label}'s portal`)
     : null);
 
-  fileSel.addEventListener("change", refresh);
   const stopFiles = watchAdminDatasets((list) => {
-    const keep = fileSel.value;
-    datasets = list;
-    mount(fileSel, list.length ? list.map((d) => el("option", { value: d.id }, d.name)) : el("option", { value: "" }, "No data files yet"));
-    if (list.some((d) => d.id === keep)) fileSel.value = keep;
-    else {
-      const sg = list.find((d) => isShotData(detectColumns(d.columns || [])));
-      if (sg) fileSel.value = sg.id;
-    }
+    datasets = list; // newest first
+    const sg = list.find((d) => isShotData(detectColumns(d.columns || [])));
+    fileId = (sg || list[0])?.id || "";
     refresh();
   });
 

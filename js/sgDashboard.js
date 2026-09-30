@@ -195,16 +195,25 @@ export function sgDashboard(container, opts) {
     const mineAll = me ? applyFilters(me.rounds, roundsOnly) : null;
     const fieldAll = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, roundsOnly) }));
     const mySG = mineAll ? sgPerRound(mineAll) : null;
+    // No player picked: each card shows the average of every player's own SG / round.
+    const playing = fieldAll.filter((p) => p.rounds.length);
+    const fieldAvg = (k) => (playing.length ? playing.reduce((a, p) => a + sgPerRound(p.rounds)[k], 0) / playing.length : null);
     return el("div", { class: "sg-cards" }, SUMMARY.map(([k, label]) => {
-      if (!me) return el("div", { class: "sg-card" }, [el("h3", {}, label), el("p", { class: "sg-value muted" }, "\u2014")]);
-      const r = rankOf(fieldAll, me.key, (rs) => sgPerRound(rs)[k]);
-      const pct = r && r.of > 1 ? 1 - (r.rank - 1) / (r.of - 1) : 1;
       const pick = k === "TOTAL" ? [] : k === "T2G" ? T2G : [k];
       const on = pick.length === st.cats.length && pick.every((x) => st.cats.includes(x));
+      let value, color, sub;
+      if (me) {
+        const r = rankOf(fieldAll, me.key, (rs) => sgPerRound(rs)[k]);
+        const pct = r && r.of > 1 ? 1 - (r.rank - 1) / (r.of - 1) : 1;
+        value = mySG[k]; color = gradeColor(pct); sub = r ? `Rank ${r.rank} of ${r.of}` : "";
+      } else {
+        value = fieldAvg(k); color = value === null ? "inherit" : sgColor(value);
+        sub = `Average of ${playing.length} ${playing.length === 1 ? "player" : "players"}`;
+      }
       const card = el("div", { class: "sg-card" + (on ? " on" : ""), role: "button", tabindex: "0", title: `Show ${label.replace("SG: ", "")}` }, [
         el("h3", {}, label),
-        el("p", { class: "sg-value", style: `color:${gradeColor(pct)}` }, fmtSG(mySG[k])),
-        el("p", { class: "sg-rank" }, r ? `Rank ${r.rank} of ${r.of}` : ""),
+        el("p", { class: "sg-value", style: `color:${color}` }, fmtSG(value)),
+        el("p", { class: "sg-rank" }, sub),
       ]);
       const go = () => { st.cats = [...pick]; draw(); };
       card.addEventListener("click", go);

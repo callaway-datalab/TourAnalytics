@@ -326,7 +326,11 @@ export function rank(entries) {
 const GRADES = ["#e51f1f", "#ef7b2b", "#f2a134", "#f5cc56", "#f7e379", "#d4df57", "#bbdb44", "#7bd32e", "#44ce1b"];
 export const gradeColor = (pct) => GRADES[Math.max(0, Math.min(GRADES.length - 1, Math.round(pct * (GRADES.length - 1))))];
 export const sgColor = (v) => (v >= 0 ? "#44ce1b" : "#e51f1f");
-export const fmtSG = (v) => (v === null || v === undefined || isNaN(v) ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
+export const fmtSG = (v) => {
+  if (v === null || v === undefined || isNaN(v)) return "\u2014";
+  const r = Math.round(v * 100) / 100 || 0; // no "-0.00"
+  return `${r >= 0 ? "+" : ""}${r.toFixed(2)}`;
+};
 
 
 /* ======================= Filters (year, tournament, round, category, lie, distance) ======================= */
