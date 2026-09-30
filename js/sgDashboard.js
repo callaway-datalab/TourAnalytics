@@ -191,7 +191,7 @@ export function sgDashboard(container, opts) {
   function cards(slicedField, f) {
     // Cards cover every category for the rounds picked (year, tournament, round, span), so their
     // values and ranks always compare like with like.
-    const roundsOnly = { ...f, cat: "", lie: "", dist: "" };
+    const roundsOnly = { ...f, cats: [], lie: "", dist: "" }; // every category, whatever pills are picked
     const mineAll = me ? applyFilters(me.rounds, roundsOnly) : null;
     const fieldAll = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, roundsOnly) }));
     const mySG = mineAll ? sgPerRound(mineAll) : null;
