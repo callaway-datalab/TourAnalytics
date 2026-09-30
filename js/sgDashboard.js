@@ -61,6 +61,14 @@ export function sgDashboard(container, opts) {
     const slicedField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, rankF) }));
     const mine = me ? applyFilters(me.rounds, f) : null;
 
+    // Rebuilding the dashboard would briefly shrink the page and jump it to the top. Hold its
+    // height and put the scroll position back, so changing a filter or pill keeps your place.
+    const y = window.scrollY;
+    container.style.minHeight = `${container.offsetHeight}px`;
+    // Remember which control had focus, so it can be focused again without scrolling.
+    const act = container.contains(document.activeElement) ? document.activeElement : null;
+    const focusKey = act ? (act.getAttribute("aria-label") || act.textContent).trim() : null;
+    const focusTag = act?.tagName;
     mount(container, [
       filterBar(opt),
       me ? selectionStrip(mine, slicedField) : null,
@@ -71,6 +79,12 @@ export function sgDashboard(container, opts) {
         rankingsBlock(slicedField),
       ]),
     ]);
+    if (focusKey) {
+      const again = [...container.querySelectorAll(focusTag || "*")].find((n) => (n.getAttribute("aria-label") || n.textContent).trim() === focusKey);
+      again?.focus({ preventScroll: true });
+    }
+    window.scrollTo(0, y);
+    requestAnimationFrame(() => { container.style.minHeight = ""; window.scrollTo(0, y); });
     centerRankings();
   }
 
@@ -80,6 +94,26 @@ export function sgDashboard(container, opts) {
     s.addEventListener("change", () => { st[key] = s.value; draw(); });
     return el("label", {}, [label, s]);
   }
+  // Distance, grouped under its category (Off-the-Tee: Driver / Non-Driver, Approach: 50-75 yds, ...).
+  // Picking a distance also picks its category; with a category chosen, only its distances show.
+  function distanceSelect() {
+    const base = me ? me.rounds : field.flatMap((p) => p.rounds);
+    const groups = CATEGORIES.filter(([k]) => !st.cat || st.cat === k)
+      .map(([k, label]) => ({ k, label, dists: filterOptions(base, k).dist }))
+      .filter((g) => g.dists.length);
+    const s = el("select", { "aria-label": "Distance" }, [
+      el("option", { value: "" }, "All distances"),
+      ...groups.map((g) => el("optgroup", { label: g.label }, g.dists.map((d) =>
+        el("option", { value: `${g.k}|${d}`, selected: st.cat === g.k && st.dist === d }, d)))),
+    ]);
+    s.addEventListener("change", () => {
+      if (!s.value) st.dist = "";
+      else { const [k, ...rest] = s.value.split("|"); st.cat = k; st.dist = rest.join("|"); }
+      draw();
+    });
+    return el("label", {}, ["Distance", s]);
+  }
+
   function filterBar(opt) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
@@ -92,7 +126,7 @@ export function sgDashboard(container, opts) {
       select("Tournament", "event", opt.event, "All tournaments"),
       select("Round", "roundNo", opt.roundNo, "All rounds", (v) => `Round ${v}`),
       select("Lie", "lie", opt.lie, "All lies"),
-      select("Distance", "dist", opt.dist, "All distances"),
+      distanceSelect(),
       reset,
     ]);
   }

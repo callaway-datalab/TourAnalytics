@@ -54,25 +54,35 @@ export const ANALYST_ROLE = 'analyst';
 //   mike@example.com,Mike Smith,Coach,C1001
 // A player_id cell may list several players separated by ";" or "|".
 // Anyone not in the roster has no team: only the player sees their own data.
-export const ROSTER_COLUMNS = ['email', 'name', 'role', 'player_id'];
+// The roster is a CSV the admin keeps: one row per team member per player, naming the player.
+//   email,name,role,player
+//   mike@example.com,Mike Smith,Coach,Alex Moreno
+// "name" is the team member; "player" is the player they work with, by name as it appears in the
+// data. Several players can share a cell, separated by ";" or "|". When two player IDs share a name,
+// write it with the ID, e.g. "Chris Walker (10452)". Older rosters with a player_id column still work.
+export const ROSTER_COLUMNS = ['email', 'name', 'role', 'player'];
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-/** Returns { entries: [{email, name, role, playerLabel, playerKey}], problems: [string] }.
- *  Any problem means the file should be rejected as a whole, so a typo never silently
- *  drops someone's access. */
-export function parseTeamRoster(text) {
+/**
+ * resolvePlayer(text) -> { key, label } | { error }. Turns a player name (or ID) into a player key.
+ * Returns { entries: [{email, name, role, playerLabel, playerKey}], problems: [string] }.
+ * Any problem means the file should be rejected as a whole, so a typo never silently drops access.
+ */
+export function parseTeamRoster(text, resolvePlayer) {
   const rows = parseCsv(text);
   if (!rows.length) throw new UserError('That file is empty.');
   const header = rows[0].map((h) => norm(h).replace(/[\s-]+/g, '_'));
   const find = (...names) => header.findIndex((h) => names.includes(h));
   const iEmail = find('email', 'email_address', 'e_mail');
-  const iName = find('name', 'full_name', 'team_member');
+  const iName = find('name', 'full_name', 'team_member', 'team_member_name');
   const iRole = find('role', 'title', 'position');
-  const iPlayer = find('player_id', 'player', 'player_ids', 'client_id', 'players');
-  const missing = [[iEmail, 'email'], [iRole, 'role'], [iPlayer, 'player_id']].filter(([i]) => i < 0).map(([, n]) => n);
+  const iPlayer = find('player', 'players', 'player_name', 'player_names', 'player_id', 'player_ids', 'client_id');
+  const missing = [[iEmail, 'email'], [iRole, 'role'], [iPlayer, 'player']].filter(([i]) => i < 0).map(([, n]) => n);
   if (missing.length) {
     throw new UserError(`The roster needs these columns: ${ROSTER_COLUMNS.join(', ')}. Missing: ${missing.join(', ')}.`);
   }
+  const idColumn = ['player_id', 'player_ids', 'client_id'].includes(header[iPlayer]); // an older, ID-based roster
+  const resolve = resolvePlayer ? (t) => resolvePlayer(t, idColumn) : (t) => ({ key: clientKey(t), label: t });
   const entries = [];
   const problems = [];
   const seen = new Set();
@@ -85,14 +95,15 @@ export function parseTeamRoster(text) {
     const players = cell(iPlayer).split(/[;|]/).map((p) => p.trim()).filter(Boolean);
     if (!EMAIL_RE.test(email)) { problems.push(`Row ${line}: "${cell(iEmail)}" isn't an email address.`); return; }
     if (!role) { problems.push(`Row ${line}: no role for ${email}.`); return; }
-    if (!players.length) { problems.push(`Row ${line}: no player_id for ${email}.`); return; }
+    if (!players.length) { problems.push(`Row ${line}: no player for ${email}.`); return; }
     const name = cell(iName) || email;
-    for (const playerLabel of players) {
-      const playerKey = clientKey(playerLabel);
-      const dup = `${email}|${playerKey}`;
-      if (seen.has(dup)) { problems.push(`Row ${line}: ${email} is listed for ${playerLabel} more than once.`); continue; }
+    for (const text of players) {
+      const hit = resolve(text);
+      if (hit.error) { problems.push(`Row ${line}: ${hit.error}`); continue; }
+      const dup = `${email}|${hit.key}`;
+      if (seen.has(dup)) { problems.push(`Row ${line}: ${email} is listed for ${hit.label} more than once.`); continue; }
       seen.add(dup);
-      entries.push({ email, name, role, playerLabel, playerKey });
+      entries.push({ email, name, role, playerLabel: hit.label, playerKey: hit.key });
     }
   });
   return { entries, problems };

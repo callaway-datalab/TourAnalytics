@@ -186,8 +186,10 @@ site.
   When you pick one player, tick any roles on their team (Coach, Caddy, ...) that should also see
   it. Leave them all unticked to share with the player only.
 - **Coaches, caddies and other team members** come from one file you keep: your **team roster**,
-  a CSV with the columns `email, name, role, player_id` and one row per team member per player
-  (several players can share a cell, separated by `;`). `team_members_template.csv` in this project
+  a CSV with the columns `email, name, role, player` and one row per team member per player.
+  `name` is the team member; `player` is the player's name exactly as it appears in your data
+  (several players can share a cell, separated by `;`). If two player IDs share a name, write it with
+  the ID, e.g. `Chris Walker (10452)`. `team_members_template.csv` in this project
   is an example. On **Clients & codes → Team roster**, upload the file whenever it changes:
   - Each uploaded roster **replaces** the previous one. Anyone you take out loses access to those
     players immediately; players who aren't in the file have no team, so only they see their data.

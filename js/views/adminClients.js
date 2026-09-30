@@ -358,10 +358,30 @@ export async function render(main, { flash }) {
     const a = el("a", { href: url, download: name }); document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
+  // The roster names players; downloads use the same names (with the ID only where two share a name).
   const downloadBtn = linkButton("Download current roster", () => saveCsv("team_members.csv",
-    toCsv(ROSTER_COLUMNS, (rosterCache.entries || []).map((e) => [e.email, e.name, roleLabel(e.role), e.playerLabel]))));
-  const templateBtn = linkButton("Download a blank template", () => saveCsv("team_members.csv",
-    toCsv(ROSTER_COLUMNS, [["coach@example.com", "Mike Smith", "Coach", "C1001"], ["caddy@example.com", "Jo Brown", "Caddy", "C1001; C1002"]])));
+    toCsv(ROSTER_COLUMNS, (rosterCache.entries || []).map((e) => [e.email, e.name, roleLabel(e.role), clientsCache.labels.get(e.playerKey) || e.playerLabel]))));
+  const templateBtn = linkButton("Download a blank template", () => {
+    const names = [...clientsCache.labels.values()].sort((a, b) => a.localeCompare(b));
+    const p1 = names[0] || "Player Name", p2 = names[1] || "Another Player";
+    saveCsv("team_members.csv", toCsv(ROSTER_COLUMNS, [
+      ["coach@example.com", "Mike Smith", "Coach", p1],
+      ["coach@example.com", "Mike Smith", "Coach", p2],
+      ["caddy@example.com", "Jo Brown", "Caddy", `${p1}; ${p2}`],
+    ]));
+  });
+
+  // Roster player names -> player keys. A name two IDs share must be written with its ID.
+  function resolvePlayer(text, idColumn) {
+    const t = text.trim().toLowerCase();
+    const all = [...clientsCache.labels].map(([key, label]) => ({ key, label, id: clientsCache.ids?.get(key) || key.replace(/^c_/, "") }));
+    const hit = all.find((p) => p.label.toLowerCase() === t) || all.find((p) => p.id.toLowerCase() === t);
+    if (hit) return { key: hit.key, label: hit.label };
+    const dupes = sameNamePlayers(all, text);
+    if (dupes.length) return { error: `${dupes.length} players are named ${text.trim()}. Write it as ${dupes.map((d) => `"${d.label}"`).join(" or ")}.` };
+    if (idColumn) return { key: clientKey(text.trim()), label: text.trim() }; // older ID roster: allow players with no data yet
+    return { error: `There's no player named "${text.trim()}" in your data. Check the spelling, or use the name exactly as it appears in Data.` };
+  }
   const rosterForm = el("form", {
     class: "inline-form",
     onSubmit: async (e) => {
@@ -370,7 +390,8 @@ export async function render(main, { flash }) {
       if (!f) { flash("Choose your team roster CSV.", "error"); return; }
       rosterBtn.disabled = true; rosterBtn.textContent = "Applying\u2026";
       try {
-        const { entries, problems } = parseTeamRoster(await f.text());
+        if (!clientsCache.labels.size) await refreshClients(); // need the player list to match names
+        const { entries, problems } = parseTeamRoster(await f.text(), resolvePlayer);
         if (problems.length) {
           flash(`Nothing was changed. Fix these rows and upload again: ${problems.slice(0, 8).join(" ")}${problems.length > 8 ? ` (and ${problems.length - 8} more)` : ""}`, "error");
           return;

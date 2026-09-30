@@ -638,3 +638,5 @@ details.sees { margin-top: 2rem; }
 .rank-scroll { max-height: 27.5rem; } /* about 11 rows, so the selected player sits mid-view */
 .center { text-align: center; }
 .sg-filters { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+select optgroup { background: #111411; color: #ffc703; font-weight: 700; font-style: normal; } select optgroup option { color: #fff; font-weight: 400; }
+.sg-body, .sg-panel { overflow-anchor: none; }
