@@ -44,9 +44,9 @@ export async function render(main, { previewClient, flash }) {
           `Questions you ask while previewing ${previewClient.label} are samples: they go to your own inbox, and ${previewClient.label} never sees them.`) : null,
       ]),
     theirSection,
-    previewingPlayer ? el("h2", {}, "Your sample questions") : null,
-    list,
-    archived,
+    // In a player preview only the player's own questions are shown (samples go to your inbox).
+    previewingPlayer ? null : list,
+    previewingPlayer ? null : archived,
     sharedSection,
   ]);
 

@@ -561,3 +561,4 @@ main > .subnav:first-child { margin-top: -1rem; }
 .create-panel { margin-top: 0.5rem; }
 .codes-rows td:nth-child(1), .codes-rows td:nth-child(2), .codes-rows .tag { white-space: nowrap; }
 .codes-rows .tag { display: inline-block; }
+.roster-note { margin-top: 1rem; }

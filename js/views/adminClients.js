@@ -294,7 +294,8 @@ export async function render(main, { flash }) {
       const haystack = [inv.code, formatCode(inv.code), inv.clientLabel, email, user?.name, isTeamKey(inv.clientKey) ? "" : inv.note, note, statusText, ...grants.map((g) => g.label)]
         .filter(Boolean).join(" ").toLowerCase();
       return { inv, user, grants, types, typeLabels, email, status, teamOf, haystack };
-    }).filter((r) => r.types.some((t) => shown.has(t)) && (!q || r.haystack.includes(q)));
+    }).filter((r) => r.types.some((t) => shown.has(t)) && (!q || r.haystack.includes(q)))
+      .sort((a, b) => (a.user?.name || a.inv.clientLabel || "").localeCompare(b.user?.name || b.inv.clientLabel || "", undefined, { sensitivity: "base" }));
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
@@ -388,7 +389,7 @@ export async function render(main, { flash }) {
     el("section", {}, [
       el("h2", {}, "Team roster"),
       rosterForm,
-      el("p", { class: "muted" }, ["Uploading replaces the previous roster completely: anyone you remove loses access. ", downloadBtn, " \u00b7 ", templateBtn]),
+      el("p", { class: "muted roster-note" }, ["Uploading replaces the previous roster completely: anyone you remove loses access. ", downloadBtn, " \u00b7 ", templateBtn]),
     ]),
   ]);
 

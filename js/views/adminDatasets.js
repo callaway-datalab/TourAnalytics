@@ -5,7 +5,6 @@ import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
 export async function render(main, { flash }) {
   const file = el("input", { type: "file", accept: ".csv,.parquet", required: true });
   const idColumn = el("input", { value: "client_id", required: true });
-  const name = el("input", { placeholder: "Defaults to the file name" });
   const description = el("input", { maxLength: 200 });
   const submit = el("button", { class: "btn", type: "submit" }, "Upload data");
   const listBox = el("div");
@@ -30,7 +29,8 @@ export async function render(main, { flash }) {
         }
         const dataset = buildDataset(table, idColumn.value.trim() || "client_id");
         submit.textContent = `Uploading (${dataset.byClient.size} people)\u2026`;
-        const displayName = name.value.trim() || f.name.replace(/\.(csv|parquet)$/i, "");
+        // Named after the file; uploading a file with the same name replaces that data.
+        const displayName = f.name.replace(/\.(csv|parquet)$/i, "");
         const people = dataset.byClient.size;
         const result = await uploadDataset(displayName, description.value.trim(), dataset, (done, total) => {
           submit.textContent = `Uploading (${people} people)\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`;
@@ -50,7 +50,6 @@ export async function render(main, { flash }) {
     el("label", {}, ["File (.csv or .parquet)", file]),
     el("label", {}, ["Column that says who each row belongs to", idColumn,
       el("small", {}, "Use the exact column name. The values in it are what you'll enter when you create each person's access code. Matching ignores capital letters and spaces.")]),
-    el("label", {}, ["Name shown to clients", name, el("small", {}, "Uploading with a name that already exists replaces that data.")]),
     el("label", {}, ["Short description (optional)", description]),
     el("div", {}, submit),
   ]);
