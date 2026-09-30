@@ -54,10 +54,16 @@ function match(path) {
 
 export function navigate(hash) { location.hash = hash; }
 
+// Each render gets a number; a render that's been overtaken by a newer one (e.g. signing in while
+// the log-in page is still loading) stops instead of drawing the wrong page over the right one.
+let renderGen = 0;
+
 async function render() {
+  const gen = ++renderGen;
   const raw = location.hash.slice(1) || "/login";
 
   const state = await whenReady();
+  if (gen !== renderGen) return;
   const team = effectiveTeam(state); // a real team member, or the admin previewing one
 
   // Admin: preview any account's portal. Players go to their own view; team members and
@@ -183,7 +189,10 @@ async function render() {
 
   try {
     const mod = await loader();
-    currentCleanup = await mod.render(main, { params, previewClient, routeId, flash: (msg, type) => flash(main, msg, type) });
+    if (gen !== renderGen) return;
+    const cleanup = await mod.render(main, { params, previewClient, routeId, flash: (msg, type) => flash(main, msg, type) });
+    if (gen !== renderGen) { if (typeof cleanup === "function") cleanup(); return; }
+    currentCleanup = cleanup;
   } catch (err) {
     console.error(err);
     main.textContent = "Something went wrong loading this page. Reloading the page usually fixes it.";

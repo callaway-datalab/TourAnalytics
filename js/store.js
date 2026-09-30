@@ -168,6 +168,25 @@ export function setAnalystPlayers(target, { playerKeys, allPlayers, labels }) {
     : updateDoc(doc(db, "invites", target.code), { access, allPlayers: !!allPlayers });
 }
 
+/** Keep the player names stored on team members' and analysts' access up to date (so their Player
+ *  dropdown shows names, not IDs). */
+export async function syncAccessLabels(users, invites, labels) {
+  const relabel = (access) => Object.fromEntries(Object.entries(access).map(([k, g]) => [k, { ...g, label: labels.get(k) || g.label }]));
+  const jobs = [];
+  for (const u of users) {
+    if (!u.access || !Object.keys(u.access).length) continue;
+    const next = relabel(u.access);
+    if (!sameAccess(u.access, next)) jobs.push(updateDoc(doc(db, "users", u.uid), { access: next }));
+  }
+  for (const v of invites) {
+    if (!v.access || v.usedBy || !Object.keys(v.access).length) continue;
+    const next = relabel(v.access);
+    if (!sameAccess(v.access, next)) jobs.push(updateDoc(doc(db, "invites", v.code), { access: next }));
+  }
+  await Promise.all(jobs);
+  return jobs.length;
+}
+
 /** Analysts set to "all players" pick up players added since (called when the admin loads Player Access). */
 export async function syncAllPlayersAnalysts(users, invites, labels) {
   const want = analystAccess([...labels.keys()], labels);
@@ -213,8 +232,8 @@ export async function getTeamRoster() {
  *    their email and carrying their players, and retires codes nobody needs any more.
  * Player accounts are never touched.
  */
-export async function applyTeamRoster(entries, fileName = "") {
-  const byEmail = rosterByEmail(entries);
+export async function applyTeamRoster(entries, fileName = "", labels = null) {
+  const byEmail = rosterByEmail(entries, labels);
   const [usersSnap, invitesSnap, previous] = await Promise.all([
     getDocs(collection(db, "users")), getDocs(collection(db, "invites")), getTeamRoster(),
   ]);
@@ -370,6 +389,33 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   return { datasetId, clients: newClientKeys.length };
 }
 
+/* ---------- Field stats: the part of a strokes-gained file every signed-in user may read ---------- */
+// Per player, per round, per category totals (see buildFieldSummary in sg.js), so players can see
+// the rankings. Stored in pieces like everything else, at fieldStats/{datasetId}.
+export async function publishFieldStats(datasetId, summary, sourceUploadedAt) {
+  const ref = doc(db, "fieldStats", datasetId);
+  const old = await getDoc(ref);
+  const pieces = splitString(JSON.stringify(summary), DOC_CHUNK_CHARS);
+  await commitInChunks(pieces.map((data, i) => sized((b) => b.set(doc(ref, "chunks", String(i)), { data }), data.length)));
+  for (let i = pieces.length; i < (old.exists() ? old.data().chunkCount || 0 : 0); i++) await deleteDoc(doc(ref, "chunks", String(i)));
+  await setDoc(ref, { chunkCount: pieces.length, sourceUploadedAt: sourceUploadedAt ?? null, publishedAt: serverTimestamp() });
+}
+
+/** When the field stats for a data file were last built from it (ms), or null if never. */
+export async function fieldStatsSource(datasetId) {
+  const snap = await getDoc(doc(db, "fieldStats", datasetId));
+  return snap.exists() ? snap.data().sourceUploadedAt ?? 0 : null;
+}
+
+/** The published field stats for a data file, or null. */
+export async function getFieldStats(datasetId) {
+  const snap = await getDoc(doc(db, "fieldStats", datasetId));
+  if (!snap.exists()) return null;
+  const pieces = await Promise.all(Array.from({ length: snap.data().chunkCount }, (_, i) => getDoc(doc(db, "fieldStats", datasetId, "chunks", String(i)))));
+  try { return { ...JSON.parse(pieces.map((p) => p.data().data).join("")), sourceUploadedAt: snap.data().sourceUploadedAt }; }
+  catch { return null; }
+}
+
 export async function deleteDataset(datasetId) {
   const snap = await getDoc(doc(db, "datasets", datasetId));
   if (!snap.exists()) return;
@@ -378,6 +424,11 @@ export async function deleteDataset(datasetId) {
     await deleteDoc(doc(db, "clientData", key, "datasets", datasetId));
   }
   await deleteDoc(doc(db, "datasets", datasetId));
+  const fs = await getDoc(doc(db, "fieldStats", datasetId));
+  if (fs.exists()) {
+    for (let i = 0; i < (fs.data().chunkCount || 0); i++) await deleteDoc(doc(db, "fieldStats", datasetId, "chunks", String(i)));
+    await deleteDoc(fs.ref);
+  }
 }
 
 export function watchClientDatasets(clientKey, cb) {

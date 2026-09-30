@@ -6,7 +6,7 @@ import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
   watchTeamRoster, applyTeamRoster, UserError, adminStats,
   refreshInvite, deleteInvite, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
-  createTeamAccess, setTeamPlayers, clearInviteExpiry,
+  createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels,
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, parseTeamRoster, toCsv, ROSTER_COLUMNS, norm } from "../data.js";
 
@@ -28,7 +28,7 @@ export async function render(main, { flash }) {
   // Preview anyone's portal: players open their own view, team members and analysts theirs.
   const portalHref = (u) => (isTeamKey(u.clientKey)
     ? `#/view-as-member/${encodeURIComponent(u.uid)}`
-    : `#/view-as/${encodeURIComponent(u.clientKey)}?label=${encodeURIComponent(u.clientLabel)}`);
+    : `#/view-as/${encodeURIComponent(u.clientKey)}?label=${encodeURIComponent(clientsCache.labels.get(u.clientKey) || u.clientLabel)}`);
 
   // One pop-up, reused for "who do they work with" and "edit players".
   const dialog = el("dialog", { class: "players-dialog" });
@@ -268,7 +268,7 @@ export async function render(main, { flash }) {
       links.push(refresh, del);
     } else if (!inv.usedBy) {
       links.push(el("a", { href: isTeamKey(inv.clientKey) ? `#/view-as-code/${inv.code}`
-        : `#/view-as/${encodeURIComponent(inv.clientKey)}?label=${encodeURIComponent(inv.clientLabel)}` }, "See their portal"));
+        : `#/view-as/${encodeURIComponent(inv.clientKey)}?label=${encodeURIComponent(clientsCache.labels.get(inv.clientKey) || inv.clientLabel)}` }, "See their portal"));
       if (editable) links.push(linkButton("Edit players", () => editPlayers(inv, null, grants)));
       const revoke = linkButton("Revoke", async () => {
         revoke.disabled = true;
@@ -289,7 +289,7 @@ export async function render(main, { flash }) {
     const rows = invitesCache.map((inv) => {
       const user = inv.usedBy ? usersCache.find((u) => u.uid === inv.usedBy) : null;
       const access = (user?.access ?? inv.access) || {};
-      const grants = Object.entries(access).map(([key, g]) => ({ key, role: g.role, label: g.label || key.replace(/^c_/, "") }))
+      const grants = Object.entries(access).map(([key, g]) => ({ key, role: g.role, label: clientsCache.labels.get(key) || g.label || key.replace(/^c_/, "") }))
         .sort((a, b) => a.label.localeCompare(b.label));
       const roles = [...new Set(grants.map((g) => g.role))];
       // User type: one tag per type (a team member can be e.g. a coach for one player, caddy for another).
@@ -376,7 +376,7 @@ export async function render(main, { flash }) {
           return;
         }
         if (!entries.length && !confirmAction("This roster has no team members. Uploading it removes every roster coach, caddy, etc. from every player. Continue?")) return;
-        const r = await applyTeamRoster(entries, f.name);
+        const r = await applyTeamRoster(entries, f.name, clientsCache.labels);
         const unknown = [...new Set(entries.filter((x) => clientsCache.labels.size && !clientsCache.labels.has(x.playerKey)).map((x) => x.playerLabel))];
         flash(`Roster applied: ${r.people} team ${r.people === 1 ? "member" : "members"}, ${r.links} player ${r.links === 1 ? "link" : "links"}.`
           + (r.updated ? ` Updated ${r.updated} existing ${r.updated === 1 ? "account" : "accounts"}.` : "")
@@ -396,7 +396,7 @@ export async function render(main, { flash }) {
     const { labels, ids } = await adminAllClients();
     clientsCache = { labels, ids };
     renderInvites(); // player codes are listed by name once names are known
-    syncAllPlayersAnalysts(usersCache, invitesCache, labels).catch(() => {});
+    syncAllPlayersAnalysts(usersCache, invitesCache, labels).then(() => syncAccessLabels(usersCache, invitesCache, labels)).catch(() => {});
     mount(knownIds, [...labels.values()].map((label) => el("option", { value: label })));
   }
 

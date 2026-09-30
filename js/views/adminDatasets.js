@@ -1,5 +1,6 @@
 import { el, mount, formatWhen, num, confirmAction, subNav } from "../ui.js";
-import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage } from "../store.js";
+import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage, adminAllClients, publishFieldStats } from "../store.js";
+import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
 
 export async function render(main, { flash }) {
@@ -35,6 +36,17 @@ export async function render(main, { flash }) {
         const result = await uploadDataset(displayName, description.value.trim(), dataset, (done, total) => {
           submit.textContent = `Uploading (${people} people)\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`;
         });
+
+        // Strokes-gained files: publish the per-round summary players' rankings are built from.
+        const idx = detectColumns(dataset.columns);
+        if (isShotData(idx)) {
+          submit.textContent = "Updating rankings\u2026";
+          try {
+            const { labels } = await adminAllClients();
+            const players = [...dataset.byClient].map(([key, g]) => ({ key, name: labels.get(key) || g.name || g.label, rounds: prepare(g.rows, idx) }));
+            await publishFieldStats(result.datasetId, buildFieldSummary(players), Date.now());
+          } catch (err) { console.error("Couldn't publish rankings", err); }
+        }
 
         let msg = `Added "${displayName}": ${num(dataset.rowCount)} rows for ${num(result.clients)} ${result.clients === 1 ? "person" : "people"}.`;
         if (dataset.blankIdRows) msg += ` ${num(dataset.blankIdRows)} rows have no value in "${dataset.idColumn}" and won't be shown to anyone.`;

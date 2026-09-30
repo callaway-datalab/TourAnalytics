@@ -16,6 +16,7 @@ const ALIASES = {
   sgPerAttempt: ["strokesgainedattempt", "strokesgainedperattempt", "sgattempt", "sgperattempt", "sgpershot"],
   attempts: ["attempts", "shots", "numshots", "shotcount"],
   date: ["date", "rounddate", "eventdate"],
+  year: ["year", "season"],
   event: ["tournament", "event", "eventname", "tournamentname"],
   round: ["playerrndname", "roundid", "round", "roundnumber", "rnd"],
   hole: ["hole", "holenumber"],
@@ -94,8 +95,13 @@ export function prepare(rows, idx) {
     const event = get(r, "event") ?? "";
     const rnd = get(r, "round") ?? "";
     const key = idx.round !== undefined && isNaN(Number(rnd)) ? String(rnd) : `${date}|${event}|${rnd}`;
-    if (!rounds.has(key)) rounds.set(key, { key, date: String(date), event: String(event), shots: [] });
-    rounds.get(key).shots.push({ cat, sg, w, r });
+    if (!rounds.has(key)) {
+      const d = new Date(date);
+      const year = get(r, "year") ?? (isNaN(d) ? "" : d.getFullYear());
+      rounds.set(key, { key, date: String(date), event: String(event), roundNo: isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), shots: [] });
+    }
+    const lie = get(r, "lie"), dist = get(r, "distanceRange");
+    rounds.get(key).shots.push({ cat, sg, w, r, lie: lie == null ? null : String(lie), dist: dist == null ? null : String(dist) });
   }
   const list = [...rounds.values()];
   if (idx.date !== undefined) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
@@ -119,11 +125,12 @@ export function sgPerRound(rounds) {
 /** SG per round within each value of a column (e.g. Distance Range), for one category. */
 export function sgBy(rounds, idx, cat, field) {
   if (idx[field] === undefined) return null;
+  cat = cat || null;
   const n = rounds.length || 1;
   const groups = new Map();
   for (const rd of rounds) for (const s of rd.shots) {
-    if (s.cat !== cat) continue;
-    const k = s.r[idx[field]];
+    if (cat && s.cat !== cat) continue;
+    const k = field === "lie" ? s.lie : field === "distanceRange" ? s.dist : s.r?.[idx[field]];
     if (k === null || k === undefined || k === "" || squash(k) === "none") continue;
     const g = groups.get(k) || { label: String(k), sg: 0, shots: 0 };
     g.sg += s.sg; g.shots += s.w;
@@ -152,7 +159,7 @@ export function trend(rounds, cat, by = "event") {
       : by === "month" ? (valid ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown")
       : (rd.event || rd.date || rd.key);
     const g = groups.get(key) || { label: key, sg: 0, rounds: 0, first: groups.size };
-    g.sg += rd.shots.filter((s) => s.cat === cat).reduce((a, s) => a + s.sg, 0);
+    g.sg += rd.shots.filter((s) => !cat || s.cat === cat).reduce((a, s) => a + s.sg, 0);
     g.rounds++;
     groups.set(key, g);
   }
@@ -182,14 +189,14 @@ const STATS = {
     { label: "Hit Green %", field: "onGreen", kind: "pct", higher: true },
     { label: "Avg Proximity (ft)", field: "proximity", kind: "mean", higher: false, dp: 1, onlyNotHoled: true },
     { label: "Avg Start Distance (yds)", field: "startDist", kind: "mean", higher: null, dp: 1 },
-    { label: "Shots / Round", kind: "perRound", higher: null, dp: 1 },
+    { label: "Attempts / Round", kind: "perRound", higher: null, dp: 1 },
   ],
   ARG: [
     { label: "SG / Attempt", kind: "sgPerAttempt", higher: true, dp: 3 },
     { label: "Up & Down %", field: "upDown", kind: "pct", higher: true },
     { label: "Avg Proximity (ft)", field: "proximity", kind: "mean", higher: false, dp: 1, onlyNotHoled: true },
     { label: "Hole-outs", field: "holeOut", kind: "count", higher: true },
-    { label: "Shots / Round", kind: "perRound", higher: null, dp: 1 },
+    { label: "Attempts / Round", kind: "perRound", higher: null, dp: 1 },
   ],
   PUTT: [
     { label: "SG / Attempt", kind: "sgPerAttempt", higher: true, dp: 3 },
@@ -203,7 +210,7 @@ const STATS = {
 
 function statValue(def, rounds, idx, cat) {
   const shots = rounds.flatMap((rd) => rd.shots.filter((s) => s.cat === cat).map((s) => ({ ...s, rd })));
-  const col = (s, f) => (idx[f] === undefined ? null : s.r[idx[f]]);
+  const col = (s, f) => (idx[f] === undefined || !s.r ? null : s.r[idx[f]]);
   switch (def.kind) {
     case "mean": {
       if (idx[def.field] === undefined) return undefined;
@@ -314,3 +321,69 @@ const GRADES = ["#e51f1f", "#ef7b2b", "#f2a134", "#f5cc56", "#f7e379", "#d4df57"
 export const gradeColor = (pct) => GRADES[Math.max(0, Math.min(GRADES.length - 1, Math.round(pct * (GRADES.length - 1))))];
 export const sgColor = (v) => (v >= 0 ? "#44ce1b" : "#e51f1f");
 export const fmtSG = (v) => (v === null || v === undefined || isNaN(v) ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
+
+
+/* ======================= Filters (year, tournament, round, category, lie, distance) ======================= */
+
+/** Values present for each filter, for the dropdowns. Lie and distance follow the chosen category. */
+export function filterOptions(rounds, cat) {
+  const uniq = (vals) => [...new Set(vals.filter((v) => v !== null && v !== undefined && v !== ""))];
+  const shots = rounds.flatMap((rd) => rd.shots.filter((s) => !cat || s.cat === cat));
+  const byNum = (a, b) => lead(a) - lead(b) || a.localeCompare(b);
+  const lieRank = (l) => { const i = LIE_ORDER.indexOf(squash(l)); return i < 0 ? 99 : i; };
+  const dists = uniq(shots.map((s) => s.dist));
+  return {
+    year: uniq(rounds.map((r) => r.year)).sort().reverse(),
+    event: uniq(rounds.map((r) => r.event)),
+    roundNo: uniq(rounds.map((r) => r.roundNo)).sort(byNum),
+    lie: uniq(shots.map((s) => s.lie)).sort((a, b) => lieRank(a) - lieRank(b) || a.localeCompare(b)),
+    dist: dists.every((d) => lead(d) !== Infinity) ? dists.sort(byNum) : dists.sort((a, b) => (squash(a) === "driver" ? -1 : squash(b) === "driver" ? 1 : a.localeCompare(b))),
+  };
+}
+
+/**
+ * Apply filters. Year / tournament / round pick which rounds count (the "per round" denominator);
+ * category / lie / distance pick which shots count. f = { year, event, roundNo, cat, lie, dist, span }.
+ */
+export function applyFilters(rounds, f = {}) {
+  let rs = rounds.filter((rd) => (!f.year || rd.year === f.year) && (!f.event || rd.event === f.event) && (!f.roundNo || rd.roundNo === f.roundNo));
+  if (f.span > 0) rs = rs.slice(-f.span);
+  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!f.cat || s.cat === f.cat) && (!f.lie || s.lie === f.lie) && (!f.dist || s.dist === f.dist)) }));
+}
+
+/** Strokes gained per round, attempts per round and SG per attempt for a (filtered) set of rounds. */
+export function sliceTotals(rounds) {
+  const n = rounds.length;
+  let sg = 0, w = 0;
+  for (const rd of rounds) for (const s of rd.shots) { sg += s.sg; w += s.w; }
+  return { rounds: n, sgPerRound: n ? sg / n : null, attemptsPerRound: n ? w / n : null, sgPerAttempt: w ? sg / w : null, attempts: w };
+}
+
+/* ======================= Field summary (what players may see of each other) ======================= */
+// Per player, per round, per category: total strokes gained and attempts. Enough for rankings by
+// year / tournament / round / category, without sharing anyone's lie- or distance-level detail.
+
+export function buildFieldSummary(players) {
+  return {
+    players: players.map((p) => ({
+      key: p.key, name: p.name,
+      rounds: p.rounds.map((rd) => {
+        const c = {};
+        for (const s of rd.shots) { const x = (c[s.cat] ||= [0, 0]); x[0] += s.sg; x[1] += s.w; }
+        for (const k of Object.keys(c)) c[k] = [Math.round(c[k][0] * 1000) / 1000, c[k][1]];
+        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, c };
+      }),
+    })),
+  };
+}
+
+/** Turn a published summary back into the { key, name, rounds } shape the dashboard uses. */
+export function summaryPlayers(summary) {
+  return (summary?.players || []).map((p) => ({
+    key: p.key, name: p.name, summaryOnly: true,
+    rounds: p.rounds.map((rd, i) => ({
+      key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y,
+      shots: Object.entries(rd.c).map(([cat, [sg, w]]) => ({ cat, sg, w, lie: null, dist: null })),
+    })),
+  }));
+}

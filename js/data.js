@@ -98,12 +98,13 @@ export function parseTeamRoster(text) {
   return { entries, problems };
 }
 
-/** entries -> Map(email -> { name, access: { [playerKey]: { role, label } } }) */
-export function rosterByEmail(entries) {
+/** entries -> Map(email -> { name, access: { [playerKey]: { role, label } } }).
+ *  labels (optional): player key -> name to show, instead of the ID in the file. */
+export function rosterByEmail(entries, labels) {
   const out = new Map();
   for (const e of entries) {
     if (!out.has(e.email)) out.set(e.email, { name: e.name, access: {} });
-    out.get(e.email).access[e.playerKey] = { role: e.role, label: e.playerLabel };
+    out.get(e.email).access[e.playerKey] = { role: e.role, label: labels?.get(e.playerKey) || e.playerLabel };
   }
   return out;
 }

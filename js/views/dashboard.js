@@ -1,11 +1,14 @@
 import { el, mount } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchClientDatasets } from "../store.js";
+import { watchClientDatasets, getDatasetRows, getFieldStats } from "../store.js";
+import { detectColumns, isShotData, prepare, summaryPlayers } from "../sg.js";
+import { sgDashboard } from "../sgDashboard.js";
 import { render as renderDataset } from "./dataset.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
 
-// My Data: opens the player's data straight away, with its charts and table. Players have one data
-// file; if there are ever more, small tabs let them switch (newest first).
+// My Data: opens the player's data straight away. A strokes-gained file gets the same dashboard as the
+// admin's Analyze page (filters, cards, category charts, trends, rankings); any other file gets the
+// plain chart and table. Players have one data file; if there are ever more, tabs let them switch.
 export async function render(main, { previewClient, flash }) {
   const state = getState();
   const clientKey = previewClient ? previewClient.key : state.profile?.clientKey;
@@ -19,12 +22,27 @@ export async function render(main, { previewClient, flash }) {
   let current = null;       // id of the file on screen
   let shownVersion = null;  // id + upload time, so a re-upload refreshes the view
   let stopDataset = () => {};
+  const dashState = {};
 
   const show = async (d) => {
     const version = `${d.id}|${d.uploadedAt?.toMillis?.() ?? ""}`;
     if (version === shownVersion) return;
     shownVersion = version;
     stopDataset(); stopDataset = () => {};
+    const idx = detectColumns(d.columns || []);
+    if (isShotData(idx)) {
+      mount(box, el("p", { class: "empty center" }, "Loading\u2026"));
+      const [rows, summary] = await Promise.all([getDatasetRows(clientKey, d.id, d.chunkCount), getFieldStats(d.id).catch(() => null)]);
+      if (shownVersion !== version) return;
+      const field = summaryPlayers(summary).map((p) => ({ ...p, label: p.name || p.key.replace(/^c_/, "") }));
+      const label = field.find((p) => p.key === clientKey)?.label || d.playerName || previewClient?.label || d.clientLabel;
+      const me = { key: clientKey, label, rounds: prepare(rows, idx) };
+      const inner = el("div");
+      mount(box, inner);
+      const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", state: dashState });
+      stopDataset = () => dash.destroy();
+      return;
+    }
     const cleanup = await renderDataset(box, { params: { id: d.id }, previewClient, flash, embedded: true, hideTitle: true });
     if (typeof cleanup === "function") stopDataset = cleanup;
   };

@@ -1,5 +1,5 @@
 import { el, mount, formatWhen } from "../ui.js";
-import { watchAdminThreads } from "../store.js";
+import { watchAdminThreads, adminAllClients } from "../store.js";
 import { threadActions } from "../threadActions.js";
 
 export async function render(main, { flash }) {
@@ -16,11 +16,16 @@ export async function render(main, { flash }) {
     ]),
   ]);
 
-  const unsub = watchAdminThreads((threads) => {
+  // Show players by name (the ID when the data has no name).
+  let names = new Map();
+  let lastThreads = null;
+  adminAllClients().then(({ labels }) => { names = labels; if (lastThreads) draw(lastThreads); }).catch(() => {});
+  const unsub = watchAdminThreads((threads) => { lastThreads = threads; draw(threads); });
+  function draw(threads) {
     const row = (t) => el("li", {}, [
       el("a", { class: "row-main", href: `#/admin/questions/${t.id}` }, [
         el("span", { class: "row-title" }, t.subject),
-        el("span", { class: "muted" }, t.aboutLabel ? `${t.askerName} \u00b7 about ${t.aboutLabel}` : `${t.askerName} \u00b7 client ${t.clientLabel}`),
+        el("span", { class: "muted" }, t.aboutLabel ? `${t.askerName} \u00b7 about ${names.get(t.aboutKey) || t.aboutLabel}` : `${t.askerName} \u00b7 ${names.get(t.clientKey) || t.clientLabel}`),
       ]),
       el("span", { class: "row-meta" }, [
         t.sample ? el("span", { class: "tag muted-tag" }, "Sample") : null, t.sample ? " " : null,
@@ -39,6 +44,7 @@ export async function render(main, { flash }) {
     mount(list, active.length ? active.map(row)
       : el("p", { class: "empty" }, "No open questions. New ones appear here and in the alert badge."));
     mount(archivedList, archived.length ? archived.map(row) : el("p", { class: "empty" }, "Nothing archived yet."));
-  });
+  }
+
   return unsub;
 }
