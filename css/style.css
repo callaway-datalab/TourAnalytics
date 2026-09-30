@@ -562,3 +562,61 @@ main > .subnav:first-child { margin-top: -1rem; }
 .codes-rows td:nth-child(1), .codes-rows td:nth-child(2), .codes-rows .tag { white-space: nowrap; }
 .codes-rows .tag { display: inline-block; }
 .roster-note { margin-top: 1rem; }
+
+/* ================================================================== */
+/*  Data → Analyze: strokes-gained dashboard (styled after the         */
+/*  original player site: black cards, white edges, green/red values)  */
+/* ================================================================== */
+.analyze-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1.25rem; margin: 0 auto 1rem; max-width: 40rem; }
+.analyze-controls label { flex: 1 1 14rem; }
+.analyze-controls select { margin-top: 0.25rem; border-radius: 999px; }
+.sg-player { text-align: center; margin: 0.5rem 0 1rem; }
+.sg-player .muted { font-size: 1rem; font-weight: 400; }
+
+.sg-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
+.sg-card { background: rgba(0, 0, 0, 0.9); border: 2px solid #fff; border-radius: 12px; padding: 0.8rem 0.6rem; text-align: center; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5); }
+.sg-card h3 { font-size: 0.85rem; margin: 0 0 0.35rem; text-decoration: underline; text-underline-offset: 3px; color: rgba(255, 255, 255, 0.9); }
+.sg-value { font: 900 1.9rem/1.1 var(--font-body); margin: 0; font-variant-numeric: tabular-nums; }
+.sg-rank { margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--muted); }
+
+.sg-tabs { margin: 0.5rem 0 1.25rem; }
+.sg-tabs a { font-size: 1rem; padding: 0.5rem 1.3rem; }
+.sg-panel { display: flex; flex-direction: column; gap: 1rem; }
+.panel { background: rgba(0, 0, 0, 0.82); border: 2px solid #fff; border-radius: 15px; padding: 1rem 1.1rem; }
+.panel > h3 { margin: 0 0 0.75rem; font-size: 1.1rem; text-align: center; text-decoration: underline; text-underline-offset: 4px; }
+.sg-row { display: flex; flex-wrap: wrap; gap: 1rem; }
+.sg-row .grow { flex: 1 1 24rem; }
+.sg-headline { flex: 0 1 15rem; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.sg-headline h3 { margin-bottom: 0.25rem; }
+.sg-big { font: 900 3.2rem/1 var(--font-body); margin: 0.2rem 0; font-variant-numeric: tabular-nums; }
+.sg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); gap: 1rem; }
+.sg-chart { position: relative; height: 16rem; }
+.sg-chart.tall { height: 22rem; }
+.sg-chart.wide { height: 18rem; }
+
+/* Stat Averages and Rankings tables: black / dark-grey stripes like the originals */
+.panel .table-scroll { border: 0; border-radius: 10px; background: transparent; }
+table.stats tbody tr:nth-child(odd) td, table.rankings tbody tr:nth-child(odd) td { background: #000; }
+table.stats tbody tr:nth-child(even) td, table.rankings tbody tr:nth-child(even) td { background: #1a1a1a; }
+table.stats td.good { color: #44ce1b; font-weight: 700; }
+table.stats td.bad { color: #ff6b4d; font-weight: 700; }
+.rank-scroll { max-height: 26rem; overflow-y: auto; }
+.rank-scroll thead th { position: sticky; top: 0; z-index: 1; background: #1c201c; }
+table.rankings tr.tier-top td:first-child { box-shadow: inset 5px 0 0 #44ce1b; }
+table.rankings tr.tier-mid td:first-child { box-shadow: inset 5px 0 0 #ffc703; }
+table.rankings tr.tier-bottom td:first-child { box-shadow: inset 5px 0 0 #e51f1f; }
+table.rankings tr.me td { background: rgba(255, 199, 3, 0.22) !important; font-weight: 700; }
+
+/* Miss Tendencies bar */
+.miss { padding: 1.5rem 0 0.5rem; }
+.miss-bar { display: flex; height: 2.2rem; border: 2px solid #fff; border-radius: 8px; overflow: hidden; }
+.miss-bar div { display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8); }
+.miss-legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-top: 0.9rem; font-size: 0.9rem; }
+.miss-legend i { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 3px; margin-right: 0.35rem; vertical-align: -1px; }
+
+.trend-toggles { justify-content: center; margin: -0.25rem 0 0.75rem; }
+.inline-select { display: inline-flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+.inline-select select { width: auto; margin: 0; }
+details.sees { margin-top: 2rem; }
+.sg-panel section.panel, .sg-grid > section { margin: 0; }
+.which-player { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem; margin: 0.6rem 0 0; } .which-player[hidden] { display: none; } .which-player span { color: var(--signal); font-weight: 700; width: 100%; }

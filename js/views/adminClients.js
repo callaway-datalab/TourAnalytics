@@ -1,6 +1,7 @@
 // Player Access: the admin's home page.
 //   At a glance · Access codes (create + table) · Team roster · Players
 import { el, mount, formatWhen, confirmAction, num } from "../ui.js";
+import { sameNamePlayers } from "../playerPicker.js";
 import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
   watchTeamRoster, applyTeamRoster, UserError, adminStats,
@@ -60,7 +61,8 @@ export async function render(main, { flash }) {
     const search = el("input", { type: "search", list: listId, placeholder: "Search players to add\u2026", autocomplete: "off", "aria-label": "Add a player" });
     const options = el("datalist", { id: listId });
     const chips = el("ul", { class: "attach-list chosen-players" });
-    const adder = el("div", { class: "player-adder" }, [search, options, chips]);
+    const which = el("div", { class: "which-player", hidden: true });
+    const adder = el("div", { class: "player-adder" }, [search, which, options, chips]);
     const draw = () => {
       mount(options, players().filter((p) => !chosen.includes(p.key)).map((p) => el("option", { value: p.label })));
       mount(chips, chosen.length
@@ -69,11 +71,18 @@ export async function render(main, { flash }) {
         : el("li", { class: "none-yet" }, el("span", { class: "muted" }, "No players added yet.")));
       adder.hidden = allowAll && allBox.checked;
     };
+    const add = (p) => { if (!chosen.includes(p.key)) chosen.push(p.key); search.value = ""; which.hidden = true; delete which.dataset.for; draw(); };
     const tryAdd = () => {
       const t = search.value.trim().toLowerCase();
       const p = players().find((x) => x.label.toLowerCase() === t);
-      if (p) { if (!chosen.includes(p.key)) chosen.push(p.key); search.value = ""; draw(); }
-      return !!p;
+      if (p) { add(p); return true; }
+      // A name shared by more than one player ID: ask which one.
+      const dupes = sameNamePlayers(players(), search.value);
+      which.hidden = !dupes.length;
+      const forText = search.value.trim().toLowerCase();
+      if (dupes.length && which.dataset.for !== forText) which.dataset.for = forText, mount(which, [el("span", {}, `There are ${dupes.length} players named ${search.value.trim()}. Which one?`),
+        ...dupes.map((d) => linkButton(`ID ${clientsCache.ids?.get(d.key) || d.key.replace(/^c_/, "")}`, () => add(d), "btn ghost"))]);
+      return false;
     };
     search.addEventListener("focus", draw); // pick up players added since the form was drawn
     search.addEventListener("input", tryAdd);
@@ -106,11 +115,11 @@ export async function render(main, { flash }) {
     const type = typeSel.value;
     if (type === "player") {
       fields = {
-        id: el("input", { list: "known-ids", placeholder: "As it appears in your data", required: true }),
+        id: el("input", { list: "known-ids", placeholder: "Start typing a name\u2026", required: true, autocomplete: "off" }),
         note: el("input", { maxLength: 200, placeholder: "Who is this for?" }),
       };
       mount(fieldsBox, el("div", { class: "inline-form" }, [
-        el("label", {}, ["Player ID", fields.id, knownIds]),
+        el("label", {}, ["Player", fields.id, knownIds]),
         el("label", {}, ["Note (optional)", fields.note]),
       ]));
       return;
@@ -140,11 +149,24 @@ export async function render(main, { flash }) {
       createBtn.disabled = true;
       try {
         if (type === "player") {
-          const label = fields.id.value.trim();
-          if (!label) { flash("Enter the player's ID exactly as it appears in your data.", "error"); return; }
-          const key = clientKey(label);
-          const code = await createInvite({ clientKey: key, clientLabel: label, note: fields.note.value.trim(), days: 0 });
-          flash(`Access code for ${label}: ${formatCode(code)}` + (clientsCache.labels.has(key) ? "" : " (No uploaded data matches this ID yet.)"), "ok");
+          const typed = fields.id.value.trim();
+          if (!typed) { flash("Enter the player's name (or their ID).", "error"); return; }
+          // A name from the list, or an ID. A name shared by two IDs has to be picked from the list.
+          const all = [...clientsCache.labels.entries()].map(([key, label]) => ({ key, label }));
+          const byName = all.find((p) => p.label.toLowerCase() === typed.toLowerCase());
+          const hit = byName || all.find((p) => (clientsCache.ids?.get(p.key) || "").toLowerCase() === typed.toLowerCase());
+          const dupes = hit ? [] : sameNamePlayers(all, typed);
+          if (dupes.length) {
+            flash(`There are ${dupes.length} players named ${typed}. Pick the right one from the list: ${dupes.map((d) => d.label).join(" or ")}.`, "error");
+            return;
+          }
+          const key = hit ? hit.key : clientKey(typed);
+          // Picked by name: use the player's ID. Typed an ID: keep it exactly as typed.
+          const knownId = byName ? clientsCache.ids?.get(byName.key) : null;
+          const id = knownId && knownId.toLowerCase() !== typed.toLowerCase() ? knownId : typed;
+          const shown = hit ? hit.label : typed;
+          const code = await createInvite({ clientKey: key, clientLabel: id, note: fields.note.value.trim(), days: 0 });
+          flash(`Access code for ${shown}: ${formatCode(code)}` + (clientsCache.labels.has(key) ? "" : " (No uploaded data matches this ID yet.)"), "ok");
         } else {
           const name = fields.name.value.trim(), email = fields.email.value.trim();
           const { allPlayers, playerKeys } = fields.players.value();
@@ -258,6 +280,7 @@ export async function render(main, { flash }) {
     return links.length ? el("span", { class: "row-actions" }, links) : null;
   }
 
+  const nameOf = (r) => r.user?.name || (!isTeamKey(r.inv.clientKey) && clientsCache.labels.get(r.inv.clientKey)) || r.inv.clientLabel || "";
   function renderInvites() {
     if (!invitesCache.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes yet.")); return; }
     const shown = new Set(typeBoxes.map((l) => l.querySelector("input")).filter((c) => c.checked).map((c) => c.value));
@@ -291,18 +314,21 @@ export async function render(main, { flash }) {
         : grants.length === 0 ? el("span", { class: "muted" }, "\u2014")
         : grants.length === 1 ? grants[0].label
         : linkButton(`${grants.length} players`, () => showPlayers(inv.clientLabel, grants));
-      const haystack = [inv.code, formatCode(inv.code), inv.clientLabel, email, user?.name, isTeamKey(inv.clientKey) ? "" : inv.note, note, statusText, ...grants.map((g) => g.label)]
+      const haystack = [inv.code, formatCode(inv.code), inv.clientLabel, clientsCache.labels.get(inv.clientKey), email, user?.name, isTeamKey(inv.clientKey) ? "" : inv.note, note, statusText, ...grants.map((g) => g.label)]
         .filter(Boolean).join(" ").toLowerCase();
       return { inv, user, grants, types, typeLabels, email, status, teamOf, haystack };
     }).filter((r) => r.types.some((t) => shown.has(t)) && (!q || r.haystack.includes(q)))
-      .sort((a, b) => (a.user?.name || a.inv.clientLabel || "").localeCompare(b.user?.name || b.inv.clientLabel || "", undefined, { sensitivity: "base" }));
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b), undefined, { sensitivity: "base" }));
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
       el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows.map(({ inv, user, grants, typeLabels, email, status, teamOf }) => el("tr", {}, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
-        el("td", {}, [user?.name || inv.clientLabel, inv.note && !isTeamKey(inv.clientKey) ? el("div", { class: "muted small" }, inv.note) : null]),
+        el("td", {}, [
+          user?.name || (!isTeamKey(inv.clientKey) && clientsCache.labels.get(inv.clientKey)) || inv.clientLabel,
+          !isTeamKey(inv.clientKey) ? el("div", { class: "muted small" }, [`ID ${inv.clientLabel}`, inv.note ? ` \u00b7 ${inv.note}` : ""]) : null,
+        ]),
         el("td", {}, email || el("span", { class: "muted" }, "\u2014")),
         el("td", {}, el("span", { class: "type-tags" }, typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)))),
         el("td", {}, teamOf),
@@ -367,8 +393,9 @@ export async function render(main, { flash }) {
 
   /* ========================= Known players (for the forms) ========================= */
   async function refreshClients() {
-    const { labels } = await adminAllClients();
-    clientsCache = { labels };
+    const { labels, ids } = await adminAllClients();
+    clientsCache = { labels, ids };
+    renderInvites(); // player codes are listed by name once names are known
     syncAllPlayersAnalysts(usersCache, invitesCache, labels).catch(() => {});
     mount(knownIds, [...labels.values()].map((label) => el("option", { value: label })));
   }

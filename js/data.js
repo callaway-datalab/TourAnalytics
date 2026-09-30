@@ -221,6 +221,8 @@ function inferColumn(values) {
   return { type: 'text', convert: blankTo((v) => (typeof v === 'bigint' ? v.toString() : String(v))) };
 }
 
+export const NAME_COLUMNS = ['player', 'playername', 'name', 'golfer', 'fullname', 'playerfullname'];
+
 export function resolveIdColumn(columns, input) {
   const want = String(input ?? '').trim();
   let i = columns.indexOf(want);
@@ -250,6 +252,10 @@ export function buildDataset(table, idInput) {
     converters.push([i, convert]);
   });
 
+  // A column with the player's name (e.g. "player"), shown instead of the ID wherever players are listed.
+  const squashName = (c) => String(c).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const nameCol = columns.findIndex((c, i) => i !== idCol && NAME_COLUMNS.includes(squashName(c)));
+
   const byClient = new Map();
   let blankIdRows = 0;
   for (const r of rows) {
@@ -258,6 +264,7 @@ export function buildDataset(table, idInput) {
     const key = clientKey(id);
     let g = byClient.get(key);
     if (!g) byClient.set(key, (g = { label: id, rows: [] }));
+    if (nameCol >= 0 && !g.name && !isBlank(r[nameCol])) g.name = String(r[nameCol]).trim();
     g.rows.push(converters.map(([i, convert]) => convert(r[i])));
   }
   if (!byClient.size) throw new UserError(`Every value in "${columns[idCol]}" is blank, so no row can be matched to a person.`);

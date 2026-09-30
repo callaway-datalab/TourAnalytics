@@ -59,8 +59,8 @@ export async function render(main, { flash }) {
     });
   };
 
-  const { labels } = await adminAllClients();
-  const picker = playerPicker(labels, show);
+  const { labels, ids } = await adminAllClients();
+  const picker = playerPicker(labels, show, ids);
   mount(pickerBox, picker.node);
   show(null);
   picker.restore();

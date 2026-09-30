@@ -350,6 +350,8 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   ops.push((batch) => batch.set(doc(db, "datasets", datasetId), {
     name, description: description || "", idColumn: dataset.idColumn, columns: dataset.columns,
     rowCount: dataset.rowCount, blankIdRows: dataset.blankIdRows, clientKeys: newClientKeys,
+    // Player names from the file (e.g. a "player" column), keyed like clientKeys.
+    playerNames: Object.fromEntries([...dataset.byClient].filter(([, g]) => g.name).map(([k, g]) => [k, g.name])),
     uploadedAt: serverTimestamp(),
   }));
   for (const key of oldClientKeys.filter((k) => !newClientKeys.includes(k))) {
@@ -359,7 +361,7 @@ export async function uploadDataset(name, description, dataset, onProgress) {
     const chunks = chunkRows(group.rows);
     ops.push((batch) => batch.set(doc(db, "clientData", clientKey, "datasets", datasetId), {
       name, description: description || "", idColumn: dataset.idColumn, columns: dataset.columns,
-      clientLabel: group.label, rowCount: group.rows.length, chunkCount: chunks.length, uploadedAt: serverTimestamp(),
+      clientLabel: group.label, playerName: group.name || null, rowCount: group.rows.length, chunkCount: chunks.length, uploadedAt: serverTimestamp(),
     }));
     chunks.forEach((data, i) => ops.push(sized((batch) =>
       batch.set(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)), { data }), data.length * 2)));
@@ -408,7 +410,19 @@ export async function adminAllClients() {
     if (!isTeamKey(k) && !labels.has(k)) labels.set(k, d.data().clientLabel);
   });
   datasetsSnap.forEach((d) => (d.data().clientKeys || []).forEach((k) => { if (!labels.has(k)) labels.set(k, k.replace(/^c_/, "")); }));
-  return { labels, usersSnap, invitesSnap, datasetsSnap };
+
+  // Show players by name where the data has one. If two IDs share a name, add the ID so they
+  // can be told apart ("Chris Walker (10452)"); pickers then make you choose which one.
+  const ids = new Map(labels);             // key -> the ID as typed / in the data
+  const names = new Map();                 // key -> player name
+  datasetsSnap.forEach((d) => Object.entries(d.data().playerNames || {}).forEach(([k, n]) => { if (n) names.set(k, n); }));
+  const count = new Map();
+  for (const [k] of labels) if (names.has(k)) count.set(names.get(k).toLowerCase(), (count.get(names.get(k).toLowerCase()) || 0) + 1);
+  for (const [k, id] of ids) {
+    const n = names.get(k);
+    if (n) labels.set(k, count.get(n.toLowerCase()) > 1 ? `${n} (${id})` : n);
+  }
+  return { labels, ids, names, usersSnap, invitesSnap, datasetsSnap };
 }
 
 export async function adminStats() {
