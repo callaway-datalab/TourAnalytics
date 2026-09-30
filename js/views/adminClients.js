@@ -2,6 +2,7 @@
 //   At a glance · Access codes (create + table) · Team roster · Players
 import { el, mount, formatWhen, confirmAction, num } from "../ui.js";
 import { sameNamePlayers } from "../playerPicker.js";
+import { plainName } from "../names.js";
 import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
   watchTeamRoster, applyTeamRoster, UserError, adminStats,
@@ -359,27 +360,32 @@ export async function render(main, { flash }) {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
   // The roster names players; downloads use the same names (with the ID only where two share a name).
+  const idOf = (key) => clientsCache.ids?.get(key) || key.replace(/^c_/, "");
+  const playerName = (key, fallback) => plainName(clientsCache.labels.get(key) || fallback);
   const downloadBtn = linkButton("Download current roster", () => saveCsv("team_members.csv",
-    toCsv(ROSTER_COLUMNS, (rosterCache.entries || []).map((e) => [e.email, e.name, roleLabel(e.role), clientsCache.labels.get(e.playerKey) || e.playerLabel]))));
+    toCsv(ROSTER_COLUMNS, (rosterCache.entries || []).map((e) => [playerName(e.playerKey, e.playerLabel), idOf(e.playerKey), e.name, roleLabel(e.role), e.email]))));
   const templateBtn = linkButton("Download a blank template", () => {
-    const names = [...clientsCache.labels.values()].sort((a, b) => a.localeCompare(b));
-    const p1 = names[0] || "Player Name", p2 = names[1] || "Another Player";
+    // Example rows using real players from your data: one player per row.
+    const players = [...clientsCache.labels.keys()].sort((a, b) => playerName(a).localeCompare(playerName(b)));
+    const p = (i) => (players[i] ? [playerName(players[i]), idOf(players[i])] : [`Player ${i + 1}`, `PLAYER-ID-${i + 1}`]);
     saveCsv("team_members.csv", toCsv(ROSTER_COLUMNS, [
-      ["coach@example.com", "Mike Smith", "Coach", p1],
-      ["coach@example.com", "Mike Smith", "Coach", p2],
-      ["caddy@example.com", "Jo Brown", "Caddy", `${p1}; ${p2}`],
+      [...p(0), "Mike Smith", "Coach", "mike.smith@example.com"],
+      [...p(1), "Mike Smith", "Coach", "mike.smith@example.com"],
+      [...p(0), "Jo Brown", "Caddy", "jo.brown@example.com"],
+      [...p(2), "Sam Lee", "Other", "sam.lee@example.com"],
     ]));
   });
 
   // Roster player names -> player keys. A name two IDs share must be written with its ID.
-  function resolvePlayer(text, idColumn) {
+  function resolvePlayer(text, isId) {
     const t = text.trim().toLowerCase();
     const all = [...clientsCache.labels].map(([key, label]) => ({ key, label, id: clientsCache.ids?.get(key) || key.replace(/^c_/, "") }));
-    const hit = all.find((p) => p.label.toLowerCase() === t) || all.find((p) => p.id.toLowerCase() === t);
+    const hit = isId ? all.find((p) => p.id.toLowerCase() === t)
+      : all.find((p) => p.label.toLowerCase() === t) || all.find((p) => p.id.toLowerCase() === t);
     if (hit) return { key: hit.key, label: hit.label };
     const dupes = sameNamePlayers(all, text);
     if (dupes.length) return { error: `${dupes.length} players are named ${text.trim()}. Write it as ${dupes.map((d) => `"${d.label}"`).join(" or ")}.` };
-    if (idColumn) return { key: clientKey(text.trim()), label: text.trim() }; // older ID roster: allow players with no data yet
+    if (isId) return { key: clientKey(text.trim()), label: text.trim() }; // an ID with no data yet (e.g. a new player)
     return { error: `There's no player named "${text.trim()}" in your data. Check the spelling, or use the name exactly as it appears in Data.` };
   }
   const rosterForm = el("form", {

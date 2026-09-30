@@ -79,7 +79,7 @@ tests/
   data.test.mjs           unit tests, run with: node tests/data.test.mjs
   rules.test.mjs          security-rules tests — needs the Firestore emulator, see the file header
   browser-smoke.js        the end-to-end browser test mentioned above (needs Playwright + Node)
-sample_data.csv          sample data to try the portal with
+sample_data.csv          made-up strokes-gained data to try the portal with (ID column: playerID)
 ```
 
 ## Known limitations

@@ -167,8 +167,9 @@ site.
 ## 10. Try it
 
 1. Open your GitHub Pages link and log in with the admin email/password from step 4.
-2. **Data** → upload `sample_data.csv` (included in this project) with ID column `client_id`.
-3. **Clients & codes** → create a code for `C1001` (one of the IDs in the sample data) → copy it.
+2. **Data → Upload** → upload `sample_data.csv` (made-up strokes-gained data included in this project) with ID
+   column `playerID`. Open **Data → Analyze** to see the dashboard.
+3. **Player Access** → **Create New Access Code** → User Type Player → start typing `Alex Moreno` → Create code → copy it.
 4. Open a private/incognito window, go to `your-site-url/#/signup?code=THECODE`, and create a test
    account. You should see that person's 20 rows of sample data and a chart, and be able to ask a
    question that shows up in your admin inbox with an alert.
@@ -186,22 +187,14 @@ site.
   When you pick one player, tick any roles on their team (Coach, Caddy, ...) that should also see
   it. Leave them all unticked to share with the player only.
 - **Coaches, caddies and other team members** come from one file you keep: your **team roster**,
-  a CSV with the columns `email, name, role, player` and one row per team member per player.
-  `name` is the team member; `player` is the player's name exactly as it appears in your data
-  (several players can share a cell, separated by `;`). If two player IDs share a name, write it with
-  the ID, e.g. `Chris Walker (10452)`. `team_members_template.csv` in this project
-  is an example. On **Clients & codes → Team roster**, upload the file whenever it changes:
-  - Each uploaded roster **replaces** the previous one. Anyone you take out loses access to those
-    players immediately; players who aren't in the file have no team, so only they see their data.
-  - Anyone listed who doesn't have a login yet gets an access code, shown in the roster table.
-    Send it with your `#/signup` link. It only works with the email address in the roster, and
-    their players are already set up when they sign up.
-  - A file with a mistake (a bad email, missing role or player) is rejected as a whole and
-    nothing changes, so a typo never silently removes someone.
-  - "Download current roster" gives you back exactly what's live, if you ever lose your copy.
-  - Team members see their players' data and team-shared documents, can't add or change
-    anything, and can send you questions. A team member needs a different email address from any
-    player account.
+  a CSV with the columns `player, playerID, team member, team role, team member email`, one row per
+  player per team member (`team_members_template.csv` in this project is an example). `playerID`
+  says exactly which player; the email is how the team member signs up. Team role is Coach, Caddy or
+  Other. Upload it on **Player Access → Team roster** whenever it changes:
+  - Each upload **replaces** the previous roster: anyone you take out loses access immediately.
+  - Anyone new gets an access code (see Access codes) that only works with their email.
+  - A file with a mistake is rejected as a whole, so a typo never silently removes someone.
+  - "Download current roster" gives you back exactly what's live, in the same format.
 - **Answer a question**: a badge appears in your sidebar and browser tab; click Questions, open the
   thread, reply.
 - **See what a client sees**: Clients & codes → "See their portal" next to their name.

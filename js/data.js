@@ -54,18 +54,18 @@ export const ANALYST_ROLE = 'analyst';
 //   mike@example.com,Mike Smith,Coach,C1001
 // A player_id cell may list several players separated by ";" or "|".
 // Anyone not in the roster has no team: only the player sees their own data.
-// The roster is a CSV the admin keeps: one row per team member per player, naming the player.
-//   email,name,role,player
-//   mike@example.com,Mike Smith,Coach,Alex Moreno
-// "name" is the team member; "player" is the player they work with, by name as it appears in the
-// data. Several players can share a cell, separated by ";" or "|". When two player IDs share a name,
-// write it with the ID, e.g. "Chris Walker (10452)". Older rosters with a player_id column still work.
-export const ROSTER_COLUMNS = ['email', 'name', 'role', 'player'];
+// The roster is a CSV the admin keeps: one row per player per team member.
+//   player,playerID,team member,team role,team member email
+//   Alex Moreno,10231,Mike Smith,Coach,mike@example.com
+// playerID says exactly which player (the name is for your reference); the email is how the team
+// member signs up and is recognized. Team role is Coach, Caddy or Other (any other word works too).
+// Older rosters (email,name,role,player or player_id) still upload.
+export const ROSTER_COLUMNS = ['player', 'playerID', 'team member', 'team role', 'team member email'];
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /**
- * resolvePlayer(text) -> { key, label } | { error }. Turns a player name (or ID) into a player key.
- * Returns { entries: [{email, name, role, playerLabel, playerKey}], problems: [string] }.
+ * resolvePlayer(text, isId) -> { key, label } | { error }: turns a player ID (or, without an ID, a
+ * name) into a player key. Returns { entries: [{email, name, role, playerLabel, playerKey}], problems }.
  * Any problem means the file should be rejected as a whole, so a typo never silently drops access.
  */
 export function parseTeamRoster(text, resolvePlayer) {
@@ -73,16 +73,17 @@ export function parseTeamRoster(text, resolvePlayer) {
   if (!rows.length) throw new UserError('That file is empty.');
   const header = rows[0].map((h) => norm(h).replace(/[\s-]+/g, '_'));
   const find = (...names) => header.findIndex((h) => names.includes(h));
-  const iEmail = find('email', 'email_address', 'e_mail');
-  const iName = find('name', 'full_name', 'team_member', 'team_member_name');
-  const iRole = find('role', 'title', 'position');
-  const iPlayer = find('player', 'players', 'player_name', 'player_names', 'player_id', 'player_ids', 'client_id');
-  const missing = [[iEmail, 'email'], [iRole, 'role'], [iPlayer, 'player']].filter(([i]) => i < 0).map(([, n]) => n);
+  const iEmail = find('team_member_email', 'email', 'email_address', 'e_mail');
+  const iName = find('team_member', 'team_member_name', 'name', 'full_name');
+  const iRole = find('team_role', 'role', 'title', 'position');
+  const iId = find('playerid', 'player_id', 'player_ids', 'client_id');
+  const iPlayer = find('player', 'players', 'player_name', 'player_names');
+  const missing = [[iEmail, 'team member email'], [iRole, 'team role'], [iId >= 0 ? iId : iPlayer, 'playerID']]
+    .filter(([i]) => i < 0).map(([, n]) => n);
   if (missing.length) {
     throw new UserError(`The roster needs these columns: ${ROSTER_COLUMNS.join(', ')}. Missing: ${missing.join(', ')}.`);
   }
-  const idColumn = ['player_id', 'player_ids', 'client_id'].includes(header[iPlayer]); // an older, ID-based roster
-  const resolve = resolvePlayer ? (t) => resolvePlayer(t, idColumn) : (t) => ({ key: clientKey(t), label: t });
+  const resolve = resolvePlayer || ((t) => ({ key: clientKey(t), label: t }));
   const entries = [];
   const problems = [];
   const seen = new Set();
@@ -92,13 +93,15 @@ export function parseTeamRoster(text, resolvePlayer) {
     if (r.every((v) => String(v ?? '').trim() === '')) return;
     const email = cell(iEmail).toLowerCase();
     const role = normRole(cell(iRole));
-    const players = cell(iPlayer).split(/[;|]/).map((p) => p.trim()).filter(Boolean);
+    // Prefer the ID; fall back to the player's name when a row has no ID.
+    const byId = cell(iId).split(/[;|]/).map((p) => p.trim()).filter(Boolean);
+    const players = byId.length ? byId.map((t) => [t, true]) : cell(iPlayer).split(/[;|]/).map((p) => p.trim()).filter(Boolean).map((t) => [t, false]);
     if (!EMAIL_RE.test(email)) { problems.push(`Row ${line}: "${cell(iEmail)}" isn't an email address.`); return; }
-    if (!role) { problems.push(`Row ${line}: no role for ${email}.`); return; }
+    if (!role) { problems.push(`Row ${line}: no team role for ${email}.`); return; }
     if (!players.length) { problems.push(`Row ${line}: no player for ${email}.`); return; }
     const name = cell(iName) || email;
-    for (const text of players) {
-      const hit = resolve(text);
+    for (const [text, isId] of players) {
+      const hit = resolve(text, isId);
       if (hit.error) { problems.push(`Row ${line}: ${hit.error}`); continue; }
       const dup = `${email}|${hit.key}`;
       if (seen.has(dup)) { problems.push(`Row ${line}: ${email} is listed for ${hit.label} more than once.`); continue; }

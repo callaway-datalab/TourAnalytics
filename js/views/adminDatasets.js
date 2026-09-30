@@ -5,7 +5,7 @@ import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
 
 export async function render(main, { flash }) {
   const file = el("input", { type: "file", accept: ".csv,.parquet", required: true });
-  const idColumn = el("input", { value: "client_id", required: true });
+  const idColumn = el("input", { value: "playerID", required: true });
   const description = el("input", { maxLength: 200 });
   const submit = el("button", { class: "btn", type: "submit" }, "Upload data");
   const listBox = el("div");
@@ -28,7 +28,7 @@ export async function render(main, { flash }) {
           const { readParquetFile } = await import("../parquet.js");
           table = await readParquetFile(f);
         }
-        const dataset = buildDataset(table, idColumn.value.trim() || "client_id");
+        const dataset = buildDataset(table, idColumn.value.trim() || "playerID");
         submit.textContent = `Uploading (${dataset.byClient.size} people)\u2026`;
         // Named after the file; uploading a file with the same name replaces that data.
         const displayName = f.name.replace(/\.(csv|parquet)$/i, "");
@@ -51,7 +51,7 @@ export async function render(main, { flash }) {
         let msg = `Added "${displayName}": ${num(dataset.rowCount)} rows for ${num(result.clients)} ${result.clients === 1 ? "person" : "people"}.`;
         if (dataset.blankIdRows) msg += ` ${num(dataset.blankIdRows)} rows have no value in "${dataset.idColumn}" and won't be shown to anyone.`;
         flash(msg, "ok");
-        form.reset(); idColumn.value = "client_id";
+        form.reset(); idColumn.value = "playerID";
       } catch (err) {
         flash(uploadErrorMessage(err, "that data file"), "error");
       } finally {
