@@ -3,7 +3,7 @@ import { getState } from "../auth.js";
 import { getDatasetMeta, getDatasetRows } from "../store.js";
 import { toCsv, slugify } from "../data.js";
 
-const PALETTE = ["#44ce1b", "#ffc703", "#4fc3f7", "#ff6b4d", "#ffffff", "#c38bff", "#ff9f40", "#9be7c4"];
+const PALETTE = ["#c8a97e", "#30d158", "#0a84ff", "#ff9f0a", "#f5f5f7", "#bf5af2", "#64d2ff", "#ff453a"];
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 });
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 });
 

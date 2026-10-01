@@ -7,7 +7,7 @@
 import { el, mount, formatWhen, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
 import { UserError } from "../store.js";
-import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds } from "../rounds.js";
+import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
 import { readImageText, parseScorecard } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
@@ -50,7 +50,7 @@ function renderList(main) {
       return el("a", { class: "entry-card", href: `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}` }, [
         el("div", { class: "entry-card-main" }, [
           el("strong", {}, r.course || "Round"),
-          el("span", { class: "muted" }, [r.date, r.location ? ` \u00b7 ${r.location}` : ""].join("")),
+          el("span", { class: "muted" }, [r.date, r.type ? ` \u00b7 ${r.type === "tournament" ? "Tournament" : "Practice"}` : "", r.location ? ` \u00b7 ${r.location}` : ""].join("")),
         ]),
         el("div", { class: "entry-card-score" }, r.status === "complete"
           ? [el("strong", {}, String(score)), el("span", { class: "muted" }, toPar(score - par))]
@@ -63,7 +63,7 @@ function renderList(main) {
       done.length ? el("h2", {}, "Completed") : null, ...done.map(row),
     ]);
   };
-  return watchPlayerRounds(myKey, draw);
+  return watchMyRounds(state, myKey, draw); // includes rounds you started for a player in the earlier version
 }
 
 function roundTotals(r) {
@@ -92,6 +92,15 @@ async function renderNew(main, flash) {
   const teesIn = el("input", { list: "tee-names", placeholder: "e.g. Blue", autocomplete: "off", maxLength: 30, enterkeyhint: "done" });
   const teeNames = el("datalist", { id: "tee-names" }, ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Championship", "Tournament", "Back", "Middle", "Forward"].map((t) => el("option", { value: t })));
   let lastCardText = ""; // what the photo said, so changing Tees can re-pick the yardage row
+  // Tournament or Practice: two pills, exactly one picked.
+  let roundType = "";
+  const typePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "Round type" });
+  const drawType = () => mount(typePills, [["tournament", "Tournament"], ["practice", "Practice"]].map(([v, l]) => {
+    const b = el("button", { type: "button", role: "radio", class: "seg-btn" + (roundType === v ? " on" : ""), "aria-checked": roundType === v ? "true" : "false" }, l);
+    b.addEventListener("click", () => { roundType = v; drawType(); });
+    return b;
+  }));
+  drawType();
 
   // --- scorecard ---
   const grid = el("div", { class: "card-grid" });
@@ -184,6 +193,7 @@ async function renderNew(main, flash) {
     class: "entry-form",
     onSubmit: async (e) => {
       e.preventDefault();
+      if (!roundType) { flash("Pick Tournament or Practice.", "error"); typePills.querySelector("button")?.focus(); return; }
       if (!course.value.trim()) { flash("Enter the course.", "error"); course.focus(); return; }
       const missing = holes.filter((h) => !h.par).map((h) => h.n);
       if (missing.length) { flash(`Pick a par for hole${missing.length > 1 ? "s" : ""} ${missing.join(", ")}.`, "error"); return; }
@@ -191,7 +201,7 @@ async function renderNew(main, flash) {
       try {
         const id = await createRound({
           playerKey: player.key, playerLabel: player.label, ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "",
-          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(),
+          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: roundType,
           holes: holes.map((h) => ({ n: h.n, par: h.par, yards: h.yards ?? null, hcp: h.hcp ?? null })),
         });
         location.hash = `#/entry/${encodeURIComponent(player.key)}/${id}`;
@@ -204,6 +214,7 @@ async function renderNew(main, flash) {
   }, [
     el("section", { class: "entry-section" }, [
       el("h2", {}, "Round details"),
+      el("div", { class: "field" }, [el("span", { class: "field-label" }, "Round type"), typePills]),
       el("label", {}, ["Date", date]),
       el("label", { class: "course-label" }, ["Course", courseBox.node]),
       el("label", {}, ["Location (optional)", locationIn]),
@@ -344,7 +355,7 @@ function renderRound(main, params, flash) {
     const head = el("header", { class: "round-head" }, [
       el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Data Entry")),
       el("h1", {}, round.course || "Round"),
-      el("p", { class: "muted" }, [round.date, round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
+      el("p", { class: "muted" }, [round.type ? `${round.type === "tournament" ? "Tournament" : "Practice"} round \u00b7 ` : "", round.date, round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
       el("p", { class: "round-score" }, [scoreLine, " ", status]),
       canEdit() ? null : el("p", { class: "muted small" }, `Entered by ${round.ownerName || "someone else"} \u2014 view only.`),
     ]);

@@ -151,6 +151,14 @@ export function sgBy(rounds, idx, cat, field) {
 
 /** SG per round for one category, grouped by event, month or year (oldest first). */
 export function trend(rounds, cat, by = "event") {
+  if (by === "round") {
+    // One bar per round, oldest first, labeled with its date (and round number when there is one).
+    return rounds.map((rd) => {
+      const d = new Date(rd.date);
+      const day = isNaN(d) ? rd.date : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} '${String(d.getFullYear()).slice(2)}`;
+      return { label: `${day}${rd.roundNo ? ` R${rd.roundNo}` : ""}`, value: rd.shots.filter((s) => !cat || s.cat === cat).reduce((a, s) => a + s.sg, 0), rounds: 1, event: rd.event };
+    });
+  }
   const groups = new Map();
   for (const rd of rounds) {
     const d = new Date(rd.date);
@@ -322,10 +330,10 @@ export function rank(entries) {
   return [...entries].sort((a, b) => b.value - a.value).map((e, i) => ({ ...e, rank: i + 1 }));
 }
 
-/** Old-site grade colors, from best (A+) to worst (F), by percentile 0..1 (1 = best). */
-const GRADES = ["#e51f1f", "#ef7b2b", "#f2a134", "#f5cc56", "#f7e379", "#d4df57", "#bbdb44", "#7bd32e", "#44ce1b"];
+/** Grade colors from worst to best, by percentile 0..1 (1 = best): a refined red → amber → green ramp. */
+const GRADES = ["#ff453a", "#ff6a3d", "#ff9f0a", "#ffb340", "#ffd60a", "#c9d64a", "#8fd45c", "#5ed25f", "#30d158"];
 export const gradeColor = (pct) => GRADES[Math.max(0, Math.min(GRADES.length - 1, Math.round(pct * (GRADES.length - 1))))];
-export const sgColor = (v) => (v >= 0 ? "#44ce1b" : "#e51f1f");
+export const sgColor = (v) => (v >= 0 ? "#30d158" : "#ff453a");
 export const fmtSG = (v) => {
   if (v === null || v === undefined || isNaN(v)) return "\u2014";
   const r = Math.round(v * 100) / 100 || 0; // no "-0.00"
@@ -357,10 +365,18 @@ export function filterOptions(rounds, cat) {
  * category / lie / distance pick which shots count. f = { year, event, roundNo, cats: [...], lie, dist, span }.
  */
 export function applyFilters(rounds, f = {}) {
-  let rs = rounds.filter((rd) => (!f.year || rd.year === f.year) && (!f.event || rd.event === f.event) && (!f.roundNo || rd.roundNo === f.roundNo));
+  // Each filter can hold one value or several (any of them matches); empty means "all".
+  const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
+  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie);
+  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.event)) && (!roundNos || roundNos.has(rd.roundNo)));
   if (f.span > 0) rs = rs.slice(-f.span);
   const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
-  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!f.lie || s.lie === f.lie) && (!f.dist || s.dist === f.dist)) }));
+  // Distances are "CAT|label" pairs. A category with distances picked keeps only those; others are unaffected.
+  const dists = Array.isArray(f.dist) ? f.dist : f.dist ? [`${f.cat || ""}|${f.dist}`] : [];
+  const byCat = new Map();
+  for (const d of dists) { const [c, ...rest] = String(d).split("|"); const l = rest.join("|"); if (!byCat.has(c)) byCat.set(c, new Set()); byCat.get(c).add(l); }
+  const distOk = (s) => { if (!byCat.size) return true; const want = byCat.get(s.cat) || byCat.get(""); return !want || want.has(s.dist); };
+  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!lies || lies.has(s.lie)) && distOk(s)) }));
 }
 
 /** Strokes gained per round, attempts per round and SG per attempt for a (filtered) set of rounds. */

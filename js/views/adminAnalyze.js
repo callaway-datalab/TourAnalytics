@@ -5,7 +5,8 @@ import { adminAllClients, watchAdminDatasets, getDatasetMeta, getDatasetRows, pu
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
-import { getAllRounds } from "../rounds.js";
+import { getAllRounds, watchMyRounds } from "../rounds.js";
+import { myRoundsTable } from "../myRoundsTable.js";
 import { getState } from "../auth.js";
 import { myEntryKey } from "./dataEntry.js";
 import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
@@ -36,7 +37,7 @@ export async function render(main, { flash }) {
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
   const drawSource = () => mount(sourcePills, [["tour", "Tour"], ["entered", "Entered Rounds"]].map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
-    a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); refresh(); });
+    a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
     return a;
   }));
   drawSource();
@@ -96,6 +97,20 @@ export async function render(main, { flash }) {
   }
 
   // Rounds from Data Entry, every player, in the same dashboard.
+  // Your own rounds table (with Delete), kept live while Entered Rounds is showing.
+  const roundsTableBox = el("div");
+  let stopMine = () => {};
+  let firstMine = true;
+  function watchMine() {
+    stopMine();
+    firstMine = true;
+    stopMine = watchMyRounds(getState(), myEntryKey(getState()), (rounds) => {
+      mount(roundsTableBox, myRoundsTable(rounds, { flash }));
+      if (!firstMine && source === "entered") refreshEntered(); // a round was added or deleted: redo the stats
+      firstMine = false;
+    });
+  }
+
   async function refreshEntered() {
     const token = ++loadToken;
     status.textContent = "Loading entered rounds\u2026";
@@ -103,12 +118,13 @@ export async function render(main, { flash }) {
     if (token !== loadToken) return;
     status.textContent = "";
     fieldPlayers = enteredPlayers(rounds, (r) => displayLabels.get(r.playerKey) || r.playerLabel);
+    dash?.destroy(); dash = null;
     if (!fieldPlayers.length) {
-      mount(body, el("p", { class: "empty center" }, ["No entered rounds yet. They appear here as soon as anyone records shots in ", el("a", { href: "#/entry" }, "Data Entry"), "."]));
+      mount(body, [roundsTableBox, el("p", { class: "empty center" }, ["No entered rounds yet. They appear here as soon as anyone records shots in ", el("a", { href: "#/entry" }, "Data Entry"), "."])]);
       return;
     }
     const box = el("div");
-    mount(body, box);
+    mount(body, [roundsTableBox, box]);
     dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE });
   }
 
@@ -175,5 +191,5 @@ export async function render(main, { flash }) {
   if (dash) dash.update({ field: fieldPlayers, me: meFrom() });
   picker.restore();
 
-  return () => { loadToken++; dash?.destroy(); stopFiles(); };
+  return () => { loadToken++; dash?.destroy(); stopFiles(); stopMine(); };
 }

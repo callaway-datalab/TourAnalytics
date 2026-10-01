@@ -41,7 +41,11 @@ export function sgDashboard(container, opts) {
   const { idx, mode } = opts;
   const showRanks = opts.rankings !== false; // e.g. a player's own entered rounds: nobody to rank against
   const st = opts.state || {};
-  Object.assign(st, { span: st.span ?? 0, year: st.year ?? "", event: st.event ?? "", roundNo: st.roundNo ?? "", cats: st.cats ?? [], lie: st.lie ?? "", dist: st.dist ?? "", trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "" });
+  // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
+  const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  Object.assign(st, { span: st.span ?? 0, year: arr(st.year), event: arr(st.event), roundNo: arr(st.roundNo), cats: st.cats ?? [], lie: arr(st.lie),
+    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null });
+  const narrowed = () => st.lie.length || st.dist.length; // lie / distance in use (the shared summary can't follow those)
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
   let me = opts.me;
@@ -49,24 +53,34 @@ export function sgDashboard(container, opts) {
   const fieldIsSummary = () => field.some((p) => p.summaryOnly);
 
   loadScript(CHART_JS).then(() => draw()).catch(() => {});
+  const closePanels = () => {
+    if (!st.openFilter) return;
+    st.openFilter = null;
+    container.querySelectorAll(".ms-panel").forEach((p) => { p.hidden = true; });
+    container.querySelectorAll(".ms-btn").forEach((b) => b.setAttribute("aria-expanded", "false"));
+  };
+  const onDocDown = (e) => { if (!e.target.closest?.(".ms")) closePanels(); };
+  const onKey = (e) => { if (e.key === "Escape") closePanels(); };
+  document.addEventListener("pointerdown", onDocDown);
+  document.addEventListener("keydown", onKey);
 
   function draw() {
     destroyCharts();
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
-    // A distance belongs to one category; it only applies while that's the one category picked.
-    if (st.dist && !(st.cats.length === 1 && st.cats[0] === st.distCat)) st.dist = "";
+    // Keep only choices that still exist: distances of the picked categories, lies seen in them.
+    if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
     const opt = filterOptions(base, st.cats);
-    if (st.lie && !opt.lie.includes(st.lie)) st.lie = "";
-    if (st.dist && !opt.dist.includes(st.dist)) st.dist = "";
+    st.lie = st.lie.filter((l) => opt.lie.includes(l));
     const f = { span: Number(st.span), year: st.year, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist };
     // Rankings from the shared summary can't follow lie / distance.
-    const rankF = fieldIsSummary() ? { ...f, lie: "", dist: "" } : f;
+    const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [] } : f;
     const slicedField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, rankF) }));
     const mine = me ? applyFilters(me.rounds, f) : null;
 
     // Rebuilding the dashboard would briefly shrink the page and jump it to the top. Hold its
     // height and put the scroll position back, so changing a filter or pill keeps your place.
     const y = window.scrollY;
+    const panelScroll = container.querySelector(".ms-panel:not([hidden]) .ms-options")?.scrollTop || 0;
     container.style.minHeight = `${container.offsetHeight}px`;
     // Remember which control had focus, so it can be focused again without scrolling.
     const act = container.contains(document.activeElement) ? document.activeElement : null;
@@ -87,50 +101,78 @@ export function sgDashboard(container, opts) {
       const again = [...container.querySelectorAll(focusTag || "*")].find((n) => (n.getAttribute("aria-label") || n.textContent).trim() === focusKey);
       again?.focus({ preventScroll: true });
     }
+    const openList = container.querySelector(".ms-panel:not([hidden]) .ms-options");
+    if (openList) openList.scrollTop = panelScroll;
     window.scrollTo(0, y);
     requestAnimationFrame(() => { container.style.minHeight = ""; window.scrollTo(0, y); });
     centerRankings();
   }
 
   /* ------------------------------ filters ------------------------------ */
-  function select(label, key, values, allLabel, fmt = (v) => v) {
-    const s = el("select", { "aria-label": label }, [el("option", { value: "" }, allLabel), ...values.map((v) => el("option", { value: v, selected: st[key] === v }, fmt(v)))]);
-    s.addEventListener("change", () => { st[key] = s.value; draw(); });
-    return el("label", {}, [label, s]);
-  }
-  // Distance, grouped under its category (Off-the-Tee: Driver / Non-Driver, Approach: 50-75 yds, ...).
-  // Picking a distance also picks its category; with a category chosen, only its distances show.
-  function distanceSelect() {
-    const base = me ? me.rounds : field.flatMap((p) => p.rounds);
-    const groups = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
-      .map(([k, label]) => ({ k, label, dists: filterOptions(base, k).dist }))
-      .filter((g) => g.dists.length);
-    const s = el("select", { "aria-label": "Distance" }, [
-      el("option", { value: "" }, "All distances"),
-      ...groups.map((g) => el("optgroup", { label: g.label }, g.dists.map((d) =>
-        el("option", { value: `${g.k}|${d}`, selected: st.distCat === g.k && st.dist === d }, d)))),
+  // A filter button that opens a checklist: pick any number of options (none = all). It stays open
+  // while you tick, and closes on Done, a tap outside, or Escape.
+  function multi(label, key, options, allLabel, { plural, fmt = (v) => v } = {}) {
+    const chosen = new Set(st[key]);
+    const labelOf = (v) => options.find((o) => o.value === v)?.label ?? fmt(v);
+    const summary = !chosen.size ? allLabel : chosen.size <= 2 ? [...chosen].map(labelOf).join(", ") : `${chosen.size} ${plural}`;
+    const open = st.openFilter === key;
+    const btn = el("button", { type: "button", class: "ms-btn" + (chosen.size ? " on" : ""), "aria-expanded": open ? "true" : "false", "aria-label": `${label}: ${summary}` }, [
+      el("span", { class: "ms-sum" }, summary), el("span", { class: "ms-caret", "aria-hidden": "true" }, "\u25BE"),
     ]);
-    s.addEventListener("change", () => {
-      if (!s.value) st.dist = "";
-      else { const [k, ...rest] = s.value.split("|"); st.cats = [k]; st.distCat = k; st.dist = rest.join("|"); }
+    const toggle = (v, on) => {
+      st[key] = on ? [...st[key], v] : st[key].filter((x) => x !== v);
+      if (key === "dist" && on) { // a distance belongs to a category: make sure that category is picked
+        const c = v.split("|")[0];
+        if (!st.cats.length) st.cats = [c]; else if (!st.cats.includes(c)) st.cats = [...st.cats, c];
+      }
+      st.openFilter = key;
       draw();
+    };
+    let lastGroup = null;
+    const rows = [];
+    for (const o of options) {
+      if (o.group && o.group !== lastGroup) { rows.push(el("p", { class: "ms-group" }, o.group)); lastGroup = o.group; }
+      const box = el("input", { type: "checkbox", checked: chosen.has(o.value), "aria-label": `${label}: ${o.label}` });
+      box.addEventListener("change", () => toggle(o.value, box.checked));
+      rows.push(el("label", { class: "ms-row" }, [box, el("span", {}, o.label)]));
+    }
+    const all = el("button", { type: "button", class: "link ms-all" }, `All (clear)`);
+    all.addEventListener("click", () => { st[key] = []; st.openFilter = key; draw(); });
+    const done = el("button", { type: "button", class: "btn ms-done" }, "Done");
+    done.addEventListener("click", () => { st.openFilter = null; panel.hidden = true; btn.setAttribute("aria-expanded", "false"); btn.focus({ preventScroll: true }); });
+    const panel = el("div", { class: "ms-panel", hidden: !open, role: "group", "aria-label": label }, [
+      el("div", { class: "ms-top" }, [el("strong", {}, label), all]),
+      el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, "Nothing to pick for this selection.")),
+      done,
+    ]);
+    btn.addEventListener("click", () => {
+      const nowOpen = panel.hidden;
+      container.querySelectorAll(".ms-panel").forEach((p) => { p.hidden = true; });
+      container.querySelectorAll(".ms-btn").forEach((b) => b.setAttribute("aria-expanded", "false"));
+      panel.hidden = !nowOpen; btn.setAttribute("aria-expanded", nowOpen ? "true" : "false");
+      st.openFilter = nowOpen ? key : null;
     });
-    return el("label", {}, ["Distance", s]);
+    return el("div", { class: "ms" }, [el("span", { class: "ms-label" }, label), btn, panel]);
   }
 
   function filterBar(opt) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
-    const active = ["year", "event", "roundNo", "lie", "dist"].some((k) => st[k]) || Number(st.span) > 0;
+    const active = ["year", "event", "roundNo", "lie", "dist"].some((k) => st[k].length) || Number(st.span) > 0;
     const reset = el("button", { class: "link", type: "button", hidden: !active }, "Clear filters");
-    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: "", event: "", roundNo: "", lie: "", dist: "" }); draw(); });
+    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], openFilter: null }); draw(); });
+    // Distances, grouped under their category; with categories picked, only theirs show.
+    const base = me ? me.rounds : field.flatMap((p) => p.rounds);
+    const distOpts = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
+      .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
+    const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
     return el("div", { class: "sg-filters" }, [
       el("label", {}, ["Span", span]),
-      select("Year", "year", opt.year, "All years"),
-      select("Tournament", "event", opt.event, "All tournaments"),
-      select("Round", "roundNo", opt.roundNo, "All rounds", (v) => `Round ${v}`),
-      select("Lie", "lie", opt.lie, "All lies"),
-      distanceSelect(),
+      multi("Year", "year", simple(opt.year), "All years", { plural: "years" }),
+      multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
+      multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
+      multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
+      multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
       reset,
     ]);
   }
@@ -146,6 +188,7 @@ export function sgDashboard(container, opts) {
       a.addEventListener("click", (e) => {
         e.preventDefault();
         st.cats = on ? st.cats.filter((x) => x !== k) : [...st.cats, k];
+        if (on) st.dist = st.dist.filter((d) => d.split("|")[0] !== k);
         if (st.cats.length === CATEGORIES.length) st.cats = [];
         st.cats.sort((x, y) => CATEGORIES.findIndex(([c]) => c === x) - CATEGORIES.findIndex(([c]) => c === y));
         draw();
@@ -157,9 +200,12 @@ export function sgDashboard(container, opts) {
   const catsName = () => (!st.cats.length ? "All categories"
     : st.cats.length === 3 && T2G.every((k) => st.cats.includes(k)) ? "Tee to Green"
     : st.cats.map(catName).join(" + "));
+  const list = (a, plural, fmt = (v) => v) => (!a.length ? "" : a.length <= 2 ? a.map(fmt).join(", ") : `${a.length} ${plural}`);
   const describe = () => [
     catsName(),
-    st.year, st.event, st.roundNo ? `Round ${st.roundNo}` : "", st.lie, st.dist,
+    list(st.year, "years"), list(st.event, "tournaments"),
+    st.roundNo.length ? (st.roundNo.length <= 2 ? `Round ${st.roundNo.join(" & ")}` : `${st.roundNo.length} rounds`) : "",
+    list(st.lie, "lies"), list(st.dist, "distances", (d) => d.split("|").slice(1).join("|")),
     Number(st.span) > 0 ? `last ${st.span} rounds` : "",
   ].filter(Boolean).join(" \u00b7 ");
 
@@ -175,9 +221,9 @@ export function sgDashboard(container, opts) {
         cell("Attempts / Round", t.attemptsPerRound === null ? "\u2014" : nf1.format(t.attemptsPerRound)),
         cell("SG / Attempt", t.sgPerAttempt === null ? "\u2014" : `${t.sgPerAttempt >= 0 ? "+" : ""}${t.sgPerAttempt.toFixed(3)}`),
         cell("Rounds", String(t.rounds)),
-        !showRanks ? null : cell(fieldIsSummary() && (st.lie || st.dist) ? `Rank \u00b7 ${catsName()}` : "Rank", r ? `${r.rank} of ${r.of}` : "\u2014"),
+        !showRanks ? null : cell(fieldIsSummary() && narrowed() ? `Rank \u00b7 ${catsName()}` : "Rank", r ? `${r.rank} of ${r.of}` : "\u2014"),
       ]),
-      fieldIsSummary() && (st.lie || st.dist) ? el("p", { class: "muted small center" }, "Rank uses the category and rounds you've picked; rankings don't break down by lie or distance.") : null,
+      fieldIsSummary() && narrowed() ? el("p", { class: "muted small center" }, "Rank uses the category and rounds you've picked; rankings don't break down by lie or distance.") : null,
     ]);
   }
 
@@ -239,7 +285,7 @@ export function sgDashboard(container, opts) {
             title: "SG / round", tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` })))])
         : byCat);
     } else {
-      const comparable = !(fieldIsSummary() && (st.lie || st.dist)); // the field summary has no lie / distance detail
+      const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
       const stats = statTable(cat, mine, comparable ? slicedField.map((p) => p.rounds) : [], idx);
       const others = mode === "admin" ? "All players" : "Field";
       blocks.push(panelBox("Stat Averages", stats.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain stats" }, [
@@ -257,7 +303,7 @@ export function sgDashboard(container, opts) {
       if (cat === "APP" || cat === "ARG") {
         const pts = leavePoints(mine, idx, cat);
         if (pts) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c) => scatterChart(c, pts, LEAVE_SCALE[cat]), "tall")));
-        else { const hist = leaveHistogram(mine, idx, cat); if (hist) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c) => barChart(c, hist.map((h) => h.label), hist.map((h) => h.count), { single: "#44ce1b", title: "Shots" })))); }
+        else { const hist = leaveHistogram(mine, idx, cat); if (hist) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c) => barChart(c, hist.map((h) => h.label), hist.map((h) => h.count), { single: "#30d158", title: "Shots" })))); }
       }
       for (const [fieldName, title] of BREAKDOWNS[cat]) {
         const groups = sgBy(mine, idx, cat, fieldName);
@@ -275,14 +321,14 @@ export function sgDashboard(container, opts) {
     }
 
     const t = trend(mine, cat || null, st.trendBy);
-    const toggles = el("div", { class: "subnav small trend-toggles" }, [["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
+    const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
       const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
       a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
       return a;
     }));
     const avg = t.length ? t.reduce((a, g) => a + g.value, 0) / t.length : 0;
     blocks.push(panelBox("Strokes Gained Trends", [toggles, chartBox((c) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
-      title: "SG / round", average: avg, tooltip: (i) => `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`,
+      title: "SG / round", average: avg, tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
     }), "wide")], "full"));
     return blocks;
   }
@@ -321,7 +367,7 @@ export function sgDashboard(container, opts) {
     return panelBox(`Rankings \u00b7 ${describe()}`, [
       el("div", { class: "rank-tools" }, search),
       ranked.length ? rankScroll : el("p", { class: "empty" }, "No rounds match these filters."),
-      fieldIsSummary() && (st.lie || st.dist) ? el("p", { class: "muted small" }, "Rankings follow year, tournament, round and category, not lie or distance.") : null,
+      fieldIsSummary() && narrowed() ? el("p", { class: "muted small" }, "Rankings follow year, tournament, round and category, not lie or distance.") : null,
     ], "full");
   }
 
@@ -346,24 +392,24 @@ export function sgDashboard(container, opts) {
     return wrap;
   }
   function baseOptions() {
-    const muted = "#b8c2ba", grid = "rgba(255,255,255,0.12)";
+    const muted = "#8e8e93", grid = "rgba(255,255,255,0.06)";
     return {
       responsive: true, maintainAspectRatio: false, animation: false,
-      plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.9)", borderColor: "#fff", borderWidth: 1 } },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(28,28,30,0.96)", borderColor: "rgba(255,255,255,0.12)", borderWidth: 1, padding: 10, cornerRadius: 10, titleFont: { family: "Inter, system-ui, sans-serif", weight: "600" }, bodyFont: { family: "Inter, system-ui, sans-serif" } } },
       scales: {
         x: { ticks: { color: muted }, grid: { color: grid } },
-        y: { ticks: { color: muted }, grid: { color: (c) => (c.tick?.value === 0 ? "#ffffff" : grid), lineWidth: (c) => (c.tick?.value === 0 ? 2 : 1) } },
+        y: { ticks: { color: muted }, grid: { color: (c) => (c.tick?.value === 0 ? "rgba(255,255,255,0.35)" : grid), lineWidth: (c) => (c.tick?.value === 0 ? 1.5 : 1) } },
       },
     };
   }
   function barChart(canvas, labels, values, { title, compare, average, single, tooltip } = {}) {
-    const datasets = [{ type: "bar", label: title || "", data: values, borderRadius: 4, maxBarThickness: 60, backgroundColor: single || values.map((v) => (v >= 0 ? "#44ce1b" : "#e51f1f")) }];
-    if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#ffc703" });
-    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffc703", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 });
+    const datasets = [{ type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || values.map((v) => (v >= 0 ? "#30d158" : "#ff453a")) }];
+    if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#c8a97e" });
+    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#c8a97e", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 });
     const o = baseOptions();
-    o.plugins.legend = { display: !!(compare || average !== undefined), labels: { color: "#fff", boxWidth: 14 } };
+    o.plugins.legend = { display: !!(compare || average !== undefined), labels: { color: "#a1a1a6", boxWidth: 12, usePointStyle: true, font: { family: "Inter, system-ui, sans-serif", size: 12 } } };
     if (tooltip) o.plugins.tooltip.callbacks = { afterLabel: (c) => (c.datasetIndex === 0 ? tooltip(c.dataIndex) : "") };
-    if (title) o.scales.y.title = { display: true, text: title, color: "#b8c2ba" };
+    if (title) o.scales.y.title = { display: true, text: title, color: "#8e8e93" };
     return new Chart(canvas, { data: { labels, datasets }, options: o });
   }
   function scatterChart(canvas, pts, lim) {
@@ -374,18 +420,18 @@ export function sgDashboard(container, opts) {
       id: "ellipse",
       afterDatasetsDraw(chart) {
         const { ctx, scales: { x, y } } = chart;
-        ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = "#ffc703"; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = "#c8a97e"; ctx.lineWidth = 2; ctx.beginPath();
         ctx.ellipse(x.getPixelForValue(mx), y.getPixelForValue(my), Math.abs(x.getPixelForValue(mx + sx) - x.getPixelForValue(mx)), Math.abs(y.getPixelForValue(my + sy) - y.getPixelForValue(my)), 0, 0, 2 * Math.PI);
         ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x.getPixelForValue(0), y.getPixelForValue(0), 5, 0, 2 * Math.PI); ctx.fill(); ctx.restore();
       },
     };
     const o = baseOptions();
-    o.scales.x = { ...o.scales.x, min: -lim, max: lim, title: { display: true, text: "\u2190 Left   \u00b7   Right \u2192", color: "#b8c2ba" }, grid: { color: (c) => (c.tick?.value === 0 ? "#fff" : "rgba(255,255,255,0.12)") } };
-    o.scales.y = { ...o.scales.y, min: -lim, max: lim, title: { display: true, text: "\u2190 Short   \u00b7   Long \u2192", color: "#b8c2ba" } };
-    return new Chart(canvas, { type: "scatter", data: { datasets: [{ data: pts, pointRadius: 3, backgroundColor: "rgba(68,206,27,0.55)", borderColor: "rgba(68,206,27,0.9)" }] }, options: o, plugins: [ellipse] });
+    o.scales.x = { ...o.scales.x, min: -lim, max: lim, title: { display: true, text: "\u2190 Left   \u00b7   Right \u2192", color: "#8e8e93" }, grid: { color: (c) => (c.tick?.value === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.06)") } };
+    o.scales.y = { ...o.scales.y, min: -lim, max: lim, title: { display: true, text: "\u2190 Short   \u00b7   Long \u2192", color: "#8e8e93" } };
+    return new Chart(canvas, { type: "scatter", data: { datasets: [{ data: pts, pointRadius: 3, backgroundColor: "rgba(200,169,126,0.55)", borderColor: "rgba(200,169,126,0.95)" }] }, options: o, plugins: [ellipse] });
   }
   function missBar(parts) {
-    const color = (l) => (l === "Fairway" ? "#44ce1b" : /^l/i.test(l) ? "#1f6fb2" : /^r/i.test(l) ? "#7b4bb5" : "#5c6670");
+    const color = (l) => (l === "Fairway" ? "#30d158" : /^l/i.test(l) ? "#0a84ff" : /^r/i.test(l) ? "#bf5af2" : "#48484a");
     return el("div", { class: "miss" }, [
       el("div", { class: "miss-bar" }, parts.map((p) => el("div", { style: `width:${p.pct}%;background:${color(p.label)}`, title: `${p.label}: ${p.count} shots` }, p.pct >= 8 ? `${Math.round(p.pct)}%` : ""))),
       el("div", { class: "miss-legend" }, parts.map((p) => el("span", {}, [el("i", { style: `background:${color(p.label)}` }), `${p.label} ${nf1.format(p.pct)}%`]))),
@@ -394,7 +440,7 @@ export function sgDashboard(container, opts) {
 
   draw();
   return {
-    destroy: destroyCharts,
+    destroy() { destroyCharts(); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
     update(next) { if ("me" in next) me = next.me; if ("field" in next) field = next.field; draw(); },
   };
 }

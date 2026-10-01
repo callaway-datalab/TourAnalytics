@@ -7,7 +7,9 @@ import { plainName, teamLabels } from "../names.js";
 import { effectiveTeam } from "../preview.js";
 import { render as renderDataset } from "./dataset.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
-import { watchPlayerRounds } from "../rounds.js";
+import { watchPlayerRounds, watchMyRounds } from "../rounds.js";
+import { myRoundsTable } from "../myRoundsTable.js";
+import { myEntryKey } from "./dataEntry.js";
 import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 
 let lastSource = "tour"; // Tour | Entered Rounds, remembered while the app is open
@@ -25,6 +27,12 @@ export async function render(main, { previewClient, flash }) {
   const box = el("div", { class: "embedded-dataset" });
   const tourBox = el("div", {}, [tabs, box]);
   const enteredBox = el("div", { class: "embedded-dataset entered-box" });
+  const roundsTableBox = el("div");
+  const enteredDashBox = el("div");
+  mount(enteredBox, [roundsTableBox, enteredDashBox]);
+  // Your own view (a player, or a coach on "Me"): the table of your rounds, with Delete.
+  const ownView = !previewClient || previewClient.self;
+  const unsubTable = ownView ? watchMyRounds(state, myEntryKey(state), (rounds) => mount(roundsTableBox, myRoundsTable(rounds, { flash }))) : () => {};
 
   // Tour (uploaded stats) | Entered Rounds (from Data Entry). "Me" (a coach's own) has only entered rounds.
   if (previewClient?.self) lastSource = "entered";
@@ -101,15 +109,15 @@ export async function render(main, { previewClient, flash }) {
     const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
     enteredDash?.destroy(); enteredDash = null;
     if (!players.length) {
-      mount(enteredBox, el("p", { class: "empty center" }, ["No entered rounds yet. Record one in ", el("a", { href: "#/entry" }, "Data Entry"), " and it shows up here."]));
+      mount(enteredDashBox, el("p", { class: "empty center" }, ["No entered rounds yet. Record one in ", el("a", { href: "#/entry" }, "Data Entry"), " and it shows up here."]));
       return;
     }
     const me = { ...players[0], label };
     const inner = el("div");
-    mount(enteredBox, inner);
+    mount(enteredDashBox, inner);
     enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, mode: "player", state: enteredState, rankings: false,
       note: "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in." });
   });
 
-  return () => { unsub(); stopDataset(); unsubEntered(); enteredDash?.destroy(); };
+  return () => { unsub(); stopDataset(); unsubEntered(); unsubTable(); enteredDash?.destroy(); };
 }

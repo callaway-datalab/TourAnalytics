@@ -10,10 +10,10 @@ import { db } from "./firebase-init.js";
 
 const roundsOf = (playerKey) => collection(db, "entries", playerKey, "rounds");
 
-export async function createRound({ playerKey, playerLabel, ownerUid, ownerName, date, course, location, tees, holes }) {
+export async function createRound({ playerKey, playerLabel, ownerUid, ownerName, date, course, location, tees, type, holes }) {
   const ref = doc(roundsOf(playerKey));
   await setDoc(ref, {
-    ownerUid, ownerName: ownerName || "", playerKey, playerLabel, date, course, location: location || "", tees: tees || "",
+    ownerUid, ownerName: ownerName || "", playerKey, playerLabel, date, course, location: location || "", tees: tees || "", type: type || "",
     holes, shots: {}, status: "in-progress", createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   });
   return ref.id;
@@ -58,4 +58,21 @@ export function watchAllRounds(cb) {
 }
 export async function getAllRounds() {
   return listOf(await getDocs(collectionGroup(db, "rounds")));
+}
+
+/** Every round you own: your own rounds, plus any you entered for a player under the earlier
+ *  version of Data Entry (when coaches and the admin picked a player). Newest first. */
+export function watchMyRounds(state, myKey, cb) {
+  const uid = state.user?.uid;
+  const parts = { mine: [], others: [] };
+  const emit = () => {
+    const seen = new Set();
+    cb([...parts.mine, ...parts.others].filter((r) => !seen.has(r.id) && seen.add(r.id))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0)));
+  };
+  const uns = [watchPlayerRounds(myKey, (l) => { parts.mine = l; emit(); })];
+  const owned = (l) => { parts.others = l.filter((r) => r.ownerUid === uid && r.playerKey !== myKey); emit(); };
+  if (state.isAdmin) uns.push(watchAllRounds(owned));
+  else if (state.isTeam) uns.push(watchRoundsFor(Object.keys(state.teamAccess || {}), owned));
+  return () => uns.forEach((u) => u());
 }
