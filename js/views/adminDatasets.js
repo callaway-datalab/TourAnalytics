@@ -67,7 +67,7 @@ export async function render(main, { flash }) {
   ]);
 
   mount(main, [
-    subNav([["#/admin/datasets", "Upload"], ["#/admin/analyze", "Analyze"]], "#/admin/datasets"),
+    subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/datasets"),
     el("p", { class: "muted intro" }, "Upload one file that covers many people. Each person only sees the rows that belong to them."),
     el("section", {}, [el("h2", {}, "Upload a data file"), form]),
     el("section", {}, [el("h2", {}, "Uploaded files"), listBox]),

@@ -40,8 +40,8 @@ export async function render(main) {
   mount(main, el("div", { class: "auth" }, [
     el("section", { class: "auth-intro" }, [
       el("p", { class: "auth-name" }, [logoImg(), portalName]),
-      el("h1", {}, "Your numbers and reports, just for you."),
-      el("p", {}, "Log in to see your data, download your files and ask a question."),
+      el("h1", {}, "Your game. Beyond the score."),
+      el("p", {}, "Stats, insights, and reports. All in one place."),
     ]),
     el("section", { class: "auth-form" }, [
       el("h2", {}, "Log in"),

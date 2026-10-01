@@ -129,7 +129,9 @@ export async function render(main, { flash }) {
     // only for you; once they sign up, their own name and email replace it.
     fields = {
       name: el("input", { maxLength: 80, placeholder: "Only for you, until they sign up" }),
-      players: playerPicker([], { allowAll: type === "analyst" }),
+      // Analysts always see every player (including ones added later), so there's nothing to pick.
+      players: type === "analyst" ? { node: el("p", { class: "muted small all-note" }, "Analysts see all players, including players added later."), value: () => ({ allPlayers: true, playerKeys: [] }) }
+        : playerPicker([], { allowAll: false }),
     };
     mount(fieldsBox, [
       fields.players.node,
@@ -250,6 +252,15 @@ export async function render(main, { flash }) {
         catch { flash("Couldn't remove that account.", "error"); remove.disabled = false; }
       }, "link danger");
       links.push(reset, remove);
+    } else if (inv.usedBy && !user) {
+      // Their access has been removed: the row can now be cleared from the list.
+      const del = linkButton("Delete", async () => {
+        if (!confirmAction(`Delete ${inv.clientLabel || "this person"}'s code ${formatCode(inv.code)} from the list? Their access is already removed.`)) return;
+        del.disabled = true;
+        try { await deleteInvite(inv.code); flash("Removed from the list.", "ok"); }
+        catch { flash("Couldn't delete that code.", "error"); del.disabled = false; }
+      }, "link danger");
+      links.push(del);
     } else if (!inv.usedBy && inv.revoked) {
       const refresh = linkButton("Refresh access", async () => {
         refresh.disabled = true;

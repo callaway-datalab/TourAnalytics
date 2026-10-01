@@ -36,7 +36,7 @@ export async function render(main, { previewClient, flash }) {
   // In the admin's preview of a player, their rounds show with Delete (acting as that player).
   const adminPreviewOfPlayer = state.isAdmin && previewClient && !previewClient.role && !previewClient.self;
   const unsubTable = ownView
-    ? watchMyRounds(state, myEntryKey(state), (rounds) => mount(roundsTableBox, myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid })))
+    ? watchPlayerRounds(myEntryKey(state), (rounds) => mount(roundsTableBox, myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid })))
     : adminPreviewOfPlayer
       ? watchPlayerRounds(clientKey, (rounds) => mount(roundsTableBox, myRoundsTable(rounds, { flash, title: `${previewClient.label}'s rounds` })))
       : () => {};

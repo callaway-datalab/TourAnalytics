@@ -48,6 +48,10 @@ onAuthStateChanged(auth, (user) => {
   // Admins don't strictly need a profile doc; clients do, to know their clientKey.
   const setProfile = (profile) => {
     state.profile = profile;
+    // After an email change, bring the profile's copy up to date.
+    if (profile && user.email && profile.email && profile.email !== user.email.toLowerCase()) {
+      import("./store.js").then((m) => m.syncProfileEmail(user.uid, user.email.toLowerCase()));
+    }
     state.isTeam = !state.isAdmin && !!profile && isTeamKey(profile.clientKey);
     state.teamAccess = (state.isTeam && profile.access) || {};
     state.status = "ready";

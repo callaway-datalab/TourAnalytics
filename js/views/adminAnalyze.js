@@ -5,10 +5,10 @@ import { adminAllClients, watchAdminDatasets, getDatasetMeta, getDatasetRows, pu
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
-import { getAllRounds, watchMyRounds } from "../rounds.js";
+import { getAllRounds, watchPlayerRounds } from "../rounds.js";
 import { myRoundsTable } from "../myRoundsTable.js";
 import { getState } from "../auth.js";
-import { myEntryKey } from "./dataEntry.js";
+import { myEntryKey, myName } from "./dataEntry.js";
 import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 
 export const ENTERED_NOTE = "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in.";
@@ -43,7 +43,7 @@ export async function render(main, { flash }) {
   drawSource();
 
   mount(main, [
-    subNav([["#/admin/datasets", "Upload"], ["#/admin/analyze", "Analyze"]], "#/admin/analyze"),
+    subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/analyze"),
     sourcePills,
     pickerBox,
     portalLink,
@@ -101,12 +101,17 @@ export async function render(main, { flash }) {
   const roundsTableBox = el("div");
   let stopMine = () => {};
   let firstMine = true;
+  // The rounds table follows the player picked above: their entered rounds only (yours when you pick
+  // yourself). In admin mode, Delete appears only on rounds you entered.
   function watchMine() {
-    stopMine();
+    stopMine(); stopMine = () => {};
     firstMine = true;
-    stopMine = watchMyRounds(getState(), myEntryKey(getState()), (rounds) => {
-      const uid = getState().user.uid;
-      mount(roundsTableBox, myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid })); // admin mode: only your own
+    if (!player) { mount(roundsTableBox, el("p", { class: "muted center small" }, "Pick a player to see their entered rounds.")); return; }
+    const uid = getState().user.uid;
+    const mineKey = myEntryKey(getState());
+    stopMine = watchPlayerRounds(player.key, (rounds) => {
+      mount(roundsTableBox, myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid,
+        title: player.key === mineKey ? "Your rounds" : `${player.label}'s rounds` }) || el("p", { class: "muted center small" }, `${player.label} has no entered rounds yet.`));
       if (!firstMine && source === "entered") refreshEntered(); // a round was added or deleted: redo the stats
       firstMine = false;
     });
@@ -180,14 +185,15 @@ export async function render(main, { flash }) {
   const { labels, ids } = await adminAllClients();
   // "Me" first: your own entered rounds (Data Entry), alongside every player.
   const meKey = myEntryKey(getState());
-  displayLabels = new Map([[meKey, "Me"], ...labels]);
+  displayLabels = new Map([[meKey, myName()], ...labels]); // you, by your Profile name, at the top
   fieldPlayers = fieldPlayers.map((p) => ({ ...p, label: labels.get(p.key) || p.label }));
   const picker = playerPicker(displayLabels, (p) => {
     player = p;
+    if (source === "entered") watchMine();
     drawPortalLink();
     if (dash) dash.update({ me: meFrom() });
     else if (datasets.length) refresh(); // simple comparison: redraw with the highlight (rows are cached)
-  }, ids);
+  }, ids, meKey);
   mount(pickerBox, picker.node);
   if (dash) dash.update({ field: fieldPlayers, me: meFrom() });
   picker.restore();

@@ -72,7 +72,7 @@ export function roundToPrepared(round) {
   }
   const d = new Date(round.date);
   return {
-    key: round.id, date: round.date || "", event: round.course || "Entered round", roundNo: "",
+    key: round.id, date: round.date || "", event: round.tournament || round.course || "Entered round", roundNo: "",
     year: isNaN(d) ? "" : String(d.getFullYear()), shots,
   };
 }

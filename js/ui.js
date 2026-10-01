@@ -92,8 +92,8 @@ const NAV = {
   ],
   admin: [
     ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
-    ["#/admin/datasets", "data", "Stats", ["admin-datasets", "admin-analyze"]],
-    ["#/admin/documents", "doc", "Reports", ["admin-documents", "admin-reports-view"]],
+    ["#/admin/analyze", "data", "Stats", ["admin-datasets", "admin-analyze"]],          // opens on Analyze
+    ["#/admin/reports/view", "doc", "Reports", ["admin-documents", "admin-reports-view"]], // opens on View
     ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
   ],
 };
@@ -119,10 +119,9 @@ function teamNav() {
 }
 
 /* Account button: a drop-down with your email, Questions (with the unread count) and Reset Password. */
-function accountMenu(state, { questionsHref, showBadge }) {
+function accountMenu(state) {
   const email = state.user?.email || "";
-  const badge = () => (showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null);
-  const btn = el("button", { class: "account-btn", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }, [icon("user"), text(" Account"), badge()]);
+  const btn = el("button", { class: "account-btn", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }, [icon("user"), text(" Account")]);
   const note = el("p", { class: "menu-note", role: "status", hidden: true });
   const reset = el("button", { class: "menu-item", type: "button", role: "menuitem" }, "Reset Password");
   reset.addEventListener("click", async () => {
@@ -136,9 +135,10 @@ function accountMenu(state, { questionsHref, showBadge }) {
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("p", { class: "menu-email", title: email }, email),
-    el("a", { class: "menu-item", href: questionsHref, role: "menuitem" }, ["Questions", badge()]),
+    el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     reset,
     note,
+    el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
   ]);
   const wrap = el("div", { class: "account" }, [btn, menu]);
   const setOpen = (open) => { menu.hidden = !open; btn.setAttribute("aria-expanded", open ? "true" : "false"); if (!open) note.hidden = true; };
@@ -171,8 +171,11 @@ export function renderShell(root, { previewClient, currentRoute }) {
         return link;
       }));
 
-  const footItems = [accountMenu(state, { questionsHref: admin ? "#/admin/questions" : "#/questions", showBadge }),
-    el("button", { class: "link", type: "button", onClick: () => signOut() }, "Log out")];
+  const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
+  const footItems = [
+    accountMenu(state),
+    el("a", { class: "ask-link", href: admin ? "#/admin/questions" : "#/questions", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, ["Ask a question", askBadge]),
+  ];
 
   mount(root, el("div", { class: "shell" }, [
     el("aside", { class: "rail" }, [

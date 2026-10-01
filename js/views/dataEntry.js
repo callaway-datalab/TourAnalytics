@@ -30,7 +30,7 @@ export async function render(main, { params, routeId, flash, previewClient }) {
 export function myEntryKey(state = getState()) {
   return state.isAdmin && !state.profile?.clientKey ? `a_${state.user.uid}` : state.profile?.clientKey;
 }
-const myName = (state) => state.profile?.name || state.user?.displayName || state.user?.email || "Me";
+export const myName = (state = getState()) => state.profile?.name || state.user?.displayName || state.user?.email?.split("@")[0] || "Me";
 
 /* ======================================== round list ======================================== */
 function renderList(main) {
@@ -72,7 +72,7 @@ function renderList(main) {
       done.length ? el("h2", {}, "Completed") : null, ...done.map(row),
     ]);
   };
-  return watchMyRounds(state, myKey, draw); // includes rounds you started for a player in the earlier version
+  return watchPlayerRounds(myKey, draw); // only your own rounds; someone else's are deleted from inside their portal
 }
 
 function roundTotals(r) {
@@ -104,9 +104,15 @@ async function renderNew(main, flash) {
   // Tournament or Practice: two pills, exactly one picked.
   let roundType = "";
   const typePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "Round type" });
-  const drawType = () => mount(typePills, [["tournament", "Tournament"], ["practice", "Practice"]].map(([v, l]) => {
-    const b = el("button", { type: "button", role: "radio", class: "seg-btn" + (roundType === v ? " on" : ""), "aria-checked": roundType === v ? "true" : "false" }, l);
-    b.addEventListener("click", () => { roundType = v; drawType(); });
+  const tournamentIn = el("input", { placeholder: "e.g. Club Championship", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
+  const tournamentField = el("label", { hidden: true }, ["Tournament name", tournamentIn]);
+  const drawType = () => {
+    typePills.querySelectorAll(".seg-btn").forEach((b) => { const on = b.dataset.v === roundType; b.classList.toggle("on", on); b.setAttribute("aria-checked", on ? "true" : "false"); });
+    tournamentField.hidden = roundType !== "tournament";
+  };
+  mount(typePills, [["tournament", "Tournament"], ["practice", "Practice"]].map(([v, l]) => {
+    const b = el("button", { type: "button", role: "radio", class: "seg-btn", "data-v": v, "aria-checked": "false" }, l);
+    b.addEventListener("click", () => { roundType = v; drawType(); if (v === "tournament" && !tournamentIn.value) tournamentIn.focus({ preventScroll: true }); });
     return b;
   }));
   drawType();
@@ -132,7 +138,11 @@ async function renderNew(main, flash) {
     mount(grid, holes.map((h, i) => {
       const parBtns = el("div", { class: "seg seg-sm", role: "group", "aria-label": `Hole ${h.n} par` }, [3, 4, 5].map((p) => {
         const b = el("button", { type: "button", class: "seg-btn" + (h.par === p ? " on" : ""), "aria-pressed": h.par === p ? "true" : "false" }, String(p));
-        b.addEventListener("click", () => { holes[i].par = p; drawGrid(); });
+        b.addEventListener("click", () => {
+          holes[i].par = p;
+          b.parentElement.querySelectorAll(".seg-btn").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on ? "true" : "false"); });
+          drawTotals();
+        });
         return b;
       }));
       const yards = el("input", { type: "number", inputmode: "numeric", min: 50, max: 750, placeholder: "yds", value: h.yards ?? "", "aria-label": `Hole ${h.n} yards` });
@@ -203,6 +213,7 @@ async function renderNew(main, flash) {
     onSubmit: async (e) => {
       e.preventDefault();
       if (!roundType) { flash("Pick Tournament or Practice.", "error"); typePills.querySelector("button")?.focus(); return; }
+      if (roundType === "tournament" && !tournamentIn.value.trim()) { flash("Enter the tournament name.", "error"); tournamentIn.focus(); return; }
       if (!course.value.trim()) { flash("Enter the course.", "error"); course.focus(); return; }
       const missing = holes.filter((h) => !h.par).map((h) => h.n);
       if (missing.length) { flash(`Pick a par for hole${missing.length > 1 ? "s" : ""} ${missing.join(", ")}.`, "error"); return; }
@@ -210,7 +221,7 @@ async function renderNew(main, flash) {
       try {
         const id = await createRound({
           playerKey: player.key, playerLabel: player.label, ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "",
-          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: roundType,
+          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: roundType, tournament: roundType === "tournament" ? tournamentIn.value.trim() : "",
           holes: holes.map((h) => ({ n: h.n, par: h.par, yards: h.yards ?? null, hcp: h.hcp ?? null })),
         });
         location.hash = `#/entry/${encodeURIComponent(player.key)}/${id}`;
@@ -224,6 +235,7 @@ async function renderNew(main, flash) {
     el("section", { class: "entry-section" }, [
       el("h2", {}, "Round details"),
       el("div", { class: "field" }, [el("span", { class: "field-label" }, "Round type"), typePills]),
+      tournamentField,
       el("label", {}, ["Date", date]),
       el("label", { class: "course-label" }, ["Course", courseBox.node]),
       el("label", {}, ["Location (optional)", locationIn]),
@@ -366,7 +378,7 @@ function renderRound(main, params, flash, previewClient) {
     const head = el("header", { class: "round-head" }, [
       el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Data Entry")),
       el("h1", {}, round.course || "Round"),
-      el("p", { class: "muted" }, [round.type ? `${round.type === "tournament" ? "Tournament" : "Practice"} round \u00b7 ` : "", round.date, round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
+      el("p", { class: "muted" }, [round.type ? (round.type === "tournament" ? `${round.tournament || "Tournament"} \u00b7 ` : "Practice round \u00b7 ") : "", round.date, round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
       el("p", { class: "round-score" }, [scoreLine, " ", status]),
       canEdit() ? null : el("p", { class: "muted small" }, `Entered by ${round.ownerName || "someone else"} \u2014 view only.`),
     ]);
@@ -411,7 +423,7 @@ function renderRound(main, params, flash, previewClient) {
       ]),
       ...strokes.map((s, i) => strokeCard(s, i, ro)),
       ro ? null : el("div", { class: "shot-tools" }, [
-        (() => { const b = el("button", { type: "button", class: "btn ghost add-shot" }, "\uFF0B Add a shot"); b.addEventListener("click", () => { strokes.forEach((x) => { if (isComplete(x)) x.open = false; }); strokes.push({ ...blankStroke(), open: true }); changed(true, strokes.length - 1); }); return b; })(),
+        (() => { const b = el("button", { type: "button", class: "btn ghost add-shot" }, "\uFF0B Add a shot"); b.addEventListener("click", () => { strokes.push({ ...blankStroke(), open: true }); changed(true, strokes.length - 1); }); return b; })(),
         strokes.length > 1 ? (() => { const b = el("button", { type: "button", class: "link danger" }, "Remove last shot"); b.addEventListener("click", () => { strokes.pop(); changed(); }); return b; })() : null,
       ]),
     ]);
@@ -511,7 +523,7 @@ function renderRound(main, params, flash, previewClient) {
       el("p", { class: "shot-label" }, "To"),
       chips(END_LIES, s.endLie, (l) => {
         s.endLie = l;
-        if (l === "Holed") { s.endDist = 0; s.open = false; strokes = strokes.filter((x, j) => j <= i || x.startDist !== "" || x.endLie); }
+        if (l === "Holed") { s.endDist = 0; strokes = strokes.filter((x, j) => j <= i || x.startDist !== "" || x.endLie); }
         else if (s.endDist === 0) s.endDist = "";
         changed(true, i);
       }, `Shot ${i + 1} result`),
@@ -519,9 +531,7 @@ function renderRound(main, params, flash, previewClient) {
       isComplete(s) && !ro ? (() => { const d = el("button", { type: "button", class: "link done-shot" }, "Done \u2713"); d.addEventListener("click", () => { s.open = false; drawHole(i); }); return d; })() : null,
     ]);
     // Starting on another shot folds the finished ones away (without moving this one).
-    card.addEventListener("focusin", () => collapseOthers(i));
-    card.addEventListener("pointerdown", () => collapseOthers(i));
-    return card;
+    return card; // a shot folds into a band only when you tap Done
   }
 
   function drawBar() {

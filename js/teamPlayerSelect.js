@@ -15,7 +15,7 @@ export function teamPlayerSelect(previewClient, page) {
   const players = Object.keys(team.teamAccess)
     .map((key) => ({ key, label: names.get(key) }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  if (selfKey) players.unshift({ key: selfKey, label: "Me" });
+  if (selfKey) players.unshift({ key: selfKey, label: state.profile?.name || "Me" }); // you, by your Profile name
   if (players.length < 2) return null;
   const sel = el("select", { "aria-label": "Player" }, players.map((p) =>
     el("option", { value: p.key, selected: p.key === previewClient.key }, p.label)));

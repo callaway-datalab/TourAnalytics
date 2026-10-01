@@ -8,7 +8,7 @@ export async function render(main, { flash }) {
   const results = el("div");
   const pickerBox = el("div");
   mount(main, [
-    subNav([["#/admin/documents", "Upload"], ["#/admin/reports/view", "View"]], "#/admin/reports/view"),
+    subNav([["#/admin/reports/view", "View"], ["#/admin/documents", "Upload"]], "#/admin/reports/view"),
     pickerBox,
     results,
   ]);

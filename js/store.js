@@ -4,7 +4,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
-  updatePassword, reauthenticateWithCredential, EmailAuthProvider,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider, updateProfile, verifyBeforeUpdateEmail,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, db } from "./firebase-init.js";
 import {
@@ -82,6 +82,29 @@ export async function changeOwnPassword(currentPassword, newPassword) {
   const user = auth.currentUser;
   await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, currentPassword));
   await updatePassword(user, newPassword);
+}
+
+/* ============================== Profile ============================== */
+
+/** Your name: shown in menus, player lists and on rounds you enter. */
+export async function updateMyName(name) {
+  const user = auth.currentUser;
+  await updateProfile(user, { displayName: name });
+  const ref = doc(db, "users", user.uid);
+  if ((await getDoc(ref)).exists()) await updateDoc(ref, { name });
+}
+
+/** Change your sign-in email: we email a link to the new address, and it switches once that link is
+ *  clicked (Firebase's rule, so nobody can take over an account with a typo'd address). */
+export async function changeMyEmail(currentPassword, newEmail) {
+  const user = auth.currentUser;
+  await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, currentPassword));
+  await verifyBeforeUpdateEmail(user, newEmail.trim());
+}
+
+/** Keep the profile's copy of your email in step with your sign-in email (after a change). */
+export async function syncProfileEmail(uid, email) {
+  try { await updateDoc(doc(db, "users", uid), { email }); } catch { /* no profile (admin) or offline: fine */ }
 }
 
 /* ============================== Admin: clients & codes ============================== */

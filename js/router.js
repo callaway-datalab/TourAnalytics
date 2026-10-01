@@ -117,7 +117,7 @@ async function render() {
     // Optional page to land on (the player dropdown keeps you on Data or Reports).
     const to = ["/dashboard", "/documents"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
     if (!team.preview && state.isTeam && key === state.profile?.clientKey) {
-      previewClient = { key, label: "Me", self: true }; // a team member's own entered rounds
+      previewClient = { key, label: state.profile?.name || "Me", self: true }; // a team member's own entered rounds
     } else if (team.isTeam && team.teamAccess[key]) {
       previewClient = { key, label: teamLabels(team.teamAccess).get(key) || label, role: team.teamAccess[key].role };
     } else if (state.isAdmin) {

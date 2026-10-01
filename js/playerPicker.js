@@ -13,9 +13,10 @@ export function sameNamePlayers(players, text) {
   return hits.length > 1 ? hits : [];
 }
 
-export function playerPicker(labels, onPick, ids = new Map()) {
+export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
+  // pinKey (you) always sits at the top of the list.
   const players = [...labels.entries()].map(([key, label]) => ({ key, label, id: ids.get(key) || key.replace(/^c_/, "") }))
-    .sort((a, b) => (a.label === "Me" ? -1 : b.label === "Me" ? 1 : a.label.localeCompare(b.label)));
+    .sort((a, b) => (a.key === pinKey ? -1 : b.key === pinKey ? 1 : a.label.localeCompare(b.label)));
   const listId = "pp-" + Math.random().toString(36).slice(2, 7);
   const input = el("input", { type: "search", placeholder: "Type a player's name\u2026", autocomplete: "off", role: "combobox",
     "aria-autocomplete": "list", "aria-controls": listId, "aria-expanded": "false", enterkeyhint: "search" });
@@ -36,7 +37,7 @@ export function playerPicker(labels, onPick, ids = new Map()) {
     shown = players.filter((p) => !t || p.label.toLowerCase().includes(t) || p.id.toLowerCase().includes(t)).slice(0, 50);
     mount(list, shown.length
       ? shown.map((p, i) => {
-          const li = el("li", { class: "pp-item" + (i === active ? " on" : "") + (p.label === "Me" ? " me" : ""), role: "option", id: `${listId}-${i}`, "aria-selected": i === active ? "true" : "false" }, p.label);
+          const li = el("li", { class: "pp-item" + (i === active ? " on" : "") + (p.key === pinKey ? " me" : ""), role: "option", id: `${listId}-${i}`, "aria-selected": i === active ? "true" : "false" }, p.label);
           li.addEventListener("pointerdown", (e) => { e.preventDefault(); choose(p); }); // before the box loses focus
           return li;
         })
@@ -90,7 +91,7 @@ export function playerPicker(labels, onPick, ids = new Map()) {
     el("label", { for: undefined }, "Player"),
     el("div", { class: "picker-row" }, [el("div", { class: "pp", style: "flex:1" }, [input, list]), clear]),
     which,
-    el("p", { class: "muted" }, `${players.filter((p) => p.label !== "Me").length} players`),
+    el("p", { class: "muted" }, `${players.filter((p) => p.key !== pinKey).length} players`),
   ]);
   const restore = () => { if (lastPick && players.some((p) => p.key === lastPick.key)) choose(players.find((p) => p.key === lastPick.key)); };
   return { node, restore };

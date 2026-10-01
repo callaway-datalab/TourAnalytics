@@ -89,9 +89,9 @@ export function sgDashboard(container, opts) {
     mount(container, [
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       filterBar(opt),
-      me ? selectionStrip(mine, slicedField) : null,
       cards(slicedField, f),
       catPills(),
+      me ? selectionStrip(mine, slicedField) : null, // "Alex Moreno: Approach · …" sits under the category pills
       el("div", { class: "sg-panel" }, [
         ...(me ? detailBlocks(mine, slicedField) : []),
         showRanks ? rankingsBlock(slicedField) : null,
@@ -109,8 +109,8 @@ export function sgDashboard(container, opts) {
   }
 
   /* ------------------------------ filters ------------------------------ */
-  // A filter button that opens a checklist: pick any number of options (none = all). It stays open
-  // while you tick, and closes on Done, a tap outside, or Escape.
+  // A filter button that opens a checklist: pick any number of options (none = all). Each tick applies
+  // straight away; it stays open while you tick and closes when you tap outside, tap the button, or press Escape.
   function multi(label, key, options, allLabel, { plural, fmt = (v) => v } = {}) {
     const chosen = new Set(st[key]);
     const labelOf = (v) => options.find((o) => o.value === v)?.label ?? fmt(v);
@@ -138,12 +138,9 @@ export function sgDashboard(container, opts) {
     }
     const all = el("button", { type: "button", class: "link ms-all" }, `All (clear)`);
     all.addEventListener("click", () => { st[key] = []; st.openFilter = key; draw(); });
-    const done = el("button", { type: "button", class: "btn ms-done" }, "Done");
-    done.addEventListener("click", () => { st.openFilter = null; panel.hidden = true; btn.setAttribute("aria-expanded", "false"); btn.focus({ preventScroll: true }); });
     const panel = el("div", { class: "ms-panel", hidden: !open, role: "group", "aria-label": label }, [
       el("div", { class: "ms-top" }, [el("strong", {}, label), all]),
       el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, "Nothing to pick for this selection.")),
-      done,
     ]);
     btn.addEventListener("click", () => {
       const nowOpen = panel.hidden;
@@ -253,7 +250,7 @@ export function sgDashboard(container, opts) {
       if (me) {
         const r = rankOf(fieldAll, me.key, (rs) => sgPerRound(rs)[k]);
         const pct = r && r.of > 1 ? 1 - (r.rank - 1) / (r.of - 1) : 1;
-        value = mySG[k]; color = showRanks ? gradeColor(pct) : sgColor(value ?? 0); sub = showRanks && r ? `Rank ${r.rank} of ${r.of}` : "";
+        value = mySG[k]; color = sgColor(value ?? 0); sub = showRanks && r && r.of > 1 ? `Rank ${r.rank} of ${r.of}` : ""; // green gained, red lost
       } else {
         value = fieldAvg(k); color = value === null ? "inherit" : sgColor(value);
         sub = `Average of ${playing.length} ${playing.length === 1 ? "player" : "players"}`;
@@ -293,7 +290,8 @@ export function sgDashboard(container, opts) {
         el("tbody", {}, stats.map((s) => {
           const fmt = (v) => (v === null || v === undefined ? "\u2014" : ["pct", "onePutt", "driverPct"].includes(s.kind) ? `${nf1.format(v)}%`
             : s.kind === "sgPerRound" || s.kind === "sgPerAttempt" ? `${v >= 0 ? "+" : ""}${v.toFixed(s.dp ?? 2)}` : v.toFixed(s.dp ?? 1));
-          const better = s.higher === null || s.field === null ? null : s.higher ? s.value >= s.field : s.value <= s.field;
+          const sgRow = s.kind === "sgPerRound" || s.kind === "sgPerAttempt";
+          const better = sgRow ? s.value >= 0 : s.higher === null || s.field === null ? null : s.higher ? s.value >= s.field : s.value <= s.field;
           return el("tr", {}, [el("td", {}, s.label), el("td", { class: "num" + (better === null ? "" : better ? " good" : " bad") }, fmt(s.value)), el("td", { class: "num muted" }, fmt(s.field))]);
         })),
       ])) : el("p", { class: "empty" }, "No stats for this selection.")));
@@ -435,10 +433,15 @@ export function sgDashboard(container, opts) {
           pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: single || signColors, pointBorderColor: single || signColors,
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
       : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors }];
-    if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#c8a97e" });
-    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#c8a97e", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 });
+    // Reference marks are blue dashes: "All players" (a dash at each bar) and "Average" (a dashed line).
+    if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#0a84ff", borderDash: [5, 4], borderWidth: 2 });
+    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#0a84ff", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 });
     const o = baseOptions();
-    o.plugins.legend = { display: !!(compare || average !== undefined), labels: { color: "#a1a1a6", boxWidth: 12, usePointStyle: true, font: { family: "Inter, system-ui, sans-serif", size: 12 } } };
+    // Legend: only the reference marks (no "SG / round" entry), each drawn as a short blue dash.
+    o.plugins.legend = { display: !!(compare || average !== undefined), labels: {
+      color: "#a1a1a6", boxWidth: 22, boxHeight: 0, usePointStyle: false, font: { family: "Inter, system-ui, sans-serif", size: 12 },
+      filter: (item) => item.datasetIndex !== 0,
+    } };
     if (tooltip) o.plugins.tooltip.callbacks = { afterLabel: (c) => (c.datasetIndex === 0 ? tooltip(c.dataIndex) : "") };
     if (title) o.scales.y.title = { display: true, text: title, color: "#8e8e93" };
     return new Chart(canvas, { data: { labels, datasets }, options: o });
