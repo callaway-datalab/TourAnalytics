@@ -738,3 +738,63 @@ select optgroup { background: #111411; color: #ffc703; font-weight: 700; font-st
   .chip { flex: 1 1 calc(33% - 0.4rem); padding: 0.45rem 0.4rem; }
   .card-head, .card-row { grid-template-columns: 1.8rem minmax(6.6rem, 1.5fr) minmax(3.6rem, 1fr) minmax(3rem, 0.8fr); gap: 0.35rem; }
 }
+
+/* --- Account drop-down --- */
+.account { position: relative; }
+.account-btn { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 1rem; border-radius: 999px; border: 1px solid #fff;
+  background: rgba(255, 255, 255, 0.1); color: #fff; font: 700 0.9rem/1.2 var(--font-body); cursor: pointer; position: relative; min-height: 2.4rem; }
+.account-btn:hover, .account-btn[aria-expanded="true"] { background: #fff; color: #000; }
+.account-btn svg { display: none; }
+.account-btn .badge { position: absolute; top: -0.55rem; right: -0.45rem; margin: 0; min-width: 1.35rem; height: 1.35rem; padding: 0 0.35rem; border-radius: 999px;
+  background: #d22909; color: #fff; font: 700 0.75rem/1.35rem var(--font-body); text-align: center; box-shadow: 0 0 0 2px #000; }
+.account-menu { position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 50; min-width: 15rem; max-width: min(20rem, 92vw);
+  background: #0b0d0b; border: 2px solid #fff; border-radius: 14px; padding: 0.4rem; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6); }
+.account-menu[hidden] { display: none; }
+.menu-email { margin: 0; padding: 0.6rem 0.75rem 0.7rem; color: var(--muted); font-size: 0.88rem; border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 2.9rem; padding: 0.55rem 0.75rem; margin-top: 0.2rem;
+  border: 0; border-radius: 10px; background: transparent; color: #fff; text-decoration: none; text-align: left; font: 600 0.98rem var(--font-body); cursor: pointer; }
+.menu-item:hover, .menu-item:focus-visible { background: rgba(255, 255, 255, 0.12); outline: none; }
+.menu-item .badge { position: static; margin-left: 0.5rem; background: #d22909; color: #fff; border-radius: 999px; padding: 0 0.45rem; font-size: 0.75rem; line-height: 1.35rem; min-width: 1.35rem; text-align: center; box-shadow: none; }
+.menu-note { margin: 0.3rem 0.75rem 0.5rem; font-size: 0.85rem; color: var(--brand); }
+@media (max-width: 820px) { .account-menu { right: auto; left: 50%; transform: translateX(-50%); } }
+
+/* --- Course type-ahead --- */
+.combo { position: relative; }
+.combo-list { position: absolute; left: 0; right: 0; top: calc(100% + 0.3rem); z-index: 40; list-style: none; margin: 0; padding: 0.3rem;
+  max-height: min(22rem, 55vh); overflow-y: auto; background: #0b0d0b; border: 2px solid #fff; border-radius: 14px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6); }
+.combo-list[hidden] { display: none; }
+.combo-head { padding: 0.5rem 0.7rem 0.2rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.combo-item { display: flex; flex-direction: column; gap: 0.1rem; min-height: 3rem; justify-content: center; padding: 0.5rem 0.7rem; border-radius: 10px; cursor: pointer; }
+.combo-item strong { font-weight: 700; }
+.combo-item .muted { font-size: 0.85rem; }
+.combo-item.on, .combo-item:hover { background: rgba(255, 255, 255, 0.12); }
+.combo-tag { align-self: flex-start; font-size: 0.7rem; color: #000; background: var(--signal); border-radius: 999px; padding: 0 0.45rem; margin-top: 0.15rem; }
+.combo-msg { padding: 0.6rem 0.7rem; color: var(--muted); font-size: 0.9rem; }
+.near-btn { margin-top: 0.4rem; font-size: 0.92rem; min-height: 2.75rem; }
+.course-label { position: relative; }
+
+/* --- Course type-ahead --- */
+.combo { position: relative; }
+.combo-list { position: absolute; left: 0; right: 0; top: calc(100% + 0.25rem); z-index: 40; max-height: 18rem; overflow-y: auto; list-style: none; margin: 0; padding: 0.3rem;
+  background: #0b0d0b; border: 2px solid #fff; border-radius: 12px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6); }
+.combo-list[hidden] { display: none; }
+.combo-head { padding: 0.45rem 0.6rem 0.2rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.combo-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.6rem; min-height: 2.9rem; padding: 0.55rem 0.6rem; border-radius: 8px; cursor: pointer; }
+.combo-item .muted { font-size: 0.85rem; }
+.combo-item.on, .combo-item:hover { background: rgba(255, 255, 255, 0.12); }
+.combo-tag { font-size: 0.72rem; color: var(--brand); border: 1px solid var(--brand); border-radius: 999px; padding: 0 0.45rem; }
+.combo-msg { padding: 0.55rem 0.6rem; color: var(--muted); font-size: 0.88rem; }
+.near-btn { margin-top: 0.4rem; min-height: 2.75rem; }
+.course-label { display: block; }
+
+/* --- Finished shots fold into a narrow band; tap to reopen --- */
+.shot-band { display: flex; align-items: center; gap: 0.6rem; width: 100%; min-height: 3rem; margin: 0 0 0.5rem; padding: 0.45rem 0.8rem;
+  border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.45); background: rgba(14, 136, 20, 0.22); color: #fff; text-align: left;
+  font: 600 0.92rem/1.3 var(--font-body); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.shot-band:active { transform: scale(0.99); }
+.band-n { flex: none; width: 1.7rem; height: 1.7rem; border-radius: 999px; background: #fff; color: #000; display: grid; place-items: center; font-weight: 900; font-size: 0.85rem; }
+.band-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.band-sg { flex: none; font-weight: 900; font-variant-numeric: tabular-nums; }
+.band-edit { flex: none; color: var(--muted); }
+.done-shot { display: block; margin: 0.8rem auto 0; min-height: 2.75rem; font-weight: 700; }

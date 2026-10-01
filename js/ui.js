@@ -89,14 +89,12 @@ const NAV = {
     ["#/dashboard", "data", "My Stats", ["dashboard", "dataset"]],
     ["#/documents", "doc", "My Reports", ["documents"]],
     ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
-    ["#/questions", "chat", "My Questions", ["questions", "question-new", "thread"]],
   ],
   admin: [
     ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
     ["#/admin/datasets", "data", "Stats", ["admin-datasets", "admin-analyze"]],
     ["#/admin/documents", "doc", "Reports", ["admin-documents", "admin-reports-view"]],
     ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
-    ["#/admin/questions", "chat", "Questions", ["admin-questions", "admin-thread"]],
   ],
 };
 
@@ -117,18 +115,51 @@ function teamNav() {
     ["#/dashboard", "data", "Stats", ["dashboard", "dataset"]],
     ["#/documents", "doc", "Reports", ["documents"]],
     NAV.client[2], // Data Entry
-    NAV.client[3], // My Questions
   ];
 }
+
+/* Account button: a drop-down with your email, Questions (with the unread count) and Reset Password. */
+function accountMenu(state, { questionsHref, showBadge }) {
+  const email = state.user?.email || "";
+  const badge = () => (showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null);
+  const btn = el("button", { class: "account-btn", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }, [icon("user"), text(" Account"), badge()]);
+  const note = el("p", { class: "menu-note", role: "status", hidden: true });
+  const reset = el("button", { class: "menu-item", type: "button", role: "menuitem" }, "Reset Password");
+  reset.addEventListener("click", async () => {
+    reset.disabled = true;
+    try {
+      const { sendPasswordReset } = await import("./store.js");
+      await sendPasswordReset(email);
+      note.textContent = `We've emailed a reset link to ${email}.`;
+    } catch { note.textContent = "Couldn't send the reset email. Try again in a moment."; }
+    finally { note.hidden = false; reset.disabled = false; }
+  });
+  const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
+    el("p", { class: "menu-email", title: email }, email),
+    el("a", { class: "menu-item", href: questionsHref, role: "menuitem" }, ["Questions", badge()]),
+    reset,
+    note,
+  ]);
+  const wrap = el("div", { class: "account" }, [btn, menu]);
+  const setOpen = (open) => { menu.hidden = !open; btn.setAttribute("aria-expanded", open ? "true" : "false"); if (!open) note.hidden = true; };
+  // Opened from the keyboard (detail 0), move focus into the menu; a tap or click leaves it be.
+  btn.addEventListener("click", (e) => { e.stopPropagation(); setOpen(menu.hidden); if (!menu.hidden && e.detail === 0) menu.querySelector(".menu-item")?.focus(); });
+  menu.addEventListener("click", (e) => { if (e.target.closest("a")) setOpen(false); });
+  currentAccountMenu = { wrap, btn, menu, setOpen };
+  return wrap;
+}
+// One set of page-wide listeners for whichever Account menu is on screen (the header is redrawn often).
+let currentAccountMenu = null;
+document.addEventListener("click", (e) => { const m = currentAccountMenu; if (m && !m.wrap.contains(e.target)) m.setOpen(false); });
+document.addEventListener("keydown", (e) => { const m = currentAccountMenu; if (m && e.key === "Escape" && !m.menu.hidden) { m.setOpen(false); m.btn.focus(); } });
+window.addEventListener("hashchange", () => currentAccountMenu?.setOpen(false));
 
 export function renderShell(root, { previewClient, currentRoute }) {
   const state = window.__authState;
   const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
   const admin = state.isAdmin && !previewClient && !previewingTeam;
   const team = (!state.isAdmin && state.isTeam) || previewingTeam;
-  // In a preview, leave Data Entry out: rounds entered there would be entered as you, not them.
-  const items = (admin ? NAV.admin : team ? teamNav() : NAV.client)
-    .filter(([href]) => !(href === "#/entry" && state.isAdmin && (previewClient || previewingTeam)));
+  const items = admin ? NAV.admin : team ? teamNav() : NAV.client; // Data Entry is always the last one
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 
@@ -137,17 +168,11 @@ export function renderShell(root, { previewClient, currentRoute }) {
       .map(([href, ic, label, matches]) => {
         const isCurrent = matches.includes(currentRoute);
         const link = el("a", { href, "aria-current": isCurrent ? "page" : null }, [icon(ic), text(" " + label)]);
-        if (href.endsWith("/questions") && showBadge) {
-          link.appendChild(el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)));
-        }
         return link;
       }));
 
-  const footItems = [];
-  if ((!previewClient || team) && !previewingTeam) {
-    footItems.push(el("a", { href: "#/account" }, [icon("user"), text(" " + (state.user?.displayName || state.profile?.name || state.user?.email || "Account"))]));
-  }
-  footItems.push(el("button", { class: "link", type: "button", onClick: () => signOut() }, "Log out"));
+  const footItems = [accountMenu(state, { questionsHref: admin ? "#/admin/questions" : "#/questions", showBadge }),
+    el("button", { class: "link", type: "button", onClick: () => signOut() }, "Log out")];
 
   mount(root, el("div", { class: "shell" }, [
     el("aside", { class: "rail" }, [

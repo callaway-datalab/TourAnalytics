@@ -116,7 +116,9 @@ async function render() {
     const label = qs.get("label") || key;
     // Optional page to land on (the player dropdown keeps you on Data or Reports).
     const to = ["/dashboard", "/documents"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
-    if (team.isTeam && team.teamAccess[key]) {
+    if (!team.preview && state.isTeam && key === state.profile?.clientKey) {
+      previewClient = { key, label: "Me", self: true }; // a team member's own entered rounds
+    } else if (team.isTeam && team.teamAccess[key]) {
       previewClient = { key, label: teamLabels(team.teamAccess).get(key) || label, role: team.teamAccess[key].role };
     } else if (state.isAdmin) {
       setPreviewTeam(null); // "See their portal" on a player: a plain player preview
@@ -137,7 +139,7 @@ async function render() {
     return;
   }
   // A team member whose access to this player was just removed goes back to their list.
-  if (previewClient && team.isTeam && !team.teamAccess[previewClient.key]) previewClient = null;
+  if (previewClient && !previewClient.self && team.isTeam && !team.teamAccess[previewClient.key]) previewClient = null;
   const path = raw.split("?")[0];
   const found = match(path);
 
@@ -182,7 +184,7 @@ async function render() {
     main = root;
   } else {
     main = renderShell(root, { previewClient, currentRoute: routeId });
-    if ((previewClient && (PLAYER_PAGES.includes(routeId) || (state.isAdmin && guard === "client"))) || (team.preview && guard !== "admin")) {
+    if ((previewClient && !previewClient.self && (PLAYER_PAGES.includes(routeId) || (state.isAdmin && guard === "client"))) || (team.preview && guard !== "admin")) {
       // The bar goes INSIDE <main> (placing it beside <main> breaks the two-column layout and
       // pushes the page off-screen). Views clear their container, so give them an inner one.
       const inner = document.createElement("div");

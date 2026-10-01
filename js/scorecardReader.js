@@ -35,9 +35,11 @@ const nums = (line) => (line.match(/\d+/g) || []).map(Number);
 /**
  * Pick yardages, pars and handicaps out of scorecard text. Scorecards list each row as
  * label, holes 1-9, OUT, holes 10-18, IN, TOTAL (or front and back nine on separate lines).
- * Returns { yards: [], par: [], hcp: [] } with up to 18 values each (missing ones are null).
+ * tees (optional): the tee name, e.g. "Blue"; yardages then come from the line(s) labeled with it.
+ * Returns { yards: [], par: [], hcp: [], teeRow } with up to 18 values each (missing ones are null);
+ * teeRow is the tee name found, or "" when the first yardage row was used.
  */
-export function parseScorecard(text, holes = 18) {
+export function parseScorecard(text, holes = 18, tees = "") {
   const lines = String(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const take = (test, keep) => lines.filter((l) => test(l)).flatMap((l) => nums(l).filter(keep));
   const par = take((l) => /\bpar\b/i.test(l), (n) => n >= 3 && n <= 6);
@@ -45,15 +47,18 @@ export function parseScorecard(text, holes = 18) {
   // Yardage: the first line (or pair of lines) where most numbers look like hole lengths.
   const yardLines = lines.filter((l) => !/\b(par|hcp|hdcp|handicap|index)\b/i.test(l))
     .filter((l) => { const n = nums(l); return n.length >= 5 && n.filter((x) => x >= 80 && x <= 700).length >= n.length * 0.6; });
+  // With a tee name, prefer the rows that start with (or contain) it.
+  const tee = String(tees || "").trim().toLowerCase();
+  const teeLines = tee ? yardLines.filter((l) => new RegExp(`(^|[^a-z])${tee.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`, "i").test(l)) : [];
   let yards = [];
-  for (const l of yardLines) {
+  for (const l of teeLines.length ? teeLines : yardLines) {
     yards.push(...nums(l).filter((n) => n >= 80 && n <= 700));
     if (yards.length >= holes) break;
   }
   // Drop OUT / IN totals if they slipped into the yardage row (they're the sum of the nine before).
   yards = dropTotals(yards);
   const fit = (a) => Array.from({ length: holes }, (_, i) => (a[i] ?? null));
-  return { yards: fit(yards), par: fit(par), hcp: fit(hcp) };
+  return { yards: fit(yards), par: fit(par), hcp: fit(hcp), teeRow: teeLines.length ? tees.trim() : "" };
 }
 
 function dropTotals(list) {

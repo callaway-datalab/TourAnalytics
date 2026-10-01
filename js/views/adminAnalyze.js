@@ -6,6 +6,8 @@ import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
 import { getAllRounds } from "../rounds.js";
+import { getState } from "../auth.js";
+import { myEntryKey } from "./dataEntry.js";
 import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 
 export const ENTERED_NOTE = "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in.";
@@ -147,7 +149,7 @@ export async function render(main, { flash }) {
     drawTable();
   }
 
-  const drawPortalLink = () => mount(portalLink, player
+  const drawPortalLink = () => mount(portalLink, player && !player.key.startsWith("a_")
     ? el("a", { href: `#/view-as/${encodeURIComponent(player.key)}?label=${encodeURIComponent(player.label)}` }, `See ${player.label}'s portal`)
     : null);
 
@@ -159,9 +161,11 @@ export async function render(main, { flash }) {
   });
 
   const { labels, ids } = await adminAllClients();
-  displayLabels = labels;
+  // "Me" first: your own entered rounds (Data Entry), alongside every player.
+  const meKey = myEntryKey(getState());
+  displayLabels = new Map([[meKey, "Me"], ...labels]);
   fieldPlayers = fieldPlayers.map((p) => ({ ...p, label: labels.get(p.key) || p.label }));
-  const picker = playerPicker(labels, (p) => {
+  const picker = playerPicker(displayLabels, (p) => {
     player = p;
     drawPortalLink();
     if (dash) dash.update({ me: meFrom() });

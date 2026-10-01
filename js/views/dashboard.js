@@ -26,7 +26,8 @@ export async function render(main, { previewClient, flash }) {
   const tourBox = el("div", {}, [tabs, box]);
   const enteredBox = el("div", { class: "embedded-dataset entered-box" });
 
-  // Tour (uploaded stats) | Entered Rounds (from Data Entry)
+  // Tour (uploaded stats) | Entered Rounds (from Data Entry). "Me" (a coach's own) has only entered rounds.
+  if (previewClient?.self) lastSource = "entered";
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
   const drawSource = () => {
     tourBox.hidden = lastSource !== "tour";

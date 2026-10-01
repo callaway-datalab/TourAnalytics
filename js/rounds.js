@@ -10,10 +10,10 @@ import { db } from "./firebase-init.js";
 
 const roundsOf = (playerKey) => collection(db, "entries", playerKey, "rounds");
 
-export async function createRound({ playerKey, playerLabel, ownerUid, ownerName, date, course, location, holes }) {
+export async function createRound({ playerKey, playerLabel, ownerUid, ownerName, date, course, location, tees, holes }) {
   const ref = doc(roundsOf(playerKey));
   await setDoc(ref, {
-    ownerUid, ownerName: ownerName || "", playerKey, playerLabel, date, course, location: location || "",
+    ownerUid, ownerName: ownerName || "", playerKey, playerLabel, date, course, location: location || "", tees: tees || "",
     holes, shots: {}, status: "in-progress", createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   });
   return ref.id;

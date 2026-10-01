@@ -195,13 +195,15 @@ site.
   - Anyone new gets an access code (see Access codes) that only works with their email.
   - A file with a mistake is rejected as a whole, so a typo never silently removes someone.
   - "Download current roster" gives you back exactly what's live, in the same format.
-- **Record a round (anyone)**: **Data Entry → Start a new round**. Enter the date, course and
-  location, then the scorecard: tap each hole's par and type its yardage and handicap, or tap **Read a
+- **Record a round (anyone)**: **Data Entry → Start a new round**. Enter the date, start typing the
+  course (pick it from the list and the location fills in; a course you've played before also refills
+  its scorecard and tees), and the tees. Then the scorecard: tap each hole's par and type its yardage and handicap, or tap **Read a
   scorecard photo** and check what it filled in. **Start round**, then for each shot pick where it
   started and where it finished (lie chips) and the distance. Every change saves automatically.
-  Players record their own rounds; coaches, caddies and analysts pick which of their players; you can
-  enter for anyone. Entered rounds show under **Stats → Analyze → Entered Rounds** (and on each
-  player's **My Stats → Entered Rounds**). Their strokes-gained numbers are placeholders for now.
+  Everyone records their own rounds (you included). Entered rounds show under **Stats → Analyze →
+  Entered Rounds** (pick **Me** for your own) and on each player's **My Stats → Entered Rounds**;
+  coaches pick **Me** in their player dropdown for theirs. Strokes-gained numbers are placeholders for now.
+- **Questions and password**: under **Account** (top right): your email, **Questions** and **Reset Password**.
 - **Answer a question**: a badge appears in your sidebar and browser tab; click Questions, open the
   thread, reply.
 - **See what a client sees**: Clients & codes → "See their portal" next to their name.

@@ -6,14 +6,15 @@
 // a sticky bottom bar, and every change saved automatically.
 import { el, mount, formatWhen, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { adminAllClients, UserError } from "../store.js";
-import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchRoundsFor, watchAllRounds } from "../rounds.js";
+import { UserError } from "../store.js";
+import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds } from "../rounds.js";
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
 import { readImageText, parseScorecard } from "../scorecardReader.js";
-import { teamLabels, plainName } from "../names.js";
+import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
-import { playerPicker } from "../playerPicker.js";
 
+// Short lie names for the narrow shot bands (the full words are in the band's label).
+const SHORT_LIE = { "Tee box": "Tee", Fairway: "Fwy", Rough: "Rgh", Bunker: "Bkr", Recovery: "Rec", Green: "Grn", Penalty: "Pen" };
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const toPar = (n) => (n === 0 ? "E" : n > 0 ? `+${n}` : String(n));
 
@@ -23,20 +24,18 @@ export async function render(main, { params, routeId, flash }) {
   return renderList(main);
 }
 
-/* ================================== who can enter for whom ================================== */
-async function playersICanEnterFor() {
-  const state = getState();
-  if (state.isAdmin) {
-    const { labels, ids } = await adminAllClients();
-    return { admin: true, labels, ids };
-  }
-  if (state.isTeam) return { team: true, labels: teamLabels(state.teamAccess) };
-  return { self: { key: state.profile.clientKey, label: plainName(state.profile.name || state.profile.clientLabel) } };
+/* ================================== whose rounds ================================== */
+// Rounds are always the signed-in person's own: a player's, a coach's, an analyst's, or the admin's.
+// Players and team members use their own key; the admin (who has no player key) gets "a_<uid>".
+export function myEntryKey(state = getState()) {
+  return state.isAdmin && !state.profile?.clientKey ? `a_${state.user.uid}` : state.profile?.clientKey;
 }
+const myName = (state) => state.profile?.name || state.user?.displayName || state.user?.email || "Me";
 
 /* ======================================== round list ======================================== */
 function renderList(main) {
   const state = getState();
+  const myKey = myEntryKey(state);
   const list = el("div", { class: "entry-list" });
   mount(main, [
     el("div", { class: "entry-top" }, [
@@ -51,7 +50,7 @@ function renderList(main) {
       return el("a", { class: "entry-card", href: `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}` }, [
         el("div", { class: "entry-card-main" }, [
           el("strong", {}, r.course || "Round"),
-          el("span", { class: "muted" }, [r.date, r.location ? ` \u00b7 ${r.location}` : "", state.profile?.clientKey === r.playerKey ? "" : ` \u00b7 ${plainName(r.playerLabel)}`].join("")),
+          el("span", { class: "muted" }, [r.date, r.location ? ` \u00b7 ${r.location}` : ""].join("")),
         ]),
         el("div", { class: "entry-card-score" }, r.status === "complete"
           ? [el("strong", {}, String(score)), el("span", { class: "muted" }, toPar(score - par))]
@@ -64,9 +63,7 @@ function renderList(main) {
       done.length ? el("h2", {}, "Completed") : null, ...done.map(row),
     ]);
   };
-  if (state.isAdmin) return watchAllRounds(draw);
-  if (state.isTeam) return watchRoundsFor(Object.keys(state.teamAccess || {}), draw);
-  return watchPlayerRounds(state.profile.clientKey, draw);
+  return watchPlayerRounds(myKey, draw);
 }
 
 function roundTotals(r) {
@@ -83,27 +80,18 @@ const parThru = (r) => (r.holes || []).filter((h) => holeScore(r.shots?.[`h${h.n
 /* ======================================== new round ======================================== */
 async function renderNew(main, flash) {
   const state = getState();
-  const who = await playersICanEnterFor();
-  let player = who.self || null;
+  const player = { key: myEntryKey(state), label: myName(state) }; // always your own round
   let holesCount = 18;
   let holes = blankHoles(18);
 
   // --- details ---
-  let playerField;
-  if (who.self) playerField = null;
-  else if (who.team) {
-    const opts = [...who.labels].sort((a, b) => a[1].localeCompare(b[1]));
-    const sel = el("select", { "aria-label": "Player" }, [el("option", { value: "" }, "Choose a player\u2026"), ...opts.map(([k, l]) => el("option", { value: k }, l))]);
-    if (opts.length === 1) { sel.value = opts[0][0]; player = { key: opts[0][0], label: opts[0][1] }; }
-    sel.addEventListener("change", () => { player = sel.value ? { key: sel.value, label: who.labels.get(sel.value) } : null; });
-    playerField = el("label", {}, ["Player", sel]);
-  } else {
-    const pick = playerPicker(who.labels, (p) => { player = p; }, who.ids);
-    playerField = pick.node;
-  }
   const date = el("input", { type: "date", value: todayISO(), required: true });
-  const course = el("input", { required: true, placeholder: "e.g. Torrey Pines South", autocomplete: "off", maxLength: 80 });
+  const course = el("input", { required: true, placeholder: "Start typing a course\u2026", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
   const locationIn = el("input", { placeholder: "e.g. La Jolla, CA", autocomplete: "off", maxLength: 80 });
+  // Tees: also tells the scorecard reader which row of yardages to use.
+  const teesIn = el("input", { list: "tee-names", placeholder: "e.g. Blue", autocomplete: "off", maxLength: 30, enterkeyhint: "done" });
+  const teeNames = el("datalist", { id: "tee-names" }, ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Championship", "Tournament", "Back", "Middle", "Forward"].map((t) => el("option", { value: t })));
+  let lastCardText = ""; // what the photo said, so changing Tees can re-pick the yardage row
 
   // --- scorecard ---
   const grid = el("div", { class: "card-grid" });
@@ -138,13 +126,41 @@ async function renderNew(main, flash) {
     drawTotals();
   };
 
+  // Course: type-ahead from your past courses and OpenStreetMap; picking one fills the location, and a
+  // course you've played before also refills its scorecard.
+  const pastRounds = await new Promise((res) => { const un = watchPlayerRounds(player.key, (r) => { res(r); setTimeout(() => un(), 0); }); });
+  const courseBox = courseCombobox(course, {
+    history: courseHistory(pastRounds),
+    onPick: (c) => {
+      if (c.location) locationIn.value = c.location;
+      if (c.tees && !teesIn.value) teesIn.value = c.tees;
+      if (c.holes?.length) {
+        holesCount = c.holes.length === 9 ? 9 : 18;
+        holes = blankHoles(holesCount).map((h, i) => ({ ...h, ...(c.holes[i] || {}), n: i + 1 }));
+        drawCount(); drawGrid();
+        photoStatus.textContent = `Scorecard filled from your round here on ${c.date}. Check it's the same tees.`;
+      }
+    },
+  });
+
+  // Changing Tees after reading a photo re-picks that row's yardages.
+  teesIn.addEventListener("change", () => {
+    if (!lastCardText) return;
+    const read = parseScorecard(lastCardText, holesCount, teesIn.value.trim());
+    if (!read.teeRow) { photoStatus.textContent = `Couldn't find a "${teesIn.value.trim()}" row on the card; the yardages are unchanged.`; return; }
+    holes = holes.map((h, i) => ({ ...h, yards: read.yards[i] ?? h.yards }));
+    drawGrid();
+    photoStatus.textContent = `Yardages switched to the ${read.teeRow} row. Check them below.`;
+  });
+
   photo.addEventListener("change", async () => {
     const f = photo.files[0];
     if (!f) return;
     photoStatus.textContent = "Reading the scorecard\u2026 this can take 20\u201330 seconds.";
     try {
       const text = await readImageText(f, (p) => { photoStatus.textContent = `Reading the scorecard\u2026 ${Math.round(p * 100)}%`; });
-      const read = parseScorecard(text, holesCount);
+      lastCardText = text;
+      const read = parseScorecard(text, holesCount, teesIn.value.trim());
       let found = 0;
       holes = holes.map((h, i) => {
         const next = { ...h };
@@ -155,7 +171,7 @@ async function renderNew(main, flash) {
       });
       drawGrid();
       photoStatus.textContent = found
-        ? `Filled in ${found} of ${holesCount * 3} boxes from the photo. Check them below and fix anything that's off.`
+        ? `Filled in ${found} of ${holesCount * 3} boxes from the photo${read.teeRow ? ` (yardages from the ${read.teeRow} row)` : teesIn.value.trim() ? ` (couldn't find a "${teesIn.value.trim()}" row, so used the first yardage row)` : ""}. Check them below and fix anything that's off.`
         : "Couldn't make out the numbers in that photo. Try a sharper, straight-on shot in good light, or type them in below.";
     } catch (err) {
       console.error(err);
@@ -168,7 +184,6 @@ async function renderNew(main, flash) {
     class: "entry-form",
     onSubmit: async (e) => {
       e.preventDefault();
-      if (!player) { flash("Choose the player this round is for.", "error"); return; }
       if (!course.value.trim()) { flash("Enter the course.", "error"); course.focus(); return; }
       const missing = holes.filter((h) => !h.par).map((h) => h.n);
       if (missing.length) { flash(`Pick a par for hole${missing.length > 1 ? "s" : ""} ${missing.join(", ")}.`, "error"); return; }
@@ -176,7 +191,7 @@ async function renderNew(main, flash) {
       try {
         const id = await createRound({
           playerKey: player.key, playerLabel: player.label, ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "",
-          date: date.value, course: course.value.trim(), location: locationIn.value.trim(),
+          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(),
           holes: holes.map((h) => ({ n: h.n, par: h.par, yards: h.yards ?? null, hcp: h.hcp ?? null })),
         });
         location.hash = `#/entry/${encodeURIComponent(player.key)}/${id}`;
@@ -189,10 +204,10 @@ async function renderNew(main, flash) {
   }, [
     el("section", { class: "entry-section" }, [
       el("h2", {}, "Round details"),
-      playerField,
       el("label", {}, ["Date", date]),
-      el("label", {}, ["Course", course]),
+      el("label", { class: "course-label" }, ["Course", courseBox.node]),
       el("label", {}, ["Location (optional)", locationIn]),
+      el("label", {}, ["Tees", teesIn, teeNames]),
     ]),
     el("section", { class: "entry-section" }, [
       el("h2", {}, "Scorecard"),
@@ -239,7 +254,9 @@ function renderRound(main, params, flash) {
       loadHole();
       draw();
     } else if (!editingNow) {
-      // Someone else (or another device) changed it: refresh unless we're mid-edit.
+      // Our own save coming back: just refresh the score and hole strip, never the shots on screen.
+      if (holeIdx >= 0 && JSON.stringify(r.shots?.[key(hole())] || []) === JSON.stringify(cleanStrokes())) { drawStrip(); updateScore(); return; }
+      // Someone else (or another device) changed it: refresh.
       if (holeIdx >= 0) loadHole();
       draw();
     }
@@ -252,7 +269,11 @@ function renderRound(main, params, flash) {
     strokes = saved && saved.length ? saved.map((s) => ({ ...s })) : Array.from({ length: h.par }, () => blankStroke());
     if (!strokes[0].startLie) { strokes[0].startLie = "Tee box"; strokes[0].startDist = h.yards ?? ""; }
     chain();
+    strokes.forEach((s) => { s.open = !isComplete(s); }); // finished shots start as summary bands
   }
+  // A shot is complete once it has where it started, where it finished and how far was left.
+  const isComplete = (s) => !!(s.startLie && s.startDist !== "" && s.startDist !== null && s.endLie
+    && (s.endLie === "Holed" || (s.endDist !== "" && s.endDist !== null && s.endDist !== undefined)));
   const blankStroke = () => ({ startLie: "", startDist: "", endLie: "", endDist: "" });
 
   // Each shot starts where the one before it finished (unless it was changed by hand).
@@ -269,20 +290,22 @@ function renderRound(main, params, flash) {
 
   // Taps (lie chips, add/remove shot) redraw the hole. Typing a distance must NOT redraw, or the phone
   // keyboard would close after every digit, so it only updates the bits that depend on it.
-  function changed(redraw = true) {
+  function changed(redraw = true, anchor = null) {
     chain();
-    if (redraw) drawHole(); else refreshDerived();
+    if (redraw) drawHole(anchor); else refreshDerived();
     if (!canEdit()) return;
     status.textContent = "Saving\u2026";
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 600);
   }
+  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart }) => ({
+    startLie, startDist: startDist === "" || startDist === null ? null : Number(startDist), endLie,
+    endDist: endLie === "Holed" ? 0 : endDist === "" || endDist === null || endDist === undefined ? null : Number(endDist),
+    ...(manualStart ? { manualStart: true } : {}),
+  }));
   async function save() {
     const h = hole();
-    const clean = strokes.map(({ startLie, startDist, endLie, endDist, manualStart }) => ({
-      startLie, startDist: startDist === "" ? null : Number(startDist), endLie, endDist: endDist === "" || endLie === "Holed" ? (endLie === "Holed" ? 0 : null) : Number(endDist),
-      ...(manualStart ? { manualStart: true } : {}),
-    }));
+    const clean = cleanStrokes();
     try {
       await saveHole(playerKey, roundId, h.n, clean);
       status.textContent = "Saved \u2713";
@@ -295,10 +318,14 @@ function renderRound(main, params, flash) {
 
   async function go(i) {
     await flushSave();
+    const y = window.scrollY;
     holeIdx = i;
     loadHole();
     draw();
-    window.scrollTo(0, 0);
+    window.scrollTo(0, y);
+    // Stay put, unless the new hole's title would be above the screen: then bring just that into view.
+    const title = main.querySelector(".hole-title, .round-summary");
+    if (title && title.getBoundingClientRect().top < 0) window.scrollTo(0, window.scrollY + title.getBoundingClientRect().top - 12);
   }
 
   /* ---------- layout ---------- */
@@ -306,17 +333,19 @@ function renderRound(main, params, flash) {
   const holeBox = el("div", { class: "hole-box" });
   const bar = el("div", { class: "entry-bar entry-nav" });
 
-  function draw() {
+  const scoreLine = el("span");
+  function updateScore() {
     const { score, thru } = roundTotals(round);
+    mount(scoreLine, [el("strong", {}, thru ? toPar(score - parThru(round)) : "E"),
+      el("span", { class: "muted" }, thru === round.holes.length ? ` \u00b7 ${score} total` : ` \u00b7 thru ${thru}`)]);
+  }
+  function draw() {
+    updateScore();
     const head = el("header", { class: "round-head" }, [
       el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Data Entry")),
       el("h1", {}, round.course || "Round"),
-      el("p", { class: "muted" }, [round.date, round.location ? ` \u00b7 ${round.location}` : "", ` \u00b7 ${plainName(round.playerLabel)}`].join("")),
-      el("p", { class: "round-score" }, [
-        el("strong", {}, thru ? toPar(score - parThru(round)) : "E"),
-        el("span", { class: "muted" }, thru === round.holes.length ? ` \u00b7 ${score} total` : ` \u00b7 thru ${thru}`),
-        " ", status,
-      ]),
+      el("p", { class: "muted" }, [round.date, round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
+      el("p", { class: "round-score" }, [scoreLine, " ", status]),
       canEdit() ? null : el("p", { class: "muted small" }, `Entered by ${round.ownerName || "someone else"} \u2014 view only.`),
     ]);
     if (holeIdx < 0) { mount(main, [head, summary()]); return; }
@@ -334,13 +363,24 @@ function renderRound(main, params, flash) {
       b.addEventListener("click", () => go(i));
       return b;
     }), (() => { const b = el("button", { type: "button", class: "hole-chip sum" }, [el("span", {}, "\u2211"), el("small", {}, "card")]); b.addEventListener("click", () => go(-1)); return b; })()]);
-    requestAnimationFrame(() => strip.querySelector(".hole-chip.on")?.scrollIntoView({ inline: "center", block: "nearest" }));
+    requestAnimationFrame(() => {
+      const on = strip.querySelector(".hole-chip.on");
+      if (on) strip.scrollLeft = on.offsetLeft - strip.clientWidth / 2 + on.offsetWidth / 2; // sideways only, never the page
+    });
   }
 
-  function drawHole() {
+  // Redraw the hole without moving the screen: the shot you're working on (anchor) stays exactly where it
+  // was, and the box you were typing in keeps focus.
+  function drawHole(anchor = null) {
     const h = hole();
     const ro = !canEdit();
     const hs = holeScore(strokes);
+    const anchorEl = anchor !== null ? holeBox.querySelector(`[data-i="${anchor}"]`) : null;
+    const before = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+    const y = window.scrollY;
+    const act = document.activeElement;
+    const actCard = act?.closest?.("[data-i]")?.dataset.i, actRole = act?.dataset?.role;
+    holeBox.style.minHeight = `${holeBox.offsetHeight}px`;
     mount(holeBox, [
       el("div", { class: "hole-title" }, [
         el("h2", {}, `Hole ${h.n}`),
@@ -349,14 +389,38 @@ function renderRound(main, params, flash) {
       ]),
       ...strokes.map((s, i) => strokeCard(s, i, ro)),
       ro ? null : el("div", { class: "shot-tools" }, [
-        (() => { const b = el("button", { type: "button", class: "btn ghost add-shot" }, "\uFF0B Add a shot"); b.addEventListener("click", () => { strokes.push(blankStroke()); changed(); requestAnimationFrame(() => holeBox.querySelector(".shot-card:last-of-type")?.scrollIntoView({ block: "center", behavior: "smooth" })); }); return b; })(),
+        (() => { const b = el("button", { type: "button", class: "btn ghost add-shot" }, "\uFF0B Add a shot"); b.addEventListener("click", () => { strokes.forEach((x) => { if (isComplete(x)) x.open = false; }); strokes.push({ ...blankStroke(), open: true }); changed(true, strokes.length - 1); }); return b; })(),
         strokes.length > 1 ? (() => { const b = el("button", { type: "button", class: "link danger" }, "Remove last shot"); b.addEventListener("click", () => { strokes.pop(); changed(); }); return b; })() : null,
       ]),
     ]);
+    const after = anchor !== null ? holeBox.querySelector(`[data-i="${anchor}"]`) : null;
+    if (before !== null && after) window.scrollTo(0, y + after.getBoundingClientRect().top - before);
+    else window.scrollTo(0, y);
+    if (actRole && actCard !== undefined) holeBox.querySelector(`[data-i="${actCard}"] input[data-role="${actRole}"]`)?.focus({ preventScroll: true });
+    // If the hole got shorter (shots folded), keep just enough room below that the page can't snap upward.
+    requestAnimationFrame(() => { holeBox.style.minHeight = `${Math.max(0, window.innerHeight - holeBox.getBoundingClientRect().top)}px`; });
     drawStrip();
   }
 
+  // Fold finished shots (other than the one being worked on) into bands, in place, so the shot you're
+  // on doesn't move and its keyboard stays open.
+  function collapseOthers(i) {
+    const keep = holeBox.querySelector(`[data-i="${i}"]`);
+    const before = keep ? keep.getBoundingClientRect().top : null;
+    let changedAny = false;
+    strokes.forEach((x, j) => {
+      if (j === i || !x.open || !isComplete(x)) return;
+      x.open = false; changedAny = true;
+      holeBox.querySelector(`[data-i="${j}"]`)?.replaceWith(strokeCard(x, j, !canEdit()));
+    });
+    if (changedAny && keep && before !== null) window.scrollBy(0, keep.getBoundingClientRect().top - before);
+  }
+
   function refreshDerived() {
+    holeBox.querySelectorAll(".shot-band").forEach((band) => {
+      const j = Number(band.dataset.i);
+      if (strokes[j]) band.replaceWith(strokeCard(strokes[j], j, !canEdit()));
+    });
     holeBox.querySelectorAll(".shot-card").forEach((card) => {
       const s = strokes[Number(card.dataset.i)];
       if (!s) return;
@@ -380,6 +444,20 @@ function renderRound(main, params, flash) {
 
   function strokeCard(s, i, ro) {
     const sg = strokesGained(s);
+    if (!s.open && isComplete(s)) {
+      // Narrow summary band; tap to open it again.
+      const u1 = unitFor(s.startLie), u2 = unitFor(s.endLie === "Penalty" ? s.startLie : s.endLie);
+      const full = `${s.startLie} ${s.startDist} ${u1} \u2192 ${s.endLie === "Holed" ? "Holed" : `${s.endLie} ${s.endDist} ${u2}`}`;
+      const short = (l) => SHORT_LIE[l] || l, su = (u) => (u === "yds" ? "y" : "ft");
+      const band = el("button", { type: "button", class: "shot-band", "data-i": String(i), "aria-expanded": "false", "aria-label": `Shot ${i + 1}: ${full}. Tap to edit.`, title: full }, [
+        el("span", { class: "band-n" }, String(i + 1)),
+        el("span", { class: "band-text" }, `${short(s.startLie)} ${s.startDist}${su(u1)} \u2192 ${s.endLie === "Holed" ? "Holed" : `${short(s.endLie)} ${s.endDist}${su(u2)}`}`),
+        el("span", { class: "band-sg", style: sg === null ? "" : `color:${sgColor(sg)}` }, sg === null ? "" : fmtSG(sg)),
+        el("span", { class: "band-edit", "aria-hidden": "true" }, "\u270E"),
+      ]);
+      band.addEventListener("click", () => { s.open = true; drawHole(i); });
+      return band;
+    }
     const chips = (lies, value, onPick, label) => el("div", { class: "chips", role: "radiogroup", "aria-label": label }, lies.map((l) => {
       const b = el("button", { type: "button", role: "radio", "aria-checked": value === l ? "true" : "false", class: "chip" + (value === l ? " on" : "") + (l === "Holed" ? " holed" : l === "Penalty" ? " pen" : ""), disabled: ro }, l);
       b.addEventListener("click", () => onPick(l));
@@ -399,24 +477,29 @@ function renderRound(main, params, flash) {
       return el("div", { class: "dist" }, [inp, el("span", { class: "unit" }, unit)]);
     };
     const after = strokes.slice(0, i).some((x) => x.endLie === "Holed");
-    return el("section", { class: "shot-card" + (after ? " after-holed" : ""), "data-i": String(i) }, [
+    const card = el("section", { class: "shot-card" + (after ? " after-holed" : ""), "data-i": String(i) }, [
       el("div", { class: "shot-head" }, [
         el("h3", {}, `Shot ${i + 1}`),
         el("span", { class: "shot-sg", style: sg === null ? "" : `color:${sgColor(sg)}`, title: "Strokes gained (placeholder numbers)" }, sg === null ? "" : `${fmtSG(sg)} SG`),
       ]),
       after ? el("p", { class: "muted small" }, "This comes after the ball was holed \u2014 remove it if it's extra.") : null,
       el("p", { class: "shot-label" }, "From"),
-      chips(LIES, s.startLie, (l) => { s.startLie = l; s.manualStart = i > 0; changed(); }, `Shot ${i + 1} starting lie`),
+      chips(LIES, s.startLie, (l) => { s.startLie = l; s.manualStart = i > 0; changed(true, i); }, `Shot ${i + 1} starting lie`),
       distInput(s.startDist, unitFor(s.startLie), (v) => { s.startDist = v; s.manualStart = i > 0; changed(false); }, `Shot ${i + 1} starting distance`, "start"),
       el("p", { class: "shot-label" }, "To"),
       chips(END_LIES, s.endLie, (l) => {
         s.endLie = l;
-        if (l === "Holed") { s.endDist = 0; strokes = strokes.filter((x, j) => j <= i || x.startDist !== "" || x.endLie); }
+        if (l === "Holed") { s.endDist = 0; s.open = false; strokes = strokes.filter((x, j) => j <= i || x.startDist !== "" || x.endLie); }
         else if (s.endDist === 0) s.endDist = "";
-        changed();
+        changed(true, i);
       }, `Shot ${i + 1} result`),
       s.endLie === "Holed" ? el("p", { class: "holed-note" }, "\u26F3 In the hole") : distInput(s.endDist, unitFor(s.endLie === "Penalty" ? s.startLie : s.endLie), (v) => { s.endDist = v; changed(false); }, `Shot ${i + 1} distance left`, "end"),
+      isComplete(s) && !ro ? (() => { const d = el("button", { type: "button", class: "link done-shot" }, "Done \u2713"); d.addEventListener("click", () => { s.open = false; drawHole(i); }); return d; })() : null,
     ]);
+    // Starting on another shot folds the finished ones away (without moving this one).
+    card.addEventListener("focusin", () => collapseOthers(i));
+    card.addEventListener("pointerdown", () => collapseOthers(i));
+    return card;
   }
 
   function drawBar() {
