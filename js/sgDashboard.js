@@ -44,8 +44,8 @@ export function sgDashboard(container, opts) {
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   Object.assign(st, { span: st.span ?? 0, year: arr(st.year), event: arr(st.event), roundNo: arr(st.roundNo), cats: st.cats ?? [], lie: arr(st.lie),
-    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
-  const narrowed = () => st.lie.length || st.dist.length; // lie / distance in use (the shared summary can't follow those)
+    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), club: arr(st.club), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
+  const narrowed = () => st.lie.length || st.dist.length || st.club.length; // lie / distance / club in use (the shared summary can't follow those)
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
   let me = opts.me;
@@ -71,9 +71,10 @@ export function sgDashboard(container, opts) {
     if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
     const opt = filterOptions(base, st.cats);
     st.lie = st.lie.filter((l) => opt.lie.includes(l));
-    const f = { span: Number(st.span), year: st.year, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist };
-    // Rankings from the shared summary can't follow lie / distance.
-    const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [] } : f;
+    st.club = st.club.filter((c) => opt.club.includes(c));
+    const f = { span: Number(st.span), year: st.year, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club };
+    // Rankings from the shared summary can't follow lie / distance / club.
+    const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
     const slicedField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, rankF) }));
     const mine = me ? applyFilters(me.rounds, f) : null;
 
@@ -155,9 +156,9 @@ export function sgDashboard(container, opts) {
   function filterBar(opt) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
-    const active = ["year", "event", "roundNo", "lie", "dist"].some((k) => st[k].length) || Number(st.span) > 0;
+    const active = ["year", "event", "roundNo", "lie", "dist", "club"].some((k) => st[k].length) || Number(st.span) > 0;
     const reset = el("button", { class: "link", type: "button", hidden: !active }, "Clear filters");
-    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], openFilter: null }); draw(); });
+    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], club: [], openFilter: null }); draw(); });
     // Distances, grouped under their category; with categories picked, only theirs show.
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
     const distOpts = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
@@ -170,6 +171,8 @@ export function sgDashboard(container, opts) {
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
       multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
       multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
+      // Club: only when shots have clubs (rounds entered with WITB clubs).
+      opt.club.length ? multi("Club", "club", simple(opt.club), "All clubs", { plural: "clubs" }) : null,
       reset,
     ]);
   }
@@ -202,7 +205,7 @@ export function sgDashboard(container, opts) {
     catsName(),
     list(st.year, "years"), list(st.event, "tournaments"),
     st.roundNo.length ? (st.roundNo.length <= 2 ? `Round ${st.roundNo.join(" & ")}` : `${st.roundNo.length} rounds`) : "",
-    list(st.lie, "lies"), list(st.dist, "distances", (d) => d.split("|").slice(1).join("|")),
+    list(st.lie, "lies"), list(st.dist, "distances", (d) => d.split("|").slice(1).join("|")), list(st.club, "clubs"),
     Number(st.span) > 0 ? `last ${st.span} rounds` : "",
   ].filter(Boolean).join(" \u00b7 ");
 

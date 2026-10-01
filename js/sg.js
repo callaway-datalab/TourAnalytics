@@ -42,6 +42,12 @@ const ALIASES = {
   spin: ["backspin", "spinrate", "spin"],
 };
 
+// Clubs in bag order: driver, woods, hybrids, irons, wedges, putter.
+const clubOrder = (s) => {
+  const n = parseFloat(String(s).replace(/[^\d.]/g, "")) || 0;
+  return /^driver/i.test(s) ? n / 100 : /^\d+w$/i.test(s) ? 1 + n / 100 : /^\d+H$/.test(s) ? 2 + n / 100 : /^\d+i$/i.test(s) ? 3 + n / 100
+    : /^PW$/i.test(s) ? 3.99 : /wedge/i.test(s) ? 4 + n / 1000 : /putter/i.test(s) ? 5 : 6;
+};
 const LIE_ORDER = ["teebox", "tee", "fairway", "firstcut", "rough", "bunker", "sand", "recovery", "fringe", "green"];
 const squash = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -351,7 +357,9 @@ export function filterOptions(rounds, cat) {
   const byNum = (a, b) => lead(a) - lead(b) || a.localeCompare(b);
   const lieRank = (l) => { const i = LIE_ORDER.indexOf(squash(l)); return i < 0 ? 99 : i; };
   const dists = uniq(shots.map((s) => s.dist));
+  const clubs = uniq(shots.map((s) => s.club));
   return {
+    club: clubs.sort((a, b) => clubOrder(a) - clubOrder(b) || a.localeCompare(b)),
     year: uniq(rounds.map((r) => r.year)).sort().reverse(),
     event: uniq(rounds.map((r) => r.event)),
     roundNo: uniq(rounds.map((r) => r.roundNo)).sort(byNum),
@@ -367,7 +375,7 @@ export function filterOptions(rounds, cat) {
 export function applyFilters(rounds, f = {}) {
   // Each filter can hold one value or several (any of them matches); empty means "all".
   const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
-  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie);
+  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club);
   let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.event)) && (!roundNos || roundNos.has(rd.roundNo)));
   if (f.span > 0) rs = rs.slice(-f.span);
   const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
@@ -376,7 +384,7 @@ export function applyFilters(rounds, f = {}) {
   const byCat = new Map();
   for (const d of dists) { const [c, ...rest] = String(d).split("|"); const l = rest.join("|"); if (!byCat.has(c)) byCat.set(c, new Set()); byCat.get(c).add(l); }
   const distOk = (s) => { if (!byCat.size) return true; const want = byCat.get(s.cat) || byCat.get(""); return !want || want.has(s.dist); };
-  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!lies || lies.has(s.lie)) && distOk(s)) }));
+  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!lies || lies.has(s.lie)) && (!clubs || clubs.has(s.club)) && distOk(s)) }));
 }
 
 /** Strokes gained per round, attempts per round and SG per attempt for a (filtered) set of rounds. */

@@ -136,6 +136,7 @@ function accountMenu(state) {
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("p", { class: "menu-email", title: email }, email),
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
+    el("a", { class: "menu-item", href: "#/witb", role: "menuitem", title: "What's in the bag" }, "WITB"),
     reset,
     note,
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),

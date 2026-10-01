@@ -16,6 +16,7 @@ const ROUTES = [
   ["/questions/new", "client", () => import("./views/questionNew.js"), "question-new"],
   ["/questions/:id", "client", () => import("./views/thread.js"), "thread"],
   ["/account", "signed-in", () => import("./views/account.js"), "account"],
+  ["/witb", "signed-in", () => import("./views/witb.js"), "witb"],
   ["/entry", "signed-in", () => import("./views/dataEntry.js"), "entry"],
   ["/entry/new", "signed-in", () => import("./views/dataEntry.js"), "entry-new"],
   ["/entry/:player/:round", "signed-in", () => import("./views/dataEntry.js"), "entry-round"],

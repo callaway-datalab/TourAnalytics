@@ -67,7 +67,7 @@ export function roundToPrepared(round) {
       const sg = strokesGained(st);
       if (sg === null) return;
       const cat = categoryOf(st, i, h.par);
-      shots.push({ cat, sg, w: 1, lie: st.startLie, dist: distanceBucket(cat, st, h.par) });
+      shots.push({ cat, sg, w: 1, lie: st.startLie, dist: distanceBucket(cat, st, h.par), club: st.club || null });
     });
   }
   const d = new Date(round.date);
@@ -78,7 +78,7 @@ export function roundToPrepared(round) {
 }
 
 /** Column map so the shared dashboard offers its lie and distance views for entered rounds. */
-export const ENTERED_IDX = { category: 0, sg: 1, lie: 2, distanceRange: 3 };
+export const ENTERED_IDX = { category: 0, sg: 1, lie: 2, distanceRange: 3, club: 4 };
 
 /** Group entered rounds by player: [{ key, label, rounds }], oldest round first. */
 export function enteredPlayers(rounds, labelOf = (r) => r.playerLabel) {

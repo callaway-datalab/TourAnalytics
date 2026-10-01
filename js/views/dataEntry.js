@@ -11,6 +11,7 @@ import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlaye
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
 import { readImageText, parseScorecard } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
+import { getBag, clubLabel, clubRank } from "../bag.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
 
 // Short lie names for the narrow shot bands (the full words are in the band's label).
@@ -273,6 +274,12 @@ function renderRound(main, params, flash, previewClient) {
   // Whoever entered a round can change or delete it. The admin can too, but only from inside that
   // player's portal (a preview), never from the admin's own pages.
   const canEdit = () => round && (round.ownerUid === state.user.uid || (state.isAdmin && previewClient?.key === playerKey));
+  // Your clubs (WITB), for the optional Club on each shot.
+  let bag = [];
+  getBag(state.user.uid).then((clubs) => {
+    bag = clubs.map((c) => ({ label: clubLabel(c), model: c.model || "" })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
+    if (round && holeIdx >= 0 && bag.length) drawHole();
+  });
   const hole = () => round.holes[holeIdx];
   const key = (h) => `h${h.n}`;
 
@@ -332,7 +339,8 @@ function renderRound(main, params, flash, previewClient) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 600);
   }
-  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart }) => ({
+  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart, club }) => ({
+    ...(club ? { club } : {}),
     startLie, startDist: startDist === "" || startDist === null ? null : Number(startDist), endLie,
     endDist: endLie === "Holed" ? 0 : endDist === "" || endDist === null || endDist === undefined ? null : Number(endDist),
     ...(manualStart ? { manualStart: true } : {}),
@@ -388,11 +396,18 @@ function renderRound(main, params, flash, previewClient) {
   }
 
   function drawStrip() {
+    let running = 0; // score to par through each hole (finished holes only)
     mount(strip, [...round.holes.map((h, i) => {
       const hs = holeScore(i === holeIdx ? strokes : round.shots?.[key(h)]);
       const diff = hs.done ? hs.strokes - h.par : null;
-      const b = el("button", { type: "button", class: "hole-chip" + (i === holeIdx ? " on" : "") + (hs.done ? " done" : ""), "aria-current": i === holeIdx ? "step" : null, "aria-label": `Hole ${h.n}` }, [
-        el("span", {}, String(h.n)), el("small", {}, hs.done ? (diff === 0 ? "par" : toPar(diff)) : "\u00a0"),
+      if (hs.done) running += diff;
+      // Outline: grey par, green birdie, lime eagle or better, orange bogey, red double bogey or worse.
+      const tone = !hs.done ? "" : diff <= -2 ? " eagle" : diff === -1 ? " birdie" : diff === 0 ? " par" : diff === 1 ? " bogey" : " double";
+      const b = el("button", { type: "button", class: "hole-chip" + (i === holeIdx ? " on" : "") + (hs.done ? " done" : "") + tone,
+        "aria-current": i === holeIdx ? "step" : null, "aria-label": hs.done ? `Hole ${h.n}: ${scoreName(diff)}, ${toPar(running)} through ${h.n}` : `Hole ${h.n}` }, [
+        el("span", { class: "hc-n" }, String(h.n)),
+        el("small", { class: "hc-res" }, hs.done ? shortScore(diff) : "\u00a0"),
+        el("small", { class: "hc-tot" }, hs.done ? toPar(running) : "\u00a0"),
       ]);
       b.addEventListener("click", () => go(i));
       return b;
@@ -476,6 +491,21 @@ function renderRound(main, params, flash, previewClient) {
     if (res && hs.done) res.textContent = `${hs.strokes} \u00b7 ${scoreName(hs.strokes - h.par)}`;
   }
 
+  // Club for a shot: your WITB clubs, or a nudge to fill out WITB.
+  function clubPicker(s, ro) {
+    if (!bag.length) {
+      return s.club ? el("p", { class: "club-note" }, s.club)
+        : el("p", { class: "muted small club-note" }, ["Fill out ", el("a", { href: "#/witb" }, "WITB"), " in the Account section to track club usage."]);
+    }
+    const sel = el("select", { class: "club-select", "aria-label": "Club", disabled: ro }, [
+      el("option", { value: "" }, "\u2014"),
+      ...bag.map((c) => el("option", { value: c.label, selected: s.club === c.label }, c.model ? `${c.label} \u00b7 ${c.model}` : c.label)),
+      ...(s.club && !bag.some((c) => c.label === s.club) ? [el("option", { value: s.club, selected: true }, s.club)] : []),
+    ]);
+    sel.addEventListener("change", () => { s.club = sel.value || undefined; changed(false); });
+    return sel;
+  }
+
   function strokeCard(s, i, ro) {
     const sg = strokesGained(s);
     if (!s.open && isComplete(s)) {
@@ -485,7 +515,7 @@ function renderRound(main, params, flash, previewClient) {
       const short = (l) => SHORT_LIE[l] || l, su = (u) => (u === "yds" ? "y" : "ft");
       const band = el("button", { type: "button", class: "shot-band", "data-i": String(i), "aria-expanded": "false", "aria-label": `Shot ${i + 1}: ${full}. Tap to edit.`, title: full }, [
         el("span", { class: "band-n" }, String(i + 1)),
-        el("span", { class: "band-text" }, `${short(s.startLie)} ${s.startDist}${su(u1)} \u2192 ${s.endLie === "Holed" ? "Holed" : `${short(s.endLie)} ${s.endDist}${su(u2)}`}`),
+        el("span", { class: "band-text" }, `${s.club ? `${s.club} \u00b7 ` : ""}${short(s.startLie)} ${s.startDist}${su(u1)} \u2192 ${s.endLie === "Holed" ? "Holed" : `${short(s.endLie)} ${s.endDist}${su(u2)}`}`),
         el("span", { class: "band-sg", style: sg === null ? "" : `color:${sgColor(sg)}` }, sg === null ? "" : fmtSG(sg)),
         el("span", { class: "band-edit", "aria-hidden": "true" }, "\u270E"),
       ]);
@@ -517,13 +547,15 @@ function renderRound(main, params, flash, previewClient) {
         el("span", { class: "shot-sg", style: sg === null ? "" : `color:${sgColor(sg)}`, title: "Strokes gained (placeholder numbers)" }, sg === null ? "" : `${fmtSG(sg)} SG`),
       ]),
       after ? el("p", { class: "muted small" }, "This comes after the ball was holed \u2014 remove it if it's extra.") : null,
+      el("p", { class: "shot-label" }, "Club (optional)"),
+      clubPicker(s, ro),
       el("p", { class: "shot-label" }, "From"),
       chips(LIES, s.startLie, (l) => { s.startLie = l; s.manualStart = i > 0; changed(true, i); }, `Shot ${i + 1} starting lie`),
       distInput(s.startDist, unitFor(s.startLie), (v) => { s.startDist = v; s.manualStart = i > 0; changed(false); }, `Shot ${i + 1} starting distance`, "start"),
       el("p", { class: "shot-label" }, "To"),
       chips(END_LIES, s.endLie, (l) => {
         s.endLie = l;
-        if (l === "Holed") { s.endDist = 0; strokes = strokes.filter((x, j) => j <= i || x.startDist !== "" || x.endLie); }
+        if (l === "Holed") { s.endDist = 0; strokes = strokes.slice(0, i + 1); } // holed: any later shots are removed
         else if (s.endDist === 0) s.endDist = "";
         changed(true, i);
       }, `Shot ${i + 1} result`),
@@ -589,4 +621,6 @@ function renderRound(main, params, flash, previewClient) {
   return () => { onLeave(); unsub(); window.removeEventListener("pagehide", onLeave); };
 }
 
+// Short names for the hole chips.
+const shortScore = (d) => ({ "-3": "Albatross", "-2": "Eagle", "-1": "Birdie", 0: "Par", 1: "Bogey", 2: "Dbl Bogey", 3: "Tpl Bogey" }[d] ?? (d < -3 ? "Condor" : `+${d}`));
 const scoreName = (d) => ({ "-3": "Albatross", "-2": "Eagle", "-1": "Birdie", 0: "Par", 1: "Bogey", 2: "Double bogey", 3: "Triple bogey" }[d] ?? (d > 0 ? `+${d}` : String(d)));
