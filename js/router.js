@@ -16,6 +16,9 @@ const ROUTES = [
   ["/questions/new", "client", () => import("./views/questionNew.js"), "question-new"],
   ["/questions/:id", "client", () => import("./views/thread.js"), "thread"],
   ["/account", "signed-in", () => import("./views/account.js"), "account"],
+  ["/entry", "signed-in", () => import("./views/dataEntry.js"), "entry"],
+  ["/entry/new", "signed-in", () => import("./views/dataEntry.js"), "entry-new"],
+  ["/entry/:player/:round", "signed-in", () => import("./views/dataEntry.js"), "entry-round"],
   ["/team", "team", () => import("./views/teamHome.js"), "team"],
   ["/admin", "admin", () => import("./views/adminClients.js"), "admin-clients"], // Player Access is the admin's home
   ["/admin/datasets", "admin", () => import("./views/adminDatasets.js"), "admin-datasets"],
@@ -96,7 +99,7 @@ async function render() {
       if (person) t = { uid: null, name: person.name, email: id, kind: null, access: person.access };
     } else {
       const inv = await fetchInvite(id).catch(() => null);
-      if (inv) t = { uid: null, name: inv.clientLabel, email: inv.email, kind: inv.kind || null, access: inv.access || {} };
+      if (inv) t = { uid: null, name: inv.clientLabel || "this person", email: inv.email || null, kind: inv.kind || null, access: inv.access || {} };
     }
     if (!t) { navigate(homeFor(state)); return; }
     setPreviewTeam(t);

@@ -39,6 +39,7 @@ const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || "All categories
  */
 export function sgDashboard(container, opts) {
   const { idx, mode } = opts;
+  const showRanks = opts.rankings !== false; // e.g. a player's own entered rounds: nobody to rank against
   const st = opts.state || {};
   Object.assign(st, { span: st.span ?? 0, year: st.year ?? "", event: st.event ?? "", roundNo: st.roundNo ?? "", cats: st.cats ?? [], lie: st.lie ?? "", dist: st.dist ?? "", trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "" });
   const charts = [];
@@ -72,13 +73,14 @@ export function sgDashboard(container, opts) {
     const focusKey = act ? (act.getAttribute("aria-label") || act.textContent).trim() : null;
     const focusTag = act?.tagName;
     mount(container, [
+      opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       filterBar(opt),
       me ? selectionStrip(mine, slicedField) : null,
       cards(slicedField, f),
       catPills(),
       el("div", { class: "sg-panel" }, [
         ...(me ? detailBlocks(mine, slicedField) : []),
-        rankingsBlock(slicedField),
+        showRanks ? rankingsBlock(slicedField) : null,
       ]),
     ]);
     if (focusKey) {
@@ -173,7 +175,7 @@ export function sgDashboard(container, opts) {
         cell("Attempts / Round", t.attemptsPerRound === null ? "\u2014" : nf1.format(t.attemptsPerRound)),
         cell("SG / Attempt", t.sgPerAttempt === null ? "\u2014" : `${t.sgPerAttempt >= 0 ? "+" : ""}${t.sgPerAttempt.toFixed(3)}`),
         cell("Rounds", String(t.rounds)),
-        cell(fieldIsSummary() && (st.lie || st.dist) ? `Rank \u00b7 ${catsName()}` : "Rank", r ? `${r.rank} of ${r.of}` : "\u2014"),
+        !showRanks ? null : cell(fieldIsSummary() && (st.lie || st.dist) ? `Rank \u00b7 ${catsName()}` : "Rank", r ? `${r.rank} of ${r.of}` : "\u2014"),
       ]),
       fieldIsSummary() && (st.lie || st.dist) ? el("p", { class: "muted small center" }, "Rank uses the category and rounds you've picked; rankings don't break down by lie or distance.") : null,
     ]);
@@ -205,7 +207,7 @@ export function sgDashboard(container, opts) {
       if (me) {
         const r = rankOf(fieldAll, me.key, (rs) => sgPerRound(rs)[k]);
         const pct = r && r.of > 1 ? 1 - (r.rank - 1) / (r.of - 1) : 1;
-        value = mySG[k]; color = gradeColor(pct); sub = r ? `Rank ${r.rank} of ${r.of}` : "";
+        value = mySG[k]; color = showRanks ? gradeColor(pct) : sgColor(value ?? 0); sub = showRanks && r ? `Rank ${r.rank} of ${r.of}` : "";
       } else {
         value = fieldAvg(k); color = value === null ? "inherit" : sgColor(value);
         sub = `Average of ${playing.length} ${playing.length === 1 ? "player" : "players"}`;

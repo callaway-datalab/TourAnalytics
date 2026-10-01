@@ -61,7 +61,7 @@ export async function render(main, { flash }) {
   }, [
     el("label", {}, ["File (.csv or .parquet)", file]),
     el("label", {}, ["Column that says who each row belongs to", idColumn,
-      el("small", {}, "Use the exact column name. The values in it are what you'll enter when you create each person's access code. Matching ignores capital letters and spaces.")]),
+      el("small", {}, "Usually playerID. Each player's rows are matched by this ID; a player column, if the file has one, gives their name. Matching ignores capital letters and spaces.")]),
     el("label", {}, ["Short description (optional)", description]),
     el("div", {}, submit),
   ]);

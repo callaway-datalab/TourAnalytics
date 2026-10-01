@@ -7,8 +7,12 @@ import { plainName, teamLabels } from "../names.js";
 import { effectiveTeam } from "../preview.js";
 import { render as renderDataset } from "./dataset.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
+import { watchPlayerRounds } from "../rounds.js";
+import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 
-// My Data: opens the player's data straight away. A strokes-gained file gets the same dashboard as the
+let lastSource = "tour"; // Tour | Entered Rounds, remembered while the app is open
+
+// My Stats: opens the player's stats straight away, with Tour | Entered Rounds pills on top. A strokes-gained file gets the same dashboard as the
 // admin's Analyze page (filters, cards, category charts, trends, rankings); any other file gets the
 // plain chart and table. Players have one data file; if there are ever more, tabs let them switch.
 export async function render(main, { previewClient, flash }) {
@@ -19,7 +23,22 @@ export async function render(main, { previewClient, flash }) {
 
   const tabs = el("nav", { class: "subnav small", "aria-label": "Data files" });
   const box = el("div", { class: "embedded-dataset" });
-  mount(main, [teamPlayerSelect(previewClient, "/dashboard"), tabs, box]);
+  const tourBox = el("div", {}, [tabs, box]);
+  const enteredBox = el("div", { class: "embedded-dataset entered-box" });
+
+  // Tour (uploaded stats) | Entered Rounds (from Data Entry)
+  const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
+  const drawSource = () => {
+    tourBox.hidden = lastSource !== "tour";
+    enteredBox.hidden = lastSource !== "entered";
+    mount(sourcePills, [["tour", "Tour"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+      const a = el("a", { href: "#", "aria-current": lastSource === v ? "page" : null }, l);
+      a.addEventListener("click", (e) => { e.preventDefault(); lastSource = v; drawSource(); });
+      return a;
+    }));
+  };
+  mount(main, [teamPlayerSelect(previewClient, "/dashboard"), sourcePills, tourBox, enteredBox]);
+  drawSource();
 
   let current = null;       // id of the file on screen
   let shownVersion = null;  // id + upload time, so a re-upload refreshes the view
@@ -72,5 +91,24 @@ export async function render(main, { previewClient, flash }) {
     show(datasets.find((d) => d.id === current));
   });
 
-  return () => { unsub(); stopDataset(); };
+  // Entered rounds: this player's own rounds from Data Entry. Nobody else's are shown here, so no rankings.
+  let enteredDash = null;
+  const enteredState = {};
+  const unsubEntered = watchPlayerRounds(clientKey, (rounds) => {
+    const players = enteredPlayers(rounds, () => "");
+    const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
+    const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
+    enteredDash?.destroy(); enteredDash = null;
+    if (!players.length) {
+      mount(enteredBox, el("p", { class: "empty center" }, ["No entered rounds yet. Record one in ", el("a", { href: "#/entry" }, "Data Entry"), " and it shows up here."]));
+      return;
+    }
+    const me = { ...players[0], label };
+    const inner = el("div");
+    mount(enteredBox, inner);
+    enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, mode: "player", state: enteredState, rankings: false,
+      note: "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in." });
+  });
+
+  return () => { unsub(); stopDataset(); unsubEntered(); enteredDash?.destroy(); };
 }

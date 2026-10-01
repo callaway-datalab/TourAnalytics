@@ -640,3 +640,101 @@ details.sees { margin-top: 2rem; }
 .sg-filters { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
 select optgroup { background: #111411; color: #ffc703; font-weight: 700; font-style: normal; } select optgroup option { color: #fff; font-weight: 400; }
 .sg-body, .sg-panel { overflow-anchor: none; }
+
+/* ================================================================== */
+/*  Data Entry, phone-first: one column, 44px+ tap targets, 16px      */
+/*  inputs (no iOS zoom), chip pickers, a sticky bottom action bar.   */
+/* ================================================================== */
+.source-pills { margin: -0.25rem 0 1rem; }
+.source-pills a { font-size: 1rem; padding: 0.5rem 1.4rem; }
+.sg-note { margin: -0.25rem 0 0.9rem; }
+
+.entry-top { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; align-items: center; margin: 0 0 1.25rem; }
+.btn.entry-big { min-height: 3.25rem; padding: 0.85rem 1.6rem; font-size: 1.08rem; display: inline-flex; align-items: center; justify-content: center; }
+.entry-list h2 { font-size: 1.1rem; margin: 1.5rem 0 0.6rem; }
+.entry-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4rem; padding: 0.8rem 1rem;
+  margin-bottom: 0.6rem; background: var(--surface); border: 2px solid var(--panel-border); border-radius: 14px; color: #fff; text-decoration: none; }
+.entry-card:active { transform: scale(0.99); }
+.entry-card-main { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.entry-card-main strong { font-size: 1.05rem; }
+.entry-card-main .muted { font-size: 0.88rem; }
+.entry-card-score { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.entry-card-score strong { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+
+.entry-form { max-width: 40rem; margin: 0 auto; padding-bottom: 6rem; }
+.entry-section { background: var(--surface); border: 2px solid var(--panel-border); border-radius: 15px; padding: 1rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.85rem; }
+.entry-section h2 { margin: 0; font-size: 1.15rem; }
+.entry-form input, .entry-form select, .hole-box input { font-size: 16px; min-height: 2.9rem; margin: 0.3rem 0 0; }
+.entry-form label { font-size: 0.92rem; }
+.photo-btn { width: 100%; cursor: pointer; }
+.photo-btn:focus-within { outline: 3px solid var(--brand); outline-offset: 2px; }
+
+.seg { display: flex; gap: 0.4rem; }
+.seg-btn { flex: 1; min-height: 2.9rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.06);
+  color: #fff; font: 700 1rem var(--font-body); cursor: pointer; }
+.seg-btn.on { background: var(--brand-deep); border-color: #fff; }
+.seg.seg-sm .seg-btn { min-height: 2.75rem; padding: 0; font-size: 1rem; }
+
+.card-head, .card-row { display: grid; grid-template-columns: 2.2rem minmax(7.5rem, 1.4fr) minmax(4.2rem, 1fr) minmax(3.4rem, 0.8fr); gap: 0.45rem; align-items: center; }
+.card-head { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 0 0.1rem; }
+.card-grid { display: flex; flex-direction: column; gap: 0.4rem; }
+.card-row input { margin: 0; text-align: center; padding: 0.4rem; }
+.card-hole { font-weight: 900; text-align: center; font-size: 1.05rem; }
+.card-totals { margin: 0.3rem 0 0; }
+
+.entry-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; gap: 0.6rem; align-items: center; justify-content: center;
+  padding: 0.7rem max(0.8rem, env(safe-area-inset-right)) calc(0.7rem + env(safe-area-inset-bottom, 0px)) max(0.8rem, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.88); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-top: 1px solid rgba(255, 255, 255, 0.2); }
+.entry-bar .btn { min-height: 3.1rem; flex: 1; max-width: 18rem; font-size: 1.02rem; }
+.entry-bar .bar-mid { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: center; }
+.entry-bar .btn[disabled] { opacity: 0.35; }
+
+.round-head { text-align: center; margin-bottom: 0.75rem; }
+.round-head h1 { font-size: clamp(1.5rem, 6vw, 2.2rem); margin: 0.2rem 0; }
+.round-head p { margin: 0.15rem 0; }
+.round-score strong { font-size: 1.4rem; }
+.save-status { font-size: 0.82rem; color: var(--muted); margin-left: 0.4rem; }
+
+.hole-strip { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.3rem 0.1rem 0.6rem; margin: 0 -0.25rem 0.5rem; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.hole-chip { flex: none; scroll-snap-align: center; width: 3.1rem; min-height: 3.3rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(0, 0, 0, 0.55); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font: 700 1.05rem var(--font-body); }
+.hole-chip small { font-size: 0.68rem; font-weight: 400; color: var(--muted); }
+.hole-chip.done { border-color: var(--brand); }
+.hole-chip.on { background: #fff; color: #000; border-color: #fff; }
+.hole-chip.on small { color: #333; }
+.hole-chip.sum { border-style: dashed; }
+
+.hole-box { max-width: 40rem; margin: 0 auto; padding-bottom: 6.5rem; }
+.hole-title { text-align: center; margin-bottom: 0.75rem; }
+.hole-title h2 { font-size: 2rem; margin: 0; }
+.hole-title p { margin: 0.1rem 0; color: var(--muted); font-size: 1rem; }
+.hole-title .hole-result { color: var(--brand); font-weight: 700; }
+
+.shot-card { background: var(--surface); border: 2px solid var(--panel-border); border-radius: 15px; padding: 0.85rem 0.85rem 1rem; margin-bottom: 0.8rem; }
+.shot-card.after-holed { opacity: 0.6; border-style: dashed; }
+.shot-head { display: flex; justify-content: space-between; align-items: baseline; }
+.shot-head h3 { margin: 0; font-size: 1.15rem; }
+.shot-sg { font-weight: 900; font-variant-numeric: tabular-nums; }
+.shot-label { margin: 0.7rem 0 0.35rem; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chip { min-height: 2.75rem; padding: 0.45rem 0.95rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06);
+  color: #fff; font: 600 0.98rem var(--font-body); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.chip.on { background: var(--brand-deep); border-color: #fff; color: #fff; }
+.chip.holed.on { background: #fff; color: #000; }
+.chip.pen.on { background: var(--danger-deep); }
+.chip[disabled] { cursor: default; }
+.dist { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.dist input { flex: 1; max-width: 11rem; font-size: 1.2rem !important; font-weight: 700; text-align: center; margin: 0 !important; }
+.dist .unit { color: var(--muted); font-weight: 700; min-width: 2rem; }
+.holed-note { margin: 0.6rem 0 0; font-weight: 700; color: var(--brand); }
+.shot-tools { display: flex; flex-direction: column; align-items: center; gap: 0.8rem; margin: 0.4rem 0 1rem; }
+.add-shot { width: 100%; min-height: 3.1rem; border-style: dashed !important; }
+.round-summary { max-width: 46rem; margin: 0 auto; }
+.round-summary tfoot td { font-weight: 900; border-top: 2px solid rgba(255, 255, 255, 0.4); }
+
+@media (max-width: 520px) {
+  main { padding-left: 0.75rem; padding-right: 0.75rem; }
+  .entry-section, .shot-card { border-width: 1px; }
+  .chip { flex: 1 1 calc(33% - 0.4rem); padding: 0.45rem 0.4rem; }
+  .card-head, .card-row { grid-template-columns: 1.8rem minmax(6.6rem, 1.5fr) minmax(3.6rem, 1fr) minmax(3rem, 0.8fr); gap: 0.35rem; }
+}

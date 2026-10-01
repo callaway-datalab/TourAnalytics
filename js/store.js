@@ -125,7 +125,9 @@ export async function createTeamAccess({ name, email, role, playerKeys, labels }
   const code = makeCode();
   const r = normRole(role);
   await setDoc(doc(db, "invites", code), {
-    clientKey: teamKey(), clientLabel: name, note: "", email: norm(email), kind: "team",
+    // No email: anyone with the code can sign up (like a player code). The name is only a label
+    // until they do; their account then shows the name and email they signed up with.
+    clientKey: teamKey(), clientLabel: name || "", note: "", ...(email ? { email: norm(email) } : {}), kind: "team",
     access: Object.fromEntries(playerKeys.map((k) => [k, { role: r, label: labels.get(k) || k.replace(/^c_/, "") }])),
     createdAt: serverTimestamp(), expiresAt: null, usedBy: null, usedAt: null, revoked: false,
   });
@@ -151,7 +153,7 @@ const analystAccess = (keys, labels) =>
 export async function createAnalystAccess({ name, email, playerKeys, allPlayers, labels, days }) {
   const code = makeCode();
   await setDoc(doc(db, "invites", code), {
-    clientKey: teamKey(), clientLabel: name, note: "Callaway Access", email: norm(email),
+    clientKey: teamKey(), clientLabel: name || "", note: "Callaway Access", ...(email ? { email: norm(email) } : {}),
     kind: "analyst", allPlayers: !!allPlayers,
     access: analystAccess(allPlayers ? [...labels.keys()] : playerKeys, labels),
     createdAt: serverTimestamp(), expiresAt: null,

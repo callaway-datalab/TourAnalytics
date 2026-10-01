@@ -125,19 +125,15 @@ export async function render(main, { flash }) {
       ]));
       return;
     }
+    // Coach / caddy / analyst / other: just the players they work with. The name is optional and
+    // only for you; once they sign up, their own name and email replace it.
     fields = {
-      name: el("input", { required: true, maxLength: 80, placeholder: "e.g. Mike Smith" }),
-      email: el("input", { type: "email", required: true, placeholder: "name@example.com" }),
-      role: type === "other" ? el("input", { required: true, maxLength: 30, placeholder: "e.g. Physio, Trainer" }) : null,
+      name: el("input", { maxLength: 80, placeholder: "Only for you, until they sign up" }),
       players: playerPicker([], { allowAll: type === "analyst" }),
     };
     mount(fieldsBox, [
-      el("div", { class: "inline-form" }, [
-        el("label", {}, ["Name", fields.name]),
-        el("label", {}, ["Email", fields.email]),
-        fields.role ? el("label", {}, ["Role", fields.role]) : null,
-      ]),
       fields.players.node,
+      el("div", { class: "inline-form" }, [el("label", {}, ["Name (optional)", fields.name])]),
     ]);
   };
   typeSel.addEventListener("change", drawFields);
@@ -169,13 +165,13 @@ export async function render(main, { flash }) {
           const code = await createInvite({ clientKey: key, clientLabel: id, note: fields.note.value.trim(), days: 0 });
           flash(`Access code for ${shown}: ${formatCode(code)}` + (clientsCache.labels.has(key) ? "" : " (No uploaded data matches this ID yet.)"), "ok");
         } else {
-          const name = fields.name.value.trim(), email = fields.email.value.trim();
+          const name = fields.name.value.trim();
           const { allPlayers, playerKeys } = fields.players.value();
           if (!allPlayers && !playerKeys.length) { flash("Add at least one player they work with.", "error"); return; }
           const code = type === "analyst"
-            ? await createAnalystAccess({ name, email, playerKeys, allPlayers, labels: clientsCache.labels, days: 0 })
-            : await createTeamAccess({ name, email, role: type === "other" ? fields.role.value : type, playerKeys, labels: clientsCache.labels });
-          flash(`Access code for ${name}: ${formatCode(code)}. It only works with ${email.toLowerCase()}. Send it with the sign-up link.`, "ok");
+            ? await createAnalystAccess({ name, playerKeys, allPlayers, labels: clientsCache.labels, days: 0 })
+            : await createTeamAccess({ name, role: type, playerKeys, labels: clientsCache.labels });
+          flash(`Access code${name ? ` for ${name}` : ""}: ${formatCode(code)}. Send it with the sign-up link; whoever signs up with it gets this access.`, "ok");
         }
         drawFields();
         setCreateOpen(false);
@@ -220,7 +216,7 @@ export async function render(main, { flash }) {
     const picker = playerPicker(grants.map((g) => g.key), { allowAll: analyst, all: !!(user?.allPlayers ?? inv.allPlayers) });
     const save = el("button", { class: "btn", type: "submit" }, "Save");
     openDialog([
-      el("h3", {}, `${inv.clientLabel}'s players`),
+      el("h3", {}, `${user?.name || inv.clientLabel || "Their"}${user?.name || inv.clientLabel ? "'s" : ""} players`),
       el("form", { class: "stack", onSubmit: async (e) => {
         e.preventDefault();
         const v = picker.value();
@@ -229,7 +225,7 @@ export async function render(main, { flash }) {
         try {
           if (analyst) await setAnalystPlayers(target, { ...v, labels: clientsCache.labels });
           else await setTeamPlayers(target, { role, playerKeys: v.playerKeys, labels: clientsCache.labels });
-          dialog.close(); flash(`Updated ${inv.clientLabel}'s players.`, "ok"); refreshClients();
+          dialog.close(); flash(`Updated ${user?.name || inv.clientLabel || "their"}${user?.name || inv.clientLabel ? "'s" : ""} players.`, "ok"); refreshClients();
         } catch { flash("Couldn't save that change.", "error"); save.disabled = false; }
       } }, [picker.node, el("div", { class: "thread-actions" }, [save, linkButton("Cancel", () => dialog.close())])]),
     ]);
@@ -311,10 +307,10 @@ export async function render(main, { flash }) {
       else { status = el("span", { class: "tag hot" }, "Unused"); statusText = "unused"; }
 
       const teamOf = !isTeamKey(inv.clientKey) ? el("span", { class: "muted" }, "\u2014")
-        : inv.kind === "analyst" && (user?.allPlayers ?? inv.allPlayers) ? linkButton("All players", () => showPlayers(inv.clientLabel, grants))
+        : inv.kind === "analyst" && (user?.allPlayers ?? inv.allPlayers) ? linkButton("All players", () => showPlayers(user?.name || inv.clientLabel || "This person", grants))
         : grants.length === 0 ? el("span", { class: "muted" }, "\u2014")
         : grants.length === 1 ? grants[0].label
-        : linkButton(`${grants.length} players`, () => showPlayers(inv.clientLabel, grants));
+        : linkButton(`${grants.length} players`, () => showPlayers(user?.name || inv.clientLabel || "This person", grants));
       const haystack = [inv.code, formatCode(inv.code), inv.clientLabel, clientsCache.labels.get(inv.clientKey), email, user?.name, isTeamKey(inv.clientKey) ? "" : inv.note, note, statusText, ...grants.map((g) => g.label)]
         .filter(Boolean).join(" ").toLowerCase();
       return { inv, user, grants, types, typeLabels, email, status, teamOf, haystack };
@@ -327,7 +323,7 @@ export async function render(main, { flash }) {
       el("tbody", {}, rows.map(({ inv, user, grants, typeLabels, email, status, teamOf }) => el("tr", {}, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
-          user?.name || (!isTeamKey(inv.clientKey) && clientsCache.labels.get(inv.clientKey)) || inv.clientLabel,
+          user?.name || (!isTeamKey(inv.clientKey) && clientsCache.labels.get(inv.clientKey)) || inv.clientLabel || el("span", { class: "muted" }, "No name yet"),
           !isTeamKey(inv.clientKey) ? el("div", { class: "muted small" }, [`ID ${inv.clientLabel}`, inv.note ? ` \u00b7 ${inv.note}` : ""]) : null,
         ]),
         el("td", {}, email || el("span", { class: "muted" }, "\u2014")),

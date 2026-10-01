@@ -5,6 +5,10 @@ import { adminAllClients, watchAdminDatasets, getDatasetMeta, getDatasetRows, pu
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
+import { getAllRounds } from "../rounds.js";
+import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
+
+export const ENTERED_NOTE = "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in.";
 
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -15,6 +19,8 @@ export async function render(main, { flash }) {
   let dash = null;                 // the dashboard for the current file
   let fieldPlayers = [];           // [{ key, label, rounds }]
   const dashState = {};            // filters survive switching players
+  const enteredState = {};
+  let source = "tour";             // "tour": uploaded Tour stats; "entered": rounds from Data Entry
   const rowsCache = new Map();     // `${datasetId}|${playerKey}` -> { label, rows }
   let displayLabels = new Map();   // player key -> name (the ID when there's no name)
 
@@ -24,8 +30,18 @@ export async function render(main, { flash }) {
   const portalLink = el("p", { class: "center" });
   const body = el("div", { class: "sg-body" });
 
+  // Tour | Entered Rounds
+  const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
+  const drawSource = () => mount(sourcePills, [["tour", "Tour"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+    const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
+    a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); refresh(); });
+    return a;
+  }));
+  drawSource();
+
   mount(main, [
     subNav([["#/admin/datasets", "Upload"], ["#/admin/analyze", "Analyze"]], "#/admin/analyze"),
+    sourcePills,
     pickerBox,
     portalLink,
     status,
@@ -56,8 +72,9 @@ export async function render(main, { flash }) {
   const meFrom = () => (player && fieldPlayers.find((p) => p.key === player.key)) || null;
 
   async function refresh() {
-    const ds = datasets.find((d) => d.id === fileId);
     dash?.destroy(); dash = null;
+    if (source === "entered") return refreshEntered();
+    const ds = datasets.find((d) => d.id === fileId);
     if (!ds) { status.textContent = ""; mount(body, el("p", { class: "empty center" }, "Upload a data file to analyze.")); return; }
     const token = ++loadToken;
     mount(body, null);
@@ -74,6 +91,23 @@ export async function render(main, { flash }) {
     mount(body, box);
     dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState });
     publishIfStale(ds);
+  }
+
+  // Rounds from Data Entry, every player, in the same dashboard.
+  async function refreshEntered() {
+    const token = ++loadToken;
+    status.textContent = "Loading entered rounds\u2026";
+    const rounds = await getAllRounds().catch(() => []);
+    if (token !== loadToken) return;
+    status.textContent = "";
+    fieldPlayers = enteredPlayers(rounds, (r) => displayLabels.get(r.playerKey) || r.playerLabel);
+    if (!fieldPlayers.length) {
+      mount(body, el("p", { class: "empty center" }, ["No entered rounds yet. They appear here as soon as anyone records shots in ", el("a", { href: "#/entry" }, "Data Entry"), "."]));
+      return;
+    }
+    const box = el("div");
+    mount(body, box);
+    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.
@@ -121,7 +155,7 @@ export async function render(main, { flash }) {
     datasets = list; // newest first
     const sg = list.find((d) => isShotData(detectColumns(d.columns || [])));
     fileId = (sg || list[0])?.id || "";
-    refresh();
+    if (source === "tour") refresh();
   });
 
   const { labels, ids } = await adminAllClients();

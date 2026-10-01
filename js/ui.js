@@ -86,14 +86,16 @@ export function confirmAction(message) {
 
 const NAV = {
   client: [
-    ["#/dashboard", "data", "My Data", ["dashboard", "dataset"]],
+    ["#/dashboard", "data", "My Stats", ["dashboard", "dataset"]],
     ["#/documents", "doc", "My Reports", ["documents"]],
+    ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
     ["#/questions", "chat", "My Questions", ["questions", "question-new", "thread"]],
   ],
   admin: [
     ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
-    ["#/admin/datasets", "data", "Data", ["admin-datasets", "admin-analyze"]],
+    ["#/admin/datasets", "data", "Stats", ["admin-datasets", "admin-analyze"]],
     ["#/admin/documents", "doc", "Reports", ["admin-documents", "admin-reports-view"]],
+    ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
     ["#/admin/questions", "chat", "Questions", ["admin-questions", "admin-thread"]],
   ],
 };
@@ -112,9 +114,10 @@ export function setUnreadCount(n) {
 function teamNav() {
   // Coaches, caddies and analysts: the player is picked with the dropdown on Data and Reports.
   return [
-    ["#/dashboard", "data", "Data", ["dashboard", "dataset"]],
+    ["#/dashboard", "data", "Stats", ["dashboard", "dataset"]],
     ["#/documents", "doc", "Reports", ["documents"]],
-    NAV.client[2], // My Questions
+    NAV.client[2], // Data Entry
+    NAV.client[3], // My Questions
   ];
 }
 
@@ -123,7 +126,9 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
   const admin = state.isAdmin && !previewClient && !previewingTeam;
   const team = (!state.isAdmin && state.isTeam) || previewingTeam;
-  const items = admin ? NAV.admin : team ? teamNav() : NAV.client;
+  // In a preview, leave Data Entry out: rounds entered there would be entered as you, not them.
+  const items = (admin ? NAV.admin : team ? teamNav() : NAV.client)
+    .filter(([href]) => !(href === "#/entry" && state.isAdmin && (previewClient || previewingTeam)));
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 

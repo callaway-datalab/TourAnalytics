@@ -6,12 +6,12 @@
 <title>Client Portal</title>
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' https://www.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;
+  script-src 'self' https://www.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com 'wasm-unsafe-eval' blob:;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src https://fonts.gstatic.com;
   img-src 'self' data: blob:;
-  connect-src 'self' https://firestore.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cdn.jsdelivr.net wss://*.firebaseio.com;
-  worker-src 'self' blob:;
+  connect-src 'self' https://firestore.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com wss://*.firebaseio.com;
+  worker-src 'self' blob: https://cdn.jsdelivr.net;
   frame-src https://*.firebaseapp.com;
   object-src 'none'; base-uri 'self'; frame-ancestors 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
