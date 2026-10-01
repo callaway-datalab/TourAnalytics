@@ -6,7 +6,7 @@ import { holeScore } from "./roundCalc.js";
 
 const toPar = (n) => (n === 0 ? "E" : n > 0 ? `+${n}` : String(n));
 
-export function myRoundsTable(rounds, { flash } = {}) {
+export function myRoundsTable(rounds, { flash, canDelete = () => true, title = "Your rounds" } = {}) {
   if (!rounds.length) return null;
   const rows = rounds.map((r) => {
     let score = 0, thru = 0, parThru = 0;
@@ -16,8 +16,8 @@ export function myRoundsTable(rounds, { flash } = {}) {
     }
     const done = r.status === "complete";
     const href = `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}`;
-    const del = el("button", { type: "button", class: "link danger", "aria-label": `Delete ${r.course || "round"} on ${r.date}` }, "Delete");
-    del.addEventListener("click", async () => {
+    const del = canDelete(r) ? el("button", { type: "button", class: "link danger", "aria-label": `Delete ${r.course || "round"} on ${r.date}` }, "Delete") : null;
+    del?.addEventListener("click", async () => {
       if (!confirmAction(`Delete your round at ${r.course || "this course"} on ${r.date}, and every shot in it? This can't be undone.`)) return;
       del.disabled = true;
       try { await deleteRound(r.playerKey, r.id); flash?.("Round deleted.", "ok"); }
@@ -32,7 +32,7 @@ export function myRoundsTable(rounds, { flash } = {}) {
     ]);
   });
   return el("section", { class: "panel sg-box my-rounds" }, [
-    el("h3", {}, `Your rounds (${rounds.length})`),
+    el("h3", {}, `${title} (${rounds.length})`),
     el("div", { class: "table-scroll four-rows" }, el("table", { class: "plain stats" }, [
       el("thead", {}, el("tr", {}, ["Date", "Course", "Score", "Status", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows),

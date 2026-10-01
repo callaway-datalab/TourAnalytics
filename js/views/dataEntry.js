@@ -18,9 +18,9 @@ const SHORT_LIE = { "Tee box": "Tee", Fairway: "Fwy", Rough: "Rgh", Bunker: "Bkr
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const toPar = (n) => (n === 0 ? "E" : n > 0 ? `+${n}` : String(n));
 
-export async function render(main, { params, routeId, flash }) {
+export async function render(main, { params, routeId, flash, previewClient }) {
   if (routeId === "entry-new") return renderNew(main, flash);
-  if (routeId === "entry-round") return renderRound(main, params, flash);
+  if (routeId === "entry-round") return renderRound(main, params, flash, previewClient);
   return renderList(main);
 }
 
@@ -47,7 +47,15 @@ function renderList(main) {
     if (!rounds.length) { mount(list, el("p", { class: "empty center" }, "No rounds yet. Start one above \u2014 it takes a minute to set up.")); return; }
     const row = (r) => {
       const { score, thru, par } = roundTotals(r);
-      return el("a", { class: "entry-card", href: `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}` }, [
+      // ✕ deletes the round, only for rounds you entered yourself.
+      const del = r.ownerUid === state.user.uid ? el("button", { type: "button", class: "entry-del", "aria-label": `Delete round at ${r.course || "this course"} on ${r.date}`, title: "Delete round" }, "\u2715") : null;
+      del?.addEventListener("click", async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!confirmAction(`Delete your round at ${r.course || "this course"} on ${r.date}, and every shot in it? This can't be undone.`)) return;
+        del.disabled = true;
+        try { await deleteRound(r.playerKey, r.id); } catch { del.disabled = false; alert("Couldn't delete that round. Try again."); }
+      });
+      const card = el("a", { class: "entry-card", href: `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}` }, [
         el("div", { class: "entry-card-main" }, [
           el("strong", {}, r.course || "Round"),
           el("span", { class: "muted" }, [r.date, r.type ? ` \u00b7 ${r.type === "tournament" ? "Tournament" : "Practice"}` : "", r.location ? ` \u00b7 ${r.location}` : ""].join("")),
@@ -56,6 +64,7 @@ function renderList(main) {
           ? [el("strong", {}, String(score)), el("span", { class: "muted" }, toPar(score - par))]
           : [el("strong", {}, thru ? toPar(score - parThru(r)) : "\u2014"), el("span", { class: "muted" }, thru ? `thru ${thru}` : "not started")]),
       ]);
+      return el("div", { class: "entry-row" }, [card, del]);
     };
     const live = rounds.filter((r) => r.status !== "complete"), done = rounds.filter((r) => r.status === "complete");
     mount(list, [
@@ -238,7 +247,7 @@ async function renderNew(main, flash) {
 const blankHoles = (n) => Array.from({ length: n }, (_, i) => ({ n: i + 1, par: null, yards: null, hcp: null }));
 
 /* ===================================== entering a round ===================================== */
-function renderRound(main, params, flash) {
+function renderRound(main, params, flash, previewClient) {
   const state = getState();
   const playerKey = decodeURIComponent(params.player);
   const roundId = params.round;
@@ -249,7 +258,9 @@ function renderRound(main, params, flash) {
   let firstLoad = true;
   const status = el("span", { class: "save-status", role: "status" });
 
-  const canEdit = () => round && (state.isAdmin || round.ownerUid === state.user.uid);
+  // Whoever entered a round can change or delete it. The admin can too, but only from inside that
+  // player's portal (a preview), never from the admin's own pages.
+  const canEdit = () => round && (round.ownerUid === state.user.uid || (state.isAdmin && previewClient?.key === playerKey));
   const hole = () => round.holes[holeIdx];
   const key = (h) => `h${h.n}`;
 

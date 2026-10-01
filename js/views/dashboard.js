@@ -32,7 +32,14 @@ export async function render(main, { previewClient, flash }) {
   mount(enteredBox, [roundsTableBox, enteredDashBox]);
   // Your own view (a player, or a coach on "Me"): the table of your rounds, with Delete.
   const ownView = !previewClient || previewClient.self;
-  const unsubTable = ownView ? watchMyRounds(state, myEntryKey(state), (rounds) => mount(roundsTableBox, myRoundsTable(rounds, { flash }))) : () => {};
+  const uid = state.user.uid;
+  // In the admin's preview of a player, their rounds show with Delete (acting as that player).
+  const adminPreviewOfPlayer = state.isAdmin && previewClient && !previewClient.role && !previewClient.self;
+  const unsubTable = ownView
+    ? watchMyRounds(state, myEntryKey(state), (rounds) => mount(roundsTableBox, myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid })))
+    : adminPreviewOfPlayer
+      ? watchPlayerRounds(clientKey, (rounds) => mount(roundsTableBox, myRoundsTable(rounds, { flash, title: `${previewClient.label}'s rounds` })))
+      : () => {};
 
   // Tour (uploaded stats) | Entered Rounds (from Data Entry). "Me" (a coach's own) has only entered rounds.
   if (previewClient?.self) lastSource = "entered";

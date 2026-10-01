@@ -44,7 +44,7 @@ export function sgDashboard(container, opts) {
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   Object.assign(st, { span: st.span ?? 0, year: arr(st.year), event: arr(st.event), roundNo: arr(st.roundNo), cats: st.cats ?? [], lie: arr(st.lie),
-    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null });
+    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
   const narrowed = () => st.lie.length || st.dist.length; // lie / distance in use (the shared summary can't follow those)
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
@@ -278,11 +278,11 @@ export function sgDashboard(container, opts) {
       // All, or several categories: where the strokes are gained and lost among the ones picked.
       const shown = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k));
       const bars = shown.map(([k, l]) => ({ label: l, value: sliceTotals(mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === k) }))).sgPerRound ?? 0 }));
-      const byCat = panelBox("SG / Round by Category", chartBox((c) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), { title: "SG / round" })));
+      const byCat = panelBox("SG / Round by Category", chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), { title: "SG / round", as }), "", "by-category"));
       const lies = sgBy(mine, idx, null, "lie");
       blocks.push(lies && lies.length > 1
-        ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), {
-            title: "SG / round", tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` })))])
+        ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,
+            title: "SG / round", tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie"))])
         : byCat);
     } else {
       const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
@@ -303,7 +303,7 @@ export function sgDashboard(container, opts) {
       if (cat === "APP" || cat === "ARG") {
         const pts = leavePoints(mine, idx, cat);
         if (pts) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c) => scatterChart(c, pts, LEAVE_SCALE[cat]), "tall")));
-        else { const hist = leaveHistogram(mine, idx, cat); if (hist) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c) => barChart(c, hist.map((h) => h.label), hist.map((h) => h.count), { single: "#30d158", title: "Shots" })))); }
+        else { const hist = leaveHistogram(mine, idx, cat); if (hist) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c, as) => barChart(c, hist.map((h) => h.label), hist.map((h) => h.count), { single: "#30d158", title: "Shots", as }), "", `${cat}-leave`))); }
       }
       for (const [fieldName, title] of BREAKDOWNS[cat]) {
         const groups = sgBy(mine, idx, cat, fieldName);
@@ -313,9 +313,9 @@ export function sgDashboard(container, opts) {
           const vals = slicedField.map((p) => (sgBy(p.rounds, idx, cat, fieldName) || []).find((x) => x.label === g.label)?.perRound).filter((v) => v !== undefined);
           return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
         });
-        visuals.push(panelBox(title, chartBox((c) => barChart(c, groups.map((g) => g.label), groups.map((g) => g.perRound), {
+        visuals.push(panelBox(title, chartBox((c, as) => barChart(c, groups.map((g) => g.label), groups.map((g) => g.perRound), { as,
           title: "SG / round", compare, tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
-        }))));
+        }), "", `${cat}-${fieldName}`)));
       }
       if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
     }
@@ -327,9 +327,9 @@ export function sgDashboard(container, opts) {
       return a;
     }));
     const avg = t.length ? t.reduce((a, g) => a + g.value, 0) / t.length : 0;
-    blocks.push(panelBox("Strokes Gained Trends", [toggles, chartBox((c) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
-      title: "SG / round", average: avg, tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
-    }), "wide")], "full"));
+    blocks.push(panelBox("Strokes Gained Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
+      title: "SG / round", average: avg, as, tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
+    }), "wide", "trend")], "full"));
     return blocks;
   }
 
@@ -384,12 +384,37 @@ export function sgDashboard(container, opts) {
   function panelBox(title, content, size = "") {
     return el("section", { class: `panel sg-box ${size}` }, [el("h3", {}, title), ...[].concat(content)]);
   }
-  function chartBox(make, size = "") {
+  // A chart that draws itself once it's on the page. With a key, a small Bar | Line toggle sits in the
+  // panel's corner; the choice is remembered per chart, and switching redraws just that chart.
+  const BAR_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="2" y="8" width="3" height="6" rx="1"/><rect x="6.5" y="4" width="3" height="10" rx="1"/><rect x="11" y="6" width="3" height="8" rx="1"/></svg>';
+  const LINE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9.5,9.5 14,3.5"/></svg>';
+  function chartBox(make, size = "", key = null) {
     const wrap = el("div", { class: `sg-chart ${size}` });
-    const canvas = el("canvas", {});
+    let canvas = el("canvas", {});
     wrap.appendChild(canvas);
-    requestAnimationFrame(() => { if (typeof Chart !== "undefined" && canvas.isConnected) charts.push(make(canvas)); });
-    return wrap;
+    let chart = null;
+    const build = () => {
+      if (typeof Chart === "undefined" || !wrap.isConnected) return;
+      if (chart) { const i = charts.indexOf(chart); if (i >= 0) charts.splice(i, 1); chart.destroy(); }
+      const fresh = el("canvas", {});
+      canvas.replaceWith(fresh); canvas = fresh;
+      chart = make(canvas, (key && st.chartTypes[key]) || "bar");
+      charts.push(chart);
+    };
+    requestAnimationFrame(build);
+    if (!key) return wrap;
+    const toggle = el("div", { class: "chart-toggle", role: "group", "aria-label": "Chart style" });
+    for (const [t, label, svg] of [["bar", "Bar chart", BAR_ICON], ["line", "Line chart", LINE_ICON]]) {
+      const b = el("button", { type: "button", "aria-label": label, title: label, "aria-pressed": ((st.chartTypes[key] || "bar") === t) ? "true" : "false" });
+      b.innerHTML = svg;
+      b.addEventListener("click", () => {
+        st.chartTypes[key] = t;
+        toggle.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+        build();
+      });
+      toggle.appendChild(b);
+    }
+    return el("div", { class: "chart-holder" }, [toggle, wrap]);
   }
   function baseOptions() {
     const muted = "#8e8e93", grid = "rgba(255,255,255,0.06)";
@@ -402,8 +427,14 @@ export function sgDashboard(container, opts) {
       },
     };
   }
-  function barChart(canvas, labels, values, { title, compare, average, single, tooltip } = {}) {
-    const datasets = [{ type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || values.map((v) => (v >= 0 ? "#30d158" : "#ff453a")) }];
+  function barChart(canvas, labels, values, { title, compare, average, single, tooltip, as = "bar" } = {}) {
+    const signColors = values.map((v) => (v >= 0 ? "#30d158" : "#ff453a"));
+    const datasets = [as === "line"
+      // Line: a champagne line through green / red points, shaded green above zero and red below.
+      ? { type: "line", label: title || "", data: values, borderColor: single || "#c8a97e", borderWidth: 2.5, tension: 0.35,
+          pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: single || signColors, pointBorderColor: single || signColors,
+          fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
+      : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors }];
     if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#c8a97e" });
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#c8a97e", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 });
     const o = baseOptions();

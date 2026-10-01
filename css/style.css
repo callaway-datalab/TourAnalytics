@@ -1135,3 +1135,22 @@ table.stats td:first-child { white-space: nowrap; }
   .panel { padding: 1rem; }
 }
 .hole-strip::before, .hole-strip::after { content: ""; margin: auto; } /* centered when it fits, scrolls when it doesn't */
+
+/* --- Data Entry: ✕ to delete one of your rounds --- */
+.entry-row { position: relative; }
+.entry-row .entry-card { padding-right: 3.6rem; }
+.entry-del { position: absolute; top: 50%; right: 0.55rem; transform: translateY(-50%); width: 2.75rem; height: 2.75rem; border-radius: 999px;
+  border: 0; background: transparent; color: var(--muted); font: 500 1.05rem/1 var(--font-body); cursor: pointer; transition: background 0.15s, color 0.15s; }
+.entry-del:hover, .entry-del:focus-visible { background: var(--danger-soft); color: var(--danger); }
+.entry-row .entry-card { margin-bottom: 0.6rem; }
+
+/* --- Bar | Line toggle in a chart panel's corner --- */
+.sg-box { position: relative; }
+.chart-toggle { position: absolute; top: 0.8rem; right: 0.9rem; display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); z-index: 2; }
+.chart-toggle button { width: 2rem; height: 1.75rem; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent;
+  color: var(--muted); fill: currentColor; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.chart-toggle button:hover { color: var(--ink); }
+.chart-toggle button[aria-pressed="true"] { background: var(--ink); color: #0a0a0c; }
+@media (max-width: 520px) { .chart-toggle button { width: 2.4rem; height: 2.2rem; } }
+.sg-box > .trend-toggles + .chart-holder .chart-toggle, .sg-box .trend-toggles ~ .chart-holder .chart-toggle { top: 0.8rem; }

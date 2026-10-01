@@ -105,7 +105,8 @@ export async function render(main, { flash }) {
     stopMine();
     firstMine = true;
     stopMine = watchMyRounds(getState(), myEntryKey(getState()), (rounds) => {
-      mount(roundsTableBox, myRoundsTable(rounds, { flash }));
+      const uid = getState().user.uid;
+      mount(roundsTableBox, myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid })); // admin mode: only your own
       if (!firstMine && source === "entered") refreshEntered(); // a round was added or deleted: redo the stats
       firstMine = false;
     });
