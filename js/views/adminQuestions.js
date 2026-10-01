@@ -29,6 +29,8 @@ export async function render(main, { flash }) {
       ]),
       el("span", { class: "row-meta" }, [
         t.sample ? el("span", { class: "tag muted-tag" }, "Sample") : null, t.sample ? " " : null,
+        (t.forwardedNames || []).length ? el("span", { class: "tag type-coach", title: `Forwarded to ${t.forwardedNames.join(", ")}` }, `\u2192 ${t.forwardedNames.length === 1 ? t.forwardedNames[0] : `${t.forwardedNames.length} analysts`}`) : null,
+        (t.forwardedNames || []).length ? " " : null,
         t.archived ? el("span", { class: "tag muted-tag" }, "Completed")
           : t.adminUnread ? el("span", { class: "tag hot" }, "New")
           : !t.lastFromAdmin ? el("span", { class: "tag" }, "Needs reply")

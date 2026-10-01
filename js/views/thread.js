@@ -1,7 +1,7 @@
 import { isTeamKey, norm, roleLabel } from "../data.js";
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchThread, watchMessages, replyToThread, markThreadReadByAdmin, markThreadReadByUser, uploadErrorMessage } from "../store.js";
+import { watchThread, watchMessages, replyToThread, markThreadReadByAdmin, markThreadReadByUser, uploadErrorMessage, forwardThread, watchUsers } from "../store.js";
 import { attachPicker, attachmentLinks } from "../attachments.js";
 import { threadActions } from "../threadActions.js";
 
@@ -11,6 +11,7 @@ export async function render(main, { params, routeId, flash }) {
   const threadId = params.id;
 
   const backHref = isAdmin ? "#/admin/questions" : "#/questions";
+  let forwardedToMe = false; // an analyst reading a question the admin forwarded to them
   const crumb = el("p", { class: "crumb" }, el("a", { href: backHref }, isAdmin ? "All questions" : "My Questions"));
   const titleEl = el("h1", {}, "\u00a0");
   const metaEl = el("p", { class: "muted" });
@@ -29,7 +30,8 @@ export async function render(main, { params, routeId, flash }) {
       submit.disabled = true;
       try {
         await replyToThread(threadId, {
-          fromAdmin: isAdmin, body: body.value.trim(), authorUid: state.user.uid, files: picker.files(),
+          fromAdmin: isAdmin || forwardedToMe, body: body.value.trim(), authorUid: state.user.uid,
+          authorName: state.profile?.name || state.user.displayName || "", files: forwardedToMe ? [] : picker.files(),
           onProgress: (done, total) => { submit.textContent = `Uploading files\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`; },
         });
         body.value = ""; picker.clear();
@@ -58,7 +60,8 @@ export async function render(main, { params, routeId, flash }) {
     threadData = t;
     const mine = !!t && t.uid === state.user.uid;
     const sharedWithMe = !!t && !isAdmin && !mine && (t.sharedWith || []).includes(norm(state.user.email));
-    if (!t || (!isAdmin && !mine && !sharedWithMe)) {
+    forwardedToMe = !!t && !isAdmin && !mine && (t.forwardedTo || []).includes(state.user.uid);
+    if (!t || (!isAdmin && !mine && !sharedWithMe && !forwardedToMe)) {
       main.textContent = "";
       main.append(el("p", { class: "empty" }, "That question isn't available."));
       return;
@@ -69,7 +72,11 @@ export async function render(main, { params, routeId, flash }) {
       t.archived ? el("span", { class: "tag muted-tag" }, "Completed") : null, t.archived ? " " : null,
       threadActions(t, { asAdmin: isAdmin, flash, onDeleted: () => { location.hash = backHref; } }),
     ] : null);
-    if (sharedWithMe) {
+    if (forwardedToMe) {
+      // Forwarded by the admin: read it and answer on Callaway's behalf (text replies).
+      mount(metaEl, `Asked by ${t.askerName} (${t.aboutLabel || t.clientLabel}) \u00b7 forwarded to you by Callaway Analysts. Your reply goes to them as Callaway Analysts.`);
+      picker.node.remove();
+    } else if (sharedWithMe) {
       // A team member reading a question their player shared: read-only.
       mount(metaEl, `Asked by ${t.askerName} (${t.clientLabel}) and shared with you. Only they and Callaway Analysts can reply.`);
       form.remove();
@@ -77,6 +84,7 @@ export async function render(main, { params, routeId, flash }) {
       mount(metaEl, (t.sharedWithNames || []).length ? `Also shared with ${sharedNames(t)}.` : "");
     }
     if (isAdmin) {
+      drawForward(t);
       mount(metaEl, isTeamKey(t.clientKey)
         ? [`From ${t.askerName} \u00b7 ${t.askerEmail} \u00b7 `, el("strong", {}, "team member"), t.aboutLabel ? ` \u00b7 about ${t.aboutLabel}` : ""]
         : [
@@ -95,7 +103,8 @@ export async function render(main, { params, routeId, flash }) {
   const unMessages = watchMessages(threadId, (messages) => {
     mount(messagesList, messages.map((m, i) => el("li", { class: `msg ${m.fromAdmin ? "from-admin" : "from-client"}`, id: i === messages.length - 1 ? "latest" : null }, [
       el("div", { class: "msg-head" }, [
-        el("strong", {}, m.fromAdmin ? (isAdmin ? "You" : "Callaway Analysts")
+        el("strong", {}, m.fromAdmin
+          ? (m.authorUid === state.user.uid ? "You" : (isAdmin || forwardedToMe) && m.authorName ? m.authorName : "Callaway Analysts")
           : (!isAdmin && threadData?.uid === state.user.uid ? "You" : (threadData?.askerName || "Player"))),
         el("span", { class: "muted" }, formatWhen(m.createdAt)),
       ]),
@@ -105,5 +114,31 @@ export async function render(main, { params, routeId, flash }) {
     if (messages.length) document.getElementById("latest")?.scrollIntoView({ block: "nearest" });
   });
 
-  return () => { unThread(); unMessages(); };
+  // Admin: forward this question to one or more Callaway analysts.
+  const forwardBox = el("div", { class: "forward-box" });
+  actionsEl.after(forwardBox);
+  let analysts = [];
+  const unUsers = isAdmin ? watchUsers((users) => { analysts = users.filter((u) => u.kind === "analyst").map((u) => ({ uid: u.uid, name: u.name || u.email })); if (threadData) drawForward(threadData); }) : () => {};
+  function drawForward(t) {
+    const names = t.forwardedNames || [];
+    const open = el("button", { type: "button", class: "btn ghost" }, names.length ? "Change who it's forwarded to" : "Forward to an analyst");
+    const panel = el("div", { class: "panel forward-panel", hidden: true });
+    open.addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      if (panel.hidden) return;
+      if (!analysts.length) { mount(panel, el("p", { class: "muted" }, "No analysts have signed up yet. Add one under Player Access \u2192 Create New Access Code \u2192 Analyst.")); return; }
+      const boxes = analysts.map((a) => el("label", { class: "ms-row" }, [el("input", { type: "checkbox", value: a.uid, checked: (t.forwardedTo || []).includes(a.uid) }), el("span", {}, a.name)]));
+      const save = el("button", { type: "button", class: "btn" }, "Save");
+      save.addEventListener("click", async () => {
+        const picked = boxes.map((b) => b.querySelector("input")).filter((c) => c.checked).map((c) => analysts.find((a) => a.uid === c.value));
+        save.disabled = true;
+        try { await forwardThread(threadId, picked); flash(picked.length ? `Forwarded to ${picked.map((p) => p.name).join(", ")}.` : "No longer forwarded.", "ok"); panel.hidden = true; }
+        catch { flash("Couldn't forward that question. (Republish the Firestore rules if you haven't since this update.)", "error"); save.disabled = false; }
+      });
+      mount(panel, [el("p", { class: "muted small" }, "They'll find it under Questions and can reply as Callaway Analysts."), ...boxes, el("div", { class: "forward-actions" }, save)]);
+    });
+    mount(forwardBox, [names.length ? el("p", { class: "muted small" }, `Forwarded to ${names.join(", ")}`) : null, open, panel]);
+  }
+
+  return () => { unThread(); unMessages(); unUsers(); };
 }

@@ -258,7 +258,7 @@ export async function render(main, { flash }) {
         if (!confirmAction(`Delete ${inv.clientLabel || "this person"}'s code ${formatCode(inv.code)} from the list? Their access is already removed.`)) return;
         del.disabled = true;
         try { await deleteInvite(inv.code); flash("Removed from the list.", "ok"); }
-        catch { flash("Couldn't delete that code.", "error"); del.disabled = false; }
+        catch (err) { flash(err?.code === "permission-denied" ? "Couldn't delete that code: the database refused. Republish the Firestore rules from this update (Firebase \u2192 Firestore \u2192 Rules), then try again." : "Couldn't delete that code. Try again.", "error"); del.disabled = false; }
       }, "link danger");
       links.push(del);
     } else if (!inv.usedBy && inv.revoked) {
@@ -271,7 +271,7 @@ export async function render(main, { flash }) {
         if (!confirmAction(`Delete code ${formatCode(inv.code)}?`)) return;
         del.disabled = true;
         try { await deleteInvite(inv.code); flash("Code deleted.", "ok"); }
-        catch { flash("Couldn't delete that code.", "error"); del.disabled = false; }
+        catch (err) { flash(err?.code === "permission-denied" ? "Couldn't delete that code: the database refused. Republish the Firestore rules from this update (Firebase \u2192 Firestore \u2192 Rules), then try again." : "Couldn't delete that code. Try again.", "error"); del.disabled = false; }
       }, "link danger");
       links.push(refresh, del);
     } else if (!inv.usedBy) {

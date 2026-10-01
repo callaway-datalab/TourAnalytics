@@ -124,14 +124,22 @@ export async function render(main, { flash }) {
     if (token !== loadToken) return;
     status.textContent = "";
     fieldPlayers = enteredPlayers(rounds, (r) => displayLabels.get(r.playerKey) || r.playerLabel);
+    drawEntered();
+  }
+
+  // Entered Rounds shows strokes gained only for the player picked above: nothing until one is picked,
+  // and a plain message when that player hasn't entered any rounds (never anyone else's numbers).
+  function drawEntered() {
     dash?.destroy(); dash = null;
-    if (!fieldPlayers.length) {
-      mount(body, [roundsTableBox, el("p", { class: "empty center" }, ["No entered rounds yet. They appear here as soon as anyone records shots in ", el("a", { href: "#/entry" }, "Data Entry"), "."])]);
+    const me = meFrom();
+    if (!player) { mount(body, [roundsTableBox, el("p", { class: "empty center" }, "Pick a player above to see their entered rounds.")]); return; }
+    if (!me) {
+      mount(body, [roundsTableBox, el("p", { class: "empty center" }, `${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Data Entry." : "."}`)]);
       return;
     }
     const box = el("div");
     mount(body, [roundsTableBox, box]);
-    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE });
+    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.
@@ -191,7 +199,8 @@ export async function render(main, { flash }) {
     player = p;
     if (source === "entered") watchMine();
     drawPortalLink();
-    if (dash) dash.update({ me: meFrom() });
+    if (source === "entered") drawEntered();
+    else if (dash) dash.update({ me: meFrom() });
     else if (datasets.length) refresh(); // simple comparison: redraw with the highlight (rows are cached)
   }, ids, meKey);
   mount(pickerBox, picker.node);

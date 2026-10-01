@@ -1,6 +1,6 @@
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchMyThreads, watchSharedWithMe, watchAdminThreads } from "../store.js";
+import { watchMyThreads, watchSharedWithMe, watchAdminThreads, watchForwardedToMe } from "../store.js";
 import { threadActions } from "../threadActions.js";
 import { effectiveTeam } from "../preview.js";
 
@@ -29,6 +29,10 @@ export async function render(main, { previewClient, flash }) {
   const sharedSection = team.isTeam
     ? el("section", {}, [el("h2", {}, previewingTeam ? `Shared with ${team.name} by their players` : "Shared with you by your players"), sharedList])
     : null;
+  // Analysts: questions the admin forwarded to them, to read and answer.
+  const isAnalyst = !previewingTeam && state.isTeam && state.profile?.kind === "analyst";
+  const fwdList = el("ul", { class: "rows" });
+  const fwdSection = isAnalyst ? el("section", {}, [el("h2", {}, "Forwarded to you"), fwdList]) : null;
   const theirList = el("ul", { class: "rows" });
   const theirSection = previewingPlayer
     ? el("section", {}, [el("h2", {}, `${previewClient.label}'s questions`),
@@ -37,6 +41,7 @@ export async function render(main, { previewClient, flash }) {
 
   const previewName = previewingTeam ? team.name : previewClient?.label;
   mount(main, [
+    fwdSection,
     el("div", { class: "page-actions" }, [
       el("a", { class: "btn", href: "#/questions/new" }, "Ask a new question"),
       previewingPlayer || previewingTeam ? el("p", { class: "muted" },
@@ -93,6 +98,17 @@ export async function render(main, { previewClient, flash }) {
           el("span", { class: "muted" }, `From ${t.askerName} (${t.clientLabel}) \u00b7 ${formatWhen(t.createdAt)}`),
         ]),
       ])) : el("p", { class: "empty" }, "Nothing shared yet."));
+    }));
+  }
+  if (isAnalyst) {
+    unsubs.push(watchForwardedToMe(state.user.uid, (items) => {
+      mount(fwdList, items.length ? items.map((t) => el("li", {}, [
+        el("a", { class: "row-main", href: `#/questions/${t.id}` }, [
+          el("span", { class: "row-title" }, t.subject),
+          el("span", { class: "muted" }, `From ${t.askerName} (${t.aboutLabel || t.clientLabel}) \u00b7 ${formatWhen(t.updatedAt || t.createdAt)}`),
+        ]),
+        el("span", { class: "row-meta" }, el("span", { class: "tag" + (t.lastFromAdmin ? "" : " hot") }, t.lastFromAdmin ? "Answered" : "Needs a reply")),
+      ])) : el("p", { class: "empty" }, "Nothing forwarded to you right now."));
     }));
   }
   return () => unsubs.forEach((u) => u());

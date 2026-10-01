@@ -753,16 +753,28 @@ export async function askQuestion({ uid, clientKey, clientLabel, askerName, aske
   return threadRef.id;
 }
 
-export async function replyToThread(threadId, { fromAdmin, body, authorUid, files = [], onProgress }) {
+export async function replyToThread(threadId, { fromAdmin, body, authorUid, authorName = "", files = [], onProgress }) {
   checkAttachments(files);
   const attachments = await uploadAttachments(threadId, files, authorUid, onProgress);
   const batch = writeBatch(db);
-  batch.set(doc(collection(db, "threads", threadId, "messages")), { fromAdmin, body, authorUid, createdAt: serverTimestamp(), attachments });
+  batch.set(doc(collection(db, "threads", threadId, "messages")), { fromAdmin, body, authorUid, ...(authorName ? { authorName } : {}), createdAt: serverTimestamp(), attachments });
   batch.update(doc(db, "threads", threadId), {
     updatedAt: serverTimestamp(), adminUnread: !fromAdmin, userUnread: fromAdmin, lastFromAdmin: fromAdmin,
     archived: false, // a new message brings a completed question back
   });
   await batch.commit();
+}
+
+/** Admin: forward a question to Callaway analysts ([{ uid, name }]), so they can read and answer it. */
+export function forwardThread(threadId, analysts) {
+  return updateDoc(doc(db, "threads", threadId), { forwardedTo: analysts.map((a) => a.uid), forwardedNames: analysts.map((a) => a.name) });
+}
+
+/** Analyst: the questions forwarded to you. */
+export function watchForwardedToMe(uid, cb) {
+  return onSnapshot(query(collection(db, "threads"), where("forwardedTo", "array-contains", uid)),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0))),
+    () => cb([]));
 }
 
 /** Mark a question completed (moves it to Archived) or reopen it. Completing also clears

@@ -1089,7 +1089,7 @@ table.stats td.bad { color: var(--danger); font-weight: 600; }
 .band-n { background: var(--ink); color: #0a0a0c; }
 .band-sg { font-weight: 600; }
 .hole-chip { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); font: 600 1rem var(--font-body); }
-.hole-chip.done { border-color: rgba(48, 209, 88, 0.45); }
+.hole-chip.done { border-color: var(--line-2); }
 .hole-chip.on { background: var(--ink); color: #0a0a0c; border-color: var(--ink); }
 .hole-title h2 { font-weight: 600; font-size: 2.2rem; letter-spacing: -0.04em; }
 .hole-title .hole-result { color: var(--ok); }
@@ -1213,3 +1213,14 @@ table.stats td:first-child { white-space: nowrap; }
 .club-select { margin: 0; max-width: 20rem; min-height: 2.75rem; font-size: 16px !important; }
 .club-note { margin: 0.2rem 0 0; }
 .hole-chip { width: 4.9rem; } .hole-chip .hc-res { font-size: 0.64rem; letter-spacing: -0.01em; }
+.forward-box { margin-top: 0.75rem; display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+.forward-panel { width: 100%; max-width: 28rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.forward-panel[hidden] { display: none; }
+.forward-actions { margin-top: 0.5rem; }
+
+/* Hole outlines by result (scoped to the strip so nothing else can override them) */
+.hole-strip .hole-chip.par { border-color: #8e8e93; }
+.hole-strip .hole-chip.birdie { border-color: #30d158; }
+.hole-strip .hole-chip.eagle { border-color: #b4ff39; box-shadow: 0 0 10px rgba(180, 255, 57, 0.35); }
+.hole-strip .hole-chip.bogey { border-color: #ff9f0a; }
+.hole-strip .hole-chip.double { border-color: #ff453a; }

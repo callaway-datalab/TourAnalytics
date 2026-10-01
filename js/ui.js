@@ -134,7 +134,6 @@ function accountMenu(state) {
     finally { note.hidden = false; reset.disabled = false; }
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
-    el("p", { class: "menu-email", title: email }, email),
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     el("a", { class: "menu-item", href: "#/witb", role: "menuitem", title: "What's in the bag" }, "WITB"),
     reset,
@@ -175,7 +174,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
   const footItems = [
     accountMenu(state),
-    el("a", { class: "ask-link", href: admin ? "#/admin/questions" : "#/questions", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, ["Ask a question", askBadge]),
+    el("a", { class: "ask-link", href: admin ? "#/admin/questions" : "#/questions", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, [admin || (state.isTeam && state.profile?.kind === "analyst") ? "Questions" : "Ask a question", askBadge]),
   ];
 
   mount(root, el("div", { class: "shell" }, [
