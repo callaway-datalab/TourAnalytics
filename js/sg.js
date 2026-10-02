@@ -299,6 +299,38 @@ export function statTable(cat, playerRounds, fieldRoundsList, idx) {
   }).filter(Boolean);
 }
 
+/**
+ * Stat Averages with more: for each stat, the player's average, their best and worst single round, their
+ * rank among the players, everyone's average, and the best player.
+ *   field: [{ key, label, rounds }] (include the player); higher: true = more is better, false = less is
+ *   better, null = neither (no rank / best / worst).
+ */
+export function statTableFull(cat, me, field, idx) {
+  return STATS[cat].map((def) => {
+    const value = statValue(def, me.rounds, idx, cat);
+    if (value === undefined) return null;
+    const better = (a, b) => (def.higher ? a > b : a < b);
+    const perRound = me.rounds.map((rd) => statValue(def, [rd], idx, cat)).filter((v) => v !== undefined && v !== null && Number.isFinite(v));
+    let best = null, worst = null;
+    if (def.higher !== null && perRound.length) {
+      best = perRound.reduce((a, b) => (better(b, a) ? b : a));
+      worst = perRound.reduce((a, b) => (better(a, b) ? b : a));
+    }
+    const others = field.map((p) => ({ key: p.key, label: p.label, v: statValue(def, p.rounds, idx, cat) }))
+      .filter((o) => o.v !== undefined && o.v !== null && Number.isFinite(o.v));
+    const fieldAvg = others.length ? mean(others.map((o) => o.v)) : null;
+    let rank = null, of = null, bestPlayer = null;
+    if (def.higher !== null && others.length) {
+      const sorted = [...others].sort((a, b) => (def.higher ? b.v - a.v : a.v - b.v));
+      of = sorted.length;
+      const i = sorted.findIndex((o) => o.key === me.key);
+      rank = i >= 0 ? i + 1 : null;
+      bestPlayer = { label: sorted[0].label, value: sorted[0].v };
+    }
+    return { ...def, value, best, worst, field: fieldAvg, rank, of, bestPlayer };
+  }).filter(Boolean);
+}
+
 /** Fairway miss split for Off-the-Tee: [{ label, pct, count }]. */
 export function missSplit(rounds, idx) {
   if (idx.missDir === undefined) return null;

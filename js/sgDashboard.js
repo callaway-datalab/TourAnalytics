@@ -11,7 +11,7 @@
 // (not lie or distance).
 import { el, mount, loadScript } from "./ui.js";
 import {
-  CATEGORIES, applyFilters, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable,
+  CATEGORIES, applyFilters, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG,
 } from "./sg.js";
 
@@ -227,8 +227,7 @@ export function sgDashboard(container, opts) {
       const a = el("a", { href: "#", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false" }, y);
       a.addEventListener("click", (e) => {
         e.preventDefault();
-        st.year = on ? st.year.filter((x) => x !== y) : [...st.year, y].sort();
-        if (st.year.length === years.length) st.year = []; // every year = All
+        st.year = on ? st.year.filter((x) => x !== y) : [...st.year, y].sort(); // pick as many as you like
         draw();
       });
       return a;
@@ -343,16 +342,27 @@ export function sgDashboard(container, opts) {
         : byCat);
     } else {
       const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
-      const stats = statTable(cat, mine, comparable ? slicedField.map((p) => p.rounds) : [], idx);
-      const others = mode === "admin" ? "All players" : "Field";
-      blocks.push(panelBox("Stat Averages", stats.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain stats" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, "Stat"), el("th", { class: "num" }, me.label), el("th", { class: "num" }, others)])),
+      // Stat · Rank · Player Avg · Player Best · Player Worst · All Players · Best Player (the heading is
+      // the selection itself, e.g. "Approach · 2026 · Rough").
+      const stats = statTableFull(cat, { key: me.key, rounds: mine }, comparable ? slicedField : [], idx);
+      const others = mode === "admin" ? "All Players" : "Field";
+      blocks.push(panelBox(describe(), stats.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain stats stat-full" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, "Stat"), el("th", { class: "num" }, "Rank"), el("th", { class: "num" }, "Player Avg"),
+          el("th", { class: "num" }, "Player Best"), el("th", { class: "num" }, "Player Worst"), el("th", { class: "num" }, others), el("th", {}, "Best Player")])),
         el("tbody", {}, stats.map((s) => {
           const fmt = (v) => (v === null || v === undefined ? "\u2014" : ["pct", "onePutt", "driverPct"].includes(s.kind) ? `${nf1.format(v)}%`
             : s.kind === "sgPerRound" || s.kind === "sgPerAttempt" ? `${v >= 0 ? "+" : ""}${v.toFixed(s.dp ?? 2)}` : v.toFixed(s.dp ?? 1));
           const sgRow = s.kind === "sgPerRound" || s.kind === "sgPerAttempt";
-          const better = sgRow ? s.value >= 0 : s.higher === null || s.field === null ? null : s.higher ? s.value >= s.field : s.value <= s.field;
-          return el("tr", {}, [el("td", {}, s.label), el("td", { class: "num" + (better === null ? "" : better ? " good" : " bad") }, fmt(s.value)), el("td", { class: "num muted" }, fmt(s.field))]);
+          const tone = (v) => { const b = sgRow ? v >= 0 : s.higher === null || s.field === null ? null : s.higher ? v >= s.field : v <= s.field; return v == null || b === null ? "" : b ? " good" : " bad"; };
+          return el("tr", {}, [
+            el("td", {}, s.label),
+            el("td", { class: "num" }, s.rank ? `${s.rank} of ${s.of}` : "\u2014"),
+            el("td", { class: "num" + tone(s.value) }, fmt(s.value)),
+            el("td", { class: "num" }, fmt(s.best)),
+            el("td", { class: "num" }, fmt(s.worst)),
+            el("td", { class: "num muted" }, fmt(s.field)),
+            el("td", { class: "best-player" }, s.bestPlayer ? [el("span", {}, s.bestPlayer.label), el("span", { class: "muted" }, ` ${fmt(s.bestPlayer.value)}`)] : "\u2014"),
+          ]);
         })),
       ])) : el("p", { class: "empty" }, "No stats for this selection.")));
 
@@ -367,13 +377,14 @@ export function sgDashboard(container, opts) {
         const groups = sgBy(mine, idx, cat, fieldName);
         if (!groups || (groups.length < 2 && fieldName !== "distanceRange")) continue;
         // "All players" markers only where the others' detail is available (admin).
+        const compareField = topPlayers(slicedField);
         const compare = fieldIsSummary() ? null : groups.map((g) => {
-          const vals = slicedField.map((p) => (sgBy(p.rounds, idx, cat, fieldName) || []).find((x) => x.label === g.label)?.perRound).filter((v) => v !== undefined);
+          const vals = compareField.map((p) => (sgBy(p.rounds, idx, cat, fieldName) || []).find((x) => x.label === g.label)?.perRound).filter((v) => v !== undefined);
           return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
         });
         visuals.push(panelBox(title, chartBox((c, as) => barChart(c, groups.map((g) => g.label), groups.map((g) => g.perRound), { as,
-          title: "SG / round", compare, tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
-        }), "", `${cat}-${fieldName}`)));
+          title: "SG / round", compare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
+        }), "", `${cat}-${fieldName}`, { rankPick: !fieldIsSummary() })));
       }
       if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
     }
@@ -442,11 +453,26 @@ export function sgDashboard(container, opts) {
   function panelBox(title, content, size = "") {
     return el("section", { class: `panel sg-box ${size}` }, [el("h3", {}, title), ...[].concat(content)]);
   }
+  // Rank filter for the dashed comparison: everyone, or just the top 1 / 10 / 25 / 50 players by SG / round.
+  const RANK_TOPS = [["1", "Top 1"], ["10", "Top 10"], ["25", "Top 25"], ["50", "Top 50"], ["all", "All"]];
+  function topPlayers(list) {
+    const n = st.rankTop && st.rankTop !== "all" ? Number(st.rankTop) : null;
+    if (!n) return list;
+    return list.filter((p) => p.rounds.length).map((p) => ({ p, v: sliceTotals(p.rounds).sgPerRound ?? -Infinity }))
+      .sort((a, b) => b.v - a.v).slice(0, n).map((x) => x.p);
+  }
+  const compareName = () => (st.rankTop && st.rankTop !== "all" ? (st.rankTop === "1" ? "Top player" : `Top ${st.rankTop} players`) : "All players");
+  function rankPicker() {
+    const sel = el("select", { class: "rank-pick", "aria-label": "Compare with" }, RANK_TOPS.map(([v, l]) => el("option", { value: v, selected: (st.rankTop || "all") === v }, l)));
+    sel.addEventListener("change", () => { st.rankTop = sel.value; draw(); });
+    return el("label", { class: "rank-label" }, [el("span", {}, "Rank"), sel]);
+  }
+
   // A chart that draws itself once it's on the page. With a key, a small Bar | Line toggle sits in the
   // panel's corner; the choice is remembered per chart, and switching redraws just that chart.
   const BAR_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="2" y="8" width="3" height="6" rx="1"/><rect x="6.5" y="4" width="3" height="10" rx="1"/><rect x="11" y="6" width="3" height="8" rx="1"/></svg>';
   const LINE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9.5,9.5 14,3.5"/></svg>';
-  function chartBox(make, size = "", key = null) {
+  function chartBox(make, size = "", key = null, { rankPick = false } = {}) {
     const wrap = el("div", { class: `sg-chart ${size}` });
     let canvas = el("canvas", {});
     wrap.appendChild(canvas);
@@ -472,7 +498,7 @@ export function sgDashboard(container, opts) {
       });
       toggle.appendChild(b);
     }
-    return el("div", { class: "chart-holder" }, [toggle, wrap]);
+    return el("div", { class: "chart-holder" }, [el("div", { class: "chart-tools" }, [rankPick ? rankPicker() : null, toggle]), wrap]);
   }
   function baseOptions() {
     const muted = "#8e8e93", grid = "rgba(255,255,255,0.06)";
@@ -485,7 +511,7 @@ export function sgDashboard(container, opts) {
       },
     };
   }
-  function barChart(canvas, labels, values, { title, compare, average, single, tooltip, as = "bar" } = {}) {
+  function barChart(canvas, labels, values, { title, compare, compareLabel = "All players", average, single, tooltip, as = "bar" } = {}) {
     const signColors = values.map((v) => (v >= 0 ? "#30d158" : "#ff453a"));
     const datasets = [as === "line"
       // Line: a champagne line through green / red points, shaded green above zero and red below.
@@ -494,7 +520,7 @@ export function sgDashboard(container, opts) {
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
       : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors, order: 2 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
-    if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#ffd60a", borderDash: [5, 4], borderWidth: 2, order: 0 }); // in front
+    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#ffd60a", borderDash: [5, 4], borderWidth: 2, order: 0 }); // in front
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
     // Legend: only the reference marks (no "SG / round" entry), each drawn as a short dash in its color.

@@ -1457,3 +1457,18 @@ body.tapping { overflow: hidden; }
   .club-edit-form .edit-actions { grid-column: 1 / -1; }
 }
 .combo-dist { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* --- chart corner: Rank filter + Bar | Line toggle --- */
+.chart-tools { position: absolute; top: 0.75rem; right: 0.9rem; display: flex; align-items: center; gap: 0.4rem; z-index: 2; }
+.chart-tools .chart-toggle { position: static; }
+.rank-pick { margin: 0; min-height: 1.95rem; padding: 0.15rem 1.8rem 0.15rem 0.6rem; border-radius: 9px !important; font: 500 0.8rem var(--font-body) !important; width: auto; }
+@media (max-width: 640px) {
+  .chart-tools { top: 0.65rem; right: 0.65rem; }
+  .rank-pick { min-height: 2.2rem; font-size: 16px !important; }
+  .sg-box > h3 { padding-right: 10.5rem; }
+}
+/* Stat table: seven columns */
+.stat-full th, .stat-full td { white-space: nowrap; }
+.stat-full td.best-player { white-space: nowrap; }
+.stat-full td.best-player .muted { margin-left: 0.25rem; }
+.rank-label { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--muted); font: 600 0.66rem/1 var(--font-body); letter-spacing: 0.1em; text-transform: uppercase; }
