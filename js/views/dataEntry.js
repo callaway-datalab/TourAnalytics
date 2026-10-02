@@ -9,7 +9,7 @@ import { getState } from "../auth.js";
 import { UserError } from "../store.js";
 import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
-import { readImageText, parseScorecard } from "../scorecardReader.js";
+import { readScorecard } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
@@ -101,7 +101,7 @@ async function renderNew(main, flash) {
   // Tees: also tells the scorecard reader which row of yardages to use.
   const teesIn = el("input", { list: "tee-names", placeholder: "e.g. Blue", autocomplete: "off", maxLength: 30, enterkeyhint: "done" });
   const teeNames = el("datalist", { id: "tee-names" }, ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Championship", "Tournament", "Back", "Middle", "Forward"].map((t) => el("option", { value: t })));
-  let lastCardText = ""; // what the photo said, so changing Tees can re-pick the yardage row
+  let lastCard = null; // the photo, so changing Tees can re-read that tee's yardages
   // Tournament or Practice: two pills, exactly one picked.
   let roundType = "";
   const typePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "Round type" });
@@ -124,6 +124,7 @@ async function renderNew(main, flash) {
   const photoStatus = el("p", { class: "muted center", role: "status" });
   const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
   const photoBtn = el("label", { class: "btn ghost entry-big photo-btn" }, ["\uD83D\uDCF7  Read a scorecard photo", photo]);
+  const photoHint = el("p", { class: "muted small center" }, "Fill in your Tees above first: the photo's yardages are read from that row.");
   const countPills = el("div", { class: "seg" });
 
   const drawCount = () => mount(countPills, [18, 9].map((n) => {
@@ -172,40 +173,45 @@ async function renderNew(main, flash) {
     },
   });
 
-  // Changing Tees after reading a photo re-picks that row's yardages.
-  teesIn.addEventListener("change", () => {
-    if (!lastCardText) return;
-    const read = parseScorecard(lastCardText, holesCount, teesIn.value.trim());
-    if (!read.teeRow) { photoStatus.textContent = `Couldn't find a "${teesIn.value.trim()}" row on the card; the yardages are unchanged.`; return; }
-    holes = holes.map((h, i) => ({ ...h, yards: read.yards[i] ?? h.yards }));
-    drawGrid();
-    photoStatus.textContent = `Yardages switched to the ${read.teeRow} row. Check them below.`;
-  });
-
-  photo.addEventListener("change", async () => {
-    const f = photo.files[0];
-    if (!f) return;
-    photoStatus.textContent = "Reading the scorecard\u2026 this can take 20\u201330 seconds.";
+  // Read the photo: pars, handicaps, and the yardages of the tees in the Tees box.
+  // (window.__scorecardEngine lets a test supply the text reader.)
+  let reading = false;
+  async function readCard(file, { yardsOnly = false } = {}) {
+    if (reading) return;
+    reading = true;
+    photoStatus.textContent = "Reading the scorecard\u2026";
     try {
-      const text = await readImageText(f, (p) => { photoStatus.textContent = `Reading the scorecard\u2026 ${Math.round(p * 100)}%`; });
-      lastCardText = text;
-      const read = parseScorecard(text, holesCount, teesIn.value.trim());
+      const read = await readScorecard(file, {
+        tees: teesIn.value, holes: holesCount, engine: window.__scorecardEngine || null,
+        onProgress: (p, what) => { photoStatus.textContent = `${what}\u2026 ${Math.round(p * 100)}%`; },
+      });
       let found = 0;
       holes = holes.map((h, i) => {
         const next = { ...h };
-        if (read.par[i]) { next.par = read.par[i]; found++; }
+        if (!yardsOnly && read.par[i]) { next.par = read.par[i]; found++; }
         if (read.yards[i]) { next.yards = read.yards[i]; found++; }
-        if (read.hcp[i]) { next.hcp = read.hcp[i]; found++; }
+        if (!yardsOnly && read.hcp[i]) { next.hcp = read.hcp[i]; found++; }
         return next;
       });
       drawGrid();
-      photoStatus.textContent = found
-        ? `Filled in ${found} of ${holesCount * 3} boxes from the photo${read.teeRow ? ` (yardages from the ${read.teeRow} row)` : teesIn.value.trim() ? ` (couldn't find a "${teesIn.value.trim()}" row, so used the first yardage row)` : ""}. Check them below and fix anything that's off.`
-        : "Couldn't make out the numbers in that photo. Try a sharper, straight-on shot in good light, or type them in below.";
+      const total = holesCount * (yardsOnly ? 1 : 3);
+      photoStatus.textContent = (found
+        ? `Filled in ${found} of ${total} boxes from the photo${read.teeRow ? ` (yardages from the ${read.teeRow} row)` : ""}. Check them below and fix anything that's off.`
+        : "Couldn't make out the numbers in that photo. Try a sharper, straight-on shot in good light, or type them in below.")
+        + (read.notes.length ? ` ${read.notes.join(" ")}` : "");
     } catch (err) {
       console.error(err);
       photoStatus.textContent = "The scorecard reader isn't available right now. Type the holes in below.";
-    } finally { photo.value = ""; }
+    } finally { reading = false; }
+  }
+  // Changing Tees after reading a photo re-reads that tee's yardages from the same photo.
+  teesIn.addEventListener("change", () => { if (lastCard && teesIn.value.trim()) readCard(lastCard, { yardsOnly: true }); });
+  photo.addEventListener("change", async () => {
+    const f = photo.files[0];
+    if (!f) return;
+    lastCard = f;
+    photo.value = "";
+    await readCard(f);
   });
 
   const start = el("button", { class: "btn entry-big", type: "submit" }, "Start round \u25B6");
@@ -246,6 +252,7 @@ async function renderNew(main, flash) {
       el("h2", {}, "Scorecard"),
       countPills,
       photoBtn,
+      photoHint,
       photoStatus,
       el("p", { class: "muted center small" }, "or tap in each hole's par, yardage and handicap:"),
       el("div", { class: "card-head" }, [el("span", {}, "#"), el("span", {}, "Par"), el("span", {}, "Yards"), el("span", {}, "Hcp")]),

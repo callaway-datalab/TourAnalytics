@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
-  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp,
+  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
@@ -392,7 +392,11 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   }
 
   const ops = [];
+  // How much this file takes once stored (all players' pieces), for the storage bar.
+  const pieces = new Map([...dataset.byClient].map(([k, g]) => [k, chunkRows(g.rows)]));
+  const storedBytes = [...pieces.values()].flat().reduce((n, d) => n + d.length, 0);
   ops.push((batch) => batch.set(doc(db, "datasets", datasetId), {
+    storedBytes,
     name, description: description || "", idColumn: dataset.idColumn, columns: dataset.columns,
     rowCount: dataset.rowCount, blankIdRows: dataset.blankIdRows, clientKeys: newClientKeys,
     // Player names from the file (e.g. a "player" column), keyed like clientKeys.
@@ -403,7 +407,7 @@ export async function uploadDataset(name, description, dataset, onProgress) {
     ops.push((batch) => batch.delete(doc(db, "clientData", key, "datasets", datasetId)));
   }
   for (const [clientKey, group] of dataset.byClient) {
-    const chunks = chunkRows(group.rows);
+    const chunks = pieces.get(clientKey);
     ops.push((batch) => batch.set(doc(db, "clientData", clientKey, "datasets", datasetId), {
       name, description: description || "", idColumn: dataset.idColumn, columns: dataset.columns,
       clientLabel: group.label, playerName: group.name || null, rowCount: group.rows.length, chunkCount: chunks.length, uploadedAt: serverTimestamp(),
@@ -502,6 +506,43 @@ export async function adminAllClients() {
   return { labels, ids, names, usersSnap, invitesSnap, datasetsSnap };
 }
 
+/* ============================== Sign-ins ============================== */
+// A sign-in = opening the portal signed in (each new browser session), so people who stay logged in
+// still count when they come back. Logged in signins/{id} (for weekly numbers) and on the person's
+// profile (their total and last sign-in).
+export async function recordSignIn(uid, hasProfile) {
+  await addDoc(collection(db, "signins"), { uid, at: serverTimestamp() });
+  if (hasProfile) await updateDoc(doc(db, "users", uid), { signInCount: increment(1), lastSignInAt: serverTimestamp() });
+}
+
+/** Start of this week (Monday 00:00, local time). */
+export function weekStart(now = new Date()) {
+  const d = new Date(now); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+
+/* ============================== Storage estimate ============================== */
+// Firebase's free (Spark) plan includes 1 GiB of Firestore storage. There's no way to ask Firestore how
+// much is used from the browser, so this adds up what the portal stores: files are kept as text
+// (base64), about 4/3 of their size; data files by what was written when they were uploaded.
+export const STORAGE_QUOTA = 1024 ** 3;
+export async function storageEstimate() {
+  const [docs, datasets, atts] = await Promise.all([
+    getDocs(collection(db, "documents")), getDocs(collection(db, "datasets")),
+    getDocs(collectionGroup(db, "attachments")).catch(() => ({ docs: [] })),
+  ]);
+  const fileBytes = (snap) => snap.docs.reduce((n, d) => n + (d.data().sizeBytes || 0), 0) * 4 / 3;
+  const reports = fileBytes(docs), attachments = fileBytes(atts);
+  const data = datasets.docs.reduce((n, d) => {
+    const v = d.data();
+    return n + (v.storedBytes || (v.rowCount || 0) * ((v.columns || []).length || 6) * 8); // older files: estimated
+  }, 0);
+  const pdfSizes = docs.docs.map((d) => d.data().sizeBytes || 0).filter(Boolean);
+  const used = (reports + attachments + data) * 1.1; // + ~10% for names, indexes and everything else
+  return { used, quota: STORAGE_QUOTA, reports, attachments, data, typicalPdf: pdfSizes.length ? pdfSizes.reduce((a, b) => a + b, 0) / pdfSizes.length : 2 * 1024 ** 2 };
+}
+
 export async function adminStats() {
   const [{ labels, usersSnap, invitesSnap, datasetsSnap }, documentsSnap] =
     await Promise.all([adminAllClients(), getDocs(collection(db, "documents"))]);
@@ -510,7 +551,12 @@ export async function adminStats() {
     const v = d.data();
     return !v.usedBy && !v.revoked && (!v.expiresAt || v.expiresAt.toMillis() > now);
   }).length;
-  return { clients: labels.size, accounts: usersSnap.size, openInvites, datasets: datasetsSnap.size, documents: documentsSnap.size };
+  // This week's sign-ins (since Monday) and how many different people they came from.
+  const since = Timestamp.fromDate(weekStart());
+  const weekSnap = await getDocs(query(collection(db, "signins"), where("at", ">=", since))).catch(() => ({ docs: [] }));
+  const weekUids = new Set(weekSnap.docs.map((d) => d.data().uid));
+  return { clients: labels.size, accounts: usersSnap.size, openInvites, datasets: datasetsSnap.size, documents: documentsSnap.size,
+    weeklySignIns: weekSnap.docs.length, weeklyUsers: weekUids.size };
 }
 
 /* ============================== Documents (PDF/PPTX) ============================== */

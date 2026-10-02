@@ -6,7 +6,7 @@ import { plainName } from "../names.js";
 import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
   watchTeamRoster, applyTeamRoster, UserError, adminStats,
-  refreshInvite, deleteInvite, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
+  refreshInvite, deleteInvite, storageEstimate, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
   createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels,
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, parseTeamRoster, toCsv, ROSTER_COLUMNS, norm } from "../data.js";
@@ -45,8 +45,33 @@ export async function render(main, { flash }) {
   const statsBox = el("dl", { class: "facts glance" }, el("p", { class: "muted" }, "Loading\u2026"));
   const loadStats = () => adminStats().then((stats) => mount(statsBox, [
     ["Players in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
-    ["Data files", stats.datasets], ["Reports", stats.documents],
-  ].map(([label, value]) => el("div", {}, [el("dt", {}, label), el("dd", {}, num(value))])))).catch(() => {});
+    ["Weekly Sign-ins", stats.weeklySignIns, "Since Monday, everyone combined"], ["Weekly Users", stats.weeklyUsers, "Different people who signed in since Monday"],
+  ].map(([label, value, title]) => el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, num(value))])))).catch(() => {});
+
+  // Storage: how much of the free plan's database space is used, and roughly how much more fits.
+  const storageBox = el("div", { class: "storage" }, el("p", { class: "muted small" }, "Working out storage\u2026"));
+  const mb = (b) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(2)} GB` : b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(b >= 100 * 1024 ** 2 ? 0 : 1)} MB` : `${Math.max(0, Math.round(b / 1024))} KB`);
+  const loadStorage = () => storageEstimate().then((st) => {
+    const pctUsed = Math.min(100, (st.used / st.quota) * 100);
+    const left = Math.max(0, st.quota - st.used);
+    const pdfStored = st.typicalPdf * 4 / 3 * 1.1;
+    const tone = pctUsed >= 90 ? "bad" : pctUsed >= 70 ? "warn" : "ok";
+    mount(storageBox, [
+      el("div", { class: "storage-top" }, [el("strong", {}, "Storage"), el("span", {}, `${mb(st.used)} of ${mb(st.quota)} used`), el("span", { class: "muted" }, `${pctUsed < 1 ? pctUsed.toFixed(1) : Math.round(pctUsed)}%`)]),
+      el("div", { class: `storage-bar ${tone}`, role: "meter", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(pctUsed)), "aria-label": "Storage used" }, [
+        el("span", { class: "seg-reports", style: `width:${(st.reports * 1.1 / st.quota) * 100}%`, title: `Reports: ${mb(st.reports)}` }),
+        el("span", { class: "seg-data", style: `width:${(st.data * 1.1 / st.quota) * 100}%`, title: `Data files: ${mb(st.data)}` }),
+        el("span", { class: "seg-att", style: `width:${(st.attachments * 1.1 / st.quota) * 100}%`, title: `Question attachments: ${mb(st.attachments)}` }),
+      ]),
+      el("div", { class: "storage-legend" }, [
+        el("span", {}, [el("i", { class: "seg-reports" }), `Reports ${mb(st.reports)}`]),
+        el("span", {}, [el("i", { class: "seg-data" }), `Data files ${mb(st.data)}`]),
+        el("span", {}, [el("i", { class: "seg-att" }), `Attachments ${mb(st.attachments)}`]),
+      ]),
+      el("p", { class: "muted small" }, `About ${mb(left)} left: room for roughly ${num(Math.floor(left / pdfStored))} more reports the size of yours (${mb(st.typicalPdf)} average). An estimate on Firebase's free plan (1 GB); Firebase \u2192 Firestore \u2192 Usage has the exact figure.`),
+    ]);
+  }).catch(() => mount(storageBox, el("p", { class: "muted small" }, "Couldn't work out storage right now.")));
+  loadStorage();
   loadStats();
   const statsInterval = setInterval(loadStats, 60000);
 
@@ -330,7 +355,7 @@ export async function render(main, { flash }) {
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", ""].map((h) => el("th", {}, h)))),
+      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Sign-ins", "Last sign-in", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows.map(({ inv, user, grants, typeLabels, email, status, teamOf }) => el("tr", {}, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
@@ -341,6 +366,8 @@ export async function render(main, { flash }) {
         el("td", {}, el("span", { class: "type-tags" }, typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)))),
         el("td", {}, teamOf),
         el("td", {}, status),
+        el("td", { class: "num" }, user ? num(user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")),
+        el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
         el("td", { class: "actions" }, codeActions(inv, user, grants)),
       ]))),
     ])));
@@ -436,7 +463,7 @@ export async function render(main, { flash }) {
 
   /* ============================== Page ============================== */
   mount(main, [
-    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox]),
+    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, storageBox]),
     el("section", {}, [
       el("h2", {}, "Access codes"),
       el("div", { class: "code-tools" }, [

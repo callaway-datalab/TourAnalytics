@@ -1,10 +1,24 @@
-// Reading a scorecard photo: hole yardages, pars and handicaps.
-// The text is read in the browser with Tesseract (open-source OCR), then the rows are picked out by
-// their labels ("Par", "Hcp"/"Handicap", and the row of yardages). It's a starting point you check:
-// the setup screen shows what was read so it can be corrected before the round starts.
+// Reading a scorecard photo: hole yardages (for your tees), pars and handicaps.
+//
+// How it works (all in the browser, with Tesseract, an open-source text reader):
+//   1. Clean the photo: enlarge, grey, flip light-on-dark rows to dark-on-light, drop table lines.
+//   2. Find the "Hole" row (1 … 18): where those numbers sit gives the 18 columns. Every card has it.
+//      The photo is straightened first if it's a little tilted.
+//   3. Read the row labels on the left to find the Par, Handicap and your Tees rows.
+//   4. Cut out each cell under a hole column and read it on its own, digits only. Handicap cells that
+//      are fractions (men's / women's) are read from the top number only.
+//   5. Check the results with rules every card follows (handicaps 1-18 each used once, usually odd on
+//      one nine and even on the other; pars 3-6) and fill gaps where that settles them. A missing par is
+//      estimated from the hole's yardage, with a note to check it.
+// The setup screen shows everything that was read so it can be corrected before the round starts.
 
 const TESSERACT = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
 
+/* ============================== OCR engine (Tesseract.js) ============================== */
+// The reader talks to the engine through three calls, so it can be swapped for testing.
+//   words(canvas)          -> [{ text, x0, y0, x1, y1 }]   sparse text, word boxes
+//   lines(canvas)          -> [{ text, y0, y1 }]           a block of text, line boxes
+//   digits(canvas, mode)   -> string                       one cell, digits only
 function loadTesseract() {
   if (window.Tesseract) return Promise.resolve(window.Tesseract);
   return new Promise((resolve, reject) => {
@@ -16,57 +30,401 @@ function loadTesseract() {
   });
 }
 
-/** Read the text in an image file. onProgress(0..1) while it works. */
-export async function readImageText(file, onProgress) {
+export async function tesseractEngine() {
   const T = await loadTesseract();
-  const worker = await T.createWorker("eng", 1, {
-    logger: (m) => { if (m.status === "recognizing text" && onProgress) onProgress(m.progress); },
-  });
-  try {
-    const { data } = await worker.recognize(file);
-    return data.text || "";
-  } finally {
-    await worker.terminate();
-  }
+  const worker = await T.createWorker("eng", 1);
+  const run = async (canvas, params) => { await worker.setParameters(params); return (await worker.recognize(canvas, {}, { blocks: true, text: true })).data; };
+  const eachLine = (data, fn) => (data.blocks || []).forEach((b) => (b.paragraphs || []).forEach((p) => (p.lines || []).forEach(fn)));
+  return {
+    async words(canvas) {
+      const data = await run(canvas, { tessedit_pageseg_mode: "11", tessedit_char_whitelist: "" });
+      const out = [];
+      eachLine(data, (l) => (l.words || []).forEach((w) => out.push({ text: w.text, ...w.bbox })));
+      return out;
+    },
+    async lines(canvas) {
+      const data = await run(canvas, { tessedit_pageseg_mode: "6", tessedit_char_whitelist: "" });
+      const out = [];
+      eachLine(data, (l) => out.push({ text: l.text.trim(), y0: l.bbox.y0, y1: l.bbox.y1 }));
+      return out;
+    },
+    async digits(canvas, mode) {
+      const data = await run(canvas, { tessedit_pageseg_mode: String(mode), tessedit_char_whitelist: "0123456789" });
+      return (data.text || "").trim();
+    },
+    terminate: () => worker.terminate(),
+  };
 }
 
-const nums = (line) => (line.match(/\d+/g) || []).map(Number);
-
-/**
- * Pick yardages, pars and handicaps out of scorecard text. Scorecards list each row as
- * label, holes 1-9, OUT, holes 10-18, IN, TOTAL (or front and back nine on separate lines).
- * tees (optional): the tee name, e.g. "Blue"; yardages then come from the line(s) labeled with it.
- * Returns { yards: [], par: [], hcp: [], teeRow } with up to 18 values each (missing ones are null);
- * teeRow is the tee name found, or "" when the first yardage row was used.
- */
-export function parseScorecard(text, holes = 18, tees = "") {
-  const lines = String(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const take = (test, keep) => lines.filter((l) => test(l)).flatMap((l) => nums(l).filter(keep));
-  const par = take((l) => /\bpar\b/i.test(l), (n) => n >= 3 && n <= 6);
-  const hcp = take((l) => /\b(hcp|hdcp|handicap|hdcap|index|s\.?\s?i\.?|stroke)\b/i.test(l), (n) => n >= 1 && n <= 18);
-  // Yardage: the first line (or pair of lines) where most numbers look like hole lengths.
-  const yardLines = lines.filter((l) => !/\b(par|hcp|hdcp|handicap|index)\b/i.test(l))
-    .filter((l) => { const n = nums(l); return n.length >= 5 && n.filter((x) => x >= 80 && x <= 700).length >= n.length * 0.6; });
-  // With a tee name, prefer the rows that start with (or contain) it.
-  const tee = String(tees || "").trim().toLowerCase();
-  const teeLines = tee ? yardLines.filter((l) => new RegExp(`(^|[^a-z])${tee.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`, "i").test(l)) : [];
-  let yards = [];
-  for (const l of teeLines.length ? teeLines : yardLines) {
-    yards.push(...nums(l).filter((n) => n >= 80 && n <= 700));
-    if (yards.length >= holes) break;
-  }
-  // Drop OUT / IN totals if they slipped into the yardage row (they're the sum of the nine before).
-  yards = dropTotals(yards);
-  const fit = (a) => Array.from({ length: holes }, (_, i) => (a[i] ?? null));
-  return { yards: fit(yards), par: fit(par), hcp: fit(hcp), teeRow: teeLines.length ? tees.trim() : "" };
+/* ============================== image helpers ============================== */
+function toGray(src, scale, angle = 0) {
+  const w = Math.round(src.width * scale), h = Math.round(src.height * scale);
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+  if (angle) { ctx.translate(w / 2, h / 2); ctx.rotate(angle); ctx.translate(-w / 2, -h / 2); }
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, 0, 0, w, h);
+  const px = ctx.getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = (0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2]) / 255;
+  return { g, w, h };
 }
 
-function dropTotals(list) {
-  const out = [];
-  for (const n of list) {
-    const last9 = out.slice(-9);
-    if (last9.length === 9 && Math.abs(last9.reduce((a, b) => a + b, 0) - n) <= 2) continue;
-    out.push(n);
+// Local mean / spread / skew around each pixel, from summed-area tables.
+function boxStats(g, w, h, r) {
+  const W = w + 1;
+  const s1 = new Float64Array(W * (h + 1)), s2 = new Float64Array(W * (h + 1)), s3 = new Float64Array(W * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let a = 0, b = 0, c = 0;
+    for (let x = 0; x < w; x++) {
+      const v = g[y * w + x]; a += v; b += v * v; c += v * v * v;
+      const i = (y + 1) * W + x + 1;
+      s1[i] = s1[i - W] + a; s2[i] = s2[i - W] + b; s3[i] = s3[i - W] + c;
+    }
+  }
+  return (x, y) => {
+    const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1), y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+    const n = (x1 - x0) * (y1 - y0);
+    const S = (s) => s[y1 * W + x1] - s[y0 * W + x1] - s[y1 * W + x0] + s[y0 * W + x0];
+    const m1 = S(s1) / n, m2 = S(s2) / n, m3 = S(s3) / n;
+    const sd = Math.sqrt(Math.max(m2 - m1 * m1, 1e-6));
+    return { m1, sd, skew: (m3 - 3 * m1 * m2 + 2 * m1 * m1 * m1) / (sd * sd * sd) };
+  };
+}
+
+/** Black-and-white page for finding words: every row's text made dark-on-light, table lines removed. */
+function cleanPage({ g, w, h }) {
+  const st = boxStats(g, w, h, 22);
+  const ink = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const { m1, sd, skew } = st(x, y);
+    const flip = skew > 0; // bright text is the minority tone: flip it dark
+    const v = flip ? 1 - g[y * w + x] : g[y * w + x], m = flip ? 1 - m1 : m1;
+    ink[y * w + x] = sd > 0.06 && v < m - 0.12 * Math.max(sd, 0.08) ? 1 : 0;
+  }
+  // remove long straight runs (table lines): far taller or wider than any digit
+  const kill = new Uint8Array(w * h), vmin = 50, hmin = 120;
+  for (let x = 0; x < w; x++) for (let y = 0; y < h;) {
+    if (!ink[y * w + x]) { y++; continue; }
+    let y2 = y; while (y2 < h && ink[y2 * w + x]) y2++;
+    if (y2 - y >= vmin) for (let k = y; k < y2; k++) kill[k * w + x] = 1;
+    y = y2;
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w;) {
+    if (!ink[y * w + x]) { x++; continue; }
+    let x2 = x; while (x2 < w && ink[y * w + x2]) x2++;
+    if (x2 - x >= hmin) for (let k = x; k < x2; k++) kill[y * w + k] = 1;
+    x = x2;
+  }
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) { const v = ink[i] && !kill[i] ? 0 : 255; img.data[4 * i] = img.data[4 * i + 1] = img.data[4 * i + 2] = v; img.data[4 * i + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+function crop(page, x0, y0, x1, y1) {
+  const c = Object.assign(document.createElement("canvas"), { width: Math.max(1, Math.round(x1 - x0)), height: Math.max(1, Math.round(y1 - y0)) });
+  c.getContext("2d").drawImage(page, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+  return c;
+}
+
+const pct = (arr, p) => { const a = Array.from(arr).sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.round((p / 100) * (a.length - 1))))]; };
+
+/** One cell, ready to read: dark digits on white, cropped to the digits' band, edge lines blanked, padded.
+ *  top: take the top band of digits (a fraction's top number) instead of the tallest. */
+function cellCanvas({ g, w, h }, x0, y0, x1, y1, top = false, avoid = null) {
+  x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0)); x1 = Math.min(w, Math.round(x1)); y1 = Math.min(h, Math.round(y1));
+  const cw = x1 - x0, ch = y1 - y0;
+  if (cw < 4 || ch < 4) return null;
+  const a = new Float32Array(cw * ch);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) a[y * cw + x] = g[(y0 + y) * w + x0 + x] * 255;
+  let med = pct(a, 50), p2 = pct(a, 2), p98 = pct(a, 98);
+  if (p98 - med > med - p2) { for (let i = 0; i < a.length; i++) a[i] = 255 - a[i]; [p2, p98, med] = [255 - p98, 255 - p2, 255 - med]; }
+  const span = Math.max(med - p2, 1);
+  for (let i = 0; i < a.length; i++) a[i] = Math.min(1, Math.max(0, (a[i] - p2) / span)) * 255;
+  // the digits are the tallest run of inked rows; thin runs are lines
+  const rowInk = (y) => { let n = 0; for (let x = 0; x < cw; x++) if (a[y * cw + x] < 150) n++; return n / cw; };
+  const runs = []; let y = 0;
+  while (y < ch) { if (rowInk(y) > 0.02) { let y2 = y; while (y2 < ch && rowInk(y2) > 0.02) y2++; runs.push([y, y2]); y = y2; } else y++; }
+  // For the top number: ignore digits that belong to the row above (avoid = that row's band, in this
+  // window's coordinates), or, without that, anything touching the window's top edge.
+  const tall = runs.filter(([s, e]) => e - s >= (top ? 0.12 : 0.18) * ch
+    && !(top && (avoid ? (s + e) / 2 > avoid[0] && (s + e) / 2 < avoid[1] : s === 0)));
+  let r0 = 0, r1 = ch;
+  if (tall.length) {
+    [r0, r1] = top ? tall[0] : tall.reduce((b, r) => (r[1] - r[0] > b[1] - b[0] ? r : b));
+    r0 = Math.max(0, r0 - 4); r1 = Math.min(ch, r1 + 4);
+  }
+  const bh = r1 - r0;
+  // underlines / fraction bars touching the digits: rows with far more ink than a row through digits
+  const bandInk = []; for (let yy = r0; yy < r1; yy++) bandInk.push(rowInk(yy));
+  const typical = [...bandInk].sort((p, q) => p - q)[Math.floor(bandInk.length / 2)];
+  if (top) bandInk.forEach((v, i) => { if (i > bandInk.length * 0.65 && v > Math.max(0.25, typical * 2.2)) for (let x = 0; x < cw; x++) a[(r0 + i) * cw + x] = 255; });
+  for (let x = 0; x < cw; x++) {
+    if (x > cw * 0.2 && x < cw * 0.8) continue;
+    let n = 0; for (let yy = r0; yy < r1; yy++) if (a[yy * cw + x] < 150) n++;
+    if (n / bh > 0.85) for (let yy = r0; yy < r1; yy++) a[yy * cw + x] = 255;
+  }
+  // Resize so the digits are about 28 px tall (Tesseract reads best around there; much bigger and it
+  // starts confusing 5 with 9), with a white margin.
+  const s = Math.max(0.3, Math.min(3, 34 / bh)), pad = 20, ow = Math.round(cw * s) + 2 * pad, oh = Math.round(bh * s) + 2 * pad;
+  const src = Object.assign(document.createElement("canvas"), { width: cw, height: bh });
+  const sctx = src.getContext("2d"); const id = sctx.createImageData(cw, bh);
+  for (let yy = 0; yy < bh; yy++) for (let x = 0; x < cw; x++) { const v = a[(r0 + yy) * cw + x], i = 4 * (yy * cw + x); id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+  sctx.putImageData(id, 0, 0);
+  const out = Object.assign(document.createElement("canvas"), { width: ow, height: oh });
+  const octx = out.getContext("2d"); octx.fillStyle = "#fff"; octx.fillRect(0, 0, ow, oh);
+  octx.imageSmoothingQuality = "high"; octx.drawImage(src, pad, pad, ow - 2 * pad, oh - 2 * pad);
+  return out;
+}
+
+/* ============================== layout ============================== */
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+
+/** Find the Hole row: the line with the most of 1..18. Returns { y, h, cols: {1..18: x}, spacing, angle } or null. */
+export function findHoleRow(words) {
+  const nums = words.filter((wd) => /^\d{1,2}$/.test(wd.text) && +wd.text >= 1 && +wd.text <= 18)
+    .map((wd) => ({ n: +wd.text, x: (wd.x0 + wd.x1) / 2, y: (wd.y0 + wd.y1) / 2, h: wd.y1 - wd.y0 }));
+  let best = null;
+  for (const a of nums) {
+    const line = nums.filter((b) => Math.abs(b.y - a.y) < a.h * 0.7);
+    const distinct = new Set(line.map((b) => b.n)).size;
+    if (!best || distinct > best.distinct) best = { distinct, line };
+  }
+  if (!best || best.distinct < 6) return null;
+  const pos = {};
+  for (const b of best.line.sort((p, q) => p.x - q.x)) if (!(b.n in pos)) pos[b.n] = b;
+  const cols = {};
+  // Each nine: robust straight-line fit of x against hole number (a misread number can't drag it off).
+  for (const [lo, hi] of [[1, 9], [10, 18]]) {
+    const ks = Object.keys(pos).map(Number).filter((k) => k >= lo && k <= hi);
+    if (ks.length < 2) continue;
+    let inliers = null;
+    for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
+      const sl = (pos[ks[j]].x - pos[ks[i]].x) / (ks[j] - ks[i]); if (sl <= 0) continue;
+      const b = pos[ks[i]].x - sl * ks[i];
+      const inl = ks.filter((k) => Math.abs(pos[k].x - (sl * k + b)) < sl * 0.3);
+      if (!inliers || inl.length > inliers.length) inliers = inl;
+    }
+    if (!inliers || inliers.length < 2) continue;
+    const mx = inliers.reduce((s, k) => s + k, 0) / inliers.length, my = inliers.reduce((s, k) => s + pos[k].x, 0) / inliers.length;
+    const sl = inliers.reduce((s, k) => s + (k - mx) * (pos[k].x - my), 0) / inliers.reduce((s, k) => s + (k - mx) ** 2, 0);
+    for (let k = lo; k <= hi; k++) cols[k] = my + sl * (k - mx);
+  }
+  if (!cols[1] && !cols[10]) return null;
+  const spacing = median([...Array(17).keys()].map((i) => cols[i + 2] - cols[i + 1]).filter((d) => d > 0 && Number.isFinite(d)));
+  // tilt: slope of y against x along the row
+  const pts = Object.values(pos);
+  const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length, my = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+  const den = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+  const angle = den ? Math.atan(pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / den) : 0;
+  return { y: my, h: median(pts.map((p) => p.h)), cols, spacing, angle };
+}
+
+// Loose match for the tee name: the name may appear anywhere in the label with stray marks around it
+// ("iereen" still finds Green, ") iBlack" finds Black). Up to one wrong letter, two for long names.
+export function similar(text, name) {
+  if (!name) return false;
+  if (text.includes(name)) return true;
+  if (name.length < 3) return false;
+  // edit distance between the name and the best-matching stretch of the text
+  let prev = Array(text.length + 1).fill(0); // free start anywhere in the text
+  for (let i = 1; i <= name.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= text.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (name[i - 1] === text[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return Math.min(...prev) <= (name.length <= 3 ? 0 : name.length >= 7 ? 2 : 1);
+}
+function findRow(lines, test) {
+  for (const l of lines) {
+    const words = l.text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    if (test(words, l.text.toLowerCase())) return (l.y0 + l.y1) / 2;
+  }
+  return null;
+}
+
+/* ============================== checks with golf's rules ============================== */
+/** Fill handicap gaps where the card's rules settle them: each of 1-18 once, usually odd on one nine and even on the other. */
+export function settleHandicaps(hcp, raws = []) {
+  const out = [...hcp];
+  const counts = {}; out.forEach((v) => { if (v) counts[v] = (counts[v] || 0) + 1; });
+  out.forEach((v, i) => { if (v && counts[v] > 1) out[i] = null; }); // a value used twice: neither is trustworthy
+  if (out.length !== 18) return out;
+  for (const [lo, hi] of [[0, 9], [9, 18]]) {
+    const known = out.slice(lo, hi).filter(Boolean);
+    const odd = known.filter((v) => v % 2).length;
+    const parity = known.length >= 5 && (odd >= known.length - 1 || odd <= 1) ? (odd > known.length / 2 ? 1 : 0) : null;
+    if (parity === null) continue;
+    for (let i = lo; i < hi; i++) if (out[i] && out[i] % 2 !== parity) out[i] = null; // wrong parity: a misread
+    const used = new Set(out.filter(Boolean));
+    const left = []; for (let v = 1; v <= 18; v++) if (v % 2 === parity && !used.has(v)) left.push(v);
+    const gaps = () => { const g = []; for (let i = lo; i < hi; i++) if (!out[i]) g.push(i); return g; };
+    if (gaps().length === 1 && left.length === 1) { out[gaps()[0]] = left[0]; continue; }
+    // several gaps: use what the reader half-saw in each cell (e.g. "38" contains 8)
+    for (const i of gaps()) {
+      const seen = (raws[i] || []).join(" ");
+      const fits = left.filter((v) => seen.includes(String(v)));
+      const best = fits.sort((a, b) => String(b).length - String(a).length)[0];
+      if (best && fits.filter((v) => String(v).length === String(best).length).length === 1) { out[i] = best; left.splice(left.indexOf(best), 1); }
+    }
+    if (gaps().length === 1 && left.length === 1) out[gaps()[0]] = left[0];
   }
   return out;
+}
+
+/**
+ * Check one nine against the card's OUT / IN total. If it's off, look for a single hole whose number
+ * differs by one look-alike digit (5/9, 6/8, 3/8, 1/7, 0/8) and makes it add up; or, with one blank
+ * hole, fill it from the total. Returns { values, fixed: [{ i, from, to }], filled, mismatch }.
+ */
+const LOOKALIKE = { 5: "9", 9: "5", 6: "8", 8: "6038", 3: "8", 1: "7", 7: "1", 0: "8" };
+export function checkNine(values, total, lo, hi) {
+  const out = [...values];
+  if (!total) return { values: out, fixed: [], filled: null, mismatch: false };
+  const sum = out.reduce((a, v) => a + (v || 0), 0);
+  const blanks = out.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0);
+  if (blanks.length === 1) {
+    const v = total - sum;
+    if (v >= lo && v <= hi) { out[blanks[0]] = v; return { values: out, fixed: [], filled: blanks[0], mismatch: false }; }
+  }
+  if (blanks.length || sum === total) return { values: out, fixed: [], filled: null, mismatch: !blanks.length && sum !== total };
+  // the total itself may be the misread one (one digit away from the sum)
+  const ts = String(total), ss = String(sum);
+  const totalOneOff = ts.length === ss.length && [...ts].filter((c, i) => c !== ss[i]).length === 1;
+  const fixes = [];
+  out.forEach((v, i) => {
+    const str = String(v);
+    for (let d = 0; d < str.length; d++) for (const alt of LOOKALIKE[str[d]] || "") {
+      const nv = Number(str.slice(0, d) + alt + str.slice(d + 1));
+      if (nv >= lo && nv <= hi && sum - v + nv === total) fixes.push({ i, from: v, to: nv });
+    }
+  });
+  if (fixes.length === 1 && !totalOneOff) { out[fixes[0].i] = fixes[0].to; return { values: out, fixed: fixes, filled: null, mismatch: false }; }
+  // no single look-alike hole explains it, but the total is one digit off: the total was misread
+  if (!fixes.length && totalOneOff) return { values: out, fixed: [], filled: null, mismatch: false, totalMisread: true };
+  return { values: out, fixed: [], filled: null, mismatch: true, candidates: fixes };
+}
+
+/** A par from the hole's yardage, when the card's par couldn't be read. */
+export const parFromYards = (y) => (y == null ? null : y <= 250 ? 3 : y <= 480 ? 4 : 5);
+
+/* ============================== the reader ============================== */
+/**
+ * Read a scorecard photo.
+ *   file: the image; tees: the tee name to take yardages from (e.g. "Black"); holes: 9 or 18.
+ * Returns { par, hcp, yards, notes, teeRow } with one value (or null) per hole.
+ */
+export async function readScorecard(file, { tees = "", holes = 18, onProgress = () => {}, engine = null } = {}) {
+  const own = !engine;
+  engine = engine || await tesseractEngine();
+  try {
+    const bmp = file instanceof HTMLCanvasElement || file instanceof HTMLImageElement ? file : await createImageBitmap(file);
+    const scale = Math.max(1, Math.min(3, 2400 / bmp.width));
+    onProgress(0.05, "Cleaning up the photo");
+    let gray = toGray(bmp, scale);
+    let words = await engine.words(cleanPage(gray));
+    let row = findHoleRow(words);
+    // Straighten a tilted photo and look again.
+    if (row && Math.abs(row.angle) > 0.004) {
+      onProgress(0.15, "Straightening the photo");
+      gray = toGray(bmp, scale, -row.angle);
+      words = await engine.words(cleanPage(gray));
+      row = findHoleRow(words) || row;
+    }
+    if (!row) return { par: [], hcp: [], yards: [], notes: ["Couldn't find the Hole row (1, 2, 3 …) on the card. Try a sharper, straight-on photo."], teeRow: "" };
+    onProgress(0.25, "Finding the rows");
+    const page = cleanPage(gray);
+    const firstCol = Math.min(...Object.values(row.cols));
+    const lines = await engine.lines(crop(page, 0, 0, Math.max(10, firstCol - row.spacing * 0.6), gray.h));
+    const parY = findRow(lines, (ws) => ws.includes("par"));
+    let hcpY = findRow(lines, (ws, t) => /hand|hcp|hdcp|index|stroke|ndica|andic/.test(t));
+    // The label can be hard to read; Handicap sits right under Par on every card, so fall back to the
+    // next labeled row below Par (not the Scorer / Attest / Date line).
+    if (hcpY == null && parY != null) {
+      const below = lines.map((l) => ({ y: (l.y0 + l.y1) / 2, t: l.text.toLowerCase() }))
+        .filter((l) => l.y > parY + row.h * 1.2 && l.y < parY + row.h * 4.5 && /[a-z]{3,}/.test(l.t) && !/scor|attest|date|sign/.test(l.t))
+        .sort((p, q) => p.y - q.y);
+      if (below.length) hcpY = below[0].y;
+    }
+    const tee = tees.trim().toLowerCase();
+    const teeY = tee ? findRow(lines, (ws) => ws.some((w) => similar(w, tee))) : null;
+    const rowH = row.h * 2.5;
+    const notes = [];
+
+    const cells = [];
+    const want = (key, y, top, lo, hi) => { if (y != null) for (let k = 1; k <= holes; k++) if (row.cols[k] != null) cells.push({ key, k, y, top, lo, hi }); };
+    want("yards", teeY, false, 50, 750);
+    want("par", parY, false, 3, 6);
+    want("hcp", hcpY, true, 1, 18);
+    const res = { yards: Array(holes).fill(null), par: Array(holes).fill(null), hcp: Array(holes).fill(null) };
+    const raws = { yards: [], par: [], hcp: [] };
+    let done = 0;
+    for (const c of cells) {
+      const x = row.cols[c.k], w = row.spacing * 0.86;
+      // A fraction's top number (men's) sits above the row's middle: read just that part.
+      // Handicap: a tall window reaching up toward Par, ignoring the Par row's own digits.
+      const wy0 = c.y - rowH * (c.top ? 1.1 : 0.5);
+      const avoid = c.top && parY != null ? [parY - wy0 - rowH * 0.42, parY - wy0 + rowH * 0.42] : null;
+      const cv = cellCanvas(gray, x - w / 2, wy0, x + w / 2, c.y + rowH * 0.5, c.top, avoid);
+      const seen = [];
+      if (cv) for (const mode of [7, 8, 6]) {
+        const t = await engine.digits(cv, mode);
+        seen.push(t);
+        const m = t.match(/^\s*(\d+)\s*$/);
+        if (m && +m[1] >= c.lo && +m[1] <= c.hi) { res[c.key][c.k - 1] = +m[1]; break; }
+      }
+      raws[c.key][c.k - 1] = seen;
+      onProgress(0.3 + 0.7 * (++done / cells.length), "Reading the holes");
+    }
+    if (hcpY != null) res.hcp = settleHandicaps(res.hcp, raws.hcp);
+    // OUT / IN: the columns just after holes 9 and 18. Use them to check (and fix) each nine.
+    const readTotal = async (k, y, lo, hi) => {
+      if (y == null || row.cols[k] == null) return null;
+      const x = row.cols[k] + row.spacing, w = row.spacing * 0.95;
+      const cv = cellCanvas(gray, x - w / 2, y - rowH * 0.5, x + w / 2, y + rowH * 0.5);
+      if (!cv) return null;
+      for (const mode of [7, 8, 6]) { const m = (await engine.digits(cv, mode)).match(/^\s*(\d+)\s*$/); if (m && +m[1] >= lo && +m[1] <= hi) return +m[1]; }
+      return null;
+    };
+    for (const [key, y, nineLo, nineHi, lo, hi, what] of [["yards", teeY, 500, 4500, 50, 750, "yardage"], ["par", parY, 27, 45, 3, 6, "par"]]) {
+      if (y == null) continue;
+      for (const [a, b, label] of [[0, 9, "front nine"], [9, 18, "back nine"]]) {
+        if (b > holes) continue;
+        const total = await readTotal(b, y, nineLo, nineHi);
+        const r = checkNine(res[key].slice(a, b), total, lo, hi);
+        // Several holes could explain the gap: re-read just those cells in other ways and take the one a re-read confirms.
+        if (r.mismatch && r.candidates?.length) {
+          const confirmed = [];
+          for (const f of r.candidates) {
+            const k = a + f.i + 1, x = row.cols[k], w = row.spacing * 0.86;
+            const cv = cellCanvas(gray, x - w / 2, y - rowH * 0.5, x + w / 2, y + rowH * 0.5);
+            for (const mode of [8, 6, 13]) { if (cv && (await engine.digits(cv, mode)).replace(/\D/g, "") === String(f.to)) { confirmed.push(f); break; } }
+          }
+          if (confirmed.length === 1) { r.values[confirmed[0].i] = confirmed[0].to; r.fixed = confirmed; r.mismatch = false; }
+        }
+        res[key].splice(a, b - a, ...r.values);
+        for (const f of r.fixed) notes.push(`Hole ${a + f.i + 1} ${what} read as ${f.from}; changed to ${f.to} so the ${label} matches the card's total (${total}).`);
+        if (r.filled != null) notes.push(`Hole ${a + r.filled + 1} ${what} was worked out from the card's ${label} total (${total}).`);
+        if (r.mismatch && r.candidates?.length) {
+          const hs = [...new Set(r.candidates.map((f) => a + f.i + 1))];
+          notes.push(`Check hole${hs.length > 1 ? "s" : ""} ${hs.join(" and ")} ${what}: the ${label} adds up to ${r.values.reduce((t, v) => t + (v || 0), 0)} but the card says ${total}.`);
+        } else if (r.mismatch) notes.push(`The ${label} ${what === "par" ? "pars" : "yardages"} don't add up to the card's total (${total}); check them.`);
+      }
+    }
+    // Missing pars: estimate from yardage, and say so.
+    const guessed = [];
+    if (parY != null) res.par = res.par.map((p, i) => { if (p == null && res.yards[i] != null) { guessed.push(i + 1); return parFromYards(res.yards[i]); } return p; });
+    if (guessed.length) notes.push(`Par for hole${guessed.length > 1 ? "s" : ""} ${guessed.join(", ")} was estimated from the yardage. Check ${guessed.length > 1 ? "them" : "it"}.`);
+    if (parY == null) notes.push("Couldn't find the Par row.");
+    if (hcpY == null) notes.push("Couldn't find the Handicap row.");
+    if (tee && teeY == null) notes.push(`Couldn't find a "${tees.trim()}" row; check the Tees box matches the card.`);
+    if (!tee) notes.push("Enter your Tees to read yardages from the right row.");
+    return { ...res, notes, teeRow: teeY != null ? tees.trim() : "" };
+  } finally {
+    if (own) await engine.terminate?.();
+  }
 }

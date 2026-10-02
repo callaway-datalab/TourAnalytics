@@ -55,6 +55,14 @@ onAuthStateChanged(auth, (user) => {
     state.isTeam = !state.isAdmin && !!profile && isTeamKey(profile.clientKey);
     state.teamAccess = (state.isTeam && profile.access) || {};
     state.status = "ready";
+    // Count a sign-in once per browser session (opening the portal signed in).
+    try {
+      const key = `signin:${user.uid}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        import("./store.js").then((m) => m.recordSignIn(user.uid, !!profile)).catch(() => {});
+      }
+    } catch { /* private mode etc.: skip */ }
     notify();
   };
   profileUnsub = onSnapshot(

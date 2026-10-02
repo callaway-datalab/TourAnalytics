@@ -1288,3 +1288,19 @@ table.stats td:first-child { white-space: nowrap; }
 .chat-form { display: flex; gap: 0.5rem; align-items: flex-end; }
 .chat-form textarea { flex: 1; margin: 0; min-height: 2.9rem; max-height: 9rem; resize: vertical; font-size: 16px; }
 .chat-form .btn { min-height: 2.9rem; }
+
+/* --- Storage bar (Player Access → At a glance) --- */
+.storage { margin-top: 1rem; padding: 1rem 1.15rem; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+.storage-top { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.6rem; }
+.storage-top strong { font: 600 0.72rem/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.storage-top span:last-child { margin-left: auto; }
+.storage-bar { display: flex; height: 0.7rem; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
+.storage-bar span { display: block; height: 100%; min-width: 0; }
+.storage-bar span:not([style*="width:0%"]) { min-width: 2px; }
+.seg-reports { background: #c8a97e; }
+.seg-data { background: #0a84ff; }
+.seg-att { background: #bf5af2; }
+.storage-bar.warn { box-shadow: 0 0 0 1px rgba(255, 159, 10, 0.6); }
+.storage-bar.bad { box-shadow: 0 0 0 1px rgba(255, 69, 58, 0.8); }
+.storage-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0.6rem 0 0.3rem; font-size: 0.82rem; color: var(--ink-2); }
+.storage-legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 3px; margin-right: 0.4rem; vertical-align: -1px; }
