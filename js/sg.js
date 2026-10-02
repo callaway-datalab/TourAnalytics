@@ -186,12 +186,14 @@ export function trend(rounds, cat, by = "event") {
     const key = by === "year" ? (valid ? String(d.getFullYear()) : "Unknown")
       : by === "month" ? (valid ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown")
       : (rd.event || rd.date || rd.key);
-    const g = groups.get(key) || { label: key, sg: 0, rounds: 0, first: groups.size };
+    const g = groups.get(key) || { label: key, sg: 0, rounds: 0, first: groups.size, date: valid ? d : null };
     g.sg += rd.shots.filter((s) => !cat || s.cat === cat).reduce((a, s) => a + s.sg, 0);
     g.rounds++;
     groups.set(key, g);
   }
-  return [...groups.values()].map((g) => ({ label: by === "month" ? monthLabel(g.label) : g.label, value: g.sg / g.rounds, rounds: g.rounds }));
+  return [...groups.values()].map((g) => ({ label: by === "month" ? monthLabel(g.label) : g.label, value: g.sg / g.rounds, rounds: g.rounds,
+    // a short label for small screens: an event's date (its name is in the tap-up)
+    short: by === "event" && g.date ? g.date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null }));
 }
 const monthLabel = (ym) => {
   const [y, m] = ym.split("-").map(Number);

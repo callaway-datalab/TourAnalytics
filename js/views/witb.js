@@ -45,12 +45,29 @@ export async function render(main, { flash }) {
   const brand = el("input", { placeholder: "Brand", maxLength: 40, autocomplete: "off", "aria-label": "Brand" });
   const model = el("input", { placeholder: "Model", maxLength: 50, autocomplete: "off", "aria-label": "Model" });
   const note = el("input", { placeholder: "Note", maxLength: 120, autocomplete: "off", "aria-label": "Note (optional)" });
-  // set mode: From … To (and, for wedges, the gap between lofts)
-  let setMode = false;
-  const fromT = el("select", { "aria-label": "From" }), toT = el("select", { "aria-label": "To" });
-  const gap = el("select", { "aria-label": "Loft gap" }, [["2", "every 2\u00b0"], ["4", "every 4\u00b0"], ["6", "every 6\u00b0"]].map(([v, l]) => el("option", { value: v, selected: v === "4" }, l)));
+  // set mode: one dropdown where you tick the clubs you want
+  let setMode = false, picked = [];
+  const pickBtn = el("button", { type: "button", class: "ms-btn set-pick", "aria-expanded": "false", "aria-haspopup": "true" });
+  const pickPanel = el("div", { class: "ms-panel set-panel", hidden: true, role: "group", "aria-label": "Clubs in the set" });
+  const setBox = el("div", { class: "set-box", hidden: true }, [pickBtn, pickPanel]);
   const setToggle = el("button", { type: "button", class: "link set-toggle", hidden: true });
-  const setBox = el("div", { class: "set-box", hidden: true }, [el("span", { class: "set-label" }, "From"), fromT, el("span", { class: "set-label" }, "to"), toT, gap]);
+  const drawPick = () => {
+    const ts = CLUB_TYPES[cat.value] || [];
+    picked = ts.filter((t) => picked.includes(t)); // keep set order
+    mount(pickBtn, [el("span", { class: "ms-sum" }, picked.length ? picked.join(", ") : "Pick clubs\u2026"), el("span", { class: "ms-caret", "aria-hidden": "true" }, "\u25BE")]);
+    mount(pickPanel, el("div", { class: "ms-options" }, ts.map((t) => {
+      const box = el("input", { type: "checkbox", checked: picked.includes(t), "aria-label": t });
+      box.addEventListener("change", () => { picked = box.checked ? [...picked, t] : picked.filter((x) => x !== t); drawPick(); });
+      return el("label", { class: "ms-row" }, [box, el("span", {}, t)]);
+    })));
+  };
+  // open / close the list; while open, its block sits above the blocks below (so the list isn't hidden)
+  const setOpen = (open) => {
+    pickPanel.hidden = !open; pickBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    setBox.closest(".bag-panel")?.classList.toggle("raised", open);
+  };
+  pickBtn.addEventListener("click", () => setOpen(pickPanel.hidden));
+  document.addEventListener("pointerdown", (e) => { if (!setBox.contains(e.target)) setOpen(false); });
   const addBtn = el("button", { class: "btn", type: "submit" }, "Add club");
   const drawAddMode = () => {
     const canSet = cat.value === "Iron" || cat.value === "Wedge";
@@ -58,13 +75,12 @@ export async function render(main, { flash }) {
     setToggle.hidden = !canSet;
     setToggle.textContent = setMode ? "Add just one club" : `Add a set of ${cat.value === "Wedge" ? "wedges" : "irons"}`;
     setBox.hidden = !setMode; type.hidden = setMode;
-    gap.hidden = cat.value !== "Wedge";
     addBtn.textContent = setMode ? "Add set" : "Add club";
     if (setMode) {
-      const ts = CLUB_TYPES[cat.value] || [];
-      const [f0, t0] = cat.value === "Wedge" ? ["50\u00b0", "58\u00b0"] : ["4i", "PW"];
-      mount(fromT, ts.map((t) => el("option", { value: t, selected: t === f0 }, t)));
-      mount(toT, ts.map((t) => el("option", { value: t, selected: t === t0 }, t)));
+      // start with the usual set ticked; change it freely
+      if (!picked.length || !picked.every((t) => (CLUB_TYPES[cat.value] || []).includes(t)))
+        picked = cat.value === "Wedge" ? ["50\u00b0", "54\u00b0", "58\u00b0"] : ["4i", "5i", "6i", "7i", "8i", "9i", "PW"];
+      drawPick();
     }
   };
   cat.addEventListener("change", () => {
@@ -81,12 +97,8 @@ export async function render(main, { flash }) {
       e.preventDefault();
       const b = brand.value.trim(), m = model.value.trim(), n = note.value.trim();
       if (setMode) {
-        const ts = CLUB_TYPES[cat.value];
-        const i0 = ts.indexOf(fromT.value), i1 = ts.indexOf(toT.value);
-        if (i0 > i1) { flash("The first club has to come before the last one.", "error"); return; }
-        const step = cat.value === "Wedge" ? Number(gap.value) / 2 : 1; // wedge lofts are listed every 2°
-        const pick = ts.slice(i0, i1 + 1).filter((_, j) => j % step === 0);
-        if (cat.value === "Wedge" && !pick.includes(toT.value)) pick.push(toT.value);
+        const pick = [...picked];
+        if (!pick.length) { flash("Tick the clubs in the set.", "error"); return; }
         let added = 0, bagged = 0, skipped = 0;
         for (const t of pick) {
           const c = { id: newClubId(), cat: cat.value, type: t, brand: b, model: m, note: n };

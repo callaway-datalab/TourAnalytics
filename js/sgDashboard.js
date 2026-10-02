@@ -89,9 +89,9 @@ export function sgDashboard(container, opts) {
     const focusTag = act?.tagName;
     mount(container, [
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
-      statTypeBar(),
       catPills(),
       yearPills(opt),
+      statTypeBar(),
       filterBar(opt),
       el("div", { class: "sg-panel" }, (() => {
         // The rankings are always the first thing (Stat Averages and the charts follow).
@@ -206,11 +206,20 @@ export function sgDashboard(container, opts) {
   }
   // Category pills: pick one or several (e.g. Off-the-Tee + Approach + Around-the-Green = tee to green).
   // "All" clears the choice; picking all four is the same as All.
-  // Stat Type: which kind of stats the page shows. Strokes Gained for now; more types come later.
-  const STAT_TYPES = [["sg", "Strokes Gained"], ["hitGreen", "Hit Green %"], ["gir", "GIR"], ["puttMake", "Putt Make %"], ["hitFwy", "Hit Fwy %"], ["driveDist", "Driving Distance"]];
+  // Stat Type: which kind of stats the page shows. Strokes Gained for now; the others (marked "coming
+  // soon") depend on the category picked.
+  const STAT_TYPES_BY_CAT = {
+    all: ["OWGR", "Birdie Pct", "Bogey Avoidance", "Scoring Avg", "GIR %"],
+    OTT: ["Driving Distance", "Driving Accuracy"],
+    APP: ["Hit Green %", "Up & Down %", "Proximity"],
+    ARG: ["Hit Green %", "Up & Down %", "Proximity"],
+    PUTT: ["Make %", "3-Putt Avoidance", "Good Lag %"],
+  };
+  const statTypesNow = () => [["sg", "Strokes Gained"], ...(STAT_TYPES_BY_CAT[st.cats.length === 1 ? st.cats[0] : "all"] || []).map((l) => [l, l])];
   const READY_TYPES = ["sg"];
   function statTypeBar() {
-    const sel = el("select", { "aria-label": "Stat Type" }, STAT_TYPES.map(([v, l]) =>
+    if (!statTypesNow().some(([v]) => v === (st.statType || "sg"))) st.statType = "sg";
+    const sel = el("select", { "aria-label": "Stat Type" }, statTypesNow().map(([v, l]) =>
       el("option", { value: v, selected: (st.statType || "sg") === v, disabled: !READY_TYPES.includes(v) }, READY_TYPES.includes(v) ? l : `${l} (coming soon)`)));
     sel.addEventListener("change", () => { st.statType = sel.value; draw(); });
     return el("div", { class: "stat-type" }, el("label", {}, ["Stat Type", sel]));
@@ -334,11 +343,17 @@ export function sgDashboard(container, opts) {
       // All, or several categories: where the strokes are gained and lost among the ones picked.
       const shown = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k));
       const bars = shown.map(([k, l]) => ({ label: l, value: sliceTotals(mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === k) }))).sgPerRound ?? 0 }));
-      const byCat = panelBox("SG by Category", chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), { title: "SG / round", as }), "", "by-category"));
+      // the chosen players (Top 1 / 10 / 25 / 50 / All) for the same categories / lies
+      const cmpField = topPlayers(slicedField);
+      const avgOf = (vals) => { const v = vals.filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+      const catCompare = cmpField.length ? shown.map(([k]) => avgOf(cmpField.map((p) => sliceTotals(p.rounds.map((rd) => ({ ...rd, shots: rd.shots.filter((x) => x.cat === k) }))).sgPerRound))) : null;
+      const byCat = panelBox("SG by Category", chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), {
+        title: "SG / round", as, compare: catCompare, compareLabel: compareName() }), "", "by-category", { rankPick: cmpField.length > 0 }));
       const lies = sgBy(mine, idx, null, "lie");
+      const lieCompare = lies && !fieldIsSummary() ? lies.map((g) => avgOf(cmpField.map((p) => (sgBy(p.rounds, idx, null, "lie") || []).find((x) => x.label === g.label)?.perRound))) : null;
       blocks.push(lies && lies.length > 1
         ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,
-            title: "SG / round", tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie"))])
+            title: "SG / round", compare: lieCompare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie", { rankPick: !!lieCompare }))])
         : byCat);
     } else {
       const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
@@ -347,8 +362,9 @@ export function sgDashboard(container, opts) {
       const stats = statTableFull(cat, { key: me.key, rounds: mine }, comparable ? slicedField : [], idx);
       const others = mode === "admin" ? "All Players" : "Field";
       blocks.push(panelBox(describe(), stats.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain stats stat-full" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, "Stat"), el("th", { class: "num" }, "Rank"), el("th", { class: "num" }, "Player Avg"),
-          el("th", { class: "num" }, "Player Best"), el("th", { class: "num" }, "Player Worst"), el("th", { class: "num" }, others)])),
+        // (short headings on phones, e.g. "Avg" for "Player Avg")
+        el("thead", {}, el("tr", {}, [["Stat", "Stat"], ["Rank", "Rank"], ["Player Avg", "Avg"], ["Player Best", "Best"], ["Player Worst", "Worst"], [others, "All"]].map(([long, short], i) =>
+          el("th", { class: i ? "num" : "" }, long === short ? long : [el("span", { class: "long" }, long), el("span", { class: "short" }, short)])))),
         el("tbody", {}, stats.map((s) => {
           const fmt = (v) => (v === null || v === undefined ? "\u2014" : ["pct", "onePutt", "driverPct"].includes(s.kind) ? `${nf1.format(v)}%`
             : s.kind === "sgPerRound" || s.kind === "sgPerAttempt" ? `${v >= 0 ? "+" : ""}${v.toFixed(s.dp ?? 2)}` : v.toFixed(s.dp ?? 1));
@@ -394,7 +410,6 @@ export function sgDashboard(container, opts) {
       a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
       return a;
     }));
-    const avg = t.length ? t.reduce((a, g) => a + g.value, 0) / t.length : 0;
     // The chosen players (Top 1 / 10 / 25 / 50 / All) for the same events, months, years or rounds.
     const others = topPlayers(slicedField.filter((p) => p.key !== me.key));
     const otherTrends = others.map((p) => trend(p.rounds, cat || null, st.trendBy));
@@ -403,7 +418,8 @@ export function sgDashboard(container, opts) {
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     }) : null;
     blocks.push(panelBox("Strokes Gained Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
-      title: "SG / round", average: avg, as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(),
+      title: "SG / round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(),
+      shortLabels: t.map((g) => g.short),
       tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
     }), "wide", "trend", { rankPick: others.length > 0 })], "full"));
     return blocks;
@@ -518,7 +534,7 @@ export function sgDashboard(container, opts) {
       },
     };
   }
-  function barChart(canvas, labels, values, { title, compare, compareLabel = "All players", average, single, tooltip, as = "bar" } = {}) {
+  function barChart(canvas, labels, values, { title, compare, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar" } = {}) {
     const signColors = values.map((v) => (v >= 0 ? "#30d158" : "#ff453a"));
     const datasets = [as === "line"
       // Line: a champagne line through green / red points, shaded green above zero and red below.
@@ -536,6 +552,17 @@ export function sgDashboard(container, opts) {
       filter: (item) => item.datasetIndex !== 0,
     } };
     if (tooltip) o.plugins.tooltip.callbacks = { afterLabel: (c) => (c.datasetIndex === 0 ? tooltip(c.dataIndex) : "") };
+    // Long labels (tournament names) are shortened under the bars, and on small screens an event shows just
+    // its date; tapping a bar shows the full name.
+    const narrow = (canvas.parentElement?.clientWidth || 800) < 640;
+    const shortOf = (i) => {
+      const l = String(labels[i] ?? "");
+      if (narrow && shortLabels?.[i]) return shortLabels[i];
+      const max = narrow ? 10 : 18;
+      return l.length > max ? `${l.slice(0, max - 1).trimEnd()}\u2026` : l;
+    };
+    o.scales.x = { ...(o.scales.x || {}), ticks: { ...((o.scales.x || {}).ticks || {}), callback: (v, i) => shortOf(i), autoSkip: true, maxRotation: narrow ? 50 : 30, font: { size: narrow ? 10 : 12 } } };
+    o.plugins.tooltip.callbacks = { ...(o.plugins.tooltip.callbacks || {}), title: (items) => String(labels[items[0].dataIndex] ?? "") };
     if (title) o.scales.y.title = { display: true, text: title, color: "#8e8e93" };
     return new Chart(canvas, { data: { labels, datasets }, options: o });
   }

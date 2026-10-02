@@ -9,7 +9,7 @@ import { getState } from "../auth.js";
 import { UserError } from "../store.js";
 import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
-import { readScorecard, readScorecardFromTaps, rotateImage } from "../scorecardReader.js";
+import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
@@ -103,7 +103,7 @@ async function renderNew(main, flash) {
   const teeNames = el("datalist", { id: "tee-names" }, ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Championship", "Tournament", "Back", "Middle", "Forward"].map((t) => el("option", { value: t })));
   let lastCard = null; // the photo, so changing Tees can re-read that tee's yardages
   // Tournament or Practice: two pills, exactly one picked.
-  let roundType = "";
+  let roundType = "practice"; // Practice unless you pick Tournament
   const typePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "Round type" });
   const tournamentIn = el("input", { placeholder: "e.g. Club Championship", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
   const tournamentField = el("label", { hidden: true }, ["Tournament name", tournamentIn]);
@@ -124,7 +124,7 @@ async function renderNew(main, flash) {
   const photoStatus = el("p", { class: "muted center", role: "status" });
   const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
   const photoBtn = el("label", { class: "btn ghost entry-big photo-btn" }, ["\uD83D\uDCF7  Read a scorecard photo", photo]);
-  const tapBtn = el("button", { type: "button", class: "link tap-btn", hidden: true }, "\uD83D\uDC46 Point to the rows on the photo instead");
+  const tapBtn = el("button", { type: "button", class: "link tap-btn", hidden: true }, "\uD83D\uDC46 Check the rows on the photo");
   // Tees: a dropdown of the tees found on the card (each fills its yardages), or type your own.
   let cardTees = []; // [{ name, yards }] from the last photo
   const teeSelect = el("select", { "aria-label": "Tees from the card", hidden: true });
@@ -239,11 +239,38 @@ async function renderNew(main, flash) {
       photoStatus.textContent = "The scorecard reader isn't available right now. Type the holes in below.";
     } finally { reading = false; }
   }
-  const readCard = (file) => runRead((onProgress) => readScorecard(file, { holes: holesCount, engine: window.__scorecardEngine || null, onProgress }), "Reading the scorecard");
+  let lastAnalysis = null;
+  // From the table you confirmed: its numbers as they are, or (after changes) read again from your rows.
+  const readFromTable = (taps, src, ready) => runRead(async (onProgress) => {
+    if (ready) return ready;
+    const read = await readScorecardFromTaps(src, { taps, holes: holesCount, engine: window.__scorecardEngine || null, onProgress });
+    // keep the editor's table in step with what was read
+    if (lastAnalysis) {
+      const par = lastAnalysis.rows.find((r) => r.kind === "par"), hcp = lastAnalysis.rows.find((r) => r.kind === "hcp");
+      if (par) { par.values = read.par; par.readAs = "par"; }
+      if (hcp) { hcp.values = read.hcp; hcp.readAs = "hcp"; }
+      lastAnalysis.rows.filter((r) => r.kind === "tee").forEach((r, i) => { r.values = read.tees[i]?.yards || null; r.readAs = "tee"; });
+      lastAnalysis.notes = read.notes;
+    }
+    return read;
+  }, "Reading the rows you confirmed");
+  async function readCard(file) {
+    if (reading) return;
+    reading = true;
+    photoStatus.textContent = "Reading everything on the card\u2026";
+    try {
+      lastAnalysis = await analyzeCard(file, { holes: holesCount, engine: window.__scorecardEngine || null, onProgress: (p, label) => { photoStatus.textContent = `${label}\u2026 ${Math.round(p * 100)}%`; } });
+      if (lastAnalysis.rotation) lastUpright = lastAnalysis.src;
+      photoStatus.textContent = "Check the rows and columns on the photo, then tap \u201cUse these rows\u201d.";
+      tapBtn.hidden = false;
+    } catch (err) { console.error(err); photoStatus.textContent = "The scorecard reader isn't available right now. Type the holes in below."; reading = false; return; }
+    reading = false;
+    openCardEditor(lastAnalysis, holesCount, readFromTable);
+  }
   let lastUpright = null;
   tapBtn.addEventListener("click", () => {
-    if (!lastCard) return;
-    openTapper(lastUpright || lastCard, holesCount, (taps, src) => runRead((onProgress) => readScorecardFromTaps(src, { taps, holes: holesCount, engine: window.__scorecardEngine || null, onProgress }), "Reading the rows you pointed to"));
+    if (lastAnalysis) openCardEditor(lastAnalysis, holesCount, readFromTable);
+    else if (lastCard) openTapper(lastUpright || lastCard, holesCount, (taps, src) => readFromTable(taps, src));
   });
   photo.addEventListener("change", async () => {
     const f = photo.files[0];
@@ -804,4 +831,172 @@ function openTapper(source, holes, onDone) {
   document.body.classList.add("tapping");
   document.body.appendChild(overlay);
   show(); draw();
+}
+
+/* ======================= checking the card as a table ======================= */
+// The photo with the reader's table on top: a band for each row of numbers (labelled Hole, Par,
+// Handicap, a tee, or Ignore; tap a label to change it, drag ⇕ to move a row), a guide for each hole
+// column (drag the 1, 9, 10 and 18 to move them; the rest follow), and the number read at each crossing.
+// If the Hole row wasn't found you first tap the 1, 9, 10 and 18. "Use these rows" hands back taps for
+// readScorecardFromTaps (in the photo's own pixels).
+const KIND_LABEL = { hole: "Hole", par: "Par", hcp: "Handicap", tee: "Tee", ignore: "Ignore" };
+function openCardEditor(an, holes, onConfirm) {
+  const W = an.width, H = an.height, slope = an.slope || 0;
+  let refX = an.refX || 0, rows = an.rows.map((r, i) => ({ ...r, id: r.id ?? i, readAs: r.readAs ?? (r.values ? r.kind : null) })), anchors = an.anchors ? { ...an.anchors } : null;
+  // (on a phone the card starts zoomed in, so the rows and numbers are big enough to tap; scroll sideways)
+  let zoom = window.innerWidth < 700 ? 2.5 : 1, showWords = false, adding = false, placing = anchors ? null : 0, menuFor = null, drag = null, colsMoved = false;
+  const PLACE = holes === 18 ? ["h1", "h9", "h10", "h18"] : ["h1", "h9"];
+  const PLACE_SAY = { h1: "the 1", h9: "the 9", h10: "the 10", h18: "the 18" };
+  if (!anchors) anchors = {};
+  const yAt = (r, x) => r.y + slope * (x - refX);
+  const lerp = (a, b, f) => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+  const colPt = (k) => (k <= 9 ? lerp(anchors.h1, anchors.h9, (k - 1) / 8) : lerp(anchors.h10, anchors.h18, (k - 10) / 8));
+  const haveCols = () => PLACE.every((k) => anchors[k]);
+  const pct = (x, y) => `left:${(x / W) * 100}%;top:${(y / H) * 100}%`;
+  const isNum = (t) => /^\d{1,4}$/.test(t) || /^\d{1,2}\/\d{1,2}$/.test(t);
+  const spacing = () => (haveCols() ? Math.hypot(anchors.h9.x - anchors.h1.x, anchors.h9.y - anchors.h1.y) / 8 : an.spacing || W / 30);
+  // the number read nearest each crossing (live, so it follows your drags)
+  const valueAt = (x, y) => {
+    let best = null, bd = Infinity;
+    for (const w of an.words) {
+      if (!isNum(w.text)) continue;
+      const cx = (w.x0 + w.x1) / 2, cy = (w.y0 + w.y1) / 2, d = Math.hypot((cx - x) / spacing(), (cy - y) / (an.rowH * 0.6));
+      if (d < bd && Math.abs(cx - x) < spacing() * 0.5 && Math.abs(cy - y) < an.rowH * 0.45) { bd = d; best = w.text.split("/")[0]; }
+    }
+    return best;
+  };
+
+  const url = an.src instanceof HTMLCanvasElement ? null : URL.createObjectURL(an.src);
+  const img = el("img", { alt: "Your scorecard", draggable: "false" });
+  if (url) img.src = url; else an.src.toBlob((b) => { img.src = URL.createObjectURL(b); }, "image/jpeg", 0.92);
+  const layer = el("div", { class: "ce-layer" });
+  const stage = el("div", { class: "tap-stage ce-stage" }, [img, layer]);
+  const scroller = el("div", { class: "tap-scroll" }, stage);
+  const say = el("p", { class: "tap-say", role: "status" });
+  const zin = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom in" }, "+");
+  const zout = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom out" }, "\u2212");
+  const wordsBtn = el("button", { type: "button", class: "btn ghost", "aria-pressed": "false" }, "Show all words");
+  const addBtn = el("button", { type: "button", class: "btn ghost" }, "+ Add a row");
+  const useBtn = el("button", { type: "button", class: "btn" }, "Use these rows");
+  const cancel = el("button", { type: "button", class: "link" }, "Cancel");
+  const overlay = el("div", { class: "tapper card-editor", role: "dialog", "aria-modal": "true", "aria-label": "Check the rows and columns on your scorecard" }, [
+    el("div", { class: "tap-top" }, [say, el("div", { class: "tap-actions" }, [zout, zin, wordsBtn, addBtn, useBtn, cancel])]),
+    scroller,
+  ]);
+
+  function draw() {
+    stage.style.width = `${zoom * 100}%`;
+    const parts = [];
+    if (placing != null) say.textContent = `The Hole row wasn't found: tap ${PLACE_SAY[PLACE[placing]]} in the Hole row (${placing + 1} of ${PLACE.length}).`;
+    else if (adding) say.textContent = "Tap the photo where the new row is.";
+    else say.textContent = "Check the rows and columns: tap a label to change it, drag \u21D5 to move a row, drag 1 / 9 / 10 / 18 to line up the columns.";
+    useBtn.disabled = placing != null;
+    // all the words read (optional)
+    if (showWords) for (const w of an.words) parts.push(el("span", { class: "ce-word", style: `${pct(w.x0, w.y0)};width:${((w.x1 - w.x0) / W) * 100}%;height:${((w.y1 - w.y0) / H) * 100}%`, title: w.text }, el("i", {}, w.text)));
+    // row bands
+    for (const r of rows) {
+      const y0 = yAt(r, 0), y1 = yAt(r, W);
+      const angle = Math.atan2(y1 - y0, W) * 180 / Math.PI;
+      const chip = el("button", { type: "button", class: `ce-chip k-${r.kind}`, "aria-label": `Row: ${r.kind === "tee" ? `Tee ${r.name}` : KIND_LABEL[r.kind]}. Change it` },
+        r.kind === "tee" ? `Tee \u00b7 ${r.name || "?"}` : KIND_LABEL[r.kind]);
+      chip.addEventListener("click", (e) => { e.stopPropagation(); menuFor = menuFor === r.id ? null : r.id; draw(); });
+      const grip = el("span", { class: "ce-grip", title: "Drag to move this row", "aria-hidden": "true" }, "\u21D5");
+      grip.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); drag = { type: "row", id: r.id }; grip.setPointerCapture?.(e.pointerId); });
+      // the label and its drag handle sit together at the left, so both stay in reach when zoomed in
+      const band = el("div", { class: `ce-row k-${r.kind}`, style: `left:0;top:${(y0 / H) * 100}%;height:${(an.rowH / H) * 100}%;transform:translateY(-50%) rotate(${angle}deg)` },
+        el("div", { class: "ce-handle" }, [chip, grip]));
+      parts.push(band);
+      if (menuFor === r.id) parts.push(kindMenu(r, y0));
+      // the digital table: the number read at each hole
+      if (haveCols() && r.kind !== "ignore") for (let k = 1; k <= holes; k++) {
+        const c = colPt(k), yy = yAt(r, c.x);
+        const v = r.kind === "hole" ? String(k) : r.values && !colsMoved ? (r.values[k - 1] != null ? String(r.values[k - 1]) : null) : valueAt(c.x, yy);
+        parts.push(el("span", { class: "ce-val" + (v ? "" : " missing"), style: pct(c.x, yy) }, v || "?"));
+      }
+    }
+    // hole columns
+    if (haveCols()) for (let k = 1; k <= holes; k++) {
+      const c = colPt(k), handle = anchors[`h${k}`] && ["h1", "h9", "h10", "h18"].includes(`h${k}`);
+      parts.push(el("div", { class: "ce-col", style: `left:${(c.x / W) * 100}%` }));
+      const tag = el("span", { class: "ce-hole" + (handle ? " handle" : ""), style: pct(c.x, c.y), title: handle ? "Drag to line up the columns" : "" }, String(k));
+      if (handle) tag.addEventListener("pointerdown", (e) => { e.preventDefault(); drag = { type: "anchor", key: `h${k}` }; tag.setPointerCapture?.(e.pointerId); });
+      parts.push(tag);
+    }
+    for (const k of PLACE) if (anchors[k] && !haveCols()) parts.push(el("span", { class: "ce-hole handle", style: pct(anchors[k].x, anchors[k].y) }, k.slice(1)));
+    mount(layer, parts);
+  }
+
+  function kindMenu(r, y0) {
+    const pick = (kind) => {
+      if (kind === "hole") rows.forEach((o) => { if (o.kind === "hole") o.kind = "ignore"; });
+      if ((kind === "par" || kind === "hcp")) rows.forEach((o) => { if (o.kind === kind && o.id !== r.id) o.kind = "ignore"; });
+      if (r.kind !== kind) r.values = kind === r.readAs ? r.values : null; // a new job for this row: read it as that
+      r.kind = kind;
+      if (kind === "hole" && haveCols()) { // the columns' numbers move to this row
+        const dy = (k) => yAt(r, anchors[k].x) - anchors[k].y;
+        for (const k of PLACE) anchors[k] = { x: anchors[k].x, y: anchors[k].y + dy(k) };
+      }
+      menuFor = null; draw();
+    };
+    const nameIn = el("input", { value: r.name || cleanTee(r.label), placeholder: "Tee name (e.g. Blue)", maxLength: 40, "aria-label": "Tee name" });
+    const teeGo = el("button", { type: "button", class: "btn" }, "Tee");
+    teeGo.addEventListener("click", () => { r.name = nameIn.value.trim() || "Tees"; pick("tee"); });
+    const opts = ["hole", "par", "hcp", "ignore"].map((k) => { const b = el("button", { type: "button", class: `ce-opt k-${k}` }, KIND_LABEL[k]); b.addEventListener("click", () => pick(k)); return b; });
+    const del = el("button", { type: "button", class: "link danger" }, "Remove row");
+    del.addEventListener("click", () => { rows = rows.filter((o) => o.id !== r.id); menuFor = null; draw(); });
+    const m = el("div", { class: "ce-menu", style: `left:1%;top:${((y0 + an.rowH * 0.6) / H) * 100}%` }, [el("div", { class: "ce-opts" }, opts), el("div", { class: "ce-tee" }, [nameIn, teeGo]), del]);
+    m.addEventListener("click", (e) => e.stopPropagation());
+    return m;
+  }
+  const cleanTee = (t) => String(t || "").replace(/[^A-Za-z0-9 '&-]/g, " ").replace(/\s+/g, " ").trim();
+
+  // pointer → photo pixels
+  const toPhoto = (e) => { const b = img.getBoundingClientRect(); return { x: ((e.clientX - b.left) / b.width) * W, y: ((e.clientY - b.top) / b.height) * H }; };
+  stage.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const p = toPhoto(e);
+    if (drag.type === "row") { const r = rows.find((o) => o.id === drag.id); if (r) { r.y = p.y - slope * (p.x - refX); r.values = null; } } // moved: read it again
+    else { anchors[drag.key] = p; colsMoved = true; }
+    draw();
+  });
+  const endDrag = () => { if (drag) { drag = null; rows.sort((a, b) => a.y - b.y); draw(); } };
+  stage.addEventListener("pointerup", endDrag);
+  stage.addEventListener("pointercancel", endDrag);
+  img.addEventListener("click", (e) => {
+    const p = toPhoto(e);
+    if (placing != null) {
+      anchors[PLACE[placing]] = p; placing++;
+      if (placing >= PLACE.length) { placing = null; if (!an.anchors) refX = anchors.h1.x; }
+      draw(); return;
+    }
+    if (adding) { rows.push({ id: Date.now(), y: p.y - slope * (p.x - refX), kind: "ignore", name: "", label: "" }); rows.sort((a, b) => a.y - b.y); adding = false; menuFor = rows.find((r) => r.kind === "ignore" && Math.abs(r.y - (p.y - slope * (p.x - refX))) < 1)?.id ?? null; draw(); return; }
+    if (menuFor != null) { menuFor = null; draw(); }
+  });
+  zin.addEventListener("click", () => { zoom = Math.min(4, zoom * 1.5); draw(); });
+  zout.addEventListener("click", () => { zoom = Math.max(1, zoom / 1.5); draw(); });
+  wordsBtn.addEventListener("click", () => { showWords = !showWords; wordsBtn.setAttribute("aria-pressed", showWords ? "true" : "false"); wordsBtn.textContent = showWords ? "Hide words" : "Show all words"; draw(); });
+  addBtn.addEventListener("click", () => { adding = true; draw(); });
+  const close = () => { overlay.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener("keydown", onKey); document.body.classList.remove("tapping"); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  cancel.addEventListener("click", close);
+  useBtn.addEventListener("click", () => {
+    if (!haveCols()) return;
+    const at = (r) => ({ x: anchors.h1.x, y: yAt(r, anchors.h1.x) });
+    const par = rows.find((r) => r.kind === "par"), hcp = rows.find((r) => r.kind === "hcp");
+    const tees = rows.filter((r) => r.kind === "tee");
+    const taps = { ...Object.fromEntries(PLACE.map((k) => [k, anchors[k]])), par: par ? at(par) : null, hcp: hcp ? at(hcp) : null, tees: tees.map((r) => ({ ...at(r), name: r.name || "Tees" })) };
+    // Nothing to re-read (every row in use already has its numbers, columns where they were): use them as is.
+    const used = rows.filter((r) => ["par", "hcp", "tee"].includes(r.kind));
+    const ready = !colsMoved && used.length && used.every((r) => r.values && r.readAs === r.kind);
+    const result = ready ? { found: true, notes: an.notes || [], par: par?.values || Array(holes).fill(null), hcp: hcp?.values || Array(holes).fill(null),
+      tees: tees.map((r) => ({ name: r.name || "Tees", yards: r.values })) } : null;
+    Object.assign(an, { rows, anchors: { ...anchors }, refX }); // reopening shows your changes
+    close();
+    onConfirm(taps, an.src, result);
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.classList.add("tapping");
+  document.body.appendChild(overlay);
+  img.addEventListener("load", draw);
+  draw();
 }

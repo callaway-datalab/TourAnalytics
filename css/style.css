@@ -1484,3 +1484,116 @@ body.tapping { overflow: hidden; }
   .bag-panel .club-add:not(.club-edit-form) > input[placeholder^="Note"] { flex: 0.6 1 5rem; min-width: 4.5rem; }
   .bag-panel .club-add:not(.club-edit-form) > .btn { flex: 0 0 auto; }
 }
+
+/* --- Stat Type under the year pills --- */
+.sg-years + .stat-type, .sg-tabs + .stat-type { margin: 0 auto 1rem; }
+
+/* --- Analyze on phones: tighter tables and chart controls --- */
+@media (max-width: 640px) {
+  .sg-panel table.plain th, .sg-panel table.plain td { padding: 0.45rem 0.35rem; font-size: 0.76rem; }
+  .sg-panel table.plain th { font-size: 0.54rem !important; letter-spacing: 0.06em; }
+  .stat-full td:first-child { white-space: normal; min-width: 4.5rem; }
+  .rankings td:nth-child(2) { max-width: 7.5rem; }
+  .chart-toggle button { width: 1.75rem; height: 1.55rem; }
+  .chart-toggle button svg { width: 12px; height: 12px; }
+  .chart-tools { top: 0.55rem; right: 0.55rem; gap: 0.3rem; }
+  /* the Rank list keeps 16px text (so iPhone doesn't zoom) but is drawn smaller */
+  .rank-pick { min-height: 2rem; padding: 0.1rem 1.6rem 0.1rem 0.5rem; transform: scale(0.78); transform-origin: right center; margin-left: -0.6rem; }
+  .sg-box > h3 { padding-right: 8.5rem; font-size: 0.64rem !important; }
+  .sg-chart { height: 13.5rem; }
+  .sg-chart.wide { height: 14.5rem; }
+  .sg-years a, .sg-years a:hover { padding: 0.35rem 0.7rem !important; font-size: 0.78rem !important; }
+  .sg-tabs a, .sg-tabs a:hover { padding: 0.4rem 0.75rem !important; font-size: 0.8rem !important; }
+}
+
+/* --- Data Entry: the course list shows above the next block; the date box stays inside its box --- */
+.entry-section:focus-within { position: relative; z-index: 20; }
+.combo-list { z-index: 60; }
+.entry-form input[type=date] { display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
+.entry-form label { min-width: 0; }
+.set-box { position: relative; }
+.set-pick { min-width: 11rem; max-width: 18rem; }
+.set-panel { left: 0; top: calc(100% + 0.35rem); width: 13rem; }
+.set-panel .ms-options { max-height: 18rem; }
+@media (min-width: 761px) { .bag-panel .club-add:not(.club-edit-form) > .set-box { flex: 0 1 15rem; min-width: 10rem; } .set-pick { width: 100%; } }
+.bag-panel.raised { position: relative; z-index: 30; }
+.stat-full th .short { display: none; }
+@media (max-width: 640px) { .stat-full th .long { display: none; } .stat-full th .short { display: inline; } }
+
+/* ======================= Staff chat: conversations + thread ======================= */
+.chat.chat-shell { max-width: 64rem; display: grid; grid-template-columns: 17rem 1fr; gap: 0; padding: 0; overflow: hidden; }
+.chat-side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 30rem; max-height: 70vh; }
+.chat-side-top { padding: 1rem 1rem 0.5rem; }
+.chat-side-top h3 { margin: 0 0 0.6rem; font: 600 0.72rem/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.chat-new { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.chat-new .btn { min-height: 2.3rem; padding: 0.35rem 0.8rem; font-size: 0.82rem; }
+.chat-rooms { list-style: none; margin: 0; padding: 0.4rem; overflow-y: auto; flex: 1; }
+.chat-room { display: flex; align-items: center; gap: 0.6rem; width: 100%; min-height: 3.2rem; padding: 0.5rem 0.6rem; border: 0; border-radius: 12px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.chat-room:hover { background: rgba(255, 255, 255, 0.05); }
+.chat-room.on { background: var(--accent-soft); }
+.chat-room-icon { flex: none; width: 1.9rem; height: 1.9rem; border-radius: 999px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.08); color: var(--ink-2); font-size: 0.85rem; }
+.chat-room-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-room-text strong { font-size: 0.92rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-room-text .muted { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-dot { flex: none; width: 0.6rem; height: 0.6rem; border-radius: 999px; background: var(--accent); }
+.chat-picker { margin: 0 0.75rem 0.5rem; padding: 0.75rem; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 0.4rem; }
+.chat-picker[hidden] { display: none; }
+.chat-picker-title { margin: 0 0 0.2rem; font-weight: 600; }
+.chat-people { max-height: 14rem; overflow-y: auto; }
+.chat-person { min-height: 2.6rem; padding: 0.4rem 0.6rem; border: 0; border-radius: 10px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.chat-person:hover { background: rgba(255, 255, 255, 0.07); }
+.chat-picker-actions { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.3rem; }
+.chat-main { display: flex; flex-direction: column; min-width: 0; padding: 1rem; }
+.chat-thread-head { display: flex; align-items: center; gap: 0.75rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--line); }
+.chat-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-title .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-actions { display: flex; gap: 0.8rem; }
+.chat-back { display: none; }
+.chat-main .chat-list { flex: 1; max-height: 52vh; }
+@media (max-width: 760px) {
+  .chat.chat-shell { grid-template-columns: 1fr; }
+  .chat-side { border-right: 0; max-height: none; min-height: 0; }
+  .chat-shell.show-thread .chat-side { display: none; }
+  .chat-shell:not(.show-thread) .chat-main { display: none; }
+  .chat-back { display: inline-block; min-height: 2.5rem; }
+  .chat-main .chat-list { max-height: 58vh; }
+}
+
+/* ======================= Scorecard editor (the reader's table over the photo) ======================= */
+.ce-stage { touch-action: pan-x pan-y; }
+.ce-layer { position: absolute; inset: 0; pointer-events: none; }
+.ce-layer > * { pointer-events: auto; }
+.ce-word { position: absolute; border: 1px solid rgba(100, 210, 255, 0.55); background: rgba(100, 210, 255, 0.08); border-radius: 2px; pointer-events: none !important; }
+.ce-word i { position: absolute; left: 0; top: -1.05em; font: 600 0.55rem/1 var(--font-body); font-style: normal; color: #64d2ff; white-space: nowrap; background: rgba(8, 8, 10, 0.75); padding: 0 2px; border-radius: 2px; }
+.ce-row { position: absolute; width: 100%; transform-origin: 0 50%; border-top: 2px solid; border-bottom: 2px solid; pointer-events: none !important; }
+.ce-row > * { pointer-events: auto; }
+.ce-row.k-hole { border-color: rgba(200, 169, 126, 0.9); background: rgba(200, 169, 126, 0.10); }
+.ce-row.k-par { border-color: rgba(10, 132, 255, 0.95); background: rgba(10, 132, 255, 0.10); }
+.ce-row.k-hcp { border-color: rgba(191, 90, 242, 0.95); background: rgba(191, 90, 242, 0.10); }
+.ce-row.k-tee { border-color: rgba(48, 209, 88, 0.95); background: rgba(48, 209, 88, 0.10); }
+.ce-row.k-ignore { border-color: rgba(142, 142, 147, 0.5); border-style: dashed; background: transparent; }
+.ce-chip { position: absolute; left: 0.25rem; top: 50%; transform: translateY(-50%); min-height: 1.6rem; padding: 0.1rem 0.55rem; border-radius: 999px; border: 0; cursor: pointer;
+  font: 700 0.7rem/1.2 var(--font-body); white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.ce-chip.k-hole { background: #c8a97e; color: #0a0a0c; }
+.ce-chip.k-par { background: #0a84ff; color: #fff; }
+.ce-chip.k-hcp { background: #bf5af2; color: #fff; }
+.ce-chip.k-tee { background: #30d158; color: #04170a; }
+.ce-chip.k-ignore { background: #3a3a3c; color: #d1d1d6; }
+.ce-grip { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); width: 1.8rem; height: 1.8rem; border-radius: 999px; display: grid; place-items: center;
+  background: rgba(28, 28, 30, 0.92); color: var(--ink); border: 1px solid var(--line-2); cursor: ns-resize; touch-action: none; font-size: 0.95rem; }
+.ce-col { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(255, 214, 10, 0.55); pointer-events: none !important; }
+.ce-hole { position: absolute; transform: translate(-50%, -50%); min-width: 1.35rem; height: 1.35rem; padding: 0 0.2rem; border-radius: 999px; display: grid; place-items: center;
+  background: rgba(255, 214, 10, 0.92); color: #0a0a0c; font: 700 0.62rem/1 var(--font-body); pointer-events: none !important; }
+.ce-hole.handle { pointer-events: auto !important; min-width: 1.75rem; height: 1.75rem; font-size: 0.72rem; cursor: grab; touch-action: none; box-shadow: 0 0 0 2px #0a0a0c, 0 2px 8px rgba(0, 0, 0, 0.6); }
+.ce-val { position: absolute; transform: translate(-50%, 85%); padding: 0 0.2rem; border-radius: 4px; background: rgba(8, 8, 10, 0.82); color: #fff; font: 700 0.6rem/1.3 var(--font-body); pointer-events: none !important; white-space: nowrap; }
+.ce-val.missing { color: #ff9f0a; }
+.ce-menu { position: absolute; z-index: 5; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.7rem; border-radius: 14px; background: rgba(28, 28, 30, 0.98); border: 1px solid var(--line-2); box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8); min-width: 15rem; }
+.ce-opts { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.ce-opt { min-height: 2.3rem; padding: 0.3rem 0.8rem; border-radius: 999px; border: 0; cursor: pointer; font: 600 0.82rem var(--font-body); }
+.ce-opt.k-hole { background: #c8a97e; color: #0a0a0c; } .ce-opt.k-par { background: #0a84ff; color: #fff; } .ce-opt.k-hcp { background: #bf5af2; color: #fff; } .ce-opt.k-ignore { background: #3a3a3c; color: #fff; }
+.ce-tee { display: flex; gap: 0.4rem; }
+.ce-tee input { flex: 1; margin: 0; min-height: 2.3rem; font-size: 16px !important; }
+.ce-tee .btn { min-height: 2.3rem; padding: 0.3rem 0.9rem; background: #30d158; border-color: #30d158; color: #04170a; }
+.card-editor .tap-actions .btn { min-height: 2.4rem; }
+.ce-handle { position: absolute; left: 0.25rem; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 0.3rem; pointer-events: auto; }
+.ce-handle .ce-chip, .ce-handle .ce-grip { position: static; transform: none; }

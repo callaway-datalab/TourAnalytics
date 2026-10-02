@@ -278,10 +278,10 @@ export function settleHandicaps(hcp, raws = []) {
 
 /**
  * Check one nine against the card's OUT / IN total. If it's off, look for a single hole whose number
- * differs by one look-alike digit (5/9, 6/8, 3/8, 1/7, 0/8) and makes it add up; or, with one blank
+ * differs by one look-alike digit (5/9, 6/8, 3/8, 1/7, 1/4, 0/8) and makes it add up; or, with one blank
  * hole, fill it from the total. Returns { values, fixed: [{ i, from, to }], filled, mismatch }.
  */
-const LOOKALIKE = { 5: "9", 9: "5", 6: "8", 8: "6038", 3: "8", 1: "7", 7: "1", 0: "8" };
+const LOOKALIKE = { 5: "9", 9: "5", 6: "8", 8: "6038", 3: "8", 1: "74", 7: "1", 4: "1", 0: "8" };
 export function checkNine(values, total, lo, hi) {
   const out = [...values];
   if (!total) return { values: out, fixed: [], filled: null, mismatch: false };
@@ -468,8 +468,10 @@ export async function readScorecard(file, { holes = 18, onProgress = () => {}, e
       }
       if (upright) bmp = upright;
     }
+    let turnedBy = 0; // the small straightening turn (radians)
     if (row && Math.abs(row.angle) > 0.004) {
       onProgress(0.15, "Straightening the photo");
+      turnedBy = -row.angle;
       gray = toGray(bmp, scale, -row.angle);
       words = await engine.words(cleanPage(gray));
       row = findHoleRow(words) || row;
@@ -511,6 +513,9 @@ export async function readScorecard(file, { holes = 18, onProgress = () => {}, e
     if (hcpY == null) res.notes.push("Couldn't find the Handicap row.");
     if (!tees.length) res.notes.push("Couldn't find any tee rows.");
     if (rotation) res.notes.unshift(`The photo was ${rotation === 180 ? "upside down" : "sideways"}; turned it upright.`);
+    // where everything is, for the on-screen table (in the straightened photo's own pixels)
+    res.layout = { scale, turnedBy, bmp, cols: row.cols, holeY: row.y, spacing: row.spacing, rowH: layout.rowH, parY, hcpY,
+      tees: tees.filter((t) => res.tees.some((x) => x.name === t.name)).map((t) => ({ name: t.name, y: t.y })), words };
     return { ...res, found: true, rotation, upright };
   } finally {
     if (own) await engine.terminate?.();
@@ -594,6 +599,146 @@ export async function readScorecardFromTaps(file, { taps, holes = 18, onProgress
     }
     const res = await readRows(engine, gray, layout, { holes, parDy: taps.par ? snap(dyOf(P(taps.par))) : null, hcpDy: taps.hcp ? dyOf(P(taps.hcp)) : null, tees }, onProgress);
     return { ...res, found: true };
+  } finally {
+    if (own) await engine.terminate?.();
+  }
+}
+
+/* ======================= the card as a table, for checking on screen ======================= */
+/**
+ * Read every word and number on the photo and lay them out as a table: rows of numbers (with a best guess
+ * of what each row is), and the hole columns. All positions are in the photo's own pixels (after turning
+ * it upright if it was sideways).
+ * Returns { src, width, height, words, rows: [{ y, kind, name, label }], anchors, slope, rowH, rotation }
+ *   kind: "hole" | "par" | "hcp" | "tee" | "ignore"; anchors: { h1, h9, h10, h18 } (or null if not found)
+ */
+export async function analyzeCard(file, { holes = 18, engine = null, onProgress = () => {} } = {}) {
+  const own = !engine;
+  engine = engine || await tesseractEngine();
+  try {
+    // The reader that straightens the photo and finds the rows by their labels; then lay that out as a table.
+    const read = await readScorecard(file, { holes, engine, onProgress: (p, l) => onProgress(p * 0.95, l) });
+    if (read.found && read.layout) {
+      const L = read.layout, s = L.scale;
+      // the photo as the reader saw it: upright, and straightened if it was tilted (the same turn about its middle)
+      const src = Object.assign(document.createElement("canvas"), { width: L.bmp.width, height: L.bmp.height });
+      const ctx = src.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, src.width, src.height);
+      if (L.turnedBy) { ctx.translate(src.width / 2, src.height / 2); ctx.rotate(L.turnedBy); ctx.translate(-src.width / 2, -src.height / 2); }
+      ctx.drawImage(L.bmp, 0, 0);
+      const k = holes === 18 ? [1, 9, 10, 18] : [1, 9];
+      const anchors = Object.fromEntries(k.map((n) => [`h${n}`, { x: L.cols[n] / s, y: L.holeY / s }]));
+      const rows = [{ y: L.holeY / s, kind: "hole", name: "", label: "" }];
+      if (L.parY != null) rows.push({ y: L.parY / s, kind: "par", name: "", label: "Par", values: read.par, readAs: "par" });
+      if (L.hcpY != null) rows.push({ y: L.hcpY / s, kind: "hcp", name: "", label: "Handicap", values: read.hcp, readAs: "hcp" });
+      L.tees.forEach((t) => rows.push({ y: t.y / s, kind: "tee", name: t.name, label: t.name, values: read.tees.find((x) => x.name === t.name)?.yards || null, readAs: "tee" }));
+      // other lines of numbers on the card, so you can label any the reader skipped
+      const W = L.words.map((w) => ({ text: w.text, x0: w.x0 / s, y0: w.y0 / s, x1: w.x1 / s, y1: w.y1 / s }));
+      const isNum = (t) => /^\d{1,4}$/.test(t);
+      const nums = W.filter((w) => isNum(w.text)).map((w) => ({ y: (w.y0 + w.y1) / 2, h: w.y1 - w.y0 })).sort((a, b) => a.y - b.y);
+      const medH = median(nums.map((n) => n.h)) || 12;
+      const groups = [];
+      for (const n of nums) { const g = groups[groups.length - 1]; if (g && Math.abs(n.y - g.y) < medH * 0.6) { g.n++; g.y = (g.y * (g.n - 1) + n.y) / g.n; } else groups.push({ y: n.y, n: 1 }); }
+      for (const g of groups) if (g.n >= 4 && !rows.some((r) => Math.abs(r.y - g.y) < (L.rowH / s) * 0.45)) rows.push({ y: g.y, kind: "ignore", name: "", label: "" });
+      rows.sort((a, b) => a.y - b.y);
+      return { src, width: src.width, height: src.height, words: W, slope: 0, refX: anchors.h1.x, rotation: read.rotation, spacing: L.spacing / s,
+        rowH: L.rowH / s, anchors, rows, notes: read.notes };
+    }
+    return await analyzeByWords(file, { holes, engine, onProgress });
+  } finally {
+    if (own) await engine.terminate?.();
+  }
+}
+
+/** Fallback when the reader can't find the Hole row: group the page's words into lines (you place the columns). */
+async function analyzeByWords(file, { holes = 18, engine = null, onProgress = () => {} } = {}) {
+  const own = !engine;
+  engine = engine || await tesseractEngine();
+  try {
+    let bmp = await bitmapOf(file);
+    let scale = Math.max(0.5, Math.min(3, 2400 / bmp.width));
+    onProgress(0.1, "Reading everything on the card");
+    let gray = toGray(bmp, scale);
+    let words = await engine.words(cleanPage(gray));
+    let row = findHoleRow(words);
+    let rotation = 0, src = file;
+    if (!row || row.seen < 8) {
+      for (const deg of [90, 270, 180]) {
+        onProgress(0.3, "Turning the photo upright");
+        const turned = rotateImage(bmp, deg);
+        const sc = Math.max(0.5, Math.min(3, 2400 / turned.width));
+        const g = toGray(turned, sc);
+        const w = await engine.words(cleanPage(g));
+        const r = findHoleRow(w);
+        if (r && (!row || r.seen > row.seen)) { row = r; gray = g; words = w; scale = sc; rotation = deg; src = turned; bmp = turned; }
+        if (row && row.seen >= 12) break;
+      }
+    }
+    onProgress(0.7, "Laying out the rows");
+    const W = words.map((w) => ({ text: w.text, x0: w.x0 / scale, y0: w.y0 / scale, x1: w.x1 / scale, y1: w.y1 / scale }));
+    const slope = row ? Math.tan(row.angle) : 0;
+    const refX = row ? row.cols[1] / scale : 0;
+    const isNum = (t) => /^\d{1,4}$/.test(t) || /^\d{1,2}\/\d{1,2}$/.test(t);
+    const pts = W.map((w) => { const xc = (w.x0 + w.x1) / 2; return { ...w, xc, yc: (w.y0 + w.y1) / 2 - slope * (xc - refX), h: w.y1 - w.y0 }; });
+    const medH = median(pts.filter((p) => isNum(p.text)).map((p) => p.h)) || 12;
+    // group words into lines (on a tilted photo, measured along the tilt)
+    const sorted = [...pts].sort((a, b) => a.yc - b.yc);
+    const lines = [];
+    for (const p of sorted) {
+      const L = lines[lines.length - 1];
+      if (L && Math.abs(p.yc - L.y) < medH * 0.6) { L.w.push(p); L.y = L.w.reduce((t, q) => t + q.yc, 0) / L.w.length; }
+      else lines.push({ y: p.yc, w: [p] });
+    }
+    const spacing = row ? row.spacing / scale : null;
+    const firstNumX = (L) => Math.min(...L.w.filter((p) => isNum(p.text)).map((p) => p.xc));
+    const rowsOut = lines.filter((L) => L.w.filter((p) => isNum(p.text)).length >= 4).map((L) => {
+      const fx = firstNumX(L);
+      const label = L.w.filter((p) => /[A-Za-z]/.test(p.text) && p.xc < fx).sort((a, b) => a.xc - b.xc).map((p) => p.text).join(" ");
+      const nums = L.w.filter((p) => isNum(p.text)).map((p) => Number(String(p.text).split("/")[0]));
+      return { y: L.y, label, nums };
+    });
+    // best guesses
+    const holeY = row ? (row.y / scale) - slope * ((Object.values(row.cols).reduce((a, b) => a + b, 0) / Object.keys(row.cols).length) / scale - refX) : null;
+    let parI = -1, hcpI = -1;
+    rowsOut.forEach((r, i) => {
+      const t = r.label.toLowerCase();
+      if (holeY != null && Math.abs(r.y - holeY) < medH * 0.9) r.kind = "hole";
+      else if (/\bpar\b/.test(t) && parI < 0) { r.kind = "par"; parI = i; }
+      else if (/hand|hcp|hdcp|index|stroke/.test(t) && hcpI < 0) { r.kind = "hcp"; hcpI = i; }
+    });
+    if (parI < 0) { // no Par label read: a row of 3s, 4s and 5s
+      const i = rowsOut.findIndex((r) => !r.kind && r.nums.length >= 8 && r.nums.filter((n) => n >= 3 && n <= 6).length >= r.nums.length * 0.8);
+      if (i >= 0) { rowsOut[i].kind = "par"; parI = i; }
+    }
+    if (hcpI < 0 && parI >= 0) { // the row right under Par, with 1-18
+      const r = rowsOut[parI + 1];
+      if (r && !r.kind && r.nums.filter((n) => n >= 1 && n <= 18).length >= r.nums.length * 0.8) { r.kind = "hcp"; hcpI = parI + 1; }
+    }
+    for (const r of rowsOut) {
+      if (r.kind) continue;
+      const name = cleanName(r.label);
+      const yards = r.nums.filter((n) => n >= 50 && n <= 750).length >= r.nums.length * 0.6;
+      if (yards && name && !NOT_TEE.test(name)) { r.kind = "tee"; r.name = name; } else r.kind = "ignore";
+    }
+    const at = (k) => row && row.cols[k] != null ? { x: row.cols[k] / scale, y: holeY + slope * (row.cols[k] / scale - refX) } : null;
+    let anchors = row ? { h1: at(1), h9: at(9), ...(holes === 18 ? { h10: at(10), h18: at(18) } : {}) } : null;
+    if (anchors && !Object.values(anchors).every(Boolean)) anchors = null;
+    const rows = rowsOut.map((r) => ({ y: r.y, kind: r.kind, name: r.name || "", label: r.label }));
+    // Read the guessed rows cell by cell now, so the table on screen shows the numbers that will be used.
+    let read = null;
+    if (anchors && rows.some((r) => ["par", "hcp", "tee"].includes(r.kind))) {
+      const pt = (r) => ({ x: anchors.h1.x, y: r.y + slope * (anchors.h1.x - refX) });
+      const par = rows.find((r) => r.kind === "par"), hcp = rows.find((r) => r.kind === "hcp"), tees = rows.filter((r) => r.kind === "tee");
+      read = await readScorecardFromTaps(src, { holes, engine, onProgress: (p) => onProgress(0.75 + 0.25 * p, "Reading the numbers"),
+        taps: { ...anchors, par: par ? pt(par) : null, hcp: hcp ? pt(hcp) : null, tees: tees.map((r) => ({ ...pt(r), name: r.name })) } });
+      if (par) par.values = read.par;
+      if (hcp) hcp.values = read.hcp;
+      tees.forEach((r, i) => { r.values = read.tees[i]?.yards || null; });
+    }
+    return {
+      src, width: bmp.width, height: bmp.height, words: W, slope, refX, rotation, spacing,
+      rowH: medH * 2.2, anchors, rows, notes: read?.notes || [],
+    };
   } finally {
     if (own) await engine.terminate?.();
   }
