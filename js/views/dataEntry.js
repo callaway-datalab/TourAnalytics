@@ -9,7 +9,7 @@ import { getState } from "../auth.js";
 import { UserError } from "../store.js";
 import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
-import { readScorecard } from "../scorecardReader.js";
+import { readScorecard, readScorecardFromTaps } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
@@ -124,7 +124,33 @@ async function renderNew(main, flash) {
   const photoStatus = el("p", { class: "muted center", role: "status" });
   const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
   const photoBtn = el("label", { class: "btn ghost entry-big photo-btn" }, ["\uD83D\uDCF7  Read a scorecard photo", photo]);
-  const photoHint = el("p", { class: "muted small center" }, "Fill in your Tees above first: the photo's yardages are read from that row.");
+  const tapBtn = el("button", { type: "button", class: "link tap-btn", hidden: true }, "\uD83D\uDC46 Point to the rows on the photo instead");
+  // Tees: a dropdown of the tees found on the card (each fills its yardages), or type your own.
+  let cardTees = []; // [{ name, yards }] from the last photo
+  const teeSelect = el("select", { "aria-label": "Tees from the card", hidden: true });
+  const teesBox = el("div", { class: "tees-box" }, [teeSelect, teesIn, teeNames]);
+  const drawTeeSelect = () => {
+    teeSelect.hidden = !cardTees.length;
+    teesIn.hidden = !!cardTees.length && teeSelect.value !== "__own";
+    if (!cardTees.length) return;
+    const cur = teeSelect.value;
+    mount(teeSelect, [
+      el("option", { value: "" }, "Pick your tees\u2026"),
+      ...cardTees.map((t, i) => el("option", { value: String(i), selected: cur === String(i) }, `${t.name} \u00b7 ${t.yards.reduce((a, v) => a + (v || 0), 0).toLocaleString()} yds`)),
+      el("option", { value: "__own", selected: cur === "__own" }, "Other (type them)"),
+    ]);
+  };
+  const applyTee = (i) => {
+    const t = cardTees[i];
+    if (!t) return;
+    teesIn.value = t.name;
+    holes = holes.map((h, j) => ({ ...h, yards: t.yards[j] ?? h.yards }));
+    drawGrid();
+  };
+  teeSelect.addEventListener("change", () => {
+    if (teeSelect.value === "__own") { teesIn.value = ""; drawTeeSelect(); teesIn.focus(); return; }
+    applyTee(Number(teeSelect.value)); drawTeeSelect();
+  });
   const countPills = el("div", { class: "seg" });
 
   const drawCount = () => mount(countPills, [18, 9].map((n) => {
@@ -173,39 +199,50 @@ async function renderNew(main, flash) {
     },
   });
 
-  // Read the photo: pars, handicaps, and the yardages of the tees in the Tees box.
+  // Read the photo: pars, handicaps and every tee row (each tee goes in the Tees dropdown).
   // (window.__scorecardEngine lets a test supply the text reader.)
   let reading = false;
-  async function readCard(file, { yardsOnly = false } = {}) {
+  function applyRead(read) {
+    let found = 0;
+    holes = holes.map((h, i) => {
+      const next = { ...h };
+      if (read.par[i]) { next.par = read.par[i]; found++; }
+      if (read.hcp[i]) { next.hcp = read.hcp[i]; found++; }
+      return next;
+    });
+    cardTees = (read.tees || []).filter((t) => t.yards.some(Boolean));
+    found += cardTees.reduce((n, t) => n + t.yards.filter(Boolean).length, 0);
+    // keep the tees you'd already typed if the card has them; one tee: pick it
+    const typed = teesIn.value.trim().toLowerCase();
+    const match = cardTees.findIndex((t) => t.name.toLowerCase() === typed || t.name.toLowerCase().split(" ")[0] === typed);
+    const pickI = match >= 0 ? match : cardTees.length === 1 ? 0 : -1;
+    drawTeeSelect();
+    if (pickI >= 0) { teeSelect.value = String(pickI); applyTee(pickI); drawTeeSelect(); } else drawGrid();
+    return found;
+  }
+  async function runRead(fn, what) {
     if (reading) return;
     reading = true;
-    photoStatus.textContent = "Reading the scorecard\u2026";
+    photoStatus.textContent = `${what}\u2026`;
     try {
-      const read = await readScorecard(file, {
-        tees: teesIn.value, holes: holesCount, engine: window.__scorecardEngine || null,
-        onProgress: (p, what) => { photoStatus.textContent = `${what}\u2026 ${Math.round(p * 100)}%`; },
-      });
-      let found = 0;
-      holes = holes.map((h, i) => {
-        const next = { ...h };
-        if (!yardsOnly && read.par[i]) { next.par = read.par[i]; found++; }
-        if (read.yards[i]) { next.yards = read.yards[i]; found++; }
-        if (!yardsOnly && read.hcp[i]) { next.hcp = read.hcp[i]; found++; }
-        return next;
-      });
-      drawGrid();
-      const total = holesCount * (yardsOnly ? 1 : 3);
+      const read = await fn((p, label) => { photoStatus.textContent = `${label}\u2026 ${Math.round(p * 100)}%`; });
+      const found = read.found ? applyRead(read) : 0;
+      const teeLine = cardTees.length ? ` Found ${cardTees.length} set${cardTees.length > 1 ? "s" : ""} of tees: pick yours in Tees below.` : "";
       photoStatus.textContent = (found
-        ? `Filled in ${found} of ${total} boxes from the photo${read.teeRow ? ` (yardages from the ${read.teeRow} row)` : ""}. Check them below and fix anything that's off.`
-        : "Couldn't make out the numbers in that photo. Try a sharper, straight-on shot in good light, or type them in below.")
-        + (read.notes.length ? ` ${read.notes.join(" ")}` : "");
+        ? `Filled in ${found} boxes from the photo.${teeLine} Check them and fix anything that's off.`
+        : "Couldn't make out the card on its own. Tap \u201cPoint to the rows on the photo\u201d to show it where the rows are, or type the holes in below.")
+        + (found && read.notes.length ? ` ${read.notes.join(" ")}` : ""); // (nothing found: the first sentence says it)
+      tapBtn.hidden = false;
     } catch (err) {
       console.error(err);
       photoStatus.textContent = "The scorecard reader isn't available right now. Type the holes in below.";
     } finally { reading = false; }
   }
-  // Changing Tees after reading a photo re-reads that tee's yardages from the same photo.
-  teesIn.addEventListener("change", () => { if (lastCard && teesIn.value.trim()) readCard(lastCard, { yardsOnly: true }); });
+  const readCard = (file) => runRead((onProgress) => readScorecard(file, { holes: holesCount, engine: window.__scorecardEngine || null, onProgress }), "Reading the scorecard");
+  tapBtn.addEventListener("click", () => {
+    if (!lastCard) return;
+    openTapper(lastCard, holesCount, (taps) => runRead((onProgress) => readScorecardFromTaps(lastCard, { taps, holes: holesCount, engine: window.__scorecardEngine || null, onProgress }), "Reading the rows you pointed to"));
+  });
   photo.addEventListener("change", async () => {
     const f = photo.files[0];
     if (!f) return;
@@ -246,14 +283,14 @@ async function renderNew(main, flash) {
       el("label", {}, ["Date", date]),
       el("label", { class: "course-label" }, ["Course", courseBox.node]),
       el("label", {}, ["Location (optional)", locationIn]),
-      el("label", {}, ["Tees", teesIn, teeNames]),
     ]),
     el("section", { class: "entry-section" }, [
       el("h2", {}, "Scorecard"),
       countPills,
       photoBtn,
-      photoHint,
       photoStatus,
+      tapBtn,
+      el("label", { class: "tees-label" }, ["Tees", teesBox]),
       el("p", { class: "muted center small" }, "or tap in each hole's par, yardage and handicap:"),
       el("div", { class: "card-head" }, [el("span", {}, "#"), el("span", {}, "Par"), el("span", {}, "Yards"), el("span", {}, "Hcp")]),
       grid,
@@ -602,7 +639,10 @@ function renderRound(main, params, flash, previewClient) {
           s.open = false; drawHole(i);
           // Bring the next shot to the top of the screen, ready to fill in.
           const next = holeBox.querySelector(`[data-i="${i + 1}"]`);
-          if (next) window.scrollTo({ top: window.scrollY + next.getBoundingClientRect().top - 8, behavior: "smooth" });
+          // (on a computer the header stays pinned at the top, so land just below it)
+          const rail = document.querySelector(".rail");
+          const pinned = rail && ["sticky", "fixed"].includes(getComputedStyle(rail).position) ? Math.max(0, rail.getBoundingClientRect().bottom) : 0;
+          if (next) window.scrollTo({ top: window.scrollY + next.getBoundingClientRect().top - pinned - 8, behavior: "smooth" });
         });
         return d;
       })(),
@@ -671,3 +711,79 @@ function renderRound(main, params, flash, previewClient) {
 // Short names for the hole chips.
 const shortScore = (d) => ({ "-3": "Albatross", "-2": "Eagle", "-1": "Birdie", 0: "Par", 1: "Bogey", 2: "Dbl Bogey", 3: "Tpl Bogey" }[d] ?? (d < -3 ? "Condor" : `+${d}`));
 const scoreName = (d) => ({ "-3": "Albatross", "-2": "Eagle", "-1": "Birdie", 0: "Par", 1: "Bogey", 2: "Double bogey", 3: "Triple bogey" }[d] ?? (d > 0 ? `+${d}` : String(d)));
+
+/* ======================= pointing to the rows on a scorecard photo ======================= */
+// A full-screen view of the photo. You tap the 1, 9, 10 and 18 in the Hole row (1 and 9 for a nine-hole
+// card), then the Par row, the Handicap row and each tee row. onDone gets the taps in the photo's own pixels.
+function openTapper(file, holes, onDone) {
+  const url = URL.createObjectURL(file);
+  const steps = [
+    { key: "h1", say: "Tap the 1 in the Hole row" },
+    { key: "h9", say: "Tap the 9 in the Hole row" },
+    ...(holes === 18 ? [{ key: "h10", say: "Tap the 10 in the Hole row" }, { key: "h18", say: "Tap the 18 in the Hole row" }] : []),
+    { key: "par", say: "Tap anywhere on the Par row" },
+    { key: "hcp", say: "Tap anywhere on the Handicap row", optional: true },
+    { key: "tees", say: "Tap each tee row you might play from, then Done", many: true },
+  ];
+  const taps = { tees: [] };
+  const order = []; // for Undo
+  let i = 0, zoom = 1;
+  const say = el("p", { class: "tap-say", role: "status" });
+  const img = el("img", { src: url, alt: "Your scorecard photo", draggable: "false" });
+  const marks = el("div", { class: "tap-marks", "aria-hidden": "true" });
+  const stage = el("div", { class: "tap-stage" }, [img, marks]);
+  const scroller = el("div", { class: "tap-scroll" }, stage);
+  const undo = el("button", { type: "button", class: "btn ghost" }, "Undo");
+  const skip = el("button", { type: "button", class: "btn ghost" }, "Skip");
+  const done = el("button", { type: "button", class: "btn" }, "Done");
+  const cancel = el("button", { type: "button", class: "link", "aria-label": "Close" }, "Cancel");
+  const zin = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom in" }, "+");
+  const zout = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom out" }, "\u2212");
+  const overlay = el("div", { class: "tapper", role: "dialog", "aria-modal": "true", "aria-label": "Point to the rows on your scorecard" }, [
+    el("div", { class: "tap-top" }, [say, el("div", { class: "tap-actions" }, [zout, zin, undo, skip, done, cancel])]),
+    scroller,
+  ]);
+  const label = { h1: "1", h9: "9", h10: "10", h18: "18", par: "Par", hcp: "Hcp" };
+  const draw = () => {
+    const st = steps[Math.min(i, steps.length - 1)];
+    say.textContent = i >= steps.length ? "All set: tap Done to read the card." : `${i + 1} of ${steps.length}: ${st.say}${st.many && taps.tees.length ? ` (${taps.tees.length} so far)` : ""}`;
+    skip.hidden = !(st.optional && i < steps.length);
+    done.hidden = !(st.many && taps.tees.length);
+    undo.disabled = !order.length;
+    stage.style.width = `${zoom * 100}%`;
+    const W = img.naturalWidth || 1, H = img.naturalHeight || 1;
+    mount(marks, [
+      ...["h1", "h9", "h10", "h18", "par", "hcp"].filter((k) => taps[k]).map((k) => el("span", { class: "tap-dot" + (["par", "hcp"].includes(k) ? " row" : ""), style: `left:${(taps[k].x / W) * 100}%;top:${(taps[k].y / H) * 100}%` }, label[k])),
+      ...taps.tees.map((t, n) => el("span", { class: "tap-dot row tee", style: `left:${(t.x / W) * 100}%;top:${(t.y / H) * 100}%` }, `Tee ${n + 1}`)),
+    ]);
+  };
+  img.addEventListener("click", (e) => {
+    if (i >= steps.length) return;
+    const r = img.getBoundingClientRect();
+    const p = { x: ((e.clientX - r.left) / r.width) * img.naturalWidth, y: ((e.clientY - r.top) / r.height) * img.naturalHeight };
+    const st = steps[i];
+    if (st.many) { taps.tees.push(p); order.push("tees"); }
+    else { taps[st.key] = p; order.push(st.key); i++; }
+    draw();
+  });
+  undo.addEventListener("click", () => {
+    const k = order.pop();
+    if (!k) return;
+    if (k === "tees") taps.tees.pop();
+    else if (k.startsWith("skip:")) i = steps.findIndex((s) => s.key === k.slice(5));
+    else { delete taps[k]; i = steps.findIndex((s) => s.key === k); }
+    draw();
+  });
+  skip.addEventListener("click", () => { order.push(`skip:${steps[i].key}`); i++; draw(); });
+  zin.addEventListener("click", () => { zoom = Math.min(4, zoom * 1.5); draw(); });
+  zout.addEventListener("click", () => { zoom = Math.max(1, zoom / 1.5); draw(); });
+  const close = () => { overlay.remove(); URL.revokeObjectURL(url); document.removeEventListener("keydown", onKey); document.body.classList.remove("tapping"); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  cancel.addEventListener("click", close);
+  done.addEventListener("click", () => { const t = { ...taps, tees: [...taps.tees] }; close(); onDone(t); });
+  img.addEventListener("load", draw);
+  document.addEventListener("keydown", onKey);
+  document.body.classList.add("tapping");
+  document.body.appendChild(overlay);
+  draw();
+}

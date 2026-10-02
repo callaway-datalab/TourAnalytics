@@ -66,6 +66,33 @@ export async function render(main, { flash }) {
     },
   }, [cat, type, brand, model, note, addBtn]);
 
+  /* ---------- add an iron set (e.g. 4i to AW) ---------- */
+  const IRONS = CLUB_TYPES.Iron; // 1i … 9i, PW, AW
+  const fromI = el("select", { "aria-label": "Starting iron" }, IRONS.map((t) => el("option", { value: t, selected: t === "4i" }, t)));
+  const toI = el("select", { "aria-label": "Ending iron" }, IRONS.map((t) => el("option", { value: t, selected: t === "PW" }, t)));
+  const setBrand = el("input", { placeholder: "Brand", maxLength: 40, autocomplete: "off", "aria-label": "Set brand" });
+  const setModel = el("input", { placeholder: "Model", maxLength: 50, autocomplete: "off", "aria-label": "Set model" });
+  const setForm = el("form", {
+    class: "club-add iron-set",
+    onSubmit: async (e) => {
+      e.preventDefault();
+      const a = IRONS.indexOf(fromI.value), b = IRONS.indexOf(toI.value);
+      if (a > b) { flash("The starting iron has to come before the ending iron.", "error"); return; }
+      const brandV = setBrand.value.trim(), modelV = setModel.value.trim();
+      let added = 0, bagged = 0, skipped = 0;
+      for (const t of IRONS.slice(a, b + 1)) {
+        if (library.some((x) => x.cat === "Iron" && x.type === t && x.brand.toLowerCase() === brandV.toLowerCase() && x.model.toLowerCase() === modelV.toLowerCase())) { skipped++; continue; }
+        const c = { id: newClubId(), cat: "Iron", type: t, brand: brandV, model: modelV, note: "" };
+        library = [c, ...library]; added++;
+        if (inBag.length < MAX_CLUBS) { inBag = [...inBag, c.id]; bagged++; }
+      }
+      const name = [brandV, modelV].filter(Boolean).join(" ");
+      flash(`Added ${added} iron${added === 1 ? "" : "s"} (${fromI.value}\u2013${toI.value}${name ? ` \u00b7 ${name}` : ""})${bagged < added ? `; ${bagged} fit in your bag` : ""}${skipped ? `; ${skipped} already in your list` : ""}.`, "ok");
+      setBrand.value = ""; setModel.value = "";
+      draw(); await save();
+    },
+  }, [el("span", { class: "set-label" }, "From"), fromI, el("span", { class: "set-label" }, "to"), toI, setBrand, setModel, el("button", { class: "btn", type: "submit" }, "Add set")]);
+
   /* ---------- the list and the bag ---------- */
   const listBox = el("div");
   const bagBox = el("div");
@@ -115,7 +142,7 @@ export async function render(main, { flash }) {
 
   mount(main, [
     el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
-    el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm]),
+    el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm, el("h3", { class: "set-head" }, "Or add an iron set"), setForm]),
     el("section", { class: "panel bag-panel" }, [el("h3", {}, "All your clubs"), listBox]),
     el("section", { class: "panel bag-panel your-bag" }, [bagTitle, bagBox]),
   ]);

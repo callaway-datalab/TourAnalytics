@@ -10,7 +10,7 @@ export const CLUB_TYPES = {
   Driver: deg([7, 8, 8.5, 9, 9.5, 10, 10.5, 11, 12]),
   "Fairway Wood": ["2w", "3w", "4w", "5w", "7w", "9w", "11w"],
   Hybrid: ["2H", "3H", "4H", "5H", "6H", "7H"],
-  Iron: ["1i", "2i", "3i", "4i", "5i", "6i", "7i", "8i", "9i", "PW"],
+  Iron: ["1i", "2i", "3i", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "AW"],
   Wedge: deg([44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64]),
   Putter: ["Putter"],
 };
@@ -32,7 +32,8 @@ export function clubRank(label) {
   if (/^\d+w$/i.test(s)) return 1 + n / 100;
   if (/^\d+H$/.test(s)) return 2 + n / 100;
   if (/^\d+i$/i.test(s)) return 3 + n / 100;
-  if (/^PW$/i.test(s)) return 3.99;
+  if (/^PW$/i.test(s)) return 3.98;
+  if (/^AW$/i.test(s)) return 3.99;
   if (/wedge/i.test(s)) return 4 + n / 1000;
   if (/putter/i.test(s)) return 5;
   return 6;

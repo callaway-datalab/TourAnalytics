@@ -59,7 +59,7 @@ export function clubGroup(name) {
 const clubOrder = (s) => {
   const n = parseFloat(String(s).replace(/[^\d.]/g, "")) || 0;
   return /^driver/i.test(s) ? n / 100 : /^\d+w$/i.test(s) ? 1 + n / 100 : /^\d+H$/.test(s) ? 2 + n / 100 : /^\d+i$/i.test(s) ? 3 + n / 100
-    : /^PW$/i.test(s) ? 3.99 : /wedge/i.test(s) ? 4 + n / 1000 : /putter/i.test(s) ? 5 : 6;
+    : /^PW$/i.test(s) ? 3.98 : /^AW$/i.test(s) ? 3.99 : /wedge/i.test(s) ? 4 + n / 1000 : /putter/i.test(s) ? 5 : 6;
 };
 const LIE_ORDER = ["teebox", "tee", "fairway", "firstcut", "rough", "bunker", "sand", "recovery", "fringe", "green"];
 const squash = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");

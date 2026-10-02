@@ -1397,3 +1397,45 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .club-table td:first-child { white-space: normal; }
   .club-table th, .club-table td { font-size: 0.85rem; }
 }
+
+/* --- Stat Type (one column, top of the stats page) --- */
+.stat-type { max-width: 22rem; margin: 0 auto 1rem; }
+.stat-type label { display: flex; flex-direction: column; gap: 0.3rem; color: var(--muted); font: 500 0.72rem/1.2 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; }
+.stat-type select { margin: 0; min-height: 2.75rem; border-radius: 12px !important; font: 600 1rem var(--font-body); text-transform: none; letter-spacing: 0; color: var(--ink); }
+.stat-type + .sg-tabs { margin: 0 auto 1.25rem; }
+@media (min-width: 900px) { .sg-filters { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; } }
+/* eagle or better: a clear bright green, not yellow-green */
+.hole-strip .hole-chip.eagle { border-color: #2bff5e; box-shadow: 0 0 10px rgba(43, 255, 94, 0.4); }
+.set-head { margin-top: 1.25rem !important; }
+.club-add.iron-set { grid-template-columns: auto minmax(5rem, 0.6fr) auto minmax(5rem, 0.6fr) minmax(6.5rem, 1fr) minmax(7rem, 1fr) auto; }
+.set-label { color: var(--muted); font-size: 0.9rem; }
+@media (max-width: 760px) {
+  .club-add.iron-set { grid-template-columns: auto 1fr auto 1fr; }
+  .club-add.iron-set input { grid-column: span 2; }
+  .club-add.iron-set .btn { grid-column: 1 / -1; }
+}
+
+/* --- Pointing to the rows on a scorecard photo --- */
+body.tapping { overflow: hidden; }
+.tapper { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; background: rgba(8, 8, 10, 0.97); }
+.tap-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: calc(0.7rem + env(safe-area-inset-top, 0px)) 1rem 0.7rem; border-bottom: 1px solid var(--line); }
+.tap-say { flex: 1 1 16rem; margin: 0; font: 600 1rem/1.35 var(--font-body); color: var(--ink); }
+.tap-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.tap-actions .btn { min-height: 2.6rem; padding: 0.45rem 1rem; }
+.tap-zoom { min-width: 2.75rem; font-size: 1.2rem !important; }
+.tap-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding: 0.75rem; }
+.tap-stage { position: relative; width: 100%; margin: 0 auto; }
+.tap-stage img { display: block; width: 100%; height: auto; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.tap-marks { position: absolute; inset: 0; pointer-events: none; }
+.tap-dot { position: absolute; transform: translate(-50%, -50%); min-width: 1.6rem; height: 1.6rem; padding: 0 0.35rem; border-radius: 999px; display: grid; place-items: center;
+  background: var(--accent); color: #0a0a0c; font: 700 0.75rem/1 var(--font-body); box-shadow: 0 0 0 2px #0a0a0c, 0 2px 8px rgba(0, 0, 0, 0.6); white-space: nowrap; }
+.tap-dot.row { background: #0a84ff; color: #fff; }
+.tap-dot.tee { background: #30d158; color: #04170a; }
+.tap-btn { display: block; margin: 0.4rem auto 0; min-height: 2.75rem; }
+.tees-box { display: flex; flex-direction: column; gap: 0.5rem; }
+.tees-box [hidden] { display: none !important; }
+.tees-label { display: block; margin-top: 1rem; }
+.tapper { background: #08080a; }
+.tapper [hidden] { display: none !important; }
+.tap-dot { min-width: 1.25rem; height: 1.25rem; font-size: 0.66rem; opacity: 0.85; }
+@media (min-width: 900px) { .tap-dot { min-width: 1.5rem; height: 1.5rem; font-size: 0.72rem; } }

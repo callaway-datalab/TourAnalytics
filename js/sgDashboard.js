@@ -89,13 +89,14 @@ export function sgDashboard(container, opts) {
     const focusTag = act?.tagName;
     mount(container, [
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
+      statTypeBar(),
+      catPills(),
       filterBar(opt),
-      me ? selectionStrip(mine, slicedField) : null, // "Alex Moreno: Approach · …"
       el("div", { class: "sg-panel" }, (() => {
-        // The rankings sit right under the first block (Stat Averages, or SG by category for All).
+        // Rankings come first; with one category, right after its Stat Averages.
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         const ranks = showRanks ? rankingsBlock(slicedField) : null;
-        return [...blocks.slice(0, 1), ranks, ...blocks.slice(1)];
+        return st.cats.length === 1 ? [...blocks.slice(0, 1), ranks, ...blocks.slice(1)] : [ranks, ...blocks];
       })()),
     ]);
     if (focusKey) {
@@ -177,16 +178,16 @@ export function sgDashboard(container, opts) {
   function filterBar(opt) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
-    const active = ["year", "event", "roundNo", "lie", "dist", "club", "cats"].some((k) => st[k].length) || Number(st.span) > 0;
+    const active = ["year", "event", "roundNo", "lie", "dist", "club"].some((k) => st[k].length) || Number(st.span) > 0;
     const reset = el("button", { class: "link", type: "button", hidden: !active }, "Clear filters");
-    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], club: [], cats: [], openFilter: null }); draw(); });
+    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], club: [], openFilter: null }); draw(); });
     // Distances, grouped under their category; with categories picked, only theirs show.
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
     const distOpts = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
       .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
     // On phones the filters fold behind a "Filters" button (with how many are in use).
-    const inUse = ["year", "event", "roundNo", "lie", "dist", "club", "cats"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
+    const inUse = ["year", "event", "roundNo", "lie", "dist", "club"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
     const fold = el("button", { type: "button", class: "filters-toggle", "aria-expanded": st.filtersOpen ? "true" : "false" },
       [`Filters${inUse ? ` \u00b7 ${inUse} on` : ""}`, el("span", { "aria-hidden": "true" }, st.filtersOpen ? "\u25B4" : "\u25BE")]);
     fold.addEventListener("click", () => { st.filtersOpen = !st.filtersOpen; draw(); });
@@ -198,7 +199,6 @@ export function sgDashboard(container, opts) {
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
       multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
       multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
-      multi("Category", "cats", CATEGORIES.map(([v, l]) => ({ value: v, label: l })), "All categories", { plural: "categories" }),
       // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
       multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
         empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }),
@@ -207,6 +207,16 @@ export function sgDashboard(container, opts) {
   }
   // Category pills: pick one or several (e.g. Off-the-Tee + Approach + Around-the-Green = tee to green).
   // "All" clears the choice; picking all four is the same as All.
+  // Stat Type: which kind of stats the page shows. Strokes Gained for now; more types come later.
+  const STAT_TYPES = [["sg", "Strokes Gained"], ["hitGreen", "Hit Green %"], ["gir", "GIR"], ["puttMake", "Putt Make %"], ["hitFwy", "Hit Fwy %"], ["driveDist", "Driving Distance"]];
+  const READY_TYPES = ["sg"];
+  function statTypeBar() {
+    const sel = el("select", { "aria-label": "Stat Type" }, STAT_TYPES.map(([v, l]) =>
+      el("option", { value: v, selected: (st.statType || "sg") === v, disabled: !READY_TYPES.includes(v) }, READY_TYPES.includes(v) ? l : `${l} (coming soon)`)));
+    sel.addEventListener("change", () => { st.statType = sel.value; draw(); });
+    return el("div", { class: "stat-type" }, el("label", {}, ["Stat Type", sel]));
+  }
+
   function catPills() {
     const allOn = !st.cats.length;
     const all = el("a", { href: "#", "aria-current": allOn ? "page" : null }, "All");
@@ -307,7 +317,7 @@ export function sgDashboard(container, opts) {
       // All, or several categories: where the strokes are gained and lost among the ones picked.
       const shown = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k));
       const bars = shown.map(([k, l]) => ({ label: l, value: sliceTotals(mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === k) }))).sgPerRound ?? 0 }));
-      const byCat = panelBox("SG / Round by Category", chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), { title: "SG / round", as }), "", "by-category"));
+      const byCat = panelBox("SG by Category", chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), { title: "SG / round", as }), "", "by-category"));
       const lies = sgBy(mine, idx, null, "lie");
       blocks.push(lies && lies.length > 1
         ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,

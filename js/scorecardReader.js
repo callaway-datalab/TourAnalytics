@@ -312,118 +312,255 @@ export function checkNine(values, total, lo, hi) {
 /** A par from the hole's yardage, when the card's par couldn't be read. */
 export const parFromYards = (y) => (y == null ? null : y <= 250 ? 3 : y <= 480 ? 4 : 5);
 
-/* ============================== the reader ============================== */
+/* ============================== reading rows of cells ============================== */
+// layout: where the hole columns are. at(k, dy): the centre of hole k's cell in the row dy below the Hole row;
+// spacing: the gap between holes; rowH: a row's height. A row is given by its offset (dy) from the Hole row,
+// so a tilted photo still lines up (each hole's cell moves with the tilt).
+async function readCell(engine, gray, layout, k, dy, { top = false, avoidDy = null, lo, hi, modes = [7, 8, 6] }) {
+  const { x, y } = layout.at(k, dy), w = layout.spacing * 0.86, rowH = layout.rowH;
+  // Handicap: a tall window reaching up, ignoring the row above's own digits, taking the top number.
+  const wy0 = y - rowH * (top ? 1.1 : 0.5);
+  const ay = avoidDy != null ? layout.at(k, avoidDy).y : null;
+  const avoid = top && ay != null ? [ay - wy0 - rowH * 0.42, ay - wy0 + rowH * 0.42] : null;
+  const cv = cellCanvas(gray, x - w / 2, wy0, x + w / 2, y + rowH * 0.5, top, avoid);
+  const seen = [];
+  if (cv) for (const mode of modes) {
+    const t = await engine.digits(cv, mode);
+    seen.push(t);
+    const m = t.match(/^\s*(\d+)\s*$/);
+    if (m && +m[1] >= lo && +m[1] <= hi) return { value: +m[1], seen, cv };
+  }
+  return { value: null, seen, cv };
+}
+
+async function readTotal(engine, gray, layout, k, dy, lo, hi) {
+  const p = layout.at(k, dy), x = p.x + layout.spacing, y = p.y + layout.spacing * (layout.slope || 0), w = layout.spacing * 0.95;
+  const cv = cellCanvas(gray, x - w / 2, y - layout.rowH * 0.5, x + w / 2, y + layout.rowH * 0.5);
+  if (!cv) return null;
+  for (const mode of [7, 8, 6]) { const m = (await engine.digits(cv, mode)).match(/^\s*(\d+)\s*$/); if (m && +m[1] >= lo && +m[1] <= hi) return +m[1]; }
+  return null;
+}
+
+/** Read the Par row, the Handicap row and every tee row; check each nine against OUT / IN. */
+async function readRows(engine, gray, layout, { holes, parDy, hcpDy, tees }, onProgress) {
+  const notes = [];
+  const total = holes * ((parDy != null) + (hcpDy != null) + tees.length);
+  let done = 0;
+  const tick = () => onProgress(0.3 + 0.65 * (++done / Math.max(1, total)), "Reading the holes");
+  const rowOf = async (dy, opts) => {
+    const vals = [], raws = [];
+    for (let k = 1; k <= holes; k++) { const r = await readCell(engine, gray, layout, k, dy, opts); vals.push(r.value); raws.push(r.seen); tick(); }
+    return { vals, raws };
+  };
+  const par = parDy != null ? (await rowOf(parDy, { lo: 3, hi: 6 })).vals : Array(holes).fill(null);
+  let hcp = Array(holes).fill(null);
+  if (hcpDy != null) {
+    const parAbove = parDy != null && parDy < hcpDy && hcpDy - parDy < layout.rowH * 1.8;
+    const r = await rowOf(hcpDy, { top: true, avoidDy: parAbove ? parDy : null, lo: 1, hi: 18 });
+    hcp = settleHandicaps(r.vals, r.raws);
+  }
+  const teeOut = [];
+  for (const t of tees) teeOut.push({ name: t.name, yards: (await rowOf(t.dy, { lo: 50, hi: 750 })).vals, dy: t.dy });
+  // Each nine against the card's OUT / IN total (yardages per tee, and par).
+  const checkRow = async (values, dy, key, what, nineLo, nineHi, lo, hi, teeName) => {
+    for (const [a, b, label] of [[0, 9, "front nine"], [9, 18, "back nine"]]) {
+      if (b > holes) continue;
+      const totalV = await readTotal(engine, gray, layout, b, dy, nineLo, nineHi);
+      const r = checkNine(values.slice(a, b), totalV, lo, hi);
+      // Before warning, read the total again in other ways: if any reading matches the holes, all's well.
+      if (r.mismatch && totalV != null) {
+        const sum = r.values.reduce((t, v) => t + (v || 0), 0);
+        const p = layout.at(b, dy), x = p.x + layout.spacing, y = p.y + layout.spacing * (layout.slope || 0), w = layout.spacing * 0.95;
+        const cv = cellCanvas(gray, x - w / 2, y - layout.rowH * 0.5, x + w / 2, y + layout.rowH * 0.5);
+        for (const mode of [8, 6, 13]) { if (cv && (await engine.digits(cv, mode)).replace(/\D/g, "") === String(sum)) { r.mismatch = false; r.candidates = []; break; } }
+      }
+      if (r.mismatch && r.candidates?.length) {
+        const confirmed = [];
+        for (const f of r.candidates) {
+          const c = await readCell(engine, gray, layout, a + f.i + 1, dy, { lo, hi, modes: [8, 6, 13] });
+          if (c.seen.some((t) => t.replace(/\D/g, "") === String(f.to))) confirmed.push(f);
+        }
+        if (confirmed.length === 1) { r.values[confirmed[0].i] = confirmed[0].to; r.fixed = confirmed; r.mismatch = false; }
+      }
+      values.splice(a, b - a, ...r.values);
+      const who = teeName ? `${teeName} ` : "";
+      for (const f of r.fixed) notes.push(`${who}hole ${a + f.i + 1} ${what} read as ${f.from}; changed to ${f.to} so the ${label} matches the card's total (${totalV}).`);
+      if (r.filled != null) notes.push(`${who}hole ${a + r.filled + 1} ${what} was worked out from the card's ${label} total (${totalV}).`);
+      if (r.mismatch && r.candidates?.length) {
+        const hs = [...new Set(r.candidates.map((f) => a + f.i + 1))];
+        notes.push(`Check ${who}hole${hs.length > 1 ? "s" : ""} ${hs.join(" and ")} ${what}: the ${label} adds up to ${r.values.reduce((t, v) => t + (v || 0), 0)}, but the card's total reads ${totalV} (the total itself may be the misread one).`);
+      } else if (r.mismatch) notes.push(`The ${who}${label} ${what === "par" ? "pars" : "yardages"} don't add up to the card's total (${totalV}); check them.`);
+    }
+  };
+  for (const t of teeOut) await checkRow(t.yards, t.dy, "yards", "yardage", 500, 4500, 50, 750, t.name);
+  if (parDy != null) await checkRow(par, parDy, "par", "par", 27, 45, 3, 6);
+  // Missing pars: estimate from the first tee's yardage, and say so.
+  const guessed = [];
+  const yds = teeOut[0]?.yards || [];
+  par.forEach((p, i) => { if (p == null && yds[i] != null) { par[i] = parFromYards(yds[i]); guessed.push(i + 1); } });
+  if (guessed.length) notes.push(`Par for hole${guessed.length > 1 ? "s" : ""} ${guessed.join(", ")} was estimated from the yardage. Check ${guessed.length > 1 ? "them" : "it"}.`);
+  return { par, hcp, tees: teeOut.map(({ name, yards }) => ({ name, yards })), notes };
+}
+
+// A row label → a tidy tee name. Stray marks are dropped, and a label that's clearly one of the usual tee
+// names is written that way ("iBlack" → "Black", "iereen" → "Green", "Siver" → "Silver").
+const TEE_NAMES = ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Taupe", "Copper", "Jade", "Teal", "Orange", "Yellow",
+  "Purple", "Burgundy", "Bronze", "Platinum", "Tan", "Combo", "Tips", "Championship", "Tournament", "Back", "Middle", "Forward", "Members"];
+const cleanName = (t) => {
+  let words = t.replace(/[^A-Za-z0-9 '&/-]/g, " ").split(/\s+/).filter((w) => /[A-Za-z]{2,}/.test(w));
+  // a usual tee name anywhere in the label: start there ("oom Taupe Permission Only" → "Taupe Permission Only")
+  const at = words.findIndex((w) => TEE_NAMES.some((n) => w.toLowerCase() === n.toLowerCase() || (n.length >= 4 && similar(w.toLowerCase(), n.toLowerCase()))));
+  if (at >= 0) {
+    const w = words[at].toLowerCase();
+    words[at] = TEE_NAMES.find((n) => w === n.toLowerCase()) || TEE_NAMES.find((n) => n.length >= 4 && similar(w, n.toLowerCase()));
+    words = words.slice(at);
+  } else {
+    while (words.length > 1 && /^[a-z]{1,3}$/.test(words[0])) words.shift(); // leading stray marks
+    if (words[0]) words[0] = words[0].replace(/^[a-z](?=[A-Z])/, ""); // "iBlack"-style stray first letter
+  }
+  // trailing stray marks ("Green im", "Silver il si"): short all-lowercase words
+  while (words.length > 1 && /^[a-z]{1,3}$/.test(words[words.length - 1])) words.pop();
+  return words.join(" ").trim();
+};
+const NOT_TEE = /hole|^par\b|hand|hcp|hdcp|index|stroke|scor|attest|date|match|your|play|net|adj|^tot|^out\b|^in\b|signature|player|men|women|ladies|rating|slope/i;
+
+async function bitmapOf(file) {
+  return file instanceof HTMLCanvasElement || file instanceof HTMLImageElement || (typeof ImageBitmap !== "undefined" && file instanceof ImageBitmap) ? file : await createImageBitmap(file);
+}
+
+/* ============================== automatic reading ============================== */
 /**
- * Read a scorecard photo.
- *   file: the image; tees: the tee name to take yardages from (e.g. "Black"); holes: 9 or 18.
- * Returns { par, hcp, yards, notes, teeRow } with one value (or null) per hole.
+ * Read a scorecard photo on its own.
+ * Returns { par, hcp, tees: [{ name, yards }], notes, found } (one value or null per hole).
  */
-export async function readScorecard(file, { tees = "", holes = 18, onProgress = () => {}, engine = null } = {}) {
+export async function readScorecard(file, { holes = 18, onProgress = () => {}, engine = null } = {}) {
   const own = !engine;
   engine = engine || await tesseractEngine();
   try {
-    const bmp = file instanceof HTMLCanvasElement || file instanceof HTMLImageElement ? file : await createImageBitmap(file);
-    const scale = Math.max(1, Math.min(3, 2400 / bmp.width));
+    const bmp = await bitmapOf(file);
+    const scale = Math.max(0.5, Math.min(3, 2400 / bmp.width));
     onProgress(0.05, "Cleaning up the photo");
     let gray = toGray(bmp, scale);
     let words = await engine.words(cleanPage(gray));
     let row = findHoleRow(words);
-    // Straighten a tilted photo and look again.
     if (row && Math.abs(row.angle) > 0.004) {
       onProgress(0.15, "Straightening the photo");
       gray = toGray(bmp, scale, -row.angle);
       words = await engine.words(cleanPage(gray));
       row = findHoleRow(words) || row;
     }
-    if (!row) return { par: [], hcp: [], yards: [], notes: ["Couldn't find the Hole row (1, 2, 3 …) on the card. Try a sharper, straight-on photo."], teeRow: "" };
+    if (!row) return { par: [], hcp: [], tees: [], found: false, notes: ["Couldn't find the Hole row (1, 2, 3 …) on its own."] };
     onProgress(0.25, "Finding the rows");
     const page = cleanPage(gray);
     const firstCol = Math.min(...Object.values(row.cols));
     const lines = await engine.lines(crop(page, 0, 0, Math.max(10, firstCol - row.spacing * 0.6), gray.h));
     const parY = findRow(lines, (ws) => ws.includes("par"));
     let hcpY = findRow(lines, (ws, t) => /hand|hcp|hdcp|index|stroke|ndica|andic/.test(t));
-    // The label can be hard to read; Handicap sits right under Par on every card, so fall back to the
-    // next labeled row below Par (not the Scorer / Attest / Date line).
     if (hcpY == null && parY != null) {
       const below = lines.map((l) => ({ y: (l.y0 + l.y1) / 2, t: l.text.toLowerCase() }))
         .filter((l) => l.y > parY + row.h * 1.2 && l.y < parY + row.h * 4.5 && /[a-z]{3,}/.test(l.t) && !/scor|attest|date|sign/.test(l.t))
         .sort((p, q) => p.y - q.y);
       if (below.length) hcpY = below[0].y;
     }
-    const tee = tees.trim().toLowerCase();
-    const teeY = tee ? findRow(lines, (ws) => ws.some((w) => similar(w, tee))) : null;
-    const rowH = row.h * 2.5;
-    const notes = [];
+    const layout = { at: (k, dy) => ({ x: row.cols[k], y: row.y + dy }), spacing: row.spacing, rowH: row.h * 2.5, slope: 0 };
+    // Tee rows: other labeled rows whose first holes read as yardages.
+    const tees = [];
+    const used = [row.y, parY, hcpY].filter((v) => v != null);
+    for (const l of lines) {
+      const y = (l.y0 + l.y1) / 2, name = cleanName(l.text);
+      if (!name || NOT_TEE.test(name) || used.some((u) => Math.abs(u - y) < layout.rowH * 0.5) || tees.some((t) => Math.abs(t.y - y) < layout.rowH * 0.5)) continue;
+      let ok = 0;
+      for (const k of [1, 2, 3]) { const r = await readCell(engine, gray, layout, k, y - row.y, { lo: 50, hi: 750, modes: [7] }); if (r.value) ok++; if (ok >= 2) break; }
+      if (ok >= 2) tees.push({ name, y, dy: y - row.y });
+    }
+    tees.sort((a, b) => a.y - b.y);
+    const res = await readRows(engine, gray, layout, { holes, parDy: parY != null ? parY - row.y : null, hcpDy: hcpY != null ? hcpY - row.y : null, tees }, onProgress);
+    if (parY == null) res.notes.push("Couldn't find the Par row.");
+    if (hcpY == null) res.notes.push("Couldn't find the Handicap row.");
+    if (!tees.length) res.notes.push("Couldn't find any tee rows.");
+    return { ...res, found: true };
+  } finally {
+    if (own) await engine.terminate?.();
+  }
+}
 
-    const cells = [];
-    const want = (key, y, top, lo, hi) => { if (y != null) for (let k = 1; k <= holes; k++) if (row.cols[k] != null) cells.push({ key, k, y, top, lo, hi }); };
-    want("yards", teeY, false, 50, 750);
-    want("par", parY, false, 3, 6);
-    want("hcp", hcpY, true, 1, 18);
-    const res = { yards: Array(holes).fill(null), par: Array(holes).fill(null), hcp: Array(holes).fill(null) };
-    const raws = { yards: [], par: [], hcp: [] };
-    let done = 0;
-    for (const c of cells) {
-      const x = row.cols[c.k], w = row.spacing * 0.86;
-      // A fraction's top number (men's) sits above the row's middle: read just that part.
-      // Handicap: a tall window reaching up toward Par, ignoring the Par row's own digits.
-      const wy0 = c.y - rowH * (c.top ? 1.1 : 0.5);
-      const avoid = c.top && parY != null ? [parY - wy0 - rowH * 0.42, parY - wy0 + rowH * 0.42] : null;
-      const cv = cellCanvas(gray, x - w / 2, wy0, x + w / 2, c.y + rowH * 0.5, c.top, avoid);
-      const seen = [];
-      if (cv) for (const mode of [7, 8, 6]) {
-        const t = await engine.digits(cv, mode);
-        seen.push(t);
-        const m = t.match(/^\s*(\d+)\s*$/);
-        if (m && +m[1] >= c.lo && +m[1] <= c.hi) { res[c.key][c.k - 1] = +m[1]; break; }
+/* ============================== reading with your taps ============================== */
+/**
+ * Read a scorecard from points you tapped on the photo (in the photo's own pixels):
+ *   taps.h1, taps.h9 (and for 18 holes taps.h10, taps.h18): the 1 / 9 / 10 / 18 in the Hole row
+ *   taps.par, taps.hcp: anywhere on the Par / Handicap rows (hcp optional)
+ *   taps.tees: [{ x, y, name? }]: each tee row (its name is read from the label if not given)
+ */
+export async function readScorecardFromTaps(file, { taps, holes = 18, onProgress = () => {}, engine = null } = {}) {
+  const own = !engine;
+  engine = engine || await tesseractEngine();
+  try {
+    const bmp = await bitmapOf(file);
+    const scale = Math.max(0.5, Math.min(3, 2400 / bmp.width));
+    onProgress(0.1, "Getting the photo ready");
+    const gray = toGray(bmp, scale);
+    const P = (p) => p && { x: p.x * scale, y: p.y * scale };
+    const h1 = P(taps.h1), h9 = P(taps.h9), h10 = P(taps.h10 || taps.h9), h18 = P(taps.h18 || taps.h9);
+    // Holes 1-9 evenly between the 1 and the 9 taps; 10-18 between the 10 and the 18 (the OUT column sits between).
+    const at = (a, b, f) => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+    const col = (k) => (k <= 9 ? at(h1, h9, (k - 1) / 8) : at(h10, h18, (k - 10) / 8));
+    const spacing = Math.hypot(h9.x - h1.x, h9.y - h1.y) / 8;
+    // the Hole row's line (for the offset of any other tap)
+    const slope = (h18.x !== h1.x ? (h18.y - h1.y) / (h18.x - h1.x) : 0);
+    const dyOf = (p) => p.y - (h1.y + slope * (p.x - h1.x));
+    const rowDys = [taps.par, taps.hcp, ...(taps.tees || [])].filter(Boolean).map((p) => dyOf(P(p))).sort((a, b) => a - b);
+    const gaps = rowDys.slice(1).map((d, i) => d - rowDys[i]).filter((g) => g > spacing * 0.5);
+    const rowH = 0.85 * Math.min(spacing * 1.15, gaps.length ? Math.min(...gaps) : spacing);
+    const n2 = 1 + slope * slope;
+    const layout = { at: (k, dy) => { const c = col(k); return { x: c.x - (slope * dy) / n2, y: c.y + dy / n2 }; }, spacing, rowH, slope };
+    const page = cleanPage(gray);
+    // You can tap anywhere on a row: move each row to the middle of its band of numbers nearby.
+    const pctx = page.getContext("2d", { willReadFrequently: true });
+    const snap = (dy) => {
+      const ks = holes === 18 ? [2, 5, 8, 11, 14, 17] : [2, 4, 6, 8];
+      const span = Math.round(rowH * 0.9), prof = new Array(2 * span + 1).fill(0);
+      for (const k of ks) {
+        const pt = layout.at(k, dy), x0 = Math.round(pt.x - spacing * 0.35), cy = Math.round(pt.y);
+        const d = pctx.getImageData(x0, cy - span, Math.round(spacing * 0.7), 2 * span + 1).data;
+        for (let r = 0; r <= 2 * span; r++) for (let c = 0; c < Math.round(spacing * 0.7); c++) if (d[4 * (r * Math.round(spacing * 0.7) + c)] < 128) prof[r]++;
       }
-      raws[c.key][c.k - 1] = seen;
-      onProgress(0.3 + 0.7 * (++done / cells.length), "Reading the holes");
-    }
-    if (hcpY != null) res.hcp = settleHandicaps(res.hcp, raws.hcp);
-    // OUT / IN: the columns just after holes 9 and 18. Use them to check (and fix) each nine.
-    const readTotal = async (k, y, lo, hi) => {
-      if (y == null || row.cols[k] == null) return null;
-      const x = row.cols[k] + row.spacing, w = row.spacing * 0.95;
-      const cv = cellCanvas(gray, x - w / 2, y - rowH * 0.5, x + w / 2, y + rowH * 0.5);
-      if (!cv) return null;
-      for (const mode of [7, 8, 6]) { const m = (await engine.digits(cv, mode)).match(/^\s*(\d+)\s*$/); if (m && +m[1] >= lo && +m[1] <= hi) return +m[1]; }
-      return null;
+      // the run of inked rows nearest the tap
+      const on = prof.map((v) => v > 2);
+      let best = null;
+      for (let r = 0; r <= 2 * span;) {
+        if (!on[r]) { r++; continue; }
+        let e = r; while (e <= 2 * span && on[e]) e++;
+        const mid = (r + e - 1) / 2, dist = Math.abs(mid - span);
+        if (e - r >= rowH * 0.2 && (!best || dist < best.dist)) best = { mid, dist };
+        r = e;
+      }
+      return best && best.dist < rowH * 0.6 ? dy + (best.mid - span) : dy;
     };
-    for (const [key, y, nineLo, nineHi, lo, hi, what] of [["yards", teeY, 500, 4500, 50, 750, "yardage"], ["par", parY, 27, 45, 3, 6, "par"]]) {
-      if (y == null) continue;
-      for (const [a, b, label] of [[0, 9, "front nine"], [9, 18, "back nine"]]) {
-        if (b > holes) continue;
-        const total = await readTotal(b, y, nineLo, nineHi);
-        const r = checkNine(res[key].slice(a, b), total, lo, hi);
-        // Several holes could explain the gap: re-read just those cells in other ways and take the one a re-read confirms.
-        if (r.mismatch && r.candidates?.length) {
-          const confirmed = [];
-          for (const f of r.candidates) {
-            const k = a + f.i + 1, x = row.cols[k], w = row.spacing * 0.86;
-            const cv = cellCanvas(gray, x - w / 2, y - rowH * 0.5, x + w / 2, y + rowH * 0.5);
-            for (const mode of [8, 6, 13]) { if (cv && (await engine.digits(cv, mode)).replace(/\D/g, "") === String(f.to)) { confirmed.push(f); break; } }
-          }
-          if (confirmed.length === 1) { r.values[confirmed[0].i] = confirmed[0].to; r.fixed = confirmed; r.mismatch = false; }
+    // Tee names: read from each row's label, left of hole 1 (unless given).
+    const tees = [];
+    // Read the whole label column once (that reads more reliably than one strip at a time), then match
+    // each tapped row to the label beside it; a single strip is the fallback.
+    const labelW = Math.max(10, Math.min(h1.x, h10.x) - spacing * 0.6);
+    const labels = (taps.tees || []).some((t) => !t.name) ? await engine.lines(crop(page, 0, 0, labelW, gray.h)) : [];
+    for (const [i, t] of (taps.tees || []).entries()) {
+      const dy = snap(dyOf(P(t)));
+      let name = t.name;
+      if (!name) {
+        const y = h1.y + slope * (labelW / 2 - h1.x) + dy; // the row, where its label sits (left of hole 1)
+        const near = labels.map((l) => ({ l, d: Math.abs((l.y0 + l.y1) / 2 - y) })).filter((c) => c.d < rowH * 0.7 && cleanName(c.l.text)).sort((p, q) => p.d - q.d)[0];
+        name = near ? cleanName(near.l.text) : "";
+        if (!name || name.length < 3) {
+          const lines = await engine.lines(crop(page, 0, y - rowH * 0.6, labelW, y + rowH * 0.6));
+          const alt = cleanName(lines.map((l) => l.text).join(" "));
+          if (alt.length > name.length) name = alt;
         }
-        res[key].splice(a, b - a, ...r.values);
-        for (const f of r.fixed) notes.push(`Hole ${a + f.i + 1} ${what} read as ${f.from}; changed to ${f.to} so the ${label} matches the card's total (${total}).`);
-        if (r.filled != null) notes.push(`Hole ${a + r.filled + 1} ${what} was worked out from the card's ${label} total (${total}).`);
-        if (r.mismatch && r.candidates?.length) {
-          const hs = [...new Set(r.candidates.map((f) => a + f.i + 1))];
-          notes.push(`Check hole${hs.length > 1 ? "s" : ""} ${hs.join(" and ")} ${what}: the ${label} adds up to ${r.values.reduce((t, v) => t + (v || 0), 0)} but the card says ${total}.`);
-        } else if (r.mismatch) notes.push(`The ${label} ${what === "par" ? "pars" : "yardages"} don't add up to the card's total (${total}); check them.`);
+        // a short scrap that isn't a tee name ("ian") is no help: number it instead (you can rename it)
+        if (!name || (name.length <= 3 && !TEE_NAMES.some((n) => n.toLowerCase() === name.toLowerCase()))) name = `Tees ${i + 1}`;
       }
+      tees.push({ name, dy });
     }
-    // Missing pars: estimate from yardage, and say so.
-    const guessed = [];
-    if (parY != null) res.par = res.par.map((p, i) => { if (p == null && res.yards[i] != null) { guessed.push(i + 1); return parFromYards(res.yards[i]); } return p; });
-    if (guessed.length) notes.push(`Par for hole${guessed.length > 1 ? "s" : ""} ${guessed.join(", ")} was estimated from the yardage. Check ${guessed.length > 1 ? "them" : "it"}.`);
-    if (parY == null) notes.push("Couldn't find the Par row.");
-    if (hcpY == null) notes.push("Couldn't find the Handicap row.");
-    if (tee && teeY == null) notes.push(`Couldn't find a "${tees.trim()}" row; check the Tees box matches the card.`);
-    if (!tee) notes.push("Enter your Tees to read yardages from the right row.");
-    return { ...res, notes, teeRow: teeY != null ? tees.trim() : "" };
+    const res = await readRows(engine, gray, layout, { holes, parDy: taps.par ? snap(dyOf(P(taps.par))) : null, hcpDy: taps.hcp ? dyOf(P(taps.hcp)) : null, tees }, onProgress);
+    return { ...res, found: true };
   } finally {
     if (own) await engine.terminate?.();
   }

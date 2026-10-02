@@ -58,7 +58,7 @@ export function clubGroupOf(label) {
   if (/^driver/i.test(s)) return "Driver";
   if (/^\d+w$/i.test(s)) return "Fairway Wood";
   if (/^\d+H$/.test(s)) return "Hybrid";
-  if (/^\d+i$/i.test(s) || /^PW$/i.test(s)) return "Iron";
+  if (/^\d+i$/i.test(s) || /^(PW|AW)$/i.test(s)) return "Iron";
   if (/wedge/i.test(s)) return "Wedge";
   if (/putter/i.test(s)) return "Putter";
   return "Other";
