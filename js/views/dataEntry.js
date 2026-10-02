@@ -12,6 +12,7 @@ import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } fr
 import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
+import { parseShots } from "../voiceShots.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
 
 // Short lie names for the narrow shot bands (the full words are in the band's label).
@@ -350,7 +351,7 @@ function renderRound(main, params, flash, previewClient) {
   // Your clubs (WITB), for the optional Club on each shot.
   let bag = [];
   getBag(state.user.uid).then((clubs) => {
-    bag = clubs.map((c) => ({ label: clubLabel(c), model: clubMake(c), cat: c.cat })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
+    bag = clubs.map((c) => ({ label: clubLabel(c), model: clubMake(c), cat: c.cat, type: c.type })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
     if (round && holeIdx >= 0 && bag.length) drawHole();
   });
   const hole = () => round.holes[holeIdx];
@@ -524,6 +525,7 @@ function renderRound(main, params, flash, previewClient) {
         el("p", {}, [`Par ${h.par}`, h.yards ? ` \u00b7 ${h.yards} yds` : "", h.hcp ? ` \u00b7 Hcp ${h.hcp}` : ""].join("")),
         hs.done ? el("p", { class: "hole-result" }, `${hs.strokes} \u00b7 ${scoreName(hs.strokes - h.par)}`) : null,
       ]),
+      ro ? null : voiceBox(),
       ...strokes.map((s, i) => strokeCard(s, i, ro)),
       ro ? null : el("div", { class: "shot-tools" }, [
         (() => { const b = el("button", { type: "button", class: "btn ghost add-shot" }, "\uFF0B Add a shot"); b.addEventListener("click", () => { strokes.push({ ...blankStroke(), open: true }); changed(true, strokes.length - 1); }); return b; })(),
@@ -582,6 +584,77 @@ function renderRound(main, params, flash, previewClient) {
     const hs = holeScore(strokes), h = hole();
     const res = holeBox.querySelector(".hole-result");
     if (res && hs.done) res.textContent = `${hs.strokes} \u00b7 ${scoreName(hs.strokes - h.par)}`;
+  }
+
+  // Voice input: say how the hole went; it's written down (your phone's speech recognition, or your
+  // keyboard's 🎤 / typing where that isn't available), turned into shots, and fills the hole when you tap Fill in.
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let voiceOpen = false, voiceText = "", listening = null;
+  function voiceBox() {
+    const btn = el("button", { type: "button", class: "btn ghost voice-btn", "aria-expanded": voiceOpen ? "true" : "false" }, "\uD83C\uDF99 Voice input");
+    btn.addEventListener("click", () => { voiceOpen = !voiceOpen; if (!voiceOpen) stopListening(); drawHole(); if (voiceOpen && SpeechRec && !voiceText) startListening(); });
+    if (!voiceOpen) return el("div", { class: "voice" }, btn);
+    const text = el("textarea", { class: "voice-text", rows: 4, placeholder: "e.g. Driver to the fairway, 180 left. 6 iron on the green, 15 feet. Missed the putt, 3 feet left, then made it.", "aria-label": "What happened on this hole" }, voiceText);
+    text.value = voiceText;
+    const preview = el("ol", { class: "voice-preview" });
+    const notes = el("p", { class: "muted small voice-notes" });
+    const showParse = () => {
+      const r = parseShots(text.value, { bag });
+      const unit = (lie) => (lie === "Green" ? "ft" : "yds");
+      mount(preview, r.shots.map((p) => el("li", {}, [
+        el("strong", {}, p.club || p.saidClub || "Shot"), " \u2192 ",
+        p.endLie === "Holed" ? "In the hole" : `${p.endLie || "?"}${p.endDist != null ? `, ${p.endDist} ${unit(p.endLie)} left` : ""}`,
+      ])));
+      notes.textContent = r.notes.join(" ");
+      fill.disabled = !r.shots.length;
+      return r;
+    };
+    text.addEventListener("input", () => { voiceText = text.value; showParse(); });
+    const mic = SpeechRec ? el("button", { type: "button", class: "btn ghost voice-mic" + (listening ? " on" : "") }, listening ? "\u25A0 Stop" : "\uD83C\uDF99 Speak") : null;
+    mic?.addEventListener("click", () => { if (listening) stopListening(); else startListening(); });
+    const fill = el("button", { type: "button", class: "btn" }, "Fill in the hole");
+    fill.addEventListener("click", () => applyVoice(showParse()));
+    const cancel = el("button", { type: "button", class: "link" }, "Close");
+    cancel.addEventListener("click", () => { voiceOpen = false; stopListening(); drawHole(); });
+    const box = el("div", { class: "voice open" }, [
+      el("p", { class: "muted small" }, SpeechRec ? (listening ? "Listening\u2026 say how the hole went, then tap Stop." : "Tap Speak and say how the hole went, or type it.") : "Type how the hole went, or use your keyboard\u2019s \uD83C\uDF99 to dictate."),
+      text, el("div", { class: "voice-actions" }, [mic, fill, cancel]), preview, notes,
+    ]);
+    queueMicrotask(showParse);
+    return box;
+  }
+  function startListening() {
+    if (!SpeechRec || listening) return;
+    const rec = new SpeechRec();
+    rec.lang = navigator.language || "en-US"; rec.continuous = true; rec.interimResults = true;
+    const before = voiceText ? `${voiceText.trim()} ` : "";
+    rec.onresult = (e) => {
+      let said = "";
+      for (let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript;
+      voiceText = before + said;
+      const ta = holeBox.querySelector(".voice-text");
+      if (ta) { ta.value = voiceText; ta.dispatchEvent(new Event("input")); }
+    };
+    rec.onend = () => { listening = null; if (voiceOpen) drawHole(); };
+    rec.onerror = (e) => { listening = null; flash(e.error === "not-allowed" ? "Allow the microphone for this site to use voice input (or type it instead)." : "Voice input stopped. Try again, or type it.", "error"); if (voiceOpen) drawHole(); };
+    try { rec.start(); listening = rec; } catch { listening = null; }
+    if (voiceOpen) drawHole();
+  }
+  function stopListening() { try { listening?.stop(); } catch { /* already stopped */ } listening = null; }
+  function applyVoice(r) {
+    if (!r.shots.length) return;
+    const h = hole();
+    strokes = r.shots.map((p, i) => ({
+      ...blankStroke(), open: true,
+      ...(i === 0 ? { startLie: "Tee box", startDist: h.yards ?? "" } : {}),
+      endLie: p.endLie || "", endDist: p.endDist ?? "",
+      ...(p.club ? { club: p.club, clubMake: p.clubMake, clubCat: p.clubCat } : {}),
+    }));
+    // "…hit 7 iron from 160": that's how far the shot before left you
+    r.shots.forEach((p, i) => { if (p.startDist != null && i > 0 && (strokes[i - 1].endDist === "" || strokes[i - 1].endDist == null)) strokes[i - 1].endDist = p.startDist; });
+    stopListening(); voiceOpen = false; voiceText = "";
+    changed(true);
+    flash(`Filled in ${strokes.length} shot${strokes.length === 1 ? "" : "s"} from what you said. Check them below.`, "ok");
   }
 
   // Club for a shot: your WITB clubs, or a nudge to fill out WITB.

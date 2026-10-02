@@ -91,6 +91,7 @@ export function sgDashboard(container, opts) {
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       catPills(),
       yearPills(opt),
+      el("p", { class: "pill-hint muted small" }, "Tap to pick one \u00b7 double-tap to keep it (\uD83D\uDD12) and add more"),
       statTypeBar(),
       filterBar(opt),
       el("div", { class: "sg-panel" }, (() => {
@@ -226,19 +227,40 @@ export function sgDashboard(container, opts) {
   }
 
   // Year pills (under the categories): All, or any number of years.
+  // Pills: a tap picks just that one (replacing the last pick); a double-tap keeps it (🔒) so the next tap
+  // adds to it. Double-tap a kept pill to let it go (a single tap on it takes it out too).
+  let lastTap = null; // { key, value, at, wasKept } (pills are redrawn on every tap, so remember by value)
+  function tapPill(key, value, order) {
+    const keepKey = `${key}Kept`;
+    st[keepKey] = (st[keepKey] || []).filter((v) => st[key].includes(v));
+    const now = Date.now();
+    const dbl = lastTap && lastTap.key === key && lastTap.value === value && now - lastTap.at < 400;
+    if (dbl) {
+      // the first tap already did the single-tap part; now keep it (or, if it was kept, leave it let go)
+      if (!lastTap.wasKept) { st[keepKey] = [...new Set([...st[keepKey], value])]; if (!st[key].includes(value)) st[key] = [...st[key], value]; }
+      lastTap = null;
+    } else {
+      const wasKept = st[keepKey].includes(value);
+      if (wasKept) { st[keepKey] = st[keepKey].filter((v) => v !== value); st[key] = st[key].filter((v) => v !== value); }
+      else st[key] = [...st[keepKey].filter((v) => v !== value), value]; // one at a time, plus whatever is kept
+      lastTap = { key, value, at: now, wasKept };
+    }
+    st[key].sort(order);
+    draw();
+  }
+  const keptOf = (key) => (st[`${key}Kept`] || []).filter((v) => st[key].includes(v));
+
   function yearPills(opt) {
     if (!opt.year.length) return null;
     const years = [...opt.year].sort();
     const all = el("a", { href: "#", "aria-current": !st.year.length ? "page" : null }, "All years");
-    all.addEventListener("click", (e) => { e.preventDefault(); st.year = []; draw(); });
-    return el("nav", { class: "subnav sg-years", "aria-label": "Years (pick one or more)" }, [all, ...years.map((y) => {
-      const on = st.year.includes(y);
-      const a = el("a", { href: "#", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false" }, y);
-      a.addEventListener("click", (e) => {
-        e.preventDefault();
-        st.year = on ? st.year.filter((x) => x !== y) : [...st.year, y].sort(); // pick as many as you like
-        draw();
-      });
+    all.addEventListener("click", (e) => { e.preventDefault(); st.year = []; st.yearKept = []; draw(); });
+    const kept = keptOf("year");
+    return el("nav", { class: "subnav sg-years", "aria-label": "Years: tap to pick one, double-tap to keep it and add more" }, [all, ...years.map((y) => {
+      const on = st.year.includes(y), isKept = kept.includes(y);
+      const a = el("a", { href: "#", class: isKept ? "kept" : "", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false",
+        title: isKept ? "Kept: double-tap to let it go" : "Tap to pick; double-tap to keep it and add more" }, y);
+      a.addEventListener("click", (e) => { e.preventDefault(); tapPill("year", y, (p, q) => p.localeCompare(q)); });
       return a;
     })]);
   }
@@ -246,17 +268,15 @@ export function sgDashboard(container, opts) {
   function catPills() {
     const allOn = !st.cats.length;
     const all = el("a", { href: "#", "aria-current": allOn ? "page" : null }, "All");
-    all.addEventListener("click", (e) => { e.preventDefault(); st.cats = []; draw(); });
-    return el("nav", { class: "subnav sg-tabs", "aria-label": "Categories (pick one or more)" }, [all, ...CATEGORIES.map(([k, label]) => {
-      const on = st.cats.includes(k);
-      const a = el("a", { href: "#", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false" }, label);
+    all.addEventListener("click", (e) => { e.preventDefault(); st.cats = []; st.catsKept = []; draw(); });
+    const kept = keptOf("cats");
+    return el("nav", { class: "subnav sg-tabs", "aria-label": "Categories: tap to pick one, double-tap to keep it and add more" }, [all, ...CATEGORIES.map(([k, label]) => {
+      const on = st.cats.includes(k), isKept = kept.includes(k);
+      const a = el("a", { href: "#", class: isKept ? "kept" : "", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false",
+        title: isKept ? "Kept: double-tap to let it go" : "Tap to pick; double-tap to keep it and add more" }, label);
       a.addEventListener("click", (e) => {
         e.preventDefault();
-        st.cats = on ? st.cats.filter((x) => x !== k) : [...st.cats, k];
-        if (on) st.dist = st.dist.filter((d) => d.split("|")[0] !== k);
-        if (st.cats.length === CATEGORIES.length) st.cats = [];
-        st.cats.sort((x, y) => CATEGORIES.findIndex(([c]) => c === x) - CATEGORIES.findIndex(([c]) => c === y));
-        draw();
+        tapPill("cats", k, (x, y) => CATEGORIES.findIndex(([c]) => c === x) - CATEGORIES.findIndex(([c]) => c === y));
       });
       return a;
     })]);
