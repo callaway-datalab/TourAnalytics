@@ -35,7 +35,7 @@ export async function render(main, { flash }) {
 
   // Tour | Entered Rounds
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
-  const drawSource = () => mount(sourcePills, [["tour", "Tour"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+  const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
     a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
     return a;

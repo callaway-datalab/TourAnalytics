@@ -90,13 +90,13 @@ export function sgDashboard(container, opts) {
     mount(container, [
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       filterBar(opt),
-      cards(slicedField, f),
-      catPills(),
-      me ? selectionStrip(mine, slicedField) : null, // "Alex Moreno: Approach · …" sits under the category pills
-      el("div", { class: "sg-panel" }, [
-        ...(me ? detailBlocks(mine, slicedField) : []),
-        showRanks ? rankingsBlock(slicedField) : null,
-      ]),
+      me ? selectionStrip(mine, slicedField) : null, // "Alex Moreno: Approach · …"
+      el("div", { class: "sg-panel" }, (() => {
+        // The rankings sit right under the first block (Stat Averages, or SG by category for All).
+        const blocks = me ? detailBlocks(mine, slicedField) : [];
+        const ranks = showRanks ? rankingsBlock(slicedField) : null;
+        return [...blocks.slice(0, 1), ranks, ...blocks.slice(1)];
+      })()),
     ]);
     if (focusKey) {
       const again = [...container.querySelectorAll(focusTag || "*")].find((n) => (n.getAttribute("aria-label") || n.textContent).trim() === focusKey);
@@ -112,10 +112,11 @@ export function sgDashboard(container, opts) {
   /* ------------------------------ filters ------------------------------ */
   // A filter button that opens a checklist: pick any number of options (none = all). Each tick applies
   // straight away; it stays open while you tick and closes when you tap outside, tap the button, or press Escape.
-  function multi(label, key, options, allLabel, { plural, fmt = (v) => v } = {}) {
+  function multi(label, key, options, allLabel, { plural, fmt = (v) => v, empty = "Nothing to pick for this selection." } = {}) {
     const chosen = new Set(st[key]);
     const labelOf = (v) => options.find((o) => o.value === v)?.label ?? fmt(v);
-    const summary = !chosen.size ? allLabel : chosen.size <= 2 ? [...chosen].map(labelOf).join(", ") : `${chosen.size} ${plural}`;
+    const summary = !chosen.size || (options.length > 1 && chosen.size === options.length) ? allLabel // nothing or everything ticked = all
+      : chosen.size <= 2 ? [...chosen].map(labelOf).join(", ") : `${chosen.size} ${plural}`;
     const open = st.openFilter === key;
     const btn = el("button", { type: "button", class: "ms-btn" + (chosen.size ? " on" : ""), "aria-expanded": open ? "true" : "false", "aria-label": `${label}: ${summary}` }, [
       el("span", { class: "ms-sum" }, summary), el("span", { class: "ms-caret", "aria-hidden": "true" }, "\u25BE"),
@@ -124,7 +125,7 @@ export function sgDashboard(container, opts) {
       st[key] = on ? [...st[key], v] : st[key].filter((x) => x !== v);
       if (key === "dist" && on) { // a distance belongs to a category: make sure that category is picked
         const c = v.split("|")[0];
-        if (!st.cats.length) st.cats = [c]; else if (!st.cats.includes(c)) st.cats = [...st.cats, c];
+        if (!st.cats.length || st.cats.length === CATEGORIES.length) st.cats = [c]; else if (!st.cats.includes(c)) st.cats = [...st.cats, c];
       }
       if (key === "club") followClubs();
       st.openFilter = key;
@@ -142,7 +143,7 @@ export function sgDashboard(container, opts) {
     all.addEventListener("click", () => { st[key] = []; if (key === "club") followClubs(); st.openFilter = key; draw(); });
     const panel = el("div", { class: "ms-panel", hidden: !open, role: "group", "aria-label": label }, [
       el("div", { class: "ms-top" }, [el("strong", {}, label), all]),
-      el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, "Nothing to pick for this selection.")),
+      el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, empty)),
     ]);
     btn.addEventListener("click", () => {
       const nowOpen = panel.hidden;
@@ -176,23 +177,31 @@ export function sgDashboard(container, opts) {
   function filterBar(opt) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
-    const active = ["year", "event", "roundNo", "lie", "dist", "club"].some((k) => st[k].length) || Number(st.span) > 0;
+    const active = ["year", "event", "roundNo", "lie", "dist", "club", "cats"].some((k) => st[k].length) || Number(st.span) > 0;
     const reset = el("button", { class: "link", type: "button", hidden: !active }, "Clear filters");
-    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], club: [], openFilter: null }); draw(); });
+    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], club: [], cats: [], openFilter: null }); draw(); });
     // Distances, grouped under their category; with categories picked, only theirs show.
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
     const distOpts = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
       .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
-    return el("div", { class: "sg-filters" }, [
+    // On phones the filters fold behind a "Filters" button (with how many are in use).
+    const inUse = ["year", "event", "roundNo", "lie", "dist", "club", "cats"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
+    const fold = el("button", { type: "button", class: "filters-toggle", "aria-expanded": st.filtersOpen ? "true" : "false" },
+      [`Filters${inUse ? ` \u00b7 ${inUse} on` : ""}`, el("span", { "aria-hidden": "true" }, st.filtersOpen ? "\u25B4" : "\u25BE")]);
+    fold.addEventListener("click", () => { st.filtersOpen = !st.filtersOpen; draw(); });
+    return el("div", { class: "sg-filters" + (st.filtersOpen ? " open" : "") }, [
+      fold,
       el("label", {}, ["Span", span]),
       multi("Year", "year", simple(opt.year), "All years", { plural: "years" }),
       multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
       multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
       multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
-      // Club: only when shots have clubs (rounds entered with WITB clubs).
-      opt.club.length ? multi("Club", "club", clubOptions(opt), "All clubs", { plural: "clubs" }) : null,
+      multi("Category", "cats", CATEGORIES.map(([v, l]) => ({ value: v, label: l })), "All categories", { plural: "categories" }),
+      // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
+      multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
+        empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }),
       reset,
     ]);
   }
@@ -217,7 +226,7 @@ export function sgDashboard(container, opts) {
     })]);
   }
   const T2G = ["OTT", "APP", "ARG"];
-  const catsName = () => (!st.cats.length ? "All categories"
+  const catsName = () => (!st.cats.length || st.cats.length === CATEGORIES.length ? "All categories"
     : st.cats.length === 3 && T2G.every((k) => st.cats.includes(k)) ? "Tee to Green"
     : st.cats.map(catName).join(" + "));
   const list = (a, plural, fmt = (v) => v) => (!a.length ? "" : a.length <= 2 ? a.map(fmt).join(", ") : `${a.length} ${plural}`);
@@ -381,7 +390,7 @@ export function sgDashboard(container, opts) {
     };
     search.addEventListener("input", applySearch);
     rankScroll = el("div", { class: "table-scroll rank-scroll" }, el("table", { class: "plain rankings" }, [
-      el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num" }, "SG / Round"), el("th", { class: "num" }, "Attempts / Round"), el("th", { class: "num" }, "Rounds")])),
+      el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num" }, "SG / Round"), el("th", { class: "num" }, [el("span", { class: "long" }, "Attempts / Round"), el("span", { class: "short" }, "Att / Rd")]), el("th", { class: "num" }, "Rounds")])),
       body,
     ]));
     requestAnimationFrame(applySearch);

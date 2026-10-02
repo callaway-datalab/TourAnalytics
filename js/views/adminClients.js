@@ -78,7 +78,8 @@ export async function render(main, { flash }) {
   /* ======================= Player search-and-add list ======================= */
   // A searchable dropdown that adds players to a list (with × to remove). allowAll adds the
   // "All players (including players added later)" box, for analysts.
-  function playerPicker(selected = [], { all = false, allowAll = false } = {}) {
+  // selectAll: a "Select all players" box that picks every current player (for Other team members).
+  function playerPicker(selected = [], { all = false, allowAll = false, selectAll = false } = {}) {
     const players = () => [...clientsCache.labels.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
     const labelOf = (k) => clientsCache.labels.get(k) || k.replace(/^c_/, "");
     let chosen = [...new Set(selected)];
@@ -95,7 +96,7 @@ export async function render(main, { flash }) {
         ? chosen.map((k) => el("li", {}, [el("span", {}, labelOf(k)),
             linkButton("\u00d7", () => { chosen = chosen.filter((x) => x !== k); draw(); }, "link danger")]))
         : el("li", { class: "none-yet" }, el("span", { class: "muted" }, "No players added yet.")));
-      adder.hidden = allowAll && allBox.checked;
+      adder.hidden = (allowAll || selectAll) && allBox.checked;
     };
     const add = (p) => { if (!chosen.includes(p.key)) chosen.push(p.key); search.value = ""; which.hidden = true; delete which.dataset.for; draw(); };
     const tryAdd = () => {
@@ -124,10 +125,12 @@ export async function render(main, { flash }) {
     draw();
     const node = el("fieldset", { class: "check-group player-checklist" }, [
       el("legend", {}, "Players they work with"),
-      allowAll ? el("label", { class: "all-players" }, [allBox, "All players (including players added later)"]) : null,
+      allowAll ? el("label", { class: "all-players" }, [allBox, "All players (including players added later)"])
+        : selectAll ? el("label", { class: "all-players" }, [allBox, "Select all players"]) : null,
       adder,
     ]);
-    return { node, value: () => ({ allPlayers: allowAll && allBox.checked, playerKeys: allowAll && allBox.checked ? [] : [...chosen] }) };
+    return { node, value: () => ({ allPlayers: allowAll && allBox.checked,
+      playerKeys: allowAll && allBox.checked ? [] : selectAll && allBox.checked ? players().map((p) => p.key) : [...chosen] }) };
   }
 
   /* ======================= Create an access code ======================= */
@@ -156,9 +159,12 @@ export async function render(main, { flash }) {
       name: el("input", { maxLength: 80, placeholder: "Only for you, until they sign up" }),
       // Analysts always see every player (including ones added later), so there's nothing to pick.
       players: type === "analyst" ? { node: el("p", { class: "muted small all-note" }, "Analysts see all players, including players added later."), value: () => ({ allPlayers: true, playerKeys: [] }) }
-        : playerPicker([], { allowAll: false }),
+        : playerPicker([], { allowAll: false, selectAll: type === "other" }),
+      // Other: what they do (Physio, Trainer, Swing coach…)
+      role: type === "other" ? el("input", { maxLength: 30, placeholder: "e.g. Physio, Trainer, Swing coach", autocomplete: "off" }) : null,
     };
     mount(fieldsBox, [
+      fields.role ? el("div", { class: "inline-form" }, [el("label", {}, ["Role", fields.role])]) : null,
       fields.players.node,
       el("div", { class: "inline-form" }, [el("label", {}, ["Name (optional)", fields.name])]),
     ]);
@@ -194,10 +200,11 @@ export async function render(main, { flash }) {
         } else {
           const name = fields.name.value.trim();
           const { allPlayers, playerKeys } = fields.players.value();
+          if (type === "other" && !fields.role.value.trim()) { flash("Enter their role (e.g. Physio).", "error"); fields.role.focus(); return; }
           if (!allPlayers && !playerKeys.length) { flash("Add at least one player they work with.", "error"); return; }
           const code = type === "analyst"
             ? await createAnalystAccess({ name, playerKeys, allPlayers, labels: clientsCache.labels, days: 0 })
-            : await createTeamAccess({ name, role: type, playerKeys, labels: clientsCache.labels });
+            : await createTeamAccess({ name, role: type === "other" ? fields.role.value.trim() : type, playerKeys, labels: clientsCache.labels });
           flash(`Access code${name ? ` for ${name}` : ""}: ${formatCode(code)}. Send it with the sign-up link; whoever signs up with it gets this access.`, "ok");
         }
         drawFields();

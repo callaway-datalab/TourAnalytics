@@ -47,7 +47,7 @@ export async function render(main, { previewClient, flash }) {
   const drawSource = () => {
     tourBox.hidden = lastSource !== "tour";
     enteredBox.hidden = lastSource !== "entered";
-    mount(sourcePills, [["tour", "Tour"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+    mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
       const a = el("a", { href: "#", "aria-current": lastSource === v ? "page" : null }, l);
       a.addEventListener("click", (e) => { e.preventDefault(); lastSource = v; drawSource(); });
       return a;

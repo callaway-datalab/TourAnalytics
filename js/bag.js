@@ -68,3 +68,29 @@ export function saveBagHistory(uid, history) {
 /** The make-up of a bag, ignoring notes: used to tell whether the clubs themselves changed. */
 export const bagMakeup = (clubs) => JSON.stringify((clubs || []).filter((c) => c.cat && c.type)
   .map((c) => [c.cat, c.type, (c.brand || "").trim().toLowerCase(), (c.model || "").trim().toLowerCase()]).sort());
+
+/* ============================== Club library ============================== */
+// Every club you've ever played lives in your library (bags/{uid}.library); the ones in your bag right
+// now are listed in .inBag (their ids). .clubs is kept as the current bag, for Data Entry's Club choice.
+const keyOf = (c) => [c.cat, c.type, (c.brand || "").trim().toLowerCase(), (c.model || "").trim().toLowerCase()].join("|");
+export const newClubId = () => Math.random().toString(36).slice(2, 10);
+
+/** The library and bag from a bag document, building the library from older bags the first time. */
+export function libraryFrom(d) {
+  if (Array.isArray(d.library)) return { library: d.library, inBag: d.inBag || [] };
+  const seen = new Map();
+  const add = (c) => { if (!c?.cat || !c?.type) return null; const k = keyOf(c); if (!seen.has(k)) seen.set(k, { id: newClubId(), cat: c.cat, type: c.type, brand: c.brand || "", model: c.model || "", note: c.note || "" }); return seen.get(k).id; };
+  const inBag = (d.clubs || []).map(add).filter(Boolean);
+  for (const b of d.history || []) (b.clubs || []).forEach(add);
+  return { library: [...seen.values()], inBag };
+}
+
+/** Save the library and which clubs are in the bag (the bag itself is copied to .clubs). */
+export function saveLibrary(uid, library, inBag) {
+  const clubs = inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean)
+    .map(({ cat, type, brand, model, note }) => ({ cat, type, brand, model, note }));
+  return setDoc(doc(db, "bags", uid), { library, inBag, clubs: clubs.slice(0, MAX_CLUBS), updatedAt: serverTimestamp() }, { merge: true });
+}
+
+/** Does a shot's club match this library club? */
+export const shotUsesClub = (st, c) => st.club === clubLabel(c) && (st.clubMake || "") === clubMake(c);

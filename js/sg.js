@@ -40,7 +40,20 @@ const ALIASES = {
   smash: ["smashfactor", "smash"],
   launch: ["launchangle", "launch"],
   spin: ["backspin", "spinrate", "spin"],
+  club: ["club", "clubused", "clubtype", "clubname"],
 };
+
+// A club's bag group from its name ("Driver", "3w"/"3 Wood", "4H"/"4 Hybrid", "7i"/"7 Iron", "56°"/"SW"…).
+export function clubGroup(name) {
+  const s = String(name).toLowerCase().replace(/\s+/g, "");
+  if (/driver|^1w$/.test(s)) return "Driver";
+  if (/putter/.test(s)) return "Putter";
+  if (/^\d+w$|wood/.test(s)) return "Fairway Wood";
+  if (/^\d+h$|hybrid|rescue/.test(s)) return "Hybrid";
+  if (/wedge|^(gw|sw|lw|aw|uw)$|°|deg/.test(s)) return "Wedge";
+  if (/^\d+i$|iron|^pw$/.test(s)) return "Iron";
+  return "Other";
+}
 
 // Clubs in bag order: driver, woods, hybrids, irons, wedges, putter.
 const clubOrder = (s) => {
@@ -106,8 +119,9 @@ export function prepare(rows, idx) {
       const year = get(r, "year") ?? (isNaN(d) ? "" : d.getFullYear());
       rounds.set(key, { key, date: String(date), event: String(event), roundNo: isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), shots: [] });
     }
-    const lie = get(r, "lie"), dist = get(r, "distanceRange");
-    rounds.get(key).shots.push({ cat, sg, w, r, lie: lie == null ? null : String(lie), dist: dist == null ? null : String(dist) });
+    const lie = get(r, "lie"), dist = get(r, "distanceRange"), club = get(r, "club");
+    rounds.get(key).shots.push({ cat, sg, w, r, lie: lie == null ? null : String(lie), dist: dist == null ? null : String(dist),
+      club: club == null || club === "" ? null : String(club), clubCat: club == null || club === "" ? null : clubGroup(String(club)) });
   }
   const list = [...rounds.values()];
   if (idx.date !== undefined) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));

@@ -1,116 +1,133 @@
-// WITB (Account → WITB): "what's in the bag". Up to 14 clubs, each with its club, type, brand, model
-// and a note. Saved automatically. The clubs become the "Club" choice on each shot in Data Entry, and a
-// Club filter on Stats → Entered Rounds.
-// Old bags: when you change the clubs themselves (not just notes), the make-up you had when you opened
-// this page is filed under Old bags with the dates it was in use, once you leave the page.
+// WITB (Account → WITB): every club you've ever played, and your bag.
+//   Add a club at the top. Tap a club in the list to put it in (or take it out of) your bag: clubs in the
+//   bag are highlighted and listed under "Your bag" at the bottom (up to 14). Each club shows how many
+//   entered rounds it was used in and its average strokes gained per shot.
+// Your bag becomes the Club choice on each shot in Data Entry.
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchBagDoc, saveBag, saveBagHistory, bagMakeup, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake } from "../bag.js";
+import { watchBagDoc, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub } from "../bag.js";
+import { watchPlayerRounds } from "../rounds.js";
+import { strokesGained } from "../roundCalc.js";
+import { fmtSG, sgColor } from "../sg.js";
+import { myEntryKey } from "./dataEntry.js";
 
-const blank = () => ({ cat: "", type: "", brand: "", model: "", note: "" });
-const fmtDate = (iso) => { const d = new Date(`${iso}T12:00:00`); return isNaN(d) ? iso || "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
-
-export async function render(main) {
-  const uid = getState().user.uid;
-  let clubs = Array.from({ length: MAX_CLUBS }, blank);
-  let history = [], since = null, opened = null; // opened: the make-up when you arrived (for Old bags)
-  let loaded = false, timer = null, archived = false;
+export async function render(main, { flash }) {
+  const state = getState();
+  const uid = state.user.uid;
+  let library = [], inBag = [], rounds = [], loaded = false;
   const status = el("span", { class: "save-status", role: "status" });
-  const list = el("div", { class: "bag-list" });
-  const count = el("span", { class: "muted" });
-  const oldBox = el("div", { class: "old-bags" });
 
-  const filled = () => clubs.filter((c) => c.cat && c.type).map((c) => ({ cat: c.cat, type: c.type, brand: c.brand.trim(), model: c.model.trim(), note: c.note.trim() }));
-  const save = () => {
-    clearTimeout(timer);
+  const save = async () => {
     status.textContent = "Saving\u2026";
-    timer = setTimeout(async () => {
-      timer = null;
-      try { await saveBag(uid, filled(), { history, since }); status.textContent = "Saved \u2713"; }
-      catch { status.textContent = "Not saved \u2014 check your connection"; }
-    }, 500);
+    try { await saveLibrary(uid, library, inBag); status.textContent = "Saved \u2713"; }
+    catch { status.textContent = "Not saved \u2014 check your connection"; }
   };
-  const drawCount = () => { count.textContent = `${filled().length} of ${MAX_CLUBS} clubs`; };
 
-  const row = (c, i) => {
-    const cat = el("select", { "aria-label": `Slot ${i + 1} club` }, [el("option", { value: "" }, "Club\u2026"), ...CLUB_CATS.map((k) => el("option", { value: k, selected: c.cat === k }, k))]);
-    const type = el("select", { "aria-label": `Slot ${i + 1} type`, disabled: !c.cat });
-    const fillTypes = () => mount(type, [el("option", { value: "" }, c.cat ? "Type\u2026" : "\u2014"), ...(CLUB_TYPES[c.cat] || []).map((t) => el("option", { value: t, selected: c.type === t }, t))]);
-    fillTypes();
-    const input = (field, ph, max) => {
-      const inp = el("input", { value: c[field] || "", placeholder: ph, maxLength: max, autocomplete: "off", "aria-label": `Slot ${i + 1} ${ph.toLowerCase()}`, disabled: !c.cat });
-      inp.addEventListener("input", () => { c[field] = inp.value; save(); });
-      return inp;
-    };
-    const brand = input("brand", "Brand", 40), model = input("model", "Model", 50), note = input("note", "Note", 120);
-    cat.addEventListener("change", () => {
-      c.cat = cat.value;
-      c.type = c.cat === "Putter" ? "Putter" : (CLUB_TYPES[c.cat] || []).includes(c.type) ? c.type : "";
-      [type, brand, model, note].forEach((x) => { x.disabled = !c.cat; });
-      fillTypes(); drawCount(); save();
-    });
-    type.addEventListener("change", () => { c.type = type.value; drawCount(); save(); });
-    const clear = el("button", { type: "button", class: "entry-del", "aria-label": `Clear slot ${i + 1}`, title: "Clear" }, "\u2715");
-    clear.addEventListener("click", () => { clubs[i] = blank(); draw(); save(); });
-    return el("div", { class: "bag-row" }, [el("span", { class: "bag-n" }, String(i + 1)), cat, type, brand, model, note, clear]);
+  // Rounds used and average strokes gained per shot, from your entered rounds.
+  const usage = (c) => {
+    let used = 0, sg = 0, n = 0;
+    for (const r of rounds) {
+      let inRound = false;
+      for (const strokes of Object.values(r.shots || {})) for (const st of strokes || []) {
+        if (!shotUsesClub(st, c)) continue;
+        inRound = true;
+        const v = strokesGained(st);
+        if (v != null) { sg += v; n++; }
+      }
+      if (inRound) used++;
+    }
+    return { used, avg: n ? sg / n : null };
   };
-  const draw = () => { mount(list, clubs.map(row)); drawCount(); };
 
-  const drawOld = () => mount(oldBox, history.length ? history.map((b, i) => {
-    const del = el("button", { type: "button", class: "link danger" }, "Delete");
-    del.addEventListener("click", async () => {
-      if (!confirmAction("Delete this old bag from your history?")) return;
-      history = history.filter((_, j) => j !== i);
-      drawOld();
-      try { await saveBagHistory(uid, history); } catch { /* shown again on next load */ }
-    });
-    const sorted = [...b.clubs].sort((x, y) => clubRank(clubLabel(x)) - clubRank(clubLabel(y)));
-    return el("details", { class: "old-bag" }, [
-      el("summary", {}, [el("strong", {}, `${b.from ? fmtDate(b.from) : "Earlier"} \u2013 ${fmtDate(b.to)}`), el("span", { class: "muted" }, ` \u00b7 ${b.clubs.length} clubs`)]),
-      el("ul", {}, sorted.map((c) => el("li", {}, [el("strong", {}, clubLabel(c)), clubMake(c) ? ` \u00b7 ${clubMake(c)}` : "", c.note ? el("span", { class: "muted" }, ` \u2014 ${c.note}`) : null]))),
-      del,
-    ]);
-  }) : el("p", { class: "muted small" }, "When you change clubs, the bag you had is kept here with the dates you used it."));
-
-  const sortBtn = el("button", { type: "button", class: "btn ghost" }, "Sort Driver \u2192 Putter");
-  sortBtn.addEventListener("click", () => {
-    const f = clubs.filter((c) => c.cat && c.type).sort((a, b) => clubRank(clubLabel(a)) - clubRank(clubLabel(b)));
-    clubs = [...f, ...Array.from({ length: MAX_CLUBS - f.length }, blank)];
-    draw(); save();
+  /* ---------- add a club ---------- */
+  const cat = el("select", { "aria-label": "Club" }, [el("option", { value: "" }, "Club\u2026"), ...CLUB_CATS.map((k) => el("option", { value: k }, k))]);
+  const type = el("select", { "aria-label": "Type", disabled: true }, el("option", { value: "" }, "Type\u2026"));
+  const brand = el("input", { placeholder: "Brand", maxLength: 40, autocomplete: "off", "aria-label": "Brand" });
+  const model = el("input", { placeholder: "Model", maxLength: 50, autocomplete: "off", "aria-label": "Model" });
+  const note = el("input", { placeholder: "Note (optional)", maxLength: 120, autocomplete: "off", "aria-label": "Note" });
+  cat.addEventListener("change", () => {
+    mount(type, [el("option", { value: "" }, "Type\u2026"), ...(CLUB_TYPES[cat.value] || []).map((t) => el("option", { value: t }, t))]);
+    type.disabled = !cat.value;
+    if (cat.value === "Putter") type.value = "Putter";
   });
+  const addBtn = el("button", { class: "btn", type: "submit" }, "Add club");
+  const addForm = el("form", {
+    class: "club-add",
+    onSubmit: async (e) => {
+      e.preventDefault();
+      if (!cat.value || !type.value) { flash("Pick the club and its type.", "error"); return; }
+      const c = { id: newClubId(), cat: cat.value, type: type.value, brand: brand.value.trim(), model: model.value.trim(), note: note.value.trim() };
+      const dupe = library.find((x) => x.cat === c.cat && x.type === c.type && x.brand.toLowerCase() === c.brand.toLowerCase() && x.model.toLowerCase() === c.model.toLowerCase());
+      if (dupe) { flash(`${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} is already in your list.`, "error"); return; }
+      library = [c, ...library];
+      if (inBag.length < MAX_CLUBS) inBag = [...inBag, c.id]; // new clubs go straight in the bag (if there's room)
+      [brand, model, note].forEach((x) => { x.value = ""; });
+      draw(); await save();
+    },
+  }, [cat, type, brand, model, note, addBtn]);
+
+  /* ---------- the list and the bag ---------- */
+  const listBox = el("div");
+  const bagBox = el("div");
+  const toggle = (c) => {
+    if (inBag.includes(c.id)) inBag = inBag.filter((id) => id !== c.id);
+    else if (inBag.length >= MAX_CLUBS) { flash(`Your bag already has ${MAX_CLUBS} clubs. Take one out first.`, "error"); return; }
+    else inBag = [...inBag, c.id];
+    draw(); save();
+  };
+  const sorted = (list) => [...list].sort((a, b) => clubRank(clubLabel(a)) - clubRank(clubLabel(b)) || clubMake(a).localeCompare(clubMake(b)));
+  function draw() {
+    mount(listBox, library.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain club-table" }, [
+      el("thead", {}, el("tr", {}, ["Club", "Brand / model", "Note", "Rounds", "Avg SG", ""].map((h) => el("th", { class: ["Rounds", "Avg SG"].includes(h) ? "num" : "" }, h)))),
+      el("tbody", {}, sorted(library).map((c) => {
+        const on = inBag.includes(c.id);
+        const u = usage(c);
+        const del = el("button", { type: "button", class: "entry-del", "aria-label": `Remove ${clubLabel(c)} from your list`, title: "Remove from list" }, "\u2715");
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!confirmAction(`Remove ${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} from your list? Shots already entered with it keep it.`)) return;
+          library = library.filter((x) => x.id !== c.id); inBag = inBag.filter((id) => id !== c.id); draw(); save();
+        });
+        const tr = el("tr", { class: "club-row" + (on ? " in-bag" : ""), tabindex: "0", role: "button", "aria-pressed": on ? "true" : "false",
+          title: on ? "In your bag. Tap to take it out." : "Tap to put it in your bag." }, [
+          el("td", {}, [el("strong", {}, clubLabel(c)), on ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null,
+            clubMake(c) ? el("span", { class: "mobile-make" }, clubMake(c)) : null]), // brand / model under the name on phones
+          el("td", {}, clubMake(c) || el("span", { class: "muted" }, "\u2014")),
+          el("td", { class: "muted" }, c.note || ""),
+          el("td", { class: "num" }, String(u.used)),
+          el("td", { class: "num", style: u.avg == null ? "" : `color:${sgColor(u.avg)}` }, u.avg == null ? "\u2014" : fmtSG(u.avg)),
+          el("td", { class: "actions" }, del),
+        ]);
+        tr.addEventListener("click", () => toggle(c));
+        tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(c); } });
+        return tr;
+      })),
+    ])) : el("p", { class: "empty" }, "No clubs yet. Add the clubs you play above."));
+    const bag = sorted(inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean));
+    mount(bagBox, bag.length ? el("ul", { class: "bag-chips" }, bag.map((c) => {
+      const b = el("button", { type: "button", class: "bag-chip", title: "Take it out of your bag" }, [el("strong", {}, clubLabel(c)), clubMake(c) ? el("span", {}, clubMake(c)) : null, el("span", { class: "bag-x", "aria-hidden": "true" }, "\u2715")]);
+      b.addEventListener("click", () => toggle(c));
+      return el("li", {}, b);
+    })) : el("p", { class: "muted" }, "Your bag is empty. Tap clubs in the list above to put them in."));
+    bagTitle.textContent = `Your bag (${bag.length} of ${MAX_CLUBS})`;
+  }
+  const bagTitle = el("h3", {}, "Your bag");
 
   mount(main, [
-    el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), el("p", { class: "muted" }, ["Up to 14 clubs. These become the Club choices on each shot in Data Entry. ", status])]),
-    el("section", { class: "panel bag-panel" }, [
-      el("div", { class: "bag-top" }, [count, sortBtn]),
-      el("div", { class: "bag-head" }, ["#", "Club", "Type", "Brand", "Model", "Note", ""].map((h) => el("span", {}, h))),
-      list,
-    ]),
-    el("section", { class: "panel bag-panel" }, [el("h3", {}, "Old bags"), oldBox]),
+    el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
+    el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm]),
+    el("section", { class: "panel bag-panel" }, [el("h3", {}, "All your clubs"), listBox]),
+    el("section", { class: "panel bag-panel your-bag" }, [bagTitle, bagBox]),
   ]);
-  draw(); drawOld();
+  draw();
 
-  const unsub = watchBagDoc(uid, (d) => {
-    history = d.history || [];
-    drawOld();
-    if (loaded) return; // after the first load, the page is the source of truth for the current clubs
+  const unBag = watchBagDoc(uid, (d) => {
+    if (loaded) return; // after the first load the page is the source of truth
     loaded = true;
-    since = d.since || null;
-    const saved = (d.clubs || []).map((c) => ({ cat: c.cat, type: c.type, brand: c.brand || "", model: c.model || "", note: c.note || "" }));
-    // A separate copy: editing the rows must not change the bag you started with.
-    opened = { clubs: saved.map((c) => ({ ...c })), from: since, makeup: bagMakeup(saved) };
-    clubs = [...saved.map((c) => ({ ...c })), ...Array.from({ length: Math.max(0, MAX_CLUBS - saved.length) }, blank)].slice(0, MAX_CLUBS);
+    ({ library, inBag } = libraryFrom(d));
     draw();
+    if (!Array.isArray(d.library) && library.length) save(); // first visit after the update: keep the built list
   });
-
-  // Leaving the page: if the clubs themselves changed, file the bag you started with under Old bags.
-  const archive = async () => {
-    if (archived || !opened || !opened.clubs.length) return;
-    if (bagMakeup(filled()) === opened.makeup) return;
-    archived = true;
-    clearTimeout(timer);
-    try { await saveBag(uid, filled(), { history, oldBag: { clubs: opened.clubs, from: opened.from } }); } catch { archived = false; }
-  };
-  window.addEventListener("pagehide", archive);
-  return () => { unsub(); window.removeEventListener("pagehide", archive); archive(); };
+  const unRounds = watchPlayerRounds(myEntryKey(state), (rs) => { rounds = rs; draw(); });
+  return () => { unBag(); unRounds(); };
 }

@@ -597,7 +597,13 @@ function renderRound(main, params, flash, previewClient) {
       // Done is always there; it switches on as soon as the shot has a start, a finish and the distance left.
       ro ? null : (() => {
         const d = el("button", { type: "button", class: "btn ghost done-shot", disabled: !isComplete(s), title: "Fill in where it finished to fold this shot" }, "Done \u2713");
-        d.addEventListener("click", () => { if (!isComplete(s)) return; s.open = false; drawHole(i); });
+        d.addEventListener("click", () => {
+          if (!isComplete(s)) return;
+          s.open = false; drawHole(i);
+          // Bring the next shot to the top of the screen, ready to fill in.
+          const next = holeBox.querySelector(`[data-i="${i + 1}"]`);
+          if (next) window.scrollTo({ top: window.scrollY + next.getBoundingClientRect().top - 8, behavior: "smooth" });
+        });
         return d;
       })(),
     ]);
