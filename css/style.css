@@ -1224,3 +1224,67 @@ table.stats td:first-child { white-space: nowrap; }
 .hole-strip .hole-chip.eagle { border-color: #b4ff39; box-shadow: 0 0 10px rgba(180, 255, 57, 0.35); }
 .hole-strip .hole-chip.bogey { border-color: #ff9f0a; }
 .hole-strip .hole-chip.double { border-color: #ff453a; }
+.done-shot { display: block; margin: 0.9rem auto 0; min-height: 2.75rem; padding: 0.55rem 1.6rem; }
+.done-shot[disabled] { opacity: 0.35; }
+
+/* --- Hole chips: compact (a full nine fits on desktop; phones scroll a little) --- */
+.hole-chip { width: 3.5rem; min-height: 3.35rem; padding: 0.3rem 0.1rem; border-radius: 10px; gap: 0; }
+.hole-chip .hc-n { font-size: 0.92rem; }
+.hole-chip .hc-res { font-size: 0.56rem; letter-spacing: -0.02em; }
+.hole-chip .hc-tot { font-size: 0.66rem; }
+.hole-strip { gap: 0.3rem; }
+@media (max-width: 520px) {
+  .hole-chip { width: 3.15rem; min-height: 3.15rem; }
+  .hole-chip .hc-n { font-size: 0.85rem; }
+  .hole-chip .hc-res { font-size: 0.52rem; }
+}
+
+/* --- WITB: club, type, brand, model, note --- */
+.bag-panel + .bag-panel { margin-top: 1.25rem; }
+.bag-panel { max-width: 72rem; }
+.bag-head, .bag-row { grid-template-columns: 1.6rem minmax(7.5rem, 1fr) minmax(5.5rem, 0.7fr) minmax(6.5rem, 0.9fr) minmax(7rem, 1fr) minmax(8rem, 1.3fr) 2.75rem; }
+.old-bags { display: flex; flex-direction: column; gap: 0.5rem; }
+.old-bag { border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem 0.9rem; background: rgba(255, 255, 255, 0.03); }
+.old-bag summary { cursor: pointer; min-height: 2rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.old-bag ul { margin: 0.6rem 0 0.4rem; padding-left: 1.1rem; display: grid; gap: 0.25rem; }
+@media (max-width: 760px) {
+  .bag-head { display: none; }
+  .bag-row { grid-template-columns: 1.4rem 1fr 1fr 2.75rem; grid-template-areas: "n cat type x" "n brand model x" "n note note x"; row-gap: 0.35rem;
+    padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  .bag-row > :nth-child(1) { grid-area: n; } .bag-row > :nth-child(2) { grid-area: cat; } .bag-row > :nth-child(3) { grid-area: type; }
+  .bag-row > :nth-child(4) { grid-area: brand; } .bag-row > :nth-child(5) { grid-area: model; } .bag-row > :nth-child(6) { grid-area: note; }
+  .bag-row > :nth-child(7) { grid-area: x; }
+}
+
+/* --- Header: Questions and Account look exactly like the other header links --- */
+.rail .rail-foot a.ask-link, .rail .rail-foot a.ask-link:hover, .rail .rail-foot a.ask-link[aria-current="page"], .rail .rail-foot .account-btn {
+  font: 500 0.88rem/1.2 var(--font-body); letter-spacing: -0.005em; padding: 0.55rem 0.95rem; border: 0; border-radius: 10px;
+  background: transparent; box-shadow: none; min-height: 0; color: var(--ink-2); position: relative;
+}
+.rail .rail-foot a.ask-link:hover, .rail .rail-foot .account-btn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.05); }
+.rail .rail-foot a.ask-link[aria-current="page"], .rail .rail-foot .account-btn[aria-expanded="true"] { color: var(--ink); background: rgba(255, 255, 255, 0.05); }
+.rail .rail-foot a.ask-link[aria-current="page"]::after {
+  content: ""; position: absolute; left: 0.95rem; right: 0.95rem; bottom: 0.2rem; height: 2px; border-radius: 2px; background: var(--accent);
+}
+.rail .rail-foot a.ask-link .badge { top: 0; right: 0.1rem; }
+.rail-foot { gap: 0.25rem; }
+@media (max-width: 820px) {
+  .rail .rail-foot a.ask-link, .rail .rail-foot .account-btn { padding: 0.45rem 0.7rem; font-size: 0.82rem; }
+}
+.entry-bar .bar-spacer { flex: 1; max-width: 18rem; }
+
+/* --- Analyst chat --- */
+.chat-tabs { margin-bottom: 1.25rem; }
+.chat { max-width: 46rem; margin: 0 auto; display: flex; flex-direction: column; }
+.chat-list { list-style: none; margin: 0.5rem 0 0.75rem; padding: 0.25rem; display: flex; flex-direction: column; gap: 0.55rem;
+  max-height: min(60vh, 34rem); min-height: 12rem; overflow-y: auto; overscroll-behavior: contain; }
+.chat-msg { align-self: flex-start; max-width: 85%; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); border-radius: 16px 16px 16px 6px; padding: 0.55rem 0.8rem; }
+.chat-msg.mine { align-self: flex-end; background: var(--accent-soft); border-color: rgba(200, 169, 126, 0.3); border-radius: 16px 16px 6px 16px; }
+.chat-meta { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.78rem; }
+.chat-meta strong { color: var(--ink); }
+.chat-body { margin: 0.2rem 0 0; white-space: pre-wrap; word-break: break-word; }
+.chat-del { margin-left: auto; border: 0; background: transparent; color: var(--muted); cursor: pointer; min-width: 1.75rem; min-height: 1.75rem; border-radius: 999px; }
+.chat-del:hover { color: var(--danger); background: var(--danger-soft); }
+.chat-form { display: flex; gap: 0.5rem; align-items: flex-end; }
+.chat-form textarea { flex: 1; margin: 0; min-height: 2.9rem; max-height: 9rem; resize: vertical; font-size: 16px; }
+.chat-form .btn { min-height: 2.9rem; }

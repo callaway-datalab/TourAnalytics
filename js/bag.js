@@ -1,6 +1,7 @@
 // What's in the bag (WITB): up to 14 clubs per person, stored at bags/{uid}.
-//   { clubs: [{ cat, type, model }], updatedAt }
-import { doc, setDoc, onSnapshot, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+//   { clubs: [{ cat, type, brand, model, note }], since, history: [{ clubs, from, to }], updatedAt }
+// history ("Old bags") keeps each earlier make-up of the bag with the dates it was in use.
+import { doc, setDoc, updateDoc, onSnapshot, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase-init.js";
 
 export const MAX_CLUBS = 14;
@@ -37,12 +38,33 @@ export function clubRank(label) {
   return 6;
 }
 
-export function watchBag(uid, cb) {
-  return onSnapshot(doc(db, "bags", uid), (s) => cb(s.exists() ? (s.data().clubs || []) : []), () => cb([]));
+/** Brand and model together, e.g. "Titleist T100" (older entries kept them in one "model" field). */
+export const clubMake = (c) => [c?.brand, c?.model].filter((x) => x && String(x).trim()).join(" ");
+
+/** The whole bag document: { clubs, since, history }. */
+export function watchBagDoc(uid, cb) {
+  return onSnapshot(doc(db, "bags", uid), (s) => cb(s.exists() ? s.data() : { clubs: [], history: [] }), () => cb({ clubs: [], history: [] }));
 }
+export function watchBag(uid, cb) { return watchBagDoc(uid, (d) => cb(d.clubs || [])); }
 export async function getBag(uid) {
   try { const s = await getDoc(doc(db, "bags", uid)); return s.exists() ? (s.data().clubs || []) : []; } catch { return []; }
 }
-export function saveBag(uid, clubs) {
-  return setDoc(doc(db, "bags", uid), { clubs: clubs.slice(0, MAX_CLUBS), updatedAt: serverTimestamp() });
+/** Save the current bag. Pass oldBag ({ clubs, from }) to file the make-up it replaced under Old bags. */
+export function saveBag(uid, clubs, { history, since, oldBag } = {}) {
+  const next = { clubs: clubs.slice(0, MAX_CLUBS), updatedAt: serverTimestamp() };
+  if (oldBag) {
+    next.history = [{ clubs: oldBag.clubs, from: oldBag.from || null, to: new Date().toISOString().slice(0, 10) }, ...(history || [])].slice(0, 100);
+    next.since = new Date().toISOString().slice(0, 10);
+  } else {
+    if (history) next.history = history;
+    next.since = since || new Date().toISOString().slice(0, 10);
+  }
+  return setDoc(doc(db, "bags", uid), next);
 }
+/** Remove one old bag from the history. */
+export function saveBagHistory(uid, history) {
+  return updateDoc(doc(db, "bags", uid), { history });
+}
+/** The make-up of a bag, ignoring notes: used to tell whether the clubs themselves changed. */
+export const bagMakeup = (clubs) => JSON.stringify((clubs || []).filter((c) => c.cat && c.type)
+  .map((c) => [c.cat, c.type, (c.brand || "").trim().toLowerCase(), (c.model || "").trim().toLowerCase()]).sort());

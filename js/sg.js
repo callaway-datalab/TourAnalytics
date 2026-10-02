@@ -358,8 +358,11 @@ export function filterOptions(rounds, cat) {
   const lieRank = (l) => { const i = LIE_ORDER.indexOf(squash(l)); return i < 0 ? 99 : i; };
   const dists = uniq(shots.map((s) => s.dist));
   const clubs = uniq(shots.map((s) => s.club));
+  const clubCats = {};
+  for (const s of shots) if (s.club && !clubCats[s.club]) clubCats[s.club] = s.clubCat || "Other";
   return {
     club: clubs.sort((a, b) => clubOrder(a) - clubOrder(b) || a.localeCompare(b)),
+    clubCats, // club -> its bag group (Driver, Fairway Wood, Hybrid, Iron, Wedge, Putter)
     year: uniq(rounds.map((r) => r.year)).sort().reverse(),
     event: uniq(rounds.map((r) => r.event)),
     roundNo: uniq(rounds.map((r) => r.roundNo)).sort(byNum),

@@ -3,6 +3,7 @@ import { getState } from "../auth.js";
 import { watchMyThreads, watchSharedWithMe, watchAdminThreads, watchForwardedToMe } from "../store.js";
 import { threadActions } from "../threadActions.js";
 import { effectiveTeam } from "../preview.js";
+import { withChatTabs } from "../chatTabs.js";
 
 // My Questions. Three ways to arrive:
 //  - a player or team member looking at their own questions;
@@ -40,7 +41,9 @@ export async function render(main, { previewClient, flash }) {
     : null;
 
   const previewName = previewingTeam ? team.name : previewClient?.label;
-  mount(main, [
+  const put = (nodes) => (isAnalyst ? (stopTabs = withChatTabs(main, nodes, { flash })) : mount(main, nodes));
+  let stopTabs = () => {};
+  put([
     fwdSection,
     el("div", { class: "page-actions" }, [
       el("a", { class: "btn", href: "#/questions/new" }, "Ask a new question"),
@@ -53,7 +56,7 @@ export async function render(main, { previewClient, flash }) {
     previewingPlayer ? null : list,
     previewingPlayer ? null : archived,
     sharedSection,
-  ]);
+  ].filter(Boolean));
 
   // Links: your own questions open normally; in a preview, questions open in the admin inbox.
   const hrefFor = (t) => (readOnly || (previewingPlayer && !t.sample) ? `#/admin/questions/${t.id}` : `#/questions/${t.id}`);
@@ -111,5 +114,5 @@ export async function render(main, { previewClient, flash }) {
       ])) : el("p", { class: "empty" }, "Nothing forwarded to you right now."));
     }));
   }
-  return () => unsubs.forEach((u) => u());
+  return () => { unsubs.forEach((u) => u()); stopTabs(); };
 }

@@ -31,7 +31,8 @@ export function strokesGained(st) {
 /** Category of a stroke, the way the Tour data splits them. */
 export function categoryOf(st, strokeIndex, par) {
   if (st.startLie === "Green") return "PUTT";
-  if (strokeIndex === 0 && par >= 4) return "OTT";
+  // Off-the-Tee is the tee shot on a par 4 or 5 only; a par 3 tee shot is an Approach.
+  if (strokeIndex === 0 && Number(par) >= 4) return "OTT";
   const d = Number(st.startDist) || 0;
   return d <= 50 ? "ARG" : "APP";
 }
@@ -51,6 +52,18 @@ export function distanceBucket(cat, st, par) {
   return d < 50 ? "50-75 yds" : bucket(d, APP_BUCKETS, "yds", "250+ yds");
 }
 
+/** The bag group of a club label, for shots saved before groups were recorded. */
+export function clubGroupOf(label) {
+  const s = String(label || "");
+  if (/^driver/i.test(s)) return "Driver";
+  if (/^\d+w$/i.test(s)) return "Fairway Wood";
+  if (/^\d+H$/.test(s)) return "Hybrid";
+  if (/^\d+i$/i.test(s) || /^PW$/i.test(s)) return "Iron";
+  if (/wedge/i.test(s)) return "Wedge";
+  if (/putter/i.test(s)) return "Putter";
+  return "Other";
+}
+
 /** Strokes on a hole, its score, and whether it's finished. */
 export function holeScore(strokes = []) {
   const done = strokes.some((s) => s.endLie === "Holed");
@@ -67,7 +80,9 @@ export function roundToPrepared(round) {
       const sg = strokesGained(st);
       if (sg === null) return;
       const cat = categoryOf(st, i, h.par);
-      shots.push({ cat, sg, w: 1, lie: st.startLie, dist: distanceBucket(cat, st, h.par), club: st.club || null });
+      // Club: "7i · Titleist T100" when the brand / model is known; its group (Iron, Wedge…) for the filter.
+      const club = st.club ? (st.clubMake ? `${st.club} \u00b7 ${st.clubMake}` : st.club) : null;
+      shots.push({ cat, sg, w: 1, lie: st.startLie, dist: distanceBucket(cat, st, h.par), club, clubCat: st.club ? (st.clubCat || clubGroupOf(st.club)) : null });
     });
   }
   const d = new Date(round.date);

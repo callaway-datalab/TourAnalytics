@@ -1,20 +1,21 @@
 import { el, mount, formatWhen } from "../ui.js";
 import { watchAdminThreads, adminAllClients } from "../store.js";
 import { threadActions } from "../threadActions.js";
+import { withChatTabs } from "../chatTabs.js";
 
 export async function render(main, { flash }) {
   const list = el("ul", { class: "rows" });
   const archivedList = el("ul", { class: "rows" });
   const archivedCount = el("span", { class: "muted" });
 
-  mount(main, [
+  const stopTabs = withChatTabs(main, [
     list,
     el("details", { class: "archive" }, [
       el("summary", {}, ["Archived questions ", archivedCount]),
       el("p", { class: "muted" }, "Questions marked as completed, by you or the player. A new message moves one back up."),
       archivedList,
     ]),
-  ]);
+  ], { flash });
 
   // Show players by name (the ID when the data has no name).
   let names = new Map();
@@ -48,5 +49,5 @@ export async function render(main, { flash }) {
     mount(archivedList, archived.length ? archived.map(row) : el("p", { class: "empty" }, "Nothing archived yet."));
   }
 
-  return unsub;
+  return () => { unsub(); stopTabs(); };
 }

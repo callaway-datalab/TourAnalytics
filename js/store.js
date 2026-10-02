@@ -98,7 +98,8 @@ export async function updateMyName(name) {
  *  clicked (Firebase's rule, so nobody can take over an account with a typo'd address). */
 export async function changeMyEmail(currentPassword, newEmail) {
   const user = auth.currentUser;
-  await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, currentPassword));
+  // Firebase asks for a recent sign-in before changing email; the current password proves it.
+  if (currentPassword) await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, currentPassword));
   await verifyBeforeUpdateEmail(user, newEmail.trim());
 }
 

@@ -126,6 +126,7 @@ export function sgDashboard(container, opts) {
         const c = v.split("|")[0];
         if (!st.cats.length) st.cats = [c]; else if (!st.cats.includes(c)) st.cats = [...st.cats, c];
       }
+      if (key === "club") followClubs();
       st.openFilter = key;
       draw();
     };
@@ -138,7 +139,7 @@ export function sgDashboard(container, opts) {
       rows.push(el("label", { class: "ms-row" }, [box, el("span", {}, o.label)]));
     }
     const all = el("button", { type: "button", class: "link ms-all" }, `All (clear)`);
-    all.addEventListener("click", () => { st[key] = []; st.openFilter = key; draw(); });
+    all.addEventListener("click", () => { st[key] = []; if (key === "club") followClubs(); st.openFilter = key; draw(); });
     const panel = el("div", { class: "ms-panel", hidden: !open, role: "group", "aria-label": label }, [
       el("div", { class: "ms-top" }, [el("strong", {}, label), all]),
       el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, "Nothing to pick for this selection.")),
@@ -151,6 +152,25 @@ export function sgDashboard(container, opts) {
       st.openFilter = nowOpen ? key : null;
     });
     return el("div", { class: "ms" }, [el("span", { class: "ms-label" }, label), btn, panel]);
+  }
+
+  // Clubs nested under their bag group (Driver, Fairway Wood, Hybrid, Iron, Wedge, Putter), each with the
+  // brand / model you used it as, e.g. "7i · Titleist T100".
+  const CLUB_GROUPS = ["Driver", "Fairway Wood", "Hybrid", "Iron", "Wedge", "Putter", "Other"];
+  function clubOptions(opt) {
+    return opt.club.map((c) => ({ value: c, label: c, group: opt.clubCats[c] || "Other" }))
+      .sort((a, b) => CLUB_GROUPS.indexOf(a.group) - CLUB_GROUPS.indexOf(b.group));
+  }
+  // Picking clubs shows only the categories those clubs were used in (a driver: Off-the-Tee; a putter:
+  // Putting; a 7-iron: Approach, plus Off-the-Tee if it was hit off a par-4 tee). Clearing them shows all.
+  function followClubs() {
+    if (!st.club.length) { st.cats = []; return; }
+    const base = me ? me.rounds : field.flatMap((p) => p.rounds);
+    const picked = new Set(st.club);
+    const cats = new Set();
+    for (const rd of base) for (const sh of rd.shots) if (picked.has(sh.club)) cats.add(sh.cat);
+    st.cats = CATEGORIES.map(([k]) => k).filter((k) => cats.has(k));
+    st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
   }
 
   function filterBar(opt) {
@@ -172,7 +192,7 @@ export function sgDashboard(container, opts) {
       multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
       multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
       // Club: only when shots have clubs (rounds entered with WITB clubs).
-      opt.club.length ? multi("Club", "club", simple(opt.club), "All clubs", { plural: "clubs" }) : null,
+      opt.club.length ? multi("Club", "club", clubOptions(opt), "All clubs", { plural: "clubs" }) : null,
       reset,
     ]);
   }
@@ -436,11 +456,11 @@ export function sgDashboard(container, opts) {
           pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: single || signColors, pointBorderColor: single || signColors,
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
       : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors }];
-    // Reference marks are blue dashes: "All players" (a dash at each bar) and "Average" (a dashed line).
+    // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
     if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#0a84ff", borderDash: [5, 4], borderWidth: 2 });
-    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#0a84ff", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 });
+    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 }); // yellow dashes
     const o = baseOptions();
-    // Legend: only the reference marks (no "SG / round" entry), each drawn as a short blue dash.
+    // Legend: only the reference marks (no "SG / round" entry), each drawn as a short dash in its color.
     o.plugins.legend = { display: !!(compare || average !== undefined), labels: {
       color: "#a1a1a6", boxWidth: 22, boxHeight: 0, usePointStyle: false, font: { family: "Inter, system-ui, sans-serif", size: 12 },
       filter: (item) => item.datasetIndex !== 0,

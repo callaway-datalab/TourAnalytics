@@ -136,8 +136,6 @@ function accountMenu(state) {
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     el("a", { class: "menu-item", href: "#/witb", role: "menuitem", title: "What's in the bag" }, "WITB"),
-    reset,
-    note,
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
   ]);
   const wrap = el("div", { class: "account" }, [btn, menu]);
@@ -172,9 +170,10 @@ export function renderShell(root, { previewClient, currentRoute }) {
       }));
 
   const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
+  // Questions first, then Account; both look like the other header links.
   const footItems = [
-    accountMenu(state),
     el("a", { class: "ask-link", href: admin ? "#/admin/questions" : "#/questions", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, [admin || (state.isTeam && state.profile?.kind === "analyst") ? "Questions" : "Ask a question", askBadge]),
+    accountMenu(state),
   ];
 
   mount(root, el("div", { class: "shell" }, [

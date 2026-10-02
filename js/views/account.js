@@ -41,7 +41,6 @@ export async function render(main, { flash }) {
 
   /* ---- email ---- */
   const emailIn = el("input", { type: "email", value: state.user.email || "", required: true, autocomplete: "email" });
-  const emailPw = el("input", { type: "password", required: true, autocomplete: "current-password" });
   const emailBtn = el("button", { class: "btn", type: "submit" }, "Change email");
   const emailForm = el("form", {
     class: "stack panel profile-card",
@@ -51,21 +50,24 @@ export async function render(main, { flash }) {
       if (next === (state.user.email || "").toLowerCase()) { flash("That's already your email.", "error"); return; }
       emailBtn.disabled = true;
       try {
-        await changeMyEmail(emailPw.value, next);
+        await changeMyEmail(current.value, next); // the Password section's "Current password", if typed
         flash(`Check ${next} for a link to confirm the change. Until you click it, keep signing in with ${state.user.email}.`, "ok");
-        emailPw.value = "";
-      } catch (err) { flash(FRIENDLY[err.code] || "Couldn't change your email. Try again.", "error"); }
+      } catch (err) {
+        if (err.code === "auth/requires-recent-login" || err.code === "auth/missing-password") {
+          flash("For security, type your current password in the Password section, then tap Change email again.", "error");
+          current.focus();
+        } else flash(FRIENDLY[err.code] || "Couldn't change your email. Try again.", "error");
+      }
       finally { emailBtn.disabled = false; }
     },
   }, [
     el("h2", {}, "Email"),
-    el("label", {}, ["Email", emailIn, el("small", {}, "You sign in with this. We'll email the new address a link; it switches once you click it.")]),
-    el("label", {}, ["Current password", emailPw]),
+    el("label", {}, ["Email", emailIn, el("small", {}, "You sign in with this. We'll email the new address a link; it switches once you click it. If we ask, type your current password in the Password section first.")]),
     el("div", {}, emailBtn),
   ]);
 
   /* ---- password ---- */
-  const current = el("input", { type: "password", autocomplete: "current-password", required: true });
+  const current = el("input", { type: "password", autocomplete: "current-password" });
   const next = el("input", { type: "password", autocomplete: "new-password", minLength: MIN_PASSWORD, required: true });
   const confirm = el("input", { type: "password", autocomplete: "new-password", minLength: MIN_PASSWORD, required: true });
   const submit = el("button", { class: "btn", type: "submit" }, "Change password");
@@ -73,6 +75,7 @@ export async function render(main, { flash }) {
     class: "stack panel profile-card",
     onSubmit: async (e) => {
       e.preventDefault();
+      if (!current.value) { flash("Type your current password.", "error"); current.focus(); return; }
       if (next.value !== confirm.value) { flash("The two new passwords don't match.", "error"); return; }
       if (next.value.length < MIN_PASSWORD) { flash(`Use a new password of at least ${MIN_PASSWORD} characters.`, "error"); return; }
       submit.disabled = true;

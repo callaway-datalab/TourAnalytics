@@ -11,7 +11,7 @@ import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlaye
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
 import { readImageText, parseScorecard } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
-import { getBag, clubLabel, clubRank } from "../bag.js";
+import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
 
 // Short lie names for the narrow shot bands (the full words are in the band's label).
@@ -277,7 +277,7 @@ function renderRound(main, params, flash, previewClient) {
   // Your clubs (WITB), for the optional Club on each shot.
   let bag = [];
   getBag(state.user.uid).then((clubs) => {
-    bag = clubs.map((c) => ({ label: clubLabel(c), model: c.model || "" })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
+    bag = clubs.map((c) => ({ label: clubLabel(c), model: clubMake(c), cat: c.cat })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
     if (round && holeIdx >= 0 && bag.length) drawHole();
   });
   const hole = () => round.holes[holeIdx];
@@ -294,14 +294,29 @@ function renderRound(main, params, flash, previewClient) {
       holeIdx = r.status === "complete" ? -1 : Math.max(0, next);
       loadHole();
       draw();
-    } else if (!editingNow) {
-      // Our own save coming back: just refresh the score and hole strip, never the shots on screen.
-      if (holeIdx >= 0 && JSON.stringify(r.shots?.[key(hole())] || []) === JSON.stringify(cleanStrokes())) { drawStrip(); updateScore(); return; }
-      // Someone else (or another device) changed it: refresh.
-      if (holeIdx >= 0) loadHole();
-      draw();
+    } else {
+      // A save coming back from the database. The database doesn't keep field order, so compare the
+      // contents, not the text. Our own save (or anything while you're typing in this hole) only
+      // refreshes the score and the hole strip, never the shots on screen.
+      if (holeIdx < 0) { draw(); return; }
+      const typing = editingNow || holeBox.contains(document.activeElement);
+      if (typing || sameShots(r.shots?.[key(hole())], cleanStrokes())) { drawStrip(); updateScore(); return; }
+      // Someone else (another device) really changed this hole: update it in place, keeping open shots
+      // open and the page where it is.
+      const wasOpen = strokes.map((x) => x.open);
+      loadHole();
+      strokes.forEach((x, j) => { if (wasOpen[j]) x.open = true; });
+      drawHole(); updateScore();
     }
   });
+
+  // Same shots, ignoring field order and how numbers were typed ("150" vs 150).
+  function sameShots(a = [], b = []) {
+    const canon = (list) => JSON.stringify((list || []).map((o) => Object.keys(o).sort()
+      .filter((k) => o[k] !== undefined && o[k] !== null && o[k] !== "" && k !== "open")
+      .map((k) => [k, /Dist$/.test(k) ? Number(o[k]) : o[k]])));
+    return canon(a) === canon(b);
+  }
 
   function loadHole() {
     if (holeIdx < 0) return;
@@ -339,8 +354,8 @@ function renderRound(main, params, flash, previewClient) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 600);
   }
-  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart, club }) => ({
-    ...(club ? { club } : {}),
+  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart, club, clubMake, clubCat }) => ({
+    ...(club ? { club } : {}), ...(club && clubMake ? { clubMake } : {}), ...(club && clubCat ? { clubCat } : {}),
     startLie, startDist: startDist === "" || startDist === null ? null : Number(startDist), endLie,
     endDist: endLie === "Holed" ? 0 : endDist === "" || endDist === null || endDist === undefined ? null : Number(endDist),
     ...(manualStart ? { manualStart: true } : {}),
@@ -486,6 +501,11 @@ function renderRound(main, params, flash, previewClient) {
       tag.textContent = sg === null ? "" : `${fmtSG(sg)} SG`;
       tag.style.color = sg === null ? "" : sgColor(sg);
     });
+    holeBox.querySelectorAll(".shot-card").forEach((card) => {
+      const s = strokes[Number(card.dataset.i)];
+      const done = card.querySelector(".done-shot");
+      if (s && done) done.disabled = !isComplete(s);
+    });
     const hs = holeScore(strokes), h = hole();
     const res = holeBox.querySelector(".hole-result");
     if (res && hs.done) res.textContent = `${hs.strokes} \u00b7 ${scoreName(hs.strokes - h.par)}`;
@@ -497,12 +517,19 @@ function renderRound(main, params, flash, previewClient) {
       return s.club ? el("p", { class: "club-note" }, s.club)
         : el("p", { class: "muted small club-note" }, ["Fill out ", el("a", { href: "#/witb" }, "WITB"), " in the Account section to track club usage."]);
     }
+    // The shot keeps the club, its brand / model and its group, so stats can sort by any of them.
+    const inBag = bag.findIndex((c) => c.label === s.club && (c.model || "") === (s.clubMake || ""));
     const sel = el("select", { class: "club-select", "aria-label": "Club", disabled: ro }, [
       el("option", { value: "" }, "\u2014"),
-      ...bag.map((c) => el("option", { value: c.label, selected: s.club === c.label }, c.model ? `${c.label} \u00b7 ${c.model}` : c.label)),
-      ...(s.club && !bag.some((c) => c.label === s.club) ? [el("option", { value: s.club, selected: true }, s.club)] : []),
+      ...bag.map((c, i) => el("option", { value: String(i), selected: i === inBag }, c.model ? `${c.label} \u00b7 ${c.model}` : c.label)),
+      ...(s.club && inBag < 0 ? [el("option", { value: "kept", selected: true }, s.clubMake ? `${s.club} \u00b7 ${s.clubMake}` : s.club)] : []),
     ]);
-    sel.addEventListener("change", () => { s.club = sel.value || undefined; changed(false); });
+    sel.addEventListener("change", () => {
+      if (sel.value === "kept") return;
+      const c = bag[Number(sel.value)];
+      s.club = c?.label || undefined; s.clubMake = c?.model || undefined; s.clubCat = c?.cat || undefined;
+      changed(false);
+    });
     return sel;
   }
 
@@ -560,7 +587,12 @@ function renderRound(main, params, flash, previewClient) {
         changed(true, i);
       }, `Shot ${i + 1} result`),
       s.endLie === "Holed" ? el("p", { class: "holed-note" }, "\u26F3 In the hole") : distInput(s.endDist, unitFor(s.endLie === "Penalty" ? s.startLie : s.endLie), (v) => { s.endDist = v; changed(false); }, `Shot ${i + 1} distance left`, "end"),
-      isComplete(s) && !ro ? (() => { const d = el("button", { type: "button", class: "link done-shot" }, "Done \u2713"); d.addEventListener("click", () => { s.open = false; drawHole(i); }); return d; })() : null,
+      // Done is always there; it switches on as soon as the shot has a start, a finish and the distance left.
+      ro ? null : (() => {
+        const d = el("button", { type: "button", class: "btn ghost done-shot", disabled: !isComplete(s), title: "Fill in where it finished to fold this shot" }, "Done \u2713");
+        d.addEventListener("click", () => { if (!isComplete(s)) return; s.open = false; drawHole(i); });
+        return d;
+      })(),
     ]);
     // Starting on another shot folds the finished ones away (without moving this one).
     return card; // a shot folds into a band only when you tap Done
@@ -568,8 +600,10 @@ function renderRound(main, params, flash, previewClient) {
 
   function drawBar() {
     const last = holeIdx === round.holes.length - 1;
-    const prev = el("button", { type: "button", class: "btn ghost", disabled: holeIdx === 0 }, "\u25C0 Prev");
-    prev.addEventListener("click", () => go(holeIdx - 1));
+    // "◀ Hole 6" / "Hole 8 ▶": no Prev on the first hole; the last hole finishes the round instead.
+    const prev = holeIdx === 0 ? el("span", { class: "bar-spacer", "aria-hidden": "true" })
+      : el("button", { type: "button", class: "btn ghost" }, `\u25C0 Hole ${round.holes[holeIdx - 1].n}`);
+    if (holeIdx > 0) prev.addEventListener("click", () => go(holeIdx - 1));
     const next = el("button", { type: "button", class: "btn" }, last ? (canEdit() ? "Finish round \u2713" : "Scorecard") : `Hole ${round.holes[holeIdx + 1].n} \u25B6`);
     next.addEventListener("click", async () => {
       if (last && canEdit()) {
