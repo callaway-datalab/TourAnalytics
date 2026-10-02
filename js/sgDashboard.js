@@ -342,13 +342,13 @@ export function sgDashboard(container, opts) {
         : byCat);
     } else {
       const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
-      // Stat · Rank · Player Avg · Player Best · Player Worst · All Players · Best Player (the heading is
+      // Stat · Rank · Player Avg · Player Best · Player Worst · All Players (the heading is
       // the selection itself, e.g. "Approach · 2026 · Rough").
       const stats = statTableFull(cat, { key: me.key, rounds: mine }, comparable ? slicedField : [], idx);
       const others = mode === "admin" ? "All Players" : "Field";
       blocks.push(panelBox(describe(), stats.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain stats stat-full" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, "Stat"), el("th", { class: "num" }, "Rank"), el("th", { class: "num" }, "Player Avg"),
-          el("th", { class: "num" }, "Player Best"), el("th", { class: "num" }, "Player Worst"), el("th", { class: "num" }, others), el("th", {}, "Best Player")])),
+          el("th", { class: "num" }, "Player Best"), el("th", { class: "num" }, "Player Worst"), el("th", { class: "num" }, others)])),
         el("tbody", {}, stats.map((s) => {
           const fmt = (v) => (v === null || v === undefined ? "\u2014" : ["pct", "onePutt", "driverPct"].includes(s.kind) ? `${nf1.format(v)}%`
             : s.kind === "sgPerRound" || s.kind === "sgPerAttempt" ? `${v >= 0 ? "+" : ""}${v.toFixed(s.dp ?? 2)}` : v.toFixed(s.dp ?? 1));
@@ -361,7 +361,6 @@ export function sgDashboard(container, opts) {
             el("td", { class: "num" }, fmt(s.best)),
             el("td", { class: "num" }, fmt(s.worst)),
             el("td", { class: "num muted" }, fmt(s.field)),
-            el("td", { class: "best-player" }, s.bestPlayer ? [el("span", {}, s.bestPlayer.label), el("span", { class: "muted" }, ` ${fmt(s.bestPlayer.value)}`)] : "\u2014"),
           ]);
         })),
       ])) : el("p", { class: "empty" }, "No stats for this selection.")));
@@ -396,9 +395,17 @@ export function sgDashboard(container, opts) {
       return a;
     }));
     const avg = t.length ? t.reduce((a, g) => a + g.value, 0) / t.length : 0;
+    // The chosen players (Top 1 / 10 / 25 / 50 / All) for the same events, months, years or rounds.
+    const others = topPlayers(slicedField.filter((p) => p.key !== me.key));
+    const otherTrends = others.map((p) => trend(p.rounds, cat || null, st.trendBy));
+    const tCompare = others.length ? t.map((g) => {
+      const vals = otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value).filter((v) => v !== undefined);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    }) : null;
     blocks.push(panelBox("Strokes Gained Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
-      title: "SG / round", average: avg, as, tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
-    }), "wide", "trend")], "full"));
+      title: "SG / round", average: avg, as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(),
+      tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
+    }), "wide", "trend", { rankPick: others.length > 0 })], "full"));
     return blocks;
   }
 
@@ -465,7 +472,7 @@ export function sgDashboard(container, opts) {
   function rankPicker() {
     const sel = el("select", { class: "rank-pick", "aria-label": "Compare with" }, RANK_TOPS.map(([v, l]) => el("option", { value: v, selected: (st.rankTop || "all") === v }, l)));
     sel.addEventListener("change", () => { st.rankTop = sel.value; draw(); });
-    return el("label", { class: "rank-label" }, [el("span", {}, "Rank"), sel]);
+    return sel;
   }
 
   // A chart that draws itself once it's on the page. With a key, a small Bar | Line toggle sits in the

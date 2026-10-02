@@ -44,7 +44,7 @@ export async function render(main, { flash }) {
   const type = el("select", { "aria-label": "Type", disabled: true }, el("option", { value: "" }, "Type\u2026"));
   const brand = el("input", { placeholder: "Brand", maxLength: 40, autocomplete: "off", "aria-label": "Brand" });
   const model = el("input", { placeholder: "Model", maxLength: 50, autocomplete: "off", "aria-label": "Model" });
-  const note = el("input", { placeholder: "Note (optional)", maxLength: 120, autocomplete: "off", "aria-label": "Note" });
+  const note = el("input", { placeholder: "Note", maxLength: 120, autocomplete: "off", "aria-label": "Note (optional)" });
   // set mode: From … To (and, for wedges, the gap between lofts)
   let setMode = false;
   const fromT = el("select", { "aria-label": "From" }), toT = el("select", { "aria-label": "To" });

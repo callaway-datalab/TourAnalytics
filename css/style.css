@@ -1472,3 +1472,15 @@ body.tapping { overflow: hidden; }
 .stat-full td.best-player { white-space: nowrap; }
 .stat-full td.best-player .muted { margin-left: 0.25rem; }
 .rank-label { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--muted); font: 600 0.66rem/1 var(--font-body); letter-spacing: 0.1em; text-transform: uppercase; }
+/* WITB add row: a flexible row, so "From … to …" gets its room and Note gives way */
+@media (min-width: 761px) {
+  .bag-panel .club-add:not(.club-edit-form) { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.5rem; }
+  .bag-panel .club-add:not(.club-edit-form) > select { flex: 0 0 9.5rem; min-width: 0; }
+  .bag-panel .club-add:not(.club-edit-form) > select[aria-label="Type"] { flex-basis: 7rem; }
+  .bag-panel .club-add:not(.club-edit-form) > .set-box { flex: 0 0 auto; }
+  .bag-panel .club-add:not(.club-edit-form) > .set-box select { flex: 0 0 auto; width: 4.9rem; min-width: 0; }
+  .bag-panel .club-add:not(.club-edit-form) > input[placeholder="Brand"] { flex: 1 1 6rem; min-width: 5rem; }
+  .bag-panel .club-add:not(.club-edit-form) > input[placeholder="Model"] { flex: 1 1 6rem; min-width: 5rem; }
+  .bag-panel .club-add:not(.club-edit-form) > input[placeholder^="Note"] { flex: 0.6 1 5rem; min-width: 4.5rem; }
+  .bag-panel .club-add:not(.club-edit-form) > .btn { flex: 0 0 auto; }
+}
