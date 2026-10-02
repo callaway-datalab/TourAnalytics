@@ -38,7 +38,8 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
     mount(list, shown.length
       ? shown.map((p, i) => {
           const li = el("li", { class: "pp-item" + (i === active ? " on" : "") + (p.key === pinKey ? " me" : ""), role: "option", id: `${listId}-${i}`, "aria-selected": i === active ? "true" : "false" }, p.label);
-          li.addEventListener("pointerdown", (e) => { e.preventDefault(); choose(p); }); // before the box loses focus
+          li.addEventListener("mousedown", (e) => e.preventDefault()); // keep focus on a computer
+          li.addEventListener("click", () => choose(p)); // a real tap, so scrolling the list doesn't pick
           return li;
         })
       : el("li", { class: "pp-msg", role: "presentation" }, "No player matches that."));
@@ -69,7 +70,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
     if (!which.hidden) close(); // a name two IDs share: the "Which one?" buttons take over from the list
   });
   input.addEventListener("focus", drawList);
-  input.addEventListener("blur", () => setTimeout(close, 150));
+  input.addEventListener("blur", () => setTimeout(close, 250));
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();

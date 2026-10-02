@@ -221,7 +221,7 @@ export function findHoleRow(words) {
   const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length, my = pts.reduce((s, p) => s + p.y, 0) / pts.length;
   const den = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
   const angle = den ? Math.atan(pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / den) : 0;
-  return { y: my, h: median(pts.map((p) => p.h)), cols, spacing, angle };
+  return { y: my, h: median(pts.map((p) => p.h)), cols, spacing, angle, seen: Object.keys(pos).length };
 }
 
 // Loose match for the tee name: the name may appear anywhere in the label with stray marks around it
@@ -419,10 +419,20 @@ const cleanName = (t) => {
     if (words[0]) words[0] = words[0].replace(/^[a-z](?=[A-Z])/, ""); // "iBlack"-style stray first letter
   }
   // trailing stray marks ("Green im", "Silver il si"): short all-lowercase words
-  while (words.length > 1 && /^[a-z]{1,3}$/.test(words[words.length - 1])) words.pop();
+  while (words.length > 1 && (/^[a-z]{1,3}$/.test(words[words.length - 1]) || words[words.length - 1].length <= 2)) words.pop();
   return words.join(" ").trim();
 };
 const NOT_TEE = /hole|^par\b|hand|hcp|hdcp|index|stroke|scor|attest|date|match|your|play|net|adj|^tot|^out\b|^in\b|signature|player|men|women|ladies|rating|slope/i;
+
+/** The photo turned by a quarter-turn multiple (90 = clockwise), as a canvas. */
+export function rotateImage(src, deg) {
+  const d = ((deg % 360) + 360) % 360;
+  const w = src.width, h = src.height, side = d === 90 || d === 270;
+  const c = Object.assign(document.createElement("canvas"), { width: side ? h : w, height: side ? w : h });
+  const ctx = c.getContext("2d");
+  ctx.translate(c.width / 2, c.height / 2); ctx.rotate((d * Math.PI) / 180); ctx.drawImage(src, -w / 2, -h / 2);
+  return c;
+}
 
 async function bitmapOf(file) {
   return file instanceof HTMLCanvasElement || file instanceof HTMLImageElement || (typeof ImageBitmap !== "undefined" && file instanceof ImageBitmap) ? file : await createImageBitmap(file);
@@ -437,19 +447,34 @@ export async function readScorecard(file, { holes = 18, onProgress = () => {}, e
   const own = !engine;
   engine = engine || await tesseractEngine();
   try {
-    const bmp = await bitmapOf(file);
-    const scale = Math.max(0.5, Math.min(3, 2400 / bmp.width));
+    let bmp = await bitmapOf(file);
+    let scale = Math.max(0.5, Math.min(3, 2400 / bmp.width));
     onProgress(0.05, "Cleaning up the photo");
     let gray = toGray(bmp, scale);
     let words = await engine.words(cleanPage(gray));
     let row = findHoleRow(words);
+    // A sideways (or upside-down) photo: try the other ways round and keep the one that reads best.
+    let rotation = 0, upright = null;
+    if (!row || row.seen < 8) {
+      for (const deg of [90, 270, 180]) {
+        onProgress(0.08, "Turning the photo upright");
+        const turned = rotateImage(bmp, deg);
+        const sc = Math.max(0.5, Math.min(3, 2400 / turned.width));
+        const g = toGray(turned, sc);
+        const w = await engine.words(cleanPage(g));
+        const r = findHoleRow(w);
+        if (r && (!row || r.seen > row.seen)) { row = r; gray = g; words = w; scale = sc; rotation = deg; upright = turned; }
+        if (row && row.seen >= 12) break;
+      }
+      if (upright) bmp = upright;
+    }
     if (row && Math.abs(row.angle) > 0.004) {
       onProgress(0.15, "Straightening the photo");
       gray = toGray(bmp, scale, -row.angle);
       words = await engine.words(cleanPage(gray));
       row = findHoleRow(words) || row;
     }
-    if (!row) return { par: [], hcp: [], tees: [], found: false, notes: ["Couldn't find the Hole row (1, 2, 3 …) on its own."] };
+    if (!row) return { par: [], hcp: [], tees: [], found: false, rotation: 0, upright: null, notes: ["Couldn't find the Hole row (1, 2, 3 …) on its own."] };
     onProgress(0.25, "Finding the rows");
     const page = cleanPage(gray);
     const firstCol = Math.min(...Object.values(row.cols));
@@ -468,17 +493,25 @@ export async function readScorecard(file, { holes = 18, onProgress = () => {}, e
     const used = [row.y, parY, hcpY].filter((v) => v != null);
     for (const l of lines) {
       const y = (l.y0 + l.y1) / 2, name = cleanName(l.text);
-      if (!name || NOT_TEE.test(name) || used.some((u) => Math.abs(u - y) < layout.rowH * 0.5) || tees.some((t) => Math.abs(t.y - y) < layout.rowH * 0.5)) continue;
+      const knownName = TEE_NAMES.some((n) => name.toLowerCase().startsWith(n.toLowerCase()));
+      if (!name || (name.length < 3 && !knownName) || NOT_TEE.test(name) || used.some((u) => Math.abs(u - y) < layout.rowH * 0.5) || tees.some((t) => Math.abs(t.y - y) < layout.rowH * 0.5)) continue;
       let ok = 0;
       for (const k of [1, 2, 3]) { const r = await readCell(engine, gray, layout, k, y - row.y, { lo: 50, hi: 750, modes: [7] }); if (r.value) ok++; if (ok >= 2) break; }
       if (ok >= 2) tees.push({ name, y, dy: y - row.y });
     }
     tees.sort((a, b) => a.y - b.y);
     const res = await readRows(engine, gray, layout, { holes, parDy: parY != null ? parY - row.y : null, hcpDy: hcpY != null ? hcpY - row.y : null, tees }, onProgress);
+    // A stray label can pick up a neighbouring row's numbers: drop a tee whose yardages mostly repeat
+    // another's (keeping the one with a proper tee name).
+    const isKnown = (n) => TEE_NAMES.some((k) => n.toLowerCase().startsWith(k.toLowerCase()));
+    res.tees = res.tees.filter((t, i) => !res.tees.some((o, j) => j !== i
+      && t.yards.filter((v, h) => v != null && v === o.yards[h]).length >= Math.ceil(holes / 2)
+      && (isKnown(o.name) && !isKnown(t.name) || (isKnown(o.name) === isKnown(t.name) && j < i))));
     if (parY == null) res.notes.push("Couldn't find the Par row.");
     if (hcpY == null) res.notes.push("Couldn't find the Handicap row.");
     if (!tees.length) res.notes.push("Couldn't find any tee rows.");
-    return { ...res, found: true };
+    if (rotation) res.notes.unshift(`The photo was ${rotation === 180 ? "upside down" : "sideways"}; turned it upright.`);
+    return { ...res, found: true, rotation, upright };
   } finally {
     if (own) await engine.terminate?.();
   }

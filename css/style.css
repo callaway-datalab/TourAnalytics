@@ -1439,3 +1439,21 @@ body.tapping { overflow: hidden; }
 .tapper [hidden] { display: none !important; }
 .tap-dot { min-width: 1.25rem; height: 1.25rem; font-size: 0.66rem; opacity: 0.85; }
 @media (min-width: 900px) { .tap-dot { min-width: 1.5rem; height: 1.5rem; font-size: 0.72rem; } }
+.sg-tabs + .sg-years { margin: -0.5rem auto 1.25rem; }
+.sg-years a, .sg-years a:hover { padding: 0.4rem 0.85rem !important; font-size: 0.84rem !important; }
+/* WITB: set option inside the add form; editing a club in place */
+.club-add .set-box { display: flex; align-items: center; gap: 0.4rem; grid-column: span 1; }
+.club-add .set-box[hidden], .club-add select[hidden] { display: none !important; }
+.club-add .set-box select { min-width: 4.5rem; }
+.set-toggle { display: inline-block; margin-top: 0.6rem; min-height: 2.5rem; }
+.set-toggle[hidden] { display: none !important; }
+.club-edit td { background: rgba(255, 255, 255, 0.04) !important; }
+.club-edit-form { grid-template-columns: minmax(7rem, 1fr) minmax(5rem, 0.7fr) minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(7rem, 1.3fr) auto; }
+.edit-actions { display: flex; gap: 0.6rem; align-items: center; }
+.club-edit-btn { margin-right: 0.4rem; min-height: 2.4rem; }
+@media (max-width: 760px) {
+  .club-add .set-box { grid-column: 1 / -1; flex-wrap: wrap; }
+  .club-edit-form { grid-template-columns: 1fr 1fr; }
+  .club-edit-form .edit-actions { grid-column: 1 / -1; }
+}
+.combo-dist { margin-left: auto; font-variant-numeric: tabular-nums; }

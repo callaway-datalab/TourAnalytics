@@ -9,7 +9,7 @@ import { getState } from "../auth.js";
 import { UserError } from "../store.js";
 import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
-import { readScorecard, readScorecardFromTaps } from "../scorecardReader.js";
+import { readScorecard, readScorecardFromTaps, rotateImage } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
@@ -226,6 +226,7 @@ async function renderNew(main, flash) {
     photoStatus.textContent = `${what}\u2026`;
     try {
       const read = await fn((p, label) => { photoStatus.textContent = `${label}\u2026 ${Math.round(p * 100)}%`; });
+      if (read.upright) lastUpright = read.upright; // a sideways photo, turned upright: use that for pointing too
       const found = read.found ? applyRead(read) : 0;
       const teeLine = cardTees.length ? ` Found ${cardTees.length} set${cardTees.length > 1 ? "s" : ""} of tees: pick yours in Tees below.` : "";
       photoStatus.textContent = (found
@@ -239,14 +240,15 @@ async function renderNew(main, flash) {
     } finally { reading = false; }
   }
   const readCard = (file) => runRead((onProgress) => readScorecard(file, { holes: holesCount, engine: window.__scorecardEngine || null, onProgress }), "Reading the scorecard");
+  let lastUpright = null;
   tapBtn.addEventListener("click", () => {
     if (!lastCard) return;
-    openTapper(lastCard, holesCount, (taps) => runRead((onProgress) => readScorecardFromTaps(lastCard, { taps, holes: holesCount, engine: window.__scorecardEngine || null, onProgress }), "Reading the rows you pointed to"));
+    openTapper(lastUpright || lastCard, holesCount, (taps, src) => runRead((onProgress) => readScorecardFromTaps(src, { taps, holes: holesCount, engine: window.__scorecardEngine || null, onProgress }), "Reading the rows you pointed to"));
   });
   photo.addEventListener("change", async () => {
     const f = photo.files[0];
     if (!f) return;
-    lastCard = f;
+    lastCard = f; lastUpright = null;
     photo.value = "";
     await readCard(f);
   });
@@ -715,8 +717,15 @@ const scoreName = (d) => ({ "-3": "Albatross", "-2": "Eagle", "-1": "Birdie", 0:
 /* ======================= pointing to the rows on a scorecard photo ======================= */
 // A full-screen view of the photo. You tap the 1, 9, 10 and 18 in the Hole row (1 and 9 for a nine-hole
 // card), then the Par row, the Handicap row and each tee row. onDone gets the taps in the photo's own pixels.
-function openTapper(file, holes, onDone) {
-  const url = URL.createObjectURL(file);
+function openTapper(source, holes, onDone) {
+  let src = source; // a File, or a canvas (a photo already turned upright)
+  let url = null;
+  const show = async () => {
+    if (url) URL.revokeObjectURL(url);
+    const blob = src instanceof HTMLCanvasElement ? await new Promise((r) => src.toBlob(r, "image/jpeg", 0.92)) : src;
+    url = URL.createObjectURL(blob);
+    img.src = url;
+  };
   const steps = [
     { key: "h1", say: "Tap the 1 in the Hole row" },
     { key: "h9", say: "Tap the 9 in the Hole row" },
@@ -729,7 +738,7 @@ function openTapper(file, holes, onDone) {
   const order = []; // for Undo
   let i = 0, zoom = 1;
   const say = el("p", { class: "tap-say", role: "status" });
-  const img = el("img", { src: url, alt: "Your scorecard photo", draggable: "false" });
+  const img = el("img", { alt: "Your scorecard photo", draggable: "false" });
   const marks = el("div", { class: "tap-marks", "aria-hidden": "true" });
   const stage = el("div", { class: "tap-stage" }, [img, marks]);
   const scroller = el("div", { class: "tap-scroll" }, stage);
@@ -739,8 +748,9 @@ function openTapper(file, holes, onDone) {
   const cancel = el("button", { type: "button", class: "link", "aria-label": "Close" }, "Cancel");
   const zin = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom in" }, "+");
   const zout = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom out" }, "\u2212");
+  const rot = el("button", { type: "button", class: "btn ghost", "aria-label": "Turn the photo a quarter turn", title: "Turn the photo" }, "\u27F3 Rotate");
   const overlay = el("div", { class: "tapper", role: "dialog", "aria-modal": "true", "aria-label": "Point to the rows on your scorecard" }, [
-    el("div", { class: "tap-top" }, [say, el("div", { class: "tap-actions" }, [zout, zin, undo, skip, done, cancel])]),
+    el("div", { class: "tap-top" }, [say, el("div", { class: "tap-actions" }, [rot, zout, zin, undo, skip, done, cancel])]),
     scroller,
   ]);
   const label = { h1: "1", h9: "9", h10: "10", h18: "18", par: "Par", hcp: "Hcp" };
@@ -775,15 +785,23 @@ function openTapper(file, holes, onDone) {
     draw();
   });
   skip.addEventListener("click", () => { order.push(`skip:${steps[i].key}`); i++; draw(); });
+  // Turn the photo a quarter turn (clockwise); taps start again.
+  rot.addEventListener("click", async () => {
+    const bmp = src instanceof HTMLCanvasElement ? src : await createImageBitmap(src);
+    src = rotateImage(bmp, 90);
+    for (const k of Object.keys(taps)) if (k !== "tees") delete taps[k];
+    taps.tees.length = 0; order.length = 0; i = 0;
+    await show(); draw();
+  });
   zin.addEventListener("click", () => { zoom = Math.min(4, zoom * 1.5); draw(); });
   zout.addEventListener("click", () => { zoom = Math.max(1, zoom / 1.5); draw(); });
-  const close = () => { overlay.remove(); URL.revokeObjectURL(url); document.removeEventListener("keydown", onKey); document.body.classList.remove("tapping"); };
+  const close = () => { overlay.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener("keydown", onKey); document.body.classList.remove("tapping"); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   cancel.addEventListener("click", close);
-  done.addEventListener("click", () => { const t = { ...taps, tees: [...taps.tees] }; close(); onDone(t); });
+  done.addEventListener("click", () => { const t = { ...taps, tees: [...taps.tees] }, used = src; close(); onDone(t, used); });
   img.addEventListener("load", draw);
   document.addEventListener("keydown", onKey);
   document.body.classList.add("tapping");
   document.body.appendChild(overlay);
-  draw();
+  show(); draw();
 }

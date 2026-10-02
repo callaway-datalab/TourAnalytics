@@ -91,12 +91,12 @@ export function sgDashboard(container, opts) {
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       statTypeBar(),
       catPills(),
+      yearPills(opt),
       filterBar(opt),
       el("div", { class: "sg-panel" }, (() => {
-        // Rankings come first; with one category, right after its Stat Averages.
+        // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
-        const ranks = showRanks ? rankingsBlock(slicedField) : null;
-        return st.cats.length === 1 ? [...blocks.slice(0, 1), ranks, ...blocks.slice(1)] : [ranks, ...blocks];
+        return [showRanks ? rankingsBlock(slicedField) : null, ...blocks];
       })()),
     ]);
     if (focusKey) {
@@ -187,14 +187,13 @@ export function sgDashboard(container, opts) {
       .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
     // On phones the filters fold behind a "Filters" button (with how many are in use).
-    const inUse = ["year", "event", "roundNo", "lie", "dist", "club"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
+    const inUse = ["event", "roundNo", "lie", "dist", "club"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
     const fold = el("button", { type: "button", class: "filters-toggle", "aria-expanded": st.filtersOpen ? "true" : "false" },
       [`Filters${inUse ? ` \u00b7 ${inUse} on` : ""}`, el("span", { "aria-hidden": "true" }, st.filtersOpen ? "\u25B4" : "\u25BE")]);
     fold.addEventListener("click", () => { st.filtersOpen = !st.filtersOpen; draw(); });
     return el("div", { class: "sg-filters" + (st.filtersOpen ? " open" : "") }, [
       fold,
       el("label", {}, ["Span", span]),
-      multi("Year", "year", simple(opt.year), "All years", { plural: "years" }),
       multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
       multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
@@ -215,6 +214,25 @@ export function sgDashboard(container, opts) {
       el("option", { value: v, selected: (st.statType || "sg") === v, disabled: !READY_TYPES.includes(v) }, READY_TYPES.includes(v) ? l : `${l} (coming soon)`)));
     sel.addEventListener("change", () => { st.statType = sel.value; draw(); });
     return el("div", { class: "stat-type" }, el("label", {}, ["Stat Type", sel]));
+  }
+
+  // Year pills (under the categories): All, or any number of years.
+  function yearPills(opt) {
+    if (!opt.year.length) return null;
+    const years = [...opt.year].sort();
+    const all = el("a", { href: "#", "aria-current": !st.year.length ? "page" : null }, "All years");
+    all.addEventListener("click", (e) => { e.preventDefault(); st.year = []; draw(); });
+    return el("nav", { class: "subnav sg-years", "aria-label": "Years (pick one or more)" }, [all, ...years.map((y) => {
+      const on = st.year.includes(y);
+      const a = el("a", { href: "#", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false" }, y);
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        st.year = on ? st.year.filter((x) => x !== y) : [...st.year, y].sort();
+        if (st.year.length === years.length) st.year = []; // every year = All
+        draw();
+      });
+      return a;
+    })]);
   }
 
   function catPills() {
@@ -471,13 +489,13 @@ export function sgDashboard(container, opts) {
     const signColors = values.map((v) => (v >= 0 ? "#30d158" : "#ff453a"));
     const datasets = [as === "line"
       // Line: a champagne line through green / red points, shaded green above zero and red below.
-      ? { type: "line", label: title || "", data: values, borderColor: single || "#c8a97e", borderWidth: 2.5, tension: 0.35,
+      ? { type: "line", label: title || "", data: values, order: 2, borderColor: single || "#c8a97e", borderWidth: 2.5, tension: 0.35,
           pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: single || signColors, pointBorderColor: single || signColors,
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
-      : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors }];
+      : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors, order: 2 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
-    if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#0a84ff", borderDash: [5, 4], borderWidth: 2 });
-    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0 }); // yellow dashes
+    if (compare) datasets.push({ type: "line", label: "All players", data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#ffd60a", borderDash: [5, 4], borderWidth: 2, order: 0 }); // in front
+    if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
     // Legend: only the reference marks (no "SG / round" entry), each drawn as a short dash in its color.
     o.plugins.legend = { display: !!(compare || average !== undefined), labels: {
