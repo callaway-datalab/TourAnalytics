@@ -17,9 +17,11 @@ import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
 
 const CAT_NAME = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
+// always 2 decimals (the Detail list)
+const fmt2 = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
 // (tiny numbers get a third decimal, so nothing shows as "−0.00")
 const fmtSG = (v, dp = 2) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(v !== 0 && Math.abs(v) < 0.5 * 10 ** -dp ? dp + 1 : dp)}`);
-const day = (d) => { const t = Date.parse(d); return Number.isFinite(t) ? t : null; };
+const day = (d) => { const t = typeof d === "number" ? d : Date.parse(d); return Number.isFinite(t) ? t : null; }; // (a date, or a time in ms)
 const fmtDate = (d) => { const t = day(d); return t == null ? String(d || "") : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 
@@ -175,7 +177,7 @@ const P = {
   gold: "#b08d57", goldLight: "#d4b483", up: "#1e8e4a", upDeep: "#14703a", upTint: "#e7f5ec", down: "#d0342c", downDeep: "#a8241e", downTint: "#fdecea",
   track: "#eceef1", note: "#faf6ee",
 };
-export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null } = {}) {
+export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
   const range = `${a.from != null ? fmtDate(a.from) : "All rounds"}${a.to != null ? ` \u2013 ${fmtDate(a.to)}` : a.from != null ? " \u2013 today" : ""}`;
@@ -195,7 +197,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y += 12; // breathing room between sections
     need(40 + room);
     d.rect(M, y - 7, 3, 9, { fill: P.gold });
-    cap(kicker, M + 9, y, P.gold); y += 19;
+    cap(kicker, M + 9, y, P.gold); y += 23;
     d.text(title, M, y, { size: 17, bold: true, color: P.ink }); y += 14;
   };
   const badge = (text, x, yy, fill, color = "#ffffff") => {
@@ -213,7 +215,10 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   cap("Performance Report", M, 40, P.goldLight, "left", 7.5);
   if (logo) { const lh = Math.min(26, (logo.h / logo.w) * 150), lw = (logo.w / logo.h) * lh; d.image(logo.dataUrl, M + W - lw, 24, lw, lh, logo.pw, logo.ph); }
   d.text(wrap(a.me.label, W * 0.6, 30, true)[0], M, 78, { size: 30, bold: true, color: "#ffffff" });
-  d.text(`${range}   \u00b7   ${catsTxt}${sourceLabel ? `   \u00b7   ${sourceLabel}` : ""}`, M, 96, { size: 8.5, color: "#8e8e93" });
+  // the period: the preset you picked ("Last 30 days", "All time" …) or your dates (2/14/26 – 4/20/26)
+  const short = (t) => shortDate(new Date(t));
+  const period = rangeLabel || (a.from != null || a.to != null ? `${a.from != null ? short(a.from) : "start"} \u2013 ${a.to != null ? short(a.to) : "today"}` : "All time");
+  d.text(period, M, 96, { size: 8.5, color: "#8e8e93" });
   cap("Strokes gained per round", M, 122, "#8e8e93");
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 182, { size: 72, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
@@ -283,7 +288,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
 
   /* ---------- by category: gauges ---------- */
   section("By category", "Where the strokes come from", 40 + a.byCat.length * 36);
-  wrap("The bar starts at the middle line: green to the right is gaining strokes, red to the left is losing them. The best gain in the group fills the right side, the biggest loss fills the left. The dark line is Tour Avg.", W, 8)
+  wrap("The bar starts at the middle line: green to the right is gaining strokes, red to the left is losing them. The best gain in the group fills the right side, the biggest loss fills the left. The black line is zero; the gold line is Tour Avg.", W, 8)
     .forEach((l, i) => d.text(l, M, y + 6 + i * 10, { size: 8, color: P.grey }));
   y += 28;
   const gx = M + 150, gw = W - 150 - 150, zx = gx + gw / 2, half = gw / 2;
@@ -305,8 +310,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       d.roundRect(c.value >= 0 ? zx : x0 + 3, y + 9.5, Math.max(3, w - 3), 3.5, 1.75, { fill: light });
       d.rect(c.value >= 0 ? zx : zx - 2, y + 9.5, 2, 3.5, { fill: light });
     }
-    d.line(zx, y + 5, zx, y + 23, { color: "#b0b3b8", width: 0.8 });
-    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 3, fx, y + 25, { color: "#ffffff", width: 3.4 }); d.line(fx, y + 3, fx, y + 25, { color: P.ink, width: 1.6 }); }
+    d.line(zx, y + 4, zx, y + 24, { color: "#000000", width: 1.1 }); // zero
+    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
     d.text(fmtSG(c.value), M + W - 66, y + 19, { size: 18, bold: true, color: tone(c.value), align: "right" });
     if (t && t.change != null && Math.abs(t.change) >= 0.15) badge(t.change > 0 ? `Up ${t.change.toFixed(2)}` : `Down ${Math.abs(t.change).toFixed(2)}`, M + W - 58, y + 18, t.change > 0 ? P.up : P.down);
     else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
@@ -369,26 +374,40 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   roundsCol(M + colW + 14, "Toughest rounds", a.valleys, P.down, P.downTint);
   y += rowsH + 6;
 
-  /* ---------- distance and lie ---------- */
-  const enough = a.groups.filter((g) => g.shots >= Math.max(5, a.overall.rounds * 0.5)).sort((p, q) => q.perRound - p.perRound);
-  if (enough.length >= 2) {
-    const strong = enough.slice(0, 4), weak = enough.slice(-4).reverse();
-    section("Detail", "By distance (and lie)", 26 + Math.max(strong.length, weak.length) * 24);
-    const list = (x, title, rows, c) => {
-      cap(title, x, y + 6, c);
-      rows.forEach((g, i) => {
-        const yy = y + 24 + i * 24;
-        d.text(wrap(g.title, colW - 50, 9.5, true)[0], x, yy, { size: 9.5, bold: true, color: P.ink });
-        d.text(`${Math.round(g.shots)} shots${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmtSG(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 10, { size: 7.5, color: P.grey });
-        d.text(fmtSG(g.perRound), x + colW, yy + 5, { size: 13, bold: true, color: tone(g.perRound), align: "right" });
-        d.line(x, yy + 15, x + colW, yy + 15, { color: P.hair, width: 0.4 });
-      });
-    };
-    list(M, "Gaining the most", strong, P.up);
-    list(M + colW + 14, "Losing the most", weak, P.down);
-    y += 26 + Math.max(strong.length, weak.length) * 24 + 4;
-  }
+  need(30);
+  d.text(`Compared with ${plural(a.players - 1, "other player")} over the same dates and categories. All figures are strokes a round unless noted.`, M, y + 8, { size: 7.5, color: P.faint });
 
+  // ---------- appendix ----------
+  const byDist = a.groups; // category + distance, and category + distance + lie
+  if (byDist.length) {
+    newPage();
+    section("Detail", "Every skill by distance and lie", 60);
+    d.text("Strokes gained a round for each category and distance, and each distance by lie. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
+    y += 22;
+    // (rounded to 2 decimals; only ±0.01 or more; at most 28 each side)
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const gains = byDist.filter((g) => r2(g.perRound) >= 0.01).sort((p, q) => q.perRound - p.perRound).slice(0, 28);
+    const losses = byDist.filter((g) => r2(g.perRound) <= -0.01).sort((p, q) => p.perRound - q.perRound).slice(0, 28);
+    const rounds = Math.max(1, a.overall.rounds);
+    const rowH = 22;
+    const heads = () => { cap("Gaining", M, y, P.up); cap("Losing", M + colW + 14, y, P.down); y += 10; };
+    heads();
+    const row = (g, x, yy) => {
+      d.text(wrap(g.title, colW - 56, 9, true)[0], x, yy, { size: 9, bold: true, color: P.ink });
+      const per = g.shots / rounds;
+      d.text(`${per >= 10 ? Math.round(per) : per.toFixed(1)} shots/round${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmt2(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 9.5, { size: 7, color: P.grey });
+      d.text(fmt2(g.perRound), x + colW, yy + 5, { size: 12, bold: true, color: tone(g.perRound), align: "right" });
+      d.line(x, yy + 14, x + colW, yy + 14, { color: P.hair, width: 0.4 });
+    };
+    for (let i = 0; i < Math.max(gains.length, losses.length); i++) {
+      if (y + rowH > H - 50) { newPage(); heads(); }
+      y += rowH - 8;
+      if (gains[i]) row(gains[i], M, y);
+      if (losses[i]) row(losses[i], M + colW + 14, y);
+      y += 8;
+    }
+    y += 10;
+  }
   /* ---------- by product ---------- */
   if (a.products) {
     section("Equipment", "By club model", 40 + Math.min(16, a.products.length) * 20);
@@ -406,35 +425,6 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         d.line(M, y + 5, M + W, y + 5, { color: P.hair, width: 0.4 });
       }
       y += 14;
-    }
-  }
-  need(30);
-  d.text(`Compared with ${plural(a.players - 1, "other player")} over the same dates and categories. All figures are strokes a round unless noted.`, M, y + 8, { size: 7.5, color: P.faint });
-
-  // ---------- appendix ----------
-  const byDist = a.groups; // category + distance, and category + distance + lie
-  if (byDist.length) {
-    newPage();
-    section("Appendix", "Every skill by distance and lie", 60);
-    d.text("Strokes gained a round for each category and distance, and each distance by lie. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
-    y += 22;
-    const gains = byDist.filter((g) => g.perRound >= 0).sort((p, q) => q.perRound - p.perRound);
-    const losses = byDist.filter((g) => g.perRound < 0).sort((p, q) => p.perRound - q.perRound);
-    const rowH = 22;
-    const heads = () => { cap("Gaining", M, y, P.up); cap("Losing", M + colW + 14, y, P.down); y += 10; };
-    heads();
-    const row = (g, x, yy) => {
-      d.text(wrap(g.title, colW - 56, 9, true)[0], x, yy, { size: 9, bold: true, color: P.ink });
-      d.text(`${Math.round(g.shots)} shots${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmtSG(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 9.5, { size: 7, color: P.grey });
-      d.text(fmtSG(g.perRound), x + colW, yy + 5, { size: 12, bold: true, color: tone(g.perRound), align: "right" });
-      d.line(x, yy + 14, x + colW, yy + 14, { color: P.hair, width: 0.4 });
-    };
-    for (let i = 0; i < Math.max(gains.length, losses.length); i++) {
-      if (y + rowH > H - 50) { newPage(); heads(); }
-      y += rowH - 8;
-      if (gains[i]) row(gains[i], M, y);
-      if (losses[i]) row(losses[i], M + colW + 14, y);
-      y += 8;
     }
   }
   footer();
@@ -546,7 +536,8 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
         } catch { /* the report still works without it */ }
       }
       status.textContent = "Making the PDF\u2026";
-      const bytes = buildReportPdf(a, { aiSummary, sourceLabel: source.value === "tour" ? "Tour Events" : "Entered Rounds", logo: await loadLogo() });
+      const rangeLabel = preset ? presets.find(([v]) => v === preset)?.[1] : null; // a preset's name; your own dates are shown as dates
+      const bytes = buildReportPdf(a, { aiSummary, sourceLabel: source.value === "tour" ? "Tour Events" : "Entered Rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
       const blob = new Blob([bytes], { type: "application/pdf" });
       const href = URL.createObjectURL(blob);
