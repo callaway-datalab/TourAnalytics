@@ -10,6 +10,8 @@ import { UserError } from "../store.js";
 import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
 import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "../scorecardReader.js";
+import { detectCardGrid, gridValues, splitRow } from "../cardGrid.js";
+import { tesseractEngine } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { parseShots, golfFix, golfScore } from "../voiceShots.js";
@@ -128,8 +130,17 @@ async function renderNew(main, flash, viewing = null) {
   const grid = el("div", { class: "card-grid" });
   const totals = el("p", { class: "muted center card-totals" });
   const photoStatus = el("p", { class: "muted center", role: "status" });
+  // Photos: the whole card, or (for a big card or a tricky photo) the front 9 and the back 9 separately.
   const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
-  const photoBtn = el("label", { class: "btn ghost entry-big photo-btn" }, ["\uD83D\uDCF7  Read a scorecard photo", photo]);
+  const photoFront = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
+  const photoBack = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
+  const photoBtn = el("div", { class: "photo-choices" }, [
+    el("label", { class: "btn ghost entry-big photo-btn" }, ["\uD83D\uDCF7  Photo of the whole card", photo]),
+    el("div", { class: "photo-nines" }, [
+      el("label", { class: "btn ghost photo-btn photo-nine" }, ["\uD83D\uDCF7 Front 9", photoFront]),
+      el("label", { class: "btn ghost photo-btn photo-nine" }, ["\uD83D\uDCF7 Back 9", photoBack]),
+    ]),
+  ]);
   const tapBtn = el("button", { type: "button", class: "link tap-btn", hidden: true }, "\uD83D\uDC46 Check the rows on the photo");
   // Tees: a dropdown of the tees found on the card (each fills its yardages), or type your own.
   let cardTees = []; // [{ name, yards }] from the last photo
@@ -259,6 +270,76 @@ async function renderNew(main, flash, viewing = null) {
     }
     return read;
   }, "Reading the rows you confirmed");
+  // The grid way: find the card's grid, show it to check, then fill in the holes it covers.
+  let enginePromise = null;
+  const engineNow = () => window.__scorecardEngine || (enginePromise ||= tesseractEngine());
+  // With a vision AI reader set up (config.js scorecardUrl, see functions/scorecard), it reads the photo.
+  async function readWithAI(file, nine) {
+    const url = window.PORTAL_CONFIG?.scorecardUrl;
+    if (!url) return false;
+    photoStatus.textContent = "Reading the card\u2026";
+    try {
+      const big = await createImageBitmap(file).catch(() => null);
+      const c = document.createElement("canvas");
+      const k = big ? Math.min(1, 1600 / Math.max(big.width, big.height)) : 1;
+      if (big) { c.width = Math.round(big.width * k); c.height = Math.round(big.height * k); c.getContext("2d").drawImage(big, 0, 0, c.width, c.height); }
+      const image = c.toDataURL("image/jpeg", 0.88).split(",")[1];
+      const token = await getState().user?.getIdToken?.();
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ image, nine }) });
+      if (!res.ok) return false;
+      const r = await res.json();
+      const ks = nine === "back" ? Array.from({ length: 9 }, (_, i) => i + 10) : nine === "front" ? Array.from({ length: 9 }, (_, i) => i + 1) : Array.from({ length: holesCount }, (_, i) => i + 1);
+      const at = (arr, k) => (Array.isArray(arr) ? arr[k - 1] ?? null : null);
+      holes = holes.map((h, i) => (ks.includes(i + 1) ? { ...h, par: at(r.par, i + 1) || h.par, hcp: at(r.hcp, i + 1) || h.hcp } : h));
+      for (const t of r.tees || []) {
+        const have = cardTees.find((x) => x.name.toLowerCase() === String(t.name).toLowerCase());
+        const yards = have ? [...have.yards] : Array(holesCount).fill(null);
+        ks.forEach((k) => { const v = at(t.yards, k); if (v) yards[k - 1] = v; });
+        if (have) have.yards = yards; else cardTees.push({ name: String(t.name || "Tees"), yards });
+      }
+      drawTeeSelect(); drawGrid();
+      photoStatus.textContent = `Read the card${r.notes ? ` (${r.notes})` : ""}. Pick your tees below and check the numbers.`;
+      return true;
+    } catch { return false; }
+  }
+  async function readGrid(file, nine) {
+    if (reading) return;
+    if (await readWithAI(file, nine)) return; // the AI reader, when set up
+    reading = true;
+    photoStatus.textContent = "Finding the grid on the card\u2026";
+    try {
+      const grid = await detectCardGrid(file, { nine, engine: await engineNow(), onProgress: (p, label) => { photoStatus.textContent = `${label}\u2026 ${Math.round(p * 100)}%`; } });
+      photoStatus.textContent = "Check the rows and columns on the photo, then tap \u201cUse this\u201d.";
+      reading = false;
+      openGridEditor(grid, { holes: holesCount, nine, onUse: (vals, ks) => {
+        // only the holes this photo covers change
+        let found = 0;
+        holes = holes.map((h, i) => {
+          if (!ks.includes(i + 1)) return h;
+          const next = { ...h };
+          if (vals.par[i]) { next.par = vals.par[i]; found++; }
+          if (vals.hcp[i]) { next.hcp = vals.hcp[i]; found++; }
+          return next;
+        });
+        // tees: by name, this photo's holes added to what's there (the front 9 and back 9 photos combine)
+        for (const t of vals.tees) {
+          const have = cardTees.find((x) => x.name.toLowerCase() === t.name.toLowerCase());
+          const yards = have ? [...have.yards] : Array(holesCount).fill(null);
+          ks.forEach((k) => { if (t.yards[k - 1] != null) { yards[k - 1] = t.yards[k - 1]; found++; } });
+          if (have) have.yards = yards; else cardTees.push({ name: t.name, yards });
+        }
+        drawTeeSelect();
+        const pick = cardTees.length === 1 ? 0 : cardTees.findIndex((t) => t.name.toLowerCase() === teesIn.value.trim().toLowerCase());
+        if (pick >= 0) { teeSelect.value = String(pick); applyTee(pick); drawTeeSelect(); } else drawGrid();
+        const which = nine === "front" ? "front 9" : nine === "back" ? "back 9" : "card";
+        photoStatus.textContent = `Filled in ${found} boxes from the ${which}.${cardTees.length ? " Pick your tees below." : ""} Check them and fix anything that's off.${nine === "front" ? " Now take the Back 9." : ""}`;
+      } });
+    } catch (err) {
+      console.error(err);
+      photoStatus.textContent = "Couldn't read that photo. Try again straight on and in good light, or type the holes in below.";
+      reading = false;
+    }
+  }
   async function readCard(file) {
     if (reading) return;
     reading = true;
@@ -276,12 +357,11 @@ async function renderNew(main, flash, viewing = null) {
     if (lastAnalysis) openCardEditor(lastAnalysis, holesCount, readFromTable);
     else if (lastCard) openTapper(lastUpright || lastCard, holesCount, (taps, src) => readFromTable(taps, src));
   });
-  photo.addEventListener("change", async () => {
-    const f = photo.files[0];
+  for (const [input, nine] of [[photo, null], [photoFront, "front"], [photoBack, "back"]]) input.addEventListener("change", async () => {
+    const f = input.files[0];
     if (!f) return;
-    lastCard = f; lastUpright = null;
-    photo.value = "";
-    await readCard(f);
+    input.value = "";
+    await readGrid(f, nine);
   });
 
   const start = el("button", { class: "btn entry-big", type: "submit" }, "Start round \u25B6");
@@ -1107,5 +1187,211 @@ function openCardEditor(an, holes, onConfirm) {
   document.body.classList.add("tapping");
   document.body.appendChild(overlay);
   img.addEventListener("load", draw);
+  draw();
+}
+
+/* ======================= the scorecard as a grid: check it, drag labels, use it ======================= */
+// The straightened photo with the grid found on it. Each labelled row (Hole, Par, Handicap, a tee) has a chip
+// with a grip: press and hold, drag it to the right row and let go. The 1 and 10 markers do the same for the
+// hole columns. Tap a chip (or the ＋ on an unlabelled row) to change what it is. "＋ Add a line" splits a row
+// where a line was missed. "Use this" reads any squares still needed and hands back the numbers.
+const GRID_KIND = { hole: "Hole", par: "Par", hcp: "Handicap", tee: "Tee", ignore: "Not used" };
+function openGridEditor(grid, { holes = 18, nine = null, onUse }) {
+  const { W, H } = grid;
+  const kNum = nine === "back" ? [10] : nine === "front" ? [1] : holes === 18 ? [1, 10] : [1];
+  const ks = nine === "back" ? range(10, 18) : nine === "front" ? range(1, 9) : range(1, holes);
+  function range(a, b) { return Array.from({ length: b - a + 1 }, (_, i) => a + i); }
+  let zoom = window.innerWidth < 700 ? 3 : 1, menuFor = null, adding = false; // (phones: zoomed in so each row has room)
+  // the hole columns from where the 1 and the 10 are
+  const startCol = { 1: grid.holeCols[1] ?? grid.holeCols[Math.min(...Object.keys(grid.holeCols).map(Number))] ?? 1, 10: grid.holeCols[10] ?? null };
+  if (startCol[10] == null && startCol[1] != null && grid.holeCols[9] != null) startCol[10] = grid.holeCols[9] + 2;
+  const holeCols = () => Object.fromEntries(ks.map((k) => [k, k >= 10 && startCol[10] != null ? startCol[10] + (k - 10) : (startCol[k >= 10 ? 1 : 1] ?? 1) + (k - (k >= 10 ? 1 : 1))]));
+  const C = grid.cells[0]?.length || 0, R = grid.cells.length;
+  const cellAt = (r, c) => grid.cells[r]?.[c];
+  const rowMid = (r) => { const c = cellAt(r, Math.floor(C / 2)); return c ? (c.y0 + c.y1) / 2 : 0; };
+  const rowOfY = (y) => { let best = 0, bd = Infinity; for (let r = 0; r < R; r++) { const d = Math.abs(rowMid(r) - y); if (d < bd) { bd = d; best = r; } } return best; };
+  const colOfX = (x, r) => { let best = 0, bd = Infinity; for (let c = 0; c < C; c++) { const cell = cellAt(r, c); if (!cell) continue; const d = Math.abs((cell.x0 + cell.x1) / 2 - x); if (d < bd) { bd = d; best = c; } } return best; };
+  const hasContent = (r) => grid.rowInfo[r]?.added || grid.cells[r].some((c) => c.text); // (rows you split off always get a ＋)
+  const tableLeft = () => Math.min(...grid.cells.map((row) => row[0]?.x0 ?? W));
+
+  const url = { v: null };
+  const img = el("img", { alt: "Your scorecard", draggable: "false" });
+  grid.src.toBlob((b) => { url.v = URL.createObjectURL(b); img.src = url.v; }, "image/jpeg", 0.9);
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("class", "ge-svg");
+  const chips = el("div", { class: "ge-chips" });
+  const stage = el("div", { class: "tap-stage ge-stage" }, [img, svg, chips]);
+  const scroller = el("div", { class: "tap-scroll" }, stage);
+  const say = el("p", { class: "tap-say", role: "status" });
+  const zin = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom in" }, "+");
+  const zout = el("button", { type: "button", class: "btn ghost tap-zoom", "aria-label": "Zoom out" }, "\u2212");
+  const addLine = el("button", { type: "button", class: "btn ghost" }, "\uFF0B Add a line");
+  const useBtn = el("button", { type: "button", class: "btn" }, "Use this");
+  const cancel = el("button", { type: "button", class: "link" }, "Cancel");
+  const overlay = el("div", { class: "tapper card-editor grid-editor", role: "dialog", "aria-modal": "true", "aria-label": "Check the rows and columns found on your scorecard" }, [
+    el("div", { class: "tap-top" }, [say, el("div", { class: "tap-actions" }, [zout, zin, addLine, useBtn, cancel])]),
+    scroller,
+  ]);
+  const pct = (x, y) => `left:${(x / W) * 100}%;top:${(y / H) * 100}%`;
+  const sv = (tag, attrs, text) => { const n = document.createElementNS(svgNS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (text != null) n.textContent = text; return n; };
+  const KIND_FILL = { hole: "rgba(200,169,126,0.28)", par: "rgba(10,132,255,0.22)", hcp: "rgba(191,90,242,0.22)", tee: "rgba(48,209,88,0.22)" };
+
+  function draw() {
+    stage.style.width = `${zoom * 100}%`;
+    say.textContent = adding ? "Tap the photo where a row line is missing." : "Drag a label (\u283F) to the right row, or the 1 / 10 to the right column. Tap a label to change it.";
+    // the grid
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const hc = holeCols();
+    grid.rowInfo.forEach((ri, r) => {
+      const row = grid.cells[r];
+      if (!row?.length) return;
+      if (KIND_FILL[ri.kind]) {
+        const a = row[0], b = row[row.length - 1];
+        svg.appendChild(sv("polygon", { points: `${a.x0},${a.y0} ${b.x1},${b.y0} ${b.x1},${b.y1} ${a.x0},${a.y1}`, fill: KIND_FILL[ri.kind] }));
+      }
+    });
+    for (const row of grid.cells) for (const c of row) svg.appendChild(sv("rect", { x: c.x0, y: c.y0, width: Math.max(0, c.x1 - c.x0), height: Math.max(0, c.y1 - c.y0), fill: "none", stroke: "rgba(255,214,10,0.45)", "stroke-width": Math.max(1, W / 1400) }));
+    // the numbers read, in the labelled rows' hole columns
+    grid.rowInfo.forEach((ri, r) => {
+      if (!["par", "hcp", "tee", "hole"].includes(ri.kind)) return;
+      for (const k of ks) {
+        const cell = cellAt(r, hc[k]);
+        if (!cell) continue;
+        const t = ri.kind === "hole" ? String(k) : (String(cell.text || "").match(/\d{1,4}/)?.[0] || "?");
+        const fs = Math.max(9, Math.min((cell.y1 - cell.y0) * 0.42, (cell.x1 - cell.x0) * 0.34)); // fits the square
+        const cx = (cell.x0 + cell.x1) / 2, cy = cell.y1 - fs * 0.15;
+        svg.appendChild(sv("rect", { x: cx - fs * 0.95, y: cy - fs * 0.9, width: fs * 1.9, height: fs * 1.05, rx: fs * 0.2, fill: t === "?" ? "rgba(255,159,10,0.92)" : "rgba(8,8,10,0.8)" }));
+        svg.appendChild(sv("text", { x: cx, y: cy - fs * 0.12, "font-size": fs * 0.85, "font-weight": 700, fill: "#fff", "text-anchor": "middle", "font-family": "Inter, system-ui, sans-serif" }, t));
+      }
+    });
+    // chips: row labels (drag up and down) and the 1 / 10 (drag sideways)
+    const parts = [];
+    const left = tableLeft();
+    grid.rowInfo.forEach((ri, r) => {
+      const y = rowMid(r);
+      if (ri.kind !== "ignore") {
+        const chip = el("button", { type: "button", class: `ge-chip k-${ri.kind}`, style: pct(left, y), "aria-label": `${chipText(ri)}: drag to move, tap to change` }, [el("span", { class: "ge-grip", "aria-hidden": "true" }, "\u283F"), chipText(ri)]);
+        dragY(chip, r);
+        parts.push(chip);
+      } else if (hasContent(r)) {
+        // (at the right end of the row, clear of the labels on the left)
+        const rowEnd = grid.cells[r][grid.cells[r].length - 1]?.x1 ?? W;
+        const plus = el("button", { type: "button", class: "ge-plus", style: pct(Math.min(W * 0.97, rowEnd), y), "aria-label": "Label this row" }, "\uFF0B");
+        plus.addEventListener("click", (e) => { e.stopPropagation(); menuFor = r; draw(); });
+        parts.push(plus);
+      }
+      if (menuFor === r) parts.push(kindMenu(r, y));
+    });
+    const holeR = grid.rowInfo.findIndex((ri) => ri.kind === "hole");
+    for (const k of kNum) {
+      const c = startCol[k];
+      const cell = cellAt(Math.max(0, holeR), c);
+      if (!cell) continue;
+      const tag = el("button", { type: "button", class: "ge-col", style: pct((cell.x0 + cell.x1) / 2, Math.max(0, cell.y0)), "aria-label": `Hole ${k} column: drag sideways to move` }, [el("span", { class: "ge-grip", "aria-hidden": "true" }, "\u2194"), String(k)]);
+      dragX(tag, k, Math.max(0, holeR));
+      parts.push(tag);
+    }
+    mount(chips, parts);
+  }
+  // (on a phone the tee's name alone, e.g. "Taupe")
+  const chipText = (ri) => (ri.kind === "tee" ? (window.innerWidth < 700 ? (ri.name || "Tee").split(" ")[0] : `Tee \u00b7 ${ri.name || "?"}`) : GRID_KIND[ri.kind]);
+
+  // press, hold and drag; let go on the row (or column) you want
+  const toPhoto = (e) => { const b = img.getBoundingClientRect(); return { x: ((e.clientX - b.left) / b.width) * W, y: ((e.clientY - b.top) / b.height) * H }; };
+  function dragY(chip, r) {
+    let start = null, moved = false;
+    chip.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); start = { y: e.clientY }; moved = false; chip.setPointerCapture?.(e.pointerId); chip.classList.add("held"); });
+    chip.addEventListener("pointermove", (e) => {
+      if (!start) return;
+      const dy = e.clientY - start.y;
+      if (Math.abs(dy) > 6) moved = true;
+      if (moved) { chip.style.transform = `translate(0, calc(-50% + ${dy}px))`; highlightRow(rowOfY(toPhoto(e).y)); }
+    });
+    const end = (e) => {
+      if (!start) return;
+      chip.classList.remove("held"); start = null; highlightRow(null);
+      if (!moved) { menuFor = menuFor === r ? null : r; draw(); return; }
+      const to = rowOfY(toPhoto(e).y);
+      if (to !== r) { // move the label there (swapping with what was there)
+        const a = grid.rowInfo[r], b = grid.rowInfo[to];
+        [a.kind, b.kind] = [b.kind, a.kind]; [a.name, b.name] = [b.name, a.name];
+      }
+      draw();
+    };
+    chip.addEventListener("pointerup", end); chip.addEventListener("pointercancel", () => { start = null; chip.classList.remove("held"); highlightRow(null); draw(); });
+  }
+  function dragX(tag, k, holeR) {
+    let start = null, moved = false;
+    tag.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); start = { x: e.clientX }; moved = false; tag.setPointerCapture?.(e.pointerId); tag.classList.add("held"); });
+    tag.addEventListener("pointermove", (e) => { if (!start) return; const dx = e.clientX - start.x; if (Math.abs(dx) > 6) moved = true; if (moved) tag.style.transform = `translate(calc(-50% + ${dx}px), -100%)`; });
+    tag.addEventListener("pointerup", (e) => { if (!start) return; start = null; tag.classList.remove("held"); if (moved) startCol[k] = colOfX(toPhoto(e).x, holeR); draw(); });
+    tag.addEventListener("pointercancel", () => { start = null; tag.classList.remove("held"); draw(); });
+  }
+  let hl = null;
+  function highlightRow(r) {
+    hl?.remove(); hl = null;
+    if (r == null) return;
+    const row = grid.cells[r]; if (!row?.length) return;
+    const a = row[0], b = row[row.length - 1];
+    hl = sv("polygon", { points: `${a.x0},${a.y0} ${b.x1},${b.y0} ${b.x1},${b.y1} ${a.x0},${a.y1}`, fill: "rgba(255,214,10,0.25)", stroke: "#ffd60a", "stroke-width": Math.max(2, W / 600) });
+    svg.appendChild(hl);
+  }
+  function kindMenu(r, y) {
+    const ri = grid.rowInfo[r];
+    const set = (kind) => {
+      if (["hole", "par", "hcp"].includes(kind)) grid.rowInfo.forEach((o) => { if (o.kind === kind) o.kind = "ignore"; });
+      ri.kind = kind; menuFor = null; draw();
+    };
+    const nameIn = el("input", { value: ri.name || cleanTee(ri.label), placeholder: "Tee name (e.g. Blue)", maxLength: 40, "aria-label": "Tee name" });
+    const teeGo = el("button", { type: "button", class: "btn" }, "Tee");
+    teeGo.addEventListener("click", () => { ri.name = nameIn.value.trim() || "Tees"; set("tee"); });
+    const opts = ["hole", "par", "hcp", "ignore"].map((k) => { const b = el("button", { type: "button", class: `ce-opt k-${k}` }, GRID_KIND[k]); b.addEventListener("click", () => set(k)); return b; });
+    // shown next to where you tapped (in view, even zoomed in)
+    const done = el("button", { type: "button", class: "link ce-close" }, "Done");
+    done.addEventListener("click", () => { menuFor = null; draw(); });
+    const m = el("div", { class: "ce-menu", style: `left:${(tableLeft() / W) * 100}%;top:${((y + 18) / H) * 100}%` }, [el("div", { class: "ce-opts" }, opts), el("div", { class: "ce-tee" }, [nameIn, teeGo]), done]);
+    m.addEventListener("click", (e) => e.stopPropagation());
+    m.addEventListener("pointerdown", (e) => e.stopPropagation());
+    return m;
+  }
+  const cleanTee = (t) => String(t || "").replace(/[^A-Za-z0-9 '&-]/g, " ").replace(/\s+/g, " ").trim();
+
+  img.addEventListener("click", (e) => {
+    const p = toPhoto(e);
+    if (adding) {
+      // split the row the tap is inside (top and bottom measured where you tapped)
+      const at = (r) => { const c = cellAt(r, colOfX(p.x, r)); return c ? [c.y0, c.y1] : [0, 0]; };
+      let r = grid.cells.findIndex((_, i) => { const [y0, y1] = at(i); return p.y > y0 + 2 && p.y < y1 - 2; });
+      if (r < 0) r = rowOfY(p.y);
+      splitRow(grid, r, p.y);
+      adding = false; addLine.classList.remove("on"); draw(); return;
+    }
+    if (menuFor != null) { menuFor = null; draw(); }
+  });
+  addLine.addEventListener("click", () => { adding = !adding; menuFor = null; addLine.classList.toggle("on", adding); draw(); });
+  zin.addEventListener("click", () => { zoom = Math.min(4, zoom * 1.4); draw(); });
+  zout.addEventListener("click", () => { zoom = Math.max(1, zoom / 1.4); draw(); });
+  const close = () => { overlay.remove(); if (url.v) URL.revokeObjectURL(url.v); document.removeEventListener("keydown", onKey); document.body.classList.remove("tapping"); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  cancel.addEventListener("click", close);
+  useBtn.addEventListener("click", async () => {
+    useBtn.disabled = true; useBtn.textContent = "Reading\u2026";
+    const hc = holeCols();
+    grid.holeCols = hc;
+    // read any squares still needed (rows split or moved since)
+    for (const [r, ri] of grid.rowInfo.entries()) {
+      if (!["par", "hcp", "tee"].includes(ri.kind)) continue;
+      for (const k of ks) { const cell = cellAt(r, hc[k]); if (cell && !/\d/.test(cell.text || "")) cell.text = await grid.readCell(cell, ri.kind === "hcp"); }
+    }
+    const vals = gridValues(grid, grid.rowInfo, hc, holes);
+    close();
+    onUse(vals, ks);
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.classList.add("tapping");
+  document.body.appendChild(overlay);
+  img.addEventListener("load", draw);
+  window.__gridEditor = { grid, draw }; // (for tests)
   draw();
 }

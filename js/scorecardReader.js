@@ -57,7 +57,7 @@ export async function tesseractEngine() {
 }
 
 /* ============================== image helpers ============================== */
-function toGray(src, scale, angle = 0) {
+export function toGray(src, scale, angle = 0) {
   const w = Math.round(src.width * scale), h = Math.round(src.height * scale);
   const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
   const ctx = c.getContext("2d", { willReadFrequently: true });
@@ -94,7 +94,7 @@ function boxStats(g, w, h, r) {
 }
 
 /** Black-and-white page for finding words: every row's text made dark-on-light, table lines removed. */
-function cleanPage({ g, w, h }) {
+export function cleanPage({ g, w, h }) {
   const st = boxStats(g, w, h, 22);
   const ink = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -135,7 +135,7 @@ const pct = (arr, p) => { const a = Array.from(arr).sort((x, y) => x - y); retur
 
 /** One cell, ready to read: dark digits on white, cropped to the digits' band, edge lines blanked, padded.
  *  top: take the top band of digits (a fraction's top number) instead of the tallest. */
-function cellCanvas({ g, w, h }, x0, y0, x1, y1, top = false, avoid = null) {
+export function cellCanvas({ g, w, h }, x0, y0, x1, y1, top = false, avoid = null) {
   x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0)); x1 = Math.min(w, Math.round(x1)); y1 = Math.min(h, Math.round(y1));
   const cw = x1 - x0, ch = y1 - y0;
   if (cw < 4 || ch < 4) return null;
@@ -406,7 +406,7 @@ async function readRows(engine, gray, layout, { holes, parDy, hcpDy, tees }, onP
 // names is written that way ("iBlack" → "Black", "iereen" → "Green", "Siver" → "Silver").
 const TEE_NAMES = ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Taupe", "Copper", "Jade", "Teal", "Orange", "Yellow",
   "Purple", "Burgundy", "Bronze", "Platinum", "Tan", "Combo", "Tips", "Championship", "Tournament", "Back", "Middle", "Forward", "Members"];
-const cleanName = (t) => {
+export const cleanName = (t) => {
   let words = t.replace(/[^A-Za-z0-9 '&/-]/g, " ").split(/\s+/).filter((w) => /[A-Za-z]{2,}/.test(w));
   // a usual tee name anywhere in the label: start there ("oom Taupe Permission Only" → "Taupe Permission Only")
   const at = words.findIndex((w) => TEE_NAMES.some((n) => w.toLowerCase() === n.toLowerCase() || (n.length >= 4 && similar(w.toLowerCase(), n.toLowerCase()))));
@@ -422,7 +422,7 @@ const cleanName = (t) => {
   while (words.length > 1 && (/^[a-z]{1,3}$/.test(words[words.length - 1]) || words[words.length - 1].length <= 2)) words.pop();
   return words.join(" ").trim();
 };
-const NOT_TEE = /hole|^par\b|hand|hcp|hdcp|index|stroke|scor|attest|date|match|your|play|net|adj|^tot|^out\b|^in\b|signature|player|men|women|ladies|rating|slope/i;
+export const NOT_TEE = /hole|^par\b|hand|hcp|hdcp|index|stroke|scor|attest|date|match|your|play|net|adj|^tot|^out\b|^in\b|signature|player|men|women|ladies|rating|slope/i;
 
 /** The photo turned by a quarter-turn multiple (90 = clockwise), as a canvas. */
 export function rotateImage(src, deg) {
@@ -439,7 +439,7 @@ export function rotateImage(src, deg) {
  * to turn it (EXIF orientation); a page shows it the right way up, but some ways of loading it ignore the
  * note. Loading it the way the page shows it (an <img>) applies the note, so the reader sees what you see.
  */
-async function bitmapOf(file) {
+export async function bitmapOf(file) {
   if (file instanceof HTMLCanvasElement || (typeof ImageBitmap !== "undefined" && file instanceof ImageBitmap)) return file;
   let img = file;
   if (!(file instanceof HTMLImageElement)) {
@@ -460,7 +460,7 @@ async function bitmapOf(file) {
 }
 
 // How much readable text a page has: words of 3+ letters and 1-4 digit numbers (to tell which way up a card is).
-const textScore = (words) => words.filter((w) => /^[A-Za-z]{3,}$/.test(w.text) || /^\d{1,4}$/.test(w.text)).length;
+export const textScore = (words) => words.filter((w) => /^[A-Za-z]{3,}$/.test(w.text) || /^\d{1,4}$/.test(w.text)).length;
 
 /* ============================== automatic reading ============================== */
 /**

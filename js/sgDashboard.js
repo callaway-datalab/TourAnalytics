@@ -11,7 +11,7 @@
 // (not lie or distance).
 import { el, mount, loadScript } from "./ui.js";
 import {
-  CATEGORIES, applyFilters, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull,
+  CATEGORIES, applyFilters, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG,
 } from "./sg.js";
 
@@ -87,11 +87,28 @@ export function sgDashboard(container, opts) {
     const act = container.contains(document.activeElement) ? document.activeElement : null;
     const focusKey = act ? (act.getAttribute("aria-label") || act.textContent).trim() : null;
     const focusTag = act?.tagName;
+    if ((st.view || "advanced") === "basic") {
+      // Basic: traditional stats. No category pills; no lie / distance / club filters.
+      const bf = { ...f, cats: [], lie: [], dist: [], club: [] };
+      const bField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, bf) }));
+      const bMine = me ? applyFilters(me.rounds, bf) : null;
+      mount(container, [
+        viewPills(),
+        opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
+        yearPills(opt),
+        basicStatBar(bField, bMine),
+        filterBar(opt, { basic: true }),
+        el("div", { class: "sg-panel" }, basicBlocks(bField, bMine)),
+      ]);
+      window.scrollTo(0, y);
+      container.style.minHeight = "";
+      return;
+    }
     mount(container, [
+      viewPills(),
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       catPills(),
       yearPills(opt),
-      statTypeBar(),
       filterBar(opt),
       el("div", { class: "sg-panel" }, (() => {
         // The rankings are always the first thing (Stat Averages and the charts follow).
@@ -175,7 +192,7 @@ export function sgDashboard(container, opts) {
     st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
   }
 
-  function filterBar(opt) {
+  function filterBar(opt, { basic = false } = {}) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
     const active = ["year", "event", "roundNo", "lie", "dist", "club"].some((k) => st[k].length) || Number(st.span) > 0;
@@ -196,16 +213,114 @@ export function sgDashboard(container, opts) {
       el("label", {}, ["Span", span]),
       multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
-      multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
-      multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
-      // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
-      multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
-        empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }),
+      ...(basic ? [] : [
+        multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
+        multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
+        // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
+        multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
+          empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }),
+      ]),
       reset,
     ]);
   }
   // Category pills: pick one or several (e.g. Off-the-Tee + Approach + Around-the-Green = tee to green).
   // "All" clears the choice; picking all four is the same as All.
+  /* ---------------- Basic / Advanced ---------------- */
+  function viewPills() {
+    const v = st.view || "advanced";
+    return el("nav", { class: "subnav small sg-view", "aria-label": "Basic or advanced stats" }, [["basic", "Basic"], ["advanced", "Advanced"]].map(([k, l]) => {
+      const a = el("a", { href: "#", "aria-current": v === k ? "page" : null }, l);
+      a.addEventListener("click", (e) => { e.preventDefault(); st.view = k; draw(); });
+      return a;
+    }));
+  }
+  // Traditional stats, from each round's counts (Data Entry rounds have them; a Tour Events file would need
+  // those columns). higher: true = more is better.
+  const BASIC = [
+    { key: "scoring", label: "Scoring Avg", higher: false, dp: 1, unit: "", get: (c) => (c.holes ? (c.score / c.holes) * 18 : null) },
+    { key: "gir", label: "GIR %", higher: true, dp: 1, unit: "%", get: (c) => (c.holes ? (c.gir / c.holes) * 100 : null) },
+    { key: "hitGreen", label: "Hit Green %", higher: true, dp: 1, unit: "%", get: (c) => (c.apps ? (c.appGreen / c.apps) * 100 : null) },
+    { key: "fwy", label: "Driving Accuracy", higher: true, dp: 1, unit: "%", get: (c) => (c.fwyN ? (c.fwy / c.fwyN) * 100 : null) },
+    { key: "drive", label: "Driving Distance", higher: true, dp: 0, unit: " yds", get: (c) => (c.drives ? c.driveYds / c.drives : null) },
+    { key: "putts", label: "Putts / Round", higher: false, dp: 1, unit: "", get: (c) => (c.puttHoles ? (c.putts / c.puttHoles) * 18 : null) },
+    { key: "threePutt", label: "3-Putt Avoidance", higher: true, dp: 1, unit: "%", get: (c) => (c.puttHoles ? (1 - c.threePutts / c.puttHoles) * 100 : null) },
+    { key: "ud", label: "Up & Down %", higher: true, dp: 1, unit: "%", get: (c) => (c.udN ? (c.ud / c.udN) * 100 : null) },
+    { key: "birdie", label: "Birdie Pct", higher: true, dp: 1, unit: "%", get: (c) => (c.holes ? (c.birdies / c.holes) * 100 : null) },
+    { key: "bogey", label: "Bogey Avoidance", higher: true, dp: 1, unit: "%", get: (c) => (c.holes ? (c.parOrBetter / c.holes) * 100 : null) },
+    { key: "prox", label: "Proximity", higher: false, dp: 1, unit: " ft", get: (c) => (c.proxN ? c.proxFt / c.proxN : null) },
+    { key: "owgr", label: "OWGR", soon: true },
+  ];
+  const sumCounts = (rounds) => {
+    const t = {};
+    for (const rd of rounds) for (const [k, v] of Object.entries(rd.basic || {})) t[k] = (t[k] || 0) + v;
+    return t;
+  };
+  const basicNow = () => BASIC.find((b) => b.key === st.basicStat) || BASIC[0];
+  const fmtBasic = (b, v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v.toFixed(b.dp)}${b.unit}`);
+  function basicStatBar(bField, bMine) {
+    const all = [...(bMine || []), ...bField.flatMap((p) => p.rounds)];
+    const has = (b) => !b.soon && all.some((rd) => rd.basic && b.get(rd.basic) != null);
+    if (!has(basicNow())) { const first = BASIC.find(has); if (first) st.basicStat = first.key; }
+    const sel = el("select", { "aria-label": "Stat Type" }, BASIC.map((b) =>
+      el("option", { value: b.key, selected: basicNow().key === b.key, disabled: !has(b) }, b.soon ? `${b.label} (coming soon)` : has(b) ? b.label : `${b.label} (not in this data)`)));
+    sel.addEventListener("change", () => { st.basicStat = sel.value; draw(); });
+    return el("div", { class: "stat-type" }, el("label", {}, ["Stat Type", sel]));
+  }
+  function basicBlocks(bField, bMine) {
+    const b = basicNow();
+    const all = [...(bMine || []), ...bField.flatMap((p) => p.rounds)];
+    if (!all.some((rd) => rd.basic && b.get && b.get(rd.basic) != null)) {
+      return [el("section", { class: "panel" }, el("p", { class: "empty center" },
+        "These stats come from rounds entered in Data Entry (every shot is recorded there). This data doesn\u2019t have them yet: switch to Entered Rounds, or use Advanced."))];
+    }
+    // rankings for the chosen stat
+    const ranked = bField.map((p) => ({ p, v: b.get(sumCounts(p.rounds)), n: p.rounds.filter((rd) => rd.basic?.holes).length }))
+      .filter((x) => x.v != null && Number.isFinite(x.v)).sort((x, y) => (b.higher ? y.v - x.v : x.v - y.v));
+    const rankRows = ranked.map((x, i) => el("tr", { class: x.p.key === me?.key ? "me" : "" }, [
+      el("td", { class: "num" }, String(i + 1)), el("td", {}, x.p.label), el("td", { class: "num" }, el("strong", {}, fmtBasic(b, x.v))), el("td", { class: "num" }, String(x.n)),
+    ]));
+    const blocks = [];
+    if (showRanks) blocks.push(panelBox(`Rankings \u00b7 ${b.label}`, ranked.length ? el("div", { class: "table-scroll ranks-scroll" }, el("table", { class: "plain rankings" }, [
+      el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num" }, b.label), el("th", { class: "num" }, "Rounds")])),
+      el("tbody", {}, rankRows),
+    ])) : el("p", { class: "empty" }, "No rounds in this selection.")));
+    // the player's trend by date, with the chosen players (Top 1 / 10 / … / All) for the same dates
+    if (me && bMine?.length) {
+      const groups = groupBy(bMine, st.trendBy);
+      const vals = groups.map((g) => b.get(sumCounts(g.rounds)));
+      const n = st.rankTop && st.rankTop !== "all" ? Number(st.rankTop) : null;
+      const others = (n ? ranked.slice(0, n).map((x) => x.p) : bField).filter((p) => p.key !== me.key);
+      const cmp = others.length ? groups.map((g) => {
+        const vs = others.map((p) => b.get(sumCounts(groupBy(p.rounds, st.trendBy).find((x) => x.label === g.label)?.rounds || []))).filter((v) => v != null && Number.isFinite(v));
+        return vs.length ? vs.reduce((t, v) => t + v, 0) / vs.length : null;
+      }) : null;
+      const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
+        const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
+        a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
+        return a;
+      }));
+      st.chartTypes = st.chartTypes || {};
+      if (!st.chartTypes["basic-trend"]) st.chartTypes["basic-trend"] = "line";
+      blocks.push(panelBox(`${b.label} Trend`, [toggles, chartBox((c, as) => barChart(c, groups.map((g) => g.label), vals, {
+        title: b.label, as, single: "#c8a97e", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName(), shortLabels: groups.map((g) => g.short),
+        tooltip: (i) => `${groups[i].rounds.length} ${groups[i].rounds.length === 1 ? "round" : "rounds"}`,
+      }), "wide", "basic-trend", { rankPick: others.length > 0 })], "full"));
+    }
+    return blocks;
+  }
+  // rounds grouped by round / event / month / year (in date order), for the Basic trend
+  function groupBy(rounds, by) {
+    const m = new Map();
+    for (const rd of [...rounds].sort((a, b2) => String(a.date).localeCompare(String(b2.date)))) {
+      const d = new Date(rd.date), ok = !isNaN(d);
+      const key = by === "year" ? (ok ? String(d.getFullYear()) : "?") : by === "month" ? (ok ? `${d.getMonth() + 1}/${String(d.getFullYear()).slice(2)}` : "?")
+        : by === "round" ? `${rd.key}` : (rd.event || rd.date);
+      const g = m.get(key) || { label: by === "round" ? (ok ? `${shortDate(d)}` : rd.date) : key, short: ok ? shortDate(d) : null, rounds: [] };
+      g.rounds.push(rd); m.set(key, g);
+    }
+    return [...m.values()];
+  }
+
   // Stat Type: which kind of stats the page shows. Strokes Gained for now; the others (marked "coming
   // soon") depend on the category picked.
   const STAT_TYPES_BY_CAT = {
@@ -566,7 +681,9 @@ export function sgDashboard(container, opts) {
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
       : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors, order: 2 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
-    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, showLine: false, pointStyle: "line", pointRadius: 14, pointBorderWidth: 3, borderColor: "#ffd60a", borderDash: [5, 4], borderWidth: 2, order: 0 }); // in front
+    // the other players: white dots joined by a dashed white line, in front of the bars
+    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, showLine: true, spanGaps: true, borderColor: "#ffffff", backgroundColor: "#ffffff",
+      borderDash: [5, 4], borderWidth: 1.5, pointStyle: "circle", pointRadius: 3.5, pointHoverRadius: 5, pointBackgroundColor: "#ffffff", pointBorderColor: "#ffffff", tension: 0, order: 0 });
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
     // Legend: only the reference marks (no "SG / round" entry), each drawn as a short dash in its color.

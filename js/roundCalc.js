@@ -71,6 +71,45 @@ export function holeScore(strokes = []) {
   return { strokes: strokes.length + penalties, done };
 }
 
+/**
+ * Traditional stats for one entered round, as counts (so any set of rounds adds up): finished holes only.
+ *   score / par, GIR, fairways, putts, 3-putts, up-and-downs, birdies, pars or better, driving distance,
+ *   approach proximity and approaches that hit the green.
+ */
+export function basicCounts(round) {
+  const c = { holes: 0, score: 0, par: 0, gir: 0, fwyN: 0, fwy: 0, putts: 0, puttHoles: 0, threePutts: 0, udN: 0, ud: 0, birdies: 0, parOrBetter: 0,
+    drives: 0, driveYds: 0, apps: 0, appGreen: 0, proxN: 0, proxFt: 0 };
+  const yds = (lie, d) => (d === "" || d == null ? null : lie === "Green" ? Number(d) / 3 : Number(d));
+  for (const h of round.holes || []) {
+    const strokes = round.shots?.[`h${h.n}`] || [];
+    const { strokes: score, done } = holeScore(strokes);
+    if (!done || !h.par) continue;
+    c.holes++; c.score += score; c.par += h.par;
+    if (score <= h.par - 1) c.birdies++;
+    if (score <= h.par) c.parOrBetter++;
+    // to the green: strokes (and penalties) until the ball is on the green or in the hole
+    let toGreen = null, pens = 0;
+    strokes.forEach((st, i) => { if (st.endLie === "Penalty") pens++; if (toGreen == null && (st.endLie === "Green" || st.endLie === "Holed")) toGreen = i + 1 + pens; });
+    const gir = toGreen != null && toGreen <= h.par - 2;
+    if (gir) c.gir++;
+    else { c.udN++; if (score <= h.par) c.ud++; } // missed the green in regulation: got up and down for par or better?
+    const tee = strokes[0];
+    if (h.par >= 4 && tee) {
+      c.fwyN++; if (tee.endLie === "Fairway") c.fwy++;
+      const a = yds(tee.startLie, tee.startDist), b = yds(tee.endLie, tee.endDist);
+      if (a != null && b != null && tee.endLie !== "Penalty") { c.drives++; c.driveYds += a - b; }
+    }
+    const putts = strokes.filter((st) => st.startLie === "Green").length;
+    if (putts) { c.putts += putts; c.puttHoles++; if (putts >= 3) c.threePutts++; }
+    strokes.forEach((st, i) => {
+      if (categoryOf(st, i, h.par) !== "APP") return;
+      c.apps++;
+      if (st.endLie === "Green" || st.endLie === "Holed") { c.appGreen++; c.proxN++; c.proxFt += st.endLie === "Holed" ? 0 : Number(st.endDist) || 0; }
+    });
+  }
+  return c;
+}
+
 /** One entered round -> { key, date, event, roundNo, year, shots: [{ cat, sg, w, lie, dist }] }. */
 export function roundToPrepared(round) {
   const shots = [];
@@ -88,7 +127,7 @@ export function roundToPrepared(round) {
   const d = new Date(round.date);
   return {
     key: round.id, date: round.date || "", event: round.tournament || round.course || "Entered round", roundNo: "",
-    year: isNaN(d) ? "" : String(d.getFullYear()), shots,
+    year: isNaN(d) ? "" : String(d.getFullYear()), shots, basic: basicCounts(round),
   };
 }
 

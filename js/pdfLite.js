@@ -72,14 +72,38 @@ export class PdfDoc {
     this.ops.push(`${num(x1)} ${num(this.H - y1)} m ${num(x2)} ${num(this.H - y2)} l S`);
     return this;
   }
-  /** Text with its baseline at y. align: left | right | center (x is the anchor). */
-  text(str, x, y, { size = 10, bold = false, color = "#111111", align = "left" } = {}) {
+  /** Text with its baseline at y. align: left | right | center (x is the anchor); spacing: extra points between letters. */
+  text(str, x, y, { size = 10, bold = false, color = "#111111", align = "left", spacing = 0 } = {}) {
     const bytes = toWinAnsi(str);
-    const w = bytes.reduce((t, c) => t + charW(c, bold), 0) * size / 1000;
+    const w = bytes.reduce((t, c) => t + charW(c, bold), 0) * size / 1000 + spacing * Math.max(0, bytes.length - 1);
     const X = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
     const esc = bytes.map((c) => (c === 40 || c === 41 || c === 92 ? `\\${String.fromCharCode(c)}` : c < 128 ? String.fromCharCode(c) : `\\${c.toString(8).padStart(3, "0")}`)).join("");
-    this.ops.push(`BT /${bold ? "F2" : "F1"} ${num(size)} Tf ${rgb(color).map(num).join(" ")} rg ${num(X)} ${num(this.H - y)} Td (${esc}) Tj ET`);
+    this.ops.push(`BT /${bold ? "F2" : "F1"} ${num(size)} Tf ${num(spacing)} Tc ${rgb(color).map(num).join(" ")} rg ${num(X)} ${num(this.H - y)} Td (${esc}) Tj ET`);
     return w;
+  }
+  /** A rectangle with rounded corners (radius r). */
+  roundRect(x, y, w, h, r, { fill = null, stroke = null, lineWidth = 1 } = {}) {
+    const k = 0.5523 * r, Y = (v) => num(this.H - v);
+    if (fill) this.ops.push(`${rgb(fill).map(num).join(" ")} rg`);
+    if (stroke) this.ops.push(`${rgb(stroke).map(num).join(" ")} RG ${num(lineWidth)} w [] 0 d`);
+    this.ops.push([`${num(x + r)} ${Y(y)} m`, `${num(x + w - r)} ${Y(y)} l`, `${num(x + w - r + k)} ${Y(y)} ${num(x + w)} ${Y(y + r - k)} ${num(x + w)} ${Y(y + r)} c`,
+      `${num(x + w)} ${Y(y + h - r)} l`, `${num(x + w)} ${Y(y + h - r + k)} ${num(x + w - r + k)} ${Y(y + h)} ${num(x + w - r)} ${Y(y + h)} c`,
+      `${num(x + r)} ${Y(y + h)} l`, `${num(x + r - k)} ${Y(y + h)} ${num(x)} ${Y(y + h - r + k)} ${num(x)} ${Y(y + h - r)} c`,
+      `${num(x)} ${Y(y + r)} l`, `${num(x)} ${Y(y + r - k)} ${num(x + r - k)} ${Y(y)} ${num(x + r)} ${Y(y)} c`, `h ${fill && stroke ? "B" : fill ? "f" : "S"}`].join(" "));
+    return this;
+  }
+  /** A line through several points, with round joins and ends. */
+  polyline(points, { color = "#000000", width = 1 } = {}) {
+    if (points.length < 2) return this;
+    this.ops.push(`${rgb(color).map(num).join(" ")} RG ${num(width)} w 1 J 1 j [] 0 d`);
+    this.ops.push(`${points.map(([x, y], i) => `${num(x)} ${num(this.H - y)} ${i ? "l" : "m"}`).join(" ")} S 0 J 0 j`);
+    return this;
+  }
+  /** A filled dot. */
+  dot(x, y, r, color) {
+    const k = 0.5523 * r, Y = (v) => num(this.H - v);
+    this.ops.push(`${rgb(color).map(num).join(" ")} rg ${num(x + r)} ${Y(y)} m ${num(x + r)} ${Y(y - k)} ${num(x + k)} ${Y(y - r)} ${num(x)} ${Y(y - r)} c ${num(x - k)} ${Y(y - r)} ${num(x - r)} ${Y(y - k)} ${num(x - r)} ${Y(y)} c ${num(x - r)} ${Y(y + k)} ${num(x - k)} ${Y(y + r)} ${num(x)} ${Y(y + r)} c ${num(x + k)} ${Y(y + r)} ${num(x + r)} ${Y(y + k)} ${num(x + r)} ${Y(y)} c f`);
+    return this;
   }
   /** Wrapped text from y (top of the first line); returns the y below the last line. */
   para(str, x, y, maxW, { size = 10, bold = false, color = "#111111", leading = 1.35 } = {}) {
