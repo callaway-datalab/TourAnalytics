@@ -555,8 +555,13 @@ export async function adminStats() {
   const since = Timestamp.fromDate(weekStart());
   const weekSnap = await getDocs(query(collection(db, "signins"), where("at", ">=", since))).catch(() => ({ docs: [] }));
   const weekUids = new Set(weekSnap.docs.map((d) => d.data().uid));
+  // who each sign-in was (the admin isn't in users: "You")
+  const names = new Map(usersSnap.docs.map((d) => [d.id, d.data().name || d.data().email || "Someone"]));
+  const me = auth.currentUser?.uid;
+  const weekly = weekSnap.docs.map((d) => ({ uid: d.data().uid, at: d.data().at, name: d.data().uid === me ? "You" : names.get(d.data().uid) || "Someone (account removed)" }))
+    .sort((a, b) => (b.at?.toMillis?.() ?? 0) - (a.at?.toMillis?.() ?? 0));
   return { clients: labels.size, accounts: usersSnap.size, openInvites, datasets: datasetsSnap.size, documents: documentsSnap.size,
-    weeklySignIns: weekSnap.docs.length, weeklyUsers: weekUids.size };
+    weeklySignIns: weekSnap.docs.length, weeklyUsers: weekUids.size, weekly };
 }
 
 /* ============================== Documents (PDF/PPTX) ============================== */

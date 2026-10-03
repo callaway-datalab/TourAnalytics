@@ -21,9 +21,12 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const toPar = (n) => (n === 0 ? "E" : n > 0 ? `+${n}` : String(n));
 
 export async function render(main, { params, routeId, flash, previewClient }) {
-  if (routeId === "entry-new") return renderNew(main, flash);
+  // Inside someone's portal (a preview), Data Entry is theirs: their rounds, and new rounds are theirs.
+  // (only the admin's portal view; a coach looking at a player keeps their own Data Entry)
+  const viewing = getState().isAdmin && previewClient && !previewClient.self ? previewClient : null;
+  if (routeId === "entry-new") return renderNew(main, flash, viewing);
   if (routeId === "entry-round") return renderRound(main, params, flash, previewClient);
-  return renderList(main);
+  return renderList(main, viewing);
 }
 
 /* ================================== whose rounds ================================== */
@@ -35,9 +38,9 @@ export function myEntryKey(state = getState()) {
 export const myName = (state = getState()) => state.profile?.name || state.user?.displayName || state.user?.email?.split("@")[0] || "Me";
 
 /* ======================================== round list ======================================== */
-function renderList(main) {
+function renderList(main, viewing = null) {
   const state = getState();
-  const myKey = myEntryKey(state);
+  const myKey = viewing ? viewing.key : myEntryKey(state);
   const list = el("div", { class: "entry-list" });
   mount(main, [
     el("div", { class: "entry-top" }, [
@@ -50,7 +53,8 @@ function renderList(main) {
     const row = (r) => {
       const { score, thru, par } = roundTotals(r);
       // ✕ deletes the round, only for rounds you entered yourself.
-      const del = r.ownerUid === state.user.uid ? el("button", { type: "button", class: "entry-del", "aria-label": `Delete round at ${r.course || "this course"} on ${r.date}`, title: "Delete round" }, "\u2715") : null;
+      // (inside someone's portal you're acting as them: their rounds can be deleted there)
+      const del = r.ownerUid === state.user.uid || (viewing && state.isAdmin) ? el("button", { type: "button", class: "entry-del", "aria-label": `Delete round at ${r.course || "this course"} on ${r.date}`, title: "Delete round" }, "\u2715") : null;
       del?.addEventListener("click", async (e) => {
         e.preventDefault(); e.stopPropagation();
         if (!confirmAction(`Delete your round at ${r.course || "this course"} on ${r.date}, and every shot in it? This can't be undone.`)) return;
@@ -74,7 +78,7 @@ function renderList(main) {
       done.length ? el("h2", {}, "Completed") : null, ...done.map(row),
     ]);
   };
-  return watchPlayerRounds(myKey, draw); // only your own rounds; someone else's are deleted from inside their portal
+  return watchPlayerRounds(myKey, draw); // your own rounds (or, inside someone's portal, theirs)
 }
 
 function roundTotals(r) {
@@ -89,9 +93,10 @@ function roundTotals(r) {
 const parThru = (r) => (r.holes || []).filter((h) => holeScore(r.shots?.[`h${h.n}`]).done).reduce((a, h) => a + h.par, 0);
 
 /* ======================================== new round ======================================== */
-async function renderNew(main, flash) {
+async function renderNew(main, flash, viewing = null) {
   const state = getState();
-  const player = { key: myEntryKey(state), label: myName(state) }; // always your own round
+  // your own round, or (inside someone's portal) theirs
+  const player = viewing ? { key: viewing.key, label: viewing.label } : { key: myEntryKey(state), label: myName(state) };
   let holesCount = 18;
   let holes = blankHoles(18);
 
@@ -234,7 +239,6 @@ async function renderNew(main, flash) {
         ? `Filled in ${found} boxes from the photo.${teeLine} Check them and fix anything that's off.`
         : "Couldn't make out the card on its own. Tap \u201cPoint to the rows on the photo\u201d to show it where the rows are, or type the holes in below.")
         + (found && read.notes.length ? ` ${read.notes.join(" ")}` : ""); // (nothing found: the first sentence says it)
-      tapBtn.hidden = false;
     } catch (err) {
       console.error(err);
       photoStatus.textContent = "The scorecard reader isn't available right now. Type the holes in below.";
@@ -263,7 +267,6 @@ async function renderNew(main, flash) {
       lastAnalysis = await analyzeCard(file, { holes: holesCount, engine: window.__scorecardEngine || null, onProgress: (p, label) => { photoStatus.textContent = `${label}\u2026 ${Math.round(p * 100)}%`; } });
       if (lastAnalysis.rotation) lastUpright = lastAnalysis.src;
       photoStatus.textContent = "Check the rows and columns on the photo, then tap \u201cUse these rows\u201d.";
-      tapBtn.hidden = false;
     } catch (err) { console.error(err); photoStatus.textContent = "The scorecard reader isn't available right now. Type the holes in below."; reading = false; return; }
     reading = false;
     openCardEditor(lastAnalysis, holesCount, readFromTable);
@@ -319,7 +322,6 @@ async function renderNew(main, flash) {
       countPills,
       photoBtn,
       photoStatus,
-      tapBtn,
       el("label", { class: "tees-label" }, ["Tees", teesBox]),
       el("p", { class: "muted center small" }, "or tap in each hole's par, yardage and handicap:"),
       el("div", { class: "card-head" }, [el("span", {}, "#"), el("span", {}, "Par"), el("span", {}, "Yards"), el("span", {}, "Hcp")]),
@@ -591,9 +593,20 @@ function renderRound(main, params, flash, previewClient) {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   let voiceOpen = false, voiceText = "", listening = null;
   function voiceBox() {
-    const btn = el("button", { type: "button", class: "btn ghost voice-btn", "aria-expanded": voiceOpen ? "true" : "false" }, "\uD83C\uDF99 Voice input");
+    const btn = el("button", { type: "button", class: "btn ghost voice-btn", "aria-expanded": voiceOpen ? "true" : "false" }, [micIcon(), el("span", {}, "Voice input")]);
     btn.addEventListener("click", () => { voiceOpen = !voiceOpen; if (!voiceOpen) stopListening(); drawHole(); if (voiceOpen && SpeechRec && !voiceText) startListening(); });
-    if (!voiceOpen) return el("div", { class: "voice" }, btn);
+    // Reset hole: start this hole over (asks first)
+    const reset = el("button", { type: "button", class: "link danger reset-hole" }, "Reset hole");
+    reset.addEventListener("click", () => {
+      if (!confirmAction(`Clear every shot on hole ${hole().n} and start it again?`)) return;
+      const h = hole();
+      strokes = Array.from({ length: h.par }, () => ({ ...blankStroke(), open: true }));
+      strokes[0].startLie = "Tee box"; strokes[0].startDist = h.yards ?? "";
+      voiceOpen = false; voiceText = ""; stopListening();
+      changed(true);
+      flash(`Hole ${h.n} cleared.`, "ok");
+    });
+    if (!voiceOpen) return el("div", { class: "voice" }, [btn, reset]);
     const text = el("textarea", { class: "voice-text", rows: 4, placeholder: "e.g. Driver to the fairway, 180 left. 6 iron on the green, 15 feet. Missed the putt, 3 feet left, then made it.", "aria-label": "What happened on this hole" }, voiceText);
     text.value = voiceText;
     const preview = el("ol", { class: "voice-preview" });
@@ -610,7 +623,7 @@ function renderRound(main, params, flash, previewClient) {
       return r;
     };
     text.addEventListener("input", () => { voiceText = text.value; showParse(); });
-    const mic = SpeechRec ? el("button", { type: "button", class: "btn ghost voice-mic" + (listening ? " on" : "") }, listening ? "\u25A0 Stop" : "\uD83C\uDF99 Speak") : null;
+    const mic = SpeechRec ? el("button", { type: "button", class: "btn ghost voice-mic" + (listening ? " on" : "") }, listening ? "\u25A0 Stop" : [micIcon(), el("span", {}, "Speak")]) : null;
     mic?.addEventListener("click", () => { if (listening) stopListening(); else startListening(); });
     const fill = el("button", { type: "button", class: "btn" }, "Fill in the hole");
     fill.addEventListener("click", () => applyVoice(showParse()));
@@ -622,6 +635,12 @@ function renderRound(main, params, flash, previewClient) {
     ]);
     queueMicrotask(showParse);
     return box;
+  }
+  // A red round microphone icon (for Voice input / Speak)
+  function micIcon() {
+    const span = el("span", { class: "mic-icon", "aria-hidden": "true" });
+    span.innerHTML = '<svg viewBox="0 0 40 40" width="22" height="22"><circle cx="20" cy="20" r="20" fill="#e5252a"/><rect x="15.5" y="7.5" width="9" height="16" rx="4.5" fill="#fff"/><path d="M12 19.5a8 8 0 0 0 16 0" fill="none" stroke="#fff" stroke-width="2"/><line x1="20" y1="27.5" x2="20" y2="31.5" stroke="#fff" stroke-width="2"/><line x1="15.5" y1="32" x2="24.5" y2="32" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
+    return span;
   }
   function startListening() {
     if (!SpeechRec || listening) return;

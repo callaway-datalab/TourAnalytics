@@ -434,9 +434,33 @@ export function rotateImage(src, deg) {
   return c;
 }
 
+/**
+ * A photo as an upright canvas. Phones save a sideways shot with the pixels sideways plus a note saying how
+ * to turn it (EXIF orientation); a page shows it the right way up, but some ways of loading it ignore the
+ * note. Loading it the way the page shows it (an <img>) applies the note, so the reader sees what you see.
+ */
 async function bitmapOf(file) {
-  return file instanceof HTMLCanvasElement || file instanceof HTMLImageElement || (typeof ImageBitmap !== "undefined" && file instanceof ImageBitmap) ? file : await createImageBitmap(file);
+  if (file instanceof HTMLCanvasElement || (typeof ImageBitmap !== "undefined" && file instanceof ImageBitmap)) return file;
+  let img = file;
+  if (!(file instanceof HTMLImageElement)) {
+    const url = URL.createObjectURL(file);
+    try {
+      img = new Image();
+      img.decoding = "async"; img.src = url;
+      await img.decode();
+    } catch {
+      URL.revokeObjectURL(url);
+      return createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(file));
+    }
+    URL.revokeObjectURL(url);
+  }
+  const c = Object.assign(document.createElement("canvas"), { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c;
 }
+
+// How much readable text a page has: words of 3+ letters and 1-4 digit numbers (to tell which way up a card is).
+const textScore = (words) => words.filter((w) => /^[A-Za-z]{3,}$/.test(w.text) || /^\d{1,4}$/.test(w.text)).length;
 
 /* ============================== automatic reading ============================== */
 /**
@@ -455,18 +479,23 @@ export async function readScorecard(file, { holes = 18, onProgress = () => {}, e
     let row = findHoleRow(words);
     // A sideways (or upside-down) photo: try the other ways round and keep the one that reads best.
     let rotation = 0, upright = null;
-    if (!row || row.seen < 8) {
+    if (!row || row.seen < 12) {
+      // Try it turned each way; keep the way the Hole row reads best (or, with no Hole row anywhere, the way
+      // the most text reads, so at least the photo is shown upright).
+      let best = { row, gray, words, scale, deg: 0, img: null, text: textScore(words) };
       for (const deg of [90, 270, 180]) {
         onProgress(0.08, "Turning the photo upright");
         const turned = rotateImage(bmp, deg);
         const sc = Math.max(0.5, Math.min(3, 2400 / turned.width));
         const g = toGray(turned, sc);
         const w = await engine.words(cleanPage(g));
-        const r = findHoleRow(w);
-        if (r && (!row || r.seen > row.seen)) { row = r; gray = g; words = w; scale = sc; rotation = deg; upright = turned; }
-        if (row && row.seen >= 12) break;
+        const r = findHoleRow(w), text = textScore(w);
+        const better = r && (!best.row || r.seen > best.row.seen) || (!r && !best.row && text > best.text * 1.25);
+        if (better) best = { row: r, gray: g, words: w, scale: sc, deg, img: turned, text };
+        if (best.row && best.row.seen >= 12) break;
       }
-      if (upright) bmp = upright;
+      ({ row, gray, words, scale } = best);
+      if (best.deg) { rotation = best.deg; upright = best.img; bmp = best.img; }
     }
     let turnedBy = 0; // the small straightening turn (radians)
     if (row && Math.abs(row.angle) > 0.004) {
@@ -476,7 +505,7 @@ export async function readScorecard(file, { holes = 18, onProgress = () => {}, e
       words = await engine.words(cleanPage(gray));
       row = findHoleRow(words) || row;
     }
-    if (!row) return { par: [], hcp: [], tees: [], found: false, rotation: 0, upright: null, notes: ["Couldn't find the Hole row (1, 2, 3 …) on its own."] };
+    if (!row) return { par: [], hcp: [], tees: [], found: false, rotation, upright, notes: ["Couldn't find the Hole row (1, 2, 3 …) on its own."] };
     onProgress(0.25, "Finding the rows");
     const page = cleanPage(gray);
     const firstCol = Math.min(...Object.values(row.cols));
@@ -644,7 +673,7 @@ export async function analyzeCard(file, { holes = 18, engine = null, onProgress 
       return { src, width: src.width, height: src.height, words: W, slope: 0, refX: anchors.h1.x, rotation: read.rotation, spacing: L.spacing / s,
         rowH: L.rowH / s, anchors, rows, notes: read.notes };
     }
-    return await analyzeByWords(file, { holes, engine, onProgress });
+    return await analyzeByWords(read.upright || file, { holes, engine, onProgress });
   } finally {
     if (own) await engine.terminate?.();
   }

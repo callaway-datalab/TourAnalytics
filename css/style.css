@@ -1617,3 +1617,24 @@ body.tapping { overflow: hidden; }
 .sg-tabs a.kept::after, .sg-years a.kept::after { content: "\1F512"; font-size: 0.62em; margin-left: 0.35em; vertical-align: 1px; }
 .sg-tabs a.kept, .sg-years a.kept { box-shadow: inset 0 0 0 1.5px var(--accent), 0 2px 8px rgba(0, 0, 0, 0.35) !important; }
 .pill-hint { text-align: center; margin: -0.75rem auto 1rem; font-size: 0.74rem; }
+
+/* Voice input: red microphone icon; Reset hole beside it */
+.voice:not(.open) { align-items: center; gap: 1rem; flex-wrap: wrap; }
+.voice-btn, .voice-mic { display: inline-flex; align-items: center; gap: 0.5rem; }
+.mic-icon { display: inline-grid; place-items: center; line-height: 0; }
+.mic-icon svg { display: block; }
+.reset-hole { min-height: 2.75rem; }
+
+/* Phones: the chart controls (Rank list + bar/line toggle) 40% smaller */
+@media (max-width: 640px) {
+  .chart-tools { transform: scale(0.6); transform-origin: top right; top: 0.4rem; right: 0.4rem; }
+  .sg-box > h3 { padding-right: 5.5rem; }
+}
+/* At a glance: Weekly Sign-ins / Users open their lists */
+.glance-btn { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.glance-btn:hover { background: rgba(30, 30, 34, 0.85); }
+.glance-btn[aria-expanded="true"] { border-color: rgba(200, 169, 126, 0.65) !important; }
+.glance-btn dt::after { content: " \25BE"; color: var(--muted); }
+.week-list { margin-top: 0.75rem; padding: 1rem 1.15rem; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+.week-list[hidden] { display: none; }
+.week-list h3 { margin: 0 0 0.6rem; font: 600 0.72rem/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }

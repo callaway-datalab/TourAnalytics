@@ -91,7 +91,6 @@ export function sgDashboard(container, opts) {
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       catPills(),
       yearPills(opt),
-      el("p", { class: "pill-hint muted small" }, "Tap to pick one \u00b7 double-tap to keep it (\uD83D\uDD12) and add more"),
       statTypeBar(),
       filterBar(opt),
       el("div", { class: "sg-panel" }, (() => {
@@ -227,23 +226,27 @@ export function sgDashboard(container, opts) {
   }
 
   // Year pills (under the categories): All, or any number of years.
-  // Pills: a tap picks just that one (replacing the last pick); a double-tap keeps it (🔒) so the next tap
-  // adds to it. Double-tap a kept pill to let it go (a single tap on it takes it out too).
-  let lastTap = null; // { key, value, at, wasKept } (pills are redrawn on every tap, so remember by value)
+  // Pills:
+  //   tap a pill that isn't picked → pick just it (plus any kept 🔒 pills)
+  //   tap a picked pill → un-pick it;  tap a kept pill → unlock it (it stays picked)
+  //   double-tap → keep it (🔒), so the next taps add to it
+  let lastTap = null; // { key, value, at, was: "kept" | "on" | "off" } (pills are redrawn on every tap, so remember by value)
   function tapPill(key, value, order) {
     const keepKey = `${key}Kept`;
     st[keepKey] = (st[keepKey] || []).filter((v) => st[key].includes(v));
     const now = Date.now();
     const dbl = lastTap && lastTap.key === key && lastTap.value === value && now - lastTap.at < 400;
     if (dbl) {
-      // the first tap already did the single-tap part; now keep it (or, if it was kept, leave it let go)
-      if (!lastTap.wasKept) { st[keepKey] = [...new Set([...st[keepKey], value])]; if (!st[key].includes(value)) st[key] = [...st[key], value]; }
+      // the first tap did its single-tap part; the second makes it kept (and picked)
+      st[keepKey] = [...new Set([...st[keepKey], value])];
+      if (!st[key].includes(value)) st[key] = [...st[key], value];
       lastTap = null;
     } else {
-      const wasKept = st[keepKey].includes(value);
-      if (wasKept) { st[keepKey] = st[keepKey].filter((v) => v !== value); st[key] = st[key].filter((v) => v !== value); }
-      else st[key] = [...st[keepKey].filter((v) => v !== value), value]; // one at a time, plus whatever is kept
-      lastTap = { key, value, at: now, wasKept };
+      const was = st[keepKey].includes(value) ? "kept" : st[key].includes(value) ? "on" : "off";
+      if (was === "kept") st[keepKey] = st[keepKey].filter((v) => v !== value);       // unlock, stay picked
+      else if (was === "on") st[key] = st[key].filter((v) => v !== value);           // un-pick
+      else st[key] = [...st[keepKey], value];                                        // just this one (+ kept)
+      lastTap = { key, value, at: now, was };
     }
     st[key].sort(order);
     draw();
@@ -437,7 +440,7 @@ export function sgDashboard(container, opts) {
       const vals = otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value).filter((v) => v !== undefined);
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     }) : null;
-    blocks.push(panelBox("Strokes Gained Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
+    blocks.push(panelBox("SG Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
       title: "SG / round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(),
       shortLabels: t.map((g) => g.short),
       tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),

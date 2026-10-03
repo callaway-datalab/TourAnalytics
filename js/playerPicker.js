@@ -92,7 +92,6 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
     el("label", { for: undefined }, "Player"),
     el("div", { class: "picker-row" }, [el("div", { class: "pp", style: "flex:1" }, [input, list]), clear]),
     which,
-    el("p", { class: "muted" }, `${players.filter((p) => p.key !== pinKey).length} players`),
   ]);
   const restore = () => { if (lastPick && players.some((p) => p.key === lastPick.key)) choose(players.find((p) => p.key === lastPick.key)); };
   return { node, restore };

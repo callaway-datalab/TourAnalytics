@@ -110,7 +110,7 @@ export async function render(main, { flash }) {
     const uid = getState().user.uid;
     const mineKey = myEntryKey(getState());
     stopMine = watchPlayerRounds(player.key, (rounds) => {
-      mount(roundsTableBox, myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid,
+      mount(roundsTableBox, null && myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid,
         title: player.key === mineKey ? "Your rounds" : `${player.label}'s rounds` }) || el("p", { class: "muted center small" }, `${player.label} has no entered rounds yet.`));
       if (!firstMine && source === "entered") refreshEntered(); // a round was added or deleted: redo the stats
       firstMine = false;
@@ -132,13 +132,13 @@ export async function render(main, { flash }) {
   function drawEntered() {
     dash?.destroy(); dash = null;
     const me = meFrom();
-    if (!player) { mount(body, [roundsTableBox, el("p", { class: "empty center" }, "Pick a player above to see their entered rounds.")]); return; }
+    if (!player) { mount(body, el("p", { class: "empty center" }, "Pick a player above to see their entered rounds.")); return; }
     if (!me) {
-      mount(body, [roundsTableBox, el("p", { class: "empty center" }, `${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Data Entry." : "."}`)]);
+      mount(body, el("p", { class: "empty center" }, `${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Data Entry." : "."}`));
       return;
     }
     const box = el("div");
-    mount(body, [roundsTableBox, box]);
+    mount(body, box);
     dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE });
   }
 

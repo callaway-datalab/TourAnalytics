@@ -1,6 +1,6 @@
 import { el, mount } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchClientDatasets, getDatasetRows, getFieldStats } from "../store.js";
+import { watchClientDatasets, getDatasetRows, getFieldStats, getDatasetMeta } from "../store.js";
 import { detectColumns, isShotData, prepare, summaryPlayers } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
 import { plainName, teamLabels } from "../names.js";
@@ -81,6 +81,28 @@ export async function render(main, { previewClient, flash }) {
       mount(box, inner);
       const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", state: dashState });
       stopDataset = () => dash.destroy();
+      // The admin looking through a player's portal can read everyone's full data: load it, so the charts by
+      // lie, distance and club get their comparison dashes and Rank filter too (players only have the summary).
+      const st0 = getState();
+      if (st0.isAdmin && previewClient && !previewClient.self && field.length) {
+        const myVersion = version;
+        (async () => {
+          const full = [];
+          const keys = field.map((p) => p.key);
+          const next = async () => {
+            while (keys.length) {
+              const key = keys.shift();
+              try {
+                const meta = await getDatasetMeta(key, d.id);
+                full.push({ key, label: field.find((p) => p.key === key)?.label || key, rounds: key === clientKey ? me.rounds : prepare(await getDatasetRows(key, d.id, meta.chunkCount), idx) });
+              } catch { /* that player's file isn't there: leave them out */ }
+            }
+          };
+          await Promise.all(Array.from({ length: 6 }, next));
+          if (shownVersion !== myVersion || full.length < 2) return;
+          dash.update({ field: full });
+        })();
+      }
       return;
     }
     const cleanup = await renderDataset(box, { params: { id: d.id }, previewClient, flash, embedded: true, hideTitle: true });

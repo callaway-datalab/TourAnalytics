@@ -43,10 +43,45 @@ export async function render(main, { flash }) {
 
   /* ============================ At a glance ============================ */
   const statsBox = el("dl", { class: "facts glance" }, el("p", { class: "muted" }, "Loading\u2026"));
-  const loadStats = () => adminStats().then((stats) => mount(statsBox, [
-    ["Players in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
-    ["Weekly Sign-ins", stats.weeklySignIns, "Since Monday, everyone combined"], ["Weekly Users", stats.weeklyUsers, "Different people who signed in since Monday"],
-  ].map(([label, value, title]) => el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, num(value))])))).catch(() => {});
+  // Weekly Sign-ins / Weekly Users open a list (who, and when) under the boxes; tap again to close it.
+  let weekly = [], openList = null;
+  const weekBox = el("div", { class: "week-list", hidden: true });
+  const drawWeek = () => {
+    weekBox.hidden = !openList;
+    statsBox.querySelectorAll(".glance-btn").forEach((b) => b.setAttribute("aria-expanded", b.dataset.list === openList ? "true" : "false"));
+    if (!openList) return;
+    if (!weekly.length) { mount(weekBox, el("p", { class: "muted" }, "No sign-ins yet this week.")); return; }
+    if (openList === "signins") {
+      mount(weekBox, [el("h3", {}, `Sign-ins this week (${weekly.length})`), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, "Who"), el("th", {}, "When")])),
+        el("tbody", {}, weekly.map((w) => el("tr", {}, [el("td", {}, w.name), el("td", { class: "nowrap muted" }, w.at ? formatWhen(w.at) : "\u2014")]))),
+      ]))]);
+    } else {
+      const people = new Map();
+      for (const w of weekly) { const p = people.get(w.uid) || { name: w.name, n: 0, last: w.at }; p.n++; if ((w.at?.toMillis?.() ?? 0) > (p.last?.toMillis?.() ?? 0)) p.last = w.at; people.set(w.uid, p); }
+      const rows = [...people.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+      mount(weekBox, [el("h3", {}, `Who signed in this week (${rows.length})`), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, "Who"), el("th", { class: "num" }, "Sign-ins"), el("th", {}, "Last")])),
+        el("tbody", {}, rows.map((p) => el("tr", {}, [el("td", {}, p.name), el("td", { class: "num" }, String(p.n)), el("td", { class: "nowrap muted" }, p.last ? formatWhen(p.last) : "\u2014")]))),
+      ]))]);
+    }
+  };
+  const loadStats = () => adminStats().then((stats) => {
+    weekly = stats.weekly || [];
+    mount(statsBox, [
+      ["Players in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
+      ["Weekly Sign-ins", stats.weeklySignIns, "Since Monday, everyone combined. Tap to see them.", "signins"],
+      ["Weekly Users", stats.weeklyUsers, "Different people who signed in since Monday. Tap to see who.", "users"],
+    ].map(([label, value, title, list]) => {
+      if (!list) return el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, num(value))]);
+      const b = el("div", { class: "glance-btn", role: "button", tabindex: "0", title, "data-list": list, "aria-expanded": "false" }, [el("dt", {}, label), el("dd", {}, num(value))]);
+      const toggle = () => { openList = openList === list ? null : list; drawWeek(); };
+      b.addEventListener("click", toggle);
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+      return b;
+    }));
+    drawWeek();
+  }).catch(() => {});
 
   // Storage: how much of the free plan's database space is used, and roughly how much more fits.
   const storageBox = el("div", { class: "storage" }, el("p", { class: "muted small" }, "Working out storage\u2026"));
@@ -470,7 +505,7 @@ export async function render(main, { flash }) {
 
   /* ============================== Page ============================== */
   mount(main, [
-    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, storageBox]),
+    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, weekBox, storageBox]),
     el("section", {}, [
       el("h2", {}, "Access codes"),
       el("div", { class: "code-tools" }, [
