@@ -11,6 +11,24 @@ const NUM_WORDS = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
   thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50,
   sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
 
+/**
+ * Fix the usual mishearings of golf words: speech recognition hears "putt" as "pot" or "put".
+ * ("I put it on the green" is left alone: only "the / my / first / two … put" become putt.)
+ */
+export function golfFix(text) {
+  return String(text)
+    .replace(/\bpotted\b/gi, "putted").replace(/\bpots\b/gi, "putts").replace(/\bpot\b/gi, "putt")
+    .replace(/\b(the|a|my|that|this|first|second|third|1st|2nd|3rd|last|lag|tap|short|long|birdie|par|bogey|eagle|for|one|two|three|1|2|3)([\s-]+)put(s?)\b/gi, "$1$2putt$3")
+    .replace(/\bput(s?)(?=\s+(?:from|for|of|left|missed|lipped|burned|short|long|past)\b)/gi, "putt$1")
+    .replace(/\bputting it\b/gi, "putting it");
+}
+
+/** How golf-like a heard phrase is (to pick the best of the recognizer's guesses). */
+export function golfScore(text) {
+  const t = ` ${String(text).toLowerCase()} `;
+  return (t.match(/\b(putt|putts|putted|putter|fairway|green|rough|bunker|sand|trap|driver|iron|wood|hybrid|wedge|tee|feet|foot|yards|yds|hole|made|missed|lag|chip|chipped|pitch|left|out|birdie|par|bogey|penalty|water|trees)\b/g) || []).length;
+}
+
 /** "one eighty" → 180, "a hundred and twenty five" → 125, "fifteen" → 15, digits stay as they are. */
 export function wordsToNumbers(text) {
   let t = ` ${String(text).toLowerCase().replace(/(\d),(\d{3})/g, "$1$2").replace(/-/g, " ")} `;
@@ -86,7 +104,7 @@ const NEW_SHOT = /\b(teed off|tee shot|off the tee|drove|second shot|third shot|
  */
 export function parseShots(text, { bag = [] } = {}) {
   const notes = [];
-  const t = wordsToNumbers(text).replace(/\bi\b/g, "I").toLowerCase();
+  const t = wordsToNumbers(golfFix(text)).replace(/\bi\b/g, "I").toLowerCase();
   // clauses: "then", "and then", "after that", commas / full stops, and " and " before a new action
   const clauses = t.split(/\s*(?:[.;,!?]|\band then\b|\bthen\b|\bafter that\b|\bnext\b|\band (?=(?:I |then )?(?:hit|made|make|missed|miss|putted|chipped|pitched|left|had|drained|sank|(?:one|two|three|1|2|3)[\s-]?putt|tapped|holed|punched|laid|blasted|went|ended|found|got|leaving)))\s*/).map((c) => c.trim()).filter(Boolean);
   const shots = [];
@@ -151,6 +169,5 @@ export function parseShots(text, { bag = [] } = {}) {
     };
   });
   if (!shotsOut.length) notes.push("Couldn't make out any shots. Try something like: \u201cDriver to the fairway, 150 left, 8 iron on the green 20 feet, two putts.\u201d");
-  else if (shotsOut[shotsOut.length - 1].endLie !== "Holed") notes.push("The last shot doesn't finish in the hole yet: add the rest, or finish it on the screen.");
   return { shots: shotsOut, notes };
 }

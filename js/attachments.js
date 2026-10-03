@@ -1,5 +1,5 @@
 // Attach-files control and attachment links for questions and replies.
-import { el, mount } from "./ui.js";
+import { el, mount, openTabNow } from "./ui.js";
 import { readableSize, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "./data.js";
 import { getAttachmentBlobUrl } from "./store.js";
 
@@ -35,17 +35,20 @@ export function attachmentLinks(threadId, attachments, flash) {
       if (link.dataset.busy) return;
       link.dataset.busy = "1";
       const original = link.textContent;
+      const viewable = att.mimeType === "application/pdf" || att.mimeType.startsWith("image/");
+      const tab = viewable ? openTabNow() : null; // on the tap, so phones allow it
       link.textContent = "Opening\u2026";
       try {
         const url = await getAttachmentBlobUrl(threadId, att);
-        if (att.mimeType === "application/pdf" || att.mimeType.startsWith("image/")) {
-          window.open(url, "_blank", "noopener");
+        if (viewable) {
+          tab.show(url, att.name);
         } else {
           const a = el("a", { href: url, download: att.name });
           document.body.appendChild(a); a.click(); a.remove();
         }
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       } catch {
+        tab?.close();
         flash("Couldn't open that attachment. Try again.", "error");
       } finally {
         link.textContent = original;

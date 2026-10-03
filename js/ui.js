@@ -203,3 +203,22 @@ export function loadScript(src) {
   }
   return loadedScripts.get(src);
 }
+
+/* Opening a file in a new tab on phones: browsers (iPhone especially) only allow a new tab straight from a
+   tap, not after the file has finished downloading. So: open the tab on the tap, then show the file in it
+   when it's ready; if no tab could be opened, download the file instead. */
+export function openTabNow() {
+  let w = null;
+  try {
+    w = window.open("", "_blank");
+    if (w) { w.opener = null; w.document.title = "Opening\u2026"; w.document.body.innerHTML = '<p style="font:16px -apple-system,Helvetica,Arial,sans-serif;padding:24px;color:#555">Opening\u2026</p>'; }
+  } catch { w = null; }
+  return {
+    show(url, name = "file") {
+      if (w && !w.closed) { w.location.href = url; return; }
+      const a = Object.assign(document.createElement("a"), { href: url, download: name });
+      document.body.appendChild(a); a.click(); a.remove();
+    },
+    close() { try { w?.close(); } catch { /* fine */ } },
+  };
+}

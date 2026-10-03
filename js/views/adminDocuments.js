@@ -1,4 +1,4 @@
-import { el, mount, formatWhen, confirmAction, subNav } from "../ui.js";
+import { el, mount, formatWhen, confirmAction, subNav, openTabNow } from "../ui.js";
 import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage, setReportCategory, ensureAnalystReportAccess } from "../store.js";
 import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel, REPORT_CATEGORIES, reportCategory, ANALYST_ROLE } from "../data.js";
 
@@ -102,12 +102,13 @@ export async function render(main, { flash }) {
         const openLink = el("a", { href: "#" }, el("strong", {}, d.title));
         openLink.addEventListener("click", async (e) => {
           e.preventDefault();
+          const tab = openTabNow(); // on the tap, so phones allow it
           openLink.textContent = "Opening\u2026";
           try {
             const url = await getDocumentBlobUrl(d);
-            window.open(url, "_blank", "noopener");
+            tab.show(url, d.originalName || "report.pdf");
             setTimeout(() => URL.revokeObjectURL(url), 60000);
-          } catch { flash("Couldn't open that file.", "error"); }
+          } catch { tab.close(); flash("Couldn't open that file.", "error"); }
           finally { mount(openLink, el("strong", {}, d.title)); }
         });
         const del = el("button", { class: "link danger", type: "button" }, "Delete");

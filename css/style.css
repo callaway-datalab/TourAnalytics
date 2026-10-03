@@ -1625,11 +1625,6 @@ body.tapping { overflow: hidden; }
 .mic-icon svg { display: block; }
 .reset-hole { min-height: 2.75rem; }
 
-/* Phones: the chart controls (Rank list + bar/line toggle) 40% smaller */
-@media (max-width: 640px) {
-  .chart-tools { transform: scale(0.6); transform-origin: top right; top: 0.4rem; right: 0.4rem; }
-  .sg-box > h3 { padding-right: 5.5rem; }
-}
 /* At a glance: Weekly Sign-ins / Users open their lists */
 .glance-btn { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
 .glance-btn:hover { background: rgba(30, 30, 34, 0.85); }
@@ -1638,3 +1633,22 @@ body.tapping { overflow: hidden; }
 .week-list { margin-top: 0.75rem; padding: 1rem 1.15rem; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
 .week-list[hidden] { display: none; }
 .week-list h3 { margin: 0 0 0.6rem; font: 600 0.72rem/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+/* --- Auto-generate report --- */
+.report-gen { margin: 0 0 1.25rem; }
+.report-gen-panel { margin-top: 0.75rem; padding: 1.1rem; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 0.9rem; }
+.report-gen-panel[hidden] { display: none; }
+.report-field { display: flex; flex-direction: column; gap: 0.45rem; }
+.report-presets { margin: 0; }
+.report-dates { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.report-dates input { margin: 0; max-width: 11rem; }
+.report-cats { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.report-row { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; align-items: flex-end; }
+.report-row label { display: flex; flex-direction: column; gap: 0.3rem; }
+.report-row select { margin: 0; min-width: 12rem; }
+.report-check { flex-direction: row !important; align-items: center; gap: 0.5rem !important; min-height: 2.75rem; }
+.report-check input { width: 1.2rem; height: 1.2rem; }
+.report-gen-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.report-gen-result { display: flex; flex-direction: column; gap: 0.5rem; }
+.report-gen-result:empty { display: none; }
+.voice-start { margin: -0.3rem 0 0; font-weight: 600; color: var(--accent); font-size: 0.9rem; }

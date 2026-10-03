@@ -1,8 +1,9 @@
 // Reports → View: pick a player and see every report they can see, by type.
-import { el, mount, formatWhen, subNav } from "../ui.js";
+import { el, mount, formatWhen, subNav, openTabNow } from "../ui.js";
 import { adminAllClients, watchVisibleDocuments, watchEveryoneDocuments, getDocumentBlobUrl } from "../store.js";
 import { REPORT_CATEGORIES, reportCategory, roleLabel, ANALYST_ROLE } from "../data.js";
 import { playerPicker } from "../playerPicker.js";
+import { reportBuilder } from "../reportGen.js";
 
 export async function render(main, { flash }) {
   const results = el("div");
@@ -16,17 +17,20 @@ export async function render(main, { flash }) {
   let unsub = () => {};
   const open = async (d, link) => {
     const original = link.textContent;
+    const tab = openTabNow(); // on the tap, so phones allow it
     link.textContent = "Opening\u2026";
     try {
       const url = await getDocumentBlobUrl(d);
-      window.open(url, "_blank", "noopener");
+      tab.show(url, d.originalName || "report.pdf");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch { flash("Couldn't open that report.", "error"); }
+    } catch { tab.close(); flash("Couldn't open that report.", "error"); }
     finally { link.textContent = original; }
   };
 
+  let builder = null; // "Auto-generate report" for the picked player (kept across list updates)
   const show = (player) => {
     unsub(); unsub = () => {};
+    builder = player ? reportBuilder({ playerKey: player.key, playerLabel: player.label, canSave: true, flash }) : null;
     mount(results, el("p", { class: "empty center" }, "Loading\u2026"));
     // No player picked: the reports shared with everyone. A player: everything they can see.
     const watch = player ? (cb) => watchVisibleDocuments(player.key, cb) : watchEveryoneDocuments;
@@ -37,7 +41,7 @@ export async function render(main, { flash }) {
           : `${docs.length} ${docs.length === 1 ? "report" : "reports"} shared with everyone. Pick a player to see everything they've been sent.`),
         ...REPORT_CATEGORIES.map(([cat, label]) => {
           const items = docs.filter((d) => reportCategory(d) === cat);
-          return el("section", {}, [el("h2", {}, label), items.length
+          return el("section", {}, [el("h2", {}, label), cat === "performance" ? builder : null, items.length
             ? el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
                 el("thead", {}, el("tr", {}, ["Report", "Sent to", "Uploaded"].map((h) => el("th", {}, h)))),
                 el("tbody", {}, items.map((d) => {

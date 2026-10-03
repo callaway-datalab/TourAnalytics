@@ -170,12 +170,15 @@ export function sgBy(rounds, idx, cat, field) {
 }
 
 /** SG per round for one category, grouped by event, month or year (oldest first). */
+/** Compact dates for chart labels: 12/25/26. */
+export const shortDate = (d) => `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
+
 export function trend(rounds, cat, by = "event") {
   if (by === "round") {
     // One bar per round, oldest first, labeled with its date (and round number when there is one).
     return rounds.map((rd) => {
       const d = new Date(rd.date);
-      const day = isNaN(d) ? rd.date : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} '${String(d.getFullYear()).slice(2)}`;
+      const day = isNaN(d) ? rd.date : shortDate(d);
       return { label: `${day}${rd.roundNo ? ` R${rd.roundNo}` : ""}`, value: rd.shots.filter((s) => !cat || s.cat === cat).reduce((a, s) => a + s.sg, 0), rounds: 1, event: rd.event };
     });
   }
@@ -193,11 +196,11 @@ export function trend(rounds, cat, by = "event") {
   }
   return [...groups.values()].map((g) => ({ label: by === "month" ? monthLabel(g.label) : g.label, value: g.sg / g.rounds, rounds: g.rounds,
     // a short label for small screens: an event's date (its name is in the tap-up)
-    short: by === "event" && g.date ? g.date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null }));
+    short: by === "event" && g.date ? shortDate(g.date) : null }));
 }
 const monthLabel = (ym) => {
   const [y, m] = ym.split("-").map(Number);
-  return m ? new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : ym;
+  return m ? `${m}/${String(y).slice(2)}` : ym; // compact: 4/26
 };
 
 /** Stat definitions shown in each category's "Stat Averages" table. */

@@ -1,8 +1,9 @@
-import { el, mount, formatWhen } from "../ui.js";
+import { el, mount, formatWhen, openTabNow } from "../ui.js";
 import { getState } from "../auth.js";
 import { watchDocumentsFor, getDocumentBlobUrl } from "../store.js";
 import { REPORT_CATEGORIES, reportCategory } from "../data.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
+import { reportBuilder } from "../reportGen.js";
 
 export async function render(main, { previewClient, flash }) {
   const state = getState();
@@ -11,21 +12,25 @@ export async function render(main, { previewClient, flash }) {
   // One list per report type: Performance Reports, then Course Reports.
   const lists = new Map(REPORT_CATEGORIES.map(([cat]) => [cat, el("ul", { class: "rows" })]));
 
+  // "Auto-generate report" under Performance Reports (for a player's own data; only the admin can save it to their reports)
+  const playerLabel = previewClient?.label || state.profile?.name || "Player";
+  const builder = clientKey.startsWith("c_") ? reportBuilder({ playerKey: clientKey, playerLabel, canSave: state.isAdmin, flash }) : null;
   mount(main, [
     teamPlayerSelect(previewClient, "/documents"),
-    ...REPORT_CATEGORIES.map(([cat, label]) => el("section", {}, [el("h2", {}, label), lists.get(cat)])),
+    ...REPORT_CATEGORIES.map(([cat, label]) => el("section", {}, [el("h2", {}, label), cat === "performance" ? builder : null, lists.get(cat)])),
   ]);
 
   const openFile = async (doc, link) => {
     if (link.dataset.busy) return;
     link.dataset.busy = "1";
     const original = link.textContent;
+    const isPdf = doc.mimeType === "application/pdf";
+    const tab = isPdf ? openTabNow() : null; // on the tap, so phones allow it
     link.textContent = "Opening\u2026";
     try {
       const url = await getDocumentBlobUrl(doc);
-      const isPdf = doc.mimeType === "application/pdf";
       if (isPdf) {
-        window.open(url, "_blank", "noopener");
+        tab.show(url, doc.originalName || "report.pdf");
       } else {
         const a = document.createElement("a");
         a.href = url; a.download = doc.originalName;
@@ -33,6 +38,7 @@ export async function render(main, { previewClient, flash }) {
       }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch {
+      tab?.close();
       flash("Couldn't open that file. Try again.", "error");
     } finally {
       link.textContent = original;

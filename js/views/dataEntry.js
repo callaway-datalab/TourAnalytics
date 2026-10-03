@@ -12,7 +12,7 @@ import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } fr
 import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
-import { parseShots } from "../voiceShots.js";
+import { parseShots, golfFix, golfScore } from "../voiceShots.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
 
 // Short lie names for the narrow shot bands (the full words are in the band's label).
@@ -592,6 +592,8 @@ function renderRound(main, params, flash, previewClient) {
   // keyboard's 🎤 / typing where that isn't available), turned into shots, and fills the hole when you tap Fill in.
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   let voiceOpen = false, voiceText = "", listening = null;
+  // Voice input fills from the first shot that isn't done (folded) yet.
+  const voiceStart = () => { const i = strokes.findIndex((s) => s.open !== false || !isComplete(s)); return i < 0 ? strokes.length : i; };
   function voiceBox() {
     const btn = el("button", { type: "button", class: "btn ghost voice-btn", "aria-expanded": voiceOpen ? "true" : "false" }, [micIcon(), el("span", {}, "Voice input")]);
     btn.addEventListener("click", () => { voiceOpen = !voiceOpen; if (!voiceOpen) stopListening(); drawHole(); if (voiceOpen && SpeechRec && !voiceText) startListening(); });
@@ -631,6 +633,7 @@ function renderRound(main, params, flash, previewClient) {
     cancel.addEventListener("click", () => { voiceOpen = false; stopListening(); drawHole(); });
     const box = el("div", { class: "voice open" }, [
       el("p", { class: "muted small" }, SpeechRec ? (listening ? "Listening\u2026 say how the hole went, then tap Stop." : "Tap Speak and say how the hole went, or type it.") : "Type how the hole went, or use your keyboard\u2019s \uD83C\uDF99 to dictate."),
+      el("p", { class: "voice-start" }, `Starting at Shot ${voiceStart() + 1}`),
       text, el("div", { class: "voice-actions" }, [mic, fill, cancel]), preview, notes,
     ]);
     queueMicrotask(showParse);
@@ -645,12 +648,19 @@ function renderRound(main, params, flash, previewClient) {
   function startListening() {
     if (!SpeechRec || listening) return;
     const rec = new SpeechRec();
-    rec.lang = navigator.language || "en-US"; rec.continuous = true; rec.interimResults = true;
-    const before = voiceText ? `${voiceText.trim()} ` : "";
+    rec.lang = navigator.language || "en-US"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 5;
+    const before = voiceText ? `${voiceText.trim().replace(/[.!?]?$/, ".")} ` : "";
+    // each finished phrase (you paused) becomes a sentence; of the recognizer's guesses, keep the most golf-like
+    const sentence = (t) => { const x = golfFix(t.trim()); return x ? `${x[0].toUpperCase()}${x.slice(1)}${/[.!?]$/.test(x) ? "" : "."}` : ""; };
     rec.onresult = (e) => {
-      let said = "";
-      for (let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript;
-      voiceText = before + said;
+      const parts = [];
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        let best = r[0];
+        for (let j = 1; j < r.length; j++) if (golfScore(r[j].transcript) > golfScore(best.transcript)) best = r[j];
+        parts.push(r.isFinal ? sentence(best.transcript) : golfFix(best.transcript.trim()));
+      }
+      voiceText = before + parts.filter(Boolean).join(" ");
       const ta = holeBox.querySelector(".voice-text");
       if (ta) { ta.value = voiceText; ta.dispatchEvent(new Event("input")); }
     };
@@ -663,17 +673,24 @@ function renderRound(main, params, flash, previewClient) {
   function applyVoice(r) {
     if (!r.shots.length) return;
     const h = hole();
-    strokes = r.shots.map((p, i) => ({
+    const start = voiceStart(); // shots before this are done and stay as they are
+    const said = r.shots.map((p, i) => ({
       ...blankStroke(), open: true,
-      ...(i === 0 ? { startLie: "Tee box", startDist: h.yards ?? "" } : {}),
+      ...(start + i === 0 ? { startLie: "Tee box", startDist: h.yards ?? "" } : {}),
       endLie: p.endLie || "", endDist: p.endDist ?? "",
       ...(p.club ? { club: p.club, clubMake: p.clubMake, clubCat: p.clubCat } : {}),
     }));
     // "…hit 7 iron from 160": that's how far the shot before left you
-    r.shots.forEach((p, i) => { if (p.startDist != null && i > 0 && (strokes[i - 1].endDist === "" || strokes[i - 1].endDist == null)) strokes[i - 1].endDist = p.startDist; });
+    const all = [...strokes.slice(0, start), ...said];
+    r.shots.forEach((p, i) => { const prev = all[start + i - 1]; if (p.startDist != null && prev && (prev.endDist === "" || prev.endDist == null)) prev.endDist = p.startDist; });
+    strokes = all;
+    chain();
+    // finished shots fold; if the ball isn't in the hole yet, the next shot is ready for next time
+    strokes.forEach((s, i) => { if (i >= start && isComplete(s)) s.open = false; });
+    if (strokes[strokes.length - 1]?.endLie !== "Holed" && strokes.every((s) => s.open === false)) strokes.push({ ...blankStroke(), open: true });
     stopListening(); voiceOpen = false; voiceText = "";
     changed(true);
-    flash(`Filled in ${strokes.length} shot${strokes.length === 1 ? "" : "s"} from what you said. Check them below.`, "ok");
+    flash(`Filled in shot${said.length === 1 ? ` ${start + 1}` : `s ${start + 1}\u2013${start + said.length}`} from what you said.`, "ok");
   }
 
   // Club for a shot: your WITB clubs, or a nudge to fill out WITB.
