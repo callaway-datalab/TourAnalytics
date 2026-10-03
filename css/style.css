@@ -1681,8 +1681,17 @@ body.tapping { overflow: hidden; }
 
 /* --- Basic / Advanced --- */
 .sg-view { margin: 0 auto 1rem; }
-.sg-view a, .sg-view a:hover { min-width: 6.5rem; justify-content: center; }
+/* (sized to their words, text centred, like the other pills) */
 /* Basic / Advanced: centred right under Tour Events / Entered Rounds */
 .view-host { display: flex; justify-content: center; margin: -0.35rem 0 1.25rem; }
 .view-host:empty { display: none; }
 .view-host .sg-view { margin: 0; }
+/* WITB add row with shaft details: two tidy rows on wide screens */
+@media (min-width: 761px) {
+  .bag-panel .club-add:not(.club-edit-form) { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.5rem; }
+  .bag-panel .club-add:not(.club-edit-form) > * { min-width: 0; width: 100%; }
+  .bag-panel .club-add:not(.club-edit-form) > input[placeholder="Note"] { grid-column: span 1; }
+  .bag-panel .club-add:not(.club-edit-form) > .btn { width: auto; justify-self: start; }
+  .club-edit-form { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+.shaft-line { display: block; color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }

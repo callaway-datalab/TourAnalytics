@@ -5,7 +5,7 @@
 // Your bag becomes the Club choice on each shot in Data Entry.
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchBagDoc, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub } from "../bag.js";
+import { watchBagDoc, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub, shaftText, FLEXES } from "../bag.js";
 import { watchPlayerRounds } from "../rounds.js";
 import { strokesGained } from "../roundCalc.js";
 import { fmtSG, sgColor } from "../sg.js";
@@ -45,6 +45,9 @@ export async function render(main, { flash }) {
   const brand = el("input", { placeholder: "Brand", maxLength: 40, autocomplete: "off", "aria-label": "Brand" });
   const model = el("input", { placeholder: "Model", maxLength: 50, autocomplete: "off", "aria-label": "Model" });
   const note = el("input", { placeholder: "Note", maxLength: 120, autocomplete: "off", "aria-label": "Note (optional)" });
+  const shaftIn = el("input", { placeholder: "Shaft model", maxLength: 50, autocomplete: "off", "aria-label": "Shaft model" });
+  const flexIn = el("select", { "aria-label": "Flex" }, [el("option", { value: "" }, "Flex"), ...FLEXES.map((f) => el("option", { value: f }, f))]);
+  const weightIn = el("input", { type: "number", inputmode: "numeric", min: "20", max: "160", placeholder: "Weight (g)", "aria-label": "Shaft weight in grams" });
   // set mode: one dropdown where you tick the clubs you want
   let setMode = false, picked = [];
   const pickBtn = el("button", { type: "button", class: "ms-btn set-pick", "aria-expanded": "false", "aria-haspopup": "true" });
@@ -96,12 +99,13 @@ export async function render(main, { flash }) {
     onSubmit: async (e) => {
       e.preventDefault();
       const b = brand.value.trim(), m = model.value.trim(), n = note.value.trim();
+      const shaftBits = { shaft: shaftIn.value.trim(), flex: flexIn.value, weight: weightIn.value ? String(Math.round(Number(weightIn.value))) : "" };
       if (setMode) {
         const pick = [...picked];
         if (!pick.length) { flash("Tick the clubs in the set.", "error"); return; }
         let added = 0, bagged = 0, skipped = 0;
         for (const t of pick) {
-          const c = { id: newClubId(), cat: cat.value, type: t, brand: b, model: m, note: n };
+          const c = { id: newClubId(), cat: cat.value, type: t, brand: b, model: m, note: n, ...shaftBits };
           if (library.some((x) => same(x, c))) { skipped++; continue; }
           library = [c, ...library]; added++;
           if (inBag.length < MAX_CLUBS) { inBag = [...inBag, c.id]; bagged++; }
@@ -110,15 +114,15 @@ export async function render(main, { flash }) {
         flash(`Added ${added} club${added === 1 ? "" : "s"} (${pick.join(", ")}${name ? ` \u00b7 ${name}` : ""})${bagged < added ? `; ${bagged} fit in your bag` : ""}${skipped ? `; ${skipped} already in your list` : ""}.`, "ok");
       } else {
         if (!cat.value || !type.value) { flash("Pick the club and its type.", "error"); return; }
-        const c = { id: newClubId(), cat: cat.value, type: type.value, brand: b, model: m, note: n };
+        const c = { id: newClubId(), cat: cat.value, type: type.value, brand: b, model: m, note: n, ...shaftBits };
         if (library.some((x) => same(x, c))) { flash(`${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} is already in your list.`, "error"); return; }
         library = [c, ...library];
         if (inBag.length < MAX_CLUBS) inBag = [...inBag, c.id]; // new clubs go straight in the bag (if there's room)
       }
-      [brand, model, note].forEach((x) => { x.value = ""; });
+      [brand, model, note, shaftIn, weightIn].forEach((x) => { x.value = ""; }); flexIn.value = "";
       draw(); await save();
     },
-  }, [cat, type, setBox, brand, model, note, addBtn]);
+  }, [cat, type, setBox, brand, model, shaftIn, flexIn, weightIn, note, addBtn]);
 
   /* ---------- editing a club ---------- */
   let editing = null; // id of the club being edited
@@ -130,16 +134,20 @@ export async function render(main, { flash }) {
     const eb = el("input", { value: c.brand, placeholder: "Brand", maxLength: 40, "aria-label": "Brand" });
     const em = el("input", { value: c.model, placeholder: "Model", maxLength: 50, "aria-label": "Model" });
     const en = el("input", { value: c.note, placeholder: "Note", maxLength: 120, "aria-label": "Note" });
+    const es = el("input", { value: c.shaft || "", placeholder: "Shaft model", maxLength: 50, "aria-label": "Shaft model" });
+    const ef = el("select", { "aria-label": "Flex" }, [el("option", { value: "" }, "Flex"), ...FLEXES.map((f) => el("option", { value: f, selected: c.flex === f }, f))]);
+    const ew = el("input", { type: "number", inputmode: "numeric", min: "20", max: "160", value: c.weight || "", placeholder: "Weight (g)", "aria-label": "Shaft weight in grams" });
     const saveB = el("button", { type: "button", class: "btn" }, "Save");
     const cancelB = el("button", { type: "button", class: "link" }, "Cancel");
     saveB.addEventListener("click", async () => {
-      const next = { ...c, cat: ecat.value, type: etype.value, brand: eb.value.trim(), model: em.value.trim(), note: en.value.trim() };
+      const next = { ...c, cat: ecat.value, type: etype.value, brand: eb.value.trim(), model: em.value.trim(), note: en.value.trim(),
+        shaft: es.value.trim(), flex: ef.value, weight: ew.value ? String(Math.round(Number(ew.value))) : "" };
       if (library.some((x) => x.id !== c.id && same(x, next))) { flash("You already have that club in your list.", "error"); return; }
       library = library.map((x) => (x.id === c.id ? next : x));
       editing = null; draw(); await save();
     });
     cancelB.addEventListener("click", () => { editing = null; draw(); });
-    return el("tr", { class: "club-edit" }, el("td", { colspan: "6" }, el("div", { class: "club-add club-edit-form" }, [ecat, etype, eb, em, en, el("div", { class: "edit-actions" }, [saveB, cancelB])])));
+    return el("tr", { class: "club-edit" }, el("td", { colspan: "6" }, el("div", { class: "club-add club-edit-form" }, [ecat, etype, eb, em, es, ef, ew, en, el("div", { class: "edit-actions" }, [saveB, cancelB])])));
   }
 
   /* ---------- the list and the bag ---------- */
@@ -170,8 +178,9 @@ export async function render(main, { flash }) {
         const tr = el("tr", { class: "club-row" + (on ? " in-bag" : ""), tabindex: "0", role: "button", "aria-pressed": on ? "true" : "false",
           title: on ? "In your bag. Tap to take it out." : "Tap to put it in your bag." }, [
           el("td", {}, [el("strong", {}, clubLabel(c)), on ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null,
-            clubMake(c) ? el("span", { class: "mobile-make" }, clubMake(c)) : null]), // brand / model under the name on phones
-          el("td", {}, clubMake(c) || el("span", { class: "muted" }, "\u2014")),
+            clubMake(c) ? el("span", { class: "mobile-make" }, clubMake(c)) : null,
+            shaftText(c) ? el("span", { class: "mobile-make shaft-line" }, shaftText(c)) : null]), // brand / model (and shaft) under the name on phones
+          el("td", {}, [clubMake(c) || el("span", { class: "muted" }, "\u2014"), shaftText(c) ? el("span", { class: "shaft-line" }, `Shaft: ${shaftText(c)}`) : null]),
           el("td", { class: "muted" }, c.note || ""),
           el("td", { class: "num" }, String(u.used)),
           el("td", { class: "num", style: u.avg == null ? "" : `color:${sgColor(u.avg)}` }, u.avg == null ? "\u2014" : fmtSG(u.avg)),

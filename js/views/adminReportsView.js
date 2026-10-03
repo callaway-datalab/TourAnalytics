@@ -4,6 +4,8 @@ import { adminAllClients, watchVisibleDocuments, watchEveryoneDocuments, getDocu
 import { REPORT_CATEGORIES, reportCategory, roleLabel, ANALYST_ROLE } from "../data.js";
 import { playerPicker } from "../playerPicker.js";
 import { reportBuilder } from "../reportGen.js";
+import { getState } from "../auth.js";
+import { myEntryKey, myName } from "./dataEntry.js";
 
 export async function render(main, { flash }) {
   const results = el("div");
@@ -30,7 +32,9 @@ export async function render(main, { flash }) {
   let builder = null; // "Auto-generate report" for the picked player (kept across list updates)
   const show = (player) => {
     unsub(); unsub = () => {};
-    builder = player ? reportBuilder({ playerKey: player.key, playerLabel: player.label, canSave: true, flash }) : null;
+    // you (your own entered rounds) or a player; your own report is for downloading (it isn't anyone's Reports page)
+    const self = player && player.key === myEntryKey(getState());
+    builder = player ? reportBuilder({ playerKey: player.key, playerLabel: player.label, canSave: !self, flash, source: self ? "entered" : "tour" }) : null;
     mount(results, el("p", { class: "empty center" }, "Loading\u2026"));
     // No player picked: the reports shared with everyone. A player: everything they can see.
     const watch = player ? (cb) => watchVisibleDocuments(player.key, cb) : watchEveryoneDocuments;
@@ -64,7 +68,9 @@ export async function render(main, { flash }) {
   };
 
   const { labels, ids } = await adminAllClients();
-  const picker = playerPicker(labels, show, ids);
+  // you at the top, by your Profile name, for reports on your own entered rounds
+  const meKey = myEntryKey(getState());
+  const picker = playerPicker(new Map([[meKey, myName()], ...labels]), show, ids, meKey);
   mount(pickerBox, picker.node);
   show(null);
   picker.restore();
