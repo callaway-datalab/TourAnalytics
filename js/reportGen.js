@@ -282,24 +282,31 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   y = Math.max(yl + 30, yr) + 10;
 
   /* ---------- by category: gauges ---------- */
-  section("By category", "Where the strokes come from", 70);
-  d.text("The bar shows where the player stands in the group: a full bar is the best player's number, an empty bar the lowest. The dark line is Tour Avg.", M, y + 6, { size: 8, color: P.grey });
-  y += 18;
-  const gx = M + 150, gw = W - 150 - 150;
+  section("By category", "Where the strokes come from", 40 + a.byCat.length * 36);
+  wrap("The bar starts at the middle line: green to the right is gaining strokes, red to the left is losing them. The best gain in the group fills the right side, the biggest loss fills the left. The dark line is Tour Avg.", W, 8)
+    .forEach((l, i) => d.text(l, M, y + 6 + i * 10, { size: 8, color: P.grey }));
+  y += 28;
+  const gx = M + 150, gw = W - 150 - 150, zx = gx + gw / 2, half = gw / 2;
   for (const c of a.byCat) {
-    need(40);
+    need(36);
     const t = a.catTrend.find((q) => q.cat === c.cat);
     d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
     d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, color: P.grey });
     d.roundRect(gx, y + 8, gw, 12, 6, { fill: P.track });
-    const hi = c.best?.v, lo = c.low?.v;
-    const at = (v) => (hi == null || lo == null || hi === lo ? 1 : Math.max(0, Math.min(1, (v - lo) / (hi - lo))));
+    // each side's scale: the group's best gain (right) and biggest loss (left)
+    const hi = c.best?.v ?? 0, lo = c.low?.v ?? 0;
+    const posMax = hi > 0 ? hi : Math.max(Math.abs(lo), 0.01), negMax = lo < 0 ? Math.abs(lo) : Math.max(hi, 0.01);
+    const off = (v) => (v >= 0 ? Math.min(1, v / posMax) : -Math.min(1, Math.abs(v) / negMax)) * half;
     if (c.value != null) {
-      const w = Math.max(12, at(c.value) * gw), fill = c.value >= 0 ? P.up : P.down;
-      d.roundRect(gx, y + 8, w, 12, 6, { fill });
-      d.roundRect(gx + 3, y + 9.5, Math.max(4, w - 6), 3.5, 1.75, { fill: c.value >= 0 ? "#4fb97a" : "#e8665e" }); // highlight
+      const w = Math.max(10, Math.abs(off(c.value))), x0 = c.value >= 0 ? zx : zx - w, fill = c.value >= 0 ? P.up : P.down, light = c.value >= 0 ? "#4fb97a" : "#e8665e";
+      // rounded at the far end, square where it meets the middle line
+      d.roundRect(x0, y + 8, w, 12, 6, { fill });
+      d.rect(c.value >= 0 ? zx : zx - Math.min(6, w), y + 8, Math.min(6, w), 12, { fill });
+      d.roundRect(c.value >= 0 ? zx : x0 + 3, y + 9.5, Math.max(3, w - 3), 3.5, 1.75, { fill: light });
+      d.rect(c.value >= 0 ? zx : zx - 2, y + 9.5, 2, 3.5, { fill: light });
     }
-    if (c.fieldAvg != null) { const fx = gx + at(c.fieldAvg) * gw; d.line(fx, y + 3, fx, y + 25, { color: "#ffffff", width: 3.4 }); d.line(fx, y + 3, fx, y + 25, { color: P.ink, width: 1.6 }); }
+    d.line(zx, y + 5, zx, y + 23, { color: "#b0b3b8", width: 0.8 });
+    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 3, fx, y + 25, { color: "#ffffff", width: 3.4 }); d.line(fx, y + 3, fx, y + 25, { color: P.ink, width: 1.6 }); }
     d.text(fmtSG(c.value), M + W - 66, y + 19, { size: 18, bold: true, color: tone(c.value), align: "right" });
     if (t && t.change != null && Math.abs(t.change) >= 0.15) badge(t.change > 0 ? `Up ${t.change.toFixed(2)}` : `Down ${Math.abs(t.change).toFixed(2)}`, M + W - 58, y + 18, t.change > 0 ? P.up : P.down);
     else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
@@ -405,11 +412,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text(`Compared with ${plural(a.players - 1, "other player")} over the same dates and categories. All figures are strokes a round unless noted.`, M, y + 8, { size: 7.5, color: P.faint });
 
   // ---------- appendix ----------
-  const byDist = a.groups.filter((g) => !g.withLie);
+  const byDist = a.groups; // category + distance, and category + distance + lie
   if (byDist.length) {
     newPage();
-    section("Appendix", "Every skill by distance", 60);
-    d.text("Strokes gained a round for each category and distance. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
+    section("Appendix", "Every skill by distance and lie", 60);
+    d.text("Strokes gained a round for each category and distance, and each distance by lie. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
     y += 22;
     const gains = byDist.filter((g) => g.perRound >= 0).sort((p, q) => q.perRound - p.perRound);
     const losses = byDist.filter((g) => g.perRound < 0).sort((p, q) => p.perRound - q.perRound);
