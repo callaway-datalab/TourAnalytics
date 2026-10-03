@@ -43,17 +43,19 @@ export async function render(main, { previewClient, flash }) {
 
   // Tour (uploaded stats) | Entered Rounds (from Data Entry). "Me" (a coach's own) has only entered rounds.
   if (previewClient?.self) lastSource = "entered";
+  let tourDashNow = null;
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
+  const viewHost = el("div", { class: "view-host" }); // Basic / Advanced, right under the data pills
   const drawSource = () => {
     tourBox.hidden = lastSource !== "tour";
     enteredBox.hidden = lastSource !== "entered";
     mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
       const a = el("a", { href: "#", "aria-current": lastSource === v ? "page" : null }, l);
-      a.addEventListener("click", (e) => { e.preventDefault(); lastSource = v; drawSource(); });
+      a.addEventListener("click", (e) => { e.preventDefault(); lastSource = v; drawSource(); (v === "tour" ? tourDashNow : enteredDash)?.update({}); }); // its Basic / Advanced
       return a;
     }));
   };
-  mount(main, [teamPlayerSelect(previewClient, "/dashboard"), sourcePills, tourBox, enteredBox]);
+  mount(main, [teamPlayerSelect(previewClient, "/dashboard"), sourcePills, viewHost, tourBox, enteredBox]);
   drawSource();
 
   let current = null;       // id of the file on screen
@@ -79,8 +81,9 @@ export async function render(main, { previewClient, flash }) {
       const me = { key: clientKey, label, rounds: prepare(rows, idx) };
       const inner = el("div");
       mount(box, inner);
-      const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", state: dashState });
+      const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", state: dashState, viewHost });
       stopDataset = () => dash.destroy();
+      tourDashNow = dash;
       // The admin looking through a player's portal can read everyone's full data: load it, so the charts by
       // lie, distance and club get their comparison dashes and Rank filter too (players only have the summary).
       const st0 = getState();
@@ -144,7 +147,7 @@ export async function render(main, { previewClient, flash }) {
     const me = { ...players[0], label };
     const inner = el("div");
     mount(enteredDashBox, inner);
-    enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, mode: "player", state: enteredState, rankings: false,
+    enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, mode: "player", state: enteredState, rankings: false, viewHost,
       note: "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in." });
   });
 

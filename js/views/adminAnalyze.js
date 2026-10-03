@@ -35,6 +35,7 @@ export async function render(main, { flash }) {
 
   // Tour | Entered Rounds
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
+  const viewHost = el("div", { class: "view-host" }); // Basic / Advanced, right under the data pills
   const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
     a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
@@ -45,6 +46,7 @@ export async function render(main, { flash }) {
   mount(main, [
     subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/analyze"),
     sourcePills,
+    viewHost,
     pickerBox,
     portalLink,
     status,
@@ -92,7 +94,7 @@ export async function render(main, { flash }) {
     }).filter((p) => p.rounds.length);
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState });
+    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost });
     publishIfStale(ds);
   }
 
@@ -139,7 +141,7 @@ export async function render(main, { flash }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE });
+    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.

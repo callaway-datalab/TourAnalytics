@@ -1682,3 +1682,7 @@ body.tapping { overflow: hidden; }
 /* --- Basic / Advanced --- */
 .sg-view { margin: 0 auto 1rem; }
 .sg-view a, .sg-view a:hover { min-width: 6.5rem; justify-content: center; }
+/* Basic / Advanced: centred right under Tour Events / Entered Rounds */
+.view-host { display: flex; justify-content: center; margin: -0.35rem 0 1.25rem; }
+.view-host:empty { display: none; }
+.view-host .sg-view { margin: 0; }

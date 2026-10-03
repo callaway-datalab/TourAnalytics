@@ -92,6 +92,16 @@ export class PdfDoc {
       `${num(x)} ${Y(y + r)} l`, `${num(x)} ${Y(y + r - k)} ${num(x + r - k)} ${Y(y)} ${num(x + r)} ${Y(y)} c`, `h ${fill && stroke ? "B" : fill ? "f" : "S"}`].join(" "));
     return this;
   }
+  /** A smooth colour blend across a rectangle (drawn as fine bands): dir "h" (left → right) or "v" (top → bottom). */
+  gradient(x, y, w, h, from, to, { dir = "v", steps = 48 } = {}) {
+    const a = rgb(from), b = rgb(to);
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1), c = a.map((v, k) => v + (b[k] - v) * t);
+      if (dir === "v") this.rect(x, y + (h * i) / steps, w, h / steps + 0.6, { fill: c });
+      else this.rect(x + (w * i) / steps, y, w / steps + 0.6, h, { fill: c });
+    }
+    return this;
+  }
   /** A line through several points, with round joins and ends. */
   polyline(points, { color = "#000000", width = 1 } = {}) {
     if (points.length < 2) return this;

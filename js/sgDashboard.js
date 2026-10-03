@@ -92,8 +92,9 @@ export function sgDashboard(container, opts) {
       const bf = { ...f, cats: [], lie: [], dist: [], club: [] };
       const bField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, bf) }));
       const bMine = me ? applyFilters(me.rounds, bf) : null;
+      const vp = placeView();
       mount(container, [
-        viewPills(),
+        vp,
         opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
         yearPills(opt),
         basicStatBar(bField, bMine),
@@ -104,8 +105,9 @@ export function sgDashboard(container, opts) {
       container.style.minHeight = "";
       return;
     }
+    const vp = placeView();
     mount(container, [
-      viewPills(),
+      vp,
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       catPills(),
       yearPills(opt),
@@ -226,9 +228,15 @@ export function sgDashboard(container, opts) {
   // Category pills: pick one or several (e.g. Off-the-Tee + Approach + Around-the-Green = tee to green).
   // "All" clears the choice; picking all four is the same as All.
   /* ---------------- Basic / Advanced ---------------- */
+  // (drawn under the Tour Events / Entered Rounds pills when the page gives a place for them)
+  const placeView = () => {
+    if (!opts.viewHost) return viewPills();
+    if (container.closest("[hidden]")) return null; // a hidden dashboard (the other source) leaves the spot alone
+    mount(opts.viewHost, viewPills()); return null;
+  };
   function viewPills() {
     const v = st.view || "advanced";
-    return el("nav", { class: "subnav small sg-view", "aria-label": "Basic or advanced stats" }, [["basic", "Basic"], ["advanced", "Advanced"]].map(([k, l]) => {
+    return el("nav", { class: "subnav sg-view", "aria-label": "Basic or advanced stats" }, [["basic", "Basic"], ["advanced", "Advanced"]].map(([k, l]) => {
       const a = el("a", { href: "#", "aria-current": v === k ? "page" : null }, l);
       a.addEventListener("click", (e) => { e.preventDefault(); st.view = k; draw(); });
       return a;
@@ -734,7 +742,7 @@ export function sgDashboard(container, opts) {
 
   draw();
   return {
-    destroy() { destroyCharts(); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
+    destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
     update(next) { if ("me" in next) me = next.me; if ("field" in next) field = next.field; draw(); },
   };
 }
