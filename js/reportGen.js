@@ -17,7 +17,8 @@ import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
 
 const CAT_NAME = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
-const fmtSG = (v, dp = 2) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(dp)}`);
+// (tiny numbers get a third decimal, so nothing shows as "−0.00")
+const fmtSG = (v, dp = 2) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(v !== 0 && Math.abs(v) < 0.5 * 10 ** -dp ? dp + 1 : dp)}`);
 const day = (d) => { const t = Date.parse(d); return Number.isFinite(t) ? t : null; };
 const fmtDate = (d) => { const t = day(d); return t == null ? String(d || "") : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
@@ -42,7 +43,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats = C
     const vals = everyone.map((p) => ({ key: p.key, v: perRound(p.rounds, cat) })).filter((x) => x.v != null && Number.isFinite(x.v)).sort((a, b) => b.v - a.v);
     const i = vals.findIndex((x) => x.key === me.key);
     const fieldVals = vals.filter((x) => x.key !== me.key).map((x) => x.v);
-    return { rank: i >= 0 ? i + 1 : null, of: vals.length, fieldAvg: mean(fieldVals), best: vals[0] || null };
+    return { rank: i >= 0 ? i + 1 : null, of: vals.length, fieldAvg: mean(fieldVals), best: vals[0] || null, low: vals[vals.length - 1] || null };
   };
   const overall = { value: perRound(mine), rounds: mine.length, ...rankOf(null) };
   const byCat = cats.map((k) => ({ cat: k, name: CAT_NAME[k], value: perRound(mine, k), ...rankOf(k) }));
@@ -119,14 +120,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats = C
     if (c.value == null) continue;
     const gap = c.fieldAvg != null ? c.value - c.fieldAvg : c.value;
     if (gap < -0.05) focus.push({ cat: c.cat, kind: "category", lost: -gap, title: `${c.name}`,
-      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes a round${c.fieldAvg != null ? `, while the others average ${fmtSG(c.fieldAvg)}` : ""}${c.rank ? `. Ranked ${c.rank} of ${c.of}.` : "."}` });
+      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes a round${c.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(c.fieldAvg)}` : ""}${c.rank ? `. Ranked ${c.rank} of ${c.of}.` : "."}` });
   }
   const minShots = Math.max(5, mine.length * 0.5);
   for (const g of groups) {
     if (g.shots < minShots) continue;
     const gap = g.fieldAvg != null ? g.perRound - g.fieldAvg : g.perRound;
     if (gap < -0.05) focus.push({ cat: g.cat, kind: "skill", label: g.label, lost: -gap, title: g.title,
-      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round here${g.fieldAvg != null ? ` (the others: ${fmtSG(g.fieldAvg)})` : ""}, over ${Math.round(g.shots)} shots.` });
+      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round here${g.fieldAvg != null ? ` (Tour Avg ${fmtSG(g.fieldAvg)})` : ""}, over ${Math.round(g.shots)} shots.` });
   }
   for (const t of catTrend) if (t.change != null && t.change < -0.2) focus.push({ cat: t.cat, kind: "trend", lost: -t.change / 2, title: `Slipping: ${t.name}`,
     detail: `Earlier ${half} rounds: ${fmtSG(t.early)} a round. Recent ${half} rounds: ${fmtSG(t.late)} a round. That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
@@ -148,12 +149,12 @@ export function analyzePerformance(me, field, { from = null, to = null, cats = C
   for (const c of byCat) {
     if (c.value == null || c.value <= 0 || !isElite(c.rank, c.of)) continue;
     elite.push({ cat: c.cat, score: 1 + (c.value - (c.fieldAvg ?? 0)), title: c.name,
-      text: `Ranked ${c.rank} of ${c.of}. Gains ${c.value.toFixed(2)} strokes a round${c.fieldAvg != null ? `; the others average ${fmtSG(c.fieldAvg)}` : ""}.` });
+      text: `Ranked ${c.rank} of ${c.of}. Gains ${c.value.toFixed(2)} strokes a round${c.fieldAvg != null ? `; Tour Avg ${fmtSG(c.fieldAvg)}` : ""}.` });
   }
   for (const g of groups) {
     if (g.shots < Math.max(10, minShots) || g.perRound <= 0 || !isElite(g.rank, g.of)) continue;
     elite.push({ cat: g.cat, score: g.perRound - (g.fieldAvg ?? 0), title: g.title,
-      text: `Ranked ${g.rank} of ${g.of}. Gains ${g.perRound.toFixed(2)} strokes a round${g.fieldAvg != null ? `; the others average ${fmtSG(g.fieldAvg)}` : ""}. ${Math.round(g.shots)} shots.` });
+      text: `Ranked ${g.rank} of ${g.of}. Gains ${g.perRound.toFixed(2)} strokes a round${g.fieldAvg != null ? `; Tour Avg ${fmtSG(g.fieldAvg)}` : ""}. ${Math.round(g.shots)} shots.` });
   }
   elite.sort((p, q) => q.score - p.score);
   const rising = catTrend.filter((t) => t.change != null && t.change >= 0.2).sort((p, q) => q.change - p.change).map((t) => ({
@@ -216,7 +217,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   cap("Strokes gained per round", M, 122, "#8e8e93");
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 182, { size: 72, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
-  wrap(a.overall.rounds ? `${a.overall.value >= 0 ? "Better" : "Worse"} than the baseline by ${Math.abs(a.overall.value).toFixed(2)} strokes a round${versus != null ? `, and ${Math.abs(versus).toFixed(2)} ${versus >= 0 ? "better" : "worse"} than the other players (${fmtSG(a.overall.fieldAvg)}).` : "."}` : "No rounds in this period.", W * 0.56, 9.5)
+  wrap(a.overall.rounds ? `${a.overall.value >= 0 ? "Better" : "Worse"} than the baseline by ${Math.abs(a.overall.value).toFixed(2)} strokes a round${versus != null ? `, and ${Math.abs(versus).toFixed(2)} ${versus >= 0 ? "better" : "worse"} than Tour Avg (${fmtSG(a.overall.fieldAvg)}).` : "."}` : "No rounds in this period.", W * 0.56, 9.5)
     .slice(0, 2).forEach((l, i) => d.text(l, M, 202 + i * 12, { size: 9.5, color: "#c7c7cc" }));
   // badges
   let bx = M;
@@ -273,37 +274,32 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     }
     return yy;
   };
-  const yl0 = cards(M, "Strengths", strengths, P.up, P.upTint, "No clear standouts against the others in this period.");
+  const yl0 = cards(M, "Strengths", strengths, P.up, P.upTint, "No clear standouts against Tour Avg in this period.");
   const yl = yl0 + 2;
   wrap(`Elite = ranked in the top 10% of the ${a.players} players compared for that skill (with ${a.players} players, that's 1st), with at least 10 shots.${a.halves ? ` Rising / Slipping compare the recent ${a.halves.n} rounds with the ${a.halves.n} before them.` : ""}`, colW, 7.5)
     .forEach((l, i) => d.text(l, M, yl + 8 + i * 9.5, { size: 7.5, color: P.faint }));
-  const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against the others in this period.");
+  const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against Tour Avg in this period.");
   y = Math.max(yl + 30, yr) + 10;
 
   /* ---------- by category: gauges ---------- */
   section("By category", "Where the strokes come from", 70);
-  d.text("The bar starts at the zero line: to the right (green) is gaining strokes, to the left (red) is losing them. The dark line is the other players' average.", M, y + 6, { size: 8, color: P.grey });
+  d.text("The bar shows where the player stands in the group: a full bar is the best player's number, an empty bar the lowest. The dark line is Tour Avg.", M, y + 6, { size: 8, color: P.grey });
   y += 18;
-  const maxAbs = Math.max(0.25, ...a.byCat.flatMap((c) => [Math.abs(c.value || 0), Math.abs(c.fieldAvg || 0)])) * 1.1;
-  const gx = M + 150, gw = W - 150 - 150, zx = gx + gw / 2, sc = (gw / 2) / maxAbs;
+  const gx = M + 150, gw = W - 150 - 150;
   for (const c of a.byCat) {
     need(40);
     const t = a.catTrend.find((q) => q.cat === c.cat);
     d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
     d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, color: P.grey });
-    // track, centre line, bar with a darker end, others' dot
     d.roundRect(gx, y + 8, gw, 12, 6, { fill: P.track });
+    const hi = c.best?.v, lo = c.low?.v;
+    const at = (v) => (hi == null || lo == null || hi === lo ? 1 : Math.max(0, Math.min(1, (v - lo) / (hi - lo))));
     if (c.value != null) {
-      // rounded at the far end, square where it meets the zero line (filled right up to it)
-      const w = Math.max(10, Math.abs(c.value) * sc), x0 = c.value >= 0 ? zx : zx - w, fill = c.value >= 0 ? P.up : P.down;
-      d.roundRect(x0, y + 8, w, 12, 6, { fill });
-      d.rect(c.value >= 0 ? zx : zx - Math.min(6, w), y + 8, Math.min(6, w), 12, { fill });
-      const hx = c.value >= 0 ? zx : x0 + 3, hw = Math.max(3, w - 3);
-      d.roundRect(hx, y + 9.5, hw, 3.5, 1.75, { fill: c.value >= 0 ? "#4fb97a" : "#e8665e" }); // highlight
-      d.rect(c.value >= 0 ? zx : zx - 2, y + 9.5, 2, 3.5, { fill: c.value >= 0 ? "#4fb97a" : "#e8665e" });
+      const w = Math.max(12, at(c.value) * gw), fill = c.value >= 0 ? P.up : P.down;
+      d.roundRect(gx, y + 8, w, 12, 6, { fill });
+      d.roundRect(gx + 3, y + 9.5, Math.max(4, w - 6), 3.5, 1.75, { fill: c.value >= 0 ? "#4fb97a" : "#e8665e" }); // highlight
     }
-    d.line(zx, y + 4, zx, y + 24, { color: "#b0b3b8", width: 0.8 });
-    if (c.fieldAvg != null) { const fx = zx + c.fieldAvg * sc; d.line(fx, y + 3, fx, y + 25, { color: "#ffffff", width: 3.4 }); d.line(fx, y + 3, fx, y + 25, { color: P.ink, width: 1.6 }); }
+    if (c.fieldAvg != null) { const fx = gx + at(c.fieldAvg) * gw; d.line(fx, y + 3, fx, y + 25, { color: "#ffffff", width: 3.4 }); d.line(fx, y + 3, fx, y + 25, { color: P.ink, width: 1.6 }); }
     d.text(fmtSG(c.value), M + W - 66, y + 19, { size: 18, bold: true, color: tone(c.value), align: "right" });
     if (t && t.change != null && Math.abs(t.change) >= 0.15) badge(t.change > 0 ? `Up ${t.change.toFixed(2)}` : `Down ${Math.abs(t.change).toFixed(2)}`, M + W - 58, y + 18, t.change > 0 ? P.up : P.down);
     else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
@@ -323,7 +319,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
 
   /* ---------- form over time ---------- */
-  section("Form", "Round by round", 200);
+  section("SG Total Form", "Round by round", 200);
   if (a.form) {
     const ch = a.form.last - a.form.first;
     d.text(`First ${a.form.n} rounds: ${fmtSG(a.form.first)} a round.   Last ${a.form.n} rounds: ${fmtSG(a.form.last)} a round.   ${Math.abs(ch) < 0.15 ? "About the same." : `${ch > 0 ? "Better" : "Worse"} lately by ${Math.abs(ch).toFixed(2)} strokes a round.`}`, M, y + 6, { size: 9.5, bold: true, color: Math.abs(ch) < 0.15 ? P.ink : tone(ch) });
@@ -376,7 +372,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       rows.forEach((g, i) => {
         const yy = y + 24 + i * 24;
         d.text(wrap(g.title, colW - 50, 9.5, true)[0], x, yy, { size: 9.5, bold: true, color: P.ink });
-        d.text(`${Math.round(g.shots)} shots${g.fieldAvg != null ? `  \u00b7  others ${fmtSG(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 10, { size: 7.5, color: P.grey });
+        d.text(`${Math.round(g.shots)} shots${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmtSG(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 10, { size: 7.5, color: P.grey });
         d.text(fmtSG(g.perRound), x + colW, yy + 5, { size: 13, bold: true, color: tone(g.perRound), align: "right" });
         d.line(x, yy + 15, x + colW, yy + 15, { color: P.hair, width: 0.4 });
       });
@@ -407,6 +403,33 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
   need(30);
   d.text(`Compared with ${plural(a.players - 1, "other player")} over the same dates and categories. All figures are strokes a round unless noted.`, M, y + 8, { size: 7.5, color: P.faint });
+
+  // ---------- appendix ----------
+  const byDist = a.groups.filter((g) => !g.withLie);
+  if (byDist.length) {
+    newPage();
+    section("Appendix", "Every skill by distance", 60);
+    d.text("Strokes gained a round for each category and distance. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
+    y += 22;
+    const gains = byDist.filter((g) => g.perRound >= 0).sort((p, q) => q.perRound - p.perRound);
+    const losses = byDist.filter((g) => g.perRound < 0).sort((p, q) => p.perRound - q.perRound);
+    const rowH = 22;
+    const heads = () => { cap("Gaining", M, y, P.up); cap("Losing", M + colW + 14, y, P.down); y += 10; };
+    heads();
+    const row = (g, x, yy) => {
+      d.text(wrap(g.title, colW - 56, 9, true)[0], x, yy, { size: 9, bold: true, color: P.ink });
+      d.text(`${Math.round(g.shots)} shots${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmtSG(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 9.5, { size: 7, color: P.grey });
+      d.text(fmtSG(g.perRound), x + colW, yy + 5, { size: 12, bold: true, color: tone(g.perRound), align: "right" });
+      d.line(x, yy + 14, x + colW, yy + 14, { color: P.hair, width: 0.4 });
+    };
+    for (let i = 0; i < Math.max(gains.length, losses.length); i++) {
+      if (y + rowH > H - 50) { newPage(); heads(); }
+      y += rowH - 8;
+      if (gains[i]) row(gains[i], M, y);
+      if (losses[i]) row(losses[i], M + colW + 14, y);
+      y += 8;
+    }
+  }
   footer();
   return d.output();
 }
