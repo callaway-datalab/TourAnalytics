@@ -58,8 +58,8 @@ export function analyzePerformance(me, field, { from = null, to = null, cats = C
     const xs = series.map((_, i) => i), mx = mean(xs), my = mean(series.map((s) => s.value));
     slope = xs.reduce((t, x, i) => t + (x - mx) * (series[i].value - my), 0) / xs.reduce((t, x) => t + (x - mx) ** 2, 0);
   }
-  const half = Math.floor(series.length / 2);
-  const early = series.slice(0, half), late = series.slice(series.length - half);
+  const half = Math.min(10, Math.floor(series.length / 2));
+  const late = series.slice(series.length - half), early = series.slice(series.length - 2 * half, series.length - half);
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= 2 ? { n: half, early: span(early), late: span(late) } : null;
   const catTrend = cats.map((k) => {
@@ -288,9 +288,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
 
   /* ---------- by category: gauges ---------- */
   section("By category", "Where the strokes come from", 40 + a.byCat.length * 36);
-  wrap("The bar starts at the middle line: green to the right is gaining strokes, red to the left is losing them. The best gain in the group fills the right side, the biggest loss fills the left. The black line is zero; the gold line is Tour Avg.", W, 8)
-    .forEach((l, i) => d.text(l, M, y + 6 + i * 10, { size: 8, color: P.grey }));
-  y += 28;
+  d.text("The black line is zero; the gold line is Tour Avg.", M, y + 6, { size: 8, color: P.grey });
+  y += 18;
   const gx = M + 150, gw = W - 150 - 150, zx = gx + gw / 2, half = gw / 2;
   for (const c of a.byCat) {
     need(36);
@@ -341,7 +340,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (a.series.length >= 2) {
     const vals = a.series.map((q) => q.value), avg = ma(vals);
     const lo = Math.min(-1, Math.floor(Math.min(...vals))), hi = Math.max(1, Math.ceil(Math.max(...vals)));
-    const top = y + 8, ht = 130, left = M + 22, wd = W - 22;
+    const top = y + 8, ht = 100, left = M + 22, wd = W - 22;
     const Y = (v) => top + ht - ((v - lo) / (hi - lo)) * ht;
     d.roundRect(M - 6, top - 10, W + 12, ht + 42, 10, { fill: P.mist });
     for (const v of [lo, 0, hi]) { d.line(left, Y(v), M + W, Y(v), { color: v === 0 ? "#b0b3b8" : "#e5e5ea", width: v === 0 ? 0.8 : 0.5 }); d.text(v === 0 ? "0" : fmtSG(v, 0), M, Y(v) + 3, { size: 7, color: P.faint }); }
@@ -358,13 +357,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
 
   /* ---------- best and toughest rounds ---------- */
-  const rowsH = 30 + Math.max(a.peaks.length, a.valleys.length) * 30;
+  const rowsH = 28 + Math.max(a.peaks.length, a.valleys.length) * 28;
   section("Rounds", "Best and toughest", rowsH);
   const roundsCol = (x, title, list, c, tint) => {
     d.roundRect(x, y, colW, rowsH - 6, 10, { fill: tint });
     cap(title, x + 12, y + 16, c);
     list.forEach((q, i) => {
-      const yy = y + 34 + i * 30, part = c === P.up ? q.best : q.worst;
+      const yy = y + 32 + i * 28, part = c === P.up ? q.best : q.worst;
       d.text(wrap(`${q.event || "Round"}${q.roundNo ? ` R${q.roundNo}` : ""}`, colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
       d.text(`${fmtDate(q.date)}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
       d.text(fmtSG(q.value), x + colW - 12, yy + 6, { size: 15, bold: true, color: c, align: "right" });
@@ -374,20 +373,17 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   roundsCol(M + colW + 14, "Toughest rounds", a.valleys, P.down, P.downTint);
   y += rowsH + 6;
 
-  need(30);
-  d.text(`Compared with ${plural(a.players - 1, "other player")} over the same dates and categories. All figures are strokes a round unless noted.`, M, y + 8, { size: 7.5, color: P.faint });
 
   // ---------- appendix ----------
   const byDist = a.groups; // category + distance, and category + distance + lie
   if (byDist.length) {
-    newPage();
-    section("Detail", "Every skill by distance and lie", 60);
+    section("Detail", "Every skill by distance and lie", 52);
     d.text("Strokes gained a round for each category and distance, and each distance by lie. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
-    y += 22;
-    // (rounded to 2 decimals; only ±0.01 or more; at most 28 each side)
+    y += 20;
+    // (rounded to 2 decimals; only ±0.01 or more; at most 25 each side)
     const r2 = (v) => Math.round(v * 100) / 100;
-    const gains = byDist.filter((g) => r2(g.perRound) >= 0.01).sort((p, q) => q.perRound - p.perRound).slice(0, 28);
-    const losses = byDist.filter((g) => r2(g.perRound) <= -0.01).sort((p, q) => p.perRound - q.perRound).slice(0, 28);
+    const gains = byDist.filter((g) => r2(g.perRound) >= 0.01).sort((p, q) => q.perRound - p.perRound).slice(0, 25);
+    const losses = byDist.filter((g) => r2(g.perRound) <= -0.01).sort((p, q) => p.perRound - q.perRound).slice(0, 25);
     const rounds = Math.max(1, a.overall.rounds);
     const rowH = 22;
     const heads = () => { cap("Gaining", M, y, P.up); cap("Losing", M + colW + 14, y, P.down); y += 10; };
