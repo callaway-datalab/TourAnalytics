@@ -419,11 +419,10 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       section("By the numbers", "At a glance", rows * (th + gap));
       tiles.slice(0, 4).forEach((t, i) => {
         const x = M + (i % cols) * (tw + gap), ty = y + Math.floor(i / cols) * (th + gap);
-        // a dark tile with rounded corners and a soft left-to-right blend, and a fine gold edge on top
+        // a dark tile with rounded corners and a soft left-to-right blend
         d.roundRect(x, ty, 24, th, 10, { fill: P.night });
         d.roundRect(x + tw - 24, ty, 24, th, 10, { fill: P.night2 });
         d.gradient(x + 12, ty, tw - 24, th, P.night, P.night2, { dir: "h", steps: 30 });
-        d.gradient(x + 14, ty + 0.5, tw - 28, 1.6, P.gold, P.goldLight, { dir: "h", steps: 20 });
         cap(t.label, x + 16, ty + 20, P.goldLight, "left", 6.8);
         // the big number, as large as fits
         let size = 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
@@ -484,10 +483,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
     section("Detail", "Every skill by distance and lie", 52);
-    // (only the report's own categories are named)
-    const and = (list) => (list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0] || "");
-    const withLie = a.cats.filter((k) => k === "APP" || k === "ARG").map((k) => CAT_NAME[k]), distOnly = a.cats.filter((k) => k === "OTT" || k === "PUTT").map((k) => CAT_NAME[k]);
-    d.text(`Strokes gained a round: ${[withLie.length ? `${and(withLie)} by distance and lie` : "", distOnly.length ? `${and(distOnly)} by distance` : ""].filter(Boolean).join("; ")}. Gains on the left (best first), losses on the right (worst first).`, M, y + 6, { size: 8, color: P.grey });
+    d.text("Strokes gained a round. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
     y += 20;
     // (rounded to 2 decimals; only ±0.01 or more; at most 25 each side)
     const r2 = (v) => Math.round(v * 100) / 100;

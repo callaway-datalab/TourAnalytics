@@ -70,6 +70,7 @@ export function sgDashboard(container, opts) {
     // Keep only choices that still exist: distances of the picked categories, lies seen in them.
     if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
     const opt = filterOptions(base, st.cats);
+    if (!st.yearStarted && opt.year.length) { st.yearStarted = true; if (!st.year.length) st.year = [[...opt.year].sort().pop()]; } // the latest year to start
     st.lie = st.lie.filter((l) => opt.lie.includes(l));
     st.club = st.club.filter((c) => opt.club.includes(c));
     const f = { span: Number(st.span), year: st.year, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club };
@@ -296,12 +297,12 @@ export function sgDashboard(container, opts) {
     if (me && bMine?.length) {
       const groups = groupBy(bMine, st.trendBy);
       const vals = groups.map((g) => b.get(sumCounts(g.rounds)));
-      const n = st.rankTop && st.rankTop !== "all" ? Number(st.rankTop) : null;
-      const others = (n ? ranked.slice(0, n).map((x) => x.p) : bField).filter((p) => p.key !== me.key);
-      const cmp = others.length ? groups.map((g) => {
-        const vs = others.map((p) => b.get(sumCounts(groupBy(p.rounds, st.trendBy).find((x) => x.label === g.label)?.rounds || []))).filter((v) => v != null && Number.isFinite(v));
-        return vs.length ? vs.reduce((t, v) => t + v, 0) / vs.length : null;
-      }) : null;
+      // each round / event / month / year: the best result(s) there among the players who played it (this player included)
+      const others = bField.filter((p) => p.key !== me.key && p.rounds.length);
+      const cmp = others.length ? groups.map((g, i) => topMean([vals[i], ...others.map((p) => {
+        const rs = groupBy(p.rounds, st.trendBy).find((x) => x.label === g.label)?.rounds;
+        return rs ? b.get(sumCounts(rs)) : null;
+      })], b.higher)) : null;
       const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
         const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
         a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
@@ -310,7 +311,7 @@ export function sgDashboard(container, opts) {
       st.chartTypes = st.chartTypes || {};
       if (!st.chartTypes["basic-trend"]) st.chartTypes["basic-trend"] = "line";
       blocks.push(panelBox(`${b.label} Trend`, [toggles, chartBox((c, as) => barChart(c, groups.map((g) => g.label), vals, {
-        title: b.label, as, single: "#c8a97e", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName(), shortLabels: groups.map((g) => g.short),
+        title: b.label, as, single: "#c8a97e", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName({ round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event"), shortLabels: groups.map((g) => g.short),
         tooltip: (i) => `${groups[i].rounds.length} ${groups[i].rounds.length === 1 ? "round" : "rounds"}`,
       }), "wide", "basic-trend", { rankPick: others.length > 0 })], "full"));
     }
@@ -378,17 +379,17 @@ export function sgDashboard(container, opts) {
 
   function yearPills(opt) {
     if (!opt.year.length) return null;
-    const years = [...opt.year].sort();
+    const years = [...opt.year].sort().reverse(); // newest first; "All years" at the end
     const all = el("a", { href: "#", "aria-current": !st.year.length ? "page" : null }, "All years");
     all.addEventListener("click", (e) => { e.preventDefault(); st.year = []; st.yearKept = []; draw(); });
     const kept = keptOf("year");
-    return el("nav", { class: "subnav sg-years", "aria-label": "Years: tap to pick one, double-tap to keep it and add more" }, [all, ...years.map((y) => {
+    return el("nav", { class: "subnav sg-years", "aria-label": "Years: tap to pick one, double-tap to keep it and add more" }, [...years.map((y) => {
       const on = st.year.includes(y), isKept = kept.includes(y);
       const a = el("a", { href: "#", class: isKept ? "kept" : "", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false",
         title: isKept ? "Kept: double-tap to let it go" : "Tap to pick; double-tap to keep it and add more" }, y);
       a.addEventListener("click", (e) => { e.preventDefault(); tapPill("year", y, (p, q) => p.localeCompare(q)); });
       return a;
-    })]);
+    }), all]);
   }
 
   function catPills() {
@@ -556,15 +557,15 @@ export function sgDashboard(container, opts) {
       a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
       return a;
     }));
-    // The chosen players (Top 1 / 10 / 25 / 50 / All) for the same events, months, years or rounds.
-    const others = topPlayers(slicedField.filter((p) => p.key !== me.key));
+    // Each round / event / month / year: the best result there (Top 1), the average of the best few (Top 10 …)
+    // or of everyone (All), among the players who played it, this player included (so if they had the best
+    // round, their bar meets the dot).
+    const others = slicedField.filter((p) => p.key !== me.key && p.rounds.length);
     const otherTrends = others.map((p) => trend(p.rounds, cat || null, st.trendBy));
-    const tCompare = others.length ? t.map((g) => {
-      const vals = otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value).filter((v) => v !== undefined);
-      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-    }) : null;
+    const tCompare = others.length ? t.map((g) => topMean([g.value, ...otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value)])) : null;
+    const unit = { round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event";
     blocks.push(panelBox("SG Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
-      title: "SG / round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(),
+      title: "SG / round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(unit),
       shortLabels: t.map((g) => g.short),
       tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
     }), "wide", "trend", { rankPick: others.length > 0 })], "full"));
@@ -630,9 +631,25 @@ export function sgDashboard(container, opts) {
     return list.filter((p) => p.rounds.length).map((p) => ({ p, v: sliceTotals(p.rounds).sgPerRound ?? -Infinity }))
       .sort((a, b) => b.v - a.v).slice(0, n).map((x) => x.p);
   }
-  const compareName = () => (st.rankTop && st.rankTop !== "all" ? (st.rankTop === "1" ? "Top player" : `Top ${st.rankTop} players`) : "All players");
+  // what the gold dots are: on the trends, the best result(s) each round / event / month / year among the
+  // players who played it; on the other charts, the best players over the selected time frame
+  const compareName = (each = null) => {
+    const n = st.rankTop && st.rankTop !== "all" ? st.rankTop : null;
+    if (each) return n === "1" ? `Best player each ${each}` : n ? `Top ${n} each ${each} (avg)` : `All players each ${each} (avg)`;
+    return n === "1" ? "Best player overall" : n ? `Top ${n} overall (avg)` : "All players (avg)";
+  };
+  // the best n of a set of results (lower is better for some Basic stats), averaged
+  const topMean = (vals, higher = true) => {
+    const v = vals.filter((x) => x != null && Number.isFinite(x)).sort((p, q) => (higher ? q - p : p - q));
+    if (!v.length) return null;
+    const n = st.rankTop && st.rankTop !== "all" ? Number(st.rankTop) : v.length;
+    const top = v.slice(0, n);
+    return top.reduce((t, x) => t + x, 0) / top.length;
+  };
   function rankPicker() {
-    const sel = el("select", { class: "rank-pick", "aria-label": "Compare with" }, RANK_TOPS.map(([v, l]) => el("option", { value: v, selected: (st.rankTop || "all") === v }, l)));
+    const sel = el("select", { class: "rank-pick", "aria-label": "Compare with",
+      title: "Which players the gold dots show. On SG Trends: the best result (or the average of the best results) each round, event, month or year, among the players who played it. On the other charts: the best players over the selected time frame." },
+      RANK_TOPS.map(([v, l]) => el("option", { value: v, selected: (st.rankTop || "all") === v }, l)));
     sel.addEventListener("change", () => { st.rankTop = sel.value; draw(); });
     return sel;
   }
@@ -695,9 +712,9 @@ export function sgDashboard(container, opts) {
       pointStyle: "circle", pointRadius: 4, pointHoverRadius: 5.5, pointBackgroundColor: "#d4b483", pointBorderColor: "#0a0a0b", pointBorderWidth: 1, order: 0 });
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
-    // Legend: only the reference marks (no "SG / round" entry), each drawn as a short dash in its color.
+    // Legend: only the reference marks (no "SG / round" entry); the other players shown as a gold dot.
     o.plugins.legend = { display: !!(compare || average !== undefined), labels: {
-      color: "#a1a1a6", boxWidth: 22, boxHeight: 0, usePointStyle: false, font: { family: "Inter, system-ui, sans-serif", size: 12 },
+      color: "#a1a1a6", boxWidth: 8, boxHeight: 8, usePointStyle: true, pointStyle: "circle", font: { family: "Inter, system-ui, sans-serif", size: 12 },
       filter: (item) => item.datasetIndex !== 0,
     } };
     if (tooltip) o.plugins.tooltip.callbacks = { afterLabel: (c) => (c.datasetIndex === 0 ? tooltip(c.dataIndex) : "") };
