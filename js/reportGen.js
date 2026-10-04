@@ -60,7 +60,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     slope = xs.reduce((t, x, i) => t + (x - mx) * (series[i].value - my), 0) / xs.reduce((t, x) => t + (x - mx) ** 2, 0);
   }
   const half = Math.min(10, Math.floor(series.length / 2));
-  const late = series.slice(series.length - half), early = series.slice(series.length - 2 * half, series.length - half);
+  const late = series.slice(series.length - half), early = series.slice(series.length - 2 * half, series.length - half); // the last 10 vs the 10 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= 2 ? { n: half, early: span(early), late: span(late) } : null;
   const catTrend = cats.map((k) => {
@@ -133,7 +133,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round here${g.fieldAvg != null ? ` (Tour Avg ${fmtSG(g.fieldAvg)})` : ""}, over ${Math.round(g.shots)} shots.` });
   }
   for (const t of catTrend) if (t.change != null && t.change < -0.2) focus.push({ cat: t.cat, kind: "trend", lost: -t.change / 2, title: `Slipping: ${t.name}`,
-    detail: `Earlier ${half} rounds: ${fmtSG(t.early)} a round. Recent ${half} rounds: ${fmtSG(t.late)} a round. That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
+    detail: `Previous ${half} rounds: ${fmtSG(t.early)} a round. Last ${half} rounds: ${fmtSG(t.late)} a round. That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
   if (products) for (const p of products) if (p.shots >= 10 && p.perShot < -0.05) focus.push({ cat: null, kind: "product", lost: -p.total / Math.max(1, mine.length), title: `${p.club}`,
     detail: `Loses ${Math.abs(p.perShot).toFixed(3)} strokes a shot, over ${Math.round(p.shots)} shots (about ${Math.abs(p.total / Math.max(1, mine.length)).toFixed(2)} a round).` });
   // keep the biggest, at most two per category, preferring the specific over the general
@@ -162,10 +162,10 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   elite.sort((p, q) => q.score - p.score);
   const rising = catTrend.filter((t) => t.change != null && t.change >= 0.2).sort((p, q) => q.change - p.change).map((t) => ({
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
-    text: `Earlier ${half} rounds: ${fmtSG(t.early)} a round. Recent ${half} rounds: ${fmtSG(t.late)} a round. That's ${t.change.toFixed(2)} strokes a round better.` }));
+    text: `Previous ${half} rounds: ${fmtSG(t.early)} a round. Last ${half} rounds: ${fmtSG(t.late)} a round. That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
   const n10 = Math.min(10, Math.floor(series.length / 2));
-  const form = n10 >= 2 ? { n: n10, first: mean(series.slice(0, n10).map((q) => q.value)), last: mean(series.slice(-n10).map((q) => q.value)), firstSpan: span(series.slice(0, n10)), lastSpan: span(series.slice(-n10)) } : null;
+  const form = n10 >= 2 ? { n: n10, first: mean(series.slice(-2 * n10, -n10).map((q) => q.value)), last: mean(series.slice(-n10).map((q) => q.value)), firstSpan: span(series.slice(-2 * n10, -n10)), lastSpan: span(series.slice(-n10)) } : null;
   // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
   // game (how much each swings round to round), and the biggest upside (matching the group's best where the
   // player is furthest behind).
@@ -174,7 +174,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   series.forEach((q, i) => { if (q.value > 0) { if (!run) start = i; run++; if (run > best.len) best = { len: run, from: series[start].date, to: q.date }; } else run = 0; });
   const sd = (vals) => { const m = mean(vals); return vals.length > 1 ? Math.sqrt(vals.reduce((t, v) => t + (v - m) ** 2, 0) / (vals.length - 1)) : null; };
   const swings = cats.map((k) => ({ cat: k, sd: sd(series.map((q) => q.byCat[k])) })).filter((x) => x.sd != null).sort((p, q) => p.sd - q.sd);
-  const upside = byCat.filter((c) => c.best && c.value != null && c.rank > 1).map((c) => ({ cat: c.cat, gain: c.best.v - c.value, bestV: c.best.v })).sort((p, q) => q.gain - p.gain)[0] || null;
+  // Biggest upside: the player's own best stretch (their best average over a run of rounds) in each category,
+  // against their average now; the category where getting back to that is worth the most.
+  const win = Math.min(10, Math.max(3, Math.floor(series.length / 3)));
+  const upside = series.length >= win ? byCat.filter((c) => c.value != null).map((c) => {
+    let bestAvg = -Infinity, at = 0;
+    for (let i = 0; i + win <= series.length; i++) { const v = mean(series.slice(i, i + win).map((q) => q.byCat[c.cat] ?? 0)); if (v > bestAvg) { bestAvg = v; at = i; } }
+    return { cat: c.cat, gain: bestAvg - c.value, bestV: bestAvg, now: c.value, win, from: series[at].date, to: series[at + win - 1].date };
+  }).sort((p, q) => q.gain - p.gain)[0] || null : null;
   const numbers = { posRounds, n: series.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside };
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail };
@@ -273,26 +280,26 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
   const watch = a.focus.slice(0, 3).map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
   const colW = (W - 14) / 2;
-  const cardsH = (list) => list.reduce((t, it) => t + 30 + wrap(it.text, colW - 30, 8.5).length * 11, 0) + 26;
+  const cardsH = (list) => list.reduce((t, it) => t + 35 + wrap(it.text, colW - 30, 8.5).length * 11, 0) + 26;
   section("Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
   const cards = (x, title, list, accent, tint, empty) => {
     let yy = y + 4;
     cap(title, x, yy + 6, accent); yy += 14;
     if (!list.length) { d.text(empty, x, yy + 10, { size: 9, color: P.grey }); return yy + 20; }
     for (const it of list) {
-      const lines = wrap(it.text, colW - 30, 8.5), h = 24 + lines.length * 11;
+      const lines = wrap(it.text, colW - 30, 8.5), h = 29 + lines.length * 11;
       d.roundRect(x, yy, colW, h, 8, { fill: tint });
       d.roundRect(x, yy, 4, h, 2, { fill: accent });
       const tw = badge(it.tag, x + 14, yy + 14, accent);
       d.text(wrap(it.title, colW - 30 - tw - 8, 9.5, true)[0], x + 14 + tw + 6, yy + 14, { size: 9.5, bold: true, color: P.ink });
-      lines.forEach((l, i) => d.text(l, x + 14, yy + 27 + i * 11, { size: 8.5, color: "#3a3a3c" }));
+      lines.forEach((l, i) => d.text(l, x + 14, yy + 32 + i * 11, { size: 8.5, color: "#3a3a3c" }));
       yy += h + 6;
     }
     return yy;
   };
   const yl0 = cards(M, "Strengths", strengths, P.up, P.upTint, "No clear standouts against Tour Avg in this period.");
   const yl = yl0 + 2;
-  wrap(`Elite = ranked in the top 10% of the ${a.players} players compared for that skill (with ${a.players} players, that's 1st), with at least 10 shots.${a.halves ? ` Rising / Slipping compare the recent ${a.halves.n} rounds with the ${a.halves.n} before them.` : ""}`, colW, 7.5)
+  wrap(`Elite = ranked in the top 10% of the ${a.players} players compared for that skill (with ${a.players} players, that's 1st), with at least 10 shots.${a.halves ? ` Rising / Slipping compare the last ${a.halves.n} rounds with the ${a.halves.n} before them.` : ""}`, colW, 7.5)
     .forEach((l, i) => d.text(l, M, yl + 8 + i * 9.5, { size: 7.5, color: P.faint }));
   const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against Tour Avg in this period.");
   y = Math.max(yl + 30, yr) + 10;
@@ -346,19 +353,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
     y += 36;
   }
-  d.text(a.halves ? `Up / Down: the most recent ${a.halves.n} rounds (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Up / Down: recent rounds compared with earlier ones, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
+  d.text(a.halves ? `Up / Down: the last ${a.halves.n} rounds (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Up / Down: the last rounds compared with the ones before them, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
   /* ---------- SG form: total and each category ---------- */
   const formChart = (title, vals, { marks = false } = {}) => {
     const n = Math.min(10, Math.floor(vals.length / 2));
-    const first = n >= 2 ? mean(vals.slice(0, n)) : null, last = n >= 2 ? mean(vals.slice(-n)) : null;
+    const first = n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = n >= 2 ? mean(vals.slice(-n)) : null; // the 10 before, the last 10
     const top = y + 22, ht = 70, left = M + 22, wd = W - 22;
     need(ht + 52);
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
     if (first != null) {
       const ch = last - first;
-      d.text(`First ${n} rounds: ${fmtSG(first)}   \u00b7   Last ${n}: ${fmtSG(last)}   \u00b7   ${Math.abs(ch) < 0.15 ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < 0.15 ? P.grey : tone(ch), align: "right" });
+      d.text(`Previous ${n} rounds: ${fmtSG(first)}   \u00b7   Last ${n}: ${fmtSG(last)}   \u00b7   ${Math.abs(ch) < 0.15 ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < 0.15 ? P.grey : tone(ch), align: "right" });
     }
     const lo = Math.min(-0.5, Math.min(...vals)), hi = Math.max(0.5, Math.max(...vals));
     const Y = (v) => top + ht - ((v - lo) / (hi - lo)) * ht;
@@ -390,8 +397,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const pct = nb.n ? nb.posRounds / nb.n : 0;
     if (nb.n) tiles.push({ label: "Rounds in the green", big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of rounds.`, viz: "bar", v: pct });
     if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? "round" : "rounds"}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
-    if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`, text: `A round more if ${CAT_NAME[nb.upside.cat]} matched the best in the group (${fmtSG(nb.upside.bestV)}).`, viz: "pair", v: nb.upside });
-    else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "Top", text: "Leads the group in every category in this report.", viz: null });
+    if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`,
+      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-round stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, viz: "pair", v: nb.upside });
+    else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "At peak", text: "Playing at their best stretch in every category in this report.", viz: null });
     if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing round to round.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
     if (tiles.length) {
       const cols = 2, gap = 12, tw = (W - gap) / cols, th = 92, rows = Math.ceil(tiles.length / cols);
@@ -419,8 +427,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           for (let k = 0; k < n; k++) d.dot(vx + stepX * (k + 0.5), vy + 16, r, k < Math.min(t.v, n) ? P.goldLight : "#3a3a3c");
           d.text(`longest of ${nb.n}`, vx + vw, vy + 36, { size: 7.5, color: "#8e8e93", align: "right" });
         } else if (t.viz === "pair") {
-          const mine = a.byCat.find((c) => c.cat === t.v.cat)?.value ?? 0, best = t.v.bestV, mx = Math.max(Math.abs(mine), Math.abs(best), 0.01);
-          for (const [j, v, lab, col] of [[0, mine, "Now", "#8e8e93"], [1, best, "Best", P.goldLight]]) {
+          const mine = t.v.now ?? 0, best = t.v.bestV, mx = Math.max(Math.abs(mine), Math.abs(best), 0.01);
+          for (const [j, v, lab, col] of [[0, mine, "Now", "#8e8e93"], [1, best, "Peak", P.goldLight]]) {
             const yy = vy + 6 + j * 16;
             d.text(lab, vx, yy + 6, { size: 7, bold: true, color: col });
             d.roundRect(vx + 24, yy, Math.max(4, (vw - 54) * Math.abs(v) / mx), 7, 3.5, { fill: col });
