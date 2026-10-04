@@ -97,9 +97,9 @@ export function sgDashboard(container, opts) {
         vp,
         opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
         yearsRow(opt),
-        opts.slot || null, // the page's player search, under the pills
         basicStatBar(bField, bMine),
         filterBar(opt, { basic: true }),
+        opts.slot || null, // the page's player search, under the filters
         el("div", { class: "sg-panel" }, basicBlocks(bField, bMine)),
       ]);
       window.scrollTo(0, y);
@@ -112,8 +112,8 @@ export function sgDashboard(container, opts) {
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       yearsRow(opt),
       catPills(),
-      opts.slot || null, // the page's player search, under the pills and above the dropdowns
       filterBar(opt),
+      opts.slot || null, // the page's player search, under the filters
       el("div", { class: "sg-panel" }, (() => {
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];

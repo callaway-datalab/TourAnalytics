@@ -95,11 +95,12 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const mineSk = skillsOf(mine, k);
     const othersSk = detail ? others.map((p) => skillsOf(p.rounds, k)) : [];
     for (const [key, g] of mineSk) {
-      // a distance + lie that's all the shots at that distance (every putt is from the green) says nothing new
-      if (key.includes("|") && mineSk.get(key.split("|")[0])?.shots === g.shots) continue;
+      // a distance + lie that's all the shots at that distance (every putt is from the green) repeats it:
+      // marked, so the highlight cards skip it (Detail shows Approach / Around-the-Green combos in full)
+      const repeat = key.includes("|") && mineSk.get(key.split("|")[0])?.shots === g.shots;
       const vals = othersSk.map((m) => m.get(key)).filter((x) => x && x.shots >= 3).map((x) => x.perRound);
       const all = [...vals, g.perRound].sort((p, q) => q - p);
-      groups.push({ cat: k, key, word: "", label: key.includes("|") ? key.split("|").join(", from the ") : key, title: skillLabel(k, key), withLie: key.includes("|"),
+      groups.push({ repeat, cat: k, key, word: "", label: key.includes("|") ? key.split("|").join(", from the ") : key, title: skillLabel(k, key), withLie: key.includes("|"),
         perRound: g.perRound, shots: g.shots, fieldAvg: mean(vals), rank: vals.length ? all.indexOf(g.perRound) + 1 : null, of: vals.length ? all.length : null });
     }
   }
@@ -128,7 +129,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   }
   const minShots = Math.max(5, mine.length * 0.5);
   for (const g of groups) {
-    if (g.shots < minShots) continue;
+    if (g.shots < minShots || g.repeat) continue;
     const gap = g.fieldAvg != null ? g.perRound - g.fieldAvg : g.perRound;
     if (gap < -0.05) focus.push({ cat: g.cat, kind: "skill", label: g.label, lost: -gap, title: g.title,
       detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round here${g.fieldAvg != null ? ` (Tour Avg ${fmtSG(g.fieldAvg)})` : ""}, over ${Math.round(g.shots)} shots.` });
@@ -156,7 +157,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       text: `Ranked ${c.rank} of ${c.of}. Gains ${c.value.toFixed(2)} strokes a round${c.fieldAvg != null ? `; Tour Avg ${fmtSG(c.fieldAvg)}` : ""}.` });
   }
   for (const g of groups) {
-    if (g.shots < Math.max(10, minShots) || g.perRound <= 0 || !isElite(g.rank, g.of)) continue;
+    if (g.repeat || g.shots < Math.max(10, minShots) || g.perRound <= 0 || !isElite(g.rank, g.of)) continue;
     elite.push({ cat: g.cat, score: g.perRound - (g.fieldAvg ?? 0), title: g.title,
       text: `Ranked ${g.rank} of ${g.of}. Gains ${g.perRound.toFixed(2)} strokes a round${g.fieldAvg != null ? `; Tour Avg ${fmtSG(g.fieldAvg)}` : ""}. ${Math.round(g.shots)} shots.` });
   }
@@ -254,7 +255,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   let bx = M;
   if (a.overall.rank) bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, a.overall.rank === 1 ? P.gold : "#3a3a3c", a.overall.rank === 1 ? P.night : "#ffffff") + 6;
   bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
-  if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < STEADY ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling off", bx, 220, Math.abs(ch) < STEADY ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
+  if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < STEADY ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling down", bx, 220, Math.abs(ch) < STEADY ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
   // form sparkline (right side)
   if (a.series.length >= 3) {
     const vals = ma(a.series.map((q) => q.value)), x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
@@ -478,11 +479,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
 
   // ---------- appendix ----------
-  const byDist = a.groups; // category + distance, and category + distance + lie
+  // Approach and Around-the-Green: distance + lie; Off-the-Tee and Putting: distance
+  const byDist = a.groups.filter((g) => (g.cat === "APP" || g.cat === "ARG" ? g.withLie : !g.withLie));
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
     section("Detail", "Every skill by distance and lie", 52);
-    d.text("Strokes gained a round for each category and distance, and each distance by lie. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
+    // (only the report's own categories are named)
+    const and = (list) => (list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0] || "");
+    const withLie = a.cats.filter((k) => k === "APP" || k === "ARG").map((k) => CAT_NAME[k]), distOnly = a.cats.filter((k) => k === "OTT" || k === "PUTT").map((k) => CAT_NAME[k]);
+    d.text(`Strokes gained a round: ${[withLie.length ? `${and(withLie)} by distance and lie` : "", distOnly.length ? `${and(distOnly)} by distance` : ""].filter(Boolean).join("; ")}. Gains on the left (best first), losses on the right (worst first).`, M, y + 6, { size: 8, color: P.grey });
     y += 20;
     // (rounded to 2 decimals; only ±0.01 or more; at most 25 each side)
     const r2 = (v) => Math.round(v * 100) / 100;
