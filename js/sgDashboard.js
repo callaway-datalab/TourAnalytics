@@ -109,8 +109,8 @@ export function sgDashboard(container, opts) {
     mount(container, [
       vp,
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
-      catPills(),
       yearPills(opt),
+      catPills(),
       filterBar(opt),
       el("div", { class: "sg-panel" }, (() => {
         // The rankings are always the first thing (Stat Averages and the charts follow).
@@ -689,9 +689,10 @@ export function sgDashboard(container, opts) {
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
       : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors, order: 2 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
-    // the other players: white dots joined by a dashed white line, in front of the bars
-    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, showLine: true, spanGaps: true, borderColor: "#ffffff", backgroundColor: "#ffffff",
-      borderDash: [5, 4], borderWidth: 1.5, pointStyle: "circle", pointRadius: 3.5, pointHoverRadius: 5, pointBackgroundColor: "#ffffff", pointBorderColor: "#ffffff", tension: 0, order: 0 });
+    // the other players: gold dots in front of the bars
+    // (gold dots, no line)
+    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, showLine: false, borderColor: "#d4b483", backgroundColor: "#d4b483",
+      pointStyle: "circle", pointRadius: 4, pointHoverRadius: 5.5, pointBackgroundColor: "#d4b483", pointBorderColor: "#0a0a0b", pointBorderWidth: 1, order: 0 });
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
     // Legend: only the reference marks (no "SG / round" entry), each drawn as a short dash in its color.

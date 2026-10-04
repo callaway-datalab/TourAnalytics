@@ -55,7 +55,7 @@ export async function render(main, { previewClient, flash }) {
       return a;
     }));
   };
-  mount(main, [teamPlayerSelect(previewClient, "/dashboard"), sourcePills, viewHost, tourBox, enteredBox]);
+  mount(main, [teamPlayerSelect(previewClient, "/dashboard"), el("div", { class: "pill-row" }, [sourcePills, viewHost]), tourBox, enteredBox]);
   drawSource();
 
   let current = null;       // id of the file on screen

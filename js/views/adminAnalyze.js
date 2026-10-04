@@ -45,8 +45,7 @@ export async function render(main, { flash }) {
 
   mount(main, [
     subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/analyze"),
-    sourcePills,
-    viewHost,
+    el("div", { class: "pill-row" }, [sourcePills, viewHost]), // data and view, side by side
     pickerBox,
     portalLink,
     status,

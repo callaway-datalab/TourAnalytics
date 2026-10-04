@@ -30,7 +30,8 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
  * me: { key, label, rounds }  field: [{ key, label, rounds, summaryOnly? }]  (prepared rounds, as on the stats page)
  * opts: { from, to (ms or null), cats: ["OTT", …], byProduct, idx }
  */
-export function analyzePerformance(me, field, { from = null, to = null, cats = CATEGORIES.map(([k]) => k), byProduct = false, idx = {} } = {}) {
+export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {} } = {}) {
+  const cats = CATEGORIES.map(([k]) => k).filter((k) => catsIn.includes(k));
   const inRange = (rd) => { const t = day(rd.date); return t == null || ((from == null || t >= from) && (to == null || t <= to)); };
   const pick = (rounds) => rounds.filter(inRange).map((rd) => ({ ...rd, shots: rd.shots.filter((s) => cats.includes(s.cat)) }))
     .sort((a, b) => (day(a.date) ?? 0) - (day(b.date) ?? 0));
@@ -165,7 +166,17 @@ export function analyzePerformance(me, field, { from = null, to = null, cats = C
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
   const n10 = Math.min(10, Math.floor(series.length / 2));
   const form = n10 >= 2 ? { n: n10, first: mean(series.slice(0, n10).map((q) => q.value)), last: mean(series.slice(-n10).map((q) => q.value)), firstSpan: span(series.slice(0, n10)), lastSpan: span(series.slice(-n10)) } : null;
-  return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
+  // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
+  // game (how much each swings round to round), and the biggest upside (matching the group's best where the
+  // player is furthest behind).
+  const posRounds = series.filter((q) => q.value > 0).length;
+  let run = 0, best = { len: 0, from: null, to: null }, start = null;
+  series.forEach((q, i) => { if (q.value > 0) { if (!run) start = i; run++; if (run > best.len) best = { len: run, from: series[start].date, to: q.date }; } else run = 0; });
+  const sd = (vals) => { const m = mean(vals); return vals.length > 1 ? Math.sqrt(vals.reduce((t, v) => t + (v - m) ** 2, 0) / (vals.length - 1)) : null; };
+  const swings = cats.map((k) => ({ cat: k, sd: sd(series.map((q) => q.byCat[k])) })).filter((x) => x.sd != null).sort((p, q) => p.sd - q.sd);
+  const upside = byCat.filter((c) => c.best && c.value != null && c.rank > 1).map((c) => ({ cat: c.cat, gain: c.best.v - c.value, bestV: c.best.v })).sort((p, q) => q.gain - p.gain)[0] || null;
+  const numbers = { posRounds, n: series.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside };
+  return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail };
 }
 
@@ -209,7 +220,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const ma = (vals, n = 5) => vals.map((_, i) => mean(vals.slice(Math.max(0, i - n + 1), i + 1)));
 
   /* ---------- hero ---------- */
-  const heroH = 268;
+  const heroH = 236;
   d.gradient(0, 0, d.W, heroH, P.night, P.night2, { dir: "v", steps: 60 });
   d.gradient(0, heroH - 3, d.W, 3, P.gold, P.goldLight, { dir: "h", steps: 40 });
   cap("Performance Report", M, 40, P.goldLight, "left", 7.5);
@@ -220,18 +231,18 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const period = rangeLabel || (a.from != null || a.to != null ? `${a.from != null ? short(a.from) : "start"} \u2013 ${a.to != null ? short(a.to) : "today"}` : "All time");
   d.text(period, M, 96, { size: 8.5, color: "#8e8e93" });
   cap("Strokes gained per round", M, 122, "#8e8e93");
-  d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 182, { size: 72, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
+  d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 172, { size: 62, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
   wrap(a.overall.rounds ? `${a.overall.value >= 0 ? "Better" : "Worse"} than the baseline by ${Math.abs(a.overall.value).toFixed(2)} strokes a round${versus != null ? `, and ${Math.abs(versus).toFixed(2)} ${versus >= 0 ? "better" : "worse"} than Tour Avg (${fmtSG(a.overall.fieldAvg)}).` : "."}` : "No rounds in this period.", W * 0.56, 9.5)
-    .slice(0, 2).forEach((l, i) => d.text(l, M, 202 + i * 12, { size: 9.5, color: "#c7c7cc" }));
+    .slice(0, 2).forEach((l, i) => d.text(l, M, 190 + i * 12, { size: 9.5, color: "#c7c7cc" }));
   // badges
   let bx = M;
-  if (a.overall.rank) bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 244, a.overall.rank === 1 ? P.gold : "#3a3a3c", a.overall.rank === 1 ? P.night : "#ffffff") + 6;
-  bx += badge(plural(a.overall.rounds, "round"), bx, 244, "#3a3a3c") + 6;
-  if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < 0.15 ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling off", bx, 244, Math.abs(ch) < 0.15 ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
+  if (a.overall.rank) bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, a.overall.rank === 1 ? P.gold : "#3a3a3c", a.overall.rank === 1 ? P.night : "#ffffff") + 6;
+  bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
+  if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < 0.15 ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling off", bx, 220, Math.abs(ch) < 0.15 ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
   // form sparkline (right side)
   if (a.series.length >= 3) {
-    const vals = ma(a.series.map((q) => q.value)), x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 92;
+    const vals = ma(a.series.map((q) => q.value)), x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
     const lo = Math.min(...vals, 0), hi = Math.max(...vals, 0), Y = (v) => top + ht - ((v - lo) / (hi - lo || 1)) * ht;
     d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
     cap("SG Trend", x0, top - 6, "#8e8e93", "left", 6.5);
@@ -256,11 +267,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const strengths = [];
   for (const it of [...a.elite.map((e) => ({ ...e, tag: "Elite", title: e.title.replace(/^Best in the group: (.*)$/, "$1: best in the group") })),
     ...a.rising.map((r) => ({ ...r, tag: r.title.startsWith("Turned") ? "Turnaround" : "Rising", title: r.title.replace(/^(Turned it around|On the rise): /, "") }))]) {
-    if (strengths.length >= 4) break;
+    if (strengths.length >= 3) break;
     if (strengths.filter((x) => x.cat === it.cat).length >= 2) continue;
     strengths.push(it);
   }
-  const watch = a.focus.slice(0, 4).map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
+  const watch = a.focus.slice(0, 3).map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
   const colW = (W - 14) / 2;
   const cardsH = (list) => list.reduce((t, it) => t + 30 + wrap(it.text, colW - 30, 8.5).length * 11, 0) + 26;
   section("Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
@@ -286,6 +297,25 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against Tour Avg in this period.");
   y = Math.max(yl + 30, yr) + 10;
 
+  /* ---------- best and toughest rounds ---------- */
+  const rowsH = 28 + Math.max(a.peaks.length, a.valleys.length) * 28;
+  section("Rounds", "Best and toughest", rowsH);
+  const roundsCol = (x, title, list, c, tint) => {
+    d.roundRect(x, y, colW, rowsH - 6, 10, { fill: tint });
+    cap(title, x + 12, y + 16, c);
+    list.forEach((q, i) => {
+      const yy = y + 32 + i * 28, part = c === P.up ? q.best : q.worst;
+      d.text(wrap(`${q.event || "Round"}${q.roundNo ? ` R${q.roundNo}` : ""}`, colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
+      d.text(`${fmtDate(q.date)}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
+      d.text(fmtSG(q.value), x + colW - 12, yy + 6, { size: 15, bold: true, color: c, align: "right" });
+    });
+  };
+  roundsCol(M, "Best rounds", a.peaks, P.up, P.upTint);
+  roundsCol(M + colW + 14, "Toughest rounds", a.valleys, P.down, P.downTint);
+  y += rowsH + 6;
+
+
+  newPage();
   /* ---------- by category: gauges ---------- */
   section("By category", "Where the strokes come from", 40 + a.byCat.length * 36);
   d.text("The black line is zero; the gold line is Tour Avg.", M, y + 6, { size: 8, color: P.grey });
@@ -319,6 +349,55 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text(a.halves ? `Up / Down: the most recent ${a.halves.n} rounds (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Up / Down: recent rounds compared with earlier ones, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
+  /* ---------- how it adds up (waterfall) and by the numbers ---------- */
+  section("How it adds up", `How the ${fmtSG(a.overall.value)} is built`, 230);
+  d.text("Start at zero, then add what each part of the game gains or loses in a round. Where it ends is the total.", M, y + 6, { size: 8, color: P.grey });
+  y += 16;
+  {
+    const steps = a.byCat.filter((c) => c.value != null);
+    const tops = []; let run = 0;
+    for (const c of steps) { tops.push([run, run + c.value]); run += c.value; }
+    const all = [0, ...tops.flat(), a.overall.value ?? 0];
+    const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo || 1) * 0.18;
+    const top = y + 14, ht = 120, Y = (v) => top + ht - ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * ht;
+    const n = steps.length + 1, slot = W / n, bw = Math.min(70, slot * 0.56);
+    d.roundRect(M - 6, top - 12, W + 12, ht + 44, 10, { fill: P.mist });
+    d.line(M, Y(0), M + W, Y(0), { color: "#000000", width: 0.8 });
+    steps.forEach((c, i) => {
+      const [a0, a1] = tops[i], x = M + i * slot + (slot - bw) / 2, yTop = Y(Math.max(a0, a1)), yBot = Y(Math.min(a0, a1));
+      d.roundRect(x, yTop, bw, Math.max(2, yBot - yTop), 4, { fill: c.value >= 0 ? P.up : P.down });
+      if (i < steps.length - 1 || true) d.line(x + bw, Y(a1), x + slot, Y(a1), { color: "#b0b3b8", width: 0.7, dash: [2, 2] }); // carries on to the next step
+      d.text(fmtSG(c.value), x + bw / 2, c.value >= 0 ? yTop - 5 : yBot + 11, { size: 10, bold: true, color: tone(c.value), align: "center" });
+      d.text(c.name, x + bw / 2, top + ht + 18, { size: 8, bold: true, color: P.ink, align: "center" });
+    });
+    const tv = a.overall.value ?? 0, x = M + steps.length * slot + (slot - bw) / 2, yT = Y(Math.max(0, tv)), yB = Y(Math.min(0, tv));
+    d.roundRect(x, yT, bw, Math.max(2, yB - yT), 4, { fill: P.gold });
+    d.text(fmtSG(tv), x + bw / 2, tv >= 0 ? yT - 5 : yB + 11, { size: 11, bold: true, color: P.ink, align: "center" });
+    d.text("Total", x + bw / 2, top + ht + 18, { size: 8, bold: true, color: P.ink, align: "center" });
+    y = top + ht + 40;
+  }
+  // by the numbers: four tiles
+  {
+    const nb = a.numbers, tiles = [];
+    if (nb.n) tiles.push([`${nb.posRounds} of ${nb.n}`, `rounds gained strokes overall (${Math.round((nb.posRounds / nb.n) * 100)}%)`]);
+    if (nb.streak.len) tiles.push([`${nb.streak.len} in a row`, `longest run of rounds gaining strokes (${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))})`]);
+    if (nb.upside && nb.upside.gain > 0.01) tiles.push([`+${nb.upside.gain.toFixed(2)}`, `a round more if ${CAT_NAME[nb.upside.cat]} matched the best in the group (${fmtSG(nb.upside.bestV)})`]);
+    else if (a.byCat.length) tiles.push(["Top", "of the group in every category in this report"]);
+    if (nb.steady) tiles.push([CAT_NAME[nb.steady.cat], `steadiest part of the game: swings about \u00b1${nb.steady.sd.toFixed(2)} a round${nb.swingy ? `; ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)})` : ""}`]);
+    if (tiles.length) {
+      need(100);
+      cap("By the numbers", M, y + 8, P.gold); y += 16;
+      const tw = (W - 3 * 10) / 4;
+      tiles.slice(0, 4).forEach(([big, txt], i) => {
+        const x = M + i * (tw + 10);
+        d.roundRect(x, y, tw, 78, 10, { fill: P.night });
+        d.text(wrap(big, tw - 20, big.length > 9 ? 13 : 18, true)[0], x + 12, y + 26, { size: big.length > 9 ? 13 : 18, bold: true, color: P.goldLight });
+        wrap(txt, tw - 22, 7.5).slice(0, 4).forEach((l, j) => d.text(l, x + 12, y + 42 + j * 9.5, { size: 7.5, color: "#d1d1d6" }));
+      });
+      y += 90;
+    }
+  }
+
   /* ---------- AI summary (when set up) ---------- */
   if (aiSummary) {
     const lines = wrap(aiSummary, W - 28, 10.5);
@@ -329,54 +408,46 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap("Written by AI from the numbers in this report", M, y, P.faint); y += 14;
   }
 
-  /* ---------- form over time ---------- */
-  section("SG Total Form", "Round by round", 200);
-  if (a.form) {
-    const ch = a.form.last - a.form.first;
-    d.text(`First ${a.form.n} rounds: ${fmtSG(a.form.first)} a round.   Last ${a.form.n} rounds: ${fmtSG(a.form.last)} a round.   ${Math.abs(ch) < 0.15 ? "About the same." : `${ch > 0 ? "Better" : "Worse"} lately by ${Math.abs(ch).toFixed(2)} strokes a round.`}`, M, y + 6, { size: 9.5, bold: true, color: Math.abs(ch) < 0.15 ? P.ink : tone(ch) });
-    d.text(`First ${a.form.n}: ${a.form.firstSpan}   \u00b7   Last ${a.form.n}: ${a.form.lastSpan}`, M, y + 18, { size: 7.5, color: P.faint });
-    y += 26;
-  }
-  if (a.series.length >= 2) {
-    const vals = a.series.map((q) => q.value), avg = ma(vals);
-    const lo = Math.min(-1, Math.floor(Math.min(...vals))), hi = Math.max(1, Math.ceil(Math.max(...vals)));
-    const top = y + 8, ht = 100, left = M + 22, wd = W - 22;
+  /* ---------- SG form: total and each category ---------- */
+  const formChart = (title, vals, { marks = false } = {}) => {
+    const n = Math.min(10, Math.floor(vals.length / 2));
+    const first = n >= 2 ? mean(vals.slice(0, n)) : null, last = n >= 2 ? mean(vals.slice(-n)) : null;
+    const top = y + 22, ht = 70, left = M + 22, wd = W - 22;
+    need(ht + 52);
+    d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
+    if (first != null) {
+      const ch = last - first;
+      d.text(`First ${n} rounds: ${fmtSG(first)}   \u00b7   Last ${n}: ${fmtSG(last)}   \u00b7   ${Math.abs(ch) < 0.15 ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < 0.15 ? P.grey : tone(ch), align: "right" });
+    }
+    const lo = Math.min(-0.5, Math.min(...vals)), hi = Math.max(0.5, Math.max(...vals));
     const Y = (v) => top + ht - ((v - lo) / (hi - lo)) * ht;
-    d.roundRect(M - 6, top - 10, W + 12, ht + 42, 10, { fill: P.mist });
-    for (const v of [lo, 0, hi]) { d.line(left, Y(v), M + W, Y(v), { color: v === 0 ? "#b0b3b8" : "#e5e5ea", width: v === 0 ? 0.8 : 0.5 }); d.text(v === 0 ? "0" : fmtSG(v, 0), M, Y(v) + 3, { size: 7, color: P.faint }); }
+    d.roundRect(M - 6, top - 6, W + 12, ht + 22, 8, { fill: P.mist });
+    d.line(left, Y(0), M + W, Y(0), { color: "#000000", width: 0.6 });
+    d.text("0", M, Y(0) + 3, { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
-    vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1.2, bw * 0.64); const y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.8, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
-    d.polyline(avg.map((v, i) => [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 2.2 });
-    const iBest = vals.indexOf(Math.max(...vals)), iWorst = vals.indexOf(Math.min(...vals));
-    for (const [i, c, txt] of [[iBest, P.up, "Best"], [iWorst, P.down, "Toughest"]]) { const x = left + i * bw + bw / 2, yy = Y(vals[i]); d.dot(x, yy, 3, c); d.text(txt, x, vals[i] >= 0 ? yy - 6 : yy + 12, { size: 7, bold: true, color: c, align: "center" }); }
+    vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
+    d.polyline(ma(vals).map((v, i) => [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
+    if (marks) {
+      const iB = vals.indexOf(Math.max(...vals)), iW = vals.indexOf(Math.min(...vals));
+      for (const [i, c] of [[iB, P.up], [iW, P.down]]) d.dot(left + i * bw + bw / 2, Y(vals[i]), 2.4, c);
+    }
     const every = Math.max(1, Math.ceil(vals.length / 8));
-    a.series.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 13, { size: 7, color: P.faint, align: "center" }); } });
-    y = top + ht + 36;
-    d.text("Each bar is one round (green = gained strokes, red = lost). The gold line is the rolling average of the last 5 rounds: when it rises, the player is playing better.", M, y, { size: 8, color: P.grey });
-    y += 22;
-  }
-
-  /* ---------- best and toughest rounds ---------- */
-  const rowsH = 28 + Math.max(a.peaks.length, a.valleys.length) * 28;
-  section("Rounds", "Best and toughest", rowsH);
-  const roundsCol = (x, title, list, c, tint) => {
-    d.roundRect(x, y, colW, rowsH - 6, 10, { fill: tint });
-    cap(title, x + 12, y + 16, c);
-    list.forEach((q, i) => {
-      const yy = y + 32 + i * 28, part = c === P.up ? q.best : q.worst;
-      d.text(wrap(`${q.event || "Round"}${q.roundNo ? ` R${q.roundNo}` : ""}`, colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
-      d.text(`${fmtDate(q.date)}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
-      d.text(fmtSG(q.value), x + colW - 12, yy + 6, { size: 15, bold: true, color: c, align: "right" });
-    });
+    a.series.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
+    y = top + ht + 26;
   };
-  roundsCol(M, "Best rounds", a.peaks, P.up, P.upTint);
-  roundsCol(M + colW + 14, "Toughest rounds", a.valleys, P.down, P.downTint);
-  y += rowsH + 6;
-
+  if (a.series.length >= 2) {
+    newPage();
+    section("SG Form", "Round by round", 160);
+    d.text("Each bar is one round (green = gained strokes, red = lost). The gold line is the rolling average of the last 5 rounds: when it rises, the player is playing better.", M, y + 6, { size: 8, color: P.grey });
+    y += 16;
+    formChart("Total", a.series.map((q) => q.value), { marks: true });
+    for (const k of a.cats) formChart(CAT_NAME[k], a.series.map((q) => q.byCat[k] ?? 0));
+  }
 
   // ---------- appendix ----------
   const byDist = a.groups; // category + distance, and category + distance + lie
   if (byDist.length) {
+    newPage(); // Detail starts at the top of the last page
     section("Detail", "Every skill by distance and lie", 52);
     d.text("Strokes gained a round for each category and distance, and each distance by lie. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
     y += 20;
@@ -535,9 +606,10 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       const rangeLabel = preset ? presets.find(([v]) => v === preset)?.[1] : null; // a preset's name; your own dates are shown as dates
       const bytes = buildReportPdf(a, { aiSummary, sourceLabel: source.value === "tour" ? "Tour Events" : "Entered Rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
+      window.__lastReportPdf = bytes; // (for tests)
       const blob = new Blob([bytes], { type: "application/pdf" });
       const href = URL.createObjectURL(blob);
-      const save = canSave ? el("button", { type: "button", class: "btn ghost" }, `Save to ${playerLabel}'s reports`) : null;
+      const save = canSave ? el("button", { type: "button", class: "btn ghost" }, "Save to Reports") : null;
       save?.addEventListener("click", async () => {
         save.disabled = true;
         try {
@@ -548,7 +620,8 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       });
       mount(result, [
         el("p", {}, [el("strong", {}, `Report ready: ${a.overall.rounds} rounds, ${a.focus.length} focus area${a.focus.length === 1 ? "" : "s"}.`)]),
-        el("div", { class: "report-gen-actions" }, [el("a", { class: "btn", href, download: name }, "Download PDF"), el("a", { class: "btn ghost", href, target: "_blank", rel: "noopener" }, "Open"), save]),
+        // Open PDF (in a new tab; save it from there) and, for the admin, Save to Reports, side by side
+        el("div", { class: "report-gen-actions report-gen-done" }, [el("a", { class: "btn", href, target: "_blank", rel: "noopener", title: name }, "Open PDF"), save]),
       ]);
       status.textContent = "";
     } catch (err) {
