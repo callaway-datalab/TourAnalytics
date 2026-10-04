@@ -17,6 +17,7 @@ import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
 
 const CAT_NAME = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
+const STEADY = 0.05; // a change smaller than ±0.05 strokes a round counts as steady
 // always 2 decimals (the Detail list)
 const fmt2 = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
 // (tiny numbers get a third decimal, so nothing shows as "−0.00")
@@ -182,7 +183,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     for (let i = 0; i + win <= series.length; i++) { const v = mean(series.slice(i, i + win).map((q) => q.byCat[c.cat] ?? 0)); if (v > bestAvg) { bestAvg = v; at = i; } }
     return { cat: c.cat, gain: bestAvg - c.value, bestV: bestAvg, now: c.value, win, from: series[at].date, to: series[at + win - 1].date };
   }).sort((p, q) => q.gain - p.gain)[0] || null : null;
-  const numbers = { posRounds, n: series.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside };
+  // one category: the other players' typical swing in it (Tour Avg steadiness)
+  let tourSd = null;
+  if (cats.length === 1) {
+    const k = cats[0];
+    const sds = others.map((p) => sd(p.rounds.map((rd) => rd.shots.filter((x) => x.cat === k).reduce((t, x) => t + x.sg, 0)))).filter((v) => v != null && Number.isFinite(v));
+    tourSd = sds.length ? mean(sds) : null;
+  }
+  const numbers = { posRounds, n: series.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside, tourSd };
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail };
 }
@@ -246,7 +254,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   let bx = M;
   if (a.overall.rank) bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, a.overall.rank === 1 ? P.gold : "#3a3a3c", a.overall.rank === 1 ? P.night : "#ffffff") + 6;
   bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
-  if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < 0.15 ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling off", bx, 220, Math.abs(ch) < 0.15 ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
+  if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < STEADY ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling off", bx, 220, Math.abs(ch) < STEADY ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
   // form sparkline (right side)
   if (a.series.length >= 3) {
     const vals = ma(a.series.map((q) => q.value)), x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
@@ -349,7 +357,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.line(zx, y + 4, zx, y + 24, { color: "#000000", width: 1.1 }); // zero
     if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
     d.text(fmtSG(c.value), M + W - 66, y + 19, { size: 18, bold: true, color: tone(c.value), align: "right" });
-    if (t && t.change != null && Math.abs(t.change) >= 0.15) badge(t.change > 0 ? `Up ${t.change.toFixed(2)}` : `Down ${Math.abs(t.change).toFixed(2)}`, M + W - 58, y + 18, t.change > 0 ? P.up : P.down);
+    if (t && t.change != null && Math.abs(t.change) >= STEADY) badge(t.change > 0 ? `Up ${t.change.toFixed(2)}` : `Down ${Math.abs(t.change).toFixed(2)}`, M + W - 58, y + 18, t.change > 0 ? P.up : P.down);
     else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
     y += 36;
   }
@@ -365,7 +373,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
     if (first != null) {
       const ch = last - first;
-      d.text(`Previous ${n} rounds: ${fmtSG(first)}   \u00b7   Last ${n}: ${fmtSG(last)}   \u00b7   ${Math.abs(ch) < 0.15 ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < 0.15 ? P.grey : tone(ch), align: "right" });
+      d.text(`Previous ${n} rounds: ${fmtSG(first)}   \u00b7   Last ${n}: ${fmtSG(last)}   \u00b7   ${Math.abs(ch) < STEADY ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < STEADY ? P.grey : tone(ch), align: "right" });
     }
     const lo = Math.min(-0.5, Math.min(...vals)), hi = Math.max(0.5, Math.max(...vals));
     const Y = (v) => top + ht - ((v - lo) / (hi - lo)) * ht;
@@ -400,7 +408,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`,
       text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-round stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, viz: "pair", v: nb.upside });
     else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "At peak", text: "Playing at their best stretch in every category in this report.", viz: null });
-    if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing round to round.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
+    if (nb.steady && a.cats.length === 1) {
+      const v = nb.steady.sd, tv = nb.tourSd;
+      tiles.push({ label: `${CAT_NAME[nb.steady.cat]} steadiness`, big: `\u00b1${v.toFixed(2)}`,
+        text: `Typical swing round to round.${tv != null ? ` Tour Avg: \u00b1${tv.toFixed(2)}, so ${Math.abs(v - tv) < 0.05 ? "about as steady as the others" : v < tv ? "steadier than the others" : "less steady than the others"}.` : ""}`, viz: "steadyVsTour", v: { mine: v, tour: tv } });
+    } else if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing round to round.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
     if (tiles.length) {
       const cols = 2, gap = 12, tw = (W - gap) / cols, th = 92, rows = Math.ceil(tiles.length / cols);
       section("By the numbers", "At a glance", rows * (th + gap));
@@ -433,6 +445,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
             d.text(lab, vx, yy + 6, { size: 7, bold: true, color: col });
             d.roundRect(vx + 24, yy, Math.max(4, (vw - 54) * Math.abs(v) / mx), 7, 3.5, { fill: col });
             d.text(fmtSG(v), vx + vw, yy + 6.5, { size: 7.5, bold: true, color: col, align: "right" });
+          }
+        } else if (t.viz === "steadyVsTour") {
+          const { mine: m1, tour: m2 } = t.v, mx = Math.max(m1, m2 ?? 0, 0.01), mid = vx + vw / 2;
+          for (const [j, v, col, lab] of [[0, m1, P.goldLight, "Player"], [1, m2, "#8e8e93", "Tour Avg"]]) {
+            if (v == null) continue;
+            const yy = vy + 6 + j * 16, half = (vw / 2 - 4) * (v / mx);
+            d.roundRect(mid - half, yy, half * 2, 7, 3.5, { fill: col });
+            d.text(lab, vx, yy - 2, { size: 6, bold: true, color: col });
           }
         } else if (t.viz === "swing") {
           const s1 = t.v.steady.sd, s2 = t.v.swingy ? t.v.swingy.sd : s1, mx = Math.max(s1, s2, 0.01), mid = vx + vw / 2;
@@ -644,7 +664,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   });
 
   mount(panel, [
-    el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Dates"), presetBox, el("div", { class: "report-dates" }, [fromIn, el("span", { class: "muted" }, "to"), toIn])]),
+    el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Dates"), presetBox, el("div", { class: "report-dates" }, [el("label", { class: "date-field" }, ["Start Date", fromIn]), el("label", { class: "date-field" }, ["End Date", toIn])])]),
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Categories"), catBox]),
     el("div", { class: "report-row" }, [el("label", {}, ["Data", source]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
     el("div", { class: "report-gen-actions" }, [go]), status, result,

@@ -1762,3 +1762,17 @@ body.tapping { overflow: hidden; }
 .analyze-picker > p.center:empty { display: none; }
 .analyze-picker > p.center { margin: 0.4rem 0 0; }
 .picker-home:empty { display: none; }
+/* Basic / Advanced beside the year pills */
+.years-row { gap: 1.25rem; margin: 0 auto 0.6rem; }
+.years-row .sg-years, .years-row .sg-view { margin: 0 !important; }
+/* Start Date / End Date */
+.report-dates { align-items: flex-end; gap: 0.75rem; }
+.date-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.72rem; color: var(--muted); }
+.date-field input { margin: 0; }
+@media (max-width: 640px) { .report-dates { gap: 0.5rem; } .date-field input { width: 100%; } }
+/* the Filters button on phones: less padding around the word */
+.sg-filters .filters-toggle { min-height: 2.05rem !important; padding: 0.2rem 0.9rem !important; font-size: 0.84rem !important; }
+@media (max-width: 640px) {
+  .report-dates { align-items: stretch !important; }
+  .date-field { width: 100%; }
+}

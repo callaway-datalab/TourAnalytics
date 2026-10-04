@@ -96,7 +96,7 @@ export function sgDashboard(container, opts) {
       mount(container, [
         vp,
         opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
-        yearPills(opt),
+        yearsRow(opt),
         opts.slot || null, // the page's player search, under the pills
         basicStatBar(bField, bMine),
         filterBar(opt, { basic: true }),
@@ -110,7 +110,7 @@ export function sgDashboard(container, opts) {
     mount(container, [
       vp,
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
-      yearPills(opt),
+      yearsRow(opt),
       catPills(),
       opts.slot || null, // the page's player search, under the pills and above the dropdowns
       filterBar(opt),
@@ -231,11 +231,9 @@ export function sgDashboard(container, opts) {
   // "All" clears the choice; picking all four is the same as All.
   /* ---------------- Basic / Advanced ---------------- */
   // (drawn under the Tour Events / Entered Rounds pills when the page gives a place for them)
-  const placeView = () => {
-    if (!opts.viewHost) return viewPills();
-    if (container.closest("[hidden]")) return null; // a hidden dashboard (the other source) leaves the spot alone
-    mount(opts.viewHost, viewPills()); return null;
-  };
+  // Basic / Advanced sit beside the year pills now (the page's top spot is left empty)
+  const placeView = () => { if (opts.viewHost && !container.closest("[hidden]")) mount(opts.viewHost, null); return null; };
+  const yearsRow = (opt) => el("div", { class: "pill-row years-row" }, [yearPills(opt), viewPills()]);
   function viewPills() {
     const v = st.view || "advanced";
     return el("nav", { class: "subnav sg-view", "aria-label": "Basic or advanced stats" }, [["basic", "Basic"], ["advanced", "Advanced"]].map(([k, l]) => {
