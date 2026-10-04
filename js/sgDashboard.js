@@ -608,8 +608,22 @@ export function sgDashboard(container, opts) {
       body,
     ]));
     requestAnimationFrame(applySearch);
+    // a magnifying-glass button (top right) opens the search; ✕ or Esc closes it and shows everyone again
+    const open = !!st.rankOpen || !!st.rankQuery;
+    const glass = el("button", { type: "button", class: "rank-glass", "aria-label": "Search the rankings for a player", title: "Search for a player", "aria-expanded": open ? "true" : "false" });
+    glass.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+    const closeBtn = el("button", { type: "button", class: "rank-close", "aria-label": "Close the search" }, "\u2715");
+    const searchBox = el("div", { class: "rank-tools", hidden: !open }, [search, closeBtn]);
+    const shut = () => { st.rankOpen = false; search.value = ""; applySearch(); searchBox.hidden = true; glass.setAttribute("aria-expanded", "false"); glass.focus(); };
+    glass.addEventListener("click", () => {
+      if (!searchBox.hidden) { shut(); return; }
+      st.rankOpen = true; searchBox.hidden = false; glass.setAttribute("aria-expanded", "true"); search.focus();
+    });
+    closeBtn.addEventListener("click", shut);
+    search.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); shut(); } });
     return panelBox(`Rankings \u00b7 ${describe()}`, [
-      el("div", { class: "rank-tools" }, search),
+      glass,
+      searchBox,
       ranked.length ? rankScroll : el("p", { class: "empty" }, "No rounds match these filters."),
       fieldIsSummary() && narrowed() ? el("p", { class: "muted small" }, "Rankings follow year, tournament, round and category, not lie or distance.") : null,
     ], "full");

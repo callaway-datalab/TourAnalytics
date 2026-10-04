@@ -1813,3 +1813,24 @@ main > nav.subnav { margin-bottom: 0.75rem !important; }
   .stats-pills > * { flex: 0 0 auto; }
 }
 @media (min-width: 761px) and (max-width: 1080px) { .stats-pills { flex-wrap: wrap; } } /* narrower windows: wrap rather than spill */
+
+/* Rankings: the magnifying-glass search (top right of the panel) */
+.sg-box { position: relative; }
+.rank-glass { position: absolute; top: 0.7rem; right: 0.8rem; width: 2.05rem; height: 2.05rem; border-radius: 999px; border: 1px solid var(--line-2);
+  background: var(--elev); color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.rank-glass:hover, .rank-glass[aria-expanded="true"] { border-color: rgba(200, 169, 126, 0.6); color: #f3dfbd; }
+.rank-tools { display: flex; gap: 0.4rem; align-items: center; margin: 0.2rem 0 0.7rem; }
+.rank-tools[hidden] { display: none !important; }
+.rank-tools input { flex: 1; margin: 0; }
+.rank-close { flex: none; width: 2.05rem; height: 2.05rem; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--muted); cursor: pointer; }
+.sg-box:has(.rank-glass) > h3 { padding-right: 3rem; }
+
+/* Desktop: the pill groups spread across the full width (left edge to right edge of More Filters) */
+@media (min-width: 1081px) { .stats-pills { justify-content: space-between !important; width: 100%; } }
+
+/* Phones: the same 12px between every row of pills and dropdowns */
+@media (max-width: 760px) {
+  .stats-pills { row-gap: 0.75rem !important; column-gap: 0.6rem !important; margin-bottom: 0.75rem !important; }
+  main > nav.subnav, .source-home, .sg-filters, .analyze-picker { margin-bottom: 0.75rem !important; }
+  .sg-filters.open { row-gap: 0.75rem !important; }
+}
