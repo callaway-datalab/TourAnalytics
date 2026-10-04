@@ -1788,3 +1788,28 @@ body.tapping { overflow: hidden; }
 main > nav.subnav a, main > nav.subnav a:hover { padding: 0.4rem 0.85rem !important; font-size: 0.84rem !important; }
 main > nav.subnav { margin-bottom: 0.75rem !important; }
 @media (max-width: 640px) { main > nav.subnav a, main > nav.subnav a:hover { padding: 0.35rem 0.7rem !important; font-size: 0.78rem !important; } }
+
+/* --- Stats: every pill on one row, the same gap as between the dropdowns --- */
+.stats-pills { display: flex !important; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.45rem 0.6rem !important; }
+.stats-pills > * { margin: 0 !important; }
+.source-home:empty { display: none !important; }
+.cat-drop { display: none; }
+.cat-drop .ms-label { display: none; }
+.cat-drop .ms-btn { min-width: 11rem; }
+@media (max-width: 760px) {
+  .stats-pills .sg-tabs { display: none !important; }    /* phones: a Category dropdown instead of the pills */
+  .cat-drop { display: block; position: relative; }
+}
+/* "More Filters": the dropdowns fold away on every screen */
+.sg-filters .filters-toggle { display: flex !important; grid-column: 1 / -1; justify-content: space-between; align-items: center; width: 100%;
+  border-radius: 10px; border: 1px solid var(--line-2); background: var(--elev); color: var(--ink); font-weight: 600; cursor: pointer; }
+.sg-filters:not(.open) > :not(.filters-toggle) { display: none !important; }
+/* the rankings' "Find a player…" box: the same as the player search box */
+.rank-search input, .sg-box input[type=search] { min-height: 2.05rem !important; height: 2.05rem; padding: 0.25rem 0.75rem !important; font-size: 0.84rem !important; border-radius: 10px !important; }
+@media (max-width: 820px) { .rank-search input, .sg-box input[type=search] { font-size: 16px !important; } }
+@media (min-width: 761px) {
+  .stats-pills a, .stats-pills a:hover { padding: 0.4rem 0.7rem !important; }
+  .stats-pills { flex-wrap: nowrap; }
+  .stats-pills > * { flex: 0 0 auto; }
+}
+@media (min-width: 761px) and (max-width: 1080px) { .stats-pills { flex-wrap: wrap; } } /* narrower windows: wrap rather than spill */

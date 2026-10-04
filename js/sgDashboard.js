@@ -111,8 +111,7 @@ export function sgDashboard(container, opts) {
     mount(container, [
       vp,
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
-      yearsRow(opt),
-      catPills(),
+      yearsRow(opt, { cats: true }),
       filterBar(opt),
       opts.slot || null, // the page's player search, under the filters
       el("div", { class: "sg-panel" }, (() => {
@@ -211,7 +210,7 @@ export function sgDashboard(container, opts) {
     // On phones the filters fold behind a "Filters" button (with how many are in use).
     const inUse = ["event", "roundNo", "lie", "dist", "club"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
     const fold = el("button", { type: "button", class: "filters-toggle", "aria-expanded": st.filtersOpen ? "true" : "false" },
-      [`Filters${inUse ? ` \u00b7 ${inUse} on` : ""}`, el("span", { "aria-hidden": "true" }, st.filtersOpen ? "\u25B4" : "\u25BE")]);
+      [`More Filters${inUse ? ` \u00b7 ${inUse} on` : ""}`, el("span", { "aria-hidden": "true" }, st.filtersOpen ? "\u25B4" : "\u25BE")]);
     fold.addEventListener("click", () => { st.filtersOpen = !st.filtersOpen; draw(); });
     return el("div", { class: "sg-filters" + (st.filtersOpen ? " open" : "") }, [
       fold,
@@ -234,7 +233,13 @@ export function sgDashboard(container, opts) {
   // (drawn under the Tour Events / Entered Rounds pills when the page gives a place for them)
   // Basic / Advanced sit beside the year pills now (the page's top spot is left empty)
   const placeView = () => { if (opts.viewHost && !container.closest("[hidden]")) mount(opts.viewHost, null); return null; };
-  const yearsRow = (opt) => el("div", { class: "pill-row years-row" }, [yearPills(opt), viewPills()]);
+  // One row of pills: the page's Tour Events / Entered Rounds (lent to us; a hidden dashboard leaves them),
+  // the years, Basic / Advanced and, on Advanced, the categories (a Category dropdown on phones).
+  const yearsRow = (opt, { cats = false } = {}) => {
+    const lead = opts.lead && !container.closest("[hidden]") ? opts.lead : null;
+    const catDrop = cats ? el("div", { class: "cat-drop" }, multi("Category", "cats", CATEGORIES.map(([v, l]) => ({ value: v, label: l })), "All categories", { plural: "categories" })) : null;
+    return el("div", { class: "pill-row years-row stats-pills" }, [lead, yearPills(opt), viewPills(), cats ? catPills() : null, catDrop]);
+  };
   function viewPills() {
     const v = st.view || "advanced";
     return el("nav", { class: "subnav sg-view", "aria-label": "Basic or advanced stats" }, [["basic", "Basic"], ["advanced", "Advanced"]].map(([k, l]) => {
@@ -760,7 +765,7 @@ export function sgDashboard(container, opts) {
 
   draw();
   return {
-    destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); if (opts.slot && opts.slotHome) opts.slotHome.appendChild(opts.slot); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
+    destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); if (opts.lead && opts.leadHome && opts.lead.parentNode !== opts.leadHome) opts.leadHome.appendChild(opts.lead); if (opts.slot && opts.slotHome) opts.slotHome.appendChild(opts.slot); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
     update(next) { if ("me" in next) me = next.me; if ("field" in next) field = next.field; draw(); },
   };
 }
