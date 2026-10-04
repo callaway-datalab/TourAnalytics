@@ -31,6 +31,10 @@ export async function render(main, { flash }) {
   let fileId = "";                 // the file being analyzed: the newest strokes-gained file
   const status = el("p", { class: "muted center", role: "status" });
   const portalLink = el("p", { class: "center" });
+  // the player search + portal link: placed by the dashboard under its pills (above the dropdowns);
+  // when there's no dashboard (nothing to show yet) it sits here
+  const pickerSlot = el("div", { class: "analyze-picker" }, [pickerBox, portalLink]);
+  const pickerHome = el("div", { class: "picker-home" }, pickerSlot);
   const body = el("div", { class: "sg-body" });
 
   // Tour | Entered Rounds
@@ -46,8 +50,7 @@ export async function render(main, { flash }) {
   mount(main, [
     subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/analyze"),
     el("div", { class: "pill-row" }, [sourcePills, viewHost]), // data and view, side by side
-    pickerBox,
-    portalLink,
+    pickerHome,
     status,
     body,
   ]);
@@ -93,7 +96,7 @@ export async function render(main, { flash }) {
     }).filter((p) => p.rounds.length);
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost });
+    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, slot: pickerSlot, slotHome: pickerHome });
     publishIfStale(ds);
   }
 
@@ -140,7 +143,7 @@ export async function render(main, { flash }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost });
+    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, slot: pickerSlot, slotHome: pickerHome });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.

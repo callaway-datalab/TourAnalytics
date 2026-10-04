@@ -97,6 +97,7 @@ export function sgDashboard(container, opts) {
         vp,
         opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
         yearPills(opt),
+        opts.slot || null, // the page's player search, under the pills
         basicStatBar(bField, bMine),
         filterBar(opt, { basic: true }),
         el("div", { class: "sg-panel" }, basicBlocks(bField, bMine)),
@@ -111,6 +112,7 @@ export function sgDashboard(container, opts) {
       opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       yearPills(opt),
       catPills(),
+      opts.slot || null, // the page's player search, under the pills and above the dropdowns
       filterBar(opt),
       el("div", { class: "sg-panel" }, (() => {
         // The rankings are always the first thing (Stat Averages and the charts follow).
@@ -743,7 +745,7 @@ export function sgDashboard(container, opts) {
 
   draw();
   return {
-    destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
+    destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); if (opts.slot && opts.slotHome) opts.slotHome.appendChild(opts.slot); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
     update(next) { if ("me" in next) me = next.me; if ("field" in next) field = next.field; draw(); },
   };
 }

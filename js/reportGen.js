@@ -349,65 +349,6 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text(a.halves ? `Up / Down: the most recent ${a.halves.n} rounds (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Up / Down: recent rounds compared with earlier ones, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
-  /* ---------- how it adds up (waterfall) and by the numbers ---------- */
-  section("How it adds up", `How the ${fmtSG(a.overall.value)} is built`, 230);
-  d.text("Start at zero, then add what each part of the game gains or loses in a round. Where it ends is the total.", M, y + 6, { size: 8, color: P.grey });
-  y += 16;
-  {
-    const steps = a.byCat.filter((c) => c.value != null);
-    const tops = []; let run = 0;
-    for (const c of steps) { tops.push([run, run + c.value]); run += c.value; }
-    const all = [0, ...tops.flat(), a.overall.value ?? 0];
-    const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo || 1) * 0.18;
-    const top = y + 14, ht = 120, Y = (v) => top + ht - ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * ht;
-    const n = steps.length + 1, slot = W / n, bw = Math.min(70, slot * 0.56);
-    d.roundRect(M - 6, top - 12, W + 12, ht + 44, 10, { fill: P.mist });
-    d.line(M, Y(0), M + W, Y(0), { color: "#000000", width: 0.8 });
-    steps.forEach((c, i) => {
-      const [a0, a1] = tops[i], x = M + i * slot + (slot - bw) / 2, yTop = Y(Math.max(a0, a1)), yBot = Y(Math.min(a0, a1));
-      d.roundRect(x, yTop, bw, Math.max(2, yBot - yTop), 4, { fill: c.value >= 0 ? P.up : P.down });
-      if (i < steps.length - 1 || true) d.line(x + bw, Y(a1), x + slot, Y(a1), { color: "#b0b3b8", width: 0.7, dash: [2, 2] }); // carries on to the next step
-      d.text(fmtSG(c.value), x + bw / 2, c.value >= 0 ? yTop - 5 : yBot + 11, { size: 10, bold: true, color: tone(c.value), align: "center" });
-      d.text(c.name, x + bw / 2, top + ht + 18, { size: 8, bold: true, color: P.ink, align: "center" });
-    });
-    const tv = a.overall.value ?? 0, x = M + steps.length * slot + (slot - bw) / 2, yT = Y(Math.max(0, tv)), yB = Y(Math.min(0, tv));
-    d.roundRect(x, yT, bw, Math.max(2, yB - yT), 4, { fill: P.gold });
-    d.text(fmtSG(tv), x + bw / 2, tv >= 0 ? yT - 5 : yB + 11, { size: 11, bold: true, color: P.ink, align: "center" });
-    d.text("Total", x + bw / 2, top + ht + 18, { size: 8, bold: true, color: P.ink, align: "center" });
-    y = top + ht + 40;
-  }
-  // by the numbers: four tiles
-  {
-    const nb = a.numbers, tiles = [];
-    if (nb.n) tiles.push([`${nb.posRounds} of ${nb.n}`, `rounds gained strokes overall (${Math.round((nb.posRounds / nb.n) * 100)}%)`]);
-    if (nb.streak.len) tiles.push([`${nb.streak.len} in a row`, `longest run of rounds gaining strokes (${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))})`]);
-    if (nb.upside && nb.upside.gain > 0.01) tiles.push([`+${nb.upside.gain.toFixed(2)}`, `a round more if ${CAT_NAME[nb.upside.cat]} matched the best in the group (${fmtSG(nb.upside.bestV)})`]);
-    else if (a.byCat.length) tiles.push(["Top", "of the group in every category in this report"]);
-    if (nb.steady) tiles.push([CAT_NAME[nb.steady.cat], `steadiest part of the game: swings about \u00b1${nb.steady.sd.toFixed(2)} a round${nb.swingy ? `; ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)})` : ""}`]);
-    if (tiles.length) {
-      need(100);
-      cap("By the numbers", M, y + 8, P.gold); y += 16;
-      const tw = (W - 3 * 10) / 4;
-      tiles.slice(0, 4).forEach(([big, txt], i) => {
-        const x = M + i * (tw + 10);
-        d.roundRect(x, y, tw, 78, 10, { fill: P.night });
-        d.text(wrap(big, tw - 20, big.length > 9 ? 13 : 18, true)[0], x + 12, y + 26, { size: big.length > 9 ? 13 : 18, bold: true, color: P.goldLight });
-        wrap(txt, tw - 22, 7.5).slice(0, 4).forEach((l, j) => d.text(l, x + 12, y + 42 + j * 9.5, { size: 7.5, color: "#d1d1d6" }));
-      });
-      y += 90;
-    }
-  }
-
-  /* ---------- AI summary (when set up) ---------- */
-  if (aiSummary) {
-    const lines = wrap(aiSummary, W - 28, 10.5);
-    section("Summary", "In a few words", lines.length * 15 + 20);
-    d.roundRect(M, y, W, lines.length * 15 + 22, 10, { fill: P.mist });
-    lines.forEach((l, i) => d.text(l, M + 14, y + 18 + i * 15, { size: 10.5, color: P.ink }));
-    y += lines.length * 15 + 30;
-    cap("Written by AI from the numbers in this report", M, y, P.faint); y += 14;
-  }
-
   /* ---------- SG form: total and each category ---------- */
   const formChart = (title, vals, { marks = false } = {}) => {
     const n = Math.min(10, Math.floor(vals.length / 2));
@@ -435,13 +376,77 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     a.series.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
     y = top + ht + 26;
   };
+  /* ---------- SG form: the total (of the categories in this report) ---------- */
   if (a.series.length >= 2) {
-    newPage();
-    section("SG Form", "Round by round", 160);
+    section("SG Form", "Round by round", 150);
     d.text("Each bar is one round (green = gained strokes, red = lost). The gold line is the rolling average of the last 5 rounds: when it rises, the player is playing better.", M, y + 6, { size: 8, color: P.grey });
-    y += 16;
-    formChart("Total", a.series.map((q) => q.value), { marks: true });
-    for (const k of a.cats) formChart(CAT_NAME[k], a.series.map((q) => q.byCat[k] ?? 0));
+    y += 14;
+    formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, a.series.map((q) => q.value), { marks: true });
+  }
+
+  /* ---------- by the numbers: four premium tiles ---------- */
+  {
+    const nb = a.numbers, tiles = [];
+    const pct = nb.n ? nb.posRounds / nb.n : 0;
+    if (nb.n) tiles.push({ label: "Rounds in the green", big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of rounds.`, viz: "bar", v: pct });
+    if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? "round" : "rounds"}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
+    if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`, text: `A round more if ${CAT_NAME[nb.upside.cat]} matched the best in the group (${fmtSG(nb.upside.bestV)}).`, viz: "pair", v: nb.upside });
+    else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "Top", text: "Leads the group in every category in this report.", viz: null });
+    if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing round to round.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
+    if (tiles.length) {
+      const cols = 2, gap = 12, tw = (W - gap) / cols, th = 92, rows = Math.ceil(tiles.length / cols);
+      section("By the numbers", "At a glance", rows * (th + gap));
+      tiles.slice(0, 4).forEach((t, i) => {
+        const x = M + (i % cols) * (tw + gap), ty = y + Math.floor(i / cols) * (th + gap);
+        // a dark tile with rounded corners and a soft left-to-right blend, and a fine gold edge on top
+        d.roundRect(x, ty, 24, th, 10, { fill: P.night });
+        d.roundRect(x + tw - 24, ty, 24, th, 10, { fill: P.night2 });
+        d.gradient(x + 12, ty, tw - 24, th, P.night, P.night2, { dir: "h", steps: 30 });
+        d.gradient(x + 14, ty + 0.5, tw - 28, 1.6, P.gold, P.goldLight, { dir: "h", steps: 20 });
+        cap(t.label, x + 16, ty + 20, P.goldLight, "left", 6.8);
+        // the big number, as large as fits
+        let size = 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
+        d.text(t.big, x + 16, ty + 50, { size, bold: true, color: "#ffffff" });
+        wrap(t.text, tw * 0.52, 7.8).slice(0, 3).forEach((l, j) => d.text(l, x + 16, ty + 64 + j * 9.5, { size: 7.8, color: "#a1a1a6" }));
+        // a small picture on the right
+        const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + 30;
+        if (t.viz === "bar") {
+          d.roundRect(vx, vy + 12, vw, 7, 3.5, { fill: "#2c2c2e" });
+          d.roundRect(vx, vy + 12, Math.max(7, vw * t.v), 7, 3.5, { fill: P.goldLight });
+          d.text(`${Math.round(t.v * 100)}%`, vx + vw, vy + 36, { size: 15, bold: true, color: P.goldLight, align: "right" });
+        } else if (t.viz === "dots") {
+          const n = Math.min(nb.n, 12), r = Math.min(4.5, vw / (n * 2.6)), stepX = vw / n;
+          for (let k = 0; k < n; k++) d.dot(vx + stepX * (k + 0.5), vy + 16, r, k < Math.min(t.v, n) ? P.goldLight : "#3a3a3c");
+          d.text(`longest of ${nb.n}`, vx + vw, vy + 36, { size: 7.5, color: "#8e8e93", align: "right" });
+        } else if (t.viz === "pair") {
+          const mine = a.byCat.find((c) => c.cat === t.v.cat)?.value ?? 0, best = t.v.bestV, mx = Math.max(Math.abs(mine), Math.abs(best), 0.01);
+          for (const [j, v, lab, col] of [[0, mine, "Now", "#8e8e93"], [1, best, "Best", P.goldLight]]) {
+            const yy = vy + 6 + j * 16;
+            d.text(lab, vx, yy + 6, { size: 7, bold: true, color: col });
+            d.roundRect(vx + 24, yy, Math.max(4, (vw - 54) * Math.abs(v) / mx), 7, 3.5, { fill: col });
+            d.text(fmtSG(v), vx + vw, yy + 6.5, { size: 7.5, bold: true, color: col, align: "right" });
+          }
+        } else if (t.viz === "swing") {
+          const s1 = t.v.steady.sd, s2 = t.v.swingy ? t.v.swingy.sd : s1, mx = Math.max(s1, s2, 0.01), mid = vx + vw / 2;
+          for (const [j, v, col, lab] of [[0, s1, P.goldLight, "Steadiest"], [1, s2, "#8e8e93", "Swingiest"]]) {
+            const yy = vy + 6 + j * 16, half = (vw / 2 - 4) * (v / mx);
+            d.roundRect(mid - half, yy, half * 2, 7, 3.5, { fill: col });
+            d.text(lab, vx, yy - 2, { size: 6, bold: true, color: col });
+          }
+        }
+      });
+      y += rows * (th + gap) + 4;
+    }
+  }
+
+  /* ---------- AI summary (when set up) ---------- */
+  if (aiSummary) {
+    const lines = wrap(aiSummary, W - 28, 10.5);
+    section("Summary", "In a few words", lines.length * 15 + 20);
+    d.roundRect(M, y, W, lines.length * 15 + 22, 10, { fill: P.mist });
+    lines.forEach((l, i) => d.text(l, M + 14, y + 18 + i * 15, { size: 10.5, color: P.ink }));
+    y += lines.length * 15 + 30;
+    cap("Written by AI from the numbers in this report", M, y, P.faint); y += 14;
   }
 
   // ---------- appendix ----------

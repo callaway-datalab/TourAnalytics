@@ -1755,3 +1755,10 @@ body.tapping { overflow: hidden; }
   .report-gen-panel > button.btn, .report-gen-actions > button.btn:not(.ghost) { width: 100%; }
 }
 .report-gen-actions .btn { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+/* Stats: the player search under the pills, no "Player" label */
+.analyze-picker .player-picker > label { display: none; }
+.analyze-picker { margin: 0 auto 0.9rem; }
+.analyze-picker .player-picker { margin: 0 auto; }
+.analyze-picker > p.center:empty { display: none; }
+.analyze-picker > p.center { margin: 0.4rem 0 0; }
+.picker-home:empty { display: none; }
