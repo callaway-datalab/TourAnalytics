@@ -1964,3 +1964,134 @@ main > nav.subnav { margin-bottom: 0.75rem !important; }
   .hb-row { grid-template-columns: 1.2rem minmax(0, 7rem) 1fr 3.2rem; }
   .fp-sum { font-size: 0.78rem; }
 }
+
+/* ================= Goals (Apple-style) ================= */
+.gx { max-width: 46rem; margin: 0 auto; padding-bottom: 5rem; font-feature-settings: "tnum"; }
+.gx-center { text-align: center; } .gx-muted { color: var(--muted); }
+.gx-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 0.5rem 0 1.4rem; }
+.gx-eyebrow { margin: 0; font-size: 0.78rem; font-weight: 600; color: #d4b483; letter-spacing: 0.01em; }
+.gx-title { margin: 0.1rem 0 0.25rem; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.022em; line-height: 1.15; text-transform: none; }
+.gx-sub { margin: 0; font-size: 0.86rem; color: var(--muted); letter-spacing: -0.005em; }
+.gx-link { background: none; border: 0; color: #d4b483; font: 500 0.95rem var(--font-body); cursor: pointer; padding: 0.3rem 0.2rem; }
+.gx-link:hover { text-decoration: underline; }
+/* inset grouped list */
+.gx-group { background: rgba(255,255,255,0.045); border-radius: 14px; margin: 0 0 1.25rem; overflow: hidden; }
+.gx-row { padding: 0.7rem 1rem; position: relative; }
+.gx-row + .gx-row::before { content: ""; position: absolute; top: 0; left: 1rem; right: 0; height: 1px; background: rgba(255,255,255,0.08); }
+.gx-dlrow { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.gx-row-label { font-size: 0.95rem; font-weight: 500; margin-right: auto; }
+/* segmented control */
+.gx-seg { display: inline-flex; padding: 2px; border-radius: 9px; background: rgba(118,118,128,0.24); }
+.gx-seg button { border: 0; background: transparent; color: var(--ink); font: 500 0.8rem var(--font-body); padding: 0.32rem 0.85rem; border-radius: 7px; cursor: pointer; }
+.gx-seg button.on { background: #636366; box-shadow: 0 3px 8px rgba(0,0,0,0.12), 0 3px 1px rgba(0,0,0,0.04); }
+/* fields */
+.gx-field { height: 1.9rem; min-height: 0 !important; padding: 0 0.5rem !important; margin: 0 !important; border-radius: 8px !important; border: 0 !important;
+  background: rgba(118,118,128,0.24) !important; color: var(--ink); font: 500 0.9rem var(--font-body) !important; }
+.gx-num { width: 4.6rem; text-align: right; font-variant-numeric: tabular-nums; }
+.gx-date { width: auto; }
+.gx-rounds { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--muted); }
+/* a goal row */
+.gx-r1 { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto auto; align-items: center; gap: 0.55rem; }
+.gx-name { font-size: 0.95rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
+.gx-goalrow.lvl-total .gx-name { font-weight: 700; font-size: 1.02rem; }
+.gx-goalrow.lvl-cat .gx-name { font-weight: 600; }
+.gx-goalrow.lvl-cat { padding-left: 1.6rem; } .gx-goalrow.lvl-skill { padding-left: 2.6rem; }
+.gx-goalrow.lvl-skill .gx-name { color: rgba(255,255,255,0.86); font-size: 0.9rem; }
+.gx-now { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gx-fold { width: 1.4rem; height: 1.4rem; border: 0; background: none; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0; transition: transform .2s ease; }
+.gx-fold.open { transform: rotate(90deg); }
+.gx-fold-sp { width: 1.4rem; }
+/* iOS switch */
+.gx-switch { width: 2.55rem; height: 1.55rem; border-radius: 999px; border: 0; padding: 0; background: rgba(120,120,128,0.32); position: relative; cursor: pointer; transition: background .2s ease; }
+.gx-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.55rem - 4px); height: calc(1.55rem - 4px); border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,0.15), 0 3px 1px rgba(0,0,0,0.06); transition: transform .2s ease; }
+.gx-switch.on { background: #30d158; } .gx-switch.on::after { transform: translateX(1rem); }
+/* slider + boxes */
+.gx-r2 { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 0.75rem; margin: 0.45rem 0 0.1rem 1.95rem; }
+.gx-goalrow:not(.active) .gx-r2 { opacity: 0.55; }
+.gx-track { position: relative; }
+.gx-range { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; margin: 0; cursor: pointer; }
+.gx-range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: rgba(255,255,255,0.16); }
+.gx-range::-moz-range-track { height: 4px; border-radius: 999px; background: rgba(255,255,255,0.16); }
+.gx-range::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9px; border-radius: 50%; background: #fff; box-shadow: 0 0.5px 4px rgba(0,0,0,0.35), 0 6px 13px rgba(0,0,0,0.18); }
+.gx-range::-moz-range-thumb { width: 22px; height: 22px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0.5px 4px rgba(0,0,0,0.35), 0 6px 13px rgba(0,0,0,0.18); }
+.gx-goalrow.active .gx-range::-webkit-slider-runnable-track { background: linear-gradient(90deg, rgba(212,180,131,0.55), rgba(212,180,131,0.9)); }
+.gx-tick { position: absolute; top: 50%; width: 2px; height: 12px; transform: translate(-50%, -50%); background: #d4b483; border-radius: 1px; pointer-events: none; }
+.gx-box { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.66rem; color: var(--muted); font-weight: 500; letter-spacing: 0.01em; }
+/* frosted save bar */
+.gx-bar { position: sticky; bottom: 0.75rem; display: flex; justify-content: flex-end; align-items: center; gap: 1rem; padding: 0.6rem 0.75rem; border-radius: 16px;
+  background: rgba(28,28,30,0.72); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 1px solid rgba(255,255,255,0.08); z-index: 5; }
+.gx-btn { border: 0; border-radius: 980px; background: #d4b483; color: #0a0a0b; font: 600 0.92rem var(--font-body); padding: 0.55rem 1.25rem; cursor: pointer; letter-spacing: -0.01em; }
+.gx-btn:hover { background: #e0c497; } .gx-btn:disabled { opacity: 0.5; }
+/* progress */
+.gx-summary { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.1rem; border-radius: 18px; background: rgba(255,255,255,0.045); margin-bottom: 1.25rem; flex-wrap: wrap; }
+.gx-sum-txt { display: flex; flex-direction: column; margin-right: auto; }
+.gx-sum-txt strong { font-size: 1.45rem; letter-spacing: -0.02em; font-weight: 700; }
+.gx-sum-txt span { font-size: 0.82rem; color: var(--muted); }
+.gx-dl { display: flex; flex-direction: column; align-items: flex-end; font-size: 0.75rem; color: var(--muted); }
+.gx-dl strong { font-size: 0.98rem; color: var(--ink); font-weight: 600; } .gx-dl.past strong { color: #ff6b5e; }
+.gx-ring { display: inline-flex; flex: none; } .gx-ring circle:last-child { transition: stroke-dasharray .6s ease; }
+.gx-list { list-style: none; margin: 0 0 0.75rem; padding: 0; background: rgba(255,255,255,0.045); border-radius: 14px; overflow: hidden; }
+.gx-goal { display: flex; align-items: center; gap: 0.85rem; padding: 0.7rem 1rem; position: relative; }
+.gx-goal + .gx-goal::before { content: ""; position: absolute; top: 0; left: 4.2rem; right: 0; height: 1px; background: rgba(255,255,255,0.08); }
+.gx-goal-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.gx-goal-name { font-size: 0.95rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-goal-name.lvl-skill { font-weight: 500; }
+.gx-goal-line { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gx-arrow { margin: 0 0.35rem; opacity: 0.6; }
+.gx-goal-togo { font-size: 0.82rem; font-weight: 600; color: #d4b483; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gx-goal-togo.ok { color: #30d158; }
+.gx-foot { font-size: 0.75rem; color: var(--muted); margin: 0.5rem 0.25rem; }
+@media (max-width: 640px) {
+  .gx-title { font-size: 1.5rem; }
+  .gx-r2 { grid-template-columns: 1fr 1fr; margin-left: 0; }
+  .gx-track { grid-column: 1 / -1; }
+  .gx-box { flex-direction: row; align-items: center; justify-content: space-between; gap: 0.4rem; font-size: 0.72rem; }
+  .gx-goalrow.lvl-cat { padding-left: 1.25rem; } .gx-goalrow.lvl-skill { padding-left: 1.75rem; }
+  .gx-dlrow .gx-row-label { width: 100%; }
+}
+.gx-range { background: transparent !important; border: 0 !important; padding: 0 !important; min-height: 0 !important; box-shadow: none !important; }
+.gx-range::-webkit-slider-runnable-track { background: linear-gradient(90deg, rgba(255,255,255,0.55) var(--p, 0%), rgba(255,255,255,0.16) var(--p, 0%)) !important; }
+.gx-goalrow.active .gx-range::-webkit-slider-runnable-track { background: linear-gradient(90deg, #d4b483 var(--p, 0%), rgba(255,255,255,0.16) var(--p, 0%)) !important; }
+.gx-range::-moz-range-progress { height: 4px; border-radius: 999px; background: rgba(255,255,255,0.55); }
+.gx-goalrow.active .gx-range::-moz-range-progress { background: #d4b483; }
+/* the Filters panel lets its dropdown lists show over what's below (they were clipped at its edge) */
+.filters-panel { overflow: visible !important; }
+.filters-panel .ms-panel { z-index: 40; }
+.filters-panel-btn { border-radius: 16px; }
+/* Goals: the dials */
+.gx-dialcard { display: flex; flex-direction: column; align-items: center; padding: 0.85rem 1rem 0.9rem; position: relative; }
+.gx-dc-head { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.gx-dialcard.lvl-total .gx-name { font-size: 1.05rem; font-weight: 700; }
+.gx-dialcard.lvl-cat .gx-name { font-size: 0.92rem; font-weight: 600; }
+.gx-dial-wrap { position: relative; display: grid; place-items: center; margin-top: 0.2rem; }
+.gx-dial { touch-action: none; cursor: grab; border-radius: 50%; outline: none; }
+.gx-dial.held { cursor: grabbing; }
+.gx-dial:focus-visible { box-shadow: 0 0 0 3px rgba(212,180,131,0.45); }
+.gx-knob { filter: drop-shadow(0 1px 3px rgba(0,0,0,0.45)) drop-shadow(0 5px 10px rgba(0,0,0,0.25)); transition: r .15s ease; }
+.gx-dial.held .gx-knob { r: 13; }
+.gx-dialcard:not(.active) .gx-dial-svg path:nth-child(2) { stroke: rgba(255,255,255,0.5); }
+.gx-dial-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; }
+.gx-dial-val { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.gx-dialcard.lvl-cat .gx-dial-val { font-size: 1.3rem; }
+.gx-dial-chg { font-size: 0.74rem; font-weight: 600; color: #d4b483; margin-top: 0.25rem; }
+.gx-dial-now { font-size: 0.68rem; color: var(--muted); margin-top: 0.1rem; }
+.gx-dialcard.lvl-cat .gx-dial-chg { font-size: 0.66rem; } .gx-dialcard.lvl-cat .gx-dial-now { font-size: 0.62rem; }
+.gx-dc-ends { width: 100%; max-width: 15rem; display: flex; justify-content: space-between; font-size: 0.66rem; color: var(--muted); margin-top: -0.6rem; }
+.gx-dialcard.lvl-cat .gx-dc-ends { margin-top: -0.4rem; max-width: 10rem; }
+.gx-dc-boxes { display: flex; gap: 0.75rem; margin-top: 0.6rem; }
+.gx-dialcard:not(.active) .gx-dial-wrap, .gx-dialcard:not(.active) .gx-dc-boxes { opacity: 0.6; }
+.gx-dialgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin: 0 0 1.25rem; }
+.gx-dialgrid .gx-dialcard { background: rgba(255,255,255,0.045); border-radius: 14px; padding: 0.75rem 0.6rem 0.8rem; }
+.gx-dialgrid .gx-dc-boxes { gap: 0.4rem; } .gx-dialgrid .gx-num { width: 3.9rem; font-size: 0.82rem !important; }
+.gx-more { margin-top: 0.55rem; background: none; border: 0; color: #d4b483; font: 500 0.8rem var(--font-body); cursor: pointer; padding: 0.2rem 0.4rem; }
+.gx-more span { display: inline-block; transition: transform .2s ease; } .gx-more.open span { transform: rotate(90deg); }
+.gx-section { margin: 0 0 0.45rem 1rem; font-size: 0.74rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.gx-group > .gx-goalrow.lvl-skill { padding-left: 1rem; }
+@media (max-width: 760px) { .gx-dialgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; } }
+/* category cards: names wrap; the two boxes stack in the narrow cards */
+.gx-dialgrid .gx-name { white-space: normal; font-size: 0.84rem !important; line-height: 1.2; }
+.gx-dialgrid .gx-dc-boxes { flex-direction: column; width: 100%; max-width: 9.5rem; gap: 0.35rem; }
+.gx-dialgrid .gx-box { flex-direction: row !important; align-items: center; justify-content: space-between; gap: 0.4rem; font-size: 0.66rem; }
+.gx-dialgrid .gx-num { width: 4.2rem; }
+.gx-dialcard, .gx-dialgrid { min-width: 0; }
+.gx-dialgrid .gx-dialcard { overflow: hidden; }
