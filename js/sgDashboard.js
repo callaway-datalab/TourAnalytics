@@ -301,15 +301,16 @@ export function sgDashboard(container, opts) {
     // no player: the leaderboard
     const ranked = slicedField.filter((p) => p.rounds.length).map((p) => ({ p, v: perRoundOf(p.rounds) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
     if (!ranked.length) return null;
-    const max = Math.max(...ranked.slice(0, 5).map((x) => Math.abs(x.v)), 0.01);
+    const shown = ranked.map((x, i) => ({ ...x, i })); // everyone; the list scrolls
+    const max = Math.max(...shown.filter(Boolean).map((x) => Math.abs(x.v)), 0.01);
     return el("section", { class: "panel hero" }, [
       el("span", { class: "hero-kicker" }, describe()),
       el("h2", { class: "hero-name" }, "Leaderboard"),
-      el("div", { class: "hero-board" }, ranked.slice(0, 5).map((x, i) => el("div", { class: "hb-row" }, [
-        el("span", { class: "hb-rank" }, String(i + 1)), el("span", { class: "hb-name" }, x.p.label),
+      el("div", { class: "hero-board", tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => (!x ? null : el("div", { class: "hb-row" }, [
+        el("span", { class: "hb-rank" }, String(x.i + 1)), el("span", { class: "hb-name" }, x.p.label),
         el("span", { class: "hb-bar" }, el("span", { class: x.v >= 0 ? "pos" : "neg", style: `width:${Math.max(4, (Math.abs(x.v) / max) * 100)}%` })),
         el("strong", { class: x.v >= 0 ? "pos" : "neg" }, fmtSG(x.v)),
-      ]))),
+      ])))),
       el("p", { class: "muted small" }, "Pick a player above for their own view."),
       foot,
     ]);
@@ -655,10 +656,12 @@ export function sgDashboard(container, opts) {
       if (!r.of) return null;
       const avg = r.vals.reduce((t, x) => t + x.v, 0) / r.of;
       const lead = slicedField.find((p) => p.key === r.leader?.key);
-      lines.push(`${r.of} players (${what}). Leader: ${lead?.label || "\u2014"} (${fmtSG(r.leader.v)} a round). Group average: ${fmtSG(avg)}.`);
+      const last = r.vals[r.vals.length - 1], lastP = slicedField.find((p) => p.key === last?.key);
+      lines.push(`${r.of} players (${what}). Leader: ${lead?.label || "\u2014"} (${fmtSG(r.leader.v)} a round)${r.of > 1 && lastP ? `; last: ${lastP.label} (${fmtSG(last.v)})` : ""}. Group average: ${fmtSG(avg)}.`);
       if (cats.length > 1) {
-        const spread = cats.map(([k, l]) => { const v = rankAmong(slicedField, null, k).vals; return v.length ? { l, hi: v[0].v, lo: v[v.length - 1].v } : null; }).filter(Boolean).sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo));
-        if (spread.length) lines.push(`Biggest gap between players: ${spread[0].l} (from ${fmtSG(spread[0].hi)} to ${fmtSG(spread[0].lo)} a round). Pick a player for their own summary.`);
+        const nameOf = (key) => slicedField.find((p) => p.key === key)?.label || "\u2014";
+        const spread = cats.map(([k, l]) => { const v = rankAmong(slicedField, null, k).vals; return v.length > 1 ? { l, hi: v[0], lo: v[v.length - 1] } : null; }).filter(Boolean).sort((a, b) => (b.hi.v - b.lo.v) - (a.hi.v - a.lo.v));
+        if (spread.length) lines.push(`Biggest gap between players: ${spread[0].l}, from ${nameOf(spread[0].hi.key)} (${fmtSG(spread[0].hi.v)}) to ${nameOf(spread[0].lo.key)} (${fmtSG(spread[0].lo.v)}) a round. Pick a player for their own summary.`);
       }
     }
     if (!lines.length) return null;
