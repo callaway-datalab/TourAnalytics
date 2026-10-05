@@ -324,7 +324,10 @@ export function sgDashboard(container, opts) {
       data: { labels, datasets: [{ data: vals, borderColor: "#d4b483", backgroundColor: grad, fill: "origin", borderWidth: 2.4, pointRadius: 0, pointHoverRadius: 4, tension: 0.35 }] },
       options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${fmtSG(c.parsed.y)} (5-round average)` } } },
-        scales: { x: { display: false }, y: { grid: { color: (c) => (c.tick.value === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.06)") }, ticks: { color: "#8e8e93", maxTicksLimit: 4, callback: (v) => fmtSG(v) }, border: { display: false } } } },
+        scales: {
+          // a minimal x-axis: a few dates, small and grey, no grid
+          x: { display: true, grid: { display: false }, border: { display: false }, ticks: { color: "#6e6e73", font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 5, padding: 2 } },
+          y: { grid: { color: (c) => (c.tick.value === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.06)") }, ticks: { color: "#8e8e93", maxTicksLimit: 4, callback: (v) => fmtSG(v) }, border: { display: false } } } },
     });
   }
 
@@ -894,10 +897,25 @@ export function sgDashboard(container, opts) {
       responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(28,28,30,0.96)", borderColor: "rgba(255,255,255,0.12)", borderWidth: 1, padding: 10, cornerRadius: 10, titleFont: { family: "Inter, system-ui, sans-serif", weight: "600" }, bodyFont: { family: "Inter, system-ui, sans-serif" } } },
       scales: {
-        x: { ticks: { color: muted }, grid: { color: grid } },
-        y: { ticks: { color: muted }, grid: { color: (c) => (c.tick?.value === 0 ? "rgba(255,255,255,0.35)" : grid), lineWidth: (c) => (c.tick?.value === 0 ? 1.5 : 1) } },
+        x: { ticks: { color: muted }, grid: { display: false }, border: { display: false } },
+        y: { ticks: { color: muted }, border: { display: false }, grid: { color: (c) => (c.tick?.value === 0 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.05)"), lineWidth: (c) => (c.tick?.value === 0 ? 1.5 : 1) } },
       },
+      animation: { duration: 650, easing: "easeOutQuart" },
+      animations: { y: { from: (c) => (c.chart?.scales?.y ? c.chart.scales.y.getPixelForValue(0) : undefined) } },
     };
+  }
+  // a bar's gradient: bright at its tip, deeper at the zero line (scales with the chart, so it's crisp at any size)
+  const GRAD = { up: ["#5ef08f", "#1f9d50"], down: ["#ff7a6e", "#b3261e"], gold: ["#e6c995", "#9a7a46"] };
+  function barFill(c, single, hover = false) {
+    const { chart, dataIndex } = c, area = chart.chartArea, y = chart.scales?.y;
+    const v = c.dataset.data[dataIndex];
+    const [tip, base] = single ? GRAD.gold : v >= 0 ? GRAD.up : GRAD.down;
+    if (!area || !y || v == null) return tip;
+    const z = y.getPixelForValue(0), t = y.getPixelForValue(v);
+    if (!Number.isFinite(z) || !Number.isFinite(t) || Math.abs(z - t) < 1) return tip;
+    const g = chart.ctx.createLinearGradient(0, t, 0, z);
+    g.addColorStop(0, hover ? "#ffffff" : tip); g.addColorStop(hover ? 0.12 : 0, tip); g.addColorStop(1, base);
+    return g;
   }
   function barChart(canvas, labels, values, { title, compare, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar" } = {}) {
     const signColors = values.map((v) => (v >= 0 ? "#30d158" : "#ff453a"));
@@ -906,7 +924,12 @@ export function sgDashboard(container, opts) {
       ? { type: "line", label: title || "", data: values, order: 2, borderColor: single || "#c8a97e", borderWidth: 2.5, tension: 0.35,
           pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: single || signColors, pointBorderColor: single || signColors,
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
-      : { type: "bar", label: title || "", data: values, borderRadius: 6, maxBarThickness: 44, backgroundColor: single || signColors, order: 2 }];
+      // Bars: rounded, filled with a gradient that deepens toward the zero line (green up, red down),
+      // a soft glow on hover, growing from zero when drawn.
+      : { type: "bar", label: title || "", data: values, order: 2, maxBarThickness: 46, categoryPercentage: 0.72, barPercentage: 0.9,
+          borderRadius: { topLeft: 8, topRight: 8, bottomLeft: 8, bottomRight: 8 }, borderSkipped: false,
+          backgroundColor: (c) => barFill(c, single), hoverBackgroundColor: (c) => barFill(c, single, true),
+          borderWidth: 0 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
     // the other players: gold dots in front of the bars
     // (gold dots, no line)
