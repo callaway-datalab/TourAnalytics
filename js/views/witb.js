@@ -48,6 +48,7 @@ export async function render(main, { flash }) {
   const shaftIn = el("input", { placeholder: "Shaft model", maxLength: 50, autocomplete: "off", "aria-label": "Shaft model" });
   const flexIn = el("select", { "aria-label": "Flex" }, [el("option", { value: "" }, "Flex"), ...FLEXES.map((f) => el("option", { value: f }, f))]);
   const weightIn = el("input", { type: "number", inputmode: "numeric", min: "20", max: "160", placeholder: "Weight (g)", "aria-label": "Shaft weight in grams" });
+  const yardsIn = el("input", { type: "number", inputmode: "numeric", min: "0", max: "400", placeholder: "Stock yds", "aria-label": "Stock yardage" });
   // set mode: one dropdown where you tick the clubs you want
   let setMode = false, picked = [];
   const pickBtn = el("button", { type: "button", class: "ms-btn set-pick", "aria-expanded": "false", "aria-haspopup": "true" });
@@ -99,7 +100,7 @@ export async function render(main, { flash }) {
     onSubmit: async (e) => {
       e.preventDefault();
       const b = brand.value.trim(), m = model.value.trim(), n = note.value.trim();
-      const shaftBits = { shaft: shaftIn.value.trim(), flex: flexIn.value, weight: weightIn.value ? String(Math.round(Number(weightIn.value))) : "" };
+      const shaftBits = { shaft: shaftIn.value.trim(), flex: flexIn.value, weight: weightIn.value ? String(Math.round(Number(weightIn.value))) : "", yards: yardsIn.value ? String(Math.round(Number(yardsIn.value))) : "" };
       if (setMode) {
         const pick = [...picked];
         if (!pick.length) { flash("Tick the clubs in the set.", "error"); return; }
@@ -119,10 +120,10 @@ export async function render(main, { flash }) {
         library = [c, ...library];
         if (inBag.length < MAX_CLUBS) inBag = [...inBag, c.id]; // new clubs go straight in the bag (if there's room)
       }
-      [brand, model, note, shaftIn, weightIn].forEach((x) => { x.value = ""; }); flexIn.value = "";
+      [brand, model, note, shaftIn, weightIn, yardsIn].forEach((x) => { x.value = ""; }); flexIn.value = "";
       draw(); await save();
     },
-  }, [cat, type, setBox, brand, model, shaftIn, flexIn, weightIn, note, addBtn]);
+  }, [cat, type, setBox, brand, model, yardsIn, shaftIn, flexIn, weightIn, note, addBtn]);
 
   /* ---------- editing a club ---------- */
   let editing = null; // id of the club being edited
@@ -137,17 +138,18 @@ export async function render(main, { flash }) {
     const es = el("input", { value: c.shaft || "", placeholder: "Shaft model", maxLength: 50, "aria-label": "Shaft model" });
     const ef = el("select", { "aria-label": "Flex" }, [el("option", { value: "" }, "Flex"), ...FLEXES.map((f) => el("option", { value: f, selected: c.flex === f }, f))]);
     const ew = el("input", { type: "number", inputmode: "numeric", min: "20", max: "160", value: c.weight || "", placeholder: "Weight (g)", "aria-label": "Shaft weight in grams" });
+    const ey = el("input", { type: "number", inputmode: "numeric", min: "0", max: "400", value: c.yards || "", placeholder: "Stock yds", "aria-label": "Stock yardage" });
     const saveB = el("button", { type: "button", class: "btn" }, "Save");
     const cancelB = el("button", { type: "button", class: "link" }, "Cancel");
     saveB.addEventListener("click", async () => {
       const next = { ...c, cat: ecat.value, type: etype.value, brand: eb.value.trim(), model: em.value.trim(), note: en.value.trim(),
-        shaft: es.value.trim(), flex: ef.value, weight: ew.value ? String(Math.round(Number(ew.value))) : "" };
+        shaft: es.value.trim(), flex: ef.value, weight: ew.value ? String(Math.round(Number(ew.value))) : "", yards: ey.value ? String(Math.round(Number(ey.value))) : "" };
       if (library.some((x) => x.id !== c.id && same(x, next))) { flash("You already have that club in your list.", "error"); return; }
       library = library.map((x) => (x.id === c.id ? next : x));
       editing = null; draw(); await save();
     });
     cancelB.addEventListener("click", () => { editing = null; draw(); });
-    return el("tr", { class: "club-edit" }, el("td", { colspan: "6" }, el("div", { class: "club-add club-edit-form" }, [ecat, etype, eb, em, es, ef, ew, en, el("div", { class: "edit-actions" }, [saveB, cancelB])])));
+    return el("tr", { class: "club-edit" }, el("td", { colspan: "6" }, el("div", { class: "club-add club-edit-form" }, [ecat, etype, eb, em, ey, es, ef, ew, en, el("div", { class: "edit-actions" }, [saveB, cancelB])])));
   }
 
   /* ---------- the list and the bag ---------- */
@@ -179,8 +181,9 @@ export async function render(main, { flash }) {
           title: on ? "In your bag. Tap to take it out." : "Tap to put it in your bag." }, [
           el("td", {}, [el("strong", {}, clubLabel(c)), on ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null,
             clubMake(c) ? el("span", { class: "mobile-make" }, clubMake(c)) : null,
-            shaftText(c) ? el("span", { class: "mobile-make shaft-line" }, shaftText(c)) : null]), // brand / model (and shaft) under the name on phones
-          el("td", {}, [clubMake(c) || el("span", { class: "muted" }, "\u2014"), shaftText(c) ? el("span", { class: "shaft-line" }, `Shaft: ${shaftText(c)}`) : null]),
+            c.yards ? el("span", { class: "mobile-make shaft-line" }, `Stock ${c.yards} yds`) : null,
+            shaftText(c) ? el("span", { class: "mobile-make shaft-line" }, shaftText(c)) : null]), // brand / model (stock yardage, shaft) under the name on phones
+          el("td", {}, [clubMake(c) || el("span", { class: "muted" }, "\u2014"), c.yards ? el("span", { class: "shaft-line" }, `Stock: ${c.yards} yds`) : null, shaftText(c) ? el("span", { class: "shaft-line" }, `Shaft: ${shaftText(c)}`) : null]),
           el("td", { class: "muted" }, c.note || ""),
           el("td", { class: "num" }, String(u.used)),
           el("td", { class: "num", style: u.avg == null ? "" : `color:${sgColor(u.avg)}` }, u.avg == null ? "\u2014" : fmtSG(u.avg)),

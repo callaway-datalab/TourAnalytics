@@ -67,7 +67,7 @@ function resultIn(t) {
   if (/\b(made|make|makes|sank|sink|holed|drained|in the (hole|cup)|went in|holed out|tap in|tapped in|chipped in|holeinone|ace)\b/.test(t) && !/\b(missed|miss|lipped out)\b/.test(t)) return "Holed";
   if (/\b(water|out of bounds|ob|o\.b\.|lost ball|hazard|penalty|unplayable)\b/.test(t)) return "Penalty";
   if (/\b(bunker|sand|trap|beach)\b/.test(t)) return "Bunker";
-  if (/\b(trees?|woods|behind|blocked|recovery|pine straw|stuck)\b/.test(t)) return "Recovery";
+  if (/\b(trees?|woods|behind|blocked|recovery|pine straw|stuck)\b/.test(t)) return "Rough"; // (no "Recovery" lie: trouble counts as rough)
   if (/\b(rough|thick stuff|long grass|first cut)\b/.test(t)) return "Rough";
   if (/\b(green|on in|on the dance floor|putting surface)\b/.test(t)) return "Green";
   if (/\b(fairway|short grass|fringe|collar|apron|down the middle|middle|center|centre|split the fairway)\b/.test(t)) return "Fairway";

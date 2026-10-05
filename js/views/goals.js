@@ -141,9 +141,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       const reached = s.now >= g.value, span = g.value - g.start;
       return { reached, pct: reached ? 1 : span > 0 ? Math.max(0, (s.now - g.start) / span) : 0, toGo: g.value - s.now };
     };
-    const add = levels.length ? el("button", { type: "button", class: "gx-btn gx-btn-sm" }, "\uFF0B Goal") : null;
-    add?.addEventListener("click", () => startEdit(null));
-    const addCh = el("button", { type: "button", class: "gx-btn gx-btn-sm gx-btn-alt" }, "\uFF0B Challenge");
+    const addCh = el("button", { type: "button", class: "gx-btn gx-btn-sm" }, "\uFF0B Goal");
     addCh.addEventListener("click", () => { chEditing = { id: null, stat: "fwy", target: 70, measure: "round", when: "next", n: 3, date: "" }; draw(); });
     let colorAt = 0;
     // A goal set: just its goals (each with its deadline), Edit and Delete. "Now" is the average over the
@@ -186,18 +184,19 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     const goalsDone = allGoals.filter((x) => status(x).reached).length;
     const chs = challenges().map((ch) => ({ ch, st: challengeStatus(ch, sgRounds, basicRounds) }));
     const chDone = chs.filter((x) => x.st.status === "done").length, chLive = chs.filter((x) => x.st.status === "progress" || x.st.status === "waiting").length;
+    const chMissed = chs.filter((x) => x.st.status === "missed").length;
     const stat = (r, big, small) => el("div", { class: "gx-ov-stat" }, [r, el("div", {}, [el("strong", {}, big), el("span", {}, small)])]);
     const overview = el("section", { class: "gx-overview" }, [
-      stat(ring(allGoals.length ? goalsDone / allGoals.length : 0, { size: 52, stroke: 6, color: "#d4b483" }), `${goalsDone}/${allGoals.length}`, "goals reached"),
-      stat(ring(chs.length ? chDone / chs.length : 0, { size: 52, stroke: 6, color: "#30d158" }), `${chDone}/${chs.length}`, "challenges done"),
-      stat(ring(chLive ? 1 : 0, { size: 52, stroke: 6, color: "#64d2ff" }), String(chLive), "challenges going"),
+      stat(ring(chs.length ? chDone / chs.length : 0, { size: 52, stroke: 6, color: "#30d158" }), `${chDone}/${chs.length}`, "goals done"),
+      stat(ring(chs.length ? chLive / chs.length : 0, { size: 52, stroke: 6, color: "#64d2ff" }), String(chLive), "going"),
+      stat(ring(chs.length ? chMissed / chs.length : 0, { size: 52, stroke: 6, color: "#ff453a" }), String(chMissed), "missed"),
     ]);
     // challenges
     const chCard = ({ ch, st }) => {
       const S = CH_STATS.find((x) => x.key === ch.stat) || CH_STATS[0];
       const val = st.value == null ? "\u2014" : S.kind === "sg" ? fmt(st.value) : S.unit === "%" ? `${st.value.toFixed(1)}%` : st.value.toFixed(1);
       const words = { waiting: "Waiting for a round", progress: st.met ? "On track" : "Behind", done: "Done", missed: "Missed" }[st.status];
-      const del = el("button", { type: "button", class: "gx-link gx-danger gx-ch-del", "aria-label": "Delete this challenge" }, "\u2715");
+      const del = el("button", { type: "button", class: "gx-link gx-danger gx-ch-del", "aria-label": "Delete this goal" }, "\u2715");
       del.addEventListener("click", async () => {
         const next = challenges().filter((x) => x.id !== ch.id);
         try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; draw(); } catch (err) { console.error(err); flash("Couldn't delete it.", "error"); }
@@ -216,15 +215,12 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     };
     mount(container, el("div", { class: "gx" }, [
       el("header", { class: "gx-head gx-hero" }, [
-        el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, whose === "My" ? "My goals" : label), el("p", { class: "gx-sub" }, `${source} \u00b7 tap a goal or challenge for its rounds`)]),
-        el("div", { class: "gx-head-actions" }, [addCh, add]),
+        el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, whose === "My" ? "My goals" : label), el("p", { class: "gx-sub" }, `${source} \u00b7 tap a goal for its rounds`)]),
+        el("div", { class: "gx-head-actions" }, [addCh]),
       ]),
       overview,
-      el("div", { class: "gx-section-head" }, [el("h2", {}, "Challenges"), el("span", {}, "Quick targets for a round, a week or a date")]),
-      chs.length ? el("div", { class: "gx-chs" }, chs.map(chCard)) : el("p", { class: "gx-empty" }, "No challenges yet. Try \u201cHit 70% fairways in my next round\u201d."),
-      el("div", { class: "gx-section-head" }, [el("h2", {}, "Goals"), el("span", {}, "Strokes-gained goals, each with its deadline")]),
-      ...sets().map(card),
-      sets().length ? null : el("p", { class: "gx-empty" }, levels.length ? "No goals yet. Use \uFF0B Goal to aim for a strokes-gained number by a date or within some rounds." : "Goals need at least 3 rounds of strokes-gained data."),
+      el("div", { class: "gx-section-head" }, [el("h2", {}, "Goals"), el("span", {}, "Targets for a round, a week or a date")]),
+      chs.length ? el("div", { class: "gx-chs" }, chs.map(chCard)) : el("p", { class: "gx-empty" }, "No goals yet. Try \u201cHit 70% fairways in my next round\u201d."),
       el("p", { class: "gx-foot" }, "Strokes gained a round. Rings fill from where each goal started to the goal."),
     ]));
   }
@@ -292,7 +288,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     nIn.addEventListener("input", () => { ch.n = Math.max(2, Math.round(Number(nIn.value) || 3)); sync(); });
     dIn.addEventListener("change", () => { ch.date = dIn.value; sync(); });
     sync();
-    const save = el("button", { type: "button", class: "gx-btn" }, ch.id ? "Save Challenge" : "Add Challenge");
+    const save = el("button", { type: "button", class: "gx-btn" }, ch.id ? "Save Goal" : "Add Goal");
     const cancel = el("button", { type: "button", class: "gx-link" }, "Cancel");
     cancel.addEventListener("click", () => { chEditing = null; draw(); });
     save.addEventListener("click", async () => {
@@ -302,19 +298,19 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
         n: ch.when === "nextN" ? ch.n : null, date: ch.when === "date" ? ch.date : null, start: ch.start || new Date().toISOString().slice(0, 10) };
       const next = ch.id ? challenges().map((x) => (x.id === ch.id ? item : x)) : [...challenges(), item];
       save.disabled = true;
-      try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; chEditing = null; draw(); flash("Challenge added.", "ok"); }
-      catch (err) { console.error(err); flash("Couldn't save the challenge. Try again.", "error"); save.disabled = false; }
+      try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; chEditing = null; draw(); flash(ch.id ? "Goal saved." : "Goal added.", "ok"); }
+      catch (err) { console.error(err); flash("Couldn't save the goal. Try again.", "error"); save.disabled = false; }
     });
     const st = S();
     mount(container, el("div", { class: "gx" }, [
-      el("header", { class: "gx-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, ch.id ? "Edit challenge" : "New challenge"), el("p", { class: "gx-sub" }, ch.id ? `Counting rounds from ${ch.start}.` : "A quick target. Only rounds played from today count.")])]),
+      el("header", { class: "gx-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, ch.id ? "Edit goal" : "New goal"), el("p", { class: "gx-sub" }, ch.id ? `Counting rounds from ${ch.start}.` : "A quick target. Only rounds played from today count.")])]),
       el("section", { class: "gx-group" }, [
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "Stat"), statSel]),
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, st.kind === "sg" ? "Gain" : st.higher ? "At least" : "At most"),
           target, st.unit === "%" ? el("span", { class: "gx-unit" }, "%") : null, st.kind === "sg" ? measure : null]),
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "When"), whenSel, ch.when === "nextN" ? el("span", { class: "gx-rounds" }, [nIn, "rounds"]) : null, ch.when === "date" ? dIn : null]),
       ]),
-      el("div", { class: "gx-ch-sentence" }, [el("span", { class: "gx-eyebrow" }, "Your challenge"), sentence,
+      el("div", { class: "gx-ch-sentence" }, [el("span", { class: "gx-eyebrow" }, "Your goal"), sentence,
         st.kind === "basic" && !basicRounds.length ? el("p", { class: "gx-sub" }, "This stat comes from rounds entered in Data Entry (full shots or quick mode).") : null]),
       el("div", { class: "gx-bar" }, [cancel, save]),
     ]));

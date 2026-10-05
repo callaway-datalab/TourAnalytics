@@ -314,13 +314,14 @@ export function sgDashboard(container, opts) {
     const minBox = el("label", { class: "hb-min" }, ["Min. rounds played", minIn]);
     const shown = ranked.map((x, i) => ({ ...x, i })); // everyone; the list scrolls
     const max = Math.max(...shown.filter(Boolean).map((x) => Math.abs(x.v)), 0.01);
+    const posMax = Math.max(...shown.filter((x) => x && x.v >= 0).map((x) => x.v), 0.01), negMax = Math.max(...shown.filter((x) => x && x.v < 0).map((x) => -x.v), 0.01);
     return el("section", { class: "panel hero" }, [
       el("div", { class: "hb-head" }, [el("div", {}, [el("span", { class: "hero-kicker" }, describe()), el("h2", { class: "hero-name" }, "Leaderboard")]), minBox]),
       ranked.length ? null : el("p", { class: "muted small" }, `No one has played ${minR} rounds in this selection.`),
       el("div", { class: "hero-board", tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => (!x ? null : el("div", { class: "hb-row" }, [
         el("span", { class: "hb-rank" }, String(x.i + 1)),
         opts.onPick ? (() => { const b = el("button", { type: "button", class: "hb-name hb-link", title: `Open ${x.p.label}` }, x.p.label); b.addEventListener("click", () => opts.onPick(x.p.key)); return b; })() : el("span", { class: "hb-name" }, x.p.label),
-        el("span", { class: "hb-bar" }, el("span", { class: x.v >= 0 ? "pos" : "neg", style: `width:${Math.max(4, (Math.abs(x.v) / max) * 100)}%` })),
+        el("span", { class: "hb-bar" }, el("span", { class: x.v >= 0 ? "pos" : "neg", style: htmlBarStyle(x.v, Math.abs(x.v) / max, Math.abs(x.v) / (x.v >= 0 ? posMax : negMax)) })),
         el("strong", { class: x.v >= 0 ? "pos" : "neg" }, fmtSG(x.v)),
       ])))),
       el("p", { class: "muted small" }, opts.onPick ? "Tap a name for that player's view." : "Pick a player above for their own view."),
@@ -931,19 +932,30 @@ export function sgDashboard(container, opts) {
       animations: { y: { from: (c) => (c.chart?.scales?.y ? c.chart.scales.y.getPixelForValue(0) : undefined) } },
     };
   }
-  // a bar's gradient: light at the zero line, darker toward its tip (scales with the chart, so it's crisp at any size)
-  const GRAD = { up: ["#0f6b34", "#7ff0a8"], down: ["#8e1b14", "#ff9d94"], gold: ["#8a6a38", "#efd7a8"] }; // [tip, at zero]
+  // A bar's colour, on one scale for the whole chart: a clear green (or red) at the zero line, darkening
+  // out to the chart's biggest bar. So a +0.5 bar ends in the colour at the middle of a +1.0 bar.
+  const GRAD = { up: ["#43c870", "#0b5a2a"], down: ["#ff5a4e", "#8a1712"], gold: ["#d9b97f", "#7f6031"] }; // [at zero, at the biggest bar]
   function barFill(c, single, hover = false) {
     const { chart, dataIndex } = c, area = chart.chartArea, y = chart.scales?.y;
     const v = c.dataset.data[dataIndex];
-    const [tip, base] = single ? GRAD.gold : v >= 0 ? GRAD.up : GRAD.down;
-    if (!area || !y || v == null) return tip;
-    const z = y.getPixelForValue(0), t = y.getPixelForValue(v);
-    if (!Number.isFinite(z) || !Number.isFinite(t) || Math.abs(z - t) < 1) return tip;
-    const g = chart.ctx.createLinearGradient(0, z, 0, t); // from zero (light) out to the tip (dark)
-    g.addColorStop(0, base); g.addColorStop(hover ? 0.85 : 1, tip); if (hover) g.addColorStop(1, "#ffffff");
+    const [near, far] = single ? GRAD.gold : v >= 0 ? GRAD.up : GRAD.down;
+    if (!area || !y || v == null) return near;
+    // each side on its own scale: green darkens to the biggest gain, red to the biggest loss
+    const side = c.dataset.data.map((x) => Number(x) || 0).filter((x) => (v >= 0 ? x >= 0 : x < 0));
+    const max = Math.max(...side.map(Math.abs), 1e-9);
+    const z = y.getPixelForValue(0), end = y.getPixelForValue(v >= 0 ? max : -max);
+    if (!Number.isFinite(z) || !Number.isFinite(end) || Math.abs(z - end) < 1) return near;
+    const g = chart.ctx.createLinearGradient(0, z, 0, end); // the same span for every bar on this side
+    g.addColorStop(0, near); g.addColorStop(1, far);
     return g;
   }
+  /** The same scale for HTML bars (the leaderboard): the gradient spans the full track, the bar shows its part. */
+  // width: on the shared scale; colour: on its own side's scale (darkest at the biggest gain / loss)
+  const htmlBarStyle = (v, frac, colorFrac = frac) => {
+    const [near, far] = v >= 0 ? GRAD.up : GRAD.down;
+    const w = Math.max(0.04, frac), cf = Math.max(0.04, colorFrac);
+    return `width:${w * 100}%;background:linear-gradient(90deg, ${near}, ${far});background-size:${100 / cf}% 100%;background-repeat:no-repeat`;
+  };
   function barChart(canvas, labels, values, { title, compare, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar" } = {}) {
     const signColors = values.map((v) => (v >= 0 ? "#30d158" : "#ff453a"));
     const datasets = [as === "line"

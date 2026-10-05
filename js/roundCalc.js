@@ -4,8 +4,8 @@
 // numbers to show. Replace it (or strokesGained()) with your own functions when they're ready;
 // nothing else needs to change.
 
-export const LIES = ["Tee box", "Fairway", "Rough", "Bunker", "Recovery", "Green"];
-export const END_LIES = ["Fairway", "Rough", "Bunker", "Recovery", "Green", "Holed", "Penalty"];
+export const LIES = ["Tee box", "Fairway", "Rough", "Bunker", "Green"];
+export const END_LIES = ["Fairway", "Rough", "Bunker", "Green", "Holed", "Penalty"];
 export const unitFor = (lie) => (lie === "Green" ? "ft" : "yds");
 
 /* ------------------------------ PLACEHOLDER: expected strokes ------------------------------ */

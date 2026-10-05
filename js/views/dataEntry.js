@@ -447,7 +447,8 @@ function renderRound(main, params, flash, previewClient) {
   // Your clubs (WITB), for the optional Club on each shot.
   let bag = [];
   getBag(state.user.uid).then((clubs) => {
-    bag = clubs.map((c) => ({ label: clubLabel(c), model: clubMake(c), cat: c.cat, type: c.type })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
+    bag = clubs.map((c) => ({ label: clubLabel(c), model: clubMake(c), cat: c.cat, type: c.type, yards: Number(c.yards) || null })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
+    if (round && round.holes && strokes.length && holeBox?.isConnected) { chain(); drawHole(); } // (the bag arrived: suggest clubs)
     if (round && holeIdx >= 0 && bag.length) drawHole();
   });
   const hole = () => round.holes[holeIdx];
@@ -512,6 +513,33 @@ function renderRound(main, params, flash, previewClient) {
         s.startDist = prev.endLie === "Penalty" ? (s.startDist || prev.endDist || prev.startDist) : prev.endDist;
       }
     }
+    strokes.forEach((s, i) => suggestClub(s, i));
+  }
+  // typing a distance: show the newly suggested clubs without redrawing (the keyboard stays up)
+  function syncClubs() {
+    holeBox.querySelectorAll(".shot-card").forEach((card) => {
+      const st = strokes[Number(card.dataset.i)], sel = card.querySelector(".club-select");
+      if (!st || !sel || !st.clubAuto) return;
+      const k = bag.findIndex((c) => c.label === st.club && (c.model || "") === (st.clubMake || ""));
+      sel.value = k >= 0 ? String(k) : "";
+    });
+  }
+  // A club to start with (only for shots you haven't picked one for): Driver off the tee on a par 4 or 5,
+  // Putter on the green, otherwise the club whose stock yardage (WITB) is closest to the distance left.
+  function suggestClub(s, i) {
+    if (!bag.length || s.clubPicked || (s.club && !s.clubAuto)) return;
+    const h = round?.holes?.[holeIdx];
+    const isCat = (c, k) => c.cat === k || new RegExp(k, "i").test(c.label);
+    let c = null;
+    if (s.startLie === "Green") c = bag.find((x) => isCat(x, "Putter"));
+    else if (i === 0 && s.startLie === "Tee box" && h && h.par >= 4) c = bag.find((x) => isCat(x, "Driver"));
+    if (!c) {
+      const d = Number(s.startDist);
+      const withYards = bag.filter((x) => x.yards && !isCat(x, "Putter"));
+      if (d > 0 && s.startLie !== "Green" && withYards.length) c = withYards.reduce((a, b) => (Math.abs(b.yards - d) < Math.abs(a.yards - d) ? b : a));
+    }
+    if (c) { s.club = c.label; s.clubMake = c.model || undefined; s.clubCat = c.cat || undefined; s.clubAuto = true; }
+    else if (s.clubAuto) { s.club = undefined; s.clubMake = undefined; s.clubCat = undefined; s.clubAuto = false; }
   }
 
   // Taps (lie chips, add/remove shot) redraw the hole. Typing a distance must NOT redraw, or the phone
@@ -524,7 +552,7 @@ function renderRound(main, params, flash, previewClient) {
   function changed(redraw = true, anchor = null) {
     queueMicrotask(revealNext);
     chain();
-    if (redraw) drawHole(anchor); else refreshDerived();
+    if (redraw) drawHole(anchor); else { refreshDerived(); syncClubs(); }
     if (!canEdit()) return;
     status.textContent = "Saving\u2026";
     clearTimeout(saveTimer);
@@ -888,6 +916,7 @@ function renderRound(main, params, flash, previewClient) {
       if (sel.value === "kept") return;
       const c = bag[Number(sel.value)];
       s.club = c?.label || undefined; s.clubMake = c?.model || undefined; s.clubCat = c?.cat || undefined;
+      s.clubPicked = true; s.clubAuto = false; // yours: no more suggestions for this shot
       changed(false);
     });
     return sel;

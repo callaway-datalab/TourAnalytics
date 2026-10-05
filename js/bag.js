@@ -89,7 +89,7 @@ export function libraryFrom(d) {
 /** Save the library and which clubs are in the bag (the bag itself is copied to .clubs). */
 export function saveLibrary(uid, library, inBag) {
   const clubs = inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean)
-    .map(({ cat, type, brand, model, note, shaft = "", flex = "", weight = "" }) => ({ cat, type, brand, model, note, shaft, flex, weight }));
+    .map(({ cat, type, brand, model, note, shaft = "", flex = "", weight = "", yards = "" }) => ({ cat, type, brand, model, note, shaft, flex, weight, yards }));
   return setDoc(doc(db, "bags", uid), { library, inBag, clubs: clubs.slice(0, MAX_CLUBS), updatedAt: serverTimestamp() }, { merge: true });
 }
 
