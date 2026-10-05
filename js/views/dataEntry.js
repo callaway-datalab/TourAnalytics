@@ -7,8 +7,8 @@
 import { el, mount, formatWhen, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
 import { UserError } from "../store.js";
-import { createRound, saveHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
-import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundToPrepared } from "../roundCalc.js";
+import { createRound, saveHole, saveQuickHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
+import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundHoleScore, roundToPrepared } from "../roundCalc.js";
 import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "../scorecardReader.js";
 import { detectCardGrid, gridValues, splitRow } from "../cardGrid.js";
 import { tesseractEngine } from "../scorecardReader.js";
@@ -87,12 +87,12 @@ function roundTotals(r) {
   let score = 0, thru = 0, par = 0;
   for (const h of r.holes || []) {
     par += h.par;
-    const hs = holeScore(r.shots?.[`h${h.n}`]);
+    const hs = roundHoleScore(r, h);
     if (hs.done) { score += hs.strokes; thru++; }
   }
   return { score, thru, par };
 }
-const parThru = (r) => (r.holes || []).filter((h) => holeScore(r.shots?.[`h${h.n}`]).done).reduce((a, h) => a + h.par, 0);
+const parThru = (r) => (r.holes || []).filter((h) => roundHoleScore(r, h).done).reduce((a, h) => a + h.par, 0);
 
 /* ======================================== new round ======================================== */
 async function renderNew(main, flash, viewing = null) {
@@ -113,6 +113,19 @@ async function renderNew(main, flash, viewing = null) {
   // Tournament or Practice: two pills, exactly one picked.
   let roundType = "practice"; // Practice unless you pick Tournament
   const typePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "Round type" });
+  // Quick (score, putts, fairway, green in regulation) or full shot-by-shot detail
+  let entryMode = "full";
+  const modePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "How much to enter" });
+  const modeNote = el("p", { class: "muted small" });
+  const drawMode = () => {
+    mount(modePills, [["quick", "Quick"], ["full", "Full shots"]].map(([v, l]) => {
+      const b = el("button", { type: "button", role: "radio", class: `seg-btn${entryMode === v ? " on" : ""}`, "aria-checked": entryMode === v ? "true" : "false" }, l);
+      b.addEventListener("click", () => { entryMode = v; drawMode(); });
+      return b;
+    }));
+    modeNote.textContent = entryMode === "quick" ? "Score, putts, fairway and green in regulation for each hole. You can add shot detail to any hole." : "Every shot, for strokes gained.";
+  };
+  drawMode();
   const tournamentIn = el("input", { placeholder: "e.g. Club Championship", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
   const tournamentField = el("label", { hidden: true }, ["Tournament name", tournamentIn]);
   const drawType = () => {
@@ -379,7 +392,7 @@ async function renderNew(main, flash, viewing = null) {
         const id = await createRound({
           playerKey: player.key, playerLabel: player.label, ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "",
           date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: roundType, tournament: roundType === "tournament" ? tournamentIn.value.trim() : "",
-          holes: holes.map((h) => ({ n: h.n, par: h.par, yards: h.yards ?? null, hcp: h.hcp ?? null })),
+          holes: holes.map((h) => ({ n: h.n, par: h.par, yards: h.yards ?? null, hcp: h.hcp ?? null })), mode: entryMode,
         });
         location.hash = `#/entry/${encodeURIComponent(player.key)}/${id}`;
       } catch (err) {
@@ -392,6 +405,7 @@ async function renderNew(main, flash, viewing = null) {
     el("section", { class: "entry-section" }, [
       el("h2", {}, "Round details"),
       el("div", { class: "field" }, [el("span", { class: "field-label" }, "Round type"), typePills]),
+      el("div", { class: "field" }, [el("span", { class: "field-label" }, "Entry"), modePills, modeNote]),
       tournamentField,
       el("label", {}, ["Date", date]),
       el("label", { class: "course-label" }, ["Course", courseBox.node]),
@@ -446,7 +460,7 @@ function renderRound(main, params, flash, previewClient) {
     if (firstLoad) {
       firstLoad = false;
       // Open on the first unfinished hole.
-      const next = r.holes.findIndex((h) => !holeScore(r.shots?.[key(h)]).done);
+      const next = r.holes.findIndex((h) => !roundHoleScore(r, h).done);
       holeIdx = r.status === "complete" ? -1 : Math.max(0, next);
       loadHole();
       draw();
@@ -519,9 +533,16 @@ function renderRound(main, params, flash, previewClient) {
   async function save() {
     const h = hole();
     const clean = cleanStrokes();
+    // With no signal the save is kept on this phone and sent when the signal is back; the screen carries on.
+    const write = saveHole(playerKey, roundId, h.n, clean);
+    await settle(write);
+  }
+  const OFFLINE_MSG = "Saved on this phone \u00b7 will sync";
+  async function settle(write) {
     try {
-      await saveHole(playerKey, roundId, h.n, clean);
-      status.textContent = "Saved \u2713";
+      if (navigator.onLine === false) { write.catch(() => {}); status.textContent = OFFLINE_MSG; return; }
+      const ok = await Promise.race([write.then(() => true), new Promise((r) => setTimeout(() => r(false), 4000))]);
+      status.textContent = ok ? "Saved \u2713" : OFFLINE_MSG;
     } catch (err) {
       console.error(err);
       status.textContent = "Not saved \u2014 check your connection";
@@ -569,7 +590,7 @@ function renderRound(main, params, flash, previewClient) {
   function drawStrip() {
     let running = 0; // score to par through each hole (finished holes only)
     mount(strip, [...round.holes.map((h, i) => {
-      const hs = holeScore(i === holeIdx ? strokes : round.shots?.[key(h)]);
+      const hs = i === holeIdx && !quickNow() ? holeScore(strokes) : roundHoleScore(round, h);
       const diff = hs.done ? hs.strokes - h.par : null;
       if (hs.done) running += diff;
       // Outline: grey par, green birdie, lime eagle or better, orange bogey, red double bogey or worse.
@@ -591,9 +612,70 @@ function renderRound(main, params, flash, previewClient) {
 
   // Redraw the hole without moving the screen: the shot you're working on (anchor) stays exactly where it
   // was, and the box you were typing in keeps focus.
+  /* ---------------- Quick mode: score, putts, fairway, green in regulation ---------------- */
+  const detailHoles = new Set(); // holes you've opened up for full shot detail
+  const quickNow = () => round?.mode === "quick" && !detailHoles.has(hole().n) && !(round.shots?.[key(hole())] || []).length;
+  let quickTimer = null;
+  function quickBox() {
+    const h = hole(), ro = !canEdit();
+    const q = { score: "", putts: "", fwy: null, gir: null, ...(round.quick?.[key(h)] || {}) };
+    const autoGir = () => (q.score !== "" && q.putts !== "" ? Number(q.score) - Number(q.putts) <= h.par - 2 : null);
+    const save = () => {
+      round.quick = { ...(round.quick || {}), [key(h)]: { ...q } };
+      drawStrip(); updateScore();
+      if (ro) return;
+      status.textContent = "Saving\u2026";
+      clearTimeout(quickTimer);
+      quickTimer = setTimeout(() => { quickTimer = null; settle(saveQuickHole(playerKey, roundId, h.n, { score: q.score === "" ? null : Number(q.score), putts: q.putts === "" ? null : Number(q.putts), fwy: q.fwy, gir: q.gir })); }, 400);
+    };
+    const stepper = (label, field, min, max, start) => {
+      const val = el("span", { class: "qk-val" }, q[field] === "" || q[field] == null ? "\u2013" : String(q[field]));
+      const set = (v) => { q[field] = v; if (field !== "gir" && q.girAuto !== false) q.gir = autoGir(); save(); drawHole(); };
+      const minus = el("button", { type: "button", class: "qk-step", "aria-label": `${label}: one less`, disabled: ro }, "\u2212");
+      const plus = el("button", { type: "button", class: "qk-step", "aria-label": `${label}: one more`, disabled: ro }, "+");
+      minus.addEventListener("click", () => set(Math.max(min, (q[field] === "" || q[field] == null ? start : Number(q[field])) - (q[field] === "" || q[field] == null ? 0 : 1))));
+      plus.addEventListener("click", () => set(Math.min(max, (q[field] === "" || q[field] == null ? start : Number(q[field]) + 1))));
+      return el("div", { class: "qk-row" }, [el("span", { class: "qk-label" }, label), el("div", { class: "qk-stepper" }, [minus, val, plus])]);
+    };
+    const choice = (label, field, opts) => el("div", { class: "qk-row" }, [el("span", { class: "qk-label" }, label), el("div", { class: "seg qk-seg" }, opts.map(([v, l]) => {
+      const b = el("button", { type: "button", class: `seg-btn${q[field] === v ? " on" : ""}`, disabled: ro }, l);
+      b.addEventListener("click", () => { q[field] = q[field] === v ? null : v; if (field === "gir") q.girAuto = false; save(); drawHole(); });
+      return b;
+    }))]);
+    const box = el("div", { class: "quick-box" });
+    const redraw = () => {
+      if (q.girAuto !== false && q.gir == null) q.gir = autoGir();
+      mount(box, [
+        stepper("Score", "score", 1, 15, h.par),
+        stepper("Putts", "putts", 0, 8, 2),
+        h.par >= 4 ? choice("Fairway", "fwy", [[true, "Hit"], [false, "Missed"]]) : el("div", { class: "qk-row muted small" }, [el("span", { class: "qk-label" }, "Fairway"), "Par 3: no fairway"]),
+        choice("Green in regulation", "gir", [[true, "Yes"], [false, "No"]]),
+        el("p", { class: "muted small qk-note" }, "Green in regulation fills itself in from score and putts; tap to change it."),
+      ]);
+    };
+    redraw();
+    const more = ro ? null : el("button", { type: "button", class: "link qk-more" }, "\uFF0B Add shot detail for this hole");
+    more?.addEventListener("click", () => { detailHoles.add(h.n); loadHole(); drawHole(); });
+    return [box, more];
+  }
+
   function drawHole(anchor = null) {
     const h = hole();
     const ro = !canEdit();
+    if (quickNow()) {
+      const q = round.quick?.[key(h)];
+      const qs = roundHoleScore(round, h);
+      holeBox.style.minHeight = "";
+      mount(holeBox, [
+        el("div", { class: "hole-title" }, [
+          el("h2", {}, `Hole ${h.n}`),
+          el("p", {}, [`Par ${h.par}`, h.yards ? ` \u00b7 ${h.yards} yds` : "", h.hcp ? ` \u00b7 Hcp ${h.hcp}` : ""].join("")),
+          qs.done ? el("p", { class: "hole-result" }, `${qs.strokes} \u00b7 ${scoreName(qs.strokes - h.par)}`) : null,
+        ]),
+        ...quickBox(),
+      ]);
+      return;
+    }
     const hs = holeScore(strokes);
     const anchorEl = anchor !== null ? holeBox.querySelector(`[data-i="${anchor}"]`) : null;
     const before = anchorEl ? anchorEl.getBoundingClientRect().top : null;
@@ -879,7 +961,7 @@ function renderRound(main, params, flash, previewClient) {
     next.addEventListener("click", async () => {
       if (last && canEdit()) {
         await flushSave();
-        const open = round.holes.filter((h, i) => !holeScore(i === holeIdx ? strokes : round.shots?.[key(h)]).done).map((h) => h.n);
+        const open = round.holes.filter((h, i) => !(i === holeIdx && !quickNow() ? holeScore(strokes) : roundHoleScore(round, h)).done).map((h) => h.n);
         if (open.length && !confirmAction(`Hole${open.length > 1 ? "s" : ""} ${open.join(", ")} ${open.length > 1 ? "aren't" : "isn't"} finished. Finish the round anyway?`)) return;
         try { await updateRound(playerKey, roundId, { status: "complete" }); } catch { flash("Couldn't finish the round. Try again.", "error"); return; }
         go(-1);
@@ -894,7 +976,7 @@ function renderRound(main, params, flash, previewClient) {
     const { score, par, thru } = roundTotals(round);
     const thruAll = thru === round.holes.length;
     const rows = round.holes.map((h) => {
-      const hs = holeScore(round.shots?.[key(h)]);
+      const hs = roundHoleScore(round, h);
       return el("tr", {}, [el("td", {}, String(h.n)), el("td", { class: "num" }, String(h.par)), el("td", { class: "num" }, h.yards ? String(h.yards) : "\u2014"),
         el("td", { class: "num" + (hs.done ? (hs.strokes < h.par ? " good" : hs.strokes > h.par ? " bad" : "") : "") }, hs.done ? String(hs.strokes) : "\u2014")]);
     });

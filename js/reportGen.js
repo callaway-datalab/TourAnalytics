@@ -215,7 +215,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   let page = 1, y = 0;
   const footer = () => {
     d.line(M, H - 34, M + W, H - 34, { color: P.hair, width: 0.5 });
-    cap("Tour Analytics", M, H - 20, P.faint);
+    cap("Tour Analytics  \u00b7  Powered by ShotLink", M, H - 20, P.faint);
     cap(`${a.me.label}  \u00b7  Page ${page}`, M + W, H - 20, P.faint, "right");
   };
   const newPage = () => { footer(); d.addPage(); page++; y = 46; };
@@ -308,10 +308,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   };
   const yl0 = cards(M, "Strengths", strengths, P.up, P.upTint, "No clear standouts against Tour Avg in this period.");
   const yl = yl0 + 2;
-  wrap(`Elite = ranked in the top 10% of the ${a.players} players compared for that skill (with ${a.players} players, that's 1st), with at least 10 shots.${a.halves ? ` Rising / Slipping compare the last ${a.halves.n} rounds with the ${a.halves.n} before them.` : ""}`, colW, 7.5)
-    .forEach((l, i) => d.text(l, M, yl + 8 + i * 9.5, { size: 7.5, color: P.faint }));
   const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against Tour Avg in this period.");
-  y = Math.max(yl + 30, yr) + 10;
+  y = Math.max(yl, yr) + 10;
 
   /* ---------- best and toughest rounds ---------- */
   const rowsH = 28 + Math.max(a.peaks.length, a.valleys.length) * 28;
@@ -555,7 +553,7 @@ async function loadLogo() {
 
 /* ============================== loading the player's data ============================== */
 const once = (watchFn, ...args) => new Promise((res) => { let un = null; un = watchFn(...args, (v) => { res(v); setTimeout(() => un?.(), 0); }); });
-async function loadSource(source, playerKey, label) {
+export async function loadSource(source, playerKey, label) {
   if (source === "entered") {
     const state = getState();
     const rounds = await once(watchPlayerRounds, playerKey);
@@ -571,7 +569,27 @@ async function loadSource(source, playerKey, label) {
   const [rows, summary] = await Promise.all([getDatasetRows(playerKey, shot.id, shot.chunkCount), getFieldStats(shot.id).catch(() => null)]);
   const me = { key: playerKey, label, rounds: prepare(rows, idx) };
   const field = summaryPlayers(summary);
-  return { me, field: field.length ? field.map((p) => (p.key === playerKey ? { ...me } : p)) : [me], idx };
+  return { me, field: field.length ? field.map((p) => (p.key === playerKey ? { ...me } : p)) : [me], idx, datasetId: shot.id };
+}
+
+/** The admin: every player's full shots in that file (so ranks can go down to each distance). */
+export async function loadFullField(datasetId, field, me, idx) {
+  const st = getState();
+  if (!st.isAdmin || !datasetId) return null;
+  const { getDatasetMeta } = await import("./store.js");
+  const keys = field.map((p) => p.key), full = [];
+  const next = async () => {
+    while (keys.length) {
+      const key = keys.shift();
+      try {
+        if (key === me.key) { full.push(me); continue; }
+        const meta = await getDatasetMeta(key, datasetId);
+        full.push({ key, label: field.find((p) => p.key === key)?.label || key, rounds: prepare(await getDatasetRows(key, datasetId, meta.chunkCount), idx) });
+      } catch { /* that player's file isn't there */ }
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, next));
+  return full.length > 1 ? full : null;
 }
 
 /* ============================== the panel ============================== */

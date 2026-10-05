@@ -31,6 +31,7 @@ export async function render(main, { flash }) {
   let fileId = "";                 // the file being analyzed: the newest strokes-gained file
   const status = el("p", { class: "muted center", role: "status" });
   const portalLink = el("p", { class: "center" });
+  let enteredUpdated = null;
   const sourceHome = el("div", { class: "pill-row source-home" });
   queueMicrotask(() => { if (!sourcePills.parentNode) sourceHome.appendChild(sourcePills); });
   // the player search + portal link: placed by the dashboard under its pills (above the dropdowns);
@@ -98,7 +99,7 @@ export async function render(main, { flash }) {
     }).filter((p) => p.rounds.length);
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome });
+    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome });
     publishIfStale(ds);
   }
 
@@ -127,6 +128,7 @@ export async function render(main, { flash }) {
     const token = ++loadToken;
     status.textContent = "Loading entered rounds\u2026";
     const rounds = await getAllRounds().catch(() => []);
+    enteredUpdated = Math.max(0, ...rounds.map((r) => r.updatedAt?.toMillis?.() ?? 0)) || null; // for "last updated"
     if (token !== loadToken) return;
     status.textContent = "";
     fieldPlayers = enteredPlayers(rounds, (r) => displayLabels.get(r.playerKey) || r.playerLabel);
@@ -145,7 +147,7 @@ export async function render(main, { flash }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome });
+    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.

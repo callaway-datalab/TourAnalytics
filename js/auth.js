@@ -65,11 +65,23 @@ onAuthStateChanged(auth, (user) => {
     } catch { /* private mode etc.: skip */ }
     notify();
   };
+  // The profile, kept on this device too, so the app still opens with no signal (Data Entry offline).
+  const PKEY = `ta:profile:${user.uid}`;
+  const cached = () => { try { return JSON.parse(localStorage.getItem(PKEY) || "null"); } catch { return null; } };
+  let heard = false;
+  const offlineTimer = setTimeout(() => { if (!heard && navigator.onLine === false && cached()) setProfile(cached()); }, 1200);
   profileUnsub = onSnapshot(
     doc(db, "users", user.uid),
-    (snap) => setProfile(snap.exists() ? snap.data() : null),
-    () => setProfile(null),
+    (snap) => {
+      heard = true; clearTimeout(offlineTimer);
+      const p = snap.exists() ? snap.data() : null;
+      try { localStorage.setItem(PKEY, JSON.stringify(p, (k, x) => (x && typeof x === "object" && typeof x.toMillis === "function" ? null : x))); } catch { /* fine */ }
+      setProfile(p);
+    },
+    () => { heard = true; clearTimeout(offlineTimer); setProfile(navigator.onLine === false ? cached() : null); },
   );
+  // anything entered offline last time goes up now
+  import("./rounds.js").then((m) => m.flushPending()).catch(() => {});
 });
 
 export function signOut() {

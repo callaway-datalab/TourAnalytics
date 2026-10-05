@@ -64,6 +64,14 @@ export function clubGroupOf(label) {
   return "Other";
 }
 
+/** A hole's score in a round: from its shots, or (quick mode) the score typed in. */
+export function roundHoleScore(round, h, shots = undefined) {
+  const st = shots !== undefined ? shots : round?.shots?.[`h${h.n}`];
+  if (st && st.length) return holeScore(st);
+  const q = round?.quick?.[`h${h.n}`];
+  return q && Number(q.score) > 0 ? { strokes: Number(q.score), done: true, quick: true } : { strokes: 0, done: false };
+}
+
 /** Strokes on a hole, its score, and whether it's finished. */
 export function holeScore(strokes = []) {
   const done = strokes.some((s) => s.endLie === "Holed");
@@ -82,6 +90,19 @@ export function basicCounts(round) {
   const yds = (lie, d) => (d === "" || d == null ? null : lie === "Green" ? Number(d) / 3 : Number(d));
   for (const h of round.holes || []) {
     const strokes = round.shots?.[`h${h.n}`] || [];
+    const q = round.quick?.[`h${h.n}`];
+    if (!strokes.length && q && Number(q.score) > 0 && h.par) {
+      // quick mode: score, putts, fairway, green in regulation
+      const sc = Number(q.score), pu = q.putts === "" || q.putts == null ? null : Number(q.putts);
+      c.holes++; c.score += sc; c.par += h.par;
+      if (sc <= h.par - 1) c.birdies++;
+      if (sc <= h.par) c.parOrBetter++;
+      const gir = q.gir != null ? !!q.gir : pu != null && sc - pu <= h.par - 2;
+      if (gir) c.gir++; else { c.udN++; if (sc <= h.par) c.ud++; }
+      if (h.par >= 4 && (q.fwy === true || q.fwy === false)) { c.fwyN++; if (q.fwy) c.fwy++; }
+      if (pu != null) { c.putts += pu; c.puttHoles++; if (pu >= 3) c.threePutts++; }
+      continue;
+    }
     const { strokes: score, done } = holeScore(strokes);
     if (!done || !h.par) continue;
     c.holes++; c.score += score; c.par += h.par;

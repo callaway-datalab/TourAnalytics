@@ -2,7 +2,7 @@
 // Each row opens the round; Delete removes it (after a confirm).
 import { el, mount, confirmAction } from "./ui.js";
 import { deleteRound } from "./rounds.js";
-import { holeScore } from "./roundCalc.js";
+import { holeScore, roundHoleScore } from "./roundCalc.js";
 
 const toPar = (n) => (n === 0 ? "E" : n > 0 ? `+${n}` : String(n));
 
@@ -11,7 +11,7 @@ export function myRoundsTable(rounds, { flash, canDelete = () => true, title = "
   const rows = rounds.map((r) => {
     let score = 0, thru = 0, parThru = 0;
     for (const h of r.holes || []) {
-      const hs = holeScore(r.shots?.[`h${h.n}`]);
+      const hs = roundHoleScore(r, h);
       if (hs.done) { score += hs.strokes; thru++; parThru += h.par; }
     }
     const done = r.status === "complete";

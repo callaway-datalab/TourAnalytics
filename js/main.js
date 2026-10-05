@@ -7,6 +7,9 @@ import { watchMyThreads, watchAdminThreads } from "./store.js";
 
 startRouter();
 
+// Offline: let the app open with no signal (Data Entry on the course).
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+
 // Unread-question badge + desktop notifications, independent of which page is open.
 let unsubThreads = null;
 let lastCount = 0;

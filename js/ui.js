@@ -89,12 +89,14 @@ const NAV = {
     ["#/dashboard", "data", "My Stats", ["dashboard", "dataset"]],
     ["#/documents", "doc", "My Reports", ["documents"]],
     ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
+    ["#/goals", "data", "Goals", ["goals"]],
   ],
   admin: [
     ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
     ["#/admin/analyze", "data", "Stats", ["admin-datasets", "admin-analyze"]],          // opens on Analyze
     ["#/admin/reports/view", "doc", "Reports", ["admin-documents", "admin-reports-view"]], // opens on View
     ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
+    ["#/admin/goals", "data", "Goals", ["admin-goals"]],
   ],
 };
 
@@ -114,7 +116,8 @@ function teamNav() {
   return [
     ["#/dashboard", "data", "Stats", ["dashboard", "dataset"]],
     ["#/documents", "doc", "Reports", ["documents"]],
-    NAV.client[2], // Data Entry
+    NAV.client.find(([h]) => h === "#/entry"), // Data Entry
+    NAV.client.find(([h]) => h === "#/goals"), // Goals
   ];
 }
 

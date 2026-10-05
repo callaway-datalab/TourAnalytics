@@ -51,7 +51,12 @@ export async function render(main, { previewClient, flash }) {
     enteredBox.hidden = lastSource !== "entered";
     mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
       const a = el("a", { href: "#", "aria-current": lastSource === v ? "page" : null }, l);
-      a.addEventListener("click", (e) => { e.preventDefault(); lastSource = v; drawSource(); (v === "tour" ? tourDashNow : enteredDash)?.update({}); }); // its Basic / Advanced
+      a.addEventListener("click", (e) => {
+        e.preventDefault(); lastSource = v; drawSource();
+        const d = v === "tour" ? tourDashNow : enteredDash;
+        if (d) d.update({}); // it takes the pills into its Filters panel
+        else { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } // nothing to show there: keep the pills on the page
+      });
       return a;
     }));
   };
@@ -82,7 +87,7 @@ export async function render(main, { previewClient, flash }) {
       const me = { key: clientKey, label, rounds: prepare(rows, idx) };
       const inner = el("div");
       mount(box, inner);
-      const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", state: dashState, viewHost, lead: sourcePills, leadHome: sourceHome });
+      const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", teamRole, state: dashState, updatedAt: d.uploadedAt?.toMillis?.() ?? null, viewHost, lead: sourcePills, leadHome: sourceHome });
       stopDataset = () => dash.destroy();
       tourDashNow = dash;
       // The admin looking through a player's portal can read everyone's full data: load it, so the charts by
@@ -148,7 +153,7 @@ export async function render(main, { previewClient, flash }) {
     const me = { ...players[0], label };
     const inner = el("div");
     mount(enteredDashBox, inner);
-    enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, mode: "player", state: enteredState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
+    enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, mode: "player", teamRole, state: enteredState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
       note: "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in." });
   });
 
