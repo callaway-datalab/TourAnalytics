@@ -74,7 +74,8 @@ export function sgDashboard(container, opts) {
     if (!st.yearStarted && opt.year.length) { st.yearStarted = true; if (!st.year.length) st.year = [[...opt.year].sort().pop()]; } // the latest year to start
     st.lie = st.lie.filter((l) => opt.lie.includes(l));
     st.club = st.club.filter((c) => opt.club.includes(c));
-    const f = { span: Number(st.span), year: st.year, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club };
+    st.tour = (st.tour || []).filter((t) => (opt.tour || []).includes(t));
+    const f = { span: Number(st.span), year: st.year, tour: st.tour, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
     const slicedField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, rankF) }));
@@ -115,7 +116,7 @@ export function sgDashboard(container, opts) {
       el("div", { class: "sg-panel" }, (() => {
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
-        return [heroBox(mine, slicedField, f), summaryBox(mine, slicedField), showRanks ? rankingsBlock(slicedField) : null, ...blocks];
+        return [heroBox(mine, slicedField, f), summaryBox(mine, slicedField), showRanks && me ? rankingsBlock(slicedField) : null, ...blocks];
       })()),
     ]);
     if (focusKey) {
@@ -197,9 +198,14 @@ export function sgDashboard(container, opts) {
   function filterBar(opt, { basic = false, bare = false } = {}) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
-    const active = ["year", "event", "roundNo", "lie", "dist", "club"].some((k) => st[k].length) || Number(st.span) > 0;
-    const reset = el("button", { class: "link", type: "button", hidden: !active }, "Clear filters");
-    reset.addEventListener("click", () => { Object.assign(st, { span: 0, year: [], event: [], roundNo: [], lie: [], dist: [], club: [], openFilter: null }); draw(); });
+    const latest = [...opt.year].sort().pop();
+    const active = ["event", "roundNo", "lie", "dist", "club", "cats"].some((k) => st[k].length) || Number(st.span) > 0 || (st.view || "advanced") !== "advanced"
+      || JSON.stringify(st.year) !== JSON.stringify(latest ? [latest] : []);
+    const reset = el("button", { class: "link", type: "button", hidden: !active }, "Reset Filters");
+    reset.addEventListener("click", () => {
+      Object.assign(st, { span: 0, year: latest ? [latest] : [], tour: [], event: [], roundNo: [], lie: [], dist: [], club: [], cats: [], view: "advanced", openFilter: null });
+      draw();
+    });
     // Distances, grouped under their category; with categories picked, only theirs show.
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
     const distOpts = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
@@ -213,6 +219,7 @@ export function sgDashboard(container, opts) {
     return el("div", { class: "sg-filters" + (st.filtersOpen || bare ? " open" : "") + (bare ? " bare" : "") }, [
       bare ? null : fold,
       el("label", {}, ["Span", span]),
+      (opt.tour || []).length > 1 ? multi("Tour", "tour", simple(opt.tour), "All tours", { plural: "tours" }) : null,
       multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
       ...(basic ? [] : [
@@ -235,7 +242,7 @@ export function sgDashboard(container, opts) {
     const src = opts.lead?.querySelector?.("[aria-current=page]")?.textContent || "";
     const yrs = st.year.length ? [...st.year].sort().reverse().join(" + ") : "All years";
     const cats = st.cats.length ? st.cats.map((k) => CAT_NAME[k] || k).join(" + ") : "All categories";
-    const more = ["event", "roundNo", "lie", "dist", "club"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
+    const more = ["tour", "event", "roundNo", "lie", "dist", "club"].filter((k) => (st[k] || []).length).length + (Number(st.span) > 0 ? 1 : 0);
     const btn = el("button", { type: "button", class: "filters-panel-btn", "aria-expanded": open ? "true" : "false" }, [
       el("span", { class: "fp-title" }, "Filters"),
       el("span", { class: "fp-sum" }, [src, yrs, basic ? "Basic" : "Advanced", cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
@@ -299,19 +306,24 @@ export function sgDashboard(container, opts) {
       ]);
     }
     // no player: the leaderboard
-    const ranked = slicedField.filter((p) => p.rounds.length).map((p) => ({ p, v: perRoundOf(p.rounds) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
-    if (!ranked.length) return null;
+    const minR = Math.max(1, Number(st.minRounds) || 1);
+    const ranked = slicedField.filter((p) => p.rounds.length >= minR).map((p) => ({ p, v: perRoundOf(p.rounds), n: p.rounds.length })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
+    const minIn = el("input", { type: "number", min: 1, max: 99, value: minR, class: "hb-min-in", "aria-label": "Minimum rounds played" });
+    // (redrawn just after the change finishes, so the box isn't removed mid-event)
+    minIn.addEventListener("change", () => { st.minRounds = Math.max(1, Math.round(Number(minIn.value) || 1)); setTimeout(draw, 0); });
+    const minBox = el("label", { class: "hb-min" }, ["Min. rounds played", minIn]);
     const shown = ranked.map((x, i) => ({ ...x, i })); // everyone; the list scrolls
     const max = Math.max(...shown.filter(Boolean).map((x) => Math.abs(x.v)), 0.01);
     return el("section", { class: "panel hero" }, [
-      el("span", { class: "hero-kicker" }, describe()),
-      el("h2", { class: "hero-name" }, "Leaderboard"),
+      el("div", { class: "hb-head" }, [el("div", {}, [el("span", { class: "hero-kicker" }, describe()), el("h2", { class: "hero-name" }, "Leaderboard")]), minBox]),
+      ranked.length ? null : el("p", { class: "muted small" }, `No one has played ${minR} rounds in this selection.`),
       el("div", { class: "hero-board", tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => (!x ? null : el("div", { class: "hb-row" }, [
-        el("span", { class: "hb-rank" }, String(x.i + 1)), el("span", { class: "hb-name" }, x.p.label),
+        el("span", { class: "hb-rank" }, String(x.i + 1)),
+        opts.onPick ? (() => { const b = el("button", { type: "button", class: "hb-name hb-link", title: `Open ${x.p.label}` }, x.p.label); b.addEventListener("click", () => opts.onPick(x.p.key)); return b; })() : el("span", { class: "hb-name" }, x.p.label),
         el("span", { class: "hb-bar" }, el("span", { class: x.v >= 0 ? "pos" : "neg", style: `width:${Math.max(4, (Math.abs(x.v) / max) * 100)}%` })),
         el("strong", { class: x.v >= 0 ? "pos" : "neg" }, fmtSG(x.v)),
       ])))),
-      el("p", { class: "muted small" }, "Pick a player above for their own view."),
+      el("p", { class: "muted small" }, opts.onPick ? "Tap a name for that player's view." : "Pick a player above for their own view."),
       foot,
     ]);
   }
@@ -371,11 +383,19 @@ export function sgDashboard(container, opts) {
     for (const rd of rounds) for (const [k, v] of Object.entries(rd.basic || {})) t[k] = (t[k] || 0) + v;
     return t;
   };
+  // a Basic stat over some rounds: entered rounds add up their counts; a stats file's rounds carry the stat itself
+  const bval = (b, rounds) => {
+    if (!b.get || !rounds?.length) return null;
+    if (rounds.some((rd) => rd.basic && rd.basic.holes)) return b.get(sumCounts(rounds.filter((rd) => rd.basic)));
+    const vs = rounds.map((rd) => rd.stats?.[b.key]).filter((v) => v != null && Number.isFinite(v));
+    return vs.length ? vs.reduce((t, v) => t + v, 0) / vs.length : null;
+  };
+  const hasStat = (b, rd) => (rd.basic && b.get && b.get(rd.basic) != null) || (rd.stats && rd.stats[b.key] != null);
   const basicNow = () => BASIC.find((b) => b.key === st.basicStat) || BASIC[0];
   const fmtBasic = (b, v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v.toFixed(b.dp)}${b.unit}`);
   function basicStatBar(bField, bMine) {
     const all = [...(bMine || []), ...bField.flatMap((p) => p.rounds)];
-    const has = (b) => !b.soon && all.some((rd) => rd.basic && b.get(rd.basic) != null);
+    const has = (b) => !b.soon && all.some((rd) => hasStat(b, rd));
     if (!has(basicNow())) { const first = BASIC.find(has); if (first) st.basicStat = first.key; }
     // the category pills narrow the list (whole-round stats like Scoring Avg show with All)
     const allowed = BASIC.filter((b) => (!st.cats.length ? true : b.cat && st.cats.includes(b.cat)));
@@ -388,12 +408,12 @@ export function sgDashboard(container, opts) {
   function basicBlocks(bField, bMine) {
     const b = basicNow();
     const all = [...(bMine || []), ...bField.flatMap((p) => p.rounds)];
-    if (!all.some((rd) => rd.basic && b.get && b.get(rd.basic) != null)) {
+    if (!all.some((rd) => hasStat(b, rd))) {
       return [el("section", { class: "panel" }, el("p", { class: "empty center" },
         "These stats come from rounds entered in Data Entry (every shot is recorded there). This data doesn\u2019t have them yet: switch to Entered Rounds, or use Advanced."))];
     }
     // rankings for the chosen stat
-    const ranked = bField.map((p) => ({ p, v: b.get(sumCounts(p.rounds)), n: p.rounds.filter((rd) => rd.basic?.holes).length }))
+    const ranked = bField.map((p) => ({ p, v: bval(b, p.rounds), n: p.rounds.filter((rd) => hasStat(b, rd)).length }))
       .filter((x) => x.v != null && Number.isFinite(x.v)).sort((x, y) => (b.higher ? y.v - x.v : x.v - y.v));
     const rankRows = ranked.map((x, i) => el("tr", { class: x.p.key === me?.key ? "me" : "" }, [
       el("td", { class: "num" }, String(i + 1)), el("td", {}, x.p.label), el("td", { class: "num" }, el("strong", {}, fmtBasic(b, x.v))), el("td", { class: "num" }, String(x.n)),
@@ -408,7 +428,7 @@ export function sgDashboard(container, opts) {
         const ordered = [...(bMine || [])].sort((p, q) => String(p.date).localeCompare(String(q.date)));
         const n = Math.min(10, Math.floor(ordered.length / 2));
         if (n >= 2) {
-          const last = b.get(sumCounts(ordered.slice(-n))), prev = b.get(sumCounts(ordered.slice(-2 * n, -n)));
+          const last = bval(b, ordered.slice(-n)), prev = bval(b, ordered.slice(-2 * n, -n));
           if (last != null && prev != null) { const better = b.higher ? last > prev : last < prev; lines.push(Math.abs(last - prev) < 0.05 * Math.max(1, Math.abs(prev)) / 10 ? `Steady over the last ${n} rounds (${fmtBasic(b, last)}).` : `Last ${n} rounds: ${fmtBasic(b, last)}, against ${fmtBasic(b, prev)} in the ${n} before: ${better ? "better" : "worse"}.`); }
         }
       } else if (ranked.length) {
@@ -423,12 +443,12 @@ export function sgDashboard(container, opts) {
     // the player's trend by date, with the chosen players (Top 1 / 10 / … / All) for the same dates
     if (me && bMine?.length) {
       const groups = groupBy(bMine, st.trendBy);
-      const vals = groups.map((g) => b.get(sumCounts(g.rounds)));
+      const vals = groups.map((g) => bval(b, g.rounds));
       // each round / event / month / year: the best result(s) there among the players who played it (this player included)
       const others = bField.filter((p) => p.key !== me.key && p.rounds.length);
       const cmp = others.length ? groups.map((g, i) => topMean([vals[i], ...others.map((p) => {
         const rs = groupBy(p.rounds, st.trendBy).find((x) => x.label === g.label)?.rounds;
-        return rs ? b.get(sumCounts(rs)) : null;
+        return rs ? bval(b, rs) : null;
       })], b.higher)) : null;
       const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
         const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
@@ -643,7 +663,7 @@ export function sgDashboard(container, opts) {
         const k = cats[0][0], m = new Map();
         for (const rd of mine) for (const x of rd.shots) if (x.cat === k && x.dist) m.set(x.dist, (m.get(x.dist) || 0) + x.sg);
         const ds = [...m].map(([d, t]) => ({ d, v: t / mine.length })).sort((a, b) => b.v - a.v);
-        if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${fmtSG(ds[0].v)} a round); hardest from ${ds[ds.length - 1].d} (${fmtSG(ds[ds.length - 1].v)}).`);
+        if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${fmtSG(ds[0].v)} a round); lowest from ${ds[ds.length - 1].d} (${fmtSG(ds[ds.length - 1].v)}).`);
       }
       // form: the last 10 rounds against the 10 before them
       const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -699,7 +719,7 @@ export function sgDashboard(container, opts) {
       const others = mode === "admin" ? "All Players" : "Field";
       blocks.push(panelBox(describe(), stats.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain stats stat-full" }, [
         // (short headings on phones, e.g. "Avg" for "Player Avg")
-        el("thead", {}, el("tr", {}, [["Stat", "Stat"], ["Rank", "Rank"], ["Player Avg", "Avg"], ["Player Best", "Best"], ["Player Worst", "Worst"], [others, "All"]].map(([long, short], i) =>
+        el("thead", {}, el("tr", {}, [["Stat", "Stat"], ["Rank", "Rank"], ["Player Avg", "Avg"], ["Player Peak", "Peak"], [others, "Tour"]].map(([long, short], i) =>
           el("th", { class: i ? "num" : "" }, long === short ? long : [el("span", { class: "long" }, long), el("span", { class: "short" }, short)])))),
         el("tbody", {}, stats.map((s) => {
           const fmt = (v) => (v === null || v === undefined ? "\u2014" : ["pct", "onePutt", "driverPct"].includes(s.kind) ? `${nf1.format(v)}%`
@@ -711,7 +731,6 @@ export function sgDashboard(container, opts) {
             el("td", { class: "num" }, s.rank ? `${s.rank} of ${s.of}` : "\u2014"),
             el("td", { class: "num" + tone(s.value) }, fmt(s.value)),
             el("td", { class: "num" }, fmt(s.best)),
-            el("td", { class: "num" }, fmt(s.worst)),
             el("td", { class: "num muted" }, fmt(s.field)),
           ]);
         })),
@@ -863,6 +882,7 @@ export function sgDashboard(container, opts) {
   // panel's corner; the choice is remembered per chart, and switching redraws just that chart.
   const BAR_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="2" y="8" width="3" height="6" rx="1"/><rect x="6.5" y="4" width="3" height="10" rx="1"/><rect x="11" y="6" width="3" height="8" rx="1"/></svg>';
   const LINE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9.5,9.5 14,3.5"/></svg>';
+  const lastSig = new Map(); // each chart's last data (so unchanged charts don't re-animate)
   function chartBox(make, size = "", key = null, { rankPick = false } = {}) {
     const wrap = el("div", { class: `sg-chart ${size}` });
     let canvas = el("canvas", {});
@@ -875,6 +895,13 @@ export function sgDashboard(container, opts) {
       canvas.replaceWith(fresh); canvas = fresh;
       chart = make(canvas, (key && st.chartTypes[key]) || "bar");
       charts.push(chart);
+      // only a chart whose data changed grows in again; the rest appear as they were
+      try {
+        const d = chart.data || {}, id = key || `${d.datasets?.[0]?.label || ""}|${size}|${(d.labels || []).length}`;
+        const sig = JSON.stringify([d.labels, (d.datasets || []).map((x) => [x.type, x.data])]) + ((key && st.chartTypes[key]) || "");
+        if (lastSig.get(id) === sig && typeof chart.stop === "function") { chart.stop(); chart.update("none"); }
+        lastSig.set(id, sig);
+      } catch { /* fine */ }
     };
     requestAnimationFrame(build);
     if (!key) return wrap;
@@ -904,8 +931,8 @@ export function sgDashboard(container, opts) {
       animations: { y: { from: (c) => (c.chart?.scales?.y ? c.chart.scales.y.getPixelForValue(0) : undefined) } },
     };
   }
-  // a bar's gradient: bright at its tip, deeper at the zero line (scales with the chart, so it's crisp at any size)
-  const GRAD = { up: ["#5ef08f", "#1f9d50"], down: ["#ff7a6e", "#b3261e"], gold: ["#e6c995", "#9a7a46"] };
+  // a bar's gradient: light at the zero line, darker toward its tip (scales with the chart, so it's crisp at any size)
+  const GRAD = { up: ["#0f6b34", "#7ff0a8"], down: ["#8e1b14", "#ff9d94"], gold: ["#8a6a38", "#efd7a8"] }; // [tip, at zero]
   function barFill(c, single, hover = false) {
     const { chart, dataIndex } = c, area = chart.chartArea, y = chart.scales?.y;
     const v = c.dataset.data[dataIndex];
@@ -913,8 +940,8 @@ export function sgDashboard(container, opts) {
     if (!area || !y || v == null) return tip;
     const z = y.getPixelForValue(0), t = y.getPixelForValue(v);
     if (!Number.isFinite(z) || !Number.isFinite(t) || Math.abs(z - t) < 1) return tip;
-    const g = chart.ctx.createLinearGradient(0, t, 0, z);
-    g.addColorStop(0, hover ? "#ffffff" : tip); g.addColorStop(hover ? 0.12 : 0, tip); g.addColorStop(1, base);
+    const g = chart.ctx.createLinearGradient(0, z, 0, t); // from zero (light) out to the tip (dark)
+    g.addColorStop(0, base); g.addColorStop(hover ? 0.85 : 1, tip); if (hover) g.addColorStop(1, "#ffffff");
     return g;
   }
   function barChart(canvas, labels, values, { title, compare, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar" } = {}) {
@@ -924,10 +951,10 @@ export function sgDashboard(container, opts) {
       ? { type: "line", label: title || "", data: values, order: 2, borderColor: single || "#c8a97e", borderWidth: 2.5, tension: 0.35,
           pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: single || signColors, pointBorderColor: single || signColors,
           fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
-      // Bars: rounded, filled with a gradient that deepens toward the zero line (green up, red down),
-      // a soft glow on hover, growing from zero when drawn.
+      // Bars: light at the zero line, deepening (darker green up, darker red down) the further they reach;
+      // square where they meet zero, rounded at the tip; a glint on hover; growing from zero when drawn.
       : { type: "bar", label: title || "", data: values, order: 2, maxBarThickness: 46, categoryPercentage: 0.72, barPercentage: 0.9,
-          borderRadius: { topLeft: 8, topRight: 8, bottomLeft: 8, bottomRight: 8 }, borderSkipped: false,
+          borderRadius: 8, borderSkipped: "start",
           backgroundColor: (c) => barFill(c, single), hoverBackgroundColor: (c) => barFill(c, single, true),
           borderWidth: 0 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
@@ -949,10 +976,10 @@ export function sgDashboard(container, opts) {
     const shortOf = (i) => {
       const l = String(labels[i] ?? "");
       if (narrow && shortLabels?.[i]) return shortLabels[i];
-      const max = narrow ? 10 : 18;
+      const max = narrow ? 12 : 18;
       return l.length > max ? `${l.slice(0, max - 1).trimEnd()}\u2026` : l;
     };
-    o.scales.x = { ...(o.scales.x || {}), ticks: { ...((o.scales.x || {}).ticks || {}), callback: (v, i) => shortOf(i), autoSkip: true, maxRotation: narrow ? 50 : 30, font: { size: narrow ? 10 : 12 } } };
+    o.scales.x = { ...(o.scales.x || {}), ticks: { ...((o.scales.x || {}).ticks || {}), callback: (v, i) => shortOf(i), autoSkip: true, maxRotation: narrow ? 50 : 30, font: { size: narrow ? 9 : 11 } } };
     o.plugins.tooltip.callbacks = { ...(o.plugins.tooltip.callbacks || {}), title: (items) => String(labels[items[0].dataIndex] ?? "") };
     if (title) o.scales.y.title = { display: true, text: title, color: "#8e8e93" };
     return new Chart(canvas, { data: { labels, datasets }, options: o });

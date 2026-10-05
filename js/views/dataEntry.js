@@ -516,7 +516,13 @@ function renderRound(main, params, flash, previewClient) {
 
   // Taps (lie chips, add/remove shot) redraw the hole. Typing a distance must NOT redraw, or the phone
   // keyboard would close after every digit, so it only updates the bits that depend on it.
+  // the next shot appears as soon as the one before it is complete (without redrawing, so the keyboard stays up)
+  function revealNext() {
+    const focus = strokes.findIndex((x) => !isComplete(x));
+    holeBox.querySelectorAll(".shot-card.shot-later").forEach((c) => { if (focus < 0 || Number(c.dataset.i) <= focus) { c.hidden = false; c.classList.remove("shot-later"); } });
+  }
   function changed(redraw = true, anchor = null) {
+    queueMicrotask(revealNext);
     chain();
     if (redraw) drawHole(anchor); else refreshDerived();
     if (!canEdit()) return;
@@ -690,7 +696,17 @@ function renderRound(main, params, flash, previewClient) {
         hs.done ? el("p", { class: "hole-result" }, `${hs.strokes} \u00b7 ${scoreName(hs.strokes - h.par)}`) : null,
       ]),
       ro ? null : voiceBox(),
-      ...strokes.map((s, i) => strokeCard(s, i, ro)),
+      // one shot at a time: finished shots fold into bands, the shot you're on is open, and untouched
+      // shots after it stay out of the way until you get there
+      ...(() => {
+        const focus = strokes.findIndex((x) => !isComplete(x)); // the first shot still to finish (the next one shows once it's complete)
+        const untouched = (x) => !x.endLie && (x.endDist === "" || x.endDist == null) && !x.club && !x.manualStart;
+        return strokes.map((x, i) => {
+          const c = strokeCard(x, i, ro);
+          if (focus >= 0 && i > focus && untouched(x)) { c.hidden = true; c.classList.add("shot-later"); } // shown when you get there
+          return c;
+        });
+      })(),
       ro ? null : el("div", { class: "shot-tools" }, [
         (() => { const b = el("button", { type: "button", class: "btn ghost add-shot" }, "\uFF0B Add a shot"); b.addEventListener("click", () => { strokes.push({ ...blankStroke(), open: true }); changed(true, strokes.length - 1); }); return b; })(),
         strokes.length > 1 ? (() => { const b = el("button", { type: "button", class: "link danger" }, "Remove last shot"); b.addEventListener("click", () => { strokes.pop(); changed(); }); return b; })() : null,

@@ -32,6 +32,7 @@ export async function render(main, { flash }) {
   const status = el("p", { class: "muted center", role: "status" });
   const portalLink = el("p", { class: "center" });
   let enteredUpdated = null;
+  let pickerRef = null; // the player search (so the leaderboard can pick a player)
   const sourceHome = el("div", { class: "pill-row source-home" });
   queueMicrotask(() => { if (!sourcePills.parentNode) sourceHome.appendChild(sourcePills); });
   // the player search + portal link: placed by the dashboard under its pills (above the dropdowns);
@@ -99,7 +100,7 @@ export async function render(main, { flash }) {
     }).filter((p) => p.rounds.length);
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome });
+    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
     publishIfStale(ds);
   }
 
@@ -147,7 +148,7 @@ export async function render(main, { flash }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome });
+    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.
@@ -203,7 +204,7 @@ export async function render(main, { flash }) {
   const meKey = myEntryKey(getState());
   displayLabels = new Map([[meKey, myName()], ...labels]); // you, by your Profile name, at the top
   fieldPlayers = fieldPlayers.map((p) => ({ ...p, label: labels.get(p.key) || p.label }));
-  const picker = playerPicker(displayLabels, (p) => {
+  const picker = pickerRef = playerPicker(displayLabels, (p) => {
     player = p;
     if (source === "entered") watchMine();
     drawPortalLink();

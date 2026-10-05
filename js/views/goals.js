@@ -85,7 +85,11 @@ function dial({ lo, hi, value, now, size = 168, onChange, label }) {
 
 export function goalsPanel(container, { playerKey, label, flash = () => {}, own = false }) {
   const state = getState();
-  let sgRounds = [], basicRounds = [], chEditing = null;
+  let sgRounds = [], basicRounds = [], chEditing = null, meData = null;
+  // "now" and the goal follow the deadline: a 5-round deadline means 5-round averages (10 for a date)
+  const lvCache = new Map();
+  const levelsFor = (w) => { if (!meData) return []; if (!lvCache.has(w)) lvCache.set(w, goalLevels(meData, { x: w })); return lvCache.get(w); };
+  const winOf = (dlx) => (dlx && dlx.type === "rounds" ? Math.max(1, Number(dlx.rounds) || 10) : 10);
   let levels = [], goals = null, editing = null, draft = {}, dl = { type: "date", date: "", rounds: 10 }, setName = "", source = "", nRounds = 0, unsub = () => {}, alive = true;
   const folded = new Set();      // "TOTAL" folded hides the categories
   const shownSkills = new Set(); // categories whose skills are shown (hidden to start)
@@ -97,7 +101,8 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       if (!alive) return;
       let data = tour; source = "Tour Events";
       if (!data || !data.me.rounds.length) { data = entered; source = "Entered Rounds"; }
-      levels = data && data.me.rounds.length ? goalLevels(data.me) : [];
+      meData = data?.me || null;
+      levels = meData && meData.rounds.length ? levelsFor(10) : [];
       nRounds = data?.me.rounds.length || 0;
       // challenges: strokes gained from any rounds; fairways, putts … from entered rounds
       sgRounds = [...(tour?.me.rounds || []), ...(entered?.me.rounds || [])];
@@ -118,6 +123,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     editing = set ? set.id : "new";
     draft = set ? Object.fromEntries(Object.entries(set.skills || {}).map(([k, g]) => [k, { ...g }])) : {};
     const sd = deadlineOf(set); dl = { type: sd?.type || "date", date: sd?.date || "", rounds: sd?.rounds || 10 };
+    levels = levelsFor(winOf(dl));
     setName = set?.name || `Goal set ${sets().length + 1}`;
     draw();
   };
@@ -135,47 +141,48 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       const reached = s.now >= g.value, span = g.value - g.start;
       return { reached, pct: reached ? 1 : span > 0 ? Math.max(0, (s.now - g.start) / span) : 0, toGo: g.value - s.now };
     };
-    const add = levels.length ? el("button", { type: "button", class: "gx-btn gx-btn-sm" }, "\uFF0B Goal set") : null;
+    const add = levels.length ? el("button", { type: "button", class: "gx-btn gx-btn-sm" }, "\uFF0B Goal") : null;
     add?.addEventListener("click", () => startEdit(null));
     const addCh = el("button", { type: "button", class: "gx-btn gx-btn-sm gx-btn-alt" }, "\uFF0B Challenge");
     addCh.addEventListener("click", () => { chEditing = { id: null, stat: "fwy", target: 70, measure: "round", when: "next", n: 3, date: "" }; draw(); });
     let colorAt = 0;
+    // A goal set: just its goals (each with its deadline), Edit and Delete. "Now" is the average over the
+    // set's own window (a 5-round deadline: the last 5 rounds).
     const card = (set) => {
       const color = SET_COLORS[colorAt++ % SET_COLORS.length];
-      const list = Object.entries(set.skills || {}).map(([key, g]) => ({ key, g, s: levels.find((x) => x.key === key) })).filter((x) => x.s)
-        .sort((a, b) => lv[a.s.level] - lv[b.s.level] || levels.indexOf(a.s) - levels.indexOf(b.s));
-      const done = list.filter((x) => status(x).reached).length;
+      const lvs = levelsFor(winOf(deadlineOf(set)));
+      const list = Object.entries(set.skills || {}).map(([key, g]) => ({ key, g, s: lvs.find((x) => x.key === key) })).filter((x) => x.s)
+        .sort((a, b) => lv[a.s.level] - lv[b.s.level] || lvs.indexOf(a.s) - lvs.indexOf(b.s));
       const d = deadlineTxt(deadlineOf(set));
       const edit = el("button", { type: "button", class: "gx-link" }, "Edit");
       edit.addEventListener("click", () => startEdit(set));
       const del = el("button", { type: "button", class: "gx-link gx-danger" }, "Delete");
       del.addEventListener("click", async () => {
-        if (!confirm(`Delete \u201c${set.name}\u201d?`)) return;
-        try { const next = sets().filter((x) => x.id !== set.id); await saveGoalSets(playerKey, next, state.user.uid); goals = { sets: next }; draw(); flash("Goal set deleted.", "ok"); }
-        catch (err) { console.error(err); flash("Couldn't delete it. Try again.", "error"); }
+        if (!confirm("Delete these goals?")) return;
+        try { const next = sets().filter((x) => x.id !== set.id); await saveGoalSets(playerKey, next, state.user.uid); goals = { ...(goals || {}), sets: next }; draw(); flash("Goals deleted.", "ok"); }
+        catch (err) { console.error(err); flash("Couldn't delete them. Try again.", "error"); }
       });
       return el("section", { class: "gx-set", style: `--accent:${color}` }, [
-        el("div", { class: "gx-summary" }, [
-          ring(list.length ? done / list.length : 0, { size: 56, stroke: 6, done: done === list.length && list.length > 0, color }),
-          el("div", { class: "gx-sum-txt" }, [el("strong", { class: "gx-set-name" }, set.name || "Goals"), el("span", {}, `${done} of ${list.length} reached`)]),
-          d ? el("div", { class: `gx-dl${d.past ? " past" : ""}` }, [el("span", {}, "Deadline"), el("strong", {}, d.main), el("span", {}, d.sub)]) : null,
-        ]),
         el("ul", { class: "gx-list" }, list.map((x) => {
           const st = status(x), { g, s } = x;
-          return el("li", { class: `gx-goal${st.reached ? " done" : ""}` }, [
+          const li = el("li", { class: `gx-goal gx-tap${st.reached ? " done" : ""}`, tabindex: "0", role: "button", "aria-label": `${s.label}: rounds since it was set` }, [
             ring(st.pct, { done: st.reached, color }),
             el("div", { class: "gx-goal-main" }, [
               el("span", { class: `gx-goal-name lvl-${s.level}` }, s.label),
-              el("span", { class: "gx-goal-line" }, [`Now ${fmt(s.now)}`, el("span", { class: "gx-arrow" }, "\u2192"), `Goal ${fmt(g.value)}`]),
+              el("span", { class: "gx-goal-line" }, [`Now: ${fmt(s.now)}`, el("span", { class: "gx-arrow" }, "\u2192"), `Goal: ${fmt(g.value)}`]),
+              d ? el("span", { class: `gx-goal-line gx-goal-dl${d.past ? " past" : ""}` }, `Deadline: ${d.main} (${d.sub})`) : null,
             ]),
             el("span", { class: `gx-goal-togo${st.reached ? " ok" : ""}` }, st.reached ? "Reached" : `${fmt(st.toGo)} to go`),
           ]);
+          const open = () => roundsPopup(`${s.label}`, `${s.win}-round average now ${fmt(s.now)} \u00b7 goal ${fmt(g.value)}`, s.rounds.filter((r) => String(r.date).slice(0, 10) >= (g.setAt || "")), true, g.value);
+          li.addEventListener("click", open); li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+          return li;
         })),
         el("div", { class: "gx-set-actions" }, [edit, del]),
       ]);
     };
     // the overview: goals reached, challenges done, challenges going
-    const allGoals = sets().flatMap((x) => Object.entries(x.skills || {}).map(([key, g]) => ({ g, s: levels.find((l) => l.key === key) })).filter((x) => x.s));
+    const allGoals = sets().flatMap((x) => { const lvs = levelsFor(winOf(deadlineOf(x))); return Object.entries(x.skills || {}).map(([key, g]) => ({ g, s: lvs.find((l) => l.key === key) })).filter((y) => y.s); });
     const goalsDone = allGoals.filter((x) => status(x).reached).length;
     const chs = challenges().map((ch) => ({ ch, st: challengeStatus(ch, sgRounds, basicRounds) }));
     const chDone = chs.filter((x) => x.st.status === "done").length, chLive = chs.filter((x) => x.st.status === "progress" || x.st.status === "waiting").length;
@@ -195,25 +202,66 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
         const next = challenges().filter((x) => x.id !== ch.id);
         try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; draw(); } catch (err) { console.error(err); flash("Couldn't delete it.", "error"); }
       });
-      return el("article", { class: `gx-ch ${st.status}${st.status === "progress" && !st.met ? " behind" : ""}` }, [
-        el("div", { class: "gx-ch-top" }, [el("span", { class: "gx-ch-badge" }, st.status === "done" ? "\u2713" : st.status === "missed" ? "\u2715" : st.status === "waiting" ? "\u2022\u2022\u2022" : "\u25B6"), el("span", { class: "gx-ch-status" }, words), del]),
+      const edit = el("button", { type: "button", class: "gx-link gx-ch-edit" }, "Edit");
+      edit.addEventListener("click", (e) => { e.stopPropagation(); chEditing = { ...ch, n: ch.n || 3, date: ch.date || "" }; draw(); });
+      del.addEventListener("click", (e) => e.stopPropagation(), true);
+      const card = el("article", { class: `gx-ch gx-tap ${st.status}${st.status === "progress" && !st.met ? " behind" : ""}`, tabindex: "0", role: "button", "aria-label": `${challengeText(ch)}: rounds so far` }, [
+        el("div", { class: "gx-ch-top" }, [el("span", { class: "gx-ch-badge" }, st.status === "done" ? "\u2713" : st.status === "missed" ? "\u2715" : st.status === "waiting" ? "\u2022\u2022\u2022" : "\u25B6"), el("span", { class: "gx-ch-status" }, words), edit, del]),
         el("p", { class: "gx-ch-text" }, challengeText(ch)),
         el("div", { class: "gx-ch-now" }, [el("strong", {}, val), el("span", {}, st.rounds ? `${st.rounds} round${st.rounds === 1 ? "" : "s"} so far` : st.needs === "entered" ? "from your entered rounds" : "no rounds yet")]),
       ]);
+      const open = () => roundsPopup(challengeText(ch), `Since ${ch.start} \u00b7 ${words}${st.value == null ? "" : ` \u00b7 so far ${val}`}`, st.each, S.kind === "sg", Number(ch.target), S);
+      card.addEventListener("click", open); card.addEventListener("keydown", (e) => { if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } });
+      return card;
     };
     mount(container, el("div", { class: "gx" }, [
       el("header", { class: "gx-head gx-hero" }, [
-        el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, whose === "My" ? "My goals" : label), el("p", { class: "gx-sub" }, `${source} \u00b7 now is the last ${win()} rounds`)]),
+        el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, whose === "My" ? "My goals" : label), el("p", { class: "gx-sub" }, `${source} \u00b7 tap a goal or challenge for its rounds`)]),
         el("div", { class: "gx-head-actions" }, [addCh, add]),
       ]),
       overview,
       el("div", { class: "gx-section-head" }, [el("h2", {}, "Challenges"), el("span", {}, "Quick targets for a round, a week or a date")]),
       chs.length ? el("div", { class: "gx-chs" }, chs.map(chCard)) : el("p", { class: "gx-empty" }, "No challenges yet. Try \u201cHit 70% fairways in my next round\u201d."),
-      el("div", { class: "gx-section-head" }, [el("h2", {}, "Goal sets"), el("span", {}, "Longer-term strokes-gained goals, with a deadline")]),
+      el("div", { class: "gx-section-head" }, [el("h2", {}, "Goals"), el("span", {}, "Strokes-gained goals, each with its deadline")]),
       ...sets().map(card),
-      sets().length ? null : el("p", { class: "gx-empty" }, levels.length ? "No goal sets yet. Use \uFF0B Goal set to aim for a strokes-gained number by a date or within some rounds." : "Goal sets need at least 3 rounds of strokes-gained data."),
+      sets().length ? null : el("p", { class: "gx-empty" }, levels.length ? "No goals yet. Use \uFF0B Goal to aim for a strokes-gained number by a date or within some rounds." : "Goals need at least 3 rounds of strokes-gained data."),
       el("p", { class: "gx-foot" }, "Strokes gained a round. Rings fill from where each goal started to the goal."),
     ]));
+  }
+
+  /* ---------------- the round-by-round pop-up ---------------- */
+  function roundsPopup(title, sub, rounds, isSG, target, stat = null) {
+    const fv = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : isSG ? fmt(v) : stat?.unit === "%" ? `${v.toFixed(1)}%` : v.toFixed(1));
+    const vals = rounds.map((r) => r.v).filter((v) => v != null && Number.isFinite(v));
+    const mx = Math.max(0.01, ...vals.map(Math.abs), Math.abs(target || 0));
+    const good = (v) => (stat && stat.higher === false ? v <= target : v >= target);
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const list = rounds.length ? el("ul", { class: "gx-pop-list" }, rounds.map((r) => {
+      const d = new Date(String(r.date).slice(0, 10) + "T12:00:00");
+      return el("li", {}, [
+        el("div", { class: "gx-pop-when" }, [el("strong", {}, isNaN(d) ? r.date : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })), el("span", {}, `${r.event || "Round"}${r.roundNo ? ` \u00b7 R${r.roundNo}` : ""}`)]),
+        isSG ? el("span", { class: "gx-pop-bar" }, el("span", { class: r.v >= 0 ? "pos" : "neg", style: `width:${Math.max(3, (Math.abs(r.v || 0) / mx) * 100)}%` })) : el("span", { class: "gx-pop-bar" }),
+        el("strong", { class: `gx-pop-v${r.v == null ? "" : good(r.v) ? " ok" : ""}` }, fv(r.v)),
+      ]);
+    })) : el("p", { class: "gx-empty" }, "No rounds since this was set.");
+    const avg = vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length : null;
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": title }, el("div", { class: "gx-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Round by round"), el("h2", {}, title), el("p", { class: "gx-sub" }, sub)]), close]),
+      el("div", { class: "gx-pop-sum" }, [
+        el("div", {}, [el("span", {}, "Rounds"), el("strong", {}, String(rounds.length))]),
+        el("div", {}, [el("span", {}, "Average"), el("strong", {}, fv(avg))]),
+        el("div", {}, [el("span", {}, "Target"), el("strong", {}, fv(target))]),
+      ]),
+      list,
+    ]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    close.addEventListener("click", shut);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    document.addEventListener("keydown", onKey);
+    document.body.classList.add("gx-noscroll");
+    document.body.appendChild(overlay);
+    close.focus();
   }
 
   /* ---------------- a challenge: "Hit [70]% [fairways] in [my next round]" ---------------- */
@@ -244,22 +292,22 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     nIn.addEventListener("input", () => { ch.n = Math.max(2, Math.round(Number(nIn.value) || 3)); sync(); });
     dIn.addEventListener("change", () => { ch.date = dIn.value; sync(); });
     sync();
-    const save = el("button", { type: "button", class: "gx-btn" }, "Add Challenge");
+    const save = el("button", { type: "button", class: "gx-btn" }, ch.id ? "Save Challenge" : "Add Challenge");
     const cancel = el("button", { type: "button", class: "gx-link" }, "Cancel");
     cancel.addEventListener("click", () => { chEditing = null; draw(); });
     save.addEventListener("click", async () => {
       if (ch.when === "date" && !ch.date) { flash("Pick the date.", "error"); return; }
       const st = S();
-      const item = { id: `c${Date.now().toString(36)}`, stat: ch.stat, target: Number(ch.target) || 0, measure: st.kind === "sg" ? ch.measure : "round", when: ch.when,
-        n: ch.when === "nextN" ? ch.n : null, date: ch.when === "date" ? ch.date : null, start: new Date().toISOString().slice(0, 10) };
-      const next = [...challenges(), item];
+      const item = { id: ch.id || `c${Date.now().toString(36)}`, stat: ch.stat, target: Number(ch.target) || 0, measure: st.kind === "sg" ? ch.measure : "round", when: ch.when,
+        n: ch.when === "nextN" ? ch.n : null, date: ch.when === "date" ? ch.date : null, start: ch.start || new Date().toISOString().slice(0, 10) };
+      const next = ch.id ? challenges().map((x) => (x.id === ch.id ? item : x)) : [...challenges(), item];
       save.disabled = true;
       try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; chEditing = null; draw(); flash("Challenge added.", "ok"); }
       catch (err) { console.error(err); flash("Couldn't save the challenge. Try again.", "error"); save.disabled = false; }
     });
     const st = S();
     mount(container, el("div", { class: "gx" }, [
-      el("header", { class: "gx-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, "New challenge"), el("p", { class: "gx-sub" }, "A quick target. Only rounds played from today count.")])]),
+      el("header", { class: "gx-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, ch.id ? "Edit challenge" : "New challenge"), el("p", { class: "gx-sub" }, ch.id ? `Counting rounds from ${ch.start}.` : "A quick target. Only rounds played from today count.")])]),
       el("section", { class: "gx-group" }, [
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "Stat"), statSel]),
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, st.kind === "sg" ? "Gain" : st.higher ? "At least" : "At most"),
@@ -280,13 +328,17 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     // deadline: a date, or a number of rounds
     const seg = el("div", { class: "gx-seg", role: "radiogroup", "aria-label": "Deadline" }, [["date", "By date"], ["rounds", "In rounds"]].map(([v, l]) => {
       const b = el("button", { type: "button", role: "radio", "aria-checked": dl.type === v ? "true" : "false", class: dl.type === v ? "on" : "" }, l);
-      b.addEventListener("click", () => { dl.type = v; editor(); });
+      b.addEventListener("click", () => { dl.type = v; levels = levelsFor(winOf(dl)); editor(); });
       return b;
     }));
     const dlInput = dl.type === "date"
       ? el("input", { type: "date", class: "gx-field gx-date", value: dl.date, "aria-label": "Deadline date" })
       : el("span", { class: "gx-rounds" }, [el("input", { type: "number", min: 1, max: 200, class: "gx-field gx-num", value: dl.rounds, "aria-label": "Deadline in rounds" }), "rounds"]);
-    (dlInput.tagName === "INPUT" ? dlInput : dlInput.querySelector("input")).addEventListener("change", (e) => { if (dl.type === "date") dl.date = e.target.value; else dl.rounds = Math.max(1, Math.round(Number(e.target.value) || 10)); });
+    (dlInput.tagName === "INPUT" ? dlInput : dlInput.querySelector("input")).addEventListener("change", (e) => {
+      if (dl.type === "date") { dl.date = e.target.value; return; }
+      dl.rounds = Math.max(1, Math.round(Number(e.target.value) || 10));
+      levels = levelsFor(winOf(dl)); setTimeout(editor, 0); // the dials re-measure over the new number of rounds
+    });
     const save = el("button", { type: "button", class: "gx-btn" }, "Save Goals");
     const cancel = sets().length ? el("button", { type: "button", class: "gx-link" }, "Cancel") : null;
     cancel?.addEventListener("click", () => { editing = null; draft = {}; draw(); });
@@ -327,7 +379,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
           el("p", { class: "gx-sub" }, `Each dial and slider runs from the worst to the best ${win()}-round average; the gold tick is now. Drag to set a goal, or type it.`)]),
       ]),
       el("section", { class: "gx-group" }, [
-        el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "Name"), nameIn]),
+
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "Deadline"), seg, dlInput]),
       ]),
       ...blocks,

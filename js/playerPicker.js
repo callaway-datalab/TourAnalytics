@@ -94,5 +94,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
     which,
   ]);
   const restore = () => { if (lastPick && players.some((p) => p.key === lastPick.key)) choose(players.find((p) => p.key === lastPick.key)); };
-  return { node, restore };
+  /** Pick a player by key (e.g. from the leaderboard). */
+  const select = (key) => { const p = players.find((x) => x.key === key); if (p) choose(p); };
+  return { node, restore, select };
 }

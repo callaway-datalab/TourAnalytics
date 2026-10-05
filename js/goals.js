@@ -20,7 +20,7 @@ const byDate = (rounds) => [...rounds].sort((a, b) => String(a.date).localeCompa
 export function goalLevels(me, { x = 10 } = {}) {
   const rs = byDate(me.rounds);
   if (rs.length < 3) return [];
-  const win = Math.max(3, Math.min(x, Math.floor(rs.length / 2)));
+  const win = Math.max(1, Math.min(x, rs.length));
   const series = new Map(), shots = new Map();
   const add = (k, i, v) => { if (!series.has(k)) series.set(k, new Array(rs.length).fill(0)); series.get(k)[i] += v; };
   rs.forEach((rd, i) => {
@@ -42,7 +42,8 @@ export function goalLevels(me, { x = 10 } = {}) {
     const now = mean(vals.slice(-win));
     if (best - worst < 0.04) { worst -= 0.05; best += 0.05; }
     const [cat, dist] = level === "total" ? [null, null] : key.split("|");
-    out.push({ key, level, cat, dist: dist || null, label: level === "total" ? "SG Total" : level === "cat" ? CAT[cat] || cat : `${CAT[cat] || cat}, ${dist}`, worst, best, now, win });
+    out.push({ key, level, cat, dist: dist || null, label: level === "total" ? "SG Total" : level === "cat" ? CAT[cat] || cat : `${CAT[cat] || cat}, ${dist}`, worst, best, now, win,
+      rounds: rs.map((rd, i) => ({ date: rd.date, event: rd.event || "", roundNo: rd.roundNo || "", v: vals[i] })) });
   }
   const lv = { total: 0, cat: 1, skill: 2 };
   return out.sort((a, b) => lv[a.level] - lv[b.level] || ORDER.indexOf(a.cat) - ORDER.indexOf(b.cat) || distOrder(a.dist) - distOrder(b.dist));
@@ -117,7 +118,14 @@ export function challengeStatus(ch, sgRounds, basicRounds, today = new Date()) {
   // a running total (e.g. "+1 putting strokes this week") is done the moment it's reached
   const early = met && st.kind === "sg" && ch.measure === "total" && t > 0;
   const status = !rs.length ? (closed ? "missed" : "waiting") : closed || early ? (met ? "done" : "missed") : "progress";
-  return { status, value, rounds: rs.length, met, needs: st.kind === "basic" ? "entered" : null, window: w };
+  // each counted round's own value (for the round-by-round pop-up)
+  const each = rs.map((r) => {
+    let v = null;
+    if (st.kind === "sg") v = r.shots.reduce((u, x) => u + (!st.cat || x.cat === st.cat ? x.sg : 0), 0);
+    else v = st.get(r.basic || {}, 1);
+    return { date: r.date, event: r.event || r.course || "", roundNo: r.roundNo || "", v };
+  });
+  return { status, value, rounds: rs.length, met, needs: st.kind === "basic" ? "entered" : null, window: w, each };
 }
 /** The goal sets in a saved document (an older single set reads as one). */
 export function setsOf(d) {

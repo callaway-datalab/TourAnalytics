@@ -59,7 +59,8 @@ export async function render(main, { flash }) {
       }
     },
   }, [
-    el("label", {}, ["File (.csv or .parquet)", file]),
+    el("label", {}, ["File (.csv or .parquet)", file,
+      el("small", {}, "Columns: player, playerID, year, date, tour, tournament, round, category, distance, lie, stat type, stat value, attempts. Stat type is \u201cstrokes gained\u201d (the value per attempt) or a round stat such as \u201cdriving distance\u201d, \u201chit fwy %\u201d, \u201cgir %\u201d, \u201cputts per round\u201d, \u201cscoring average\u201d. Tours without ShotLink detail use null for distance and lie.")]),
     el("label", {}, ["Column that says who each row belongs to", idColumn,
       el("small", {}, "Usually playerID. Each player's rows are matched by this ID; a player column, if the file has one, gives their name. Matching ignores capital letters and spaces.")]),
     el("label", {}, ["Short description (optional)", description]),

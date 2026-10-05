@@ -10,6 +10,12 @@ export const CATEGORIES = [
 ];
 
 const ALIASES = {
+  // The stats file: player / playerID / year / date / tour / tournament / round / category / distance / lie /
+  // stat type / stat value / attempts. "stat type" is "strokes gained" (value per attempt) or a round stat
+  // such as "driving distance" or "hit fwy %". Tours other than the PGA TOUR have "null" distance and lie.
+  statType: ["stattype", "statname", "metric"],
+  statValue: ["statvalue", "statval", "metricvalue"],
+  tour: ["tour", "tourname", "league"],
   category: ["category", "shotcategory", "sgcategory", "shottype"],
   sg: ["cdsg", "sg", "strokesgained", "sgshot", "sgvalue", "sgtotal"],
   // Aggregated files: strokes gained per attempt, times the number of attempts in that row.
@@ -76,7 +82,26 @@ export function detectColumns(columns) {
 }
 
 /** Can this file drive the strokes-gained view? */
-export const isShotData = (idx) => idx.category !== undefined && (idx.sg !== undefined || idx.sgPerAttempt !== undefined);
+export const isShotData = (idx) => (idx.statType !== undefined && idx.statValue !== undefined) || (idx.category !== undefined && (idx.sg !== undefined || idx.sgPerAttempt !== undefined));
+
+/** A round stat's key from its "stat type" (driving distance → drive, hit fwy % → fwy …); null = strokes gained. */
+const SG_TYPES = ["strokesgained", "sg", "strokesgainedattempt", "strokesgainedperattempt", "sgperattempt"];
+const STAT_TYPES = {
+  drive: ["drivingdistance", "drivedistance", "avgdrivingdistance", "driving"],
+  fwy: ["hitfwy", "hitfairway", "fairwayshit", "fairwayhit", "fwy", "fwyhit", "drivingaccuracy", "fairways"],
+  gir: ["gir", "greensinregulation", "hitgir", "girpct"],
+  hitGreen: ["hitgreen", "greenshit", "hitgreenpct"],
+  putts: ["puttsperround", "putts", "puttsround", "puttsrd"],
+  scoring: ["scoringaverage", "scoringavg", "score", "scoring"],
+  threePutt: ["3puttavoidance", "threeputtavoidance", "3putt", "threeputt"],
+  ud: ["updown", "upanddown", "updownpct", "scrambling"],
+  birdie: ["birdiepct", "birdie", "birdiepercentage", "birdies"],
+  bogey: ["bogeyavoidance", "bogey"],
+  prox: ["proximity", "approachproximity", "proximityft", "proximitytohole"],
+  owgr: ["owgr", "worldranking"],
+};
+const statKeyOf = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; return `x:${q}`; };
+const isNull = (v) => v === null || v === undefined || v === "" || squash(v) === "null" || squash(v) === "na";
 
 export function normalizeCategory(v) {
   const s = squash(v);
@@ -103,24 +128,38 @@ const lead = (s) => { const m = String(s).match(/-?\d+(\.\d+)?/); return m ? Num
 export function prepare(rows, idx) {
   const get = (r, f) => (idx[f] === undefined ? null : r[idx[f]]);
   const rounds = new Map();
-  for (const r of rows) {
-    const cat = normalizeCategory(get(r, "category"));
-    // One row can stand for several shots ("attempts"); its SG is then per attempt × attempts.
-    const w = idx.attempts !== undefined ? num(get(r, "attempts")) : 1;
-    const per = idx.sgPerAttempt !== undefined ? num(get(r, "sgPerAttempt")) : null;
-    const sg = per !== null && w !== null ? per * w : num(get(r, "sg"));
-    if (!cat || sg === null || w === null || w <= 0) continue;
-    const date = get(r, "date") ?? "";
-    const event = get(r, "event") ?? "";
-    const rnd = get(r, "round") ?? "";
+  const roundOf = (r) => {
+    const date = get(r, "date") ?? "", event = get(r, "event") ?? "", rnd = get(r, "round") ?? "";
     const key = idx.round !== undefined && isNaN(Number(rnd)) ? String(rnd) : `${date}|${event}|${rnd}`;
     if (!rounds.has(key)) {
       const d = new Date(date);
       const year = get(r, "year") ?? (isNaN(d) ? "" : d.getFullYear());
-      rounds.set(key, { key, date: String(date), event: String(event), roundNo: isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), shots: [] });
+      const tour = idx.tour !== undefined && !isNull(get(r, "tour")) ? String(get(r, "tour")) : "";
+      rounds.set(key, { key, date: String(date), event: String(event), roundNo: isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, shots: [] });
     }
+    return rounds.get(key);
+  };
+  for (const r of rows) {
+    // the stats file: a round stat (driving distance, hit fwy % …) is kept on its round
+    let statKey = null;
+    if (idx.statType !== undefined) {
+      statKey = statKeyOf(get(r, "statType"));
+      if (statKey) {
+        const v = num(get(r, "statValue"));
+        if (v === null) continue;
+        const rd = roundOf(r); rd.stats ||= {};
+        const prev = rd.stats[statKey]; rd.stats[statKey] = prev == null ? v : (prev + v) / 2;
+        continue;
+      }
+    }
+    const cat = normalizeCategory(get(r, "category"));
+    // One row can stand for several shots ("attempts"); its SG is then per attempt × attempts.
+    const w = idx.attempts !== undefined ? num(get(r, "attempts")) : 1;
+    const per = idx.statType !== undefined ? num(get(r, "statValue")) : idx.sgPerAttempt !== undefined ? num(get(r, "sgPerAttempt")) : null;
+    const sg = per !== null && w !== null ? per * w : num(get(r, "sg"));
+    if (!cat || sg === null || w === null || w <= 0) continue;
     const lie = get(r, "lie"), dist = get(r, "distanceRange"), club = get(r, "club");
-    rounds.get(key).shots.push({ cat, sg, w, r, lie: lie == null ? null : String(lie), dist: dist == null ? null : String(dist),
+    roundOf(r).shots.push({ cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
       club: club == null || club === "" ? null : String(club), clubCat: club == null || club === "" ? null : clubGroup(String(club)) });
   }
   const list = [...rounds.values()];
@@ -415,6 +454,7 @@ export function filterOptions(rounds, cat) {
     club: clubs.sort((a, b) => clubOrder(a) - clubOrder(b) || a.localeCompare(b)),
     clubCats, // club -> its bag group (Driver, Fairway Wood, Hybrid, Iron, Wedge, Putter)
     year: uniq(rounds.map((r) => r.year)).sort().reverse(),
+    tour: uniq(rounds.map((r) => r.tour)).sort(),
     event: uniq(rounds.map((r) => r.event)),
     roundNo: uniq(rounds.map((r) => r.roundNo)).sort(byNum),
     lie: uniq(shots.map((s) => s.lie)).sort((a, b) => lieRank(a) - lieRank(b) || a.localeCompare(b)),
@@ -429,8 +469,8 @@ export function filterOptions(rounds, cat) {
 export function applyFilters(rounds, f = {}) {
   // Each filter can hold one value or several (any of them matches); empty means "all".
   const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
-  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club);
-  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.event)) && (!roundNos || roundNos.has(rd.roundNo)));
+  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club), tours = set(f.tour);
+  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.event)) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || tours.has(rd.tour || "")));
   if (f.span > 0) rs = rs.slice(-f.span);
   const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
   // Distances are "CAT|label" pairs. A category with distances picked keeps only those; others are unaffected.
