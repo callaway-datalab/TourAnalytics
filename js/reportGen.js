@@ -576,19 +576,13 @@ export async function loadSource(source, playerKey, label) {
 export async function loadFullField(datasetId, field, me, idx) {
   const st = getState();
   if (!st.isAdmin || !datasetId) return null;
-  const { getDatasetMeta } = await import("./store.js");
-  const keys = field.map((p) => p.key), full = [];
-  const next = async () => {
-    while (keys.length) {
-      const key = keys.shift();
-      try {
-        if (key === me.key) { full.push(me); continue; }
-        const meta = await getDatasetMeta(key, datasetId);
-        full.push({ key, label: field.find((p) => p.key === key)?.label || key, rounds: prepare(await getDatasetRows(key, datasetId, meta.chunkCount), idx) });
-      } catch { /* that player's file isn't there */ }
-    }
-  };
-  await Promise.all(Array.from({ length: 6 }, next));
+  const { loadDatasetPlayers } = await import("./fieldCache.js");
+  const { players } = await loadDatasetPlayers(datasetId).catch(() => ({ players: new Map() }));
+  const full = field.map((p) => {
+    if (p.key === me.key) return me;
+    const got = players.get(p.key);
+    return got ? { key: p.key, label: p.label || p.key, rounds: prepare(got.rows, idx) } : null; // that player's file isn't there
+  }).filter(Boolean);
   return full.length > 1 ? full : null;
 }
 

@@ -478,6 +478,18 @@ export async function getDatasetRows(clientKey, datasetId, chunkCount) {
   return chunks.flatMap((snap) => JSON.parse(snap.data().data));
 }
 
+/** The admin: one data file's catalogue record (its players, their names, when it was uploaded). */
+export async function getDatasetRecord(datasetId) {
+  const snap = await getDoc(doc(db, "datasets", datasetId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+/** The admin: one player's rows in one request (lists the pieces, so it needs no record read first). */
+export async function getDatasetRowsListed(clientKey, datasetId) {
+  const snap = await getDocs(collection(db, "clientData", clientKey, "datasets", datasetId, "chunks"));
+  return snap.docs.sort((a, b) => Number(a.id) - Number(b.id)).flatMap((d) => JSON.parse(d.data().data));
+}
+
 /** Every clientKey known to the system, with a display label, from users/invites/datasets. */
 export async function adminAllClients() {
   const [usersSnap, invitesSnap, datasetsSnap] = await Promise.all([

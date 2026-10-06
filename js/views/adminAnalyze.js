@@ -1,7 +1,8 @@
 // Data → Analyze: the strokes-gained dashboard for any player, with rankings across every player.
 // Players see the same dashboard on their own My Data page (see sgDashboard.js).
 import { el, mount, num, subNav } from "../ui.js";
-import { adminAllClients, watchAdminDatasets, getDatasetMeta, getDatasetRows, publishFieldStats, fieldStatsSource } from "../store.js";
+import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource } from "../store.js";
+import { loadDatasetPlayers } from "../fieldCache.js";
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
@@ -25,6 +26,7 @@ export async function render(main, { flash }) {
   const enteredState = {};
   let source = "tour";             // "tour": uploaded Tour stats; "entered": rounds from Data Entry
   const rowsCache = new Map();     // `${datasetId}|${playerKey}` -> { label, rows }
+  const preparedCache = new Map(); // `${datasetId}|${uploadedAt}` -> [{ key, label, rounds }]
   let displayLabels = new Map();   // player key -> name (the ID when there's no name)
 
   const pickerBox = el("div");
@@ -59,25 +61,14 @@ export async function render(main, { flash }) {
     body,
   ]);
 
+  // Every player's rows: from memory, or the copy kept on this device, or (first time / new upload) Firestore.
   async function loadAll(ds, token) {
-    const keys = [...(ds.clientKeys || [])];
-    const total = keys.length;
-    let done = 0;
-    const next = async () => {
-      while (keys.length && token === loadToken) {
-        const key = keys.shift();
-        const ck = `${ds.id}|${key}`;
-        if (!rowsCache.has(ck)) {
-          try {
-            const meta = await getDatasetMeta(key, ds.id);
-            rowsCache.set(ck, { label: meta.playerName || meta.clientLabel, rows: await getDatasetRows(key, ds.id, meta.chunkCount) });
-          } catch { rowsCache.set(ck, { label: key.replace(/^c_/, ""), rows: [] }); }
-        }
-        done++;
-        if (token === loadToken) status.textContent = `Loading players\u2026 ${done} of ${total}`;
-      }
-    };
-    await Promise.all(Array.from({ length: 6 }, next));
+    const total = (ds.clientKeys || []).length;
+    status.textContent = "Loading players\u2026";
+    const { players } = await loadDatasetPlayers(ds.id, { ds, onProgress: (done) => {
+      if (token === loadToken) status.textContent = `Loading players\u2026 ${done} of ${total}. This is kept on this device, so the next refresh is quick.`;
+    } });
+    for (const [key, p] of players) if (p) rowsCache.set(`${ds.id}|${key}`, p);
   }
 
   const meFrom = () => (player && fieldPlayers.find((p) => p.key === player.key)) || null;
@@ -94,10 +85,16 @@ export async function render(main, { flash }) {
     status.textContent = "";
     const idx = detectColumns(ds.columns || []);
     if (!isShotData(idx)) { renderGeneric(ds); return; }
-    fieldPlayers = (ds.clientKeys || []).map((key) => {
-      const c = rowsCache.get(`${ds.id}|${key}`) || { label: key, rows: [] };
-      return { key, label: displayLabels.get(key) || c.label || key.replace(/^c_/, ""), rounds: prepare(c.rows, idx) };
-    }).filter((p) => p.rounds.length);
+    // reading each player's rows into rounds is done once per file (not again on every redraw)
+    const pk = `${ds.id}|${ds.uploadedAt?.toMillis?.() ?? ""}`;
+    if (!preparedCache.has(pk)) {
+      preparedCache.clear();
+      preparedCache.set(pk, (ds.clientKeys || []).map((key) => {
+        const c = rowsCache.get(`${ds.id}|${key}`) || { label: key, rows: [] };
+        return { key, label: c.label, rounds: prepare(c.rows, idx) };
+      }).filter((p) => p.rounds.length));
+    }
+    fieldPlayers = preparedCache.get(pk).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.label || p.key.replace(/^c_/, "") }));
     const box = el("div");
     mount(body, box);
     dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });

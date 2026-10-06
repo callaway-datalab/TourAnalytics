@@ -85,6 +85,8 @@ onAuthStateChanged(auth, (user) => {
 });
 
 export function signOut() {
+  // the copy of the stats data kept on this device (see fieldCache.js) goes with the account
+  try { indexedDB.deleteDatabase("ta-cache"); } catch { /* nothing kept */ }
   return fbSignOut(auth);
 }
 

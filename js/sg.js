@@ -100,8 +100,14 @@ const STAT_TYPES = {
   prox: ["proximity", "approachproximity", "proximityft", "proximitytohole"],
   owgr: ["owgr", "worldranking"],
 };
-const statKeyOf = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; return `x:${q}`; };
-const isNull = (v) => v === null || v === undefined || v === "" || squash(v) === "null" || squash(v) === "na";
+// Rows repeat the same few values (categories, stat types, lies), so each answer is worked out once per value.
+const memo = (fn) => { const m = new Map(); return (v) => { if (m.has(v)) return m.get(v); const r = fn(v); if (m.size < 20000) m.set(v, r); return r; }; };
+const statKeyOf = (t) => statKeyMemo(t);
+const statKeyOfRaw = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; return `x:${q}`; };
+const isNullRaw = (v) => v === null || v === undefined || v === "" || squash(v) === "null" || squash(v) === "na";
+const isNullMemo = memo(isNullRaw);
+const isNull = (v) => (v === null || v === undefined || v === "" ? true : isNullMemo(v));
+const statKeyMemo = memo((t) => statKeyOfRaw(t));
 
 export function normalizeCategory(v) {
   const s = squash(v);
@@ -112,6 +118,8 @@ export function normalizeCategory(v) {
   return null;
 }
 
+const catMemo = memo((v) => normalizeCategory(v));
+const clubMemo = memo((c) => clubGroup(c));
 const num = (v) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? null : Number(v));
 const truthy = (v) => {
   if (v === null || v === undefined || v === "") return null;
@@ -152,7 +160,7 @@ export function prepare(rows, idx) {
         continue;
       }
     }
-    const cat = normalizeCategory(get(r, "category"));
+    const cat = catMemo(get(r, "category"));
     // One row can stand for several shots ("attempts"); its SG is then per attempt × attempts.
     const w = idx.attempts !== undefined ? num(get(r, "attempts")) : 1;
     const per = idx.statType !== undefined ? num(get(r, "statValue")) : idx.sgPerAttempt !== undefined ? num(get(r, "sgPerAttempt")) : null;
@@ -160,7 +168,7 @@ export function prepare(rows, idx) {
     if (!cat || sg === null || w === null || w <= 0) continue;
     const lie = get(r, "lie"), dist = get(r, "distanceRange"), club = get(r, "club");
     roundOf(r).shots.push({ cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
-      club: club == null || club === "" ? null : String(club), clubCat: club == null || club === "" ? null : clubGroup(String(club)) });
+      club: club == null || club === "" ? null : String(club), clubCat: club == null || club === "" ? null : clubMemo(String(club)) });
   }
   const list = [...rounds.values()];
   if (idx.date !== undefined) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));

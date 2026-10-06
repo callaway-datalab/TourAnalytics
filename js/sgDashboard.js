@@ -809,7 +809,8 @@ export function sgDashboard(container, opts) {
   const minRoundsFor = (players) => {
     if (st.minRounds != null) return Math.max(1, Number(st.minRounds) || 1);
     const most = Math.max(0, ...players.map((p) => p.rounds.length));
-    return Math.max(1, Math.round(most * 0.25));
+    // a quarter of the most rounds anyone played, rounded down to a 10 (23 → 20); under 10 → 1
+    return Math.max(1, Math.floor((most * 0.25) / 10) * 10);
   };
   function minRoundsBox(players) {
     const v = minRoundsFor(players);

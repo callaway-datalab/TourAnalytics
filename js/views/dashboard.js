@@ -1,6 +1,6 @@
 import { el, mount } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchClientDatasets, getDatasetRows, getFieldStats, getDatasetMeta } from "../store.js";
+import { watchClientDatasets, getDatasetRows, getFieldStats } from "../store.js";
 import { detectColumns, isShotData, prepare, summaryPlayers } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
 import { plainName, teamLabels } from "../names.js";
@@ -96,18 +96,13 @@ export async function render(main, { previewClient, flash }) {
       if (st0.isAdmin && previewClient && !previewClient.self && field.length) {
         const myVersion = version;
         (async () => {
-          const full = [];
-          const keys = field.map((p) => p.key);
-          const next = async () => {
-            while (keys.length) {
-              const key = keys.shift();
-              try {
-                const meta = await getDatasetMeta(key, d.id);
-                full.push({ key, label: field.find((p) => p.key === key)?.label || key, rounds: key === clientKey ? me.rounds : prepare(await getDatasetRows(key, d.id, meta.chunkCount), idx) });
-              } catch { /* that player's file isn't there: leave them out */ }
-            }
-          };
-          await Promise.all(Array.from({ length: 6 }, next));
+          const { loadDatasetPlayers } = await import("../fieldCache.js");
+          const { players } = await loadDatasetPlayers(d.id).catch(() => ({ players: new Map() }));
+          const full = field.map((p) => {
+            if (p.key === clientKey) return { key: p.key, label: p.label, rounds: me.rounds };
+            const got = players.get(p.key);
+            return got ? { key: p.key, label: p.label, rounds: prepare(got.rows, idx) } : null; // that player's file isn't there: leave them out
+          }).filter((p) => p && p.rounds.length);
           if (shownVersion !== myVersion || full.length < 2) return;
           dash.update({ field: full });
         })();
