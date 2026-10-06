@@ -24,6 +24,8 @@ export async function render(main, { previewClient, flash }) {
   return () => panel.destroy();
 }
 
+const OV_RANGES = [["week", "Last week"], ["month", "Last month"], ["year", "Last year"], ["all", "All-time"]];
+
 /** A progress ring (Activity-style). */
 const SET_COLORS = ["#d4b483", "#64d2ff", "#bf5af2", "#ff9f0a", "#ff375f"];
 function ring(pct, { size = 44, stroke = 5, done = false, color = "#d4b483" } = {}) {
@@ -91,6 +93,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
   const levelsFor = (w) => { if (!meData) return []; if (!lvCache.has(w)) lvCache.set(w, goalLevels(meData, { x: w })); return lvCache.get(w); };
   const winOf = (dlx) => (dlx && dlx.type === "rounds" ? Math.max(1, Number(dlx.rounds) || 10) : 10);
   let levels = [], goals = null, editing = null, draft = {}, dl = { type: "date", date: "", rounds: 10 }, setName = "", source = "", nRounds = 0, unsub = () => {}, alive = true;
+  let ovRange = "all";            // the overview cards' time frame
   const folded = new Set();      // "TOTAL" folded hides the categories
   const shownSkills = new Set(); // categories whose skills are shown (hidden to start)
   const whose = own || label === "My" ? "My" : `${label}'s`;
@@ -183,24 +186,37 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     const allGoals = sets().flatMap((x) => { const lvs = levelsFor(winOf(deadlineOf(x))); return Object.entries(x.skills || {}).map(([key, g]) => ({ g, s: lvs.find((l) => l.key === key) })).filter((y) => y.s); });
     const goalsDone = allGoals.filter((x) => status(x).reached).length;
     const chs = challenges().map((ch) => ({ ch, st: challengeStatus(ch, sgRounds, basicRounds) }));
-    const chDone = chs.filter((x) => x.st.status === "done").length, chLive = chs.filter((x) => x.st.status === "progress" || x.st.status === "waiting").length;
-    const chMissed = chs.filter((x) => x.st.status === "missed").length;
-    const stat = (r, big, small) => el("div", { class: "gx-ov-stat" }, [r, el("div", {}, [el("strong", {}, big), el("span", {}, small)])]);
-    const overview = el("section", { class: "gx-overview" }, [
-      stat(ring(chs.length ? chDone / chs.length : 0, { size: 52, stroke: 6, color: "#30d158" }), `${chDone}/${chs.length}`, "goals done"),
-      stat(ring(chs.length ? chLive / chs.length : 0, { size: 52, stroke: 6, color: "#64d2ff" }), String(chLive), "going"),
-      stat(ring(chs.length ? chMissed / chs.length : 0, { size: 52, stroke: 6, color: "#ff453a" }), String(chMissed), "missed"),
+    // The overview cards follow a time frame: goals going now always count; finished goals count when they
+    // finished inside it. Tap a card for its goals, newest first.
+    const since = (() => { const days = { week: 7, month: 30, year: 365 }[ovRange]; if (!days) return ""; const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString().slice(0, 10); })();
+    const inRange = ({ st }) => !since || st.ended == null || st.ended >= since;
+    const shown = chs.filter(inRange);
+    const live = shown.filter((x) => x.st.status === "progress" || x.st.status === "waiting");
+    const achieved = shown.filter((x) => x.st.status === "done"), missed = shown.filter((x) => x.st.status === "missed");
+    const n = shown.length;
+    const stat = (kind, r, big, small, items) => {
+      const b = el("button", { type: "button", class: "gx-ov-stat gx-tap", "aria-label": `${small}: ${items.length} ${items.length === 1 ? "goal" : "goals"}. Show them.` }, [r, el("div", {}, [el("strong", {}, big), el("span", {}, small)])]);
+      b.addEventListener("click", () => historyPopup(kind, small, items));
+      return b;
+    };
+    const rangeSeg = el("div", { class: "gx-seg gx-ov-range", role: "radiogroup", "aria-label": "Time frame" }, OV_RANGES.map(([v, l]) => {
+      const b = el("button", { type: "button", role: "radio", class: ovRange === v ? "on" : "", "aria-checked": ovRange === v ? "true" : "false" }, l);
+      b.addEventListener("click", () => { ovRange = v; draw(); });
+      return b;
+    }));
+    const overview = el("section", { class: "gx-ov-wrap" }, [
+      rangeSeg,
+      el("div", { class: "gx-overview" }, [
+        stat("live", ring(n ? live.length / n : 0, { size: 52, stroke: 6, color: "#64d2ff" }), String(live.length), "In Progress", live),
+        stat("done", ring(n ? achieved.length / n : 0, { size: 52, stroke: 6, color: "#30d158" }), `${achieved.length}/${n}`, "Achieved", achieved),
+        stat("missed", ring(n ? missed.length / n : 0, { size: 52, stroke: 6, color: "#ff453a" }), String(missed.length), "Missed", missed),
+      ]),
     ]);
     // challenges
     const chCard = ({ ch, st }) => {
-      const S = CH_STATS.find((x) => x.key === ch.stat) || CH_STATS[0];
-      const val = st.value == null ? "\u2014" : S.kind === "sg" ? fmt(st.value) : S.unit === "%" ? `${st.value.toFixed(1)}%` : st.value.toFixed(1);
-      const words = { waiting: "Waiting for a round", progress: st.met ? "On track" : "Behind", done: "Done", missed: "Missed" }[st.status];
+      const { val, words, open } = chInfo({ ch, st });
       const del = el("button", { type: "button", class: "gx-link gx-danger gx-ch-del", "aria-label": "Delete this goal" }, "\u2715");
-      del.addEventListener("click", async () => {
-        const next = challenges().filter((x) => x.id !== ch.id);
-        try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; draw(); } catch (err) { console.error(err); flash("Couldn't delete it.", "error"); }
-      });
+      del.addEventListener("click", () => deleteChallenge(ch));
       const edit = el("button", { type: "button", class: "gx-link gx-ch-edit" }, "Edit");
       edit.addEventListener("click", (e) => { e.stopPropagation(); chEditing = { ...ch, n: ch.n || 3, date: ch.date || "" }; draw(); });
       del.addEventListener("click", (e) => e.stopPropagation(), true);
@@ -209,20 +225,90 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
         el("p", { class: "gx-ch-text" }, challengeText(ch)),
         el("div", { class: "gx-ch-now" }, [el("strong", {}, val), el("span", {}, st.rounds ? `${st.rounds} round${st.rounds === 1 ? "" : "s"} so far` : st.needs === "entered" ? "from your entered rounds" : "no rounds yet")]),
       ]);
-      const open = () => roundsPopup(challengeText(ch), `Since ${ch.start} \u00b7 ${words}${st.value == null ? "" : ` \u00b7 so far ${val}`}`, st.each, S.kind === "sg", Number(ch.target), S);
       card.addEventListener("click", open); card.addEventListener("keydown", (e) => { if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } });
       return card;
     };
+    const activeChs = chs.filter((x) => x.st.status === "progress" || x.st.status === "waiting")
+      .sort((a, b) => String(b.ch.start).localeCompare(String(a.ch.start)));
     mount(container, el("div", { class: "gx" }, [
       el("header", { class: "gx-head gx-hero" }, [
         el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goals"), el("h1", { class: "gx-title" }, whose === "My" ? "My goals" : label), el("p", { class: "gx-sub" }, `${source} \u00b7 tap a goal for its rounds`)]),
         el("div", { class: "gx-head-actions" }, [addCh]),
       ]),
       overview,
-      el("div", { class: "gx-section-head" }, [el("h2", {}, "Goals"), el("span", {}, "Targets for a round, a week or a date")]),
-      chs.length ? el("div", { class: "gx-chs" }, chs.map(chCard)) : el("p", { class: "gx-empty" }, "No goals yet. Try \u201cHit 70% fairways in my next round\u201d."),
+      el("div", { class: "gx-section-head" }, [el("h2", {}, "Active Goals"), el("span", {}, "Targets for a round, a week or a date")]),
+      activeChs.length ? el("div", { class: "gx-chs" }, activeChs.map(chCard))
+        : el("p", { class: "gx-empty" }, chs.length ? "No active goals. Finished ones are under Achieved and Missed above." : "No goals yet. Try \u201cHit 70% fairways in my next round\u201d."),
       el("p", { class: "gx-foot" }, "Strokes gained a round. Rings fill from where each goal started to the goal."),
     ]));
+  }
+
+  /* ---------------- a quick goal's words, value and rounds ---------------- */
+  function chInfo({ ch, st }) {
+    const S = CH_STATS.find((x) => x.key === ch.stat) || CH_STATS[0];
+    const val = st.value == null ? "\u2014" : S.kind === "sg" ? fmt(st.value) : S.unit === "%" ? `${st.value.toFixed(1)}%` : st.value.toFixed(1);
+    const words = { waiting: "Waiting for a round", progress: st.met ? "On track" : "Behind", done: "Achieved", missed: "Missed" }[st.status];
+    const open = () => roundsPopup(challengeText(ch), `Since ${ch.start} \u00b7 ${words}${st.value == null ? "" : ` \u00b7 ${st.status === "done" || st.status === "missed" ? "result" : "so far"} ${val}`}`, st.each, S.kind === "sg", Number(ch.target), S);
+    return { S, val, words, open };
+  }
+  async function deleteChallenge(ch) {
+    const next = challenges().filter((x) => x.id !== ch.id);
+    try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; draw(); return true; }
+    catch (err) { console.error(err); flash("Couldn't delete it.", "error"); return false; }
+  }
+
+  /* ---------------- an overview card's goals, newest first ---------------- */
+  function historyPopup(kind, title, items) {
+    const rangeName = (OV_RANGES.find(([v]) => v === ovRange) || OV_RANGES[3])[1];
+    const when = (x) => (kind === "live" ? x.ch.start : x.st.ended || x.ch.start) || "";
+    const list = [...items].sort((a, b) => String(when(b)).localeCompare(String(when(a))) || String(b.ch.start).localeCompare(String(a.ch.start)));
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const ul = el("ul", { class: "gx-pop-list gx-hist" });
+    const row = (x) => {
+      const { val, words, open } = chInfo(x);
+      const { ch, st } = x;
+      const dates = kind === "live" ? `Set ${fmtDay(ch.start)} \u00b7 ${words}` : `Set ${fmtDay(ch.start)} \u00b7 ${kind === "done" ? "achieved" : "missed"} ${fmtDay(st.ended || ch.start)}`;
+      const del = el("button", { type: "button", class: "gx-link gx-danger gx-hist-del", "aria-label": "Delete this goal" }, "\u2715");
+      const li = el("li", { class: `gx-hist-row gx-tap ${st.status}${st.status === "progress" && !st.met ? " behind" : ""}`, tabindex: "0", role: "button", "aria-label": `${challengeText(ch)}: rounds` }, [
+        el("span", { class: "gx-ch-badge" }, st.status === "done" ? "\u2713" : st.status === "missed" ? "\u2715" : st.status === "waiting" ? "\u2022\u2022\u2022" : "\u25B6"),
+        el("div", { class: "gx-pop-when" }, [el("strong", {}, challengeText(ch)), el("span", {}, dates)]),
+        el("strong", { class: `gx-pop-v${st.met ? " ok" : ""}` }, val),
+        del,
+      ]);
+      li.addEventListener("click", open);
+      li.addEventListener("keydown", (e) => { if (e.target === li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } });
+      del.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("Delete this goal?")) return;
+        if (await deleteChallenge(ch)) { li.remove(); count.textContent = String(ul.children.length); if (!ul.children.length) ul.replaceWith(empty()); }
+      });
+      return li;
+    };
+    const empty = () => el("p", { class: "gx-empty" }, kind === "live" ? "No goals in progress." : `No ${title.toLowerCase()} goals ${ovRange === "all" ? "yet" : `in the ${rangeName.toLowerCase()}`}.`);
+    list.forEach((x) => ul.appendChild(row(x)));
+    const count = el("strong", {}, String(list.length));
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": title }, el("div", { class: "gx-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Goal history"), el("h2", {}, title),
+        el("p", { class: "gx-sub" }, `${kind === "live" ? "Going now" : rangeName} \u00b7 newest first \u00b7 tap a goal for its rounds`)]), close]),
+      el("div", { class: "gx-pop-sum gx-pop-sum1" }, [el("div", {}, [el("span", {}, "Goals"), count])]),
+      list.length ? ul : empty(),
+    ]));
+    showOverlay(overlay, close);
+  }
+  // pop-ups can stack (a goal's rounds over the history): Escape and the page lock follow the top one
+  function showOverlay(overlay, close) {
+    const isTop = () => [...document.querySelectorAll(".gx-pop-overlay")].pop() === overlay;
+    const shut = () => {
+      overlay.remove(); document.removeEventListener("keydown", onKey);
+      if (!document.querySelector(".gx-pop-overlay")) document.body.classList.remove("gx-noscroll");
+    };
+    const onKey = (e) => { if (e.key === "Escape" && isTop()) { e.stopImmediatePropagation(); shut(); } };
+    close.addEventListener("click", shut);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    document.addEventListener("keydown", onKey);
+    document.body.classList.add("gx-noscroll");
+    document.body.appendChild(overlay);
+    close.focus();
   }
 
   /* ---------------- the round-by-round pop-up ---------------- */
@@ -236,7 +322,8 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       const d = new Date(String(r.date).slice(0, 10) + "T12:00:00");
       return el("li", {}, [
         el("div", { class: "gx-pop-when" }, [el("strong", {}, isNaN(d) ? r.date : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })), el("span", {}, `${r.event || "Round"}${r.roundNo ? ` \u00b7 R${r.roundNo}` : ""}`)]),
-        isSG ? el("span", { class: "gx-pop-bar" }, el("span", { class: r.v >= 0 ? "pos" : "neg", style: `width:${Math.max(3, (Math.abs(r.v || 0) / mx) * 100)}%` })) : el("span", { class: "gx-pop-bar" }),
+        isSG ? (() => { const w = Math.max(3, (Math.abs(r.v || 0) / mx) * 100); // dark at zero, brightest at the longest bar
+          return el("span", { class: "gx-pop-bar" }, el("span", { class: r.v >= 0 ? "pos" : "neg", style: `width:${w}%;background-size:${(10000 / w).toFixed(1)}% 100%;background-repeat:no-repeat` })); })() : el("span", { class: "gx-pop-bar" }),
         el("strong", { class: `gx-pop-v${r.v == null ? "" : good(r.v) ? " ok" : ""}` }, fv(r.v)),
       ]);
     })) : el("p", { class: "gx-empty" }, "No rounds since this was set.");
@@ -250,14 +337,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       ]),
       list,
     ]));
-    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
-    const onKey = (e) => { if (e.key === "Escape") shut(); };
-    close.addEventListener("click", shut);
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
-    document.addEventListener("keydown", onKey);
-    document.body.classList.add("gx-noscroll");
-    document.body.appendChild(overlay);
-    close.focus();
+    showOverlay(overlay, close);
   }
 
   /* ---------------- a challenge: "Hit [70]% [fairways] in [my next round]" ---------------- */

@@ -1,7 +1,7 @@
 // Offline: keeps a copy of the app itself so it opens with no signal (Data Entry on the course).
 // The page and the app's files: fresh when online, the saved copy when not. The Firebase libraries
 // (versioned, never change): the saved copy first. Data goes through Firebase, not here.
-const CACHE = "tour-analytics-v88";
+const CACHE = "tour-analytics-v89";
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html", "./css/style.css", "./config.js"]).catch(() => {}))); });
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (e) => {

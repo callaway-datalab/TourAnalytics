@@ -125,7 +125,10 @@ export function challengeStatus(ch, sgRounds, basicRounds, today = new Date()) {
     else v = st.get(r.basic || {}, 1);
     return { date: r.date, event: r.event || r.course || "", roundNo: r.roundNo || "", v };
   });
-  return { status, value, rounds: rs.length, met, needs: st.kind === "basic" ? "entered" : null, window: w, each };
+  // when it finished (a finished goal): the round that settled it, or the end of its week / month / date
+  const lastDay = rs.length ? dayOf(rs[rs.length - 1].date) : null;
+  const ended = status === "done" || status === "missed" ? (w.count || early ? lastDay : w.to) || ch.start : null;
+  return { status, value, rounds: rs.length, met, needs: st.kind === "basic" ? "entered" : null, window: w, each, ended };
 }
 /** The goal sets in a saved document (an older single set reads as one). */
 export function setsOf(d) {

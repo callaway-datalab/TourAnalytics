@@ -67,6 +67,7 @@ export function sgDashboard(container, opts) {
 
   function draw() {
     destroyCharts();
+    chartSeq = 0;
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
     // Keep only choices that still exist: distances of the picked categories, lies seen in them.
     if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
@@ -480,7 +481,7 @@ export function sgDashboard(container, opts) {
       st.chartTypes = st.chartTypes || {};
       if (!st.chartTypes["basic-trend"]) st.chartTypes["basic-trend"] = "line";
       blocks.push(panelBox(`${b.label} Trend`, [toggles, chartBox((c, as) => barChart(c, groups.map((g) => g.label), vals, {
-        title: b.label, as, single: "#c8a97e", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName({ round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event"), shortLabels: groups.map((g) => g.short),
+        title: b.label, as, single: "blue", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName({ round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event"), shortLabels: groups.map((g) => g.short),
         tooltip: (i) => `${groups[i].rounds.length} ${groups[i].rounds.length === 1 ? "round" : "rounds"}`,
       }), "wide", "basic-trend", { rankPick: others.length > 0 })], "full"));
     }
@@ -763,7 +764,7 @@ export function sgDashboard(container, opts) {
       if (cat === "APP" || cat === "ARG") {
         const pts = leavePoints(mine, idx, cat);
         if (pts) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c) => scatterChart(c, pts, LEAVE_SCALE[cat]), "tall")));
-        else { const hist = leaveHistogram(mine, idx, cat); if (hist) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c, as) => barChart(c, hist.map((h) => h.label), hist.map((h) => h.count), { single: "#30d158", title: "Shots", as }), "", `${cat}-leave`))); }
+        else { const hist = leaveHistogram(mine, idx, cat); if (hist) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c, as) => barChart(c, hist.map((h) => h.label), hist.map((h) => h.count), { single: "blue", title: "Shots", as }), "", `${cat}-leave`))); }
       }
       for (const [fieldName, title] of BREAKDOWNS[cat]) {
         const groups = sgBy(mine, idx, cat, fieldName);
@@ -921,7 +922,9 @@ export function sgDashboard(container, opts) {
   const BAR_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="2" y="8" width="3" height="6" rx="1"/><rect x="6.5" y="4" width="3" height="10" rx="1"/><rect x="11" y="6" width="3" height="8" rx="1"/></svg>';
   const LINE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9.5,9.5 14,3.5"/></svg>';
   const lastSig = new Map(); // each chart's last data (so unchanged charts don't re-animate)
+  let chartSeq = 0;
   function chartBox(make, size = "", key = null, { rankPick = false } = {}) {
+    const seq = chartSeq++; // its place on the page (charts can share a title)
     const wrap = el("div", { class: `sg-chart ${size}` });
     let canvas = el("canvas", {});
     wrap.appendChild(canvas);
@@ -933,12 +936,27 @@ export function sgDashboard(container, opts) {
       canvas.replaceWith(fresh); canvas = fresh;
       chart = make(canvas, (key && st.chartTypes[key]) || "bar");
       charts.push(chart);
-      // only a chart whose data changed grows in again; the rest appear as they were
+      // Only a chart whose bars changed grows in again; the rest appear as they were. When just the gold
+      // dots changed (Top 1 / 10 / 25 / 50 / All), the bars stay put and the dots glide to their new places.
       try {
-        const d = chart.data || {}, id = key || `${d.datasets?.[0]?.label || ""}|${size}|${(d.labels || []).length}`;
-        const sig = JSON.stringify([d.labels, (d.datasets || []).map((x) => [x.type, x.data])]) + ((key && st.chartTypes[key]) || "");
-        if (lastSig.get(id) === sig && typeof chart.stop === "function") { chart.stop(); chart.update("none"); }
-        lastSig.set(id, sig);
+        const d = chart.data || {}, sets = d.datasets || [];
+        const id = `${seq}|${key || ""}|${sets[0]?.label || ""}|${size}|${(d.labels || []).length}`;
+        const dots = sets.find((x) => x.$dots) || null;
+        const bars = JSON.stringify([d.labels, sets.filter((x) => !x.$dots).map((x) => [x.type, x.data])]) + ((key && st.chartTypes[key]) || "");
+        const prev = lastSig.get(id);
+        if (prev && prev.bars === bars && typeof chart.stop === "function") {
+          chart.stop();
+          const dotsMoved = !!dots && JSON.stringify(prev.dots) !== JSON.stringify(dots.data);
+          if (dotsMoved) {
+            const next = dots.data;
+            dots.data = prev.dots && prev.dots.length === next.length ? prev.dots.slice() : next.map(() => null);
+            chart.update("none");                           // as it was a moment ago
+            chart.$dotsOnly = true; dots.data = next;
+            chart.config.options.animation = { ...(chart.config.options.animation || {}), duration: 450, easing: "easeOutCubic" };
+            chart.update(); // the bars hold still; only the dots move
+          } else chart.update("none");
+        }
+        lastSig.set(id, { bars, dots: dots ? dots.data.slice() : null });
       } catch { /* fine */ }
     };
     requestAnimationFrame(build);
@@ -966,50 +984,66 @@ export function sgDashboard(container, opts) {
         y: { ticks: { color: muted }, border: { display: false }, grid: { color: (c) => (c.tick?.value === 0 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.05)"), lineWidth: (c) => (c.tick?.value === 0 ? 1.5 : 1) } },
       },
       animation: { duration: 650, easing: "easeOutQuart" },
-      animations: { y: { from: (c) => (c.chart?.scales?.y ? c.chart.scales.y.getPixelForValue(0) : undefined) } },
+      animations: { y: { from: (c) => (c.chart?.$dotsOnly || !c.chart?.scales?.y ? undefined : c.chart.scales.y.getPixelForValue(0)) } },
     };
   }
-  // A bar's colour, on one scale for the whole chart: a clear green (or red) at the zero line, darkening
-  // out to the chart's biggest bar. So a +0.5 bar ends in the colour at the middle of a +1.0 bar.
-  const GRAD = { up: ["#43c870", "#0b5a2a"], down: ["#ff5a4e", "#8a1712"], gold: ["#d9b97f", "#7f6031"] }; // [at zero, at the biggest bar]
-  function barFill(c, single, hover = false) {
+  // A bar's colour, on one scale for the whole chart: dark at the zero line, brightening the further the
+  // bar reaches. Each side has its own scale: green brightens to the chart's biggest gain, red to its biggest
+  // loss, so the longest bar on each side ends in the brightest colour and a half-length bar ends halfway.
+  // One-colour (blue) charts whose bars all sit far from zero (driving distance, scoring average): the stretch
+  // between the shortest and longest bar gets most of the dark-to-bright range, so differences still show.
+  const GRAD = { up: ["#0c4a24", "#3ef07e"], down: ["#5c0f0b", "#ff5c4f"], blue: ["#0a2f66", "#4db2ff"] }; // [at zero, at the biggest bar]
+  const LINE_COLOR = { blue: "#2f9bff", up: "#30d158" };
+  const rampOf = (single, v) => (single === "up" ? GRAD.up : single ? GRAD.blue : v >= 0 ? GRAD.up : GRAD.down);
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const mix = (a, b, t) => { const p = hex(a), q = hex(b); return `rgb(${p.map((x, i) => Math.round(x + (q[i] - x) * t)).join(",")})`; };
+  // the colour stops for one side: [fraction of the span, colour]
+  function rampStops(near, far, minAbs, maxAbs) {
+    const r = maxAbs > 0 ? minAbs / maxAbs : 0;
+    if (r <= 0.35 || r >= 0.999) return [[0, near], [1, far]];
+    return [[0, near], [r, mix(near, far, 0.22)], [1, far]]; // bars bunched far from zero: spread their tips
+  }
+  function barFill(c, single) {
     const { chart, dataIndex } = c, area = chart.chartArea, y = chart.scales?.y;
     const v = c.dataset.data[dataIndex];
-    const [near, far] = single ? GRAD.gold : v >= 0 ? GRAD.up : GRAD.down;
-    if (!area || !y || v == null) return near;
-    // each side on its own scale: green darkens to the biggest gain, red to the biggest loss
-    const side = c.dataset.data.map((x) => Number(x) || 0).filter((x) => (v >= 0 ? x >= 0 : x < 0));
-    const max = Math.max(...side.map(Math.abs), 1e-9);
-    const z = y.getPixelForValue(0), end = y.getPixelForValue(v >= 0 ? max : -max);
-    if (!Number.isFinite(z) || !Number.isFinite(end) || Math.abs(z - end) < 1) return near;
+    const [near, far] = rampOf(single, v);
+    if (!area || !y || v == null) return far;
+    const side = c.dataset.data.map(Number).filter((x) => Number.isFinite(x) && (v >= 0 ? x >= 0 : x < 0)).map(Math.abs);
+    const maxAbs = Math.max(...side, 1e-9), minAbs = Math.min(...side);
+    const z = y.getPixelForValue(0), end = y.getPixelForValue(v >= 0 ? maxAbs : -maxAbs);
+    if (!Number.isFinite(z) || !Number.isFinite(end) || Math.abs(z - end) < 1) return far;
     const g = chart.ctx.createLinearGradient(0, z, 0, end); // the same span for every bar on this side
-    g.addColorStop(0, near); g.addColorStop(1, far);
+    // strokes gained: straight from zero; one-colour stats (often far from zero): spread between their min and max
+    for (const [t, col] of single ? rampStops(near, far, minAbs, maxAbs) : [[0, near], [1, far]]) g.addColorStop(t, col);
     return g;
   }
   /** The same scale for HTML bars (the leaderboard): the gradient spans the full track, the bar shows its part. */
-  // width: on the shared scale; colour: on its own side's scale (darkest at the biggest gain / loss)
+  // width: on the shared scale; colour: on its own side's scale (brightest at the biggest gain / loss)
   const htmlBarStyle = (v, frac, colorFrac = frac) => {
-    const [near, far] = v >= 0 ? GRAD.up : GRAD.down;
+    const [near, far] = rampOf(null, v);
     const w = Math.max(0.04, frac), cf = Math.max(0.04, colorFrac);
     return `width:${w * 100}%;background:linear-gradient(90deg, ${near}, ${far});background-size:${100 / cf}% 100%;background-repeat:no-repeat`;
   };
   function barChart(canvas, labels, values, { title, compare, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar" } = {}) {
     const signColors = values.map((v) => (v >= 0 ? "#30d158" : "#ff453a"));
+    const lineCol = single ? LINE_COLOR[single] || LINE_COLOR.blue : null;
+    const lineFill = single === "up" ? "rgba(48,209,88,0.12)" : "rgba(47,155,255,0.13)";
     const datasets = [as === "line"
-      // Line: a champagne line through green / red points, shaded green above zero and red below.
-      ? { type: "line", label: title || "", data: values, order: 2, borderColor: single || "#c8a97e", borderWidth: 2.5, tension: 0.35,
-          pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: single || signColors, pointBorderColor: single || signColors,
-          fill: single ? { target: "origin", above: "rgba(200,169,126,0.12)" } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
-      // Bars: light at the zero line, deepening (darker green up, darker red down) the further they reach;
+      // Line: a champagne line through green / red points, shaded green above zero and red below
+      // (one-colour charts, like the Basic stats: a blue line, shaded blue).
+      ? { type: "line", label: title || "", data: values, order: 2, borderColor: lineCol || "#c8a97e", borderWidth: 2.5, tension: 0.35,
+          pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: lineCol || signColors, pointBorderColor: lineCol || signColors,
+          fill: single ? { target: "origin", above: lineFill } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
+      // Bars: dark at the zero line, brightening (brighter green up, brighter red down) the further they reach;
       // square where they meet zero, rounded at the tip; a glint on hover; growing from zero when drawn.
       : { type: "bar", label: title || "", data: values, order: 2, maxBarThickness: 46, categoryPercentage: 0.72, barPercentage: 0.9,
           borderRadius: 8, borderSkipped: "start",
-          backgroundColor: (c) => barFill(c, single), hoverBackgroundColor: (c) => barFill(c, single, true),
+          backgroundColor: (c) => barFill(c, single), hoverBackgroundColor: (c) => barFill(c, single),
           borderWidth: 0 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
     // the other players: gold dots in front of the bars
     // (gold dots, no line)
-    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, showLine: false, borderColor: "#d4b483", backgroundColor: "#d4b483",
+    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, $dots: true, showLine: false, borderColor: "#d4b483", backgroundColor: "#d4b483",
       pointStyle: "circle", pointRadius: 4, pointHoverRadius: 5.5, pointBackgroundColor: "#d4b483", pointBorderColor: "#0a0a0b", pointBorderWidth: 1, order: 0 });
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
