@@ -153,7 +153,7 @@ export async function render(main, { previewClient, flash }) {
     const me = { ...players[0], label };
     const inner = el("div");
     mount(enteredDashBox, inner);
-    enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, mode: "player", teamRole, state: enteredState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
+    enteredDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, entered: true, mode: "player", teamRole, state: enteredState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
       note: "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in." });
   });
 

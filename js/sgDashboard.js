@@ -219,7 +219,7 @@ export function sgDashboard(container, opts) {
     return el("div", { class: "sg-filters" + (st.filtersOpen || bare ? " open" : "") + (bare ? " bare" : "") }, [
       bare ? null : fold,
       el("label", {}, ["Span", span]),
-      (opt.tour || []).length > 1 ? multi("Tour", "tour", simple(opt.tour), "All tours", { plural: "tours" }) : null,
+      multi("Tour", "tour", simple(opt.tour || []), (opt.tour || []).length ? "All tours" : "No tour data", { plural: "tours" }),
       multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
       ...(basic ? [] : [
@@ -298,6 +298,7 @@ export function sgDashboard(container, opts) {
               el("span", { class: "hero-chip" }, `${mine.length} rounds`),
               form ? el("span", { class: `hero-chip ${form[1]}` }, `Form: ${form[0]}`) : null,
             ]),
+            insightsButton(),
           ]),
           el("div", { class: "hero-chart" }, [el("span", { class: "hero-chart-label" }, "SG trend \u00b7 rolling 5-round average"), chartBox((c) => heroChart(c, ordered.map((rd) => { const d = new Date(rd.date); return isNaN(d) ? rd.date : shortDate(d); }), roll))]),
         ]),
@@ -306,12 +307,9 @@ export function sgDashboard(container, opts) {
       ]);
     }
     // no player: the leaderboard
-    const minR = Math.max(1, Number(st.minRounds) || 1);
+    const minR = minRoundsFor(slicedField.filter((p) => p.rounds.length));
     const ranked = slicedField.filter((p) => p.rounds.length >= minR).map((p) => ({ p, v: perRoundOf(p.rounds), n: p.rounds.length })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
-    const minIn = el("input", { type: "number", min: 1, max: 99, value: minR, class: "hb-min-in", "aria-label": "Minimum rounds played" });
-    // (redrawn just after the change finishes, so the box isn't removed mid-event)
-    minIn.addEventListener("change", () => { st.minRounds = Math.max(1, Math.round(Number(minIn.value) || 1)); setTimeout(draw, 0); });
-    const minBox = el("label", { class: "hb-min" }, ["Min. rounds played", minIn]);
+    const minBox = minRoundsBox(slicedField.filter((p) => p.rounds.length));
     const shown = ranked.map((x, i) => ({ ...x, i })); // everyone; the list scrolls
     const max = Math.max(...shown.filter(Boolean).map((x) => Math.abs(x.v)), 0.01);
     const posMax = Math.max(...shown.filter((x) => x && x.v >= 0).map((x) => x.v), 0.01), negMax = Math.max(...shown.filter((x) => x && x.v < 0).map((x) => -x.v), 0.01);
@@ -327,6 +325,29 @@ export function sgDashboard(container, opts) {
       el("p", { class: "muted small" }, opts.onPick ? "Tap a name for that player's view." : "Pick a player above for their own view."),
       foot,
     ]);
+  }
+  // ✨ Generate AI Insights: the Reports page's report builder, in a pop-up, for the player on screen
+  function insightsButton() {
+    if (!me || !me.key) return null;
+    const btn = el("button", { type: "button", class: "hero-insights" }, "\u2728 Generate AI Insights");
+    btn.addEventListener("click", async () => {
+      const { reportBuilder } = await import("./reportGen.js");
+      const state = getState();
+      const flashMsg = (msg) => { const n = el("p", { class: "hero-pop-msg", role: "status" }, msg); body.prepend(n); setTimeout(() => n.remove(), 4000); };
+      const builder = reportBuilder({ playerKey: me.key, playerLabel: me.label, canSave: !!state.isAdmin && !String(me.key).startsWith("a_"), flash: flashMsg,
+        source: opts.entered ? "entered" : "tour" });
+      const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+      const body = el("div", { class: "hero-pop-body" }, builder.node || builder);
+      const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate AI Insights" }, el("div", { class: "gx-pop hero-pop" }, [
+        el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Performance report"), el("h2", {}, me.label)]), close]), body]));
+      const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+      const onKey = (e) => { if (e.key === "Escape") shut(); };
+      close.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+      document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll");
+      document.body.appendChild(overlay);
+      overlay.querySelector(".report-gen-open")?.click(); // straight to the options
+    });
+    return btn;
   }
   function heroChart(canvas, labels, vals) {
     const ctx = canvas.getContext("2d"), h = canvas.parentNode?.clientHeight || 180;
@@ -783,8 +804,21 @@ export function sgDashboard(container, opts) {
 
   /* ------------------------------ rankings ------------------------------ */
   let rankScroll = null;
+  // Min. rounds: until you set it, 25% of the most rounds anyone listed has played (rounded)
+  const minRoundsFor = (players) => {
+    if (st.minRounds != null) return Math.max(1, Number(st.minRounds) || 1);
+    const most = Math.max(0, ...players.map((p) => p.rounds.length));
+    return Math.max(1, Math.round(most * 0.25));
+  };
+  function minRoundsBox(players) {
+    const v = minRoundsFor(players);
+    const inp = el("input", { type: "number", min: 1, max: 999, value: v, class: "hb-min-in", "aria-label": "Minimum rounds played" });
+    inp.addEventListener("change", () => { st.minRounds = Math.max(1, Math.round(Number(inp.value) || 1)); setTimeout(draw, 0); });
+    return el("label", { class: "hb-min", title: "Only players with at least this many rounds in the selection" }, ["Min. rounds", inp]);
+  }
   function rankingsBlock(slicedField) {
-    const ranked = rank(slicedField.filter((p) => p.rounds.length).map((p) => {
+    const minR = minRoundsFor(slicedField);
+    const ranked = rank(slicedField.filter((p) => p.rounds.length >= minR || p.key === me?.key).map((p) => {
       const t = sliceTotals(p.rounds);
       return { key: p.key, label: p.label, value: t.sgPerRound ?? -Infinity, rounds: t.rounds, att: t.attemptsPerRound };
     }));
@@ -827,7 +861,10 @@ export function sgDashboard(container, opts) {
     search.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); shut(); } });
     // (players and coaches only: not for the admin or analysts)
     const searchable = !getState().isAdmin && opts.teamRole !== "analyst";
+    const minBox = minRoundsBox(slicedField.filter((p) => p.rounds.length));
+    minBox.classList.add("rank-min"); if (searchable) minBox.classList.add("with-glass");
     return panelBox(`Rankings \u00b7 ${describe()}`, [
+      minBox,
       searchable ? glass : null,
       searchable ? searchBox : null,
       ranked.length ? rankScroll : el("p", { class: "empty" }, "No rounds match these filters."),

@@ -2248,3 +2248,26 @@ main > nav.subnav { margin-bottom: 0.75rem !important; }
   .hole-title h2 { font-size: 1.85rem !important; }
 }
 .shot-card.shot-later, .shot-card[hidden] { display: none !important; }
+/* hero: a taller chart; Generate AI Insights under the chips */
+.hero-chart { min-height: 250px !important; } .hero-chart .sg-chart { min-height: 228px !important; height: 228px !important; }
+.hero-id { display: flex; flex-direction: column; }
+.hero-insights { align-self: flex-start; margin-top: 1rem; border: 1px solid rgba(212,180,131,0.45); background: linear-gradient(135deg, rgba(212,180,131,0.22), rgba(212,180,131,0.06));
+  color: #f3dfbd; font: 600 0.9rem var(--font-body); padding: 0.6rem 1.05rem; border-radius: 999px; cursor: pointer; transition: transform .15s ease, background .15s ease; }
+.hero-insights:hover { transform: translateY(-1px); background: linear-gradient(135deg, rgba(212,180,131,0.32), rgba(212,180,131,0.1)); }
+.hero-pop { width: min(40rem, 100%) !important; max-height: 88vh !important; overflow-y: auto; }
+.hero-pop-body .report-gen-open { display: none; }
+.hero-pop-body .report-gen-panel { margin-top: 0.6rem; }
+.hero-pop-msg { margin: 0.5rem 0; padding: 0.5rem 0.75rem; border-radius: 10px; background: rgba(48,209,88,0.14); font-size: 0.86rem; }
+@media (max-width: 760px) { .hero-chart { min-height: 190px !important; } .hero-chart .sg-chart { min-height: 172px !important; height: 172px !important; } .hero-insights { width: 100%; text-align: center; } }
+/* Min. rounds: top-right corner of the leaderboard and the rankings */
+.hb-head { flex-wrap: nowrap !important; }
+.hb-min { flex: none; white-space: nowrap; }
+.rank-min { position: absolute; top: 0.75rem; right: 0.9rem; z-index: 2; }
+.rank-min.with-glass { right: 3.1rem; }
+.sg-box:has(.rank-min) > h3 { padding-right: 11rem; }
+@media (max-width: 760px) {
+  .hb-head { align-items: flex-start; }
+  .hb-min { font-size: 0.68rem; gap: 0.35rem; }
+  .hb-min-in { width: 3rem !important; }
+  .sg-box:has(.rank-min) > h3 { padding-right: 8.5rem; }
+}

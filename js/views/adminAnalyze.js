@@ -148,7 +148,7 @@ export async function render(main, { flash }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
+    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, entered: true, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.
