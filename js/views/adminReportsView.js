@@ -43,7 +43,8 @@ export async function render(main, { flash }) {
         el("p", { class: "muted center" }, player
           ? `${docs.length} ${docs.length === 1 ? "report" : "reports"} visible to ${player.label}, exactly as they see them on My Reports.`
           : `${docs.length} ${docs.length === 1 ? "report" : "reports"} shared with everyone. Pick a player to see everything they've been sent.`),
-        ...REPORT_CATEGORIES.map(([cat, label]) => {
+        // Performance Reports (Data) or Course Reports (Planning): ?cat= picks the list
+        ...REPORT_CATEGORIES.filter(([cat]) => cat === (new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance")).map(([cat, label]) => {
           const items = docs.filter((d) => reportCategory(d) === cat);
           return el("section", {}, [el("h2", {}, label), cat === "performance" ? builder : null, items.length
             ? el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [

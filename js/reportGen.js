@@ -11,7 +11,7 @@
 import { el, mount } from "./ui.js";
 import { getState } from "./auth.js";
 import { watchClientDatasets, getDatasetRows, getFieldStats, uploadDocument } from "./store.js";
-import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate } from "./sg.js";
+import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds } from "./sg.js";
 import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
@@ -31,13 +31,17 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
  * me: { key, label, rounds }  field: [{ key, label, rounds, summaryOnly? }]  (prepared rounds, as on the stats page)
  * opts: { from, to (ms or null), cats: ["OTT", …], byProduct, idx }
  */
-export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {} } = {}) {
+export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null } = {}) {
   const cats = CATEGORIES.map(([k]) => k).filter((k) => catsIn.includes(k));
   const inRange = (rd) => { const t = day(rd.date); return t == null || ((from == null || t >= from) && (to == null || t <= to)); };
   const pick = (rounds) => rounds.filter(inRange).map((rd) => ({ ...rd, shots: rd.shots.filter((s) => cats.includes(s.cat)) }))
     .sort((a, b) => (day(a.date) ?? 0) - (day(b.date) ?? 0));
   const mine = pick(me.rounds);
-  const others = field.filter((p) => p.key !== me.key).map((p) => ({ ...p, rounds: pick(p.rounds) })).filter((p) => p.rounds.length);
+  const played = field.filter((p) => p.key !== me.key).map((p) => ({ ...p, rounds: pick(p.rounds) })).filter((p) => p.rounds.length);
+  // Tour Avg, ranks and Elite use the same players as the Stats page: at least Min. rounds in this period
+  // (the number set on the Stats page, or its default: a quarter of the most rounds played, down to a 10)
+  const minR = Number(minRounds) >= 1 ? Math.round(Number(minRounds)) : defaultMinRounds(Math.max(mine.length, ...played.map((p) => p.rounds.length)));
+  const others = played.filter((p) => p.rounds.length >= minR);
   const everyone = [{ key: me.key, label: me.label, rounds: mine }, ...others];
   const detail = !field.some((p) => p.summaryOnly);
   const perRound = (rounds, cat) => sliceTotals(cat ? rounds.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === cat) })) : rounds).sgPerRound;
@@ -193,7 +197,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   }
   const numbers = { posRounds, n: series.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside, tourSd };
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail };
+    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length };
 }
 
 /* ============================== the PDF ============================== */
@@ -272,11 +276,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (!a.overall.rounds) { footer(); return d.output(); }
 
   /* ---------- how to read ---------- */
-  d.roundRect(M, y - 4, W, 34, 8, { fill: P.note });
+  d.roundRect(M, y - 4, W, 46, 8, { fill: P.note });
   d.text("How to read this:", M + 12, y + 9, { size: 8.5, bold: true, color: P.gold });
   d.text("Strokes gained compares every shot with what a typical tour player would do from the same spot.", M + 92, y + 9, { size: 8.5, color: P.ink });
   d.text("Plus (green) = better than that; minus (red) = worse. +1.00 means one stroke a round better.", M + 92, y + 21, { size: 8.5, color: P.ink });
-  y += 46;
+  d.text(`Tour Avg and ranks: the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period.`, M + 92, y + 33, { size: 8.5, color: P.ink });
+  y += 58;
 
   /* ---------- highlights: strengths and things to watch ---------- */
   // (at most two strengths from the same category, so they don't repeat each other)
@@ -588,7 +593,7 @@ export async function loadFullField(datasetId, field, me, idx) {
 
 /* ============================== the panel ============================== */
 /** "Auto-generate report" for one player. canSave: the admin can also put it in the player's reports. */
-export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource = "tour" }) {
+export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource = "tour", minRounds = null }) {
   const wrapEl = el("div", { class: "report-gen" });
   const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate AI Insights");
   const panel = el("div", { class: "report-gen-panel", hidden: true });
@@ -626,6 +631,8 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   // data and product
   const source = el("select", { "aria-label": "Data" }, [el("option", { value: "tour", selected: startSource === "tour" }, "Tour Events"), el("option", { value: "entered", selected: startSource === "entered" }, "Entered Rounds")]);
   const product = el("input", { type: "checkbox", "aria-label": "Differentiate by product" });
+  // Min. rounds for Tour Avg and ranks: the Stats page's number when it opened this; empty = the default
+  const minIn = el("input", { type: "number", min: 1, max: 999, inputmode: "numeric", class: "report-min-in", placeholder: "Auto", value: minRounds ?? "", "aria-label": "Minimum rounds for Tour Avg and ranks" });
   const go = el("button", { type: "button", class: "btn" }, "Generate report");
   const status = el("p", { class: "muted small", role: "status" });
   const result = el("div", { class: "report-gen-result" });
@@ -637,7 +644,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       if (!data || !data.me.rounds.length) { status.textContent = source.value === "tour" ? "No Tour Events data for this player yet." : "No entered rounds for this player yet."; return; }
       status.textContent = "Working out the insights\u2026";
       const from = fromIn.value ? Date.parse(`${fromIn.value}T00:00:00`) : null, to = toIn.value ? Date.parse(`${toIn.value}T23:59:59`) : null;
-      const a = analyzePerformance(data.me, data.field, { from, to, cats, byProduct: product.checked, idx: data.idx });
+      const a = analyzePerformance(data.me, data.field, { from, to, cats, byProduct: product.checked, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null });
       let aiSummary = null;
       const url = window.PORTAL_CONFIG?.insightsUrl;
       if (url && a.overall.rounds) {
@@ -679,7 +686,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   mount(panel, [
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Dates"), presetBox, el("div", { class: "report-dates" }, [el("label", { class: "date-field" }, ["Start Date", fromIn]), el("label", { class: "date-field" }, ["End Date", toIn])])]),
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Categories"), catBox]),
-    el("div", { class: "report-row" }, [el("label", {}, ["Data", source]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
+    el("div", { class: "report-row" }, [el("label", {}, ["Data", source]), el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: a quarter of the most rounds played, rounded down to a 10." }, ["Min. rounds", minIn]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
     el("div", { class: "report-gen-actions" }, [go]), status, result,
   ]);
   mount(wrapEl, [openBtn, panel]);

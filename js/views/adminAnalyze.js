@@ -12,7 +12,7 @@ import { getState } from "../auth.js";
 import { myEntryKey, myName } from "./dataEntry.js";
 import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 
-export const ENTERED_NOTE = "Entered rounds use placeholder strokes-gained numbers until the real calculations are plugged in.";
+export const ENTERED_NOTE = "Entered rounds: strokes gained is measured against the scoring-average baseline by lie and distance.";
 
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 

@@ -72,9 +72,9 @@ export async function flushPending() {
 }
 if (typeof window !== "undefined") window.addEventListener("online", () => { flushPending(); });
 
-export async function createRound({ playerKey, playerLabel, ownerUid, ownerName, date, course, location, tees, type, tournament, holes, mode = "full" }) {
+export async function createRound({ playerKey, playerLabel, ownerUid, ownerName, date, course, location, tees, type, tournament, tour = "", holes, mode = "full" }) {
   const ref = doc(roundsOf(playerKey));
-  const data = { ownerUid, ownerName: ownerName || "", playerKey, playerLabel, date, course, location: location || "", tees: tees || "", type: type || "", tournament: tournament || "",
+  const data = { ownerUid, ownerName: ownerName || "", playerKey, playerLabel, date, course, location: location || "", tees: tees || "", type: type || "", tournament: tournament || "", tour: tour || "",
     holes, shots: {}, quick: {}, mode, status: "in-progress" };
   const v = localChange(playerKey, ref.id, (d) => Object.assign(d, data));
   const write = setDoc(ref, { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }).then(() => markSent(playerKey, ref.id, v));

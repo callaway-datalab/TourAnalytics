@@ -84,21 +84,53 @@ export function confirmAction(message) {
 
 /* ---------------- Layout: sidebar + main, rebuilt whenever auth state changes ---------------- */
 
-const NAV = {
-  client: [
-    ["#/dashboard", "data", "My Stats", ["dashboard", "dataset"]],
-    ["#/documents", "doc", "My Reports", ["documents"]],
-    ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
-    ["#/goals", "data", "Goals", ["goals"]],
-  ],
-  admin: [
-    ["#/admin/clients", "people", "Player Access", ["admin-clients"]],
-    ["#/admin/analyze", "data", "Stats", ["admin-datasets", "admin-analyze"]],          // opens on Analyze
-    ["#/admin/reports/view", "doc", "Reports", ["admin-documents", "admin-reports-view"]], // opens on View
-    ["#/entry", "data", "Data Entry", ["entry", "entry-new", "entry-round"]],
-    ["#/admin/goals", "data", "Goals", ["admin-goals"]],
-  ],
+// Two levels: a few headers in the top bar, each with its own row of pages under it.
+//   [label, href, routeIds, { soon, q }]  (q: a ?cat= the link needs to count as current)
+const sectionsFor = (kind) => {
+  const admin = kind === "admin", player = kind === "client";
+  const dataItems = [
+    ["Stats", admin ? "#/admin/analyze" : "#/dashboard", admin ? ["admin-datasets", "admin-analyze"] : ["dashboard", "dataset"]],
+    ["Performance Reports", admin ? "#/admin/reports/view?cat=performance" : "#/documents", admin ? ["admin-documents", "admin-reports-view"] : ["documents"], { q: admin ? "performance" : null }],
+    ["WITB", "#/witb", ["witb"]],
+    ["Live Scoring", "#/live", ["live"], { soon: true }],
+    ["Add Data", "#/entry", ["entry", "entry-new", "entry-round"]],
+  ];
+  const planItems = [
+    ["Course Reports", admin ? "#/admin/reports/view?cat=course" : "#/course-reports", admin ? ["admin-reports-view"] : ["course-reports"], { q: admin ? "course" : null }],
+    ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
+    ["Practice", "#/practice/recommendations", ["practice", "practice-recs", "practice-tracking"], { soon: true }],
+  ];
+  return [
+    { id: "data", label: player ? "My Data" : "Data", icon: "data", items: dataItems },
+    { id: "plan", label: player ? "My Plan" : "Planning", icon: "doc", items: planItems },
+  ];
 };
+const NAV = { admin: [["#/admin/clients", "people", "Player Access", ["admin-clients"]]] };
+const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
+const itemOn = (item, routeId) => {
+  const [, , routes, opt = {}] = item;
+  if (!routes.includes(routeId)) return false;
+  return !opt.q || (routeId !== "admin-reports-view" ? opt.q === "performance" : catNow() === opt.q);
+};
+
+/** The row of pages under the current header (Stats / Performance Reports / …), or null. */
+export function sectionNav(currentRoute) {
+  const kind = shellKind();
+  const sec = sectionsFor(kind).find((x) => x.items.some((it) => itemOn(it, currentRoute)));
+  if (!sec) return null;
+  return el("nav", { class: "section-nav", "aria-label": sec.label }, sec.items.map((it) => {
+    const [label, href, , opt = {}] = it;
+    const on = itemOn(it, currentRoute);
+    return el("a", { href, "aria-current": on ? "page" : null, class: opt.soon ? "soon" : null }, [label, opt.soon ? el("span", { class: "soon-tag" }, "Soon") : null]);
+  }));
+}
+function shellKind() {
+  const state = window.__authState || {};
+  const previewingTeam = state.isAdmin && !!getPreviewTeam();
+  if (state.isAdmin && !window.__previewClient && !previewingTeam) return "admin";
+  if ((!state.isAdmin && state.isTeam) || previewingTeam) return "team";
+  return "client";
+}
 
 let unreadCount = 0;
 export function setUnreadCount(n) {
@@ -109,16 +141,6 @@ export function setUnreadCount(n) {
   });
   const base = document.title.replace(/^\(\d+\)\s*/, "");
   document.title = n > 0 ? `(${n}) ${base}` : base;
-}
-
-function teamNav() {
-  // Coaches, caddies and analysts: the player is picked with the dropdown on Data and Reports.
-  return [
-    ["#/dashboard", "data", "Stats", ["dashboard", "dataset"]],
-    ["#/documents", "doc", "Reports", ["documents"]],
-    NAV.client.find(([h]) => h === "#/entry"), // Data Entry
-    NAV.client.find(([h]) => h === "#/goals"), // Goals
-  ];
 }
 
 /* Account button: a drop-down with your email, Questions (with the unread count) and Reset Password. */
@@ -138,7 +160,6 @@ function accountMenu(state) {
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
-    el("a", { class: "menu-item", href: "#/witb", role: "menuitem", title: "What's in the bag" }, "WITB"),
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
   ]);
   const wrap = el("div", { class: "account" }, [btn, menu]);
@@ -160,7 +181,11 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
   const admin = state.isAdmin && !previewClient && !previewingTeam;
   const team = (!state.isAdmin && state.isTeam) || previewingTeam;
-  const items = admin ? NAV.admin : team ? teamNav() : NAV.client; // Data Entry is always the last one
+  window.__previewClient = previewClient || null;
+  const kind = admin ? "admin" : team ? "team" : "client";
+  // top bar: (Player Access,) Data, Planning — each opens on its first page
+  const secs = sectionsFor(kind), onSec = secs.find((sec) => sec.items.some((it) => itemOn(it, currentRoute)));
+  const items = [...(admin ? NAV.admin : []), ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 

@@ -5,7 +5,7 @@ import { REPORT_CATEGORIES, reportCategory } from "../data.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
 import { reportBuilder } from "../reportGen.js";
 
-export async function render(main, { previewClient, flash }) {
+export async function render(main, { previewClient, flash, only = "performance" }) {
   const state = getState();
   const clientKey = previewClient ? previewClient.key : state.profile?.clientKey;
   if (!clientKey) return; // signed out or profile gone mid-navigation
@@ -16,8 +16,9 @@ export async function render(main, { previewClient, flash }) {
   const playerLabel = previewClient?.label || state.profile?.name || "Player";
   const builder = clientKey.startsWith("c_") ? reportBuilder({ playerKey: clientKey, playerLabel, canSave: state.isAdmin, flash }) : null;
   mount(main, [
-    teamPlayerSelect(previewClient, "/documents"),
-    ...REPORT_CATEGORIES.map(([cat, label]) => el("section", {}, [el("h2", {}, label), cat === "performance" ? builder : null, lists.get(cat)])),
+    teamPlayerSelect(previewClient, only === "course" ? "/course-reports" : "/documents"),
+    // Performance Reports (under Data) or Course Reports (under Planning): one list each
+    ...REPORT_CATEGORIES.filter(([cat]) => cat === only).map(([cat, label]) => el("section", {}, [el("h2", {}, label), cat === "performance" ? builder : null, lists.get(cat)])),
   ]);
 
   const openFile = async (doc, link) => {

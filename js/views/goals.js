@@ -216,10 +216,10 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     const chCard = ({ ch, st }) => {
       const { val, words, open } = chInfo({ ch, st });
       const del = el("button", { type: "button", class: "gx-link gx-danger gx-ch-del", "aria-label": "Delete this goal" }, "\u2715");
-      del.addEventListener("click", () => deleteChallenge(ch));
+      // (one listener: a capture-phase stopPropagation on the button itself stopped this one from running)
+      del.addEventListener("click", (e) => { e.stopPropagation(); if (confirm("Delete this goal?")) deleteChallenge(ch); });
       const edit = el("button", { type: "button", class: "gx-link gx-ch-edit" }, "Edit");
       edit.addEventListener("click", (e) => { e.stopPropagation(); chEditing = { ...ch, n: ch.n || 3, date: ch.date || "" }; draw(); });
-      del.addEventListener("click", (e) => e.stopPropagation(), true);
       const card = el("article", { class: `gx-ch gx-tap ${st.status}${st.status === "progress" && !st.met ? " behind" : ""}`, tabindex: "0", role: "button", "aria-label": `${challengeText(ch)}: rounds so far` }, [
         el("div", { class: "gx-ch-top" }, [el("span", { class: "gx-ch-badge" }, st.status === "done" ? "\u2713" : st.status === "missed" ? "\u2715" : st.status === "waiting" ? "\u2022\u2022\u2022" : "\u25B6"), el("span", { class: "gx-ch-status" }, words), edit, del]),
         el("p", { class: "gx-ch-text" }, challengeText(ch)),

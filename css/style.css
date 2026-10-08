@@ -1948,7 +1948,7 @@ main > nav.subnav { margin-bottom: 0.75rem !important; }
 .ht-rank { font-size: 0.7rem; color: var(--muted); }
 .hero-foot { margin: 0.9rem 0 0; font-size: 0.7rem; color: var(--muted); letter-spacing: 0.04em; }
 .hero-board { display: grid; gap: 0.45rem; margin: 0.6rem 0 0.4rem; }
-.hb-row { display: grid; grid-template-columns: 1.4rem minmax(0, 9rem) 1fr 3.6rem; align-items: center; gap: 0.6rem; }
+.hb-row { display: grid; grid-template-columns: 1.6rem minmax(0, 13.5rem) 1fr 3.6rem; align-items: center; gap: 0.6rem; }
 .hb-rank { color: #d4b483; font-weight: 800; } .hb-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .hb-bar { height: 10px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
 .hb-bar span { display: block; height: 100%; border-radius: 999px; } .hb-bar .pos { background: linear-gradient(90deg, #0c4a24, #3ef07e); } .hb-bar .neg { background: linear-gradient(90deg, #5c0f0b, #ff5c4f); }
@@ -1961,7 +1961,7 @@ main > nav.subnav { margin-bottom: 0.75rem !important; }
   .hero-big strong { font-size: 2.9rem; }
   .hero-chart { min-height: 150px; } .hero-chart .sg-chart { min-height: 140px; height: 140px; }
   .hero-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hb-row { grid-template-columns: 1.2rem minmax(0, 7rem) 1fr 3.2rem; }
+  .hb-row { grid-template-columns: 1.5rem minmax(0, 10rem) 1fr 3.1rem; gap: 0.45rem; font-size: 0.82rem; }
   .fp-sum { font-size: 0.78rem; }
 }
 
@@ -2290,3 +2290,58 @@ button.gx-ov-stat:focus-visible { outline: 2px solid rgba(212,180,131,0.6); outl
 .gx-hist-row .gx-pop-when strong { font-weight: 600; line-height: 1.3; white-space: normal; }
 .gx-hist-del { padding: 0 !important; font-size: 0.8rem !important; opacity: 0.55; } .gx-hist-del:hover { opacity: 1; }
 @media (max-width: 640px) { .gx-ov-range button { padding: 0.32rem 0.6rem; font-size: 0.76rem; } }
+.report-min-in { width: 6rem; margin: 0; font-size: 16px; }
+@media (max-width: 640px) { .report-min-in { width: 100%; min-height: 2.3rem; } }
+
+/* +0.00: neither gained nor lost (to two places) */
+.zero, .hero .zero, .hb-row strong.zero { color: #ffd60a; }
+.hb-name { font-size: 0.92rem; }
+@media (max-width: 640px) { .hb-name { font-size: 0.82rem; white-space: normal; line-height: 1.15; overflow-wrap: anywhere; } } /* long names wrap instead of being cut */
+
+/* ===== update 93: the hero chart's tournament table ===== */
+.hero-chart-tap { cursor: pointer; border-radius: 12px; transition: background .15s ease; }
+.hero-chart-tap:hover { background: rgba(255,255,255,0.03); }
+.hero-chart-tap:focus-visible { outline: 2px solid rgba(212,180,131,0.55); outline-offset: 3px; }
+.hero-chart-label { display: flex; justify-content: space-between; gap: 0.6rem; }
+.hero-chart-hint { color: #d4b483; letter-spacing: 0.04em; text-transform: none; opacity: 0.8; }
+.hero-tourn-scroll { max-height: min(60vh, 34rem); overflow-y: auto; overscroll-behavior: contain; margin: 0.4rem 0 0.6rem; }
+.hero-tourn thead th { position: sticky; top: 0; background: #1c1c1e; z-index: 1; }
+.hero-tourn td.ht-date { white-space: nowrap; color: var(--muted); }
+.hero-tourn td.num { white-space: nowrap; }
+@media (max-width: 640px) { .hero-tourn { font-size: 0.8rem; } .hero-tourn th, .hero-tourn td { padding: 0.4rem 0.35rem; } }
+.hero-tourn th { letter-spacing: 0.04em; white-space: nowrap; }
+.hero-tourn td:nth-child(2) { min-width: 9rem; }
+
+/* ===== update 94: Data / Planning headers with their own row of pages ===== */
+.section-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.35rem; margin: -0.6rem 0 1.4rem; padding: 0.3rem;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 999px; width: fit-content; max-width: 100%; margin-inline: auto; }
+.section-nav a { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.42rem 0.95rem; border-radius: 999px; color: var(--muted);
+  font-size: 0.86rem; font-weight: 600; text-decoration: none; white-space: nowrap; transition: background .15s ease, color .15s ease; }
+.section-nav a:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
+.section-nav a[aria-current="page"] { color: #0b0b0c; background: #d4b483; }
+.section-nav a.soon { opacity: 0.75; }
+.soon-tag { font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.08rem 0.38rem; border-radius: 999px; background: rgba(212,180,131,0.18); color: #d4b483; }
+.section-nav a[aria-current="page"] .soon-tag { background: rgba(0,0,0,0.15); color: #0b0b0c; }
+.soon-panel { text-align: center; padding: 3rem 1.5rem; max-width: 36rem; margin: 1rem auto; }
+.soon-panel h1 { margin: 0.2rem 0 0.6rem; }
+.soon-badge { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px; background: rgba(212,180,131,0.15); color: #d4b483; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.05em; margin-bottom: 0.9rem; }
+@media (max-width: 640px) {
+  .section-nav { border-radius: 16px; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; width: 100%; }
+  .section-nav::-webkit-scrollbar { display: none; }
+  .section-nav a { font-size: 0.8rem; padding: 0.4rem 0.75rem; }
+}
+.subnav.small.soon-tabs { justify-content: center; }
+.soon-panel h1 { font-size: clamp(1.6rem, 4vw, 2.2rem); }
+
+/* ===== update 94: one tour at a time ===== */
+.tour-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.7rem 0 0.2rem; }
+.tour-chip { display: inline-flex; gap: 0.3rem; align-items: baseline; padding: 0.38rem 0.8rem; border-radius: 999px; cursor: pointer;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--muted); font: inherit; font-size: 0.82rem; transition: all .15s ease; }
+.tour-chip strong { color: var(--ink); font-weight: 700; }
+.tour-chip:hover { border-color: rgba(212,180,131,0.5); }
+.tour-chip.on { background: rgba(212,180,131,0.16); border-color: #d4b483; color: #f1e2c8; }
+.tour-chip.on strong { color: #d4b483; }
+.tour-pick { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; color: var(--muted); }
+.tour-pick select { margin: 0; font-size: 16px; padding: 0.3rem 0.6rem; min-height: 2.1rem; max-width: 14rem; }
+.hero .tour-chips + .hero-foot, .hb-head + .tour-chips { margin-top: 0.4rem; }
+.hero > .tour-chips { margin: 0.7rem 0 0.9rem; }

@@ -429,6 +429,10 @@ export function leaveHistogram(rounds, idx, cat) {
   return counts.map((count, i) => ({ label: edges[i + 1] === Infinity ? `${edges[i]}+` : `${edges[i]}-${edges[i + 1]}`, count }));
 }
 
+/** Min. rounds, until someone types their own: a quarter of the most rounds anyone played, rounded down
+ *  to a 10 (23 → 20); under 10 → 1. Used by the Stats page and the report. */
+export const defaultMinRounds = (mostRounds) => Math.max(1, Math.floor((Math.max(0, Number(mostRounds) || 0) * 0.25) / 10) * 10);
+
 /** Rank players by a value (higher first). Returns [{ key, label, value, rank }]. */
 export function rank(entries) {
   return [...entries].sort((a, b) => b.value - a.value).map((e, i) => ({ ...e, rank: i + 1 }));
@@ -478,7 +482,7 @@ export function applyFilters(rounds, f = {}) {
   // Each filter can hold one value or several (any of them matches); empty means "all".
   const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
   const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club), tours = set(f.tour);
-  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.event)) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || tours.has(rd.tour || "")));
+  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.event)) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")));
   if (f.span > 0) rs = rs.slice(-f.span);
   const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
   // Distances are "CAT|label" pairs. A category with distances picked keeps only those; others are unaffected.
@@ -509,7 +513,7 @@ export function buildFieldSummary(players) {
         const c = {};
         for (const s of rd.shots) { const x = (c[s.cat] ||= [0, 0]); x[0] += s.sg; x[1] += s.w; }
         for (const k of Object.keys(c)) c[k] = [Math.round(c[k][0] * 1000) / 1000, c[k][1]];
-        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, c };
+        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, t: rd.tour || "", c };
       }),
     })),
   };
@@ -520,7 +524,7 @@ export function summaryPlayers(summary) {
   return (summary?.players || []).map((p) => ({
     key: p.key, name: p.name, summaryOnly: true,
     rounds: p.rounds.map((rd, i) => ({
-      key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y,
+      key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y, tour: rd.t, // (undefined: a summary from before tours were kept)
       shots: Object.entries(rd.c).map(([cat, [sg, w]]) => ({ cat, sg, w, lie: null, dist: null })),
     })),
   }));

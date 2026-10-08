@@ -3,7 +3,7 @@ import { isTeamKey, rosterByEmail } from "./data.js";
 import { teamLabels } from "./names.js";
 import { getUserProfile, getTeamRoster, fetchInvite } from "./store.js";
 import { whenReady, getState, subscribe } from "./auth.js";
-import { renderShell, flash } from "./ui.js";
+import { renderShell, sectionNav, flash } from "./ui.js";
 
 // [pattern, guard, loader, routeId] — routeId drives which nav item is "current".
 const ROUTES = [
@@ -13,6 +13,11 @@ const ROUTES = [
   ["/data/:id", "client", () => import("./views/dataset.js"), "dataset"],
   ["/documents", "client", () => import("./views/documents.js"), "documents"],
   ["/goals", "client", () => import("./views/goals.js"), "goals"],
+  ["/course-reports", "client", () => import("./views/documents.js").then((m) => ({ render: (main, ctx) => m.render(main, { ...ctx, only: "course" }) })), "course-reports"],
+  ["/live", "signed-in", () => import("./views/comingSoon.js"), "live"],
+  ["/practice", "signed-in", () => import("./views/comingSoon.js"), "practice"],
+  ["/practice/recommendations", "signed-in", () => import("./views/comingSoon.js"), "practice-recs"],
+  ["/practice/tracking", "signed-in", () => import("./views/comingSoon.js"), "practice-tracking"],
   ["/questions", "client", () => import("./views/questions.js"), "questions"],
   ["/questions/new", "client", () => import("./views/questionNew.js"), "question-new"],
   ["/questions/:id", "client", () => import("./views/thread.js"), "thread"],
@@ -40,7 +45,7 @@ let currentCleanup = null;
 let previewClient = null;
 let lastTeamPlayer = null; // the player a team member last looked at
 // Pages that show one player's data and need to know which player.
-const PLAYER_PAGES = ["dashboard", "dataset", "documents"];
+const PLAYER_PAGES = ["dashboard", "dataset", "documents", "course-reports"];
 const homeFor = (state) => (!state.user ? "/login" : state.isAdmin ? "/admin/clients" : state.isTeam ? "/team" : "/dashboard");
 
 function match(path) {
@@ -118,7 +123,7 @@ async function render() {
     const qs = new URLSearchParams(queryPart || "");
     const label = qs.get("label") || key;
     // Optional page to land on (the player dropdown keeps you on Data or Reports).
-    const to = ["/dashboard", "/documents"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
+    const to = ["/dashboard", "/documents", "/course-reports"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
     if (!team.preview && state.isTeam && key === state.profile?.clientKey) {
       previewClient = { key, label: state.profile?.name || "Me", self: true }; // a team member's own entered rounds
     } else if (team.isTeam && team.teamAccess[key]) {
@@ -196,6 +201,12 @@ async function render() {
       main.append(el_previewBar(), inner);
       main = inner;
     }
+  }
+
+  // the row of pages under the current header (Stats / Performance Reports / WITB / …)
+  if (guard !== "public") {
+    const sub = sectionNav(routeId);
+    if (sub) { const inner = document.createElement("div"); main.append(sub, inner); main = inner; }
   }
 
   try {

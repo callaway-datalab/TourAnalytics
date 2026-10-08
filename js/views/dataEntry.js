@@ -128,6 +128,9 @@ async function renderNew(main, flash, viewing = null) {
   drawMode();
   const tournamentIn = el("input", { placeholder: "e.g. Club Championship", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
   const tournamentField = el("label", { hidden: true }, ["Tournament name", tournamentIn]);
+  // optional: a real tour you're playing on, or your own league (the Stats page filters by it)
+  const tourIn = el("input", { placeholder: "e.g. Korn Ferry Tour, or Saturday League", autocomplete: "off", maxLength: 60, list: "tour-names", enterkeyhint: "next" });
+  const tourNames = el("datalist", { id: "tour-names" }, ["PGA TOUR", "Korn Ferry Tour", "DP World Tour", "LIV Golf", "PGA TOUR Champions", "LPGA Tour", "Epson Tour", "Amateur"].map((t) => el("option", { value: t })));
   const drawType = () => {
     typePills.querySelectorAll(".seg-btn").forEach((b) => { const on = b.dataset.v === roundType; b.classList.toggle("on", on); b.setAttribute("aria-checked", on ? "true" : "false"); });
     tournamentField.hidden = roundType !== "tournament";
@@ -391,7 +394,7 @@ async function renderNew(main, flash, viewing = null) {
       try {
         const id = await createRound({
           playerKey: player.key, playerLabel: player.label, ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "",
-          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: roundType, tournament: roundType === "tournament" ? tournamentIn.value.trim() : "",
+          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: roundType, tournament: roundType === "tournament" ? tournamentIn.value.trim() : "", tour: tourIn.value.trim(),
           holes: holes.map((h) => ({ n: h.n, par: h.par, yards: h.yards ?? null, hcp: h.hcp ?? null })), mode: entryMode,
         });
         location.hash = `#/entry/${encodeURIComponent(player.key)}/${id}`;
@@ -407,6 +410,7 @@ async function renderNew(main, flash, viewing = null) {
       el("div", { class: "field" }, [el("span", { class: "field-label" }, "Round type"), typePills]),
       el("div", { class: "field" }, [el("span", { class: "field-label" }, "Entry"), modePills, modeNote]),
       tournamentField,
+      el("label", {}, ["Tour or league (optional)", tourIn, tourNames]),
       el("label", {}, ["Date", date]),
       el("label", { class: "course-label" }, ["Course", courseBox.node]),
       el("label", {}, ["Location (optional)", locationIn]),
@@ -612,7 +616,7 @@ function renderRound(main, params, flash, previewClient) {
     const head = el("header", { class: "round-head" }, [
       el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Data Entry")),
       el("h1", {}, round.course || "Round"),
-      el("p", { class: "muted" }, [round.type ? (round.type === "tournament" ? `${round.tournament || "Tournament"} \u00b7 ` : "Practice round \u00b7 ") : "", round.date, round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
+      el("p", { class: "muted" }, [round.type ? (round.type === "tournament" ? `${round.tournament || "Tournament"} \u00b7 ` : "Practice round \u00b7 ") : "", round.date, round.tour ? ` \u00b7 ${round.tour}` : "", round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
       el("p", { class: "round-score" }, [scoreLine, " ", status]),
       canEdit() ? null : el("p", { class: "muted small" }, `Entered by ${round.ownerName || "someone else"} \u2014 view only.`),
     ]);
@@ -960,7 +964,7 @@ function renderRound(main, params, flash, previewClient) {
     const card = el("section", { class: "shot-card" + (after ? " after-holed" : ""), "data-i": String(i) }, [
       el("div", { class: "shot-head" }, [
         el("h3", {}, `Shot ${i + 1}`),
-        el("span", { class: "shot-sg", style: sg === null ? "" : `color:${sgColor(sg)}`, title: "Strokes gained (placeholder numbers)" }, sg === null ? "" : `${fmtSG(sg)} SG`),
+        el("span", { class: "shot-sg", style: sg === null ? "" : `color:${sgColor(sg)}`, title: "Strokes gained against the scoring-average baseline" }, sg === null ? "" : `${fmtSG(sg)} SG`),
       ]),
       after ? el("p", { class: "muted small" }, "This comes after the ball was holed \u2014 remove it if it's extra.") : null,
       el("p", { class: "shot-label" }, "Club (optional)"),
@@ -1037,7 +1041,7 @@ function renderRound(main, params, flash, previewClient) {
         const v = per(k);
         return el("div", { class: "sg-card" }, [el("h3", {}, l), el("p", { class: "sg-value", style: `color:${sgColor(v)}` }, fmtSG(v))]);
       })),
-      el("p", { class: "muted small center" }, "Strokes gained for entered rounds uses placeholder numbers for now. Full charts: Stats \u2192 Entered Rounds."),
+      el("p", { class: "muted small center" }, "Strokes gained is measured against the scoring-average baseline by lie and distance. Full charts: Stats \u2192 Entered Rounds."),
       el("div", { class: "table-scroll" }, el("table", { class: "plain stats" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, "Hole"), el("th", { class: "num" }, "Par"), el("th", { class: "num" }, "Yds"), el("th", { class: "num" }, "Score")])),
         el("tbody", {}, rows),
