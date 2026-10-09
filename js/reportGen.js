@@ -224,7 +224,9 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const last = n >= 2 ? statAgg(mineK.slice(-n), !!keep).value : null, prev = n >= 2 ? statAgg(mineK.slice(-2 * n, -n), !!keep).value : null;
     // its value in each category it has (Hit Green %: Approach and Around-the-Green)
     const byCat = keep ? [] : CATEGORIES.map(([c, name]) => { const rs = mineK.map((rd) => ({ ...rd, shots: rd.shots.filter((o) => o.cat === c) })); const v = statAgg(rs, true).value; return v == null ? null : { cat: c, name, value: v }; }).filter(Boolean);
-    return { key: k, def: label ? { ...def, label } : def, value, rounds: mineK.length, events: mineK.length > 0 && mineK.every((rd) => rd.eventLevel), rank, of: rank ? all.length : null,
+    // (out of every player compared, the same number for every stat: someone with no value for it, say no
+    // eagles, or never in that spot, counts below everyone who has one)
+    return { key: k, def: label ? { ...def, label } : def, value, rounds: mineK.length, events: mineK.length > 0 && mineK.every((rd) => rd.eventLevel), rank, of: rank ? everyone.length : null,
       fieldAvg: mean(vals), lo: Math.min(...all), hi: Math.max(...all), trend: last != null && prev != null ? { n, last, prev } : null, byCat: byCat.length > 1 ? byCat : [] };
   };
   // A distance label ("100-120 yds", "250+ yds", "<10 ft", "20-30 ft") -> { mid, lo } in yards and feet.
@@ -428,8 +430,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   newPage();
   /* ---------- by category: gauges ---------- */
   section("By category", "Where the strokes come from", 40 + a.byCat.length * 36);
-  d.text("The black line is zero; the gold line is Tour Avg.", M, y + 6, { size: 8, color: P.grey });
-  y += 18;
+  d.text("The black line is zero; the gold line is Tour Avg.", M, y + 1, { size: 8, color: P.grey });
+  y += 14;
   const gx = M + 150, gw = W - 150 - 150, zx = gx + gw / 2, half = gw / 2;
   for (const c of a.byCat) {
     need(36);
@@ -577,8 +579,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
     section("Detail", "Every skill by distance and lie", 52);
-    d.text("Strokes gained a round. Gains on the left (best first), losses on the right (worst first).", M, y + 6, { size: 8, color: P.grey });
-    y += 20;
+    d.text("Strokes gained a round. Gains on the left (best first), losses on the right (worst first).", M, y + 1, { size: 8, color: P.grey });
+    y += 22;
     // (rounded to 2 decimals; only ±0.01 or more; at most 25 each side)
     const r2 = (v) => Math.round(v * 100) / 100;
     const gains = byDist.filter((g) => r2(g.perRound) >= 0.01).sort((p, q) => q.perRound - p.perRound).slice(0, 25);
@@ -630,14 +632,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // Short game (Up & Down by distance and lie) and Putting (Made Putt % by distance).
   if (a.basics?.length || a.grid?.length || a.udGrid || a.puttGrid || a.teeGrid?.length) {
     newPage();
-    const bandH = 84;
-    d.gradient(0, 0, d.W, bandH, P.night, P.night2, { dir: "v", steps: 40 });
-    d.gradient(0, bandH - 3, d.W, 3, P.gold, P.goldLight, { dir: "h", steps: 40 });
-    cap("Basic Stats", M, 28, P.goldLight, "left", 7.5);
-    d.text(wrap(a.me.label, W * 0.75, 19, true)[0], M, 52, { size: 19, bold: true, color: "#ffffff" });
-    d.text(`${period}${a.tour ? `  \u00b7  ${a.tour}` : ""}  \u00b7  ranked among the same ${a.compared ?? 0} ${a.compared === 1 ? "player" : "players"} as strokes gained (at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"})`,
-      M, 69, { size: 7.5, color: "#8e8e93" });
-    y = bandH + 8;
+    // (the same heading as the other pages' sections)
+    y -= 12;
+    d.rect(M, y - 7, 3, 9, { fill: P.gold });
+    cap("Detail", M + 9, y, P.gold); y += 23;
+    d.text("Basic Stats", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
+    d.text(`Ranks are out of the ${a.players ?? 1} ${a.players === 1 ? "player" : "players"} compared (at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} of strokes gained${a.tour ? `, ${a.tour}` : ""}); someone with no value for a stat counts below everyone who has one.`, M, y + 4, { size: 7.5, color: P.grey });
+    y += 6;
     const better = (b, x, ref) => (b.def.higher == null || ref == null || Math.abs(x - ref) < 1e-9 ? null : b.def.higher ? x > ref : x < ref);
     const tint = (b) => { const g = better(b, b.value, b.fieldAvg); return g == null ? P.ink : g ? P.up : P.down; };
     const head = (title) => { y += 13; d.rect(M, y - 6.5, 3, 8, { fill: P.gold }); cap(title, M + 9, y, P.gold, "left", 6.6); y += 6; };
@@ -657,7 +658,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const gridBox = (colHeads, rows) => {
       // (no headings, e.g. one Off-the-Tee column: no heading row)
       const bare = colHeads.every((h) => !h), top = bare ? 3 : 16;
-      const x = M, w = W, cellW = (w - NAME_W) / colHeads.length, gh = top + rows.length * ROW_H + 3;
+      // (as wide as its columns need, up to the page: Off-the-Tee's one or two columns stay narrow)
+      const x = M, w = Math.min(W, NAME_W + colHeads.length * 150), cellW = (w - NAME_W) / colHeads.length, gh = top + rows.length * ROW_H + 3;
       d.roundRect(x, y, w, gh, 8, { fill: P.mist });
       colHeads.forEach((lab, c) => {
         if (!lab) return;
@@ -675,8 +677,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         r.cells.forEach((b, c) => {
           const cx = x + NAME_W + cellW * c;
           if (!b) { d.text("\u2014", cx + cellW / 2 - 3, ry + ROW_H / 2 + 3, { size: 8.5, color: P.faint, align: "center" }); return; }
-          d.text(fmtStat(b.def, b.value), cx + 4, ry + 11, { size: 9, bold: true, color: tint(b) });
-          pillAt(b, cx + Math.min(cellW, 130) - 8, ry + 10.5); // (a wide single column keeps the rank by the value)
+          d.text(fmtStat(b.def, b.value), cx + 4, ry + 11, { size: 9, bold: true, color: P.ink }); // (colour is for the ranks)
+          pillAt(b, cx + cellW - 8, ry + 10.5);
           if (b.fieldAvg != null) d.text(`Avg ${fmtStat(b.def, b.fieldAvg)}`, cx + 4, ry + 20, { size: 5.6, color: P.grey });
         });
       });
@@ -706,13 +708,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     section("Other", other.map((b) => b.def.label), other.length ? [{ name: "Other", cells: other }] : []);
     const heightOf = ([, heads, rows]) => 19 + (heads.every((h) => !h) ? 3 : 16) + rows.length * ROW_H + 3;
     const total = queued.reduce((t, q) => t + heightOf(q), 0), room = H - 60 - y - total;
-    const extra = queued.length ? Math.max(0, Math.min(40, room / queued.length)) : 0;
-    for (const q of queued) {
+    // (the first section sits close under the title: a fifth of the usual gap)
+    const extra = queued.length ? Math.max(0, Math.min(40, room / Math.max(1, queued.length - 0.8))) : 0;
+    queued.forEach((q, i) => {
       need(heightOf(q));
-      y += extra;
+      y += i === 0 ? extra * 0.2 : extra;
       head(q[0]);
       gridBox(q[1], q[2]);
-    }
+    });
   }
   footer();
   return d.output();
