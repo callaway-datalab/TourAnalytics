@@ -201,7 +201,13 @@ const truthy = (v) => {
   return null;
 };
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
-const lead = (s) => { const m = String(s).match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : Infinity; };
+// The number a distance label starts at, for sorting: "<5 ft" comes before "5-10 ft", "30+ ft" after "20-30 ft".
+const lead = (s) => {
+  const t = String(s), m = t.match(/-?\d+(\.\d+)?/);
+  if (!m) return Infinity;
+  const n = Number(m[0]);
+  return /^\s*(<|under|less than|inside)/i.test(t) ? n - 0.5 : /^\s*(>|over|more than)/i.test(t) || new RegExp(`${m[0]}\\s*\\+`).test(t) ? n + 0.5 : n;
+};
 
 /** Turn one player's rows into shots grouped by round, oldest round first. */
 export function prepare(rows, idx) {

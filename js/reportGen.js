@@ -301,6 +301,11 @@ const P = {
   gold: "#b08d57", goldLight: "#d4b483", up: "#1e8e4a", upDeep: "#14703a", upTint: "#e7f5ec", down: "#d0342c", downDeep: "#a8241e", downTint: "#fdecea",
   track: "#eceef1", note: "#faf6ee",
 };
+// Rank colours (the front page's rank badge, the categories' ranks and the Basic Stats page):
+// top 10 bright green, 11-50 green, 51-100 yellow, 101-150 orange, past 150 red. [fill, text on it]
+const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ? ["#1e8e4a", "#ffffff"] : rank <= 100 ? ["#f5c400", "#2a2200"] : rank <= 150 ? ["#f08a24", "#ffffff"] : ["#d0342c", "#ffffff"]);
+// the same colour for text on white (bright green and yellow darkened so they read)
+const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -346,11 +351,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   cap("Strokes gained per round", M, 122, "#8e8e93");
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 172, { size: 62, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
-  wrap(a.overall.rounds ? `${a.overall.value >= 0 ? "Better" : "Worse"} than the baseline by ${Math.abs(a.overall.value).toFixed(2)} strokes a round${versus != null ? `, and ${Math.abs(versus).toFixed(2)} ${versus >= 0 ? "better" : "worse"} than Tour Avg (${fmtSG(a.overall.fieldAvg)}).` : "."}` : "No rounds in this period.", W * 0.56, 9.5)
+  wrap(a.overall.rounds ? (versus != null ? `${Math.abs(versus).toFixed(2)} strokes a round ${versus >= 0 ? "better" : "worse"} than Tour Avg (${fmtSG(a.overall.fieldAvg)}).` : "") : "No rounds in this period.", W * 0.56, 9.5)
     .slice(0, 2).forEach((l, i) => d.text(l, M, 190 + i * 12, { size: 9.5, color: "#c7c7cc" }));
   // badges
   let bx = M;
-  if (a.overall.rank) bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, a.overall.rank === 1 ? P.gold : "#3a3a3c", a.overall.rank === 1 ? P.night : "#ffffff") + 6;
+  if (a.overall.rank) { const [f, t] = rankColors(a.overall.rank); bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, f, t) + 6; }
   bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
   if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < STEADY ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling down", bx, 220, Math.abs(ch) < STEADY ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
   // form sparkline (right side)
@@ -437,7 +442,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     need(36);
     const t = a.catTrend.find((q) => q.cat === c.cat);
     d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
-    d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, color: P.grey });
+    d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, bold: !!c.rank, color: c.rank ? rankInk(c.rank) : P.grey });
     d.roundRect(gx, y + 8, gw, 12, 6, { fill: P.track });
     // each side's scale: the group's best gain (right) and biggest loss (left)
     const hi = c.best?.v ?? 0, lo = c.low?.v ?? 0;
@@ -645,9 +650,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const pillAt = (b, xr, yy, size = 5.6) => {
       if (!b.rank) return 0;
       // by rank: top 10 bright green, 11-50 green, 51-100 yellow, 101-150 orange, past 150 red
-      const T = `${b.rank} / ${b.of}`, w = textWidth(T, size, true) + 10;
-      const [fill, ink] = b.rank <= 10 ? ["#34c759", "#0a2a12"] : b.rank <= 50 ? ["#1e8e4a", "#ffffff"] : b.rank <= 100 ? ["#f5c400", "#2a2200"] : b.rank <= 150 ? ["#f08a24", "#ffffff"] : ["#d0342c", "#ffffff"];
-      d.roundRect(xr - w, yy - 8, w, 10.5, 5.25, { fill });
+      const T = `${b.rank} / ${b.of}`, w = textWidth(T, size, true) + size * 1.8, h = size * 1.85;
+      const [fill, ink] = rankColors(b.rank);
+      d.roundRect(xr - w, yy - h * 0.76, w, h, h / 2, { fill });
       d.text(T, xr - w / 2, yy - 0.6, { size, bold: true, color: ink, align: "center" });
       return w;
     };
@@ -655,11 +660,17 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const SUB = { prox: "lower is better", pinHigh: "+/- 10 ft Short or Long", onLine: "+/- 10 ft Left or Right" };
     const NAME_W = 92, ROW_H = 24;
     // a grid across the page: rows [{ name, sub, cells | note }], one heading per column
+    // how a grid is laid out: no name column when its rows have no names (Scoring); as wide as its columns need,
+    // up to the page (Off-the-Tee stays narrow); bigger numbers where the cells have room
+    const layout = (colHeads, rows) => {
+      const nameW = rows.some((r) => r.name) ? NAME_W : 0;
+      const w = Math.min(W, nameW + colHeads.length * 150), cellW = (w - nameW) / colHeads.length;
+      const vs = Math.max(9, Math.min(14, cellW / 7)), rowH = Math.round(vs + 16), top = colHeads.every((h) => !h) ? 3 : 16;
+      return { nameW, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
+    };
     const gridBox = (colHeads, rows) => {
-      // (no headings, e.g. one Off-the-Tee column: no heading row)
-      const bare = colHeads.every((h) => !h), top = bare ? 3 : 16;
-      // (as wide as its columns need, up to the page: Off-the-Tee's one or two columns stay narrow)
-      const x = M, w = Math.min(W, NAME_W + colHeads.length * 150), cellW = (w - NAME_W) / colHeads.length, gh = top + rows.length * ROW_H + 3;
+      const { nameW: NW, w, cellW, vs, rowH: RH, top, gh } = layout(colHeads, rows), x = M;
+      const NAME_W = NW, ROW_H = RH, k = (vs - 9) / 5; // (k: 0 for the smallest cells, 1 for the roomiest)
       d.roundRect(x, y, w, gh, 8, { fill: P.mist });
       colHeads.forEach((lab, c) => {
         if (!lab) return;
@@ -667,19 +678,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         while (z > 4.4 && textWidth(t, z, true) + 1.1 * t.length > cellW - 6) z -= 0.2;
         cap(t, x + NAME_W + cellW * (c + 0.5) - 3, y + 11, P.soft, "center", z);
       });
-      for (let c = 0; c < colHeads.length; c++) { const lx = x + NAME_W + cellW * c - 3; d.line(lx, y + 4, lx, y + gh - 4, { color: "#d9d9de", width: 0.6 }); }
+      for (let c = NAME_W ? 0 : 1; c < colHeads.length; c++) { const lx = x + NAME_W + cellW * c - 3; d.line(lx, y + 4, lx, y + gh - 4, { color: "#d9d9de", width: 0.6 }); }
       rows.forEach((r, i) => {
         const ry = y + top + i * ROW_H;
         if (i) d.line(x + 8, ry, x + w - 8, ry, { color: P.hair, width: 0.5 });
-        d.text(r.name, x + 9, ry + (r.sub ? 10 : ROW_H / 2 + 3), { size: 7.8, bold: true, color: P.ink });
-        if (r.sub) d.text(r.sub, x + 9, ry + 19, { size: 5.8, color: P.faint });
+        if (r.name) d.text(r.name, x + 9, ry + (r.sub ? ROW_H / 2 - 1 : ROW_H / 2 + 3), { size: 7.8 + k, bold: true, color: P.ink });
+        if (r.sub) d.text(r.sub, x + 9, ry + ROW_H / 2 + 8, { size: 5.8 + 0.6 * k, color: P.faint });
         if (r.note) { d.text(r.note, x + NAME_W + 4, ry + ROW_H / 2 + 3, { size: 7, color: P.faint }); return; }
         r.cells.forEach((b, c) => {
           const cx = x + NAME_W + cellW * c;
           if (!b) { d.text("\u2014", cx + cellW / 2 - 3, ry + ROW_H / 2 + 3, { size: 8.5, color: P.faint, align: "center" }); return; }
-          d.text(fmtStat(b.def, b.value), cx + 4, ry + 11, { size: 9, bold: true, color: P.ink }); // (colour is for the ranks)
-          pillAt(b, cx + cellW - 8, ry + 10.5);
-          if (b.fieldAvg != null) d.text(`Avg ${fmtStat(b.def, b.fieldAvg)}`, cx + 4, ry + 20, { size: 5.6, color: P.grey });
+          d.text(fmtStat(b.def, b.value), cx + 4 + 2 * k, ry + 4 + vs * 0.85, { size: vs, bold: true, color: P.ink }); // (colour is for the ranks)
+          pillAt(b, cx + cellW - 8, ry + 4 + vs * 0.8, 5.6 + 1.6 * k);
+          if (b.fieldAvg != null) d.text(`Avg ${fmtStat(b.def, b.fieldAvg)}`, cx + 4 + 2 * k, ry + ROW_H - 4, { size: 5.6 + 1.6 * k, color: P.grey });
         });
       });
       y += gh;
@@ -693,7 +704,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const SHORT = { scoring: "Scoring Avg", eagles: "Eagles/Round", birdiesRd: "Birdies/Round", parsRd: "Pars/Round", bogeysRd: "Bogeys/Round", dblBogeysRd: "Dbl Bogeys/Round",
       birdie: "Birdie %", parOrBetter: "Par or Better %", bogey: "Bogey Avoidance", owgr: "OWGR" };
     const scoring = pick(Object.keys(SHORT));
-    section("Scoring", scoring.map((b) => SHORT[b.key]), scoring.length ? [{ name: "Scoring", cells: scoring }] : []);
+    section("Scoring", scoring.map((b) => SHORT[b.key]), scoring.length ? [{ name: "", cells: scoring }] : []);
     // Off-the-Tee: Driving Distance and Hit Fairway %, Driver and Non-Driver
     section("Off-the-Tee", a.teeSplit ? ["Driver", "Non-Driver"] : [""], (a.teeGrid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || "", cells: g.cells, note: noteFor(g) })));
     // Approach by distance (GIR % isn't shown)
@@ -705,8 +716,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // anything else (Scrambling, Putts / Round …): one row, a column per stat
     const shown = new Set([...Object.keys(SHORT), "drive", "fwy", "gir", "hitGreen", "prox", "pinHigh", "onLine", "goodLag"]);
     const other = a.basics.filter((b) => !shown.has(b.key) && !(a.udGrid && b.key === "ud") && !(a.puttGrid && b.key === "make"));
-    section("Other", other.map((b) => b.def.label), other.length ? [{ name: "Other", cells: other }] : []);
-    const heightOf = ([, heads, rows]) => 19 + (heads.every((h) => !h) ? 3 : 16) + rows.length * ROW_H + 3;
+    section("Other", other.map((b) => b.def.label), other.length ? [{ name: "", cells: other }] : []);
+    const heightOf = ([, heads, rows]) => 19 + layout(heads, rows).gh;
     const total = queued.reduce((t, q) => t + heightOf(q), 0), room = H - 60 - y - total;
     // (the first section sits close under the title: a fifth of the usual gap)
     const extra = queued.length ? Math.max(0, Math.min(40, room / Math.max(1, queued.length - 0.8))) : 0;
