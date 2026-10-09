@@ -662,13 +662,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // a grid across the page: rows [{ name, sub, cells | note }], one heading per column
     // how a grid is laid out: no name column when its rows have no names (Scoring); as wide as its columns need,
     // up to the page (Off-the-Tee stays narrow); bigger numbers where the cells have room
+    let VS = null; // one text size for every grid on the page: Approach by distance's (set below)
+    const valueW = (b, z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k; return 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8; };
     const layout = (colHeads, rows) => {
-      const nameW = rows.some((r) => r.name) ? NAME_W : 0;
-      const w = Math.min(W, nameW + colHeads.length * 150), cellW = (w - nameW) / colHeads.length;
+      const z0 = VS ?? 14;
+      const nameW = rows.some((r) => r.name) ? Math.max(NAME_W, ...rows.map((r) => (r.name ? textWidth(r.name, z0, true) + 16 : 0))) : 0;
+      // each column as wide as its widest value and heading need (with some air), up to the page
+      const need = colHeads.map((h, c) => Math.max(70, textWidth(String(h).toUpperCase(), 5.6, true) + 1.1 * String(h).length + 14,
+        ...rows.map((r) => (r.cells?.[c] ? valueW(r.cells[c], z0) + 14 : 0))));
+      const w = Math.min(W, nameW + need.reduce((t, x) => t + x, 0)), cellW = (w - nameW) / colHeads.length;
       // the biggest size (9 to 14 pt) at which every value and its rank bubble fit side by side in their cell
       const fitsAt = (z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k;
         return rows.every((r) => (r.cells || []).every((b) => !b || 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8 <= cellW)); };
-      let vs = 14; while (vs > 8 && !fitsAt(vs)) vs -= 0.5;
+      let vs = VS ?? 14; while (vs > 8 && !fitsAt(vs)) vs -= 0.5; // (the page's size; smaller only if this grid can't fit it)
       const rowH = Math.round(Math.max(9, vs) + 16), top = colHeads.every((h) => !h) ? 3 : 16;
       return { nameW, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
     };
@@ -686,7 +692,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       rows.forEach((r, i) => {
         const ry = y + top + i * ROW_H;
         if (i) d.line(x + 8, ry, x + w - 8, ry, { color: P.hair, width: 0.5 });
-        if (r.name) d.text(r.name, x + 9, ry + (r.sub ? ROW_H / 2 - 1 : ROW_H / 2 + 3), { size: 7.8 + k, bold: true, color: P.ink });
+        if (r.name) d.text(r.name, x + 9, ry + (r.sub ? ROW_H / 2 - 1 : ROW_H / 2 + 3), { size: vs, bold: true, color: P.ink }); // (as big as the values)
         if (r.sub) d.text(r.sub, x + 9, ry + ROW_H / 2 + 8, { size: 5.8 + 0.6 * k, color: P.faint });
         if (r.note) { d.text(r.note, x + NAME_W + 4, ry + ROW_H / 2 + 3, { size: 7, color: P.faint }); return; }
         r.cells.forEach((b, c) => {
@@ -721,15 +727,17 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // Short game: Up & Down by distance and lie
     if (a.udGrid) section("Short game \u00b7 Up & Down %", a.udGrid.lies, a.udGrid.bands.map((band, r) => ({ name: band, cells: a.udGrid.cells[r] })));
     // Putting: Made Putt % at each distance
-    if (a.puttGrid) section("Putting", a.puttGrid.labels, [{ name: "Made Putt %", cells: a.puttGrid.cells }]);
+    if (a.puttGrid) section("Putting - Make %", a.puttGrid.labels, [{ name: "", cells: a.puttGrid.cells }]);
     // anything else (Scrambling, Putts / Round …): one row, a column per stat
     const shown = new Set([...Object.keys(SHORT), "drive", "fwy", "gir", "hitGreen", "prox", "pinHigh", "onLine", "goodLag"]);
     const other = a.basics.filter((b) => !shown.has(b.key) && !(a.udGrid && b.key === "ud") && !(a.puttGrid && b.key === "make"));
     section("Other", other.map((b) => b.def.label), other.length ? [{ name: "", cells: other }] : []);
+    const appr = queued.find(([t]) => t === "Approach by distance");
+    VS = appr ? layout(appr[1], appr[2]).vs : null;
     const heightOf = ([, heads, rows]) => 19 + layout(heads, rows).gh;
     const total = queued.reduce((t, q) => t + heightOf(q), 0), room = H - 60 - y - total;
     // (the first section sits close under the title: a fifth of the usual gap)
-    const extra = queued.length ? Math.max(0, Math.min(40, room / Math.max(1, queued.length - 0.8))) : 0;
+    const extra = 0.8 * (queued.length ? Math.max(0, Math.min(40, room / Math.max(1, queued.length - 0.8))) : 0); // (20% less than filling the page)
     queued.forEach((q, i) => {
       need(heightOf(q));
       y += i === 0 ? extra * 0.2 : extra;
@@ -870,7 +878,8 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
         } catch { /* the report still works without it */ }
       }
       status.textContent = "Making the PDF\u2026";
-      const rangeLabel = preset ? presets.find(([v]) => v === preset)?.[1] : null; // a preset's name; your own dates are shown as dates
+      // a preset's name ("This year" is shown as the year itself, e.g. 2026); your own dates are shown as dates
+      const rangeLabel = preset === "year" ? String(new Date().getFullYear()) : preset ? presets.find(([v]) => v === preset)?.[1] : null;
       const bytes = buildReportPdf(a, { aiSummary, sourceLabel: source.value === "tour" ? "Tour Events" : "Entered Rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
       window.__lastReportPdf = bytes; // (for tests)
