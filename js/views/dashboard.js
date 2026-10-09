@@ -60,7 +60,10 @@ export async function render(main, { previewClient, flash }) {
       return a;
     }));
   };
-  const sourceHome = el("div", { class: "pill-row source-home" }, sourcePills); // lent to the stats' one row of pills
+  // lent to the stats' one row of pills; hidden while loading (so the pills don't flash outside the Filters
+  // panel), shown when there's nothing to draw
+  const sourceHome = el("div", { class: "pill-row source-home", hidden: true }, sourcePills);
+  const showPills = () => { if (sourcePills.parentNode === sourceHome || !sourcePills.parentNode) { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } };
   // a coach's player dropdown: the Stats / Performance Reports / … row goes under it (as on the admin's Stats)
   const picker = teamPlayerSelect(previewClient, "/dashboard");
   const secHome = el("div", { class: "sec-home" });
@@ -123,6 +126,7 @@ export async function render(main, { previewClient, flash }) {
       mount(tabs, null); tabs.hidden = true;
       mount(box, el("p", { class: "empty center" }, teamRole ? "No data has been added for this player yet."
         : "No data has been added to your account yet. It will appear here as soon as it's uploaded."));
+      if (lastSource === "tour") showPills();
       return;
     }
     datasets.sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0));
@@ -147,6 +151,7 @@ export async function render(main, { previewClient, flash }) {
     enteredDash?.destroy(); enteredDash = null;
     if (!players.length) {
       mount(enteredDashBox, el("p", { class: "empty center" }, ["No entered rounds yet. Record one in ", el("a", { href: "#/entry" }, "Data Entry"), " and it shows up here."]));
+      if (lastSource === "entered") showPills();
       return;
     }
     const me = { ...players[0], label };

@@ -1,4 +1,4 @@
-import { el, mount, formatWhen, num, confirmAction, subNav, relocateSectionNav } from "../ui.js";
+import { el, mount, formatWhen, num, confirmAction, subNav } from "../ui.js";
 import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage, adminAllClients, publishFieldStats } from "../store.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
@@ -72,10 +72,8 @@ export async function render(main, { flash }) {
     el("div", {}, submit),
   ]);
 
-  const secHome = el("div", { class: "sec-home" });
   mount(main, [
-    subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/datasets"),
-    secHome, // the Stats / Performance Reports / WITB / … row, under Analyze / Upload (as on Analyze)
+    subNav([["#/admin/clients", "Players"], ["#/admin/datasets", "Upload Data"]], "#/admin/datasets"),
     el("p", { class: "muted intro" }, "Upload one file that covers many people. Each person only sees the rows that belong to them."),
     el("section", {}, [el("h2", {}, "Upload a data file"), form]),
     el("section", {}, [el("h2", {}, "Uploaded files"), listBox]),
@@ -103,6 +101,5 @@ export async function render(main, { flash }) {
     ]);
     mount(listBox, el("div", { class: "table-scroll" }, table));
   });
-  const undoTop = relocateSectionNav(main, secHome);
-  return () => { unsub(); undoTop(); };
+  return unsub;
 }

@@ -2450,3 +2450,17 @@ main.tight-top > div > nav.subnav:first-child, main.tight-top nav.subnav:first-c
 .chat-friend .chat-accept { font-weight: 700; color: #d4b483; }
 .chat-friend > span:first-child { min-width: 0; }
 .chat-friends { max-height: 30rem; overflow-y: auto; }
+/* update 107: header icons (WITB golf bag, Chat word bubble, Account menu) */
+.rail-foot .hdr-icon, .account-btn.hdr-icon { display: inline-flex !important; align-items: center; justify-content: center; position: relative;
+  width: 2.4rem; height: 2.4rem; min-height: 2.4rem; padding: 0 !important; border-radius: 999px; }
+.rail-foot .hdr-icon svg, .account-btn.hdr-icon svg { display: block !important; width: 21px; height: 21px; fill: currentColor; }
+.rail-foot a.hdr-icon { color: var(--ink-2, #d1d1d6); background: transparent; }
+.rail-foot a.hdr-icon:hover, .rail-foot a.hdr-icon[aria-current="page"] { background: #fff; color: #000; }
+.account-btn.hdr-icon { border: 1px solid rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.06); }
+.rail-foot .hdr-icon .badge { position: absolute; top: -0.3rem; right: -0.35rem; margin: 0; min-width: 1.2rem; height: 1.2rem; padding: 0 0.3rem; border-radius: 999px;
+  font: 700 0.7rem/1.2rem var(--font-body); text-align: center; background: var(--danger, #d22909); color: #fff; box-shadow: 0 0 0 2px #0a0a0c; }
+.rail-foot { gap: 0.4rem !important; }
+.rail-foot .hdr-icon, .rail-foot a.hdr-icon, .account-btn.hdr-icon { border: 0 !important; background: transparent !important; color: #e5e5ea !important; box-shadow: none !important; }
+.rail-foot .hdr-icon:hover, .account-btn.hdr-icon:hover, .account-btn.hdr-icon[aria-expanded="true"] { background: rgba(255, 255, 255, 0.1) !important; color: #fff !important; }
+.rail-foot a.hdr-icon[aria-current="page"] { background: rgba(212, 180, 131, 0.16) !important; color: #d4b483 !important; }
+.rail-foot .hdr-icon svg, .account-btn.hdr-icon svg { width: 22px; height: 22px; }

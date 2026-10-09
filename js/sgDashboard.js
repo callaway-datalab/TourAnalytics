@@ -307,7 +307,9 @@ export function sgDashboard(container, opts) {
   /* ---------------- the hero: the lead card ---------------- */
   const updatedTxt = () => {
     const t = opts.updatedAt ? new Date(opts.updatedAt) : null;
-    return [t && !isNaN(t) ? `Last updated ${t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}` : null, "Powered by ShotLink"].filter(Boolean).join(" \u00b7 ");
+    // (ShotLink only for PGA TOUR and Korn Ferry data)
+    const shotlink = !opts.entered && /^(pga|korn)/i.test(String(st.tour?.[0] ?? ""));
+    return [t && !isNaN(t) ? `Last updated ${t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}` : null, shotlink ? "Powered by ShotLink" : null].filter(Boolean).join(" \u00b7 ");
   };
   function heroBox(mine, slicedField, f) {
     const foot = el("p", { class: "hero-foot" }, updatedTxt());
@@ -442,7 +444,8 @@ export function sgDashboard(container, opts) {
       const state = getState();
       const flashMsg = (msg) => { const n = el("p", { class: "hero-pop-msg", role: "status" }, msg); body.prepend(n); setTimeout(() => n.remove(), 4000); };
       const builder = reportBuilder({ playerKey: me.key, playerLabel: me.label, canSave: !!state.isAdmin && !String(me.key).startsWith("a_"), flash: flashMsg,
-        source: opts.entered ? "entered" : "tour", minRounds: minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: tourCounts.length ? (st.tour[0] ?? null) : null });
+        source: opts.entered ? "entered" : "tour", minRounds: minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: tourCounts.length ? (st.tour[0] ?? null) : null,
+        fullField: fieldIsSummary() ? null : fieldAll }); // (the admin: everyone's rows, for ranks by distance)
       const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
       const body = el("div", { class: "hero-pop-body" }, builder.node || builder);
       const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate AI Insights" }, el("div", { class: "gx-pop hero-pop" }, [
@@ -1269,7 +1272,7 @@ export function sgDashboard(container, opts) {
 
   draw();
   return {
-    destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); if (opts.lead && opts.leadHome) { if (opts.lead.parentNode !== opts.leadHome) opts.leadHome.appendChild(opts.lead); opts.leadHome.hidden = false; } if (opts.slot && opts.slotHome) opts.slotHome.appendChild(opts.slot); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
+    destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); if (opts.lead && opts.leadHome) { if (opts.lead.parentNode !== opts.leadHome) opts.leadHome.appendChild(opts.lead); } /* (the page shows them again if nothing else draws) */ if (opts.slot && opts.slotHome) opts.slotHome.appendChild(opts.slot); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
     update(next) { if ("me" in next) meAll = next.me; if ("field" in next) fieldAll = next.field || []; draw(); },
   };
 }

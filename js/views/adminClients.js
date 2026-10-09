@@ -1,6 +1,6 @@
 // Player Access: the admin's home page.
 //   At a glance · Access codes (create + table) · Team roster · Players
-import { el, mount, formatWhen, confirmAction, num } from "../ui.js";
+import { el, mount, formatWhen, confirmAction, num, subNav } from "../ui.js";
 import { sameNamePlayers } from "../playerPicker.js";
 import { plainName } from "../names.js";
 import {
@@ -505,6 +505,7 @@ export async function render(main, { flash }) {
 
   /* ============================== Page ============================== */
   mount(main, [
+    subNav([["#/admin/clients", "Players"], ["#/admin/datasets", "Upload Data"]], "#/admin/clients"), // (Upload Data lives here)
     el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, weekBox, storageBox]),
     el("section", {}, [
       el("h2", {}, "Access codes"),

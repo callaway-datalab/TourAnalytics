@@ -53,6 +53,10 @@ export function icon(name) {
     data: "M3 16V4h2v10h12v2zM7 12V8h2v4zm4 0V5h2v7zm4 0V9h2v3z",
     doc: "M5 2h7l4 4v12H5zm6 1.5V7h3.5zM7 10h7v1.5H7zm0 3h7v1.5H7z",
     chat: "M3 4h14v10H9l-4 3v-3H3z",
+    // header icons: a word bubble (Chat), a golf bag (WITB) and a menu (Account)
+    bubble: "M4 3h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9.5L5 17.5V14H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+    bag: "M6.6 7.3h5.8v9.9a1.5 1.5 0 0 1-1.5 1.5H8.1a1.5 1.5 0 0 1-1.5-1.5zm1.6 3.4v3.4h2.6v-3.4zM6 5.2h7v1.8H6zm.9-.3V3.3a1.7 1.7 0 0 1 1.7-1.7h.8v3.3zm3.3 0V1.4h1.1l1.8 1.4-.6.9-1.1-.7v1.9zm2.9 3.2c2.3.4 3.1 3.8 1.5 6.8l-1.1-.6c1.2-2.4.7-4.5-.4-4.8z",
+    menu: "M3 5h14v2H3zm0 4h14v2H3zm0 4h14v2H3z",
     people: "M7 9a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm6 1a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zM1 17c0-3 2.5-5 6-5s6 2 6 5zm12-4.5c2.6 0 5 1.4 5 4.5h-3.5c0-1.9-.7-3.5-1.5-4.5z",
     user: "M10 10a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM3 17c0-3.5 3-5.5 7-5.5s7 2 7 5.5z",
   };
@@ -61,6 +65,7 @@ export function icon(name) {
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", paths[name] || "");
+  if (name === "bag") path.setAttribute("fill-rule", "evenodd"); // (the pocket is a cut-out)
   svg.appendChild(path);
   return svg;
 }
@@ -89,9 +94,8 @@ export function confirmAction(message) {
 const sectionsFor = (kind) => {
   const admin = kind === "admin", player = kind === "client";
   const dataItems = [
-    ["Stats", admin ? "#/admin/analyze" : "#/dashboard", admin ? ["admin-datasets", "admin-analyze"] : ["dashboard", "dataset"]],
+    ["Stats", admin ? "#/admin/analyze" : "#/dashboard", admin ? ["admin-analyze"] : ["dashboard", "dataset"]],
     ["Performance Reports", admin ? "#/admin/reports/view?cat=performance" : "#/documents", admin ? ["admin-documents", "admin-reports-view"] : ["documents"], { q: admin ? "performance" : null }],
-    ["WITB", "#/witb", ["witb"]],
     ["Live Scoring", "#/live", ["live"], { soon: true }],
     ["Add Data", "#/entry", ["entry", "entry-new", "entry-round"]],
   ];
@@ -101,11 +105,12 @@ const sectionsFor = (kind) => {
     ["Practice", "#/practice/recommendations", ["practice", "practice-recs", "practice-tracking"], { soon: true }],
   ];
   return [
-    { id: "data", label: player ? "My Data" : "Data", icon: "data", items: dataItems },
-    { id: "plan", label: player ? "My Plan" : "Planning", icon: "doc", items: planItems },
+    { id: "data", label: "Analyze", icon: "data", items: dataItems },
+    { id: "plan", label: "Play", icon: "doc", items: planItems },
   ];
 };
-const NAV = { admin: [["#/admin/clients", "people", "Player Access", ["admin-clients"]]] };
+// (Player Access also holds Upload Data for the admin)
+const NAV = { admin: [["#/admin/clients", "people", "Player Access", ["admin-clients", "admin-datasets"]]] };
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
 const itemOn = (item, routeId) => {
   const [, , routes, opt = {}] = item;
@@ -159,7 +164,7 @@ export function setUnreadCount(n) {
 /* Account button: a drop-down with your email, Questions (with the unread count) and Reset Password. */
 function accountMenu(state) {
   const email = state.user?.email || "";
-  const btn = el("button", { class: "account-btn", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }, [icon("user"), text(" Account")]);
+  const btn = el("button", { class: "account-btn hdr-icon", type: "button", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "Account", title: "Account" }, [icon("menu")]);
   const note = el("p", { class: "menu-note", role: "status", hidden: true });
   const reset = el("button", { class: "menu-item", type: "button", role: "menuitem" }, "Reset Password");
   reset.addEventListener("click", async () => {
@@ -196,7 +201,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const team = (!state.isAdmin && state.isTeam) || previewingTeam;
   window.__previewClient = previewClient || null;
   const kind = admin ? "admin" : team ? "team" : "client";
-  // top bar: (Player Access,) Data, Planning — each opens on its first page
+  // top bar: (Player Access,) Analyze, Play — each opens on its first page
   const secs = sectionsFor(kind), onSec = secs.find((sec) => sec.items.some((it) => itemOn(it, currentRoute)));
   const items = [...(admin ? NAV.admin : []), ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
@@ -213,7 +218,9 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
   // Chat (with Questions inside it) first, then Account; both look like the other header links.
   const footItems = [
-    el("a", { class: "ask-link", href: admin ? "#/admin/questions" : "#/questions", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, ["Chat", askBadge]),
+    // WITB (a golf bag) and Chat (a word bubble), then the Account menu
+    el("a", { class: "hdr-icon witb-link", href: "#/witb", "aria-label": "WITB", title: "WITB", "aria-current": currentRoute === "witb" ? "page" : null }, [icon("bag")]),
+    el("a", { class: "ask-link hdr-icon", href: admin ? "#/admin/questions" : "#/questions", "aria-label": "Chat", title: "Chat", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, [icon("bubble"), askBadge]),
     accountMenu(state),
   ];
 

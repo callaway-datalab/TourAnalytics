@@ -35,7 +35,10 @@ export async function render(main, { flash }) {
   const portalLink = el("p", { class: "center" });
   let enteredUpdated = null;
   let pickerRef = null; // the player search (so the leaderboard can pick a player)
-  const sourceHome = el("div", { class: "pill-row source-home" });
+  // (hidden while loading, so Tour Events / Entered Rounds don't flash outside the Filters panel; shown
+  // only when there's nothing to draw, so the other source can still be picked)
+  const sourceHome = el("div", { class: "pill-row source-home", hidden: true });
+  const showPills = () => { if (!sourcePills.parentNode || sourcePills.parentNode === sourceHome) { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } };
   queueMicrotask(() => { if (!sourcePills.parentNode) sourceHome.appendChild(sourcePills); });
   // the player search + portal link: placed by the dashboard under its pills (above the dropdowns);
   // when there's no dashboard (nothing to show yet) it sits here
@@ -56,7 +59,6 @@ export async function render(main, { flash }) {
   drawSource();
 
   mount(main, [
-    subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/analyze"),
     sourceHome, // the data pills sit here until the stats draw them into their one row of pills
     pickerHome,
     status,
@@ -76,10 +78,10 @@ export async function render(main, { flash }) {
   const meFrom = () => (player && fieldPlayers.find((p) => p.key === player.key)) || null;
 
   async function refresh() {
-    dash?.destroy(); dash = null;
+    dash?.destroy(); dash = null; sourceHome.hidden = true;
     if (source === "entered") return refreshEntered();
     const ds = datasets.find((d) => d.id === fileId);
-    if (!ds) { status.textContent = ""; mount(body, el("p", { class: "empty center" }, "Upload a data file to analyze.")); return; }
+    if (!ds) { status.textContent = ""; mount(body, el("p", { class: "empty center" }, "Upload a data file to analyze.")); showPills(); return; }
     const token = ++loadToken;
     mount(body, null);
     await loadAll(ds, token);
@@ -138,11 +140,12 @@ export async function render(main, { flash }) {
   // Entered Rounds shows strokes gained only for the player picked above: nothing until one is picked,
   // and a plain message when that player hasn't entered any rounds (never anyone else's numbers).
   function drawEntered() {
-    dash?.destroy(); dash = null;
+    dash?.destroy(); dash = null; sourceHome.hidden = true;
     const me = meFrom();
-    if (!player) { mount(body, el("p", { class: "empty center" }, "Pick a player above to see their entered rounds.")); return; }
+    if (!player) { mount(body, el("p", { class: "empty center" }, "Pick a player above to see their entered rounds.")); showPills(); return; }
     if (!me) {
       mount(body, el("p", { class: "empty center" }, `${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Data Entry." : "."}`));
+      showPills();
       return;
     }
     const box = el("div");
