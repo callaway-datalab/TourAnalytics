@@ -19,6 +19,10 @@ export async function render(main, { flash }) {
       const ext = f.name.toLowerCase().split(".").pop();
       if (!["csv", "parquet"].includes(ext)) { flash("Data files must be .csv or .parquet.", "error"); return; }
 
+      // A browser can't hold a CSV much over ~400 MB as text, and the whole file is read in one go.
+      const MB = 1024 * 1024;
+      if (ext === "csv" && f.size > 400 * MB) { flash(`That CSV is ${Math.round(f.size / MB).toLocaleString()} MB. A browser can only read CSVs up to about 400 MB. Save it as Parquet (much smaller), or split it (by year, say) and upload the parts.`, "error"); return; }
+      if (ext === "parquet" && f.size > 300 * MB) { flash(`That Parquet file is ${Math.round(f.size / MB).toLocaleString()} MB, more than this page can read in one go (about 300 MB). Split it (by year, say) and upload the parts.`, "error"); return; }
       submit.disabled = true; submit.textContent = "Reading file\u2026";
       try {
         let table;
@@ -29,6 +33,7 @@ export async function render(main, { flash }) {
           table = await readParquetFile(f);
         }
         const dataset = buildDataset(table, idColumn.value.trim() || "playerID");
+        table = null;
         submit.textContent = `Uploading (${dataset.byClient.size} people)\u2026`;
         // Named after the file; uploading a file with the same name replaces that data.
         const displayName = f.name.replace(/\.(csv|parquet)$/i, "");

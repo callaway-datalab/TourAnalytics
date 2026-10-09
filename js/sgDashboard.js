@@ -276,12 +276,12 @@ export function sgDashboard(container, opts) {
     const more = ["event", "roundNo", "lie", "dist", "club"].filter((k) => (st[k] || []).length).length + (Number(st.span) > 0 ? 1 : 0);
     const btn = el("button", { type: "button", class: "filters-panel-btn", "aria-expanded": open ? "true" : "false" }, [
       el("span", { class: "fp-title" }, "Filters"),
-      el("span", { class: "fp-sum" }, [src, yrs, statList.length < 2 ? def.label : "", cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
+      el("span", { class: "fp-sum" }, [src, yrs, tourCounts.length ? tourName(st.tour[0] ?? "") : "", def.label, cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
       el("span", { class: "fp-caret", "aria-hidden": "true" }, open ? "\u25B4" : "\u25BE"),
     ]);
     btn.addEventListener("click", () => { st.panelOpen = !st.panelOpen; try { localStorage.setItem("ta:filtersOpen", st.panelOpen ? "1" : "0"); } catch { /* fine */ } draw(); });
     // Stat Type sits beside the Filters button, so it's there whether the panel is open or folded
-    return el("section", { class: `filters-panel${open ? " open" : ""}` }, [el("div", { class: "fp-head" }, [btn, statSelect()]), open ? el("div", { class: "fp-body" }, [
+    return el("section", { class: `filters-panel${open ? " open" : ""}` }, [el("div", { class: "fp-head" }, [btn]), open ? el("div", { class: "fp-body" }, [
       yearsRow(opt, { cats: true }), filterBar(opt, { bare: true }),
     ]) : null]);
   }
@@ -471,15 +471,22 @@ export function sgDashboard(container, opts) {
     const lead = opts.lead && !container.closest("[hidden]") ? opts.lead : null;
     cats = cats && catsAvail.length > 1;
     const catDrop = cats ? el("div", { class: "cat-drop" }, multi("Category", "cats", catsAvail.map(([v, l]) => ({ value: v, label: l })), "All categories", { plural: "categories" })) : null;
-    return el("div", { class: "pill-row years-row stats-pills" }, [lead, yearPills(opt), tourSelect(), cats ? catPills() : null, catDrop]);
+    // two rows: data source, years and tour on top; the categories and Stat Type under them
+    const top = el("div", { class: "pill-row years-row stats-pills" }, [lead, yearPills(opt), tourPills()]);
+    const stat = statSelect();
+    const bottom = cats || stat ? el("div", { class: "pill-row stats-pills stats-row2" }, [cats ? catPills() : null, catDrop, stat]) : null;
+    return el("div", { class: "stats-rows" }, [top, bottom]);
   };
   const tourName = (t) => t || "No tour";
-  // Tour: one at a time (never mixed). A dropdown here and the "PGA: 100 rounds" buttons on the hero card.
-  function tourSelect() {
-    if (tourCounts.length < 2) return null;
-    const sel = el("select", { class: "tour-select", "aria-label": "Tour" }, tourCounts.map(([t, n]) => el("option", { value: t, selected: st.tour[0] === t }, tourName(t))));
-    sel.addEventListener("change", () => { st.tour = [sel.value]; draw(); });
-    return el("label", { class: "tour-pick" }, [el("span", {}, "Tour"), sel]);
+  // Tour: one at a time (never mixed). Pills here and the tour buttons on the hero card.
+  function tourPills() {
+    if (!tourCounts.length) return null;
+    return el("nav", { class: "subnav sg-tours", role: "radiogroup", "aria-label": "Tour" }, tourCounts.map(([t]) => {
+      const on = st.tour[0] === t;
+      const a = el("a", { href: "#", role: "radio", "aria-checked": on ? "true" : "false", "aria-current": on ? "page" : null }, tourName(t));
+      a.addEventListener("click", (e) => { e.preventDefault(); if (!on) { st.tour = [t]; draw(); } });
+      return a;
+    }));
   }
   // Stat Type: every stat found in the data on screen. The tables and charts below follow what that stat has.
   function statSelect() {

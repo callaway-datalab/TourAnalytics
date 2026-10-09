@@ -385,6 +385,11 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   const datasetId = existing.empty ? doc(collection(db, "datasets")).id : existing.docs[0].id;
   const oldClientKeys = existing.empty ? [] : existing.docs[0].data().clientKeys || [];
 
+  // How much this file takes once stored (all players' pieces), for the storage bar. Checked before anything
+  // is deleted: the free Spark plan stores 1 GiB in all, so a file that would fill most of it is refused.
+  const pieces = new Map([...dataset.byClient].map(([k, g]) => [k, chunkRows(g.rows)]));
+  const storedBytes = [...pieces.values()].flat().reduce((n, d) => n + d.length, 0);
+  if (storedBytes > 600 * 1024 * 1024) throw new UserError(`Stored, this file would take about ${Math.round(storedBytes / 1024 / 1024).toLocaleString()} MB. The free Firebase plan holds 1 GB in all (the portal's other data included), so it can't be uploaded as it is. Upload part of it (recent years, say), or move to the Blaze plan.`);
   // Clean up client data this upload no longer covers, and any stale data for clients it still covers.
   const newClientKeys = [...dataset.byClient.keys()];
   for (const key of new Set([...oldClientKeys, ...newClientKeys])) {
@@ -392,9 +397,6 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   }
 
   const ops = [];
-  // How much this file takes once stored (all players' pieces), for the storage bar.
-  const pieces = new Map([...dataset.byClient].map(([k, g]) => [k, chunkRows(g.rows)]));
-  const storedBytes = [...pieces.values()].flat().reduce((n, d) => n + d.length, 0);
   ops.push((batch) => batch.set(doc(db, "datasets", datasetId), {
     storedBytes,
     name, description: description || "", idColumn: dataset.idColumn, columns: dataset.columns,

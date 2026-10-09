@@ -289,7 +289,9 @@ async function renderNew(main, flash, viewing = null) {
   const useLink = () => { const u = linkIn.value.trim(); if (u) useCard(/^https?:\/\//i.test(u) ? u : `https://${u}`); };
   linkBtn.addEventListener("click", useLink);
   linkIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); useLink(); } });
-  const onlineBox = el("div", { class: "cc-box", hidden: !courseCardsEnabled() }, [findBtn, onlineList, el("div", { class: "cc-link" }, [linkIn, linkBtn])]);
+  // (not switched on yet: the admin sees why, everyone else just gets the photo)
+  const onlineBox = courseCardsEnabled() ? el("div", { class: "cc-box" }, [findBtn, onlineList, el("div", { class: "cc-link" }, [linkIn, linkBtn])])
+    : state.isAdmin ? el("p", { class: "muted small center cc-off" }, "Admin: finding scorecards on BlueGolf / GolfTraxx isn\u2019t switched on yet. It needs the course-card proxy (functions/course-card/worker.js) and its address as courseCardUrl in config.js.") : null;
   // the photo: a last resort when the card is online (open straight away when online lookup isn't set up)
   const photoMore = el("details", { class: "photo-more", open: !courseCardsEnabled() }, [
     el("summary", {}, courseCardsEnabled() ? "Can\u2019t find it online? Read a photo of the card" : "Read a photo of the card"), photoBtn, tapBtn]);
