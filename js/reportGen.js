@@ -322,7 +322,7 @@ const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ?
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
 // This file's build. It must match main.js?v= in index.html (bumped with every update): when it doesn't, the
 // browser is still running an older copy of this file, so the report isn't made (it would have old fixes missing).
-export const REPORT_BUILD = "125";
+export const REPORT_BUILD = "126";
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -334,7 +334,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   let page = 1, y = 0;
   const footer = () => {
     d.line(M, H - 34, M + W, H - 34, { color: P.hair, width: 0.5 });
-    cap(`Tour Analytics  \u00b7  Build ${REPORT_BUILD}${a.shotlink ? "  \u00b7  Powered by ShotLink" : ""}`, M, H - 20, P.faint); // (ShotLink: PGA TOUR / Korn Ferry data only)
+    cap(a.shotlink ? "Tour Analytics  \u00b7  Powered by ShotLink" : "Tour Analytics", M, H - 20, P.faint); // (ShotLink: PGA TOUR / Korn Ferry data only)
     cap(`${a.me.label}  \u00b7  Page ${page}`, M + W, H - 20, P.faint, "right");
   };
   const newPage = () => { footer(); d.addPage(); page++; y = 46; };
@@ -552,7 +552,6 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         } else if (t.viz === "dots") {
           const n = Math.min(nb.n, 12), r = Math.min(4.5, vw / (n * 2.6)), stepX = vw / n;
           for (let k = 0; k < n; k++) d.dot(vx + stepX * (k + 0.5), vy + 16, r, k < Math.min(t.v, n) ? P.goldLight : "#3a3a3c");
-          d.text(`longest of ${nb.n}`, vx + vw, vy + 36, { size: 7.5, color: "#8e8e93", align: "right" });
         } else if (t.viz === "pair") {
           const mine = t.v.now ?? 0, best = t.v.bestV, mx = Math.max(Math.abs(mine), Math.abs(best), 0.01);
           for (const [j, v, lab, col] of [[0, mine, "Now", "#8e8e93"], [1, best, "Peak", P.goldLight]]) {
