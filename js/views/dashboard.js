@@ -1,4 +1,4 @@
-import { el, mount } from "../ui.js";
+import { el, mount, relocateSectionNav } from "../ui.js";
 import { getState } from "../auth.js";
 import { watchClientDatasets, getDatasetRows, getFieldStats } from "../store.js";
 import { detectColumns, isShotData, prepare, summaryPlayers } from "../sg.js";
@@ -45,7 +45,7 @@ export async function render(main, { previewClient, flash }) {
   if (previewClient?.self) lastSource = "entered";
   let tourDashNow = null;
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
-  const viewHost = el("div", { class: "view-host" }); // Basic / Advanced, right under the data pills
+  const viewHost = el("div", { class: "view-host" }); // (kept empty: Basic / Advanced was here)
   const drawSource = () => {
     tourBox.hidden = lastSource !== "tour";
     enteredBox.hidden = lastSource !== "entered";
@@ -61,7 +61,11 @@ export async function render(main, { previewClient, flash }) {
     }));
   };
   const sourceHome = el("div", { class: "pill-row source-home" }, sourcePills); // lent to the stats' one row of pills
-  mount(main, [teamPlayerSelect(previewClient, "/dashboard"), sourceHome, tourBox, enteredBox]);
+  // a coach's player dropdown: the Stats / Performance Reports / … row goes under it (as on the admin's Stats)
+  const picker = teamPlayerSelect(previewClient, "/dashboard");
+  const secHome = el("div", { class: "sec-home" });
+  mount(main, [picker, picker ? secHome : null, sourceHome, tourBox, enteredBox]);
+  const undoTop = picker ? relocateSectionNav(main, secHome) : () => {};
   drawSource();
 
   let current = null;       // id of the file on screen
@@ -137,7 +141,7 @@ export async function render(main, { previewClient, flash }) {
   let enteredDash = null;
   const enteredState = {};
   const unsubEntered = watchPlayerRounds(clientKey, (rounds) => {
-    const players = enteredPlayers(rounds, () => "");
+    const players = enteredPlayers(rounds, () => "", { withQuick: true });
     const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
     const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
     enteredDash?.destroy(); enteredDash = null;
@@ -152,5 +156,5 @@ export async function render(main, { previewClient, flash }) {
       note: "Entered rounds: strokes gained is measured against the scoring-average baseline by lie and distance." });
   });
 
-  return () => { unsub(); stopDataset(); unsubEntered(); unsubTable(); enteredDash?.destroy(); };
+  return () => { unsub(); stopDataset(); unsubEntered(); unsubTable(); enteredDash?.destroy(); undoTop(); };
 }

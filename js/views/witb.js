@@ -1,7 +1,7 @@
-// WITB (Account → WITB): every club you've ever played, and your bag.
+// WITB: every club you've ever played, and your bag.
 //   Add a club at the top. Tap a club in the list to put it in (or take it out of) your bag: clubs in the
 //   bag are highlighted and listed under "Your bag" at the bottom (up to 14). Each club shows how many
-//   entered rounds it was used in and its average strokes gained per shot.
+//   entered rounds it was used in, its attempts a round and its strokes gained per attempt.
 // Your bag becomes the Club choice on each shot in Data Entry.
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
@@ -23,20 +23,22 @@ export async function render(main, { flash }) {
     catch { status.textContent = "Not saved \u2014 check your connection"; }
   };
 
-  // Rounds used and average strokes gained per shot, from your entered rounds.
-  const usage = (c) => {
-    let used = 0, sg = 0, n = 0;
+  // Rounds used, shots (attempts) and strokes gained per attempt, from your entered rounds. Several clubs
+  // together (an iron set): rounds where any of them was used, and all their shots.
+  const usage = (clubs) => {
+    clubs = [].concat(clubs);
+    let used = 0, sg = 0, n = 0, shots = 0;
     for (const r of rounds) {
       let inRound = false;
       for (const strokes of Object.values(r.shots || {})) for (const st of strokes || []) {
-        if (!shotUsesClub(st, c)) continue;
-        inRound = true;
+        if (!clubs.some((c) => shotUsesClub(st, c))) continue;
+        inRound = true; shots++;
         const v = strokesGained(st);
         if (v != null) { sg += v; n++; }
       }
       if (inRound) used++;
     }
-    return { used, avg: n ? sg / n : null };
+    return { used, shots, perRound: used ? shots / used : null, avg: n ? sg / n : null };
   };
 
   /* ---------- add a club (or, for irons and wedges, a whole set) ---------- */
@@ -162,37 +164,95 @@ export async function render(main, { flash }) {
     draw(); save();
   };
   const sorted = (list) => [...list].sort((a, b) => clubRank(clubLabel(a)) - clubRank(clubLabel(b)) || clubMake(a).localeCompare(clubMake(b)));
+  // "All your clubs", grouped by club type (Driver, Fairway Wood, Hybrid, Iron, Wedge, Putter). Irons of the same
+  // brand and model are a set, shown as one row that opens to its clubs. Where you have more than one of the same
+  // club (two drivers, two 7-irons), a champagne star marks the one with the best SG / Attempt.
+  const GROUP_NAMES = { Driver: "Drivers", "Fairway Wood": "Fairway woods", Hybrid: "Hybrids", Iron: "Irons", Wedge: "Wedges", Putter: "Putters" };
+  let openSets = new Set();
+  try { openSets = new Set(JSON.parse(localStorage.getItem("ta:witbOpenSets") || "[]")); } catch { /* fine */ }
+  const keepOpenSets = () => { try { localStorage.setItem("ta:witbOpenSets", JSON.stringify([...openSets])); } catch { /* fine */ } };
+  const sameKind = (c) => (c.cat === "Driver" || c.cat === "Putter" ? c.cat : clubLabel(c)); // "the same club": any driver; otherwise the same club (7i, 56° wedge)
+  const fmtAtt = (v) => (v == null ? "\u2014" : (Math.round(v * 10) / 10).toFixed(1));
+  const sgCell = (v) => el("td", { class: "num c-sg", style: v == null ? "" : `color:${sgColor(v)}` }, v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(3)}`);
+  function clubRow(c, use, star, inSet = false) {
+    const on = inBag.includes(c.id);
+    if (editing === c.id) return editRow(c);
+    const edit = el("button", { type: "button", class: "link club-edit-btn", "aria-label": `Edit ${clubLabel(c)}` }, "Edit");
+    edit.addEventListener("click", (e) => { e.stopPropagation(); editing = c.id; draw(); });
+    const del = el("button", { type: "button", class: "entry-del", "aria-label": `Remove ${clubLabel(c)} from your list`, title: "Remove from list" }, "\u2715");
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!confirmAction(`Remove ${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} from your list? Shots already entered with it keep it.`)) return;
+      library = library.filter((x) => x.id !== c.id); inBag = inBag.filter((id) => id !== c.id); draw(); save();
+    });
+    const starEl = star ? el("span", { class: "club-star", title: `Best SG / Attempt of your ${c.cat === "Driver" || c.cat === "Putter" ? GROUP_NAMES[c.cat].toLowerCase() : clubLabel(c)}s`, "aria-label": "Best SG per attempt" }, "\u2605") : null;
+    const make = clubMake(c);
+    const tr = el("tr", { class: "club-row" + (on ? " in-bag" : "") + (inSet ? " in-set" : ""), tabindex: "0", role: "button", "aria-pressed": on ? "true" : "false",
+      title: on ? "In your bag. Tap to take it out." : "Tap to put it in your bag." }, [
+      el("td", { class: "c-club" }, [el("strong", {}, clubLabel(c)), on ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null,
+        make ? el("span", { class: "mobile-make" }, [make, starEl ? " " : null, starEl ? starEl.cloneNode(true) : null]) : null, // brand / model under the name on phones
+        c.note ? el("span", { class: "club-note" }, c.note) : null]),
+      el("td", { class: "c-make" }, make ? [make, starEl ? " " : null, starEl] : el("span", { class: "muted" }, "\u2014")),
+      el("td", { class: "num c-rounds" }, String(use.used)),
+      el("td", { class: "num c-att" }, fmtAtt(use.perRound)),
+      sgCell(use.avg),
+      el("td", { class: "actions" }, [edit, del]),
+    ]);
+    tr.addEventListener("click", () => toggle(c));
+    tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(c); } });
+    return tr;
+  }
   function draw() {
-    mount(listBox, library.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain club-table" }, [
-      el("thead", {}, el("tr", {}, ["Club", "Brand / model", "Note", "Rounds", "Avg SG", ""].map((h) => el("th", { class: ["Rounds", "Avg SG"].includes(h) ? "num" : "" }, h)))),
-      el("tbody", {}, sorted(library).map((c) => {
-        const on = inBag.includes(c.id);
-        const u = usage(c);
-        if (editing === c.id) return editRow(c);
-        const edit = el("button", { type: "button", class: "link club-edit-btn", "aria-label": `Edit ${clubLabel(c)}` }, "Edit");
-        edit.addEventListener("click", (e) => { e.stopPropagation(); editing = c.id; draw(); });
-        const del = el("button", { type: "button", class: "entry-del", "aria-label": `Remove ${clubLabel(c)} from your list`, title: "Remove from list" }, "\u2715");
-        del.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (!confirmAction(`Remove ${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} from your list? Shots already entered with it keep it.`)) return;
-          library = library.filter((x) => x.id !== c.id); inBag = inBag.filter((id) => id !== c.id); draw(); save();
-        });
-        const tr = el("tr", { class: "club-row" + (on ? " in-bag" : ""), tabindex: "0", role: "button", "aria-pressed": on ? "true" : "false",
-          title: on ? "In your bag. Tap to take it out." : "Tap to put it in your bag." }, [
-          el("td", {}, [el("strong", {}, clubLabel(c)), on ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null,
-            clubMake(c) ? el("span", { class: "mobile-make" }, clubMake(c)) : null,
-            c.yards ? el("span", { class: "mobile-make shaft-line" }, `Stock ${c.yards} yds`) : null,
-            shaftText(c) ? el("span", { class: "mobile-make shaft-line" }, shaftText(c)) : null]), // brand / model (stock yardage, shaft) under the name on phones
-          el("td", {}, [clubMake(c) || el("span", { class: "muted" }, "\u2014"), c.yards ? el("span", { class: "shaft-line" }, `Stock: ${c.yards} yds`) : null, shaftText(c) ? el("span", { class: "shaft-line" }, `Shaft: ${shaftText(c)}`) : null]),
-          el("td", { class: "muted" }, c.note || ""),
-          el("td", { class: "num" }, String(u.used)),
-          el("td", { class: "num", style: u.avg == null ? "" : `color:${sgColor(u.avg)}` }, u.avg == null ? "\u2014" : fmtSG(u.avg)),
-          el("td", { class: "actions" }, [edit, del]),
+    const use = new Map(library.map((c) => [c.id, usage(c)]));
+    // the star: per kind of club, the best SG / Attempt when at least two of them have one
+    const starred = new Set();
+    const kinds = new Map();
+    for (const c of library) { const k = sameKind(c); if (!kinds.has(k)) kinds.set(k, []); kinds.get(k).push(c); }
+    for (const list of kinds.values()) {
+      const rated = list.filter((c) => use.get(c.id).avg != null);
+      if (list.length < 2 || rated.length < 2) continue;
+      const best = rated.reduce((a, b) => (use.get(b.id).avg > use.get(a.id).avg ? b : a));
+      // (a tie at the three decimals shown: no star)
+      if (!rated.some((c) => c !== best && Math.round(use.get(c.id).avg * 1000) === Math.round(use.get(best.id).avg * 1000))) starred.add(best.id);
+    }
+    const rows = [];
+    for (const cat of CLUB_CATS) {
+      const list = sorted(library.filter((c) => c.cat === cat));
+      if (!list.length) continue;
+      rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "6", scope: "colgroup" }, [GROUP_NAMES[cat] || cat, el("span", { class: "club-group-n" }, ` ${list.length}`)])));
+      if (cat !== "Iron") { for (const c of list) rows.push(clubRow(c, use.get(c.id), starred.has(c.id))); continue; }
+      // irons: a set is two or more irons of the same brand and model
+      const bySet = new Map();
+      for (const c of list) { const k = clubMake(c).toLowerCase(); if (!bySet.has(k)) bySet.set(k, []); bySet.get(k).push(c); }
+      const done = new Set();
+      for (const c of list) {
+        const k = clubMake(c).toLowerCase(), set = bySet.get(k);
+        if (!k || set.length < 2) { rows.push(clubRow(c, use.get(c.id), starred.has(c.id))); continue; }
+        if (done.has(k)) continue;
+        done.add(k);
+        const open = openSets.has(k), u = usage(set), nBag = set.filter((x) => inBag.includes(x.id)).length;
+        const range = set.length > 1 ? `${clubLabel(set[0])}\u2013${clubLabel(set[set.length - 1])}` : clubLabel(set[0]);
+        const tr = el("tr", { class: `club-set${open ? " open" : ""}${nBag ? " has-bag" : ""}`, tabindex: "0", role: "button", "aria-expanded": open ? "true" : "false",
+          title: open ? "Close the set" : "Show the clubs in this set" }, [
+          el("td", { class: "c-club" }, [el("span", { class: "set-caret", "aria-hidden": "true" }, open ? "\u25BE" : "\u25B8"), el("strong", {}, `${range} set`),
+            el("span", { class: "mobile-make" }, clubMake(set[0])), el("span", { class: "club-note" }, `${set.length} clubs${nBag ? ` \u00b7 ${nBag} in bag` : ""}`)]),
+          el("td", { class: "c-make" }, clubMake(set[0])),
+          el("td", { class: "num c-rounds" }, String(u.used)),
+          el("td", { class: "num c-att" }, fmtAtt(u.perRound)),
+          sgCell(u.avg),
+          el("td", { class: "actions" }),
         ]);
-        tr.addEventListener("click", () => toggle(c));
-        tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(c); } });
-        return tr;
-      })),
+        const flip = () => { if (open) openSets.delete(k); else openSets.add(k); keepOpenSets(); draw(); };
+        tr.addEventListener("click", flip);
+        tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+        rows.push(tr);
+        if (open) for (const x of set) rows.push(clubRow(x, use.get(x.id), starred.has(x.id), true));
+      }
+    }
+    mount(listBox, library.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain club-table" }, [
+      el("thead", {}, el("tr", {}, [["Club", ""], ["Brand / model", "c-make"], ["Rounds", "num c-rounds"], ["Attempts / Round", "num c-att"], ["SG / Attempt", "num c-sg"], ["", ""]].map(([h, cls]) =>
+        el("th", { class: cls }, h === "Attempts / Round" ? [el("span", { class: "long" }, h), el("span", { class: "short" }, "Att / Rd")] : h === "SG / Attempt" ? [el("span", { class: "long" }, h), el("span", { class: "short" }, "SG / Att")] : h)))),
+      el("tbody", {}, rows),
     ])) : el("p", { class: "empty" }, "No clubs yet. Add the clubs you play above."));
     const bag = sorted(inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean));
     mount(bagBox, bag.length ? el("ul", { class: "bag-chips" }, bag.map((c) => {

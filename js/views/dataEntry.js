@@ -13,6 +13,7 @@ import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "
 import { detectCardGrid, gridValues, splitRow } from "../cardGrid.js";
 import { tesseractEngine } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
+import { courseCardsEnabled, searchCourseCards, loadCourseCard, sourceOf } from "../courseCard.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { parseShots, golfFix, golfScore } from "../voiceShots.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
@@ -228,9 +229,70 @@ async function renderNew(main, flash, viewing = null) {
         holes = blankHoles(holesCount).map((h, i) => ({ ...h, ...(c.holes[i] || {}), n: i + 1 }));
         drawCount(); drawGrid();
         photoStatus.textContent = `Scorecard filled from your round here on ${c.date}. Check it's the same tees.`;
-      }
+      } else setTimeout(() => findOnline({ auto: true }), 0); // a new course: look for its scorecard online
     },
   });
+  // typed a course without picking from the list: look it up when you move on
+  course.addEventListener("change", () => setTimeout(() => findOnline({ auto: true }), 250));
+
+  /* --- the scorecard from BlueGolf or GolfTraxx: tried first; a photo of the card is the fallback --- */
+  const onlineList = el("div", { class: "cc-list", role: "list" });
+  const linkIn = el("input", { type: "url", inputmode: "url", autocomplete: "off", placeholder: "Paste a BlueGolf or GolfTraxx scorecard link", "aria-label": "BlueGolf or GolfTraxx scorecard link" });
+  const linkBtn = el("button", { type: "button", class: "btn ghost" }, "Use link");
+  const findBtn = el("button", { type: "button", class: "btn ghost entry-big cc-find" }, "\uD83D\uDD0E  Find the scorecard online");
+  let searchedFor = "", lookToken = 0;
+  const openPhoto = () => { photoMore.open = true; };
+  function applyCard(card) {
+    if (card.holes && card.holes !== holesCount) {
+      holesCount = card.holes;
+      holes = blankHoles(holesCount).map((h, i) => ({ ...h, ...(holes[i] || {}), n: i + 1 }));
+      drawCount();
+    }
+    cardTees = [];
+    teeSelect.value = "";
+    return applyRead(card);
+  }
+  async function useCard(url, title = "") {
+    const src = sourceOf(url);
+    if (!src) { photoStatus.textContent = "That link isn't a BlueGolf or GolfTraxx page."; return; }
+    const token = ++lookToken;
+    photoStatus.textContent = `Reading the scorecard from ${src}\u2026`;
+    const card = await loadCourseCard(url).catch(() => ({ found: 0 }));
+    if (token !== lookToken) return;
+    onlineList.querySelectorAll(".cc-item").forEach((b) => b.classList.toggle("on", b.dataset.url === url));
+    if (!card.found) { photoStatus.textContent = `Couldn't read a scorecard on that ${src} page. Pick another result, paste a link, or read a photo of the card.`; openPhoto(); return; }
+    const found = applyCard(card);
+    photoStatus.textContent = `Filled in ${found} boxes from ${src}${title ? ` (${title})` : ""}.${cardTees.length > 1 ? " Pick your tees below." : ""} Check the numbers against the card.${card.notes?.length ? ` ${card.notes.join(" ")}` : ""}`;
+  }
+  async function findOnline({ auto = false } = {}) {
+    if (!courseCardsEnabled()) return;
+    const name = course.value.trim();
+    if (!name) { if (!auto) { photoStatus.textContent = "Enter the course first."; course.focus(); } return; }
+    if (auto && (searchedFor === name || holes.some((h) => h.par))) return; // (already looked, or the card is filled)
+    searchedFor = name;
+    const token = ++lookToken;
+    photoStatus.textContent = "Looking for the scorecard on BlueGolf and GolfTraxx\u2026";
+    mount(onlineList, null);
+    let results = [];
+    try { results = await searchCourseCards(name, locationIn.value.trim()); }
+    catch { if (token === lookToken) { photoStatus.textContent = "Couldn't search for the scorecard right now. Paste a link, or read a photo of the card."; openPhoto(); } return; }
+    if (token !== lookToken) return;
+    if (!results.length) { photoStatus.textContent = `No scorecard for \u201c${name}\u201d on BlueGolf or GolfTraxx. Paste a link if you have one, or read a photo of the card.`; openPhoto(); return; }
+    mount(onlineList, [el("p", { class: "muted small cc-head" }, results.length > 1 ? "Not the right course? Pick another:" : "Found:"), ...results.slice(0, 6).map((r) => {
+      const b = el("button", { type: "button", class: "cc-item", role: "listitem", "data-url": r.url }, [el("span", { class: "cc-title" }, r.title || r.url), el("span", { class: "cc-src" }, r.source)]);
+      b.addEventListener("click", () => useCard(r.url, r.title));
+      return b;
+    })]);
+    await useCard(results[0].url, results[0].title); // the best match straight away
+  }
+  findBtn.addEventListener("click", () => findOnline());
+  const useLink = () => { const u = linkIn.value.trim(); if (u) useCard(/^https?:\/\//i.test(u) ? u : `https://${u}`); };
+  linkBtn.addEventListener("click", useLink);
+  linkIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); useLink(); } });
+  const onlineBox = el("div", { class: "cc-box", hidden: !courseCardsEnabled() }, [findBtn, onlineList, el("div", { class: "cc-link" }, [linkIn, linkBtn])]);
+  // the photo: a last resort when the card is online (open straight away when online lookup isn't set up)
+  const photoMore = el("details", { class: "photo-more", open: !courseCardsEnabled() }, [
+    el("summary", {}, courseCardsEnabled() ? "Can\u2019t find it online? Read a photo of the card" : "Read a photo of the card"), photoBtn, tapBtn]);
 
   // Read the photo: pars, handicaps and every tee row (each tee goes in the Tees dropdown).
   // (window.__scorecardEngine lets a test supply the text reader.)
@@ -418,8 +480,9 @@ async function renderNew(main, flash, viewing = null) {
     el("section", { class: "entry-section" }, [
       el("h2", {}, "Scorecard"),
       countPills,
-      photoBtn,
+      onlineBox,
       photoStatus,
+      photoMore,
       el("label", { class: "tees-label" }, ["Tees", teesBox]),
       el("p", { class: "muted center small" }, "or tap in each hole's par, yardage and handicap:"),
       el("div", { class: "card-head" }, [el("span", {}, "#"), el("span", {}, "Par"), el("span", {}, "Yards"), el("span", {}, "Hcp")]),

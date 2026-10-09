@@ -13,7 +13,8 @@ const ALIASES = {
   // The stats file: player / playerID / year / date / tour / tournament / round / category / distance / lie /
   // stat type / stat value / attempts. "stat type" is "strokes gained" (value per attempt) or a round stat
   // such as "driving distance" or "hit fwy %". Tours other than the PGA TOUR have "null" distance and lie.
-  statType: ["stattype", "statname", "metric"],
+  statType: ["stattype", "statname", "metric", "stat"],
+  successes: ["successes", "success"],
   statValue: ["statvalue", "statval", "metricvalue"],
   tour: ["tour", "tourname", "league"],
   category: ["category", "shotcategory", "sgcategory", "shottype"],
@@ -87,7 +88,7 @@ export const isShotData = (idx) => (idx.statType !== undefined && idx.statValue 
 /** A round stat's key from its "stat type" (driving distance → drive, hit fwy % → fwy …); null = strokes gained. */
 const SG_TYPES = ["strokesgained", "sg", "strokesgainedattempt", "strokesgainedperattempt", "sgperattempt"];
 const STAT_TYPES = {
-  drive: ["drivingdistance", "drivedistance", "avgdrivingdistance", "driving"],
+  drive: ["drivingdistance", "drivedistance", "avgdrivingdistance", "driving", "drivingdistanceyds"],
   fwy: ["hitfwy", "hitfairway", "fairwayshit", "fairwayhit", "fwy", "fwyhit", "drivingaccuracy", "fairways"],
   gir: ["gir", "greensinregulation", "hitgir", "girpct"],
   hitGreen: ["hitgreen", "greenshit", "hitgreenpct"],
@@ -97,14 +98,84 @@ const STAT_TYPES = {
   ud: ["updown", "upanddown", "updownpct", "scrambling"],
   birdie: ["birdiepct", "birdie", "birdiepercentage", "birdies"],
   bogey: ["bogeyavoidance", "bogey"],
-  prox: ["proximity", "approachproximity", "proximityft", "proximitytohole"],
+  prox: ["proximity", "approachproximity", "proximityft", "proximitytohole", "avgproximity"],
+  make: ["make", "makepct", "puttsmade", "makepercentage", "puttmake"],
+  scramble: [],
+  parOrBetter: ["parorbetter", "parorbetterpct"],
+  pinHigh: ["pinhigh", "pinhighpct"],
+  onLine: ["online", "onlinepct"],
+  goodLag: ["goodlag", "goodlagpct", "lag"],
+  eagles: ["eaglesround", "eaglesperround"],
+  birdiesRd: ["birdiesround", "birdiesperround"],
+  parsRd: ["parsround", "parsperround"],
+  bogeysRd: ["bogeysround", "bogeysperround"],
+  dblBogeysRd: ["dblbogeysround", "doublebogeysround", "dblbogeysperround", "doublebogeysperround", "doublebogeyorworseround"],
   owgr: ["owgr", "worldranking"],
 };
+// ("up & down" and "scrambling" mean the same thing in most files, so a "scrambling" stat type stays with Up & Down)
+
+/**
+ * Every stat the Stats page can show, in the order the Stat Type dropdown lists them. A stat only appears
+ * when the loaded data has it. pct: a percentage; higher: true = more is better, false = less is better,
+ * null = neither (ranked highest first, no better / worse colouring). help: what it means, under the dropdown.
+ */
+export const STAT_DEFS = {
+  sg: { label: "Strokes Gained", higher: true, dp: 2, help: "Strokes gained against the baseline, per round." },
+  scoring: { label: "Scoring Avg", higher: false, dp: 2, help: "Strokes per 18 holes. Lower is better." },
+  eagles: { label: "Eagles / Round", higher: true, dp: 2, help: "Eagles (or better) per round." },
+  birdiesRd: { label: "Birdies / Round", higher: true, dp: 2, help: "Birdies per round." },
+  parsRd: { label: "Pars / Round", higher: null, dp: 2, help: "Pars per round. Not marked better or worse (fewer pars can mean more birdies)." },
+  bogeysRd: { label: "Bogeys / Round", higher: false, dp: 2, help: "Bogeys per round. Lower is better." },
+  dblBogeysRd: { label: "Double Bogeys / Round", higher: false, dp: 2, help: "Double bogeys (or worse, as the data file counts them) per round. Lower is better." },
+  birdie: { label: "Birdie %", pct: true, higher: true, help: "Holes played in birdie or better." },
+  parOrBetter: { label: "Par or Better %", pct: true, higher: true, help: "Holes played in par or better." },
+  bogey: { label: "Bogey Avoidance", pct: true, higher: false, help: "Holes with bogey or worse, as a percentage (the PGA TOUR measure). Lower is better." },
+  gir: { label: "GIR %", pct: true, higher: true, help: "Greens hit in regulation." },
+  scramble: { label: "Scrambling %", pct: true, higher: true, help: "Missed the green in regulation and still made par or better." },
+  putts: { label: "Putts / Round", higher: false, dp: 2, help: "Putts per 18 holes. Lower is better." },
+  fwy: { label: "Hit Fairway %", pct: true, higher: true, help: "Tee shots on par 4s and 5s that finished in the fairway." },
+  drive: { label: "Driving Distance", unit: " yds", dp: 1, higher: true, help: "Average tee shot distance in yards." },
+  hitGreen: { label: "Hit Green %", pct: true, higher: true, help: "Approach and around-the-green shots that finished on the green (or in the hole)." },
+  pinHigh: { label: "Pin-High %", pct: true, higher: true, help: "Shots that finished pin high, as the data file counts them." },
+  onLine: { label: "On-Line %", pct: true, higher: true, help: "Shots that finished on line with the hole, as the data file counts them." },
+  prox: { label: "Proximity", unit: " ft", dp: 1, higher: false, help: "Average distance from the hole, in feet, for shots that finished on the green (holed = 0). Lower is better." },
+  ud: { label: "Up & Down %", pct: true, higher: true, help: "From the first shot around the green, holed out in two strokes or fewer." },
+  make: { label: "Make %", pct: true, higher: true, help: "Putts holed." },
+  goodLag: { label: "Good Lag %", pct: true, higher: true, help: "Long putts left close enough for an easy next putt, as the data file counts them." },
+  threePutt: { label: "3-Putt Avoidance", pct: true, higher: false, help: "Holes with three or more putts, as a percentage (the PGA TOUR measure). Lower is better." },
+  owgr: { label: "OWGR", higher: false, dp: 0, help: "Official World Golf Ranking. Lower is better." },
+};
+const STAT_ORDER = Object.keys(STAT_DEFS);
+const xLabels = new Map(); // "x:<squashed>" -> the stat type as written in the file, for stats we don't know
+/** A stat's definition (a stat type we don't know gets its name from the file, with no better / worse). */
+export function statDef(key) {
+  if (STAT_DEFS[key]) return { key, ...STAT_DEFS[key] };
+  const raw = xLabels.get(key) || String(key).replace(/^x:/, "");
+  const pct = /%|pct|percent/i.test(raw);
+  const label = raw.replace(/\b([a-z])/g, (m) => m.toUpperCase());
+  return { key, label, pct, higher: null, dp: 2, help: "From the data file. Higher and lower aren't marked better or worse." };
+}
+/** Format a stat value (\u2014 for none). */
+export function fmtStat(def, v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "\u2014";
+  if (def.key === "sg") return fmtSG(v);
+  if (def.pct) return `${(Math.round(v * 10) / 10 || 0).toFixed(1)}%`;
+  const dp = def.dp ?? 1, r = Math.round(v * 10 ** dp) / 10 ** dp || 0;
+  return `${r.toFixed(dp)}${def.unit || ""}`;
+}
+/** The stats present in some rounds (prepared or from the field summary), in dropdown order. */
+export function statsIn(roundLists) {
+  const seen = new Set();
+  for (const rounds of roundLists) for (const rd of rounds) {
+    if (rd.has) { for (const k of rd.has) seen.add(k); } else if (rd.shots?.length) seen.add("sg");
+  }
+  return [...STAT_ORDER.filter((k) => seen.has(k)), ...[...seen].filter((k) => !STAT_DEFS[k]).sort()];
+}
 // Rows repeat the same few values (categories, stat types, lies), so each answer is worked out once per value.
 const memo = (fn) => { const m = new Map(); return (v) => { if (m.has(v)) return m.get(v); const r = fn(v); if (m.size < 20000) m.set(v, r); return r; }; };
 const statKeyOf = (t) => statKeyMemo(t);
-const statKeyOfRaw = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; return `x:${q}`; };
-const isNullRaw = (v) => v === null || v === undefined || v === "" || squash(v) === "null" || squash(v) === "na";
+const statKeyOfRaw = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; if (!xLabels.has(`x:${q}`)) xLabels.set(`x:${q}`, String(t).trim()); return `x:${q}`; };
+const isNullRaw = (v) => v === null || v === undefined || v === "" || ["null", "na", "nan", "none"].includes(squash(v));
 const isNullMemo = memo(isNullRaw);
 const isNull = (v) => (v === null || v === undefined || v === "" ? true : isNullMemo(v));
 const statKeyMemo = memo((t) => statKeyOfRaw(t));
@@ -135,28 +206,36 @@ const lead = (s) => { const m = String(s).match(/-?\d+(\.\d+)?/); return m ? Num
 /** Turn one player's rows into shots grouped by round, oldest round first. */
 export function prepare(rows, idx) {
   const get = (r, f) => (idx[f] === undefined ? null : r[idx[f]]);
+  const shotCols = ["onGreen", "proximity", "upDown", "holeOut", "hitFwy", "missDir", "driveDist"].some((f) => idx[f] !== undefined);
   const rounds = new Map();
   const roundOf = (r) => {
     const date = get(r, "date") ?? "", event = get(r, "event") ?? "", rnd = get(r, "round") ?? "";
-    const key = idx.round !== undefined && isNaN(Number(rnd)) ? String(rnd) : `${date}|${event}|${rnd}`;
+    const key = idx.round !== undefined && !isNull(rnd) && isNaN(Number(rnd)) ? String(rnd) : `${date}|${event}|${isNull(rnd) ? "" : rnd}`;
     if (!rounds.has(key)) {
       const d = new Date(date);
       const year = get(r, "year") ?? (isNaN(d) ? "" : d.getFullYear());
       const tour = idx.tour !== undefined && !isNull(get(r, "tour")) ? String(get(r, "tour")) : "";
-      rounds.set(key, { key, date: String(date), event: String(event), roundNo: isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, shots: [] });
+      // A row with no round number covers the whole tournament (e.g. Birdies / Round over its rounds): an "event" round.
+      const noRound = idx.round !== undefined && isNull(rnd);
+      rounds.set(key, { key, date: String(date), event: String(event), roundNo: noRound || isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, shots: [], ...(noRound ? { eventLevel: true } : {}) });
     }
     return rounds.get(key);
   };
   for (const r of rows) {
     // the stats file: a round stat (driving distance, hit fwy % …) is kept on its round
+    // (any other stat keeps its category, distance and lie, so it can be split the same way as strokes gained)
     let statKey = null;
     if (idx.statType !== undefined) {
       statKey = statKeyOf(get(r, "statType"));
       if (statKey) {
-        const v = num(get(r, "statValue"));
+        const aw = idx.attempts !== undefined ? num(get(r, "attempts")) : null;
+        let v = num(get(r, "statValue"));
+        if (v === null && idx.successes !== undefined) { const sc = num(get(r, "successes")); if (sc !== null && aw) v = sc / aw; } // successes ÷ attempts
         if (v === null) continue;
-        const rd = roundOf(r); rd.stats ||= {};
-        const prev = rd.stats[statKey]; rd.stats[statKey] = prev == null ? v : (prev + v) / 2;
+        const lie = get(r, "lie"), dist = get(r, "distanceRange");
+        const rd = roundOf(r);
+        (rd.obs ||= []).push({ k: statKey, cat: catMemo(get(r, "category")), lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
+          v, w: aw !== null && aw > 0 ? aw : 1, file: true });
         continue;
       }
     }
@@ -167,12 +246,106 @@ export function prepare(rows, idx) {
     const sg = per !== null && w !== null ? per * w : num(get(r, "sg"));
     if (!cat || sg === null || w === null || w <= 0) continue;
     const lie = get(r, "lie"), dist = get(r, "distanceRange"), club = get(r, "club");
-    roundOf(r).shots.push({ cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
-      club: club == null || club === "" ? null : String(club), clubCat: club == null || club === "" ? null : clubMemo(String(club)) });
+    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
+      club: club == null || club === "" ? null : String(club), clubCat: club == null || club === "" ? null : clubMemo(String(club)) };
+    const rd = roundOf(r);
+    rd.shots.push(shot);
+    if (shotCols) shotObs(rd, shot, r, idx);
   }
   const list = [...rounds.values()];
+  for (const rd of list) {
+    rd.obs ||= [];
+    rd.has = new Set(rd.obs.map((o) => o.k));
+    if (rd.shots.length) rd.has.add("sg");
+  }
+  // A percentage written as a fraction (0.62) shows as 62%: per stat, when none of this player's values is above 1.
+  const fracKeys = new Set(), over = new Set();
+  for (const rd of list) for (const o of rd.obs) if (o.file && statDef(o.k).pct) { fracKeys.add(o.k); if (Math.abs(o.v) > 1.0001) over.add(o.k); }
+  for (const k of fracKeys) if (!over.has(k)) for (const rd of list) for (const o of rd.obs) if (o.k === k) o.v *= 100;
   if (idx.date !== undefined) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
   return list;
+}
+
+/** Shot-by-shot files: the per-shot columns (hit green, proximity, up & down, holed, fairway, drive) as stats. */
+function shotObs(rd, s, r, idx) {
+  const col = (f) => (idx[f] === undefined ? null : r[idx[f]]);
+  const add = (k, v) => { if (v !== null && v !== undefined && Number.isFinite(v)) (rd.obs ||= []).push({ k, cat: s.cat, lie: s.lie, dist: s.dist, v, w: s.w }); };
+  const holed = truthy(col("holeOut")) === true;
+  if (s.cat === "APP" || s.cat === "ARG") {
+    const g = truthy(col("onGreen")); if (g !== null) add("hitGreen", g || holed ? 100 : 0);
+    const p = num(col("proximity")); if (p !== null && !holed) add("prox", p);
+    if (s.cat === "ARG") { const u = truthy(col("upDown")); if (u !== null) add("ud", u ? 100 : 0); }
+  }
+  if (s.cat === "PUTT") { const h = truthy(col("holeOut")); if (h !== null) add("make", h ? 100 : 0); }
+  if (s.cat === "OTT") {
+    const f = truthy(col("hitFwy"));
+    if (f !== null) add("fwy", f ? 100 : 0);
+    else if (idx.missDir !== undefined) { const m = col("missDir"); if (m !== null && m !== "") add("fwy", ["fairway", "hit", "center", "fwy"].includes(squash(m)) ? 100 : 0); }
+    add("drive", num(col("driveDist")));
+  }
+}
+
+/**
+ * Rounds for one stat: only rounds that have it. For strokes gained they are the rounds as they are; for any
+ * other stat each round's "shots" become that stat's values ({ cat, lie, dist, v, w }), so the same filters
+ * (category, lie, distance, year, tournament and so on) work unchanged. Worked out once per rounds list and stat.
+ */
+const statMemo = new WeakMap();
+export function statRounds(rounds, key) {
+  if (!rounds) return rounds;
+  let m = statMemo.get(rounds);
+  if (!m) { m = new Map(); statMemo.set(rounds, m); }
+  if (m.has(key)) return m.get(key);
+  const has = (rd) => (rd.has ? rd.has.has(key) : key === "sg" && rd.shots?.length > 0);
+  const out = key === "sg" ? rounds.filter(has)
+    : rounds.filter(has).map((rd) => ({ ...rd, shots: rd.obs.filter((o) => o.k === key).map((o) => ({ cat: o.cat, lie: o.lie, dist: o.dist, v: o.v, w: o.w, sg: 0, club: null, clubCat: null })) }));
+  m.set(key, out);
+  return out;
+}
+
+/**
+ * A (non strokes-gained) stat over some rounds: the attempt-weighted average of its values, so a set of
+ * rounds pools to its true rate (62 greens from 100 approaches = 62%). A round's whole-round value
+ * (no category) is used when nothing is narrowed; once a category, lie or distance is picked, only values
+ * that have one count. Returns { value, w (attempts), rounds (rounds with a value) }.
+ */
+export function statAgg(rounds, narrowed = false) {
+  let s = 0, w = 0, n = 0;
+  for (const rd of rounds) {
+    let obs = rd.shots;
+    if (!obs.length) continue;
+    if (narrowed) obs = obs.filter((o) => o.cat != null);
+    else { const whole = obs.filter((o) => o.cat == null); if (whole.length) obs = whole; }
+    if (!obs.length) continue;
+    n++;
+    for (const o of obs) { s += o.v * o.w; w += o.w; }
+  }
+  return { value: w ? s / w : null, w, rounds: n };
+}
+
+/** A stat's value within each lie or distance (one category): [{ label, value, w }], in the same order as sgBy. */
+export function groupObs(rounds, cat, field) {
+  const groups = new Map();
+  for (const rd of rounds) for (const o of rd.shots) {
+    if (o.cat == null || (cat && o.cat !== cat)) continue;
+    const k = field === "lie" ? o.lie : o.dist;
+    if (k === null || k === undefined || k === "" || squash(k) === "none") continue;
+    const g = groups.get(k) || { label: String(k), s: 0, w: 0 };
+    g.s += o.v * o.w; g.w += o.w; groups.set(k, g);
+  }
+  const out = [...groups.values()].map((g) => ({ label: g.label, value: g.w ? g.s / g.w : null, w: g.w }));
+  sortGroups(out, field);
+  return out;
+}
+function sortGroups(out, field) {
+  const numeric = out.every((g) => lead(g.label) !== Infinity);
+  const lieRank = (l) => { const i = LIE_ORDER.indexOf(squash(l)); return i < 0 ? 99 : i; };
+  const lies = field === "lie" && out.some((g) => lieRank(g.label) < 99);
+  const clubRank = (l) => (squash(l) === "driver" ? 0 : 1);
+  out.sort((a, b) => (numeric ? lead(a.label) - lead(b.label)
+    : lies ? lieRank(a.label) - lieRank(b.label)
+    : field === "distanceRange" ? clubRank(a.label) - clubRank(b.label) || a.label.localeCompare(b.label)
+    : a.label.localeCompare(b.label)));
 }
 
 export const lastRounds = (rounds, n) => (n > 0 ? rounds.slice(-n) : rounds);
@@ -205,14 +378,7 @@ export function sgBy(rounds, idx, cat, field) {
   }
   const out = [...groups.values()].map((g) => ({ ...g, perRound: g.sg / n }));
   // Distance-like labels sort by their leading number; lies from tee to green; others by label.
-  const numeric = out.every((g) => lead(g.label) !== Infinity);
-  const lieRank = (l) => { const i = LIE_ORDER.indexOf(squash(l)); return i < 0 ? 99 : i; };
-  const lies = field === "lie" && out.some((g) => lieRank(g.label) < 99);
-  const clubRank = (l) => (squash(l) === "driver" ? 0 : 1);
-  out.sort((a, b) => (numeric ? lead(a.label) - lead(b.label)
-    : lies ? lieRank(a.label) - lieRank(b.label)
-    : field === "distanceRange" ? clubRank(a.label) - clubRank(b.label) || a.label.localeCompare(b.label)
-    : a.label.localeCompare(b.label)));
+  sortGroups(out, field);
   return out.length ? out : null;
 }
 
@@ -513,7 +679,11 @@ export function buildFieldSummary(players) {
         const c = {};
         for (const s of rd.shots) { const x = (c[s.cat] ||= [0, 0]); x[0] += s.sg; x[1] += s.w; }
         for (const k of Object.keys(c)) c[k] = [Math.round(c[k][0] * 1000) / 1000, c[k][1]];
-        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, t: rd.tour || "", c };
+        // every other stat, per category ("" = whole round): [value × attempts, attempts]
+        const sx = {};
+        for (const o of rd.obs || []) { const x = ((sx[o.k] ||= {})[o.cat || ""] ||= [0, 0]); x[0] += o.v * o.w; x[1] += o.w; }
+        for (const k of Object.keys(sx)) for (const c2 of Object.keys(sx[k])) sx[k][c2] = [Math.round(sx[k][c2][0] * 1000) / 1000, Math.round(sx[k][c2][1] * 1000) / 1000];
+        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, t: rd.tour || "", c, ...(Object.keys(sx).length ? { s: sx } : {}), ...(rd.eventLevel ? { ev: 1 } : {}) };
       }),
     })),
   };
@@ -524,8 +694,9 @@ export function summaryPlayers(summary) {
   return (summary?.players || []).map((p) => ({
     key: p.key, name: p.name, summaryOnly: true,
     rounds: p.rounds.map((rd, i) => ({
-      key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y, tour: rd.t, // (undefined: a summary from before tours were kept)
+      key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y, tour: rd.t, ...(rd.ev ? { eventLevel: true } : {}), // (undefined: a summary from before tours were kept)
       shots: Object.entries(rd.c).map(([cat, [sg, w]]) => ({ cat, sg, w, lie: null, dist: null })),
-    })),
+      obs: Object.entries(rd.s || {}).flatMap(([k, byCat]) => Object.entries(byCat).filter(([, [, w]]) => w > 0).map(([cat, [vw, w]]) => ({ k, cat: cat || null, lie: null, dist: null, v: vw / w, w }))),
+    })).map((rd) => { rd.has = new Set(rd.obs.map((o) => o.k)); if (rd.shots.length) rd.has.add("sg"); return rd; }),
   }));
 }

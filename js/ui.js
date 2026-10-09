@@ -113,6 +113,19 @@ const itemOn = (item, routeId) => {
   return !opt.q || (routeId !== "admin-reports-view" ? opt.q === "performance" : catNow() === opt.q);
 };
 
+/**
+ * Move the row of pages (Stats / Performance Reports / WITB / …) from above the page into `host` (under the
+ * page's player search, say), and pull the page up close to the top bar. Returns the undo for the spacing.
+ */
+export function relocateSectionNav(main, host) {
+  const prev = main?.previousElementSibling;
+  const nav = prev?.classList?.contains("section-nav") ? prev : null;
+  if (nav && host) { nav.classList.add("moved"); host.appendChild(nav); }
+  const top = document.getElementById("main");
+  top?.classList.add("tight-top");
+  return () => top?.classList.remove("tight-top");
+}
+
 /** The row of pages under the current header (Stats / Performance Reports / …), or null. */
 export function sectionNav(currentRoute) {
   const kind = shellKind();

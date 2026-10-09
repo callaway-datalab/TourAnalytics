@@ -428,14 +428,14 @@ export async function publishFieldStats(datasetId, summary, sourceUploadedAt) {
   const pieces = splitString(JSON.stringify(summary), DOC_CHUNK_CHARS);
   await commitInChunks(pieces.map((data, i) => sized((b) => b.set(doc(ref, "chunks", String(i)), { data }), data.length)));
   for (let i = pieces.length; i < (old.exists() ? old.data().chunkCount || 0 : 0); i++) await deleteDoc(doc(ref, "chunks", String(i)));
-  await setDoc(ref, { chunkCount: pieces.length, sourceUploadedAt: sourceUploadedAt ?? null, publishedAt: serverTimestamp(), format: 2 });
+  await setDoc(ref, { chunkCount: pieces.length, sourceUploadedAt: sourceUploadedAt ?? null, publishedAt: serverTimestamp(), format: 3 });
 }
 
 /** When the field stats for a data file were last built from it (ms), or null if never. */
 export async function fieldStatsSource(datasetId) {
   const snap = await getDoc(doc(db, "fieldStats", datasetId));
-  // (format 2 carries each round's tour; an older one is rebuilt)
-  return snap.exists() ? (snap.data().format === 2 ? snap.data().sourceUploadedAt ?? 0 : 0) : null;
+  // (format 3 carries each round's tour and its other stats by category; an older one is rebuilt)
+  return snap.exists() ? (snap.data().format === 3 ? snap.data().sourceUploadedAt ?? 0 : 0) : null;
 }
 
 /** The published field stats for a data file, or null. */

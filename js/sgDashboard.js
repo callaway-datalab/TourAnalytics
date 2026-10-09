@@ -1,6 +1,8 @@
 // The strokes-gained dashboard, shared by the admin's Data → Analyze page and every player's My Data
 // page (and coaches viewing a player). Styled after the original player site.
 //
+//   Stat Type (update 95): every stat found in the data (Strokes Gained, Hit Green %, Putts / Round ...). The
+//   tables and charts follow what that stat has: split by category, distance and lie where it can be.
 //   Filters: span · year · tournament · round · lie · distance, and category pills
 //   "Your selection": SG / round, attempts / round, SG / attempt and rank for exactly that slice
 //   SG cards (Total, T2G, OTT, APP, ARG, PUTT), category visuals, trends, rankings
@@ -14,6 +16,7 @@ import { el, mount, loadScript } from "./ui.js";
 import {
   CATEGORIES, applyFilters, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds,
+  statRounds, statAgg, statDef, fmtStat, statsIn, groupObs,
 } from "./sg.js";
 
 const CHART_JS = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
@@ -49,8 +52,19 @@ export function sgDashboard(container, opts) {
   const narrowed = () => st.lie.length || st.dist.length || st.club.length; // lie / distance / club in use (the shared summary can't follow those)
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
-  let me = opts.me;
-  let field = opts.field || [];
+  // Every stat's rounds (meAll / fieldAll); me / field hold the rounds of the stat on screen (Stat Type).
+  let meAll = opts.me, fieldAll = opts.field || [];
+  let me = meAll, field = fieldAll;
+  let statKey = "sg", def = statDef("sg"), statList = ["sg"], catsAvail = CATEGORIES;
+  // Some stats come one row per tournament (no round number, e.g. Birdies / Round over its rounds): then
+  // what's counted is events, not rounds, and the page says so.
+  let unit = "round";
+  const rw = (n) => `${Number(n).toLocaleString()} ${unit}${n === 1 ? "" : "s"}`;
+  const Unit = () => (unit === "event" ? "Events" : "Rounds");
+  const isSG = () => statKey === "sg";
+  // (another stat: a round counts only where it has a value in the selection, e.g. an approach for Hit Green %)
+  const nz = (rs) => (isSG() ? rs : rs.filter((rd) => rd.shots.length));
+  let lastRankF = {}; // the filters the field was sliced with (the rankings can't follow lie / distance from the shared summary)
   const fieldIsSummary = () => field.some((p) => p.summaryOnly);
 
   loadScript(CHART_JS).then(() => draw()).catch(() => {});
@@ -68,7 +82,20 @@ export function sgDashboard(container, opts) {
   function draw() {
     destroyCharts();
     chartSeq = 0;
+    // Stat Type: every stat in the data on screen (the player's, or everyone's), Strokes Gained first.
+    statList = statsIn(meAll ? [meAll.rounds] : fieldAll.map((p) => p.rounds));
+    if (!statList.length) statList = ["sg"];
+    statKey = statList.includes(st.statWanted) ? st.statWanted : statList.includes("sg") ? "sg" : statList[0];
+    def = statDef(statKey);
+    me = meAll ? { ...meAll, rounds: statRounds(meAll.rounds, statKey) } : null;
+    field = fieldAll.map((p) => ({ ...p, rounds: statRounds(p.rounds, statKey) }));
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
+    unit = base.length && base.every((rd) => rd.eventLevel) ? "event" : "round";
+    if (unit === "event" && st.trendBy === "round") st.trendBy = "event";
+    // the categories this stat has (strokes gained: all four; Make %: Putting only; Scoring Avg: none)
+    const catSeen = new Set(); for (const rd of base) for (const x of rd.shots) if (x.cat) catSeen.add(x.cat);
+    catsAvail = CATEGORIES.filter(([k]) => catSeen.has(k));
+    st.cats = st.cats.filter((k) => catSeen.has(k));
     // Keep only choices that still exist: distances of the picked categories, lies seen in them.
     if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
     const opt = filterOptions(base, st.cats);
@@ -92,8 +119,9 @@ export function sgDashboard(container, opts) {
     const f = { span: Number(st.span), year: st.year, tour: st.tour, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
-    const slicedField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, rankF) }));
-    const mine = me ? applyFilters(me.rounds, f) : null;
+    lastRankF = rankF;
+    const slicedField = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, rankF)) }));
+    const mine = me ? nz(applyFilters(me.rounds, f)) : null;
     // Gold dots (Top 1 / 10 / 25 / 50 / All): until picked by hand, the next group up from the player's rank
     // (Min. rounds applies): 100th → Top 50, 18th → Top 10, 2nd-10th → Top 1; the leader compares with the Top 10.
     if (me && !(st.rankTopManual && st.rankTopFor === me.key)) {
@@ -111,30 +139,14 @@ export function sgDashboard(container, opts) {
     const act = container.contains(document.activeElement) ? document.activeElement : null;
     const focusKey = act ? (act.getAttribute("aria-label") || act.textContent).trim() : null;
     const focusTag = act?.tagName;
-    if ((st.view || "advanced") === "basic") {
-      // Basic: traditional stats. No category pills; no lie / distance / club filters.
-      const bf = { ...f, cats: [], lie: [], dist: [], club: [] };
-      const bField = field.map((p) => ({ ...p, rounds: applyFilters(p.rounds, bf) }));
-      const bMine = me ? applyFilters(me.rounds, bf) : null;
-      const vp = placeView(); parkLead();
-      mount(container, [
-        vp,
-        opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
-        opts.slot || null, // the page's player search, then the Filters panel
-        filtersPanel(opt, { basic: true, statBar: basicStatBar(bField, bMine) }),
-        el("div", { class: "sg-panel" }, basicBlocks(bField, bMine)),
-      ]);
-      window.scrollTo(0, y);
-      container.style.minHeight = "";
-      return;
-    }
     const vp = placeView(); parkLead();
     mount(container, [
       vp,
-      opts.note ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
+      opts.note && isSG() ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       opts.slot || null, // the page's player search, then the Filters panel
       filtersPanel(opt),
       el("div", { class: "sg-panel" }, (() => {
+        if (!isSG()) return statBlocks(mine, slicedField, f);
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         return [heroBox(mine, slicedField, f), summaryBox(mine, slicedField), showRanks && me ? rankingsBlock(slicedField) : null, ...blocks];
@@ -216,20 +228,20 @@ export function sgDashboard(container, opts) {
     st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
   }
 
-  function filterBar(opt, { basic = false, bare = false } = {}) {
+  function filterBar(opt, { bare = false } = {}) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
     const latest = [...opt.year].sort().pop();
-    const active = ["event", "roundNo", "lie", "dist", "club", "cats"].some((k) => st[k].length) || Number(st.span) > 0 || (st.view || "advanced") !== "advanced"
+    const active = ["event", "roundNo", "lie", "dist", "club", "cats"].some((k) => st[k].length) || Number(st.span) > 0
       || JSON.stringify(st.year) !== JSON.stringify(latest ? [latest] : []);
     const reset = el("button", { class: "link", type: "button", hidden: !active }, "Reset Filters");
     reset.addEventListener("click", () => {
-      Object.assign(st, { span: 0, year: latest ? [latest] : [], tour: [], event: [], roundNo: [], lie: [], dist: [], club: [], cats: [], view: "advanced", openFilter: null });
+      Object.assign(st, { span: 0, year: latest ? [latest] : [], tour: [], event: [], roundNo: [], lie: [], dist: [], club: [], cats: [], openFilter: null });
       draw();
     });
     // Distances, grouped under their category; with categories picked, only theirs show.
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
-    const distOpts = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k))
+    const distOpts = catsAvail.filter(([k]) => !st.cats.length || st.cats.includes(k))
       .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
     // On phones the filters fold behind a "Filters" button (with how many are in use).
@@ -242,13 +254,12 @@ export function sgDashboard(container, opts) {
       el("label", {}, ["Span", span]),
       multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
       multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
-      ...(basic ? [] : [
-        multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }),
-        multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }),
-        // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
-        multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
-          empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }),
-      ]),
+      // Lie and distance only when this stat has them; Club for strokes gained (clubs are recorded per shot).
+      opt.lie.length ? multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }) : null,
+      distOpts.length ? multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }) : null,
+      // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
+      isSG() ? multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
+        empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }) : null,
       reset,
     ]);
   }
@@ -256,21 +267,22 @@ export function sgDashboard(container, opts) {
   // "All" clears the choice; picking all four is the same as All.
   const CAT_NAME = Object.fromEntries(CATEGORIES);
   /* ---------------- the Filters panel (everything but the player search) ---------------- */
-  function filtersPanel(opt, { basic = false, statBar = null } = {}) {
+  function filtersPanel(opt) {
     if (st.panelOpen === undefined) { try { st.panelOpen = localStorage.getItem("ta:filtersOpen") === "1"; } catch { st.panelOpen = false; } } // remembered on this device
     const open = !!st.panelOpen;
     const src = opts.lead?.querySelector?.("[aria-current=page]")?.textContent || "";
     const yrs = st.year.length ? [...st.year].sort().reverse().join(" + ") : "All years";
-    const cats = st.cats.length ? st.cats.map((k) => CAT_NAME[k] || k).join(" + ") : "All categories";
+    const cats = catsAvail.length < 2 ? "" : st.cats.length ? st.cats.map((k) => CAT_NAME[k] || k).join(" + ") : "All categories";
     const more = ["event", "roundNo", "lie", "dist", "club"].filter((k) => (st[k] || []).length).length + (Number(st.span) > 0 ? 1 : 0);
     const btn = el("button", { type: "button", class: "filters-panel-btn", "aria-expanded": open ? "true" : "false" }, [
       el("span", { class: "fp-title" }, "Filters"),
-      el("span", { class: "fp-sum" }, [src, yrs, basic ? "Basic" : "Advanced", cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
+      el("span", { class: "fp-sum" }, [src, yrs, statList.length < 2 ? def.label : "", cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
       el("span", { class: "fp-caret", "aria-hidden": "true" }, open ? "\u25B4" : "\u25BE"),
     ]);
     btn.addEventListener("click", () => { st.panelOpen = !st.panelOpen; try { localStorage.setItem("ta:filtersOpen", st.panelOpen ? "1" : "0"); } catch { /* fine */ } draw(); });
-    return el("section", { class: `filters-panel${open ? " open" : ""}` }, [btn, open ? el("div", { class: "fp-body" }, [
-      yearsRow(opt, { cats: true }), statBar, filterBar(opt, { basic, bare: true }),
+    // Stat Type sits beside the Filters button, so it's there whether the panel is open or folded
+    return el("section", { class: `filters-panel${open ? " open" : ""}` }, [el("div", { class: "fp-head" }, [btn, statSelect()]), open ? el("div", { class: "fp-body" }, [
+      yearsRow(opt, { cats: true }), filterBar(opt, { bare: true }),
     ]) : null]);
   }
   // When the panel is folded the page's data pills still need a home on the page (they're lent to us).
@@ -288,98 +300,120 @@ export function sgDashboard(container, opts) {
   };
   function heroBox(mine, slicedField, f) {
     const foot = el("p", { class: "hero-foot" }, updatedTxt());
+    const sg = isSG();
     if (me && mine && mine.length) {
-      // the player: their number, rank, form, a rolling-average chart, and four category tiles to explore
-      const total = perRoundOf(mine), r = rankAmong(slicedField, me.key);
+      // the player: their number, rank, form, a rolling-average chart, and a tile for each category to explore
+      const total = metric(mine), r = rankAmong(slicedField, me.key);
       const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-      const per = ordered.map((rd) => rd.shots.reduce((t, x) => t + x.sg, 0));
-      const ROLL = 10; // rolling 10-round average
-      const roll = per.map((_, i) => { const w = per.slice(Math.max(0, i - (ROLL - 1)), i + 1); return w.reduce((t, v) => t + v, 0) / w.length; });
+      const per = ordered.map((rd) => metric([rd]));
+      const ROLL = 10; // rolling 10-round average (another stat: pooled over those rounds' attempts)
+      const roll = ordered.map((_, i) => metric(ordered.slice(Math.max(0, i - (ROLL - 1)), i + 1)));
       const n = Math.min(10, Math.floor(per.length / 2));
-      const ch = n >= 2 ? per.slice(-n).reduce((t, v) => t + v, 0) / n - per.slice(-2 * n, -n).reduce((t, v) => t + v, 0) / n : null;
-      const form = ch == null ? null : Math.abs(ch) < 0.05 ? ["Steady", ""] : ch > 0 ? [`Up ${ch.toFixed(2)}`, "up"] : [`Down ${Math.abs(ch).toFixed(2)}`, "down"];
-      const allCats = applyFilters(me.rounds, { ...f, cats: [] });
-      const tiles = CATEGORIES.map(([k, l]) => {
-        const v = perRoundOf(allCats, k), rk = rankAmong(slicedField.map((p) => ({ ...p })), me.key, k);
+      let form = null;
+      if (n >= 2) {
+        const last = metric(ordered.slice(-n)), prev = metric(ordered.slice(-2 * n, -n));
+        if (last != null && prev != null) {
+          const ch = last - prev, steady = Math.abs(ch) < steadyBand(prev);
+          const amt = sg ? Math.abs(ch).toFixed(2) : fmtStat({ ...def, unit: def.pct ? "" : def.unit }, Math.abs(ch)).replace("%", def.pct ? " pts" : "");
+          form = steady ? ["Steady", ""] : sg ? (ch > 0 ? [`Up ${amt}`, "up"] : [`Down ${amt}`, "down"])
+            : def.higher == null ? [`${ch > 0 ? "Up" : "Down"} ${amt}`, ""] : (def.higher ? ch > 0 : ch < 0) ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"];
+        }
+      }
+      // a tile per category this stat has (with its rank among the same players, every category counted)
+      const allCats = nz(applyFilters(me.rounds, { ...f, cats: [] }));
+      const fieldAllCats = catsAvail.length > 1 ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...lastRankF, cats: [] })) })) : [];
+      const fieldAvgOf = (k) => { const v = rankedField(fieldAllCats).map((p) => metric(p.rounds, k)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+      const tiles = catsAvail.length < 2 ? [] : catsAvail.map(([k, l]) => {
+        const v = metric(allCats, k), rk = rankAmong(fieldAllCats, me.key, k);
         const on = st.cats.length === 1 && st.cats[0] === k;
         const b = el("button", { type: "button", class: `hero-tile${on ? " on" : ""}`, "aria-pressed": on ? "true" : "false", title: on ? "Back to all categories" : `Explore ${l}` }, [
-          el("span", { class: "ht-name" }, l), el("strong", { class: v == null ? "" : signCls(v) }, fmtSG(v)), el("span", { class: "ht-rank" }, rk.rank ? `${ordinal(rk.rank)} of ${rk.of}` : ""),
+          el("span", { class: "ht-name" }, l), el("strong", { class: v == null ? "" : toneCls(v, sg ? null : fieldAvgOf(k)) }, fmtV(v)), el("span", { class: "ht-rank" }, rk.rank && rk.of > 1 ? `${ordinal(rk.rank)} of ${rk.of}` : ""),
         ]);
         b.addEventListener("click", () => { st.cats = on ? [] : [k]; draw(); });
         return b;
       });
+      const fieldVals = sg ? null : rankAmong(slicedField, null).vals;
+      const fieldAvg = fieldVals && fieldVals.length ? fieldVals.reduce((t, x) => t + x.v, 0) / fieldVals.length : null;
+      const trendName = sg ? "SG" : def.label;
       return el("section", { class: "panel hero" }, [
         el("div", { class: "hero-top" }, [
           el("div", { class: "hero-id" }, [
             el("span", { class: "hero-kicker" }, `${describe()}`),
             el("h2", { class: "hero-name" }, me.label),
-            el("div", { class: "hero-big" }, [el("strong", { class: signCls(total) }, fmtSG(total)), el("span", {}, "strokes gained a round")]),
+            el("div", { class: "hero-big" }, [el("strong", { class: toneCls(total, fieldAvg) }, fmtV(total)), el("span", {}, sg ? "strokes gained a round" : def.label)]),
+            sg ? null : el("p", { class: "hero-help" }, def.help),
             el("div", { class: "hero-chips" }, [
-              r.rank ? el("span", { class: `hero-chip${r.rank === 1 ? " gold" : ""}` }, `${ordinal(r.rank)} of ${r.of}`) : null,
-              el("span", { class: "hero-chip" }, `${mine.length} rounds`),
+              r.rank && r.of > 1 ? el("span", { class: `hero-chip${r.rank === 1 ? " gold" : ""}` }, `${ordinal(r.rank)} of ${r.of}`) : null,
+              el("span", { class: "hero-chip" }, rw(mine.length)),
               form ? el("span", { class: `hero-chip ${form[1]}` }, `Form: ${form[0]}`) : null,
             ]),
             insightsButton(slicedField),
           ]),
           (() => {
             // tap the chart: every tournament, its own average and the rolling average at that point
-            const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: "Show every tournament", "aria-label": "SG trend chart. Show every tournament in a table." }, [
-              el("span", { class: "hero-chart-label" }, ["SG trend \u00b7 rolling 10-round average", el("span", { class: "hero-chart-hint" }, "Tap for the table")]),
+            const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: "Show every tournament", "aria-label": `${trendName} trend chart. Show every tournament in a table.` }, [
+              el("span", { class: "hero-chart-label" }, [`${trendName} trend \u00b7 rolling 10-${unit} average`, el("span", { class: "hero-chart-hint" }, "Tap for the table")]),
               chartBox((c) => heroChart(c, ordered.map((rd) => { const d = new Date(rd.date); return isNaN(d) ? rd.date : shortDate(d); }), roll))]);
-            const openT = () => tournamentsPopup(ordered, per, roll);
+            const openT = () => tournamentsPopup(ordered, roll);
             box.addEventListener("click", openT);
             box.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openT(); } });
             return box;
           })(),
         ]),
         tourButtons(), // (one row across the card, under Generate AI Insights)
-        el("div", { class: "hero-tiles" }, tiles),
+        tiles.length ? el("div", { class: `hero-tiles n${tiles.length}` }, tiles) : null,
         foot,
       ]);
     }
     // no player: the leaderboard
     const minR = minRoundsFor(slicedField.filter((p) => p.rounds.length));
-    const ranked = rankedField(slicedField).map((p) => ({ p, v: perRoundOf(p.rounds), n: p.rounds.length })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
+    const ranked = rankedField(slicedField).map((p) => ({ p, v: metric(p.rounds), n: p.rounds.length })).filter((x) => x.v != null).sort(byBest);
     const minBox = minRoundsBox(slicedField.filter((p) => p.rounds.length));
     const shown = ranked.map((x, i) => ({ ...x, i })); // everyone; the list scrolls
-    const max = Math.max(...shown.filter(Boolean).map((x) => Math.abs(x.v)), 0.01);
-    const posMax = Math.max(...shown.filter((x) => x && x.v >= 0).map((x) => x.v), 0.01), negMax = Math.max(...shown.filter((x) => x && x.v < 0).map((x) => -x.v), 0.01);
+    const max = Math.max(...shown.map((x) => Math.abs(x.v)), 0.01);
+    const posMax = Math.max(...shown.filter((x) => x.v >= 0).map((x) => x.v), 0.01), negMax = Math.max(...shown.filter((x) => x.v < 0).map((x) => -x.v), 0.01);
+    // another stat: one blue bar, its length from the lowest value to the highest (so the differences show)
+    const lo = Math.min(...shown.map((x) => x.v)), hi = Math.max(...shown.map((x) => x.v));
+    const blueBar = (v) => { const fr = hi - lo > 1e-9 ? 0.12 + (0.88 * (v - lo)) / (hi - lo) : 1; return `width:${fr * 100}%;background:linear-gradient(90deg, #0a2f66, #4db2ff);background-size:${100 / fr}% 100%;background-repeat:no-repeat`; };
     return el("section", { class: "panel hero" }, [
-      el("div", { class: "hb-head" }, [el("div", {}, [el("span", { class: "hero-kicker" }, describe()), el("h2", { class: "hero-name" }, "Leaderboard")]), minBox]),
+      el("div", { class: "hb-head" }, [el("div", {}, [el("span", { class: "hero-kicker" }, describe()), el("h2", { class: "hero-name" }, "Leaderboard"),
+        sg ? null : el("p", { class: "hero-help" }, [el("strong", {}, def.label), `: ${def.help}`])]), minBox]),
       tourButtons(),
-      ranked.length ? null : el("p", { class: "muted small" }, `No one has played ${minR} rounds in this selection.`),
-      el("div", { class: "hero-board", tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => (!x ? null : el("div", { class: "hb-row" }, [
+      ranked.length ? null : el("p", { class: "muted small" }, `No one has ${rw(minR)} in this selection.`),
+      el("div", { class: `hero-board${sg ? "" : " stat-board"}`, tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => el("div", { class: "hb-row" }, [
         el("span", { class: "hb-rank" }, String(x.i + 1)),
         opts.onPick ? (() => { const b = el("button", { type: "button", class: "hb-name hb-link", title: `Open ${x.p.label}` }, x.p.label); b.addEventListener("click", () => opts.onPick(x.p.key)); return b; })() : el("span", { class: "hb-name", title: x.p.label }, x.p.label),
         // a value that shows as +0.00 is yellow (neither gained nor lost, to two places)
-        el("span", { class: "hb-bar" }, el("span", { class: signCls(x.v), style: isZero(x.v) ? "width:4%;background:#ffd60a" : htmlBarStyle(x.v, Math.abs(x.v) / max, Math.abs(x.v) / (x.v >= 0 ? posMax : negMax)) })),
-        el("strong", { class: signCls(x.v) }, fmtSG(x.v)),
-      ])))),
-      el("p", { class: "muted small" }, opts.onPick ? "Tap a name for that player's view." : "Pick a player above for their own view."),
+        el("span", { class: "hb-bar" }, el("span", { class: sg ? signCls(x.v) : "", style: !sg ? blueBar(x.v) : isZero(x.v) ? "width:4%;background:#ffd60a" : htmlBarStyle(x.v, Math.abs(x.v) / max, Math.abs(x.v) / (x.v >= 0 ? posMax : negMax)) })),
+        el("strong", { class: sg ? signCls(x.v) : "" }, fmtV(x.v)),
+      ]))),
+      el("p", { class: "muted small" }, [opts.onPick ? "Tap a name for that player's view." : "Pick a player above for their own view.",
+        !sg && def.higher === false ? " Lower is better, so the lowest is first." : !sg && def.higher == null ? " Highest first." : ""].join("")),
       foot,
     ]);
   }
   // The hero chart's table: each tournament (in date order, newest at the top), the player's SG / round
   // there, and the rolling 10-round average as of their last round in it (what the chart shows there).
-  function tournamentsPopup(ordered, per, roll) {
+  function tournamentsPopup(ordered, roll) {
     const rows = [];
     ordered.forEach((rd, i) => {
       const y = String(rd.date || "").slice(0, 4), last = rows[rows.length - 1];
-      if (last && last.event === rd.event && last.year === y) { last.sum += per[i]; last.n++; last.to = rd.date; last.roll = roll[i]; }
-      else rows.push({ event: rd.event || "\u2014", year: y, from: rd.date, to: rd.date, sum: per[i], n: 1, roll: roll[i] });
+      if (last && last.event === rd.event && last.year === y) { last.rounds.push(rd); last.to = rd.date; last.roll = roll[i]; }
+      else rows.push({ event: rd.event || "\u2014", year: y, from: rd.date, to: rd.date, rounds: [rd], roll: roll[i] });
     });
     const when = (r) => { const a = new Date(r.from), b = new Date(r.to); if (isNaN(a)) return r.from || ""; return isNaN(b) || r.from === r.to ? shortDate(a) : `${shortDate(a)}\u2013${shortDate(b)}`; };
-    const cell = (v) => el("td", { class: `num ${signCls(v)}` }, fmtSG(v));
+    const cell = (v) => el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v));
+    const what = isSG() ? "strokes gained a round" : def.label;
     const table = el("table", { class: "plain rankings hero-tourn" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), el("th", { class: "num", title: "Strokes gained a round in that tournament" }, "Event avg"), el("th", { class: "num", title: "Rolling 10-round average at the end of that tournament" }, "Rolling 10")])),
-      el("tbody", {}, [...rows].reverse().map((r) => el("tr", {}, [el("td", { class: "ht-date" }, when(r)), el("td", {}, r.event), el("td", { class: "num" }, String(r.n)), cell(r.sum / r.n), cell(r.roll)]))),
+      el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"), el("th", { class: "num", title: `${what} in that tournament` }, "Event avg"), el("th", { class: "num", title: `Rolling 10-${unit} average at the end of that tournament` }, "Rolling 10")])),
+      el("tbody", {}, [...rows].reverse().map((r) => el("tr", {}, [el("td", { class: "ht-date" }, when(r)), el("td", {}, r.event), unit === "event" ? null : el("td", { class: "num" }, String(r.rounds.length)), cell(metric(r.rounds)), cell(r.roll)]))),
     ]);
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Tournaments" }, el("div", { class: "gx-pop hero-pop" }, [
-      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "SG trend"), el("h2", {}, me.label),
-        el("p", { class: "gx-sub" }, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${ordered.length} rounds \u00b7 ${describe()} \u00b7 strokes gained a round, newest first`)]), close]),
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${isSG() ? "SG" : def.label} trend`), el("h2", {}, me.label),
+        el("p", { class: "gx-sub" }, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 ${describe()} \u00b7 ${what}, newest first`)]), close]),
       el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-      el("p", { class: "muted small" }, "Event avg: strokes gained a round in that tournament. Rolling 10: the average of the last 10 rounds up to the end of that tournament (fewer at the start)."),
+      el("p", { class: "muted small" }, `Event avg: ${what} in that tournament. Rolling 10: the last 10 ${unit}s up to the end of that tournament (fewer at the start)${isSG() ? "" : ", pooled over their attempts"}.`),
     ]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };
@@ -419,155 +453,52 @@ export function sgDashboard(container, opts) {
       type: "line",
       data: { labels, datasets: [{ data: vals, borderColor: "#d4b483", backgroundColor: grad, fill: "origin", borderWidth: 2.4, pointRadius: 0, pointHoverRadius: 4, tension: 0.35 }] },
       options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${fmtSG(c.parsed.y)} (10-round average)` } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${fmtV(c.parsed.y)} (10-${unit} average)` } } },
         scales: {
           // a minimal x-axis: a few dates, small and grey, no grid
           x: { display: true, grid: { display: false }, border: { display: false }, ticks: { color: "#6e6e73", font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 5, padding: 2 } },
-          y: { grid: { color: (c) => (c.tick.value === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.06)") }, ticks: { color: "#8e8e93", maxTicksLimit: 4, callback: (v) => fmtSG(v) }, border: { display: false } } } },
+          y: { grid: { color: (c) => (c.tick.value === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.06)") }, ticks: { color: "#8e8e93", maxTicksLimit: 4, callback: (v) => (isSG() ? fmtSG(v) : fmtStat({ ...def, dp: Math.min(def.dp ?? 1, 1) }, v)) }, border: { display: false } } } },
     });
   }
 
-  /* ---------------- Basic / Advanced ---------------- */
+  /* ---------------- the pill row in the Filters panel ---------------- */
   // (drawn under the Tour Events / Entered Rounds pills when the page gives a place for them)
-  // Basic / Advanced sit beside the year pills now (the page's top spot is left empty)
+  // (the page's old Basic / Advanced spot is left empty)
   const placeView = () => { if (opts.viewHost && !container.closest("[hidden]")) mount(opts.viewHost, null); return null; };
   // One row of pills: the page's Tour Events / Entered Rounds (lent to us; a hidden dashboard leaves them),
-  // the years, Basic / Advanced and, on Advanced, the categories (a Category dropdown on phones).
+  // the years, the Tour and the categories this stat has (a Category dropdown on phones).
   const yearsRow = (opt, { cats = false } = {}) => {
     const lead = opts.lead && !container.closest("[hidden]") ? opts.lead : null;
-    const catDrop = cats ? el("div", { class: "cat-drop" }, multi("Category", "cats", CATEGORIES.map(([v, l]) => ({ value: v, label: l })), "All categories", { plural: "categories" })) : null;
-    return el("div", { class: "pill-row years-row stats-pills" }, [lead, yearPills(opt), viewPills(), tourSelect(), cats ? catPills() : null, catDrop]);
+    cats = cats && catsAvail.length > 1;
+    const catDrop = cats ? el("div", { class: "cat-drop" }, multi("Category", "cats", catsAvail.map(([v, l]) => ({ value: v, label: l })), "All categories", { plural: "categories" })) : null;
+    return el("div", { class: "pill-row years-row stats-pills" }, [lead, yearPills(opt), tourSelect(), cats ? catPills() : null, catDrop]);
   };
   const tourName = (t) => t || "No tour";
   // Tour: one at a time (never mixed). A dropdown here and the "PGA: 100 rounds" buttons on the hero card.
   function tourSelect() {
     if (tourCounts.length < 2) return null;
-    const sel = el("select", { class: "tour-select", "aria-label": "Tour" }, tourCounts.map(([t, n]) => el("option", { value: t, selected: st.tour[0] === t }, `${tourName(t)} (${n})`)));
+    const sel = el("select", { class: "tour-select", "aria-label": "Tour" }, tourCounts.map(([t, n]) => el("option", { value: t, selected: st.tour[0] === t }, tourName(t))));
     sel.addEventListener("change", () => { st.tour = [sel.value]; draw(); });
     return el("label", { class: "tour-pick" }, [el("span", {}, "Tour"), sel]);
+  }
+  // Stat Type: every stat found in the data on screen. The tables and charts below follow what that stat has.
+  function statSelect() {
+    if (statList.length < 2) return null;
+    const sel = el("select", { class: "stat-select", "aria-label": "Stat type" }, statList.map((k) => el("option", { value: k, selected: k === statKey }, statDef(k).label)));
+    sel.addEventListener("change", () => { st.statWanted = sel.value; st.openFilter = null; draw(); });
+    return el("label", { class: "stat-pick" }, [el("span", {}, "Stat Type"), sel]);
   }
   function tourButtons() {
     if (!tourCounts.length || (tourCounts.length === 1 && tourCounts[0][0] === "")) return null;
     return el("div", { class: "tour-chips", role: "radiogroup", "aria-label": "Tour" }, tourCounts.map(([t, n]) => {
       const on = st.tour[0] === t;
       const b = el("button", { type: "button", role: "radio", "aria-checked": on ? "true" : "false", class: `tour-chip${on ? " on" : ""}` },
-        [el("strong", {}, `${tourName(t)}:`), ` ${n.toLocaleString()} ${n === 1 ? "round" : "rounds"}`]);
+        tourName(t));
       b.addEventListener("click", () => { if (!on) { st.tour = [t]; draw(); } });
       return b;
     }));
   }
-  function viewPills() {
-    const v = st.view || "advanced";
-    return el("nav", { class: "subnav sg-view", "aria-label": "Basic or advanced stats" }, [["basic", "Basic"], ["advanced", "Advanced"]].map(([k, l]) => {
-      const a = el("a", { href: "#", "aria-current": v === k ? "page" : null }, l);
-      a.addEventListener("click", (e) => { e.preventDefault(); st.view = k; draw(); });
-      return a;
-    }));
-  }
-  // Traditional stats, from each round's counts (Data Entry rounds have them; a Tour Events file would need
-  // those columns). higher: true = more is better.
-  const BASIC = [
-    { key: "scoring", cat: null, label: "Scoring Avg", higher: false, dp: 1, unit: "", get: (c) => (c.holes ? (c.score / c.holes) * 18 : null) },
-    { key: "gir", cat: "APP", label: "GIR %", higher: true, dp: 1, unit: "%", get: (c) => (c.holes ? (c.gir / c.holes) * 100 : null) },
-    { key: "hitGreen", cat: "APP", label: "Hit Green %", higher: true, dp: 1, unit: "%", get: (c) => (c.apps ? (c.appGreen / c.apps) * 100 : null) },
-    { key: "fwy", cat: "OTT", label: "Driving Accuracy", higher: true, dp: 1, unit: "%", get: (c) => (c.fwyN ? (c.fwy / c.fwyN) * 100 : null) },
-    { key: "drive", cat: "OTT", label: "Driving Distance", higher: true, dp: 0, unit: " yds", get: (c) => (c.drives ? c.driveYds / c.drives : null) },
-    { key: "putts", cat: "PUTT", label: "Putts / Round", higher: false, dp: 1, unit: "", get: (c) => (c.puttHoles ? (c.putts / c.puttHoles) * 18 : null) },
-    { key: "threePutt", cat: "PUTT", label: "3-Putt Avoidance", higher: true, dp: 1, unit: "%", get: (c) => (c.puttHoles ? (1 - c.threePutts / c.puttHoles) * 100 : null) },
-    { key: "ud", cat: "ARG", label: "Up & Down %", higher: true, dp: 1, unit: "%", get: (c) => (c.udN ? (c.ud / c.udN) * 100 : null) },
-    { key: "birdie", cat: null, label: "Birdie Pct", higher: true, dp: 1, unit: "%", get: (c) => (c.holes ? (c.birdies / c.holes) * 100 : null) },
-    { key: "bogey", cat: null, label: "Bogey Avoidance", higher: true, dp: 1, unit: "%", get: (c) => (c.holes ? (c.parOrBetter / c.holes) * 100 : null) },
-    { key: "prox", cat: "APP", label: "Proximity", higher: false, dp: 1, unit: " ft", get: (c) => (c.proxN ? c.proxFt / c.proxN : null) },
-    { key: "owgr", cat: null, label: "OWGR", soon: true },
-  ];
-  const sumCounts = (rounds) => {
-    const t = {};
-    for (const rd of rounds) for (const [k, v] of Object.entries(rd.basic || {})) t[k] = (t[k] || 0) + v;
-    return t;
-  };
-  // a Basic stat over some rounds: entered rounds add up their counts; a stats file's rounds carry the stat itself
-  const bval = (b, rounds) => {
-    if (!b.get || !rounds?.length) return null;
-    if (rounds.some((rd) => rd.basic && rd.basic.holes)) return b.get(sumCounts(rounds.filter((rd) => rd.basic)));
-    const vs = rounds.map((rd) => rd.stats?.[b.key]).filter((v) => v != null && Number.isFinite(v));
-    return vs.length ? vs.reduce((t, v) => t + v, 0) / vs.length : null;
-  };
-  const hasStat = (b, rd) => (rd.basic && b.get && b.get(rd.basic) != null) || (rd.stats && rd.stats[b.key] != null);
-  const basicNow = () => BASIC.find((b) => b.key === st.basicStat) || BASIC[0];
-  const fmtBasic = (b, v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v.toFixed(b.dp)}${b.unit}`);
-  function basicStatBar(bField, bMine) {
-    const all = [...(bMine || []), ...bField.flatMap((p) => p.rounds)];
-    const has = (b) => !b.soon && all.some((rd) => hasStat(b, rd));
-    if (!has(basicNow())) { const first = BASIC.find(has); if (first) st.basicStat = first.key; }
-    // the category pills narrow the list (whole-round stats like Scoring Avg show with All)
-    const allowed = BASIC.filter((b) => (!st.cats.length ? true : b.cat && st.cats.includes(b.cat)));
-    if (!allowed.some((b) => b.key === basicNow().key)) { const first = allowed.find(has); if (first) st.basicStat = first.key; }
-    const sel = el("select", { "aria-label": "Stat Type" }, allowed.map((b) =>
-      el("option", { value: b.key, selected: basicNow().key === b.key, disabled: !has(b) }, b.soon ? `${b.label} (coming soon)` : has(b) ? b.label : `${b.label} (not in this data)`)));
-    sel.addEventListener("change", () => { st.basicStat = sel.value; draw(); });
-    return el("div", { class: "stat-type" }, el("label", {}, ["Stat Type", sel]));
-  }
-  function basicBlocks(bField, bMine) {
-    const b = basicNow();
-    const all = [...(bMine || []), ...bField.flatMap((p) => p.rounds)];
-    if (!all.some((rd) => hasStat(b, rd))) {
-      return [el("section", { class: "panel" }, el("p", { class: "empty center" },
-        "These stats come from rounds entered in Data Entry (every shot is recorded there). This data doesn\u2019t have them yet: switch to Entered Rounds, or use Advanced."))];
-    }
-    // rankings for the chosen stat
-    const ranked = rankedField(bField).map((p) => ({ p, v: bval(b, p.rounds), n: p.rounds.filter((rd) => hasStat(b, rd)).length }))
-      .filter((x) => x.v != null && Number.isFinite(x.v)).sort((x, y) => (b.higher ? y.v - x.v : x.v - y.v));
-    const rankRows = ranked.map((x, i) => el("tr", { class: x.p.key === me?.key ? "me" : "" }, [
-      el("td", { class: "num" }, String(i + 1)), el("td", {}, x.p.label), el("td", { class: "num" }, el("strong", {}, fmtBasic(b, x.v))), el("td", { class: "num" }, String(x.n)),
-    ]));
-    const blocks = [];
-    {
-      const lines = [];
-      const meRow = ranked.findIndex((x) => x.p.key === me?.key);
-      if (me && meRow >= 0) {
-        const x = ranked[meRow];
-        lines.push(`${me.label} ${b.label}: ${fmtBasic(b, x.v)} over ${x.n} ${x.n === 1 ? "round" : "rounds"}, ${ordinal(meRow + 1)} of ${ranked.length} players (${b.higher ? "higher" : "lower"} is better).`);
-        const ordered = [...(bMine || [])].sort((p, q) => String(p.date).localeCompare(String(q.date)));
-        const n = Math.min(10, Math.floor(ordered.length / 2));
-        if (n >= 2) {
-          const last = bval(b, ordered.slice(-n)), prev = bval(b, ordered.slice(-2 * n, -n));
-          if (last != null && prev != null) { const better = b.higher ? last > prev : last < prev; lines.push(Math.abs(last - prev) < 0.05 * Math.max(1, Math.abs(prev)) / 10 ? `Steady over the last ${n} rounds (${fmtBasic(b, last)}).` : `Last ${n} rounds: ${fmtBasic(b, last)}, against ${fmtBasic(b, prev)} in the ${n} before: ${better ? "better" : "worse"}.`); }
-        }
-      } else if (ranked.length) {
-        lines.push(`${ranked.length} players. Best ${b.label}: ${ranked[0].p.label} (${fmtBasic(b, ranked[0].v)}). Pick a player for their own summary.`);
-      }
-      if (lines.length) blocks.push(el("section", { class: "panel sg-summary" }, [el("h3", {}, "Summary"), ...lines.map((t) => el("p", {}, t))]));
-    }
-    const bMinBox = minRoundsBox(bField.filter((p) => p.rounds.length)); bMinBox.classList.add("rank-min");
-    if (showRanks) blocks.push(panelBox(`Rankings \u00b7 ${b.label}`, [bMinBox, ranked.length ? el("div", { class: "table-scroll ranks-scroll" }, el("table", { class: "plain rankings" }, [
-      el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num" }, b.label), el("th", { class: "num" }, "Rounds")])),
-      el("tbody", {}, rankRows),
-    ])) : el("p", { class: "empty" }, "No rounds in this selection.")]));
-    // the player's trend by date, with the chosen players (Top 1 / 10 / … / All) for the same dates
-    if (me && bMine?.length) {
-      const groups = groupBy(bMine, st.trendBy);
-      const vals = groups.map((g) => bval(b, g.rounds));
-      // each round / event / month / year: the best result(s) there among the players who played it (this player included)
-      const others = rankedField(bField).filter((p) => p.key !== me.key);
-      const cmp = others.length ? groups.map((g, i) => topMean([vals[i], ...others.map((p) => {
-        const rs = groupBy(p.rounds, st.trendBy).find((x) => x.label === g.label)?.rounds;
-        return rs ? bval(b, rs) : null;
-      })], b.higher)) : null;
-      const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
-        const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
-        a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
-        return a;
-      }));
-      st.chartTypes = st.chartTypes || {};
-      if (!st.chartTypes["basic-trend"]) st.chartTypes["basic-trend"] = "line";
-      blocks.push(panelBox(`${b.label} Trend`, [toggles, chartBox((c, as) => barChart(c, groups.map((g) => g.label), vals, {
-        title: b.label, as, single: "blue", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName({ round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event"), shortLabels: groups.map((g) => g.short),
-        tooltip: (i) => `${groups[i].rounds.length} ${groups[i].rounds.length === 1 ? "round" : "rounds"}`,
-      }), "wide", "basic-trend", { rankPick: others.length > 0 })], "full"));
-    }
-    return blocks;
-  }
-  // rounds grouped by round / event / month / year (in date order), for the Basic trend
+  // rounds grouped by round / event / month / year (in date order), for a stat's trend
   function groupBy(rounds, by) {
     const m = new Map();
     for (const rd of [...rounds].sort((a, b2) => String(a.date).localeCompare(String(b2.date)))) {
@@ -578,25 +509,6 @@ export function sgDashboard(container, opts) {
       g.rounds.push(rd); m.set(key, g);
     }
     return [...m.values()];
-  }
-
-  // Stat Type: which kind of stats the page shows. Strokes Gained for now; the others (marked "coming
-  // soon") depend on the category picked.
-  const STAT_TYPES_BY_CAT = {
-    all: ["OWGR", "Birdie Pct", "Bogey Avoidance", "Scoring Avg", "GIR %"],
-    OTT: ["Driving Distance", "Driving Accuracy"],
-    APP: ["Hit Green %", "Up & Down %", "Proximity"],
-    ARG: ["Hit Green %", "Up & Down %", "Proximity"],
-    PUTT: ["Make %", "3-Putt Avoidance", "Good Lag %"],
-  };
-  const statTypesNow = () => [["sg", "Strokes Gained"], ...(STAT_TYPES_BY_CAT[st.cats.length === 1 ? st.cats[0] : "all"] || []).map((l) => [l, l])];
-  const READY_TYPES = ["sg"];
-  function statTypeBar() {
-    if (!statTypesNow().some(([v]) => v === (st.statType || "sg"))) st.statType = "sg";
-    const sel = el("select", { "aria-label": "Stat Type" }, statTypesNow().map(([v, l]) =>
-      el("option", { value: v, selected: (st.statType || "sg") === v, disabled: !READY_TYPES.includes(v) }, READY_TYPES.includes(v) ? l : `${l} (coming soon)`)));
-    sel.addEventListener("change", () => { st.statType = sel.value; draw(); });
-    return el("div", { class: "stat-type" }, el("label", {}, ["Stat Type", sel]));
   }
 
   // Year pills (under the categories): All, or any number of years.
@@ -647,7 +559,7 @@ export function sgDashboard(container, opts) {
     const all = el("a", { href: "#", "aria-current": allOn ? "page" : null }, "All");
     all.addEventListener("click", (e) => { e.preventDefault(); st.cats = []; st.catsKept = []; draw(); });
     const kept = keptOf("cats");
-    return el("nav", { class: "subnav sg-tabs", "aria-label": "Categories: tap to pick one, double-tap to keep it and add more" }, [all, ...CATEGORIES.map(([k, label]) => {
+    return el("nav", { class: "subnav sg-tabs", "aria-label": "Categories: tap to pick one, double-tap to keep it and add more" }, [all, ...catsAvail.map(([k, label]) => {
       const on = st.cats.includes(k), isKept = kept.includes(k);
       const a = el("a", { href: "#", class: isKept ? "kept" : "", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false",
         title: isKept ? "Kept: double-tap to let it go" : "Tap to pick; double-tap to keep it and add more" }, label);
@@ -659,7 +571,7 @@ export function sgDashboard(container, opts) {
     })]);
   }
   const T2G = ["OTT", "APP", "ARG"];
-  const catsName = () => (!st.cats.length || st.cats.length === CATEGORIES.length ? "All categories"
+  const catsName = () => (catsAvail.length === 1 ? catsAvail[0][1] : catsAvail.length < 2 && !st.cats.length ? "" : !st.cats.length || st.cats.length === catsAvail.length ? "All categories"
     : st.cats.length === 3 && T2G.every((k) => st.cats.includes(k)) ? "Tee to Green"
     : st.cats.map(catName).join(" + "));
   const list = (a, plural, fmt = (v) => v) => (!a.length ? "" : a.length <= 2 ? a.map(fmt).join(", ") : `${a.length} ${plural}`);
@@ -743,6 +655,22 @@ export function sgDashboard(container, opts) {
     let t = 0; for (const rd of rounds) for (const x of rd.shots) if (!cat || x.cat === cat) t += x.sg;
     return t / rounds.length;
   };
+  // The number a player is ranked on: strokes gained a round, or the stat's attempt-weighted average.
+  const narrowedNow = () => !!(st.cats.length || st.lie.length || st.dist.length);
+  const metric = (rounds, cat = null) => {
+    if (isSG()) return perRoundOf(rounds, cat);
+    if (!rounds || !rounds.length) return null;
+    const rs = cat ? rounds.map((rd) => ({ ...rd, shots: rd.shots.filter((o) => o.cat === cat) })) : rounds;
+    return statAgg(rs, !!cat || narrowedNow()).value;
+  };
+  // "Steady" form: within 0.05 strokes gained, half a point for a percentage, or 0.5% of the value otherwise
+  // (0.35 strokes on a 70 scoring average, 1.5 yds on a 290-yard drive)
+  const steadyBand = (prev) => (isSG() ? 0.05 : def.pct ? 0.5 : Math.max(0.01, Math.abs(prev) * 0.005));
+  const higherBetter = () => def.higher !== false; // (neither better nor worse: ranked highest first)
+  const byBest = (a, b) => (higherBetter() ? b.v - a.v : a.v - b.v);
+  const fmtV = (v) => fmtStat(def, v);
+  // green / red for strokes gained; another stat is coloured against the field average when better / worse is known
+  const toneCls = (v, ref) => (isSG() ? signCls(v) : v == null || ref == null || def.higher == null || Math.abs(v - ref) < 1e-9 ? "" : (def.higher ? v > ref : v < ref) ? "pos" : "neg");
   const sgWord = (v) => `${v >= 0 ? "gains" : "loses"} ${Math.abs(v).toFixed(2)} strokes a round`;
   // Who is ranked: players with at least Min. rounds in the selection (the player on screen always counts),
   // so the hero card, its tiles, the summary and the Rankings table all give the same rank.
@@ -751,7 +679,7 @@ export function sgDashboard(container, opts) {
     return slicedField.filter((p) => p.rounds.length && (p.rounds.length >= minR || p.key === me?.key));
   };
   function rankAmong(slicedField, key, cat = null) {
-    const vals = rankedField(slicedField).map((p) => ({ key: p.key, v: perRoundOf(p.rounds, cat) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
+    const vals = rankedField(slicedField).map((p) => ({ key: p.key, v: metric(p.rounds, cat) })).filter((x) => x.v != null).sort(byBest);
     const i = vals.findIndex((x) => x.key === key);
     return { rank: i >= 0 ? i + 1 : null, of: vals.length, leader: vals[0] || null, vals };
   }
@@ -762,12 +690,12 @@ export function sgDashboard(container, opts) {
     if (me && mine && mine.length) {
       const name = me.label || "This player";
       const total = perRoundOf(mine), r = rankAmong(slicedField, me.key);
-      lines.push(`${name} ${sgWord(total)} over ${mine.length} ${mine.length === 1 ? "round" : "rounds"} (${what})${r.rank ? `, ${ordinal(r.rank)} of ${r.of} players` : ""}.`);
+      lines.push(`${name} ${sgWord(total)} over ${mine.length} ${mine.length === 1 ? "round" : "rounds"} (${what})${r.rank && r.of > 1 ? `, ${ordinal(r.rank)} of ${r.of} players` : ""}.`);
       if (cats.length > 1) {
         const byCat = cats.map(([k, l]) => ({ l, v: perRoundOf(mine, k), rk: rankAmong(slicedField, me.key, k) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
         if (byCat.length > 1) {
           const best = byCat[0], worst = byCat[byCat.length - 1];
-          lines.push(`Strongest: ${best.l} (${fmtSG(best.v)}${best.rk.rank ? `, ${ordinal(best.rk.rank)}` : ""}). Weakest: ${worst.l} (${fmtSG(worst.v)}${worst.rk.rank ? `, ${ordinal(worst.rk.rank)}` : ""}).`);
+          lines.push(`Strongest: ${best.l} (${fmtSG(best.v)}${best.rk.rank && best.rk.of > 1 ? `, ${ordinal(best.rk.rank)}` : ""}). Weakest: ${worst.l} (${fmtSG(worst.v)}${worst.rk.rank && worst.rk.of > 1 ? `, ${ordinal(worst.rk.rank)}` : ""}).`);
         }
       } else if (cats.length === 1) {
         // one category: its best and worst distances
@@ -891,6 +819,136 @@ export function sgDashboard(container, opts) {
     return blocks;
   }
 
+  /* ------------------------------ any other stat (Hit Green %, Putts / Round, Driving Distance ...) ------------------------------ */
+  // The same page as strokes gained: the hero card (or leaderboard), a summary, the rankings, then whatever this
+  // stat can be split by (category, distance, lie) and its trend. What shows follows what the data has.
+  function statBlocks(mine, slicedField, f) {
+    const blocks = [heroBox(mine, slicedField, f), statSummary(mine, slicedField)];
+    if (!me) return blocks;
+    if (showRanks) blocks.push(rankingsBlock(slicedField));
+    if (!mine || !mine.length) { blocks.push(el("section", { class: "panel" }, el("p", { class: "empty center" }, `No ${def.label} for ${me.label} in this selection.`))); return blocks; }
+    blocks.push(...statDetail(mine, slicedField));
+    blocks.push(statTrend(mine, slicedField));
+    return blocks;
+  }
+  const avgOf = (vals) => { const v = vals.filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  function statSummary(mine, slicedField) {
+    const lines = [], what = describe();
+    const r = rankAmong(slicedField, me && mine?.length ? me.key : null);
+    const avg = r.vals.length ? r.vals.reduce((t, x) => t + x.v, 0) / r.vals.length : null;
+    const better = (a, b) => (def.higher == null ? null : def.higher ? a > b : a < b);
+    if (me && mine && mine.length) {
+      const v = metric(mine);
+      lines.push(`${me.label}: ${def.label} ${fmtV(v)} over ${rw(mine.length)}${what ? ` (${what})` : ""}${r.rank && r.of > 1 ? `, ${ordinal(r.rank)} of ${r.of} players` : ""}.`);
+      if (avg != null && r.of > 1 && v != null) {
+        const b = better(v, avg);
+        lines.push(`Players\u2019 average: ${fmtV(avg)}${b === null || Math.abs(v - avg) < 1e-9 ? "." : `, so ${b ? "better" : "worse"} than average.`}`);
+      }
+      const cat = st.cats.length === 1 ? st.cats[0] : catsAvail.length === 1 ? catsAvail[0][0] : "";
+      if (!cat && catsAvail.length > 1) {
+        const parts = catsAvail.filter(([k]) => !st.cats.length || st.cats.includes(k)).map(([k, l]) => ({ l, v: metric(mine, k) })).filter((x) => x.v != null);
+        if (parts.length > 1) lines.push(`By category: ${parts.map((x) => `${x.l} ${fmtV(x.v)}`).join(", ")}.`);
+      } else if (cat && def.higher != null) {
+        // its best and lowest distance (with at least 3 attempts, so one lucky shot doesn't lead)
+        const ds = groupObs(mine, cat, "distanceRange").filter((g) => g.w >= 3 && g.value != null).sort((a, b) => (def.higher ? b.value - a.value : a.value - b.value));
+        if (ds.length > 1) lines.push(`Best from ${ds[0].label} (${fmtV(ds[0].value)}, ${Math.round(ds[0].w)} attempts); lowest from ${ds[ds.length - 1].label} (${fmtV(ds[ds.length - 1].value)}, ${Math.round(ds[ds.length - 1].w)} attempts).`);
+      }
+      const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const n = Math.min(10, Math.floor(ordered.length / 2));
+      if (n >= 2) {
+        const last = metric(ordered.slice(-n)), prev = metric(ordered.slice(-2 * n, -n));
+        if (last != null && prev != null) {
+          const steady = Math.abs(last - prev) < steadyBand(prev), b = better(last, prev);
+          lines.push(steady ? `Steady: ${fmtV(last)} over the last ${rw(n)}, about the same as the ${n} before.`
+            : `Last ${rw(n)}: ${fmtV(last)}, against ${fmtV(prev)} in the ${n} before${b === null ? "" : `: ${b ? "better" : "worse"}`}.`);
+        }
+      }
+    } else if (r.of) {
+      const nameOf = (key) => slicedField.find((p) => p.key === key)?.label || "\u2014";
+      const last = r.vals[r.vals.length - 1];
+      lines.push(`${r.of} players${what ? ` (${what})` : ""}. ${def.higher === false ? "Lowest" : "Highest"}: ${nameOf(r.leader.key)} (${fmtV(r.leader.v)})${r.of > 1 ? `; ${def.higher === false ? "highest" : "lowest"}: ${nameOf(last.key)} (${fmtV(last.v)})` : ""}. Average: ${fmtV(avg)}. Pick a player for their own summary.`);
+    }
+    if (!lines.length) return null;
+    return el("section", { class: "panel sg-summary" }, [el("h3", {}, "Summary"), ...lines.map((t) => el("p", {}, t))]);
+  }
+  function statDetail(mine, slicedField) {
+    const blocks = [], visuals = [];
+    const cat = st.cats.length === 1 ? st.cats[0] : catsAvail.length === 1 ? catsAvail[0][0] : "";
+    const detailOK = !fieldIsSummary(); // others' lie / distance detail (the admin); the shared summary has categories only
+    // the gold dots: the same players as on the strokes-gained charts (none when there's nobody else to compare with)
+    const cmpField = rankedField(slicedField).some((p) => p.key !== me.key) ? topPlayers(slicedField) : [];
+    const tip = (groups) => (i) => `${Math.round(groups[i].w).toLocaleString()} ${Math.round(groups[i].w) === 1 ? "attempt" : "attempts"}`;
+    if (!cat && catsAvail.length > 1) {
+      const shown = catsAvail.filter(([k]) => !st.cats.length || st.cats.includes(k));
+      const bars = shown.map(([k, l]) => ({ label: l, value: metric(mine, k) }));
+      const compare = cmpField.length ? shown.map(([k]) => avgOf(cmpField.map((p) => metric(p.rounds, k)))) : null;
+      visuals.push(panelBox(`${def.label} by Category`, chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), {
+        title: def.label, as, single: "blue", compare, compareLabel: compareName() }), "", `${statKey}-cat`, { rankPick: cmpField.length > 0 })));
+      const lies = groupObs(mine, null, "lie");
+      if (lies.length > 1) {
+        const lc = detailOK && cmpField.length ? lies.map((g) => avgOf(cmpField.map((p) => groupObs(p.rounds, null, "lie").find((x) => x.label === g.label)?.value))) : null;
+        visuals.push(panelBox(`${def.label} by Lie`, chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.value), {
+          title: def.label, as, single: "blue", compare: lc, compareLabel: compareName(), tooltip: tip(lies) }), "", `${statKey}-lie`, { rankPick: !!lc })));
+      }
+    }
+    if (cat) {
+      const catLabel = catName(cat);
+      const dims = [["distanceRange", "Distance"], ["lie", "Lie"]].map(([fieldName, name]) => ({ fieldName, name, groups: groupObs(mine, cat, fieldName) }));
+      for (const d of dims) {
+        if (d.groups.length < 2) continue;
+        const cmp = detailOK && cmpField.length ? d.groups.map((g) => avgOf(cmpField.map((p) => groupObs(p.rounds, cat, d.fieldName).find((x) => x.label === g.label)?.value))) : null;
+        visuals.push(panelBox(`${def.label} by ${d.name} \u00b7 ${catLabel}`, chartBox((c, as) => barChart(c, d.groups.map((g) => g.label), d.groups.map((g) => g.value), {
+          title: def.label, as, single: "blue", compare: cmp, compareLabel: compareName(), tooltip: tip(d.groups) }), "", `${statKey}-${cat}-${d.fieldName}`, { rankPick: !!cmp })));
+      }
+      if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
+      // distance by lie: every bucket the data has, with how many attempts each value comes from
+      const [dist, lie] = dims;
+      if (dist.groups.length > 1 && lie.groups.length > 1) blocks.push(statMatrix(mine, cat, dist.groups.map((g) => g.label), lie.groups.map((g) => g.label), catLabel));
+      return blocks;
+    }
+    if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
+    return blocks;
+  }
+  function statMatrix(mine, cat, dists, lies, catLabel) {
+    const cell = new Map(), add = (k, o) => { const c = cell.get(k) || { s: 0, w: 0 }; c.s += o.v * o.w; c.w += o.w; cell.set(k, c); };
+    for (const rd of mine) for (const o of rd.shots) {
+      if (o.cat !== cat || o.dist == null) continue;
+      add(`${o.dist}|${o.lie}`, o); add(`${o.dist}|*`, o); if (o.lie != null) add(`*|${o.lie}`, o); add("*|*", o);
+    }
+    const td = (k, strong = false) => {
+      const c = cell.get(k);
+      if (!c || !c.w) return el("td", { class: "num muted" }, "\u2014");
+      return el("td", { class: "num" }, [el(strong ? "strong" : "span", {}, fmtV(c.s / c.w)), el("span", { class: "mx-n" }, ` ${Math.round(c.w)}`)]);
+    };
+    const table = el("table", { class: "plain stats stat-matrix" }, [
+      el("thead", {}, el("tr", {}, [el("th", {}, "Distance"), ...lies.map((l) => el("th", { class: "num" }, l)), el("th", { class: "num" }, "All lies")])),
+      el("tbody", {}, [...dists.map((d) => el("tr", {}, [el("td", {}, d), ...lies.map((l) => td(`${d}|${l}`)), td(`${d}|*`, true)])),
+        el("tr", { class: "mx-total" }, [el("td", {}, "All distances"), ...lies.map((l) => td(`*|${l}`, true)), td("*|*", true)])]),
+    ]);
+    return panelBox(`${def.label} by Distance and Lie \u00b7 ${catLabel}`, [el("div", { class: "table-scroll" }, table),
+      el("p", { class: "muted small" }, "The small number is how many attempts each value comes from.")], "full");
+  }
+  function statTrend(mine, slicedField) {
+    const groups = groupBy(mine, st.trendBy);
+    const vals = groups.map((g) => metric(g.rounds));
+    // each round / event / month / year: the best result(s) there among the players who played it (this player included)
+    const others = rankedField(slicedField).filter((p) => p.key !== me.key);
+    const otherGroups = others.map((p) => groupBy(p.rounds, st.trendBy));
+    const cmp = others.length ? groups.map((g, i) => topMean([vals[i], ...otherGroups.map((og) => { const x = og.find((y) => y.label === g.label); return x ? metric(x.rounds) : null; })], def.higher !== false)) : null;
+    const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].filter(([v]) => unit !== "event" || v !== "round").map(([v, l]) => {
+      const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
+      a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
+      return a;
+    }));
+    const key = "stat-trend";
+    if (!st.chartTypes[key]) st.chartTypes[key] = "line"; // (values far from zero read better as a line)
+    const each = { round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event";
+    return panelBox(`${def.label} Trend`, [toggles, chartBox((c, as) => barChart(c, groups.map((g) => g.label), vals, {
+      title: def.label, as, single: "blue", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName(each), shortLabels: groups.map((g) => g.short),
+      tooltip: (i) => rw(groups[i].rounds.length),
+    }), "wide", key, { rankPick: others.length > 0 })], "full");
+  }
+
   /* ------------------------------ rankings ------------------------------ */
   let rankScroll = null;
   // Min. rounds: until you set it, 25% of the most rounds anyone listed has played (rounded)
@@ -902,13 +960,17 @@ export function sgDashboard(container, opts) {
     const v = minRoundsFor(players);
     const inp = el("input", { type: "number", min: 1, max: 999, value: v, class: "hb-min-in", "aria-label": "Minimum rounds played" });
     inp.addEventListener("change", () => { st.minRounds = Math.max(1, Math.round(Number(inp.value) || 1)); setTimeout(draw, 0); });
-    return el("label", { class: "hb-min", title: "Only players with at least this many rounds in the selection" }, ["Min. rounds", inp]);
+    return el("label", { class: "hb-min", title: `Only players with at least this many ${unit}s in the selection` }, [`Min. ${unit}s`, inp]);
   }
   function rankingsBlock(slicedField) {
-    const ranked = rank(rankedField(slicedField).map((p) => {
-      const t = sliceTotals(p.rounds);
-      return { key: p.key, label: p.label, value: t.sgPerRound ?? -Infinity, rounds: t.rounds, att: t.attemptsPerRound };
-    }));
+    const sg = isSG();
+    // strokes gained: SG / Round and attempts a round; another stat: its value and, when it has categories, the attempts
+    const showAtt = sg || catsAvail.length > 0;
+    const ranked = rankedField(slicedField).map((p) => {
+      if (sg) { const t = sliceTotals(p.rounds); return { key: p.key, label: p.label, value: t.sgPerRound ?? -Infinity, rounds: t.rounds, att: t.attemptsPerRound }; }
+      const a = statAgg(p.rounds, narrowedNow());
+      return { key: p.key, label: p.label, value: a.value, rounds: p.rounds.length, att: a.w };
+    }).filter((r) => sg || r.value != null).map((r) => ({ ...r, v: r.value })).sort(byBest).map((r, i) => ({ ...r, rank: i + 1 }));
     const third = Math.max(1, Math.ceil(ranked.length / 3));
     const search = el("input", { type: "search", placeholder: "Find a player\u2026", value: st.rankQuery, "aria-label": "Find a player in the rankings" });
     const body = el("tbody", {}, ranked.map((r) => el("tr", {
@@ -917,8 +979,8 @@ export function sgDashboard(container, opts) {
     }, [
       el("td", { class: "num" }, String(r.rank)),
       el("td", {}, r.label),
-      el("td", { class: "num" }, fmtSG(r.value === -Infinity ? null : r.value)),
-      el("td", { class: "num" }, r.att === null ? "\u2014" : nf1.format(r.att)),
+      el("td", { class: "num" }, fmtV(r.value === -Infinity ? null : r.value)),
+      showAtt ? el("td", { class: "num" }, r.att === null ? "\u2014" : sg ? nf1.format(r.att) : Math.round(r.att).toLocaleString()) : null,
       el("td", { class: "num" }, String(r.rounds)),
     ])));
     const applySearch = () => {
@@ -929,7 +991,9 @@ export function sgDashboard(container, opts) {
     };
     search.addEventListener("input", applySearch);
     rankScroll = el("div", { class: "table-scroll rank-scroll" }, el("table", { class: "plain rankings" }, [
-      el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num" }, "SG / Round"), el("th", { class: "num" }, [el("span", { class: "long" }, "Attempts / Round"), el("span", { class: "short" }, "Att / Rd")]), el("th", { class: "num" }, "Rounds")])),
+      el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num" }, sg ? "SG / Round" : def.label),
+        !showAtt ? null : sg ? el("th", { class: "num" }, [el("span", { class: "long" }, "Attempts / Round"), el("span", { class: "short" }, "Att / Rd")]) : el("th", { class: "num" }, [el("span", { class: "long" }, "Attempts"), el("span", { class: "short" }, "Att")]),
+        el("th", { class: "num" }, Unit())])),
       body,
     ]));
     requestAnimationFrame(applySearch);
@@ -950,12 +1014,13 @@ export function sgDashboard(container, opts) {
     const searchable = !getState().isAdmin && opts.teamRole !== "analyst";
     const minBox = minRoundsBox(slicedField.filter((p) => p.rounds.length));
     minBox.classList.add("rank-min"); if (searchable) minBox.classList.add("with-glass");
-    return panelBox(`Rankings \u00b7 ${describe()}`, [
+    return panelBox(`Rankings \u00b7 ${sg ? "" : `${def.label} \u00b7 `}${describe()}`.replace(/ \u00b7 $/, ""), [
       minBox,
       searchable ? glass : null,
       searchable ? searchBox : null,
       ranked.length ? rankScroll : el("p", { class: "empty" }, "No rounds match these filters."),
       fieldIsSummary() && narrowed() ? el("p", { class: "muted small" }, "Rankings follow year, tournament, round and category, not lie or distance.") : null,
+      !sg && def.higher === false ? el("p", { class: "muted small" }, "Lower is better, so the lowest is ranked first.") : !sg && def.higher == null ? el("p", { class: "muted small" }, "Ranked highest first (the file doesn\u2019t say whether higher is better).") : null,
     ], "full");
   }
 
@@ -978,8 +1043,8 @@ export function sgDashboard(container, opts) {
     list = rankedField(list); // the gold dots (Tour avg) use the same players as the rankings (Min. rounds)
     const n = st.rankTop && st.rankTop !== "all" ? Number(st.rankTop) : null;
     if (!n) return list;
-    return list.filter((p) => p.rounds.length).map((p) => ({ p, v: sliceTotals(p.rounds).sgPerRound ?? -Infinity }))
-      .sort((a, b) => b.v - a.v).slice(0, n).map((x) => x.p);
+    return list.filter((p) => p.rounds.length).map((p) => ({ p, v: metric(p.rounds) })).filter((x) => x.v != null)
+      .sort(byBest).slice(0, n).map((x) => x.p);
   }
   // what the gold dots are: on the trends, the best result(s) each round / event / month / year among the
   // players who played it; on the other charts, the best players over the selected time frame
@@ -988,7 +1053,7 @@ export function sgDashboard(container, opts) {
     if (each) return n === "1" ? `Best player each ${each}` : n ? `Top ${n} each ${each} (avg)` : `All players each ${each} (avg)`;
     return n === "1" ? "Best player overall" : n ? `Top ${n} overall (avg)` : "All players (avg)";
   };
-  // the best n of a set of results (lower is better for some Basic stats), averaged
+  // the best n of a set of results (lower is better for some stats), averaged
   const topMean = (vals, higher = true) => {
     const v = vals.filter((x) => x != null && Number.isFinite(x)).sort((p, q) => (higher ? q - p : p - q));
     if (!v.length) return null;
@@ -1118,7 +1183,7 @@ export function sgDashboard(container, opts) {
     const lineFill = single === "up" ? "rgba(48,209,88,0.12)" : "rgba(47,155,255,0.13)";
     const datasets = [as === "line"
       // Line: a champagne line through green / red points, shaded green above zero and red below
-      // (one-colour charts, like the Basic stats: a blue line, shaded blue).
+      // (one-colour charts, like stats other than strokes gained: a blue line, shaded blue).
       ? { type: "line", label: title || "", data: values, order: 2, borderColor: lineCol || "#c8a97e", borderWidth: 2.5, tension: 0.35,
           pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: lineCol || signColors, pointBorderColor: lineCol || signColors,
           fill: single ? { target: "origin", above: lineFill } : { target: "origin", above: "rgba(48,209,88,0.10)", below: "rgba(255,69,58,0.10)" } }
@@ -1184,6 +1249,6 @@ export function sgDashboard(container, opts) {
   draw();
   return {
     destroy() { destroyCharts(); if (opts.viewHost) mount(opts.viewHost, null); if (opts.lead && opts.leadHome) { if (opts.lead.parentNode !== opts.leadHome) opts.leadHome.appendChild(opts.lead); opts.leadHome.hidden = false; } if (opts.slot && opts.slotHome) opts.slotHome.appendChild(opts.slot); document.removeEventListener("pointerdown", onDocDown); document.removeEventListener("keydown", onKey); },
-    update(next) { if ("me" in next) me = next.me; if ("field" in next) field = next.field; draw(); },
+    update(next) { if ("me" in next) meAll = next.me; if ("field" in next) fieldAll = next.field || []; draw(); },
   };
 }

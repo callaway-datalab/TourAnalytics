@@ -1,6 +1,6 @@
 // Data → Analyze: the strokes-gained dashboard for any player, with rankings across every player.
 // Players see the same dashboard on their own My Data page (see sgDashboard.js).
-import { el, mount, num, subNav } from "../ui.js";
+import { el, mount, num, subNav, relocateSectionNav } from "../ui.js";
 import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource } from "../store.js";
 import { loadDatasetPlayers } from "../fieldCache.js";
 import { playerPicker } from "../playerPicker.js";
@@ -40,12 +40,14 @@ export async function render(main, { flash }) {
   // the player search + portal link: placed by the dashboard under its pills (above the dropdowns);
   // when there's no dashboard (nothing to show yet) it sits here
   const pickerSlot = el("div", { class: "analyze-picker" }, [pickerBox]); // (no portal link: that's on Player Access)
+  // the Stats / Performance Reports / WITB / … row goes under the player search (it travels with it)
+  const undoTop = relocateSectionNav(main, pickerSlot);
   const pickerHome = el("div", { class: "picker-home" }, pickerSlot);
   const body = el("div", { class: "sg-body" });
 
   // Tour | Entered Rounds
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
-  const viewHost = el("div", { class: "view-host" }); // Basic / Advanced, right under the data pills
+  const viewHost = el("div", { class: "view-host" }); // (kept empty: Basic / Advanced was here)
   const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
     a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
@@ -129,7 +131,7 @@ export async function render(main, { flash }) {
     enteredUpdated = Math.max(0, ...rounds.map((r) => r.updatedAt?.toMillis?.() ?? 0)) || null; // for "last updated"
     if (token !== loadToken) return;
     status.textContent = "";
-    fieldPlayers = enteredPlayers(rounds, (r) => displayLabels.get(r.playerKey) || r.playerLabel);
+    fieldPlayers = enteredPlayers(rounds, (r) => displayLabels.get(r.playerKey) || r.playerLabel, { withQuick: true });
     drawEntered();
   }
 
@@ -213,5 +215,5 @@ export async function render(main, { flash }) {
   if (dash) dash.update({ field: fieldPlayers, me: meFrom() });
   picker.restore();
 
-  return () => { loadToken++; dash?.destroy(); stopFiles(); stopMine(); };
+  return () => { loadToken++; dash?.destroy(); stopFiles(); stopMine(); undoTop(); };
 }

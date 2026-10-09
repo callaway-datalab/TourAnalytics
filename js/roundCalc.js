@@ -169,7 +169,72 @@ export function basicCounts(round) {
   return c;
 }
 
-/** One entered round -> { key, date, event, roundNo, year, shots: [{ cat, sg, w, lie, dist }] }. */
+/**
+ * Every stat an entered round gives, with the category, lie and distance it belongs to, in the same shape as
+ * an uploaded stats file's rows: [{ k, cat, lie, dist, v, w }]. Shot by shot (w = 1) where a stat belongs to a
+ * shot (Hit Green % for each approach, by its distance and lie); whole-round stats (cat null) are weighted by
+ * holes, so any set of rounds pools to the true rate. Quick-mode holes give what they can (score, putts,
+ * fairway, green in regulation).
+ */
+export function roundObs(round) {
+  const obs = [];
+  const add = (k, cat, lie, dist, v, w = 1) => { if (v !== null && v !== undefined && Number.isFinite(v) && w > 0) obs.push({ k, cat, lie, dist, v, w }); };
+  const c = basicCounts(round);
+  if (c.holes) {
+    add("scoring", null, null, null, (c.score / c.holes) * 18, c.holes);
+    add("birdie", null, null, null, (100 * c.birdies) / c.holes, c.holes);
+    add("parOrBetter", null, null, null, (100 * c.parOrBetter) / c.holes, c.holes);
+    add("bogey", null, null, null, (100 * (c.holes - c.parOrBetter)) / c.holes, c.holes);
+    add("gir", null, null, null, (100 * c.gir) / c.holes, c.holes);
+    if (c.udN) add("scramble", null, null, null, (100 * c.ud) / c.udN, c.udN);
+  }
+  if (c.puttHoles) add("putts", null, null, null, (c.putts / c.puttHoles) * 18, c.puttHoles);
+  const yds = (lie, d) => (d === "" || d == null ? null : lie === "Green" || lie === "Fringe" ? Number(d) / 3 : Number(d));
+  for (const h of round.holes || []) {
+    const strokes = round.shots?.[`h${h.n}`] || [];
+    const q = round.quick?.[`h${h.n}`];
+    if (!strokes.length) {
+      // quick mode: the fairway (par 4s and 5s) and three-putts, without distances
+      if (q && Number(q.score) > 0 && h.par) {
+        if (h.par >= 4 && (q.fwy === true || q.fwy === false)) add("fwy", "OTT", "Tee box", `Par ${h.par} tee shots`, q.fwy ? 100 : 0);
+        if (q.putts !== "" && q.putts != null && Number(q.putts) > 0) add("threePutt", "PUTT", "Green", null, Number(q.putts) >= 3 ? 100 : 0);
+      }
+      continue;
+    }
+    const done = strokes.some((x) => x.endLie === "Holed");
+    let argSeen = false, firstPutt = null, putts = 0;
+    strokes.forEach((st, i) => {
+      if (!st.startLie || st.startDist === "" || st.startDist == null || !st.endLie) return;
+      const cat = categoryOf(st, i, h.par), dist = distanceBucket(cat, st, h.par), lie = st.startLie;
+      if (cat === "OTT") {
+        add("fwy", cat, lie, dist, st.endLie === "Fairway" ? 100 : 0);
+        const a = yds(st.startLie, st.startDist), b = st.endLie === "Holed" ? 0 : yds(st.endLie, st.endDist);
+        if (a != null && b != null && st.endLie !== "Penalty") add("drive", cat, lie, dist, a - b);
+      }
+      if (cat === "APP" || cat === "ARG") {
+        const on = st.endLie === "Green" || st.endLie === "Holed";
+        add("hitGreen", cat, lie, dist, on ? 100 : 0);
+        if (on) add("prox", cat, lie, dist, st.endLie === "Holed" ? 0 : Number(st.endDist));
+      }
+      if (cat === "ARG" && !argSeen && done) {
+        // up and down: from the first shot around the green, in the hole in two strokes or fewer (penalties count)
+        argSeen = true;
+        const rest = strokes.slice(i);
+        const used = rest.length + rest.filter((x) => x.endLie === "Penalty").length;
+        add("ud", cat, lie, dist, used <= 2 ? 100 : 0);
+      }
+      if (cat === "PUTT") {
+        putts++;
+        if (!firstPutt) firstPutt = { lie, dist };
+        add("make", cat, lie, dist, st.endLie === "Holed" ? 100 : 0);
+      }
+    });
+    if (done && firstPutt) add("threePutt", "PUTT", firstPutt.lie, firstPutt.dist, putts >= 3 ? 100 : 0);
+  }
+  return obs;
+}
+
+/** One entered round -> { key, date, event, roundNo, year, shots: [{ cat, sg, w, lie, dist }], obs, has }. */
 export function roundToPrepared(round) {
   const shots = [];
   for (const h of round.holes || []) {
@@ -184,22 +249,26 @@ export function roundToPrepared(round) {
     });
   }
   const d = new Date(round.date);
+  const obs = roundObs(round);
+  const has = new Set(obs.map((o) => o.k));
+  if (shots.length) has.add("sg");
   return {
     key: round.id, date: round.date || "", event: round.tournament || round.course || "Entered round", roundNo: "", tour: round.tour || "",
-    year: isNaN(d) ? "" : String(d.getFullYear()), shots, basic: basicCounts(round),
+    year: isNaN(d) ? "" : String(d.getFullYear()), shots, obs, has, basic: basicCounts(round),
   };
 }
 
 /** Column map so the shared dashboard offers its lie and distance views for entered rounds. */
 export const ENTERED_IDX = { category: 0, sg: 1, lie: 2, distanceRange: 3, club: 4 };
 
-/** Group entered rounds by player: [{ key, label, rounds }], oldest round first. */
-export function enteredPlayers(rounds, labelOf = (r) => r.playerLabel) {
+/** Group entered rounds by player: [{ key, label, rounds }], oldest round first. Rounds with no shots
+ *  (quick mode) are left out unless withQuick (the Stats page, which shows their scoring, putts and so on). */
+export function enteredPlayers(rounds, labelOf = (r) => r.playerLabel, { withQuick = false } = {}) {
   const by = new Map();
   for (const r of rounds) {
     if (!by.has(r.playerKey)) by.set(r.playerKey, { key: r.playerKey, label: labelOf(r), rounds: [] });
     const p = roundToPrepared(r);
-    if (p.shots.length) by.get(r.playerKey).rounds.push(p);
+    if (p.shots.length || (withQuick && p.obs.length)) by.get(r.playerKey).rounds.push(p);
   }
   for (const p of by.values()) p.rounds.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
   return [...by.values()].filter((p) => p.rounds.length);

@@ -1,4 +1,4 @@
-import { el, mount, formatWhen, num, confirmAction, subNav } from "../ui.js";
+import { el, mount, formatWhen, num, confirmAction, subNav, relocateSectionNav } from "../ui.js";
 import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage, adminAllClients, publishFieldStats } from "../store.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
@@ -60,15 +60,17 @@ export async function render(main, { flash }) {
     },
   }, [
     el("label", {}, ["File (.csv or .parquet)", file,
-      el("small", {}, "Columns: player, playerID, year, date, tour, tournament, round, category, distance, lie, stat type, stat value, attempts. Stat type is \u201cstrokes gained\u201d (the value per attempt) or a round stat such as \u201cdriving distance\u201d, \u201chit fwy %\u201d, \u201cgir %\u201d, \u201cputts per round\u201d, \u201cscoring average\u201d. Tours without ShotLink detail use null for distance and lie.")]),
+      el("small", {}, "Columns: player, playerID, year, date, tournament, round, category, distance, lie, stat (or stat type), stat value, attempts, tour, and optionally successes. Stat is \u201cStrokes Gained\u201d (the value per attempt) or any other stat (Hit Green %, GIR %, Proximity (ft), Birdies/Round \u2026). Every stat in the file appears in the Stats page\u2019s Stat Type list. Leave category, distance and lie empty where a stat doesn\u2019t have them, and round empty for a row that covers a whole tournament.")]),
     el("label", {}, ["Column that says who each row belongs to", idColumn,
       el("small", {}, "Usually playerID. Each player's rows are matched by this ID; a player column, if the file has one, gives their name. Matching ignores capital letters and spaces.")]),
     el("label", {}, ["Short description (optional)", description]),
     el("div", {}, submit),
   ]);
 
+  const secHome = el("div", { class: "sec-home" });
   mount(main, [
     subNav([["#/admin/analyze", "Analyze"], ["#/admin/datasets", "Upload"]], "#/admin/datasets"),
+    secHome, // the Stats / Performance Reports / WITB / … row, under Analyze / Upload (as on Analyze)
     el("p", { class: "muted intro" }, "Upload one file that covers many people. Each person only sees the rows that belong to them."),
     el("section", {}, [el("h2", {}, "Upload a data file"), form]),
     el("section", {}, [el("h2", {}, "Uploaded files"), listBox]),
@@ -96,5 +98,6 @@ export async function render(main, { flash }) {
     ]);
     mount(listBox, el("div", { class: "table-scroll" }, table));
   });
-  return unsub;
+  const undoTop = relocateSectionNav(main, secHome);
+  return () => { unsub(); undoTop(); };
 }

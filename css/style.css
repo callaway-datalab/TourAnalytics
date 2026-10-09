@@ -2345,3 +2345,80 @@ button.gx-ov-stat:focus-visible { outline: 2px solid rgba(212,180,131,0.6); outl
 .tour-pick select { margin: 0; font-size: 16px; padding: 0.3rem 0.6rem; min-height: 2.1rem; max-width: 14rem; }
 .hero .tour-chips + .hero-foot, .hb-head + .tour-chips { margin-top: 0.4rem; }
 .hero > .tour-chips { margin: 0.7rem 0 0.9rem; }
+
+/* ---------- update 95: Stat Type, and the stats that aren't strokes gained ---------- */
+.fp-head { display: flex; align-items: center; gap: 0.5rem; padding-right: 0.75rem; }
+.fp-head .filters-panel-btn { flex: 1; min-width: 0; }
+.stat-pick { flex: none; display: inline-flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); }
+.stat-pick span { white-space: nowrap; }
+.stat-pick select { margin: 0; min-height: 2.1rem; height: 2.1rem; padding: 0.2rem 2rem 0.2rem 0.75rem; font-size: 16px; font-weight: 600; color: var(--ink); max-width: 13.5rem; border-radius: 10px; border-color: rgba(212, 180, 131, 0.45); }
+.hero-help { margin: 0.15rem 0 0.55rem; max-width: 32rem; font-size: 0.8rem; line-height: 1.4; color: var(--muted); }
+.hb-head .hero-help { margin-bottom: 0; }
+.hero-tiles.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.hero-tiles.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hero-big strong.pos, .hero-tile strong.pos { color: #30d158; }
+.hero-big strong.neg, .hero-tile strong.neg { color: #ff453a; }
+.stat-matrix td, .stat-matrix th { white-space: nowrap; }
+.stat-matrix .mx-n { font-size: 0.72em; color: var(--muted); font-weight: 400; }
+.stat-matrix .mx-total td { border-top: 1px solid var(--line); }
+@media (max-width: 640px) {
+  .fp-head { flex-wrap: wrap; padding: 0 0.75rem 0.6rem 0; }
+  .fp-head .filters-panel-btn { flex-basis: 100%; }
+  .stat-pick { margin-left: 1rem; flex: 1; }
+  .stat-pick select { flex: 1; max-width: none; }
+}
+.hb-row > strong { white-space: nowrap; }
+.hero-help strong { color: var(--ink); font-weight: 600; }
+.hero-board.stat-board .hb-row { grid-template-columns: 1.6rem minmax(0, 13.5rem) 1fr 5.6rem; }
+@media (max-width: 640px) { .hero-board.stat-board .hb-row { grid-template-columns: 1.5rem minmax(0, 10rem) 1fr 4.9rem; } }
+/* update 96: the Filters panel's pill row always wraps (and a group too wide on its own scrolls), so nothing spills out */
+.fp-body .stats-pills { flex-wrap: wrap !important; justify-content: flex-start !important; width: auto !important; }
+.fp-body .stats-pills > * { flex: 0 1 auto !important; min-width: 0; max-width: 100%; }
+.fp-body .stats-pills > .subnav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.fp-body .stats-pills > .subnav::-webkit-scrollbar { display: none; }
+.fp-body .tour-pick select { max-width: 11rem; }
+@media (min-width: 641px) { .fp-body .sg-filters { grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)) !important; } }
+/* update 96: Analyze / Upload sit right under the top bar; Stats / Performance Reports / … sit under the player search */
+main.tight-top { padding-top: 0.6rem !important; }
+main.tight-top > div > nav.subnav:first-child, main.tight-top nav.subnav:first-child { margin-top: 0 !important; }
+.section-nav.moved { margin: 0.75rem auto 0 !important; width: fit-content; max-width: 100%; }
+.sec-home .section-nav.moved { margin: 0 auto 1rem !important; }
+/* update 96: WITB "All your clubs" grouped by club type; iron sets fold */
+.club-table td.c-club, .club-table th:first-child { white-space: normal; }
+@media (max-width: 760px) { .club-table td:nth-child(3), .club-table th:nth-child(3) { display: table-cell; } }
+@media (max-width: 640px) { .club-table td.c-make, .club-table th.c-make { display: none; } }
+@media (max-width: 480px) { .club-table td.c-rounds, .club-table th.c-rounds { display: none; } .club-table td.actions { white-space: nowrap; } }
+.club-table .club-note { display: block; margin-top: 0.15rem; color: var(--muted); font-size: 0.8rem; font-weight: 400; }
+.club-table .club-star { color: #d4b483; font-size: 0.95em; }
+.club-table tr.club-group th { padding: 1.1rem 0.6rem 0.45rem; text-align: left; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4b483; background: transparent; border-bottom: 1px solid var(--line); }
+.club-table tbody tr.club-group:first-child th { padding-top: 0.5rem; }
+.club-table .club-group-n { color: var(--muted); letter-spacing: 0; font-weight: 500; }
+.club-table tr.club-set { cursor: pointer; }
+.club-table tr.club-set:hover td { background: rgba(255, 255, 255, 0.04); }
+.club-table tr.club-set.has-bag td:first-child { box-shadow: inset 3px 0 0 rgba(212, 180, 131, 0.45); }
+.club-table .set-caret { display: inline-block; width: 1.1rem; color: #d4b483; }
+.club-table tr.in-set td.c-club { padding-left: 1.7rem; }
+.club-table th .short { display: none; }
+@media (max-width: 760px) { .club-table th .long { display: none; } .club-table th .short { display: inline; } }
+.club-table td { vertical-align: middle; }
+/* update 96: Add Data, the scorecard from BlueGolf / GolfTraxx first */
+.cc-box { display: grid; gap: 0.6rem; margin: 0.25rem 0 0.5rem; }
+.cc-box[hidden] { display: none; }
+.cc-list { display: grid; gap: 0.35rem; }
+.cc-list:empty { display: none; }
+.cc-head { margin: 0.2rem 0 0; }
+.cc-item { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; width: 100%; padding: 0.6rem 0.8rem; border-radius: 12px; border: 1px solid var(--line-2);
+  background: var(--elev); color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.cc-item:hover { border-color: rgba(212, 180, 131, 0.5); }
+.cc-item.on { border-color: #d4b483; box-shadow: inset 3px 0 0 #d4b483; }
+.cc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
+.cc-src { flex: none; font-size: 0.72rem; font-weight: 600; color: #d4b483; }
+.cc-link { display: flex; gap: 0.5rem; }
+.cc-link input { flex: 1; min-width: 0; margin: 0; font-size: 16px; }
+.cc-link .btn { flex: none; }
+.photo-more { margin: 0.4rem 0 0.75rem; }
+.photo-more > summary { cursor: pointer; color: var(--muted); font-size: 0.88rem; text-align: center; padding: 0.4rem; list-style: none; }
+.photo-more > summary::-webkit-details-marker { display: none; }
+.photo-more > summary::before { content: "\25B8  "; color: #d4b483; }
+.photo-more[open] > summary::before { content: "\25BE  "; }
+.photo-more[open] > summary { margin-bottom: 0.5rem; }
