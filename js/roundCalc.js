@@ -190,6 +190,12 @@ export function roundObs(round) {
   }
   if (c.puttHoles) add("putts", null, null, null, (c.putts / c.puttHoles) * 18, c.puttHoles);
   const yds = (lie, d) => (d === "" || d == null ? null : lie === "Green" || lie === "Fringe" ? Number(d) / 3 : Number(d));
+  // scoring by par: each finished hole's score, on its par 3 / 4 / 5 average
+  for (const h of round.holes || []) {
+    const strokes = round.shots?.[`h${h.n}`] || [], q = round.quick?.[`h${h.n}`];
+    const score = strokes.length ? (strokes.some((x) => x.endLie === "Holed") ? strokes.length + strokes.filter((x) => x.endLie === "Penalty").length : null) : (q && Number(q.score) > 0 ? Number(q.score) : null);
+    if (score != null && [3, 4, 5].includes(Number(h.par))) add(`par${h.par}`, null, null, null, score, 1);
+  }
   for (const h of round.holes || []) {
     const strokes = round.shots?.[`h${h.n}`] || [];
     const q = round.quick?.[`h${h.n}`];

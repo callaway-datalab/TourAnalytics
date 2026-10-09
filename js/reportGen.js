@@ -261,12 +261,26 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const kindOf = (dist) => { const q = String(dist || "").toLowerCase().replace(/[^a-z]/g, ""); return q.includes("nondriver") ? "Non-Driver" : q.includes("driver") ? "Driver" : null; };
   const teeKinds = new Set(["drive", "fwy"].flatMap((k) => statRounds(myAll, k).flatMap((rd) => rd.shots.filter((o) => o.cat === "OTT").map((o) => kindOf(o.dist)))));
   const teeSplit = teeKinds.has("Driver") && teeKinds.has("Non-Driver");
-  const teeGrid = ["drive", "fwy"].filter((k) => present.includes(k)).map((k) => {
-    const cells = teeSplit ? ["Driver", "Non-Driver"].map((kind) => entryFor(k, (o) => o.cat === "OTT" && kindOf(o.dist) === kind, `${statDef(k).label} \u00b7 ${kind}`)) : [entryFor(k)];
-    return { key: k, def: statDef(k), cells, overall: null };
+  // (GIR % goes here too; a stat the data doesn't split by club shows on an "All" row, with everyone's overall value)
+  const teeGrid = ["drive", "fwy", "gir"].filter((k) => present.includes(k)).map((k) => {
+    const split = teeSplit ? ["Driver", "Non-Driver"].map((kind) => entryFor(k, (o) => o.cat === "OTT" && kindOf(o.dist) === kind, `${statDef(k).label} \u00b7 ${kind}`)) : [];
+    // the "All" value: its tee shots (par 4s and 5s) when the data has them, so GIR % here is the par 4 / 5 GIR %
+    // (a par 3's green in regulation comes from an approach, which belongs in Approach)
+    const tee = entryFor(k, (o) => o.cat === "OTT");
+    return { key: k, def: statDef(k), cells: split.some(Boolean) ? split : [null, null].slice(0, split.length), all: tee || entryFor(k) };
+  });
+  const teeAllRow = !teeSplit || teeGrid.some((g) => !g.cells.some(Boolean));
+  // Scoring by par: "Par 3 Scoring Avg" … in the data, or Scoring Avg rows marked Par 3 / 4 / 5
+  const parScoring = [3, 4, 5].map((n) => {
+    const k = `par${n}`, label = `Par ${n} Scoring Avg`;
+    if (present.includes(k)) return entryFor(k);
+    if (!present.includes("scoring")) return null;
+    const re = new RegExp(`par\\s*${n}\\b`, "i");
+    const e = entryFor("scoring", (o) => re.test(String(o.dist || "")) || re.test(String(o.lie || "")), label);
+    return e ? { ...e, key: k } : null;
   });
   for (const k of present) {
-    if (k === "goodLag" || k === "drive" || k === "fwy") continue; // (Good Lag isn't shown; the tee stats are a grid)
+    if (k === "goodLag" || k === "drive" || k === "fwy" || k === "par3" || k === "par4" || k === "par5") continue; // (Good Lag isn't shown; the tee stats are a grid)
     if (k === "make") {
       // Made Putt %: each putting distance in the data (0-3 ft, 3-5 ft …), in a grid on the page
       const labels = [...new Set(statRounds(myAll, k).flatMap((rd) => rd.shots.filter((o) => o.cat === "PUTT" && o.dist).map((o) => String(o.dist))))]
@@ -289,7 +303,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (e) basics.push(e);
   }
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit,
+    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
 
@@ -498,7 +512,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     section("SG Form", "Round by round", 150);
     d.text("Each bar is one round (green = gained strokes, red = lost). The gold line is the rolling average of the last 5 rounds: when it rises, the player is playing better.", M, y + 6, { size: 8, color: P.grey });
     y += 14;
-    formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, a.series.map((q) => q.value), { marks: true });
+    formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, a.series.map((q) => q.value)); // (no best / worst dots)
   }
 
   /* ---------- by the numbers: four premium tiles ---------- */
@@ -709,6 +723,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     };
     // (sections are gathered first, then spaced out to fill the page: a bigger gap when there's room)
     const queued = [];
+    // (title null: a second grid of the section above, right under it)
     const section = (title, colHeads, rows) => { if (rows.length && colHeads.length) queued.push([title, colHeads, rows]); };
     const pick = (keys) => keys.flatMap((k) => a.basics.filter((b) => b.key === k));
     const noteFor = (g) => (g.missing ? `No ${g.def.label} in this data file.` : g.overall ? `${fmtStat(g.def, g.overall.value)} overall (the data doesn't split this stat this way)` : "");
@@ -717,12 +732,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       birdie: "Birdie %", parOrBetter: "Par or Better %", bogey: "Bogey Avoidance", owgr: "OWGR" };
     const scoring = pick(Object.keys(SHORT));
     section("Scoring", scoring.map((b) => SHORT[b.key]), scoring.length ? [{ name: "", cells: scoring }] : []);
+    // a second row of Scoring: by par (its own grid, right under the first, no heading)
+    if (a.parScoring) section(scoring.length ? null : "Scoring", ["Par 3 Scoring Avg", "Par 4 Scoring Avg", "Par 5 Scoring Avg"], [{ name: "", cells: a.parScoring }]);
     // Off-the-Tee: Driving Distance and Hit Fairway %, Driver and Non-Driver
     // Off-the-Tee: a column per stat (Driving Distance, Hit Fairway %), a row for Driver and Non-Driver when the
     // data splits them (otherwise one row)
     if (a.teeGrid?.length) {
-      const kinds = a.teeSplit ? ["Driver", "Non-Driver"] : [""];
-      section("Off-the-Tee", a.teeGrid.map((g) => g.def.label), kinds.map((kind, r) => ({ name: kind, cells: a.teeGrid.map((g) => g.cells[r] || null) })));
+      const rows = a.teeSplit ? ["Driver", "Non-Driver"].map((kind, r) => ({ name: kind, cells: a.teeGrid.map((g) => g.cells[r] || null) })) : [];
+      if (a.teeAllRow) rows.push({ name: a.teeSplit ? "All" : "", cells: a.teeGrid.map((g) => g.all) });
+      section("Off-the-Tee", a.teeGrid.map((g) => (g.key === "gir" ? "GIR % (Par 4/5)" : g.def.label)), rows);
     }
     // Approach by distance (GIR % isn't shown)
     section("Approach by distance", a.bands || [], (a.grid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || (g.def.higher === false ? "lower is better" : ""), cells: g.cells, note: noteFor(g) })));
@@ -736,14 +754,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     section("Other", other.map((b) => b.def.label), other.length ? [{ name: "", cells: other }] : []);
     const appr = queued.find(([t]) => t === "Approach by distance");
     VS = appr ? layout(appr[1], appr[2]).vs : null;
-    const heightOf = ([, heads, rows]) => 19 + layout(heads, rows).gh;
+    const heightOf = ([title, heads, rows]) => (title === null ? 6 : 19) + layout(heads, rows).gh;
     const total = queued.reduce((t, q) => t + heightOf(q), 0), room = H - 60 - y - total;
     // (the first section sits close under the title: a fifth of the usual gap)
-    const extra = 0.8 * (queued.length ? Math.max(0, Math.min(40, room / Math.max(1, queued.length - 0.8))) : 0); // (20% less than filling the page)
+    const gaps = queued.filter((q) => q[0] !== null).length;
+    const extra = 0.8 * (gaps ? Math.max(0, Math.min(40, room / Math.max(1, gaps - 0.8))) : 0); // (20% less than filling the page)
     queued.forEach((q, i) => {
       need(heightOf(q));
-      y += i === 0 ? extra * 0.2 : extra;
-      head(q[0]);
+      if (q[0] === null) y += 6; // (the section's second grid)
+      else { y += i === 0 ? extra * 0.2 : extra; head(q[0]); }
       gridBox(q[1], q[2]);
     });
   }
