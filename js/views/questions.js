@@ -41,7 +41,8 @@ export async function render(main, { previewClient, flash }) {
     : null;
 
   const previewName = previewingTeam ? team.name : previewClient?.label;
-  const put = (nodes) => (isAnalyst ? (stopTabs = withChatTabs(main, nodes, { flash })) : mount(main, nodes));
+  // Chat | Questions for everyone on their own page (an admin preview shows the questions only)
+  const put = (nodes) => (!previewingTeam && !previewingPlayer ? (stopTabs = withChatTabs(main, nodes, { flash })) : mount(main, nodes));
   let stopTabs = () => {};
   put([
     fwdSection,

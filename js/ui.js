@@ -211,9 +211,9 @@ export function renderShell(root, { previewClient, currentRoute }) {
       }));
 
   const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
-  // Questions first, then Account; both look like the other header links.
+  // Chat (with Questions inside it) first, then Account; both look like the other header links.
   const footItems = [
-    el("a", { class: "ask-link", href: admin ? "#/admin/questions" : "#/questions", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, [admin || (state.isTeam && state.profile?.kind === "analyst") ? "Questions" : "Ask a question", askBadge]),
+    el("a", { class: "ask-link", href: admin ? "#/admin/questions" : "#/questions", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, ["Chat", askBadge]),
     accountMenu(state),
   ];
 

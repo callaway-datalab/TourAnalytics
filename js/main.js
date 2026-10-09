@@ -13,6 +13,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") navigator.se
 // Unread-question badge + desktop notifications, independent of which page is open.
 let unsubThreads = null;
 let lastCount = 0;
+let circlesSyncedFor = null; // (once per sign-in)
 let notifiedIds = new Set();
 
 subscribe((state) => {
@@ -20,6 +21,8 @@ subscribe((state) => {
   if (!state.user) { setUnreadCount(0); return; }
 
   if (state.isAdmin) {
+    // who each player can chat with (their team and Callaway staff): refreshed when the admin signs in
+    if (circlesSyncedFor !== state.user.uid) { circlesSyncedFor = state.user.uid; import("./chatCircles.js").then((m) => m.syncChatCircles()).catch(() => {}); }
     unsubThreads = watchAdminThreads((threads) => updateBadge(threads.filter((t) => t.adminUnread && !t.archived), threads));
   } else if (state.profile) {
     unsubThreads = watchMyThreads(state.user.uid, (threads) => updateBadge(threads.filter((t) => t.userUnread && !t.archived), threads));

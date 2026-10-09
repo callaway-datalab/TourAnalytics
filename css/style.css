@@ -2433,3 +2433,11 @@ main.tight-top > div > nav.subnav:first-child, main.tight-top nav.subnav:first-c
   .stats-row2 .cat-drop, .stats-row2 .stat-pick { flex: 1 1 100% !important; margin-left: 0 !important; }
   .stats-row2 .stat-pick select { flex: 1; max-width: none; }
 }
+/* update 100: Chat for everyone */
+.chat-room-circle { display: block; font-size: 0.7rem; color: #d4b483; margin-top: 0.1rem; }
+.chat-empty { padding: 1rem 0.5rem; color: var(--muted); font-size: 0.88rem; }
+.chat-sec { display: grid; gap: 0.25rem; margin-bottom: 0.6rem; }
+.chat-sec-title { margin: 0.35rem 0 0.15rem; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #d4b483; }
+.chat-find { margin: 0 0 0.5rem; font-size: 16px; }
+.chat-picker .chat-people { max-height: 22rem; overflow-y: auto; }
+.chat-form[hidden] { display: none !important; }
