@@ -666,21 +666,23 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const valueW = (b, z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k; return 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8; };
     const layout = (colHeads, rows) => {
       const z0 = VS ?? 14;
-      const nameW = rows.some((r) => r.name) ? Math.max(NAME_W, ...rows.map((r) => (r.name ? textWidth(r.name, z0, true) + 16 : 0))) : 0;
+      const nameW = rows.some((r) => r.name) ? Math.max(NAME_W, ...rows.map((r) => (r.name ? textWidth(r.name, z0 * 0.88, true) + 16 : 0))) : 0;
       // each column as wide as its widest value and heading need (with some air), up to the page
       const need = colHeads.map((h, c) => Math.max(70, textWidth(String(h).toUpperCase(), 5.6, true) + 1.1 * String(h).length + 14,
         ...rows.map((r) => (r.cells?.[c] ? valueW(r.cells[c], z0) + 14 : 0))));
-      const w = Math.min(W, nameW + need.reduce((t, x) => t + x, 0)), cellW = (w - nameW) / colHeads.length;
+      // (no name column: a margin inside the box's left and right edges, so values aren't against them)
+      const pad = nameW ? 0 : 10;
+      const w = Math.min(W, nameW + 2 * pad + need.reduce((t, x) => t + x, 0)), cellW = (w - nameW - 2 * pad) / colHeads.length;
       // the biggest size (9 to 14 pt) at which every value and its rank bubble fit side by side in their cell
       const fitsAt = (z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k;
         return rows.every((r) => (r.cells || []).every((b) => !b || 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8 <= cellW)); };
       let vs = VS ?? 14; while (vs > 8 && !fitsAt(vs)) vs -= 0.5; // (the page's size; smaller only if this grid can't fit it)
       const rowH = Math.round(Math.max(9, vs) + 16), top = colHeads.every((h) => !h) ? 3 : 16;
-      return { nameW, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
+      return { nameW, pad, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
     };
     const gridBox = (colHeads, rows) => {
-      const { nameW: NW, w, cellW, vs, rowH: RH, top, gh } = layout(colHeads, rows), x = M;
-      const NAME_W = NW, ROW_H = RH, k = (vs - 9) / 5; // (k: 0 for the smallest cells, 1 for the roomiest)
+      const { nameW: NW, pad, w, cellW, vs, rowH: RH, top, gh } = layout(colHeads, rows), x = M;
+      const NAME_W = NW + pad, ROW_H = RH, k = (vs - 9) / 5; // (k: 0 for the smallest cells, 1 for the roomiest)
       d.roundRect(x, y, w, gh, 8, { fill: P.mist });
       colHeads.forEach((lab, c) => {
         if (!lab) return;
@@ -688,11 +690,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         while (z > 4.4 && textWidth(t, z, true) + 1.1 * t.length > cellW - 6) z -= 0.2;
         cap(t, x + NAME_W + cellW * (c + 0.5) - 3, y + 11, P.soft, "center", z);
       });
-      for (let c = NAME_W ? 0 : 1; c < colHeads.length; c++) { const lx = x + NAME_W + cellW * c - 3; d.line(lx, y + 4, lx, y + gh - 4, { color: "#d9d9de", width: 0.6 }); }
+      for (let c = NW ? 0 : 1; c < colHeads.length; c++) { const lx = x + NAME_W + cellW * c - 3; d.line(lx, y + 4, lx, y + gh - 4, { color: "#d9d9de", width: 0.6 }); }
       rows.forEach((r, i) => {
         const ry = y + top + i * ROW_H;
         if (i) d.line(x + 8, ry, x + w - 8, ry, { color: P.hair, width: 0.5 });
-        if (r.name) d.text(r.name, x + 9, ry + (r.sub ? ROW_H / 2 - 1 : ROW_H / 2 + 3), { size: vs, bold: true, color: P.ink }); // (as big as the values)
+        if (r.name) d.text(r.name, x + 9, ry + (r.sub ? ROW_H / 2 - 1 : ROW_H / 2 + 3), { size: vs * 0.88, bold: true, color: P.ink }); // (a touch smaller than the values)
         if (r.sub) d.text(r.sub, x + 9, ry + ROW_H / 2 + 8, { size: 5.8 + 0.6 * k, color: P.faint });
         if (r.note) { d.text(r.note, x + NAME_W + 4, ry + ROW_H / 2 + 3, { size: 7, color: P.faint }); return; }
         r.cells.forEach((b, c) => {
@@ -879,7 +881,9 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       }
       status.textContent = "Making the PDF\u2026";
       // a preset's name ("This year" is shown as the year itself, e.g. 2026); your own dates are shown as dates
-      const rangeLabel = preset === "year" ? String(new Date().getFullYear()) : preset ? presets.find(([v]) => v === preset)?.[1] : null;
+      // ("This year" and "All time" also say how current they are: "2026 - As of 10/9/2026")
+      const asOf = ` - As of ${new Date().toLocaleDateString("en-US")}`;
+      const rangeLabel = preset === "year" ? `${new Date().getFullYear()}${asOf}` : preset === "all" ? `All time${asOf}` : preset ? presets.find(([v]) => v === preset)?.[1] : null;
       const bytes = buildReportPdf(a, { aiSummary, sourceLabel: source.value === "tour" ? "Tour Events" : "Entered Rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
       window.__lastReportPdf = bytes; // (for tests)

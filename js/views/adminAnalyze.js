@@ -35,6 +35,7 @@ export async function render(main, { flash }) {
   const portalLink = el("p", { class: "center" });
   let enteredUpdated = null;
   let pickerRef = null; // the player search (so the leaderboard can pick a player)
+  let pendingNote = ""; // (said once the file that was switched to has loaded)
   // (hidden while loading, so Tour Events / Entered Rounds don't flash outside the Filters panel; shown
   // only when there's nothing to draw, so the other source can still be picked)
   const sourceHome = el("div", { class: "pill-row source-home", hidden: true });
@@ -86,7 +87,7 @@ export async function render(main, { flash }) {
     mount(body, null);
     await loadAll(ds, token);
     if (token !== loadToken) return;
-    status.textContent = "";
+    status.textContent = pendingNote; pendingNote = "";
     const idx = detectColumns(ds.columns || []);
     if (!isShotData(idx)) { renderGeneric(ds); return; }
     // reading each player's rows into rounds is done once per file (not again on every redraw)
@@ -211,8 +212,23 @@ export async function render(main, { flash }) {
     if (source === "entered") watchMine();
     drawPortalLink();
     if (source === "entered") drawEntered();
-    else if (dash) dash.update({ me: meFrom() });
-    else if (datasets.length) refresh(); // simple comparison: redraw with the highlight (rows are cached)
+    else if (dash || datasets.length) {
+      // A player who isn't in the file on screen: open the newest file that has them, or say why there's nothing
+      // (rather than leaving the leaderboard up as if the click did nothing).
+      status.textContent = "";
+      if (p && !meFrom()) {
+        const other = datasets.find((d) => d.id !== fileId && isShotData(detectColumns(d.columns || [])) && (d.clientKeys || []).includes(p.key));
+        if (other) { fileId = other.id; pendingNote = `${p.label} is in ${other.name || "another file"}, so that file is showing.`; refresh(); return; }
+        const cur = datasets.find((d) => d.id === fileId);
+        const inFile = (cur?.clientKeys || []).includes(p.key);
+        status.textContent = inFile ? `${p.label} is in ${cur?.name || "this file"}, but none of their rows have a date, tournament and round that can be read.`
+          : `${p.label} has no Tour Events data in ${cur?.name || "the uploaded file"}. Check Entered Rounds, or upload a file with their rows.`;
+        if (dash) dash.update({ me: null });
+        return;
+      }
+      if (dash) dash.update({ me: meFrom() });
+      else refresh(); // simple comparison: redraw with the highlight (rows are cached)
+    }
   }, ids, meKey);
   mount(pickerBox, picker.node);
   if (dash) dash.update({ field: fieldPlayers, me: meFrom() });
