@@ -665,7 +665,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const layout = (colHeads, rows) => {
       const nameW = rows.some((r) => r.name) ? NAME_W : 0;
       const w = Math.min(W, nameW + colHeads.length * 150), cellW = (w - nameW) / colHeads.length;
-      const vs = Math.max(9, Math.min(14, cellW / 7)), rowH = Math.round(vs + 16), top = colHeads.every((h) => !h) ? 3 : 16;
+      // the biggest size (9 to 14 pt) at which every value and its rank bubble fit side by side in their cell
+      const fitsAt = (z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k;
+        return rows.every((r) => (r.cells || []).every((b) => !b || 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8 <= cellW)); };
+      let vs = 14; while (vs > 8 && !fitsAt(vs)) vs -= 0.5;
+      const rowH = Math.round(Math.max(9, vs) + 16), top = colHeads.every((h) => !h) ? 3 : 16;
       return { nameW, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
     };
     const gridBox = (colHeads, rows) => {
@@ -706,7 +710,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const scoring = pick(Object.keys(SHORT));
     section("Scoring", scoring.map((b) => SHORT[b.key]), scoring.length ? [{ name: "", cells: scoring }] : []);
     // Off-the-Tee: Driving Distance and Hit Fairway %, Driver and Non-Driver
-    section("Off-the-Tee", a.teeSplit ? ["Driver", "Non-Driver"] : [""], (a.teeGrid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || "", cells: g.cells, note: noteFor(g) })));
+    // Off-the-Tee: a column per stat (Driving Distance, Hit Fairway %), a row for Driver and Non-Driver when the
+    // data splits them (otherwise one row)
+    if (a.teeGrid?.length) {
+      const kinds = a.teeSplit ? ["Driver", "Non-Driver"] : [""];
+      section("Off-the-Tee", a.teeGrid.map((g) => g.def.label), kinds.map((kind, r) => ({ name: kind, cells: a.teeGrid.map((g) => g.cells[r] || null) })));
+    }
     // Approach by distance (GIR % isn't shown)
     section("Approach by distance", a.bands || [], (a.grid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || (g.def.higher === false ? "lower is better" : ""), cells: g.cells, note: noteFor(g) })));
     // Short game: Up & Down by distance and lie

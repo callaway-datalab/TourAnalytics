@@ -356,7 +356,8 @@ export function sgDashboard(container, opts) {
             el("div", { class: "hero-big" }, [el("strong", { class: toneCls(total, fieldAvg) }, fmtV(total)), el("span", {}, sg ? "strokes gained a round" : def.label)]),
             sg ? null : el("p", { class: "hero-help" }, def.help),
             el("div", { class: "hero-chips" }, [
-              r.rank && r.of > 1 ? el("span", { class: `hero-chip${r.rank === 1 ? " gold" : ""}` }, `${ordinal(r.rank)} of ${r.of}`) : null,
+              // (coloured by rank, as in the report: top 10, 11-50, 51-100, 101-150, past 150)
+              r.rank && r.of > 1 ? el("span", { class: `hero-chip rank-chip ${r.rank <= 10 ? "rk-10" : r.rank <= 50 ? "rk-50" : r.rank <= 100 ? "rk-100" : r.rank <= 150 ? "rk-150" : "rk-out"}` }, `${ordinal(r.rank)} of ${r.of}`) : null,
               el("span", { class: "hero-chip" }, rw(mine.length)),
               form ? el("span", { class: `hero-chip ${form[1]}` }, `Form: ${form[0]}`) : null,
             ]),

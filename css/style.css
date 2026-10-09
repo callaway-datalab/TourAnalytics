@@ -2467,3 +2467,10 @@ main.tight-top > div > nav.subnav:first-child, main.tight-top nav.subnav:first-c
 /* update 111: someone else's WITB (the admin in their portal): no editing */
 .witb-readonly .club-table td.actions > *, .witb-readonly + .your-bag .entry-del { display: none; }
 .witb-readonly .club-table tr.club-row { cursor: default; }
+/* update 115: the hero card's rank chip, coloured like the report's rank bubbles */
+.hero-chip.rank-chip { border: 0; font-weight: 700; }
+.hero-chip.rk-10 { background: #34c759; color: #0a2a12; }
+.hero-chip.rk-50 { background: #1e8e4a; color: #ffffff; }
+.hero-chip.rk-100 { background: #f5c400; color: #2a2200; }
+.hero-chip.rk-150 { background: #f08a24; color: #ffffff; }
+.hero-chip.rk-out { background: #d0342c; color: #ffffff; }
