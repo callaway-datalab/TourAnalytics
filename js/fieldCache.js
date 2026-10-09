@@ -54,7 +54,7 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
   if (!ds) return { players: new Map(), from: "none" };
   const version = versionOf(ds), keys = ds.clientKeys || [];
   const mem = memory.get(datasetId);
-  if (mem && version != null && mem.version === version) return { players: mem.players, from: "memory" };
+  if (mem && version != null && mem.version === version && !mem.failed?.length) return { players: mem.players, from: "memory" };
   const flightKey = `${datasetId}|${version}`;
   if (inflight.has(flightKey)) return inflight.get(flightKey);
   const job = (async () => {
@@ -67,21 +67,28 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
         return { players, from: "device" };
       }
     }
-    // from Firestore
-    const players = new Map(keys.map((k) => [k, null]));
-    const queue = [...keys];
-    let done = 0, failed = 0;
+    // from Firestore (after a load where some players failed, only those are fetched again)
+    const retry = mem && version != null && mem.version === version && mem.failed?.length ? mem : null;
+    const players = retry ? retry.players : new Map(keys.map((k) => [k, null]));
+    const queue = retry ? [...retry.failed] : [...keys];
+    const failedKeys = [];
+    let done = retry ? keys.length - queue.length : 0, error = null;
     const next = async () => {
       while (queue.length) {
         const key = queue.shift();
         try { players.set(key, { label: nameOf(ds, key), rows: await getDatasetRowsListed(key, datasetId) }); }
-        catch { failed++; players.set(key, { label: nameOf(ds, key), rows: [] }); }
+        catch (err) { failedKeys.push(key); error = error || err; players.set(key, { label: nameOf(ds, key), rows: [] }); }
         done++;
         onProgress?.(done, keys.length);
       }
     };
     await Promise.all(Array.from({ length: 16 }, next));
-    if (version != null && !failed) {
+    if (failedKeys.length) {
+      // keep what did load (so a redraw doesn't fetch everyone again) and say who didn't, and why
+      if (version != null) memory.set(datasetId, { version, players, failed: failedKeys });
+      return { players, from: "network", failed: failedKeys, error };
+    }
+    if (version != null) {
       memory.set(datasetId, { version, players });
       // saved after the page has drawn, so it never slows this load down
       setTimeout(() => writeCopy(datasetId, { format: FORMAT, version, savedAt: Date.now(), players: [...players].map(([k, p]) => [k, p.label, p.rows]) }), 1500);
@@ -90,6 +97,22 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
   })();
   inflight.set(flightKey, job);
   try { return await job; } finally { inflight.delete(flightKey); }
+}
+
+/** Why Firestore didn't return something, in plain words. */
+export function loadErrorText(err) {
+  const code = String(err?.code || err?.message || "");
+  if (/resource-exhausted|quota/i.test(code)) return "Firestore's daily read limit was reached (the free plan allows 50,000 reads a day); it resets at midnight Pacific";
+  if (/permission-denied/i.test(code)) return "Firestore refused the read (check the published rules)";
+  if (/unavailable|network|offline|deadline/i.test(code)) return "the connection dropped";
+  return code ? `Firestore said: ${code}` : "Firestore didn't return them";
+}
+/** One player's rows, fetched again (e.g. after a load where they failed). */
+export async function reloadPlayerRows(datasetId, key) {
+  const rows = await getDatasetRowsListed(key, datasetId);
+  const mem = memory.get(datasetId);
+  if (mem) { const p = mem.players.get(key); mem.players.set(key, { label: p?.label || key, rows }); if (mem.failed) mem.failed = mem.failed.filter((k) => k !== key); }
+  return rows;
 }
 
 /** Forget this device's copies (e.g. on sign-out). */

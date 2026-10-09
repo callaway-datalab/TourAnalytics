@@ -2,7 +2,7 @@
 // Players see the same dashboard on their own My Data page (see sgDashboard.js).
 import { el, mount, num, subNav, relocateSectionNav } from "../ui.js";
 import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource } from "../store.js";
-import { loadDatasetPlayers } from "../fieldCache.js";
+import { loadDatasetPlayers, loadErrorText, reloadPlayerRows } from "../fieldCache.js";
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
@@ -36,6 +36,7 @@ export async function render(main, { flash }) {
   let enteredUpdated = null;
   let pickerRef = null; // the player search (so the leaderboard can pick a player)
   let pendingNote = ""; // (said once the file that was switched to has loaded)
+  let loadNote = "";    // (players whose rows didn't load)
   // (hidden while loading, so Tour Events / Entered Rounds don't flash outside the Filters panel; shown
   // only when there's nothing to draw, so the other source can still be picked)
   const sourceHome = el("div", { class: "pill-row source-home", hidden: true });
@@ -70,10 +71,12 @@ export async function render(main, { flash }) {
   async function loadAll(ds, token) {
     const total = (ds.clientKeys || []).length;
     status.textContent = "Loading players\u2026";
-    const { players } = await loadDatasetPlayers(ds.id, { ds, onProgress: (done) => {
+    const { players, failed, error } = await loadDatasetPlayers(ds.id, { ds, onProgress: (done) => {
       if (token === loadToken) status.textContent = `Loading players\u2026 ${done} of ${total}. This is kept on this device, so the next refresh is quick.`;
     } });
     for (const [key, p] of players) if (p) rowsCache.set(`${ds.id}|${key}`, p);
+    // (some players didn't load: say so, rather than leaving them out without a word)
+    loadNote = failed?.length ? `Couldn\u2019t load ${failed.length} of ${total} players\u2019 rows: ${loadErrorText(error)}. They\u2019re left out for now and tried again next time you open this page.` : "";
   }
 
   const meFrom = () => (player && fieldPlayers.find((p) => p.key === player.key)) || null;
@@ -87,7 +90,7 @@ export async function render(main, { flash }) {
     mount(body, null);
     await loadAll(ds, token);
     if (token !== loadToken) return;
-    status.textContent = pendingNote; pendingNote = "";
+    status.textContent = [pendingNote, loadNote].filter(Boolean).join(" "); pendingNote = "";
     const idx = detectColumns(ds.columns || []);
     if (!isShotData(idx)) { renderGeneric(ds); return; }
     // reading each player's rows into rounds is done once per file (not again on every redraw)
@@ -156,6 +159,7 @@ export async function render(main, { flash }) {
 
   // Keep the players' rankings (the published per-round summary) in step with this file.
   async function publishIfStale(ds) {
+    if (loadNote) return; // (not while some players' rows are missing: the shared summary would leave them out)
     try {
       const uploaded = ds.uploadedAt?.toMillis?.() ?? 0;
       const src = await fieldStatsSource(ds.id);
@@ -221,8 +225,32 @@ export async function render(main, { flash }) {
         if (other) { fileId = other.id; pendingNote = `${p.label} is in ${other.name || "another file"}, so that file is showing.`; refresh(); return; }
         const cur = datasets.find((d) => d.id === fileId);
         const inFile = (cur?.clientKeys || []).includes(p.key);
-        status.textContent = inFile ? `${p.label} is in ${cur?.name || "this file"}, but none of their rows have a date, tournament and round that can be read.`
-          : `${p.label} has no Tour Events data in ${cur?.name || "the uploaded file"}. Check Entered Rounds, or upload a file with their rows.`;
+        if (inFile) {
+          // in the file but not on screen: their rows didn't load (or can't be read). Fetch them again now.
+          status.textContent = `Loading ${p.label}\u2026`;
+          reloadPlayerRows(cur.id, p.key).then((rows) => {
+            if (player?.key !== p.key) return;
+            const rounds = prepare(rows, detectColumns(cur.columns || []));
+            if (!rounds.length) {
+              status.textContent = rows.length ? `${p.label} has ${rows.length.toLocaleString()} rows in ${cur.name || "this file"}, but none could be read as rounds (each needs a date, a tournament, a stat and a value).`
+                : `${p.label} is listed in ${cur.name || "this file"}, but no rows were stored for them. Re-upload the file to fix it.`;
+              if (dash) dash.update({ me: null });
+              return;
+            }
+            rowsCache.set(`${cur.id}|${p.key}`, { label: p.label, rows });
+            const one = { key: p.key, label: displayLabels.get(p.key) || p.label, rounds };
+            fieldPlayers = [...fieldPlayers.filter((q) => q.key !== p.key), one];
+            for (const [k, list] of preparedCache) preparedCache.set(k, [...list.filter((q) => q.key !== p.key), one]);
+            status.textContent = "";
+            if (dash) dash.update({ field: fieldPlayers, me: one }); else refresh();
+          }).catch((err) => {
+            if (player?.key !== p.key) return;
+            status.textContent = `Couldn\u2019t load ${p.label}\u2019s rows: ${loadErrorText(err)}. Try again in a moment.`;
+            if (dash) dash.update({ me: null });
+          });
+          return;
+        }
+        status.textContent = `${p.label} has no Tour Events data in ${cur?.name || "the uploaded file"}. Check Entered Rounds, or upload a file with their rows.`;
         if (dash) dash.update({ me: null });
         return;
       }
