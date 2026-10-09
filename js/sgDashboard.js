@@ -59,6 +59,7 @@ export function sgDashboard(container, opts) {
   // Some stats come one row per tournament (no round number, e.g. Birdies / Round over its rounds): then
   // what's counted is events, not rounds, and the page says so.
   let unit = "round";
+  let sgEligible = null, sgMinR = 1; // the players ranked for every stat (see draw)
   const rw = (n) => `${Number(n).toLocaleString()} ${unit}${n === 1 ? "" : "s"}`;
   const Unit = () => (unit === "event" ? "Events" : "Rounds");
   const isSG = () => statKey === "sg";
@@ -121,6 +122,16 @@ export function sgDashboard(container, opts) {
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
     lastRankF = rankF;
     const slicedField = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, rankF)) }));
+    // Who's ranked, for every stat: players with at least Min. rounds of strokes-gained data in the selection
+    // (year, tour, tournament, round, span). Other stats' rows don't line up with rounds (some are one row per
+    // tournament), so they use this same list. With no strokes-gained data at all, each stat counts its own.
+    sgEligible = null;
+    const roundF = { ...rankF, cats: [], lie: [], dist: [], club: [] };
+    const sgCounts = fieldAll.map((p) => [p.key, applyFilters(statRounds(p.rounds, "sg"), roundF).length]).filter(([, n]) => n > 0);
+    if (sgCounts.length) {
+      sgMinR = st.minRounds != null ? Math.max(1, Number(st.minRounds) || 1) : defaultMinRounds(Math.max(...sgCounts.map(([, n]) => n)));
+      sgEligible = new Set(sgCounts.filter(([, n]) => n >= sgMinR).map(([k]) => k));
+    }
     const mine = me ? nz(applyFilters(me.rounds, f)) : null;
     // Gold dots (Top 1 / 10 / 25 / 50 / All): until picked by hand, the next group up from the player's rank
     // (Min. rounds applies): 100th → Top 50, 18th → Top 10, 2nd-10th → Top 1; the leader compares with the Top 10.
@@ -379,7 +390,7 @@ export function sgDashboard(container, opts) {
       el("div", { class: "hb-head" }, [el("div", {}, [el("span", { class: "hero-kicker" }, describe()), el("h2", { class: "hero-name" }, "Leaderboard"),
         sg ? null : el("p", { class: "hero-help" }, [el("strong", {}, def.label), `: ${def.help}`])]), minBox]),
       tourButtons(),
-      ranked.length ? null : el("p", { class: "muted small" }, `No one has ${rw(minR)} in this selection.`),
+      ranked.length ? null : el("p", { class: "muted small" }, `No one has ${sgEligible ? `${minR} strokes-gained ${minR === 1 ? "round" : "rounds"}` : rw(minR)} in this selection.`),
       el("div", { class: `hero-board${sg ? "" : " stat-board"}`, tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => el("div", { class: "hb-row" }, [
         el("span", { class: "hb-rank" }, String(x.i + 1)),
         opts.onPick ? (() => { const b = el("button", { type: "button", class: "hb-name hb-link", title: `Open ${x.p.label}` }, x.p.label); b.addEventListener("click", () => opts.onPick(x.p.key)); return b; })() : el("span", { class: "hb-name", title: x.p.label }, x.p.label),
@@ -682,6 +693,7 @@ export function sgDashboard(container, opts) {
   // Who is ranked: players with at least Min. rounds in the selection (the player on screen always counts),
   // so the hero card, its tiles, the summary and the Rankings table all give the same rank.
   const rankedField = (slicedField) => {
+    if (sgEligible) return slicedField.filter((p) => p.rounds.length && (sgEligible.has(p.key) || p.key === me?.key));
     const minR = minRoundsFor(slicedField.filter((p) => p.rounds.length));
     return slicedField.filter((p) => p.rounds.length && (p.rounds.length >= minR || p.key === me?.key));
   };
@@ -960,6 +972,7 @@ export function sgDashboard(container, opts) {
   let rankScroll = null;
   // Min. rounds: until you set it, 25% of the most rounds anyone listed has played (rounded)
   const minRoundsFor = (players) => {
+    if (sgEligible) return sgMinR; // (strokes-gained rounds decide, for every stat)
     if (st.minRounds != null) return Math.max(1, Number(st.minRounds) || 1);
     return defaultMinRounds(Math.max(0, ...players.map((p) => p.rounds.length)));
   };
@@ -967,7 +980,8 @@ export function sgDashboard(container, opts) {
     const v = minRoundsFor(players);
     const inp = el("input", { type: "number", min: 1, max: 999, value: v, class: "hb-min-in", "aria-label": "Minimum rounds played" });
     inp.addEventListener("change", () => { st.minRounds = Math.max(1, Math.round(Number(inp.value) || 1)); setTimeout(draw, 0); });
-    return el("label", { class: "hb-min", title: `Only players with at least this many ${unit}s in the selection` }, [`Min. ${unit}s`, inp]);
+    const what = sgEligible ? "round" : unit;
+    return el("label", { class: "hb-min", title: sgEligible && !isSG() ? "Only players with at least this many strokes-gained rounds in the selection (the same players for every stat)" : `Only players with at least this many ${what}s in the selection` }, [`Min. ${what}s`, inp]);
   }
   function rankingsBlock(slicedField) {
     const sg = isSG();
