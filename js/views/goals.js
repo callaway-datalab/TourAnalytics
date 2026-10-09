@@ -391,7 +391,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "When"), whenSel, ch.when === "nextN" ? el("span", { class: "gx-rounds" }, [nIn, "rounds"]) : null, ch.when === "date" ? dIn : null]),
       ]),
       el("div", { class: "gx-ch-sentence" }, [el("span", { class: "gx-eyebrow" }, "Your goal"), sentence,
-        st.kind === "basic" && !basicRounds.length ? el("p", { class: "gx-sub" }, "This stat comes from rounds entered in Data Entry (full shots or quick mode).") : null]),
+        st.kind === "basic" && !basicRounds.length ? el("p", { class: "gx-sub" }, "This stat comes from rounds recorded in Track Round (full shots or quick mode).") : null]),
       el("div", { class: "gx-bar" }, [cancel, save]),
     ]));
   }

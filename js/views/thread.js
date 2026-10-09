@@ -126,7 +126,7 @@ export async function render(main, { params, routeId, flash }) {
     open.addEventListener("click", () => {
       panel.hidden = !panel.hidden;
       if (panel.hidden) return;
-      if (!analysts.length) { mount(panel, el("p", { class: "muted" }, "No analysts have signed up yet. Add one under Player Access \u2192 Create New Access Code \u2192 Analyst.")); return; }
+      if (!analysts.length) { mount(panel, el("p", { class: "muted" }, "No analysts have signed up yet. Add one under User Access \u2192 Create New Access Code \u2192 Analyst.")); return; }
       const boxes = analysts.map((a) => el("label", { class: "ms-row" }, [el("input", { type: "checkbox", value: a.uid, checked: (t.forwardedTo || []).includes(a.uid) }), el("span", {}, a.name)]));
       const save = el("button", { type: "button", class: "btn" }, "Save");
       save.addEventListener("click", async () => {

@@ -97,11 +97,11 @@ const sectionsFor = (kind) => {
     ["Stats", admin ? "#/admin/analyze" : "#/dashboard", admin ? ["admin-analyze"] : ["dashboard", "dataset"]],
     ["Performance Reports", admin ? "#/admin/reports/view?cat=performance" : "#/documents", admin ? ["admin-documents", "admin-reports-view"] : ["documents"], { q: admin ? "performance" : null }],
     ["Live Scoring", "#/live", ["live"], { soon: true }],
-    ["Add Data", "#/entry", ["entry", "entry-new", "entry-round"]],
   ];
   const planItems = [
     ["Course Reports", admin ? "#/admin/reports/view?cat=course" : "#/course-reports", admin ? ["admin-reports-view"] : ["course-reports"], { q: admin ? "course" : null }],
     ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
+    ["Track Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (was Add Data, under Analyze)
     ["Practice", "#/practice/recommendations", ["practice", "practice-recs", "practice-tracking"], { soon: true }],
   ];
   return [
@@ -110,7 +110,7 @@ const sectionsFor = (kind) => {
   ];
 };
 // (Player Access also holds Upload Data for the admin)
-const NAV = { admin: [["#/admin/clients", "people", "Player Access", ["admin-clients", "admin-datasets"]]] };
+const NAV = { admin: [["#/admin/clients", "people", "User Access", ["admin-clients", "admin-datasets"]]] };
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
 const itemOn = (item, routeId) => {
   const [, , routes, opt = {}] = item;

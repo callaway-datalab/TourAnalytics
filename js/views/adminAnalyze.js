@@ -144,7 +144,7 @@ export async function render(main, { flash }) {
     const me = meFrom();
     if (!player) { mount(body, el("p", { class: "empty center" }, "Pick a player above to see their entered rounds.")); showPills(); return; }
     if (!me) {
-      mount(body, el("p", { class: "empty center" }, `${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Data Entry." : "."}`));
+      mount(body, el("p", { class: "empty center" }, `${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Track Round." : "."}`));
       showPills();
       return;
     }

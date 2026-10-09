@@ -254,10 +254,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const UD_BANDS = [["<30 yds", 0, 30], ["30-50 yds", 30, 50]], UD_LIES = ["Fairway", "Rough", "Bunker"];
   let udGrid = null, puttGrid = null;
   // Off-the-Tee: Driving Distance and Hit Fairway %, Driver and Non-Driver (the data's tee-shot "distance")
-  const kindOf = (dist) => { const q = String(dist || "").toLowerCase().replace(/[^a-z]/g, ""); return !q ? null : q === "driver" ? "Driver" : "Non-Driver"; };
+  // ("Tee Shot (Driver)", "Driver" -> Driver; "Tee Shot (Non-Driver)", "Non-Driver" -> Non-Driver). Both in the data:
+  // two columns; otherwise one, with no heading.
+  const kindOf = (dist) => { const q = String(dist || "").toLowerCase().replace(/[^a-z]/g, ""); return q.includes("nondriver") ? "Non-Driver" : q.includes("driver") ? "Driver" : null; };
+  const teeKinds = new Set(["drive", "fwy"].flatMap((k) => statRounds(myAll, k).flatMap((rd) => rd.shots.filter((o) => o.cat === "OTT").map((o) => kindOf(o.dist)))));
+  const teeSplit = teeKinds.has("Driver") && teeKinds.has("Non-Driver");
   const teeGrid = ["drive", "fwy"].filter((k) => present.includes(k)).map((k) => {
-    const cells = ["Driver", "Non-Driver"].map((kind) => entryFor(k, (o) => o.cat === "OTT" && kindOf(o.dist) === kind, `${statDef(k).label} \u00b7 ${kind}`));
-    return { key: k, def: statDef(k), cells, overall: cells.some(Boolean) ? null : entryFor(k) };
+    const cells = teeSplit ? ["Driver", "Non-Driver"].map((kind) => entryFor(k, (o) => o.cat === "OTT" && kindOf(o.dist) === kind, `${statDef(k).label} \u00b7 ${kind}`)) : [entryFor(k)];
+    return { key: k, def: statDef(k), cells, overall: null };
   });
   for (const k of present) {
     if (k === "goodLag" || k === "drive" || k === "fwy") continue; // (Good Lag isn't shown; the tee stats are a grid)
@@ -283,7 +287,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (e) basics.push(e);
   }
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid,
+    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
 
@@ -639,9 +643,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const head = (title) => { y += 13; d.rect(M, y - 6.5, 3, 8, { fill: P.gold }); cap(title, M + 9, y, P.gold, "left", 6.6); y += 6; };
     const pillAt = (b, xr, yy, size = 5.6) => {
       if (!b.rank) return 0;
-      const T = `${b.rank} / ${b.of}`, top = b.rank <= Math.max(1, Math.floor(b.of * 0.1)), w = textWidth(T, size, true) + 10;
-      d.roundRect(xr - w, yy - 8, w, 10.5, 5.25, { fill: top ? P.gold : "#3a3a3c" });
-      d.text(T, xr - w / 2, yy - 0.6, { size, bold: true, color: "#ffffff", align: "center" });
+      // by rank: top 10 bright green, 11-50 green, 51-100 yellow, 101-150 orange, past 150 red
+      const T = `${b.rank} / ${b.of}`, w = textWidth(T, size, true) + 10;
+      const [fill, ink] = b.rank <= 10 ? ["#34c759", "#0a2a12"] : b.rank <= 50 ? ["#1e8e4a", "#ffffff"] : b.rank <= 100 ? ["#f5c400", "#2a2200"] : b.rank <= 150 ? ["#f08a24", "#ffffff"] : ["#d0342c", "#ffffff"];
+      d.roundRect(xr - w, yy - 8, w, 10.5, 5.25, { fill });
+      d.text(T, xr - w / 2, yy - 0.6, { size, bold: true, color: ink, align: "center" });
       return w;
     };
     // what's under a row's name
@@ -649,16 +655,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const NAME_W = 92, ROW_H = 24;
     // a grid across the page: rows [{ name, sub, cells | note }], one heading per column
     const gridBox = (colHeads, rows) => {
-      const x = M, w = W, cellW = (w - NAME_W) / colHeads.length, gh = 16 + rows.length * ROW_H + 3;
+      // (no headings, e.g. one Off-the-Tee column: no heading row)
+      const bare = colHeads.every((h) => !h), top = bare ? 3 : 16;
+      const x = M, w = W, cellW = (w - NAME_W) / colHeads.length, gh = top + rows.length * ROW_H + 3;
       d.roundRect(x, y, w, gh, 8, { fill: P.mist });
       colHeads.forEach((lab, c) => {
+        if (!lab) return;
         let t = lab.toUpperCase(), z = 5.6;
         while (z > 4.4 && textWidth(t, z, true) + 1.1 * t.length > cellW - 6) z -= 0.2;
         cap(t, x + NAME_W + cellW * (c + 0.5) - 3, y + 11, P.soft, "center", z);
       });
       for (let c = 0; c < colHeads.length; c++) { const lx = x + NAME_W + cellW * c - 3; d.line(lx, y + 4, lx, y + gh - 4, { color: "#d9d9de", width: 0.6 }); }
       rows.forEach((r, i) => {
-        const ry = y + 16 + i * ROW_H;
+        const ry = y + top + i * ROW_H;
         if (i) d.line(x + 8, ry, x + w - 8, ry, { color: P.hair, width: 0.5 });
         d.text(r.name, x + 9, ry + (r.sub ? 10 : ROW_H / 2 + 3), { size: 7.8, bold: true, color: P.ink });
         if (r.sub) d.text(r.sub, x + 9, ry + 19, { size: 5.8, color: P.faint });
@@ -667,13 +676,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           const cx = x + NAME_W + cellW * c;
           if (!b) { d.text("\u2014", cx + cellW / 2 - 3, ry + ROW_H / 2 + 3, { size: 8.5, color: P.faint, align: "center" }); return; }
           d.text(fmtStat(b.def, b.value), cx + 4, ry + 11, { size: 9, bold: true, color: tint(b) });
-          pillAt(b, cx + cellW - 8, ry + 10.5);
+          pillAt(b, cx + Math.min(cellW, 130) - 8, ry + 10.5); // (a wide single column keeps the rank by the value)
           if (b.fieldAvg != null) d.text(`Avg ${fmtStat(b.def, b.fieldAvg)}`, cx + 4, ry + 20, { size: 5.6, color: P.grey });
         });
       });
       y += gh;
     };
-    const section = (title, colHeads, rows) => { if (!rows.length || !colHeads.length) return; need(30 + 16 + rows.length * ROW_H); head(title); gridBox(colHeads, rows); };
+    // (sections are gathered first, then spaced out to fill the page: a bigger gap when there's room)
+    const queued = [];
+    const section = (title, colHeads, rows) => { if (rows.length && colHeads.length) queued.push([title, colHeads, rows]); };
     const pick = (keys) => keys.flatMap((k) => a.basics.filter((b) => b.key === k));
     const noteFor = (g) => (g.missing ? `No ${g.def.label} in this data file.` : g.overall ? `${fmtStat(g.def, g.overall.value)} overall (the data doesn't split this stat this way)` : "");
     // Scoring: one row, a column per stat
@@ -682,7 +693,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const scoring = pick(Object.keys(SHORT));
     section("Scoring", scoring.map((b) => SHORT[b.key]), scoring.length ? [{ name: "Scoring", cells: scoring }] : []);
     // Off-the-Tee: Driving Distance and Hit Fairway %, Driver and Non-Driver
-    section("Off-the-Tee", ["Driver", "Non-Driver"], (a.teeGrid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || "", cells: g.cells, note: noteFor(g) })));
+    section("Off-the-Tee", a.teeSplit ? ["Driver", "Non-Driver"] : [""], (a.teeGrid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || "", cells: g.cells, note: noteFor(g) })));
     // Approach by distance (GIR % isn't shown)
     section("Approach by distance", a.bands || [], (a.grid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || (g.def.higher === false ? "lower is better" : ""), cells: g.cells, note: noteFor(g) })));
     // Short game: Up & Down by distance and lie
@@ -693,6 +704,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const shown = new Set([...Object.keys(SHORT), "drive", "fwy", "gir", "hitGreen", "prox", "pinHigh", "onLine", "goodLag"]);
     const other = a.basics.filter((b) => !shown.has(b.key) && !(a.udGrid && b.key === "ud") && !(a.puttGrid && b.key === "make"));
     section("Other", other.map((b) => b.def.label), other.length ? [{ name: "Other", cells: other }] : []);
+    const heightOf = ([, heads, rows]) => 19 + (heads.every((h) => !h) ? 3 : 16) + rows.length * ROW_H + 3;
+    const total = queued.reduce((t, q) => t + heightOf(q), 0), room = H - 60 - y - total;
+    const extra = queued.length ? Math.max(0, Math.min(40, room / queued.length)) : 0;
+    for (const q of queued) {
+      need(heightOf(q));
+      y += extra;
+      head(q[0]);
+      gridBox(q[1], q[2]);
+    }
   }
   footer();
   return d.output();

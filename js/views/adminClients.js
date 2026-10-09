@@ -505,7 +505,7 @@ export async function render(main, { flash }) {
 
   /* ============================== Page ============================== */
   mount(main, [
-    subNav([["#/admin/clients", "Players"], ["#/admin/datasets", "Upload Data"]], "#/admin/clients"), // (Upload Data lives here)
+    subNav([["#/admin/clients", "Users"], ["#/admin/datasets", "Upload Data"]], "#/admin/clients"), // (Upload Data lives here)
     el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, weekBox, storageBox]),
     el("section", {}, [
       el("h2", {}, "Access codes"),

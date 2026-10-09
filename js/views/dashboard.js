@@ -150,7 +150,7 @@ export async function render(main, { previewClient, flash }) {
     const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
     enteredDash?.destroy(); enteredDash = null;
     if (!players.length) {
-      mount(enteredDashBox, el("p", { class: "empty center" }, ["No entered rounds yet. Record one in ", el("a", { href: "#/entry" }, "Data Entry"), " and it shows up here."]));
+      mount(enteredDashBox, el("p", { class: "empty center" }, ["No entered rounds yet. Record one in ", el("a", { href: "#/entry" }, "Track Round"), " and it shows up here."]));
       if (lastSource === "entered") showPills();
       return;
     }
