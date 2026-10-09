@@ -322,7 +322,7 @@ const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ?
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
 // This file's build. It must match main.js?v= in index.html (bumped with every update): when it doesn't, the
 // browser is still running an older copy of this file, so the report isn't made (it would have old fixes missing).
-export const REPORT_BUILD = "126";
+export const REPORT_BUILD = "127";
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -885,7 +885,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       // the Stats page's players when it opened this, or loaded now. (Others only have the shared summary.)
       let field = data.field;
       if (source.value === startSource && fullField?.length > 1) field = fullField.map((p) => (p.key === playerKey ? data.me : p));
-      else if (data.datasetId && getState().isAdmin) {
+      else if (data.datasetId && getState().isAdmin && !(await import("./fieldCache.js")).isLiteDevice()) {
         status.textContent = "Loading every player\u2019s rounds\u2026";
         field = (await loadFullField(data.datasetId, data.field, data.me, data.idx).catch(() => null)) || data.field;
       }

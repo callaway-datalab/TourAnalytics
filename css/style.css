@@ -2474,3 +2474,17 @@ main.tight-top > div > nav.subnav:first-child, main.tight-top nav.subnav:first-c
 .hero-chip.rk-100 { background: #f5c400; color: #2a2200; }
 .hero-chip.rk-150 { background: #f08a24; color: #ffffff; }
 .hero-chip.rk-out { background: #d0342c; color: #ffffff; }
+/* update 127: phones: the logo and name in the top-left corner and the WITB, Chat and Account icons on the same
+   line in the top-right corner; Analyze / Play (and User Access) on the line under them */
+@media (max-width: 820px) {
+  .rail { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand foot" "nav nav";
+    align-items: center !important; justify-items: stretch !important; gap: 0.15rem 0.5rem !important; padding: 0.45rem 0.75rem 0.5rem !important; }
+  .rail > .brand { grid-area: brand; justify-self: start !important; width: auto !important; flex: none !important; margin: 0 !important;
+    display: inline-flex !important; justify-content: flex-start !important; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .rail > .rail-foot { grid-area: foot; display: flex !important; justify-self: end !important; width: auto !important; margin: 0 !important; justify-content: flex-end !important; }
+  .rail > nav { grid-area: nav; display: flex !important; flex-wrap: wrap; justify-content: center !important; justify-self: center !important; gap: 0.1rem 0.15rem; }
+  /* the Account menu opens under its button, against the right edge */
+  .account-menu { left: auto !important; right: 0 !important; transform: none !important; }
+}
+@media (max-width: 820px) { .rail > .brand { max-width: 100%; } }
+@media (max-width: 380px) { .rail > .brand { letter-spacing: 0.1em !important; gap: 0.4rem !important; font-size: 0.74rem !important; } .rail-foot .hdr-icon, .account-btn.hdr-icon { width: 2.15rem !important; height: 2.15rem !important; min-height: 2.15rem !important; } .rail > .brand .brand-logo { height: 1.5rem !important; } .rail-foot { gap: 0.1rem !important; } }

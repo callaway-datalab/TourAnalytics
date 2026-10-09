@@ -1,10 +1,10 @@
 // Data → Analyze: the strokes-gained dashboard for any player, with rankings across every player.
 // Players see the same dashboard on their own My Data page (see sgDashboard.js).
 import { el, mount, num, subNav, relocateSectionNav } from "../ui.js";
-import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource } from "../store.js";
-import { loadDatasetPlayers, loadErrorText, reloadPlayerRows } from "../fieldCache.js";
+import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource, getFieldStats } from "../store.js";
+import { loadDatasetPlayers, loadErrorText, reloadPlayerRows, isLiteDevice } from "../fieldCache.js";
 import { playerPicker } from "../playerPicker.js";
-import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
+import { detectColumns, isShotData, prepare, buildFieldSummary, summaryPlayers } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
 import { getAllRounds, watchPlayerRounds } from "../rounds.js";
 import { myRoundsTable } from "../myRoundsTable.js";
@@ -88,6 +88,7 @@ export async function render(main, { flash }) {
     if (!ds) { status.textContent = ""; mount(body, el("p", { class: "empty center" }, "Upload a data file to analyze.")); showPills(); return; }
     const token = ++loadToken;
     mount(body, null);
+    if (isLiteDevice() && isShotData(detectColumns(ds.columns || []))) return refreshLite(ds, token);
     await loadAll(ds, token);
     if (token !== loadToken) return;
     status.textContent = [pendingNote, loadNote].filter(Boolean).join(" "); pendingNote = "";
@@ -107,6 +108,42 @@ export async function render(main, { flash }) {
     mount(body, box);
     dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
     publishIfStale(ds);
+  }
+
+  // Phones and tablets: everyone from the shared field summary (small: a few numbers per round), and full rows
+  // only for the player picked (fetched when they're picked). Loading every player's rows of a big file is more
+  // than a phone's browser allows a page to hold: it stops the page and reloads it, over and over.
+  async function refreshLite(ds, token) {
+    status.textContent = "Loading players\u2026";
+    const idx = detectColumns(ds.columns || []);
+    const summary = await getFieldStats(ds.id).catch(() => null);
+    if (token !== loadToken) return;
+    const pk = `lite|${ds.id}|${ds.uploadedAt?.toMillis?.() ?? ""}`;
+    if (!preparedCache.has(pk)) { preparedCache.clear(); preparedCache.set(pk, summaryPlayers(summary).filter((p) => p.rounds.length)); }
+    // (the player picked, with their full rows, in place of their summary line)
+    const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
+    fieldPlayers = preparedCache.get(pk).map((p) => {
+      const label = displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "");
+      return full && p.key === player.key ? { key: p.key, label, rounds: prepare(full.rows, idx) } : { ...p, label };
+    });
+    if (full && !fieldPlayers.some((p) => p.key === player.key)) fieldPlayers.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
+    const notes = [pendingNote]; pendingNote = "";
+    const ranked = fieldPlayers.some((p) => p.summaryOnly);
+    if (!ranked) notes.push("The rankings for this file haven\u2019t been built yet. Open Analyze once on a computer to build them; here you can still pick a player to see their own numbers.");
+    else notes.push("On a phone, rankings don\u2019t break down by lie or distance.");
+    status.textContent = notes.filter(Boolean).join(" ");
+    const me = meFrom();
+    if (!fieldPlayers.length) {
+      mount(body, el("p", { class: "empty center" }, player ? `Loading ${player.label}\u2026` : "Pick a player above."));
+      showPills();
+      if (player) pickerRef?.select?.(player.key);
+      return;
+    }
+    const box = el("div");
+    mount(body, box);
+    dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
+    // (never published from here: this field is the summary itself)
+    if (player && (!me || me.summaryOnly)) pickerRef?.select?.(player.key); // fetch the picked player's full rows
   }
 
   // Rounds from Data Entry, every player, in the same dashboard.
@@ -220,8 +257,8 @@ export async function render(main, { flash }) {
       // A player who isn't in the file on screen: open the newest file that has them, or say why there's nothing
       // (rather than leaving the leaderboard up as if the click did nothing).
       status.textContent = "";
-      if (p && !meFrom()) {
-        const other = datasets.find((d) => d.id !== fileId && isShotData(detectColumns(d.columns || [])) && (d.clientKeys || []).includes(p.key));
+      if (p && (!meFrom() || meFrom().summaryOnly)) {
+        const other = meFrom() ? null : datasets.find((d) => d.id !== fileId && isShotData(detectColumns(d.columns || [])) && (d.clientKeys || []).includes(p.key));
         if (other) { fileId = other.id; pendingNote = `${p.label} is in ${other.name || "another file"}, so that file is showing.`; refresh(); return; }
         const cur = datasets.find((d) => d.id === fileId);
         const inFile = (cur?.clientKeys || []).includes(p.key);

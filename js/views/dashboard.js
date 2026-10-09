@@ -103,7 +103,8 @@ export async function render(main, { previewClient, flash }) {
       if (st0.isAdmin && previewClient && !previewClient.self && field.length) {
         const myVersion = version;
         (async () => {
-          const { loadDatasetPlayers } = await import("../fieldCache.js");
+          const { loadDatasetPlayers, isLiteDevice } = await import("../fieldCache.js");
+          if (isLiteDevice()) return; // (phones and tablets: the summary is enough; every player's rows is too much for them)
           const { players } = await loadDatasetPlayers(d.id).catch(() => ({ players: new Map() }));
           const full = field.map((p) => {
             if (p.key === clientKey) return { key: p.key, label: p.label, rounds: me.rounds };

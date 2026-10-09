@@ -99,6 +99,19 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
   try { return await job; } finally { inflight.delete(flightKey); }
 }
 
+/**
+ * Phones and tablets (a touch screen with no mouse): their browsers stop a page that holds too much (iPhone
+ * Safari reloads it), and every player's full rows of a big file is far more than that. On these, Analyze and
+ * the reports use the shared field summary for everyone else and load full rows only for the player picked.
+ */
+export function isLiteDevice() {
+  try {
+    const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
+    const lowMem = typeof navigator !== "undefined" && navigator.deviceMemory && navigator.deviceMemory < 4;
+    return !!(touchOnly || lowMem);
+  } catch { return false; }
+}
+
 /** Why Firestore didn't return something, in plain words. */
 export function loadErrorText(err) {
   const code = String(err?.code || err?.message || "");
