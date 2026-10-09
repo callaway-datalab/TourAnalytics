@@ -4,6 +4,8 @@ import { startRouter } from "./router.js";
 import { subscribe } from "./auth.js";
 import { setUnreadCount } from "./ui.js";
 
+// The build this page loaded (main.js?v= in index.html), so other files can tell if they're an older copy
+window.__taBuild = new URL(import.meta.url).searchParams.get("v");
 startRouter();
 
 // Offline: let the app open with no signal (Data Entry on the course).

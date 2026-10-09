@@ -320,6 +320,9 @@ const P = {
 const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ? ["#1e8e4a", "#ffffff"] : rank <= 100 ? ["#f5c400", "#2a2200"] : rank <= 150 ? ["#f08a24", "#ffffff"] : ["#d0342c", "#ffffff"]);
 // the same colour for text on white (bright green and yellow darkened so they read)
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
+// This file's build. It must match main.js?v= in index.html (bumped with every update): when it doesn't, the
+// browser is still running an older copy of this file, so the report isn't made (it would have old fixes missing).
+export const REPORT_BUILD = "124";
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -331,7 +334,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   let page = 1, y = 0;
   const footer = () => {
     d.line(M, H - 34, M + W, H - 34, { color: P.hair, width: 0.5 });
-    cap(a.shotlink ? "Tour Analytics  \u00b7  Powered by ShotLink" : "Tour Analytics", M, H - 20, P.faint); // (ShotLink: PGA TOUR / Korn Ferry data only)
+    cap(`Tour Analytics  \u00b7  Build ${REPORT_BUILD}${a.shotlink ? "  \u00b7  Powered by ShotLink" : ""}`, M, H - 20, P.faint); // (ShotLink: PGA TOUR / Korn Ferry data only)
     cap(`${a.me.label}  \u00b7  Page ${page}`, M + W, H - 20, P.faint, "right");
   };
   const newPage = () => { footer(); d.addPage(); page++; y = 46; };
@@ -481,7 +484,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   y += 18;
 
   /* ---------- SG form: total and each category ---------- */
-  const formChart = (title, vals, { marks = false } = {}) => {
+  const formChart = (title, vals) => {
     const n = Math.min(10, Math.floor(vals.length / 2));
     const first = n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = n >= 2 ? mean(vals.slice(-n)) : null; // the 10 before, the last 10
     const top = y + 22, ht = 70, left = M + 22, wd = W - 22;
@@ -499,10 +502,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
     d.polyline(ma(vals).map((v, i) => [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
-    if (marks) {
-      const iB = vals.indexOf(Math.max(...vals)), iW = vals.indexOf(Math.min(...vals));
-      for (const [i, c] of [[iB, P.up], [iW, P.down]]) d.dot(left + i * bw + bw / 2, Y(vals[i]), 2.4, c);
-    }
+    // (no best / worst dots: bars and the rolling average only)
     const every = Math.max(1, Math.ceil(vals.length / 8));
     a.series.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
     y = top + ht + 26;
@@ -873,6 +873,11 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   const result = el("div", { class: "report-gen-result" });
   go.addEventListener("click", async () => {
     go.disabled = true; mount(result, null);
+    const pageBuild = window.__taBuild;
+    if (pageBuild && pageBuild !== REPORT_BUILD) {
+      status.textContent = `This page is still running an older copy of the report (build ${REPORT_BUILD}, the site is on ${pageBuild}). Reload the page and try again.`;
+      go.disabled = false; return;
+    }
     status.textContent = "Loading the rounds\u2026";
     try {
       const data = await loadSource(source.value, playerKey, playerLabel);

@@ -180,7 +180,16 @@ export function statsIn(roundLists) {
 // Rows repeat the same few values (categories, stat types, lies), so each answer is worked out once per value.
 const memo = (fn) => { const m = new Map(); return (v) => { if (m.has(v)) return m.get(v); const r = fn(v); if (m.size < 20000) m.set(v, r); return r; }; };
 const statKeyOf = (t) => statKeyMemo(t);
-const statKeyOfRaw = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; if (!xLabels.has(`x:${q}`)) xLabels.set(`x:${q}`, String(t).trim()); return `x:${q}`; };
+// Names that aren't on the lists above but clearly mean one of these stats: "Scoring Average (Par 3)",
+// "Par 3s Scoring Avg", "Par 4 Performance" -> par4; "GIR Percentage", "Greens In Reg %", "GIR % (Par 4/5)" -> gir
+// (a par-3-only GIR, "Par 3 GIR %", isn't the par 4 / 5 GIR %, so it keeps its own name)
+const looseStatKey = (q) => {
+  const par = q.match(/par([345])s?(?!\d)/);
+  if (par && /scor|avg|average|perf|strokes/.test(q) && !/gir|greens?inreg|birdie|bogey|eagle|par(or|orbetter)/.test(q)) return `par${par[1]}`;
+  if ((/^gir/.test(q) || /gir(pct|percent|percentage)?$/.test(q) || /greens?inreg/.test(q)) && !/par3(?!\d)/.test(q)) return "gir";
+  return null;
+};
+const statKeyOfRaw = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; const loose = looseStatKey(q); if (loose) return loose; if (!xLabels.has(`x:${q}`)) xLabels.set(`x:${q}`, String(t).trim()); return `x:${q}`; };
 const isNullRaw = (v) => v === null || v === undefined || v === "" || ["null", "na", "nan", "none"].includes(squash(v));
 const isNullMemo = memo(isNullRaw);
 const isNull = (v) => (v === null || v === undefined || v === "" ? true : isNullMemo(v));
