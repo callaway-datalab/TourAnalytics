@@ -10,14 +10,33 @@ import { watchPlayerRounds } from "../rounds.js";
 import { strokesGained } from "../roundCalc.js";
 import { fmtSG, sgColor } from "../sg.js";
 import { myEntryKey } from "./dataEntry.js";
+import { effectiveTeam } from "../preview.js";
+import { uidForClient, getUserProfile } from "../store.js";
 
-export async function render(main, { flash }) {
+export async function render(main, { flash, previewClient }) {
   const state = getState();
-  const uid = state.user.uid;
+  // Whose bag: your own, or (the admin in someone's portal) that player's or team member's. Theirs is shown
+  // as it is: only they can change it.
+  let uid = state.user.uid, entryKey = myEntryKey(state), viewing = null;
+  const team = effectiveTeam(state);
+  if (state.isAdmin && team.preview && team.uid) {
+    uid = team.uid; viewing = team.name || "This person";
+    entryKey = (await getUserProfile(uid).catch(() => null))?.clientKey || null;
+  } else if (state.isAdmin && previewClient && !previewClient.self && !previewClient.role) {
+    viewing = previewClient.label || "This player"; entryKey = previewClient.key;
+    uid = await uidForClient(previewClient.key).catch(() => null);
+    if (!uid) {
+      mount(main, [el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`)]),
+        el("p", { class: "empty center" }, `${viewing} hasn\u2019t signed up yet, so there are no clubs to show.`)]);
+      return () => {};
+    }
+  }
+  const readOnly = !!viewing;
   let library = [], inBag = [], rounds = [], loaded = false;
   const status = el("span", { class: "save-status", role: "status" });
 
   const save = async () => {
+    if (readOnly) return;
     status.textContent = "Saving\u2026";
     try { await saveLibrary(uid, library, inBag); status.textContent = "Saved \u2713"; }
     catch { status.textContent = "Not saved \u2014 check your connection"; }
@@ -158,6 +177,7 @@ export async function render(main, { flash }) {
   const listBox = el("div");
   const bagBox = el("div");
   const toggle = (c) => {
+    if (readOnly) return; // (someone else's bag: look, don't change)
     if (inBag.includes(c.id)) inBag = inBag.filter((id) => id !== c.id);
     else if (inBag.length >= MAX_CLUBS) { flash(`Your bag already has ${MAX_CLUBS} clubs. Take one out first.`, "error"); return; }
     else inBag = [...inBag, c.id];
@@ -178,17 +198,18 @@ export async function render(main, { flash }) {
     const on = inBag.includes(c.id);
     if (editing === c.id) return editRow(c);
     const edit = el("button", { type: "button", class: "link club-edit-btn", "aria-label": `Edit ${clubLabel(c)}` }, "Edit");
-    edit.addEventListener("click", (e) => { e.stopPropagation(); editing = c.id; draw(); });
+    edit.addEventListener("click", (e) => { e.stopPropagation(); if (!readOnly) { editing = c.id; draw(); } });
     const del = el("button", { type: "button", class: "entry-del", "aria-label": `Remove ${clubLabel(c)} from your list`, title: "Remove from list" }, "\u2715");
     del.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (readOnly) return;
       if (!confirmAction(`Remove ${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} from your list? Shots already entered with it keep it.`)) return;
       library = library.filter((x) => x.id !== c.id); inBag = inBag.filter((id) => id !== c.id); draw(); save();
     });
     const starEl = star ? el("span", { class: "club-star", title: `Best SG / Attempt of your ${c.cat === "Driver" || c.cat === "Putter" ? GROUP_NAMES[c.cat].toLowerCase() : clubLabel(c)}s`, "aria-label": "Best SG per attempt" }, "\u2605") : null;
     const make = clubMake(c);
     const tr = el("tr", { class: "club-row" + (on ? " in-bag" : "") + (inSet ? " in-set" : ""), tabindex: "0", role: "button", "aria-pressed": on ? "true" : "false",
-      title: on ? "In your bag. Tap to take it out." : "Tap to put it in your bag." }, [
+      title: readOnly ? "" : on ? "In your bag. Tap to take it out." : "Tap to put it in your bag." }, [
       el("td", { class: "c-club" }, [el("strong", {}, clubLabel(c)), on ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null,
         make ? el("span", { class: "mobile-make" }, [make, starEl ? " " : null, starEl ? starEl.cloneNode(true) : null]) : null, // brand / model under the name on phones
         c.note ? el("span", { class: "club-note" }, c.note) : null]),
@@ -259,15 +280,16 @@ export async function render(main, { flash }) {
       const b = el("button", { type: "button", class: "bag-chip", title: "Take it out of your bag" }, [el("strong", {}, clubLabel(c)), clubMake(c) ? el("span", {}, clubMake(c)) : null, el("span", { class: "bag-x", "aria-hidden": "true" }, "\u2715")]);
       b.addEventListener("click", () => toggle(c));
       return el("li", {}, b);
-    })) : el("p", { class: "muted" }, "Your bag is empty. Tap clubs in the list above to put them in."));
-    bagTitle.textContent = `Your bag (${bag.length} of ${MAX_CLUBS})`;
+    })) : el("p", { class: "muted" }, readOnly ? "Their bag is empty." : "Your bag is empty. Tap clubs in the list above to put them in."));
+    bagTitle.textContent = `${readOnly ? "Their" : "Your"} bag (${bag.length} of ${MAX_CLUBS})`;
   }
   const bagTitle = el("h3", {}, "Your bag");
 
   mount(main, [
-    el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
-    el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm, setToggle]),
-    el("section", { class: "panel bag-panel" }, [el("h3", {}, "All your clubs"), listBox]),
+    readOnly ? el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), el("p", { class: "muted" }, `Every club ${viewing} has played, and what\u2019s in their bag. Only they can change it.`)])
+      : el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
+    readOnly ? null : el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm, setToggle]),
+    el("section", { class: `panel bag-panel${readOnly ? " witb-readonly" : ""}` }, [el("h3", {}, readOnly ? "All their clubs" : "All your clubs"), listBox]),
     el("section", { class: "panel bag-panel your-bag" }, [bagTitle, bagBox]),
   ]);
   draw();
@@ -279,6 +301,6 @@ export async function render(main, { flash }) {
     draw();
     if (!Array.isArray(d.library) && library.length) save(); // first visit after the update: keep the built list
   });
-  const unRounds = watchPlayerRounds(myEntryKey(state), (rs) => { rounds = rs; draw(); });
+  const unRounds = entryKey ? watchPlayerRounds(entryKey, (rs) => { rounds = rs; draw(); }) : () => {};
   return () => { unBag(); unRounds(); };
 }

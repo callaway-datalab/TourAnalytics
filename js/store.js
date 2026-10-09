@@ -228,6 +228,12 @@ export async function syncAllPlayersAnalysts(users, invites, labels) {
 }
 
 /** Admin: one account's profile (used to preview a team member's portal). */
+/** The admin: the account (uid) of the player with this key, or null if they haven't signed up. */
+export async function uidForClient(clientKey) {
+  const snap = await getDocs(query(collection(db, "users"), where("clientKey", "==", clientKey)));
+  return snap.docs.find((d) => !d.data().kind)?.id || snap.docs[0]?.id || null;
+}
+
 export async function getUserProfile(uid) {
   const snap = await getDoc(doc(db, "users", uid));
   return snap.exists() ? { uid, ...snap.data() } : null;
