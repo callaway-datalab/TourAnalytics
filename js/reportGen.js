@@ -322,7 +322,7 @@ const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ?
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
 // This file's build. It must match main.js?v= in index.html (bumped with every update): when it doesn't, the
 // browser is still running an older copy of this file, so the report isn't made (it would have old fixes missing).
-export const REPORT_BUILD = "124";
+export const REPORT_BUILD = "125";
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -352,7 +352,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(text.toUpperCase(), x + 8, yy, { size: 7, bold: true, spacing: 1.1, color });
     return w;
   };
-  const ma = (vals, n = 5) => vals.map((_, i) => mean(vals.slice(Math.max(0, i - n + 1), i + 1)));
+  const ma = (vals, n = 10) => vals.map((_, i) => mean(vals.slice(Math.max(0, i - n + 1), i + 1)));
 
   /* ---------- hero ---------- */
   const heroH = 236;
@@ -380,7 +380,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const vals = ma(a.series.map((q) => q.value)), x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
     const lo = Math.min(...vals, 0), hi = Math.max(...vals, 0), Y = (v) => top + ht - ((v - lo) / (hi - lo || 1)) * ht;
     d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
-    cap("SG Trend", x0, top - 6, "#8e8e93", "left", 6.5);
+    cap("SG Trend - Rolling 10-round average", x0, top - 6, "#8e8e93", "left", 6.5);
     d.line(x0, Y(0), x0 + w - 12, Y(0), { color: "#3a3a3c", width: 0.5, dash: [2, 2] });
     const pts = vals.map((v, i) => [x0 + (i / (vals.length - 1)) * (w - 12), Y(v)]);
     d.polyline(pts, { color: P.goldLight, width: 1.8 });
@@ -510,7 +510,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   /* ---------- SG form: the total (of the categories in this report) ---------- */
   if (a.series.length >= 2) {
     section("SG Form", "Round by round", 150);
-    d.text("Each bar is one round (green = gained strokes, red = lost). The gold line is the rolling average of the last 5 rounds: when it rises, the player is playing better.", M, y + 6, { size: 8, color: P.grey });
+    d.text("Each bar is one round (green = gained strokes, red = lost). The gold line is the rolling average of the last 10 rounds: when it rises, the player is playing better.", M, y + 6, { size: 8, color: P.grey });
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, a.series.map((q) => q.value)); // (no best / worst dots)
   }
