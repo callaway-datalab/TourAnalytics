@@ -1,18 +1,17 @@
-// Chat, for everyone (the Chat page; update 100):
-//   • Company chat: Callaway staff only (the admin and analysts; messages in staffChat/{id}, as before)
-//   • Direct messages: two people (chatRooms/dm_<uidA>_<uidB>)
-//   • Groups: a name and the people in it (chatRooms/{id}); anyone in a group can add people or leave
-// Who can reach whom: a player, their own team and Callaway staff. Each player's "circle" (chatCircles/{playerKey},
-// kept up to date by the admin's app) lists those people; a conversation that involves a player belongs to one
-// circle (scope "circle") and the Firestore rules only let people from that circle into it. Staff-only
-// conversations work as before, with the staff directory (staffDirectory/{uid}: name).
+// Chat (update 101): the same page for everyone, from the admin to analysts, players, coaches and caddies.
+//   • Direct messages and named groups (chatRooms/{id}, messages in chatRooms/{id}/messages); anyone in a group
+//     can add people or leave
+//   • Company chat: Callaway staff only (staffChat/{id})
+//   • Friends: ask someone by their email; once they accept you can message each other
+// What differs is only who you can message: the admin and analysts anyone; everyone else Callaway staff, their
+// own team and their friends. The Firestore rules check this too (chatReach, chatFriends; see chatCircles.js).
 import {
-  collection, addDoc, deleteDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, orderBy, query, where, limit, serverTimestamp,
+  collection, addDoc, deleteDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, orderBy, query, where, limit, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase-init.js";
 import { el, mount, formatWhen, confirmAction } from "./ui.js";
 import { getState } from "./auth.js";
-import { watchUsers } from "./store.js";
+import { isTeamKey } from "./data.js";
 import { syncChatCircles, roleName } from "./chatCircles.js";
 
 export function watchStaffChat(cb) {
@@ -24,8 +23,19 @@ const COMPANY = { id: "company", type: "company", name: "Company chat" };
 const msgsOf = (roomId) => (roomId === "company" ? collection(db, "staffChat") : collection(db, "chatRooms", roomId, "messages"));
 const readKey = (uid, roomId) => `chatRead:${uid}:${roomId}`;
 const lastRead = (uid, roomId) => { try { return Number(localStorage.getItem(readKey(uid, roomId))) || 0; } catch { return 0; } };
-const markRead = (uid, roomId) => { try { localStorage.setItem(readKey(uid, roomId), String(Date.now())); } catch { /* fine */ } };
+const markRead = (uid, roomId) => { try { localStorage.setItem(readKey(uid, roomId), String(Date.now())); } catch { /* fine */ } window.dispatchEvent(new Event("ta-chat-read")); };
 const ms = (t) => t?.toMillis?.() ?? (t instanceof Date ? t.getTime() : 0);
+const isStaffState = (state) => state.isAdmin || state.profile?.kind === "analyst";
+
+/** Unread chats (and friend requests waiting for you), for the header badge. */
+export function watchChatUnread(uid, cb) {
+  let rooms = [], requests = 0;
+  const count = () => cb(rooms.filter((r) => ms(r.lastAt) > lastRead(uid, r.id) && r.lastBy && r.lastBy !== uid).length + requests);
+  const a = onSnapshot(query(collection(db, "chatRooms"), where("members", "array-contains", uid)), (s) => { rooms = s.docs.map((d) => ({ id: d.id, ...d.data() })); count(); }, () => {});
+  const b = onSnapshot(query(collection(db, "friendRequests"), where("to", "==", uid)), (s) => { requests = s.size; count(); }, () => {});
+  window.addEventListener("ta-chat-read", count);
+  return () => { a(); b(); window.removeEventListener("ta-chat-read", count); };
+}
 
 export const renderStaffChat = (container, opts) => renderChat(container, opts);
 
@@ -33,56 +43,64 @@ export function renderChat(container, { flash }) {
   const state = getState();
   const uid = state.user.uid;
   const myName = state.profile?.name || state.user.displayName || state.user.email || "Me";
-  const staff = state.isAdmin || state.profile?.kind === "analyst";
-  let rooms = [], directory = new Map(), companyLast = null, current = staff ? "company" : null, stopMsgs = () => {}, roomsKey = "", companyKey = "";
-  // the circles I can chat in: { key: { uids, names, roles, playerName } }
-  let circles = new Map(), autoOpened = false;
-  const circleUnsubs = [];
-  const nameFromCircles = (id) => { for (const c of circles.values()) if (c.names?.[id]) return c.names[id]; return null; };
-  const roleFromCircles = (id) => { for (const c of circles.values()) if (c.roles?.[id]) return c.roles[id]; return null; };
-  const redrawAll = () => { drawList(); drawHead(); };
-  if (staff) {
-    if (state.isAdmin) syncChatCircles().catch(() => {}); // (who each player can reach: refreshed when the admin opens Chat)
-    circleUnsubs.push(onSnapshot(collection(db, "chatCircles"), (s) => { circles = new Map(s.docs.map((d) => [d.id, d.data()])); redrawAll(); }, () => {}));
-  } else {
-    // a player: their own circle; a team member: the circle of each player they work with
-    const keys = state.isTeam ? Object.keys(state.teamAccess || {}) : state.profile?.clientKey ? [state.profile.clientKey] : [];
-    for (const k of keys) circleUnsubs.push(onSnapshot(doc(db, "chatCircles", k), (d) => { if (d.exists()) circles.set(k, d.data()); else circles.delete(k); redrawAll(); }, () => {}));
+  const staff = isStaffState(state);
+  let rooms = [], current = staff ? "company" : null, stopMsgs = () => {}, roomsKey = "", companyKey = "", companyLast = null, autoOpened = false;
+  // people: uid -> { name, role, title }; who I may message: staff -> everyone, else reach + friends
+  const people = new Map();
+  let reach = [], friends = [], incoming = [], outgoing = [];
+  const unsubs = [];
+  const redraw = () => { drawList(); drawHead(); if (!friendsBox.hidden) drawFriends(); };
+
+  // ---- me: my name in the chat directory, my email (so friends can find me) ----
+  if (state.isAdmin) syncChatCircles().catch(() => {});
+  else {
+    const role = staff ? "analyst" : isTeamKey(state.profile?.clientKey) ? "team" : "player";
+    getDoc(doc(db, "chatNames", uid)).then((d) => (!d.exists() ? setDoc(doc(db, "chatNames", uid), { name: myName, role, updatedAt: serverTimestamp() })
+      : d.data().name !== myName ? updateDoc(doc(db, "chatNames", uid), { name: myName, updatedAt: serverTimestamp() }) : null)).catch(() => {});
+    const email = String(state.user.email || "").toLowerCase();
+    if (email) setDoc(doc(db, "friendEmails", email), { uid }).catch(() => {});
   }
 
-  // ---- the staff directory: add myself; the admin adds every analyst ----
-  if (staff) setDoc(doc(db, "staffDirectory", uid), { name: myName, role: state.isAdmin ? "admin" : "analyst", updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
-  // (only entries that are new or renamed are written, once the directory has loaded)
-  let dirLoaded = false, analysts = [];
-  const syncAnalysts = () => {
-    if (!state.isAdmin || !dirLoaded) return;
-    for (const u of analysts) {
-      const name = u.name || u.email;
-      if (directory.get(u.uid) !== name) setDoc(doc(db, "staffDirectory", u.uid), { name, role: "analyst" }, { merge: true }).catch(() => {});
-    }
+  // ---- who's who ----
+  const nameWatch = new Map();
+  const watchName = (id) => {
+    if (staff || people.has(id) || nameWatch.has(id)) return;
+    nameWatch.set(id, onSnapshot(doc(db, "chatNames", id), (d) => { if (d.exists()) { people.set(id, d.data()); redraw(); } }, () => {}));
   };
-  const unUsers = state.isAdmin ? watchUsers((users) => { analysts = users.filter((x) => x.kind === "analyst"); syncAnalysts(); }) : () => {};
-  let dirKey = "";
-  const unDir = !staff ? () => {} : onSnapshot(collection(db, "staffDirectory"), (s) => {
-    directory = new Map(s.docs.map((d) => [d.id, d.data().name || "Analyst"]));
-    const k = JSON.stringify([...directory]);
-    const first = !dirLoaded; dirLoaded = true;
-    if (first) syncAnalysts();
-    if (k !== dirKey) { dirKey = k; drawList(); drawHead(); } // redraw only when someone was added or renamed
-  }, () => {});
-  // (players and teams can only list conversations that belong to a circle; the rules check that)
-  const roomsQ = staff ? query(collection(db, "chatRooms"), where("members", "array-contains", uid))
-    : query(collection(db, "chatRooms"), where("members", "array-contains", uid), where("scope", "==", "circle"));
-  const unRooms = onSnapshot(roomsQ,
-    (s) => { const next = s.docs.map((d) => ({ id: d.id, ...d.data() })); const k = JSON.stringify(next); if (k === roomsKey) return; roomsKey = k; rooms = next; drawList(); drawHead();
-      // (no company chat: open the latest conversation the first time they load; phones still start on the list)
-      if (!staff && !current && !autoOpened && rooms.length) { autoOpened = true; open(allRooms()[0].id); shell.classList.remove("show-thread"); } }, () => {});
-  const unCompany = !staff ? () => {} : onSnapshot(query(collection(db, "staffChat"), orderBy("createdAt", "desc"), limit(1)),
-    (s) => { const m = s.docs[0]?.data(); const k = m ? `${ms(m.createdAt)}|${m.body}` : ""; if (k === companyKey) return; companyKey = k; companyLast = m ? { at: ms(m.createdAt), text: m.body, by: m.uid } : null; drawList(); }, () => {});
+  if (staff) {
+    unsubs.push(onSnapshot(collection(db, "chatNames"), (s) => { people.clear(); s.docs.forEach((d) => people.set(d.id, d.data())); redraw(); }, () => {}));
+  } else {
+    unsubs.push(onSnapshot(doc(db, "chatReach", uid), (d) => { reach = d.exists() ? d.data().uids || [] : []; reach.forEach(watchName); redraw(); }, () => {}));
+  }
+  unsubs.push(onSnapshot(doc(db, "chatFriends", uid), (d) => { friends = d.exists() ? d.data().uids || [] : []; friends.forEach(watchName); redraw(); }, () => {}));
+  unsubs.push(onSnapshot(query(collection(db, "friendRequests"), where("to", "==", uid)), (s) => { incoming = s.docs.map((d) => ({ id: d.id, ...d.data() })); incoming.forEach((r) => watchName(r.from)); redraw(); }, () => {}));
+  unsubs.push(onSnapshot(query(collection(db, "friendRequests"), where("from", "==", uid)), (s) => { outgoing = s.docs.map((d) => ({ id: d.id, ...d.data() })); outgoing.forEach((r) => watchName(r.to)); redraw(); }, () => {}));
+  unsubs.push(onSnapshot(query(collection(db, "chatRooms"), where("members", "array-contains", uid)), (s) => {
+    const next = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const k = JSON.stringify(next); if (k === roomsKey) return;
+    roomsKey = k; rooms = next;
+    rooms.forEach((r) => r.members.forEach(watchName));
+    redraw();
+    // (no company chat: open the latest conversation the first time they load; phones still start on the list)
+    if (!staff && !current && !autoOpened && rooms.length) { autoOpened = true; open(allRooms()[0].id); shell.classList.remove("show-thread"); }
+  }, () => {}));
+  if (staff) unsubs.push(onSnapshot(query(collection(db, "staffChat"), orderBy("createdAt", "desc"), limit(1)), (s) => {
+    const m = s.docs[0]?.data(); const k = m ? `${ms(m.createdAt)}|${m.body}` : ""; if (k === companyKey) return;
+    companyKey = k; companyLast = m ? { at: ms(m.createdAt), text: m.body, by: m.uid } : null; drawList();
+  }, () => {}));
 
-  const nameOf = (id) => (id === uid ? "You" : directory.get(id) || nameFromCircles(id) || "Someone");
-  const roleOf = (id) => { const r = roleFromCircles(id) || (directory.has(id) ? "analyst" : ""); return r ? roleName(r) : ""; };
-  const circleName = (key) => { const c = circles.get(key); if (!c) return ""; return c.roles?.[uid] === "player" ? "Your team" : `${c.playerName || "Player"}\u2019s team`; };
+  const nameOf = (id) => (id === uid ? "You" : people.get(id)?.name || "Someone");
+  const roleOf = (id) => { const p = people.get(id); return p ? p.title || roleName(p.role) : ""; };
+  const isStaffId = (id) => ["admin", "analyst"].includes(people.get(id)?.role);
+  // who I can message, in sections
+  function contacts() {
+    const others = staff ? [...people.keys()].filter((id) => id !== uid) : [...new Set([...reach, ...friends])].filter((id) => id !== uid);
+    const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
+    const callaway = others.filter(isStaffId).sort(byName);
+    const friendIds = friends.filter((id) => id !== uid && !isStaffId(id)).sort(byName);
+    const rest = others.filter((id) => !isStaffId(id) && !friendIds.includes(id)).sort(byName);
+    return [{ title: "Callaway", ids: callaway }, { title: staff ? "Everyone" : "Your team", ids: rest }, { title: "Friends", ids: friendIds }].filter((x) => x.ids.length);
+  }
   const roomName = (r) => (r.type === "company" ? "Company chat" : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
   const allRooms = () => [...(staff ? [{ ...COMPANY, lastAt: companyLast?.at || 0, lastText: companyLast?.text || "", lastBy: companyLast?.by }] : []),
     ...rooms.map((r) => ({ ...r, lastAt: ms(r.lastAt) || ms(r.createdAt) }))].sort((a, b) => (a.type === "company" ? -1 : b.type === "company" ? 1 : b.lastAt - a.lastAt));
@@ -98,24 +116,24 @@ export function renderChat(container, { flash }) {
   box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
   const newDm = el("button", { type: "button", class: "btn ghost" }, "New message");
   const newGroup = el("button", { type: "button", class: "btn ghost" }, "New group");
+  const friendsBtn = el("button", { type: "button", class: "btn ghost chat-friends-btn" }, ["Friends", el("span", { class: "badge", hidden: true })]);
   const picker = el("div", { class: "chat-picker", hidden: true });
+  const friendsBox = el("div", { class: "chat-picker chat-friends", hidden: true });
   const shell = el("section", { class: "panel chat chat-shell" }, [
-    el("aside", { class: "chat-side" }, [el("div", { class: "chat-side-top" }, [el("h3", {}, "Chats"), el("div", { class: "chat-new" }, [newDm, newGroup])]), picker, list]),
+    el("aside", { class: "chat-side" }, [el("div", { class: "chat-side-top" }, [el("h3", {}, "Chats"), el("div", { class: "chat-new" }, [newDm, newGroup, friendsBtn])]), picker, friendsBox, list]),
     el("div", { class: "chat-main" }, [head, msgs, form]),
   ]);
   mount(container, shell);
 
   function drawList() {
+    const n = friendsBtn.querySelector(".badge"); n.hidden = !incoming.length; n.textContent = String(incoming.length);
     const all = allRooms();
-    if (!all.length) {
-      mount(list, el("li", { class: "empty chat-empty" }, circles.size ? "No chats yet. Start one with New message or New group." : "Chat opens once Callaway has set up your team. Check back soon."));
-      return;
-    }
+    if (!all.length) { mount(list, el("li", { class: "empty chat-empty" }, "No chats yet. Start one with New message or New group.")); return; }
     mount(list, all.map((r) => {
+      const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
       const b = el("button", { type: "button", class: "chat-room" + (r.id === current ? " on" : ""), "aria-current": r.id === current ? "true" : null }, [
         el("span", { class: "chat-room-icon", "aria-hidden": "true" }, r.type === "company" ? "#" : r.type === "group" ? "\u25CE" : "\u25CF"),
-        el("span", { class: "chat-room-text" }, [el("strong", {}, roomName(r)), el("span", { class: "muted" }, r.lastText ? r.lastText.slice(0, 60) : r.type === "group" ? `${r.members.length} people` : r.type === "dm" ? roleOf(r.members.find((m) => m !== uid)) : ""),
-          staff && r.scope === "circle" && circles.size > 1 ? el("span", { class: "chat-room-circle" }, circleName(r.circle)) : null]),
+        el("span", { class: "chat-room-text" }, [el("strong", {}, roomName(r)), el("span", { class: "muted" }, r.lastText ? r.lastText.slice(0, 60) : r.type === "group" ? `${r.members.length} people` : other ? roleOf(other) : "")]),
         unread(r) && r.id !== current ? el("span", { class: "chat-dot", "aria-label": "Unread" }) : null,
       ]);
       b.addEventListener("click", () => open(r.id));
@@ -124,12 +142,12 @@ export function renderChat(container, { flash }) {
   }
 
   function drawHead() {
-    const r = allRooms().find((x) => x.id === current) || (staff ? COMPANY : null);
+    const r = allRooms().find((x) => x.id === current);
     if (!r) { mount(head, null); return; }
     const back = el("button", { type: "button", class: "link chat-back", "aria-label": "Back to chats" }, "\u2039 Chats");
     back.addEventListener("click", () => shell.classList.remove("show-thread"));
     const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
-    const sub = r.type === "company" ? "Everyone: you and all Callaway analysts" : r.type === "dm" ? [roleOf(other), r.scope === "circle" && staff ? circleName(r.circle) : ""].filter(Boolean).join(" \u00b7 ") || "Direct message" : r.members.map(nameOf).join(", ");
+    const sub = r.type === "company" ? "Everyone at Callaway: you and all analysts" : r.type === "dm" ? (roleOf(other) || "Direct message") : r.members.map(nameOf).join(", ");
     const actions = [];
     if (r.type === "group") {
       const add = el("button", { type: "button", class: "link" }, "Add people");
@@ -147,15 +165,14 @@ export function renderChat(container, { flash }) {
 
   function open(roomId) {
     current = roomId;
-    if (!roomId) { stopMsgs(); stopMsgs = () => {}; drawList(); drawHead(); mount(msgs, el("li", { class: "empty" }, "Pick a chat, or start one.")); form.hidden = true; shell.classList.remove("show-thread"); return; }
+    stopMsgs(); stopMsgs = () => {};
+    picker.hidden = true; friendsBox.hidden = true;
+    drawList(); drawHead();
+    if (!roomId) { mount(msgs, el("li", { class: "empty" }, "Pick a chat, or start one.")); form.hidden = true; shell.classList.remove("show-thread"); return; }
     form.hidden = false;
     shell.classList.add("show-thread");
-    picker.hidden = true;
-    stopMsgs();
-    drawList(); drawHead();
     mount(msgs, el("li", { class: "empty" }, "Loading\u2026"));
-    let first = true;
-    let msgsKey = null;
+    let first = true, msgsKey = null;
     stopMsgs = onSnapshot(query(msgsOf(roomId), orderBy("createdAt", "asc")), (s) => {
       const items = s.docs.map((d) => ({ id: d.id, ...d.data() }));
       const k = JSON.stringify(items.map((m) => [m.id, ms(m.createdAt)]));
@@ -177,96 +194,57 @@ export function renderChat(container, { flash }) {
       if (atBottom) msgs.scrollTop = msgs.scrollHeight;
       first = false;
       markRead(uid, roomId); drawList();
-    }, () => mount(msgs, el("li", { class: "empty" }, "This chat isn't available. Republish the Firestore rules from the latest update.")));
+    }, () => mount(msgs, el("li", { class: "empty" }, "This chat isn't available. (Republish the Firestore rules from the latest update if you haven't.)")));
   }
 
   async function send() {
     const body = box.value.trim();
-    if (!body) return;
+    if (!body || !current) return;
     sendBtn.disabled = true;
     try {
       await addDoc(msgsOf(current), { uid, name: myName, body, createdAt: serverTimestamp() });
-      if (current && current !== "company") await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
+      if (current !== "company") await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
       box.value = ""; box.focus();
-    } catch { flash("Couldn't send that message. (Republish the Firestore rules if you haven't since this update.)", "error"); }
+    } catch { flash("Couldn't send that message. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
     finally { sendBtn.disabled = false; }
   }
 
   // ---- picking people: a new direct message, a new group, or adding to a group ----
-  // People come in sections: Callaway staff (staff only), then each player's team (for a player: "Your team",
-  // which includes Callaway staff). A group, or a message, belongs to one section.
-  function sections(room = null) {
-    const out = [];
-    if (room) {
-      const pool = room.scope === "circle" ? (circles.get(room.circle)?.uids || []) : [...directory.keys()];
-      const people = pool.filter((id) => id !== uid && !room.members.includes(id));
-      if (people.length) out.push({ key: room.scope === "circle" ? room.circle : null, title: "", people });
-      return out;
-    }
-    if (staff) out.push({ key: null, title: "Callaway staff", people: [...directory.keys()].filter((id) => id !== uid) });
-    const cs = [...circles.entries()].sort((a, b) => circleName(a[0]).localeCompare(circleName(b[0])));
-    for (const [key, c] of cs) {
-      // (staff see each player's team without the other staff, who are in the first section)
-      const people = (c.uids || []).filter((id) => id !== uid && !(staff && ["admin", "analyst"].includes(c.roles?.[id])));
-      if (people.length) out.push({ key, title: circleName(key), people });
-    }
-    return out.filter((x) => x.people.length);
-  }
   const personLabel = (id) => { const r = roleOf(id); return r ? [nameOf(id), el("span", { class: "muted small" }, ` \u00b7 ${r}`)] : nameOf(id); };
+  const closeBtn = (what) => { const b = el("button", { type: "button", class: "link" }, "Close"); b.addEventListener("click", () => { what.hidden = true; }); return b; };
   function openPicker(mode, room = null) {
-    const secs = sections(room);
+    friendsBox.hidden = true;
+    const secs = contacts().map((x) => ({ ...x, ids: room ? x.ids.filter((id) => !room.members.includes(id)) : x.ids })).filter((x) => x.ids.length);
     picker.hidden = false;
     if (!secs.length) {
-      mount(picker, [el("p", { class: "muted small" }, mode === "add" ? "Everyone who can join is already in this group."
-        : staff ? "No one else is here yet. Analysts appear once they've opened Chat; players and their teams once they have accounts." : "No one to message yet. Callaway sets up who's on your team."), closeBtn()]);
+      mount(picker, [el("p", { class: "muted small" }, mode === "add" ? "Everyone you can message is already in this group."
+        : "No one to message yet. Add a friend with Friends, or check back once Callaway has set up your team."), closeBtn(picker)]);
       return;
     }
-    // with many players' teams (staff), a search box narrows the list
-    const find = staff && !room && secs.length > 3 ? el("input", { type: "search", placeholder: "Find a person or player\u2026", "aria-label": "Find a person", class: "chat-find" }) : null;
+    const total = secs.reduce((n, x) => n + x.ids.length, 0);
+    const find = total > 12 ? el("input", { type: "search", placeholder: "Find someone\u2026", "aria-label": "Find someone", class: "chat-find" }) : null;
     const body = el("div", { class: "chat-people" });
-    const filterSecs = () => {
-      const q = (find?.value || "").trim().toLowerCase();
-      return !q ? secs : secs.map((x) => (x.title.toLowerCase().includes(q) ? x : { ...x, people: x.people.filter((id) => nameOf(id).toLowerCase().includes(q)) })).filter((x) => x.people.length);
-    };
-    if (mode === "dm") {
-      const draw = () => mount(body, filterSecs().map((x) => el("div", { class: "chat-sec" }, [x.title ? el("p", { class: "chat-sec-title" }, x.title) : null, ...x.people.map((id) => {
-        const b = el("button", { type: "button", class: "chat-person" }, personLabel(id));
-        b.addEventListener("click", () => startDm(id, x.key));
-        return b;
-      })])));
-      find?.addEventListener("input", draw);
-      draw();
-      mount(picker, [el("p", { class: "chat-picker-title" }, "Message\u2026"), find, body, closeBtn()]);
-      find?.focus();
-      return;
-    }
-    const nameIn = mode === "group" ? el("input", { placeholder: "Group name", maxLength: 60, "aria-label": "Group name" }) : null;
-    let chosenSec; // (a group's people all come from one section)
+    const shown = () => { const q = (find?.value || "").trim().toLowerCase(); return secs.map((x) => ({ ...x, ids: q ? x.ids.filter((id) => nameOf(id).toLowerCase().includes(q)) : x.ids })).filter((x) => x.ids.length); };
     const picked = new Set();
-    const draw = () => mount(body, filterSecs().map((x) => el("div", { class: "chat-sec" }, [x.title ? el("p", { class: "chat-sec-title" }, x.title) : null, ...x.people.map((id) => {
-      const cb = el("input", { type: "checkbox", value: id, checked: chosenSec === x.key && picked.has(id), "aria-label": nameOf(id) });
-      cb.addEventListener("change", () => {
-        if (chosenSec !== x.key) { picked.clear(); chosenSec = x.key; }
-        if (cb.checked) picked.add(id); else picked.delete(id);
-        if (!picked.size) chosenSec = undefined;
-        draw();
-      });
+    const drawPeople = () => mount(body, shown().map((x) => el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, x.title), ...x.ids.map((id) => {
+      if (mode === "dm") { const b = el("button", { type: "button", class: "chat-person" }, personLabel(id)); b.addEventListener("click", () => startDm(id)); return b; }
+      const cb = el("input", { type: "checkbox", value: id, checked: picked.has(id), "aria-label": nameOf(id) });
+      cb.addEventListener("change", () => { if (cb.checked) picked.add(id); else picked.delete(id); });
       return el("label", { class: "ms-row" }, [cb, el("span", {}, personLabel(id))]);
     })])));
-    find?.addEventListener("input", draw);
-    draw();
+    find?.addEventListener("input", drawPeople);
+    drawPeople();
+    if (mode === "dm") { mount(picker, [el("p", { class: "chat-picker-title" }, "Message\u2026"), find, body, closeBtn(picker)]); find?.focus(); return; }
+    const nameIn = mode === "group" ? el("input", { placeholder: "Group name", maxLength: 60, "aria-label": "Group name" }) : null;
     const go = el("button", { type: "button", class: "btn" }, mode === "group" ? "Create group" : "Add");
     go.addEventListener("click", async () => {
       const ids = [...picked];
       if (!ids.length) { flash("Tick at least one person.", "error"); return; }
-      const circle = room ? (room.scope === "circle" ? room.circle : null) : chosenSec ?? null;
       try {
         if (mode === "group") {
           const name = nameIn.value.trim();
           if (!name) { flash("Give the group a name.", "error"); nameIn.focus(); return; }
-          const members = [uid, ...ids];
-          const ref = await addDoc(collection(db, "chatRooms"), { type: "group", name, members, createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "",
-            ...(circle ? { scope: "circle", circle } : {}) });
+          const ref = await addDoc(collection(db, "chatRooms"), { type: "group", name, members: [uid, ...ids], createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "" });
           open(ref.id);
         } else {
           await updateDoc(doc(db, "chatRooms", room.id), { members: [...room.members, ...ids] });
@@ -274,23 +252,86 @@ export function renderChat(container, { flash }) {
         }
       } catch { flash("Couldn't save that. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
     });
-    mount(picker, [el("p", { class: "chat-picker-title" }, mode === "group" ? (staff ? "New group (people from one section)" : "New group") : `Add people to \u201c${room.name}\u201d`), nameIn, find, body, el("div", { class: "chat-picker-actions" }, [go, closeBtn()])]);
+    mount(picker, [el("p", { class: "chat-picker-title" }, mode === "group" ? "New group" : `Add people to \u201c${room.name}\u201d`), nameIn, find, body, el("div", { class: "chat-picker-actions" }, [go, closeBtn(picker)])]);
     (nameIn || find)?.focus();
   }
-  const closeBtn = () => { const b = el("button", { type: "button", class: "link" }, "Cancel"); b.addEventListener("click", () => { picker.hidden = true; }); return b; };
-  async function startDm(other, circle) {
+  async function startDm(other) {
     const id = `dm_${[uid, other].sort().join("_")}`;
     try {
       const snap = await getDoc(doc(db, "chatRooms", id));
-      if (!snap.exists()) await setDoc(doc(db, "chatRooms", id), { type: "dm", members: [uid, other].sort(), createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "",
-        ...(circle ? { scope: "circle", circle } : {}) });
+      if (!snap.exists()) await setDoc(doc(db, "chatRooms", id), { type: "dm", members: [uid, other].sort(), createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "" });
       open(id);
     } catch { flash(`Couldn't start a message with ${nameOf(other)}. (Republish the Firestore rules from the latest update if you haven't.)`, "error"); }
   }
+
+  // ---- friends: ask by email, accept or decline, remove ----
+  const emailIn = el("input", { type: "email", inputmode: "email", autocomplete: "off", placeholder: "Their email", "aria-label": "Friend's email" });
+  const askBtn = el("button", { type: "button", class: "btn" }, "Ask");
+  async function ask() {
+    const email = emailIn.value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { flash("Enter their email address.", "error"); emailIn.focus(); return; }
+    askBtn.disabled = true;
+    try {
+      const d = await getDoc(doc(db, "friendEmails", email));
+      const to = d.exists() ? d.data().uid : null;
+      if (!to) { flash("No one with that email uses the portal yet (or they haven't opened Chat).", "error"); return; }
+      if (to === uid) { flash("That's you.", "error"); return; }
+      if (friends.includes(to)) { flash(`${nameOf(to)} is already a friend.`, "error"); return; }
+      const back = incoming.find((r) => r.from === to);
+      if (back) { await accept(back); return; } // (they've already asked you)
+      await setDoc(doc(db, "friendRequests", `${uid}_${to}`), { from: uid, to, createdAt: serverTimestamp() });
+      emailIn.value = "";
+      flash("Friend request sent. You can message each other once they accept.");
+    } catch { flash("Couldn't send that request. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
+    finally { askBtn.disabled = false; }
+  }
+  askBtn.addEventListener("click", ask);
+  emailIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ask(); } });
+  async function accept(r) {
+    try {
+      const theirs = await getDoc(doc(db, "chatFriends", r.from));
+      const b = writeBatch(db);
+      b.set(doc(db, "chatFriends", uid), { uids: [...new Set([...friends, r.from])], lastAdded: r.from });
+      b.set(doc(db, "chatFriends", r.from), { uids: [...new Set([...(theirs.exists() ? theirs.data().uids || [] : []), uid])], lastAdded: uid });
+      b.delete(doc(db, "friendRequests", r.id));
+      await b.commit();
+      flash(`You and ${nameOf(r.from)} are friends now.`);
+    } catch { flash("Couldn't accept that request. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
+  }
+  async function removeFriend(id) {
+    if (!confirmAction(`Remove ${nameOf(id)} as a friend? Chats you already have stay.`)) return;
+    try {
+      const theirs = await getDoc(doc(db, "chatFriends", id));
+      const b = writeBatch(db);
+      b.set(doc(db, "chatFriends", uid), { uids: friends.filter((x) => x !== id), lastAdded: "" });
+      if (theirs.exists()) b.set(doc(db, "chatFriends", id), { uids: (theirs.data().uids || []).filter((x) => x !== uid), lastAdded: theirs.data().lastAdded || "" });
+      await b.commit();
+    } catch { flash("Couldn't remove that friend.", "error"); }
+  }
+  function drawFriends() {
+    const row = (id, btns) => el("div", { class: "chat-friend" }, [el("span", {}, personLabel(id)), el("span", { class: "chat-friend-btns" }, btns)]);
+    const btn = (label, fn, cls = "link") => { const b = el("button", { type: "button", class: cls }, label); b.addEventListener("click", fn); return b; };
+    mount(friendsBox, [
+      el("p", { class: "chat-picker-title" }, "Friends"),
+      incoming.length ? el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Asked you"), ...incoming.map((r) => row(r.from, [
+        btn("Accept", () => accept(r), "link chat-accept"), btn("Decline", async () => { try { await deleteDoc(doc(db, "friendRequests", r.id)); } catch { flash("Couldn't decline that.", "error"); } }),
+      ]))]) : null,
+      el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Your friends"), ...(friends.length ? friends.map((id) => row(id, [
+        btn("Message", () => startDm(id)), btn("Remove", () => removeFriend(id), "link danger"),
+      ])) : [el("p", { class: "muted small" }, "None yet.")])]),
+      outgoing.length ? el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Waiting for them"), ...outgoing.map((r) => row(r.to, [
+        btn("Cancel", async () => { try { await deleteDoc(doc(db, "friendRequests", r.id)); } catch { flash("Couldn't cancel that.", "error"); } }),
+      ]))]) : null,
+      el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Add a friend"), el("div", { class: "cc-link" }, [emailIn, askBtn]),
+        el("p", { class: "muted small" }, "They get a request in Chat. Once they accept, you can message each other.")]),
+      closeBtn(friendsBox),
+    ]);
+  }
   newDm.addEventListener("click", () => openPicker("dm"));
   newGroup.addEventListener("click", () => openPicker("group"));
+  friendsBtn.addEventListener("click", () => { picker.hidden = true; friendsBox.hidden = !friendsBox.hidden; if (!friendsBox.hidden) drawFriends(); });
 
-  open(staff ? "company" : null);
+  open(current);
   shell.classList.remove("show-thread"); // phones start on the list
-  return () => { stopMsgs(); unRooms(); unDir(); unCompany(); unUsers(); circleUnsubs.forEach((u) => u()); };
+  return () => { stopMsgs(); unsubs.forEach((u) => u()); nameWatch.forEach((u) => u()); };
 }

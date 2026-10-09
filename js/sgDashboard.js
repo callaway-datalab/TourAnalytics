@@ -442,7 +442,7 @@ export function sgDashboard(container, opts) {
       const state = getState();
       const flashMsg = (msg) => { const n = el("p", { class: "hero-pop-msg", role: "status" }, msg); body.prepend(n); setTimeout(() => n.remove(), 4000); };
       const builder = reportBuilder({ playerKey: me.key, playerLabel: me.label, canSave: !!state.isAdmin && !String(me.key).startsWith("a_"), flash: flashMsg,
-        source: opts.entered ? "entered" : "tour", minRounds: minRoundsFor(slicedField.filter((p) => p.rounds.length)) });
+        source: opts.entered ? "entered" : "tour", minRounds: minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: tourCounts.length ? (st.tour[0] ?? null) : null });
       const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
       const body = el("div", { class: "hero-pop-body" }, builder.node || builder);
       const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate AI Insights" }, el("div", { class: "gx-pop hero-pop" }, [

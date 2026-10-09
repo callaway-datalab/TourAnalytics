@@ -11,7 +11,7 @@
 import { el, mount } from "./ui.js";
 import { getState } from "./auth.js";
 import { watchClientDatasets, getDatasetRows, getFieldStats, uploadDocument } from "./store.js";
-import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds } from "./sg.js";
+import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn } from "./sg.js";
 import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
@@ -31,10 +31,14 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
  * me: { key, label, rounds }  field: [{ key, label, rounds, summaryOnly? }]  (prepared rounds, as on the stats page)
  * opts: { from, to (ms or null), cats: ["OTT", …], byProduct, idx }
  */
-export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null } = {}) {
+export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null, tour = null } = {}) {
   const cats = CATEGORIES.map(([k]) => k).filter((k) => catsIn.includes(k));
   const inRange = (rd) => { const t = day(rd.date); return t == null || ((from == null || t >= from) && (to == null || t <= to)); };
-  const pick = (rounds) => rounds.filter(inRange).map((rd) => ({ ...rd, shots: rd.shots.filter((s) => cats.includes(s.cat)) }))
+  // Only rounds with strokes-gained data count (a file's other stats, such as Birdies / Round per tournament, make
+  // rounds of their own that would otherwise count as rounds with no strokes gained), and only the Stats page's tour.
+  const hasSG = (rd) => (rd.has ? rd.has.has("sg") : rd.shots.length > 0);
+  const onTour = (rd) => tour == null || (rd.tour || "") === tour;
+  const pick = (rounds) => rounds.filter((rd) => hasSG(rd) && onTour(rd) && inRange(rd)).map((rd) => ({ ...rd, shots: rd.shots.filter((s) => cats.includes(s.cat)) }))
     .sort((a, b) => (day(a.date) ?? 0) - (day(b.date) ?? 0));
   const mine = pick(me.rounds);
   const played = field.filter((p) => p.key !== me.key).map((p) => ({ ...p, rounds: pick(p.rounds) })).filter((p) => p.rounds.length);
@@ -196,8 +200,75 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     tourSd = sds.length ? mean(sds) : null;
   }
   const numbers = { posRounds, n: series.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside, tourSd };
+
+  // Basic stats (page 4): every other stat in the data (Scoring Avg, GIR %, Putts / Round …), in the same period and
+  // tour, ranked among the same players as strokes gained (the same Min. rounds list).
+  const pickAll = (rounds) => rounds.filter((rd) => onTour(rd) && inRange(rd)).sort((p, q) => (day(p.date) ?? 0) - (day(q.date) ?? 0));
+  const myAll = pickAll(me.rounds);
+  const fieldByKey = new Map(field.map((p) => [p.key, p]));
+  const othersAll = others.map((p) => ({ key: p.key, rounds: pickAll(fieldByKey.get(p.key)?.rounds || []) }));
+  // one stat (optionally only some of its values: a distance band, a lie) -> its card's numbers, or null
+  const entryFor = (k, keep = null, label = null) => {
+    const def = statDef(k);
+    const only = (rounds) => (keep ? rounds.map((rd) => ({ ...rd, shots: rd.shots.filter(keep) })) : rounds).filter((rd) => rd.shots.length);
+    const mineK = only(statRounds(myAll, k));
+    const value = statAgg(mineK, !!keep).value;
+    if (value == null) return null;
+    const vals = othersAll.map((p) => statAgg(only(statRounds(p.rounds, k)), !!keep).value).filter((v) => v != null && Number.isFinite(v));
+    const better = (x, y) => (def.higher === false ? x < y : x > y);
+    const all = [...vals, value];
+    const rank = def.higher == null ? null : 1 + vals.filter((v) => better(v, value)).length;
+    // the last 10 rounds (or events) against the 10 before, pooled
+    const n = Math.min(10, Math.floor(mineK.length / 2));
+    const last = n >= 2 ? statAgg(mineK.slice(-n), !!keep).value : null, prev = n >= 2 ? statAgg(mineK.slice(-2 * n, -n), !!keep).value : null;
+    // its value in each category it has (Hit Green %: Approach and Around-the-Green)
+    const byCat = keep ? [] : CATEGORIES.map(([c, name]) => { const rs = mineK.map((rd) => ({ ...rd, shots: rd.shots.filter((o) => o.cat === c) })); const v = statAgg(rs, true).value; return v == null ? null : { cat: c, name, value: v }; }).filter(Boolean);
+    return { key: k, def: label ? { ...def, label } : def, value, rounds: mineK.length, events: mineK.length > 0 && mineK.every((rd) => rd.eventLevel), rank, of: rank ? all.length : null,
+      fieldAvg: mean(vals), lo: Math.min(...all), hi: Math.max(...all), trend: last != null && prev != null ? { n, last, prev } : null, byCat: byCat.length > 1 ? byCat : [] };
+  };
+  // A distance label ("100-120 yds", "250+ yds", "<10 ft", "20-30 ft") -> { mid, lo } in yards and feet.
+  const distOf = (label) => {
+    const t = String(label || ""), nums = (t.match(/\d+(\.\d+)?/g) || []).map(Number);
+    if (!nums.length) return null;
+    const ft = /ft|feet|'/i.test(t), lo = /^\s*</.test(t) ? 0 : nums[0], hi = nums.length > 1 ? nums[1] : /\+/.test(t) ? nums[0] * 1.2 : /^\s*</.test(t) ? nums[0] : nums[0];
+    const mid = (lo + hi) / 2;
+    return { yds: ft ? mid / 3 : mid, ftMid: ft ? mid : mid * 3, ftLo: ft ? lo : lo * 3 };
+  };
+  const lieOf = (l) => { const q = String(l || "").toLowerCase(); return q.includes("fairway") ? "Fairway" : q.includes("rough") ? "Rough" : q.includes("bunker") || q.includes("sand") ? "Bunker" : null; };
+  // (the bands follow the data's own buckets: 100-120 and 120-140 make 100-140 yds, and so on)
+  const BANDS = [["50-100 yds", 50, 100], ["100-140 yds", 100, 140], ["140-180 yds", 140, 180], ["180-220 yds", 180, 220], [">220 yds", 220, Infinity]];
+  const present = statsIn([myAll]).filter((k) => k !== "sg");
+  // Approach by distance: Hit Green %, Proximity, Pin-High % and On-Line % in five distance bands
+  // (a bucket in the data goes in the band its middle falls in: 200-225 yds -> 180-220 yds)
+  // (all four rows whenever the data has any of them; one the data doesn't have says so)
+  const gridOn = ["hitGreen", "prox", "pinHigh", "onLine"].some((k) => present.includes(k));
+  const grid = !gridOn ? [] : ["hitGreen", "prox", "pinHigh", "onLine"].map((k) => {
+    if (!present.includes(k)) return { key: k, def: statDef(k), cells: [], overall: null, missing: true };
+    const cells = BANDS.map(([lab, lo, hi]) => entryFor(k, (o) => { const d = distOf(o.dist); return !!d && (o.cat === "APP" || o.cat === "ARG") && d.yds >= lo && d.yds < hi; }, `${statDef(k).label} \u00b7 ${lab}`));
+    // (a stat with no distances in the data: its row shows its overall value instead)
+    return { key: k, def: statDef(k), cells, overall: cells.some(Boolean) ? null : entryFor(k) };
+  });
+  const gridKeys = new Set(grid.map((g) => g.key));
+  const basics = [];
+  const UD_BANDS = [["<30 yds", 0, 30], ["30-50 yds", 30, 50]], UD_LIES = ["Fairway", "Rough", "Bunker"];
+  let udGrid = null;
+  for (const k of present) {
+    if (gridKeys.has(k)) continue;
+    if (k === "ud") {
+      // Up & Down %: inside 30 yds and 30-50 yds, from the fairway, the rough and a bunker (a grid on the page)
+      const cells = UD_BANDS.map(([band, lo, hi]) => UD_LIES.map((lie) => entryFor(k, (o) => { const d = distOf(o.dist); return !!d && d.yds >= lo && d.yds < hi && lieOf(o.lie) === lie; }, `Up & Down % \u00b7 ${band} \u00b7 ${lie}`)));
+      if (cells.flat().some(Boolean)) { udGrid = { bands: UD_BANDS.map(([b]) => b), lies: UD_LIES, cells }; continue; }
+    }
+    if (k === "goodLag") {
+      // Good Lag %: only putts from over 25 feet
+      const far = entryFor(k, (o) => { const d = distOf(o.dist); return !!d && (d.ftLo >= 25 || d.ftMid > 25); }, "Good Lag % \u00b7 25+ ft");
+      if (far) { basics.push(far); continue; }
+    }
+    const e = entryFor(k);
+    if (e) basics.push(e);
+  }
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length };
+    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid };
 }
 
 /* ============================== the PDF ============================== */
@@ -280,7 +351,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text("How to read this:", M + 12, y + 9, { size: 8.5, bold: true, color: P.gold });
   d.text("Strokes gained compares every shot with what a typical tour player would do from the same spot.", M + 92, y + 9, { size: 8.5, color: P.ink });
   d.text("Plus (green) = better than that; minus (red) = worse. +1.00 means one stroke a round better.", M + 92, y + 21, { size: 8.5, color: P.ink });
-  d.text(`Tour Avg and ranks: the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period.`, M + 92, y + 33, { size: 8.5, color: P.ink });
+  d.text(`Tour Avg and ranks: the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
   y += 58;
 
   /* ---------- highlights: strengths and things to watch ---------- */
@@ -324,8 +395,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap(title, x + 12, y + 16, c);
     list.forEach((q, i) => {
       const yy = y + 32 + i * 28, part = c === P.up ? q.best : q.worst;
-      d.text(wrap(`${q.event || "Round"}${q.roundNo ? ` R${q.roundNo}` : ""}`, colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
-      d.text(`${fmtDate(q.date)}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
+      d.text(wrap(q.event || "Round", colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
+      d.text(`${q.roundNo ? `R${q.roundNo}  \u00b7  ` : ""}${fmtDate(q.date)}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
       d.text(fmtSG(q.value), x + colW - 12, yy + 6, { size: 15, bold: true, color: c, align: "right" });
     });
   };
@@ -531,6 +602,147 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       y += 14;
     }
   }
+
+  /* ---------- page 4: basic stats ---------- */
+  // A page of its own: a dark band like the cover, then a card per stat in three groups. Each card: the value,
+  // its rank among the same players as the strokes-gained ranks, a bar from the group's lowest to highest with
+  // Tour Avg (gold) and this player (dot), then Tour Avg and how it's going lately.
+  if (a.basics?.length) {
+    newPage();
+    const bandH = 108;
+    d.gradient(0, 0, d.W, bandH, P.night, P.night2, { dir: "v", steps: 40 });
+    d.gradient(0, bandH - 3, d.W, 3, P.gold, P.goldLight, { dir: "h", steps: 40 });
+    cap("Basic Stats", M, 36, P.goldLight, "left", 7.5);
+    d.text(wrap(a.me.label, W * 0.75, 22, true)[0], M, 64, { size: 22, bold: true, color: "#ffffff" });
+    d.text(`${period}${a.tour ? `  \u00b7  ${a.tour}` : ""}  \u00b7  ranked among the same ${a.compared ?? 0} ${a.compared === 1 ? "player" : "players"} as strokes gained (at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"})`,
+      M, 86, { size: 8, color: "#8e8e93" });
+    y = bandH + 24;
+    d.text("Each bar runs from the group's lowest to highest. Gold line: Tour Avg. Dot: this player (green = better than Tour Avg, red = worse).", M, y, { size: 7.5, color: P.grey });
+    y += 10;
+    const GROUPS = [
+      ["Scoring", ["scoring", "eagles", "birdiesRd", "parsRd", "bogeysRd", "dblBogeysRd", "birdie", "parOrBetter", "bogey", "owgr"]],
+      ["Off-the-Tee", ["drive", "fwy"]],
+      ["Approach", ["gir", "hitGreen", "prox", "pinHigh", "onLine"]], // (the grid, then any other approach stat)
+      ["Short game", ["ud", "scramble", "putts", "make", "goodLag", "threePutt"]],
+    ];
+    const known = new Set(GROUPS.flatMap(([, ks]) => ks));
+    const groups = [...GROUPS.map(([t, ks]) => [t, ks.flatMap((k) => a.basics.filter((b) => b.key === k))]), ["Other", a.basics.filter((b) => !known.has(b.key))]]
+      .filter(([t, list]) => list.length || (t === "Approach" && a.grid?.length) || (t === "Short game" && a.udGrid));
+    const cols = 4, gap = 8, cw = (W - gap * (cols - 1)) / cols, ch = 70;
+    const better = (b, x, ref) => (b.def.higher == null || ref == null || Math.abs(x - ref) < 1e-9 ? null : b.def.higher ? x > ref : x < ref);
+    const band = (b) => (b.def.pct ? 0.5 : Math.max(0.01, Math.abs(b.trend.prev) * 0.005)); // ("steady", as on the Stats page)
+    const amount = (b, v) => (b.def.pct ? `${Math.abs(v).toFixed(1)} pts` : fmtStat({ ...b.def, key: "" }, Math.abs(v)));
+    const head = (title) => { y += 14; d.rect(M, y - 7, 3, 9, { fill: P.gold }); cap(title, M + 9, y, P.gold); y += 9; };
+    const pillAt = (b, xr, yy) => {
+      if (!b.rank) return 0;
+      const T = `${b.rank} / ${b.of}`, top = b.rank <= Math.max(1, Math.floor(b.of * 0.1)), w = textWidth(T, 6.5, true) + 12;
+      d.roundRect(xr - w, yy - 9, w, 12, 6, { fill: top ? P.gold : "#3a3a3c" });
+      d.text(T, xr - w / 2, yy - 0.5, { size: 6.5, bold: true, color: "#ffffff", align: "center" });
+      return w;
+    };
+    for (const [title, list] of groups) {
+      if (title === "Approach" && a.grid?.length) {
+        // a grid: a row per stat, a column per distance band; each cell its value, rank and Tour Avg
+        const rowH = 30, nameW = 84, cellW = (W - nameW) / a.bands.length;
+        need(28 + 18 + a.grid.length * rowH);
+        head("Approach by distance");
+        d.roundRect(M, y, W, 18 + a.grid.length * rowH + 4, 10, { fill: P.mist });
+        a.bands.forEach((lab, c) => cap(lab, M + nameW + cellW * (c + 0.5), y + 13, P.soft, "center", 6.3));
+        // thin vertical lines between the names and each distance band
+        for (let c = 0; c < a.bands.length; c++) { const lx = M + nameW + cellW * c - 3; d.line(lx, y + 5, lx, y + 18 + a.grid.length * rowH - 4, { color: "#d9d9de", width: 0.6 }); }
+        a.grid.forEach((g, r) => {
+          const ry = y + 18 + r * rowH;
+          if (r) d.line(M + 10, ry, M + W - 10, ry, { color: P.hair, width: 0.5 });
+          d.text(g.def.label, M + 12, ry + 13, { size: 8.5, bold: true, color: P.ink });
+          if (g.def.higher === false) d.text("lower is better", M + 12, ry + 23, { size: 6.3, color: P.faint });
+          if (g.missing) { d.text(`No ${g.def.label} in this data file.`, M + nameW + 6, ry + 14, { size: 7.5, color: P.faint }); return; }
+          if (g.overall) {
+            const b = g.overall, good = better(b, b.value, b.fieldAvg);
+            const t1 = fmtStat(b.def, b.value);
+            d.text(t1, M + nameW + 6, ry + 14, { size: 10.5, bold: true, color: good == null ? P.ink : good ? P.up : P.down });
+            d.text(`all distances (the data has no distances for this stat)${b.fieldAvg != null ? `  \u00b7  Avg ${fmtStat(b.def, b.fieldAvg)}` : ""}`, M + nameW + 12 + textWidth(t1, 10.5, true), ry + 14, { size: 7, color: P.grey });
+            pillAt(b, M + W - 10, ry + 13);
+            return;
+          }
+          g.cells.forEach((b, c) => {
+            const cx = M + nameW + cellW * c;
+            if (!b) { d.text("\u2014", cx + cellW / 2, ry + 17, { size: 9, color: P.faint, align: "center" }); return; }
+            const good = better(b, b.value, b.fieldAvg);
+            d.text(fmtStat(b.def, b.value), cx + 6, ry + 14, { size: 10.5, bold: true, color: good == null ? P.ink : good ? P.up : P.down });
+            const pw = pillAt(b, cx + cellW - 9, ry + 13);
+            d.text(b.fieldAvg != null ? `Avg ${fmtStat(b.def, b.fieldAvg)}` : "", cx + 6, ry + 24, { size: 6.2, color: P.grey });
+            void pw;
+          });
+        });
+        y += 18 + a.grid.length * rowH + 8;
+        if (!list.length) continue;
+      }
+      // Short game: the Up & Down grid fills the first three spots of the first row; cards follow
+      const ud = title === "Short game" && a.udGrid ? a.udGrid : null, skip = ud ? cols - 1 : 0;
+      const rows = Math.ceil((list.length + skip) / cols);
+      need(24 + rows * (ch + gap) + (ud ? 12 : 0));
+      if (title === "Approach" && a.grid?.length) y += 2; // (other approach stats: cards right under the grid)
+      else head(title);
+      if (ud) {
+        // a row per distance, a column per lie; each cell its value, rank and Tour Avg
+        const gw = skip * cw + (skip - 1) * gap, gh = ch + 12, nameW = 78, cellW = (gw - nameW) / ud.lies.length, rowH = (gh - 18) / ud.bands.length;
+        d.roundRect(M, y, gw, gh, 9, { fill: P.mist });
+        cap("Up & Down %", M + 10, y + 13, P.soft, "left", 6.2);
+        ud.lies.forEach((lie, c) => cap(lie, M + nameW + cellW * (c + 0.5), y + 13, P.soft, "center", 6.2));
+        for (let c = 0; c < ud.lies.length; c++) { const lx = M + nameW + cellW * c - 3; d.line(lx, y + 5, lx, y + gh - 5, { color: "#d9d9de", width: 0.6 }); }
+        ud.bands.forEach((band, r) => {
+          const ry = y + 18 + r * rowH;
+          if (r) d.line(M + 10, ry, M + gw - 10, ry, { color: P.hair, width: 0.5 });
+          d.text(band, M + 10, ry + rowH / 2 + 3, { size: 8.5, bold: true, color: P.ink });
+          ud.cells[r].forEach((b, c) => {
+            const cx = M + nameW + cellW * c;
+            if (!b) { d.text("\u2014", cx + cellW / 2, ry + rowH / 2 + 3, { size: 9, color: P.faint, align: "center" }); return; }
+            const good = better(b, b.value, b.fieldAvg);
+            d.text(fmtStat(b.def, b.value), cx + 6, ry + 13, { size: 10.5, bold: true, color: good == null ? P.ink : good ? P.up : P.down });
+            pillAt(b, cx + cellW - 9, ry + 12);
+            d.text(b.fieldAvg != null ? `Avg ${fmtStat(b.def, b.fieldAvg)}` : "", cx + 6, ry + 23, { size: 6.2, color: P.grey });
+          });
+        });
+      }
+      list.forEach((b, i0) => {
+        const i = i0 + skip;
+        const x = M + (i % cols) * (cw + gap), ty = y + Math.floor(i / cols) * (ch + gap) + (ud && i >= cols ? 12 : 0);
+        d.roundRect(x, ty, cw, ch, 9, { fill: P.mist });
+        // the name, and the rank (gold in the top 10%)
+        const pill = pillAt(b, x + cw - 8, ty + 16);
+        let lab = b.def.label.toUpperCase();
+        const fits = (t, z) => textWidth(t, z, true) + 1 * t.length <= cw - 22 - pill;
+        if (!fits(lab, 5.4)) lab = lab.replace("DOUBLE ", "DBL ").replace(" / ROUND", "/RD").replace("UP & DOWN %", "U&D %"); // (long names, shortened)
+        let ls = 6.2; while (ls > 4.8 && !fits(lab, ls)) ls -= 0.2;
+        d.text(lab, x + 10, ty + 16, { size: ls, bold: true, color: P.soft, spacing: 1 });
+        // the value
+        const good = better(b, b.value, b.fieldAvg);
+        d.text(fmtStat(b.def, b.value), x + 10, ty + 36, { size: 15, bold: true, color: good == null ? P.ink : good ? P.up : P.down });
+        // the bar: lowest to highest, Tour Avg, this player
+        const bx = x + 10, bw = cw - 20, by = ty + 42, span = b.hi - b.lo;
+        const X = (v) => bx + (span > 1e-9 ? ((v - b.lo) / span) * bw : bw / 2);
+        d.roundRect(bx, by, bw, 4.5, 2.25, { fill: P.track });
+        if (b.fieldAvg != null) { const fx = X(b.fieldAvg); d.line(fx, by - 3, fx, by + 7.5, { color: P.gold, width: 1.5 }); }
+        d.dot(X(b.value), by + 2.25, 3.4, "#ffffff");
+        d.dot(X(b.value), by + 2.25, 2.6, good == null ? P.ink : good ? P.up : P.down);
+        // Tour Avg, then lately (or, for a stat with categories, each category)
+        const l1 = b.fieldAvg != null ? `Avg ${fmtStat(b.def, b.fieldAvg)}${b.def.higher === false ? " \u00b7 lower is better" : ""}` : `${b.rounds} ${b.events ? "events" : "rounds"}`;
+        let l2 = "";
+        if (b.trend) {
+          const ch2 = b.trend.last - b.trend.prev, steady = Math.abs(ch2) < band(b), g = better(b, b.trend.last, b.trend.prev);
+          l2 = steady ? `Last ${b.trend.n}: steady` : `Last ${b.trend.n}: ${g == null ? (ch2 > 0 ? "up" : "down") : g ? "better" : "worse"} ${amount(b, ch2)}`;
+        }
+        if (b.byCat.length) l2 = b.byCat.map((c) => `${{ OTT: "Tee", APP: "App", ARG: "ATG", PUTT: "Putt" }[c.cat] || c.name} ${fmtStat(b.def, c.value)}`).join(" \u00b7 ");
+        d.text(wrap(l1, cw - 20, 6.4)[0], x + 10, ty + 56, { size: 6.4, color: P.grey });
+        if (l2) {
+          const col = /better/.test(l2) ? P.up : /worse/.test(l2) ? P.down : P.grey;
+          d.text(wrap(l2, cw - 20, 6.4)[0], x + 10, ty + 65, { size: 6.4, bold: col !== P.grey, color: col });
+        }
+      });
+      y += rows * (ch + gap) - gap + 4 + (ud ? 12 : 0);
+    }
+    d.para(`Approach by distance: each band holds the data's distance buckets whose middle falls in it. Up & Down: inside 50 yds, by distance and lie. Good Lag: putts over 25 ft. Last 10: the last 10 ${a.basics.some((b) => b.events) ? "rounds or events" : "rounds"} against the 10 before.`, M, Math.max(y + 12, H - 66), W, { size: 6.5, color: P.faint });
+  }
   footer();
   return d.output();
 }
@@ -593,7 +805,7 @@ export async function loadFullField(datasetId, field, me, idx) {
 
 /* ============================== the panel ============================== */
 /** "Auto-generate report" for one player. canSave: the admin can also put it in the player's reports. */
-export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource = "tour", minRounds = null }) {
+export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource = "tour", minRounds = null, tour = null }) {
   const wrapEl = el("div", { class: "report-gen" });
   const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate AI Insights");
   const panel = el("div", { class: "report-gen-panel", hidden: true });
@@ -644,7 +856,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       if (!data || !data.me.rounds.length) { status.textContent = source.value === "tour" ? "No Tour Events data for this player yet." : "No entered rounds for this player yet."; return; }
       status.textContent = "Working out the insights\u2026";
       const from = fromIn.value ? Date.parse(`${fromIn.value}T00:00:00`) : null, to = toIn.value ? Date.parse(`${toIn.value}T23:59:59`) : null;
-      const a = analyzePerformance(data.me, data.field, { from, to, cats, byProduct: product.checked, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null });
+      const a = analyzePerformance(data.me, data.field, { from, to, cats, byProduct: product.checked, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null, tour: source.value === startSource ? tour : null });
       let aiSummary = null;
       const url = window.PORTAL_CONFIG?.insightsUrl;
       if (url && a.overall.rounds) {

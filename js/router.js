@@ -18,9 +18,10 @@ const ROUTES = [
   ["/practice", "signed-in", () => import("./views/comingSoon.js"), "practice"],
   ["/practice/recommendations", "signed-in", () => import("./views/comingSoon.js"), "practice-recs"],
   ["/practice/tracking", "signed-in", () => import("./views/comingSoon.js"), "practice-tracking"],
-  ["/questions", "client", () => import("./views/questions.js"), "questions"],
-  ["/questions/new", "client", () => import("./views/questionNew.js"), "question-new"],
-  ["/questions/:id", "client", () => import("./views/thread.js"), "thread"],
+  // Chat (Questions before update 101: its old links open Chat)
+  ["/questions", "client", () => import("./views/chat.js"), "questions"],
+  ["/questions/new", "client", () => import("./views/chat.js"), "question-new"],
+  ["/questions/:id", "client", () => import("./views/chat.js"), "thread"],
   ["/account", "signed-in", () => import("./views/account.js"), "account"],
   ["/witb", "signed-in", () => import("./views/witb.js"), "witb"],
   ["/entry", "signed-in", () => import("./views/dataEntry.js"), "entry"],
@@ -34,8 +35,8 @@ const ROUTES = [
   ["/admin/clients", "admin", () => import("./views/adminClients.js"), "admin-clients"],
   ["/admin/documents", "admin", () => import("./views/adminDocuments.js"), "admin-documents"],
   ["/admin/reports/view", "admin", () => import("./views/adminReportsView.js"), "admin-reports-view"],
-  ["/admin/questions", "admin", () => import("./views/adminQuestions.js"), "admin-questions"],
-  ["/admin/questions/:id", "admin", () => import("./views/thread.js"), "admin-thread"],
+  ["/admin/questions", "admin", () => import("./views/chat.js"), "admin-questions"],
+  ["/admin/questions/:id", "admin", () => import("./views/chat.js"), "admin-thread"],
 ];
 
 let currentCleanup = null;

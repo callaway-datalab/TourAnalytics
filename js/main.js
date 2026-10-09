@@ -3,7 +3,6 @@ document.title = portalName; // browser tab shows the portal name from config.js
 import { startRouter } from "./router.js";
 import { subscribe } from "./auth.js";
 import { setUnreadCount } from "./ui.js";
-import { watchMyThreads, watchAdminThreads } from "./store.js";
 
 startRouter();
 
@@ -14,27 +13,26 @@ if ("serviceWorker" in navigator && location.protocol === "https:") navigator.se
 let unsubThreads = null;
 let lastCount = 0;
 let circlesSyncedFor = null; // (once per sign-in)
-let notifiedIds = new Set();
 
 subscribe((state) => {
   if (unsubThreads) { unsubThreads(); unsubThreads = null; }
   if (!state.user) { setUnreadCount(0); return; }
-
-  if (state.isAdmin) {
-    // who each player can chat with (their team and Callaway staff): refreshed when the admin signs in
-    if (circlesSyncedFor !== state.user.uid) { circlesSyncedFor = state.user.uid; import("./chatCircles.js").then((m) => m.syncChatCircles()).catch(() => {}); }
-    unsubThreads = watchAdminThreads((threads) => updateBadge(threads.filter((t) => t.adminUnread && !t.archived), threads));
-  } else if (state.profile) {
-    unsubThreads = watchMyThreads(state.user.uid, (threads) => updateBadge(threads.filter((t) => t.userUnread && !t.archived), threads));
+  if (state.isAdmin && circlesSyncedFor !== state.user.uid) {
+    // who each person can chat with (their team and Callaway staff): refreshed when the admin signs in
+    circlesSyncedFor = state.user.uid;
+    import("./chatCircles.js").then((m) => m.syncChatCircles()).catch(() => {});
+  }
+  if (state.isAdmin || state.profile) {
+    // the Chat badge: unread conversations and friend requests waiting for you
+    const uid = state.user.uid;
+    let stop = null, live = true;
+    unsubThreads = () => { live = false; stop?.(); };
+    import("./chat.js").then((m) => { if (live) stop = m.watchChatUnread(uid, updateBadge); }).catch(() => {});
   }
 });
 
-function updateBadge(unread, all) {
-  setUnreadCount(unread.length);
-  if (unread.length > lastCount && "Notification" in window && Notification.permission === "granted" && document.hidden) {
-    const newest = unread.find((t) => !notifiedIds.has(t.id));
-    if (newest) new Notification("New message", { body: newest.subject || "You have a new message." });
-  }
-  notifiedIds = new Set(all.map((t) => t.id));
-  lastCount = unread.length;
+function updateBadge(n) {
+  setUnreadCount(n);
+  if (n > lastCount && "Notification" in window && Notification.permission === "granted" && document.hidden) new Notification("New message", { body: "You have a new message in Chat." });
+  lastCount = n;
 }

@@ -1,16 +1,15 @@
-// Who each player can chat with: chatCircles/{playerKey} = { uids, names, roles, playerName }.
-//   The player, their team (coaches, caddies, analysts given access to them) and Callaway staff (the admin and
-//   every analyst). Firestore rules check every chat that involves a player against this list, so a player
-//   can only reach their own team and Callaway staff. Only the admin writes it: the app refreshes it when the
-//   admin signs in, and when the admin opens Chat.
-import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+// Who each person can chat with (update 101), kept up to date by the admin's app (when the admin signs in and
+// when they open Chat):
+//   chatNames/{uid}     = { name, role, title }  so people show by name ("Cody Coach · Coach")
+//   friendEmails/{email} = { uid }              so a friend can be found by their exact email
+//   chatReach/{uid}     = { uids }              a player's or team member's team and Callaway staff
+// Friends are added by people themselves (chat.js) and checked by the Firestore rules.
+import { collection, doc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, adminUids } from "./firebase-init.js";
 import { isTeamKey } from "./data.js";
 import { getState } from "./auth.js";
-import { adminAllClients } from "./store.js";
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
-const ROLE_NAMES = { player: "Player", coach: "Coach", caddie: "Caddie", caddy: "Caddie", analyst: "Analyst", admin: "Callaway", other: "Team" };
+const ROLE_NAMES = { player: "Player", coach: "Coach", caddie: "Caddie", caddy: "Caddie", analyst: "Analyst", admin: "Callaway", team: "Team", other: "Team" };
 export const roleName = (r) => ROLE_NAMES[r] || (r ? r[0].toUpperCase() + r.slice(1) : "");
 
 let running = null;
@@ -19,28 +18,41 @@ export function syncChatCircles() {
   if (!state.isAdmin) return Promise.resolve();
   return (running ||= (async () => {
     const users = (await getDocs(collection(db, "users"))).docs.map((d) => ({ uid: d.id, ...d.data() }));
-    let labels = new Map();
-    try { labels = (await adminAllClients()).labels; } catch { /* names only */ }
     const nameOf = (u) => u.name || u.email || "Someone";
-    const staff = [
-      ...adminUids.map((uid) => ({ uid, name: uid === state.user.uid ? (state.profile?.name || "Callaway") : "Callaway", role: "admin" })),
-      ...users.filter((u) => u.kind === "analyst").map((u) => ({ uid: u.uid, name: nameOf(u), role: "analyst" })),
-    ];
-    const keys = new Set(users.filter((u) => u.clientKey && !isTeamKey(u.clientKey) && u.kind !== "analyst").map((u) => u.clientKey));
-    for (const key of keys) {
-      const people = new Map();
-      for (const u of users) {
-        if (u.clientKey === key && !isTeamKey(u.clientKey)) people.set(u.uid, { name: nameOf(u), role: "player" });
-        else if (u.kind !== "analyst" && u.access?.[key]) people.set(u.uid, { name: nameOf(u), role: u.access[key].role || "other" });
-      }
-      for (const s of staff) if (!people.has(s.uid)) people.set(s.uid, { name: s.name, role: s.role });
-      const uids = [...people.keys()].sort();
-      const next = { uids, names: Object.fromEntries([...people].map(([k, v]) => [k, v.name])), roles: Object.fromEntries([...people].map(([k, v]) => [k, v.role])), playerName: labels.get(key) || [...people.values()].find((p) => p.role === "player")?.name || key };
-      try {
-        const cur = await getDoc(doc(db, "chatCircles", key));
-        const d = cur.exists() ? cur.data() : null;
-        if (!d || JSON.stringify([d.uids, d.names, d.roles, d.playerName]) !== JSON.stringify([next.uids, next.names, next.roles, next.playerName])) await setDoc(doc(db, "chatCircles", key), { ...next, updatedAt: serverTimestamp() });
-      } catch (err) { console.warn("chat circle", key, err); }
+    const staffIds = [...adminUids, ...users.filter((u) => u.kind === "analyst").map((u) => u.uid)];
+    const isStaff = (uid) => staffIds.includes(uid);
+    // names and roles
+    const names = new Map();
+    for (const uid of adminUids) names.set(uid, { name: uid === state.user.uid ? (state.profile?.name || state.user.displayName || "Callaway") : (users.find((u) => u.uid === uid)?.name || "Callaway"), role: "admin", title: "Callaway" });
+    for (const u of users) {
+      if (names.has(u.uid)) continue;
+      if (u.kind === "analyst") names.set(u.uid, { name: nameOf(u), role: "analyst", title: "Analyst" });
+      else if (isTeamKey(u.clientKey)) { const r = Object.values(u.access || {})[0]?.role || "team"; names.set(u.uid, { name: nameOf(u), role: "team", title: roleName(r) }); }
+      else if (u.clientKey) names.set(u.uid, { name: nameOf(u), role: "player", title: "Player" });
     }
-  })().finally(() => { running = null; }));
+    // each player's team: the player and everyone with access to them (analysts are staff)
+    const teamOf = new Map();
+    for (const u of users) {
+      if (u.clientKey && !isTeamKey(u.clientKey) && u.kind !== "analyst") (teamOf.get(u.clientKey) || teamOf.set(u.clientKey, new Set()).get(u.clientKey)).add(u.uid);
+      if (u.kind !== "analyst") for (const k of Object.keys(u.access || {})) (teamOf.get(k) || teamOf.set(k, new Set()).get(k)).add(u.uid);
+    }
+    const reach = new Map();
+    for (const u of users) {
+      if (isStaff(u.uid)) continue;
+      const keys = isTeamKey(u.clientKey) ? Object.keys(u.access || {}) : u.clientKey ? [u.clientKey] : [];
+      const set = new Set([u.uid, ...staffIds]);
+      for (const k of keys) for (const x of teamOf.get(k) || []) set.add(x);
+      reach.set(u.uid, [...set].sort());
+    }
+    const emails = new Map(users.filter((u) => u.email).map((u) => [String(u.email).toLowerCase(), u.uid]));
+    // write only what changed
+    const cur = async (c) => new Map((await getDocs(collection(db, c))).docs.map((d) => [d.id, d.data()]));
+    const [curNames, curReach, curEmails] = await Promise.all([cur("chatNames"), cur("chatReach"), cur("friendEmails")]);
+    const ops = [];
+    for (const [uid, v] of names) { const c = curNames.get(uid); if (!c || c.name !== v.name || c.role !== v.role || c.title !== v.title) ops.push((b) => b.set(doc(db, "chatNames", uid), { ...v, updatedAt: serverTimestamp() })); }
+    for (const [uid, uids] of reach) { const c = curReach.get(uid); if (!c || JSON.stringify(c.uids) !== JSON.stringify(uids)) ops.push((b) => b.set(doc(db, "chatReach", uid), { uids })); }
+    for (const uid of curReach.keys()) if (!reach.has(uid)) ops.push((b) => b.delete(doc(db, "chatReach", uid))); // (access removed)
+    for (const [email, uid] of emails) if (curEmails.get(email)?.uid !== uid) ops.push((b) => b.set(doc(db, "friendEmails", email), { uid }));
+    for (let i = 0; i < ops.length; i += 400) { const b = writeBatch(db); ops.slice(i, i + 400).forEach((f) => f(b)); await b.commit(); }
+  })().catch((err) => console.warn("chat sync", err)).finally(() => { running = null; }));
 }
