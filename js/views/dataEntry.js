@@ -13,6 +13,7 @@ import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "
 import { detectCardGrid, gridValues, splitRow } from "../cardGrid.js";
 import { tesseractEngine } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
+import { myCourseCards, saveCourseCard } from "../courseCards.js";
 import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
 import { parseShots, golfFix, golfScore } from "../voiceShots.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
@@ -178,6 +179,7 @@ async function renderNew(main, flash, viewing = null) {
     teesIn.value = t.name;
     holes = holes.map((h, j) => ({ ...h, yards: t.yards[j] ?? h.yards }));
     drawGrid();
+    cardChanged();
   };
   teeSelect.addEventListener("change", () => {
     if (teeSelect.value === "__own") { teesIn.value = ""; drawTeeSelect(); teesIn.focus(); return; }
@@ -206,7 +208,6 @@ async function renderNew(main, flash, viewing = null) {
       el("span", { class: "sc-tot-val" }, [el("strong", {}, yds ? yds.toLocaleString() : "–"), " yds"]));
   };
   const teeLabel = () => { const t = teesIn.value.trim(); return t && t.length <= 7 ? t : "Yds"; };
-  const PAR_NEXT = { null: 4, 4: 5, 5: 3, 3: 4 };
   // Enter / "next" on a phone keyboard: the next box along the row (then the same row on the next nine)
   const nextBox = (input) => {
     const row = input.dataset.row, all = [...grid.querySelectorAll(`input[data-row="${row}"]`)];
@@ -224,26 +225,34 @@ async function renderNew(main, flash, viewing = null) {
           inp.value = inp.value.replace(/\D/g, "");
           const v = inp.value === "" ? null : Math.min(max, Number(inp.value));
           holes[i][k] = v;
-          drawTotals();
+          drawTotals(); cardChanged();
         });
         inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nextBox(inp); } });
         return inp;
       };
+      // Par: 4 to start with; ▲ / ▼ above and below it change it (3 to 5; 6 by typing it on a computer)
       const parBtn = (h, i) => {
-        const b = el("button", { type: "button", class: `sc-par${h.par ? "" : " empty"}`, "aria-label": `Hole ${h.n} par${h.par ? ` ${h.par}` : ", not set"}` }, h.par ? String(h.par) : "·");
+        const val = el("span", { class: "sc-par-v", "aria-live": "polite" }, String(h.par || 4));
+        const up = el("button", { type: "button", class: "sc-step up", "aria-label": `Hole ${h.n}: par up` }, "\u25B2");
+        const down = el("button", { type: "button", class: "sc-step down", "aria-label": `Hole ${h.n}: par down` }, "\u25BC");
+        const box = el("div", { class: "sc-par", role: "group", tabindex: "0", "aria-label": `Hole ${h.n} par` }, [up, val, down]);
         const set = (p) => {
           holes[i].par = p;
-          b.textContent = p ? String(p) : "·";
-          b.classList.toggle("empty", !p); b.classList.remove("miss");
-          b.setAttribute("aria-label", `Hole ${h.n} par${p ? ` ${p}` : ", not set"}`);
-          drawTotals();
+          val.textContent = String(p);
+          box.classList.toggle("odd", p !== 4);
+          up.disabled = p >= 5; down.disabled = p <= 3;
+          drawTotals(); cardChanged();
         };
-        b.addEventListener("click", () => set(PAR_NEXT[holes[i].par ?? null] ?? 4));
-        b.addEventListener("keydown", (e) => {
+        up.addEventListener("click", () => set(Math.min(5, (holes[i].par || 4) + 1)));
+        down.addEventListener("click", () => set(Math.max(3, (holes[i].par || 4) - 1)));
+        box.addEventListener("keydown", (e) => {
           if (["3", "4", "5", "6"].includes(e.key)) { e.preventDefault(); set(Number(e.key)); }
-          else if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); set(null); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); set(Math.min(5, (holes[i].par || 4) + 1)); }
+          else if (e.key === "ArrowDown") { e.preventDefault(); set(Math.max(3, (holes[i].par || 4) - 1)); }
         });
-        return b;
+        box.classList.toggle("odd", (h.par || 4) !== 4);
+        up.disabled = (h.par || 4) >= 5; down.disabled = (h.par || 4) <= 3;
+        return box;
       };
       const row = (cls, label, cells, sum) => el("tr", { class: cls }, [el("th", { scope: "row" }, label), ...cells.map((c) => el("td", {}, c)), el("td", { class: "sc-sum", ...(sum ? { "data-sum": sum } : {}) }, "")]);
       return el("div", { class: "sc-nine" }, el("table", { class: "sc-table" }, [
@@ -262,20 +271,59 @@ async function renderNew(main, flash, viewing = null) {
 
   // Course: type-ahead from your past courses and OpenStreetMap; picking one fills the location, and a
   // course you've played before also refills its scorecard.
-  const pastRounds = await new Promise((res) => { const un = watchPlayerRounds(player.key, (r) => { res(r); setTimeout(() => un(), 0); }); });
+  const [pastRounds, savedCards] = await Promise.all([
+    new Promise((res) => { const un = watchPlayerRounds(player.key, (r) => { res(r); setTimeout(() => un(), 0); }); }),
+    myCourseCards(state.user?.uid),
+  ]);
+  // your saved scorecards first (they keep every set of tees you've entered), then courses from your rounds
+  const fromCards = savedCards.map((c) => ({ name: c.name, location: c.location || "", tees: c.lastTees || "", saved: c,
+    holes: Array.from({ length: c.holes || 18 }, (_, i) => ({ n: i + 1, par: c.par?.[i] ?? 4, hcp: c.hcp?.[i] ?? null, yards: (c.tees?.[c.lastTees] || [])[i] ?? null })) }));
+  const seen = new Set(fromCards.map((c) => c.name.trim().toLowerCase()));
   const courseBox = courseCombobox(course, {
-    history: courseHistory(pastRounds),
+    history: [...fromCards, ...courseHistory(pastRounds).filter((c) => !seen.has(c.name.trim().toLowerCase()))],
     onPick: (c) => {
       if (c.location) locationIn.value = c.location;
       if (c.tees && !teesIn.value) teesIn.value = c.tees;
       if (c.holes?.length) {
         holesCount = c.holes.length === 9 ? 9 : 18;
         holes = blankHoles(holesCount).map((h, i) => ({ ...h, ...(c.holes[i] || {}), n: i + 1 }));
+        // a saved card: each set of tees you've entered goes in the Tees dropdown
+        cardTees = c.saved ? Object.entries(c.saved.tees || {}).map(([name, yards]) => ({ name, yards: [...yards] })) : [];
+        teeSelect.value = "";
+        drawTeeSelect();
+        const pick = cardTees.findIndex((t) => t.name === (c.saved?.lastTees || c.tees));
+        if (pick >= 0) { teeSelect.value = String(pick); applyTee(pick); drawTeeSelect(); }
         drawCount(); drawGrid();
-        photoStatus.textContent = `Scorecard filled from your round here on ${c.date}. Check it's the same tees.`;
+        photoStatus.textContent = c.saved ? `Scorecard filled from your saved card${cardTees.length > 1 ? `: ${cardTees.length} sets of tees, pick yours above` : ""}. Check it's still right.`
+          : `Scorecard filled from your round here on ${c.date}. Check it's the same tees.`;
+        lastSavedKey = cardKey(); // (nothing new to save yet)
       }
     },
   });
+
+  // Every scorecard you fill in is saved for you in the background (a moment after you stop typing),
+  // by course: next time, picking the course fills it in. Only yours; never anyone else's.
+  const savedNote = el("span", { class: "sc-saved", "aria-live": "polite" }, "");
+  let saveTimer = null, lastSavedKey = "";
+  const cardNow = () => {
+    const tees = {};
+    for (const t of cardTees) tees[t.name] = t.yards;
+    const teeName = teesIn.value.trim() || "Tees";
+    if (holes.some((h) => h.yards)) tees[teeName] = holes.map((h) => h.yards ?? null);
+    return { name: course.value.trim(), location: locationIn.value.trim(), holes: holesCount, par: holes.map((h) => h.par ?? 4), hcp: holes.map((h) => h.hcp ?? null), tees, lastTees: teesIn.value.trim() };
+  };
+  const cardKey = () => JSON.stringify(cardNow());
+  // worth keeping: a course name and something beyond the blank card (yardages, handicaps or a par that isn't 4)
+  const worthSaving = (c) => c.name && (Object.keys(c.tees).length || c.hcp.some((v) => v) || c.par.some((p) => p !== 4));
+  async function saveNow() {
+    clearTimeout(saveTimer); saveTimer = null;
+    const c = cardNow(), key = JSON.stringify(c);
+    if (!worthSaving(c) || key === lastSavedKey || !state.user?.uid) return;
+    try { await saveCourseCard(state.user.uid, c); lastSavedKey = key; savedNote.textContent = "\u2713 Saved to your courses"; }
+    catch (err) { console.warn("Couldn't save the scorecard", err); }
+  }
+  function cardChanged() { savedNote.textContent = ""; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 1500); }
+  for (const inp of [course, locationIn, teesIn]) inp.addEventListener("change", cardChanged);
 
 
   // Read the photo: pars, handicaps and every tee row (each tee goes in the Tees dropdown).
@@ -290,6 +338,7 @@ async function renderNew(main, flash, viewing = null) {
       return next;
     });
     cardTees = (read.tees || []).filter((t) => t.yards.some(Boolean));
+    cardChanged();
     found += cardTees.reduce((n, t) => n + t.yards.filter(Boolean).length, 0);
     // keep the tees you'd already typed if the card has them; one tee: pick it
     const typed = teesIn.value.trim().toLowerCase();
@@ -442,6 +491,7 @@ async function renderNew(main, flash, viewing = null) {
         return;
       }
       start.disabled = true;
+      saveNow().catch(() => {});
       try {
         const id = await createRound({
           playerKey: player.key, playerLabel: player.label, ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "",
@@ -474,14 +524,14 @@ async function renderNew(main, flash, viewing = null) {
       tapBtn,
       photoStatus,
       grid,
-      el("div", { class: "sc-foot" }, [el("p", { class: "sc-hint" }, "Tap Par to set 3 \u00b7 4 \u00b7 5. Type yardage and handicap."), totals]),
+      el("div", { class: "sc-foot" }, [el("p", { class: "sc-hint" }, ["Par is 4 unless you change it with \u25B2 \u25BC. ", savedNote]), totals]),
     ]),
     el("div", { class: "entry-bar" }, start),
   ]);
   mount(main, [el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Track Round")), form]);
   drawCount(); drawGrid();
 }
-const blankHoles = (n) => Array.from({ length: n }, (_, i) => ({ n: i + 1, par: null, yards: null, hcp: null }));
+const blankHoles = (n) => Array.from({ length: n }, (_, i) => ({ n: i + 1, par: 4, yards: null, hcp: null })); // (par 4 unless changed)
 
 /* ===================================== entering a round ===================================== */
 function renderRound(main, params, flash, previewClient) {
