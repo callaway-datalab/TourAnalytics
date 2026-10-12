@@ -102,16 +102,20 @@ export function generateShots(plan) {
 /* ---- off the tee: a made-up par 4 / 5 drive, with a fairway, a hard side and an easier side ---- */
 const WIDTHS = { tight: 24, standard: 32, wide: 40 };
 function makeHole(b, width, trouble) {
-  const L = rint(b.hole[0], b.hole[1]);
-  const w = WIDTHS[width] || 32;
+  return holeLayout({ length: rint(b.hole[0], b.hole[1]), width, trouble, carry: b.carry, club: b.club });
+}
+/** A made-up hole off the tee of a given length (rounds and course prep use this too). */
+export function holeLayout({ length, width = "standard", trouble = pick(["left", "right", "both"]), carry = 290, club = "Driver", startLie = "Tee box", par = null }) {
+  const L = Math.round(length), b = { carry, club };
+  const w = typeof width === "number" ? width : WIDTHS[width] || 32;
   const hard = { kind: pick(["water", "ob", "water"]), at: rint(8, 14) };      // penalty this far past the fairway edge
   const soft = { kind: pick(["trees", "bunker", "rough"]), at: rint(18, 28) }; // trees / waste this far past
   const sides = trouble === "left" ? { left: hard, right: soft } : trouble === "right" ? { left: soft, right: hard }
     : { left: { kind: "trees", at: rint(12, 18) }, right: { kind: pick(["water", "ob"]), at: rint(12, 18) } };
   // a fairway bunker on one side, around where the ball comes down
-  const bSide = Math.random() < 0.5 ? -1 : 1, carry = b.carry;
+  const bSide = Math.random() < 0.5 ? -1 : 1;
   const fb = Math.random() < 0.75 ? { side: bSide, y0: carry - rint(15, 30), y1: carry + rint(5, 20), depth: rint(7, 11) } : null;
-  return { kind: "tee", club: b.club, hole: L, par: L > 470 ? 5 : 4, width: w, widthId: width, trouble, sides, bunker: fb, startLie: "Tee box", startDist: L };
+  return { kind: "tee", club: b.club, hole: L, par: par || (L > 470 ? 5 : 4), width: w, widthId: width, trouble, sides, bunker: fb, startLie, startDist: L, carry };
 }
 
 /** Where a drive finished, from its total distance and how far off line (+ right): { lie, dist, penalty, zone }. */
@@ -134,15 +138,33 @@ export function teeResult(shot, total, offline) {
 
 /** Strokes after the tee shot (to finish the hole), for a result from teeResult. */
 export function afterTee(shot, r) {
-  if (r.penalty === "ob") return 1 + expectedStrokes("Tee box", shot.hole);      // stroke and distance
+  if (r.penalty === "ob") return 1 + expectedStrokes(shot.startLie || "Tee box", shot.hole); // stroke and distance
   if (r.penalty === "water") return 1 + expectedStrokes("Rough", r.dist);        // drop, plus a stroke
-  return expectedStrokes(r.lie, r.dist) + (r.recovery ? 0.3 : 0);                // (trees: a punch-out costs about a third)
+  return expectedStrokes(r.lie, r.dist) + (r.recovery && !shot.played ? 0.3 : 0); // (trees: a punch-out costs about a third; in a round the next shot shows it)
 }
 
 /* ---- approach / around the green: a green with a pin, bunkers and maybe water ---- */
 function makeGreenShot(cat, b, lie, pinMix) {
-  const D = rint(b.lo, Math.max(b.lo, b.hi - 1));
-  const rx = rint(12, 17), ry = rint(13, 19); // green half-width, half-depth (yds)
+  let D = rint(b.lo, Math.max(b.lo, b.hi - 1));
+  const g = greenLayout(cat, pinMix);
+  const { rx, ry } = g.green, { x: px, y: py } = g.pin, near = Math.sign(px) || 1, hazards = g.hazards;
+  // where you're hitting from: straight back for an approach; for a chip, off one side or the front
+  let sx = 0, sy = -D;
+  if (cat === "ARG") {
+    const ang = -Math.PI / 2 + (pinMix === "hard" ? near * rnd(0.6, 1.2) : rnd(-0.9, 0.9));
+    sx = px + Math.cos(ang) * D; sy = py + Math.sin(ang) * D;
+    // never on the green itself: step back until it's just off it (the distance grows to match)
+    let k = D;
+    while ((sx / (rx + 1)) ** 2 + (sy / (ry + 1)) ** 2 <= 1 && k < D + 40) { k += 1; sx = px + Math.cos(ang) * k; sy = py + Math.sin(ang) * k; }
+    if (k !== D) D = Math.round(k);
+    if (lie === "Bunker") hazards.push({ type: "bunker", cx: sx, cy: sy, r: 5.5, start: true });
+    else if (lie === "Fairway" && Math.hypot(sx / (rx + 4), sy / (ry + 4)) <= 1) lie = "Fringe";
+  }
+  return { kind: "green", cat, startLie: lie, startDist: D, green: g.green, pin: g.pin, from: { x: sx, y: sy }, hazards, pinMix };
+}
+/** A made-up green: its size, the pin, bunkers and maybe water (yds, centre at 0,0). */
+export function greenLayout(cat = "APP", pinMix = pick(["easy", "mid", "mid", "hard"]), { size = 1 } = {}) {
+  const rx = Math.round(rint(12, 17) * size), ry = Math.round(rint(13, 19) * size); // green half-width, half-depth (yds)
   // the pin: middle, a corner, or tucked by trouble
   const px = pinMix === "easy" ? rnd(-0.2, 0.2) * rx : (Math.random() < 0.5 ? -1 : 1) * rnd(0.45, pinMix === "hard" ? 0.72 : 0.6) * rx;
   const py = pinMix === "easy" ? rnd(-0.2, 0.2) * ry : (Math.random() < 0.5 ? -1 : 1) * rnd(0.4, pinMix === "hard" ? 0.7 : 0.55) * ry;
@@ -153,15 +175,7 @@ function makeGreenShot(cat, b, lie, pinMix) {
   if (Math.random() < 0.7) hazards.push({ type: "bunker", ...edgePoint(rx, ry, -Math.PI / 2 + rnd(-0.7, 0.7), rnd(4, 5.5)) });
   // water: for approaches, sometimes, on one side (often the pin's side when it's tucked)
   if (cat === "APP" && Math.random() < 0.45) hazards.push({ type: "water", side: pinMix === "hard" ? near : pick([-1, 1]), from: rx + rnd(5, 9) });
-  // where you're hitting from: straight back for an approach; for a chip, off one side or the front
-  let sx = 0, sy = -D;
-  if (cat === "ARG") {
-    const ang = -Math.PI / 2 + (pinMix === "hard" ? near * rnd(0.6, 1.2) : rnd(-0.9, 0.9));
-    const r0 = D; // distance to the pin
-    sx = px + Math.cos(ang) * r0; sy = py + Math.sin(ang) * r0;
-    if (lie === "Bunker") hazards.push({ type: "bunker", cx: sx, cy: sy, r: 5.5, start: true });
-  }
-  return { kind: "green", cat, startLie: lie, startDist: D, green: { rx, ry }, pin: { x: px, y: py }, from: { x: sx, y: sy }, hazards, pinMix };
+  return { green: { rx, ry }, pin: { x: px, y: py }, hazards, pinMix };
 }
 function edgePoint(rx, ry, ang, r) {
   // a bunker just off the green edge, at that angle from the centre
@@ -195,7 +209,10 @@ export const afterGreen = (r) => (r.lie === "Holed" ? 0 : r.penalty ? 1 + expect
 
 /* ---- putting: a distance, a break and a slope ---- */
 function makePutt(b, brk, slope) {
-  const D = Math.round(rnd(b.lo, b.hi) * 2) / 2;
+  return puttFrom(Math.round(rnd(b.lo, b.hi) * 2) / 2, brk, slope);
+}
+/** A putt of a given length (ft), with a break and slope (random unless given). */
+export function puttFrom(D, brk = pick(["straight", "lr", "lr", "rl", "rl"]), slope = pick(["up", "flat", "down"])) {
   const pct = brk === "straight" ? 0 : Math.round(rnd(1, 3) * 10) / 10; // side slope, %
   return { kind: "putt", startLie: "Green", startDist: D, breakDir: brk, slope, sidePct: pct, upPct: slope === "flat" ? 0 : Math.round(rnd(1, 2.5) * 10) / 10 };
 }
@@ -214,9 +231,16 @@ export function puttRead(p, stimp = 11) {
 export function scoreShot(shot) {
   const r = shot.result;
   if (!r) return null;
-  if (shot.kind === "tee") return expectedStrokes("Tee box", shot.hole) - afterTee(shot, r) - 1;
+  if (shot.kind === "tee") return expectedStrokes(shot.startLie || "Tee box", shot.hole) - afterTee(shot, r) - 1;
   if (shot.kind === "putt") return expectedStrokes("Green", shot.startDist) - (r.lie === "Holed" ? 0 : expectedStrokes("Green", r.dist)) - 1;
-  return expectedStrokes(shot.startLie === "Bunker" ? "Bunker" : shot.startLie, shot.startDist) - afterGreen(r) - 1;
+  return startExpected(shot) - afterGreen(r) - 1;
+}
+
+/** Expected strokes from where a green-side shot starts (startDist is yds; fringe and green are looked up in feet). */
+export function startExpected(shot) {
+  const lie = shot.startLie;
+  if (lie === "Fringe" || lie === "Green") return expectedStrokes(lie, shot.startDist * 3);
+  return expectedStrokes(lie, shot.startDist);
 }
 
 /* ------------------------------------------------------------------ where to aim ------------------------------------------------------------------ */

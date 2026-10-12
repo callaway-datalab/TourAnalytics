@@ -12,17 +12,19 @@
  */
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, teeResult, greenResult, scoreShot, bestAim, spreadFor, puttRead } from "../practice/model.js";
-import { holeSvg, greenSvg, puttSvg, scatterSvg, driveScatterSvg, trendSvg, describePin } from "../practice/draw.js";
-import { summarize, scored, personalSpread, courseByBucket, readLaunchMonitor, resultFromMonitor, resultFromSpeech } from "../practice/analysis.js";
+import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, scoreShot, spreadFor } from "../practice/model.js";
+import { trendSvg } from "../practice/draw.js";
+import { summarize, scored, personalSpread, courseByBucket, readLaunchMonitor, resultFromMonitor } from "../practice/analysis.js";
 import { listSessions, saveSession, deleteSession, newSessionId } from "../practice/store.js";
+import { bagPatterns, clubFor } from "../practice/clubs.js";
+import { gameById, gameProgress, personalBest, fmtGameScore } from "../practice/games.js";
+import { SG, sgCls, tile, shotTitle, resultText, keyTiles, bucketTable, patternPanel, shotCard } from "./practiceShot.js";
 import { myEntryKey, myName } from "./dataEntry.js";
 
-const SG = (v, dp = 2) => (v == null || Number.isNaN(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(dp)}`);
-const sgCls = (v) => (v == null ? "" : v >= 0.005 ? "pos" : v <= -0.005 ? "neg" : "");
-const n1 = (v, u = "") => (v == null || Number.isNaN(v) ? "—" : `${Math.round(v * 10) / 10}${u}`);
-const p0 = (v) => (v == null ? "—" : `${Math.round(v)}%`);
 const LS_CAT = "ta:practice:cat";
+// The tools beside the four categories (update 138)
+const TOOLS = { ROUND: "Sim Round", PREP: "Course Prep", GAMES: "Games", BAG: "My Clubs" };
+const TOOL_ORDER = ["ROUND", "PREP", "GAMES", "BAG"];
 const DEF_TOTAL = { OTT: 14, APP: 20, ARG: 20, PUTT: 24 };
 
 export async function render(main, { flash }) {
@@ -31,9 +33,9 @@ export async function render(main, { flash }) {
   const playerKey = state.profile?.clientKey || null;
   const label = state.profile?.name || myName(state);
   let cat = new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || (() => { try { return localStorage.getItem(LS_CAT); } catch { return null; } })() || "APP";
-  if (!CATS[cat]) cat = "APP";
+  if (!CATS[cat] && !TOOLS[cat]) cat = "APP";
   let sessions = [];
-  let view = { name: "home" }; // home | plan | play | summary
+  let view = { name: "home" }; // home | plan | play | summary (sessions and games) · round | roundEnd (rounds) · tool pages
   let lastKey = "";
   let saveTimer = null;
   let showHeat = true;
@@ -41,14 +43,22 @@ export async function render(main, { flash }) {
   let roundsP = null;
 
   const pills = el("nav", { class: "pr-pills", "aria-label": "Practice category" });
+  const tools = el("nav", { class: "pr-pills pr-tools", "aria-label": "Practice tools" });
   const body = el("div", { class: "pr-body" });
-  mount(main, [el("div", { class: "pr-wrap" }, [pills, body])]);
-  const drawPills = () => mount(pills, CAT_ORDER.map((c) => {
-    const a = el("button", { type: "button", class: `pr-pill${c === cat ? " on" : ""}`, "aria-pressed": c === cat ? "true" : "false" }, [el("span", { class: "pr-pl-full" }, CATS[c].label), el("span", { class: "pr-pl-short", "aria-hidden": "true" }, c === "ARG" ? "Around Green" : CATS[c].label)]);
-    a.addEventListener("click", () => { if (view.name === "play" && !confirmLeave()) return; cat = c; try { localStorage.setItem(LS_CAT, c); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); });
-    return a;
-  }));
-  const confirmLeave = () => true; // (a session in progress is saved as you go; you can pick it up again)
+  mount(main, [el("div", { class: "pr-wrap" }, [pills, tools, body])]);
+  const pick = (c) => { cat = c; try { localStorage.setItem(LS_CAT, c); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
+  const drawPills = () => {
+    mount(pills, CAT_ORDER.map((c) => {
+      const a = el("button", { type: "button", class: `pr-pill${c === cat ? " on" : ""}`, "aria-pressed": c === cat ? "true" : "false" }, [el("span", { class: "pr-pl-full" }, CATS[c].label), el("span", { class: "pr-pl-short", "aria-hidden": "true" }, c === "ARG" ? "Around Green" : CATS[c].label)]);
+      a.addEventListener("click", () => pick(c));
+      return a;
+    }));
+    mount(tools, TOOL_ORDER.map((t) => {
+      const a = el("button", { type: "button", class: `pr-pill${t === cat ? " on" : ""}`, "aria-pressed": t === cat ? "true" : "false" }, TOOLS[t]);
+      a.addEventListener("click", () => pick(t));
+      return a;
+    }));
+  };
 
   // your rounds (the Tour Events file and your entered rounds), for "on course" by bucket
   const courseFor = async (c) => {
@@ -66,17 +76,64 @@ export async function render(main, { flash }) {
     return res;
   };
 
+  function save(s, now = false) {
+    clearTimeout(saveTimer);
+    const run = () => saveSession(uid, s).catch((err) => { console.error(err); flash?.("Couldn't save just now. It'll try again with the next shot.", "error"); });
+    if (now) return run();
+    saveTimer = setTimeout(run, 700);
+  }
+
+  /** Where the aim map's spread comes from: your club's pattern (My Clubs), else your practice pattern, else a typical one. */
+  function aimFor(shot) {
+    if (shot.kind === "putt") return null;
+    const pats = bagPatterns(sessions, { min: 8 });
+    if (shot.kind === "tee") {
+      const club = shot.club === "Driver" ? "Driver" : shot.club === "3 wood" ? "3w" : null, p = club && pats[club];
+      if (p?.carrySd != null) return { spread: { sx: Math.max(4, p.offlineSd), sy: Math.max(4, p.carrySd) }, label: `Aim map uses your ${club} pattern (${p.n} shots).` };
+      const ps = personalSpread("OTT", sessions, shot.club);
+      return ps ? { spread: ps, label: `Aim map uses your pattern (${ps.n} shots).` } : { spread: spreadFor(shot) };
+    }
+    if (shot.startDist > 50 && shot.startLie !== "Bunker") {
+      const c = clubFor(pats, shot.startDist);
+      if (c) return { spread: c, label: `Aim map uses your ${c.club} pattern (${c.n} shots).` };
+    }
+    const p = personalSpread(shot.startDist <= 50 ? "ARG" : "APP", sessions);
+    if (p) return { spread: { sx: p.fx * shot.startDist, sy: p.fy * shot.startDist }, label: `Aim map uses your pattern (${p.n} shots).` };
+    return { spread: spreadFor(shot) };
+  }
+
+  // what the tool pages get to work with
+  const ctx = {
+    body, uid, state, flash, label, playerKey, save,
+    get sessions() { return sessions; },
+    add(s) { sessions = [s, ...sessions.filter((x) => x.id !== s.id)]; },
+    async remove(id) { await deleteSession(uid, id).catch(() => {}); sessions = sessions.filter((x) => x.id !== id); },
+    aimFor, newId: newSessionId,
+    heat: { get on() { return showHeat; }, set(v) { showHeat = v; } },
+    go(v) { view = v; draw(); }, home() { view = { name: "home" }; draw(); },
+    get view() { return view; },
+    playSession(s) { sessions = [s, ...sessions.filter((x) => x.id !== s.id)]; view = { name: "play", session: s, at: Math.max(0, s.shots.findIndex((x) => !x.result)) }; draw(); },
+    showSummary(s) { view = { name: "summary", session: s }; draw(); },
+    courseFor,
+  };
+
   drawPills(); mount(body, el("p", { class: "muted pr-loading" }, "Loading your practice\u2026"));
   try { sessions = await listSessions(uid); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
   drawPills(); draw();
 
-  function draw() {
+  async function draw() {
     // a new page or a new shot starts at the top
-    const key = `${view.name}:${view.at ?? ""}:${cat}`;
+    const key = `${view.name}:${view.at ?? ""}:${view.hole ?? ""}:${view.k ?? ""}:${cat}`;
     if (key !== lastKey) { lastKey = key; try { window.scrollTo({ top: 0 }); } catch { /* */ } }
-    if (view.name === "plan") return drawPlan();
     if (view.name === "play") return drawPlay();
     if (view.name === "summary") return drawSummary(view.session);
+    if (["round", "roundEnd", "prepCourse", "prepNew"].includes(view.name) || cat === "ROUND" || cat === "PREP") {
+      const m = await import("./practiceRound.js");
+      return m.render(ctx, cat === "PREP" ? "prep" : "sim");
+    }
+    if (cat === "GAMES") { const m = await import("./practiceGames.js"); return m.render(ctx); }
+    if (cat === "BAG" || view.name.startsWith("bag")) { const m = await import("./practiceClubs.js"); return m.render(ctx); }
+    if (view.name === "plan") return drawPlan();
     return drawHome();
   }
 
@@ -93,9 +150,9 @@ export async function render(main, { flash }) {
     const resume = active ? (() => {
       const left = active.shots.filter((s) => !s.result).length;
       const b = el("button", { type: "button", class: "btn ghost" }, "Resume");
-      b.addEventListener("click", () => { view = { name: "play", session: active, at: active.shots.findIndex((s) => !s.result) }; draw(); });
+      b.addEventListener("click", () => ctx.playSession(active));
       const x = el("button", { type: "button", class: "link danger" }, "Discard");
-      x.addEventListener("click", async () => { if (!confirmAction("Discard this unfinished session?")) return; await deleteSession(uid, active.id).catch(() => {}); sessions = sessions.filter((s) => s.id !== active.id); draw(); });
+      x.addEventListener("click", async () => { if (!confirmAction("Discard this unfinished session?")) return; await ctx.remove(active.id); draw(); });
       return el("section", { class: "panel pr-resume" }, [el("div", {}, [el("strong", {}, "Session in progress"), el("span", { class: "muted" }, ` · ${active.shots.length - left} of ${active.shots.length} shots · ${new Date(active.startedAt).toLocaleDateString()}`)]), el("div", { class: "pr-row" }, [b, x])]);
     })() : null;
     if (!done.length) {
@@ -120,8 +177,9 @@ export async function render(main, { flash }) {
     const table = bucketTable(cat, all.byBucket, course);
     const list = el("div", { class: "pr-sessions" }, done.map((s) => {
       const sm = s.summary || summarize(cat, s.shots);
+      const g = s.mode === "game" ? gameById(s.gameId) : null;
       const row = el("button", { type: "button", class: "pr-sess" }, [
-        el("span", { class: "pr-sess-d" }, new Date(s.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })),
+        el("span", { class: "pr-sess-d" }, [new Date(s.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), g ? el("span", { class: "pr-sess-tag" }, g.title) : null]),
         el("span", { class: "muted" }, `${sm.n} shots`),
         el("strong", { class: sgCls(sm.sg) }, SG(sm.sg, 1)),
         el("span", { class: `pr-sess-per ${sgCls(sm.sgPer)}` }, `${SG(sm.sgPer)} / shot`),
@@ -210,10 +268,8 @@ export async function render(main, { flash }) {
       const shots = generateShots(plan);
       if (!shots.length) { flash?.("Add some shots first.", "error"); return; }
       const s = { id: newSessionId(), cat, status: "active", startedAt: new Date().toISOString(), plan: { counts: plan.counts, mixes, stimp, total: shots.length }, shots, playerKey: playerKey || myEntryKey(state), playerLabel: label };
-      sessions = [s, ...sessions];
       save(s);
-      view = { name: "play", session: s, at: 0 };
-      draw();
+      ctx.playSession(s);
     });
     const back = el("button", { type: "button", class: "link" }, "← Back");
     back.addEventListener("click", () => { view = { name: "home" }; draw(); });
@@ -232,94 +288,67 @@ export async function render(main, { flash }) {
     ]);
   }
 
-  /* =============================================== play a session =============================================== */
-  function save(s, now = false) {
-    clearTimeout(saveTimer);
-    const run = () => saveSession(uid, s).catch((err) => { console.error(err); flash?.("Couldn't save the session just now. It'll try again with the next shot.", "error"); });
-    if (now) return run();
-    saveTimer = setTimeout(run, 700);
-  }
+  /* =============================================== play a session (or a game) =============================================== */
   function drawPlay() {
-    const s = view.session, shots = s.shots;
-    let at = Math.max(0, Math.min(shots.length - 1, view.at ?? 0));
+    const s = view.session, shots = s.shots, game = s.mode === "game" ? gameById(s.gameId) : null;
+    const at = Math.max(0, Math.min(shots.length - 1, view.at ?? 0));
     const shot = shots[at];
-    const doneN = shots.filter((x) => x.result).length;
-    const sgSum = scored(shots).reduce((t, x) => t + x.sg, 0);
     const go = (i) => { view.at = Math.max(0, Math.min(shots.length - 1, i)); draw(); };
-    const prev = el("button", { type: "button", class: "pr-nav", "aria-label": "Previous shot", disabled: at === 0 ? true : null }, "‹");
-    prev.addEventListener("click", () => go(at - 1));
-    const next = el("button", { type: "button", class: "pr-nav", "aria-label": "Next shot", disabled: at === shots.length - 1 ? true : null }, "›");
-    next.addEventListener("click", () => go(at + 1));
-    const finish = el("button", { type: "button", class: "btn ghost pr-finish" }, doneN === shots.length ? "See results" : "Finish");
+    const count = el("span", { class: "muted pr-count" });
+    const prog = el("i");
+    const right = el("strong", { class: "pr-sgsum" });
+    const live = game ? el("div", { class: "pr-game-live", "aria-live": "polite" }) : null;
+    const update = () => {
+      const doneN = shots.filter((x) => x.result).length;
+      count.textContent = `${doneN} / ${shots.length}`;
+      prog.style.setProperty("--w", `${(doneN / shots.length) * 100}%`);
+      if (game) {
+        const g = gameProgress(game, s), pb = personalBest(game, sessions);
+        right.textContent = `${fmtGameScore(game, g.score)} ${game.sg ? "SG" : game.unit === "makes" ? "made" : "pts"}`;
+        live.className = `pr-game-live ${g.status}`;
+        mount(live, [el("span", {}, [el("strong", {}, `Target ${fmtGameScore(game, game.target)}`), pb != null ? ` \u00b7 Best ${fmtGameScore(game, pb)}` : ""]), el("span", {}, g.need || "")]);
+      } else right.textContent = SG(scored(shots).reduce((t, x) => t + x.sg, 0));
+    };
+    const finish = el("button", { type: "button", class: "btn ghost pr-finish" }, "Finish");
     finish.addEventListener("click", () => finishSession(s));
-    // personal pattern (once there's enough of it)
-    const mineSpread = (() => {
-      const p = personalSpread(cat, sessions, shot.kind === "tee" ? shot.club : null);
-      if (!p) return null;
-      return shot.kind === "tee" ? p : { sx: p.fx * shot.startDist, sy: p.fy * shot.startDist, n: p.n };
-    })();
-    const spread = mineSpread || spreadFor(shot);
-    const carry = shot.kind === "tee" ? (BUCKETS.OTT.find((b) => b.id === shot.bucket)?.carry || 280) : null;
-    const aim = shot.kind === "putt" ? null : bestAim(shot, spread, carry);
-    const visual = el("div", { class: "pr-visual" });
-    const resultLine = el("p", { class: "pr-result", "aria-live": "polite" });
-    const setResult = (r) => {
-      shot.result = r; shot.sg = scoreShot(shot);
-      save(s);
-      drawVisual(); drawResult(); drawInputs();
-      bar.querySelector(".pr-sgsum").textContent = SG(scored(shots).reduce((t, x) => t + x.sg, 0), 2);
-      bar.querySelector(".pr-count").textContent = `${shots.filter((x) => x.result).length} / ${shots.length}`;
-    };
-    const drawVisual = () => {
-      const r = shot.result;
-      if (shot.kind === "tee") mount(visual, holeSvg(shot, { aim, showHeat, carry, result: r && r.total != null ? r : null, onTap: (total, offline) => setResult({ ...teeResult(shot, total, offline), total, offline, source: "tap" }) }));
-      else if (shot.kind === "putt") mount(visual, puttSvg(shot, { stimp: s.plan?.stimp || 11, result: r && r.x != null ? r : null, onTap: (x, y) => { const d = Math.round(Math.hypot(x, y) * 10) / 10; setResult(d <= 0.25 ? { lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "tap" } : { lie: "Green", dist: d, unit: "ft", x, y, source: "tap" }); } }));
-      else mount(visual, greenSvg(shot, { aim, showHeat, result: r && r.x != null ? r : null, onTap: (x, y) => setResult({ ...greenResult(shot, x, y), source: "tap" }) }));
-    };
-    const drawResult = () => {
-      const r = shot.result;
-      if (!r) { mount(resultLine, el("span", { class: "muted" }, shot.kind === "putt" ? "Tap where it stopped (or Made), type it, or say it." : "Tap where it finished, type it, or say it.")); return; }
-      const sg = shot.sg;
-      const where = shot.kind === "tee" ? `${r.zone || r.lie} · ${r.total} yds, ${Math.abs(r.offline)} ${r.offline < 0 ? "left" : r.offline > 0 ? "right" : "on line"}${r.penalty ? "" : ` · ${r.dist} to go`}`
-        : r.lie === "Holed" ? "In the hole!" : r.penalty ? "Water · penalty stroke" : `${r.lie} · ${n1(r.dist)} ${r.unit}`;
-      mount(resultLine, [el("span", {}, where), el("strong", { class: `pr-sgchip ${sgCls(sg)}` }, `${SG(sg)} SG`)]);
-    };
-    const inputs = el("div", { class: "pr-inputs" });
-    const drawInputs = () => mount(inputs, inputsFor(shot, setResult, () => go(at + 1), at === shots.length - 1 ? () => finishSession(s) : null));
-    drawVisual(); drawResult(); drawInputs();
-
-    const heatBtn = el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Aim map");
-    heatBtn.addEventListener("click", () => { showHeat = !showHeat; heatBtn.classList.toggle("on", showHeat); heatBtn.setAttribute("aria-pressed", String(showHeat)); drawVisual(); });
-    const monitor = (shot.kind === "tee" || shot.kind === "green") && cat !== "ARG" ? monitorButton(s, at, (n) => { flash?.(`Filled ${n} shot${n === 1 ? "" : "s"} from the file.`, "ok"); draw(); }) : null;
+    const monitor = (shot.kind === "tee" || shot.kind === "green") && s.cat !== "ARG" ? monitorButton(s, at, (n) => { flash?.(`Filled ${n} shot${n === 1 ? "" : "s"} from the file.`, "ok"); draw(); }) : null;
+    const card = shotCard({
+      shot, stimp: s.plan?.stimp || 11, aim: aimFor(shot), eyebrow: `${game ? `${game.title} \u00b7 ` : ""}Shot ${at + 1} of ${shots.length}`,
+      onPrev: at > 0 ? () => go(at - 1) : null, onNext: at < shots.length - 1 ? () => go(at + 1) : null,
+      onResult: (r) => { shot.result = r || undefined; shot.sg = r ? scoreShot(shot) : null; save(s); update(); },
+      next: at === shots.length - 1 ? { label: game ? "Finish game \u2713" : "Finish session \u2713", onClick: () => finishSession(s) } : { label: "Next shot \u203A", onClick: () => go(at + 1) },
+      more: [monitor, finish], heat: ctx.heat,
+    });
     const bar = el("div", { class: "pr-bar" }, [
-      el("div", { class: "pr-bar-l" }, [el("strong", {}, CATS[cat].label), el("span", { class: "muted pr-count" }, `${doneN} / ${shots.length}`)]),
-      el("div", { class: "pr-prog" }, el("i", { style: `--w:${(doneN / shots.length) * 100}%` })),
-      el("div", { class: "pr-bar-r" }, [el("span", { class: "muted small" }, "Session"), el("strong", { class: "pr-sgsum" }, SG(sgSum))]),
-    ]);
-    const card = el("section", { class: "panel pr-shot" }, [
-      el("div", { class: "pr-shot-head" }, [prev, el("div", { class: "pr-shot-t" }, [el("p", { class: "pr-eyebrow" }, `Shot ${at + 1} of ${shots.length}`), el("h2", {}, shotTitle(shot)), el("p", { class: "muted pr-shot-sub" }, shotSub(shot, aim, s.plan?.stimp, mineSpread))]), next]),
-      el("div", { class: "pr-play" }, [
-        el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, legend(shot))])]),
-        el("div", { class: "pr-in-col" }, [resultLine, inputs, el("div", { class: "pr-more" }, [monitor, finish])]),
-      ]),
+      el("div", { class: "pr-bar-l" }, [el("strong", {}, game ? game.title : CATS[s.cat].label), count]),
+      el("div", { class: "pr-prog" }, prog),
+      el("div", { class: "pr-bar-r" }, [el("span", { class: "muted small" }, game ? "Score" : "Session"), right]),
     ]);
     const list = el("details", { class: "panel pr-list" }, [el("summary", {}, "Shot list"), el("ol", {}, shots.map((x, i) => {
-      const li = el("li", { class: i === at ? "on" : "" }, [el("span", {}, shotTitle(x)), el("span", { class: sgCls(x.sg) }, x.result ? SG(x.sg) : "")]);
+      const li = el("li", { class: i === at ? "on" : "" }, [el("span", {}, shotTitle(x)), el("span", { class: sgCls(x.sg) }, x.result ? (game && !game.sg ? `${game.points(x)} pt` : SG(x.sg)) : "")]);
       li.addEventListener("click", () => go(i));
       return li;
     }))]);
-    mount(body, [bar, card, list]);
+    update();
+    mount(body, [bar, live, card, list]);
   }
 
   async function finishSession(s) {
+    const game = s.mode === "game" ? gameById(s.gameId) : null;
     const done = s.shots.filter((x) => x.result);
     if (!done.length) {
-      if (!confirmAction("No shots entered yet. Discard this session?")) return;
-      await deleteSession(uid, s.id).catch(() => {});
-      sessions = sessions.filter((x) => x.id !== s.id);
+      if (!confirmAction(`No shots entered yet. Discard this ${game ? "game" : "session"}?`)) return;
+      await ctx.remove(s.id);
       view = { name: "home" }; draw(); return;
     }
-    if (done.length < s.shots.length && !confirmAction(`Finish with ${done.length} of ${s.shots.length} shots? The rest are left out.`)) return;
+    const partial = done.length < s.shots.length;
+    if (partial && !confirmAction(game ? `Finish with ${done.length} of ${s.shots.length} shots? An unfinished game doesn't count for your best.` : `Finish with ${done.length} of ${s.shots.length} shots? The rest are left out.`)) return;
+    if (game) {
+      const before = personalBest(game, sessions.filter((x) => x.id !== s.id));
+      const g = gameProgress(game, s);
+      s.game = { score: g.score, target: game.target, passed: !partial && (game.better === "low" ? g.score <= game.target : game.sg ? g.score > game.target : g.score >= game.target), complete: !partial,
+        best: !partial && (before == null || (game.better === "low" ? g.score < before : g.score > before)) };
+    }
     s.shots = done;
     s.status = "done";
     s.finishedAt = new Date().toISOString();
@@ -329,32 +358,45 @@ export async function render(main, { flash }) {
     view = { name: "summary", session: s }; draw();
   }
 
-  /* =============================================== a session's results =============================================== */
+  /* =============================================== a session's (or game's) results =============================================== */
   async function drawSummary(s) {
+    const game = s.mode === "game" ? gameById(s.gameId) : null;
     const sm = summarize(s.cat, s.shots);
     const course = await courseFor(s.cat).catch(() => ({}));
-    const back = el("button", { type: "button", class: "link" }, "← Practice");
+    const back = el("button", { type: "button", class: "link" }, "\u2190 Back");
     back.addEventListener("click", () => { view = { name: "home" }; draw(); });
-    const del = el("button", { type: "button", class: "link danger" }, "Delete session");
-    del.addEventListener("click", async () => { if (!confirmAction("Delete this session? This can't be undone.")) return; await deleteSession(uid, s.id).catch(() => {}); sessions = sessions.filter((x) => x.id !== s.id); view = { name: "home" }; draw(); });
-    const again = el("button", { type: "button", class: "btn" }, "＋  New session");
-    again.addEventListener("click", () => { view = { name: "plan" }; draw(); });
+    const del = el("button", { type: "button", class: "link danger" }, game ? "Delete game" : "Delete session");
+    del.addEventListener("click", async () => { if (!confirmAction("Delete this? It can't be undone.")) return; await ctx.remove(s.id); view = { name: "home" }; draw(); });
+    const again = el("button", { type: "button", class: "btn" }, game ? "\u21BB  Play again" : "\uFF0B  New session");
+    again.addEventListener("click", async () => {
+      if (game) { const m = await import("./practiceGames.js"); m.startGame(ctx, game); return; }
+      view = { name: "plan" }; draw();
+    });
     const shotRows = scored(s.shots).map((x) => el("tr", {}, [
       el("td", { class: "num" }, String(x.i)), el("td", {}, shotTitle(x)), el("td", { class: `num ${sgCls(x.sg)}` }, SG(x.sg)), el("td", {}, resultText(x)),
+      game && !game.sg ? el("td", { class: "num" }, String(game.points(x))) : null,
     ]));
+    const date = new Date(s.startedAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+    const hero = game
+      ? el("section", { class: `panel pr-sum-hero pr-game-hero ${s.game?.passed ? "passed" : "failed"}` }, [
+        el("div", {}, [el("p", { class: "pr-eyebrow" }, `${game.title} \u00b7 ${date}`),
+          el("div", { class: "pr-big" }, [el("strong", {}, fmtGameScore(game, s.game?.score)), el("span", {}, game.sg ? "strokes gained" : game.unit)]),
+          el("p", { class: "pr-verdict" }, [s.game?.passed ? "\u2713 Target beaten" : s.game?.complete === false ? "Unfinished" : "Target missed", ` (target ${fmtGameScore(game, game.target)})`, s.game?.best ? el("span", { class: "pr-pb" }, "New personal best") : ""]),
+          el("p", { class: "muted" }, `${sm.n} shots \u00b7 ${SG(sm.sg)} strokes gained vs Tour average`)]),
+        again])
+      : el("section", { class: "panel pr-sum-hero" }, [
+        el("div", {}, [el("p", { class: "pr-eyebrow" }, `${CATS[s.cat].label} \u00b7 ${date}`),
+          el("div", { class: "pr-big" }, [el("strong", { class: sgCls(sm.sg) }, SG(sm.sg, 2)), el("span", {}, "strokes gained vs Tour average")]),
+          el("p", { class: "muted" }, `${sm.n} shots \u00b7 ${SG(sm.sgPer)} a shot`)]),
+        again]);
     mount(body, [
       el("p", { class: "crumb pr-crumb" }, [back, del]),
-      el("section", { class: "panel pr-sum-hero" }, [
-        el("div", {}, [el("p", { class: "pr-eyebrow" }, `${CATS[s.cat].label} · ${new Date(s.startedAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}`),
-          el("div", { class: "pr-big" }, [el("strong", { class: sgCls(sm.sg) }, SG(sm.sg, 2)), el("span", {}, "strokes gained vs Tour average")]),
-          el("p", { class: "muted" }, `${sm.n} shots · ${SG(sm.sgPer)} a shot`)]),
-        again,
-      ]),
+      hero,
       el("section", { class: "panel" }, [el("div", { class: "pr-tiles" }, keyTiles(s.cat, sm))]),
-      el("section", { class: "panel" }, [el("h2", {}, "By distance"), bucketTable(s.cat, sm.byBucket, course, true)]),
+      game ? null : el("section", { class: "panel" }, [el("h2", {}, "By distance"), bucketTable(s.cat, sm.byBucket, course, true)]),
       patternPanel(s.cat, scored(s.shots), "Where they finished"),
       el("section", { class: "panel" }, [el("h2", {}, "Shot by shot"), el("div", { class: "table-scroll" }, el("table", { class: "plain pr-shots" }, [
-        el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "#"), el("th", {}, "Shot"), el("th", { class: "num" }, "SG"), el("th", {}, "Result")])), el("tbody", {}, shotRows)]))]),
+        el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "#"), el("th", {}, "Shot"), el("th", { class: "num" }, "SG"), el("th", {}, "Result"), game && !game.sg ? el("th", { class: "num" }, "Pts") : null])), el("tbody", {}, shotRows)]))]),
     ]);
   }
 
@@ -395,151 +437,3 @@ const HOW = {
   ARG: ["Pick how many shots, the distances and the mix of lies (fringe, rough, bunker).", "Pins range from lots of green to short-sided.", "Tap where it stopped, type it or say it.", "See proximity, up-and-down chances and strokes gained by distance."],
   PUTT: ["Pick how many putts, the distances, and the mix of breaks and slopes. Set the green speed.", "Each putt comes with a read: where to aim and how it plays.", "Tap where it stopped (or Made), type the leave or say it (“2 feet long”).", "See make %, speed, the putts you leave and the “pro side” on breaking putts."],
 };
-function shotTitle(x) {
-  if (x.kind === "tee") return `${x.club} · ${x.hole}-yd par ${x.par}`;
-  if (x.kind === "putt") return `${x.startDist} ft · ${x.breakDir === "lr" ? "left to right" : x.breakDir === "rl" ? "right to left" : "straight"}${x.slope !== "flat" ? `, ${x.slope}hill` : ""}`;
-  return `${x.startDist} yds · ${x.startLie === "Bunker" ? (x.cat === "ARG" ? "greenside bunker" : "fairway bunker") : x.startLie.toLowerCase()}`;
-}
-function shotSub(x, aim, stimp, mine) {
-  const pattern = mine ? ` Aim map uses your pattern (${mine.n} shots).` : "";
-  if (x.kind === "tee") {
-    const t = (side) => { const k = x.sides[side].kind; return k === "ob" ? "out of bounds" : k === "water" ? "water" : k === "trees" ? "trees" : k === "bunker" ? "waste area" : "rough"; };
-    const a = aim ? (Math.abs(aim.x) < 1.5 ? "Aim at the middle of the fairway." : `Aim ${Math.round(Math.abs(aim.x))} yds ${aim.x < 0 ? "left" : "right"} of the middle.`) : "";
-    return `${x.width}-yd fairway · ${t("left")} left, ${t("right")} right. ${a}${pattern}`;
-  }
-  if (x.kind === "putt") {
-    const r = puttRead(x, stimp || 11);
-    return `${r.aimIn ? `Aim about ${r.cups} cup${r.cups === 1 ? "" : "s"} ${r.aimSide} (${r.aimIn} in).` : "Straight: aim at the hole."}${r.plays ? ` Plays about ${Math.abs(r.plays)} ft ${r.plays > 0 ? "longer" : "shorter"}.` : ""} Stimp ${stimp || 11}.`;
-  }
-  const off = aim ? Math.hypot(aim.x - x.pin.x, aim.y - x.pin.y) : 0;
-  const dir = aim ? [aim.y - x.pin.y > 1.5 ? "long" : aim.y - x.pin.y < -1.5 ? "short" : "", aim.x - x.pin.x > 1.5 ? "right" : aim.x - x.pin.x < -1.5 ? "left" : ""].filter(Boolean).join(" and ") : "";
-  return `Pin ${describePin(x)}. ${off >= 2 && dir ? `Best aim: ${Math.round(off)} yds ${dir} of the pin.` : "Best aim: at the pin."}${pattern}`;
-}
-function legend(x) {
-  if (x.kind === "putt") return "Arrows: the way it breaks. Gold ring: where to aim. Rings: 3 and 6 ft.";
-  return "Green = fewest strokes left, red = most. Gold ring: best aim.";
-}
-function resultText(x) {
-  const r = x.result;
-  if (!r) return "";
-  if (x.kind === "tee") return `${r.zone || r.lie}, ${r.total} yds, ${Math.abs(r.offline)} ${r.offline < 0 ? "L" : r.offline > 0 ? "R" : ""}`;
-  if (r.lie === "Holed") return "Holed";
-  if (r.penalty) return "Water";
-  return `${r.lie}, ${n1(r.dist)} ${r.unit}`;
-}
-function tile(k, v, cls = "", sub = "") {
-  return el("div", { class: "pr-tile" }, [el("span", { class: "pr-tile-k" }, k), el("strong", { class: cls }, v), sub ? el("span", { class: "pr-tile-s" }, sub) : null]);
-}
-function keyTiles(cat, s) {
-  if (!s.n) return [];
-  if (cat === "OTT") return [tile("Fairways", p0(s.fairwayPct)), tile("Avg distance", n1(s.avgTotal, " yds")), tile("Avg offline", n1(s.avgOffline, " yds"), "", s.leftPct != null ? `${Math.round(s.leftPct)}% left` : ""), tile("Penalties", p0(s.penaltyPct))];
-  if (cat === "PUTT") return [tile("Made", p0(s.makePct)), tile("Avg leave", n1(s.avgLeave, " ft"), "", "misses"), tile("Within 3 ft", p0(s.within3Pct), "", "of misses"), tile("Long", p0(s.longPct), "", "of misses"), tile("Pro side", p0(s.proSidePct), "", "breaking misses")];
-  return [tile(cat === "ARG" ? "On the green" : "Greens hit", p0(s.greenPct)), tile("Avg proximity", n1(s.avgProx, " ft")), tile("Median", n1(s.medProx, " ft")), tile("Long", p0(s.longPct)), ...(s.holed ? [tile("Holed", String(s.holed))] : [tile("Water", p0(s.penaltyPct))])];
-}
-function bucketTable(cat, rows, course, compact = false) {
-  const metric = cat === "OTT" ? ["Fairways", (r) => p0(r.fairwayPct)] : cat === "PUTT" ? ["Made", (r) => p0(r.makePct)] : ["Proximity", (r) => n1(r.avgProx, " ft")];
-  const body = rows.filter((r) => r.n || (!compact && course[r.id]?.n)).map((r) => {
-    const c = course[r.id], gap = r.sgPer != null && c?.sgPer != null ? r.sgPer - c.sgPer : null;
-    return el("tr", {}, [el("td", {}, r.label), el("td", { class: "num" }, String(r.n || "—")), el("td", { class: `num ${sgCls(r.sgPer)}` }, r.n ? SG(r.sgPer) : "—"),
-      el("td", { class: "num" }, r.n ? metric[1](r) : "—"), el("td", { class: `num ${sgCls(c?.sgPer)}` }, c?.n ? SG(c.sgPer) : "—"), el("td", { class: `num pr-gap ${sgCls(gap)}` }, gap == null ? "—" : SG(gap))]);
-  });
-  if (!body.length) return el("p", { class: "muted" }, "No shots yet.");
-  return el("div", { class: "table-scroll" }, el("table", { class: "plain pr-btable" }, [
-    el("thead", {}, el("tr", {}, [el("th", {}, cat === "OTT" ? "Club" : "Distance"), el("th", { class: "num" }, "Shots"), el("th", { class: "num" }, "SG / shot"), el("th", { class: "num" }, metric[0]), el("th", { class: "num" }, "On course"), el("th", { class: "num", title: "Practice minus on course" }, "Gap")])),
-    el("tbody", {}, body),
-  ]));
-}
-function patternPanel(cat, shots, title) {
-  if (!shots.length) return null;
-  let svg = null, cap = "";
-  if (cat === "OTT") {
-    const pts = shots.filter((s) => s.result.total != null).map((s) => ({ x: s.result.offline, y: s.result.total, good: s.result.lie === "Fairway" }));
-    svg = driveScatterSvg(pts, { width: 32 }); cap = "Distance and how far off line. Green: in the fairway. The shaded band is a 32-yd fairway.";
-  } else if (cat === "PUTT") {
-    const pts = shots.filter((s) => s.result.x != null).map((s) => ({ x: s.result.x, y: s.result.y, good: s.result.lie === "Holed" }));
-    if (!pts.length) return null;
-    svg = scatterSvg(pts, { range: 8, unit: "ft", rings: [3, 6], label: "Where your putts finished" }); cap = "Where your putts stopped, the hole in the middle; up is long. Rings: 3 and 6 ft.";
-  } else {
-    const pts = shots.filter((s) => s.result.x != null).map((s) => ({ x: (s.result.x - s.pin.x) * 3, y: (s.result.y - s.pin.y) * 3, good: s.result.lie === "Green" || s.result.lie === "Holed" }));
-    if (!pts.length) return null;
-    const range = cat === "ARG" ? 30 : 60;
-    svg = scatterSvg(pts, { range, unit: "ft", rings: cat === "ARG" ? [5, 10, 20] : [10, 20, 40], label: "Where your shots finished round the pin" }); cap = "Round the pin, in feet; up is long. Green: on the green.";
-  }
-  return el("section", { class: "panel pr-pattern" }, [el("h2", {}, title), el("div", { class: "pr-pat" }, svg), el("p", { class: "muted small" }, cap)]);
-}
-
-/* ===================================================== entering a result ===================================================== */
-const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-function inputsFor(shot, setResult, next, finish) {
-  const r = shot.result;
-  const nextBtn = el("button", { type: "button", class: "btn pr-next", disabled: r ? null : true }, finish ? "Finish session ✓" : "Next shot ›");
-  nextBtn.addEventListener("click", () => (finish ? finish() : next()));
-  const say = SpeechRec ? (() => {
-    const b = el("button", { type: "button", class: "btn ghost pr-say" }, "🎙 Say it");
-    b.addEventListener("click", () => {
-      const rec = new SpeechRec();
-      rec.lang = navigator.language || "en-US"; rec.interimResults = false; rec.maxAlternatives = 3;
-      b.textContent = "Listening…"; b.disabled = true;
-      rec.onresult = (e) => {
-        const alts = [...e.results[0]].map((a) => a.transcript);
-        const got = alts.map((t) => resultFromSpeech(shot, t)).find(Boolean);
-        if (got) setResult(got); else { b.textContent = `Didn’t catch “${alts[0]}”`; }
-      };
-      rec.onend = () => { b.disabled = false; if (b.textContent === "Listening…") b.textContent = "🎙 Say it"; };
-      rec.onerror = () => { b.disabled = false; b.textContent = "🎙 Say it"; };
-      try { rec.start(); } catch { b.disabled = false; }
-    });
-    return b;
-  })() : null;
-  const num = (val, label, attrs = {}) => el("input", { type: "text", inputmode: "decimal", value: val ?? "", "aria-label": label, placeholder: label, autocomplete: "off", ...attrs });
-  if (shot.kind === "tee") {
-    const tot = num(r?.total, "Total yds"), off = num(r?.offline != null ? Math.abs(r.offline) : "", "Offline yds");
-    let side = r?.offline < 0 ? -1 : 1;
-    const sideSeg = el("div", { class: "seg seg-sm pr-side" });
-    const drawSide = () => mount(sideSeg, [[-1, "Left"], [1, "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === v ? " on" : ""}` }, l); b.addEventListener("click", () => { side = v; drawSide(); apply(); }); return b; }));
-    drawSide();
-    const apply = () => { const t = Number(tot.value), o = Number(off.value || 0) * side; if (t >= 50) setResult({ ...teeResult(shot, Math.round(t), Math.round(o)), total: Math.round(t), offline: Math.round(o), source: "typed" }); };
-    tot.addEventListener("change", apply); off.addEventListener("change", apply);
-    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Total (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sideSeg])]),
-      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like “285, 12 left”.")];
-  }
-  if (shot.kind === "putt") {
-    const made = el("button", { type: "button", class: `btn ${r?.lie === "Holed" ? "" : "ghost"} pr-made` }, "✓ Made");
-    made.addEventListener("click", () => setResult({ lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "typed" }));
-    const leave = num(r && r.lie !== "Holed" ? r.dist : "", "Feet");
-    let dir = r?.y > 0 ? "long" : r?.y < 0 ? "short" : null;
-    const dirSeg = el("div", { class: "seg seg-sm pr-dir" });
-    const drawDir = () => mount(dirSeg, [["short", "Short"], ["long", "Long"], ["left", "Left"], ["right", "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${dir === v ? " on" : ""}` }, l); b.addEventListener("click", () => { dir = v; drawDir(); apply(); }); return b; }));
-    drawDir();
-    const apply = () => {
-      const d = Number(leave.value); if (!(d > 0)) return;
-      const v = { short: [0, -1], long: [0, 1], left: [-1, 0], right: [1, 0] }[dir] || null;
-      setResult({ lie: "Green", dist: d, unit: "ft", ...(v ? { x: v[0] * d, y: v[1] * d } : {}), source: "typed" });
-    };
-    leave.addEventListener("change", apply);
-    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Missed by (ft)"), leave]), el("div", {}, [el("span", { class: "rd-label" }, "Which way"), dirSeg])]),
-      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say “made it” or “2 feet long”.")];
-  }
-  // approach / around the green: the lie and the distance (or tap)
-  let lie = r?.lie && r.lie !== "Penalty" ? r.lie : r?.penalty ? "Water" : null;
-  const dist = num(r && r.lie !== "Holed" && !r.penalty ? r.dist : "", "Distance");
-  const unitOf = (l) => (l === "Green" || l === "Fringe" ? "ft" : "yds");
-  const unitTag = el("span", { class: "pr-unit" }, lie ? unitOf(lie) : "");
-  const lieSeg = el("div", { class: "pr-lies" });
-  const drawLie = () => mount(lieSeg, ["Green", "Fringe", "Fairway", "Rough", "Bunker", "Water", "Holed"].map((l) => {
-    const b = el("button", { type: "button", class: `pr-chip${lie === l ? " on" : ""}` }, l);
-    b.addEventListener("click", () => { lie = l; drawLie(); unitTag.textContent = unitOf(l); apply(true); });
-    return b;
-  }));
-  drawLie();
-  const apply = (fromLie = false) => {
-    if (lie === "Holed") return setResult({ lie: "Holed", dist: 0, unit: "ft", x: shot.pin.x, y: shot.pin.y, source: "typed" });
-    if (lie === "Water") return setResult({ lie: "Penalty", penalty: "water", dist: Number(dist.value) || Math.round(shot.startDist / 4), unit: "yds", source: "typed" });
-    const d = Number(dist.value);
-    if (!lie || !(d >= 0) || dist.value === "") { if (!fromLie) dist.focus(); return; }
-    setResult({ lie, dist: d, unit: unitOf(lie), source: "typed" });
-  };
-  dist.addEventListener("change", () => apply());
-  return [el("div", { class: "pr-fields col" }, [el("div", {}, [el("span", { class: "rd-label" }, "Finished on"), lieSeg]), el("label", { class: "pr-dist" }, [el("span", { class: "rd-label" }, "From the pin"), el("div", { class: "pr-dist-in" }, [dist, unitTag])])]),
-    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like “green, 14 feet short” or “rough, 8 yards”.")];
-}

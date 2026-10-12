@@ -1,0 +1,258 @@
+/*
+ * Practice pieces shared by sessions, rounds, games and My Clubs (update 138): the shot card (the made-up hole,
+ * green or putt, the aim map, and entering the result), the shot text, tiles, tables and patterns.
+ */
+import { el, mount } from "../ui.js";
+import { teeResult, greenResult, bestAim, puttRead } from "../practice/model.js";
+import { holeSvg, greenSvg, puttSvg, scatterSvg, driveScatterSvg } from "../practice/draw.js";
+import { resultFromSpeech } from "../practice/analysis.js";
+
+export const SG = (v, dp = 2) => (v == null || Number.isNaN(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(dp)}`);
+export const sgCls = (v) => (v == null ? "" : v >= 0.005 ? "pos" : v <= -0.005 ? "neg" : "");
+export const n1 = (v, u = "") => (v == null || Number.isNaN(v) ? "\u2014" : `${Math.round(v * 10) / 10}${u}`);
+export const p0 = (v) => (v == null ? "\u2014" : `${Math.round(v)}%`);
+
+/**
+ * One shot to play: the header (with the hole's detail), the picture with its aim map, the result and how to enter it.
+ *   opts: { shot, stimp, aim: { spread, label } , eyebrow, title, onPrev, onNext, onResult(r), next: { label, onClick }, more: [elements],
+ *           heat: { on, set(v) } }
+ * onResult is called with each result (or null when it's cleared); the card redraws itself.
+ */
+export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", title = null, onPrev = null, onNext = null, onResult, next = null, more = [], heat = { on: true, set() {} } }) {
+  let showHeat = heat.on;
+  const carry = shot.kind === "tee" ? shot.carry || (shot.club === "3 wood" ? 260 : shot.club === "Iron" ? 225 : 290) : null;
+  const aim = shot.kind === "putt" || !aimInfo ? null : bestAim(shot, aimInfo.spread, carry);
+  const visual = el("div", { class: "pr-visual" });
+  const resultLine = el("p", { class: "pr-result", "aria-live": "polite" });
+  const inputs = el("div", { class: "pr-inputs" });
+  const setResult = (r) => {
+    onResult(r);
+    drawVisual(); drawResult();
+    // typed into a box: leave the boxes as they are (rebuilding them mid-typing loses your place)
+    const typing = r?.source === "typed" && inputs.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+    if (typing || !r) { const nb = inputs.querySelector(".pr-next"); if (nb) nb.disabled = !r; } else drawInputs();
+  };
+  const drawVisual = () => {
+    const r = shot.result;
+    if (shot.kind === "tee") mount(visual, holeSvg(shot, { aim, showHeat, carry, result: r && r.total != null ? r : null, onTap: (total, offline) => setResult({ ...teeResult(shot, total, offline), total, offline, source: "tap" }) }));
+    else if (shot.kind === "putt") mount(visual, puttSvg(shot, { stimp, result: r && r.x != null ? r : null, onTap: (x, y) => { const d = Math.round(Math.hypot(x, y) * 10) / 10; setResult(d <= 0.25 ? { lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "tap" } : { lie: "Green", dist: d, unit: "ft", x, y, source: "tap" }); } }));
+    else mount(visual, greenSvg(shot, { aim, showHeat, result: r && r.x != null ? r : null, onTap: (x, y) => setResult({ ...greenResult(shot, x, y), source: "tap" }) }));
+  };
+  const drawResult = () => {
+    const r = shot.result;
+    if (!r) { mount(resultLine, el("span", { class: "muted" }, shot.kind === "putt" ? "Tap where it stopped (or Made), type it, or say it." : "Tap where it finished, type it, or say it.")); return; }
+    const where = shot.kind === "tee" ? `${r.zone || r.lie} \u00b7 ${r.total} yds, ${r.offline ? `${Math.abs(r.offline)} ${r.offline < 0 ? "left" : "right"}` : "on line"}${r.penalty ? "" : ` \u00b7 ${r.dist} to go`}`
+      : r.lie === "Holed" ? "In the hole!" : r.penalty ? "Water \u00b7 penalty stroke" : `${r.lie} \u00b7 ${n1(r.dist)} ${r.unit}`;
+    mount(resultLine, [el("span", {}, where), el("strong", { class: `pr-sgchip ${sgCls(shot.sg)}` }, `${SG(shot.sg)} SG`)]);
+  };
+  const drawInputs = () => mount(inputs, inputsFor(shot, setResult, next));
+  drawVisual(); drawResult(); drawInputs();
+  const heatBtn = shot.kind === "putt" ? null : el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Aim map");
+  heatBtn?.addEventListener("click", () => { showHeat = !showHeat; heat.set(showHeat); heatBtn.classList.toggle("on", showHeat); heatBtn.setAttribute("aria-pressed", String(showHeat)); drawVisual(); });
+  const navBtn = (txt, label, fn) => { const b = el("button", { type: "button", class: "pr-nav", "aria-label": label, disabled: fn ? null : true }, txt); if (fn) b.addEventListener("click", fn); return b; };
+  return el("section", { class: "panel pr-shot" }, [
+    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, el("h2", {}, title || shotTitle(shot)), el("p", { class: "pr-shot-sub" }, shotSub(shot, aim, stimp, aimInfo?.label))]), navBtn("\u203A", "Next shot", onNext)]),
+    el("dl", { class: "pr-facts" }, shotFacts(shot, stimp).map(([k, v]) => el("div", {}, [el("dt", {}, k), el("dd", {}, v)]))),
+    el("div", { class: "pr-play" }, [
+      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, legend(shot))])]),
+      el("div", { class: "pr-in-col" }, [resultLine, inputs, more.filter(Boolean).length ? el("div", { class: "pr-more" }, more) : null]),
+    ]),
+  ]);
+}
+
+export function shotTitle(x) {
+  if (x.kind === "tee") return x.startLie && x.startLie !== "Tee box" ? `${x.hole} yds \u00b7 ${x.startLie.toLowerCase()}, down the fairway` : `${x.club} \u00b7 ${x.hole}-yd par ${x.par}`;
+  if (x.kind === "putt") return `${n1(x.startDist)} ft · ${x.breakDir === "lr" ? "left to right" : x.breakDir === "rl" ? "right to left" : "straight"}${x.slope !== "flat" ? `, ${x.slope}hill` : ""}`;
+  if (x.startLie === "Fringe") return `${Math.round(x.startDist * 3)} ft \u00b7 fringe`;
+  const lie = x.startLie === "Tee box" ? `tee, par 3` : x.startLie === "Bunker" ? (x.startDist <= 50 ? "greenside bunker" : "fairway bunker") : x.startLie.toLowerCase();
+  return `${Math.round(x.startDist)} yds \u00b7 ${lie}`;
+}
+export function shotSub(x, aim, stimp, aimLabel) {
+  const pattern = aimLabel ? ` ${aimLabel}` : "";
+  if (x.kind === "tee") {
+    const a = aim ? (Math.abs(aim.x) < 1.5 ? "Aim at the middle of the fairway." : `Aim ${Math.round(Math.abs(aim.x))} yds ${aim.x < 0 ? "left" : "right"} of the middle.`) : "";
+    return `${a}${pattern}`;
+  }
+  if (x.kind === "putt") {
+    const r = puttRead(x, stimp || 11);
+    return `${r.aimIn ? `Aim about ${r.cups} cup${r.cups === 1 ? "" : "s"} ${r.aimSide} (${r.aimIn} in).` : "Straight: aim at the hole."}${r.plays ? ` Plays about ${Math.abs(r.plays)} ft ${r.plays > 0 ? "longer" : "shorter"}.` : ""} Stimp ${stimp || 11}.`;
+  }
+  const off = aim ? Math.hypot(aim.x - x.pin.x, aim.y - x.pin.y) : 0;
+  const dir = aim ? [aim.y - x.pin.y > 1.5 ? "long" : aim.y - x.pin.y < -1.5 ? "short" : "", aim.x - x.pin.x > 1.5 ? "right" : aim.x - x.pin.x < -1.5 ? "left" : ""].filter(Boolean).join(" and ") : "";
+  return `${off >= 2 && dir ? `Best aim: ${Math.round(off)} yds ${dir} of the pin.` : "Best aim: at the pin."}${pattern}`;
+}
+/** The detail of each made-up hole / green / putt, as [label, value] pairs. */
+const SIDE_KIND = { ob: "Out of bounds", water: "Water", trees: "Trees", bunker: "Waste area", rough: "Rough" };
+const where = (x, y, rx, ry) => {
+  const fb = y < -0.35 * ry ? "short" : y > 0.35 * ry ? "long" : "", lr = x < -0.35 * rx ? "left" : x > 0.35 * rx ? "right" : "";
+  return [fb, lr].filter(Boolean).join("-") || "middle";
+};
+export function shotFacts(x, stimp) {
+  if (x.kind === "tee") {
+    const half = x.width / 2;
+    const side = (k) => { const t = x.sides[k]; return t.kind === "rough" ? "Rough all the way" : `${SIDE_KIND[t.kind]} ${t.at} yds past the edge (${Math.round(half + t.at)} from the middle)`; };
+    const out = [
+      ["Fairway", `${x.width} yds wide (${half} either side of the middle)`],
+      ["Left", side("left")],
+      ["Right", side("right")],
+    ];
+    if (x.bunker) out.push(["Fairway bunker", `${x.bunker.side < 0 ? "Left" : "Right"} side, ${x.bunker.y0}\u2013${x.bunker.y1} yds off the tee`]);
+    return out;
+  }
+  if (x.kind === "putt") {
+    return [
+      ["Break", x.breakDir === "straight" ? "Straight" : `${x.breakDir === "lr" ? "Left to right" : "Right to left"}, ${x.sidePct}% side slope`],
+      ["Slope", x.slope === "flat" ? "Flat" : `${x.slope === "up" ? "Uphill" : "Downhill"}, ${x.upPct}%`],
+      ["Green speed", `Stimp ${stimp || 11}`],
+    ];
+  }
+  const { rx, ry } = x.green, { x: px, y: py } = x.pin;
+  const ey = ry * Math.sqrt(Math.max(0, 1 - (px / rx) ** 2)), ex = rx * Math.sqrt(Math.max(0, 1 - (py / ry) ** 2));
+  const r = (v) => Math.max(0, Math.round(v));
+  const trouble = x.hazards.filter((h) => !h.start).map((h) => (h.type === "water" ? `water ${h.side < 0 ? "left" : "right"}` : `bunker ${where(h.cx, h.cy, rx, ry)}`));
+  const out = [
+    ["Green", `${r(2 * ry)} yds deep, ${r(2 * rx)} wide`],
+    ["Pin", `${r(py + ey)} yds on from the front, ${r(ey - py)} from the back`],
+    ["Side to side", `${r(px + ex)} yds from the left edge, ${r(ex - px)} from the right`],
+    ["Trouble", trouble.length ? trouble.join(", ").replace(/^./, (c) => c.toUpperCase()) : "None"],
+  ];
+  if (x.startDist <= 50 && x.from) out.push(["Playing from", `${x.startLie === "Bunker" ? "Bunker" : x.startLie}, ${where(x.from.x, x.from.y, rx, ry)} of the green`]);
+  return out;
+}
+export function legend(x) {
+  if (x.kind === "putt") return "Arrows: the way it breaks. Gold ring: where to aim. Rings: 3 and 6 ft.";
+  return "Green = fewest strokes left, red = most. Gold ring: best aim.";
+}
+export function resultText(x) {
+  const r = x.result;
+  if (!r) return "";
+  if (x.kind === "tee") return `${r.zone || r.lie}, ${r.total} yds, ${r.offline ? `${Math.abs(r.offline)} ${r.offline < 0 ? "L" : "R"}` : "on line"}`;
+  if (r.lie === "Holed") return "Holed";
+  if (r.penalty) return "Water";
+  return `${r.lie}, ${n1(r.dist)} ${r.unit}`;
+}
+export function tile(k, v, cls = "", sub = "") {
+  return el("div", { class: "pr-tile" }, [el("span", { class: "pr-tile-k" }, k), el("strong", { class: cls }, v), sub ? el("span", { class: "pr-tile-s" }, sub) : null]);
+}
+export function keyTiles(cat, s) {
+  if (!s.n) return [];
+  if (cat === "OTT") return [tile("Fairways", p0(s.fairwayPct)), tile("Avg distance", n1(s.avgTotal, " yds")), tile("Avg offline", n1(s.avgOffline, " yds"), "", s.leftPct != null ? `${Math.round(s.leftPct)}% left` : ""), tile("Penalties", p0(s.penaltyPct))];
+  if (cat === "PUTT") return [tile("Made", p0(s.makePct)), tile("Avg leave", n1(s.avgLeave, " ft"), "", "misses"), tile("Within 3 ft", p0(s.within3Pct), "", "of misses"), tile("Long", p0(s.longPct), "", "of misses"), tile("Pro side", p0(s.proSidePct), "", "breaking misses")];
+  return [tile(cat === "ARG" ? "On the green" : "Greens hit", p0(s.greenPct)), tile("Avg proximity", n1(s.avgProx, " ft")), tile("Median", n1(s.medProx, " ft")), tile("Long", p0(s.longPct)), ...(s.holed ? [tile("Holed", String(s.holed))] : [tile("Water", p0(s.penaltyPct))])];
+}
+export function bucketTable(cat, rows, course, compact = false) {
+  const metric = cat === "OTT" ? ["Fairways", (r) => p0(r.fairwayPct)] : cat === "PUTT" ? ["Made", (r) => p0(r.makePct)] : ["Proximity", (r) => n1(r.avgProx, " ft")];
+  const body = rows.filter((r) => r.n || (!compact && course[r.id]?.n)).map((r) => {
+    const c = course[r.id], gap = r.sgPer != null && c?.sgPer != null ? r.sgPer - c.sgPer : null;
+    return el("tr", {}, [el("td", {}, r.label), el("td", { class: "num" }, String(r.n || "—")), el("td", { class: `num ${sgCls(r.sgPer)}` }, r.n ? SG(r.sgPer) : "—"),
+      el("td", { class: "num" }, r.n ? metric[1](r) : "—"), el("td", { class: `num ${sgCls(c?.sgPer)}` }, c?.n ? SG(c.sgPer) : "—"), el("td", { class: `num pr-gap ${sgCls(gap)}` }, gap == null ? "—" : SG(gap))]);
+  });
+  if (!body.length) return el("p", { class: "muted" }, "No shots yet.");
+  return el("div", { class: "table-scroll" }, el("table", { class: "plain pr-btable" }, [
+    el("thead", {}, el("tr", {}, [el("th", {}, cat === "OTT" ? "Club" : "Distance"), el("th", { class: "num" }, "Shots"), el("th", { class: "num" }, "SG / shot"), el("th", { class: "num" }, metric[0]), el("th", { class: "num" }, "On course"), el("th", { class: "num", title: "Practice minus on course" }, "Gap")])),
+    el("tbody", {}, body),
+  ]));
+}
+export function patternPanel(cat, shots, title) {
+  if (!shots.length) return null;
+  let svg = null, cap = "";
+  if (cat === "OTT") {
+    const pts = shots.filter((s) => s.result.total != null).map((s) => ({ x: s.result.offline, y: s.result.total, good: s.result.lie === "Fairway" }));
+    svg = driveScatterSvg(pts, { width: 32 }); cap = "Distance and how far off line. Green: in the fairway. The shaded band is a 32-yd fairway.";
+  } else if (cat === "PUTT") {
+    const pts = shots.filter((s) => s.result.x != null).map((s) => ({ x: s.result.x, y: s.result.y, good: s.result.lie === "Holed" }));
+    if (!pts.length) return null;
+    svg = scatterSvg(pts, { range: 8, unit: "ft", rings: [3, 6], label: "Where your putts finished" }); cap = "Where your putts stopped, the hole in the middle; up is long. Rings: 3 and 6 ft.";
+  } else {
+    const pts = shots.filter((s) => s.result.x != null).map((s) => ({ x: (s.result.x - s.pin.x) * 3, y: (s.result.y - s.pin.y) * 3, good: s.result.lie === "Green" || s.result.lie === "Holed" }));
+    if (!pts.length) return null;
+    const range = cat === "ARG" ? 30 : 60;
+    svg = scatterSvg(pts, { range, unit: "ft", rings: cat === "ARG" ? [5, 10, 20] : [10, 20, 40], label: "Where your shots finished round the pin" }); cap = "Round the pin, in feet; up is long. Green: on the green.";
+  }
+  return el("section", { class: "panel pr-pattern" }, [el("h2", {}, title), el("div", { class: "pr-pat" }, svg), el("p", { class: "muted small" }, cap)]);
+}
+
+/* ===================================================== entering a result ===================================================== */
+export const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+export function inputsFor(shot, setResult, next) {
+  const r = shot.result;
+  const nextBtn = next ? el("button", { type: "button", class: "btn pr-next", disabled: r ? null : true }, next.label) : null;
+  nextBtn?.addEventListener("click", () => next.onClick());
+  const say = SpeechRec ? (() => {
+    const b = el("button", { type: "button", class: "btn ghost pr-say" }, "🎙 Say it");
+    b.addEventListener("click", () => {
+      const rec = new SpeechRec();
+      rec.lang = navigator.language || "en-US"; rec.interimResults = false; rec.maxAlternatives = 3;
+      b.textContent = "Listening…"; b.disabled = true;
+      rec.onresult = (e) => {
+        const alts = [...e.results[0]].map((a) => a.transcript);
+        const got = alts.map((t) => resultFromSpeech(shot, t)).find(Boolean);
+        if (got) setResult(got); else { b.textContent = `Didn’t catch “${alts[0]}”`; }
+      };
+      rec.onend = () => { b.disabled = false; if (b.textContent === "Listening…") b.textContent = "🎙 Say it"; };
+      rec.onerror = () => { b.disabled = false; b.textContent = "🎙 Say it"; };
+      try { rec.start(); } catch { b.disabled = false; }
+    });
+    return b;
+  })() : null;
+  const num = (val, label, attrs = {}) => el("input", { type: "text", inputmode: "decimal", value: val ?? "", "aria-label": label, placeholder: label, autocomplete: "off", ...attrs });
+  if (shot.kind === "tee") {
+    const tot = num(r?.total, "Total yds"), off = num(r?.offline != null ? Math.abs(r.offline) : "", "Offline yds");
+    // left / right: nothing picked to start (a ball on the line needs neither); tap again to clear
+    let side = r?.offline < 0 ? -1 : r?.offline > 0 ? 1 : 0;
+    const sideSeg = el("div", { class: "seg seg-sm pr-side", role: "group", "aria-label": "Which side" });
+    const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
+    const drawSide = () => mount(sideSeg, [[-1, "Left"], [1, "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === v ? " on" : ""}`, "aria-pressed": side === v ? "true" : "false" }, l); b.addEventListener("click", () => { side = side === v ? 0 : v; drawSide(); apply(); }); return b; }));
+    drawSide();
+    const apply = () => {
+      const t = Number(tot.value), o = Number(off.value || 0);
+      hint.textContent = "";
+      if (!(t >= 50)) return;
+      if (o > 0 && !side) { hint.textContent = "Left or right?"; if (shot.result) setResult(null); return; }
+      const offline = Math.round(o * (side || 1));
+      setResult({ ...teeResult(shot, Math.round(t), offline), total: Math.round(t), offline, source: "typed" });
+    };
+    tot.addEventListener("change", apply); off.addEventListener("change", apply);
+    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Total (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
+      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like \u201c285, 12 left\u201d.")];
+  }
+  if (shot.kind === "putt") {
+    const made = el("button", { type: "button", class: `btn ${r?.lie === "Holed" ? "" : "ghost"} pr-made` }, "✓ Made");
+    made.addEventListener("click", () => setResult({ lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "typed" }));
+    const leave = num(r && r.lie !== "Holed" ? r.dist : "", "Feet");
+    let dir = r?.y > 0 ? "long" : r?.y < 0 ? "short" : null;
+    const dirSeg = el("div", { class: "seg seg-sm pr-dir" });
+    const drawDir = () => mount(dirSeg, [["short", "Short"], ["long", "Long"], ["left", "Left"], ["right", "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${dir === v ? " on" : ""}` }, l); b.addEventListener("click", () => { dir = dir === v ? null : v; drawDir(); apply(); }); return b; }));
+    drawDir();
+    const apply = () => {
+      const d = Number(leave.value); if (!(d > 0)) return;
+      const v = { short: [0, -1], long: [0, 1], left: [-1, 0], right: [1, 0] }[dir] || null;
+      setResult({ lie: "Green", dist: d, unit: "ft", ...(v ? { x: v[0] * d, y: v[1] * d } : {}), source: "typed" });
+    };
+    leave.addEventListener("change", apply);
+    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Missed by (ft)"), leave]), el("div", {}, [el("span", { class: "rd-label" }, "Which way"), dirSeg])]),
+      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say “made it” or “2 feet long”.")];
+  }
+  // approach / around the green: the lie and the distance (or tap)
+  let lie = r?.lie && r.lie !== "Penalty" ? r.lie : r?.penalty ? "Water" : null;
+  const dist = num(r && r.lie !== "Holed" && !r.penalty ? r.dist : "", "Distance");
+  const unitOf = (l) => (l === "Green" || l === "Fringe" ? "ft" : "yds");
+  const unitTag = el("span", { class: "pr-unit" }, lie ? unitOf(lie) : "");
+  const lieSeg = el("div", { class: "pr-lies" });
+  const drawLie = () => mount(lieSeg, ["Green", "Fringe", "Fairway", "Rough", "Bunker", "Water", "Holed"].map((l) => {
+    const b = el("button", { type: "button", class: `pr-chip${lie === l ? " on" : ""}` }, l);
+    b.addEventListener("click", () => { lie = l; drawLie(); unitTag.textContent = unitOf(l); apply(true); });
+    return b;
+  }));
+  drawLie();
+  const apply = (fromLie = false) => {
+    if (lie === "Holed") return setResult({ lie: "Holed", dist: 0, unit: "ft", x: shot.pin.x, y: shot.pin.y, source: "typed" });
+    if (lie === "Water") return setResult({ lie: "Penalty", penalty: "water", dist: Number(dist.value) || Math.round(shot.startDist / 4), unit: "yds", source: "typed" });
+    const d = Number(dist.value);
+    if (!lie || !(d >= 0) || dist.value === "") { if (!fromLie) dist.focus(); return; }
+    setResult({ lie, dist: d, unit: unitOf(lie), source: "typed" });
+  };
+  dist.addEventListener("change", () => apply());
+  return [el("div", { class: "pr-fields col" }, [el("div", {}, [el("span", { class: "rd-label" }, "Finished on"), lieSeg]), el("label", { class: "pr-dist" }, [el("span", { class: "rd-label" }, "From the pin"), el("div", { class: "pr-dist-in" }, [dist, unitTag])])]),
+    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like “green, 14 feet short” or “rough, 8 yards”.")];
+}

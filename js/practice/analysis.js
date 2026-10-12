@@ -134,11 +134,20 @@ export function readLaunchMonitor(text) {
     if (/l\b|left/i.test(t) && n > 0) n = -n; // "12.3 L"
     return n;
   };
+  const iClub = col(/^club( |\(|\[|$)|club name|club type|^club$/, /speed|path|face|head/);
+  const iBall = col(/ball speed/), iSpin = col(/total spin|^spin( |\(|\[|$)|spin rate|back spin|backspin/, /axis|side spin|sidespin/), iLaunch = col(/launch angle|^launch( |\(|\[|$)|vla|vertical launch/, /direction|hla|horizontal/);
+  const iHeight = col(/^height|apex|peak height|max height/);
   const out = [];
   for (const r of rows.slice(hi + 1)) {
     const carry = iCarry >= 0 ? num(r[iCarry]) : null, total = iTotal >= 0 ? num(r[iTotal]) : null;
     if (carry == null && total == null) continue; // (a units row, or a blank)
-    out.push({ carry, total: total ?? carry, offline: iSide >= 0 ? num(r[iSide]) ?? 0 : 0 });
+    const o = { carry, total: total ?? carry, offline: iSide >= 0 ? num(r[iSide]) ?? 0 : 0 };
+    if (iClub >= 0 && r[iClub]?.trim()) o.club = r[iClub].trim();
+    if (iBall >= 0) o.ball = num(r[iBall]);
+    if (iSpin >= 0) o.spin = num(r[iSpin]);
+    if (iLaunch >= 0) o.launch = num(r[iLaunch]);
+    if (iHeight >= 0) o.height = num(r[iHeight]);
+    out.push(o);
   }
   if (!out.length) throw new Error("No shots in that file.");
   return out;
