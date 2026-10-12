@@ -2488,3 +2488,6 @@ main.tight-top > div > nav.subnav:first-child, main.tight-top nav.subnav:first-c
 }
 @media (max-width: 820px) { .rail > .brand { max-width: 100%; } }
 @media (max-width: 380px) { .rail > .brand { letter-spacing: 0.1em !important; gap: 0.4rem !important; font-size: 0.74rem !important; } .rail-foot .hdr-icon, .account-btn.hdr-icon { width: 2.15rem !important; height: 2.15rem !important; min-height: 2.15rem !important; } .rail > .brand .brand-logo { height: 1.5rem !important; } .rail-foot { gap: 0.1rem !important; } }
+/* update 129: a category the lie / distance / club filters don't belong to: its own numbers, dimmed, not clickable */
+.hero-tile.apart { opacity: 0.42; cursor: default; filter: saturate(0.4); }
+.hero-tile.apart:hover { transform: none; border-color: rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); }

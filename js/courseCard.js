@@ -1,11 +1,14 @@
 // Course scorecards from BlueGolf or GolfTraxx: the first thing Add Data tries (a photo of the card is the
 // fallback). A browser page can't read another site directly (the sites don't allow it), so a small proxy does
-// the fetching: functions/course-card/worker.js, a free Cloudflare Worker, with its address in config.js as
-// courseCardUrl. The proxy only searches for and fetches pages on those two sites; the reading is done here.
+// the fetching: the portal-tools Cloud Run function (functions/portal-tools, update 131), with its /course-card
+// address in config.js as courseCardUrl. It only searches for and fetches pages on those two sites, and only for
+// signed-in users; the reading is done here.
 //
 //   searchCourseCards("Torrey Pines South", "La Jolla, CA") -> [{ title, url, source }]
 //   loadCourseCard(url)                                      -> { holes, par[], hcp[], tees: [{ name, yards[] }], found, notes[] }
 //   parseScorecardHtml(html)                                 -> the same, from a page's HTML (any table layout)
+
+import { getState } from "./auth.js";
 
 export const courseCardUrl = () => window.PORTAL_CONFIG?.courseCardUrl || "";
 export const courseCardsEnabled = () => !!courseCardUrl();
@@ -15,7 +18,8 @@ export const sourceOf = (url) => { try { const h = new URL(url).hostname; return
 async function call(params) {
   const base = courseCardUrl();
   if (!base) throw new Error("not set up");
-  const res = await fetch(`${base}${base.includes("?") ? "&" : "?"}${new URLSearchParams(params)}`);
+  const token = await getState().user?.getIdToken?.().catch(() => null);
+  const res = await fetch(`${base}${base.includes("?") ? "&" : "?"}${new URLSearchParams(params)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
   if (!res.ok) throw new Error(`proxy ${res.status}`);
   return res.json();
 }

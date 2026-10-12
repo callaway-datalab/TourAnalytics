@@ -335,14 +335,23 @@ export function sgDashboard(container, opts) {
       // a tile per category this stat has (with its rank among the same players, every category counted)
       const allCats = nz(applyFilters(me.rounds, { ...f, cats: [] }));
       const fieldAllCats = catsAvail.length > 1 ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...lastRankF, cats: [] })) })) : [];
-      const fieldAvgOf = (k) => { const v = rankedField(fieldAllCats).map((p) => metric(p.rounds, k)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+      // A lie / distance / club filter belongs to the category picked: the other categories' tiles keep their
+      // own numbers (only the year / tour / tournament / round / span filters apply), dimmed and not clickable.
+      const apart = (k) => !!(narrowed() && st.cats.length && !st.cats.includes(k));
+      const noShot = { lie: [], dist: [], club: [] };
+      const anyApart = catsAvail.some(([k]) => apart(k));
+      const allCatsBare = anyApart ? nz(applyFilters(me.rounds, { ...f, ...noShot, cats: [] })) : null;
+      const fieldBare = anyApart ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...lastRankF, ...noShot, cats: [] })) })) : [];
+      const avgIn = (list, k) => { const v = rankedField(list).map((p) => metric(p.rounds, k)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
       const tiles = catsAvail.length < 2 ? [] : catsAvail.map(([k, l]) => {
-        const v = metric(allCats, k), rk = rankAmong(fieldAllCats, me.key, k);
+        const off = apart(k), mineK = off ? allCatsBare : allCats, fieldK = off ? fieldBare : fieldAllCats;
+        const v = metric(mineK, k), rk = rankAmong(fieldK, me.key, k);
         const on = st.cats.length === 1 && st.cats[0] === k;
-        const b = el("button", { type: "button", class: `hero-tile${on ? " on" : ""}`, "aria-pressed": on ? "true" : "false", title: on ? "Back to all categories" : `Explore ${l}` }, [
-          el("span", { class: "ht-name" }, l), el("strong", { class: v == null ? "" : toneCls(v, sg ? null : fieldAvgOf(k)) }, fmtV(v)), el("span", { class: "ht-rank" }, rk.rank && rk.of > 1 ? `${ordinal(rk.rank)} of ${rk.of}` : ""),
+        const b = el("button", { type: "button", class: `hero-tile${on ? " on" : ""}${off ? " apart" : ""}`, "aria-pressed": on ? "true" : "false", disabled: off ? true : null,
+          title: off ? "Lie / distance / club filters don\u2019t apply here: this is the whole category. Reset the filters to explore it." : on ? "Back to all categories" : `Explore ${l}` }, [
+          el("span", { class: "ht-name" }, l), el("strong", { class: v == null ? "" : toneCls(v, sg ? null : avgIn(fieldK, k)) }, fmtV(v)), el("span", { class: "ht-rank" }, rk.rank && rk.of > 1 ? `${ordinal(rk.rank)} of ${rk.of}` : ""),
         ]);
-        b.addEventListener("click", () => { st.cats = on ? [] : [k]; draw(); });
+        if (!off) b.addEventListener("click", () => { st.cats = on ? [] : [k]; draw(); });
         return b;
       });
       const fieldVals = sg ? null : rankAmong(slicedField, null).vals;

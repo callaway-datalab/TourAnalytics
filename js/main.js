@@ -15,10 +15,16 @@ if ("serviceWorker" in navigator && location.protocol === "https:") navigator.se
 let unsubThreads = null;
 let lastCount = 0;
 let circlesSyncedFor = null; // (once per sign-in)
+let prunedFor = null;         // (the field detail's old copies: checked once per visit)
 
 subscribe((state) => {
   if (unsubThreads) { unsubThreads(); unsubThreads = null; }
   if (!state.user) { setUnreadCount(0); return; }
+  if (state.status === "ready" && prunedFor !== state.user.uid) {
+    // copies of field detail whose data file was deleted or rebuilt: removed, a little after the page is up
+    prunedFor = state.user.uid;
+    setTimeout(() => import("./fieldStore.js").then((m) => m.pruneDetailCopies()).catch(() => {}), 8000);
+  }
   if (state.isAdmin && circlesSyncedFor !== state.user.uid) {
     // who each person can chat with (their team and Callaway staff): refreshed when the admin signs in
     circlesSyncedFor = state.user.uid;

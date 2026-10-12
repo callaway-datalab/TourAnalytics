@@ -87,6 +87,8 @@ onAuthStateChanged(auth, (user) => {
 export function signOut() {
   // the copy of the stats data kept on this device (see fieldCache.js) goes with the account
   try { indexedDB.deleteDatabase("ta-cache"); } catch { /* nothing kept */ }
+  // and the field's lie / distance detail (see fieldStore.js)
+  try { indexedDB.deleteDatabase("ta-detail"); } catch { /* nothing kept */ }
   return fbSignOut(auth);
 }
 

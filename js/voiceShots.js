@@ -69,7 +69,8 @@ function resultIn(t) {
   if (/\b(bunker|sand|trap|beach)\b/.test(t)) return "Bunker";
   if (/\b(trees?|woods|behind|blocked|recovery|pine straw|stuck)\b/.test(t)) return "Rough"; // (no "Recovery" lie: trouble counts as rough)
   if (/\b(rough|thick stuff|long grass|first cut)\b/.test(t)) return "Rough";
-  if (/\b(green|on in|on the dance floor|putting surface)\b/.test(t)) return "Green";
+  // ("missed the green" isn't on it: left blank to fill in, unless it says where — bunker, rough …)
+  if (/\b(green|on in|on the dance floor|putting surface)\b/.test(t.replace(/\b(?:missed|miss|missing|short of|long of|over)\s+(?:the\s+)?green\b/g, " "))) return "Green";
   if (/\b(fairway|short grass|fringe|collar|apron|down the middle|middle|center|centre|split the fairway)\b/.test(t)) return "Fairway";
   return null;
 }
@@ -97,6 +98,42 @@ const stripClubs = (c) => c
 const PUTT = /\b(putt|putts|putted|putting|lag|lagged|lags)\b/;
 const NEW_SHOT = /\b(teed off|tee shot|off the tee|drove|second shot|third shot|fourth shot|fifth shot|approach|chip|chipped|pitch|pitched|punch(ed)?|laid up|lay(ed)? up|layup|blast(ed)?|flop(ped)?|next shot)\b/;
 
+/*
+ * Phone dictation often runs a whole hole together with no full stops ("driver to the fairway 150 left 8 iron
+ * on the green 20 feet two putt"). A run like that is split where a new shot starts: a club ("8 iron"), a putt
+ * ("two putt", "the putt"), or a shot word ("made", "missed", "chipped" …), keeping the little words before it
+ * ("and then I hit my 8 iron"). Two starts close together ("missed the putt") are the same shot.
+ */
+const CLUB_START = /^(?:driver|\d{1,2}\s*(?:wood|w)|fairway wood|wood|\d\s*(?:hybrid|h|rescue)|hybrid|rescue|[1-9]\s*(?:iron|i)|pitching wedge|pw|(?:gap|approach|sand|lob) wedge|aw|gw|sw|lw|(?:4[4-9]|5\d|6[0-4])\s*(?:degree|deg|°)|wedge|putter)\b/;
+const PUTT_START = /^(?:(?:one|two|three|1|2|3)[\s-]?putt(?:ed|s)?|putt(?:ed|s)?|lag(?:ged)?)\b/;
+const ACTION_START = /^(?:made|make|missed|miss|holed|drained|sank|tapped|chipped|chip|pitched|pitch|punched|laid up|layed up|blasted|flopped|drove|teed off)\b/;
+const SAID_SOMETHING = /\d|\b(fairway|middle|rough|bunker|sand|trap|beach|green|fringe|collar|apron|water|ob|hazard|penalty|trees?|woods|left|right|short|long|out|holed|in|drop|dropped|feet|foot|yards|yds)\b/;
+const LEAD_WORDS = new Set(["and", "then", "i", "hit", "used", "took", "pulled", "grabbed", "played", "my", "a", "the", "with", "it", "so", "next", "first", "second", "third", "fourth", "short", "long", "lag", "that"]);
+export function splitRun(clause) {
+  const w = clause.split(/\s+/).filter(Boolean);
+  if (w.length < 4) return [clause];
+  const cuts = [];
+  let last = 0; // (where the current shot's words began)
+  const startsAt = (i) => { const rest = w.slice(i, i + 3).join(" "); return CLUB_START.test(rest) || PUTT_START.test(rest) || ACTION_START.test(rest); };
+  for (let i = 1; i < w.length; i++) {
+    if (!startsAt(i)) continue;
+    if (startsAt(i - 1)) continue; // (the second word of one: "3 wood", "sand wedge", "two putt")
+    let j = i;
+    while (j > 0 && LEAD_WORDS.has(w[j - 1])) j--;
+    if (j === 0) continue;
+    // only once the words so far say how a shot went (a lie, a distance …): "teed off with 3 wood",
+    // "7 iron missed the green", "missed the putt" stay one shot
+    if (!SAID_SOMETHING.test(w.slice(last, j).join(" "))) continue;
+    if (!cuts.includes(j)) { cuts.push(j); last = j; }
+  }
+  if (!cuts.length) return [clause];
+  const out = [];
+  let from = 0;
+  for (const c of cuts) { out.push(w.slice(from, c).join(" ")); from = c; }
+  out.push(w.slice(from).join(" "));
+  return out.filter(Boolean);
+}
+
 /**
  * Parse what you said into shots.
  *   options.bag: your WITB clubs [{ label, model, cat, type }] (to pick the right club); options.par
@@ -104,9 +141,11 @@ const NEW_SHOT = /\b(teed off|tee shot|off the tee|drove|second shot|third shot|
  */
 export function parseShots(text, { bag = [] } = {}) {
   const notes = [];
-  const t = wordsToNumbers(golfFix(text)).replace(/\bi\b/g, "I").toLowerCase();
+  // ("period" / "full stop" said out loud, when the phone writes the word rather than the stop)
+  const t = wordsToNumbers(golfFix(String(text).replace(/\b(period|full stop|new line|next line)\b/gi, "."))).replace(/\bi\b/g, "I").toLowerCase();
   // clauses: "then", "and then", "after that", commas / full stops, and " and " before a new action
-  const clauses = t.split(/\s*(?:[.;,!?]|\band then\b|\bthen\b|\bafter that\b|\bnext\b|\band (?=(?:I |then )?(?:hit|made|make|missed|miss|putted|chipped|pitched|left|had|drained|sank|(?:one|two|three|1|2|3)[\s-]?putt|tapped|holed|punched|laid|blasted|went|ended|found|got|leaving)))\s*/).map((c) => c.trim()).filter(Boolean);
+  const clauses = t.split(/\s*(?:[.;,!?]|\band then\b|\bthen\b|\bafter that\b|\bnext\b|\band (?=(?:I |then )?(?:hit|made|make|missed|miss|putted|chipped|pitched|left|had|drained|sank|(?:one|two|three|1|2|3)[\s-]?putt|tapped|holed|punched|laid|blasted|went|ended|found|got|leaving)))\s*/).map((c) => c.trim()).filter(Boolean)
+    .flatMap(splitRun); // (and a run with no full stops, where each new shot starts)
   const shots = [];
   const cur = () => shots[shots.length - 1];
   const start = () => { shots.push({}); return cur(); };
@@ -131,7 +170,7 @@ export function parseShots(text, { bag = [] } = {}) {
     const startsNew = !s0 || !!club || isPutt || NEW_SHOT.test(c)
       || (result && s0.endLie && !(result === s0.endLie))
       || (result === "Holed" && s0.endLie && s0.endLie !== "Holed");
-    const s = startsNew && !(s0 && !s0.endLie && !s0.club && !s0.putt && !club && !isPutt) ? start() : s0;
+    const s = startsNew && !(s0 && !s0.endLie && !s0.clubSaid && !s0.putt && !club && !isPutt) ? start() : s0;
     if (club) s.clubSaid = club;
     if (isPutt) s.putt = true;
     if (result) s.endLie = result;

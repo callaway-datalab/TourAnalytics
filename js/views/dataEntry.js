@@ -291,7 +291,7 @@ async function renderNew(main, flash, viewing = null) {
   linkIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); useLink(); } });
   // (not switched on yet: the admin sees why, everyone else just gets the photo)
   const onlineBox = courseCardsEnabled() ? el("div", { class: "cc-box" }, [findBtn, onlineList, el("div", { class: "cc-link" }, [linkIn, linkBtn])])
-    : state.isAdmin ? el("p", { class: "muted small center cc-off" }, "Admin: finding scorecards on BlueGolf / GolfTraxx isn\u2019t switched on yet. It needs the course-card proxy (functions/course-card/worker.js) and its address as courseCardUrl in config.js.") : null;
+    : state.isAdmin ? el("p", { class: "muted small center cc-off" }, "Admin: finding scorecards on BlueGolf / GolfTraxx isn\u2019t switched on yet. It needs the portal-tools function (functions/portal-tools, see DEPLOY_BLAZE.md) and its /course-card address as courseCardUrl in config.js.") : null;
   // the photo: a last resort when the card is online (open straight away when online lookup isn't set up)
   const photoMore = el("details", { class: "photo-more", open: !courseCardsEnabled() }, [
     el("summary", {}, courseCardsEnabled() ? "Can\u2019t find it online? Read a photo of the card" : "Read a photo of the card"), photoBtn, tapBtn]);
@@ -867,11 +867,14 @@ function renderRound(main, params, flash, previewClient) {
   // keyboard's 🎤 / typing where that isn't available), turned into shots, and fills the hole when you tap Fill in.
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   let voiceOpen = false, voiceText = "", listening = null;
+  const canSpeak = () => !!SpeechRec;
+  // each finished phrase (you paused) becomes a sentence; of the recognizer's guesses, the most golf-like is kept
+  const sentence = (t) => { const x = golfFix(String(t).trim()); return x ? `${x[0].toUpperCase()}${x.slice(1)}${/[.!?]$/.test(x) ? "" : "."}` : ""; };
   // Voice input fills from the first shot that isn't done (folded) yet.
   const voiceStart = () => { const i = strokes.findIndex((s) => s.open !== false || !isComplete(s)); return i < 0 ? strokes.length : i; };
   function voiceBox() {
     const btn = el("button", { type: "button", class: "btn ghost voice-btn", "aria-expanded": voiceOpen ? "true" : "false" }, [micIcon(), el("span", {}, "Voice input")]);
-    btn.addEventListener("click", () => { voiceOpen = !voiceOpen; if (!voiceOpen) stopListening(); drawHole(); if (voiceOpen && SpeechRec && !voiceText) startListening(); });
+    btn.addEventListener("click", () => { voiceOpen = !voiceOpen; if (!voiceOpen) stopListening(); drawHole(); if (voiceOpen && canSpeak() && !voiceText) startListening(); });
     // Reset hole: start this hole over (asks first)
     const reset = el("button", { type: "button", class: "link danger reset-hole" }, "Reset hole");
     reset.addEventListener("click", () => {
@@ -900,14 +903,14 @@ function renderRound(main, params, flash, previewClient) {
       return r;
     };
     text.addEventListener("input", () => { voiceText = text.value; showParse(); });
-    const mic = SpeechRec ? el("button", { type: "button", class: "btn ghost voice-mic" + (listening ? " on" : "") }, listening ? "\u25A0 Stop" : [micIcon(), el("span", {}, "Speak")]) : null;
+    const mic = canSpeak() ? el("button", { type: "button", class: "btn ghost voice-mic" + (listening ? " on" : "") }, listening ? "\u25A0 Stop" : [micIcon(), el("span", {}, "Speak")]) : null;
     mic?.addEventListener("click", () => { if (listening) stopListening(); else startListening(); });
     const fill = el("button", { type: "button", class: "btn" }, "Fill in the hole");
     fill.addEventListener("click", () => applyVoice(showParse()));
     const cancel = el("button", { type: "button", class: "link" }, "Close");
     cancel.addEventListener("click", () => { voiceOpen = false; stopListening(); drawHole(); });
     const box = el("div", { class: "voice open" }, [
-      el("p", { class: "muted small" }, SpeechRec ? (listening ? "Listening\u2026 say how the hole went, then tap Stop." : "Tap Speak and say how the hole went, or type it.") : "Type how the hole went, or use your keyboard\u2019s \uD83C\uDF99 to dictate."),
+      el("p", { class: "muted small" }, canSpeak() ? (listening ? "Listening\u2026 say how the hole went, then tap Stop. No need to say \u201cperiod\u201d: each new club or putt starts a new shot." : "Tap Speak and say how the hole went, or type it.") : "Type how the hole went, or use your keyboard\u2019s \uD83C\uDF99 to dictate."),
       el("p", { class: "voice-start" }, `Starting at Shot ${voiceStart() + 1}`),
       text, el("div", { class: "voice-actions" }, [mic, fill, cancel]), preview, notes,
     ]);
@@ -926,7 +929,6 @@ function renderRound(main, params, flash, previewClient) {
     rec.lang = navigator.language || "en-US"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 5;
     const before = voiceText ? `${voiceText.trim().replace(/[.!?]?$/, ".")} ` : "";
     // each finished phrase (you paused) becomes a sentence; of the recognizer's guesses, keep the most golf-like
-    const sentence = (t) => { const x = golfFix(t.trim()); return x ? `${x[0].toUpperCase()}${x.slice(1)}${/[.!?]$/.test(x) ? "" : "."}` : ""; };
     rec.onresult = (e) => {
       const parts = [];
       for (let i = 0; i < e.results.length; i++) {

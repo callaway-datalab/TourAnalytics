@@ -123,15 +123,44 @@ function openDb() {
     if (typeof indexedDB === "undefined") return reject(new Error("no IndexedDB"));
     const req = indexedDB.open(DB_NAME, 1);
     req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE); };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => { const dbh = req.result; dbh.onversionchange = () => dbh.close(); resolve(dbh); }; // (so a sign-out's delete isn't held up)
     req.onerror = () => reject(req.error);
   });
 }
 async function cacheGet(key) {
   try {
     const dbh = await openDb();
-    return await new Promise((resolve) => { const r = dbh.transaction(STORE).objectStore(STORE).get(key); r.onsuccess = () => resolve(r.result || null); r.onerror = () => resolve(null); });
+    const got = await new Promise((resolve) => { const r = dbh.transaction(STORE).objectStore(STORE).get(key); r.onsuccess = () => resolve(r.result || null); r.onerror = () => resolve(null); });
+    dbh.close();
+    return got;
   } catch { return null; }
+}
+
+/**
+ * Once per visit: drop copies of detail that's no longer current — its data file was deleted, or the detail
+ * was rebuilt from a newer upload (or no longer has that year). Kept as they are when Firestore can't be reached.
+ */
+export async function pruneDetailCopies() {
+  let dbh;
+  try { dbh = await openDb(); } catch { return; }
+  try {
+    const keys = await new Promise((resolve) => { const r = dbh.transaction(STORE).objectStore(STORE).getAllKeys(); r.onsuccess = () => resolve(r.result || []); r.onerror = () => resolve([]); });
+    const ids = [...new Set(keys.map((k) => String(k).split("|")[0]))];
+    const gone = [];
+    for (const id of ids) {
+      let d;
+      try { const snap = await getDoc(doc(db, "fieldStats", id)); d = snap.exists() ? snap.data().detail : null; }
+      catch { continue; } // (offline or not allowed: leave this file's copies alone)
+      for (const k of keys) {
+        const [kid, year, src] = String(k).split("|");
+        if (kid !== id) continue;
+        const current = d && d.format === FORMAT && String(d.sourceUploadedAt) === src && (d.years || []).map(String).includes(year);
+        if (!current) gone.push(k);
+      }
+    }
+    if (gone.length) await new Promise((resolve) => { const tx = dbh.transaction(STORE, "readwrite"); for (const k of gone) tx.objectStore(STORE).delete(k); tx.oncomplete = tx.onerror = tx.onabort = () => resolve(); });
+    return gone.length;
+  } finally { dbh.close(); }
 }
 async function cachePut(key, bytes, datasetId) {
   try {
@@ -144,5 +173,6 @@ async function cachePut(key, bytes, datasetId) {
       all.onsuccess = () => { for (const k of all.result) if (String(k).startsWith(`${datasetId}|${year}|`) && k !== key) st.delete(k); st.put(bytes, key); };
       tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
     });
+    dbh.close();
   } catch { /* (no copy kept: it's downloaded again next time) */ }
 }
