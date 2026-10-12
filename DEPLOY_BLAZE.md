@@ -1,4 +1,4 @@
-# Blaze setup: lie / distance detail, the budget pause and the course lookup
+# Blaze setup: lie / distance detail and the budget pause
 
 Update 128 saves the field's per-round lie / distance detail to Cloud Storage
 (`fieldDetail/{dataset}/{year}.bin.gz`), so phones, players' own portals and their
@@ -64,35 +64,6 @@ round totals, as it worked before Blaze. Nothing is deleted and billing stays on
 To switch downloads back on: Analyze on a phone shows **Resume** in its status line (admin only),
 or set `paused` to `false` in Firestore → `config/billing`. After a Resume it won't pause again
 until next month's budget period.
-
-## 4. Portal tools: the course scorecard lookup
-
-A Cloud Run function, `portal-tools`, finds a course's scorecard on BlueGolf / GolfTraxx for Track Round
-(it replaces the Cloudflare Worker). Only signed-in portal users can use it. Free at the portal's usage.
-
-1. **Its service account:** IAM & Admin → **Service Accounts** → **Create service account**, name `portal-tools`,
-   no roles needed → Done. (Cloud Run needs an account to run as; this project has no default one.)
-2. **Create the function:** Cloud Run → **Write a function**:
-   - Service name `portal-tools`, region **us-west1**, runtime **Node.js 22**.
-   - **Authentication: Allow public access.** (Browsers call it directly; the function itself turns away
-     anyone who isn't signed in to the portal.) No trigger.
-   - Expand **Containers, Volumes, Networking, Security**:
-     - **Variables & Secrets** → add `ALLOWED_ORIGINS` = `https://callaway-datalab.github.io`
-     - **Security** → Service account → `portal-tools`
-   - **Create**.
-3. **The code:** in the editor, replace `index.js` and `package.json` with the files in `functions/portal-tools/`,
-   set **Function entry point** to `tools`, **Save and redeploy**.
-4. **Point the portal at it:** copy the address at the top of the service page
-   (`https://portal-tools-….us-west1.run.app`). In the GitHub repo, edit `config.js` and add, inside
-   `window.PORTAL_CONFIG = { … }`:
-
-   ```
-   courseCardUrl: "https://portal-tools-….us-west1.run.app/course-card",
-   ```
-
-5. **Try it:** Track Round → Start a new round → type a course name.
-
-The old Cloudflare worker (`functions/course-card/`) isn't used any more; you can delete that folder from the repo.
 
 ## On each device
 
