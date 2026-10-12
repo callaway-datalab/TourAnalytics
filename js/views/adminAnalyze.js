@@ -3,6 +3,7 @@
 import { el, mount, num, subNav, relocateSectionNav } from "../ui.js";
 import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource, getFieldStats } from "../store.js";
 import { loadDatasetPlayers, loadErrorText, reloadPlayerRows, isLiteDevice } from "../fieldCache.js";
+import { publishFieldDetail, detailSource, getFieldDetail, billingState, resumeDownloads } from "../fieldStore.js";
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary, summaryPlayers } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
@@ -114,11 +115,21 @@ export async function render(main, { flash }) {
   // only for the player picked (fetched when they're picked). Loading every player's rows of a big file is more
   // than a phone's browser allows a page to hold: it stops the page and reloads it, over and over.
   async function refreshLite(ds, token) {
-    status.textContent = "Loading players\u2026";
     const idx = detectColumns(ds.columns || []);
+    const uploaded = ds.uploadedAt?.toMillis?.() ?? 0;
+    const dk = `detail|${ds.id}|${uploaded}`;
+    // the whole field with lie / distance detail, once it's here (from Cloud Storage; see loadDetailLite)
+    if (detailCache.has(dk)) {
+      const list = detailCache.get(dk).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "") }));
+      // (a player picked who isn't in the detail but whose rows were fetched: added, so they aren't fetched again)
+      const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
+      if (full && !list.some((p) => p.key === player.key)) list.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
+      return drawLite(ds, idx, list, "");
+    }
+    status.textContent = "Loading players\u2026";
     const summary = await getFieldStats(ds.id).catch(() => null);
     if (token !== loadToken) return;
-    const pk = `lite|${ds.id}|${ds.uploadedAt?.toMillis?.() ?? ""}`;
+    const pk = `lite|${ds.id}|${uploaded}`;
     if (!preparedCache.has(pk)) { preparedCache.clear(); preparedCache.set(pk, summaryPlayers(summary).filter((p) => p.rounds.length)); }
     // (the player picked, with their full rows, in place of their summary line)
     const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
@@ -127,11 +138,37 @@ export async function render(main, { flash }) {
       return full && p.key === player.key ? { key: p.key, label, rounds: prepare(full.rows, idx) } : { ...p, label };
     });
     if (full && !fieldPlayers.some((p) => p.key === player.key)) fieldPlayers.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
-    const notes = [pendingNote]; pendingNote = "";
     const ranked = fieldPlayers.some((p) => p.summaryOnly);
-    if (!ranked) notes.push("The rankings for this file haven\u2019t been built yet. Open Analyze once on a computer to build them; here you can still pick a player to see their own numbers.");
-    else notes.push("On a phone, rankings don\u2019t break down by lie or distance.");
+    const why = detailWhy.get(dk);
+    const note = !ranked ? "The rankings for this file haven\u2019t been built yet. Open Analyze once on a computer to build them; here you can still pick a player to see their own numbers."
+      : why === undefined || why === null ? "Loading lie and distance detail\u2026"
+      : why === "paused" ? "Lie and distance ranks are paused: this month\u2019s budget was reached."
+      : why === "none" || why === "stale" ? "Lie and distance ranks appear once Analyze has been opened on a computer since the last upload."
+      : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
+    drawLite(ds, idx, fieldPlayers, note, why === "paused");
+    if (why === undefined) loadDetailLite(ds, dk);
+  }
+
+  // Phones: the field's lie / distance detail, once per upload (kept on the device after the first time).
+  const detailCache = new Map(), detailWhy = new Map();
+  async function loadDetailLite(ds, dk) {
+    detailWhy.set(dk, null); // (asked for: not asked again while it loads)
+    const { players, why } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0);
+    detailWhy.set(dk, why);
+    if (players) { detailCache.clear(); detailCache.set(dk, players); preparedCache.clear(); }
+    if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
+  }
+
+  function drawLite(ds, idx, players, note, paused = false) {
+    fieldPlayers = players;
+    const notes = [pendingNote, note]; pendingNote = "";
     status.textContent = notes.filter(Boolean).join(" ");
+    if (paused) {
+      // (the budget function switched downloads off; the admin can switch them back on)
+      const btn = el("button", { type: "button", class: "link" }, "Resume");
+      btn.addEventListener("click", async () => { btn.disabled = true; await resumeDownloads().catch(() => {}); detailWhy.clear(); refresh(); });
+      status.append(" ", btn);
+    }
     const me = meFrom();
     if (!fieldPlayers.length) {
       mount(body, el("p", { class: "empty center" }, player ? `Loading ${player.label}\u2026` : "Pick a player above."));
@@ -200,8 +237,14 @@ export async function render(main, { flash }) {
     try {
       const uploaded = ds.uploadedAt?.toMillis?.() ?? 0;
       const src = await fieldStatsSource(ds.id);
-      if (src !== null && src >= uploaded) return;
-      await publishFieldStats(ds.id, buildFieldSummary(fieldPlayers.map((p) => ({ key: p.key, name: p.label, rounds: p.rounds }))), Date.now());
+      const asPublished = () => fieldPlayers.map((p) => ({ key: p.key, name: p.label, rounds: p.rounds }));
+      if (src === null || src < uploaded) await publishFieldStats(ds.id, buildFieldSummary(asPublished()), Date.now());
+      // the per-round lie / distance detail for phones and players' portals (Cloud Storage)
+      const dsrc = await detailSource(ds.id);
+      if (dsrc === null || dsrc < uploaded) {
+        const res = await publishFieldDetail(ds.id, asPublished(), Date.now());
+        if (res?.skipped === "paused") console.info("Detail not published: downloads are paused (budget reached).");
+      }
     } catch (err) { console.error("Couldn't publish rankings for players", err); }
   }
 

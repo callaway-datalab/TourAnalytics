@@ -100,7 +100,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
   mount(container, el("p", { class: "gx-muted gx-center" }, "Loading\u2026"));
   (async () => {
     try {
-      const [tour, entered] = await Promise.all([loadSource("tour", playerKey, label).catch(() => null), loadSource("entered", playerKey, label).catch(() => null)]);
+      const [tour, entered] = await Promise.all([loadSource("tour", playerKey, label, { detail: false }).catch(() => null), loadSource("entered", playerKey, label).catch(() => null)]);
       if (!alive) return;
       let data = tour; source = "Tour Events";
       if (!data || !data.me.rounds.length) { data = entered; source = "Entered Rounds"; }

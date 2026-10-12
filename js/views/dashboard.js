@@ -100,7 +100,21 @@ export async function render(main, { previewClient, flash }) {
       // The admin looking through a player's portal can read everyone's full data: load it, so the charts by
       // lie, distance and club get their comparison dashes and Rank filter too (players only have the summary).
       const st0 = getState();
-      if (st0.isAdmin && previewClient && !previewClient.self && field.length) {
+      const adminFull = st0.isAdmin && previewClient && !previewClient.self && field.length;
+      // Everyone else (players, team members, and the admin on a phone): the field's per-round lie / distance
+      // detail from Cloud Storage, so ranks break down by lie and distance too. Kept on the device per upload.
+      if (field.length && !(adminFull && !(await import("../fieldCache.js")).isLiteDevice())) {
+        const myVersion = version;
+        (async () => {
+          const { getFieldDetail } = await import("../fieldStore.js");
+          const { players } = await getFieldDetail(d.id, d.uploadedAt?.toMillis?.() ?? 0);
+          if (!players || shownVersion !== myVersion) return;
+          const full = players.map((p) => (p.key === clientKey ? { key: p.key, label, rounds: me.rounds } : { key: p.key, label: shown(p.key, p.name), rounds: p.rounds })).filter((p) => p.rounds.length);
+          if (!full.some((p) => p.key === clientKey)) full.push(me);
+          if (full.length >= 2) dash.update({ field: full });
+        })();
+      }
+      if (adminFull) {
         const myVersion = version;
         (async () => {
           const { loadDatasetPlayers, isLiteDevice } = await import("../fieldCache.js");

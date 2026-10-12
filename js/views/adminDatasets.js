@@ -50,6 +50,10 @@ export async function render(main, { flash }) {
             const { labels } = await adminAllClients();
             const players = [...dataset.byClient].map(([key, g]) => ({ key, name: labels.get(key) || g.name || g.label, rounds: prepare(g.rows, idx) }));
             await publishFieldStats(result.datasetId, buildFieldSummary(players), Date.now());
+            // the per-round lie / distance detail for phones and players' portals (Cloud Storage)
+            submit.textContent = "Updating lie and distance detail\u2026";
+            const { publishFieldDetail } = await import("../fieldStore.js");
+            await publishFieldDetail(result.datasetId, players, Date.now());
           } catch (err) { console.error("Couldn't publish rankings", err); }
         }
 
@@ -89,7 +93,7 @@ export async function render(main, { flash }) {
         del.addEventListener("click", async () => {
           if (!confirmAction(`Delete "${d.name}"? Clients will lose access to it.`)) return;
           del.disabled = true; del.textContent = "Deleting\u2026";
-          try { await deleteDataset(d.id); flash(`Deleted "${d.name}".`, "ok"); }
+          try { await deleteDataset(d.id); import("../fieldStore.js").then((m) => m.deleteFieldDetail(d.id)).catch(() => {}); flash(`Deleted "${d.name}".`, "ok"); }
           catch { flash("Couldn't delete that dataset.", "error"); del.disabled = false; del.textContent = "Delete"; }
         });
         return el("tr", {}, [

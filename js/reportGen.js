@@ -322,7 +322,7 @@ const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ?
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
 // This file's build. It must match main.js?v= in index.html (bumped with every update): when it doesn't, the
 // browser is still running an older copy of this file, so the report isn't made (it would have old fixes missing).
-export const REPORT_BUILD = "127";
+export const REPORT_BUILD = "128";
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -792,7 +792,9 @@ async function loadLogo() {
 
 /* ============================== loading the player's data ============================== */
 const once = (watchFn, ...args) => new Promise((res) => { let un = null; un = watchFn(...args, (v) => { res(v); setTimeout(() => un?.(), 0); }); });
-export async function loadSource(source, playerKey, label) {
+// detail: the field's per-round lie / distance detail (Cloud Storage) in place of the round totals, so ranks go
+// down to each distance and lie. Off when the caller has the field already, or doesn't need ranks that deep.
+export async function loadSource(source, playerKey, label, { detail = true } = {}) {
   if (source === "entered") {
     const state = getState();
     const rounds = await once(watchPlayerRounds, playerKey);
@@ -807,7 +809,12 @@ export async function loadSource(source, playerKey, label) {
   const idx = detectColumns(shot.columns || []);
   const [rows, summary] = await Promise.all([getDatasetRows(playerKey, shot.id, shot.chunkCount), getFieldStats(shot.id).catch(() => null)]);
   const me = { key: playerKey, label, rounds: prepare(rows, idx) };
-  const field = summaryPlayers(summary);
+  let field = summaryPlayers(summary);
+  if (detail && field.length) {
+    const { getFieldDetail } = await import("./fieldStore.js");
+    const det = await getFieldDetail(shot.id, shot.uploadedAt?.toMillis?.() ?? 0);
+    if (det.players?.length > 1) field = det.players.map((p) => ({ key: p.key, name: p.name, label: p.name, rounds: p.rounds }));
+  }
   return { me, field: field.length ? field.map((p) => (p.key === playerKey ? { ...me } : p)) : [me], idx, datasetId: shot.id };
 }
 
@@ -879,13 +886,15 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
     }
     status.textContent = "Loading the rounds\u2026";
     try {
-      const data = await loadSource(source.value, playerKey, playerLabel);
+      const useStats = source.value === startSource && fullField?.length > 1;
+      if (source.value === "tour" && !useStats) status.textContent = "Loading every player\u2019s rounds\u2026";
+      const data = await loadSource(source.value, playerKey, playerLabel, { detail: !useStats });
       if (!data || !data.me.rounds.length) { status.textContent = source.value === "tour" ? "No Tour Events data for this player yet." : "No entered rounds for this player yet."; return; }
       // Every player's own rows (the admin), so ranks and Tour Avg can go down to each distance and lie:
       // the Stats page's players when it opened this, or loaded now. (Others only have the shared summary.)
       let field = data.field;
-      if (source.value === startSource && fullField?.length > 1) field = fullField.map((p) => (p.key === playerKey ? data.me : p));
-      else if (data.datasetId && getState().isAdmin && !(await import("./fieldCache.js")).isLiteDevice()) {
+      if (useStats) field = fullField.map((p) => (p.key === playerKey ? data.me : p));
+      else if (data.datasetId && getState().isAdmin && data.field.some((p) => p.summaryOnly) && !(await import("./fieldCache.js")).isLiteDevice()) {
         status.textContent = "Loading every player\u2019s rounds\u2026";
         field = (await loadFullField(data.datasetId, data.field, data.me, data.idx).catch(() => null)) || data.field;
       }
