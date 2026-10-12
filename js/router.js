@@ -15,9 +15,10 @@ const ROUTES = [
   ["/goals", "client", () => import("./views/goals.js"), "goals"],
   ["/course-reports", "client", () => import("./views/documents.js").then((m) => ({ render: (main, ctx) => m.render(main, { ...ctx, only: "course" }) })), "course-reports"],
   ["/live", "signed-in", () => import("./views/comingSoon.js"), "live"],
-  ["/practice", "signed-in", () => import("./views/comingSoon.js"), "practice"],
-  ["/practice/recommendations", "signed-in", () => import("./views/comingSoon.js"), "practice-recs"],
-  ["/practice/tracking", "signed-in", () => import("./views/comingSoon.js"), "practice-tracking"],
+  ["/practice", "signed-in", () => import("./views/practice.js"), "practice"],
+  // (the old Practice Recommendations / Practice Tracking links open Practice)
+  ["/practice/recommendations", "signed-in", () => import("./views/practice.js"), "practice"],
+  ["/practice/tracking", "signed-in", () => import("./views/practice.js"), "practice"],
   // Chat (Questions before update 101: its old links open Chat)
   ["/questions", "client", () => import("./views/chat.js"), "questions"],
   ["/questions/new", "client", () => import("./views/chat.js"), "question-new"],

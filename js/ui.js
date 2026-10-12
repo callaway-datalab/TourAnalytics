@@ -102,7 +102,7 @@ const sectionsFor = (kind) => {
     ["Course Reports", admin ? "#/admin/reports/view?cat=course" : "#/course-reports", admin ? ["admin-reports-view"] : ["course-reports"], { q: admin ? "course" : null }],
     ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
     ["Track Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (was Add Data, under Analyze)
-    ["Practice", "#/practice/recommendations", ["practice", "practice-recs", "practice-tracking"], { soon: true }],
+    ["Practice", "#/practice", ["practice"]],
   ];
   return [
     { id: "data", label: "Analyze", icon: "data", items: dataItems },
