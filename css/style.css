@@ -2491,3 +2491,118 @@ main.tight-top > div > nav.subnav:first-child, main.tight-top nav.subnav:first-c
 /* update 129: a category the lie / distance / club filters don't belong to: its own numbers, dimmed, not clickable */
 .hero-tile.apart { opacity: 0.42; cursor: default; filter: saturate(0.4); }
 .hero-tile.apart:hover { transform: none; border-color: rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); }
+
+/* ======================= update 134: Track Round's round details, as a scorecard ======================= */
+.entry-form.rd-new { max-width: 64rem; }
+.rd-new .entry-section { gap: 0.9rem !important; }
+.rd-new .entry-section h2 { margin: 0 !important; font-size: 1.02rem !important; letter-spacing: -0.01em; }
+.rd-new .rd-label { display: block; font: 600 0.68rem/1.2 var(--font-body); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.35rem; }
+.rd-new .rd-label em { font-style: normal; font-weight: 500; letter-spacing: 0.04em; text-transform: none; color: rgba(255, 255, 255, 0.32); margin-left: 0.15rem; }
+.rd-new label { margin: 0; }
+.rd-new .rd-details input, .rd-new .sc-tees input, .rd-new .sc-tees select { min-height: 2.75rem; margin: 0 !important; }
+/* details: one compact grid (6 columns on a computer, 2 on a phone) */
+.rd-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.85rem 0.9rem; align-items: start; }
+.rd-course { grid-column: span 3; } .rd-date { grid-column: span 1; } .rd-loc { grid-column: span 2; }
+.rd-tour { grid-column: span 2; } .rd-type { grid-column: span 2; } .rd-mode { grid-column: span 2; }
+.rd-tname { grid-column: 1 / -1; }
+.rd-new .rd-type .seg, .rd-new .rd-mode .seg { min-height: 2.75rem; }
+.rd-new .rd-type .seg-btn, .rd-new .rd-mode .seg-btn { min-height: 2.45rem; font-size: 0.92rem; }
+.rd-new .rd-mode .muted { margin: 0.35rem 0 0; font-size: 0.75rem; }
+.rd-new .near-btn { font-size: 0.8rem; margin-top: 0.35rem; }
+/* the scorecard section */
+.sc-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.sc-head-r { display: flex; align-items: center; gap: 0.6rem; }
+.sc-head-r .rd-label { margin: 0; }
+.sc-count { width: 7.5rem; }
+.sc-count .seg-btn { min-height: 2rem !important; font-size: 0.88rem !important; }
+.sc-tools { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 0.9rem; align-items: end; }
+.sc-tees { margin: 0 !important; }
+.sc-photos { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 0.4rem; }
+.sc-photo { display: flex; align-items: center; justify-content: center; gap: 0.45rem; min-height: 2.75rem; padding: 0 0.6rem; border-radius: 12px; cursor: pointer;
+  border: 1px solid rgba(212, 180, 131, 0.35); background: rgba(212, 180, 131, 0.06); color: #e7d3b0; font: 600 0.88rem var(--font-body); white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease; }
+.sc-photo:hover { background: rgba(212, 180, 131, 0.14); border-color: rgba(212, 180, 131, 0.6); }
+.sc-photo.main { background: #d4b483; color: #141416; border-color: #d4b483; }
+.sc-photo.main:hover { background: #e0c497; }
+.sc-photo:focus-within { outline: 2px solid #d4b483; outline-offset: 2px; }
+.sc-cam { display: inline-flex; }
+.rd-card [role=status]:empty { display: none; }
+.rd-card [role=status] { margin: 0; font-size: 0.85rem; text-align: left; }
+.rd-new .tap-btn { justify-self: start; margin: -0.3rem 0 0; font-size: 0.85rem; }
+/* the card itself: front 9 and back 9 side by side on a computer, stacked on a phone */
+.sc { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr)); gap: 0.75rem; }
+.sc-nine { border: 1px solid rgba(212, 180, 131, 0.32); border-radius: 14px; overflow: hidden; background: linear-gradient(180deg, #19191c, #121214); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
+.sc-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.sc-table col, .sc-table th, .sc-table td { padding: 0; }
+.sc-table th[scope=row] { width: 3.6rem; text-align: left; padding: 0 0.55rem; font: 700 0.64rem/1 var(--font-body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-table .sc-sum { width: 3.3rem; }
+.sc-table td, .sc-table thead th { border-left: 1px solid rgba(255, 255, 255, 0.06); text-align: center; }
+.sc-table tbody tr { border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.sc-holes th { height: 2.1rem; background: #d4b483; color: #17140f; font: 800 0.9rem var(--font-body); border-left-color: rgba(0, 0, 0, 0.12) !important; }
+.sc-holes th:first-child { text-align: left; padding: 0 0.55rem; font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.sc-holes th.sc-sum { background: #c4a26f; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.sc-table td.sc-sum { background: rgba(212, 180, 131, 0.08); color: #e7d3b0; font-weight: 700; font-size: 0.92rem; }
+.sc-yards th[scope=row] .sc-tee { color: #e7d3b0; }
+.sc-parrow { background: rgba(255, 255, 255, 0.035); }
+.rd-new .sc-in, .rd-new .sc-par { display: block; width: 100%; height: 2.6rem; min-height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important;
+  background: transparent !important; box-shadow: none !important; color: var(--ink); text-align: center; font: 600 16px/1 var(--font-body) !important; font-variant-numeric: tabular-nums; }
+.rd-new .sc-hcp .sc-in { color: var(--ink-2); font-weight: 500 !important; }
+.rd-new .sc-in::placeholder { color: transparent; }
+.rd-new .sc-in:focus, .rd-new .sc-par:focus-visible { outline: none; background: rgba(212, 180, 131, 0.16) !important; box-shadow: inset 0 0 0 2px #d4b483 !important; }
+.rd-new .sc-par { cursor: pointer; font-weight: 800 !important; }
+.rd-new .sc-par.empty { color: rgba(255, 255, 255, 0.28); }
+.rd-new .sc-par.miss { background: rgba(255, 69, 58, 0.16) !important; box-shadow: inset 0 0 0 2px rgba(255, 69, 58, 0.7) !important; }
+.sc-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.sc-hint { margin: 0; font-size: 0.78rem; color: var(--muted); }
+.sc-totals { display: flex; align-items: baseline; gap: 1.1rem; font-variant-numeric: tabular-nums; }
+.sc-tot-label { font: 700 0.66rem var(--font-body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.sc-tot-val { color: var(--ink-2); font-size: 0.9rem; }
+.sc-tot-val strong { color: #e7d3b0; font-size: 1.15rem; font-weight: 800; margin-right: 0.15rem; }
+/* phones: two columns of details, the photo buttons and tees stacked, the card edge to edge */
+@media (max-width: 760px) {
+  .rd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 0.65rem; }
+  .rd-course { grid-column: 1 / -1; } .rd-date { grid-column: span 1; } .rd-loc { grid-column: span 1; }
+  .rd-tour { grid-column: 1 / -1; } .rd-type { grid-column: span 1; } .rd-mode { grid-column: span 1; }
+  .rd-new .rd-type .seg-btn, .rd-new .rd-mode .seg-btn { font-size: 0.84rem; padding: 0 0.2rem; }
+  .sc-tools { grid-template-columns: 1fr; gap: 0.7rem; }
+  .rd-new .rd-card { padding: 0.9rem 0.6rem !important; }
+  .rd-new .rd-card .sc-head, .rd-new .rd-card .sc-tools, .rd-new .rd-card [role=status], .rd-new .rd-card .sc-foot, .rd-new .tap-btn { margin-left: 0.3rem; margin-right: 0.3rem; }
+  .sc-table th[scope=row] { width: 2.7rem; padding: 0 0.35rem; font-size: 0.58rem; letter-spacing: 0.06em; }
+  .sc-holes th:first-child { padding: 0 0.35rem; font-size: 0.58rem; }
+  .sc-table .sc-sum { width: 2.7rem; }
+  .sc-holes th { font-size: 0.84rem; height: 1.9rem; }
+  .sc-table td.sc-sum { font-size: 0.8rem; }
+  .rd-new .sc-in, .rd-new .sc-par { height: 2.5rem; letter-spacing: -0.03em; }
+  .sc-foot { flex-direction: column-reverse; align-items: stretch; gap: 0.5rem; }
+  .sc-totals { justify-content: space-between; padding: 0.55rem 0.8rem; border-radius: 12px; background: rgba(212, 180, 131, 0.08); border: 1px solid rgba(212, 180, 131, 0.2); }
+  .sc-hint { text-align: center; }
+}
+/* very narrow phones: the nine scrolls sideways rather than squeezing the numbers */
+@media (max-width: 359px) { .sc-nine { overflow-x: auto; } .sc-table { min-width: 21rem; } }
+/* (widths from the columns, so the label column doesn't shrink; everything centred in its box) */
+.sc-table col.sc-c-label { width: 3.6rem; } .sc-table col.sc-c-sum { width: 3.3rem; }
+.sc-table th, .sc-table td { vertical-align: middle !important; background-clip: padding-box; }
+.sc-table tbody th[scope=row] { background: transparent !important; width: auto; }
+.sc-table .sc-sum { width: auto; }
+.rd-new .tap-btn[hidden] { display: none !important; }
+.rd-new .rd-type .seg, .rd-new .rd-mode .seg { display: flex; width: 100%; }
+.rd-new .rd-type .seg-btn, .rd-new .rd-mode .seg-btn { flex: 1 1 0; white-space: nowrap; }
+@media (max-width: 760px) { .sc-table col.sc-c-label { width: 2.55rem; } .sc-table col.sc-c-sum { width: 2.6rem; } }
+.rd-new .rd-type, .rd-new .rd-mode { width: 100%; min-width: 0; }
+.rd-new .rd-type .seg, .rd-new .rd-mode .seg { width: 100% !important; box-sizing: border-box; }
+@media (max-width: 760px) {
+  .rd-new .rd-card { padding: 0.9rem 0.45rem !important; }
+  .sc-table col.sc-c-label { width: 2.15rem; } .sc-table col.sc-c-sum { width: 2.45rem; }
+  .sc-table th[scope=row], .sc-holes th:first-child { padding: 0 0.25rem; font-size: 0.54rem; letter-spacing: 0.03em; }
+  /* three-digit yardages in a phone-width box: drawn a little smaller (the box stays 16px, so iPhone doesn't zoom) */
+  .rd-new .sc-yards .sc-in { width: 118%; margin-left: -9% !important; transform: scale(0.85); font-weight: 600 !important; letter-spacing: -0.02em; }
+}
+@media (max-width: 380px) {
+  .rd-new .rd-card { padding: 0.85rem 0.35rem !important; }
+  .rd-new .sc-yards .sc-in { width: 128%; margin-left: -14% !important; transform: scale(0.76); }
+  .sc-table td.sc-sum { font-size: 0.74rem; }
+}
+.rd-new .rd-grid > .field { display: flex !important; flex-direction: column; width: auto !important; max-width: none !important; justify-self: stretch !important; margin: 0 !important; gap: 0 !important; }
+.rd-new .sc-table col.sc-c-label { width: 4.3rem; }
+.rd-new .sc-table th[scope=row] { letter-spacing: 0.06em; }
+@media (max-width: 760px) { .rd-new .sc-table col.sc-c-label { width: 2.15rem; } }

@@ -105,7 +105,7 @@ async function renderNew(main, flash, viewing = null) {
   // --- details ---
   const date = el("input", { type: "date", value: todayISO(), required: true });
   const course = el("input", { required: true, placeholder: "Start typing a course\u2026", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
-  const locationIn = el("input", { placeholder: "e.g. La Jolla, CA", autocomplete: "off", maxLength: 80 });
+  const locationIn = el("input", { placeholder: "City, State", autocomplete: "off", maxLength: 80 });
   // Tees: also tells the scorecard reader which row of yardages to use.
   const teesIn = el("input", { list: "tee-names", placeholder: "e.g. Blue", autocomplete: "off", maxLength: 30, enterkeyhint: "done" });
   const teeNames = el("datalist", { id: "tee-names" }, ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Championship", "Tournament", "Back", "Middle", "Forward"].map((t) => el("option", { value: t })));
@@ -127,9 +127,9 @@ async function renderNew(main, flash, viewing = null) {
   };
   drawMode();
   const tournamentIn = el("input", { placeholder: "e.g. Club Championship", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
-  const tournamentField = el("label", { hidden: true }, ["Tournament name", tournamentIn]);
+  const tournamentField = el("label", { hidden: true, class: "rd-tname" }, [el("span", { class: "rd-label" }, "Tournament name"), tournamentIn]);
   // optional: a real tour you're playing on, or your own league (the Stats page filters by it)
-  const tourIn = el("input", { placeholder: "e.g. Korn Ferry Tour, or Saturday League", autocomplete: "off", maxLength: 60, list: "tour-names", enterkeyhint: "next" });
+  const tourIn = el("input", { placeholder: "e.g. Korn Ferry Tour", autocomplete: "off", maxLength: 60, list: "tour-names", enterkeyhint: "next" });
   const tourNames = el("datalist", { id: "tour-names" }, ["PGA TOUR", "Korn Ferry Tour", "DP World Tour", "LIV Golf", "PGA TOUR Champions", "LPGA Tour", "Epson Tour", "Amateur"].map((t) => el("option", { value: t })));
   const drawType = () => {
     typePills.querySelectorAll(".seg-btn").forEach((b) => { const on = b.dataset.v === roundType; b.classList.toggle("on", on); b.setAttribute("aria-checked", on ? "true" : "false"); });
@@ -143,19 +143,18 @@ async function renderNew(main, flash, viewing = null) {
   drawType();
 
   // --- scorecard ---
-  const grid = el("div", { class: "card-grid" });
-  const totals = el("p", { class: "muted center card-totals" });
+  const grid = el("div", { class: "sc" });
+  const totals = el("div", { class: "sc-totals" });
   const photoStatus = el("p", { class: "muted center", role: "status" });
   // Photos: the whole card, or (for a big card or a tricky photo) the front 9 and the back 9 separately.
   const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
   const photoFront = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
   const photoBack = el("input", { type: "file", accept: "image/*", capture: "environment", class: "visually-hidden" });
-  const photoBtn = el("div", { class: "photo-choices" }, [
-    el("label", { class: "btn ghost entry-big photo-btn" }, ["\uD83D\uDCF7  Photo of the whole card", photo]),
-    el("div", { class: "photo-nines" }, [
-      el("label", { class: "btn ghost photo-btn photo-nine" }, ["\uD83D\uDCF7 Front 9", photoFront]),
-      el("label", { class: "btn ghost photo-btn photo-nine" }, ["\uD83D\uDCF7 Back 9", photoBack]),
-    ]),
+  const camIcon = () => { const sp = el("span", { class: "sc-cam", "aria-hidden": "true" }); sp.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 8h3l1.6-2.2h6.8L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.6"/></svg>'; return sp; };
+  const photoBtn = el("div", { class: "sc-photos", role: "group", "aria-label": "Read a photo of the card" }, [
+    el("label", { class: "sc-photo main" }, [camIcon(), el("span", {}, "Photo of card"), photo]),
+    el("label", { class: "sc-photo" }, [el("span", {}, "Front 9"), photoFront]),
+    el("label", { class: "sc-photo" }, [el("span", {}, "Back 9"), photoBack]),
   ]);
   const tapBtn = el("button", { type: "button", class: "link tap-btn", hidden: true }, "\uD83D\uDC46 Check the rows on the photo");
   // Tees: a dropdown of the tees found on the card (each fills its yardages), or type your own.
@@ -184,36 +183,82 @@ async function renderNew(main, flash, viewing = null) {
     if (teeSelect.value === "__own") { teesIn.value = ""; drawTeeSelect(); teesIn.focus(); return; }
     applyTee(Number(teeSelect.value)); drawTeeSelect();
   });
-  const countPills = el("div", { class: "seg" });
+  const countPills = el("div", { class: "seg seg-sm sc-count", role: "group", "aria-label": "Holes" });
 
   const drawCount = () => mount(countPills, [18, 9].map((n) => {
-    const b = el("button", { type: "button", class: "seg-btn" + (holesCount === n ? " on" : ""), "aria-pressed": holesCount === n ? "true" : "false" }, `${n} holes`);
+    const b = el("button", { type: "button", class: "seg-btn" + (holesCount === n ? " on" : ""), "aria-pressed": holesCount === n ? "true" : "false" }, String(n));
     b.addEventListener("click", () => { holesCount = n; holes = blankHoles(n).map((h, i) => ({ ...h, ...(holes[i] || {}), n: i + 1 })); drawCount(); drawGrid(); });
     return b;
   }));
+  // The scorecard, laid out like the card itself: a table per nine (Hole / Yards / Par / Hcp, with OUT and IN),
+  // and the round's totals under it. Par is a tap (blank → 4 → 5 → 3 → 4 …); yards and handicap are typed.
+  const sumOf = (from, to, k) => holes.slice(from, to).reduce((a, h) => a + (Number(h[k]) || 0), 0);
+  const fmtSum = (v) => (v ? String(v) : "–"); // (no thousands comma: the OUT / IN box is narrow)
   const drawTotals = () => {
-    const par = holes.reduce((a, h) => a + (h.par || 0), 0), yds = holes.reduce((a, h) => a + (Number(h.yards) || 0), 0);
-    totals.textContent = `Par ${par || "\u2014"} \u00b7 ${yds ? yds.toLocaleString() : "\u2014"} yds`;
+    for (const cell of grid.querySelectorAll("[data-sum]")) {
+      const [k, from, to] = cell.dataset.sum.split(":");
+      cell.textContent = fmtSum(sumOf(Number(from), Number(to), k));
+    }
+    const par = sumOf(0, holes.length, "par"), yds = sumOf(0, holes.length, "yards");
+    totals.replaceChildren(
+      el("span", { class: "sc-tot-label" }, holesCount === 18 ? "Total" : "9 holes"),
+      el("span", { class: "sc-tot-val" }, ["Par ", el("strong", {}, par ? String(par) : "–")]),
+      el("span", { class: "sc-tot-val" }, [el("strong", {}, yds ? yds.toLocaleString() : "–"), " yds"]));
+  };
+  const teeLabel = () => { const t = teesIn.value.trim(); return t && t.length <= 7 ? t : "Yds"; };
+  const PAR_NEXT = { null: 4, 4: 5, 5: 3, 3: 4 };
+  // Enter / "next" on a phone keyboard: the next box along the row (then the same row on the next nine)
+  const nextBox = (input) => {
+    const row = input.dataset.row, all = [...grid.querySelectorAll(`input[data-row="${row}"]`)];
+    const i = all.indexOf(input);
+    (all[i + 1] || null)?.focus();
   };
   const drawGrid = () => {
-    mount(grid, holes.map((h, i) => {
-      const parBtns = el("div", { class: "seg seg-sm", role: "group", "aria-label": `Hole ${h.n} par` }, [3, 4, 5].map((p) => {
-        const b = el("button", { type: "button", class: "seg-btn" + (h.par === p ? " on" : ""), "aria-pressed": h.par === p ? "true" : "false" }, String(p));
-        b.addEventListener("click", () => {
-          holes[i].par = p;
-          b.parentElement.querySelectorAll(".seg-btn").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on ? "true" : "false"); });
+    const nines = holesCount === 9 ? [[0, 9, "Out"]] : [[0, 9, "Out"], [9, 18, "In"]];
+    mount(grid, nines.map(([from, to, sumName]) => {
+      const hs = holes.slice(from, to);
+      const numIn = (h, i, k, max, label) => {
+        const inp = el("input", { type: "text", inputmode: "numeric", pattern: "[0-9]*", maxLength: k === "yards" ? 3 : 2, autocomplete: "off", enterkeyhint: "next",
+          value: h[k] ?? "", "aria-label": `Hole ${h.n} ${label}`, "data-row": k, class: "sc-in" });
+        inp.addEventListener("input", () => {
+          inp.value = inp.value.replace(/\D/g, "");
+          const v = inp.value === "" ? null : Math.min(max, Number(inp.value));
+          holes[i][k] = v;
           drawTotals();
         });
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nextBox(inp); } });
+        return inp;
+      };
+      const parBtn = (h, i) => {
+        const b = el("button", { type: "button", class: `sc-par${h.par ? "" : " empty"}`, "aria-label": `Hole ${h.n} par${h.par ? ` ${h.par}` : ", not set"}` }, h.par ? String(h.par) : "·");
+        const set = (p) => {
+          holes[i].par = p;
+          b.textContent = p ? String(p) : "·";
+          b.classList.toggle("empty", !p); b.classList.remove("miss");
+          b.setAttribute("aria-label", `Hole ${h.n} par${p ? ` ${p}` : ", not set"}`);
+          drawTotals();
+        };
+        b.addEventListener("click", () => set(PAR_NEXT[holes[i].par ?? null] ?? 4));
+        b.addEventListener("keydown", (e) => {
+          if (["3", "4", "5", "6"].includes(e.key)) { e.preventDefault(); set(Number(e.key)); }
+          else if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); set(null); }
+        });
         return b;
-      }));
-      const yards = el("input", { type: "number", inputmode: "numeric", min: 50, max: 750, placeholder: "yds", value: h.yards ?? "", "aria-label": `Hole ${h.n} yards` });
-      yards.addEventListener("input", () => { holes[i].yards = yards.value === "" ? null : Number(yards.value); drawTotals(); });
-      const hcp = el("input", { type: "number", inputmode: "numeric", min: 1, max: 18, placeholder: "hcp", value: h.hcp ?? "", "aria-label": `Hole ${h.n} handicap` });
-      hcp.addEventListener("input", () => { holes[i].hcp = hcp.value === "" ? null : Number(hcp.value); });
-      return el("div", { class: "card-row" }, [el("span", { class: "card-hole" }, String(h.n)), parBtns, yards, hcp]);
+      };
+      const row = (cls, label, cells, sum) => el("tr", { class: cls }, [el("th", { scope: "row" }, label), ...cells.map((c) => el("td", {}, c)), el("td", { class: "sc-sum", ...(sum ? { "data-sum": sum } : {}) }, "")]);
+      return el("div", { class: "sc-nine" }, el("table", { class: "sc-table" }, [
+        el("colgroup", {}, [el("col", { class: "sc-c-label" }), ...hs.map(() => el("col", {})), el("col", { class: "sc-c-sum" })]),
+        el("thead", {}, el("tr", { class: "sc-holes" }, [el("th", { scope: "col" }, "Hole"), ...hs.map((h) => el("th", { scope: "col" }, String(h.n))), el("th", { scope: "col", class: "sc-sum" }, sumName)])),
+        el("tbody", {}, [
+          row("sc-yards", el("span", { class: "sc-tee" }, teeLabel()), hs.map((h, j) => numIn(h, from + j, "yards", 750, "yards")), `yards:${from}:${to}`),
+          row("sc-parrow", "Par", hs.map((h, j) => parBtn(h, from + j)), `par:${from}:${to}`),
+          row("sc-hcp", "Hcp", hs.map((h, j) => numIn(h, from + j, "hcp", 18, "handicap")), null),
+        ]),
+      ]));
     }));
     drawTotals();
   };
+  teesIn.addEventListener("input", () => grid.querySelectorAll(".sc-tee").forEach((n) => { n.textContent = teeLabel(); }));
 
   // Course: type-ahead from your past courses and OpenStreetMap; picking one fills the location, and a
   // course you've played before also refills its scorecard.
@@ -232,9 +277,6 @@ async function renderNew(main, flash, viewing = null) {
     },
   });
 
-  // the photo of the card: fills in the pars, handicaps and every tee's yardages
-  const photoMore = el("details", { class: "photo-more", open: true }, [
-    el("summary", {}, "Read a photo of the card"), photoBtn, tapBtn]);
 
   // Read the photo: pars, handicaps and every tee row (each tee goes in the Tees dropdown).
   // (window.__scorecardEngine lets a test supply the text reader.)
@@ -386,14 +428,19 @@ async function renderNew(main, flash, viewing = null) {
 
   const start = el("button", { class: "btn entry-big", type: "submit" }, "Start round \u25B6");
   const form = el("form", {
-    class: "entry-form",
+    class: "entry-form rd-new",
     onSubmit: async (e) => {
       e.preventDefault();
       if (!roundType) { flash("Pick Tournament or Practice.", "error"); typePills.querySelector("button")?.focus(); return; }
       if (roundType === "tournament" && !tournamentIn.value.trim()) { flash("Enter the tournament name.", "error"); tournamentIn.focus(); return; }
       if (!course.value.trim()) { flash("Enter the course.", "error"); course.focus(); return; }
       const missing = holes.filter((h) => !h.par).map((h) => h.n);
-      if (missing.length) { flash(`Pick a par for hole${missing.length > 1 ? "s" : ""} ${missing.join(", ")}.`, "error"); return; }
+      if (missing.length) {
+        flash(`Tap a par for hole${missing.length > 1 ? "s" : ""} ${missing.join(", ")}.`, "error");
+        grid.querySelectorAll(".sc-par.empty").forEach((b) => b.classList.add("miss"));
+        grid.querySelector(".sc-par.empty")?.focus({ preventScroll: false });
+        return;
+      }
       start.disabled = true;
       try {
         const id = await createRound({
@@ -409,26 +456,25 @@ async function renderNew(main, flash, viewing = null) {
       }
     },
   }, [
-    el("section", { class: "entry-section" }, [
+    el("section", { class: "entry-section rd-details" }, [
       el("h2", {}, "Round details"),
-      el("div", { class: "field" }, [el("span", { class: "field-label" }, "Round type"), typePills]),
-      el("div", { class: "field" }, [el("span", { class: "field-label" }, "Entry"), modePills, modeNote]),
-      tournamentField,
-      el("label", {}, ["Tour or league (optional)", tourIn, tourNames]),
-      el("label", {}, ["Date", date]),
-      el("label", { class: "course-label" }, ["Course", courseBox.node]),
-      el("label", {}, ["Location (optional)", locationIn]),
+      el("div", { class: "rd-grid" }, [
+        el("label", { class: "course-label rd-course" }, [el("span", { class: "rd-label" }, "Course"), courseBox.node]),
+        el("label", { class: "rd-date" }, [el("span", { class: "rd-label" }, "Date"), date]),
+        el("label", { class: "rd-loc" }, [el("span", { class: "rd-label" }, ["Location ", el("em", {}, "optional")]), locationIn]),
+        el("label", { class: "rd-tour" }, [el("span", { class: "rd-label" }, ["Tour or league ", el("em", {}, "optional")]), tourIn, tourNames]),
+        el("div", { class: "field rd-type" }, [el("span", { class: "rd-label" }, "Round type"), typePills]),
+        el("div", { class: "field rd-mode" }, [el("span", { class: "rd-label" }, "Entry"), modePills, modeNote]),
+        tournamentField,
+      ]),
     ]),
-    el("section", { class: "entry-section" }, [
-      el("h2", {}, "Scorecard"),
-      countPills,
+    el("section", { class: "entry-section rd-card" }, [
+      el("div", { class: "sc-head" }, [el("h2", {}, "Scorecard"), el("div", { class: "sc-head-r" }, [el("span", { class: "rd-label" }, "Holes"), countPills])]),
+      el("div", { class: "sc-tools" }, [photoBtn, el("label", { class: "tees-label sc-tees" }, [el("span", { class: "rd-label" }, "Tees"), teesBox])]),
+      tapBtn,
       photoStatus,
-      photoMore,
-      el("label", { class: "tees-label" }, ["Tees", teesBox]),
-      el("p", { class: "muted center small" }, "or tap in each hole's par, yardage and handicap:"),
-      el("div", { class: "card-head" }, [el("span", {}, "#"), el("span", {}, "Par"), el("span", {}, "Yards"), el("span", {}, "Hcp")]),
       grid,
-      totals,
+      el("div", { class: "sc-foot" }, [el("p", { class: "sc-hint" }, "Tap Par to set 3 \u00b7 4 \u00b7 5. Type yardage and handicap."), totals]),
     ]),
     el("div", { class: "entry-bar" }, start),
   ]);
