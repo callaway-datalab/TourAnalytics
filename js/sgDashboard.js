@@ -844,8 +844,8 @@ export function sgDashboard(container, opts) {
       const corr = (a, b) => { const ma = mean(a), mb = mean(b); let n = 0, da = 0, db = 0; for (let i = 0; i < a.length; i++) { n += (a[i] - ma) * (b[i] - mb); da += (a[i] - ma) ** 2; db += (b[i] - mb) ** 2; } return da && db ? n / Math.sqrt(da * db) : null; };
       const rows = cats.map(([k, l]) => { const v = P.map((p) => perRoundOf(p.rounds, k) ?? 0); return { l, sd: sd(v) || 0, r: corr(v, totals) }; });
       blocks.push(panelBox("Where Players Differ Most", [
-        chartBox((c) => barChart(c, rows.map((x) => x.l), rows.map((x) => x.sd), { single: "up", title: "Spread (SG / round)", tooltip: (i) => (rows[i].r == null ? "" : `Follows the total: ${Math.round(rows[i].r * 100)}%`) })),
-        el("p", { class: "muted small" }, (() => { const top = [...rows].sort((a, b) => b.sd - a.sd)[0], tie = [...rows].filter((x) => x.r != null).sort((a, b) => b.r - a.r)[0]; return `${top.l} separates this field the most (players' SG / round in it vary by \u00b1${top.sd.toFixed(2)}).${tie ? ` ${tie.l} follows the overall ranking most closely (${Math.round(tie.r * 100)}%).` : ""}`; })()),
+        chartBox((c) => barChart(c, rows.map((x) => x.l), rows.map((x) => x.sd), { single: "up", title: "Spread (SG / round)", tooltip: (i) => `\u00b1${rows[i].sd.toFixed(2)} standard deviation` })),
+        el("p", { class: "muted small" }, (() => { const top = [...rows].sort((a, b) => b.sd - a.sd)[0]; return `${top.l} separates the field the most (\u00b1${top.sd.toFixed(2)} standard deviation).`; })()),
       ]));
     }
 
@@ -861,19 +861,19 @@ export function sgDashboard(container, opts) {
       ]));
     }
 
-    // 4. hot and cold: the last 8 rounds against the rest of the selection
+    // 4. hot and cold: the last 10 rounds against the 10 before them (as the 10-round rolling averages)
     {
       const form = P.map((p) => {
         const rs = [...p.rounds].filter((rd) => !rd.eventLevel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-        if (rs.length < 16) return null;
-        const last = perRoundOf(rs.slice(-8)), before = perRoundOf(rs.slice(0, -8));
-        return { p, last, ch: last - before };
+        if (rs.length < 20) return null;
+        const last = perRoundOf(rs.slice(-10)), before = perRoundOf(rs.slice(-20, -10));
+        return { p, last, before, ch: last - before };
       }).filter(Boolean);
       if (form.length >= 4) {
         const hot = form.filter((x) => x.ch > 0).sort((a, b) => b.ch - a.ch).slice(0, 5), cold = form.filter((x) => x.ch < 0).sort((a, b) => a.ch - b.ch).slice(0, 5);
-        const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtSG(x.last)} a round, last 8`)]), el("strong", { class: `ti-v ${signCls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${Math.abs(x.ch).toFixed(2)}`)]))) : el("p", { class: "muted small" }, "No one."));
+        const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtSG(x.last)} last 10, ${fmtSG(x.before)} previous 10`)]), el("strong", { class: `ti-v ${signCls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${Math.abs(x.ch).toFixed(2)}`)]))) : el("p", { class: "muted small" }, "No one."));
         blocks.push(panelBox("Hot & Cold", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Heating up"), list(hot)]), el("div", {}, [el("p", { class: "ti-col-title" }, "Cooling off"), list(cold)])]),
-          el("p", { class: "muted small" }, "Strokes gained a round over each player's last 8 rounds, against their rounds before that in this selection.")]));
+          el("p", { class: "muted small" }, "Strokes gained a round over each player's last 10 rounds, against the 10 before those, in this selection.")]));
       }
     }
 
@@ -913,7 +913,7 @@ export function sgDashboard(container, opts) {
       }
     }
 
-    return blocks.length ? [el("h2", { class: "ti-head" }, "Tour Insights"), el("div", { class: "sg-grid ti-grid" }, blocks)] : [];
+    return blocks.length ? [el("div", { class: "sg-grid ti-grid" }, blocks)] : [];
   }
 
   /* ------------------------------ category detail ------------------------------ */

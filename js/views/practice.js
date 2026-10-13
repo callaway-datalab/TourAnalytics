@@ -148,8 +148,8 @@ export async function render(main, { flash }) {
   drawPills(); draw();
 
   async function draw() {
-    // a new page or a new shot starts at the top
-    const key = `${view.name}:${view.at ?? ""}:${view.hole ?? ""}:${view.k ?? ""}:${cat}:${tool}`;
+    // a new page starts at the top; the next shot (or hole) keeps you where you are (update 152)
+    const key = `${view.name}:${view.session?.id ?? ""}:${cat}:${tool}`;
     if (key !== lastKey) { lastKey = key; try { window.scrollTo({ top: 0 }); } catch { /* */ } }
     if (view.name === "play") return drawPlay();
     if (view.name === "monitorUpload") return drawMonitorUpload(view.session);
@@ -290,8 +290,7 @@ export async function render(main, { flash }) {
     const stimpIn = cat === "PUTT" ? el("input", { type: "number", inputmode: "decimal", min: 7, max: 15, step: 0.5, value: stimp, "aria-label": "Green speed (stimp)" }) : null;
     stimpIn?.addEventListener("input", () => { stimp = Number(stimpIn.value) || 11; });
     // a launch monitor: hit the shots, load its file at the end (update 145)
-    const monCb = cat !== "PUTT" ? el("input", { type: "checkbox", id: "pr-mon" }) : null;
-    const monRow = monCb ? el("label", { class: "pr-check pr-mon-row", for: "pr-mon" }, [monCb, el("span", {}, [el("strong", {}, "I'm using a launch monitor"), el("span", { class: "muted small" }, " \u00b7 just click through the shots as you hit them, then load the file at the end: each shot in the file fills the next shot here, in order.")])]) : null;
+    const monCb = null, monRow = null; // (update 152: no launch monitor sessions; that's My Clubs)
     const go = el("button", { type: "button", class: "btn pr-go" }, "Build my session \u25B6");
     go.addEventListener("click", async () => {
       const plan = { cat, counts: { ...counts }, mixes, stimp };
@@ -333,10 +332,6 @@ export async function render(main, { flash }) {
       const name = el("input", { maxLength: 40, placeholder: "e.g. Practice green, back left", value: sp?.name || "" });
       const dist = num({ min: 1, max: 90, value: sp?.dist ?? "", placeholder: "ft" });
       const brk = sel(BRK, sp?.side ?? 0, "Break"), slp = sel(SLP, sp?.fwd ?? 0, "Slope");
-      const aimL = num({ min: 0, max: 20, value: sp?.aim?.long ? Math.abs(sp.aim.long) : "", placeholder: "0" });
-      const aimLD = sel([[1, "long"], [-1, "short"]], (sp?.aim?.long ?? 1) < 0 ? -1 : 1, "Long or short");
-      const aimR = num({ min: 0, max: 20, value: sp?.aim?.right ? Math.abs(sp.aim.right) : "", placeholder: "0" });
-      const aimRD = sel([[-1, "left"], [1, "right"]], (sp?.aim?.right ?? -1) > 0 ? 1 : -1, "Left or right");
       const ok = el("button", { type: "submit", class: "btn" }, sp ? "Save spot" : "Add spot");
       const cancel = el("button", { type: "button", class: "link" }, "Cancel");
       cancel.addEventListener("click", () => drawList());
@@ -344,15 +339,13 @@ export async function render(main, { flash }) {
         e.preventDefault();
         const d = Number(dist.value);
         if (!(d > 0)) { flash?.("Enter how long the putt is (feet).", "error"); dist.focus(); return; }
-        const next = { id: sp?.id || newSessionId(), name: name.value.trim(), dist: d, side: Number(brk.value), fwd: Number(slp.value),
-          aim: { long: (Number(aimL.value) || 0) * Number(aimLD.value), right: (Number(aimR.value) || 0) * Number(aimRD.value) }, createdAt: sp?.createdAt || new Date().toISOString() };
+        const next = { id: sp?.id || newSessionId(), name: name.value.trim(), dist: d, side: Number(brk.value), fwd: Number(slp.value), createdAt: sp?.createdAt || new Date().toISOString() };
         ok.disabled = true;
         try { await saveSpot(owner, next); spots = [...spots.filter((x) => x.id !== next.id), next]; picked.add(next.id); drawList(); }
         catch (err) { console.error(err); ok.disabled = false; flash?.("Couldn't save that spot. Check your connection.", "error"); }
       } }, [
         el("div", { class: "inline-form" }, [el("label", {}, ["Name (optional)", name]), el("label", {}, ["Length (ft)", dist])]),
         el("div", { class: "inline-form" }, [el("label", {}, ["Break", brk]), el("label", {}, ["Slope", slp])]),
-        el("div", { class: "pr-aim-row" }, [el("span", { class: "rd-label" }, "Where you aim"), el("div", { class: "pr-aim-in" }, [aimL, el("span", {}, "ft"), aimLD, el("span", { class: "muted" }, "and"), aimR, el("span", {}, "ft"), aimRD])]),
         el("div", { class: "thread-actions" }, [ok, cancel]),
       ]);
     }
@@ -370,13 +363,13 @@ export async function render(main, { flash }) {
           try { await deleteSpot(owner, sp.id); spots = spots.filter((x) => x.id !== sp.id); picked.delete(sp.id); drawList(); } catch { flash?.("Couldn't delete it.", "error"); }
         });
         return el("li", { class: "pr-spot" }, [cb, el("div", {}, [el("strong", {}, `${sp.dist} ft${sp.name ? ` \u00b7 ${sp.name}` : ""}`),
-          el("p", { class: "muted small" }, `${breakText(sp.side)} \u00b7 ${slopeText(sp.fwd)} \u00b7 aim ${myAimText(sp.aim)}`)]), el("span", { class: "row-actions" }, [ed, del])]);
+          el("p", { class: "muted small" }, `${breakText(sp.side)} \u00b7 ${slopeText(sp.fwd)}`)]), el("span", { class: "row-actions" }, [ed, del])]);
       }));
       const add = el("button", { type: "button", class: "btn ghost" }, "\uFF0B  Add a spot");
       add.addEventListener("click", () => mount(adder, form()));
       const adder = el("div", {}, editing ? null : add);
       mount(box, [
-        el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "My putting spots"), el("p", { class: "muted small" }, "Real putts you can get to: how long, how it breaks and slopes, and where you aim. Then practise them, as many times each as you like.")])]),
+        el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "My putting spots"), el("p", { class: "muted small" }, "Real putts you can get to: how long, and how they break and slope. Then practise them, as many times each as you like.")])]),
         spots.length ? list : el("p", { class: "muted" }, "No spots yet."), adder, goRow,
       ]);
       drawGo();
@@ -390,7 +383,7 @@ export async function render(main, { flash }) {
       if (!use.length) return;
       // every spot in turn, round and round (spot 1, 2, 3, then 1, 2, 3 again…)
       const shots = [];
-      for (let k = 0; k < perSpot; k++) for (const sp of use) shots.push(withSlopes({ kind: "putt", startLie: "Green", startDist: sp.dist, spot: sp.name || "", spotId: sp.id, myAim: sp.aim, i: shots.length + 1 }, sp.side, sp.fwd));
+      for (let k = 0; k < perSpot; k++) for (const sp of use) shots.push(withSlopes({ kind: "putt", startLie: "Green", startDist: sp.dist, spot: sp.name || "", spotId: sp.id, i: shots.length + 1 }, sp.side, sp.fwd));
       const s = { id: newSessionId(), cat: "PUTT", status: "active", startedAt: new Date().toISOString(), plan: { counts: {}, mixes: {}, stimp: 11, total: shots.length, spots: use.map((x) => x.id) }, shots, playerKey: playerKey || myEntryKey(state), playerLabel: label };
       save(s);
       ctx.playSession(s);
@@ -431,7 +424,7 @@ export async function render(main, { flash }) {
       next: at === shots.length - 1
         ? { label: s.monitor ? "Done \u2014 load the file \u203A" : game ? "Finish game \u2713" : "Finish session \u2713", onClick: () => finishSession(s), always: !!s.monitor }
         : { label: "Next shot \u203A", onClick: () => go(at + 1), always: !!s.monitor },
-      more: [s.monitor ? null : monitor, finish], heat: ctx.heat,
+      more: [finish], heat: ctx.heat,
       clubs: ctx.clubs, onClub: () => save(s), monitor: !!s.monitor,
     });
     const bar = el("div", { class: "pr-bar" }, [

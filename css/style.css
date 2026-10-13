@@ -3166,3 +3166,12 @@ button.ti-name:hover { color: var(--accent); }
 @media (max-width: 560px) { .pr-slope-pick { grid-template-columns: 1fr; } }
 .pr-hitgreen { min-height: 3.6rem; border-radius: 14px; padding: 0 1.2rem; }
 .pr-hitgreen.on { background: #30d158; border-color: #30d158; color: #04140a; }
+/* update 152: My Clubs launch data */
+.pr-launch td .small { font-weight: 400; max-width: 16rem; white-space: normal; }
+.pr-lgroup { margin-bottom: 0.9rem; }
+.pr-lgroup .pr-tiles { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); }
+.pr-club-pick { display: grid; gap: 0.3rem; max-width: 30rem; margin: 0.6rem 0; }
+.pr-spec { margin: 0.4rem 0 0.8rem; }
+.pr-shots-scroll table td, .pr-shots-scroll table th { white-space: nowrap; }
+.chat-ca .chat-room-icon { color: #d4b483; }
+.chat-ca strong { color: #d4b483; }

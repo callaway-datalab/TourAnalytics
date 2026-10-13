@@ -57,13 +57,14 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   const drawResult = () => {
     const r = shot.result;
     if (!r) { mount(resultLine, el("span", { class: "muted" }, shot.kind === "putt" ? "Tap where it stopped (or Made), type it, or say it." : "Tap where it finished, type it, or say it.")); return; }
-    const where = shot.kind === "tee" ? `${r.zone || r.lie} \u00b7 ${r.total} yds, ${r.offline ? `${Math.abs(r.offline)} ${r.offline < 0 ? "left" : "right"}` : "on line"}${r.penalty ? "" : ` \u00b7 ${r.dist} to go`}`
+    const relOff = shot.kind === "tee" ? Math.round(r.offline - aimLineX(aim, r.total || 0)) : 0;
+    const where = shot.kind === "tee" ? `${r.zone || r.lie} \u00b7 ${r.total} yds, ${relOff ? `${Math.abs(relOff)} ${relOff < 0 ? "left" : "right"} of your line` : "on your line"}${r.penalty ? "" : ` \u00b7 ${r.dist} to go`}`
       : r.lie === "Holed" ? "In the hole!" : r.penalty ? "Water \u00b7 penalty stroke" : `${r.lie} \u00b7 ${n1(r.dist)} ${r.unit}`;
     mount(resultLine, [el("span", {}, where), el("strong", { class: `pr-sgchip ${sgCls(shot.sg)}` }, `${SG(shot.sg)} SG`)]);
   };
   // a launch monitor session: no typing, just Next (the file fills the result in at the end)
   const monNext = () => { const b = el("button", { type: "button", class: "btn pr-next" }, next.label); b.addEventListener("click", () => next.onClick()); return el("div", { class: "pr-mon-next" }, b); };
-  const drawInputs = () => mount(inputs, monitor && next && !shot.result ? monNext() : inputsFor(shot, setResult, next));
+  const drawInputs = () => mount(inputs, monitor && next && !shot.result ? monNext() : inputsFor(shot, setResult, next, { aim }));
   drawVisual(); drawResult(); drawInputs();
   // a putt (update 151): set its break and slope to match the putt in front of you; the plane tilts to show it
   const titleH = el("h2", {}, title || shotTitle(shot));
@@ -213,7 +214,9 @@ export function patternPanel(cat, shots, title) {
 
 /* ===================================================== entering a result ===================================================== */
 export const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-export function inputsFor(shot, setResult, next) {
+/** Where the aim line is, side to side, at a distance (yds from the middle): the line from the tee to the aim point. */
+export const aimLineX = (aim, total) => (aim && aim.y > 0 ? (aim.x * total) / aim.y : 0);
+export function inputsFor(shot, setResult, next, { aim = null } = {}) {
   const r = shot.result;
   const nextBtn = next ? el("button", { type: "button", class: "btn pr-next", disabled: r || next.always ? null : true }, next.label) : null;
   nextBtn?.addEventListener("click", () => next.onClick());
@@ -225,7 +228,9 @@ export function inputsFor(shot, setResult, next) {
       mount(b, sayKids("Listening…")); b.dataset.listening = "1"; b.classList.add("on"); b.disabled = true;
       rec.onresult = (e) => {
         const alts = [...e.results[0]].map((a) => a.transcript);
-        const got = alts.map((t) => resultFromSpeech(shot, t)).find(Boolean);
+        let got = alts.map((t) => resultFromSpeech(shot, t)).find(Boolean);
+        // a tee shot's "12 left" is from your aim line (update 152)
+        if (got && shot.kind === "tee" && got.total != null && aim) { const abs = Math.round(aimLineX(aim, got.total) + (got.offline || 0)); got = { ...teeResult(shot, got.total, abs), total: got.total, offline: abs, source: got.source || "said" }; }
         if (got) setResult(got); else { delete b.dataset.listening; b.classList.remove("on"); mount(b, sayKids(`Didn’t catch “${alts[0]}”`)); }
       };
       rec.onend = () => { b.disabled = false; if (b.dataset.listening) mount(b, sayKids("Say it")); delete b.dataset.listening; b.classList.remove("on"); };
@@ -236,9 +241,11 @@ export function inputsFor(shot, setResult, next) {
   })() : null;
   const num = (val, label, attrs = {}) => el("input", { type: "text", inputmode: "decimal", value: val ?? "", "aria-label": label, placeholder: label, autocomplete: "off", ...attrs });
   if (shot.kind === "tee") {
-    const tot = num(r?.total, "Total yds"), off = num(r?.offline != null ? Math.abs(r.offline) : "", "Offline yds");
+    // Offline is from your aim line when there is one (update 152), not from the middle of the fairway
+    const rel = r?.offline != null ? Math.round(r.offline - aimLineX(aim, r.total || 0)) : null;
+    const tot = num(r?.total, "Total yds"), off = num(rel != null ? Math.abs(rel) : "", "Offline yds");
     // left / right: nothing picked to start (a ball on the line needs neither); tap again to clear
-    let side = r?.offline < 0 ? -1 : r?.offline > 0 ? 1 : 0;
+    let side = rel < 0 ? -1 : rel > 0 ? 1 : 0;
     const sideSeg = el("div", { class: "seg seg-sm pr-side", role: "group", "aria-label": "Which side" });
     const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
     const drawSide = () => mount(sideSeg, [[-1, "Left"], [1, "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === v ? " on" : ""}`, "aria-pressed": side === v ? "true" : "false" }, l); b.addEventListener("click", () => { side = side === v ? 0 : v; drawSide(); apply(); }); return b; }));
@@ -248,11 +255,11 @@ export function inputsFor(shot, setResult, next) {
       hint.textContent = "";
       if (!(t >= 50)) return;
       if (o > 0 && !side) { hint.textContent = "Left or right?"; if (shot.result) setResult(null); return; }
-      const offline = Math.round(o * (side || 1));
+      const offline = Math.round(aimLineX(aim, t) + o * (side || 1));
       setResult({ ...teeResult(shot, Math.round(t), offline), total: Math.round(t), offline, source: "typed" });
     };
     tot.addEventListener("change", apply); off.addEventListener("change", apply);
-    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Total (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
+    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Total (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.abs(aim.x) >= 1.5 ? "Offline from your aim line (yds)" : "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
       el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like \u201c285, 12 left\u201d.")];
   }
   if (shot.kind === "putt") {

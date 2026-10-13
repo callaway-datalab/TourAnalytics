@@ -1,95 +1,139 @@
 /*
- * Practice › My Clubs (update 138): each club's stock pattern — carry, how much it varies, the miss and how wide —
- * from launch monitor files (TrackMan, GCQuad, anything with Club / Carry / Side columns) or shots you enter,
- * with the gaps between clubs. The patterns also drive the aim maps elsewhere in Practice.
+ * Practice › My Clubs (update 152): how each of your clubs launches. Pick the club (its make, model and shaft, from
+ * your bag or typed in), load a GCQuad or TrackMan CSV, and every number in it shows per club: speeds, smash,
+ * launch, spin, delivery (attack, path, face), height, descent, carry, total and dispersion, with the gaps
+ * through the bag. (Carry and offline still feed the aim maps elsewhere in Practice.)
  */
 import { el, mount, confirmAction } from "../ui.js";
-import { readLaunchMonitor, resultFromSpeech } from "../practice/analysis.js";
-import { CLUB_LIST, sortClubs, normClub, bagPatterns, clubStats, gapping } from "../practice/clubs.js";
-import { SpeechRec, sayKids } from "./practiceShot.js";
+import { normClub, sortClubs } from "../practice/clubs.js";
+import { readLaunchFile, launchStats, METRICS, METRIC, fmtMetric } from "../practice/launch.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs = {}, kids = []) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, String(v)); for (const k of [].concat(kids)) if (k) n.appendChild(typeof k === "string" ? document.createTextNode(k) : k); return n; };
-const r0 = (v) => (v == null ? "—" : String(Math.round(v)));
-const r1 = (v) => (v == null ? "—" : (Math.round(v * 10) / 10).toFixed(1));
-const lr = (v) => (v == null ? "—" : Math.abs(v) < 0.5 ? "on line" : `${r1(Math.abs(v))} ${v < 0 ? "L" : "R"}`);
-const COMMON = ["Driver", "3w", "5w", "4H", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "50°", "54°", "58°"];
+const r0 = (v) => (v == null ? "\u2014" : String(Math.round(v)));
+const r1 = (v) => (v == null ? "\u2014" : (Math.round(v * 10) / 10).toFixed(1));
+const lr = (v) => (v == null ? "\u2014" : Math.abs(v) < 0.5 ? "on line" : `${r1(Math.abs(v))} ${v < 0 ? "L" : "R"}`);
+// the bag's club types (the same names as WITB)
+const TYPES = ["Driver", "2w", "3w", "4w", "5w", "7w", "9w", "2H", "3H", "4H", "5H", "6H", "7H", "2i", "3i", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "AW", "GW", "SW", "LW",
+  "46°", "48°", "50°", "52°", "54°", "56°", "58°", "60°", "62°", "64°"];
+const TABLE_KEYS = ["clubSpeed", "ballSpeed", "smash", "launch", "spin", "attack", "path", "faceToPath", "height", "landAngle", "carry", "total", "offline"];
 
 let picked = null; // the club open in the detail panel
+let bagCache = null;
+
+/** A club as you set it up: { key, type, label, brand, model, shaft, flex, loft }. */
+const specLabel = (sp) => [sp.type, [sp.brand, sp.model].filter(Boolean).join(" "), [sp.shaft, sp.flex].filter(Boolean).join(" ")].filter(Boolean).join(" \u00b7 ");
+const specKeyOf = (sp) => sp.bagId ? `bag:${sp.bagId}` : `c:${[sp.type, sp.brand, sp.model, sp.shaft, sp.flex, sp.loft].map((x) => String(x || "").trim().toLowerCase()).join("|")}`;
+
+/** Your clubs' launch shots, grouped by club: Map(key -> { spec, shots, sessions }). */
+function clubsFrom(sessions) {
+  const by = new Map();
+  for (const s of sessions) {
+    if (s.cat !== "BAG" || s.source !== "monitor") continue;
+    for (const x of s.shots || []) {
+      const key = x.spec || `c:${(x.club || "?").toLowerCase()}`;
+      const spec = s.specs?.[key] || { type: x.club || "Club", label: x.club || "Club" };
+      if (!by.has(key)) by.set(key, { key, spec, shots: [], sessions: new Set() });
+      const g = by.get(key);
+      g.shots.push(x.m ? x : { ...x, m: { carry: x.carry, total: x.total, offline: x.offline, ballSpeed: x.ball, spin: x.spin, launch: x.launch, height: x.height } });
+      g.sessions.add(s.id);
+    }
+  }
+  const order = (g) => TYPES.indexOf(g.spec.type) >= 0 ? TYPES.indexOf(g.spec.type) : 999;
+  return [...by.values()].sort((a, b) => order(a) - order(b) || specLabel(a.spec).localeCompare(specLabel(b.spec)));
+}
 
 export async function render(ctx) {
   const v = ctx.view;
-  if (v.name === "bagEntry") return drawEntry(ctx, v);
   if (v.name === "bagImport") return drawImport(ctx, v);
-  const pats = bagPatterns(ctx.sessions);
-  const clubs = sortClubs(Object.keys(pats));
-  const file = fileButton(ctx);
-  const hit = el("button", { type: "button", class: "btn" }, "＋  Hit a club");
-  hit.addEventListener("click", () => ctx.go({ name: "bagEntry", club: null, shots: [] }));
+  const clubs = clubsFrom(ctx.sessions);
+  const add = el("button", { type: "button", class: "btn" }, "\uFF0B  Add launch data");
+  add.addEventListener("click", () => ctx.go({ name: "bagImport" }));
   const hero = el("section", { class: "panel pr-hero" }, [
     el("div", {}, [el("p", { class: "pr-eyebrow" }, "Practice"), el("h1", {}, "My Clubs"),
-      el("p", { class: "muted pr-lede" }, "Every club's stock shot: how far it carries, how much that varies, which way it misses and how wide, and the gaps through the bag. Once a club has 8 shots, the aim maps in Practice use its real pattern.")]),
-    el("div", { class: "pr-row pr-wrap-row" }, [hit, file]),
+      el("p", { class: "muted pr-lede" }, "How each of your clubs launches. Pick the club (make, model and shaft), load a GCQuad or TrackMan export, and every number shows here: speeds, smash, launch, spin, delivery, height, carry and dispersion.")]),
+    el("div", { class: "pr-row pr-wrap-row" }, [add]),
   ]);
   if (!clubs.length) {
     mount(ctx.body, [hero, el("section", { class: "panel pr-empty" }, [el("h2", {}, "How it works"), el("ol", {}, [
-      "Load a CSV export from TrackMan, GCQuad (FSX) or most launch monitors: Club, Carry, Total and Side (or Offline) columns. A file can hold every club.",
-      "No launch monitor? Tap “Hit a club”, pick the club, and type or say each shot: “152, 6 left”.",
-      "Each club's carry, its spread, its miss and the gaps between clubs show here.",
-      "The aim maps on approach and tee shots switch to your own pattern for the club you'd hit.",
+      "Tap \u201cAdd launch data\u201d and pick the club from your bag (What's in the Bag), or type in its make, model, shaft and flex.",
+      "Export the session from your GCQuad (FSX) or TrackMan as a CSV and load it. A file with a Club column can hold every club at once.",
+      "Every number in the file shows per club: averages, how much each varies, and every shot.",
+      "Compare clubs side by side, and see the carry gaps through the bag.",
     ].map((t) => el("li", {}, t)))])]);
     return;
   }
-  if (!picked || !pats[picked]) picked = clubs[0];
+  if (!picked || !clubs.some((c) => c.key === picked)) picked = clubs[0].key;
+  const stats = new Map(clubs.map((c) => [c.key, launchStats(c.shots)]));
+  const keys = TABLE_KEYS.filter((k) => clubs.some((c) => stats.get(c.key)[k]));
   const detail = el("div");
-  const drawDetail = () => mount(detail, clubDetail(ctx, picked, pats[picked]));
-  const table = el("div", { class: "table-scroll" }, el("table", { class: "plain pr-bag" }, [
-    el("thead", {}, el("tr", {}, ["Club", "Shots", "Carry", "Carry range", "Total", "Miss", "80% within", "Ball", "Spin"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+  const drawDetail = () => { const c = clubs.find((x) => x.key === picked); mount(detail, clubDetail(ctx, c, stats.get(c.key))); };
+  const table = el("div", { class: "table-scroll" }, el("table", { class: "plain pr-bag pr-launch" }, [
+    el("thead", {}, el("tr", {}, [el("th", {}, "Club"), el("th", { class: "num" }, "Shots"), ...keys.map((k) => el("th", { class: "num", title: METRIC[k].label }, `${METRIC[k].label}${METRIC[k].unit && METRIC[k].unit !== "°" ? ` (${METRIC[k].unit})` : ""}`))])),
     el("tbody", {}, clubs.map((c) => {
-      const p = pats[c];
-      const tr = el("tr", { class: c === picked ? "on" : "", tabindex: 0 }, [el("td", {}, el("strong", {}, c)), el("td", { class: "num" }, String(p.n)), el("td", { class: "num" }, r0(p.carry)), el("td", { class: "num" }, p.n >= 3 ? `${r0(p.carryLo)}–${r0(p.carryHi)}` : "—"),
-        el("td", { class: "num" }, r0(p.total)), el("td", { class: "num" }, lr(p.offline)), el("td", { class: "num" }, p.width80 != null && p.n >= 3 ? `±${r0(p.width80)} yds` : "—"), el("td", { class: "num" }, p.ball ? `${r0(p.ball)} mph` : "—"), el("td", { class: "num" }, p.spin ? r0(p.spin) : "—")]);
-      const open = () => { picked = c; table.querySelectorAll("tr.on").forEach((x) => x.classList.remove("on")); tr.classList.add("on"); drawDetail(); detail.scrollIntoView({ behavior: "smooth", block: "start" }); };
+      const st = stats.get(c.key);
+      const tr = el("tr", { class: c.key === picked ? "on" : "", tabindex: 0 }, [
+        el("td", {}, [el("strong", {}, c.spec.type), el("div", { class: "muted small" }, specLabel({ ...c.spec, type: "" }) || "\u2014")]),
+        el("td", { class: "num" }, String(c.shots.length)),
+        ...keys.map((k) => el("td", { class: "num" }, st[k] ? fmtMetric(k, st[k].avg) : "\u2014")),
+      ]);
+      const open = () => { picked = c.key; table.querySelectorAll("tr.on").forEach((x) => x.classList.remove("on")); tr.classList.add("on"); drawDetail(); detail.scrollIntoView({ behavior: "smooth", block: "start" }); };
       tr.addEventListener("click", open); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
       return tr;
     })),
   ]));
   drawDetail();
-  const gaps = gapping(pats);
+  // carry gaps through the bag (one entry per club type: its most-hit version)
+  const pats = {};
+  for (const c of clubs) {
+    const carry = c.shots.map((x) => x.m?.carry).filter((x) => x != null);
+    if (!carry.length || (pats[c.spec.type] && pats[c.spec.type].n >= carry.length)) continue;
+    const s = [...carry].sort((a, b) => a - b), q = (p) => s[Math.min(s.length - 1, Math.round((s.length - 1) * p))];
+    pats[c.spec.type] = { n: carry.length, carry: carry.reduce((a, b) => a + b, 0) / carry.length, carryLo: q(0.1), carryHi: q(0.9) };
+  }
+  const gapClubs = sortClubs(Object.keys(pats));
   mount(ctx.body, [
     hero,
-    el("section", { class: "panel" }, [el("h2", {}, "Your bag"), el("p", { class: "muted small" }, "Carry range: the middle 80% of shots. Miss: where they finish on average. 80% within: how far either side of that line 80% of shots finish. Tap a club for its pattern."), table]),
+    el("section", { class: "panel" }, [el("h2", {}, "Your clubs"), el("p", { class: "muted small" }, "Averages over every shot loaded for each club. Angles: L / R is left / right of the target. Tap a club for all its numbers."), table]),
     detail,
-    el("section", { class: "panel" }, [el("h2", {}, "Gapping"), gapSvg(pats, clubs), gaps.some((g) => g.note) ? el("ul", { class: "pr-gap-notes" }, gaps.filter((g) => g.note).map((g) => el("li", { class: g.note === "big gap" ? "warn" : "info" }, `${g.from} → ${g.to}: ${r0(g.gap)} yds ${g.note === "big gap" ? "— a big gap; a club (or a partial shot) to cover it?" : "— these two overlap"}`))) : el("p", { class: "muted small" }, "No big gaps or overlaps.")]),
-    sessionsPanel(ctx),
+    gapClubs.length > 1 ? el("section", { class: "panel" }, [el("h2", {}, "Carry gaps"), gapSvg(pats, gapClubs)]) : null,
+    filesPanel(ctx),
   ]);
 }
 
 /* ---------------------------------------------- one club ---------------------------------------------- */
-function clubDetail(ctx, club, p) {
-  const shots = p.shots.slice(-60);
-  const lines = [
-    `Carries ${r0(p.carry)} yds on average${p.n >= 3 ? `; 80% between ${r0(p.carryLo)} and ${r0(p.carryHi)}` : ""}${p.total && Math.abs(p.total - p.carry) >= 2 ? `, and runs out to ${r0(p.total)}` : ""}.`,
-    p.n >= 3 ? `Finishes ${Math.abs(p.offline) < 0.5 ? "on your line" : `${r1(Math.abs(p.offline))} yds ${p.offline < 0 ? "left" : "right"}`} on average; 80% within ${r0(p.width80)} yds either side of that. ${Math.round(p.leftPct)}% finish left, ${Math.round(p.rightPct)}% right.` : "Hit a few more for its pattern.",
-    p.n >= 8 ? `The aim maps use this pattern for shots of about ${r0(p.carry - 15)}–${r0(p.carry + 15)} yds.` : `${8 - p.n} more shot${8 - p.n === 1 ? "" : "s"} and the aim maps start using it.`,
+function clubDetail(ctx, c, st) {
+  const groups = [
+    ["Speed", ["clubSpeed", "ballSpeed", "smash"]],
+    ["Launch", ["launch", "launchDir", "spin", "backSpin", "sideSpin", "spinAxis"]],
+    ["Delivery", ["attack", "path", "face", "faceToPath", "dynLoft", "swingPlane", "impactH", "impactV"]],
+    ["Flight", ["height", "landAngle", "hang", "carry", "total", "offline", "carrySide"]],
   ];
-  const more = el("button", { type: "button", class: "btn ghost" }, `＋  Hit more ${club}`);
-  more.addEventListener("click", () => ctx.go({ name: "bagEntry", club, shots: [] }));
+  const tile = (k) => {
+    const s = st[k]; if (!s) return null;
+    return el("div", { class: "pr-tile" }, [el("span", { class: "pr-tile-k" }, METRIC[k].label), el("strong", {}, fmtMetric(k, s.avg)),
+      el("span", { class: "pr-tile-s" }, [METRIC[k].unit && METRIC[k].unit !== "°" ? METRIC[k].unit : "", s.sd != null ? ` \u00b1${(Math.round(s.sd * 10 ** (METRIC[k].dp)) / 10 ** METRIC[k].dp).toFixed(METRIC[k].dp)}` : ""].join(""))]);
+  };
+  const keys = METRICS.map(([k]) => k).filter((k) => st[k]);
+  const shotsTable = el("div", { class: "table-scroll five-rows pr-shots-scroll" }, el("table", { class: "plain" }, [
+    el("thead", {}, el("tr", {}, [el("th", {}, "#"), ...keys.map((k) => el("th", { class: "num" }, METRIC[k].label))])),
+    el("tbody", {}, c.shots.map((x, i) => el("tr", {}, [el("td", {}, String(i + 1)), ...keys.map((k) => el("td", { class: "num" }, fmtMetric(k, x.m?.[k])))]))),
+  ]));
+  const disp = c.shots.filter((x) => x.m?.carry != null);
+  const p = disp.length >= 3 ? (() => {
+    const carry = disp.map((x) => x.m.carry), off = disp.map((x) => x.m.offline ?? x.m.carrySide ?? 0);
+    const m = (a) => a.reduce((s, v) => s + v, 0) / a.length, sdv = (a) => { const mm = m(a); return Math.sqrt(a.reduce((s, v) => s + (v - mm) ** 2, 0) / Math.max(1, a.length - 1)); };
+    return { carry: m(carry), offline: m(off), carrySd: sdv(carry), offlineSd: sdv(off) };
+  })() : null;
   return el("section", { class: "panel pr-club" }, [
-    el("div", { class: "pr-sub" }, [el("h2", {}, `${club} · stock shot`), more]),
+    el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, c.spec.type), el("p", { class: "muted small" }, `${specLabel({ ...c.spec, type: "" }) || "No make or shaft recorded"} \u00b7 ${c.shots.length} shot${c.shots.length === 1 ? "" : "s"}`)])]),
     el("div", { class: "pr-club-grid" }, [
-      el("div", { class: "pr-pat" }, dispersionSvg(shots, p)),
-      el("div", {}, [
-        el("div", { class: "pr-tiles" }, [
-          tileEl("Carry", r0(p.carry), p.n >= 3 ? `±${r0(p.carrySd)} (1 sd)` : ""), tileEl("Total", r0(p.total)), tileEl("Miss", lr(p.offline)), tileEl("80% within", p.n >= 3 ? `±${r0(p.width80)}` : "—", "yds of the line"),
-          p.ball ? tileEl("Ball speed", `${r0(p.ball)}`, "mph") : null, p.spin ? tileEl("Spin", r0(p.spin), "rpm") : null, p.launch ? tileEl("Launch", `${r1(p.launch)}°`) : null, p.height ? tileEl("Height", r0(p.height)) : null,
-        ].filter(Boolean)),
-        el("ul", { class: "pr-stock" }, lines.map((t) => el("li", {}, t))),
-      ]),
+      p ? el("div", { class: "pr-pat" }, [dispersionSvg(disp.map((x) => ({ carry: x.m.carry, offline: x.m.offline ?? x.m.carrySide ?? 0 })), p), el("p", { class: "muted small center" }, `Finishes ${lr(p.offline)} on average, \u00b1${r0(p.offlineSd)} yds side to side and \u00b1${r0(p.carrySd)} yds long and short (1 sd)`)]) : null,
+      el("div", {}, groups.map(([g, ks]) => { const t = ks.map(tile).filter(Boolean); return t.length ? el("div", { class: "pr-lgroup" }, [el("p", { class: "ti-col-title" }, g), el("div", { class: "pr-tiles" }, t)]) : null; })),
     ]),
+    el("h3", { class: "subhead" }, "Every shot"), shotsTable,
   ]);
 }
-const tileEl = (k, v, sub = "") => el("div", { class: "pr-tile" }, [el("span", { class: "pr-tile-k" }, k), el("strong", {}, v), sub ? el("span", { class: "pr-tile-s" }, sub) : null]);
 
 /** The club's shots round its average: left/right across, carry up; rings at 1 and 2 standard deviations. */
 function dispersionSvg(shots, p) {
@@ -132,161 +176,98 @@ function gapSvg(pats, clubs) {
   return svg;
 }
 
-function sessionsPanel(ctx) {
-  const list = ctx.sessions.filter((s) => s.cat === "BAG");
+
+/* ---------------------------------------------- the files loaded ---------------------------------------------- */
+function filesPanel(ctx) {
+  const list = ctx.sessions.filter((s) => s.cat === "BAG" && s.source === "monitor");
   if (!list.length) return null;
-  return el("section", { class: "panel" }, [el("h2", {}, "Sessions"), el("div", { class: "pr-sessions" }, list.map((s) => {
+  return el("section", { class: "panel" }, [el("h2", {}, "Files loaded"), el("div", { class: "pr-sessions" }, list.map((s) => {
     const by = {};
-    for (const x of s.shots || []) by[x.club] = (by[x.club] || 0) + 1;
+    for (const x of s.shots || []) { const lbl = s.specs?.[x.spec]?.type || x.club || "Club"; by[lbl] = (by[lbl] || 0) + 1; }
     const del = el("button", { type: "button", class: "link danger" }, "Delete");
-    del.addEventListener("click", async () => { if (!confirmAction("Delete this session's shots from My Clubs?")) return; await ctx.remove(s.id); render(ctx); });
+    del.addEventListener("click", async () => { if (!confirmAction("Delete this file's shots from My Clubs?")) return; await ctx.remove(s.id); render(ctx); });
     return el("div", { class: "pr-sess pr-sess-static" }, [
-      el("span", { class: "pr-sess-d" }, [new Date(s.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), el("span", { class: "pr-sess-tag" }, s.source === "monitor" ? s.fileName || "Launch monitor" : "Entered")]),
-      el("span", { class: "muted" }, sortClubs(Object.keys(by)).map((c) => `${c} ×${by[c]}`).join(", ")),
+      el("span", { class: "pr-sess-d" }, [new Date(s.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), el("span", { class: "pr-sess-tag" }, s.fileName || "Launch monitor")]),
+      el("span", { class: "muted" }, sortClubs(Object.keys(by)).map((c) => `${c} \u00d7${by[c]}`).join(", ")),
       el("strong", {}, `${(s.shots || []).length}`),
       del,
     ]);
   }))]);
 }
 
-/* ---------------------------------------------- loading a launch monitor file ---------------------------------------------- */
-function fileButton(ctx) {
-  const input = el("input", { type: "file", accept: ".csv,text/csv", class: "visually-hidden" });
-  input.addEventListener("change", async () => {
-    const f = input.files[0]; input.value = "";
-    if (!f) return;
-    try {
-      const rows = readLaunchMonitor(await f.text());
-      ctx.go({ name: "bagImport", rows, fileName: f.name.slice(0, 60) });
-    } catch (err) { ctx.flash?.(err.message || "Couldn't read that file.", "error"); }
-  });
-  return el("label", { class: "btn ghost" }, ["⇧  TrackMan / GCQuad file", input]);
-}
-
-function drawImport(ctx, v) {
-  const hasClub = v.rows.some((r) => r.club);
-  let fallback = null;
-  const rows = v.rows.map((r) => ({ ...r, club: r.club ? normClub(r.club) : null }));
-  const summary = el("div");
-  const save = el("button", { type: "button", class: "btn pr-go" }, "Save to My Clubs");
-  const drawSummary = () => {
-    const by = {};
-    for (const r of rows) { const c = r.club || fallback; if (c) by[c] = (by[c] || 0) + 1; }
-    const keys = sortClubs(Object.keys(by));
-    save.disabled = !keys.length;
-    mount(summary, keys.length ? el("ul", { class: "pr-import-list" }, keys.map((c) => el("li", {}, [el("strong", {}, c), ` ${by[c]} shot${by[c] === 1 ? "" : "s"} · ${r0(clubStats(rows.filter((r) => (r.club || fallback) === c)).carry)} carry`]))) : el("p", { class: "muted" }, "Pick the club these shots were hit with."));
-  };
-  const picker = !hasClub || rows.some((r) => !r.club) ? clubChips(null, (c) => { fallback = c; drawSummary(); }) : null;
-  drawSummary();
-  save.addEventListener("click", async () => {
-    const at = new Date().toISOString();
-    const shots = rows.filter((r) => r.club || fallback).map((r, i) => ({ club: r.club || fallback, carry: r.carry ?? r.total, total: r.total ?? r.carry, offline: r.offline ?? 0, ...(r.ball != null ? { ball: r.ball } : {}), ...(r.spin != null ? { spin: r.spin } : {}), ...(r.launch != null ? { launch: r.launch } : {}), ...(r.height != null ? { height: r.height } : {}), at: `${at}#${String(i).padStart(4, "0")}`, source: "monitor" }));
-    const s = { id: ctx.newId(), cat: "BAG", status: "done", source: "monitor", fileName: v.fileName, startedAt: at, shots };
-    ctx.add(s); await ctx.save(s, true);
-    ctx.flash?.(`Saved ${shots.length} shots.`, "ok");
-    ctx.home();
-  });
-  const back = el("button", { type: "button", class: "link" }, "← Cancel");
-  back.addEventListener("click", () => ctx.home());
-  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
-    el("p", { class: "pr-eyebrow" }, "My Clubs · launch monitor file"), el("h1", {}, v.fileName || "Your file"),
-    el("p", { class: "muted" }, `${v.rows.length} shots in the file.${hasClub ? "" : " There's no Club column, so pick the club."}`),
-    picker ? el("div", {}, [el("span", { class: "rd-label" }, hasClub ? "Club for shots with none" : "Club"), picker]) : null,
-    summary, save,
-  ])]);
-}
-
-/** Chips to pick a club (your WITB bag first, if you have one, else the usual set; "Other" for the full list). */
-function clubChips(current, onPick) {
-  const box = el("div", { class: "pr-chips-row" });
-  let full = false;
-  const draw = () => mount(box, [...(full ? CLUB_LIST : COMMON).map((c) => {
-    const b = el("button", { type: "button", class: `pr-chip${c === current ? " on" : ""}` }, c);
-    b.addEventListener("click", () => { current = c; onPick(c); draw(); });
-    return b;
-  }), full ? null : (() => { const b = el("button", { type: "button", class: "pr-chip ghost" }, "More…"); b.addEventListener("click", () => { full = true; draw(); }); return b; })()]);
-  draw();
-  return box;
-}
-
-/* ---------------------------------------------- entering shots by hand ---------------------------------------------- */
-function drawEntry(ctx, v) {
-  const shots = v.shots;
-  let club = v.club;
-  const list = el("ol", { class: "pr-hole-shots pr-entry-list" });
-  const statsBox = el("div");
-  const drawList = () => {
-    mount(list, shots.map((x, i) => {
-      const rm = el("button", { type: "button", class: "link danger", "aria-label": `Remove shot ${i + 1}` }, "✕");
-      rm.addEventListener("click", () => { shots.splice(i, 1); drawList(); });
-      return el("li", {}, [el("span", {}, x.club), el("span", {}, `${r0(x.carry)} carry${x.total && x.total !== x.carry ? ` · ${r0(x.total)} total` : ""}`), el("span", { class: "muted" }, lr(x.offline)), rm]);
-    }));
-    const mine = shots.filter((x) => x.club === club);
-    const st = mine.length >= 2 ? clubStats(mine) : null;
-    mount(statsBox, st ? el("p", { class: "muted small" }, `This session, ${club}: ${r0(st.carry)} carry on average, ${lr(st.offline)}, ${mine.length} shots.`) : null);
-    save.disabled = !shots.length;
-  };
-  const chips = clubChips(club, (c) => { club = c; carry.focus(); drawList(); });
-  const num = (ph, label) => el("input", { type: "text", inputmode: "decimal", placeholder: ph, "aria-label": label, autocomplete: "off" });
-  const carry = num("Carry", "Carry (yds)"), total = num("Total", "Total (yds, optional)"), off = num("Offline", "Offline (yds)");
-  let side = 0;
-  const sideSeg = el("div", { class: "seg seg-sm pr-side" });
-  const drawSide = () => mount(sideSeg, [[-1, "Left"], [1, "Right"]].map(([s, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === s ? " on" : ""}` }, l); b.addEventListener("click", () => { side = side === s ? 0 : s; drawSide(); }); return b; }));
-  drawSide();
-  const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
-  const addShot = (c, t, o) => {
-    shots.push({ club, carry: c, total: t || c, offline: o, at: `${new Date().toISOString()}`, source: "typed" });
-    carry.value = ""; total.value = ""; off.value = ""; side = 0; drawSide(); hint.textContent = ""; drawList(); carry.focus();
-  };
-  const add = el("button", { type: "button", class: "btn" }, "Add shot");
-  add.addEventListener("click", () => {
-    if (!club) { hint.textContent = "Pick the club first."; return; }
-    const c = Number(carry.value), t = Number(total.value) || null, o = Number(off.value) || 0;
-    if (!(c > 0)) { hint.textContent = "Type the carry."; carry.focus(); return; }
-    if (o && !side) { hint.textContent = "Left or right?"; return; }
-    addShot(c, t, o * (side || 1));
-  });
-  [carry, total, off].forEach((i) => i.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); }));
-  const say = SpeechRec ? (() => {
-    const b = el("button", { type: "button", class: "btn ghost pr-say voice-mic" }, sayKids("Say it"));
-    b.addEventListener("click", () => {
-      if (!club) { hint.textContent = "Pick the club first."; return; }
-      const rec = new SpeechRec();
-      rec.lang = navigator.language || "en-US"; rec.maxAlternatives = 3;
-      mount(b, sayKids("Listening…")); b.dataset.listening = "1"; b.classList.add("on"); b.disabled = true;
-      rec.onresult = (e) => {
-        const alts = [...e.results[0]].map((a) => a.transcript);
-        // read it like a tee shot: "152, 6 left"
-        const fake = { kind: "tee", width: 30, sides: { left: { kind: "rough", at: 99 }, right: { kind: "rough", at: 99 } }, hole: 600 };
-        const got = alts.map((t) => resultFromSpeech(fake, t.replace(/\b(\d{2,3})\b/, (m) => (Number(m) < 100 ? `${Number(m) + 1000}` : m)))).find(Boolean);
-        if (got) addShot(got.total > 1000 ? got.total - 1000 : got.total, null, got.offline); else hint.textContent = `Didn’t catch “${alts[0]}”`;
-      };
-      rec.onend = () => { b.disabled = false; b.classList.remove("on"); if (b.dataset.listening) mount(b, sayKids("Say it")); delete b.dataset.listening; };
-      rec.onerror = () => { b.disabled = false; b.classList.remove("on"); delete b.dataset.listening; mount(b, sayKids("Say it")); };
-      try { rec.start(); } catch { b.disabled = false; }
+/* ---------------------------------------------- adding launch data ---------------------------------------------- */
+async function drawImport(ctx) {
+  if (!bagCache) { try { const m = await import("../bag.js"); const clubs = await m.getBag(ctx.uid); bagCache = (clubs || []).filter((c) => c.cat !== "Putter").map((c, i) => ({ bagId: c.id || `${c.cat}-${c.type}-${i}`, type: normClub(m.clubLabel(c)) || m.clubLabel(c), label: m.clubLabel(c), brand: c.brand || "", model: c.model || "", shaft: c.shaft || "", flex: c.flex || "", loft: "" })); } catch { bagCache = []; } }
+  const bag = bagCache;
+  const which = el("select", { "aria-label": "Club" }, [
+    el("option", { value: "file" }, "Every club in the file (by its Club column)"),
+    ...bag.map((c, i) => el("option", { value: `bag:${i}` }, `${c.label}${c.brand || c.model ? ` \u00b7 ${[c.brand, c.model].filter(Boolean).join(" ")}` : ""}${c.shaft ? ` \u00b7 ${c.shaft}${c.flex ? ` ${c.flex}` : ""}` : ""}`)),
+    el("option", { value: "other" }, "Another club\u2026"),
+  ]);
+  const type = el("select", { "aria-label": "Club" }, TYPES.map((t) => el("option", { value: t, selected: t === "7i" }, t)));
+  const brand = el("input", { maxLength: 40, placeholder: "e.g. Callaway" }), model = el("input", { maxLength: 40, placeholder: "e.g. Apex Pro" });
+  const shaft = el("input", { maxLength: 50, placeholder: "e.g. Project X LZ 6.0" }), flex = el("input", { maxLength: 10, placeholder: "e.g. S, X" }), loft = el("input", { maxLength: 8, placeholder: "e.g. 34°" });
+  const other = el("div", { class: "pr-spec", hidden: true }, [
+    el("div", { class: "inline-form" }, [el("label", {}, ["Club", type]), el("label", {}, ["Loft (optional)", loft])]),
+    el("div", { class: "inline-form" }, [el("label", {}, ["Make", brand]), el("label", {}, ["Model", model])]),
+    el("div", { class: "inline-form" }, [el("label", {}, ["Shaft", shaft]), el("label", {}, ["Flex", flex])]),
+  ]);
+  which.addEventListener("change", () => { other.hidden = which.value !== "other"; });
+  const input = el("input", { type: "file", accept: ".csv,text/csv,.txt" });
+  const status = el("p", { class: "muted small", "aria-live": "polite" });
+  const save = el("button", { type: "button", class: "btn pr-go", disabled: true }, "Save to My Clubs");
+  let parsed = null, fileName = "";
+  // which club each shot is: the one picked, or (every club) the file's Club column matched to your bag
+  const assign = () => {
+    const specs = {};
+    const put = (sp) => { const key = specKeyOf(sp); specs[key] = { type: sp.type, brand: sp.brand || "", model: sp.model || "", shaft: sp.shaft || "", flex: sp.flex || "", loft: sp.loft || "" }; return key; };
+    const fixed = which.value.startsWith("bag:") ? bag[Number(which.value.slice(4))] : which.value === "other" ? { type: type.value, brand: brand.value.trim(), model: model.value.trim(), shaft: shaft.value.trim(), flex: flex.value.trim(), loft: loft.value.trim() } : null;
+    const shots = parsed.shots.map((x, i) => {
+      let sp = fixed;
+      if (!sp) { const t = normClub(x.club) || "Club"; sp = bag.find((b) => b.type === t) || { type: t }; }
+      return { ...x, club: sp.type, spec: put(sp), at: `${new Date().toISOString()}#${String(i).padStart(4, "0")}` };
     });
-    return b;
-  })() : null;
-  const save = el("button", { type: "button", class: "btn pr-go" }, "Save to My Clubs");
-  save.addEventListener("click", async () => {
-    if (!shots.length) return;
-    const s = { id: ctx.newId(), cat: "BAG", status: "done", source: "typed", startedAt: new Date().toISOString(), shots: shots.map((x, i) => ({ ...x, at: `${x.at}#${String(i).padStart(4, "0")}` })) };
-    ctx.add(s); await ctx.save(s, true);
-    picked = club;
-    ctx.flash?.(`Saved ${shots.length} shots.`, "ok");
-    ctx.home();
+    return { shots, specs };
+  };
+  const preview = () => {
+    if (!parsed) { save.disabled = true; return; }
+    if (which.value === "file" && !parsed.shots.some((x) => x.club)) { status.textContent = `${parsed.shots.length} shots, but the file has no Club column: pick the club above.`; save.disabled = true; return; }
+    const { shots, specs } = assign();
+    const by = {};
+    for (const x of shots) by[specs[x.spec].type] = (by[specs[x.spec].type] || 0) + 1;
+    status.textContent = `${shots.length} shots: ${sortClubs(Object.keys(by)).map((c) => `${c} \u00d7${by[c]}`).join(", ")}. Numbers found: ${parsed.keys.map((k) => METRIC[k].label).join(", ")}.`;
+    save.disabled = false;
+  };
+  which.addEventListener("change", preview);
+  [type, brand, model, shaft, flex, loft].forEach((x) => x.addEventListener("change", preview));
+  input.addEventListener("change", async () => {
+    const f = input.files[0];
+    if (!f) return;
+    try { parsed = readLaunchFile(await f.text()); fileName = f.name.slice(0, 60); preview(); }
+    catch (err) { parsed = null; status.textContent = err.message || "Couldn't read that file."; save.disabled = true; }
   });
-  const back = el("button", { type: "button", class: "link" }, "← Back");
-  back.addEventListener("click", () => { if (shots.length && !confirmAction("Leave without saving these shots?")) return; ctx.home(); });
-  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
-    el("p", { class: "pr-eyebrow" }, "My Clubs"), el("h1", {}, "Hit a club"),
-    el("p", { class: "muted small" }, "Pick the club, then add each shot: carry, and how far off line (left or right). Total is optional. Switch clubs any time."),
-    el("div", {}, [el("span", { class: "rd-label" }, "Club"), chips]),
-    el("div", { class: "pr-fields pr-bag-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Carry (yds)"), carry]), el("label", {}, [el("span", { class: "rd-label" }, "Total (optional)"), total]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sideSeg])]),
-    hint,
-    el("div", { class: "pr-actions" }, [say, add]),
-    el("p", { class: "muted small pr-tip" }, "Say it like “152, 6 left”."),
-    statsBox, list, save,
-  ])]);
-  drawList();
+  save.addEventListener("click", async () => {
+    if (!parsed) return;
+    if (which.value === "other" && !brand.value.trim() && !model.value.trim() && !confirmAction("Save without the club's make or model?")) return;
+    const { shots, specs } = assign();
+    save.disabled = true;
+    const s = { id: ctx.newId(), cat: "BAG", status: "done", source: "monitor", fileName, startedAt: new Date().toISOString(), shots, specs };
+    ctx.add(s); await ctx.save(s, true);
+    ctx.flash?.(`Saved ${shots.length} shots.`, "ok");
+    ctx.go({ name: "home" });
+  });
+  const back = el("button", { type: "button", class: "link" }, "\u2190 Back");
+  back.addEventListener("click", () => ctx.go({ name: "home" }));
+  mount(ctx.body, [
+    el("p", { class: "crumb" }, back),
+    el("section", { class: "panel pr-plan" }, [
+      el("p", { class: "pr-eyebrow" }, "My Clubs"), el("h1", {}, "Add launch data"),
+      el("label", { class: "pr-club-pick" }, [el("span", { class: "rd-label" }, "Which club"), which]),
+      bag.length ? null : el("p", { class: "muted small" }, "Add your clubs in What's in the Bag to pick them here with their make, model and shaft, or choose \u201cAnother club\u201d."),
+      other,
+      el("label", { class: "pr-file" }, [el("span", { class: "rd-label" }, "GCQuad or TrackMan CSV"), input]),
+      status, save,
+      el("p", { class: "muted small" }, "GCQuad: FSX \u2192 export the session as CSV. TrackMan: the session's Export \u2192 CSV. Every column it has is kept: speeds, launch, spin, delivery, height, descent, carry, total and side."),
+    ]),
+  ]);
 }

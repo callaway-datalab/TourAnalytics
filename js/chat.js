@@ -102,7 +102,9 @@ export function renderChat(container, { flash }) {
     const rest = others.filter((id) => !isStaffId(id) && !friendIds.includes(id)).sort(byName);
     return [{ title: "Callaway analysts", ids: callaway }, { title: staff ? "Everyone" : "Your team", ids: rest }, { title: "Friends", ids: friendIds }].filter((x) => x.ids.length);
   }
-  const roomName = (r) => (r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
+  // "Callaway Analyst" (update 152): everyone's own conversation with Callaway's analysts (and the admin), always there
+  const caId = `ca_${uid}`;
+  const roomName = (r) => (r.callaway ? (r.createdBy === uid ? "Callaway Analyst" : `${nameOf(r.createdBy)} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
   const allRooms = () => rooms.map((r) => ({ ...r, lastAt: ms(r.lastAt) || ms(r.createdAt) })).sort((a, b) => b.lastAt - a.lastAt);
   const unread = (r) => r.lastAt > lastRead(uid, r.id) && r.lastBy && r.lastBy !== uid;
 
@@ -128,8 +130,15 @@ export function renderChat(container, { flash }) {
   function drawList() {
     const n = friendsBtn.querySelector(".badge"); n.hidden = !incoming.length; n.textContent = String(incoming.length);
     const all = allRooms();
-    if (!all.length) { mount(list, el("li", { class: "empty chat-empty" }, "No chats yet. Start one with New message or New group.")); return; }
-    mount(list, all.map((r) => {
+    // Callaway Analyst sits at the top until you've started it (then it's a conversation like any other)
+    const pin = all.some((r) => r.id === caId) ? null : (() => {
+      const b = el("button", { type: "button", class: "chat-room chat-ca" }, [el("span", { class: "chat-room-icon", "aria-hidden": "true" }, "\u2605"),
+        el("span", { class: "chat-room-text" }, [el("strong", {}, "Callaway Analyst"), el("span", { class: "muted" }, "Message Callaway's analysts")])]);
+      b.addEventListener("click", startCallaway);
+      return el("li", {}, b);
+    })();
+    if (!all.length) { mount(list, [pin, el("li", { class: "empty chat-empty" }, "No other chats yet. Start one with New message or New group.")]); return; }
+    mount(list, [pin, ...all.map((r) => {
       const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
       const b = el("button", { type: "button", class: "chat-room" + (r.id === current ? " on" : ""), "aria-current": r.id === current ? "true" : null }, [
         el("span", { class: "chat-room-icon", "aria-hidden": "true" }, r.type === "group" ? "\u25CE" : "\u25CF"),
@@ -138,7 +147,7 @@ export function renderChat(container, { flash }) {
       ]);
       b.addEventListener("click", () => open(r.id));
       return el("li", {}, b);
-    }));
+    })]);
   }
 
   function drawHead() {
@@ -255,6 +264,16 @@ export function renderChat(container, { flash }) {
     mount(picker, [el("p", { class: "chat-picker-title" }, mode === "group" ? "New group" : `Add people to \u201c${room.name}\u201d`), nameIn, find, body, el("div", { class: "chat-picker-actions" }, [go, closeBtn(picker)])]);
     (nameIn || find)?.focus();
   }
+  async function startCallaway() {
+    const team = [...new Set(staffIds)].filter((x) => x !== uid);
+    if (!team.length) { flash("No Callaway analysts yet. Add one on Player Access (User Type: Analyst) and they'll be here.", "error"); return; }
+    try {
+      const ref = doc(db, "chatRooms", caId), snap = await getDoc(ref);
+      if (!snap.exists()) await setDoc(ref, { type: "group", callaway: true, name: "Callaway Analyst", members: [uid, ...team], createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "" });
+      else if (!team.every((x) => snap.data().members.includes(x))) await updateDoc(ref, { members: [...new Set([...snap.data().members, ...team])] }); // (analysts added since)
+      open(caId);
+    } catch { flash("Couldn't open Callaway Analyst. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
+  }
   async function startDm(other) {
     const id = `dm_${[uid, other].sort().join("_")}`;
     try {
@@ -318,9 +337,9 @@ export function renderChat(container, { flash }) {
       incoming.length ? el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Asked you"), ...incoming.map((r) => row(r.from, [
         btn("Accept", () => accept(r), "link chat-accept"), btn("Decline", async () => { try { await deleteDoc(doc(db, "friendRequests", r.id)); } catch { flash("Couldn't decline that.", "error"); } }),
       ]))]) : null,
-      analysts().length ? el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Callaway analysts"), ...analysts().map((id) => row(id, [
-        btn("Message", () => startDm(id)), el("span", { class: "muted small chat-always" }, "Always here"),
-      ]))]) : null,
+      el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Callaway"),
+        el("div", { class: "chat-friend" }, [el("span", {}, [el("strong", {}, "Callaway Analyst"), el("span", { class: "muted small" }, " \u00b7 Callaway's analysts")]), el("span", { class: "chat-friend-btns" }, [btn("Message", startCallaway), el("span", { class: "muted small chat-always" }, "Always here")])]),
+        ...analysts().map((id) => row(id, [btn("Message", () => startDm(id)), el("span", { class: "muted small chat-always" }, "Always here")]))]),
       el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Your friends"), ...(friends.filter((id) => !isStaffId(id)).length ? friends.filter((id) => !isStaffId(id)).map((id) => row(id, [
         btn("Message", () => startDm(id)), btn("Remove", () => removeFriend(id), "link danger"),
       ])) : [el("p", { class: "muted small" }, "None yet.")])]),
