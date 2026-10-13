@@ -43,7 +43,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const mine = pick(me.rounds);
   const played = field.filter((p) => p.key !== me.key).map((p) => ({ ...p, rounds: pick(p.rounds) })).filter((p) => p.rounds.length);
   // Tour Avg, ranks and Elite use the same players as the Stats page: at least Min. rounds in this period
-  // (the number set on the Stats page, or its default: a quarter of the most rounds played, down to a 10)
+  // (the number set on the Stats page, or its default: 33% of the most rounds played, down to a 5)
   const minR = Number(minRounds) >= 1 ? Math.round(Number(minRounds)) : defaultMinRounds(Math.max(mine.length, ...played.map((p) => p.rounds.length)));
   const others = played.filter((p) => p.rounds.length >= minR);
   const everyone = [{ key: me.key, label: me.label, rounds: mine }, ...others];
@@ -322,7 +322,7 @@ const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ?
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
 // This file's build. It must match main.js?v= in index.html (bumped with every update): when it doesn't, the
 // browser is still running an older copy of this file, so the report isn't made (it would have old fixes missing).
-export const REPORT_BUILD = "149";
+export const REPORT_BUILD = "150";
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -945,7 +945,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   mount(panel, [
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Dates"), presetBox, el("div", { class: "report-dates" }, [el("label", { class: "date-field" }, ["Start Date", fromIn]), el("label", { class: "date-field" }, ["End Date", toIn])])]),
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Categories"), catBox]),
-    el("div", { class: "report-row" }, [el("label", {}, ["Data", source]), el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: a quarter of the most rounds played, rounded down to a 10." }, ["Min. rounds", minIn]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
+    el("div", { class: "report-row" }, [el("label", {}, ["Data", source]), el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: 33% of the most rounds played, rounded down to a 5." }, ["Min. rounds", minIn]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
     el("div", { class: "report-gen-actions" }, [go]), status, result,
   ]);
   mount(wrapEl, [openBtn, panel]);

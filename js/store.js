@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
-  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup, limit,
+  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup, limit, deleteField,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
@@ -192,6 +192,77 @@ export function setAnalystPlayers(target, { playerKeys, allPlayers, labels }) {
   return target.uid
     ? updateDoc(doc(db, "users", target.uid), { access, allPlayers: !!allPlayers })
     : updateDoc(doc(db, "invites", target.code), { access, allPlayers: !!allPlayers });
+}
+
+/**
+ * The admin's Edit on Player Access (update 150): who someone is, their email, their user type and the
+ * players they work with. Writes the code and, once they've signed up, their account the same way.
+ *   type: "player" | "coach" | "caddy" | "analyst" | "other" (with role)
+ *   player: for a player, { key, id } (their data); others: playerKeys / allPlayers
+ */
+export async function editAccess(inv, user, { type, name, email, role, player, playerKeys = [], allPlayers = false, labels }) {
+  const em = email ? norm(email) : "";
+  let common;
+  if (type === "player") {
+    common = { clientKey: player.key, clientLabel: player.id, kind: deleteField(), access: deleteField(), allPlayers: deleteField() };
+  } else {
+    const key = isTeamKey(inv.clientKey) ? inv.clientKey : isTeamKey(user?.clientKey) ? user.clientKey : teamKey();
+    const analyst = type === "analyst";
+    const keys = analyst && allPlayers ? [...labels.keys()] : playerKeys;
+    const r = analyst ? ANALYST_ROLE : normRole(type === "other" ? role : type);
+    const access = Object.fromEntries(keys.map((k) => [k, { role: r, label: labels.get(k) || k.replace(/^c_/, "") }]));
+    common = { clientKey: key, kind: analyst ? "analyst" : "team", access, allPlayers: analyst ? !!allPlayers : deleteField() };
+  }
+  const invFields = { ...common, ...(type === "player" ? {} : { clientLabel: name || "" }), email: em || deleteField(),
+    note: type === "analyst" ? "Callaway Access" : type === "player" ? (inv.note === "Callaway Access" || inv.note === "From team roster" ? "" : inv.note || "") : "" };
+  await updateDoc(doc(db, "invites", inv.code), invFields);
+  if (user) {
+    const userFields = { ...common, ...(name ? { name } : {}), ...(em ? { email: em } : {}) };
+    if (type !== "player") userFields.clientLabel = name || user.clientLabel || "";
+    await updateDoc(doc(db, "users", user.uid), userFields);
+  }
+}
+
+/**
+ * Each player's team (coaches, caddies and other team members, not analysts), from everyone's access:
+ * [{ playerKey, email, name, role }]. Accounts first; codes not used yet (with an email) count too.
+ */
+export function teamEntries(users, invites) {
+  const out = [], seen = new Set();
+  const add = (access, name, email) => {
+    for (const [k, g] of Object.entries(access || {})) {
+      if (!g || g.role === ANALYST_ROLE) continue;
+      const id = `${k}|${email || name}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ playerKey: k, email: email ? norm(email) : "", name: name || email || "Team member", role: g.role });
+    }
+  };
+  for (const u of users) if (isTeamKey(u.clientKey) && u.kind !== "analyst") add(u.access, u.name, u.email);
+  for (const v of invites) if (isTeamKey(v.clientKey) && v.kind !== "analyst" && !v.usedBy && !v.revoked) add(v.access, v.clientLabel, v.email);
+  return out;
+}
+/** The admin: every player's team, read fresh. */
+export async function getTeamEntries() {
+  const [u, v] = await Promise.all([getDocs(collection(db, "users")), getDocs(collection(db, "invites"))]);
+  return teamEntries(u.docs.map((d) => ({ uid: d.id, ...d.data() })), v.docs.map((d) => ({ code: d.id, ...d.data() })));
+}
+
+/** Keep teams/{player} (who a player can share a question with) in step with who has access to them. */
+export async function syncTeams(users, invites) {
+  const byPlayer = new Map();
+  for (const e of teamEntries(users, invites)) {
+    if (!e.email) continue; // (sharing goes to an email)
+    if (!byPlayer.has(e.playerKey)) byPlayer.set(e.playerKey, []);
+    byPlayer.get(e.playerKey).push({ email: e.email, name: e.name, role: e.role });
+  }
+  const snap = await getDocs(collection(db, "teams"));
+  const jobs = [];
+  const sig = (m) => JSON.stringify([...(m || [])].map((x) => [x.email, x.name, x.role]).sort());
+  snap.forEach((d) => { if (!byPlayer.has(d.id)) jobs.push(deleteDoc(d.ref)); else if (sig(d.data().members) === sig(byPlayer.get(d.id))) byPlayer.delete(d.id); });
+  for (const [k, members] of byPlayer) jobs.push(setDoc(doc(db, "teams", k), { members, updatedAt: serverTimestamp() }));
+  await Promise.all(jobs);
+  return jobs.length;
 }
 
 /** Keep the player names stored on team members' and analysts' access up to date (so their Player

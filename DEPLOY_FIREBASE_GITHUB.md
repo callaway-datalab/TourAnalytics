@@ -186,15 +186,10 @@ site.
 - **Share a document**: Documents page → upload a PDF or PowerPoint → choose Everyone or one player.
   When you pick one player, tick any roles on their team (Coach, Caddy, ...) that should also see
   it. Leave them all unticked to share with the player only.
-- **Coaches, caddies and other team members** come from one file you keep: your **team roster**,
-  a CSV with the columns `player, playerID, team member, team role, team member email`, one row per
-  player per team member (`team_members_template.csv` in this project is an example). `playerID`
-  says exactly which player; the email is how the team member signs up. Team role is Coach, Caddy or
-  Other. Upload it on **Player Access → Team roster** whenever it changes:
-  - Each upload **replaces** the previous roster: anyone you take out loses access immediately.
-  - Anyone new gets an access code (see Access codes) that only works with their email.
-  - A file with a mistake is rejected as a whole, so a typo never silently removes someone.
-  - "Download current roster" gives you back exactly what's live, in the same format.
+- **Coaches, caddies and other team members**: Player Access → Create New Access Code, pick their
+  user type and the players they work with, and send them the code. **Edit** on any row changes who
+  they are, their email, their user type and their players at any time (update 150; the team roster
+  file is gone).
 - **Record a round (anyone)**: **Data Entry → Start a new round**. Enter the date, start typing the
   course (pick it from the list and the location fills in; a course you've played before also refills
   its scorecard and tees), and the tees. Then the scorecard: tap each hole's par and type its yardage and handicap, or tap **Read a

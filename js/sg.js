@@ -616,9 +616,9 @@ export function leaveHistogram(rounds, idx, cat) {
   return counts.map((count, i) => ({ label: edges[i + 1] === Infinity ? `${edges[i]}+` : `${edges[i]}-${edges[i + 1]}`, count }));
 }
 
-/** Min. rounds, until someone types their own: a quarter of the most rounds anyone played, rounded down
- *  to a 10 (23 → 20); under 10 → 1. Used by the Stats page and the report. */
-export const defaultMinRounds = (mostRounds) => Math.max(1, Math.floor((Math.max(0, Number(mostRounds) || 0) * 0.33) / 10) * 10); // 33% of the most, down to a 10 (update 149)
+/** Min. rounds, until someone types their own: 33% of the most rounds anyone played, rounded down to a 5
+ *  (60 → 15, 23 → 5); under 15 → 1. Used by the Stats page and the report. */
+export const defaultMinRounds = (mostRounds) => Math.max(1, Math.floor((Math.max(0, Number(mostRounds) || 0) * 0.33) / 5) * 5); // 33% of the most, down to a 5 (update 150)
 
 /** Rank players by a value (higher first). Returns [{ key, label, value, rank }]. */
 export function rank(entries) {

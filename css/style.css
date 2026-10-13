@@ -3140,3 +3140,7 @@ button.ti-name:hover { color: var(--accent); }
 .py-tag { margin-left: 0.5rem; background: rgba(212, 180, 131, 0.14); color: #d4b483; }
 .py-right { display: inline-flex; align-items: center; gap: 0.6rem; }
 .py-x { font-size: 0.85rem; opacity: 0.7; }
+
+/* update 150: Edit on Player Access */
+.edit-person [hidden] { display: none !important; }
+.edit-person .inline-form { align-items: end; }

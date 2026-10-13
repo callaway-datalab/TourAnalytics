@@ -1,15 +1,15 @@
 // Player Access: the admin's home page.
-//   At a glance · Access codes (create + table) · Team roster · Players
+//   At a glance · Access codes (create + table, each with Edit)
 import { el, mount, formatWhen, confirmAction, num, subNav } from "../ui.js";
 import { sameNamePlayers } from "../playerPicker.js";
 import { plainName } from "../names.js";
 import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
-  watchTeamRoster, applyTeamRoster, UserError, adminStats,
+  UserError, adminStats, editAccess, syncTeams,
   refreshInvite, deleteInvite, storageEstimate, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
   createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels,
 } from "../store.js";
-import { clientKey, formatCode, isTeamKey, roleLabel, parseTeamRoster, toCsv, ROSTER_COLUMNS, norm } from "../data.js";
+import { clientKey, formatCode, isTeamKey, roleLabel, ANALYST_ROLE } from "../data.js";
 
 const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["other", "Other"]];
 const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["other", "Other"]];
@@ -18,7 +18,6 @@ export async function render(main, { flash }) {
   let clientsCache = { labels: new Map() };
   let invitesCache = [];
   let usersCache = [];
-  let rosterCache = { entries: [], uploadedAt: null };
   let expiryCleared = false;
 
   const linkButton = (text, onClick, cls = "link") => {
@@ -278,34 +277,81 @@ export async function render(main, { flash }) {
   codeSearch.addEventListener("input", () => renderInvites());
   typeBoxes.forEach((l) => l.querySelector("input").addEventListener("change", () => renderInvites()));
 
-  function editPlayers(inv, user, grants) {
-    const target = user ? { uid: user.uid } : { code: inv.code };
-    const analyst = inv.kind === "analyst";
-    const role = grants[0]?.role || "coach";
-    const picker = playerPicker(grants.map((g) => g.key), { allowAll: analyst, all: !!(user?.allPlayers ?? inv.allPlayers) });
+  // Edit: who they are, their email, user type and the players they work with (update 150).
+  function editPerson(inv, user, grants) {
+    const isPlayer = !isTeamKey(user?.clientKey ?? inv.clientKey);
+    const roles = [...new Set(grants.map((g) => g.role))];
+    const curType = isPlayer ? "player" : inv.kind === "analyst" || user?.kind === "analyst" ? "analyst"
+      : roles[0] === "coach" || roles[0] === "caddy" ? roles[0] : "other";
+    const who = user?.name || (isPlayer ? clientsCache.labels.get(inv.clientKey) : inv.clientLabel) || "this person";
+    const typeSel = el("select", {}, USER_TYPES.map(([v, l]) => el("option", { value: v, selected: v === curType }, l)));
+    const nameIn = el("input", { maxLength: 80, value: user?.name || (isPlayer ? "" : inv.clientLabel || ""), placeholder: user ? "Their name" : "Only for you, until they sign up" });
+    const emailIn = el("input", { type: "email", maxLength: 120, value: user?.email || inv.email || "", placeholder: user ? "" : "Optional", autocomplete: "off" });
+    const curKey = isPlayer ? (user?.clientKey ?? inv.clientKey) : null;
+    const playerIn = el("input", { list: "known-ids", value: curKey ? (clientsCache.labels.get(curKey) || inv.clientLabel || "") : "", placeholder: "Start typing a name\u2026", autocomplete: "off" });
+    const roleIn = el("input", { maxLength: 30, value: curType === "other" ? roles[0] || "" : "", placeholder: "e.g. Physio, Trainer, Swing coach", autocomplete: "off" });
+    const teamBox = el("div");
+    let picker = null;
+    const drawType = () => {
+      const t = typeSel.value;
+      roleRow.hidden = t !== "other";
+      playerRow.hidden = t !== "player";
+      if (t === "player") { picker = null; mount(teamBox, null); return; }
+      const keep = picker ? picker.value() : { playerKeys: grants.map((g) => g.key), allPlayers: !!(user?.allPlayers ?? inv.allPlayers) };
+      picker = playerPicker(keep.playerKeys, { allowAll: t === "analyst", all: t === "analyst" && (keep.allPlayers || curType !== "analyst") });
+      mount(teamBox, picker.node);
+    };
+    const roleRow = el("label", {}, ["Role", roleIn]);
+    const playerRow = el("label", {}, ["Which player they are", playerIn]);
+    typeSel.addEventListener("change", drawType);
     const save = el("button", { class: "btn", type: "submit" }, "Save");
     openDialog([
-      el("h3", {}, `${user?.name || inv.clientLabel || "Their"}${user?.name || inv.clientLabel ? "'s" : ""} players`),
-      el("form", { class: "stack", onSubmit: async (e) => {
+      el("h3", {}, `Edit ${who}`),
+      el("form", { class: "stack edit-person", onSubmit: async (e) => {
         e.preventDefault();
-        const v = picker.value();
-        if (!v.allPlayers && !v.playerKeys.length) { flash("Add at least one player.", "error"); return; }
+        const type = typeSel.value;
+        const v = { type, name: nameIn.value.trim(), email: emailIn.value.trim(), role: roleIn.value.trim(), labels: clientsCache.labels };
+        if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) { flash("That email doesn't look right.", "error"); emailIn.focus(); return; }
+        if (user && !v.name) { flash("Enter their name.", "error"); nameIn.focus(); return; }
+        if (type === "player") {
+          if (!playerIn.value.trim()) { flash("Enter which player they are.", "error"); playerIn.focus(); return; }
+          const p = resolvePlayer(playerIn.value);
+          if (p.error) { flash(p.error, "error"); return; }
+          v.player = p;
+        } else {
+          if (type === "other" && !v.role) { flash("Enter their role (e.g. Physio).", "error"); roleIn.focus(); return; }
+          Object.assign(v, picker.value());
+          if (!v.allPlayers && !v.playerKeys.length) { flash("Add at least one player they work with.", "error"); return; }
+        }
+        if ((type === "player") !== isPlayer && !confirmAction(type === "player"
+          ? `Make ${who} a player? They'll see that player's data instead of the players they work with now.`
+          : `Make ${who} a team member? They'll see the players you picked instead of their own data. (Rounds and practice they've entered stay saved under their player ID.)`)) return;
         save.disabled = true;
         try {
-          if (analyst) await setAnalystPlayers(target, { ...v, labels: clientsCache.labels });
-          else await setTeamPlayers(target, { role, playerKeys: v.playerKeys, labels: clientsCache.labels });
-          dialog.close(); flash(`Updated ${user?.name || inv.clientLabel || "their"}${user?.name || inv.clientLabel ? "'s" : ""} players.`, "ok"); refreshClients();
-        } catch { flash("Couldn't save that change.", "error"); save.disabled = false; }
-      } }, [picker.node, el("div", { class: "thread-actions" }, [save, linkButton("Cancel", () => dialog.close())])]),
+          await editAccess(inv, user, v);
+          dialog.close(); flash(`Saved ${v.name || who}.`, "ok"); refreshClients();
+        } catch (err) {
+          flash(err?.code === "permission-denied" ? "The database refused that change. Republish the Firestore rules from update 150 (Firebase \u2192 Firestore \u2192 Rules), then try again." : "Couldn't save that change. Try again.", "error");
+          save.disabled = false;
+        }
+      } }, [
+        el("div", { class: "inline-form" }, [el("label", {}, ["User Type", typeSel]), roleRow]),
+        playerRow,
+        el("div", { class: "inline-form" }, [el("label", {}, [user ? "Name" : "Name (optional)", nameIn]), el("label", {}, ["Email", emailIn])]),
+        user ? el("p", { class: "muted small" }, `Changing the email here changes their contact email in the portal. They still sign in with the email they signed up with (${user.email || "\u2014"}) until they change it under Account.`)
+          : el("p", { class: "muted small" }, "With an email, only someone signing up with that email can use this code. Leave it empty and anyone with the code can."),
+        teamBox,
+        el("div", { class: "thread-actions" }, [save, linkButton("Cancel", () => dialog.close())]),
+      ]),
     ]);
+    drawType();
   }
 
   function codeActions(inv, user, grants) {
     const links = [];
-    const editable = inv.kind === "analyst" || inv.kind === "team"; // roster people are edited through the roster file
     if (inv.usedBy && user) {
       links.push(el("a", { href: portalHref(user) }, "See their portal"));
-      if (editable) links.push(linkButton("Edit players", () => editPlayers(inv, user, grants)));
+      links.push(linkButton("Edit", () => editPerson(inv, user, grants)));
       const reset = linkButton("Password reset", async () => {
         reset.disabled = true;
         try { await sendPasswordReset(user.email); flash(`Password reset email sent to ${user.email}.`, "ok"); }
@@ -344,7 +390,7 @@ export async function render(main, { flash }) {
     } else if (!inv.usedBy) {
       links.push(el("a", { href: isTeamKey(inv.clientKey) ? `#/view-as-code/${inv.code}`
         : `#/view-as/${encodeURIComponent(inv.clientKey)}?label=${encodeURIComponent(clientsCache.labels.get(inv.clientKey) || inv.clientLabel)}` }, "See their portal"));
-      if (editable) links.push(linkButton("Edit players", () => editPlayers(inv, null, grants)));
+      links.push(linkButton("Edit", () => editPerson(inv, null, grants)));
       const revoke = linkButton("Revoke", async () => {
         revoke.disabled = true;
         try { await revokeInvite(inv.code); flash("Code revoked.", "ok"); }
@@ -415,84 +461,16 @@ export async function render(main, { flash }) {
     ])));
   }
 
-  /* ============================ Team roster ============================ */
-  const rosterFile = el("input", { type: "file", accept: ".csv,text/csv", class: "visually-hidden" });
-  const rosterPickText = el("span", {}, "Choose File");
-  const rosterFileName = el("span", { class: "file-name muted" }, "No file chosen");
-  const rosterPicker = el("label", { class: "file-pick" }, [el("span", { class: "btn ghost" }, rosterPickText), rosterFile]);
-  const drawRosterFile = () => {
-    const picked = rosterFile.files[0];
-    const hasRoster = (rosterCache.entries || []).length > 0 || !!rosterCache.fileName;
-    rosterPickText.textContent = hasRoster ? "Replace Roster" : "Choose File";
-    if (picked) rosterFileName.textContent = `${picked.name} (ready to upload)`;
-    else if (hasRoster) rosterFileName.textContent = `${rosterCache.fileName || "Current roster"}${rosterCache.uploadedAt ? ` \u00b7 uploaded ${formatWhen(rosterCache.uploadedAt)}` : ""}`;
-    else rosterFileName.textContent = "No file chosen";
-  };
-  rosterFile.addEventListener("change", drawRosterFile);
-  const rosterBtn = el("button", { class: "btn", type: "submit" }, "Upload roster");
-  const saveCsv = (name, csv) => {
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = el("a", { href: url, download: name }); document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  };
-  // The roster names players; downloads use the same names (with the ID only where two share a name).
-  const idOf = (key) => clientsCache.ids?.get(key) || key.replace(/^c_/, "");
-  const playerName = (key, fallback) => plainName(clientsCache.labels.get(key) || fallback);
-  const downloadBtn = linkButton("Download current roster", () => saveCsv("team_members.csv",
-    toCsv(ROSTER_COLUMNS, (rosterCache.entries || []).map((e) => [playerName(e.playerKey, e.playerLabel), idOf(e.playerKey), e.name, roleLabel(e.role), e.email]))));
-  const templateBtn = linkButton("Download a blank template", () => {
-    // Example rows using real players from your data: one player per row.
-    const players = [...clientsCache.labels.keys()].sort((a, b) => playerName(a).localeCompare(playerName(b)));
-    const p = (i) => (players[i] ? [playerName(players[i]), idOf(players[i])] : [`Player ${i + 1}`, `PLAYER-ID-${i + 1}`]);
-    saveCsv("team_members.csv", toCsv(ROSTER_COLUMNS, [
-      [...p(0), "Mike Smith", "Coach", "mike.smith@example.com"],
-      [...p(1), "Mike Smith", "Coach", "mike.smith@example.com"],
-      [...p(0), "Jo Brown", "Caddy", "jo.brown@example.com"],
-      [...p(2), "Sam Lee", "Other", "sam.lee@example.com"],
-    ]));
-  });
-
-  // Roster player names -> player keys. A name two IDs share must be written with its ID.
-  function resolvePlayer(text, isId) {
+  // A player typed by name (from the list) or by ID. A name two IDs share must be picked from the list.
+  function resolvePlayer(text) {
     const t = text.trim().toLowerCase();
     const all = [...clientsCache.labels].map(([key, label]) => ({ key, label, id: clientsCache.ids?.get(key) || key.replace(/^c_/, "") }));
-    const hit = isId ? all.find((p) => p.id.toLowerCase() === t)
-      : all.find((p) => p.label.toLowerCase() === t) || all.find((p) => p.id.toLowerCase() === t);
-    if (hit) return { key: hit.key, label: hit.label };
+    const hit = all.find((p) => p.label.toLowerCase() === t) || all.find((p) => p.id.toLowerCase() === t);
+    if (hit) return { key: hit.key, id: hit.id, label: hit.label };
     const dupes = sameNamePlayers(all, text);
-    if (dupes.length) return { error: `${dupes.length} players are named ${text.trim()}. Write it as ${dupes.map((d) => `"${d.label}"`).join(" or ")}.` };
-    if (isId) return { key: clientKey(text.trim()), label: text.trim() }; // an ID with no data yet (e.g. a new player)
-    return { error: `There's no player named "${text.trim()}" in your data. Check the spelling, or use the name exactly as it appears in Data.` };
+    if (dupes.length) return { error: `${dupes.length} players are named ${text.trim()}. Pick the right one from the list: ${dupes.map((d) => d.label).join(" or ")}.` };
+    return { key: clientKey(text.trim()), id: text.trim(), label: text.trim() }; // an ID with no data yet (a new player)
   }
-  const rosterForm = el("form", {
-    class: "inline-form",
-    onSubmit: async (e) => {
-      e.preventDefault();
-      const f = rosterFile.files[0];
-      if (!f) { flash("Choose your team roster CSV.", "error"); return; }
-      rosterBtn.disabled = true; rosterBtn.textContent = "Applying\u2026";
-      try {
-        if (!clientsCache.labels.size) await refreshClients(); // need the player list to match names
-        const { entries, problems } = parseTeamRoster(await f.text(), resolvePlayer);
-        if (problems.length) {
-          flash(`Nothing was changed. Fix these rows and upload again: ${problems.slice(0, 8).join(" ")}${problems.length > 8 ? ` (and ${problems.length - 8} more)` : ""}`, "error");
-          return;
-        }
-        if (!entries.length && !confirmAction("This roster has no team members. Uploading it removes every roster coach, caddy, etc. from every player. Continue?")) return;
-        const r = await applyTeamRoster(entries, f.name, clientsCache.labels);
-        const unknown = [...new Set(entries.filter((x) => clientsCache.labels.size && !clientsCache.labels.has(x.playerKey)).map((x) => x.playerLabel))];
-        flash(`Roster applied: ${r.people} team ${r.people === 1 ? "member" : "members"}, ${r.links} player ${r.links === 1 ? "link" : "links"}.`
-          + (r.updated ? ` Updated ${r.updated} existing ${r.updated === 1 ? "account" : "accounts"}.` : "")
-          + (r.newCodes ? ` ${r.newCodes} new access ${r.newCodes === 1 ? "code" : "codes"} to send (see Access codes).` : "")
-          + (unknown.length ? ` Note: no data or account uses these player IDs yet: ${unknown.join(", ")}.` : ""), "ok");
-        rosterForm.reset(); drawRosterFile();
-      } catch (err) {
-        flash(err instanceof UserError ? err.message : "Couldn't apply that roster. Try again.", "error");
-      } finally {
-        rosterBtn.disabled = false; rosterBtn.textContent = "Upload roster";
-      }
-    },
-  }, [el("div", { class: "file-row" }, [el("div", { class: "file-line" }, [rosterPicker, rosterFileName])]), rosterBtn]);
 
   /* ========================= Known players (for the forms) ========================= */
   async function refreshClients() {
@@ -500,6 +478,8 @@ export async function render(main, { flash }) {
     clientsCache = { labels, ids };
     renderInvites(); // player codes are listed by name once names are known
     syncAllPlayersAnalysts(usersCache, invitesCache, labels).then(() => syncAccessLabels(usersCache, invitesCache, labels)).catch(() => {});
+    // who each player can share questions with: everyone with access to them (update 150: no roster file)
+    if (usersCache.length || invitesCache.length) syncTeams(usersCache, invitesCache).catch(() => {});
     mount(knownIds, [...labels.values()].map((label) => el("option", { value: label })));
   }
 
@@ -517,11 +497,6 @@ export async function render(main, { flash }) {
       createToggle,
       createPanel,
     ]),
-    el("section", {}, [
-      el("h2", {}, "Team roster"),
-      rosterForm,
-      el("p", { class: "muted roster-note" }, ["Uploading replaces the previous roster completely: anyone you remove loses access. ", downloadBtn, " \u00b7 ", templateBtn]),
-    ]),
   ]);
 
   const unInv = watchInvites((invites) => {
@@ -530,9 +505,8 @@ export async function render(main, { flash }) {
     renderInvites(); refreshClients();
   });
   const unUsers = watchUsers((users) => { usersCache = users; renderInvites(); refreshClients(); });
-  const unRoster = watchTeamRoster((r) => { rosterCache = r; drawRosterFile(); refreshClients(); });
   const clientsInterval = setInterval(refreshClients, 15000);
   refreshClients();
 
-  return () => { unInv(); unUsers(); unRoster(); clearInterval(clientsInterval); clearInterval(statsInterval); dialog.remove(); };
+  return () => { unInv(); unUsers(); clearInterval(clientsInterval); clearInterval(statsInterval); dialog.remove(); };
 }

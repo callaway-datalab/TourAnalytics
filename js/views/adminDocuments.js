@@ -1,5 +1,5 @@
 import { el, mount, formatWhen, confirmAction, subNav, openTabNow } from "../ui.js";
-import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamRoster, uploadErrorMessage, setReportCategory, ensureAnalystReportAccess } from "../store.js";
+import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamEntries, uploadErrorMessage, setReportCategory, ensureAnalystReportAccess } from "../store.js";
 import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel, REPORT_CATEGORIES, reportCategory, ANALYST_ROLE } from "../data.js";
 
 export async function render(main, { flash }) {
@@ -37,8 +37,8 @@ export async function render(main, { flash }) {
   let clientLabels = new Map();
   const teamOnly = (d) => (d.teamRoles || []).filter((r) => r !== ANALYST_ROLE); // analysts always see player reports
   ensureAnalystReportAccess().catch(() => {}); // older reports: make sure Callaway analysts can see them
-  // Who is on each player's team comes from the uploaded team roster.
-  getTeamRoster().then(({ entries = [] }) => {
+  // Who is on each player's team: everyone given access to them on Player Access (update 150).
+  getTeamEntries().then((entries) => {
     teamByPlayer = new Map();
     for (const e of entries) {
       if (!teamByPlayer.has(e.playerKey)) teamByPlayer.set(e.playerKey, new Map());
