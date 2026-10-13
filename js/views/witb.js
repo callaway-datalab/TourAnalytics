@@ -76,10 +76,19 @@ export async function render(main, { flash, previewClient }) {
   const pickPanel = el("div", { class: "ms-panel set-panel", hidden: true, role: "group", "aria-label": "Clubs in the set" });
   const setBox = el("div", { class: "set-box", hidden: true }, [pickBtn, pickPanel]);
   const setToggle = el("button", { type: "button", class: "link set-toggle", hidden: true });
+  // a stock yardage for each club in the set (update 140)
+  const setYards = {};
+  const yardsGrid = el("div", { class: "set-yards", hidden: true });
+  const drawYards = () => mount(yardsGrid, picked.length ? [el("span", { class: "set-yards-label" }, "Stock yds"), ...picked.map((t) => {
+    const i = el("input", { type: "number", inputmode: "numeric", min: "0", max: "400", value: setYards[t] ?? "", placeholder: "yds", "aria-label": `${t} stock yardage` });
+    i.addEventListener("input", () => { setYards[t] = i.value; });
+    return el("label", { class: "set-yard" }, [el("span", {}, t), i]);
+  })] : null);
   const drawPick = () => {
     const ts = CLUB_TYPES[cat.value] || [];
     picked = ts.filter((t) => picked.includes(t)); // keep set order
     mount(pickBtn, [el("span", { class: "ms-sum" }, picked.length ? picked.join(", ") : "Pick clubs\u2026"), el("span", { class: "ms-caret", "aria-hidden": "true" }, "\u25BE")]);
+    drawYards();
     mount(pickPanel, el("div", { class: "ms-options" }, ts.map((t) => {
       const box = el("input", { type: "checkbox", checked: picked.includes(t), "aria-label": t });
       box.addEventListener("change", () => { picked = box.checked ? [...picked, t] : picked.filter((x) => x !== t); drawPick(); });
@@ -99,7 +108,7 @@ export async function render(main, { flash, previewClient }) {
     if (!canSet) setMode = false;
     setToggle.hidden = !canSet;
     setToggle.textContent = setMode ? "Add just one club" : `Add a set of ${cat.value === "Wedge" ? "wedges" : "irons"}`;
-    setBox.hidden = !setMode; type.hidden = setMode;
+    setBox.hidden = !setMode; type.hidden = setMode; yardsIn.hidden = setMode; yardsGrid.hidden = !setMode;
     addBtn.textContent = setMode ? "Add set" : "Add club";
     if (setMode) {
       // start with the usual set ticked; change it freely
@@ -127,7 +136,8 @@ export async function render(main, { flash, previewClient }) {
         if (!pick.length) { flash("Tick the clubs in the set.", "error"); return; }
         let added = 0, bagged = 0, skipped = 0;
         for (const t of pick) {
-          const c = { id: newClubId(), cat: cat.value, type: t, brand: b, model: m, note: n, ...shaftBits };
+          const y = setYards[t];
+          const c = { id: newClubId(), cat: cat.value, type: t, brand: b, model: m, note: n, ...shaftBits, yards: y ? String(Math.round(Number(y))) : "" };
           if (library.some((x) => same(x, c))) { skipped++; continue; }
           library = [c, ...library]; added++;
           if (inBag.length < MAX_CLUBS) { inBag = [...inBag, c.id]; bagged++; }
@@ -142,9 +152,10 @@ export async function render(main, { flash, previewClient }) {
         if (inBag.length < MAX_CLUBS) inBag = [...inBag, c.id]; // new clubs go straight in the bag (if there's room)
       }
       [brand, model, note, shaftIn, weightIn, yardsIn].forEach((x) => { x.value = ""; }); flexIn.value = "";
+      for (const k of Object.keys(setYards)) delete setYards[k];
       draw(); await save();
     },
-  }, [cat, type, setBox, brand, model, yardsIn, shaftIn, flexIn, weightIn, note, addBtn]);
+  }, [cat, type, setBox, brand, model, yardsIn, shaftIn, flexIn, weightIn, note, yardsGrid, addBtn]);
 
   /* ---------- editing a club ---------- */
   let editing = null; // id of the club being edited

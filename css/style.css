@@ -2923,3 +2923,118 @@ body:has(#app > .boot-msg)::after { background: radial-gradient(1200px 600px at 
   .pr-bag-fields { grid-template-columns: 1fr 1fr; }
   .pr-more-links { margin-left: 0; width: 100%; justify-content: space-between; }
 }
+
+/* ===================================================== update 139: the section menu as a sub-header ===================================================== */
+/* Stats / Performance Reports / …  and  Course Reports / Goals / Track Round / Practice hang from the top bar,
+   styled like Analyze / Play: plain words, the current one underlined in gold. */
+.rail > .section-nav.subhead {
+  grid-column: 1 / -1; order: 99; flex-basis: 100%; justify-self: stretch; width: auto; max-width: none;
+  display: flex !important; flex-wrap: nowrap; justify-content: center; gap: 0.15rem !important;
+  margin: 0.35rem calc(-1 * clamp(1rem, 3vw, 2.25rem)) -0.55rem !important; padding: 0 clamp(0.5rem, 3vw, 2.25rem) !important;
+  background: rgba(255,255,255,0.025) !important; border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 0 !important; box-shadow: none !important;
+  overflow-x: auto; scrollbar-width: none;
+}
+.rail > .section-nav.subhead::-webkit-scrollbar { display: none; }
+.rail > .section-nav.subhead a {
+  position: relative; flex: 0 0 auto; background: transparent !important; color: var(--muted) !important; border-radius: 0 !important;
+  padding: 0.62rem 0.85rem 0.7rem !important; font: 500 0.84rem/1.2 var(--font-body) !important; letter-spacing: -0.005em; white-space: nowrap;
+}
+.rail > .section-nav.subhead a:hover { color: var(--ink) !important; }
+.rail > .section-nav.subhead a[aria-current="page"] { color: var(--ink) !important; }
+.rail > .section-nav.subhead a[aria-current="page"]::after {
+  content: ""; position: absolute; left: 0.85rem; right: 0.85rem; bottom: 0.25rem; height: 2px; border-radius: 2px; background: var(--accent);
+}
+.rail > .section-nav.subhead a .soon-tag { background: rgba(255,255,255,0.08) !important; color: var(--muted) !important; }
+@media (max-width: 760px) {
+  .rail > .section-nav.subhead { justify-content: safe center; margin: 0.25rem -0.75rem -0.6rem !important; padding: 0 0.4rem !important; }
+  .rail > .section-nav.subhead a { padding: 0.6rem 0.62rem 0.68rem !important; font-size: 0.8rem !important; }
+  .rail > .section-nav.subhead a[aria-current="page"]::after { left: 0.62rem; right: 0.62rem; }
+}
+
+/* ===================================================== update 139: practice tabs, Course Prep (distance only), games editor ===================================================== */
+.pr-tabs { display: flex; justify-content: center; gap: 0.2rem; margin: -0.4rem 0 1.1rem; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.pr-tabs::-webkit-scrollbar { display: none; }
+.pr-tab { position: relative; flex: 0 0 auto; border: 0; background: none; color: var(--muted); font: 600 0.9rem var(--font-body); padding: 0.7rem 1rem 0.8rem; cursor: pointer; white-space: nowrap; }
+.pr-tab:hover { color: var(--ink); }
+.pr-tab.on { color: var(--ink); }
+.pr-tab.on::after { content: ""; position: absolute; left: 1rem; right: 1rem; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+.pr-hero-main { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; flex: 1; }
+.pr-catseg { margin: 0.35rem 0 0.4rem; max-width: 36rem; }
+.pr-catseg .seg-btn { min-height: 2.35rem !important; font-size: 0.84rem !important; padding: 0 0.6rem !important; white-space: nowrap; }
+.pr-check { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.7rem 0.85rem; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); cursor: pointer; }
+.pr-check input { width: 1.15rem; height: 1.15rem; margin-top: 0.1rem; accent-color: var(--accent); flex: none; }
+.pr-random { background: radial-gradient(120% 140% at 0% 0%, rgba(200,169,126,0.1), transparent 55%), var(--surface); }
+.pr-random .pr-go { max-width: 24rem; }
+
+/* the shot in a round: one number */
+.pr-dshot .pr-shot-t { margin-bottom: 0.6rem; }
+.pr-strip-svg { max-width: 640px; margin: 0.2rem auto 1rem; }
+.pr-strip-svg .pr-yd { font-size: 9px; }
+.pr-dist-entry { max-width: 40rem; margin: 0 auto; }
+.pr-dist-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.7rem; align-items: end; margin-bottom: 0.7rem; }
+.pr-dist-big { display: flex; flex-direction: column; gap: 0.3rem; }
+.pr-bignum { width: 100%; font-size: 1.9rem !important; font-weight: 700; padding: 0.55rem 3.2rem 0.55rem 0.9rem !important; border-radius: 14px !important; font-variant-numeric: tabular-nums; }
+.pr-dist-entry .pr-unit { font-size: 1rem; }
+.pr-holed { min-height: 3.6rem; border-radius: 14px; padding: 0 1.2rem; }
+.pr-holed.on { background: #30d158; border-color: #30d158; color: #04140a; }
+.pr-unitseg { margin-bottom: 0.6rem; }
+.pr-unitseg .seg-btn { min-height: 2.5rem !important; font-size: 0.86rem !important; }
+.pr-quick { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.4rem; }
+.pr-pen { white-space: nowrap; }
+.pr-pen.on { background: rgba(255,69,58,0.18); border-color: rgba(255,69,58,0.6); color: #ff8a80; }
+.pr-dist-entry .pr-actions { align-items: center; }
+
+/* games: editing, sending, from your coach */
+.pr-game-links { display: flex; flex-wrap: wrap; gap: 0.9rem; justify-content: center; font-size: 0.85rem; }
+.pr-from { color: var(--accent) !important; font-size: 0.78rem; font-weight: 600; }
+.pr-note { font-style: italic; color: var(--ink); opacity: 0.85; font-size: 0.86rem; }
+.pr-coach-games { border-color: rgba(200,169,126,0.5) !important; }
+.pr-editor { display: grid; gap: 0.8rem; margin: 0.6rem 0 1rem; }
+.pr-editor .pr-optrow > .rd-label { min-width: 10rem; }
+.pr-editor input[type=text] { font-size: 16px; }
+.pr-range-in { display: inline-flex; align-items: center; gap: 0.4rem; }
+.pr-range-in input { width: 5rem; text-align: center; font-size: 16px; }
+.pr-range-in em { font-style: normal; color: var(--muted); }
+.pr-preview { padding: 0.75rem 0.9rem; border-radius: 12px; background: rgba(200,169,126,0.08); border: 1px solid rgba(200,169,126,0.3); font-size: 0.9rem; }
+.pr-send-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.4rem; margin-bottom: 1rem; }
+@media (max-width: 560px) {
+  .pr-tab { padding: 0.65rem 0.6rem 0.75rem; font-size: 0.84rem; }
+  .pr-tab.on::after { left: 0.6rem; right: 0.6rem; }
+  .pr-tabs { justify-content: safe center; }
+  .pr-catseg .seg-btn { font-size: 0.76rem !important; padding: 0 0.3rem !important; }
+  .pr-editor .pr-optrow > .rd-label { min-width: 0; }
+  .pr-bignum { font-size: 1.6rem !important; }
+}
+/* (the sub-header is a <nav> too: keep it out of the phone header's "nav" area, on its own row) */
+@media (max-width: 820px) {
+  .rail > nav.section-nav.subhead { grid-area: auto !important; grid-row: 3 !important; grid-column: 1 / -1 !important; justify-self: stretch !important; display: flex !important; flex-wrap: nowrap !important; }
+}
+.pr-editor .pr-optrow { flex-direction: column; align-items: stretch; gap: 0.35rem; }
+.pr-editor .pr-optrow > input, .pr-editor .pr-optrow > .pr-opt { min-width: 0 !important; max-width: none; width: 100%; }
+.pr-editor .seg { flex-wrap: wrap; }
+.pr-editor .seg-btn { flex: 1 1 auto; }
+.pr-plan .pr-optrow > input[type=text] { min-width: 0; }
+.pr-dist-entry .pr-next { white-space: nowrap; }
+@media (max-width: 560px) { .pr-round-bar .pr-bar-l > .muted { display: none; } .pr-round-bar .pr-bar-l strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 11rem; } }
+@media (max-width: 560px) {
+  .pr-opt .seg-btn { white-space: normal !important; font-size: 0.78rem !important; line-height: 1.15; min-height: 2.6rem !important; padding: 0.2rem 0.35rem !important; }
+  .pr-random .pr-opts, .pr-plan { min-width: 0; }
+}
+
+/* ===================================================== update 140 ===================================================== */
+/* The front-page leaderboard: about ten players in view (the rest scroll) */
+.hero-board { max-height: 18.3rem !important; }
+/* Drop-downs open straight down from their button everywhere, phones included (not as a sheet at the bottom) */
+@media (max-width: 520px) {
+  .ms-panel { position: absolute !important; top: calc(100% + 0.35rem) !important; bottom: auto !important; left: 0 !important; right: auto !important;
+    width: max(100%, 14rem) !important; max-width: calc(100vw - 1.5rem) !important; }
+  .ms-options { max-height: 16rem !important; }
+}
+.ms-panel.to-left { left: auto !important; right: 0 !important; }
+/* a set of irons or wedges: a stock yardage for each */
+.club-add .set-yards { grid-column: 1 / -1; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.club-add .set-yards[hidden], .club-add input[hidden] { display: none !important; }
+.set-yards-label { flex-basis: 100%; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 0.2rem; }
+.set-yard { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.2rem 0.15rem 0.6rem; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid var(--line); }
+.set-yard span { font-weight: 600; font-size: 0.85rem; min-width: 1.6rem; }
+.set-yard input { width: 4.2rem !important; min-width: 0 !important; padding: 0.35rem 0.4rem !important; text-align: center; }

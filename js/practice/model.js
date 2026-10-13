@@ -2,7 +2,7 @@
  * Practice sessions (update 136): the plan, the random shots, the made-up holes and greens, and the scoring.
  *
  * Every shot is scored with the same strokes-gained baseline as Track Round (roundCalc.expectedStrokes,
- * Callaway's scoring-average table), so practice numbers line up with on-course numbers: 0.00 is a Tour-average
+ * Callaway's scoring-average table), so practice numbers line up with on-course numbers: 0.00 is a Tour-baseline
  * shot, +0.20 is a fifth of a stroke better.
  *
  * Coordinates:
@@ -282,4 +282,28 @@ export function bestAim(shot, spread, carry = null) {
     }
   }
   return best;
+}
+
+/* ------------------------------------------------------------------ one shot, any category (games) ------------------------------------------------------------------ */
+/** The practice bucket a distance falls in (yds; ft for putts), nearest one at the ends. */
+export function bucketOf(cat, D) {
+  const list = BUCKETS[cat] || [];
+  if (cat === "OTT") return list[0];
+  return list.find((b) => D >= b.lo && D < b.hi) || (D < list[0]?.lo ? list[0] : list.at(-1));
+}
+/**
+ * One practice shot of a category from a distance (yds; ft for putts), for games.
+ * opts: { lie: "Fairway" | "Rough" | "Bunker" | "mixed", pin: "easy" | "mid" | "hard" | "mixed", width: "tight" | "standard" | "wide" | "mixed", club }
+ */
+export function shotFor(cat, D, { lie = "Fairway", pin = "mixed", width = "standard", club = "Driver" } = {}) {
+  const b = bucketOf(cat, D);
+  if (cat === "OTT") {
+    const ob = BUCKETS.OTT.find((x) => x.club === club) || BUCKETS.OTT[0];
+    const w = width === "mixed" ? pick(["tight", "standard", "standard", "wide"]) : width;
+    return { ...holeLayout({ length: D || rint(ob.hole[0], ob.hole[1]), width: w, carry: ob.carry, club: ob.club }), bucket: ob.id, bucketLabel: ob.label };
+  }
+  if (cat === "PUTT") return { ...puttFrom(D), bucket: b.id, bucketLabel: b.label };
+  const l = lie === "mixed" ? pick(cat === "ARG" ? ["Fairway", "Rough", "Rough", "Bunker"] : ["Fairway", "Fairway", "Rough"]) : lie;
+  const p = pin === "mixed" ? pick(["easy", "mid", "mid", "hard"]) : pin;
+  return { ...makeGreenShot(cat, { lo: D, hi: D + 1 }, l, p), bucket: b.id, bucketLabel: b.label };
 }

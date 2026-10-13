@@ -54,7 +54,7 @@ export async function render(main, { flash }) {
   // Tour | Entered Rounds
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
   const viewHost = el("div", { class: "view-host" }); // (kept empty: Basic / Advanced was here)
-  const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+  const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"], ["practice", "Practice"]].map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
     a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
     return a;
@@ -85,6 +85,7 @@ export async function render(main, { flash }) {
   async function refresh() {
     dash?.destroy(); dash = null; sourceHome.hidden = true;
     if (source === "entered") return refreshEntered();
+    if (source === "practice") return refreshPractice();
     const ds = datasets.find((d) => d.id === fileId);
     if (!ds) { status.textContent = ""; mount(body, el("p", { class: "empty center" }, "Upload a data file to analyze.")); showPills(); return; }
     const token = ++loadToken;
@@ -231,6 +232,28 @@ export async function render(main, { flash }) {
     dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, entered: true, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
   }
 
+  // Practice (update 139): the picked player's practice sessions, games and Course Prep rounds.
+  const practiceState = {};
+  async function refreshPractice() {
+    dash?.destroy(); dash = null; sourceHome.hidden = true;
+    if (!player) { mount(body, el("p", { class: "empty center" }, "Pick a player above to see their practice.")); showPills(); return; }
+    const token = ++loadToken;
+    status.textContent = "Loading practice\u2026";
+    const { loadPracticeFor } = await import("../practice/toStats.js");
+    const st = getState();
+    // (you: your own practice, kept under your account; a player: theirs, under their player key)
+    const key = player.key === myEntryKey(st) ? st.user.uid : player.key;
+    let rounds = [];
+    try { rounds = await loadPracticeFor(key); } catch (err) { console.error(err); }
+    if (token !== loadToken) return;
+    status.textContent = "";
+    if (!rounds.length) { mount(body, el("p", { class: "empty center" }, `${player.label} hasn't logged any practice yet.`)); showPills(); return; }
+    const me = { key: player.key, label: player.label, rounds };
+    const box = el("div");
+    mount(body, box);
+    dash = sgDashboard(box, { me, field: [me], idx: ENTERED_IDX, entered: true, mode: "admin", rankings: false, state: practiceState, note: "Practice: sessions, games and Course Prep rounds, measured against the Tour baselines by distance (and lie, where it's known).", viewHost, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (k) => pickerRef?.select?.(k) });
+  }
+
   // Keep the players' rankings (the published per-round summary) in step with this file.
   async function publishIfStale(ds) {
     if (loadNote) return; // (not while some players' rows are missing: the shared summary would leave them out)
@@ -296,6 +319,7 @@ export async function render(main, { flash }) {
     if (source === "entered") watchMine();
     drawPortalLink();
     if (source === "entered") drawEntered();
+    else if (source === "practice") refreshPractice();
     else if (dash || datasets.length) {
       // A player who isn't in the file on screen: open the newest file that has them, or say why there's nothing
       // (rather than leaving the leaderboard up as if the click did nothing).

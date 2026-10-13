@@ -7,7 +7,7 @@
  *   Play:       each shot on a made-up hole or green, with a heat map of where to aim (from the strokes-gained
  *               baseline and your own shot pattern once there's enough of it). Enter the result by tapping where
  *               it finished, typing, saying it, or loading a TrackMan / GCQuad file.
- *   Results:    strokes gained against Tour average (the same baseline as Track Round), by distance, the key numbers
+ *   Results:    strokes gained against the Tour baselines (the same as Track Round), by distance, the key numbers
  *               for the category, your pattern, and how practice compares with the course.
  */
 import { el, mount, confirmAction } from "../ui.js";
@@ -15,25 +15,33 @@ import { getState } from "../auth.js";
 import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, scoreShot, spreadFor } from "../practice/model.js";
 import { trendSvg } from "../practice/draw.js";
 import { summarize, scored, personalSpread, courseByBucket, readLaunchMonitor, resultFromMonitor } from "../practice/analysis.js";
-import { listSessions, saveSession, deleteSession, newSessionId } from "../practice/store.js";
+import { listSessions, saveSession, deleteSession, newSessionId, practiceOwner } from "../practice/store.js";
 import { bagPatterns, clubFor } from "../practice/clubs.js";
-import { gameById, gameProgress, personalBest, fmtGameScore } from "../practice/games.js";
+import { gameProgress, personalBest, fmtGameScore, pointsFor, passedIt, targetText, scoringOf, isLow, gameOf } from "../practice/games.js";
 import { SG, sgCls, tile, shotTitle, resultText, keyTiles, bucketTable, patternPanel, shotCard } from "./practiceShot.js";
 import { myEntryKey, myName } from "./dataEntry.js";
 
 const LS_CAT = "ta:practice:cat";
 // The tools beside the four categories (update 138)
-const TOOLS = { ROUND: "Sim Round", PREP: "Course Prep", GAMES: "Games", BAG: "My Clubs" };
-const TOOL_ORDER = ["ROUND", "PREP", "GAMES", "BAG"];
+const LS_TOOL = "ta:practice:tool";
+const TOOLS = { CUSTOM: "Custom", PREP: "Course Prep", GAMES: "Games", BAG: "My Clubs" };
+const TOOL_ORDER = ["CUSTOM", "PREP", "GAMES", "BAG"];
+
 const DEF_TOTAL = { OTT: 14, APP: 20, ARG: 20, PUTT: 24 };
 
 export async function render(main, { flash }) {
   const state = getState();
   const uid = state.user.uid;
+  const owner = practiceOwner(state);
   const playerKey = state.profile?.clientKey || null;
   const label = state.profile?.name || myName(state);
-  let cat = new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || (() => { try { return localStorage.getItem(LS_CAT); } catch { return null; } })() || "APP";
-  if (!CATS[cat] && !TOOLS[cat]) cat = "APP";
+  const q = new URLSearchParams(location.hash.split("?")[1] || "");
+  const ls = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  let cat = q.get("cat") || ls(LS_CAT) || "APP";
+  if (!CATS[cat]) cat = "APP";
+  let tool = q.get("tool") || ls(LS_TOOL) || "CUSTOM";
+  if (tool === "ROUND") tool = "PREP"; // (Sim Round is part of Course Prep now)
+  if (!TOOLS[tool]) tool = "CUSTOM";
   let sessions = [];
   let view = { name: "home" }; // home | plan | play | summary (sessions and games) · round | roundEnd (rounds) · tool pages
   let lastKey = "";
@@ -42,20 +50,22 @@ export async function render(main, { flash }) {
   const courseCache = new Map(); // cat -> { bucketId: { sgPer, n } }
   let roundsP = null;
 
-  const pills = el("nav", { class: "pr-pills", "aria-label": "Practice category" });
-  const tools = el("nav", { class: "pr-pills pr-tools", "aria-label": "Practice tools" });
+  // Custom · Course Prep · Games · My Clubs (update 139); Custom has the four categories inside it
+  const tools = el("nav", { class: "pr-tabs", "aria-label": "Practice" });
+  const pills = el("div", { class: "seg pr-catseg", role: "group", "aria-label": "Category" });
   const body = el("div", { class: "pr-body" });
-  mount(main, [el("div", { class: "pr-wrap" }, [pills, tools, body])]);
+  mount(main, [el("div", { class: "pr-wrap" }, [tools, body])]);
+  const pickTool = (t) => { tool = t; try { localStorage.setItem(LS_TOOL, t); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
   const pick = (c) => { cat = c; try { localStorage.setItem(LS_CAT, c); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
   const drawPills = () => {
-    mount(pills, CAT_ORDER.map((c) => {
-      const a = el("button", { type: "button", class: `pr-pill${c === cat ? " on" : ""}`, "aria-pressed": c === cat ? "true" : "false" }, [el("span", { class: "pr-pl-full" }, CATS[c].label), el("span", { class: "pr-pl-short", "aria-hidden": "true" }, c === "ARG" ? "Around Green" : CATS[c].label)]);
-      a.addEventListener("click", () => pick(c));
+    mount(tools, TOOL_ORDER.map((t) => {
+      const a = el("button", { type: "button", class: `pr-tab${t === tool ? " on" : ""}`, "aria-current": t === tool ? "page" : null }, TOOLS[t]);
+      a.addEventListener("click", () => pickTool(t));
       return a;
     }));
-    mount(tools, TOOL_ORDER.map((t) => {
-      const a = el("button", { type: "button", class: `pr-pill${t === cat ? " on" : ""}`, "aria-pressed": t === cat ? "true" : "false" }, TOOLS[t]);
-      a.addEventListener("click", () => pick(t));
+    mount(pills, CAT_ORDER.map((c) => {
+      const a = el("button", { type: "button", class: `seg-btn${c === cat ? " on" : ""}`, "aria-pressed": c === cat ? "true" : "false" }, [el("span", { class: "pr-pl-full" }, CATS[c].label), el("span", { class: "pr-pl-short", "aria-hidden": "true" }, { OTT: "Tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" }[c])]);
+      a.addEventListener("click", () => pick(c));
       return a;
     }));
   };
@@ -78,7 +88,7 @@ export async function render(main, { flash }) {
 
   function save(s, now = false) {
     clearTimeout(saveTimer);
-    const run = () => saveSession(uid, s).catch((err) => { console.error(err); flash?.("Couldn't save just now. It'll try again with the next shot.", "error"); });
+    const run = () => saveSession(owner, s).catch((err) => { console.error(err); flash?.("Couldn't save just now. It'll try again with the next shot.", "error"); });
     if (now) return run();
     saveTimer = setTimeout(run, 700);
   }
@@ -104,10 +114,10 @@ export async function render(main, { flash }) {
 
   // what the tool pages get to work with
   const ctx = {
-    body, uid, state, flash, label, playerKey, save,
+    body, uid, owner, state, flash, label, playerKey, save,
     get sessions() { return sessions; },
     add(s) { sessions = [s, ...sessions.filter((x) => x.id !== s.id)]; },
-    async remove(id) { await deleteSession(uid, id).catch(() => {}); sessions = sessions.filter((x) => x.id !== id); },
+    async remove(id) { await deleteSession(owner, id).catch(() => {}); sessions = sessions.filter((x) => x.id !== id); },
     aimFor, newId: newSessionId,
     heat: { get on() { return showHeat; }, set(v) { showHeat = v; } },
     go(v) { view = v; draw(); }, home() { view = { name: "home" }; draw(); },
@@ -118,21 +128,21 @@ export async function render(main, { flash }) {
   };
 
   drawPills(); mount(body, el("p", { class: "muted pr-loading" }, "Loading your practice\u2026"));
-  try { sessions = await listSessions(uid); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
+  try { sessions = await listSessions(owner, { oldUid: owner !== uid ? uid : null }); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
   drawPills(); draw();
 
   async function draw() {
     // a new page or a new shot starts at the top
-    const key = `${view.name}:${view.at ?? ""}:${view.hole ?? ""}:${view.k ?? ""}:${cat}`;
+    const key = `${view.name}:${view.at ?? ""}:${view.hole ?? ""}:${view.k ?? ""}:${cat}:${tool}`;
     if (key !== lastKey) { lastKey = key; try { window.scrollTo({ top: 0 }); } catch { /* */ } }
     if (view.name === "play") return drawPlay();
     if (view.name === "summary") return drawSummary(view.session);
-    if (["round", "roundEnd", "prepCourse", "prepNew"].includes(view.name) || cat === "ROUND" || cat === "PREP") {
+    if (["round", "roundEnd", "prepCourse", "prepNew", "prepRandom"].includes(view.name) || (tool === "PREP" && view.name === "home")) {
       const m = await import("./practiceRound.js");
-      return m.render(ctx, cat === "PREP" ? "prep" : "sim");
+      return m.render(ctx);
     }
-    if (cat === "GAMES") { const m = await import("./practiceGames.js"); return m.render(ctx); }
-    if (cat === "BAG" || view.name.startsWith("bag")) { const m = await import("./practiceClubs.js"); return m.render(ctx); }
+    if (tool === "GAMES" || view.name.startsWith("game")) { const m = await import("./practiceGames.js"); return m.render(ctx); }
+    if (tool === "BAG" || view.name.startsWith("bag")) { const m = await import("./practiceClubs.js"); return m.render(ctx); }
     if (view.name === "plan") return drawPlan();
     return drawHome();
   }
@@ -144,7 +154,7 @@ export async function render(main, { flash }) {
     const startBtn = el("button", { type: "button", class: "btn pr-start" }, "＋  Start new practice session");
     startBtn.addEventListener("click", () => { view = { name: "plan" }; draw(); });
     const head = el("section", { class: "panel pr-hero" }, [
-      el("div", {}, [el("p", { class: "pr-eyebrow" }, "Practice"), el("h1", {}, CATS[cat].label), el("p", { class: "muted pr-lede" }, LEDE[cat])]),
+      el("div", { class: "pr-hero-main" }, [el("p", { class: "pr-eyebrow" }, "Custom practice"), pills, el("h1", {}, CATS[cat].label), el("p", { class: "muted pr-lede" }, LEDE[cat])]),
       startBtn,
     ]);
     const resume = active ? (() => {
@@ -168,7 +178,7 @@ export async function render(main, { flash }) {
     const recentSum = summarize(cat, recent.flatMap((s) => s.shots || []));
     const tiles = el("div", { class: "pr-tiles" }, [
       tile("Sessions", String(done.length)), tile("Shots", String(all.n)),
-      tile("SG / shot", SG(all.sgPer), sgCls(all.sgPer), "all time, vs Tour avg"), tile("Last 30 days", SG(recentSum.sgPer), sgCls(recentSum.sgPer), `${recentSum.n} shots`),
+      tile("SG / shot", SG(all.sgPer), sgCls(all.sgPer), "all time, vs Tour baselines"), tile("Last 30 days", SG(recentSum.sgPer), sgCls(recentSum.sgPer), `${recentSum.n} shots`),
       ...keyTiles(cat, all),
     ]);
     const trend = [...done].reverse().map((s) => ({ label: new Date(s.startedAt).toLocaleDateString(), v: s.summary?.sgPer ?? summarize(cat, s.shots).sgPer ?? 0 }));
@@ -177,7 +187,7 @@ export async function render(main, { flash }) {
     const table = bucketTable(cat, all.byBucket, course);
     const list = el("div", { class: "pr-sessions" }, done.map((s) => {
       const sm = s.summary || summarize(cat, s.shots);
-      const g = s.mode === "game" ? gameById(s.gameId) : null;
+      const g = gameOf(s);
       const row = el("button", { type: "button", class: "pr-sess" }, [
         el("span", { class: "pr-sess-d" }, [new Date(s.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), g ? el("span", { class: "pr-sess-tag" }, g.title) : null]),
         el("span", { class: "muted" }, `${sm.n} shots`),
@@ -279,7 +289,7 @@ export async function render(main, { flash }) {
         el("div", { class: "pr-plan-head" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, `New session · ${CATS[cat].label}`), el("h1", {}, "Plan your session")]), totalBox]),
         el("div", { class: "pr-plan-grid" }, [
           el("div", {}, [el("div", { class: "pr-sub" }, [el("h2", {}, cat === "OTT" ? "Clubs" : "Distances"), modes]), rows,
-            el("p", { class: "muted small" }, "On course and practice: strokes gained per shot against Tour average (0.00). “Focus on weak spots” puts more shots where you lose the most.")]),
+            el("p", { class: "muted small" }, "On course and practice: strokes gained per shot against the Tour baselines (0.00). “Focus on weak spots” puts more shots where you lose the most.")]),
           el("div", {}, [el("h2", {}, "Mix"), mixBox, stimpIn ? el("label", { class: "pr-stimp" }, [el("span", { class: "rd-label" }, "Green speed (stimp)"), stimpIn]) : null,
             el("p", { class: "muted small" }, "Every shot is drawn at random from this plan, in a random order, so no two in a row are the same.")]),
         ]),
@@ -290,7 +300,7 @@ export async function render(main, { flash }) {
 
   /* =============================================== play a session (or a game) =============================================== */
   function drawPlay() {
-    const s = view.session, shots = s.shots, game = s.mode === "game" ? gameById(s.gameId) : null;
+    const s = view.session, shots = s.shots, game = gameOf(s);
     const at = Math.max(0, Math.min(shots.length - 1, view.at ?? 0));
     const shot = shots[at];
     const go = (i) => { view.at = Math.max(0, Math.min(shots.length - 1, i)); draw(); };
@@ -304,9 +314,9 @@ export async function render(main, { flash }) {
       prog.style.setProperty("--w", `${(doneN / shots.length) * 100}%`);
       if (game) {
         const g = gameProgress(game, s), pb = personalBest(game, sessions);
-        right.textContent = `${fmtGameScore(game, g.score)} ${game.sg ? "SG" : game.unit === "makes" ? "made" : "pts"}`;
+        right.textContent = `${fmtGameScore(game, g.score)} ${scoringOf(game).sg ? "SG" : scoringOf(game).unit === "makes" ? "made" : "pts"}`;
         live.className = `pr-game-live ${g.status}`;
-        mount(live, [el("span", {}, [el("strong", {}, `Target ${fmtGameScore(game, game.target)}`), pb != null ? ` \u00b7 Best ${fmtGameScore(game, pb)}` : ""]), el("span", {}, g.need || "")]);
+        mount(live, [el("span", {}, [el("strong", {}, targetText(game)), pb != null ? ` \u00b7 Best ${fmtGameScore(game, pb)}` : ""]), el("span", {}, g.need || "")]);
       } else right.textContent = SG(scored(shots).reduce((t, x) => t + x.sg, 0));
     };
     const finish = el("button", { type: "button", class: "btn ghost pr-finish" }, "Finish");
@@ -325,7 +335,7 @@ export async function render(main, { flash }) {
       el("div", { class: "pr-bar-r" }, [el("span", { class: "muted small" }, game ? "Score" : "Session"), right]),
     ]);
     const list = el("details", { class: "panel pr-list" }, [el("summary", {}, "Shot list"), el("ol", {}, shots.map((x, i) => {
-      const li = el("li", { class: i === at ? "on" : "" }, [el("span", {}, shotTitle(x)), el("span", { class: sgCls(x.sg) }, x.result ? (game && !game.sg ? `${game.points(x)} pt` : SG(x.sg)) : "")]);
+      const li = el("li", { class: i === at ? "on" : "" }, [el("span", {}, shotTitle(x)), el("span", { class: sgCls(x.sg) }, x.result ? (game && !scoringOf(game).sg ? `${pointsFor(game, x)} pt` : SG(x.sg)) : "")]);
       li.addEventListener("click", () => go(i));
       return li;
     }))]);
@@ -334,7 +344,7 @@ export async function render(main, { flash }) {
   }
 
   async function finishSession(s) {
-    const game = s.mode === "game" ? gameById(s.gameId) : null;
+    const game = gameOf(s);
     const done = s.shots.filter((x) => x.result);
     if (!done.length) {
       if (!confirmAction(`No shots entered yet. Discard this ${game ? "game" : "session"}?`)) return;
@@ -346,8 +356,8 @@ export async function render(main, { flash }) {
     if (game) {
       const before = personalBest(game, sessions.filter((x) => x.id !== s.id));
       const g = gameProgress(game, s);
-      s.game = { score: g.score, target: game.target, passed: !partial && (game.better === "low" ? g.score <= game.target : game.sg ? g.score > game.target : g.score >= game.target), complete: !partial,
-        best: !partial && (before == null || (game.better === "low" ? g.score < before : g.score > before)) };
+      s.game = { score: g.score, target: game.target, passed: !partial && passedIt(game, g.score), complete: !partial,
+        best: !partial && (before == null || (isLow(game) ? g.score < before : g.score > before)) };
     }
     s.shots = done;
     s.status = "done";
@@ -360,7 +370,7 @@ export async function render(main, { flash }) {
 
   /* =============================================== a session's (or game's) results =============================================== */
   async function drawSummary(s) {
-    const game = s.mode === "game" ? gameById(s.gameId) : null;
+    const game = gameOf(s);
     const sm = summarize(s.cat, s.shots);
     const course = await courseFor(s.cat).catch(() => ({}));
     const back = el("button", { type: "button", class: "link" }, "\u2190 Back");
@@ -374,19 +384,19 @@ export async function render(main, { flash }) {
     });
     const shotRows = scored(s.shots).map((x) => el("tr", {}, [
       el("td", { class: "num" }, String(x.i)), el("td", {}, shotTitle(x)), el("td", { class: `num ${sgCls(x.sg)}` }, SG(x.sg)), el("td", {}, resultText(x)),
-      game && !game.sg ? el("td", { class: "num" }, String(game.points(x))) : null,
+      game && !scoringOf(game).sg ? el("td", { class: "num" }, String(pointsFor(game, x))) : null,
     ]));
     const date = new Date(s.startedAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
     const hero = game
       ? el("section", { class: `panel pr-sum-hero pr-game-hero ${s.game?.passed ? "passed" : "failed"}` }, [
         el("div", {}, [el("p", { class: "pr-eyebrow" }, `${game.title} \u00b7 ${date}`),
-          el("div", { class: "pr-big" }, [el("strong", {}, fmtGameScore(game, s.game?.score)), el("span", {}, game.sg ? "strokes gained" : game.unit)]),
-          el("p", { class: "pr-verdict" }, [s.game?.passed ? "\u2713 Target beaten" : s.game?.complete === false ? "Unfinished" : "Target missed", ` (target ${fmtGameScore(game, game.target)})`, s.game?.best ? el("span", { class: "pr-pb" }, "New personal best") : ""]),
-          el("p", { class: "muted" }, `${sm.n} shots \u00b7 ${SG(sm.sg)} strokes gained vs Tour average`)]),
+          el("div", { class: "pr-big" }, [el("strong", {}, fmtGameScore(game, s.game?.score)), el("span", {}, scoringOf(game).sg ? "strokes gained" : scoringOf(game).unit)]),
+          el("p", { class: "pr-verdict" }, [s.game?.passed ? "\u2713 Target beaten" : s.game?.complete === false ? "Unfinished" : "Target missed", ` (${targetText(game).toLowerCase()})`, s.game?.best ? el("span", { class: "pr-pb" }, "New personal best") : ""]),
+          el("p", { class: "muted" }, `${sm.n} shots \u00b7 ${SG(sm.sg)} strokes gained vs Tour baselines`)]),
         again])
       : el("section", { class: "panel pr-sum-hero" }, [
         el("div", {}, [el("p", { class: "pr-eyebrow" }, `${CATS[s.cat].label} \u00b7 ${date}`),
-          el("div", { class: "pr-big" }, [el("strong", { class: sgCls(sm.sg) }, SG(sm.sg, 2)), el("span", {}, "strokes gained vs Tour average")]),
+          el("div", { class: "pr-big" }, [el("strong", { class: sgCls(sm.sg) }, SG(sm.sg, 2)), el("span", {}, "strokes gained vs Tour baselines")]),
           el("p", { class: "muted" }, `${sm.n} shots \u00b7 ${SG(sm.sgPer)} a shot`)]),
         again]);
     mount(body, [
@@ -396,7 +406,7 @@ export async function render(main, { flash }) {
       game ? null : el("section", { class: "panel" }, [el("h2", {}, "By distance"), bucketTable(s.cat, sm.byBucket, course, true)]),
       patternPanel(s.cat, scored(s.shots), "Where they finished"),
       el("section", { class: "panel" }, [el("h2", {}, "Shot by shot"), el("div", { class: "table-scroll" }, el("table", { class: "plain pr-shots" }, [
-        el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "#"), el("th", {}, "Shot"), el("th", { class: "num" }, "SG"), el("th", {}, "Result"), game && !game.sg ? el("th", { class: "num" }, "Pts") : null])), el("tbody", {}, shotRows)]))]),
+        el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "#"), el("th", {}, "Shot"), el("th", { class: "num" }, "SG"), el("th", {}, "Result"), game && !scoringOf(game).sg ? el("th", { class: "num" }, "Pts") : null])), el("tbody", {}, shotRows)]))]),
     ]);
   }
 
@@ -432,7 +442,7 @@ const LEDE = {
   PUTT: "Distances, breaks and slopes at random, with a read for each, scored by makes and the putt you leave.",
 };
 const HOW = {
-  OTT: ["Pick how many drives, with which clubs, and the mix of fairway widths and trouble.", "Each tee shot gets its own hole. The aim map shows where the fewest strokes are, for your pattern.", "Tap where it finished, type the distance and how far off line, say it, or load a TrackMan / GCQuad file.", "See your fairways, misses, penalties and strokes gained against Tour average."],
+  OTT: ["Pick how many drives, with which clubs, and the mix of fairway widths and trouble.", "Each tee shot gets its own hole. The aim map shows where the fewest strokes are, for your pattern.", "Tap where it finished, type the distance and how far off line, say it, or load a TrackMan / GCQuad file.", "See your fairways, misses, penalties and strokes gained against the Tour baselines."],
   APP: ["Pick how many shots and how they're split across distances. Your on-course strokes gained shows for each.", "Mix in rough and bunker lies, and middle, corner and tucked pins.", "Tap where the ball finished on the green, type it, say it (“14 feet short”), or load a launch monitor file.", "See proximity, greens hit, strokes gained by distance and your pattern round the pin."],
   ARG: ["Pick how many shots, the distances and the mix of lies (fringe, rough, bunker).", "Pins range from lots of green to short-sided.", "Tap where it stopped, type it or say it.", "See proximity, up-and-down chances and strokes gained by distance."],
   PUTT: ["Pick how many putts, the distances, and the mix of breaks and slopes. Set the green speed.", "Each putt comes with a read: where to aim and how it plays.", "Tap where it stopped (or Made), type the leave or say it (“2 feet long”).", "See make %, speed, the putts you leave and the “pro side” on breaking putts."],

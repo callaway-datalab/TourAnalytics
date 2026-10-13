@@ -96,7 +96,7 @@ const sectionsFor = (kind) => {
   const dataItems = [
     ["Stats", admin ? "#/admin/analyze" : "#/dashboard", admin ? ["admin-analyze"] : ["dashboard", "dataset"]],
     ["Performance Reports", admin ? "#/admin/reports/view?cat=performance" : "#/documents", admin ? ["admin-documents", "admin-reports-view"] : ["documents"], { q: admin ? "performance" : null }],
-    ["Live Scoring", "#/live", ["live"], { soon: true }],
+    ["Live Event Feed", "#/live", ["live"], { soon: true }],
   ];
   const planItems = [
     ["Course Reports", admin ? "#/admin/reports/view?cat=course" : "#/course-reports", admin ? ["admin-reports-view"] : ["course-reports"], { q: admin ? "course" : null }],
@@ -270,3 +270,15 @@ export function openTabNow() {
     close() { try { w?.close(); } catch { /* fine */ } },
   };
 }
+
+/* Drop-downs (update 140): an open list that would run off the right edge of the screen opens leftwards from its
+   button instead, so it always drops straight down from where you tapped. */
+function keepPanelsOnScreen() {
+  document.querySelectorAll(".ms-panel:not([hidden])").forEach((p) => {
+    p.classList.remove("to-left");
+    const r = p.getBoundingClientRect();
+    if (r.right > window.innerWidth - 6) p.classList.add("to-left");
+  });
+}
+document.addEventListener("click", () => requestAnimationFrame(keepPanelsOnScreen), true);
+document.addEventListener("click", () => requestAnimationFrame(keepPanelsOnScreen));

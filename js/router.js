@@ -207,8 +207,10 @@ async function render() {
 
   // the row of pages under the current header (Stats / Performance Reports / WITB / …)
   if (guard !== "public") {
+    // (update 139: a sub-header that hangs from the top bar, under Analyze / Play, rather than pills on the page)
     const sub = sectionNav(routeId);
-    if (sub) { const inner = document.createElement("div"); main.append(sub, inner); main = inner; }
+    const rail = document.querySelector(".rail");
+    if (sub && rail) { sub.classList.add("subhead"); rail.appendChild(sub); }
   }
 
   try {

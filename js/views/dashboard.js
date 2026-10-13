@@ -12,7 +12,7 @@ import { myRoundsTable } from "../myRoundsTable.js";
 import { myEntryKey } from "./dataEntry.js";
 import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 
-let lastSource = "tour"; // Tour | Entered Rounds, remembered while the app is open
+let lastSource = "tour"; // Tour | Entered Rounds | Practice, remembered while the app is open
 
 // My Stats: opens the player's stats straight away, with Tour | Entered Rounds pills on top. A strokes-gained file gets the same dashboard as the
 // admin's Analyze page (filters, cards, category charts, trends, rankings); any other file gets the
@@ -27,6 +27,7 @@ export async function render(main, { previewClient, flash }) {
   const box = el("div", { class: "embedded-dataset" });
   const tourBox = el("div", {}, [tabs, box]);
   const enteredBox = el("div", { class: "embedded-dataset entered-box" });
+  const practiceBox = el("div", { class: "embedded-dataset practice-box" }); // (update 139: Practice)
   const roundsTableBox = el("div");
   const enteredDashBox = el("div");
   mount(enteredBox, [roundsTableBox, enteredDashBox]);
@@ -49,11 +50,13 @@ export async function render(main, { previewClient, flash }) {
   const drawSource = () => {
     tourBox.hidden = lastSource !== "tour";
     enteredBox.hidden = lastSource !== "entered";
-    mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+    practiceBox.hidden = lastSource !== "practice";
+    if (lastSource === "practice") loadPractice();
+    mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"], ["practice", "Practice"]].map(([v, l]) => {
       const a = el("a", { href: "#", "aria-current": lastSource === v ? "page" : null }, l);
       a.addEventListener("click", (e) => {
         e.preventDefault(); lastSource = v; drawSource();
-        const d = v === "tour" ? tourDashNow : enteredDash;
+        const d = v === "tour" ? tourDashNow : v === "practice" ? practiceDash : enteredDash;
         if (d) d.update({}); // it takes the pills into its Filters panel
         else { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } // nothing to show there: keep the pills on the page
       });
@@ -67,8 +70,34 @@ export async function render(main, { previewClient, flash }) {
   // a coach's player dropdown: the Stats / Performance Reports / … row goes under it (as on the admin's Stats)
   const picker = teamPlayerSelect(previewClient, "/dashboard");
   const secHome = el("div", { class: "sec-home" });
-  mount(main, [picker, picker ? secHome : null, sourceHome, tourBox, enteredBox]);
+  mount(main, [picker, picker ? secHome : null, sourceHome, tourBox, enteredBox, practiceBox]);
   const undoTop = picker ? relocateSectionNav(main, secHome) : () => {};
+  // Practice (update 139): the player's practice sessions, games and Course Prep rounds, on the same dashboard
+  let practiceDash = null, practiceLoading = null;
+  const practiceState = {};
+  function loadPractice() {
+    if (practiceLoading) return;
+    mount(practiceBox, el("p", { class: "empty center" }, "Loading practice\u2026"));
+    practiceLoading = (async () => {
+      const { practiceOwner } = await import("../practice/store.js");
+      const { loadPracticeFor } = await import("../practice/toStats.js");
+      const key = ownView ? practiceOwner(state) : clientKey;
+      let rounds = [];
+      try { rounds = await loadPracticeFor(key); } catch (err) { console.error(err); }
+      const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
+      const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
+      if (!rounds.length) {
+        mount(practiceBox, el("p", { class: "empty center" }, ["No practice yet. Sessions, games and Course Prep rounds from ", el("a", { href: "#/practice" }, "Practice"), " show up here."]));
+        if (lastSource === "practice") showPills();
+        return;
+      }
+      const me = { key: clientKey, label, rounds };
+      const inner = el("div");
+      mount(practiceBox, inner);
+      practiceDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, entered: true, mode: "player", teamRole, state: practiceState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
+        note: "Practice: every session, game and Course Prep round, measured against the Tour baselines by distance (and lie, where it's known)." });
+    })();
+  }
   drawSource();
 
   let current = null;       // id of the file on screen
@@ -176,5 +205,5 @@ export async function render(main, { previewClient, flash }) {
       note: "Entered rounds: strokes gained is measured against the scoring-average baseline by lie and distance." });
   });
 
-  return () => { unsub(); stopDataset(); unsubEntered(); unsubTable(); enteredDash?.destroy(); undoTop(); };
+  return () => { unsub(); stopDataset(); unsubEntered(); unsubTable(); enteredDash?.destroy(); practiceDash?.destroy(); undoTop(); };
 }
