@@ -16,7 +16,7 @@ import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, scoreShot, 
 import { trendSvg } from "../practice/draw.js";
 import { summarize, scored, personalSpread, courseByBucket, readLaunchMonitor, resultFromMonitor } from "../practice/analysis.js";
 import { listSessions, saveSession, deleteSession, newSessionId, practiceOwner, listSpots, saveSpot, deleteSpot } from "../practice/store.js";
-import { bagPatterns, clubFor } from "../practice/clubs.js";
+import { bagPatterns, clubFor, normClub } from "../practice/clubs.js";
 import { gameProgress, personalBest, fmtGameScore, pointsFor, passedIt, targetText, scoringOf, isLow, gameOf } from "../practice/games.js";
 import { SG, sgCls, tile, shotTitle, resultText, keyTiles, bucketTable, patternPanel, shotCard } from "./practiceShot.js";
 import { myEntryKey, myName } from "./dataEntry.js";
@@ -143,7 +143,19 @@ export async function render(main, { flash }) {
   drawPills(); mount(body, el("p", { class: "muted pr-loading" }, "Loading your practice\u2026"));
   // your clubs for the Club picker on each shot: your WITB bag, else the usual set (update 145)
   ctx.clubs = ["Driver", "3w", "5w", "4H", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "50\u00b0", "54\u00b0", "58\u00b0"];
-  import("../bag.js").then(async (m) => { const bag = await m.getBag(uid); if (bag?.length) ctx.clubs = [...bag].sort((a, b) => m.clubRank(m.clubLabel(a)) - m.clubRank(m.clubLabel(b))).map((c) => m.clubLabel(c)).filter((x) => x && !/putter/i.test(x)); }).catch(() => {});
+  // how far each club carries (course prep's target, update 153): My Clubs launch data, else your WITB stock yardage, else a typical carry
+  const TYPICAL = { Driver: 275, "2w": 255, "3w": 245, "4w": 235, "5w": 225, "7w": 210, "2H": 230, "3H": 220, "4H": 210, "5H": 200, "6H": 190, "2i": 225, "3i": 215, "4i": 205, "5i": 195, "6i": 183, "7i": 172, "8i": 160, "9i": 148, PW: 136, AW: 124, GW: 120, SW: 100, LW: 85 };
+  const stock = {};
+  ctx.carryFor = (label) => {
+    const t = normClub(label) || label;
+    const pat = bagPatterns(sessions)[t];
+    if (pat?.n >= 3 && pat.carry) return Math.round(pat.carry);
+    if (stock[label]) return stock[label];
+    if (TYPICAL[t]) return TYPICAL[t];
+    const deg = parseFloat(String(t)); // a wedge by loft: 46° ~ 125 … 60° ~ 80
+    return deg >= 44 && deg <= 64 ? Math.round(125 - (deg - 46) * 3.2) : null;
+  };
+  import("../bag.js").then(async (m) => { const bag = await m.getBag(uid); if (bag?.length) { ctx.clubs = [...bag].sort((a, b) => m.clubRank(m.clubLabel(a)) - m.clubRank(m.clubLabel(b))).map((c) => m.clubLabel(c)).filter((x) => x && !/putter/i.test(x)); for (const c of bag) { const y = Number(c.yards); if (y > 0) stock[m.clubLabel(c)] = y; } } }).catch(() => {});
   try { sessions = await listSessions(owner, { oldUid: owner !== uid ? uid : null }); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
   drawPills(); draw();
 
@@ -418,14 +430,15 @@ export async function render(main, { flash }) {
     finish.addEventListener("click", () => finishSession(s));
     const monitor = (shot.kind === "tee" || shot.kind === "green") && s.cat !== "ARG" ? monitorButton(s, at, (n) => { flash?.(`Filled ${n} shot${n === 1 ? "" : "s"} from the file.`, "ok"); draw(); }) : null;
     const card = shotCard({
-      shot, stimp: s.plan?.stimp || 11, aim: aimFor(shot), eyebrow: `${game ? `${game.title} \u00b7 ` : ""}Shot ${at + 1} of ${shots.length}`,
+      // a game (update 153): aim straight down the middle (or at the pin), the club the game says, no aim map
+      shot, stimp: s.plan?.stimp || 11, aim: game ? null : aimFor(shot), fixedAim: !!game, eyebrow: `${game ? `${game.title} \u00b7 ` : ""}Shot ${at + 1} of ${shots.length}`,
       onPrev: at > 0 ? () => go(at - 1) : null, onNext: at < shots.length - 1 ? () => go(at + 1) : null,
       onResult: (r) => { shot.result = r || undefined; shot.sg = r ? scoreShot(shot) : null; save(s); update(); },
       next: at === shots.length - 1
         ? { label: s.monitor ? "Done \u2014 load the file \u203A" : game ? "Finish game \u2713" : "Finish session \u2713", onClick: () => finishSession(s), always: !!s.monitor }
         : { label: "Next shot \u203A", onClick: () => go(at + 1), always: !!s.monitor },
       more: [finish], heat: ctx.heat,
-      clubs: ctx.clubs, onClub: () => save(s), monitor: !!s.monitor,
+      clubs: game ? null : ctx.clubs, onClub: () => save(s), monitor: !!s.monitor,
     });
     const bar = el("div", { class: "pr-bar" }, [
       el("div", { class: "pr-bar-l" }, [el("strong", {}, game ? game.title : CATS[s.cat].label), count]),

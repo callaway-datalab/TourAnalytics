@@ -32,7 +32,7 @@ function svgPoint(svg, evt) {
  * The hole for a tee shot. opts: { aim: {x,y}, showHeat, result: {total, offline}, onTap(total, offline), carry }
  * x is yards left (−) / right (+) of the target line; drawn with the tee at the bottom.
  */
-export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, carry = 285 } = {}) {
+export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, carry = 285, sgStart = null } = {}) {
   const half = shot.width / 2;
   const y0 = Math.max(120, Math.min(carry, shot.hole - 50) - 120), y1 = Math.min(shot.hole + 10, Math.max(carry, 200) + 60);
   const X0 = -70, W = 140, H = y1 - y0, AX = 15; // AX: the strip under the hole for the side-to-side axis
@@ -70,6 +70,12 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
     const g = svgEl("g", { opacity: 0.42, class: "pr-heat" });
     for (const [x, y, v] of cells) g.appendChild(svgEl("rect", { x, y: sy(y + step), width: step, height: step, fill: heat(v, best, worst) }));
     svg.appendChild(g);
+    // (a strokes gained map, update 153: what landing there gains, against the Tour baseline from the tee)
+    if (sgStart != null) {
+      const f = (v) => { const g2 = sgStart - v - 1; return `${g2 >= 0 ? "+" : "\u2212"}${Math.abs(g2).toFixed(2)}`; };
+      svg.appendChild(svgEl("rect", { x: X0 + 1, y: 1, width: 66, height: 8, rx: 2, fill: "rgba(0,0,0,0.55)" }));
+      svg.appendChild(svgEl("text", { x: X0 + 3, y: 6.6, class: "pr-yd pr-axis sm", style: "fill:#fff" }, `Green ${f(best)} SG \u00b7 red ${f(worst)} SG`));
+    }
   }
   // yardage lines
   for (let y = Math.ceil(y0 / 25) * 25; y <= y1; y += 25) {
@@ -114,7 +120,7 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
 
 /* ================================================ approach / around the green ================================================ */
 /** The green for an approach or chip. opts: { aim, showHeat, result: {x,y}, onTap(x, y) } (yards, green centre at 0,0). */
-export function greenSvg(shot, { aim = null, showHeat = true, result = null, onTap = null } = {}) {
+export function greenSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, sgStart = null, aimLine = false } = {}) {
   const { rx, ry } = shot.green, R0 = Math.max(rx, ry) + 12;
   // Your view (update 151): turned so the line from where you are to the pin points straight up, with you at
   // the bottom centre. Everything on the green is drawn in its own yards, then turned and slid into place.
@@ -151,7 +157,10 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
     const g = svgEl("g", { opacity: 0.38, class: "pr-heat", "clip-path": `url(#${clipId})`, "shape-rendering": "crispEdges" });
     for (const [x, y, v] of cells) g.appendChild(svgEl("rect", { x, y: Y(y + step), width: step + 0.05, height: step + 0.05, fill: heat(v, best, worst) }));
     g0.appendChild(g);
+    if (sgStart != null) { const f = (v) => { const g2 = sgStart - v - 1; return `${g2 >= 0 ? "+" : "\u2212"}${Math.abs(g2).toFixed(2)}`; }; svg.__sgLegend = `Green ${f(best)} SG \u00b7 red ${f(worst)} SG`; }
   }
+  // your target line (course prep, update 153): from where you are to the target
+  if (aim && aimLine) g0.appendChild(svgEl("line", { x1: shot.from.x, y1: Y(shot.from.y), x2: aim.x, y2: Y(aim.y), stroke: "#d4b483", "stroke-width": 0.4, "stroke-dasharray": "1.2 0.8" }));
   // rings round the pin: 10, 20 and 30 ft (labelled on screen, below)
   const RINGS = [10, 20, 30];
   for (const ft of RINGS) g0.appendChild(svgEl("circle", { cx: shot.pin.x, cy: Y(shot.pin.y), r: ft / 3, fill: "none", stroke: "rgba(255,255,255,0.3)", "stroke-width": 0.25, "stroke-dasharray": "0.8 0.8" }));
@@ -177,6 +186,10 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
   svg.appendChild(svgEl("line", { x1: 0, y1: yy, x2: 0, y2: py + 1.5, stroke: "rgba(212,180,131,0.35)", "stroke-width": 0.3, "stroke-dasharray": "1 1" }));
   if (!inView) svg.appendChild(svgEl("path", { d: `M0 ${H2 - 4.6} l-2 3.4 l4 0 z`, fill: "#d4b483" }));
   svg.appendChild(svgEl("text", { x: 2.4, y: Math.min(H2 - 1.4, yy + 0.8), class: "pr-yd" }, `${shot.startDist} yds`));
+  if (svg.__sgLegend) {
+    svg.appendChild(svgEl("rect", { x: -R + 1, y: -R0 + 1, width: 34, height: 4.2, rx: 1, fill: "rgba(0,0,0,0.55)" }));
+    svg.appendChild(svgEl("text", { x: -R + 2, y: -R0 + 4, class: "pr-yd pr-ring", style: "fill:#fff" }, svg.__sgLegend));
+  }
   if (onTap) {
     svg.classList.add("tappable");
     // a tap on screen → back to the green's own yards

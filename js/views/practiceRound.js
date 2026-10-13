@@ -10,12 +10,12 @@
  *                            scrambling, the scorecard, and your best and costliest shots.
  */
 import { el, mount, confirmAction } from "../ui.js";
-import { CATS } from "../practice/model.js";
+import { CATS, holeLayout, shotFor, puttFrom } from "../practice/model.js";
 import { randomHoles, courseHoles, nextShot, playShot, undoShot, pickUp, roundSummary, scoreName, holeExpected, shotSG, resultFromWords } from "../practice/round.js";
 import { gameProgress, personalBest, targetText, passedIt, gameOf } from "../practice/games.js";
 import { wordsToNumbers, golfFix } from "../voiceShots.js";
 import { expectedStrokes } from "../roundCalc.js";
-import { trendSvg } from "../practice/draw.js";
+import { trendSvg, holeSvg, greenSvg, puttSvg } from "../practice/draw.js";
 import { SG, sgCls, tile, SpeechRec, sayKids, clubSelect } from "./practiceShot.js";
 
 const sumOf = (s) => roundSummary(s.holes, { noPutts: !!s.opts?.noPutts });
@@ -351,6 +351,54 @@ function resultPanel(shot, onChange, next, { noPutts = false } = {}) {
   ]);
 }
 
+/*
+ * A random course's picture for the shot (update 153): the hole off the tee, the green on approaches and chips, the
+ * putt on the green, drawn once per shot and kept with it. Tap to move your target; picking a club sets the
+ * target's distance to that club's carry. The strokes gained map (off to start) colours each landing spot by what
+ * it would gain against the Tour baseline from here.
+ */
+function visFor(hole, shot) {
+  if (shot.unit === "ft") return puttFrom(Math.max(1, shot.startDist));
+  if (shot.startLie === "Tee box" && hole.par >= 4) return holeLayout({ length: hole.length, par: hole.par });
+  const d = Math.max(5, Math.round(shot.startDist));
+  return shotFor(d <= 50 ? "ARG" : "APP", d, { lie: "Fairway", pin: "mixed" });
+}
+function simVisual(ctx, s, hole, shot) {
+  if (!shot.vis) { shot.vis = JSON.parse(JSON.stringify(visFor(hole, shot))); ctx.save(s); }
+  const v = shot.vis;
+  const box = el("div", { class: "pr-visual pr-sim" });
+  const label = el("p", { class: "muted small pr-target" });
+  ctx.sgMap ??= false;
+  const sgStart = shot.unit === "ft" ? null : v.kind === "tee" ? expectedStrokes("Tee box", v.hole) : expectedStrokes(v.startLie === "Tee box" ? "Tee box" : v.startLie || "Fairway", v.startDist);
+  // the target: down the middle at your club's carry off the tee; at the pin otherwise
+  const defTarget = () => (v.kind === "tee" ? { x: 0, y: Math.min(ctx.carryFor?.(shot.clubUsed || "Driver") || 275, v.hole - 40) } : v.kind === "green" ? { x: v.pin.x, y: v.pin.y } : null);
+  shot.target ||= defTarget();
+  const tdist = () => (v.kind === "tee" ? Math.round(Math.hypot(shot.target.x, shot.target.y)) : Math.round(Math.hypot(shot.target.x - v.from.x, shot.target.y - v.from.y)));
+  const draw = () => {
+    if (v.kind === "putt") { mount(box, puttSvg(v, {})); label.textContent = ""; return; }
+    const onTap = v.kind === "tee" ? (total, offline) => { shot.target = { x: offline, y: total }; ctx.save(s); draw(); } : (x, y) => { shot.target = { x, y }; ctx.save(s); draw(); };
+    mount(box, v.kind === "tee"
+      ? holeSvg(v, { aim: shot.target, showHeat: ctx.sgMap, carry: shot.target.y, onTap, sgStart })
+      : greenSvg(v, { aim: shot.target, showHeat: ctx.sgMap, onTap, sgStart, aimLine: true }));
+    const side = v.kind === "tee" ? shot.target.x : 0;
+    label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Tap the picture to move it.`;
+  };
+  // a club: its carry becomes the target's distance (same direction)
+  const club = shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (c) => {
+    shot.clubUsed = c || undefined;
+    const carry = c ? ctx.carryFor?.(c) : null;
+    if (carry && shot.target) {
+      if (v.kind === "tee") { const d = Math.hypot(shot.target.x, shot.target.y) || 1; shot.target = { x: (shot.target.x / d) * carry, y: (shot.target.y / d) * carry }; }
+      else { const dx = shot.target.x - v.from.x, dy = shot.target.y - v.from.y, d = Math.hypot(dx, dy) || 1; shot.target = { x: v.from.x + (dx / d) * carry, y: v.from.y + (dy / d) * carry }; }
+    }
+    ctx.save(s); draw();
+  }) : null;
+  const sgBtn = shot.unit === "ft" ? null : el("button", { type: "button", class: `pr-toggle${ctx.sgMap ? " on" : ""}`, "aria-pressed": String(!!ctx.sgMap) }, "Strokes gained map");
+  sgBtn?.addEventListener("click", () => { ctx.sgMap = !ctx.sgMap; sgBtn.classList.toggle("on", ctx.sgMap); sgBtn.setAttribute("aria-pressed", String(ctx.sgMap)); draw(); });
+  draw();
+  return el("div", { class: "pr-sim-wrap" }, [box, el("div", { class: "pr-vis-tools" }, [sgBtn, label]), club]);
+}
+
 function drawRound(ctx, s) {
   const game = gameOf(s);
   // just finished a hole: show how it went, then on
@@ -366,7 +414,7 @@ function drawRound(ctx, s) {
     if (!shot.result) return;
     const res = shot.result;
     const { holeN, ...clean } = shot; void holeN;
-    delete clean.result; delete clean.sg;
+    delete clean.result; delete clean.sg; delete clean.vis; delete clean.target; // (the picture stays with the shot being played only)
     playShot(hole, clean, res, { noPutts: !!s.opts?.noPutts });
     s.pending = null;
     ctx.save(s);
@@ -388,7 +436,7 @@ function drawRound(ctx, s) {
       hole.from ? el("p", { class: "muted small" }, `From ${hole.from}`) : null,
     ]),
     holeStrip(hole, shot),
-    shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); }) : null,
+    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); }) : null,
     resultPanel(shot, (r) => { shot.result = r || undefined; ctx.save(s); }, commit, { noPutts: !!s.opts?.noPutts }),
     el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [pick, end])]),
   ]);

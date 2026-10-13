@@ -898,18 +898,36 @@ export function sgDashboard(container, opts) {
         if (String(rd.date) > String(e.end)) e.end = rd.date;
         (e.by.get(p) || e.by.set(p, []).get(p)).push(rd);
       }
-      const list = [...ev.values()].map((e) => {
+      // every tournament in the selection (newest first): the best in the field (the "winner": the best strokes gained a
+      // round among those who played every round) and the top 10 the same way
+      const all = [...ev.values()].map((e) => {
         const most = Math.max(...[...e.by.values()].map((rs) => rs.length));
-        let best = null;
-        for (const [p, rs] of e.by) { if (rs.length < most) continue; const v = perRoundOf(rs); if (best == null || v > best.v) best = { p, v }; }
-        return { ...e, players: e.by.size, best };
-      }).sort((a, b) => String(b.end).localeCompare(String(a.end))).slice(0, 12);
+        const ranked = [...e.by].filter(([, rs]) => rs.length >= most).map(([p, rs]) => ({ p, v: perRoundOf(rs) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
+        return { ...e, players: e.by.size, best: ranked[0] || null, top10: ranked.slice(0, 10) };
+      }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
+      // wins so far (oldest first), so a second win shows "(2)"
+      const wins = new Map(), tops = new Map();
+      for (const e of all) {
+        if (e.best) { const n = (wins.get(e.best.p)?.n || 0) + 1; wins.set(e.best.p, { p: e.best.p, n }); e.winNo = n; }
+        for (const x of e.top10) tops.set(x.p, { p: x.p, n: (tops.get(x.p)?.n || 0) + 1 });
+      }
+      const list = [...all].reverse();
       if (list.length >= 2) {
         const fmtD = (d) => { const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
-        blocks.push(panelBox("Tournaments", [el("div", { class: "table-scroll" }, el("table", { class: "plain rankings ti-events" }, [
+        blocks.push(panelBox("Tournaments", [el("div", { class: "table-scroll ti-events-scroll", tabindex: "0" }, el("table", { class: "plain rankings ti-events" }, [
           el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Players"), el("th", {}, "Best in the field"), el("th", { class: "num" }, "Winning avg")])),
-          el("tbody", {}, list.map((e) => el("tr", {}, [el("td", { class: "ht-date" }, fmtD(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.players)), el("td", {}, e.best ? nameBtn(e.best.p) : "\u2014"), el("td", { class: `num ${e.best ? signCls(e.best.v) : ""}` }, e.best ? fmtSG(e.best.v) : "\u2014")]))),
-        ])), el("p", { class: "muted small" }, "The latest 12 in this selection. Date: the last day. Winning avg: the best strokes gained a round there, among the players who played every round.")], "full"));
+          el("tbody", {}, list.map((e) => el("tr", {}, [el("td", { class: "ht-date" }, fmtD(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.players)),
+            el("td", {}, e.best ? [nameBtn(e.best.p), e.winNo > 1 ? el("span", { class: "ti-winno" }, ` (${e.winNo})`) : null] : "\u2014"), el("td", { class: `num ${e.best ? signCls(e.best.v) : ""}` }, e.best ? fmtSG(e.best.v) : "\u2014")]))),
+        ])), el("p", { class: "muted small" }, `All ${list.length} tournaments in this selection, newest first. Date: the last day. Best in the field and Winning avg: the best strokes gained a round there, among the players who played every round; (2) means their second.`)], "full"));
+        // Wins, Top 10s (the same way), and the FedEx Cup and OWGR (coming)
+        const col = (title, rows, empty) => el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, title),
+          rows.length ? el("ol", { class: "ti-list ti-scroll", tabindex: "0", "aria-label": title }, rows.map((x) => el("li", {}, [nameBtn(x.p), el("strong", { class: "ti-v" }, String(x.n))])))
+            : el("p", { class: "muted small" }, empty)]);
+        const byN = (m) => [...m.values()].filter((x) => x.n >= 1).sort((a, b) => b.n - a.n || String(a.p.label).localeCompare(String(b.p.label)));
+        blocks.push(panelBox("Wins & Rankings", [el("div", { class: "ti-leaders" }, [
+          col("Wins", byN(wins), "No wins in this selection."), col("Top 10s", byN(tops), "No top 10s in this selection."),
+          col("FedEx Cup", [], "Coming soon."), col("OWGR", [], "Coming soon."),
+        ]), el("p", { class: "muted small" }, "Wins and top 10s: by strokes gained a round at each tournament in this selection, among the players who played every round.")], "full"));
       }
     }
 

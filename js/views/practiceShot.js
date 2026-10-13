@@ -34,10 +34,10 @@ export function clubSelect(clubs, value, onChange) {
   return el("label", { class: "pr-club-row" }, [el("span", { class: "rd-label" }, "Club"), sel]);
 }
 
-export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", title = null, onPrev = null, onNext = null, onResult, next = null, more = [], heat = { on: true, set() {} }, clubs = null, onClub = null, monitor = false }) {
-  let showHeat = heat.on;
+export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", title = null, onPrev = null, onNext = null, onResult, next = null, more = [], heat = { on: true, set() {} }, clubs = null, onClub = null, monitor = false, fixedAim = false }) {
+  let showHeat = fixedAim ? false : heat.on;
   const carry = shot.kind === "tee" ? shot.carry || (shot.club === "3 wood" ? 260 : shot.club === "Iron" ? 225 : 290) : null;
-  const aim = shot.kind === "putt" || !aimInfo ? null : bestAim(shot, aimInfo.spread, carry);
+  const aim = shot.kind === "putt" ? null : fixedAim ? (shot.kind === "tee" ? { x: 0, y: carry } : { x: shot.pin.x, y: shot.pin.y }) : !aimInfo ? null : bestAim(shot, aimInfo.spread, carry);
   const visual = el("div", { class: "pr-visual" });
   const resultLine = el("p", { class: "pr-result", "aria-live": "polite" });
   const inputs = el("div", { class: "pr-inputs" });
@@ -87,14 +87,14 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
       plane,
     ]);
   }
-  const heatBtn = shot.kind === "putt" ? null : el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Aim map");
+  const heatBtn = shot.kind === "putt" || fixedAim ? null : el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Aim map");
   heatBtn?.addEventListener("click", () => { showHeat = !showHeat; heat.set(showHeat); heatBtn.classList.toggle("on", showHeat); heatBtn.setAttribute("aria-pressed", String(showHeat)); drawVisual(); });
   const navBtn = (txt, label, fn) => { const b = el("button", { type: "button", class: "pr-nav", "aria-label": label, disabled: fn ? null : true }, txt); if (fn) b.addEventListener("click", fn); return b; };
   return el("section", { class: "panel pr-shot" }, [
-    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, el("p", { class: "pr-shot-sub" }, shotSub(shot, aim, stimp, aimInfo?.label))]), navBtn("\u203A", "Next shot", onNext)]),
+    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, el("p", { class: "pr-shot-sub" }, fixedAim && shot.kind !== "putt" ? (shot.kind === "tee" ? "Aim down the middle." : "Aim at the pin.") : shotSub(shot, aim, stimp, aimInfo?.label))]), navBtn("\u203A", "Next shot", onNext)]),
     factsDl,
     el("div", { class: "pr-play" }, [
-      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, legend(shot))]), slopeBox]),
+      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, fixedAim && shot.kind !== "putt" ? (shot.kind === "tee" ? "Gold line: your target, down the middle." : "Gold ring: your target, the pin.") : legend(shot))]), slopeBox]),
       el("div", { class: "pr-in-col" }, [
         clubs && shot.kind !== "putt" ? clubSelect(clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; onClub?.(v); }) : null,
         monitor ? el("p", { class: "pr-monitor-note" }, "Using a launch monitor: just hit the shot and tap Next. You'll load the file at the end, and it fills the shots in this order.") : null,
