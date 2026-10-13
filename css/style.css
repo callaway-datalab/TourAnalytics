@@ -3051,3 +3051,52 @@ body:has(#app > .boot-msg)::after { background: radial-gradient(1200px 600px at 
 .chat-always { font-style: italic; }
 .pr-sess-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem; align-items: center; }
 .pr-sess-wrap .pr-sess-del { position: static !important; transform: none !important; width: 2.3rem; height: 2.3rem; }
+
+/* ===================================================== update 142 ===================================================== */
+/* Sign in / sign up: the same course photo as the loading screen */
+body:has(#app > .auth) { background: transparent; }
+body:has(#app > .auth)::before { filter: grayscale(1) brightness(0.55) contrast(1.05); }
+body:has(#app > .auth)::after { background: radial-gradient(1200px 600px at 50% -10%, rgba(200, 169, 126, 0.14), transparent 60%), linear-gradient(180deg, rgba(8, 8, 10, 0.3) 0%, rgba(8, 8, 10, 0.6) 55%, rgba(8, 8, 10, 0.82) 100%); }
+/* The tournaments pop-up on phones: nearly full screen, the table compact, names wrapping */
+@media (max-width: 640px) {
+  .gx-pop-overlay:has(.hero-pop) { padding: 0.5rem; align-items: end; }
+  .hero-pop { width: 100% !important; max-height: 92vh !important; border-radius: 20px 20px 14px 14px !important; padding: 0.9rem 0.8rem 0.5rem !important; }
+  .hero-tourn-scroll { max-height: 70vh; }
+  .hero-tourn { font-size: 0.78rem; table-layout: fixed; width: 100%; }
+  .hero-tourn th, .hero-tourn td { padding: 0.45rem 0.25rem !important; }
+  .hero-tourn th:nth-child(1), .hero-tourn td:nth-child(1) { width: 4.4rem; }
+  .hero-tourn td:nth-child(2) { min-width: 0 !important; white-space: normal; word-break: break-word; line-height: 1.25; }
+  .hero-tourn th:nth-last-child(1), .hero-tourn th:nth-last-child(2) { width: 3.6rem; font-size: 0.66rem; white-space: normal; line-height: 1.15; }
+  .hero-tourn th:nth-child(3):not(:nth-last-child(2)) { width: 2rem; }
+}
+.hero-tourn td.ht-win { color: #c8a97e; }
+/* Tour Insights (the main Analyze page, no player picked) */
+.ti-head { margin: 1.6rem 0 0.8rem; font-size: 1.15rem; letter-spacing: -0.01em; }
+.ti-grid { margin-bottom: 1rem; }
+.ti-grid > .full { grid-column: 1 / -1; }
+.ti-leaders { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.8rem; }
+.ti-col { padding: 0.7rem 0.8rem; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--line); min-width: 0; }
+.ti-col-title { margin: 0 0 0.4rem; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.ti-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; counter-reset: ti; }
+.ti-list li { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr) auto auto; gap: 0.5rem; align-items: center; padding: 0.3rem 0.2rem; border-radius: 8px; counter-increment: ti; font-size: 0.88rem; }
+.ti-list li::before { content: counter(ti); color: var(--muted); font-size: 0.78rem; text-align: right; }
+.ti-list li:hover { background: rgba(255,255,255,0.03); }
+.ti-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; min-width: 0; }
+button.ti-name { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; cursor: pointer; }
+button.ti-name:hover { color: var(--accent); }
+.ti-sub { font-size: 0.75rem; white-space: nowrap; }
+.ti-v { font-variant-numeric: tabular-nums; text-align: right; min-width: 3.2rem; }
+.ti-list li:not(:has(.ti-sub)) { grid-template-columns: 1.3rem minmax(0, 1fr) auto; }
+.ti-two { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 640px) { .ti-two { grid-template-columns: 1fr; } .ti-events td:nth-child(3), .ti-events th:nth-child(3) { display: none; } }
+.ti-events td, .ti-events th { white-space: nowrap; }
+.ti-events td:nth-child(2) { white-space: normal; min-width: 8rem; }
+.ti-list li { grid-template-columns: 1.3rem minmax(0, 1fr) auto !important; }
+.ti-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.ti-who .ti-sub { font-size: 0.72rem; }
+@media (max-width: 640px) {
+  .hero-tourn th:nth-child(1), .hero-tourn td:nth-child(1) { width: 3.7rem; }
+  .ti-events { font-size: 0.8rem; }
+  .ti-events th, .ti-events td { padding: 0.4rem 0.3rem !important; }
+  .ti-events th:nth-child(4), .ti-events td:nth-child(4) { white-space: normal; }
+}

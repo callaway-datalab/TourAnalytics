@@ -160,7 +160,7 @@ export function sgDashboard(container, opts) {
         if (!isSG()) return statBlocks(mine, slicedField, f);
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
-        return [heroBox(mine, slicedField, f), summaryBox(mine, slicedField), showRanks && me ? rankingsBlock(slicedField) : null, ...blocks];
+        return [heroBox(mine, slicedField, f), summaryBox(mine, slicedField), showRanks && me ? rankingsBlock(slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
       })()),
     ]);
     if (focusKey) {
@@ -377,7 +377,7 @@ export function sgDashboard(container, opts) {
             const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: "Show every tournament", "aria-label": `${trendName} trend chart. Show every tournament in a table.` }, [
               el("span", { class: "hero-chart-label" }, [`${trendName} trend \u00b7 rolling 10-${unit} average`, el("span", { class: "hero-chart-hint" }, "Tap for the table")]),
               chartBox((c) => heroChart(c, ordered.map((rd) => { const d = new Date(rd.date); return isNaN(d) ? rd.date : shortDate(d); }), roll))]);
-            const openT = () => tournamentsPopup(ordered, roll);
+            const openT = () => tournamentsPopup(ordered, slicedField);
             box.addEventListener("click", openT);
             box.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openT(); } });
             return box;
@@ -417,26 +417,38 @@ export function sgDashboard(container, opts) {
   }
   // The hero chart's table: each tournament (in date order, newest at the top), the player's SG / round
   // there, and the rolling 10-round average as of their last round in it (what the chart shows there).
-  function tournamentsPopup(ordered, roll) {
+  function tournamentsPopup(ordered, slicedField = []) {
     const rows = [];
-    ordered.forEach((rd, i) => {
+    ordered.forEach((rd) => {
       const y = String(rd.date || "").slice(0, 4), last = rows[rows.length - 1];
-      if (last && last.event === rd.event && last.year === y) { last.rounds.push(rd); last.to = rd.date; last.roll = roll[i]; }
-      else rows.push({ event: rd.event || "\u2014", year: y, from: rd.date, to: rd.date, rounds: [rd], roll: roll[i] });
+      if (last && last.event === rd.event && last.year === y) { last.rounds.push(rd); last.to = rd.date; }
+      else rows.push({ event: rd.event || "\u2014", year: y, from: rd.date, to: rd.date, rounds: [rd] });
     });
-    const when = (r) => { const a = new Date(r.from), b = new Date(r.to); if (isNaN(a)) return r.from || ""; return isNaN(b) || r.from === r.to ? shortDate(a) : `${shortDate(a)}\u2013${shortDate(b)}`; };
-    const cell = (v) => el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v));
+    // the winning average: the best in the field at that tournament, among those who played every round (made the cut)
+    const better = (a, b) => (isSG() || def.higher !== false ? a > b : a < b);
+    const winOf = (r) => {
+      const played = (slicedField || []).map((p) => (p.rounds || []).filter((x) => x.event === r.event && String(x.date || "").slice(0, 4) === r.year)).filter((rs) => rs.length);
+      if (!played.length) return null;
+      const most = Math.max(...played.map((rs) => rs.length));
+      let best = null;
+      for (const rs of played) { if (rs.length < most) continue; const v = metric(rs); if (v != null && (best == null || better(v, best))) best = v; }
+      return best;
+    };
+    // the date: the last day of the tournament
+    const when = (r) => { const b = new Date(r.to); return isNaN(b) ? r.to || "" : b.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
+    const cell = (v, cls = "") => el("td", { class: `num ${cls} ${isSG() ? signCls(v) : ""}` }, fmtV(v));
     const what = isSG() ? "strokes gained a round" : def.label;
     const table = el("table", { class: "plain rankings hero-tourn" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"), el("th", { class: "num", title: `${what} in that tournament` }, "Event avg"), el("th", { class: "num", title: `Rolling 10-${unit} average at the end of that tournament` }, "Rolling 10")])),
-      el("tbody", {}, [...rows].reverse().map((r) => el("tr", {}, [el("td", { class: "ht-date" }, when(r)), el("td", {}, r.event), unit === "event" ? null : el("td", { class: "num" }, String(r.rounds.length)), cell(metric(r.rounds)), cell(r.roll)]))),
+      el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"),
+        el("th", { class: "num", title: `${me.label}'s ${what} in that tournament` }, "Event avg"), el("th", { class: "num", title: "The best in the field there, among the players who played every round" }, "Winning avg")])),
+      el("tbody", {}, [...rows].reverse().map((r) => el("tr", {}, [el("td", { class: "ht-date" }, when(r)), el("td", { class: "ht-name" }, r.event), unit === "event" ? null : el("td", { class: "num" }, String(r.rounds.length)), cell(metric(r.rounds)), cell(winOf(r), "ht-win")]))),
     ]);
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Tournaments" }, el("div", { class: "gx-pop hero-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${isSG() ? "SG" : def.label} trend`), el("h2", {}, me.label),
-        el("p", { class: "gx-sub" }, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 ${describe()} \u00b7 ${what}, newest first`)]), close]),
+        el("p", { class: "gx-sub" }, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 ${what}, newest first`)]), close]),
       el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-      el("p", { class: "muted small" }, `Event avg: ${what} in that tournament. Rolling 10: the last 10 ${unit}s up to the end of that tournament (fewer at the start)${isSG() ? "" : ", pooled over their attempts"}.`),
+      el("p", { class: "muted small" }, `Date: the last day of the tournament. Event avg: ${what} there. Winning avg: the best in the field there, among the players who played every round.`),
     ]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };
@@ -760,6 +772,117 @@ export function sgDashboard(container, opts) {
     }
     if (!lines.length) return null;
     return el("section", { class: "panel sg-summary" }, [el("h3", {}, "Summary"), ...lines.map((t) => el("p", {}, t))]);
+  }
+
+  /* ------------------------------ the whole tour (no player picked; update 142) ------------------------------ */
+  // Category leaders, where players differ most, the spread of the field, hot and cold form, the steadiest
+  // players, each tournament's winning average, and (with everyone's full detail) the field by approach distance.
+  function tourBlocks(slicedField) {
+    const P = rankedField(slicedField).filter((p) => p.rounds.length);
+    if (P.length < 3) return [];
+    const nameBtn = (p) => (opts.onPick ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, p.label); b.addEventListener("click", () => opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, p.label));
+    const sgCell = (v) => el("strong", { class: `ti-v ${signCls(v)}` }, fmtSG(v));
+    const roundTotal = (rd) => rd.shots.reduce((t, x) => t + x.sg, 0);
+    const mean = (a) => a.reduce((t, x) => t + x, 0) / a.length;
+    const sd = (a) => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((t, x) => t + (x - m) ** 2, 0) / (a.length - 1)); };
+    const blocks = [];
+    const cats = CATEGORIES.filter(([k]) => catsAvail.some(([c]) => c === k));
+
+    // 1. category leaders: the top five in each
+    if (cats.length > 1) {
+      blocks.push(panelBox("Category Leaders", el("div", { class: "ti-leaders" }, cats.map(([k, l]) => {
+        const top = P.map((p) => ({ p, v: perRoundOf(p.rounds, k) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v).slice(0, 5);
+        return el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, l), el("ol", { class: "ti-list" }, top.map((x) => el("li", {}, [nameBtn(x.p), sgCell(x.v)])))]);
+      })), "full"));
+    }
+
+    // 2. where players differ most: the spread of SG / round in each category, and how closely it follows the total
+    if (cats.length > 1) {
+      const totals = P.map((p) => perRoundOf(p.rounds));
+      const corr = (a, b) => { const ma = mean(a), mb = mean(b); let n = 0, da = 0, db = 0; for (let i = 0; i < a.length; i++) { n += (a[i] - ma) * (b[i] - mb); da += (a[i] - ma) ** 2; db += (b[i] - mb) ** 2; } return da && db ? n / Math.sqrt(da * db) : null; };
+      const rows = cats.map(([k, l]) => { const v = P.map((p) => perRoundOf(p.rounds, k) ?? 0); return { l, sd: sd(v) || 0, r: corr(v, totals) }; });
+      blocks.push(panelBox("Where Players Differ Most", [
+        chartBox((c) => barChart(c, rows.map((x) => x.l), rows.map((x) => x.sd), { single: "up", title: "Spread (SG / round)", tooltip: (i) => (rows[i].r == null ? "" : `Follows the total: ${Math.round(rows[i].r * 100)}%`) })),
+        el("p", { class: "muted small" }, (() => { const top = [...rows].sort((a, b) => b.sd - a.sd)[0], tie = [...rows].filter((x) => x.r != null).sort((a, b) => b.r - a.r)[0]; return `${top.l} separates this field the most (players' SG / round in it vary by \u00b1${top.sd.toFixed(2)}).${tie ? ` ${tie.l} follows the overall ranking most closely (${Math.round(tie.r * 100)}%).` : ""}`; })()),
+      ]));
+    }
+
+    // 3. how the field is spread: players by SG / round
+    {
+      const vals = P.map((p) => perRoundOf(p.rounds)).filter((v) => v != null);
+      const lo = Math.floor(Math.min(...vals) * 2) / 2, hi = Math.ceil(Math.max(...vals) * 2) / 2 || lo + 0.5;
+      const bins = [];
+      for (let a = lo; a < hi - 1e-9; a += 0.5) bins.push({ a, b: a + 0.5, n: vals.filter((v) => v >= a && (v < a + 0.5 || (a + 0.5 >= hi - 1e-9 && v <= hi))).length });
+      if (bins.length >= 2) blocks.push(panelBox("The Field, Spread Out", [
+        chartBox((c) => barChart(c, bins.map((x) => `${x.a >= 0 ? "+" : ""}${x.a.toFixed(1)}`), bins.map((x) => x.n), { single: "blue", title: "Players", tooltip: (i) => `${fmtSG(bins[i].a)} to ${fmtSG(bins[i].b)} a round` })),
+        el("p", { class: "muted small" }, `${vals.length} players by strokes gained a round. ${vals.filter((v) => v >= 0).length} gain on the field; ${vals.filter((v) => v >= 1).length} gain a stroke or more a round.`),
+      ]));
+    }
+
+    // 4. hot and cold: the last 8 rounds against the rest of the selection
+    {
+      const form = P.map((p) => {
+        const rs = [...p.rounds].filter((rd) => !rd.eventLevel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        if (rs.length < 16) return null;
+        const last = perRoundOf(rs.slice(-8)), before = perRoundOf(rs.slice(0, -8));
+        return { p, last, ch: last - before };
+      }).filter(Boolean);
+      if (form.length >= 4) {
+        const hot = form.filter((x) => x.ch > 0).sort((a, b) => b.ch - a.ch).slice(0, 5), cold = form.filter((x) => x.ch < 0).sort((a, b) => a.ch - b.ch).slice(0, 5);
+        const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtSG(x.last)} a round, last 8`)]), el("strong", { class: `ti-v ${signCls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${Math.abs(x.ch).toFixed(2)}`)]))) : el("p", { class: "muted small" }, "No one."));
+        blocks.push(panelBox("Hot & Cold", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Heating up"), list(hot)]), el("div", {}, [el("p", { class: "ti-col-title" }, "Cooling off"), list(cold)])]),
+          el("p", { class: "muted small" }, "Strokes gained a round over each player's last 8 rounds, against their rounds before that in this selection.")]));
+      }
+    }
+
+    // 5. the steadiest and the streakiest: how much a player's rounds swing
+    {
+      const steady = P.map((p) => { const t = p.rounds.filter((rd) => !rd.eventLevel).map(roundTotal); return t.length >= 8 ? { p, s: sd(t), avg: mean(t) } : null; }).filter(Boolean);
+      if (steady.length >= 4) {
+        const most = [...steady].sort((a, b) => a.s - b.s).slice(0, 5), least = [...steady].sort((a, b) => b.s - a.s).slice(0, 5);
+        const list = (xs) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtSG(x.avg)} a round`)]), el("strong", { class: "ti-v" }, `\u00b1${x.s.toFixed(2)}`)])));
+        blocks.push(panelBox("Steadiest & Streakiest", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Steadiest"), list(most)]), el("div", {}, [el("p", { class: "ti-col-title" }, "Streakiest"), list(least)])]),
+          el("p", { class: "muted small" }, "How much a player's strokes gained swings from round to round (standard deviation), with at least 8 rounds.")]));
+      }
+    }
+
+    // 6. tournaments: when, how many played, and the winning average (the best among those who played every round)
+    {
+      const ev = new Map();
+      for (const p of P) for (const rd of p.rounds) {
+        if (!rd.event) continue;
+        const k = `${rd.event}|${String(rd.date || "").slice(0, 4)}`;
+        const e = ev.get(k) || ev.set(k, { event: rd.event, end: rd.date, by: new Map() }).get(k);
+        if (String(rd.date) > String(e.end)) e.end = rd.date;
+        (e.by.get(p) || e.by.set(p, []).get(p)).push(rd);
+      }
+      const list = [...ev.values()].map((e) => {
+        const most = Math.max(...[...e.by.values()].map((rs) => rs.length));
+        let best = null;
+        for (const [p, rs] of e.by) { if (rs.length < most) continue; const v = perRoundOf(rs); if (best == null || v > best.v) best = { p, v }; }
+        return { ...e, players: e.by.size, best };
+      }).sort((a, b) => String(b.end).localeCompare(String(a.end))).slice(0, 12);
+      if (list.length >= 2) {
+        const fmtD = (d) => { const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
+        blocks.push(panelBox("Tournaments", [el("div", { class: "table-scroll" }, el("table", { class: "plain rankings ti-events" }, [
+          el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Players"), el("th", {}, "Best in the field"), el("th", { class: "num" }, "Winning avg")])),
+          el("tbody", {}, list.map((e) => el("tr", {}, [el("td", { class: "ht-date" }, fmtD(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.players)), el("td", {}, e.best ? nameBtn(e.best.p) : "\u2014"), el("td", { class: `num ${e.best ? signCls(e.best.v) : ""}` }, e.best ? fmtSG(e.best.v) : "\u2014")]))),
+        ])), el("p", { class: "muted small" }, "The latest 12 in this selection. Date: the last day. Winning avg: the best strokes gained a round there, among the players who played every round.")], "full"));
+      }
+    }
+
+    // 7. the field by approach distance (needs everyone's shot detail, which the admin has)
+    if (!fieldIsSummary() && catsAvail.some(([k]) => k === "APP")) {
+      const acc = new Map();
+      for (const p of P) for (const rd of p.rounds) for (const x of rd.shots) if (x.cat === "APP" && x.dist) { const o = acc.get(x.dist) || acc.set(x.dist, { sg: 0, w: 0 }).get(x.dist); o.sg += x.sg; o.w += x.w || 1; }
+      const lead = (s) => { const m = String(s).match(/\d+/); return m ? Number(m[0]) : 999; };
+      const rows = [...acc].filter(([, o]) => o.w >= 20).map(([d, o]) => ({ d, v: o.sg / o.w, w: o.w })).sort((a, b) => lead(a.d) - lead(b.d));
+      if (rows.length >= 3) blocks.push(panelBox("The Field by Approach Distance", [
+        chartBox((c) => barChart(c, rows.map((r) => r.d), rows.map((r) => r.v), { title: "SG / shot", tooltip: (i) => `${nf1.format(rows[i].w)} shots` })),
+        el("p", { class: "muted small" }, "Every ranked player's approach shots together: strokes gained a shot against the Tour baselines, by distance."),
+      ]));
+    }
+    return blocks.length ? [el("h2", { class: "ti-head" }, "Tour Insights"), el("div", { class: "sg-grid ti-grid" }, blocks)] : [];
   }
 
   /* ------------------------------ category detail ------------------------------ */
@@ -1147,19 +1270,9 @@ export function sgDashboard(container, opts) {
       } catch { /* fine */ }
     };
     requestAnimationFrame(build);
-    if (!key) return wrap;
-    const toggle = el("div", { class: "chart-toggle", role: "group", "aria-label": "Chart style" });
-    for (const [t, label, svg] of [["bar", "Bar chart", BAR_ICON], ["line", "Line chart", LINE_ICON]]) {
-      const b = el("button", { type: "button", "aria-label": label, title: label, "aria-pressed": ((st.chartTypes[key] || "bar") === t) ? "true" : "false" });
-      b.innerHTML = svg;
-      b.addEventListener("click", () => {
-        st.chartTypes[key] = t;
-        toggle.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
-        build();
-      });
-      toggle.appendChild(b);
-    }
-    return el("div", { class: "chart-holder" }, [el("div", { class: "chart-tools" }, [rankPick ? rankPicker() : null, toggle]), wrap]);
+    // (update 142: no bar / line switch; each chart keeps its own style)
+    if (!key || !rankPick) return key ? el("div", { class: "chart-holder" }, [wrap]) : wrap;
+    return el("div", { class: "chart-holder" }, [el("div", { class: "chart-tools" }, [rankPicker()]), wrap]);
   }
   function baseOptions() {
     const muted = "#8e8e93", grid = "rgba(255,255,255,0.06)";
@@ -1230,13 +1343,14 @@ export function sgDashboard(container, opts) {
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
     // the other players: gold dots in front of the bars
     // (gold dots, no line)
-    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, $dots: true, showLine: false, borderColor: "#d4b483", backgroundColor: "#d4b483",
-      pointStyle: "circle", pointRadius: 4, pointHoverRadius: 5.5, pointBackgroundColor: "#d4b483", pointBorderColor: "#0a0a0b", pointBorderWidth: 1, order: 0 });
+    // (update 142: the other players as a champagne line joining their values, in front of the bars)
+    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, $dots: true, showLine: true, spanGaps: true, tension: 0.3, borderColor: "#c8a97e", backgroundColor: "#c8a97e", borderWidth: 2.25,
+      pointStyle: "circle", pointRadius: 0, pointHitRadius: 10, pointHoverRadius: 4.5, pointBackgroundColor: "#c8a97e", pointBorderColor: "#0a0a0b", pointBorderWidth: 1, order: 0 });
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
     // Legend: only the reference marks (no "SG / round" entry); the other players shown as a gold dot.
     o.plugins.legend = { display: !!(compare || average !== undefined), labels: {
-      color: "#a1a1a6", boxWidth: 8, boxHeight: 8, usePointStyle: true, pointStyle: "circle", font: { family: "Inter, system-ui, sans-serif", size: 12 },
+      color: "#a1a1a6", boxWidth: 18, boxHeight: 8, usePointStyle: true, pointStyle: "line", font: { family: "Inter, system-ui, sans-serif", size: 12 },
       filter: (item) => item.datasetIndex !== 0,
     } };
     if (tooltip) o.plugins.tooltip.callbacks = { afterLabel: (c) => (c.datasetIndex === 0 ? tooltip(c.dataIndex) : "") };
