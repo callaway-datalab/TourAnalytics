@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
-  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup,
+  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup, limit,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
@@ -425,6 +425,12 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   }
   await commitInChunks(ops, onProgress);
   return { datasetId, clients: newClientKeys.length };
+}
+
+/** The admin: the latest files uploaded from Python (the data-import function's progress and results). */
+export function watchImports(cb, n = 5) {
+  return onSnapshot(query(collection(db, "imports"), orderBy("startedAt", "desc"), limit(n)), (snap) =>
+    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));
 }
 
 /* ---------- Field stats: the part of a strokes-gained file every signed-in user may read ---------- */

@@ -1,5 +1,5 @@
 import { el, mount, formatWhen, num, confirmAction, subNav } from "../ui.js";
-import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage, adminAllClients, publishFieldStats } from "../store.js";
+import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage, adminAllClients, publishFieldStats, watchImports } from "../store.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
 
@@ -9,6 +9,7 @@ export async function render(main, { flash }) {
   const description = el("input", { maxLength: 200 });
   const submit = el("button", { class: "btn", type: "submit" }, "Upload data");
   const listBox = el("div");
+  const importsBox = el("section", { class: "py-imports", hidden: true });
 
   const form = el("form", {
     class: "stack narrow",
@@ -80,8 +81,29 @@ export async function render(main, { flash }) {
     subNav([["#/admin/clients", "Users"], ["#/admin/datasets", "Upload Data"]], "#/admin/datasets"),
     el("p", { class: "muted intro" }, "Upload one file that covers many people. Each person only sees the rows that belong to them."),
     el("section", {}, [el("h2", {}, "Upload a data file"), form]),
+    importsBox,
     el("section", {}, [el("h2", {}, "Uploaded files"), listBox]),
   ]);
+
+  // files sent from Python (tour_upload.py -> the data-import function): progress and result (update 146)
+  const unsubImports = watchImports((list) => {
+    importsBox.hidden = !list.length;
+    if (!list.length) return;
+    mount(importsBox, [
+      el("h2", {}, "From Python"),
+      el("ul", { class: "py-list" }, list.map((x) => {
+        const state = x.status === "done" ? el("span", { class: "py-ok" }, "Live")
+          : x.status === "error" ? el("span", { class: "py-err" }, "Failed")
+          : el("span", { class: "py-run" }, x.step ? `${x.step}\u2026` : "Working\u2026");
+        const detail = x.status === "done" ? `${num(x.rows)} rows for ${num(x.people)} ${x.people === 1 ? "person" : "people"}${x.blankIdRows ? ` \u00b7 ${num(x.blankIdRows)} rows had no ID` : ""}`
+          : x.status === "error" ? x.message || "" : x.rows ? `${num(x.rows)} rows for ${num(x.people)} people` : "";
+        return el("li", {}, [
+          el("div", { class: "py-top" }, [el("strong", {}, x.name || x.file), state]),
+          el("p", { class: "muted small" }, [detail, detail ? " \u00b7 " : "", formatWhen(x.finishedAt || x.startedAt)]),
+        ]);
+      })),
+    ]);
+  });
 
   const unsub = watchAdminDatasets((datasets) => {
     if (!datasets.length) { mount(listBox, el("p", { class: "empty" }, "Nothing uploaded yet.")); return; }
@@ -99,11 +121,11 @@ export async function render(main, { flash }) {
         return el("tr", {}, [
           el("td", {}, el("strong", {}, d.name)), el("td", {}, d.idColumn),
           el("td", { class: "num" }, num(d.rowCount)), el("td", { class: "num" }, num((d.clientKeys || []).length)),
-          el("td", {}, formatWhen(d.uploadedAt)), el("td", { class: "actions" }, del),
+          el("td", {}, [formatWhen(d.uploadedAt), d.source === "python" ? el("span", { class: "py-tag" }, "Python") : null]), el("td", { class: "actions" }, del),
         ]);
       })),
     ]);
     mount(listBox, el("div", { class: "table-scroll" }, table));
   });
-  return unsub;
+  return () => { unsub(); unsubImports(); };
 }

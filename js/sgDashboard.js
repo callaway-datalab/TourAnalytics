@@ -157,6 +157,8 @@ export function sgDashboard(container, opts) {
       opts.slot || null, // the page's player search, then the Filters panel
       filtersPanel(opt),
       el("div", { class: "sg-panel" }, (() => {
+        // nothing to show (no player picked, or no rounds yet): the same Filters panel, and why it's empty
+        if (opts.emptyNote) return [el("section", { class: "panel sg-empty-note" }, el("p", { class: "empty center" }, opts.emptyNote))];
         if (!isSG()) return statBlocks(mine, slicedField, f);
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
@@ -179,6 +181,9 @@ export function sgDashboard(container, opts) {
   // straight away; it stays open while you tick and closes when you tap outside, tap the button, or press Escape.
   function multi(label, key, options, allLabel, { plural, fmt = (v) => v, empty = "Nothing to pick for this selection." } = {}) {
     const chosen = new Set(st[key]);
+    // nothing picked = everything: shown with every box ticked, unless you just pressed None (all unticked)
+    st.noneShown ||= {};
+    const allTicked = !chosen.size && !st.noneShown[key];
     const labelOf = (v) => options.find((o) => o.value === v)?.label ?? fmt(v);
     const summary = !chosen.size || (options.length > 1 && chosen.size === options.length) ? allLabel // nothing or everything ticked = all
       : chosen.size <= 2 ? [...chosen].map(labelOf).join(", ") : `${chosen.size} ${plural}`;
@@ -187,7 +192,10 @@ export function sgDashboard(container, opts) {
       el("span", { class: "ms-sum" }, summary), el("span", { class: "ms-caret", "aria-hidden": "true" }, "\u25BE"),
     ]);
     const toggle = (v, on) => {
-      st[key] = on ? [...st[key], v] : st[key].filter((x) => x !== v);
+      if (allTicked && !on) st[key] = options.map((o) => o.value).filter((x) => x !== v); // (from "all": everything but this one)
+      else st[key] = on ? [...st[key], v] : st[key].filter((x) => x !== v);
+      st.noneShown[key] = false;
+      if (st[key].length && st[key].length === options.length) st[key] = []; // (everything ticked: back to "all")
       if (key === "dist" && on) { // a distance belongs to a category: make sure that category is picked
         const c = v.split("|")[0];
         if (!st.cats.length || st.cats.length === CATEGORIES.length) st.cats = [c]; else if (!st.cats.includes(c)) st.cats = [...st.cats, c];
@@ -200,14 +208,17 @@ export function sgDashboard(container, opts) {
     const rows = [];
     for (const o of options) {
       if (o.group && o.group !== lastGroup) { rows.push(el("p", { class: "ms-group" }, o.group)); lastGroup = o.group; }
-      const box = el("input", { type: "checkbox", checked: chosen.has(o.value), "aria-label": `${label}: ${o.label}` });
+      const box = el("input", { type: "checkbox", checked: allTicked || chosen.has(o.value), "aria-label": `${label}: ${o.label}` });
       box.addEventListener("change", () => toggle(o.value, box.checked));
       rows.push(el("label", { class: "ms-row" }, [box, el("span", {}, o.label)]));
     }
-    const all = el("button", { type: "button", class: "link ms-all" }, `All (clear)`);
-    all.addEventListener("click", () => { st[key] = []; if (key === "club") followClubs(); st.openFilter = key; draw(); });
+    // All: tick every option. None: untick them all (then tick just the ones you want; nothing ticked shows everything).
+    const all = el("button", { type: "button", class: "link ms-all" }, "All");
+    all.addEventListener("click", () => { st[key] = []; st.noneShown[key] = false; if (key === "club") followClubs(); st.openFilter = key; draw(); });
+    const none = el("button", { type: "button", class: "link ms-all" }, "None");
+    none.addEventListener("click", () => { st[key] = []; st.noneShown[key] = true; if (key === "club") followClubs(); st.openFilter = key; draw(); });
     const panel = el("div", { class: "ms-panel", hidden: !open, role: "group", "aria-label": label }, [
-      el("div", { class: "ms-top" }, [el("strong", {}, label), all]),
+      el("div", { class: "ms-top" }, [el("strong", {}, label), el("span", { class: "ms-allnone" }, [all, none])]),
       el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, empty)),
     ]);
     btn.addEventListener("click", () => {
@@ -440,7 +451,7 @@ export function sgDashboard(container, opts) {
     const what = isSG() ? "strokes gained a round" : def.label;
     const table = el("table", { class: "plain rankings hero-tourn" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"),
-        el("th", { class: "num", title: `${me.label}'s ${what} in that tournament` }, "Event avg"), el("th", { class: "num", title: "Event avg minus the best in the field there (among the players who played every round)" }, "Diff. from winning avg")])),
+        el("th", { class: "num", title: `${me.label}'s ${what} in that tournament` }, "Event avg"), el("th", { class: "num", title: "Event avg minus the best in the field there (among the players who played every round)" }, "Winner margin")])),
       el("tbody", {}, [...rows].reverse().map((r) => el("tr", {}, [el("td", { class: "ht-date" }, when(r)), el("td", { class: "ht-name" }, r.event), unit === "event" ? null : el("td", { class: "num" }, String(r.rounds.length)), cell(metric(r.rounds)), (() => { const m = metric(r.rounds), w = winOf(r), d = m == null || w == null ? null : m - w; return el("td", { class: `num ht-win ${d != null && Math.abs(d) < 0.005 ? "ht-won" : ""}` }, d == null ? "\u2014" : Math.abs(d) < 0.005 ? "Best" : `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(isSG() ? 2 : 1)}`); })()]))),
     ]);
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
@@ -448,7 +459,7 @@ export function sgDashboard(container, opts) {
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${isSG() ? "SG" : def.label} trend`), el("h2", {}, me.label),
         el("p", { class: "gx-sub" }, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 ${what}, newest first`)]), close]),
       el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-      el("p", { class: "muted small" }, `Date: the last day of the tournament. Event avg: ${what} there. Diff. from winning avg: event avg minus the best in the field there (among the players who played every round); \u201cBest\u201d when it was theirs.`),
+      el("p", { class: "muted small" }, `Date: the last day of the tournament. Event avg: ${what} there. Winner margin: event avg minus the best in the field there (among the players who played every round); \u201cBest\u201d when it was theirs.`),
     ]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };

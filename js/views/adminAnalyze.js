@@ -87,7 +87,7 @@ export async function render(main, { flash }) {
     if (source === "entered") return refreshEntered();
     if (source === "practice") return refreshPractice();
     const ds = datasets.find((d) => d.id === fileId);
-    if (!ds) { status.textContent = ""; mount(body, el("p", { class: "empty center" }, "Upload a data file to analyze.")); showPills(); return; }
+    if (!ds) { status.textContent = ""; emptyDash("Upload a data file to analyze."); return; }
     const token = ++loadToken;
     mount(body, null);
     if (isLiteDevice() && isShotData(detectColumns(ds.columns || []))) return refreshLite(ds, token);
@@ -221,22 +221,28 @@ export async function render(main, { flash }) {
   function drawEntered() {
     dash?.destroy(); dash = null; sourceHome.hidden = true;
     const me = meFrom();
-    if (!player) { mount(body, el("p", { class: "empty center" }, "Pick a player above to see their entered rounds.")); showPills(); return; }
-    if (!me) {
-      mount(body, el("p", { class: "empty center" }, `${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Track Round." : "."}`));
-      showPills();
-      return;
-    }
+    if (!player) { emptyDash("Pick a player above to see their entered rounds."); return; }
+    if (!me) { emptyDash(`${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Track Round." : "."}`); return; }
     const box = el("div");
     mount(body, box);
     dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, entered: true, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
+  }
+
+  // Nothing to show yet: the same Filters panel (with Tour Events | Entered Rounds | Practice in it) and why (update 145)
+  const emptyState = {};
+  function emptyDash(note) {
+    dash?.destroy(); dash = null;
+    const box = el("div");
+    mount(body, box);
+    dash = sgDashboard(box, { me: null, field: [], idx: ENTERED_IDX, entered: true, mode: "admin", rankings: false, state: emptyState, emptyNote: note, viewHost,
+      slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (k) => pickerRef?.select?.(k) });
   }
 
   // Practice (update 139): the picked player's practice sessions, games and Course Prep rounds.
   const practiceState = {};
   async function refreshPractice() {
     dash?.destroy(); dash = null; sourceHome.hidden = true;
-    if (!player) { mount(body, el("p", { class: "empty center" }, "Pick a player above to see their practice.")); showPills(); return; }
+    if (!player) { emptyDash("Pick a player above to see their practice."); return; }
     const token = ++loadToken;
     status.textContent = "Loading practice\u2026";
     const { loadPracticeFor } = await import("../practice/toStats.js");
@@ -247,7 +253,7 @@ export async function render(main, { flash }) {
     try { rounds = await loadPracticeFor(key); } catch (err) { console.error(err); }
     if (token !== loadToken) return;
     status.textContent = "";
-    if (!rounds.length) { mount(body, el("p", { class: "empty center" }, `${player.label} hasn't logged any practice yet.`)); showPills(); return; }
+    if (!rounds.length) { emptyDash(`${player.label} hasn't logged any practice yet.`); return; }
     const me = { key: player.key, label: player.label, rounds };
     const box = el("div");
     mount(body, box);

@@ -1,0 +1,15 @@
+{
+  "name": "data-import",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.4.0",
+    "@google-cloud/firestore": "^7.11.0",
+    "@google-cloud/storage": "^7.15.0",
+    "hyparquet": "^1.0.0",
+    "hyparquet-compressors": "^1.0.0"
+  }
+}

@@ -15,18 +15,18 @@ export function practiceRounds(sessions) {
   for (const s of sessions || []) {
     if (s.status !== "done" || s.cat === "BAG") continue;
     const shots = [];
-    const add = (cat, sg, lie, dist, club = null) => { if (cat && sg != null && Number.isFinite(sg)) shots.push({ cat, sg, w: 1, lie: lie || null, dist, club, clubCat: club ? (club === "Driver" ? "Driver" : /wood/i.test(club) ? "Fairway Wood" : "Iron") : null }); };
+    const add = (cat, sg, lie, dist, club = null) => { if (cat && sg != null && Number.isFinite(sg)) shots.push({ cat, sg, w: 1, lie: lie || null, dist, club, clubCat: club ? (club === "Driver" ? "Driver" : /wood|^\d+\s*w$/i.test(club) ? "Fairway Wood" : "Iron") : null }); };
     if (s.cat === "ROUND") {
       for (const h of s.holes || []) for (const x of h.shots || []) {
         const d = x.unit === "ft" || x.kind === "putt" ? x.startDist : x.startDist;
-        add(x.rcat, x.sg, x.startLie === "Green" || x.unit === "ft" ? "Green" : x.startLie, distanceBucket(x.rcat, { startDist: d }, h.par), null);
+        add(x.rcat, x.sg, x.startLie === "Green" || x.unit === "ft" ? "Green" : x.startLie, distanceBucket(x.rcat, { startDist: d }, h.par), x.clubUsed || null);
       }
     } else {
       for (const x of s.shots || []) {
         if (!x.result) continue;
         const sg = x.sg ?? scoreShot(x);
         const cat = s.cat;
-        add(cat, sg, x.kind === "putt" ? "Green" : x.startLie, distanceBucket(cat, { startDist: x.startDist }, x.par || 4), cat === "OTT" ? x.club : null);
+        add(cat, sg, x.kind === "putt" ? "Green" : x.startLie, distanceBucket(cat, { startDist: x.startDist }, x.par || 4), x.clubUsed || (cat === "OTT" ? x.club : null));
       }
     }
     if (!shots.length) continue;

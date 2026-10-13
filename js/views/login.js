@@ -16,6 +16,20 @@ export async function render(main) {
   const password = el("input", { type: "password", autocomplete: "current-password", required: true });
   const submit = el("button", { class: "btn", type: "submit" }, "Log in");
   const errorBox = el("div");
+  // Forgot password? (update 145): a reset link to the email typed above
+  const forgot = el("button", { type: "button", class: "link forgot-link" }, "Forgot password?");
+  forgot.addEventListener("click", async () => {
+    const addr = email.value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { mount(errorBox, el("p", { class: "flash error", role: "alert" }, "Type your email above first, then tap Forgot password?")); email.focus(); return; }
+    forgot.disabled = true;
+    try {
+      const { sendPasswordReset } = await import("../store.js");
+      await sendPasswordReset(addr);
+      mount(errorBox, el("p", { class: "flash", role: "status" }, `If ${addr} has an account, we've emailed it a link to set a new password. Check your inbox (and spam).`));
+    } catch (err) {
+      mount(errorBox, el("p", { class: "flash error", role: "alert" }, FRIENDLY[err.code] || "Couldn't send the reset email. Try again in a moment."));
+    } finally { forgot.disabled = false; }
+  });
 
   const form = el("form", {
     onSubmit: async (e) => {
@@ -34,6 +48,7 @@ export async function render(main) {
   }, [
     el("label", {}, ["Email", email]),
     el("label", {}, ["Password", password]),
+    el("p", { class: "forgot-row" }, forgot),
     submit,
   ]);
 

@@ -3114,3 +3114,27 @@ button.ti-name:hover { color: var(--accent); }
 .ti-two .ti-v { padding-top: 0.05rem; }
 .ti-scroll .ti-name { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; line-height: 1.25; }
 .hero-tourn td.ht-won { color: #30d158; font-weight: 600; }
+.ms-allnone { display: inline-flex; gap: 0.9rem; }
+.forgot-row { margin: -0.3rem 0 0.4rem; text-align: right; }
+.forgot-link { font-size: 0.85rem; }
+
+/* update 145: club per shot, launch-monitor sessions, empty dashboards */
+.pr-club-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.5rem 0; font-size: 0.9rem; }
+.pr-club-sel { flex: 0 1 180px; min-width: 0; padding: 0.35rem 0.5rem; border-radius: 8px; border: 1px solid var(--line, #ccc); background: var(--panel, #fff); color: inherit; font: inherit; }
+.pr-monitor-note { margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-radius: 8px; background: rgba(212, 180, 131, 0.15); font-size: 0.88rem; }
+.pr-mon-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.6rem 0; font-size: 0.92rem; }
+.pr-mon-link { font-size: 0.85rem; }
+.pr-file { margin: 0.8rem 0; }
+.sg-empty-note { margin-top: 0.8rem; }
+.pr-mon-next { display: flex; justify-content: flex-end; margin: 0.6rem 0; } .pr-mon-next .pr-next { min-width: 50%; }
+
+/* update 146: files sent from Python */
+.py-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.py-list li { padding: 0.6rem 0.8rem; border: 1px solid var(--line, rgba(255,255,255,0.1)); border-radius: 10px; }
+.py-list li p { margin: 0.2rem 0 0; overflow-wrap: anywhere; }
+.py-top { display: flex; justify-content: space-between; gap: 0.8rem; align-items: baseline; }
+.py-ok, .py-err, .py-run, .py-tag { font-size: 0.78rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+.py-ok { background: rgba(46, 160, 67, 0.18); color: #3fb950; }
+.py-err { background: rgba(248, 81, 73, 0.16); color: #f85149; }
+.py-run { background: rgba(212, 180, 131, 0.18); color: #d4b483; }
+.py-tag { margin-left: 0.5rem; background: rgba(212, 180, 131, 0.14); color: #d4b483; }

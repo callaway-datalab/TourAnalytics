@@ -141,6 +141,9 @@ export async function render(main, { flash }) {
   };
 
   drawPills(); mount(body, el("p", { class: "muted pr-loading" }, "Loading your practice\u2026"));
+  // your clubs for the Club picker on each shot: your WITB bag, else the usual set (update 145)
+  ctx.clubs = ["Driver", "3w", "5w", "4H", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "50\u00b0", "54\u00b0", "58\u00b0"];
+  import("../bag.js").then(async (m) => { const bag = await m.getBag(uid); if (bag?.length) ctx.clubs = [...bag].sort((a, b) => m.clubRank(m.clubLabel(a)) - m.clubRank(m.clubLabel(b))).map((c) => m.clubLabel(c)).filter((x) => x && !/putter/i.test(x)); }).catch(() => {});
   try { sessions = await listSessions(owner, { oldUid: owner !== uid ? uid : null }); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
   drawPills(); draw();
 
@@ -149,6 +152,7 @@ export async function render(main, { flash }) {
     const key = `${view.name}:${view.at ?? ""}:${view.hole ?? ""}:${view.k ?? ""}:${cat}:${tool}`;
     if (key !== lastKey) { lastKey = key; try { window.scrollTo({ top: 0 }); } catch { /* */ } }
     if (view.name === "play") return drawPlay();
+    if (view.name === "monitorUpload") return drawMonitorUpload(view.session);
     if (view.name === "summary") return drawSummary(view.session);
     if (["round", "roundEnd", "prepCourse", "prepNew", "prepRandom"].includes(view.name) || (tool === "PREP" && view.name === "home")) {
       const m = await import("./practiceRound.js");
@@ -285,12 +289,15 @@ export async function render(main, { flash }) {
     }));
     const stimpIn = cat === "PUTT" ? el("input", { type: "number", inputmode: "decimal", min: 7, max: 15, step: 0.5, value: stimp, "aria-label": "Green speed (stimp)" }) : null;
     stimpIn?.addEventListener("input", () => { stimp = Number(stimpIn.value) || 11; });
-    const go = el("button", { type: "button", class: "btn pr-go" }, "Build my session ▶");
+    // a launch monitor: hit the shots, load its file at the end (update 145)
+    const monCb = cat !== "PUTT" ? el("input", { type: "checkbox", id: "pr-mon" }) : null;
+    const monRow = monCb ? el("label", { class: "pr-check pr-mon-row", for: "pr-mon" }, [monCb, el("span", {}, [el("strong", {}, "I'm using a TrackMan / GCQuad"), el("span", { class: "muted small" }, " \u00b7 just click through the shots as you hit them, then load the file at the end: each shot in the file fills the next shot here, in order.")])]) : null;
+    const go = el("button", { type: "button", class: "btn pr-go" }, "Build my session \u25B6");
     go.addEventListener("click", async () => {
       const plan = { cat, counts: { ...counts }, mixes, stimp };
       const shots = generateShots(plan);
       if (!shots.length) { flash?.("Add some shots first.", "error"); return; }
-      const s = { id: newSessionId(), cat, status: "active", startedAt: new Date().toISOString(), plan: { counts: plan.counts, mixes, stimp, total: shots.length }, shots, playerKey: playerKey || myEntryKey(state), playerLabel: label };
+      const s = { id: newSessionId(), cat, status: "active", startedAt: new Date().toISOString(), plan: { counts: plan.counts, mixes, stimp, total: shots.length }, shots, playerKey: playerKey || myEntryKey(state), playerLabel: label, ...(monCb?.checked ? { monitor: true } : {}) };
       save(s);
       ctx.playSession(s);
     });
@@ -306,7 +313,7 @@ export async function render(main, { flash }) {
           el("div", {}, [el("h2", {}, "Mix"), mixBox, stimpIn ? el("label", { class: "pr-stimp" }, [el("span", { class: "rd-label" }, "Green speed (stimp)"), stimpIn]) : null,
             el("p", { class: "muted small" }, "Every shot is drawn at random from this plan, in a random order, so no two in a row are the same.")]),
         ]),
-        go,
+        monRow, go,
       ]),
     ]);
   }
@@ -339,8 +346,11 @@ export async function render(main, { flash }) {
       shot, stimp: s.plan?.stimp || 11, aim: aimFor(shot), eyebrow: `${game ? `${game.title} \u00b7 ` : ""}Shot ${at + 1} of ${shots.length}`,
       onPrev: at > 0 ? () => go(at - 1) : null, onNext: at < shots.length - 1 ? () => go(at + 1) : null,
       onResult: (r) => { shot.result = r || undefined; shot.sg = r ? scoreShot(shot) : null; save(s); update(); },
-      next: at === shots.length - 1 ? { label: game ? "Finish game \u2713" : "Finish session \u2713", onClick: () => finishSession(s) } : { label: "Next shot \u203A", onClick: () => go(at + 1) },
-      more: [monitor, finish], heat: ctx.heat,
+      next: at === shots.length - 1
+        ? { label: s.monitor ? "Done \u2014 load the file \u203A" : game ? "Finish game \u2713" : "Finish session \u2713", onClick: () => finishSession(s), always: !!s.monitor }
+        : { label: "Next shot \u203A", onClick: () => go(at + 1), always: !!s.monitor },
+      more: [s.monitor ? null : monitor, finish], heat: ctx.heat,
+      clubs: ctx.clubs, onClub: () => save(s), monitor: !!s.monitor,
     });
     const bar = el("div", { class: "pr-bar" }, [
       el("div", { class: "pr-bar-l" }, [el("strong", {}, game ? game.title : CATS[s.cat].label), count]),
@@ -356,7 +366,9 @@ export async function render(main, { flash }) {
     mount(body, [bar, live, card, list]);
   }
 
-  async function finishSession(s) {
+  async function finishSession(s, { afterFile = false } = {}) {
+    // a launch monitor session: load the file first (it fills the shots in order)
+    if (s.monitor && !afterFile && s.shots.some((x) => !x.result)) { view = { name: "monitorUpload", session: s }; draw(); return; }
     const game = gameOf(s);
     const done = s.shots.filter((x) => x.result);
     if (!done.length) {
@@ -421,6 +433,34 @@ export async function render(main, { flash }) {
       el("section", { class: "panel" }, [el("h2", {}, "Shot by shot"), el("div", { class: "table-scroll" }, el("table", { class: "plain pr-shots" }, [
         el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "#"), el("th", {}, "Shot"), el("th", { class: "num" }, "SG"), el("th", {}, "Result"), game && !scoringOf(game).sg ? el("th", { class: "num" }, "Pts") : null])), el("tbody", {}, shotRows)]))]),
     ]);
+  }
+
+  /* --------------------------------------------- a launch monitor session: its file, at the end --------------------------------------------- */
+  function drawMonitorUpload(s) {
+    const n = s.shots.length, game = gameOf(s);
+    const input = el("input", { type: "file", accept: ".csv,text/csv", class: "visually-hidden" });
+    const status = el("p", { class: "muted", role: "status" });
+    input.addEventListener("change", async () => {
+      const f = input.files[0]; input.value = "";
+      if (!f) return;
+      try {
+        const rows = readLaunchMonitor(await f.text());
+        // the file's shots, in order, fill this session's shots, in order
+        const k = Math.min(rows.length, n);
+        for (let i = 0; i < k; i++) { const sh = s.shots[i]; sh.result = resultFromMonitor(sh, rows[i]); sh.sg = scoreShot(sh); if (rows[i].club && !sh.clubUsed) sh.clubUsed = rows[i].club; }
+        status.textContent = rows.length === n ? `All ${n} shots matched.` : rows.length > n ? `The file has ${rows.length} shots; the first ${n} were used.` : `The file has ${rows.length} of the ${n} shots; the rest are left out.`;
+        await save(s, true);
+        finishSession(s, { afterFile: true });
+      } catch (err) { status.textContent = err.message || "Couldn't read that file."; }
+    });
+    const back = el("button", { type: "button", class: "link" }, "\u2190 Back to the shots");
+    back.addEventListener("click", () => { view = { name: "play", session: s, at: n - 1 }; draw(); });
+    mount(body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
+      el("p", { class: "pr-eyebrow" }, game ? game.title : CATS[s.cat].label), el("h1", {}, "Load your TrackMan / GCQuad file"),
+      el("p", {}, `This ${game ? "game" : "session"} had ${n} shots. Export this session's shots from your launch monitor as a CSV (Carry, Total, and Side or Offline columns) and load it: the first shot in the file fills shot 1, the second shot 2, and so on.`),
+      el("label", { class: "btn pr-go pr-file" }, ["\u21E7  Load the file", input]),
+      status,
+    ])]);
   }
 
   /* --------------------------------------------- pieces --------------------------------------------- */

@@ -26,7 +26,15 @@ export const p0 = (v) => (v == null ? "\u2014" : `${Math.round(v)}%`);
  *           heat: { on, set(v) } }
  * onResult is called with each result (or null when it's cleared); the card redraws itself.
  */
-export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", title = null, onPrev = null, onNext = null, onResult, next = null, more = [], heat = { on: true, set() {} } }) {
+/** "Club" for a shot (update 145): your bag (WITB) if you have one, else the usual clubs. */
+export function clubSelect(clubs, value, onChange) {
+  const sel = el("select", { class: "pr-club-sel", "aria-label": "Club used" }, [el("option", { value: "" }, "Club\u2026"), ...clubs.map((c) => el("option", { value: c, selected: c === value }, c))]);
+  if (value && !clubs.includes(value)) sel.appendChild(el("option", { value, selected: true }, value));
+  sel.addEventListener("change", () => onChange(sel.value || null));
+  return el("label", { class: "pr-club-row" }, [el("span", { class: "rd-label" }, "Club"), sel]);
+}
+
+export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", title = null, onPrev = null, onNext = null, onResult, next = null, more = [], heat = { on: true, set() {} }, clubs = null, onClub = null, monitor = false }) {
   let showHeat = heat.on;
   const carry = shot.kind === "tee" ? shot.carry || (shot.club === "3 wood" ? 260 : shot.club === "Iron" ? 225 : 290) : null;
   const aim = shot.kind === "putt" || !aimInfo ? null : bestAim(shot, aimInfo.spread, carry);
@@ -38,7 +46,7 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
     drawVisual(); drawResult();
     // typed into a box: leave the boxes as they are (rebuilding them mid-typing loses your place)
     const typing = r?.source === "typed" && inputs.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
-    if (typing || !r) { const nb = inputs.querySelector(".pr-next"); if (nb) nb.disabled = !r; } else drawInputs();
+    if (typing || !r) { const nb = inputs.querySelector(".pr-next"); if (nb) nb.disabled = !r && !next?.always; } else drawInputs();
   };
   const drawVisual = () => {
     const r = shot.result;
@@ -53,7 +61,9 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
       : r.lie === "Holed" ? "In the hole!" : r.penalty ? "Water \u00b7 penalty stroke" : `${r.lie} \u00b7 ${n1(r.dist)} ${r.unit}`;
     mount(resultLine, [el("span", {}, where), el("strong", { class: `pr-sgchip ${sgCls(shot.sg)}` }, `${SG(shot.sg)} SG`)]);
   };
-  const drawInputs = () => mount(inputs, inputsFor(shot, setResult, next));
+  // a launch monitor session: no typing, just Next (the file fills the result in at the end)
+  const monNext = () => { const b = el("button", { type: "button", class: "btn pr-next" }, next.label); b.addEventListener("click", () => next.onClick()); return el("div", { class: "pr-mon-next" }, b); };
+  const drawInputs = () => mount(inputs, monitor && next && !shot.result ? monNext() : inputsFor(shot, setResult, next));
   drawVisual(); drawResult(); drawInputs();
   const heatBtn = shot.kind === "putt" ? null : el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Aim map");
   heatBtn?.addEventListener("click", () => { showHeat = !showHeat; heat.set(showHeat); heatBtn.classList.toggle("on", showHeat); heatBtn.setAttribute("aria-pressed", String(showHeat)); drawVisual(); });
@@ -63,7 +73,10 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
     el("dl", { class: "pr-facts" }, shotFacts(shot, stimp).map(([k, v]) => el("div", {}, [el("dt", {}, k), el("dd", {}, v)]))),
     el("div", { class: "pr-play" }, [
       el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, legend(shot))])]),
-      el("div", { class: "pr-in-col" }, [resultLine, inputs, more.filter(Boolean).length ? el("div", { class: "pr-more" }, more) : null]),
+      el("div", { class: "pr-in-col" }, [
+        clubs && shot.kind !== "putt" ? clubSelect(clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; onClub?.(v); }) : null,
+        monitor ? el("p", { class: "pr-monitor-note" }, "Using a TrackMan / GCQuad: just hit the shot and tap Next. You'll load the file at the end, and it fills the shots in this order.") : null,
+        resultLine, inputs, more.filter(Boolean).length ? el("div", { class: "pr-more" }, more) : null]),
     ]),
   ]);
 }
@@ -184,7 +197,7 @@ export function patternPanel(cat, shots, title) {
 export const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 export function inputsFor(shot, setResult, next) {
   const r = shot.result;
-  const nextBtn = next ? el("button", { type: "button", class: "btn pr-next", disabled: r ? null : true }, next.label) : null;
+  const nextBtn = next ? el("button", { type: "button", class: "btn pr-next", disabled: r || next.always ? null : true }, next.label) : null;
   nextBtn?.addEventListener("click", () => next.onClick());
   const say = SpeechRec ? (() => {
     const b = el("button", { type: "button", class: "btn ghost pr-say voice-mic" }, sayKids("Say it"));

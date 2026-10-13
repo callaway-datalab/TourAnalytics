@@ -6,7 +6,7 @@
  */
 import { el, mount, confirmAction } from "../ui.js";
 import { CATS } from "../practice/model.js";
-import { BUILT_IN, SCORING, proxTable, buildGame, personalBest, fmtGameScore, targetText, scoringOf, describeGame, isLow } from "../practice/games.js";
+import { BUILT_IN, SCORING, proxTable, storableGame, buildGame, personalBest, fmtGameScore, targetText, scoringOf, describeGame, isLow } from "../practice/games.js";
 import { listMyGames, saveMyGame, deleteMyGame, listAssigned, sendGame, dismissAssigned } from "../practice/store.js";
 import { spotHole } from "../practice/round.js";
 
@@ -15,14 +15,14 @@ let assigned = null; // games sent to you
 const CAT_ORDER = ["OTT", "APP", "ARG", "PUTT"];
 
 /** Start a game: a new session, straight into the first shot (or spot). */
-export async function startGame(ctx, game) {
-  const base = { id: ctx.newId(), mode: "game", gameId: game.id, gameDef: game, status: "active", startedAt: new Date().toISOString(), playerKey: ctx.playerKey, playerLabel: ctx.label };
+export async function startGame(ctx, game, { monitor = false } = {}) {
+  const base = { id: ctx.newId(), mode: "game", gameId: game.id, gameDef: storableGame(game), status: "active", startedAt: new Date().toISOString(), playerKey: ctx.playerKey, playerLabel: ctx.label };
   if (game.play === "holes") {
     const { startRound } = await import("./practiceRound.js");
     startRound(ctx, { mode: "game", course: { name: game.title }, holes: buildGame(game), gameId: game.id, gameDef: game });
     return;
   }
-  const s = { ...base, cat: game.cat, shots: buildGame(game), plan: { stimp: 11 } };
+  const s = { ...base, cat: game.cat, shots: buildGame(game), plan: { stimp: 11 }, ...(monitor ? { monitor: true } : {}) };
   s.plan.total = s.shots.length;
   ctx.save(s);
   ctx.playSession(s);
@@ -72,8 +72,11 @@ function drawHome(ctx) {
   const card = (g, { tag = null, note = null, onDismiss = null, edited = false, custom = false } = {}) => {
     const plays = done.filter((s) => s.gameId === g.id), pb = personalBest(g, ctx.sessions);
     const passed = plays.filter((s) => s.game?.passed).length, last = plays[0];
-    const play = el("button", { type: "button", class: "btn pr-play-btn" }, "▶  Play");
+    const play = el("button", { type: "button", class: "btn pr-play-btn" }, "\u25B6  Play");
     play.addEventListener("click", () => startGame(ctx, g));
+    // with a launch monitor: click through the shots, load its file at the end (one shot each, not putting)
+    const withMon = g.play !== "holes" && g.cat !== "PUTT" ? el("button", { type: "button", class: "link pr-mon-link" }, "Play with TrackMan / GCQuad") : null;
+    withMon?.addEventListener("click", () => startGame(ctx, g, { monitor: true }));
     const edit = el("button", { type: "button", class: "link" }, "Edit");
     edit.addEventListener("click", () => ctx.go({ name: "gameEdit", game: JSON.parse(JSON.stringify(g)), isNew: false }));
     const send = sender ? el("button", { type: "button", class: "link" }, "Send to players") : null;
@@ -96,7 +99,7 @@ function drawHome(ctx) {
         el("span", {}, [el("em", {}, "Beaten"), el("strong", {}, plays.length ? `${passed} of ${plays.length}` : "—")]),
       ]),
       play,
-      el("div", { class: "pr-game-links" }, [edit, send, reset, del, dismiss].filter(Boolean)),
+      el("div", { class: "pr-game-links" }, [withMon, edit, send, reset, del, dismiss].filter(Boolean)),
     ]);
   };
 
@@ -216,7 +219,11 @@ function drawEditor(ctx, g, isNew) {
     if (!g.title?.trim()) { ctx.flash?.("Give the game a name.", "error"); return; }
     const out = { ...g, title: g.title.trim(), updated: new Date().toISOString() };
     if (!out.blurb) delete out.blurb;
-    try { await saveMyGame(ctx.owner, out); } catch (err) { console.error(err); ctx.flash?.("Couldn't save the game. Check your connection.", "error"); return; }
+    try { await saveMyGame(ctx.owner, storableGame(out)); } catch (err) {
+      console.error(err);
+      ctx.flash?.(err?.code === "permission-denied" ? "Couldn't save the game: Firestore refused it. Republish the Firestore rules from the latest update." : `Couldn't save the game (${err?.code || err?.message || "error"}).`, "error");
+      return;
+    }
     mine = [...(mine || []).filter((x) => x.id !== out.id), out];
     ctx.flash?.(isBuiltIn ? "Saved your version." : "Saved.", "ok");
     ctx.home();
@@ -249,7 +256,7 @@ async function drawSend(ctx, g) {
     try {
       for (const key of picked) {
         const id = ctx.newId();
-        const game = { ...g, id: `sent_${id}`, blurb: g.blurb || describeGame(g) };
+        const game = storableGame({ ...g, id: `sent_${id}`, blurb: g.blurb || describeGame(g) });
         await sendGame(key, { id, game, note: note.value.trim(), fromUid: ctx.uid, fromName, sentAt: at, playerKey: key });
       }
       ctx.flash?.(`Sent ${g.title} to ${picked.size} player${picked.size === 1 ? "" : "s"}.`, "ok");

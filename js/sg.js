@@ -618,7 +618,7 @@ export function leaveHistogram(rounds, idx, cat) {
 
 /** Min. rounds, until someone types their own: a quarter of the most rounds anyone played, rounded down
  *  to a 10 (23 → 20); under 10 → 1. Used by the Stats page and the report. */
-export const defaultMinRounds = (mostRounds) => Math.max(1, Math.floor((Math.max(0, Number(mostRounds) || 0) * 0.25) / 10) * 10);
+export const defaultMinRounds = (mostRounds) => Math.max(1, Math.floor((Math.max(0, Number(mostRounds) || 0) * 0.3) / 10) * 10); // 30% of the most, down to a 10 (update 145)
 
 /** Rank players by a value (higher first). Returns [{ key, label, value, rank }]. */
 export function rank(entries) {

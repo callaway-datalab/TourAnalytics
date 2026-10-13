@@ -16,7 +16,7 @@ import { gameProgress, personalBest, targetText, passedIt, gameOf } from "../pra
 import { wordsToNumbers, golfFix } from "../voiceShots.js";
 import { expectedStrokes } from "../roundCalc.js";
 import { trendSvg } from "../practice/draw.js";
-import { SG, sgCls, tile, SpeechRec, sayKids } from "./practiceShot.js";
+import { SG, sgCls, tile, SpeechRec, sayKids, clubSelect } from "./practiceShot.js";
 
 const sumOf = (s) => roundSummary(s.holes, { noPutts: !!s.opts?.noPutts });
 const toParText = (d) => (d === 0 ? "E" : d > 0 ? `+${d}` : `−${Math.abs(d)}`);
@@ -393,6 +393,7 @@ function drawRound(ctx, s) {
       hole.from ? el("p", { class: "muted small" }, `From ${hole.from}`) : null,
     ]),
     holeStrip(hole, shot),
+    shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); }) : null,
     resultPanel(shot, (r) => { shot.result = r || undefined; ctx.save(s); }, commit, { noPutts: !!s.opts?.noPutts }),
     el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [pick, end])]),
   ]);

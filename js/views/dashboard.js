@@ -72,6 +72,12 @@ export async function render(main, { previewClient, flash }) {
   const secHome = el("div", { class: "sec-home" });
   mount(main, [picker, picker ? secHome : null, sourceHome, tourBox, enteredBox, practiceBox]);
   const undoTop = picker ? relocateSectionNav(main, secHome) : () => {};
+  // Nothing to show yet: the same Filters panel (with the data pills in it) and why (update 145)
+  function emptyDash(box, note) {
+    const inner = el("div");
+    mount(box, inner);
+    return sgDashboard(inner, { me: null, field: [], idx: ENTERED_IDX, entered: true, mode: "player", teamRole, state: {}, rankings: false, emptyNote: note, viewHost, lead: sourcePills, leadHome: sourceHome });
+  }
   // Practice (update 139): the player's practice sessions, games and Course Prep rounds, on the same dashboard
   let practiceDash = null, practiceLoading = null;
   const practiceState = {};
@@ -86,11 +92,7 @@ export async function render(main, { previewClient, flash }) {
       try { rounds = await loadPracticeFor(key); } catch (err) { console.error(err); }
       const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
       const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
-      if (!rounds.length) {
-        mount(practiceBox, el("p", { class: "empty center" }, ["No practice yet. Sessions, games and Course Prep rounds from ", el("a", { href: "#/practice" }, "Practice"), " show up here."]));
-        if (lastSource === "practice") showPills();
-        return;
-      }
+      if (!rounds.length) { practiceDash = emptyDash(practiceBox, "No practice yet. Sessions, games and Course Prep rounds from Practice show up here."); if (lastSource === "practice") practiceDash.update({}); return; }
       const me = { key: clientKey, label, rounds };
       const inner = el("div");
       mount(practiceBox, inner);
@@ -168,9 +170,9 @@ export async function render(main, { previewClient, flash }) {
     if (!datasets.length) {
       current = null; shownVersion = null; stopDataset(); stopDataset = () => {};
       mount(tabs, null); tabs.hidden = true;
-      mount(box, el("p", { class: "empty center" }, teamRole ? "No data has been added for this player yet."
-        : "No data has been added to your account yet. It will appear here as soon as it's uploaded."));
-      if (lastSource === "tour") showPills();
+      const d0 = tourDashNow = emptyDash(box, teamRole ? "No data has been added for this player yet." : "No data has been added to your account yet. It will appear here as soon as it's uploaded.");
+      stopDataset = () => d0.destroy();
+      if (lastSource === "tour") tourDashNow.update({});
       return;
     }
     datasets.sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0));
@@ -193,11 +195,7 @@ export async function render(main, { previewClient, flash }) {
     const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
     const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
     enteredDash?.destroy(); enteredDash = null;
-    if (!players.length) {
-      mount(enteredDashBox, el("p", { class: "empty center" }, ["No entered rounds yet. Record one in ", el("a", { href: "#/entry" }, "Track Round"), " and it shows up here."]));
-      if (lastSource === "entered") showPills();
-      return;
-    }
+    if (!players.length) { enteredDash = emptyDash(enteredDashBox, "No entered rounds yet. Record one in Track Round and it shows up here."); if (lastSource === "entered") enteredDash.update({}); return; }
     const me = { ...players[0], label };
     const inner = el("div");
     mount(enteredDashBox, inner);

@@ -27,7 +27,8 @@ const proxFt = (r) => (r.lie === "Holed" ? 0 : r.unit === "ft" ? r.dist : r.dist
 export const PROX_TABLE = { holed: 10, bands: [[8, 4], [15, 3], [25, 2]], green: 1, miss: 0, water: -2 };
 export const proxTable = (g) => {
   const t = g?.scoring?.table || {};
-  const bands = (t.bands?.length ? t.bands : PROX_TABLE.bands).map(([ft, pts]) => [Number(ft) || 0, Number(pts) || 0]).filter(([ft]) => ft > 0).sort((a, b) => a[0] - b[0]);
+  // (saved games keep each band as { ft, pts }: Firestore can't store a list of lists)
+  const bands = (t.bands?.length ? t.bands : PROX_TABLE.bands).map((b) => (Array.isArray(b) ? b : [b.ft, b.pts])).map(([ft, pts]) => [Number(ft) || 0, Number(pts) || 0]).filter(([ft]) => ft > 0).sort((a, b) => a[0] - b[0]);
   const n = (k) => (t[k] == null || t[k] === "" || Number.isNaN(Number(t[k])) ? PROX_TABLE[k] : Number(t[k]));
   return { holed: n("holed"), bands, green: n("green"), miss: n("miss"), water: n("water") };
 };
@@ -152,3 +153,10 @@ export function describeGame(g) {
 
 /** The recipe a game session was played with (kept on the session, so it shows even if the game's since changed). */
 export const gameOf = (s) => (s?.mode === "game" ? s.gameDef || BUILT_IN.find((g) => g.id === s.gameId) || null : null);
+
+/** A game ready to save (Firestore can't hold a list of lists, so proximity bands become { ft, pts }). */
+export function storableGame(g) {
+  const c = JSON.parse(JSON.stringify(g));
+  if (c.scoring?.table?.bands) c.scoring.table.bands = c.scoring.table.bands.map((b) => (Array.isArray(b) ? { ft: b[0], pts: b[1] } : b));
+  return c;
+}
