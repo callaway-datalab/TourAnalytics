@@ -33,7 +33,9 @@ export function practiceRounds(sessions) {
     const g = gameOf(s);
     const event = g ? `Game · ${g.title}` : s.cat === "ROUND" ? `Course Prep · ${s.course?.name || "Round"}` : `Practice · ${CATS[s.cat]?.label || ""}`;
     const date = dayOf(s.startedAt);
-    out.push({ key: s.id, date, event, roundNo: "", tour: "", year: date.slice(0, 4), shots, obs: [], has: new Set(["sg"]) });
+    // the Session filter: Custom practice, Course Prep, Sim rounds, or the game
+    const ptype = g ? `game:${g.title}` : s.cat === "ROUND" ? (s.mode === "sim" ? "sim" : "prep") : "custom";
+    out.push({ key: s.id, date, event, roundNo: "", tour: "", year: date.slice(0, 4), shots, obs: [], has: new Set(["sg"]), ptype });
   }
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }

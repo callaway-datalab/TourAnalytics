@@ -433,6 +433,13 @@ export function watchImports(cb, n = 5) {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));
 }
 
+/** The admin: clear a Python upload from the list (and, with a data file deleted, its uploads). */
+export const deleteImport = (id) => deleteDoc(doc(db, "imports", id));
+async function deleteImportsOf(datasetId) {
+  try { const snap = await getDocs(query(collection(db, "imports"), where("datasetId", "==", datasetId))); await Promise.all(snap.docs.map((d) => deleteDoc(d.ref))); }
+  catch (err) { console.warn("Couldn't clear its Python uploads", err); }
+}
+
 /* ---------- Field stats: the part of a strokes-gained file every signed-in user may read ---------- */
 // Per player, per round, per category totals (see buildFieldSummary in sg.js), so players can see
 // the rankings. Stored in pieces like everything else, at fieldStats/{datasetId}.
@@ -469,6 +476,7 @@ export async function deleteDataset(datasetId) {
     await deleteDoc(doc(db, "clientData", key, "datasets", datasetId));
   }
   await deleteDoc(doc(db, "datasets", datasetId));
+  await deleteImportsOf(datasetId);
   const fs = await getDoc(doc(db, "fieldStats", datasetId));
   if (fs.exists()) {
     for (let i = 0; i < (fs.data().chunkCount || 0); i++) await deleteDoc(doc(db, "fieldStats", datasetId, "chunks", String(i)));

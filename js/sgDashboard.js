@@ -48,7 +48,7 @@ export function sgDashboard(container, opts) {
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   Object.assign(st, { span: st.span ?? 0, year: arr(st.year), event: arr(st.event), roundNo: arr(st.roundNo), cats: st.cats ?? [], lie: arr(st.lie),
-    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), club: arr(st.club), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
+    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), club: arr(st.club), ptype: arr(st.ptype), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
   const narrowed = () => st.lie.length || st.dist.length || st.club.length; // lie / distance / club in use (the shared summary can't follow those)
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
@@ -96,6 +96,7 @@ export function sgDashboard(container, opts) {
     // the categories this stat has (strokes gained: all four; Make %: Putting only; Scoring Avg: none)
     const catSeen = new Set(); for (const rd of base) for (const x of rd.shots) if (x.cat) catSeen.add(x.cat);
     catsAvail = CATEGORIES.filter(([k]) => catSeen.has(k));
+    if (opts.entered && !base.length && statKey === "sg") catsAvail = CATEGORIES; // (entered rounds / practice with nothing yet: the filters still show)
     st.cats = st.cats.filter((k) => catSeen.has(k));
     // Keep only choices that still exist: distances of the picked categories, lies seen in them.
     if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
@@ -117,7 +118,10 @@ export function sgDashboard(container, opts) {
         st.tour = [pga || byRounds[0]];
       } else st.tour = [st.tour[0]];
     } else st.tour = [];
-    const f = { span: Number(st.span), year: st.year, tour: st.tour, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club };
+    // Tournament: only those on the tour (and in the years) picked; a pick that's no longer there goes
+    st.event = st.event.filter((e) => eventOptions(base).some((o) => o.value === e));
+    if (opts.practice) st.event = [];
+    const f = { span: Number(st.span), year: st.year, tour: st.tour, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, ptype: st.ptype };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
     lastRankF = rankF;
@@ -250,15 +254,39 @@ export function sgDashboard(container, opts) {
     st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
   }
 
+  // The Tournament filter's list: the tournaments on the tour and in the years picked, newest first.
+  // (entered rounds: each tournament entered, and "Practice Rounds" for the rest)
+  function eventOptions(rounds) {
+    const tours = st.tour.length ? new Set(st.tour.map(String)) : null, years = st.year.length ? new Set(st.year.map(String)) : null;
+    const last = new Map();
+    for (const rd of rounds) {
+      if (tours && rd.tour !== undefined && !tours.has(rd.tour || "")) continue;
+      if (years && !years.has(String(rd.year))) continue;
+      const e = rd.tfilter ?? rd.event;
+      if (e == null || e === "") continue;
+      const t = Date.parse(rd.date) || 0;
+      if (!last.has(e) || t > last.get(e)) last.set(e, t);
+    }
+    return [...last].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).map(([e]) => ({ value: e, label: e }));
+  }
+  // Practice's Session filter: Custom practice, Course Prep, Sim rounds and each game.
+  const PTYPE = { custom: "Custom practice", prep: "Course Prep", sim: "Sim rounds" };
+  function sessionOptions(rounds) {
+    const seen = new Set(rounds.map((rd) => rd.ptype).filter(Boolean));
+    const kinds = ["custom", "prep", "sim"].map((k) => ({ value: k, label: PTYPE[k], group: "Sessions" }));
+    const games = [...seen].filter((k) => k.startsWith("game:")).sort().map((k) => ({ value: k, label: k.slice(5), group: "Games" }));
+    return [...kinds, ...games];
+  }
+
   function filterBar(opt, { bare = false } = {}) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
     span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
     const latest = [...opt.year].sort().pop();
-    const active = ["event", "roundNo", "lie", "dist", "club", "cats"].some((k) => st[k].length) || Number(st.span) > 0
+    const active = ["event", "roundNo", "lie", "dist", "club", "cats", "ptype"].some((k) => st[k].length) || Number(st.span) > 0
       || JSON.stringify(st.year) !== JSON.stringify(latest ? [latest] : []);
     const reset = el("button", { class: "link", type: "button", hidden: !active }, "Reset Filters");
     reset.addEventListener("click", () => {
-      Object.assign(st, { span: 0, year: latest ? [latest] : [], tour: [], event: [], roundNo: [], lie: [], dist: [], club: [], cats: [], openFilter: null });
+      Object.assign(st, { span: 0, year: latest ? [latest] : [], tour: [], event: [], roundNo: [], lie: [], dist: [], club: [], cats: [], ptype: [], openFilter: null });
       draw();
     });
     // Distances, grouped under their category; with categories picked, only theirs show.
@@ -267,18 +295,20 @@ export function sgDashboard(container, opts) {
       .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
     // On phones the filters fold behind a "Filters" button (with how many are in use).
-    const inUse = ["event", "roundNo", "lie", "dist", "club"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
+    const inUse = ["event", "roundNo", "lie", "dist", "club", "ptype"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
     const fold = el("button", { type: "button", class: "filters-toggle", "aria-expanded": st.filtersOpen ? "true" : "false" },
       [`More Filters${inUse ? ` \u00b7 ${inUse} on` : ""}`, el("span", { "aria-hidden": "true" }, st.filtersOpen ? "\u25B4" : "\u25BE")]);
     fold.addEventListener("click", () => { st.filtersOpen = !st.filtersOpen; draw(); });
     return el("div", { class: "sg-filters" + (st.filtersOpen || bare ? " open" : "") + (bare ? " bare" : "") }, [
       bare ? null : fold,
       el("label", {}, ["Span", span]),
-      multi("Tournament", "event", simple(opt.event), "All tournaments", { plural: "tournaments" }),
-      multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
-      // Lie and distance only when this stat has them; Club for strokes gained (clubs are recorded per shot).
-      opt.lie.length ? multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies" }) : null,
-      distOpts.length ? multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|") }) : null,
+      // Practice has no tournaments: its Session filter instead (custom practice, Course Prep, sim rounds, games)
+      opts.practice ? multi("Session", "ptype", sessionOptions(base), "All sessions", { plural: "sessions", fmt: (v) => PTYPE[v] || String(v).replace(/^game:/, "") })
+        : multi("Tournament", "event", eventOptions(base), "All tournaments", { plural: "tournaments" }),
+      opts.entered ? null : multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
+      // Lie and distance when this stat has them (always for entered rounds and practice); Club for strokes gained.
+      opt.lie.length || (opts.entered && isSG()) ? multi("Lie", "lie", simple(opt.lie), "All lies", { plural: "lies", empty: "No lies in this selection yet." }) : null,
+      distOpts.length || (opts.entered && isSG()) ? multi("Distance", "dist", distOpts, "All distances", { plural: "distances", fmt: (v) => v.split("|").slice(1).join("|"), empty: "No distances in this selection yet." }) : null,
       // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
       isSG() ? multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
         empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }) : null,
@@ -295,7 +325,7 @@ export function sgDashboard(container, opts) {
     const src = opts.lead?.querySelector?.("[aria-current=page]")?.textContent || "";
     const yrs = st.year.length ? [...st.year].sort().reverse().join(" + ") : "All years";
     const cats = catsAvail.length < 2 ? "" : st.cats.length ? st.cats.map((k) => CAT_NAME[k] || k).join(" + ") : "All categories";
-    const more = ["event", "roundNo", "lie", "dist", "club"].filter((k) => (st[k] || []).length).length + (Number(st.span) > 0 ? 1 : 0);
+    const more = ["event", "roundNo", "lie", "dist", "club", "ptype"].filter((k) => (st[k] || []).length).length + (Number(st.span) > 0 ? 1 : 0);
     const btn = el("button", { type: "button", class: "filters-panel-btn", "aria-expanded": open ? "true" : "false" }, [
       el("span", { class: "fp-title" }, "Filters"),
       el("span", { class: "fp-sum" }, [src, yrs, tourCounts.length ? tourName(st.tour[0] ?? "") : "", def.label, cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),

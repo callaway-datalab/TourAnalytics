@@ -75,7 +75,7 @@ function drawHome(ctx) {
     const play = el("button", { type: "button", class: "btn pr-play-btn" }, "\u25B6  Play");
     play.addEventListener("click", () => startGame(ctx, g));
     // with a launch monitor: click through the shots, load its file at the end (one shot each, not putting)
-    const withMon = g.play !== "holes" && g.cat !== "PUTT" ? el("button", { type: "button", class: "link pr-mon-link" }, "Play with TrackMan / GCQuad") : null;
+    const withMon = g.play !== "holes" && g.cat !== "PUTT" ? el("button", { type: "button", class: "link pr-mon-link" }, "Play with a launch monitor") : null;
     withMon?.addEventListener("click", () => startGame(ctx, g, { monitor: true }));
     const edit = el("button", { type: "button", class: "link" }, "Edit");
     edit.addEventListener("click", () => ctx.go({ name: "gameEdit", game: JSON.parse(JSON.stringify(g)), isNew: false }));

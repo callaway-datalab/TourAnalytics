@@ -104,7 +104,7 @@ export function courseByBucket(cat, rounds) {
   return out;
 }
 
-/* --------------------------------------------- a launch monitor file (TrackMan / GCQuad CSV) --------------------------------------------- */
+/* --------------------------------------------- a launch monitor file (CSV) --------------------------------------------- */
 function parseCsv(text) {
   const delim = (text.split("\n")[0].match(/;/g) || []).length > (text.split("\n")[0].match(/,/g) || []).length ? ";" : ",";
   const rows = [];
@@ -117,7 +117,7 @@ function parseCsv(text) {
   if (cell || row.length) { row.push(cell); rows.push(row); }
   return rows.filter((r) => r.some((c) => c.trim()));
 }
-/** Shots from a TrackMan or GCQuad export: [{ carry, total, offline }] (offline: − left, + right; yds). */
+/** Shots from a launch monitor's CSV export: [{ carry, total, offline }] (offline: − left, + right; yds). */
 export function readLaunchMonitor(text) {
   const rows = parseCsv(text);
   const hi = rows.findIndex((r) => r.some((c) => /carry|total/i.test(c)));

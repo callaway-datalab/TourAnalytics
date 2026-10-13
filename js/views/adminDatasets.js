@@ -1,5 +1,5 @@
 import { el, mount, formatWhen, num, confirmAction, subNav } from "../ui.js";
-import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage, adminAllClients, publishFieldStats, watchImports } from "../store.js";
+import { watchAdminDatasets, uploadDataset, deleteDataset, uploadErrorMessage, adminAllClients, publishFieldStats, watchImports, deleteImport } from "../store.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../sg.js";
 import { parseCsv, tableFromCsvRows, buildDataset } from "../data.js";
 
@@ -86,9 +86,12 @@ export async function render(main, { flash }) {
   ]);
 
   // files sent from Python (tour_upload.py -> the data-import function): progress and result (update 146)
-  const unsubImports = watchImports((list) => {
+  let importsList = [], fileIds = null;
+  const drawImports = () => {
+    // only uploads still in progress, ones that failed, and ones whose data file is still here
+    const list = importsList.filter((x) => x.status !== "done" || !fileIds || fileIds.has(x.datasetId));
     importsBox.hidden = !list.length;
-    if (!list.length) return;
+    if (!list.length) { mount(importsBox, null); return; }
     mount(importsBox, [
       el("h2", {}, "From Python"),
       el("ul", { class: "py-list" }, list.map((x) => {
@@ -97,15 +100,19 @@ export async function render(main, { flash }) {
           : el("span", { class: "py-run" }, x.step ? `${x.step}\u2026` : "Working\u2026");
         const detail = x.status === "done" ? `${num(x.rows)} rows for ${num(x.people)} ${x.people === 1 ? "person" : "people"}${x.blankIdRows ? ` \u00b7 ${num(x.blankIdRows)} rows had no ID` : ""}`
           : x.status === "error" ? x.message || "" : x.rows ? `${num(x.rows)} rows for ${num(x.people)} people` : "";
+        const x2 = el("button", { type: "button", class: "link py-x", title: "Clear from this list", "aria-label": `Clear ${x.name || x.file} from this list` }, "\u2715");
+        x2.addEventListener("click", async () => { x2.disabled = true; try { await deleteImport(x.id); } catch { x2.disabled = false; flash("Couldn't clear it. Republish the Firestore rules (update 146).", "error"); } });
         return el("li", {}, [
-          el("div", { class: "py-top" }, [el("strong", {}, x.name || x.file), state]),
+          el("div", { class: "py-top" }, [el("strong", {}, x.name || x.file), el("span", { class: "py-right" }, [state, x2])]),
           el("p", { class: "muted small" }, [detail, detail ? " \u00b7 " : "", formatWhen(x.finishedAt || x.startedAt)]),
         ]);
       })),
     ]);
-  });
+  };
+  const unsubImports = watchImports((list) => { importsList = list; drawImports(); });
 
   const unsub = watchAdminDatasets((datasets) => {
+    fileIds = new Set(datasets.map((d) => d.id)); drawImports();
     if (!datasets.length) { mount(listBox, el("p", { class: "empty" }, "Nothing uploaded yet.")); return; }
     const table = el("table", { class: "plain" }, [
       el("thead", {}, el("tr", {}, ["Name", "ID column", "Rows", "People", "Uploaded", ""].map((h, i) =>

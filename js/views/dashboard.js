@@ -73,10 +73,10 @@ export async function render(main, { previewClient, flash }) {
   mount(main, [picker, picker ? secHome : null, sourceHome, tourBox, enteredBox, practiceBox]);
   const undoTop = picker ? relocateSectionNav(main, secHome) : () => {};
   // Nothing to show yet: the same Filters panel (with the data pills in it) and why (update 145)
-  function emptyDash(box, note) {
+  function emptyDash(box, note, { practice = false } = {}) {
     const inner = el("div");
     mount(box, inner);
-    return sgDashboard(inner, { me: null, field: [], idx: ENTERED_IDX, entered: true, mode: "player", teamRole, state: {}, rankings: false, emptyNote: note, viewHost, lead: sourcePills, leadHome: sourceHome });
+    return sgDashboard(inner, { me: null, field: [], idx: ENTERED_IDX, entered: true, mode: "player", teamRole, state: {}, rankings: false, practice, emptyNote: note, viewHost, lead: sourcePills, leadHome: sourceHome });
   }
   // Practice (update 139): the player's practice sessions, games and Course Prep rounds, on the same dashboard
   let practiceDash = null, practiceLoading = null;
@@ -92,11 +92,11 @@ export async function render(main, { previewClient, flash }) {
       try { rounds = await loadPracticeFor(key); } catch (err) { console.error(err); }
       const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
       const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
-      if (!rounds.length) { practiceDash = emptyDash(practiceBox, "No practice yet. Sessions, games and Course Prep rounds from Practice show up here."); if (lastSource === "practice") practiceDash.update({}); return; }
+      if (!rounds.length) { practiceDash = emptyDash(practiceBox, "No practice yet. Sessions, games and Course Prep rounds from Practice show up here.", { practice: true }); if (lastSource === "practice") practiceDash.update({}); return; }
       const me = { key: clientKey, label, rounds };
       const inner = el("div");
       mount(practiceBox, inner);
-      practiceDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, entered: true, mode: "player", teamRole, state: practiceState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
+      practiceDash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, entered: true, practice: true, mode: "player", teamRole, state: practiceState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
         note: "Practice: every session, game and Course Prep round, measured against the Tour baselines by distance (and lie, where it's known)." });
     })();
   }

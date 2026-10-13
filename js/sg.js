@@ -618,7 +618,7 @@ export function leaveHistogram(rounds, idx, cat) {
 
 /** Min. rounds, until someone types their own: a quarter of the most rounds anyone played, rounded down
  *  to a 10 (23 → 20); under 10 → 1. Used by the Stats page and the report. */
-export const defaultMinRounds = (mostRounds) => Math.max(1, Math.floor((Math.max(0, Number(mostRounds) || 0) * 0.3) / 10) * 10); // 30% of the most, down to a 10 (update 145)
+export const defaultMinRounds = (mostRounds) => Math.max(1, Math.floor((Math.max(0, Number(mostRounds) || 0) * 0.33) / 10) * 10); // 33% of the most, down to a 10 (update 149)
 
 /** Rank players by a value (higher first). Returns [{ key, label, value, rank }]. */
 export function rank(entries) {
@@ -668,8 +668,9 @@ export function filterOptions(rounds, cat) {
 export function applyFilters(rounds, f = {}) {
   // Each filter can hold one value or several (any of them matches); empty means "all".
   const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
-  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club), tours = set(f.tour);
-  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.event)) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")));
+  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club), tours = set(f.tour), ptypes = set(f.ptype);
+  // (the Tournament filter: an entered round's tournament, or "Practice Rounds"; practice: its kind of session)
+  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.tfilter ?? rd.event)) && (!ptypes || ptypes.has(rd.ptype || "")) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")));
   if (f.span > 0) rs = rs.slice(-f.span);
   const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
   // Distances are "CAT|label" pairs. A category with distances picked keeps only those; others are unaffected.

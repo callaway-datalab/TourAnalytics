@@ -230,11 +230,11 @@ export async function render(main, { flash }) {
 
   // Nothing to show yet: the same Filters panel (with Tour Events | Entered Rounds | Practice in it) and why (update 145)
   const emptyState = {};
-  function emptyDash(note) {
+  function emptyDash(note, { practice = false } = {}) {
     dash?.destroy(); dash = null;
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: null, field: [], idx: ENTERED_IDX, entered: true, mode: "admin", rankings: false, state: emptyState, emptyNote: note, viewHost,
+    dash = sgDashboard(box, { me: null, field: [], idx: ENTERED_IDX, entered: true, mode: "admin", rankings: false, practice, state: emptyState, emptyNote: note, viewHost,
       slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (k) => pickerRef?.select?.(k) });
   }
 
@@ -242,7 +242,7 @@ export async function render(main, { flash }) {
   const practiceState = {};
   async function refreshPractice() {
     dash?.destroy(); dash = null; sourceHome.hidden = true;
-    if (!player) { emptyDash("Pick a player above to see their practice."); return; }
+    if (!player) { emptyDash("Pick a player above to see their practice.", { practice: true }); return; }
     const token = ++loadToken;
     status.textContent = "Loading practice\u2026";
     const { loadPracticeFor } = await import("../practice/toStats.js");
@@ -253,11 +253,11 @@ export async function render(main, { flash }) {
     try { rounds = await loadPracticeFor(key); } catch (err) { console.error(err); }
     if (token !== loadToken) return;
     status.textContent = "";
-    if (!rounds.length) { emptyDash(`${player.label} hasn't logged any practice yet.`); return; }
+    if (!rounds.length) { emptyDash(`${player.label} hasn't logged any practice yet.`, { practice: true }); return; }
     const me = { key: player.key, label: player.label, rounds };
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: [me], idx: ENTERED_IDX, entered: true, mode: "admin", rankings: false, state: practiceState, note: "Practice: sessions, games and Course Prep rounds, measured against the Tour baselines by distance (and lie, where it's known).", viewHost, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (k) => pickerRef?.select?.(k) });
+    dash = sgDashboard(box, { me, field: [me], idx: ENTERED_IDX, entered: true, practice: true, mode: "admin", rankings: false, state: practiceState, note: "Practice: sessions, games and Course Prep rounds, measured against the Tour baselines by distance (and lie, where it's known).", viewHost, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (k) => pickerRef?.select?.(k) });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.

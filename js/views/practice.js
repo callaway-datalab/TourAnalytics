@@ -6,7 +6,7 @@
  *               from the Stats data), and the mix of lies / pins / fairway widths / breaks. Then a random order.
  *   Play:       each shot on a made-up hole or green, with a heat map of where to aim (from the strokes-gained
  *               baseline and your own shot pattern once there's enough of it). Enter the result by tapping where
- *               it finished, typing, saying it, or loading a TrackMan / GCQuad file.
+ *               it finished, typing, saying it, or loading a launch monitor file.
  *   Results:    strokes gained against the Tour baselines (the same as Track Round), by distance, the key numbers
  *               for the category, your pattern, and how practice compares with the course.
  */
@@ -291,7 +291,7 @@ export async function render(main, { flash }) {
     stimpIn?.addEventListener("input", () => { stimp = Number(stimpIn.value) || 11; });
     // a launch monitor: hit the shots, load its file at the end (update 145)
     const monCb = cat !== "PUTT" ? el("input", { type: "checkbox", id: "pr-mon" }) : null;
-    const monRow = monCb ? el("label", { class: "pr-check pr-mon-row", for: "pr-mon" }, [monCb, el("span", {}, [el("strong", {}, "I'm using a TrackMan / GCQuad"), el("span", { class: "muted small" }, " \u00b7 just click through the shots as you hit them, then load the file at the end: each shot in the file fills the next shot here, in order.")])]) : null;
+    const monRow = monCb ? el("label", { class: "pr-check pr-mon-row", for: "pr-mon" }, [monCb, el("span", {}, [el("strong", {}, "I'm using a launch monitor"), el("span", { class: "muted small" }, " \u00b7 just click through the shots as you hit them, then load the file at the end: each shot in the file fills the next shot here, in order.")])]) : null;
     const go = el("button", { type: "button", class: "btn pr-go" }, "Build my session \u25B6");
     go.addEventListener("click", async () => {
       const plan = { cat, counts: { ...counts }, mixes, stimp };
@@ -456,7 +456,7 @@ export async function render(main, { flash }) {
     const back = el("button", { type: "button", class: "link" }, "\u2190 Back to the shots");
     back.addEventListener("click", () => { view = { name: "play", session: s, at: n - 1 }; draw(); });
     mount(body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
-      el("p", { class: "pr-eyebrow" }, game ? game.title : CATS[s.cat].label), el("h1", {}, "Load your TrackMan / GCQuad file"),
+      el("p", { class: "pr-eyebrow" }, game ? game.title : CATS[s.cat].label), el("h1", {}, "Load your launch monitor file"),
       el("p", {}, `This ${game ? "game" : "session"} had ${n} shots. Export this session's shots from your launch monitor as a CSV (Carry, Total, and Side or Offline columns) and load it: the first shot in the file fills shot 1, the second shot 2, and so on.`),
       el("label", { class: "btn pr-go pr-file" }, ["\u21E7  Load the file", input]),
       status,
@@ -483,7 +483,7 @@ export async function render(main, { flash }) {
         done(k);
       } catch (err) { flash?.(err.message || "Couldn't read that file.", "error"); }
     });
-    return el("label", { class: "btn ghost pr-monitor", title: "A CSV export from TrackMan or GCQuad (FSX): Carry / Total and Side or Offline columns" }, ["TrackMan / GCQuad file", input]);
+    return el("label", { class: "btn ghost pr-monitor", title: "A CSV export from your launch monitor: Carry / Total and Side or Offline columns" }, ["Launch monitor file", input]);
   }
 }
 
@@ -495,7 +495,7 @@ const LEDE = {
   PUTT: "Distances, breaks and slopes at random, with a read for each, scored by makes and the putt you leave.",
 };
 const HOW = {
-  OTT: ["Pick how many drives, with which clubs, and the mix of fairway widths and trouble.", "Each tee shot gets its own hole. The aim map shows where the fewest strokes are, for your pattern.", "Tap where it finished, type the distance and how far off line, say it, or load a TrackMan / GCQuad file.", "See your fairways, misses, penalties and strokes gained against the Tour baselines."],
+  OTT: ["Pick how many drives, with which clubs, and the mix of fairway widths and trouble.", "Each tee shot gets its own hole. The aim map shows where the fewest strokes are, for your pattern.", "Tap where it finished, type the distance and how far off line, say it, or load a launch monitor file.", "See your fairways, misses, penalties and strokes gained against the Tour baselines."],
   APP: ["Pick how many shots and how they're split across distances. Your on-course strokes gained shows for each.", "Mix in rough and bunker lies, and middle, corner and tucked pins.", "Tap where the ball finished on the green, type it, say it (“14 feet short”), or load a launch monitor file.", "See proximity, greens hit, strokes gained by distance and your pattern round the pin."],
   ARG: ["Pick how many shots, the distances and the mix of lies (fringe, rough, bunker).", "Pins range from lots of green to short-sided.", "Tap where it stopped, type it or say it.", "See proximity, up-and-down chances and strokes gained by distance."],
   PUTT: ["Pick how many putts, the distances, and the mix of breaks and slopes. Set the green speed.", "Each putt comes with a read: where to aim and how it plays.", "Tap where it stopped (or Made), type the leave or say it (“2 feet long”).", "See make %, speed, the putts you leave and the “pro side” on breaking putts."],

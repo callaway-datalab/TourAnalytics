@@ -75,7 +75,7 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
       el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, legend(shot))])]),
       el("div", { class: "pr-in-col" }, [
         clubs && shot.kind !== "putt" ? clubSelect(clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; onClub?.(v); }) : null,
-        monitor ? el("p", { class: "pr-monitor-note" }, "Using a TrackMan / GCQuad: just hit the shot and tap Next. You'll load the file at the end, and it fills the shots in this order.") : null,
+        monitor ? el("p", { class: "pr-monitor-note" }, "Using a launch monitor: just hit the shot and tap Next. You'll load the file at the end, and it fills the shots in this order.") : null,
         resultLine, inputs, more.filter(Boolean).length ? el("div", { class: "pr-more" }, more) : null]),
     ]),
   ]);
