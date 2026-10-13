@@ -145,7 +145,7 @@ function historyPanel(ctx) {
   const done = ctx.sessions.filter((s) => s.cat === "ROUND" && s.mode !== "game" && s.status === "done");
   if (!done.length) return el("section", { class: "panel pr-empty" }, [el("h2", {}, "How it works"), el("ol", {}, [
     "Simulate a random course, or pick one you've saved a scorecard for in Track Round, one you've played, or type one in.",
-    "Each hole has its par and yardage. Hit your shot, then enter how far is left: yards off the green, feet on it, or holed. Say it if you like (“150”, “12 feet”, “made it”).",
+    "Each hole has its par and yardage. Hit your shot, then enter the distance left: yards, or tap Hit Green and the feet from the pin (0 = holed). Say it if you like (“150”, “12 feet”, “made it”).",
     "The next shot starts from there, down to the putts, until it's in.",
     "At the end: your score, strokes gained by category against the Tour baselines, greens, putts and the scorecard.",
   ].map((t) => el("li", {}, t)))]);
@@ -288,44 +288,40 @@ function holeStrip(hole, shot) {
 
 /** Entering what a shot left: yards off the green / feet on it / holed, a penalty, or say it. */
 function resultPanel(shot, onChange, next, { noPutts = false } = {}) {
-  let unit = shot.unit === "ft" || shot.startDist <= 25 ? "ft" : "yds", holed = false, penalty = false;
-  if (shot.result) { unit = shot.result.unit; holed = shot.result.lie === "Holed"; penalty = !!shot.result.penalty; }
-  const num = el("input", { type: "text", inputmode: "decimal", class: "pr-bignum", placeholder: "0", autocomplete: "off", "aria-label": "Distance left", value: shot.result && !holed ? String(shot.result.dist) : "" });
-  const unitBox = el("div", { class: "seg seg-sm pr-unitseg", role: "group", "aria-label": "Where it finished" });
+  // (update 151) one box, "Distance left", and a Hit Green button: on → feet from the pin (0 = holed), off → yards
+  let green = shot.unit === "ft", penalty = false;
+  if (shot.result) { green = shot.result.unit === "ft"; penalty = !!shot.result.penalty; }
+  const holedAlready = shot.result?.lie === "Holed";
+  const num = el("input", { type: "text", inputmode: "decimal", class: "pr-bignum", placeholder: "0", autocomplete: "off", "aria-label": "Distance left", value: shot.result ? (holedAlready ? "0" : String(shot.result.dist)) : "" });
   const pen = el("button", { type: "button", class: "pr-chip pr-pen", "aria-pressed": "false" }, "+1 penalty");
-  // skipping putts: the hole ends on the green, so the button is "Hit green" (then how far from the pin; 0 = holed)
-  const holeBtn = el("button", { type: "button", class: "btn ghost pr-holed" }, noPutts ? "\u26F3 Hit green" : "\u2713 Holed");
+  const greenBtn = el("button", { type: "button", class: "btn ghost pr-hitgreen", "aria-pressed": "false" }, "\u26F3 Hit Green");
+  const unitLbl = el("span", { class: "pr-unit" });
   const line = el("p", { class: "pr-result", "aria-live": "polite" });
-  const nextBtn = el("button", { type: "button", class: "btn pr-next", disabled: true }, "Next shot ›");
+  const nextBtn = el("button", { type: "button", class: "btn pr-next", disabled: true }, "Next shot \u203A");
   nextBtn.addEventListener("click", () => next());
   const result = () => {
-    if (holed) return { lie: "Holed", dist: 0, unit: "ft" };
-    if (noPutts && unit === "ft" && String(num.value).trim() === "0") return { lie: "Holed", dist: 0, unit: "ft" };
-    const d = Number(String(num.value).replace(",", "."));
+    const raw = String(num.value).trim().replace(",", ".");
+    if (green && raw !== "" && Number(raw) === 0) return { lie: "Holed", dist: 0, unit: "ft" };
+    const d = Number(raw);
     if (!(d > 0)) return null;
-    return { lie: unit === "ft" ? "Green" : "Off", dist: d, unit, ...(penalty ? { penalty: true } : {}) };
+    return { lie: green ? "Green" : "Off", dist: d, unit: green ? "ft" : "yds", ...(penalty && !green ? { penalty: true } : {}) };
   };
   const update = () => {
-    mount(unitBox, [["yds", "Off the green \u00b7 yds"], ["ft", noPutts ? "Hit the green \u00b7 ft from pin" : "On the green \u00b7 ft"]].map(([u, l]) => { const b = el("button", { type: "button", class: `seg-btn${!holed && unit === u ? " on" : ""}` }, l); b.addEventListener("click", () => { unit = u; holed = false; update(); num.focus(); }); return b; }));
-    holeBtn.classList.toggle("on", noPutts ? unit === "ft" : holed); pen.classList.toggle("on", penalty); pen.setAttribute("aria-pressed", String(penalty));
+    greenBtn.classList.toggle("on", green); greenBtn.setAttribute("aria-pressed", String(green));
+    unitLbl.textContent = green ? "ft" : "yds";
+    pen.hidden = green; pen.classList.toggle("on", penalty); pen.setAttribute("aria-pressed", String(penalty));
     const r = result();
     onChange(r);
     nextBtn.disabled = !r;
     nextBtn.textContent = r?.lie === "Holed" || (noPutts && r?.unit === "ft") ? "Finish hole \u2713" : "Next shot \u203A";
-    if (!r) { mount(line, el("span", { class: "muted" }, noPutts ? "How far is left? Yards if you missed the green \u2014 or Hit green and how far from the pin." : "How far is left? Yards off the green, feet on it \u2014 or holed.")); return; }
+    if (!r) { mount(line, el("span", { class: "muted" }, green ? "On the green: how many feet from the pin? (0 = holed)" : "How many yards are left? Tap Hit Green if you're on.")); return; }
     const sg = shotSG(shot, r);
-    mount(line, [el("span", {}, r.lie === "Holed" ? "In the hole!" : noPutts && r.unit === "ft" ? `On the green, ${fmtD(r.dist, "ft")} from the pin` : `${fmtD(r.dist, r.unit)} left${r.unit === "ft" ? " on the green" : ""}${r.penalty ? " \u00b7 penalty stroke" : ""}`), el("strong", { class: `pr-sgchip ${sgCls(sg)}` }, `${SG(sg)} SG`)]);
+    mount(line, [el("span", {}, r.lie === "Holed" ? "In the hole!" : r.unit === "ft" ? `On the green, ${fmtD(r.dist, "ft")} from the pin` : `${fmtD(r.dist, r.unit)} left${r.penalty ? " \u00b7 penalty stroke" : ""}`), el("strong", { class: `pr-sgchip ${sgCls(sg)}` }, `${SG(sg)} SG`)]);
   };
-  num.addEventListener("input", () => { holed = false; update(); });
+  num.addEventListener("input", update);
   num.addEventListener("keydown", (e) => { if (e.key === "Enter" && !nextBtn.disabled) next(); });
-  pen.addEventListener("click", () => { penalty = !penalty; holed = false; update(); });
-  holeBtn.addEventListener("click", () => {
-    if (noPutts) { unit = "ft"; holed = false; penalty = false; update(); num.focus(); return; }
-    holed = !holed; if (holed) { num.value = ""; penalty = false; } update();
-  });
-  // tap-ins: one tap for the usual leaves on the green
-  const quickFt = noPutts ? [5, 10, 15, 20, 30, 40] : [1, 2, 3, 4, 6, 10];
-  const quick = noPutts || shot.unit === "ft" || shot.startDist <= 60 ? el("div", { class: "pr-quick" }, quickFt.map((f) => { const b = el("button", { type: "button", class: "pr-chip" }, `${f} ft`); b.addEventListener("click", () => { unit = "ft"; holed = false; num.value = String(f); update(); }); return b; })) : null;
+  pen.addEventListener("click", () => { penalty = !penalty; update(); });
+  greenBtn.addEventListener("click", () => { green = !green; if (green) penalty = false; update(); num.focus(); });
   const say = SpeechRec ? (() => {
     const b = el("button", { type: "button", class: "btn ghost pr-say voice-mic" }, sayKids("Say it"));
     b.addEventListener("click", () => {
@@ -336,8 +332,8 @@ function resultPanel(shot, onChange, next, { noPutts = false } = {}) {
         const alts = [...e.results[0]].map((a) => a.transcript);
         const got = alts.map((t) => resultFromWords(t, wordsToNumbers, golfFix)).find(Boolean);
         if (!got) { delete b.dataset.listening; b.classList.remove("on"); mount(b, sayKids(`Didn’t catch “${alts[0]}”`)); return; }
-        holed = got.lie === "Holed"; penalty = !!got.penalty;
-        if (!holed) { unit = got.unit === "ft" ? "ft" : "yds"; num.value = String(got.dist); }
+        penalty = !!got.penalty;
+        if (got.lie === "Holed") { green = true; num.value = "0"; } else { green = got.unit === "ft"; num.value = String(got.dist); }
         update();
       };
       rec.onend = () => { b.disabled = false; if (b.dataset.listening) mount(b, sayKids("Say it")); delete b.dataset.listening; b.classList.remove("on"); };
@@ -349,10 +345,9 @@ function resultPanel(shot, onChange, next, { noPutts = false } = {}) {
   update();
   return el("div", { class: "pr-dist-entry" }, [
     line,
-    el("div", { class: "pr-dist-row" }, [el("label", { class: "pr-dist-big" }, [el("span", { class: "rd-label" }, "Distance left"), el("div", { class: "pr-dist-in" }, [num, el("span", { class: "pr-unit" }, unit)])]), holeBtn]),
-    unitBox, quick,
+    el("div", { class: "pr-dist-row" }, [el("label", { class: "pr-dist-big" }, [el("span", { class: "rd-label" }, "Distance left"), el("div", { class: "pr-dist-in" }, [num, unitLbl])]), greenBtn]),
     el("div", { class: "pr-actions" }, [say, pen, nextBtn]),
-    el("p", { class: "muted small pr-tip" }, noPutts ? "Say it like \u201c150\u201d or \u201cgreen, 18 feet\u201d. 0 ft is holed. Off the green is scored as if from the fairway." : "Say it like \u201c150\u201d, \u201c12 feet\u201d, \u201cmade it\u201d or \u201cwater, 160\u201d. Off the green is scored as if from the fairway."),
+    el("p", { class: "muted small pr-tip" }, "Say it like \u201c150\u201d, \u201c12 feet\u201d, \u201cmade it\u201d or \u201cwater, 160\u201d. With Hit Green on, 0 is holed. Off the green is scored as if from the fairway."),
   ]);
 }
 

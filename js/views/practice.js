@@ -12,10 +12,10 @@
  */
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, scoreShot, spreadFor } from "../practice/model.js";
+import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, scoreShot, spreadFor, withSlopes, breakText, slopeText, myAimText, SEV } from "../practice/model.js";
 import { trendSvg } from "../practice/draw.js";
 import { summarize, scored, personalSpread, courseByBucket, readLaunchMonitor, resultFromMonitor } from "../practice/analysis.js";
-import { listSessions, saveSession, deleteSession, newSessionId, practiceOwner } from "../practice/store.js";
+import { listSessions, saveSession, deleteSession, newSessionId, practiceOwner, listSpots, saveSpot, deleteSpot } from "../practice/store.js";
 import { bagPatterns, clubFor } from "../practice/clubs.js";
 import { gameProgress, personalBest, fmtGameScore, pointsFor, passedIt, targetText, scoringOf, isLow, gameOf } from "../practice/games.js";
 import { SG, sgCls, tile, shotTitle, resultText, keyTiles, bucketTable, patternPanel, shotCard } from "./practiceShot.js";
@@ -315,7 +315,89 @@ export async function render(main, { flash }) {
         ]),
         monRow, go,
       ]),
+      cat === "PUTT" ? spotsPanel() : null,
     ]);
+  }
+
+  /* ---------------- your own putting spots (update 151): real putts you can get to, with your aim ---------------- */
+  function spotsPanel() {
+    const box = el("section", { class: "panel pr-spots" });
+    let spots = null, perSpot = 3;
+    const picked = new Set();
+    const stepBtn = (txt, fn, lbl) => { const b = el("button", { type: "button", class: "pr-step", "aria-label": lbl }, txt); b.addEventListener("click", fn); return b; };
+    const num = (attrs) => el("input", { type: "number", inputmode: "decimal", step: 0.5, ...attrs });
+    const sel = (vals, cur, lbl) => el("select", { "aria-label": lbl }, vals.map(([v, l]) => el("option", { value: String(v), selected: v === cur }, l)));
+    const BRK = [-3, -2, -1, 0, 1, 2, 3].map((v) => [v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "left to right" : "right to left"}` : "Straight"]);
+    const SLP = [3, 2, 1, 0, -1, -2, -3].map((v) => [v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "uphill" : "downhill"}` : "Flat"]);
+    function form(sp = null) {
+      const name = el("input", { maxLength: 40, placeholder: "e.g. Practice green, back left", value: sp?.name || "" });
+      const dist = num({ min: 1, max: 90, value: sp?.dist ?? "", placeholder: "ft" });
+      const brk = sel(BRK, sp?.side ?? 0, "Break"), slp = sel(SLP, sp?.fwd ?? 0, "Slope");
+      const aimL = num({ min: 0, max: 20, value: sp?.aim?.long ? Math.abs(sp.aim.long) : "", placeholder: "0" });
+      const aimLD = sel([[1, "long"], [-1, "short"]], (sp?.aim?.long ?? 1) < 0 ? -1 : 1, "Long or short");
+      const aimR = num({ min: 0, max: 20, value: sp?.aim?.right ? Math.abs(sp.aim.right) : "", placeholder: "0" });
+      const aimRD = sel([[-1, "left"], [1, "right"]], (sp?.aim?.right ?? -1) > 0 ? 1 : -1, "Left or right");
+      const ok = el("button", { type: "submit", class: "btn" }, sp ? "Save spot" : "Add spot");
+      const cancel = el("button", { type: "button", class: "link" }, "Cancel");
+      cancel.addEventListener("click", () => drawList());
+      return el("form", { class: "stack pr-spot-form", onSubmit: async (e) => {
+        e.preventDefault();
+        const d = Number(dist.value);
+        if (!(d > 0)) { flash?.("Enter how long the putt is (feet).", "error"); dist.focus(); return; }
+        const next = { id: sp?.id || newSessionId(), name: name.value.trim(), dist: d, side: Number(brk.value), fwd: Number(slp.value),
+          aim: { long: (Number(aimL.value) || 0) * Number(aimLD.value), right: (Number(aimR.value) || 0) * Number(aimRD.value) }, createdAt: sp?.createdAt || new Date().toISOString() };
+        ok.disabled = true;
+        try { await saveSpot(owner, next); spots = [...spots.filter((x) => x.id !== next.id), next]; picked.add(next.id); drawList(); }
+        catch (err) { console.error(err); ok.disabled = false; flash?.("Couldn't save that spot. Check your connection.", "error"); }
+      } }, [
+        el("div", { class: "inline-form" }, [el("label", {}, ["Name (optional)", name]), el("label", {}, ["Length (ft)", dist])]),
+        el("div", { class: "inline-form" }, [el("label", {}, ["Break", brk]), el("label", {}, ["Slope", slp])]),
+        el("div", { class: "pr-aim-row" }, [el("span", { class: "rd-label" }, "Where you aim"), el("div", { class: "pr-aim-in" }, [aimL, el("span", {}, "ft"), aimLD, el("span", { class: "muted" }, "and"), aimR, el("span", {}, "ft"), aimRD])]),
+        el("div", { class: "thread-actions" }, [ok, cancel]),
+      ]);
+    }
+    function drawList(editing = null) {
+      if (!spots) return;
+      const list = el("ul", { class: "pr-spot-list" }, spots.map((sp) => {
+        if (editing === sp.id) return el("li", {}, form(sp));
+        const cb = el("input", { type: "checkbox", checked: picked.has(sp.id), "aria-label": `Practise ${sp.name || `${sp.dist} ft`}` });
+        cb.addEventListener("change", () => { if (cb.checked) picked.add(sp.id); else picked.delete(sp.id); drawGo(); });
+        const ed = el("button", { type: "button", class: "link" }, "Edit");
+        ed.addEventListener("click", () => drawList(sp.id));
+        const del = el("button", { type: "button", class: "link danger", "aria-label": "Delete this spot" }, "\u2715");
+        del.addEventListener("click", async () => {
+          if (!confirmAction(`Delete ${sp.name || "this spot"}?`)) return;
+          try { await deleteSpot(owner, sp.id); spots = spots.filter((x) => x.id !== sp.id); picked.delete(sp.id); drawList(); } catch { flash?.("Couldn't delete it.", "error"); }
+        });
+        return el("li", { class: "pr-spot" }, [cb, el("div", {}, [el("strong", {}, `${sp.dist} ft${sp.name ? ` \u00b7 ${sp.name}` : ""}`),
+          el("p", { class: "muted small" }, `${breakText(sp.side)} \u00b7 ${slopeText(sp.fwd)} \u00b7 aim ${myAimText(sp.aim)}`)]), el("span", { class: "row-actions" }, [ed, del])]);
+      }));
+      const add = el("button", { type: "button", class: "btn ghost" }, "\uFF0B  Add a spot");
+      add.addEventListener("click", () => mount(adder, form()));
+      const adder = el("div", {}, editing ? null : add);
+      mount(box, [
+        el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "My putting spots"), el("p", { class: "muted small" }, "Real putts you can get to: how long, how it breaks and slopes, and where you aim. Then practise them, as many times each as you like.")])]),
+        spots.length ? list : el("p", { class: "muted" }, "No spots yet."), adder, goRow,
+      ]);
+      drawGo();
+    }
+    const perVal = el("strong", { class: "pr-cnt" });
+    const goBtn = el("button", { type: "button", class: "btn pr-go" }, "Practise my spots \u25B6");
+    const goRow = el("div", { class: "pr-spot-go" }, [el("span", { class: "rd-label" }, "Putts at each"), el("span", { class: "pr-stepper sm" }, [stepBtn("\u2212", () => { perSpot = Math.max(1, perSpot - 1); drawGo(); }, "Fewer"), perVal, stepBtn("+", () => { perSpot = Math.min(20, perSpot + 1); drawGo(); }, "More")]), goBtn]);
+    const drawGo = () => { perVal.textContent = String(perSpot); goRow.hidden = !spots?.length; goBtn.disabled = !picked.size; };
+    goBtn.addEventListener("click", () => {
+      const use = spots.filter((x) => picked.has(x.id));
+      if (!use.length) return;
+      // every spot in turn, round and round (spot 1, 2, 3, then 1, 2, 3 again…)
+      const shots = [];
+      for (let k = 0; k < perSpot; k++) for (const sp of use) shots.push(withSlopes({ kind: "putt", startLie: "Green", startDist: sp.dist, spot: sp.name || "", spotId: sp.id, myAim: sp.aim, i: shots.length + 1 }, sp.side, sp.fwd));
+      const s = { id: newSessionId(), cat: "PUTT", status: "active", startedAt: new Date().toISOString(), plan: { counts: {}, mixes: {}, stimp: 11, total: shots.length, spots: use.map((x) => x.id) }, shots, playerKey: playerKey || myEntryKey(state), playerLabel: label };
+      save(s);
+      ctx.playSession(s);
+    });
+    mount(box, el("p", { class: "muted" }, "Loading your spots\u2026"));
+    listSpots(owner).then((list) => { spots = list; list.forEach((x) => picked.add(x.id)); drawList(); }).catch((err) => { console.error(err); spots = []; drawList(); });
+    return box;
   }
 
   /* =============================================== play a session (or a game) =============================================== */
@@ -492,11 +574,11 @@ const LEDE = {
   OTT: "Made-up holes with real trouble: a hard side, an easier side, fairway bunkers, and fairways from 24 to 40 yards wide.",
   APP: "Random distances and lies into greens with pins, bunkers and water, scored with strokes gained, with a map of where to aim.",
   ARG: "Chips, pitches and bunker shots to tucked and open pins, scored by how many strokes it leaves you.",
-  PUTT: "Distances, breaks and slopes at random, with a read for each, scored by makes and the putt you leave.",
+  PUTT: "Distances, breaks and slopes at random, or your own real putts, scored by makes and the putt you leave.",
 };
 const HOW = {
   OTT: ["Pick how many drives, with which clubs, and the mix of fairway widths and trouble.", "Each tee shot gets its own hole. The aim map shows where the fewest strokes are, for your pattern.", "Tap where it finished, type the distance and how far off line, say it, or load a launch monitor file.", "See your fairways, misses, penalties and strokes gained against the Tour baselines."],
   APP: ["Pick how many shots and how they're split across distances. Your on-course strokes gained shows for each.", "Mix in rough and bunker lies, and middle, corner and tucked pins.", "Tap where the ball finished on the green, type it, say it (“14 feet short”), or load a launch monitor file.", "See proximity, greens hit, strokes gained by distance and your pattern round the pin."],
   ARG: ["Pick how many shots, the distances and the mix of lies (fringe, rough, bunker).", "Pins range from lots of green to short-sided.", "Tap where it stopped, type it or say it.", "See proximity, up-and-down chances and strokes gained by distance."],
-  PUTT: ["Pick how many putts, the distances, and the mix of breaks and slopes. Set the green speed.", "Each putt comes with a read: where to aim and how it plays.", "Tap where it stopped (or Made), type the leave or say it (“2 feet long”).", "See make %, speed, the putts you leave and the “pro side” on breaking putts."],
+  PUTT: ["Pick how many putts, the distances, and the mix of breaks and slopes. Set the green speed.", "Set each putt's break and slope to match the one in front of you, or practise your own spots with your aim.", "Tap where it stopped (or Made), type the leave or say it (“2 feet long”).", "See make %, speed, the putts you leave and the “pro side” on breaking putts."],
 };

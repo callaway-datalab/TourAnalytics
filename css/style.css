@@ -3144,3 +3144,25 @@ button.ti-name:hover { color: var(--accent); }
 /* update 150: Edit on Player Access */
 .edit-person [hidden] { display: none !important; }
 .edit-person .inline-form { align-items: end; }
+.tag.type-employee { background: rgba(212, 180, 131, 0.18); color: #d4b483; }
+.pr-hole .pr-axis { font-size: 4.2px; }
+.pr-hole .pr-axis.sm { font-size: 3.2px; fill: rgba(255,255,255,0.5); }
+.pr-green .pr-ring { font-size: 1.6px; fill: rgba(255,255,255,0.7); }
+.pr-plane { max-width: 360px; margin: 0.4rem auto 0; }
+.pr-plane .pr-yd { font-size: 3.6px; }
+/* update 151: putting slopes and spots */
+.pr-slopes { margin-top: 0.8rem; }
+.pr-slope-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.pr-slope-pick label { display: grid; gap: 0.25rem; }
+.pr-slope-pick select, .pr-spot-form select { min-width: 0; }
+.pr-spots { margin-top: 1rem; }
+.pr-spot-list { list-style: none; margin: 0.6rem 0; padding: 0; display: grid; gap: 0.5rem; }
+.pr-spot { display: grid; grid-template-columns: auto 1fr auto; gap: 0.7rem; align-items: center; padding: 0.6rem 0.8rem; border: 1px solid var(--line, rgba(255,255,255,0.1)); border-radius: 10px; }
+.pr-spot p { margin: 0.15rem 0 0; }
+.pr-aim-row { display: grid; gap: 0.3rem; }
+.pr-aim-in { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+.pr-aim-in input { width: 4.5rem; }
+.pr-spot-go { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; margin-top: 0.8rem; }
+@media (max-width: 560px) { .pr-slope-pick { grid-template-columns: 1fr; } }
+.pr-hitgreen { min-height: 3.6rem; border-radius: 14px; padding: 0 1.2rem; }
+.pr-hitgreen.on { background: #30d158; border-color: #30d158; color: #04140a; }

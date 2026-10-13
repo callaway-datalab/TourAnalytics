@@ -33,8 +33,8 @@ export function syncChatCircles() {
     // each player's team: the player and everyone with access to them (analysts are staff)
     const teamOf = new Map();
     for (const u of users) {
-      if (u.clientKey && !isTeamKey(u.clientKey) && u.kind !== "analyst") (teamOf.get(u.clientKey) || teamOf.set(u.clientKey, new Set()).get(u.clientKey)).add(u.uid);
-      if (u.kind !== "analyst") for (const k of Object.keys(u.access || {})) (teamOf.get(k) || teamOf.set(k, new Set()).get(k)).add(u.uid);
+      if (u.clientKey && !isTeamKey(u.clientKey) && u.kind !== "analyst" && u.kind !== "employee") (teamOf.get(u.clientKey) || teamOf.set(u.clientKey, new Set()).get(u.clientKey)).add(u.uid);
+      if (u.kind !== "analyst" && u.kind !== "employee") for (const k of Object.keys(u.access || {})) (teamOf.get(k) || teamOf.set(k, new Set()).get(k)).add(u.uid);
     }
     const reach = new Map();
     for (const u of users) {

@@ -213,9 +213,27 @@ function makePutt(b, brk, slope) {
 }
 /** A putt of a given length (ft), with a break and slope (random unless given). */
 export function puttFrom(D, brk = pick(["straight", "lr", "lr", "rl", "rl"]), slope = pick(["up", "flat", "down"])) {
-  const pct = brk === "straight" ? 0 : Math.round(rnd(1, 3) * 10) / 10; // side slope, %
-  return { kind: "putt", startLie: "Green", startDist: D, breakDir: brk, slope, sidePct: pct, upPct: slope === "flat" ? 0 : Math.round(rnd(1, 2.5) * 10) / 10 };
+  // (update 151) how much it breaks and how up / downhill it is, in words: gentle, moderate or severe
+  const side = brk === "straight" ? 0 : (brk === "lr" ? 1 : -1) * rint(1, 3), fwd = slope === "flat" ? 0 : (slope === "up" ? 1 : -1) * rint(1, 3);
+  return { kind: "putt", startLie: "Green", startDist: D, ...withSlopes({}, side, fwd) };
 }
+/** Severity words, 1–3. */
+export const SEV = ["", "Gentle", "Moderate", "Severe"];
+/** A putt's side slope (+ breaks left to right) and forward slope (+ uphill), −3…3 (older putts: from their %). */
+export function puttLevels(p) {
+  const lvl = (pct) => (pct < 1.6 ? 1 : pct < 2.4 ? 2 : 3);
+  const side = p.side ?? (p.breakDir === "lr" ? lvl(p.sidePct || 1.5) : p.breakDir === "rl" ? -lvl(p.sidePct || 1.5) : 0);
+  const fwd = p.fwd ?? (p.slope === "up" ? lvl(p.upPct || 1.5) : p.slope === "down" ? -lvl(p.upPct || 1.5) : 0);
+  return { side, fwd };
+}
+/** Set a putt's slopes (keeping breakDir / slope in step, which the summaries use). */
+export function withSlopes(p, side, fwd) {
+  return Object.assign(p, { side, fwd, breakDir: side > 0 ? "lr" : side < 0 ? "rl" : "straight", slope: fwd > 0 ? "up" : fwd < 0 ? "down" : "flat" });
+}
+export const breakText = (side) => (side ? `${SEV[Math.abs(side)]} ${side > 0 ? "left to right" : "right to left"}` : "Straight");
+export const slopeText = (fwd) => (fwd ? `${SEV[Math.abs(fwd)]} ${fwd > 0 ? "uphill" : "downhill"}` : "Flat");
+/** Your own aim on one of your putting spots: "1 ft short and 3 ft left". */
+export const myAimText = (a) => (a ? [a.long ? `${Math.abs(a.long)} ft ${a.long > 0 ? "long" : "short"}` : "", a.right ? `${Math.abs(a.right)} ft ${a.right > 0 ? "right" : "left"}` : ""].filter(Boolean).join(" and ") || "at the hole" : "");
 /** A rough read: how far to aim outside the hole (inches) and how much longer / shorter it plays (ft). */
 export function puttRead(p, stimp = 11) {
   const dir = p.breakDir === "lr" ? -1 : p.breakDir === "rl" ? 1 : 0; // aim left for a left-to-right putt

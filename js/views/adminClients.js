@@ -11,8 +11,8 @@ import {
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, ANALYST_ROLE } from "../data.js";
 
-const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["other", "Other"]];
-const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["other", "Other"]];
+const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
+const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
 
 export async function render(main, { flash }) {
   let clientsCache = { labels: new Map() };
@@ -192,7 +192,7 @@ export async function render(main, { flash }) {
     fields = {
       name: el("input", { maxLength: 80, placeholder: "Only for you, until they sign up" }),
       // Analysts always see every player (including ones added later), so there's nothing to pick.
-      players: type === "analyst" ? { node: el("p", { class: "muted small all-note" }, "Analysts see all players, including players added later."), value: () => ({ allPlayers: true, playerKeys: [] }) }
+      players: type === "analyst" || type === "employee" ? { node: el("p", { class: "muted small all-note" }, `${type === "employee" ? "Employees" : "Analysts"} see all players, including players added later.`), value: () => ({ allPlayers: true, playerKeys: [] }) }
         : playerPicker([], { allowAll: false, selectAll: type === "other" }),
       // Other: what they do (Physio, Trainer, Swing coach…)
       role: type === "other" ? el("input", { maxLength: 30, placeholder: "e.g. Physio, Trainer, Swing coach", autocomplete: "off" }) : null,
@@ -236,8 +236,8 @@ export async function render(main, { flash }) {
           const { allPlayers, playerKeys } = fields.players.value();
           if (type === "other" && !fields.role.value.trim()) { flash("Enter their role (e.g. Physio).", "error"); fields.role.focus(); return; }
           if (!allPlayers && !playerKeys.length) { flash("Add at least one player they work with.", "error"); return; }
-          const code = type === "analyst"
-            ? await createAnalystAccess({ name, playerKeys, allPlayers, labels: clientsCache.labels, days: 0 })
+          const code = type === "analyst" || type === "employee"
+            ? await createAnalystAccess({ name, playerKeys, allPlayers, labels: clientsCache.labels, days: 0, kind: type })
             : await createTeamAccess({ name, role: type === "other" ? fields.role.value.trim() : type, playerKeys, labels: clientsCache.labels });
           flash(`Access code${name ? ` for ${name}` : ""}: ${formatCode(code)}. Send it with the sign-up link; whoever signs up with it gets this access.`, "ok");
         }
@@ -281,7 +281,7 @@ export async function render(main, { flash }) {
   function editPerson(inv, user, grants) {
     const isPlayer = !isTeamKey(user?.clientKey ?? inv.clientKey);
     const roles = [...new Set(grants.map((g) => g.role))];
-    const curType = isPlayer ? "player" : inv.kind === "analyst" || user?.kind === "analyst" ? "analyst"
+    const curType = isPlayer ? "player" : inv.kind === "employee" || user?.kind === "employee" ? "employee" : inv.kind === "analyst" || user?.kind === "analyst" ? "analyst"
       : roles[0] === "coach" || roles[0] === "caddy" ? roles[0] : "other";
     const who = user?.name || (isPlayer ? clientsCache.labels.get(inv.clientKey) : inv.clientLabel) || "this person";
     const typeSel = el("select", {}, USER_TYPES.map(([v, l]) => el("option", { value: v, selected: v === curType }, l)));
@@ -297,6 +297,7 @@ export async function render(main, { flash }) {
       roleRow.hidden = t !== "other";
       playerRow.hidden = t !== "player";
       if (t === "player") { picker = null; mount(teamBox, null); return; }
+      if (t === "employee") { picker = { value: () => ({ allPlayers: true, playerKeys: [] }) }; mount(teamBox, el("p", { class: "muted small all-note" }, "Employees see all players, including players added later.")); return; }
       const keep = picker ? picker.value() : { playerKeys: grants.map((g) => g.key), allPlayers: !!(user?.allPlayers ?? inv.allPlayers) };
       picker = playerPicker(keep.playerKeys, { allowAll: t === "analyst", all: t === "analyst" && (keep.allPlayers || curType !== "analyst") });
       mount(teamBox, picker.node);
@@ -417,6 +418,7 @@ export async function render(main, { flash }) {
       let types, typeLabels;
       if (!isTeamKey(inv.clientKey)) { types = ["player"]; typeLabels = [["player", "Player"]]; }
       else if (inv.kind === "analyst") { types = ["analyst"]; typeLabels = [["analyst", "Callaway Analyst"]]; }
+      else if (inv.kind === "employee") { types = ["employee"]; typeLabels = [["employee", "Employee"]]; }
       else {
         types = roles.map((r) => (r === "coach" || r === "caddy" ? r : "other"));
         if (!types.length) types = ["other"];
@@ -431,7 +433,7 @@ export async function render(main, { flash }) {
       else { status = el("span", { class: "tag hot" }, "Unused"); statusText = "unused"; }
 
       const teamOf = !isTeamKey(inv.clientKey) ? el("span", { class: "muted" }, "\u2014")
-        : inv.kind === "analyst" && (user?.allPlayers ?? inv.allPlayers) ? linkButton("All players", () => showPlayers(user?.name || inv.clientLabel || "This person", grants))
+        : (inv.kind === "analyst" || inv.kind === "employee") && (user?.allPlayers ?? inv.allPlayers) ? linkButton("All players", () => showPlayers(user?.name || inv.clientLabel || "This person", grants))
         : grants.length === 0 ? el("span", { class: "muted" }, "\u2014")
         : grants.length === 1 ? grants[0].label
         : linkButton(`${grants.length} players`, () => showPlayers(user?.name || inv.clientLabel || "This person", grants));

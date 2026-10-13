@@ -3,8 +3,8 @@
  * green or putt, the aim map, and entering the result), the shot text, tiles, tables and patterns.
  */
 import { el, mount } from "../ui.js";
-import { teeResult, greenResult, bestAim, puttRead } from "../practice/model.js";
-import { holeSvg, greenSvg, puttSvg, scatterSvg, driveScatterSvg } from "../practice/draw.js";
+import { teeResult, greenResult, bestAim, puttLevels, withSlopes, breakText, slopeText, myAimText, SEV } from "../practice/model.js";
+import { holeSvg, greenSvg, puttSvg, planeSvg, scatterSvg, driveScatterSvg } from "../practice/draw.js";
 import { resultFromSpeech } from "../practice/analysis.js";
 
 /** The red microphone (the same as Track Round's voice input), with a label. */
@@ -65,14 +65,35 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   const monNext = () => { const b = el("button", { type: "button", class: "btn pr-next" }, next.label); b.addEventListener("click", () => next.onClick()); return el("div", { class: "pr-mon-next" }, b); };
   const drawInputs = () => mount(inputs, monitor && next && !shot.result ? monNext() : inputsFor(shot, setResult, next));
   drawVisual(); drawResult(); drawInputs();
+  // a putt (update 151): set its break and slope to match the putt in front of you; the plane tilts to show it
+  const titleH = el("h2", {}, title || shotTitle(shot));
+  const factsDl = el("dl", { class: "pr-facts" });
+  const drawFacts = () => { mount(factsDl, shotFacts(shot, stimp).map(([k, v]) => el("div", {}, [el("dt", {}, k), el("dd", {}, v)]))); if (!title) titleH.textContent = shotTitle(shot); };
+  drawFacts();
+  let slopeBox = null;
+  if (shot.kind === "putt") {
+    const plane = el("div", { class: "pr-plane-box" });
+    const drawPlane = () => { const lv = puttLevels(shot); mount(plane, planeSvg(lv.side, lv.fwd)); };
+    const opt = (val, label, cur) => el("option", { value: String(val), selected: val === cur }, label);
+    const lv0 = puttLevels(shot);
+    const brk = el("select", { "aria-label": "Break" }, [-3, -2, -1, 0, 1, 2, 3].map((v) => opt(v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "left to right" : "right to left"}` : "Straight", lv0.side)));
+    const slp = el("select", { "aria-label": "Slope" }, [3, 2, 1, 0, -1, -2, -3].map((v) => opt(v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "uphill" : "downhill"}` : "Flat", lv0.fwd)));
+    const change = () => { withSlopes(shot, Number(brk.value), Number(slp.value)); drawPlane(); drawVisual(); drawFacts(); onClub?.(); };
+    brk.addEventListener("change", change); slp.addEventListener("change", change);
+    drawPlane();
+    slopeBox = el("div", { class: "pr-slopes" }, [
+      el("div", { class: "pr-slope-pick" }, [el("label", {}, [el("span", { class: "rd-label" }, "Break"), brk]), el("label", {}, [el("span", { class: "rd-label" }, "Slope"), slp])]),
+      plane,
+    ]);
+  }
   const heatBtn = shot.kind === "putt" ? null : el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Aim map");
   heatBtn?.addEventListener("click", () => { showHeat = !showHeat; heat.set(showHeat); heatBtn.classList.toggle("on", showHeat); heatBtn.setAttribute("aria-pressed", String(showHeat)); drawVisual(); });
   const navBtn = (txt, label, fn) => { const b = el("button", { type: "button", class: "pr-nav", "aria-label": label, disabled: fn ? null : true }, txt); if (fn) b.addEventListener("click", fn); return b; };
   return el("section", { class: "panel pr-shot" }, [
-    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, el("h2", {}, title || shotTitle(shot)), el("p", { class: "pr-shot-sub" }, shotSub(shot, aim, stimp, aimInfo?.label))]), navBtn("\u203A", "Next shot", onNext)]),
-    el("dl", { class: "pr-facts" }, shotFacts(shot, stimp).map(([k, v]) => el("div", {}, [el("dt", {}, k), el("dd", {}, v)]))),
+    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, el("p", { class: "pr-shot-sub" }, shotSub(shot, aim, stimp, aimInfo?.label))]), navBtn("\u203A", "Next shot", onNext)]),
+    factsDl,
     el("div", { class: "pr-play" }, [
-      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, legend(shot))])]),
+      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, legend(shot))]), slopeBox]),
       el("div", { class: "pr-in-col" }, [
         clubs && shot.kind !== "putt" ? clubSelect(clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; onClub?.(v); }) : null,
         monitor ? el("p", { class: "pr-monitor-note" }, "Using a launch monitor: just hit the shot and tap Next. You'll load the file at the end, and it fills the shots in this order.") : null,
@@ -83,7 +104,7 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
 
 export function shotTitle(x) {
   if (x.kind === "tee") return x.startLie && x.startLie !== "Tee box" ? `${x.hole} yds \u00b7 ${x.startLie.toLowerCase()}, down the fairway` : `${x.club} \u00b7 ${x.hole}-yd par ${x.par}`;
-  if (x.kind === "putt") return `${n1(x.startDist)} ft · ${x.breakDir === "lr" ? "left to right" : x.breakDir === "rl" ? "right to left" : "straight"}${x.slope !== "flat" ? `, ${x.slope}hill` : ""}`;
+  if (x.kind === "putt") { const lv = puttLevels(x); return `${n1(x.startDist)} ft${x.spot ? ` \u00b7 ${x.spot}` : ""} · ${breakText(lv.side).toLowerCase()}${lv.fwd ? `, ${slopeText(lv.fwd).toLowerCase()}` : ""}`; }
   if (x.startLie === "Fringe") return `${Math.round(x.startDist * 3)} ft \u00b7 fringe`;
   const lie = x.startLie === "Tee box" ? `tee, par 3` : x.startLie === "Bunker" ? (x.startDist <= 50 ? "greenside bunker" : "fairway bunker") : x.startLie.toLowerCase();
   return `${Math.round(x.startDist)} yds \u00b7 ${lie}`;
@@ -94,10 +115,7 @@ export function shotSub(x, aim, stimp, aimLabel) {
     const a = aim ? (Math.abs(aim.x) < 1.5 ? "Aim at the middle of the fairway." : `Aim ${Math.round(Math.abs(aim.x))} yds ${aim.x < 0 ? "left" : "right"} of the middle.`) : "";
     return `${a}${pattern}`;
   }
-  if (x.kind === "putt") {
-    const r = puttRead(x, stimp || 11);
-    return `${r.aimIn ? `Aim about ${r.cups} cup${r.cups === 1 ? "" : "s"} ${r.aimSide} (${r.aimIn} in).` : "Straight: aim at the hole."}${r.plays ? ` Plays about ${Math.abs(r.plays)} ft ${r.plays > 0 ? "longer" : "shorter"}.` : ""} Stimp ${stimp || 11}.`;
-  }
+  if (x.kind === "putt") return x.myAim ? `Your aim here: ${myAimText(x.myAim)}.` : `Set the break and slope to match your putt. Stimp ${stimp || 11}.`;
   const off = aim ? Math.hypot(aim.x - x.pin.x, aim.y - x.pin.y) : 0;
   const dir = aim ? [aim.y - x.pin.y > 1.5 ? "long" : aim.y - x.pin.y < -1.5 ? "short" : "", aim.x - x.pin.x > 1.5 ? "right" : aim.x - x.pin.x < -1.5 ? "left" : ""].filter(Boolean).join(" and ") : "";
   return `${off >= 2 && dir ? `Best aim: ${Math.round(off)} yds ${dir} of the pin.` : "Best aim: at the pin."}${pattern}`;
@@ -122,9 +140,9 @@ export function shotFacts(x, stimp) {
   }
   if (x.kind === "putt") {
     return [
-      ["Break", x.breakDir === "straight" ? "Straight" : `${x.breakDir === "lr" ? "Left to right" : "Right to left"}, ${x.sidePct}% side slope`],
-      ["Slope", x.slope === "flat" ? "Flat" : `${x.slope === "up" ? "Uphill" : "Downhill"}, ${x.upPct}%`],
-      ["Green speed", `Stimp ${stimp || 11}`],
+      ["Break", breakText(puttLevels(x).side)],
+      ["Slope", slopeText(puttLevels(x).fwd)],
+      x.myAim ? ["Your aim", myAimText(x.myAim)] : ["Green speed", `Stimp ${stimp || 11}`],
     ];
   }
   const { rx, ry } = x.green, { x: px, y: py } = x.pin;
@@ -141,7 +159,7 @@ export function shotFacts(x, stimp) {
   return out;
 }
 export function legend(x) {
-  if (x.kind === "putt") return "Arrows: the way it breaks. Gold ring: where to aim. Rings: 3 and 6 ft.";
+  if (x.kind === "putt") return x.myAim ? "Arrows: the way it breaks. Gold ring: your aim. Rings: 3 and 6 ft." : "Arrows: the way it breaks. Rings: 3 and 6 ft.";
   return "Green = fewest strokes left, red = most. Gold ring: best aim.";
 }
 export function resultText(x) {

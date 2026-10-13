@@ -174,11 +174,12 @@ const analystAccess = (keys, labels) =>
   Object.fromEntries(keys.map((k) => [k, { role: ANALYST_ROLE, label: labels.get(k) || k.replace(/^c_/, "") }]));
 
 /** A code for an internal analyst: tied to their email, carrying the players they can see. */
-export async function createAnalystAccess({ name, email, playerKeys, allPlayers, labels, days }) {
+export async function createAnalystAccess({ name, email, playerKeys, allPlayers, labels, days, kind = "analyst" }) {
   const code = makeCode();
   await setDoc(doc(db, "invites", code), {
-    clientKey: teamKey(), clientLabel: name || "", note: "Callaway Access", ...(email ? { email: norm(email) } : {}),
-    kind: "analyst", allPlayers: !!allPlayers,
+    // kind "employee" (update 151): a Callaway employee, with every player (as an analyst sees them) but not on staff chat
+    clientKey: teamKey(), clientLabel: name || "", note: kind === "employee" ? "Employee" : "Callaway Access", ...(email ? { email: norm(email) } : {}),
+    kind, allPlayers: kind === "employee" ? true : !!allPlayers,
     access: analystAccess(allPlayers ? [...labels.keys()] : playerKeys, labels),
     createdAt: serverTimestamp(), expiresAt: null,
     usedBy: null, usedAt: null, revoked: false,
@@ -207,14 +208,16 @@ export async function editAccess(inv, user, { type, name, email, role, player, p
     common = { clientKey: player.key, clientLabel: player.id, kind: deleteField(), access: deleteField(), allPlayers: deleteField() };
   } else {
     const key = isTeamKey(inv.clientKey) ? inv.clientKey : isTeamKey(user?.clientKey) ? user.clientKey : teamKey();
-    const analyst = type === "analyst";
+    const employee = type === "employee";
+    if (employee) allPlayers = true; // employees always have every player
+    const analyst = type === "analyst" || employee;
     const keys = analyst && allPlayers ? [...labels.keys()] : playerKeys;
     const r = analyst ? ANALYST_ROLE : normRole(type === "other" ? role : type);
     const access = Object.fromEntries(keys.map((k) => [k, { role: r, label: labels.get(k) || k.replace(/^c_/, "") }]));
-    common = { clientKey: key, kind: analyst ? "analyst" : "team", access, allPlayers: analyst ? !!allPlayers : deleteField() };
+    common = { clientKey: key, kind: employee ? "employee" : analyst ? "analyst" : "team", access, allPlayers: analyst ? !!allPlayers : deleteField() };
   }
   const invFields = { ...common, ...(type === "player" ? {} : { clientLabel: name || "" }), email: em || deleteField(),
-    note: type === "analyst" ? "Callaway Access" : type === "player" ? (inv.note === "Callaway Access" || inv.note === "From team roster" ? "" : inv.note || "") : "" };
+    note: type === "analyst" ? "Callaway Access" : type === "employee" ? "Employee" : type === "player" ? (["Callaway Access", "From team roster", "Employee"].includes(inv.note) ? "" : inv.note || "") : "" };
   await updateDoc(doc(db, "invites", inv.code), invFields);
   if (user) {
     const userFields = { ...common, ...(name ? { name } : {}), ...(em ? { email: em } : {}) };
@@ -289,10 +292,10 @@ export async function syncAllPlayersAnalysts(users, invites, labels) {
   const want = analystAccess([...labels.keys()], labels);
   const jobs = [];
   for (const u of users) {
-    if (u.kind === "analyst" && u.allPlayers && !sameAccess(u.access || {}, want)) jobs.push(updateDoc(doc(db, "users", u.uid), { access: want }));
+    if ((u.kind === "analyst" || u.kind === "employee") && u.allPlayers && !sameAccess(u.access || {}, want)) jobs.push(updateDoc(doc(db, "users", u.uid), { access: want }));
   }
   for (const v of invites) {
-    if (v.kind === "analyst" && v.allPlayers && !v.usedBy && !sameAccess(v.access || {}, want)) jobs.push(updateDoc(doc(db, "invites", v.code), { access: want }));
+    if ((v.kind === "analyst" || v.kind === "employee") && v.allPlayers && !v.usedBy && !sameAccess(v.access || {}, want)) jobs.push(updateDoc(doc(db, "invites", v.code), { access: want }));
   }
   await Promise.all(jobs);
   return jobs.length;

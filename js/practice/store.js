@@ -55,3 +55,11 @@ export async function listAssigned(playerKey) {
 }
 export const sendGame = (playerKey, a) => setDoc(doc(db, "assignedGames", playerKey, "games", a.id), clean(a));
 export const dismissAssigned = (playerKey, id) => deleteDoc(doc(db, "assignedGames", playerKey, "games", id));
+
+/* Your own putting spots (update 151): real putts you can get to, with your aim, practice/{owner}/spots/{id}. */
+export async function listSpots(owner) {
+  const snap = await getDocs(collection(db, "practice", owner, "spots"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+}
+export const saveSpot = (owner, sp) => setDoc(doc(db, "practice", owner, "spots", sp.id), clean(sp));
+export const deleteSpot = (owner, id) => deleteDoc(doc(db, "practice", owner, "spots", id));

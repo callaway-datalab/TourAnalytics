@@ -17,7 +17,7 @@
  *   sg        total strokes gained against the Tour baselines (beat 0.00)
  *   strokes   strokes to hole out (play: "holes"); lower is better
  */
-import { shotFor } from "./model.js";
+import { shotFor, withSlopes } from "./model.js";
 import { spotHole } from "./round.js";
 
 const rint = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
@@ -92,7 +92,7 @@ export function buildGame(g) {
   return ds.map((d, i) => {
     const s = shotFor(g.cat, d, { ...(g.setup || {}), width: g.setup?.width || "standard" });
     // short putts go all round the hole: every break and slope in turn
-    if (g.cat === "PUTT" && g.list?.length) { s.breakDir = breaks[i % 3]; s.slope = slopes[Math.floor(i / 3) % 3]; s.sidePct = s.breakDir === "straight" ? 0 : s.sidePct || 1.5; s.upPct = s.slope === "flat" ? 0 : s.upPct || 1.5; }
+    if (g.cat === "PUTT" && g.list?.length) { const b = breaks[i % 3], sl = slopes[Math.floor(i / 3) % 3]; withSlopes(s, b === "lr" ? 2 : b === "rl" ? -2 : 0, sl === "up" ? 2 : sl === "down" ? -2 : 0); }
     return { ...s, i: i + 1 };
   });
 }
