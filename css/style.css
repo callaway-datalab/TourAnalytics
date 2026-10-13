@@ -3038,3 +3038,16 @@ body:has(#app > .boot-msg)::after { background: radial-gradient(1200px 600px at 
 .set-yard { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.2rem 0.15rem 0.6rem; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid var(--line); }
 .set-yard span { font-weight: 600; font-size: 0.85rem; min-width: 1.6rem; }
 .set-yard input { width: 4.2rem !important; min-width: 0 !important; padding: 0.35rem 0.4rem !important; text-align: center; }
+
+/* ===================================================== update 141 ===================================================== */
+.pr-fixed { margin: 0; padding: 0.55rem 0.8rem; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid var(--line); color: var(--muted); }
+.pr-prox { display: grid; gap: 0.35rem; padding: 0.8rem; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.02); }
+.pr-prox .rd-label { margin: 0 0 0.2rem; }
+.pr-prox-row { display: grid; grid-template-columns: minmax(0, 1fr) 4rem auto 1.4rem; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+.pr-prox-row > span { display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.pr-prox-row em { font-style: normal; color: var(--muted); font-size: 0.8rem; }
+.pr-prox input.pr-pts { width: 4rem; text-align: center; font-size: 16px; padding: 0.35rem 0.3rem; }
+.pr-prox > .link { justify-self: start; font-size: 0.85rem; }
+.chat-always { font-style: italic; }
+.pr-sess-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem; align-items: center; }
+.pr-sess-wrap .pr-sess-del { position: static !important; transform: none !important; width: 2.3rem; height: 2.3rem; }

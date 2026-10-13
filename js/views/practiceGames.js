@@ -6,7 +6,7 @@
  */
 import { el, mount, confirmAction } from "../ui.js";
 import { CATS } from "../practice/model.js";
-import { BUILT_IN, SCORING, buildGame, personalBest, fmtGameScore, targetText, scoringOf, describeGame, isLow } from "../practice/games.js";
+import { BUILT_IN, SCORING, proxTable, buildGame, personalBest, fmtGameScore, targetText, scoringOf, describeGame, isLow } from "../practice/games.js";
 import { listMyGames, saveMyGame, deleteMyGame, listAssigned, sendGame, dismissAssigned } from "../practice/store.js";
 import { spotHole } from "../practice/round.js";
 
@@ -106,7 +106,7 @@ function drawHome(ctx) {
     const b = el("button", { type: "button", class: "btn ghost" }, "Resume");
     b.addEventListener("click", () => (g.play === "holes" ? ctx.go({ name: "round", session: s }) : ctx.playSession(s)));
     const x = el("button", { type: "button", class: "link danger" }, "Discard");
-    x.addEventListener("click", async () => { if (!confirmAction("Discard this unfinished game?")) return; await ctx.remove(s.id); drawHome(ctx); });
+    x.addEventListener("click", async () => { if (!confirmAction("Discard this unfinished game?")) return; if (await ctx.remove(s.id)) drawHome(ctx); });
     return el("section", { class: "panel pr-resume" }, [el("div", {}, [el("strong", {}, `${g.title} in progress`), el("span", { class: "muted" }, ` · ${new Date(s.startedAt).toLocaleDateString()}`)]), el("div", { class: "pr-row" }, [b, x])]);
   });
   const create = el("button", { type: "button", class: "btn" }, "＋  Make a game");
@@ -131,7 +131,7 @@ function drawHome(ctx) {
       el("span", { class: "pr-sess-per muted" }, s.game?.passed ? "beaten" : s.game?.complete === false ? "unfinished" : "missed"),
     ]);
     row.addEventListener("click", () => (g.play === "holes" ? ctx.go({ name: "roundEnd", session: s }) : ctx.showSummary(s)));
-    return row;
+    return ctx.rowWithDelete(row, s, "game");
   }))]) : null;
   mount(ctx.body, [
     el("section", { class: "panel pr-hero" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, "Practice"), el("h1", {}, "Pressure games"),
@@ -156,6 +156,31 @@ function drawEditor(ctx, g, isNew) {
     return el("label", { class: "pr-optrow" }, [el("span", { class: "rd-label" }, label), i]);
   };
   const prev = el("p", { class: "pr-preview" });
+  // proximity points: what each finish is worth, and the distances for each band
+  const proxEditor = () => {
+    const t = proxTable(g);
+    g.scoring.table = { holed: t.holed, bands: t.bands.map((b) => [...b]), green: t.green, miss: t.miss, water: t.water };
+    const T = g.scoring.table;
+    const pts = (val, set, label) => { const i = el("input", { type: "text", inputmode: "numeric", value: String(val), "aria-label": `${label} points`, class: "pr-pts" }); i.addEventListener("input", () => { set(i.value === "" || i.value === "-" ? 0 : Number(i.value) || 0); preview(); }); return i; };
+    const ftIn = (b) => { const i = el("input", { type: "text", inputmode: "numeric", value: String(b[0]), "aria-label": "Within feet", class: "pr-pts" }); i.addEventListener("input", () => { b[0] = Number(i.value) || 0; preview(); }); return i; };
+    const row = (label, input, extra = null) => el("div", { class: "pr-prox-row" }, [el("span", {}, label), extra, input, el("em", {}, "pts")]);
+    const addBand = el("button", { type: "button", class: "link" }, "\uFF0B Add a distance");
+    addBand.addEventListener("click", () => { const last = T.bands.at(-1)?.[0] || 10; T.bands.push([last + 10, 1]); draw(); });
+    return el("div", { class: "pr-prox" }, [
+      el("p", { class: "rd-label" }, "Points for each finish"),
+      row("Holed", pts(T.holed, (v) => { T.holed = v; }, "Holed")),
+      ...T.bands.map((b, i) => {
+        const rm = T.bands.length > 1 ? el("button", { type: "button", class: "link danger", "aria-label": "Remove this distance" }, "\u2715") : null;
+        rm?.addEventListener("click", () => { T.bands.splice(i, 1); draw(); });
+        return el("div", { class: "pr-prox-row" }, [el("span", {}, ["Inside ", ftIn(b), " ft"]), pts(b[1], (v) => { b[1] = v; }, `Inside ${b[0]} ft`), el("em", {}, "pts"), rm]);
+      }),
+      addBand,
+      row("On the green, further", pts(T.green, (v) => { T.green = v; }, "On the green")),
+      row("Missed the green", pts(T.miss, (v) => { T.miss = v; }, "Missed")),
+      row("In the water", pts(T.water, (v) => { T.water = v; }, "Water")),
+      el("p", { class: "muted small" }, "A shot scores the first line it fits, top to bottom: holed, then the closest distance it's inside."),
+    ]);
+  };
   const preview = () => { mount(prev, [el("strong", {}, g.title || "Your game"), ` — ${describeGame(g)} ${targetText(g)}.`]); };
   const unit = () => (g.cat === "PUTT" ? "ft" : "yds");
   const draw = () => {
@@ -166,7 +191,8 @@ function drawEditor(ctx, g, isNew) {
     const distMode = g.list?.length ? "list" : "range";
     mount(form, [
       input("Name", g.title, (v) => { g.title = v.slice(0, 40); }, { maxLength: 40, placeholder: "e.g. Six-foot pressure" }),
-      seg("Category", CAT_ORDER.map((c) => [c, CATS[c].label]), () => g.cat, (v) => { g.cat = v; if (v === "OTT") { delete g.list; delete g.dist; } else if (!g.dist && !g.list) g.dist = v === "PUTT" ? { from: 5, to: 15 } : v === "ARG" ? { from: 10, to: 30 } : { from: 100, to: 175 }; }),
+      // (the category is set when a game is made; editing keeps it)
+      !isNew ? el("div", { class: "pr-optrow" }, [el("span", { class: "rd-label" }, "Category"), el("p", { class: "pr-fixed" }, CATS[g.cat].label)]) : seg("Category", CAT_ORDER.map((c) => [c, CATS[c].label]), () => g.cat, (v) => { g.cat = v; if (v === "OTT") { delete g.list; delete g.dist; } else if (!g.dist && !g.list) g.dist = v === "PUTT" ? { from: 5, to: 15 } : v === "ARG" ? { from: 10, to: 30 } : { from: 100, to: 175 }; }),
       ["APP", "ARG"].includes(g.cat) ? seg("How it's played", [["shots", "One shot each"], ["holes", "Play each one out"]], () => g.play, (v) => { g.play = v; }) : null,
       input(g.play === "holes" ? "Spots" : "Shots", g.shots, (v) => { g.shots = Math.max(1, Math.min(40, Number(v) || 1)); }, { inputmode: "numeric", maxLength: 2 }),
       g.cat !== "OTT" ? seg(`Distances (${unit()})`, [["range", "A range"], ["list", "Set distances"]], () => distMode, (v) => { if (v === "list") { g.list = [g.dist?.from || 6]; delete g.dist; } else { g.dist = { from: g.list?.[0] || 10, to: (g.list?.at(-1) || 10) + 10 }; delete g.list; } }) : null,
@@ -177,6 +203,7 @@ function drawEditor(ctx, g, isNew) {
       ["APP", "ARG"].includes(g.cat) && g.play !== "holes" ? seg("Lie", [["Fairway", "Fairway"], ["Rough", "Rough"], ["Bunker", "Bunker"], ["mixed", "Mixed"]], () => g.setup.lie || "Fairway", (v) => { g.setup.lie = v; }) : null,
       ["APP", "ARG"].includes(g.cat) && g.play !== "holes" ? seg("Pins", [["easy", "Middle"], ["mid", "Corners"], ["hard", "Tucked"], ["mixed", "Mixed"]], () => g.setup.pin || "mixed", (v) => { g.setup.pin = v; }) : null,
       seg("Scoring", allowed.map(([k, sc]) => [k, sc.label]), () => g.scoring.type, (v) => { g.scoring = { type: v, ...(v === "inside" ? { inside: g.cat === "PUTT" ? 3 : 6 } : {}) }; if (v === "sg") g.target = 0; }),
+      g.scoring.type === "prox" ? proxEditor() : null,
       g.scoring.type === "inside" ? input("Inside (ft)", g.scoring.inside, (v) => { g.scoring.inside = Math.max(1, Number(v) || 1); }, { inputmode: "numeric", maxLength: 3 }) : null,
       input(isLow(g) ? "Target (or less)" : scoringOf(g).sg ? "Target (strokes gained, beat it)" : "Target", g.target, (v) => { g.target = Number(v) || 0; }, { inputmode: "decimal", maxLength: 6 }),
       input("Description (optional)", g.blurb, (v) => { g.blurb = v.slice(0, 200); }, { maxLength: 200, placeholder: "Leave blank to describe it automatically" }),

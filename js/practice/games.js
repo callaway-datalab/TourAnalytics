@@ -23,10 +23,21 @@ import { spotHole } from "./round.js";
 const rint = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
 const proxFt = (r) => (r.lie === "Holed" ? 0 : r.unit === "ft" ? r.dist : r.dist * 3);
 
+/** Proximity points: the default table (each game can have its own: scoring.table). */
+export const PROX_TABLE = { holed: 10, bands: [[8, 4], [15, 3], [25, 2]], green: 1, miss: 0, water: -2 };
+export const proxTable = (g) => {
+  const t = g?.scoring?.table || {};
+  const bands = (t.bands?.length ? t.bands : PROX_TABLE.bands).map(([ft, pts]) => [Number(ft) || 0, Number(pts) || 0]).filter(([ft]) => ft > 0).sort((a, b) => a[0] - b[0]);
+  const n = (k) => (t[k] == null || t[k] === "" || Number.isNaN(Number(t[k])) ? PROX_TABLE[k] : Number(t[k]));
+  return { holed: n("holed"), bands, green: n("green"), miss: n("miss"), water: n("water") };
+};
+const signed = (v) => (v < 0 ? `\u2212${Math.abs(v)}` : String(v));
+
 export const SCORING = {
   fairways: { label: "Fairways", cats: ["OTT"], text: () => "Fairway 1 · Rough or bunker 0 · Penalty −2", maxPer: 1, unit: "pts", points: (s) => (s.result.penalty ? -2 : s.result.lie === "Fairway" ? 1 : 0) },
-  prox: { label: "Proximity points", cats: ["APP", "ARG"], text: () => "Holed 10 · Inside 8 ft 4 · 15 ft 3 · 25 ft 2 · On the green 1 · Missed 0 · Water −2", maxPer: 10, unit: "pts",
-    points: (s) => { const r = s.result; if (r.penalty) return -2; if (r.lie === "Holed") return 10; if (r.lie !== "Green") return 0; const f = proxFt(r); return f <= 8 ? 4 : f <= 15 ? 3 : f <= 25 ? 2 : 1; } },
+  prox: { label: "Proximity points", cats: ["APP", "ARG"], unit: "pts",
+    text: (g) => { const t = proxTable(g); return [`Holed ${signed(t.holed)}`, ...t.bands.map(([ft, p], i) => `${i ? "" : "Inside "}${ft} ft ${signed(p)}`), `On the green ${signed(t.green)}`, `Missed ${signed(t.miss)}`, `Water ${signed(t.water)}`].join(" \u00b7 "); },
+    points: (s, g) => { const t = proxTable(g), r = s.result; if (r.penalty) return t.water; if (r.lie === "Holed") return t.holed; if (r.lie !== "Green") return t.miss; const f = proxFt(r); const b = t.bands.find(([ft]) => f <= ft); return b ? b[1] : t.green; } },
   inside: { label: "Inside a distance", cats: ["APP", "ARG", "PUTT"], text: (g) => `Holed or inside ${g.scoring.inside || 6} ft 1 · Further 0`, maxPer: 1, unit: "pts", points: (s, g) => (s.result.lie === "Holed" || (!s.result.penalty && proxFt(s.result) <= (g.scoring.inside || 6)) ? 1 : 0) },
   makes: { label: "Makes", cats: ["PUTT"], text: () => "A point for every make", maxPer: 1, unit: "makes", points: (s) => (s.result.lie === "Holed" ? 1 : 0) },
   ladder: { label: "Ladder (longer makes worth more)", cats: ["PUTT"], text: () => "A make is worth a point for every 3 ft: 3 ft 1, 6 ft 2, 9 ft 3", maxPer: null, unit: "pts", points: (s) => (s.result.lie === "Holed" ? Math.max(1, Math.round(s.startDist / 3)) : 0) },
@@ -90,6 +101,7 @@ export const isLow = (g) => !!scoringOf(g).low;
 /** What a point is worth at most per shot (for "still possible?"). */
 function maxPer(g) {
   const sc = scoringOf(g);
+  if (g.scoring?.type === "prox") { const t = proxTable(g); return Math.max(t.holed, t.green, t.miss, ...t.bands.map((b) => b[1])); }
   if (g.scoring?.type === "ladder") return Math.max(...(g.list?.length ? g.list : [Number(g.dist?.to) || 9]).map((d) => Math.max(1, Math.round(d / 3))));
   return sc.maxPer ?? 1;
 }

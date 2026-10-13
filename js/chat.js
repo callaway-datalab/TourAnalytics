@@ -1,8 +1,9 @@
 // Chat (update 101): the same page for everyone, from the admin to analysts, players, coaches and caddies.
 //   • Direct messages and named groups (chatRooms/{id}, messages in chatRooms/{id}/messages); anyone in a group
 //     can add people or leave
-//   • Company chat: Callaway staff only (staffChat/{id})
-//   • Friends: ask someone by their email; once they accept you can message each other
+//   • (Company chat was taken out in update 141: message analysts directly, or make a group)
+//   • Friends: ask someone by their email; once they accept you can message each other. Callaway's analysts are
+//     on everyone's list from the start, and can't be removed (update 141)
 // What differs is only who you can message: the admin and analysts anyone; everyone else Callaway staff, their
 // own team and their friends. The Firestore rules check this too (chatReach, chatFriends; see chatCircles.js).
 import {
@@ -19,8 +20,7 @@ export function watchStaffChat(cb) {
     (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb(null));
 }
 
-const COMPANY = { id: "company", type: "company", name: "Company chat" };
-const msgsOf = (roomId) => (roomId === "company" ? collection(db, "staffChat") : collection(db, "chatRooms", roomId, "messages"));
+const msgsOf = (roomId) => collection(db, "chatRooms", roomId, "messages");
 const readKey = (uid, roomId) => `chatRead:${uid}:${roomId}`;
 const lastRead = (uid, roomId) => { try { return Number(localStorage.getItem(readKey(uid, roomId))) || 0; } catch { return 0; } };
 const markRead = (uid, roomId) => { try { localStorage.setItem(readKey(uid, roomId), String(Date.now())); } catch { /* fine */ } window.dispatchEvent(new Event("ta-chat-read")); };
@@ -44,7 +44,7 @@ export function renderChat(container, { flash }) {
   const uid = state.user.uid;
   const myName = state.profile?.name || state.user.displayName || state.user.email || "Me";
   const staff = isStaffState(state);
-  let rooms = [], current = staff ? "company" : null, stopMsgs = () => {}, roomsKey = "", companyKey = "", companyLast = null, autoOpened = false;
+  let rooms = [], current = null, stopMsgs = () => {}, roomsKey = "", autoOpened = false;
   // people: uid -> { name, role, title }; who I may message: staff -> everyone, else reach + friends
   const people = new Map();
   let reach = [], friends = [], incoming = [], outgoing = [];
@@ -81,12 +81,8 @@ export function renderChat(container, { flash }) {
     roomsKey = k; rooms = next;
     rooms.forEach((r) => r.members.forEach(watchName));
     redraw();
-    // (no company chat: open the latest conversation the first time they load; phones still start on the list)
-    if (!staff && !current && !autoOpened && rooms.length) { autoOpened = true; open(allRooms()[0].id); shell.classList.remove("show-thread"); }
-  }, () => {}));
-  if (staff) unsubs.push(onSnapshot(query(collection(db, "staffChat"), orderBy("createdAt", "desc"), limit(1)), (s) => {
-    const m = s.docs[0]?.data(); const k = m ? `${ms(m.createdAt)}|${m.body}` : ""; if (k === companyKey) return;
-    companyKey = k; companyLast = m ? { at: ms(m.createdAt), text: m.body, by: m.uid } : null; drawList();
+    // open the latest conversation the first time they load; phones still start on the list
+    if (!current && !autoOpened && rooms.length) { autoOpened = true; open(allRooms()[0].id); shell.classList.remove("show-thread"); }
   }, () => {}));
 
   const nameOf = (id) => (id === uid ? "You" : people.get(id)?.name || "Someone");
@@ -99,11 +95,10 @@ export function renderChat(container, { flash }) {
     const callaway = others.filter(isStaffId).sort(byName);
     const friendIds = friends.filter((id) => id !== uid && !isStaffId(id)).sort(byName);
     const rest = others.filter((id) => !isStaffId(id) && !friendIds.includes(id)).sort(byName);
-    return [{ title: "Callaway", ids: callaway }, { title: staff ? "Everyone" : "Your team", ids: rest }, { title: "Friends", ids: friendIds }].filter((x) => x.ids.length);
+    return [{ title: "Callaway analysts", ids: callaway }, { title: staff ? "Everyone" : "Your team", ids: rest }, { title: "Friends", ids: friendIds }].filter((x) => x.ids.length);
   }
-  const roomName = (r) => (r.type === "company" ? "Company chat" : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
-  const allRooms = () => [...(staff ? [{ ...COMPANY, lastAt: companyLast?.at || 0, lastText: companyLast?.text || "", lastBy: companyLast?.by }] : []),
-    ...rooms.map((r) => ({ ...r, lastAt: ms(r.lastAt) || ms(r.createdAt) }))].sort((a, b) => (a.type === "company" ? -1 : b.type === "company" ? 1 : b.lastAt - a.lastAt));
+  const roomName = (r) => (r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
+  const allRooms = () => rooms.map((r) => ({ ...r, lastAt: ms(r.lastAt) || ms(r.createdAt) })).sort((a, b) => b.lastAt - a.lastAt);
   const unread = (r) => r.lastAt > lastRead(uid, r.id) && r.lastBy && r.lastBy !== uid;
 
   // ---- layout: conversations | thread (on phones one at a time) ----
@@ -132,7 +127,7 @@ export function renderChat(container, { flash }) {
     mount(list, all.map((r) => {
       const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
       const b = el("button", { type: "button", class: "chat-room" + (r.id === current ? " on" : ""), "aria-current": r.id === current ? "true" : null }, [
-        el("span", { class: "chat-room-icon", "aria-hidden": "true" }, r.type === "company" ? "#" : r.type === "group" ? "\u25CE" : "\u25CF"),
+        el("span", { class: "chat-room-icon", "aria-hidden": "true" }, r.type === "group" ? "\u25CE" : "\u25CF"),
         el("span", { class: "chat-room-text" }, [el("strong", {}, roomName(r)), el("span", { class: "muted" }, r.lastText ? r.lastText.slice(0, 60) : r.type === "group" ? `${r.members.length} people` : other ? roleOf(other) : "")]),
         unread(r) && r.id !== current ? el("span", { class: "chat-dot", "aria-label": "Unread" }) : null,
       ]);
@@ -147,7 +142,7 @@ export function renderChat(container, { flash }) {
     const back = el("button", { type: "button", class: "link chat-back", "aria-label": "Back to chats" }, "\u2039 Chats");
     back.addEventListener("click", () => shell.classList.remove("show-thread"));
     const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
-    const sub = r.type === "company" ? "Everyone at Callaway: you and all analysts" : r.type === "dm" ? (roleOf(other) || "Direct message") : r.members.map(nameOf).join(", ");
+    const sub = r.type === "dm" ? (roleOf(other) || "Direct message") : r.members.map(nameOf).join(", ");
     const actions = [];
     if (r.type === "group") {
       const add = el("button", { type: "button", class: "link" }, "Add people");
@@ -155,7 +150,7 @@ export function renderChat(container, { flash }) {
       const leave = el("button", { type: "button", class: "link danger" }, "Leave");
       leave.addEventListener("click", async () => {
         if (!confirmAction(`Leave \u201c${r.name}\u201d?`)) return;
-        try { await updateDoc(doc(db, "chatRooms", r.id), { members: r.members.filter((m) => m !== uid) }); open(staff ? "company" : null); }
+        try { await updateDoc(doc(db, "chatRooms", r.id), { members: r.members.filter((m) => m !== uid) }); open(null); }
         catch { flash("Couldn't leave that group.", "error"); }
       });
       actions.push(add, leave);
@@ -203,7 +198,7 @@ export function renderChat(container, { flash }) {
     sendBtn.disabled = true;
     try {
       await addDoc(msgsOf(current), { uid, name: myName, body, createdAt: serverTimestamp() });
-      if (current !== "company") await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
+      await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
       box.value = ""; box.focus();
     } catch { flash("Couldn't send that message. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
     finally { sendBtn.disabled = false; }
@@ -308,6 +303,8 @@ export function renderChat(container, { flash }) {
       await b.commit();
     } catch { flash("Couldn't remove that friend.", "error"); }
   }
+  // Callaway's analysts (and the admin): on everyone's friends list, for good
+  const analysts = () => (staff ? [...people.keys()] : reach).filter((id) => id !== uid && isStaffId(id)).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   function drawFriends() {
     const row = (id, btns) => el("div", { class: "chat-friend" }, [el("span", {}, personLabel(id)), el("span", { class: "chat-friend-btns" }, btns)]);
     const btn = (label, fn, cls = "link") => { const b = el("button", { type: "button", class: cls }, label); b.addEventListener("click", fn); return b; };
@@ -316,7 +313,10 @@ export function renderChat(container, { flash }) {
       incoming.length ? el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Asked you"), ...incoming.map((r) => row(r.from, [
         btn("Accept", () => accept(r), "link chat-accept"), btn("Decline", async () => { try { await deleteDoc(doc(db, "friendRequests", r.id)); } catch { flash("Couldn't decline that.", "error"); } }),
       ]))]) : null,
-      el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Your friends"), ...(friends.length ? friends.map((id) => row(id, [
+      analysts().length ? el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Callaway analysts"), ...analysts().map((id) => row(id, [
+        btn("Message", () => startDm(id)), el("span", { class: "muted small chat-always" }, "Always here"),
+      ]))]) : null,
+      el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Your friends"), ...(friends.filter((id) => !isStaffId(id)).length ? friends.filter((id) => !isStaffId(id)).map((id) => row(id, [
         btn("Message", () => startDm(id)), btn("Remove", () => removeFriend(id), "link danger"),
       ])) : [el("p", { class: "muted small" }, "None yet.")])]),
       outgoing.length ? el("div", { class: "chat-sec" }, [el("p", { class: "chat-sec-title" }, "Waiting for them"), ...outgoing.map((r) => row(r.to, [

@@ -6,7 +6,7 @@
 import { el, mount, confirmAction } from "../ui.js";
 import { readLaunchMonitor, resultFromSpeech } from "../practice/analysis.js";
 import { CLUB_LIST, sortClubs, normClub, bagPatterns, clubStats, gapping } from "../practice/clubs.js";
-import { SpeechRec } from "./practiceShot.js";
+import { SpeechRec, sayKids } from "./practiceShot.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs = {}, kids = []) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, String(v)); for (const k of [].concat(kids)) if (k) n.appendChild(typeof k === "string" ? document.createTextNode(k) : k); return n; };
@@ -248,12 +248,12 @@ function drawEntry(ctx, v) {
   });
   [carry, total, off].forEach((i) => i.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); }));
   const say = SpeechRec ? (() => {
-    const b = el("button", { type: "button", class: "btn ghost pr-say" }, "🎙 Say it");
+    const b = el("button", { type: "button", class: "btn ghost pr-say voice-mic" }, sayKids("Say it"));
     b.addEventListener("click", () => {
       if (!club) { hint.textContent = "Pick the club first."; return; }
       const rec = new SpeechRec();
       rec.lang = navigator.language || "en-US"; rec.maxAlternatives = 3;
-      b.textContent = "Listening…"; b.disabled = true;
+      mount(b, sayKids("Listening…")); b.dataset.listening = "1"; b.classList.add("on"); b.disabled = true;
       rec.onresult = (e) => {
         const alts = [...e.results[0]].map((a) => a.transcript);
         // read it like a tee shot: "152, 6 left"
@@ -261,8 +261,8 @@ function drawEntry(ctx, v) {
         const got = alts.map((t) => resultFromSpeech(fake, t.replace(/\b(\d{2,3})\b/, (m) => (Number(m) < 100 ? `${Number(m) + 1000}` : m)))).find(Boolean);
         if (got) addShot(got.total > 1000 ? got.total - 1000 : got.total, null, got.offline); else hint.textContent = `Didn’t catch “${alts[0]}”`;
       };
-      rec.onend = () => { b.disabled = false; b.textContent = "🎙 Say it"; };
-      rec.onerror = () => { b.disabled = false; b.textContent = "🎙 Say it"; };
+      rec.onend = () => { b.disabled = false; b.classList.remove("on"); if (b.dataset.listening) mount(b, sayKids("Say it")); delete b.dataset.listening; };
+      rec.onerror = () => { b.disabled = false; b.classList.remove("on"); delete b.dataset.listening; mount(b, sayKids("Say it")); };
       try { rec.start(); } catch { b.disabled = false; }
     });
     return b;

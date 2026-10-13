@@ -272,7 +272,17 @@ export async function render(main, { flash, previewClient }) {
           el("td", { class: "num c-rounds" }, String(u.used)),
           el("td", { class: "num c-att" }, fmtAtt(u.perRound)),
           sgCell(u.avg),
-          el("td", { class: "actions" }),
+          el("td", { class: "actions" }, readOnly ? null : (() => {
+            // the whole set at once (update 141)
+            const delSet = el("button", { type: "button", class: "entry-del", "aria-label": `Remove the whole ${range} set from your list`, title: "Remove the whole set" }, "\u2715");
+            delSet.addEventListener("click", (e) => {
+              e.stopPropagation();
+              if (!confirmAction(`Remove the whole ${range} set${clubMake(set[0]) ? ` (${clubMake(set[0])})` : ""}, all ${set.length} clubs, from your list? Shots already entered with them keep them.`)) return;
+              const ids = new Set(set.map((x) => x.id));
+              library = library.filter((x) => !ids.has(x.id)); inBag = inBag.filter((id) => !ids.has(id)); openSets.delete(k); keepOpenSets(); draw(); save();
+            });
+            return delSet;
+          })()),
         ]);
         const flip = () => { if (open) openSets.delete(k); else openSets.add(k); keepOpenSets(); draw(); };
         tr.addEventListener("click", flip);

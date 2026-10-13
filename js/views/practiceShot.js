@@ -7,6 +7,14 @@ import { teeResult, greenResult, bestAim, puttRead } from "../practice/model.js"
 import { holeSvg, greenSvg, puttSvg, scatterSvg, driveScatterSvg } from "../practice/draw.js";
 import { resultFromSpeech } from "../practice/analysis.js";
 
+/** The red microphone (the same as Track Round's voice input), with a label. */
+export function micIcon() {
+  const span = el("span", { class: "mic-icon", "aria-hidden": "true" });
+  span.innerHTML = '<svg viewBox="0 0 40 40" width="22" height="22"><circle cx="20" cy="20" r="20" fill="#e5252a"/><rect x="15.5" y="7.5" width="9" height="16" rx="4.5" fill="#fff"/><path d="M12 19.5a8 8 0 0 0 16 0" fill="none" stroke="#fff" stroke-width="2"/><line x1="20" y1="27.5" x2="20" y2="31.5" stroke="#fff" stroke-width="2"/><line x1="15.5" y1="32" x2="24.5" y2="32" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
+  return span;
+}
+export const sayKids = (text) => [micIcon(), el("span", {}, text)];
+
 export const SG = (v, dp = 2) => (v == null || Number.isNaN(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(dp)}`);
 export const sgCls = (v) => (v == null ? "" : v >= 0.005 ? "pos" : v <= -0.005 ? "neg" : "");
 export const n1 = (v, u = "") => (v == null || Number.isNaN(v) ? "\u2014" : `${Math.round(v * 10) / 10}${u}`);
@@ -179,18 +187,18 @@ export function inputsFor(shot, setResult, next) {
   const nextBtn = next ? el("button", { type: "button", class: "btn pr-next", disabled: r ? null : true }, next.label) : null;
   nextBtn?.addEventListener("click", () => next.onClick());
   const say = SpeechRec ? (() => {
-    const b = el("button", { type: "button", class: "btn ghost pr-say" }, "🎙 Say it");
+    const b = el("button", { type: "button", class: "btn ghost pr-say voice-mic" }, sayKids("Say it"));
     b.addEventListener("click", () => {
       const rec = new SpeechRec();
       rec.lang = navigator.language || "en-US"; rec.interimResults = false; rec.maxAlternatives = 3;
-      b.textContent = "Listening…"; b.disabled = true;
+      mount(b, sayKids("Listening…")); b.dataset.listening = "1"; b.classList.add("on"); b.disabled = true;
       rec.onresult = (e) => {
         const alts = [...e.results[0]].map((a) => a.transcript);
         const got = alts.map((t) => resultFromSpeech(shot, t)).find(Boolean);
-        if (got) setResult(got); else { b.textContent = `Didn’t catch “${alts[0]}”`; }
+        if (got) setResult(got); else { delete b.dataset.listening; b.classList.remove("on"); mount(b, sayKids(`Didn’t catch “${alts[0]}”`)); }
       };
-      rec.onend = () => { b.disabled = false; if (b.textContent === "Listening…") b.textContent = "🎙 Say it"; };
-      rec.onerror = () => { b.disabled = false; b.textContent = "🎙 Say it"; };
+      rec.onend = () => { b.disabled = false; if (b.dataset.listening) mount(b, sayKids("Say it")); delete b.dataset.listening; b.classList.remove("on"); };
+      rec.onerror = () => { b.disabled = false; b.classList.remove("on"); delete b.dataset.listening; mount(b, sayKids("Say it")); };
       try { rec.start(); } catch { b.disabled = false; }
     });
     return b;

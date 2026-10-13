@@ -85,12 +85,14 @@ export function nextShot(hole) {
 }
 
 /** Record a shot's result on the hole (done when it's in, or at the stroke limit). */
-export function playShot(hole, shot, result) {
+export function playShot(hole, shot, result, { noPutts = false } = {}) {
   shot.result = result;
   shot.sg = shotSG(shot, result);
   hole.shots.push(shot);
   hole.strokes = hole.shots.reduce((t, s) => t + 1 + (s.result?.penalty ? 1 : 0), 0);
   if (result.lie === "Holed") hole.done = true;
+  // skipping the putts (the range): the hole ends on the green, with how close
+  else if (noPutts && result.unit === "ft") { hole.done = true; hole.prox = result.dist; }
   else if (hole.strokes >= MAX_STROKES) { hole.done = true; hole.pickedUp = true; }
   return hole;
 }
@@ -98,7 +100,7 @@ export function playShot(hole, shot, result) {
 /** Take back the last shot on a hole. */
 export function undoShot(hole) {
   const s = hole.shots.pop();
-  hole.done = false; hole.pickedUp = false;
+  hole.done = false; hole.pickedUp = false; delete hole.prox;
   hole.strokes = hole.shots.reduce((t, x) => t + 1 + (x.result?.penalty ? 1 : 0), 0);
   return s;
 }
@@ -117,7 +119,7 @@ export function holeExpected(hole) {
 const onGreenResult = (r) => r && (r.lie === "Holed" || (r.unit === "ft" && r.lie !== "Fringe"));
 
 /** A round's (or game's) totals: score, to par, strokes gained by category, greens, putts, scrambling. */
-export function roundSummary(holes) {
+export function roundSummary(holes, { noPutts = false } = {}) {
   const played = holes.filter((h) => h.done);
   const sg = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 };
   let gir = 0, girOf = 0, putts = 0, pens = 0, udAtt = 0, udMade = 0, scr = 0, scrAtt = 0;
@@ -134,8 +136,12 @@ export function roundSummary(holes) {
     putts += h.shots.filter((s) => s.rcat === "PUTT").length;
     pens += h.shots.filter((s) => s.result?.penalty).length;
   }
-  const score = played.reduce((t, h) => t + h.strokes, 0), par = played.reduce((t, h) => t + h.par, 0);
+  const score = played.reduce((t, h) => t + h.strokes, 0);
+  // skipping putts: compared with regulation (on the green in par − 2), with the average proximity
+  const par = played.reduce((t, h) => t + (noPutts ? h.par - 2 : h.par), 0);
+  const proxList = played.map((h) => h.prox).filter((v) => v != null);
   return {
+    noPutts, prox: proxList.length ? proxList.reduce((a, b) => a + b, 0) / proxList.length : null,
     holes: played.length, score, par, toPar: score - par, sg, sgTotal: Object.values(sg).reduce((a, b) => a + b, 0), expected: played.reduce((t, h) => t + holeExpected(h), 0),
     gir: girOf ? { hit: gir, of: girOf } : null, putts, penalties: pens, scrambling: scrAtt ? { made: scr, of: scrAtt } : null, upDowns: udAtt ? { made: udMade, of: udAtt } : null,
   };

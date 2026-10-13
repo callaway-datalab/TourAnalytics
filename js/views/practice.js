@@ -86,8 +86,10 @@ export async function render(main, { flash }) {
     return res;
   };
 
+  let saveFor = null; // the session a save is waiting for
   function save(s, now = false) {
     clearTimeout(saveTimer);
+    saveFor = s.id;
     const run = () => saveSession(owner, s).catch((err) => { console.error(err); flash?.("Couldn't save just now. It'll try again with the next shot.", "error"); });
     if (now) return run();
     saveTimer = setTimeout(run, 700);
@@ -117,7 +119,18 @@ export async function render(main, { flash }) {
     body, uid, owner, state, flash, label, playerKey, save,
     get sessions() { return sessions; },
     add(s) { sessions = [s, ...sessions.filter((x) => x.id !== s.id)]; },
-    async remove(id) { await deleteSession(owner, id).catch(() => {}); sessions = sessions.filter((x) => x.id !== id); },
+    async remove(id) {
+      // (if it doesn't delete, say so, rather than hiding it until the next visit)
+      if (saveFor === id) { clearTimeout(saveTimer); saveFor = null; } // (a save still waiting would bring it back)
+      try { await deleteSession(owner, id); } catch (err) { console.error(err); flash?.(`Couldn't delete that (${err.code || err.message}). If you haven't yet, republish the Firestore rules from the latest update.`, "error"); return false; }
+      sessions = sessions.filter((x) => x.id !== id); return true;
+    },
+    /** A session row with a delete button beside it. */
+    rowWithDelete(row, s, what = "session") {
+      const del = el("button", { type: "button", class: "entry-del pr-sess-del", "aria-label": `Delete this ${what}`, title: `Delete this ${what}` }, "\u2715");
+      del.addEventListener("click", async (e) => { e.stopPropagation(); if (!confirmAction(`Delete this ${what}? It can't be undone.`)) return; if (await ctx.remove(s.id)) draw(); });
+      return el("div", { class: "pr-sess-wrap" }, [row, del]);
+    },
     aimFor, newId: newSessionId,
     heat: { get on() { return showHeat; }, set(v) { showHeat = v; } },
     go(v) { view = v; draw(); }, home() { view = { name: "home" }; draw(); },
@@ -150,23 +163,23 @@ export async function render(main, { flash }) {
   /* =============================================== home: your practice in this category =============================================== */
   async function drawHome() {
     const mine = sessions.filter((s) => s.cat === cat);
-    const done = mine.filter((s) => s.status === "done"), active = mine.find((s) => s.status === "active");
+    const done = mine.filter((s) => s.status === "done"), actives = mine.filter((s) => s.status === "active");
     const startBtn = el("button", { type: "button", class: "btn pr-start" }, "＋  Start new practice session");
     startBtn.addEventListener("click", () => { view = { name: "plan" }; draw(); });
     const head = el("section", { class: "panel pr-hero" }, [
       el("div", { class: "pr-hero-main" }, [el("p", { class: "pr-eyebrow" }, "Custom practice"), pills, el("h1", {}, CATS[cat].label), el("p", { class: "muted pr-lede" }, LEDE[cat])]),
       startBtn,
     ]);
-    const resume = active ? (() => {
+    const resume = actives.map((active) => {
       const left = active.shots.filter((s) => !s.result).length;
       const b = el("button", { type: "button", class: "btn ghost" }, "Resume");
       b.addEventListener("click", () => ctx.playSession(active));
       const x = el("button", { type: "button", class: "link danger" }, "Discard");
-      x.addEventListener("click", async () => { if (!confirmAction("Discard this unfinished session?")) return; await ctx.remove(active.id); draw(); });
-      return el("section", { class: "panel pr-resume" }, [el("div", {}, [el("strong", {}, "Session in progress"), el("span", { class: "muted" }, ` · ${active.shots.length - left} of ${active.shots.length} shots · ${new Date(active.startedAt).toLocaleDateString()}`)]), el("div", { class: "pr-row" }, [b, x])]);
-    })() : null;
+      x.addEventListener("click", async () => { if (!confirmAction("Discard this unfinished session?")) return; if (await ctx.remove(active.id)) draw(); });
+      return el("section", { class: "panel pr-resume" }, [el("div", {}, [el("strong", {}, "Session in progress"), el("span", { class: "muted" }, ` \u00b7 ${active.shots.length - left} of ${active.shots.length} shots \u00b7 ${new Date(active.startedAt).toLocaleDateString()}`)]), el("div", { class: "pr-row" }, [b, x])]);
+    });
     if (!done.length) {
-      mount(body, [head, resume, el("section", { class: "panel pr-empty" }, [
+      mount(body, [head, ...resume, el("section", { class: "panel pr-empty" }, [
         el("h2", {}, "How it works"),
         el("ol", {}, HOW[cat].map((t) => el("li", {}, t))),
       ])]);
@@ -195,9 +208,9 @@ export async function render(main, { flash }) {
         el("span", { class: `pr-sess-per ${sgCls(sm.sgPer)}` }, `${SG(sm.sgPer)} / shot`),
       ]);
       row.addEventListener("click", () => { view = { name: "summary", session: s }; draw(); });
-      return row;
+      return ctx.rowWithDelete(row, s, g ? "game" : "session");
     }));
-    mount(body, [head, resume,
+    mount(body, [head, ...resume,
       el("section", { class: "panel" }, [el("h2", {}, "Your practice"), tiles, trend.length > 1 ? el("div", { class: "pr-chart" }, [el("p", { class: "pr-cap" }, "Strokes gained per shot, session by session"), trendSvg(trend)]) : null]),
       el("section", { class: "panel" }, [el("h2", {}, "By distance"), el("p", { class: "muted small" }, "Practice against your strokes gained per shot on the course (Tour Events and Track Round), on the same baseline."), table]),
       patternPanel(cat, allShots.filter((s) => s.result).slice(-150), "Your pattern (last 150 shots)"),
