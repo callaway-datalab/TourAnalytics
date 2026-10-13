@@ -3100,3 +3100,16 @@ button.ti-name:hover { color: var(--accent); }
   .ti-events th, .ti-events td { padding: 0.4rem 0.3rem !important; }
   .ti-events th:nth-child(4), .ti-events td:nth-child(4) { white-space: normal; }
 }
+
+/* ===================================================== update 143: Tour Insights layout ===================================================== */
+.ti-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; align-items: stretch; }
+@media (max-width: 860px) { .ti-grid { grid-template-columns: minmax(0, 1fr) !important; } }
+/* category leaders: everyone, scrolling (about six in view) */
+.ti-scroll { max-height: 13.2rem; overflow-y: auto; overscroll-behavior: contain; padding-right: 0.3rem; scrollbar-width: thin; scrollbar-color: rgba(200,169,126,0.4) transparent; }
+.ti-scroll::-webkit-scrollbar { width: 5px; } .ti-scroll::-webkit-scrollbar-thumb { background: rgba(200,169,126,0.4); border-radius: 999px; }
+/* full names in the lists (they wrap rather than cut off) */
+.ti-who .ti-name, .ti-two .ti-name { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; }
+.ti-two { gap: 1.2rem; }
+.ti-two .ti-list li { align-items: start; }
+.ti-two .ti-v { padding-top: 0.05rem; }
+.ti-scroll .ti-name { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; line-height: 1.25; }

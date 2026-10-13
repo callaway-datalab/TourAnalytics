@@ -160,7 +160,7 @@ export function sgDashboard(container, opts) {
         if (!isSG()) return statBlocks(mine, slicedField, f);
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
-        return [heroBox(mine, slicedField, f), summaryBox(mine, slicedField), showRanks && me ? rankingsBlock(slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
+        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, showRanks && me ? rankingsBlock(slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
       })()),
     ]);
     if (focusKey) {
@@ -791,8 +791,9 @@ export function sgDashboard(container, opts) {
     // 1. category leaders: the top five in each
     if (cats.length > 1) {
       blocks.push(panelBox("Category Leaders", el("div", { class: "ti-leaders" }, cats.map(([k, l]) => {
-        const top = P.map((p) => ({ p, v: perRoundOf(p.rounds, k) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v).slice(0, 5);
-        return el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, l), el("ol", { class: "ti-list" }, top.map((x) => el("li", {}, [nameBtn(x.p), sgCell(x.v)])))]);
+        // every ranked player, best first; the list scrolls
+        const top = P.map((p) => ({ p, v: perRoundOf(p.rounds, k) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
+        return el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, l), el("ol", { class: "ti-list ti-scroll", tabindex: "0", "aria-label": `${l} leaders` }, top.map((x) => el("li", {}, [nameBtn(x.p), sgCell(x.v)])))]);
       })), "full"));
     }
 
@@ -880,7 +881,7 @@ export function sgDashboard(container, opts) {
       if (rows.length >= 3) blocks.push(panelBox("The Field by Approach Distance", [
         chartBox((c) => barChart(c, rows.map((r) => r.d), rows.map((r) => r.v), { title: "SG / shot", tooltip: (i) => `${nf1.format(rows[i].w)} shots` })),
         el("p", { class: "muted small" }, "Every ranked player's approach shots together: strokes gained a shot against the Tour baselines, by distance."),
-      ]));
+      ], "full"));
     }
     return blocks.length ? [el("h2", { class: "ti-head" }, "Tour Insights"), el("div", { class: "sg-grid ti-grid" }, blocks)] : [];
   }
@@ -1350,8 +1351,14 @@ export function sgDashboard(container, opts) {
     const o = baseOptions();
     // Legend: only the reference marks (no "SG / round" entry); the other players shown as a gold dot.
     o.plugins.legend = { display: !!(compare || average !== undefined), labels: {
-      color: "#a1a1a6", boxWidth: 18, boxHeight: 8, usePointStyle: true, pointStyle: "line", font: { family: "Inter, system-ui, sans-serif", size: 12 },
+      color: "#a1a1a6", boxWidth: 22, boxHeight: 8, usePointStyle: true, pointStyle: "line", pointStyleWidth: 24, font: { family: "Inter, system-ui, sans-serif", size: 12 },
       filter: (item) => item.datasetIndex !== 0,
+      // the comparison line as a champagne dash in the legend (the average as a yellow one)
+      generateLabels: (chart) => Chart.defaults.plugins.legend.labels.generateLabels(chart).map((it) => {
+        const ds = chart.data.datasets[it.datasetIndex] || {};
+        const col = ds.$dots ? "#c8a97e" : ds.borderColor || it.strokeStyle;
+        return { ...it, pointStyle: "line", strokeStyle: col, fillStyle: col, lineWidth: 3, lineDash: ds.$dots ? [] : ds.borderDash || [] };
+      }),
     } };
     if (tooltip) o.plugins.tooltip.callbacks = { afterLabel: (c) => (c.datasetIndex === 0 ? tooltip(c.dataIndex) : "") };
     // Long labels (tournament names) are shortened under the bars, and on small screens an event shows just
