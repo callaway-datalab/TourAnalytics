@@ -3113,3 +3113,4 @@ button.ti-name:hover { color: var(--accent); }
 .ti-two .ti-list li { align-items: start; }
 .ti-two .ti-v { padding-top: 0.05rem; }
 .ti-scroll .ti-name { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; line-height: 1.25; }
+.hero-tourn td.ht-won { color: #30d158; font-weight: 600; }

@@ -53,6 +53,9 @@ export function syncChatCircles() {
     for (const [uid, uids] of reach) { const c = curReach.get(uid); if (!c || JSON.stringify(c.uids) !== JSON.stringify(uids)) ops.push((b) => b.set(doc(db, "chatReach", uid), { uids })); }
     for (const uid of curReach.keys()) if (!reach.has(uid)) ops.push((b) => b.delete(doc(db, "chatReach", uid))); // (access removed)
     for (const [email, uid] of emails) if (curEmails.get(email)?.uid !== uid) ops.push((b) => b.set(doc(db, "friendEmails", email), { uid }));
+    // everyone's default contacts: Callaway's analysts (and the admin), readable by anyone signed in (update 144)
+    const staffDoc = { uids: [...new Set(staffIds)].sort() };
+    ops.push((b) => b.set(doc(db, "chatStaff", "all"), staffDoc));
     for (let i = 0; i < ops.length; i += 400) { const b = writeBatch(db); ops.slice(i, i + 400).forEach((f) => f(b)); await b.commit(); }
   })().catch((err) => console.warn("chat sync", err)).finally(() => { running = null; }));
 }

@@ -440,15 +440,15 @@ export function sgDashboard(container, opts) {
     const what = isSG() ? "strokes gained a round" : def.label;
     const table = el("table", { class: "plain rankings hero-tourn" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"),
-        el("th", { class: "num", title: `${me.label}'s ${what} in that tournament` }, "Event avg"), el("th", { class: "num", title: "The best in the field there, among the players who played every round" }, "Winning avg")])),
-      el("tbody", {}, [...rows].reverse().map((r) => el("tr", {}, [el("td", { class: "ht-date" }, when(r)), el("td", { class: "ht-name" }, r.event), unit === "event" ? null : el("td", { class: "num" }, String(r.rounds.length)), cell(metric(r.rounds)), cell(winOf(r), "ht-win")]))),
+        el("th", { class: "num", title: `${me.label}'s ${what} in that tournament` }, "Event avg"), el("th", { class: "num", title: "Event avg minus the best in the field there (among the players who played every round)" }, "Diff. from winning avg")])),
+      el("tbody", {}, [...rows].reverse().map((r) => el("tr", {}, [el("td", { class: "ht-date" }, when(r)), el("td", { class: "ht-name" }, r.event), unit === "event" ? null : el("td", { class: "num" }, String(r.rounds.length)), cell(metric(r.rounds)), (() => { const m = metric(r.rounds), w = winOf(r), d = m == null || w == null ? null : m - w; return el("td", { class: `num ht-win ${d != null && Math.abs(d) < 0.005 ? "ht-won" : ""}` }, d == null ? "\u2014" : Math.abs(d) < 0.005 ? "Best" : `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(isSG() ? 2 : 1)}`); })()]))),
     ]);
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Tournaments" }, el("div", { class: "gx-pop hero-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${isSG() ? "SG" : def.label} trend`), el("h2", {}, me.label),
         el("p", { class: "gx-sub" }, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 ${what}, newest first`)]), close]),
       el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-      el("p", { class: "muted small" }, `Date: the last day of the tournament. Event avg: ${what} there. Winning avg: the best in the field there, among the players who played every round.`),
+      el("p", { class: "muted small" }, `Date: the last day of the tournament. Event avg: ${what} there. Diff. from winning avg: event avg minus the best in the field there (among the players who played every round); \u201cBest\u201d when it was theirs.`),
     ]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };
@@ -872,17 +872,6 @@ export function sgDashboard(container, opts) {
       }
     }
 
-    // 7. the field by approach distance (needs everyone's shot detail, which the admin has)
-    if (!fieldIsSummary() && catsAvail.some(([k]) => k === "APP")) {
-      const acc = new Map();
-      for (const p of P) for (const rd of p.rounds) for (const x of rd.shots) if (x.cat === "APP" && x.dist) { const o = acc.get(x.dist) || acc.set(x.dist, { sg: 0, w: 0 }).get(x.dist); o.sg += x.sg; o.w += x.w || 1; }
-      const lead = (s) => { const m = String(s).match(/\d+/); return m ? Number(m[0]) : 999; };
-      const rows = [...acc].filter(([, o]) => o.w >= 20).map(([d, o]) => ({ d, v: o.sg / o.w, w: o.w })).sort((a, b) => lead(a.d) - lead(b.d));
-      if (rows.length >= 3) blocks.push(panelBox("The Field by Approach Distance", [
-        chartBox((c) => barChart(c, rows.map((r) => r.d), rows.map((r) => r.v), { title: "SG / shot", tooltip: (i) => `${nf1.format(rows[i].w)} shots` })),
-        el("p", { class: "muted small" }, "Every ranked player's approach shots together: strokes gained a shot against the Tour baselines, by distance."),
-      ], "full"));
-    }
     return blocks.length ? [el("h2", { class: "ti-head" }, "Tour Insights"), el("div", { class: "sg-grid ti-grid" }, blocks)] : [];
   }
 
@@ -1344,21 +1333,15 @@ export function sgDashboard(container, opts) {
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
     // the other players: gold dots in front of the bars
     // (gold dots, no line)
-    // (update 142: the other players as a champagne line joining their values, in front of the bars)
-    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, $dots: true, showLine: true, spanGaps: true, tension: 0.3, borderColor: "#c8a97e", backgroundColor: "#c8a97e", borderWidth: 2.25,
-      pointStyle: "circle", pointRadius: 0, pointHitRadius: 10, pointHoverRadius: 4.5, pointBackgroundColor: "#c8a97e", pointBorderColor: "#0a0a0b", pointBorderWidth: 1, order: 0 });
+    // the other players: champagne dots in front of the bars (no line)
+    if (compare) datasets.push({ type: "line", label: compareLabel, data: compare, $dots: true, showLine: false, borderColor: "#d4b483", backgroundColor: "#d4b483",
+      pointStyle: "circle", pointRadius: 4, pointHoverRadius: 5.5, pointBackgroundColor: "#d4b483", pointBorderColor: "#0a0a0b", pointBorderWidth: 1, order: 0 });
     if (average !== undefined) datasets.push({ type: "line", label: "Average", data: labels.map(() => average), borderColor: "#ffd60a", borderDash: [6, 6], borderWidth: 2, pointRadius: 0, order: 0 }); // yellow dashes, in front
     const o = baseOptions();
     // Legend: only the reference marks (no "SG / round" entry); the other players shown as a gold dot.
     o.plugins.legend = { display: !!(compare || average !== undefined), labels: {
-      color: "#a1a1a6", boxWidth: 22, boxHeight: 8, usePointStyle: true, pointStyle: "line", pointStyleWidth: 24, font: { family: "Inter, system-ui, sans-serif", size: 12 },
+      color: "#a1a1a6", boxWidth: 8, boxHeight: 8, usePointStyle: true, pointStyle: "circle", font: { family: "Inter, system-ui, sans-serif", size: 12 },
       filter: (item) => item.datasetIndex !== 0,
-      // the comparison line as a champagne dash in the legend (the average as a yellow one)
-      generateLabels: (chart) => Chart.defaults.plugins.legend.labels.generateLabels(chart).map((it) => {
-        const ds = chart.data.datasets[it.datasetIndex] || {};
-        const col = ds.$dots ? "#c8a97e" : ds.borderColor || it.strokeStyle;
-        return { ...it, pointStyle: "line", strokeStyle: col, fillStyle: col, lineWidth: 3, lineDash: ds.$dots ? [] : ds.borderDash || [] };
-      }),
     } };
     if (tooltip) o.plugins.tooltip.callbacks = { afterLabel: (c) => (c.datasetIndex === 0 ? tooltip(c.dataIndex) : "") };
     // Long labels (tournament names) are shortened under the bars, and on small screens an event shows just

@@ -14,6 +14,7 @@ import { el, mount, formatWhen, confirmAction } from "./ui.js";
 import { getState } from "./auth.js";
 import { isTeamKey } from "./data.js";
 import { syncChatCircles, roleName } from "./chatCircles.js";
+import { adminUids } from "./firebase-init.js";
 
 export function watchStaffChat(cb) {
   return onSnapshot(query(collection(db, "staffChat"), orderBy("createdAt", "asc")),
@@ -48,6 +49,8 @@ export function renderChat(container, { flash }) {
   // people: uid -> { name, role, title }; who I may message: staff -> everyone, else reach + friends
   const people = new Map();
   let reach = [], friends = [], incoming = [], outgoing = [];
+  // Callaway's analysts (and the admin): everyone's contacts from the start (update 144)
+  let staffIds = [...adminUids];
   const unsubs = [];
   const redraw = () => { drawList(); drawHead(); if (!friendsBox.hidden) drawFriends(); };
 
@@ -72,6 +75,8 @@ export function renderChat(container, { flash }) {
   } else {
     unsubs.push(onSnapshot(doc(db, "chatReach", uid), (d) => { reach = d.exists() ? d.data().uids || [] : []; reach.forEach(watchName); redraw(); }, () => {}));
   }
+  unsubs.push(onSnapshot(doc(db, "chatStaff", "all"), (d) => { staffIds = [...new Set([...adminUids, ...(d.exists() ? d.data().uids || [] : [])])]; staffIds.forEach(watchName); redraw(); }, () => {}));
+  adminUids.forEach((id) => watchName(id));
   unsubs.push(onSnapshot(doc(db, "chatFriends", uid), (d) => { friends = d.exists() ? d.data().uids || [] : []; friends.forEach(watchName); redraw(); }, () => {}));
   unsubs.push(onSnapshot(query(collection(db, "friendRequests"), where("to", "==", uid)), (s) => { incoming = s.docs.map((d) => ({ id: d.id, ...d.data() })); incoming.forEach((r) => watchName(r.from)); redraw(); }, () => {}));
   unsubs.push(onSnapshot(query(collection(db, "friendRequests"), where("from", "==", uid)), (s) => { outgoing = s.docs.map((d) => ({ id: d.id, ...d.data() })); outgoing.forEach((r) => watchName(r.to)); redraw(); }, () => {}));
@@ -85,12 +90,12 @@ export function renderChat(container, { flash }) {
     if (!current && !autoOpened && rooms.length) { autoOpened = true; open(allRooms()[0].id); shell.classList.remove("show-thread"); }
   }, () => {}));
 
-  const nameOf = (id) => (id === uid ? "You" : people.get(id)?.name || "Someone");
-  const roleOf = (id) => { const p = people.get(id); return p ? p.title || roleName(p.role) : ""; };
-  const isStaffId = (id) => ["admin", "analyst"].includes(people.get(id)?.role);
+  const nameOf = (id) => (id === uid ? "You" : people.get(id)?.name || (staffIds.includes(id) ? "Callaway Analyst" : "Someone"));
+  const roleOf = (id) => { const p = people.get(id); return p ? p.title || roleName(p.role) : staffIds.includes(id) ? "Callaway" : ""; };
+  const isStaffId = (id) => staffIds.includes(id) || ["admin", "analyst"].includes(people.get(id)?.role);
   // who I can message, in sections
   function contacts() {
-    const others = staff ? [...people.keys()].filter((id) => id !== uid) : [...new Set([...reach, ...friends])].filter((id) => id !== uid);
+    const others = staff ? [...new Set([...people.keys(), ...staffIds])].filter((id) => id !== uid) : [...new Set([...staffIds, ...reach, ...friends])].filter((id) => id !== uid);
     const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
     const callaway = others.filter(isStaffId).sort(byName);
     const friendIds = friends.filter((id) => id !== uid && !isStaffId(id)).sort(byName);
@@ -304,7 +309,7 @@ export function renderChat(container, { flash }) {
     } catch { flash("Couldn't remove that friend.", "error"); }
   }
   // Callaway's analysts (and the admin): on everyone's friends list, for good
-  const analysts = () => (staff ? [...people.keys()] : reach).filter((id) => id !== uid && isStaffId(id)).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  const analysts = () => [...new Set([...staffIds, ...(staff ? [...people.keys()] : reach)])].filter((id) => id !== uid && isStaffId(id)).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   function drawFriends() {
     const row = (id, btns) => el("div", { class: "chat-friend" }, [el("span", {}, personLabel(id)), el("span", { class: "chat-friend-btns" }, btns)]);
     const btn = (label, fn, cls = "link") => { const b = el("button", { type: "button", class: cls }, label); b.addEventListener("click", fn); return b; };
