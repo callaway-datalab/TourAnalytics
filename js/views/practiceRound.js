@@ -10,7 +10,7 @@
  *                            scrambling, the scorecard, and your best and costliest shots.
  */
 import { el, mount, confirmAction } from "../ui.js";
-import { CATS, holeLayout, shotFor, puttFrom } from "../practice/model.js";
+import { CATS, holeLayout, shotFor, puttFrom, teeResult, greenResult } from "../practice/model.js";
 import { randomHoles, courseHoles, nextShot, playShot, undoShot, pickUp, roundSummary, scoreName, holeExpected, shotSG, resultFromWords } from "../practice/round.js";
 import { gameProgress, personalBest, targetText, passedIt, gameOf } from "../practice/games.js";
 import { wordsToNumbers, golfFix } from "../voiceShots.js";
@@ -287,6 +287,84 @@ function holeStrip(hole, shot) {
 }
 
 /** Entering what a shot left: yards off the green / feet on it / holed, a penalty, or say it. */
+/*
+ * Entering a shot in Course Prep (update 154), the way Track Round does it, but with how far you hit it and how far
+ * offline rather than where it started and finished: where it finished, and what's left, are worked out and carried
+ * to the next shot. On a random course the made-up hole decides the lie (fairway, rough, bunker, water, out of
+ * bounds, the green); on a real course you pick where it finished.
+ */
+function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = {}, onChange, next) {
+  const putt = shot.unit === "ft";
+  const r0 = shot.result;
+  const num = (val, label) => el("input", { type: "text", inputmode: "decimal", class: "pr-bignum", value: val ?? "", "aria-label": label, placeholder: "0", autocomplete: "off" });
+  const hitIn = num(r0?.hit ?? "", putt ? "Rolled (ft)" : "Hit (yds)"), offIn = num(r0?.off ? Math.abs(r0.off) : "", putt ? "Offline (ft)" : "Offline (yds)");
+  let side = r0?.off < 0 ? -1 : r0?.off > 0 ? 1 : 0, holed = r0?.lie === "Holed";
+  // a real course: where it finished (the made-up hole works it out on a random course)
+  let endLie = r0?.endLie || "Fairway";
+  const LIE_CHIPS = ["Fairway", "Rough", "Bunker", "Fringe", "Green", "Water", "OB"];
+  const lieBox = !vis && !putt ? el("div", { class: "pr-lies" }) : null;
+  const drawLies = () => lieBox && mount(lieBox, LIE_CHIPS.map((l) => { const b = el("button", { type: "button", class: `pr-chip${endLie === l ? " on" : ""}` }, l === "OB" ? "Out of bounds" : l); b.addEventListener("click", () => { endLie = l; drawLies(); update(); }); return b; }));
+  const sideSeg = el("div", { class: "seg seg-sm pr-side", role: "group", "aria-label": "Which side" });
+  const drawSide = () => mount(sideSeg, [[-1, "Left"], [1, "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === v ? " on" : ""}`, "aria-pressed": String(side === v) }, l); b.addEventListener("click", () => { side = side === v ? 0 : v; drawSide(); update(); }); return b; }));
+  const holedBtn = el("button", { type: "button", class: "btn ghost pr-holed" }, putt ? "✓ Made" : "✓ Holed");
+  holedBtn.addEventListener("click", () => { holed = !holed; update(); });
+  const line = el("p", { class: "pr-result", "aria-live": "polite" });
+  const nextBtn = el("button", { type: "button", class: "btn pr-next", disabled: true }, "Next shot ›");
+  nextBtn.addEventListener("click", () => next());
+  const compute = () => {
+    const target = typeof tgt === "function" ? tgt() : tgt;
+    if (holed) return { lie: "Holed", dist: 0, unit: "ft" };
+    const h = Number(String(hitIn.value).replace(",", ".")), o = Number(String(offIn.value || 0).replace(",", "."));
+    if (!(h > 0)) return null;
+    if (o > 0 && !side) return "side";
+    const off = o * (side || 1), keep = { hit: h, off };
+    if (putt) { const d = Math.round(Math.hypot(off, h - shot.startDist) * 10) / 10; return d <= 0.2 ? { lie: "Holed", dist: 0, unit: "ft", ...keep } : { lie: "Green", dist: d, unit: "ft", ...keep }; }
+    if (vis?.kind === "tee") {
+      const line0 = target && target.y > 0 ? (target.x * h) / target.y : 0;
+      const t = teeResult(vis, Math.round(h), Math.round(line0 + off));
+      return { lie: t.penalty === "ob" ? "OB" : t.penalty ? "Penalty" : t.lie, dist: t.dist, unit: "yds", ...(t.penalty ? { penalty: t.penalty } : {}), zone: t.zone, ...keep };
+    }
+    if (vis?.kind === "green") {
+      const tx = target?.x ?? vis.pin.x, ty = target?.y ?? vis.pin.y, fx = vis.from.x, fy = vis.from.y, dd = Math.hypot(tx - fx, ty - fy) || 1, ux = (tx - fx) / dd, uy = (ty - fy) / dd;
+      const g = greenResult(vis, fx + ux * h + uy * off, fy + uy * h - ux * off);
+      if (g.unit === "ft" && g.dist <= 0.3) return { lie: "Holed", dist: 0, unit: "ft", ...keep };
+      return { lie: g.lie, dist: g.dist, unit: g.unit, ...(g.penalty ? { penalty: g.penalty } : {}), ...keep };
+    }
+    // a real course: straight down the line to the hole
+    const left = Math.max(1, Math.round(Math.hypot(shot.startDist - h, off)));
+    if (endLie === "OB") return { lie: "OB", dist: shot.startDist, unit: "yds", penalty: "ob", endLie, ...keep };
+    if (endLie === "Water") return { lie: "Penalty", dist: left, unit: "yds", penalty: "water", endLie, ...keep };
+    if (endLie === "Green" || endLie === "Fringe") return { lie: endLie, dist: Math.round(Math.hypot(shot.startDist - h, off) * 3 * 10) / 10, unit: "ft", endLie, ...keep };
+    return { lie: endLie, dist: left, unit: "yds", endLie, ...keep };
+  };
+  const update = () => {
+    holedBtn.classList.toggle("on", holed);
+    const r = compute();
+    const ok = r && r !== "side";
+    onChange(ok ? r : null);
+    nextBtn.disabled = !ok;
+    nextBtn.textContent = ok && (r.lie === "Holed" || (noPutts && r.unit === "ft")) ? "Finish hole ✓" : "Next shot ›";
+    if (r === "side") { mount(line, el("span", { class: "muted" }, "Left or right?")); return; }
+    if (!ok) { mount(line, el("span", { class: "muted" }, putt ? "How far it rolled, and how far offline." : "How far you hit it, and how far offline.")); return; }
+    const sg = shotSG(shot, r);
+    const where = r.lie === "Holed" ? "In the hole!" : r.penalty === "ob" ? "Out of bounds · replay, a stroke added" : r.penalty ? `${r.zone || "Water"} · penalty stroke, ${fmtD(r.dist, "yds")} left` : r.unit === "ft" ? `${r.lie === "Fringe" ? "Fringe" : "On the green"}, ${fmtD(r.dist, "ft")} from the pin` : `${r.zone || r.lie}, ${fmtD(r.dist, "yds")} left`;
+    mount(line, [el("span", {}, where), el("strong", { class: `pr-sgchip ${sgCls(sg)}` }, `${SG(sg)} SG`)]);
+  };
+  [hitIn, offIn].forEach((x) => { x.addEventListener("input", update); x.addEventListener("keydown", (e) => { if (e.key === "Enter" && !nextBtn.disabled) next(); }); });
+  drawSide(); drawLies(); update();
+  return el("div", { class: "pr-dist-entry pr-hit-entry" }, [
+    line,
+    el("div", { class: "pr-hit-row" }, [
+      el("label", { class: "pr-dist-big" }, [el("span", { class: "rd-label" }, putt ? "Rolled" : "Hit"), el("div", { class: "pr-dist-in" }, [hitIn, el("span", { class: "pr-unit" }, putt ? "ft" : "yds")])]),
+      el("label", { class: "pr-dist-big" }, [el("span", { class: "rd-label" }, "Offline"), el("div", { class: "pr-dist-in" }, [offIn, el("span", { class: "pr-unit" }, putt ? "ft" : "yds")])]),
+      el("div", {}, [el("span", { class: "rd-label" }, "Side"), sideSeg]),
+    ]),
+    lieBox ? el("div", {}, [el("span", { class: "rd-label" }, "Finished in"), lieBox]) : null,
+    el("div", { class: "pr-actions" }, [holedBtn, nextBtn]),
+    el("p", { class: "muted small pr-tip" }, putt ? "Rolled: how far the ball went (past the hole is more than the putt's length)." : vis ? "Offline: left or right of your target line. Where it finished, and what's left, come from the hole." : "What's left is worked out from how far you hit it and how far offline."),
+  ]);
+}
+
 function resultPanel(shot, onChange, next, { noPutts = false } = {}) {
   // (update 151) one box, "Distance left", and a Hit Green button: on → feet from the pin (0 = holed), off → yards
   let green = shot.unit === "ft", penalty = false;
@@ -364,22 +442,28 @@ function visFor(hole, shot) {
   return shotFor(d <= 50 ? "ARG" : "APP", d, { lie: "Fairway", pin: "mixed" });
 }
 function simVisual(ctx, s, hole, shot) {
-  if (!shot.vis) { shot.vis = JSON.parse(JSON.stringify(visFor(hole, shot))); ctx.save(s); }
+  // (a hole's layout off the tee stays the same, e.g. replaying after out of bounds)
+  if (!shot.vis) {
+    const teeShot = shot.startLie === "Tee box" && hole.par >= 4 && shot.unit !== "ft";
+    shot.vis = teeShot && hole.teeVis ? hole.teeVis : JSON.parse(JSON.stringify(visFor(hole, shot)));
+    if (teeShot) hole.teeVis = shot.vis;
+    ctx.save(s);
+  }
   const v = shot.vis;
   const box = el("div", { class: "pr-visual pr-sim" });
   const label = el("p", { class: "muted small pr-target" });
-  ctx.sgMap ??= false;
-  const sgStart = shot.unit === "ft" ? null : v.kind === "tee" ? expectedStrokes("Tee box", v.hole) : expectedStrokes(v.startLie === "Tee box" ? "Tee box" : v.startLie || "Fairway", v.startDist);
+  let sgOn = false; // the strokes gained map: off to start, every shot
+  const sgStart = shot.unit === "ft" ? null : v.kind === "tee" ? expectedStrokes("Tee box", v.hole) : expectedStrokes(["Tee box", "Fairway", "Rough", "Bunker", "Fringe"].includes(shot.startLie) ? shot.startLie : "Fairway", Math.max(1, shot.startDist));
   // the target: down the middle at your club's carry off the tee; at the pin otherwise
   const defTarget = () => (v.kind === "tee" ? { x: 0, y: Math.min(ctx.carryFor?.(shot.clubUsed || "Driver") || 275, v.hole - 40) } : v.kind === "green" ? { x: v.pin.x, y: v.pin.y } : null);
   shot.target ||= defTarget();
   const tdist = () => (v.kind === "tee" ? Math.round(Math.hypot(shot.target.x, shot.target.y)) : Math.round(Math.hypot(shot.target.x - v.from.x, shot.target.y - v.from.y)));
   const draw = () => {
-    if (v.kind === "putt") { mount(box, puttSvg(v, {})); label.textContent = ""; return; }
+    if (v.kind === "putt") { mount(box, puttSvg(v, { showHeat: sgOn })); label.textContent = ""; return; }
     const onTap = v.kind === "tee" ? (total, offline) => { shot.target = { x: offline, y: total }; ctx.save(s); draw(); } : (x, y) => { shot.target = { x, y }; ctx.save(s); draw(); };
     mount(box, v.kind === "tee"
-      ? holeSvg(v, { aim: shot.target, showHeat: ctx.sgMap, carry: shot.target.y, onTap, sgStart })
-      : greenSvg(v, { aim: shot.target, showHeat: ctx.sgMap, onTap, sgStart, aimLine: true }));
+      ? holeSvg(v, { aim: shot.target, showHeat: sgOn, carry: shot.target.y, onTap, sgStart })
+      : greenSvg(v, { aim: shot.target, showHeat: sgOn, onTap, sgStart, aimLine: true }));
     const side = v.kind === "tee" ? shot.target.x : 0;
     label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Tap the picture to move it.`;
   };
@@ -393,8 +477,8 @@ function simVisual(ctx, s, hole, shot) {
     }
     ctx.save(s); draw();
   }) : null;
-  const sgBtn = shot.unit === "ft" ? null : el("button", { type: "button", class: `pr-toggle${ctx.sgMap ? " on" : ""}`, "aria-pressed": String(!!ctx.sgMap) }, "Strokes gained map");
-  sgBtn?.addEventListener("click", () => { ctx.sgMap = !ctx.sgMap; sgBtn.classList.toggle("on", ctx.sgMap); sgBtn.setAttribute("aria-pressed", String(ctx.sgMap)); draw(); });
+  const sgBtn = el("button", { type: "button", class: `pr-toggle${sgOn ? " on" : ""}`, "aria-pressed": String(!!sgOn) }, "Strokes gained map");
+  sgBtn.addEventListener("click", () => { sgOn = !sgOn; sgBtn.classList.toggle("on", sgOn); sgBtn.setAttribute("aria-pressed", String(sgOn)); draw(); });
   draw();
   return el("div", { class: "pr-sim-wrap" }, [box, el("div", { class: "pr-vis-tools" }, [sgBtn, label]), club]);
 }
@@ -435,9 +519,10 @@ function drawRound(ctx, s) {
       el("p", { class: "pr-shot-sub" }, `${CATS[shot.rcat].label} · Tour baseline from here ${(shot.unit === "ft" ? expectedStrokes("Green", shot.startDist) : expectedStrokes(shot.startLie === "Tee box" ? "Tee box" : "Fairway", shot.startDist)).toFixed(2)} strokes`),
       hole.from ? el("p", { class: "muted small" }, `From ${hole.from}`) : null,
     ]),
-    holeStrip(hole, shot),
-    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); }) : null,
-    resultPanel(shot, (r) => { shot.result = r || undefined; ctx.save(s); }, commit, { noPutts: !!s.opts?.noPutts }),
+    // a random course: its made-up hole from above; a real one: the strip down the hole
+    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : holeStrip(hole, shot),
+    s.mode !== "sim" && shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); }) : null,
+    entryPanel(shot, { vis: s.mode === "sim" ? shot.vis : null, target: () => shot.target, noPutts: !!s.opts?.noPutts }, (r) => { shot.result = r || undefined; ctx.save(s); }, commit),
     el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [pick, end])]),
   ]);
   const thru = sm.holes;
@@ -448,12 +533,12 @@ function drawRound(ctx, s) {
   ]);
   const live = game ? (() => { const g = gameProgress(game, s), pb = personalBest(game, ctx.sessions); return el("div", { class: `pr-game-live ${g.status}` }, [el("span", {}, [el("strong", {}, targetText(game)), pb != null ? ` · Best ${pb}` : ""]), el("span", {}, g.need)]); })() : null;
   const holeShots = hole.shots.length ? el("section", { class: "panel pr-list" }, [el("h2", {}, `${hole.short ? "Spot" : "Hole"} ${hole.n} so far`), el("ol", { class: "pr-hole-shots" }, hole.shots.map(shotLi))]) : null;
-  mount(ctx.body, [bar, live, card, holeShots, scorecardStrip(s)]);
+  mount(ctx.body, [bar, live, holeShots, card, scorecardStrip(s)]);
   setTimeout(() => card.querySelector(".pr-bignum")?.focus({ preventScroll: true }), 50);
 }
 
 const shotText = (x) => (x.kind === "dist" || !x.kind ? (x.unit === "ft" ? `Putt from ${fmtD(x.startDist, "ft")}` : x.startLie === "Tee box" ? `Tee shot, ${x.startDist} yds` : `From ${fmtD(x.startDist, "yds")}`) : `${x.startDist} ${x.kind === "putt" ? "ft" : "yds"}`);
-const leftText = (r) => (!r ? "" : r.lie === "Holed" ? "Holed" : `${fmtD(r.dist, r.unit)} left${r.penalty ? " + penalty" : ""}`);
+const leftText = (r) => (!r ? "" : `${r.hit != null ? `Hit ${r.hit}${r.off ? ` \u00b7 ${Math.abs(r.off)} ${r.off < 0 ? "L" : "R"}` : ""} \u2192 ` : ""}${r.lie === "Holed" ? "Holed" : r.penalty === "ob" ? "OB" : `${["Fairway", "Rough", "Bunker", "Fringe"].includes(r.lie) ? `${r.lie}, ` : r.unit === "ft" ? "Green, " : ""}${fmtD(r.dist, r.unit)} left${r.penalty ? " + penalty" : ""}`}`);
 const shotLi = (x) => el("li", {}, [el("span", {}, `${CATS[x.rcat]?.short || ""} · ${shotText(x)}`), el("span", { class: "muted" }, leftText(x.result)), el("span", { class: sgCls(x.sg) }, SG(x.sg))]);
 
 function drawHoleDone(ctx, s, hole, game) {

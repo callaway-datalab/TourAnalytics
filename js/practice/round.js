@@ -57,10 +57,13 @@ export function spotHole(n, lo, hi) {
 }
 
 /* ---------------------------------------------------------------- the numbers per shot ---------------------------------------------------------------- */
-const baseFrom = (lie, dist, unit) => (unit === "ft" ? expectedStrokes("Green", Math.max(0.5, dist)) : expectedStrokes(lie === "Tee box" ? "Tee box" : "Fairway", Math.max(1, dist)));
-const baseLeft = (r) => (r.lie === "Holed" ? 0 : r.unit === "ft" ? expectedStrokes("Green", Math.max(0.5, r.dist)) : expectedStrokes("Fairway", Math.max(1, r.dist)));
+// (update 154) the lie counts when it's known (course prep's made-up holes say where it finished); else as from the fairway
+const LIES = ["Tee box", "Fairway", "Rough", "Bunker", "Fringe"];
+const lieOf = (l) => (LIES.includes(l) ? l : "Fairway");
+const baseFrom = (lie, dist, unit) => (unit === "ft" ? expectedStrokes(lie === "Fringe" ? "Fringe" : "Green", Math.max(0.5, dist)) : expectedStrokes(lieOf(lie), Math.max(1, dist)));
+const baseLeft = (r) => (r.lie === "Holed" ? 0 : r.unit === "ft" ? expectedStrokes(r.lie === "Fringe" ? "Fringe" : "Green", Math.max(0.5, r.dist)) : expectedStrokes(r.penalty ? "Fairway" : lieOf(r.lie), Math.max(1, r.dist)));
 /** Strokes gained for one shot against the Tour baselines. */
-export const shotSG = (shot, r = shot.result) => (r ? baseFrom(shot.startLie, shot.startDist, shot.unit) - baseLeft(r) - 1 - (r.penalty ? 1 : 0) : null);
+export const shotSG = (shot, r = shot.result) => (r ? r.penalty === "ob" ? -2 /* (replaying from the same spot, a stroke down) */ : baseFrom(shot.startLie, shot.startDist, shot.unit) - baseLeft(r) - 1 - (r.penalty ? 1 : 0) : null);
 
 const rcatOf = (shot, hole, first) => {
   if (shot.unit === "ft") return "PUTT";
@@ -79,7 +82,9 @@ export function nextShot(hole) {
     const r = last.result;
     // (rounds from update 138 kept a lie: anything on the green, in feet, is a putt)
     const onGreen = r.unit === "ft" && r.lie !== "Fringe";
-    shot = onGreen ? { startLie: "Green", startDist: r.dist, unit: "ft" } : { startLie: "Fairway", startDist: r.unit === "ft" ? Math.max(1, Math.round(r.dist / 3)) : r.dist, unit: "yds" };
+    // out of bounds: stroke and distance, from where the last one was played
+    if (r.penalty === "ob") shot = { startLie: last.startLie, startDist: last.startDist, unit: last.unit };
+    else shot = onGreen ? { startLie: "Green", startDist: r.dist, unit: "ft" } : { startLie: r.penalty ? "Fairway" : lieOf(r.lie === "Off" ? "Fairway" : r.lie), startDist: r.unit === "ft" ? Math.max(1, Math.round(r.dist / 3)) : r.dist, unit: "yds" };
   }
   return { kind: "dist", ...shot, n: strokesSoFar + 1, rcat: rcatOf(shot, hole, !last) };
 }

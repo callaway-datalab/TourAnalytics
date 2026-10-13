@@ -439,6 +439,7 @@ export async function render(main, { flash }) {
         : { label: "Next shot \u203A", onClick: () => go(at + 1), always: !!s.monitor },
       more: [finish], heat: ctx.heat,
       clubs: game ? null : ctx.clubs, onClub: () => save(s), monitor: !!s.monitor,
+      onStimp: (v) => { s.plan = { ...(s.plan || {}), stimp: v }; save(s); },
     });
     const bar = el("div", { class: "pr-bar" }, [
       el("div", { class: "pr-bar-l" }, [el("strong", {}, game ? game.title : CATS[s.cat].label), count]),

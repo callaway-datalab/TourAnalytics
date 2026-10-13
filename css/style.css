@@ -3198,3 +3198,9 @@ button.ti-name:hover { color: var(--accent); }
 .pr-sim .pr-svg { max-height: 56vh; margin: 0 auto; }
 .pr-target { margin: 0; }
 .chat-compose[hidden], .chat-list[hidden] { display: none !important; }
+.pr-slope-pick { grid-template-columns: 1fr 1fr 6rem; }
+@media (max-width: 560px) { .pr-slope-pick { grid-template-columns: 1fr 1fr; } }
+/* update 154: course prep entry */
+.pr-hit-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.8rem; align-items: end; margin: 0.4rem 0 0.6rem; }
+.pr-hit-entry .pr-lies { margin: 0.3rem 0 0.6rem; }
+@media (max-width: 560px) { .pr-hit-row { grid-template-columns: 1fr 1fr; } .pr-hit-row > div:last-child { grid-column: 1 / -1; } }

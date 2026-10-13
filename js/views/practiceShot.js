@@ -3,7 +3,7 @@
  * green or putt, the aim map, and entering the result), the shot text, tiles, tables and patterns.
  */
 import { el, mount } from "../ui.js";
-import { teeResult, greenResult, bestAim, puttLevels, withSlopes, breakText, slopeText, myAimText, SEV } from "../practice/model.js";
+import { teeResult, greenResult, fairwayX, puttLevels, withSlopes, breakText, slopeText, myAimText, SEV } from "../practice/model.js";
 import { holeSvg, greenSvg, puttSvg, planeSvg, scatterSvg, driveScatterSvg } from "../practice/draw.js";
 import { resultFromSpeech } from "../practice/analysis.js";
 
@@ -34,10 +34,12 @@ export function clubSelect(clubs, value, onChange) {
   return el("label", { class: "pr-club-row" }, [el("span", { class: "rd-label" }, "Club"), sel]);
 }
 
-export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", title = null, onPrev = null, onNext = null, onResult, next = null, more = [], heat = { on: true, set() {} }, clubs = null, onClub = null, monitor = false, fixedAim = false }) {
-  let showHeat = fixedAim ? false : heat.on;
+export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", title = null, onPrev = null, onNext = null, onResult, next = null, more = [], heat = { on: true, set() {} }, clubs = null, onClub = null, monitor = false, fixedAim = false, onStimp = null }) {
+  let showHeat = false; // the strokes gained map: off to start, every shot (update 154)
   const carry = shot.kind === "tee" ? shot.carry || (shot.club === "3 wood" ? 260 : shot.club === "Iron" ? 225 : 290) : null;
-  const aim = shot.kind === "putt" ? null : fixedAim ? (shot.kind === "tee" ? { x: 0, y: carry } : { x: shot.pin.x, y: shot.pin.y }) : !aimInfo ? null : bestAim(shot, aimInfo.spread, carry);
+  // the target: down the middle of the fairway (round a dogleg) or at the pin; no "best aim" (update 154)
+  const aim = shot.kind === "putt" ? null : shot.kind === "tee" ? { x: fairwayX(shot, Math.min(carry, shot.hole - 40)), y: Math.min(carry, shot.hole - 40) } : { x: shot.pin.x, y: shot.pin.y };
+  void fixedAim; void aimInfo;
   const visual = el("div", { class: "pr-visual" });
   const resultLine = el("p", { class: "pr-result", "aria-live": "polite" });
   const inputs = el("div", { class: "pr-inputs" });
@@ -51,7 +53,7 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   const drawVisual = () => {
     const r = shot.result;
     if (shot.kind === "tee") mount(visual, holeSvg(shot, { aim, showHeat, carry, result: r && r.total != null ? r : null, onTap: (total, offline) => setResult({ ...teeResult(shot, total, offline), total, offline, source: "tap" }) }));
-    else if (shot.kind === "putt") mount(visual, puttSvg(shot, { stimp, result: r && r.x != null ? r : null, onTap: (x, y) => { const d = Math.round(Math.hypot(x, y) * 10) / 10; setResult(d <= 0.25 ? { lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "tap" } : { lie: "Green", dist: d, unit: "ft", x, y, source: "tap" }); } }));
+    else if (shot.kind === "putt") mount(visual, puttSvg(shot, { stimp, showHeat, result: r && r.x != null ? r : null, onTap: (x, y) => { const d = Math.round(Math.hypot(x, y) * 10) / 10; setResult(d <= 0.25 ? { lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "tap" } : { lie: "Green", dist: d, unit: "ft", x, y, source: "tap" }); } }));
     else mount(visual, greenSvg(shot, { aim, showHeat, result: r && r.x != null ? r : null, onTap: (x, y) => setResult({ ...greenResult(shot, x, y), source: "tap" }) }));
   };
   const drawResult = () => {
@@ -82,19 +84,23 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
     const change = () => { withSlopes(shot, Number(brk.value), Number(slp.value)); drawPlane(); drawVisual(); drawFacts(); onClub?.(); };
     brk.addEventListener("change", change); slp.addEventListener("change", change);
     drawPlane();
+    // the green speed (update 154): the session's, set here for every putt that follows
+    const st = el("input", { type: "number", inputmode: "decimal", min: 6, max: 16, step: 0.5, value: stimp, "aria-label": "Green speed (stimp)" });
+    st.addEventListener("change", () => { const v = Math.max(6, Math.min(16, Number(st.value) || 11)); st.value = v; stimp = v; onStimp?.(v); drawVisual(); drawFacts(); });
     slopeBox = el("div", { class: "pr-slopes" }, [
-      el("div", { class: "pr-slope-pick" }, [el("label", {}, [el("span", { class: "rd-label" }, "Break"), brk]), el("label", {}, [el("span", { class: "rd-label" }, "Slope"), slp])]),
+      el("div", { class: "pr-slope-pick" }, [el("label", {}, [el("span", { class: "rd-label" }, "Break"), brk]), el("label", {}, [el("span", { class: "rd-label" }, "Slope"), slp]), el("label", { class: "pr-stimp-in" }, [el("span", { class: "rd-label" }, "Stimp"), st])]),
       plane,
     ]);
   }
-  const heatBtn = shot.kind === "putt" || fixedAim ? null : el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Aim map");
-  heatBtn?.addEventListener("click", () => { showHeat = !showHeat; heat.set(showHeat); heatBtn.classList.toggle("on", showHeat); heatBtn.setAttribute("aria-pressed", String(showHeat)); drawVisual(); });
+  const heatBtn = el("button", { type: "button", class: `pr-toggle${showHeat ? " on" : ""}`, "aria-pressed": showHeat ? "true" : "false" }, "Strokes gained map");
+  heatBtn.addEventListener("click", () => { showHeat = !showHeat; heatBtn.classList.toggle("on", showHeat); heatBtn.setAttribute("aria-pressed", String(showHeat)); drawVisual(); });
+  void heat;
   const navBtn = (txt, label, fn) => { const b = el("button", { type: "button", class: "pr-nav", "aria-label": label, disabled: fn ? null : true }, txt); if (fn) b.addEventListener("click", fn); return b; };
   return el("section", { class: "panel pr-shot" }, [
-    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, el("p", { class: "pr-shot-sub" }, fixedAim && shot.kind !== "putt" ? (shot.kind === "tee" ? "Aim down the middle." : "Aim at the pin.") : shotSub(shot, aim, stimp, aimInfo?.label))]), navBtn("\u203A", "Next shot", onNext)]),
+    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, el("p", { class: "pr-shot-sub" }, shot.kind === "tee" ? (shot.dogleg ? `Aim down the middle: it doglegs ${shot.dogleg.dir < 0 ? "left" : "right"} at ${shot.dogleg.at} yds.` : "Aim down the middle.") : shot.kind === "putt" ? shotSub(shot, aim, stimp) : "Aim at the pin.")]), navBtn("\u203A", "Next shot", onNext)]),
     factsDl,
     el("div", { class: "pr-play" }, [
-      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, fixedAim && shot.kind !== "putt" ? (shot.kind === "tee" ? "Gold line: your target, down the middle." : "Gold ring: your target, the pin.") : legend(shot))]), slopeBox]),
+      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, shot.kind === "tee" ? "Gold line: your target, down the middle." : shot.kind === "putt" ? legend(shot) : "Gold ring: your target, the pin.")]), slopeBox]),
       el("div", { class: "pr-in-col" }, [
         clubs && shot.kind !== "putt" ? clubSelect(clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; onClub?.(v); }) : null,
         monitor ? el("p", { class: "pr-monitor-note" }, "Using a launch monitor: just hit the shot and tap Next. You'll load the file at the end, and it fills the shots in this order.") : null,
@@ -160,7 +166,7 @@ export function shotFacts(x, stimp) {
   return out;
 }
 export function legend(x) {
-  if (x.kind === "putt") return x.myAim ? "Arrows: the way it breaks. Gold ring: your aim. Rings: 3 and 6 ft." : "Arrows: the way it breaks. Rings: 3 and 6 ft.";
+  if (x.kind === "putt") return "Arrows: the way it breaks. Rings: 3 and 6 ft.";
   return "Green = fewest strokes left, red = most. Gold ring: best aim.";
 }
 export function resultText(x) {
@@ -259,46 +265,56 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
       setResult({ ...teeResult(shot, Math.round(t), offline), total: Math.round(t), offline, source: "typed" });
     };
     tot.addEventListener("change", apply); off.addEventListener("change", apply);
-    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Total (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.abs(aim.x) >= 1.5 ? "Offline from your aim line (yds)" : "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
+    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.abs(aim.x) >= 1.5 ? "Offline from your aim line (yds)" : "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
       el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like \u201c285, 12 left\u201d.")];
   }
+  // how far you hit it and how far offline: where it finished (and what's left) is worked out (update 154)
+  const offSide = (init) => {
+    let side = init;
+    const seg = el("div", { class: "seg seg-sm pr-side", role: "group", "aria-label": "Which side" });
+    const draw = (onChange) => mount(seg, [[-1, "Left"], [1, "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === v ? " on" : ""}`, "aria-pressed": side === v ? "true" : "false" }, l); b.addEventListener("click", () => { side = side === v ? 0 : v; draw(onChange); onChange(); }); return b; }));
+    return { seg, draw, get: () => side };
+  };
   if (shot.kind === "putt") {
     const made = el("button", { type: "button", class: `btn ${r?.lie === "Holed" ? "" : "ghost"} pr-made` }, "✓ Made");
     made.addEventListener("click", () => setResult({ lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "typed" }));
-    const leave = num(r && r.lie !== "Holed" ? r.dist : "", "Feet");
-    let dir = r?.y > 0 ? "long" : r?.y < 0 ? "short" : null;
-    const dirSeg = el("div", { class: "seg seg-sm pr-dir" });
-    const drawDir = () => mount(dirSeg, [["short", "Short"], ["long", "Long"], ["left", "Left"], ["right", "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${dir === v ? " on" : ""}` }, l); b.addEventListener("click", () => { dir = dir === v ? null : v; drawDir(); apply(); }); return b; }));
-    drawDir();
+    // (the hole is the putt's length straight ahead: rolled 2 ft past it = long 2)
+    const D = shot.startDist;
+    const rolled = num(r && r.lie !== "Holed" && r.y != null ? Math.round((D + r.y) * 10) / 10 : "", "Rolled ft"), off = num(r && r.x ? Math.abs(r.x) : "", "Offline ft");
+    const sd = offSide(r?.x < 0 ? -1 : r?.x > 0 ? 1 : 0);
+    const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
     const apply = () => {
-      const d = Number(leave.value); if (!(d > 0)) return;
-      const v = { short: [0, -1], long: [0, 1], left: [-1, 0], right: [1, 0] }[dir] || null;
-      setResult({ lie: "Green", dist: d, unit: "ft", ...(v ? { x: v[0] * d, y: v[1] * d } : {}), source: "typed" });
+      const h = Number(rolled.value), o = Number(off.value || 0);
+      hint.textContent = "";
+      if (!(h > 0)) return;
+      if (o > 0 && !sd.get()) { hint.textContent = "Left or right?"; return; }
+      const x = o * (sd.get() || 1), y = h - D, d = Math.round(Math.hypot(x, y) * 10) / 10;
+      setResult(d <= 0.2 ? { lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "typed" } : { lie: "Green", dist: d, unit: "ft", x, y, source: "typed" });
     };
-    leave.addEventListener("change", apply);
-    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Missed by (ft)"), leave]), el("div", {}, [el("span", { class: "rd-label" }, "Which way"), dirSeg])]),
-      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say “made it” or “2 feet long”.")];
+    sd.draw(apply);
+    rolled.addEventListener("change", apply); off.addEventListener("change", apply);
+    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Rolled (ft)"), rolled]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (ft)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg])]), hint,
+      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Rolled: how far the ball went (past the hole is more than the putt's length). Say “made it” or “2 feet long”.")];
   }
-  // approach / around the green: the lie and the distance (or tap)
-  let lie = r?.lie && r.lie !== "Penalty" ? r.lie : r?.penalty ? "Water" : null;
-  const dist = num(r && r.lie !== "Holed" && !r.penalty ? r.dist : "", "Distance");
-  const unitOf = (l) => (l === "Green" || l === "Fringe" ? "ft" : "yds");
-  const unitTag = el("span", { class: "pr-unit" }, lie ? unitOf(lie) : "");
-  const lieSeg = el("div", { class: "pr-lies" });
-  const drawLie = () => mount(lieSeg, ["Green", "Fringe", "Fairway", "Rough", "Bunker", "Water", "Holed"].map((l) => {
-    const b = el("button", { type: "button", class: `pr-chip${lie === l ? " on" : ""}` }, l);
-    b.addEventListener("click", () => { lie = l; drawLie(); unitTag.textContent = unitOf(l); apply(true); });
-    return b;
-  }));
-  drawLie();
-  const apply = (fromLie = false) => {
-    if (lie === "Holed") return setResult({ lie: "Holed", dist: 0, unit: "ft", x: shot.pin.x, y: shot.pin.y, source: "typed" });
-    if (lie === "Water") return setResult({ lie: "Penalty", penalty: "water", dist: Number(dist.value) || Math.round(shot.startDist / 4), unit: "yds", source: "typed" });
-    const d = Number(dist.value);
-    if (!lie || !(d >= 0) || dist.value === "") { if (!fromLie) dist.focus(); return; }
-    setResult({ lie, dist: d, unit: unitOf(lie), source: "typed" });
+  // approach / around the green: how far it went towards the pin, and how far offline (or tap where it finished)
+  const fx = shot.from.x, fy = shot.from.y, dd = Math.hypot(shot.pin.x - fx, shot.pin.y - fy) || 1, ux = (shot.pin.x - fx) / dd, uy = (shot.pin.y - fy) / dd;
+  const along = r && r.x != null ? (r.x - fx) * ux + (r.y - fy) * uy : null, across = r && r.x != null ? (r.x - fx) * uy - (r.y - fy) * ux : null; // (+ right)
+  const hit = num(along != null ? Math.round(along) : "", "Hit yds"), off = num(across ? Math.round(Math.abs(across)) : "", "Offline yds");
+  const sd = offSide(across < -0.5 ? -1 : across > 0.5 ? 1 : 0);
+  const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
+  const holed = el("button", { type: "button", class: `btn ${r?.lie === "Holed" ? "" : "ghost"} pr-made` }, "✓ Holed");
+  holed.addEventListener("click", () => setResult({ lie: "Holed", dist: 0, unit: "ft", x: shot.pin.x, y: shot.pin.y, source: "typed" }));
+  const apply = () => {
+    const h = Number(hit.value), o = Number(off.value || 0);
+    hint.textContent = "";
+    if (!(h > 0)) return;
+    if (o > 0 && !sd.get()) { hint.textContent = "Left or right?"; return; }
+    const a = o * (sd.get() || 1), x = fx + ux * h + uy * a, y = fy + uy * h - ux * a;
+    setResult({ ...greenResult(shot, Math.round(x * 10) / 10, Math.round(y * 10) / 10), source: "typed" });
   };
-  dist.addEventListener("change", () => apply());
-  return [el("div", { class: "pr-fields col" }, [el("div", {}, [el("span", { class: "rd-label" }, "Finished on"), lieSeg]), el("label", { class: "pr-dist" }, [el("span", { class: "rd-label" }, "From the pin"), el("div", { class: "pr-dist-in" }, [dist, unitTag])])]),
-    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like “green, 14 feet short” or “rough, 8 yards”.")];
+  sd.draw(apply);
+  hit.addEventListener("change", apply); off.addEventListener("change", apply);
+  return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg]), holed]), hint,
+    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went towards the pin; offline: how far left or right of that line. Where it finished, and what's left, are worked out. Or tap where it finished.")];
+
 }

@@ -105,7 +105,7 @@ function makeHole(b, width, trouble) {
   return holeLayout({ length: rint(b.hole[0], b.hole[1]), width, trouble, carry: b.carry, club: b.club });
 }
 /** A made-up hole off the tee of a given length (rounds and course prep use this too). */
-export function holeLayout({ length, width = "standard", trouble = pick(["left", "right", "both"]), carry = 290, club = "Driver", startLie = "Tee box", par = null }) {
+export function holeLayout({ length, width = "standard", trouble = pick(["left", "right", "both"]), carry = 290, club = "Driver", startLie = "Tee box", par = null, dogleg = true }) {
   const L = Math.round(length), b = { carry, club };
   const w = typeof width === "number" ? width : WIDTHS[width] || 32;
   const hard = { kind: pick(["water", "ob", "water"]), at: rint(8, 14) };      // penalty this far past the fairway edge
@@ -115,13 +115,30 @@ export function holeLayout({ length, width = "standard", trouble = pick(["left",
   // a fairway bunker on one side, around where the ball comes down
   const bSide = Math.random() < 0.5 ? -1 : 1;
   const fb = Math.random() < 0.75 ? { side: bSide, y0: carry - rint(15, 30), y1: carry + rint(5, 20), depth: rint(7, 11) } : null;
-  return { kind: "tee", club: b.club, hole: L, par: par || (L > 470 ? 5 : 4), width: w, widthId: width, trouble, sides, bunker: fb, startLie, startDist: L, carry };
+  // a dogleg (update 154), about two holes in five: the fairway turns left or right past the landing area
+  const dl = dogleg === false || L < 340 || Math.random() > 0.4 ? null : { dir: Math.random() < 0.5 ? -1 : 1, at: Math.min(L - 90, rint(Math.max(200, carry - 50), Math.max(210, carry + 10))), ang: rint(14, 32) };
+  return { kind: "tee", club: b.club, hole: L, par: par || (L > 470 ? 5 : 4), width: w, widthId: width, trouble, sides, bunker: fb, startLie, startDist: L, carry, ...(dl ? { dogleg: dl } : {}) };
+}
+/** The middle of the fairway, side to side, this far from the tee (yds; 0 unless it doglegs). */
+export function fairwayX(shot, y) {
+  const d = shot.dogleg;
+  return d && y > d.at ? d.dir * (y - d.at) * Math.tan((d.ang * Math.PI) / 180) : 0;
+}
+/** Where the hole is (x, y from the tee), round a dogleg. */
+export function holeSpot(shot) {
+  const d = shot.dogleg;
+  if (!d) return { x: 0, y: shot.hole };
+  const a = (d.ang * Math.PI) / 180, rest = shot.hole - d.at;
+  return { x: d.dir * rest * Math.sin(a), y: d.at + rest * Math.cos(a) };
 }
 
 /** Where a drive finished, from its total distance and how far off line (+ right): { lie, dist, penalty, zone }. */
 export function teeResult(shot, total, offline) {
-  const half = shot.width / 2, ax = Math.abs(offline), side = offline < 0 ? "left" : "right";
-  const remaining = Math.max(1, Math.round(Math.hypot(shot.hole - total, offline)));
+  // (a dogleg: how far off the middle of the fairway there, and what's left round the corner to the hole)
+  const rel = offline - fairwayX(shot, total), h = holeSpot(shot), d = shot.dogleg;
+  const half = shot.width / 2, ax = Math.abs(rel), side = rel < 0 ? "left" : "right";
+  offline = rel;
+  const remaining = Math.max(1, Math.round(d && total <= d.at ? Math.hypot(offline, d.at - total) + (shot.hole - d.at) : Math.hypot(h.x - (rel + fairwayX(shot, total)), h.y - total)));
   const fb = shot.bunker;
   const inBunker = fb && Math.sign(offline || 1) === fb.side && total >= fb.y0 && total <= fb.y1 && ax >= half - 4 && ax <= half + fb.depth;
   if (inBunker) return { lie: "Bunker", dist: remaining, zone: "Fairway bunker" };
