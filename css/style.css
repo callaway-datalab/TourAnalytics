@@ -3204,3 +3204,5 @@ button.ti-name:hover { color: var(--accent); }
 .pr-hit-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.8rem; align-items: end; margin: 0.4rem 0 0.6rem; }
 .pr-hit-entry .pr-lies { margin: 0.3rem 0 0.6rem; }
 @media (max-width: 560px) { .pr-hit-row { grid-template-columns: 1fr 1fr; } .pr-hit-row > div:last-child { grid-column: 1 / -1; } }
+.pr-aim-handle { cursor: grab; touch-action: none; }
+.pr-aim-handle:active { cursor: grabbing; }

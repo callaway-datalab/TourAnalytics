@@ -10,7 +10,7 @@
  *                            scrambling, the scorecard, and your best and costliest shots.
  */
 import { el, mount, confirmAction } from "../ui.js";
-import { CATS, holeLayout, shotFor, puttFrom, teeResult, greenResult } from "../practice/model.js";
+import { CATS, holeLayout, shotFor, puttFrom, teeResult, greenResult, holeSpot } from "../practice/model.js";
 import { randomHoles, courseHoles, nextShot, playShot, undoShot, pickUp, roundSummary, scoreName, holeExpected, shotSG, resultFromWords } from "../practice/round.js";
 import { gameProgress, personalBest, targetText, passedIt, gameOf } from "../practice/games.js";
 import { wordsToNumbers, golfFix } from "../voiceShots.js";
@@ -462,10 +462,10 @@ function simVisual(ctx, s, hole, shot) {
     if (v.kind === "putt") { mount(box, puttSvg(v, { showHeat: sgOn })); label.textContent = ""; return; }
     const onTap = v.kind === "tee" ? (total, offline) => { shot.target = { x: offline, y: total }; ctx.save(s); draw(); } : (x, y) => { shot.target = { x, y }; ctx.save(s); draw(); };
     mount(box, v.kind === "tee"
-      ? holeSvg(v, { aim: shot.target, showHeat: sgOn, carry: shot.target.y, onTap, sgStart })
-      : greenSvg(v, { aim: shot.target, showHeat: sgOn, onTap, sgStart, aimLine: true }));
+      ? holeSvg(v, { aim: shot.target, showHeat: sgOn, carry: shot.target.y, onTap, sgStart, onAim: (x, y) => onTap(y, x) })
+      : greenSvg(v, { aim: shot.target, showHeat: sgOn, onTap, sgStart, aimLine: true, onAim: (x, y) => onTap(x, y) }));
     const side = v.kind === "tee" ? shot.target.x : 0;
-    label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Tap the picture to move it.`;
+    label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Tap the picture, or hold the end of the line and drag, to move it.`;
   };
   // a club: its carry becomes the target's distance (same direction)
   const club = shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (c) => {
@@ -483,6 +483,49 @@ function simVisual(ctx, s, hole, shot) {
   return el("div", { class: "pr-sim-wrap" }, [box, el("div", { class: "pr-vis-tools" }, [sgBtn, label]), club]);
 }
 
+/*
+ * The hole's stroke trail (update 156): every shot so far drawn on the hole from above, tee to where it finished.
+ * A random course uses its made-up hole; otherwise (a par 3, a real hole) a plain straight hole of that length.
+ */
+function resetHole(hole) { hole.shots = []; hole.done = false; hole.pickedUp = false; hole.strokes = 0; delete hole.prox; }
+function trailLayout(hole) {
+  if (hole.teeVis) return hole.teeVis;
+  return { kind: "tee", hole: hole.length, width: hole.par === 3 ? 26 : 30, sides: { left: { kind: "rough", at: 30 }, right: { kind: "rough", at: 30 } }, bunker: null, startLie: "Tee box", startDist: hole.length, carry: Math.min(hole.length, 280) };
+}
+function trailOf(hole, layout, pick = -1) {
+  const H = holeSpot(layout), out = [];
+  let cur = { x: 0, y: 0 };
+  hole.shots.forEach((x, i) => {
+    const r = x.result || {};
+    let end;
+    if (r.lie === "Holed") end = { ...H };
+    else if (r.penalty === "ob") end = { ...cur };
+    else if (i === 0 && r.hit != null && x.startLie === "Tee box" && layout === hole.teeVis) {
+      const t = x.target, line0 = t && t.y > 0 ? (t.x * r.hit) / t.y : 0;
+      end = { x: line0 + (r.off || 0), y: r.hit };
+    } else {
+      const dx = H.x - cur.x, dy = H.y - cur.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
+      const yd = (v) => (x.unit === "ft" ? v / 3 : v);
+      // with what's left (the result), else how far it was hit
+      const left = r.dist != null ? (r.unit === "ft" ? r.dist / 3 : r.dist) : null, hit = r.hit != null ? yd(r.hit) : left != null ? Math.max(0, d - left) : 0, off = r.off != null ? yd(r.off) : 0;
+      end = { x: cur.x + ux * hit + uy * off, y: cur.y + uy * hit - ux * off };
+    }
+    out.push({ ...end, label: String(i + 1), on: i === pick });
+    cur = end;
+  });
+  return out;
+}
+function trailPanel(hole, pick = -1, onClose = null) {
+  const layout = trailLayout(hole);
+  const close = onClose ? el("button", { type: "button", class: "link" }, "Close") : null;
+  close?.addEventListener("click", onClose);
+  return el("section", { class: "panel pr-trail" }, [
+    el("div", { class: "pr-sub" }, [el("h2", {}, `${hole.short ? "Spot" : "Hole"} ${hole.n}, shot by shot`), close]),
+    el("div", { class: "pr-visual pr-sim" }, holeSvg(layout, { full: true, showHeat: false, trail: trailOf(hole, layout, pick), carry: layout.carry || 260 })),
+    pick >= 0 ? el("p", { class: "muted small" }, `Shot ${pick + 1}: ${shotText(hole.shots[pick])} · ${leftText(hole.shots[pick].result)}`) : null,
+  ]);
+}
+
 function drawRound(ctx, s) {
   const game = gameOf(s);
   // just finished a hole: show how it went, then on
@@ -498,7 +541,7 @@ function drawRound(ctx, s) {
     if (!shot.result) return;
     const res = shot.result;
     const { holeN, ...clean } = shot; void holeN;
-    delete clean.result; delete clean.sg; delete clean.vis; delete clean.target; // (the picture stays with the shot being played only)
+    delete clean.result; delete clean.sg; delete clean.vis; // (the picture stays with the shot being played; the target stays for the trail)
     playShot(hole, clean, res, { noPutts: !!s.opts?.noPutts });
     s.pending = null;
     ctx.save(s);
@@ -507,6 +550,8 @@ function drawRound(ctx, s) {
   };
   const undo = hole.shots.length ? el("button", { type: "button", class: "link" }, "↶ Undo last shot") : null;
   undo?.addEventListener("click", () => { undoShot(hole); s.pending = null; ctx.save(s); ctx.go({ name: "round", session: s, k: `${hole.n}-${hole.shots.length}-u`, hole: hole.n }); });
+  const reset = hole.shots.length ? el("button", { type: "button", class: "link" }, "Reset hole") : null;
+  reset?.addEventListener("click", () => { if (!confirmAction(`Start hole ${hole.n} again? Its ${hole.shots.length} shot${hole.shots.length === 1 ? "" : "s"} are cleared.`)) return; resetHole(hole); s.pending = null; ctx.save(s); ctx.go({ name: "round", session: s, k: `reset-${hole.n}-${Date.now()}`, hole: hole.n }); });
   const pick = el("button", { type: "button", class: "link pr-pickup" }, "Pick up");
   pick.addEventListener("click", () => { if (!confirmAction(`Pick up on this hole? It counts as ${Math.max(hole.strokes + 1, hole.par + 3)}.`)) return; pickUp(hole); s.pending = null; ctx.save(s); ctx.go({ name: "round", session: s, k: "after", hole: hole.n }); });
   const end = el("button", { type: "button", class: "link danger" }, game ? "End game" : "End round");
@@ -523,7 +568,7 @@ function drawRound(ctx, s) {
     s.mode === "sim" ? simVisual(ctx, s, hole, shot) : holeStrip(hole, shot),
     s.mode !== "sim" && shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); }) : null,
     entryPanel(shot, { vis: s.mode === "sim" ? shot.vis : null, target: () => shot.target, noPutts: !!s.opts?.noPutts }, (r) => { shot.result = r || undefined; ctx.save(s); }, commit),
-    el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [pick, end])]),
+    el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [reset, pick, end])]),
   ]);
   const thru = sm.holes;
   const bar = el("div", { class: "pr-bar pr-round-bar" }, [
@@ -532,7 +577,14 @@ function drawRound(ctx, s) {
     el("div", { class: "pr-bar-r" }, [el("span", { class: "muted small" }, thru ? `thru ${thru}` : `${s.holes.length} holes`), el("strong", {}, thru ? (game ? `${sm.score}` : toParText(sm.toPar)) : "E"), el("span", { class: `small ${sgCls(sm.sgTotal)}` }, thru ? `${SG(sm.sgTotal, 1)} SG` : "")]),
   ]);
   const live = game ? (() => { const g = gameProgress(game, s), pb = personalBest(game, ctx.sessions); return el("div", { class: `pr-game-live ${g.status}` }, [el("span", {}, [el("strong", {}, targetText(game)), pb != null ? ` · Best ${pb}` : ""]), el("span", {}, g.need)]); })() : null;
-  const holeShots = hole.shots.length ? el("section", { class: "panel pr-list" }, [el("h2", {}, `${hole.short ? "Spot" : "Hole"} ${hole.n} so far`), el("ol", { class: "pr-hole-shots" }, hole.shots.map(shotLi))]) : null;
+  // the shots so far: tap one to see the hole's trail with it picked out (update 156)
+  const trailBox = el("div");
+  const showTrail = (i) => { mount(trailBox, trailPanel(hole, i, () => mount(trailBox, null))); trailBox.scrollIntoView({ behavior: "smooth", block: "nearest" }); };
+  const holeShots = hole.shots.length ? el("section", { class: "panel pr-list" }, [
+    el("div", { class: "pr-sub" }, [el("h2", {}, `${hole.short ? "Spot" : "Hole"} ${hole.n} so far`), (() => { const b = el("button", { type: "button", class: "link" }, "See the hole"); b.addEventListener("click", () => showTrail(-1)); return b; })()]),
+    el("ol", { class: "pr-hole-shots pr-tap-shots" }, hole.shots.map((x, i) => { const li = shotLi(x); li.tabIndex = 0; li.title = "See it on the hole"; li.addEventListener("click", () => showTrail(i)); li.addEventListener("keydown", (e) => { if (e.key === "Enter") showTrail(i); }); return li; })),
+    trailBox,
+  ]) : null;
   mount(ctx.body, [bar, live, holeShots, card, scorecardStrip(s)]);
   setTimeout(() => card.querySelector(".pr-bignum")?.focus({ preventScroll: true }), 50);
 }
@@ -561,8 +613,9 @@ function drawHoleDone(ctx, s, hole, game) {
         : el("div", { class: "pr-big" }, [el("strong", {}, String(hole.strokes)), el("span", {}, name)]),
       el("p", {}, [el("span", { class: sgCls(sg) }, `${SG(sg)} strokes gained`), np ? null : el("span", { class: "muted" }, ` \u00b7 Tour baseline ${holeExpected(hole).toFixed(2)}`)]),
       el("ol", { class: "pr-hole-shots" }, hole.shots.map(shotLi)),
+      hole.shots.length ? trailPanel(hole) : null,
       el("p", { class: "muted" }, game ? `${sm.score} strokes after ${sm.holes} of ${s.holes.length}` : np ? `${toParText(sm.toPar)} against regulation through ${sm.holes} \u00b7 ${SG(sm.sgTotal, 1)} SG` : `${toParText(sm.toPar)} through ${sm.holes} \u00b7 ${SG(sm.sgTotal, 1)} SG`),
-      next, el("p", { class: "center" }, undo),
+      next, el("p", { class: "center" }, [undo, " \u00b7 ", (() => { const b = el("button", { type: "button", class: "link" }, "Reset hole"); b.addEventListener("click", () => { if (!confirmAction(`Start hole ${hole.n} again?`)) return; resetHole(hole); s.pending = null; ctx.save(s); ctx.go({ name: "round", session: s, k: `reset-${hole.n}-${Date.now()}`, hole: hole.n }); }); return b; })()]),
     ]),
     scorecardStrip(s),
   ]);

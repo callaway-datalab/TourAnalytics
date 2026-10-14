@@ -34,9 +34,9 @@ function svgPoint(svg, evt) {
  * The hole for a tee shot. opts: { aim: {x,y}, showHeat, result: {total, offline}, onTap(total, offline), carry }
  * x is yards left (−) / right (+) of the target line; drawn with the tee at the bottom.
  */
-export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, carry = 285, sgStart = null } = {}) {
+export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, carry = 285, sgStart = null, onAim = null, trail = null, full = false } = {}) {
   const half = shot.width / 2;
-  const y0 = Math.max(120, Math.min(carry, shot.hole - 50) - 120), y1 = Math.min(shot.hole + 10, Math.max(carry, 200) + 60);
+  const y0 = full ? -8 : Math.max(120, Math.min(carry, shot.hole - 50) - 120), y1 = full ? holeSpot(shot).y + 22 : Math.min(shot.hole + 10, Math.max(carry, 200) + 60);
   const cx = (y) => fairwayX(shot, y); // the middle of the fairway (a dogleg bends it)
   const bend = cx(y1);
   const X0 = Math.min(-70, bend - 70), W = Math.max(70, bend + 70) - X0, H = y1 - y0, AX = 15; // AX: the strip under the hole for the side-to-side axis
@@ -125,9 +125,18 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
   }
   // the target line and point
   if (aim) {
-    svg.appendChild(svgEl("line", { x1: 0, y1: H + 4, x2: aim.x, y2: sy(aim.y), stroke: "#d4b483", "stroke-width": 0.9, "stroke-dasharray": "3 2" }));
-    svg.appendChild(svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 3.4, fill: "none", stroke: "#d4b483", "stroke-width": 1.2 }));
-    svg.appendChild(svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 0.9, fill: "#d4b483" }));
+    const ln = svgEl("line", { x1: 0, y1: sy(0) < H ? sy(0) : H + 4, x2: aim.x, y2: sy(aim.y), stroke: "#d4b483", "stroke-width": 0.9, "stroke-dasharray": "3 2" });
+    const ring = svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 3.4, fill: "none", stroke: "#d4b483", "stroke-width": 1.2 });
+    const dot = svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 0.9, fill: "#d4b483" });
+    svg.append(ln, ring, dot);
+    // (update 156) hold the end of the target line and drag it
+    if (onAim) dragAim(svg, [ring, dot], (x, y) => { ln.setAttribute("x2", x); ln.setAttribute("y2", y); }, (p) => [p.x, p.y], (p) => onAim(Math.round(p.x), Math.round(y1 - p.y)), 7);
+  }
+  // the shots so far on this hole (course prep, update 156): where each one finished, joined up
+  if (trail?.length) {
+    const pts = [[0, sy(0)], ...trail.map((q) => [q.x, sy(q.y)])];
+    svg.appendChild(svgEl("polyline", { points: pts.map((q) => q.map((v) => v.toFixed(1)).join(",")).join(" "), fill: "none", stroke: "#fff", "stroke-width": 0.9, "stroke-dasharray": "2.4 1.6", opacity: 0.85 }));
+    trail.forEach((q) => { ball(svg, q.x, sy(q.y), q.on ? 2.6 : 1.9, ids); if (q.label) pill(svg, q.x + 3.2, sy(q.y) + 1.2, q.label, 3.2, { color: q.on ? "#d4b483" : "#fff" }); });
   }
   if (result) ball(svg, Math.max(X0 + 2, Math.min(X0 + W - 2, result.offline)), sy(Math.max(y0 + 1, Math.min(y1 - 1, result.total))), 1.6, ids);
   // the side-to-side axis (update 151): yards from the centre of the fairway to each edge, the rough and the trouble
@@ -150,14 +159,37 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
   svg.appendChild(svgEl("path", { d: `M0 ${H - 0.5} l-2.4 -3.6 l4.8 0 z`, fill: "#d4b483" }));
   if (onTap) {
     svg.classList.add("tappable");
-    svg.addEventListener("click", (e) => { const p = svgPoint(svg, e); if (p.y > H) return; onTap(Math.round(y1 - p.y), Math.round(p.x)); });
+    svg.addEventListener("click", (e) => { if (svg.__dragged) return; const p = svgPoint(svg, e); if (p.y > H) return; onTap(Math.round(y1 - p.y), Math.round(p.x)); });
   }
   return svg;
 }
 
+/** Drag the target's end: shapes move with the pointer (move(x, y) updates anything else), done(point) on release. */
+function dragAim(svg, shapes, move, toLocal, done, r) {
+  const [ring] = shapes;
+  const handle = svgEl("circle", { cx: ring.getAttribute("cx"), cy: ring.getAttribute("cy"), r, fill: "transparent", class: "pr-aim-handle" });
+  ring.parentNode.appendChild(handle);
+  let on = false;
+  handle.addEventListener("pointerdown", (e) => { on = true; handle.setPointerCapture?.(e.pointerId); e.preventDefault(); e.stopPropagation(); });
+  handle.addEventListener("pointermove", (e) => {
+    if (!on) return;
+    const [x, y] = toLocal(svgPoint(svg, e));
+    for (const sh of [...shapes, handle]) { sh.setAttribute("cx", x); sh.setAttribute("cy", y); }
+    move(x, y);
+  });
+  const end = (e) => {
+    if (!on) return;
+    on = false; svg.__dragged = true; setTimeout(() => { svg.__dragged = false; }, 60);
+    done(svgPoint(svg, e));
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", () => { on = false; });
+  handle.addEventListener("click", (e) => e.stopPropagation());
+}
+
 /** Strokes gained → colour: deep green (gains a lot) → yellow (about even) → red (costs). */
 export function sgColor(v) {
-  const stops = [[-1.2, [214, 48, 49]], [-0.5, [240, 128, 48]], [-0.1, [235, 200, 70]], [0.15, [120, 200, 80]], [0.5, [30, 150, 70]]];
+  const stops = [[-0.5, [214, 40, 40]], [-0.25, [238, 128, 44]], [0, [240, 210, 60]], [0.25, [130, 200, 70]], [0.5, [28, 150, 68]]];
   if (v <= stops[0][0]) return `rgb(${stops[0][1]})`;
   for (let i = 1; i < stops.length; i++) if (v <= stops[i][0]) {
     const [a, ca] = stops[i - 1], [b, cb] = stops[i], t = (v - a) / (b - a);
@@ -168,16 +200,16 @@ export function sgColor(v) {
 /** The key for the strokes gained map. */
 function sgKey(x, y, h) {
   const g = svgEl("g", { class: "pr-sgkey" });
-  const vals = [-1, -0.5, 0, 0.25, 0.5], w = h * 1.6;
-  g.appendChild(svgEl("rect", { x, y, width: w * vals.length + h * 6.4, height: h * 1.7, rx: h * 0.3, fill: "rgba(0,0,0,0.6)" }));
+  const vals = [-0.5, -0.25, 0, 0.25, 0.5], w = h * 1.6;
+  g.appendChild(svgEl("rect", { x, y, width: w * vals.length + h * 9, height: h * 1.7, rx: h * 0.3, fill: "rgba(0,0,0,0.6)" }));
   vals.forEach((v, i) => g.appendChild(svgEl("rect", { x: x + h * 0.4 + i * w, y: y + h * 0.35, width: w, height: h, fill: sgColor(v) })));
-  g.appendChild(svgEl("text", { x: x + h * 0.8 + vals.length * w, y: y + h * 1.15, class: "pr-yd", style: `font-size:${h * 0.8}px;fill:#fff` }, "\u22121 \u2192 +0.5 SG"));
+  g.appendChild(svgEl("text", { x: x + h * 0.8 + vals.length * w, y: y + h * 1.15, class: "pr-yd", style: `font-size:${h * 0.8}px;fill:#fff` }, "\u22120.5 \u00b7 0 \u00b7 +0.5 SG"));
   return g;
 }
 
 /* ================================================ approach / around the green ================================================ */
 /** The green for an approach or chip. opts: { aim, showHeat, result: {x,y}, onTap(x, y) } (yards, green centre at 0,0). */
-export function greenSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, sgStart = null, aimLine = false } = {}) {
+export function greenSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, sgStart = null, aimLine = false, onAim = null } = {}) {
   const { rx, ry } = shot.green, R0 = Math.max(rx, ry) + 12;
   // Your view (update 151): turned so the line from where you are to the pin points straight up, with you at
   // the bottom centre. Everything on the green is drawn in its own yards, then turned and slid into place.
@@ -243,8 +275,15 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
   const RINGS = [10, 20, 30];
   for (const ft of RINGS) g0.appendChild(svgEl("circle", { cx: shot.pin.x, cy: Y(shot.pin.y), r: ft / 3, fill: "none", stroke: "rgba(255,255,255,0.45)", "stroke-width": 0.18, "stroke-dasharray": "0.6 0.7" }));
   if (aim) {
-    g0.appendChild(svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 1.6, fill: "none", stroke: "#d4b483", "stroke-width": 0.5 }));
-    g0.appendChild(svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 0.45, fill: "#d4b483" }));
+    const ln = aimLine || onAim ? svgEl("line", { x1: shot.from.x, y1: Y(shot.from.y), x2: aim.x, y2: Y(aim.y), stroke: "#d4b483", "stroke-width": 0.4, "stroke-dasharray": "1.2 0.8" }) : null;
+    const ring = svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 1.6, fill: "none", stroke: "#d4b483", "stroke-width": 0.5 });
+    const dot = svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 0.45, fill: "#d4b483" });
+    if (ln) g0.appendChild(ln);
+    g0.append(ring, dot);
+    if (onAim) {
+      const toGreen = (p) => { const a = p.x + pX, b = p.y; return [a * c + b * sn, -a * sn + b * c]; }; // (screen → the green's own coordinates)
+      dragAim(svg, [ring, dot], (x, y) => { if (ln) { ln.setAttribute("x2", x); ln.setAttribute("y2", y); } }, toGreen, (p) => { const [x, y] = toGreen(p); onAim(f1(x), f1(-y)); }, 3.2);
+    }
   }
   vignette(svg, -R, -R0, 2 * R, R0 + H2, ids);
   // the pin, upright on screen; the ball
@@ -265,7 +304,7 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
   if (onTap) {
     svg.classList.add("tappable");
     // a tap on screen → back to the green's own yards
-    svg.addEventListener("click", (e) => { const p = svgPoint(svg, e); const a = p.x + pX, b = p.y; const x = a * c + b * sn, y = -a * sn + b * c; onTap(f1(x), f1(-y)); });
+    svg.addEventListener("click", (e) => { if (svg.__dragged) return; const p = svgPoint(svg, e); const a = p.x + pX, b = p.y; const x = a * c + b * sn, y = -a * sn + b * c; onTap(f1(x), f1(-y)); });
   }
   return svg;
 }
@@ -296,9 +335,21 @@ export function puttSvg(p, { result = null, onTap = null, stimp = 11, showHeat =
     svg.appendChild(g);
   }
   // the fall line: arrows the way the ball breaks
-  const lv = puttLevels(p), dir = Math.sign(lv.side);
-  if (dir) for (let y = -6; y <= 6; y += 4) for (let x = -6; x <= 6; x += 6) svg.appendChild(svgEl("path", { d: `M${x - dir * 1.2} ${y} l${dir * 2.4} 0 m${-dir * 0.9} -0.6 l${dir * 0.9} 0.6 l${-dir * 0.9} 0.6`, stroke: "rgba(255,255,255,0.28)", "stroke-width": 0.18, fill: "none" }));
-  if (lv.fwd) svg.appendChild(svgEl("text", { x: -R + 0.8, y: -R + 1.6, class: "pr-yd sm" }, `${lv.fwd > 0 ? "\u2191" : "\u2193"} ${slopeText(lv.fwd).toLowerCase()}`));
+  // (update 156) one direction for the slope and the break together: downhill is away from you (up), a right break
+  // to the right, so downhill + breaking right points at about half past one; longer arrows for more severe
+  const lv = puttLevels(p), vx = lv.side, vy = lv.fwd; // screen: x right, y down (uphill comes back towards you)
+  const mag = Math.hypot(vx, vy);
+  if (mag) {
+    const ux = vx / mag, uy = vy / mag, L = 1.4 + Math.min(3, mag) * 0.55, hw = 0.55;
+    for (let y = -6; y <= 6; y += 4) for (let x = -6; x <= 6; x += 6) {
+      const x0 = x - (ux * L) / 2, y0 = y - (uy * L) / 2, x1 = x + (ux * L) / 2, y1 = y + (uy * L) / 2;
+      svg.appendChild(svgEl("path", { d: `M${x0.toFixed(2)} ${y0.toFixed(2)} L${x1.toFixed(2)} ${y1.toFixed(2)} M${(x1 - ux * hw - uy * hw * 0.7).toFixed(2)} ${(y1 - uy * hw + ux * hw * 0.7).toFixed(2)} L${x1.toFixed(2)} ${y1.toFixed(2)} L${(x1 - ux * hw + uy * hw * 0.7).toFixed(2)} ${(y1 - uy * hw - ux * hw * 0.7).toFixed(2)}`,
+        stroke: "rgba(255,255,255,0.5)", "stroke-width": 0.16, fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    }
+  }
+  // the two reads, top left
+  pill(svg, -R + 0.5, -R + 1.2, slopeText(lv.fwd), 0.62);
+  pill(svg, -R + 0.5, -R + 2.4, breakText(lv.side), 0.62);
   // rings: 3 ft (should be a make) and 6 ft
   for (const ft of [3, 6]) svg.appendChild(svgEl("circle", { cx: 0, cy: 0, r: ft, fill: "none", stroke: "rgba(255,255,255,0.25)", "stroke-width": 0.08, "stroke-dasharray": "0.3 0.3" }));
   // your own aim, on one of your putting spots (update 151: no made-up read)

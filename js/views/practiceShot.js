@@ -38,7 +38,9 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   let showHeat = false; // the strokes gained map: off to start, every shot (update 154)
   const carry = shot.kind === "tee" ? shot.carry || (shot.club === "3 wood" ? 260 : shot.club === "Iron" ? 225 : 290) : null;
   // the target: down the middle of the fairway (round a dogleg) or at the pin; no "best aim" (update 154)
-  const aim = shot.kind === "putt" ? null : shot.kind === "tee" ? { x: fairwayX(shot, Math.min(carry, shot.hole - 40)), y: Math.min(carry, shot.hole - 40) } : { x: shot.pin.x, y: shot.pin.y };
+  // (update 156) hold the end of the target line and drag it: kept with the shot
+  let aim = shot.kind === "putt" ? null : shot.aimAt || (shot.kind === "tee" ? { x: fairwayX(shot, Math.min(carry, shot.hole - 40)), y: Math.min(carry, shot.hole - 40) } : { x: shot.pin.x, y: shot.pin.y });
+  const onAim = (x, y) => { aim = { x, y }; shot.aimAt = aim; onClub?.(); drawVisual(); drawInputs(); };
   void fixedAim; void aimInfo;
   const visual = el("div", { class: "pr-visual" });
   const resultLine = el("p", { class: "pr-result", "aria-live": "polite" });
@@ -52,9 +54,9 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   };
   const drawVisual = () => {
     const r = shot.result;
-    if (shot.kind === "tee") mount(visual, holeSvg(shot, { aim, showHeat, carry, result: r && r.total != null ? r : null, onTap: (total, offline) => setResult({ ...teeResult(shot, total, offline), total, offline, source: "tap" }) }));
+    if (shot.kind === "tee") mount(visual, holeSvg(shot, { aim, onAim, showHeat, carry, result: r && r.total != null ? r : null, onTap: (total, offline) => setResult({ ...teeResult(shot, total, offline), total, offline, source: "tap" }) }));
     else if (shot.kind === "putt") mount(visual, puttSvg(shot, { stimp, showHeat, result: r && r.x != null ? r : null, onTap: (x, y) => { const d = Math.round(Math.hypot(x, y) * 10) / 10; setResult(d <= 0.25 ? { lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "tap" } : { lie: "Green", dist: d, unit: "ft", x, y, source: "tap" }); } }));
-    else mount(visual, greenSvg(shot, { aim, showHeat, result: r && r.x != null ? r : null, onTap: (x, y) => setResult({ ...greenResult(shot, x, y), source: "tap" }) }));
+    else mount(visual, greenSvg(shot, { aim, onAim, showHeat, result: r && r.x != null ? r : null, onTap: (x, y) => setResult({ ...greenResult(shot, x, y), source: "tap" }) }));
   };
   const drawResult = () => {
     const r = shot.result;
@@ -66,7 +68,7 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   };
   // a launch monitor session: no typing, just Next (the file fills the result in at the end)
   const monNext = () => { const b = el("button", { type: "button", class: "btn pr-next" }, next.label); b.addEventListener("click", () => next.onClick()); return el("div", { class: "pr-mon-next" }, b); };
-  const drawInputs = () => mount(inputs, monitor && next && !shot.result ? monNext() : inputsFor(shot, setResult, next, { aim }));
+  function drawInputs() { mount(inputs, monitor && next && !shot.result ? monNext() : inputsFor(shot, setResult, next, { aim })); }
   drawVisual(); drawResult(); drawInputs();
   // a putt (update 151): set its break and slope to match the putt in front of you; the plane tilts to show it
   const titleH = el("h2", {}, title || shotTitle(shot));
@@ -100,7 +102,7 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
     el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, el("p", { class: "pr-shot-sub" }, shot.kind === "tee" ? (shot.dogleg ? `Aim down the middle: it doglegs ${shot.dogleg.dir < 0 ? "left" : "right"} at ${shot.dogleg.at} yds.` : "Aim down the middle.") : shot.kind === "putt" ? shotSub(shot, aim, stimp) : "Aim at the pin.")]), navBtn("\u203A", "Next shot", onNext)]),
     factsDl,
     el("div", { class: "pr-play" }, [
-      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, shot.kind === "tee" ? "Gold line: your target, down the middle." : shot.kind === "putt" ? legend(shot) : "Gold ring: your target, the pin.")]), slopeBox]),
+      el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, shot.kind === "putt" ? legend(shot) : "Gold: your target. Hold its end and drag to move it.")]), slopeBox]),
       el("div", { class: "pr-in-col" }, [
         clubs && shot.kind !== "putt" ? clubSelect(clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; onClub?.(v); }) : null,
         monitor ? el("p", { class: "pr-monitor-note" }, "Using a launch monitor: just hit the shot and tap Next. You'll load the file at the end, and it fills the shots in this order.") : null,
@@ -297,7 +299,9 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
       el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Rolled: how far the ball went (past the hole is more than the putt's length). Say “made it” or “2 feet long”.")];
   }
   // approach / around the green: how far it went towards the pin, and how far offline (or tap where it finished)
-  const fx = shot.from.x, fy = shot.from.y, dd = Math.hypot(shot.pin.x - fx, shot.pin.y - fy) || 1, ux = (shot.pin.x - fx) / dd, uy = (shot.pin.y - fy) / dd;
+  // (along your target line: at the pin unless you've moved it)
+  const tx = aim?.x ?? shot.pin.x, ty = aim?.y ?? shot.pin.y;
+  const fx = shot.from.x, fy = shot.from.y, dd = Math.hypot(tx - fx, ty - fy) || 1, ux = (tx - fx) / dd, uy = (ty - fy) / dd;
   const along = r && r.x != null ? (r.x - fx) * ux + (r.y - fy) * uy : null, across = r && r.x != null ? (r.x - fx) * uy - (r.y - fy) * ux : null; // (+ right)
   const hit = num(along != null ? Math.round(along) : "", "Hit yds"), off = num(across ? Math.round(Math.abs(across)) : "", "Offline yds");
   const sd = offSide(across < -0.5 ? -1 : across > 0.5 ? 1 : 0);
@@ -315,6 +319,6 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
   sd.draw(apply);
   hit.addEventListener("change", apply); off.addEventListener("change", apply);
   return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg]), holed]), hint,
-    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went towards the pin; offline: how far left or right of that line. Where it finished, and what's left, are worked out. Or tap where it finished.")];
+    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went along your target line; offline: how far left or right of it. Where it finished, and what's left, are worked out. Or tap where it finished.")];
 
 }

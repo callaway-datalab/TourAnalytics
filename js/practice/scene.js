@@ -129,5 +129,6 @@ export function pill(g, x, y, text, size, { anchor = "start", color = "#fff" } =
   const w = text.length * size * 0.56 + size * 0.9, h = size * 1.45;
   const x0 = anchor === "middle" ? x - w / 2 : anchor === "end" ? x - w : x;
   g.appendChild(svgEl("rect", { x: x0, y: y - h * 0.72, width: w, height: h, rx: h / 2, fill: "rgba(8,12,9,0.62)" }));
-  g.appendChild(svgEl("text", { x: x0 + w / 2, y: y + size * 0.05, "text-anchor": "middle", class: "pr-yd", style: `font-size:${size}px;fill:${color}` }, text));
+  // (drawn 10× larger and scaled down: tiny font sizes in small viewBoxes come out squashed)
+  g.appendChild(svgEl("text", { x: 0, y: 0, transform: `translate(${(x0 + w / 2).toFixed(3)} ${(y + size * 0.05).toFixed(3)}) scale(0.1)`, "text-anchor": "middle", class: "pr-yd", style: `font-size:${size * 10}px;fill:${color};letter-spacing:0` }, text));
 }
