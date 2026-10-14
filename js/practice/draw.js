@@ -2,8 +2,9 @@
  * Practice visuals (update 136): the made-up hole, green and putt for each shot (with the "where to aim" heat map),
  * and the small charts on the summaries. Plain SVG, sized by viewBox, so they're sharp on any screen.
  */
-import { teeValue, greenValue, puttLevels, slopeText, breakText, fairwayX, holeSpot, startExpected } from "./model.js";
+import { teeValue, greenValue, puttLevels, slopeText, breakText, fairwayX, holeSpot, startExpected, teeResult, surfaceAt } from "./model.js";
 import { expectedStrokes } from "../roundCalc.js";
+import { sceneDefs, rng, seedOf, PAL, blob, smoothPath, bunker, tree, flag, ball, vignette, pill } from "./scene.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs = {}, kids = []) => {
@@ -41,52 +42,86 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
   const X0 = Math.min(-70, bend - 70), W = Math.max(70, bend + 70) - X0, H = y1 - y0, AX = 15; // AX: the strip under the hole for the side-to-side axis
   const sy = (y) => y1 - y; // yards from the tee → svg y (down)
   const svg = svgEl("svg", { viewBox: `${X0} 0 ${W} ${H + AX}`, class: "pr-svg pr-hole", role: "img", "aria-label": `${shot.hole} yard hole, ${shot.width} yard fairway${shot.dogleg ? `, dogleg ${shot.dogleg.dir < 0 ? "left" : "right"}` : ""}` });
-  svg.appendChild(svgEl("rect", { x: X0, y: 0, width: W, height: H, fill: "#17251a" }));
-  const defs = svgEl("defs", {}, svgEl("pattern", { id: "pr-ob", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, [
-    svgEl("rect", { width: 6, height: 6, fill: "#2a1416" }), svgEl("rect", { width: 2, height: 6, fill: "#4a1d22" })]));
-  svg.appendChild(defs);
-  // drawn in 4-yard bands, so the fairway and its sides follow a dogleg round the corner
-  const B = 4;
+  // ---- the course (update 155: a flyover look) ----
+  const ids = sceneDefs(svg, { grain: 1.5, relief: 0.03 });
+  const rand = rng(seedOf(shot.hole, shot.width, shot.sides.left.at, shot.sides.right.at, shot.dogleg?.at || 0));
+  const land = svgEl("g", { filter: ids.url("grass") });
+  svg.appendChild(land);
+  land.appendChild(svgEl("rect", { x: X0, y: -2, width: W, height: H + 4, fill: PAL.rough }));
+  // deeper rough further out, in soft drifts
+  for (let k = 0; k < 7; k++) land.appendChild(svgEl("path", { d: blob(X0 + rand() * W, rand() * H, 14 + rand() * 18, 20 + rand() * 30, rand, { wobble: 0.25 }), fill: PAL.roughDeep, opacity: 0.55 }));
+  const edgePts = (side, at) => { const sg = side === "left" ? -1 : 1, pts = []; for (let y = y0 - 4; y <= y1 + 4; y += 4) pts.push([cx(y) + sg * (half + at) + (rand() - 0.5) * 1.2, sy(y)]); return pts; };
+  const deco = svgEl("g");
   for (const side of ["left", "right"]) {
-    const t = shot.sides[side], sg = side === "left" ? -1 : 1;
-    for (let y = y0; y < y1; y += B) {
-      const c = cx(y + B / 2), edge = c + sg * (half + t.at);
-      const x = sg < 0 ? X0 : edge, w = sg < 0 ? edge - X0 : X0 + W - edge;
-      if (w <= 0) continue;
-      if (t.kind === "water") svg.appendChild(svgEl("rect", { x, y: sy(y + B), width: w, height: B + 0.3, fill: "#1d4a6e" }));
-      if (t.kind === "ob") { svg.appendChild(svgEl("rect", { x, y: sy(y + B), width: w, height: B + 0.3, fill: "url(#pr-ob)" })); if (Math.round(y) % 20 < B) svg.appendChild(svgEl("rect", { x: edge - 0.9, y: sy(y + B), width: 1.8, height: 6, fill: "#f5f5f7" })); }
-      if (t.kind === "trees" && Math.round(y) % 12 < B) for (let k = 0; k < 3; k++) svg.appendChild(svgEl("circle", { cx: edge + sg * (5 + k * 9), cy: sy(y), r: 5, fill: "#0e1d11", stroke: "#24402a", "stroke-width": 0.6 }));
-      if (t.kind === "bunker") svg.appendChild(svgEl("rect", { x: sg < 0 ? edge - 16 : edge, y: sy(y + B), width: 16, height: B + 0.3, fill: "#c9b48a", opacity: 0.85 }));
+    const t = shot.sides[side], sg = side === "left" ? -1 : 1, out = sg < 0 ? X0 - 4 : X0 + W + 4;
+    if (t.kind === "water") {
+      const e = edgePts(side, t.at), poly = [...e, [out, e.at(-1)[1]], [out, e[0][1]]];
+      const d = `M${poly.map((q) => q.map((v) => v.toFixed(1)).join(" ")).join(" L")} Z`;
+      land.appendChild(svgEl("path", { d, fill: "none", stroke: "#6b6a3a", "stroke-width": 3.2, "stroke-linejoin": "round", opacity: 0.6 })); // the bank
+      deco.appendChild(svgEl("path", { d, fill: ids.url("waterG"), filter: ids.url("water") }));
+      deco.appendChild(svgEl("path", { d: smoothPath(e, false), fill: "none", stroke: "rgba(255,255,255,0.28)", "stroke-width": 0.5, transform: `translate(${sg * 1.3} 0)` }));
+    }
+    if (t.kind === "ob") {
+      const e = edgePts(side, t.at), poly = [...e, [out, e.at(-1)[1]], [out, e[0][1]]];
+      land.appendChild(svgEl("path", { d: `M${poly.map((q) => q.map((v) => v.toFixed(1)).join(" ")).join(" L")} Z`, fill: "#3b2a1d", opacity: 0.38 }));
+      for (let y = Math.ceil(y0 / 18) * 18; y < y1; y += 18) {
+        const x = cx(y) + sg * (half + t.at), yy = sy(y);
+        deco.appendChild(svgEl("ellipse", { cx: x + 0.9, cy: yy + 1, rx: 0.9, ry: 0.5, fill: "#000", opacity: 0.5, filter: ids.url("shadow") }));
+        deco.appendChild(svgEl("rect", { x: x - 0.55, y: yy - 2.6, width: 1.1, height: 2.8, rx: 0.3, fill: "#f4f4f2" }));
+      }
+    }
+    if (t.kind === "trees") for (let y = y0 - 6; y < y1 + 6; y += 7 + rand() * 4) for (let k = 0; k < 4; k++) {
+      const x = cx(y) + sg * (half + t.at + 4 + k * 8.5 + rand() * 4);
+      if ((sg < 0 && x < X0 - 6) || (sg > 0 && x > X0 + W + 6)) continue;
+      tree(deco, x, sy(y) + (rand() - 0.5) * 4, 3.6 + rand() * 2.6, ids, rand);
+    }
+    if (t.kind === "bunker") {
+      for (let y = y0 + rand() * 20; y < y1; y += 34 + rand() * 18) {
+        const x = cx(y) + sg * (half + t.at + 7);
+        bunker(deco, blob(x, sy(y), 6 + rand() * 3, 11 + rand() * 6, rand, { wobble: 0.22, n: 11 }), ids);
+      }
     }
   }
-  // the fairway (with mowing stripes), and a bunker by it
+  // the fairway: first cut round it, then the fairway with its mowing stripes
   const fw = [];
-  for (let y = y0; y <= y1; y += B) fw.push([cx(y) - half, sy(y)]);
-  for (let y = y1; y >= y0; y -= B) fw.push([cx(y) + half, sy(y)]);
-  svg.appendChild(svgEl("polygon", { points: fw.map((q) => q.map((v) => v.toFixed(1)).join(",")).join(" "), fill: "#2d5a35" }));
-  for (let y = Math.ceil(y0 / 20) * 20; y < y1; y += 20) svg.appendChild(svgEl("rect", { x: cx(y + 5) - half, y: sy(y + 10), width: shot.width, height: 10, fill: "#33653c", opacity: 0.6 }));
+  for (let y = y0 - 6; y <= y1 + 6; y += 6) fw.push([cx(y) - half + (rand() - 0.5) * 0.8, sy(y)]);
+  for (let y = y1 + 6; y >= y0 - 6; y -= 6) fw.push([cx(y) + half + (rand() - 0.5) * 0.8, sy(y)]);
+  const fwD = smoothPath(fw);
+  land.appendChild(svgEl("path", { d: fwD, fill: PAL.cut, stroke: PAL.cut, "stroke-width": 5, "stroke-linejoin": "round" }));
+  land.appendChild(svgEl("path", { d: fwD, fill: ids.url("fwG") }));
+  const clip = svgEl("clipPath", { id: ids.id("fwclip") }, svgEl("path", { d: fwD }));
+  svg.appendChild(clip);
+  const stripes = svgEl("g", { "clip-path": `url(#${ids.id("fwclip")})` });
+  for (let y = Math.floor(y0 / 12) * 12; y < y1 + 12; y += 12) stripes.appendChild(svgEl("rect", { x: X0, y: sy(y + 6), width: W, height: 6, fill: "#fff", opacity: 0.07 }));
+  land.appendChild(stripes);
   if (shot.bunker) {
-    const b = shot.bunker, c = cx((b.y0 + b.y1) / 2), bx = b.side < 0 ? c - half - b.depth : c + half - 4;
-    svg.appendChild(svgEl("rect", { x: bx, y: sy(b.y1), width: b.depth + 4, height: b.y1 - b.y0, rx: 5, fill: "#d8c597" }));
+    const b = shot.bunker, c = cx((b.y0 + b.y1) / 2), bx = b.side < 0 ? c - half - b.depth / 2 + 1.5 : c + half + b.depth / 2 - 1.5;
+    bunker(deco, blob(bx, sy((b.y0 + b.y1) / 2), b.depth / 2 + 1, (b.y1 - b.y0) / 2, rand, { wobble: 0.18, n: 12 }), ids);
   }
   // the green, when it's in view
   const hs = holeSpot(shot);
-  if (hs.y <= y1 + 2) { svg.appendChild(svgEl("ellipse", { cx: hs.x, cy: sy(hs.y), rx: 14, ry: 12, fill: "#3f7a46" })); svg.appendChild(svgEl("line", { x1: hs.x, y1: sy(hs.y), x2: hs.x, y2: sy(hs.y) - 9, stroke: "#f5f5f7", "stroke-width": 0.8 })); svg.appendChild(svgEl("path", { d: `M${hs.x} ${sy(hs.y) - 9} l5 1.5 l-5 1.5 z`, fill: "#ff453a" })); }
+  if (hs.y <= y1 + 14) {
+    deco.appendChild(svgEl("path", { d: blob(hs.x, sy(hs.y), 16, 14, rand, { wobble: 0.08 }), fill: PAL.collar }));
+    deco.appendChild(svgEl("path", { d: blob(hs.x, sy(hs.y), 14, 12, rand, { wobble: 0.08 }), fill: ids.url("greenG"), filter: ids.url("grass") }));
+    flag(deco, hs.x, sy(hs.y), 9, ids);
+  }
+  svg.appendChild(deco);
   // the strokes gained map (update 154): what each landing spot gains against the Tour baseline from the tee, by distance and lie
   if (showHeat) {
     const cells = [], step = 3, base = sgStart ?? expectedStrokes(shot.startLie || "Tee box", shot.hole);
     for (let y = Math.max(y0, 120); y < y1; y += step)
-      for (let x = X0; x < X0 + W; x += step) cells.push([x, y, base - teeValue(shot, x + step / 2, y + step / 2) - 1]);
-    const g = svgEl("g", { opacity: 0.5, class: "pr-heat", "shape-rendering": "crispEdges" });
+      for (let x = X0; x < X0 + W; x += step) { if (teeResult(shot, y + step / 2, x + step / 2).penalty) continue; cells.push([x, y, base - teeValue(shot, x + step / 2, y + step / 2) - 1]); } // (not over water or out of bounds)
+    const g = svgEl("g", { opacity: 0.45, class: "pr-heat", filter: ids.url("soft"), "pointer-events": "none" });
     for (const [x, y, v] of cells) g.appendChild(svgEl("rect", { x, y: sy(y + step), width: step + 0.1, height: step + 0.1, fill: sgColor(v) }));
     svg.appendChild(g);
-    svg.appendChild(sgKey(X0 + 1, 1, 5));
   }
+  vignette(svg, X0, 0, W, H, ids);
+  if (showHeat) svg.appendChild(sgKey(X0 + 1, 1, 5));
   // yardage lines (straight from the tee)
   for (let y = Math.ceil(y0 / 25) * 25; y <= y1; y += 25) {
     const c = cx(y);
-    svg.appendChild(svgEl("line", { x1: c - half, x2: c + half, y1: sy(y), y2: sy(y), stroke: "rgba(255,255,255,0.18)", "stroke-width": 0.5, "stroke-dasharray": "2 2" }));
-    svg.appendChild(svgEl("text", { x: c + half + 2, y: sy(y) + 2, class: "pr-yd" }, String(y)));
+    svg.appendChild(svgEl("line", { x1: c - half, x2: c + half, y1: sy(y), y2: sy(y), stroke: "rgba(255,255,255,0.32)", "stroke-width": 0.35, "stroke-dasharray": "1.5 1.5" }));
+    pill(svg, c + half + 2.5, sy(y) + 1.2, String(y), 3.6);
   }
   // the target line and point
   if (aim) {
@@ -94,10 +129,7 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
     svg.appendChild(svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 3.4, fill: "none", stroke: "#d4b483", "stroke-width": 1.2 }));
     svg.appendChild(svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 0.9, fill: "#d4b483" }));
   }
-  if (result) {
-    const bx = Math.max(X0 + 2, Math.min(X0 + W - 2, result.offline)), by = sy(Math.max(y0 + 1, Math.min(y1 - 1, result.total)));
-    svg.appendChild(svgEl("circle", { cx: bx, cy: by, r: 2.6, fill: "#fff", stroke: "#111", "stroke-width": 0.8, class: "pr-ball" }));
-  }
+  if (result) ball(svg, Math.max(X0 + 2, Math.min(X0 + W - 2, result.offline)), sy(Math.max(y0 + 1, Math.min(y1 - 1, result.total))), 1.6, ids);
   // the side-to-side axis (update 151): yards from the centre of the fairway to each edge, the rough and the trouble
   svg.appendChild(svgEl("rect", { x: X0, y: H, width: W, height: AX, fill: "#101511" }));
   svg.appendChild(svgEl("line", { x1: X0, x2: X0 + W, y1: H + 0.4, y2: H + 0.4, stroke: "rgba(255,255,255,0.35)", "stroke-width": 0.5 }));
@@ -157,43 +189,70 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
   const place = (x, y) => { const [a, b] = rot(x, -y); return [a - pX, b]; }; // green yards → screen
   const svg = svgEl("svg", { viewBox: `${-R} ${-R0} ${2 * R} ${R0 + H2}`, class: "pr-svg pr-green", role: "img", "aria-label": `Green, pin ${describePin(shot)}, from ${shot.startDist} yards` });
   const Y = (y) => -y; // long = up
-  svg.appendChild(svgEl("rect", { x: -R, y: -R0, width: 2 * R, height: R0 + H2, fill: "#1a2a1c" }));
+  // ---- the course (update 155: a flyover look) ----
+  const ids = sceneDefs(svg, { grain: 4.5, relief: 0.06, bump: 1.1 });
+  const rand = rng(seedOf(rx, ry, shot.pin.x, shot.pin.y, shot.hazards.length));
+  const BIG = 3 * R;
   const g0 = svgEl("g", { transform: `translate(${-pX} 0) rotate(${th})` });
   svg.appendChild(g0);
-  const BIG = 3 * R;
+  const land = svgEl("g", { filter: ids.url("grass") });
+  g0.appendChild(land);
+  land.appendChild(svgEl("rect", { x: -BIG, y: -BIG, width: 2 * BIG, height: 2 * BIG, fill: PAL.rough }));
+  for (let k = 0; k < 6; k++) land.appendChild(svgEl("path", { d: blob((rand() - 0.5) * 2 * R0, (rand() - 0.5) * 2 * R0, 5 + rand() * 7, 6 + rand() * 9, rand, { wobble: 0.3 }), fill: PAL.roughDeep, opacity: 0.5 }));
+  // the fairway running up to the green from where you are (an approach), with its stripes
+  {
+    const fx0 = shot.from.x, fy0 = shot.from.y, L = Math.hypot(-fx0, -fy0) || 1, ux = -fx0 / L, uy = -fy0 / L, w = Math.min(rx, 14);
+    if (shot.cat !== "ARG" || L > Math.max(rx, ry) + 6) {
+      const ex = -ux * (ry * 0.6), ey = -uy * (ry * 0.6), sx = fx0 - ux * 20, sy0 = fy0 - uy * 20;
+      const pts = [[sx - uy * w, sy0 + ux * w], [ex - uy * w * 0.9, ey + ux * w * 0.9], [ex + uy * w * 0.9, ey - ux * w * 0.9], [sx + uy * w, sy0 - ux * w]].map(([a, b]) => [a, Y(b)]);
+      land.appendChild(svgEl("path", { d: `M${pts.map((q) => q.map((v) => v.toFixed(2)).join(" ")).join(" L")} Z`, fill: PAL.fairway, stroke: PAL.cut, "stroke-width": 2.2, "stroke-linejoin": "round" }));
+    }
+  }
   for (const h of shot.hazards) if (h.type === "water") {
     const x = h.side > 0 ? h.from : -BIG, w = h.side > 0 ? BIG - h.from : BIG - h.from;
-    g0.appendChild(svgEl("rect", { x, y: -BIG, width: w, height: 2 * BIG, fill: "#1d4a6e" }));
+    const edge = []; for (let yy = -BIG; yy <= BIG; yy += 3) edge.push([h.side * h.from + (rand() - 0.5) * 0.7, yy]);
+    const poly = h.side > 0 ? [...edge, [BIG, BIG], [BIG, -BIG]] : [...edge, [-BIG, BIG], [-BIG, -BIG]];
+    const d = `M${poly.map((q) => q.map((v) => v.toFixed(2)).join(" ")).join(" L")} Z`;
+    void x; void w;
+    land.appendChild(svgEl("path", { d, fill: "none", stroke: "#6b6a3a", "stroke-width": 1.6, opacity: 0.6 }));
+    g0.appendChild(svgEl("path", { d, fill: ids.url("waterG"), filter: ids.url("water") }));
+    g0.appendChild(svgEl("path", { d: smoothPath(edge, false), fill: "none", stroke: "rgba(255,255,255,0.3)", "stroke-width": 0.25, transform: `translate(${h.side * 0.7} 0)` }));
   }
-  g0.appendChild(svgEl("ellipse", { cx: 0, cy: 0, rx: rx + 1.4, ry: ry + 1.4, fill: "#2f5f37" }));
-  g0.appendChild(svgEl("ellipse", { cx: 0, cy: 0, rx, ry, fill: "#3f7a46" }));
-  for (const h of shot.hazards) if (h.type === "bunker") g0.appendChild(svgEl("circle", { cx: h.cx, cy: Y(h.cy), r: h.r, fill: "#d8c597", stroke: "#b9a576", "stroke-width": 0.4 }));
+  // the green: collar, then the putting surface (lit, with a fine grain)
+  const top = svgEl("g");
+  g0.appendChild(top);
+  top.appendChild(svgEl("path", { d: blob(0, 0, rx + 1.5, ry + 1.5, rand, { wobble: 0.025, n: 16 }), fill: PAL.collar, filter: ids.url("grass") }));
+  top.appendChild(svgEl("path", { d: blob(0, 0, rx, ry, rand, { wobble: 0.02, n: 16 }), fill: ids.url("greenG"), filter: ids.url("grass") }));
+  // faint mowing pattern on the green
+  const gclip = svgEl("clipPath", { id: ids.id("gclip") }, svgEl("ellipse", { cx: 0, cy: 0, rx, ry }));
+  svg.appendChild(gclip);
+  const gs = svgEl("g", { "clip-path": `url(#${ids.id("gclip")})` });
+  for (let x = -rx; x < rx; x += 3) gs.appendChild(svgEl("rect", { x, y: -ry, width: 1.5, height: 2 * ry, fill: "#fff", opacity: 0.05 }));
+  top.appendChild(gs);
+  for (const h of shot.hazards) if (h.type === "bunker") bunker(top, blob(h.cx, Y(h.cy), h.r, h.r * (0.85 + rand() * 0.3), rand, { wobble: 0.15, n: 11, rot: rand() * 3 }), ids, { lip: 0.45 });
   if (showHeat) {
     // the strokes gained map (update 154): what finishing at each spot gains against the Tour baseline from where you are
     const base = sgStart ?? startExpected(shot), step = 0.75, cells = [];
-    for (let x = -R0; x < R0; x += step) for (let y = -R0; y < R0; y += step) cells.push([x, y, base - greenValue(shot, x + step / 2, y + step / 2) - 1]);
-    const g = svgEl("g", { opacity: 0.5, class: "pr-heat", "shape-rendering": "crispEdges" });
+    for (let x = -R0; x < R0; x += step) for (let y = -R0; y < R0; y += step) { if (surfaceAt(shot, x + step / 2, y + step / 2) === "Water") continue; cells.push([x, y, base - greenValue(shot, x + step / 2, y + step / 2) - 1]); }
+    const g = svgEl("g", { opacity: 0.5, class: "pr-heat", filter: ids.url("soft"), "pointer-events": "none" });
     for (const [x, y, v] of cells) g.appendChild(svgEl("rect", { x, y: Y(y + step), width: step + 0.05, height: step + 0.05, fill: sgColor(v) }));
     g0.appendChild(g);
     svg.__sgKey = true;
   }
   // rings round the pin: 10, 20 and 30 ft (labelled on screen, below)
   const RINGS = [10, 20, 30];
-  for (const ft of RINGS) g0.appendChild(svgEl("circle", { cx: shot.pin.x, cy: Y(shot.pin.y), r: ft / 3, fill: "none", stroke: "rgba(255,255,255,0.3)", "stroke-width": 0.25, "stroke-dasharray": "0.8 0.8" }));
+  for (const ft of RINGS) g0.appendChild(svgEl("circle", { cx: shot.pin.x, cy: Y(shot.pin.y), r: ft / 3, fill: "none", stroke: "rgba(255,255,255,0.45)", "stroke-width": 0.18, "stroke-dasharray": "0.6 0.7" }));
   if (aim) {
     g0.appendChild(svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 1.6, fill: "none", stroke: "#d4b483", "stroke-width": 0.5 }));
     g0.appendChild(svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 0.45, fill: "#d4b483" }));
   }
-  if (result && result.x != null) {
-    g0.appendChild(svgEl("circle", { cx: result.x, cy: Y(result.y), r: 0.95, fill: "#fff", stroke: "#111", "stroke-width": 0.3, class: "pr-ball" }));
-  }
-  // the pin, upright on screen
+  vignette(svg, -R, -R0, 2 * R, R0 + H2, ids);
+  // the pin, upright on screen; the ball
   const [px, py] = place(shot.pin.x, shot.pin.y);
-  svg.appendChild(svgEl("line", { x1: px, y1: py, x2: px, y2: py - 5.5, stroke: "#f5f5f7", "stroke-width": 0.35 }));
-  svg.appendChild(svgEl("path", { d: `M${px} ${py - 5.5} l3 0.9 l-3 0.9 z`, fill: "#ff453a" }));
-  svg.appendChild(svgEl("circle", { cx: px, cy: py, r: 0.45, fill: "#0b0b0c" }));
+  flag(svg, px, py, 5.5, ids);
+  if (result && result.x != null) { const [bx, by] = place(result.x, result.y); ball(svg, bx, by, 0.55, ids); }
   // the rings' sizes, on the right of each ring
-  for (const ft of RINGS) svg.appendChild(svgEl("text", { x: px + ft / 3 + 0.4, y: py + 0.9, class: "pr-yd pr-ring" }, `${ft}${ft === RINGS[RINGS.length - 1] ? " ft" : ""}`));
+  for (const ft of RINGS) svg.appendChild(svgEl("text", { x: px + ft / 3 + 0.4, y: py + 0.9, class: "pr-yd pr-ring", style: "paint-order:stroke;stroke:rgba(0,0,0,0.55);stroke-width:0.35px" }, `${ft}${ft === RINGS[RINGS.length - 1] ? " ft" : ""}`));
   // you: bottom centre (on the green's picture when you're that close, else at the bottom edge with the distance)
   const [fx, fy] = place(shot.from.x, shot.from.y);
   const inView = fy < H2 - 3;
@@ -201,7 +260,7 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
   const yy = inView ? fy : H2 - 1.2;
   svg.appendChild(svgEl("line", { x1: 0, y1: yy, x2: 0, y2: py + 1.5, stroke: "rgba(212,180,131,0.35)", "stroke-width": 0.3, "stroke-dasharray": "1 1" }));
   if (!inView) svg.appendChild(svgEl("path", { d: `M0 ${H2 - 4.6} l-2 3.4 l4 0 z`, fill: "#d4b483" }));
-  svg.appendChild(svgEl("text", { x: 2.4, y: Math.min(H2 - 1.4, yy + 0.8), class: "pr-yd" }, `${shot.startDist} yds`));
+  pill(svg, 2.4, Math.min(H2 - 1.8, yy + 0.4), `${shot.startDist} yds`, 2.2);
   if (svg.__sgKey) svg.appendChild(sgKey(-R + 1, -R0 + 1, 2.2));
   if (onTap) {
     svg.classList.add("tappable");
@@ -221,12 +280,15 @@ export function describePin(shot) {
 export function puttSvg(p, { result = null, onTap = null, stimp = 11, showHeat = false } = {}) {
   const R = 9;
   const svg = svgEl("svg", { viewBox: `${-R} ${-R} ${2 * R} ${2 * R}`, class: "pr-svg pr-putt", role: "img", "aria-label": `${p.startDist} foot putt` });
-  svg.appendChild(svgEl("rect", { x: -R, y: -R, width: 2 * R, height: 2 * R, fill: "#3f7a46" }));
-  for (let i = -R; i < R; i += 1.5) svg.appendChild(svgEl("rect", { x: i, y: -R, width: 0.75, height: 2 * R, fill: "#447f4b", opacity: 0.5 }));
+  const ids = sceneDefs(svg, { grain: 9, relief: 0.12, bump: 0.22 });
+  const surf = svgEl("g", { filter: ids.url("grass") });
+  surf.appendChild(svgEl("rect", { x: -R - 1, y: -R - 1, width: 2 * R + 2, height: 2 * R + 2, fill: ids.url("greenG") }));
+  for (let i = -R; i < R; i += 2) surf.appendChild(svgEl("rect", { x: i, y: -R - 1, width: 1, height: 2 * R + 2, fill: "#fff", opacity: 0.05 }));
+  svg.appendChild(surf);
   // the strokes gained map (update 154): where the ball stops, against the Tour baseline for this putt
   if (showHeat) {
     const base = expectedStrokes("Green", Math.max(0.5, p.startDist)), step = 0.3;
-    const g = svgEl("g", { opacity: 0.55, class: "pr-heat", "shape-rendering": "crispEdges" });
+    const g = svgEl("g", { opacity: 0.55, class: "pr-heat", filter: ids.url("soft"), "pointer-events": "none" });
     for (let x = -R; x < R; x += step) for (let y = -R; y < R; y += step) {
       const d = Math.hypot(x + step / 2, y + step / 2), v = base - (d <= 0.18 ? 0 : expectedStrokes("Green", Math.max(0.5, d))) - 1;
       g.appendChild(svgEl("rect", { x, y, width: step + 0.02, height: step + 0.02, fill: sgColor(v) }));
@@ -246,12 +308,15 @@ export function puttSvg(p, { result = null, onTap = null, stimp = 11, showHeat =
     svg.appendChild(svgEl("circle", { cx: ax, cy: ay, r: 0.08, fill: "#d4b483" }));
     svg.appendChild(svgEl("text", { x: ax + 0.45, y: ay - 0.3, class: "pr-yd sm" }, "your aim"));
   }
-  svg.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 0.18, fill: "#0b0b0c" }));
+  // the cup: dark, with a lighter rim
+  svg.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 0.24, fill: "#e8f2e0", opacity: 0.5 }));
+  svg.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 0.18, fill: ids.url("cup") }));
   // where the putt comes from
   svg.appendChild(svgEl("path", { d: `M0 ${R - 0.4} l-0.8 -1.2 m0.8 1.2 l0.8 -1.2`, stroke: "#d4b483", "stroke-width": 0.12, fill: "none" }));
   svg.appendChild(svgEl("text", { x: 0.6, y: R - 0.6, class: "pr-yd sm" }, `${p.startDist} ft`));
   if (showHeat) svg.appendChild(sgKey(-R + 0.3, R - 1.6, 0.75));
-  if (result && result.x != null) svg.appendChild(svgEl("circle", { cx: Math.max(-R + 0.3, Math.min(R - 0.3, result.x)), cy: Math.max(-R + 0.3, Math.min(R - 0.3, -result.y)), r: 0.14, fill: "#fff", stroke: "#111", "stroke-width": 0.04, class: "pr-ball" }));
+  if (result && result.x != null) ball(svg, Math.max(-R + 0.3, Math.min(R - 0.3, result.x)), Math.max(-R + 0.3, Math.min(R - 0.3, -result.y)), 0.14, ids);
+  vignette(svg, -R, -R, 2 * R, 2 * R, ids);
   if (onTap) {
     svg.classList.add("tappable");
     svg.addEventListener("click", (e) => { const q = svgPoint(svg, e); onTap(f1(q.x), f1(-q.y)); });
