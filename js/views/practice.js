@@ -12,7 +12,7 @@
  */
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, scoreShot, spreadFor, withSlopes, breakText, slopeText, myAimText, SEV } from "../practice/model.js";
+import { CATS, CAT_ORDER, BUCKETS, MIXES, generateShots, distribute, scoreShot, spreadFor, withFall, fallOf, fallText, FALL_SEV, myAimText } from "../practice/model.js";
 import { trendSvg } from "../practice/draw.js";
 import { summarize, scored, personalSpread, courseByBucket, readLaunchMonitor, resultFromMonitor } from "../practice/analysis.js";
 import { listSessions, saveSession, deleteSession, newSessionId, practiceOwner, listSpots, saveSpot, deleteSpot } from "../practice/store.js";
@@ -24,8 +24,9 @@ import { myEntryKey, myName } from "./dataEntry.js";
 const LS_CAT = "ta:practice:cat";
 // The tools beside the four categories (update 138)
 const LS_TOOL = "ta:practice:tool";
-const TOOLS = { CUSTOM: "Custom", PREP: "Course Prep", GAMES: "Games", BAG: "My Clubs" };
-const TOOL_ORDER = ["CUSTOM", "PREP", "GAMES", "BAG"];
+// (update 157) no Games tab: Course Prep's filters cover it (old games still open from your history)
+const TOOLS = { CUSTOM: "Custom", PREP: "Course Prep", BAG: "My Clubs" };
+const TOOL_ORDER = ["CUSTOM", "PREP", "BAG"];
 
 const DEF_TOTAL = { OTT: 14, APP: 20, ARG: 20, PUTT: 24 };
 
@@ -170,7 +171,7 @@ export async function render(main, { flash }) {
       const m = await import("./practiceRound.js");
       return m.render(ctx);
     }
-    if (tool === "GAMES" || view.name.startsWith("game")) { const m = await import("./practiceGames.js"); return m.render(ctx); }
+    if (view.name.startsWith("game")) { const m = await import("./practiceGames.js"); return m.render(ctx); }
     if (tool === "BAG" || view.name.startsWith("bag")) { const m = await import("./practiceClubs.js"); return m.render(ctx); }
     if (view.name === "plan") return drawPlan();
     return drawHome();
@@ -338,12 +339,14 @@ export async function render(main, { flash }) {
     const stepBtn = (txt, fn, lbl) => { const b = el("button", { type: "button", class: "pr-step", "aria-label": lbl }, txt); b.addEventListener("click", fn); return b; };
     const num = (attrs) => el("input", { type: "number", inputmode: "decimal", step: 0.5, ...attrs });
     const sel = (vals, cur, lbl) => el("select", { "aria-label": lbl }, vals.map(([v, l]) => el("option", { value: String(v), selected: v === cur }, l)));
-    const BRK = [-3, -2, -1, 0, 1, 2, 3].map((v) => [v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "left to right" : "right to left"}` : "Straight"]);
-    const SLP = [3, 2, 1, 0, -1, -2, -3].map((v) => [v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "uphill" : "downhill"}` : "Flat"]);
+    // (update 157) the fall line: a clock time (6 o'clock: straight uphill) and how severe
+    const CLK = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((v) => [v, `${v} o'clock${v === 12 ? " (downhill)" : v === 6 ? " (uphill)" : ""}`]);
+    const SEVS = [0, 1, 2, 3].map((v) => [v, FALL_SEV[v]]);
+    const spotFall = (sp) => (sp?.fall ? sp.fall : sp ? fallOf({ side: sp.side, fwd: sp.fwd }) : { clock: 12, sev: 0 });
     function form(sp = null) {
       const name = el("input", { maxLength: 40, placeholder: "e.g. Practice green, back left", value: sp?.name || "" });
       const dist = num({ min: 1, max: 90, value: sp?.dist ?? "", placeholder: "ft" });
-      const brk = sel(BRK, sp?.side ?? 0, "Break"), slp = sel(SLP, sp?.fwd ?? 0, "Slope");
+      const f0 = spotFall(sp), clk = sel(CLK, f0.clock, "Fall line"), sevSel = sel(SEVS, Math.min(3, Math.round(f0.sev)), "Slope");
       const ok = el("button", { type: "submit", class: "btn" }, sp ? "Save spot" : "Add spot");
       const cancel = el("button", { type: "button", class: "link" }, "Cancel");
       cancel.addEventListener("click", () => drawList());
@@ -351,13 +354,13 @@ export async function render(main, { flash }) {
         e.preventDefault();
         const d = Number(dist.value);
         if (!(d > 0)) { flash?.("Enter how long the putt is (feet).", "error"); dist.focus(); return; }
-        const next = { id: sp?.id || newSessionId(), name: name.value.trim(), dist: d, side: Number(brk.value), fwd: Number(slp.value), createdAt: sp?.createdAt || new Date().toISOString() };
+        const next = { id: sp?.id || newSessionId(), name: name.value.trim(), dist: d, ...(() => { const f = withFall({}, Number(clk.value), Number(sevSel.value)); return { side: f.side, fwd: f.fwd, fall: f.fall }; })(), createdAt: sp?.createdAt || new Date().toISOString() };
         ok.disabled = true;
         try { await saveSpot(owner, next); spots = [...spots.filter((x) => x.id !== next.id), next]; picked.add(next.id); drawList(); }
         catch (err) { console.error(err); ok.disabled = false; flash?.("Couldn't save that spot. Check your connection.", "error"); }
       } }, [
         el("div", { class: "inline-form" }, [el("label", {}, ["Name (optional)", name]), el("label", {}, ["Length (ft)", dist])]),
-        el("div", { class: "inline-form" }, [el("label", {}, ["Break", brk]), el("label", {}, ["Slope", slp])]),
+        el("div", { class: "inline-form" }, [el("label", {}, ["Fall line", clk]), el("label", {}, ["Slope", sevSel])]),
         el("div", { class: "thread-actions" }, [ok, cancel]),
       ]);
     }
@@ -375,13 +378,13 @@ export async function render(main, { flash }) {
           try { await deleteSpot(owner, sp.id); spots = spots.filter((x) => x.id !== sp.id); picked.delete(sp.id); drawList(); } catch { flash?.("Couldn't delete it.", "error"); }
         });
         return el("li", { class: "pr-spot" }, [cb, el("div", {}, [el("strong", {}, `${sp.dist} ft${sp.name ? ` \u00b7 ${sp.name}` : ""}`),
-          el("p", { class: "muted small" }, `${breakText(sp.side)} \u00b7 ${slopeText(sp.fwd)}`)]), el("span", { class: "row-actions" }, [ed, del])]);
+          el("p", { class: "muted small" }, `Fall line: ${fallText({ side: sp.side, fwd: sp.fwd, fall: sp.fall })}`)]), el("span", { class: "row-actions" }, [ed, del])]);
       }));
       const add = el("button", { type: "button", class: "btn ghost" }, "\uFF0B  Add a spot");
       add.addEventListener("click", () => mount(adder, form()));
       const adder = el("div", {}, editing ? null : add);
       mount(box, [
-        el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "My putting spots"), el("p", { class: "muted small" }, "Real putts you can get to: how long, and how they break and slope. Then practise them, as many times each as you like.")])]),
+        el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "My putting spots"), el("p", { class: "muted small" }, "Real putts you can get to: how long, and which way they fall and how much. Then practise them, as many times each as you like.")])]),
         spots.length ? list : el("p", { class: "muted" }, "No spots yet."), adder, goRow,
       ]);
       drawGo();
@@ -395,7 +398,7 @@ export async function render(main, { flash }) {
       if (!use.length) return;
       // every spot in turn, round and round (spot 1, 2, 3, then 1, 2, 3 again…)
       const shots = [];
-      for (let k = 0; k < perSpot; k++) for (const sp of use) shots.push(withSlopes({ kind: "putt", startLie: "Green", startDist: sp.dist, spot: sp.name || "", spotId: sp.id, i: shots.length + 1 }, sp.side, sp.fwd));
+      for (let k = 0; k < perSpot; k++) for (const sp of use) { const f = spotFall(sp); shots.push(withFall({ kind: "putt", startLie: "Green", startDist: sp.dist, spot: sp.name || "", spotId: sp.id, i: shots.length + 1 }, f.clock, f.sev)); }
       const s = { id: newSessionId(), cat: "PUTT", status: "active", startedAt: new Date().toISOString(), plan: { counts: {}, mixes: {}, stimp: 11, total: shots.length, spots: use.map((x) => x.id) }, shots, playerKey: playerKey || myEntryKey(state), playerLabel: label };
       save(s);
       ctx.playSession(s);

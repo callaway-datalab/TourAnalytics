@@ -3,7 +3,9 @@
  * green or putt, the aim map, and entering the result), the shot text, tiles, tables and patterns.
  */
 import { el, mount } from "../ui.js";
-import { teeResult, greenResult, fairwayX, puttLevels, withSlopes, breakText, slopeText, myAimText, SEV } from "../practice/model.js";
+import { teeResult, greenResult, fairwayX, puttLevels, withFall, fallOf, fallText, FALL_SEV, myAimText } from "../practice/model.js";
+// (update 157) the red dot on the picture, where what you've typed puts the ball
+const previewAt = (from, pt) => from.closest(".pr-shot")?.querySelector(".pr-visual svg")?.__preview?.(pt);
 import { holeSvg, greenSvg, puttSvg, planeSvg, scatterSvg, driveScatterSvg } from "../practice/draw.js";
 import { resultFromSpeech } from "../practice/analysis.js";
 
@@ -80,17 +82,19 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
     const plane = el("div", { class: "pr-plane-box" });
     const drawPlane = () => { const lv = puttLevels(shot); mount(plane, planeSvg(lv.side, lv.fwd)); };
     const opt = (val, label, cur) => el("option", { value: String(val), selected: val === cur }, label);
-    const lv0 = puttLevels(shot);
-    const brk = el("select", { "aria-label": "Break" }, [-3, -2, -1, 0, 1, 2, 3].map((v) => opt(v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "left to right" : "right to left"}` : "Straight", lv0.side)));
-    const slp = el("select", { "aria-label": "Slope" }, [3, 2, 1, 0, -1, -2, -3].map((v) => opt(v, v ? `${SEV[Math.abs(v)]} ${v > 0 ? "uphill" : "downhill"}` : "Flat", lv0.fwd)));
-    const change = () => { withSlopes(shot, Number(brk.value), Number(slp.value)); drawPlane(); drawVisual(); drawFacts(); onClub?.(); };
-    brk.addEventListener("change", change); slp.addEventListener("change", change);
+    // (update 157) the fall line: the clock time water would run off the hole (6 o'clock: straight uphill), and how severe
+    const f0 = fallOf(shot);
+    const clk = el("select", { "aria-label": "Fall line" }, [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((v) => opt(v, `${v} o'clock${v === 12 ? " (downhill)" : v === 6 ? " (uphill)" : v === 3 ? " (breaks right)" : v === 9 ? " (breaks left)" : ""}`, f0.clock)));
+    const sev = el("select", { "aria-label": "Slope" }, [0, 1, 2, 3].map((v) => opt(v, FALL_SEV[v], Math.min(3, Math.round(f0.sev)))));
+    const change = () => { withFall(shot, Number(clk.value), Number(sev.value)); clk.disabled = sev.value === "0"; drawPlane(); drawVisual(); drawFacts(); onClub?.(); };
+    clk.disabled = !f0.sev;
+    clk.addEventListener("change", change); sev.addEventListener("change", change);
     drawPlane();
     // the green speed (update 154): the session's, set here for every putt that follows
     const st = el("input", { type: "number", inputmode: "decimal", min: 6, max: 16, step: 0.5, value: stimp, "aria-label": "Green speed (stimp)" });
     st.addEventListener("change", () => { const v = Math.max(6, Math.min(16, Number(st.value) || 11)); st.value = v; stimp = v; onStimp?.(v); drawVisual(); drawFacts(); });
     slopeBox = el("div", { class: "pr-slopes" }, [
-      el("div", { class: "pr-slope-pick" }, [el("label", {}, [el("span", { class: "rd-label" }, "Break"), brk]), el("label", {}, [el("span", { class: "rd-label" }, "Slope"), slp]), el("label", { class: "pr-stimp-in" }, [el("span", { class: "rd-label" }, "Stimp"), st])]),
+      el("div", { class: "pr-slope-pick" }, [el("label", {}, [el("span", { class: "rd-label" }, "Fall line"), clk]), el("label", {}, [el("span", { class: "rd-label" }, "Slope"), sev]), el("label", { class: "pr-stimp-in" }, [el("span", { class: "rd-label" }, "Stimp"), st])]),
       plane,
     ]);
   }
@@ -113,7 +117,7 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
 
 export function shotTitle(x) {
   if (x.kind === "tee") return x.startLie && x.startLie !== "Tee box" ? `${x.hole} yds \u00b7 ${x.startLie.toLowerCase()}, down the fairway` : `${x.club} \u00b7 ${x.hole}-yd par ${x.par}`;
-  if (x.kind === "putt") { const lv = puttLevels(x); return `${n1(x.startDist)} ft${x.spot ? ` \u00b7 ${x.spot}` : ""} · ${breakText(lv.side).toLowerCase()}${lv.fwd ? `, ${slopeText(lv.fwd).toLowerCase()}` : ""}`; }
+  if (x.kind === "putt") return `${n1(x.startDist)} ft${x.spot ? ` \u00b7 ${x.spot}` : ""} · ${fallText(x) === "Flat" ? "flat" : `fall line ${fallText(x)}`}`;
   if (x.startLie === "Fringe") return `${Math.round(x.startDist * 3)} ft \u00b7 fringe`;
   const lie = x.startLie === "Tee box" ? `tee, par 3` : x.startLie === "Bunker" ? (x.startDist <= 50 ? "greenside bunker" : "fairway bunker") : x.startLie.toLowerCase();
   return `${Math.round(x.startDist)} yds \u00b7 ${lie}`;
@@ -149,8 +153,7 @@ export function shotFacts(x, stimp) {
   }
   if (x.kind === "putt") {
     return [
-      ["Break", breakText(puttLevels(x).side)],
-      ["Slope", slopeText(puttLevels(x).fwd)],
+      ["Fall line", fallText(x)],
       x.myAim ? ["Your aim", myAimText(x.myAim)] : ["Green speed", `Stimp ${stimp || 11}`],
     ];
   }
@@ -267,7 +270,9 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
       setResult({ ...teeResult(shot, Math.round(t), offline), total: Math.round(t), offline, source: "typed" });
     };
     tot.addEventListener("change", apply); off.addEventListener("change", apply);
-    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.abs(aim.x) >= 1.5 ? "Offline from your aim line (yds)" : "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
+    const pv = () => { const t = Number(tot.value), o = Number(off.value || 0); previewAt(tot, t > 0 && (!o || side) ? { x: aimLineX(aim, t) + o * (side || 1), y: t } : null); };
+    tot.addEventListener("input", pv); off.addEventListener("input", pv); sideSeg.addEventListener("click", () => setTimeout(pv));
+    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.abs(aim.x) >= 1.5 ? "Offline from your aim line (yds)" : "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
       el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like \u201c285, 12 left\u201d.")];
   }
   // how far you hit it and how far offline: where it finished (and what's left) is worked out (update 154)
@@ -295,6 +300,8 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
     };
     sd.draw(apply);
     rolled.addEventListener("change", apply); off.addEventListener("change", apply);
+    const pv = () => { const h = Number(rolled.value), o = Number(off.value || 0); previewAt(rolled, h > 0 && (!o || sd.get()) ? { x: o * (sd.get() || 1), y: h - D } : null); };
+    rolled.addEventListener("input", pv); off.addEventListener("input", pv); sd.seg.addEventListener("click", () => setTimeout(pv));
     return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Rolled (ft)"), rolled]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (ft)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg])]), hint,
       el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Rolled: how far the ball went (past the hole is more than the putt's length). Say “made it” or “2 feet long”.")];
   }
@@ -318,7 +325,9 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
   };
   sd.draw(apply);
   hit.addEventListener("change", apply); off.addEventListener("change", apply);
-  return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg]), holed]), hint,
+  const pv = () => { const h = Number(hit.value), o = Number(off.value || 0); if (!(h > 0) || (o && !sd.get())) { previewAt(hit, null); return; } const a = o * (sd.get() || 1); previewAt(hit, { x: fx + ux * h + uy * a, y: fy + uy * h - ux * a }); };
+  hit.addEventListener("input", pv); off.addEventListener("input", pv); sd.seg.addEventListener("click", () => setTimeout(pv));
+  return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg]), holed]), hint,
     el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went along your target line; offline: how far left or right of it. Where it finished, and what's left, are worked out. Or tap where it finished.")];
 
 }

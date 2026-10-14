@@ -3206,3 +3206,28 @@ button.ti-name:hover { color: var(--accent); }
 @media (max-width: 560px) { .pr-hit-row { grid-template-columns: 1fr 1fr; } .pr-hit-row > div:last-child { grid-column: 1 / -1; } }
 .pr-aim-handle { cursor: grab; touch-action: none; }
 .pr-aim-handle:active { cursor: grabbing; }
+
+/* ---- update 157: Course Prep filters, side divider, the red dot ---- */
+.pr-side .seg-btn + .seg-btn { position: relative; }
+.pr-side .seg-btn + .seg-btn::before { content: ""; position: absolute; left: -2px; top: 22%; bottom: 22%; width: 1px; background: rgba(255,255,255,0.35); }
+.pr-side .seg-btn.on::before, .pr-side .seg-btn.on + .seg-btn::before { opacity: 0; }
+.pr-hit-entry .pr-result[hidden], .pr-result:empty { display: none; }
+.pr-filt-h { margin: 1rem 0 0.4rem; font-size: 1rem; }
+.pr-filters { margin: 0.4rem 0 1rem; }
+.pr-dd-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pr-dd { position: relative; }
+.pr-dd > summary { list-style: none; cursor: pointer; display: flex; flex-direction: column; gap: 0.1rem; min-width: 8.5rem; padding: 0.5rem 2rem 0.5rem 0.8rem; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); }
+.pr-dd > summary::-webkit-details-marker { display: none; }
+.pr-dd > summary::after { content: "\25BE"; position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--ink-2); }
+.pr-dd[open] > summary { border-color: rgba(255,255,255,0.45); }
+.pr-dd > summary strong { font-weight: 600; font-size: 0.95rem; }
+.pr-dd > summary strong.some { color: #d4b483; }
+.pr-dd-menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 13rem; max-height: 22rem; overflow: auto; padding: 0.6rem 0.75rem; border-radius: 12px; background: #17181b; border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,0.5); }
+.pr-dd-top { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; padding-bottom: 0.45rem; margin-bottom: 0.35rem; border-bottom: 1px solid var(--line); font-size: 0.88rem; }
+.pr-dd-g { margin: 0.35rem 0 0.15rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); }
+.pr-dd-opt { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; cursor: pointer; white-space: nowrap; }
+.pr-dd-opt input { width: 1.05rem; height: 1.05rem; accent-color: #d4b483; }
+.pr-filt-note { margin: 0.5rem 0 0; }
+.pr-filt-note.bad { color: #ff6b61; }
+.pr-hole-shots li.pr-auto { opacity: 0.6; }
+@media (max-width: 560px) { .pr-dd { flex: 1 1 calc(50% - 0.5rem); } .pr-dd > summary { min-width: 0; } .pr-dd:nth-child(2n) .pr-dd-menu { left: auto; right: 0; } }

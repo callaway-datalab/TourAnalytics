@@ -232,8 +232,31 @@ function makePutt(b, brk, slope) {
 export function puttFrom(D, brk = pick(["straight", "lr", "lr", "rl", "rl"]), slope = pick(["up", "flat", "down"])) {
   // (update 151) how much it breaks and how up / downhill it is, in words: gentle, moderate or severe
   const side = brk === "straight" ? 0 : (brk === "lr" ? 1 : -1) * rint(1, 3), fwd = slope === "flat" ? 0 : (slope === "up" ? 1 : -1) * rint(1, 3);
-  return { kind: "putt", startLie: "Green", startDist: D, ...withSlopes({}, side, fwd) };
+  const p = { kind: "putt", startLie: "Green", startDist: D, ...withSlopes({}, side, fwd) };
+  // (update 157) as a fall line: the clock time water would run from the hole (6 o'clock: straight uphill), and how much
+  const sev = Math.max(Math.abs(side), Math.abs(fwd));
+  return sev ? withFall(p, clockOf(side, fwd), sev) : withFall(p, 12, 0);
 }
+/** The fall line's clock time for a side slope (+ breaks left to right) and forward slope (+ uphill). */
+export function clockOf(side, fwd) {
+  if (!side && !fwd) return 12;
+  const a = Math.atan2(side, -fwd); // 0 = 12 o'clock (downhill, away from you), clockwise
+  const h = Math.round(((a * 180) / Math.PI + 360) % 360 / 30) % 12;
+  return h === 0 ? 12 : h;
+}
+/** Set a putt's fall line (clock 1–12, severity 0 flat … 3 severe); its side / forward slopes follow. */
+export function withFall(p, clock, sev) {
+  const t = ((clock % 12) * 30 * Math.PI) / 180;
+  const side = Math.round(sev * Math.sin(t) * 100) / 100, fwd = Math.round(-sev * Math.cos(t) * 100) / 100;
+  return Object.assign(withSlopes(p, side, fwd), { fall: { clock, sev } });
+}
+export const FALL_SEV = ["Flat", "Slight", "Moderate", "Severe"];
+/** "4 o'clock · moderate" (or "Flat"). */
+export function fallText(p) {
+  const f = p.fall || (() => { const lv = puttLevels(p); const sev = Math.round(Math.max(Math.abs(lv.side), Math.abs(lv.fwd))); return { clock: clockOf(lv.side, lv.fwd), sev }; })();
+  return f.sev ? `${f.clock} o'clock \u00b7 ${FALL_SEV[Math.min(3, Math.round(f.sev))].toLowerCase()}` : "Flat";
+}
+export const fallOf = (p) => p.fall || (() => { const lv = puttLevels(p); return { clock: clockOf(lv.side, lv.fwd), sev: Math.round(Math.max(Math.abs(lv.side), Math.abs(lv.fwd))) }; })();
 /** Severity words, 1–3. */
 export const SEV = ["", "Gentle", "Moderate", "Severe"];
 /** A putt's side slope (+ breaks left to right) and forward slope (+ uphill), −3…3 (older putts: from their %). */
@@ -245,10 +268,11 @@ export function puttLevels(p) {
 }
 /** Set a putt's slopes (keeping breakDir / slope in step, which the summaries use). */
 export function withSlopes(p, side, fwd) {
-  return Object.assign(p, { side, fwd, breakDir: side > 0 ? "lr" : side < 0 ? "rl" : "straight", slope: fwd > 0 ? "up" : fwd < 0 ? "down" : "flat" });
+  return Object.assign(p, { side, fwd, breakDir: side >= 0.3 ? "lr" : side <= -0.3 ? "rl" : "straight", slope: fwd >= 0.3 ? "up" : fwd <= -0.3 ? "down" : "flat" });
 }
-export const breakText = (side) => (side ? `${SEV[Math.abs(side)]} ${side > 0 ? "left to right" : "right to left"}` : "Straight");
-export const slopeText = (fwd) => (fwd ? `${SEV[Math.abs(fwd)]} ${fwd > 0 ? "uphill" : "downhill"}` : "Flat");
+const sevWord = (v) => SEV[Math.min(3, Math.max(1, Math.round(Math.abs(v))))];
+export const breakText = (side) => (Math.abs(side) >= 0.3 ? `${sevWord(side)} ${side > 0 ? "left to right" : "right to left"}` : "Straight");
+export const slopeText = (fwd) => (Math.abs(fwd) >= 0.3 ? `${sevWord(fwd)} ${fwd > 0 ? "uphill" : "downhill"}` : "Flat");
 /** Your own aim on one of your putting spots: "1 ft short and 3 ft left". */
 export const myAimText = (a) => (a ? [a.long ? `${Math.abs(a.long)} ft ${a.long > 0 ? "long" : "short"}` : "", a.right ? `${Math.abs(a.right)} ft ${a.right > 0 ? "right" : "left"}` : ""].filter(Boolean).join(" and ") || "at the hole" : "");
 /** A rough read: how far to aim outside the hole (inches) and how much longer / shorter it plays (ft). */
