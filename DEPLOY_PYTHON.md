@@ -3,10 +3,28 @@
 Your Python code sends a DataFrame to the portal, and the portal updates itself. You don't need to open anything.
 Uploading by hand on **Upload Data** still works exactly as before.
 
-How it works: `python/tour_upload.py` puts the file in Cloud Storage under `incoming/`. The **data-import**
-function sees it arrive and does what the Upload Data page does: it splits the rows per player, updates
-the rankings and the lie / distance detail, and then deletes the file. Players see the new data the next time
-they open or refresh the portal. A file with the same name as one already uploaded replaces it.
+How it works (update 165): `python/tour_upload.py` does the heavy part on your computer, where there's no time
+or memory limit. pandas splits the rows per player and saves them straight to the portal's database, exactly as
+the Upload Data page would. Then it drops a small marker file in Cloud Storage (`incoming/_rebuild/`), and the
+**data-import** function rebuilds the rankings and the lie / distance detail from the saved rows. Players see the
+new data the next time they open or refresh the portal. A file with the same name as one already uploaded
+replaces it.
+
+(Before update 165 the whole file went to the cloud function, which had to read it in one go inside its
+9 minutes and 2 GiB. A very big file couldn't finish, and the run was stopped without a word, so Upload Data said
+"Reading the file" for ever. A file of a couple of million rows now takes a few minutes: about 20 seconds to
+split, then the time your connection takes to send the rows, then a minute or two for the rankings.)
+
+## Updating to update 165 (once)
+
+1. Cloud Run → `data-import` → **Source** → **Edit source**: replace `index.js` with the new
+   `functions/data-import/index.js` and click **Save and redeploy**.
+2. Cloud Run → `data-import` → **Edit & deploy new revision** → set **Memory** to **4 GiB** (and keep the request
+   timeout at 540 seconds). Deploy.
+3. Replace your copy of `tour_upload.py` with the new `python/tour_upload.py`.
+
+Your stuck upload from before: the next upload marks it as stopped and clears its leftover file out of
+`incoming/`. (Upload Data already shows it as **Stopped**.) Then send the file again with the new script.
 
 Do steps 1–4 once.
 
@@ -64,8 +82,20 @@ from tour_upload import upload_dataframe
 upload_dataframe(df, "strokes_gained_2026", description="Weekly ShotLink pull")
 ```
 
-Nothing is saved to disk: the DataFrame is packed as Parquet in memory and sent (much smaller and quicker than
-CSV for big data). Without pyarrow it sends gzipped CSV instead; `fmt="csv"` forces that.
+Nothing is saved to disk. It prints each step as it goes, e.g.
+
+```
+Uploading "strokes_gained_2026" (1,800,000 rows)...
+  Splitting the rows per player on this computer
+  Saving 1,512 players' rows (229 MB)
+  Saving 1,512 players' rows: 64%
+Rows live: "strokes_gained_2026", 1,800,000 rows for 1,512 players.
+  Updating rankings...
+Live: "strokes_gained_2026", 1,800,000 rows for 1,512 players. Rankings updated.
+```
+
+The rows are live (players see them) as soon as "Rows live" prints; the rankings follow a minute or two later.
+`mode="cloud"` sends the whole file to the cloud function the old way (small files only).
 
 It prints its progress and finishes with something like
 `Live: "strokes_gained_2026", 412,880 rows for 186 players.` If something's wrong with the data (no
@@ -81,8 +111,10 @@ Files sent from Python are tagged **Python** in the list of uploaded files.
 
 ## Limits and cost
 
-- The function has 9 minutes per file. If a very large file runs out of time or memory (Upload Data shows it as
-  Failed), set the function's memory to 4 GiB, or split by year and send each part under its own name.
+- The cloud function only rebuilds the rankings now (a couple of million rows takes about a minute of its 9).
+  If it ever stops for time or memory, Upload Data shows it as **Stopped**; the rows are still live, and opening
+  Analyze on a computer rebuilds the rankings. A file over 40 MB sent the old way (`mode="cloud"`, or an older
+  `tour_upload.py`) is turned away with a message saying to use the new script.
 - The cost should stay within the free monthly allowances: a few invocations a week, each a minute or two.
   The function also starts briefly whenever anything else is saved to the bucket (the detail files). It
   ignores those and returns straight away.

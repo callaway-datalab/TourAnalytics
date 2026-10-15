@@ -94,9 +94,14 @@ export async function render(main, { flash }) {
     if (!list.length) { mount(importsBox, null); return; }
     mount(importsBox, [
       el("h2", {}, "From Python"),
-      el("ul", { class: "py-list" }, list.map((x) => {
+      el("ul", { class: "py-list" }, list.map((x0) => {
+        // (update 165) no heartbeat for 15 minutes: the cloud stopped it (time or memory), so say so
+        const beat = x0.updatedAt?.toMillis?.() ?? x0.startedAt?.toMillis?.() ?? 0;
+        const x = x0.status === "running" && beat && Date.now() - beat > 15 * 60 * 1000
+          ? { ...x0, status: "error", stopped: true, message: x0.rows ? "Stopped while updating the rankings (the rows are live). Opening Analyze on a computer rebuilds them." : "Stopped: the cloud ran out of time or memory reading a file this big. Send it again with tour_upload.py from update 165, which splits it on your computer first." }
+          : x0;
         const state = x.status === "done" ? el("span", { class: "py-ok" }, "Live")
-          : x.status === "error" ? el("span", { class: "py-err" }, "Failed")
+          : x.status === "error" ? el("span", { class: "py-err" }, x.stopped ? "Stopped" : "Failed")
           : el("span", { class: "py-run" }, x.step ? `${x.step}\u2026` : "Working\u2026");
         const detail = x.status === "done" ? `${num(x.rows)} rows for ${num(x.people)} ${x.people === 1 ? "person" : "people"}${x.blankIdRows ? ` \u00b7 ${num(x.blankIdRows)} rows had no ID` : ""}`
           : x.status === "error" ? x.message || "" : x.rows ? `${num(x.rows)} rows for ${num(x.people)} people` : "";

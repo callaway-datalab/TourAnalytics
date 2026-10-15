@@ -609,7 +609,7 @@ export function sgDashboard(container, opts) {
       const { reportBuilder } = await import("./reportGen.js");
       const state = getState();
       const flashMsg = (msg) => { const n = el("p", { class: "hero-pop-msg", role: "status" }, msg); body.prepend(n); setTimeout(() => n.remove(), 4000); };
-      const builder = reportBuilder({ playerKey: me.key, playerLabel: me.label, canSave: !!state.isAdmin && !String(me.key).startsWith("a_"), flash: flashMsg,
+      const builder = reportBuilder({ playerKey: me.key, playerLabel: me.label, canSave: false, flash: flashMsg, // (update 164: no Save to Reports here)
         source: opts.entered ? "entered" : "tour", minRounds: minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: tourCounts.length ? (st.tour[0] ?? null) : null,
         fullField: fieldIsSummary() ? null : fieldAll }); // (the admin: everyone's rows, for ranks by distance)
       const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");

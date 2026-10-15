@@ -1,5 +1,5 @@
 /*
- * Practice › Launch Data (update 152): how each of your clubs launches. Pick the club (its make, model and shaft, from
+ * Practice › Launch Monitor Data (update 152): how each of your clubs launches. Pick the club (its make, model and shaft, from
  * your bag or typed in), load a GCQuad or TrackMan CSV, and every number in it shows per club: speeds, smash,
  * launch, spin, delivery (attack, path, face), height, descent, carry, total and dispersion, with the gaps
  * through the bag. (Carry and offline still feed the aim maps elsewhere in Practice.)
@@ -50,7 +50,7 @@ export async function render(ctx) {
   const add = el("button", { type: "button", class: "btn" }, "\uFF0B  Add launch data");
   add.addEventListener("click", () => ctx.go({ name: "bagImport" }));
   const hero = el("section", { class: "panel pr-hero" }, [
-    el("div", {}, [el("p", { class: "pr-eyebrow" }, "Practice"), el("h1", {}, "Launch Data"),
+    el("div", {}, [el("p", { class: "pr-eyebrow" }, "Practice"), el("h1", {}, "Launch Monitor Data"),
       el("p", { class: "muted pr-lede" }, "How each of your clubs launches. Pick the club (make, model and shaft), load a GCQuad or TrackMan export, and every number shows here: speeds, smash, launch, spin, delivery, height, carry and dispersion.")]),
     el("div", { class: "pr-row pr-wrap-row" }, [add]),
   ]);
@@ -185,7 +185,7 @@ function filesPanel(ctx) {
     const by = {};
     for (const x of s.shots || []) { const lbl = s.specs?.[x.spec]?.type || x.club || "Club"; by[lbl] = (by[lbl] || 0) + 1; }
     const del = el("button", { type: "button", class: "link danger" }, "Delete");
-    del.addEventListener("click", async () => { if (!confirmAction("Delete this file's shots from Launch Data?")) return; await ctx.remove(s.id); render(ctx); });
+    del.addEventListener("click", async () => { if (!confirmAction("Delete this file's shots from Launch Monitor Data?")) return; await ctx.remove(s.id); render(ctx); });
     return el("div", { class: "pr-sess pr-sess-static" }, [
       el("span", { class: "pr-sess-d" }, [new Date(s.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), el("span", { class: "pr-sess-tag" }, s.fileName || "Launch monitor")]),
       el("span", { class: "muted" }, sortClubs(Object.keys(by)).map((c) => `${c} \u00d7${by[c]}`).join(", ")),
@@ -215,7 +215,7 @@ async function drawImport(ctx) {
   which.addEventListener("change", () => { other.hidden = which.value !== "other"; });
   const input = el("input", { type: "file", accept: ".csv,text/csv,.txt" });
   const status = el("p", { class: "muted small", "aria-live": "polite" });
-  const save = el("button", { type: "button", class: "btn pr-go", disabled: true }, "Save to Launch Data");
+  const save = el("button", { type: "button", class: "btn pr-go", disabled: true }, "Save to Launch Monitor Data");
   let parsed = null, fileName = "";
   // which club each shot is: the one picked, or (every club) the file's Club column matched to your bag
   const assign = () => {
@@ -261,7 +261,7 @@ async function drawImport(ctx) {
   mount(ctx.body, [
     el("p", { class: "crumb" }, back),
     el("section", { class: "panel pr-plan" }, [
-      el("p", { class: "pr-eyebrow" }, "Launch Data"), el("h1", {}, "Add launch data"),
+      el("p", { class: "pr-eyebrow" }, "Launch Monitor Data"), el("h1", {}, "Add launch data"),
       el("label", { class: "pr-club-pick" }, [el("span", { class: "rd-label" }, "Which club"), which]),
       bag.length ? null : el("p", { class: "muted small" }, "Add your clubs in What's in the Bag to pick them here with their make, model and shaft, or choose \u201cAnother club\u201d."),
       other,

@@ -1,5 +1,5 @@
 // Practice in Firestore.
-//   practice/{owner}/sessions/{id}   your sessions, games, rounds and Launch Data shots
+//   practice/{owner}/sessions/{id}   your sessions, games, rounds and Launch Monitor Data shots
 //   practice/{owner}/games/{id}      games you've made, or your versions of the built-in ones (update 139)
 //   assignedGames/{playerKey}/games/{id}  games a coach (or the admin) has sent a player (update 139)
 // The owner is a player's key (so their coach and the admin can see their practice in Analyze), or the signed-in

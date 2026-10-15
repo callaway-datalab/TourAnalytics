@@ -2,6 +2,7 @@
 // letter and works the same on phones. Players are listed by name; when two IDs share a name, typing it
 // asks which one. Remembers the last player chosen across those pages.
 import { el, mount } from "./ui.js";
+import { favoriteKeys } from "./watchlist.js";
 
 let lastPick = null; // { key, label }
 
@@ -14,9 +15,10 @@ export function sameNamePlayers(players, text) {
 }
 
 export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
-  // pinKey (you) always sits at the top of the list.
-  const players = [...labels.entries()].map(([key, label]) => ({ key, label, id: ids.get(key) || key.replace(/^c_/, "") }))
-    .sort((a, b) => (a.key === pinKey ? -1 : b.key === pinKey ? 1 : a.label.localeCompare(b.label)));
+  // pinKey (you) always sits at the top of the list, then your Watchlist's players (★, update 164), then everyone
+  const fav = new Set(favoriteKeys());
+  const players = [...labels.entries()].map(([key, label]) => ({ key, label, id: ids.get(key) || key.replace(/^c_/, ""), fav: fav.has(key) }))
+    .sort((a, b) => (a.key === pinKey ? -1 : b.key === pinKey ? 1 : (b.fav - a.fav) || a.label.localeCompare(b.label)));
   const listId = "pp-" + Math.random().toString(36).slice(2, 7);
   const input = el("input", { type: "search", placeholder: "Type a player's name\u2026", autocomplete: "off", role: "combobox",
     "aria-autocomplete": "list", "aria-controls": listId, "aria-expanded": "false", enterkeyhint: "search" });
@@ -37,7 +39,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
     shown = players.filter((p) => !t || p.label.toLowerCase().includes(t) || p.id.toLowerCase().includes(t)).slice(0, 50);
     mount(list, shown.length
       ? shown.map((p, i) => {
-          const li = el("li", { class: "pp-item" + (i === active ? " on" : "") + (p.key === pinKey ? " me" : ""), role: "option", id: `${listId}-${i}`, "aria-selected": i === active ? "true" : "false" }, p.label);
+          const li = el("li", { class: "pp-item" + (i === active ? " on" : "") + (p.key === pinKey ? " me" : "") + (p.fav ? " fav" : ""), role: "option", id: `${listId}-${i}`, "aria-selected": i === active ? "true" : "false" }, p.fav ? [el("span", { class: "pp-star", "aria-label": "On your Watchlist" }, "\u2605"), p.label] : p.label);
           li.addEventListener("mousedown", (e) => e.preventDefault()); // keep focus on a computer
           li.addEventListener("click", () => choose(p)); // a real tap, so scrolling the list doesn't pick
           return li;

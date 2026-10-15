@@ -14,6 +14,12 @@
  * The file's settings ride on its Storage metadata: name, description, idColumn (default playerID).
  * Accepts .csv, .csv.gz and .parquet.
  *
+ * (update 165) Big files: tour_upload.py now splits the rows per player on your computer and saves them itself
+ * (no time or memory limit there), then drops a small marker in incoming/_rebuild/. For that marker this function
+ * only rebuilds the rankings and the lie / distance detail, reading the saved rows player by player. A file too big
+ * to read here in one go is turned away with that advice, and every step keeps a heartbeat (updatedAt), so a run
+ * that's stopped for time or memory shows as stopped instead of "Reading the file" for ever.
+ *
  * This is the source. index.js is this file bundled with the shared portal code (see build.sh); deploy index.js.
  * Deploy: see DEPLOY_PYTHON.md. Entry point: dataImport  Runtime: Node.js 22
  * Trigger: Cloud Storage, object finalized, bucket touranalytics-dd46e.firebasestorage.app
@@ -33,7 +39,9 @@ const { Storage } = require("@google-cloud/storage");
 const db = new Firestore();
 const gcs = new Storage();
 const PREFIX = "incoming/";
+const REBUILD = "incoming/_rebuild/";
 const DETAIL_FORMAT = 1;
+const MAX_DIRECT_BYTES = 40 * 1024 * 1024; // (bigger files: tour_upload.py splits them on your computer)
 
 functions.cloudEvent("dataImport", async (event) => {
   const obj = event.data || {};
@@ -44,14 +52,23 @@ functions.cloudEvent("dataImport", async (event) => {
   const meta = obj.metadata || {};
   const fileName = path.slice(PREFIX.length);
   const name = String(meta.name || fileName.replace(/\.(csv\.gz|csv|parquet)$/i, "")).trim();
+  if (path.startsWith(REBUILD)) return rebuild(bucket, file, meta);
   const status = db.doc(`imports/${obj.generation || Date.now()}`);
   const set = (fields) => status.set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  // too big to read in one go here (the run would be stopped for time or memory part-way, silently)
+  if (Number(obj.size) > MAX_DIRECT_BYTES) {
+    await set({ file: fileName, name, status: "error", step: null, startedAt: FieldValue.serverTimestamp(), finishedAt: FieldValue.serverTimestamp(),
+      message: `This file is ${Math.round(Number(obj.size) / 1048576)} MB, too big for the cloud to read in one go. Send it with the latest tour_upload.py (update 165 or later), which splits it on your computer first.` });
+    await file.delete().catch(() => {});
+    return;
+  }
 
   // (a retried event for a file that's already been done: nothing to do)
   const prior = await status.get();
   if (prior.exists && prior.data().status === "done") return;
   await set({ file: fileName, name, status: "running", step: "Reading the file", startedAt: FieldValue.serverTimestamp() });
   console.log(`Importing ${path} as "${name}" (${obj.size} bytes)`);
+  const beat = heartbeat(status);
 
   try {
     const [buf] = await file.download();
@@ -83,9 +100,63 @@ functions.cloudEvent("dataImport", async (event) => {
     console.error("Import failed", err);
     await set({ status: "error", step: null, message: String(err?.message || err), finishedAt: FieldValue.serverTimestamp() });
   } finally {
+    clearInterval(beat);
     await file.delete().catch((e) => console.warn("Couldn't delete the incoming file", e?.message));
   }
 });
+
+/** updatedAt every minute while a run is alive (a run stopped for time or memory then shows as stopped). */
+const heartbeat = (ref) => setInterval(() => ref.set({ updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {}), 60000);
+
+/*
+ * (update 165) The rankings and the lie / distance detail for a data file tour_upload.py has already saved: its
+ * rows are read back player by player (16 at a time) and each player's are turned into rounds straight away, so the
+ * raw rows never all sit in memory at once.
+ */
+async function rebuild(bucket, file, meta) {
+  const datasetId = String(meta.datasetId || ""), status = db.doc(`imports/${meta.statusId || `rebuild_${datasetId}`}`);
+  const set = (fields) => status.set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  const beat = heartbeat(status);
+  try {
+    const dsSnap = await db.doc(`datasets/${datasetId}`).get();
+    if (!dsSnap.exists) throw new Error("That data file isn't there any more.");
+    const ds = dsSnap.data(), idx = detectColumns(ds.columns || []);
+    let rankings = false, detail = null;
+    if (isShotData(idx)) {
+      await set({ step: "Updating rankings" });
+      const labels = await playerLabels();
+      const keys = ds.clientKeys || [], names = ds.playerNames || {}, players = [];
+      let done = 0;
+      const next = async () => {
+        while (keys.length) {
+          const key = keys.shift();
+          const m = await db.doc(`clientData/${key}/datasets/${datasetId}`).get();
+          const n = m.exists ? m.data().chunkCount || 0 : 0;
+          const refs = Array.from({ length: n }, (_, i) => db.doc(`clientData/${key}/datasets/${datasetId}/chunks/${i}`));
+          const snaps = refs.length ? await db.getAll(...refs) : [];
+          const rows = snaps.flatMap((sn) => (sn.exists ? JSON.parse(sn.data().data) : []));
+          const rounds = prepare(rows, idx);
+          for (const rd of rounds) for (const sh of rd.shots) delete sh.r; // (the raw row isn't needed from here)
+          if (rounds.length) players.push({ key, name: labels.get(key) || names[key] || key.replace(/^c_/, ""), rounds });
+          if (++done % 100 === 0) await set({ step: `Updating rankings (${done} of ${ds.clientKeys.length} players)` });
+        }
+      };
+      await Promise.all(Array.from({ length: 16 }, next));
+      await publishFieldStats(datasetId, buildFieldSummary(players), Date.now());
+      rankings = true;
+      await set({ step: "Updating lie and distance detail" });
+      detail = await publishFieldDetail(bucket, datasetId, players, Date.now());
+    }
+    await set({ status: "done", step: null, datasetId, rankings, detail: detail?.skipped || (detail ? "saved" : null), finishedAt: FieldValue.serverTimestamp() });
+    console.log(`Rebuilt rankings for ${datasetId}`);
+  } catch (err) {
+    console.error("Rebuild failed", err);
+    await set({ status: "error", step: null, message: `The rows are live, but the rankings couldn't be rebuilt: ${String(err?.message || err)}. Opening Analyze on a computer rebuilds them.`, finishedAt: FieldValue.serverTimestamp() });
+  } finally {
+    clearInterval(beat);
+    await file.delete().catch(() => {});
+  }
+}
 
 /* ---------------------------------------------------------------- reading ---------------------------------------------------------------- */
 

@@ -4,7 +4,7 @@
 //   friendEmails/{email} = { uid }              so a friend can be found by their exact email
 //   chatReach/{uid}     = { uids }              a player's or team member's team and Callaway staff
 // Friends are added by people themselves (chat.js) and checked by the Firestore rules.
-import { collection, doc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, adminUids } from "./firebase-init.js";
 import { isTeamKey } from "./data.js";
 import { getState } from "./auth.js";
@@ -57,5 +57,11 @@ export function syncChatCircles() {
     const staffDoc = { uids: [...new Set(staffIds)].sort() };
     ops.push((b) => b.set(doc(db, "chatStaff", "all"), staffDoc));
     for (let i = 0; i < ops.length; i += 400) { const b = writeBatch(db); ops.slice(i, i + 400).forEach((f) => f(b)); await b.commit(); }
+    // (update 164) the Callaway Analyst team chat: every analyst and the admin (analysts can't add themselves)
+    try {
+      const ref = doc(db, "chatRooms", "ca_staff"), snap = await getDoc(ref);
+      const want = [...new Set(staffIds)];
+      if (snap.exists() && !want.every((x) => snap.data().members.includes(x))) await updateDoc(ref, { members: [...new Set([...snap.data().members, ...want])] });
+    } catch { /* (opened once by someone, it's kept up to date from then on) */ }
   })().catch((err) => console.warn("chat sync", err)).finally(() => { running = null; }));
 }

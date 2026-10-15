@@ -50,6 +50,7 @@ export function mount(node, children) {
 export function icon(name) {
   const paths = {
     home: "M3 9.5 10 3l7 6.5V17H12v-4H8v4H3z",
+    star: "M10 2.2l2.4 5 5.4.6-4 3.7 1.1 5.4L10 14.2l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z",
     data: "M3 16V4h2v10h12v2zM7 12V8h2v4zm4 0V5h2v7zm4 0V9h2v3z",
     doc: "M5 2h7l4 4v12H5zm6 1.5V7h3.5zM7 10h7v1.5H7zm0 3h7v1.5H7z",
     chat: "M3 4h14v10H9l-4 3v-3H3z",
@@ -110,7 +111,10 @@ const sectionsFor = (kind) => {
     ["Practice", "#/practice", ["practice"]],
     ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
   ];
+  // (update 164) Watchlist: anyone with more than one player (Home for a player, or one player's coach)
+  const multi = admin || (kind === "team" && teamCount() > 1);
   return [
+    { id: "home", label: multi ? "Watchlist" : "Home", icon: multi ? "star" : "home", items: [[multi ? "Watchlist" : "Home", "#/watchlist", ["watchlist"]]] },
     { id: "data", label: "Analyze", icon: "data", items: dataItems },
     { id: "plan", label: "Play", icon: "doc", items: planItems },
   ];
@@ -141,7 +145,7 @@ export function relocateSectionNav(main, host) {
 export function sectionNav(currentRoute) {
   const kind = shellKind();
   const sec = sectionsFor(kind).find((x) => x.items.some((it) => itemOn(it, currentRoute)));
-  if (!sec) return null;
+  if (!sec || sec.items.length < 2) return null; // (Watchlist / Home: no row of pages under it)
   return el("nav", { class: "section-nav", "aria-label": sec.label }, sec.items.map((it) => {
     const [label, href, , opt = {}] = it;
     const on = itemOn(it, currentRoute);
@@ -232,7 +236,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
 
   mount(root, el("div", { class: "shell" }, [
     el("aside", { class: "rail" }, [
-      el("a", { class: "brand", href: admin ? "#/admin/clients" : team ? "#/team" : "#/dashboard" }, [logoImg(), portalName]),
+      el("a", { class: "brand", href: "#/watchlist" }, [logoImg(), portalName]),
       nav,
       el("div", { class: "rail-foot" }, footItems),
     ]),

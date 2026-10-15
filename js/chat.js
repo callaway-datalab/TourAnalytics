@@ -72,7 +72,15 @@ export function renderChat(container, { flash }) {
     nameWatch.set(id, onSnapshot(doc(db, "chatNames", id), (d) => { if (d.exists()) { people.set(id, d.data()); redraw(); } }, () => {}));
   };
   if (staff) {
-    unsubs.push(onSnapshot(collection(db, "chatNames"), (s) => { people.clear(); s.docs.forEach((d) => people.set(d.id, d.data())); redraw(); }, () => {}));
+    unsubs.push(onSnapshot(collection(db, "chatNames"), (s) => { s.docs.forEach((d) => people.set(d.id, d.data())); redraw(); }, () => {}));
+    // (update 164) the admin: everyone from the user list too, so an analyst shows even before the chat directory has them
+    if (state.isAdmin) import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js").then(({ getDocs }) => getDocs(collection(db, "users"))).then((snap) => {
+      let added = false;
+      snap.docs.forEach((d) => { const u = d.data(); if (people.has(d.id) || d.id === uid) return; added = true;
+        people.set(d.id, { name: u.name || u.email || "Someone", role: u.kind === "analyst" ? "analyst" : isTeamKey(u.clientKey) ? "team" : "player", title: u.kind === "analyst" ? "Analyst" : "" });
+        if (u.kind === "analyst" && !staffIds.includes(d.id)) staffIds = [...staffIds, d.id]; });
+      if (added) redraw();
+    }).catch(() => {});
   } else {
     unsubs.push(onSnapshot(doc(db, "chatReach", uid), (d) => { reach = d.exists() ? d.data().uids || [] : []; reach.forEach(watchName); redraw(); }, () => {}));
   }
@@ -94,6 +102,8 @@ export function renderChat(container, { flash }) {
   const nameOf = (id) => (id === uid ? "You" : people.get(id)?.name || (staffIds.includes(id) ? "Callaway Analyst" : "Someone"));
   const roleOf = (id) => { const p = people.get(id); return p ? p.title || roleName(p.role) : staffIds.includes(id) ? "Callaway" : ""; };
   const isStaffId = (id) => staffIds.includes(id) || ["admin", "analyst"].includes(people.get(id)?.role);
+  // every Callaway analyst (and the admin) the chat knows of
+  const allStaff = () => [...new Set([...adminUids, ...staffIds, ...[...people.keys()].filter((id) => ["admin", "analyst"].includes(people.get(id)?.role))])];
   // who I can message, in sections
   function contacts() {
     const others = staff ? [...new Set([...people.keys(), ...staffIds])].filter((id) => id !== uid) : [...new Set([...staffIds, ...reach, ...friends])].filter((id) => id !== uid);
@@ -105,7 +115,8 @@ export function renderChat(container, { flash }) {
   }
   // "Callaway Analyst" (update 152; 153: always to the admin too): everyone's own conversation with Callaway's analysts (and the admin), always there
   const caId = `ca_${uid}`;
-  const roomName = (r) => (r.callaway ? (r.createdBy === uid ? "Callaway Analyst" : `${nameOf(r.createdBy)} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
+  const STAFF_ROOM = "ca_staff"; // (update 164) the analysts' own chat
+  const roomName = (r) => (r.staffRoom ? "Callaway Analyst" : r.callaway ? (r.createdBy === uid ? "Callaway Analyst" : `${nameOf(r.createdBy)} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
   // in your Callaway Analyst chat, Callaway's replies show as "Callaway Analyst (Sam)"
   const first = (n) => String(n || "").trim().split(/\s+/)[0] || "";
   const authorOf = (r, m) => (r?.callaway && r.createdBy === uid && m.uid !== uid ? `Callaway Analyst${first(m.name || nameOf(m.uid)) ? ` (${first(m.name || nameOf(m.uid))})` : ""}` : m.name || nameOf(m.uid));
@@ -145,21 +156,25 @@ export function renderChat(container, { flash }) {
     };
     // Callaway Analyst: always first, starred (yours; Callaway's staff see each person's)
     const mine = staff ? null : all.find((r) => r.id === caId) || { id: caId, callaway: true, createdBy: uid, members: [], type: "group", lastText: "" };
-    const rest = all.filter((r) => r.id !== caId && !(staff && r.callaway));
+    const rest = all.filter((r) => r.id !== caId && r.id !== STAFF_ROOM && !(staff && r.callaway));
     // (update 163) Callaway's staff: a permanent, starred Callaway Analyst at the top too, holding every person's
     // Callaway Analyst conversation (newest first); tap it to open or fold the list
+    // (update 164) the star opens the Callaway Analyst team chat (every analyst and the admin); the arrow folds the
+    // players' and teams' Callaway Analyst conversations under it
     const caRooms = staff ? all.filter((r) => r.callaway) : [];
+    const team = staff ? all.find((r) => r.id === STAFF_ROOM) : null;
     const caHead = staff ? (() => {
-      const any = caRooms.some((r) => unread(r) && r.id !== current);
-      const b = el("button", { type: "button", class: "chat-room chat-ca chat-ca-head", "aria-expanded": caOpen ? "true" : "false" }, [
+      const any = [...caRooms, ...(team ? [team] : [])].some((r) => unread(r) && r.id !== current);
+      const b = el("button", { type: "button", class: "chat-room chat-ca chat-ca-head" + (current === STAFF_ROOM ? " on" : "") }, [
         el("span", { class: "chat-room-icon", "aria-hidden": "true" }, "\u2605"),
-        el("span", { class: "chat-room-text" }, [el("strong", {}, "Callaway Analyst"), el("span", { class: "muted" }, caRooms.length ? `${caRooms.length} conversation${caRooms.length === 1 ? "" : "s"} with players and teams` : "Messages to Callaway Analyst show up here")]),
+        el("span", { class: "chat-room-text" }, [el("strong", {}, "Callaway Analyst"), el("span", { class: "muted" }, team?.lastText ? team.lastText.slice(0, 60) : "Your analysts' chat")]),
         any ? el("span", { class: "chat-dot", "aria-label": "Unread" }) : null,
-        el("span", { class: "chat-ca-caret", "aria-hidden": "true" }, caOpen ? "\u25B4" : "\u25BE"),
       ]);
-      b.addEventListener("click", () => { caOpen = !caOpen; drawList(); });
-      const sub = caOpen ? (caRooms.length ? caRooms.map((r) => { const li = item(r); li.classList.add("chat-ca-sub"); return li; }) : [el("li", { class: "chat-ca-sub chat-empty muted small" }, "No one has messaged Callaway Analyst yet.")]) : [];
-      return [el("li", {}, b), ...sub];
+      b.addEventListener("click", () => startStaffRoom());
+      const fold = el("button", { type: "button", class: "chat-ca-caret", "aria-expanded": caOpen ? "true" : "false", "aria-label": caOpen ? "Hide the players' conversations" : "Show the players' conversations", title: `${caRooms.length} conversation${caRooms.length === 1 ? "" : "s"} with players and teams` }, [caRooms.length ? String(caRooms.length) : "", caOpen ? " \u25B4" : " \u25BE"]);
+      fold.addEventListener("click", (e) => { e.stopPropagation(); caOpen = !caOpen; drawList(); });
+      const sub = caOpen ? (caRooms.length ? caRooms.map((r) => { const li = item(r); li.classList.add("chat-ca-sub"); return li; }) : [el("li", { class: "chat-ca-sub chat-empty muted small" }, "No player has messaged Callaway Analyst yet.")]) : [];
+      return [el("li", { class: "chat-ca-row" }, [b, fold]), ...sub];
     })() : [];
     const asks = incoming.map((r) => {
       const ok = el("button", { type: "button", class: "link chat-accept" }, "Accept"), no = el("button", { type: "button", class: "link" }, "Decline");
@@ -182,14 +197,14 @@ export function renderChat(container, { flash }) {
     const back = el("button", { type: "button", class: "link chat-back", "aria-label": "Back to chats" }, "\u2039 Chats");
     back.addEventListener("click", () => shell.classList.remove("show-thread"));
     const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
-    const sub = r.callaway ? (r.createdBy === uid ? "Callaway's analysts" : `${nameOf(r.createdBy)} \u00b7 to Callaway's analysts`) : r.type === "dm" ? (roleOf(other) || "Direct message") : r.members.map(nameOf).join(", ");
+    const sub = r.staffRoom ? `${r.members.length} people \u00b7 ${r.members.map(nameOf).join(", ")}` : r.callaway ? (r.createdBy === uid ? "Callaway's analysts" : `${nameOf(r.createdBy)} \u00b7 to Callaway's analysts`) : r.type === "dm" ? (roleOf(other) || "Direct message") : r.members.map(nameOf).join(", ");
     const actions = [];
-    if (!r.callaway) {
+    if (!r.callaway && !r.staffRoom) {
       const plus = el("button", { type: "button", class: "btn ghost chat-plus", title: "Add people", "aria-label": "Add people" }, "\uFF0B");
       plus.addEventListener("click", () => openPicker("add", r));
       actions.push(plus);
     }
-    if (r.type === "group" && !r.callaway) {
+    if (r.type === "group" && !r.callaway && !r.staffRoom) {
       const leave = el("button", { type: "button", class: "link danger" }, "Leave");
       leave.addEventListener("click", async () => {
         if (!confirmAction(`Leave \u201c${r.name}\u201d?`)) return;
@@ -258,15 +273,15 @@ export function renderChat(container, { flash }) {
   const personLabel = (id) => { const r = roleOf(id); return r ? [nameOf(id), el("span", { class: "muted small" }, ` \u00b7 ${r}`)] : nameOf(id); };
   let to = [];
   // everyone I can message (Callaway's staff, my team, friends; the admin and analysts: everyone)
-  const reachable = () => [...new Set(staff ? [...people.keys(), ...staffIds] : [...staffIds, ...reach, ...friends])].filter((id) => id !== uid);
+  const reachable = () => [...new Set(staff ? [...people.keys(), ...allStaff()] : [...allStaff(), ...reach, ...friends])].filter((id) => id !== uid);
   /** A search box with matches under it; picking one calls onPick(id). An email not in the list can be asked to chat. */
   function searchBox(onPick, exclude = []) {
     const input = el("input", { type: "search", class: "chat-find", placeholder: "Search for people\u2026", "aria-label": "Search for people", autocomplete: "off" });
     const res = el("ul", { class: "chat-results" });
     const draw = () => {
       const q = input.value.trim().toLowerCase();
-      const ids = reachable().filter((id) => !exclude.includes(id) && !to.includes(id) && (!q || nameOf(id).toLowerCase().includes(q) || roleOf(id).toLowerCase().includes(q)))
-        .sort((a, b) => nameOf(a).localeCompare(nameOf(b))).slice(0, q ? 20 : 8);
+      const ids = reachable().filter((id) => !exclude.includes(id) && !to.includes(id) && (!q || nameOf(id).toLowerCase().includes(q) || roleOf(id).toLowerCase().includes(q) || (isStaffId(id) && "callaway analyst".includes(q))))
+        .sort((a, b) => (isStaffId(b) - isStaffId(a)) || nameOf(a).localeCompare(nameOf(b))).slice(0, q ? 30 : Math.max(8, allStaff().length));
       const items = ids.map((id) => { const b = el("button", { type: "button", class: "chat-person" }, personLabel(id)); b.addEventListener("click", () => { input.value = ""; onPick(id); }); return el("li", {}, b); });
       if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(q)) {
         const b = el("button", { type: "button", class: "chat-person" }, [`Ask ${q} to chat`, el("span", { class: "muted small" }, " \u00b7 they accept, then you can message")]);
@@ -326,6 +341,24 @@ export function renderChat(container, { flash }) {
       else if (!team.every((x) => snap.data().members.includes(x))) await updateDoc(ref, { members: [...new Set([...snap.data().members, ...team])] }); // (analysts added since)
       open(caId);
     } catch { flash("Couldn't open Callaway Analyst. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
+  }
+  // the Callaway Analyst team chat: every analyst and the admin, kept up to date as analysts are added
+  async function startStaffRoom() {
+    const team = allStaff();
+    if (team.filter((x) => x !== uid).length < 1) {
+      current = null; drawList();
+      mount(head, el("div", { class: "chat-title" }, [el("strong", {}, "Callaway Analyst"), el("span", { class: "muted small" }, "Your analysts' chat")]));
+      mount(msgs, el("li", { class: "empty" }, "No analysts on the portal yet. Give someone Callaway Access as an Analyst on User Access and they'll be here."));
+      msgs.hidden = false; compose.hidden = true; form.hidden = true; shell.classList.add("show-thread");
+      return;
+    }
+    try {
+      const ref = doc(db, "chatRooms", STAFF_ROOM), snap = await getDoc(ref);
+      if (!snap.exists()) await setDoc(ref, { type: "group", staffRoom: true, name: "Callaway Analyst", members: team, createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "" });
+      else if (!snap.data().members.includes(uid)) { flash("You'll be added to the Callaway Analyst chat the next time the admin opens Chat."); return; }
+      else if (!team.every((x) => snap.data().members.includes(x))) await updateDoc(ref, { members: [...new Set([...snap.data().members, ...team])] }).catch(() => {});
+      open(STAFF_ROOM);
+    } catch { flash("Couldn't open the Callaway Analyst chat. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
   }
   async function startDm(other) {
     const id = `dm_${[uid, other].sort().join("_")}`;

@@ -1,5 +1,5 @@
 /*
- * Practice pieces shared by sessions, rounds, games and Launch Data (update 138): the shot card (the made-up hole,
+ * Practice pieces shared by sessions, rounds, games and Launch Monitor Data (update 138): the shot card (the made-up hole,
  * green or putt, the aim map, and entering the result), the shot text, tiles, tables and patterns.
  */
 import { el, mount } from "../ui.js";

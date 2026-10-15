@@ -25,8 +25,8 @@ const LS_CAT = "ta:practice:cat";
 // The tools beside the four categories (update 138)
 const LS_TOOL = "ta:practice:tool";
 // (update 157) no Games tab: Course Prep's filters cover it (old games still open from your history)
-// (update 160) Course Prep is its own page under Play (#/course-prep); Practice is Custom and Launch Data
-const TOOLS = { CUSTOM: "Custom", PREP: "Course Prep", BAG: "Launch Data" };
+// (update 160) Course Prep is its own page under Play (#/course-prep); Practice is Custom and Launch Monitor Data
+const TOOLS = { CUSTOM: "Custom", PREP: "Course Prep", BAG: "Launch Monitor Data" };
 const TOOL_ORDER = ["CUSTOM", "BAG"];
 
 const DEF_TOTAL = { OTT: 14, APP: 20, ARG: 20, PUTT: 24 };
@@ -54,7 +54,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
   const courseCache = new Map(); // cat -> { bucketId: { sgPer, n } }
   let roundsP = null;
 
-  // Custom · Course Prep · Games · Launch Data (update 139); Custom has the four categories inside it
+  // Custom · Course Prep · Games · Launch Monitor Data (update 139); Custom has the four categories inside it
   const tools = el("nav", { class: "pr-tabs", "aria-label": "Practice" });
   const pills = el("div", { class: "seg pr-catseg", role: "group", "aria-label": "Category" });
   const body = el("div", { class: "pr-body" });
@@ -99,7 +99,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     saveTimer = setTimeout(run, 700);
   }
 
-  /** Where the aim map's spread comes from: your club's pattern (Launch Data), else your practice pattern, else a typical one. */
+  /** Where the aim map's spread comes from: your club's pattern (Launch Monitor Data), else your practice pattern, else a typical one. */
   function aimFor(shot) {
     if (shot.kind === "putt") return null;
     const pats = bagPatterns(sessions, { min: 8 });
@@ -147,7 +147,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
   drawPills(); mount(body, el("p", { class: "muted pr-loading" }, "Loading your practice\u2026"));
   // your clubs for the Club picker on each shot: your WITB bag, else the usual set (update 145)
   ctx.clubs = ["Driver", "3w", "5w", "4H", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "50\u00b0", "54\u00b0", "58\u00b0"];
-  // how far each club carries (course prep's target, update 153): Launch Data launch data, else your WITB stock yardage, else a typical carry
+  // how far each club carries (course prep's target, update 153): Launch Monitor Data launch data, else your WITB stock yardage, else a typical carry
   const TYPICAL = { Driver: 275, "2w": 255, "3w": 245, "4w": 235, "5w": 225, "7w": 210, "2H": 230, "3H": 220, "4H": 210, "5H": 200, "6H": 190, "2i": 225, "3i": 215, "4i": 205, "5i": 195, "6i": 183, "7i": 172, "8i": 160, "9i": 148, PW: 136, AW: 124, GW: 120, SW: 100, LW: 85 };
   const stock = {};
   ctx.carryFor = (label) => {
@@ -320,7 +320,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     const stimpIn = cat === "PUTT" ? el("input", { type: "number", inputmode: "decimal", min: 7, max: 15, step: 0.5, value: stimp, "aria-label": "Green speed (stimp)" }) : null;
     stimpIn?.addEventListener("input", () => { stimp = Number(stimpIn.value) || 11; });
     // a launch monitor: hit the shots, load its file at the end (update 145)
-    const monCb = null, monRow = null; // (update 152: no launch monitor sessions; that's Launch Data)
+    const monCb = null, monRow = null; // (update 152: no launch monitor sessions; that's Launch Monitor Data)
     const go = el("button", { type: "button", class: "btn pr-go" }, "Build my session \u25B6");
     go.addEventListener("click", async () => {
       const plan = { cat, counts: { ...counts }, mixes, stimp };

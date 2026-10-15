@@ -199,6 +199,8 @@ var ALIASES = {
   date: ["date", "rounddate", "eventdate"],
   year: ["year", "season"],
   event: ["tournament", "event", "eventname", "tournamentname"],
+  course: ["course", "coursename", "venue", "golfcourse"],
+  // (update 160)
   round: ["playerrndname", "roundid", "round", "roundnumber", "rnd"],
   hole: ["hole", "holenumber"],
   distanceRange: ["distancerange", "distancebucket", "distance"],
@@ -370,8 +372,9 @@ function prepare(rows, idx) {
       const d = new Date(date);
       const year = get(r, "year") ?? (isNaN(d) ? "" : d.getFullYear());
       const tour = idx.tour !== void 0 && !isNull(get(r, "tour")) ? String(get(r, "tour")) : "";
+      const course = idx.course !== void 0 && !isNull(get(r, "course")) ? String(get(r, "course")).trim() : "";
       const noRound = idx.round !== void 0 && isNull(rnd);
-      rounds.set(key, { key, date: String(date), event: String(event), roundNo: noRound || isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, shots: [], ...noRound ? { eventLevel: true } : {} });
+      rounds.set(key, { key, date: String(date), event: String(event), roundNo: noRound || isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, ...course ? { course } : {}, shots: [], ...noRound ? { eventLevel: true } : {} });
     }
     return rounds.get(key);
   };
@@ -488,7 +491,7 @@ function buildFieldSummary(players) {
           x[1] += o.w;
         }
         for (const k of Object.keys(sx)) for (const c2 of Object.keys(sx[k])) sx[k][c2] = [Math.round(sx[k][c2][0] * 1e3) / 1e3, Math.round(sx[k][c2][1] * 1e3) / 1e3];
-        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, t: rd.tour || "", c, ...Object.keys(sx).length ? { s: sx } : {}, ...rd.eventLevel ? { ev: 1 } : {} };
+        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, t: rd.tour || "", ...rd.course ? { co: rd.course } : {}, c, ...Object.keys(sx).length ? { s: sx } : {}, ...rd.eventLevel ? { ev: 1 } : {} };
       })
     }))
   };
@@ -538,7 +541,7 @@ function encodeYear(players) {
       b++;
     }
     const plain = rd.key === `${rd.date}|${rd.event}|${rd.roundNo}`;
-    return [plain ? null : rd.key, id(rd.date), id(rd.event), rd.roundNo, id(rd.tour), rd.eventLevel ? 1 : 0, rd.shots.length, (rd.obs || []).length];
+    return [plain ? null : rd.key, id(rd.date), id(rd.event), rd.roundNo, id(rd.tour), rd.eventLevel ? 1 : 0, rd.shots.length, (rd.obs || []).length, id(rd.course || null)];
   })]);
   const wide = dict.length > 65535, I = wide ? Uint32Array : Uint16Array;
   const header = new TextEncoder().encode(JSON.stringify({ v: 1, year: players[0]?.rounds[0]?.year ?? "", wide, nS, nO, dict, players: hp }));
@@ -571,7 +574,9 @@ var { Storage } = require2("@google-cloud/storage");
 var db = new Firestore();
 var gcs = new Storage();
 var PREFIX = "incoming/";
+var REBUILD = "incoming/_rebuild/";
 var DETAIL_FORMAT = 1;
+var MAX_DIRECT_BYTES = 40 * 1024 * 1024;
 functions.cloudEvent("dataImport", async (event) => {
   const obj = event.data || {};
   const path = String(obj.name || "");
@@ -581,12 +586,28 @@ functions.cloudEvent("dataImport", async (event) => {
   const meta = obj.metadata || {};
   const fileName = path.slice(PREFIX.length);
   const name = String(meta.name || fileName.replace(/\.(csv\.gz|csv|parquet)$/i, "")).trim();
+  if (path.startsWith(REBUILD)) return rebuild(bucket, file, meta);
   const status = db.doc(`imports/${obj.generation || Date.now()}`);
   const set = (fields) => status.set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  if (Number(obj.size) > MAX_DIRECT_BYTES) {
+    await set({
+      file: fileName,
+      name,
+      status: "error",
+      step: null,
+      startedAt: FieldValue.serverTimestamp(),
+      finishedAt: FieldValue.serverTimestamp(),
+      message: `This file is ${Math.round(Number(obj.size) / 1048576)} MB, too big for the cloud to read in one go. Send it with the latest tour_upload.py (update 165 or later), which splits it on your computer first.`
+    });
+    await file.delete().catch(() => {
+    });
+    return;
+  }
   const prior = await status.get();
   if (prior.exists && prior.data().status === "done") return;
   await set({ file: fileName, name, status: "running", step: "Reading the file", startedAt: FieldValue.serverTimestamp() });
   console.log(`Importing ${path} as "${name}" (${obj.size} bytes)`);
+  const beat = heartbeat(status);
   try {
     const [buf] = await file.download();
     const table = await readTable(buf, fileName);
@@ -621,9 +642,57 @@ functions.cloudEvent("dataImport", async (event) => {
     console.error("Import failed", err);
     await set({ status: "error", step: null, message: String(err?.message || err), finishedAt: FieldValue.serverTimestamp() });
   } finally {
+    clearInterval(beat);
     await file.delete().catch((e) => console.warn("Couldn't delete the incoming file", e?.message));
   }
 });
+var heartbeat = (ref) => setInterval(() => ref.set({ updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {
+}), 6e4);
+async function rebuild(bucket, file, meta) {
+  const datasetId = String(meta.datasetId || ""), status = db.doc(`imports/${meta.statusId || `rebuild_${datasetId}`}`);
+  const set = (fields) => status.set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  const beat = heartbeat(status);
+  try {
+    const dsSnap = await db.doc(`datasets/${datasetId}`).get();
+    if (!dsSnap.exists) throw new Error("That data file isn't there any more.");
+    const ds = dsSnap.data(), idx = detectColumns(ds.columns || []);
+    let rankings = false, detail = null;
+    if (isShotData(idx)) {
+      await set({ step: "Updating rankings" });
+      const labels = await playerLabels();
+      const keys = ds.clientKeys || [], names = ds.playerNames || {}, players = [];
+      let done = 0;
+      const next = async () => {
+        while (keys.length) {
+          const key = keys.shift();
+          const m = await db.doc(`clientData/${key}/datasets/${datasetId}`).get();
+          const n = m.exists ? m.data().chunkCount || 0 : 0;
+          const refs = Array.from({ length: n }, (_, i) => db.doc(`clientData/${key}/datasets/${datasetId}/chunks/${i}`));
+          const snaps = refs.length ? await db.getAll(...refs) : [];
+          const rows = snaps.flatMap((sn) => sn.exists ? JSON.parse(sn.data().data) : []);
+          const rounds = prepare(rows, idx);
+          for (const rd of rounds) for (const sh of rd.shots) delete sh.r;
+          if (rounds.length) players.push({ key, name: labels.get(key) || names[key] || key.replace(/^c_/, ""), rounds });
+          if (++done % 100 === 0) await set({ step: `Updating rankings (${done} of ${ds.clientKeys.length} players)` });
+        }
+      };
+      await Promise.all(Array.from({ length: 16 }, next));
+      await publishFieldStats(datasetId, buildFieldSummary(players), Date.now());
+      rankings = true;
+      await set({ step: "Updating lie and distance detail" });
+      detail = await publishFieldDetail(bucket, datasetId, players, Date.now());
+    }
+    await set({ status: "done", step: null, datasetId, rankings, detail: detail?.skipped || (detail ? "saved" : null), finishedAt: FieldValue.serverTimestamp() });
+    console.log(`Rebuilt rankings for ${datasetId}`);
+  } catch (err) {
+    console.error("Rebuild failed", err);
+    await set({ status: "error", step: null, message: `The rows are live, but the rankings couldn't be rebuilt: ${String(err?.message || err)}. Opening Analyze on a computer rebuilds them.`, finishedAt: FieldValue.serverTimestamp() });
+  } finally {
+    clearInterval(beat);
+    await file.delete().catch(() => {
+    });
+  }
+}
 async function readTable(buf, fileName) {
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".parquet")) {
