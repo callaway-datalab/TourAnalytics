@@ -25,6 +25,7 @@ const ALIASES = {
   date: ["date", "rounddate", "eventdate"],
   year: ["year", "season"],
   event: ["tournament", "event", "eventname", "tournamentname"],
+  course: ["course", "coursename", "venue", "golfcourse"], // (update 160)
   round: ["playerrndname", "roundid", "round", "roundnumber", "rnd"],
   hole: ["hole", "holenumber"],
   distanceRange: ["distancerange", "distancebucket", "distance"],
@@ -236,9 +237,10 @@ export function prepare(rows, idx) {
       const d = new Date(date);
       const year = get(r, "year") ?? (isNaN(d) ? "" : d.getFullYear());
       const tour = idx.tour !== undefined && !isNull(get(r, "tour")) ? String(get(r, "tour")) : "";
+      const course = idx.course !== undefined && !isNull(get(r, "course")) ? String(get(r, "course")).trim() : "";
       // A row with no round number covers the whole tournament (e.g. Birdies / Round over its rounds): an "event" round.
       const noRound = idx.round !== undefined && isNull(rnd);
-      rounds.set(key, { key, date: String(date), event: String(event), roundNo: noRound || isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, shots: [], ...(noRound ? { eventLevel: true } : {}) });
+      rounds.set(key, { key, date: String(date), event: String(event), roundNo: noRound || isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, ...(course ? { course } : {}), shots: [], ...(noRound ? { eventLevel: true } : {}) });
     }
     return rounds.get(key);
   };
@@ -655,6 +657,7 @@ export function filterOptions(rounds, cat) {
     year: uniq(rounds.map((r) => r.year)).sort().reverse(),
     tour: uniq(rounds.map((r) => r.tour)).sort(),
     event: uniq(rounds.map((r) => r.event)),
+    course: uniq(rounds.map((r) => r.course)).sort((a, b) => a.localeCompare(b)),
     roundNo: uniq(rounds.map((r) => r.roundNo)).sort(byNum),
     lie: uniq(shots.map((s) => s.lie)).sort((a, b) => lieRank(a) - lieRank(b) || a.localeCompare(b)),
     dist: dists.every((d) => lead(d) !== Infinity) ? dists.sort(byNum) : dists.sort((a, b) => (squash(a) === "driver" ? -1 : squash(b) === "driver" ? 1 : a.localeCompare(b))),
@@ -668,9 +671,9 @@ export function filterOptions(rounds, cat) {
 export function applyFilters(rounds, f = {}) {
   // Each filter can hold one value or several (any of them matches); empty means "all".
   const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
-  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club), tours = set(f.tour), ptypes = set(f.ptype);
+  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club), tours = set(f.tour), ptypes = set(f.ptype), courses = set(f.course);
   // (the Tournament filter: an entered round's tournament, or "Practice Rounds"; practice: its kind of session)
-  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.tfilter ?? rd.event)) && (!ptypes || ptypes.has(rd.ptype || "")) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")));
+  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.tfilter ?? rd.event)) && (!ptypes || ptypes.has(rd.ptype || "")) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")) && (!courses || courses.has(rd.course || "")));
   if (f.span > 0) rs = rs.slice(-f.span);
   // the last N months from today (update 159): "Last Month" on 10/15 looks back to 9/15
   if (f.months > 0) {
@@ -714,7 +717,7 @@ export function buildFieldSummary(players) {
         const sx = {};
         for (const o of rd.obs || []) { const x = ((sx[o.k] ||= {})[o.cat || ""] ||= [0, 0]); x[0] += o.v * o.w; x[1] += o.w; }
         for (const k of Object.keys(sx)) for (const c2 of Object.keys(sx[k])) sx[k][c2] = [Math.round(sx[k][c2][0] * 1000) / 1000, Math.round(sx[k][c2][1] * 1000) / 1000];
-        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, t: rd.tour || "", c, ...(Object.keys(sx).length ? { s: sx } : {}), ...(rd.eventLevel ? { ev: 1 } : {}) };
+        return { d: rd.date, e: rd.event, r: rd.roundNo, y: rd.year, t: rd.tour || "", ...(rd.course ? { co: rd.course } : {}), c, ...(Object.keys(sx).length ? { s: sx } : {}), ...(rd.eventLevel ? { ev: 1 } : {}) };
       }),
     })),
   };
@@ -725,9 +728,21 @@ export function summaryPlayers(summary) {
   return (summary?.players || []).map((p) => ({
     key: p.key, name: p.name, summaryOnly: true,
     rounds: p.rounds.map((rd, i) => ({
-      key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y, tour: rd.t, ...(rd.ev ? { eventLevel: true } : {}), // (undefined: a summary from before tours were kept)
+      key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y, tour: rd.t, ...(rd.co ? { course: rd.co } : {}), ...(rd.ev ? { eventLevel: true } : {}), // (undefined: a summary from before tours were kept)
       shots: Object.entries(rd.c).map(([cat, [sg, w]]) => ({ cat, sg, w, lie: null, dist: null })),
       obs: Object.entries(rd.s || {}).flatMap(([k, byCat]) => Object.entries(byCat).filter(([, [, w]]) => w > 0).map(([cat, [vw, w]]) => ({ k, cat: cat || null, lie: null, dist: null, v: vw / w, w }))),
     })).map((rd) => { rd.has = new Set(rd.obs.map((o) => o.k)); if (rd.shots.length) rd.has.add("sg"); return rd; }),
   }));
+}
+
+/** (update 160) A course name, loosely: "Pebble Beach Golf Links" and "Pebble Beach GL" both become "pebble beach". */
+export function courseKey(name) {
+  return String(name || "").toLowerCase().replace(/&/g, " ").replace(/[^a-z0-9 ]+/g, " ")
+    .split(/\s+/).filter((w) => w && !["golf", "club", "course", "links", "gl", "gc", "cc", "country", "the", "and", "resort", "g", "c"].includes(w)).join(" ");
+}
+/** Do two course names mean the same course? */
+export function sameCourse(a, b) {
+  const x = courseKey(a), y = courseKey(b);
+  if (!x || !y) return false;
+  return x === y || (Math.min(x.length, y.length) >= 5 && (x.includes(y) || y.includes(x)));
 }

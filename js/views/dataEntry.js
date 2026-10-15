@@ -528,7 +528,7 @@ async function renderNew(main, flash, viewing = null) {
     ]),
     el("div", { class: "entry-bar" }, start),
   ]);
-  mount(main, [el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Track Round")), form]);
+  mount(main, [el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Enter New Round")), form]);
   drawCount(); drawGrid();
 }
 const blankHoles = (n) => Array.from({ length: n }, (_, i) => ({ n: i + 1, par: 4, yards: null, hcp: null })); // (par 4 unless changed)
@@ -714,7 +714,7 @@ function renderRound(main, params, flash, previewClient) {
   function draw() {
     updateScore();
     const head = el("header", { class: "round-head" }, [
-      el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Track Round")),
+      el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Enter New Round")),
       el("h1", {}, round.course || "Round"),
       el("p", { class: "muted" }, [round.type ? (round.type === "tournament" ? `${round.tournament || "Tournament"} \u00b7 ` : "Practice round \u00b7 ") : "", round.date, round.tour ? ` \u00b7 ${round.tour}` : "", round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
       el("p", { class: "round-score" }, [scoreLine, " ", status]),

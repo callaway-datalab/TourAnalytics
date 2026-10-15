@@ -1,4 +1,4 @@
-// Your saved scorecards (update 135): every scorecard you fill in on Track Round is kept for you, by course,
+// Your saved scorecards (update 135): every scorecard you fill in on Enter New Round is kept for you, by course,
 // so picking that course again fills the card (pars, handicaps and each set of tees you've entered).
 // Only you can read or change yours:  courseCards/{your uid}/cards/{course}
 import { collection, doc, getDocs, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";

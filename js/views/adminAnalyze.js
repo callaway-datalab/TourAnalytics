@@ -232,7 +232,7 @@ export async function render(main, { flash, routeId }) {
     dash?.destroy(); dash = null; sourceHome.hidden = true;
     const me = meFrom();
     if (!player) { emptyDash("Pick a player above to see their entered rounds."); return; }
-    if (!me) { emptyDash(`${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Track Round." : "."}`); return; }
+    if (!me) { emptyDash(`${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Enter New Round." : "."}`); return; }
     const box = el("div");
     mount(body, box);
     dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, entered: true, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, ...dashOpts() });

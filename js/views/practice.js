@@ -7,7 +7,7 @@
  *   Play:       each shot on a made-up hole or green, with a heat map of where to aim (from the strokes-gained
  *               baseline and your own shot pattern once there's enough of it). Enter the result by tapping where
  *               it finished, typing, saying it, or loading a launch monitor file.
- *   Results:    strokes gained against the Tour baselines (the same as Track Round), by distance, the key numbers
+ *   Results:    strokes gained against the Tour baselines (the same as Enter New Round), by distance, the key numbers
  *               for the category, your pattern, and how practice compares with the course.
  */
 import { el, mount, confirmAction } from "../ui.js";
@@ -25,12 +25,13 @@ const LS_CAT = "ta:practice:cat";
 // The tools beside the four categories (update 138)
 const LS_TOOL = "ta:practice:tool";
 // (update 157) no Games tab: Course Prep's filters cover it (old games still open from your history)
+// (update 160) Course Prep is its own page under Play (#/course-prep); Practice is Custom and My Clubs
 const TOOLS = { CUSTOM: "Custom", PREP: "Course Prep", BAG: "My Clubs" };
-const TOOL_ORDER = ["CUSTOM", "PREP", "BAG"];
+const TOOL_ORDER = ["CUSTOM", "BAG"];
 
 const DEF_TOTAL = { OTT: 14, APP: 20, ARG: 20, PUTT: 24 };
 
-export async function render(main, { flash }) {
+export async function render(main, { flash, coursePrep = false, previewClient = null }) {
   const state = getState();
   const uid = state.user.uid;
   const owner = practiceOwner(state);
@@ -41,8 +42,10 @@ export async function render(main, { flash }) {
   let cat = q.get("cat") || ls(LS_CAT) || "APP";
   if (!CATS[cat]) cat = "APP";
   let tool = q.get("tool") || ls(LS_TOOL) || "CUSTOM";
-  if (tool === "ROUND") tool = "PREP"; // (Sim Round is part of Course Prep now)
-  if (!TOOLS[tool]) tool = "CUSTOM";
+  // (an old link to Course Prep, or Sim Round, inside Practice: its own page now)
+  if (!coursePrep && ["PREP", "ROUND"].includes(q.get("tool"))) { location.hash = "#/course-prep"; return; }
+  if (coursePrep) tool = "PREP";
+  else if (!TOOL_ORDER.includes(tool)) tool = "CUSTOM";
   let sessions = [];
   let view = { name: "home" }; // home | plan | play | summary (sessions and games) · round | roundEnd (rounds) · tool pages
   let lastKey = "";
@@ -55,7 +58,7 @@ export async function render(main, { flash }) {
   const tools = el("nav", { class: "pr-tabs", "aria-label": "Practice" });
   const pills = el("div", { class: "seg pr-catseg", role: "group", "aria-label": "Category" });
   const body = el("div", { class: "pr-body" });
-  mount(main, [el("div", { class: "pr-wrap" }, [tools, body])]);
+  mount(main, [el("div", { class: "pr-wrap" }, [coursePrep ? null : tools, body])]);
   const pickTool = (t) => { tool = t; try { localStorage.setItem(LS_TOOL, t); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
   const pick = (c) => { cat = c; try { localStorage.setItem(LS_CAT, c); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
   const drawPills = () => {
@@ -117,7 +120,7 @@ export async function render(main, { flash }) {
 
   // what the tool pages get to work with
   const ctx = {
-    body, uid, owner, state, flash, label, playerKey, save,
+    body, uid, owner, state, flash, label, playerKey, save, coursePrep, previewClient,
     get sessions() { return sessions; },
     add(s) { sessions = [s, ...sessions.filter((x) => x.id !== s.id)]; },
     async remove(id) {
@@ -167,7 +170,7 @@ export async function render(main, { flash }) {
     if (view.name === "play") return drawPlay();
     if (view.name === "monitorUpload") return drawMonitorUpload(view.session);
     if (view.name === "summary") return drawSummary(view.session);
-    if (["round", "roundEnd", "prepCourse", "prepNew", "prepRandom"].includes(view.name) || (tool === "PREP" && view.name === "home")) {
+    if (["round", "roundEnd", "prepCourse", "prepNew", "prepRandom", "prepMenu", "prepMaps", "prepHistory"].includes(view.name) || (tool === "PREP" && view.name === "home")) {
       const m = await import("./practiceRound.js");
       return m.render(ctx);
     }
@@ -229,7 +232,7 @@ export async function render(main, { flash }) {
     }));
     mount(body, [head, ...resume,
       el("section", { class: "panel" }, [el("h2", {}, "Your practice"), tiles, trend.length > 1 ? el("div", { class: "pr-chart" }, [el("p", { class: "pr-cap" }, "Strokes gained per shot, session by session"), trendSvg(trend)]) : null]),
-      el("section", { class: "panel" }, [el("h2", {}, "By distance"), el("p", { class: "muted small" }, "Practice against your strokes gained per shot on the course (Tour Events and Track Round), on the same baseline."), table]),
+      el("section", { class: "panel" }, [el("h2", {}, "By distance"), el("p", { class: "muted small" }, "Practice against your strokes gained per shot on the course (Tour Events and Enter New Round), on the same baseline."), table]),
       patternPanel(cat, allShots.filter((s) => s.result).slice(-150), "Your pattern (last 150 shots)"),
       el("section", { class: "panel" }, [el("h2", {}, "Sessions"), list]),
     ]);
@@ -249,10 +252,22 @@ export async function render(main, { flash }) {
       const v = course[b.id]?.n >= 8 ? course[b.id].sgPer : pastAll.byBucket.find((x) => x.id === b.id)?.sgPer;
       return v == null ? 0.6 : Math.max(0.25, 0.6 - v * (cat === "PUTT" ? 6 : 4));
     });
-    const defaultOn = (b) => !(cat === "APP" && (b.lo >= 225)) ; // (225-250 off unless you add it)
+    // (update 160) tick a club / distance off and its shots go to the ones still on (225-250 starts off)
+    const off = new Set(buckets.filter((b) => cat === "APP" && b.lo >= 225).map((b) => b.id));
     const reflow = () => {
-      const w = weightsFor(mode).map((v, i) => (defaultOn(buckets[i]) || mode === "focus" ? v : 0));
+      const w = weightsFor(mode).map((v, i) => (off.has(buckets[i].id) ? 0 : v));
+      if (!w.some((v) => v > 0)) { buckets.forEach((b) => { counts[b.id] = 0; }); return; }
       distribute(total, w).forEach((n, i) => { counts[buckets[i].id] = n; });
+    };
+    const toggleRow = (b, on) => {
+      if (on) off.delete(b.id); else off.add(b.id);
+      if (mode === "custom" && !on) {
+        // keep the counts you set, and share this one's out across the rest by how many each has
+        const n = counts[b.id] || 0, rest = buckets.filter((x) => !off.has(x.id));
+        counts[b.id] = 0;
+        if (rest.length) distribute(n, rest.map((x) => (counts[x.id] || 0) + 0.01)).forEach((k, i) => { counts[rest[i].id] = (counts[rest[i].id] || 0) + k; });
+      } else { if (mode === "custom") mode = "even"; reflow(); }
+      drawRows(); drawModes();
     };
     reflow();
     const mixes = Object.fromEntries((MIXES[cat] || []).map((m) => [m.id, Object.fromEntries(m.options.map(([k, , d]) => [k, d]))]));
@@ -276,9 +291,11 @@ export async function render(main, { flash }) {
         ...buckets.map((b) => {
           const c = course[b.id], pr = pastAll.byBucket.find((x) => x.id === b.id);
           const v = el("span", { class: "pr-cnt" }, String(counts[b.id] || 0));
-          const set = (d) => { counts[b.id] = Math.max(0, (counts[b.id] || 0) + d); mode = "custom"; total = buckets.reduce((t, x) => t + (counts[x.id] || 0), 0); totalVal.textContent = String(total); drawRows(); drawModes(); };
-          return el("div", { class: "pr-brow" }, [
-            el("span", { class: "pr-bl" }, [b.label, el("i", { class: "pr-bbar", style: `--w:${((counts[b.id] || 0) / max) * 100}%` })]),
+          const set = (d) => { if (off.has(b.id)) off.delete(b.id); counts[b.id] = Math.max(0, (counts[b.id] || 0) + d); mode = "custom"; total = buckets.reduce((t, x) => t + (counts[x.id] || 0), 0); totalVal.textContent = String(total); drawRows(); drawModes(); };
+          const cb = el("input", { type: "checkbox", class: "pr-bon", checked: !off.has(b.id), "aria-label": `Practise ${b.label}` });
+          cb.addEventListener("change", () => toggleRow(b, cb.checked));
+          return el("div", { class: `pr-brow${off.has(b.id) ? " off" : ""}` }, [
+            el("label", { class: "pr-bl" }, [el("span", { class: "pr-bl-t" }, [cb, b.label]), el("i", { class: "pr-bbar", style: `--w:${((counts[b.id] || 0) / max) * 100}%` })]),
             el("span", { class: `pr-bv ${sgCls(c?.sgPer)}`, title: c?.n ? `${Math.round(c.n)} shots on course` : "No shots on course yet" }, c?.n ? SG(c.sgPer) : "—"),
             el("span", { class: `pr-bv ${sgCls(pr?.sgPer)}`, title: pr?.n ? `${pr.n} practice shots` : "Not practised yet" }, pr?.n ? SG(pr.sgPer) : "—"),
             el("span", { class: "pr-stepper sm" }, [stepBtn("−", () => set(-1), `Fewer at ${b.label}`), v, stepBtn("+", () => set(1), `More at ${b.label}`)]),
@@ -321,7 +338,7 @@ export async function render(main, { flash }) {
         el("div", { class: "pr-plan-head" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, `New session · ${CATS[cat].label}`), el("h1", {}, "Plan your session")]), totalBox]),
         el("div", { class: "pr-plan-grid" }, [
           el("div", {}, [el("div", { class: "pr-sub" }, [el("h2", {}, cat === "OTT" ? "Clubs" : "Distances"), modes]), rows,
-            el("p", { class: "muted small" }, "On course and practice: strokes gained per shot against the Tour baselines (0.00). “Focus on weak spots” puts more shots where you lose the most.")]),
+            el("p", { class: "muted small" }, `Untick a ${cat === "OTT" ? "club" : "distance"} to leave it out: its shots go to the rest. On course and practice: strokes gained per shot against the Tour baselines (0.00). “Focus on weak spots” puts more shots where you lose the most.`)]),
           el("div", {}, [el("h2", {}, "Mix"), mixBox, stimpIn ? el("label", { class: "pr-stimp" }, [el("span", { class: "rd-label" }, "Green speed (stimp)"), stimpIn]) : null,
             el("p", { class: "muted small" }, "Every shot is drawn at random from this plan, in a random order, so no two in a row are the same.")]),
         ]),

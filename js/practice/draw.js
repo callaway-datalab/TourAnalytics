@@ -34,7 +34,7 @@ function svgPoint(svg, evt) {
  * The hole for a tee shot. opts: { aim: {x,y}, showHeat, result: {total, offline}, onTap(total, offline), carry }
  * x is yards left (−) / right (+) of the target line; drawn with the tee at the bottom.
  */
-export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, carry = 285, sgStart = null, onAim = null, trail = null, full = false, preview = null } = {}) {
+export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, carry = 285, sgStart = null, onAim = null, trail = null, full = false, preview = null, pinLine = false } = {}) {
   const half = shot.width / 2;
   const y0 = full ? -8 : Math.max(120, Math.min(carry, shot.hole - 50) - 120), y1 = full ? holeSpot(shot).y + 22 : Math.min(shot.hole + 10, Math.max(carry, 200) + 60);
   const cx = (y) => fairwayX(shot, y); // the middle of the fairway (a dogleg bends it)
@@ -108,15 +108,19 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
   svg.appendChild(deco);
   // the strokes gained map (update 154): what each landing spot gains against the Tour baseline from the tee, by distance and lie
   if (showHeat) {
-    const cells = [], step = 3, base = sgStart ?? expectedStrokes(shot.startLie || "Tee box", shot.hole);
+    // (update 160) water, dense forest and out of bounds: dark red; the rest has its pockets (see pocketAt)
+    const cells = [], obCells = [], step = 3, base = sgStart ?? expectedStrokes(shot.startLie || "Tee box", shot.hole);
     for (let y = Math.max(y0, 120); y < y1; y += step)
-      for (let x = X0; x < X0 + W; x += step) { if (teeResult(shot, y + step / 2, x + step / 2).penalty) continue; cells.push([x, y, base - teeValue(shot, x + step / 2, y + step / 2) - 1]); } // (not over water or out of bounds)
+      for (let x = X0; x < X0 + W; x += step) { if (teeResult(shot, y + step / 2, x + step / 2).penalty) { obCells.push([x, y]); continue; } cells.push([x, y, base - teeValue(shot, x + step / 2, y + step / 2) - 1]); }
     const g = svgEl("g", { opacity: 0.45, class: "pr-heat", filter: ids.url("soft"), "pointer-events": "none" });
     for (const [x, y, v] of cells) g.appendChild(svgEl("rect", { x, y: sy(y + step), width: step + 0.1, height: step + 0.1, fill: sgColor(v) }));
     svg.appendChild(g);
+    const gOb = svgEl("g", { opacity: 0.72, class: "pr-heat pr-heat-ob", "pointer-events": "none" });
+    for (const [x, y] of obCells) gOb.appendChild(svgEl("rect", { x, y: sy(y + step), width: step + 0.1, height: step + 0.1, fill: OB_RED }));
+    svg.appendChild(gOb);
   }
   vignette(svg, X0, 0, W, H, ids);
-  if (showHeat) svg.appendChild(sgKey(X0 + 1, 1, 5));
+  if (showHeat) svg.appendChild(sgKey(X0 + 1, 1, 5, true));
   // yardage lines (straight from the tee)
   for (let y = Math.ceil(y0 / 25) * 25; y <= y1; y += 25) {
     const c = cx(y);
@@ -139,9 +143,27 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
     const ln = svgEl("line", { x1: 0, y1: sy(0) < H ? sy(0) : H + 4, x2: aim.x, y2: sy(aim.y), stroke: "#d4b483", "stroke-width": 0.9, "stroke-dasharray": "3 2" });
     const ring = svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 3.4, fill: "none", stroke: "#d4b483", "stroke-width": 1.2 });
     const dot = svgEl("circle", { cx: aim.x, cy: sy(aim.y), r: 0.9, fill: "#d4b483" });
-    svg.append(ln, ring, dot);
+    // (update 160) a round's made-up hole: a grey line on from the target to the pin, and each line's length halfway along it
+    const pinG = pinLine ? svgEl("g", { class: "pr-pinline", "pointer-events": "none" }) : null;
+    const drawPin = (ax, ay) => { // (yards: across, from the tee)
+      if (!pinG) return;
+      while (pinG.firstChild) pinG.firstChild.remove();
+      const hs = holeSpot(shot), top = y1 - 4, bot = Math.max(0, y0 + 2);
+      // the grey line, up to where it leaves the picture
+      const t = hs.y > top && hs.y > ay ? Math.max(0, (top - ay) / (hs.y - ay)) : 1, ex = ax + (hs.x - ax) * t, ey = ay + (hs.y - ay) * t;
+      const toPin = Math.round(Math.hypot(hs.x - ax, hs.y - ay)), toAim = Math.round(Math.hypot(ax, ay));
+      if (toPin >= 2) {
+        pinG.appendChild(svgEl("line", { x1: ax, y1: sy(ay), x2: ex, y2: sy(ey), stroke: "#c7c7cc", "stroke-width": 0.9, "stroke-dasharray": "3 2", opacity: 0.9 }));
+        pill(pinG, (ax + ex) / 2 + 2.5, sy((ay + ey) / 2) + 1.2, `${toPin} yds`, 3.6, { color: "#e5e5ea" });
+      }
+      // the gold line's length, halfway along the part you can see
+      const my = (Math.max(bot, 0) + ay) / 2, mx = ay > 0 ? (ax * my) / ay : 0;
+      if (my > y0) pill(pinG, mx + 2.5, sy(my) + 1.2, `${toAim} yds`, 3.6, { color: "#d4b483" });
+    };
+    svg.append(ln, ...(pinG ? [pinG] : []), ring, dot);
+    drawPin(aim.x, aim.y);
     // (update 156) hold the end of the target line and drag it
-    if (onAim) dragAim(svg, [ring, dot], (x, y) => { ln.setAttribute("x2", x); ln.setAttribute("y2", y); }, (p) => [p.x, p.y], (p) => onAim(Math.round(p.x), Math.round(y1 - p.y)), 7);
+    if (onAim) dragAim(svg, [ring, dot], (x, y) => { ln.setAttribute("x2", x); ln.setAttribute("y2", y); drawPin(x, y1 - y); }, (p) => [p.x, p.y], (p) => onAim(Math.round(p.x), Math.round(y1 - p.y)), 7);
   }
   // the shots so far on this hole (course prep, update 156): where each one finished, joined up
   if (trail?.length) {
@@ -200,6 +222,11 @@ function dragAim(svg, shapes, move, toLocal, done, r) {
   const handle = svgEl("circle", { cx: ring.getAttribute("cx"), cy: ring.getAttribute("cy"), r, fill: "transparent", class: "pr-aim-handle" });
   ring.parentNode.appendChild(handle);
   let on = false;
+  // (update 160) on a phone, holding the target and dragging moved the whole page: the touch is kept for the drag
+  handle.style.touchAction = "none";
+  const stopScroll = (e) => { if (on && e.cancelable) e.preventDefault(); };
+  handle.addEventListener("touchstart", (e) => { if (e.cancelable) e.preventDefault(); on = true; }, { passive: false });
+  handle.addEventListener("touchmove", stopScroll, { passive: false }); // (a touch's moves all go to where it started)
   handle.addEventListener("pointerdown", (e) => { on = true; handle.setPointerCapture?.(e.pointerId); e.preventDefault(); e.stopPropagation(); });
   handle.addEventListener("pointermove", (e) => {
     if (!on) return;
@@ -213,7 +240,8 @@ function dragAim(svg, shapes, move, toLocal, done, r) {
     done(svgPoint(svg, e));
   };
   handle.addEventListener("pointerup", end);
-  handle.addEventListener("pointercancel", () => { on = false; });
+  handle.addEventListener("pointercancel", (e) => { if (on && e.pointerType === "touch") end(e); on = false; });
+
   handle.addEventListener("click", (e) => e.stopPropagation());
 }
 
@@ -228,18 +256,24 @@ export function sgColor(v) {
   return `rgb(${stops.at(-1)[1]})`;
 }
 /** The key for the strokes gained map. */
-function sgKey(x, y, h) {
+const OB_RED = "#6e0a10"; // (update 160) out of bounds (and water, dense forest) on the strokes gained map
+function sgKey(x, y, h, ob = false) {
   const g = svgEl("g", { class: "pr-sgkey" });
-  const vals = [-0.5, -0.25, 0, 0.25, 0.5], w = h * 1.6;
-  g.appendChild(svgEl("rect", { x, y, width: w * vals.length + h * 9, height: h * 1.7, rx: h * 0.3, fill: "rgba(0,0,0,0.6)" }));
+  const vals = [-0.5, -0.25, 0, 0.25, 0.5], w = h * 1.6, extra = ob ? h * 4.6 : 0;
+  g.appendChild(svgEl("rect", { x, y, width: w * vals.length + h * 9 + extra, height: h * 1.7, rx: h * 0.3, fill: "rgba(0,0,0,0.6)" }));
   vals.forEach((v, i) => g.appendChild(svgEl("rect", { x: x + h * 0.4 + i * w, y: y + h * 0.35, width: w, height: h, fill: sgColor(v) })));
   g.appendChild(svgEl("text", { x: x + h * 0.8 + vals.length * w, y: y + h * 1.15, class: "pr-yd", style: `font-size:${h * 0.8}px;fill:#fff` }, "\u22120.5 \u00b7 0 \u00b7 +0.5 SG"));
+  if (ob) {
+    const ox = x + h * 0.4 + vals.length * w + h * 8.4;
+    g.appendChild(svgEl("rect", { x: ox, y: y + h * 0.35, width: w, height: h, fill: OB_RED }));
+    g.appendChild(svgEl("text", { x: ox + w + h * 0.3, y: y + h * 1.15, class: "pr-yd", style: `font-size:${h * 0.8}px;fill:#fff` }, "OB"));
+  }
   return g;
 }
 
 /* ================================================ approach / around the green ================================================ */
 /** The green for an approach or chip. opts: { aim, showHeat, result: {x,y}, onTap(x, y) } (yards, green centre at 0,0). */
-export function greenSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, sgStart = null, aimLine = false, onAim = null, preview = null } = {}) {
+export function greenSvg(shot, { aim = null, showHeat = true, result = null, onTap = null, sgStart = null, aimLine = false, onAim = null, preview = null, pinLine = false } = {}) {
   const { rx, ry } = shot.green, R0 = Math.max(rx, ry) + 12;
   // Your view (update 151): turned so the line from where you are to the pin points straight up, with you at
   // the bottom centre. Everything on the green is drawn in its own yards, then turned and slid into place.
@@ -294,11 +328,20 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
   for (const h of shot.hazards) if (h.type === "bunker") bunker(top, blob(h.cx, Y(h.cy), h.r, h.r * (0.85 + rand() * 0.3), rand, { wobble: 0.15, n: 11, rot: rand() * 3 }), ids, { lip: 0.45 });
   if (showHeat) {
     // the strokes gained map (update 154): what finishing at each spot gains against the Tour baseline from where you are
-    const base = sgStart ?? startExpected(shot), step = 0.75, cells = [];
-    for (let x = -R0; x < R0; x += step) for (let y = -R0; y < R0; y += step) { if (surfaceAt(shot, x + step / 2, y + step / 2) === "Water") continue; cells.push([x, y, base - greenValue(shot, x + step / 2, y + step / 2) - 1]); }
-    const g = svgEl("g", { opacity: 0.5, class: "pr-heat", filter: ids.url("soft"), "pointer-events": "none" });
-    for (const [x, y, v] of cells) g.appendChild(svgEl("rect", { x, y: Y(y + step), width: step + 0.05, height: step + 0.05, fill: sgColor(v) }));
+    const base = sgStart ?? startExpected(shot), step = 1, cells = [], obCells = [];
+    // (update 160) laid out on screen, so it covers the whole picture (the green's square, turned, didn't), in
+    // a group that undoes the green's turn; each cell's value is looked up at its spot on the green
+    for (let X = -R; X < R; X += step) for (let Ys = -R0; Ys < H2; Ys += step) {
+      const a = X + step / 2 + pX, b = Ys + step / 2, gx = a * c + b * sn, gy = a * sn - b * c;
+      if (surfaceAt(shot, gx, gy) === "Water") obCells.push([X, Ys]); else cells.push([X, Ys, base - greenValue(shot, gx, gy) - 1]);
+    }
+    const unturn = `rotate(${-th}) translate(${pX} 0)`;
+    const g = svgEl("g", { opacity: 0.5, class: "pr-heat", filter: ids.url("soft"), "pointer-events": "none", transform: unturn });
+    for (const [x, y, v] of cells) g.appendChild(svgEl("rect", { x, y, width: step + 0.05, height: step + 0.05, fill: sgColor(v) }));
     g0.appendChild(g);
+    const gOb = svgEl("g", { opacity: 0.72, class: "pr-heat pr-heat-ob", "pointer-events": "none", transform: unturn });
+    for (const [x, y] of obCells) gOb.appendChild(svgEl("rect", { x, y, width: step + 0.05, height: step + 0.05, fill: OB_RED }));
+    g0.appendChild(gOb);
     svg.__sgKey = true;
   }
   // rings round the pin: 10, 20 and 30 ft (labelled on screen, below)
@@ -309,11 +352,29 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
     const ring = svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 1.6, fill: "none", stroke: "#d4b483", "stroke-width": 0.5 });
     const dot = svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 0.45, fill: "#d4b483" });
     if (ln) g0.appendChild(ln);
+    // (update 160) a round: a grey line from the target to the pin, and each line's length halfway along it (labels upright on screen)
+    const pinLn = pinLine ? svgEl("line", { stroke: "#c7c7cc", "stroke-width": 0.4, "stroke-dasharray": "1.2 0.8", opacity: 0.9 }) : null;
+    const labels = pinLine ? svgEl("g", { class: "pr-pinline", "pointer-events": "none" }) : null;
+    const drawPin = (gx, gy) => { // (the green's own yards)
+      if (!pinLn) return;
+      pinLn.setAttribute("x1", gx); pinLn.setAttribute("y1", Y(gy)); pinLn.setAttribute("x2", shot.pin.x); pinLn.setAttribute("y2", Y(shot.pin.y));
+      while (labels.firstChild) labels.firstChild.remove();
+      const toPin = Math.hypot(shot.pin.x - gx, shot.pin.y - gy), toAim = Math.hypot(gx - shot.from.x, gy - shot.from.y);
+      pinLn.setAttribute("visibility", toPin >= 1.5 ? "visible" : "hidden");
+      const [ax, ay] = place(gx, gy), [ppx, ppy] = place(shot.pin.x, shot.pin.y);
+      if (toPin >= 1.5) pill(labels, (ax + ppx) / 2 + 1.2, (ay + ppy) / 2 + 0.5, `${Math.round(toPin)} yds`, 1.9, { color: "#e5e5ea" });
+      // the gold line, halfway along the part on screen
+      const [fx0, fy0] = place(shot.from.x, shot.from.y), lim = R0 + 4, k = fy0 > lim && fy0 > ay ? (lim - ay) / (fy0 - ay) : 1;
+      const vx = ax + (fx0 - ax) * k, vy = ay + (fy0 - ay) * k;
+      pill(labels, (ax + vx) / 2 + 1.2, (ay + vy) / 2 + 0.5, `${Math.round(toAim)} yds`, 1.9, { color: "#d4b483" });
+    };
+    if (pinLn) g0.appendChild(pinLn);
     g0.append(ring, dot);
     if (onAim) {
       const toGreen = (p) => { const a = p.x + pX, b = p.y; return [a * c + b * sn, -a * sn + b * c]; }; // (screen → the green's own coordinates)
-      dragAim(svg, [ring, dot], (x, y) => { if (ln) { ln.setAttribute("x2", x); ln.setAttribute("y2", y); } }, toGreen, (p) => { const [x, y] = toGreen(p); onAim(f1(x), f1(-y)); }, 3.2);
+      dragAim(svg, [ring, dot], (x, y) => { if (ln) { ln.setAttribute("x2", x); ln.setAttribute("y2", y); } drawPin(x, -y); }, toGreen, (p) => { const [x, y] = toGreen(p); onAim(f1(x), f1(-y)); }, 3.2);
     }
+    if (labels) { svg.__pinLabels = labels; drawPin(aim.x, aim.y); }
   }
   vignette(svg, -R, -R0, 2 * R, R0 + H2, ids);
   // the pin, upright on screen; the ball
@@ -331,7 +392,8 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
   svg.appendChild(svgEl("line", { x1: 0, y1: yy, x2: 0, y2: py + 1.5, stroke: "rgba(212,180,131,0.35)", "stroke-width": 0.3, "stroke-dasharray": "1 1" }));
   if (!inView) svg.appendChild(svgEl("path", { d: `M0 ${H2 - 4.6} l-2 3.4 l4 0 z`, fill: "#d4b483" }));
   pill(svg, 2.4, Math.min(H2 - 1.8, yy + 0.4), `${shot.startDist} yds`, 2.2);
-  if (svg.__sgKey) svg.appendChild(sgKey(-R + 1, -R0 + 1, 2.2));
+  if (svg.__pinLabels) svg.appendChild(svg.__pinLabels);
+  if (svg.__sgKey) svg.appendChild(sgKey(-R + 1, -R0 + 1, 2.2, true));
   if (onTap) {
     svg.classList.add("tappable");
     // a tap on screen → back to the green's own yards

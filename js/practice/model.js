@@ -1,7 +1,7 @@
 /*
  * Practice sessions (update 136): the plan, the random shots, the made-up holes and greens, and the scoring.
  *
- * Every shot is scored with the same strokes-gained baseline as Track Round (roundCalc.expectedStrokes,
+ * Every shot is scored with the same strokes-gained baseline as Enter New Round (roundCalc.expectedStrokes,
  * Callaway's scoring-average table), so practice numbers line up with on-course numbers: 0.00 is a Tour-baseline
  * shot, +0.20 is a fifth of a stroke better.
  *
@@ -20,7 +20,7 @@ export const CATS = {
 };
 export const CAT_ORDER = ["OTT", "APP", "ARG", "PUTT"];
 
-// The buckets you split a session across (the same ranges as the Stats page and Track Round)
+// The buckets you split a session across (the same ranges as the Stats page and Enter New Round)
 export const BUCKETS = {
   OTT: [
     { id: "driver", label: "Driver", club: "Driver", hole: [410, 480], carry: 290 },
@@ -132,8 +132,33 @@ export function holeSpot(shot) {
   return { x: d.dir * rest * Math.sin(a), y: d.at + rest * Math.cos(a) };
 }
 
-/** Where a drive finished, from its total distance and how far off line (+ right): { lie, dist, penalty, zone }. */
+/*
+ * Pockets (update 160): the ground isn't the same everywhere. A smooth, seeded noise (two sizes of patch) makes some
+ * spots play a little harder than the Tour baseline and some a little easier, in strokes ("adj": + harder). It's the
+ * same for a given hole or green every time, and it's in both the strokes gained map and the score.
+ */
+const hash2 = (seed, i, j) => { let h = (seed ^ Math.imul(i, 374761393) ^ Math.imul(j, 668265263)) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967295; };
+function noise2(seed, x, y) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash2(seed, i, j), b = hash2(seed, i + 1, j), c = hash2(seed, i, j + 1), d = hash2(seed, i + 1, j + 1);
+  return (a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy) * 2 - 1; // −1 … 1
+}
+const seedFor = (...v) => v.reduce((h, x) => (Math.imul(h, 31) + Math.round(Number(x || 0) * 100)) >>> 0, 2166136261);
+/** Strokes harder (+) or easier (−) than the baseline at a spot. size: the patches (yds); amp: the most it adds. */
+export function pocketAt(seed, x, y, size, amp) {
+  const v = 0.7 * noise2(seed, x / size, y / size) + 0.3 * noise2(seed + 7919, x / (size * 0.45), y / (size * 0.45));
+  return Math.round(v * amp * 1000) / 1000;
+}
+const teeSeed = (shot) => seedFor(shot.hole, shot.width, shot.sides?.left?.at, shot.sides?.right?.at, shot.dogleg?.at || 0);
+const greenSeed = (shot) => seedFor(shot.green?.rx, shot.green?.ry, shot.pin?.x, shot.pin?.y, (shot.hazards || []).length);
+
+/** Where a drive finished, from its total distance and how far off line (+ right): { lie, dist, penalty, zone, adj }. */
 export function teeResult(shot, total, offline) {
+  const r = teeResult0(shot, total, offline);
+  if (r.penalty || shot.pockets === false) return r;
+  return { ...r, adj: pocketAt(teeSeed(shot), offline, total, 16, r.lie === "Fairway" ? 0.1 : 0.16) };
+}
+function teeResult0(shot, total, offline) {
   // (a dogleg: how far off the middle of the fairway there, and what's left round the corner to the hole)
   const rel = offline - fairwayX(shot, total), h = holeSpot(shot), d = shot.dogleg;
   const half = shot.width / 2, ax = Math.abs(rel), side = rel < 0 ? "left" : "right";
@@ -145,9 +170,10 @@ export function teeResult(shot, total, offline) {
   if (ax <= half) return { lie: "Fairway", dist: remaining, zone: "Fairway" };
   const t = shot.sides[side], beyond = ax - half;
   if (beyond >= t.at) {
+    // (update 160) water and dense forest play as out of bounds: stroke and distance
     if (t.kind === "ob") return { lie: "OB", dist: shot.hole, penalty: "ob", zone: "Out of bounds" };
-    if (t.kind === "water") return { lie: "Penalty", dist: remaining, penalty: "water", zone: "Water" };
-    if (t.kind === "trees") return { lie: "Rough", dist: remaining, recovery: true, zone: "Trees" };
+    if (t.kind === "water") return { lie: "OB", dist: shot.hole, penalty: "ob", zone: "Water (out of bounds)" };
+    if (t.kind === "trees") return { lie: "OB", dist: shot.hole, penalty: "ob", zone: "Trees (out of bounds)" };
     if (t.kind === "bunker") return { lie: "Bunker", dist: remaining, zone: "Waste bunker" };
   }
   return { lie: "Rough", dist: remaining, zone: "Rough" };
@@ -157,7 +183,7 @@ export function teeResult(shot, total, offline) {
 export function afterTee(shot, r) {
   if (r.penalty === "ob") return 1 + expectedStrokes(shot.startLie || "Tee box", shot.hole); // stroke and distance
   if (r.penalty === "water") return 1 + expectedStrokes("Rough", r.dist);        // drop, plus a stroke
-  return expectedStrokes(r.lie, r.dist) + (r.recovery && !shot.played ? 0.3 : 0); // (trees: a punch-out costs about a third; in a round the next shot shows it)
+  return expectedStrokes(r.lie, r.dist) + (r.recovery && !shot.played ? 0.3 : 0) + (r.adj || 0); // (pockets: a spot that plays harder or easier)
 }
 
 /* ---- approach / around the green: a green with a pin, bunkers and maybe water ---- */
@@ -214,15 +240,18 @@ export function surfaceAt(shot, x, y) {
   if (ef <= 1) return "Fringe";
   return "Rough";
 }
-/** The result of a ball finishing at (x, y): { lie, dist (ft on the green / fringe, else yds), penalty }. */
+/** The result of a ball finishing at (x, y): { lie, dist (ft on the green / fringe, else yds), penalty, adj }. */
 export function greenResult(shot, x, y) {
   const s = surfaceAt(shot, x, y), dy = Math.hypot(x - shot.pin.x, y - shot.pin.y);
-  if (s === "Green" || s === "Fringe") return { lie: s, dist: Math.max(0, Math.round(dy * 3 * 10) / 10), unit: "ft", x, y };
-  if (s === "Water") return { lie: "Penalty", dist: Math.round(dy), unit: "yds", penalty: "water", x, y };
-  return { lie: s, dist: Math.round(dy), unit: "yds", x, y };
+  const adj = (amp, size) => (shot.pockets === false ? {} : { adj: pocketAt(greenSeed(shot), x, y, size, amp) });
+  if (s === "Green" || s === "Fringe") return { lie: s, dist: Math.max(0, Math.round(dy * 3 * 10) / 10), unit: "ft", x, y, ...(dy * 3 > 2 ? adj(0.08, 4.5) : {}) };
+  // (update 160) water plays as out of bounds: stroke and distance, from where you hit it
+  if (s === "Water") return { lie: "OB", dist: shot.startDist, unit: "yds", penalty: "ob", zone: "Water (out of bounds)", x, y };
+  return { lie: s, dist: Math.round(dy), unit: "yds", x, y, ...adj(0.14, 5) };
 }
-/** Strokes to finish from a green result. */
-export const afterGreen = (r) => (r.lie === "Holed" ? 0 : r.penalty ? 1 + expectedStrokes("Rough", Math.max(r.dist, 3)) : expectedStrokes(r.lie, r.dist));
+/** Strokes to finish from a green result (out of bounds: a stroke, then the same shot again). */
+export const afterGreen = (r, shot = null) => (r.lie === "Holed" ? 0 : r.penalty === "ob" ? 1 + (shot ? startExpected(shot) : expectedStrokes("Rough", Math.max(r.dist, 3)))
+  : r.penalty ? 1 + expectedStrokes("Rough", Math.max(r.dist, 3)) : expectedStrokes(r.lie, r.dist) + (r.adj || 0));
 
 /* ---- putting: a distance, a break and a slope ---- */
 function makePutt(b, brk, slope) {
@@ -292,7 +321,7 @@ export function scoreShot(shot) {
   if (!r) return null;
   if (shot.kind === "tee") return expectedStrokes(shot.startLie || "Tee box", shot.hole) - afterTee(shot, r) - 1;
   if (shot.kind === "putt") return expectedStrokes("Green", shot.startDist) - (r.lie === "Holed" ? 0 : expectedStrokes("Green", r.dist)) - 1;
-  return startExpected(shot) - afterGreen(r) - 1;
+  return startExpected(shot) - afterGreen(r, shot) - 1;
 }
 
 /** Expected strokes from where a green-side shot starts (startDist is yds; fringe and green are looked up in feet). */
@@ -315,7 +344,7 @@ const GRID = (() => {
 /** Expected strokes after a tee shot that finishes at (offline x, total y). */
 export const teeValue = (shot, x, y) => afterTee(shot, teeResult(shot, y, x));
 /** Expected strokes after an approach / chip that finishes at (x, y). */
-export const greenValue = (shot, x, y) => afterGreen(greenResult(shot, x, y));
+export const greenValue = (shot, x, y) => afterGreen(greenResult(shot, x, y), shot);
 
 /** The pattern a player's shots spread over (yds): from their history when there's enough, else Tour-like. */
 export function spreadFor(shot, history = null) {

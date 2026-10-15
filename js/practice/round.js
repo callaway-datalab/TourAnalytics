@@ -71,7 +71,9 @@ const lieOf = (l) => (LIES.includes(l) ? l : "Fairway");
 const baseFrom = (lie, dist, unit) => (unit === "ft" ? expectedStrokes(lie === "Fringe" ? "Fringe" : "Green", Math.max(0.5, dist)) : expectedStrokes(lieOf(lie), Math.max(1, dist)));
 const baseLeft = (r) => (r.lie === "Holed" ? 0 : r.unit === "ft" ? expectedStrokes(r.lie === "Fringe" ? "Fringe" : "Green", Math.max(0.5, r.dist)) : expectedStrokes(r.penalty ? "Fairway" : lieOf(r.lie), Math.max(1, r.dist)));
 /** Strokes gained for one shot against the Tour baselines. */
-export const shotSG = (shot, r = shot.result) => (r ? r.penalty === "ob" ? -2 /* (replaying from the same spot, a stroke down) */ : baseFrom(shot.startLie, shot.startDist, shot.unit) - baseLeft(r) - 1 - (r.penalty ? 1 : 0) : null);
+// (update 160) pockets: a made-up hole's spot that plays harder or easier carries its "adj" to the next shot's start
+export const shotSG = (shot, r = shot.result) => (r ? r.penalty === "ob" ? -2 /* (replaying from the same spot, a stroke down) */
+  : baseFrom(shot.startLie, shot.startDist, shot.unit) + (shot.startAdj || 0) - (baseLeft(r) + (r.lie === "Holed" || r.penalty ? 0 : r.adj || 0)) - 1 - (r.penalty ? 1 : 0) : null);
 
 const rcatOf = (shot, hole, first) => {
   if (shot.unit === "ft") return "PUTT";
@@ -91,8 +93,9 @@ export function nextShot(hole) {
     // (rounds from update 138 kept a lie: anything on the green, in feet, is a putt)
     const onGreen = r.unit === "ft" && r.lie !== "Fringe";
     // out of bounds: stroke and distance, from where the last one was played
-    if (r.penalty === "ob") shot = { startLie: last.startLie, startDist: last.startDist, unit: last.unit };
+    if (r.penalty === "ob") shot = { startLie: last.startLie, startDist: last.startDist, unit: last.unit, ...(last.startAdj ? { startAdj: last.startAdj } : {}) };
     else shot = onGreen ? { startLie: "Green", startDist: r.dist, unit: "ft" } : { startLie: r.penalty ? "Fairway" : lieOf(r.lie === "Off" ? "Fairway" : r.lie), startDist: r.unit === "ft" ? Math.max(1, Math.round(r.dist / 3)) : r.dist, unit: "yds" };
+    if (!r.penalty && r.adj) shot.startAdj = r.adj;
   }
   return { kind: "dist", ...shot, n: strokesSoFar + 1, rcat: rcatOf(shot, hole, !last) };
 }

@@ -737,14 +737,14 @@ async function base64ChunksToBlobUrl(getChunk, chunkCount, mimeType) {
   return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
 }
 
-export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], category = "performance", file, onProgress }) {
+export async function uploadDocument({ title, description, audienceClientKey, teamRoles = [], category = "performance", course = "", file, onProgress }) {
   const base64 = await fileToBase64(file);
   const chunks = splitString(base64, DOC_CHUNK_CHARS);
   const docRef = doc(collection(db, "documents"));
   // Callaway analysts always see every report sent to their players.
   const roles = audienceClientKey ? [...new Set([...teamRoles.map(normRole).filter(Boolean), ANALYST_ROLE])] : [];
   const meta = {
-    title, description: description || "", audienceClientKey: audienceClientKey || null, teamRoles: roles, category,
+    title, description: description || "", audienceClientKey: audienceClientKey || null, teamRoles: roles, category, ...(course ? { course } : {}), // (a course map: which course, update 160)
     originalName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size,
     chunkCount: chunks.length, uploadedAt: serverTimestamp(),
   };

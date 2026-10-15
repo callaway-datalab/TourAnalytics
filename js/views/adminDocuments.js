@@ -7,7 +7,19 @@ export async function render(main, { flash }) {
   const title = el("input", { placeholder: "Defaults to the file name" });
   const description = el("input", { maxLength: 200 });
   const audience = el("select", {}, el("option", { value: "" }, "Everyone"));
-  const category = el("select", {}, REPORT_CATEGORIES.map(([v, label]) => el("option", { value: v }, label.replace(/s$/, ""))));
+  // (update 160) Course Report (Course Prep's list) or Course Map (one course's maps, in Course Prep under that course)
+  const category = el("select", {}, REPORT_CATEGORIES.filter(([v]) => v !== "performance").map(([v, label]) => el("option", { value: v }, label.replace(/s$/, ""))));
+  const courses = el("datalist", { id: "doc-courses" });
+  const course = el("input", { list: "doc-courses", placeholder: "e.g. Pebble Beach Golf Links", maxLength: 80, autocomplete: "off" });
+  const courseRow = el("label", { hidden: true }, ["Course", course, courses, el("span", { class: "muted small" }, "The course this map is for. It shows in Course Prep when that course is picked (close spellings match).")]);
+  category.addEventListener("change", () => { courseRow.hidden = category.value !== "map"; });
+  // the courses people have saved scorecards for, as suggestions
+  import("../courseCards.js").then(async (m) => {
+    const names = new Set();
+    try { for (const c of await (m.allCourseNames?.() ?? Promise.resolve([]))) names.add(c); } catch { /* */ }
+    try { const { getState } = await import("../auth.js"); for (const c of await m.myCourseCards(getState().user.uid)) names.add(c.name); } catch { /* */ }
+    mount(courses, [...names].sort().map((n) => el("option", { value: n })));
+  }).catch(() => {});
   const submit = el("button", { class: "btn", type: "submit" }, "Upload report");
   const listBox = el("div");
 
@@ -63,14 +75,15 @@ export async function render(main, { flash }) {
       const ext = f.name.toLowerCase().split(".").pop();
       if (!["pdf", "ppt", "pptx"].includes(ext)) { flash("Reports must be .pdf, .ppt or .pptx.", "error"); return; }
       if (f.size > MAX_DOC_BYTES) { flash(`That file is larger than the ${readableSize(MAX_DOC_BYTES)} limit for this portal.`, "error"); return; }
+      if (category.value === "map" && !course.value.trim()) { flash("Which course is this map for?", "error"); course.focus(); return; }
 
       submit.disabled = true; submit.textContent = "Uploading\u2026";
       try {
         const teamRoles = audience.value ? [...teamBox.querySelectorAll("input[value]:checked:not([disabled])")].map((c) => c.value) : [];
         const onProgress = (done, total) => { submit.textContent = `Uploading\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`; };
-        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, category: category.value, file: f, onProgress });
+        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, category: category.value, course: category.value === "map" ? course.value.trim() : "", file: f, onProgress });
         flash("Report uploaded.", "ok");
-        form.reset(); drawTeamChecks();
+        form.reset(); courseRow.hidden = category.value !== "map"; drawTeamChecks();
       } catch (err) {
         flash(uploadErrorMessage(err, "that report"), "error");
       } finally {
@@ -80,6 +93,7 @@ export async function render(main, { flash }) {
   }, [
     el("label", {}, ["File (.pdf, .pptx or .ppt)", file]),
     el("label", {}, ["Report type", category]),
+    courseRow,
     el("label", {}, ["Title", title]),
     el("label", {}, ["Description (optional)", description]),
     el("label", {}, ["Who can see it", audience]),
@@ -127,7 +141,7 @@ export async function render(main, { flash }) {
           catch { flash("Couldn't change that report's type.", "error"); typeSel.disabled = false; }
         });
         return el("tr", {}, [
-          el("td", {}, openLink), el("td", {}, d.originalName),
+          el("td", {}, [openLink, d.course ? el("div", { class: "muted small" }, d.course) : null]), el("td", {}, d.originalName),
           el("td", {}, d.audienceClientKey
             ? (clientLabels.get(d.audienceClientKey) || d.audienceClientKey.replace(/^c_/, ""))
               + (teamOnly(d).length ? ` + their ${teamOnly(d).map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only")

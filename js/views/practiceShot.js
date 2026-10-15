@@ -9,7 +9,7 @@ const previewAt = (from, pt) => from.closest(".pr-shot")?.querySelector(".pr-vis
 import { holeSvg, greenSvg, puttSvg, planeSvg, scatterSvg, driveScatterSvg } from "../practice/draw.js";
 import { resultFromSpeech } from "../practice/analysis.js";
 
-/** The red microphone (the same as Track Round's voice input), with a label. */
+/** The red microphone (the same as Enter New Round's voice input), with a label. */
 export function micIcon() {
   const span = el("span", { class: "mic-icon", "aria-hidden": "true" });
   span.innerHTML = '<svg viewBox="0 0 40 40" width="22" height="22"><circle cx="20" cy="20" r="20" fill="#e5252a"/><rect x="15.5" y="7.5" width="9" height="16" rx="4.5" fill="#fff"/><path d="M12 19.5a8 8 0 0 0 16 0" fill="none" stroke="#fff" stroke-width="2"/><line x1="20" y1="27.5" x2="20" y2="31.5" stroke="#fff" stroke-width="2"/><line x1="15.5" y1="32" x2="24.5" y2="32" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -62,10 +62,10 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   };
   const drawResult = () => {
     const r = shot.result;
-    if (!r) { mount(resultLine, el("span", { class: "muted" }, shot.kind === "putt" ? "Tap where it stopped (or Made), type it, or say it." : "Tap where it finished, type it, or say it.")); return; }
+    if (!r) { mount(resultLine, null); return; }
     const relOff = shot.kind === "tee" ? Math.round(r.offline - aimLineX(aim, r.total || 0)) : 0;
     const where = shot.kind === "tee" ? `${r.zone || r.lie} \u00b7 ${r.total} yds, ${relOff ? `${Math.abs(relOff)} ${relOff < 0 ? "left" : "right"} of your line` : "on your line"}${r.penalty ? "" : ` \u00b7 ${r.dist} to go`}`
-      : r.lie === "Holed" ? "In the hole!" : r.penalty ? "Water \u00b7 penalty stroke" : `${r.lie} \u00b7 ${n1(r.dist)} ${r.unit}`;
+      : r.lie === "Holed" ? "In the hole!" : r.penalty === "ob" ? `${r.zone || "Out of bounds"} \u00b7 stroke and distance` : r.penalty ? "Water \u00b7 penalty stroke" : `${r.lie} \u00b7 ${n1(r.dist)} ${r.unit}`;
     mount(resultLine, [el("span", {}, where), el("strong", { class: `pr-sgchip ${sgCls(shot.sg)}` }, `${SG(shot.sg)} SG`)]);
   };
   // a launch monitor session: no typing, just Next (the file fills the result in at the end)
@@ -103,8 +103,8 @@ export function shotCard({ shot, stimp = 11, aim: aimInfo = null, eyebrow = "", 
   void heat;
   const navBtn = (txt, label, fn) => { const b = el("button", { type: "button", class: "pr-nav", "aria-label": label, disabled: fn ? null : true }, txt); if (fn) b.addEventListener("click", fn); return b; };
   return el("section", { class: "panel pr-shot" }, [
-    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, el("p", { class: "pr-shot-sub" }, shot.kind === "tee" ? (shot.dogleg ? `Aim down the middle: it doglegs ${shot.dogleg.dir < 0 ? "left" : "right"} at ${shot.dogleg.at} yds.` : "Aim down the middle.") : shot.kind === "putt" ? shotSub(shot, aim, stimp) : "Aim at the pin.")]), navBtn("\u203A", "Next shot", onNext)]),
-    factsDl,
+    el("div", { class: "pr-shot-head" }, [navBtn("\u2039", "Previous shot", onPrev), el("div", { class: "pr-shot-t" }, [eyebrow ? el("p", { class: "pr-eyebrow" }, eyebrow) : null, titleH, shot.kind === "putt" ? el("p", { class: "pr-shot-sub" }, shotSub(shot, aim, stimp)) : null]), navBtn("\u203A", "Next shot", onNext)]),
+    // (update 160: no write-up of the hole, fairway, sides and bunkers; the picture shows them)
     el("div", { class: "pr-play" }, [
       el("div", { class: "pr-vis-col" }, [visual, el("div", { class: "pr-vis-tools" }, [heatBtn, el("span", { class: "muted small" }, shot.kind === "putt" ? legend(shot) : "Gold: your target. Hold its end and drag to move it.")]), slopeBox]),
       el("div", { class: "pr-in-col" }, [
@@ -179,6 +179,7 @@ export function resultText(x) {
   if (!r) return "";
   if (x.kind === "tee") return `${r.zone || r.lie}, ${r.total} yds, ${r.offline ? `${Math.abs(r.offline)} ${r.offline < 0 ? "L" : "R"}` : "on line"}`;
   if (r.lie === "Holed") return "Holed";
+  if (r.penalty === "ob") return "Out of bounds";
   if (r.penalty) return "Water";
   return `${r.lie}, ${n1(r.dist)} ${r.unit}`;
 }
@@ -227,6 +228,30 @@ export function patternPanel(cat, shots, title) {
 export const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 /** Where the aim line is, side to side, at a distance (yds from the middle): the line from the tee to the aim point. */
 export const aimLineX = (aim, total) => (aim && aim.y > 0 ? (aim.x * total) / aim.y : 0);
+/*
+ * Offline (update 160): one number, negative = left, positive = right (no Left / Right buttons). "L12" / "12 R"
+ * work too. Phones' number pads have no minus key, so a ± button beside the box flips the sign.
+ */
+export function parseOff(v) {
+  const t = String(v ?? "").trim().replace(/[\u2212\u2013]/g, "-").replace(",", ".");
+  if (!t) return 0;
+  const lr = /^([lr])\s*([\d.]+)$/i.exec(t) || /^([\d.]+)\s*([lr])$/i.exec(t);
+  if (lr) { const [a, b] = /^[lr]$/i.test(lr[1]) ? [lr[1], lr[2]] : [lr[2], lr[1]]; return (a.toLowerCase() === "l" ? -1 : 1) * Number(b); }
+  const n = Number(t);
+  return Number.isFinite(n) ? n : NaN;
+}
+export const fmtOff = (v) => (v == null || v === "" || !Number(v) ? "" : String(Math.round(Number(v) * 10) / 10));
+export function offInput(value, label, attrs = {}) {
+  const input = el("input", { type: "text", inputmode: "decimal", value: value ?? "", "aria-label": label, placeholder: "e.g. \u22128", autocomplete: "off", ...attrs });
+  const pm = el("button", { type: "button", class: "pr-pm", "aria-label": "Switch left / right", title: "Left (\u2212) or right (+)" }, "\u00b1");
+  pm.addEventListener("click", () => {
+    const n = parseOff(input.value);
+    if (!n) { input.value = input.value.trim().startsWith("-") ? input.value.trim().slice(1) : `-${input.value.trim()}`; }
+    else input.value = fmtOff(-n);
+    input.dispatchEvent(new Event("input", { bubbles: true })); input.dispatchEvent(new Event("change", { bubbles: true })); input.focus();
+  });
+  return { input, pm, box: el("span", { class: "pr-off-box" }, [input, pm]) };
+}
 export function inputsFor(shot, setResult, next, { aim = null } = {}) {
   const r = shot.result;
   const nextBtn = next ? el("button", { type: "button", class: "btn pr-next", disabled: r || next.always ? null : true }, next.label) : null;
@@ -254,80 +279,65 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
   if (shot.kind === "tee") {
     // Offline is from your aim line when there is one (update 152), not from the middle of the fairway
     const rel = r?.offline != null ? Math.round(r.offline - aimLineX(aim, r.total || 0)) : null;
-    const tot = num(r?.total, "Total yds"), off = num(rel != null ? Math.abs(rel) : "", "Offline yds");
-    // left / right: nothing picked to start (a ball on the line needs neither); tap again to clear
-    let side = rel < 0 ? -1 : rel > 0 ? 1 : 0;
-    const sideSeg = el("div", { class: "seg seg-sm pr-side", role: "group", "aria-label": "Which side" });
+    const tot = num(r?.total, "Total yds"), { input: off, box: offBox } = offInput(fmtOff(rel), "Offline yds, minus is left");
     const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
-    const drawSide = () => mount(sideSeg, [[-1, "Left"], [1, "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === v ? " on" : ""}`, "aria-pressed": side === v ? "true" : "false" }, l); b.addEventListener("click", () => { side = side === v ? 0 : v; drawSide(); apply(); }); return b; }));
-    drawSide();
     const apply = () => {
-      const t = Number(tot.value), o = Number(off.value || 0);
+      const t = Number(tot.value), o = parseOff(off.value);
       hint.textContent = "";
       if (!(t >= 50)) return;
-      if (o > 0 && !side) { hint.textContent = "Left or right?"; if (shot.result) setResult(null); return; }
-      const offline = Math.round(aimLineX(aim, t) + o * (side || 1));
+      if (!Number.isFinite(o)) { hint.textContent = "Offline: a number, minus for left (e.g. \u22128)."; return; }
+      const offline = Math.round(aimLineX(aim, t) + o);
       setResult({ ...teeResult(shot, Math.round(t), offline), total: Math.round(t), offline, source: "typed" });
     };
     tot.addEventListener("change", apply); off.addEventListener("change", apply);
-    const pv = () => { const t = Number(tot.value), o = Number(off.value || 0); previewAt(tot, t > 0 && (!o || side) ? { x: aimLineX(aim, t) + o * (side || 1), y: t } : null); };
-    tot.addEventListener("input", pv); off.addEventListener("input", pv); sideSeg.addEventListener("click", () => setTimeout(pv));
-    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.abs(aim.x) >= 1.5 ? "Offline from your aim line (yds)" : "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side (if offline)"), sideSeg])]), hint,
-      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Say it like \u201c285, 12 left\u201d.")];
+    const pv = () => { const t = Number(tot.value), o = parseOff(off.value); previewAt(tot, t > 0 && Number.isFinite(o) ? { x: aimLineX(aim, t) + o, y: t } : null); };
+    tot.addEventListener("input", pv); off.addEventListener("input", pv);
+    return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), tot]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.abs(aim.x) >= 1.5 ? "Offline from aim line (yds)" : "Offline (yds)"), offBox])]), hint,
+      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Offline: minus is left, plus is right (\u00b1 flips it). Say it like \u201c285, 12 left\u201d.")];
   }
   // how far you hit it and how far offline: where it finished (and what's left) is worked out (update 154)
-  const offSide = (init) => {
-    let side = init;
-    const seg = el("div", { class: "seg seg-sm pr-side", role: "group", "aria-label": "Which side" });
-    const draw = (onChange) => mount(seg, [[-1, "Left"], [1, "Right"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${side === v ? " on" : ""}`, "aria-pressed": side === v ? "true" : "false" }, l); b.addEventListener("click", () => { side = side === v ? 0 : v; draw(onChange); onChange(); }); return b; }));
-    return { seg, draw, get: () => side };
-  };
   if (shot.kind === "putt") {
     const made = el("button", { type: "button", class: `btn ${r?.lie === "Holed" ? "" : "ghost"} pr-made` }, "✓ Made");
     made.addEventListener("click", () => setResult({ lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "typed" }));
     // (the hole is the putt's length straight ahead: rolled 2 ft past it = long 2)
     const D = shot.startDist;
-    const rolled = num(r && r.lie !== "Holed" && r.y != null ? Math.round((D + r.y) * 10) / 10 : "", "Rolled ft"), off = num(r && r.x ? Math.abs(r.x) : "", "Offline ft");
-    const sd = offSide(r?.x < 0 ? -1 : r?.x > 0 ? 1 : 0);
+    const rolled = num(r && r.lie !== "Holed" && r.y != null ? Math.round((D + r.y) * 10) / 10 : "", "Rolled ft"), { input: off, box: offBox } = offInput(r && r.x ? fmtOff(r.x) : "", "Offline ft, minus is left");
     const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
     const apply = () => {
-      const h = Number(rolled.value), o = Number(off.value || 0);
+      const h = Number(rolled.value), o = parseOff(off.value);
       hint.textContent = "";
       if (!(h > 0)) return;
-      if (o > 0 && !sd.get()) { hint.textContent = "Left or right?"; return; }
-      const x = o * (sd.get() || 1), y = h - D, d = Math.round(Math.hypot(x, y) * 10) / 10;
+      if (!Number.isFinite(o)) { hint.textContent = "Offline: a number, minus for left."; return; }
+      const x = o, y = h - D, d = Math.round(Math.hypot(x, y) * 10) / 10;
       setResult(d <= 0.2 ? { lie: "Holed", dist: 0, unit: "ft", x: 0, y: 0, source: "typed" } : { lie: "Green", dist: d, unit: "ft", x, y, source: "typed" });
     };
-    sd.draw(apply);
     rolled.addEventListener("change", apply); off.addEventListener("change", apply);
-    const pv = () => { const h = Number(rolled.value), o = Number(off.value || 0); previewAt(rolled, h > 0 && (!o || sd.get()) ? { x: o * (sd.get() || 1), y: h - D } : null); };
-    rolled.addEventListener("input", pv); off.addEventListener("input", pv); sd.seg.addEventListener("click", () => setTimeout(pv));
-    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Rolled (ft)"), rolled]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (ft)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg])]), hint,
-      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Rolled: how far the ball went (past the hole is more than the putt's length). Say “made it” or “2 feet long”.")];
+    const pv = () => { const h = Number(rolled.value), o = parseOff(off.value); previewAt(rolled, h > 0 && Number.isFinite(o) ? { x: o, y: h - D } : null); };
+    rolled.addEventListener("input", pv); off.addEventListener("input", pv);
+    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Rolled (ft)"), rolled]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (ft)"), offBox])]), hint,
+      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Rolled: how far the ball went (past the hole is more than the putt's length). Offline: minus is left. Say “made it” or “2 feet long”.")];
   }
   // approach / around the green: how far it went towards the pin, and how far offline (or tap where it finished)
   // (along your target line: at the pin unless you've moved it)
   const tx = aim?.x ?? shot.pin.x, ty = aim?.y ?? shot.pin.y;
   const fx = shot.from.x, fy = shot.from.y, dd = Math.hypot(tx - fx, ty - fy) || 1, ux = (tx - fx) / dd, uy = (ty - fy) / dd;
   const along = r && r.x != null ? (r.x - fx) * ux + (r.y - fy) * uy : null, across = r && r.x != null ? (r.x - fx) * uy - (r.y - fy) * ux : null; // (+ right)
-  const hit = num(along != null ? Math.round(along) : "", "Hit yds"), off = num(across ? Math.round(Math.abs(across)) : "", "Offline yds");
-  const sd = offSide(across < -0.5 ? -1 : across > 0.5 ? 1 : 0);
+  const hit = num(along != null ? Math.round(along) : "", "Hit yds"), { input: off, box: offBox } = offInput(across && Math.abs(across) >= 0.5 ? fmtOff(Math.round(across)) : "", "Offline yds, minus is left");
   const hint = el("p", { class: "muted small pr-tip", "aria-live": "polite" });
   const holed = el("button", { type: "button", class: `btn ${r?.lie === "Holed" ? "" : "ghost"} pr-made` }, "✓ Holed");
   holed.addEventListener("click", () => setResult({ lie: "Holed", dist: 0, unit: "ft", x: shot.pin.x, y: shot.pin.y, source: "typed" }));
   const apply = () => {
-    const h = Number(hit.value), o = Number(off.value || 0);
+    const h = Number(hit.value), a = parseOff(off.value);
     hint.textContent = "";
     if (!(h > 0)) return;
-    if (o > 0 && !sd.get()) { hint.textContent = "Left or right?"; return; }
-    const a = o * (sd.get() || 1), x = fx + ux * h + uy * a, y = fy + uy * h - ux * a;
+    if (!Number.isFinite(a)) { hint.textContent = "Offline: a number, minus for left."; return; }
+    const x = fx + ux * h + uy * a, y = fy + uy * h - ux * a;
     setResult({ ...greenResult(shot, Math.round(x * 10) / 10, Math.round(y * 10) / 10), source: "typed" });
   };
-  sd.draw(apply);
   hit.addEventListener("change", apply); off.addEventListener("change", apply);
-  const pv = () => { const h = Number(hit.value), o = Number(off.value || 0); if (!(h > 0) || (o && !sd.get())) { previewAt(hit, null); return; } const a = o * (sd.get() || 1); previewAt(hit, { x: fx + ux * h + uy * a, y: fy + uy * h - ux * a }); };
-  hit.addEventListener("input", pv); off.addEventListener("input", pv); sd.seg.addEventListener("click", () => setTimeout(pv));
-  return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (yds)"), off]), el("div", {}, [el("span", { class: "rd-label" }, "Side"), sd.seg]), holed]), hint,
-    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went along your target line; offline: how far left or right of it. Where it finished, and what's left, are worked out. Or tap where it finished.")];
+  const pv = () => { const h = Number(hit.value), a = parseOff(off.value); if (!(h > 0) || !Number.isFinite(a)) { previewAt(hit, null); return; } previewAt(hit, { x: fx + ux * h + uy * a, y: fy + uy * h - ux * a }); };
+  hit.addEventListener("input", pv); off.addEventListener("input", pv);
+  return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.hypot(aim.x - shot.pin.x, aim.y - shot.pin.y) >= 1.5 ? "Offline from aim line (yds)" : "Offline (yds)"), offBox]), holed]), hint,
+    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went along your target line; offline: how far off it, minus for left. Where it finished, and what's left, are worked out. Or tap where it finished.")];
 
 }

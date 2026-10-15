@@ -40,8 +40,8 @@ function encodeYear(players) {
     for (const s of rd.shots) { sI.set([id(s.cat), id(s.lie), id(s.dist), id(s.club), id(s.clubCat)], a * 5); sF[a * 2] = s.sg; sF[a * 2 + 1] = s.w; a++; }
     for (const o of rd.obs || []) { oI.set([id(o.k), id(o.cat), id(o.lie), id(o.dist)], b * 4); oF[b * 2] = o.v; oF[b * 2 + 1] = o.w; b++; }
     const plain = rd.key === `${rd.date}|${rd.event}|${rd.roundNo}`;
-    // [key (null when it's date|event|round), date, event, round, tour, event-level, shots, obs]
-    return [plain ? null : rd.key, id(rd.date), id(rd.event), rd.roundNo, id(rd.tour), rd.eventLevel ? 1 : 0, rd.shots.length, (rd.obs || []).length];
+    // [key (null when it's date|event|round), date, event, round, tour, event-level, shots, obs, course (update 160)]
+    return [plain ? null : rd.key, id(rd.date), id(rd.event), rd.roundNo, id(rd.tour), rd.eventLevel ? 1 : 0, rd.shots.length, (rd.obs || []).length, id(rd.course || null)];
   })]);
   // the indexes fit in 16 bits unless the dictionary is huge
   const wide = dict.length > 65535, I = wide ? Uint32Array : Uint16Array;
@@ -81,14 +81,14 @@ export function decodeFieldDetail(bytes) {
   for (let i = 0; i < h.nS && !clubs; i++) if (sI[i * 5 + 3]) clubs = true;
   return h.players.map(([key, name, rounds]) => ({
     key, name,
-    rounds: rounds.map(([rk, di, ei, roundNo, ti, ev, ns, no]) => {
+    rounds: rounds.map(([rk, di, ei, roundNo, ti, ev, ns, no, ci]) => {
       const shots = new Array(ns), obs = new Array(no);
       // (club only when the file has clubs: two fewer fields on every shot, which adds up over a whole field)
       if (clubs) for (let i = 0; i < ns; i++, a++) shots[i] = { cat: d[sI[a * 5]], sg: r4(sF[a * 2]), w: r4(sF[a * 2 + 1]), lie: d[sI[a * 5 + 1]], dist: d[sI[a * 5 + 2]], club: d[sI[a * 5 + 3]], clubCat: d[sI[a * 5 + 4]] };
       else for (let i = 0; i < ns; i++, a++) shots[i] = { cat: d[sI[a * 5]], sg: r4(sF[a * 2]), w: r4(sF[a * 2 + 1]), lie: d[sI[a * 5 + 1]], dist: d[sI[a * 5 + 2]] };
       for (let i = 0; i < no; i++, b++) obs[i] = { k: d[oI[b * 4]], cat: d[oI[b * 4 + 1]], lie: d[oI[b * 4 + 2]], dist: d[oI[b * 4 + 3]], v: r4(oF[b * 2]), w: r4(oF[b * 2 + 1]) };
       const date = d[di] ?? "", event = d[ei] ?? "";
-      const rd = { key: rk ?? `${date}|${event}|${roundNo}`, date, event, roundNo, year, tour: d[ti] ?? "", shots, obs, ...(ev ? { eventLevel: true } : {}) };
+      const rd = { key: rk ?? `${date}|${event}|${roundNo}`, date, event, roundNo, year, tour: d[ti] ?? "", ...(ci && d[ci] ? { course: d[ci] } : {}), shots, obs, ...(ev ? { eventLevel: true } : {}) };
       rd.has = new Set(obs.map((o) => o.k));
       if (shots.length) rd.has.add("sg");
       return rd;

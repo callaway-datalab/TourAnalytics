@@ -99,14 +99,15 @@ const sectionsFor = (kind) => {
     ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
     [player ? "My Stats" : "Player Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
-    ["Performance Reports", admin ? "#/admin/reports/view?cat=performance" : "#/documents", admin ? ["admin-documents", "admin-reports-view"] : ["documents"], { q: admin ? "performance" : null }],
+    // (update 160) no Performance Reports page
     ["Live Event Feed", "#/live", ["live"], { soon: true }],
   ];
+  // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
   const planItems = [
-    ["Course Reports", admin ? "#/admin/reports/view?cat=course" : "#/course-reports", admin ? ["admin-reports-view"] : ["course-reports"], { q: admin ? "course" : null }],
-    ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
-    ["Track Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (was Add Data, under Analyze)
+    ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"]],
+    ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (was Track Round; Add Data before that)
     ["Practice", "#/practice", ["practice"]],
+    ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
   ];
   return [
     { id: "data", label: "Analyze", icon: "data", items: dataItems },

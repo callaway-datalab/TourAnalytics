@@ -195,7 +195,7 @@ export async function render(main, { previewClient, flash }) {
     const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
     const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
     enteredDash?.destroy(); enteredDash = null;
-    if (!players.length) { enteredDash = emptyDash(enteredDashBox, "No entered rounds yet. Record one in Track Round and it shows up here."); if (lastSource === "entered") enteredDash.update({}); return; }
+    if (!players.length) { enteredDash = emptyDash(enteredDashBox, "No entered rounds yet. Record one in Enter New Round and it shows up here."); if (lastSource === "entered") enteredDash.update({}); return; }
     const me = { ...players[0], label };
     const inner = el("div");
     mount(enteredDashBox, inner);

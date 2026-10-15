@@ -14,9 +14,11 @@ const ROUTES = [
   ["/leaderboards", "client", () => import("./views/leaderboards.js"), "leaderboards"],
   ["/player-stats", "client", () => import("./views/playerStats.js"), "player-stats"],
   ["/data/:id", "client", () => import("./views/dataset.js"), "dataset"],
-  ["/documents", "client", () => import("./views/documents.js"), "documents"],
+  // (update 160) no Performance Reports page; Course Reports are part of Course Prep
+  ["/documents", "client", () => Promise.resolve({ render: () => { location.hash = "#/dashboard"; } }), "documents"],
   ["/goals", "client", () => import("./views/goals.js"), "goals"],
-  ["/course-reports", "client", () => import("./views/documents.js").then((m) => ({ render: (main, ctx) => m.render(main, { ...ctx, only: "course" }) })), "course-reports"],
+  ["/course-reports", "client", () => Promise.resolve({ render: () => { location.hash = "#/course-prep"; } }), "course-reports"],
+  ["/course-prep", "signed-in", () => import("./views/practice.js").then((m) => ({ render: (main, ctx) => m.render(main, { ...ctx, coursePrep: true }) })), "course-prep"],
   ["/live", "signed-in", () => import("./views/comingSoon.js"), "live"],
   ["/practice", "signed-in", () => import("./views/practice.js"), "practice"],
   // (the old Practice Recommendations / Practice Tracking links open Practice)

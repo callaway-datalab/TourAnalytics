@@ -1,6 +1,6 @@
 /*
  * Practice in Analyze (update 139): every finished practice session, game and round becomes a "round" of shots
- * for the Stats dashboard — the same shape as Track Round's entered rounds — so strokes gained by category,
+ * for the Stats dashboard — the same shape as Enter New Round's entered rounds — so strokes gained by category,
  * distance and lie (and the trends) work on practice too.
  */
 import { distanceBucket } from "../roundCalc.js";
