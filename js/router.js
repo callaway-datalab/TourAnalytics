@@ -20,6 +20,7 @@ const ROUTES = [
   ["/course-reports", "client", () => Promise.resolve({ render: () => { location.hash = "#/course-prep"; } }), "course-reports"],
   ["/course-prep", "signed-in", () => import("./views/practice.js").then((m) => ({ render: (main, ctx) => m.render(main, { ...ctx, coursePrep: true }) })), "course-prep"],
   ["/live", "signed-in", () => import("./views/comingSoon.js"), "live"],
+  ["/product-usage", "signed-in", () => import("./views/comingSoon.js"), "product-usage"],
   ["/practice", "signed-in", () => import("./views/practice.js"), "practice"],
   // (the old Practice Recommendations / Practice Tracking links open Practice)
   ["/practice/recommendations", "signed-in", () => import("./views/practice.js"), "practice"],

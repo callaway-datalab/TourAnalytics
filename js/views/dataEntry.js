@@ -209,10 +209,53 @@ async function renderNew(main, flash, viewing = null) {
   };
   const teeLabel = () => { const t = teesIn.value.trim(); return t && t.length <= 7 ? t : "Yds"; };
   // Enter / "next" on a phone keyboard: the next box along the row (then the same row on the next nine)
-  const nextBox = (input) => {
+  const nextBox = (input, step = 1) => {
     const row = input.dataset.row, all = [...grid.querySelectorAll(`input[data-row="${row}"]`)];
-    const i = all.indexOf(input);
-    (all[i + 1] || null)?.focus();
+    const i = all.indexOf(input), to = all[i + step] || null;
+    if (to) { to.focus(); to.select?.(); } else if (step > 0) input.blur();
+  };
+  /*
+   * (update 163) Phones: the number pad has no Next key, so while a yardage or handicap box has the keyboard up, a bar
+   * sits just above it: ‹ Prev, Next hole ›, Done. Tapping it keeps the keyboard up (the box keeps focus).
+   */
+  const touchOnly = (() => { try { return matchMedia("(pointer: coarse)").matches; } catch { return false; } })();
+  let barFor = null;
+  const kbBar = (() => {
+    const btn = (label, cls, fn) => {
+      const b = el("button", { type: "button", class: `sc-kb-btn ${cls}` }, label);
+      // (pointerdown, not click: the box keeps focus, so the keyboard stays up)
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); fn(); });
+      b.addEventListener("click", (e) => e.preventDefault());
+      return b;
+    };
+    const label = el("span", { class: "sc-kb-label" });
+    const bar = el("div", { class: "sc-kb-bar", role: "toolbar", "aria-label": "Scorecard" }, [
+      btn("\u2039 Prev", "prev", () => barFor && nextBox(barFor, -1)), label,
+      btn("Next hole \u203A", "next", () => barFor && nextBox(barFor, 1)), btn("Done", "done", () => barFor?.blur()),
+    ]);
+    const place = () => {
+      const vv = window.visualViewport;
+      if (!vv) { bar.style.bottom = "0px"; return; }
+      bar.style.top = `${vv.offsetTop + vv.height - bar.offsetHeight}px`;
+    };
+    return { bar, label, place };
+  })();
+  const showBar = (input) => {
+    if (!touchOnly) return;
+    barFor = input;
+    kbBar.label.textContent = input.getAttribute("aria-label") || "";
+    if (!kbBar.bar.isConnected) {
+      document.body.appendChild(kbBar.bar);
+      window.visualViewport?.addEventListener("resize", kbBar.place); window.visualViewport?.addEventListener("scroll", kbBar.place);
+    }
+    requestAnimationFrame(kbBar.place); setTimeout(kbBar.place, 300); // (after the keyboard slides up)
+  };
+  const hideBar = () => {
+    setTimeout(() => {
+      if (grid.contains(document.activeElement) && document.activeElement.classList.contains("sc-in")) return; // (moved to the next box)
+      barFor = null; kbBar.bar.remove();
+      window.visualViewport?.removeEventListener("resize", kbBar.place); window.visualViewport?.removeEventListener("scroll", kbBar.place);
+    }, 120);
   };
   const drawGrid = () => {
     const nines = holesCount === 9 ? [[0, 9, "Out"]] : [[0, 9, "Out"], [9, 18, "In"]];
@@ -221,13 +264,18 @@ async function renderNew(main, flash, viewing = null) {
       const numIn = (h, i, k, max, label) => {
         const inp = el("input", { type: "text", inputmode: "numeric", pattern: "[0-9]*", maxLength: k === "yards" ? 3 : 2, autocomplete: "off", enterkeyhint: "next",
           value: h[k] ?? "", "aria-label": `Hole ${h.n} ${label}`, "data-row": k, class: "sc-in" });
-        inp.addEventListener("input", () => {
+        inp.addEventListener("input", (e) => {
           inp.value = inp.value.replace(/\D/g, "");
           const v = inp.value === "" ? null : Math.min(max, Number(inp.value));
           holes[i][k] = v;
           drawTotals(); cardChanged();
+          // (update 163) a full yardage (3 digits) or handicap (2 digits, or 2-9) moves on to the next hole
+          const full = k === "yards" ? inp.value.length >= 3 : inp.value.length >= 2 || /^[2-9]$/.test(inp.value);
+          if (full && e.inputType?.startsWith("insert") && inp.selectionStart === inp.value.length) nextBox(inp);
         });
         inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nextBox(inp); } });
+        inp.addEventListener("focus", () => { showBar(inp); inp.select?.(); });
+        inp.addEventListener("blur", hideBar);
         return inp;
       };
       // Par: 4 to start with; ▲ / ▼ above and below it change it (3 to 5; 6 by typing it on a computer)

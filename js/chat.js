@@ -45,7 +45,7 @@ export function renderChat(container, { flash }) {
   const uid = state.user.uid;
   const myName = state.profile?.name || state.user.displayName || state.user.email || "Me";
   const staff = isStaffState(state);
-  let rooms = [], current = null, stopMsgs = () => {}, roomsKey = "", autoOpened = false;
+  let rooms = [], current = null, stopMsgs = () => {}, roomsKey = "", autoOpened = false, caOpen = true;
   // people: uid -> { name, role, title }; who I may message: staff -> everyone, else reach + friends
   const people = new Map();
   let reach = [], friends = [], incoming = [], outgoing = [];
@@ -145,14 +145,29 @@ export function renderChat(container, { flash }) {
     };
     // Callaway Analyst: always first, starred (yours; Callaway's staff see each person's)
     const mine = staff ? null : all.find((r) => r.id === caId) || { id: caId, callaway: true, createdBy: uid, members: [], type: "group", lastText: "" };
-    const rest = all.filter((r) => r.id !== caId);
+    const rest = all.filter((r) => r.id !== caId && !(staff && r.callaway));
+    // (update 163) Callaway's staff: a permanent, starred Callaway Analyst at the top too, holding every person's
+    // Callaway Analyst conversation (newest first); tap it to open or fold the list
+    const caRooms = staff ? all.filter((r) => r.callaway) : [];
+    const caHead = staff ? (() => {
+      const any = caRooms.some((r) => unread(r) && r.id !== current);
+      const b = el("button", { type: "button", class: "chat-room chat-ca chat-ca-head", "aria-expanded": caOpen ? "true" : "false" }, [
+        el("span", { class: "chat-room-icon", "aria-hidden": "true" }, "\u2605"),
+        el("span", { class: "chat-room-text" }, [el("strong", {}, "Callaway Analyst"), el("span", { class: "muted" }, caRooms.length ? `${caRooms.length} conversation${caRooms.length === 1 ? "" : "s"} with players and teams` : "Messages to Callaway Analyst show up here")]),
+        any ? el("span", { class: "chat-dot", "aria-label": "Unread" }) : null,
+        el("span", { class: "chat-ca-caret", "aria-hidden": "true" }, caOpen ? "\u25B4" : "\u25BE"),
+      ]);
+      b.addEventListener("click", () => { caOpen = !caOpen; drawList(); });
+      const sub = caOpen ? (caRooms.length ? caRooms.map((r) => { const li = item(r); li.classList.add("chat-ca-sub"); return li; }) : [el("li", { class: "chat-ca-sub chat-empty muted small" }, "No one has messaged Callaway Analyst yet.")]) : [];
+      return [el("li", {}, b), ...sub];
+    })() : [];
     const asks = incoming.map((r) => {
       const ok = el("button", { type: "button", class: "link chat-accept" }, "Accept"), no = el("button", { type: "button", class: "link" }, "Decline");
       ok.addEventListener("click", () => accept(r));
       no.addEventListener("click", async () => { try { await deleteDoc(doc(db, "friendRequests", r.id)); } catch { flash("Couldn't decline that.", "error"); } });
       return el("li", { class: "chat-ask" }, [el("span", {}, [el("strong", {}, nameOf(r.from)), " wants to chat with you"]), el("span", { class: "chat-friend-btns" }, [ok, no])]);
     });
-    mount(list, [...asks, mine ? item(mine) : null, ...(rest.length ? rest.map(item) : [el("li", { class: "empty chat-empty" }, "No other chats yet. Start one with New message.")])]);
+    mount(list, [...asks, mine ? item(mine) : null, ...caHead, ...(rest.length ? rest.map(item) : [el("li", { class: "empty chat-empty" }, "No other chats yet. Start one with New message.")])]);
   }
 
   function drawHead() {

@@ -101,6 +101,7 @@ const sectionsFor = (kind) => {
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
     ["Live Event Feed", "#/live", ["live"], { soon: true }],
+    ["Product Usage", "#/product-usage", ["product-usage"], { soon: true }], // (update 163)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
   const planItems = [

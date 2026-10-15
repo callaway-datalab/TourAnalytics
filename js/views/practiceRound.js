@@ -130,9 +130,7 @@ async function myCourses(ctx) {
 
 let coursesCache = null;
 async function drawHome(ctx) {
-  const { reportsPanel } = await import("./coursePrepExtras.js");
-  const reports = reportsPanel(ctx);
-  mount(ctx.body, [hero(), reports, el("p", { class: "muted pr-loading" }, "Loading your courses…")]);
+  mount(ctx.body, [hero(), el("p", { class: "muted pr-loading" }, "Loading your courses…")]);
   const courses = coursesCache || (coursesCache = await myCourses(ctx));
   if (ctx.view.name !== "home") return;
   const pool = courses.flatMap((c) => c.par.map((p, i) => (Number(c.yards[i]) > 0 ? { par: p, yards: Number(c.yards[i]), course: c.name, n: i + 1 } : null)).filter(Boolean));
@@ -180,16 +178,16 @@ async function drawHome(ctx) {
     b.addEventListener("click", () => ctx.go({ name: "prepMenu", course: c }));
     return b;
   })) : el("p", { class: "muted" }, "No courses yet. Courses you save a scorecard for in Enter New Round show up here, or type one in.");
-  // (update 160) Course Reports, then a real course, then a random one
+  // (update 160) a real course, then a random one (update 162: a course's reports are inside it, under Course Maps)
   mount(ctx.body, [
-    hero(), reports, ...resumeRows(ctx),
+    hero(), ...resumeRows(ctx),
     el("section", { class: "panel" }, [el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "Prepare for a real course"), el("p", { class: "muted small" }, "Pick a course for its maps, your history there, or to simulate a round.")]), add]), cards]),
     random,
     historyPanel(ctx),
   ]);
 }
 const hero = () => el("section", { class: "panel pr-hero" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, "Play"), el("h1", {}, "Course Prep"),
-  el("p", { class: "muted pr-lede" }, "Course reports, maps and your history at a course, and a way to play it on the range shot by shot: after each one, how far you hit it and how far offline, scored against the Tour baselines.")])]);
+  el("p", { class: "muted pr-lede" }, "A course's reports and maps, your history there, and a way to play it on the range shot by shot: after each one, how far you hit it and how far offline, scored against the Tour baselines.")])]);
 
 function resumeRows(ctx) {
   return ctx.sessions.filter((s) => s.cat === "ROUND" && s.mode !== "game" && s.status === "active").map((s) => {

@@ -8,7 +8,7 @@ import { el, mount, formatWhen, openTabNow } from "../ui.js";
 import { reportCategory } from "../data.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels } from "../names.js";
-import { CATEGORIES, detectColumns, isShotData, prepare, summaryPlayers, sameCourse, fmtSG } from "../sg.js";
+import { CATEGORIES, detectColumns, isShotData, prepare, summaryPlayers, sameCourse, courseKey, fmtSG } from "../sg.js";
 import { tile, SG, sgCls } from "./practiceShot.js";
 
 /* ------------------------------------------------ the documents you can see ------------------------------------------------ */
@@ -57,7 +57,15 @@ const docRow = (ctx, d) => {
   return el("li", {}, [link, el("span", { class: "row-meta" }, [el("span", { class: "tag" }, d.mimeType === "application/pdf" ? "PDF" : "PowerPoint"), el("br"), el("span", { class: "muted" }, formatWhen(d.uploadedAt))])]);
 };
 
-/** Course Reports, at the top of Course Prep. */
+/** (update 162) A course's reports and maps: a Course Map or Course Report for that course, or an older Course Report
+ *  (uploaded before reports had a course) whose title or description names it. */
+export const forCourse = (d, name) => {
+  const cat = reportCategory(d);
+  if (cat !== "map" && cat !== "course") return false;
+  if (d.course) return sameCourse(d.course, name);
+  return cat === "course" && (sameCourse(d.title, name) || [d.title, d.description].some((t) => courseKey(t || "").includes(courseKey(name)) && courseKey(name).length >= 4));
+};
+/** (no longer on the page: a course's reports are under Course Maps) */
 export function reportsPanel(ctx) {
   const list = el("ul", { class: "rows" }, el("p", { class: "muted" }, "Loading…"));
   const admin = ctx.state.isAdmin && !effectiveTeam(ctx.state).preview;
@@ -77,7 +85,7 @@ export function drawPrepMenu(ctx, course) {
   back.addEventListener("click", () => ctx.home());
   const par = course.par.reduce((a, b) => a + (b || 0), 0), yds = course.yards.reduce((a, b) => a + (Number(b) || 0), 0);
   const nMaps = el("span", { class: "cp-opt-n" });
-  courseDocs(ctx).then((docs) => { const n = docs.filter((d) => reportCategory(d) === "map" && sameCourse(d.course, course.name)).length; nMaps.textContent = n ? `${n} map${n === 1 ? "" : "s"}` : "None yet"; }).catch(() => {});
+  courseDocs(ctx).then((docs) => { const n = docs.filter((d) => forCourse(d, course.name)).length; nMaps.textContent = n ? `${n} report${n === 1 ? "" : "s"}` : "None yet"; }).catch(() => {});
   const opt = (title, sub, extra, go) => {
     const b = el("button", { type: "button", class: "cp-opt" }, [el("strong", {}, title), el("span", { class: "muted small" }, sub), extra]);
     b.addEventListener("click", go);
@@ -87,7 +95,7 @@ export function drawPrepMenu(ctx, course) {
     el("p", { class: "pr-eyebrow" }, "Course Prep"), el("h1", {}, course.name),
     el("p", { class: "muted" }, [course.location, `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
-      opt("Course Maps", "The maps for this course, as PDFs", nMaps, () => ctx.go({ name: "prepMaps", course })),
+      opt("Course Maps", "The course reports and maps for this course", nMaps, () => ctx.go({ name: "prepMaps", course })),
       opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
       opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })),
     ]),
@@ -100,8 +108,8 @@ export async function drawMaps(ctx, course) {
   const list = el("ul", { class: "rows" }, el("p", { class: "muted" }, "Loading…"));
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel" }, [el("p", { class: "pr-eyebrow" }, course.name), el("h1", {}, "Course Maps"), list])]);
   const docs = await courseDocs(ctx).catch(() => []);
-  const maps = docs.filter((d) => reportCategory(d) === "map" && sameCourse(d.course, course.name));
-  mount(list, maps.length ? maps.map((d) => docRow(ctx, d)) : el("p", { class: "empty" }, `No maps for ${course.name} yet.${ctx.state.isAdmin ? " Upload one as a Course Map with this course's name." : " Ask your Callaway analyst."}`));
+  const maps = docs.filter((d) => forCourse(d, course.name));
+  mount(list, maps.length ? maps.map((d) => docRow(ctx, d)) : el("p", { class: "empty" }, `No reports or maps for ${course.name} yet.${ctx.state.isAdmin ? " Upload one with this course's name in Course." : " Ask your Callaway analyst."}`));
 }
 
 /* ------------------------------------------------ Course History ------------------------------------------------ */

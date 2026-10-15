@@ -1,5 +1,5 @@
 import { el, mount, formatWhen, confirmAction, subNav, openTabNow } from "../ui.js";
-import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamEntries, uploadErrorMessage, setReportCategory, ensureAnalystReportAccess } from "../store.js";
+import { watchAdminDocuments, uploadDocument, deleteDocumentFile, getDocumentBlobUrl, adminAllClients, getTeamEntries, uploadErrorMessage, setReportCategory, setDocumentCourse, ensureAnalystReportAccess } from "../store.js";
 import { MAX_DOC_BYTES, readableSize, DEFAULT_ROLES, roleLabel, REPORT_CATEGORIES, reportCategory, ANALYST_ROLE } from "../data.js";
 
 export async function render(main, { flash }) {
@@ -11,8 +11,8 @@ export async function render(main, { flash }) {
   const category = el("select", {}, REPORT_CATEGORIES.filter(([v]) => v !== "performance").map(([v, label]) => el("option", { value: v }, label.replace(/s$/, ""))));
   const courses = el("datalist", { id: "doc-courses" });
   const course = el("input", { list: "doc-courses", placeholder: "e.g. Pebble Beach Golf Links", maxLength: 80, autocomplete: "off" });
-  const courseRow = el("label", { hidden: true }, ["Course", course, courses, el("span", { class: "muted small" }, "The course this map is for. It shows in Course Prep when that course is picked (close spellings match).")]);
-  category.addEventListener("change", () => { courseRow.hidden = category.value !== "map"; });
+  // (update 162) both kinds belong to a course: they show under Course Maps when that course is picked in Course Prep
+  const courseRow = el("label", {}, ["Course", course, courses, el("span", { class: "muted small" }, "The course this is for. It shows in Course Prep under that course's Course Maps (close spellings match).")]);
   // the courses people have saved scorecards for, as suggestions
   import("../courseCards.js").then(async (m) => {
     const names = new Set();
@@ -75,15 +75,15 @@ export async function render(main, { flash }) {
       const ext = f.name.toLowerCase().split(".").pop();
       if (!["pdf", "ppt", "pptx"].includes(ext)) { flash("Reports must be .pdf, .ppt or .pptx.", "error"); return; }
       if (f.size > MAX_DOC_BYTES) { flash(`That file is larger than the ${readableSize(MAX_DOC_BYTES)} limit for this portal.`, "error"); return; }
-      if (category.value === "map" && !course.value.trim()) { flash("Which course is this map for?", "error"); course.focus(); return; }
+      if (!course.value.trim()) { flash("Which course is this for?", "error"); course.focus(); return; }
 
       submit.disabled = true; submit.textContent = "Uploading\u2026";
       try {
         const teamRoles = audience.value ? [...teamBox.querySelectorAll("input[value]:checked:not([disabled])")].map((c) => c.value) : [];
         const onProgress = (done, total) => { submit.textContent = `Uploading\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`; };
-        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, category: category.value, course: category.value === "map" ? course.value.trim() : "", file: f, onProgress });
+        await uploadDocument({ title: title.value.trim() || f.name.replace(/\.[^.]+$/, ""), description: description.value.trim(), audienceClientKey: audience.value || null, teamRoles, category: category.value, course: course.value.trim(), file: f, onProgress });
         flash("Report uploaded.", "ok");
-        form.reset(); courseRow.hidden = category.value !== "map"; drawTeamChecks();
+        form.reset(); drawTeamChecks();
       } catch (err) {
         flash(uploadErrorMessage(err, "that report"), "error");
       } finally {
@@ -108,6 +108,17 @@ export async function render(main, { flash }) {
     el("section", {}, [el("h2", {}, "Library"), listBox]),
   ]);
 
+  // (update 162) a report's course, changeable here (older course reports were uploaded without one)
+  const courseCell = (d) => {
+    if (reportCategory(d) === "performance") return null;
+    const inp = el("input", { class: "compact doc-course", value: d.course || "", placeholder: "Course\u2026", list: "doc-courses", "aria-label": `Course for ${d.title}` });
+    inp.addEventListener("change", async () => {
+      inp.disabled = true;
+      try { await setDocumentCourse(d.id, inp.value.trim()); } catch { flash("Couldn't change that report's course.", "error"); }
+      finally { inp.disabled = false; }
+    });
+    return inp;
+  };
   const unsub = watchAdminDocuments((docs) => {
     if (!docs.length) { mount(listBox, el("p", { class: "empty" }, "No reports yet.")); return; }
     const table = (items) => el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
@@ -141,7 +152,7 @@ export async function render(main, { flash }) {
           catch { flash("Couldn't change that report's type.", "error"); typeSel.disabled = false; }
         });
         return el("tr", {}, [
-          el("td", {}, [openLink, d.course ? el("div", { class: "muted small" }, d.course) : null]), el("td", {}, d.originalName),
+          el("td", {}, [openLink, courseCell(d)]), el("td", {}, d.originalName),
           el("td", {}, d.audienceClientKey
             ? (clientLabels.get(d.audienceClientKey) || d.audienceClientKey.replace(/^c_/, ""))
               + (teamOnly(d).length ? ` + their ${teamOnly(d).map((r) => roleLabel(r).toLowerCase()).join(", ")}` : " only")

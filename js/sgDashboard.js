@@ -963,8 +963,9 @@ export function sgDashboard(container, opts) {
       const steady = P.map((p) => { const t = roundVals(series(p)); return t.length >= 8 ? { p, s: sdOf(t), avg: metric(series(p)) } : null; }).filter(Boolean);
       if (steady.length >= 4) {
         const most = [...steady].sort((a, b) => a.s - b.s).slice(0, 5), least = [...steady].sort((a, b) => b.s - a.s).slice(0, 5);
-        const list = (xs) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, sg ? `${fmtSG(x.avg)} a round` : `${fmtV(x.avg)} average`)]), el("strong", { class: "ti-v" }, `\u00b1${fmtDelta(x.s)}`)])));
-        blocks.push(panelBox("Steadiest & Streakiest", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Steadiest"), list(most)]), el("div", {}, [el("p", { class: "ti-col-title" }, "Streakiest"), list(least)])])]));
+        // (update 163) the steadiest in green, the streakiest in red
+        const list = (xs, tone) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, sg ? `${fmtSG(x.avg)} a round` : `${fmtV(x.avg)} average`)]), el("strong", { class: `ti-v ${tone}` }, `\u00b1${fmtDelta(x.s)}`)])));
+        blocks.push(panelBox("Steadiest & Streakiest", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Steadiest"), list(most, "pos")]), el("div", {}, [el("p", { class: "ti-col-title" }, "Streakiest"), list(least, "neg")])])]));
       }
     }
 

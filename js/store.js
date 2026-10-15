@@ -791,6 +791,17 @@ export async function setReportCategory(docId, category) {
   await batch.commit();
 }
 
+/** Admin (update 162): which course a report or map is for (also on the team copies). */
+export async function setDocumentCourse(docId, course) {
+  const snap = await getDoc(doc(db, "documents", docId));
+  if (!snap.exists()) return;
+  const { audienceClientKey, teamRoles = [] } = snap.data();
+  const batch = writeBatch(db);
+  batch.update(snap.ref, { course: course || "" });
+  for (const role of audienceClientKey ? teamRoles : []) batch.update(doc(db, "teamDocs", audienceClientKey, "roles", role, "docs", docId), { course: course || "" });
+  await batch.commit();
+}
+
 export async function deleteDocumentFile(docId) {
   const snap = await getDoc(doc(db, "documents", docId));
   const { audienceClientKey, teamRoles = [] } = snap.exists() ? snap.data() : {};

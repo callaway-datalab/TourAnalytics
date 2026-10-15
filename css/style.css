@@ -3291,3 +3291,17 @@ button.ti-name:hover { color: var(--accent); }
 .ms-btn.on { border-color: rgba(200, 169, 126, 0.55) !important; }
 .stat-pick select { border-color: rgba(212, 180, 131, 0.45) !important; }
 .sg-filters select option, .stat-pick select option { background: #1c1c1f; color: var(--ink); }
+.doc-course { margin-top: 0.3rem; max-width: 16rem; font-size: 0.82rem; }
+/* update 163: Callaway's staff: Callaway Analyst pinned, with each person's conversation under it */
+.chat-ca-head { position: relative; }
+.chat-ca-caret { margin-left: auto; color: var(--muted); font-size: 0.8rem; padding-left: 0.4rem; }
+.chat-ca-sub { padding-left: 1.1rem; }
+.chat-ca-sub .chat-room { font-size: 0.95em; }
+li.chat-ca-sub.chat-empty { padding: 0.4rem 0.6rem 0.6rem 1.6rem; }
+/* update 163: the scorecard's bar above the phone keyboard */
+.sc-kb-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.6rem;
+  background: rgba(28, 28, 31, 0.97); border-top: 1px solid rgba(255,255,255,0.12); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.sc-kb-label { flex: 1; text-align: center; font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-kb-btn { border: 0; border-radius: 10px; padding: 0.55rem 0.8rem; font: 600 0.92rem var(--font-body, inherit); background: rgba(255,255,255,0.08); color: var(--ink); touch-action: manipulation; }
+.sc-kb-btn.next { background: #d4b483; color: #0a0a0b; }
+.sc-kb-btn.done { background: transparent; color: #d4b483; }
