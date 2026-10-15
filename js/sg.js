@@ -672,6 +672,15 @@ export function applyFilters(rounds, f = {}) {
   // (the Tournament filter: an entered round's tournament, or "Practice Rounds"; practice: its kind of session)
   let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.tfilter ?? rd.event)) && (!ptypes || ptypes.has(rd.ptype || "")) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")));
   if (f.span > 0) rs = rs.slice(-f.span);
+  // the last N months from today (update 159): "Last Month" on 10/15 looks back to 9/15
+  if (f.months > 0) {
+    const now = new Date(), y = now.getFullYear(), m = now.getMonth() - f.months;
+    const last = new Date(y, m + 1, 0).getDate(); // (31 Oct, back a month: 30 Sep)
+    const cut = Date.UTC(y, m, Math.min(now.getDate(), last));
+    const dayOf = (d) => { const s = String(d || ""), iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); if (iso) return Date.UTC(+iso[1], iso[2] - 1, +iso[3]);
+      const t = new Date(s); return isNaN(t) ? NaN : Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()); };
+    rs = rs.filter((rd) => dayOf(rd.date) >= cut);
+  }
   const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
   // Distances are "CAT|label" pairs. A category with distances picked keeps only those; others are unaffected.
   const dists = Array.isArray(f.dist) ? f.dist : f.dist ? [`${f.cat || ""}|${f.dist}`] : [];

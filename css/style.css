@@ -3240,3 +3240,24 @@ button.ti-name:hover { color: var(--accent); }
 /* update 158: Stat Type first, the category pills to its right */
 .stats-row2 .stat-pick { margin-left: 0 !important; margin-right: 0.6rem; }
 @media (max-width: 760px) { .stats-row2 .stat-pick { margin-right: 0; } }
+/* update 159: the hero card's pills open tables; Wins / Top 10s on a second row; rankings in a pop-up */
+.hero-chip.chip-btn { border: 0; font-family: inherit; line-height: inherit; cursor: pointer; transition: filter 0.15s, transform 0.15s; }
+.hero-chip.chip-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+.hero-chip.chip-btn:focus-visible { outline: 2px solid #d4b483; outline-offset: 2px; }
+.hero-chip.rank-chip, .hero-chip.rank-chip.rk-10, .hero-chip.rank-chip.rk-100 { color: #ffffff; }
+.hero-chips2 { margin-top: 0.45rem; }
+.hero .hero-insights { margin-top: 1.5rem; }
+.rank-pop { background: none !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; position: relative; }
+.rank-pop > h3 { display: none; }
+.rank-pop .rank-scroll { max-height: 60vh; }
+.form-part { margin-top: 0.9rem; }
+.form-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-bottom: 0.4rem; font-size: 0.9rem; color: var(--muted); }
+.form-head > strong { color: var(--ink); }
+.form-head span strong { color: var(--ink); font-size: 1rem; margin-left: 0.25rem; }
+.form-head span strong.pos { color: #30d158; } .form-head span strong.neg { color: #ff453a; }
+.form-scroll { max-height: 34vh; }
+.rank-pop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.rank-pop > * { flex: 1 1 100%; }
+.rank-pop > .rank-min, .rank-pop > .rank-glass { flex: none; position: static !important; }
+.rank-pop > .rank-min { margin-left: auto; }
+.hero-pop > .form-part { flex-shrink: 0; }

@@ -20,7 +20,8 @@ import {
 } from "./sg.js";
 
 const CHART_JS = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
-const SPANS = [["0", "All rounds"], ["12", "Last 12 rounds"], ["24", "Last 24 rounds"]];
+// Span (update 159): months back from today ("Last Month" on 10/15 looks back to 9/15)
+const SPANS = [["0", "All"], ["1", "Last Month"], ["3", "Last 3 Months"], ["6", "Last 6 Months"], ["12", "Last 12 Months"], ["18", "Last 18 Months"]];
 const SUMMARY = [["TOTAL", "SG: Total"], ["T2G", "SG: Tee to Green"], ["OTT", "SG: Off-the-Tee"], ["APP", "SG: Approach"], ["ARG", "SG: Around-the-Green"], ["PUTT", "SG: Putting"]];
 const BREAKDOWNS = {
   OTT: [["distanceRange", "SG by Club"], ["lie", "SG by Lie"], ["dogleg", "SG by Dogleg"]],
@@ -47,6 +48,7 @@ export function sgDashboard(container, opts) {
   const st = opts.state || {};
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  if (!SPANS.some(([v]) => v === String(st.span ?? 0))) st.span = 0; // (an old "last N rounds" pick)
   Object.assign(st, { span: st.span ?? 0, year: arr(st.year), event: arr(st.event), roundNo: arr(st.roundNo), cats: st.cats ?? [], lie: arr(st.lie),
     dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), club: arr(st.club), ptype: arr(st.ptype), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
   const narrowed = () => st.lie.length || st.dist.length || st.club.length; // lie / distance / club in use (the shared summary can't follow those)
@@ -65,6 +67,7 @@ export function sgDashboard(container, opts) {
   const isSG = () => statKey === "sg";
   // (another stat: a round counts only where it has a value in the selection, e.g. an approach for Hit Green %)
   const nz = (rs) => (isSG() ? rs : rs.filter((rd) => rd.shots.length));
+  let lastSliced = []; // the field as sliced on screen (for the hero card's pop-ups)
   let lastRankF = {}; // the filters the field was sliced with (the rankings can't follow lie / distance from the shared summary)
   const fieldIsSummary = () => field.some((p) => p.summaryOnly);
   // a name that opens that player's view (a player's own leaderboard: only them; a coach: their players)
@@ -129,11 +132,12 @@ export function sgDashboard(container, opts) {
     // Tournament: only those on the tour (and in the years) picked; a pick that's no longer there goes
     st.event = st.event.filter((e) => eventOptions(base).some((o) => o.value === e));
     if (opts.practice) st.event = [];
-    const f = { span: Number(st.span), year: st.year, tour: st.tour, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, ptype: st.ptype };
+    const f = { months: Number(st.span), year: st.year, tour: st.tour, event: st.event, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, ptype: st.ptype };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
     lastRankF = rankF;
     const slicedField = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, rankF)) }));
+    lastSliced = slicedField;
     // Who's ranked, for every stat: players with at least Min. rounds of strokes-gained data in the selection
     // (year, tour, tournament, round, span). Other stats' rows don't line up with rounds (some are one row per
     // tournament), so they use this same list. With no strokes-gained data at all, each stat counts its own.
@@ -174,7 +178,7 @@ export function sgDashboard(container, opts) {
         if (!isSG()) return statBlocks(mine, slicedField, f);
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
-        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, showRanks && me ? rankingsBlock(slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
+        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
       })()),
     ]);
     if (focusKey) {
@@ -288,7 +292,8 @@ export function sgDashboard(container, opts) {
 
   function filterBar(opt, { bare = false } = {}) {
     const span = el("select", { "aria-label": "Span" }, SPANS.map(([v, l]) => el("option", { value: v, selected: String(st.span) === v }, l)));
-    span.addEventListener("change", () => { st.span = Number(span.value); draw(); });
+    // (a span reaches back across years, so it shows every year: the year pills would cut it short)
+    span.addEventListener("change", () => { st.span = Number(span.value); if (st.span > 0) { st.year = []; st.yearKept = []; } draw(); });
     const latest = [...opt.year].sort().pop();
     const active = ["event", "roundNo", "lie", "dist", "club", "cats", "ptype"].some((k) => st[k].length) || Number(st.span) > 0
       || JSON.stringify(st.year) !== JSON.stringify(latest ? [latest] : []);
@@ -413,12 +418,22 @@ export function sgDashboard(container, opts) {
             el("h2", { class: "hero-name" }, me.label),
             el("div", { class: "hero-big" }, [el("strong", { class: toneCls(total, fieldAvg) }, fmtV(total)), el("span", {}, sg ? "strokes gained a round" : def.label)]),
             sg ? null : el("p", { class: "hero-help" }, def.help),
+            // (update 159: each pill opens a table: the rankings, every round, the form, the wins and top 10s)
             el("div", { class: "hero-chips" }, [
               // (coloured by rank, as in the report: top 10, 11-50, 51-100, 101-150, past 150)
-              r.rank && r.of > 1 ? el("span", { class: `hero-chip rank-chip ${r.rank <= 10 ? "rk-10" : r.rank <= 50 ? "rk-50" : r.rank <= 100 ? "rk-100" : r.rank <= 150 ? "rk-150" : "rk-out"}` }, `${ordinal(r.rank)} of ${r.of}`) : null,
-              el("span", { class: "hero-chip" }, rw(mine.length)),
-              form ? el("span", { class: `hero-chip ${form[1]}` }, `Form: ${form[0]}`) : null,
+              r.rank && r.of > 1 ? chipBtn(`hero-chip rank-chip ${r.rank <= 10 ? "rk-10" : r.rank <= 50 ? "rk-50" : r.rank <= 100 ? "rk-100" : r.rank <= 150 ? "rk-150" : "rk-out"}`,
+                `${ordinal(r.rank)} of ${r.of}`, "Show the rankings", () => rankPopup()) : null,
+              chipBtn("hero-chip", rw(mine.length), `Show every ${unit}`, () => tournamentsPopup(ordered, slicedField, "Rounds")),
+              form ? chipBtn(`hero-chip ${form[1]}`, `Form: ${form[0]}`, "Show the form", () => formPopup(ordered)) : null,
             ]),
+            (() => {
+              if (!showRanks || !rankedField(slicedField).some((p) => p.key !== me.key)) return null;
+              const res = myFinishes(slicedField), wins = res.filter((x) => x.rank === 1), tops = res.filter((x) => x.rank <= 10);
+              return el("div", { class: "hero-chips hero-chips2" }, [
+                chipBtn("hero-chip", `${wins.length} ${wins.length === 1 ? "Win" : "Wins"}`, "Show the wins", () => finishesPopup(wins, "Wins")),
+                chipBtn("hero-chip", `${tops.length} Top 10${tops.length === 1 ? "" : "s"}`, "Show the top 10s", () => finishesPopup(tops, "Top 10s")),
+              ]);
+            })(),
             insightsButton(slicedField),
           ]),
           (() => {
@@ -468,55 +483,120 @@ export function sgDashboard(container, opts) {
       foot,
     ]);
   }
-  // The hero chart's table (update 158): every round, newest at the top, the player's number in it and where it
-  // ranked among everyone in the field who played that round (same tournament, year and round).
-  function tournamentsPopup(ordered, slicedField = []) {
-    const evUnit = unit === "event";
-    const better = (a, b) => (isSG() || def.higher !== false ? a > b : a < b);
-    const yearOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
-    const sameRound = (x, rd) => x.event === rd.event && yearOf(x) === yearOf(rd) && (rd.roundNo ? x.roundNo === rd.roundNo : x.date === rd.date);
-    // each round's results across the field, worked out once per round
-    const rankOf = (rd) => {
-      const mineV = metric([rd]);
-      if (mineV == null) return null;
-      const vals = [];
-      for (const p of slicedField || []) {
-        if (p.key === me.key) continue;
-        const x = (p.rounds || []).find((y) => sameRound(y, rd));
-        const v = x ? metric([x]) : null;
-        if (v != null) vals.push(v);
-      }
-      if (!vals.length) return null;
-      return { rank: 1 + vals.filter((v) => better(v, mineV) && Math.abs(v - mineV) > 1e-9).length, of: vals.length + 1 };
-    };
-    const when = (rd) => { const b = new Date(rd.date); return isNaN(b) ? rd.date || "" : b.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
-    const cell = (v, cls = "") => el("td", { class: `num ${cls} ${isSG() ? signCls(v) : ""}` }, fmtV(v));
-    const what = isSG() ? "strokes gained" : def.label;
-    const events = new Set(ordered.map((rd) => `${rd.event}|${yearOf(rd)}`)).size;
-    const table = el("table", { class: "plain rankings hero-tourn" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), evUnit ? null : el("th", { class: "num" }, "Rd"),
-        el("th", { class: "num", title: `${me.label}'s ${what} in that ${unit}` }, isSG() ? "SG" : def.label),
-        el("th", { class: "num", title: `Where that ${unit} ranked among everyone in the field who played it` }, "Rank")])),
-      el("tbody", {}, [...ordered].reverse().map((rd) => {
-        const r = rankOf(rd);
-        return el("tr", {}, [el("td", { class: "ht-date" }, when(rd)), el("td", { class: "ht-name" }, rd.event || "\u2014"),
-          evUnit ? null : el("td", { class: "num" }, rd.roundNo || "\u2014"), cell(metric([rd])),
-          el("td", { class: `num ht-win ${r && r.rank === 1 ? "ht-won" : ""}` }, r ? [String(r.rank), el("span", { class: "ht-of" }, ` of ${r.of}`)] : "\u2014")]);
-      })),
-    ]);
+  /* ---------------- the hero card's pills and pop-ups (update 159) ---------------- */
+  const chipBtn = (cls, text, title, onClick) => {
+    const b = el("button", { type: "button", class: `${cls} chip-btn`, title, "aria-haspopup": "dialog" }, text);
+    b.addEventListener("click", onClick);
+    return b;
+  };
+  // a pop-up over the page: eyebrow, title, a line under it, then the content. Returns its close function.
+  function popup(eyebrow, title, sub, content, label = title) {
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
-    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": evUnit ? "Tournaments" : "Rounds" }, el("div", { class: "gx-pop hero-pop" }, [
-      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${isSG() ? "SG" : def.label} trend`), el("h2", {}, me.label),
-        el("p", { class: "gx-sub" }, `${rw(ordered.length)} \u00b7 ${events} ${events === 1 ? "tournament" : "tournaments"} \u00b7 newest first`)]), close]),
-      el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-      el("p", { class: "muted small" }, `Rank: where that ${unit} placed among everyone in the field who played it.`),
-    ]));
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": label }, el("div", { class: "gx-pop hero-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, eyebrow), el("h2", {}, title), sub ? el("p", { class: "gx-sub" }, sub) : null]), close]),
+      ...[].concat(content)]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };
     close.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
     document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll");
     document.body.appendChild(overlay);
     close.focus();
+    return shut;
+  }
+  const yearOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+  const dateTxt = (d) => { const b = new Date(d); return isNaN(b) ? d || "" : b.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
+  const better = (a, b) => (higherBetter() ? a > b : a < b);
+  // a change or a spread in the stat's own units (a percentage's in points)
+  const fmtDelta = (v) => (isSG() ? Math.abs(v).toFixed(2) : fmtStat({ ...def, unit: def.pct ? "" : def.unit, pct: false, dp: def.pct ? 1 : def.dp }, Math.abs(v)) + (def.pct ? " pts" : ""));
+  const sdOf = (a) => { if (a.length < 2) return null; const m = a.reduce((t, x) => t + x, 0) / a.length; return Math.sqrt(a.reduce((t, x) => t + (x - m) ** 2, 0) / (a.length - 1)); };
+  const roundVals = (rs) => rs.map((rd) => metric([rd])).filter((v) => v != null && Number.isFinite(v));
+  // Steadiness: how much the rounds swing (standard deviation), the last n against the n before
+  function steadinessLine(ordered, n) {
+    const a = sdOf(roundVals(ordered.slice(-n))), b = sdOf(roundVals(ordered.slice(-2 * n, -n)));
+    if (a == null || b == null) return null;
+    const ch = a - b, same = Math.abs(ch) < (isSG() ? 0.05 : Math.max(1e-9, b * 0.05));
+    const head = same ? "Steadiness is about the same" : ch < 0 ? "Steadiness is improving" : "Steadiness is declining";
+    return `${head}: \u00b1${fmtDelta(a)} a ${unit} (standard deviation) over the last ${rw(n)}, against \u00b1${fmtDelta(b)} in the ${n} before${same ? "" : ` (${ch < 0 ? "steadier" : "streakier"} by ${fmtDelta(ch)})`}.`;
+  }
+  const roundsTable = (rs, { rank = null } = {}) => el("table", { class: "plain rankings hero-tourn" }, [
+    el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rd"), el("th", { class: "num" }, isSG() ? "SG" : def.label), rank ? el("th", { class: "num" }, "Rank") : null])),
+    el("tbody", {}, rs.map((rd) => { const v = metric([rd]); return el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(rd.date)), el("td", { class: "ht-name" }, rd.event || "\u2014"),
+      unit === "event" ? null : el("td", { class: "num" }, rd.roundNo || "\u2014"), el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v)), rank ? rank(rd) : null]); })),
+  ]);
+  // Form: the last n rounds and their average, then the n before and theirs
+  function formPopup(ordered) {
+    const n = Math.min(10, Math.floor(ordered.length / 2));
+    const last = ordered.slice(-n), prev = ordered.slice(-2 * n, -n);
+    const part = (title, rs) => el("div", { class: "form-part" }, [
+      el("div", { class: "form-head" }, [el("strong", {}, title), el("span", {}, ["Average ", el("strong", { class: toneCls(metric(rs), null) }, fmtV(metric(rs)))])]),
+      el("div", { class: "table-scroll hero-tourn-scroll form-scroll" }, roundsTable([...rs].reverse()))]);
+    popup("Form", me.label, `${isSG() ? "Strokes gained" : def.label}: the last ${rw(n)} against the ${n} before, newest first`, [
+      part(`Last ${rw(n)}`, last), part(`Previous ${rw(n)}`, prev)], "Form");
+  }
+  // Each tournament in the selection: who played the most rounds there, best first (the "winner" leads)
+  function eventsOf(players) {
+    const ev = new Map();
+    for (const p of players) for (const rd of p.rounds) {
+      if (!rd.event) continue;
+      const k = `${rd.event}|${yearOf(rd)}`;
+      const e = ev.get(k) || ev.set(k, { event: rd.event, end: rd.date, by: new Map() }).get(k);
+      if (String(rd.date) > String(e.end)) e.end = rd.date;
+      (e.by.get(p) || e.by.set(p, []).get(p)).push(rd);
+    }
+    return [...ev.values()].map((e) => {
+      const most = Math.max(...[...e.by.values()].map((rs) => rs.length));
+      const ranked = [...e.by].filter(([, rs]) => rs.length >= most).map(([p, rs]) => ({ p, v: metric(rs), rs })).filter((x) => x.v != null).sort(byBest);
+      return { ...e, players: e.by.size, ranked, best: ranked[0] || null, top10: ranked.slice(0, 10) };
+    }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
+  }
+  // the player's finish at each tournament (among those who played every round), newest first
+  function myFinishes(slicedField) {
+    return eventsOf(rankedField(slicedField)).map((e) => { const i = e.ranked.findIndex((x) => x.p.key === me.key); return i < 0 ? null : { e, rank: i + 1, of: e.ranked.length, v: e.ranked[i].v }; })
+      .filter(Boolean).reverse();
+  }
+  function finishesPopup(list, what) {
+    const table = list.length ? el("div", { class: "table-scroll hero-tourn-scroll" }, el("table", { class: "plain rankings hero-tourn" }, [
+      el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, isSG() ? "SG / Round" : def.label), el("th", { class: "num" }, "Finish")])),
+      el("tbody", {}, list.map((x) => el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(x.e.end)), el("td", { class: "ht-name" }, x.e.event),
+        el("td", { class: `num ${isSG() ? signCls(x.v) : ""}` }, fmtV(x.v)), el("td", { class: `num ht-win ${x.rank === 1 ? "ht-won" : ""}` }, [String(x.rank), el("span", { class: "ht-of" }, ` of ${x.of}`)])]))),
+    ])) : el("p", { class: "empty center" }, `No ${what.toLowerCase()} in this selection.`);
+    popup(what, me.label, `${list.length} ${list.length === 1 ? "tournament" : "tournaments"} \u00b7 ${isSG() ? "strokes gained a round" : def.label}, newest first`, [table,
+      el("p", { class: "muted small" }, `${what === "Wins" ? "Best in the field" : "Top 10 in the field"} in ${isSG() ? "strokes gained a round" : def.label}, among the players who played every round there.`)], what);
+  }
+  // the Rankings table, in a pop-up (Min. rounds there redraws the page and opens it again)
+  let rankShut = null; // (only one rankings pop-up at a time)
+  function rankPopup() {
+    rankShut?.();
+    let shut = null, redone = false;
+    // (the box can report its change twice, e.g. again as the old pop-up closes: redraw once)
+    const block = rankingsBlock(lastSliced, () => { if (redone) return; redone = true; shut?.(); draw(); rankPopup(); });
+    block.classList.add("rank-pop");
+    const close = popup("Rankings", isSG() ? "Strokes Gained" : def.label, describe(), block, "Rankings");
+    shut = rankShut = () => { close(); if (rankShut === shut) rankShut = null; };
+    centerRankings();
+  }
+  // The hero chart's table (update 158) and the rounds pill's (update 159): every round, newest at the top, the
+  // player's number in it and where it ranked among everyone in the field who played that round.
+  function tournamentsPopup(ordered, slicedField = [], eyebrow = null) {
+    const sameRound = (x, rd) => x.event === rd.event && yearOf(x) === yearOf(rd) && (rd.roundNo ? x.roundNo === rd.roundNo : x.date === rd.date);
+    const rankCell = (rd) => {
+      const mineV = metric([rd]);
+      const vals = [];
+      if (mineV != null) for (const p of slicedField || []) {
+        if (p.key === me.key) continue;
+        const x = (p.rounds || []).find((y) => sameRound(y, rd));
+        const v = x ? metric([x]) : null;
+        if (v != null) vals.push(v);
+      }
+      if (!vals.length) return el("td", { class: "num ht-win" }, "\u2014");
+      const r = 1 + vals.filter((v) => better(v, mineV) && Math.abs(v - mineV) > 1e-9).length;
+      return el("td", { class: `num ht-win ${r === 1 ? "ht-won" : ""}` }, [String(r), el("span", { class: "ht-of" }, ` of ${vals.length + 1}`)]);
+    };
+    const events = new Set(ordered.map((rd) => `${rd.event}|${yearOf(rd)}`)).size;
+    popup(eyebrow || `${isSG() ? "SG" : def.label} trend`, me.label, `${rw(ordered.length)} \u00b7 ${events} ${events === 1 ? "tournament" : "tournaments"} \u00b7 newest first`, [
+      el("div", { class: "table-scroll hero-tourn-scroll" }, roundsTable([...ordered].reverse(), { rank: rankCell })),
+      el("p", { class: "muted small" }, `Rank: where that ${unit} placed among everyone in the field who played it.`),
+    ], unit === "event" ? "Tournaments" : "Rounds");
   }
   // ✨ Generate AI Insights: the Reports page's report builder, in a pop-up, for the player on screen
   function insightsButton(slicedField = []) {
@@ -684,7 +764,7 @@ export function sgDashboard(container, opts) {
     list(st.year, "years"), list(st.event, "tournaments"),
     st.roundNo.length ? (st.roundNo.length <= 2 ? `Round ${st.roundNo.join(" & ")}` : `${st.roundNo.length} rounds`) : "",
     list(st.lie, "lies"), list(st.dist, "distances", (d) => d.split("|").slice(1).join("|")), list(st.club, "clubs"),
-    Number(st.span) > 0 ? `last ${st.span} rounds` : "",
+    Number(st.span) > 0 ? (Number(st.span) === 1 ? "last month" : `last ${st.span} months`) : "",
   ].filter(Boolean).join(" \u00b7 ");
 
   /* ------------------------------ your selection ------------------------------ */
@@ -816,6 +896,7 @@ export function sgDashboard(container, opts) {
         const last = perRoundOf(ordered.slice(-n)), prev = perRoundOf(ordered.slice(-2 * n, -n)), ch = last - prev;
         lines.push(Math.abs(ch) < 0.05 ? `Form is steady: ${fmtSG(last)} a round over the last ${n} rounds, about the same as the ${n} before.`
           : `Form is ${ch > 0 ? "improving" : "cooling down"}: ${fmtSG(last)} a round over the last ${n} rounds, against ${fmtSG(prev)} in the ${n} before (${ch > 0 ? "better" : "worse"} by ${Math.abs(ch).toFixed(2)}).`);
+        const sl = steadinessLine(ordered, n); if (sl) lines.push(sl);
       }
     } else {
       // no player picked: the group
@@ -836,84 +917,70 @@ export function sgDashboard(container, opts) {
   }
 
   /* ------------------------------ the whole tour (no player picked; update 142) ------------------------------ */
-  // Category leaders, hot and cold form, the steadiest players, each tournament's best in the field, and wins.
+  // Category leaders (strokes gained), hot and cold form, the steadiest players, each tournament's best in the
+  // field, and wins. Any stat (update 159): its own form, round-to-round swing, and who led the field in it.
   function tourBlocks(slicedField) {
     const P = rankedField(slicedField).filter((p) => p.rounds.length);
     if (P.length < 3) return [];
+    const sg = isSG();
     const nameBtn = (p) => (pickable(p.key) ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, p.label); b.addEventListener("click", () => opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, p.label));
     const sgCell = (v) => el("strong", { class: `ti-v ${signCls(v)}` }, fmtSG(v));
-    const roundTotal = (rd) => rd.shots.reduce((t, x) => t + x.sg, 0);
-    const mean = (a) => a.reduce((t, x) => t + x, 0) / a.length;
-    const sd = (a) => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((t, x) => t + (x - m) ** 2, 0) / (a.length - 1)); };
+    const good = (ch) => (def.higher == null ? null : higherBetter() ? ch > 0 : ch < 0); // a change for the better?
     const blocks = [];
     const cats = CATEGORIES.filter(([k]) => catsAvail.some(([c]) => c === k));
 
-    // 1. category leaders: the top five in each
-    if (cats.length > 1) {
+    // 1. category leaders (strokes gained): everyone ranked, best first; the list scrolls
+    if (sg && cats.length > 1) {
       blocks.push(panelBox("Category Leaders", el("div", { class: "ti-leaders" }, cats.map(([k, l]) => {
-        // every ranked player, best first; the list scrolls
         const top = P.map((p) => ({ p, v: perRoundOf(p.rounds, k) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
         return el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, l), el("ol", { class: "ti-list ti-scroll", tabindex: "0", "aria-label": `${l} leaders` }, top.map((x) => el("li", {}, [nameBtn(x.p), sgCell(x.v)])))]);
       })), "full"));
     }
 
-    // 4. hot and cold: the last 10 rounds against the 10 before them (as the 10-round rolling averages)
+    // 2. hot and cold: the last 10 rounds against the 10 before them
+    const series = (p) => [...p.rounds].filter((rd) => !sg || !rd.eventLevel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     {
       const form = P.map((p) => {
-        const rs = [...p.rounds].filter((rd) => !rd.eventLevel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const rs = series(p).filter((rd) => metric([rd]) != null);
         if (rs.length < 20) return null;
-        const last = perRoundOf(rs.slice(-10)), before = perRoundOf(rs.slice(-20, -10));
-        return { p, last, before, ch: last - before };
+        const last = metric(rs.slice(-10)), before = metric(rs.slice(-20, -10));
+        return last == null || before == null ? null : { p, last, before, ch: last - before };
       }).filter(Boolean);
       if (form.length >= 4) {
-        const hot = form.filter((x) => x.ch > 0).sort((a, b) => b.ch - a.ch).slice(0, 5), cold = form.filter((x) => x.ch < 0).sort((a, b) => a.ch - b.ch).slice(0, 5);
-        const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtSG(x.last)} last 10, ${fmtSG(x.before)} previous 10`)]), el("strong", { class: `ti-v ${signCls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${Math.abs(x.ch).toFixed(2)}`)]))) : el("p", { class: "muted small" }, "No one."));
-        blocks.push(panelBox("Hot & Cold", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Heating up"), list(hot)]), el("div", {}, [el("p", { class: "ti-col-title" }, "Cooling off"), list(cold)])])]));
+        const up = (x) => (def.higher === false ? -x.ch : x.ch); // how much better (or just higher, when neither is better)
+        const hot = form.filter((x) => up(x) > 0).sort((a, b) => up(b) - up(a)).slice(0, 5), cold = form.filter((x) => up(x) < 0).sort((a, b) => up(a) - up(b)).slice(0, 5);
+        const cls = (ch) => { const g = good(ch); return g == null ? "" : g ? "pos" : "neg"; };
+        const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtV(x.last)} last 10, ${fmtV(x.before)} previous 10`)]), el("strong", { class: `ti-v ${cls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${fmtDelta(x.ch)}`)]))) : el("p", { class: "muted small" }, "No one."));
+        blocks.push(panelBox("Hot & Cold", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, def.higher == null ? "Going up" : "Heating up"), list(hot)]), el("div", {}, [el("p", { class: "ti-col-title" }, def.higher == null ? "Going down" : "Cooling off"), list(cold)])])]));
       }
     }
 
-    // 5. the steadiest and the streakiest: how much a player's rounds swing
+    // 3. the steadiest and the streakiest: how much a player's rounds swing (standard deviation)
     {
-      const steady = P.map((p) => { const t = p.rounds.filter((rd) => !rd.eventLevel).map(roundTotal); return t.length >= 8 ? { p, s: sd(t), avg: mean(t) } : null; }).filter(Boolean);
+      const steady = P.map((p) => { const t = roundVals(series(p)); return t.length >= 8 ? { p, s: sdOf(t), avg: metric(series(p)) } : null; }).filter(Boolean);
       if (steady.length >= 4) {
         const most = [...steady].sort((a, b) => a.s - b.s).slice(0, 5), least = [...steady].sort((a, b) => b.s - a.s).slice(0, 5);
-        const list = (xs) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtSG(x.avg)} a round`)]), el("strong", { class: "ti-v" }, `\u00b1${x.s.toFixed(2)}`)])));
+        const list = (xs) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, sg ? `${fmtSG(x.avg)} a round` : `${fmtV(x.avg)} average`)]), el("strong", { class: "ti-v" }, `\u00b1${fmtDelta(x.s)}`)])));
         blocks.push(panelBox("Steadiest & Streakiest", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Steadiest"), list(most)]), el("div", {}, [el("p", { class: "ti-col-title" }, "Streakiest"), list(least)])])]));
       }
     }
 
-    // 6. tournaments: when, how many played, and the winning average (the best among those who played every round)
+    // 4. tournaments: when, how many played, and the best in the field (among those who played every round)
     {
-      const ev = new Map();
-      for (const p of P) for (const rd of p.rounds) {
-        if (!rd.event) continue;
-        const k = `${rd.event}|${String(rd.date || "").slice(0, 4)}`;
-        const e = ev.get(k) || ev.set(k, { event: rd.event, end: rd.date, by: new Map() }).get(k);
-        if (String(rd.date) > String(e.end)) e.end = rd.date;
-        (e.by.get(p) || e.by.set(p, []).get(p)).push(rd);
-      }
-      // every tournament in the selection (newest first): the best in the field (the "winner": the best strokes gained a
-      // round among those who played every round) and the top 10 the same way
-      const all = [...ev.values()].map((e) => {
-        const most = Math.max(...[...e.by.values()].map((rs) => rs.length));
-        const ranked = [...e.by].filter(([, rs]) => rs.length >= most).map(([p, rs]) => ({ p, v: perRoundOf(rs) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
-        return { ...e, players: e.by.size, best: ranked[0] || null, top10: ranked.slice(0, 10) };
-      }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
-      // wins so far (oldest first), so a second win shows "(2)"
+      const all = eventsOf(P);
       const wins = new Map(), tops = new Map();
-      for (const e of all) {
+      for (const e of all) { // (oldest first, so a second win shows "(2)")
         if (e.best) { const n = (wins.get(e.best.p)?.n || 0) + 1; wins.set(e.best.p, { p: e.best.p, n }); e.winNo = n; }
         for (const x of e.top10) tops.set(x.p, { p: x.p, n: (tops.get(x.p)?.n || 0) + 1 });
       }
       const list = [...all].reverse();
       if (list.length >= 2) {
-        const fmtD = (d) => { const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
         blocks.push(panelBox("Tournaments", [el("div", { class: "table-scroll ti-events-scroll", tabindex: "0" }, el("table", { class: "plain rankings ti-events" }, [
           el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Players"), el("th", {}, "Best in the field")])),
-          el("tbody", {}, list.map((e) => el("tr", {}, [el("td", { class: "ht-date" }, fmtD(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.players)),
+          el("tbody", {}, list.map((e) => el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.players)),
             el("td", {}, e.best ? [nameBtn(e.best.p), e.winNo > 1 ? el("span", { class: "ti-winno" }, ` (${e.winNo})`) : null] : "\u2014")]))),
         ]))], "full"));
-        // Wins, Top 10s (the same way), and the FedEx Cup and OWGR (coming)
+        // Wins (led the field in this stat), Top 10s (the same way), and the FedEx Cup and OWGR (coming)
         const col = (title, rows, empty) => el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, title),
           rows.length ? el("ol", { class: "ti-list ti-scroll", tabindex: "0", "aria-label": title }, rows.map((x) => el("li", {}, [nameBtn(x.p), el("strong", { class: "ti-v" }, String(x.n))])))
             : el("p", { class: "muted small" }, empty)]);
@@ -1022,8 +1089,7 @@ export function sgDashboard(container, opts) {
   // stat can be split by (category, distance, lie) and its trend. What shows follows what the data has.
   function statBlocks(mine, slicedField, f) {
     const blocks = [heroBox(mine, slicedField, f), statSummary(mine, slicedField)];
-    if (!me) return blocks;
-    if (showRanks) blocks.push(rankingsBlock(slicedField));
+    if (!me) return [...blocks, ...tourBlocks(slicedField)]; // (the field's form, steadiness, tournaments and wins in this stat)
     if (!mine || !mine.length) { blocks.push(el("section", { class: "panel" }, el("p", { class: "empty center" }, `No ${def.label} for ${me.label} in this selection.`))); return blocks; }
     blocks.push(...statDetail(mine, slicedField));
     blocks.push(statTrend(mine, slicedField));
@@ -1040,7 +1106,7 @@ export function sgDashboard(container, opts) {
       lines.push(`${me.label}: ${def.label} ${fmtV(v)} over ${rw(mine.length)}${what ? ` (${what})` : ""}${r.rank && r.of > 1 ? `, ${ordinal(r.rank)} of ${r.of} players` : ""}.`);
       if (avg != null && r.of > 1 && v != null) {
         const b = better(v, avg);
-        lines.push(`Players\u2019 average: ${fmtV(avg)}${b === null || Math.abs(v - avg) < 1e-9 ? "." : `, so ${b ? "better" : "worse"} than average.`}`);
+        lines.push(`Tour Players\u2019 average: ${fmtV(avg)}${b === null || Math.abs(v - avg) < 1e-9 ? "." : `, so ${b ? "better" : "worse"} than average.`}`);
       }
       const cat = st.cats.length === 1 ? st.cats[0] : catsAvail.length === 1 ? catsAvail[0][0] : "";
       if (!cat && catsAvail.length > 1) {
@@ -1060,6 +1126,7 @@ export function sgDashboard(container, opts) {
           lines.push(steady ? `Steady: ${fmtV(last)} over the last ${rw(n)}, about the same as the ${n} before.`
             : `Last ${rw(n)}: ${fmtV(last)}, against ${fmtV(prev)} in the ${n} before${b === null ? "" : `: ${b ? "better" : "worse"}`}.`);
         }
+        const sl = steadinessLine(ordered, n); if (sl) lines.push(sl);
       }
     } else if (r.of) {
       const nameOf = (key) => slicedField.find((p) => p.key === key)?.label || "\u2014";
@@ -1139,7 +1206,6 @@ export function sgDashboard(container, opts) {
       return a;
     }));
     const key = "stat-trend";
-    if (!st.chartTypes[key]) st.chartTypes[key] = "line"; // (values far from zero read better as a line)
     const each = { round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event";
     return panelBox(`${def.label} Trend`, [toggles, chartBox((c, as) => barChart(c, groups.map((g) => g.label), vals, {
       title: def.label, as, single: "blue", compare: cmp && cmp.some((v) => v != null) ? cmp : null, compareLabel: compareName(each), shortLabels: groups.map((g) => g.short),
@@ -1166,15 +1232,15 @@ export function sgDashboard(container, opts) {
     if (sgEligible) return sgMinR; // (strokes-gained rounds decide, for every stat)
     return minFor(Math.max(0, ...players.map((p) => p.rounds.length)));
   };
-  function minRoundsBox(players) {
+  function minRoundsBox(players, onMin = null) {
     const v = minRoundsFor(players);
     const inp = el("input", { type: "number", min: 1, max: 999, value: v, class: "hb-min-in", "aria-label": "Minimum rounds played" });
     const most = curMost;
-    inp.addEventListener("change", () => { st.minRounds = Math.max(1, Math.round(Number(inp.value) || 1)); st.minRoundsAt = most; setTimeout(draw, 0); });
+    inp.addEventListener("change", () => { st.minRounds = Math.max(1, Math.round(Number(inp.value) || 1)); st.minRoundsAt = most; setTimeout(onMin || draw, 0); });
     const what = sgEligible ? "round" : unit;
     return el("label", { class: "hb-min", title: sgEligible && !isSG() ? "Only players with at least this many strokes-gained rounds in the selection (the same players for every stat)" : `Only players with at least this many ${what}s in the selection` }, [`Min. ${what}s`, inp]);
   }
-  function rankingsBlock(slicedField) {
+  function rankingsBlock(slicedField, onMin = null) {
     const sg = isSG();
     // strokes gained: SG / Round and attempts a round; another stat: its value and, when it has categories, the attempts
     const showAtt = sg || catsAvail.length > 0;
@@ -1224,7 +1290,7 @@ export function sgDashboard(container, opts) {
     search.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); shut(); } });
     // (players and coaches only: not for the admin or analysts)
     const searchable = !getState().isAdmin && opts.teamRole !== "analyst";
-    const minBox = minRoundsBox(slicedField.filter((p) => p.rounds.length));
+    const minBox = minRoundsBox(slicedField.filter((p) => p.rounds.length), onMin);
     minBox.classList.add("rank-min"); if (searchable) minBox.classList.add("with-glass");
     return panelBox(`Rankings \u00b7 ${sg ? "" : `${def.label} \u00b7 `}${describe()}`.replace(/ \u00b7 $/, ""), [
       minBox,
