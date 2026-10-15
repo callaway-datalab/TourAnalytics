@@ -89,7 +89,7 @@ export function libraryFrom(d) {
 /** Save the library and which clubs are in the bag (the bag itself is copied to .clubs). */
 export function saveLibrary(uid, library, inBag) {
   const clubs = inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean)
-    .map(({ cat, type, brand, model, note, shaft = "", flex = "", weight = "", yards = "" }) => ({ cat, type, brand, model, note, shaft, flex, weight, yards }));
+    .map(({ id, cat, type, brand, model, note, shaft = "", flex = "", weight = "", yards = "" }) => ({ id, cat, type, brand, model, note, shaft, flex, weight, yards }));
   return setDoc(doc(db, "bags", uid), { library, inBag, clubs: clubs.slice(0, MAX_CLUBS), updatedAt: serverTimestamp() }, { merge: true });
 }
 
@@ -98,4 +98,8 @@ export function saveLibrary(uid, library, inBag) {
 export const shaftText = (c) => [c.shaft, c.flex, c.weight ? `${c.weight}g` : ""].filter(Boolean).join(" \u00b7 ");
 export const FLEXES = ["L", "A", "R", "S", "X", "TX"];
 
-export const shotUsesClub = (st, c) => st.club === clubLabel(c) && (st.clubMake || "") === clubMake(c);
+// (update 167: two clubs can be alike but for a note or shaft; a shot entered since then names its club's id)
+export const shotUsesClub = (st, c) => (st.clubId && c.id ? st.clubId === c.id : st.club === clubLabel(c) && (st.clubMake || "") === clubMake(c));
+/** "the same club": every detail alike (club, type, brand, model, shaft, flex, weight, stock yards and note). */
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+export const sameClub = (a, b) => ["cat", "type", "brand", "model", "shaft", "flex", "weight", "yards", "note"].every((k) => norm(a[k]) === norm(b[k]));

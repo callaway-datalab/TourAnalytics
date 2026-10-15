@@ -665,25 +665,39 @@ export function filterOptions(rounds, cat) {
 }
 
 /**
+ * The round-level part of the filters (year, tour, tournament, course, round, session, last N months) as a
+ * test for one round. The Filters panel uses it to list, for each dropdown, only what the other picks leave
+ * (update 166: a tour's courses, a tournament's course, last month's tournaments).
+ */
+export function roundFilter(f = {}) {
+  // Each filter can hold one value or several (any of them matches); empty means "all".
+  const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
+  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), tours = set(f.tour), ptypes = set(f.ptype), courses = set(f.course);
+  // the last N months from today (update 159): "Last Month" on 10/15 looks back to 9/15
+  let cut = null;
+  if (f.months > 0) {
+    const now = new Date(), y = now.getFullYear(), m = now.getMonth() - f.months;
+    const last = new Date(y, m + 1, 0).getDate(); // (31 Oct, back a month: 30 Sep)
+    cut = Date.UTC(y, m, Math.min(now.getDate(), last));
+  }
+  const dayOf = (d) => { const s = String(d || ""), iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); if (iso) return Date.UTC(+iso[1], iso[2] - 1, +iso[3]);
+    const t = new Date(s); return isNaN(t) ? NaN : Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()); };
+  // (the Tournament filter: an entered round's tournament, or "Practice Rounds"; practice: its kind of session)
+  return (rd) => (!years || years.has(String(rd.year))) && (!events || events.has(String(rd.tfilter ?? rd.event))) && (!ptypes || ptypes.has(rd.ptype || ""))
+    && (!roundNos || roundNos.has(String(rd.roundNo))) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")) && (!courses || courses.has(rd.course || ""))
+    && (cut == null || dayOf(rd.date) >= cut);
+}
+
+/**
  * Apply filters. Year / tournament / round pick which rounds count (the "per round" denominator);
  * category / lie / distance pick which shots count. f = { year, event, roundNo, cats: [...], lie, dist, span }.
  */
 export function applyFilters(rounds, f = {}) {
-  // Each filter can hold one value or several (any of them matches); empty means "all".
   const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
-  const years = set(f.year), events = set(f.event), roundNos = set(f.roundNo), lies = set(f.lie), clubs = set(f.club), tours = set(f.tour), ptypes = set(f.ptype), courses = set(f.course);
-  // (the Tournament filter: an entered round's tournament, or "Practice Rounds"; practice: its kind of session)
-  let rs = rounds.filter((rd) => (!years || years.has(rd.year)) && (!events || events.has(rd.tfilter ?? rd.event)) && (!ptypes || ptypes.has(rd.ptype || "")) && (!roundNos || roundNos.has(rd.roundNo)) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")) && (!courses || courses.has(rd.course || "")));
+  const lies = set(f.lie), clubs = set(f.club);
+  let rs = rounds.filter(roundFilter({ ...f, months: 0 }));
   if (f.span > 0) rs = rs.slice(-f.span);
-  // the last N months from today (update 159): "Last Month" on 10/15 looks back to 9/15
-  if (f.months > 0) {
-    const now = new Date(), y = now.getFullYear(), m = now.getMonth() - f.months;
-    const last = new Date(y, m + 1, 0).getDate(); // (31 Oct, back a month: 30 Sep)
-    const cut = Date.UTC(y, m, Math.min(now.getDate(), last));
-    const dayOf = (d) => { const s = String(d || ""), iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); if (iso) return Date.UTC(+iso[1], iso[2] - 1, +iso[3]);
-      const t = new Date(s); return isNaN(t) ? NaN : Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()); };
-    rs = rs.filter((rd) => dayOf(rd.date) >= cut);
-  }
+  if (f.months > 0) rs = rs.filter(roundFilter({ months: f.months }));
   const cats = f.cats?.length ? f.cats : f.cat ? [f.cat] : null; // one or several categories
   // Distances are "CAT|label" pairs. A category with distances picked keeps only those; others are unaffected.
   const dists = Array.isArray(f.dist) ? f.dist : f.dist ? [`${f.cat || ""}|${f.dist}`] : [];

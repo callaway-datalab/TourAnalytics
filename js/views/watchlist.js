@@ -4,7 +4,8 @@
  * that player, without the adding and removing.
  *   Each player: strokes gained a round (Total, OTT, APP, ARG, PUTT) with ranks and how it's trending (last 10 rounds
  *   against the 10 before), their 3 best and 3 worst distances, any extra metrics you pick, and badges for big moves,
- *   hot streaks and slumps, form landmarks, best rounds, wins and milestones. The alerts sit at the top.
+ *   hot streaks and slumps, form landmarks, best rounds, wins and milestones (on each card; update 167 took the alerts
+ *   row off the top).
  */
 import { el, mount } from "../ui.js";
 import { getState } from "../auth.js";
@@ -87,12 +88,13 @@ export async function render(main, { previewClient }) {
     prefs = watchPrefs();
     const keys = multi ? prefs.players.filter((k) => labels.has(k) || field.some((p) => p.key === k)) : [single];
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
-    const cards = keys.map((k, i) => playerCard(k, { field, detail, own: owns[i], label: nameOf(k), period: prefs.period, metrics: prefs.metrics }));
+    const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
+    const cards = keys.map((k, i) => playerCard(k, { field, detail, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics }));
     const catalog = metricCatalog(field, owns.filter(Boolean).map((rounds) => ({ rounds })));
 
     // ---- controls ----
-    const period = el("div", { class: "seg seg-sm wl-period", role: "group", "aria-label": "Period" }, PERIODS.map(([v, l]) => {
-      const b = el("button", { type: "button", class: `seg-btn${prefs.period === v ? " on" : ""}`, "aria-pressed": String(prefs.period === v) }, l);
+    const period = el("div", { class: "wl-period", role: "group", "aria-label": "Period" }, PERIODS.map(([v, l]) => {
+      const b = el("button", { type: "button", class: `wl-per${cur === v ? " on" : ""}`, "aria-pressed": String(cur === v) }, l);
       b.addEventListener("click", () => { saveWatch({ period: v }); draw(); });
       return b;
     }));
@@ -107,22 +109,12 @@ export async function render(main, { previewClient }) {
       })]))),
     ]) : null;
     const controls = el("div", { class: "wl-controls" }, [period, metricsBtn, multi ? pickerBox : null]);
-    const sub = multi ? `${keys.length ? `${keys.length} player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about"} · ${PERIODS.find(([v]) => v === prefs.period)[1].toLowerCase()} · ranked on their tour`
-      : `${nameOf(single)} · ${PERIODS.find(([v]) => v === prefs.period)[1].toLowerCase()} · ranked on the tour`;
-
-    // ---- alerts: the biggest first ----
-    const alerts = cards.flatMap((c) => c.alerts || []).sort((a, b) => b.sev - a.sev).slice(0, 12);
-    const alertsBox = alerts.length ? el("section", { class: "wl-alerts", "aria-label": "Alerts" }, [
-      el("div", { class: "wl-sec-h" }, [el("h2", {}, "Alerts"), el("span", { class: "muted small" }, multi ? "Big moves, streaks, landmarks and milestones" : "What's moving in your game")]),
-      el("div", { class: "wl-alert-row" }, alerts.map((a) => el("button", { type: "button", class: `wl-alert ${a.tone || ""}`, title: `Open ${a.label}` }, [
-        el("span", { class: "wl-alert-i", "aria-hidden": "true" }, a.icon), el("span", { class: "wl-alert-t" }, [multi ? el("strong", {}, a.label) : null, el("span", {}, a.text)]),
-      ]))),
-    ]) : null;
-    alertsBox?.querySelectorAll(".wl-alert").forEach((b, i) => b.addEventListener("click", () => openPlayer(alerts[i].key)));
+    const sub = multi ? `${keys.length ? `${keys.length} player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about"} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ranked on their tour`
+      : `${nameOf(single)} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ranked on the tour`;
 
     // ---- the cards ----
     const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map(cardView));
-    mount(root, [heroShell(controls, sub), menu, alertsBox, body,
+    mount(root, [heroShell(controls, sub), menu, body,
       el("p", { class: "muted small center wl-foot" }, `Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the same tour in this period${detail ? "" : "; distance ranks appear once the field's lie and distance detail has been published"}.`)]);
   }
 
@@ -172,6 +164,8 @@ export async function render(main, { previewClient }) {
   };
   const rankPill = (r, of) => (r ? el("span", { class: `wl-rank ${rkCls(r)}`, title: `${ordinal(r)} of ${of}` }, ordinal(r)) : el("span", { class: "wl-rank none" }, "—"));
 
+  // the alerts first (biggest first), then the rest of the badges
+  const sortBadges = (bs) => [...bs].sort((x, y) => (y.alert ? y.sev || 1 : 0) - (x.alert ? x.sev || 1 : 0));
   function cardView(c) {
     const name = el("button", { type: "button", class: "wl-name", title: `Open ${c.label}'s stats` }, c.label);
     name.addEventListener("click", () => openPlayer(c.key));
@@ -183,7 +177,7 @@ export async function render(main, { previewClient }) {
       el("div", { class: "wl-id" }, [name, el("p", { class: "wl-meta" }, [c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `last: ${fmtSG(c.latest.sg)} at ${c.latest.event || "a tournament"}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "))]),
       el("div", { class: "wl-head-r" }, [el("div", { class: "wl-spark-box" }, [spark(c.spark), el("span", { class: "wl-spark-l" }, "10-round form")]), star]),
     ]);
-    const badges = c.badges.length ? el("div", { class: "wl-badges" }, c.badges.slice(0, 6).map((b) => el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]))) : null;
+    const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]))) : null;
     const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
       el("span", { class: "wl-tile-k" }, s.short),
       el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
@@ -194,7 +188,7 @@ export async function render(main, { previewClient }) {
       el("span", { class: `wl-dist-v ${sgCls(d.v)}` }, `${d.v >= 0 ? "+" : "−"}${Math.abs(d.v).toFixed(3)}`), rankPill(d.rank, d.of),
     ]))) : el("p", { class: "muted small" }, "Not enough shots yet.")]);
     const dists = el("div", { class: "wl-two" }, [distList("Best distances", c.dists.best, "best"), distList("Toughest distances", c.dists.worst, "worst")]);
-    const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Your metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => el("div", { class: "wl-mrow" }, [
+    const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => el("div", { class: "wl-mrow" }, [
       el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
     ])))]) : null;
     return el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}` }, [head, badges, sg, dists, metrics]);

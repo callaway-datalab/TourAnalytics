@@ -9,7 +9,9 @@ const DEF = { players: [], metrics: ["sg:T2G", "res:wins", "res:top10"], period:
 const lsKey = (uid) => `ta:watchlist:${uid}`;
 let cur = null, curUid = null;
 const uidNow = () => getState().user?.uid || null;
-function fromDevice(uid) { try { return { ...DEF, ...(JSON.parse(localStorage.getItem(lsKey(uid)) || "null") || {}) }; } catch { return { ...DEF }; } }
+// (update 167: "Last 12 months" became "Last 6 months")
+const fixPeriod = (o) => (o.period === "l12" ? { ...o, period: "l6" } : o);
+function fromDevice(uid) { try { return fixPeriod({ ...DEF, ...(JSON.parse(localStorage.getItem(lsKey(uid)) || "null") || {}) }); } catch { return { ...DEF }; } }
 
 /** Your watchlist as it stands (from this device until the saved copy arrives). */
 export function watchPrefs() {
@@ -28,7 +30,7 @@ export function loadWatch() {
   return (loading ||= getDoc(doc(db, "watchlists", uid)).then((s) => {
     if (s.exists() && uid === curUid) {
       const d = s.data();
-      cur = { ...DEF, ...cur, players: Array.isArray(d.players) ? d.players : cur.players, metrics: Array.isArray(d.metrics) ? d.metrics : cur.metrics, period: d.period || cur.period };
+      cur = { ...DEF, ...cur, players: Array.isArray(d.players) ? d.players : cur.players, metrics: Array.isArray(d.metrics) ? d.metrics : cur.metrics, period: d.period === "l12" ? "l6" : d.period || cur.period };
       try { localStorage.setItem(lsKey(uid), JSON.stringify(cur)); } catch { /* */ }
     }
     return cur;

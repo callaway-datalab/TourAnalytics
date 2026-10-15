@@ -203,7 +203,7 @@ export function parseShots(text, { bag = [] } = {}) {
       endLie: s.endLie || null,
       endDist: s.endLie === "Holed" ? 0 : s.endDist ?? null,
       ...(s.startDist != null ? { startDist: s.startDist } : {}),
-      ...(b ? { club: b.label, clubMake: b.model || undefined, clubCat: b.cat } : {}),
+      ...(b ? { club: b.label, clubMake: b.model || undefined, clubCat: b.cat, ...(b.id ? { clubId: b.id } : {}) } : {}),
       saidClub: said ? (said.type || said.cat) : null,
     };
   });

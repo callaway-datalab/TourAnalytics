@@ -14,14 +14,14 @@ const byDate = (a, b) => String(a.date).localeCompare(String(b.date));
 const sgOf = (rd, cat = null) => rd.shots.reduce((t, s) => t + (!cat || cat === "TOTAL" || s.cat === cat || (cat === "T2G" && s.cat !== "PUTT") ? s.sg : 0), 0);
 export const perRound = (rs, cat = null) => (rs.length ? sum(rs.map((rd) => sgOf(rd, cat))) / rs.length : null);
 
-/** The period's filter: this season (the latest year in the data), the last 12 months, or everything. */
+/** The period's filter: this season (the latest year in the data), the last 6 months, or everything. */
 export function periodFilter(period, rounds) {
-  if (period === "l12") return { months: 12 };
+  if (period === "l6" || period === "l12") return { months: 6 }; // (update 167: Last 6 months; an old "l12" pick lands here)
   if (period === "all") return {};
   const years = [...new Set(rounds.map((r) => r.year).filter(Boolean))].sort();
   return years.length ? { year: [years.at(-1)] } : {};
 }
-export const PERIODS = [["season", "Season"], ["l12", "Last 12 months"], ["all", "All"]];
+export const PERIODS = [["season", "Season"], ["l6", "Last 6 months"], ["all", "All"]];
 
 /** The tour a player plays most (their numbers are ranked against that tour). */
 const mainTour = (rounds) => { const m = new Map(); for (const r of rounds) m.set(r.tour || "", (m.get(r.tour || "") || 0) + 1); return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ""; };

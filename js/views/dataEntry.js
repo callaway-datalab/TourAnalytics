@@ -14,7 +14,7 @@ import { detectCardGrid, gridValues, splitRow } from "../cardGrid.js";
 import { tesseractEngine } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
 import { myCourseCards, saveCourseCard } from "../courseCards.js";
-import { getBag, clubLabel, clubRank, clubMake } from "../bag.js";
+import { getBag, clubLabel, clubRank, clubMake, shaftText } from "../bag.js";
 import { parseShots, golfFix, golfScore } from "../voiceShots.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
 
@@ -235,8 +235,11 @@ async function renderNew(main, flash, viewing = null) {
     ]);
     const place = () => {
       const vv = window.visualViewport;
-      if (!vv) { bar.style.bottom = "0px"; return; }
-      bar.style.top = `${vv.offsetTop + vv.height - bar.offsetHeight}px`;
+      if (!vv) { bar.style.top = ""; bar.style.bottom = "0px"; return; }
+      // (update 166) pinned by its top only: with bottom: 0 as well, an iPhone (whose page doesn't shrink for the
+      // keyboard) stretched the bar down behind the keyboard and its buttons sat out of sight
+      bar.style.bottom = "auto";
+      bar.style.top = `${Math.max(0, vv.offsetTop + vv.height - bar.offsetHeight)}px`;
     };
     return { bar, label, place };
   })();
@@ -599,10 +602,18 @@ function renderRound(main, params, flash, previewClient) {
   // Your clubs (WITB), for the optional Club on each shot.
   let bag = [];
   getBag(state.user.uid).then((clubs) => {
-    bag = clubs.map((c) => ({ label: clubLabel(c), model: clubMake(c), cat: c.cat, type: c.type, yards: Number(c.yards) || null })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
+    bag = clubs.map((c) => ({ id: c.id || null, label: clubLabel(c), model: clubMake(c), note: c.note || "", shaft: shaftText(c), cat: c.cat, type: c.type, yards: Number(c.yards) || null })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
     if (round && round.holes && strokes.length && holeBox?.isConnected) { chain(); drawHole(); } // (the bag arrived: suggest clubs)
     if (round && holeIdx >= 0 && bag.length) drawHole();
   });
+  // (update 167) the shot's club in the bag: by its id, else by club and brand / model (older shots)
+  const bagIndex = (st) => { const byId = st.clubId ? bag.findIndex((c) => c.id === st.clubId) : -1; return byId >= 0 ? byId : bag.findIndex((c) => c.label === st.club && (c.model || "") === (st.clubMake || "")); };
+  // two clubs alike but for a note or shaft: the note (or shaft) tells them apart in the Club list
+  const clubText = (c) => {
+    const base = c.model ? `${c.label} \u00b7 ${c.model}` : c.label;
+    const twins = bag.filter((x) => x.label === c.label && (x.model || "") === (c.model || ""));
+    return twins.length < 2 ? base : `${base} (${c.note || c.shaft || `#${twins.indexOf(c) + 1}`})`;
+  };
   const hole = () => round.holes[holeIdx];
   const key = (h) => `h${h.n}`;
 
@@ -672,7 +683,7 @@ function renderRound(main, params, flash, previewClient) {
     holeBox.querySelectorAll(".shot-card").forEach((card) => {
       const st = strokes[Number(card.dataset.i)], sel = card.querySelector(".club-select");
       if (!st || !sel || !st.clubAuto) return;
-      const k = bag.findIndex((c) => c.label === st.club && (c.model || "") === (st.clubMake || ""));
+      const k = bagIndex(st);
       sel.value = k >= 0 ? String(k) : "";
     });
   }
@@ -690,8 +701,8 @@ function renderRound(main, params, flash, previewClient) {
       const withYards = bag.filter((x) => x.yards && !isCat(x, "Putter"));
       if (d > 0 && s.startLie !== "Green" && withYards.length) c = withYards.reduce((a, b) => (Math.abs(b.yards - d) < Math.abs(a.yards - d) ? b : a));
     }
-    if (c) { s.club = c.label; s.clubMake = c.model || undefined; s.clubCat = c.cat || undefined; s.clubAuto = true; }
-    else if (s.clubAuto) { s.club = undefined; s.clubMake = undefined; s.clubCat = undefined; s.clubAuto = false; }
+    if (c) { s.club = c.label; s.clubMake = c.model || undefined; s.clubCat = c.cat || undefined; s.clubId = c.id || undefined; s.clubAuto = true; }
+    else if (s.clubAuto) { s.club = undefined; s.clubMake = undefined; s.clubCat = undefined; s.clubId = undefined; s.clubAuto = false; }
   }
 
   // Taps (lie chips, add/remove shot) redraw the hole. Typing a distance must NOT redraw, or the phone
@@ -710,8 +721,8 @@ function renderRound(main, params, flash, previewClient) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 600);
   }
-  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart, club, clubMake, clubCat }) => ({
-    ...(club ? { club } : {}), ...(club && clubMake ? { clubMake } : {}), ...(club && clubCat ? { clubCat } : {}),
+  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart, club, clubMake, clubCat, clubId }) => ({
+    ...(club ? { club } : {}), ...(club && clubMake ? { clubMake } : {}), ...(club && clubCat ? { clubCat } : {}), ...(club && clubId ? { clubId } : {}),
     startLie, startDist: startDist === "" || startDist === null ? null : Number(startDist), endLie,
     endDist: endLie === "Holed" ? 0 : endDist === "" || endDist === null || endDist === undefined ? null : Number(endDist),
     ...(manualStart ? { manualStart: true } : {}),
@@ -1038,7 +1049,7 @@ function renderRound(main, params, flash, previewClient) {
       ...blankStroke(), open: true,
       ...(start + i === 0 ? { startLie: "Tee box", startDist: h.yards ?? "" } : {}),
       endLie: p.endLie || "", endDist: p.endDist ?? "",
-      ...(p.club ? { club: p.club, clubMake: p.clubMake, clubCat: p.clubCat } : {}),
+      ...(p.club ? { club: p.club, clubMake: p.clubMake, clubCat: p.clubCat, ...(p.clubId ? { clubId: p.clubId } : {}) } : {}),
     }));
     // "…hit 7 iron from 160": that's how far the shot before left you
     const all = [...strokes.slice(0, start), ...said];
@@ -1060,16 +1071,16 @@ function renderRound(main, params, flash, previewClient) {
         : el("p", { class: "muted small club-note" }, ["Fill out ", el("a", { href: "#/witb" }, "WITB"), " in the Account section to track club usage."]);
     }
     // The shot keeps the club, its brand / model and its group, so stats can sort by any of them.
-    const inBag = bag.findIndex((c) => c.label === s.club && (c.model || "") === (s.clubMake || ""));
+    const inBag = bagIndex(s);
     const sel = el("select", { class: "club-select", "aria-label": "Club", disabled: ro }, [
       el("option", { value: "" }, "\u2014"),
-      ...bag.map((c, i) => el("option", { value: String(i), selected: i === inBag }, c.model ? `${c.label} \u00b7 ${c.model}` : c.label)),
+      ...bag.map((c, i) => el("option", { value: String(i), selected: i === inBag }, clubText(c))),
       ...(s.club && inBag < 0 ? [el("option", { value: "kept", selected: true }, s.clubMake ? `${s.club} \u00b7 ${s.clubMake}` : s.club)] : []),
     ]);
     sel.addEventListener("change", () => {
       if (sel.value === "kept") return;
       const c = bag[Number(sel.value)];
-      s.club = c?.label || undefined; s.clubMake = c?.model || undefined; s.clubCat = c?.cat || undefined;
+      s.club = c?.label || undefined; s.clubMake = c?.model || undefined; s.clubCat = c?.cat || undefined; s.clubId = c?.id || undefined;
       s.clubPicked = true; s.clubAuto = false; // yours: no more suggestions for this shot
       changed(false);
     });

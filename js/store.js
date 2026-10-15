@@ -179,7 +179,7 @@ export async function createAnalystAccess({ name, email, playerKeys, allPlayers,
   await setDoc(doc(db, "invites", code), {
     // kind "employee" (update 151): a Callaway employee, with every player (as an analyst sees them) but not on staff chat
     clientKey: teamKey(), clientLabel: name || "", note: kind === "employee" ? "Employee" : "Callaway Access", ...(email ? { email: norm(email) } : {}),
-    kind, allPlayers: kind === "employee" ? true : !!allPlayers,
+    kind, allPlayers: !!allPlayers, // (employees too can be limited to some players, update 166)
     access: analystAccess(allPlayers ? [...labels.keys()] : playerKeys, labels),
     createdAt: serverTimestamp(), expiresAt: null,
     usedBy: null, usedAt: null, revoked: false,
@@ -209,7 +209,6 @@ export async function editAccess(inv, user, { type, name, email, role, player, p
   } else {
     const key = isTeamKey(inv.clientKey) ? inv.clientKey : isTeamKey(user?.clientKey) ? user.clientKey : teamKey();
     const employee = type === "employee";
-    if (employee) allPlayers = true; // employees always have every player
     const analyst = type === "analyst" || employee;
     const keys = analyst && allPlayers ? [...labels.keys()] : playerKeys;
     const r = analyst ? ANALYST_ROLE : normRole(type === "other" ? role : type);

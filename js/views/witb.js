@@ -5,7 +5,7 @@
 // Your bag becomes the Club choice on each shot in Data Entry.
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchBagDoc, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub, shaftText, FLEXES } from "../bag.js";
+import { watchBagDoc, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub, shaftText, FLEXES, sameClub } from "../bag.js";
 import { watchPlayerRounds } from "../rounds.js";
 import { strokesGained } from "../roundCalc.js";
 import { fmtSG, sgColor } from "../sg.js";
@@ -124,7 +124,8 @@ export async function render(main, { flash, previewClient }) {
     drawAddMode();
   });
   setToggle.addEventListener("click", () => { setMode = !setMode; drawAddMode(); });
-  const same = (x, c) => x.cat === c.cat && x.type === c.type && x.brand.toLowerCase() === c.brand.toLowerCase() && x.model.toLowerCase() === c.model.toLowerCase();
+  // (update 167) a club can be added again when anything about it differs, even just the note
+  const same = (x, c) => sameClub(x, c);
   const addForm = el("form", {
     class: "club-add",
     onSubmit: async (e) => {
@@ -147,7 +148,7 @@ export async function render(main, { flash, previewClient }) {
       } else {
         if (!cat.value || !type.value) { flash("Pick the club and its type.", "error"); return; }
         const c = { id: newClubId(), cat: cat.value, type: type.value, brand: b, model: m, note: n, ...shaftBits };
-        if (library.some((x) => same(x, c))) { flash(`${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} is already in your list.`, "error"); return; }
+        if (library.some((x) => same(x, c))) { flash(`${clubLabel(c)}${clubMake(c) ? ` \u00b7 ${clubMake(c)}` : ""} is already in your list with exactly the same details. Change something (even the note) to add another.`, "error"); return; }
         library = [c, ...library];
         if (inBag.length < MAX_CLUBS) inBag = [...inBag, c.id]; // new clubs go straight in the bag (if there's room)
       }
@@ -176,7 +177,7 @@ export async function render(main, { flash, previewClient }) {
     saveB.addEventListener("click", async () => {
       const next = { ...c, cat: ecat.value, type: etype.value, brand: eb.value.trim(), model: em.value.trim(), note: en.value.trim(),
         shaft: es.value.trim(), flex: ef.value, weight: ew.value ? String(Math.round(Number(ew.value))) : "", yards: ey.value ? String(Math.round(Number(ey.value))) : "" };
-      if (library.some((x) => x.id !== c.id && same(x, next))) { flash("You already have that club in your list.", "error"); return; }
+      if (library.some((x) => x.id !== c.id && same(x, next))) { flash("You already have a club with exactly these details. Change something (even the note) to keep both.", "error"); return; }
       library = library.map((x) => (x.id === c.id ? next : x));
       editing = null; draw(); await save();
     });

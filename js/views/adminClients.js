@@ -192,7 +192,9 @@ export async function render(main, { flash }) {
     fields = {
       name: el("input", { maxLength: 80, placeholder: "Only for you, until they sign up" }),
       // Analysts always see every player (including ones added later), so there's nothing to pick.
-      players: type === "analyst" || type === "employee" ? { node: el("p", { class: "muted small all-note" }, `${type === "employee" ? "Employees" : "Analysts"} see all players, including players added later.`), value: () => ({ allPlayers: true, playerKeys: [] }) }
+      players: type === "analyst" ? { node: el("p", { class: "muted small all-note" }, "Analysts see all players, including players added later."), value: () => ({ allPlayers: true, playerKeys: [] }) }
+        // Employee (update 166): "All players" (ticked to start), or untick it and search for the players they see
+        : type === "employee" ? playerPicker([], { allowAll: true, all: true })
         : playerPicker([], { allowAll: false, selectAll: type === "other" }),
       // Other: what they do (Physio, Trainer, Swing coach…)
       role: type === "other" ? el("input", { maxLength: 30, placeholder: "e.g. Physio, Trainer, Swing coach", autocomplete: "off" }) : null,
@@ -297,9 +299,9 @@ export async function render(main, { flash }) {
       roleRow.hidden = t !== "other";
       playerRow.hidden = t !== "player";
       if (t === "player") { picker = null; mount(teamBox, null); return; }
-      if (t === "employee") { picker = { value: () => ({ allPlayers: true, playerKeys: [] }) }; mount(teamBox, el("p", { class: "muted small all-note" }, "Employees see all players, including players added later.")); return; }
       const keep = picker ? picker.value() : { playerKeys: grants.map((g) => g.key), allPlayers: !!(user?.allPlayers ?? inv.allPlayers) };
-      picker = playerPicker(keep.playerKeys, { allowAll: t === "analyst", all: t === "analyst" && (keep.allPlayers || curType !== "analyst") });
+      const allOk = t === "analyst" || t === "employee"; // (an employee: All players, or the ones picked, update 166)
+      picker = playerPicker(keep.allPlayers ? [] : keep.playerKeys, { allowAll: allOk, all: allOk && (keep.allPlayers || curType !== t) });
       mount(teamBox, picker.node);
     };
     const roleRow = el("label", {}, ["Role", roleIn]);

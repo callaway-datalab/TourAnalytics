@@ -3421,3 +3421,23 @@ button.chat-ca-caret:hover { background: rgba(255,255,255,0.06); color: var(--in
 .wl-period .seg-btn { white-space: nowrap; }
 .wl-dist-l { white-space: normal !important; overflow: visible !important; display: flex; flex-direction: column; line-height: 1.25; }
 .wl-dist-n { font-size: 0.7rem; color: var(--muted); }
+
+/* update 166: Span laid out like the other filters (same heading size); Stat Type has no heading */
+.span-pick { display: flex; flex-direction: column; font-size: 0.85rem; }
+.span-pick .ms-label { margin-bottom: 0.2rem; }
+.sg-filters .span-pick select { margin-top: 0; }
+
+/* update 167: the Watchlist stays centred (nothing inside can widen the page); Season | Last 6 months | All */
+.wl { grid-template-columns: minmax(0, 1fr); container-type: inline-size; }
+.wl > * { min-width: 0; }
+.wl-cards { display: flex !important; flex-wrap: wrap; justify-content: center; gap: 1rem; }
+.wl-cards > .wl-card { flex: 1 1 100%; min-width: 0; }
+@container (min-width: 68rem) { .wl-cards:not(.solo) > .wl-card { flex: 0 1 calc(50% - 0.5rem); } }
+.wl-period { display: inline-flex; align-items: stretch; padding: 3px; border-radius: 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+.wl-per { position: relative; border: 0; background: transparent; color: var(--ink-2, #c7c7cc); font: 500 0.9rem var(--font-body, inherit); padding: 0.5rem 1.1rem; border-radius: 9px; cursor: pointer; white-space: nowrap; min-height: 2.25rem; }
+.wl-per + .wl-per::before { content: ""; position: absolute; left: 0; top: 22%; bottom: 22%; width: 1px; background: rgba(255,255,255,0.18); }
+.wl-per.on { background: var(--ink, #f5f5f7); color: #0a0a0c; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+.wl-per:not(.on):hover { color: var(--ink, #fff); background: rgba(255,255,255,0.06); }
+@media (max-width: 520px) { .wl-period { display: flex; width: 100%; } .wl-per { flex: 1; padding: 0.5rem 0.4rem; font-size: 0.84rem; } }
+/* update 167: Watchlist players starred in the leaderboards */
+.fav-star { color: #d4b483; margin-right: 0.35rem; font-size: 0.85em; }

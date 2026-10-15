@@ -12,9 +12,10 @@
 // per-round, per-category summary, so player rankings follow year/tournament/round/category filters
 // (not lie or distance).
 import { getState } from "./auth.js";
+import { favoriteKeys } from "./watchlist.js";
 import { el, mount, loadScript } from "./ui.js";
 import {
-  CATEGORIES, applyFilters, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
+  CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds,
   statRounds, statAgg, statDef, fmtStat, statsIn, groupObs,
 } from "./sg.js";
@@ -67,11 +68,16 @@ export function sgDashboard(container, opts) {
   const isSG = () => statKey === "sg";
   // (another stat: a round counts only where it has a value in the selection, e.g. an approach for Hit Green %)
   const nz = (rs) => (isSG() ? rs : rs.filter((rd) => rd.shots.length));
+  let facet = { picked: [], events: [], sessions: [] }; // the Filters panel's lists (see draw)
   let lastSliced = []; // the field as sliced on screen (for the hero card's pop-ups)
   let lastRankF = {}; // the filters the field was sliced with (the rankings can't follow lie / distance from the shared summary)
   const fieldIsSummary = () => field.some((p) => p.summaryOnly);
   // a name that opens that player's view (a player's own leaderboard: only them; a coach: their players)
   const pickable = (key) => !!opts.onPick && (!opts.canPick || opts.canPick(key));
+  // (update 167) a gold star beside the players on your Watchlist, in every leaderboard
+  const favs = () => { try { return new Set(favoriteKeys()); } catch { return new Set(); } };
+  let favSet = favs();
+  const starred = (key, text) => (favSet.has(key) ? [el("span", { class: "fav-star", title: "On your Watchlist", "aria-label": "On your Watchlist" }, "\u2605"), text] : text);
 
   loadScript(CHART_JS).then(() => draw()).catch(() => {});
   const closePanels = () => {
@@ -86,6 +92,7 @@ export function sgDashboard(container, opts) {
   document.addEventListener("keydown", onKey);
 
   function draw() {
+    favSet = favs();
     destroyCharts();
     chartSeq = 0;
     // Player Stats with nobody picked yet (update 158): the page is just the player search
@@ -111,10 +118,8 @@ export function sgDashboard(container, opts) {
     st.cats = st.cats.filter((k) => catSeen.has(k));
     // Keep only choices that still exist: distances of the picked categories, lies seen in them.
     if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
-    const opt = filterOptions(base, st.cats);
-    if (!st.yearStarted && opt.year.length) { st.yearStarted = true; if (!st.year.length) st.year = [[...opt.year].sort().pop()]; } // the latest year to start
-    st.lie = st.lie.filter((l) => opt.lie.includes(l));
-    st.club = st.club.filter((c) => opt.club.includes(c));
+    const fullOpt = filterOptions(base, st.cats);
+    if (!st.yearStarted && fullOpt.year.length) { st.yearStarted = true; if (!st.year.length) st.year = [[...fullOpt.year].sort().pop()]; } // the latest year to start
     // One tour at a time (each tour's numbers come from its own source and scale, so they're never mixed).
     // A player starts on the tour they have the most rounds on; with no player, the PGA TOUR (or the biggest).
     const tourCount = new Map(); for (const rd of base) tourCount.set(rd.tour || "", (tourCount.get(rd.tour || "") || 0) + 1);
@@ -129,10 +134,24 @@ export function sgDashboard(container, opts) {
         st.tour = [pga || byRounds[0]];
       } else st.tour = [st.tour[0]];
     } else st.tour = [];
-    // Tournament: only those on the tour (and in the years) picked; a pick that's no longer there goes
-    st.event = st.event.filter((e) => eventOptions(base).some((o) => o.value === e));
+    // Linked filters (update 166): each dropdown lists only what the other picks leave (the tour's courses,
+    // a tournament's course, the last month's tournaments). A pick that's no longer there goes.
+    const roundPicks = () => ({ months: Number(st.span), year: st.year, tour: st.tour, event: opts.practice ? [] : st.event, course: st.course, roundNo: st.roundNo, ptype: st.ptype });
+    const leaving = (k) => base.filter(roundFilter({ ...roundPicks(), [k]: [] }));
     if (opts.practice) st.event = [];
-    st.course = st.course.filter((c) => opt.course.includes(c));
+    else st.event = st.event.filter((e) => eventOptions(leaving("event")).some((o) => o.value === e));
+    const uniqOf = (rs, k) => [...new Set(rs.map((rd) => rd[k]).filter((v) => v != null && v !== ""))];
+    const courseList = uniqOf(leaving("course"), "course").sort((x, y) => String(x).localeCompare(String(y)));
+    st.course = st.course.filter((c) => courseList.includes(c));
+    const roundList = uniqOf(leaving("roundNo"), "roundNo").sort((x, y) => (parseFloat(x) || 0) - (parseFloat(y) || 0) || String(x).localeCompare(String(y)));
+    st.roundNo = st.roundNo.filter((r) => roundList.includes(r));
+    if (opts.practice) { const ps = new Set(sessionOptions(leaving("ptype")).map((o) => o.value)); st.ptype = st.ptype.filter((v) => ps.has(v)); }
+    // lie, distance and club: what the rounds picked have
+    const picked = base.filter(roundFilter(roundPicks()));
+    const opt = { ...filterOptions(picked, st.cats), year: fullOpt.year, tour: fullOpt.tour, course: courseList, roundNo: roundList };
+    facet = { picked, events: opts.practice ? [] : eventOptions(leaving("event")), sessions: opts.practice ? sessionOptions(leaving("ptype")) : [] };
+    st.lie = st.lie.filter((l) => opt.lie.includes(l));
+    st.club = st.club.filter((c) => opt.club.includes(c));
     const f = { months: Number(st.span), year: st.year, tour: st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, ptype: st.ptype };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
@@ -304,7 +323,7 @@ export function sgDashboard(container, opts) {
       draw();
     });
     // Distances, grouped under their category; with categories picked, only theirs show.
-    const base = me ? me.rounds : field.flatMap((p) => p.rounds);
+    const base = facet.picked;
     const distOpts = catsAvail.filter(([k]) => !st.cats.length || st.cats.includes(k))
       .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
@@ -315,10 +334,11 @@ export function sgDashboard(container, opts) {
     fold.addEventListener("click", () => { st.filtersOpen = !st.filtersOpen; draw(); });
     return el("div", { class: "sg-filters" + (st.filtersOpen || bare ? " open" : "") + (bare ? " bare" : "") }, [
       bare ? null : fold,
-      el("label", {}, ["Span", span]),
+      // (laid out like the other filters, so its heading matches theirs)
+      el("div", { class: "span-pick" }, [el("span", { class: "ms-label" }, "Span"), span]),
       // Practice has no tournaments: its Session filter instead (custom practice, Course Prep, sim rounds, games)
-      opts.practice ? multi("Session", "ptype", sessionOptions(base), "All sessions", { plural: "sessions", fmt: (v) => PTYPE[v] || String(v).replace(/^game:/, "") })
-        : multi("Tournament", "event", eventOptions(base), "All tournaments", { plural: "tournaments" }),
+      opts.practice ? multi("Session", "ptype", facet.sessions, "All sessions", { plural: "sessions", fmt: (v) => PTYPE[v] || String(v).replace(/^game:/, "") })
+        : multi("Tournament", "event", facet.events, "All tournaments", { plural: "tournaments" }),
       // Course (update 160): when the data has a course column
       opt.course.length ? multi("Course", "course", simple(opt.course), "All courses", { plural: "courses" }) : null,
       opts.entered ? null : multi("Round", "roundNo", simple(opt.roundNo, (v) => `Round ${v}`), "All rounds", { plural: "rounds", fmt: (v) => `Round ${v}` }),
@@ -336,7 +356,7 @@ export function sgDashboard(container, opts) {
   const CAT_NAME = Object.fromEntries(CATEGORIES);
   /* ---------------- the Filters panel (everything but the player search) ---------------- */
   function filtersPanel(opt) {
-    if (st.panelOpen === undefined) { try { st.panelOpen = localStorage.getItem("ta:filtersOpen") === "1"; } catch { st.panelOpen = false; } } // remembered on this device
+    if (st.panelOpen === undefined) st.panelOpen = false; // folded each time the page opens (update 166)
     const open = !!st.panelOpen;
     const src = opts.lead?.querySelector?.("[aria-current=page]")?.textContent || "";
     const yrs = st.year.length ? [...st.year].sort().reverse().join(" + ") : "All years";
@@ -347,7 +367,7 @@ export function sgDashboard(container, opts) {
       el("span", { class: "fp-sum" }, [src, yrs, tourCounts.length ? tourName(st.tour[0] ?? "") : "", def.label, cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
       el("span", { class: "fp-caret", "aria-hidden": "true" }, open ? "\u25B4" : "\u25BE"),
     ]);
-    btn.addEventListener("click", () => { st.panelOpen = !st.panelOpen; try { localStorage.setItem("ta:filtersOpen", st.panelOpen ? "1" : "0"); } catch { /* fine */ } draw(); });
+    btn.addEventListener("click", () => { st.panelOpen = !st.panelOpen; draw(); });
     // Stat Type sits beside the Filters button, so it's there whether the panel is open or folded
     return el("section", { class: `filters-panel${open ? " open" : ""}` }, [el("div", { class: "fp-head" }, [btn]), open ? el("div", { class: "fp-body" }, [
       yearsRow(opt, { cats: true }), filterBar(opt, { bare: true }),
@@ -472,7 +492,7 @@ export function sgDashboard(container, opts) {
       ranked.length ? null : el("p", { class: "muted small" }, `No one has ${sgEligible ? `${minR} strokes-gained ${minR === 1 ? "round" : "rounds"}` : rw(minR)} in this selection.`),
       el("div", { class: `hero-board${sg ? "" : " stat-board"}`, tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => el("div", { class: "hb-row" }, [
         el("span", { class: "hb-rank" }, String(x.i + 1)),
-        pickable(x.p.key) ? (() => { const b = el("button", { type: "button", class: "hb-name hb-link", title: `Open ${x.p.label}` }, x.p.label); b.addEventListener("click", () => opts.onPick(x.p.key)); return b; })() : el("span", { class: "hb-name", title: x.p.label }, x.p.label),
+        pickable(x.p.key) ? (() => { const b = el("button", { type: "button", class: "hb-name hb-link", title: `Open ${x.p.label}` }, starred(x.p.key, x.p.label)); b.addEventListener("click", () => opts.onPick(x.p.key)); return b; })() : el("span", { class: "hb-name", title: x.p.label }, starred(x.p.key, x.p.label)),
         // a value that shows as +0.00 is yellow (neither gained nor lost, to two places)
         el("span", { class: "hb-bar" }, el("span", { class: sg ? signCls(x.v) : "", style: !sg ? blueBar(x.v) : isZero(x.v) ? "width:4%;background:#ffd60a" : htmlBarStyle(x.v, Math.abs(x.v) / max, Math.abs(x.v) / (x.v >= 0 ? posMax : negMax)) })),
         el("strong", { class: sg ? signCls(x.v) : "" }, fmtV(x.v)),
@@ -673,7 +693,7 @@ export function sgDashboard(container, opts) {
     if (statList.length < 2) return null;
     const sel = el("select", { class: "stat-select", "aria-label": "Stat type" }, statList.map((k) => el("option", { value: k, selected: k === statKey }, statDef(k).label)));
     sel.addEventListener("change", () => { st.statWanted = sel.value; st.openFilter = null; draw(); });
-    return el("label", { class: "stat-pick" }, [el("span", {}, "Stat Type"), sel]);
+    return el("label", { class: "stat-pick" }, [sel]); // (no "Stat Type" heading, update 166)
   }
   function tourButtons() {
     if (!tourCounts.length || (tourCounts.length === 1 && tourCounts[0][0] === "")) return null;
@@ -926,7 +946,7 @@ export function sgDashboard(container, opts) {
     const P = rankedField(slicedField).filter((p) => p.rounds.length);
     if (P.length < 3) return [];
     const sg = isSG();
-    const nameBtn = (p) => (pickable(p.key) ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, p.label); b.addEventListener("click", () => opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, p.label));
+    const nameBtn = (p) => (pickable(p.key) ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, starred(p.key, p.label)); b.addEventListener("click", () => opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, starred(p.key, p.label)));
     const sgCell = (v) => el("strong", { class: `ti-v ${signCls(v)}` }, fmtSG(v));
     const good = (ch) => (def.higher == null ? null : higherBetter() ? ch > 0 : ch < 0); // a change for the better?
     const blocks = [];
@@ -1260,7 +1280,7 @@ export function sgDashboard(container, opts) {
       "data-name": r.label.toLowerCase(),
     }, [
       el("td", { class: "num" }, String(r.rank)),
-      el("td", {}, r.label),
+      el("td", {}, starred(r.key, r.label)),
       el("td", { class: "num" }, fmtV(r.value === -Infinity ? null : r.value)),
       showAtt ? el("td", { class: "num" }, r.att === null ? "\u2014" : sg ? nf1.format(r.att) : Math.round(r.att).toLocaleString()) : null,
       el("td", { class: "num" }, String(r.rounds)),
