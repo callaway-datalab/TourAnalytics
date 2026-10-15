@@ -320,9 +320,10 @@ const P = {
 const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ? ["#1e8e4a", "#ffffff"] : rank <= 100 ? ["#f5c400", "#2a2200"] : rank <= 150 ? ["#f08a24", "#ffffff"] : ["#d0342c", "#ffffff"]);
 // the same colour for text on white (bright green and yellow darkened so they read)
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
-// This file's build. It must match main.js?v= in index.html (bumped with every update): when it doesn't, the
-// browser is still running an older copy of this file, so the report isn't made (it would have old fixes missing).
-export const REPORT_BUILD = "156";
+// This file's build (update 161): taken from its own URL when it's loaded with ?v= (as the Stats page does), so it
+// can't fall behind the way a typed-in number did (it said 156 while the site moved on, so the report never ran).
+// Loaded without a version, it's the page's own copy and there's nothing to check.
+export const REPORT_BUILD = (() => { try { return new URL(import.meta.url).searchParams.get("v"); } catch { return null; } })();
 export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
   const d = new PdfDoc();
   const M = 44, W = d.W - 2 * M, H = d.H;
@@ -880,7 +881,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   go.addEventListener("click", async () => {
     go.disabled = true; mount(result, null);
     const pageBuild = window.__taBuild;
-    if (pageBuild && pageBuild !== REPORT_BUILD) {
+    if (pageBuild && REPORT_BUILD && pageBuild !== REPORT_BUILD) {
       status.textContent = `This page is still running an older copy of the report (build ${REPORT_BUILD}, the site is on ${pageBuild}). Reload the page and try again.`;
       go.disabled = false; return;
     }

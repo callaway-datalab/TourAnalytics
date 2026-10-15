@@ -75,7 +75,7 @@ function drawHome(ctx) {
     const play = el("button", { type: "button", class: "btn pr-play-btn" }, "\u25B6  Play");
     play.addEventListener("click", () => startGame(ctx, g));
     // with a launch monitor: click through the shots, load its file at the end (one shot each, not putting)
-    const withMon = null; // (update 152: launch monitor files live in My Clubs only)
+    const withMon = null; // (update 152: launch monitor files live in Launch Data only)
     void withMon;
     const edit = el("button", { type: "button", class: "link" }, "Edit");
     edit.addEventListener("click", () => ctx.go({ name: "gameEdit", game: JSON.parse(JSON.stringify(g)), isNew: false }));

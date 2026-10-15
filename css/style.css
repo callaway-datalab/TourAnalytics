@@ -3285,3 +3285,9 @@ button.ti-name:hover { color: var(--accent); }
 .pr-off-row { display: flex; align-items: stretch; gap: 0.35rem; }
 .pr-off-row > .pr-dist-in { flex: 1; min-width: 0; }
 .pr-off-row > .pr-pm { min-width: 2.6rem; }
+/* update 161: the filter dropdowns get the same light grey as the pill rows beside them */
+.sg-filters select, .ms-btn, .stat-pick select, .stat-select, .cat-drop .ms-btn { background-color: rgba(255, 255, 255, 0.06) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; }
+.sg-filters select:hover, .ms-btn:hover, .stat-pick select:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
+.ms-btn.on { border-color: rgba(200, 169, 126, 0.55) !important; }
+.stat-pick select { border-color: rgba(212, 180, 131, 0.45) !important; }
+.sg-filters select option, .stat-pick select option { background: #1c1c1f; color: var(--ink); }

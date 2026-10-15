@@ -1,5 +1,5 @@
 /*
- * My Clubs (update 138): each club's stock pattern — how far it carries, how much that varies, which way it misses
+ * Launch Data (update 138): each club's stock pattern — how far it carries, how much that varies, which way it misses
  * and how wide — from launch monitor files and shots you enter, and the gaps between clubs.
  *
  * A club shot: { club, carry, total, offline (− left / + right, yds), ball?, spin?, launch?, height?, at, source }
@@ -52,7 +52,7 @@ export function clubStats(shots, { last = 60 } = {}) {
   };
 }
 
-/** Every club's pattern from your My Clubs sessions: { club: stats } (clubs with at least `min` shots). */
+/** Every club's pattern from your Launch Data sessions: { club: stats } (clubs with at least `min` shots). */
 export function bagPatterns(sessions, { min = 1 } = {}) {
   const by = new Map();
   for (const s of sessions) if (s.cat === "BAG") for (const x of s.shots || []) if (x.club) (by.get(x.club) || by.set(x.club, []).get(x.club)).push(x);

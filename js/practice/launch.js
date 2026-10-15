@@ -1,5 +1,5 @@
 /*
- * My Clubs launch data (update 152): every number a GCQuad (FSX) or TrackMan CSV export carries, per shot,
+ * Launch Data launch data (update 152): every number a GCQuad (FSX) or TrackMan CSV export carries, per shot,
  * named the same way whichever monitor it came from.
  *
  *   readLaunchFile(text) -> { shots: [{ club?, m: { key: value } }], keys: [metric keys found] }
