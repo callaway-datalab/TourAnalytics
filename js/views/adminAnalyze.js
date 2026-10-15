@@ -1,5 +1,7 @@
-// Data → Analyze: the strokes-gained dashboard for any player, with rankings across every player.
-// Players see the same dashboard on their own My Data page (see sgDashboard.js).
+// Analyze → Leaderboards (#/admin/analyze) and Analyze → Player Stats (#/admin/player-stats), update 158.
+//   Leaderboards: the whole field (Tour Events only); tapping a name opens that player in Player Stats.
+//   Player Stats: starts with just the player search; pick a player for their stats (Tour Events,
+//   Entered Rounds or Practice). Players see the same dashboard on their own My Stats page (see sgDashboard.js).
 import { el, mount, num, subNav, relocateSectionNav } from "../ui.js";
 import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource, getFieldStats } from "../store.js";
 import { loadDatasetPlayers, loadErrorText, reloadPlayerRows, isLiteDevice } from "../fieldCache.js";
@@ -17,7 +19,11 @@ export const ENTERED_NOTE = "Entered rounds: strokes gained is measured against 
 
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
-export async function render(main, { flash }) {
+export async function render(main, { flash, routeId }) {
+  const board = routeId !== "admin-player-stats"; // Leaderboards (no player) or Player Stats
+  const onPick = board
+    ? (key) => { location.hash = `#/admin/player-stats?player=${encodeURIComponent(key)}`; }
+    : (key) => pickerRef?.select?.(key);
   let player = null;               // { key, label }
   let datasets = [];
   let loadToken = 0;
@@ -41,7 +47,7 @@ export async function render(main, { flash }) {
   // (hidden while loading, so Tour Events / Entered Rounds don't flash outside the Filters panel; shown
   // only when there's nothing to draw, so the other source can still be picked)
   const sourceHome = el("div", { class: "pill-row source-home", hidden: true });
-  const showPills = () => { if (!sourcePills.parentNode || sourcePills.parentNode === sourceHome) { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } };
+  const showPills = () => { if (board || !player) return; if (!sourcePills.parentNode || sourcePills.parentNode === sourceHome) { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } };
   queueMicrotask(() => { if (!sourcePills.parentNode) sourceHome.appendChild(sourcePills); });
   // the player search + portal link: placed by the dashboard under its pills (above the dropdowns);
   // when there's no dashboard (nothing to show yet) it sits here
@@ -54,6 +60,10 @@ export async function render(main, { flash }) {
   // Tour | Entered Rounds
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
   const viewHost = el("div", { class: "view-host" }); // (kept empty: Basic / Advanced was here)
+  // what every dashboard on this page gets: Player Stats has the player search and the data pills
+  // (blank: with no player on screen, show just the search; a "nothing here yet" note for a player picked is shown)
+  const dashOpts = (blank = true) => (board ? { onPick }
+    : { slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick, blankWithoutMe: blank });
   const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"], ["practice", "Practice"]].map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
     a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
@@ -61,7 +71,7 @@ export async function render(main, { flash }) {
   }));
   drawSource();
 
-  mount(main, [
+  mount(main, board ? [status, body] : [
     sourceHome, // the data pills sit here until the stats draw them into their one row of pills
     pickerHome,
     status,
@@ -108,7 +118,7 @@ export async function render(main, { flash }) {
     fieldPlayers = preparedCache.get(pk).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.label || p.key.replace(/^c_/, "") }));
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
+    dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts() });
     publishIfStale(ds);
   }
 
@@ -179,7 +189,7 @@ export async function render(main, { flash }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
+    dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts() });
     // (never published from here: this field is the summary itself)
     if (player && (!me || me.summaryOnly)) pickerRef?.select?.(player.key); // fetch the picked player's full rows
   }
@@ -225,7 +235,7 @@ export async function render(main, { flash }) {
     if (!me) { emptyDash(`${player.label} hasn't entered any rounds yet${player.key === myEntryKey(getState()) ? " \u2014 record one in Track Round." : "."}`); return; }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, entered: true, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (key) => pickerRef?.select?.(key) });
+    dash = sgDashboard(box, { me, field: fieldPlayers, idx: ENTERED_IDX, entered: true, mode: "admin", state: enteredState, note: ENTERED_NOTE, viewHost, updatedAt: enteredUpdated, ...dashOpts() });
   }
 
   // Nothing to show yet: the same Filters panel (with Tour Events | Entered Rounds | Practice in it) and why (update 145)
@@ -235,7 +245,7 @@ export async function render(main, { flash }) {
     const box = el("div");
     mount(body, box);
     dash = sgDashboard(box, { me: null, field: [], idx: ENTERED_IDX, entered: true, mode: "admin", rankings: false, practice, state: emptyState, emptyNote: note, viewHost,
-      slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (k) => pickerRef?.select?.(k) });
+      ...dashOpts(!player) });
   }
 
   // Practice (update 139): the picked player's practice sessions, games and Course Prep rounds.
@@ -257,7 +267,7 @@ export async function render(main, { flash }) {
     const me = { key: player.key, label: player.label, rounds };
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me, field: [me], idx: ENTERED_IDX, entered: true, practice: true, mode: "admin", rankings: false, state: practiceState, note: "Practice: sessions, games and Course Prep rounds, measured against the Tour baselines by distance (and lie, where it's known).", viewHost, slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick: (k) => pickerRef?.select?.(k) });
+    dash = sgDashboard(box, { me, field: [me], idx: ENTERED_IDX, entered: true, practice: true, mode: "admin", rankings: false, state: practiceState, note: "Practice: sessions, games and Course Prep rounds, measured against the Tour baselines by distance (and lie, where it's known).", viewHost, ...dashOpts() });
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.
@@ -370,7 +380,9 @@ export async function render(main, { flash }) {
   }, ids, meKey);
   mount(pickerBox, picker.node);
   if (dash) dash.update({ field: fieldPlayers, me: meFrom() });
-  picker.restore();
+  // Player Stats starts blank: just the search (or on the player tapped on the Leaderboards)
+  const wanted = new URLSearchParams(location.hash.split("?")[1] || "").get("player");
+  if (!board && wanted) picker.select(wanted);
 
   return () => { loadToken++; dash?.destroy(); stopFiles(); stopMine(); undoTop(); };
 }

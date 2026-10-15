@@ -96,5 +96,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
   const restore = () => { if (lastPick && players.some((p) => p.key === lastPick.key)) choose(players.find((p) => p.key === lastPick.key)); };
   /** Pick a player by key (e.g. from the leaderboard). */
   const select = (key) => { const p = players.find((x) => x.key === key); if (p) choose(p); };
-  return { node, restore, select };
+  /** Show a player as picked without acting on it (the page is already theirs). */
+  const preset = (key) => { const p = players.find((x) => x.key === key); if (p) { lastPick = p; input.value = p.label; } };
+  return { node, restore, select, preset };
 }

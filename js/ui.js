@@ -1,4 +1,4 @@
-import { getPreviewTeam } from "./preview.js";
+import { getPreviewTeam, effectiveTeam } from "./preview.js";
 import { portalName } from "./firebase-init.js";
 import { subscribe, signOut } from "./auth.js";
 
@@ -91,10 +91,14 @@ export function confirmAction(message) {
 
 // Two levels: a few headers in the top bar, each with its own row of pages under it.
 //   [label, href, routeIds, { soon, q }]  (q: a ?cat= the link needs to count as current)
+const teamCount = () => Object.keys(effectiveTeam(window.__authState || {}).teamAccess || {}).length;
 const sectionsFor = (kind) => {
   const admin = kind === "admin", player = kind === "client";
   const dataItems = [
-    ["Stats", admin ? "#/admin/analyze" : "#/dashboard", admin ? ["admin-analyze"] : ["dashboard", "dataset"]],
+    // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
+    ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
+    [player ? "My Stats" : "Player Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
+      admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     ["Performance Reports", admin ? "#/admin/reports/view?cat=performance" : "#/documents", admin ? ["admin-documents", "admin-reports-view"] : ["documents"], { q: admin ? "performance" : null }],
     ["Live Event Feed", "#/live", ["live"], { soon: true }],
   ];

@@ -1143,7 +1143,7 @@ function renderRound(main, params, flash, previewClient) {
         const v = per(k);
         return el("div", { class: "sg-card" }, [el("h3", {}, l), el("p", { class: "sg-value", style: `color:${sgColor(v)}` }, fmtSG(v))]);
       })),
-      el("p", { class: "muted small center" }, "Strokes gained is measured against the scoring-average baseline by lie and distance. Full charts: Stats \u2192 Entered Rounds."),
+      el("p", { class: "muted small center" }, "Strokes gained is measured against the scoring-average baseline by lie and distance. Full charts: Analyze \u2192 Player Stats \u2192 Entered Rounds."),
       el("div", { class: "table-scroll" }, el("table", { class: "plain stats" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, "Hole"), el("th", { class: "num" }, "Par"), el("th", { class: "num" }, "Yds"), el("th", { class: "num" }, "Score")])),
         el("tbody", {}, rows),

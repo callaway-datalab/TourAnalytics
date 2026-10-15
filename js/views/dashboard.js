@@ -6,7 +6,7 @@ import { sgDashboard } from "../sgDashboard.js";
 import { plainName, teamLabels } from "../names.js";
 import { effectiveTeam } from "../preview.js";
 import { render as renderDataset } from "./dataset.js";
-import { teamPlayerSelect } from "../teamPlayerSelect.js";
+import { teamPlayerSearch } from "../teamPlayerSelect.js";
 import { watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { myRoundsTable } from "../myRoundsTable.js";
 import { myEntryKey } from "./dataEntry.js";
@@ -14,7 +14,7 @@ import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 
 let lastSource = "tour"; // Tour | Entered Rounds | Practice, remembered while the app is open
 
-// My Stats: opens the player's stats straight away, with Tour | Entered Rounds pills on top. A strokes-gained file gets the same dashboard as the
+// My Stats (Player Stats for a coach): opens the player's stats straight away, with Tour | Entered Rounds pills on top. A strokes-gained file gets the same dashboard as the
 // admin's Analyze page (filters, cards, category charts, trends, rankings); any other file gets the
 // plain chart and table. Players have one data file; if there are ever more, tabs let them switch.
 export async function render(main, { previewClient, flash }) {
@@ -67,8 +67,8 @@ export async function render(main, { previewClient, flash }) {
   // panel), shown when there's nothing to draw
   const sourceHome = el("div", { class: "pill-row source-home", hidden: true }, sourcePills);
   const showPills = () => { if (sourcePills.parentNode === sourceHome || !sourcePills.parentNode) { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } };
-  // a coach's player dropdown: the Stats / Performance Reports / … row goes under it (as on the admin's Stats)
-  const picker = teamPlayerSelect(previewClient, "/dashboard");
+  // a coach with more than one player: the player search (update 158; one player: no search, it's just theirs)
+  const picker = teamPlayerSearch(previewClient);
   const secHome = el("div", { class: "sec-home" });
   mount(main, [picker, picker ? secHome : null, sourceHome, tourBox, enteredBox, practiceBox]);
   const undoTop = picker ? relocateSectionNav(main, secHome) : () => {};

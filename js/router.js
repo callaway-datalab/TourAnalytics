@@ -10,6 +10,9 @@ const ROUTES = [
   ["/login", "public", () => import("./views/login.js"), "login"],
   ["/signup", "public", () => import("./views/signup.js"), "signup"],
   ["/dashboard", "client", () => import("./views/dashboard.js"), "dashboard"],
+  // Analyze → Leaderboards and Player Stats (update 158; My Stats for a player is /dashboard)
+  ["/leaderboards", "client", () => import("./views/leaderboards.js"), "leaderboards"],
+  ["/player-stats", "client", () => import("./views/playerStats.js"), "player-stats"],
   ["/data/:id", "client", () => import("./views/dataset.js"), "dataset"],
   ["/documents", "client", () => import("./views/documents.js"), "documents"],
   ["/goals", "client", () => import("./views/goals.js"), "goals"],
@@ -31,7 +34,8 @@ const ROUTES = [
   ["/team", "team", () => import("./views/teamHome.js"), "team"],
   ["/admin", "admin", () => import("./views/adminClients.js"), "admin-clients"], // Player Access is the admin's home
   ["/admin/datasets", "admin", () => import("./views/adminDatasets.js"), "admin-datasets"],
-  ["/admin/analyze", "admin", () => import("./views/adminAnalyze.js"), "admin-analyze"],
+  ["/admin/analyze", "admin", () => import("./views/adminAnalyze.js"), "admin-analyze"], // Leaderboards
+  ["/admin/player-stats", "admin", () => import("./views/adminAnalyze.js"), "admin-player-stats"],
   ["/admin/goals", "admin", () => import("./views/adminGoals.js"), "admin-goals"],
   ["/admin/clients", "admin", () => import("./views/adminClients.js"), "admin-clients"],
   ["/admin/documents", "admin", () => import("./views/adminDocuments.js"), "admin-documents"],
@@ -159,21 +163,27 @@ async function render() {
   if (guard !== "public" && !state.user) { navigate(`/login?next=${encodeURIComponent(raw)}`); return; }
   if (guard === "public" && state.user) { navigate(homeFor(state)); return; }
   if (guard === "team" && !team.isTeam) { navigate(homeFor(state)); return; }
-  // Team members (and the admin previewing one) skip the players list: open a player's data straight
-  // away, keeping the last player chosen. The Data/Reports dropdown switches players. Only someone
+  // Team members (and the admin previewing one) skip the players list. One player: open their stats straight
+  // away. More than one (update 158): Player Stats, which starts with just the player search. Only someone
   // with no players yet sees the /team page, which explains that.
+  const teamKeys = () => Object.keys(team.teamAccess).sort((a, b) =>
+    (team.teamAccess[a].label || a).localeCompare(team.teamAccess[b].label || b));
+  const teamPick = (keys) => {
+    const key = lastTeamPlayer && team.teamAccess[lastTeamPlayer] ? lastTeamPlayer : keys[0];
+    previewClient = { key, label: teamLabels(team.teamAccess).get(key) || key.replace(/^c_/, ""), role: team.teamAccess[key].role };
+  };
   if (routeId === "team") {
-    const keys = Object.keys(team.teamAccess).sort((a, b) =>
-      (team.teamAccess[a].label || a).localeCompare(team.teamAccess[b].label || b));
-    if (keys.length) {
-      const key = lastTeamPlayer && team.teamAccess[lastTeamPlayer] ? lastTeamPlayer : keys[0];
-      previewClient = { key, label: teamLabels(team.teamAccess).get(key) || key.replace(/^c_/, ""), role: team.teamAccess[key].role };
-      navigate("/dashboard");
-      return;
-    }
+    const keys = teamKeys();
+    if (keys.length > 1) { navigate("/player-stats"); return; }
+    if (keys.length) { teamPick(keys); navigate("/dashboard"); return; }
   }
   if (previewClient?.role) lastTeamPlayer = previewClient.key;
-  if (guard === "client" && team.isTeam && !previewClient && PLAYER_PAGES.includes(routeId)) { navigate("/team"); return; }
+  if (guard === "client" && team.isTeam && !previewClient && PLAYER_PAGES.includes(routeId)) {
+    // (Performance Reports and the like before a player was picked: the last one, or the first)
+    const keys = teamKeys();
+    if (routeId !== "dashboard" && keys.length) teamPick(keys);
+    else { navigate("/team"); return; }
+  }
   if (guard === "admin" && !state.isAdmin) { navigate("/dashboard"); return; }
   // Going back to an admin page (e.g. opening a question from a preview) ends any preview.
   if (guard === "admin" && (previewClient || getPreviewTeam())) { previewClient = null; setPreviewTeam(null); }

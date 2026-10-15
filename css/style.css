@@ -3231,3 +3231,12 @@ button.ti-name:hover { color: var(--accent); }
 .pr-filt-note.bad { color: #ff6b61; }
 .pr-hole-shots li.pr-auto { opacity: 0.6; }
 @media (max-width: 560px) { .pr-dd { flex: 1 1 calc(50% - 0.5rem); } .pr-dd > summary { min-width: 0; } .pr-dd:nth-child(2n) .pr-dd-menu { left: auto; right: 0; } }
+
+/* update 158: the leaderboard's Tour Avg line, and the trend table's rank */
+.hb-avg { margin: 0.55rem 0 0.2rem; font-size: 1rem; font-weight: 600; color: var(--ink); letter-spacing: 0.01em; }
+.hb-avg strong { font-variant-numeric: tabular-nums; }
+.hb-avg strong.pos { color: #30d158; } .hb-avg strong.neg { color: #ff453a; } .hb-avg strong.zero { color: #ffd60a; }
+.hero-tourn .ht-of { color: var(--muted); font-size: 0.78em; font-weight: 400; }
+/* update 158: Stat Type first, the category pills to its right */
+.stats-row2 .stat-pick { margin-left: 0 !important; margin-right: 0.6rem; }
+@media (max-width: 760px) { .stats-row2 .stat-pick { margin-right: 0; } }
