@@ -251,6 +251,19 @@ export function prepare(rows, idx) {
     }
     return rounds.get(key);
   };
+  // (update 194) the equipment on a row: the club (or, with no club column, its type), its bag group ("Non-Driver"
+  // tee shots kept apart from drivers), the club model ("Iron|Callaway Apex") and the ball. A model counts only
+  // when both its brand and model are known (not blank, "None" or "Unknown").
+  const known = (v) => (v == null || isNull(v) || /^(unknown|unk|n\/a|-+|\?)$/i.test(String(v).trim()) || String(v).trim() === "" ? null : String(v).trim());
+  const equip = (r) => {
+    const type = known(get(r, "clubType")), club = known(get(r, "club")) ?? type;
+    const src = type || club;
+    const clubCat = src ? (/non[\s-]*driver/i.test(src) ? "Non-Driver" : clubMemo(src)) : null;
+    const brand = known(get(r, "clubBrand")), model = known(get(r, "clubModel"));
+    const bb = known(get(r, "ballBrand")), bm = known(get(r, "ballModel"));
+    return { club, clubCat, gear: brand && model ? `${clubCat || "Other"}|${brand} ${model}` : null, ball: bb && bm ? `${bb} ${bm}` : null };
+  };
+  const hasEquip = ["club", "clubType", "clubBrand", "clubModel", "ballBrand", "ballModel"].some((f) => idx[f] !== undefined);
   for (const r of rows) {
     // the stats file: a round stat (driving distance, hit fwy % …) is kept on its round
     // (any other stat keeps its category, distance and lie, so it can be split the same way as strokes gained)
@@ -264,8 +277,9 @@ export function prepare(rows, idx) {
         if (v === null) continue;
         const lie = get(r, "lie"), dist = get(r, "distanceRange");
         const rd = roundOf(r);
+        const eq = hasEquip ? equip(r) : null;
         (rd.obs ||= []).push({ k: statKey, cat: catMemo(get(r, "category")), lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
-          v, w: aw !== null && aw > 0 ? aw : 1, file: true });
+          v, w: aw !== null && aw > 0 ? aw : 1, file: true, ...(eq?.gear ? { gear: eq.gear } : {}), ...(eq?.ball ? { ball: eq.ball } : {}) });
         continue;
       }
     }
@@ -276,14 +290,8 @@ export function prepare(rows, idx) {
     const sg = per !== null && w !== null ? per * w : num(get(r, "sg"));
     if (!cat || sg === null || w === null || w <= 0) continue;
     const lie = get(r, "lie"), dist = get(r, "distanceRange");
-    // (update 191) the club (or, with no club column, its type), its bag group, and the equipment: "Callaway Apex" irons, a "Callaway Chrome Tour" ball
-    const val = (f) => { const v = get(r, f); return v == null || isNull(v) || String(v).trim() === "" ? null : String(v).trim(); };
-    const type = val("clubType"), club = val("club") ?? type;
-    const clubCat = type || club ? clubMemo(type || club) : null;
-    const make = [val("clubBrand"), val("clubModel")].filter(Boolean).join(" ");
-    const bmake = [val("ballBrand"), val("ballModel")].filter(Boolean).join(" ");
-    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
-      club, clubCat, gear: make || club ? `${clubCat || "Other"}|${make || club}` : null, ball: bmake || null };
+    const eq = hasEquip ? equip(r) : { club: null, clubCat: null, gear: null, ball: null };
+    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist), ...eq };
     const rd = roundOf(r);
     rd.shots.push(shot);
     if (shotCols) shotObs(rd, shot, r, idx);
@@ -305,7 +313,7 @@ export function prepare(rows, idx) {
 /** Shot-by-shot files: the per-shot columns (hit green, proximity, up & down, holed, fairway, drive) as stats. */
 function shotObs(rd, s, r, idx) {
   const col = (f) => (idx[f] === undefined ? null : r[idx[f]]);
-  const add = (k, v) => { if (v !== null && v !== undefined && Number.isFinite(v)) (rd.obs ||= []).push({ k, cat: s.cat, lie: s.lie, dist: s.dist, v, w: s.w }); };
+  const add = (k, v) => { if (v !== null && v !== undefined && Number.isFinite(v)) (rd.obs ||= []).push({ k, cat: s.cat, lie: s.lie, dist: s.dist, v, w: s.w, ...(s.gear ? { gear: s.gear } : {}), ...(s.ball ? { ball: s.ball } : {}) }); };
   const holed = truthy(col("holeOut")) === true;
   if (s.cat === "APP" || s.cat === "ARG") {
     const g = truthy(col("onGreen")); if (g !== null) add("hitGreen", g || holed ? 100 : 0);
@@ -334,7 +342,7 @@ export function statRounds(rounds, key) {
   if (m.has(key)) return m.get(key);
   const has = (rd) => (rd.has ? rd.has.has(key) : key === "sg" && rd.shots?.length > 0);
   const out = key === "sg" ? rounds.filter(has)
-    : rounds.filter(has).map((rd) => ({ ...rd, shots: rd.obs.filter((o) => o.k === key).map((o) => ({ cat: o.cat, lie: o.lie, dist: o.dist, v: o.v, w: o.w, sg: 0, club: null, clubCat: null })) }));
+    : rounds.filter(has).map((rd) => ({ ...rd, shots: rd.obs.filter((o) => o.k === key).map((o) => ({ cat: o.cat, lie: o.lie, dist: o.dist, v: o.v, w: o.w, sg: 0, club: null, clubCat: null, gear: o.gear, ball: o.ball })) }));
   m.set(key, out);
   return out;
 }

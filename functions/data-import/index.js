@@ -432,6 +432,16 @@ function prepare(rows, idx) {
     }
     return rounds.get(key);
   };
+  const known = (v) => v == null || isNull(v) || /^(unknown|unk|n\/a|-+|\?)$/i.test(String(v).trim()) || String(v).trim() === "" ? null : String(v).trim();
+  const equip = (r) => {
+    const type = known(get(r, "clubType")), club = known(get(r, "club")) ?? type;
+    const src = type || club;
+    const clubCat = src ? /non[\s-]*driver/i.test(src) ? "Non-Driver" : clubMemo(src) : null;
+    const brand = known(get(r, "clubBrand")), model = known(get(r, "clubModel"));
+    const bb = known(get(r, "ballBrand")), bm = known(get(r, "ballModel"));
+    return { club, clubCat, gear: brand && model ? `${clubCat || "Other"}|${brand} ${model}` : null, ball: bb && bm ? `${bb} ${bm}` : null };
+  };
+  const hasEquip = ["club", "clubType", "clubBrand", "clubModel", "ballBrand", "ballModel"].some((f) => idx[f] !== void 0);
   for (const r of rows) {
     let statKey = null;
     if (idx.statType !== void 0) {
@@ -446,6 +456,7 @@ function prepare(rows, idx) {
         if (v === null) continue;
         const lie2 = get(r, "lie"), dist2 = get(r, "distanceRange");
         const rd2 = roundOf(r);
+        const eq2 = hasEquip ? equip(r) : null;
         (rd2.obs ||= []).push({
           k: statKey,
           cat: catMemo(get(r, "category")),
@@ -453,7 +464,9 @@ function prepare(rows, idx) {
           dist: isNull(dist2) ? null : String(dist2),
           v,
           w: aw !== null && aw > 0 ? aw : 1,
-          file: true
+          file: true,
+          ...eq2?.gear ? { gear: eq2.gear } : {},
+          ...eq2?.ball ? { ball: eq2.ball } : {}
         });
         continue;
       }
@@ -464,26 +477,8 @@ function prepare(rows, idx) {
     const sg = per !== null && w !== null ? per * w : num(get(r, "sg"));
     if (!cat || sg === null || w === null || w <= 0) continue;
     const lie = get(r, "lie"), dist = get(r, "distanceRange");
-    const val = (f) => {
-      const v = get(r, f);
-      return v == null || isNull(v) || String(v).trim() === "" ? null : String(v).trim();
-    };
-    const type = val("clubType"), club = val("club") ?? type;
-    const clubCat = type || club ? clubMemo(type || club) : null;
-    const make = [val("clubBrand"), val("clubModel")].filter(Boolean).join(" ");
-    const bmake = [val("ballBrand"), val("ballModel")].filter(Boolean).join(" ");
-    const shot = {
-      cat,
-      sg,
-      w,
-      r,
-      lie: isNull(lie) ? null : String(lie),
-      dist: isNull(dist) ? null : String(dist),
-      club,
-      clubCat,
-      gear: make || club ? `${clubCat || "Other"}|${make || club}` : null,
-      ball: bmake || null
-    };
+    const eq = hasEquip ? equip(r) : { club: null, clubCat: null, gear: null, ball: null };
+    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist), ...eq };
     const rd = roundOf(r);
     rd.shots.push(shot);
     if (shotCols) shotObs(rd, shot, r, idx);
@@ -508,7 +503,7 @@ function prepare(rows, idx) {
 function shotObs(rd, s, r, idx) {
   const col = (f) => idx[f] === void 0 ? null : r[idx[f]];
   const add = (k, v) => {
-    if (v !== null && v !== void 0 && Number.isFinite(v)) (rd.obs ||= []).push({ k, cat: s.cat, lie: s.lie, dist: s.dist, v, w: s.w });
+    if (v !== null && v !== void 0 && Number.isFinite(v)) (rd.obs ||= []).push({ k, cat: s.cat, lie: s.lie, dist: s.dist, v, w: s.w, ...s.gear ? { gear: s.gear } : {}, ...s.ball ? { ball: s.ball } : {} });
   };
   const holed = truthy(col("holeOut")) === true;
   if (s.cat === "APP" || s.cat === "ARG") {

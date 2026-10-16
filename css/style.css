@@ -3788,3 +3788,13 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .cmp-pl-add { position: relative; flex: 1 1 13rem; max-width: 18rem; }
 .cmp-pl-add input { margin: 0 !important; width: 100%; }
 .cmp-pl-add .btn.ghost, .cmp-pl-add .which-player, .cmp-pl-add .player-picker > label { display: none !important; }
+/* (update 194) Comparisons: Include (which shots count), stats by category and distance; the Stats page's career blocks */
+.cmp-include { display: grid; gap: 0.55rem; margin-top: 0.4rem; padding-top: 0.9rem; border-top: 1px solid rgba(255,255,255,0.08); }
+.cmp-include h3 { margin: 0; font-size: 0.95rem; }
+.cmp-include .cmp-build-top { gap: 0.6rem; flex-wrap: wrap; justify-content: flex-start; align-items: baseline; }
+.cmp-chip.small { padding: 0.3rem 0.6rem; font-size: 0.78rem; border-radius: 10px; }
+.cmp-stat-block { display: grid; gap: 0.35rem; }
+.cmp-stat-block + .cmp-stat-block { margin-top: 0.5rem; }
+.cmp-table tr.cmp-sub td { font-weight: 400; font-size: 0.86em; }
+.cmp-table tr.cmp-sub td:first-child { padding-left: 1.4rem; color: var(--muted); }
+.cmp.career { margin-top: 1rem; }

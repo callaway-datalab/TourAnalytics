@@ -11,6 +11,7 @@
 // Players only ever see other players' numbers in the Rankings table, which comes from the published
 // per-round, per-category summary, so player rankings follow year/tournament/round/category filters
 // (not lie or distance).
+import { careerBlocks } from "./careerBlocks.js";
 import { getState } from "./auth.js";
 import { favoriteKeys } from "./watchlist.js";
 import { el, mount, loadScript } from "./ui.js";
@@ -91,6 +92,15 @@ export function sgDashboard(container, opts) {
   document.addEventListener("pointerdown", onDocDown);
   document.addEventListener("keydown", onKey);
 
+  // (update 194) at the bottom: getting better or worse, and where they play their best (their whole career on this tour)
+  const careerUi = {};
+  function careerBox() {
+    if (!meAll || opts.practice || opts.emptyNote || !isSG()) return null;
+    const tours = !opts.entered && st.tour?.length ? new Set(st.tour) : null;
+    const rs = statRounds(meAll.rounds, "sg").filter((rd) => !tours || tours.has(rd.tour || ""));
+    const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw() });
+    return blocks.length ? el("div", { class: "cmp career" }, blocks) : null;
+  }
   function draw() {
     favSet = favs();
     destroyCharts();
@@ -200,6 +210,7 @@ export function sgDashboard(container, opts) {
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
       })()),
+      careerBox(),
     ]);
     if (focusKey) {
       const again = [...container.querySelectorAll(focusTag || "*")].find((n) => (n.getAttribute("aria-label") || n.textContent).trim() === focusKey);

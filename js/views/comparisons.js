@@ -5,8 +5,8 @@
  *   \u00b7 strokes gained by category in a table (best / worst shaded) and a grouped bar chart
  *   \u00b7 every round as a dot (the spread, the middle half, the median), and how each one unfolded
  *   \u00b7 strokes gained by distance, and the other stats (fairways, greens, proximity \u2026)
- * And, for the player as a whole: are they getting better or worse (last 5, 10, 20, 40, 80 rounds against
- * the same number before), and in which conditions they play their best (round, course, month, \u2026).
+ * (update 194) "Getting better or worse?" and "Where they play their best" moved to the Stats page (careerBlocks.js);
+ * a row there opens this page on that comparison (?pick=win:10 / cond:course:Riviera). Include: which shots count.
  * Hover a selection (its card or its key) to pick it out in every chart.
  */
 import { el, mount } from "../ui.js";
@@ -16,8 +16,8 @@ import { teamLabels, plainName } from "../names.js";
 import { playerPicker } from "../playerPicker.js";
 import { CATEGORIES, fmtStat, fmtSG } from "../sg.js";
 import {
-  COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statRows, statSets,
-  trajectory, trajectoryWords, DIMENSIONS, products, conditions, insights, fmtSigned, sgOf,
+  COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statSets,
+  products, insights, fmtSigned, includeShots, shotScope, statBlocks,
 } from "../compareData.js";
 
 const LS_PLAYER = "ta:cmp:player";
@@ -60,11 +60,14 @@ export async function render(main) {
   else if (wanted && players.some(([k]) => k === wanted)) player = { key: wanted, label: players.find(([k]) => k === wanted)[1] };
   else if (players.length === 1) player = { key: players[0][0], label: players[0][1] };
 
-  let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
+  let pickParam = q.get("pick");
+  let source = q.get("src") === "entered" ? "entered" : "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
   let staged = new Map(); // value → { label, f }
   // (update 190) untouched: the default comparison, so the whole-career tables (better or worse, best conditions) show
   let touched = false;
+  // (update 194) which shots count: none picked = every category and distance
+  let incCats = new Set(), incDists = new Set(); // "APP" / "APP|100-150 yds"
   const others = new Map(); // `${player}|${source}` → their rounds
   // (update 192) the players in the comparison: the one you're looking at, plus any you add; every selection is shown for each of them
   let extra = []; // [{ key, label }]
@@ -108,6 +111,22 @@ export async function render(main) {
     } else if (opts.years.length) { mode = "years"; sels.push({ id: `years:${opts.years[0].value}`, name: opts.years[0].label, f: { years: [opts.years[0].value] }, color: nextColor() }); }
   }
 
+  // (update 194) opened from the Stats page on one comparison: "win:10" (the last 10 against the 10 before) or "cond:course:Riviera"
+  function applyPick(p) {
+    const m = /^win:(\d+)$/.exec(p);
+    if (m) { const n = Number(m[1]); mode = "windows"; sels = [{ id: `windows:prev:${n}`, name: `The ${n} before that`, f: { prev: n }, mode: "windows", values: [`prev:${n}`], color: COLORS[0] }, { id: `windows:last:${n}`, name: `Last ${n} rounds`, f: { last: n }, mode: "windows", values: [`last:${n}`], color: COLORS[1] }]; touched = true; return; }
+    const c = /^cond:(\w+):(.*)$/.exec(p);
+    if (!c) return;
+    const [, d, v] = c;
+    const MN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const evs = d === "event" ? opts.tournaments.filter((t) => t.value.split("|")[0] === v).map((t) => t.value) : null;
+    const pick = { round: ["rounds", `Round ${v}`, { roundNos: [v] }], course: ["courses", v, { courses: [v] }], month: ["months", MN[Number(v)] || v, { months: [v] }], year: ["years", v, { years: [v] }], tour: ["tours", v, { tours: [v] }], event: ["tournaments", `${v} (every year)`, { events: evs }] }[d];
+    if (!pick || (evs && !evs.length)) return;
+    const [md, name, f] = pick;
+    mode = md; touched = true;
+    sels = [{ id: `cond:${d}:${v}`, name, f, color: COLORS[0] }, { id: "windows:all", name: "Career (everything)", f: {}, color: COLORS[1] }];
+  }
+
   /* ------------------------------ loading a player ------------------------------ */
   async function load() {
     if (!player) { data = null; draw(); return; }
@@ -122,6 +141,7 @@ export async function render(main) {
     if (extra.length) { await loadOthers(extra); if (loadingFor !== k) return; }
     opts = options(allRounds());
     defaults();
+    if (pickParam) { applyPick(pickParam); pickParam = null; }
     draw();
   }
 
@@ -136,7 +156,10 @@ export async function render(main) {
     const y = window.scrollY;
     // (update 192) with more than one player: each selection for each of them ("Pat · 2026", "Lee · 2026", …)
     const base = multi() ? sels.flatMap((s) => inPlay().map((p) => ({ ...s, id: `${s.id}@${p.key}`, base: s.id, pk: p.key, name: `${p.label} \u00b7 ${s.name}`, full: `${p.label} \u00b7 ${s.full || s.name}` }))).slice(0, MAX_SEL).map((x, i) => ({ ...x, color: COLORS[i % COLORS.length] })) : sels;
-    const items = base.map((s, i) => { const rs = roundsFor(roundsOf(s), s.f); return { ...s, i, rs, s: summarize(rs) }; });
+    const raw = base.map((s) => roundsFor(roundsOf(s), s.f));
+    scope = shotScope(raw); // (the Include choices: only what these selections have, so a driver shows Off the Tee alone)
+    const inc = incNow();
+    const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
     mount(root, [
       head,
       playersRow(),
@@ -148,9 +171,6 @@ export async function render(main) {
       items.length ? roundsSection(items) : null,
       items.length ? distanceSection(items) : null,
       items.length ? statsSection(items) : null,
-      // (update 190) the player's whole career: shown until you make your own comparison (then it would only muddle it)
-      !multi() && (!touched || !sels.length) ? trajectorySection() : null,
-      !multi() && (!touched || !sels.length) ? conditionsSection() : null,
       el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
     ]);
     window.scrollTo(0, y);
@@ -167,6 +187,29 @@ export async function render(main) {
     return el("div", { class: "cmp-who cmp-top" }, pp.node);
   }
   // (update 192) Players: who's being compared, above everything you pick (the one you're looking at is always in)
+  let scope = [];
+  const incNow = () => {
+    const cats = scope.filter((c) => incCats.has(c.cat)).map((c) => c.cat);
+    const dists = new Set();
+    for (const c of scope) { const ds = c.dists.filter((d) => incDists.has(`${c.cat}|${d}`)); if (ds.length && (!cats.length || cats.includes(c.cat))) { dists.add(`${c.cat}|*`); ds.forEach((d) => dists.add(`${c.cat}|${d}`)); } }
+    return cats.length || dists.size ? { cats: cats.length ? new Set(cats) : null, dists: dists.size ? dists : null } : null;
+  };
+  // (update 194) Include: which categories of shot, and which distances within them, count everywhere below
+  function includeRow() {
+    if (!scope.length) return null;
+    const chip = (on, label, click, title) => { const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}`, "aria-pressed": String(on), title }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label]); b.addEventListener("click", click); return b; };
+    const pickedCats = scope.filter((c) => incCats.has(c.cat));
+    const cats = scope.length > 1 ? el("div", { class: "cmp-chips" }, scope.map((c) => chip(incCats.has(c.cat), c.label, () => { incCats.has(c.cat) ? incCats.delete(c.cat) : incCats.add(c.cat); touched = true; draw(); }))) : el("p", { class: "muted small" }, `${scope[0].label} only (the only shots in these selections).`);
+    const distCats = (pickedCats.length ? pickedCats : scope).filter((c) => c.dists.length > 1);
+    const dists = distCats.map((c) => el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, `${c.label} distances`), el("div", { class: "cmp-chips" }, c.dists.map((d) => chip(incDists.has(`${c.cat}|${d}`), d, () => { const k = `${c.cat}|${d}`; incDists.has(k) ? incDists.delete(k) : incDists.add(k); touched = true; draw(); })))]));
+    const any = incNow();
+    const reset = any ? el("button", { type: "button", class: "link" }, "Count every shot") : null;
+    reset?.addEventListener("click", () => { incCats = new Set(); incDists = new Set(); draw(); });
+    return el("div", { class: "cmp-include" }, [
+      el("div", { class: "cmp-build-top" }, [el("h3", {}, "Include"), el("span", { class: "muted small" }, any ? "Only the shots picked count, in every table and chart below." : "Every shot counts. Pick categories or distances to narrow it."), reset]),
+      cats, ...dists,
+    ]);
+  }
   function playersRow() {
     if (self || players.length <= 1) return null;
     const rest = new Map(players.filter(([k]) => !inPlay().some((p) => p.key === k)));
@@ -243,7 +286,7 @@ export async function render(main) {
           const ownStaged = [...staged].filter(([v]) => !list.some((o) => o.value === v) && /^(last|prev):/.test(v)).map(([v, x]) => ({ value: v, label: x.label, n: Number(v.split(":")[1]) }));
           mount(chipsBox, groups.map(([g, test, kind]) => { const xs = [...shown.filter(test), ...ownStaged.filter((o) => kind && o.value.startsWith(kind + ":"))]; return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, [...xs.map(chip), kind ? ownWindow(kind) : null])]); }));
         } else if (mode === "product") {
-          mount(chipsBox, prods.length ? prods.map((g) => { const xs = g.items.filter((o) => shown.includes(o)); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g.group === "Other" ? "Other clubs" : g.group === "Ball" ? "Golf balls" : `${g.group}s`), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; })
+          mount(chipsBox, prods.length ? prods.map((g) => { const xs = g.items.filter((o) => shown.includes(o)); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g.group === "Other" ? "Other clubs" : g.group === "Ball" ? "Golf balls" : g.group === "Non-Driver" ? "Non-Driver (tee shots)" : `${g.group}s`), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; })
             : el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s equipment (clubType, clubBrand, clubModel, ballBrand and ballModel columns), every club model shows here, grouped by type (drivers, fairway woods, hybrids, irons, wedges, putters), with the golf balls after them. Pick one model against another to see how they play with each.")]));
         } else mount(chipsBox, el("div", { class: "cmp-chips" }, shown.map(chip)));
       };
@@ -274,7 +317,7 @@ export async function render(main) {
       drawChips(); drawAdd();
       body = el("div", {}, [search, chipsBox, long && !chipFilter && mode !== "product" ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null, addRow]);
     }
-    return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), sourceSeg()]), tabs, hint, body, note]);
+    return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), sourceSeg()]), tabs, hint, body, note, includeRow()]);
   }
   // (update 189) the picks, as one selection (several: their rounds pooled, so it's their average)
   async function addStaged() {
@@ -323,12 +366,24 @@ export async function render(main) {
   const hoverable = (node, i) => { node.addEventListener("mouseenter", () => { root.dataset.hl = String(i); }); node.addEventListener("mouseleave", () => { delete root.dataset.hl; }); return node; };
 
   /* ------------------------------ results ------------------------------ */
+  // (update 194) a category no selection has any strokes gained in (a driver's Approach, say) isn't shown anywhere
+  const used1 = (items) => { const u = usedCats(items); return u.length === 1 ? u[0][1] : "Total"; };
+  const usedCats = (items) => CATEGORIES.filter(([k]) => items.some((it) => it.s.n && Math.abs(it.s.sg[k] || 0) >= 0.005));
+  // the rows of strokes gained worth showing: with one category, just it (Total and Tee to Green would only repeat it)
+  const sgRowsFor = (items) => {
+    const used = usedCats(items);
+    if (used.length <= 1) return used.length ? SG_ROWS.filter(([k]) => k === used[0][0]) : SG_ROWS.slice(0, 1);
+    const putt = used.some(([k]) => k === "PUTT"), t2g = used.filter(([k]) => k !== "PUTT").length;
+    return SG_ROWS.filter(([k]) => k === "TOTAL" || used.some(([u]) => u === k) || (k === "T2G" && putt && t2g > 1));
+  };
   function cards(items) {
+    const used = usedCats(items);
+    const head = used.length === 1 ? used[0] : ["TOTAL", "Total"];
     return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
       el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name)]),
       it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
-      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, "SG: Total a round")]),
-      el("div", { class: "cmp-card-cats" }, CATEGORIES.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))),
+      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, `SG: ${head[1]} a round`)]),
+      used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
       it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
     ]), it.i)));
   }
@@ -339,12 +394,14 @@ export async function render(main) {
   }
 
   // strokes gained: the table (each row shaded best to worst) and the grouped bars
-  function sgSection(items) {
-    const live = items.filter((it) => it.s.n);
+  function sgSection(all) {
+    const live = all.filter((it) => it.s.n), items = live; // (a selection with no rounds: no column of dashes)
+    if (!live.length) return null;
+    const rowsShown = sgRowsFor(live);
     const shade = (vals, v) => { const xs = vals.filter((x) => x != null); if (xs.length < 2 || v == null) return ""; const hi = Math.max(...xs), lo = Math.min(...xs); return hi - lo < 1e-9 ? "" : v === hi ? "hi" : v === lo ? "lo" : ""; };
     const table = el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), it.i)), items.length > 1 ? el("th", { class: "num" }, "Spread") : null])),
-      el("tbody", {}, SG_ROWS.map(([k, l]) => {
+      el("tbody", {}, rowsShown.map(([k, l]) => {
         const vals = items.map((it) => (it.s.n ? it.s.sg[k] : null));
         const xs = vals.filter((v) => v != null);
         return el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, l), ...items.map((it, j) => el("td", { class: `num ${tone(vals[j])} ${shade(vals, vals[j])}`, "data-s": it.i }, vals[j] == null ? "\u2014" : fmtSG(vals[j]))),
@@ -354,9 +411,10 @@ export async function render(main) {
     let conf = null;
     if (live.length >= 2) {
       const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
-      conf = el("p", { class: "muted small" }, [`Best against worst in SG: Total: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
+      conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
     }
-    const chart = groupedBars([["TOTAL", "Total"], ...CATEGORIES.map(([k]) => [k, k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
+    const used = usedCats(live);
+    const chart = groupedBars([...(used.length > 1 ? [["TOTAL", "Total"]] : []), ...used.map(([k]) => [k, k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
     return el("section", { class: "panel cmp-sec" }, [secHead("Strokes gained, side by side", "A round, for each selection. The best in each row is shaded green, the worst red."), table, conf, legend(items), chart]);
   }
   // every round as a dot, and how each selection unfolded (a 5-round rolling average)
@@ -387,64 +445,31 @@ export async function render(main) {
       legend(items), distChart(rows, items, distPer),
     ]);
   }
-  function statsSection(items) {
-    const rows = statRows([...new Set([...allRounds(), ...items.flatMap((it) => roundsOf(it))])], items.map((it) => statSets(roundsOf(it), [it.f])[0]));
-    if (!rows.length) return null;
+  // (update 194) the stats for each category of shot (Driving Distance, Fairways and GIR off the tee; Hit Green %,
+  // Proximity, Pin-High and On-Line for approaches; Good Lag and Made Putt % on the green), and at each distance
+  function statsSection(all) {
+    const inc = incNow();
+    const obsSets = all.map((it) => statSets(roundsOf(it), [it.f])[0] || []);
+    const blocks = statBlocks(obsSets, inc);
+    if (!blocks.length) return null;
     const shade = (r, v) => { const xs = r.values.filter((x) => x != null); if (xs.length < 2 || v == null || r.def.higher == null) return ""; const best = r.def.higher === false ? Math.min(...xs) : Math.max(...xs), worst = r.def.higher === false ? Math.max(...xs) : Math.min(...xs); return Math.abs(best - worst) < 1e-9 ? "" : v === best ? "hi" : v === worst ? "lo" : ""; };
-    return el("section", { class: "panel cmp-sec" }, [secHead("Other stats", "The best in each row is shaded green and the worst red (lower is better for some, like Proximity)."),
-      el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]))])),
-        el("tbody", {}, rows.map((r) => el("tr", {}, [el("td", { title: r.def.help || "" }, r.label), ...items.map((it, j) => el("td", { class: `num ${shade(r, r.values[j])}`, "data-s": it.i }, fmtStat(r.def, r.values[j])))]))),
-      ]))]);
-  }
-
-  // getting better or worse: the last n against the n before, for several n
-  function trajectorySection() {
-    const tr = trajectory(data.rounds);
-    const cell = (v) => el("td", { class: `num ${tone(v)} cmp-delta` }, v == null ? "\u2014" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"} ${Math.abs(v).toFixed(2)}`);
-    return el("section", { class: "panel cmp-sec cmp-traj" }, [
-      secHead("Getting better or worse?", "Their latest rounds against the same number just before, at several time scales. Tap a row to compare the two."),
-      el("p", { class: "cmp-traj-words" }, trajectoryWords(tr)),
-      tr.length ? el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
-        el("thead", {}, el("tr", {}, ["Time scale", "Before", "Latest", ...SG_ROWS.slice(0, 5).map(([k, l]) => (k === "TOTAL" ? "Change" : k))].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
-        el("tbody", {}, tr.map((x) => {
-          const row = el("tr", { class: "cmp-tap", tabindex: "0", title: `Compare the last ${x.n} with the ${x.n} before` }, [
-            el("td", {}, `Last ${x.n} vs ${x.n} before`), el("td", { class: `num ${tone(x.prev)}` }, fmtSG(x.prev)), el("td", { class: `num ${tone(x.last)}` }, fmtSG(x.last)),
-            ...SG_ROWS.slice(0, 5).map(([k]) => cell(x.ch[k]))]);
-          const go = () => { touched = true; sels = [{ id: `windows:prev:${x.n}`, name: `The ${x.n} before that`, f: { prev: x.n }, color: COLORS[0] }, { id: `windows:last:${x.n}`, name: `Last ${x.n} rounds`, f: { last: x.n }, color: COLORS[1] }]; mode = "windows"; draw(); root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
-          row.addEventListener("click", go); row.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-          return row;
-        })),
-      ])) : null,
-    ]);
-  }
-  // the best conditions: every round grouped by one thing, against their overall average
-  function conditionsSection() {
-    const dims = DIMENSIONS.filter(([d]) => d !== "tour" || opts.tours.length > 1).filter(([d]) => d !== "course" || opts.courses.length > 1).filter(([d]) => d !== "round" || opts.rounds.length > 1);
-    if (!dims.some(([d]) => d === dim)) dim = dims[0]?.[0] || "month";
-    const list = conditions(data.rounds, dim, 3);
-    const tabs = el("div", { class: "cmp-seg small cmp-dims" }, dims.map(([d, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${dim === d ? " on" : ""}` }, l); b.addEventListener("click", () => { dim = d; draw(); }); return b; }));
-    const max = Math.max(0.05, ...list.map((x) => Math.abs(x.vsAll)));
-    const filterOf = (x) => ({ round: { roundNos: [x.label.replace("Round ", "")] }, course: { courses: [x.label] }, month: { months: [String(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(x.label))] }, year: { years: [x.label] }, tour: { tours: [x.label] } }[dim]);
-    const rows = list.map((x, j) => {
-      const f = filterOf(x), id = f ? `cond:${dim}:${x.label}` : null, on = id && has(id);
-      const w = Math.abs(x.vsAll) / max * 50;
-      const row = el(f ? "button" : "div", { type: f ? "button" : null, class: `cmp-cond${on ? " on" : ""}${f ? " cmp-tap" : ""}`, title: f ? (on ? "Take it out of the comparison" : "Add it to the comparison") : null }, [
-        el("span", { class: "cmp-cond-rank" }, String(j + 1)),
-        el("span", { class: "cmp-cond-l" }, [x.label, el("span", { class: "muted" }, ` \u00b7 ${x.n} rds`)]),
-        el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.vsAll >= 0 ? "pos" : "neg"}`, style: x.vsAll >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
-        el("strong", { class: `cmp-cond-v ${tone(x.v)}` }, fmtSG(x.v)),
-        el("span", { class: `cmp-cond-d ${tone(x.vsAll)}` }, fmtSigned(x.vsAll)),
+    const tables = blocks.map((bk) => {
+      // only the selections with something in this block, and no row that's all zeros
+      const cols = all.map((it, j) => j).filter((j) => bk.rows.some((r) => r.values[j] != null));
+      const rows = bk.rows.filter((r) => cols.some((j) => r.values[j] != null && Math.abs(r.values[j]) > 1e-9));
+      if (!cols.length || !rows.length) return null;
+      return el("div", { class: "cmp-stat-block" }, [
+        el("p", { class: "cmp-chip-gt" }, bk.label),
+        el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
+          el("thead", {}, el("tr", {}, [el("th", {}, ""), ...cols.map((j) => el("th", { class: "num", "data-s": all[j].i }, [el("i", { class: "cmp-dot", style: `--c:${all[j].color}` }), all[j].name]))])),
+          el("tbody", {}, rows.map((r) => el("tr", { class: r.dist ? "cmp-sub" : "strong" }, [
+            el("td", { title: r.def.help || "" }, r.dist ? r.dist : r.label),
+            ...cols.map((j) => el("td", { class: `num ${shade({ ...r, values: cols.map((c) => r.values[c]) }, r.values[j])}`, "data-s": all[j].i, title: r.w[j] ? `${Math.round(r.w[j])} attempts` : "" }, fmtStat(r.def, r.values[j])))]))),
+        ])),
       ]);
-      if (f) row.addEventListener("click", () => toggleSel(id, x.label, f));
-      return row;
-    });
-    return el("section", { class: "panel cmp-sec" }, [
-      secHead("Where they play their best", "Every round grouped by one condition, best first: SG: Total a round, and how far above or below their overall average. Tap one to add it to the comparison."),
-      tabs,
-      rows.length === 1 ? el("p", { class: "muted" }, "Every round falls in the same group here, so there\u2019s nothing to compare yet.") : rows.length ? el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows])
-        : el("p", { class: "muted" }, "Not enough rounds in any group yet (3 or more)."),
-    ]);
+    }).filter(Boolean);
+    if (!tables.length) return null;
+    return el("section", { class: "panel cmp-sec" }, [secHead("Stats", "By category, then at each distance. The best in each row is shaded green and the worst red (lower is better for some, like Proximity). Hover a value for how many attempts it\u2019s from."), ...tables]);
   }
   // (update 189) a colour key above every chart
   const legend = (items) => el("div", { class: "cmp-legend", "aria-hidden": "true" }, items.map((it) => hoverable(el("span", { class: "cmp-legend-i", title: it.full || it.name }, [el("i", { style: `background:${it.color}` }), it.name]), it.i)));
