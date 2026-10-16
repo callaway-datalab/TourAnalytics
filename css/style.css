@@ -3780,3 +3780,11 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .cmp-scope-row { max-width: 14rem; margin-bottom: 0.6rem; }
 .cmp-empty-note { padding: 0.9rem 1rem; border: 1px dashed rgba(255,255,255,0.14); border-radius: 12px; }
 .cmp-empty-note p { margin: 0.35rem 0 0; }
+/* (update 192) Comparisons: the players being compared, above "Compare by" */
+.cmp-players { position: relative; z-index: 55; overflow: visible !important; }
+.cmp-pl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
+.cmp-pl { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.42rem 0.55rem 0.42rem 0.8rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); font-weight: 650; font-size: 0.88rem; }
+.cmp-pl.main { border-color: rgba(212,180,131,0.6); background: rgba(212,180,131,0.14); color: #f3dfbd; padding-right: 0.8rem; }
+.cmp-pl-add { position: relative; flex: 1 1 13rem; max-width: 18rem; }
+.cmp-pl-add input { margin: 0 !important; width: 100%; }
+.cmp-pl-add .btn.ghost, .cmp-pl-add .which-player, .cmp-pl-add .player-picker > label { display: none !important; }

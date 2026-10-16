@@ -38,11 +38,10 @@ const MODES = [
   ["months", "Months", "The time of year."],
   ["tours", "Tours", "One tour against another."],
   ["custom", "Date range", "Any stretch of dates you choose."],
-  // (update 190) a club (and, when the file has them, its brand and model), grouped by type; and other players
+  // (update 190) a club model or ball, grouped by type
   ["product", "Product", "How they play with one club model or ball against another (only the shots hit with it count)."],
-  ["players", "Players", "One player against another, or a group of players pooled together."],
 ];
-const SCOPES = [["all", "Career", {}], ["this", "This season", { season: "this" }], ["last", "Last season", { season: "last" }], ["l20", "Last 20 rounds", { last: 20 }], ["l40", "Last 40 rounds", { last: 40 }]];
+const FIND = { tournaments: "a tournament", courses: "a course", product: "a club or ball", months: "a month", years: "a season", tours: "a tour" };
 
 export async function render(main) {
   const state = getState();
@@ -65,9 +64,24 @@ export async function render(main) {
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
   let staged = new Map(); // value → { label, f }
   // (update 190) untouched: the default comparison, so the whole-career tables (better or worse, best conditions) show
-  let touched = false, scope = "all";
-  const others = new Map(); // `${player}|${source}` → their rounds (Players)
-  const roundsOf = (s) => (s.players ? s.players.flatMap((k) => others.get(`${k}|${source}`) || []) : data.rounds);
+  let touched = false;
+  const others = new Map(); // `${player}|${source}` → their rounds
+  // (update 192) the players in the comparison: the one you're looking at, plus any you add; every selection is shown for each of them
+  let extra = []; // [{ key, label }]
+  const inPlay = () => (player ? [player, ...extra] : []);
+  const multi = () => extra.length > 0;
+  const roundsOfKey = (k) => (k === player?.key ? data.rounds : others.get(`${k}|${source}`) || []);
+  const roundsOf = (it) => (it.pk ? roundsOfKey(it.pk) : data.rounds);
+  const allRounds = () => (multi() ? inPlay().flatMap((p) => roundsOfKey(p.key)) : data.rounds);
+  const room = (nSels, nPlayers) => nSels * nPlayers <= MAX_SEL;
+  async function loadOthers(list) {
+    const { loadSource } = await import("../reportGen.js");
+    await Promise.all(list.map(async (p) => {
+      const ck = `${p.key}|${source}`;
+      if (others.has(ck)) return;
+      try { const res = await loadSource(source, p.key, p.label, { detail: false }); others.set(ck, res?.me?.rounds || []); } catch { others.set(ck, []); }
+    }));
+  }
   const root = el("div", { class: "cmp" });
   mount(main, root);
 
@@ -76,16 +90,17 @@ export async function render(main) {
   const has = (id) => sels.some((s) => s.id === id);
   function toggleSel(id, name, f) {
     if (has(id)) sels = sels.filter((s) => s.id !== id);
-    else { if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; } sels = [...sels, { id, name, f, color: nextColor() }]; }
+    else { if (!room(sels.length + 1, inPlay().length)) { flashNote(capNote()); return; } sels = [...sels, { id, name, f, color: nextColor() }]; }
     touched = true;
     draw();
   }
   let noteTimer = null;
   const note = el("p", { class: "cmp-note", role: "status" });
+  const capNote = () => (multi() ? `Up to ${MAX_SEL} on the charts: with ${inPlay().length} players that\u2019s ${Math.floor(MAX_SEL / inPlay().length)} picks each. Take one off first.` : `Up to ${MAX_SEL} at a time: take one off first.`);
   const flashNote = (t) => { note.textContent = t; clearTimeout(noteTimer); noteTimer = setTimeout(() => { note.textContent = ""; }, 3500); };
   // the default: the two latest seasons (or recent form, with only one)
   function defaults() {
-    sels = []; touched = false;
+    sels = []; touched = multi();
     if (opts.years.length >= 2) { mode = "years"; opts.years.slice(0, 2).forEach((y) => sels.push({ id: `years:${y.value}`, name: y.label, f: { years: [y.value] }, mode: "years", values: [y.value], color: nextColor() })); } // (this year, then last year)
     else if (opts.total >= 10) { // (one season: the latest rounds against the same number before)
       const n = [20, 10, 5].find((x) => opts.total >= 2 * x);
@@ -103,7 +118,9 @@ export async function render(main) {
     if (loadingFor !== k) return;
     data = { rounds: res?.me?.rounds || [] };
     others.set(k, data.rounds);
-    opts = options(data.rounds);
+    extra = extra.filter((p) => p.key !== player.key);
+    if (extra.length) { await loadOthers(extra); if (loadingFor !== k) return; }
+    opts = options(allRounds());
     defaults();
     draw();
   }
@@ -117,11 +134,12 @@ export async function render(main) {
     if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn\u2019t entered any rounds yet.`)])]); return; }
 
     const y = window.scrollY;
-    const sets = sels.map((s) => roundsFor(roundsOf(s), s.f));
-    const sums = sets.map((rs) => summarize(rs));
-    const items = sels.map((s, i) => ({ ...s, i, rs: sets[i], s: sums[i] }));
+    // (update 192) with more than one player: each selection for each of them ("Pat · 2026", "Lee · 2026", …)
+    const base = multi() ? sels.flatMap((s) => inPlay().map((p) => ({ ...s, id: `${s.id}@${p.key}`, base: s.id, pk: p.key, name: `${p.label} \u00b7 ${s.name}`, full: `${p.label} \u00b7 ${s.full || s.name}` }))).slice(0, MAX_SEL).map((x, i) => ({ ...x, color: COLORS[i % COLORS.length] })) : sels;
+    const items = base.map((s, i) => { const rs = roundsFor(roundsOf(s), s.f); return { ...s, i, rs, s: summarize(rs) }; });
     mount(root, [
       head,
+      playersRow(),
       builder(),
       items.length ? selectedBar(items) : null,
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
@@ -131,8 +149,8 @@ export async function render(main) {
       items.length ? distanceSection(items) : null,
       items.length ? statsSection(items) : null,
       // (update 190) the player's whole career: shown until you make your own comparison (then it would only muddle it)
-      !touched || !sels.length ? trajectorySection() : null,
-      !touched || !sels.length ? conditionsSection() : null,
+      !multi() && (!touched || !sels.length) ? trajectorySection() : null,
+      !multi() && (!touched || !sels.length) ? conditionsSection() : null,
       el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
     ]);
     window.scrollTo(0, y);
@@ -140,13 +158,42 @@ export async function render(main) {
 
   function pickerNode() {
     if (self || players.length <= 1) return null; // (only one player: nothing to search)
-    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; player = { key: p.key, label: p.label }; ls.set(LS_PLAYER, p.key); staged = new Map(); load(); });
+    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; extra = extra.filter((x) => x.key !== p.key); player = { key: p.key, label: p.label }; ls.set(LS_PLAYER, p.key); staged = new Map(); load(); });
     if (player) pp.preset(player.key);
     const inp = pp.node.querySelector("input");
     inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
     inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && player) pp.preset(player.key); }, 300));
     if (inp) inp.placeholder = "Type a player\u2019s name\u2026";
     return el("div", { class: "cmp-who cmp-top" }, pp.node);
+  }
+  // (update 192) Players: who's being compared, above everything you pick (the one you're looking at is always in)
+  function playersRow() {
+    if (self || players.length <= 1) return null;
+    const rest = new Map(players.filter(([k]) => !inPlay().some((p) => p.key === k)));
+    const chips = inPlay().map((p, i) => {
+      const x = i ? el("button", { type: "button", class: "cmp-key-x cmp-pl-x", "aria-label": `Take ${p.label} out` }, "\u2715") : null;
+      x?.addEventListener("click", () => { extra = extra.filter((e) => e.key !== p.key); opts = options(allRounds()); touched = true; draw(); });
+      return el("span", { class: `cmp-pl${i ? "" : " main"}` }, [el("span", {}, p.label), x]);
+    });
+    let adder = null;
+    if (rest.size && extra.length < MAX_SEL - 1) {
+      const pp = playerPicker(rest, async (p) => {
+        if (!p) return;
+        if (!room(Math.max(1, sels.length), inPlay().length + 1)) { flashNote(`Up to ${MAX_SEL} on the charts: take a pick off first, then add ${p.label}.`); const i0 = pp.node.querySelector("input"); if (i0) i0.value = ""; return; }
+        flashNote(`Loading ${p.label}\u2026`);
+        await loadOthers([p]);
+        extra = [...extra, { key: p.key, label: p.label }];
+        opts = options(allRounds()); touched = true; note.textContent = "";
+        draw();
+      });
+      const inp = pp.node.querySelector("input");
+      if (inp) inp.placeholder = "\uff0b Add a player\u2026";
+      adder = el("div", { class: "cmp-pl-add" }, pp.node);
+    }
+    return el("section", { class: "panel cmp-players" }, [
+      el("div", { class: "cmp-build-top" }, [el("h2", {}, "Players"), el("span", { class: "muted small" }, multi() ? "Every pick below is shown for each of them." : "Add another player to compare them side by side.")]),
+      el("div", { class: "cmp-pl-row" }, [...chips, adder]),
+    ]);
   }
   function sourceSeg() {
     return el("div", { class: "cmp-seg", role: "group", "aria-label": "Data" }, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
@@ -158,8 +205,7 @@ export async function render(main) {
 
   /* ------------------------------ choosing what to compare ------------------------------ */
   function builder() {
-    const modes = MODES.filter(([m]) => m !== "tours" || opts.tours.length > 1).filter(([m]) => m !== "courses" || opts.courses.length).filter(([m]) => m !== "rounds" || opts.rounds.length > 1)
-      .filter(([m]) => m !== "players" || (!self && players.length > 1));
+    const modes = MODES.filter(([m]) => m !== "tours" || opts.tours.length > 1).filter(([m]) => m !== "courses" || opts.courses.length).filter(([m]) => m !== "rounds" || opts.rounds.length > 1);
     if (!modes.some(([m]) => m === mode)) mode = "years";
     const tabs = el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
       const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
@@ -170,18 +216,18 @@ export async function render(main) {
     let body;
     if (mode === "custom") body = customForm();
     else {
-      const prods = mode === "product" ? products(data.rounds) : [];
-      const list = mode === "product" ? prods.flatMap((g) => g.items) : mode === "players" ? players.map(([k, l]) => ({ value: k, label: l, n: null }))
+      const prods = mode === "product" ? products(allRounds()) : [];
+      const list = mode === "product" ? prods.flatMap((g) => g.items)
         : { years: opts.years, windows: opts.windows, tournaments: opts.tournaments, courses: opts.courses, rounds: opts.rounds, months: opts.months, tours: opts.tours }[mode] || [];
-      const filterOf = (o) => (mode === "years" ? { years: [o.value] } : mode === "windows" ? windowFilter(o.value) : mode === "tournaments" ? { events: [o.value] } : mode === "courses" ? { courses: [o.value] } : mode === "rounds" ? { roundNos: [o.value] } : mode === "months" ? { months: [o.value] } : mode === "product" ? { clubs: [o.value] } : mode === "players" ? {} : { tours: [o.value] });
+      const filterOf = (o) => (mode === "years" ? { years: [o.value] } : mode === "windows" ? windowFilter(o.value) : mode === "tournaments" ? { events: [o.value] } : mode === "courses" ? { courses: [o.value] } : mode === "rounds" ? { roundNos: [o.value] } : mode === "months" ? { months: [o.value] } : mode === "product" ? { clubs: [o.value] } : { tours: [o.value] });
       const long = list.length > 14;
-      const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${mode === "tournaments" ? "a tournament" : "a course"}\u2026`, value: chipFilter }) : null;
+      const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${FIND[mode] || "one"}\u2026`, value: chipFilter }) : null;
       const chipsBox = el("div", { class: "cmp-chips-wrap" });
       const addRow = el("div", { class: "cmp-addrow" });
       const chip = (o) => {
         const on = staged.has(o.value);
         // (a small dot for each selection already in the comparison that includes it)
-        const inSel = sels.filter((x) => x.mode === mode && x.values?.includes(o.value));
+        const inSel = multi() ? [] : sels.filter((x) => x.mode === mode && x.values?.includes(o.value));
         const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, o.label, o.n == null ? null : el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`),
           inSel.length ? el("span", { class: "cmp-chip-dots", title: `In: ${inSel.map((x) => x.name).join(", ")}` }, inSel.map((x) => el("i", { style: `background:${x.color}` }))) : null]);
         b.addEventListener("click", () => { if (on) staged.delete(o.value); else staged.set(o.value, { label: o.long || o.label, f: filterOf(o) }); drawChips(); drawAdd(); });
@@ -226,49 +272,22 @@ export async function render(main) {
       }
       search?.addEventListener("input", () => { chipFilter = search.value; drawChips(); });
       drawChips(); drawAdd();
-      // (update 190) Players: over which stretch of each player's rounds
-      const scopeSel = mode === "players" ? (() => {
-        const sel = el("select", { class: "cmp-scope", "aria-label": "Which rounds" }, SCOPES.map(([v, l]) => el("option", { value: v, selected: scope === v }, l)));
-        sel.addEventListener("change", () => { scope = sel.value; });
-        return el("label", { class: "cmp-field cmp-scope-row" }, [el("span", {}, "Their rounds"), sel]);
-      })() : null;
-      body = el("div", {}, [scopeSel, search, chipsBox, long && !chipFilter && mode !== "product" && mode !== "players" ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null, addRow]);
+      body = el("div", {}, [search, chipsBox, long && !chipFilter && mode !== "product" ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null, addRow]);
     }
     return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), sourceSeg()]), tabs, hint, body, note]);
   }
   // (update 189) the picks, as one selection (several: their rounds pooled, so it's their average)
   async function addStaged() {
     if (!staged.size) return;
-    if (mode === "players") return addPlayers();
     const vals = [...staged.keys()], picks = [...staged.values()];
     const id = `${mode}:${[...vals].sort().join("|")}`;
     if (has(id)) { flashNote("That\u2019s already in the comparison."); return; }
-    if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; }
+    if (!room(sels.length + 1, inPlay().length)) { flashNote(capNote()); return; }
     const labels = picks.map((x) => x.label);
     const name = labels.length === 1 ? labels[0] : labels.length === 2 ? `${labels[0]} + ${labels[1]}` : `${labels[0]}, ${labels[1]} + ${labels.length - 2} more`;
     const f = picks.length === 1 ? picks[0].f : mode === "product" ? { clubs: vals } : { any: picks.map((x) => x.f) };
     sels = [...sels, { id, name, f, mode, values: vals, full: labels.join(", "), color: nextColor() }];
     staged = new Map(); touched = true;
-    draw();
-  }
-  // (update 190) other players: their rounds loaded, then one selection (several: pooled)
-  async function addPlayers() {
-    const keys = [...staged.keys()], labels = [...staged.values()].map((x) => x.label);
-    const [sv, sl, sf] = SCOPES.find(([v]) => v === scope) || SCOPES[0];
-    const id = `players:${[...keys].sort().join("|")}:${sv}`;
-    if (has(id)) { flashNote("That\u2019s already in the comparison."); return; }
-    if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; }
-    flashNote(`Loading ${labels.length === 1 ? labels[0] : `${labels.length} players`}\u2026`);
-    const { loadSource } = await import("../reportGen.js");
-    await Promise.all(keys.map(async (k, i) => {
-      const ck = `${k}|${source}`;
-      if (others.has(ck)) return;
-      try { const res = await loadSource(source, k, labels[i], { detail: false }); others.set(ck, res?.me?.rounds || []); } catch { others.set(ck, []); }
-    }));
-    const base = labels.length === 1 ? labels[0] : labels.length === 2 ? `${labels[0]} + ${labels[1]}` : `${labels[0]}, ${labels[1]} + ${labels.length - 2} more`;
-    const name = sv === "all" ? base : `${base} \u00b7 ${sl}`;
-    sels = [...sels, { id, name, f: sf, players: keys, mode: "players", values: keys, full: `${labels.join(", ")} (${sl})`, color: nextColor() }];
-    staged = new Map(); touched = true; note.textContent = "";
     draw();
   }
   function customForm() {
@@ -284,7 +303,7 @@ export async function render(main) {
     add.addEventListener("click", () => {
       if (!from.value && !to.value) { flashNote("Pick a start or end date (or both)."); return; }
       const f = { from: from.value || null, to: to.value || null, roundNos: rnd.size ? [...rnd] : null };
-      const n = roundsFor(data.rounds, f).length;
+      const n = roundsFor(allRounds(), f).length;
       if (!n) { flashNote("No rounds in those dates."); return; }
       const auto = `${from.value ? dateTxt(from.value) : "Start"} \u2013 ${to.value ? dateTxt(to.value) : "now"}${rnd.size ? ` (R${[...rnd].join(", R")})` : ""}`;
       toggleSel(`custom:${Date.now()}`, name.value.trim() || auto, f);
@@ -296,8 +315,8 @@ export async function render(main) {
     const clear = el("button", { type: "button", class: "link cmp-clear" }, "Clear all");
     clear.addEventListener("click", () => { sels = []; touched = true; draw(); });
     return el("div", { class: "cmp-selbar" }, [...items.map((it) => {
-      const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": `Remove ${it.name}` }, "\u2715");
-      x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== it.id); touched = true; draw(); });
+      const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": it.base ? `Remove ${sels.find((s) => s.id === it.base)?.name} (for every player)` : `Remove ${it.name}` }, "\u2715");
+      x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== (it.base || it.id)); touched = true; draw(); });
       return hoverable(el("span", { class: "cmp-key", style: `--c:${it.color}`, title: it.full || it.name }, [el("i", { "aria-hidden": "true" }), el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]), it.i);
     }), clear]);
   }
@@ -369,7 +388,7 @@ export async function render(main) {
     ]);
   }
   function statsSection(items) {
-    const rows = statRows([...new Set([...data.rounds, ...items.flatMap((it) => roundsOf(it))])], items.map((it) => statSets(roundsOf(it), [it.f])[0]));
+    const rows = statRows([...new Set([...allRounds(), ...items.flatMap((it) => roundsOf(it))])], items.map((it) => statSets(roundsOf(it), [it.f])[0]));
     if (!rows.length) return null;
     const shade = (r, v) => { const xs = r.values.filter((x) => x != null); if (xs.length < 2 || v == null || r.def.higher == null) return ""; const best = r.def.higher === false ? Math.min(...xs) : Math.max(...xs), worst = r.def.higher === false ? Math.max(...xs) : Math.min(...xs); return Math.abs(best - worst) < 1e-9 ? "" : v === best ? "hi" : v === worst ? "lo" : ""; };
     return el("section", { class: "panel cmp-sec" }, [secHead("Other stats", "The best in each row is shaded green and the worst red (lower is better for some, like Proximity)."),
