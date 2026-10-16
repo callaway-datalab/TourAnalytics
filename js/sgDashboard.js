@@ -405,8 +405,8 @@ export function sgDashboard(container, opts) {
         if (last != null && prev != null) {
           const ch = last - prev, steady = Math.abs(ch) < steadyBand(prev);
           const amt = sg ? Math.abs(ch).toFixed(2) : fmtStat({ ...def, unit: def.pct ? "" : def.unit }, Math.abs(ch)).replace("%", def.pct ? " pts" : "");
-          form = steady ? ["Steady", ""] : sg ? (ch > 0 ? [`Up ${amt}`, "up"] : [`Down ${amt}`, "down"])
-            : def.higher == null ? [`${ch > 0 ? "Up" : "Down"} ${amt}`, ""] : (def.higher ? ch > 0 : ch < 0) ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"];
+          form = steady ? ["Steady", ""] : sg ? (ch > 0 ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"]) // (update 182: Better / Worse, not Up / Down)
+            : def.higher == null ? [`${ch > 0 ? "Higher" : "Lower"} by ${amt}`, ""] : (def.higher ? ch > 0 : ch < 0) ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"];
         }
       }
       // a tile per category this stat has (with its rank among the same players, every category counted)

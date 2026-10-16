@@ -476,12 +476,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     }
     d.line(zx, y + 4, zx, y + 24, { color: "#000000", width: 1.1 }); // zero
     if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
-    d.text(fmtSG(c.value), M + W - 66, y + 19, { size: 18, bold: true, color: tone(c.value), align: "right" });
-    if (t && t.change != null && Math.abs(t.change) >= STEADY) badge(t.change > 0 ? `Up ${t.change.toFixed(2)}` : `Down ${Math.abs(t.change).toFixed(2)}`, M + W - 58, y + 18, t.change > 0 ? P.up : P.down);
+    // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
+    const chLabel = t && t.change != null && Math.abs(t.change) >= STEADY ? (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
+    const chW = chLabel ? textWidth(chLabel.toUpperCase(), 7, true) + 1.1 * (chLabel.length - 1) + 16 : 0;
+    d.text(fmtSG(c.value), chLabel ? M + W - chW - 12 : M + W - 66, y + 19, { size: 18, bold: true, color: tone(c.value), align: "right" });
+    if (chLabel) badge(chLabel, M + W - chW, y + 18, t.change > 0 ? P.up : P.down);
     else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
     y += 36;
   }
-  d.text(a.halves ? `Up / Down: the last ${a.halves.n} rounds (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Up / Down: the last rounds compared with the ones before them, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
+  d.text(a.halves ? `Better / Worse: the last ${a.halves.n} rounds (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Better / Worse: the last rounds compared with the ones before them, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
   /* ---------- SG form: total and each category ---------- */

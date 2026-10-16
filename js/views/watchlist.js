@@ -272,19 +272,28 @@ export async function render(main, { previewClient }) {
       btn.addEventListener("click", async () => (await import("../badgePopup.js")).openBadge(b, c.label));
       return btn;
     })) : null;
-    const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
+    // (update 182) tap a tile, a distance or a metric: its form
+    const tappable = (node, title, info) => {
+      if (!info) return node;
+      node.classList.add("wl-tap"); node.setAttribute("role", "button"); node.setAttribute("tabindex", "0"); node.setAttribute("aria-haspopup", "dialog"); node.title = `${title}: form`;
+      const go = async () => (await import("../badgePopup.js")).openBadge({ text: title, info }, c.label);
+      node.addEventListener("click", go);
+      node.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      return node;
+    };
+    const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => tappable(el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
       el("span", { class: "wl-tile-k" }, s.short),
       el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
       el("div", { class: "wl-tile-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
-    ])));
-    const distList = (title, xs, tone) => el("div", { class: `wl-dist ${tone}` }, [el("p", { class: "wl-col-t" }, title), xs.length ? el("ol", {}, xs.map((d) => el("li", {}, [
+    ]), s.label, s.info)));
+    const distList = (title, xs, tone) => el("div", { class: `wl-dist ${tone}` }, [el("p", { class: "wl-col-t" }, title), xs.length ? el("ol", {}, xs.map((d) => tappable(el("li", {}, [
       el("span", { class: "wl-dist-l" }, [el("span", {}, d.label), el("span", { class: "wl-dist-n" }, `${d.n} shots`)]),
       el("span", { class: `wl-dist-v ${sgCls(d.v)}` }, `${d.v >= 0 ? "+" : "−"}${Math.abs(d.v).toFixed(3)}`), rankPill(d.rank, d.of),
-    ]))) : el("p", { class: "muted small" }, "Not enough shots yet.")]);
+    ]), d.label, d.info))) : el("p", { class: "muted small" }, "Not enough shots yet.")]);
     const dists = el("div", { class: "wl-two" }, [distList("Best distances", c.dists.best, "best"), distList("Toughest distances", c.dists.worst, "worst")]);
-    const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => el("div", { class: "wl-mrow" }, [
+    const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => tappable(el("div", { class: "wl-mrow" }, [
       el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
-    ])))]) : null;
+    ]), m.label, m.info)))]) : null;
     const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics]);
     const card = el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}${isOpen ? " open" : ""}` }, [head, badges, sg, more]);
     moreBtn.addEventListener("click", () => {

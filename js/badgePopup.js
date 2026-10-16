@@ -23,7 +23,7 @@ export function openBadge(badge, playerLabel) {
   const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "✕");
   const body = el("div", { class: "wl-pop-body" }, info.blocks.map(block));
   const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": badge.text }, el("div", { class: "gx-pop wl-pop" }, [
-    el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, playerLabel), el("h2", {}, [el("span", { "aria-hidden": "true" }, `${badge.icon} `), badge.text]), info.sub ? el("p", { class: "gx-sub" }, info.sub) : null]), close]),
+    el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, playerLabel), el("h2", {}, [badge.icon ? el("span", { "aria-hidden": "true" }, `${badge.icon} `) : null, badge.text]), info.sub ? el("p", { class: "gx-sub" }, info.sub) : null]), close]),
     body,
   ]));
   const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
