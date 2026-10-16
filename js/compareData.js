@@ -49,7 +49,13 @@ export function options(rounds) {
 }
 
 /** The rounds in a selection, oldest first. f: { years, events, courses, roundNos, months, tours, from, to, last, prev, all } */
+/** (update 190) "This season" / "Last season" for whoever's rounds these are (players have different latest seasons). */
+const withSeason = (rounds, f) => { if (!f?.season) return f; const ys = [...new Set(sgRounds(rounds).map(yearOf))].sort().reverse(); const y = ys[f.season === "last" ? 1 : 0]; return { ...f, season: null, years: [y || "none"] }; };
 export function roundsFor(rounds, f = {}) {
+  f = withSeason(rounds, f);
+  // (update 190) a product: the rounds it was used in, and only its shots (so the numbers are that club's)
+  // (update 191) a pick is a club model ("Iron|Callaway Apex") or a ball ("Ball|Callaway Chrome Tour")
+  if (f.clubs) { const cs = new Set(f.clubs); return roundsFor(rounds, { ...f, clubs: null }).map((rd) => ({ ...rd, shots: rd.shots.filter((x) => cs.has(x.gear) || (x.ball && cs.has(`Ball|${x.ball}`))) })).filter((rd) => rd.shots.length); }
   // (update 189) several picks together: every round in any of them, once each, oldest first
   if (f.any) { const seen = new Set(), out = []; for (const g of f.any) for (const rd of roundsFor(rounds, g)) if (!seen.has(rd.key || rd)) { seen.add(rd.key || rd); out.push(rd); } return out.sort(byDate); }
   let rs = sgRounds(rounds);
@@ -117,6 +123,8 @@ export function statRows(allRounds, sets) {
 export function statSets(rounds, filters) {
   const all = [...(rounds || [])].sort(byDate);
   return filters.map(function one(f) {
+    f = withSeason(rounds, f);
+    if (f.clubs) return []; // (a club's shots carry no round stats)
     if (f.any) { const seen = new Set(); return f.any.flatMap((g) => one(g)).filter((rd) => (seen.has(rd) ? false : (seen.add(rd), true))); } // (update 189)
     if (f.last || f.prev) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
     const g = { ...f };
@@ -128,6 +136,25 @@ export function statSets(rounds, filters) {
   });
 }
 
+/** (update 190) The products in the shots, grouped by club type; (update 191) each club model (brand + model) and each ball. */
+export const CLUB_TYPES = ["Driver", "Fairway Wood", "Hybrid", "Iron", "Wedge", "Putter", "Other", "Ball"];
+export function products(rounds) {
+  const by = new Map();
+  const add = (g, value, label, rd, s, seen) => {
+    const m = by.get(g) || by.set(g, new Map()).get(g);
+    const SHORT = { Driver: "driver", "Fairway Wood": "fairway woods", Hybrid: "hybrids", Iron: "irons", Wedge: "wedges", Putter: "putter", Ball: "ball", Other: "" };
+    const o = m.get(value) || m.set(value, { value, label, long: SHORT[g] ? `${label} ${SHORT[g]}` : label, n: 0, shots: 0 }).get(value);
+    o.shots += s.w || 1; if (!seen.has(value)) { seen.add(value); o.n++; }
+  };
+  for (const rd of sgRounds(rounds)) {
+    const seen = new Set();
+    for (const s of rd.shots) {
+      if (s.gear) { const g = CLUB_TYPES.includes(s.clubCat) && s.clubCat !== "Ball" ? s.clubCat : "Other"; add(g, s.gear, s.gear.slice(s.gear.indexOf("|") + 1), rd, s, seen); }
+      if (s.ball) add("Ball", `Ball|${s.ball}`, s.ball, rd, s, seen);
+    }
+  }
+  return CLUB_TYPES.filter((g) => by.has(g)).map((g) => ({ group: g, items: [...by.get(g).values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label)) }));
+}
 /** Rolling average (k rounds) through a selection, for "how it unfolded". */
 export const rolling = (vals, k = 5) => vals.map((_, i) => (i + 1 >= Math.min(k, vals.length) ? mean(vals.slice(Math.max(0, i + 1 - k), i + 1)) : null));
 

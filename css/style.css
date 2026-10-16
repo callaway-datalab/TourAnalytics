@@ -3770,3 +3770,13 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .cmp-legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; padding: 0 0.2rem; }
 .cmp-legend-i { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-weight: 600; color: var(--ink-2, #d1d1d6); cursor: default; }
 .cmp-legend-i i { width: 0.7rem; height: 0.7rem; border-radius: 3px; }
+/* (update 190) Comparisons: your own windows, Players' stretch, no club data */
+.cmp-own { cursor: default; gap: 0.35rem; padding: 0.25rem 0.35rem 0.25rem 0.7rem; border-style: dashed; }
+.cmp-own:hover { background: rgba(255,255,255,0.03); }
+.cmp-own-n { width: 3.4rem; padding: 0.22rem 0.35rem !important; margin: 0 !important; text-align: center; font: 600 0.84rem var(--font-body, inherit); border-radius: 8px; -moz-appearance: textfield; }
+.cmp-own-n::-webkit-outer-spin-button, .cmp-own-n::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cmp-own-go { border: 0; background: rgba(212,180,131,0.22); color: #f3dfbd; border-radius: 8px; padding: 0.22rem 0.55rem; font-weight: 800; cursor: pointer; }
+.cmp-own-go:hover { background: rgba(212,180,131,0.35); }
+.cmp-scope-row { max-width: 14rem; margin-bottom: 0.6rem; }
+.cmp-empty-note { padding: 0.9rem 1rem; border: 1px dashed rgba(255,255,255,0.14); border-radius: 12px; }
+.cmp-empty-note p { margin: 0.35rem 0 0; }

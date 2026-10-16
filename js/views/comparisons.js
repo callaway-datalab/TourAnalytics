@@ -1,7 +1,7 @@
 /*
  * Comparisons (update 188): pick a player, then any slices of their rounds (seasons, time windows,
  * tournaments, courses, round numbers, months, tours, or a date range of your own) and see them side by side:
- *   \u00b7 a card for each, with the best crowned, and what stands out in plain words
+ *   \u00b7 a card for each, and what stands out in plain words
  *   \u00b7 strokes gained by category in a table (best / worst shaded) and a grouped bar chart
  *   \u00b7 every round as a dot (the spread, the middle half, the median), and how each one unfolded
  *   \u00b7 strokes gained by distance, and the other stats (fairways, greens, proximity \u2026)
@@ -17,7 +17,7 @@ import { playerPicker } from "../playerPicker.js";
 import { CATEGORIES, fmtStat, fmtSG } from "../sg.js";
 import {
   COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statRows, statSets,
-  rolling, trajectory, trajectoryWords, DIMENSIONS, conditions, insights, fmtSigned, sgOf,
+  trajectory, trajectoryWords, DIMENSIONS, products, conditions, insights, fmtSigned, sgOf,
 } from "../compareData.js";
 
 const LS_PLAYER = "ta:cmp:player";
@@ -34,11 +34,15 @@ const MODES = [
   ["windows", "Time windows", "Recent form against what came before, or the whole career."],
   ["tournaments", "Tournaments", "Any events, this year or any year."],
   ["courses", "Courses", "Where they play their best."],
-  ["rounds", "Rounds 1\u20134", "Openers against weekends."],
+  ["rounds", "Rounds", "Openers against weekends."],
   ["months", "Months", "The time of year."],
   ["tours", "Tours", "One tour against another."],
   ["custom", "Date range", "Any stretch of dates you choose."],
+  // (update 190) a club (and, when the file has them, its brand and model), grouped by type; and other players
+  ["product", "Product", "How they play with one club model or ball against another (only the shots hit with it count)."],
+  ["players", "Players", "One player against another, or a group of players pooled together."],
 ];
+const SCOPES = [["all", "Career", {}], ["this", "This season", { season: "this" }], ["last", "Last season", { season: "last" }], ["l20", "Last 20 rounds", { last: 20 }], ["l40", "Last 40 rounds", { last: 40 }]];
 
 export async function render(main) {
   const state = getState();
@@ -60,6 +64,10 @@ export async function render(main) {
   let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
   let staged = new Map(); // value → { label, f }
+  // (update 190) untouched: the default comparison, so the whole-career tables (better or worse, best conditions) show
+  let touched = false, scope = "all";
+  const others = new Map(); // `${player}|${source}` → their rounds (Players)
+  const roundsOf = (s) => (s.players ? s.players.flatMap((k) => others.get(`${k}|${source}`) || []) : data.rounds);
   const root = el("div", { class: "cmp" });
   mount(main, root);
 
@@ -69,6 +77,7 @@ export async function render(main) {
   function toggleSel(id, name, f) {
     if (has(id)) sels = sels.filter((s) => s.id !== id);
     else { if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; } sels = [...sels, { id, name, f, color: nextColor() }]; }
+    touched = true;
     draw();
   }
   let noteTimer = null;
@@ -76,7 +85,7 @@ export async function render(main) {
   const flashNote = (t) => { note.textContent = t; clearTimeout(noteTimer); noteTimer = setTimeout(() => { note.textContent = ""; }, 3500); };
   // the default: the two latest seasons (or recent form, with only one)
   function defaults() {
-    sels = [];
+    sels = []; touched = false;
     if (opts.years.length >= 2) { mode = "years"; opts.years.slice(0, 2).forEach((y) => sels.push({ id: `years:${y.value}`, name: y.label, f: { years: [y.value] }, mode: "years", values: [y.value], color: nextColor() })); } // (this year, then last year)
     else if (opts.total >= 10) { // (one season: the latest rounds against the same number before)
       const n = [20, 10, 5].find((x) => opts.total >= 2 * x);
@@ -93,6 +102,7 @@ export async function render(main) {
     try { const { loadSource } = await import("../reportGen.js"); res = await loadSource(source, player.key, player.label, { detail: false }); } catch (err) { console.warn(err); }
     if (loadingFor !== k) return;
     data = { rounds: res?.me?.rounds || [] };
+    others.set(k, data.rounds);
     opts = options(data.rounds);
     defaults();
     draw();
@@ -107,7 +117,7 @@ export async function render(main) {
     if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn\u2019t entered any rounds yet.`)])]); return; }
 
     const y = window.scrollY;
-    const sets = sels.map((s) => roundsFor(data.rounds, s.f));
+    const sets = sels.map((s) => roundsFor(roundsOf(s), s.f));
     const sums = sets.map((rs) => summarize(rs));
     const items = sels.map((s, i) => ({ ...s, i, rs: sets[i], s: sums[i] }));
     mount(root, [
@@ -120,8 +130,9 @@ export async function render(main) {
       items.length ? roundsSection(items) : null,
       items.length ? distanceSection(items) : null,
       items.length ? statsSection(items) : null,
-      trajectorySection(),
-      conditionsSection(),
+      // (update 190) the player's whole career: shown until you make your own comparison (then it would only muddle it)
+      !touched || !sels.length ? trajectorySection() : null,
+      !touched || !sels.length ? conditionsSection() : null,
       el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
     ]);
     window.scrollTo(0, y);
@@ -147,7 +158,8 @@ export async function render(main) {
 
   /* ------------------------------ choosing what to compare ------------------------------ */
   function builder() {
-    const modes = MODES.filter(([m]) => m !== "tours" || opts.tours.length > 1).filter(([m]) => m !== "courses" || opts.courses.length).filter(([m]) => m !== "rounds" || opts.rounds.length > 1);
+    const modes = MODES.filter(([m]) => m !== "tours" || opts.tours.length > 1).filter(([m]) => m !== "courses" || opts.courses.length).filter(([m]) => m !== "rounds" || opts.rounds.length > 1)
+      .filter(([m]) => m !== "players" || (!self && players.length > 1));
     if (!modes.some(([m]) => m === mode)) mode = "years";
     const tabs = el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
       const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
@@ -158,8 +170,10 @@ export async function render(main) {
     let body;
     if (mode === "custom") body = customForm();
     else {
-      const list = { years: opts.years, windows: opts.windows, tournaments: opts.tournaments, courses: opts.courses, rounds: opts.rounds, months: opts.months, tours: opts.tours }[mode] || [];
-      const filterOf = (o) => (mode === "years" ? { years: [o.value] } : mode === "windows" ? windowFilter(o.value) : mode === "tournaments" ? { events: [o.value] } : mode === "courses" ? { courses: [o.value] } : mode === "rounds" ? { roundNos: [o.value] } : mode === "months" ? { months: [o.value] } : { tours: [o.value] });
+      const prods = mode === "product" ? products(data.rounds) : [];
+      const list = mode === "product" ? prods.flatMap((g) => g.items) : mode === "players" ? players.map(([k, l]) => ({ value: k, label: l, n: null }))
+        : { years: opts.years, windows: opts.windows, tournaments: opts.tournaments, courses: opts.courses, rounds: opts.rounds, months: opts.months, tours: opts.tours }[mode] || [];
+      const filterOf = (o) => (mode === "years" ? { years: [o.value] } : mode === "windows" ? windowFilter(o.value) : mode === "tournaments" ? { events: [o.value] } : mode === "courses" ? { courses: [o.value] } : mode === "rounds" ? { roundNos: [o.value] } : mode === "months" ? { months: [o.value] } : mode === "product" ? { clubs: [o.value] } : mode === "players" ? {} : { tours: [o.value] });
       const long = list.length > 14;
       const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${mode === "tournaments" ? "a tournament" : "a course"}\u2026`, value: chipFilter }) : null;
       const chipsBox = el("div", { class: "cmp-chips-wrap" });
@@ -168,9 +182,9 @@ export async function render(main) {
         const on = staged.has(o.value);
         // (a small dot for each selection already in the comparison that includes it)
         const inSel = sels.filter((x) => x.mode === mode && x.values?.includes(o.value));
-        const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, o.label, el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`),
+        const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, o.label, o.n == null ? null : el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`),
           inSel.length ? el("span", { class: "cmp-chip-dots", title: `In: ${inSel.map((x) => x.name).join(", ")}` }, inSel.map((x) => el("i", { style: `background:${x.color}` }))) : null]);
-        b.addEventListener("click", () => { if (on) staged.delete(o.value); else staged.set(o.value, { label: o.label, f: filterOf(o) }); drawChips(); drawAdd(); });
+        b.addEventListener("click", () => { if (on) staged.delete(o.value); else staged.set(o.value, { label: o.long || o.label, f: filterOf(o) }); drawChips(); drawAdd(); });
         return b;
       };
       const drawChips = () => {
@@ -178,8 +192,13 @@ export async function render(main) {
         const shown = list.filter((o) => !t || o.label.toLowerCase().includes(t)).slice(0, long && !t ? 30 : 200);
         if (mode === "windows") {
           // (update 189) in three groups: recent form, the rounds just before, seasons and career
-          const groups = [["Recent form", (o) => o.value.startsWith("last:")], ["The rounds just before", (o) => o.value.startsWith("prev:")], ["Seasons and career", (o) => o.value.startsWith("year:") || o.value === "all"]];
-          mount(chipsBox, groups.map(([g, test]) => { const xs = shown.filter(test); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; }));
+          // (update 190) the first two also take a number of your own
+          const groups = [["Recent form", (o) => o.value.startsWith("last:") && !o.own, "last"], ["The rounds just before", (o) => o.value.startsWith("prev:") && !o.own, "prev"], ["Seasons and career", (o) => o.value.startsWith("year:") || o.value === "all", null]];
+          const ownStaged = [...staged].filter(([v]) => !list.some((o) => o.value === v) && /^(last|prev):/.test(v)).map(([v, x]) => ({ value: v, label: x.label, n: Number(v.split(":")[1]) }));
+          mount(chipsBox, groups.map(([g, test, kind]) => { const xs = [...shown.filter(test), ...ownStaged.filter((o) => kind && o.value.startsWith(kind + ":"))]; return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, [...xs.map(chip), kind ? ownWindow(kind) : null])]); }));
+        } else if (mode === "product") {
+          mount(chipsBox, prods.length ? prods.map((g) => { const xs = g.items.filter((o) => shown.includes(o)); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g.group === "Other" ? "Other clubs" : g.group === "Ball" ? "Golf balls" : `${g.group}s`), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; })
+            : el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s equipment (clubType, clubBrand, clubModel, ballBrand and ballModel columns), every club model shows here, grouped by type (drivers, fairway woods, hybrids, irons, wedges, putters), with the golf balls after them. Pick one model against another to see how they play with each.")]));
         } else mount(chipsBox, el("div", { class: "cmp-chips" }, shown.map(chip)));
       };
       const drawAdd = () => {
@@ -190,24 +209,66 @@ export async function render(main) {
         clear?.addEventListener("click", () => { staged = new Map(); drawChips(); drawAdd(); });
         mount(addRow, [add, el("span", { class: "muted small" }, n ? (n > 1 ? `${n} picked: their rounds are pooled into one selection.` : "1 picked.") : "Tap one or more, then add them."), clear]);
       };
+      // (update 190) your own window: "Last [n] rounds" / "The [n] before that"
+      function ownWindow(kind) {
+        const inp = el("input", { type: "number", min: 1, max: 999, class: "cmp-own-n", "aria-label": kind === "last" ? "How many latest rounds" : "How many rounds before those", placeholder: "#" });
+        const go = el("button", { type: "button", class: "cmp-own-go", "aria-label": "Pick it" }, "\u2713");
+        const pick = () => {
+          const n = Math.round(Number(inp.value));
+          if (!n || n < 1) { inp.focus(); return; }
+          if (kind === "last" ? n > opts.total : 2 * n > opts.total) { flashNote(kind === "last" ? `They have ${opts.total} rounds here.` : `Only ${opts.total} rounds here: ${Math.floor(opts.total / 2)} at most, so there are that many before them.`); return; }
+          const v = `${kind}:${n}`, label = kind === "last" ? `Last ${n} rounds` : `The ${n} before that`;
+          staged.set(v, { label, f: windowFilter(v) }); drawChips(); drawAdd();
+        };
+        go.addEventListener("click", pick);
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); pick(); } });
+        return el("span", { class: "cmp-chip cmp-own" }, [kind === "last" ? "Last" : "The", inp, kind === "last" ? "rounds" : "before that", go]);
+      }
       search?.addEventListener("input", () => { chipFilter = search.value; drawChips(); });
       drawChips(); drawAdd();
-      body = el("div", {}, [search, chipsBox, long && !chipFilter ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null, addRow]);
+      // (update 190) Players: over which stretch of each player's rounds
+      const scopeSel = mode === "players" ? (() => {
+        const sel = el("select", { class: "cmp-scope", "aria-label": "Which rounds" }, SCOPES.map(([v, l]) => el("option", { value: v, selected: scope === v }, l)));
+        sel.addEventListener("change", () => { scope = sel.value; });
+        return el("label", { class: "cmp-field cmp-scope-row" }, [el("span", {}, "Their rounds"), sel]);
+      })() : null;
+      body = el("div", {}, [scopeSel, search, chipsBox, long && !chipFilter && mode !== "product" && mode !== "players" ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null, addRow]);
     }
     return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), sourceSeg()]), tabs, hint, body, note]);
   }
   // (update 189) the picks, as one selection (several: their rounds pooled, so it's their average)
-  function addStaged() {
+  async function addStaged() {
     if (!staged.size) return;
+    if (mode === "players") return addPlayers();
     const vals = [...staged.keys()], picks = [...staged.values()];
     const id = `${mode}:${[...vals].sort().join("|")}`;
     if (has(id)) { flashNote("That\u2019s already in the comparison."); return; }
     if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; }
     const labels = picks.map((x) => x.label);
     const name = labels.length === 1 ? labels[0] : labels.length === 2 ? `${labels[0]} + ${labels[1]}` : `${labels[0]}, ${labels[1]} + ${labels.length - 2} more`;
-    const f = picks.length === 1 ? picks[0].f : { any: picks.map((x) => x.f) };
+    const f = picks.length === 1 ? picks[0].f : mode === "product" ? { clubs: vals } : { any: picks.map((x) => x.f) };
     sels = [...sels, { id, name, f, mode, values: vals, full: labels.join(", "), color: nextColor() }];
-    staged = new Map();
+    staged = new Map(); touched = true;
+    draw();
+  }
+  // (update 190) other players: their rounds loaded, then one selection (several: pooled)
+  async function addPlayers() {
+    const keys = [...staged.keys()], labels = [...staged.values()].map((x) => x.label);
+    const [sv, sl, sf] = SCOPES.find(([v]) => v === scope) || SCOPES[0];
+    const id = `players:${[...keys].sort().join("|")}:${sv}`;
+    if (has(id)) { flashNote("That\u2019s already in the comparison."); return; }
+    if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; }
+    flashNote(`Loading ${labels.length === 1 ? labels[0] : `${labels.length} players`}\u2026`);
+    const { loadSource } = await import("../reportGen.js");
+    await Promise.all(keys.map(async (k, i) => {
+      const ck = `${k}|${source}`;
+      if (others.has(ck)) return;
+      try { const res = await loadSource(source, k, labels[i], { detail: false }); others.set(ck, res?.me?.rounds || []); } catch { others.set(ck, []); }
+    }));
+    const base = labels.length === 1 ? labels[0] : labels.length === 2 ? `${labels[0]} + ${labels[1]}` : `${labels[0]}, ${labels[1]} + ${labels.length - 2} more`;
+    const name = sv === "all" ? base : `${base} \u00b7 ${sl}`;
+    sels = [...sels, { id, name, f: sf, players: keys, mode: "players", values: keys, full: `${labels.join(", ")} (${sl})`, color: nextColor() }];
+    staged = new Map(); touched = true; note.textContent = "";
     draw();
   }
   function customForm() {
@@ -233,10 +294,10 @@ export async function render(main) {
   // the chosen ones, as removable keys (hover to pick one out everywhere)
   function selectedBar(items) {
     const clear = el("button", { type: "button", class: "link cmp-clear" }, "Clear all");
-    clear.addEventListener("click", () => { sels = []; draw(); });
+    clear.addEventListener("click", () => { sels = []; touched = true; draw(); });
     return el("div", { class: "cmp-selbar" }, [...items.map((it) => {
       const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": `Remove ${it.name}` }, "\u2715");
-      x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== it.id); draw(); });
+      x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== it.id); touched = true; draw(); });
       return hoverable(el("span", { class: "cmp-key", style: `--c:${it.color}`, title: it.full || it.name }, [el("i", { "aria-hidden": "true" }), el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]), it.i);
     }), clear]);
   }
@@ -244,9 +305,8 @@ export async function render(main) {
 
   /* ------------------------------ results ------------------------------ */
   function cards(items) {
-    const bestI = items.length > 1 ? [...items].filter((x) => x.s.n).sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL)[0]?.i : null;
-    return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: `panel cmp-card${it.i === bestI ? " best" : ""}`, style: `--c:${it.color}`, "data-s": it.i }, [
-      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name), it.i === bestI ? el("span", { class: "cmp-crown", title: "The best of these" }, "\u265b Best") : null]),
+    return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
+      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name)]),
       it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
       el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, "SG: Total a round")]),
       el("div", { class: "cmp-card-cats" }, CATEGORIES.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))),
@@ -309,7 +369,7 @@ export async function render(main) {
     ]);
   }
   function statsSection(items) {
-    const rows = statRows(data.rounds, statSets(data.rounds, items.map((it) => it.f)));
+    const rows = statRows([...new Set([...data.rounds, ...items.flatMap((it) => roundsOf(it))])], items.map((it) => statSets(roundsOf(it), [it.f])[0]));
     if (!rows.length) return null;
     const shade = (r, v) => { const xs = r.values.filter((x) => x != null); if (xs.length < 2 || v == null || r.def.higher == null) return ""; const best = r.def.higher === false ? Math.min(...xs) : Math.max(...xs), worst = r.def.higher === false ? Math.max(...xs) : Math.min(...xs); return Math.abs(best - worst) < 1e-9 ? "" : v === best ? "hi" : v === worst ? "lo" : ""; };
     return el("section", { class: "panel cmp-sec" }, [secHead("Other stats", "The best in each row is shaded green and the worst red (lower is better for some, like Proximity)."),
@@ -327,12 +387,12 @@ export async function render(main) {
       secHead("Getting better or worse?", "Their latest rounds against the same number just before, at several time scales. Tap a row to compare the two."),
       el("p", { class: "cmp-traj-words" }, trajectoryWords(tr)),
       tr.length ? el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
-        el("thead", {}, el("tr", {}, ["Time scale", "Before", "Latest", ...SG_ROWS.slice(0, 5).map(([k, l]) => (k === "TOTAL" ? "Change" : k)), "How sure"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+        el("thead", {}, el("tr", {}, ["Time scale", "Before", "Latest", ...SG_ROWS.slice(0, 5).map(([k, l]) => (k === "TOTAL" ? "Change" : k))].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
         el("tbody", {}, tr.map((x) => {
           const row = el("tr", { class: "cmp-tap", tabindex: "0", title: `Compare the last ${x.n} with the ${x.n} before` }, [
             el("td", {}, `Last ${x.n} vs ${x.n} before`), el("td", { class: `num ${tone(x.prev)}` }, fmtSG(x.prev)), el("td", { class: `num ${tone(x.last)}` }, fmtSG(x.last)),
-            ...SG_ROWS.slice(0, 5).map(([k]) => cell(x.ch[k])), el("td", { class: "num" }, el("span", { class: `cmp-conf c-${x.conf.word.replace(/ /g, "-")}` }, x.conf.word))]);
-          const go = () => { sels = [{ id: `windows:prev:${x.n}`, name: `The ${x.n} before that`, f: { prev: x.n }, color: COLORS[0] }, { id: `windows:last:${x.n}`, name: `Last ${x.n} rounds`, f: { last: x.n }, color: COLORS[1] }]; mode = "windows"; draw(); root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+            ...SG_ROWS.slice(0, 5).map(([k]) => cell(x.ch[k]))]);
+          const go = () => { touched = true; sels = [{ id: `windows:prev:${x.n}`, name: `The ${x.n} before that`, f: { prev: x.n }, color: COLORS[0] }, { id: `windows:last:${x.n}`, name: `Last ${x.n} rounds`, f: { last: x.n }, color: COLORS[1] }]; mode = "windows"; draw(); root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
           row.addEventListener("click", go); row.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
           return row;
         })),
@@ -379,10 +439,21 @@ export async function render(main) {
     if (lo < 0 && hi > 0) svg.append(mk("line", { x1: L, x2: W - R, y1: Y(0), y2: Y(0), stroke: "rgba(255,255,255,0.35)" }));
   }
   const span = (vals, pad = 0.12, zero = true) => { let lo = Math.min(...vals), hi = Math.max(...vals); if (zero) { lo = Math.min(0, lo); hi = Math.max(0, hi); } const p = (hi - lo) * pad || 0.5; return [lo - (zero && lo === 0 ? 0 : p), hi + (zero && hi === 0 ? 0 : p)]; };
+  // (update 190) every x-axis: a tick under each label, the labels angled a little, and room left for them
+  const ANG = 32, CH = 6.6; // degrees; an estimate of a character's width at 10.5px
+  const xRoom = (labels) => { const m = Math.max(1, ...labels.map((t) => String(t).length)) * CH; return { below: Math.ceil(m * Math.sin(ANG * Math.PI / 180) + 18), left: Math.ceil(m * Math.cos(ANG * Math.PI / 180)) + 6 }; };
+  function xAxis(svg, xs, labels, y0, bold = false) {
+    xs.forEach((x, i) => {
+      svg.append(mk("line", { x1: x, x2: x, y1: y0, y2: y0 + 5, stroke: "rgba(255,255,255,0.35)" }));
+      svg.append(mk("text", { x: x + 3, y: y0 + 15, "text-anchor": "end", "font-size": 10.5, "font-weight": bold ? 600 : 400, fill: INK, transform: `rotate(-${ANG} ${x + 3} ${y0 + 15})` }, labels[i]));
+    });
+  }
   function groupedBars(groups, items) {
     const vals = groups.flatMap((g) => g.values).filter((v) => v != null);
     if (!vals.length) return null;
-    const W = cw(), H = 260, L = 48, R = 12, T = 12, B = 30;
+    const room = xRoom(groups.map((g) => g.label));
+    const W = cw(), T = 12, B = room.below, H = 230 + B, R = 12;
+    const L = 48;
     const [lo, hi] = span(vals);
     const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
     const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "Strokes gained by category for each selection" });
@@ -397,18 +468,21 @@ export async function render(main) {
         r.append(mk("title", {}, `${it.name} \u00b7 ${g.label}: ${fmtSG(v)}`));
         svg.append(r);
       });
-      svg.append(mk("text", { x: L + gi * gw + gw / 2, y: H - 9, "text-anchor": "middle", "font-size": 11.5, "font-weight": 600, fill: INK }, g.label));
     });
+    xAxis(svg, groups.map((_, gi) => L + gi * gw + gw / 2), groups.map((g) => g.label), H - B, true);
     return el("div", { class: "cmp-chart" }, svg);
   }
   function strip(live) {
     if (!live.length) return null;
     const all = live.flatMap((it) => it.s.rounds);
-    const W = cw(), rowH = 46, L = 14, R = 14, T = 8, B = 26, H = T + B + rowH * live.length;
     const [lo, hi] = span(all, 0.06, false);
+    const ticks = Array.from({ length: 7 }, (_, k) => lo + ((hi - lo) * k) / 6);
+    const room = xRoom(ticks.map((v) => fmtSG(v)));
+    const W = cw(), rowH = 46, L = Math.max(16, room.left), R = 16, T = 8, B = room.below, H = T + B + rowH * live.length;
     const X = (v) => L + ((v - lo) / (hi - lo)) * (W - L - R);
     const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "Every round, by selection" });
-    for (let k = 0; k <= 6; k++) { const v = lo + ((hi - lo) * k) / 6; svg.append(mk("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, stroke: GRID }), mk("text", { x: X(v), y: H - 8, "text-anchor": "middle", "font-size": 10.5, fill: INK }, fmtSG(v))); }
+    for (const v of ticks) svg.append(mk("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, stroke: GRID }));
+    xAxis(svg, ticks.map(X), ticks.map((v) => fmtSG(v)), H - B);
     if (lo < 0 && hi > 0) svg.append(mk("line", { x1: X(0), x2: X(0), y1: T, y2: H - B, stroke: "rgba(255,255,255,0.35)" }));
     live.forEach((it, r) => {
       const cy = T + rowH * r + rowH / 2, g = mk("g", { "data-s": it.i });
@@ -422,37 +496,18 @@ export async function render(main) {
     });
     return el("div", { class: "cmp-chart" }, svg);
   }
-  function lines(series) {
-    const s = series.filter((x) => x.ys.some((v) => v != null));
-    if (!s.length) return null;
-    const vals = s.flatMap((x) => x.ys.filter((v) => v != null));
-    const W = cw(), H = 240, L = 48, R = 14, T = 12, B = 28;
-    const [lo, hi] = span(vals, 0.1, false);
-    const n = Math.max(...s.map((x) => x.ys.length));
-    const X = (i) => L + (n > 1 ? (i / (n - 1)) * (W - L - R) : (W - L - R) / 2), Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "5-round rolling average through each selection" });
-    axis(svg, lo, hi, Y, L, R, W);
-    for (const k of [0, Math.floor((n - 1) / 2), n - 1]) svg.append(mk("text", { x: X(k), y: H - 8, "text-anchor": k === 0 ? "start" : k === n - 1 ? "end" : "middle", "font-size": 10.5, fill: INK }, `Round ${k + 1}`));
-    for (const x of s) {
-      const pts = x.ys.map((v, i) => (v == null ? null : [X(i), Y(v)])).filter(Boolean);
-      const d = pts.map(([px, py], i) => `${i ? "L" : "M"}${px.toFixed(1)} ${py.toFixed(1)}`).join(" ");
-      const g = mk("g", { "data-s": x.i });
-      g.append(mk("path", { d, fill: "none", stroke: x.color, "stroke-width": 2.4, "stroke-linejoin": "round", "stroke-linecap": "round" }));
-      const last = pts.at(-1); if (last) { g.append(mk("circle", { cx: last[0], cy: last[1], r: 4, fill: x.color })); const t = mk("title", {}, `${x.name}: ${fmtSG(x.ys.at(-1))} over its last 5`); g.append(t); }
-      svg.append(g);
-    }
-    return el("div", { class: "cmp-chart" }, svg);
-  }
   function distChart(rows, items, per) {
     const vals = rows.flatMap((r) => r.values).filter((v) => v != null);
     if (!vals.length) return el("p", { class: "muted" }, "No distances recorded here.");
-    const fmt = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(per === "shot" ? 3 : 2)}`;
-    const W = cw(), H = 260, L = 52, R = 14, T = 12, B = 40;
+    const fmt = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(per === "shot" ? 3 : 2)}`;
+    const room = xRoom(rows.map((r) => r.dist));
+    const W = cw(), T = 12, B = room.below, H = 230 + B, R = 18;
+    const L = Math.max(54, room.left - 6); // (the first label leans left from its point)
     const [lo, hi] = span(vals);
-    const n = rows.length, X = (i) => L + (n > 1 ? (i / (n - 1)) * (W - L - R) : (W - L - R) / 2), Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const pad = 16, n = rows.length, X = (i) => L + pad + (n > 1 ? (i / (n - 1)) * (W - L - R - 2 * pad) : (W - L - R - 2 * pad) / 2), Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
     const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "Strokes gained by distance" });
     axis(svg, lo, hi, Y, L, R, W, fmt);
-    rows.forEach((r, i) => svg.append(mk("text", { x: X(i), y: H - 22, "text-anchor": "middle", "font-size": n > 8 ? 9.5 : 10.5, fill: INK, transform: n > 8 ? `rotate(-28 ${X(i)} ${H - 22})` : null }, r.dist)));
+    xAxis(svg, rows.map((_, i) => X(i)), rows.map((r) => r.dist), H - B);
     items.forEach((it, j) => {
       const pts = rows.map((r, i) => (r.values[j] == null ? null : { x: X(i), y: Y(r.values[j]), v: r.values[j], r })).filter(Boolean);
       if (!pts.length) return;

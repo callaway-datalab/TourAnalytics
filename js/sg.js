@@ -48,7 +48,13 @@ const ALIASES = {
   smash: ["smashfactor", "smash"],
   launch: ["launchangle", "launch"],
   spin: ["backspin", "spinrate", "spin"],
-  club: ["club", "clubused", "clubtype", "clubname"],
+  club: ["club", "clubused", "clubname"],
+  // (update 191) the equipment on each shot: the club's type, brand and model, and the ball's brand and model
+  clubType: ["clubtype", "clubcategory", "clubgroup"],
+  clubBrand: ["clubbrand", "brand", "manufacturer", "clubmake", "clubmanufacturer"],
+  clubModel: ["clubmodel", "model", "productmodel"],
+  ballBrand: ["ballbrand", "ballmake", "ballmanufacturer"],
+  ballModel: ["ballmodel", "ball", "balltype"],
 };
 
 // A club's bag group from its name ("Driver", "3w"/"3 Wood", "4H"/"4 Hybrid", "7i"/"7 Iron", "56°"/"SW"…).
@@ -269,9 +275,15 @@ export function prepare(rows, idx) {
     const per = idx.statType !== undefined ? num(get(r, "statValue")) : idx.sgPerAttempt !== undefined ? num(get(r, "sgPerAttempt")) : null;
     const sg = per !== null && w !== null ? per * w : num(get(r, "sg"));
     if (!cat || sg === null || w === null || w <= 0) continue;
-    const lie = get(r, "lie"), dist = get(r, "distanceRange"), club = get(r, "club");
+    const lie = get(r, "lie"), dist = get(r, "distanceRange");
+    // (update 191) the club (or, with no club column, its type), its bag group, and the equipment: "Callaway Apex" irons, a "Callaway Chrome Tour" ball
+    const val = (f) => { const v = get(r, f); return v == null || isNull(v) || String(v).trim() === "" ? null : String(v).trim(); };
+    const type = val("clubType"), club = val("club") ?? type;
+    const clubCat = type || club ? clubMemo(type || club) : null;
+    const make = [val("clubBrand"), val("clubModel")].filter(Boolean).join(" ");
+    const bmake = [val("ballBrand"), val("ballModel")].filter(Boolean).join(" ");
     const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
-      club: club == null || club === "" ? null : String(club), clubCat: club == null || club === "" ? null : clubMemo(String(club)) };
+      club, clubCat, gear: make || club ? `${clubCat || "Other"}|${make || club}` : null, ball: bmake || null };
     const rd = roundOf(r);
     rd.shots.push(shot);
     if (shotCols) shotObs(rd, shot, r, idx);
