@@ -283,8 +283,9 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
     sub: `${lastEvent.event}, ${dateShort(lastEvent.end)}: strokes gained a round among the players who played ${evRounds(lastEvent) > 1 ? `all ${evRounds(lastEvent)} rounds` : "it"}.${margin(lastEvent) != null ? ` ${fmtSG(margin(lastEvent))} a round ahead of 2nd.` : ""}`,
     blocks: [{ kind: "table", cols: [["Pos"], ["Player"], ["SG / round", "num"]], rows: lastEvent.ranked.slice(0, 10).map((x, j) => ({ me: x.key === key, cells: [ordinal(j + 1), nm(x.key), { sg: x.v }] })) }] }));
   if (wins.length >= 2) add({ kind: "wins", icon: "🏆", tone: "gold", text: `${wins.length} wins ${period === "season" ? "this season" : "in this period"}` }, () => ({
-    sub: "Tournaments where they had the best strokes gained a round among the players who played every round.",
-    blocks: [{ kind: "table", cols: [["Date"], ["Tournament"], ["SG / round", "num"], ["Ahead of 2nd", "num"]], rows: [...wins].reverse().map(({ e }) => ({ cells: [dateShort(e.end), e.event, { sg: e.ranked[0].v }, { sg: margin(e) }] })) }] }));
+    sub: "Strokes gained a round at each tournament they finished (wins highlighted): the best among the players who played every round.",
+    blocks: [{ kind: "bars", fmt: "sg", items: finishes.map(({ e, i }) => ({ label: dateShort(e.end), sub: `${e.event} \u00b7 ${ordinal(i + 1)}`, v: e.ranked[i].v, on: i === 0 })) }, // (update 181: like the top 10s)
+      { kind: "table", title: "The wins", cols: [["Date"], ["Tournament"], ["SG / round", "num"], ["Ahead of 2nd", "num"]], rows: [...wins].reverse().map(({ e }) => ({ cells: [dateShort(e.end), e.event, { sg: e.ranked[0].v }, { sg: margin(e) }] })) }] }));
   if (top10.length >= 5) add({ kind: "top10", icon: "🎯", tone: "gold", text: `${top10.length} top 10s` }, () => ({
     sub: "Finish: their place by strokes gained a round among the players who played every round.",
     blocks: [{ kind: "bars", fmt: "sg", items: finishes.map(({ e, i }) => ({ label: dateShort(e.end), sub: `${e.event} · ${ordinal(i + 1)}`, v: e.ranked[i].v, on: i < 10 })) },

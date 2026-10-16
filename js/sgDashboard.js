@@ -456,8 +456,8 @@ export function sgDashboard(container, opts) {
               if (!showRanks || !rankedField(slicedField).some((p) => p.key !== me.key)) return null;
               const res = myFinishes(slicedField), wins = res.filter((x) => x.rank === 1), tops = res.filter((x) => x.rank <= 10);
               return el("div", { class: "hero-chips hero-chips2" }, [
-                chipBtn("hero-chip", `${wins.length} ${wins.length === 1 ? "Win" : "Wins"}`, "Show the wins", () => finishesPopup(wins, "Wins")),
-                chipBtn("hero-chip", `${tops.length} Top 10${tops.length === 1 ? "" : "s"}`, "Show the top 10s", () => finishesPopup(tops, "Top 10s")),
+                chipBtn("hero-chip", `${wins.length} ${wins.length === 1 ? "Win" : "Wins"}`, "Show the wins", () => finishesPopup(wins, "Wins", res)),
+                chipBtn("hero-chip", `${tops.length} Top 10${tops.length === 1 ? "" : "s"}`, "Show the top 10s", () => finishesPopup(tops, "Top 10s", res)),
               ]);
             })(),
             insightsButton(slicedField),
@@ -571,17 +571,30 @@ export function sgDashboard(container, opts) {
       unit === "event" ? null : el("td", { class: "num" }, rd.roundNo || "\u2014"), el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v)), rank ? rank(rd) : null]); })),
   ]);
   // Form: the last n rounds and their average, then the n before and theirs
-  function formPopup(ordered) {
+  // (update 181) Form, like the Watchlist's Big move: each round as a bar (the last n coloured) with the two
+  // averages, then where the change came from, category by category
+  async function formPopup(ordered) {
+    const { renderBlocks } = await import("./badgePopup.js");
     const n = Math.min(10, Math.floor(ordered.length / 2));
-    const last = ordered.slice(-n), prev = ordered.slice(-2 * n, -n);
-    const part = (title, rs) => el("div", { class: "form-part" }, [
-      el("div", { class: "form-head" }, [el("strong", {}, title), el("span", {}, ["Average ", el("strong", { class: toneCls(metric(rs), null) }, fmtV(metric(rs)))])]),
-      el("div", { class: "table-scroll form-scroll" }, roundsTable([...rs].reverse()))]);
-    // (update 168) the two side by side, compact, so it all fits without scrolling
-    const shut = popup("Form", me.label, `${isSG() ? "Strokes gained" : def.label}: the last ${rw(n)} against the ${n} before, newest first`,
-      el("div", { class: "form-grid" }, [part(`Last ${rw(n)}`, last), part(`Previous ${rw(n)}`, prev)]), "Form");
-    document.body.lastElementChild?.querySelector?.(".hero-pop")?.classList.add("form-pop");
-    return shut;
+    const last = ordered.slice(-n), prev = ordered.slice(-2 * n, -n), sg = isSG();
+    const goodTone = (v, ref) => (sg ? null : def.higher == null || v == null || ref == null ? "gold" : better(v, ref) ? "pos" : "neg");
+    const prevAvg = metric(prev), lastAvg = metric(last);
+    const items = [...prev, ...last].map((rd, i) => { const v = metric([rd]); return { label: dateTxt(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v, on: i >= prev.length, tone: sg ? null : goodTone(v, prevAvg) }; });
+    const cell = (v) => (sg ? { sg: v } : { text: fmtV(v) });
+    const change = (a, b) => { if (a == null || b == null) return sg ? { sg: null } : { text: "\u2014" };
+      if (sg) return { sg: a - b, arrow: true };
+      const d = a - b, same = Math.abs(d) < 1e-9;
+      return { text: `${same ? "" : d > 0 ? "\u25B2 " : "\u25BC "}${fmtDelta(d)}`, tone: same || def.higher == null ? "" : better(a, b) ? "pos" : "neg" }; };
+    const rows = [[null, sg ? "SG: Total" : catsAvail.length > 1 ? "All" : def.label], ...(catsAvail.length > 1 ? catsAvail : [])].map(([k, l]) => {
+      const a = metric(last, k), b = metric(prev, k);
+      return { strong: !k, cells: [l, cell(b), cell(a), change(a, b)] };
+    });
+    const blocks = [
+      { kind: "bars", fmtFn: fmtV, zero: sg, items, ref: [{ v: prevAvg, label: `Previous ${n}`, from: 0, to: prev.length }, { v: lastAvg, label: `Last ${n}`, from: prev.length, to: prev.length + last.length }] },
+      { kind: "table", title: catsAvail.length > 1 ? `By category (a ${unit})` : "The averages", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows },
+    ];
+    return popup("Form", me.label, `${sg ? "Strokes gained" : def.label} in each ${unit}: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
+      el("div", { class: "wl-pop-body" }, renderBlocks(blocks)), "Form");
   }
   // Each tournament in the selection: who played the most rounds there, best first (the "winner" leads)
   function eventsOf(players) {
@@ -604,13 +617,17 @@ export function sgDashboard(container, opts) {
     return eventsOf(rankedField(slicedField)).map((e) => { const i = e.ranked.findIndex((x) => x.p.key === me.key); return i < 0 ? null : { e, rank: i + 1, of: e.ranked.length, v: e.ranked[i].v }; })
       .filter(Boolean).reverse();
   }
-  function finishesPopup(list, what) {
+  async function finishesPopup(list, what, all = []) {
+    // (update 181) every tournament they finished as a bar, the wins (or top 10s) highlighted, then the list
+    const { renderBlocks } = await import("./badgePopup.js");
+    const hit = (x) => (what === "Wins" ? x.rank === 1 : x.rank <= 10);
+    const chart = all.length ? renderBlocks([{ kind: "bars", fmtFn: fmtV, zero: isSG(), items: [...all].reverse().map((x) => ({ label: dateTxt(x.e.end), sub: `${x.e.event} \u00b7 ${ordinal(x.rank)} of ${x.of}`, v: x.v, on: hit(x), tone: isSG() ? null : "gold" })) }]) : [];
     const table = list.length ? el("div", { class: "table-scroll hero-tourn-scroll" }, el("table", { class: "plain rankings hero-tourn" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, isSG() ? "SG / Round" : def.label), el("th", { class: "num" }, "Finish")])),
       el("tbody", {}, list.map((x) => el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(x.e.end)), el("td", { class: "ht-name" }, x.e.event),
         el("td", { class: `num ${isSG() ? signCls(x.v) : ""}` }, fmtV(x.v)), el("td", { class: `num ht-win ${x.rank === 1 ? "ht-won" : ""}` }, [String(x.rank), el("span", { class: "ht-of" }, ` of ${x.of}`)])]))),
     ])) : el("p", { class: "empty center" }, `No ${what.toLowerCase()} in this selection.`);
-    popup(what, me.label, `${list.length} ${list.length === 1 ? "tournament" : "tournaments"} \u00b7 ${isSG() ? "strokes gained a round" : def.label}, newest first`, [table,
+    popup(what, me.label, `${list.length} ${list.length === 1 ? "tournament" : "tournaments"} \u00b7 ${isSG() ? "strokes gained a round" : def.label}, newest first`, [...chart, table,
       el("p", { class: "muted small" }, `${what === "Wins" ? "Best in the field" : "Top 10 in the field"} in ${isSG() ? "strokes gained a round" : def.label}, among the players who played every round there.`)], what);
   }
   // the Rankings table, in a pop-up (Min. rounds there redraws the page and opens it again)

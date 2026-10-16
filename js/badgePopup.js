@@ -3,6 +3,8 @@
 //   { kind: "bars", items: [{ label, sub, v, on }], ref: [{ v, label, from?, to? }], fmt }  each round (or event) a bar; "on" ones in colour
 //   { kind: "line", items: [{ label, sub, v, on }], ref, fmt, invert }                     a line (invert: 1st at the top, for ranks)
 //   { kind: "table", title?, cols: [[title, "num"?]], rows: [{ cells, me?, strong?, gap? }] } a cell is text or { sg, arrow? }
+// (update 181) also used by the Player Stats pills (renderBlocks): a chart can take fmtFn (any stat's format) and
+// an item a tone ("pos" / "neg" / "gold"); a table cell can be { text, tone }.
 import { el } from "./ui.js";
 import { fmtSG } from "./sg.js";
 import { ordinal } from "./watchlistData.js";
@@ -35,6 +37,9 @@ export function openBadge(badge, playerLabel) {
   return shut;
 }
 
+/** The blocks as page elements (for another page's own pop-up). */
+export const renderBlocks = (blocks) => blocks.map(block).filter(Boolean);
+
 function block(b) {
   if (b.kind === "table") return table(b);
   if (b.kind === "bars" || b.kind === "line") return chart(b);
@@ -43,6 +48,7 @@ function block(b) {
 
 function table(b) {
   const cell = (c, num) => {
+    if (c && typeof c === "object" && "text" in c) return el("td", { class: `num ${c.tone || ""}` }, c.text ?? "\u2014");
     if (c && typeof c === "object") {
       const v = c.sg;
       const txt = v == null || !Number.isFinite(v) ? "—" : c.arrow ? `${Math.round(v * 100) === 0 ? "" : v > 0 ? "▲ " : "▼ "}${Math.abs(v).toFixed(2)}` : fmtSG(v);
@@ -63,15 +69,16 @@ function table(b) {
 function chart(b) {
   const items = b.items.filter((x) => x.v != null && Number.isFinite(x.v));
   if (!items.length) return el("p", { class: "muted small" }, "Nothing to chart yet.");
-  const fmt = fmtOf(b.fmt);
+  const fmt = b.fmtFn || fmtOf(b.fmt);
   const W = 560, H = 230, L = 46, R = 14, T = 14, B = 30;
   const ref = (b.ref || []).filter((r) => r.v != null && Number.isFinite(r.v));
   const vals = [...items.map((x) => x.v), ...ref.map((r) => r.v)];
   let lo = Math.min(...vals), hi = Math.max(...vals);
-  if (b.kind === "bars") { lo = Math.min(0, lo); hi = Math.max(0, hi); }
+  const fromZero = b.kind === "bars" && b.zero !== false; // (zero: false, a stat like Hit Green %: bars rise from just under the lowest)
+  if (fromZero) { lo = Math.min(0, lo); hi = Math.max(0, hi); }
   if (b.fmt === "rank") { lo = 1; hi = Math.max(hi, 2); }
   const pad = (hi - lo) * 0.08 || 0.5;
-  if (b.fmt !== "rank") { lo -= b.kind === "bars" && lo === 0 ? 0 : pad; hi += b.kind === "bars" && hi === 0 ? 0 : pad; }
+  if (b.fmt !== "rank") { lo -= fromZero && lo === 0 ? 0 : b.kind === "bars" && !fromZero ? pad * 2 : pad; hi += fromZero && hi === 0 ? 0 : pad; }
   const Y = (v) => { const t = (v - lo) / (hi - lo || 1); return b.invert ? T + t * (H - T - B) : H - B - t * (H - T - B); };
   const n = items.length, slot = (W - L - R) / n;
   const X = (i) => L + slot * (i + 0.5);
@@ -82,11 +89,12 @@ function chart(b) {
     svg.append(mk("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: C.grid }), mk("text", { x: L - 6, y: y + 3.5, "text-anchor": "end", "font-size": 10.5, fill: C.ink }, fmt(v)));
   }
   if (b.kind === "bars") {
-    svg.append(mk("line", { x1: L, x2: W - R, y1: Y(0), y2: Y(0), stroke: "rgba(255,255,255,0.3)" }));
+    const baseV = fromZero ? 0 : lo;
+    svg.append(mk("line", { x1: L, x2: W - R, y1: Y(baseV), y2: Y(baseV), stroke: "rgba(255,255,255,0.3)" }));
     const bw = Math.max(2, Math.min(26, slot * 0.7));
     items.forEach((x, i) => {
-      const y0 = Y(0), y1 = Y(x.v);
-      const r = mk("rect", { x: X(i) - bw / 2, y: Math.min(y0, y1), width: bw, height: Math.max(1, Math.abs(y1 - y0)), rx: Math.min(3, bw / 3), fill: x.on ? (x.v >= 0 ? C.pos : C.neg) : C.off });
+      const y0 = Y(baseV), y1 = Y(x.v);
+      const r = mk("rect", { x: X(i) - bw / 2, y: Math.min(y0, y1), width: bw, height: Math.max(1, Math.abs(y1 - y0)), rx: Math.min(3, bw / 3), fill: x.on ? (x.tone ? C[x.tone] || C.gold : x.v >= 0 ? C.pos : C.neg) : C.off });
       r.append(mk("title", {}, `${x.label}${x.sub ? ` · ${x.sub}` : ""}: ${fmt(x.v)}`));
       svg.append(r);
     });
