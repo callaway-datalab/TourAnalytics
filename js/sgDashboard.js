@@ -447,6 +447,9 @@ export function sgDashboard(container, opts) {
               r.rank && r.of > 1 ? chipBtn(`hero-chip rank-chip ${r.rank <= 10 ? "rk-10" : r.rank <= 50 ? "rk-50" : r.rank <= 100 ? "rk-100" : r.rank <= 150 ? "rk-150" : "rk-out"}`,
                 `${ordinal(r.rank)} of ${r.of}`, "Show the rankings", () => rankPopup()) : null,
               chipBtn("hero-chip", rw(mine.length), `Show every ${unit}`, () => tournamentsPopup(ordered, slicedField, "Rounds")),
+              // (update 175) Events: each tournament, their average there and where it placed
+              unit === "event" ? null : (() => { const n = new Set(ordered.map((rd) => `${rd.event}|${yearOf(rd)}`)).size;
+                return chipBtn("hero-chip", `${n} Event${n === 1 ? "" : "s"}`, "Show every tournament", () => eventsPopup(ordered, slicedField, r, "event")); })(),
               form ? chipBtn(`hero-chip ${form[1]}`, `Form: ${form[0]}`, "Show the form", () => formPopup(ordered)) : null,
             ]),
             (() => {
@@ -653,11 +656,14 @@ export function sgDashboard(container, opts) {
   }
   // (update 174) The hero chart's table: one row per tournament, newest first: their average there and where it
   // placed, and their rolling average and rank (everything up to the end of that tournament, this selection)
-  function eventsPopup(ordered, slicedField, now) {
-    const hist = rankHistory(ordered, slicedField, now, { all: true });
+  // (update 175) two views of it: "rolling" (the chart's table: Rolling Avg and Rank) and "event" (the Events pill:
+  // Event Avg and Rank)
+  function eventsPopup(ordered, slicedField, now, view = "rolling") {
+    const rolling = view === "rolling";
+    const hist = rolling ? rankHistory(ordered, slicedField, now, { all: true }) : [];
     const at = new Map(hist.map((x) => [String(x.date || ""), x]));
     const fin = new Map();
-    for (const e of eventsOf(rankedField(slicedField))) {
+    if (!rolling) for (const e of eventsOf(rankedField(slicedField))) {
       const mineE = [...e.by].find(([p]) => p.key === me.key);
       if (!mineE) continue;
       const i = e.ranked.findIndex((x) => x.p.key === me.key);
@@ -671,14 +677,16 @@ export function sgDashboard(container, opts) {
     const valTd = (v) => el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v));
     const table = el("table", { class: "plain rankings hero-tourn hero-events" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"),
-        el("th", { class: "num" }, "Event Avg"), el("th", { class: "num" }, "Event Rank"), el("th", { class: "num" }, "Rolling Avg"), el("th", { class: "num" }, "Rolling Rank")])),
+        ...(rolling ? [el("th", { class: "num" }, "Rolling Avg"), el("th", { class: "num" }, "Rolling Rank")] : [el("th", { class: "num" }, "Event Avg"), el("th", { class: "num" }, "Event Rank")])])),
       el("tbody", {}, rows.map((x) => el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(x.end)), el("td", { class: "ht-name" }, x.event || "\u2014"),
         unit === "event" ? null : el("td", { class: "num" }, String(x.rs.length)),
-        valTd(x.v), rankTd(x.fin, true), valTd(x.roll?.avg ?? null), rankTd(x.roll)]))),
+        ...(rolling ? [valTd(x.roll?.avg ?? null), rankTd(x.roll)] : [valTd(x.v), rankTd(x.fin, true)])]))),
     ]);
-    popup(`${isSG() ? "SG" : def.label} history`, me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 newest first`, [
+    popup(rolling ? `${isSG() ? "SG" : def.label} history` : "Events", me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 newest first`, [
       el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-      el("p", { class: "muted small" }, `Event Avg: ${isSG() ? "strokes gained a round" : def.label} at that tournament. Event Rank: where that placed among the players who played every round there (\u2014 when they didn\u2019t). Rolling Avg and Rolling Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds).`),
+      el("p", { class: "muted small" }, rolling
+        ? "Rolling Avg and Rolling Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds)."
+        : `Event Avg: ${isSG() ? "strokes gained a round" : def.label} at that tournament. Event Rank: where that placed among the players who played every round there (\u2014 when they didn\u2019t).`),
     ], "Tournaments");
     table.closest(".gx-pop")?.classList.add("hero-events-pop"); // (wider: seven columns)
   }

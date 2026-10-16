@@ -3564,3 +3564,21 @@ button.wl-badge:active { transform: scale(0.97); }
   .hero-events .ht-name { min-width: 0; }
   .hero-events td, .hero-events th { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
 }
+/* update 175: on a phone (and narrow tablets) the five strokes gained tiles sit on one line */
+@media (max-width: 720px) {
+  .wl-card { padding: 1rem 0.85rem !important; }
+  .wl-sg { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.3rem; }
+  .wl-tile.total { grid-column: auto; }
+  .wl-tile { padding: 0.5rem 0.2rem 0.45rem; border-radius: 11px; gap: 0.22rem; align-items: center; text-align: center; }
+  .wl-tile-k { font-size: 0.56rem; letter-spacing: 0.05em; }
+  .wl-tile-v, .wl-tile.total .wl-tile-v { font-size: 0.98rem; letter-spacing: -0.02em; }
+  .wl-tile-f { flex-direction: column; flex-wrap: nowrap; gap: 0.18rem; }
+  .wl-tile .wl-rank { font-size: 0.6rem; padding: 0.06rem 0.38rem; }
+  .wl-tile .wl-tr { font-size: 0.58rem; }
+}
+@media (max-width: 360px) { .wl-tile-v, .wl-tile.total .wl-tile-v { font-size: 0.88rem; } .wl-tile .wl-tr { font-size: 0.54rem; } }
+/* update 176: unsend (until someone else has seen it), and Sent / Seen under your latest message */
+.chat-unsend { margin-left: auto; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: var(--ink-2, #c7c7cc); font: 600 0.7rem var(--font-body, inherit); padding: 0.15rem 0.55rem; border-radius: 999px; cursor: pointer; }
+.chat-unsend:hover { border-color: var(--danger, #ff453a); color: var(--danger, #ff453a); }
+.chat-seen { display: block; margin-top: 0.2rem; text-align: right; font-size: 0.68rem; color: var(--muted); }
+.chat-seen.on { color: #c8a97e; }

@@ -297,9 +297,8 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   else if (total.rank && total.rank <= 10) add({ kind: "rank", icon: "🔟", tone: "gold", text: `Top 10 in SG: Total (${ordinal(total.rank)})` }, totalInfo);
   const firstsS = card.sg.slice(1).filter((s) => s.rank === 1), firsts = firstsS.map((s) => s.label);
   if (firsts.length) add({ kind: "rank", icon: "🥇", tone: "gold", text: `No. 1 in ${firsts.length > 2 ? `${firsts.slice(0, -1).join(", ")} and ${firsts.at(-1)}` : firsts.join(" and ")}` }, () => ({
-    sub: "Each category they lead, a round, and how far ahead of 2nd.",
-    blocks: [{ kind: "table", cols: [["Category"], ["Them", "num"], ["2nd"], ["", "num"], ["Ahead", "num"]], rows: firstsS.map((x) => { const second = [...sgVals.get(x.k)].filter(([k, v]) => k !== key && v != null).sort((a, b) => b[1] - a[1])[0];
-      return { cells: [x.label, { sg: x.v }, second ? nm(second[0]) : "\u2014", { sg: second?.[1] }, { sg: second ? x.v - second[1] : null }] }; }) }] }));
+    sub: `Strokes gained a round${tour ? ` on the ${tour}` : ""}, among players with ${minR} or more rounds in this period: the top 10 in each category they lead.`,
+    blocks: firstsS.map((x) => ({ kind: "table", title: x.label, cols: [["Rank"], ["Player"], ["Rounds", "num"], ["SG / round", "num"]], rows: leaders(sgVals.get(x.k)) })) })); // (update 175: the full top 10, like SG: Total)
   if (mine.length >= 20 && lastRound) {
     const cut = mine.at(-11)?.date;
     if (cut) {

@@ -10,8 +10,11 @@
 // and team, or "Callaway Analyst", and every analyst's message shows to them as Callaway Analyst. Inside, the admin
 // and every analyst see each Callaway Analyst conversation, and mark it Working on it or Unable (the admin can
 // also Assign it), so everyone knows who's answering. That status (chatTriage/{roomId}) only staff can read.
+// (update 175) Delete a chat: it goes from your list, with its messages so far (chatHidden/{uid}: room → when).
+// Everyone else in it keeps theirs; a new message brings it back with just what's new. The admin can also
+// delete a chat for everyone.
 import {
-  collection, addDoc, deleteDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, orderBy, query, where, limit, serverTimestamp, writeBatch,
+  collection, addDoc, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, orderBy, query, where, limit, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase-init.js";
 import { el, mount, formatWhen, confirmAction } from "./ui.js";
@@ -26,6 +29,7 @@ export function watchStaffChat(cb) {
 }
 
 const msgsOf = (roomId) => collection(db, "chatRooms", roomId, "messages");
+const readsOf = (roomId) => collection(db, "chatRooms", roomId, "reads"); // (update 176) read receipts
 const readKey = (uid, roomId) => `chatRead:${uid}:${roomId}`;
 const lastRead = (uid, roomId) => { try { return Number(localStorage.getItem(readKey(uid, roomId))) || 0; } catch { return 0; } };
 const markRead = (uid, roomId) => { try { localStorage.setItem(readKey(uid, roomId), String(Date.now())); } catch { /* fine */ } window.dispatchEvent(new Event("ta-chat-read")); };
@@ -129,7 +133,11 @@ export function renderChat(container, { flash }) {
   const authorOf = (r, m) => (!staff ? (isStaffId(m.uid) ? "Callaway Analyst" : m.name || nameOf(m.uid))
     : isStaffId(m.uid) ? nameOf(m.uid) : m.name || nameOf(m.uid));
   const roomNow = () => rooms.find((x) => x.id === current);
-  const allRooms = () => rooms.map((r) => ({ ...r, lastAt: ms(r.lastAt) || ms(r.createdAt) })).sort((a, b) => b.lastAt - a.lastAt);
+  let hidden = {}; // (update 175) roomId → when you deleted it (ms)
+  // (server time; while a fresh one is still on its way, the time it was deleted here)
+  unsubs.push(onSnapshot(doc(db, "chatHidden", uid), (d) => { const raw = (d.exists() && d.data().rooms) || {}; hidden = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, ms(v) || Number(v) || hidden[k] || 0])); redraw(); }, () => {}));
+  const goneFor = (r) => hidden[r.id] && r.lastAt <= hidden[r.id] && r.id !== caId && r.id !== STAFF_ROOM; // (those two stay listed: just cleared)
+  const allRooms = () => rooms.map((r) => ({ ...r, lastAt: ms(r.lastAt) || ms(r.createdAt) })).filter((r) => !goneFor(r)).sort((a, b) => b.lastAt - a.lastAt);
   const unread = (r) => r.lastAt > lastRead(uid, r.id) && r.lastBy && r.lastBy !== uid;
 
   // ---- layout: conversations | thread (on phones one at a time) ----
@@ -222,8 +230,40 @@ export function renderChat(container, { flash }) {
       });
       actions.push(leave);
     }
+    // (update 175) Delete: from your list (everyone else keeps it); the admin can also delete it for everyone
+    const del = el("button", { type: "button", class: "link danger chat-delete" }, "Delete");
+    del.addEventListener("click", () => deleteForMe(r));
+    actions.push(del);
+    if (state.isAdmin) {
+      const all = el("button", { type: "button", class: "link danger chat-delete-all" }, "Delete for everyone");
+      all.addEventListener("click", () => deleteForAll(r));
+      actions.push(all);
+    }
     mount(head, [back, el("div", { class: "chat-title" }, [el("strong", {}, roomName(r)), el("span", { class: "muted small" }, sub)]), el("div", { class: "chat-actions" }, actions),
       staff && r.callaway && !r.staffRoom ? triageBar(r) : null]);
+  }
+
+  async function deleteForMe(r) {
+    const always = r.id === caId || r.id === STAFF_ROOM;
+    if (!confirmAction(always ? `Clear \u201c${roomName(r)}\u201d? Its messages so far go from your view (it stays in your list, so you can always reach Callaway). Everyone else keeps theirs.`
+      : `Delete \u201c${roomName(r)}\u201d? It goes from your list, with its messages so far. Everyone else in it keeps theirs, and if someone writes again it comes back with just the new messages.`)) return;
+    try {
+      hidden = { ...hidden, [r.id]: Math.max(Date.now(), r.lastAt || 0) };
+      await setDoc(doc(db, "chatHidden", uid), { rooms: { [r.id]: serverTimestamp() } }, { merge: true });
+      if (always) open(r.id); else open(null);
+      flash(always ? "Cleared." : "Chat deleted.", "ok");
+    } catch { flash("Couldn't delete that chat. (Republish the Firestore rules from update 175 if you haven't.)", "error"); }
+  }
+  async function deleteForAll(r) {
+    if (!confirmAction(`Delete \u201c${roomName(r)}\u201d for everyone in it? Every message goes, for good.`)) return;
+    try {
+      const snap = await getDocs(msgsOf(r.id));
+      for (let i = 0; i < snap.docs.length; i += 400) { const b = writeBatch(db); snap.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref)); await b.commit(); }
+      if (rooms.some((x) => x.id === r.id)) await deleteDoc(doc(db, "chatRooms", r.id));
+      if (r.callaway) await deleteDoc(doc(db, "chatTriage", r.id)).catch(() => {});
+      open(null);
+      flash("Chat deleted for everyone.", "ok");
+    } catch { flash("Couldn't delete that chat for everyone.", "error"); }
   }
 
   // ---- (update 170) who's answering a Callaway Analyst conversation: staff only ----
@@ -277,29 +317,76 @@ export function renderChat(container, { flash }) {
     form.hidden = false;
     shell.classList.add("show-thread");
     mount(msgs, el("li", { class: "empty" }, "Loading\u2026"));
-    let first = true, msgsKey = null;
-    stopMsgs = onSnapshot(query(msgsOf(roomId), orderBy("createdAt", "asc")), (s) => {
-      const items = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const k = JSON.stringify(items.map((m) => [m.id, ms(m.createdAt)]));
-      if (k === msgsKey) return;
-      msgsKey = k;
+    // (update 176) read receipts: chatRooms/{id}/reads/{uid} = when each person last looked. Your own message can be
+    // unsent until someone else in the chat has seen it; your latest one says Sent or Seen.
+    let first = true, items = [], reads = {}, gotMsgs = false;
+    const seenBy = (m) => { const t = ms(m.createdAt); return !t ? [] : (roomNow()?.members || []).filter((u) => u !== m.uid && (reads[u] || 0) >= t); };
+    const render = () => {
+      if (!gotMsgs || current !== roomId) return;
       const atBottom = first || msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60;
+      const lastMine = [...items].reverse().find((m) => m.uid === uid);
+      const room = roomNow();
       mount(msgs, items.length ? items.map((m) => {
-        const mine = m.uid === uid;
-        const del = mine || state.isAdmin ? el("button", { type: "button", class: "chat-del", "aria-label": "Delete message", title: "Delete" }, "\u2715") : null;
-        del?.addEventListener("click", async () => {
-          if (!confirmAction("Delete this message?")) return;
-          try { await deleteDoc(doc(msgsOf(roomId), m.id)); } catch { flash("Couldn't delete that message.", "error"); }
-        });
+        const mine = m.uid === uid, seen = seenBy(m), canUnsend = mine && !!m.createdAt && !seen.length;
+        const act = canUnsend ? el("button", { type: "button", class: "chat-unsend", title: "Nobody else has seen it yet: take it back" }, "Unsend")
+          : state.isAdmin ? el("button", { type: "button", class: "chat-del", "aria-label": "Delete message", title: "Delete (admin)" }, "\u2715") : null;
+        act?.addEventListener("click", () => (canUnsend ? unsend(roomId, m) : adminDelete(roomId, m)));
+        const status = m === lastMine && m.createdAt ? el("span", { class: `chat-seen${seen.length ? " on" : ""}` },
+          seen.length ? (room?.type === "dm" || (room?.members?.length || 0) <= 2 ? "Seen" : `Seen by ${seen.length}`) : "Sent") : null;
         return el("li", { class: "chat-msg" + (mine ? " mine" : "") }, [
-          el("div", { class: "chat-meta" }, [el("strong", {}, mine ? "You" : authorOf(roomNow(), m)), el("span", { class: "muted" }, m.createdAt ? formatWhen(m.createdAt) : "sending\u2026"), del]),
+          el("div", { class: "chat-meta" }, [el("strong", {}, mine ? "You" : authorOf(room, m)), el("span", { class: "muted" }, m.createdAt ? formatWhen(m.createdAt) : "sending\u2026"), act]),
           el("p", { class: "chat-body" }, m.body),
+          status,
         ]);
       }) : el("li", { class: "empty" }, "No messages yet. Say hello."));
       if (atBottom) msgs.scrollTop = msgs.scrollHeight;
       first = false;
+    };
+    let msgsKey = null;
+    const stopA = onSnapshot(query(msgsOf(roomId), orderBy("createdAt", "asc")), (s) => {
+      const next = s.docs.map((d) => ({ id: d.id, ...d.data() })).filter((m) => !m.createdAt || ms(m.createdAt) > (hidden[roomId] || 0)); // (update 175: not what you deleted)
+      const k = JSON.stringify(next.map((m) => [m.id, ms(m.createdAt)]));
+      if (k === msgsKey) return;
+      msgsKey = k; items = next; gotMsgs = true;
+      render();
       markRead(uid, roomId); drawList();
+      sawLatest(roomId, items);
     }, () => mount(msgs, el("li", { class: "empty" }, "This chat isn't available. (Republish the Firestore rules from the latest update if you haven't.)")));
+    const stopB = onSnapshot(readsOf(roomId), (s) => { reads = Object.fromEntries(s.docs.map((d) => [d.id, ms(d.data().at)])); render(); }, () => {});
+    const onVis = () => { if (document.visibilityState === "visible" && current === roomId) sawLatest(roomId, items); };
+    document.addEventListener("visibilitychange", onVis);
+    stopMsgs = () => { stopA(); stopB(); document.removeEventListener("visibilitychange", onVis); };
+  }
+  // (update 176) tell the others you've seen it (only when the page is in view, and only for something new from them)
+  const wroteRead = new Map();
+  function sawLatest(roomId, items) {
+    if (document.visibilityState !== "visible") return;
+    const newest = Math.max(0, ...items.filter((m) => m.uid !== uid).map((m) => ms(m.createdAt)));
+    if (!newest || newest <= (wroteRead.get(roomId) || 0)) return;
+    wroteRead.set(roomId, newest);
+    setDoc(doc(readsOf(roomId), uid), { at: serverTimestamp() }).catch(() => {});
+  }
+  async function unsend(roomId, m) {
+    try {
+      // (checked again just now: if someone saw it meanwhile, it stays)
+      const snap = await getDocs(readsOf(roomId));
+      const t = ms(m.createdAt), members = roomNow()?.members || [];
+      if (snap.docs.some((d) => d.id !== uid && members.includes(d.id) && ms(d.data().at) >= t)) { flash("They've just seen it, so it can't be unsent.", "error"); return; }
+      await deleteDoc(doc(msgsOf(roomId), m.id));
+      await fixPreview(roomId, m);
+    } catch { flash("Couldn't unsend that message.", "error"); }
+  }
+  async function adminDelete(roomId, m) {
+    if (!confirmAction("Delete this message for everyone?")) return;
+    try { await deleteDoc(doc(msgsOf(roomId), m.id)); await fixPreview(roomId, m); } catch { flash("Couldn't delete that message.", "error"); }
+  }
+  // the chat list's preview: back to the message before, if this was the latest
+  async function fixPreview(roomId, m) {
+    const r = rooms.find((x) => x.id === roomId);
+    if (!r || r.lastBy !== m.uid || r.lastText !== String(m.body || "").slice(0, 120)) return; // (only when it's the one showing)
+    const rest = (await getDocs(query(msgsOf(roomId), orderBy("createdAt", "asc")))).docs.map((d) => d.data()).filter((x) => x.createdAt);
+    const prev = rest.at(-1);
+    await updateDoc(doc(db, "chatRooms", roomId), prev ? { lastAt: prev.createdAt, lastText: String(prev.body || "").slice(0, 120), lastBy: prev.uid } : { lastAt: r.createdAt || m.createdAt, lastText: "", lastBy: "" }).catch(() => {});
   }
 
   async function send() {
