@@ -45,7 +45,7 @@ const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || "All categories
  */
 export function sgDashboard(container, opts) {
   const { idx, mode } = opts;
-  const showRanks = opts.rankings !== false; // e.g. a player's own entered rounds: nobody to rank against
+  const showRanks = opts.rankings !== false && !opts.entered; // (update 183: entered rounds are never ranked, no wins or top 10s)
   const st = opts.state || {};
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
@@ -397,7 +397,7 @@ export function sgDashboard(container, opts) {
       const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
       const per = ordered.map((rd) => metric([rd]));
       // (update 168) the rank after each round: where they stood in the field on that date, this selection
-      const hist = showRanks ? rankHistory(ordered, slicedField, r) : [];
+      const hist = showRanks ? rankHistory(ordered, slicedField, r) : rollingOnly(ordered); // (update 183: no ranks: the rolling average alone)
       const n = Math.min(10, Math.floor(per.length / 2));
       let form = null;
       if (n >= 2) {
@@ -426,7 +426,7 @@ export function sgDashboard(container, opts) {
         const on = st.cats.length === 1 && st.cats[0] === k;
         const b = el("button", { type: "button", class: `hero-tile${on ? " on" : ""}${off ? " apart" : ""}`, "aria-pressed": on ? "true" : "false", disabled: off ? true : null,
           title: off ? "Lie / distance / club filters don\u2019t apply here: this is the whole category. Reset the filters to explore it." : on ? "Back to all categories" : `Explore ${l}` }, [
-          el("span", { class: "ht-name" }, l), el("strong", { class: v == null ? "" : toneCls(v, sg ? null : avgIn(fieldK, k)) }, fmtV(v)), el("span", { class: "ht-rank" }, rk.rank && rk.of > 1 ? `${ordinal(rk.rank)} of ${rk.of}` : ""),
+          el("span", { class: "ht-name" }, l), el("strong", { class: v == null ? "" : toneCls(v, sg ? null : avgIn(fieldK, k)) }, fmtV(v)), el("span", { class: "ht-rank" }, showRanks && rk.rank && rk.of > 1 ? `${ordinal(rk.rank)} of ${rk.of}` : ""),
         ]);
         if (!off) b.addEventListener("click", () => { st.cats = on ? [] : [k]; draw(); });
         return b;
@@ -444,7 +444,7 @@ export function sgDashboard(container, opts) {
             // (update 159: each pill opens a table: the rankings, every round, the form, the wins and top 10s)
             el("div", { class: "hero-chips" }, [
               // (coloured by rank, as in the report: top 10, 11-50, 51-100, 101-150, past 150)
-              r.rank && r.of > 1 ? chipBtn(`hero-chip rank-chip ${r.rank <= 10 ? "rk-10" : r.rank <= 50 ? "rk-50" : r.rank <= 100 ? "rk-100" : r.rank <= 150 ? "rk-150" : "rk-out"}`,
+              showRanks && r.rank && r.of > 1 ? chipBtn(`hero-chip rank-chip ${r.rank <= 10 ? "rk-10" : r.rank <= 50 ? "rk-50" : r.rank <= 100 ? "rk-100" : r.rank <= 150 ? "rk-150" : "rk-out"}`,
                 `${ordinal(r.rank)} of ${r.of}`, "Show the rankings", () => rankPopup()) : null,
               chipBtn("hero-chip", rw(mine.length), `Show every ${unit}`, () => tournamentsPopup(ordered, slicedField, "Rounds")),
               // (update 175) Events: each tournament, their average there and where it placed
@@ -468,7 +468,7 @@ export function sgDashboard(container, opts) {
             // (update 177: one point a tournament; Min. rounds is no longer here, it's in the Rankings)
             const labels = hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); });
             // (update 174) Rank | Stat: the rolling rank, or the rolling average (everything up to that date, this selection)
-            const mode = () => (st.heroChartMode === "stat" ? "stat" : "rank");
+            const mode = () => (!showRanks || st.heroChartMode === "stat" ? "stat" : "rank");
             const title = () => (mode() === "stat" ? "Weekly Rolling Average" : "Weekly Rank History");
             const makeChart = () => chartBox((c) => (mode() === "stat" ? heroChart(c, labels, hist.map((x) => x.avg)) : rankChart(c, labels, hist)));
             const titleEl = el("span", { class: "hero-chart-title" }, title());
@@ -486,7 +486,7 @@ export function sgDashboard(container, opts) {
             for (const ev of ["click", "keydown", "pointerdown"]) seg.addEventListener(ev, (e) => e.stopPropagation());
             let chartEl = makeChart();
             const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: `Show every ${unit === "event" ? "event" : "tournament"}`, "aria-label": `${trendName} history chart. Show every tournament in a table.` }, [
-              el("span", { class: "hero-chart-label" }, [titleEl, el("span", { class: "hero-chart-ctrls" }, [seg])]),
+              el("span", { class: "hero-chart-label" }, [titleEl, showRanks ? el("span", { class: "hero-chart-ctrls" }, [seg]) : null]),
               chartEl]);
             const openT = () => eventsPopup(ordered, slicedField, r);
             box.addEventListener("click", openT);
@@ -515,7 +515,7 @@ export function sgDashboard(container, opts) {
       tourButtons(),
       ranked.length ? null : el("p", { class: "muted small" }, `No one has ${sgEligible ? `${minR} strokes-gained ${minR === 1 ? "round" : "rounds"}` : rw(minR)} in this selection.`),
       el("div", { class: `hero-board${sg ? "" : " stat-board"}`, tabindex: "0", "aria-label": `Leaderboard: ${ranked.length} players (scroll for more)` }, shown.map((x) => el("div", { class: "hb-row" }, [
-        el("span", { class: "hb-rank" }, String(x.i + 1)),
+        el("span", { class: "hb-rank" }, showRanks ? String(x.i + 1) : ""),
         pickable(x.p.key) ? (() => { const b = el("button", { type: "button", class: "hb-name hb-link", title: `Open ${x.p.label}` }, starred(x.p.key, x.p.label)); b.addEventListener("click", () => opts.onPick(x.p.key)); return b; })() : el("span", { class: "hb-name", title: x.p.label }, starred(x.p.key, x.p.label)),
         // a value that shows as +0.00 is yellow (neither gained nor lost, to two places)
         el("span", { class: "hb-bar" }, el("span", { class: sg ? signCls(x.v) : "", style: !sg ? blueBar(x.v) : isZero(x.v) ? "width:4%;background:#ffd60a" : htmlBarStyle(x.v, Math.abs(x.v) / max, Math.abs(x.v) / (x.v >= 0 ? posMax : negMax)) })),
@@ -671,10 +671,10 @@ export function sgDashboard(container, opts) {
   // Event Avg and Rank)
   function eventsPopup(ordered, slicedField, now, view = "rolling") {
     const rolling = view === "rolling";
-    const hist = rolling ? rankHistory(ordered, slicedField, now, { all: true }) : [];
+    const hist = rolling ? (showRanks ? rankHistory(ordered, slicedField, now, { all: true }) : rollingOnly(ordered)) : [];
     const at = new Map(hist.map((x) => [String(x.date || ""), x]));
     const fin = new Map();
-    if (!rolling) for (const e of eventsOf(rankedField(slicedField))) {
+    if (!rolling && showRanks) for (const e of eventsOf(rankedField(slicedField))) {
       const mineE = [...e.by].find(([p]) => p.key === me.key);
       if (!mineE) continue;
       const i = e.ranked.findIndex((x) => x.p.key === me.key);
@@ -688,14 +688,14 @@ export function sgDashboard(container, opts) {
     const valTd = (v) => el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v));
     const table = el("table", { class: "plain rankings hero-tourn hero-events" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"),
-        ...(rolling ? [el("th", { class: "num" }, "Rolling Avg"), el("th", { class: "num" }, "Rolling Rank")] : [el("th", { class: "num" }, "Event Avg"), el("th", { class: "num" }, "Event Rank")])])),
+        ...(rolling ? [el("th", { class: "num" }, "Rolling Avg"), showRanks ? el("th", { class: "num" }, "Rolling Rank") : null] : [el("th", { class: "num" }, "Event Avg"), showRanks ? el("th", { class: "num" }, "Event Rank") : null])])),
       el("tbody", {}, rows.map((x) => el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(x.end)), el("td", { class: "ht-name" }, x.event || "\u2014"),
         unit === "event" ? null : el("td", { class: "num" }, String(x.rs.length)),
-        ...(rolling ? [valTd(x.roll?.avg ?? null), rankTd(x.roll)] : [valTd(x.v), rankTd(x.fin, true)])]))),
+        ...(rolling ? [valTd(x.roll?.avg ?? null), showRanks ? rankTd(x.roll) : null] : [valTd(x.v), showRanks ? rankTd(x.fin, true) : null])]))),
     ]);
     popup(rolling ? `${isSG() ? "SG" : def.label} history` : "Events", me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 newest first`, [
       el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-      el("p", { class: "muted small" }, rolling
+      el("p", { class: "muted small" }, !showRanks ? (rolling ? "Rolling Avg: everything up to the end of that tournament in this selection." : `Event Avg: ${isSG() ? "strokes gained a round" : def.label} at that tournament.`) : rolling
         ? "Rolling Avg and Rolling Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds)."
         : `Event Avg: ${isSG() ? "strokes gained a round" : def.label} at that tournament. Event Rank: where that placed among the players who played every round there (\u2014 when they didn\u2019t).`),
     ], "Tournaments");
@@ -727,6 +727,12 @@ export function sgDashboard(container, opts) {
   }
   // (update 168) Rank history: after each of the player's rounds, their rank among the same players with what each
   // had played by that date (Min. rounds scaled to the most played by then). The last point is the rank shown.
+  // (update 183) no ranks (entered rounds): their rolling average at the end of each tournament
+  function rollingOnly(ordered) {
+    const dk = (d) => String(d || ""), ends = new Map();
+    for (const rd of ordered) { const k = `${rd.event}|${yearOf(rd)}`; if (dk(rd.date) > (ends.get(k) || "")) ends.set(k, dk(rd.date)); }
+    return [...new Set(ends.values())].sort().map((d) => ({ date: d, avg: metric(ordered.filter((rd) => dk(rd.date) <= d)) })).filter((x) => x.avg != null);
+  }
   function rankHistory(ordered, slicedField, now, { all = false } = {}) {
     const dk = (d) => String(d || "");
     const ranked = rankedField(slicedField);

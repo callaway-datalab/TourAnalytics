@@ -5,7 +5,8 @@
 // Your bag becomes the Club choice on each shot in Data Entry.
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
-import { watchBagDoc, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub, shaftText, FLEXES, sameClub } from "../bag.js";
+import { teamLabels } from "../names.js";
+import { watchBagDoc, bagOwnerOf, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub, shaftText, FLEXES, sameClub } from "../bag.js";
 import { watchPlayerRounds } from "../rounds.js";
 import { strokesGained } from "../roundCalc.js";
 import { fmtSG, sgColor } from "../sg.js";
@@ -17,9 +18,38 @@ export async function render(main, { flash, previewClient }) {
   const state = getState();
   // Whose bag: your own, or (the admin in someone's portal) that player's or team member's. Theirs is shown
   // as it is: only they can change it.
-  let uid = state.user.uid, entryKey = myEntryKey(state), viewing = null;
+  let uid = state.user.uid, entryKey = myEntryKey(state), viewing = null, caddieFor = null;
   const team = effectiveTeam(state);
-  if (state.isAdmin && team.preview && team.uid) {
+  // (update 183) anyone with players (a coach, a caddie, an analyst, the admin) can look at each player's bag;
+  // only the player and their caddie can change it
+  const pickedKey = new URLSearchParams(location.hash.split("?")[1] || "").get("player");
+  const previewing = state.isAdmin && (team.preview || (previewClient && !previewClient.self && !previewClient.role));
+  let players = [];
+  if (!previewing) {
+    if (state.isAdmin) { try { players = [...(await (await import("../store.js")).adminAllClients()).labels]; } catch { players = []; } }
+    else if (team.isTeam) players = [...teamLabels(team.teamAccess)];
+    players.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  }
+  const viewAsKey = !state.isAdmin && previewClient?.role && team.teamAccess?.[previewClient.key] ? previewClient.key : null; // (a coach in a player's view)
+  const playerKey = pickedKey && players.some(([k]) => k === pickedKey) ? pickedKey : viewAsKey;
+  const picker = players.length ? (() => {
+    const sel = el("select", { class: "witb-who", "aria-label": "Whose bag" }, [el("option", { value: "", selected: !playerKey }, "My bag"),
+      ...players.map(([k, l]) => el("option", { value: k, selected: k === playerKey }, l))]);
+    sel.addEventListener("change", () => { location.hash = sel.value ? `#/witb?player=${encodeURIComponent(sel.value)}` : "#/witb"; });
+    return el("label", { class: "witb-who-row" }, ["Bag: ", sel]);
+  })() : null;
+  if (playerKey) {
+    viewing = players.find(([k]) => k === playerKey)?.[1] || previewClient?.label || "This player";
+    entryKey = playerKey;
+    uid = (await bagOwnerOf(playerKey)) || (state.isAdmin ? await uidForClient(playerKey).catch(() => null) : null);
+    const role = team.teamAccess?.[playerKey]?.role;
+    if (role === "caddie" || role === "caddy") caddieFor = playerKey;
+    if (!uid) {
+      mount(main, [el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), picker]),
+        el("p", { class: "empty center" }, `${viewing} hasn\u2019t signed in since this update (or hasn\u2019t signed up yet), so there\u2019s no bag to show. It appears once they sign in.`)]);
+      return () => {};
+    }
+  } else if (state.isAdmin && team.preview && team.uid) {
     uid = team.uid; viewing = team.name || "This person";
     entryKey = (await getUserProfile(uid).catch(() => null))?.clientKey || null;
   } else if (state.isAdmin && previewClient && !previewClient.self && !previewClient.role) {
@@ -31,14 +61,15 @@ export async function render(main, { flash, previewClient }) {
       return () => {};
     }
   }
-  const readOnly = !!viewing;
+  const readOnly = !!viewing && !caddieFor; // (their caddie can change it)
+  const ownKey = !viewing && state.profile?.clientKey && !state.isTeam && !state.profile?.kind ? state.profile.clientKey : null;
   let library = [], inBag = [], rounds = [], loaded = false;
   const status = el("span", { class: "save-status", role: "status" });
 
   const save = async () => {
     if (readOnly) return;
     status.textContent = "Saving\u2026";
-    try { await saveLibrary(uid, library, inBag); status.textContent = "Saved \u2713"; }
+    try { await saveLibrary(uid, library, inBag, caddieFor || ownKey); status.textContent = "Saved \u2713"; }
     catch { status.textContent = "Not saved \u2014 check your connection"; }
   };
 
@@ -302,14 +333,15 @@ export async function render(main, { flash, previewClient }) {
       const b = el("button", { type: "button", class: "bag-chip", title: "Take it out of your bag" }, [el("strong", {}, clubLabel(c)), clubMake(c) ? el("span", {}, clubMake(c)) : null, el("span", { class: "bag-x", "aria-hidden": "true" }, "\u2715")]);
       b.addEventListener("click", () => toggle(c));
       return el("li", {}, b);
-    })) : el("p", { class: "muted" }, readOnly ? "Their bag is empty." : "Your bag is empty. Tap clubs in the list above to put them in."));
-    bagTitle.textContent = `${readOnly ? "Their" : "Your"} bag (${bag.length} of ${MAX_CLUBS})`;
+    })) : el("p", { class: "muted" }, readOnly ? "Their bag is empty." : caddieFor ? "Their bag is empty. Tap clubs in the list above to put them in." : "Your bag is empty. Tap clubs in the list above to put them in."));
+    bagTitle.textContent = `${viewing ? "Their" : "Your"} bag (${bag.length} of ${MAX_CLUBS})`;
   }
   const bagTitle = el("h3", {}, "Your bag");
 
   mount(main, [
-    readOnly ? el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), el("p", { class: "muted" }, `Every club ${viewing} has played, and what\u2019s in their bag. Only they can change it.`)])
-      : el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
+    readOnly ? el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), picker, el("p", { class: "muted" }, `Every club ${viewing} has played, and what\u2019s in their bag. Only ${viewing} and their caddie can change it.`)])
+      : caddieFor ? el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), picker, el("p", { class: "muted" }, [`Every club ${viewing} has played. As their caddie you can change it: tap a club to put it in the bag or take it out. `, status])])
+      : el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), picker, el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
     readOnly ? null : el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm, setToggle]),
     el("section", { class: `panel bag-panel${readOnly ? " witb-readonly" : ""}` }, [el("h3", {}, readOnly ? "All their clubs" : "All your clubs"), listBox]),
     el("section", { class: "panel bag-panel your-bag" }, [bagTitle, bagBox]),

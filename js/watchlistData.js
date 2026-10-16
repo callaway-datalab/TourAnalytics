@@ -83,7 +83,7 @@ function statRanges(players) {
   rangeCache.set(players, out);
   return out;
 }
-export function metricCatalog(field, own = [], detail = null) {
+export function metricCatalog(field, own = [], detail = null, { noRanks = false } = {}) {
   const all = [...field.flatMap((p) => p.rounds), ...own.flatMap((p) => p.rounds)];
   const stats = statsIn([all]).filter((k) => k !== "sg");
   const dists = new Map();
@@ -96,7 +96,7 @@ export function metricCatalog(field, own = [], detail = null) {
     .map((x) => ({ id: `stat:${k}@${x.cat}|${x.dist}`, cat: x.cat, catLabel: CAT_SHORT[x.cat] || x.cat, label: x.dist }));
   return [
     { group: "Strokes gained", items: [["sg:T2G", "SG: Tee to Green"], ["sg:sd", "Steadiness (round-to-round swing)"], ["sg:best", "Best round"]] },
-    { group: "Results", items: [["res:wins", "Wins"], ["res:top10", "Top 10s"], ["res:rounds", "Rounds played"]] },
+    { group: "Results", items: noRanks ? [["res:rounds", "Rounds played"]] : [["res:wins", "Wins"], ["res:top10", "Top 10s"], ["res:rounds", "Rounds played"]] },
     stats.length ? { group: "Stats", items: stats.map((k) => [`stat:${k}`, statDef(k).label, RANGE_STATS.includes(k) ? rangeItems(k) : null]) } : null,
     dists.size ? { group: "Distances (strokes gained per round)", items: [...dists.values()].sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || (distLead(a.dist) - distLead(b.dist) || String(a.dist).localeCompare(String(b.dist), undefined, { numeric: true }))).map((d) => [`dist:${d.cat}|${d.dist}`, `${CAT_SHORT[d.cat] || d.cat} · ${d.dist}`]) } : null,
   ].filter(Boolean);
@@ -111,7 +111,7 @@ export const metricLabel = (id) => {
  * One player's card. field: everyone's rounds (the shared summary, or full detail); detail: the field with lie /
  * distance detail (for distance ranks), or null; own: this player's full rounds (lie / distance), or null.
  */
-export function playerCard(key, { field, detail = null, own = null, label = "", period = "season", metrics = [], tour: wantTour = null, nameOf = null }) {
+export function playerCard(key, { field, detail = null, own = null, label = "", period = "season", metrics = [], tour: wantTour = null, nameOf = null, noRanks = false }) {
   const me0 = field.find((p) => p.key === key);
   const srcAll = own?.length ? own : me0?.rounds || [];
   const mineAll = srcAll.filter((rd) => rd.shots.length);
@@ -172,7 +172,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const distVal = (b) => (rs) => { if (!rs.length) return null; const x = bucketsOf(rs).get(b); return (x ? x.sg : 0) / rs.length; };
   const distInfo = (b, label) => formInfo([...minePeriod].sort(byDate), distVal(b), { label: `${label} (strokes gained a round)`, fmtFn: fmt3, chFn: (d) => Math.abs(d).toFixed(3) });
   // best and worst: by rank when the field's detail is here, else against the baseline
-  const score = (x) => (x.rank && x.of > 1 ? 1 - (x.rank - 1) / (x.of - 1) : null);
+  const score = (x) => (!noRanks && x.rank && x.of > 1 ? 1 - (x.rank - 1) / (x.of - 1) : null); // (update 183: entered rounds: by value)
   const sorted = [...dl].sort((a, b) => (score(b) ?? 0) - (score(a) ?? 0) || b.v - a.v);
   card.dists.best = sorted.slice(0, 3);
   card.dists.worst = sorted.slice(Math.max(3, sorted.length - 3)).reverse(); // (never the same as the best)
@@ -184,6 +184,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
 
   // ---- the metrics picked ----
   for (const id of metrics) {
+    if (noRanks && (id === "res:wins" || id === "res:top10")) continue; // (update 183: entered rounds: no wins or top 10s)
     let v = null, r = { rank: null, of: 0 }, trend = null, fmt = (x) => (x == null ? "—" : fmtSG(x)), higher = true, info = null;
     if (id === "sg:T2G") { const vals = new Map(ranked.map((p) => [p.key, perRound(p.rounds, "T2G")])); v = vals.get(key); r = rankOf(vals, key); trend = trendOf(mine, (rs) => perRound(rs, "T2G"));
       info = () => formInfo(mine, (rs) => perRound(rs, "T2G"), { label: "SG: Tee to Green", fmtFn: fmtSG }); }
@@ -250,7 +251,8 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
 
   // ---- badges and alerts ----
   const badges = card.badges, alerts = card.alerts;
-  const add = (b, info = null) => { if (info) b.info = info; badges.push(b); if (b.alert) alerts.push({ ...b, key, label }); };
+  // (update 183) entered rounds: no wins, top 10s or ranks, so none of their badges
+  const add = (b, info = null) => { if (noRanks && (["win", "wins", "top10", "rank"].includes(b.kind) || /spots/.test(b.text))) return; if (info) b.info = info; badges.push(b); if (b.alert) alerts.push({ ...b, key, label }); };
   // (update 173) what each badge opens: a chart and / or a table (see badgePopup.js)
   const rdItem = (rd, on = false) => ({ label: dateShort(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" · "), v: sgOf(rd), on });
   const roundsTable = (rds) => ({ kind: "table", cols: [["Date"], ["Tournament"], ["SG", "num"]], rows: [...rds].reverse().map((rd) => ({ cells: [dateShort(rd.date), [rd.event || "\u2014", rd.roundNo ? ` R${rd.roundNo}` : ""].join(""), { sg: sgOf(rd) }] })) });
@@ -341,6 +343,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   }
   // (update 173) the latest tournament: strokes gained a round over its rounds
   const lastEv = lastRound ? mine.filter((rd) => rd.event === lastRound.event && String(rd.year) === String(lastRound.year)) : [];
+  if (noRanks) { for (const x of [...card.sg, ...card.dists.best, ...card.dists.worst, ...card.metrics]) { x.rank = null; x.of = 0; } }
   card.latest = lastRound ? { date: lastRound.date, event: lastRound.event, sg: lastRound.event ? perRound(lastEv) : sgOf(lastRound), rounds: lastRound.event ? lastEv.length : 1 } : null;
   return card;
 }

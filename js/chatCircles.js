@@ -53,6 +53,9 @@ export function syncChatCircles() {
     for (const [uid, uids] of reach) { const c = curReach.get(uid); if (!c || JSON.stringify(c.uids) !== JSON.stringify(uids)) ops.push((b) => b.set(doc(db, "chatReach", uid), { uids })); }
     for (const uid of curReach.keys()) if (!reach.has(uid)) ops.push((b) => b.delete(doc(db, "chatReach", uid))); // (access removed)
     for (const [email, uid] of emails) if (curEmails.get(email)?.uid !== uid) ops.push((b) => b.set(doc(db, "friendEmails", email), { uid }));
+    // (update 183) where each player's bag is (WITB for their team): bagOwners/{playerKey} = { uid }
+    const curOwners = await cur("bagOwners");
+    for (const u of users) if (u.clientKey && !isTeamKey(u.clientKey) && !u.kind && curOwners.get(u.clientKey)?.uid !== u.uid) ops.push((b) => b.set(doc(db, "bagOwners", u.clientKey), { uid: u.uid }));
     // (update 177) accounts that are gone: out of the chat directory and the friend finder
     const alive = new Set([...users.map((u) => u.uid), ...adminUids]);
     for (const id of curNames.keys()) if (!alive.has(id)) ops.push((b) => b.delete(doc(db, "chatNames", id)));

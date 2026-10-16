@@ -55,7 +55,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const vals = everyone.map((p) => ({ key: p.key, v: perRound(p.rounds, cat) })).filter((x) => x.v != null && Number.isFinite(x.v)).sort((a, b) => b.v - a.v);
     const i = vals.findIndex((x) => x.key === me.key);
     const fieldVals = vals.filter((x) => x.key !== me.key).map((x) => x.v);
-    return { rank: i >= 0 ? i + 1 : null, of: vals.length, fieldAvg: mean(fieldVals), best: vals[0] || null, low: vals[vals.length - 1] || null };
+    return { rank: i >= 0 && vals.length > 1 ? i + 1 : null, of: vals.length, fieldAvg: mean(fieldVals), best: vals[0] || null, low: vals[vals.length - 1] || null };
   };
   const overall = { value: perRound(mine), rounds: mine.length, ...rankOf(null) };
   const byCat = cats.map((k) => ({ cat: k, name: CAT_NAME[k], value: perRound(mine, k), ...rankOf(k) }));
@@ -803,9 +803,9 @@ export async function loadSource(source, playerKey, label, { detail = true } = {
     const state = getState();
     const rounds = await once(watchPlayerRounds, playerKey);
     const me = { key: playerKey, label, rounds: rounds.map(roundToPrepared) };
-    let field = [];
-    if (state.isAdmin) { try { field = enteredPlayers(await getAllRounds()); } catch { field = []; } }
-    return { me, field: field.length ? field : [me], idx: ENTERED_IDX };
+    // (update 183) entered rounds aren't ranked: the report is the player against the Tour baseline alone
+    void state;
+    return { me, field: [me], idx: ENTERED_IDX };
   }
   const datasets = await once(watchClientDatasets, playerKey);
   const shot = (datasets || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];

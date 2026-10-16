@@ -40,6 +40,8 @@ subscribe((state) => {
     // copies of field detail whose data file was deleted or rebuilt: removed, a little after the page is up
     prunedFor = state.user.uid;
     setTimeout(() => import("./fieldStore.js").then((m) => m.pruneDetailCopies()).catch(() => {}), 8000);
+    // (update 183) a player: where their bag is, so their team can see it (and their caddie change it)
+    setTimeout(() => import("./bag.js").then((m) => m.registerBagOwner(state)).catch(() => {}), 3000);
   }
   if (state.isAdmin && circlesSyncedFor !== state.user.uid) {
     // who each person can chat with (their team and Callaway staff): refreshed when the admin signs in

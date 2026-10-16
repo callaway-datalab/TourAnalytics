@@ -126,8 +126,8 @@ export async function render(main, { previewClient }) {
     const keys = (multi ? prefs.players : [single]).filter((k) => (source === "entered" ? true : k !== myKey || field.some((p) => p.key === k)) && (labels.has(k) || fieldNow.some((p) => p.key === k)));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName }));
-    const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow);
+    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered" }));
+    const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow, { noRanks: source === "entered" });
 
     // ---- controls ----
     const period = el("div", { class: "wl-period", role: "group", "aria-label": "Period" }, PERIODS.map(([v, l]) => {
@@ -204,7 +204,7 @@ export async function render(main, { previewClient }) {
     root.style.minHeight = `${root.offsetHeight}px`;
     mount(root, [heroShell(controls, subLine), menu, body,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
-        ? `Strokes Gained values represent per round averages. Entered Rounds: the rounds entered in Enter New Round. Trends: the last 10 rounds against the 10 before. Ranks: among the players whose entered rounds you can see, with ${cards[0]?.minR || "enough"} or more in this period.`
+        ? "Strokes Gained values represent per round averages. Entered Rounds: the rounds entered in Enter New Round (not ranked). Trends: the last 10 rounds against the 10 before."
         : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
@@ -240,7 +240,7 @@ export async function render(main, { previewClient }) {
     const good = higher == null ? null : higher ? t.ch > 0 : t.ch < 0;
     return el("span", { class: `wl-tr ${flat ? "flat" : good == null ? "" : good ? "up" : "down"}`, title: `Last ${t.n}: ${t.last?.toFixed?.(2)} · previous ${t.n}: ${t.prev?.toFixed?.(2)}` }, flat ? "◆ steady" : `${t.ch > 0 ? "▲" : "▼"} ${fmt(t.ch)}`);
   };
-  const rankPill = (r, of) => (r ? el("span", { class: `wl-rank ${rkCls(r)}`, title: `${ordinal(r)} of ${of}` }, ordinal(r)) : el("span", { class: "wl-rank none" }, "—"));
+  const rankPill = (r, of) => (src() === "entered" ? null : r ? el("span", { class: `wl-rank ${rkCls(r)}`, title: `${ordinal(r)} of ${of}` }, ordinal(r)) : el("span", { class: "wl-rank none" }, "—"));
 
   // the alerts first (biggest first), then the rest of the badges
   const sortBadges = (bs) => [...bs].sort((x, y) => (y.alert ? y.sev || 1 : 0) - (x.alert ? x.sev || 1 : 0));

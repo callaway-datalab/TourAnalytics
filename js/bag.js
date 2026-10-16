@@ -62,6 +62,20 @@ export function saveBag(uid, clubs, { history, since, oldBag } = {}) {
   }
   return setDoc(doc(db, "bags", uid), next);
 }
+/**
+ * (update 183) Whose account a player's bag is under: bagOwners/{playerKey} = { uid }. A player registers it
+ * themselves when they sign in (and their bag gets its playerKey), the admin's app fills in everyone, so
+ * the people with access to a player can see their bag, and their caddie can change it.
+ */
+export async function bagOwnerOf(playerKey) {
+  try { const s = await getDoc(doc(db, "bagOwners", playerKey)); return s.exists() ? s.data().uid || null : null; } catch { return null; }
+}
+export async function registerBagOwner(state) {
+  const key = state.profile?.clientKey, uid = state.user?.uid;
+  if (!key || !uid || state.isTeam || state.profile?.kind || /^t_/.test(key)) return; // (players only)
+  try { const o = await getDoc(doc(db, "bagOwners", key)); if (!o.exists() || o.data().uid !== uid) await setDoc(doc(db, "bagOwners", key), { uid }); } catch { /* (rules not republished yet) */ }
+  try { const b = await getDoc(doc(db, "bags", uid)); if (b.exists() && b.data().playerKey !== key) await setDoc(doc(db, "bags", uid), { playerKey: key }, { merge: true }); } catch { /* */ }
+}
 /** Remove one old bag from the history. */
 export function saveBagHistory(uid, history) {
   return updateDoc(doc(db, "bags", uid), { history });
@@ -87,10 +101,10 @@ export function libraryFrom(d) {
 }
 
 /** Save the library and which clubs are in the bag (the bag itself is copied to .clubs). */
-export function saveLibrary(uid, library, inBag) {
+export function saveLibrary(uid, library, inBag, playerKey = null) {
   const clubs = inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean)
     .map(({ id, cat, type, brand, model, note, shaft = "", flex = "", weight = "", yards = "" }) => ({ id, cat, type, brand, model, note, shaft, flex, weight, yards }));
-  return setDoc(doc(db, "bags", uid), { library, inBag, clubs: clubs.slice(0, MAX_CLUBS), updatedAt: serverTimestamp() }, { merge: true });
+  return setDoc(doc(db, "bags", uid), { library, inBag, clubs: clubs.slice(0, MAX_CLUBS), ...(playerKey ? { playerKey } : {}), updatedAt: serverTimestamp() }, { merge: true });
 }
 
 /** Does a shot's club match this library club? */
