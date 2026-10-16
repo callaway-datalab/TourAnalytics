@@ -465,17 +465,11 @@ export function sgDashboard(container, opts) {
           (() => {
             // tap the chart: every round, its number and its rank in the field
             if (hist.length < 2) return null;
-            // (update 170) Min. rounds right here (it decides who's ranked, so the line follows it); tapping it doesn't open the table
-            const minHere = minRoundsBox(slicedField.filter((p) => p.rounds.length));
-            minHere.classList.add("hero-chart-min");
-            for (const ev of ["click", "keydown", "pointerdown"]) minHere.addEventListener(ev, (e) => e.stopPropagation());
-            const first = hist[0].rank, now = hist.at(-1).rank, best = Math.min(...hist.map((x) => x.rank));
+            // (update 177: one point a tournament; Min. rounds is no longer here, it's in the Rankings)
             const labels = hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); });
             // (update 174) Rank | Stat: the rolling rank, or the rolling average (everything up to that date, this selection)
             const mode = () => (st.heroChartMode === "stat" ? "stat" : "rank");
-            const title = () => (mode() === "stat"
-              ? `${trendName} rolling average \u00b7 ${fmtV(hist[0].avg)} \u2192 ${fmtV(hist.at(-1).avg)}`
-              : `${trendName} rank history \u00b7 ${ordinal(first)} \u2192 ${ordinal(now)}${best < now ? ` (best ${ordinal(best)})` : ""}`);
+            const title = () => (mode() === "stat" ? "Weekly Rolling Average" : "Weekly Rank History");
             const makeChart = () => chartBox((c) => (mode() === "stat" ? heroChart(c, labels, hist.map((x) => x.avg)) : rankChart(c, labels, hist)));
             const titleEl = el("span", { class: "hero-chart-title" }, title());
             const seg = el("div", { class: "hero-chart-mode", role: "group", "aria-label": "Chart shows" }, [["rank", "Rank"], ["stat", "Stat"]].map(([v, l]) => {
@@ -492,7 +486,7 @@ export function sgDashboard(container, opts) {
             for (const ev of ["click", "keydown", "pointerdown"]) seg.addEventListener(ev, (e) => e.stopPropagation());
             let chartEl = makeChart();
             const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: `Show every ${unit === "event" ? "event" : "tournament"}`, "aria-label": `${trendName} history chart. Show every tournament in a table.` }, [
-              el("span", { class: "hero-chart-label" }, [titleEl, el("span", { class: "hero-chart-ctrls" }, [seg, minHere])]),
+              el("span", { class: "hero-chart-label" }, [titleEl, el("span", { class: "hero-chart-ctrls" }, [seg])]),
               chartEl]);
             const openT = () => eventsPopup(ordered, slicedField, r);
             box.addEventListener("click", openT);
@@ -723,8 +717,11 @@ export function sgDashboard(container, opts) {
     const sorted = ranked.map((p) => ({ key: p.key, rs: [...p.rounds].sort((a, b) => dk(a.date).localeCompare(dk(b.date))) }));
     const mostNow = Math.max(1, ...sorted.map((p) => p.rs.length));
     const minNow = Math.max(1, minRoundsFor(slicedField.filter((p) => p.rounds.length)));
-    // the dates to plot: each round's date (at most 60, spread evenly, always the latest)
-    let dates = [...new Set(ordered.map((rd) => dk(rd.date)))];
+    // the dates to plot: the end of each tournament (update 177: weekly, not each round; at most 60, spread
+    // evenly, always the latest)
+    const ends = new Map();
+    for (const rd of ordered) { const k = `${rd.event}|${yearOf(rd)}`; if (dk(rd.date) > (ends.get(k) || "")) ends.set(k, dk(rd.date)); }
+    let dates = [...new Set(ends.values())].sort();
     if (!all && dates.length > 60) { const step = (dates.length - 1) / 59; dates = Array.from({ length: 60 }, (_, i) => dates[Math.round(i * step)]); }
     const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
     // strokes gained: running totals, so each date is quick

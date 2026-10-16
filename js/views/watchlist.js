@@ -85,11 +85,11 @@ export async function render(main, { previewClient }) {
     const { enteredPlayers } = await import("../roundCalc.js");
     const keysToLoad = [...new Set([...(multi ? teamKeys : [single]), myKey].filter(Boolean))];
     const rounds = admin ? await once((cb) => watchAllRounds(cb)) : (await Promise.all(keysToLoad.map((k) => once((cb) => watchPlayerRounds(k, cb))))).flat();
-    enteredField = enteredPlayers(rounds || [], (r) => (r.playerKey === myKey ? youLabel : labels.get(r.playerKey) || plainName(r.playerLabel || r.playerKey.replace(/^c_/, ""))));
+    enteredField = enteredPlayers(rounds || [], (r) => (r.playerKey === myKey && multi ? youLabel : labels.get(r.playerKey) || plainName(r.playerLabel || r.playerKey.replace(/^c_/, ""))));
     for (const p of enteredField) if (!labels.has(p.key)) labels.set(p.key, p.label);
     return enteredField;
   })());
-  if (myKey) labels.set(myKey, youLabel);
+  if (myKey && multi) labels.set(myKey, youLabel); // (update 177: one player's own page keeps their name)
   await loadWatch();
   let prefs = watchPrefs();
   const picker = multi ? playerPicker(labels, (p) => { if (!p) return; if (!prefs.players.includes(p.key)) { prefs = { ...prefs, players: [...prefs.players, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }) : null;
@@ -98,11 +98,12 @@ export async function render(main, { previewClient }) {
   // (update 171) each card starts folded (name, badges, the five strokes gained); opened ones stay open while you're
   // on the page. A player on more than one tour: the tour picked on their card (this visit).
   const openCards = new Set(), tourPick = new Map();
+  if (!multi && single) openCards.add(single); // (update 177: one player: their card starts open)
 
   function heroShell(controls = null, sub = "") {
     const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
     return el("header", { class: "panel wl-hero" }, [
-      el("div", { class: "wl-hero-l" }, [el("p", { class: "wl-eyebrow" }, today), el("h1", {}, multi ? "Watchlist" : "Home"), sub ? el("p", { class: "wl-sub" }, sub) : null]),
+      el("div", { class: "wl-hero-l" }, [el("p", { class: "wl-eyebrow" }, today), el("h1", {}, multi ? "Watchlist" : "Player Snapshot"), sub ? el("p", { class: "wl-sub" }, sub) : null]),
       controls,
     ]);
   }
@@ -235,10 +236,11 @@ export async function render(main, { previewClient }) {
       return b;
     })) : null;
     const moreBtn = el("button", { type: "button", class: "wl-more-btn", "aria-expanded": String(isOpen), "aria-label": isOpen ? `Show less for ${c.label}` : `Show more for ${c.label}`, title: isOpen ? "Show less" : "Show more" }, el("span", { "aria-hidden": "true" }, "\u203a"));
-    const head = el("div", { class: "wl-card-head" }, [
+    // (update 177) one player: no name row (the page says whose) and no folding (it's open), just a tour switch if any
+    const head = multi ? el("div", { class: "wl-card-head" }, [
       el("div", { class: "wl-id" }, [name, tourSeg]),
       el("div", { class: "wl-head-r" }, [moreBtn, star]),
-    ]);
+    ]) : tourSeg ? el("div", { class: "wl-card-head" }, [el("div", { class: "wl-id" }, [tourSeg])]) : null;
     const meta = el("p", { class: "wl-meta" }, [c.tours?.length > 1 ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
     // (update 173) a badge opens what's behind it: a chart, a table, or both
     const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => {

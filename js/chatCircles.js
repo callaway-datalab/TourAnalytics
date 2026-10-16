@@ -4,7 +4,7 @@
 //   friendEmails/{email} = { uid }              so a friend can be found by their exact email
 //   chatReach/{uid}     = { uids }              a player's or team member's team and Callaway staff
 // Friends are added by people themselves (chat.js) and checked by the Firestore rules.
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db, adminUids } from "./firebase-init.js";
 import { isTeamKey } from "./data.js";
 import { getState } from "./auth.js";
@@ -53,6 +53,10 @@ export function syncChatCircles() {
     for (const [uid, uids] of reach) { const c = curReach.get(uid); if (!c || JSON.stringify(c.uids) !== JSON.stringify(uids)) ops.push((b) => b.set(doc(db, "chatReach", uid), { uids })); }
     for (const uid of curReach.keys()) if (!reach.has(uid)) ops.push((b) => b.delete(doc(db, "chatReach", uid))); // (access removed)
     for (const [email, uid] of emails) if (curEmails.get(email)?.uid !== uid) ops.push((b) => b.set(doc(db, "friendEmails", email), { uid }));
+    // (update 177) accounts that are gone: out of the chat directory and the friend finder
+    const alive = new Set([...users.map((u) => u.uid), ...adminUids]);
+    for (const id of curNames.keys()) if (!alive.has(id)) ops.push((b) => b.delete(doc(db, "chatNames", id)));
+    for (const [email, v] of curEmails) if (!alive.has(v.uid) && !emails.has(email)) ops.push((b) => b.delete(doc(db, "friendEmails", email)));
     // everyone's default contacts: Callaway's analysts (and the admin), readable by anyone signed in (update 144)
     const staffDoc = { uids: [...new Set(staffIds)].sort() };
     ops.push((b) => b.set(doc(db, "chatStaff", "all"), staffDoc));
@@ -63,5 +67,11 @@ export function syncChatCircles() {
       const want = [...new Set(staffIds)];
       if (snap.exists() && !want.every((x) => snap.data().members.includes(x))) await updateDoc(ref, { members: [...new Set([...snap.data().members, ...want])] });
     } catch { /* (opened once by someone, it's kept up to date from then on) */ }
+    // (update 177) every player's Callaway Analyst chat has every analyst in it (analysts added since it began too)
+    try {
+      const want = [...new Set(staffIds)];
+      const mine = await getDocs(query(collection(db, "chatRooms"), where("members", "array-contains", state.user.uid)));
+      for (const d of mine.docs) { const r = d.data(); if (r.callaway && !r.staffRoom && d.id.startsWith("ca_") && !want.every((x) => r.members.includes(x))) await updateDoc(d.ref, { members: [...new Set([...r.members, ...want])].slice(0, 50) }).catch(() => {}); }
+    } catch { /* (fine: next time) */ }
   })().catch((err) => console.warn("chat sync", err)).finally(() => { running = null; }));
 }
