@@ -109,13 +109,12 @@ export async function render(main, { previewClient }) {
   const openCards = new Set(), tourPick = new Map();
   if (!multi && single) openCards.add(single); // (update 177: one player: their card starts open)
 
+  // (update 189) no date, title or count: the filters are the top of the page (a preview still says whose)
   function heroShell(controls = null, sub = "") {
-    const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-    return el("header", { class: "panel wl-hero" }, [
-      el("div", { class: "wl-hero-l" }, [el("p", { class: "wl-eyebrow" }, today), el("h1", {}, multi ? "Watchlist" : "Player Snapshot"), sub ? el("p", { class: "wl-sub" }, sub) : null]),
-      controls,
-    ]);
+    if (!controls) return null;
+    return el("header", { class: "panel wl-hero wl-hero-bare" }, [controls, sub && watchIsPreview() ? el("p", { class: "wl-sub wl-preview-note" }, "Their Watchlist (changes in a preview aren\u2019t saved).") : null]);
   }
+
 
   async function draw() {
     // (update 187) where you are, before anything moves (the player search is moved into the new controls,

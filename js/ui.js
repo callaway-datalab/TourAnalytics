@@ -100,7 +100,7 @@ const sectionsFor = (kind) => {
   const dataItems = [
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
-    [player ? "My Stats" : "Player Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
+    ["Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)

@@ -3747,3 +3747,26 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
   .cmp-card-big strong { font-size: 1.9rem; }
   .cmp-name { width: 100% !important; }
 }
+/* update 189: the Watchlist's top card is just its filters */
+.wl-hero.wl-hero-bare { padding: 1rem 1.2rem !important; align-items: center; }
+.wl-hero-bare .wl-controls { width: 100%; }
+.wl-preview-note { margin: 0; width: 100%; }
+/* update 189: Comparisons, search first */
+.cmp-top { max-width: 28rem; width: 100%; margin: calc(-0.5 * clamp(1.5rem, 4vw, 3rem)) auto 0.2rem; position: relative; z-index: 60; }
+.cmp-top .player-picker, .cmp-top .pp { position: relative; }
+.cmp-top .pp-list { z-index: 70; }
+.cmp-build { position: relative; z-index: 1; display: grid; gap: 0.7rem; }
+.cmp-build-top { justify-content: space-between; }
+.cmp-seg { width: fit-content; max-width: 100%; }
+.cmp-hint { margin: 0; }
+.cmp-chips-wrap { display: grid; gap: 0.7rem; }
+.cmp-chip-group { display: grid; gap: 0.35rem; }
+.cmp-chip-gt { margin: 0; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.cmp-chip.on { border-color: #d4b483; background: rgba(212,180,131,0.16); color: #f3dfbd; }
+.cmp-chip-tick { color: #d4b483; font-weight: 800; }
+.cmp-chip-dots { display: inline-flex; gap: 2px; } .cmp-chip-dots i { width: 0.45rem; height: 0.45rem; border-radius: 50%; }
+.cmp-addrow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding-top: 0.2rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem; }
+.cmp-add:disabled { opacity: 0.4; cursor: default; }
+.cmp-legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; padding: 0 0.2rem; }
+.cmp-legend-i { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-weight: 600; color: var(--ink-2, #d1d1d6); cursor: default; }
+.cmp-legend-i i { width: 0.7rem; height: 0.7rem; border-radius: 3px; }

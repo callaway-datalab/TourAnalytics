@@ -1,12 +1,12 @@
 /*
  * Comparisons (update 188): pick a player, then any slices of their rounds (seasons, time windows,
  * tournaments, courses, round numbers, months, tours, or a date range of your own) and see them side by side:
- *   · a card for each, with the best crowned, and what stands out in plain words
- *   · strokes gained by category in a table (best / worst shaded) and a grouped bar chart
- *   · every round as a dot (the spread, the middle half, the median), and how each one unfolded
- *   · strokes gained by distance, and the other stats (fairways, greens, proximity …)
+ *   \u00b7 a card for each, with the best crowned, and what stands out in plain words
+ *   \u00b7 strokes gained by category in a table (best / worst shaded) and a grouped bar chart
+ *   \u00b7 every round as a dot (the spread, the middle half, the median), and how each one unfolded
+ *   \u00b7 strokes gained by distance, and the other stats (fairways, greens, proximity \u2026)
  * And, for the player as a whole: are they getting better or worse (last 5, 10, 20, 40, 80 rounds against
- * the same number before), and in which conditions they play their best (round, course, month, …).
+ * the same number before), and in which conditions they play their best (round, course, month, \u2026).
  * Hover a selection (its card or its key) to pick it out in every chart.
  */
 import { el, mount } from "../ui.js";
@@ -34,7 +34,7 @@ const MODES = [
   ["windows", "Time windows", "Recent form against what came before, or the whole career."],
   ["tournaments", "Tournaments", "Any events, this year or any year."],
   ["courses", "Courses", "Where they play their best."],
-  ["rounds", "Rounds 1–4", "Openers against weekends."],
+  ["rounds", "Rounds 1\u20134", "Openers against weekends."],
   ["months", "Months", "The time of year."],
   ["tours", "Tours", "One tour against another."],
   ["custom", "Date range", "Any stretch of dates you choose."],
@@ -58,6 +58,8 @@ export async function render(main) {
   else if (players.length === 1) player = { key: players[0][0], label: players[0][1] };
 
   let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
+  // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
+  let staged = new Map(); // value → { label, f }
   const root = el("div", { class: "cmp" });
   mount(main, root);
 
@@ -75,7 +77,7 @@ export async function render(main) {
   // the default: the two latest seasons (or recent form, with only one)
   function defaults() {
     sels = [];
-    if (opts.years.length >= 2) { mode = "years"; opts.years.slice(0, 2).reverse().forEach((y) => sels.push({ id: `years:${y.value}`, name: y.label, f: { years: [y.value] }, color: nextColor() })); }
+    if (opts.years.length >= 2) { mode = "years"; opts.years.slice(0, 2).forEach((y) => sels.push({ id: `years:${y.value}`, name: y.label, f: { years: [y.value] }, mode: "years", values: [y.value], color: nextColor() })); } // (this year, then last year)
     else if (opts.total >= 10) { // (one season: the latest rounds against the same number before)
       const n = [20, 10, 5].find((x) => opts.total >= 2 * x);
       mode = "windows"; sels.push({ id: `windows:prev:${n}`, name: `The ${n} before that`, f: { prev: n }, color: nextColor() }, { id: `windows:last:${n}`, name: `Last ${n} rounds`, f: { last: n }, color: nextColor() });
@@ -98,14 +100,11 @@ export async function render(main) {
 
   /* ------------------------------ the page ------------------------------ */
   function draw() {
-    const head = el("header", { class: "panel cmp-hero" }, [
-      el("div", { class: "cmp-hero-l" }, [el("p", { class: "cmp-eyebrow" }, "Analyze"), el("h1", {}, "Comparisons"),
-        el("p", { class: "cmp-lede" }, "Put any slices of a player’s golf side by side: seasons, recent form, tournaments, courses, rounds, months. See which conditions bring out their best, and whether they’re getting better.")]),
-      el("div", { class: "cmp-hero-r" }, [pickerNode(), sourceSeg()]),
-    ]);
-    if (!player) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-empty-icon", "aria-hidden": "true" }, "⇄"), el("h2", {}, "Pick a player to begin"), el("p", { class: "muted" }, "Type a name above.")])]); return; }
-    if (!data) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, `Loading ${player.label}’s rounds…`)])]); return; }
-    if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn’t entered any rounds yet.`)])]); return; }
+    // (update 189) just the player search at the top; everything else once a player is picked
+    const head = pickerNode();
+    if (!player) { mount(root, [head]); return; }
+    if (!data) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, `Loading ${player.label}\u2019s rounds\u2026`)])]); return; }
+    if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn\u2019t entered any rounds yet.`)])]); return; }
 
     const y = window.scrollY;
     const sets = sels.map((s) => roundsFor(data.rounds, s.f));
@@ -129,13 +128,14 @@ export async function render(main) {
   }
 
   function pickerNode() {
-    if (self || players.length <= 1) return player ? el("div", { class: "cmp-who-static" }, [el("span", { class: "muted small" }, "Player"), el("strong", {}, player.label)]) : null;
-    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; player = { key: p.key, label: p.label }; ls.set(LS_PLAYER, p.key); load(); });
+    if (self || players.length <= 1) return null; // (only one player: nothing to search)
+    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; player = { key: p.key, label: p.label }; ls.set(LS_PLAYER, p.key); staged = new Map(); load(); });
     if (player) pp.preset(player.key);
     const inp = pp.node.querySelector("input");
     inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
     inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && player) pp.preset(player.key); }, 300));
-    return el("div", { class: "cmp-who" }, pp.node);
+    if (inp) inp.placeholder = "Type a player\u2019s name\u2026";
+    return el("div", { class: "cmp-who cmp-top" }, pp.node);
   }
   function sourceSeg() {
     return el("div", { class: "cmp-seg", role: "group", "aria-label": "Data" }, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
@@ -151,7 +151,7 @@ export async function render(main) {
     if (!modes.some(([m]) => m === mode)) mode = "years";
     const tabs = el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
       const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
-      b.addEventListener("click", () => { mode = m; chipFilter = ""; draw(); });
+      b.addEventListener("click", () => { if (mode === m) return; mode = m; chipFilter = ""; staged = new Map(); draw(); });
       return b;
     }));
     const hint = el("p", { class: "cmp-hint" }, modes.find(([m]) => m === mode)[2]);
@@ -161,25 +161,56 @@ export async function render(main) {
       const list = { years: opts.years, windows: opts.windows, tournaments: opts.tournaments, courses: opts.courses, rounds: opts.rounds, months: opts.months, tours: opts.tours }[mode] || [];
       const filterOf = (o) => (mode === "years" ? { years: [o.value] } : mode === "windows" ? windowFilter(o.value) : mode === "tournaments" ? { events: [o.value] } : mode === "courses" ? { courses: [o.value] } : mode === "rounds" ? { roundNos: [o.value] } : mode === "months" ? { months: [o.value] } : { tours: [o.value] });
       const long = list.length > 14;
-      const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${mode === "tournaments" ? "a tournament" : "a course"}…`, value: chipFilter }) : null;
-      const chipsBox = el("div", { class: "cmp-chips" });
+      const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${mode === "tournaments" ? "a tournament" : "a course"}\u2026`, value: chipFilter }) : null;
+      const chipsBox = el("div", { class: "cmp-chips-wrap" });
+      const addRow = el("div", { class: "cmp-addrow" });
+      const chip = (o) => {
+        const on = staged.has(o.value);
+        // (a small dot for each selection already in the comparison that includes it)
+        const inSel = sels.filter((x) => x.mode === mode && x.values?.includes(o.value));
+        const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, o.label, el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`),
+          inSel.length ? el("span", { class: "cmp-chip-dots", title: `In: ${inSel.map((x) => x.name).join(", ")}` }, inSel.map((x) => el("i", { style: `background:${x.color}` }))) : null]);
+        b.addEventListener("click", () => { if (on) staged.delete(o.value); else staged.set(o.value, { label: o.label, f: filterOf(o) }); drawChips(); drawAdd(); });
+        return b;
+      };
       const drawChips = () => {
         const t = chipFilter.trim().toLowerCase();
-        mount(chipsBox, list.filter((o) => !t || o.label.toLowerCase().includes(t)).slice(0, long && !t ? 30 : 200).map((o) => {
-          const id = `${mode}:${o.value}`, s = sels.find((x) => x.id === id);
-          const b = el("button", { type: "button", class: `cmp-chip${s ? " on" : ""}`, "aria-pressed": String(!!s), style: s ? `--c:${s.color}` : null }, [s ? el("i", { "aria-hidden": "true" }) : null, o.label, el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`)]);
-          b.addEventListener("click", () => toggleSel(id, o.label, filterOf(o)));
-          return b;
-        }));
+        const shown = list.filter((o) => !t || o.label.toLowerCase().includes(t)).slice(0, long && !t ? 30 : 200);
+        if (mode === "windows") {
+          // (update 189) in three groups: recent form, the rounds just before, seasons and career
+          const groups = [["Recent form", (o) => o.value.startsWith("last:")], ["The rounds just before", (o) => o.value.startsWith("prev:")], ["Seasons and career", (o) => o.value.startsWith("year:") || o.value === "all"]];
+          mount(chipsBox, groups.map(([g, test]) => { const xs = shown.filter(test); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; }));
+        } else mount(chipsBox, el("div", { class: "cmp-chips" }, shown.map(chip)));
+      };
+      const drawAdd = () => {
+        const n = staged.size;
+        const add = el("button", { type: "button", class: "btn cmp-add", disabled: !n }, n > 1 ? `\uff0b Add these ${n} as one` : "\uff0b Add to comparison");
+        add.addEventListener("click", addStaged);
+        const clear = n ? el("button", { type: "button", class: "link" }, "Clear picks") : null;
+        clear?.addEventListener("click", () => { staged = new Map(); drawChips(); drawAdd(); });
+        mount(addRow, [add, el("span", { class: "muted small" }, n ? (n > 1 ? `${n} picked: their rounds are pooled into one selection.` : "1 picked.") : "Tap one or more, then add them."), clear]);
       };
       search?.addEventListener("input", () => { chipFilter = search.value; drawChips(); });
-      drawChips();
-      body = el("div", {}, [search, chipsBox, long && !chipFilter ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null]);
+      drawChips(); drawAdd();
+      body = el("div", {}, [search, chipsBox, long && !chipFilter ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null, addRow]);
     }
-    return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), tabs]), hint, body, note]);
+    return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), sourceSeg()]), tabs, hint, body, note]);
+  }
+  // (update 189) the picks, as one selection (several: their rounds pooled, so it's their average)
+  function addStaged() {
+    if (!staged.size) return;
+    const vals = [...staged.keys()], picks = [...staged.values()];
+    const id = `${mode}:${[...vals].sort().join("|")}`;
+    if (has(id)) { flashNote("That\u2019s already in the comparison."); return; }
+    if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; }
+    const labels = picks.map((x) => x.label);
+    const name = labels.length === 1 ? labels[0] : labels.length === 2 ? `${labels[0]} + ${labels[1]}` : `${labels[0]}, ${labels[1]} + ${labels.length - 2} more`;
+    const f = picks.length === 1 ? picks[0].f : { any: picks.map((x) => x.f) };
+    sels = [...sels, { id, name, f, mode, values: vals, full: labels.join(", "), color: nextColor() }];
+    staged = new Map();
+    draw();
   }
   function customForm() {
-    const first = opts.windows.length ? null : null; void first;
     const from = el("input", { type: "date", class: "cmp-date", "aria-label": "From" }), to = el("input", { type: "date", class: "cmp-date", "aria-label": "To" });
     const name = el("input", { type: "text", class: "cmp-name", placeholder: "Name (optional)", maxLength: 40 });
     const rnd = new Set();
@@ -188,13 +219,13 @@ export async function render(main) {
       b.addEventListener("click", () => { rnd.has(o.value) ? rnd.delete(o.value) : rnd.add(o.value); b.classList.toggle("on", rnd.has(o.value)); b.setAttribute("aria-pressed", String(rnd.has(o.value))); });
       return b;
     })]) : null;
-    const add = el("button", { type: "button", class: "btn cmp-add" }, "＋ Add to comparison");
+    const add = el("button", { type: "button", class: "btn cmp-add" }, "\uff0b Add to comparison");
     add.addEventListener("click", () => {
       if (!from.value && !to.value) { flashNote("Pick a start or end date (or both)."); return; }
       const f = { from: from.value || null, to: to.value || null, roundNos: rnd.size ? [...rnd] : null };
       const n = roundsFor(data.rounds, f).length;
       if (!n) { flashNote("No rounds in those dates."); return; }
-      const auto = `${from.value ? dateTxt(from.value) : "Start"} – ${to.value ? dateTxt(to.value) : "now"}${rnd.size ? ` (R${[...rnd].join(", R")})` : ""}`;
+      const auto = `${from.value ? dateTxt(from.value) : "Start"} \u2013 ${to.value ? dateTxt(to.value) : "now"}${rnd.size ? ` (R${[...rnd].join(", R")})` : ""}`;
       toggleSel(`custom:${Date.now()}`, name.value.trim() || auto, f);
     });
     return el("div", { class: "cmp-custom" }, [el("label", { class: "cmp-field" }, [el("span", {}, "From"), from]), el("label", { class: "cmp-field" }, [el("span", {}, "To"), to]), name, rounds, add]);
@@ -204,9 +235,9 @@ export async function render(main) {
     const clear = el("button", { type: "button", class: "link cmp-clear" }, "Clear all");
     clear.addEventListener("click", () => { sels = []; draw(); });
     return el("div", { class: "cmp-selbar" }, [...items.map((it) => {
-      const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": `Remove ${it.name}` }, "✕");
+      const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": `Remove ${it.name}` }, "\u2715");
       x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== it.id); draw(); });
-      return hoverable(el("span", { class: "cmp-key", style: `--c:${it.color}` }, [el("i", { "aria-hidden": "true" }), el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]), it.i);
+      return hoverable(el("span", { class: "cmp-key", style: `--c:${it.color}`, title: it.full || it.name }, [el("i", { "aria-hidden": "true" }), el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]), it.i);
     }), clear]);
   }
   const hoverable = (node, i) => { node.addEventListener("mouseenter", () => { root.dataset.hl = String(i); }); node.addEventListener("mouseleave", () => { delete root.dataset.hl; }); return node; };
@@ -215,11 +246,11 @@ export async function render(main) {
   function cards(items) {
     const bestI = items.length > 1 ? [...items].filter((x) => x.s.n).sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL)[0]?.i : null;
     return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: `panel cmp-card${it.i === bestI ? " best" : ""}`, style: `--c:${it.color}`, "data-s": it.i }, [
-      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name), it.i === bestI ? el("span", { class: "cmp-crown", title: "The best of these" }, "♛ Best") : null]),
-      it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} · ${it.s.events} event${it.s.events === 1 ? "" : "s"} · ${dateTxt(it.s.from)} – ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
-      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "—"), el("span", {}, "SG: Total a round")]),
-      el("div", { class: "cmp-card-cats" }, CATEGORIES.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "—")]))),
-      it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} · worst ${fmtSG(it.s.worst)} · ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
+      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name), it.i === bestI ? el("span", { class: "cmp-crown", title: "The best of these" }, "\u265b Best") : null]),
+      it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
+      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, "SG: Total a round")]),
+      el("div", { class: "cmp-card-cats" }, CATEGORIES.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))),
+      it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
     ]), it.i)));
   }
   function standout(items) {
@@ -237,8 +268,8 @@ export async function render(main) {
       el("tbody", {}, SG_ROWS.map(([k, l]) => {
         const vals = items.map((it) => (it.s.n ? it.s.sg[k] : null));
         const xs = vals.filter((v) => v != null);
-        return el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, l), ...items.map((it, j) => el("td", { class: `num ${tone(vals[j])} ${shade(vals, vals[j])}`, "data-s": it.i }, vals[j] == null ? "—" : fmtSG(vals[j]))),
-          items.length > 1 ? el("td", { class: "num muted" }, xs.length > 1 ? (Math.max(...xs) - Math.min(...xs)).toFixed(2) : "—") : null]);
+        return el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, l), ...items.map((it, j) => el("td", { class: `num ${tone(vals[j])} ${shade(vals, vals[j])}`, "data-s": it.i }, vals[j] == null ? "\u2014" : fmtSG(vals[j]))),
+          items.length > 1 ? el("td", { class: "num muted" }, xs.length > 1 ? (Math.max(...xs) - Math.min(...xs)).toFixed(2) : "\u2014") : null]);
       })),
     ]));
     let conf = null;
@@ -247,23 +278,20 @@ export async function render(main) {
       conf = el("p", { class: "muted small" }, [`Best against worst in SG: Total: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
     }
     const chart = groupedBars([["TOTAL", "Total"], ...CATEGORIES.map(([k]) => [k, k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
-    return el("section", { class: "panel cmp-sec" }, [secHead("Strokes gained, side by side", "A round, for each selection. The best in each row is shaded green, the worst red."), table, conf, chart]);
+    return el("section", { class: "panel cmp-sec" }, [secHead("Strokes gained, side by side", "A round, for each selection. The best in each row is shaded green, the worst red."), table, conf, legend(items), chart]);
   }
   // every round as a dot, and how each selection unfolded (a 5-round rolling average)
   function roundsSection(items) {
     const live = items.filter((it) => it.s.n);
     return el("section", { class: "panel cmp-sec" }, [
       secHead("Every round", "Each dot is a round (SG: Total). The bar is the middle half of the rounds, the white tick the median, the diamond the average."),
-      strip(live),
+      legend(live), strip(live),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table compact" }, [
         el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Median", "Best", "Worst", "Swing (±)", "Gaining"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
         el("tbody", {}, live.map((it) => el("tr", { "data-s": it.i }, [el("td", {}, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), el("td", { class: "num" }, String(it.s.n)),
           el("td", { class: `num ${tone(it.s.sg.TOTAL)}` }, fmtSG(it.s.sg.TOTAL)), el("td", { class: `num ${tone(it.s.median)}` }, fmtSG(it.s.median)), el("td", { class: "num pos" }, fmtSG(it.s.best)), el("td", { class: "num neg" }, fmtSG(it.s.worst)),
-          el("td", { class: "num" }, it.s.sd == null ? "—" : it.s.sd.toFixed(2)), el("td", { class: "num" }, `${Math.round((it.s.gaining || 0) * 100)}%`)]))),
+          el("td", { class: "num" }, it.s.sd == null ? "\u2014" : it.s.sd.toFixed(2)), el("td", { class: "num" }, `${Math.round((it.s.gaining || 0) * 100)}%`)]))),
       ])),
-      el("h3", { class: "cmp-h3" }, "How each one unfolded"),
-      el("p", { class: "muted small" }, "SG: Total, averaged over 5 rounds at a time, from each selection’s first round to its last."),
-      lines(live.map((it) => ({ i: it.i, color: it.color, name: it.name, ys: rolling(it.s.rounds, 5) }))),
     ]);
   }
   function distanceSection(items) {
@@ -277,7 +305,7 @@ export async function render(main) {
     return el("section", { class: "panel cmp-sec" }, [
       secHead("By distance", `Strokes gained ${distPer === "round" ? "a round" : "a shot"} at each distance. Where one selection pulls away from another is where the difference was made.`),
       el("div", { class: "cmp-ctrls" }, [tabs, per]),
-      distChart(rows, items, distPer),
+      legend(items), distChart(rows, items, distPer),
     ]);
   }
   function statsSection(items) {
@@ -294,7 +322,7 @@ export async function render(main) {
   // getting better or worse: the last n against the n before, for several n
   function trajectorySection() {
     const tr = trajectory(data.rounds);
-    const cell = (v) => el("td", { class: `num ${tone(v)} cmp-delta` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"} ${Math.abs(v).toFixed(2)}`);
+    const cell = (v) => el("td", { class: `num ${tone(v)} cmp-delta` }, v == null ? "\u2014" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"} ${Math.abs(v).toFixed(2)}`);
     return el("section", { class: "panel cmp-sec cmp-traj" }, [
       secHead("Getting better or worse?", "Their latest rounds against the same number just before, at several time scales. Tap a row to compare the two."),
       el("p", { class: "cmp-traj-words" }, trajectoryWords(tr)),
@@ -324,7 +352,7 @@ export async function render(main) {
       const w = Math.abs(x.vsAll) / max * 50;
       const row = el(f ? "button" : "div", { type: f ? "button" : null, class: `cmp-cond${on ? " on" : ""}${f ? " cmp-tap" : ""}`, title: f ? (on ? "Take it out of the comparison" : "Add it to the comparison") : null }, [
         el("span", { class: "cmp-cond-rank" }, String(j + 1)),
-        el("span", { class: "cmp-cond-l" }, [x.label, el("span", { class: "muted" }, ` · ${x.n} rds`)]),
+        el("span", { class: "cmp-cond-l" }, [x.label, el("span", { class: "muted" }, ` \u00b7 ${x.n} rds`)]),
         el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.vsAll >= 0 ? "pos" : "neg"}`, style: x.vsAll >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
         el("strong", { class: `cmp-cond-v ${tone(x.v)}` }, fmtSG(x.v)),
         el("span", { class: `cmp-cond-d ${tone(x.vsAll)}` }, fmtSigned(x.vsAll)),
@@ -339,6 +367,8 @@ export async function render(main) {
         : el("p", { class: "muted" }, "Not enough rounds in any group yet (3 or more)."),
     ]);
   }
+  // (update 189) a colour key above every chart
+  const legend = (items) => el("div", { class: "cmp-legend", "aria-hidden": "true" }, items.map((it) => hoverable(el("span", { class: "cmp-legend-i", title: it.full || it.name }, [el("i", { style: `background:${it.color}` }), it.name]), it.i)));
   const secHead = (t, sub) => el("div", { class: "cmp-sec-head" }, [el("h2", {}, t), sub ? el("p", { class: "muted small" }, sub) : null]);
 
   /* ------------------------------ charts (SVG) ------------------------------ */
@@ -364,7 +394,7 @@ export async function render(main) {
         if (v == null) return;
         const it = items[j], y0 = Y(0), y1 = Y(v);
         const r = mk("rect", { x: x0 + j * bw + 1, y: Math.min(y0, y1), width: Math.max(2, bw - 2), height: Math.max(1, Math.abs(y1 - y0)), rx: 3, fill: it.color, "data-s": it.i });
-        r.append(mk("title", {}, `${it.name} · ${g.label}: ${fmtSG(v)}`));
+        r.append(mk("title", {}, `${it.name} \u00b7 ${g.label}: ${fmtSG(v)}`));
         svg.append(r);
       });
       svg.append(mk("text", { x: L + gi * gw + gw / 2, y: H - 9, "text-anchor": "middle", "font-size": 11.5, "font-weight": 600, fill: INK }, g.label));
@@ -428,7 +458,7 @@ export async function render(main) {
       if (!pts.length) return;
       const g = mk("g", { "data-s": it.i });
       g.append(mk("path", { d: pts.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "), fill: "none", stroke: it.color, "stroke-width": 2.2, "stroke-linejoin": "round" }));
-      for (const p of pts) { const c = mk("circle", { cx: p.x, cy: p.y, r: 3.6, fill: it.color, stroke: "#121214", "stroke-width": 1.5 }); c.append(mk("title", {}, `${it.name} · ${p.r.dist}: ${fmt(p.v)} (${p.r.w[j]} shots)`)); g.append(c); }
+      for (const p of pts) { const c = mk("circle", { cx: p.x, cy: p.y, r: 3.6, fill: it.color, stroke: "#121214", "stroke-width": 1.5 }); c.append(mk("title", {}, `${it.name} \u00b7 ${p.r.dist}: ${fmt(p.v)} (${p.r.w[j]} shots)`)); g.append(c); }
       svg.append(g);
     });
     return el("div", { class: "cmp-chart" }, svg);

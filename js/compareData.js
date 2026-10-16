@@ -50,6 +50,8 @@ export function options(rounds) {
 
 /** The rounds in a selection, oldest first. f: { years, events, courses, roundNos, months, tours, from, to, last, prev, all } */
 export function roundsFor(rounds, f = {}) {
+  // (update 189) several picks together: every round in any of them, once each, oldest first
+  if (f.any) { const seen = new Set(), out = []; for (const g of f.any) for (const rd of roundsFor(rounds, g)) if (!seen.has(rd.key || rd)) { seen.add(rd.key || rd); out.push(rd); } return out.sort(byDate); }
   let rs = sgRounds(rounds);
   if (f.last) return rs.slice(-f.last);
   if (f.prev) return rs.slice(-2 * f.prev, -f.prev);
@@ -114,7 +116,8 @@ export function statRows(allRounds, sets) {
 /** statRows needs each selection's rounds WITH their stats: the same filter on every round (not only SG rounds). */
 export function statSets(rounds, filters) {
   const all = [...(rounds || [])].sort(byDate);
-  return filters.map((f) => {
+  return filters.map(function one(f) {
+    if (f.any) { const seen = new Set(); return f.any.flatMap((g) => one(g)).filter((rd) => (seen.has(rd) ? false : (seen.add(rd), true))); } // (update 189)
     if (f.last || f.prev) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
     const g = { ...f };
     const set = (v) => (v && v.length ? new Set(v.map(String)) : null);
