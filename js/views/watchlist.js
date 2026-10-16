@@ -95,6 +95,9 @@ export async function render(main, { previewClient }) {
   const picker = multi ? playerPicker(labels, (p) => { if (!p) return; if (!prefs.players.includes(p.key)) { prefs = { ...prefs, players: [...prefs.players, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }) : null;
   const pickerBox = el("div", { class: "wl-add" }, picker ? [picker.node] : []);
   let menuOpen = false;
+  // (update 171) each card starts folded (name, badges, the five strokes gained); opened ones stay open while you're
+  // on the page. A player on more than one tour: the tour picked on their card (this visit).
+  const openCards = new Set(), tourPick = new Map();
 
   function heroShell(controls = null, sub = "") {
     const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -113,7 +116,7 @@ export async function render(main, { previewClient }) {
     const keys = (multi ? prefs.players : [single]).filter((k) => (source === "entered" ? true : k !== myKey || field.some((p) => p.key === k)) && (labels.has(k) || fieldNow.some((p) => p.key === k)));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics }));
+    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics, tour: tourPick.get(k) ?? null }));
     const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })));
 
     // ---- controls ----
@@ -157,8 +160,8 @@ export async function render(main, { previewClient }) {
     root.style.minHeight = `${root.offsetHeight}px`;
     mount(root, [heroShell(controls, subLine), menu, body,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
-        ? `Entered Rounds: the rounds entered in Enter New Round. Rank trend: the SG Total rank after each round. Trends: the last 10 rounds against the 10 before. Ranks: among the players whose entered rounds you can see, with ${cards[0]?.minR || "enough"} or more in this period.`
-        : `Rank trend: the SG Total rank after each round. Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the same tour in this period${detail ? "" : "; distance ranks appear once the field's lie and distance detail has been published"}.`)]);
+        ? `Entered Rounds: the rounds entered in Enter New Round. Trends: the last 10 rounds against the 10 before. Ranks: among the players whose entered rounds you can see, with ${cards[0]?.minR || "enough"} or more in this period.`
+        : `Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     requestAnimationFrame(() => { root.style.minHeight = ""; window.scrollTo(0, y); });
@@ -186,25 +189,6 @@ export async function render(main, { previewClient }) {
     else location.hash = "#/dashboard";
   }
 
-  // (update 168) SG Total rank after each round: 1st at the top; the latest dot green when it's better than where
-  // the line started, red when worse
-  function spark(ranks) {
-    const v = ranks.filter((x) => x != null);
-    if (v.length < 2) return null;
-    const W = 120, H = 34, lo = 1, hi = Math.max(lo + 1, ...v);
-    const X = (i) => (i / (v.length - 1)) * W, Y = (r) => 3 + ((r - lo) / (hi - lo)) * (H - 6);
-    const NS = "http://www.w3.org/2000/svg", mk = (t, a) => { const n = document.createElementNS(NS, t); for (const [k, x] of Object.entries(a)) n.setAttribute(k, String(x)); return n; };
-    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "wl-spark", role: "img", "aria-label": `SG Total rank after each round: ${ordinal(v[0])} to ${ordinal(v.at(-1))}` });
-    const path = v.map((r, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(r).toFixed(1)}`).join(" ");
-    const grad = mk("linearGradient", { id: `wlg${Math.random().toString(36).slice(2, 7)}`, x1: 0, x2: 0, y1: 0, y2: 1 });
-    grad.append(mk("stop", { offset: "0%", "stop-color": "#d4b483", "stop-opacity": 0.35 }), mk("stop", { offset: "100%", "stop-color": "#d4b483", "stop-opacity": 0 }));
-    const defs = mk("defs", {}); defs.appendChild(grad); svg.appendChild(defs);
-    svg.appendChild(mk("path", { d: `${path} L${W} ${H} L0 ${H} Z`, fill: `url(#${grad.id})` }));
-    svg.appendChild(mk("path", { d: path, fill: "none", stroke: "#d4b483", "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-linecap": "round" }));
-    svg.appendChild(mk("circle", { cx: X(v.length - 1), cy: Y(v.at(-1)), r: 2.4, fill: v.at(-1) < v[0] ? "#30d158" : v.at(-1) > v[0] ? "#ff453a" : "#d4b483" }));
-    const t = mk("title", {}); t.textContent = `${ordinal(v[0])} → ${ordinal(v.at(-1))}`; svg.prepend(t);
-    return svg;
-  }
   const trendEl = (t, { higher = true, fmt = (x) => Math.abs(x).toFixed(2), band = 0.05 } = {}) => {
     if (!t) return el("span", { class: "wl-tr muted" }, "—");
     const flat = Math.abs(t.ch) < band;
@@ -222,10 +206,19 @@ export async function render(main, { previewClient }) {
     star?.addEventListener("click", () => { saveWatch({ players: watchPrefs().players.filter((k) => k !== c.key) }); draw(); });
     if (c.empty) return el("article", { class: "panel wl-card empty" }, [el("div", { class: "wl-card-head" }, [el("div", {}, [name, el("p", { class: "wl-meta" }, src() === "entered" ? "No entered rounds in this period." : "No rounds in this period.")]), star])]);
     const total = c.sg[0];
+    const isOpen = openCards.has(c.key);
+    // (update 171) more than one tour in this period: switch between them (ranked against that tour's field)
+    const tourSeg = c.tours?.length > 1 ? el("div", { class: "wl-tours", role: "group", "aria-label": `${c.label}'s tour` }, c.tours.map(({ tour: t, n }) => {
+      const b = el("button", { type: "button", class: `wl-tour${t === c.tour ? " on" : ""}`, "aria-pressed": String(t === c.tour), title: `${n} round${n === 1 ? "" : "s"} on ${t}` }, t);
+      b.addEventListener("click", () => { if (t === c.tour) return; tourPick.set(c.key, t); draw(); });
+      return b;
+    })) : null;
+    const moreBtn = el("button", { type: "button", class: "wl-more-btn", "aria-expanded": String(isOpen), "aria-label": isOpen ? `Show less for ${c.label}` : `Show more for ${c.label}`, title: isOpen ? "Show less" : "Show more" }, el("span", { "aria-hidden": "true" }, "\u203a"));
     const head = el("div", { class: "wl-card-head" }, [
-      el("div", { class: "wl-id" }, [name, el("p", { class: "wl-meta" }, [c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `last: ${fmtSG(c.latest.sg)} at ${c.latest.event || "a tournament"}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "))]),
-      el("div", { class: "wl-head-r" }, [el("div", { class: "wl-spark-box" }, [spark(c.spark), el("span", { class: "wl-spark-l" }, "SG Total Rank Trend")]), star]),
+      el("div", { class: "wl-id" }, [name, tourSeg]),
+      el("div", { class: "wl-head-r" }, [moreBtn, star]),
     ]);
+    const meta = el("p", { class: "wl-meta" }, [c.tours?.length > 1 ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `last: ${fmtSG(c.latest.sg)} at ${c.latest.event || "a tournament"}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
     const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]))) : null;
     const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
       el("span", { class: "wl-tile-k" }, s.short),
@@ -240,7 +233,16 @@ export async function render(main, { previewClient }) {
     const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => el("div", { class: "wl-mrow" }, [
       el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
     ])))]) : null;
-    return el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}` }, [head, badges, sg, dists, metrics]);
+    const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics]);
+    const card = el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}${isOpen ? " open" : ""}` }, [head, badges, sg, more]);
+    moreBtn.addEventListener("click", () => {
+      const open = !openCards.has(c.key);
+      if (open) openCards.add(c.key); else openCards.delete(c.key);
+      more.hidden = !open; card.classList.toggle("open", open);
+      moreBtn.setAttribute("aria-expanded", String(open)); moreBtn.title = open ? "Show less" : "Show more";
+      moreBtn.setAttribute("aria-label", `${open ? "Show less" : "Show more"} for ${c.label}`);
+    });
+    return card;
   }
 
   await draw();

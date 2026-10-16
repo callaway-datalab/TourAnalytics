@@ -273,7 +273,7 @@ export async function render(main, { flash }) {
     el("div", { class: "inline-form" }, [el("label", { class: "type-pick" }, ["User Type", typeSel])]),
     fieldsBox,
     // (update 170) a fake user: the code is used straight away by a test account you can act as
-    el("label", { class: "fake-row" }, [fakeBox, el("span", {}, [el("strong", {}, "Fake user"), el("span", { class: "muted small" }, " \u00b7 make a test account with this access now, and act as it (nobody else gets the code)")])]),
+    el("label", { class: "fake-row" }, [fakeBox, el("span", {}, [el("strong", {}, "Fake user"), el("span", { class: "muted small fake-hint" }, "Make a test account with this access now, and act as it (nobody else gets the code).")])]),
     el("div", {}, createBtn),
   ]);
   drawFields();

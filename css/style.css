@@ -3362,9 +3362,6 @@ button.chat-ca-caret:hover { background: rgba(255,255,255,0.06); color: var(--in
 .wl-name:focus-visible { outline: 2px solid #d4b483; outline-offset: 3px; border-radius: 4px; }
 .wl-meta { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.8rem; }
 .wl-head-r { display: flex; align-items: flex-start; gap: 0.6rem; flex: none; }
-.wl-spark-box { display: flex; flex-direction: column; align-items: flex-end; gap: 0.1rem; }
-.wl-spark { width: 7.5rem; height: 2.1rem; display: block; }
-.wl-spark-l { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .wl-star { border: 0; background: rgba(212,180,131,0.12); color: #d4b483; width: 2rem; height: 2rem; border-radius: 999px; font-size: 1rem; cursor: pointer; flex: none; }
 .wl-star:hover { background: rgba(255,69,58,0.15); color: #ff6b5e; }
 .wl-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; }
@@ -3414,7 +3411,6 @@ button.chat-ca-caret:hover { background: rgba(255,255,255,0.06); color: var(--in
   .wl-tile.total { grid-column: 1 / -1; }
   .wl-two { grid-template-columns: 1fr; }
   .wl-card-head { flex-wrap: wrap; }
-  .wl-spark { width: 6rem; }
   .wl-mrow { grid-template-columns: minmax(0, 1fr) auto 2.8rem; }
   .wl-mrow .wl-tr { grid-column: 2 / -1; }
 }
@@ -3499,3 +3495,19 @@ button.chat-ca-caret:hover { background: rgba(255,255,255,0.06); color: var(--in
 .chat-person-ca { font-weight: 600; color: #f3dfbd; }
 .chat-thread-head { flex-wrap: wrap; }
 .chat-tri-assign { width: auto !important; max-width: 12rem; margin: 0 !important; }
+/* update 171: the Fake user tick on Create code (the checkbox no longer stretches across the row) */
+.create-code .fake-row { display: flex; align-items: flex-start; gap: 0.65rem; margin: 0.2rem 0 0.4rem; cursor: pointer; max-width: 36rem; }
+.create-code .fake-row input[type=checkbox] { flex: none; width: 1.2rem !important; height: 1.2rem; min-height: 0; margin: 0.1rem 0 0 !important; padding: 0 !important; display: inline-block; box-shadow: none; }
+.create-code .fake-row > span { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; line-height: 1.35; }
+.create-code .fake-row .fake-hint { font-weight: 400; }
+/* update 171: Watchlist cards fold (name, badges, five strokes gained); a tour switch for players on more than one */
+.wl-more { display: grid; gap: 1rem; }
+.wl-more[hidden] { display: none; }
+.wl-more > .wl-meta { margin: 0; }
+.wl-more-btn { flex: none; width: 2rem; height: 2rem; border-radius: 999px; border: 0; cursor: pointer; background: rgba(255,255,255,0.06); color: var(--ink-2, #c7c7cc); display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; line-height: 1; }
+.wl-more-btn:hover { background: rgba(255,255,255,0.12); }
+.wl-more-btn span { display: inline-block; transform: rotate(90deg); transition: transform 0.2s var(--ease, ease); }
+.wl-card.open .wl-more-btn span { transform: rotate(-90deg); }
+.wl-tours { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
+.wl-tour { border: 1px solid rgba(255,255,255,0.14); background: transparent; color: var(--muted); border-radius: 999px; padding: 0.2rem 0.65rem; font: 600 0.74rem var(--font-body, inherit); cursor: pointer; }
+.wl-tour.on { background: rgba(212,180,131,0.18); border-color: rgba(212,180,131,0.55); color: #f3dfbd; }

@@ -85,14 +85,20 @@ export const metricLabel = (id) => {
  * One player's card. field: everyone's rounds (the shared summary, or full detail); detail: the field with lie /
  * distance detail (for distance ranks), or null; own: this player's full rounds (lie / distance), or null.
  */
-export function playerCard(key, { field, detail = null, own = null, label = "", period = "season", metrics = [] }) {
+export function playerCard(key, { field, detail = null, own = null, label = "", period = "season", metrics = [], tour: wantTour = null }) {
   const me0 = field.find((p) => p.key === key);
   const srcAll = own?.length ? own : me0?.rounds || [];
   const mineAll = srcAll.filter((rd) => rd.shots.length);
   if (!mineAll.length) return { key, label, empty: true };
-  const tour = mainTour(mineAll);
-  const f = { ...periodFilter(period, mineAll), tour: tour ? [tour] : [] };
   const sgOnly = (rs) => statRounds(rs, "sg");
+  // (update 171) the tours they played in this period, most rounds first; a player on more than one (PGA and Korn
+  // Ferry, say) can be switched between them on the card. Ranked against the field on the tour shown.
+  const pf = periodFilter(period, mineAll);
+  const inPeriod = applyFilters(sgOnly(mineAll), pf);
+  const tourN = new Map(); for (const r of inPeriod.length ? inPeriod : mineAll) tourN.set(r.tour || "", (tourN.get(r.tour || "") || 0) + 1);
+  const tours = [...tourN].sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ tour: t, n }));
+  const tour = wantTour != null && tourN.has(wantTour) ? wantTour : tours[0]?.tour ?? mainTour(mineAll);
+  const f = { ...pf, tour: tour ? [tour] : [] };
   const mine = applyFilters(sgOnly(mineAll), f).sort(byDate);
   // the field on the same tour and period (this player with their full rounds)
   const fieldF = field.map((p) => ({ key: p.key, rounds: p.key === key ? mine : applyFilters(sgOnly(p.rounds), f) })).filter((p) => p.rounds.length);
@@ -100,7 +106,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const most = Math.max(0, ...fieldF.map((p) => p.rounds.length));
   const minR = most >= 15 ? defaultMinRounds(most) : Math.max(1, Math.floor(most * 0.33));
   const ranked = fieldF.filter((p) => p.rounds.length >= minR || p.key === key);
-  const card = { key, label, tour, rounds: mine.length, minR, of: ranked.length, period, sg: [], dists: { best: [], worst: [] }, metrics: [], badges: [], alerts: [], spark: [] };
+  const card = { key, label, tour, tours: tours.filter((t) => t.tour), rounds: mine.length, minR, of: ranked.length, period, sg: [], dists: { best: [], worst: [] }, metrics: [], badges: [], alerts: [] };
   if (!mine.length) return { ...card, empty: true };
 
   // ---- the five strokes gained ----
@@ -110,9 +116,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
     card.sg.push({ k, label: l, short, v: vals.get(key), rank: r.rank, of: r.of, avg: r.avg, trend: trendOf(mine, (rs) => perRound(rs, k)) });
   }
   const total = card.sg[0];
-  // (update 168) SG Total rank after each round: where they stood on the tour that day (this period), with
-  // Min. rounds scaled to the most played by then; the last point is the rank on the card
-  card.spark = rankTrail(key, mine, ranked, minR, total.rank);
+  // (update 171: the SG Total rank trend chart is gone from the card)
 
   // ---- distances: strokes gained a shot by category and distance (enough attempts to mean something) ----
   const MIN_ATT = 8;
@@ -218,26 +222,5 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   }
   card.latest = lastRound ? { date: lastRound.date, event: lastRound.event, sg: sgOf(lastRound) } : null;
   return card;
-}
-/** SG Total rank after each of the player's rounds (at most 40 points, spread evenly; always the latest). */
-function rankTrail(key, mine, ranked, minR, nowRank) {
-  const dk = (d) => String(d || "");
-  const sorted = ranked.map((p) => ({ key: p.key, rs: (p.key === key ? mine : [...p.rounds]).sort((a, b) => dk(a.date).localeCompare(dk(b.date))) }));
-  const cum = sorted.map((p) => { let t = 0; return p.rs.map((rd) => (t += sgOf(rd))); });
-  const mostNow = Math.max(1, ...sorted.map((p) => p.rs.length));
-  let dates = [...new Set(mine.map((rd) => dk(rd.date)))];
-  if (dates.length > 40) { const step = (dates.length - 1) / 39; dates = Array.from({ length: 40 }, (_, i) => dates[Math.round(i * step)]); }
-  const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
-  const out = dates.map((d) => {
-    const counts = sorted.map((p) => upTo(p.rs, d));
-    const need = Math.max(1, Math.round((minR * Math.max(1, ...counts)) / mostNow));
-    const vals = [];
-    sorted.forEach((p, i) => { const n = counts[i]; if (n && (n >= need || p.key === key)) vals.push({ key: p.key, v: cum[i][n - 1] / n }); });
-    vals.sort((a, b) => b.v - a.v);
-    const i = vals.findIndex((x) => x.key === key);
-    return i >= 0 ? i + 1 : null;
-  });
-  if (out.length && nowRank) out[out.length - 1] = nowRank;
-  return out;
 }
 export const ordinal = (n) => { const t = ["th", "st", "nd", "rd"], v = n % 100; return n + (t[(v - 20) % 10] || t[v] || t[0]); };
