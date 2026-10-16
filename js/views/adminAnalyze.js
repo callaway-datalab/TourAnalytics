@@ -64,7 +64,8 @@ export async function render(main, { flash, routeId }) {
   // (blank: with no player on screen, show just the search; a "nothing here yet" note for a player picked is shown)
   const dashOpts = (blank = true) => (board ? { onPick }
     : { slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick, blankWithoutMe: blank });
-  const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"], ["practice", "Practice"]].map(([v, l]) => {
+  // (update 169) no Practice pill: just Tour Events | Entered Rounds
+  const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
     a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
     return a;

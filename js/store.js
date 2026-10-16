@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
-  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup, limit, deleteField,
+  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup, limit, deleteField, getCountFromServer,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
@@ -614,6 +614,14 @@ export async function adminAllClients() {
   return { labels, ids, names, usersSnap, invitesSnap, datasetsSnap };
 }
 
+/* ============================== Reports generated (update 169) ============================== */
+// Each AI Insights report made (Generate AI Insights → Generate report), for the admin's At a glance count.
+export function logReportRun({ uid = null, playerKey = null, source = null } = {}) {
+  uid ||= auth.currentUser?.uid;
+  if (!uid) return Promise.resolve();
+  return addDoc(collection(db, "reportRuns"), { uid, at: serverTimestamp(), ...(playerKey ? { playerKey: String(playerKey).slice(0, 190) } : {}), ...(source ? { source: String(source).slice(0, 20) } : {}) });
+}
+
 /* ============================== Sign-ins ============================== */
 // A sign-in = opening the portal signed in (each new browser session), so people who stay logged in
 // still count when they come back. Logged in signins/{id} (for weekly numbers) and on the person's
@@ -668,8 +676,10 @@ export async function adminStats() {
   const me = auth.currentUser?.uid;
   const weekly = weekSnap.docs.map((d) => ({ uid: d.data().uid, at: d.data().at, name: d.data().uid === me ? "You" : names.get(d.data().uid) || "Someone (account removed)" }))
     .sort((a, b) => (b.at?.toMillis?.() ?? 0) - (a.at?.toMillis?.() ?? 0));
+  // (update 169) every AI Insights report made: a count (one read per thousand, not one per report)
+  const reports = await getCountFromServer(collection(db, "reportRuns")).then((s) => s.data().count).catch(() => null);
   return { clients: labels.size, accounts: usersSnap.size, openInvites, datasets: datasetsSnap.size, documents: documentsSnap.size,
-    weeklySignIns: weekSnap.docs.length, weeklyUsers: weekUids.size, weekly };
+    weeklySignIns: weekSnap.docs.length, weeklyUsers: weekUids.size, weekly, reports };
 }
 
 /* ============================== Documents (PDF/PPTX) ============================== */

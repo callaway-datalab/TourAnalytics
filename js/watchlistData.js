@@ -110,7 +110,9 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
     card.sg.push({ k, label: l, short, v: vals.get(key), rank: r.rank, of: r.of, avg: r.avg, trend: trendOf(mine, (rs) => perRound(rs, k)) });
   }
   const total = card.sg[0];
-  card.spark = mine.map((_, i) => perRound(mine.slice(Math.max(0, i - 9), i + 1)));
+  // (update 168) SG Total rank after each round: where they stood on the tour that day (this period), with
+  // Min. rounds scaled to the most played by then; the last point is the rank on the card
+  card.spark = rankTrail(key, mine, ranked, minR, total.rank);
 
   // ---- distances: strokes gained a shot by category and distance (enough attempts to mean something) ----
   const MIN_ATT = 8;
@@ -179,7 +181,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   if ((sign < 0 && run >= 5) || (avg5 != null && avg5 <= -1.5)) add({ kind: "cold", icon: "🧊", tone: "down", text: run >= 5 && sign < 0 ? `Slump · ${run} straight rounds losing` : `Slump · ${fmtSG(avg5)} a round, last 5`, alert: true, sev: 3 });
   // big moves: the last 10 against the 10 before
   if (total.trend && Math.abs(total.trend.ch) >= 0.75) add({ kind: total.trend.ch > 0 ? "up" : "down", icon: total.trend.ch > 0 ? "⬆" : "⬇", tone: total.trend.ch > 0 ? "up" : "down", text: `Big move · ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)} a round, last ${total.trend.n} vs previous ${total.trend.n}`, alert: true, sev: 2 });
-  for (const s of card.sg.slice(1)) if (s.trend && Math.abs(s.trend.ch) >= 0.5) add({ kind: s.trend.ch > 0 ? "up" : "down", icon: s.trend.ch > 0 ? "↗" : "↘", tone: s.trend.ch > 0 ? "up" : "down", text: `${s.label} ${s.trend.ch > 0 ? "up" : "down"} ${Math.abs(s.trend.ch).toFixed(2)}`, alert: true, sev: 1 });
+  // (update 168: no badge for a category moving up or down: its tile shows that)
   // form landmarks: the rolling 10-round average at its best (or worst) of the period
   const rolls = mine.length >= 20 ? mine.map((_, i) => (i >= 9 ? perRound(mine.slice(i - 9, i + 1)) : null)).filter((x) => x != null) : [];
   if (rolls.length >= 5) {
@@ -200,11 +202,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   if (wins.length && lastEvent && wins.at(-1).e === lastEvent) add({ kind: "win", icon: "🏆", tone: "gold", text: `Led the field at ${lastEvent.event}`, alert: true, sev: 5 });
   if (wins.length >= 2) add({ kind: "wins", icon: "🏆", tone: "gold", text: `${wins.length} wins ${period === "season" ? "this season" : "in this period"}` });
   if (top10.length >= 5) add({ kind: "top10", icon: "🎯", tone: "gold", text: `${top10.length} top 10s` });
-  const crossed = (n, step) => { const prev = n - 5; for (let m = step; m <= n; m += step) if (m > prev) return m; return null; }; // (a round count passed in the last 5)
-  const sm = crossed(mine.length, 25);
-  if (sm) add({ kind: "milestone", icon: "📍", tone: "", text: `${sm} rounds ${period === "season" ? "this season" : "in this period"}`, alert: true, sev: 1 });
-  const cm = crossed(careerRs.length, 100);
-  if (cm) add({ kind: "milestone", icon: "🎖", tone: "gold", text: `${cm} career rounds in the data`, alert: true, sev: 2 });
+  // (update 168: no badges for rounds played)
   // ranks: the top 10, number 1 in a category, and big climbs (against where they stood 10 rounds ago)
   if (total.rank === 1) add({ kind: "rank", icon: "🥇", tone: "gold", text: "No. 1 in SG: Total" });
   else if (total.rank && total.rank <= 10) add({ kind: "rank", icon: "🔟", tone: "gold", text: `Top 10 in SG: Total (${ordinal(total.rank)})` });
@@ -220,5 +218,26 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   }
   card.latest = lastRound ? { date: lastRound.date, event: lastRound.event, sg: sgOf(lastRound) } : null;
   return card;
+}
+/** SG Total rank after each of the player's rounds (at most 40 points, spread evenly; always the latest). */
+function rankTrail(key, mine, ranked, minR, nowRank) {
+  const dk = (d) => String(d || "");
+  const sorted = ranked.map((p) => ({ key: p.key, rs: (p.key === key ? mine : [...p.rounds]).sort((a, b) => dk(a.date).localeCompare(dk(b.date))) }));
+  const cum = sorted.map((p) => { let t = 0; return p.rs.map((rd) => (t += sgOf(rd))); });
+  const mostNow = Math.max(1, ...sorted.map((p) => p.rs.length));
+  let dates = [...new Set(mine.map((rd) => dk(rd.date)))];
+  if (dates.length > 40) { const step = (dates.length - 1) / 39; dates = Array.from({ length: 40 }, (_, i) => dates[Math.round(i * step)]); }
+  const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
+  const out = dates.map((d) => {
+    const counts = sorted.map((p) => upTo(p.rs, d));
+    const need = Math.max(1, Math.round((minR * Math.max(1, ...counts)) / mostNow));
+    const vals = [];
+    sorted.forEach((p, i) => { const n = counts[i]; if (n && (n >= need || p.key === key)) vals.push({ key: p.key, v: cum[i][n - 1] / n }); });
+    vals.sort((a, b) => b.v - a.v);
+    const i = vals.findIndex((x) => x.key === key);
+    return i >= 0 ? i + 1 : null;
+  });
+  if (out.length && nowRank) out[out.length - 1] = nowRank;
+  return out;
 }
 export const ordinal = (n) => { const t = ["th", "st", "nd", "rd"], v = n % 100; return n + (t[(v - 20) % 10] || t[v] || t[0]); };

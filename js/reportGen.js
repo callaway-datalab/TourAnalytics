@@ -10,7 +10,7 @@
 // (PORTAL_CONFIG.insightsUrl, see functions/insights), its written summary is added too.
 import { el, mount } from "./ui.js";
 import { getState } from "./auth.js";
-import { watchClientDatasets, getDatasetRows, getFieldStats, uploadDocument } from "./store.js";
+import { watchClientDatasets, getDatasetRows, getFieldStats, uploadDocument, logReportRun } from "./store.js";
 import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn } from "./sg.js";
 import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
@@ -920,6 +920,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       const bytes = buildReportPdf(a, { aiSummary, sourceLabel: source.value === "tour" ? "Tour Events" : "Entered Rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
       window.__lastReportPdf = bytes; // (for tests)
+      logReportRun({ uid: getState().user?.uid, playerKey, source: source.value }).catch(() => {}); // (update 169: At a glance → Reports generated)
       const blob = new Blob([bytes], { type: "application/pdf" });
       const href = URL.createObjectURL(blob);
       const save = canSave ? el("button", { type: "button", class: "btn ghost" }, "Save to Reports") : null;

@@ -396,8 +396,8 @@ export function sgDashboard(container, opts) {
       const total = metric(mine), r = rankAmong(slicedField, me.key);
       const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
       const per = ordered.map((rd) => metric([rd]));
-      const ROLL = 10; // rolling 10-round average (another stat: pooled over those rounds' attempts)
-      const roll = ordered.map((_, i) => metric(ordered.slice(Math.max(0, i - (ROLL - 1)), i + 1)));
+      // (update 168) the rank after each round: where they stood in the field on that date, this selection
+      const hist = showRanks ? rankHistory(ordered, slicedField, r) : [];
       const n = Math.min(10, Math.floor(per.length / 2));
       let form = null;
       if (n >= 2) {
@@ -461,9 +461,11 @@ export function sgDashboard(container, opts) {
           ]),
           (() => {
             // tap the chart: every round, its number and its rank in the field
-            const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: `Show every ${unit}`, "aria-label": `${trendName} trend chart. Show every ${unit} in a table.` }, [
-              el("span", { class: "hero-chart-label" }, [`${trendName} trend \u00b7 rolling 10-${unit} average`, el("span", { class: "hero-chart-hint" }, "Tap for the table")]),
-              chartBox((c) => heroChart(c, ordered.map((rd) => { const d = new Date(rd.date); return isNaN(d) ? rd.date : shortDate(d); }), roll))]);
+            if (hist.length < 2) return null;
+            const first = hist[0].rank, now = hist.at(-1).rank, best = Math.min(...hist.map((x) => x.rank));
+            const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: `Show every ${unit}`, "aria-label": `${trendName} rank history chart. Show every ${unit} in a table.` }, [
+              el("span", { class: "hero-chart-label" }, [`${trendName} rank history \u00b7 ${ordinal(first)} \u2192 ${ordinal(now)}${best < now ? ` (best ${ordinal(best)})` : ""}`, el("span", { class: "hero-chart-hint" }, "Tap for the table")]),
+              chartBox((c) => rankChart(c, hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); }), hist))]);
             const openT = () => tournamentsPopup(ordered, slicedField);
             box.addEventListener("click", openT);
             box.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openT(); } });
@@ -552,9 +554,12 @@ export function sgDashboard(container, opts) {
     const last = ordered.slice(-n), prev = ordered.slice(-2 * n, -n);
     const part = (title, rs) => el("div", { class: "form-part" }, [
       el("div", { class: "form-head" }, [el("strong", {}, title), el("span", {}, ["Average ", el("strong", { class: toneCls(metric(rs), null) }, fmtV(metric(rs)))])]),
-      el("div", { class: "table-scroll hero-tourn-scroll form-scroll" }, roundsTable([...rs].reverse()))]);
-    popup("Form", me.label, `${isSG() ? "Strokes gained" : def.label}: the last ${rw(n)} against the ${n} before, newest first`, [
-      part(`Last ${rw(n)}`, last), part(`Previous ${rw(n)}`, prev)], "Form");
+      el("div", { class: "table-scroll form-scroll" }, roundsTable([...rs].reverse()))]);
+    // (update 168) the two side by side, compact, so it all fits without scrolling
+    const shut = popup("Form", me.label, `${isSG() ? "Strokes gained" : def.label}: the last ${rw(n)} against the ${n} before, newest first`,
+      el("div", { class: "form-grid" }, [part(`Last ${rw(n)}`, last), part(`Previous ${rw(n)}`, prev)]), "Form");
+    document.body.lastElementChild?.querySelector?.(".hero-pop")?.classList.add("form-pop");
+    return shut;
   }
   // Each tournament in the selection: who played the most rounds there, best first (the "winner" leads)
   function eventsOf(players) {
@@ -644,6 +649,59 @@ export function sgDashboard(container, opts) {
       overlay.querySelector(".report-gen-open")?.click(); // straight to the options
     });
     return btn;
+  }
+  // (update 168) Rank history: after each of the player's rounds, their rank among the same players with what each
+  // had played by that date (Min. rounds scaled to the most played by then). The last point is the rank shown.
+  function rankHistory(ordered, slicedField, now) {
+    const dk = (d) => String(d || "");
+    const ranked = rankedField(slicedField);
+    if (!ranked.some((p) => p.key !== me.key)) return [];
+    const sorted = ranked.map((p) => ({ key: p.key, rs: [...p.rounds].sort((a, b) => dk(a.date).localeCompare(dk(b.date))) }));
+    const mostNow = Math.max(1, ...sorted.map((p) => p.rs.length));
+    const minNow = Math.max(1, minRoundsFor(slicedField.filter((p) => p.rounds.length)));
+    // the dates to plot: each round's date (at most 60, spread evenly, always the latest)
+    let dates = [...new Set(ordered.map((rd) => dk(rd.date)))];
+    if (dates.length > 60) { const step = (dates.length - 1) / 59; dates = Array.from({ length: 60 }, (_, i) => dates[Math.round(i * step)]); }
+    const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
+    // strokes gained: running totals, so each date is quick
+    const sgFast = isSG();
+    const cum = sgFast ? sorted.map((p) => { let t = 0; return p.rs.map((rd) => { for (const x of rd.shots) t += x.sg; return t; }); }) : null;
+    const out = [];
+    for (const d of dates) {
+      const counts = sorted.map((p) => upTo(p.rs, d));
+      const most = Math.max(1, ...counts);
+      const need = Math.max(1, Math.round((minNow * most) / mostNow));
+      const vals = [];
+      sorted.forEach((p, i) => {
+        const n = counts[i];
+        if (!n || (n < need && p.key !== me.key)) return;
+        const v = sgFast ? cum[i][n - 1] / n : metric(p.rs.slice(0, n));
+        if (v != null) vals.push({ key: p.key, v });
+      });
+      vals.sort(byBest);
+      const i = vals.findIndex((x) => x.key === me.key);
+      if (i >= 0) out.push({ date: d, rank: i + 1, of: vals.length });
+    }
+    if (out.length && now?.rank) Object.assign(out[out.length - 1], { rank: now.rank, of: now.of }); // (the same as the pill)
+    return out;
+  }
+  // the rank line: 1st at the top, a gold line, the latest point marked
+  function rankChart(canvas, labels, hist) {
+    const ctx = canvas.getContext("2d"), h = canvas.parentNode?.clientHeight || 180;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "rgba(212,180,131,0.35)"); grad.addColorStop(1, "rgba(212,180,131,0)");
+    const ranks = hist.map((x) => x.rank), worst = Math.max(...ranks);
+    return new Chart(canvas, {
+      type: "line",
+      data: { labels, datasets: [{ data: ranks, borderColor: "#d4b483", backgroundColor: grad, fill: "end", borderWidth: 2.4, stepped: false, tension: 0.25,
+        pointRadius: ranks.map((_, i) => (i === ranks.length - 1 ? 3.5 : 0)), pointBackgroundColor: "#f3dfbd", pointHoverRadius: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${ordinal(c.parsed.y)} of ${hist[c.dataIndex].of}` } } },
+        scales: {
+          x: { display: true, grid: { display: false }, border: { display: false }, ticks: { color: "#6e6e73", font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 5, padding: 2 } },
+          y: { reverse: true, min: 1, suggestedMax: Math.max(5, worst + 1), grid: { color: "rgba(255,255,255,0.06)" }, border: { display: false },
+            ticks: { color: "#8e8e93", maxTicksLimit: 5, precision: 0, callback: (v) => (Number.isInteger(v) ? ordinal(v) : "") } } } },
+    });
   }
   function heroChart(canvas, labels, vals) {
     const ctx = canvas.getContext("2d"), h = canvas.parentNode?.clientHeight || 180;

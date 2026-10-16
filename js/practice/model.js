@@ -156,7 +156,8 @@ const greenSeed = (shot) => seedFor(shot.green?.rx, shot.green?.ry, shot.pin?.x,
 export function teeResult(shot, total, offline) {
   const r = teeResult0(shot, total, offline);
   if (r.penalty || shot.pockets === false) return r;
-  return { ...r, adj: pocketAt(teeSeed(shot), offline, total, 16, r.lie === "Fairway" ? 0.1 : 0.16) };
+  // (update 169) bigger pockets: fairway, rough and bunkers each have their own (out of bounds never does)
+  return { ...r, adj: pocketAt(teeSeed(shot), offline, total, 16, r.lie === "Fairway" ? 0.2 : r.lie === "Bunker" ? 0.34 : 0.3) };
 }
 function teeResult0(shot, total, offline) {
   // (a dogleg: how far off the middle of the fairway there, and what's left round the corner to the hole)
@@ -244,10 +245,19 @@ export function surfaceAt(shot, x, y) {
 export function greenResult(shot, x, y) {
   const s = surfaceAt(shot, x, y), dy = Math.hypot(x - shot.pin.x, y - shot.pin.y);
   const adj = (amp, size) => (shot.pockets === false ? {} : { adj: pocketAt(greenSeed(shot), x, y, size, amp) });
-  if (s === "Green" || s === "Fringe") return { lie: s, dist: Math.max(0, Math.round(dy * 3 * 10) / 10), unit: "ft", x, y, ...(dy * 3 > 2 ? adj(0.08, 4.5) : {}) };
+  // (update 169) on the green (and fringe) it depends on the direction from the hole, not the distance: from one
+  // side the putt plays harder (back left, say) and from another easier. Closer is still better (the baseline);
+  // the effect builds over the first 12 ft so tap-ins stay tap-ins.
+  const dirAdj = () => {
+    if (shot.pockets === false || dy * 3 <= 1.5) return {};
+    const t = Math.atan2(y - shot.pin.y, x - shot.pin.x), sd = greenSeed(shot), p1 = (sd % 628) / 100, p2 = ((sd >>> 10) % 628) / 100;
+    const v = 0.65 * Math.sin(t + p1) + 0.35 * Math.sin(2 * t + p2);
+    return { adj: Math.round(0.16 * v * Math.min(1, (dy * 3) / 12) * 1000) / 1000 };
+  };
+  if (s === "Green" || s === "Fringe") return { lie: s, dist: Math.max(0, Math.round(dy * 3 * 10) / 10), unit: "ft", x, y, ...dirAdj() };
   // (update 160) water plays as out of bounds: stroke and distance, from where you hit it
   if (s === "Water") return { lie: "OB", dist: shot.startDist, unit: "yds", penalty: "ob", zone: "Water (out of bounds)", x, y };
-  return { lie: s, dist: Math.round(dy), unit: "yds", x, y, ...adj(0.14, 5) };
+  return { lie: s, dist: Math.round(dy), unit: "yds", x, y, ...adj(s === "Bunker" ? 0.3 : 0.26, 5) };
 }
 /** Strokes to finish from a green result (out of bounds: a stroke, then the same shot again). */
 export const afterGreen = (r, shot = null) => (r.lie === "Holed" ? 0 : r.penalty === "ob" ? 1 + (shot ? startExpected(shot) : expectedStrokes("Rough", Math.max(r.dist, 3)))

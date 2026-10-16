@@ -71,6 +71,8 @@ export async function render(main, { flash }) {
       ["Players in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
       ["Weekly Sign-ins", stats.weeklySignIns, "Since Monday, everyone combined. Tap to see them.", "signins"],
       ["Weekly Users", stats.weeklyUsers, "Different people who signed in since Monday. Tap to see who.", "users"],
+      // (update 169) every AI Insights report made, by anyone, since update 169
+      ["Reports generated", stats.reports ?? 0, "AI Insights reports made with Generate AI Insights, everyone combined (counted from update 169)."],
     ].map(([label, value, title, list]) => {
       if (!list) return el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, num(value))]);
       const b = el("div", { class: "glance-btn", role: "button", tabindex: "0", title, "data-list": list, "aria-expanded": "false" }, [el("dt", {}, label), el("dd", {}, num(value))]);

@@ -430,6 +430,13 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
     el("p", { class: "muted small pr-tip" }, putt ? "Rolled: how far the ball went (past the hole is more than the putt's length). Offline: minus is left." : vis ? "Offline: off your target line, minus is left, plus is right (\u00b1 flips it). Where it finished, and what's left, come from the hole." : "Offline: minus is left, plus is right. What's left is worked out from how far you hit it and how far offline."),
   ]);
   wrap.__update = update; // (the target moved: what it finished as, and the dot, follow)
+  // (update 169) a tap on the picture: the shot finished there (how far, and how far off the target line)
+  wrap.__place = (h, off) => {
+    holed = false;
+    hitIn.value = String(putt ? Math.round(h * 10) / 10 : Math.round(h));
+    offIn.value = fmtOff(putt ? Math.round(off * 10) / 10 : Math.round(off));
+    update();
+  };
   drawLies(); update();
   return wrap;
 }
@@ -529,14 +536,28 @@ function simVisual(ctx, s, hole, shot) {
   shot.target ||= defTarget();
   const tdist = () => (v.kind === "tee" ? Math.round(Math.hypot(shot.target.x, shot.target.y)) : Math.round(Math.hypot(shot.target.x - v.from.x, shot.target.y - v.from.y)));
   const draw = () => {
-    if (v.kind === "putt") { mount(box, puttSvg(v, { showHeat: sgOn, preview: lastPreview.get(shot) })); label.textContent = ""; return; }
-    const moved = () => box.closest(".pr-shot")?.querySelector(".pr-hit-entry")?.__update?.();
-    const onTap = v.kind === "tee" ? (total, offline) => { shot.target = { x: offline, y: total }; ctx.save(s); draw(); moved(); } : (x, y) => { shot.target = { x, y }; ctx.save(s); draw(); moved(); };
+    // (update 169) tap the picture: your shot finished there (as in Custom practice). Hold the target's circle and
+    // drag to move the target.
+    const entry = () => box.closest(".pr-shot")?.querySelector(".pr-hit-entry");
+    const place = (h, off) => entry()?.__place?.(h, off);
+    if (v.kind === "putt") {
+      mount(box, puttSvg(v, { showHeat: sgOn, preview: lastPreview.get(shot), onTap: (x, y) => place(y + shot.startDist, x) }));
+      label.textContent = "Tap the picture where the putt finished.";
+      return;
+    }
+    const moved = () => entry()?.__update?.();
+    const aimAt = v.kind === "tee" ? (total, offline) => { shot.target = { x: offline, y: total }; ctx.save(s); draw(); moved(); } : (x, y) => { shot.target = { x, y }; ctx.save(s); draw(); moved(); };
+    const tapTee = (total, offline) => { const t = shot.target, line0 = t && t.y > 0 ? (t.x * total) / t.y : 0; place(total, offline - line0); };
+    const tapGreen = (x, y) => {
+      const t = shot.target || v.pin, fx = v.from.x, fy = v.from.y, dd = Math.hypot(t.x - fx, t.y - fy) || 1, ux = (t.x - fx) / dd, uy = (t.y - fy) / dd;
+      const dx = x - fx, dy = y - fy;
+      place(dx * ux + dy * uy, dx * uy - dy * ux);
+    };
     mount(box, v.kind === "tee"
-      ? holeSvg(v, { aim: shot.target, showHeat: sgOn, carry: shot.target.y, onTap, sgStart, onAim: (x, y) => onTap(y, x), preview: lastPreview.get(shot), pinLine: true })
-      : greenSvg(v, { aim: shot.target, showHeat: sgOn, onTap, sgStart, aimLine: true, onAim: (x, y) => onTap(x, y), preview: lastPreview.get(shot), pinLine: true }));
+      ? holeSvg(v, { aim: shot.target, showHeat: sgOn, carry: shot.target.y, onTap: tapTee, sgStart, onAim: (x, y) => aimAt(y, x), preview: lastPreview.get(shot), pinLine: true })
+      : greenSvg(v, { aim: shot.target, showHeat: sgOn, onTap: tapGreen, sgStart, aimLine: true, onAim: (x, y) => aimAt(x, y), preview: lastPreview.get(shot), pinLine: true }));
     const side = v.kind === "tee" ? shot.target.x : 0;
-    label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Gold: to your target; grey: on to the pin. Tap the picture, or hold the end of the line and drag, to move it.`;
+    label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Gold: to your target; grey: on to the pin. Tap the picture where your shot finished; hold the target's circle and drag to move it.`;
   };
   // a club: its carry becomes the target's distance (same direction)
   const club = shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (c) => {

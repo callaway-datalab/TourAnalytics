@@ -13,7 +13,7 @@ import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, prepare, summaryPlayers, fmtSG } from "../sg.js";
 import { playerCard, metricCatalog, metricLabel, PERIODS, ordinal } from "../watchlistData.js";
-import { watchPrefs, loadWatch, saveWatch } from "../watchlist.js";
+import { watchPrefs, loadWatch, saveWatch, watchIsPreview } from "../watchlist.js";
 import { playerPicker } from "../playerPicker.js";
 
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; try { un = watch(fin); } catch { fin([]); } setTimeout(() => fin([]), 10000); });
@@ -47,13 +47,15 @@ export async function render(main, { previewClient }) {
   const via = single || teamKeys[0];
   const list = admin ? await once((cb) => store.watchAdminDatasets(cb)) : await once((cb) => store.watchClientDatasets(via, cb));
   const ds = (list || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];
-  if (!ds) { mount(root, [heroShell(), el("section", { class: "panel" }, el("p", { class: "empty center" }, "No stats yet. They show here as soon as a stats file is uploaded."))]); return () => {}; }
-  const idx = detectColumns(ds.columns || []);
-  const summary = await store.getFieldStats(ds.id).catch(() => null);
+  // (update 169: with no Tour file yet, Entered Rounds still works)
+  const idx = ds ? detectColumns(ds.columns || []) : {};
+  const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null;
   let field = summaryPlayers(summary).filter((p) => p.rounds.length);
   let detail = null;
   const ownCache = new Map(); // key → full rounds (lie / distance)
   async function ownRounds(key) {
+    if (src() === "entered") return enteredField?.find((p) => p.key === key)?.rounds || null;
+    if (!ds) return null;
     if (ownCache.has(key)) return ownCache.get(key);
     const d = detail?.find((p) => p.key === key);
     if (d) { ownCache.set(key, d.rounds); return d.rounds; }
@@ -66,10 +68,28 @@ export async function render(main, { previewClient }) {
     ownCache.set(key, r);
     return r;
   }
-  import("../fieldStore.js").then(({ getFieldDetail }) => getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0)).then((res) => {
-    if (res?.players?.length) { detail = res.players; draw(); }
+  if (ds) import("../fieldStore.js").then(({ getFieldDetail }) => getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0)).then((res) => {
+    if (res?.players?.length) { detail = res.players; if (src() === "tour") draw(); }
   }).catch(() => {});
 
+  // ---- (update 169) Entered Rounds: the rounds entered in Enter New Round, yours included ----
+  // You: your own entered rounds (add yourself with "＋ Me"). The admin sees everyone's; a coach their players' and
+  // their own. Ranked among the players whose entered rounds you can see.
+  const preview = team.preview || !!previewClient;
+  const myKey = preview ? null : state.isAdmin && !state.profile?.clientKey ? `a_${state.user.uid}` : state.profile?.clientKey || null;
+  const youLabel = "You";
+  const src = () => (watchPrefs().source === "entered" ? "entered" : "tour");
+  let enteredField = null, enteredLoading = null;
+  const loadEntered = () => (enteredLoading ||= (async () => {
+    const { watchAllRounds, watchPlayerRounds } = await import("../rounds.js");
+    const { enteredPlayers } = await import("../roundCalc.js");
+    const keysToLoad = [...new Set([...(multi ? teamKeys : [single]), myKey].filter(Boolean))];
+    const rounds = admin ? await once((cb) => watchAllRounds(cb)) : (await Promise.all(keysToLoad.map((k) => once((cb) => watchPlayerRounds(k, cb))))).flat();
+    enteredField = enteredPlayers(rounds || [], (r) => (r.playerKey === myKey ? youLabel : labels.get(r.playerKey) || plainName(r.playerLabel || r.playerKey.replace(/^c_/, ""))));
+    for (const p of enteredField) if (!labels.has(p.key)) labels.set(p.key, p.label);
+    return enteredField;
+  })());
+  if (myKey) labels.set(myKey, youLabel);
   await loadWatch();
   let prefs = watchPrefs();
   const picker = multi ? playerPicker(labels, (p) => { if (!p) return; if (!prefs.players.includes(p.key)) { prefs = { ...prefs, players: [...prefs.players, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }) : null;
@@ -86,11 +106,15 @@ export async function render(main, { previewClient }) {
 
   async function draw() {
     prefs = watchPrefs();
-    const keys = multi ? prefs.players.filter((k) => labels.has(k) || field.some((p) => p.key === k)) : [single];
+    const source = src();
+    if (source === "entered" && !enteredField) { await loadEntered(); }
+    const fieldNow = source === "entered" ? enteredField || [] : field, detailNow = source === "entered" ? enteredField || [] : detail;
+    // (you, in Tour Events: only when you're a player in the file)
+    const keys = (multi ? prefs.players : [single]).filter((k) => (source === "entered" ? true : k !== myKey || field.some((p) => p.key === k)) && (labels.has(k) || fieldNow.some((p) => p.key === k)));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards = keys.map((k, i) => playerCard(k, { field, detail, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics }));
-    const catalog = metricCatalog(field, owns.filter(Boolean).map((rounds) => ({ rounds })));
+    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics }));
+    const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })));
 
     // ---- controls ----
     const period = el("div", { class: "wl-period", role: "group", "aria-label": "Period" }, PERIODS.map(([v, l]) => {
@@ -108,14 +132,36 @@ export async function render(main, { previewClient }) {
         return el("label", { class: "wl-menu-o" }, [cb, el("span", {}, l)]);
       })]))),
     ]) : null;
-    const controls = el("div", { class: "wl-controls" }, [period, metricsBtn, multi ? pickerBox : null]);
-    const sub = multi ? `${keys.length ? `${keys.length} player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about"} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ranked on their tour`
-      : `${nameOf(single)} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ranked on the tour`;
+    // (update 169) Tour Events | Entered Rounds, and "＋ Me" (your own entered rounds) for anyone with a Watchlist
+    const sourceSeg = el("div", { class: "wl-period wl-source", role: "group", "aria-label": "Data" }, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+      const b = el("button", { type: "button", class: `wl-per${source === v ? " on" : ""}`, "aria-pressed": String(source === v) }, l);
+      b.addEventListener("click", () => { if (source === v) return; saveWatch({ source: v }); draw(); });
+      return b;
+    }));
+    const meBtn = multi && myKey && !prefs.players.includes(myKey) ? (() => {
+      const b = el("button", { type: "button", class: "btn ghost wl-me-btn", title: "Watch your own entered rounds" }, "＋ Me");
+      b.addEventListener("click", () => { saveWatch({ players: [myKey, ...watchPrefs().players], source: "entered" }); draw(); });
+      return b;
+    })() : null;
+    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, metricsBtn, meBtn, multi ? pickerBox : null]);
+    const where = source === "entered" ? "entered rounds" : "ranked on their tour";
+    const sub = multi ? `${keys.length ? `${keys.length} player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about"} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ${where}`
+      : `${nameOf(single)} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ${source === "entered" ? "entered rounds" : "ranked on the tour"}`;
+    // (update 168) previewing someone: their own Watchlist, and changes aren't kept
+    const subLine = multi && watchIsPreview() ? `${sub} · their Watchlist (changes in a preview aren't saved)` : sub;
 
     // ---- the cards ----
     const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map(cardView));
-    mount(root, [heroShell(controls, sub), menu, body,
-      el("p", { class: "muted small center wl-foot" }, `Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the same tour in this period${detail ? "" : "; distance ranks appear once the field's lie and distance detail has been published"}.`)]);
+    // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
+    const y = window.scrollY, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null;
+    root.style.minHeight = `${root.offsetHeight}px`;
+    mount(root, [heroShell(controls, subLine), menu, body,
+      el("p", { class: "muted small center wl-foot" }, source === "entered"
+        ? `Entered Rounds: the rounds entered in Enter New Round. Rank trend: the SG Total rank after each round. Trends: the last 10 rounds against the 10 before. Ranks: among the players whose entered rounds you can see, with ${cards[0]?.minR || "enough"} or more in this period.`
+        : `Rank trend: the SG Total rank after each round. Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the same tour in this period${detail ? "" : "; distance ranks appear once the field's lie and distance detail has been published"}.`)]);
+    window.scrollTo(0, y);
+    if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
+    requestAnimationFrame(() => { root.style.minHeight = ""; window.scrollTo(0, y); });
   }
 
   function emptyState() {
@@ -134,26 +180,29 @@ export async function render(main, { previewClient }) {
   }
 
   function openPlayer(key) {
+    if (key && key === myKey) { location.hash = "#/entry"; return; } // (you: your entered rounds)
     if (admin) location.hash = `#/admin/player-stats?player=${encodeURIComponent(key)}`;
     else if (team.isTeam) location.hash = `#/view-as/${encodeURIComponent(key)}?label=${encodeURIComponent(nameOf(key))}&to=/dashboard`;
     else location.hash = "#/dashboard";
   }
 
-  function spark(vals) {
-    const v = vals.filter((x) => x != null);
-    if (v.length < 3) return null;
-    const W = 120, H = 34, lo = Math.min(-0.5, ...v), hi = Math.max(0.5, ...v);
-    const X = (i) => (i / (v.length - 1)) * W, Y = (x) => H - 3 - ((x - lo) / (hi - lo)) * (H - 6);
-    const NS = "http://www.w3.org/2000/svg", s = (t, a) => { const n = document.createElementNS(NS, t); for (const [k, x] of Object.entries(a)) n.setAttribute(k, String(x)); return n; };
-    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "wl-spark", role: "img", "aria-label": "Rolling 10-round strokes gained" });
-    const path = v.map((x, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(x).toFixed(1)}`).join(" ");
-    const grad = s("linearGradient", { id: `wlg${Math.random().toString(36).slice(2, 7)}`, x1: 0, x2: 0, y1: 0, y2: 1 });
-    grad.append(s("stop", { offset: "0%", "stop-color": "#d4b483", "stop-opacity": 0.35 }), s("stop", { offset: "100%", "stop-color": "#d4b483", "stop-opacity": 0 }));
-    const defs = s("defs", {}); defs.appendChild(grad); svg.appendChild(defs);
-    svg.appendChild(s("line", { x1: 0, x2: W, y1: Y(0), y2: Y(0), stroke: "rgba(255,255,255,0.18)", "stroke-width": 0.8, "stroke-dasharray": "2 2" }));
-    svg.appendChild(s("path", { d: `${path} L${W} ${H} L0 ${H} Z`, fill: `url(#${grad.id})` }));
-    svg.appendChild(s("path", { d: path, fill: "none", stroke: "#d4b483", "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-linecap": "round" }));
-    svg.appendChild(s("circle", { cx: X(v.length - 1), cy: Y(v.at(-1)), r: 2.4, fill: v.at(-1) >= 0 ? "#30d158" : "#ff453a" }));
+  // (update 168) SG Total rank after each round: 1st at the top; the latest dot green when it's better than where
+  // the line started, red when worse
+  function spark(ranks) {
+    const v = ranks.filter((x) => x != null);
+    if (v.length < 2) return null;
+    const W = 120, H = 34, lo = 1, hi = Math.max(lo + 1, ...v);
+    const X = (i) => (i / (v.length - 1)) * W, Y = (r) => 3 + ((r - lo) / (hi - lo)) * (H - 6);
+    const NS = "http://www.w3.org/2000/svg", mk = (t, a) => { const n = document.createElementNS(NS, t); for (const [k, x] of Object.entries(a)) n.setAttribute(k, String(x)); return n; };
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "wl-spark", role: "img", "aria-label": `SG Total rank after each round: ${ordinal(v[0])} to ${ordinal(v.at(-1))}` });
+    const path = v.map((r, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(r).toFixed(1)}`).join(" ");
+    const grad = mk("linearGradient", { id: `wlg${Math.random().toString(36).slice(2, 7)}`, x1: 0, x2: 0, y1: 0, y2: 1 });
+    grad.append(mk("stop", { offset: "0%", "stop-color": "#d4b483", "stop-opacity": 0.35 }), mk("stop", { offset: "100%", "stop-color": "#d4b483", "stop-opacity": 0 }));
+    const defs = mk("defs", {}); defs.appendChild(grad); svg.appendChild(defs);
+    svg.appendChild(mk("path", { d: `${path} L${W} ${H} L0 ${H} Z`, fill: `url(#${grad.id})` }));
+    svg.appendChild(mk("path", { d: path, fill: "none", stroke: "#d4b483", "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    svg.appendChild(mk("circle", { cx: X(v.length - 1), cy: Y(v.at(-1)), r: 2.4, fill: v.at(-1) < v[0] ? "#30d158" : v.at(-1) > v[0] ? "#ff453a" : "#d4b483" }));
+    const t = mk("title", {}); t.textContent = `${ordinal(v[0])} → ${ordinal(v.at(-1))}`; svg.prepend(t);
     return svg;
   }
   const trendEl = (t, { higher = true, fmt = (x) => Math.abs(x).toFixed(2), band = 0.05 } = {}) => {
@@ -171,11 +220,11 @@ export async function render(main, { previewClient }) {
     name.addEventListener("click", () => openPlayer(c.key));
     const star = multi ? el("button", { type: "button", class: "wl-star on", "aria-label": `Remove ${c.label} from your Watchlist`, title: "Remove from Watchlist" }, "★") : null;
     star?.addEventListener("click", () => { saveWatch({ players: watchPrefs().players.filter((k) => k !== c.key) }); draw(); });
-    if (c.empty) return el("article", { class: "panel wl-card empty" }, [el("div", { class: "wl-card-head" }, [el("div", {}, [name, el("p", { class: "wl-meta" }, "No rounds in this period.")]), star])]);
+    if (c.empty) return el("article", { class: "panel wl-card empty" }, [el("div", { class: "wl-card-head" }, [el("div", {}, [name, el("p", { class: "wl-meta" }, src() === "entered" ? "No entered rounds in this period." : "No rounds in this period.")]), star])]);
     const total = c.sg[0];
     const head = el("div", { class: "wl-card-head" }, [
       el("div", { class: "wl-id" }, [name, el("p", { class: "wl-meta" }, [c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `last: ${fmtSG(c.latest.sg)} at ${c.latest.event || "a tournament"}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "))]),
-      el("div", { class: "wl-head-r" }, [el("div", { class: "wl-spark-box" }, [spark(c.spark), el("span", { class: "wl-spark-l" }, "10-round form")]), star]),
+      el("div", { class: "wl-head-r" }, [el("div", { class: "wl-spark-box" }, [spark(c.spark), el("span", { class: "wl-spark-l" }, "SG Total Rank Trend")]), star]),
     ]);
     const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]))) : null;
     const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [

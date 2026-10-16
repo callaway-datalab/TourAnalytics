@@ -3441,3 +3441,30 @@ button.chat-ca-caret:hover { background: rgba(255,255,255,0.06); color: var(--in
 @media (max-width: 520px) { .wl-period { display: flex; width: 100%; } .wl-per { flex: 1; padding: 0.5rem 0.4rem; font-size: 0.84rem; } }
 /* update 167: Watchlist players starred in the leaderboards */
 .fav-star { color: #d4b483; margin-right: 0.35rem; font-size: 0.85em; }
+
+/* update 168: the Form pop-up: both halves side by side, compact, no scrolling */
+.form-pop { width: min(62rem, 100%) !important; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+.form-grid .form-part { margin-top: 0.6rem; min-width: 0; }
+.form-grid .form-head { font-size: 0.86rem; }
+.form-grid .form-scroll { max-height: none !important; overflow: visible; margin: 0.3rem 0 0.4rem; }
+.form-grid .hero-tourn { font-size: 0.78rem; }
+.form-grid .hero-tourn th, .form-grid .hero-tourn td { padding: 0.28rem 0.35rem !important; line-height: 1.2; }
+.form-grid .hero-tourn .ht-name { max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .form-grid .hero-tourn { font-size: 0.74rem; }
+  .form-grid .hero-tourn th, .form-grid .hero-tourn td { padding: 0.18rem 0.3rem !important; }
+  .form-grid .hero-tourn .ht-name { max-width: 9rem; }
+}
+/* update 168: the Watchlist's player search list opens over the player cards */
+.wl-hero { position: relative; z-index: 20; overflow: visible !important; }
+.wl-menu { position: relative; z-index: 15; }
+.wl-add .pp-list { z-index: 60; }
+/* update 169: the What to play dropdowns open over the blocks below them (How it works, the course list) */
+.pr-plan { position: relative; }
+.pr-plan:has(.pr-dd[open]) { z-index: 40; }
+.pr-dd[open] { z-index: 41; }
+.pr-dd-menu { z-index: 60; }
+/* update 169: Watchlist: Tour Events | Entered Rounds, and ＋ Me */
+.wl-me-btn { min-height: 2.25rem; }

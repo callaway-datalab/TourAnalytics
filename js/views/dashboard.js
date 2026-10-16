@@ -44,6 +44,7 @@ export async function render(main, { previewClient, flash }) {
 
   // Tour (uploaded stats) | Entered Rounds (from Data Entry). "Me" (a coach's own) has only entered rounds.
   if (previewClient?.self) lastSource = "entered";
+  if (lastSource === "practice") lastSource = "tour"; // (update 169: Practice is gone from these pills)
   let tourDashNow = null;
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
   const viewHost = el("div", { class: "view-host" }); // (kept empty: Basic / Advanced was here)
@@ -52,7 +53,8 @@ export async function render(main, { previewClient, flash }) {
     enteredBox.hidden = lastSource !== "entered";
     practiceBox.hidden = lastSource !== "practice";
     if (lastSource === "practice") loadPractice();
-    mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"], ["practice", "Practice"]].map(([v, l]) => {
+    // (update 169) no Practice pill: just Tour Events | Entered Rounds
+    mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
       const a = el("a", { href: "#", "aria-current": lastSource === v ? "page" : null }, l);
       a.addEventListener("click", (e) => {
         e.preventDefault(); lastSource = v; drawSource();
