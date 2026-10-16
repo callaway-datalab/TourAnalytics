@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, db } from "./firebase-init.js";
 import {
-  chunkRows, splitString, DOC_CHUNK_CHARS, UserError, ANALYST_ROLE, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, readableSize, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
+  chunkRows, parseChunk, splitString, DOC_CHUNK_CHARS, UserError, ANALYST_ROLE, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, readableSize, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
 } from "./data.js";
 
 export { UserError };
@@ -571,7 +571,7 @@ export async function getDatasetMeta(clientKey, datasetId) {
 export async function getDatasetRows(clientKey, datasetId, chunkCount) {
   const chunks = await Promise.all(
     Array.from({ length: chunkCount }, (_, i) => getDoc(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)))));
-  return chunks.flatMap((snap) => JSON.parse(snap.data().data));
+  return chunks.flatMap((snap) => parseChunk(snap.data().data));
 }
 
 /** The admin: one data file's catalogue record (its players, their names, when it was uploaded). */
@@ -583,7 +583,7 @@ export async function getDatasetRecord(datasetId) {
 /** The admin: one player's rows in one request (lists the pieces, so it needs no record read first). */
 export async function getDatasetRowsListed(clientKey, datasetId) {
   const snap = await getDocs(collection(db, "clientData", clientKey, "datasets", datasetId, "chunks"));
-  return snap.docs.sort((a, b) => Number(a.id) - Number(b.id)).flatMap((d) => JSON.parse(d.data().data));
+  return snap.docs.sort((a, b) => Number(a.id) - Number(b.id)).flatMap((d) => parseChunk(d.data().data));
 }
 
 /** Every clientKey known to the system, with a display label, from users/invites/datasets. */

@@ -237,19 +237,62 @@ def client_key(label):
     return "c_" + urllib.parse.quote(n, safe="-_.!~*'()").replace(".", "%2E")
 
 
-def chunk_rows(rows_json, max_chars=MAX_CHUNK_CHARS):
-    """Rows (each already JSON) into stored pieces, as js/data.js chunkRows."""
-    chunks, parts, size = [], [], 2
-    for s in rows_json:
-        if len(s) + 2 > 800000:
+_DUMPS = json.JSONEncoder(separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode
+
+
+def _vkey(v):
+    return ("n",) if v is None else (type(v).__name__, v)
+
+
+def pack_rows(rows):
+    """(update 193) One stored piece, packed as js/data.js packRows: each column once, and a column whose
+    values repeat as its distinct values plus each row's place in that list."""
+    w = max((len(r) for r in rows), default=0)
+    cols = []
+    for c in range(w):
+        vals = [r[c] if c < len(r) else None for r in rows]
+        raw = _DUMPS(vals)
+        pos, uniq, idx = {}, [], []
+        for v in vals:
+            k = _vkey(v)
+            i = pos.get(k)
+            if i is None:
+                i = pos[k] = len(uniq)
+                uniq.append(v)
+            idx.append(i)
+        d = '{"d":' + _DUMPS(uniq) + ',"i":' + _DUMPS(idx) + "}"
+        cols.append(d if len(d) < len(raw) else raw)
+    return '{"v":2,"n":%d,"w":%d,"c":[%s]}' % (len(rows), w, ",".join(cols))
+
+
+def chunk_rows(rows, max_chars=MAX_CHUNK_CHARS):
+    """Rows (lists) into stored pieces, as js/data.js chunkRows."""
+    chunks = []
+
+    def emit(run):
+        if not run:
+            return
+        s = pack_rows(run)
+        if len(s) <= max_chars or len(run) == 1:
+            chunks.append(s)
+            return
+        h = (len(run) + 1) // 2
+        emit(run[:h])
+        emit(run[h:])
+
+    run, size, budget = [], 0, max_chars * 3
+    for r in rows:
+        n = len(_DUMPS(r))
+        if n + 2 > 800000:
             raise ValueError("One row in this file is too large to store.")
-        if parts and size + len(s) + 1 > max_chars:
-            chunks.append("[" + ",".join(parts) + "]")
-            parts, size = [], 2
-        parts.append(s)
-        size += len(s) + 1
-    if parts or not chunks:
-        chunks.append("[" + ",".join(parts) + "]")
+        if run and size + n + 1 > budget:
+            emit(run)
+            run, size = [], 0
+        run.append(r)
+        size += n + 1
+    emit(run)
+    if not chunks:
+        chunks.append(pack_rows([]))
     return chunks
 
 
@@ -271,8 +314,7 @@ def build_dataset(df, id_column="playerID", progress=None):
     name_pos = next((k for k, i in enumerate(data_idx) if squash(columns[i]) in _NAME_COLUMNS), None)
     if progress:
         progress("Columns read")
-    dumps = json.JSONEncoder(separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode
-    rows_json = [dumps(list(r)) for r in zip(*values)]  # each row as the portal stores it
+    rows_all = [list(r) for r in zip(*values)]  # each row as the portal stores it
     names = values[name_pos] if name_pos is not None else None
     ids = df.iloc[:, id_i].tolist()
     del values
@@ -293,7 +335,7 @@ def build_dataset(df, id_column="playerID", progress=None):
     for k in order:
         pos = groups[k]
         name = next((str(names[p]).strip() for p in pos if names is not None and not _blank(names[p])), None) if names is not None else None
-        players.append({"key": client_key(k), "label": k, "name": name, "rows": len(pos), "chunks": chunk_rows([rows_json[p] for p in pos])})
+        players.append({"key": client_key(k), "label": k, "name": name, "rows": len(pos), "chunks": chunk_rows([rows_all[p] for p in pos])})
     return {"idColumn": columns[id_i], "columns": cols, "players": players, "rowCount": len(df), "blankIdRows": blank}
 
 

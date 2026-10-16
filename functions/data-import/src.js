@@ -26,7 +26,7 @@
  */
 import { createRequire } from "node:module";
 import { gunzipSync } from "node:zlib";
-import { parseCsv, tableFromCsvRows, tableFromObjects, buildDataset, chunkRows, splitString, DOC_CHUNK_CHARS, isTeamKey } from "../../js/data.js";
+import { parseCsv, tableFromCsvRows, tableFromObjects, buildDataset, chunkRows, parseChunk, splitString, DOC_CHUNK_CHARS, isTeamKey } from "../../js/data.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary } from "../../js/sg.js";
 import { encodeFieldDetail, gzip } from "../../js/fieldDetail.js";
 
@@ -134,7 +134,7 @@ async function rebuild(bucket, file, meta) {
           const n = m.exists ? m.data().chunkCount || 0 : 0;
           const refs = Array.from({ length: n }, (_, i) => db.doc(`clientData/${key}/datasets/${datasetId}/chunks/${i}`));
           const snaps = refs.length ? await db.getAll(...refs) : [];
-          const rows = snaps.flatMap((sn) => (sn.exists ? JSON.parse(sn.data().data) : []));
+          const rows = snaps.flatMap((sn) => (sn.exists ? parseChunk(sn.data().data) : []));
           const rounds = prepare(rows, idx);
           for (const rd of rounds) for (const sh of rd.shots) delete sh.r; // (the raw row isn't needed from here)
           if (rounds.length) players.push({ key, name: labels.get(key) || names[key] || key.replace(/^c_/, ""), rounds });

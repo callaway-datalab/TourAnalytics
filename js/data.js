@@ -288,19 +288,52 @@ export function buildDataset(table, idInput) {
 }
 
 /* ---------- Chunking (Firestore documents are limited to ~1 MiB) ---------- */
+// (update 193) Stored pieces are packed: each column once per piece, and a column whose values repeat (dates,
+// events, courses, categories, clubs, balls …) as its distinct values plus each row's place in that list.
+// Usually well under half the size of plain rows. Pieces stored before this (plain "[[…],[…]]") still read the same.
+const valKey = (v) => (v === null || v === undefined ? "n" : typeof v === "string" ? "s" + v : typeof v === "number" ? "d" + v : "b" + v);
+export function packRows(rows) {
+  const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  const cols = [];
+  for (let c = 0; c < w; c++) {
+    const vals = rows.map((r) => (r[c] === undefined ? null : r[c]));
+    const raw = JSON.stringify(vals);
+    const pos = new Map(), uniq = [];
+    const idx = vals.map((v) => { const k = valKey(v); let i = pos.get(k); if (i === undefined) { i = uniq.length; pos.set(k, i); uniq.push(v); } return i; });
+    const dict = `{"d":${JSON.stringify(uniq)},"i":${JSON.stringify(idx)}}`;
+    cols.push(dict.length < raw.length ? dict : raw);
+  }
+  return `{"v":2,"n":${rows.length},"w":${w},"c":[${cols.join(",")}]}`;
+}
+/** One stored piece back into rows (either kind). */
+export function parseChunk(str) {
+  const x = JSON.parse(str);
+  if (Array.isArray(x)) return x;
+  const cols = x.c.map((c) => (Array.isArray(c) ? c : c.i.map((i) => c.d[i])));
+  const rows = new Array(x.n);
+  for (let r = 0; r < x.n; r++) { const row = new Array(x.w); for (let c = 0; c < x.w; c++) row[c] = cols[c][r]; rows[r] = row; }
+  return rows;
+}
 export function chunkRows(rows, maxChars = MAX_CHUNK_CHARS) {
   const chunks = [];
-  let parts = [], size = 2;
+  // pack a run of rows; if it comes out too big, split it in half and try again
+  const emit = (run) => {
+    if (!run.length) return;
+    const s = packRows(run);
+    if (s.length <= maxChars || run.length === 1) { chunks.push(s); return; }
+    const h = Math.ceil(run.length / 2);
+    emit(run.slice(0, h)); emit(run.slice(h));
+  };
+  let run = [], size = 0;
+  const budget = maxChars * 3; // (plain size: packing usually takes it to well under a third)
   for (const row of rows) {
-    const s = JSON.stringify(row);
-    if (s.length + 2 > 800000) throw new UserError('One row in this file is too large to store.');
-    if (parts.length && size + s.length + 1 > maxChars) {
-      chunks.push(`[${parts.join(',')}]`);
-      parts = []; size = 2;
-    }
-    parts.push(s); size += s.length + 1;
+    const n = JSON.stringify(row).length;
+    if (n + 2 > 800000) throw new UserError('One row in this file is too large to store.');
+    if (run.length && size + n + 1 > budget) { emit(run); run = []; size = 0; }
+    run.push(row); size += n + 1;
   }
-  if (parts.length || !chunks.length) chunks.push(`[${parts.join(',')}]`);
+  emit(run);
+  if (!chunks.length) chunks.push(packRows([]));
   return chunks;
 }
 

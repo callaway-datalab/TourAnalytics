@@ -159,21 +159,69 @@ function buildDataset(table, idInput) {
   if (!byClient.size) throw new UserError(`Every value in "${columns[idCol]}" is blank, so no row can be matched to a person.`);
   return { idColumn: columns[idCol], columns: cols, byClient, rowCount: rows.length, blankIdRows };
 }
+var valKey = (v) => v === null || v === void 0 ? "n" : typeof v === "string" ? "s" + v : typeof v === "number" ? "d" + v : "b" + v;
+function packRows(rows) {
+  const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  const cols = [];
+  for (let c = 0; c < w; c++) {
+    const vals = rows.map((r) => r[c] === void 0 ? null : r[c]);
+    const raw = JSON.stringify(vals);
+    const pos = /* @__PURE__ */ new Map(), uniq = [];
+    const idx = vals.map((v) => {
+      const k = valKey(v);
+      let i = pos.get(k);
+      if (i === void 0) {
+        i = uniq.length;
+        pos.set(k, i);
+        uniq.push(v);
+      }
+      return i;
+    });
+    const dict = `{"d":${JSON.stringify(uniq)},"i":${JSON.stringify(idx)}}`;
+    cols.push(dict.length < raw.length ? dict : raw);
+  }
+  return `{"v":2,"n":${rows.length},"w":${w},"c":[${cols.join(",")}]}`;
+}
+function parseChunk(str) {
+  const x = JSON.parse(str);
+  if (Array.isArray(x)) return x;
+  const cols = x.c.map((c) => Array.isArray(c) ? c : c.i.map((i) => c.d[i]));
+  const rows = new Array(x.n);
+  for (let r = 0; r < x.n; r++) {
+    const row = new Array(x.w);
+    for (let c = 0; c < x.w; c++) row[c] = cols[c][r];
+    rows[r] = row;
+  }
+  return rows;
+}
 function chunkRows(rows, maxChars = MAX_CHUNK_CHARS) {
   const chunks = [];
-  let parts = [], size = 2;
-  for (const row of rows) {
-    const s = JSON.stringify(row);
-    if (s.length + 2 > 8e5) throw new UserError("One row in this file is too large to store.");
-    if (parts.length && size + s.length + 1 > maxChars) {
-      chunks.push(`[${parts.join(",")}]`);
-      parts = [];
-      size = 2;
+  const emit = (run2) => {
+    if (!run2.length) return;
+    const s = packRows(run2);
+    if (s.length <= maxChars || run2.length === 1) {
+      chunks.push(s);
+      return;
     }
-    parts.push(s);
-    size += s.length + 1;
+    const h = Math.ceil(run2.length / 2);
+    emit(run2.slice(0, h));
+    emit(run2.slice(h));
+  };
+  let run = [], size = 0;
+  const budget = maxChars * 3;
+  for (const row of rows) {
+    const n = JSON.stringify(row).length;
+    if (n + 2 > 8e5) throw new UserError("One row in this file is too large to store.");
+    if (run.length && size + n + 1 > budget) {
+      emit(run);
+      run = [];
+      size = 0;
+    }
+    run.push(row);
+    size += n + 1;
   }
-  if (parts.length || !chunks.length) chunks.push(`[${parts.join(",")}]`);
+  emit(run);
+  if (!chunks.length) chunks.push(packRows([]));
   return chunks;
 }
 function splitString(str, size) {
@@ -223,7 +271,13 @@ var ALIASES = {
   smash: ["smashfactor", "smash"],
   launch: ["launchangle", "launch"],
   spin: ["backspin", "spinrate", "spin"],
-  club: ["club", "clubused", "clubtype", "clubname"]
+  club: ["club", "clubused", "clubname"],
+  // (update 191) the equipment on each shot: the club's type, brand and model, and the ball's brand and model
+  clubType: ["clubtype", "clubcategory", "clubgroup"],
+  clubBrand: ["clubbrand", "brand", "manufacturer", "clubmake", "clubmanufacturer"],
+  clubModel: ["clubmodel", "model", "productmodel"],
+  ballBrand: ["ballbrand", "ballmake", "ballmanufacturer"],
+  ballModel: ["ballmodel", "ball", "balltype"]
 };
 function clubGroup(name) {
   const s = String(name).toLowerCase().replace(/\s+/g, "");
@@ -409,7 +463,15 @@ function prepare(rows, idx) {
     const per = idx.statType !== void 0 ? num(get(r, "statValue")) : idx.sgPerAttempt !== void 0 ? num(get(r, "sgPerAttempt")) : null;
     const sg = per !== null && w !== null ? per * w : num(get(r, "sg"));
     if (!cat || sg === null || w === null || w <= 0) continue;
-    const lie = get(r, "lie"), dist = get(r, "distanceRange"), club = get(r, "club");
+    const lie = get(r, "lie"), dist = get(r, "distanceRange");
+    const val = (f) => {
+      const v = get(r, f);
+      return v == null || isNull(v) || String(v).trim() === "" ? null : String(v).trim();
+    };
+    const type = val("clubType"), club = val("club") ?? type;
+    const clubCat = type || club ? clubMemo(type || club) : null;
+    const make = [val("clubBrand"), val("clubModel")].filter(Boolean).join(" ");
+    const bmake = [val("ballBrand"), val("ballModel")].filter(Boolean).join(" ");
     const shot = {
       cat,
       sg,
@@ -417,8 +479,10 @@ function prepare(rows, idx) {
       r,
       lie: isNull(lie) ? null : String(lie),
       dist: isNull(dist) ? null : String(dist),
-      club: club == null || club === "" ? null : String(club),
-      clubCat: club == null || club === "" ? null : clubMemo(String(club))
+      club,
+      clubCat,
+      gear: make || club ? `${clubCat || "Other"}|${make || club}` : null,
+      ball: bmake || null
     };
     const rd = roundOf(r);
     rd.shots.push(shot);
@@ -669,7 +733,7 @@ async function rebuild(bucket, file, meta) {
           const n = m.exists ? m.data().chunkCount || 0 : 0;
           const refs = Array.from({ length: n }, (_, i) => db.doc(`clientData/${key}/datasets/${datasetId}/chunks/${i}`));
           const snaps = refs.length ? await db.getAll(...refs) : [];
-          const rows = snaps.flatMap((sn) => sn.exists ? JSON.parse(sn.data().data) : []);
+          const rows = snaps.flatMap((sn) => sn.exists ? parseChunk(sn.data().data) : []);
           const rounds = prepare(rows, idx);
           for (const rd of rounds) for (const sh of rd.shots) delete sh.r;
           if (rounds.length) players.push({ key, name: labels.get(key) || names[key] || key.replace(/^c_/, ""), rounds });
