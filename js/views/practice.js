@@ -20,6 +20,9 @@ import { bagPatterns, clubFor, normClub } from "../practice/clubs.js";
 import { gameProgress, personalBest, fmtGameScore, pointsFor, passedIt, targetText, scoringOf, isLow, gameOf } from "../practice/games.js";
 import { SG, sgCls, tile, shotTitle, resultText, keyTiles, bucketTable, patternPanel, shotCard } from "./practiceShot.js";
 import { myEntryKey, myName } from "./dataEntry.js";
+import { effectiveTeam } from "../preview.js";
+import { teamLabels } from "../names.js";
+import { playerPicker } from "../playerPicker.js";
 
 const LS_CAT = "ta:practice:cat";
 // The tools beside the four categories (update 138)
@@ -34,10 +37,32 @@ const DEF_TOTAL = { OTT: 14, APP: 20, ARG: 20, PUTT: 24 };
 export async function render(main, { flash, coursePrep = false, previewClient = null }) {
   const state = getState();
   const uid = state.user.uid;
-  const owner = practiceOwner(state);
-  const playerKey = state.profile?.clientKey || null;
-  const label = state.profile?.name || myName(state);
+  let owner = practiceOwner(state);
+  let playerKey = state.profile?.clientKey || null;
+  let label = state.profile?.name || myName(state);
   const q = new URLSearchParams(location.hash.split("?")[1] || "");
+  // (update 187) anyone with players (a coach, a caddie, an analyst, the admin) can look at a player's practice
+  // and launch monitor data: type their name above the tabs. Theirs is shown as it is (nothing to start or delete).
+  let players = [];
+  if (!coursePrep) {
+    const team = effectiveTeam(state);
+    if (state.isAdmin && !team.preview) { try { players = [...(await (await import("../store.js")).adminAllClients()).labels]; } catch { players = []; } }
+    else if (team.isTeam) players = [...teamLabels(team.teamAccess)];
+  }
+  const viewKey = q.get("player") && players.some(([k]) => k === q.get("player")) ? q.get("player") : null;
+  const viewing = viewKey ? players.find(([k]) => k === viewKey)[1] : null;
+  if (viewKey) { owner = viewKey; playerKey = viewKey; label = viewing; }
+  const whoBox = players.length ? (() => {
+    const ME = "__mine";
+    const go = (key) => { const h = key ? `#/practice?player=${encodeURIComponent(key)}` : "#/practice"; if (location.hash !== h) location.hash = h; };
+    const pp = playerPicker(new Map([[ME, "My practice"], ...players]), (p) => go(p && p.key !== ME ? p.key : null), new Map([[ME, " "]]), ME);
+    const inp = pp.node.querySelector("input");
+    if (inp) inp.placeholder = "My practice \u00b7 type a player\u2019s name\u2026";
+    if (viewKey) pp.preset(viewKey);
+    inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
+    inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && viewKey) pp.preset(viewKey); }, 300));
+    return el("div", { class: "pr-who" }, [pp.node, viewing ? el("p", { class: "muted small pr-who-note" }, `${viewing}\u2019s practice and launch monitor data, to look at (only ${viewing} can add to it).`) : null]);
+  })() : null;
   const ls = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   let cat = q.get("cat") || ls(LS_CAT) || "APP";
   if (!CATS[cat]) cat = "APP";
@@ -58,7 +83,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
   const tools = el("nav", { class: "pr-tabs", "aria-label": "Practice" });
   const pills = el("div", { class: "seg pr-catseg", role: "group", "aria-label": "Category" });
   const body = el("div", { class: "pr-body" });
-  mount(main, [el("div", { class: "pr-wrap" }, [coursePrep ? null : tools, body])]);
+  mount(main, [el("div", { class: "pr-wrap" }, [whoBox, coursePrep ? null : tools, body])]);
   const pickTool = (t) => { tool = t; try { localStorage.setItem(LS_TOOL, t); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
   const pick = (c) => { cat = c; try { localStorage.setItem(LS_CAT, c); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
   const drawPills = () => {
@@ -81,7 +106,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
       const { loadSource } = await import("../reportGen.js");
       const [tour, entered] = await Promise.all([
         playerKey ? loadSource("tour", playerKey, label, { detail: false }).catch(() => null) : null,
-        loadSource("entered", myEntryKey(state), label).catch(() => null),
+        loadSource("entered", viewKey || myEntryKey(state), label).catch(() => null),
       ]);
       return [...(tour?.me?.rounds || []), ...(entered?.me?.rounds || [])];
     })();
@@ -92,6 +117,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
 
   let saveFor = null; // the session a save is waiting for
   function save(s, now = false) {
+    if (viewKey) return Promise.resolve(); // (someone else's: look, don't change)
     clearTimeout(saveTimer);
     saveFor = s.id;
     const run = () => saveSession(owner, s).catch((err) => { console.error(err); flash?.("Couldn't save just now. It'll try again with the next shot.", "error"); });
@@ -122,8 +148,10 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
   const ctx = {
     body, uid, owner, state, flash, label, playerKey, save, coursePrep, previewClient,
     get sessions() { return sessions; },
+    readOnly: !!viewKey, viewing,
     add(s) { sessions = [s, ...sessions.filter((x) => x.id !== s.id)]; },
     async remove(id) {
+      if (viewKey) return false;
       // (if it doesn't delete, say so, rather than hiding it until the next visit)
       if (saveFor === id) { clearTimeout(saveTimer); saveFor = null; } // (a save still waiting would bring it back)
       try { await deleteSession(owner, id); } catch (err) { console.error(err); flash?.(`Couldn't delete that (${err.code || err.message}). If you haven't yet, republish the Firestore rules from the latest update.`, "error"); return false; }
@@ -131,6 +159,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     },
     /** A session row with a delete button beside it. */
     rowWithDelete(row, s, what = "session") {
+      if (viewKey) return row;
       const del = el("button", { type: "button", class: "entry-del pr-sess-del", "aria-label": `Delete this ${what}`, title: `Delete this ${what}` }, "\u2715");
       del.addEventListener("click", async (e) => { e.stopPropagation(); if (!confirmAction(`Delete this ${what}? It can't be undone.`)) return; if (await ctx.remove(s.id)) draw(); });
       return el("div", { class: "pr-sess-wrap" }, [row, del]);
@@ -160,7 +189,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     return deg >= 44 && deg <= 64 ? Math.round(125 - (deg - 46) * 3.2) : null;
   };
   import("../bag.js").then(async (m) => { const bag = await m.getBag(uid); if (bag?.length) { ctx.clubs = [...bag].sort((a, b) => m.clubRank(m.clubLabel(a)) - m.clubRank(m.clubLabel(b))).map((c) => m.clubLabel(c)).filter((x) => x && !/putter/i.test(x)); for (const c of bag) { const y = Number(c.yards); if (y > 0) stock[m.clubLabel(c)] = y; } } }).catch(() => {});
-  try { sessions = await listSessions(owner, { oldUid: owner !== uid ? uid : null }); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
+  try { sessions = await listSessions(owner, { oldUid: !viewKey && owner !== uid ? uid : null }); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
   drawPills(); draw();
 
   async function draw() {
@@ -187,10 +216,10 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     const startBtn = el("button", { type: "button", class: "btn pr-start" }, "＋  Start new practice session");
     startBtn.addEventListener("click", () => { view = { name: "plan" }; draw(); });
     const head = el("section", { class: "panel pr-hero" }, [
-      el("div", { class: "pr-hero-main" }, [el("p", { class: "pr-eyebrow" }, "Custom practice"), pills, el("h1", {}, CATS[cat].label), el("p", { class: "muted pr-lede" }, LEDE[cat])]),
-      startBtn,
+      el("div", { class: "pr-hero-main" }, [el("p", { class: "pr-eyebrow" }, viewKey ? `${viewing} \u00b7 Custom practice` : "Custom practice"), pills, el("h1", {}, CATS[cat].label), viewKey ? null : el("p", { class: "muted pr-lede" }, LEDE[cat])]),
+      viewKey ? null : startBtn,
     ]);
-    const resume = actives.map((active) => {
+    const resume = viewKey ? [] : actives.map((active) => {
       const left = active.shots.filter((s) => !s.result).length;
       const b = el("button", { type: "button", class: "btn ghost" }, "Resume");
       b.addEventListener("click", () => ctx.playSession(active));
@@ -199,7 +228,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
       return el("section", { class: "panel pr-resume" }, [el("div", {}, [el("strong", {}, "Session in progress"), el("span", { class: "muted" }, ` \u00b7 ${active.shots.length - left} of ${active.shots.length} shots \u00b7 ${new Date(active.startedAt).toLocaleDateString()}`)]), el("div", { class: "pr-row" }, [b, x])]);
     });
     if (!done.length) {
-      mount(body, [head, ...resume, el("section", { class: "panel pr-empty" }, [
+      mount(body, [head, ...resume, viewKey ? el("section", { class: "panel pr-empty" }, el("p", { class: "muted" }, `${viewing} hasn\u2019t finished any ${CATS[cat].label.toLowerCase()} practice yet.`)) : el("section", { class: "panel pr-empty" }, [
         el("h2", {}, "How it works"),
         el("ol", {}, HOW[cat].map((t) => el("li", {}, t))),
       ])]);
@@ -231,7 +260,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
       return ctx.rowWithDelete(row, s, g ? "game" : "session");
     }));
     mount(body, [head, ...resume,
-      el("section", { class: "panel" }, [el("h2", {}, "Your practice"), tiles, trend.length > 1 ? el("div", { class: "pr-chart" }, [el("p", { class: "pr-cap" }, "Strokes gained per shot, session by session"), trendSvg(trend)]) : null]),
+      el("section", { class: "panel" }, [el("h2", {}, viewKey ? `${viewing}\u2019s practice` : "Your practice"), tiles, trend.length > 1 ? el("div", { class: "pr-chart" }, [el("p", { class: "pr-cap" }, "Strokes gained per shot, session by session"), trendSvg(trend)]) : null]),
       el("section", { class: "panel" }, [el("h2", {}, "By distance"), el("p", { class: "muted small" }, "Practice against your strokes gained per shot on the course (Tour Events and Enter New Round), on the same baseline."), table]),
       patternPanel(cat, allShots.filter((s) => s.result).slice(-150), "Your pattern (last 150 shots)"),
       el("section", { class: "panel" }, [el("h2", {}, "Sessions"), list]),
@@ -509,8 +538,8 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     const course = await courseFor(s.cat).catch(() => ({}));
     const back = el("button", { type: "button", class: "link" }, "\u2190 Back");
     back.addEventListener("click", () => { view = { name: "home" }; draw(); });
-    const del = el("button", { type: "button", class: "link danger" }, game ? "Delete game" : "Delete session");
-    del.addEventListener("click", async () => { if (!confirmAction("Delete this? It can't be undone.")) return; await ctx.remove(s.id); view = { name: "home" }; draw(); });
+    const del = viewKey ? null : el("button", { type: "button", class: "link danger" }, game ? "Delete game" : "Delete session");
+    del?.addEventListener("click", async () => { if (!confirmAction("Delete this? It can't be undone.")) return; await ctx.remove(s.id); view = { name: "home" }; draw(); });
     const again = el("button", { type: "button", class: "btn" }, game ? "\u21BB  Play again" : "\uFF0B  New session");
     again.addEventListener("click", async () => {
       if (game) { const m = await import("./practiceGames.js"); m.startGame(ctx, game); return; }

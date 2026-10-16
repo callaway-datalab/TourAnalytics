@@ -341,8 +341,10 @@ export async function render(main, { flash, previewClient }) {
     ])) : el("p", { class: "empty" }, "No clubs yet. Add the clubs you play above."));
     const bag = sorted(inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean));
     mount(bagBox, bag.length ? el("ul", { class: "bag-chips" }, bag.map((c) => {
-      const b = el("button", { type: "button", class: "bag-chip", title: "Take it out of your bag" }, [el("strong", {}, clubLabel(c)), clubMake(c) ? el("span", {}, clubMake(c)) : null, el("span", { class: "bag-x", "aria-hidden": "true" }, "\u2715")]);
-      b.addEventListener("click", () => toggle(c));
+      // (update 186) someone else's bag: no ✕ (nothing to take out)
+      const b = el(readOnly ? "span" : "button", readOnly ? { class: "bag-chip bag-chip-ro" } : { type: "button", class: "bag-chip", title: viewing ? "Take it out of their bag" : "Take it out of your bag" },
+        [el("strong", {}, clubLabel(c)), clubMake(c) ? el("span", {}, clubMake(c)) : null, readOnly ? null : el("span", { class: "bag-x", "aria-hidden": "true" }, "\u2715")]);
+      if (!readOnly) b.addEventListener("click", () => toggle(c));
       return el("li", {}, b);
     })) : el("p", { class: "muted" }, readOnly ? "Their bag is empty." : caddieFor ? "Their bag is empty. Tap clubs in the list above to put them in." : "Your bag is empty. Tap clubs in the list above to put them in."));
     bagTitle.textContent = `${viewing ? "Their" : "Your"} bag (${bag.length} of ${MAX_CLUBS})`;

@@ -118,6 +118,10 @@ export async function render(main, { previewClient }) {
   }
 
   async function draw() {
+    // (update 187) where you are, before anything moves (the player search is moved into the new controls,
+    // which used to shorten the page and scroll you up a little on every redraw)
+    const y0 = window.scrollY, h0 = root.offsetHeight;
+    root.style.minHeight = `${h0}px`;
     prefs = watchPrefs();
     const source = src();
     if (source === "entered" && !enteredField) { await loadEntered(); }
@@ -192,7 +196,8 @@ export async function render(main, { previewClient }) {
     })() : null;
     const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, metricsBtn, meBtn, multi ? pickerBox : null]);
     const where = source === "entered" ? "entered rounds" : "ranked on their tour";
-    const sub = multi ? `${keys.length ? `${keys.length} player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about"} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ${where}`
+    // (update 186) just how many players
+    const sub = multi ? (keys.length ? `${keys.length} Player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about")
       : `${nameOf(single)} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ${source === "entered" ? "entered rounds" : "ranked on the tour"}`;
     // (update 168) previewing someone: their own Watchlist, and changes aren't kept
     const subLine = multi && watchIsPreview() ? `${sub} · their Watchlist (changes in a preview aren't saved)` : sub;
@@ -200,8 +205,7 @@ export async function render(main, { previewClient }) {
     // ---- the cards ----
     const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map(cardView));
     // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
-    const y = window.scrollY, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
-    root.style.minHeight = `${root.offsetHeight}px`;
+    const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
     mount(root, [heroShell(controls, subLine), menu, body,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
         ? "Strokes Gained values represent per round averages. Entered Rounds: the rounds entered in Enter New Round (not ranked). Trends: the last 10 rounds against the 10 before."
@@ -253,7 +257,8 @@ export async function render(main, { previewClient }) {
     const total = c.sg[0];
     const isOpen = openCards.has(c.key);
     // (update 171) more than one tour in this period: switch between them (ranked against that tour's field)
-    const tourSeg = c.tours?.length > 1 ? el("div", { class: "wl-tours", role: "group", "aria-label": `${c.label}'s tour` }, c.tours.map(({ tour: t, n }) => {
+    // (update 186) a pill for their tour even when there's only one (more than one: switch between them)
+    const tourSeg = c.tours?.length ? el("div", { class: "wl-tours", role: "group", "aria-label": `${c.label}'s tour` }, c.tours.map(({ tour: t, n }) => {
       const b = el("button", { type: "button", class: `wl-tour${t === c.tour ? " on" : ""}`, "aria-pressed": String(t === c.tour), title: `${n} round${n === 1 ? "" : "s"} on ${t}` }, t);
       b.addEventListener("click", () => { if (t === c.tour) return; tourPick.set(c.key, t); draw(); });
       return b;
@@ -264,7 +269,7 @@ export async function render(main, { previewClient }) {
       el("div", { class: "wl-id" }, [name, tourSeg]),
       el("div", { class: "wl-head-r" }, [moreBtn, star]),
     ]) : tourSeg ? el("div", { class: "wl-card-head" }, [el("div", { class: "wl-id" }, [tourSeg])]) : null;
-    const meta = el("p", { class: "wl-meta" }, [c.tours?.length > 1 ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
+    const meta = el("p", { class: "wl-meta" }, [c.tours?.length ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
     // (update 173) a badge opens what's behind it: a chart, a table, or both
     const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => {
       if (!b.info) return el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);

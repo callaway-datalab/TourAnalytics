@@ -25,8 +25,8 @@ export function periodFilter(period, rounds) {
 export const PERIODS = [["season", "Season"], ["l3", "Last 3 months"], ["l6", "Last 6 months"], ["all", "All"]];
 
 /** (update 172) The stats that can be split by distance on the Watchlist. */
-export const RANGE_STATS = ["hitGreen", "pinHigh", "onLine", "prox", "ud", "make"];
-const ONE_CAT = { ud: "ARG", make: "PUTT" }; // (their distances need no category in the label)
+export const RANGE_STATS = ["hitGreen", "pinHigh", "onLine", "prox", "ud", "make", "fwy", "gir", "drive"]; // (update 187: + Hit Fairway %, GIR %, Driving Distance)
+const ONE_CAT = { ud: "ARG", make: "PUTT", fwy: "OTT", drive: "OTT" }; // (their distances need no category in the label)
 /** A stat metric id: "stat:<key>" (all distances) or "stat:<key>@<cat>|<distance>". */
 export const parseStatId = (id) => { const body = id.slice(5), at = body.indexOf("@"); if (at < 0) return { k: body, cat: null, dist: null }; const [cat, ...d] = body.slice(at + 1).split("|"); return { k: body.slice(0, at), cat, dist: d.join("|") }; };
 const rangeLabel = (k, cat, dist) => `${ONE_CAT[k] === cat ? "" : `${CAT_SHORT[cat] || cat} `}${dist}`;
@@ -202,7 +202,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       info = () => { const bestRd = mine.reduce((m, rd) => (sgOf(rd) > sgOf(m) ? rd : m), mine[0]);
         return { sub: `Every round this ${period === "season" ? "season" : "period"}, the best highlighted: ${fmtSG(sgOf(bestRd))} at ${bestRd.event || "a tournament"}, ${dateShort(bestRd.date)}.`,
           blocks: [{ kind: "bars", fmt: "sg", items: mine.map((rd) => ({ label: dateShort(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: sgOf(rd), on: rd === bestRd })) },
-            { kind: "table", cols: [["Category"], ["That round", "num"], ["Their average", "num"]], rows: SG_KEYS.map(([kk, ll]) => ({ strong: kk === "TOTAL", cells: [ll, { sg: sgOf(bestRd, kk) }, { sg: perRound(mine, kk) }] })) }] }; }; }
+            { kind: "table", cols: [["Category"], ["That round", "num"], ["Average Round", "num"]], rows: SG_KEYS.map(([kk, ll]) => ({ strong: kk === "TOTAL", cells: [ll, { sg: sgOf(bestRd, kk) }, { sg: perRound(mine, kk) }] })) }] }; }; }
     else if (id === "res:wins" || id === "res:top10") {
       const counts = new Map(ranked.map((p) => [p.key, 0]));
       for (const e of events) e.ranked.slice(0, id === "res:wins" ? 1 : 10).forEach((x) => counts.set(x.key, (counts.get(x.key) || 0) + 1));
@@ -297,9 +297,9 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const top = recent.reduce((b, rd) => (sgOf(rd) > sgOf(b) ? rd : b), recent[0]);
   const bestInfo = (pool, what) => () => {
     const next = [...pool].sort((a, b) => sgOf(b) - sgOf(a)).slice(0, 6);
-    return { sub: `${top.event || "A tournament"}${top.roundNo ? `, round ${top.roundNo}` : ""}, ${dateShort(top.date)}: the round by category, against their average this ${period === "season" ? "season" : "period"}.`,
-      blocks: [{ kind: "table", cols: [["Category"], ["That round", "num"], ["Their average", "num"], ["Difference", "num"]], rows: SG_KEYS.map(([k, l]) => { const a = sgOf(top, k), m = perRound(mine, k); return { strong: k === "TOTAL", cells: [l, { sg: a }, { sg: m }, { sg: m == null ? null : a - m, arrow: true }] }; }) },
-        { kind: "table", title: `Their best rounds (${what})`, cols: [["Date"], ["Tournament"], ["SG", "num"]], rows: next.map((rd) => ({ me: rd === top, cells: [dateShort(rd.date), [rd.event || "\u2014", rd.roundNo ? ` R${rd.roundNo}` : ""].join(""), { sg: sgOf(rd) }] })) }] };
+    return { sub: `${top.event || "A tournament"}${top.roundNo ? `, round ${top.roundNo}` : ""}, ${dateShort(top.date)}: the round by category, against the average round this ${period === "season" ? "season" : "period"}.`,
+      blocks: [{ kind: "table", cols: [["Category"], ["That round", "num"], ["Average Round", "num"], ["Difference", "num"]], rows: SG_KEYS.map(([k, l]) => { const a = sgOf(top, k), m = perRound(mine, k); return { strong: k === "TOTAL", cells: [l, { sg: a }, { sg: m }, { sg: m == null ? null : a - m, arrow: true }] }; }) },
+        { kind: "table", title: `Best Rounds (${what})`, cols: [["Date"], ["Tournament"], ["SG", "num"]], rows: next.map((rd) => ({ me: rd === top, cells: [dateShort(rd.date), [rd.event || "\u2014", rd.roundNo ? ` R${rd.roundNo}` : ""].join(""), { sg: sgOf(rd) }] })) }] };
   };
   if (top && careerRs.length >= 20 && sgOf(top) >= careerBest - 1e-9) add({ kind: "career", icon: "⭐", tone: "gold", text: `Career-best round · ${fmtSG(sgOf(top))} at ${top.event || "a tournament"}`, alert: true, sev: 4 }, bestInfo(careerRs, "everything in the data"));
   else if (top && mine.length >= 10 && sgOf(top) >= Math.max(...rs) - 1e-9) add({ kind: "season", icon: "✨", tone: "gold", text: `${period === "season" ? "Season" : "Period"}-best round · ${fmtSG(sgOf(top))} at ${top.event || "a tournament"}`, alert: true, sev: 2 }, bestInfo(mine, period === "season" ? "this season" : "this period"));

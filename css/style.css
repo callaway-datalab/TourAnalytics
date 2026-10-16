@@ -3606,3 +3606,9 @@ button.wl-badge:active { transform: scale(0.97); }
 .page-head .witb-who-row { justify-content: center; margin: 0.4rem auto 0.6rem; max-width: 28rem; }
 .witb-who-pick { flex: 1 1 100%; }
 .witb-who-pick .player-picker > label, .witb-who-pick .picker-row > .btn { display: none; }
+/* update 186: someone else's bag: plain chips */
+.bag-chip.bag-chip-ro { cursor: default; }
+/* update 187: Practice, whose practice */
+.pr-who { max-width: 28rem; margin: 0 auto 0.9rem; text-align: center; }
+.pr-who .player-picker > label, .pr-who .picker-row > .btn { display: none; }
+.pr-who-note { margin: 0.35rem 0 0; }

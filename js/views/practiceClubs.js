@@ -47,13 +47,14 @@ export async function render(ctx) {
   const v = ctx.view;
   if (v.name === "bagImport") return drawImport(ctx, v);
   const clubs = clubsFrom(ctx.sessions);
-  const add = el("button", { type: "button", class: "btn" }, "\uFF0B  Add launch data");
-  add.addEventListener("click", () => ctx.go({ name: "bagImport" }));
+  const add = ctx.readOnly ? null : el("button", { type: "button", class: "btn" }, "\uFF0B  Add launch data"); // (update 187: someone else's: just look)
+  add?.addEventListener("click", () => ctx.go({ name: "bagImport" }));
   const hero = el("section", { class: "panel pr-hero" }, [
-    el("div", {}, [el("p", { class: "pr-eyebrow" }, "Practice"), el("h1", {}, "Launch Monitor Data"),
+    el("div", {}, [el("p", { class: "pr-eyebrow" }, ctx.viewing ? `${ctx.viewing} \u00b7 Practice` : "Practice"), el("h1", {}, "Launch Monitor Data"),
       el("p", { class: "muted pr-lede" }, "How each of your clubs launches. Pick the club (make, model and shaft), load a GCQuad or TrackMan export, and every number shows here: speeds, smash, launch, spin, delivery, height, carry and dispersion.")]),
     el("div", { class: "pr-row pr-wrap-row" }, [add]),
   ]);
+  if (!clubs.length && ctx.readOnly) { mount(ctx.body, [hero, el("section", { class: "panel pr-empty" }, el("p", { class: "muted" }, `${ctx.viewing} hasn\u2019t loaded any launch monitor data yet.`))]); return; } // (update 187)
   if (!clubs.length) {
     mount(ctx.body, [hero, el("section", { class: "panel pr-empty" }, [el("h2", {}, "How it works"), el("ol", {}, [
       "Tap \u201cAdd launch data\u201d and pick the club from your bag (What's in the Bag), or type in its make, model, shaft and flex.",
@@ -184,8 +185,8 @@ function filesPanel(ctx) {
   return el("section", { class: "panel" }, [el("h2", {}, "Files loaded"), el("div", { class: "pr-sessions" }, list.map((s) => {
     const by = {};
     for (const x of s.shots || []) { const lbl = s.specs?.[x.spec]?.type || x.club || "Club"; by[lbl] = (by[lbl] || 0) + 1; }
-    const del = el("button", { type: "button", class: "link danger" }, "Delete");
-    del.addEventListener("click", async () => { if (!confirmAction("Delete this file's shots from Launch Monitor Data?")) return; await ctx.remove(s.id); render(ctx); });
+    const del = ctx.readOnly ? null : el("button", { type: "button", class: "link danger" }, "Delete");
+    del?.addEventListener("click", async () => { if (!confirmAction("Delete this file's shots from Launch Monitor Data?")) return; await ctx.remove(s.id); render(ctx); });
     return el("div", { class: "pr-sess pr-sess-static" }, [
       el("span", { class: "pr-sess-d" }, [new Date(s.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), el("span", { class: "pr-sess-tag" }, s.fileName || "Launch monitor")]),
       el("span", { class: "muted" }, sortClubs(Object.keys(by)).map((c) => `${c} \u00d7${by[c]}`).join(", ")),
