@@ -3511,3 +3511,56 @@ button.chat-ca-caret:hover { background: rgba(255,255,255,0.06); color: var(--in
 .wl-tours { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
 .wl-tour { border: 1px solid rgba(255,255,255,0.14); background: transparent; color: var(--muted); border-radius: 999px; padding: 0.2rem 0.65rem; font: 600 0.74rem var(--font-body, inherit); cursor: pointer; }
 .wl-tour.on { background: rgba(212,180,131,0.18); border-color: rgba(212,180,131,0.55); color: #f3dfbd; }
+/* update 172: opening one Watchlist card leaves the one beside it folded (no stretching to match) */
+.wl-cards { align-items: flex-start; }
+/* update 172: distances for Hit Green %, Pin-High %, On-Line %, Proximity, Up & Down %, Made Putt % */
+.wl-menu-stat { display: grid; gap: 0.2rem; }
+.wl-ranges { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; padding: 0 0 0.4rem 1.5rem; }
+.wl-range { border: 1px solid rgba(255,255,255,0.14); background: transparent; color: var(--muted); border-radius: 999px; padding: 0.18rem 0.6rem; font: 600 0.74rem var(--font-body, inherit); cursor: pointer; }
+.wl-range.on { background: rgba(212,180,131,0.18); border-color: rgba(212,180,131,0.55); color: #f3dfbd; }
+.wl-range-cat { flex-basis: 100%; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 0.15rem; }
+@media (max-width: 520px) { .wl-period .wl-per { font-size: 0.78rem; padding: 0.5rem 0.25rem; } }
+/* update 173: a Watchlist badge opens its details */
+button.wl-badge { font-family: inherit; line-height: inherit; border: 0; cursor: pointer; transition: filter 0.15s, transform 0.15s; }
+button.wl-badge:hover { filter: brightness(1.25); }
+button.wl-badge:active { transform: scale(0.97); }
+.wl-pop { width: min(40rem, 100%); max-height: min(86vh, 48rem); }
+.wl-pop-body { overflow-y: auto; display: grid; gap: 1rem; padding: 0.8rem 0.1rem 0.8rem; }
+.wl-pop-t { margin: 0 0 0.4rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #d4b483; }
+.wl-pop-cw { border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 0.4rem 0.3rem 0.1rem; }
+.wl-pop-chart { display: block; width: 100%; height: auto; }
+.wl-pop-chart text { font-family: var(--font-body, inherit); font-variant-numeric: tabular-nums; }
+.wl-pop-tw { overflow-x: auto; }
+.wl-pop-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.wl-pop-table th { text-align: left; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 0.35rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
+.wl-pop-table td { padding: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.wl-pop-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wl-pop-table td.pos { color: #30d158; } .wl-pop-table td.neg { color: #ff453a; } .wl-pop-table td.zero { color: #ffd60a; }
+.wl-pop-table tr.me td { background: rgba(212,180,131,0.12); font-weight: 700; }
+.wl-pop-table tr.me td:first-child { box-shadow: inset 3px 0 0 #d4b483; }
+.wl-pop-table tr.strong td { font-weight: 700; }
+.wl-pop-table tr.gap td { text-align: center; color: var(--muted); padding: 0.15rem; }
+@media (max-width: 520px) { .gx-pop-overlay:has(.wl-pop) { padding: 0.5rem; align-items: end; } .wl-pop-table { font-size: 0.8rem; } .wl-pop-table td, .wl-pop-table th { padding-left: 0.35rem; padding-right: 0.35rem; } }
+/* update 174: Rank | Stat on the Player Stats hero chart, beside Min. rounds */
+.hero-chart-label { align-items: center; flex-wrap: wrap; row-gap: 0.35rem; }
+.hero-chart-title { min-width: 0; }
+.hero-chart-ctrls { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6rem; text-transform: none; letter-spacing: 0; }
+.hero-chart-label .hero-chart-ctrls .hero-chart-min { margin-left: 0; }
+.hero-chart-mode { display: inline-flex; padding: 2px; border-radius: 999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+.hcm-btn { border: 0; background: transparent; color: var(--muted); font: 600 0.72rem var(--font-body, inherit); padding: 0.22rem 0.7rem; border-radius: 999px; cursor: pointer; min-height: 1.5rem; }
+.hcm-btn.on { background: #f2f2f7; color: #0a0a0b; }
+.gx-pop.hero-pop.hero-events-pop { width: min(54rem, 100%) !important; }
+.hero-events th { white-space: nowrap; }
+.hero-events .ht-name { min-width: 8rem; }
+@media (max-width: 600px) {
+  .gx-pop.hero-pop.hero-events-pop { width: 100% !important; }
+  .hero-events { font-size: 0.8rem; table-layout: auto !important; }
+  .hero-events th { white-space: normal !important; line-height: 1.2; vertical-align: bottom; font-size: 0.6rem !important; letter-spacing: 0.02em; width: auto !important; }
+  .hero-events td:nth-child(1) { width: auto !important; font-size: 0.72rem; }
+  .hero-events td.ht-name { font-size: 0.74rem !important; line-height: 1.25; }
+  .hero-events th { letter-spacing: 0 !important; }
+  .hero-events th:nth-child(3), .hero-events td:nth-child(3) { display: none; } /* (Rds) */
+  .hero-events .ht-of { display: none; }
+  .hero-events .ht-name { min-width: 0; }
+  .hero-events td, .hero-events th { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
+}

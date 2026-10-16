@@ -69,7 +69,7 @@ export async function render(main, { previewClient }) {
     return r;
   }
   if (ds) import("../fieldStore.js").then(({ getFieldDetail }) => getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0)).then((res) => {
-    if (res?.players?.length) { detail = res.players; if (src() === "tour") draw(); }
+    if (res?.players?.length) { detail = res.players; for (const [k, v] of ownCache) if (!v) ownCache.delete(k); if (src() === "tour") draw(); } // (update 172: anyone without rounds yet gets them from the detail)
   }).catch(() => {});
 
   // ---- (update 169) Entered Rounds: the rounds entered in Enter New Round, yours included ----
@@ -116,8 +116,8 @@ export async function render(main, { previewClient }) {
     const keys = (multi ? prefs.players : [single]).filter((k) => (source === "entered" ? true : k !== myKey || field.some((p) => p.key === k)) && (labels.has(k) || fieldNow.some((p) => p.key === k)));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics, tour: tourPick.get(k) ?? null }));
-    const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })));
+    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics, tour: tourPick.get(k) ?? null, nameOf }));
+    const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow);
 
     // ---- controls ----
     const period = el("div", { class: "wl-period", role: "group", "aria-label": "Period" }, PERIODS.map(([v, l]) => {
@@ -129,10 +129,30 @@ export async function render(main, { previewClient }) {
     metricsBtn.addEventListener("click", () => { menuOpen = !menuOpen; draw(); });
     const menu = menuOpen ? el("div", { class: "panel wl-menu", role: "group", "aria-label": "Metrics" }, [
       el("div", { class: "wl-menu-top" }, [el("strong", {}, "Metrics on every card"), (() => { const b = el("button", { type: "button", class: "link" }, "Done"); b.addEventListener("click", () => { menuOpen = false; draw(); }); return b; })()]),
-      el("div", { class: "wl-menu-groups" }, catalog.map((g) => el("div", { class: "wl-menu-g" }, [el("p", { class: "wl-menu-gt" }, g.group), ...g.items.map(([id, l]) => {
-        const cb = el("input", { type: "checkbox", checked: prefs.metrics.includes(id) });
-        cb.addEventListener("change", () => { const m = cb.checked ? [...prefs.metrics, id] : prefs.metrics.filter((x) => x !== id); saveWatch({ metrics: m }); draw(); });
-        return el("label", { class: "wl-menu-o" }, [cb, el("span", {}, l)]);
+      el("div", { class: "wl-menu-groups" }, catalog.map((g) => el("div", { class: "wl-menu-g" }, [el("p", { class: "wl-menu-gt" }, g.group), ...g.items.map(([id, l, ranges]) => {
+        // (update 172) Hit Green %, Pin-High %, On-Line %, Proximity, Up & Down %, Made Putt %: once ticked, pick
+        // distances too ("All distances" is the stat over every shot); each pick is its own row on the cards
+        const mine = (m) => m === id || m.startsWith(`${id}@`);
+        const on = prefs.metrics.some(mine);
+        const cb = el("input", { type: "checkbox", checked: on });
+        cb.addEventListener("change", () => { const m = cb.checked ? [...prefs.metrics, id] : prefs.metrics.filter((x) => !mine(x)); saveWatch({ metrics: m }); draw(); });
+        const opt = el("label", { class: "wl-menu-o" }, [cb, el("span", {}, l)]);
+        if (!on || !ranges?.length) return opt;
+        const chip = (cid, text) => {
+          const sel = prefs.metrics.includes(cid);
+          const b = el("button", { type: "button", class: `wl-range${sel ? " on" : ""}`, "aria-pressed": String(sel), dataset: { id: cid } }, text);
+          b.addEventListener("click", () => {
+            let m = sel ? prefs.metrics.filter((x) => x !== cid) : [...prefs.metrics, cid];
+            if (!m.some(mine)) m = prefs.metrics.filter((x) => !mine(x)); // (nothing left picked: the stat is off)
+            saveWatch({ metrics: m }); draw();
+          });
+          return b;
+        };
+        const cats = [...new Set(ranges.map((r) => r.cat))];
+        return el("div", { class: "wl-menu-stat" }, [opt, el("div", { class: "wl-ranges", role: "group", "aria-label": `${l}: distances` }, [
+          chip(id, "All distances"),
+          ...cats.flatMap((c) => [cats.length > 1 ? el("span", { class: "wl-range-cat" }, ranges.find((r) => r.cat === c).catLabel) : null, ...ranges.filter((r) => r.cat === c).map((r) => chip(r.id, r.label))]),
+        ])]);
       })]))),
     ]) : null;
     // (update 169) Tour Events | Entered Rounds, and "＋ Me" (your own entered rounds) for anyone with a Watchlist
@@ -156,7 +176,7 @@ export async function render(main, { previewClient }) {
     // ---- the cards ----
     const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map(cardView));
     // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
-    const y = window.scrollY, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null;
+    const y = window.scrollY, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
     root.style.minHeight = `${root.offsetHeight}px`;
     mount(root, [heroShell(controls, subLine), menu, body,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
@@ -164,6 +184,7 @@ export async function render(main, { previewClient }) {
         : `Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
+    if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });
     requestAnimationFrame(() => { root.style.minHeight = ""; window.scrollTo(0, y); });
   }
 
@@ -218,8 +239,14 @@ export async function render(main, { previewClient }) {
       el("div", { class: "wl-id" }, [name, tourSeg]),
       el("div", { class: "wl-head-r" }, [moreBtn, star]),
     ]);
-    const meta = el("p", { class: "wl-meta" }, [c.tours?.length > 1 ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `last: ${fmtSG(c.latest.sg)} at ${c.latest.event || "a tournament"}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
-    const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]))) : null;
+    const meta = el("p", { class: "wl-meta" }, [c.tours?.length > 1 ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
+    // (update 173) a badge opens what's behind it: a chart, a table, or both
+    const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => {
+      if (!b.info) return el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
+      const btn = el("button", { type: "button", class: `wl-badge ${b.tone || ""}`, "aria-haspopup": "dialog", title: "See the details" }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
+      btn.addEventListener("click", async () => (await import("../badgePopup.js")).openBadge(b, c.label));
+      return btn;
+    })) : null;
     const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
       el("span", { class: "wl-tile-k" }, s.short),
       el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),

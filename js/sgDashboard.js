@@ -467,10 +467,31 @@ export function sgDashboard(container, opts) {
             minHere.classList.add("hero-chart-min");
             for (const ev of ["click", "keydown", "pointerdown"]) minHere.addEventListener(ev, (e) => e.stopPropagation());
             const first = hist[0].rank, now = hist.at(-1).rank, best = Math.min(...hist.map((x) => x.rank));
-            const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: `Show every ${unit}`, "aria-label": `${trendName} rank history chart. Show every ${unit} in a table.` }, [
-              el("span", { class: "hero-chart-label" }, [`${trendName} rank history \u00b7 ${ordinal(first)} \u2192 ${ordinal(now)}${best < now ? ` (best ${ordinal(best)})` : ""}`, minHere]),
-              chartBox((c) => rankChart(c, hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); }), hist))]);
-            const openT = () => tournamentsPopup(ordered, slicedField);
+            const labels = hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); });
+            // (update 174) Rank | Stat: the rolling rank, or the rolling average (everything up to that date, this selection)
+            const mode = () => (st.heroChartMode === "stat" ? "stat" : "rank");
+            const title = () => (mode() === "stat"
+              ? `${trendName} rolling average \u00b7 ${fmtV(hist[0].avg)} \u2192 ${fmtV(hist.at(-1).avg)}`
+              : `${trendName} rank history \u00b7 ${ordinal(first)} \u2192 ${ordinal(now)}${best < now ? ` (best ${ordinal(best)})` : ""}`);
+            const makeChart = () => chartBox((c) => (mode() === "stat" ? heroChart(c, labels, hist.map((x) => x.avg)) : rankChart(c, labels, hist)));
+            const titleEl = el("span", { class: "hero-chart-title" }, title());
+            const seg = el("div", { class: "hero-chart-mode", role: "group", "aria-label": "Chart shows" }, [["rank", "Rank"], ["stat", "Stat"]].map(([v, l]) => {
+              const b = el("button", { type: "button", class: `hcm-btn${mode() === v ? " on" : ""}`, "aria-pressed": String(mode() === v), title: v === "rank" ? "Plot the rolling rank" : "Plot the rolling average" }, l);
+              b.addEventListener("click", () => {
+                if (mode() === v) return;
+                st.heroChartMode = v;
+                for (const x of seg.children) { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); }
+                titleEl.textContent = title();
+                const fresh = makeChart(); chartEl.replaceWith(fresh); chartEl = fresh;
+              });
+              return b;
+            }));
+            for (const ev of ["click", "keydown", "pointerdown"]) seg.addEventListener(ev, (e) => e.stopPropagation());
+            let chartEl = makeChart();
+            const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: `Show every ${unit === "event" ? "event" : "tournament"}`, "aria-label": `${trendName} history chart. Show every tournament in a table.` }, [
+              el("span", { class: "hero-chart-label" }, [titleEl, el("span", { class: "hero-chart-ctrls" }, [seg, minHere])]),
+              chartEl]);
+            const openT = () => eventsPopup(ordered, slicedField, r);
             box.addEventListener("click", openT);
             box.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openT(); } });
             return box;
@@ -630,6 +651,37 @@ export function sgDashboard(container, opts) {
       el("p", { class: "muted small" }, `Rank: where that ${unit} placed among everyone in the field who played it.`),
     ], unit === "event" ? "Tournaments" : "Rounds");
   }
+  // (update 174) The hero chart's table: one row per tournament, newest first: their average there and where it
+  // placed, and their rolling average and rank (everything up to the end of that tournament, this selection)
+  function eventsPopup(ordered, slicedField, now) {
+    const hist = rankHistory(ordered, slicedField, now, { all: true });
+    const at = new Map(hist.map((x) => [String(x.date || ""), x]));
+    const fin = new Map();
+    for (const e of eventsOf(rankedField(slicedField))) {
+      const mineE = [...e.by].find(([p]) => p.key === me.key);
+      if (!mineE) continue;
+      const i = e.ranked.findIndex((x) => x.p.key === me.key);
+      fin.set(`${e.event}|${yearOf(mineE[1][0])}`, i < 0 ? null : { rank: i + 1, of: e.ranked.length });
+    }
+    const groups = new Map();
+    for (const rd of ordered) { const k = `${rd.event}|${yearOf(rd)}`; (groups.get(k) || groups.set(k, { event: rd.event, rs: [] }).get(k)).rs.push(rd); }
+    const rows = [...groups].map(([k, g]) => { const end = g.rs.reduce((m, rd) => (String(rd.date) > String(m) ? rd.date : m), g.rs[0].date); return { k, ...g, end, v: metric(g.rs), fin: fin.get(k), roll: at.get(String(end || "")) }; })
+      .sort((a, b) => String(b.end).localeCompare(String(a.end)));
+    const rankTd = (x, won = false) => (x ? el("td", { class: `num ht-win ${won && x.rank === 1 ? "ht-won" : ""}` }, [String(x.rank), el("span", { class: "ht-of" }, ` of ${x.of}`)]) : el("td", { class: "num ht-win" }, "\u2014"));
+    const valTd = (v) => el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v));
+    const table = el("table", { class: "plain rankings hero-tourn hero-events" }, [
+      el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"),
+        el("th", { class: "num" }, "Event Avg"), el("th", { class: "num" }, "Event Rank"), el("th", { class: "num" }, "Rolling Avg"), el("th", { class: "num" }, "Rolling Rank")])),
+      el("tbody", {}, rows.map((x) => el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(x.end)), el("td", { class: "ht-name" }, x.event || "\u2014"),
+        unit === "event" ? null : el("td", { class: "num" }, String(x.rs.length)),
+        valTd(x.v), rankTd(x.fin, true), valTd(x.roll?.avg ?? null), rankTd(x.roll)]))),
+    ]);
+    popup(`${isSG() ? "SG" : def.label} history`, me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 newest first`, [
+      el("div", { class: "table-scroll hero-tourn-scroll" }, table),
+      el("p", { class: "muted small" }, `Event Avg: ${isSG() ? "strokes gained a round" : def.label} at that tournament. Event Rank: where that placed among the players who played every round there (\u2014 when they didn\u2019t). Rolling Avg and Rolling Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds).`),
+    ], "Tournaments");
+    table.closest(".gx-pop")?.classList.add("hero-events-pop"); // (wider: seven columns)
+  }
   // ✨ Generate AI Insights: the Reports page's report builder, in a pop-up, for the player on screen
   function insightsButton(slicedField = []) {
     if (!me || !me.key) return null;
@@ -656,7 +708,7 @@ export function sgDashboard(container, opts) {
   }
   // (update 168) Rank history: after each of the player's rounds, their rank among the same players with what each
   // had played by that date (Min. rounds scaled to the most played by then). The last point is the rank shown.
-  function rankHistory(ordered, slicedField, now) {
+  function rankHistory(ordered, slicedField, now, { all = false } = {}) {
     const dk = (d) => String(d || "");
     const ranked = rankedField(slicedField);
     if (!ranked.some((p) => p.key !== me.key)) return [];
@@ -665,7 +717,7 @@ export function sgDashboard(container, opts) {
     const minNow = Math.max(1, minRoundsFor(slicedField.filter((p) => p.rounds.length)));
     // the dates to plot: each round's date (at most 60, spread evenly, always the latest)
     let dates = [...new Set(ordered.map((rd) => dk(rd.date)))];
-    if (dates.length > 60) { const step = (dates.length - 1) / 59; dates = Array.from({ length: 60 }, (_, i) => dates[Math.round(i * step)]); }
+    if (!all && dates.length > 60) { const step = (dates.length - 1) / 59; dates = Array.from({ length: 60 }, (_, i) => dates[Math.round(i * step)]); }
     const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
     // strokes gained: running totals, so each date is quick
     const sgFast = isSG();
@@ -684,7 +736,7 @@ export function sgDashboard(container, opts) {
       });
       vals.sort(byBest);
       const i = vals.findIndex((x) => x.key === me.key);
-      if (i >= 0) out.push({ date: d, rank: i + 1, of: vals.length });
+      if (i >= 0) out.push({ date: d, rank: i + 1, of: vals.length, avg: vals[i].v }); // (avg: their rolling average, update 174)
     }
     if (out.length && now?.rank) Object.assign(out[out.length - 1], { rank: now.rank, of: now.of }); // (the same as the pill)
     return out;
@@ -713,9 +765,10 @@ export function sgDashboard(container, opts) {
     grad.addColorStop(0, "rgba(212,180,131,0.45)"); grad.addColorStop(1, "rgba(212,180,131,0)");
     return new Chart(canvas, {
       type: "line",
-      data: { labels, datasets: [{ data: vals, borderColor: "#d4b483", backgroundColor: grad, fill: "origin", borderWidth: 2.4, pointRadius: 0, pointHoverRadius: 4, tension: 0.35 }] },
+      data: { labels, datasets: [{ data: vals, borderColor: "#d4b483", backgroundColor: grad, fill: isSG() ? "origin" : "start", borderWidth: 2.4, tension: 0.25,
+        pointRadius: vals.map((_, i) => (i === vals.length - 1 ? 3.5 : 0)), pointBackgroundColor: "#f3dfbd", pointHoverRadius: 4 }] },
       options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${fmtV(c.parsed.y)} (10-${unit} average)` } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${fmtV(c.parsed.y)} (rolling average)` } } },
         scales: {
           // a minimal x-axis: a few dates, small and grey, no grid
           x: { display: true, grid: { display: false }, border: { display: false }, ticks: { color: "#6e6e73", font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 5, padding: 2 } },
