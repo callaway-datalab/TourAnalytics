@@ -3602,3 +3602,7 @@ button.wl-badge:active { transform: scale(0.97); }
 .witb-mine.on { background: rgba(212,180,131,0.18); border-color: rgba(212,180,131,0.55); color: #f3dfbd; }
 .witb-who-pick { flex: 1 1 16rem; min-width: 0; }
 .witb-who-pick .player-picker { margin: 0; }
+/* update 185: WITB search centred, "My bag" in its list, no label or Clear */
+.page-head .witb-who-row { justify-content: center; margin: 0.4rem auto 0.6rem; max-width: 28rem; }
+.witb-who-pick { flex: 1 1 100%; }
+.witb-who-pick .player-picker > label, .witb-who-pick .picker-row > .btn { display: none; }

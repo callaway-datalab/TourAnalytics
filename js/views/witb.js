@@ -32,15 +32,22 @@ export async function render(main, { flash, previewClient }) {
     players.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
   }
   const viewAsKey = !state.isAdmin && previewClient?.role && team.teamAccess?.[previewClient.key] ? previewClient.key : null; // (a coach in a player's view)
-  const playerKey = pickedKey && players.some(([k]) => k === pickedKey) ? pickedKey : viewAsKey;
+  // (update 185) always opens on My bag; another player's only when picked in the search
+  void viewAsKey;
+  const playerKey = pickedKey && players.some(([k]) => k === pickedKey) ? pickedKey : null;
   // (update 184) whose bag: type a player's name (or My bag for your own)
   const picker = players.length ? (() => {
     const go = (key) => { const h = key ? `#/witb?player=${encodeURIComponent(key)}` : "#/witb"; if (location.hash !== h) location.hash = h; };
-    const pp = playerPicker(new Map(players), (p) => go(p?.key || null));
+    // (update 185) "My bag" is the first entry in the list; no separate button or label
+    const ME = "__mybag";
+    const pp = playerPicker(new Map([[ME, "My bag"], ...players]), (p) => go(p && p.key !== ME ? p.key : null), new Map([[ME, " "]]), ME);
+    const inp = pp.node.querySelector("input");
+    if (inp) inp.placeholder = "My bag \u00b7 type a player\u2019s name\u2026";
     if (playerKey) pp.preset(playerKey);
-    const mine = el("button", { type: "button", class: `btn ghost witb-mine${playerKey ? "" : " on"}`, "aria-pressed": String(!playerKey) }, "My bag");
-    mine.addEventListener("click", () => go(null));
-    return el("div", { class: "witb-who-row" }, [el("span", { class: "witb-who-l" }, "Bag:"), mine, el("div", { class: "witb-who-pick" }, pp.node)]);
+    // tapping in empties the box so the whole list shows (My bag first); tapping away puts the name back
+    inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
+    inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && playerKey) pp.preset(playerKey); }, 300));
+    return el("div", { class: "witb-who-row" }, [el("div", { class: "witb-who-pick" }, pp.node)]);
   })() : null;
   if (playerKey) {
     viewing = players.find(([k]) => k === playerKey)?.[1] || previewClient?.label || "This player";
