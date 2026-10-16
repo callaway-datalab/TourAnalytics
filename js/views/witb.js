@@ -6,6 +6,7 @@
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
 import { teamLabels } from "../names.js";
+import { playerPicker } from "../playerPicker.js";
 import { watchBagDoc, bagOwnerOf, saveLibrary, libraryFrom, newClubId, CLUB_TYPES, CLUB_CATS, MAX_CLUBS, clubLabel, clubRank, clubMake, shotUsesClub, shaftText, FLEXES, sameClub } from "../bag.js";
 import { watchPlayerRounds } from "../rounds.js";
 import { strokesGained } from "../roundCalc.js";
@@ -32,11 +33,14 @@ export async function render(main, { flash, previewClient }) {
   }
   const viewAsKey = !state.isAdmin && previewClient?.role && team.teamAccess?.[previewClient.key] ? previewClient.key : null; // (a coach in a player's view)
   const playerKey = pickedKey && players.some(([k]) => k === pickedKey) ? pickedKey : viewAsKey;
+  // (update 184) whose bag: type a player's name (or My bag for your own)
   const picker = players.length ? (() => {
-    const sel = el("select", { class: "witb-who", "aria-label": "Whose bag" }, [el("option", { value: "", selected: !playerKey }, "My bag"),
-      ...players.map(([k, l]) => el("option", { value: k, selected: k === playerKey }, l))]);
-    sel.addEventListener("change", () => { location.hash = sel.value ? `#/witb?player=${encodeURIComponent(sel.value)}` : "#/witb"; });
-    return el("label", { class: "witb-who-row" }, ["Bag: ", sel]);
+    const go = (key) => { const h = key ? `#/witb?player=${encodeURIComponent(key)}` : "#/witb"; if (location.hash !== h) location.hash = h; };
+    const pp = playerPicker(new Map(players), (p) => go(p?.key || null));
+    if (playerKey) pp.preset(playerKey);
+    const mine = el("button", { type: "button", class: `btn ghost witb-mine${playerKey ? "" : " on"}`, "aria-pressed": String(!playerKey) }, "My bag");
+    mine.addEventListener("click", () => go(null));
+    return el("div", { class: "witb-who-row" }, [el("span", { class: "witb-who-l" }, "Bag:"), mine, el("div", { class: "witb-who-pick" }, pp.node)]);
   })() : null;
   if (playerKey) {
     viewing = players.find(([k]) => k === playerKey)?.[1] || previewClient?.label || "This player";
