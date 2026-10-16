@@ -1,4 +1,4 @@
-import { portalName } from "./firebase-init.js"; // validates config.js and initializes Firebase first
+import { portalName, actingAs, actAsError, stopActingAs } from "./firebase-init.js"; // validates config.js and initializes Firebase first
 document.title = portalName; // browser tab shows the portal name from config.js
 import { startRouter } from "./router.js";
 import { subscribe } from "./auth.js";
@@ -7,6 +7,22 @@ import { setUnreadCount } from "./ui.js";
 // The build this page loaded (main.js?v= in index.html), so other files can tell if they're an older copy
 window.__taBuild = new URL(import.meta.url).searchParams.get("v");
 startRouter();
+
+// (update 170) a tab acting as a fake user says so, with a way back to your own sign-in
+if (actingAs || actAsError) {
+  const bar = document.createElement("div");
+  bar.className = `actas-bar${actAsError ? " bad" : ""}`;
+  bar.setAttribute("role", "status");
+  const txt = document.createElement("span");
+  txt.textContent = actAsError ? `Couldn't act as that fake user: ${actAsError}` : `Acting as ${actingAs.name} · a fake user · this tab only`;
+  const stop = document.createElement("button");
+  stop.type = "button"; stop.className = "actas-stop"; stop.textContent = actAsError ? "Dismiss" : "Stop";
+  stop.addEventListener("click", () => (actAsError ? bar.remove() : stopActingAs()));
+  bar.append(txt, stop);
+  document.body.prepend(bar);
+  document.body.classList.toggle("acting-as", !!actingAs);
+  if (actingAs) document.title = `${actingAs.name} · ${portalName}`;
+}
 
 // Offline: let the app open with no signal (Data Entry on the course).
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});

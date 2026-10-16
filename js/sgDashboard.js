@@ -462,9 +462,13 @@ export function sgDashboard(container, opts) {
           (() => {
             // tap the chart: every round, its number and its rank in the field
             if (hist.length < 2) return null;
+            // (update 170) Min. rounds right here (it decides who's ranked, so the line follows it); tapping it doesn't open the table
+            const minHere = minRoundsBox(slicedField.filter((p) => p.rounds.length));
+            minHere.classList.add("hero-chart-min");
+            for (const ev of ["click", "keydown", "pointerdown"]) minHere.addEventListener(ev, (e) => e.stopPropagation());
             const first = hist[0].rank, now = hist.at(-1).rank, best = Math.min(...hist.map((x) => x.rank));
             const box = el("div", { class: "hero-chart hero-chart-tap", role: "button", tabindex: "0", title: `Show every ${unit}`, "aria-label": `${trendName} rank history chart. Show every ${unit} in a table.` }, [
-              el("span", { class: "hero-chart-label" }, [`${trendName} rank history \u00b7 ${ordinal(first)} \u2192 ${ordinal(now)}${best < now ? ` (best ${ordinal(best)})` : ""}`, el("span", { class: "hero-chart-hint" }, "Tap for the table")]),
+              el("span", { class: "hero-chart-label" }, [`${trendName} rank history \u00b7 ${ordinal(first)} \u2192 ${ordinal(now)}${best < now ? ` (best ${ordinal(best)})` : ""}`, minHere]),
               chartBox((c) => rankChart(c, hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); }), hist))]);
             const openT = () => tournamentsPopup(ordered, slicedField);
             box.addEventListener("click", openT);

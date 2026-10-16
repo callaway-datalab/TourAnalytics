@@ -3468,3 +3468,34 @@ button.chat-ca-caret:hover { background: rgba(255,255,255,0.06); color: var(--in
 .pr-dd-menu { z-index: 60; }
 /* update 169: Watchlist: Tour Events | Entered Rounds, and ＋ Me */
 .wl-me-btn { min-height: 2.25rem; }
+
+/* update 170: a tab acting as a fake user */
+.actas-bar { position: fixed; left: 50%; bottom: calc(0.8rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 3000; display: flex; align-items: center; gap: 0.8rem;
+  max-width: calc(100vw - 1.5rem); padding: 0.5rem 0.6rem 0.5rem 1rem; border-radius: 999px; background: #3a2a06; border: 1px solid #d4b483; color: #f3dfbd; font-size: 0.86rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.actas-bar.bad { background: #3a0b0b; border-color: #ff6b5e; color: #ffd0cc; }
+.actas-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actas-stop { flex: none; border: 0; border-radius: 999px; padding: 0.35rem 0.9rem; background: #d4b483; color: #0a0a0b; font-weight: 700; cursor: pointer; }
+.tag.type-fake { background: rgba(212,180,131,0.18); color: #f3dfbd; }
+.fake-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0 0.6rem; }
+/* update 170: Min. rounds above the rank history chart */
+.hero-chart-label .hero-chart-min { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 0.72rem; }
+.hero-chart-label .hero-chart-min .hb-min-in { width: 3.4rem; min-height: 1.7rem; height: 1.7rem; padding: 0.1rem 0.4rem; font-size: 0.82rem; }
+/* update 170: who's answering a Callaway Analyst conversation (staff only) */
+.chat-triage { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin-top: 0.5rem; padding: 0.5rem 0.7rem; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); font-size: 0.84rem; }
+.chat-tri-status { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600; }
+.chat-tri-status i { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: #8e8e93; flex: none; }
+.chat-triage.st-open .chat-tri-status i { background: #ff9f0a; }
+.chat-triage.st-working .chat-tri-status i, .chat-triage.st-assigned .chat-tri-status i { background: #0a84ff; }
+.chat-triage.st-answered .chat-tri-status i { background: #30d158; }
+.chat-tri-acts { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; margin-left: auto; }
+.chat-tri-btn { border: 1px solid rgba(255,255,255,0.15); background: transparent; color: var(--ink); border-radius: 999px; padding: 0.3rem 0.75rem; font: 600 0.8rem var(--font-body, inherit); cursor: pointer; }
+.chat-tri-btn.work.on { background: rgba(10,132,255,0.2); border-color: #0a84ff; }
+.chat-tri-btn.unable.on { background: rgba(255,69,58,0.18); border-color: #ff453a; }
+.chat-tri-assign { min-height: 1.9rem; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.8rem; }
+.chat-tri-note { flex-basis: 100%; }
+.chat-tri-chip { display: inline-block; margin-top: 0.15rem; font-size: 0.7rem; font-weight: 600; color: #ff9f0a; }
+.chat-tri-chip.st-working, .chat-tri-chip.st-assigned { color: #64b5ff; }
+.chat-tri-chip.st-answered { color: #4cd17e; }
+.chat-person-ca { font-weight: 600; color: #f3dfbd; }
+.chat-thread-head { flex-wrap: wrap; }
+.chat-tri-assign { width: auto !important; max-width: 12rem; margin: 0 !important; }

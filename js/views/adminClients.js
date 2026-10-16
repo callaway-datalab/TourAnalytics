@@ -18,6 +18,7 @@ export async function render(main, { flash }) {
   let clientsCache = { labels: new Map() };
   let invitesCache = [];
   let usersCache = [];
+  let fakeMap = new Map(), unFake = () => {}; // (update 170) fake users: uid → { name, email }
   let expiryCleared = false;
 
   const linkButton = (text, onClick, cls = "link") => {
@@ -209,6 +210,19 @@ export async function render(main, { flash }) {
   };
   typeSel.addEventListener("change", drawFields);
 
+  const fakeBox = el("input", { type: "checkbox", "aria-label": "Fake user" });
+  fakeBox.addEventListener("change", () => { createBtn.textContent = fakeBox.checked ? "Create fake user" : "Create code"; });
+  async function makeFake(code, name) {
+    const { createFakeUser } = await import("../fakeUsers.js");
+    try {
+      await createFakeUser({ code, name });
+      flash(`Fake user \u201c${name}\u201d made, with this access. Use Act as on its row to see the portal as them.`, "ok");
+    } catch (err) {
+      console.error(err);
+      flash(err?.code === "permission-denied" ? "The database refused: republish the Firestore rules from update 170, then try again." : `Made the code ${formatCode(code)}, but couldn't make the fake user (${err?.code || err?.message || "error"}).`, "error");
+    }
+    fakeBox.checked = false; createBtn.textContent = "Create code";
+  }
   const createForm = el("form", {
     class: "stack create-code",
     onSubmit: async (e) => {
@@ -233,8 +247,9 @@ export async function render(main, { flash }) {
           const knownId = byName ? clientsCache.ids?.get(byName.key) : null;
           const id = knownId && knownId.toLowerCase() !== typed.toLowerCase() ? knownId : typed;
           const shown = hit ? hit.label : typed;
-          const code = await createInvite({ clientKey: key, clientLabel: id, note: fields.note.value.trim(), days: 0 });
-          flash(`Access code for ${shown}: ${formatCode(code)}` + (clientsCache.labels.has(key) ? "" : " (No uploaded data matches this ID yet.)"), "ok");
+          const code = await createInvite({ clientKey: key, clientLabel: id, note: fields.note.value.trim() || (fakeBox.checked ? "Fake user" : ""), days: 0 });
+          if (fakeBox.checked) await makeFake(code, shown);
+          else flash(`Access code for ${shown}: ${formatCode(code)}` + (clientsCache.labels.has(key) ? "" : " (No uploaded data matches this ID yet.)"), "ok");
         } else {
           const name = fields.name.value.trim();
           const { allPlayers, playerKeys } = fields.players.value();
@@ -243,7 +258,8 @@ export async function render(main, { flash }) {
           const code = type === "analyst" || type === "employee"
             ? await createAnalystAccess({ name, playerKeys, allPlayers, labels: clientsCache.labels, days: 0, kind: type })
             : await createTeamAccess({ name, role: type === "other" ? fields.role.value.trim() : type, playerKeys, labels: clientsCache.labels });
-          flash(`Access code${name ? ` for ${name}` : ""}: ${formatCode(code)}. Send it with the sign-up link; whoever signs up with it gets this access.`, "ok");
+          if (fakeBox.checked) await makeFake(code, name || `Test ${USER_TYPES.find(([v]) => v === type)?.[1].toLowerCase() || "user"}`);
+          else flash(`Access code${name ? ` for ${name}` : ""}: ${formatCode(code)}. Send it with the sign-up link; whoever signs up with it gets this access.`, "ok");
         }
         drawFields();
         setCreateOpen(false);
@@ -256,6 +272,8 @@ export async function render(main, { flash }) {
   }, [
     el("div", { class: "inline-form" }, [el("label", { class: "type-pick" }, ["User Type", typeSel])]),
     fieldsBox,
+    // (update 170) a fake user: the code is used straight away by a test account you can act as
+    el("label", { class: "fake-row" }, [fakeBox, el("span", {}, [el("strong", {}, "Fake user"), el("span", { class: "muted small" }, " \u00b7 make a test account with this access now, and act as it (nobody else gets the code)")])]),
     el("div", {}, createBtn),
   ]);
   drawFields();
@@ -354,6 +372,19 @@ export async function render(main, { flash }) {
 
   function codeActions(inv, user, grants) {
     const links = [];
+    if (inv.usedBy && user && fakeMap.has(user.uid)) {
+      // (update 170) a fake user: act as it (a new tab, signed in as it), edit it, or delete it altogether
+      links.push(linkButton("Act as", async () => (await import("../fakeUsers.js")).actAs(user.uid), "link actas-link"));
+      links.push(linkButton("Edit", () => editPerson(inv, user, grants)));
+      const del = linkButton("Delete", async () => {
+        if (!confirmAction(`Delete the fake user ${user.name}? Its account goes; anything it entered stays.`)) return;
+        del.disabled = true;
+        try { await (await import("../fakeUsers.js")).deleteFakeUser(user.uid); await deleteInvite(inv.code).catch(() => {}); flash(`Deleted ${user.name}.`, "ok"); }
+        catch { flash("Couldn't delete that fake user.", "error"); del.disabled = false; }
+      }, "link danger");
+      links.push(del);
+      return el("span", { class: "row-actions" }, links);
+    }
     if (inv.usedBy && user) {
       links.push(el("a", { href: portalHref(user) }, "See their portal"));
       links.push(linkButton("Edit", () => editPerson(inv, user, grants)));
@@ -457,7 +488,7 @@ export async function render(main, { flash }) {
           !isTeamKey(inv.clientKey) ? el("div", { class: "muted small" }, [`ID ${inv.clientLabel}`, inv.note ? ` \u00b7 ${inv.note}` : ""]) : null,
         ]),
         el("td", {}, email || el("span", { class: "muted" }, "\u2014")),
-        el("td", {}, el("span", { class: "type-tags" }, typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)))),
+        el("td", {}, el("span", { class: "type-tags" }, [...typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)), user && fakeMap.has(user.uid) ? el("span", { class: "tag type-fake", title: "A test account you made" }, "Fake") : null])),
         el("td", {}, teamOf),
         el("td", {}, status),
         el("td", { class: "num" }, user ? num(user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")),
@@ -511,8 +542,10 @@ export async function render(main, { flash }) {
     renderInvites(); refreshClients();
   });
   const unUsers = watchUsers((users) => { usersCache = users; renderInvites(); refreshClients(); });
+  // (update 170) the fake users, to tag them and offer Act as
+  import("../fakeUsers.js").then((m) => { unFake = m.watchFakeUsers((map) => { fakeMap = map; renderInvites(); }); }).catch(() => {});
   const clientsInterval = setInterval(refreshClients, 15000);
   refreshClients();
 
-  return () => { unInv(); unUsers(); clearInterval(clientsInterval); clearInterval(statsInterval); dialog.remove(); };
+  return () => { unInv(); unUsers(); unFake(); clearInterval(clientsInterval); clearInterval(statsInterval); dialog.remove(); };
 }

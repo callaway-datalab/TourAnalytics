@@ -6,6 +6,10 @@
 //     on everyone's list from the start, and can't be removed (update 141)
 // What differs is only who you can message: the admin and analysts anyone; everyone else Callaway staff, their
 // own team and their friends. The Firestore rules check this too (chatReach, chatFriends; see chatCircles.js).
+// (update 170) Callaway's analysts are anonymous from the outside: players, coaches and caddies message their friends
+// and team, or "Callaway Analyst", and every analyst's message shows to them as Callaway Analyst. Inside, the admin
+// and every analyst see each Callaway Analyst conversation, and mark it Working on it or Unable (the admin can
+// also Assign it), so everyone knows who's answering. That status (chatTriage/{roomId}) only staff can read.
 import {
   collection, addDoc, deleteDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, orderBy, query, where, limit, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
@@ -69,6 +73,7 @@ export function renderChat(container, { flash }) {
   const nameWatch = new Map();
   const watchName = (id) => {
     if (staff || people.has(id) || nameWatch.has(id)) return;
+    if (!staff && (staffIds.includes(id) || adminUids.includes(id))) return; // (update 170: analysts stay anonymous)
     nameWatch.set(id, onSnapshot(doc(db, "chatNames", id), (d) => { if (d.exists()) { people.set(id, d.data()); redraw(); } }, () => {}));
   };
   if (staff) {
@@ -99,14 +104,15 @@ export function renderChat(container, { flash }) {
     if (!current && !autoOpened && rooms.length) { autoOpened = true; open(allRooms()[0].id); shell.classList.remove("show-thread"); }
   }, () => {}));
 
-  const nameOf = (id) => (id === uid ? "You" : people.get(id)?.name || (staffIds.includes(id) ? "Callaway Analyst" : "Someone"));
-  const roleOf = (id) => { const p = people.get(id); return p ? p.title || roleName(p.role) : staffIds.includes(id) ? "Callaway" : ""; };
-  const isStaffId = (id) => staffIds.includes(id) || ["admin", "analyst"].includes(people.get(id)?.role);
+  const isStaffId = (id) => staffIds.includes(id) || adminUids.includes(id) || ["admin", "analyst"].includes(people.get(id)?.role);
+  // (update 170) to everyone outside Callaway, every analyst (and the admin) is just "Callaway Analyst"
+  const nameOf = (id) => (id === uid ? "You" : !staff && isStaffId(id) ? "Callaway Analyst" : people.get(id)?.name || (staff && adminUids.includes(id) ? "Admin" : staffIds.includes(id) ? "Callaway Analyst" : "Someone"));
+  const roleOf = (id) => { if (!staff && isStaffId(id)) return "Callaway"; const p = people.get(id); return p ? p.title || roleName(p.role) : staffIds.includes(id) ? "Callaway" : ""; };
   // every Callaway analyst (and the admin) the chat knows of
   const allStaff = () => [...new Set([...adminUids, ...staffIds, ...[...people.keys()].filter((id) => ["admin", "analyst"].includes(people.get(id)?.role))])];
   // who I can message, in sections
   function contacts() {
-    const others = staff ? [...new Set([...people.keys(), ...staffIds])].filter((id) => id !== uid) : [...new Set([...staffIds, ...reach, ...friends])].filter((id) => id !== uid);
+    const others = staff ? [...new Set([...people.keys(), ...staffIds])].filter((id) => id !== uid) : [...new Set([...reach, ...friends])].filter((id) => id !== uid && !isStaffId(id));
     const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
     const callaway = others.filter(isStaffId).sort(byName);
     const friendIds = friends.filter((id) => id !== uid && !isStaffId(id)).sort(byName);
@@ -119,7 +125,9 @@ export function renderChat(container, { flash }) {
   const roomName = (r) => (r.staffRoom ? "Callaway Analyst" : r.callaway ? (r.createdBy === uid ? "Callaway Analyst" : `${nameOf(r.createdBy)} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
   // in your Callaway Analyst chat, Callaway's replies show as "Callaway Analyst (Sam)"
   const first = (n) => String(n || "").trim().split(/\s+/)[0] || "";
-  const authorOf = (r, m) => (r?.callaway && r.createdBy === uid && m.uid !== uid ? `Callaway Analyst${first(m.name || nameOf(m.uid)) ? ` (${first(m.name || nameOf(m.uid))})` : ""}` : m.name || nameOf(m.uid));
+  // (update 170) outside Callaway every analyst is "Callaway Analyst"; inside, staff see which of them wrote it
+  const authorOf = (r, m) => (!staff ? (isStaffId(m.uid) ? "Callaway Analyst" : m.name || nameOf(m.uid))
+    : isStaffId(m.uid) ? nameOf(m.uid) : m.name || nameOf(m.uid));
   const roomNow = () => rooms.find((x) => x.id === current);
   const allRooms = () => rooms.map((r) => ({ ...r, lastAt: ms(r.lastAt) || ms(r.createdAt) })).sort((a, b) => b.lastAt - a.lastAt);
   const unread = (r) => r.lastAt > lastRead(uid, r.id) && r.lastBy && r.lastBy !== uid;
@@ -148,7 +156,8 @@ export function renderChat(container, { flash }) {
       const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
       const b = el("button", { type: "button", class: "chat-room" + (r.callaway ? " chat-ca" : "") + (r.id === current ? " on" : ""), "aria-current": r.id === current ? "true" : null }, [
         el("span", { class: "chat-room-icon", "aria-hidden": "true" }, icon(r)),
-        el("span", { class: "chat-room-text" }, [el("strong", {}, roomName(r)), el("span", { class: "muted" }, r.lastText ? r.lastText.slice(0, 60) : r.callaway ? "Message Callaway's analysts" : r.type === "group" ? `${r.members.length} people` : other ? roleOf(other) : "")]),
+        el("span", { class: "chat-room-text" }, [el("strong", {}, roomName(r)), el("span", { class: "muted" }, r.lastText ? r.lastText.slice(0, 60) : r.callaway ? "Message Callaway's analysts" : r.type === "group" ? `${r.members.length} people` : other ? roleOf(other) : ""),
+          staff && r.callaway && !r.staffRoom && r.lastText ? (() => { const st = statusOf(r); return el("span", { class: `chat-tri-chip st-${st.state}` }, statusText(st)); })() : null]),
         unread(r) && r.id !== current ? el("span", { class: "chat-dot", "aria-label": "Unread" }) : null,
       ]);
       b.addEventListener("click", () => (r.id === caId ? startCallaway() : open(r.id)));
@@ -197,7 +206,7 @@ export function renderChat(container, { flash }) {
     const back = el("button", { type: "button", class: "link chat-back", "aria-label": "Back to chats" }, "\u2039 Chats");
     back.addEventListener("click", () => shell.classList.remove("show-thread"));
     const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
-    const sub = r.staffRoom ? `${r.members.length} people \u00b7 ${r.members.map(nameOf).join(", ")}` : r.callaway ? (r.createdBy === uid ? "Callaway's analysts" : `${nameOf(r.createdBy)} \u00b7 to Callaway's analysts`) : r.type === "dm" ? (roleOf(other) || "Direct message") : r.members.map(nameOf).join(", ");
+    const sub = r.staffRoom ? `${r.members.length} people \u00b7 ${r.members.map(nameOf).join(", ")}` : r.callaway ? (r.createdBy === uid ? "Callaway's analysts" : `${nameOf(r.createdBy)} \u00b7 to Callaway's analysts`) : r.type === "dm" ? (roleOf(other) || "Direct message") : [...new Set(r.members.map(nameOf))].join(", ");
     const actions = [];
     if (!r.callaway && !r.staffRoom) {
       const plus = el("button", { type: "button", class: "btn ghost chat-plus", title: "Add people", "aria-label": "Add people" }, "\uFF0B");
@@ -213,7 +222,49 @@ export function renderChat(container, { flash }) {
       });
       actions.push(leave);
     }
-    mount(head, [back, el("div", { class: "chat-title" }, [el("strong", {}, roomName(r)), el("span", { class: "muted small" }, sub)]), el("div", { class: "chat-actions" }, actions)]);
+    mount(head, [back, el("div", { class: "chat-title" }, [el("strong", {}, roomName(r)), el("span", { class: "muted small" }, sub)]), el("div", { class: "chat-actions" }, actions),
+      staff && r.callaway && !r.staffRoom ? triageBar(r) : null]);
+  }
+
+  // ---- (update 170) who's answering a Callaway Analyst conversation: staff only ----
+  const triage = new Map(); // roomId → { state: "working" | "assigned" | "answered" | "open", by, assignedBy, unable: [], at }
+  if (staff) unsubs.push(onSnapshot(collection(db, "chatTriage"), (snap) => { triage.clear(); snap.docs.forEach((d) => triage.set(d.id, d.data())); redraw(); }, () => {}));
+  /** Where a conversation stands: answered goes back to open when the player writes again. */
+  function statusOf(r) {
+    const t = triage.get(r.id) || {};
+    const unable = (t.unable || []).filter((x) => x !== t.by);
+    const newer = r.lastBy && !isStaffId(r.lastBy) && ms(r.lastAt) > ms(t.at);
+    const state = !t.state || (t.state === "answered" && newer) ? "open" : t.state;
+    return { ...t, state, unable, waiting: newer };
+  }
+  const statusText = (st) => (st.state === "working" ? `${st.by === uid ? "You're" : `${nameOf(st.by)} is`} working on it`
+    : st.state === "assigned" ? `Assigned to ${st.by === uid ? "you" : nameOf(st.by)}${st.assignedBy && st.assignedBy !== st.by ? ` by ${st.assignedBy === uid ? "you" : nameOf(st.assignedBy)}` : ""}`
+    : st.state === "answered" ? `Answered by ${st.by === uid ? "you" : nameOf(st.by)}`
+    : st.waiting || !st.state ? "Open \u00b7 nobody's on it yet" : "Open");
+  async function setTriage(roomId, data) {
+    try { await setDoc(doc(db, "chatTriage", roomId), { ...data, at: serverTimestamp() }); }
+    catch { flash("Couldn't update that. (Republish the Firestore rules from update 170 if you haven't.)", "error"); }
+  }
+  function triageBar(r) {
+    const st = statusOf(r);
+    const btn = (label, cls, fn, on = false) => { const b = el("button", { type: "button", class: `chat-tri-btn ${cls}${on ? " on" : ""}`, "aria-pressed": String(on) }, label); b.addEventListener("click", fn); return b; };
+    const mineWorking = (st.state === "working" || st.state === "assigned") && st.by === uid;
+    const working = btn("\u{1F6E0} Working on it", "work", () => setTriage(r.id, { state: "working", by: uid, unable: st.unable.filter((x) => x !== uid), assignedBy: null }), st.state === "working" && st.by === uid);
+    const iUnable = st.unable.includes(uid);
+    const unable = btn("Unable", "unable", () => setTriage(r.id, iUnable ? { state: st.state, by: st.by || null, assignedBy: st.assignedBy || null, unable: st.unable.filter((x) => x !== uid) }
+      : { ...(mineWorking ? { state: "open", by: null, assignedBy: null } : { state: st.state, by: st.by || null, assignedBy: st.assignedBy || null }), unable: [...st.unable, uid] }), iUnable);
+    // the admin: hand it to one analyst
+    const assign = state.isAdmin ? (() => {
+      const sel = el("select", { class: "chat-tri-assign", "aria-label": "Assign to" }, [el("option", { value: "" }, "Assign\u2026"),
+        ...allStaff().map((id) => el("option", { value: id, selected: st.state === "assigned" && st.by === id }, id === uid ? "Me" : nameOf(id)))]);
+      sel.addEventListener("change", () => { if (sel.value) setTriage(r.id, { state: "assigned", by: sel.value, assignedBy: uid, unable: st.unable.filter((x) => x !== sel.value) }); });
+      return sel;
+    })() : null;
+    return el("div", { class: `chat-triage st-${st.state}` }, [
+      el("span", { class: "chat-tri-status" }, [el("i", { "aria-hidden": "true" }), statusText(st), st.unable.length ? el("span", { class: "muted" }, ` \u00b7 Unable: ${st.unable.map((x) => (x === uid ? "you" : nameOf(x))).join(", ")}`) : null]),
+      el("span", { class: "chat-tri-acts" }, [working, unable, assign]),
+      el("span", { class: "muted small chat-tri-note" }, "Only Callaway's analysts see this. The player sees every reply as Callaway Analyst."),
+    ]);
   }
 
   function open(roomId) {
@@ -262,7 +313,11 @@ export function renderChat(container, { flash }) {
     }
     sendBtn.disabled = true;
     try {
-      await addDoc(msgsOf(current), { uid, name: myName, body, createdAt: serverTimestamp() });
+      const room = roomNow();
+      // (update 170) staff writing where outsiders can read it: signed as Callaway Analyst (staff still see who)
+      const outsiders = staff && room && !room.staffRoom && room.members.some((m) => !isStaffId(m));
+      await addDoc(msgsOf(current), { uid, name: outsiders ? "Callaway Analyst" : myName, body, createdAt: serverTimestamp() });
+      if (staff && room?.callaway && !room.staffRoom) setTriage(current, { state: "answered", by: uid, assignedBy: null, unable: [] });
       await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
       box.value = ""; box.focus();
     } catch { flash("Couldn't send that message. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
@@ -273,7 +328,7 @@ export function renderChat(container, { flash }) {
   const personLabel = (id) => { const r = roleOf(id); return r ? [nameOf(id), el("span", { class: "muted small" }, ` \u00b7 ${r}`)] : nameOf(id); };
   let to = [];
   // everyone I can message (Callaway's staff, my team, friends; the admin and analysts: everyone)
-  const reachable = () => [...new Set(staff ? [...people.keys(), ...allStaff()] : [...allStaff(), ...reach, ...friends])].filter((id) => id !== uid);
+  const reachable = () => [...new Set(staff ? [...people.keys(), ...allStaff()] : [...reach, ...friends].filter((id) => !isStaffId(id)))].filter((id) => id !== uid);
   /** A search box with matches under it; picking one calls onPick(id). An email not in the list can be asked to chat. */
   function searchBox(onPick, exclude = []) {
     const input = el("input", { type: "search", class: "chat-find", placeholder: "Search for people\u2026", "aria-label": "Search for people", autocomplete: "off" });
@@ -283,6 +338,12 @@ export function renderChat(container, { flash }) {
       const ids = reachable().filter((id) => !exclude.includes(id) && !to.includes(id) && (!q || nameOf(id).toLowerCase().includes(q) || roleOf(id).toLowerCase().includes(q) || (isStaffId(id) && "callaway analyst".includes(q))))
         .sort((a, b) => (isStaffId(b) - isStaffId(a)) || nameOf(a).localeCompare(nameOf(b))).slice(0, q ? 30 : Math.max(8, allStaff().length));
       const items = ids.map((id) => { const b = el("button", { type: "button", class: "chat-person" }, personLabel(id)); b.addEventListener("click", () => { input.value = ""; onPick(id); }); return el("li", {}, b); });
+      // (update 170) outside Callaway: one "Callaway Analyst" (the analysts' shared inbox), never a named analyst
+      if (!staff && !exclude.length && (!q || "callaway analyst".includes(q) || q.includes("analyst") || q.includes("callaway"))) {
+        const b = el("button", { type: "button", class: "chat-person chat-person-ca" }, ["\u2605 Callaway Analyst", el("span", { class: "muted small" }, " \u00b7 any of Callaway's analysts")]);
+        b.addEventListener("click", () => { input.value = ""; startCallaway(); });
+        items.unshift(el("li", {}, b));
+      }
       if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(q)) {
         const b = el("button", { type: "button", class: "chat-person" }, [`Ask ${q} to chat`, el("span", { class: "muted small" }, " \u00b7 they accept, then you can message")]);
         b.addEventListener("click", () => askEmail(q));
