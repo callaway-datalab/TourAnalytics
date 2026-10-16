@@ -52,6 +52,10 @@ export async function render(main, { previewClient }) {
   const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null;
   let field = summaryPlayers(summary).filter((p) => p.rounds.length);
   let detail = null;
+  // (update 178) anyone's name for the badge pop-ups: yours / your players', else the field's (the same names as
+  // the Rankings), never a bare ID
+  const fieldNames = new Map(field.filter((p) => p.name).map((p) => [p.key, plainName(p.name)]));
+  const anyName = (k) => labels.get(k) || fieldNames.get(k) || enteredField?.find((p) => p.key === k)?.label || k.replace(/^c_/, "");
   const ownCache = new Map(); // key → full rounds (lie / distance)
   async function ownRounds(key) {
     if (src() === "entered") return enteredField?.find((p) => p.key === key)?.rounds || null;
@@ -117,7 +121,7 @@ export async function render(main, { previewClient }) {
     const keys = (multi ? prefs.players : [single]).filter((k) => (source === "entered" ? true : k !== myKey || field.some((p) => p.key === k)) && (labels.has(k) || fieldNow.some((p) => p.key === k)));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics, tour: tourPick.get(k) ?? null, nameOf }));
+    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics, tour: tourPick.get(k) ?? null, nameOf: anyName }));
     const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow);
 
     // ---- controls ----
@@ -136,7 +140,8 @@ export async function render(main, { previewClient }) {
         const mine = (m) => m === id || m.startsWith(`${id}@`);
         const on = prefs.metrics.some(mine);
         const cb = el("input", { type: "checkbox", checked: on });
-        cb.addEventListener("change", () => { const m = cb.checked ? [...prefs.metrics, id] : prefs.metrics.filter((x) => !mine(x)); saveWatch({ metrics: m }); draw(); });
+        // (update 179) ticking one with distances starts with every distance picked (untick the ones you don't want)
+        cb.addEventListener("change", () => { const m = cb.checked ? [...prefs.metrics, id, ...(ranges || []).map((r) => r.id)] : prefs.metrics.filter((x) => !mine(x)); saveWatch({ metrics: [...new Set(m)] }); draw(); });
         const opt = el("label", { class: "wl-menu-o" }, [cb, el("span", {}, l)]);
         if (!on || !ranges?.length) return opt;
         const chip = (cid, text) => {
@@ -181,8 +186,8 @@ export async function render(main, { previewClient }) {
     root.style.minHeight = `${root.offsetHeight}px`;
     mount(root, [heroShell(controls, subLine), menu, body,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
-        ? `Entered Rounds: the rounds entered in Enter New Round. Trends: the last 10 rounds against the 10 before. Ranks: among the players whose entered rounds you can see, with ${cards[0]?.minR || "enough"} or more in this period.`
-        : `Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
+        ? `Strokes Gained values represent per round averages. Entered Rounds: the rounds entered in Enter New Round. Trends: the last 10 rounds against the 10 before. Ranks: among the players whose entered rounds you can see, with ${cards[0]?.minR || "enough"} or more in this period.`
+        : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });

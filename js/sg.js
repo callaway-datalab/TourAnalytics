@@ -218,6 +218,7 @@ const truthy = (v) => {
 };
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 // The number a distance label starts at, for sorting: "<5 ft" comes before "5-10 ft", "30+ ft" after "20-30 ft".
+export const distLead = (s) => lead(s); // (update 179: "<5 ft" before "5-10 ft", ">220 yds" after "200-220 yds")
 const lead = (s) => {
   const t = String(s), m = t.match(/-?\d+(\.\d+)?/);
   if (!m) return Infinity;

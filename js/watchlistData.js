@@ -3,7 +3,7 @@
 //   · their 3 best and 3 worst distances (strokes gained a shot, ranked when the field's lie / distance detail is here)
 //   · any other metrics picked, with ranks and trends
 //   · badges and alerts: big moves, hot streaks and slumps, form landmarks, best rounds, wins and milestones
-import { CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds } from "./sg.js";
+import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds } from "./sg.js";
 
 export const SG_KEYS = [["TOTAL", "SG: Total", "Total"], ["OTT", "Off-the-Tee", "OTT"], ["APP", "Approach", "APP"], ["ARG", "Around-the-Green", "ARG"], ["PUTT", "Putting", "PUTT"]];
 const CAT_SHORT = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
@@ -92,13 +92,13 @@ export function metricCatalog(field, own = [], detail = null) {
   // (update 172) the distances each of Hit Green %, Pin-High %, On-Line %, Proximity, Up & Down % and Made Putt % can be split by
   const ranges = new Map();
   for (const src of [own, detail || []]) for (const [k, m] of statRanges(src)) { const t = ranges.get(k) || ranges.set(k, new Map()).get(k); for (const [b, x] of m) t.set(b, x); }
-  const rangeItems = (k) => [...(ranges.get(k)?.values() || [])].sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || String(a.dist).localeCompare(String(b.dist), undefined, { numeric: true }))
+  const rangeItems = (k) => [...(ranges.get(k)?.values() || [])].sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || (distLead(a.dist) - distLead(b.dist) || String(a.dist).localeCompare(String(b.dist), undefined, { numeric: true })))
     .map((x) => ({ id: `stat:${k}@${x.cat}|${x.dist}`, cat: x.cat, catLabel: CAT_SHORT[x.cat] || x.cat, label: x.dist }));
   return [
     { group: "Strokes gained", items: [["sg:T2G", "SG: Tee to Green"], ["sg:sd", "Steadiness (round-to-round swing)"], ["sg:best", "Best round"]] },
     { group: "Results", items: [["res:wins", "Wins"], ["res:top10", "Top 10s"], ["res:rounds", "Rounds played"]] },
     stats.length ? { group: "Stats", items: stats.map((k) => [`stat:${k}`, statDef(k).label, RANGE_STATS.includes(k) ? rangeItems(k) : null]) } : null,
-    dists.size ? { group: "Distances (strokes gained per round)", items: [...dists.values()].sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || String(a.dist).localeCompare(String(b.dist), undefined, { numeric: true })).map((d) => [`dist:${d.cat}|${d.dist}`, `${CAT_SHORT[d.cat] || d.cat} · ${d.dist}`]) } : null,
+    dists.size ? { group: "Distances (strokes gained per round)", items: [...dists.values()].sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || (distLead(a.dist) - distLead(b.dist) || String(a.dist).localeCompare(String(b.dist), undefined, { numeric: true }))).map((d) => [`dist:${d.cat}|${d.dist}`, `${CAT_SHORT[d.cat] || d.cat} · ${d.dist}`]) } : null,
   ].filter(Boolean);
 }
 export const metricLabel = (id) => {
