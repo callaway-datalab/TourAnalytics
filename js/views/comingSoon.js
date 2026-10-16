@@ -2,7 +2,7 @@
 import { el, mount } from "../ui.js";
 
 const PAGES = {
-  live: { eyebrow: "Analyze", title: "Live Event Feed", text: "Follow a round hole by hole as it's played, with strokes gained updating after every shot." },
+  live: { eyebrow: "Live", title: "Live Feed", text: "Follow a round hole by hole as it's played, with strokes gained updating after every shot." },
   // (update 163)
   "product-usage": { eyebrow: "Analyze", title: "Product Usage", text: "Dashboards on how Callaway products are used across the Tour and by each player, and how players perform with each one, to see which products work best for which players." },
   practice: { eyebrow: "Planning", title: "Practice", text: "Practice plans built from your strokes-gained data, and a log of what you've worked on." },

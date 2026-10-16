@@ -1,0 +1,440 @@
+/*
+ * Comparisons (update 188): pick a player, then any slices of their rounds (seasons, time windows,
+ * tournaments, courses, round numbers, months, tours, or a date range of your own) and see them side by side:
+ *   · a card for each, with the best crowned, and what stands out in plain words
+ *   · strokes gained by category in a table (best / worst shaded) and a grouped bar chart
+ *   · every round as a dot (the spread, the middle half, the median), and how each one unfolded
+ *   · strokes gained by distance, and the other stats (fairways, greens, proximity …)
+ * And, for the player as a whole: are they getting better or worse (last 5, 10, 20, 40, 80 rounds against
+ * the same number before), and in which conditions they play their best (round, course, month, …).
+ * Hover a selection (its card or its key) to pick it out in every chart.
+ */
+import { el, mount } from "../ui.js";
+import { getState } from "../auth.js";
+import { effectiveTeam } from "../preview.js";
+import { teamLabels, plainName } from "../names.js";
+import { playerPicker } from "../playerPicker.js";
+import { CATEGORIES, fmtStat, fmtSG } from "../sg.js";
+import {
+  COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statRows, statSets,
+  rolling, trajectory, trajectoryWords, DIMENSIONS, conditions, insights, fmtSigned, sgOf,
+} from "../compareData.js";
+
+const LS_PLAYER = "ta:cmp:player";
+const NS = "http://www.w3.org/2000/svg";
+const mk = (t, a = {}, text = null) => { const n = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) if (v != null) n.setAttribute(k, String(v)); if (text != null) n.textContent = text; return n; };
+const HALO = { stroke: "#121214", "stroke-width": 3.5, "stroke-linejoin": "round", "paint-order": "stroke" };
+const INK = "rgba(235,235,245,0.62)", GRID = "rgba(255,255,255,0.07)";
+const tone = (v) => (v == null ? "" : Math.round(v * 100) === 0 ? "zero" : v > 0 ? "pos" : "neg");
+const dateTxt = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); const t = m ? new Date(+m[1], m[2] - 1, +m[3]) : new Date(d); return isNaN(t) ? String(d || "") : t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }); };
+const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* */ } } };
+
+const MODES = [
+  ["years", "Seasons", "Each season side by side."],
+  ["windows", "Time windows", "Recent form against what came before, or the whole career."],
+  ["tournaments", "Tournaments", "Any events, this year or any year."],
+  ["courses", "Courses", "Where they play their best."],
+  ["rounds", "Rounds 1–4", "Openers against weekends."],
+  ["months", "Months", "The time of year."],
+  ["tours", "Tours", "One tour against another."],
+  ["custom", "Date range", "Any stretch of dates you choose."],
+];
+
+export async function render(main) {
+  const state = getState();
+  const team = effectiveTeam(state);
+  // who can be compared: the admin everyone, a coach their players, a player themselves
+  let players = [];
+  if (state.isAdmin && !team.preview) { try { players = [...(await (await import("../store.js")).adminAllClients()).labels].map(([k, l]) => [k, plainName(l)]); } catch { players = []; } }
+  else if (team.isTeam) players = [...teamLabels(team.teamAccess)];
+  const self = !state.isAdmin && !team.isTeam && state.profile?.clientKey ? [state.profile.clientKey, state.profile.name || "Me"] : null;
+  players.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+
+  const q = new URLSearchParams(location.hash.split("?")[1] || "");
+  let player = null;
+  const wanted = q.get("player") || ls.get(LS_PLAYER);
+  if (self) player = { key: self[0], label: self[1] };
+  else if (wanted && players.some(([k]) => k === wanted)) player = { key: wanted, label: players.find(([k]) => k === wanted)[1] };
+  else if (players.length === 1) player = { key: players[0][0], label: players[0][1] };
+
+  let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
+  const root = el("div", { class: "cmp" });
+  mount(main, root);
+
+  /* ------------------------------ selections ------------------------------ */
+  const nextColor = () => COLORS.find((c) => !sels.some((s) => s.color === c)) || COLORS[sels.length % COLORS.length];
+  const has = (id) => sels.some((s) => s.id === id);
+  function toggleSel(id, name, f) {
+    if (has(id)) sels = sels.filter((s) => s.id !== id);
+    else { if (sels.length >= MAX_SEL) { flashNote(`Up to ${MAX_SEL} at a time: take one off first.`); return; } sels = [...sels, { id, name, f, color: nextColor() }]; }
+    draw();
+  }
+  let noteTimer = null;
+  const note = el("p", { class: "cmp-note", role: "status" });
+  const flashNote = (t) => { note.textContent = t; clearTimeout(noteTimer); noteTimer = setTimeout(() => { note.textContent = ""; }, 3500); };
+  // the default: the two latest seasons (or recent form, with only one)
+  function defaults() {
+    sels = [];
+    if (opts.years.length >= 2) { mode = "years"; opts.years.slice(0, 2).reverse().forEach((y) => sels.push({ id: `years:${y.value}`, name: y.label, f: { years: [y.value] }, color: nextColor() })); }
+    else if (opts.total >= 10) { // (one season: the latest rounds against the same number before)
+      const n = [20, 10, 5].find((x) => opts.total >= 2 * x);
+      mode = "windows"; sels.push({ id: `windows:prev:${n}`, name: `The ${n} before that`, f: { prev: n }, color: nextColor() }, { id: `windows:last:${n}`, name: `Last ${n} rounds`, f: { last: n }, color: nextColor() });
+    } else if (opts.years.length) { mode = "years"; sels.push({ id: `years:${opts.years[0].value}`, name: opts.years[0].label, f: { years: [opts.years[0].value] }, color: nextColor() }); }
+  }
+
+  /* ------------------------------ loading a player ------------------------------ */
+  async function load() {
+    if (!player) { data = null; draw(); return; }
+    const k = `${player.key}|${source}`;
+    loadingFor = k; data = null; draw();
+    let res = null;
+    try { const { loadSource } = await import("../reportGen.js"); res = await loadSource(source, player.key, player.label, { detail: false }); } catch (err) { console.warn(err); }
+    if (loadingFor !== k) return;
+    data = { rounds: res?.me?.rounds || [] };
+    opts = options(data.rounds);
+    defaults();
+    draw();
+  }
+
+  /* ------------------------------ the page ------------------------------ */
+  function draw() {
+    const head = el("header", { class: "panel cmp-hero" }, [
+      el("div", { class: "cmp-hero-l" }, [el("p", { class: "cmp-eyebrow" }, "Analyze"), el("h1", {}, "Comparisons"),
+        el("p", { class: "cmp-lede" }, "Put any slices of a player’s golf side by side: seasons, recent form, tournaments, courses, rounds, months. See which conditions bring out their best, and whether they’re getting better.")]),
+      el("div", { class: "cmp-hero-r" }, [pickerNode(), sourceSeg()]),
+    ]);
+    if (!player) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-empty-icon", "aria-hidden": "true" }, "⇄"), el("h2", {}, "Pick a player to begin"), el("p", { class: "muted" }, "Type a name above.")])]); return; }
+    if (!data) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, `Loading ${player.label}’s rounds…`)])]); return; }
+    if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn’t entered any rounds yet.`)])]); return; }
+
+    const y = window.scrollY;
+    const sets = sels.map((s) => roundsFor(data.rounds, s.f));
+    const sums = sets.map((rs) => summarize(rs));
+    const items = sels.map((s, i) => ({ ...s, i, rs: sets[i], s: sums[i] }));
+    mount(root, [
+      head,
+      builder(),
+      items.length ? selectedBar(items) : null,
+      items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
+      items.length >= 2 ? standout(items) : null,
+      items.length ? sgSection(items) : null,
+      items.length ? roundsSection(items) : null,
+      items.length ? distanceSection(items) : null,
+      items.length ? statsSection(items) : null,
+      trajectorySection(),
+      conditionsSection(),
+      el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
+    ]);
+    window.scrollTo(0, y);
+  }
+
+  function pickerNode() {
+    if (self || players.length <= 1) return player ? el("div", { class: "cmp-who-static" }, [el("span", { class: "muted small" }, "Player"), el("strong", {}, player.label)]) : null;
+    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; player = { key: p.key, label: p.label }; ls.set(LS_PLAYER, p.key); load(); });
+    if (player) pp.preset(player.key);
+    const inp = pp.node.querySelector("input");
+    inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
+    inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && player) pp.preset(player.key); }, 300));
+    return el("div", { class: "cmp-who" }, pp.node);
+  }
+  function sourceSeg() {
+    return el("div", { class: "cmp-seg", role: "group", "aria-label": "Data" }, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
+      const b = el("button", { type: "button", class: `cmp-seg-b${source === v ? " on" : ""}`, "aria-pressed": String(source === v) }, l);
+      b.addEventListener("click", () => { if (source === v) return; source = v; load(); });
+      return b;
+    }));
+  }
+
+  /* ------------------------------ choosing what to compare ------------------------------ */
+  function builder() {
+    const modes = MODES.filter(([m]) => m !== "tours" || opts.tours.length > 1).filter(([m]) => m !== "courses" || opts.courses.length).filter(([m]) => m !== "rounds" || opts.rounds.length > 1);
+    if (!modes.some(([m]) => m === mode)) mode = "years";
+    const tabs = el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
+      const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
+      b.addEventListener("click", () => { mode = m; chipFilter = ""; draw(); });
+      return b;
+    }));
+    const hint = el("p", { class: "cmp-hint" }, modes.find(([m]) => m === mode)[2]);
+    let body;
+    if (mode === "custom") body = customForm();
+    else {
+      const list = { years: opts.years, windows: opts.windows, tournaments: opts.tournaments, courses: opts.courses, rounds: opts.rounds, months: opts.months, tours: opts.tours }[mode] || [];
+      const filterOf = (o) => (mode === "years" ? { years: [o.value] } : mode === "windows" ? windowFilter(o.value) : mode === "tournaments" ? { events: [o.value] } : mode === "courses" ? { courses: [o.value] } : mode === "rounds" ? { roundNos: [o.value] } : mode === "months" ? { months: [o.value] } : { tours: [o.value] });
+      const long = list.length > 14;
+      const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${mode === "tournaments" ? "a tournament" : "a course"}…`, value: chipFilter }) : null;
+      const chipsBox = el("div", { class: "cmp-chips" });
+      const drawChips = () => {
+        const t = chipFilter.trim().toLowerCase();
+        mount(chipsBox, list.filter((o) => !t || o.label.toLowerCase().includes(t)).slice(0, long && !t ? 30 : 200).map((o) => {
+          const id = `${mode}:${o.value}`, s = sels.find((x) => x.id === id);
+          const b = el("button", { type: "button", class: `cmp-chip${s ? " on" : ""}`, "aria-pressed": String(!!s), style: s ? `--c:${s.color}` : null }, [s ? el("i", { "aria-hidden": "true" }) : null, o.label, el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`)]);
+          b.addEventListener("click", () => toggleSel(id, o.label, filterOf(o)));
+          return b;
+        }));
+      };
+      search?.addEventListener("input", () => { chipFilter = search.value; drawChips(); });
+      drawChips();
+      body = el("div", {}, [search, chipsBox, long && !chipFilter ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null]);
+    }
+    return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), tabs]), hint, body, note]);
+  }
+  function customForm() {
+    const first = opts.windows.length ? null : null; void first;
+    const from = el("input", { type: "date", class: "cmp-date", "aria-label": "From" }), to = el("input", { type: "date", class: "cmp-date", "aria-label": "To" });
+    const name = el("input", { type: "text", class: "cmp-name", placeholder: "Name (optional)", maxLength: 40 });
+    const rnd = new Set();
+    const rounds = opts.rounds.length > 1 ? el("div", { class: "cmp-chips cmp-mini" }, [el("span", { class: "muted small" }, "Only:"), ...opts.rounds.map((o) => {
+      const b = el("button", { type: "button", class: "cmp-chip", "aria-pressed": "false" }, o.label);
+      b.addEventListener("click", () => { rnd.has(o.value) ? rnd.delete(o.value) : rnd.add(o.value); b.classList.toggle("on", rnd.has(o.value)); b.setAttribute("aria-pressed", String(rnd.has(o.value))); });
+      return b;
+    })]) : null;
+    const add = el("button", { type: "button", class: "btn cmp-add" }, "＋ Add to comparison");
+    add.addEventListener("click", () => {
+      if (!from.value && !to.value) { flashNote("Pick a start or end date (or both)."); return; }
+      const f = { from: from.value || null, to: to.value || null, roundNos: rnd.size ? [...rnd] : null };
+      const n = roundsFor(data.rounds, f).length;
+      if (!n) { flashNote("No rounds in those dates."); return; }
+      const auto = `${from.value ? dateTxt(from.value) : "Start"} – ${to.value ? dateTxt(to.value) : "now"}${rnd.size ? ` (R${[...rnd].join(", R")})` : ""}`;
+      toggleSel(`custom:${Date.now()}`, name.value.trim() || auto, f);
+    });
+    return el("div", { class: "cmp-custom" }, [el("label", { class: "cmp-field" }, [el("span", {}, "From"), from]), el("label", { class: "cmp-field" }, [el("span", {}, "To"), to]), name, rounds, add]);
+  }
+  // the chosen ones, as removable keys (hover to pick one out everywhere)
+  function selectedBar(items) {
+    const clear = el("button", { type: "button", class: "link cmp-clear" }, "Clear all");
+    clear.addEventListener("click", () => { sels = []; draw(); });
+    return el("div", { class: "cmp-selbar" }, [...items.map((it) => {
+      const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": `Remove ${it.name}` }, "✕");
+      x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== it.id); draw(); });
+      return hoverable(el("span", { class: "cmp-key", style: `--c:${it.color}` }, [el("i", { "aria-hidden": "true" }), el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]), it.i);
+    }), clear]);
+  }
+  const hoverable = (node, i) => { node.addEventListener("mouseenter", () => { root.dataset.hl = String(i); }); node.addEventListener("mouseleave", () => { delete root.dataset.hl; }); return node; };
+
+  /* ------------------------------ results ------------------------------ */
+  function cards(items) {
+    const bestI = items.length > 1 ? [...items].filter((x) => x.s.n).sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL)[0]?.i : null;
+    return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: `panel cmp-card${it.i === bestI ? " best" : ""}`, style: `--c:${it.color}`, "data-s": it.i }, [
+      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name), it.i === bestI ? el("span", { class: "cmp-crown", title: "The best of these" }, "♛ Best") : null]),
+      it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} · ${it.s.events} event${it.s.events === 1 ? "" : "s"} · ${dateTxt(it.s.from)} – ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
+      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "—"), el("span", {}, "SG: Total a round")]),
+      el("div", { class: "cmp-card-cats" }, CATEGORIES.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "—")]))),
+      it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} · worst ${fmtSG(it.s.worst)} · ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
+    ]), it.i)));
+  }
+  function standout(items) {
+    const list = insights(items.map((it) => ({ name: it.name, s: it.s })));
+    if (!list.length) return null;
+    return el("section", { class: "panel cmp-standout" }, [el("h2", {}, "What stands out"), el("ul", {}, list.map((x) => el("li", { class: x.tone }, x.text)))]);
+  }
+
+  // strokes gained: the table (each row shaded best to worst) and the grouped bars
+  function sgSection(items) {
+    const live = items.filter((it) => it.s.n);
+    const shade = (vals, v) => { const xs = vals.filter((x) => x != null); if (xs.length < 2 || v == null) return ""; const hi = Math.max(...xs), lo = Math.min(...xs); return hi - lo < 1e-9 ? "" : v === hi ? "hi" : v === lo ? "lo" : ""; };
+    const table = el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
+      el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), it.i)), items.length > 1 ? el("th", { class: "num" }, "Spread") : null])),
+      el("tbody", {}, SG_ROWS.map(([k, l]) => {
+        const vals = items.map((it) => (it.s.n ? it.s.sg[k] : null));
+        const xs = vals.filter((v) => v != null);
+        return el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, l), ...items.map((it, j) => el("td", { class: `num ${tone(vals[j])} ${shade(vals, vals[j])}`, "data-s": it.i }, vals[j] == null ? "—" : fmtSG(vals[j]))),
+          items.length > 1 ? el("td", { class: "num muted" }, xs.length > 1 ? (Math.max(...xs) - Math.min(...xs)).toFixed(2) : "—") : null]);
+      })),
+    ]));
+    let conf = null;
+    if (live.length >= 2) {
+      const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
+      conf = el("p", { class: "muted small" }, [`Best against worst in SG: Total: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
+    }
+    const chart = groupedBars([["TOTAL", "Total"], ...CATEGORIES.map(([k]) => [k, k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
+    return el("section", { class: "panel cmp-sec" }, [secHead("Strokes gained, side by side", "A round, for each selection. The best in each row is shaded green, the worst red."), table, conf, chart]);
+  }
+  // every round as a dot, and how each selection unfolded (a 5-round rolling average)
+  function roundsSection(items) {
+    const live = items.filter((it) => it.s.n);
+    return el("section", { class: "panel cmp-sec" }, [
+      secHead("Every round", "Each dot is a round (SG: Total). The bar is the middle half of the rounds, the white tick the median, the diamond the average."),
+      strip(live),
+      el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table compact" }, [
+        el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Median", "Best", "Worst", "Swing (±)", "Gaining"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+        el("tbody", {}, live.map((it) => el("tr", { "data-s": it.i }, [el("td", {}, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), el("td", { class: "num" }, String(it.s.n)),
+          el("td", { class: `num ${tone(it.s.sg.TOTAL)}` }, fmtSG(it.s.sg.TOTAL)), el("td", { class: `num ${tone(it.s.median)}` }, fmtSG(it.s.median)), el("td", { class: "num pos" }, fmtSG(it.s.best)), el("td", { class: "num neg" }, fmtSG(it.s.worst)),
+          el("td", { class: "num" }, it.s.sd == null ? "—" : it.s.sd.toFixed(2)), el("td", { class: "num" }, `${Math.round((it.s.gaining || 0) * 100)}%`)]))),
+      ])),
+      el("h3", { class: "cmp-h3" }, "How each one unfolded"),
+      el("p", { class: "muted small" }, "SG: Total, averaged over 5 rounds at a time, from each selection’s first round to its last."),
+      lines(live.map((it) => ({ i: it.i, color: it.color, name: it.name, ys: rolling(it.s.rounds, 5) }))),
+    ]);
+  }
+  function distanceSection(items) {
+    const prof = distanceProfile(items.map((it) => it.rs), distPer);
+    const cats = CATEGORIES.filter(([k]) => prof[k]);
+    if (!cats.length) return null;
+    if (!prof[distCat]) distCat = cats[0][0];
+    const tabs = el("div", { class: "cmp-seg small" }, cats.map(([k, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${distCat === k ? " on" : ""}` }, l); b.addEventListener("click", () => { distCat = k; draw(); }); return b; }));
+    const per = el("div", { class: "cmp-seg small" }, [["round", "A round"], ["shot", "A shot"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${distPer === v ? " on" : ""}` }, l); b.addEventListener("click", () => { distPer = v; draw(); }); return b; }));
+    const rows = prof[distCat];
+    return el("section", { class: "panel cmp-sec" }, [
+      secHead("By distance", `Strokes gained ${distPer === "round" ? "a round" : "a shot"} at each distance. Where one selection pulls away from another is where the difference was made.`),
+      el("div", { class: "cmp-ctrls" }, [tabs, per]),
+      distChart(rows, items, distPer),
+    ]);
+  }
+  function statsSection(items) {
+    const rows = statRows(data.rounds, statSets(data.rounds, items.map((it) => it.f)));
+    if (!rows.length) return null;
+    const shade = (r, v) => { const xs = r.values.filter((x) => x != null); if (xs.length < 2 || v == null || r.def.higher == null) return ""; const best = r.def.higher === false ? Math.min(...xs) : Math.max(...xs), worst = r.def.higher === false ? Math.max(...xs) : Math.min(...xs); return Math.abs(best - worst) < 1e-9 ? "" : v === best ? "hi" : v === worst ? "lo" : ""; };
+    return el("section", { class: "panel cmp-sec" }, [secHead("Other stats", "The best in each row is shaded green and the worst red (lower is better for some, like Proximity)."),
+      el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]))])),
+        el("tbody", {}, rows.map((r) => el("tr", {}, [el("td", { title: r.def.help || "" }, r.label), ...items.map((it, j) => el("td", { class: `num ${shade(r, r.values[j])}`, "data-s": it.i }, fmtStat(r.def, r.values[j])))]))),
+      ]))]);
+  }
+
+  // getting better or worse: the last n against the n before, for several n
+  function trajectorySection() {
+    const tr = trajectory(data.rounds);
+    const cell = (v) => el("td", { class: `num ${tone(v)} cmp-delta` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"} ${Math.abs(v).toFixed(2)}`);
+    return el("section", { class: "panel cmp-sec cmp-traj" }, [
+      secHead("Getting better or worse?", "Their latest rounds against the same number just before, at several time scales. Tap a row to compare the two."),
+      el("p", { class: "cmp-traj-words" }, trajectoryWords(tr)),
+      tr.length ? el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
+        el("thead", {}, el("tr", {}, ["Time scale", "Before", "Latest", ...SG_ROWS.slice(0, 5).map(([k, l]) => (k === "TOTAL" ? "Change" : k)), "How sure"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+        el("tbody", {}, tr.map((x) => {
+          const row = el("tr", { class: "cmp-tap", tabindex: "0", title: `Compare the last ${x.n} with the ${x.n} before` }, [
+            el("td", {}, `Last ${x.n} vs ${x.n} before`), el("td", { class: `num ${tone(x.prev)}` }, fmtSG(x.prev)), el("td", { class: `num ${tone(x.last)}` }, fmtSG(x.last)),
+            ...SG_ROWS.slice(0, 5).map(([k]) => cell(x.ch[k])), el("td", { class: "num" }, el("span", { class: `cmp-conf c-${x.conf.word.replace(/ /g, "-")}` }, x.conf.word))]);
+          const go = () => { sels = [{ id: `windows:prev:${x.n}`, name: `The ${x.n} before that`, f: { prev: x.n }, color: COLORS[0] }, { id: `windows:last:${x.n}`, name: `Last ${x.n} rounds`, f: { last: x.n }, color: COLORS[1] }]; mode = "windows"; draw(); root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+          row.addEventListener("click", go); row.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+          return row;
+        })),
+      ])) : null,
+    ]);
+  }
+  // the best conditions: every round grouped by one thing, against their overall average
+  function conditionsSection() {
+    const dims = DIMENSIONS.filter(([d]) => d !== "tour" || opts.tours.length > 1).filter(([d]) => d !== "course" || opts.courses.length > 1).filter(([d]) => d !== "round" || opts.rounds.length > 1);
+    if (!dims.some(([d]) => d === dim)) dim = dims[0]?.[0] || "month";
+    const list = conditions(data.rounds, dim, 3);
+    const tabs = el("div", { class: "cmp-seg small cmp-dims" }, dims.map(([d, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${dim === d ? " on" : ""}` }, l); b.addEventListener("click", () => { dim = d; draw(); }); return b; }));
+    const max = Math.max(0.05, ...list.map((x) => Math.abs(x.vsAll)));
+    const filterOf = (x) => ({ round: { roundNos: [x.label.replace("Round ", "")] }, course: { courses: [x.label] }, month: { months: [String(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(x.label))] }, year: { years: [x.label] }, tour: { tours: [x.label] } }[dim]);
+    const rows = list.map((x, j) => {
+      const f = filterOf(x), id = f ? `cond:${dim}:${x.label}` : null, on = id && has(id);
+      const w = Math.abs(x.vsAll) / max * 50;
+      const row = el(f ? "button" : "div", { type: f ? "button" : null, class: `cmp-cond${on ? " on" : ""}${f ? " cmp-tap" : ""}`, title: f ? (on ? "Take it out of the comparison" : "Add it to the comparison") : null }, [
+        el("span", { class: "cmp-cond-rank" }, String(j + 1)),
+        el("span", { class: "cmp-cond-l" }, [x.label, el("span", { class: "muted" }, ` · ${x.n} rds`)]),
+        el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.vsAll >= 0 ? "pos" : "neg"}`, style: x.vsAll >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
+        el("strong", { class: `cmp-cond-v ${tone(x.v)}` }, fmtSG(x.v)),
+        el("span", { class: `cmp-cond-d ${tone(x.vsAll)}` }, fmtSigned(x.vsAll)),
+      ]);
+      if (f) row.addEventListener("click", () => toggleSel(id, x.label, f));
+      return row;
+    });
+    return el("section", { class: "panel cmp-sec" }, [
+      secHead("Where they play their best", "Every round grouped by one condition, best first: SG: Total a round, and how far above or below their overall average. Tap one to add it to the comparison."),
+      tabs,
+      rows.length === 1 ? el("p", { class: "muted" }, "Every round falls in the same group here, so there\u2019s nothing to compare yet.") : rows.length ? el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows])
+        : el("p", { class: "muted" }, "Not enough rounds in any group yet (3 or more)."),
+    ]);
+  }
+  const secHead = (t, sub) => el("div", { class: "cmp-sec-head" }, [el("h2", {}, t), sub ? el("p", { class: "muted small" }, sub) : null]);
+
+  /* ------------------------------ charts (SVG) ------------------------------ */
+  // (a phone gets a narrower drawing, so the labels stay readable when it's scaled to fit)
+  const cw = () => (window.innerWidth < 640 ? 400 : 720);
+  function axis(svg, lo, hi, Y, L, R, W, fmt = (v) => fmtSG(v)) {
+    for (let k = 0; k <= 4; k++) { const v = lo + ((hi - lo) * k) / 4, yy = Y(v); svg.append(mk("line", { x1: L, x2: W - R, y1: yy, y2: yy, stroke: GRID }), mk("text", { x: L - 6, y: yy + 3.5, "text-anchor": "end", "font-size": 10.5, fill: INK }, fmt(v))); }
+    if (lo < 0 && hi > 0) svg.append(mk("line", { x1: L, x2: W - R, y1: Y(0), y2: Y(0), stroke: "rgba(255,255,255,0.35)" }));
+  }
+  const span = (vals, pad = 0.12, zero = true) => { let lo = Math.min(...vals), hi = Math.max(...vals); if (zero) { lo = Math.min(0, lo); hi = Math.max(0, hi); } const p = (hi - lo) * pad || 0.5; return [lo - (zero && lo === 0 ? 0 : p), hi + (zero && hi === 0 ? 0 : p)]; };
+  function groupedBars(groups, items) {
+    const vals = groups.flatMap((g) => g.values).filter((v) => v != null);
+    if (!vals.length) return null;
+    const W = cw(), H = 260, L = 48, R = 12, T = 12, B = 30;
+    const [lo, hi] = span(vals);
+    const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "Strokes gained by category for each selection" });
+    axis(svg, lo, hi, Y, L, R, W);
+    const gw = (W - L - R) / groups.length, n = items.length, bw = Math.min(28, (gw * 0.78) / n);
+    groups.forEach((g, gi) => {
+      const x0 = L + gi * gw + (gw - bw * n) / 2;
+      g.values.forEach((v, j) => {
+        if (v == null) return;
+        const it = items[j], y0 = Y(0), y1 = Y(v);
+        const r = mk("rect", { x: x0 + j * bw + 1, y: Math.min(y0, y1), width: Math.max(2, bw - 2), height: Math.max(1, Math.abs(y1 - y0)), rx: 3, fill: it.color, "data-s": it.i });
+        r.append(mk("title", {}, `${it.name} · ${g.label}: ${fmtSG(v)}`));
+        svg.append(r);
+      });
+      svg.append(mk("text", { x: L + gi * gw + gw / 2, y: H - 9, "text-anchor": "middle", "font-size": 11.5, "font-weight": 600, fill: INK }, g.label));
+    });
+    return el("div", { class: "cmp-chart" }, svg);
+  }
+  function strip(live) {
+    if (!live.length) return null;
+    const all = live.flatMap((it) => it.s.rounds);
+    const W = cw(), rowH = 46, L = 14, R = 14, T = 8, B = 26, H = T + B + rowH * live.length;
+    const [lo, hi] = span(all, 0.06, false);
+    const X = (v) => L + ((v - lo) / (hi - lo)) * (W - L - R);
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "Every round, by selection" });
+    for (let k = 0; k <= 6; k++) { const v = lo + ((hi - lo) * k) / 6; svg.append(mk("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, stroke: GRID }), mk("text", { x: X(v), y: H - 8, "text-anchor": "middle", "font-size": 10.5, fill: INK }, fmtSG(v))); }
+    if (lo < 0 && hi > 0) svg.append(mk("line", { x1: X(0), x2: X(0), y1: T, y2: H - B, stroke: "rgba(255,255,255,0.35)" }));
+    live.forEach((it, r) => {
+      const cy = T + rowH * r + rowH / 2, g = mk("g", { "data-s": it.i });
+      g.append(mk("rect", { x: X(it.s.q1), y: cy - 9, width: Math.max(2, X(it.s.q3) - X(it.s.q1)), height: 18, rx: 6, fill: it.color, "fill-opacity": 0.18, stroke: it.color, "stroke-opacity": 0.5 }));
+      // the dots, spread a little up and down so they don't sit on each other
+      it.s.rounds.forEach((v, k) => { const jitter = ((k * 37) % 11) / 10 - 0.5; const c = mk("circle", { cx: X(v), cy: cy + jitter * 22, r: 3.2, fill: it.color, "fill-opacity": 0.85 }); c.append(mk("title", {}, `${it.name}: ${fmtSG(v)}`)); g.append(c); });
+      g.append(mk("line", { x1: X(it.s.median), x2: X(it.s.median), y1: cy - 12, y2: cy + 12, stroke: "#fff", "stroke-width": 2.2 }));
+      const m = X(it.s.sg.TOTAL);
+      g.append(mk("path", { d: `M${m} ${cy - 7} L${m + 7} ${cy} L${m} ${cy + 7} L${m - 7} ${cy} Z`, fill: "#fff", stroke: it.color, "stroke-width": 2 }));
+      svg.append(g);
+    });
+    return el("div", { class: "cmp-chart" }, svg);
+  }
+  function lines(series) {
+    const s = series.filter((x) => x.ys.some((v) => v != null));
+    if (!s.length) return null;
+    const vals = s.flatMap((x) => x.ys.filter((v) => v != null));
+    const W = cw(), H = 240, L = 48, R = 14, T = 12, B = 28;
+    const [lo, hi] = span(vals, 0.1, false);
+    const n = Math.max(...s.map((x) => x.ys.length));
+    const X = (i) => L + (n > 1 ? (i / (n - 1)) * (W - L - R) : (W - L - R) / 2), Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "5-round rolling average through each selection" });
+    axis(svg, lo, hi, Y, L, R, W);
+    for (const k of [0, Math.floor((n - 1) / 2), n - 1]) svg.append(mk("text", { x: X(k), y: H - 8, "text-anchor": k === 0 ? "start" : k === n - 1 ? "end" : "middle", "font-size": 10.5, fill: INK }, `Round ${k + 1}`));
+    for (const x of s) {
+      const pts = x.ys.map((v, i) => (v == null ? null : [X(i), Y(v)])).filter(Boolean);
+      const d = pts.map(([px, py], i) => `${i ? "L" : "M"}${px.toFixed(1)} ${py.toFixed(1)}`).join(" ");
+      const g = mk("g", { "data-s": x.i });
+      g.append(mk("path", { d, fill: "none", stroke: x.color, "stroke-width": 2.4, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      const last = pts.at(-1); if (last) { g.append(mk("circle", { cx: last[0], cy: last[1], r: 4, fill: x.color })); const t = mk("title", {}, `${x.name}: ${fmtSG(x.ys.at(-1))} over its last 5`); g.append(t); }
+      svg.append(g);
+    }
+    return el("div", { class: "cmp-chart" }, svg);
+  }
+  function distChart(rows, items, per) {
+    const vals = rows.flatMap((r) => r.values).filter((v) => v != null);
+    if (!vals.length) return el("p", { class: "muted" }, "No distances recorded here.");
+    const fmt = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(per === "shot" ? 3 : 2)}`;
+    const W = cw(), H = 260, L = 52, R = 14, T = 12, B = 40;
+    const [lo, hi] = span(vals);
+    const n = rows.length, X = (i) => L + (n > 1 ? (i / (n - 1)) * (W - L - R) : (W - L - R) / 2), Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "cmp-svg", role: "img", "aria-label": "Strokes gained by distance" });
+    axis(svg, lo, hi, Y, L, R, W, fmt);
+    rows.forEach((r, i) => svg.append(mk("text", { x: X(i), y: H - 22, "text-anchor": "middle", "font-size": n > 8 ? 9.5 : 10.5, fill: INK, transform: n > 8 ? `rotate(-28 ${X(i)} ${H - 22})` : null }, r.dist)));
+    items.forEach((it, j) => {
+      const pts = rows.map((r, i) => (r.values[j] == null ? null : { x: X(i), y: Y(r.values[j]), v: r.values[j], r })).filter(Boolean);
+      if (!pts.length) return;
+      const g = mk("g", { "data-s": it.i });
+      g.append(mk("path", { d: pts.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "), fill: "none", stroke: it.color, "stroke-width": 2.2, "stroke-linejoin": "round" }));
+      for (const p of pts) { const c = mk("circle", { cx: p.x, cy: p.y, r: 3.6, fill: it.color, stroke: "#121214", "stroke-width": 1.5 }); c.append(mk("title", {}, `${it.name} · ${p.r.dist}: ${fmt(p.v)} (${p.r.w[j]} shots)`)); g.append(c); }
+      svg.append(g);
+    });
+    return el("div", { class: "cmp-chart" }, svg);
+  }
+
+  draw();
+  if (player) load();
+  return () => {};
+}

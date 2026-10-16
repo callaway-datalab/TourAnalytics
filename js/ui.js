@@ -60,6 +60,8 @@ export function icon(name) {
     menu: "M3 5h14v2H3zm0 4h14v2H3zm0 4h14v2H3z",
     people: "M7 9a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm6 1a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zM1 17c0-3 2.5-5 6-5s6 2 6 5zm12-4.5c2.6 0 5 1.4 5 4.5h-3.5c0-1.9-.7-3.5-1.5-4.5z",
     user: "M10 10a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM3 17c0-3.5 3-5.5 7-5.5s7 2 7 5.5z",
+    // (update 188) Live Feed: a dot with signal rings
+    live: "M10 12.2a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4zM5.4 14.6a6.5 6.5 0 0 1 0-9.2l1.1 1.1a5 5 0 0 0 0 7zm9.2 0-1.1-1.1a5 5 0 0 0 0-7l1.1-1.1a6.5 6.5 0 0 1 0 9.2zM3.2 16.8a9.6 9.6 0 0 1 0-13.6l1.1 1.1a8 8 0 0 0 0 11.4zm13.6 0-1.1-1.1a8 8 0 0 0 0-11.4l1.1-1.1a9.6 9.6 0 0 1 0 13.6z",
   };
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 20 20");
@@ -101,7 +103,8 @@ const sectionsFor = (kind) => {
     [player ? "My Stats" : "Player Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
-    ["Live Event Feed", "#/live", ["live"], { soon: true }],
+    // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
+    ["Comparisons", "#/comparisons", ["comparisons"]],
     ["Product Usage", "#/product-usage", ["product-usage"], { soon: true }], // (update 163)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
@@ -217,13 +220,15 @@ export function renderShell(root, { previewClient, currentRoute }) {
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 
-  const nav = el("nav", { "aria-label": "Main" },
-    items
+  const nav = el("nav", { "aria-label": "Main" }, [
+    ...items
       .map(([href, ic, label, matches]) => {
         const isCurrent = matches.includes(currentRoute);
         const link = el("a", { href, "aria-current": isCurrent ? "page" : null }, [icon(ic), text(" " + label)]);
         return link;
-      }));
+      }),
+    liveLink(currentRoute), // (update 188) Live Feed, right of Play: greyed out with no live event
+  ]);
 
   const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
   // Chat (with Questions inside it) first, then Account; both look like the other header links.
@@ -246,6 +251,28 @@ export function renderShell(root, { previewClient, currentRoute }) {
 }
 
 subscribe((s) => { window.__authState = s; });
+
+// (update 188) Live Feed in the top bar: live when liveFeed/status says an event is on (the admin sets it),
+// greyed out (and not a link) otherwise
+let liveOn = false, liveWatching = false;
+function paintLive() {
+  document.querySelectorAll("[data-live-link]").forEach((a) => {
+    a.classList.toggle("nav-off", !liveOn);
+    if (liveOn) { a.setAttribute("href", "#/live"); a.removeAttribute("aria-disabled"); a.title = "Live Feed"; }
+    else { a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); a.title = "Live Feed: no live event right now"; }
+  });
+}
+function liveLink(currentRoute) {
+  const a = el("a", { class: "live-link", dataset: { liveLink: "1" }, "aria-current": currentRoute === "live" ? "page" : null }, [icon("live"), text(" Live Feed")]);
+  if (!liveWatching) {
+    liveWatching = true;
+    Promise.all([import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js"), import("./firebase-init.js")])
+      .then(([fs, fi]) => fs.onSnapshot(fs.doc(fi.db, "liveFeed", "status"), (d) => { liveOn = !!(d.exists() && d.data().active); paintLive(); }, () => {}))
+      .catch(() => {});
+  }
+  setTimeout(paintLive, 0);
+  return a;
+}
 
 const loadedScripts = new Map();
 /** Loads a plain (non-module) script once and caches the promise, for UMD libraries like Chart.js. */
