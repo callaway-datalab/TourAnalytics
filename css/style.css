@@ -3582,3 +3582,7 @@ button.wl-badge:active { transform: scale(0.97); }
 .chat-unsend:hover { border-color: var(--danger, #ff453a); color: var(--danger, #ff453a); }
 .chat-seen { display: block; margin-top: 0.2rem; text-align: right; font-size: 0.68rem; color: var(--muted); }
 .chat-seen.on { color: #c8a97e; }
+/* update 180: whose metrics (everyone, or one player's own) */
+.wl-menu-who-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.wl-menu-who { width: auto !important; min-width: 12rem; max-width: 100%; margin: 0 !important; padding: 0.35rem 0.7rem !important; font-size: 0.88rem; }
+.wl-menu-note { margin: 0.1rem 0 0.6rem; }

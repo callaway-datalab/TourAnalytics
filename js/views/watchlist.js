@@ -99,6 +99,11 @@ export async function render(main, { previewClient }) {
   const picker = multi ? playerPicker(labels, (p) => { if (!p) return; if (!prefs.players.includes(p.key)) { prefs = { ...prefs, players: [...prefs.players, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }) : null;
   const pickerBox = el("div", { class: "wl-add" }, picker ? [picker.node] : []);
   let menuOpen = false;
+  // (update 180) metrics for everyone, or a player's own (watchlists.metricsFor[key]: theirs instead of everyone's)
+  let menuFor = "all";
+  const metricsOf = (k) => (Array.isArray(prefs.metricsFor?.[k]) ? prefs.metricsFor[k] : prefs.metrics);
+  const listFor = (who) => (who === "all" ? prefs.metrics : metricsOf(who));
+  const setList = (who, m) => (who === "all" ? saveWatch({ metrics: m }) : saveWatch({ metricsFor: { ...(prefs.metricsFor || {}), [who]: m } }));
   // (update 171) each card starts folded (name, badges, the five strokes gained); opened ones stay open while you're
   // on the page. A player on more than one tour: the tour picked on their card (this visit).
   const openCards = new Set(), tourPick = new Map();
@@ -121,7 +126,7 @@ export async function render(main, { previewClient }) {
     const keys = (multi ? prefs.players : [single]).filter((k) => (source === "entered" ? true : k !== myKey || field.some((p) => p.key === k)) && (labels.has(k) || fieldNow.some((p) => p.key === k)));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: prefs.metrics, tour: tourPick.get(k) ?? null, nameOf: anyName }));
+    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName }));
     const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow);
 
     // ---- controls ----
@@ -132,25 +137,38 @@ export async function render(main, { previewClient }) {
     }));
     const metricsBtn = el("button", { type: "button", class: "btn ghost wl-metrics-btn", "aria-expanded": String(menuOpen) }, ["＋ Metrics", prefs.metrics.length ? el("span", { class: "wl-count" }, String(prefs.metrics.length)) : null]);
     metricsBtn.addEventListener("click", () => { menuOpen = !menuOpen; draw(); });
+    // (update 180) whose metrics: everyone's, or one player's own (starting from everyone's)
+    if (menuFor !== "all" && !keys.includes(menuFor)) menuFor = "all";
+    const list = listFor(menuFor), own = menuFor !== "all" && Array.isArray(prefs.metricsFor?.[menuFor]);
+    const whoSel = multi && keys.length ? (() => {
+      const sel = el("select", { class: "wl-menu-who", "aria-label": "Metrics for" }, [el("option", { value: "all", selected: menuFor === "all" }, "Everyone"),
+        ...keys.map((k) => el("option", { value: k, selected: menuFor === k }, `${nameOf(k)}${Array.isArray(prefs.metricsFor?.[k]) ? " (own)" : ""}`))]);
+      sel.addEventListener("change", () => { menuFor = sel.value; draw(); });
+      return sel;
+    })() : null;
+    const whoNote = menuFor === "all" ? (Object.keys(prefs.metricsFor || {}).some((k) => keys.includes(k)) ? el("p", { class: "muted small wl-menu-note" }, "Everyone except the players with their own (marked \u201cown\u201d).") : null)
+      : own ? el("p", { class: "muted small wl-menu-note" }, [`${nameOf(menuFor)} has their own metrics. `, (() => { const b = el("button", { type: "button", class: "link" }, "Use everyone\u2019s instead"); b.addEventListener("click", () => { const mf = { ...(prefs.metricsFor || {}) }; delete mf[menuFor]; saveWatch({ metricsFor: mf }); draw(); }); return b; })()])
+      : el("p", { class: "muted small wl-menu-note" }, `${nameOf(menuFor)} uses everyone\u2019s metrics. Change any and they get their own.`);
     const menu = menuOpen ? el("div", { class: "panel wl-menu", role: "group", "aria-label": "Metrics" }, [
-      el("div", { class: "wl-menu-top" }, [el("strong", {}, "Metrics on every card"), (() => { const b = el("button", { type: "button", class: "link" }, "Done"); b.addEventListener("click", () => { menuOpen = false; draw(); }); return b; })()]),
+      el("div", { class: "wl-menu-top" }, [el("div", { class: "wl-menu-who-row" }, [el("strong", {}, "Metrics for"), whoSel || el("strong", {}, "every card")]), (() => { const b = el("button", { type: "button", class: "link" }, "Done"); b.addEventListener("click", () => { menuOpen = false; draw(); }); return b; })()]),
+      whoNote,
       el("div", { class: "wl-menu-groups" }, catalog.map((g) => el("div", { class: "wl-menu-g" }, [el("p", { class: "wl-menu-gt" }, g.group), ...g.items.map(([id, l, ranges]) => {
         // (update 172) Hit Green %, Pin-High %, On-Line %, Proximity, Up & Down %, Made Putt %: once ticked, pick
         // distances too ("All distances" is the stat over every shot); each pick is its own row on the cards
         const mine = (m) => m === id || m.startsWith(`${id}@`);
-        const on = prefs.metrics.some(mine);
+        const on = list.some(mine);
         const cb = el("input", { type: "checkbox", checked: on });
         // (update 179) ticking one with distances starts with every distance picked (untick the ones you don't want)
-        cb.addEventListener("change", () => { const m = cb.checked ? [...prefs.metrics, id, ...(ranges || []).map((r) => r.id)] : prefs.metrics.filter((x) => !mine(x)); saveWatch({ metrics: [...new Set(m)] }); draw(); });
+        cb.addEventListener("change", () => { const m = cb.checked ? [...list, id, ...(ranges || []).map((r) => r.id)] : list.filter((x) => !mine(x)); setList(menuFor, [...new Set(m)]); draw(); });
         const opt = el("label", { class: "wl-menu-o" }, [cb, el("span", {}, l)]);
         if (!on || !ranges?.length) return opt;
         const chip = (cid, text) => {
-          const sel = prefs.metrics.includes(cid);
+          const sel = list.includes(cid);
           const b = el("button", { type: "button", class: `wl-range${sel ? " on" : ""}`, "aria-pressed": String(sel), dataset: { id: cid } }, text);
           b.addEventListener("click", () => {
-            let m = sel ? prefs.metrics.filter((x) => x !== cid) : [...prefs.metrics, cid];
-            if (!m.some(mine)) m = prefs.metrics.filter((x) => !mine(x)); // (nothing left picked: the stat is off)
-            saveWatch({ metrics: m }); draw();
+            let m = sel ? list.filter((x) => x !== cid) : [...list, cid];
+            if (!m.some(mine)) m = list.filter((x) => !mine(x)); // (nothing left picked: the stat is off)
+            setList(menuFor, m); draw();
           });
           return b;
         };

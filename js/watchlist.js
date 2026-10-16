@@ -9,7 +9,7 @@ import { getState, subscribe } from "./auth.js";
 import { getPreviewTeam } from "./preview.js";
 import { getPreviewClient } from "./router.js";
 
-const DEF = { players: [], metrics: ["sg:T2G", "res:wins", "res:top10"], period: "season", source: "tour" }; // (source: update 169)
+const DEF = { players: [], metrics: ["sg:T2G", "res:wins", "res:top10"], metricsFor: {}, period: "season", source: "tour" }; // (metricsFor: update 180, a player's own) // (source: update 169)
 const lsKey = (uid) => `ta:watchlist:${uid}`;
 // (update 167: "Last 12 months" became "Last 6 months")
 const fixPeriod = (o) => (o.period === "l12" ? { ...o, period: "l6" } : o);
@@ -58,7 +58,7 @@ export function loadWatch() {
     loaded.add(o.id);
     if (s.exists()) {
       const d = s.data(), cur = lists.get(o.id) || { ...DEF };
-      const next = fixPeriod({ ...DEF, ...cur, players: Array.isArray(d.players) ? d.players : cur.players, metrics: Array.isArray(d.metrics) ? d.metrics : cur.metrics, period: d.period || cur.period, source: d.source || cur.source || "tour" });
+      const next = fixPeriod({ ...DEF, ...cur, players: Array.isArray(d.players) ? d.players : cur.players, metrics: Array.isArray(d.metrics) ? d.metrics : cur.metrics, metricsFor: d.metricsFor && typeof d.metricsFor === "object" ? d.metricsFor : cur.metricsFor || {}, period: d.period || cur.period, source: d.source || cur.source || "tour" });
       lists.set(o.id, next);
       if (o.own) { try { localStorage.setItem(lsKey(o.uid), JSON.stringify(next)); } catch { /* */ } }
     }
@@ -75,7 +75,7 @@ export async function saveWatch(patch) {
   lists.set(o.id, cur);
   if (!o.own) return;
   try { localStorage.setItem(lsKey(o.uid), JSON.stringify(cur)); } catch { /* */ }
-  try { await setDoc(doc(db, "watchlists", o.uid), { players: cur.players, metrics: cur.metrics, period: cur.period, source: cur.source || "tour", updatedAt: serverTimestamp() }); }
+  try { await setDoc(doc(db, "watchlists", o.uid), { players: cur.players, metrics: cur.metrics, metricsFor: cur.metricsFor || {}, period: cur.period, source: cur.source || "tour", updatedAt: serverTimestamp() }); }
   catch (err) { console.warn("Watchlist kept on this device only (republish the Firestore rules to save it to your account).", err?.code || err); }
 }
 export const toggleFavorite = (key) => { const p = watchPrefs().players || []; return saveWatch({ players: p.includes(key) ? p.filter((k) => k !== key) : [...p, key] }); };
