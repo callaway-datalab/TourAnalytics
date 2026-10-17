@@ -1,4 +1,3 @@
-import { sgHelp, sgWords, fieldLine, strokesWords } from "./plain.js";
 // The strokes-gained dashboard, shared by the admin's Data → Analyze page and every player's My Data
 // page (and coaches viewing a player). Styled after the original player site.
 //
@@ -25,7 +24,7 @@ import {
 const CHART_JS = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
 // Span (update 159): months back from today ("Last Month" on 10/15 looks back to 9/15)
 const SPANS = [["0", "All"], ["1", "Last Month"], ["3", "Last 3 Months"], ["6", "Last 6 Months"], ["12", "Last 12 Months"], ["18", "Last 18 Months"]];
-const SUMMARY = [["TOTAL", "Total"], ["T2G", "Tee to Green"], ["OTT", "Tee Shots"], ["APP", "Approach"], ["ARG", "Short Game"], ["PUTT", "Putting"]];
+const SUMMARY = [["TOTAL", "SG: Total"], ["T2G", "SG: Tee to Green"], ["OTT", "SG: Off-the-Tee"], ["APP", "SG: Approach"], ["ARG", "SG: Around-the-Green"], ["PUTT", "SG: Putting"]];
 const BREAKDOWNS = {
   OTT: [["distanceRange", "SG by Club"], ["lie", "SG by Lie"], ["dogleg", "SG by Dogleg"]],
   APP: [["distanceRange", "SG by Distance"], ["lie", "SG by Lie"], ["pin", "SG by Pin Location"]],
@@ -417,9 +416,8 @@ export function sgDashboard(container, opts) {
         if (last != null && prev != null) {
           const ch = last - prev, steady = Math.abs(ch) < steadyBand(prev);
           const amt = sg ? Math.abs(ch).toFixed(2) : fmtStat({ ...def, unit: def.pct ? "" : def.unit }, Math.abs(ch)).replace("%", def.pct ? " pts" : "");
-          // (update 197) in words; the numbers are in its pop-up
-          void amt;
-          form = steady ? ["Steady", ""] : def.higher == null && !sg ? [`${ch > 0 ? "Higher" : "Lower"} lately`, ""] : (sg || def.higher ? ch > 0 : ch < 0) ? ["\u25b2 Improving", "up"] : ["\u25bc Slipping", "down"];
+          form = steady ? ["Steady", ""] : sg ? (ch > 0 ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"]) // (update 182: Better / Worse, not Up / Down)
+            : def.higher == null ? [`${ch > 0 ? "Higher" : "Lower"} by ${amt}`, ""] : (def.higher ? ch > 0 : ch < 0) ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"];
         }
       }
       // a tile per category this stat has (with its rank among the same players, every category counted)
@@ -453,10 +451,7 @@ export function sgDashboard(container, opts) {
             el("span", { class: "hero-kicker" }, `${describe()}`),
             el("h2", { class: "hero-name" }, me.label),
             el("div", { class: "hero-big" }, [el("strong", { class: toneCls(total, fieldAvg) }, fmtV(total)), el("span", {}, sg ? "strokes gained a round" : def.label)]),
-            // (update 197) what the number means, in words
-            // (update 200) just strokes gained; the one comparison is the real field average of the players in this data
-            sg ? el("p", { class: "hero-plain" }, [`${sgWords(total, { cap: true })}.`, (() => { const vs = rankedField(slicedField).map((p) => metric(p.rounds)).filter((x) => x != null); const t = fieldLine(vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, vs.length); return t ? el("span", { class: "hero-field" }, ` ${t}`) : null; })()]) : el("p", { class: "hero-help" }, def.help),
-            sg ? sgHelp() : null,
+            sg ? null : el("p", { class: "hero-help" }, def.help),
             // (update 159: each pill opens a table: the rankings, every round, the form, the wins and top 10s)
             el("div", { class: "hero-chips" }, [
               // (coloured by rank, as in the report: top 10, 11-50, 51-100, 101-150, past 150)
@@ -578,9 +573,8 @@ export function sgDashboard(container, opts) {
     const a = sdOf(roundVals(ordered.slice(-n))), b = sdOf(roundVals(ordered.slice(-2 * n, -n)));
     if (a == null || b == null) return null;
     const ch = a - b, same = Math.abs(ch) < (isSG() ? 0.05 : Math.max(1e-9, b * 0.05));
-    // (update 197) in words: how much their rounds swing from one to the next
-    if (same || Math.abs(ch) < (isSG() ? 0.3 : b * 0.15)) return `Consistency: about the same lately (their ${unit}s swing by about \u00b1${fmtDelta(a)}).`;
-    return `Consistency: ${ch < 0 ? "steadier" : "more up and down"} lately. Their ${unit}s swing by about \u00b1${fmtDelta(a)}, ${ch < 0 ? "down" : "up"} from \u00b1${fmtDelta(b)}.`;
+    const head = same ? "Steadiness is about the same" : ch < 0 ? "Steadiness is improving" : "Steadiness is declining";
+    return `${head}: \u00b1${fmtDelta(a)} a ${unit} (standard deviation) over the last ${rw(n)}, against \u00b1${fmtDelta(b)} in the ${n} before${same ? "" : ` (${ch < 0 ? "steadier" : "streakier"} by ${fmtDelta(ch)})`}.`;
   }
   const roundsTable = (rs, { rank = null } = {}) => el("table", { class: "plain rankings hero-tourn" }, [
     el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rd"), el("th", { class: "num" }, isSG() ? "SG" : def.label), rank ? el("th", { class: "num" }, "Rank") : null])),
@@ -1058,29 +1052,27 @@ export function sgDashboard(container, opts) {
     if (me && mine && mine.length) {
       const name = me.label || "This player";
       const total = perRoundOf(mine), r = rankAmong(slicedField, me.key);
-      // (update 197) plain words: what it means, what's best and worst, which way it's going
-      const fvs = rankedField(slicedField).map((p) => perRoundOf(p.rounds)).filter((x) => x != null), favg = fvs.length >= 3 ? fvs.reduce((a, b) => a + b, 0) / fvs.length : null;
-      lines.push(`Overall: ${sgWords(total)}${r.rank && r.of > 1 && showRanks ? ` (${ordinal(r.rank)} of ${r.of} players here)` : ""}, over ${mine.length} ${mine.length === 1 ? "round" : "rounds"}.${favg != null ? ` The field average here is ${fmtSG(favg)} (${fvs.length} players), so that\u2019s ${strokesWords(total - favg)} than the field.` : ""}`);
+      lines.push(`${name} ${sgWord(total)} over ${mine.length} ${mine.length === 1 ? "round" : "rounds"} (${what})${r.rank && r.of > 1 ? `, ${ordinal(r.rank)} of ${r.of} players` : ""}.`);
       if (cats.length > 1) {
         const byCat = cats.map(([k, l]) => ({ l, v: perRoundOf(mine, k), rk: rankAmong(slicedField, me.key, k) })).filter((x) => x.v != null).sort((a, b) => b.v - a.v);
         if (byCat.length > 1) {
           const best = byCat[0], worst = byCat[byCat.length - 1];
-          lines.push(`Best part of their game: ${best.l} (${sgWords(best.v)}). Needs the most work: ${worst.l} (${sgWords(worst.v)}).`);
+          lines.push(`Strongest: ${best.l} (${fmtSG(best.v)}${best.rk.rank && best.rk.of > 1 ? `, ${ordinal(best.rk.rank)}` : ""}). Weakest: ${worst.l} (${fmtSG(worst.v)}${worst.rk.rank && worst.rk.of > 1 ? `, ${ordinal(worst.rk.rank)}` : ""}).`);
         }
       } else if (cats.length === 1) {
         // one category: its best and worst distances
         const k = cats[0][0], m = new Map();
         for (const rd of mine) for (const x of rd.shots) if (x.cat === k && x.dist) m.set(x.dist, (m.get(x.dist) || 0) + x.sg);
         const ds = [...m].map(([d, t]) => ({ d, v: t / mine.length })).sort((a, b) => b.v - a.v);
-        if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${sgWords(ds[0].v)}); toughest from ${ds[ds.length - 1].d} (${sgWords(ds[ds.length - 1].v)}).`);
+        if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${fmtSG(ds[0].v)} a round); lowest from ${ds[ds.length - 1].d} (${fmtSG(ds[ds.length - 1].v)}).`);
       }
       // form: the last 10 rounds against the 10 before them
       const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
       const n = Math.min(10, Math.floor(ordered.length / 2));
       if (n >= 2) {
         const last = perRoundOf(ordered.slice(-n)), prev = perRoundOf(ordered.slice(-2 * n, -n)), ch = last - prev;
-        lines.push(Math.abs(ch) < 0.25 ? `Form: steady. Their last ${n} rounds are about the same as the ${n} before.`
-          : `Form: ${ch > 0 ? "improving" : "slipping"}. Their last ${n} rounds are ${strokesWords(ch)} than the ${n} before.`);
+        lines.push(Math.abs(ch) < 0.05 ? `Form is steady: ${fmtSG(last)} a round over the last ${n} rounds, about the same as the ${n} before.`
+          : `Form is ${ch > 0 ? "improving" : "cooling down"}: ${fmtSG(last)} a round over the last ${n} rounds, against ${fmtSG(prev)} in the ${n} before (${ch > 0 ? "better" : "worse"} by ${Math.abs(ch).toFixed(2)}).`);
         const sl = steadinessLine(ordered, n); if (sl) lines.push(sl);
       }
     } else {
@@ -1098,7 +1090,7 @@ export function sgDashboard(container, opts) {
       }
     }
     if (!lines.length) return null;
-    return el("section", { class: "panel sg-summary" }, [el("h3", {}, "In plain words"), ...lines.map((t) => el("p", {}, t))]);
+    return el("section", { class: "panel sg-summary" }, [el("h3", {}, "Summary"), ...lines.map((t) => el("p", {}, t))]);
   }
 
   /* ------------------------------ the whole tour (no player picked; update 142) ------------------------------ */
@@ -1194,12 +1186,12 @@ export function sgDashboard(container, opts) {
       const avgOf = (vals) => { const v = vals.filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
       const catCompare = cmpField.length ? shown.map(([k]) => avgOf(cmpField.map((p) => sliceTotals(p.rounds.map((rd) => ({ ...rd, shots: rd.shots.filter((x) => x.cat === k) }))).sgPerRound))) : null;
       const byCat = panelBox("SG by Category", chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), {
-        title: "Strokes gained a round", as, compare: catCompare, compareLabel: compareName() }), "", "by-category", { rankPick: cmpField.length > 0 }));
+        title: "SG / round", as, compare: catCompare, compareLabel: compareName() }), "", "by-category", { rankPick: cmpField.length > 0 }));
       const lies = sgBy(mine, idx, null, "lie");
       const lieCompare = lies && !fieldIsSummary() ? lies.map((g) => avgOf(cmpField.map((p) => (sgBy(p.rounds, idx, null, "lie") || []).find((x) => x.label === g.label)?.perRound))) : null;
       blocks.push(lies && lies.length > 1
         ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,
-            title: "Strokes gained a round", compare: lieCompare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie", { rankPick: !!lieCompare }))])
+            title: "SG / round", compare: lieCompare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie", { rankPick: !!lieCompare }))])
         : byCat);
     } else {
       const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
@@ -1243,7 +1235,7 @@ export function sgDashboard(container, opts) {
           return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
         });
         visuals.push(panelBox(title, chartBox((c, as) => barChart(c, groups.map((g) => g.label), groups.map((g) => g.perRound), { as,
-          title: "Strokes gained a round", compare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
+          title: "SG / round", compare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
         }), "", `${cat}-${fieldName}`, { rankPick: !fieldIsSummary() })));
       }
       if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
@@ -1263,7 +1255,7 @@ export function sgDashboard(container, opts) {
     const tCompare = others.length ? t.map((g) => topMean([g.value, ...otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value)])) : null;
     const unit = { round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event";
     blocks.push(panelBox("SG Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
-      title: "Strokes gained a round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(unit),
+      title: "SG / round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(unit),
       shortLabels: t.map((g) => g.short),
       tooltip: (i) => (st.trendBy === "round" ? t[i].event : `${t[i].rounds} ${t[i].rounds === 1 ? "round" : "rounds"}`),
     }), "wide", "trend", { rankPick: others.length > 0 })], "full"));
@@ -1320,7 +1312,7 @@ export function sgDashboard(container, opts) {
       lines.push(`${r.of} players${what ? ` (${what})` : ""}. ${def.higher === false ? "Lowest" : "Highest"}: ${nameOf(r.leader.key)} (${fmtV(r.leader.v)})${r.of > 1 ? `; ${def.higher === false ? "highest" : "lowest"}: ${nameOf(last.key)} (${fmtV(last.v)})` : ""}. Average: ${fmtV(avg)}. Pick a player for their own summary.`);
     }
     if (!lines.length) return null;
-    return el("section", { class: "panel sg-summary" }, [el("h3", {}, "In plain words"), ...lines.map((t) => el("p", {}, t))]);
+    return el("section", { class: "panel sg-summary" }, [el("h3", {}, "Summary"), ...lines.map((t) => el("p", {}, t))]);
   }
   function statDetail(mine, slicedField) {
     const blocks = [], visuals = [];
@@ -1498,15 +1490,8 @@ export function sgDashboard(container, opts) {
   }
 
   /* ------------------------------ building blocks ------------------------------ */
-  // (update 197) every chart gets a plain title and one line on how to read it
-  const PLAIN_TITLES = {
-    "SG by Category": ["Where they gain and lose strokes", "One bar for each part of the game. Above zero = strokes gained, below = strokes lost. The dashes show the players picked on the right, for comparison."],
-    "SG Trends": ["How they\u2019ve played over time", "Strokes gained a round for each period. Above zero = strokes gained, below = strokes lost. The dashes show the players picked on the right."],
-  };
   function panelBox(title, content, size = "") {
-    const by = /^SG by (.+)$/.exec(title);
-    const [t, help] = PLAIN_TITLES[title] || (by ? [`By ${by[1].toLowerCase()}`, `Strokes gained a round for each ${by[1].toLowerCase()}. Above zero = strokes gained, below = strokes lost.`] : [title, null]);
-    return el("section", { class: `panel sg-box ${size}` }, [el("h3", {}, t), help ? el("p", { class: "sg-box-help" }, help) : null, ...[].concat(content)]);
+    return el("section", { class: `panel sg-box ${size}` }, [el("h3", {}, title), ...[].concat(content)]);
   }
   // Rank filter for the dashed comparison: everyone, or just the top 1 / 10 / 25 / 50 players by SG / round.
   const RANK_TOPS = [["1", "Top 1"], ["10", "Top 10"], ["25", "Top 25"], ["50", "Top 50"], ["all", "All"]];

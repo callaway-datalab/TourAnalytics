@@ -3,10 +3,9 @@
 // sources work without renaming. Anything missing just hides the charts that need it.
 
 export const CATEGORIES = [
-  // (update 197) everyday names on every page (the data file can still say Off-the-Tee, Around-the-Green …)
-  ["OTT", "Tee Shots"],
+  ["OTT", "Off-the-Tee"],
   ["APP", "Approach"],
-  ["ARG", "Short Game"],
+  ["ARG", "Around-the-Green"],
   ["PUTT", "Putting"],
 ];
 

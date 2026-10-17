@@ -5,8 +5,7 @@
 //   · badges and alerts: big moves, hot streaks and slumps, form landmarks, best rounds, wins and milestones
 import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds } from "./sg.js";
 
-// (update 198) everyday names (the tiles: Total, Tee, Approach, Short, Putting)
-export const SG_KEYS = [["TOTAL", "Overall", "Total"], ["OTT", "Tee Shots", "Tee"], ["APP", "Approach", "Approach"], ["ARG", "Short Game", "Short"], ["PUTT", "Putting", "Putting"]];
+export const SG_KEYS = [["TOTAL", "SG: Total", "Total"], ["OTT", "Off-the-Tee", "OTT"], ["APP", "Approach", "APP"], ["ARG", "Around-the-Green", "ARG"], ["PUTT", "Putting", "PUTT"]];
 const CAT_SHORT = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
 const sum = (a) => a.reduce((t, x) => t + x, 0);
 const mean = (a) => (a.length ? sum(a) / a.length : null);
@@ -195,7 +194,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       v = vals.get(key); r = rankOf(vals, key, false); higher = false; fmt = (x) => (x == null ? "—" : `±${x.toFixed(2)}`);
       trend = trendOf(mine, swing);
       // (a swing needs several rounds: the bars are each round's strokes gained, the table the swing either side)
-      info = () => { const fi = formInfo(mine, (rs) => perRound(rs), { label: "Overall", fmtFn: fmtSG }); const t = trendOf(mine, swing);
+      info = () => { const fi = formInfo(mine, (rs) => perRound(rs), { label: "SG: Total", fmtFn: fmtSG }); const t = trendOf(mine, swing);
         if (t) fi.blocks[1] = { kind: "table", title: "Steadiness (round-to-round swing; lower is steadier)", cols: [[""], [`Previous ${t.n}`, "num"], [`Last ${t.n}`, "num"], ["Change", "num"]],
           rows: [{ cells: ["Swing", { text: `\u00b1${t.prev.toFixed(2)}` }, { text: `\u00b1${t.last.toFixed(2)}` }, { text: `${t.ch > 0 ? "\u25B2 " : "\u25BC "}${Math.abs(t.ch).toFixed(2)}`, tone: t.ch < 0 ? "pos" : "neg" }] }] };
         fi.sub = "Strokes gained in each round (the last 10 highlighted), and how much they swing from round to round."; return fi; };
@@ -211,7 +210,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       const winsOnly = id === "res:wins";
       info = () => ({ sub: `Strokes gained a round at each tournament they finished (${winsOnly ? "wins" : "top 10s"} highlighted), among the players who played every round.`,
         blocks: [{ kind: "bars", fmt: "sg", items: finishes.map(({ e, i }) => ({ label: dateShort(e.end), sub: `${e.event} \u00b7 ${ordinal(i + 1)}`, v: e.ranked[i].v, on: winsOnly ? i === 0 : i < 10 })) },
-          { kind: "table", cols: [["Date"], ["Tournament"], ["Finish", "num"], ["SG a round", "num"]], rows: [...(winsOnly ? wins : top10)].reverse().map(({ e, i }) => ({ cells: [dateShort(e.end), e.event, ordinal(i + 1), { sg: e.ranked[i].v }] })) }] });
+          { kind: "table", cols: [["Date"], ["Tournament"], ["Finish", "num"], ["SG / round", "num"]], rows: [...(winsOnly ? wins : top10)].reverse().map(({ e, i }) => ({ cells: [dateShort(e.end), e.event, ordinal(i + 1), { sg: e.ranked[i].v }] })) }] });
     } else if (id === "res:rounds") { v = mine.length; r = rankOf(new Map(fieldF.map((p) => [p.key, p.rounds.length])), key); fmt = (x) => String(x ?? 0); }
     else if (id.startsWith("stat:") && parseStatId(id).cat) {
       // (update 172) a stat at one distance: ranked against the field's lie / distance detail (when it's here)
@@ -271,13 +270,12 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
     return { sub: byRun ? `Strokes gained in each round. The ${n} in a row ${sign > 0 ? "gaining" : "losing"} on the field are highlighted.` : `Strokes gained in each round. The last 5 (highlighted) average ${fmtSG(avg5)} a round.`,
       blocks: [{ kind: "bars", fmt: "sg", items: show.map((rd, i) => rdItem(rd, i >= show.length - n)), ref: byRun ? [] : [{ v: avg5, label: "Last 5 avg" }] }, { ...roundsTable(mine.slice(-n)), title: byRun ? "The streak" : "The last 5" }] };
   };
-  if ((sign > 0 && run >= 5) || (avg5 != null && avg5 >= 1.5)) add({ kind: "hot", icon: "🔥", tone: "up", text: run >= 5 && sign > 0 ? `Hot streak · gained strokes ${run} rounds in a row` : `Hot streak · gaining ${Math.abs(avg5).toFixed(1)} strokes a round, last 5 rounds`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign > 0));
-  if ((sign < 0 && run >= 5) || (avg5 != null && avg5 <= -1.5)) add({ kind: "cold", icon: "🧊", tone: "down", text: run >= 5 && sign < 0 ? `Slump · lost strokes ${run} rounds in a row` : `Slump · losing ${Math.abs(avg5).toFixed(1)} strokes a round, last 5 rounds`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign < 0));
+  if ((sign > 0 && run >= 5) || (avg5 != null && avg5 >= 1.5)) add({ kind: "hot", icon: "🔥", tone: "up", text: run >= 5 && sign > 0 ? `Hot streak · ${run} straight rounds gaining` : `Hot streak · ${fmtSG(avg5)} a round, last 5`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign > 0));
+  if ((sign < 0 && run >= 5) || (avg5 != null && avg5 <= -1.5)) add({ kind: "cold", icon: "🧊", tone: "down", text: run >= 5 && sign < 0 ? `Slump · ${run} straight rounds losing` : `Slump · ${fmtSG(avg5)} a round, last 5`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign < 0));
   // big moves: the last 10 against the 10 before
-  if (total.trend && Math.abs(total.trend.ch) >= 0.75) add({ kind: total.trend.ch > 0 ? "up" : "down", icon: total.trend.ch > 0 ? "⬆" : "⬇", tone: total.trend.ch > 0 ? "up" : "down", text: `Big move · ${Math.abs(total.trend.ch).toFixed(1)} strokes a round ${total.trend.ch > 0 ? "better" : "worse"} lately`, alert: true, sev: 2 }, () => {
+  if (total.trend && Math.abs(total.trend.ch) >= 0.75) add({ kind: total.trend.ch > 0 ? "up" : "down", icon: total.trend.ch > 0 ? "⬆" : "⬇", tone: total.trend.ch > 0 ? "up" : "down", text: `Big move · ${total.trend.ch > 0 ? "Better" : "Worse"} by ${Math.abs(total.trend.ch).toFixed(2)}, last ${total.trend.n} vs prev. ${total.trend.n}`, alert: true, sev: 2 }, () => {
     const n = total.trend.n, show = mine.slice(-2 * n);
-    const ch = total.trend.ch;
-    return { sub: `${ch > 0 ? "Better" : "Worse"} lately: their last ${n} rounds average ${fmtSG(total.trend.last)}, against ${fmtSG(total.trend.prev)} in the ${n} before (${Math.abs(ch).toFixed(1)} strokes a round ${ch > 0 ? "better" : "worse"}). The bars are each round (the last ${n} highlighted); the table shows which part of the game changed.`,
+    return { sub: `Strokes gained in each round: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
       blocks: [{ kind: "bars", fmt: "sg", items: show.map((rd, i) => rdItem(rd, i >= n)), ref: [{ v: total.trend.prev, label: `Previous ${n}`, from: 0, to: n }, { v: total.trend.last, label: `Last ${n}`, from: n, to: 2 * n }] },
         { kind: "table", title: "By category (a round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: card.sg.map((x) => { const t = trendOf(mine, (rs) => perRound(rs, x.k)); return { strong: x.k === "TOTAL", cells: [x.label, { sg: t?.prev }, { sg: t?.last }, { sg: t?.ch, arrow: true }] }; }) }] };
   });
@@ -311,34 +309,34 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const margin = (e) => (e.ranked.length > 1 ? e.ranked[0].v - e.ranked[1].v : null);
   if (wins.length && lastEvent && wins.at(-1).e === lastEvent) add({ kind: "win", icon: "🏆", tone: "gold", text: `Led the field at ${lastEvent.event}`, alert: true, sev: 5 }, () => ({
     sub: `${lastEvent.event}, ${dateShort(lastEvent.end)}: strokes gained a round among the players who played ${evRounds(lastEvent) > 1 ? `all ${evRounds(lastEvent)} rounds` : "it"}.${margin(lastEvent) != null ? ` ${fmtSG(margin(lastEvent))} a round ahead of 2nd.` : ""}`,
-    blocks: [{ kind: "table", cols: [["Pos"], ["Player"], ["SG a round", "num"]], rows: lastEvent.ranked.slice(0, 10).map((x, j) => ({ me: x.key === key, cells: [ordinal(j + 1), nm(x.key), { sg: x.v }] })) }] }));
+    blocks: [{ kind: "table", cols: [["Pos"], ["Player"], ["SG / round", "num"]], rows: lastEvent.ranked.slice(0, 10).map((x, j) => ({ me: x.key === key, cells: [ordinal(j + 1), nm(x.key), { sg: x.v }] })) }] }));
   if (wins.length >= 2) add({ kind: "wins", icon: "🏆", tone: "gold", text: `${wins.length} wins ${period === "season" ? "this season" : "in this period"}` }, () => ({
     sub: "Strokes gained a round at each tournament they finished (wins highlighted): the best among the players who played every round.",
     blocks: [{ kind: "bars", fmt: "sg", items: finishes.map(({ e, i }) => ({ label: dateShort(e.end), sub: `${e.event} \u00b7 ${ordinal(i + 1)}`, v: e.ranked[i].v, on: i === 0 })) }, // (update 181: like the top 10s)
-      { kind: "table", title: "The wins", cols: [["Date"], ["Tournament"], ["SG a round", "num"], ["Ahead of 2nd", "num"]], rows: [...wins].reverse().map(({ e }) => ({ cells: [dateShort(e.end), e.event, { sg: e.ranked[0].v }, { sg: margin(e) }] })) }] }));
+      { kind: "table", title: "The wins", cols: [["Date"], ["Tournament"], ["SG / round", "num"], ["Ahead of 2nd", "num"]], rows: [...wins].reverse().map(({ e }) => ({ cells: [dateShort(e.end), e.event, { sg: e.ranked[0].v }, { sg: margin(e) }] })) }] }));
   if (top10.length >= 5) add({ kind: "top10", icon: "🎯", tone: "gold", text: `${top10.length} top 10s` }, () => ({
     sub: "Finish: their place by strokes gained a round among the players who played every round.",
     blocks: [{ kind: "bars", fmt: "sg", items: finishes.map(({ e, i }) => ({ label: dateShort(e.end), sub: `${e.event} · ${ordinal(i + 1)}`, v: e.ranked[i].v, on: i < 10 })) },
-      { kind: "table", title: "The top 10s", cols: [["Date"], ["Tournament"], ["Finish", "num"], ["SG a round", "num"]], rows: [...top10].reverse().map(({ e, i }) => ({ cells: [dateShort(e.end), e.event, ordinal(i + 1), { sg: e.ranked[i].v }] })) }] }));
+      { kind: "table", title: "The top 10s", cols: [["Date"], ["Tournament"], ["Finish", "num"], ["SG / round", "num"]], rows: [...top10].reverse().map(({ e, i }) => ({ cells: [dateShort(e.end), e.event, ordinal(i + 1), { sg: e.ranked[i].v }] })) }] }));
   // (update 168: no badges for rounds played)
   // ranks: the top 10, number 1 in a category, and big climbs (against where they stood 10 rounds ago)
-  const totalInfo = () => ({ sub: `Overall strokes gained a round${tour ? ` on the ${tour}` : ""}, among players with ${minR} or more rounds in this period.`,
-    blocks: [{ kind: "table", cols: [["Rank"], ["Player"], ["Rounds", "num"], ["SG a round", "num"]], rows: leaders(sgVals.get("TOTAL")) }] });
-  if (total.rank === 1) add({ kind: "rank", icon: "🥇", tone: "gold", text: "No. 1 overall" }, totalInfo);
-  else if (total.rank && total.rank <= 10) add({ kind: "rank", icon: "🔟", tone: "gold", text: `Top 10 overall (${ordinal(total.rank)})` }, totalInfo);
+  const totalInfo = () => ({ sub: `SG: Total a round${tour ? ` on the ${tour}` : ""}, among players with ${minR} or more rounds in this period.`,
+    blocks: [{ kind: "table", cols: [["Rank"], ["Player"], ["Rounds", "num"], ["SG / round", "num"]], rows: leaders(sgVals.get("TOTAL")) }] });
+  if (total.rank === 1) add({ kind: "rank", icon: "🥇", tone: "gold", text: "No. 1 in SG: Total" }, totalInfo);
+  else if (total.rank && total.rank <= 10) add({ kind: "rank", icon: "🔟", tone: "gold", text: `Top 10 in SG: Total (${ordinal(total.rank)})` }, totalInfo);
   const firstsS = card.sg.slice(1).filter((s) => s.rank === 1), firsts = firstsS.map((s) => s.label);
   if (firsts.length) add({ kind: "rank", icon: "🥇", tone: "gold", text: `No. 1 in ${firsts.length > 2 ? `${firsts.slice(0, -1).join(", ")} and ${firsts.at(-1)}` : firsts.join(" and ")}` }, () => ({
     sub: `Strokes gained a round${tour ? ` on the ${tour}` : ""}, among players with ${minR} or more rounds in this period: the top 10 in each category they lead.`,
-    blocks: firstsS.map((x) => ({ kind: "table", title: x.label, cols: [["Rank"], ["Player"], ["Rounds", "num"], ["SG a round", "num"]], rows: leaders(sgVals.get(x.k)) })) })); // (update 175: the full top 10, like SG: Total)
+    blocks: firstsS.map((x) => ({ kind: "table", title: x.label, cols: [["Rank"], ["Player"], ["Rounds", "num"], ["SG / round", "num"]], rows: leaders(sgVals.get(x.k)) })) })); // (update 175: the full top 10, like SG: Total)
   if (mine.length >= 20 && lastRound) {
     const cut = mine.at(-11)?.date;
     if (cut) {
       const before = new Map(ranked.map((p) => [p.key, perRound(p.rounds.filter((rd) => String(rd.date) <= String(cut)))]).filter(([, v]) => v != null));
       const was = rankOf(before, key).rank;
-      if (was && total.rank && Math.abs(was - total.rank) >= 10) add({ kind: total.rank < was ? "up" : "down", icon: total.rank < was ? "⬆" : "⬇", tone: total.rank < was ? "up" : "down", text: `${total.rank < was ? "Up" : "Down"} ${Math.abs(was - total.rank)} places, to ${ordinal(total.rank)} overall`, alert: true, sev: 3 }, () => {
+      if (was && total.rank && Math.abs(was - total.rank) >= 10) add({ kind: total.rank < was ? "up" : "down", icon: total.rank < was ? "⬆" : "⬇", tone: total.rank < was ? "up" : "down", text: `${total.rank < was ? "Better" : "Worse"} by ${Math.abs(was - total.rank)} spots, to ${ordinal(total.rank)} in SG: Total`, alert: true, sev: 3 }, () => {
         const trail = rankTrail(key, mine, ranked, minR, total.rank), dates = mine.map((rd) => rd.date);
         const pts = rankDates(mine).map((d, i) => ({ label: dateShort(d), v: trail[i], on: i === trail.length - 1 })).filter((x) => x.v != null);
-        return { sub: `Their overall rank after each round this ${period === "season" ? "season" : "period"}: ${ordinal(was)} 10 rounds ago, ${ordinal(total.rank)} now.`,
+        return { sub: `Their SG: Total rank after each round this ${period === "season" ? "season" : "period"}: ${ordinal(was)} 10 rounds ago, ${ordinal(total.rank)} now.`,
           blocks: [{ kind: "line", fmt: "rank", invert: true, items: pts }, { ...roundsTable(mine.slice(-10)), title: "The last 10 rounds" }] };
       });
     }
@@ -367,8 +365,7 @@ function formInfo(ordered, val, { label, fmtFn, chFn = (d) => Math.abs(d).toFixe
   const change = (a, b) => (a == null || b == null ? { text: "\u2014" } : { text: `${Math.abs(a - b) < 1e-9 ? "" : a > b ? "\u25B2 " : "\u25BC "}${chFn(a - b)}`, tone: better(a, b) == null || Math.abs(a - b) < 1e-9 ? "" : better(a, b) ? "pos" : "neg" });
   const tableRows = (rows || [{ label, val }]).map((r, i) => { const a = r.val(lastR), b = r.val(prevR); return { strong: i === 0 && (rows?.length || 0) > 1, cells: [r.label, cell(b), cell(a), change(a, b)] }; });
   return {
-    // (update 198) the answer first, in words
-    sub: `${pv == null || lv == null ? "" : better(lv, pv) == null || Math.abs(lv - pv) < 1e-9 ? `${lv > pv ? "Higher" : lv < pv ? "Lower" : "The same"} lately: ` : `${better(lv, pv) ? "Better" : "Worse"} lately: `}${pv == null || lv == null ? "" : `${fmt(lv)} over the last ${n} ${what}s, against ${fmt(pv)} in the ${n} before. `}The bars are each ${what} (the last ${n} highlighted).`,
+    sub: `${label} in each ${what}: the last ${n} (highlighted) against the ${n} before.`,
     blocks: [
       { kind: "bars", fmtFn, zero: signed, items: [...prevR, ...lastR].map((rd, i) => { const v = val([rd]); return { label: dateShort(rd.date), sub: roundSub(rd), v, on: i >= prevR.length, tone: toneOf(v) }; }),
         ref: [{ v: pv, label: `Previous ${n}`, from: 0, to: prevR.length }, { v: lv, label: `Last ${n}`, from: prevR.length, to: prevR.length + lastR.length }] },

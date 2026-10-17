@@ -394,7 +394,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   /* ---------- how to read ---------- */
   d.roundRect(M, y - 4, W, 46, 8, { fill: P.note });
   d.text("How to read this:", M + 12, y + 9, { size: 8.5, bold: true, color: P.gold });
-  d.text("Strokes gained scores every shot against the baseline: the strokes expected from that distance and lie.", M + 92, y + 9, { size: 8.5, color: P.ink });
+  d.text("Strokes gained compares every shot with what a typical tour player would do from the same spot.", M + 92, y + 9, { size: 8.5, color: P.ink });
   d.text("Plus (green) = better than that; minus (red) = worse. +1.00 means one stroke a round better.", M + 92, y + 21, { size: 8.5, color: P.ink });
   d.text(`Tour Avg and ranks: the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
   y += 58;

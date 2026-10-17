@@ -1,4 +1,3 @@
-import { sgHelp, strokesWords } from "../plain.js";
 /*
  * Comparisons (update 188): pick a player, then any slices of their rounds (seasons, time windows,
  * tournaments, courses, round numbers, months, tours, or a date range of your own) and see them side by side:
@@ -42,7 +41,6 @@ const MODES = [
   // (update 190) a club model or ball, grouped by type
   ["product", "Product", "How they play with one club model or ball against another (only the shots hit with it count)."],
 ];
-const SHORTCAT = { OTT: "Tee", APP: "Approach", ARG: "Short", PUTT: "Putting" }; // (update 199) everyday names in the small spaces
 const FIND = { tournaments: "a tournament", courses: "a course", product: "a club or ball", months: "a month", years: "a season", tours: "a tour" };
 
 export async function render(main) {
@@ -222,18 +220,15 @@ export async function render(main) {
       playersRow(),
       builder(),
       items.length ? selectedBar(items) : null,
-      items.length >= 2 ? standout(items) : null,
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
+      items.length >= 2 ? standout(items) : null,
       items.length ? sgSection(items) : null,
       items.length ? roundsSection(items) : null,
       items.length ? distanceSection(items) : null,
       items.length ? statsSection(items) : null,
-      el("p", { class: "muted small center cmp-foot" }, "Numbers are strokes gained a round: + is strokes gained, \u2212 is strokes lost. A round can be in more than one selection."),
+      el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
     ]);
     window.scrollTo(0, y);
-    // (the folded parts stay as you left them when the page redraws)
-    root.querySelector(".cmp-include")?.addEventListener("toggle", (e) => { includeOpen = e.target.open; });
-    root.querySelector(".cmp-fold")?.addEventListener("toggle", (e) => { roundsOpen = e.target.open; });
   }
 
   function pickerNode() {
@@ -247,7 +242,7 @@ export async function render(main) {
     return el("div", { class: "cmp-who cmp-top" }, pp.node);
   }
   // (update 192) Players: who's being compared, above everything you pick (the one you're looking at is always in)
-  let scope = [], includeOpen = false, roundsOpen = false;
+  let scope = [];
   const incNow = () => {
     const cats = scope.filter((c) => incCats.has(c.cat)).map((c) => c.cat);
     const dists = new Set();
@@ -265,9 +260,7 @@ export async function render(main) {
     const any = incNow();
     const reset = any ? el("button", { type: "button", class: "link" }, "Count every shot") : null;
     reset?.addEventListener("click", () => { incCats = new Set(); incDists = new Set(); draw(); });
-    // (update 199) folded under "More options" until something in it is picked
-    return el("details", { class: "cmp-include", open: any || includeOpen ? true : null }, [
-      el("summary", {}, any ? "More options (narrowed: only some shots count)" : "More options: which shots count"),
+    return el("div", { class: "cmp-include" }, [
       el("div", { class: "cmp-build-top" }, [el("h3", {}, "Include"), el("span", { class: "muted small" }, any ? "Only the shots picked count, in every table and chart below." : "Every shot counts. Pick categories or distances to narrow it."), reset]),
       cats, ...dists,
     ]);
@@ -449,15 +442,15 @@ export async function render(main) {
     return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
       el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name)]),
       it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n.toLocaleString()} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
-      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, head[0] === "TOTAL" ? "strokes gained a round" : `${head[1]}: strokes gained a round`)]),
-      used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, SHORTCAT[k] || k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
-      it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best round ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 gained strokes in ${Math.round(it.s.gaining * 100)}% of rounds`) : null,
+      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, `SG: ${head[1]} a round`)]),
+      used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
+      it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
     ]), it.i)));
   }
   function standout(items) {
     const list = insights(items.map((it) => ({ name: it.name, s: it.s })));
     if (!list.length) return null;
-    return el("section", { class: "panel cmp-standout" }, [el("h2", {}, "In plain words"), el("ul", {}, list.map((x) => el("li", { class: x.tone }, x.text))), sgHelp("What do the numbers mean?")]);
+    return el("section", { class: "panel cmp-standout" }, [el("h2", {}, "What stands out"), el("ul", {}, list.map((x) => el("li", { class: x.tone }, x.text)))]);
   }
 
   // strokes gained: the table (each row shaded best to worst) and the grouped bars
@@ -467,7 +460,7 @@ export async function render(main) {
     const rowsShown = sgRowsFor(live);
     const shade = (vals, v) => { const xs = vals.filter((x) => x != null); if (xs.length < 2 || v == null) return ""; const hi = Math.max(...xs), lo = Math.min(...xs); return hi - lo < 1e-9 ? "" : v === hi ? "hi" : v === lo ? "lo" : ""; };
     const table = el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), it.i)), items.length > 1 ? el("th", { class: "num" }, "Gap") : null])),
+      el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), it.i)), items.length > 1 ? el("th", { class: "num" }, "Spread") : null])),
       el("tbody", {}, rowsShown.map(([k, l]) => {
         const vals = items.map((it) => (it.s.n ? it.s.sg[k] : null));
         const xs = vals.filter((v) => v != null);
@@ -478,23 +471,20 @@ export async function render(main) {
     let conf = null;
     if (live.length >= 2) {
       const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
-      const sure = { clear: "a clear difference", likely: "probably a real difference", possible: "could be chance", "too close to call": "too close to call", "too few rounds": "too few rounds to be sure" }[c.word] || c.word;
-      conf = el("p", { class: "muted small" }, [`Best against worst: ${strokesWords(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL).replace(" better", "")} apart \u2014 `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, sure), " (allowing for how much rounds vary)."]);
+      conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
     }
     const used = usedCats(live);
-    const chart = groupedBars([...(used.length > 1 ? [["TOTAL", "Total"]] : []), ...used.map(([k]) => [k, SHORTCAT[k] || k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
-    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained a round for each part of the game. The best in each row is shaded green, the worst red."), table, conf, legend(items), chart]);
+    const chart = groupedBars([...(used.length > 1 ? [["TOTAL", "Total"]] : []), ...used.map(([k]) => [k, k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
+    return el("section", { class: "panel cmp-sec" }, [secHead("Strokes gained, side by side", "A round, for each selection. The best in each row is shaded green, the worst red."), table, conf, legend(items), chart]);
   }
   // every round as a dot, and how each selection unfolded (a 5-round rolling average)
   function roundsSection(items) {
     const live = items.filter((it) => it.s.n);
-    // (update 199) folded away: the detail behind the averages
-    return el("details", { class: "panel cmp-sec cmp-fold", open: roundsOpen ? true : null }, [
-      el("summary", {}, [el("span", { class: "cmp-fold-t" }, "Every round"), el("span", { class: "muted small" }, "How spread out their rounds are. Tap to show.")]),
-      el("p", { class: "muted small" }, "Each dot is one round. The shaded bar holds the middle half of the rounds, the white tick is the middle round, the diamond the average."),
+    return el("section", { class: "panel cmp-sec" }, [
+      secHead("Every round", "Each dot is a round (SG: Total). The bar is the middle half of the rounds, the white tick the median, the diamond the average."),
       legend(live), strip(live),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table compact" }, [
-        el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Middle round", "Best", "Worst", "Swing (\u00b1)", "Rounds gaining"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+        el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Median", "Best", "Worst", "Swing (±)", "Gaining"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
         el("tbody", {}, live.map((it) => el("tr", { "data-s": it.i }, [el("td", {}, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), el("td", { class: "num" }, String(it.s.n)),
           el("td", { class: `num ${tone(it.s.sg.TOTAL)}` }, fmtSG(it.s.sg.TOTAL)), el("td", { class: `num ${tone(it.s.median)}` }, fmtSG(it.s.median)), el("td", { class: "num pos" }, fmtSG(it.s.best)), el("td", { class: "num neg" }, fmtSG(it.s.worst)),
           el("td", { class: "num" }, it.s.sd == null ? "\u2014" : it.s.sd.toFixed(2)), el("td", { class: "num" }, `${Math.round((it.s.gaining || 0) * 100)}%`)]))),
@@ -510,7 +500,7 @@ export async function render(main) {
     const per = el("div", { class: "cmp-seg small" }, [["round", "A round"], ["shot", "A shot"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${distPer === v ? " on" : ""}` }, l); b.addEventListener("click", () => { distPer = v; draw(); }); return b; }));
     const rows = prof[distCat];
     return el("section", { class: "panel cmp-sec" }, [
-      secHead("By distance", `Strokes gained ${distPer === "round" ? "a round" : "a shot"} from each distance. Higher is better; where one line pulls away from another is where the difference was made.`),
+      secHead("By distance", `Strokes gained ${distPer === "round" ? "a round" : "a shot"} at each distance. Where one selection pulls away from another is where the difference was made.`),
       el("div", { class: "cmp-ctrls" }, [tabs, per]),
       legend(items), distChart(rows, items, distPer),
     ]);
