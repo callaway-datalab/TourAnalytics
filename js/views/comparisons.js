@@ -1,3 +1,4 @@
+import { sgHelp, strokesWords } from "../plain.js";
 /*
  * Comparisons (update 188): pick a player, then any slices of their rounds (seasons, time windows,
  * tournaments, courses, round numbers, months, tours, or a date range of your own) and see them side by side:
@@ -41,6 +42,7 @@ const MODES = [
   // (update 190) a club model or ball, grouped by type
   ["product", "Product", "How they play with one club model or ball against another (only the shots hit with it count)."],
 ];
+const SHORTCAT = { OTT: "Tee", APP: "Approach", ARG: "Short", PUTT: "Putting" }; // (update 199) everyday names in the small spaces
 const FIND = { tournaments: "a tournament", courses: "a course", product: "a club or ball", months: "a month", years: "a season", tours: "a tour" };
 
 export async function render(main) {
@@ -68,22 +70,73 @@ export async function render(main) {
   let touched = false;
   // (update 194) which shots count: none picked = every category and distance
   let incCats = new Set(), incDists = new Set(); // "APP" / "APP|100-150 yds"
-  const others = new Map(); // `${player}|${source}` → their rounds
-  // (update 192) the players in the comparison: the one you're looking at, plus any you add; every selection is shown for each of them
-  let extra = []; // [{ key, label }]
-  const inPlay = () => (player ? [player, ...extra] : []);
-  const multi = () => extra.length > 0;
+  const others = new Map(); // `${player}|${source}` → their rounds ("*|tour": everyone's, pooled)
+  // (update 192) the players in the comparison; every selection is shown for each of them.
+  // (update 195) only Callaway's staff (the admin, analysts and employees) compare players: they can add players,
+  // take any out, and with none left compare everyone in the file together ("Everyone"). A player, coach or
+  // caddie sees one player at a time (the one picked at the top).
+  const staff = !team.preview && (state.isAdmin || (state.isTeam && ["analyst", "employee"].includes(state.profile?.kind)));
+  const EVERY = "*";
+  const lite = staff ? await import("../fieldCache.js").then((m) => m.isLiteDevice()).catch(() => false) : false; // (a phone can't hold everyone's rounds)
+  let chosen = player ? [player] : []; // (staff) [] = everyone
+  let everyN = 0, dsInfo = null, busy = "";
+  const everyOk = () => staff && source === "tour" && !!dsInfo && !lite;
+  const everyLabel = () => `Everyone${everyN ? ` (${everyN.toLocaleString()} players)` : ""}`;
+  const inPlay = () => (!player ? [] : !staff ? [player] : chosen.length ? chosen.map((p) => (p.key === EVERY ? { key: EVERY, label: "Everyone" } : p)) : everyOk() ? [{ key: EVERY, label: "Everyone" }] : [player]);
+  const multi = () => inPlay().length > 1;
   const roundsOfKey = (k) => (k === player?.key ? data.rounds : others.get(`${k}|${source}`) || []);
-  const roundsOf = (it) => (it.pk ? roundsOfKey(it.pk) : data.rounds);
-  const allRounds = () => (multi() ? inPlay().flatMap((p) => roundsOfKey(p.key)) : data.rounds);
+  const roundsOf = (it) => roundsOfKey(it.pk || inPlay()[0]?.key);
+  let allMemo = null; // (the same arrays give the same pooled array, so the work done on it is kept)
+  const allRounds = () => { const parts = inPlay().map((p) => roundsOfKey(p.key)); if (parts.length === 1) return parts[0]; if (allMemo && allMemo.parts.length === parts.length && allMemo.parts.every((x, i) => x === parts[i])) return allMemo.out; const out = parts.flat(); allMemo = { parts, out }; return out; };
   const room = (nSels, nPlayers) => nSels * nPlayers <= MAX_SEL;
   async function loadOthers(list) {
     const { loadSource } = await import("../reportGen.js");
     await Promise.all(list.map(async (p) => {
+      if (p.key === player?.key) return;
+      if (p.key === EVERY) return loadEveryone();
       const ck = `${p.key}|${source}`;
       if (others.has(ck)) return;
       try { const res = await loadSource(source, p.key, p.label, { detail: false }); others.set(ck, res?.me?.rounds || []); } catch { others.set(ck, []); }
     }));
+  }
+  // (update 195) everyone in the file: every player's rounds, pooled (each round keeps whose it is)
+  async function loadEveryone() {
+    const ck = `${EVERY}|tour`;
+    if (others.has(ck) || !dsInfo) return;
+    const say = (d, n) => { busy = `Loading everyone\u2019s rounds\u2026 ${d.toLocaleString()} of ${n.toLocaleString()} players`; const b = root.querySelector(".cmp-busy p"); if (b) b.textContent = busy; };
+    let rowsBy = [];
+    try {
+      if (state.isAdmin) {
+        const { loadDatasetPlayers } = await import("../fieldCache.js");
+        const { players: m } = await loadDatasetPlayers(dsInfo.id, { onProgress: say });
+        rowsBy = [...m].map(([k, p]) => [k, p?.rows || []]);
+      } else {
+        const { getDatasetMeta, getDatasetRows } = await import("../store.js");
+        const keys = players.map(([k]) => k), queue = [...keys];
+        let done = 0;
+        const next = async () => { while (queue.length) { const k = queue.shift(); let rows = []; try { const m = await getDatasetMeta(k, dsInfo.id); rows = await getDatasetRows(k, dsInfo.id, m.chunkCount); } catch { /* not in this file */ } rowsBy.push([k, rows]); say(++done, keys.length); } };
+        await Promise.all(Array.from({ length: 12 }, next));
+      }
+    } catch (err) { console.warn(err); }
+    const { prepare } = await import("../sg.js");
+    const pooled = [];
+    let n = 0;
+    for (const [k, rows] of rowsBy) {
+      const rs = k === player?.key ? data.rounds : rows.length ? prepare(rows, dsInfo.idx) : [];
+      if (!rs.length) continue;
+      n++;
+      for (const rd of rs) { if (k !== player?.key) for (const sh of rd.shots) delete sh.r; pooled.push({ ...rd, key: `${k}|${rd.key}`, pk: k }); }
+    }
+    everyN = n; busy = "";
+    others.set(ck, pooled);
+  }
+  // the players changed: load anyone not loaded yet, then redraw
+  async function setChosen(list) {
+    chosen = list; touched = true;
+    const need = inPlay().filter((p) => p.key !== player?.key && !others.has(`${p.key}|${source}`));
+    if (need.length) { busy = need.some((p) => p.key === EVERY) ? "Loading everyone\u2019s rounds\u2026" : `Loading ${need.map((p) => p.label).join(", ")}\u2026`; draw(); await loadOthers(need); busy = ""; }
+    opts = options(allRounds());
+    draw();
   }
   const root = el("div", { class: "cmp" });
   mount(main, root);
@@ -137,8 +190,9 @@ export async function render(main) {
     if (loadingFor !== k) return;
     data = { rounds: res?.me?.rounds || [] };
     others.set(k, data.rounds);
-    extra = extra.filter((p) => p.key !== player.key);
-    if (extra.length) { await loadOthers(extra); if (loadingFor !== k) return; }
+    if (source === "tour" && res?.datasetId) dsInfo = { id: res.datasetId, idx: res.idx };
+    const need = inPlay().filter((p) => p.key !== player.key);
+    if (need.length) { await loadOthers(need); if (loadingFor !== k) return; }
     opts = options(allRounds());
     defaults();
     if (pickParam) { applyPick(pickParam); pickParam = null; }
@@ -153,9 +207,12 @@ export async function render(main) {
     if (!data) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, `Loading ${player.label}\u2019s rounds\u2026`)])]); return; }
     if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn\u2019t entered any rounds yet.`)])]); return; }
 
+    if (busy) { mount(root, [head, playersRow(), el("section", { class: "panel cmp-empty cmp-busy" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, busy)])]); return; }
     const y = window.scrollY;
     // (update 192) with more than one player: each selection for each of them ("Pat · 2026", "Lee · 2026", …)
-    const base = multi() ? sels.flatMap((s) => inPlay().map((p) => ({ ...s, id: `${s.id}@${p.key}`, base: s.id, pk: p.key, name: `${p.label} \u00b7 ${s.name}`, full: `${p.label} \u00b7 ${s.full || s.name}` }))).slice(0, MAX_SEL).map((x, i) => ({ ...x, color: COLORS[i % COLORS.length] })) : sels;
+    const solo = inPlay()[0];
+    const base = !multi() && staff && solo && solo.key !== player.key ? sels.map((s) => ({ ...s, pk: solo.key, name: `${solo.label} \u00b7 ${s.name}`, full: `${solo.label} \u00b7 ${s.full || s.name}` }))
+      : multi() ? sels.flatMap((s) => inPlay().map((p) => ({ ...s, id: `${s.id}@${p.key}`, base: s.id, pk: p.key, name: `${p.label} \u00b7 ${s.name}`, full: `${p.label} \u00b7 ${s.full || s.name}` }))).slice(0, MAX_SEL).map((x, i) => ({ ...x, color: COLORS[i % COLORS.length] })) : sels;
     const raw = base.map((s) => roundsFor(roundsOf(s), s.f));
     scope = shotScope(raw); // (the Include choices: only what these selections have, so a driver shows Off the Tee alone)
     const inc = incNow();
@@ -165,20 +222,23 @@ export async function render(main) {
       playersRow(),
       builder(),
       items.length ? selectedBar(items) : null,
-      items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length >= 2 ? standout(items) : null,
+      items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length ? sgSection(items) : null,
       items.length ? roundsSection(items) : null,
       items.length ? distanceSection(items) : null,
       items.length ? statsSection(items) : null,
-      el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
+      el("p", { class: "muted small center cmp-foot" }, "Numbers are strokes gained a round: + is strokes gained, \u2212 is strokes lost. A round can be in more than one selection."),
     ]);
     window.scrollTo(0, y);
+    // (the folded parts stay as you left them when the page redraws)
+    root.querySelector(".cmp-include")?.addEventListener("toggle", (e) => { includeOpen = e.target.open; });
+    root.querySelector(".cmp-fold")?.addEventListener("toggle", (e) => { roundsOpen = e.target.open; });
   }
 
   function pickerNode() {
     if (self || players.length <= 1) return null; // (only one player: nothing to search)
-    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; extra = extra.filter((x) => x.key !== p.key); player = { key: p.key, label: p.label }; ls.set(LS_PLAYER, p.key); staged = new Map(); load(); });
+    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; const old = player?.key; player = { key: p.key, label: p.label }; chosen = [player, ...chosen.filter((x) => x.key !== old && x.key !== p.key)]; ls.set(LS_PLAYER, p.key); staged = new Map(); load(); });
     if (player) pp.preset(player.key);
     const inp = pp.node.querySelector("input");
     inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
@@ -187,7 +247,7 @@ export async function render(main) {
     return el("div", { class: "cmp-who cmp-top" }, pp.node);
   }
   // (update 192) Players: who's being compared, above everything you pick (the one you're looking at is always in)
-  let scope = [];
+  let scope = [], includeOpen = false, roundsOpen = false;
   const incNow = () => {
     const cats = scope.filter((c) => incCats.has(c.cat)).map((c) => c.cat);
     const dists = new Set();
@@ -205,37 +265,44 @@ export async function render(main) {
     const any = incNow();
     const reset = any ? el("button", { type: "button", class: "link" }, "Count every shot") : null;
     reset?.addEventListener("click", () => { incCats = new Set(); incDists = new Set(); draw(); });
-    return el("div", { class: "cmp-include" }, [
+    // (update 199) folded under "More options" until something in it is picked
+    return el("details", { class: "cmp-include", open: any || includeOpen ? true : null }, [
+      el("summary", {}, any ? "More options (narrowed: only some shots count)" : "More options: which shots count"),
       el("div", { class: "cmp-build-top" }, [el("h3", {}, "Include"), el("span", { class: "muted small" }, any ? "Only the shots picked count, in every table and chart below." : "Every shot counts. Pick categories or distances to narrow it."), reset]),
       cats, ...dists,
     ]);
   }
   function playersRow() {
-    if (self || players.length <= 1) return null;
-    const rest = new Map(players.filter(([k]) => !inPlay().some((p) => p.key === k)));
-    const chips = inPlay().map((p, i) => {
-      const x = i ? el("button", { type: "button", class: "cmp-key-x cmp-pl-x", "aria-label": `Take ${p.label} out` }, "\u2715") : null;
-      x?.addEventListener("click", () => { extra = extra.filter((e) => e.key !== p.key); opts = options(allRounds()); touched = true; draw(); });
-      return el("span", { class: `cmp-pl${i ? "" : " main"}` }, [el("span", {}, p.label), x]);
+    if (!staff || players.length <= 1) return null;
+    const list = chosen;
+    const rest = new Map(players.filter(([k]) => !list.some((p) => p.key === k)));
+    const chips = list.map((p) => {
+      const x = el("button", { type: "button", class: "cmp-key-x cmp-pl-x", "aria-label": `Take ${p.key === EVERY ? "everyone" : p.label} out` }, "\u2715");
+      x.addEventListener("click", () => setChosen(list.filter((e) => e.key !== p.key)));
+      return el("span", { class: `cmp-pl${p.key === player?.key ? " main" : ""}${p.key === EVERY ? " every" : ""}` }, [el("span", {}, p.key === EVERY ? everyLabel() : p.label), x]);
     });
+    if (!list.length) chips.push(el("span", { class: "cmp-pl every main" }, everyOk() ? everyLabel() : player.label));
     let adder = null;
-    if (rest.size && extra.length < MAX_SEL - 1) {
-      const pp = playerPicker(rest, async (p) => {
+    if (rest.size && list.length < MAX_SEL) {
+      const pp = playerPicker(rest, (p) => {
         if (!p) return;
-        if (!room(Math.max(1, sels.length), inPlay().length + 1)) { flashNote(`Up to ${MAX_SEL} on the charts: take a pick off first, then add ${p.label}.`); const i0 = pp.node.querySelector("input"); if (i0) i0.value = ""; return; }
-        flashNote(`Loading ${p.label}\u2026`);
-        await loadOthers([p]);
-        extra = [...extra, { key: p.key, label: p.label }];
-        opts = options(allRounds()); touched = true; note.textContent = "";
-        draw();
+        if (!room(Math.max(1, sels.length), Math.max(1, list.length) + 1)) { flashNote(`Up to ${MAX_SEL} on the charts: take a pick off first, then add ${p.label}.`); const i0 = pp.node.querySelector("input"); if (i0) i0.value = ""; return; }
+        setChosen([...list, { key: p.key, label: p.label }]);
       });
       const inp = pp.node.querySelector("input");
       if (inp) inp.placeholder = "\uff0b Add a player\u2026";
       adder = el("div", { class: "cmp-pl-add" }, pp.node);
     }
+    let addEvery = null;
+    if (everyOk() && list.length && !list.some((p) => p.key === EVERY)) {
+      addEvery = el("button", { type: "button", class: "btn ghost small cmp-pl-every" }, "\uff0b Everyone");
+      addEvery.addEventListener("click", () => { if (!room(Math.max(1, sels.length), list.length + 1)) { flashNote(`Up to ${MAX_SEL} on the charts: take a pick off first.`); return; } setChosen([...list, { key: EVERY, label: "Everyone" }]); });
+    }
+    const hint = !list.length ? (everyOk() ? "Everyone in the file together: each pick below pools every player\u2019s rounds (how everyone with driver A did against everyone with driver B, say). Add a player to narrow it." : lite ? "Everyone together needs a computer: it\u2019s every player\u2019s rounds, more than a phone can hold." : "Everyone together works with Tour Events.")
+      : multi() ? "Every pick below is shown for each of them. Take them all out to compare everyone together." : "Add players to compare them side by side, or take them all out to compare everyone together.";
     return el("section", { class: "panel cmp-players" }, [
-      el("div", { class: "cmp-build-top" }, [el("h2", {}, "Players"), el("span", { class: "muted small" }, multi() ? "Every pick below is shown for each of them." : "Add another player to compare them side by side.")]),
-      el("div", { class: "cmp-pl-row" }, [...chips, adder]),
+      el("div", { class: "cmp-build-top" }, [el("h2", {}, "Players"), el("span", { class: "muted small" }, hint)]),
+      el("div", { class: "cmp-pl-row" }, [...chips, addEvery, adder]),
     ]);
   }
   function sourceSeg() {
@@ -381,16 +448,16 @@ export async function render(main) {
     const head = used.length === 1 ? used[0] : ["TOTAL", "Total"];
     return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
       el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name)]),
-      it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
-      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, `SG: ${head[1]} a round`)]),
-      used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
-      it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
+      it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n.toLocaleString()} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
+      el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, head[0] === "TOTAL" ? "strokes gained a round" : `${head[1]}: strokes gained a round`)]),
+      used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, SHORTCAT[k] || k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
+      it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best round ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 gained strokes in ${Math.round(it.s.gaining * 100)}% of rounds`) : null,
     ]), it.i)));
   }
   function standout(items) {
     const list = insights(items.map((it) => ({ name: it.name, s: it.s })));
     if (!list.length) return null;
-    return el("section", { class: "panel cmp-standout" }, [el("h2", {}, "What stands out"), el("ul", {}, list.map((x) => el("li", { class: x.tone }, x.text)))]);
+    return el("section", { class: "panel cmp-standout" }, [el("h2", {}, "In plain words"), el("ul", {}, list.map((x) => el("li", { class: x.tone }, x.text))), sgHelp("What do the numbers mean?")]);
   }
 
   // strokes gained: the table (each row shaded best to worst) and the grouped bars
@@ -400,7 +467,7 @@ export async function render(main) {
     const rowsShown = sgRowsFor(live);
     const shade = (vals, v) => { const xs = vals.filter((x) => x != null); if (xs.length < 2 || v == null) return ""; const hi = Math.max(...xs), lo = Math.min(...xs); return hi - lo < 1e-9 ? "" : v === hi ? "hi" : v === lo ? "lo" : ""; };
     const table = el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), it.i)), items.length > 1 ? el("th", { class: "num" }, "Spread") : null])),
+      el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), it.i)), items.length > 1 ? el("th", { class: "num" }, "Gap") : null])),
       el("tbody", {}, rowsShown.map(([k, l]) => {
         const vals = items.map((it) => (it.s.n ? it.s.sg[k] : null));
         const xs = vals.filter((v) => v != null);
@@ -411,20 +478,23 @@ export async function render(main) {
     let conf = null;
     if (live.length >= 2) {
       const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
-      conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
+      const sure = { clear: "a clear difference", likely: "probably a real difference", possible: "could be chance", "too close to call": "too close to call", "too few rounds": "too few rounds to be sure" }[c.word] || c.word;
+      conf = el("p", { class: "muted small" }, [`Best against worst: ${strokesWords(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL).replace(" better", "")} apart \u2014 `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, sure), " (allowing for how much rounds vary)."]);
     }
     const used = usedCats(live);
-    const chart = groupedBars([...(used.length > 1 ? [["TOTAL", "Total"]] : []), ...used.map(([k]) => [k, k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
-    return el("section", { class: "panel cmp-sec" }, [secHead("Strokes gained, side by side", "A round, for each selection. The best in each row is shaded green, the worst red."), table, conf, legend(items), chart]);
+    const chart = groupedBars([...(used.length > 1 ? [["TOTAL", "Total"]] : []), ...used.map(([k]) => [k, SHORTCAT[k] || k])].map(([k, l]) => ({ label: l, values: items.map((it) => (it.s.n ? it.s.sg[k] : null)) })), items);
+    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained a round for each part of the game. The best in each row is shaded green, the worst red."), table, conf, legend(items), chart]);
   }
   // every round as a dot, and how each selection unfolded (a 5-round rolling average)
   function roundsSection(items) {
     const live = items.filter((it) => it.s.n);
-    return el("section", { class: "panel cmp-sec" }, [
-      secHead("Every round", "Each dot is a round (SG: Total). The bar is the middle half of the rounds, the white tick the median, the diamond the average."),
+    // (update 199) folded away: the detail behind the averages
+    return el("details", { class: "panel cmp-sec cmp-fold", open: roundsOpen ? true : null }, [
+      el("summary", {}, [el("span", { class: "cmp-fold-t" }, "Every round"), el("span", { class: "muted small" }, "How spread out their rounds are. Tap to show.")]),
+      el("p", { class: "muted small" }, "Each dot is one round. The shaded bar holds the middle half of the rounds, the white tick is the middle round, the diamond the average."),
       legend(live), strip(live),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table compact" }, [
-        el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Median", "Best", "Worst", "Swing (±)", "Gaining"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+        el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Middle round", "Best", "Worst", "Swing (\u00b1)", "Rounds gaining"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
         el("tbody", {}, live.map((it) => el("tr", { "data-s": it.i }, [el("td", {}, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), el("td", { class: "num" }, String(it.s.n)),
           el("td", { class: `num ${tone(it.s.sg.TOTAL)}` }, fmtSG(it.s.sg.TOTAL)), el("td", { class: `num ${tone(it.s.median)}` }, fmtSG(it.s.median)), el("td", { class: "num pos" }, fmtSG(it.s.best)), el("td", { class: "num neg" }, fmtSG(it.s.worst)),
           el("td", { class: "num" }, it.s.sd == null ? "\u2014" : it.s.sd.toFixed(2)), el("td", { class: "num" }, `${Math.round((it.s.gaining || 0) * 100)}%`)]))),
@@ -440,7 +510,7 @@ export async function render(main) {
     const per = el("div", { class: "cmp-seg small" }, [["round", "A round"], ["shot", "A shot"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${distPer === v ? " on" : ""}` }, l); b.addEventListener("click", () => { distPer = v; draw(); }); return b; }));
     const rows = prof[distCat];
     return el("section", { class: "panel cmp-sec" }, [
-      secHead("By distance", `Strokes gained ${distPer === "round" ? "a round" : "a shot"} at each distance. Where one selection pulls away from another is where the difference was made.`),
+      secHead("By distance", `Strokes gained ${distPer === "round" ? "a round" : "a shot"} from each distance. Higher is better; where one line pulls away from another is where the difference was made.`),
       el("div", { class: "cmp-ctrls" }, [tabs, per]),
       legend(items), distChart(rows, items, distPer),
     ]);
@@ -532,7 +602,8 @@ export async function render(main) {
       const cy = T + rowH * r + rowH / 2, g = mk("g", { "data-s": it.i });
       g.append(mk("rect", { x: X(it.s.q1), y: cy - 9, width: Math.max(2, X(it.s.q3) - X(it.s.q1)), height: 18, rx: 6, fill: it.color, "fill-opacity": 0.18, stroke: it.color, "stroke-opacity": 0.5 }));
       // the dots, spread a little up and down so they don't sit on each other
-      it.s.rounds.forEach((v, k) => { const jitter = ((k * 37) % 11) / 10 - 0.5; const c = mk("circle", { cx: X(v), cy: cy + jitter * 22, r: 3.2, fill: it.color, "fill-opacity": 0.85 }); c.append(mk("title", {}, `${it.name}: ${fmtSG(v)}`)); g.append(c); });
+      const step = Math.max(1, Math.ceil(it.s.rounds.length / 500)); // (everyone's rounds: a sample of 500 dots, so the chart stays quick)
+      it.s.rounds.forEach((v, k) => { if (k % step) return; const jitter = ((k * 37) % 11) / 10 - 0.5; const c = mk("circle", { cx: X(v), cy: cy + jitter * 22, r: 3.2, fill: it.color, "fill-opacity": 0.85 }); c.append(mk("title", {}, `${it.name}: ${fmtSG(v)}`)); g.append(c); });
       g.append(mk("line", { x1: X(it.s.median), x2: X(it.s.median), y1: cy - 12, y2: cy + 12, stroke: "#fff", "stroke-width": 2.2 }));
       const m = X(it.s.sg.TOTAL);
       g.append(mk("path", { d: `M${m} ${cy - 7} L${m + 7} ${cy} L${m} ${cy + 7} L${m - 7} ${cy} Z`, fill: "#fff", stroke: it.color, "stroke-width": 2 }));

@@ -1,3 +1,4 @@
+import { sgHelp, sgWords } from "../plain.js";
 /*
  * Watchlist (update 164): the players you follow, at a glance. Everyone with more than one player has it (the admin,
  * analysts, coaches with several players); a player (or one player's coach) gets the same page as "Home", for just
@@ -207,8 +208,8 @@ export async function render(main, { previewClient }) {
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
     mount(root, [heroShell(controls, subLine), menu, body,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
-        ? "Strokes Gained values represent per round averages. Entered Rounds: the rounds entered in Enter New Round (not ranked). Trends: the last 10 rounds against the 10 before."
-        : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
+        ? "Numbers are strokes gained a round: + is strokes gained, \u2212 is strokes lost. Better / worse: their last 10 rounds against the 10 before. Entered Rounds are the rounds entered in Enter New Round (not ranked)."
+        : `Numbers are strokes gained a round: + is strokes gained, \u2212 is strokes lost. Better / worse: their last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on that tour in this period. Tap anything for the details.`), el("div", { class: "wl-foot-help" }, sgHelp())]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });
@@ -241,7 +242,9 @@ export async function render(main, { previewClient }) {
     if (!t) return el("span", { class: "wl-tr muted" }, "—");
     const flat = Math.abs(t.ch) < band;
     const good = higher == null ? null : higher ? t.ch > 0 : t.ch < 0;
-    return el("span", { class: `wl-tr ${flat ? "flat" : good == null ? "" : good ? "up" : "down"}`, title: `Last ${t.n}: ${t.last?.toFixed?.(2)} · previous ${t.n}: ${t.prev?.toFixed?.(2)}` }, flat ? "◆ steady" : `${t.ch > 0 ? "▲" : "▼"} ${fmt(t.ch)}`);
+    // (update 198) a word, not a number: better / worse / steady lately (the number is in the tooltip and the pop-up)
+    void fmt;
+    return el("span", { class: `wl-tr ${flat ? "flat" : good == null ? "" : good ? "up" : "down"}`, title: `Last ${t.n}: ${t.last?.toFixed?.(2)} · previous ${t.n}: ${t.prev?.toFixed?.(2)}` }, flat ? "◆ steady" : good == null ? `${t.ch > 0 ? "▲ higher" : "▼ lower"}` : `${t.ch > 0 ? "▲" : "▼"} ${good ? "better" : "worse"}`);
   };
   const rankPill = (r, of) => (src() === "entered" ? null : r ? el("span", { class: `wl-rank ${rkCls(r)}`, title: `${ordinal(r)} of ${of}` }, ordinal(r)) : el("span", { class: "wl-rank none" }, "—"));
 
@@ -288,7 +291,7 @@ export async function render(main, { previewClient }) {
     const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => tappable(el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
       el("span", { class: "wl-tile-k" }, s.short),
       el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
-      el("div", { class: "wl-tile-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
+      el("div", { class: "wl-tile-f" }, [rankPill(s.rank, s.of), trendEl(s.trend, { band: i === 0 ? 0.15 : 0.1 })]),
     ]), s.label, s.info)));
     const distList = (title, xs, tone) => el("div", { class: `wl-dist ${tone}` }, [el("p", { class: "wl-col-t" }, title), xs.length ? el("ol", {}, xs.map((d) => tappable(el("li", {}, [
       el("span", { class: "wl-dist-l" }, [el("span", {}, d.label), el("span", { class: "wl-dist-n" }, `${d.n} shots`)]),
@@ -299,7 +302,13 @@ export async function render(main, { previewClient }) {
       el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
     ]), m.label, m.info)))]) : null;
     const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics]);
-    const card = el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}${isOpen ? " open" : ""}` }, [head, badges, sg, more]);
+    // (update 198) the card in one sentence: how good, and which way it's going
+    const tt = total.trend, tdir = tt && Math.abs(tt.ch) >= 0.15 ? (tt.ch > 0 ? "improving" : "slipping") : tt ? "steady" : null;
+    const plain = total.v == null ? null : el("p", { class: "wl-plain" }, [
+      el("span", { class: sgCls(total.v) }, sgWords(total.v, { cap: true })),
+      tdir ? `, ${tdir} lately` : "", ".",
+    ]);
+    const card = el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}${isOpen ? " open" : ""}` }, [head, plain, badges, sg, more]);
     moreBtn.addEventListener("click", () => {
       const open = !openCards.has(c.key);
       if (open) openCards.add(c.key); else openCards.delete(c.key);

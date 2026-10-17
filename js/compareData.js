@@ -6,7 +6,7 @@ import { CATEGORIES, statRounds, statAgg, statsIn, statDef, distLead, STAT_DEFS 
 
 export const COLORS = ["#d4b483", "#4fd1c5", "#a78bfa", "#ff7a6b", "#5ab0ff", "#a3e635", "#f472b6", "#fbbf24"];
 export const MAX_SEL = 8;
-export const SG_ROWS = [["TOTAL", "SG: Total"], ...CATEGORIES, ["T2G", "Tee to Green"]];
+export const SG_ROWS = [["TOTAL", "Overall"], ...CATEGORIES, ["T2G", "Tee to Green"]];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const sum = (a) => a.reduce((t, x) => t + x, 0);
@@ -21,7 +21,10 @@ const yearOf = (rd) => String(rd.year || dk(rd.date).slice(0, 4));
 const evKey = (rd) => `${rd.event}|${yearOf(rd)}`;
 
 /** The strokes-gained rounds, oldest first (event-level rows and rounds with no shots left out). */
-export const sgRounds = (rounds) => statRounds(rounds || [], "sg").filter((rd) => rd.shots.length && !rd.eventLevel).sort(byDate);
+// (update 195) worked out once per rounds list (everyone's rounds pooled is a lot to sort on every redraw)
+const sgMemo = new WeakMap(), sortedMemo = new WeakMap();
+export const sgRounds = (rounds) => { if (!rounds) return []; let r = sgMemo.get(rounds); if (!r) { r = statRounds(rounds, "sg").filter((rd) => rd.shots.length && !rd.eventLevel).sort(byDate); sgMemo.set(rounds, r); } return r; };
+const sortedAll = (rounds) => { if (!rounds) return []; let r = sortedMemo.get(rounds); if (!r) { r = [...rounds].sort(byDate); sortedMemo.set(rounds, r); } return r; };
 
 /* ------------------------------------------------ what can be picked ------------------------------------------------ */
 /** The choices for each way of comparing, with how many rounds each has. */
@@ -140,7 +143,7 @@ export function statRows(allRounds, sets) {
 }
 /** statRows needs each selection's rounds WITH their stats: the same filter on every round (not only SG rounds). */
 export function statSets(rounds, filters) {
-  const all = [...(rounds || [])].sort(byDate);
+  const all = sortedAll(rounds);
   return filters.map(function one(f) {
     f = withSeason(rounds, f);
     if (f.clubs) { // (update 194) a product: only the stats recorded with it
@@ -289,24 +292,28 @@ export function insights(sels) {
   const byTot = [...ok].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL);
   const best = byTot[0], worst = byTot.at(-1);
   const c = confidence(best.s.rounds, worst.s.rounds);
-  out.push({ tone: "gold", text: `${best.name} is the best of these: ${fmt(best.s.sg.TOTAL)} a round, ${Math.abs(best.s.sg.TOTAL - worst.s.sg.TOTAL).toFixed(2)} better than ${worst.name}. The gap is ${c.word}.` });
-  // (update 194) with three or more: every one in order, and the gap to the one above
-  if (byTot.length >= 3) out.push({ tone: "", text: `In order: ${byTot.map((x, i) => `${i + 1}. ${x.name} ${fmt(x.s.sg.TOTAL)}${i ? ` (${(byTot[i - 1].s.sg.TOTAL - x.s.sg.TOTAL).toFixed(2)} behind)` : ""}`).join("; ")}.` });
+  // (update 199) plain words: who's best, by how much, and whether to trust it
+  const gap = best.s.sg.TOTAL - worst.s.sg.TOTAL;
+  const sure = { clear: "That\u2019s a clear difference.", likely: "Probably a real difference.", possible: "It could be chance.", "too close to call": "Too close to call.", "too few rounds": "Too few rounds to be sure." }[c.word] || "";
+  out.push({ tone: "gold", text: gap < 0.05 ? `${best.name} and ${worst.name} are about the same.` : `${best.name} is best: ${words(gap)} better than ${worst.name}. ${sure}` });
+  // (update 194) with three or more: every one in order
+  if (byTot.length >= 3) out.push({ tone: "", text: `In order: ${byTot.map((x, i) => `${i + 1}. ${x.name} (${fmt(x.s.sg.TOTAL)})`).join(", ")}.` });
   // where the gap comes from (best vs worst)
   const usedCats = CATEGORIES.filter(([k]) => ok.some((x) => Math.abs(x.s.sg[k] || 0) >= 0.005));
   const parts = usedCats.map(([k, l]) => ({ l, d: best.s.sg[k] - worst.s.sg[k] })).sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
-  if (usedCats.length > 1 && parts[0] && Math.abs(parts[0].d) >= 0.1) out.push({ tone: "", text: `Most of that is ${parts[0].l} (${fmt(parts[0].d)} a round)${parts[1] && Math.abs(parts[1].d) >= 0.1 ? `, then ${parts[1].l} (${fmt(parts[1].d)})` : ""}.` });
+  if (usedCats.length > 1 && parts[0] && Math.abs(parts[0].d) >= 0.1) out.push({ tone: "", text: `Most of the difference is ${parts[0].l} (${words(Math.abs(parts[0].d))})${parts[1] && Math.abs(parts[1].d) >= 0.1 ? `, then ${parts[1].l}` : ""}.` });
   // each category's leader
   for (const [k, l] of usedCats.length > 1 ? usedCats : []) {
     const lead = [...ok].sort((a, b) => b.s.sg[k] - a.s.sg[k]);
-    if (lead.length > 2 && lead[0] !== best && lead[0].s.sg[k] - lead[1].s.sg[k] >= 0.2) out.push({ tone: "", text: `${l} was best in ${lead[0].name} (${fmt(lead[0].s.sg[k])} a round, ${(lead[0].s.sg[k] - lead[1].s.sg[k]).toFixed(2)} clear of the next).` });
+    if (lead.length > 2 && lead[0] !== best && lead[0].s.sg[k] - lead[1].s.sg[k] >= 0.2) out.push({ tone: "", text: `${l} was best in ${lead[0].name}.` });
   }
   // steadiness
   const st = ok.filter((x) => x.s.sd != null).sort((a, b) => a.s.sd - b.s.sd);
-  if (st.length >= 2 && st.at(-1).s.sd - st[0].s.sd >= 0.4) out.push({ tone: "", text: `Steadiest: ${st[0].name} (rounds within ±${st[0].s.sd.toFixed(2)} of the average); the most up and down: ${st.at(-1).name} (±${st.at(-1).s.sd.toFixed(2)}).` });
+  if (st.length >= 2 && st.at(-1).s.sd - st[0].s.sd >= 0.4) out.push({ tone: "", text: `Most consistent: ${st[0].name}. Most up and down: ${st.at(-1).name}.` });
   // small samples
   const small = ok.filter((x) => x.s.n < 8);
   if (small.length) out.push({ tone: "muted", text: `${small.map((x) => x.name).join(", ")} ${small.length === 1 ? "has" : "have"} fewer than 8 rounds, so treat ${small.length === 1 ? "it" : "them"} as a hint, not a verdict.` });
   return out;
 }
+const words = (v) => { const a = Math.abs(v).toFixed(1); return `${a} stroke${a === "1.0" ? "" : "s"} a round`; };
 export { fmt as fmtSigned, MONTHS };
