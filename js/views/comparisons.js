@@ -151,7 +151,8 @@ export async function render(main) {
   let noteTimer = null;
   const note = el("p", { class: "cmp-note", role: "status" });
   const capNote = () => (multi() ? `Up to ${MAX_SEL} on the charts: with ${inPlay().length} players that\u2019s ${Math.floor(MAX_SEL / inPlay().length)} picks each. Take one off first.` : `Up to ${MAX_SEL} at a time: take one off first.`);
-  const flashNote = (t) => { note.textContent = t; clearTimeout(noteTimer); noteTimer = setTimeout(() => { note.textContent = ""; }, 3500); };
+  const gnote = el("p", { class: "cmp-note", role: "status" }); // (the guide's own, so a message shows where you are)
+  const flashNote = (t) => { note.textContent = t; gnote.textContent = t; clearTimeout(noteTimer); noteTimer = setTimeout(() => { note.textContent = ""; gnote.textContent = ""; }, 3500); };
   // the default: the two latest seasons (or recent form, with only one)
   function defaults() {
     sels = []; touched = multi();
@@ -217,8 +218,8 @@ export async function render(main) {
     const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
     mount(root, [
       head,
-      playersRow(),
-      builder(),
+      guideBox(),
+      editBox(),
       items.length ? selectedBar(items) : null,
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length >= 2 ? standout(items) : null,
@@ -229,11 +230,12 @@ export async function render(main) {
       el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
     ]);
     window.scrollTo(0, y);
+    root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; });
   }
 
   function pickerNode() {
     if (self || players.length <= 1) return null; // (only one player: nothing to search)
-    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; const old = player?.key; player = { key: p.key, label: p.label }; chosen = [player, ...chosen.filter((x) => x.key !== old && x.key !== p.key)]; ls.set(LS_PLAYER, p.key); staged = new Map(); load(); });
+    const pp = playerPicker(new Map(players), (p) => { if (!p || p.key === player?.key) return; const old = player?.key; player = { key: p.key, label: p.label }; chosen = [player, ...chosen.filter((x) => x.key !== old && x.key !== p.key)]; ls.set(LS_PLAYER, p.key); staged = new Map(); g = { open: true }; load(); });
     if (player) pp.preset(player.key);
     const inp = pp.node.querySelector("input");
     inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
@@ -296,6 +298,144 @@ export async function render(main) {
     return el("section", { class: "panel cmp-players" }, [
       el("div", { class: "cmp-build-top" }, [el("h2", {}, "Players"), el("span", { class: "muted small" }, hint)]),
       el("div", { class: "cmp-pl-row" }, [...chips, addEvery, adder]),
+    ]);
+  }
+  /* ------------------------------ (update 203) the guide: a few plain questions set the filters ------------------------------ */
+  // Who → what → the detail, then the comparison is set up; everything stays editable under "Edit the filters yourself".
+  let g = { open: !pickParam, step: null }, editOpen = false;
+  const SEASONS = [["this", "This season", { season: "this" }], ["last", "Last season", { season: "last" }], ["l20", "Their last 20 rounds", { last: 20 }], ["all", "Their whole career", {}]];
+  const groupName = (k) => ({ Driver: "Drivers", "Non-Driver": "Non-driver tee shots", "Fairway Wood": "Fairway woods", Hybrid: "Hybrids", Iron: "Irons", Wedge: "Wedges", Putter: "Putters", Ball: "Golf balls", Other: "Other clubs" }[k] || k);
+  function guideStep() {
+    if (!g.who) { if (staff && players.length > 1) return "who"; g.who = "one"; }
+    if (g.who === "several" && !g.playersDone) return "players";
+    if (!g.what) return "what";
+    if (g.what === "time" && !g.when) return "when";
+    if (g.what === "gear" && !g.gear) return "gear";
+    if (g.what === "gear" && !g.models) return "models";
+    if (g.what === "place" && !g.place) return "place";
+    if (g.what === "versus" && !g.stretch) return "stretch";
+    return "done";
+  }
+  const restart = () => { g = { open: true }; draw(); root.querySelector(".cmp-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const answer = async (k, v) => {
+    g[k] = v;
+    if (k === "who") { if (v === "one") await setChosen([player]); else if (v === "everyone") await setChosen([]); else if (chosen.length < 2) await setChosen(chosen.length ? chosen : [player]); }
+    if (guideStep() === "done") applyGuide(); else draw();
+  };
+  const back = () => { const order = ["stretch", "place", "models", "gear", "when", "what", "playersDone", "who"]; for (const k of order) if (g[k]) { delete g[k]; if (k !== "playersDone") break; } draw(); };
+  function applyGuide() {
+    const mk = (id, name, f, md, values = null) => ({ id, name, f, mode: md, values, color: COLORS[0] });
+    let out = [];
+    if (g.what === "time") {
+      const n = opts.total >= 40 ? 10 : 5;
+      if (g.when === "seasons") { mode = "years"; out = opts.years.slice(0, 2).map((y) => mk(`years:${y.value}`, y.label, { years: [y.value] }, "years", [y.value])); }
+      if (g.when === "form") { mode = "windows"; out = [mk(`windows:prev:${n}`, `The ${n} before that`, { prev: n }, "windows", [`prev:${n}`]), mk(`windows:last:${n}`, `Last ${n} rounds`, { last: n }, "windows", [`last:${n}`])]; }
+      if (g.when === "career") { mode = "windows"; const y = opts.years[0]; out = [mk(`years:${y.value}`, `This season (${y.value})`, { years: [y.value] }, "years", [y.value]), mk("windows:all", "Career (everything)", {}, "windows", ["all"])]; }
+      if (g.when === "own") { mode = "custom"; editOpen = true; }
+    }
+    if (g.what === "gear") { mode = "product"; const items = products(allRounds()).flatMap((x) => x.items); out = g.models.map((v) => { const it = items.find((x) => x.value === v); return mk(`product:${v}`, it?.long || it?.label || v, { clubs: [v] }, "product", [v]); }); }
+    if (g.what === "place") {
+      if (g.place === "rounds") { mode = "rounds"; out = opts.rounds.map((o) => mk(`rounds:${o.value}`, o.label, { roundNos: [o.value] }, "rounds", [o.value])); }
+      if (g.place === "courses") { mode = "courses"; out = [...opts.courses].sort((a, b) => b.n - a.n).slice(0, 4).map((o) => mk(`courses:${o.value}`, o.label, { courses: [o.value] }, "courses", [o.value])); }
+      if (g.place === "tournaments") { mode = "tournaments"; out = opts.tournaments.slice(0, 4).map((o) => mk(`tournaments:${o.value}`, o.label, { events: [o.value] }, "tournaments", [o.value])); }
+      if (g.place === "months") { mode = "months"; out = [...opts.months].sort((a, b) => b.n - a.n).slice(0, 4).sort((a, b) => Number(a.value) - Number(b.value)).map((o) => mk(`months:${o.value}`, o.label, { months: [o.value] }, "months", [o.value])); }
+    }
+    if (g.what === "versus") { const [v, l, f] = SEASONS.find(([x]) => x === g.stretch); mode = "windows"; out = [mk(`scope:${v}`, l, f, "windows")]; }
+    const cap = Math.max(1, Math.floor(MAX_SEL / Math.max(1, inPlay().length)));
+    sels = out.slice(0, cap).map((x, i) => ({ ...x, color: COLORS[i % COLORS.length] }));
+    incCats = new Set(); incDists = new Set(); staged = new Map(); chipFilter = "";
+    touched = true; g.open = false;
+    draw();
+    root.querySelector(".cmp-cards, .cmp-edit")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function guideSummary() {
+    const who = g.who === "everyone" ? "Everyone in the data" : g.who === "several" ? inPlay().map((p) => p.label).join(", ") : player.label;
+    const what = g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
+      : g.what === "gear" ? `${groupName(g.gear).toLowerCase()}: one model against another` : g.what === "place" ? `by ${g.place === "rounds" ? "round" : g.place.replace(/s$/, "")}` : g.what === "versus" ? `against each other, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
+    return `${who} · ${what}`;
+  }
+  function guideBox() {
+    if (!g.open) {
+      if (!g.what) return null;
+      const again = el("button", { type: "button", class: "btn ghost small" }, "Start over");
+      again.addEventListener("click", restart);
+      return el("section", { class: "panel cmp-guide done" }, [el("div", { class: "cmp-guide-sum" }, [el("span", { class: "muted small" }, "Comparing"), el("strong", {}, guideSummary())]), again]);
+    }
+    const step = guideStep();
+    if (step === "done") return null;
+    const opt = (v, label, sub, k = step) => { const b = el("button", { type: "button", class: "cmp-guide-o" }, [el("strong", {}, label), sub ? el("span", {}, sub) : null]); b.addEventListener("click", () => answer(k, v)); return b; };
+    let q = "", body = [];
+    const prods = step === "gear" || step === "models" ? products(allRounds()) : [];
+    if (step === "who") {
+      q = "Who do you want to look at?";
+      body = [opt("one", `Just ${player.label}`, "One player’s rounds"), opt("several", "A few players, side by side", "Pick the players next"), everyOk() ? opt("everyone", "Everyone in the data together", "The whole field pooled, e.g. everyone with one driver against everyone with another") : null];
+    } else if (step === "players") {
+      q = "Which players?";
+      const nextB = el("button", { type: "button", class: "btn cmp-add", disabled: chosen.filter((p) => p.key !== EVERY).length < 2 ? true : null }, "Next →");
+      nextB.addEventListener("click", () => answer("playersDone", true));
+      body = [el("p", { class: "muted small" }, "Add at least two players below, then tap Next."), playersRow(), nextB];
+    } else if (step === "what") {
+      q = "What do you want to compare?";
+      body = [
+        opt("time", "How they’re playing over time", "This season against last, or recent form"),
+        products(allRounds()).length ? opt("gear", "One club or ball against another", "Drivers, irons, putters, golf balls…") : null,
+        opt("place", "Where and when they play best", "Courses, tournaments, rounds or months"),
+        inPlay().length > 1 ? opt("versus", "The players against each other", "Over the same stretch of rounds") : null,
+      ];
+    } else if (step === "when") {
+      q = "Which time periods?";
+      const n = opts.total >= 40 ? 10 : 5;
+      body = [
+        opts.years.length >= 2 ? opt("seasons", "This season vs last season", `${opts.years[0].value} against ${opts.years[1].value}`) : null,
+        opts.total >= 2 * n ? opt("form", `Their last ${n} rounds vs the ${n} before`, "Are they playing better or worse lately?") : null,
+        opts.years.length ? opt("career", "This season vs their whole career", "How this year compares with their usual") : null,
+        opt("own", "I’ll choose the dates myself", "Opens the date picker"),
+      ];
+    } else if (step === "gear") {
+      q = "Which kind of equipment?";
+      body = prods.map((x) => opt(x.group, groupName(x.group), `${x.items.length} model${x.items.length === 1 ? "" : "s"}`));
+    } else if (step === "models") {
+      const grp = prods.find((x) => x.group === g.gear);
+      const cap = Math.max(2, Math.floor(MAX_SEL / Math.max(1, inPlay().length)));
+      q = `Which ${groupName(g.gear).toLowerCase()}? Pick two or more.`;
+      const pickd = new Set(g.pick || []);
+      const go = el("button", { type: "button", class: "btn cmp-add", disabled: pickd.size < 2 ? true : null }, pickd.size >= 2 ? `Compare these ${pickd.size} →` : "Compare these →");
+      go.addEventListener("click", () => answer("models", [...pickd]));
+      body = [el("div", { class: "cmp-chips" }, (grp?.items || []).map((o) => {
+        const on = pickd.has(o.value);
+        const c = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "✓") : null, o.label, el("span", { class: "cmp-chip-n" }, `${o.n} rds`)]);
+        c.addEventListener("click", () => { if (on) pickd.delete(o.value); else if (pickd.size < cap) pickd.add(o.value); else flashNote(`Up to ${cap} at a time${inPlay().length > 1 ? ` with ${inPlay().length} players` : ""}.`); g.pick = [...pickd]; draw(); });
+        return c;
+      })), go];
+    } else if (step === "place") {
+      q = "Compare them by…";
+      body = [
+        opts.courses.length > 1 ? opt("courses", "Course", "Their 4 most-played courses") : null,
+        opts.tournaments.length > 1 ? opt("tournaments", "Tournament", "Their latest 4 tournaments") : null,
+        opts.rounds.length > 1 ? opt("rounds", "Round", "Round 1 against round 2, 3 and 4") : null,
+        opts.months.length > 1 ? opt("months", "Time of year", "Their 4 busiest months") : null,
+      ];
+    } else if (step === "stretch") {
+      q = "Over which rounds?";
+      body = SEASONS.map(([v, l]) => opt(v, l, null));
+    }
+    const skip = el("button", { type: "button", class: "link" }, "Skip: I’ll set the filters myself");
+    skip.addEventListener("click", () => { g.open = false; editOpen = true; draw(); });
+    const backB = (g.who && step !== "who") || (step === "what" && g.who) ? el("button", { type: "button", class: "link" }, "← Back") : null;
+    backB?.addEventListener("click", back);
+    return el("section", { class: "panel cmp-guide" }, [
+      el("p", { class: "cmp-guide-k" }, "Set up a comparison"),
+      el("h2", {}, q),
+      el("div", { class: step === "models" || step === "players" ? "cmp-guide-free" : "cmp-guide-opts" }, body.filter(Boolean)),
+      el("div", { class: "cmp-guide-foot" }, [backB, skip]),
+      gnote,
+    ]);
+  }
+  // everything you can set by hand, folded away under one line (open when you skip the questions)
+  function editBox() {
+    return el("details", { class: "panel cmp-edit", open: editOpen ? true : null }, [
+      el("summary", {}, [el("span", { class: "cmp-edit-t" }, "Edit the filters yourself"), el("span", { class: "muted small" }, "Players, seasons, tournaments, products, which shots count…")]),
+      playersRow(), builder(),
     ]);
   }
   function sourceSeg() {

@@ -3801,3 +3801,36 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 /* (update 195) Comparisons: everyone in the file together */
 .cmp-pl.every { border-style: dashed; }
 .cmp-pl-every { padding: 0.42rem 0.8rem !important; border-radius: 12px !important; font-size: 0.86rem !important; }
+/* (update 203) Comparisons: long names wrap in the tables instead of running off the screen */
+.cmp-table th { white-space: normal; overflow-wrap: anywhere; min-width: 5.5rem; max-width: 11rem; vertical-align: bottom; line-height: 1.25; }
+.cmp-table th .cmp-dot { vertical-align: baseline; }
+.cmp-table td:first-child { white-space: normal; min-width: 7rem; }
+/* (update 203) the guide: a few plain questions set up the comparison */
+.cmp-guide { display: grid; gap: 0.8rem; }
+.cmp-guide-k { margin: 0; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #d4b483; }
+.cmp-guide h2 { margin: 0; font-size: 1.3rem; letter-spacing: -0.01em; }
+.cmp-guide-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.6rem; }
+.cmp-guide-o { display: grid; gap: 0.25rem; text-align: left; padding: 0.9rem 1rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: inherit; font: inherit; cursor: pointer; transition: all 0.15s; }
+.cmp-guide-o:hover { border-color: rgba(212,180,131,0.6); background: rgba(212,180,131,0.1); }
+.cmp-guide-o strong { font-size: 1rem; }
+.cmp-guide-o span { font-size: 0.82rem; color: var(--muted); line-height: 1.35; }
+.cmp-guide-free { display: grid; gap: 0.7rem; justify-items: start; }
+.cmp-guide-free .cmp-players { width: 100%; box-sizing: border-box; }
+.cmp-guide-foot { display: flex; gap: 1rem; flex-wrap: wrap; }
+.cmp-guide.done { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; padding-top: 0.9rem !important; padding-bottom: 0.9rem !important; }
+.cmp-guide-sum { display: grid; gap: 0.1rem; }
+.cmp-guide-sum strong { font-size: 1rem; }
+.cmp-edit > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.7rem; }
+.cmp-edit > summary::-webkit-details-marker { display: none; }
+.cmp-edit > summary::before { content: "\25b8"; color: var(--muted); }
+.cmp-edit[open] > summary::before { content: "\25be"; }
+.cmp-edit-t { font-weight: 700; }
+.cmp-edit[open] { display: grid; gap: 1rem; }
+.cmp-edit > .panel { margin: 0; box-shadow: none; }
+@media (max-width: 640px) {
+  .cmp-table { font-size: 0.8rem; }
+  .cmp-table th { min-width: 3.6rem; max-width: 6.5rem; padding: 0.4rem 0.35rem; font-size: 0.6rem; letter-spacing: 0.02em; }
+  .cmp-table td { padding: 0.45rem 0.35rem; white-space: normal; }
+  .cmp-table td:first-child { min-width: 5.5rem; }
+}
+.cmp-guide .cmp-note:empty { display: none; }
