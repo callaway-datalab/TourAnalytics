@@ -152,7 +152,8 @@ export function sectionNav(currentRoute) {
   return el("nav", { class: "section-nav", "aria-label": sec.label }, sec.items.map((it) => {
     const [label, href, , opt = {}] = it;
     const on = itemOn(it, currentRoute);
-    if (opt.off) return el("span", { class: "nav-off", "aria-disabled": "true", title: "Available once there\u2019s product data" }, label); // (update 205)
+    // (update 205) greyed out until it has data; (update 207) a link with no address, so it's styled exactly like its neighbours
+    if (opt.off) return el("a", { class: "nav-off", role: "link", "aria-disabled": "true", title: "Available once there\u2019s product data" }, label);
     return el("a", { href, "aria-current": on ? "page" : null, class: opt.soon ? "soon" : null }, [label, opt.soon ? el("span", { class: "soon-tag" }, "Soon") : null]);
   }));
 }

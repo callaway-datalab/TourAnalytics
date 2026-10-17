@@ -30,17 +30,17 @@ export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, red
 function trajectoryBlock(rs, go) {
   const tr = trajectory(rs);
   if (!tr.length) return null;
-  const cell = (v) => el("td", { class: `num ${tone(v)} cmp-delta` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"} ${Math.abs(v).toFixed(2)}`);
+  const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [
     secHead("Getting better or worse?", "Their latest rounds against the same number just before, at several time scales. Tap a row to compare the two."),
     el("p", { class: "cmp-traj-words" }, trajectoryWords(tr)),
     el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
       // (update 205) just the change in each category (no Before / Latest / Change columns)
-      el("thead", {}, el("tr", {}, ["Time scale", ...SG_ROWS.slice(1, 5).map(([k]) => k)].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+      el("thead", {}, el("tr", {}, ["Rounds", ...SG_ROWS.slice(0, 5).map(([k]) => (k === "TOTAL" ? "Total" : k))].map((h, i) => el("th", { class: i ? "num" : "" }, h)))), // (update 208: Total back, first)
       el("tbody", {}, tr.map((x) => {
         const row = el("tr", { class: "cmp-tap", tabindex: "0", title: `Compare the last ${x.n} with the ${x.n} before` }, [
           el("td", {}, `Last ${x.n} vs ${x.n} before`),
-          ...SG_ROWS.slice(1, 5).map(([k]) => cell(x.ch[k]))]);
+          ...SG_ROWS.slice(0, 5).map(([k]) => cell(x.ch[k], k === "TOTAL"))]);
         row.addEventListener("click", () => go(`win:${x.n}`)); row.addEventListener("keydown", (e) => { if (e.key === "Enter") go(`win:${x.n}`); });
         return row;
       })),

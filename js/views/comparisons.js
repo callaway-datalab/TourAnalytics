@@ -64,7 +64,8 @@ export async function render(main) {
   let source = q.get("src") === "entered" ? "entered" : "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
   let staged = new Map(); // value → { label, f }
-  let combine = false; // (update 206) several picks: compared against each other unless this is ticked
+  let combine = false;
+  let h2h = false; // (update 208) players against each other: only the rounds they played together (same tournament, same round) // (update 206) several picks: compared against each other unless this is ticked
   // (update 190) untouched: the default comparison, so the whole-career tables (better or worse, best conditions) show
   let touched = false;
   // (update 194) which shots count: none picked = every category and distance
@@ -209,7 +210,13 @@ export async function render(main) {
     const solo = inPlay()[0];
     const base = !multi() && staff && solo && solo.key !== player.key ? sels.map((s) => ({ ...s, pk: solo.key, name: `${solo.label} \u00b7 ${s.name}`, full: `${solo.label} \u00b7 ${s.full || s.name}` }))
       : multi() ? sels.flatMap((s) => inPlay().map((p) => ({ ...s, id: `${s.id}@${p.key}`, base: s.id, pk: p.key, name: `${p.label} \u00b7 ${s.name}`, full: `${p.label} \u00b7 ${s.full || s.name}` }))).slice(0, MAX_SEL).map((x, i) => ({ ...x, color: COLORS[i % COLORS.length] })) : sels;
-    const raw = base.map((s) => roundsFor(roundsOf(s), s.f));
+    // (update 208) head to head: each player's rounds cut to the ones every player in the comparison played (same tournament, same round)
+    const rkey = (rd) => `${rd.event}|${rd.year || String(rd.date || "").slice(0, 4)}|${rd.roundNo}`;
+    const h2hOn = h2h && multi() && !inPlay().some((p) => p.key === EVERY);
+    let shared = null;
+    if (h2hOn) for (const p of inPlay()) { const ks = new Set(roundsOfKey(p.key).filter((rd) => rd.event && rd.roundNo).map(rkey)); shared = shared ? new Set([...shared].filter((k) => ks.has(k))) : ks; }
+    const raw = base.map((s) => roundsFor(shared ? roundsOf(s).filter((rd) => shared.has(rkey(rd))) : roundsOf(s), s.f));
+    if (shared) base.forEach((x) => { x.name = `${x.name} (head to head)`; x.full = `${x.full || x.name}`; });
     scope = shotScope(raw); // (the Include choices: only what these selections have, so a driver shows Off the Tee alone)
     const inc = incNow();
     const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
@@ -297,6 +304,12 @@ export async function render(main) {
     return el("section", { class: "panel cmp-players" }, [
       el("div", { class: "cmp-build-top" }, [el("h2", {}, "Players"), el("span", { class: "muted small" }, hint)]),
       el("div", { class: "cmp-pl-row" }, [...chips, addEvery, adder]),
+      (() => { // (update 208) head to head: only the rounds they all played
+        if (!multi() || inPlay().some((p) => p.key === EVERY)) return null;
+        const box = el("input", { type: "checkbox", checked: h2h ? true : null });
+        box.addEventListener("change", () => { h2h = box.checked; touched = true; draw(); });
+        return el("label", { class: "cmp-combine cmp-h2h" }, [box, el("span", {}, "Head to head only: just the rounds they played together (same tournament, same round)")]);
+      })(),
     ]);
   }
   /* ------------------------------ (update 203) the guide: a few plain questions set the filters ------------------------------ */
@@ -312,6 +325,7 @@ export async function render(main) {
     if (g.what === "gear" && !g.gear) return "gear";
     if (g.what === "gear" && !g.models) return "models";
     if (g.what === "place" && !g.place) return "place";
+    if (g.what === "versus" && g.h2h === undefined) return "h2h";
     if (g.what === "versus" && !g.stretch) return "stretch";
     return "done";
   }
@@ -321,7 +335,7 @@ export async function render(main) {
     if (k === "who") { if (v === "one") await setChosen([player]); else if (v === "everyone") await setChosen([]); else if (chosen.length < 2) await setChosen(chosen.length ? chosen : [player]); }
     if (guideStep() === "done") applyGuide(); else draw();
   };
-  const back = () => { const order = ["stretch", "place", "models", "gear", "when", "what", "playersDone", "who"]; for (const k of order) if (g[k]) { delete g[k]; if (k !== "playersDone") break; } draw(); };
+  const back = () => { const order = ["stretch", "h2h", "place", "models", "gear", "when", "what", "playersDone", "who"]; for (const k of order) if (g[k] !== undefined) { delete g[k]; if (k !== "playersDone") break; } draw(); };
   function applyGuide() {
     const mk = (id, name, f, md, values = null) => ({ id, name, f, mode: md, values, color: COLORS[0] });
     let out = [];
@@ -339,6 +353,7 @@ export async function render(main) {
       if (g.place === "tournaments") { mode = "tournaments"; out = opts.tournaments.slice(0, 4).map((o) => mk(`tournaments:${o.value}`, o.label, { events: [o.value] }, "tournaments", [o.value])); }
       if (g.place === "months") { mode = "months"; out = [...opts.months].sort((a, b) => b.n - a.n).slice(0, 4).sort((a, b) => Number(a.value) - Number(b.value)).map((o) => mk(`months:${o.value}`, o.label, { months: [o.value] }, "months", [o.value])); }
     }
+    h2h = g.what === "versus" && !!g.h2h;
     if (g.what === "versus") { const [v, l, f] = SEASONS.find(([x]) => x === g.stretch); mode = "windows"; out = [mk(`scope:${v}`, l, f, "windows")]; }
     const cap = Math.max(1, Math.floor(MAX_SEL / Math.max(1, inPlay().length)));
     sels = out.slice(0, cap).map((x, i) => ({ ...x, color: COLORS[i % COLORS.length] }));
@@ -350,7 +365,7 @@ export async function render(main) {
   function guideSummary() {
     const who = g.who === "everyone" ? "Everyone in the data" : g.who === "several" ? inPlay().map((p) => p.label).join(", ") : player.label;
     const what = g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
-      : g.what === "gear" ? `${groupName(g.gear).toLowerCase()}: one model against another` : g.what === "place" ? `by ${g.place === "rounds" ? "round" : g.place.replace(/s$/, "")}` : g.what === "versus" ? `against each other, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
+      : g.what === "gear" ? `${groupName(g.gear).toLowerCase()}: one model against another` : g.what === "place" ? `by ${g.place === "rounds" ? "round" : g.place.replace(/s$/, "")}` : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
     return `${who} · ${what}`;
   }
   function guideBox() {
@@ -414,8 +429,11 @@ export async function render(main) {
         opts.rounds.length > 1 ? opt("rounds", "Round", "Round 1 against round 2, 3 and 4") : null,
         opts.months.length > 1 ? opt("months", "Time of year", "Their 4 busiest months") : null,
       ];
+    } else if (step === "h2h") {
+      q = "Which of their rounds?";
+      body = [opt(true, "Only when they went head to head", "Just the rounds they all played: same tournament, same round"), opt(false, "All of their rounds", "Each player\u2019s own rounds, whether or not the others played them")];
     } else if (step === "stretch") {
-      q = "Over which rounds?";
+      q = g.h2h ? "Over which stretch of those rounds?" : "Over which rounds?";
       body = SEASONS.map(([v, l]) => opt(v, l, null));
     }
     const skip = el("button", { type: "button", class: "link" }, "Skip: I’ll set the filters myself");
@@ -636,10 +654,10 @@ export async function render(main) {
       secHead("Every round", "Each dot is a round (SG: Total). The bar is the middle half of the rounds, the white tick the median, the diamond the average."),
       legend(live), strip(live),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table compact" }, [
-        el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Median", "Best", "Worst", "Swing (±)", "Gaining"].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+        el("thead", {}, el("tr", {}, ["", "Rounds", "Average", "Median", "Best", "Worst", "Swing (±)", "Gaining"].map((h, i) => el("th", { class: `${i ? "num" : ""}${[3, 6, 7].includes(i) ? " ph-hide" : ""}` }, h)))),
         el("tbody", {}, live.map((it) => el("tr", { "data-s": it.i }, [el("td", {}, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), el("td", { class: "num" }, String(it.s.n)),
-          el("td", { class: `num ${tone(it.s.sg.TOTAL)}` }, fmtSG(it.s.sg.TOTAL)), el("td", { class: `num ${tone(it.s.median)}` }, fmtSG(it.s.median)), el("td", { class: "num pos" }, fmtSG(it.s.best)), el("td", { class: "num neg" }, fmtSG(it.s.worst)),
-          el("td", { class: "num" }, it.s.sd == null ? "\u2014" : it.s.sd.toFixed(2)), el("td", { class: "num" }, `${Math.round((it.s.gaining || 0) * 100)}%`)]))),
+          el("td", { class: `num ${tone(it.s.sg.TOTAL)}` }, fmtSG(it.s.sg.TOTAL)), el("td", { class: `num ph-hide ${tone(it.s.median)}` }, fmtSG(it.s.median)), el("td", { class: "num pos" }, fmtSG(it.s.best)), el("td", { class: "num neg" }, fmtSG(it.s.worst)),
+          el("td", { class: "num ph-hide" }, it.s.sd == null ? "\u2014" : it.s.sd.toFixed(2)), el("td", { class: "num ph-hide" }, `${Math.round((it.s.gaining || 0) * 100)}%`)]))),
       ])),
     ]);
   }
