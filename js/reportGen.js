@@ -840,7 +840,7 @@ export async function loadFullField(datasetId, field, me, idx) {
 /** "Auto-generate report" for one player. canSave: the admin can also put it in the player's reports. */
 export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource = "tour", minRounds = null, tour = null, fullField = null }) {
   const wrapEl = el("div", { class: "report-gen" });
-  const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate AI Insights");
+  const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate AI Report");
   const panel = el("div", { class: "report-gen-panel", hidden: true });
   openBtn.addEventListener("click", () => { panel.hidden = !panel.hidden; openBtn.setAttribute("aria-expanded", panel.hidden ? "false" : "true"); });
 

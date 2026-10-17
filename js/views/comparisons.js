@@ -64,6 +64,7 @@ export async function render(main) {
   let source = q.get("src") === "entered" ? "entered" : "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
   let staged = new Map(); // value → { label, f }
+  let combine = false; // (update 206) several picks: compared against each other unless this is ticked
   // (update 190) untouched: the default comparison, so the whole-career tables (better or worse, best conditions) show
   let touched = false;
   // (update 194) which shots count: none picked = every category and distance
@@ -156,11 +157,7 @@ export async function render(main) {
   // the default: the two latest seasons (or recent form, with only one)
   function defaults() {
     sels = []; touched = multi();
-    if (opts.years.length >= 2) { mode = "years"; opts.years.slice(0, 2).forEach((y) => sels.push({ id: `years:${y.value}`, name: y.label, f: { years: [y.value] }, mode: "years", values: [y.value], color: nextColor() })); } // (this year, then last year)
-    else if (opts.total >= 10) { // (one season: the latest rounds against the same number before)
-      const n = [20, 10, 5].find((x) => opts.total >= 2 * x);
-      mode = "windows"; sels.push({ id: `windows:prev:${n}`, name: `The ${n} before that`, f: { prev: n }, color: nextColor() }, { id: `windows:last:${n}`, name: `Last ${n} rounds`, f: { last: n }, color: nextColor() });
-    } else if (opts.years.length) { mode = "years"; sels.push({ id: `years:${opts.years[0].value}`, name: opts.years[0].label, f: { years: [opts.years[0].value] }, color: nextColor() }); }
+    mode = "years"; // (update 206) nothing picked to start with: the questions (or your own picks) decide
   }
 
   // (update 194) opened from the Stats page on one comparison: "win:10" (the last 10 against the 10 before) or "cond:course:Riviera"
@@ -216,6 +213,8 @@ export async function render(main) {
     scope = shotScope(raw); // (the Include choices: only what these selections have, so a driver shows Off the Tee alone)
     const inc = incNow();
     const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
+    // (update 206) while the questions are open, they're all there is: no filters or numbers until they're answered or skipped
+    if (g.open) { mount(root, [head, guideBox()]); window.scrollTo(0, y); return; }
     mount(root, [
       head,
       guideBox(),
@@ -490,13 +489,17 @@ export async function render(main) {
             : el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s equipment (clubType, clubBrand, clubModel, ballBrand and ballModel columns), every club model shows here, grouped by type (drivers, fairway woods, hybrids, irons, wedges, putters), with the golf balls after them. Pick one model against another to see how they play with each.")]));
         } else mount(chipsBox, el("div", { class: "cmp-chips" }, shown.map(chip)));
       };
+      // (update 206) picks are compared against each other; tick "Combine" to pool them into one group instead
       const drawAdd = () => {
         const n = staged.size;
-        const add = el("button", { type: "button", class: "btn cmp-add", disabled: !n }, n > 1 ? `\uff0b Add these ${n} as one` : "\uff0b Add to comparison");
+        const add = el("button", { type: "button", class: "btn cmp-add", disabled: !n }, n > 1 ? (combine ? `\uff0b Add these ${n} as one group` : `\uff0b Compare these ${n}`) : "\uff0b Add to comparison");
         add.addEventListener("click", addStaged);
         const clear = n ? el("button", { type: "button", class: "link" }, "Clear picks") : null;
         clear?.addEventListener("click", () => { staged = new Map(); drawChips(); drawAdd(); });
-        mount(addRow, [add, el("span", { class: "muted small" }, n ? (n > 1 ? `${n} picked: their rounds are pooled into one selection.` : "1 picked.") : "Tap one or more, then add them."), clear]);
+        const box = el("input", { type: "checkbox", checked: combine ? true : null });
+        box.addEventListener("change", () => { combine = box.checked; drawAdd(); });
+        const comb = n > 1 ? el("label", { class: "cmp-combine" }, [box, el("span", {}, "Combine them into one group (their rounds pooled)")]) : null;
+        mount(addRow, [add, comb, el("span", { class: "muted small" }, n ? (n > 1 ? (combine ? `${n} picked: added as one group.` : `${n} picked: each one added on its own.`) : "1 picked.") : "Tap one or more, then add them."), clear]);
       };
       // (update 190) your own window: "Last [n] rounds" / "The [n] before that"
       function ownWindow(kind) {
@@ -522,6 +525,15 @@ export async function render(main) {
   // (update 189) the picks, as one selection (several: their rounds pooled, so it's their average)
   async function addStaged() {
     if (!staged.size) return;
+    // (update 206) not combining: each pick is its own selection
+    if (!combine && staged.size > 1) {
+      const list = [...staged].filter(([v]) => !has(`${mode}:${v}`));
+      if (!room(sels.length + list.length, inPlay().length)) { flashNote(capNote()); return; }
+      for (const [v, x] of list) sels = [...sels, { id: `${mode}:${v}`, name: x.label, f: x.f, mode, values: [v], full: x.label, color: nextColor() }];
+      staged = new Map(); touched = true;
+      draw();
+      return;
+    }
     const vals = [...staged.keys()], picks = [...staged.values()];
     const id = `${mode}:${[...vals].sort().join("|")}`;
     if (has(id)) { flashNote("That\u2019s already in the comparison."); return; }

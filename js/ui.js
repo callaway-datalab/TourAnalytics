@@ -104,8 +104,8 @@ const sectionsFor = (kind) => {
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
-    ["Comparisons", "#/comparisons", ["comparisons"]],
-    ["Product Usage", "#/product-usage", ["product-usage"], { soon: true }], // (update 163)
+    ["Deep Dives", "#/comparisons", ["comparisons"]], // (update 205: renamed from Comparisons)
+    ["Product Usage", "#/product-usage", ["product-usage"], { soon: true, off: true }], // (update 163; 205: greyed out, not clickable, until it has data)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
   const planItems = [
@@ -152,6 +152,7 @@ export function sectionNav(currentRoute) {
   return el("nav", { class: "section-nav", "aria-label": sec.label }, sec.items.map((it) => {
     const [label, href, , opt = {}] = it;
     const on = itemOn(it, currentRoute);
+    if (opt.off) return el("span", { class: "nav-off", "aria-disabled": "true", title: "Available once there\u2019s product data" }, label); // (update 205)
     return el("a", { href, "aria-current": on ? "page" : null, class: opt.soon ? "soon" : null }, [label, opt.soon ? el("span", { class: "soon-tag" }, "Soon") : null]);
   }));
 }

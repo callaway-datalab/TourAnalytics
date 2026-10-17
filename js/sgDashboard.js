@@ -94,11 +94,11 @@ export function sgDashboard(container, opts) {
 
   // (update 194) at the bottom: getting better or worse, and where they play their best (their whole career on this tour)
   const careerUi = {};
-  function careerBox() {
+  function careerBox(only = "conditions") {
     if (!meAll || opts.practice || opts.emptyNote || !isSG()) return null;
     const tours = !opts.entered && st.tour?.length ? new Set(st.tour) : null;
     const rs = statRounds(meAll.rounds, "sg").filter((rd) => !tours || tours.has(rd.tour || ""));
-    const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw() });
+    const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw(), only });
     return blocks.length ? el("div", { class: "cmp career" }, blocks) : null;
   }
   function draw() {
@@ -208,7 +208,8 @@ export function sgDashboard(container, opts) {
         if (!isSG()) return statBlocks(mine, slicedField, f);
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
-        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
+        // (update 205) "Getting better or worse?" right under the hero card
+        return [heroBox(mine, slicedField, f), careerBox("trajectory"), me ? summaryBox(mine, slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
       })()),
       careerBox(),
     ]);
@@ -715,7 +716,7 @@ export function sgDashboard(container, opts) {
   // ✨ Generate AI Insights: the Reports page's report builder, in a pop-up, for the player on screen
   function insightsButton(slicedField = []) {
     if (!me || !me.key) return null;
-    const btn = el("button", { type: "button", class: "hero-insights" }, "\u2728 Generate AI Insights");
+    const btn = el("button", { type: "button", class: "hero-insights" }, "\u2728 Generate AI Report");
     btn.addEventListener("click", async () => {
       const { reportBuilder } = await import("./reportGen.js");
       const state = getState();
@@ -725,7 +726,7 @@ export function sgDashboard(container, opts) {
         fullField: fieldIsSummary() ? null : fieldAll }); // (the admin: everyone's rows, for ranks by distance)
       const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
       const body = el("div", { class: "hero-pop-body" }, builder.node || builder);
-      const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate AI Insights" }, el("div", { class: "gx-pop hero-pop" }, [
+      const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate AI Report" }, el("div", { class: "gx-pop hero-pop" }, [
         el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Performance report"), el("h2", {}, me.label)]), close]), body]));
       const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
       const onKey = (e) => { if (e.key === "Escape") shut(); };

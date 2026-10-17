@@ -3834,3 +3834,9 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
   .cmp-table td:first-child { min-width: 5.5rem; }
 }
 .cmp-guide .cmp-note:empty { display: none; }
+/* (update 205) a page that isn't ready yet: greyed out, not clickable */
+.section-nav .nav-off { display: inline-flex; align-items: center; padding: 0.42rem 0.95rem; border-radius: 999px; color: var(--muted); opacity: 0.38; cursor: not-allowed; user-select: none; }
+.cmp.career + .sg-summary, .sg-panel > .cmp.career { margin-top: 0; }
+/* (update 206) several picks: compared by default; tick to combine them into one group */
+.cmp-combine { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; cursor: pointer; }
+.cmp-combine input { width: 1.05rem; height: 1.05rem; accent-color: #d4b483; margin: 0; }

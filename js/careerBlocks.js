@@ -19,11 +19,12 @@ export function compareLink(key, source, pick) {
   return `#/comparisons?${q}`;
 }
 
-export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, redraw = () => {} } = {}) {
+export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, redraw = () => {}, only = null } = {}) {
   const rs = sgRounds(rounds || []);
   if (rs.length < 6) return [];
   const go = (pick) => { location.hash = compareLink(key, source, pick); };
-  return [trajectoryBlock(rs, go), conditionsBlock(rs, go, ui, redraw)].filter(Boolean);
+  // (update 205) only: "trajectory" (right under the hero card) or "conditions" (at the bottom)
+  return [only !== "conditions" ? trajectoryBlock(rs, go) : null, only !== "trajectory" ? conditionsBlock(rs, go, ui, redraw) : null].filter(Boolean);
 }
 
 function trajectoryBlock(rs, go) {
@@ -34,11 +35,12 @@ function trajectoryBlock(rs, go) {
     secHead("Getting better or worse?", "Their latest rounds against the same number just before, at several time scales. Tap a row to compare the two."),
     el("p", { class: "cmp-traj-words" }, trajectoryWords(tr)),
     el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
-      el("thead", {}, el("tr", {}, ["Time scale", "Before", "Latest", ...SG_ROWS.slice(0, 5).map(([k]) => (k === "TOTAL" ? "Change" : k))].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+      // (update 205) just the change in each category (no Before / Latest / Change columns)
+      el("thead", {}, el("tr", {}, ["Time scale", ...SG_ROWS.slice(1, 5).map(([k]) => k)].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
       el("tbody", {}, tr.map((x) => {
         const row = el("tr", { class: "cmp-tap", tabindex: "0", title: `Compare the last ${x.n} with the ${x.n} before` }, [
-          el("td", {}, `Last ${x.n} vs ${x.n} before`), el("td", { class: `num ${tone(x.prev)}` }, fmtSG(x.prev)), el("td", { class: `num ${tone(x.last)}` }, fmtSG(x.last)),
-          ...SG_ROWS.slice(0, 5).map(([k]) => cell(x.ch[k]))]);
+          el("td", {}, `Last ${x.n} vs ${x.n} before`),
+          ...SG_ROWS.slice(1, 5).map(([k]) => cell(x.ch[k]))]);
         row.addEventListener("click", () => go(`win:${x.n}`)); row.addEventListener("keydown", (e) => { if (e.key === "Enter") go(`win:${x.n}`); });
         return row;
       })),
@@ -59,7 +61,7 @@ function conditionsBlock(rs, go, ui, redraw) {
   const rows = list.map((x, j) => {
     const pick = pickOf(x);
     const w = Math.abs(x.vsAll) / max * 50;
-    const row = el(pick ? "button" : "div", { type: pick ? "button" : null, class: `cmp-cond${pick ? " cmp-tap" : ""}`, title: pick ? "Compare it on the Comparisons page" : null }, [
+    const row = el(pick ? "button" : "div", { type: pick ? "button" : null, class: `cmp-cond${pick ? " cmp-tap" : ""}`, title: pick ? "Look at it in Deep Dives" : null }, [
       el("span", { class: "cmp-cond-rank" }, String(j + 1)),
       el("span", { class: "cmp-cond-l" }, [x.label, el("span", { class: "muted" }, ` · ${x.n} rds`)]),
       el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.vsAll >= 0 ? "pos" : "neg"}`, style: x.vsAll >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
