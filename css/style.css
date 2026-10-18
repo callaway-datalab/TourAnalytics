@@ -3861,3 +3861,11 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .cmp-group-row { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; flex-wrap: wrap; padding: 0.5rem 0.7rem; border-radius: 12px; background: rgba(255,255,255,0.04); }
 .cmp-group-row > span { font-weight: 600; }
 .cmp-guide-o:disabled { opacity: 0.5; cursor: not-allowed; }
+/* (update 210) product groups; small samples flagged */
+.cmp-pb { display: grid; gap: 0.75rem; width: 100%; }
+.cmp-pb-groups { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+.cmp-pb-groups .cmp-chip-gt { flex-basis: 100%; }
+.cmp-few { margin: 0.2rem 0 0; font-size: 0.8rem; font-weight: 600; color: #ffb340; }
+.cmp-few-mark { color: #ffb340; font-weight: 800; }
+.cmp-key-n.few { color: #ffb340; }
+.sg-few { margin: 0.4rem 0 0; color: #ffb340 !important; }

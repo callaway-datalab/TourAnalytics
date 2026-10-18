@@ -14,7 +14,7 @@ import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { playerPicker } from "../playerPicker.js";
-import { CATEGORIES, fmtStat, fmtSG } from "../sg.js";
+import { CATEGORIES, fmtStat, fmtSG, gearInfo } from "../sg.js";
 import {
   COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statSets,
   products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage,
@@ -254,7 +254,7 @@ export async function render(main) {
   let productsOnly = false;
   function productsStart() {
     if (!staff || players.length < 3) return null;
-    const b = el("button", { type: "button", class: "cmp-guide-o" }, [el("strong", {}, "Compare products across every player"), el("span", {}, lite ? "Needs a computer: it\u2019s every player\u2019s rounds, more than a phone can hold." : "Drivers, irons, putters, golf balls\u2026 with how many players use each and how long they stay with it")]);
+    const b = el("button", { type: "button", class: "cmp-guide-o" }, [el("strong", {}, "Compare everyone"), el("span", {}, lite ? "Needs a computer: it\u2019s every player\u2019s rounds, more than a phone can hold." : "Every player in the data together: products (who uses what, and how it performs), seasons, courses\u2026")]);
     if (lite) b.disabled = true; else b.addEventListener("click", startProducts);
     return el("section", { class: "panel cmp-guide" }, [el("p", { class: "cmp-guide-k" }, "Or, without picking a player"), el("div", { class: "cmp-guide-opts" }, b)]);
   }
@@ -266,7 +266,7 @@ export async function render(main) {
       if (res?.datasetId) { source = "tour"; player = { key: k, label: l }; data = { rounds: res.me?.rounds || [] }; others.set(`${k}|tour`, data.rounds); dsInfo = { id: res.datasetId, idx: res.idx }; break; }
     }
     if (!player) { busy = ""; draw(); flashNote("Couldn\u2019t find Tour Events data to compare."); return; }
-    productsOnly = true; chosen = []; g = { open: true, who: "everyone", what: "gear" }; opts = options(data.rounds);
+    productsOnly = true; chosen = []; g = { open: true, who: "everyone" }; opts = options(data.rounds);
     busy = "Loading everyone\u2019s rounds\u2026"; draw();
     await loadEveryone();
     opts = options(allRounds()); defaults(); busy = ""; loadingFor = `${player.key}|tour`;
@@ -354,11 +354,7 @@ export async function render(main) {
     if (g.phow === "one" && !g.pone) return "pone";
     if (!g.what) return "what";
     if (g.what === "time" && !g.when) return "when";
-    if (g.what === "gear" && !g.gear) return "gear";
-    if (g.what === "gear" && !g.models) return "models";
-    if (g.what === "gear" && g.models.length > 1 && !g.how) return "how";
-    if (g.how === "groups" && !g.groups) return "groups";
-    if (g.how === "one" && !g.one) return "one";
+    if (g.what === "gear" && !g.pgDone) return "pbuild"; // (update 210: groups built by kind, brand, model and season)
     if (g.what === "place" && !g.place) return "place";
     if (g.what === "versus" && g.h2h === undefined) return "h2h";
     if (g.what === "versus" && !g.stretch) return "stretch";
@@ -375,7 +371,7 @@ export async function render(main) {
     if (k === "pvsrest") await setChosen([player, restOf([player])]);
     if (guideStep() === "done") applyGuide(); else draw();
   };
-  const back = () => { const order = ["stretch", "h2h", "place", "one", "groups", "how", "models", "gear", "when", "what", "pone", "pgroups", "phow", "pvsrest", "playersDone", "who"]; for (const k of order) if (g[k] !== undefined) { delete g[k]; if (k !== "playersDone") break; } draw(); };
+  const back = () => { const order = ["stretch", "h2h", "place", "pgDone", "one", "groups", "how", "models", "gear", "when", "what", "pone", "pgroups", "phow", "pvsrest", "playersDone", "who"]; for (const k of order) if (g[k] !== undefined) { delete g[k]; if (k !== "playersDone") break; } draw(); };
   function applyGuide() {
     const mk = (id, name, f, md, values = null) => ({ id, name, f, mode: md, values, color: COLORS[0] });
     let out = [];
@@ -386,8 +382,8 @@ export async function render(main) {
       if (g.when === "career") { mode = "windows"; const y = opts.years[0]; out = [mk(`years:${y.value}`, `This season (${y.value})`, { years: [y.value] }, "years", [y.value]), mk("windows:all", "Career (everything)", {}, "windows", ["all"])]; }
       if (g.when === "own") { mode = "custom"; editOpen = true; }
     }
-    if (g.what === "gear") {
-      mode = "product";
+    if (g.what === "gear") { mode = "product"; out = pb.groups.map((x) => mk(x.id, x.name, x.f, "product", x.f.clubs)); pb.groups = []; }
+    if (false) {
       const grp = products(allRounds()).find((x) => x.group === g.gear), items = grp?.items || [];
       const nm = (vs) => { const ls = vs.map((v) => items.find((x) => x.value === v)?.label || v); return ls.length === 1 ? items.find((x) => x.value === vs[0])?.long || ls[0] : ls.length === 2 ? `${ls[0]} + ${ls[1]}` : `${ls[0]}, ${ls[1]} + ${ls.length - 2} more`; };
       const one = (vs, name) => mk(`product:${[...vs].sort().join("|")}`, name || nm(vs), { clubs: vs }, "product", vs);
@@ -412,10 +408,67 @@ export async function render(main) {
     draw();
     root.querySelector(".cmp-cards, .cmp-edit")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+  /* ------------------------------ (update 210) building product groups ------------------------------ */
+  // Kind of club, then brands, then (optionally) models, and a season: each pick becomes a group, e.g. "All Callaway
+  // drivers" against "All TaylorMade drivers", "Callaway drivers · 2026" against "· 2025", or two models against one.
+  const pb = { kind: null, brands: new Set(), models: new Set(), season: "any", groups: [] };
+  function productBuilder(inGuide) {
+    const kinds = products(allRounds());
+    if (!kinds.length) return el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s clubType, clubBrand, clubModel, ballBrand and ballModel, every product shows here.")]);
+    if (!pb.kind || !kinds.some((k) => k.group === pb.kind)) { pb.kind = kinds[0].group; pb.brands.clear(); pb.models.clear(); }
+    const items = kinds.find((k) => k.group === pb.kind).items.map((o) => ({ ...o, ...gearInfo(o.value) }));
+    const brands = [...new Set(items.map((o) => o.brand))].sort();
+    const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n} rds`) : null]); b.addEventListener("click", click); return b; };
+    const row = (t, kids) => el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, t), el("div", { class: "cmp-chips" }, kids)]);
+    const kindName = groupName(pb.kind);
+    const kindRow = row("Kind of club", kinds.map((k) => pill(pb.kind === k.group, groupName(k.group), null, () => { pb.kind = k.group; pb.brands.clear(); pb.models.clear(); draw(); })));
+    const brandRow = row("Brand", brands.map((b) => pill(pb.brands.has(b), b, null, () => { pb.brands.has(b) ? pb.brands.delete(b) : pb.brands.add(b); for (const m of [...pb.models]) if (!pb.brands.has(items.find((o) => o.value === m)?.brand)) pb.models.delete(m); draw(); })));
+    const shown = items.filter((o) => pb.brands.has(o.brand));
+    const modelRow = pb.brands.size ? row("Model (none picked = every model of those brands)", shown.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { pb.models.has(o.value) ? pb.models.delete(o.value) : pb.models.add(o.value); draw(); }))) : null;
+    const seasonRow = opts.years.length > 1 ? row("Season", [["any", "Any season"], ...opts.years.map((y) => [y.value, y.label])].map(([v, l]) => pill(pb.season === v, l, null, () => { pb.season = v; draw(); }))) : null;
+    // the group the picks make
+    const pickVals = pb.models.size ? [...pb.models] : shown.map((o) => o.value);
+    const yrs = pb.season === "any" ? null : [pb.season];
+    const nameOf = (vals, all) => {
+      const ls = vals.map((v) => items.find((o) => o.value === v)?.label || v);
+      const bs = [...new Set(vals.map((v) => items.find((o) => o.value === v)?.brand))];
+      const base = all ? `All ${bs.length === 1 ? `${bs[0]} ` : bs.length === 2 ? `${bs[0]} + ${bs[1]} ` : ""}${kindName.toLowerCase()}` : ls.length === 1 ? ls[0] : ls.length === 2 ? `${ls[0]} + ${ls[1]}` : `${ls[0]}, ${ls[1]} + ${ls.length - 2} more`;
+      return `${base}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`;
+    };
+    const groupOfVals = (vals, name) => { const f = { clubs: vals, ...(yrs ? { years: yrs } : {}) }; return { id: `product:${[...vals].sort().join("|")}${yrs ? `@${yrs[0]}` : ""}`, name, f, n: roundsFor(allRounds(), f).length }; };
+    const cur = pickVals.length ? groupOfVals(pickVals, nameOf(pickVals, !pb.models.size)) : null;
+    const taken = new Set((inGuide ? pb.groups : sels.filter((s) => s.f?.clubs)).flatMap((x) => x.f.clubs));
+    const restVals = items.map((o) => o.value).filter((v) => !taken.has(v) && !(cur && cur.f.clubs.includes(v)));
+    const addGroup = (grp) => {
+      if (!grp) return;
+      if (inGuide) { if (pb.groups.some((x) => x.id === grp.id)) return; pb.groups.push({ ...grp, color: COLORS[pb.groups.length % COLORS.length] }); }
+      else { if (has(grp.id)) { flashNote("That\u2019s already in the comparison."); return; } if (!room(sels.length + 1, inPlay().length)) { flashNote(capNote()); return; } sels = [...sels, { id: grp.id, name: grp.name, f: grp.f, mode: "product", values: grp.f.clubs, color: nextColor() }]; touched = true; }
+      pb.brands.clear(); pb.models.clear(); draw();
+    };
+    const addB = el("button", { type: "button", class: "btn cmp-add", disabled: cur ? null : true }, cur ? `\uff0b Add \u201c${cur.name}\u201d (${cur.n} rds)` : "Pick a brand (and models) to make a group");
+    addB.addEventListener("click", () => addGroup(cur));
+    const restB = restVals.length && (taken.size || cur) ? el("button", { type: "button", class: "btn ghost" }, `\uff0b All the other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`) : null;
+    restB?.addEventListener("click", () => { if (cur) addGroup(cur); const g2 = groupOfVals(restVals.filter((v) => !(cur?.f.clubs || []).includes(v)), `All other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`); if (g2.f.clubs.length) addGroup(g2); });
+    const hint = cur && cur.n < 10 ? el("p", { class: "cmp-few" }, `Only ${cur.n} round${cur.n === 1 ? "" : "s"} with this: the numbers will be shaky.`) : null;
+    let groupsBox = null, go = null;
+    if (inGuide) {
+      groupsBox = pb.groups.length ? el("div", { class: "cmp-pb-groups" }, [el("p", { class: "cmp-chip-gt" }, "Your groups"), ...pb.groups.map((x, i) => {
+        const xb = el("button", { type: "button", class: "cmp-key-x", "aria-label": `Remove ${x.name}` }, "\u2715");
+        xb.addEventListener("click", () => { pb.groups.splice(i, 1); draw(); });
+        return el("span", { class: "cmp-key", style: `--c:${x.color}` }, [el("i", { "aria-hidden": "true" }), el("span", {}, x.name), el("span", { class: `cmp-key-n${x.n < 10 ? " few" : ""}` }, `${x.n}`), xb]);
+      })]) : null;
+      go = el("button", { type: "button", class: "btn cmp-add", disabled: pb.groups.length < 2 ? true : null }, pb.groups.length < 2 ? "Add at least two groups to compare" : `Compare these ${pb.groups.length} \u2192`);
+      go.addEventListener("click", () => { g.pgDone = true; applyGuide(); });
+    }
+    return el("div", { class: "cmp-pb" }, [
+      inGuide ? el("p", { class: "muted small" }, "Make each group: pick a kind of club, then one or more brands (and models, if you want just some), and a season. Add it, then make the next. E.g. all Callaway drivers vs all TaylorMade drivers, or two Callaway models vs one Titleist.") : null,
+      kindRow, brandRow, modelRow, seasonRow, el("div", { class: "cmp-guide-row" }, [addB, restB]), hint, groupsBox, go,
+    ]);
+  }
   function guideSummary() {
     const who = g.who === "everyone" ? "Everyone in the data" : g.who === "several" ? inPlay().map((p) => p.label).join(", ") : player.label;
     const what = g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
-      : g.what === "gear" ? `${groupName(g.gear).toLowerCase()}: ${g.models?.length === 1 || g.how === "one" ? "one against all the others" : g.how === "groups" ? "two groups" : "one model against another"}` : g.what === "place" ? `by ${g.place === "rounds" ? "round" : g.place.replace(/s$/, "")}` : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
+      : g.what === "gear" ? "products" : g.what === "place" ? `by ${g.place === "rounds" ? "round" : g.place.replace(/s$/, "")}` : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
     return `${who} · ${what}`;
   }
   function guideBox() {
@@ -432,7 +485,7 @@ export async function render(main) {
     const prods = step === "gear" || step === "models" ? products(allRounds()) : [];
     if (step === "who") {
       q = "Who do you want to look at?";
-      body = [opt("one", `Just ${player.label}`, "One player’s rounds"), opt("several", "A few players, side by side", "Pick the players next"), everyOk() ? opt("everyone", "Everyone in the data together", "The whole field pooled, e.g. everyone with one driver against everyone with another") : null];
+      body = [opt("one", `Just ${player.label}`, "One player’s rounds"), opt("several", "A few players, side by side", "Pick the players next")]; // (update 210: everyone together is the start card, before a player is picked)
     } else if (step === "players") {
       q = "Which players?";
       const nextB = el("button", { type: "button", class: "btn cmp-add", disabled: chosen.filter((p) => p.key !== EVERY).length < 2 ? true : null }, "Next \u2192");
@@ -485,6 +538,9 @@ export async function render(main) {
         opts.years.length ? opt("career", "This season vs their whole career", "How this year compares with their usual") : null,
         opt("own", "I’ll choose the dates myself", "Opens the date picker"),
       ];
+    } else if (step === "pbuild") {
+      q = "Which products?";
+      body = [productBuilder(true)];
     } else if (step === "gear") {
       q = "Which kind of equipment?";
       body = prods.map((x) => opt(x.group, groupName(x.group), `${x.items.length} model${x.items.length === 1 ? "" : "s"}`));
@@ -524,7 +580,7 @@ export async function render(main) {
     return el("section", { class: "panel cmp-guide" }, [
       el("p", { class: "cmp-guide-k" }, "Set up a comparison"),
       el("h2", {}, q),
-      el("div", { class: ["models", "players", "groups", "pgroups"].includes(step) ? "cmp-guide-free" : "cmp-guide-opts" }, body.filter(Boolean)),
+      el("div", { class: ["models", "players", "groups", "pgroups", "pbuild"].includes(step) ? "cmp-guide-free" : "cmp-guide-opts" }, body.filter(Boolean)),
       el("div", { class: "cmp-guide-foot" }, [backB, skip]),
       gnote,
     ]);
@@ -556,6 +612,7 @@ export async function render(main) {
     const hint = el("p", { class: "cmp-hint" }, modes.find(([m]) => m === mode)[2]);
     let body;
     if (mode === "custom") body = customForm();
+    else if (mode === "product") body = productBuilder(false);
     else {
       const prods = mode === "product" ? products(allRounds()) : [];
       const list = mode === "product" ? prods.flatMap((g) => g.items)
@@ -693,6 +750,8 @@ export async function render(main) {
     return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
       el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name)]),
       it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n.toLocaleString()} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
+      // (update 210) a small sample says so, so 3 rounds isn't read like 60
+      it.s.n && it.s.n < FEW ? el("p", { class: "cmp-few" }, `Only ${it.s.n} round${it.s.n === 1 ? "" : "s"}: read with care.`) : null,
       el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, `SG: ${head[1]} a round`)]),
       used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
       it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
@@ -728,15 +787,17 @@ export async function render(main) {
       ]));
     }
     const table = el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]), it.i))])),
+      el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name, it.s.n < FEW ? el("span", { class: "cmp-few-mark", title: `Only ${it.s.n} rounds` }, " *") : null]), it.i))])),
       el("tbody", {}, rows),
     ]));
+    const fewOnes = items.filter((it) => it.s.n < FEW);
+    const fewNote = fewOnes.length ? el("p", { class: "cmp-few" }, `* Only a few rounds: ${fewOnes.map((it) => `${it.name} (${it.s.n})`).join(", ")}. Differences against ${fewOnes.length === 1 ? "it" : "them"} may just be chance.`) : null;
     let conf = null;
     if (live.length >= 2) {
       const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
       conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
     }
-    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained, then the other stats by part of the game and distance. The best in each row is shaded green, the worst red (lower is better for some, like Proximity). Hover a stat for how many attempts it’s from."), table, conf]);
+    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained, then the other stats by part of the game and distance. The best in each row is shaded green, the worst red (lower is better for some, like Proximity). Hover a stat for how many attempts it’s from."), table, fewNote, conf]);
   }
   // every round as a dot, and how each selection unfolded (a 5-round rolling average)
   function roundsSection(items) {
@@ -768,13 +829,15 @@ export async function render(main) {
   }
   // (update 194) the stats for each category of shot (Driving Distance, Fairways and GIR off the tee; Hit Green %,
   // Proximity, Pin-High and On-Line for approaches; Good Lag and Made Putt % on the green), and at each distance
+  const FEW = 10; // (update 210) fewer rounds than this: flagged everywhere
   const statsSection = () => null; // (update 209: part of "Side by side" now)
   // (update 209) product usage across everyone in the data: how many use it, share, switching, how long they stay
   function usageSection(items) {
     const ps = sels.filter((s) => s.f?.clubs?.length);
     const pooled = others.get(`${EVERY}|tour`);
     if (!ps.length || !pooled || source !== "tour") return null;
-    const u = productUsage(pooled, ps.map((s) => ({ clubs: s.f.clubs })));
+    // (a group for one season counts that season's tournaments only)
+    const u = ps.map((s) => (productUsage(s.f.years ? pooled.filter((rd) => s.f.years.includes(String(rd.year || String(rd.date || "").slice(0, 4)))) : pooled, [{ clubs: s.f.clubs }]) || [null])[0]);
     if (!u || !u.some(Boolean)) return null;
     const colorOf = (s) => items.find((it) => (it.base || it.id) === s.id)?.color || s.color;
     const kind = ps[0].f.clubs[0].startsWith("Ball|") ? "golf balls" : groupNameOf(ps[0].f.clubs[0].split("|")[0]).toLowerCase();
@@ -783,7 +846,7 @@ export async function render(main) {
       ["Players who used it", (x) => n0(x.players), "Different players with at least one shot with it."],
       ["Players a tournament", (x) => f1(x.perEvent), "On average, how many players used it at each tournament."],
       ["Market share", (x) => pc(x.share), `Of every player at every tournament, how often it was their main ${kind.replace(/s$/, "")} (the one they hit the most shots with).`],
-      ["Rounds played with it", (x) => n0(x.rounds), ""],
+      ["Rounds played with it", (x) => `${n0(x.rounds)}${x.rounds < FEW ? " *" : ""}`, "* Fewer than 10 rounds: read the rest of this column with care."],
       ["Switched to it", (x) => n0(x.switchIn), "Times a player changed to it from another one."],
       ["Switched away", (x) => n0(x.switchOut), "Times a player changed from it to another one."],
       ["Stays with it", (x) => (x.stay == null ? "\u2014" : `${f1(x.stay)} events`), "After switching to it, how many tournaments in a row they kept it (on average)."],

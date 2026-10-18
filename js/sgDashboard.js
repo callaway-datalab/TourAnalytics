@@ -18,7 +18,7 @@ import { el, mount, loadScript } from "./ui.js";
 import {
   CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds,
-  statRounds, statAgg, statDef, fmtStat, statsIn, groupObs,
+  statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList,
 } from "./sg.js";
 
 const CHART_JS = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
@@ -52,8 +52,8 @@ export function sgDashboard(container, opts) {
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   if (!SPANS.some(([v]) => v === String(st.span ?? 0))) st.span = 0; // (an old "last N rounds" pick)
   Object.assign(st, { span: st.span ?? 0, year: arr(st.year), event: arr(st.event), course: arr(st.course), roundNo: arr(st.roundNo), cats: st.cats ?? [], lie: arr(st.lie),
-    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), club: arr(st.club), ptype: arr(st.ptype), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
-  const narrowed = () => st.lie.length || st.dist.length || st.club.length; // lie / distance / club in use (the shared summary can't follow those)
+    dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), club: arr(st.club), gear: arr(st.gear), ptype: arr(st.ptype), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
+  const narrowed = () => st.lie.length || st.dist.length || st.club.length || st.gear.length; // lie / distance / club in use (the shared summary can't follow those)
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
   // Every stat's rounds (meAll / fieldAll); me / field hold the rounds of the stat on screen (Stat Type).
@@ -162,7 +162,8 @@ export function sgDashboard(container, opts) {
     facet = { picked, events: opts.practice ? [] : eventOptions(leaving("event")), sessions: opts.practice ? sessionOptions(leaving("ptype")) : [] };
     st.lie = st.lie.filter((l) => opt.lie.includes(l));
     st.club = st.club.filter((c) => opt.club.includes(c));
-    const f = { months: Number(st.span), year: st.year, tour: st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, ptype: st.ptype };
+    st.gear = st.gear.filter((c) => opt.gear.includes(c));
+    const f = { months: Number(st.span), year: st.year, tour: st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, gear: st.gear, ptype: st.ptype };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
     lastRankF = rankF;
@@ -248,7 +249,7 @@ export function sgDashboard(container, opts) {
         const c = v.split("|")[0];
         if (!st.cats.length || st.cats.length === CATEGORIES.length) st.cats = [c]; else if (!st.cats.includes(c)) st.cats = [...st.cats, c];
       }
-      if (key === "club") followClubs();
+      if (key === "club" || key === "gear") followClubs();
       st.openFilter = key;
       draw();
     };
@@ -262,9 +263,9 @@ export function sgDashboard(container, opts) {
     }
     // All: tick every option. None: untick them all (then tick just the ones you want; nothing ticked shows everything).
     const all = el("button", { type: "button", class: "link ms-all" }, "All");
-    all.addEventListener("click", () => { st[key] = []; st.noneShown[key] = false; if (key === "club") followClubs(); st.openFilter = key; draw(); });
+    all.addEventListener("click", () => { st[key] = []; st.noneShown[key] = false; if (key === "club" || key === "gear") followClubs(); st.openFilter = key; draw(); });
     const none = el("button", { type: "button", class: "link ms-all" }, "None");
-    none.addEventListener("click", () => { st[key] = []; st.noneShown[key] = true; if (key === "club") followClubs(); st.openFilter = key; draw(); });
+    none.addEventListener("click", () => { st[key] = []; st.noneShown[key] = true; if (key === "club" || key === "gear") followClubs(); st.openFilter = key; draw(); });
     const panel = el("div", { class: "ms-panel", hidden: !open, role: "group", "aria-label": label }, [
       el("div", { class: "ms-top" }, [el("strong", {}, label), el("span", { class: "ms-allnone" }, [all, none])]),
       el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, empty)),
@@ -282,6 +283,7 @@ export function sgDashboard(container, opts) {
   // Clubs nested under their bag group (Driver, Fairway Wood, Hybrid, Iron, Wedge, Putter), each with the
   // brand / model you used it as, e.g. "7i · Titleist T100".
   const CLUB_GROUPS = ["Driver", "Fairway Wood", "Hybrid", "Iron", "Wedge", "Putter", "Other"];
+  const GEAR_ORDER = ["Driver", "Non-Driver", "Fairway Wood", "Hybrid", "Iron", "Wedge", "Putter", "Other", "Golf Ball"];
   function clubOptions(opt) {
     return opt.club.map((c) => ({ value: c, label: c, group: opt.clubCats[c] || "Other" }))
       .sort((a, b) => CLUB_GROUPS.indexOf(a.group) - CLUB_GROUPS.indexOf(b.group));
@@ -289,11 +291,11 @@ export function sgDashboard(container, opts) {
   // Picking clubs shows only the categories those clubs were used in (a driver: Off-the-Tee; a putter:
   // Putting; a 7-iron: Approach, plus Off-the-Tee if it was hit off a par-4 tee). Clearing them shows all.
   function followClubs() {
-    if (!st.club.length) { st.cats = []; return; }
+    if (!st.club.length && !st.gear.length) { st.cats = []; return; }
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
-    const picked = new Set(st.club);
+    const picked = new Set(st.club), pickedG = new Set(st.gear); // (update 210: products too)
     const cats = new Set();
-    for (const rd of base) for (const sh of rd.shots) if (picked.has(sh.club)) cats.add(sh.cat);
+    for (const rd of base) for (const sh of rd.shots) if ((!picked.size || picked.has(sh.club)) && (!pickedG.size || pickedG.has(sh.gear) || (sh.ball && pickedG.has(`Ball|${sh.ball}`)))) cats.add(sh.cat);
     st.cats = CATEGORIES.map(([k]) => k).filter((k) => cats.has(k));
     st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
   }
@@ -327,7 +329,7 @@ export function sgDashboard(container, opts) {
     // (a span reaches back across years, so it shows every year: the year pills would cut it short)
     span.addEventListener("change", () => { st.span = Number(span.value); if (st.span > 0) { st.year = []; st.yearKept = []; } draw(); });
     const latest = [...opt.year].sort().pop();
-    const active = ["event", "course", "roundNo", "lie", "dist", "club", "cats", "ptype"].some((k) => st[k].length) || Number(st.span) > 0
+    const active = ["event", "course", "roundNo", "lie", "dist", "club", "gear", "cats", "ptype"].some((k) => st[k].length) || Number(st.span) > 0
       || JSON.stringify(st.year) !== JSON.stringify(latest ? [latest] : []);
     const reset = el("button", { class: "link", type: "button", hidden: !active }, "Reset Filters");
     reset.addEventListener("click", () => {
@@ -340,7 +342,7 @@ export function sgDashboard(container, opts) {
       .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
     // On phones the filters fold behind a "Filters" button (with how many are in use).
-    const inUse = ["event", "course", "roundNo", "lie", "dist", "club", "ptype"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
+    const inUse = ["event", "course", "roundNo", "lie", "dist", "club", "gear", "ptype"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
     const fold = el("button", { type: "button", class: "filters-toggle", "aria-expanded": st.filtersOpen ? "true" : "false" },
       [`More Filters${inUse ? ` \u00b7 ${inUse} on` : ""}`, el("span", { "aria-hidden": "true" }, st.filtersOpen ? "\u25B4" : "\u25BE")]);
     fold.addEventListener("click", () => { st.filtersOpen = !st.filtersOpen; draw(); });
@@ -360,6 +362,9 @@ export function sgDashboard(container, opts) {
       // Club: from Data Entry shots (WITB clubs) or a club column in an uploaded file.
       isSG() ? multi("Club", "club", clubOptions(opt), opt.club.length ? "All clubs" : "No club data", { plural: "clubs",
         empty: "No clubs in this data yet. Clubs come from shots entered with a Club (Data Entry) or a \u201cclub\u201d column in an uploaded file." }) : null,
+      // (update 210) Product: a club model (brand and model) or a ball, under its kind of club
+      isSG() && opt.gear.length ? multi("Product", "gear", opt.gear.map((v) => { const g = gearInfo(v); return { value: v, label: `${g.brand} ${g.model}`.trim(), group: g.kind === "Ball" ? "Golf Ball" : g.kind }; })
+        .sort((a, b) => GEAR_ORDER.indexOf(a.group) - GEAR_ORDER.indexOf(b.group) || a.label.localeCompare(b.label)), "All products", { plural: "products", fmt: (v) => gearLabel(v) }) : null,
       reset,
     ]);
   }
@@ -373,7 +378,7 @@ export function sgDashboard(container, opts) {
     const src = opts.lead?.querySelector?.("[aria-current=page]")?.textContent || "";
     const yrs = st.year.length ? [...st.year].sort().reverse().join(" + ") : "All years";
     const cats = catsAvail.length < 2 ? "" : st.cats.length ? st.cats.map((k) => CAT_NAME[k] || k).join(" + ") : "All categories";
-    const more = ["event", "course", "roundNo", "lie", "dist", "club", "ptype"].filter((k) => (st[k] || []).length).length + (Number(st.span) > 0 ? 1 : 0);
+    const more = ["event", "course", "roundNo", "lie", "dist", "club", "gear", "ptype"].filter((k) => (st[k] || []).length).length + (Number(st.span) > 0 ? 1 : 0);
     const btn = el("button", { type: "button", class: "filters-panel-btn", "aria-expanded": open ? "true" : "false" }, [
       el("span", { class: "fp-title" }, "Filters"),
       el("span", { class: "fp-sum" }, [src, yrs, tourCounts.length ? tourName(st.tour[0] ?? "") : "", def.label, cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
@@ -941,7 +946,7 @@ export function sgDashboard(container, opts) {
     catsName(),
     list(st.year, "years"), list(st.event, "tournaments"), list(st.course, "courses"),
     st.roundNo.length ? (st.roundNo.length <= 2 ? `Round ${st.roundNo.join(" & ")}` : `${st.roundNo.length} rounds`) : "",
-    list(st.lie, "lies"), list(st.dist, "distances", (d) => d.split("|").slice(1).join("|")), list(st.club, "clubs"),
+    list(st.lie, "lies"), list(st.dist, "distances", (d) => d.split("|").slice(1).join("|")), list(st.club, "clubs"), list(st.gear, "products", (v) => gearLabel(v)),
     Number(st.span) > 0 ? (Number(st.span) === 1 ? "last month" : `last ${st.span} months`) : "",
   ].filter(Boolean).join(" \u00b7 ");
 
@@ -1194,6 +1199,7 @@ export function sgDashboard(container, opts) {
         ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,
             title: "SG / round", compare: lieCompare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie", { rankPick: !!lieCompare }))])
         : byCat);
+      const byClub = sgByClubBox(mine, null); if (byClub) blocks.push(byClub);
     } else {
       const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
       // Stat · Rank · Player Avg · Player Best · Player Worst · All Players (the heading is
@@ -1239,6 +1245,7 @@ export function sgDashboard(container, opts) {
           title: "SG / round", compare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
         }), "", `${cat}-${fieldName}`, { rankPick: !fieldIsSummary() })));
       }
+      const byClubC = sgByClubBox(mine, cat); if (byClubC) visuals.push(byClubC);
       if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
     }
 
@@ -1491,6 +1498,22 @@ export function sgDashboard(container, opts) {
   }
 
   /* ------------------------------ building blocks ------------------------------ */
+  // (update 210) SG by Club: strokes gained a round with each club model (brand + model), best first.
+  // A model with only a few rounds is marked, so 3 rounds isn't read like 60.
+  const FEW = 10;
+  function sgByClubBox(mine, cat) {
+    if (!isSG() || !mine?.length) return null;
+    const rs = cat ? mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === cat) })) : mine;
+    const list = gearList(rs).filter((g) => g.kind !== "Ball").map((g) => ({ ...g, perRound: g.sg / mine.length }))
+      .sort((a, b) => b.perRound - a.perRound).slice(0, 14);
+    if (!list.length) return null;
+    const few = list.filter((g) => g.rounds < FEW);
+    return panelBox("SG by Club", [
+      chartBox((c, as) => barChart(c, list.map((g) => `${g.label}${g.rounds < FEW ? " *" : ""}`), list.map((g) => g.perRound), { as, title: "SG / round",
+        tooltip: (i) => `${nf1.format(list[i].shots)} shots in ${list[i].rounds} round${list[i].rounds === 1 ? "" : "s"}${list[i].rounds < FEW ? " (only a few rounds: read with care)" : ""}` }), "", `club-${cat || "all"}`),
+      few.length ? el("p", { class: "muted small sg-few" }, `* Fewer than ${FEW} rounds with this club: ${few.map((g) => `${g.label} (${g.rounds})`).join(", ")}. Read these with care.`) : null,
+    ]);
+  }
   function panelBox(title, content, size = "") {
     return el("section", { class: `panel sg-box ${size}` }, [el("h3", {}, title), ...[].concat(content)]);
   }

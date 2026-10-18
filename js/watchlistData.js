@@ -3,7 +3,7 @@
 //   · their 3 best and 3 worst distances (strokes gained a shot, ranked when the field's lie / distance detail is here)
 //   · any other metrics picked, with ranks and trends
 //   · badges and alerts: big moves, hot streaks and slumps, form landmarks, best rounds, wins and milestones
-import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds } from "./sg.js";
+import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds, gearList, gearLabel } from "./sg.js";
 
 export const SG_KEYS = [["TOTAL", "SG: Total", "Total"], ["OTT", "Off-the-Tee", "OTT"], ["APP", "Approach", "APP"], ["ARG", "Around-the-Green", "ARG"], ["PUTT", "Putting", "PUTT"]];
 const CAT_SHORT = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
@@ -98,12 +98,15 @@ export function metricCatalog(field, own = [], detail = null, { noRanks = false 
     { group: "Strokes gained", items: [["sg:T2G", "SG: Tee to Green"], ["sg:sd", "Steadiness (round-to-round swing)"], ["sg:best", "Best round"]] },
     { group: "Results", items: noRanks ? [["res:rounds", "Rounds played"]] : [["res:wins", "Wins"], ["res:top10", "Top 10s"], ["res:rounds", "Rounds played"]] },
     stats.length ? { group: "Stats", items: stats.map((k) => [`stat:${k}`, statDef(k).label, RANGE_STATS.includes(k) ? rangeItems(k) : null]) } : null,
+    // (update 210) each club model (brand + model) and ball: strokes gained a round with it
+    (() => { const gl = gearList(own.flatMap((p) => p.rounds)).sort((a, b) => b.shots - a.shots); return gl.length ? { group: "Clubs and balls (strokes gained per round)", items: gl.map((g) => [`gear:${g.value}`, g.label]) } : null; })(),
     dists.size ? { group: "Distances (strokes gained per round)", items: [...dists.values()].sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || (distLead(a.dist) - distLead(b.dist) || String(a.dist).localeCompare(String(b.dist), undefined, { numeric: true }))).map((d) => [`dist:${d.cat}|${d.dist}`, `${CAT_SHORT[d.cat] || d.cat} · ${d.dist}`]) } : null,
   ].filter(Boolean);
 }
 export const metricLabel = (id) => {
   if (id.startsWith("stat:")) { const { k, cat, dist } = parseStatId(id); return cat ? `${statDef(k).label} · ${rangeLabel(k, cat, dist)}` : statDef(k).label; }
   if (id.startsWith("dist:")) { const [c, ...d] = id.slice(5).split("|"); return `${CAT_SHORT[c] || c} · ${d.join("|")}`; }
+  if (id.startsWith("gear:")) return gearLabel(id.slice(5));
   return { "sg:T2G": "SG: Tee to Green", "sg:sd": "Steadiness", "sg:best": "Best round", "res:wins": "Wins", "res:top10": "Top 10s", "res:rounds": "Rounds played" }[id] || id;
 };
 
@@ -237,6 +240,16 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       if (def.higher == null) higher = null;
       const hb = higher;
       info = () => formInfo(myS, val, { label: def.label, fmtFn: (x) => fmtStat(def, x), chFn: statCh(def), higher: hb, signed: false });
+    } else if (id.startsWith("gear:")) {
+      // (update 210) strokes gained a round with one club model or ball (a round without it counts as 0)
+      const g = id.slice(5), withG = (s) => s.gear === g || (s.ball && `Ball|${s.ball}` === g);
+      const gv = (rs) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + (withG(s) ? s.sg : 0), 0), 0) / rs.length : null);
+      const used = minePeriod.filter((rd) => rd.shots.some(withG)).length;
+      v = used ? gv(minePeriod) : null;
+      if (detail?.length && v != null) r = rankOf(new Map(detail.map((p) => { const rs = p.key === key ? minePeriod : applyFilters(sgOnly(p.rounds), f); return [p.key, p.key === key ? v : rs.some((rd) => rd.shots.some(withG)) ? gv(rs) : null]; })), key);
+      fmt = (y) => (y == null ? "\u2014" : `${fmtSG(y)}${used && used < 10 ? ` (${used} rd${used === 1 ? "" : "s"})` : ""}`);
+      trend = trendOf([...minePeriod].sort(byDate), gv);
+      info = () => { const fi = formInfo([...minePeriod].sort(byDate), gv, { label: `${gearLabel(g)} (strokes gained a round)`, fmtFn: fmtSG }); if (!used) fi.sub = `Not used in this period. ${fi.sub}`; else if (used < 10) fi.sub = `Only ${used} round${used === 1 ? "" : "s"} with it this period, so read this with care. ${fi.sub}`; return fi; };
     } else if (id.startsWith("dist:")) {
       // (update 172) strokes gained per round at that distance (all their rounds in the period count)
       const b = id.slice(5), o = myB.get(b);

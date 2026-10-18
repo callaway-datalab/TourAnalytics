@@ -11,7 +11,7 @@
 import { el, mount } from "./ui.js";
 import { getState } from "./auth.js";
 import { watchClientDatasets, getDatasetRows, getFieldStats, uploadDocument, logReportRun } from "./store.js";
-import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn } from "./sg.js";
+import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn, gearInfo } from "./sg.js";
 import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
@@ -125,6 +125,23 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     }
     products = [...m.values()].map((g) => ({ club: g.club, group: g.cat, shots: g.shots, rounds: g.rounds.size, perShot: g.sg / g.shots, total: g.sg }))
       .sort((a, b) => b.shots - a.shots);
+  }
+  // (update 210) each club model (brand + model) for Off-the-Tee, Approach and Putting: strokes gained a round with
+  // it (in the rounds it was used), and the stats recorded with it; a model with only a few rounds is flagged
+  let productTable = null;
+  if (byProduct) {
+    const SECS = [["OTT", "Off-the-Tee", [["drive", "Driving Distance"], ["fwy", "Fairway %"]]], ["APP", "Approach", [["hitGreen", "Hit Green %"], ["prox", "Proximity"]]], ["PUTT", "Putting", [["make", "Made Putt %"], ["goodLag", "Good Lag %"]]]];
+    productTable = SECS.map(([cat, name, stats]) => {
+      const m = new Map();
+      for (const rd of mine) {
+        for (const s of rd.shots) { if (s.cat !== cat || !s.gear) continue; const g = m.get(s.gear) || m.set(s.gear, { value: s.gear, sg: 0, shots: 0, rounds: new Set(), obs: {} }).get(s.gear); g.sg += s.sg; g.shots += s.w || 1; g.rounds.add(rd.key); }
+        for (const o of rd.obs || []) { if (!o.gear || (o.cat && o.cat !== cat) || !m.has(o.gear) || !stats.some(([k]) => k === o.k)) continue; const x = m.get(o.gear).obs[o.k] ||= { s: 0, w: 0 }; x.s += o.v * o.w; x.w += o.w; }
+      }
+      const rows = [...m.values()].map((g) => { const gi = gearInfo(g.value); return { label: `${gi.brand} ${gi.model}`.trim(), kind: gi.kind, rounds: g.rounds.size, shots: g.shots, perRound: g.sg / Math.max(1, g.rounds.size), stats: stats.map(([k]) => (g.obs[k]?.w ? { v: g.obs[k].s / g.obs[k].w, def: statDef(k) } : null)) }; })
+        .sort((a, b) => b.rounds - a.rounds || b.perRound - a.perRound);
+      return { cat, name, statNames: stats.map(([, l]) => l), rows };
+    }).filter((s) => s.rows.length);
+    if (!productTable.length) productTable = null;
   }
 
   // the top 3-5 things to work on: where the most strokes go, per round
@@ -303,7 +320,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (e) basics.push(e);
   }
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
+    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
 
@@ -628,7 +645,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y += 10;
   }
   /* ---------- by product ---------- */
-  if (a.products) {
+  if (a.products && !a.productTable) {
     section("Equipment", "By club model", 40 + Math.min(16, a.products.length) * 20);
     if (!a.products.length) { y = d.para("No club information on these shots: clubs come from Data Entry (with WITB) or a club column in an uploaded file.", M, y, W, { size: 9, color: P.grey }) + 6; }
     else {
@@ -768,6 +785,37 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       else { y += i === 0 ? extra * 0.2 : extra; head(q[0]); }
       gridBox(q[1], q[2]);
     });
+  }
+  /* ---------- (update 210) page 5: by product ---------- */
+  if (a.productTable) {
+    newPage();
+    y -= 12;
+    d.rect(M, y - 7, 3, 9, { fill: P.gold });
+    cap("Equipment", M + 9, y, P.gold); y += 23;
+    d.text("By Product", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
+    d.text("Each club model (brand and model): strokes gained a round in the rounds it was used, and the stats recorded with it. * Fewer than 10 rounds: read with care.", M, y + 4, { size: 7.5, color: P.grey });
+    y += 16;
+    const FEW = 10;
+    for (const sec of a.productTable) {
+      need(40 + Math.min(10, sec.rows.length) * 18);
+      y += 10; cap(sec.name, M, y, P.gold, "left", 8); y += 8;
+      // (only the stats that have a value for some model; columns spaced so the headings never touch)
+      const keepS = sec.statNames.map((_, i) => i).filter((i) => sec.rows.some((r) => r.stats[i]));
+      const cx = [M, null, M + W * 0.42, M + W * 0.55, M + W * 0.78, M + W];
+      const heads = ["Model", "Rounds", "SG / Rd", ...keepS.map((i) => sec.statNames[i])];
+      heads.forEach((h, i) => cap(h, i ? cx[i + 1] : cx[0], y + 4, P.soft, i ? "right" : "left"));
+      y += 8;
+      for (const r of sec.rows.slice(0, 12)) {
+        need(18); y += 15;
+        const few = r.rounds < FEW, col = few ? P.grey : P.ink;
+        d.text(`${wrap(r.label, W * 0.44, 9.5, true)[0]}${few ? " *" : ""}`, cx[0], y, { size: 9.5, bold: !few, color: col });
+        d.text(String(r.rounds), cx[2], y, { size: 9.5, color: few ? P.down : P.grey, align: "right" });
+        d.text(fmt2(r.perRound), cx[3], y, { size: 9.5, bold: true, color: few ? P.grey : tone(r.perRound), align: "right" });
+        keepS.forEach((si, i) => { const x = r.stats[si]; d.text(x ? fmtStat(x.def, x.v) : "\u2014", cx[4 + i], y, { size: 9.5, color: col, align: "right" }); });
+        d.line(M, y + 5, M + W, y + 5, { color: P.hair, width: 0.4 });
+      }
+      y += 8;
+    }
   }
   footer();
   return d.output();

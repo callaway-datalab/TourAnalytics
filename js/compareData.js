@@ -309,8 +309,8 @@ export function insights(sels) {
   const st = ok.filter((x) => x.s.sd != null).sort((a, b) => a.s.sd - b.s.sd);
   if (st.length >= 2 && st.at(-1).s.sd - st[0].s.sd >= 0.4) out.push({ tone: "", text: `Steadiest: ${st[0].name} (rounds within ±${st[0].s.sd.toFixed(2)} of the average); the most up and down: ${st.at(-1).name} (±${st.at(-1).s.sd.toFixed(2)}).` });
   // small samples
-  const small = ok.filter((x) => x.s.n < 8);
-  if (small.length) out.push({ tone: "muted", text: `${small.map((x) => x.name).join(", ")} ${small.length === 1 ? "has" : "have"} fewer than 8 rounds, so treat ${small.length === 1 ? "it" : "them"} as a hint, not a verdict.` });
+  const small = ok.filter((x) => x.s.n < 10); // (update 210: the same 10 as the warnings on the page)
+  if (small.length) out.push({ tone: "muted", text: `${small.map((x) => x.name).join(", ")} ${small.length === 1 ? "has" : "have"} fewer than 10 rounds, so treat ${small.length === 1 ? "it" : "them"} as a hint, not a verdict.` });
   return out;
 }
 export { fmt as fmtSigned, MONTHS };

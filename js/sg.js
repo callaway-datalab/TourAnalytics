@@ -57,6 +57,18 @@ const ALIASES = {
   ballModel: ["ballmodel", "ball", "balltype"],
 };
 
+// (update 210) every product seen in the data: "Driver|Callaway Elyte" (or "Ball|Titleist Pro V1") -> { kind, brand, model }
+const GEAR = new Map();
+export const gearInfo = (v) => GEAR.get(v) || (() => { const [kind, ...r] = String(v).split("|"); const name = r.join("|"); const sp = name.indexOf(" "); return { kind, brand: sp > 0 ? name.slice(0, sp) : name, model: sp > 0 ? name.slice(sp + 1) : "" }; })();
+const KIND_SHORT = { Driver: "Driver", "Non-Driver": "Non-Driver", "Fairway Wood": "Fairway", Hybrid: "Hybrid", Iron: "Irons", Wedge: "Wedges", Putter: "Putter", Ball: "Ball", Other: "Club" };
+/** "Callaway Elyte (Driver)" */
+export const gearLabel = (v) => { const g = gearInfo(v); return `${g.brand} ${g.model}`.trim() + ` (${KIND_SHORT[g.kind] || g.kind})`; };
+/** The products (club models and balls) on some shots: [{ value, label, kind, brand, model, shots, rounds }] */
+export function gearList(rounds) {
+  const m = new Map();
+  for (const rd of rounds) { const seen = new Set(); for (const s of rd.shots) for (const v of [s.gear, s.ball ? `Ball|${s.ball}` : null]) { if (!v) continue; const o = m.get(v) || m.set(v, { value: v, ...gearInfo(v), label: gearLabel(v), shots: 0, rounds: 0, sg: 0 }).get(v); o.shots += s.w || 1; o.sg += s.sg || 0; if (!seen.has(v)) { seen.add(v); o.rounds++; } } }
+  return [...m.values()];
+}
 // A club's bag group from its name ("Driver", "3w"/"3 Wood", "4H"/"4 Hybrid", "7i"/"7 Iron", "56°"/"SW"…).
 export function clubGroup(name) {
   const s = String(name).toLowerCase().replace(/\s+/g, "");
@@ -261,7 +273,10 @@ export function prepare(rows, idx) {
     const clubCat = src ? (/non[\s-]*driver/i.test(src) ? "Non-Driver" : clubMemo(src)) : null;
     const brand = known(get(r, "clubBrand")), model = known(get(r, "clubModel"));
     const bb = known(get(r, "ballBrand")), bm = known(get(r, "ballModel"));
-    return { club, clubCat, gear: brand && model ? `${clubCat || "Other"}|${brand} ${model}` : null, ball: bb && bm ? `${bb} ${bm}` : null };
+    const gear = brand && model ? `${clubCat || "Other"}|${brand} ${model}` : null, ball = bb && bm ? `${bb} ${bm}` : null;
+    if (gear && !GEAR.has(gear)) GEAR.set(gear, { kind: clubCat || "Other", brand, model });
+    if (ball && !GEAR.has(`Ball|${ball}`)) GEAR.set(`Ball|${ball}`, { kind: "Ball", brand: bb, model: bm });
+    return { club, clubCat, gear, ball };
   };
   const hasEquip = ["club", "clubType", "clubBrand", "clubModel", "ballBrand", "ballModel"].some((f) => idx[f] !== undefined);
   for (const r of rows) {
@@ -674,6 +689,7 @@ export function filterOptions(rounds, cat) {
   for (const s of shots) if (s.club && !clubCats[s.club]) clubCats[s.club] = s.clubCat || "Other";
   return {
     club: clubs.sort((a, b) => clubOrder(a) - clubOrder(b) || a.localeCompare(b)),
+    gear: uniq(shots.flatMap((s) => [s.gear, s.ball ? `Ball|${s.ball}` : null])), // (update 210)
     clubCats, // club -> its bag group (Driver, Fairway Wood, Hybrid, Iron, Wedge, Putter)
     year: uniq(rounds.map((r) => r.year)).sort().reverse(),
     tour: uniq(rounds.map((r) => r.tour)).sort(),
@@ -715,7 +731,7 @@ export function roundFilter(f = {}) {
  */
 export function applyFilters(rounds, f = {}) {
   const set = (v) => { const a = Array.isArray(v) ? v : v ? [v] : []; return a.length ? new Set(a.map(String)) : null; };
-  const lies = set(f.lie), clubs = set(f.club);
+  const lies = set(f.lie), clubs = set(f.club), gears = set(f.gear); // (update 210: gear = club models / balls)
   let rs = rounds.filter(roundFilter({ ...f, months: 0 }));
   if (f.span > 0) rs = rs.slice(-f.span);
   if (f.months > 0) rs = rs.filter(roundFilter({ months: f.months }));
@@ -725,7 +741,7 @@ export function applyFilters(rounds, f = {}) {
   const byCat = new Map();
   for (const d of dists) { const [c, ...rest] = String(d).split("|"); const l = rest.join("|"); if (!byCat.has(c)) byCat.set(c, new Set()); byCat.get(c).add(l); }
   const distOk = (s) => { if (!byCat.size) return true; const want = byCat.get(s.cat) || byCat.get(""); return !want || want.has(s.dist); };
-  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!lies || lies.has(s.lie)) && (!clubs || clubs.has(s.club)) && distOk(s)) }));
+  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!lies || lies.has(s.lie)) && (!clubs || clubs.has(s.club)) && (!gears || gears.has(s.gear) || (s.ball && gears.has(`Ball|${s.ball}`))) && distOk(s)) }));
 }
 
 /** Strokes gained per round, attempts per round and SG per attempt for a (filtered) set of rounds. */
