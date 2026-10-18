@@ -164,7 +164,8 @@ export function statSets(rounds, filters) {
 /* (update 194) The stats for each category of shot, and at each distance: [{ cat, label, rows: [{ key, label, def, dist, values, w }] }]
  * obsSets: each selection's rounds with their stats (statSets). A stat recorded for the whole round (no category)
  * goes with the category it belongs to (Driving Distance and Fairways off the tee, Make % with putting …). */
-const HOME = { drive: ["OTT"], fwy: ["OTT"], gir: ["OTT", "APP"], hitGreen: ["APP"], prox: ["APP"], pinHigh: ["APP"], onLine: ["APP"], ud: ["ARG"], scramble: ["ARG"], putts: ["PUTT"], make: ["PUTT"], goodLag: ["PUTT"], threePutt: ["PUTT"] };
+const HOME = { drive: ["OTT"], fwy: ["OTT"], gir: ["OTT"], // (update 209: GIR off the tee only, as "GIR % (Par 4/5)")
+  hitGreen: ["APP"], prox: ["APP"], pinHigh: ["APP"], onLine: ["APP"], ud: ["ARG"], scramble: ["ARG"], putts: ["PUTT"], make: ["PUTT"], goodLag: ["PUTT"], threePutt: ["PUTT"] };
 export function statBlocks(obsSets, inc = null) {
   const SECTIONS = [...CATEGORIES, ["ROUND", "Scoring"]];
   const cell = (list) => { let s = 0, w = 0; for (const o of list) { s += o.v * o.w; w += o.w; } return w ? { v: s / w, w } : null; };
@@ -173,7 +174,7 @@ export function statBlocks(obsSets, inc = null) {
   obsSets.forEach((rs, i) => {
     for (const rd of rs) for (const o of rd.obs || []) {
       if (o.k === "sg" || o.v == null || !Number.isFinite(o.v)) continue;
-      for (const sec of homeOf(o)) {
+      for (const sec of o.k === "gir" ? ["OTT"] : homeOf(o)) {
         if (inc?.cats && !inc.cats.has(sec) && sec !== "ROUND") continue;
         if (inc?.cats && sec === "ROUND") continue; // (only some shots counted: whole-round scoring doesn't fit)
         if (o.cat && o.dist && inc?.dists?.has(`${o.cat}|*`) && !inc.dists.has(`${o.cat}|${o.dist}`)) continue;
@@ -188,7 +189,7 @@ export function statBlocks(obsSets, inc = null) {
   return SECTIONS.filter(([sec]) => by.has(sec)).map(([sec, label]) => {
     const rows = [];
     for (const [k, per] of [...by.get(sec)].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))) {
-      const def = statDef(k);
+      const def = k === "gir" ? { ...statDef(k), label: "GIR % (Par 4/5)" } : statDef(k);
       // all distances: the file's own all-distance rows when it has them, otherwise every row pooled
       const overall = per.map((list) => { const whole = list.filter((o) => !o.dist); return cell(whole.length ? whole : list); });
       if (overall.every((c) => !c)) continue;
@@ -313,3 +314,78 @@ export function insights(sels) {
   return out;
 }
 export { fmt as fmtSigned, MONTHS };
+
+/* ------------------------------------------------ (update 209) product usage ------------------------------------------------ */
+/**
+ * How each product (or group of products) is used across the players in the rounds (every round must carry
+ * whose it is, rd.pk: everyone's rounds pooled). sels: [{ clubs: ["Driver|Callaway Elyte", …] }].
+ * A player's model at a tournament is the one they hit the most shots with there (of that kind of club).
+ * Returns null when fewer than 3 players are in the rounds.
+ */
+export function productUsage(rounds, sels) {
+  const rs = sgRounds(rounds).filter((rd) => rd.pk);
+  if (new Set(rs.map((rd) => rd.pk)).size < 3) return null;
+  const kindOf = (v) => (v.startsWith("Ball|") ? "Ball" : v.split("|")[0]);
+  const valOf = (s, kind) => (kind === "Ball" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear && s.gear.startsWith(`${kind}|`) ? s.gear : null);
+  const cache = new Map();
+  const byKind = (kind) => {
+    if (cache.has(kind)) return cache.get(kind);
+    // player → event → { counts: Map(value → shots), date }
+    const pe = new Map(), evDate = new Map(), roundsWith = new Map();
+    for (const rd of rs) {
+      const ek = evKey(rd);
+      if (!evDate.has(ek) || dk(rd.date) > evDate.get(ek)) evDate.set(ek, dk(rd.date));
+      const seen = new Set();
+      for (const s of rd.shots) {
+        const v = valOf(s, kind); if (!v) continue;
+        const p = pe.get(rd.pk) || pe.set(rd.pk, new Map()).get(rd.pk);
+        const e = p.get(ek) || p.set(ek, new Map()).get(ek);
+        e.set(v, (e.get(v) || 0) + (s.w || 1));
+        if (!seen.has(v)) { seen.add(v); roundsWith.set(v, (roundsWith.get(v) || 0) + 1); }
+      }
+    }
+    const main = (counts) => [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const events = [...new Set([...pe.values()].flatMap((m) => [...m.keys()]))];
+    const out = { pe, evDate, events, roundsWith, main };
+    cache.set(kind, out);
+    return out;
+  };
+  const pct = (a, b) => (b ? (100 * a) / b : null);
+  return sels.map((sel) => {
+    const S = new Set(sel.clubs || []);
+    if (!S.size) return null;
+    const kind = kindOf([...S][0]);
+    const { pe, evDate, events, roundsWith, main } = byKind(kind);
+    let playerEvents = 0, inEvents = 0, users = new Set(), switchIn = 0, switchOut = 0, kept = 0;
+    const perEvent = new Map(events.map((e) => [e, 0]));
+    const runs = [];
+    for (const [pk, evs] of pe) {
+      const seq = [...evs].sort((a, b) => (evDate.get(a[0]) || "").localeCompare(evDate.get(b[0]) || ""));
+      let run = 0, startedBySwitch = false, prevIn = null, used = false;
+      for (const [ek, counts] of seq) {
+        const any = [...counts.keys()].some((v) => S.has(v));
+        if (any) { used = true; perEvent.set(ek, perEvent.get(ek) + 1); }
+        const isIn = S.has(main(counts));
+        playerEvents++; if (isIn) inEvents++;
+        if (isIn) { if (prevIn === false) { switchIn++; startedBySwitch = true; } run++; }
+        else { if (prevIn === true) { switchOut++; runs.push({ n: run, switched: startedBySwitch }); run = 0; startedBySwitch = false; } }
+        prevIn = isIn;
+      }
+      if (run) runs.push({ n: run, switched: startedBySwitch, ongoing: true });
+      if (used) users.add(pk);
+      if (used && prevIn) kept++;
+    }
+    const sw = runs.filter((r) => r.switched);
+    const avg = (xs) => (xs.length ? xs.reduce((a, r) => a + r.n, 0) / xs.length : null);
+    return {
+      players: users.size,
+      perEvent: events.length ? [...perEvent.values()].reduce((a, b) => a + b, 0) / events.length : null,
+      share: pct(inEvents, playerEvents),
+      rounds: [...S].reduce((a, v) => a + (roundsWith.get(v) || 0), 0),
+      switchIn, switchOut,
+      stay: avg(sw.length ? sw : runs), staySwitched: sw.length,
+      kept: users.size ? pct(kept, users.size) : null,
+      events: events.length,
+    };
+  });
+}

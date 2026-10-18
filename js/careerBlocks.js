@@ -61,7 +61,7 @@ function conditionsBlock(rs, go, ui, redraw) {
   const rows = list.map((x, j) => {
     const pick = pickOf(x);
     const w = Math.abs(x.vsAll) / max * 50;
-    const row = el(pick ? "button" : "div", { type: pick ? "button" : null, class: `cmp-cond${pick ? " cmp-tap" : ""}`, title: pick ? "Look at it in Deep Dives" : null }, [
+    const row = el(pick ? "button" : "div", { type: pick ? "button" : null, class: `cmp-cond${pick ? " cmp-tap" : ""}`, title: pick ? "Look at it in Compare" : null }, [
       el("span", { class: "cmp-cond-rank" }, String(j + 1)),
       el("span", { class: "cmp-cond-l" }, [x.label, el("span", { class: "muted" }, ` · ${x.n} rds`)]),
       el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.vsAll >= 0 ? "pos" : "neg"}`, style: x.vsAll >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),

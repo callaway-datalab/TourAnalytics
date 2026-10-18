@@ -22,7 +22,7 @@ const ROUTES = [
   ["/course-prep", "signed-in", () => import("./views/practice.js").then((m) => ({ render: (main, ctx) => m.render(main, { ...ctx, coursePrep: true }) })), "course-prep"],
   ["/live", "signed-in", () => import("./views/comingSoon.js"), "live"],
   ["/comparisons", "signed-in", () => import("./views/comparisons.js"), "comparisons"], // (update 188)
-  ["/product-usage", "signed-in", () => import("./views/comingSoon.js"), "product-usage"],
+  ["/product-usage", "signed-in", () => Promise.resolve({ render: () => { location.hash = "#/comparisons"; } }), "product-usage"], // (update 209: product usage is in Compare)
   ["/practice", "signed-in", () => import("./views/practice.js"), "practice"],
   // (the old Practice Recommendations / Practice Tracking links open Practice)
   ["/practice/recommendations", "signed-in", () => import("./views/practice.js"), "practice"],

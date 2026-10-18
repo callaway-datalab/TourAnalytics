@@ -104,8 +104,8 @@ const sectionsFor = (kind) => {
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
-    ["Deep Dives", "#/comparisons", ["comparisons"]], // (update 205: renamed from Comparisons)
-    ["Product Usage", "#/product-usage", ["product-usage"], { soon: true, off: true }], // (update 163; 205: greyed out, not clickable, until it has data)
+    ["Compare", "#/comparisons", ["comparisons"]], // (update 205: Deep Dives; 209: Compare)
+    // (update 209) no Product Usage tab: product usage is in Compare (staff can compare products across everyone)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
   const planItems = [

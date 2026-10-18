@@ -3854,3 +3854,10 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 /* (update 208) Where they play their best: the whole name, wrapped if it's long */
 .cmp-cond-l { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; line-height: 1.25; }
 .cmp-h2h { margin-top: 0.6rem; }
+/* (update 209) Compare: one table with group rows; two groups; product usage */
+.cmp-table tr.cmp-grp td { padding-top: 0.9rem; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #d4b483; border-bottom: 1px solid rgba(212,180,131,0.25); white-space: normal; }
+.cmp-guide-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.cmp-groups { display: grid; gap: 0.45rem; width: 100%; }
+.cmp-group-row { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; flex-wrap: wrap; padding: 0.5rem 0.7rem; border-radius: 12px; background: rgba(255,255,255,0.04); }
+.cmp-group-row > span { font-weight: 600; }
+.cmp-guide-o:disabled { opacity: 0.5; cursor: not-allowed; }
