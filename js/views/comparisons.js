@@ -14,7 +14,7 @@ import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { playerPicker } from "../playerPicker.js";
-import { CATEGORIES, fmtStat, fmtSG, gearInfo, gearLabel } from "../sg.js";
+import { CATEGORIES, fmtStat, fmtSG, gearInfo, gearLabel, statDef } from "../sg.js";
 import {
   COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statSets,
   products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage, sgRounds,
@@ -310,7 +310,7 @@ export async function render(main) {
     draw();
   }
   // (update 211/212) no player: back to the very start (for staff, "Compare everyone"). Start over does this too.
-  function clearAll(keepPicks = false) { placeDim = null; player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
+  function clearAll(keepPicks = false) { placeDim = null; player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; pb.pair = null; pb.season = "any"; if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
   /* (update 214) the start screen: who to look at. Everyone, one player, several, or a player (or several) and everyone.
      Next goes on to the question that fits: one player or everyone → what to compare; several → how to compare them. */
   let startPicks = []; // [{ key, label }] (EVERY = everyone in the data)
@@ -450,7 +450,7 @@ export async function render(main) {
     if (!g.what) return "what";
     if (g.what === "time" && !g.when) return "when";
     if (g.what === "gear" && !g.pgDone) return "pbuild"; // (update 210: groups built by kind, brand, model and season)
-    if (g.what === "place" && !g.place) return "place";
+    if (g.what === "place" && !g.place) g.place = "tournaments"; // (update 217: no question; the page has a switch for each)
     if (g.what === "versus" && g.h2h === undefined) return "h2h";
     if (g.what === "versus" && !g.stretch) return "stretch";
     return "done";
@@ -470,6 +470,7 @@ export async function render(main) {
     const order = ["stretch", "h2h", "place", "pgDone", "one", "groups", "how", "models", "gear", "when", "what", "pone", "pgroups", "phow", "pvsrest", "playersDone", "who"];
     // (update 214) players and everyone: "each" was set for them, so going back from "what" is back to the start
     if (g.what === undefined && g.phow === "each" && chosen.some((p) => p.key === EVERY)) { delete g.phow; delete g.playersDone; delete g.who; }
+    else if (g.what === "place") { delete g.place; delete g.what; }
     else for (const k of order) if (g[k] !== undefined) { delete g[k]; if (k !== "playersDone") break; }
     if (!self && (!g.who || (g.who === "several" && !g.playersDone))) { clearAll(true); return; } // back to the start, the picks kept
     draw();
@@ -480,6 +481,7 @@ export async function render(main) {
     if (g.what === "time") {
       const n = opts.total >= 40 ? 10 : 5;
       if (g.when === "seasons") { mode = "years"; out = opts.years.slice(0, 2).map((y) => mk(`years:${y.value}`, y.label, { years: [y.value] }, "years", [y.value])); }
+      if (g.when === "formev") { const e = opts.events >= 10 ? 5 : 3; mode = "windows"; out = [mk(`windows:prevev:${e}`, `The ${e} events before that`, { prevEv: e }, "windows", [`prevev:${e}`]), mk(`windows:lastev:${e}`, `Last ${e} events`, { lastEv: e }, "windows", [`lastev:${e}`])]; }
       if (g.when === "form") { mode = "windows"; out = [mk(`windows:prev:${n}`, `The ${n} before that`, { prev: n }, "windows", [`prev:${n}`]), mk(`windows:last:${n}`, `Last ${n} rounds`, { last: n }, "windows", [`last:${n}`])]; }
       if (g.when === "career") { mode = "windows"; const y = opts.years[0]; out = [mk(`years:${y.value}`, `This season (${y.value})`, { years: [y.value] }, "years", [y.value]), mk("windows:all", "Career (everything)", {}, "windows", ["all"])]; }
       if (g.when === "own") { mode = "custom"; editOpen = true; }
@@ -515,18 +517,24 @@ export async function render(main) {
   /* ------------------------------ (update 210) building product groups ------------------------------ */
   // Kind of club, then brands, then (optionally) models, and a season: each pick becomes a group, e.g. "All Callaway
   // drivers" against "All TaylorMade drivers", "Callaway drivers · 2026" against "· 2025", or two models against one.
-  const pb = { kind: null, brands: new Set(), models: new Set(), season: "any", groups: [], q: "" };
+  const pb = { kind: null, brands: new Set(), models: new Set(), season: "any", groups: [], q: "", pair: null };
   function productBuilder(inGuide) {
-    const kinds = products(allRounds());
-    if (!kinds.length) return el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s clubType, clubBrand, clubModel, ballBrand and ballModel, every product shows here.")]);
+    // (update 217) the season first: every other pill (and its round count) is only what was used that season
+    const kindsAny = products(allRounds());
+    const yearsWith = opts.years.length > 1 ? opts.years : [];
+    if (pb.season !== "any" && !yearsWith.some((y) => y.value === pb.season)) pb.season = "any";
+    const kinds = pb.season === "any" ? kindsAny : products(roundsFor(allRounds(), { years: [pb.season] }));
+    if (!kindsAny.length) return el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s clubType, clubBrand, clubModel, ballBrand and ballModel, every product shows here.")]);
     // (update 212) the search box: every pill below narrows to what matches as you type (kind, brand or model)
     const words = (pb.q || "").toLowerCase().split(/\s+/).filter(Boolean);
     const hit = (k, o) => { const t = `${groupName(k.group)} ${k.group} ${o.brand} ${o.label}`.toLowerCase(); return words.every((w) => t.includes(w)); };
     const kindsAll = kinds.map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
     const kindsShown = words.length ? kindsAll.filter((k) => k.items.some((o) => hit(k, o))) : kindsAll;
     if (!pb.kind || !kindsAll.some((k) => k.group === pb.kind) || (kindsShown.length && !kindsShown.some((k) => k.group === pb.kind))) { pb.kind = (kindsShown[0] || kindsAll[0]).group; pb.brands.clear(); pb.models.clear(); }
-    const kindNow = kindsAll.find((k) => k.group === pb.kind);
+    const kindNow = kindsAll.find((k) => k.group === pb.kind) || { group: pb.kind, items: [] };
     const items = kindNow.items;
+    for (const m of [...pb.models]) if (!items.some((o) => o.value === m)) pb.models.delete(m); // (not used that season)
+    for (const b of [...pb.brands]) if (!items.some((o) => o.brand === b)) pb.brands.delete(b);
     const matches = words.length ? items.filter((o) => hit(kindNow, o)) : items;
     const brands = [...new Set([...matches.map((o) => o.brand), ...pb.brands])].filter((b) => items.some((o) => o.brand === b)).sort();
     const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n} rds`) : null]); b.addEventListener("click", click); return b; };
@@ -543,7 +551,12 @@ export async function render(main) {
     const shown = items.filter((o) => pb.brands.has(o.brand));
     const modelPills = (words.length ? [...new Map([...shown.filter((o) => matches.includes(o) || pb.models.has(o.value)), ...matches].map((o) => [o.value, o])).values()] : shown);
     const modelRow = pb.brands.size || words.length ? row(words.length && !pb.brands.size ? "Model" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else { pb.models.add(o.value); pb.brands.add(o.brand); } draw(); }))) : null;
-    const seasonRow = opts.years.length > 1 ? row("Season", [["any", "Any season"], ...opts.years.map((y) => [y.value, y.label])].map(([v, l]) => pill(pb.season === v, l, null, () => { pb.season = v; draw(); }))) : null;
+    // (update 217) each season's rounds with what's picked so far (the kind, its brands, its models); none: not offered
+    const pickedNow = new Set(pb.models.size ? [...pb.models] : pb.brands.size ? (kindsAny.find((k) => k.group === pb.kind)?.items || []).filter((o) => pb.brands.has(gearInfo(o.value).brand)).map((o) => o.value) : (kindsAny.find((k) => k.group === pb.kind)?.items || []).map((o) => o.value));
+    const isBall = pb.kind === "Ball";
+    const useIt = (rd) => rd.shots.some((x) => pickedNow.has(isBall ? (x.ball ? `Ball|${x.ball}` : "") : x.gear));
+    const yrCount = new Map(yearsWith.map((y) => [y.value, roundsFor(allRounds(), { years: [y.value] }).filter(useIt).length]));
+    const seasonRow = yearsWith.length ? row("Season", [["any", "Any season", null], ...yearsWith.filter((y) => yrCount.get(y.value) || pb.season === y.value).map((y) => [y.value, y.label, yrCount.get(y.value)])].map(([v, l, n]) => pill(pb.season === v, l, n, () => { pb.season = v; draw(); }))) : null;
     // the group the picks make
     const pickVals = pb.models.size ? [...pb.models] : shown.map((o) => o.value);
     const yrs = pb.season === "any" ? null : [pb.season];
@@ -553,9 +566,16 @@ export async function render(main) {
       const base = all ? `All ${bs.length === 1 ? `${bs[0]} ` : bs.length === 2 ? `${bs[0]} + ${bs[1]} ` : ""}${kindName.toLowerCase()}` : ls.length === 1 ? ls[0] : ls.length === 2 ? `${ls[0]} + ${ls[1]}` : `${ls[0]}, ${ls[1]} + ${ls.length - 2} more`;
       return `${base}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`;
     };
-    const groupOfVals = (vals, name) => { const f = { clubs: vals, ...(yrs ? { years: yrs } : {}) }; return { id: `product:${[...vals].sort().join("|")}${yrs ? `@${yrs[0]}` : ""}`, name, f, n: roundsFor(allRounds(), f).length }; };
+    // (update 217) combined with another product (a driver with one ball, say): only the shots hit with both
+    const pair = pb.pair, isBallNow = pb.kind === "Ball";
+    const groupOfVals = (vals, name) => {
+      let clubs = vals, balls = null;
+      if (pair) { if (isBallNow) { clubs = pair.clubs; balls = [...new Set([...pair.balls, ...vals])]; } else { clubs = [...new Set([...pair.clubs, ...vals])]; balls = pair.balls.length ? pair.balls : null; } }
+      const f = { clubs, ...(balls ? { balls } : {}), ...(yrs ? { years: yrs } : {}) };
+      return { id: `product:${[...clubs].sort().join("|")}${balls ? `+${[...balls].sort().join("|")}` : ""}${yrs ? `@${yrs[0]}` : ""}`, name: pair ? `${pair.name} + ${name}` : name, f, n: roundsFor(allRounds(), f).length };
+    };
     const cur = pickVals.length ? groupOfVals(pickVals, nameOf(pickVals, !pb.models.size)) : null;
-    const taken = new Set((inGuide ? pb.groups : sels.filter((s) => s.f?.clubs)).flatMap((x) => x.f.clubs));
+    const taken = new Set((inGuide ? pb.groups : sels.filter((s) => s.f?.clubs)).flatMap((x) => x.f.clubs || []));
     const restVals = items.map((o) => o.value).filter((v) => !taken.has(v) && !(cur && cur.f.clubs.includes(v)));
     const addGroup = (grp, redraw = true) => {
       if (!grp) return;
@@ -574,6 +594,16 @@ export async function render(main) {
     addB.addEventListener("click", () => addGroup(cur));
     const restB = restVals.length && (taken.size || cur) ? el("button", { type: "button", class: "btn ghost" }, `\uff0b All the other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`) : null;
     restB?.addEventListener("click", () => { if (cur) addGroup(cur); const g2 = groupOfVals(restVals.filter((v) => !(cur?.f.clubs || []).includes(v)), `All other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`); if (g2.f.clubs.length) addGroup(g2); });
+    // (update 217) "Combine with another product": keep this pick, then pick a ball (or another club) to go with it
+    const pairB = cur && !pair ? el("button", { type: "button", class: "btn ghost" }, "\ud83d\udd17 Combine with another product\u2026") : null;
+    pairB?.addEventListener("click", () => {
+      const vals = pb.models.size ? [...pb.models] : shown.map((o) => o.value);
+      pb.pair = { clubs: isBallNow ? [] : vals, balls: isBallNow ? vals : [], name: nameOf(vals, !pb.models.size).replace(/ \u00b7 \d{4}$/, ""), kind: pb.kind };
+      pb.kind = isBallNow ? (kindsAll.find((k) => k.group !== "Ball")?.group || pb.kind) : kindsAll.some((k) => k.group === "Ball") ? "Ball" : pb.kind;
+      pb.brands.clear(); pb.models.clear(); draw();
+    });
+    const pairBox = pair ? el("div", { class: "cmp-pair" }, [el("span", {}, [el("span", { class: "muted small" }, "Combined with "), el("strong", {}, pair.name)]), el("span", { class: "muted small" }, pair.balls.length || isBallNow ? "Only shots hit with both count. Pick another to add the same club with a different ball." : "Shots with either count."),
+      (() => { const x = el("button", { type: "button", class: "link" }, "Stop combining"); x.addEventListener("click", () => { pb.pair = null; draw(); }); return x; })()]) : null;
     const hint = cur && cur.n < 10 ? el("p", { class: "cmp-few" }, `Only ${cur.n} round${cur.n === 1 ? "" : "s"} with this: the numbers will be shaky.`) : null;
     let groupsBox = null, go = null;
     if (inGuide) {
@@ -586,14 +616,14 @@ export async function render(main) {
       go.addEventListener("click", () => { g.pgDone = true; applyGuide(); });
     }
     return el("div", { class: "cmp-pb" }, [
-      inGuide ? el("p", { class: "muted small" }, "Make each group: pick a kind of club, then one or more brands (and models, if you want just some), and a season. Add it, then make the next. E.g. all Callaway drivers vs all TaylorMade drivers, or two Callaway models vs one Titleist.") : null,
-      searchRow, kindRow, brandRow, modelRow, seasonRow, el("div", { class: "cmp-guide-row" }, [sepB, addB, restB]), hint, groupsBox, go,
+      inGuide ? el("p", { class: "muted small" }, "Make each group: pick a season (if you want one), a kind of club, then one or more brands (and models, if you want just some). Add it, then make the next. \u201cCombine with another product\u201d pairs it with a ball (or another club). E.g. all Callaway drivers vs all TaylorMade drivers, or two Callaway models vs one Titleist.") : null,
+      seasonRow, pairBox, searchRow, kindRow, brandRow, modelRow, el("div", { class: "cmp-guide-row" }, [sepB, addB, restB, pairB]), hint, groupsBox, go,
     ]);
   }
   function guideSummary() {
     const who = g.who === "everyone" ? "Everyone in the data" : g.who === "several" ? inPlay().map((p) => p.label).join(", ") : player.label;
-    const what = g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
-      : g.what === "gear" ? "products" : g.what === "place" ? `by ${g.place === "rounds" ? "round" : g.place.replace(/s$/, "")}` : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
+    const what = g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", formev: "the latest events against the ones before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
+      : g.what === "gear" ? "products" : g.what === "place" ? "where and when they play best" : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
     return `${who} · ${what}`;
   }
   function guideBox() {
@@ -660,6 +690,7 @@ export async function render(main) {
       body = [
         opts.years.length >= 2 ? opt("seasons", "This season vs last season", `${opts.years[0].value} against ${opts.years[1].value}`) : null,
         opts.total >= 2 * n ? opt("form", `Their last ${n} rounds vs the ${n} before`, "Are they playing better or worse lately?") : null,
+        opts.events >= 6 ? opt("formev", `Their last ${opts.events >= 10 ? 5 : 3} events vs the ${opts.events >= 10 ? 5 : 3} before`, "The same, tournament by tournament") : null, // (update 217)
         opts.years.length ? opt("career", "This season vs their whole career", "How this year compares with their usual") : null,
         opt("own", "I’ll choose the dates myself", "Opens the date picker"),
       ];
@@ -763,9 +794,10 @@ export async function render(main) {
         if (mode === "windows") {
           // (update 189) in three groups: recent form, the rounds just before, seasons and career
           // (update 190) the first two also take a number of your own
-          const groups = [["Recent form", (o) => o.value.startsWith("last:") && !o.own, "last"], ["The rounds just before", (o) => o.value.startsWith("prev:") && !o.own, "prev"], ["Seasons and career", (o) => o.value.startsWith("year:") || o.value === "all", null]];
-          const ownStaged = [...staged].filter(([v]) => !list.some((o) => o.value === v) && /^(last|prev):/.test(v)).map(([v, x]) => ({ value: v, label: x.label, n: Number(v.split(":")[1]) }));
-          mount(chipsBox, groups.map(([g, test, kind]) => { const xs = [...shown.filter(test), ...ownStaged.filter((o) => kind && o.value.startsWith(kind + ":"))]; return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, [...xs.map(chip), kind ? ownWindow(kind) : null])]); }));
+          const groups = [["Recent form", (o) => /^last(ev)?:/.test(o.value) && !o.own, "last"], ["The rounds or events just before", (o) => /^prev(ev)?:/.test(o.value) && !o.own, "prev"], ["Seasons and career", (o) => o.value.startsWith("year:") || o.value === "all", null]];
+          const ownStaged = [...staged].filter(([v]) => !list.some((o) => o.value === v) && /^(last|prev)(ev)?:/.test(v)).map(([v, x]) => ({ value: v, label: x.label, n: Number(v.split(":")[1]) }));
+          // (update 217) rounds or tournaments, each with a number of your own
+          mount(chipsBox, groups.map(([g, test, kind]) => { const xs = [...shown.filter(test), ...ownStaged.filter((o) => kind && (o.value.startsWith(kind + ":") || o.value.startsWith(kind + "ev:")))]; return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, [...xs.map(chip), kind ? ownWindow(kind) : null, kind ? ownWindow(kind + "ev") : null])]); }));
         } else if (mode === "product") {
           mount(chipsBox, prods.length ? prods.map((g) => { const xs = g.items.filter((o) => shown.includes(o)); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g.group === "Other" ? "Other clubs" : g.group === "Ball" ? "Golf balls" : g.group === "Non-Driver" ? "Non-Driver (tee shots)" : `${g.group}s`), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; })
             : el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s equipment (clubType, clubBrand, clubModel, ballBrand and ballModel columns), every club model shows here, grouped by type (drivers, fairway woods, hybrids, irons, wedges, putters), with the golf balls after them. Pick one model against another to see how they play with each.")]));
@@ -785,18 +817,19 @@ export async function render(main) {
       };
       // (update 190) your own window: "Last [n] rounds" / "The [n] before that"
       function ownWindow(kind) {
-        const inp = el("input", { type: "number", min: 1, max: 999, class: "cmp-own-n", "aria-label": kind === "last" ? "How many latest rounds" : "How many rounds before those", placeholder: "#" });
+        const ev = kind === "lastev" || kind === "prevev", base = ev ? kind.slice(0, -2) : kind, unit = ev ? "events" : "rounds", have = ev ? opts.events : opts.total;
+        const inp = el("input", { type: "number", min: 1, max: 999, class: "cmp-own-n", "aria-label": base === "last" ? `How many latest ${unit}` : `How many ${unit} before those`, placeholder: "#" });
         const go = el("button", { type: "button", class: "cmp-own-go", "aria-label": "Pick it" }, "\u2713");
         const pick = () => {
           const n = Math.round(Number(inp.value));
           if (!n || n < 1) { inp.focus(); return; }
-          if (kind === "last" ? n > opts.total : 2 * n > opts.total) { flashNote(kind === "last" ? `They have ${opts.total} rounds here.` : `Only ${opts.total} rounds here: ${Math.floor(opts.total / 2)} at most, so there are that many before them.`); return; }
-          const v = `${kind}:${n}`, label = kind === "last" ? `Last ${n} rounds` : `The ${n} before that`;
+          if (base === "last" ? n > have : 2 * n > have) { flashNote(base === "last" ? `They have ${have} ${unit} here.` : `Only ${have} ${unit} here: ${Math.floor(have / 2)} at most, so there are that many before them.`); return; }
+          const v = `${kind}:${n}`, label = base === "last" ? `Last ${n} ${unit}` : ev ? `The ${n} events before that` : `The ${n} before that`;
           staged.set(v, { label, f: windowFilter(v) }); drawChips(); drawAdd();
         };
         go.addEventListener("click", pick);
         inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); pick(); } });
-        return el("span", { class: "cmp-chip cmp-own" }, [kind === "last" ? "Last" : "The", inp, kind === "last" ? "rounds" : "before that", go]);
+        return el("span", { class: "cmp-chip cmp-own" }, [base === "last" ? "Last" : "The", inp, base === "last" ? unit : ev ? "events before that" : "before that", go]);
       }
       search?.addEventListener("input", () => { chipFilter = search.value; drawChips(); });
       drawChips(); drawAdd();
@@ -1020,6 +1053,28 @@ export async function render(main) {
      best first; tap one to see each visit (a tournament: every year there; a month: every tournament in it …) */
   const MN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const PLACE = [["tournaments", "Tournament", (rd) => rd.event || null], ["courses", "Course", (rd) => rd.course || null], ["months", "Month", (rd) => { const m = /^\d{4}-(\d{2})/.exec(String(rd.date || "")); return m ? MN[Number(m[1]) - 1] : null; }], ["rounds", "Round", (rd) => (rd.roundNo ? `Round ${rd.roundNo}` : null)]];
+  // (update 217) why they play better (or worse) there: each part of the game, and the stats behind it, against their usual
+  const WHY_STATS = ["drive", "fwy", "gir", "hitGreen", "prox", "scramble", "ud", "make", "goodLag", "putts"];
+  function whyBox(x, all) {
+    const per = (rds, k) => rds.reduce((t, rd) => t + rdSG(rd, k), 0) / rds.length;
+    const cats = CATEGORIES.map(([k, l]) => ({ k, l, here: per(x.rds, k), usual: per(all, k) })).map((c) => ({ ...c, d: c.here - c.usual }));
+    const better = x.v >= per(all, "TOTAL");
+    const lead = [...cats].sort((a, b) => (better ? b.d - a.d : a.d - b.d))[0];
+    const agg = (rds, k) => { let s = 0, w = 0, s2 = 0, w2 = 0; for (const rd of rds) for (const o of rd.obs || []) { if (o.k !== k || o.v == null || !Number.isFinite(o.v)) continue; const ww = o.w || 1; if (!o.dist) { s += o.v * ww; w += ww; } else { s2 += o.v * ww; w2 += ww; } } return w ? s / w : w2 ? s2 / w2 : null; };
+    const stats = WHY_STATS.map((k) => { const def = k === "gir" ? { ...statDef(k), label: "GIR %" } : statDef(k); const here = agg(x.rds, k), usual = agg(all, k); return here == null || usual == null ? null : { def, here, usual, d: here - usual }; }).filter(Boolean);
+    const good = (d, def) => (def.higher == null || Math.abs(d) < 1e-9 ? "" : (def.higher === false ? -d : d) > 0 ? "pos" : "neg");
+    const dTxt = (d, def) => { const f = fmtStat({ ...def, pct: false, unit: def.pct ? " pts" : def.unit }, Math.abs(d)); return `${d > 0 ? "+" : d < 0 ? "\u2212" : ""}${f}`; };
+    const why = Math.abs(lead.d) < 0.05 ? `No one part of the game stands out: it\u2019s a little from everywhere.` : `${better ? "Mostly" : "Mostly down to"} ${lead.l}: ${fmtSigned(lead.d)} a round ${lead.d >= 0 ? "better" : "worse"} than their usual here.`;
+    return el("div", { class: "cmp-why" }, [
+      el("p", { class: "cmp-why-h" }, [el("strong", {}, "Why? "), why]),
+      el("div", { class: "cmp-why-grid" }, [
+        el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Strokes gained a round"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Usual"), el("th", { class: "num" }, "Diff")])),
+          el("tbody", {}, cats.map((c) => el("tr", { class: c === lead && Math.abs(lead.d) >= 0.05 ? "strong" : "" }, [el("td", {}, c.l), el("td", { class: `num ${tone(c.here)}` }, fmtSG(c.here)), el("td", { class: "num muted" }, fmtSG(c.usual)), el("td", { class: `num ${tone(c.d)}` }, fmtSigned(c.d))])))]),
+        stats.length ? el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Stats"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Usual"), el("th", { class: "num" }, "Diff")])),
+          el("tbody", {}, stats.map((st) => el("tr", {}, [el("td", {}, st.def.label), el("td", { class: "num" }, fmtStat(st.def, st.here)), el("td", { class: "num muted" }, fmtStat(st.def, st.usual)), el("td", { class: `num ${good(st.d, st.def)}` }, dTxt(st.d, st.def))])))]) : null,
+      ]),
+    ]);
+  }
   function placeSection() {
     const ps = inPlay().filter((p) => p.key !== EVERY).slice(0, 4);
     const pool = ps.length ? ps : inPlay();
@@ -1059,7 +1114,7 @@ export async function render(main) {
             el("td", { class: "num" }, String(rds.length)), finishes.size ? el("td", { class: `num cmp-fin${f === "MC" ? " mc" : ""}` }, f) : null, el("td", { class: `num strong ${tone(v)}` }, fmtSG(v)),
             el("td", { class: "ph-hide cmp-rd-chips" }, placeDim === "rounds" ? dateTxt(rds[0].date) : [...rds].sort((a, b) => Number(a.roundNo || 0) - Number(b.roundNo || 0)).map((rd) => el("span", { class: `cmp-rd-chip ${tone(rdSG(rd, "TOTAL"))}` }, `R${rd.roundNo || "?"} ${fmtSG(rdSG(rd, "TOTAL"))}`)))]); })),
       ]));
-      return [row, det];
+      return [row, whyBox(x, all), det];
     });
     return el("section", { class: "panel cmp-sec career-sec" }, [
       el("div", { class: "cmp-sec-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), el("p", { class: "muted small" }, `Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total a round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit.`)]),
@@ -1280,7 +1335,7 @@ export async function render(main) {
   let lastUsage = null;
   function usageSection(items) {
     lastUsage = null;
-    const ps = sels.filter((s) => s.f?.clubs?.length);
+    const ps = sels.filter((s) => s.f?.clubs?.length && !s.f.balls); // (update 217: not a club-and-ball combination)
     const pooled = others.get(`${EVERY}|tour`);
     if (!ps.length || !pooled || source !== "tour") return null;
     // (a group for one season counts that season's tournaments only)

@@ -40,15 +40,19 @@ export function options(rounds) {
   const months = [...count(monthOf)].sort((a, b) => a[0] - b[0]).map(([v, n]) => ({ value: String(v), label: MONTHS[v], n }));
   const tours = [...count((rd) => rd.tour || null)].sort((a, b) => b[1] - a[1]).map(([v, n]) => ({ value: v, label: v, n }));
   const total = rs.length, season = years[0]?.value;
+  const evOrder = [...new Set(rs.map(evKey))]; // (oldest first)
   // time windows: the latest N rounds, and the season, last season and everything
   const windows = [
     ...[5, 10, 20, 40, 80].filter((n) => n < total).map((n) => ({ value: `last:${n}`, label: `Last ${n} rounds`, n })),
     ...[5, 10, 20, 40].filter((n) => n * 2 <= total).map((n) => ({ value: `prev:${n}`, label: `The ${n} before that`, n })),
+    // (update 217) by tournaments too
+    ...[3, 5, 10].filter((n) => n < evOrder.length).map((n) => ({ value: `lastev:${n}`, label: `Last ${n} events`, n: rs.filter((rd) => evOrder.slice(-n).includes(evKey(rd))).length })),
+    ...[3, 5, 10].filter((n) => 2 * n <= evOrder.length).map((n) => ({ value: `prevev:${n}`, label: `The ${n} events before that`, n: rs.filter((rd) => evOrder.slice(-2 * n, -n).includes(evKey(rd))).length })),
     season ? { value: `year:${season}`, label: `This season (${season})`, n: years[0].n } : null,
     years[1] ? { value: `year:${years[1].value}`, label: `Last season (${years[1].value})`, n: years[1].n } : null,
     { value: "all", label: "Career (everything)", n: total },
   ].filter(Boolean);
-  return { total, years, tournaments, courses, rounds: rounds_, months, tours, windows };
+  return { total, events: evOrder.length, years, tournaments, courses, rounds: rounds_, months, tours, windows };
 }
 
 /** The rounds in a selection, oldest first. f: { years, events, courses, roundNos, months, tours, from, to, last, prev, all } */
@@ -58,12 +62,15 @@ export function roundsFor(rounds, f = {}) {
   f = withSeason(rounds, f);
   // (update 190) a product: the rounds it was used in, and only its shots (so the numbers are that club's)
   // (update 191) a pick is a club model ("Iron|Callaway Apex") or a ball ("Ball|Callaway Chrome Tour")
-  if (f.clubs) { const cs = new Set(f.clubs); return roundsFor(rounds, { ...f, clubs: null }).map((rd) => ({ ...rd, shots: rd.shots.filter((x) => gearMatch(x, cs)) })).filter((rd) => rd.shots.length); }
+  // (update 217) f.balls: a club with one ball (a driver and a ball combined): only shots hit with both
+  if (f.clubs || f.balls) { const cs = f.clubs?.length ? new Set(f.clubs) : null, bs = f.balls?.length ? new Set(f.balls) : null; return roundsFor(rounds, { ...f, clubs: null, balls: null }).map((rd) => ({ ...rd, shots: rd.shots.filter((x) => comboMatch(x, cs, bs)) })).filter((rd) => rd.shots.length); }
   // (update 189) several picks together: every round in any of them, once each, oldest first
   if (f.any) { const seen = new Set(), out = []; for (const g of f.any) for (const rd of roundsFor(rounds, g)) if (!seen.has(rd.key || rd)) { seen.add(rd.key || rd); out.push(rd); } return out.sort(byDate); }
   let rs = sgRounds(rounds);
   if (f.last) return rs.slice(-f.last);
   if (f.prev) return rs.slice(-2 * f.prev, -f.prev);
+  // (update 217) the latest N tournaments (every round in them), or the N before those
+  if (f.lastEv || f.prevEv) { const order = [...new Set(rs.map(evKey))]; const keep = new Set(f.lastEv ? order.slice(-f.lastEv) : order.slice(-2 * f.prevEv, -f.prevEv)); return rs.filter((rd) => keep.has(evKey(rd))); }
   const set = (v) => (v && v.length ? new Set(v.map(String)) : null);
   const years = set(f.years), events = set(f.events), courses = set(f.courses), rnds = set(f.roundNos), months = set(f.months), tours = set(f.tours);
   rs = rs.filter((rd) => (!years || years.has(yearOf(rd))) && (!events || events.has(evKey(rd))) && (!courses || courses.has(rd.course || ""))
@@ -72,6 +79,7 @@ export function roundsFor(rounds, f = {}) {
   return rs;
 }
 const gearMatch = (x, cs) => cs.has(x.gear) || (x.ball && cs.has(`Ball|${x.ball}`));
+const comboMatch = (x, cs, bs) => (!cs || gearMatch(x, cs)) && (!bs || (x.ball && bs.has(`Ball|${x.ball}`)));
 
 /* (update 194) which shots count: some categories, and some distances within them ("APP|100-150 yds"). null = all. */
 export function includeShots(rs, inc) {
@@ -91,7 +99,7 @@ export function shotScope(sets) {
 }
 
 /** A window choice ("last:10", "prev:10", "year:2025", "all") as a filter. */
-export const windowFilter = (v) => (v === "all" ? {} : v.startsWith("last:") ? { last: Number(v.slice(5)) } : v.startsWith("prev:") ? { prev: Number(v.slice(5)) } : v.startsWith("year:") ? { years: [v.slice(5)] } : {});
+export const windowFilter = (v) => (v === "all" ? {} : v.startsWith("lastev:") ? { lastEv: Number(v.slice(7)) } : v.startsWith("prevev:") ? { prevEv: Number(v.slice(7)) } : v.startsWith("last:") ? { last: Number(v.slice(5)) } : v.startsWith("prev:") ? { prev: Number(v.slice(5)) } : v.startsWith("year:") ? { years: [v.slice(5)] } : {});
 
 /* ------------------------------------------------ the numbers ------------------------------------------------ */
 /** Everything the page shows for one selection. */
@@ -146,9 +154,9 @@ export function statSets(rounds, filters) {
   const all = sortedAll(rounds);
   return filters.map(function one(f) {
     f = withSeason(rounds, f);
-    if (f.clubs) { // (update 194) a product: only the stats recorded with it
-      const cs = new Set(f.clubs);
-      return one({ ...f, clubs: null }).map((rd) => { const obs = (rd.obs || []).filter((o) => gearMatch(o, cs)); return { ...rd, obs, has: new Set(obs.map((o) => o.k)), shots: [] }; }).filter((rd) => rd.obs.length);
+    if (f.clubs || f.balls) { // (update 194) a product: only the stats recorded with it (update 217: or a club with a ball)
+      const cs = f.clubs?.length ? new Set(f.clubs) : null, bs = f.balls?.length ? new Set(f.balls) : null;
+      return one({ ...f, clubs: null, balls: null }).map((rd) => { const obs = (rd.obs || []).filter((o) => comboMatch(o, cs, bs)); return { ...rd, obs, has: new Set(obs.map((o) => o.k)), shots: [] }; }).filter((rd) => rd.obs.length);
     }
     if (f.any) { const seen = new Set(); return f.any.flatMap((g) => one(g)).filter((rd) => (seen.has(rd) ? false : (seen.add(rd), true))); } // (update 189)
     if (f.last || f.prev) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }

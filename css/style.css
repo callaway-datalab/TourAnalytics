@@ -3959,3 +3959,12 @@ button.cmp-place { width: 100%; text-align: left; font: inherit; color: inherit;
 .cmp-rd-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .cmp-rd-chip { font-size: 0.72rem; padding: 0.1rem 0.4rem; border-radius: 6px; background: rgba(255,255,255,0.05); white-space: nowrap; }
 @media (max-width: 560px) { .cmp-place-det { padding-left: 0.3rem; } }
+/* (update 217) a product combined with another; why they play better somewhere */
+.cmp-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.8rem; padding: 0.6rem 0.8rem; border-radius: 12px; border: 1px dashed rgba(212,180,131,0.55); background: rgba(212,180,131,0.07); margin-bottom: 0.6rem; }
+.cmp-why { margin: 0.2rem 0 0.4rem 1.6rem; padding: 0.7rem 0.8rem; border-radius: 12px; background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); }
+.cmp-why-h { margin: 0 0 0.5rem; font-size: 0.88rem; }
+.cmp-why-h strong { color: #d4b483; }
+.cmp-why-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.4rem 1.2rem; }
+.cmp-why-t { font-size: 0.82rem; }
+@media (max-width: 560px) { .cmp-why { margin-left: 0; } }
+.cmp-why-t td.num { white-space: nowrap; } .cmp-why-t td:first-child { white-space: normal; }
