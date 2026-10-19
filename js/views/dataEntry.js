@@ -114,7 +114,7 @@ async function renderNew(main, flash, viewing = null) {
   // (update 223) the Tour: Practice, PGA, Korn Ferry, DPWT, or Other (type its name). It's the round's tour everywhere
   // (Stats, Compare, the Watchlist), next to the tour data uploaded for the player.
   let tourPick = "Practice";
-  const TOUR_OPTS = ["Practice", "PGA", "Korn Ferry", "DPWT", "Other"];
+  const TOUR_OPTS = ["Practice", "Other"]; // (update 224: just these two; Other: type the tour)
   const typePills = el("div", { class: "seg seg-wrap", role: "radiogroup", "aria-label": "Tour" });
   // Quick (score, putts, fairway, green in regulation) or full shot-by-shot detail
   let entryMode = "full";
@@ -132,7 +132,7 @@ async function renderNew(main, flash, viewing = null) {
   const tournamentIn = el("input", { placeholder: "e.g. Club Championship", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
   const tournamentField = el("label", { hidden: true, class: "rd-tname" }, [el("span", { class: "rd-label" }, ["Tournament name ", el("em", {}, "optional")]), tournamentIn]);
   // "Other": the tour's own name
-  const tourIn = el("input", { placeholder: "e.g. LIV Golf, Club league", autocomplete: "off", maxLength: 60, enterkeyhint: "next" });
+  const tourIn = el("input", { placeholder: "e.g. PGA, Korn Ferry, Club league", autocomplete: "off", maxLength: 60, enterkeyhint: "next" });
   const tourOther = el("label", { class: "rd-tour", hidden: true }, [el("span", { class: "rd-label" }, "Tour name"), tourIn]);
   const roundTour = () => (tourPick === "Other" ? tourIn.value.trim() : tourPick);
   const drawType = () => {
