@@ -202,7 +202,7 @@ export async function render(main) {
   // (update 194) opened from the Stats page on one comparison: "win:10" (the last 10 against the 10 before) or "cond:course:Riviera"
   function applyPick(p) {
     const m = /^win:(\d+)$/.exec(p);
-    if (m) { const n = Number(m[1]); mode = "windows"; sels = [{ id: `windows:prev:${n}`, name: `The ${n} before that`, f: { prev: n }, mode: "windows", values: [`prev:${n}`], color: COLORS[0] }, { id: `windows:last:${n}`, name: `Last ${n} rounds`, f: { last: n }, mode: "windows", values: [`last:${n}`], color: COLORS[1] }]; touched = true; return; }
+    if (m) { const n = Number(m[1]); mode = "windows"; sels = [{ id: `windows:prev:${n}`, name: `The ${n} rounds before that`, f: { prev: n }, mode: "windows", values: [`prev:${n}`], color: COLORS[0] }, { id: `windows:last:${n}`, name: `Last ${n} rounds`, f: { last: n }, mode: "windows", values: [`last:${n}`], color: COLORS[1] }]; touched = true; return; }
     const c = /^cond:(\w+):(.*)$/.exec(p);
     if (!c) return;
     const [, d, v] = c;
@@ -272,6 +272,7 @@ export async function render(main) {
       editBox(),
       items.length ? reportBar(items) : null,
       items.length ? selectedBar(items) : null,
+      items.length >= 2 ? boardSection(items) : null, // (update 220)
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length >= 2 ? standout(items) : null,
       items.length >= 2 ? yoySection(items) : null, // (update 216)
@@ -482,7 +483,7 @@ export async function render(main) {
       const n = opts.total >= 40 ? 10 : 5;
       if (g.when === "seasons") { mode = "years"; out = opts.years.slice(0, 2).map((y) => mk(`years:${y.value}`, y.label, { years: [y.value] }, "years", [y.value])); }
       if (g.when === "formev") { const e = opts.events >= 10 ? 5 : 3; mode = "windows"; out = [mk(`windows:prevev:${e}`, `The ${e} events before that`, { prevEv: e }, "windows", [`prevev:${e}`]), mk(`windows:lastev:${e}`, `Last ${e} events`, { lastEv: e }, "windows", [`lastev:${e}`])]; }
-      if (g.when === "form") { mode = "windows"; out = [mk(`windows:prev:${n}`, `The ${n} before that`, { prev: n }, "windows", [`prev:${n}`]), mk(`windows:last:${n}`, `Last ${n} rounds`, { last: n }, "windows", [`last:${n}`])]; }
+      if (g.when === "form") { mode = "windows"; out = [mk(`windows:prev:${n}`, `The ${n} rounds before that`, { prev: n }, "windows", [`prev:${n}`]), mk(`windows:last:${n}`, `Last ${n} rounds`, { last: n }, "windows", [`last:${n}`])]; }
       if (g.when === "career") { mode = "windows"; const y = opts.years[0]; out = [mk(`years:${y.value}`, `This season (${y.value})`, { years: [y.value] }, "years", [y.value]), mk("windows:all", "Career (everything)", {}, "windows", ["all"])]; }
       if (g.when === "own") { mode = "custom"; editOpen = true; }
     }
@@ -512,7 +513,7 @@ export async function render(main) {
     incCats = new Set(); incDists = new Set(); staged = new Map(); chipFilter = "";
     touched = true; g.open = false;
     draw();
-    root.querySelector(".cmp-cards, .cmp-edit")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    root.querySelector(placeDim ? ".career-sec" : ".cmp-cards, .cmp-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }); // (update 218: the ranked list, not the bottom)
   }
   /* ------------------------------ (update 210) building product groups ------------------------------ */
   // Kind of club, then brands, then (optionally) models, and a season: each pick becomes a group, e.g. "All Callaway
@@ -537,7 +538,7 @@ export async function render(main) {
     for (const b of [...pb.brands]) if (!items.some((o) => o.brand === b)) pb.brands.delete(b);
     const matches = words.length ? items.filter((o) => hit(kindNow, o)) : items;
     const brands = [...new Set([...matches.map((o) => o.brand), ...pb.brands])].filter((b) => items.some((o) => o.brand === b)).sort();
-    const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n} rds`) : null]); b.addEventListener("click", click); return b; };
+    const pill = (on, label, n, click, unit = "rds") => { const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n} ${n === 1 && unit === "models" ? "model" : unit}`) : null]); b.addEventListener("click", click); return b; };
     const row = (t, kids) => el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, t), el("div", { class: "cmp-chips" }, kids)]);
     const kindName = groupName(pb.kind);
     const search = el("input", { type: "search", class: "cmp-pb-q", placeholder: "Search products (e.g. Elyte, TaylorMade, putter)\u2026", autocomplete: "off", enterkeyhint: "search", value: pb.q || "" });
@@ -546,11 +547,13 @@ export async function render(main) {
       const again = root.querySelector(".cmp-pb-q"); if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch {} }
     });
     const searchRow = el("div", { class: "cmp-pb-search" }, [search, words.length && !kindsShown.length ? el("p", { class: "muted small" }, `Nothing matches \u201c${pb.q.trim()}\u201d.`) : null]);
-    const kindRow = row("Kind of club", kindsShown.map((k) => pill(pb.kind === k.group, groupName(k.group), null, () => { pb.kind = k.group; pb.brands.clear(); pb.models.clear(); draw(); })));
-    const brandRow = row("Brand", brands.map((b) => pill(pb.brands.has(b), b, null, () => { pb.brands.has(b) ? pb.brands.delete(b) : pb.brands.add(b); for (const m of [...pb.models]) if (!pb.brands.has(items.find((o) => o.value === m)?.brand)) pb.models.delete(m); draw(); })));
+    const kindRow = row("Kind of club", kindsShown.map((k) => pill(pb.kind === k.group, groupName(k.group), k.items.length, () => { pb.kind = k.group; pb.brands.clear(); pb.models.clear(); draw(); }, "models")));
+    const brandRow = row("Brand", brands.map((b) => pill(pb.brands.has(b), b, items.filter((o) => o.brand === b).length, () => { pb.brands.has(b) ? pb.brands.delete(b) : pb.brands.add(b); for (const m of [...pb.models]) if (!pb.brands.has(items.find((o) => o.value === m)?.brand)) pb.models.delete(m); draw(); }, "models")));
     const shown = items.filter((o) => pb.brands.has(o.brand));
-    const modelPills = (words.length ? [...new Map([...shown.filter((o) => matches.includes(o) || pb.models.has(o.value)), ...matches].map((o) => [o.value, o])).values()] : shown);
-    const modelRow = pb.brands.size || words.length ? row(words.length && !pb.brands.size ? "Model" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else { pb.models.add(o.value); pb.brands.add(o.brand); } draw(); }))) : null;
+    // (update 218) every model of that kind shows straight away; picking a brand narrows them to its models
+    const baseModels = pb.brands.size ? shown : items;
+    const modelPills = (words.length ? [...new Map([...baseModels.filter((o) => matches.includes(o) || pb.models.has(o.value)), ...(pb.brands.size ? matches.filter((o) => pb.brands.has(o.brand)) : matches)].map((o) => [o.value, o])).values()] : baseModels);
+    const modelRow = modelPills.length ? row(!pb.brands.size ? "Model (or pick a brand above for all its models)" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else { pb.models.add(o.value); pb.brands.add(o.brand); } draw(); }))) : null;
     // (update 217) each season's rounds with what's picked so far (the kind, its brands, its models); none: not offered
     const pickedNow = new Set(pb.models.size ? [...pb.models] : pb.brands.size ? (kindsAny.find((k) => k.group === pb.kind)?.items || []).filter((o) => pb.brands.has(gearInfo(o.value).brand)).map((o) => o.value) : (kindsAny.find((k) => k.group === pb.kind)?.items || []).map((o) => o.value));
     const isBall = pb.kind === "Ball";
@@ -824,12 +827,12 @@ export async function render(main) {
           const n = Math.round(Number(inp.value));
           if (!n || n < 1) { inp.focus(); return; }
           if (base === "last" ? n > have : 2 * n > have) { flashNote(base === "last" ? `They have ${have} ${unit} here.` : `Only ${have} ${unit} here: ${Math.floor(have / 2)} at most, so there are that many before them.`); return; }
-          const v = `${kind}:${n}`, label = base === "last" ? `Last ${n} ${unit}` : ev ? `The ${n} events before that` : `The ${n} before that`;
+          const v = `${kind}:${n}`, label = base === "last" ? `Last ${n} ${unit}` : ev ? `The ${n} events before that` : `The ${n} rounds before that`;
           staged.set(v, { label, f: windowFilter(v) }); drawChips(); drawAdd();
         };
         go.addEventListener("click", pick);
         inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); pick(); } });
-        return el("span", { class: "cmp-chip cmp-own" }, [base === "last" ? "Last" : "The", inp, base === "last" ? unit : ev ? "events before that" : "before that", go]);
+        return el("span", { class: "cmp-chip cmp-own" }, [base === "last" ? "Last" : "The", inp, base === "last" ? unit : ev ? "events before that" : "rounds before that", go]);
       }
       search?.addEventListener("input", () => { chipFilter = search.value; drawChips(); });
       drawChips(); drawAdd();
@@ -955,14 +958,37 @@ export async function render(main) {
     return el("div", { class: "cmp-custom" }, [el("label", { class: "cmp-field" }, [el("span", {}, "From"), from]), el("label", { class: "cmp-field" }, [el("span", {}, "To"), to]), name, rounds, add]);
   }
   // the chosen ones, as removable keys (hover to pick one out everywhere)
+  // (update 218) tap two or more in the bar, then Combine: they become one group (their rounds pooled)
+  let joinPick = new Set();
+  function combineSels() {
+    const pick = sels.filter((s) => joinPick.has(s.id));
+    if (pick.length < 2) return;
+    const fs = pick.map((s) => s.f || {});
+    const sameYears = fs.every((f) => JSON.stringify(f.years || null) === JSON.stringify(fs[0].years || null));
+    const plainProducts = fs.every((f) => f.clubs?.length && !f.balls && Object.keys(f).every((k) => k === "clubs" || k === "years")) && sameYears;
+    const f = plainProducts ? { clubs: [...new Set(fs.flatMap((x) => x.clubs))], ...(fs[0].years ? { years: fs[0].years } : {}) } : { any: fs };
+    const name = pick.length === 2 ? `${pick[0].name} + ${pick[1].name}` : `${pick[0].name}, ${pick[1].name} + ${pick.length - 2} more`;
+    const at = sels.indexOf(pick[0]);
+    const one = { id: `combo:${pick.map((s) => s.id).sort().join("&")}`, name, full: pick.map((s) => s.full || s.name).join(" + "), f, mode: plainProducts ? "product" : pick[0].mode, values: plainProducts ? f.clubs : null, color: pick[0].color };
+    sels = sels.filter((s) => !joinPick.has(s.id)); sels.splice(Math.min(at, sels.length), 0, one);
+    joinPick = new Set(); touched = true; draw();
+  }
   function selectedBar(items) {
     const clear = el("button", { type: "button", class: "link cmp-clear" }, "Clear all");
-    clear.addEventListener("click", () => { sels = []; touched = true; draw(); });
+    clear.addEventListener("click", () => { sels = []; joinPick = new Set(); touched = true; draw(); });
+    for (const id of [...joinPick]) if (!sels.some((s) => s.id === id)) joinPick.delete(id);
+    const joinB = joinPick.size >= 2 ? el("button", { type: "button", class: "btn small cmp-join" }, `Combine these ${joinPick.size}`) : null;
+    joinB?.addEventListener("click", combineSels);
+    const hint = sels.length >= 2 ? el("span", { class: "muted small cmp-join-hint" }, joinPick.size ? (joinPick.size === 1 ? "Tap another to combine them" : "") : "Tap two or more to combine them") : null;
     return el("div", { class: "cmp-selbar" }, [...items.map((it) => {
       const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": it.base ? `Remove ${sels.find((s) => s.id === it.base)?.name} (for every player)` : `Remove ${it.name}` }, "\u2715");
       x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== (it.base || it.id)); touched = true; draw(); });
-      return hoverable(el("span", { class: "cmp-key", style: `--c:${it.color}`, title: it.full || it.name }, [el("i", { "aria-hidden": "true" }), el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]), it.i);
-    }), clear]);
+      const sid = it.base || it.id, on = joinPick.has(sid);
+      const key = el("span", { class: `cmp-key cmp-key-pick${on ? " picked" : ""}`, style: `--c:${it.color}`, title: `${it.full || it.name} (tap to pick it for combining)`, role: "button", tabindex: "0", "aria-pressed": String(on) }, [el("i", { "aria-hidden": "true" }), on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]);
+      const flip = (e) => { if (e.target.closest(".cmp-key-x")) return; on ? joinPick.delete(sid) : joinPick.add(sid); draw(); };
+      key.addEventListener("click", flip); key.addEventListener("keydown", (e) => { if (e.key === "Enter") flip(e); });
+      return hoverable(key, it.i);
+    }), joinB, hint, clear]);
   }
   const hoverable = (node, i) => { node.addEventListener("mouseenter", () => { root.dataset.hl = String(i); }); node.addEventListener("mouseleave", () => { delete root.dataset.hl; }); return node; };
 
@@ -993,7 +1019,42 @@ export async function render(main) {
       used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
       it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
       it.s.n ? el("p", { class: "cmp-card-tap" }, "Tap for the tournaments \u203a") : null,
-    ]), it), it.i)));
+    ]), it), it.i)).concat(compCard(items, head)));
+  }
+  // (update 218) the "Comparison" card: how far apart they are (the best against each of the others), and why
+  function compCard(items0, head) {
+    const live = items0.filter((it) => it.s.n);
+    if (live.length < 2) return [];
+    const k = head[0], items = [...live].sort((a, b) => (b.s.sg[k] ?? -99) - (a.s.sg[k] ?? -99));
+    const top = items[0], rest = items.slice(1);
+    const cats = CATEGORIES.filter(([c]) => items.some((it) => Math.abs(it.s.sg[c] || 0) >= 0.005));
+    const gap = (a, b, c) => (a.s.sg[c] ?? 0) - (b.s.sg[c] ?? 0);
+    const node = el("article", { class: "panel cmp-card cmp-card-comp cmp-tap", tabindex: "0", role: "button", "aria-haspopup": "dialog" }, [
+      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, "Comparison")]),
+      el("p", { class: "cmp-card-meta" }, rest.length === 1 ? `${top.name} against ${rest[0].name}` : `${top.name} (best) against the others`),
+      ...rest.slice(0, 3).map((b) => el("div", { class: "cmp-comp-row" }, [
+        el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(gap(top, b, k)) }, fmtSigned(gap(top, b, k))), el("span", {}, rest.length === 1 ? `SG: ${head[1]} a round, the difference` : `ahead of ${b.name}`)]),
+        cats.length > 1 && rest.length === 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${cats.length},1fr)` }, cats.map(([c]) => el("div", {}, [el("span", {}, c), el("strong", { class: tone(gap(top, b, c)) }, fmtSigned(gap(top, b, c)))]))) : null,
+      ])),
+      rest.length > 3 ? el("p", { class: "muted small" }, `+ ${rest.length - 3} more`) : null,
+      el("p", { class: "cmp-card-tap" }, "Tap for why \u203a"),
+    ]);
+    const go = () => openWhy(top, rest);
+    node.addEventListener("click", go); node.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    return [node];
+  }
+  const cut = (t) => (t.length > 16 ? `${t.slice(0, 15).trim()}\u2026` : t);
+  function openWhy(top, rest) {
+    const say = (b) => (lead) => `Mostly ${lead.l}: ${top.name} ${lead.d >= 0 ? "gains" : "loses"} ${Math.abs(lead.d).toFixed(2)} a round ${lead.d >= 0 ? "more than" : "against"} ${b.name}.`;
+    const blocks = rest.map((b) => el("div", { class: "wl-pop-block" }, [rest.length > 1 ? el("p", { class: "wl-pop-t" }, `${top.name} vs ${b.name} \u00b7 ${fmtSigned(top.s.sg.TOTAL - b.s.sg.TOTAL)} a round`) : null, whyCore(top.rs, b.rs, cut(top.name), cut(b.name), say(b), true)]));
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Comparison" }, el("div", { class: "gx-pop wl-pop cmp-rd-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Comparison"), el("h2", {}, rest.length === 1 ? `${top.name} vs ${rest[0].name}` : `${top.name} against the others`), el("p", { class: "gx-sub" }, "Where the difference comes from: strokes gained in each part of the game, and the stats behind it.")]), close]),
+      el("div", { class: "wl-pop-body" }, blocks)]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    close.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll"); document.body.appendChild(overlay); close.focus();
   }
   // (update 215) a card opens its rounds: tournament by tournament, and each one opens to its rounds
   const rdSG = (rd, k) => rd.shots.reduce((t, s) => t + (k === "TOTAL" || s.cat === k ? s.sg : 0), 0);
@@ -1052,34 +1113,66 @@ export async function render(main) {
   /* (update 216) where and when they play best: every course (tournament, month, round) across all their appearances,
      best first; tap one to see each visit (a tournament: every year there; a month: every tournament in it …) */
   const MN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const PLACE = [["tournaments", "Tournament", (rd) => rd.event || null], ["courses", "Course", (rd) => rd.course || null], ["months", "Month", (rd) => { const m = /^\d{4}-(\d{2})/.exec(String(rd.date || "")); return m ? MN[Number(m[1]) - 1] : null; }], ["rounds", "Round", (rd) => (rd.roundNo ? `Round ${rd.roundNo}` : null)]];
+  const PLACE = [["tournaments", "Tournament", (rd) => rd.event || null], ["courses", "Course", (rd) => rd.course || null], ["months", "Month", (rd) => { const m = /^\d{4}-(\d{2})/.exec(String(rd.date || "")); return m ? MN[Number(m[1]) - 1] : null; }], ["rounds", "Round", (rd) => (rd.roundNo ? `Round ${rd.roundNo}` : null)],
+    // (update 219) the season, and where it fell in a run of tournaments
+    ["seasons", "Season", (rd) => yr(rd)], ["weeks", "Event week", (rd) => weekTag.get(`${rd.pk}|${evk(rd)}`) || null]];
+  let weekTag = new Map(), placePick = new Set();
+  const WEEKS = ["First event back", "2nd week in a row", "3rd+ week in a row"];
   // (update 217) why they play better (or worse) there: each part of the game, and the stats behind it, against their usual
   const WHY_STATS = ["drive", "fwy", "gir", "hitGreen", "prox", "scramble", "ud", "make", "goodLag", "putts"];
   function whyBox(x, all) {
     const per = (rds, k) => rds.reduce((t, rd) => t + rdSG(rd, k), 0) / rds.length;
+    return whyCore(x.rds, all, "Here", "Usual", (lead, better) => `${better ? "Mostly" : "Mostly down to"} ${lead.l}: ${fmtSigned(lead.d)} a round ${lead.d >= 0 ? "better" : "worse"} than their usual here.`, x.v >= per(all, "TOTAL"));
+  }
+  // (update 218) the parts of the game, and the stats, of one set of rounds (a) against another (b)
+  function whyCore(aRds, bRds, la, lb, say, better) {
+    const per = (rds, k) => rds.reduce((t, rd) => t + rdSG(rd, k), 0) / rds.length;
+    const x = { rds: aRds }, all = bRds;
     const cats = CATEGORIES.map(([k, l]) => ({ k, l, here: per(x.rds, k), usual: per(all, k) })).map((c) => ({ ...c, d: c.here - c.usual }));
-    const better = x.v >= per(all, "TOTAL");
     const lead = [...cats].sort((a, b) => (better ? b.d - a.d : a.d - b.d))[0];
     const agg = (rds, k) => { let s = 0, w = 0, s2 = 0, w2 = 0; for (const rd of rds) for (const o of rd.obs || []) { if (o.k !== k || o.v == null || !Number.isFinite(o.v)) continue; const ww = o.w || 1; if (!o.dist) { s += o.v * ww; w += ww; } else { s2 += o.v * ww; w2 += ww; } } return w ? s / w : w2 ? s2 / w2 : null; };
     const stats = WHY_STATS.map((k) => { const def = k === "gir" ? { ...statDef(k), label: "GIR %" } : statDef(k); const here = agg(x.rds, k), usual = agg(all, k); return here == null || usual == null ? null : { def, here, usual, d: here - usual }; }).filter(Boolean);
     const good = (d, def) => (def.higher == null || Math.abs(d) < 1e-9 ? "" : (def.higher === false ? -d : d) > 0 ? "pos" : "neg");
     const dTxt = (d, def) => { const f = fmtStat({ ...def, pct: false, unit: def.pct ? " pts" : def.unit }, Math.abs(d)); return `${d > 0 ? "+" : d < 0 ? "\u2212" : ""}${f}`; };
-    const why = Math.abs(lead.d) < 0.05 ? `No one part of the game stands out: it\u2019s a little from everywhere.` : `${better ? "Mostly" : "Mostly down to"} ${lead.l}: ${fmtSigned(lead.d)} a round ${lead.d >= 0 ? "better" : "worse"} than their usual here.`;
+    const why = Math.abs(lead.d) < 0.05 ? `No one part of the game stands out: it\u2019s a little from everywhere.` : say(lead, better);
     return el("div", { class: "cmp-why" }, [
       el("p", { class: "cmp-why-h" }, [el("strong", {}, "Why? "), why]),
       el("div", { class: "cmp-why-grid" }, [
-        el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Strokes gained a round"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Usual"), el("th", { class: "num" }, "Diff")])),
+        el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Strokes gained a round"), el("th", { class: "num" }, la), el("th", { class: "num" }, lb), el("th", { class: "num" }, "Diff")])),
           el("tbody", {}, cats.map((c) => el("tr", { class: c === lead && Math.abs(lead.d) >= 0.05 ? "strong" : "" }, [el("td", {}, c.l), el("td", { class: `num ${tone(c.here)}` }, fmtSG(c.here)), el("td", { class: "num muted" }, fmtSG(c.usual)), el("td", { class: `num ${tone(c.d)}` }, fmtSigned(c.d))])))]),
-        stats.length ? el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Stats"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Usual"), el("th", { class: "num" }, "Diff")])),
+        stats.length ? el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Stats"), el("th", { class: "num" }, la), el("th", { class: "num" }, lb), el("th", { class: "num" }, "Diff")])),
           el("tbody", {}, stats.map((st) => el("tr", {}, [el("td", {}, st.def.label), el("td", { class: "num" }, fmtStat(st.def, st.here)), el("td", { class: "num muted" }, fmtStat(st.def, st.usual)), el("td", { class: `num ${good(st.d, st.def)}` }, dTxt(st.d, st.def))])))]) : null,
       ]),
     ]);
+  }
+  // (update 219) the picked ones, side by side (every table and chart), as selections
+  function placeBar(groups, dimL) {
+    for (const k of [...placePick]) if (!groups.has(k)) placePick.delete(k);
+    const n = placePick.size;
+    const go = el("button", { type: "button", class: "btn cmp-add small", disabled: n >= 2 ? null : true }, n >= 2 ? `Compare these ${n} \u2192` : `Tick two or more numbers to compare them`);
+    go.addEventListener("click", () => {
+      const fOf = (k, rds) => ({ tournaments: { events: [...new Set(rds.map(evk))] }, weeks: { events: [...new Set(rds.map(evk))] }, courses: { courses: [k] }, months: { months: [String(MN.indexOf(k))] }, rounds: { roundNos: [k.replace("Round ", "")] }, seasons: { years: [k] } }[placeDim]);
+      const list = [...placePick].slice(0, Math.max(2, Math.floor(MAX_SEL / Math.max(1, inPlay().length))));
+      sels = list.map((k, i) => ({ id: `place:${placeDim}:${k}`, name: k, full: `${dimL}: ${k}`, f: fOf(k, groups.get(k)), mode: "filters", color: COLORS[i % COLORS.length] }));
+      mode = "filters"; placePick = new Set(); touched = true; g.open = false; draw();
+      root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    const clear = n ? el("button", { type: "button", class: "link" }, "Clear picks") : null;
+    clear?.addEventListener("click", () => { placePick = new Set(); draw(); });
+    return el("div", { class: "cmp-place-bar" }, [go, clear]);
   }
   function placeSection() {
     const ps = inPlay().filter((p) => p.key !== EVERY).slice(0, 4);
     const pool = ps.length ? ps : inPlay();
     const rsOf = (p) => sgRounds(roundsOfKey(p.key)).map((rd) => ({ ...rd, pk: rd.pk || p.key }));
     const all = pool.flatMap(rsOf);
+    // (update 219) each tournament: the first one back after a break (3+ weeks off), or the 2nd / 3rd+ in a row
+    weekTag = new Map();
+    for (const p of pool) {
+      const evs = [...new Map(all.filter((rd) => rd.pk === p.key).map((rd) => [evk(rd), rd.date])).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+      let run = 0, prev = null;
+      for (const [k, d] of evs) { const t = Date.parse(d); run = prev != null && t - prev < 17 * 864e5 ? run + 1 : 1; prev = t; weekTag.set(`${p.key}|${k}`, WEEKS[Math.min(run, 3) - 1]); }
+    }
     const dims = PLACE.filter(([, , f]) => new Set(all.map(f).filter(Boolean)).size > 1);
     if (!dims.length) return el("section", { class: "panel cmp-empty" }, el("p", { class: "muted" }, "Not enough variety in these rounds to rank."));
     if (!dims.some(([d]) => d === placeDim)) placeDim = dims[0][0];
@@ -1089,14 +1182,20 @@ export async function render(main) {
     for (const rd of all) { const k = keyOf(rd); if (!k) continue; (groups.get(k) || groups.set(k, []).get(k)).push(rd); }
     const evsOf = (rds) => [...rds.reduce((m, rd) => { const k = `${rd.pk}|${evk(rd)}`; (m.get(k) || m.set(k, []).get(k)).push(rd); return m; }, new Map()).values()];
     let list = [...groups].map(([k, rds]) => ({ k, rds, n: rds.length, evs: evsOf(rds).length, v: rds.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / rds.length, byP: pool.map((p) => { const x = rds.filter((rd) => rd.pk === p.key); return x.length ? x.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / x.length : null; }) }));
-    list = placeDim === "rounds" ? list.sort((a, b) => b.v - a.v) : list.sort((a, b) => (b.n >= 3) - (a.n >= 3) || b.v - a.v);
+    list = placeDim === "rounds" || placeDim === "seasons" || placeDim === "weeks" ? list.sort((a, b) => b.v - a.v) : list.sort((a, b) => (b.n >= 3) - (a.n >= 3) || b.v - a.v);
     const max = Math.max(0.05, ...list.map((x) => Math.abs(x.v - avgAll)));
-    const tabs = el("div", { class: "cmp-seg small cmp-dims" }, dims.map(([d, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${placeDim === d ? " on" : ""}` }, l); b.addEventListener("click", () => { placeDim = d; placeOpen = new Set(); draw(); }); return b; }));
+    const tabs = el("div", { class: "cmp-seg small cmp-dims" }, dims.map(([d, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${placeDim === d ? " on" : ""}` }, l); b.addEventListener("click", () => { placeDim = d; placeOpen = new Set(); placePick = new Set(); draw(); }); return b; }));
     const many = pool.length > 1;
     const rows = list.flatMap((x, i) => {
       const on = placeOpen.has(x.k), w = Math.abs(x.v - avgAll) / max * 50;
       const row = el("button", { type: "button", class: `cmp-cond cmp-tap cmp-place${on ? " on" : ""}${x.n < 3 ? " few" : ""}`, "aria-expanded": String(on) }, [
-        el("span", { class: "cmp-cond-rank" }, String(i + 1)),
+        (() => { // (update 219) tick some, then "Compare these"
+          const picked = placePick.has(x.k);
+          const ck = el("span", { class: `cmp-cond-rank cmp-place-ck${picked ? " on" : ""}`, role: "checkbox", "aria-checked": String(picked), tabindex: "0", title: picked ? "Picked to compare (tap to take it out)" : "Pick it to compare" }, picked ? "\u2713" : String(i + 1));
+          const flip = (e) => { e.stopPropagation(); e.preventDefault(); picked ? placePick.delete(x.k) : placePick.add(x.k); draw(); };
+          ck.addEventListener("click", flip); ck.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") flip(e); });
+          return ck;
+        })(),
         el("span", { class: "cmp-cond-l" }, [el("span", { class: "cmp-ev-caret", "aria-hidden": "true" }, on ? "\u25be " : "\u25b8 "), x.k, el("span", { class: "muted" }, ` \u00b7 ${x.evs} visit${x.evs === 1 ? "" : "s"}, ${x.n} rd${x.n === 1 ? "" : "s"}`)]),
         el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.v >= avgAll ? "pos" : "neg"}`, style: x.v >= avgAll ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
         el("strong", { class: `cmp-cond-v ${tone(x.v)}` }, fmtSG(x.v)),
@@ -1117,9 +1216,38 @@ export async function render(main) {
       return [row, whyBox(x, all), det];
     });
     return el("section", { class: "panel cmp-sec career-sec" }, [
-      el("div", { class: "cmp-sec-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), el("p", { class: "muted small" }, `Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total a round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit.`)]),
+      el("div", { class: "cmp-sec-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), el("p", { class: "muted small" }, `Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total a round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit and why, or tick numbers to compare them side by side.`)]),
       tabs,
+      placeBar(groups, dimL),
       el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
+    ]);
+  }
+  /* (update 220) the leaderboard at the top of every comparison: best first, each bar against that player's usual
+     (their average over every round here). Tap one for its tournaments. */
+  function boardSection(items) {
+    const live = items.filter((it) => it.s.n);
+    if (live.length < 2) return null;
+    const avgOf = new Map();
+    const usual = (it) => { const pk = it.pk || inPlay()[0]?.key; if (!avgOf.has(pk)) { const rs = sgRounds(roundsOfKey(pk)); avgOf.set(pk, rs.length ? rs.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / rs.length : 0); } return avgOf.get(pk); };
+    const list = [...live].map((it) => ({ it, v: it.s.sg.TOTAL, d: it.s.sg.TOTAL - usual(it) })).sort((a, b) => b.v - a.v);
+    const max = Math.max(0.05, ...list.map((x) => Math.abs(x.d)));
+    const pks = new Set(live.map((it) => it.pk || inPlay()[0]?.key));
+    const rows = list.map((x, i) => {
+      const w = Math.abs(x.d) / max * 50;
+      const row = el("button", { type: "button", class: "cmp-cond cmp-tap cmp-board-row", title: "See its tournaments", "data-s": x.it.i }, [
+        el("span", { class: "cmp-cond-rank" }, String(i + 1)),
+        el("span", { class: "cmp-cond-l" }, [el("i", { class: "cmp-dot", style: `--c:${x.it.color}` }), x.it.name, el("span", { class: "muted" }, ` \u00b7 ${x.it.s.n} rd${x.it.s.n === 1 ? "" : "s"}`), x.it.s.n < FEW ? el("span", { class: "cmp-few-mark", title: "Only a few rounds" }, " *") : null]),
+        el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.d >= 0 ? "pos" : "neg"}`, style: x.d >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
+        el("strong", { class: `cmp-cond-v ${tone(x.v)}` }, fmtSG(x.v)),
+        el("span", { class: `cmp-cond-d ${tone(x.d)}` }, fmtSigned(x.d)),
+      ]);
+      row.addEventListener("click", () => openRounds(x.it));
+      return hoverable(row, x.it.i);
+    });
+    const avgTxt = pks.size === 1 ? ` (${fmtSG(usual(live[0]))})` : "";
+    return el("section", { class: "panel cmp-sec career-sec cmp-board" }, [
+      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Leaderboard"), el("p", { class: "muted small" }, `Best first: SG: Total a round, and how far above or below ${pks.size === 1 ? "their" : "each player\u2019s"} average over every round${avgTxt}. Tap one for its tournaments.`)]),
+      el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, pks.size === 1 ? "their average" : "their averages"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
     ]);
   }
   function timelineSection(items) {

@@ -44,7 +44,7 @@ export function options(rounds) {
   // time windows: the latest N rounds, and the season, last season and everything
   const windows = [
     ...[5, 10, 20, 40, 80].filter((n) => n < total).map((n) => ({ value: `last:${n}`, label: `Last ${n} rounds`, n })),
-    ...[5, 10, 20, 40].filter((n) => n * 2 <= total).map((n) => ({ value: `prev:${n}`, label: `The ${n} before that`, n })),
+    ...[5, 10, 20, 40].filter((n) => n * 2 <= total).map((n) => ({ value: `prev:${n}`, label: `The ${n} rounds before that`, n })),
     // (update 217) by tournaments too
     ...[3, 5, 10].filter((n) => n < evOrder.length).map((n) => ({ value: `lastev:${n}`, label: `Last ${n} events`, n: rs.filter((rd) => evOrder.slice(-n).includes(evKey(rd))).length })),
     ...[3, 5, 10].filter((n) => 2 * n <= evOrder.length).map((n) => ({ value: `prevev:${n}`, label: `The ${n} events before that`, n: rs.filter((rd) => evOrder.slice(-2 * n, -n).includes(evKey(rd))).length })),

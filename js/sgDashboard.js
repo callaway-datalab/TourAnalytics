@@ -97,7 +97,8 @@ export function sgDashboard(container, opts) {
   function careerBox(only = "conditions") {
     if (!meAll || opts.practice || opts.emptyNote || !isSG()) return null;
     const tours = !opts.entered && st.tour?.length ? new Set(st.tour) : null;
-    const rs = statRounds(meAll.rounds, "sg").filter((rd) => !tours || tours.has(rd.tour || ""));
+    let rs = statRounds(meAll.rounds, "sg").filter((rd) => !tours || tours.has(rd.tour || ""));
+    if (st.gear?.length) rs = applyFilters(rs, { gear: st.gear }); // (update 219: a product picked: only its shots, in the rounds it was used)
     const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw(), only });
     return blocks.length ? el("div", { class: "cmp career" }, blocks) : null;
   }
@@ -165,7 +166,7 @@ export function sgDashboard(container, opts) {
     st.gear = st.gear.filter((c) => opt.gear.includes(c));
     const f = { months: Number(st.span), year: st.year, tour: st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, gear: st.gear, ptype: st.ptype };
     // Rankings from the shared summary can't follow lie / distance / club.
-    const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [] } : f;
+    const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [], gear: [] } : f; // (update 219: nor product)
     lastRankF = rankF;
     const slicedField = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, rankF)) }));
     lastSliced = slicedField;
@@ -212,7 +213,7 @@ export function sgDashboard(container, opts) {
         // (update 205) "Getting better or worse?" right under the hero card
         return [heroBox(mine, slicedField, f), careerBox("trajectory"), me ? summaryBox(mine, slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
       })()),
-      careerBox(),
+      // (update 219) "Where they play their best" is on the Compare page now
     ]);
     if (focusKey) {
       const again = [...container.querySelectorAll(focusTag || "*")].find((n) => (n.getAttribute("aria-label") || n.textContent).trim() === focusKey);
@@ -1199,7 +1200,7 @@ export function sgDashboard(container, opts) {
         ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,
             title: "SG / round", compare: lieCompare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie", { rankPick: !!lieCompare }))])
         : byCat);
-      const byClub = sgByClubBox(mine, null); if (byClub) blocks.push(byClub);
+      // (update 218) SG by Club: only with one category picked (below)
     } else {
       const comparable = !(fieldIsSummary() && narrowed()); // the field summary has no lie / distance detail
       // Stat · Rank · Player Avg · Player Best · Player Worst · All Players (the heading is
@@ -1504,9 +1505,10 @@ export function sgDashboard(container, opts) {
   function sgByClubBox(mine, cat) {
     if (!isSG() || !mine?.length) return null;
     const rs = cat ? mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === cat) })) : mine;
+    if (!cat) return null; // (update 218: only for one category, and only when more than one product was used in it)
     const list = gearList(rs).filter((g) => g.kind !== "Ball").map((g) => ({ ...g, perRound: g.sg / mine.length }))
       .sort((a, b) => b.perRound - a.perRound).slice(0, 14);
-    if (!list.length) return null;
+    if (list.length < 2) return null;
     const few = list.filter((g) => g.rounds < FEW);
     return panelBox("SG by Club", [
       chartBox((c, as) => barChart(c, list.map((g) => `${g.label}${g.rounds < FEW ? " *" : ""}`), list.map((g) => g.perRound), { as, title: "SG / round",

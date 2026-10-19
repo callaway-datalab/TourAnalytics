@@ -3968,3 +3968,27 @@ button.cmp-place { width: 100%; text-align: left; font: inherit; color: inherit;
 .cmp-why-t { font-size: 0.82rem; }
 @media (max-width: 560px) { .cmp-why { margin-left: 0; } }
 .cmp-why-t td.num { white-space: nowrap; } .cmp-why-t td:first-child { white-space: normal; }
+.cmp.career { max-width: none !important; width: 100%; margin-left: 0 !important; margin-right: 0 !important; } /* (update 218: as wide as the other blocks) */
+/* (update 218) combining picks; the Comparison card */
+.cmp-key-pick { cursor: pointer; }
+.cmp-key-pick.picked { outline: 2px solid #d4b483; outline-offset: 1px; }
+.cmp-key-pick .cmp-chip-tick { color: #d4b483; }
+.cmp-join { min-height: 0 !important; padding: 0.3rem 0.9rem !important; }
+.cmp-join-hint { align-self: center; }
+.cmp-card-comp { border-style: dashed !important; background: linear-gradient(160deg, rgba(212,180,131,0.08), rgba(255,255,255,0.02)) !important; }
+.cmp-comp-row + .cmp-comp-row { margin-top: 0.4rem; }
+.cmp-comp-row .cmp-card-big strong { font-size: 1.6rem; }
+.cmp-rd-pop .cmp-why { margin-left: 0; }
+/* (update 219) pick places to compare */
+.cmp-place-bar { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin: 0.4rem 0; }
+.cmp-place-ck { cursor: pointer; display: inline-grid; place-items: center; min-width: 1.6rem; height: 1.6rem; border-radius: 7px; border: 1px solid rgba(255,255,255,0.22); }
+.cmp-place-ck:hover { border-color: #d4b483; }
+.cmp-place-ck.on { background: #d4b483; color: #111; border-color: #d4b483; font-weight: 700; }
+/* (update 220) the leaderboard at the top of a comparison */
+button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.cmp-board-row .cmp-dot { margin-right: 0.4rem; }
+.cmp[data-hl] .cmp-board-row:not([data-s]) { opacity: 1; }
+/* (update 220) phones: the bar under the name (the leaderboard and where they play best) */
+@media (max-width: 640px) {
+  .cmp-conds .cmp-cond:not(.cmp-cond-h) .cmp-cond-bar { display: block; grid-column: 2 / -1; grid-row: 2; height: 7px; margin-top: 0.15rem; }
+}

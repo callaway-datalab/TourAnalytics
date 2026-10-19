@@ -741,7 +741,9 @@ export function applyFilters(rounds, f = {}) {
   const byCat = new Map();
   for (const d of dists) { const [c, ...rest] = String(d).split("|"); const l = rest.join("|"); if (!byCat.has(c)) byCat.set(c, new Set()); byCat.get(c).add(l); }
   const distOk = (s) => { if (!byCat.size) return true; const want = byCat.get(s.cat) || byCat.get(""); return !want || want.has(s.dist); };
-  return rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!lies || lies.has(s.lie)) && (!clubs || clubs.has(s.club)) && (!gears || gears.has(s.gear) || (s.ball && gears.has(`Ball|${s.ball}`))) && distOk(s)) }));
+  const out = rs.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => (!cats || cats.includes(s.cat)) && (!lies || lies.has(s.lie)) && (!clubs || clubs.has(s.club)) && (!gears || gears.has(s.gear) || (s.ball && gears.has(`Ball|${s.ball}`))) && distOk(s)) }));
+  // (update 219) a product picked: only the rounds it was used in (so rounds, events, form and every count follow it)
+  return gears ? out.filter((rd) => rd.shots.length) : out;
 }
 
 /** Strokes gained per round, attempts per round and SG per attempt for a (filtered) set of rounds. */
