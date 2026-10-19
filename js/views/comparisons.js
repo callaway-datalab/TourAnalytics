@@ -254,7 +254,7 @@ export async function render(main) {
   // (update 209) staff: compare products across every player, with no player picked
   let productsOnly = false;
   function productsStart() {
-    if (!staff || players.length < 3) return null;
+    if (!staff || players.length < 3) return el("section", { class: "panel cmp-empty" }, [el("p", { class: "muted" }, "Type a player\u2019s name above to start.")]); // (update 212)
     const b = el("button", { type: "button", class: "cmp-guide-o" }, [el("strong", {}, "Compare everyone"), el("span", {}, lite ? "Needs a computer: it\u2019s every player\u2019s rounds, more than a phone can hold." : "Every player in the data together: products (who uses what, and how it performs), seasons, courses\u2026")]);
     if (lite) b.disabled = true; else b.addEventListener("click", startProducts);
     return el("section", { class: "panel cmp-guide" }, [el("p", { class: "cmp-guide-k" }, "Or, without picking a player"), el("div", { class: "cmp-guide-opts" }, b)]);
@@ -273,19 +273,18 @@ export async function render(main) {
     opts = options(allRounds()); defaults(); busy = ""; loadingFor = `${player.key}|tour`;
     draw();
   }
+  // (update 211/212) no player: back to the very start (for staff, "Compare everyone"). Start over does this too.
+  function clearAll() { player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
   function pickerNode() {
     if (self || players.length <= 1) return null; // (only one player: nothing to search)
-    const pp = playerPicker(new Map(players), (p) => { if (!p || (p.key === player?.key && !productsOnly)) return; productsOnly = false; const old = player?.key; player = { key: p.key, label: p.label }; chosen = [player, ...chosen.filter((x) => x.key !== old && x.key !== p.key)]; ls.set(LS_PLAYER, p.key); staged = new Map(); g = { open: true }; load(); });
+    const pp = playerPicker(new Map(players), (p) => { if (!p) { clearAll(); return; } if (p.key === player?.key && !productsOnly) return; productsOnly = false; const old = player?.key; player = { key: p.key, label: p.label }; chosen = [player, ...chosen.filter((x) => x.key !== old && x.key !== p.key)]; ls.set(LS_PLAYER, p.key); staged = new Map(); g = { open: true }; load(); });
     if (player && !productsOnly) pp.preset(player.key);
     const inp = pp.node.querySelector("input");
     inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
     inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && player && !productsOnly) pp.preset(player.key); }, 300));
     if (inp) inp.placeholder = "Type a player\u2019s name\u2026";
-    // (update 211) clear the player: back to the start (for staff, "Compare everyone")
-    const clearAll = () => { player = null; data = null; chosen = []; productsOnly = false; sels = []; g = { open: true }; loadingFor = null; ls.set(LS_PLAYER, ""); draw(); };
-    const x = player && !productsOnly ? el("button", { type: "button", class: "cmp-top-x", "aria-label": "Clear the player", title: "Clear the player" }, "\u2715") : null;
-    x?.addEventListener("click", clearAll);
-    return el("div", { class: "cmp-who cmp-top" }, [pp.node, x]);
+    // (update 212) the picker's own "Clear" button (as on the other pages) clears the player: back to the start
+    return el("div", { class: "cmp-who cmp-top" }, [pp.node]);
   }
   // (update 192) Players: who's being compared, above everything you pick (the one you're looking at is always in)
   let scope = [];
@@ -365,7 +364,7 @@ export async function render(main) {
     if (g.what === "versus" && !g.stretch) return "stretch";
     return "done";
   }
-  const restart = () => { g = { open: true }; draw(); root.querySelector(".cmp-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const restart = () => { if (!self && players.length > 1) { clearAll(); return; } g = { open: true }; draw(); root.querySelector(".cmp-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
   const answer = async (k, v) => {
     g[k] = v;
     if (k === "who") { if (v === "one") await setChosen([player]); else if (v === "everyone") await setChosen([]); else if (chosen.length < 2) await setChosen(chosen.length ? chosen : [player]); }
@@ -416,20 +415,34 @@ export async function render(main) {
   /* ------------------------------ (update 210) building product groups ------------------------------ */
   // Kind of club, then brands, then (optionally) models, and a season: each pick becomes a group, e.g. "All Callaway
   // drivers" against "All TaylorMade drivers", "Callaway drivers · 2026" against "· 2025", or two models against one.
-  const pb = { kind: null, brands: new Set(), models: new Set(), season: "any", groups: [] };
+  const pb = { kind: null, brands: new Set(), models: new Set(), season: "any", groups: [], q: "" };
   function productBuilder(inGuide) {
     const kinds = products(allRounds());
     if (!kinds.length) return el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s clubType, clubBrand, clubModel, ballBrand and ballModel, every product shows here.")]);
-    if (!pb.kind || !kinds.some((k) => k.group === pb.kind)) { pb.kind = kinds[0].group; pb.brands.clear(); pb.models.clear(); }
-    const items = kinds.find((k) => k.group === pb.kind).items.map((o) => ({ ...o, ...gearInfo(o.value) }));
-    const brands = [...new Set(items.map((o) => o.brand))].sort();
+    // (update 212) the search box: every pill below narrows to what matches as you type (kind, brand or model)
+    const words = (pb.q || "").toLowerCase().split(/\s+/).filter(Boolean);
+    const hit = (k, o) => { const t = `${groupName(k.group)} ${k.group} ${o.brand} ${o.label}`.toLowerCase(); return words.every((w) => t.includes(w)); };
+    const kindsAll = kinds.map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
+    const kindsShown = words.length ? kindsAll.filter((k) => k.items.some((o) => hit(k, o))) : kindsAll;
+    if (!pb.kind || !kindsAll.some((k) => k.group === pb.kind) || (kindsShown.length && !kindsShown.some((k) => k.group === pb.kind))) { pb.kind = (kindsShown[0] || kindsAll[0]).group; pb.brands.clear(); pb.models.clear(); }
+    const kindNow = kindsAll.find((k) => k.group === pb.kind);
+    const items = kindNow.items;
+    const matches = words.length ? items.filter((o) => hit(kindNow, o)) : items;
+    const brands = [...new Set([...matches.map((o) => o.brand), ...pb.brands])].filter((b) => items.some((o) => o.brand === b)).sort();
     const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n} rds`) : null]); b.addEventListener("click", click); return b; };
     const row = (t, kids) => el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, t), el("div", { class: "cmp-chips" }, kids)]);
     const kindName = groupName(pb.kind);
-    const kindRow = row("Kind of club", kinds.map((k) => pill(pb.kind === k.group, groupName(k.group), null, () => { pb.kind = k.group; pb.brands.clear(); pb.models.clear(); draw(); })));
+    const search = el("input", { type: "search", class: "cmp-pb-q", placeholder: "Search products (e.g. Elyte, TaylorMade, putter)\u2026", autocomplete: "off", enterkeyhint: "search", value: pb.q || "" });
+    search.addEventListener("input", () => {
+      const pos = search.selectionStart; pb.q = search.value; draw();
+      const again = root.querySelector(".cmp-pb-q"); if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch {} }
+    });
+    const searchRow = el("div", { class: "cmp-pb-search" }, [search, words.length && !kindsShown.length ? el("p", { class: "muted small" }, `Nothing matches \u201c${pb.q.trim()}\u201d.`) : null]);
+    const kindRow = row("Kind of club", kindsShown.map((k) => pill(pb.kind === k.group, groupName(k.group), null, () => { pb.kind = k.group; pb.brands.clear(); pb.models.clear(); draw(); })));
     const brandRow = row("Brand", brands.map((b) => pill(pb.brands.has(b), b, null, () => { pb.brands.has(b) ? pb.brands.delete(b) : pb.brands.add(b); for (const m of [...pb.models]) if (!pb.brands.has(items.find((o) => o.value === m)?.brand)) pb.models.delete(m); draw(); })));
     const shown = items.filter((o) => pb.brands.has(o.brand));
-    const modelRow = pb.brands.size ? row("Model (none picked = every model of those brands)", shown.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { pb.models.has(o.value) ? pb.models.delete(o.value) : pb.models.add(o.value); draw(); }))) : null;
+    const modelPills = (words.length ? [...new Map([...shown.filter((o) => matches.includes(o) || pb.models.has(o.value)), ...matches].map((o) => [o.value, o])).values()] : shown);
+    const modelRow = pb.brands.size || words.length ? row(words.length && !pb.brands.size ? "Model" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else { pb.models.add(o.value); pb.brands.add(o.brand); } draw(); }))) : null;
     const seasonRow = opts.years.length > 1 ? row("Season", [["any", "Any season"], ...opts.years.map((y) => [y.value, y.label])].map(([v, l]) => pill(pb.season === v, l, null, () => { pb.season = v; draw(); }))) : null;
     // the group the picks make
     const pickVals = pb.models.size ? [...pb.models] : shown.map((o) => o.value);
@@ -474,7 +487,7 @@ export async function render(main) {
     }
     return el("div", { class: "cmp-pb" }, [
       inGuide ? el("p", { class: "muted small" }, "Make each group: pick a kind of club, then one or more brands (and models, if you want just some), and a season. Add it, then make the next. E.g. all Callaway drivers vs all TaylorMade drivers, or two Callaway models vs one Titleist.") : null,
-      kindRow, brandRow, modelRow, seasonRow, el("div", { class: "cmp-guide-row" }, [sepB, addB, restB]), hint, groupsBox, go,
+      searchRow, kindRow, brandRow, modelRow, seasonRow, el("div", { class: "cmp-guide-row" }, [sepB, addB, restB]), hint, groupsBox, go,
     ]);
   }
   function guideSummary() {

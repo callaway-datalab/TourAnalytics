@@ -3886,3 +3886,10 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .wl-clubs-t .pos { color: #30d158; } .wl-clubs-t .neg { color: #ff453a; }
 .wl-few { color: #ffb340; font-weight: 800; }
 .wl-few-note { margin: 0.3rem 0 0; color: #ffb340 !important; }
+
+/* (update 212) Compare: the player search's own Clear button (as on the other pages), and the product search */
+.cmp-top .picker-row > .btn { display: inline-flex; flex: none; }
+.cmp-top .picker-row { display: flex; gap: 0.4rem; align-items: center; }
+.cmp-pb-search { margin: 0 0 0.6rem; }
+.cmp-pb-q { width: 100%; max-width: 26rem; box-sizing: border-box; }
+.cmp-pb-search p { margin: 0.4rem 0 0; }
