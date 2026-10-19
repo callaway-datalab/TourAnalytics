@@ -11,6 +11,8 @@ import { watchPlayerRounds, watchMyRounds } from "../rounds.js";
 import { myRoundsTable } from "../myRoundsTable.js";
 import { myEntryKey } from "./dataEntry.js";
 import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
+// (update 223) no Tour Events / Entered Rounds pills: a player's entered rounds are part of their stats, each on its own
+// tour (Practice, or the tour picked when the round was set up), next to the tour data uploaded for them.
 
 let lastSource = "tour"; // Tour | Entered Rounds | Practice, remembered while the app is open
 
@@ -25,12 +27,12 @@ export async function render(main, { previewClient, flash }) {
 
   const tabs = el("nav", { class: "subnav small", "aria-label": "Data files" });
   const box = el("div", { class: "embedded-dataset" });
-  const tourBox = el("div", {}, [tabs, box]);
+  const roundsTableBox = el("div");
+  const tourBox = el("div", {}, [tabs, box, roundsTableBox]);
   const enteredBox = el("div", { class: "embedded-dataset entered-box" });
   const practiceBox = el("div", { class: "embedded-dataset practice-box" }); // (update 139: Practice)
-  const roundsTableBox = el("div");
   const enteredDashBox = el("div");
-  mount(enteredBox, [roundsTableBox, enteredDashBox]);
+  mount(enteredBox, [enteredDashBox]);
   // Your own view (a player, or a coach on "Me"): the table of your rounds, with Delete.
   const ownView = !previewClient || previewClient.self;
   const uid = state.user.uid;
@@ -43,8 +45,7 @@ export async function render(main, { previewClient, flash }) {
       : () => {};
 
   // Tour (uploaded stats) | Entered Rounds (from Data Entry). "Me" (a coach's own) has only entered rounds.
-  if (previewClient?.self) lastSource = "entered";
-  if (lastSource === "practice") lastSource = "tour"; // (update 169: Practice is gone from these pills)
+  lastSource = "tour"; // (update 223: always; entered rounds are in it)
   let tourDashNow = null;
   const sourcePills = el("nav", { class: "subnav source-pills", "aria-label": "Data" });
   const viewHost = el("div", { class: "view-host" }); // (kept empty: Basic / Advanced was here)
@@ -53,17 +54,7 @@ export async function render(main, { previewClient, flash }) {
     enteredBox.hidden = lastSource !== "entered";
     practiceBox.hidden = lastSource !== "practice";
     if (lastSource === "practice") loadPractice();
-    // (update 169) no Practice pill: just Tour Events | Entered Rounds
-    mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
-      const a = el("a", { href: "#", "aria-current": lastSource === v ? "page" : null }, l);
-      a.addEventListener("click", (e) => {
-        e.preventDefault(); lastSource = v; drawSource();
-        const d = v === "tour" ? tourDashNow : v === "practice" ? practiceDash : enteredDash;
-        if (d) d.update({}); // it takes the pills into its Filters panel
-        else { sourceHome.appendChild(sourcePills); sourceHome.hidden = false; } // nothing to show there: keep the pills on the page
-      });
-      return a;
-    }));
+    mount(sourcePills, null); // (update 223: no Tour Events / Entered Rounds pills)
   };
   // lent to the stats' one row of pills; hidden while loading (so the pills don't flash outside the Filters
   // panel), shown when there's nothing to draw
@@ -124,7 +115,7 @@ export async function render(main, { previewClient, flash }) {
       const shown = (key, name) => tl.get(key) ?? plainName(name || key.replace(/^c_/, ""));
       const field = summaryPlayers(summary).map((p) => ({ ...p, label: shown(p.key, p.name) }));
       const label = field.find((p) => p.key === clientKey)?.label || shown(clientKey, d.playerName || previewClient?.label || d.clientLabel);
-      const me = { key: clientKey, label, rounds: prepare(rows, idx) };
+      const me = { key: clientKey, label, rounds: [...prepare(rows, idx), ...enteredRs].sort((a, b) => String(a.date).localeCompare(String(b.date))) }; // (update 223: and the entered rounds)
       const inner = el("div");
       mount(box, inner);
       const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", teamRole, state: dashState, updatedAt: d.uploadedAt?.toMillis?.() ?? null, viewHost, lead: sourcePills, leadHome: sourceHome });
@@ -168,10 +159,25 @@ export async function render(main, { previewClient, flash }) {
     if (typeof cleanup === "function") stopDataset = cleanup;
   };
 
+  // (update 223) the entered rounds (kept here, so the tour data's dashboard includes them)
+  let enteredRs = [], lastDatasets = null;
+  const showEnteredOnly = () => {
+    stopDataset(); stopDataset = () => {};
+    const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
+    const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
+    const me = { key: clientKey, label, rounds: enteredRs };
+    const inner = el("div");
+    mount(box, inner);
+    const dash = sgDashboard(inner, { me, field: [me], idx: ENTERED_IDX, entered: true, mode: "player", teamRole, state: dashState, rankings: false, viewHost, lead: sourcePills, leadHome: sourceHome,
+      note: "Entered rounds: strokes gained is measured against the scoring-average baseline by lie and distance." });
+    tourDashNow = dash; stopDataset = () => dash.destroy();
+  };
   const unsub = watchClientDatasets(clientKey, (datasets) => {
+    lastDatasets = datasets;
     if (!datasets.length) {
       current = null; shownVersion = null; stopDataset(); stopDataset = () => {};
       mount(tabs, null); tabs.hidden = true;
+      if (enteredRs.length) { showEnteredOnly(); return; }
       const d0 = tourDashNow = emptyDash(box, teamRole ? "No data has been added for this player yet." : "No data has been added to your account yet. It will appear here as soon as it's uploaded.");
       stopDataset = () => d0.destroy();
       if (lastSource === "tour") tourDashNow.update({});
@@ -194,6 +200,13 @@ export async function render(main, { previewClient, flash }) {
   const enteredState = {};
   const unsubEntered = watchPlayerRounds(clientKey, (rounds) => {
     const players = enteredPlayers(rounds, () => "", { withQuick: true });
+    // (update 223) into the stats: redraw them with these rounds in
+    const was = enteredRs.length;
+    enteredRs = players[0]?.rounds || [];
+    if (lastDatasets) {
+      if (!lastDatasets.length) { if (enteredRs.length) showEnteredOnly(); }
+      else if (was || enteredRs.length) { const d = lastDatasets.find((x) => x.id === current); if (d) { shownVersion = null; show(d); } }
+    }
     const tl = previewClient?.role ? teamLabels(effectiveTeam(getState()).teamAccess) : new Map();
     const label = tl.get(clientKey) ?? plainName(previewClient?.label || state.profile?.name || "You");
     enteredDash?.destroy(); enteredDash = null;

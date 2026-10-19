@@ -58,7 +58,13 @@ export async function render(main, { previewClient }) {
   const anyName = (k) => labels.get(k) || fieldNames.get(k) || enteredField?.find((p) => p.key === k)?.label || k.replace(/^c_/, "");
   const ownCache = new Map(); // key → full rounds (lie / distance)
   async function ownRounds(key) {
-    if (src() === "entered") return enteredField?.find((p) => p.key === key)?.rounds || null;
+    // (update 223) their tour rows and their entered rounds together
+    const ent = enteredField?.find((p) => p.key === key)?.rounds || [];
+    const base = await tourRounds(key);
+    if (!ent.length) return base;
+    return [...(base || []), ...ent].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }
+  async function tourRounds(key) {
     if (!ds) return null;
     if (ownCache.has(key)) return ownCache.get(key);
     const d = detail?.find((p) => p.key === key);
@@ -82,7 +88,18 @@ export async function render(main, { previewClient }) {
   const preview = team.preview || !!previewClient;
   const myKey = preview ? null : state.isAdmin && !state.profile?.clientKey ? `a_${state.user.uid}` : state.profile?.clientKey || null;
   const youLabel = "You";
-  const src = () => (watchPrefs().source === "entered" ? "entered" : "tour");
+  const src = () => "tour"; // (update 223: no Tour Events / Entered Rounds switch; entered rounds join the tour data)
+  // each player's entered rounds added to their rounds in a field (and anyone with only entered rounds added)
+  const mergeMemo = new WeakMap();
+  const withEntered = (list) => {
+    if (!list || !enteredField?.length) return list;
+    if (mergeMemo.has(list)) return mergeMemo.get(list);
+    const ent = new Map(enteredField.map((p) => [p.key, p]));
+    const out = list.map((p) => (ent.has(p.key) ? { ...p, rounds: [...p.rounds, ...ent.get(p.key).rounds].sort((a, b) => String(a.date).localeCompare(String(b.date))) } : p));
+    for (const p of enteredField) if (!list.some((q) => q.key === p.key)) out.push(p);
+    mergeMemo.set(list, out);
+    return out;
+  };
   let enteredField = null, enteredLoading = null;
   const loadEntered = () => (enteredLoading ||= (async () => {
     const { watchAllRounds, watchPlayerRounds } = await import("../rounds.js");
@@ -106,7 +123,21 @@ export async function render(main, { previewClient }) {
   const setList = (who, m) => (who === "all" ? saveWatch({ metrics: m }) : saveWatch({ metricsFor: { ...(prefs.metricsFor || {}), [who]: m } }));
   // (update 171) each card starts folded (name, badges, the five strokes gained); opened ones stay open while you're
   // on the page. A player on more than one tour: the tour picked on their card (this visit).
-  const openCards = new Set(), tourPick = new Map();
+  // (update 223) every card the same height folded: the badges area as tall as the tallest one's (blank space below fewer)
+  const evenBadges = () => {
+    const bs = [...root.querySelectorAll(".wl-cards .wl-badges")];
+    bs.forEach((b) => { b.style.minHeight = ""; });
+    const max = Math.max(0, ...bs.map((b) => b.getBoundingClientRect().height));
+    bs.forEach((b) => { b.style.minHeight = `${max}px`; });
+    // and anything else (a tour switch on one card): every folded card as tall as the tallest folded one
+    const cs = [...root.querySelectorAll(".wl-cards .wl-card:not(.open)")];
+    cs.forEach((c) => { c.style.minHeight = ""; });
+    const top = Math.max(0, ...cs.map((c) => c.getBoundingClientRect().height));
+    if (cs.length > 1) cs.forEach((c) => { c.style.minHeight = `${top}px`; });
+  };
+  let evenT = null;
+  window.addEventListener("resize", () => { clearTimeout(evenT); evenT = setTimeout(() => { if (root.isConnected) evenBadges(); }, 150); });
+  const openCards = new Set(), tourPick = new Map(), distOpen = new Set(); // (update 223: distance lists opened to the rest)
   if (!multi && single) openCards.add(single); // (update 177: one player: their card starts open)
 
   // (update 189) no date, title or count: the filters are the top of the page (a preview still says whose)
@@ -123,10 +154,9 @@ export async function render(main, { previewClient }) {
     root.style.minHeight = `${h0}px`;
     prefs = watchPrefs();
     const source = src();
-    if (source === "entered" && !enteredField) { await loadEntered(); }
-    const fieldNow = source === "entered" ? enteredField || [] : field, detailNow = source === "entered" ? enteredField || [] : detail;
-    // (you, in Tour Events: only when you're a player in the file)
-    const keys = (multi ? prefs.players : [single]).filter((k) => (source === "entered" ? true : k !== myKey || field.some((p) => p.key === k)) && (labels.has(k) || fieldNow.some((p) => p.key === k)));
+    if (!enteredField) { try { await loadEntered(); } catch { enteredField = []; } }
+    const fieldNow = withEntered(field) || [], detailNow = withEntered(detail);
+    const keys = (multi ? prefs.players : [single]).filter((k) => labels.has(k) || fieldNow.some((p) => p.key === k));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
     const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered" }));
@@ -191,15 +221,10 @@ export async function render(main, { previewClient }) {
         ])]);
       })]))),
     ]) : null;
-    // (update 169) Tour Events | Entered Rounds, and "＋ Me" (your own entered rounds) for anyone with a Watchlist
-    const sourceSeg = el("div", { class: "wl-period wl-source", role: "group", "aria-label": "Data" }, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
-      const b = el("button", { type: "button", class: `wl-per${source === v ? " on" : ""}`, "aria-pressed": String(source === v) }, l);
-      b.addEventListener("click", () => { if (source === v) return; saveWatch({ source: v }); draw(); });
-      return b;
-    }));
+    const sourceSeg = null; // (update 223: no Tour Events / Entered Rounds switch)
     const meBtn = multi && myKey && !prefs.players.includes(myKey) ? (() => {
       const b = el("button", { type: "button", class: "btn ghost wl-me-btn", title: "Watch your own entered rounds" }, "＋ Me");
-      b.addEventListener("click", () => { saveWatch({ players: [myKey, ...watchPrefs().players], source: "entered" }); draw(); });
+      b.addEventListener("click", () => { saveWatch({ players: [myKey, ...watchPrefs().players] }); draw(); });
       return b;
     })() : null;
     const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, metricsBtn, meBtn, multi ? pickerBox : null]);
@@ -221,7 +246,7 @@ export async function render(main, { previewClient }) {
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });
-    requestAnimationFrame(() => { root.style.minHeight = ""; window.scrollTo(0, y); });
+    requestAnimationFrame(() => { root.style.minHeight = ""; evenBadges(); window.scrollTo(0, y); });
   }
 
   function emptyState() {
@@ -279,12 +304,12 @@ export async function render(main, { previewClient }) {
     ]) : tourSeg ? el("div", { class: "wl-card-head" }, [el("div", { class: "wl-id" }, [tourSeg])]) : null;
     const meta = el("p", { class: "wl-meta" }, [c.tours?.length ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
     // (update 173) a badge opens what's behind it: a chart, a table, or both
-    const badges = c.badges.length ? el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => {
+    const badges = el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => {
       if (!b.info) return el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
       const btn = el("button", { type: "button", class: `wl-badge ${b.tone || ""}`, "aria-haspopup": "dialog", title: "See the details" }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
       btn.addEventListener("click", async () => (await import("../badgePopup.js")).openBadge(b, c.label));
       return btn;
-    })) : null;
+    })); // (update 223: always there, so the cards line up)
     // (update 182) tap a tile, a distance or a metric: its form
     const tappable = (node, title, info) => {
       if (!info) return node;
@@ -299,10 +324,17 @@ export async function render(main, { previewClient }) {
       el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
       el("div", { class: "wl-tile-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
     ]), s.label, s.info)));
-    const distList = (title, xs, tone) => el("div", { class: `wl-dist ${tone}` }, [el("p", { class: "wl-col-t" }, title), xs.length ? el("ol", {}, xs.map((d) => tappable(el("li", {}, [
-      el("span", { class: "wl-dist-l" }, [el("span", {}, d.label), el("span", { class: "wl-dist-n" }, `${d.n} shots`)]),
-      el("span", { class: `wl-dist-v ${sgCls(d.v)}` }, `${d.v >= 0 ? "+" : "−"}${Math.abs(d.v).toFixed(3)}`), rankPill(d.rank, d.of),
-    ]), d.label, d.info))) : el("p", { class: "muted small" }, "Not enough shots yet.")]);
+    // (update 223) 3 of each to start (by total strokes gained there); "+ N more" opens the rest. A trend under each rank.
+    const distList = (title, all, tone) => {
+      const k = `${c.key}|${tone}`, open = distOpen.has(k), xs = open ? all : all.slice(0, 3);
+      const more = all.length > 3 ? el("button", { type: "button", class: "link wl-dist-more", "aria-expanded": String(open) }, open ? "\u25b4 Show 3" : `\u25be ${all.length - 3} more`) : null;
+      more?.addEventListener("click", (e) => { e.stopPropagation(); open ? distOpen.delete(k) : distOpen.add(k); draw(); });
+      return el("div", { class: `wl-dist ${tone}` }, [el("p", { class: "wl-col-t" }, title), xs.length ? el("ol", {}, xs.map((d) => tappable(el("li", {}, [
+        el("span", { class: "wl-dist-l" }, [el("span", {}, d.label), el("span", { class: "wl-dist-n" }, `${d.n} shots`)]),
+        el("span", { class: `wl-dist-v ${sgCls(d.v)}` }, `${d.v >= 0 ? "+" : "−"}${Math.abs(d.v).toFixed(3)}`),
+        el("span", { class: "wl-dist-rk" }, [rankPill(d.rank, d.of), trendEl(d.trend, { fmt: (x) => Math.abs(x).toFixed(3), band: 0.005 })]),
+      ]), d.label, d.info))) : el("p", { class: "muted small" }, tone === "best" ? "Nowhere gaining yet." : "Nowhere losing."), more]);
+    };
     const dists = el("div", { class: "wl-two" }, [distList("Best distances", c.dists.best, "best"), distList("Toughest distances", c.dists.worst, "worst")]);
     const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => tappable(el("div", { class: "wl-mrow" }, [
       el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") || /^sg:sd@.*\|/.test(m.id) ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),

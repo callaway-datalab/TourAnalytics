@@ -259,7 +259,7 @@ export function roundToPrepared(round) {
   const has = new Set(obs.map((o) => o.k));
   if (shots.length) has.add("sg");
   return {
-    key: round.id, date: round.date || "", event: round.tournament || round.course || "Entered round", roundNo: "", tour: round.tour || "",
+    key: round.id, date: round.date || "", event: round.tournament || round.course || "Entered round", roundNo: "", tour: round.type === "practice" ? "Practice" : round.tour || "Entered", entered: true, // (update 223: its tour: Practice, or the tour picked when it was set up)
     // the Tournament filter: its tournament, or "Practice Rounds" for every round that wasn't one
     tfilter: round.tournament && round.type !== "practice" ? round.tournament : "Practice Rounds",
     year: isNaN(d) ? "" : String(d.getFullYear()), shots, obs, has, basic: basicCounts(round),

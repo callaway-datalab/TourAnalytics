@@ -4011,3 +4011,10 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .cmp-tourbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.6rem 0.9rem !important; }
 .cmp-tourbar .cmp-chip-gt { margin: 0; }
 .cmp-verdict-sure { margin: 0 0 0.4rem; }
+.seg.seg-wrap { flex-wrap: wrap; } /* (update 223: the Tour pills on a new round) */
+/* (update 223) Watchlist distances: the trend under the rank, and the rest on request */
+.wl-dist-rk { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
+.wl-dist-rk .wl-tr { font-size: 0.66rem; white-space: nowrap; }
+.wl-dist-more { margin-top: 0.35rem; font-size: 0.78rem; }
+.wl-badges:empty { display: block; }
+.rd-grid .rd-type { grid-column: 1 / -1; } .rd-grid .rd-type .seg { width: fit-content; max-width: 100%; }

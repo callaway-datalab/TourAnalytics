@@ -846,6 +846,7 @@ async function loadLogo() {
 const once = (watchFn, ...args) => new Promise((res) => { let un = null; un = watchFn(...args, (v) => { res(v); setTimeout(() => un?.(), 0); }); });
 // detail: the field's per-round lie / distance detail (Cloud Storage) in place of the round totals, so ranks go
 // down to each distance and lie. Off when the caller has the field already, or doesn't need ranks that deep.
+const enteredFor = async (playerKey) => { try { return ((await once(watchPlayerRounds, playerKey)) || []).map(roundToPrepared); } catch { return []; } };
 export async function loadSource(source, playerKey, label, { detail = true } = {}) {
   if (source === "entered") {
     const state = getState();
@@ -855,12 +856,14 @@ export async function loadSource(source, playerKey, label, { detail = true } = {
     void state;
     return { me, field: [me], idx: ENTERED_IDX };
   }
-  const datasets = await once(watchClientDatasets, playerKey);
+  // (update 223) one set of rounds: the tour data uploaded for the player AND the rounds entered for them (each
+  // entered round on its own tour: Practice, or the tour picked when it was set up)
+  const [datasets, entered] = await Promise.all([once(watchClientDatasets, playerKey), enteredFor(playerKey)]);
   const shot = (datasets || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];
-  if (!shot) return null;
+  if (!shot) { if (!entered.length) return null; const me0 = { key: playerKey, label, rounds: entered }; return { me: me0, field: [me0], idx: ENTERED_IDX }; }
   const idx = detectColumns(shot.columns || []);
   const [rows, summary] = await Promise.all([getDatasetRows(playerKey, shot.id, shot.chunkCount), getFieldStats(shot.id).catch(() => null)]);
-  const me = { key: playerKey, label, rounds: prepare(rows, idx) };
+  const me = { key: playerKey, label, rounds: [...prepare(rows, idx), ...entered].sort((a, b) => String(a.date).localeCompare(String(b.date))) };
   let field = summaryPlayers(summary);
   if (detail && field.length) {
     const { getFieldDetail } = await import("./fieldStore.js");
@@ -886,7 +889,8 @@ export async function loadFullField(datasetId, field, me, idx) {
 
 /* ============================== the panel ============================== */
 /** "Auto-generate report" for one player. canSave: the admin can also put it in the player's reports. */
-export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource = "tour", minRounds = null, tour = null, fullField = null }) {
+export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource0 = "tour", // eslint-disable-line no-unused-vars
+   minRounds = null, tour = null, fullField = null }) {
   const wrapEl = el("div", { class: "report-gen" });
   const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate AI Report");
   const panel = el("div", { class: "report-gen-panel", hidden: true });
@@ -922,7 +926,8 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   }));
   drawCats();
   // data and product
-  const source = el("select", { "aria-label": "Data" }, [el("option", { value: "tour", selected: startSource === "tour" }, "Tour Events"), el("option", { value: "entered", selected: startSource === "entered" }, "Entered Rounds")]);
+  // (update 223) no Tour Events / Entered Rounds choice: the player's rounds are both together
+  const source = { value: "tour" }, startSource = "tour"; void startSource0;
   const product = el("input", { type: "checkbox", "aria-label": "Differentiate by product" });
   // Min. rounds for Tour Avg and ranks: the Stats page's number when it opened this; empty = the default
   const minIn = el("input", { type: "number", min: 1, max: 999, inputmode: "numeric", class: "report-min-in", placeholder: "Auto", value: minRounds ?? "", "aria-label": "Minimum rounds for Tour Avg and ranks" });
@@ -941,7 +946,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       const useStats = source.value === startSource && fullField?.length > 1;
       if (source.value === "tour" && !useStats) status.textContent = "Loading every player\u2019s rounds\u2026";
       const data = await loadSource(source.value, playerKey, playerLabel, { detail: !useStats });
-      if (!data || !data.me.rounds.length) { status.textContent = source.value === "tour" ? "No Tour Events data for this player yet." : "No entered rounds for this player yet."; return; }
+      if (!data || !data.me.rounds.length) { status.textContent = "No rounds for this player yet (no tour data and no entered rounds)."; return; }
       // Every player's own rows (the admin), so ranks and Tour Avg can go down to each distance and lie:
       // the Stats page's players when it opened this, or loaded now. (Others only have the shared summary.)
       let field = data.field;
@@ -968,7 +973,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       // ("This year" and "All time" also say how current they are: "2026 - As of 10/9/2026")
       const asOf = ` - As of ${new Date().toLocaleDateString("en-US")}`;
       const rangeLabel = preset === "year" ? `${new Date().getFullYear()}${asOf}` : preset === "all" ? `All time${asOf}` : preset ? presets.find(([v]) => v === preset)?.[1] : null;
-      const bytes = buildReportPdf(a, { aiSummary, sourceLabel: source.value === "tour" ? "Tour Events" : "Entered Rounds", logo: await loadLogo(), rangeLabel });
+      const bytes = buildReportPdf(a, { aiSummary, sourceLabel: "All rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
       window.__lastReportPdf = bytes; // (for tests)
       logReportRun({ uid: getState().user?.uid, playerKey, source: source.value }).catch(() => {}); // (update 169: At a glance → Reports generated)
@@ -998,7 +1003,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   mount(panel, [
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Dates"), presetBox, el("div", { class: "report-dates" }, [el("label", { class: "date-field" }, ["Start Date", fromIn]), el("label", { class: "date-field" }, ["End Date", toIn])])]),
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Categories"), catBox]),
-    el("div", { class: "report-row" }, [el("label", {}, ["Data", source]), el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: 33% of the most rounds played, rounded down to a 5." }, ["Min. rounds", minIn]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
+    el("div", { class: "report-row" }, [el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: 33% of the most rounds played, rounded down to a 5." }, ["Min. rounds", minIn]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
     el("div", { class: "report-gen-actions" }, [go]), status, result,
   ]);
   mount(wrapEl, [openBtn, panel]);

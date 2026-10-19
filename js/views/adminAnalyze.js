@@ -65,11 +65,8 @@ export async function render(main, { flash, routeId }) {
   const dashOpts = (blank = true) => (board ? { onPick }
     : { slot: pickerSlot, slotHome: pickerHome, lead: sourcePills, leadHome: sourceHome, onPick, blankWithoutMe: blank });
   // (update 169) no Practice pill: just Tour Events | Entered Rounds
-  const drawSource = () => mount(sourcePills, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
-    const a = el("a", { href: "#", "aria-current": source === v ? "page" : null }, l);
-    a.addEventListener("click", (e) => { e.preventDefault(); if (source === v) return; source = v; drawSource(); if (v === "entered") watchMine(); else { stopMine(); stopMine = () => {}; } refresh(); });
-    return a;
-  }));
+  // (update 223) no Tour Events / Entered Rounds pills: the player's entered rounds join their tour data (each on its own tour)
+  const drawSource = () => mount(sourcePills, null);
   drawSource();
 
   mount(main, board ? [status, body] : [
@@ -91,7 +88,27 @@ export async function render(main, { flash, routeId }) {
     loadNote = failed?.length ? `Couldn\u2019t load ${failed.length} of ${total} players\u2019 rows: ${loadErrorText(error)}. They\u2019re left out for now and tried again next time you open this page.` : "";
   }
 
-  const meFrom = () => (player && fieldPlayers.find((p) => p.key === player.key)) || null;
+  // (update 223) the player picked: their tour rows plus the rounds entered for them
+  const enteredOf = new Map(); let stopEnt = () => {}, entFor = null;
+  const meBase = () => (player && fieldPlayers.find((p) => p.key === player.key)) || null;
+  const meFrom = () => {
+    const base = meBase(), ent = player ? enteredOf.get(player.key) || [] : [];
+    if (!ent.length) return base;
+    if (!base) return { key: player.key, label: displayLabels.get(player.key) || player.label, rounds: ent };
+    return { ...base, rounds: [...base.rounds, ...ent].sort((a, b) => String(a.date).localeCompare(String(b.date))) };
+  };
+  function watchEntered(key) {
+    if (entFor === key) return;
+    stopEnt(); entFor = key;
+    if (!key) { stopEnt = () => {}; return; }
+    stopEnt = watchPlayerRounds(key, (rounds) => {
+      enteredOf.set(key, enteredPlayers(rounds, () => "", { withQuick: true })[0]?.rounds || []);
+      if (player?.key !== key || !dash) return;
+      const me = meFrom();
+      if (me && !meBase()) status.textContent = "";
+      dash.update({ me });
+    });
+  }
 
   async function refresh() {
     dash?.destroy(); dash = null; sourceHome.hidden = true;
@@ -333,6 +350,7 @@ export async function render(main, { flash, routeId }) {
   fieldPlayers = fieldPlayers.map((p) => ({ ...p, label: labels.get(p.key) || p.label }));
   const picker = pickerRef = playerPicker(displayLabels, (p) => {
     player = p;
+    watchEntered(p?.key || null); // (update 223)
     if (source === "entered") watchMine();
     drawPortalLink();
     if (source === "entered") drawEntered();
@@ -341,7 +359,7 @@ export async function render(main, { flash, routeId }) {
       // A player who isn't in the file on screen: open the newest file that has them, or say why there's nothing
       // (rather than leaving the leaderboard up as if the click did nothing).
       status.textContent = "";
-      if (p && (!meFrom() || meFrom().summaryOnly)) {
+      if (p && (!meBase() || meBase().summaryOnly) && !(enteredOf.get(p.key) || []).length) {
         const other = meFrom() ? null : datasets.find((d) => d.id !== fileId && isShotData(detectColumns(d.columns || [])) && (d.clientKeys || []).includes(p.key));
         if (other) { fileId = other.id; pendingNote = `${p.label} is in ${other.name || "another file"}, so that file is showing.`; refresh(); return; }
         const cur = datasets.find((d) => d.id === fileId);
@@ -371,7 +389,7 @@ export async function render(main, { flash, routeId }) {
           });
           return;
         }
-        status.textContent = `${p.label} has no Tour Events data in ${cur?.name || "the uploaded file"}. Check Entered Rounds, or upload a file with their rows.`;
+        status.textContent = `${p.label} has no tour data in ${cur?.name || "the uploaded file"} and no entered rounds yet. Upload a file with their rows, or enter a round for them.`;
         if (dash) dash.update({ me: null });
         return;
       }
@@ -385,5 +403,5 @@ export async function render(main, { flash, routeId }) {
   const wanted = new URLSearchParams(location.hash.split("?")[1] || "").get("player");
   if (!board && wanted) picker.select(wanted);
 
-  return () => { loadToken++; dash?.destroy(); stopFiles(); stopMine(); undoTop(); };
+  return () => { loadToken++; dash?.destroy(); stopFiles(); stopMine(); stopEnt(); undoTop(); };
 }

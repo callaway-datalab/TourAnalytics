@@ -64,7 +64,7 @@ export async function render(main) {
   else if (players.length === 1) player = { key: players[0][0], label: players[0][1] };
 
   let pickParam = q.get("pick");
-  let source = q.get("src") === "entered" ? "entered" : "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
+  let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
   let staged = new Map(); // value → { label, f }
   let combine = false;
@@ -128,8 +128,10 @@ export async function render(main) {
   function tourBar() {
     const ps = inPlay().length ? inPlay() : player ? [player] : [];
     const counts = new Map();
-    for (const p of ps) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.tour) counts.set(rd.tour, (counts.get(rd.tour) || 0) + 1);
-    if (counts.size < 2 && !tourSel.size) return null;
+    let oneMulti = false; // (update 223: shown with Everyone, or when a player has rounds on more than one tour)
+    for (const p of ps) { const mine = new Set(); for (const rd of sgRounds(rawOfKey(p.key))) if (rd.tour) { counts.set(rd.tour, (counts.get(rd.tour) || 0) + 1); mine.add(rd.tour); } if (mine.size > 1) oneMulti = true; }
+    const withEvery = ps.some((p) => p.key === EVERY) || productsOnly;
+    if ((!withEvery && !oneMulti) || (counts.size < 2 && !tourSel.size)) { if (tourSel.size) { tourSel = new Set(); allMemo = null; setTimeout(() => { if (data) opts = options(allRounds()); draw(); }, 0); } return null; }
     const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n.toLocaleString()} rds`) : null]); b.addEventListener("click", click); return b; };
     const redo = () => { allMemo = null; if (data) opts = options(allRounds()); draw(); };
     return el("div", { class: "panel cmp-tourbar" }, [el("span", { class: "cmp-chip-gt" }, "Tour"),
@@ -784,6 +786,8 @@ export async function render(main) {
     ]);
   }
   function sourceSeg() {
+    return null; // (update 223: no Tour Events / Entered Rounds switch; entered rounds are part of each player's rounds)
+    // eslint-disable-next-line no-unreachable
     return el("div", { class: "cmp-seg", role: "group", "aria-label": "Data" }, [["tour", "Tour Events"], ["entered", "Entered Rounds"]].map(([v, l]) => {
       const b = el("button", { type: "button", class: `cmp-seg-b${source === v ? " on" : ""}`, "aria-pressed": String(source === v) }, l);
       b.addEventListener("click", () => { if (source === v) return; source = v; load(); });

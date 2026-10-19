@@ -67,7 +67,7 @@ function renderList(main, viewing = null) {
       const card = el("a", { class: "entry-card", href: `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}` }, [
         el("div", { class: "entry-card-main" }, [
           el("strong", {}, r.course || "Round"),
-          el("span", { class: "muted" }, [r.date, r.type ? ` \u00b7 ${r.type === "tournament" ? "Tournament" : "Practice"}` : "", r.location ? ` \u00b7 ${r.location}` : ""].join("")),
+          el("span", { class: "muted" }, [r.date, r.tour || r.type ? ` \u00b7 ${r.tour || (r.type === "tournament" ? "Tournament" : "Practice")}` : "", r.location ? ` \u00b7 ${r.location}` : ""].join("")),
         ]),
         el("div", { class: "entry-card-score" }, r.status === "complete"
           ? [el("strong", {}, String(score)), el("span", { class: "muted" }, toPar(score - par))]
@@ -111,9 +111,11 @@ async function renderNew(main, flash, viewing = null) {
   const teesIn = el("input", { list: "tee-names", placeholder: "e.g. Blue", autocomplete: "off", maxLength: 30, enterkeyhint: "done" });
   const teeNames = el("datalist", { id: "tee-names" }, ["Black", "Blue", "White", "Gold", "Green", "Red", "Silver", "Championship", "Tournament", "Back", "Middle", "Forward"].map((t) => el("option", { value: t })));
   let lastCard = null; // the photo, so changing Tees can re-read that tee's yardages
-  // Tournament or Practice: two pills, exactly one picked.
-  let roundType = "practice"; // Practice unless you pick Tournament
-  const typePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "Round type" });
+  // (update 223) the Tour: Practice, PGA, Korn Ferry, DPWT, or Other (type its name). It's the round's tour everywhere
+  // (Stats, Compare, the Watchlist), next to the tour data uploaded for the player.
+  let tourPick = "Practice";
+  const TOUR_OPTS = ["Practice", "PGA", "Korn Ferry", "DPWT", "Other"];
+  const typePills = el("div", { class: "seg seg-wrap", role: "radiogroup", "aria-label": "Tour" });
   // Quick (score, putts, fairway, green in regulation) or full shot-by-shot detail
   let entryMode = "full";
   const modePills = el("div", { class: "seg", role: "radiogroup", "aria-label": "How much to enter" });
@@ -128,17 +130,19 @@ async function renderNew(main, flash, viewing = null) {
   };
   drawMode();
   const tournamentIn = el("input", { placeholder: "e.g. Club Championship", autocomplete: "off", maxLength: 80, enterkeyhint: "next" });
-  const tournamentField = el("label", { hidden: true, class: "rd-tname" }, [el("span", { class: "rd-label" }, "Tournament name"), tournamentIn]);
-  // optional: a real tour you're playing on, or your own league (the Stats page filters by it)
-  const tourIn = el("input", { placeholder: "e.g. Korn Ferry Tour", autocomplete: "off", maxLength: 60, list: "tour-names", enterkeyhint: "next" });
-  const tourNames = el("datalist", { id: "tour-names" }, ["PGA TOUR", "Korn Ferry Tour", "DP World Tour", "LIV Golf", "PGA TOUR Champions", "LPGA Tour", "Epson Tour", "Amateur"].map((t) => el("option", { value: t })));
+  const tournamentField = el("label", { hidden: true, class: "rd-tname" }, [el("span", { class: "rd-label" }, ["Tournament name ", el("em", {}, "optional")]), tournamentIn]);
+  // "Other": the tour's own name
+  const tourIn = el("input", { placeholder: "e.g. LIV Golf, Club league", autocomplete: "off", maxLength: 60, enterkeyhint: "next" });
+  const tourOther = el("label", { class: "rd-tour", hidden: true }, [el("span", { class: "rd-label" }, "Tour name"), tourIn]);
+  const roundTour = () => (tourPick === "Other" ? tourIn.value.trim() : tourPick);
   const drawType = () => {
-    typePills.querySelectorAll(".seg-btn").forEach((b) => { const on = b.dataset.v === roundType; b.classList.toggle("on", on); b.setAttribute("aria-checked", on ? "true" : "false"); });
-    tournamentField.hidden = roundType !== "tournament";
+    typePills.querySelectorAll(".seg-btn").forEach((b) => { const on = b.dataset.v === tourPick; b.classList.toggle("on", on); b.setAttribute("aria-checked", on ? "true" : "false"); });
+    tourOther.hidden = tourPick !== "Other";
+    tournamentField.hidden = tourPick === "Practice";
   };
-  mount(typePills, [["tournament", "Tournament"], ["practice", "Practice"]].map(([v, l]) => {
-    const b = el("button", { type: "button", role: "radio", class: "seg-btn", "data-v": v, "aria-checked": "false" }, l);
-    b.addEventListener("click", () => { roundType = v; drawType(); if (v === "tournament" && !tournamentIn.value) tournamentIn.focus({ preventScroll: true }); });
+  mount(typePills, TOUR_OPTS.map((v) => {
+    const b = el("button", { type: "button", role: "radio", class: "seg-btn", "data-v": v, "aria-checked": "false" }, v);
+    b.addEventListener("click", () => { tourPick = v; drawType(); if (v === "Other") tourIn.focus({ preventScroll: true }); });
     return b;
   }));
   drawType();
@@ -531,8 +535,7 @@ async function renderNew(main, flash, viewing = null) {
     class: "entry-form rd-new",
     onSubmit: async (e) => {
       e.preventDefault();
-      if (!roundType) { flash("Pick Tournament or Practice.", "error"); typePills.querySelector("button")?.focus(); return; }
-      if (roundType === "tournament" && !tournamentIn.value.trim()) { flash("Enter the tournament name.", "error"); tournamentIn.focus(); return; }
+      if (tourPick === "Other" && !tourIn.value.trim()) { flash("Type the tour\u2019s name (or pick one).", "error"); tourIn.focus(); return; }
       if (!course.value.trim()) { flash("Enter the course.", "error"); course.focus(); return; }
       const missing = holes.filter((h) => !h.par).map((h) => h.n);
       if (missing.length) {
@@ -546,7 +549,7 @@ async function renderNew(main, flash, viewing = null) {
       try {
         const id = await createRound({
           playerKey: player.key, playerLabel: player.label, ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "",
-          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: roundType, tournament: roundType === "tournament" ? tournamentIn.value.trim() : "", tour: tourIn.value.trim(),
+          date: date.value, course: course.value.trim(), location: locationIn.value.trim(), tees: teesIn.value.trim(), type: tourPick === "Practice" ? "practice" : "tournament", tournament: tourPick === "Practice" ? "" : tournamentIn.value.trim(), tour: roundTour(),
           holes: holes.map((h) => ({ n: h.n, par: h.par, yards: h.yards ?? null, hcp: h.hcp ?? null })), mode: entryMode,
         });
         location.hash = `#/entry/${encodeURIComponent(player.key)}/${id}`;
@@ -563,8 +566,8 @@ async function renderNew(main, flash, viewing = null) {
         el("label", { class: "course-label rd-course" }, [el("span", { class: "rd-label" }, "Course"), courseBox.node]),
         el("label", { class: "rd-date" }, [el("span", { class: "rd-label" }, "Date"), date]),
         el("label", { class: "rd-loc" }, [el("span", { class: "rd-label" }, ["Location ", el("em", {}, "optional")]), locationIn]),
-        el("label", { class: "rd-tour" }, [el("span", { class: "rd-label" }, ["Tour or league ", el("em", {}, "optional")]), tourIn, tourNames]),
-        el("div", { class: "field rd-type" }, [el("span", { class: "rd-label" }, "Round type"), typePills]),
+        el("div", { class: "field rd-type" }, [el("span", { class: "rd-label" }, "Tour"), typePills]),
+        tourOther,
         el("div", { class: "field rd-mode" }, [el("span", { class: "rd-label" }, "Entry"), modePills, modeNote]),
         tournamentField,
       ]),
@@ -775,7 +778,7 @@ function renderRound(main, params, flash, previewClient) {
     const head = el("header", { class: "round-head" }, [
       el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Enter New Round")),
       el("h1", {}, round.course || "Round"),
-      el("p", { class: "muted" }, [round.type ? (round.type === "tournament" ? `${round.tournament || "Tournament"} \u00b7 ` : "Practice round \u00b7 ") : "", round.date, round.tour ? ` \u00b7 ${round.tour}` : "", round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
+      el("p", { class: "muted" }, [round.tour || (round.type === "practice" ? "Practice" : ""), round.tournament ? ` \u00b7 ${round.tournament}` : "", ` \u00b7 ${round.date}`, round.location ? ` \u00b7 ${round.location}` : "", round.tees ? ` \u00b7 ${round.tees} tees` : ""].join("")),
       el("p", { class: "round-score" }, [scoreLine, " ", status]),
       canEdit() ? null : el("p", { class: "muted small" }, `Entered by ${round.ownerName || "someone else"} \u2014 view only.`),
     ]);

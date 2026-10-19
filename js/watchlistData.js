@@ -197,7 +197,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
     const [cat, ...d] = b.split("|"), v = o.sg / nMine;
     let r = { rank: null, of: 0, avg: null };
     if (fieldB) r = rankOf(new Map(fieldB.map((p) => { const x = p.b.get(b); return [p.key, p.key === key ? v : x && x.w >= MIN_ATT && p.n ? x.sg / p.n : null]; })), key);
-    return { id: b, cat, dist: d.join("|"), label: `${CAT_SHORT[cat] || cat} · ${d.join("|")}`, v, n: Math.round(o.w), rank: r.rank, of: r.of, avg: r.avg,
+    return { id: b, cat, dist: d.join("|"), label: `${CAT_SHORT[cat] || cat} · ${d.join("|")}`, v, tot: o.sg, n: Math.round(o.w), rank: r.rank, of: r.of, avg: r.avg,
       info: () => distInfo(b, `${CAT_SHORT[cat] || cat} · ${d.join("|")}`) }; // (update 182)
   });
   // (update 182) a distance's form: strokes gained there each round (a round without a shot there counts as 0)
@@ -206,9 +206,13 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const distInfo = (b, label) => formInfo([...minePeriod].sort(byDate), distVal(b), { label: `${label} (strokes gained a round)`, fmtFn: fmt3, chFn: (d) => Math.abs(d).toFixed(3) });
   // best and worst: by rank when the field's detail is here, else against the baseline
   const score = (x) => (!noRanks && x.rank && x.of > 1 ? 1 - (x.rank - 1) / (x.of - 1) : null); // (update 183: entered rounds: by value)
-  const sorted = [...dl].sort((a, b) => (score(b) ?? 0) - (score(a) ?? 0) || b.v - a.v);
-  card.dists.best = sorted.slice(0, 3);
-  card.dists.worst = sorted.slice(Math.max(3, sorted.length - 3)).reverse(); // (never the same as the best)
+  void score;
+  // (update 223) by total strokes gained there: every distance gaining (most first), every one losing (most first);
+  // the card shows 3 of each and opens to the rest. Each with its trend (the last 10 rounds against the 10 before).
+  const byDate0 = [...minePeriod].sort(byDate);
+  for (const x of dl) x.trend = trendOf(byDate0, (rs) => { const y = bucketsOf(rs).get(x.id); return y && y.w >= 3 ? y.sg / rs.length : null; });
+  card.dists.best = dl.filter((x) => x.tot > 0).sort((a, b) => b.tot - a.tot);
+  card.dists.worst = dl.filter((x) => x.tot < 0).sort((a, b) => a.tot - b.tot);
 
   // ---- results: wins and top 10s (best strokes gained a round at a tournament, among those who played every round) ----
   const events = eventsOf(ranked.map((p) => ({ key: p.key, rounds: p.rounds })));
