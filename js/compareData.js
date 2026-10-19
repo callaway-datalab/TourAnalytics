@@ -173,7 +173,7 @@ export function statSets(rounds, filters) {
       return one({ ...f, clubs: null, balls: null }).map((rd) => { const obs = (rd.obs || []).filter((o) => comboMatch(o, cs, bs)); return { ...rd, obs, has: new Set(obs.map((o) => o.k)), shots: [] }; }).filter((rd) => rd.obs.length);
     }
     if (f.any) { const seen = new Set(); return f.any.flatMap((g) => one(g)).filter((rd) => (seen.has(rd) ? false : (seen.add(rd), true))); } // (update 189)
-    if (f.last || f.prev) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
+    if (f.last || f.prev || f.lastEv || f.prevEv) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
     const g = { ...f };
     const set = (v) => (v && v.length ? new Set(v.map(String)) : null);
     const years = set(g.years), events = set(g.events), courses = set(g.courses), rnds = set(g.roundNos), months = set(g.months), tours = set(g.tours);
