@@ -131,6 +131,12 @@ export async function render(main, { previewClient }) {
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
     const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered" }));
     const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow, { noRanks: source === "entered" });
+    // (update 213) metrics picked before that aren't offered any more: listed so they can be taken off
+    {
+      const offered = new Set(catalog.flatMap((g) => g.items.flatMap(([id, , rg]) => [id, ...(rg || []).map((x) => x.id)])));
+      const old = [...new Set(listFor(menuFor))].filter((m) => !offered.has(m));
+      if (old.length) catalog.push({ group: "No longer offered (untick to remove)", items: old.map((m) => [m, metricLabel(m), []]) });
+    }
 
     // ---- controls ----
     const period = el("div", { class: "wl-period", role: "group", "aria-label": "Period" }, PERIODS.map(([v, l]) => {
@@ -158,7 +164,7 @@ export async function render(main, { previewClient }) {
       el("div", { class: "wl-menu-groups" }, catalog.map((g) => el("div", { class: "wl-menu-g" }, [el("p", { class: "wl-menu-gt" }, g.group), ...g.items.map(([id, l, ranges]) => {
         // (update 172) Hit Green %, Pin-High %, On-Line %, Proximity, Up & Down %, Made Putt %: once ticked, pick
         // distances too ("All distances" is the stat over every shot); each pick is its own row on the cards
-        const mine = (m) => m === id || m.startsWith(`${id}@`);
+        const mine = (m) => m === id || (ranges || []).some((x) => x.id === m);
         const on = list.some(mine);
         const cb = el("input", { type: "checkbox", checked: on });
         // (update 179) ticking one with distances starts with every distance picked (untick the ones you don't want)
@@ -177,7 +183,7 @@ export async function render(main, { previewClient }) {
         };
         const cats = [...new Set(ranges.map((r) => r.cat))];
         return el("div", { class: "wl-menu-stat" }, [opt, el("div", { class: "wl-ranges", role: "group", "aria-label": `${l}: distances` }, [
-          chip(id, "All distances"),
+          chip(id, "All"),
           ...cats.flatMap((c) => [cats.length > 1 ? el("span", { class: "wl-range-cat" }, ranges.find((r) => r.cat === c).catLabel) : null, ...ranges.filter((r) => r.cat === c).map((r) => chip(r.id, r.label))]),
         ])]);
       })]))),

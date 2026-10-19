@@ -3893,3 +3893,16 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .cmp-pb-search { margin: 0 0 0.6rem; }
 .cmp-pb-q { width: 100%; max-width: 26rem; box-sizing: border-box; }
 .cmp-pb-search p { margin: 0.4rem 0 0; }
+
+/* (update 213) Compare: "Players who used it" opens the list */
+.cmp-tap-hint { color: #d4b483; font-weight: 700; }
+.cmp-table tr.cmp-tap { cursor: pointer; }
+.cmp-table tr.cmp-tap:hover td { background: rgba(212,180,131,0.07); }
+/* (update 213) Watchlist metrics menu: by part of the game, compact */
+.wl-menu-groups { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)) !important; gap: 0.2rem 1.1rem !important; }
+.wl-menu-gt { margin: 0.35rem 0 0.15rem !important; }
+.wl-menu-o { padding: 0.1rem 0 !important; font-size: 0.83rem !important; gap: 0.4rem !important; line-height: 1.25; }
+.wl-menu-o input { width: 0.9rem !important; height: 0.9rem !important; }
+.wl-menu-stat { gap: 0.1rem !important; }
+.wl-menu-stat .wl-ranges { margin: 0 0 0.3rem 1.3rem; padding: 0 !important; gap: 0.2rem !important; }
+.wl-menu-stat .wl-range { padding: 0.08rem 0.42rem !important; font-size: 0.68rem !important; }

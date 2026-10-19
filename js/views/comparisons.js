@@ -14,7 +14,7 @@ import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { playerPicker } from "../playerPicker.js";
-import { CATEGORIES, fmtStat, fmtSG, gearInfo } from "../sg.js";
+import { CATEGORIES, fmtStat, fmtSG, gearInfo, gearLabel } from "../sg.js";
 import {
   COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statSets,
   products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage,
@@ -967,9 +967,29 @@ export async function render(main) {
       secHead("Product usage", `Across everyone in the data (${new Set(pooled.map((rd) => rd.pk)).size.toLocaleString()} players). A player\u2019s model at a tournament is the one they hit the most shots with there. Hover a row for what it means.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, ""), ...ps.map((s) => el("th", { class: "num" }, [el("i", { class: "cmp-dot", style: `--c:${colorOf(s)}` }), s.name]))])),
-        el("tbody", {}, ROWS.map(([l, f, help]) => el("tr", {}, [el("td", { title: help }, l), ...u.map((x) => el("td", { class: "num" }, x ? f(x) : "\u2014"))]))),
+        el("tbody", {}, ROWS.map(([l, f, help], ri) => {
+          const tr = el("tr", {}, [el("td", { title: help }, ri === 0 ? [l, el("span", { class: "cmp-tap-hint" }, " \u203a")] : l), ...u.map((x) => el("td", { class: "num" }, x ? f(x) : "\u2014"))]);
+          // (update 213) "Players who used it": tap for the list of everyone who did
+          if (ri === 0) { tr.classList.add("cmp-tap"); tr.tabIndex = 0; tr.title = "See everyone who used it"; const go = () => openUsers(ps, u); tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); }
+          return tr;
+        })),
       ])),
     ]);
+  }
+  // (update 213) everyone who used each product in the comparison, in a pop-up that scrolls
+  async function openUsers(ps, u) {
+    const { openBadge } = await import("../badgePopup.js");
+    const names = new Map(players);
+    const nameOf = (pk) => names.get(pk) || String(pk).replace(/^c_/, "");
+    const md = (d) => { const t = String(d || "").slice(0, 10); if (!t) return "\u2014"; const x = new Date(`${t}T12:00:00`); return Number.isNaN(+x) ? t : x.toLocaleDateString("en-US", { month: "short", year: "numeric" }); };
+    const blocks = ps.map((s, i) => {
+      const x = u[i]; if (!x) return null;
+      const multiModel = s.f.clubs.length > 1;
+      const cols = [["Player"], ...(multiModel ? [["Model"]] : []), ["Rds", "num"], ["Events", "num"], ["Last used", "num"], ["Now", "num"]];
+      return { kind: "table", title: `${s.name} \u00b7 ${x.who.length} player${x.who.length === 1 ? "" : "s"}`, cols,
+        rows: x.who.map((w) => ({ cells: [nameOf(w.pk), ...(multiModel ? [w.top ? gearLabel(w.top) : "\u2014"] : []), String(w.rounds), String(w.events), md(w.last), { text: w.still ? "\u2713" : "", tone: w.still ? "pos" : "" }] })) };
+    }).filter(Boolean);
+    openBadge({ text: "Players who used it", info: () => ({ sub: "Most rounds first. Rds: rounds with it. Now \u2713: still their main one at their latest tournament.", blocks }) }, ps.length === 1 ? ps[0].name : "Product usage");
   }
   // (update 189) a colour key above every chart
   const legend = (items) => el("div", { class: "cmp-legend", "aria-hidden": "true" }, items.map((it) => hoverable(el("span", { class: "cmp-legend-i", title: it.full || it.name }, [el("i", { style: `background:${it.color}` }), it.name]), it.i)));

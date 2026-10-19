@@ -9,7 +9,7 @@ import { getState, subscribe } from "./auth.js";
 import { getPreviewTeam } from "./preview.js";
 import { getPreviewClient } from "./router.js";
 
-const DEF = { players: [], metrics: ["sg:T2G", "res:wins", "res:top10"], metricsFor: {}, period: "season", source: "tour" }; // (metricsFor: update 180, a player's own) // (source: update 169)
+const DEF = { players: [], metrics: ["res:wins", "res:top10"], metricsFor: {}, period: "season", source: "tour" }; // (metricsFor: update 180, a player's own) // (source: update 169)
 const lsKey = (uid) => `ta:watchlist:${uid}`;
 // (update 167: "Last 12 months" became "Last 6 months")
 const fixPeriod = (o) => (o.period === "l12" ? { ...o, period: "l6" } : o);

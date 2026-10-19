@@ -331,11 +331,12 @@ export function productUsage(rounds, sels) {
   const byKind = (kind) => {
     if (cache.has(kind)) return cache.get(kind);
     // player → event → { counts: Map(value → shots), date }
-    const pe = new Map(), evDate = new Map(), roundsWith = new Map();
+    const pe = new Map(), evDate = new Map(), roundsWith = new Map(), prs = new Map(); // prs: player → each round's set of values (update 213)
     for (const rd of rs) {
       const ek = evKey(rd);
       if (!evDate.has(ek) || dk(rd.date) > evDate.get(ek)) evDate.set(ek, dk(rd.date));
       const seen = new Set();
+      (prs.get(rd.pk) || prs.set(rd.pk, []).get(rd.pk)).push(seen);
       for (const s of rd.shots) {
         const v = valOf(s, kind); if (!v) continue;
         const p = pe.get(rd.pk) || pe.set(rd.pk, new Map()).get(rd.pk);
@@ -346,7 +347,7 @@ export function productUsage(rounds, sels) {
     }
     const main = (counts) => [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
     const events = [...new Set([...pe.values()].flatMap((m) => [...m.keys()]))];
-    const out = { pe, evDate, events, roundsWith, main };
+    const out = { pe, evDate, events, roundsWith, main, prs };
     cache.set(kind, out);
     return out;
   };
@@ -355,7 +356,8 @@ export function productUsage(rounds, sels) {
     const S = new Set(sel.clubs || []);
     if (!S.size) return null;
     const kind = kindOf([...S][0]);
-    const { pe, evDate, events, roundsWith, main } = byKind(kind);
+    const { pe, evDate, events, roundsWith, main, prs } = byKind(kind);
+    const who = []; // (update 213) each player who used it: { pk, rounds, events, last, still, top }
     let playerEvents = 0, inEvents = 0, users = new Set(), switchIn = 0, switchOut = 0, kept = 0;
     const perEvent = new Map(events.map((e) => [e, 0]));
     const runs = [];
@@ -372,7 +374,12 @@ export function productUsage(rounds, sels) {
         prevIn = isIn;
       }
       if (run) runs.push({ n: run, switched: startedBySwitch, ongoing: true });
-      if (used) users.add(pk);
+      if (used) {
+        users.add(pk);
+        const evIn = seq.filter(([, counts]) => [...counts.keys()].some((v) => S.has(v)));
+        const tally = new Map(); for (const [, counts] of evIn) for (const [v, n] of counts) if (S.has(v)) tally.set(v, (tally.get(v) || 0) + n);
+        who.push({ pk, rounds: (prs.get(pk) || []).filter((set) => [...set].some((v) => S.has(v))).length, events: evIn.length, last: evDate.get(evIn[evIn.length - 1][0]) || "", still: !!prevIn, top: [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] || null });
+      }
       if (used && prevIn) kept++;
     }
     const sw = runs.filter((r) => r.switched);
@@ -386,6 +393,7 @@ export function productUsage(rounds, sels) {
       stay: avg(sw.length ? sw : runs), staySwitched: sw.length,
       kept: users.size ? pct(kept, users.size) : null,
       events: events.length,
+      who: who.sort((a, b) => b.rounds - a.rounds || b.events - a.events),
     };
   });
 }
