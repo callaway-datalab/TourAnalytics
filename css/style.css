@@ -3992,3 +3992,18 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 @media (max-width: 640px) {
   .cmp-conds .cmp-cond:not(.cmp-cond-h) .cmp-cond-bar { display: block; grid-column: 2 / -1; grid-row: 2; height: 7px; margin-top: 0.15rem; }
 }
+/* (update 221) the Verdict; the why pop-up stacked; a card inside the leaderboard pop-up; bars square at zero */
+.cmp-cards-verdict { grid-template-columns: 1fr !important; }
+.cmp-verdict-win { margin: 0.3rem 0 0.1rem; font-size: clamp(1.5rem, 4.5vw, 2.2rem); font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: #fff; }
+.cmp-verdict-win .cmp-dot { width: 0.7em; height: 0.7em; margin-right: 0.35rem; vertical-align: 0.08em; }
+.cmp-verdict-sub { margin: 0 0 0.6rem; color: var(--muted); font-size: 0.95rem; }
+.cmp-verdict-row { margin: 0.15rem 0; font-size: 0.9rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.cmp-rd-pop .cmp-why-grid { grid-template-columns: 1fr !important; }
+.cmp-why-grid .cmp-why-t { width: 100%; }
+.cmp-why-key { display: grid; gap: 0.2rem; margin-bottom: 0.6rem; font-size: 0.88rem; }
+.cmp-why-key p { margin: 0; overflow-wrap: anywhere; }
+.cmp-why-tag { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 700; }
+.cmp-pop-card { margin-top: 0.6rem; padding: 0.7rem 0.8rem; border-radius: 14px; background: rgba(255,255,255,0.035); border-left: 3px solid var(--c); }
+.cmp-pop-card .cmp-card-big strong { font-size: 1.8rem; }
+.cmp-cond-bar .b.pos { border-radius: 0 999px 999px 0 !important; }
+.cmp-cond-bar .b.neg { border-radius: 999px 0 0 999px !important; }

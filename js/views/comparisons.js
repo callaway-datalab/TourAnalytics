@@ -548,12 +548,12 @@ export async function render(main) {
     });
     const searchRow = el("div", { class: "cmp-pb-search" }, [search, words.length && !kindsShown.length ? el("p", { class: "muted small" }, `Nothing matches \u201c${pb.q.trim()}\u201d.`) : null]);
     const kindRow = row("Kind of club", kindsShown.map((k) => pill(pb.kind === k.group, groupName(k.group), k.items.length, () => { pb.kind = k.group; pb.brands.clear(); pb.models.clear(); draw(); }, "models")));
-    const brandRow = row("Brand", brands.map((b) => pill(pb.brands.has(b), b, items.filter((o) => o.brand === b).length, () => { pb.brands.has(b) ? pb.brands.delete(b) : pb.brands.add(b); for (const m of [...pb.models]) if (!pb.brands.has(items.find((o) => o.value === m)?.brand)) pb.models.delete(m); draw(); }, "models")));
+    const brandRow = row("Brand", brands.map((b) => pill(pb.brands.has(b), b, items.filter((o) => o.brand === b).length, () => { pb.brands.has(b) ? pb.brands.delete(b) : pb.brands.add(b); if (pb.brands.size) for (const m of [...pb.models]) if (!pb.brands.has(items.find((o) => o.value === m)?.brand)) pb.models.delete(m); draw(); }, "models")));
     const shown = items.filter((o) => pb.brands.has(o.brand));
     // (update 218) every model of that kind shows straight away; picking a brand narrows them to its models
-    const baseModels = pb.brands.size ? shown : items;
+    const baseModels = pb.brands.size ? items.filter((o) => pb.brands.has(o.brand) || pb.models.has(o.value)) : items;
     const modelPills = (words.length ? [...new Map([...baseModels.filter((o) => matches.includes(o) || pb.models.has(o.value)), ...(pb.brands.size ? matches.filter((o) => pb.brands.has(o.brand)) : matches)].map((o) => [o.value, o])).values()] : baseModels);
-    const modelRow = modelPills.length ? row(!pb.brands.size ? "Model (or pick a brand above for all its models)" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else { pb.models.add(o.value); pb.brands.add(o.brand); } draw(); }))) : null;
+    const modelRow = modelPills.length ? row(!pb.brands.size ? "Model (or pick a brand above for all its models)" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else pb.models.add(o.value); draw(); /* (update 221: models of any brand, no brand needed) */ }))) : null;
     // (update 217) each season's rounds with what's picked so far (the kind, its brands, its models); none: not offered
     const pickedNow = new Set(pb.models.size ? [...pb.models] : pb.brands.size ? (kindsAny.find((k) => k.group === pb.kind)?.items || []).filter((o) => pb.brands.has(gearInfo(o.value).brand)).map((o) => o.value) : (kindsAny.find((k) => k.group === pb.kind)?.items || []).map((o) => o.value));
     const isBall = pb.kind === "Ball";
@@ -1010,7 +1010,16 @@ export async function render(main) {
     const head = used.length === 1 ? used[0] : ["TOTAL", "Total"];
     // (update 215) time frames: best to worst, by the number shown big
     const items = timeMode() ? [...items0].sort((a, b) => (b.s.n ? b.s.sg[head[0]] ?? -99 : -99) - (a.s.n ? a.s.sg[head[0]] ?? -99 : -99)) : items0;
+    // (update 221) two or more: the leaderboard above has each one (tap it for its card and tournaments); here, the Verdict
+    if (items.filter((it) => it.s.n).length >= 2) return el("section", { class: "cmp-cards cmp-cards-verdict" }, compCard(items, head));
     return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(tapCard(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
+      ...cardBody(it, used, head),
+      it.s.n ? el("p", { class: "cmp-card-tap" }, "Tap for the tournaments \u203a") : null,
+    ]), it), it.i)));
+  }
+  // a selection's card: its rounds, SG a round (and by category), best and worst
+  function cardBody(it, used, head) {
+    return [
       el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name)]),
       it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n.toLocaleString()} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
       // (update 210) a small sample says so, so 3 rounds isn't read like 60
@@ -1018,8 +1027,7 @@ export async function render(main) {
       el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, `SG: ${head[1]} a round`)]),
       used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
       it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
-      it.s.n ? el("p", { class: "cmp-card-tap" }, "Tap for the tournaments \u203a") : null,
-    ]), it), it.i)).concat(compCard(items, head)));
+    ];
   }
   // (update 218) the "Comparison" card: how far apart they are (the best against each of the others), and why
   function compCard(items0, head) {
@@ -1029,16 +1037,18 @@ export async function render(main) {
     const top = items[0], rest = items.slice(1);
     const cats = CATEGORIES.filter(([c]) => items.some((it) => Math.abs(it.s.sg[c] || 0) >= 0.005));
     const gap = (a, b, c) => (a.s.sg[c] ?? 0) - (b.s.sg[c] ?? 0);
-    const node = el("article", { class: "panel cmp-card cmp-card-comp cmp-tap", tabindex: "0", role: "button", "aria-haspopup": "dialog" }, [
-      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, "Comparison")]),
-      el("p", { class: "cmp-card-meta" }, rest.length === 1 ? `${top.name} against ${rest[0].name}` : `${top.name} (best) against the others`),
-      ...rest.slice(0, 3).map((b) => el("div", { class: "cmp-comp-row" }, [
-        el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(gap(top, b, k)) }, fmtSigned(gap(top, b, k))), el("span", {}, rest.length === 1 ? `SG: ${head[1]} a round, the difference` : `ahead of ${b.name}`)]),
-        cats.length > 1 && rest.length === 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${cats.length},1fr)` }, cats.map(([c]) => el("div", {}, [el("span", {}, c), el("strong", { class: tone(gap(top, b, c)) }, fmtSigned(gap(top, b, c)))]))) : null,
-      ])),
-      rest.length > 3 ? el("p", { class: "muted small" }, `+ ${rest.length - 3} more`) : null,
+    // (update 221) the Verdict: which one is best, in big letters, and by how much
+    const close = Math.abs(gap(top, rest[0], k)) < 0.05;
+    const node = el("article", { class: "panel cmp-card cmp-card-comp cmp-tap", tabindex: "0", role: "button", "aria-haspopup": "dialog", style: `--c:${top.color}` }, [
+      el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, "Verdict")]),
+      el("p", { class: "cmp-verdict-win" }, [el("span", { class: "cmp-verdict-trophy", "aria-hidden": "true" }, "\ud83c\udfc6 "), el("i", { class: "cmp-dot", style: `--c:${top.color}` }), top.name]),
+      el("p", { class: "cmp-verdict-sub" }, close ? `is best, but only just: ${fmtSigned(gap(top, rest[0], k))} a round ahead of ${rest[0].name}.` : rest.length === 1 ? `is better, by ${gap(top, rest[0], k).toFixed(2)} strokes a round (SG: ${head[1]}).` : `is the best of ${items.length}.`),
+      ...(rest.length === 1 ? [cats.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${cats.length},1fr)` }, cats.map(([c]) => el("div", {}, [el("span", {}, c), el("strong", { class: tone(gap(top, b0(), c)) }, fmtSigned(gap(top, b0(), c)))]))) : null]
+        : rest.slice(0, 4).map((b) => el("p", { class: "cmp-verdict-row" }, [el("i", { class: "cmp-dot", style: `--c:${b.color}` }), b.name, el("strong", { class: tone(-gap(top, b, k)) }, ` ${gap(top, b, k).toFixed(2)} behind`)]))),
+      rest.length > 4 ? el("p", { class: "muted small" }, `+ ${rest.length - 4} more`) : null,
       el("p", { class: "cmp-card-tap" }, "Tap for why \u203a"),
     ]);
+    function b0() { return rest[0]; }
     const go = () => openWhy(top, rest);
     node.addEventListener("click", go); node.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
     return [node];
@@ -1046,10 +1056,14 @@ export async function render(main) {
   const cut = (t) => (t.length > 16 ? `${t.slice(0, 15).trim()}\u2026` : t);
   function openWhy(top, rest) {
     const say = (b) => (lead) => `Mostly ${lead.l}: ${top.name} ${lead.d >= 0 ? "gains" : "loses"} ${Math.abs(lead.d).toFixed(2)} a round ${lead.d >= 0 ? "more than" : "against"} ${b.name}.`;
-    const blocks = rest.map((b) => el("div", { class: "wl-pop-block" }, [rest.length > 1 ? el("p", { class: "wl-pop-t" }, `${top.name} vs ${b.name} \u00b7 ${fmtSigned(top.s.sg.TOTAL - b.s.sg.TOTAL)} a round`) : null, whyCore(top.rs, b.rs, cut(top.name), cut(b.name), say(b), true)]));
+    // (update 221) the columns are A and B (each with its colour); their full names are spelled out above
+    const tag = (it, L) => el("span", { class: "cmp-why-tag" }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), L]);
+    const blocks = rest.map((b) => el("div", { class: "wl-pop-block" }, [
+      el("div", { class: "cmp-why-key" }, [el("p", {}, [tag(top, "A"), " ", el("strong", {}, top.name), el("span", { class: "muted" }, ` \u00b7 ${fmtSG(top.s.sg.TOTAL)} a round`)]), el("p", {}, [tag(b, "B"), " ", el("strong", {}, b.name), el("span", { class: "muted" }, ` \u00b7 ${fmtSG(b.s.sg.TOTAL)} a round`)])]),
+      whyCore(top.rs, b.rs, () => tag(top, "A"), () => tag(b, "B"), say(b), true)]));
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Comparison" }, el("div", { class: "gx-pop wl-pop cmp-rd-pop" }, [
-      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Comparison"), el("h2", {}, rest.length === 1 ? `${top.name} vs ${rest[0].name}` : `${top.name} against the others`), el("p", { class: "gx-sub" }, "Where the difference comes from: strokes gained in each part of the game, and the stats behind it.")]), close]),
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Verdict"), el("h2", {}, `Why ${top.name} is best`), el("p", { class: "gx-sub" }, "Where the difference comes from: strokes gained in each part of the game, and the stats behind it.")]), close]),
       el("div", { class: "wl-pop-body" }, blocks)]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };
@@ -1071,7 +1085,10 @@ export async function render(main) {
     const evs = new Map();
     const pk0 = it.pk || inPlay()[0]?.key;
     for (const rd of rs) { const k = `${rd.pk || ""}|${rd.event || "\u2014"}|${rd.year || String(rd.date || "").slice(0, 4)}`; (evs.get(k) || evs.set(k, { event: rd.event || "\u2014", pk: rd.pk || pk0, rounds: [] }).get(k)).rounds.push(rd); }
-    const hasFin = finishes.size > 0 && pk0 !== EVERY;
+    const hasFin = finishes.size > 0;
+    const SGKs = SGK.filter(([k]) => k === "TOTAL" || rs.some((rd) => rd.shots.some((x) => x.cat === k))); // (update 221)
+    const multiP = new Set(list0().map((e) => e.pk)).size > 1, namesP = new Map(players), nameOfP = (k) => namesP.get(k) || String(k || "").replace(/^c_/, "");
+    function list0() { return [...evs.values()]; }
     const list = [...evs.values()].reverse(); // (latest first)
     const open = new Set();
     let all = false;
@@ -1085,15 +1102,15 @@ export async function render(main) {
       for (const [i, e] of list.entries()) {
         const on = all || open.has(i);
         const tr = el("tr", { class: `cmp-ev-row cmp-tap${on ? " on" : ""}`, tabindex: "0", title: on ? "Hide its rounds" : "Show its rounds" }, [
-          el("td", {}, [el("span", { class: "cmp-ev-caret", "aria-hidden": "true" }, on ? "\u25be " : "\u25b8 "), e.event, el("span", { class: "muted cmp-ev-date" }, dateTxt(e.rounds.at(-1).date))]),
-          el("td", { class: "num" }, String(e.rounds.length)), hasFin ? el("td", { class: `num cmp-fin${finishOf(e.pk, e.rounds[0]) === "MC" ? " mc" : ""}` }, finishOf(e.pk, e.rounds[0])) : null, ...SGK.map(([k]) => td(avg(e.rounds, k), k === "TOTAL"))]);
+          el("td", {}, [el("span", { class: "cmp-ev-caret", "aria-hidden": "true" }, on ? "\u25be " : "\u25b8 "), e.event, el("span", { class: "muted cmp-ev-date" }, [dateTxt(e.rounds.at(-1).date), pk0 === EVERY || multiP ? ` \u00b7 ${nameOfP(e.pk)}` : ""])]),
+          el("td", { class: "num" }, String(e.rounds.length)), hasFin ? el("td", { class: `num cmp-fin${finishOf(e.pk, e.rounds[0]) === "MC" ? " mc" : ""}` }, finishOf(e.pk, e.rounds[0])) : null, ...SGKs.map(([k]) => td(avg(e.rounds, k), k === "TOTAL"))]);
         const flip = () => { if (all) { all = false; list.forEach((_, j) => open.add(j)); } open.has(i) ? open.delete(i) : open.add(i); paint(); };
         tr.addEventListener("click", flip); tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter") flip(); });
         rows.push(tr);
-        if (on) for (const rd of e.rounds) rows.push(el("tr", { class: "cmp-rd-row" }, [el("td", {}, [rd.roundNo ? `Round ${rd.roundNo}` : "Round", el("span", { class: "cmp-ev-date" }, dateTxt(rd.date))]), el("td", { class: "num muted" }, ""), hasFin ? el("td", {}, "") : null, ...SGK.map(([k]) => td(rdSG(rd, k), k === "TOTAL"))]));
+        if (on) for (const rd of e.rounds) rows.push(el("tr", { class: "cmp-rd-row" }, [el("td", {}, [rd.roundNo ? `Round ${rd.roundNo}` : "Round", el("span", { class: "cmp-ev-date" }, dateTxt(rd.date))]), el("td", { class: "num muted" }, ""), hasFin ? el("td", {}, "") : null, ...SGKs.map(([k]) => td(rdSG(rd, k), k === "TOTAL"))]));
       }
       mount(body, el("div", { class: "wl-pop-tw" }, el("table", { class: "wl-pop-table cmp-ev-table" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), hasFin ? el("th", { class: "num", title: "Finish: by SG: Total among those who played every round; MC = fewer rounds (missed the cut)" }, "Fin") : null, ...SGK.map(([, l]) => el("th", { class: "num" }, l))])),
+        el("thead", {}, el("tr", {}, [el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), hasFin ? el("th", { class: "num", title: "Finish: by SG: Total among those who played every round; MC = fewer rounds (missed the cut)" }, "Fin") : null, ...SGKs.map(([, l]) => el("th", { class: "num" }, l))])),
         el("tbody", {}, rows),
       ])));
     };
@@ -1103,6 +1120,7 @@ export async function render(main) {
     const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": it.name }, el("div", { class: "gx-pop wl-pop cmp-rd-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} \u00b7 ${list.length} tournament${list.length === 1 ? "" : "s"}`), el("h2", {}, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]),
         el("p", { class: "gx-sub" }, "Strokes gained a round at each tournament, latest first. Tap one to see its rounds.")]), close]),
+      el("div", { class: "cmp-pop-card", style: `--c:${it.color}` }, cardBody(it, usedCats([it]), (() => { const u = usedCats([it]); return u.length === 1 ? u[0] : ["TOTAL", "Total"]; })()).slice(1)), // (update 221: its card)
       el("div", { class: "cmp-rd-acts" }, allB), body]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };
@@ -1128,7 +1146,8 @@ export async function render(main) {
   function whyCore(aRds, bRds, la, lb, say, better) {
     const per = (rds, k) => rds.reduce((t, rd) => t + rdSG(rd, k), 0) / rds.length;
     const x = { rds: aRds }, all = bRds;
-    const cats = CATEGORIES.map(([k, l]) => ({ k, l, here: per(x.rds, k), usual: per(all, k) })).map((c) => ({ ...c, d: c.here - c.usual }));
+    const cats = CATEGORIES.map(([k, l]) => ({ k, l, here: per(x.rds, k), usual: per(all, k) })).map((c) => ({ ...c, d: c.here - c.usual })).filter((c) => Math.abs(c.here) >= 0.005 || Math.abs(c.usual) >= 0.005); // (update 221: not a part of the game neither has)
+    const L = (v) => (typeof v === "function" ? v() : v); // (a label can be made fresh for each table)
     const lead = [...cats].sort((a, b) => (better ? b.d - a.d : a.d - b.d))[0];
     const agg = (rds, k) => { let s = 0, w = 0, s2 = 0, w2 = 0; for (const rd of rds) for (const o of rd.obs || []) { if (o.k !== k || o.v == null || !Number.isFinite(o.v)) continue; const ww = o.w || 1; if (!o.dist) { s += o.v * ww; w += ww; } else { s2 += o.v * ww; w2 += ww; } } return w ? s / w : w2 ? s2 / w2 : null; };
     const stats = WHY_STATS.map((k) => { const def = k === "gir" ? { ...statDef(k), label: "GIR %" } : statDef(k); const here = agg(x.rds, k), usual = agg(all, k); return here == null || usual == null ? null : { def, here, usual, d: here - usual }; }).filter(Boolean);
@@ -1138,9 +1157,9 @@ export async function render(main) {
     return el("div", { class: "cmp-why" }, [
       el("p", { class: "cmp-why-h" }, [el("strong", {}, "Why? "), why]),
       el("div", { class: "cmp-why-grid" }, [
-        el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Strokes gained a round"), el("th", { class: "num" }, la), el("th", { class: "num" }, lb), el("th", { class: "num" }, "Diff")])),
+        el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Strokes gained a round"), el("th", { class: "num" }, L(la)), el("th", { class: "num" }, L(lb)), el("th", { class: "num" }, "Diff")])),
           el("tbody", {}, cats.map((c) => el("tr", { class: c === lead && Math.abs(lead.d) >= 0.05 ? "strong" : "" }, [el("td", {}, c.l), el("td", { class: `num ${tone(c.here)}` }, fmtSG(c.here)), el("td", { class: "num muted" }, fmtSG(c.usual)), el("td", { class: `num ${tone(c.d)}` }, fmtSigned(c.d))])))]),
-        stats.length ? el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Stats"), el("th", { class: "num" }, la), el("th", { class: "num" }, lb), el("th", { class: "num" }, "Diff")])),
+        stats.length ? el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Stats"), el("th", { class: "num" }, L(la)), el("th", { class: "num" }, L(lb)), el("th", { class: "num" }, "Diff")])),
           el("tbody", {}, stats.map((st) => el("tr", {}, [el("td", {}, st.def.label), el("td", { class: "num" }, fmtStat(st.def, st.here)), el("td", { class: "num muted" }, fmtStat(st.def, st.usual)), el("td", { class: `num ${good(st.d, st.def)}` }, dTxt(st.d, st.def))])))]) : null,
       ]),
     ]);
@@ -1228,7 +1247,12 @@ export async function render(main) {
     const live = items.filter((it) => it.s.n);
     if (live.length < 2) return null;
     const avgOf = new Map();
-    const usual = (it) => { const pk = it.pk || inPlay()[0]?.key; if (!avgOf.has(pk)) { const rs = sgRounds(roundsOfKey(pk)); avgOf.set(pk, rs.length ? rs.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / rs.length : 0); } return avgOf.get(pk); };
+    // (update 221) "their average" over the same parts of the game the pick has (a driver: their Off-the-Tee average)
+    const usual = (it) => {
+      const pk = it.pk || inPlay()[0]?.key, cs = [...new Set(it.rs.flatMap((rd) => rd.shots.map((x) => x.cat)))].sort(), key = `${pk}|${cs.join(",")}`;
+      if (!avgOf.has(key)) { const rs = sgRounds(roundsOfKey(pk)), all4 = cs.length >= 4; avgOf.set(key, rs.length ? rs.reduce((t, rd) => t + (all4 ? rdSG(rd, "TOTAL") : cs.reduce((u, c) => u + rdSG(rd, c), 0)), 0) / rs.length : 0); }
+      return avgOf.get(key);
+    };
     const list = [...live].map((it) => ({ it, v: it.s.sg.TOTAL, d: it.s.sg.TOTAL - usual(it) })).sort((a, b) => b.v - a.v);
     const max = Math.max(0.05, ...list.map((x) => Math.abs(x.d)));
     const pks = new Set(live.map((it) => it.pk || inPlay()[0]?.key));
@@ -1244,9 +1268,9 @@ export async function render(main) {
       row.addEventListener("click", () => openRounds(x.it));
       return hoverable(row, x.it.i);
     });
-    const avgTxt = pks.size === 1 ? ` (${fmtSG(usual(live[0]))})` : "";
+    const avgTxt = pks.size === 1 && new Set(live.map(usual)).size === 1 ? ` (${fmtSG(usual(live[0]))})` : "";
     return el("section", { class: "panel cmp-sec career-sec cmp-board" }, [
-      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Leaderboard"), el("p", { class: "muted small" }, `Best first: SG: Total a round, and how far above or below ${pks.size === 1 ? "their" : "each player\u2019s"} average over every round${avgTxt}. Tap one for its tournaments.`)]),
+      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Leaderboard"), el("p", { class: "muted small" }, `Best first: strokes gained a round, and how far above or below ${pks.size === 1 ? "their" : "each player\u2019s"} average over every round (in the same parts of the game)${avgTxt}. Tap one for its card and tournaments.`)]),
       el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, pks.size === 1 ? "their average" : "their averages"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
     ]);
   }
