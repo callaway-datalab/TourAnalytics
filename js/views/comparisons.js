@@ -17,7 +17,7 @@ import { playerPicker } from "../playerPicker.js";
 import { CATEGORIES, fmtStat, fmtSG, gearInfo, gearLabel, statDef } from "../sg.js";
 import {
   COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statSets,
-  products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage, sgRounds,
+  products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage, sgRounds, sureWords,
 } from "../compareData.js";
 import { renderBlocks } from "../badgePopup.js";
 
@@ -112,7 +112,30 @@ export async function render(main) {
   const everyLabel = () => `Everyone${everyN ? ` (${everyN.toLocaleString()} players)` : ""}`;
   const inPlay = () => (!player ? [] : !staff ? [player] : chosen.length ? chosen.map((p) => (p.key === EVERY ? { key: EVERY, label: "Everyone" } : p)) : everyOk() ? [{ key: EVERY, label: "Everyone" }] : [player]);
   const multi = () => inPlay().length > 1;
-  const roundsOfKey = (k) => (k === player?.key ? data.rounds : others.get(`${k}|${source}`) || []);
+  const rawOfKey = (k) => (k === player?.key ? data.rounds : others.get(`${k}|${source}`) || []);
+  // (update 222) the Tour filter: only the rounds on the tours picked (none picked = every tour), everywhere on the page
+  let tourSel = new Set();
+  const tourCache = new Map();
+  const roundsOfKey = (k) => {
+    const raw = rawOfKey(k);
+    if (!tourSel.size) return raw;
+    const key = [...tourSel].sort().join("|"), c = tourCache.get(k);
+    if (c && c.src === raw && c.key === key) return c.out;
+    const out = raw.filter((rd) => tourSel.has(rd.tour || ""));
+    tourCache.set(k, { src: raw, key, out });
+    return out;
+  };
+  function tourBar() {
+    const ps = inPlay().length ? inPlay() : player ? [player] : [];
+    const counts = new Map();
+    for (const p of ps) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.tour) counts.set(rd.tour, (counts.get(rd.tour) || 0) + 1);
+    if (counts.size < 2 && !tourSel.size) return null;
+    const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n.toLocaleString()} rds`) : null]); b.addEventListener("click", click); return b; };
+    const redo = () => { allMemo = null; if (data) opts = options(allRounds()); draw(); };
+    return el("div", { class: "panel cmp-tourbar" }, [el("span", { class: "cmp-chip-gt" }, "Tour"),
+      el("div", { class: "cmp-chips" }, [pill(!tourSel.size, "All tours", null, () => { tourSel = new Set(); redo(); }),
+        ...[...counts].sort((a, b) => b[1] - a[1]).map(([t, n]) => pill(tourSel.has(t), t, n, () => { tourSel.has(t) ? tourSel.delete(t) : tourSel.add(t); redo(); }))])]);
+  }
   const roundsOf = (it) => roundsOfKey(it.pk || inPlay()[0]?.key);
   let allMemo = null; // (the same arrays give the same pooled array, so the work done on it is kept)
   const allRounds = () => { const parts = inPlay().map((p) => roundsOfKey(p.key)); if (parts.length === 1) return parts[0]; if (allMemo && allMemo.parts.length === parts.length && allMemo.parts.every((x, i) => x === parts[i])) return allMemo.out; const out = parts.flat(); allMemo = { parts, out }; return out; };
@@ -263,11 +286,11 @@ export async function render(main) {
     const inc = incNow();
     const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
     // (update 206) while the questions are open, they're all there is: no filters or numbers until they're answered or skipped
-    if (g.open) { mount(root, [head, guideBox()]); window.scrollTo(0, y); return; }
-    if (placeDim && !sels.length) { mount(root, [head, guideBox(), placeSection(), editBox()]); window.scrollTo(0, y); root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; }); return; }
+    if (g.open) { mount(root, [head, tourBar(), guideBox()]); window.scrollTo(0, y); return; }
+    if (placeDim && !sels.length) { mount(root, [head, tourBar(), guideBox(), placeSection(), editBox()]); window.scrollTo(0, y); root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; }); return; }
     placeDim = null;
     mount(root, [
-      head,
+      head, tourBar(), // (update 222)
       guideBox(),
       editBox(),
       items.length ? reportBar(items) : null,
@@ -535,6 +558,13 @@ export async function render(main) {
     const kindNow = kindsAll.find((k) => k.group === pb.kind) || { group: pb.kind, items: [] };
     const items = kindNow.items;
     for (const m of [...pb.models]) if (!items.some((o) => o.value === m)) pb.models.delete(m); // (not used that season)
+    // (update 222) a kind opens on Callaway (Odyssey for putters), or the first brand there is; untick it to see every brand's models
+    if (pb.brandFor !== pb.kind && !words.length) {
+      pb.brandFor = pb.kind;
+      const bs = [...new Set(items.map((o) => o.brand))].sort();
+      const pref = ["Callaway", "Odyssey"].find((b) => bs.includes(b)) || bs[0];
+      if (!pb.brands.size && !pb.models.size && pref) pb.brands.add(pref);
+    }
     for (const b of [...pb.brands]) if (!items.some((o) => o.brand === b)) pb.brands.delete(b);
     const matches = words.length ? items.filter((o) => hit(kindNow, o)) : items;
     const brands = [...new Set([...matches.map((o) => o.brand), ...pb.brands])].filter((b) => items.some((o) => o.brand === b)).sort();
@@ -553,7 +583,9 @@ export async function render(main) {
     // (update 218) every model of that kind shows straight away; picking a brand narrows them to its models
     const baseModels = pb.brands.size ? items.filter((o) => pb.brands.has(o.brand) || pb.models.has(o.value)) : items;
     const modelPills = (words.length ? [...new Map([...baseModels.filter((o) => matches.includes(o) || pb.models.has(o.value)), ...(pb.brands.size ? matches.filter((o) => pb.brands.has(o.brand)) : matches)].map((o) => [o.value, o])).values()] : baseModels);
-    const modelRow = modelPills.length ? row(!pb.brands.size ? "Model (or pick a brand above for all its models)" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), o.label, o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else pb.models.add(o.value); draw(); /* (update 221: models of any brand, no brand needed) */ }))) : null;
+    const oneBrand = pb.brands.size === 1 ? [...pb.brands][0] : null;
+    const mLabel = (o) => (oneBrand && o.brand === oneBrand ? o.model || o.label.replace(new RegExp(`^${oneBrand}\\s+`), "") : o.label); // (update 222)
+    const modelRow = modelPills.length ? row(!pb.brands.size ? "Model (or pick a brand above for all its models)" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), mLabel(o), o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else pb.models.add(o.value); draw(); /* (update 221: models of any brand, no brand needed) */ }))) : null;
     // (update 217) each season's rounds with what's picked so far (the kind, its brands, its models); none: not offered
     const pickedNow = new Set(pb.models.size ? [...pb.models] : pb.brands.size ? (kindsAny.find((k) => k.group === pb.kind)?.items || []).filter((o) => pb.brands.has(gearInfo(o.value).brand)).map((o) => o.value) : (kindsAny.find((k) => k.group === pb.kind)?.items || []).map((o) => o.value));
     const isBall = pb.kind === "Ball";
@@ -1046,6 +1078,7 @@ export async function render(main) {
       ...(rest.length === 1 ? [cats.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${cats.length},1fr)` }, cats.map(([c]) => el("div", {}, [el("span", {}, c), el("strong", { class: tone(gap(top, b0(), c)) }, fmtSigned(gap(top, b0(), c)))]))) : null]
         : rest.slice(0, 4).map((b) => el("p", { class: "cmp-verdict-row" }, [el("i", { class: "cmp-dot", style: `--c:${b.color}` }), b.name, el("strong", { class: tone(-gap(top, b, k)) }, ` ${gap(top, b, k).toFixed(2)} behind`)]))),
       rest.length > 4 ? el("p", { class: "muted small" }, `+ ${rest.length - 4} more`) : null,
+      el("p", { class: "muted small cmp-verdict-sure" }, sureWords(top.s.rounds, rest.at(-1).s.rounds)), // (update 222: how sure, and how many rounds would settle it)
       el("p", { class: "cmp-card-tap" }, "Tap for why \u203a"),
     ]);
     function b0() { return rest[0]; }
@@ -1365,7 +1398,7 @@ export async function render(main) {
     let conf = null;
     if (live.length >= 2) {
       const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
-      conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${fmtSigned(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL)} a round, `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, c.word), ` (allowing for how much rounds vary${c.word === "too few rounds" ? "" : `; z = ${Math.abs(c.z).toFixed(1)}`}).`]);
+      conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${s[0].name} is ${Math.abs(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL).toFixed(2)} a round better than ${s.at(-1).name}. `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, sureWords(s[0].s.rounds, s.at(-1).s.rounds))]); // (update 222)
     }
     return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained, then the other stats by part of the game and distance. The best in each row is shaded green, the worst red (lower is better for some, like Proximity). Hover a stat for how many attempts it’s from."), table, fewNote, conf]);
   }
@@ -1488,7 +1521,7 @@ export async function render(main) {
   function usageSection(items) {
     lastUsage = null;
     const ps = sels.filter((s) => s.f?.clubs?.length && !s.f.balls); // (update 217: not a club-and-ball combination)
-    const pooled = others.get(`${EVERY}|tour`);
+    const pooled = others.has(`${EVERY}|tour`) ? roundsOfKey(EVERY) : null; // (update 222: on the tours picked)
     if (!ps.length || !pooled || source !== "tour") return null;
     // (a group for one season counts that season's tournaments only)
     const u = ps.map((s) => (productUsage(s.f.years ? pooled.filter((rd) => s.f.years.includes(String(rd.year || String(rd.date || "").slice(0, 4)))) : pooled, [{ clubs: s.f.clubs }]) || [null])[0]);

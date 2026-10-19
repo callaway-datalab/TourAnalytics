@@ -4007,3 +4007,7 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .cmp-pop-card .cmp-card-big strong { font-size: 1.8rem; }
 .cmp-cond-bar .b.pos { border-radius: 0 999px 999px 0 !important; }
 .cmp-cond-bar .b.neg { border-radius: 999px 0 0 999px !important; }
+/* (update 222) the Tour filter on Compare; the Verdict's how-sure line */
+.cmp-tourbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.6rem 0.9rem !important; }
+.cmp-tourbar .cmp-chip-gt { margin: 0; }
+.cmp-verdict-sure { margin: 0 0 0.4rem; }
