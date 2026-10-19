@@ -49,7 +49,8 @@ const nameOf = (ds, key) => ds?.playerNames?.[key] || key.replace(/^c_/, "");
  * ds: the file's catalogue record when the caller has it (saves a read). onProgress(done, total) while
  * loading from Firestore; not called when the copy on this device is used.
  */
-export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = null } = {}) {
+export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = null, order = null, onPlayer = null } = {}) {
+  // (update 231) order: the keys to fetch first (the rest after); onPlayer(key, p) as each one arrives
   if (!ds) ds = await getDatasetRecord(datasetId);
   if (!ds) return { players: new Map(), from: "none" };
   const version = versionOf(ds), keys = ds.clientKeys || [];
@@ -70,7 +71,8 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
     // from Firestore (after a load where some players failed, only those are fetched again)
     const retry = mem && version != null && mem.version === version && mem.failed?.length ? mem : null;
     const players = retry ? retry.players : new Map(keys.map((k) => [k, null]));
-    const queue = retry ? [...retry.failed] : [...keys];
+    let queue = retry ? [...retry.failed] : [...keys];
+    if (order?.length) { const pos = new Map(order.map((k, i) => [k, i])); queue = queue.sort((a, b) => (pos.get(a) ?? 1e9) - (pos.get(b) ?? 1e9)); }
     const failedKeys = [];
     let done = retry ? keys.length - queue.length : 0, error = null;
     const next = async () => {
@@ -78,6 +80,7 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
         const key = queue.shift();
         try { players.set(key, { label: nameOf(ds, key), rows: await getDatasetRowsListed(key, datasetId) }); }
         catch (err) { failedKeys.push(key); error = error || err; players.set(key, { label: nameOf(ds, key), rows: [] }); }
+        try { onPlayer?.(key, players.get(key)); } catch { /* the caller's problem */ }
         done++;
         onProgress?.(done, keys.length);
       }

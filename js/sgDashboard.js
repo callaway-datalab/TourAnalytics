@@ -54,7 +54,7 @@ export function sgDashboard(container, opts) {
   if (!SPANS.some(([v]) => v === String(st.span ?? 0))) st.span = 0; // (an old "last N rounds" pick)
   Object.assign(st, { span: st.span ?? 0, year: arr(st.year), event: arr(st.event), course: arr(st.course), roundNo: arr(st.roundNo), cats: st.cats ?? [], lie: arr(st.lie),
     dist: arr(st.dist).map((d) => (String(d).includes("|") ? d : `${st.distCat || ""}|${d}`)), club: arr(st.club), gear: arr(st.gear), ptype: arr(st.ptype), trendBy: st.trendBy ?? "event", rankQuery: st.rankQuery ?? "", openFilter: null, chartTypes: st.chartTypes ?? {} });
-  if (st.rel == null) { try { st.rel = localStorage.getItem("ta:rel") !== "0"; } catch { st.rel = true; } } // (update 229: Relative to Avg unless Raw was picked) // (update 226: Raw / Relative to Tour Avg, remembered)
+  st.rel = false; // (update 231: no Relative to Avg / Raw value on the stats page; the stats table compares with a rank instead) // (update 229: Relative to Avg unless Raw was picked) // (update 226: Raw / Relative to Tour Avg, remembered)
   const narrowed = () => st.lie.length || st.dist.length || st.club.length || st.gear.length; // lie / distance / club in use (the shared summary can't follow those)
   const charts = [];
   const destroyCharts = () => { while (charts.length) charts.pop().destroy(); };
@@ -1288,15 +1288,17 @@ export function sgDashboard(container, opts) {
       for (const { rd, m } of perRd) { const v = m.get(row.key); if (v == null || !Number.isFinite(v)) continue; if (row.key.startsWith("s:") && !(rd.obs || []).some((o) => o.v != null)) continue; if (!best || (row.higher ? v > best.v : v < best.v)) best = { v, rd }; }
       return best;
     };
-    const relNow = relOn();
-    const cmpLabel = compareName().replace(/ overall/, "").replace(/ \(avg\)/, " avg");
+    // (update 231) against a rank (picked above the table): each value less the value of the player ranked #N in that row
+    const vsN = st.vsRank ? Number(st.vsRank) : null;
+    const nthOf = (k, higher) => { const vs = fieldMaps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)).sort((a, b) => (higher === false ? a - b : b - a)); return vs.length ? vs[Math.min(vsN, vs.length) - 1] : null; };
+    const relNow = !!vsN;
     const tr = [];
     for (const row of R) {
       if (row.grp) { tr.push(el("tr", { class: "cmp-grp" }, el("td", { colspan: 4 }, row.grp))); continue; }
-      const v = meV.get(row.key) ?? null, fAvg = avg(cmpMaps, row.key);
+      const v = meV.get(row.key) ?? null, fAvg = vsN ? nthOf(row.key, row.higher) : avg(cmpMaps, row.key);
       const good = (d) => (d == null || row.higher == null || Math.abs(d) < 1e-9 ? "" : (row.higher ? d > 0 : d < 0) ? "pos" : "neg");
       const shown = relNow && v != null && fAvg != null ? (row.fmt === sgF || row.fmt === sg3 ? row.fmt(v - fAvg) : `${v - fAvg >= 0 ? "+" : "−"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(v - fAvg))}`) : row.fmt(v);
-      const vCls = relNow && v != null && fAvg != null ? good(v - fAvg) : row.tone ? sgTone(v) : good(v != null && fAvg != null ? v - fAvg : null);
+      const vCls = relNow && v != null && fAvg != null ? (row.higher == null ? "" : good(v - fAvg)) : row.tone ? sgTone(v) : good(v != null && fAvg != null ? v - fAvg : null);
       const rk = showRanks ? rankOfRow(row.key, v, row.higher) : null;
       const a = lastV?.get(row.key), b = prevV?.get(row.key), ch = a != null && b != null ? a - b : null;
       const chTxt = ch == null ? "—" : Math.abs(ch) < (row.tone ? 0.005 : 1e-9) ? "◆ steady" : `${ch > 0 ? "▲" : "▼"} ${row.fmt === sg3 ? Math.abs(ch).toFixed(3) : row.fmt === sgF ? Math.abs(ch).toFixed(2) : row.def ? fmtStat({ ...row.def, pct: false, unit: row.def.pct ? " pct" : row.def.unit }, Math.abs(ch)) : Math.abs(ch).toFixed(1)}`;
@@ -1309,9 +1311,9 @@ export function sgDashboard(container, opts) {
       ]));
     }
     return [
-      el("div", { class: "sg-full-top" }, [relSeg(), topPills("Rank comparisons")]), // (update 229)
+      el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? `Each value less the ${cmpLabel}` : "" }, relNow ? `Vs ${topName()}` : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? `Each value less the value of the player ranked #${vsN} (or the last one ranked, in a smaller field)` : "" }, relNow ? `Vs #${vsN}` : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
         el("tbody", {}, tr),
       ])),
     ];
@@ -1672,6 +1674,20 @@ export function sgDashboard(container, opts) {
       const on = (st.rankTop || "all") === v;
       const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on) }, l);
       b.addEventListener("click", () => { st.rankTop = v; st.rankTopManual = true; st.rankTopFor = me?.key; draw(); });
+      return b;
+    }))]);
+  }
+  // (update 231) Rank comparisons above the stats table: none (the player's own values) or #1 / #10 / #25 / #50.
+  // Tap the one picked again to go back to none. The pick also sets who the gold dots on the charts are.
+  function vsPills() {
+    return el("div", { class: "top-pills" }, [el("span", { class: "ms-label" }, "Rank comparisons"), el("div", { class: "seg small vs-pills" }, [["1", "#1"], ["10", "#10"], ["25", "#25"], ["50", "#50"]].map(([v, l]) => {
+      const on = st.vsRank === v;
+      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on), title: `Show each stat against the player ranked #${v}` }, l);
+      b.addEventListener("click", () => {
+        if (on) { st.vsRank = null; st.rankTopManual = false; st.rankTopFor = null; }
+        else { st.vsRank = v; st.rankTop = v; st.rankTopManual = true; st.rankTopFor = me?.key; }
+        draw();
+      });
       return b;
     }))]);
   }

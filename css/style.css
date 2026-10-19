@@ -4047,3 +4047,6 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .rel-pick .seg-btn, .top-pills .seg-btn { white-space: nowrap; flex: 0 0 auto; }
 .top-pills { margin-bottom: 0 !important; }
 .ms-options [hidden] { display: none !important; } /* (update 230: the search hides rows; .ms-row's display: flex was overriding hidden) */
+/* (update 231) Rank comparisons: snug around the text */
+.top-pills .seg { padding: 2px !important; min-height: 0 !important; }
+.top-pills .seg-btn { padding: 0.12rem 0.7rem !important; min-height: 0 !important; height: auto !important; line-height: 1.25 !important; }

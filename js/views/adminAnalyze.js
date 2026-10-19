@@ -19,7 +19,7 @@ export const ENTERED_NOTE = "Entered rounds: strokes gained is measured against 
 
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 // (update 227) kept while the app is open (not just while this page is), so coming back to Analyze is instant
-const ROWS = new Map(), PREPARED = new Map(), DETAIL = new Map(), DETAIL_WHY = new Map(), FULL_LOADS = new Map();
+const ROWS = new Map(), PREPARED = new Map(), DETAIL = new Map(), DETAIL_WHY = new Map(), STAGED = new Map();
 const keepFew = (m, n = 4) => { while (m.size > n) m.delete(m.keys().next().value); };
 
 export async function render(main, { flash, routeId }) {
@@ -124,16 +124,24 @@ export async function render(main, { flash, routeId }) {
     const token = ++loadToken;
     mount(body, null);
     if (isLiteDevice() && isShotData(detectColumns(ds.columns || []))) return refreshLite(ds, token);
-    // (update 227) a computer: if every player's full rows aren't ready yet, show the page now from the shared summary
-    // (and its lie / distance detail), and load the full rows in the background; the page fills in when they're here
+    // (update 231) a computer, the first time this file is opened this session: the players load in stages (the
+    // latest season's PGA players first, then that season's other tours, then the season before, and so on), and the
+    // page shows as soon as the first stage is in, filling in quietly as the rest arrive
     {
       const idx0 = detectColumns(ds.columns || []), pk0 = `${ds.id}|${ds.uploadedAt?.toMillis?.() ?? ""}`;
       if (isShotData(idx0) && !preparedCache.has(pk0)) {
-        const summary0 = await getFieldStats(ds.id).catch(() => null);
-        if (token !== loadToken) return;
-        if (summary0 && summaryPlayers(summary0).length) {
-          if (!FULL_LOADS.has(pk0)) FULL_LOADS.set(pk0, loadFullInBackground(ds, pk0, idx0));
-          return refreshLite(ds, token);
+        const job = STAGED.get(pk0) || startStaged(ds, pk0, idx0);
+        if (!job.firstDone) { status.textContent = "Loading\u2026"; await job.first; if (token !== loadToken) return; status.textContent = ""; }
+        if (!preparedCache.has(pk0)) {
+          const labelled = () => [...job.prepared.values()].map((p) => ({ ...p, label: displayLabels.get(p.key) || p.label || p.key.replace(/^c_/, "") }));
+          fieldPlayers = labelled();
+          const box = el("div");
+          mount(body, box);
+          dash = sgDashboard(box, { me: meFrom(), field: fieldPlayers, idx: idx0, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts() });
+          const myDash = dash;
+          job.onUpdate = () => { if (dash !== myDash || fileId !== ds.id) return; fieldPlayers = labelled(); dash.update({ field: fieldPlayers, me: meFrom() }); };
+          watchCoverage(job);
+          return;
         }
       }
     }
@@ -158,29 +166,80 @@ export async function render(main, { flash, routeId }) {
     publishIfStale(ds);
   }
 
-  // (update 227) every player's full rows, read into rounds a few players at a time (so the page stays responsive)
-  async function loadFullInBackground(ds, pk, idx) {
-    try {
+  // (update 231) staged loading. Stages: for each season (latest first), its PGA players, then its other tours'.
+  function startStaged(ds, pk, idx) {
+    const job = { prepared: new Map(), covered: new Set(), combos: new Set(), firstDone: false, done: false, onUpdate: null };
+    let firstResolve; job.first = new Promise((res) => { firstResolve = res; });
+    STAGED.set(pk, job);
+    const finishFirst = () => { if (!job.firstDone) { job.firstDone = true; firstResolve(); } };
+    (async () => {
       const keys = ds.clientKeys || [];
-      if (keys.some((k) => !rowsCache.has(`${ds.id}|${k}`))) {
-        const { players } = await loadDatasetPlayers(ds.id, { ds, onProgress: (done) => { if (fileId === ds.id && !preparedCache.has(pk)) fullNote.textContent = `Loading every player\u2019s full rows in the background (${done} of ${keys.length})\u2026 the page fills in when they\u2019re here.`; } });
-        for (const [key, p] of players) if (p) rowsCache.set(`${ds.id}|${key}`, p);
+      // who played which season and tour (from the shared summary: a few numbers per round)
+      const summary = await getFieldStats(ds.id).catch(() => null);
+      const sp = summaryPlayers(summary);
+      const yt = new Map(); // key → Set("year|tour")
+      const tourN = new Map();
+      for (const p of sp) { const s0 = new Set(); for (const rd of p.rounds) { const y = String(rd.year || String(rd.date || "").slice(0, 4)), t = rd.tour || ""; s0.add(`${y}|${t}`); job.combos.add(`${y}|${t}`); tourN.set(t, (tourN.get(t) || 0) + 1); } yt.set(p.key, s0); }
+      const isPga = (t) => /pga/i.test(t) && !/champ/i.test(t);
+      const years = [...new Set([...job.combos].map((c) => c.split("|")[0]))].sort().reverse();
+      const tours = [...tourN.keys()].sort((a, b) => (isPga(b) - isPga(a)) || tourN.get(b) - tourN.get(a));
+      const pgaT = tours.filter(isPga), otherT = tours.filter((t) => !isPga(t));
+      const stages = [];
+      const taken = new Set();
+      for (const y of years) for (const ts of [pgaT, otherT]) {
+        if (!ts.length) continue;
+        const want = new Set(ts.map((t) => `${y}|${t}`));
+        const ks = keys.filter((k) => [...(yt.get(k) || [])].some((c) => want.has(c)));
+        stages.push({ combos: want, keys: ks });
+        for (const k of ks) taken.add(k);
       }
-      const out = [];
-      for (let i = 0; i < keys.length; i++) {
-        const c = rowsCache.get(`${ds.id}|${keys[i]}`) || { label: keys[i], rows: [] };
-        const rounds = prepare(c.rows, idx);
-        if (rounds.length) out.push({ key: keys[i], label: c.label, rounds });
-        if (i % 25 === 24) await new Promise((res) => setTimeout(res, 0)); // (let the page breathe)
-      }
+      const order = [...new Set([...stages.flatMap((st) => st.keys), ...keys])];
+      if (!stages.length) stages.push({ combos: new Set(job.combos), keys });
+      // read a player's rows into rounds once they're here; a stage is ready once all its players are
+      const loaded = new Set();
+      let next = 0;
+      const prepOne = (k) => { if (job.prepared.has(k)) return; const c = rowsCache.get(`${ds.id}|${k}`); if (!c) return; const rounds = prepare(c.rows, idx); if (rounds.length) job.prepared.set(k, { key: k, label: c.label, rounds }); };
+      const advance = () => {
+        let moved = false;
+        while (next < stages.length && stages[next].keys.every((k) => loaded.has(k))) {
+          for (const k of stages[next].keys) prepOne(k);
+          for (const c of stages[next].combos) job.covered.add(c);
+          next++; moved = true;
+        }
+        if (moved) { finishFirst(); job.onUpdate?.(); }
+      };
+      let pend = null;
+      const onPlayer = (k, p) => { if (p) rowsCache.set(`${ds.id}|${k}`, p); loaded.add(k); if (!pend) pend = setTimeout(() => { pend = null; advance(); }, 120); };
+      try {
+        const { players } = await loadDatasetPlayers(ds.id, { ds, order, onPlayer });
+        for (const [k, p] of players) { if (p) rowsCache.set(`${ds.id}|${k}`, p); loaded.add(k); }
+      } catch (err) { console.warn(err); for (const k of keys) loaded.add(k); }
+      clearTimeout(pend);
+      // everyone: every stage, then anyone left over
+      for (let i = 0; i < keys.length; i++) { prepOne(keys[i]); if (i % 40 === 39) await new Promise((res) => setTimeout(res, 0)); }
+      for (const c of job.combos) job.covered.add(c);
+      next = stages.length;
       keepFew(preparedCache);
-      preparedCache.set(pk, out);
-    } catch (err) { console.warn(err); }
-    finally { FULL_LOADS.delete(pk); fullNote.textContent = ""; }
-    if (fileId === ds.id && source === "tour" && preparedCache.has(pk)) {
-      // (the player on screen stays picked; filters are kept in dashState)
-      refresh();
-    }
+      preparedCache.set(pk, keys.map((k) => job.prepared.get(k)).filter(Boolean));
+      job.done = true; finishFirst();
+      job.onUpdate?.();
+      publishIfStale(ds);
+    })().catch((err) => { console.warn(err); finishFirst(); });
+    return job;
+  }
+  // (update 231) while it loads: say so only when what's on screen (a season, tour or player) isn't in yet
+  let coverTimer = null;
+  function watchCoverage(job) {
+    clearInterval(coverTimer);
+    const check = () => {
+      if (job.done || !dash) { fullNote.textContent = ""; clearInterval(coverTimer); return; }
+      const ys = dashState.year?.length ? dashState.year.map(String) : null, ts = dashState.tour?.length ? dashState.tour : null;
+      const needed = [...job.combos].filter((c) => { const [y, t] = c.split("|"); return (!ys || ys.includes(y)) && (!ts || ts.includes(t)); });
+      const missing = needed.some((c) => !job.covered.has(c)) || (player && !job.prepared.has(player.key) && !fieldPlayers.some((p) => p.key === player.key));
+      fullNote.textContent = missing ? "Data is loading. Thank you for your patience." : "";
+    };
+    check();
+    coverTimer = setInterval(check, 500);
   }
   // Phones and tablets: everyone from the shared field summary (small: a few numbers per round), and full rows
   // only for the player picked (fetched when they're picked). Loading every player's rows of a big file is more
@@ -445,5 +504,5 @@ export async function render(main, { flash, routeId }) {
   const wanted = new URLSearchParams(location.hash.split("?")[1] || "").get("player");
   if (!board && wanted) picker.select(wanted);
 
-  return () => { loadToken++; dash?.destroy(); stopFiles(); stopMine(); stopEnt(); undoTop(); };
+  return () => { loadToken++; clearInterval(coverTimer); dash?.destroy(); stopFiles(); stopMine(); stopEnt(); undoTop(); };
 }
