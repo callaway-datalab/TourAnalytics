@@ -1189,7 +1189,7 @@ export async function render(main) {
     const agg = (rds, k) => { let s = 0, w = 0, s2 = 0, w2 = 0; for (const rd of rds) for (const o of rd.obs || []) { if (o.k !== k || o.v == null || !Number.isFinite(o.v)) continue; const ww = o.w || 1; if (!o.dist) { s += o.v * ww; w += ww; } else { s2 += o.v * ww; w2 += ww; } } return w ? s / w : w2 ? s2 / w2 : null; };
     const stats = WHY_STATS.map((k) => { const def = k === "gir" ? { ...statDef(k), label: "GIR %" } : statDef(k); const here = agg(x.rds, k), usual = agg(all, k); return here == null || usual == null ? null : { def, here, usual, d: here - usual }; }).filter(Boolean);
     const good = (d, def) => (def.higher == null || Math.abs(d) < 1e-9 ? "" : (def.higher === false ? -d : d) > 0 ? "pos" : "neg");
-    const dTxt = (d, def) => { const f = fmtStat({ ...def, pct: false, unit: def.pct ? " pts" : def.unit }, Math.abs(d)); return `${d > 0 ? "+" : d < 0 ? "\u2212" : ""}${f}`; };
+    const dTxt = (d, def) => { const f = fmtStat({ ...def, pct: false, unit: def.pct ? " pct" : def.unit }, Math.abs(d)); return `${d > 0 ? "+" : d < 0 ? "\u2212" : ""}${f}`; };
     const why = Math.abs(lead.d) < 0.05 ? `No one part of the game stands out: it\u2019s a little from everywhere.` : say(lead, better);
     return el("div", { class: "cmp-why" }, [
       el("p", { class: "cmp-why-h" }, [el("strong", {}, "Why? "), why]),

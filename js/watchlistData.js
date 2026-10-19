@@ -41,7 +41,9 @@ function rankOf(values, key, higher = true) {
   if (i < 0) return { rank: null, of: list.length };
   const v = list[i][1];
   const tie = list.findIndex(([, x]) => Math.abs(x - v) < 1e-9); // (ties share the better rank)
-  return { rank: tie + 1, of: list.length, avg: mean(list.map(([, x]) => x)) };
+  const sumAll = list.reduce((t, [, x]) => t + x, 0);
+  // (update 226) avgO: everyone else's average (for "Relative to Tour Avg")
+  return { rank: tie + 1, of: list.length, avg: mean(list.map(([, x]) => x)), avgO: list.length > 1 ? (sumAll - v) / (list.length - 1) : null };
 }
 
 /** Last n rounds against the n before (n up to 10, at least 3). */
@@ -161,6 +163,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   last20.forEach((r, i) => { const t = r.tour || "", o = recentN.get(t) || { n: 0, at: -1 }; recentN.set(t, { n: o.n + 1, at: i }); });
   const recentTour = [...recentN].filter(([t]) => tourN.has(t)).sort((a, b) => b[1].n - a[1].n || b[1].at - a[1].at)[0]?.[0];
   const tour = wantTour != null && tourN.has(wantTour) ? wantTour : recentTour ?? tours[0]?.tour ?? mainTour(mineAll);
+  if (/^practice$/i.test(tour || "")) noRanks = true; // (update 226: Practice: no wins, top 10s or ranks; stat values, streaks and trends only)
   const f = { ...pf, tour: tour ? [tour] : [] };
   const mine = applyFilters(sgOnly(mineAll), f).sort(byDate);
   // the field on the same tour and period (this player with their full rounds)
@@ -176,7 +179,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   for (const [k, l, short] of SG_KEYS) {
     const vals = new Map(ranked.map((p) => [p.key, perRound(p.rounds, k)]));
     const r = rankOf(vals, key);
-    card.sg.push({ k, label: l, short, v: vals.get(key), rank: r.rank, of: r.of, avg: r.avg, trend: trendOf(mine, (rs) => perRound(rs, k)),
+    card.sg.push({ k, label: l, short, v: vals.get(key), rank: r.rank, of: r.of, avg: r.avg, avgO: r.avgO, trend: trendOf(mine, (rs) => perRound(rs, k)),
       // (update 182) its form; SG: Total's also says where the change came from
       info: () => formInfo(mine, (rs) => perRound(rs, k), { label: l, fmtFn: fmtSG, rows: k === "TOTAL" ? SG_KEYS.map(([kk, ll]) => ({ label: ll, val: (rs) => perRound(rs, kk) })) : null }) });
   }
@@ -198,7 +201,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
     let r = { rank: null, of: 0, avg: null };
     if (fieldB) r = rankOf(new Map(fieldB.map((p) => { const x = p.b.get(b); return [p.key, p.key === key ? v : x && x.w >= MIN_ATT && p.n ? x.sg / p.n : null]; })), key);
     return { id: b, cat, dist: d.join("|"), label: `${CAT_SHORT[cat] || cat} · ${d.join("|")}`, v, tot: o.sg, n: Math.round(o.w), rank: r.rank, of: r.of, avg: r.avg,
-      info: () => distInfo(b, `${CAT_SHORT[cat] || cat} · ${d.join("|")}`) }; // (update 182)
+      avgO: r.avgO, info: () => distInfo(b, `${CAT_SHORT[cat] || cat} · ${d.join("|")}`) }; // (update 182)
   });
   // (update 182) a distance's form: strokes gained there each round (a round without a shot there counts as 0)
   const fmt3 = (y) => `${y >= 0 ? "+" : "\u2212"}${Math.abs(y).toFixed(3)}`;
@@ -320,7 +323,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       trend = trendOf(minePeriod.sort(byDate), (rs) => { const x = bucketsOf(rs).get(b); return x && x.w >= 3 ? x.sg / rs.length : null; });
       info = () => distInfo(b, metricLabel(id));
     }
-    card.metrics.push({ id, label: metricLabel(id), v, text: fmt(v), rank: r.rank, of: r.of, trend, higher, info, fmtCh: (ch) => (id.startsWith("stat:") ? (() => { const d = statDef(parseStatId(id).k); return fmtStat({ ...d, pct: false, unit: d.pct ? " pts" : d.unit }, Math.abs(ch)); })() : id.startsWith("dist:") || /^sg:sd@.*\|/.test(id) ? Math.abs(ch).toFixed(3) : Math.abs(ch).toFixed(2)) });
+    card.metrics.push({ id, label: metricLabel(id), v, text: fmt(v), rank: r.rank, of: r.of, avgO: r.avgO ?? null, trend, higher, info, fmtCh: (ch) => (id.startsWith("stat:") ? (() => { const d = statDef(parseStatId(id).k); return fmtStat({ ...d, pct: false, unit: d.pct ? " pct" : d.unit }, Math.abs(ch)); })() : id.startsWith("dist:") || /^sg:sd@.*\|/.test(id) ? Math.abs(ch).toFixed(3) : Math.abs(ch).toFixed(2)) });
   }
 
   // ---- badges and alerts ----
@@ -467,6 +470,6 @@ function rankTrail(key, mine, ranked, minR, nowRank) {
   if (out.length && nowRank) out[out.length - 1] = nowRank;
   return out;
 }
-const statCh = (def) => (d) => fmtStat({ ...def, pct: false, unit: def.pct ? " pts" : def.unit }, Math.abs(d));
+const statCh = (def) => (d) => fmtStat({ ...def, pct: false, unit: def.pct ? " pct" : def.unit }, Math.abs(d));
 const dateShort = (d) => { const s = String(d || ""), m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); const t = m ? new Date(+m[1], m[2] - 1, +m[3]) : new Date(s); return isNaN(t) ? s : t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }); };
 export const ordinal = (n) => { const t = ["th", "st", "nd", "rd"], v = n % 100; return n + (t[(v - 20) % 10] || t[v] || t[0]); };

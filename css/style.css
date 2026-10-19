@@ -4041,3 +4041,8 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .sg-full-top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
 .sg-full-t th, .sg-full-t td { white-space: nowrap; }
 .sg-full-t td:first-child { white-space: normal; }
+/* (update 229) the stats table's two pickers: one line each */
+.sg-full-top { justify-content: flex-start !important; gap: 0.6rem 1.2rem !important; margin-bottom: 0.6rem; }
+.rel-pick, .top-pills .seg { flex-wrap: nowrap !important; width: auto !important; }
+.rel-pick .seg-btn, .top-pills .seg-btn { white-space: nowrap; flex: 0 0 auto; }
+.top-pills { margin-bottom: 0 !important; }
