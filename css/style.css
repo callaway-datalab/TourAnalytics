@@ -4050,3 +4050,9 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 /* (update 231) Rank comparisons: snug around the text */
 .top-pills .seg { padding: 2px !important; min-height: 0 !important; }
 .top-pills .seg-btn { padding: 0.12rem 0.7rem !important; min-height: 0 !important; height: auto !important; line-height: 1.25 !important; }
+/* (update 233) Time windows: rounds on one row, events on the next */
+.cmp-win-row + .cmp-win-row { margin-top: 0.45rem; }
+.cmp-chips.cmp-win-row { flex-wrap: nowrap; overflow-x: auto; gap: 0.35rem; padding-bottom: 2px; scrollbar-width: thin; }
+.cmp-win-row .cmp-chip { flex: 0 0 auto; white-space: nowrap; padding: 0.32rem 0.6rem; font-size: 0.82rem; gap: 0.3rem; }
+.cmp-win-row .cmp-own { padding: 0.2rem 0.3rem 0.2rem 0.6rem; }
+.cmp-win-row .cmp-own input.cmp-own-n, .cmp-win-row input.cmp-own-n[type=number] { width: 2.6rem !important; min-width: 0 !important; flex: 0 0 2.6rem !important; padding: 0.1rem 0.25rem !important; margin: 0 0.15rem !important; }

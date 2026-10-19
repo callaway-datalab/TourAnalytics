@@ -221,7 +221,7 @@ export async function render(main) {
   // the default: the two latest seasons (or recent form, with only one)
   function defaults() {
     sels = []; touched = multi();
-    mode = "years"; // (update 206) nothing picked to start with: the questions (or your own picks) decide
+    mode = "windows"; // (update 206) nothing picked to start with: the questions (or your own picks) decide
   }
 
   // (update 194) opened from the Stats page on one comparison: "win:10" (the last 10 against the 10 before) or "cond:course:Riviera"
@@ -797,8 +797,8 @@ export async function render(main) {
 
   /* ------------------------------ choosing what to compare ------------------------------ */
   function builder() {
-    const modes = MODES.filter(([m]) => !["tournaments", "courses", "rounds", "months", "tours"].includes(m)); // (update 216: all in "Tournaments & courses")
-    if (!modes.some(([m]) => m === mode)) mode = "years";
+    const modes = MODES.filter(([m]) => !["years", "tournaments", "courses", "rounds", "months", "tours"].includes(m)); // (update 216: all in "Tournaments & courses") (update 233: seasons are in Time windows)
+    if (!modes.some(([m]) => m === mode)) mode = "windows";
     const tabs = el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
       const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
       b.addEventListener("click", () => { if (mode === m) return; mode = m; chipFilter = ""; staged = new Map(); draw(); });
@@ -814,7 +814,7 @@ export async function render(main) {
       const list = mode === "product" ? prods.flatMap((g) => g.items)
         : { years: opts.years, windows: opts.windows, tournaments: opts.tournaments, courses: opts.courses, rounds: opts.rounds, months: opts.months, tours: opts.tours }[mode] || [];
       const filterOf = (o) => (mode === "years" ? { years: [o.value] } : mode === "windows" ? windowFilter(o.value) : mode === "tournaments" ? { events: [o.value] } : mode === "courses" ? { courses: [o.value] } : mode === "rounds" ? { roundNos: [o.value] } : mode === "months" ? { months: [o.value] } : mode === "product" ? { clubs: [o.value] } : { tours: [o.value] });
-      const long = list.length > 14;
+      const long = list.length > 14 && mode !== "windows"; // (update 233: no search in Time windows)
       const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${FIND[mode] || "one"}\u2026`, value: chipFilter }) : null;
       const chipsBox = el("div", { class: "cmp-chips-wrap" });
       const addRow = el("div", { class: "cmp-addrow" });
@@ -822,7 +822,7 @@ export async function render(main) {
         const on = staged.has(o.value);
         // (a small dot for each selection already in the comparison that includes it)
         const inSel = multi() ? [] : sels.filter((x) => x.mode === mode && x.values?.includes(o.value));
-        const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, o.label, o.n == null ? null : el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`),
+        const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, mode === "windows" ? o.label.replace(/ before that$/, " before") : o.label, o.n == null ? null : el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`),
           inSel.length ? el("span", { class: "cmp-chip-dots", title: `In: ${inSel.map((x) => x.name).join(", ")}` }, inSel.map((x) => el("i", { style: `background:${x.color}` }))) : null]);
         b.addEventListener("click", () => { if (on) staged.delete(o.value); else staged.set(o.value, { label: o.long || o.label, f: filterOf(o) }); drawChips(); drawAdd(); });
         return b;
@@ -836,7 +836,15 @@ export async function render(main) {
           const groups = [["Recent form", (o) => /^last(ev)?:/.test(o.value) && !o.own, "last"], ["The rounds or events just before", (o) => /^prev(ev)?:/.test(o.value) && !o.own, "prev"], ["Seasons and career", (o) => o.value.startsWith("year:") || o.value === "all", null]];
           const ownStaged = [...staged].filter(([v]) => !list.some((o) => o.value === v) && /^(last|prev)(ev)?:/.test(v)).map(([v, x]) => ({ value: v, label: x.label, n: Number(v.split(":")[1]) }));
           // (update 217) rounds or tournaments, each with a number of your own
-          mount(chipsBox, groups.map(([g, test, kind]) => { const xs = [...shown.filter(test), ...ownStaged.filter((o) => kind && (o.value.startsWith(kind + ":") || o.value.startsWith(kind + "ev:")))]; return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, [...xs.map(chip), kind ? ownWindow(kind) : null, kind ? ownWindow(kind + "ev") : null])]); }));
+          // (update 233) the rounds on one row, the events on the next
+          mount(chipsBox, groups.map(([g, test, kind]) => {
+            const xs = [...shown.filter(test), ...ownStaged.filter((o) => kind && (o.value.startsWith(kind + ":") || o.value.startsWith(kind + "ev:")))];
+            if (!kind) return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, xs.map(chip))]);
+            const rds = xs.filter((o) => o.value.startsWith(kind + ":")), evs = xs.filter((o) => o.value.startsWith(kind + "ev:"));
+            return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g),
+              el("div", { class: "cmp-chips cmp-win-row" }, [...rds.map(chip), ownWindow(kind)]),
+              el("div", { class: "cmp-chips cmp-win-row" }, [...evs.map(chip), ownWindow(kind + "ev")])]);
+          }));
         } else if (mode === "product") {
           mount(chipsBox, prods.length ? prods.map((g) => { const xs = g.items.filter((o) => shown.includes(o)); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g.group === "Other" ? "Other clubs" : g.group === "Ball" ? "Golf balls" : g.group === "Non-Driver" ? "Non-Driver (tee shots)" : `${g.group}s`), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; })
             : el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s equipment (clubType, clubBrand, clubModel, ballBrand and ballModel columns), every club model shows here, grouped by type (drivers, fairway woods, hybrids, irons, wedges, putters), with the golf balls after them. Pick one model against another to see how they play with each.")]));
@@ -868,7 +876,7 @@ export async function render(main) {
         };
         go.addEventListener("click", pick);
         inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); pick(); } });
-        return el("span", { class: "cmp-chip cmp-own" }, [base === "last" ? "Last" : "The", inp, base === "last" ? unit : ev ? "events before that" : "rounds before that", go]);
+        return el("span", { class: "cmp-chip cmp-own" }, [base === "last" ? "Last" : "The", inp, base === "last" ? unit : ev ? "events before" : "rounds before", go]);
       }
       search?.addEventListener("input", () => { chipFilter = search.value; drawChips(); });
       drawChips(); drawAdd();
