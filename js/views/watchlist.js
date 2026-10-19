@@ -137,7 +137,8 @@ export async function render(main, { previewClient }) {
   };
   let evenT = null;
   window.addEventListener("resize", () => { clearTimeout(evenT); evenT = setTimeout(() => { if (root.isConnected) evenBadges(); }, 150); });
-  const openCards = new Set(), tourPick = new Map(), distOpen = new Set(); // (update 223: distance lists opened to the rest)
+  const openCards = new Set(), tourPick = new Map(), distOpen = new Set();
+  let rel = false; // (update 226) Relative to Tour Avg // (update 223: distance lists opened to the rest)
   if (!multi && single) openCards.add(single); // (update 177: one player: their card starts open)
 
   // (update 189) no date, title or count: the filters are the top of the page (a preview still says whose)
@@ -153,6 +154,7 @@ export async function render(main, { previewClient }) {
     const y0 = window.scrollY, h0 = root.offsetHeight;
     root.style.minHeight = `${h0}px`;
     prefs = watchPrefs();
+    rel = !!prefs.rel;
     const source = src();
     if (!enteredField) { try { await loadEntered(); } catch { enteredField = []; } }
     const fieldNow = withEntered(field) || [], detailNow = withEntered(detail);
@@ -227,7 +229,13 @@ export async function render(main, { previewClient }) {
       b.addEventListener("click", () => { saveWatch({ players: [myKey, ...watchPrefs().players] }); draw(); });
       return b;
     })() : null;
-    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, metricsBtn, meBtn, multi ? pickerBox : null]);
+    // (update 226) Raw stat value | Relative to Tour Avg
+    const relSeg = el("div", { class: "wl-period wl-rel", role: "group", "aria-label": "Values" }, [[false, "Raw value"], [true, "Relative to Avg"]].map(([v, l]) => {
+      const b = el("button", { type: "button", class: `wl-per${rel === v ? " on" : ""}`, "aria-pressed": String(rel === v) }, l);
+      b.addEventListener("click", () => { if (rel === v) return; saveWatch({ rel: v }); draw(); });
+      return b;
+    }));
+    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, relSeg, metricsBtn, meBtn, multi ? pickerBox : null]);
     const where = source === "entered" ? "entered rounds" : "ranked on their tour";
     // (update 186) just how many players
     const sub = multi ? (keys.length ? `${keys.length} Player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about")
@@ -241,8 +249,8 @@ export async function render(main, { previewClient }) {
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
     mount(root, [heroShell(controls, subLine), menu, body,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
-        ? "Strokes Gained values represent per round averages. Entered Rounds: the rounds entered in Enter New Round (not ranked). Trends: the last 10 rounds against the 10 before."
-        : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before. Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
+        ? `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
+        : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });
@@ -321,7 +329,7 @@ export async function render(main, { previewClient }) {
     };
     const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => tappable(el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
       el("span", { class: "wl-tile-k" }, s.short),
-      el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
+      rel && s.v != null && s.avgO != null ? el("strong", { class: `wl-tile-v ${sgCls(s.v - s.avgO)}`, title: `${fmtSG(s.v)} a round; the rest average ${fmtSG(s.avgO)}` }, fmtSG(s.v - s.avgO)) : el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
       el("div", { class: "wl-tile-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
     ]), s.label, s.info)));
     // (update 223) 3 of each to start (by total strokes gained there); "+ N more" opens the rest. A trend under each rank.
@@ -331,13 +339,13 @@ export async function render(main, { previewClient }) {
       more?.addEventListener("click", (e) => { e.stopPropagation(); open ? distOpen.delete(k) : distOpen.add(k); draw(); });
       return el("div", { class: `wl-dist ${tone}` }, [el("p", { class: "wl-col-t" }, title), xs.length ? el("ol", {}, xs.map((d) => tappable(el("li", {}, [
         el("span", { class: "wl-dist-l" }, [el("span", {}, d.label), el("span", { class: "wl-dist-n" }, `${d.n} shots`)]),
-        el("span", { class: `wl-dist-v ${sgCls(d.v)}` }, `${d.v >= 0 ? "+" : "−"}${Math.abs(d.v).toFixed(3)}`),
+        (() => { const x = rel && d.avgO != null ? d.v - d.avgO : d.v; return el("span", { class: `wl-dist-v ${sgCls(x)}` }, `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(3)}`); })(),
         el("span", { class: "wl-dist-rk" }, [rankPill(d.rank, d.of), trendEl(d.trend, { fmt: (x) => Math.abs(x).toFixed(3), band: 0.005 })]),
       ]), d.label, d.info))) : el("p", { class: "muted small" }, tone === "best" ? "Nowhere gaining yet." : "Nowhere losing."), more]);
     };
     const dists = el("div", { class: "wl-two" }, [distList("Best distances", c.dists.best, "best"), distList("Toughest distances", c.dists.worst, "worst")]);
     const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => tappable(el("div", { class: "wl-mrow" }, [
-      el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") || /^sg:sd@.*\|/.test(m.id) ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
+      el("span", { class: "wl-m-l" }, m.label), rel && m.v != null && m.avgO != null ? (() => { const dd = m.v - m.avgO, good = m.higher == null || Math.abs(dd) < 1e-9 ? "" : (m.higher === false ? dd < 0 : dd > 0) ? "pos" : "neg"; return el("strong", { class: `wl-m-v ${good}`, title: `${m.text}; the rest average ${m.fmtCh(m.avgO)}` }, `${dd >= 0 ? "+" : "\u2212"}${m.fmtCh(dd)}`); })() : el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") || /^sg:sd@.*\|/.test(m.id) ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
     ]), m.label, m.info)))]) : null;
     // (update 211) club breakdowns: each model side by side (a model with under 10 rounds is marked)
     const clubs = (c.clubTables || []).map((t) => el("div", { class: "wl-clubs" }, [
@@ -352,7 +360,7 @@ export async function render(main, { previewClient }) {
       t.cols.some((x) => x.rounds < 10) ? el("p", { class: "muted small wl-few-note" }, "* Fewer than 10 rounds: read with care.") : null,
     ]));
     const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics, ...clubs]);
-    const card = el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}${isOpen ? " open" : ""}` }, [head, badges, sg, more]);
+    const card = el("article", { class: `panel wl-card${isOpen ? " open" : ""}` }, [head, badges, sg, more]); // (update 226: every card the same, no glow for some)
     moreBtn.addEventListener("click", () => {
       const open = !openCards.has(c.key);
       if (open) openCards.add(c.key); else openCards.delete(c.key);

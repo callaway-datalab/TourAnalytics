@@ -4034,3 +4034,10 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .usage-cols h4 { margin: 0 0 0.4rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: #d4b483; }
 .usage-people th.sortable { cursor: pointer; text-decoration: underline dotted; }
 .usage-people th.on { color: #d4b483; }
+/* (update 228) Raw value | Relative to Avg on the categories row; the Top pills; the full stats table */
+.stats-row2 .rel-pick { margin-left: auto; }
+.rel-pick .seg-btn, .top-pills .seg-btn { font-size: 0.78rem; padding: 0.3rem 0.7rem; }
+.top-pills { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.sg-full-top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.sg-full-t th, .sg-full-t td { white-space: nowrap; }
+.sg-full-t td:first-child { white-space: normal; }
