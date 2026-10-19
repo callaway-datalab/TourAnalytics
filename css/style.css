@@ -4019,3 +4019,18 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .wl-badges:empty { display: block; }
 .rd-grid .rd-type { grid-column: 1 / -1; } .rd-grid .rd-type .seg { width: fit-content; max-width: 100%; }
 .wl-badges { align-content: flex-start; align-items: flex-start; } /* (update 225: the extra space stays blank; badges keep their own height) */
+/* (update 226) the menu bar stays above the page as it scrolls (the Watchlist's controls slid over it) */
+.rail { z-index: 100 !important; }
+.wl-card.elite { box-shadow: none !important; border-color: rgba(255,255,255,0.07) !important; }
+.wl-m-v.pos { color: #30d158; } .wl-m-v.neg { color: #ff453a; }
+.rel-pick .seg { display: inline-flex; }
+.sg-full-t { width: 100%; } .sg-full-t td.num { font-variant-numeric: tabular-nums; } /* (update 227) */
+.ms-search { width: 100%; box-sizing: border-box; margin: 0.3rem 0 0.4rem; padding: 0.45rem 0.7rem; font-size: 0.85rem; border-radius: 10px; } /* (update 227) */
+/* (update 227) Usage on At a glance */
+.usage-box { margin: 1rem 0; padding: 1rem 1.1rem; border-radius: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); display: grid; gap: 0.8rem; }
+.usage-top { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; }
+.usage-top h3 { margin: 0; }
+.usage-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem 1.4rem; }
+.usage-cols h4 { margin: 0 0 0.4rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: #d4b483; }
+.usage-people th.sortable { cursor: pointer; text-decoration: underline dotted; }
+.usage-people th.on { color: #d4b483; }

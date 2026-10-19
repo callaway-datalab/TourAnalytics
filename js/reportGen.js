@@ -60,6 +60,31 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const overall = { value: perRound(mine), rounds: mine.length, ...rankOf(null) };
   const byCat = cats.map((k) => ({ cat: k, name: CAT_NAME[k], value: perRound(mine, k), ...rankOf(k) }));
 
+  // (update 227) Weekly Rank History, as on the Stats page's hero card: their rank at the end of each tournament, on
+  // the rounds so far in this period, among the players with enough rounds by then (Min. rounds, scaled)
+  const rankHist = (() => {
+    const pool = [{ key: me.key, rs: mine }, ...played.map((p) => ({ key: p.key, rs: p.rounds }))];
+    if (pool.length < 2) return [];
+    const dk = (d) => String(d || "");
+    const ends = new Map(); for (const rd of mine) { const k = `${rd.event}|${String(rd.year || dk(rd.date).slice(0, 4))}`; if (dk(rd.date) > (ends.get(k) || "")) ends.set(k, dk(rd.date)); }
+    let dates = [...new Set(ends.values())].sort();
+    if (dates.length > 60) { const step = (dates.length - 1) / 59; dates = Array.from({ length: 60 }, (_, i) => dates[Math.round(i * step)]); }
+    const sorted = pool.map((p) => ({ key: p.key, rs: [...p.rs].sort((a, b) => dk(a.date).localeCompare(dk(b.date))) }));
+    const cum = sorted.map((p) => { let t = 0; return p.rs.map((rd) => { for (const x of rd.shots) t += x.sg; return t; }); });
+    const mostNow = Math.max(1, ...sorted.map((p) => p.rs.length));
+    const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
+    const out = [];
+    for (const d of dates) {
+      const counts = sorted.map((p) => upTo(p.rs, d)), most = Math.max(1, ...counts), need = Math.max(1, Math.round((minR * most) / mostNow));
+      const vals = [];
+      sorted.forEach((p, i) => { const n = counts[i]; if (!n || (n < need && p.key !== me.key)) return; vals.push({ key: p.key, v: cum[i][n - 1] / n }); });
+      vals.sort((a, b) => b.v - a.v);
+      const i = vals.findIndex((x) => x.key === me.key);
+      if (i >= 0 && vals.length > 1) out.push({ date: d, rank: i + 1, of: vals.length });
+    }
+    if (out.length && overall.rank) Object.assign(out[out.length - 1], { rank: overall.rank, of: overall.of });
+    return out;
+  })();
   // each round, trend line, early vs late by category
   const series = mine.map((rd) => ({ date: rd.date, event: rd.event, roundNo: rd.roundNo, value: rd.shots.reduce((t, s) => t + s.sg, 0),
     byCat: Object.fromEntries(cats.map((k) => [k, rd.shots.filter((s) => s.cat === k).reduce((t, s) => t + s.sg, 0)])) }));
@@ -319,7 +344,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const e = entryFor(k);
     if (e) basics.push(e);
   }
-  return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
+  return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
@@ -394,7 +419,21 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
   if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < STEADY ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling down", bx, 220, Math.abs(ch) < STEADY ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
   // form sparkline (right side)
-  if (a.series.length >= 3) {
+  if (a.rankHist?.length >= 2) {
+    // (update 227) Weekly Rank History: 1st at the top, a gold line, the latest rank marked
+    const h = a.rankHist, x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
+    const worst = Math.max(...h.map((q) => q.rank)), best = Math.min(...h.map((q) => q.rank));
+    const lo = Math.max(1, best - Math.ceil((worst - best) * 0.1) - 1), hi = worst + Math.ceil((worst - best) * 0.1) + 1;
+    const Y = (rk) => top + ((rk - lo) / (hi - lo || 1)) * ht;
+    d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
+    cap("Weekly Rank History", x0, top - 6, "#8e8e93", "left", 6.5);
+    const pts = h.map((q, i) => [x0 + (i / (h.length - 1)) * (w - 12), Y(q.rank)]);
+    d.polyline(pts, { color: P.goldLight, width: 1.8 });
+    d.dot(...pts[pts.length - 1], 3, P.goldLight);
+    const lastQ = h[h.length - 1], ord = (n) => { const t = ["th", "st", "nd", "rd"], v = n % 100; return n + (t[(v - 20) % 10] || t[v] || t[0]); };
+    d.text(`${ord(lastQ.rank)} of ${lastQ.of}`, Math.min(pts[pts.length - 1][0] + 6, x0 + w - 40), pts[pts.length - 1][1] + (pts[pts.length - 1][1] < top + 10 ? 12 : -5), { size: 7.5, bold: true, color: P.goldLight });
+    d.text(`Best ${ord(best)} \u00b7 higher on the chart = better rank`, x0, top + ht + 18, { size: 6.5, color: "#8e8e93" });
+  } else if (a.series.length >= 3) {
     const vals = ma(a.series.map((q) => q.value)), x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
     const lo = Math.min(...vals, 0), hi = Math.max(...vals, 0), Y = (v) => top + ht - ((v - lo) / (hi - lo || 1)) * ht;
     d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
@@ -894,12 +933,23 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   const wrapEl = el("div", { class: "report-gen" });
   const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate AI Report");
   const panel = el("div", { class: "report-gen-panel", hidden: true });
-  openBtn.addEventListener("click", () => { panel.hidden = !panel.hidden; openBtn.setAttribute("aria-expanded", panel.hidden ? "false" : "true"); });
+  openBtn.addEventListener("click", () => { panel.hidden = !panel.hidden; openBtn.setAttribute("aria-expanded", panel.hidden ? "false" : "true"); if (!panel.hidden) loadSeasons(); });
 
   // dates
   const fromIn = el("input", { type: "date", "aria-label": "From" }), toIn = el("input", { type: "date", "aria-label": "To" });
   const iso = (t) => new Date(t).toISOString().slice(0, 10);
   const presets = [["30", "Last 30 days"], ["90", "Last 90 days"], ["365", "Last 12 months"], ["year", "This year"], ["all", "All time"]];
+  // (update 227) and each season in the player's data (added once their rounds are looked up)
+  let seasonsLoaded = false;
+  const loadSeasons = async () => {
+    if (seasonsLoaded) return; seasonsLoaded = true;
+    try {
+      const d0 = await loadSource("tour", playerKey, playerLabel, { detail: false });
+      const ys = [...new Set((d0?.me?.rounds || []).map((rd) => String(rd.year || String(rd.date || "").slice(0, 4))).filter((y) => /^\d{4}$/.test(y)))].sort().reverse();
+      for (const y of ys) if (!presets.some(([v]) => v === `y:${y}`)) presets.push([`y:${y}`, `${y} season`]);
+      drawPresets();
+    } catch { /* the usual presets only */ }
+  };
   let preset = "all";
   const presetBox = el("div", { class: "subnav small report-presets" });
   const drawPresets = () => mount(presetBox, presets.map(([v, l]) => {
@@ -908,6 +958,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       e.preventDefault(); preset = v;
       const now = Date.now();
       if (v === "all") { fromIn.value = ""; toIn.value = ""; }
+      else if (v.startsWith("y:")) { fromIn.value = `${v.slice(2)}-01-01`; toIn.value = `${v.slice(2)}-12-31`; }
       else if (v === "year") { fromIn.value = `${new Date().getFullYear()}-01-01`; toIn.value = iso(now); }
       else { fromIn.value = iso(now - Number(v) * 864e5); toIn.value = iso(now); }
       drawPresets();
@@ -972,7 +1023,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       // a preset's name ("This year" is shown as the year itself, e.g. 2026); your own dates are shown as dates
       // ("This year" and "All time" also say how current they are: "2026 - As of 10/9/2026")
       const asOf = ` - As of ${new Date().toLocaleDateString("en-US")}`;
-      const rangeLabel = preset === "year" ? `${new Date().getFullYear()}${asOf}` : preset === "all" ? `All time${asOf}` : preset ? presets.find(([v]) => v === preset)?.[1] : null;
+      const rangeLabel = preset === "year" ? `${new Date().getFullYear()}${asOf}` : preset === "all" ? `All time${asOf}` : preset?.startsWith?.("y:") ? `${preset.slice(2)} season` : preset ? presets.find(([v]) => v === preset)?.[1] : null;
       const bytes = buildReportPdf(a, { aiSummary, sourceLabel: "All rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
       window.__lastReportPdf = bytes; // (for tests)

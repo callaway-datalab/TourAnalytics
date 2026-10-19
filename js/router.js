@@ -232,6 +232,7 @@ async function render() {
   try {
     const mod = await loader();
     if (gen !== renderGen) return;
+    import("./usage.js").then((u) => u.trackPage(routeId)).catch(() => {}); // (update 227: page views and time, for At a glance)
     const cleanup = await mod.render(main, { params, previewClient, routeId, flash: (msg, type) => flash(main, msg, type) });
     if (gen !== renderGen) { if (typeof cleanup === "function") cleanup(); return; }
     currentCleanup = cleanup;

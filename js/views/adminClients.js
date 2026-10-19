@@ -110,6 +110,64 @@ export async function render(main, { flash }) {
   }).catch(() => mount(storageBox, el("p", { class: "muted small" }, "Couldn't work out storage right now.")));
   loadStorage();
   loadStats();
+
+  /* (update 227) Usage: time in the portal and the pages people open, for everyone (and each person) */
+  const PAGE_NAMES = { dashboard: "My Stats", watchlist: "Watchlist", leaderboards: "Leaderboards", "player-stats": "Player Stats", comparisons: "Compare", goals: "Goals",
+    practice: "Practice", "course-prep": "Course Prep", questions: "Questions", "question-new": "New question", thread: "Question", account: "Account", witb: "WITB",
+    entry: "Enter Rounds", "entry-new": "New round", "entry-round": "Entering a round", team: "Team home", "admin-clients": "Player Access", "admin-datasets": "Data",
+    "admin-analyze": "Analyze: Leaderboards", "admin-player-stats": "Analyze: Player Stats", "admin-goals": "Goals (admin)", "admin-documents": "Documents",
+    "admin-reports-view": "Reports", "admin-questions": "Questions (admin)", "admin-thread": "Question (admin)", dataset: "Data file", live: "Live" };
+  const pageName = (k) => PAGE_NAMES[k] || String(k).replace(/^admin-/, "Admin: ").replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase());
+  const dur = (sec) => { sec = Math.round(sec || 0); if (sec < 60) return `${sec}s`; const m = Math.round(sec / 60); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); return `${h}h ${m % 60}m`; };
+  const usageBox = el("section", { class: "usage-box" }, el("p", { class: "muted small" }, "Loading usage\u2026"));
+  let usageSpan = "30", usageSort = "time";
+  const loadUsageBox = async () => {
+    const { loadUsage, dayOf } = await import("../usage.js");
+    const back = { "7": 6, "30": 29, "90": 89 }[usageSpan];
+    const since = back == null ? null : dayOf(new Date(Date.now() - back * 864e5));
+    let docs = [];
+    try { docs = await loadUsage(since); } catch (err) { mount(usageBox, el("p", { class: "muted small" }, `Couldn\u2019t load usage (${err?.code || "error"}). Republish firestore.rules from this update.`)); return; }
+    let usersSnap = null;
+    try { usersSnap = (await (await import("../store.js")).adminAllClients()).usersSnap; } catch { /* names unknown */ }
+    const names = new Map((usersSnap?.docs || []).map((d) => [d.id, d.data().name || d.data().email || "Someone"]));
+    const me = (await import("../auth.js")).getState().user?.uid;
+    const nameOf = (uid) => (uid === me ? "You" : names.get(uid) || "Someone (account removed)");
+    const people = new Map(), pages = new Map();
+    let total = 0, views = 0;
+    for (const d of docs) {
+      const p = people.get(d.uid) || people.set(d.uid, { uid: d.uid, name: nameOf(d.uid), days: 0, sec: 0, views: 0, pages: new Map(), last: "" }).get(d.uid);
+      p.days++; p.sec += d.seconds || 0; total += d.seconds || 0; if (d.day > p.last) p.last = d.day;
+      for (const [k, n] of Object.entries(d.pages || {})) { p.views += n; views += n; p.pages.set(k, (p.pages.get(k) || 0) + n); const g = pages.get(k) || pages.set(k, { views: 0, sec: 0, who: new Set() }).get(k); g.views += n; g.who.add(d.uid); }
+      for (const [k, v] of Object.entries(d.pageSec || {})) { const g = pages.get(k) || pages.set(k, { views: 0, sec: 0, who: new Set() }).get(k); g.sec += v; g.who.add(d.uid); }
+    }
+    const ppl = [...people.values()].sort((a, b) => (usageSort === "time" ? b.sec - a.sec : usageSort === "days" ? b.days - a.days : b.views - a.views));
+    const personDays = docs.length;
+    const seg = el("div", { class: "seg small" }, [["7", "7 days"], ["30", "30 days"], ["90", "90 days"], ["all", "All time"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${usageSpan === v ? " on" : ""}` }, l); b.addEventListener("click", () => { usageSpan = v; loadUsageBox(); }); return b; }));
+    const kpi = (label, value, title) => el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, value)]);
+    const th = (label, key) => { const b = el("th", { class: `num${key ? " sortable" : ""}${usageSort === key ? " on" : ""}` }, label); if (key) b.addEventListener("click", () => { usageSort = key; loadUsageBox(); }); return b; };
+    mount(usageBox, [
+      el("div", { class: "usage-top" }, [el("h3", {}, "Usage"), seg]),
+      docs.length ? null : el("p", { class: "muted small" }, "No usage recorded yet for this period. It\u2019s counted from this update on, once firestore.rules is republished."),
+      el("dl", { class: "facts glance usage-kpis" }, [
+        kpi("Total time", dur(total), "Active time in the portal, everyone combined (tab showing, used in the last 2 minutes)."),
+        kpi("People", String(people.size), "Different people who used it in this period."),
+        kpi("Avg time a person", dur(people.size ? total / people.size : 0), "Total time divided by the people who used it."),
+        kpi("Avg time a visit day", dur(personDays ? total / personDays : 0), "For each person, each day they used it: the average time that day."),
+        kpi("Page views", views.toLocaleString(), "Pages opened, everyone combined."),
+      ]),
+      pages.size ? el("div", { class: "usage-cols" }, [
+        el("div", {}, [el("h4", {}, "Most visited pages"), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
+          el("thead", {}, el("tr", {}, [el("th", {}, "Page"), el("th", { class: "num" }, "Views"), el("th", { class: "num" }, "Time"), el("th", { class: "num" }, "People")])),
+          el("tbody", {}, [...pages].sort((a, b) => b[1].views - a[1].views || b[1].sec - a[1].sec).map(([k, g]) => el("tr", {}, [el("td", {}, pageName(k)), el("td", { class: "num" }, g.views.toLocaleString()), el("td", { class: "num" }, dur(g.sec)), el("td", { class: "num" }, String(g.who.size))]))),
+        ]))]),
+        el("div", {}, [el("h4", {}, "By person"), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain usage-people" }, [
+          el("thead", {}, el("tr", {}, [el("th", {}, "Who"), th("Days", "days"), th("Total time", "time"), el("th", { class: "num" }, "Avg a day"), th("Views", "views"), el("th", {}, "Most used"), el("th", {}, "Last")])),
+          el("tbody", {}, ppl.map((p) => { const top = [...p.pages].sort((a, b) => b[1] - a[1])[0]; return el("tr", {}, [el("td", {}, p.name), el("td", { class: "num" }, String(p.days)), el("td", { class: "num" }, dur(p.sec)), el("td", { class: "num" }, dur(p.sec / p.days)), el("td", { class: "num" }, String(p.views)), el("td", {}, top ? pageName(top[0]) : "\u2014"), el("td", { class: "nowrap muted" }, p.last)]); })),
+        ]))]),
+      ]) : null,
+    ]);
+  };
+  loadUsageBox();
   const statsInterval = setInterval(loadStats, 60000);
 
   /* ======================= Player search-and-add list ======================= */
@@ -523,7 +581,7 @@ export async function render(main, { flash }) {
   /* ============================== Page ============================== */
   mount(main, [
     subNav([["#/admin/clients", "Users"], ["#/admin/datasets", "Upload Data"]], "#/admin/clients"), // (Upload Data lives here)
-    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, weekBox, storageBox]),
+    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, weekBox, usageBox, storageBox]),
     el("section", {}, [
       el("h2", {}, "Access codes"),
       el("div", { class: "code-tools" }, [

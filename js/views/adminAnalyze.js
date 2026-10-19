@@ -18,6 +18,9 @@ import { enteredPlayers, ENTERED_IDX } from "../roundCalc.js";
 export const ENTERED_NOTE = "Entered rounds: strokes gained is measured against the scoring-average baseline by lie and distance.";
 
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+// (update 227) kept while the app is open (not just while this page is), so coming back to Analyze is instant
+const ROWS = new Map(), PREPARED = new Map(), DETAIL = new Map(), DETAIL_WHY = new Map(), FULL_LOADS = new Map();
+const keepFew = (m, n = 4) => { while (m.size > n) m.delete(m.keys().next().value); };
 
 export async function render(main, { flash, routeId }) {
   const board = routeId !== "admin-player-stats"; // Leaderboards (no player) or Player Stats
@@ -32,8 +35,8 @@ export async function render(main, { flash, routeId }) {
   const dashState = {};            // filters survive switching players
   const enteredState = {};
   let source = "tour";             // "tour": uploaded Tour stats; "entered": rounds from Data Entry
-  const rowsCache = new Map();     // `${datasetId}|${playerKey}` -> { label, rows }
-  const preparedCache = new Map(); // `${datasetId}|${uploadedAt}` -> [{ key, label, rounds }]
+  const rowsCache = ROWS;          // `${datasetId}|${playerKey}` -> { label, rows }
+  const preparedCache = PREPARED;  // `${datasetId}|${uploadedAt}` -> [{ key, label, rounds }]
   let displayLabels = new Map();   // player key -> name (the ID when there's no name)
 
   const pickerBox = el("div");
@@ -69,10 +72,12 @@ export async function render(main, { flash, routeId }) {
   const drawSource = () => mount(sourcePills, null);
   drawSource();
 
-  mount(main, board ? [status, body] : [
+  const fullNote = el("p", { class: "muted small center analyze-bg-note", role: "status" }); // (update 227)
+  mount(main, board ? [status, fullNote, body] : [
     sourceHome, // the data pills sit here until the stats draw them into their one row of pills
     pickerHome,
     status,
+    fullNote,
     body,
   ]);
 
@@ -119,7 +124,20 @@ export async function render(main, { flash, routeId }) {
     const token = ++loadToken;
     mount(body, null);
     if (isLiteDevice() && isShotData(detectColumns(ds.columns || []))) return refreshLite(ds, token);
-    await loadAll(ds, token);
+    // (update 227) a computer: if every player's full rows aren't ready yet, show the page now from the shared summary
+    // (and its lie / distance detail), and load the full rows in the background; the page fills in when they're here
+    {
+      const idx0 = detectColumns(ds.columns || []), pk0 = `${ds.id}|${ds.uploadedAt?.toMillis?.() ?? ""}`;
+      if (isShotData(idx0) && !preparedCache.has(pk0)) {
+        const summary0 = await getFieldStats(ds.id).catch(() => null);
+        if (token !== loadToken) return;
+        if (summary0 && summaryPlayers(summary0).length) {
+          if (!FULL_LOADS.has(pk0)) FULL_LOADS.set(pk0, loadFullInBackground(ds, pk0, idx0));
+          return refreshLite(ds, token);
+        }
+      }
+    }
+    if (!preparedCache.has(`${ds.id}|${ds.uploadedAt?.toMillis?.() ?? ""}`)) await loadAll(ds, token); // (update 227: already read this session: no need)
     if (token !== loadToken) return;
     status.textContent = [pendingNote, loadNote].filter(Boolean).join(" "); pendingNote = "";
     const idx = detectColumns(ds.columns || []);
@@ -127,7 +145,7 @@ export async function render(main, { flash, routeId }) {
     // reading each player's rows into rounds is done once per file (not again on every redraw)
     const pk = `${ds.id}|${ds.uploadedAt?.toMillis?.() ?? ""}`;
     if (!preparedCache.has(pk)) {
-      preparedCache.clear();
+      keepFew(preparedCache);
       preparedCache.set(pk, (ds.clientKeys || []).map((key) => {
         const c = rowsCache.get(`${ds.id}|${key}`) || { label: key, rows: [] };
         return { key, label: c.label, rounds: prepare(c.rows, idx) };
@@ -140,6 +158,30 @@ export async function render(main, { flash, routeId }) {
     publishIfStale(ds);
   }
 
+  // (update 227) every player's full rows, read into rounds a few players at a time (so the page stays responsive)
+  async function loadFullInBackground(ds, pk, idx) {
+    try {
+      const keys = ds.clientKeys || [];
+      if (keys.some((k) => !rowsCache.has(`${ds.id}|${k}`))) {
+        const { players } = await loadDatasetPlayers(ds.id, { ds, onProgress: (done) => { if (fileId === ds.id && !preparedCache.has(pk)) fullNote.textContent = `Loading every player\u2019s full rows in the background (${done} of ${keys.length})\u2026 the page fills in when they\u2019re here.`; } });
+        for (const [key, p] of players) if (p) rowsCache.set(`${ds.id}|${key}`, p);
+      }
+      const out = [];
+      for (let i = 0; i < keys.length; i++) {
+        const c = rowsCache.get(`${ds.id}|${keys[i]}`) || { label: keys[i], rows: [] };
+        const rounds = prepare(c.rows, idx);
+        if (rounds.length) out.push({ key: keys[i], label: c.label, rounds });
+        if (i % 25 === 24) await new Promise((res) => setTimeout(res, 0)); // (let the page breathe)
+      }
+      keepFew(preparedCache);
+      preparedCache.set(pk, out);
+    } catch (err) { console.warn(err); }
+    finally { FULL_LOADS.delete(pk); fullNote.textContent = ""; }
+    if (fileId === ds.id && source === "tour" && preparedCache.has(pk)) {
+      // (the player on screen stays picked; filters are kept in dashState)
+      refresh();
+    }
+  }
   // Phones and tablets: everyone from the shared field summary (small: a few numbers per round), and full rows
   // only for the player picked (fetched when they're picked). Loading every player's rows of a big file is more
   // than a phone's browser allows a page to hold: it stops the page and reloads it, over and over.
@@ -159,7 +201,7 @@ export async function render(main, { flash, routeId }) {
     const summary = await getFieldStats(ds.id).catch(() => null);
     if (token !== loadToken) return;
     const pk = `lite|${ds.id}|${uploaded}`;
-    if (!preparedCache.has(pk)) { preparedCache.clear(); preparedCache.set(pk, summaryPlayers(summary).filter((p) => p.rounds.length)); }
+    if (!preparedCache.has(pk)) { keepFew(preparedCache); preparedCache.set(pk, summaryPlayers(summary).filter((p) => p.rounds.length)); }
     // (the player picked, with their full rows, in place of their summary line)
     const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
     fieldPlayers = preparedCache.get(pk).map((p) => {
@@ -179,12 +221,12 @@ export async function render(main, { flash, routeId }) {
   }
 
   // Phones: the field's lie / distance detail, once per upload (kept on the device after the first time).
-  const detailCache = new Map(), detailWhy = new Map();
+  const detailCache = DETAIL, detailWhy = DETAIL_WHY;
   async function loadDetailLite(ds, dk) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
     const { players, why } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0);
     detailWhy.set(dk, why);
-    if (players) { detailCache.clear(); detailCache.set(dk, players); preparedCache.clear(); }
+    if (players) { keepFew(detailCache, 2); detailCache.set(dk, players); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
     if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
   }
 
