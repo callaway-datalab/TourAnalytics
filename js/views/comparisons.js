@@ -55,7 +55,7 @@ export async function render(main) {
 
   const q = new URLSearchParams(location.hash.split("?")[1] || "");
   let player = null;
-  const wanted = q.get("player") || ls.get(LS_PLAYER);
+  const wanted = q.get("player"); // (update 214: the start screen asks who; only a link from the Stats page picks one)
   if (self) player = { key: self[0], label: self[1] };
   else if (wanted && players.some(([k]) => k === wanted)) player = { key: wanted, label: players.find(([k]) => k === wanted)[1] };
   else if (players.length === 1) player = { key: players[0][0], label: players[0][1] };
@@ -199,7 +199,10 @@ export async function render(main) {
     others.set(k, data.rounds);
     if (source === "tour" && res?.datasetId) dsInfo = { id: res.datasetId, idx: res.idx };
     const need = inPlay().filter((p) => p.key !== player.key);
-    if (need.length) { await loadOthers(need); if (loadingFor !== k) return; }
+    if (need.length) {
+      if (need.some((p) => p.key === EVERY || p.rest)) { opts = options(data.rounds); busy = "Loading everyone\u2019s rounds\u2026"; draw(); } // (update 214: say so while it loads)
+      await loadOthers(need); busy = ""; if (loadingFor !== k) return;
+    }
     opts = options(allRounds());
     defaults();
     if (pickParam) { applyPick(pickParam); pickParam = null; }
@@ -209,8 +212,8 @@ export async function render(main) {
   /* ------------------------------ the page ------------------------------ */
   function draw() {
     // (update 189) just the player search at the top; everything else once a player is picked
-    const head = pickerNode();
-    if (!player) { mount(root, [head, busy ? el("section", { class: "panel cmp-empty cmp-busy" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, busy)]) : productsStart()]); return; }
+    const head = null; // (update 214: no player search at the top; the start screen asks who)
+    if (!player) { mount(root, [head, busy ? el("section", { class: "panel cmp-empty cmp-busy" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, busy)]) : startBox()]); return; }
     if (!data) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, `Loading ${player.label}\u2019s rounds\u2026`)])]); return; }
     if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn\u2019t entered any rounds yet.`)])]); return; }
 
@@ -274,7 +277,62 @@ export async function render(main) {
     draw();
   }
   // (update 211/212) no player: back to the very start (for staff, "Compare everyone"). Start over does this too.
-  function clearAll() { player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
+  function clearAll(keepPicks = false) { player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
+  /* (update 214) the start screen: who to look at. Everyone, one player, several, or a player (or several) and everyone.
+     Next goes on to the question that fits: one player or everyone → what to compare; several → how to compare them. */
+  let startPicks = []; // [{ key, label }] (EVERY = everyone in the data)
+  const everyStartOk = () => staff && players.length >= 3;
+  function startBox() {
+    if (self) return null;
+    const one = !staff; // (a coach or caddie: one player at a time)
+    const picksP = startPicks.filter((p) => p.key !== EVERY), withEvery = startPicks.some((p) => p.key === EVERY);
+    const chips = startPicks.map((p) => {
+      const x = el("button", { type: "button", class: "cmp-key-x cmp-pl-x", "aria-label": `Take ${p.key === EVERY ? "everyone" : p.label} out` }, "\u2715");
+      x.addEventListener("click", () => { startPicks = startPicks.filter((e) => e.key !== p.key); draw(); });
+      return el("span", { class: `cmp-pl${p.key === EVERY ? " every" : ""}` }, [el("span", {}, p.key === EVERY ? "Everyone" : p.label), x]);
+    });
+    let everyB = null;
+    if (everyStartOk() && !withEvery) {
+      everyB = el("button", { type: "button", class: "btn ghost small cmp-pl-every", disabled: lite ? true : null, title: lite ? "Needs a computer: it\u2019s every player\u2019s rounds" : null }, "\uff0b Everyone");
+      everyB.addEventListener("click", () => { startPicks = [...startPicks, { key: EVERY, label: "Everyone" }]; draw(); });
+    }
+    let adder = null;
+    const rest = new Map(players.filter(([k]) => !startPicks.some((p) => p.key === k)));
+    if (rest.size && (!one || !picksP.length) && picksP.length < MAX_SEL) {
+      const pp = playerPicker(rest, (p) => { if (!p) return; startPicks = one ? [{ key: p.key, label: p.label }] : [...startPicks, { key: p.key, label: p.label }]; draw(); });
+      const inp = pp.node.querySelector("input");
+      if (inp) inp.placeholder = picksP.length ? "\uff0b Add another player\u2026" : "\uff0b Add a player\u2026";
+      adder = el("div", { class: "cmp-pl-add" }, pp.node);
+    }
+    const nm = (ps) => (ps.length === 1 ? ps[0].label : ps.length === 2 ? `${ps[0].label} and ${ps[1].label}` : `${ps.slice(0, -1).map((p) => p.label).join(", ")} and ${ps.at(-1).label}`);
+    const hint = !startPicks.length ? (one ? "Pick a player." : `Pick Everyone, one player, several players, or players and Everyone.${lite ? " (Everyone needs a computer.)" : ""}`)
+      : !picksP.length ? "Everyone in the data together: products (who uses what, and how it performs), seasons, courses\u2026"
+      : picksP.length === 1 && !withEvery ? `Just ${picksP[0].label}\u2019s rounds.`
+      : withEvery ? `${nm(picksP)} against everyone in the data.` : `${nm(picksP)} side by side. Next: on their own, in groups, or one against the rest.`;
+    const next = el("button", { type: "button", class: "btn cmp-add", disabled: startPicks.length ? null : true }, "Next \u2192");
+    next.addEventListener("click", startNext);
+    return el("section", { class: "panel cmp-guide cmp-start" }, [
+      el("p", { class: "cmp-guide-k" }, "Set up a comparison"),
+      el("h2", {}, one ? "Which player?" : "Which players?"),
+      el("div", { class: "cmp-guide-free" }, [
+        el("section", { class: "panel cmp-players" }, [
+          el("div", { class: "cmp-build-top" }, [el("h2", {}, "Players"), el("span", { class: "muted small" }, hint)]),
+          el("div", { class: "cmp-pl-row" }, [...chips, everyB, adder]),
+        ]),
+        el("div", { class: "cmp-guide-row" }, [next]),
+      ]),
+      gnote,
+    ]);
+  }
+  async function startNext() {
+    const ps = startPicks.filter((p) => p.key !== EVERY), withEvery = startPicks.some((p) => p.key === EVERY);
+    if (!ps.length) { if (withEvery) await startProducts(); return; }
+    player = { key: ps[0].key, label: ps[0].label }; productsOnly = false; staged = new Map();
+    chosen = withEvery ? [...ps, { key: EVERY, label: "Everyone" }] : [...ps];
+    // one player (or players and everyone, each on their own): what to compare next; several: how to compare them
+    g = ps.length === 1 && !withEvery ? { open: true, who: "one" } : withEvery ? { open: true, who: "several", playersDone: true, phow: "each" } : { open: true, who: "several", playersDone: true };
+    await load();
+  }
   function pickerNode() {
     if (self || players.length <= 1) return null; // (only one player: nothing to search)
     const pp = playerPicker(new Map(players), (p) => { if (!p) { clearAll(); return; } if (p.key === player?.key && !productsOnly) return; productsOnly = false; const old = player?.key; player = { key: p.key, label: p.label }; chosen = [player, ...chosen.filter((x) => x.key !== old && x.key !== p.key)]; ls.set(LS_PLAYER, p.key); staged = new Map(); g = { open: true }; load(); });
@@ -364,7 +422,7 @@ export async function render(main) {
     if (g.what === "versus" && !g.stretch) return "stretch";
     return "done";
   }
-  const restart = () => { if (!self && players.length > 1) { clearAll(); return; } g = { open: true }; draw(); root.querySelector(".cmp-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const restart = () => { if (!self) { clearAll(); return; } g = { open: true }; draw(); root.querySelector(".cmp-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
   const answer = async (k, v) => {
     g[k] = v;
     if (k === "who") { if (v === "one") await setChosen([player]); else if (v === "everyone") await setChosen([]); else if (chosen.length < 2) await setChosen(chosen.length ? chosen : [player]); }
@@ -375,7 +433,14 @@ export async function render(main) {
     if (k === "pvsrest") await setChosen([player, restOf([player])]);
     if (guideStep() === "done") applyGuide(); else draw();
   };
-  const back = () => { const order = ["stretch", "h2h", "place", "pgDone", "one", "groups", "how", "models", "gear", "when", "what", "pone", "pgroups", "phow", "pvsrest", "playersDone", "who"]; for (const k of order) if (g[k] !== undefined) { delete g[k]; if (k !== "playersDone") break; } draw(); };
+  const back = () => {
+    const order = ["stretch", "h2h", "place", "pgDone", "one", "groups", "how", "models", "gear", "when", "what", "pone", "pgroups", "phow", "pvsrest", "playersDone", "who"];
+    // (update 214) players and everyone: "each" was set for them, so going back from "what" is back to the start
+    if (g.what === undefined && g.phow === "each" && chosen.some((p) => p.key === EVERY)) { delete g.phow; delete g.playersDone; delete g.who; }
+    else for (const k of order) if (g[k] !== undefined) { delete g[k]; if (k !== "playersDone") break; }
+    if (!self && (!g.who || (g.who === "several" && !g.playersDone))) { clearAll(true); return; } // back to the start, the picks kept
+    draw();
+  };
   function applyGuide() {
     const mk = (id, name, f, md, values = null) => ({ id, name, f, mode: md, values, color: COLORS[0] });
     let out = [];
@@ -600,7 +665,7 @@ export async function render(main) {
     }
     const skip = el("button", { type: "button", class: "link" }, "Skip: I’ll set the filters myself");
     skip.addEventListener("click", () => { g.open = false; editOpen = true; draw(); });
-    const backB = (g.who && step !== "who") || (step === "what" && g.who) ? el("button", { type: "button", class: "link" }, "← Back") : null;
+    const backB = (g.who && step !== "who" && !(self && step === "what")) ? el("button", { type: "button", class: "link" }, "← Back") : null;
     backB?.addEventListener("click", back);
     return el("section", { class: "panel cmp-guide" }, [
       el("p", { class: "cmp-guide-k" }, "Set up a comparison"),

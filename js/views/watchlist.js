@@ -159,7 +159,10 @@ export async function render(main, { previewClient }) {
       : own ? el("p", { class: "muted small wl-menu-note" }, [`${nameOf(menuFor)} has their own metrics. `, (() => { const b = el("button", { type: "button", class: "link" }, "Use everyone\u2019s instead"); b.addEventListener("click", () => { const mf = { ...(prefs.metricsFor || {}) }; delete mf[menuFor]; saveWatch({ metricsFor: mf }); draw(); }); return b; })()])
       : el("p", { class: "muted small wl-menu-note" }, `${nameOf(menuFor)} uses everyone\u2019s metrics. Change any and they get their own.`);
     const menu = menuOpen ? el("div", { class: "panel wl-menu", role: "group", "aria-label": "Metrics" }, [
-      el("div", { class: "wl-menu-top" }, [el("div", { class: "wl-menu-who-row" }, [el("strong", {}, "Metrics for"), whoSel || el("strong", {}, "every card")]), (() => { const b = el("button", { type: "button", class: "link" }, "Done"); b.addEventListener("click", () => { menuOpen = false; draw(); }); return b; })()]),
+      el("div", { class: "wl-menu-top" }, [el("div", { class: "wl-menu-who-row" }, [el("strong", {}, "Metrics for"), whoSel || el("strong", {}, "every card")]), el("div", { class: "wl-menu-acts" }, [
+        // (update 214) Clear: take every metric off (for whoever the menu is for)
+        list.length ? (() => { const b = el("button", { type: "button", class: "btn ghost small wl-menu-clear" }, "Clear"); b.addEventListener("click", () => { setList(menuFor, []); draw(); }); return b; })() : null,
+        (() => { const b = el("button", { type: "button", class: "link" }, "Done"); b.addEventListener("click", () => { menuOpen = false; draw(); }); return b; })()])]),
       whoNote,
       el("div", { class: "wl-menu-groups" }, catalog.map((g) => el("div", { class: "wl-menu-g" }, [el("p", { class: "wl-menu-gt" }, g.group), ...g.items.map(([id, l, ranges]) => {
         // (update 172) Hit Green %, Pin-High %, On-Line %, Proximity, Up & Down %, Made Putt %: once ticked, pick
@@ -167,8 +170,8 @@ export async function render(main, { previewClient }) {
         const mine = (m) => m === id || (ranges || []).some((x) => x.id === m);
         const on = list.some(mine);
         const cb = el("input", { type: "checkbox", checked: on });
-        // (update 179) ticking one with distances starts with every distance picked (untick the ones you don't want)
-        cb.addEventListener("change", () => { const m = cb.checked ? [...list, id, ...(ranges || []).map((r) => r.id)] : list.filter((x) => !mine(x)); setList(menuFor, [...new Set(m)]); draw(); });
+        // (update 214) ticking one starts with just "All" (every distance together); pick distances to add rows for them
+        cb.addEventListener("change", () => { const m = cb.checked ? [...list, id] : list.filter((x) => !mine(x)); setList(menuFor, [...new Set(m)]); draw(); });
         const opt = el("label", { class: "wl-menu-o" }, [cb, el("span", {}, l)]);
         if (!on || !ranges?.length) return opt;
         const chip = (cid, text) => {
@@ -302,7 +305,7 @@ export async function render(main, { previewClient }) {
     ]), d.label, d.info))) : el("p", { class: "muted small" }, "Not enough shots yet.")]);
     const dists = el("div", { class: "wl-two" }, [distList("Best distances", c.dists.best, "best"), distList("Toughest distances", c.dists.worst, "worst")]);
     const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => tappable(el("div", { class: "wl-mrow" }, [
-      el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
+      el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") || /^sg:sd@.*\|/.test(m.id) ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
     ]), m.label, m.info)))]) : null;
     // (update 211) club breakdowns: each model side by side (a model with under 10 rounds is marked)
     const clubs = (c.clubTables || []).map((t) => el("div", { class: "wl-clubs" }, [

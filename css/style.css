@@ -3906,3 +3906,9 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .wl-menu-stat { gap: 0.1rem !important; }
 .wl-menu-stat .wl-ranges { margin: 0 0 0.3rem 1.3rem; padding: 0 !important; gap: 0.2rem !important; }
 .wl-menu-stat .wl-range { padding: 0.08rem 0.42rem !important; font-size: 0.68rem !important; }
+
+/* (update 214) Watchlist badges: tighter, so they sit on as few lines as possible */
+.wl-badges { gap: 0.25rem !important; }
+.wl-badge { padding: 0.18rem 0.5rem !important; font-size: 0.7rem !important; gap: 0.25rem !important; white-space: nowrap; }
+.wl-menu-acts { display: flex; align-items: center; gap: 0.9rem; }
+.wl-menu-clear { min-height: 0 !important; padding: 0.25rem 0.8rem !important; font-size: 0.8rem !important; }
