@@ -94,7 +94,7 @@ function chart(b) {
     const bw = Math.max(2, Math.min(26, slot * 0.7));
     items.forEach((x, i) => {
       const y0 = Y(baseV), y1 = Y(x.v);
-      const r = mk("rect", { x: X(i) - bw / 2, y: Math.min(y0, y1), width: bw, height: Math.max(1, Math.abs(y1 - y0)), rx: Math.min(3, bw / 3), fill: x.on ? (x.tone ? C[x.tone] || C.gold : x.v >= 0 ? C.pos : C.neg) : C.off });
+      const r = mk("rect", { x: X(i) - bw / 2, y: Math.min(y0, y1), width: bw, height: Math.max(1, Math.abs(y1 - y0)), rx: Math.min(3, bw / 3), fill: x.on ? (x.color || (x.tone ? C[x.tone] || C.gold : x.v >= 0 ? C.pos : C.neg)) : C.off }); // (update 215: or its own colour)
       r.append(mk("title", {}, `${x.label}${x.sub ? ` · ${x.sub}` : ""}: ${fmt(x.v)}`));
       svg.append(r);
     });
@@ -114,8 +114,8 @@ function chart(b) {
   // reference lines (an average; over part of the chart when from / to are given)
   for (const r of ref) {
     const x1 = r.from != null ? L + slot * r.from : L, x2 = r.to != null ? L + slot * r.to : W - R, y = Y(r.v);
-    svg.append(mk("line", { x1, x2, y1: y, y2: y, stroke: C.gold, "stroke-width": 1.4, "stroke-dasharray": "5 4" }),
-      mk("text", { x: x2 - 3, y: y - 5, "text-anchor": "end", "font-size": 10.5, "font-weight": 600, fill: C.gold, ...HALO }, `${r.label} ${fmt(r.v)}`));
+    svg.append(mk("line", { x1, x2, y1: y, y2: y, stroke: r.color || C.gold, "stroke-width": 1.4, "stroke-dasharray": "5 4" }),
+      mk("text", { x: x2 - 3, y: y - 5, "text-anchor": "end", "font-size": 10.5, "font-weight": 600, fill: r.color || C.gold, ...HALO }, `${r.label} ${fmt(r.v)}`));
   }
   // dates: the first, the last, and one in the middle
   const marks = [...new Set([0, Math.floor((n - 1) / 2), n - 1])].filter((i) => n > 1 || i === 0);

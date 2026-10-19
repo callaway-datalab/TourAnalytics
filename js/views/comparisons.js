@@ -17,8 +17,9 @@ import { playerPicker } from "../playerPicker.js";
 import { CATEGORIES, fmtStat, fmtSG, gearInfo, gearLabel } from "../sg.js";
 import {
   COLORS, MAX_SEL, SG_ROWS, options, roundsFor, windowFilter, summarize, confidence, distanceProfile, statSets,
-  products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage,
+  products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage, sgRounds,
 } from "../compareData.js";
+import { renderBlocks } from "../badgePopup.js";
 
 const LS_PLAYER = "ta:cmp:player";
 const NS = "http://www.w3.org/2000/svg";
@@ -247,6 +248,7 @@ export async function render(main) {
       items.length ? sgSection(items) : null,
       items.length ? roundsSection(items) : null,
       items.length ? distanceSection(items) : null,
+      items.length ? timelineSection(items) : null, // (update 215)
       items.length ? statsSection(items) : null,
       el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
     ]);
@@ -834,10 +836,14 @@ export async function render(main) {
     const putt = used.some(([k]) => k === "PUTT"), t2g = used.filter(([k]) => k !== "PUTT").length;
     return SG_ROWS.filter(([k]) => k === "TOTAL" || used.some(([u]) => u === k) || (k === "T2G" && putt && t2g > 1));
   };
-  function cards(items) {
-    const used = usedCats(items);
+  // (update 215) comparing time frames (seasons, last 10 against the 10 before, dates of your own)
+  const timeMode = () => ["years", "windows", "custom"].includes(mode);
+  function cards(items0) {
+    const used = usedCats(items0);
     const head = used.length === 1 ? used[0] : ["TOTAL", "Total"];
-    return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
+    // (update 215) time frames: best to worst, by the number shown big
+    const items = timeMode() ? [...items0].sort((a, b) => (b.s.n ? b.s.sg[head[0]] ?? -99 : -99) - (a.s.n ? a.s.sg[head[0]] ?? -99 : -99)) : items0;
+    return el("section", { class: "cmp-cards" }, items.map((it) => hoverable(tapCard(el("article", { class: "panel cmp-card", style: `--c:${it.color}`, "data-s": it.i }, [
       el("div", { class: "cmp-card-top" }, [el("span", { class: "cmp-card-name" }, it.name)]),
       it.s.n ? el("p", { class: "cmp-card-meta" }, `${it.s.n.toLocaleString()} round${it.s.n === 1 ? "" : "s"} \u00b7 ${it.s.events} event${it.s.events === 1 ? "" : "s"} \u00b7 ${dateTxt(it.s.from)} \u2013 ${dateTxt(it.s.to)}`) : el("p", { class: "cmp-card-meta" }, "No rounds"),
       // (update 210) a small sample says so, so 3 rounds isn't read like 60
@@ -845,7 +851,83 @@ export async function render(main) {
       el("div", { class: "cmp-card-big" }, [el("strong", { class: tone(it.s.sg.TOTAL) }, it.s.n ? fmtSG(it.s.sg.TOTAL) : "\u2014"), el("span", {}, `SG: ${head[1]} a round`)]),
       used.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${used.length},1fr)` }, used.map(([k]) => el("div", {}, [el("span", {}, k), el("strong", { class: tone(it.s.sg[k]) }, it.s.n ? fmtSG(it.s.sg[k]) : "\u2014")]))) : null,
       it.s.n >= 2 ? el("p", { class: "cmp-card-foot" }, `Best ${fmtSG(it.s.best)} \u00b7 worst ${fmtSG(it.s.worst)} \u00b7 ${Math.round(it.s.gaining * 100)}% of rounds gaining`) : null,
-    ]), it.i)));
+      it.s.n ? el("p", { class: "cmp-card-tap" }, "Tap for the tournaments \u203a") : null,
+    ]), it), it.i)));
+  }
+  // (update 215) a card opens its rounds: tournament by tournament, and each one opens to its rounds
+  const rdSG = (rd, k) => rd.shots.reduce((t, s) => t + (k === "TOTAL" || s.cat === k ? s.sg : 0), 0);
+  const SGK = [["TOTAL", "Total"], ["OTT", "OTT"], ["APP", "APP"], ["ARG", "ARG"], ["PUTT", "PUTT"]];
+  function tapCard(node, it) {
+    if (!it.s.n) return node;
+    node.classList.add("cmp-tap"); node.tabIndex = 0; node.setAttribute("role", "button"); node.setAttribute("aria-haspopup", "dialog");
+    const go = () => openRounds(it);
+    node.addEventListener("click", go); node.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    return node;
+  }
+  function openRounds(it) {
+    const rs = [...it.rs].filter((rd) => rd.shots?.length).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const evs = new Map();
+    for (const rd of rs) { const k = `${rd.pk || ""}|${rd.event || "\u2014"}|${rd.year || String(rd.date || "").slice(0, 4)}`; (evs.get(k) || evs.set(k, { event: rd.event || "\u2014", rounds: [] }).get(k)).rounds.push(rd); }
+    const list = [...evs.values()].reverse(); // (latest first)
+    const open = new Set();
+    let all = false;
+    const avg = (xs, k) => xs.reduce((t, rd) => t + rdSG(rd, k), 0) / xs.length;
+    const td = (v, strong) => el("td", { class: `num ${tone(v)}${strong ? " strong" : ""}` }, fmtSG(v));
+    const body = el("div", { class: "wl-pop-body" });
+    const allB = el("button", { type: "button", class: "btn ghost small" }, "Show every round");
+    const paint = () => {
+      allB.textContent = all ? "Tournaments only" : "Show every round";
+      const rows = [];
+      for (const [i, e] of list.entries()) {
+        const on = all || open.has(i);
+        const tr = el("tr", { class: `cmp-ev-row cmp-tap${on ? " on" : ""}`, tabindex: "0", title: on ? "Hide its rounds" : "Show its rounds" }, [
+          el("td", {}, [el("span", { class: "cmp-ev-caret", "aria-hidden": "true" }, on ? "\u25be " : "\u25b8 "), e.event, el("span", { class: "muted cmp-ev-date" }, dateTxt(e.rounds.at(-1).date))]),
+          el("td", { class: "num" }, String(e.rounds.length)), ...SGK.map(([k]) => td(avg(e.rounds, k), k === "TOTAL"))]);
+        const flip = () => { if (all) { all = false; list.forEach((_, j) => open.add(j)); } open.has(i) ? open.delete(i) : open.add(i); paint(); };
+        tr.addEventListener("click", flip); tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter") flip(); });
+        rows.push(tr);
+        if (on) for (const rd of e.rounds) rows.push(el("tr", { class: "cmp-rd-row" }, [el("td", {}, [rd.roundNo ? `Round ${rd.roundNo}` : "Round", el("span", { class: "cmp-ev-date" }, dateTxt(rd.date))]), el("td", { class: "num muted" }, ""), ...SGK.map(([k]) => td(rdSG(rd, k), k === "TOTAL"))]));
+      }
+      mount(body, el("div", { class: "wl-pop-tw" }, el("table", { class: "wl-pop-table cmp-ev-table" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), ...SGK.map(([, l]) => el("th", { class: "num" }, l))])),
+        el("tbody", {}, rows),
+      ])));
+    };
+    allB.addEventListener("click", () => { all = !all; if (!all) open.clear(); paint(); });
+    paint();
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": it.name }, el("div", { class: "gx-pop wl-pop cmp-rd-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${it.s.n} round${it.s.n === 1 ? "" : "s"} \u00b7 ${list.length} tournament${list.length === 1 ? "" : "s"}`), el("h2", {}, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name]),
+        el("p", { class: "gx-sub" }, "Strokes gained a round at each tournament, latest first. Tap one to see its rounds.")]), close]),
+      el("div", { class: "cmp-rd-acts" }, allB), body]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    close.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll"); document.body.appendChild(overlay); close.focus();
+  }
+  // (update 215) time frames: every round in order, the ones being compared in their colour, each one's average dashed
+  function timelineSection(items) {
+    if (!timeMode()) return null;
+    const pks = [...new Set(items.filter((it) => it.s.n).map((it) => it.pk || inPlay()[0]?.key))].filter((k) => k && k !== EVERY).slice(0, 4);
+    if (!pks.length) return null;
+    const blocks = pks.map((pk) => {
+      const mine = items.filter((it) => it.s.n && (it.pk || inPlay()[0]?.key) === pk);
+      const inIt = new Map(); // round key → the first item it's in
+      for (const it of mine) for (const rd of it.rs) if (!inIt.has(rd.key)) inIt.set(rd.key, it);
+      const allRs = [...sgRounds(roundsOfKey(pk))].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const first = allRs.findIndex((rd) => inIt.has(rd.key));
+      const rs = first < 0 ? [] : allRs.slice(Math.max(0, first - 2));
+      if (!rs.length) return null;
+      const bars = rs.map((rd) => { const it = inIt.get(rd.key); return { label: dateTxt(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: rdSG(rd, "TOTAL"), on: !!it, color: it?.color }; });
+      const ref = mine.map((it) => { const idx = rs.map((rd, i) => (it.rs.some((x) => x.key === rd.key) ? i : -1)).filter((i) => i >= 0); return idx.length ? { v: it.s.sg.TOTAL, label: it.name.replace(/^.* \u00b7 /, ""), from: idx[0], to: idx.at(-1) + 1, color: it.color } : null; }).filter(Boolean);
+      return { kind: "bars", fmt: "sg", items: bars, ref, title: pks.length > 1 || multi() ? (players.find(([k]) => k === pk)?.[1] || (pk === player?.key ? player.label : pk)) : null };
+    }).filter(Boolean);
+    if (!blocks.length) return null;
+    return el("section", { class: "panel cmp-sec" }, [
+      secHead("Round by round", "SG: Total in every round, in order. The rounds being compared are in their colour; each dashed line is that group\u2019s average."),
+      el("div", { class: "cmp-legend" }, items.filter((it) => it.s.n).map((it) => el("span", { class: "cmp-legend-i" }, [el("i", { style: `background:${it.color}` }), it.name]))),
+      ...renderBlocks(blocks),
+    ]);
   }
   function standout(items) {
     const list = insights(items.map((it) => ({ name: it.name, s: it.s })));

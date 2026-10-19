@@ -3912,3 +3912,26 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .wl-badge { padding: 0.18rem 0.5rem !important; font-size: 0.7rem !important; gap: 0.25rem !important; white-space: nowrap; }
 .wl-menu-acts { display: flex; align-items: center; gap: 0.9rem; }
 .wl-menu-clear { min-height: 0 !important; padding: 0.25rem 0.8rem !important; font-size: 0.8rem !important; }
+
+/* (update 215) Compare: cards open their tournaments and rounds */
+.cmp-card.cmp-tap { cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
+.cmp-card.cmp-tap:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--c) 55%, transparent); }
+.cmp-card-tap { margin: 0.5rem 0 0; font-size: 0.74rem; color: #d4b483; font-weight: 600; }
+.cmp-rd-pop { width: min(46rem, 100%) !important; }
+.cmp-rd-pop h2 .cmp-dot { margin-right: 0.4rem; }
+.cmp-rd-acts { display: flex; justify-content: flex-end; margin-top: 0.4rem; }
+.cmp-ev-table td:first-child { white-space: normal; min-width: 9rem; }
+.cmp-ev-row { cursor: pointer; }
+.cmp-ev-row:hover td { background: rgba(212,180,131,0.07); }
+.cmp-ev-row.on td { font-weight: 600; }
+.cmp-ev-caret { color: #d4b483; }
+.cmp-rd-row td { font-size: 0.8em; color: var(--muted); }
+.cmp-rd-row td:first-child { padding-left: 1.3rem; }
+.cmp-rd-row td.num.pos, .cmp-rd-row td.num.neg { opacity: 0.9; }
+.cmp-ev-date { display: block; font-size: 0.85em; }
+@media (max-width: 560px) {
+  .cmp-ev-table { width: 100%; }
+  .cmp-ev-table th, .cmp-ev-table td { padding: 0.4rem 0.14rem !important; font-size: 0.66rem !important; letter-spacing: 0 !important; }
+  .cmp-ev-table td:first-child { min-width: 0; width: 34%; }
+  .cmp-rd-row td:first-child { padding-left: 0.6rem !important; }
+}
