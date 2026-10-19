@@ -236,6 +236,7 @@ export async function render(main) {
       head,
       guideBox(),
       editBox(),
+      items.length ? reportBar(items) : null,
       items.length ? selectedBar(items) : null,
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length >= 2 ? standout(items) : null,
@@ -280,7 +281,11 @@ export async function render(main) {
     inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
     inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && player && !productsOnly) pp.preset(player.key); }, 300));
     if (inp) inp.placeholder = "Type a player\u2019s name\u2026";
-    return el("div", { class: "cmp-who cmp-top" }, pp.node);
+    // (update 211) clear the player: back to the start (for staff, "Compare everyone")
+    const clearAll = () => { player = null; data = null; chosen = []; productsOnly = false; sels = []; g = { open: true }; loadingFor = null; ls.set(LS_PLAYER, ""); draw(); };
+    const x = player && !productsOnly ? el("button", { type: "button", class: "cmp-top-x", "aria-label": "Clear the player", title: "Clear the player" }, "\u2715") : null;
+    x?.addEventListener("click", clearAll);
+    return el("div", { class: "cmp-who cmp-top" }, [pp.node, x]);
   }
   // (update 192) Players: who's being compared, above everything you pick (the one you're looking at is always in)
   let scope = [];
@@ -439,13 +444,20 @@ export async function render(main) {
     const cur = pickVals.length ? groupOfVals(pickVals, nameOf(pickVals, !pb.models.size)) : null;
     const taken = new Set((inGuide ? pb.groups : sels.filter((s) => s.f?.clubs)).flatMap((x) => x.f.clubs));
     const restVals = items.map((o) => o.value).filter((v) => !taken.has(v) && !(cur && cur.f.clubs.includes(v)));
-    const addGroup = (grp) => {
+    const addGroup = (grp, redraw = true) => {
       if (!grp) return;
       if (inGuide) { if (pb.groups.some((x) => x.id === grp.id)) return; pb.groups.push({ ...grp, color: COLORS[pb.groups.length % COLORS.length] }); }
       else { if (has(grp.id)) { flashNote("That\u2019s already in the comparison."); return; } if (!room(sels.length + 1, inPlay().length)) { flashNote(capNote()); return; } sels = [...sels, { id: grp.id, name: grp.name, f: grp.f, mode: "product", values: grp.f.clubs, color: nextColor() }]; touched = true; }
-      pb.brands.clear(); pb.models.clear(); draw();
+      if (redraw) { pb.brands.clear(); pb.models.clear(); draw(); }
     };
-    const addB = el("button", { type: "button", class: "btn cmp-add", disabled: cur ? null : true }, cur ? `\uff0b Add \u201c${cur.name}\u201d (${cur.n} rds)` : "Pick a brand (and models) to make a group");
+    // (update 211) several picked: add each on its own, or combine them into one group (never assumed)
+    const parts = pb.models.size > 1 ? [...pb.models].map((v) => [v]) : !pb.models.size && pb.brands.size > 1 ? [...pb.brands].map((b) => shown.filter((o) => o.brand === b).map((o) => o.value)) : null;
+    let addB, sepB = null;
+    if (parts) {
+      sepB = el("button", { type: "button", class: "btn cmp-add" }, `\uff0b Add these ${parts.length} separately`);
+      sepB.addEventListener("click", () => { for (const vs of parts) addGroup(groupOfVals(vs, nameOf(vs, !pb.models.size)), false); pb.brands.clear(); pb.models.clear(); draw(); });
+      addB = el("button", { type: "button", class: "btn ghost" }, `\uff0b Combine them into one group (${cur.n} rds)`);
+    } else addB = el("button", { type: "button", class: "btn cmp-add", disabled: cur ? null : true }, cur ? `\uff0b Add \u201c${cur.name}\u201d (${cur.n} rds)` : "Pick a brand (and models) to make a group");
     addB.addEventListener("click", () => addGroup(cur));
     const restB = restVals.length && (taken.size || cur) ? el("button", { type: "button", class: "btn ghost" }, `\uff0b All the other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`) : null;
     restB?.addEventListener("click", () => { if (cur) addGroup(cur); const g2 = groupOfVals(restVals.filter((v) => !(cur?.f.clubs || []).includes(v)), `All other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`); if (g2.f.clubs.length) addGroup(g2); });
@@ -462,7 +474,7 @@ export async function render(main) {
     }
     return el("div", { class: "cmp-pb" }, [
       inGuide ? el("p", { class: "muted small" }, "Make each group: pick a kind of club, then one or more brands (and models, if you want just some), and a season. Add it, then make the next. E.g. all Callaway drivers vs all TaylorMade drivers, or two Callaway models vs one Titleist.") : null,
-      kindRow, brandRow, modelRow, seasonRow, el("div", { class: "cmp-guide-row" }, [addB, restB]), hint, groupsBox, go,
+      kindRow, brandRow, modelRow, seasonRow, el("div", { class: "cmp-guide-row" }, [sepB, addB, restB]), hint, groupsBox, go,
     ]);
   }
   function guideSummary() {
@@ -500,9 +512,9 @@ export async function render(main) {
       const cap = Math.max(1, Math.floor(MAX_SEL / Math.max(1, isP ? 1 : inPlay().length)));
       q = "How do you want to compare them?";
       body = [
-        n <= cap ? opt("each", "Each one on its own", isP ? "Every player side by side" : "Every model side by side") : null,
-        opt("groups", "In two groups", isP ? "Put some players together and compare the groups (their rounds pooled)" : "Put some models together and compare the groups"),
-        opt("one", "One against all the rest", isP ? "One player against the others put together" : `One model against all the other ${groupName(g.gear).toLowerCase()}`),
+        n <= cap ? opt("each", "Add them separately", isP ? "Every player on their own, side by side" : "Every model on its own, side by side") : null,
+        opt("groups", "Combine them into two groups", isP ? "Put some players together and compare the groups (their rounds pooled)" : "Put some models together and compare the groups"),
+        opt("one", "One against the rest combined", isP ? "One player against the others put together" : `One model against all the other ${groupName(g.gear).toLowerCase()}`),
       ];
     } else if (step === "pgroups" || step === "groups") {
       const isP = step === "pgroups";
@@ -832,7 +844,91 @@ export async function render(main) {
   const FEW = 10; // (update 210) fewer rounds than this: flagged everywhere
   const statsSection = () => null; // (update 209: part of "Side by side" now)
   // (update 209) product usage across everyone in the data: how many use it, share, switching, how long they stay
+  /* ------------------------------ (update 211) Generate AI Report ------------------------------ */
+  function reportBar(items) {
+    const live = items.filter((it) => it.s.n);
+    if (!live.length) return null;
+    const b = el("button", { type: "button", class: "hero-insights cmp-ai-btn" }, "\u2728 Generate AI Report");
+    const status = el("span", { class: "muted small" }, "");
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try { await makeReport(live, (t) => { status.textContent = t; }); status.textContent = "Done: the report opened in a new tab (and downloaded)."; }
+      catch (err) { console.warn(err); status.textContent = "Couldn\u2019t make the report. Try again."; }
+      b.disabled = false;
+    });
+    return el("div", { class: "cmp-ai" }, [b, status]);
+  }
+  async function makeReport(live0, say) {
+    say("Working out the highlights\u2026");
+    // (names that all start the same, "Everyone · …", lose the shared start; it goes in the subtitle)
+    const pre = (() => { const m = /^(.+? \u00b7 )/.exec(live0[0].name); return m && live0.every((it) => it.name.startsWith(m[1])) ? m[1] : ""; })();
+    const live = live0.map((it) => ({ ...it, name: it.name.slice(pre.length) }));
+    const catName = Object.fromEntries(CATEGORIES);
+    const used = usedCats(live);
+    const by = (k) => [...live].sort((a, b) => b.s.sg[k] - a.s.sg[k]);
+    const words = (v) => `${Math.abs(v).toFixed(2)} stroke${Math.abs(v).toFixed(2) === "1.00" ? "" : "s"} a round`;
+    const hi = [], lo = [];
+    const order = by("TOTAL"), best = order[0], worst = order.at(-1);
+    if (live.length > 1) hi.push(`${best.name} is best overall: ${f2s(best.s.sg.TOTAL)} a round, ${words(best.s.sg.TOTAL - worst.s.sg.TOTAL)} ahead of ${worst.name}.`);
+    else hi.push(`${best.name}: ${f2s(best.s.sg.TOTAL)} strokes gained a round over ${best.s.n} rounds.`);
+    for (const [k] of used.length > 1 ? used : []) {
+      const o = by(k), top = o[0], bot = o.at(-1);
+      if (live.length > 1 && top.s.sg[k] - bot.s.sg[k] >= 0.15) hi.push(`${catName[k]}: ${top.name} is best (${f2s(top.s.sg[k])} a round), ${words(top.s.sg[k] - bot.s.sg[k])} ahead of ${bot.name}.`);
+      for (const it of live) if (it.s.sg[k] <= -0.3) lo.push(`${it.name} loses ${words(it.s.sg[k])} on ${catName[k]}.`);
+      for (const it of live) if (it.s.sg[k] >= 0.5 && !hi.some((t) => t.startsWith(`${catName[k]}: ${it.name}`))) hi.push(`${it.name} gains ${words(it.s.sg[k])} on ${catName[k]}.`);
+    }
+    if (live.length > 1) lo.unshift(`${worst.name} trails the rest overall (${f2s(worst.s.sg.TOTAL)} a round).`);
+    const st = live.filter((x) => x.s.sd != null).sort((a, b) => a.s.sd - b.s.sd);
+    if (st.length >= 2 && st.at(-1).s.sd - st[0].s.sd >= 0.4) { hi.push(`${st[0].name} is the most consistent from round to round.`); lo.push(`${st.at(-1).name} is the most up and down from round to round.`); }
+    const few = live.filter((it) => it.s.n < FEW);
+    if (few.length) lo.push(`Only a few rounds for ${few.map((it) => `${it.name} (${it.s.n})`).join(", ")}: treat ${few.length === 1 ? "it" : "them"} as a hint, not a verdict.`);
+    // the table: strokes gained, then the main stats (no distances)
+    const tones = (vals, higher = true) => { const xs = vals.filter((v) => v != null); if (xs.length < 2) return vals.map(() => ""); const hiV = higher === false ? Math.min(...xs) : Math.max(...xs), loV = higher === false ? Math.max(...xs) : Math.min(...xs); return vals.map((v) => (v == null || Math.abs(hiV - loV) < 1e-9 ? "" : v === hiV ? "up" : v === loV ? "down" : "")); };
+    const rows = [{ group: "Strokes gained a round" }, ...sgRowsFor(live).map(([k, l]) => { const vals = live.map((it) => it.s.sg[k]); return { label: l, cells: vals.map(f2s), tones: tones(vals) }; })];
+    const obsSets = live.map((it) => statSets(roundsOf(it), [it.f])[0] || []);
+    for (const bk of statBlocks(obsSets, incNow())) {
+      const main = bk.rows.filter((r) => !r.dist && r.values.some((v) => v != null));
+      if (!main.length) continue;
+      rows.push({ group: bk.label });
+      for (const r of main) rows.push({ label: r.label, cells: r.values.map((v) => fmtStat(r.def, v)), tones: tones(r.values, r.def.higher) });
+    }
+    rows.push({ group: "Rounds" }, { label: "Rounds", cells: live.map((it) => String(it.s.n)) });
+    const fallback = insights(live.map((it) => ({ name: it.name, s: it.s }))).map((x) => x.text).join(" ");
+    // the AI summary, when the service is set up
+    let summary = null;
+    const url = window.PORTAL_CONFIG?.insightsUrl;
+    if (url) {
+      say("Writing the summary\u2026");
+      try {
+        const token = await getState().user?.getIdToken?.();
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ comparison: { what: guideSummary(), selections: live.map((it) => ({ name: it.name, rounds: it.s.n, sg: it.s.sg, best: it.s.best, worst: it.s.worst, steadiness: it.s.sd })), highlights: hi, lowlights: lo, table: rows.filter((r) => !r.group).map((r) => [r.label, ...r.cells]), usage: lastUsage?.rows || null } }) });
+        if (res.ok) summary = (await res.json()).summary || null;
+      } catch { /* the report still works without it */ }
+    }
+    say("Making the PDF\u2026");
+    const { buildComparePdf } = await import("../compareReport.js");
+    const bytes = buildComparePdf({
+      title: live.length > 1 ? live.map((it) => it.name).slice(0, 3).join(" vs ") + (live.length > 3 ? ` + ${live.length - 3} more` : "") : live[0].name,
+      subtitle: g.what ? guideSummary() : `${pre ? `${pre.replace(/ \u00b7 $/, "")} \u00b7 ` : ""}${live.length} selection${live.length === 1 ? "" : "s"}`,
+      summary, fallback, highlights: hi.slice(0, 6), lowlights: lo.slice(0, 6),
+      cols: live.map((it) => ({ name: it.name, n: it.s.n, few: it.s.n < FEW })), rows,
+      usage: lastUsage?.rows ? { cols: lastUsage.cols, rows: lastUsage.rows } : null,
+      notes: ["Strokes gained scores every shot against the baseline in the data: + means strokes gained, \u2212 strokes lost. A round\u2019s total is the sum of its shots; the numbers here are averages a round.",
+        "Green is the best in a row and red the worst (for stats like Proximity, lower is better).",
+        `Anything with fewer than ${FEW} rounds is marked *: with so few rounds a difference can be luck.`],
+    });
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const href = URL.createObjectURL(blob);
+    const a = el("a", { href, download: `Compare report ${new Date().toISOString().slice(0, 10)}.pdf` });
+    document.body.append(a); a.click(); a.remove();
+    window.open(href, "_blank");
+    window.__lastComparePdf = bytes; // (for tests)
+  }
+  const f2s = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
+  let lastUsage = null;
   function usageSection(items) {
+    lastUsage = null;
     const ps = sels.filter((s) => s.f?.clubs?.length);
     const pooled = others.get(`${EVERY}|tour`);
     if (!ps.length || !pooled || source !== "tour") return null;
@@ -842,6 +938,7 @@ export async function render(main) {
     const colorOf = (s) => items.find((it) => (it.base || it.id) === s.id)?.color || s.color;
     const kind = ps[0].f.clubs[0].startsWith("Ball|") ? "golf balls" : groupNameOf(ps[0].f.clubs[0].split("|")[0]).toLowerCase();
     const f1 = (v) => (v == null ? "\u2014" : v.toFixed(1)), pc = (v) => (v == null ? "\u2014" : `${Math.round(v)}%`), n0 = (v) => (v == null ? "\u2014" : Number(v).toLocaleString());
+    lastUsage = { cols: ps.map((s) => s.name), u, rowsOf: null };
     const ROWS = [
       ["Players who used it", (x) => n0(x.players), "Different players with at least one shot with it."],
       ["Players a tournament", (x) => f1(x.perEvent), "On average, how many players used it at each tournament."],
@@ -852,6 +949,7 @@ export async function render(main) {
       ["Stays with it", (x) => (x.stay == null ? "\u2014" : `${f1(x.stay)} events`), "After switching to it, how many tournaments in a row they kept it (on average)."],
       ["Still using it", (x) => pc(x.kept), "Of the players who used it, the share whose latest tournament was with it."],
     ];
+    lastUsage.rows = ROWS.map(([l, f]) => [l, ...u.map((x) => (x ? f(x) : "\u2014"))]);
     return el("section", { class: "panel cmp-sec" }, [
       secHead("Product usage", `Across everyone in the data (${new Set(pooled.map((rd) => rd.pk)).size.toLocaleString()} players). A player\u2019s model at a tournament is the one they hit the most shots with there. Hover a row for what it means.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [

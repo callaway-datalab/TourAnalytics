@@ -298,7 +298,19 @@ export async function render(main, { previewClient }) {
     const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => tappable(el("div", { class: "wl-mrow" }, [
       el("span", { class: "wl-m-l" }, m.label), el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
     ]), m.label, m.info)))]) : null;
-    const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics]);
+    // (update 211) club breakdowns: each model side by side (a model with under 10 rounds is marked)
+    const clubs = (c.clubTables || []).map((t) => el("div", { class: "wl-clubs" }, [
+      el("p", { class: "wl-col-t" }, `${t.title} \u00b7 ${t.what}`),
+      t.cols.length ? el("div", { class: "wl-clubs-tw" }, el("table", { class: "wl-clubs-t" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), ...t.cols.map((x) => el("th", {}, [x.label, x.rounds < 10 ? el("span", { class: "wl-few", title: `Only ${x.rounds} rounds` }, " *") : null]))])),
+        el("tbody", {}, [
+          el("tr", {}, [el("td", {}, "SG a round"), ...t.cols.map((x) => el("td", { class: `num ${sgCls(x.v)}` }, fmtSG(x.v)))]),
+          el("tr", { class: "muted" }, [el("td", {}, "Rounds"), ...t.cols.map((x) => el("td", { class: "num" }, String(x.rounds)))]),
+        ]),
+      ])) : el("p", { class: "muted small" }, "Not used in this period."),
+      t.cols.some((x) => x.rounds < 10) ? el("p", { class: "muted small wl-few-note" }, "* Fewer than 10 rounds: read with care.") : null,
+    ]));
+    const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics, ...clubs]);
     const card = el("article", { class: `panel wl-card${total.rank && total.rank <= 10 ? " elite" : ""}${isOpen ? " open" : ""}` }, [head, badges, sg, more]);
     moreBtn.addEventListener("click", () => {
       const open = !openCards.has(c.key);

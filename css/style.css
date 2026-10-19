@@ -3869,3 +3869,20 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
 .cmp-few-mark { color: #ffb340; font-weight: 800; }
 .cmp-key-n.few { color: #ffb340; }
 .sg-few { margin: 0.4rem 0 0; color: #ffb340 !important; }
+/* (update 211) clear the player; the AI report button; Watchlist club breakdowns */
+.cmp-top { display: flex; align-items: center; gap: 0.4rem; }
+.cmp-top > .player-picker { flex: 1; min-width: 0; }
+.cmp-top-x { flex: none; width: 2.2rem; height: 2.2rem; border-radius: 50%; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); color: var(--muted); cursor: pointer; font-size: 0.85rem; }
+.cmp-top-x:hover { color: #fff; background: rgba(255,255,255,0.1); }
+.cmp-ai { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.cmp-ai-btn { width: auto !important; margin: 0 !important; }
+.wl-clubs { margin-top: 0.9rem; }
+.wl-clubs-tw { overflow-x: auto; }
+.wl-clubs-t { border-collapse: collapse; font-size: 0.85rem; min-width: 100%; }
+.wl-clubs-t th { font-size: 0.68rem; font-weight: 700; color: var(--muted); text-align: right; padding: 0.3rem 0.5rem; vertical-align: bottom; line-height: 1.2; }
+.wl-clubs-t td { padding: 0.35rem 0.5rem; border-top: 1px solid rgba(255,255,255,0.06); white-space: nowrap; }
+.wl-clubs-t td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.wl-clubs-t tr.muted td { color: var(--muted); font-size: 0.78rem; }
+.wl-clubs-t .pos { color: #30d158; } .wl-clubs-t .neg { color: #ff453a; }
+.wl-few { color: #ffb340; font-weight: 800; }
+.wl-few-note { margin: 0.3rem 0 0; color: #ffb340 !important; }

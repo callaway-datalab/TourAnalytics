@@ -3,7 +3,7 @@
 //   · their 3 best and 3 worst distances (strokes gained a shot, ranked when the field's lie / distance detail is here)
 //   · any other metrics picked, with ranks and trends
 //   · badges and alerts: big moves, hot streaks and slumps, form landmarks, best rounds, wins and milestones
-import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds, gearList, gearLabel } from "./sg.js";
+import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds, gearList, gearLabel, gearInfo } from "./sg.js";
 
 export const SG_KEYS = [["TOTAL", "SG: Total", "Total"], ["OTT", "Off-the-Tee", "OTT"], ["APP", "Approach", "APP"], ["ARG", "Around-the-Green", "ARG"], ["PUTT", "Putting", "PUTT"]];
 const CAT_SHORT = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
@@ -98,12 +98,26 @@ export function metricCatalog(field, own = [], detail = null, { noRanks = false 
     { group: "Strokes gained", items: [["sg:T2G", "SG: Tee to Green"], ["sg:sd", "Steadiness (round-to-round swing)"], ["sg:best", "Best round"]] },
     { group: "Results", items: noRanks ? [["res:rounds", "Rounds played"]] : [["res:wins", "Wins"], ["res:top10", "Top 10s"], ["res:rounds", "Rounds played"]] },
     stats.length ? { group: "Stats", items: stats.map((k) => [`stat:${k}`, statDef(k).label, RANGE_STATS.includes(k) ? rangeItems(k) : null]) } : null,
-    // (update 210) each club model (brand + model) and ball: strokes gained a round with it
-    (() => { const gl = gearList(own.flatMap((p) => p.rounds)).sort((a, b) => b.shots - a.shots); return gl.length ? { group: "Clubs and balls (strokes gained per round)", items: gl.map((g) => [`gear:${g.value}`, g.label]) } : null; })(),
+    // (update 211) a club breakdown: every model of one kind of club (or one brand's), side by side
+    (() => {
+      const gl = gearList(own.flatMap((p) => p.rounds));
+      const kinds = CLUB_KINDS.filter(([k]) => gl.some((g) => g.kind === k));
+      if (!kinds.length) return null;
+      const items = [];
+      for (const [k, name] of kinds) {
+        items.push([`club:${k}`, `${name}: every model`]);
+        const brands = [...new Set(gl.filter((g) => g.kind === k).map((g) => g.brand))].sort();
+        if (brands.length > 1) for (const b of brands) items.push([`club:${k}@${b}`, `${name}: ${b} only`]);
+      }
+      return { group: "Club breakdown (models side by side)", items };
+    })(),
     dists.size ? { group: "Distances (strokes gained per round)", items: [...dists.values()].sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || (distLead(a.dist) - distLead(b.dist) || String(a.dist).localeCompare(String(b.dist), undefined, { numeric: true }))).map((d) => [`dist:${d.cat}|${d.dist}`, `${CAT_SHORT[d.cat] || d.cat} · ${d.dist}`]) } : null,
   ].filter(Boolean);
 }
+// (update 211) a kind of club, its name, and the part of the game its strokes gained is shown for
+export const CLUB_KINDS = [["Driver", "Drivers", "OTT"], ["Non-Driver", "Non-driver tee shots", "OTT"], ["Fairway Wood", "Fairway woods", null], ["Hybrid", "Hybrids", null], ["Iron", "Irons", "APP"], ["Wedge", "Wedges", "ARG"], ["Putter", "Putters", "PUTT"], ["Ball", "Golf balls", null]];
 export const metricLabel = (id) => {
+  if (id.startsWith("club:")) { const [k, b] = id.slice(5).split("@"); const kd = CLUB_KINDS.find(([x]) => x === k); return `${kd?.[1] || k}${b ? `: ${b}` : ""}`; }
   if (id.startsWith("stat:")) { const { k, cat, dist } = parseStatId(id); return cat ? `${statDef(k).label} · ${rangeLabel(k, cat, dist)}` : statDef(k).label; }
   if (id.startsWith("dist:")) { const [c, ...d] = id.slice(5).split("|"); return `${CAT_SHORT[c] || c} · ${d.join("|")}`; }
   if (id.startsWith("gear:")) return gearLabel(id.slice(5));
@@ -186,7 +200,26 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const wins = finishes.filter((x) => x.i === 0), top10 = finishes.filter((x) => x.i < 10);
 
   // ---- the metrics picked ----
+  card.clubTables = [];
   for (const id of metrics) {
+    // (update 211) a club breakdown: each model of that kind (or brand) side by side, strokes gained a round with it
+    if (id.startsWith("club:")) {
+      const [k, brand] = id.slice(5).split("@"), kd = CLUB_KINDS.find(([x]) => x === k), cat = kd?.[2] || null;
+      const isIt = (v) => { const gi = gearInfo(v); return gi.kind === k && (!brand || gi.brand === brand); };
+      const cols = new Map();
+      for (const rd of minePeriod) {
+        const seen = new Set();
+        for (const s of rd.shots) {
+          const v = k === "Ball" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear;
+          if (!v || !isIt(v) || (cat && s.cat !== cat)) continue;
+          const c = cols.get(v) || cols.set(v, { value: v, sg: 0, rounds: 0, shots: 0 }).get(v);
+          c.sg += s.sg; c.shots += s.w || 1; if (!seen.has(v)) { seen.add(v); c.rounds++; }
+        }
+      }
+      const list = [...cols.values()].map((c) => { const gi = gearInfo(c.value); return { label: `${gi.brand} ${gi.model}`.trim(), v: c.sg / Math.max(1, c.rounds), rounds: c.rounds, shots: c.shots }; }).sort((a, b) => b.rounds - a.rounds);
+      card.clubTables.push({ id, title: metricLabel(id), what: cat ? `SG ${(CATEGORIES.find(([c]) => c === cat) || [])[1] || cat} a round` : "SG a round (all its shots)", cols: list });
+      continue;
+    }
     if (noRanks && (id === "res:wins" || id === "res:top10")) continue; // (update 183: entered rounds: no wins or top 10s)
     let v = null, r = { rank: null, of: 0 }, trend = null, fmt = (x) => (x == null ? "—" : fmtSG(x)), higher = true, info = null;
     if (id === "sg:T2G") { const vals = new Map(ranked.map((p) => [p.key, perRound(p.rounds, "T2G")])); v = vals.get(key); r = rankOf(vals, key); trend = trendOf(mine, (rs) => perRound(rs, "T2G"));
