@@ -33,6 +33,8 @@ const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { retur
 const MODES = [
   ["years", "Seasons", "Each season side by side."],
   ["windows", "Time windows", "Recent form against what came before, or the whole career."],
+  // (update 216) seasons, tournaments, courses, rounds, months and tours together: each choice narrows the others
+  ["filters", "Tournaments & courses", "Open a filter, pick from it, and the other filters only offer what still fits."],
   ["tournaments", "Tournaments", "Any events, this year or any year."],
   ["courses", "Courses", "Where they play their best."],
   ["rounds", "Rounds", "Openers against weekends."],
@@ -81,6 +83,31 @@ export async function render(main) {
   const lite = staff ? await import("../fieldCache.js").then((m) => m.isLiteDevice()).catch(() => false) : false; // (a phone can't hold everyone's rounds)
   let chosen = player ? [player] : []; // (staff) [] = everyone
   let everyN = 0, dsInfo = null, busy = "";
+  // (update 216) finishing positions at each tournament: by SG: Total among the players who played every round there
+  // (the most anyone played); anyone with fewer rounds missed the cut. evKey → Map(player → "1" / "T3" / "MC")
+  let finishes = new Map();
+  let placeDim = null, placeOpen = new Set(), tlBy = "rounds", yoyBy = "event"; // (update 216)
+  const yr = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+  const evk = (rd) => `${rd.event}|${yr(rd)}`;
+  function setFinishes(field) {
+    if (!field?.length || finishes.size) return;
+    const evs = new Map();
+    for (const p of field) for (const rd of p.rounds || []) {
+      if (!rd.event) continue;
+      const e = evs.get(evk(rd)) || evs.set(evk(rd), new Map()).get(evk(rd));
+      const o = e.get(p.key) || e.set(p.key, { n: 0, sg: 0 }).get(p.key);
+      o.n++; o.sg += (rd.shots || []).reduce((t, x) => t + (x.sg || 0), 0);
+    }
+    for (const [k, e] of evs) {
+      const most = Math.max(...[...e.values()].map((o) => o.n));
+      const made = [...e].filter(([, o]) => o.n === most).sort((a, b) => b[1].sg - a[1].sg);
+      const out = new Map();
+      made.forEach(([pk, o], i) => { const first = made.findIndex(([, x]) => Math.round(x.sg * 100) === Math.round(o.sg * 100)); const tie = made.filter(([, x]) => Math.round(x.sg * 100) === Math.round(o.sg * 100)).length > 1; out.set(pk, `${tie ? "T" : ""}${first + 1}`); });
+      for (const [pk, o] of e) if (o.n < most) out.set(pk, "MC");
+      finishes.set(k, out);
+    }
+  }
+  const finishOf = (pk, rd) => finishes.get(evk(rd))?.get(pk) || "\u2014";
   const everyOk = () => staff && source === "tour" && !!dsInfo && !lite;
   const everyLabel = () => `Everyone${everyN ? ` (${everyN.toLocaleString()} players)` : ""}`;
   const inPlay = () => (!player ? [] : !staff ? [player] : chosen.length ? chosen.map((p) => (p.key === EVERY ? { key: EVERY, label: "Everyone" } : p)) : everyOk() ? [{ key: EVERY, label: "Everyone" }] : [player]);
@@ -199,6 +226,7 @@ export async function render(main) {
     data = { rounds: res?.me?.rounds || [] };
     others.set(k, data.rounds);
     if (source === "tour" && res?.datasetId) dsInfo = { id: res.datasetId, idx: res.idx };
+    if (source === "tour") setFinishes(res?.field); // (update 216)
     const need = inPlay().filter((p) => p.key !== player.key);
     if (need.length) {
       if (need.some((p) => p.key === EVERY || p.rest)) { opts = options(data.rounds); busy = "Loading everyone\u2019s rounds\u2026"; draw(); } // (update 214: say so while it loads)
@@ -236,6 +264,8 @@ export async function render(main) {
     const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
     // (update 206) while the questions are open, they're all there is: no filters or numbers until they're answered or skipped
     if (g.open) { mount(root, [head, guideBox()]); window.scrollTo(0, y); return; }
+    if (placeDim && !sels.length) { mount(root, [head, guideBox(), placeSection(), editBox()]); window.scrollTo(0, y); root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; }); return; }
+    placeDim = null;
     mount(root, [
       head,
       guideBox(),
@@ -244,6 +274,7 @@ export async function render(main) {
       items.length ? selectedBar(items) : null,
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length >= 2 ? standout(items) : null,
+      items.length >= 2 ? yoySection(items) : null, // (update 216)
       usageSection(items),
       items.length ? sgSection(items) : null,
       items.length ? roundsSection(items) : null,
@@ -269,7 +300,7 @@ export async function render(main) {
     const { loadSource } = await import("../reportGen.js");
     for (const [k, l] of players.slice(0, 20)) { // (any player in the latest tour file gives its id)
       let res = null; try { res = await loadSource("tour", k, l, { detail: false }); } catch { /* next */ }
-      if (res?.datasetId) { source = "tour"; player = { key: k, label: l }; data = { rounds: res.me?.rounds || [] }; others.set(`${k}|tour`, data.rounds); dsInfo = { id: res.datasetId, idx: res.idx }; break; }
+      if (res?.datasetId) { source = "tour"; player = { key: k, label: l }; data = { rounds: res.me?.rounds || [] }; others.set(`${k}|tour`, data.rounds); dsInfo = { id: res.datasetId, idx: res.idx }; setFinishes(res.field); break; }
     }
     if (!player) { busy = ""; draw(); flashNote("Couldn\u2019t find Tour Events data to compare."); return; }
     productsOnly = true; chosen = []; g = { open: true, who: "everyone" }; opts = options(data.rounds);
@@ -279,7 +310,7 @@ export async function render(main) {
     draw();
   }
   // (update 211/212) no player: back to the very start (for staff, "Compare everyone"). Start over does this too.
-  function clearAll(keepPicks = false) { player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
+  function clearAll(keepPicks = false) { placeDim = null; player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
   /* (update 214) the start screen: who to look at. Everyone, one player, several, or a player (or several) and everyone.
      Next goes on to the question that fits: one player or everyone → what to compare; several → how to compare them. */
   let startPicks = []; // [{ key, label }] (EVERY = everyone in the data)
@@ -464,7 +495,9 @@ export async function render(main) {
       } else if (g.how === "groups") out = [0, 1].map((x) => g.models.filter((v) => (g.groups[v] ?? 0) === x)).filter((vs) => vs.length).map((vs) => one(vs));
       else out = g.models.map((v) => one([v]));
     }
-    if (g.what === "place") {
+    placeDim = null;
+    if (g.what === "place") { placeDim = g.place; } // (update 216: every course / tournament / month / round, ranked; no selections)
+    if (false) {
       if (g.place === "rounds") { mode = "rounds"; out = opts.rounds.map((o) => mk(`rounds:${o.value}`, o.label, { roundNos: [o.value] }, "rounds", [o.value])); }
       if (g.place === "courses") { mode = "courses"; out = [...opts.courses].sort((a, b) => b.n - a.n).slice(0, 4).map((o) => mk(`courses:${o.value}`, o.label, { courses: [o.value] }, "courses", [o.value])); }
       if (g.place === "tournaments") { mode = "tournaments"; out = opts.tournaments.slice(0, 4).map((o) => mk(`tournaments:${o.value}`, o.label, { events: [o.value] }, "tournaments", [o.value])); }
@@ -653,10 +686,10 @@ export async function render(main) {
     } else if (step === "place") {
       q = "Compare them by…";
       body = [
-        opts.courses.length > 1 ? opt("courses", "Course", "Their 4 most-played courses") : null,
-        opts.tournaments.length > 1 ? opt("tournaments", "Tournament", "Their latest 4 tournaments") : null,
+        opts.courses.length > 1 ? opt("courses", "Course", "Every course they\u2019ve played, best first") : null,
+        opts.tournaments.length > 1 ? opt("tournaments", "Tournament", "Every tournament, all years together, best first") : null,
         opts.rounds.length > 1 ? opt("rounds", "Round", "Round 1 against round 2, 3 and 4") : null,
-        opts.months.length > 1 ? opt("months", "Time of year", "Their 4 busiest months") : null,
+        opts.months.length > 1 ? opt("months", "Time of year", "Every month, best first") : null,
       ];
     } else if (step === "h2h") {
       q = "Which of their rounds?";
@@ -694,7 +727,7 @@ export async function render(main) {
 
   /* ------------------------------ choosing what to compare ------------------------------ */
   function builder() {
-    const modes = MODES.filter(([m]) => m !== "tours" || opts.tours.length > 1).filter(([m]) => m !== "courses" || opts.courses.length).filter(([m]) => m !== "rounds" || opts.rounds.length > 1);
+    const modes = MODES.filter(([m]) => !["tournaments", "courses", "rounds", "months", "tours"].includes(m)); // (update 216: all in "Tournaments & courses")
     if (!modes.some(([m]) => m === mode)) mode = "years";
     const tabs = el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
       const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
@@ -704,6 +737,7 @@ export async function render(main) {
     const hint = el("p", { class: "cmp-hint" }, modes.find(([m]) => m === mode)[2]);
     let body;
     if (mode === "custom") body = customForm();
+    else if (mode === "filters") body = facetBuilder();
     else if (mode === "product") body = productBuilder(false);
     else {
       const prods = mode === "product" ? products(allRounds()) : [];
@@ -769,6 +803,80 @@ export async function render(main) {
       body = el("div", {}, [search, chipsBox, long && !chipFilter && mode !== "product" ? el("p", { class: "muted small" }, `Showing the latest 30 of ${list.length}: type to find others.`) : null, addRow]);
     }
     return el("section", { class: "panel cmp-build" }, [el("div", { class: "cmp-build-top" }, [el("h2", {}, "Compare by"), sourceSeg()]), tabs, hint, body, note, includeRow()]);
+  }
+  /* (update 216) filters that narrow each other: Season, Tour, Tournament, Course, Round, Month. Open one to pick from
+     it; every other filter then only offers what's left (2026 picked: only 2026's tournaments and courses). */
+  const fx = { years: new Set(), tours: new Set(), events: new Set(), courses: new Set(), roundNos: new Set(), months: new Set(), open: "events", q: "" };
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const FACETS = [
+    ["years", "Season", "Seasons", (rd) => yr(rd), (v) => v],
+    ["tours", "Tour", "Tours", (rd) => rd.tour || null, (v) => v],
+    ["events", "Tournament", "Tournaments", (rd) => rd.event || null, (v) => v],
+    ["courses", "Course", "Courses", (rd) => rd.course || null, (v) => v],
+    ["roundNos", "Round", "Rounds", (rd) => (rd.roundNo ? String(rd.roundNo) : null), (v) => `Round ${v}`],
+    ["months", "Month", "Months", (rd) => { const m = /^\d{4}-(\d{2})/.exec(String(rd.date || "")); return m ? String(Number(m[1]) - 1) : null; }, (v) => MON[Number(v)] || v],
+  ];
+  function facetBuilder() {
+    const rs = sgRounds(allRounds());
+    const facets = FACETS.filter(([k, , , f]) => new Set(rs.map(f).filter(Boolean)).size > 1 || fx[k].size);
+    const fits = (rd, skip) => facets.every(([k, , , f]) => k === skip || !fx[k].size || fx[k].has(f(rd)));
+    if (!facets.some(([k]) => k === fx.open)) fx.open = facets[0]?.[0] || null;
+    const latest = new Map(); for (const rd of rs) { const e = rd.event; if (e && String(rd.date) > (latest.get(e) || "")) latest.set(e, String(rd.date)); }
+    const optsOf = (k, f) => {
+      const m = new Map(); for (const rd of rs) { if (!fits(rd, k)) continue; const v = f(rd); if (v) m.set(v, (m.get(v) || 0) + 1); }
+      for (const v of fx[k]) if (!m.has(v)) m.set(v, 0);
+      const xs = [...m];
+      return k === "years" ? xs.sort((a, b) => b[0].localeCompare(a[0])) : k === "events" ? xs.sort((a, b) => (latest.get(b[0]) || "").localeCompare(latest.get(a[0]) || "")) : k === "roundNos" || k === "months" ? xs.sort((a, b) => Number(a[0]) - Number(b[0])) : xs.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    };
+    const box = el("div", { class: "cmp-fx" });
+    const redraw = () => { mount(box, inner()); };
+    const inner = () => {
+      const heads = el("div", { class: "cmp-fx-heads" }, facets.map(([k, l]) => {
+        const n = fx[k].size;
+        const b = el("button", { type: "button", class: `cmp-fx-h${fx.open === k ? " open" : ""}${n ? " set" : ""}`, "aria-expanded": String(fx.open === k) }, [l, n ? el("span", { class: "cmp-fx-n" }, String(n)) : null, el("span", { class: "cmp-fx-car", "aria-hidden": "true" }, fx.open === k ? "\u25b4" : "\u25be")]);
+        b.addEventListener("click", () => { fx.open = fx.open === k ? null : k; fx.q = ""; redraw(); });
+        return b;
+      }));
+      let opts_ = null;
+      if (fx.open) {
+        const [k, l, , f, lab] = facets.find(([x]) => x === fx.open);
+        const all = optsOf(k, f), t = fx.q.trim().toLowerCase();
+        const shown = all.filter(([v]) => !t || lab(v).toLowerCase().includes(t));
+        const search = all.length > 12 ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find a ${l.toLowerCase()}\u2026`, value: fx.q }) : null;
+        search?.addEventListener("input", () => { const pos = search.selectionStart; fx.q = search.value; redraw(); const a = box.querySelector(".cmp-chip-search"); if (a) { a.focus(); try { a.setSelectionRange(pos, pos); } catch {} } });
+        opts_ = el("div", { class: "cmp-fx-opts" }, [search, el("div", { class: "cmp-chips" }, shown.slice(0, t ? 200 : 40).map(([v, n]) => {
+          const on = fx[k].has(v);
+          const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}${!n && !on ? " off" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, lab(v), el("span", { class: "cmp-chip-n" }, `${n} rd${n === 1 ? "" : "s"}`)]);
+          b.addEventListener("click", () => { on ? fx[k].delete(v) : fx[k].add(v); redraw(); });
+          return b;
+        })), !t && shown.length > 40 ? el("p", { class: "muted small" }, `Showing 40 of ${shown.length}: type to find others.`) : null]);
+      }
+      // what the picks make, and adding it
+      const picked = facets.filter(([k]) => fx[k].size);
+      const match = rs.filter((rd) => fits(rd, null));
+      const fOf = (over = {}) => { const f = {}; for (const [k] of facets) { const vs = over[k] || [...fx[k]]; if (!vs.length) continue; if (k === "events") { const names = new Set(vs); f.events = [...new Set(rs.filter((rd) => names.has(rd.event)).map(evk))]; } else f[k] = vs; } return f; };
+      const nameOf = (over = {}) => picked.map(([k, , , , lab]) => { const vs = over[k] || [...fx[k]]; return vs.length <= 2 ? vs.map(lab).join(" + ") : `${lab(vs[0])} + ${vs.length - 1} more`; }).join(" \u00b7 ");
+      const add = (list) => {
+        const fresh = list.filter((x) => !has(x.id));
+        if (!fresh.length) { flashNote("That\u2019s already in the comparison."); return; }
+        if (!room(sels.length + fresh.length, inPlay().length)) { flashNote(capNote()); return; }
+        for (const x of fresh) sels = [...sels, { ...x, mode: "filters", full: x.name, color: nextColor() }];
+        touched = true; draw();
+      };
+      const sel = (over) => { const f = fOf(over); return { id: `filters:${JSON.stringify(f)}`, name: nameOf(over) || "All rounds", f }; };
+      const multiF = picked.filter(([k]) => fx[k].size > 1);
+      const acts = [];
+      if (picked.length) {
+        for (const [k, , pl] of multiF) { const b = el("button", { type: "button", class: "btn cmp-add" }, `\uff0b Each of the ${fx[k].size} ${pl.toLowerCase()} separately`); b.addEventListener("click", () => add([...fx[k]].map((v) => sel({ [k]: [v] })))); acts.push(b); }
+        const one = el("button", { type: "button", class: multiF.length ? "btn ghost" : "btn cmp-add", disabled: match.length ? null : true }, `${multiF.length ? "\uff0b Combine into one group" : `\uff0b Add \u201c${nameOf()}\u201d`} (${match.length} rds)`);
+        one.addEventListener("click", () => add([sel()]));
+        acts.push(one);
+        const clr = el("button", { type: "button", class: "link" }, "Clear filters"); clr.addEventListener("click", () => { for (const [k] of FACETS) fx[k].clear(); redraw(); }); acts.push(clr);
+      }
+      return [heads, opts_, el("div", { class: "cmp-addrow" }, picked.length ? acts : [el("span", { class: "muted small" }, "Open a filter above and pick from it.")])];
+    };
+    redraw();
+    return box;
   }
   // (update 189) the picks, as one selection (several: their rounds pooled, so it's their average)
   async function addStaged() {
@@ -867,7 +975,9 @@ export async function render(main) {
   function openRounds(it) {
     const rs = [...it.rs].filter((rd) => rd.shots?.length).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const evs = new Map();
-    for (const rd of rs) { const k = `${rd.pk || ""}|${rd.event || "\u2014"}|${rd.year || String(rd.date || "").slice(0, 4)}`; (evs.get(k) || evs.set(k, { event: rd.event || "\u2014", rounds: [] }).get(k)).rounds.push(rd); }
+    const pk0 = it.pk || inPlay()[0]?.key;
+    for (const rd of rs) { const k = `${rd.pk || ""}|${rd.event || "\u2014"}|${rd.year || String(rd.date || "").slice(0, 4)}`; (evs.get(k) || evs.set(k, { event: rd.event || "\u2014", pk: rd.pk || pk0, rounds: [] }).get(k)).rounds.push(rd); }
+    const hasFin = finishes.size > 0 && pk0 !== EVERY;
     const list = [...evs.values()].reverse(); // (latest first)
     const open = new Set();
     let all = false;
@@ -882,14 +992,14 @@ export async function render(main) {
         const on = all || open.has(i);
         const tr = el("tr", { class: `cmp-ev-row cmp-tap${on ? " on" : ""}`, tabindex: "0", title: on ? "Hide its rounds" : "Show its rounds" }, [
           el("td", {}, [el("span", { class: "cmp-ev-caret", "aria-hidden": "true" }, on ? "\u25be " : "\u25b8 "), e.event, el("span", { class: "muted cmp-ev-date" }, dateTxt(e.rounds.at(-1).date))]),
-          el("td", { class: "num" }, String(e.rounds.length)), ...SGK.map(([k]) => td(avg(e.rounds, k), k === "TOTAL"))]);
+          el("td", { class: "num" }, String(e.rounds.length)), hasFin ? el("td", { class: `num cmp-fin${finishOf(e.pk, e.rounds[0]) === "MC" ? " mc" : ""}` }, finishOf(e.pk, e.rounds[0])) : null, ...SGK.map(([k]) => td(avg(e.rounds, k), k === "TOTAL"))]);
         const flip = () => { if (all) { all = false; list.forEach((_, j) => open.add(j)); } open.has(i) ? open.delete(i) : open.add(i); paint(); };
         tr.addEventListener("click", flip); tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter") flip(); });
         rows.push(tr);
-        if (on) for (const rd of e.rounds) rows.push(el("tr", { class: "cmp-rd-row" }, [el("td", {}, [rd.roundNo ? `Round ${rd.roundNo}` : "Round", el("span", { class: "cmp-ev-date" }, dateTxt(rd.date))]), el("td", { class: "num muted" }, ""), ...SGK.map(([k]) => td(rdSG(rd, k), k === "TOTAL"))]));
+        if (on) for (const rd of e.rounds) rows.push(el("tr", { class: "cmp-rd-row" }, [el("td", {}, [rd.roundNo ? `Round ${rd.roundNo}` : "Round", el("span", { class: "cmp-ev-date" }, dateTxt(rd.date))]), el("td", { class: "num muted" }, ""), hasFin ? el("td", {}, "") : null, ...SGK.map(([k]) => td(rdSG(rd, k), k === "TOTAL"))]));
       }
       mount(body, el("div", { class: "wl-pop-tw" }, el("table", { class: "wl-pop-table cmp-ev-table" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), ...SGK.map(([, l]) => el("th", { class: "num" }, l))])),
+        el("thead", {}, el("tr", {}, [el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), hasFin ? el("th", { class: "num", title: "Finish: by SG: Total among those who played every round; MC = fewer rounds (missed the cut)" }, "Fin") : null, ...SGK.map(([, l]) => el("th", { class: "num" }, l))])),
         el("tbody", {}, rows),
       ])));
     };
@@ -906,6 +1016,57 @@ export async function render(main) {
     document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll"); document.body.appendChild(overlay); close.focus();
   }
   // (update 215) time frames: every round in order, the ones being compared in their colour, each one's average dashed
+  /* (update 216) where and when they play best: every course (tournament, month, round) across all their appearances,
+     best first; tap one to see each visit (a tournament: every year there; a month: every tournament in it …) */
+  const MN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const PLACE = [["tournaments", "Tournament", (rd) => rd.event || null], ["courses", "Course", (rd) => rd.course || null], ["months", "Month", (rd) => { const m = /^\d{4}-(\d{2})/.exec(String(rd.date || "")); return m ? MN[Number(m[1]) - 1] : null; }], ["rounds", "Round", (rd) => (rd.roundNo ? `Round ${rd.roundNo}` : null)]];
+  function placeSection() {
+    const ps = inPlay().filter((p) => p.key !== EVERY).slice(0, 4);
+    const pool = ps.length ? ps : inPlay();
+    const rsOf = (p) => sgRounds(roundsOfKey(p.key)).map((rd) => ({ ...rd, pk: rd.pk || p.key }));
+    const all = pool.flatMap(rsOf);
+    const dims = PLACE.filter(([, , f]) => new Set(all.map(f).filter(Boolean)).size > 1);
+    if (!dims.length) return el("section", { class: "panel cmp-empty" }, el("p", { class: "muted" }, "Not enough variety in these rounds to rank."));
+    if (!dims.some(([d]) => d === placeDim)) placeDim = dims[0][0];
+    const [, dimL, keyOf] = dims.find(([d]) => d === placeDim);
+    const avgAll = all.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / all.length;
+    const groups = new Map();
+    for (const rd of all) { const k = keyOf(rd); if (!k) continue; (groups.get(k) || groups.set(k, []).get(k)).push(rd); }
+    const evsOf = (rds) => [...rds.reduce((m, rd) => { const k = `${rd.pk}|${evk(rd)}`; (m.get(k) || m.set(k, []).get(k)).push(rd); return m; }, new Map()).values()];
+    let list = [...groups].map(([k, rds]) => ({ k, rds, n: rds.length, evs: evsOf(rds).length, v: rds.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / rds.length, byP: pool.map((p) => { const x = rds.filter((rd) => rd.pk === p.key); return x.length ? x.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / x.length : null; }) }));
+    list = placeDim === "rounds" ? list.sort((a, b) => b.v - a.v) : list.sort((a, b) => (b.n >= 3) - (a.n >= 3) || b.v - a.v);
+    const max = Math.max(0.05, ...list.map((x) => Math.abs(x.v - avgAll)));
+    const tabs = el("div", { class: "cmp-seg small cmp-dims" }, dims.map(([d, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${placeDim === d ? " on" : ""}` }, l); b.addEventListener("click", () => { placeDim = d; placeOpen = new Set(); draw(); }); return b; }));
+    const many = pool.length > 1;
+    const rows = list.flatMap((x, i) => {
+      const on = placeOpen.has(x.k), w = Math.abs(x.v - avgAll) / max * 50;
+      const row = el("button", { type: "button", class: `cmp-cond cmp-tap cmp-place${on ? " on" : ""}${x.n < 3 ? " few" : ""}`, "aria-expanded": String(on) }, [
+        el("span", { class: "cmp-cond-rank" }, String(i + 1)),
+        el("span", { class: "cmp-cond-l" }, [el("span", { class: "cmp-ev-caret", "aria-hidden": "true" }, on ? "\u25be " : "\u25b8 "), x.k, el("span", { class: "muted" }, ` \u00b7 ${x.evs} visit${x.evs === 1 ? "" : "s"}, ${x.n} rd${x.n === 1 ? "" : "s"}`)]),
+        el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.v >= avgAll ? "pos" : "neg"}`, style: x.v >= avgAll ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
+        el("strong", { class: `cmp-cond-v ${tone(x.v)}` }, fmtSG(x.v)),
+        el("span", { class: `cmp-cond-d ${tone(x.v - avgAll)}` }, fmtSigned(x.v - avgAll)),
+      ]);
+      row.addEventListener("click", () => { on ? placeOpen.delete(x.k) : placeOpen.add(x.k); draw(); });
+      if (!on) return [row];
+      // each visit: a tournament's years, a course's tournaments, a month's tournaments, a round's tournaments
+      const visits = evsOf(x.rds).sort((a, b) => String(b.at(-1).date).localeCompare(String(a.at(-1).date)));
+      const pname = (pk) => pool.find((p) => p.key === pk)?.label || "";
+      const det = el("div", { class: "cmp-place-det" }, el("table", { class: "cmp-table cmp-place-t" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, placeDim === "tournaments" ? "Year" : "Tournament"), el("th", { class: "num" }, "Rds"), finishes.size ? el("th", { class: "num", title: "Finish: by SG: Total among those who played every round; MC = fewer rounds" }, "Fin") : null, el("th", { class: "num" }, "SG/rd"), el("th", { class: "ph-hide" }, placeDim === "rounds" ? "Date" : "Each round")])),
+        el("tbody", {}, visits.map((rds) => { const v = rds.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / rds.length, f = finishOf(rds[0].pk, rds[0]);
+          return el("tr", {}, [el("td", {}, [placeDim === "tournaments" ? yr(rds[0]) : `${rds[0].event || "\u2014"} ${yr(rds[0])}`, many ? el("span", { class: "muted small" }, ` \u00b7 ${pname(rds[0].pk)}`) : null, placeDim === "tournaments" && rds[0].course ? el("span", { class: "muted small" }, ` \u00b7 ${rds[0].course}`) : null]),
+            el("td", { class: "num" }, String(rds.length)), finishes.size ? el("td", { class: `num cmp-fin${f === "MC" ? " mc" : ""}` }, f) : null, el("td", { class: `num strong ${tone(v)}` }, fmtSG(v)),
+            el("td", { class: "ph-hide cmp-rd-chips" }, placeDim === "rounds" ? dateTxt(rds[0].date) : [...rds].sort((a, b) => Number(a.roundNo || 0) - Number(b.roundNo || 0)).map((rd) => el("span", { class: `cmp-rd-chip ${tone(rdSG(rd, "TOTAL"))}` }, `R${rd.roundNo || "?"} ${fmtSG(rdSG(rd, "TOTAL"))}`)))]); })),
+      ]));
+      return [row, det];
+    });
+    return el("section", { class: "panel cmp-sec career-sec" }, [
+      el("div", { class: "cmp-sec-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), el("p", { class: "muted small" }, `Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total a round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit.`)]),
+      tabs,
+      el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
+    ]);
+  }
   function timelineSection(items) {
     if (!timeMode()) return null;
     const pks = [...new Set(items.filter((it) => it.s.n).map((it) => it.pk || inPlay()[0]?.key))].filter((k) => k && k !== EVERY).slice(0, 4);
@@ -918,15 +1079,45 @@ export async function render(main) {
       const first = allRs.findIndex((rd) => inIt.has(rd.key));
       const rs = first < 0 ? [] : allRs.slice(Math.max(0, first - 2));
       if (!rs.length) return null;
-      const bars = rs.map((rd) => { const it = inIt.get(rd.key); return { label: dateTxt(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: rdSG(rd, "TOTAL"), on: !!it, color: it?.color }; });
-      const ref = mine.map((it) => { const idx = rs.map((rd, i) => (it.rs.some((x) => x.key === rd.key) ? i : -1)).filter((i) => i >= 0); return idx.length ? { v: it.s.sg.TOTAL, label: it.name.replace(/^.* \u00b7 /, ""), from: idx[0], to: idx.at(-1) + 1, color: it.color } : null; }).filter(Boolean);
+      // (update 216) round by round, or tournament by tournament (each one's SG: Total a round)
+      const units = tlBy === "rounds" ? rs.map((rd) => ({ rds: [rd], label: dateTxt(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 ") }))
+        : [...rs.reduce((m, rd) => { const k = evk(rd); (m.get(k) || m.set(k, []).get(k)).push(rd); return m; }, new Map()).values()].map((rds) => ({ rds, label: dateTxt(rds.at(-1).date), sub: `${rds[0].event || "\u2014"} \u00b7 ${rds.length} rd${rds.length === 1 ? "" : "s"}${finishes.size ? ` \u00b7 ${finishOf(pk, rds[0])}` : ""}` }));
+      const bars = units.map((u) => { const it = u.rds.map((rd) => inIt.get(rd.key)).find(Boolean); return { label: u.label, sub: u.sub, v: u.rds.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / u.rds.length, on: !!it, color: it?.color }; });
+      const ref = mine.map((it) => { const keys = new Set(it.rs.map((x) => x.key)); const idx = units.map((u, i) => (u.rds.some((rd) => keys.has(rd.key)) ? i : -1)).filter((i) => i >= 0); return idx.length ? { v: it.s.sg.TOTAL, label: it.name.replace(/^.* \u00b7 /, ""), from: idx[0], to: idx.at(-1) + 1, color: it.color } : null; }).filter(Boolean);
       return { kind: "bars", fmt: "sg", items: bars, ref, title: pks.length > 1 || multi() ? (players.find(([k]) => k === pk)?.[1] || (pk === player?.key ? player.label : pk)) : null };
     }).filter(Boolean);
     if (!blocks.length) return null;
     return el("section", { class: "panel cmp-sec" }, [
-      secHead("Round by round", "SG: Total in every round, in order. The rounds being compared are in their colour; each dashed line is that group\u2019s average."),
+      el("div", { class: "cmp-sec-head cmp-tl-head" }, [el("div", {}, [el("h2", {}, tlBy === "rounds" ? "Round by round" : "Tournament by tournament"),
+        el("p", { class: "muted small" }, `SG: Total ${tlBy === "rounds" ? "in every round" : "a round at every tournament"}, in order. The ones being compared are in their colour; each dashed line is that group\u2019s average.`)]),
+        el("div", { class: "cmp-seg small" }, [["rounds", "Rounds"], ["events", "Tournaments"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${tlBy === v ? " on" : ""}` }, l); b.addEventListener("click", () => { tlBy = v; draw(); }); return b; }))]),
       el("div", { class: "cmp-legend" }, items.filter((it) => it.s.n).map((it) => el("span", { class: "cmp-legend-i" }, [el("i", { style: `background:${it.color}` }), it.name]))),
       ...renderBlocks(blocks),
+    ]);
+  }
+  // (update 216) seasons side by side: the tournaments (or courses) they played in more than one of them, year over year
+  function yoySection(items) {
+    const ys = items.filter((it) => it.s.n && it.f?.years?.length === 1);
+    if (ys.length < 2 || ys.length !== items.filter((it) => it.s.n).length) return null;
+    const pks = new Set(ys.map((it) => it.pk || inPlay()[0]?.key));
+    if (pks.size > 1) return null;
+    const cols = [...ys].sort((a, b) => a.f.years[0].localeCompare(b.f.years[0]));
+    const keyOf = (rd) => (yoyBy === "event" ? rd.event : rd.course) || null;
+    const per = cols.map((it) => { const m = new Map(); for (const rd of it.rs) { const k = keyOf(rd); if (!k) continue; const o = m.get(k) || m.set(k, { n: 0, sg: 0, rd }).get(k); o.n++; o.sg += rdSG(rd, "TOTAL"); } return m; });
+    const names = [...new Set(per.flatMap((m) => [...m.keys()]))].filter((k) => per.filter((m) => m.has(k)).length >= 2);
+    if (!names.length) return null;
+    const pk = [...pks][0];
+    const rows = names.map((k) => { const vals = per.map((m) => (m.has(k) ? m.get(k).sg / m.get(k).n : null)); const got = vals.map((v, i) => [v, i]).filter(([v]) => v != null); return { k, vals, ns: per.map((m) => m.get(k)?.n || 0), fins: per.map((m) => (m.has(k) && yoyBy === "event" && finishes.size ? finishOf(pk, m.get(k).rd) : null)), ch: got.at(-1)[0] - got[0][0] }; }).sort((a, b) => b.ch - a.ch);
+    const big = Math.max(...rows.map((x) => Math.abs(x.ch)));
+    const tabs = el("div", { class: "cmp-seg small" }, [["event", "Tournaments"], ["course", "Courses"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${yoyBy === v ? " on" : ""}` }, l); b.addEventListener("click", () => { yoyBy = v; draw(); }); return b; }));
+    return el("section", { class: "panel cmp-sec cmp-yoy" }, [
+      el("div", { class: "cmp-sec-head cmp-tl-head" }, [el("div", {}, [el("h2", {}, "Year over year"), el("p", { class: "muted small" }, `${yoyBy === "event" ? "Tournaments" : "Courses"} played in more than one of these seasons: SG: Total a round each year${yoyBy === "event" && finishes.size ? " (and where they finished)" : ""}, biggest improvement first.`)]), tabs]),
+      el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, yoyBy === "event" ? "Tournament" : "Course"), ...cols.map((it) => el("th", { class: "num" }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.f.years[0]])), el("th", { class: "num" }, "Change")])),
+        el("tbody", {}, rows.map((x) => el("tr", { class: Math.abs(x.ch) === big ? "strong" : "" }, [el("td", {}, x.k),
+          ...x.vals.map((v, i) => el("td", { class: `num ${tone(v)}` }, v == null ? "\u2014" : [fmtSG(v), el("span", { class: "cmp-yoy-n" }, x.fins[i] ? ` fin ${x.fins[i]}` : ` ${x.ns[i]} rds`)])),
+          el("td", { class: `num cmp-delta strong ${tone(x.ch)}` }, `${x.ch > 0.004 ? "\u25b2" : x.ch < -0.004 ? "\u25bc" : "\u25c6"}\u00a0${Math.abs(x.ch).toFixed(2)}`)]))),
+      ])),
     ]);
   }
   function standout(items) {

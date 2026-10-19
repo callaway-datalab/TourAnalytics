@@ -3935,3 +3935,27 @@ button.cmp-cond:hover { background: rgba(255,255,255,0.04); }
   .cmp-ev-table td:first-child { min-width: 0; width: 34%; }
   .cmp-rd-row td:first-child { padding-left: 0.6rem !important; }
 }
+
+/* (update 216) Compare: filters that narrow each other */
+.cmp-fx { display: grid; gap: 0.7rem; }
+.cmp-fx-heads { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.cmp-fx-h { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 999px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.04); color: var(--ink); font: 600 0.86rem var(--font-body, inherit); cursor: pointer; }
+.cmp-fx-h.set { border-color: rgba(212,180,131,0.6); color: #f3dfbd; }
+.cmp-fx-h.open { background: rgba(212,180,131,0.14); border-color: #d4b483; }
+.cmp-fx-n { min-width: 1.2rem; height: 1.2rem; padding: 0 0.3rem; border-radius: 999px; background: #d4b483; color: #111; font-size: 0.7rem; display: inline-grid; place-items: center; }
+.cmp-fx-car { font-size: 0.7rem; color: var(--muted); }
+.cmp-fx-opts { display: grid; gap: 0.5rem; padding: 0.7rem; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+.cmp-chip.off { opacity: 0.45; }
+/* (update 216) year over year, the ranked places, the timeline switch, finishes */
+.cmp-tl-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; flex-wrap: wrap; }
+.cmp-yoy-n { font-size: 0.72em; color: var(--muted); font-weight: 500; }
+.cmp-fin { font-weight: 600; color: #f3dfbd; }
+.cmp-fin.mc { color: var(--muted); font-weight: 500; }
+button.cmp-place { width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.cmp-place.few { opacity: 0.6; }
+.cmp-place.on { background: rgba(212,180,131,0.07); }
+.cmp-place-det { padding: 0.2rem 0 0.8rem 1.6rem; overflow-x: auto; }
+.cmp-place-t { font-size: 0.84rem; }
+.cmp-rd-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.cmp-rd-chip { font-size: 0.72rem; padding: 0.1rem 0.4rem; border-radius: 6px; background: rgba(255,255,255,0.05); white-space: nowrap; }
+@media (max-width: 560px) { .cmp-place-det { padding-left: 0.3rem; } }
