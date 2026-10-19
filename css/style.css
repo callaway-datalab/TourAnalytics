@@ -4018,3 +4018,4 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .wl-dist-more { margin-top: 0.35rem; font-size: 0.78rem; }
 .wl-badges:empty { display: block; }
 .rd-grid .rd-type { grid-column: 1 / -1; } .rd-grid .rd-type .seg { width: fit-content; max-width: 100%; }
+.wl-badges { align-content: flex-start; align-items: flex-start; } /* (update 225: the extra space stays blank; badges keep their own height) */
