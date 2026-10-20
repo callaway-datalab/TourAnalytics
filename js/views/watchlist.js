@@ -154,7 +154,7 @@ export async function render(main, { previewClient }) {
     const y0 = window.scrollY, h0 = root.offsetHeight;
     root.style.minHeight = `${h0}px`;
     prefs = watchPrefs();
-    rel = !!prefs.rel;
+    rel = false; // (update 242: always raw values; no Raw / Relative switch)
     const source = src();
     if (!enteredField) { try { await loadEntered(); } catch { enteredField = []; } }
     const fieldNow = withEntered(field) || [], detailNow = withEntered(detail);
@@ -235,7 +235,7 @@ export async function render(main, { previewClient }) {
       b.addEventListener("click", () => { if (rel === v) return; saveWatch({ rel: v }); draw(); });
       return b;
     }));
-    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, relSeg, metricsBtn, meBtn, multi ? pickerBox : null]);
+    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, metricsBtn, meBtn, multi ? pickerBox : null]);
     const where = source === "entered" ? "entered rounds" : "ranked on their tour";
     // (update 186) just how many players
     const sub = multi ? (keys.length ? `${keys.length} Player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about")
