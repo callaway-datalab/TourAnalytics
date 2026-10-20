@@ -10,7 +10,10 @@ const KINDS = [
   [/\b(fairway woods?|fairways woods?|woods?)\b/, "Fairway Wood"], [/\bhybrids?\b/, "Hybrid"], [/\b(golf )?balls?\b/, "Ball"],
 ];
 const EXCL = /\b(?:exclud(?:e|ing)|except(?: for)?|without|leav(?:e|ing) out|not counting|ignor(?:e|ing)|minus|but not|skip(?:ping)?)\b\s+(.+?)(?=$|[.;!?]|\b(?:and (?:tell|let|show|which|who)|tell me|let me know)\b)/gi;
-const SPLIT = /\s+(?:vs\.?|versus|against|compared (?:to|with)|as opposed to)\s+/i;
+// (update 245) "A vs B", "A against B", "A compared with B", "A and compare it with B", "A with all the other …"
+const SPLIT = /\s*(?:,?\s*(?:and\s+)?(?:then\s+)?compare\s+(?:it|them|that|those|this)\s+(?:with|to|against)|\s(?:vs\.?|versus|against|compared\s+(?:to|with)|stacked\s+up\s+(?:to|against)|as\s+opposed\s+to)|\s(?:with|and|to)(?=\s+(?:all\s+)?(?:of\s+)?(?:the\s+|his\s+|her\s+|their\s+)?(?:other|rest|remaining|every\s+other|non-?)\b))\s+/i;
+// "all the other putters", "the rest", "every other", "non-TRTL": everything of that kind the other side isn't
+const REST = /\b(?:other|rest|remaining|every other|non-?\s?[a-z0-9]+|everything else|anything else)\b/;
 const norm = (t) => String(t || "").toLowerCase().replace(/[‘’]/g, "'").replace(/[–—]/g, "-");
 const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const wordIn = (hay, w) => new RegExp(`(^|[^a-z0-9])${esc(w)}($|[^a-z0-9])`).test(hay);
@@ -20,7 +23,8 @@ export function yearsIn(text, maxYear) {
   const t = norm(text), out = new Set();
   const top = Number(maxYear) || new Date().getFullYear();
   for (const m of t.matchAll(/\b(20\d\d)\s*(?:-|to|through|thru|until|till)\s*(20\d\d)\b/g)) { const a = Number(m[1]), b = Number(m[2]); for (let y = Math.min(a, b); y <= Math.max(a, b); y++) out.add(String(y)); }
-  for (const m of t.matchAll(/\b(?:since|from|after)\s+(20\d\d)\b(?!\s*(?:-|to|through|thru|until|till)\s*20\d\d)/g)) for (let y = Number(m[1]); y <= top; y++) out.add(String(y));
+  // "since 2025", "from the start of the 2025 season", "since the beginning of 2025": that season on
+  for (const m of t.matchAll(/\b(?:since|from|after|starting(?: in| from)?|beginning(?: in)?)\s+(?:the\s+)?(?:(?:start|beginning)\s+of\s+)?(?:the\s+)?(20\d\d)\b(?!\s*(?:-|to|through|thru|until|till)\s*20\d\d)/g)) for (let y = Number(m[1]); y <= top; y++) out.add(String(y));
   for (const m of t.matchAll(/\b(20\d\d)\b/g)) out.add(m[1]);
   if (/\bthis (season|year)\b/.test(t)) out.add(String(top));
   if (/\blast (season|year)\b/.test(t)) out.add(String(top - 1));
@@ -88,7 +92,8 @@ export function productGroups(ask, catalog, { maxYear = null } = {}) {
     return { kinds, brands, models, years: yearsIn(t, maxYear) };
   };
   const whole = sideSpec(ask.text);
-  const specs = ask.sides.map(sideSpec).map((s) => ({
+  const specs = ask.sides.map((txt) => ({ ...sideSpec(txt), rest: ask.sides.length > 1 && REST.test(norm(txt)) })).map((s) => ({
+    rest: s.rest,
     kinds: s.kinds.length ? s.kinds : whole.kinds,
     brands: s.brands.length || s.models.length ? s.brands : ask.sides.length > 1 ? [] : whole.brands,
     models: s.models,
@@ -97,7 +102,7 @@ export function productGroups(ask, catalog, { maxYear = null } = {}) {
   // a year said once for the whole request goes to every side that didn't name its own: none named ("2026
   // drivers: Callaway vs TaylorMade"), or only the last one, at its end ("Callaway vs TaylorMade drivers in 2026")
   const withY = specs.filter((s) => s.years.length);
-  const tailYears = specs.length > 1 && withY.length === 1 && specs.at(-1).years.length && /(?:in|for|during|from|over|since)\s+(?:the\s+)?(?:20\d\d|this season|last season)(?:\s*(?:-|to|through|and)\s*20\d\d)?\s*(?:season|seasons)?\s*$/.test(ask.sides.at(-1));
+  const tailYears = specs.length > 1 && withY.length === 1 && specs.at(-1).years.length && /(?:in|for|during|over)\s+(?:the\s+)?(?:20\d\d|this season|last season)(?:\s*(?:-|to|through|and)\s*20\d\d)?\s*(?:season|seasons)?\s*$/.test(ask.sides.at(-1));
   if (tailYears) for (const s of specs) if (!s.years.length) s.years = specs.at(-1).years;
   const anyYears = specs.some((s) => s.years.length) ? null : whole.years;
   const groups = [];
@@ -109,18 +114,37 @@ export function productGroups(ask, catalog, { maxYear = null } = {}) {
     if (years?.length) f.years = years;
     groups.push({ name: `${name}${years?.length ? ` · ${yrsTxt(years)}` : ""}`, f });
   };
-  for (const s of specs) {
-    const years = s.years.length ? s.years : anyYears || [];
+  // each side's clubs; a "the rest" side is everything of its kind the other sides aren't
+  const poolOf = (s) => {
     let pool = items;
     if (s.kinds.length) pool = pool.filter((o) => s.kinds.includes(o.kind));
+    if (s.rest) { if (s.brands.length && !s.models.length) pool = pool.filter((o) => s.brands.includes(o.brand)); return pool; }
     if (s.models.length) pool = pool.filter((o) => s.models.some((m) => m.value === o.value));
     else if (s.brands.length) pool = pool.filter((o) => s.brands.includes(o.brand));
     else if (!s.kinds.length) pool = [];
+    return pool;
+  };
+  const pools = specs.map(poolOf);
+  specs.forEach((s, i) => {
+    if (!s.rest) return;
+    const taken = new Set(pools.filter((_, j) => j !== i && !specs[j].rest).flat().map((o) => o.value));
+    pools[i] = pools[i].filter((o) => !taken.has(o.value));
+    s.restOf = pools.filter((_, j) => j !== i && !specs[j].rest).flat();
+  });
+  for (const [si, s] of specs.entries()) {
+    const years = s.years.length ? s.years : anyYears || [];
+    const pool = pools[si];
     if (!pool.length) continue;
     const kindTxt = (list) => { const ks = [...new Set(list.map((o) => o.kind))]; return ks.length === 1 ? kindWord[ks[0]] || ks[0].toLowerCase() : "clubs"; };
     if (specs.length > 1 || ask.together) {
       // one group a side ("TRTL vs Jailbird"): every model that side names, together
-      const name = s.models.length ? [...new Set(s.models.map((o) => o.model || o.label))].join(" + ") : `All ${s.brands.length ? `${s.brands.join(" + ")} ` : ""}${kindTxt(pool)}`;
+      const word = (list) => { // what a set of models has in common ("TRTL" for TRTL, TRTL DB and TRTL S)
+        const ws = list.map((o) => norm(o.model || o.label).split(/\s+/));
+        const common = ws[0].filter((w) => ws.every((x) => x.includes(w)) && w.length >= 3);
+        return common.length && list.length > 1 ? (list[0].model || list[0].label).split(/\s+/).filter((w) => common.includes(norm(w))).join(" ") : null;
+      };
+      const name = s.rest ? `All other ${kindTxt(pool)}${s.restOf?.length && word(s.restOf) ? ` (not ${word(s.restOf)})` : ""}`
+        : s.models.length ? (s.models.length > 1 && word(s.models) ? `All ${word(s.models)} ${kindTxt(pool)}` : [...new Set(s.models.map((o) => o.model || o.label))].join(" + ")) : `All ${s.brands.length ? `${s.brands.join(" + ")} ` : ""}${kindTxt(pool)}`;
       mk(pool, name, years);
     } else if (s.models.length > 1 || (!s.models.length && (s.brands.length <= 1))) {
       // one side: each model on its own ("all Callaway drivers": which one was best)

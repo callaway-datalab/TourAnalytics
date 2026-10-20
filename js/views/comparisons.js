@@ -506,6 +506,18 @@ export async function render(main) {
     const catalog = products(allRounds()).map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
     let groups = productGroups(ask, catalog, { maxYear });
     let kind = "product";
+    // (update 245) a group with no rounds (a putter not used in the seasons asked for) is left out and said so;
+    // if none has any, the seasons are dropped and it's tried again
+    const nOf = (f) => roundsFor(allRounds(), f).length;
+    let empties = [];
+    if (groups.length) {
+      empties = groups.filter((x) => !nOf(x.f)).map((x) => x.name);
+      if (empties.length === groups.length && groups.some((x) => x.f.years)) {
+        const again = productGroups({ ...ask, years: [], sides: ask.sides.map((t) => t.replace(/\b(?:since|from|after|in|for|during|starting(?: in| from)?|beginning(?: in)?)?\s*(?:the\s+)?(?:(?:start|beginning)\s+of\s+)?(?:the\s+)?20\d\d(?:\s*(?:-|to|through|thru|until|till)\s*20\d\d)?(?:\s+seasons?)?/g, " ")), text: ask.text.replace(/\b20\d\d\b/g, " ") }, catalog, { maxYear });
+        if (again.some((x) => nOf(x.f))) { askErr = `None of these were used in ${ask.years.join(", ")}, so this is every season.`; groups = again; empties = groups.filter((x) => !nOf(x.f)).map((x) => x.name); }
+      }
+      groups = groups.filter((x) => nOf(x.f));
+    }
     if (!groups.length) {
       kind = "time";
       if (ask.last) { const n = ask.last.n, ev = ask.last.unit === "events"; groups = [{ name: `The ${n} ${ev ? "events" : "rounds"} before that`, f: ev ? { prevEv: n } : { prev: n }, id: `windows:${ev ? "prevev" : "prev"}:${n}` }, { name: `Last ${n} ${ev ? "events" : "rounds"}`, f: ev ? { lastEv: n } : { last: n }, id: `windows:${ev ? "lastev" : "last"}:${n}` }]; }
@@ -518,7 +530,7 @@ export async function render(main) {
     const cap = Math.max(2, Math.floor(MAX_SEL / Math.max(1, inPlay().length)));
     sels = groups.slice(0, cap).map((x, i) => ({ id: x.id || `ask:${i}:${x.name}`, name: x.name, f: x.f, mode: x.mode || (kind === "product" ? "product" : "windows"), values: x.values || x.f.clubs || x.f.balls || null, color: COLORS[i % COLORS.length] }));
     mode = kind === "product" ? "product" : "windows"; g.what = kind === "product" ? "gear" : "time"; g.open = false; touched = true; placeDim = null; backToPlace = null;
-    askRes = { text, rewrite, ask, kind, dropped: Math.max(0, groups.length - cap), missed };
+    askRes = { text, rewrite, ask, kind, dropped: Math.max(0, groups.length - cap), missed, empties };
     askBusy = "";
     draw();
     root.querySelector(".cmp-askres")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -533,6 +545,7 @@ export async function render(main) {
     read.push(`**Who:** ${who.join(", ")}`);
     read.push(`**Compared:** ${sels.map((x) => x.name).join("  \u00b7  ")}${askRes.dropped ? ` (and ${askRes.dropped} more that didn\u2019t fit)` : ""}`);
     if (exclOn()) read.push(`**Left out:** ${[...excl.events.values(), ...[...excl.rounds].map((n) => `Round ${n}s`)].join(", ")}`);
+    if (askRes.empties?.length) read.push(`**No rounds with:** ${askRes.empties.join(", ")}`);
     if (askRes.missed.length) read.push(`**Couldn\u2019t find to leave out:** ${askRes.missed.join(", ")}`);
     let answer = "Nothing to compare: none of these had rounds.";
     if (live.length === 1) answer = `**${live[0].name}**: **${fmtSG(live[0].s.sg.TOTAL)}** strokes gained a round over ${live[0].s.n} rounds. There\u2019s only one, so nothing to compare it with.`;
