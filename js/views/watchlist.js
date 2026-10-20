@@ -244,10 +244,12 @@ export async function render(main, { previewClient }) {
     const subLine = multi && watchIsPreview() ? `${sub} · their Watchlist (changes in a preview aren't saved)` : sub;
 
     // ---- the cards ----
-    const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map(cardView));
+    const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map((c) => { const n = cardView(c); n.dataset.key = c.key; return n; }));
+    if (multi && keys.length > 1 && !watchIsPreview()) dragToReorder(body); // (update 249)
     // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
-    mount(root, [heroShell(controls, subLine), menu, body,
+    const dragHint = multi && keys.length > 1 && !watchIsPreview() ? el("p", { class: "muted small center wl-drag-hint" }, "Hold a card and drag it to change the order.") : null; // (update 249)
+    mount(root, [heroShell(controls, subLine), menu, body, dragHint,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
         ? `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
         : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
@@ -287,6 +289,71 @@ export async function render(main, { previewClient }) {
   };
   const rankPill = (r, of) => (src() === "entered" ? null : r ? el("span", { class: `wl-rank ${rkCls(r)}`, title: `${ordinal(r)} of ${of}` }, ordinal(r)) : el("span", { class: "wl-rank none" }, "—"));
 
+  /* (update 249) hold a card, then drag it: the order is saved (this week's guys at the top). A hold (a third of a
+     second without moving) starts it, so taps, clicks and scrolling work as before. */
+  function dragToReorder(box) {
+    let hold = null, drag = null;
+    const cardsNow = () => [...box.querySelectorAll(":scope > .wl-card")];
+    const place = (e) => {
+      const c = drag.card;
+      c.style.transform = "none";
+      const r = c.getBoundingClientRect();
+      c.style.transform = `translate(${e.clientX - drag.gx - r.left}px, ${e.clientY - drag.gy - r.top}px) scale(1.02)`;
+    };
+    const onMove = (e) => {
+      if (hold) { if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) stop(); return; }
+      if (!drag) return;
+      e.preventDefault();
+      // over another card: this one goes before or after it (whichever half the pointer's in)
+      const over = cardsNow().find((c) => { if (c === drag.card) return false; const r = c.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; });
+      if (over) {
+        const r = over.getBoundingClientRect(), list = cardsNow(), before = list.indexOf(drag.card) > list.indexOf(over);
+        // one card a row (a phone): by height; side by side (a grid row): by side
+        const lefts = new Set(list.map((x) => Math.round(x.getBoundingClientRect().left / 8)));
+        const firstHalf = lefts.size === 1 ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2;
+        if (before && firstHalf) box.insertBefore(drag.card, over); else if (!before && !firstHalf) box.insertBefore(drag.card, over.nextSibling);
+      }
+      place(e);
+      const edge = 70; // near the top or bottom of the window: scroll
+      if (e.clientY < edge) window.scrollBy(0, -12); else if (e.clientY > innerHeight - edge) window.scrollBy(0, 12);
+    };
+    const noScroll = (e) => { if (drag) e.preventDefault(); };
+    const stop = () => {
+      if (hold) { clearTimeout(hold.t); hold = null; }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("touchmove", noScroll);
+      if (!drag) return;
+      const c = drag.card; drag = null;
+      c.classList.remove("wl-dragging"); c.style.transform = ""; box.classList.remove("wl-reordering");
+      const order = cardsNow().map((x) => x.dataset.key).filter(Boolean);
+      const all = watchPrefs().players || [];
+      saveWatch({ players: [...order, ...all.filter((k) => !order.includes(k))] });
+      // the click that ends a drag isn't a click on the card
+      const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+      window.addEventListener("click", eat, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", eat, { capture: true }), 60);
+    };
+    box.addEventListener("pointerdown", (e) => {
+      const card = e.target.closest(".wl-card");
+      if (!card || card.parentElement !== box || e.button > 0 || drag) return;
+      if (e.target.closest("input, select, textarea")) return;
+      hold = { x: e.clientX, y: e.clientY, t: setTimeout(() => {
+        const r = card.getBoundingClientRect();
+        drag = { card, gx: hold.x - r.left, gy: hold.y - r.top };
+        hold = null;
+        card.classList.add("wl-dragging"); box.classList.add("wl-reordering");
+        try { navigator.vibrate?.(15); } catch { /* */ }
+      }, 320) };
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", stop);
+      window.addEventListener("pointercancel", stop);
+      window.addEventListener("touchmove", noScroll, { passive: false });
+    });
+    box.addEventListener("contextmenu", (e) => { if (drag || hold) e.preventDefault(); });
+    box.addEventListener("dragstart", (e) => e.preventDefault());
+  }
   // the alerts first (biggest first), then the rest of the badges
   const sortBadges = (bs) => [...bs].sort((x, y) => (y.alert ? y.sev || 1 : 0) - (x.alert ? x.sev || 1 : 0));
   function cardView(c) {
