@@ -521,8 +521,26 @@ export async function render(main) {
     const missed = ask.excl.filter((ph) => ![...matchEvents([ph], [...evs.values()]).keys()].length);
     // what to compare: clubs and balls, else seasons or recent form
     const catalog = products(allRounds()).map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
-    let groups = productGroups(ask, catalog, { maxYear });
+    let groups = ask.roundSets ? [] : productGroups(ask, catalog, { maxYear });
     let kind = "product";
+    // (update 250) a stretch back from today ("the past 12 months") and sets of rounds by how good they were
+    const base = { ...(ask.since ? { from: ask.since.from } : {}), ...(ask.years.length && !ask.since ? { years: ask.years } : {}) };
+    if (ask.since) for (const x of groups) x.f = { ...x.f, from: ask.since.from };
+    if (ask.roundSets) {
+      kind = "rounds";
+      const rs0 = ask.roundSets, total = roundsFor(allRounds(), base).length;
+      const setName = (word, x) => (x.n ? `${word} ${x.n} rounds` : `${word} ${x.pct}% of rounds`);
+      if (rs0.best) groups.push({ name: setName("Best", rs0.best), f: { ...base, ...(rs0.best.n ? { top: rs0.best.n } : { topPct: rs0.best.pct }) } });
+      if (rs0.worst) groups.push({ name: setName("Worst", rs0.worst), f: { ...base, ...(rs0.worst.n ? { bottom: rs0.worst.n } : { bottomPct: rs0.worst.pct }) } });
+      if (rs0.usual) {
+        const one = rs0.best || rs0.worst, isBest = !!rs0.best;
+        if (rs0.rest && one && !(rs0.best && rs0.worst)) {
+          const k = one.n ? total - one.n : null, pct = one.pct ? 100 - one.pct : null;
+          groups.push({ name: one.n ? `The other ${k} rounds` : `The other ${pct}%`, f: { ...base, ...(isBest ? (k != null ? { bottom: k } : { bottomPct: pct }) : (k != null ? { top: k } : { topPct: pct })) } });
+        } else groups.push({ name: "All rounds", f: { ...base } });
+      }
+      groups = groups.map((x, i) => ({ ...x, id: `ask:rounds:${i}:${JSON.stringify(x.f)}`, mode: "custom" }));
+    }
     // (update 245) a group with no rounds (a putter not used in the seasons asked for) is left out and said so;
     // if none has any, the seasons are dropped and it's tried again
     const nOf = (f) => roundsFor(allRounds(), f).length;
@@ -534,6 +552,19 @@ export async function render(main) {
         if (again.some((x) => nOf(x.f))) { askErr = `None of these were used in ${ask.years.join(", ")}, so this is every season.`; groups = again; empties = groups.filter((x) => !nOf(x.f)).map((x) => x.name); }
       }
       groups = groups.filter((x) => nOf(x.f));
+    }
+    // nothing to go on (no clubs, no sets of rounds, no seasons, windows or dates): say so, don't guess
+    if (!groups.length && !ask.last && !ask.years.length && !ask.since && !ask.kinds.length && !/\bseasons?\b|\byears?\b/.test(ask.text)) {
+      const keep = text;
+      clearAll(); route = "ask"; askText = keep;
+      askErr = "I couldn\u2019t tell what to compare from that. Name what to put side by side: seasons (2026 vs 2025), recent form (the last 12 rounds), clubs or balls (Callaway drivers vs TaylorMade drivers), or sets of rounds (his best rounds vs his average ones), plus a part of the game if you like (approach, putting).";
+      draw(); return;
+    }
+    if (!groups.length && ask.since && !ask.last && !ask.years.length) {
+      // the past N months against the same stretch before it
+      const from = new Date(ask.since.from), days = Math.round((Date.now() - from) / 864e5), before = new Date(from.getTime() - days * 864e5), to0 = new Date(from.getTime() - 864e5);
+      groups = [{ name: `The ${ask.since.label.replace(/^the past /, "")} before that`, f: { from: before.toISOString().slice(0, 10), to: to0.toISOString().slice(0, 10) }, id: `ask:before:${ask.since.from}`, mode: "custom" }, { name: ask.since.label.replace(/^the p/, "P"), f: { from: ask.since.from }, id: `ask:since:${ask.since.from}`, mode: "custom" }];
+      kind = "time";
     }
     if (!groups.length) {
       kind = "time";
@@ -563,12 +594,29 @@ export async function render(main) {
     const catNames = Object.fromEntries(CATEGORIES);
     const only = [...incCats].map((c) => catNames[c]).filter(Boolean);
     if (only.length) read.push(`**Only:** ${only.join(" + ")} (strokes gained from those shots)`);
+    if (askRes.ask.since) read.push(`**When:** ${askRes.ask.since.label} (since ${dateTxt(askRes.ask.since.from)})`);
     read.push(`**Compared:** ${sels.map((x) => x.name).join("  \u00b7  ")}${askRes.dropped ? ` (and ${askRes.dropped} more that didn\u2019t fit)` : ""}`);
     if (exclOn()) read.push(`**Left out:** ${[...excl.events.values(), ...[...excl.rounds].map((n) => `Round ${n}s`)].join(", ")}`);
     if (askRes.empties?.length) read.push(`**No rounds with:** ${askRes.empties.join(", ")}`);
     if (askRes.missed.length) read.push(`**Couldn\u2019t find to leave out:** ${askRes.missed.join(", ")}`);
     const what = only.length ? `${only.join(" + ")}: ` : "";
-    let answer = "Nothing to compare: none of these had rounds.";
+    let answer = "Nothing to compare: none of these had rounds.", biggest = null, statsLine = null;
+    // (update 250) where the difference is: each part of the game, biggest first, and the stats that moved most
+    const pairDetail = (a, b) => {
+      const cats = usedCats(live).filter(([c]) => !incCats.size || incCats.has(c));
+      if (cats.length > 1) {
+        const ds = cats.map(([c, l]) => ({ l, d: (a.s.sg[c] ?? 0) - (b.s.sg[c] ?? 0), av: a.s.sg[c] ?? 0, bv: b.s.sg[c] ?? 0 })).sort((x, y) => Math.abs(y.d) - Math.abs(x.d));
+        biggest = `**Biggest difference: ${ds[0].l}**, ${fmtSigned(ds[0].d)} a round (${fmtSG(ds[0].av)} vs ${fmtSG(ds[0].bv)}). Then ${ds.slice(1).map((x) => `${x.l} ${fmtSigned(x.d)}`).join(", ")}.`;
+      }
+      try {
+        const sets = [a, b].map((it) => statSets(roundsOf(it), [it.f])[0] || []);
+        const rows = statBlocks(sets).flatMap((bk) => bk.rows.filter((r) => !r.dist && r.values[0] != null && r.values[1] != null && r.def.higher != null));
+        const big = rows.map((r) => ({ r, d: r.values[0] - r.values[1], rel: Math.abs(r.values[0] - r.values[1]) / Math.max(Math.abs(r.values[1]), 1e-9) }))
+          .filter((x) => (x.r.def.pct ? Math.abs(x.d) >= 1 : x.rel >= 0.02)).sort((x, y) => (y.r.def.pct ? Math.abs(y.d) / 100 : y.rel) - (x.r.def.pct ? Math.abs(x.d) / 100 : x.rel)).slice(0, 3);
+        if (big.length) statsLine = `**The stats behind it:** ${big.map((x) => `${x.r.def.label} ${fmtStat(x.r.def, x.r.values[0])} vs ${fmtStat(x.r.def, x.r.values[1])}`).join("; ")}.`;
+      } catch { /* (no stats) */ }
+    };
+
     if (live.length === 1) answer = `${what}**${live[0].name}**: **${fmtSG(live[0].s.sg.TOTAL)}** strokes gained a round over ${live[0].s.n} rounds. There\u2019s only one, so nothing to compare it with.`;
     // (update 247) two stretches of time (the last 12 rounds and the 12 before): told as a trend, latest first
     const dk0 = (v) => String(v || "").slice(0, 10);
@@ -576,13 +624,16 @@ export async function render(main) {
     if (trend) {
       const [late, early] = [...live].sort((a, b) => dk0(b.s.to).localeCompare(dk0(a.s.to))), d = late.s.sg.TOTAL - early.s.sg.TOTAL;
       const f = fitStory(late, early);
+      pairDetail(late, early);
       answer = `${what}**${late.name}**: **${fmtSG(late.s.sg.TOTAL)}** strokes gained a round over ${late.s.n} rounds, ${Math.abs(d) < 0.05 ? "**about the same as**" : `**${d > 0 ? "up" : "down"} ${Math.abs(d).toFixed(2)}** from`} ${early.name.toLowerCase()} (${fmtSG(early.s.sg.TOTAL)}). ${f.sum}`;
       if (late.s.n < FEW || early.s.n < FEW) answer += " Few rounds, so treat it as a hint.";
     } else if (live.length >= 2) {
       const o = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), a = o[0], b = o[1];
       const f = fitStory(a, b);
-      answer = `${what}**${a.name}** was best: **${fmtSG(a.s.sg.TOTAL)}** strokes gained a round over ${a.s.n} rounds, **${(a.s.sg.TOTAL - b.s.sg.TOTAL).toFixed(2)}** ahead of ${b.name} (${fmtSG(b.s.sg.TOTAL)}, ${b.s.n} rounds).${o.length > 2 ? ` Then: ${o.slice(2).map((x) => `${x.name} ${fmtSG(x.s.sg.TOTAL)}`).join(", ")}.` : ""} ${f.sum}`;
+      if (askRes.kind === "rounds") { const [x0, y0] = [live[0], live[1]]; answer = `${what}**${x0.name}**: **${fmtSG(x0.s.sg.TOTAL)}** strokes gained a round (${x0.s.n} rounds) against **${fmtSG(y0.s.sg.TOTAL)}** for ${y0.name.toLowerCase()} (${y0.s.n} rounds): **${Math.abs(x0.s.sg.TOTAL - y0.s.sg.TOTAL).toFixed(2)}** a round apart.`; pairDetail(x0, y0); } else
+      answer = `${what}**${a.name}** was best: **${fmtSG(a.s.sg.TOTAL)}** strokes gained a round over ${a.s.n} rounds, **${(a.s.sg.TOTAL - b.s.sg.TOTAL).toFixed(2)}** ahead of ${b.name} (${fmtSG(b.s.sg.TOTAL)}, ${b.s.n} rounds).${o.length > 2 ? ` Then: ${o.slice(2).map((x) => `${x.name} ${fmtSG(x.s.sg.TOTAL)}`).join(", ")}.` : ""} ${askRes.kind === "rounds" ? "" : f.sum}`;
       if (a.s.n < FEW || b.s.n < FEW) answer += " Few rounds, so treat it as a hint.";
+      pairDetail(a, b);
     }
     const x = el("button", { type: "button", class: "gx-pop-x cmp-askres-x", "aria-label": "Close" }, "\u2715");
     x.addEventListener("click", () => { askRes = null; draw(); });
@@ -592,6 +643,8 @@ export async function render(main) {
       el("div", { class: "cmp-askres-top" }, [el("p", { class: "cmp-guide-k" }, "\u2728 You asked"), x]),
       el("p", { class: "cmp-askres-q" }, `\u201c${askRes.text}\u201d`),
       el("p", { class: "cmp-askres-a" }, md(answer)),
+      biggest ? el("p", { class: "cmp-askres-b" }, md(biggest)) : null,
+      statsLine ? el("p", { class: "cmp-askres-b" }, md(statsLine)) : null,
       askErr ? el("p", { class: "cmp-ask-err" }, askErr) : null,
       el("ul", { class: "cmp-askres-read" }, read.map((t) => el("li", {}, md(t)))),
       el("div", { class: "cmp-guide-row" }, [again, el("span", { class: "muted small" }, "Change anything with the filters below.")]),

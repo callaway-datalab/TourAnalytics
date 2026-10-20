@@ -61,6 +61,14 @@ export function options(rounds) {
 const withSeason = (rounds, f) => { if (!f?.season) return f; const ys = [...new Set(sgRounds(rounds).map(yearOf))].sort().reverse(); const y = ys[f.season === "last" ? 1 : 0]; return { ...f, season: null, years: [y || "none"] }; };
 export function roundsFor(rounds, f = {}) {
   f = withSeason(rounds, f);
+  // (update 250) the best (or worst) rounds of the rest of the filter: the top 25%, the best 10 …
+  if (f.top || f.topPct || f.bottom || f.bottomPct) {
+    const base = roundsFor(rounds, { ...f, top: null, topPct: null, bottom: null, bottomPct: null });
+    const byTot = [...base].sort((a, b) => sgOf(b) - sgOf(a));
+    const n = f.top || f.bottom || Math.max(1, Math.round(base.length * (f.topPct || f.bottomPct) / 100));
+    const pick = f.top || f.topPct ? byTot.slice(0, n) : byTot.slice(-n);
+    return pick.sort(byDate);
+  }
   // (update 190) a product: the rounds it was used in, and only its shots (so the numbers are that club's)
   // (update 191) a pick is a club model ("Iron|Callaway Apex") or a ball ("Ball|Callaway Chrome Tour")
   // (update 217) f.balls: a club with one ball (a driver and a ball combined): only shots hit with both
@@ -169,7 +177,7 @@ export function statSets(rounds, filters) {
       return one({ ...f, clubs: null, balls: null }).map((rd) => { const obs = (rd.obs || []).filter((o) => comboMatch(o, cs, bs)); return { ...rd, obs, has: new Set(obs.map((o) => o.k)), shots: [] }; }).filter((rd) => rd.obs.length);
     }
     if (f.any) { const seen = new Set(); return f.any.flatMap((g) => one(g)).filter((rd) => (seen.has(rd) ? false : (seen.add(rd), true))); } // (update 189)
-    if (f.last || f.prev || f.lastEv || f.prevEv) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
+    if (f.last || f.prev || f.lastEv || f.prevEv || f.top || f.topPct || f.bottom || f.bottomPct) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
     const g = { ...f };
     const set = (v) => (v && v.length ? new Set(v.map(String)) : null);
     const years = set(g.years), events = set(g.events), courses = set(g.courses), rnds = set(g.roundNos), months = set(g.months), tours = set(g.tours);

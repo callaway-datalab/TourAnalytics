@@ -30,7 +30,10 @@ this form, keeping every name as written (players, brands, models, tournaments):
 Rules: <what> is brand and/or model and kind of club (drivers, putters, irons, wedges, fairway woods, hybrids, balls), e.g. "all Callaway drivers"
 or "TRTL putters". If they want one set ranked ("which Callaway driver was best"), write just "Compare all Callaway drivers" with no "vs".
 For seasons only (no clubs), write e.g. "Compare 2026 vs 2025 for Scottie Scheffler". Turn "last year", "this season", "since 2024"
-into years. Leave out the Exclude part if nothing is excluded. Reply with the sentence only.
+into years. For recent form, write e.g. "Compare the last 12 rounds for Sam Burns". For a stretch back from today, keep it as
+"over the past 12 months" (or weeks). For sets of rounds by score, write e.g. "Compare his best 25% of rounds vs his average rounds
+over the past 12 months for Xander Schauffele" (or "best 10 rounds", "worst rounds", "the rest"). If they name a part of the game
+(approach, off the tee, around the green, putting), keep it, e.g. "Compare the approach game over the last 12 rounds for Sam Burns". Leave out the Exclude part if nothing is excluded. Reply with the sentence only.
 
 Request: ${String(ask.text).slice(0, 800)}`;
     const r = await fetch("https://api.anthropic.com/v1/messages", {

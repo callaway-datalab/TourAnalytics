@@ -65,9 +65,29 @@ export function readAsk(text, { players = [], maxYear = null } = {}) {
   // (update 247) a part of the game: only its strokes gained and stats ("his approach game", "putting", "short game")
   const cats = [[/\bapproach(?:es| shots?| play| game)?\b|\biron play\b/, "APP"], [/\boff[- ]the[- ]tee\b|\bdriving\b|\btee shots?\b|\btee ball\b/, "OTT"],
     [/\baround[- ]the[- ]green\b|\bshort game\b|\bchipping\b|\bpitching\b|\bwedge play\b/, "ARG"], [/\bputting\b|\bon the greens?\b|\bwith the putter\b/, "PUTT"]].filter(([re]) => re.test(t)).map(([, c]) => c);
+  // (update 250) a stretch of time back from today: "the past 12 months", "the last 6 weeks", "the past year"
+  let since = null;
+  const pm = /\b(?:past|last|previous|prior)\s+(\d+|one|two|three|six|twelve|eighteen)\s+(months?|weeks?|years?)\b/.exec(t) || (/\b(?:past|last) (year|twelve months)\b/.test(t) && !/\blast year'?s\b/.test(t) && /\bpast year\b|twelve months/.test(t) ? [null, "12", "months"] : null);
+  if (pm) {
+    const WORD = { one: 1, two: 2, three: 3, six: 6, twelve: 12, eighteen: 18 };
+    const n = Number(pm[1]) || WORD[pm[1]] || 12, d = new Date();
+    if (/^week/.test(pm[2])) d.setDate(d.getDate() - 7 * n); else if (/^year/.test(pm[2])) d.setFullYear(d.getFullYear() - n); else d.setMonth(d.getMonth() - n);
+    since = { from: d.toISOString().slice(0, 10), label: `the past ${n} ${pm[2].replace(/s$/, "")}${n === 1 ? "" : "s"}` };
+  }
+  // (update 250) sets of rounds by how good they were: "his best rounds", "the top 10 rounds", "his worst 20%"
+  const setOf = (word) => {
+    const m = new RegExp(`\\b(?:his |her |their |the )?(${word})\\s+(?:(\\d+)\\s*(%|percent)?\\s+)?(?:of\\s+(?:his |her |their )?)?rounds\\b|\\b(${word})\\s+(\\d+)\\s*(%|percent)\\b`).exec(t);
+    if (!m) return null;
+    const n = Number(m[2] || m[5] || 0), pct = !!(m[3] || m[6]);
+    return n ? (pct ? { pct: n } : { n }) : { pct: 25 };
+  };
+  const best = setOf("best|top|good|great|low(?:est)?"), worst = setOf("worst|bottom|bad|poor|high(?:est)?");
+  const usual = /\b(average|typical|normal|usual|other|all(?: of)?(?: his| her| their)?|regular|median)\s+rounds?\b|\bthe rest\b|\b(?:his|her|their) average\b/.test(t);
+  const rest = /\bthe rest\b|\bother rounds\b|\bthe others\b|\beverything else\b/.test(t);
+  const roundSets = best || worst ? { best, worst, usual: usual || !(best && worst), rest } : null;
   const lm = /\blast\s+(\d+)\s+(rounds?|events?|tournaments?)\b/.exec(t);
   const last = lm ? { n: Number(lm[1]), unit: /round/.test(lm[2]) ? "rounds" : "events" } : null;
-  return { cats, players: [...found].map(([key, label]) => ({ key, label })), everyone, years, sides: sides.length > 1 ? sides : [t], excl, exclRounds, together, last, kinds, text: t };
+  return { since, roundSets, cats, players: [...found].map(([key, label]) => ({ key, label })), everyone, years, sides: sides.length > 1 ? sides : [t], excl, exclRounds, together, last, kinds, text: t };
 }
 
 /**

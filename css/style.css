@@ -4127,3 +4127,4 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .wl-card.wl-dragging { position: relative; z-index: 50; cursor: grabbing; box-shadow: 0 18px 40px rgba(0,0,0,0.55), 0 0 0 2px rgba(212,180,131,0.6); transition: box-shadow 0.15s; pointer-events: none; }
 .wl-reordering .wl-card:not(.wl-dragging) { transition: transform 0.15s; }
 .wl-reordering { cursor: grabbing; }
+.cmp-askres-b { font-size: 0.95rem; line-height: 1.5; margin: 0 0 0.5rem; }
