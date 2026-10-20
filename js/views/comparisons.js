@@ -346,6 +346,7 @@ export async function render(main) {
       items.length ? reportBar(items) : null,
       items.length ? selectedBar(items) : null,
       items.length >= 2 ? boardSection(items) : null, // (update 220)
+      insideSection(items), // (update 246)
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length >= 2 ? standout(items) : null,
       items.length >= 2 ? yoySection(items) : null, // (update 216)
@@ -1260,9 +1261,126 @@ export async function render(main) {
     const f = plainProducts ? { clubs: [...new Set(fs.flatMap((x) => x.clubs))], ...(fs[0].years ? { years: fs[0].years } : {}) } : { any: fs };
     const name = pick.length === 2 ? `${pick[0].name} + ${pick[1].name}` : `${pick[0].name}, ${pick[1].name} + ${pick.length - 2} more`;
     const at = sels.indexOf(pick[0]);
-    const one = { id: `combo:${pick.map((s) => s.id).sort().join("&")}`, name, full: pick.map((s) => s.full || s.name).join(" + "), f, mode: plainProducts ? "product" : pick[0].mode, values: plainProducts ? f.clubs : null, color: pick[0].color };
+    const one = { id: `combo:${pick.map((s) => s.id).sort().join("&")}`, parts: plainProducts ? null : pick.map((s) => ({ name: s.name, f: s.f })), name, full: pick.map((s) => s.full || s.name).join(" + "), f, mode: plainProducts ? "product" : pick[0].mode, values: plainProducts ? f.clubs : null, color: pick[0].color };
     sels = sels.filter((s) => !joinPick.has(s.id)); sels.splice(Math.min(at, sels.length), 0, one);
     joinPick = new Set(); touched = true; draw();
+  }
+  /* ------------------------------ (update 246) inside the groups ------------------------------ */
+  const gearName = (v) => { const gi = gearInfo(v); return `${gi.brand || ""} ${gi.model || ""}`.trim() || String(v).replace(/^[^|]*\|/, ""); };
+  // the parts of a group: each model (or ball) in it, else each season, else each pick it was combined from
+  function membersOf(sel) {
+    const f = sel?.f || {};
+    if (f.any?.length > 1) return (sel.parts || f.any.map((ff, i) => ({ name: `Part ${i + 1}`, f: ff }))).map((p0, i) => ({ key: `any:${i}`, name: p0.name, f: p0.f }));
+    if (f.clubs?.length > 1) return f.clubs.map((v) => ({ key: v, name: gearName(v), f: { ...f, clubs: [v] } }));
+    if (f.balls?.length > 1) return f.balls.map((v) => ({ key: v, name: gearName(v), f: { ...f, balls: [v] } }));
+    if (f.years?.length > 1) return f.years.map((y) => ({ key: `y:${y}`, name: y, f: { ...f, years: [y] } }));
+    return null;
+  }
+  const editable = (sel) => !!(membersOf(sel) || sel.f?.clubs?.length || sel.f?.balls?.length);
+  function insideSection(items) {
+    const live = items.filter((it) => it.s.n);
+    const groups = live.map((it) => ({ it, sel: sels.find((s0) => s0.id === (it.base || it.id)) })).map((x) => ({ ...x, mem: membersOf(x.sel) })).filter((x) => x.mem);
+    if (!groups.length) return null;
+    const inc = incNow();
+    const topBest = Math.max(...live.map((it) => it.s.sg.TOTAL));
+    const blocks = groups.map(({ it, sel, mem }) => {
+      const rows = mem.map((m) => { const rs = includeShots(roundsFor(roundsOf(it), m.f), inc); return { m, s: summarize(rs) }; }).filter((r) => r.s.n).sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL);
+      if (!rows.length) return null;
+      const g0 = it.s.sg.TOTAL, max = Math.max(0.05, ...rows.map((r) => Math.abs(r.s.sg.TOTAL - g0)));
+      const below = rows.filter((r) => r.s.sg.TOTAL < g0 - 0.005).length;
+      const star = rows[0].s.sg.TOTAL > topBest + 1e-9 && live.length > 1 ? rows[0] : null;
+      const say = `${rows.length > 1 ? `${rows.length - below} of ${rows.length} above the group\u2019s ${fmtSG(g0)}; ` : ""}best: **${rows[0].m.name}** (${fmtSG(rows[0].s.sg.TOTAL)}, ${rows[0].s.n} rds)${rows.length > 1 ? `, worst: **${rows.at(-1).m.name}** (${fmtSG(rows.at(-1).s.sg.TOTAL)})` : ""}.${star ? ` **${star.m.name} on its own beats every selection here.**` : ""}`;
+      const md = (t) => t.split(/\*\*/).map((p0, i) => (i % 2 ? el("strong", {}, p0) : p0));
+      const drop = (m) => { const b = el("button", { type: "button", class: "cmp-in-drop", title: `Take ${m.name} out of this group` }, "\u2715"); b.addEventListener("click", (e) => { e.stopPropagation(); setMembers(sel.id, mem.filter((x) => x.key !== m.key)); }); return b; };
+      return el("div", { class: "cmp-in-g" }, [
+        el("div", { class: "cmp-in-h" }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), el("strong", {}, it.name), el("span", { class: "muted small" }, ` \u00b7 ${fmtSG(g0)} a round together \u00b7 ${it.s.n} rds`), (() => { const b = el("button", { type: "button", class: "link small" }, "Edit group"); b.addEventListener("click", () => openGroupEdit(sel.id)); return b; })()]),
+        el("p", { class: "muted small cmp-in-say" }, md(say)),
+        el("div", { class: "cmp-conds" }, rows.map((r) => {
+          const d = r.s.sg.TOTAL - g0, w = Math.abs(d) / max * 50;
+          return el("div", { class: `cmp-cond cmp-in-row${r === star ? " star" : ""}` }, [
+            el("span", { class: "cmp-cond-l" }, [r.m.name, el("span", { class: "muted" }, ` \u00b7 ${r.s.n} rd${r.s.n === 1 ? "" : "s"}`), r.s.n < FEW ? el("span", { class: "cmp-few-mark", title: "Only a few rounds" }, " *") : null]),
+            el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${d >= 0 ? "pos" : "neg"}`, style: d >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
+            el("strong", { class: `cmp-cond-v ${tone(r.s.sg.TOTAL)}` }, fmtSG(r.s.sg.TOTAL)),
+            el("span", { class: `cmp-cond-d ${tone(d)}` }, fmtSigned(d)),
+            mem.length > 1 ? drop(r.m) : el("span"),
+          ]);
+        })),
+      ]);
+    }).filter(Boolean);
+    if (!blocks.length) return null;
+    return el("section", { class: "panel cmp-sec cmp-inside" }, [
+      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Inside the groups"), el("p", { class: "muted small" }, "Each model (or ball, season or pick) in a group on its own: strokes gained a round, and how far above or below the group as a whole. \u2715 takes one out of the group; Edit group adds more.")]),
+      ...blocks,
+    ]);
+  }
+  // a group's parts changed: its filter, and its name when the name was made for it
+  function setMembers(id, mem, extra = {}) {
+    const sel = sels.find((s0) => s0.id === id);
+    if (!sel || !mem.length) { flashNote("A group needs at least one."); return; }
+    const f0 = sel.f || {};
+    let f;
+    if (f0.any?.length > 1 || mem[0].key.startsWith("any:")) f = mem.length === 1 ? mem[0].f : { any: mem.map((m) => m.f) };
+    else if (mem[0].key.startsWith("y:")) f = { ...f0, years: mem.map((m) => m.key.slice(2)) };
+    else if (f0.clubs?.length && !(f0.balls?.length > 1 && f0.clubs.length === 1)) f = { ...f0, clubs: mem.map((m) => m.key) };
+    else f = { ...f0, balls: mem.map((m) => m.key) };
+    Object.assign(f, extra.f || {});
+    if (f.years && !f.years.length) delete f.years;
+    const yrsTxt = (ys) => { const n = ys.map(Number).sort((a, b) => a - b); return n.length > 1 && n.every((v, i) => !i || v === n[i - 1] + 1) ? `${n[0]}\u2013${n.at(-1)}` : n.join(" + "); };
+    const auto = extra.name || (sel.custom ? sel.name : `${mem.length <= 3 ? mem.map((m) => m.name.replace(/ \u00b7 .*$/, "")).join(" + ") : `${sel.name.replace(/ \u00b7 [\d\u2013+ ]+$/, "").replace(/ \(edited\)$/, "")} (edited)`}${f.years?.length && !mem[0].key.startsWith("y:") ? ` \u00b7 ${yrsTxt(f.years)}` : ""}`);
+    sels = sels.map((s0) => (s0.id === id ? { ...s0, f, name: auto, full: auto, custom: !!extra.name || s0.custom, parts: f.any ? mem.map((m) => ({ name: m.name, f: m.f })) : null, values: f.clubs || f.balls || s0.values } : s0));
+    touched = true; draw();
+  }
+  // the editor: what's in the group (untick to drop), what else of the same kind there is (tap to add), the seasons
+  function openGroupEdit(id) {
+    const sel = sels.find((s0) => s0.id === id);
+    if (!sel) return;
+    const f0 = sel.f || {};
+    const mem0 = membersOf(sel) || (f0.clubs?.length ? f0.clubs.map((v) => ({ key: v, name: gearName(v), f: { ...f0, clubs: [v] } })) : f0.balls?.length ? f0.balls.map((v) => ({ key: v, name: gearName(v), f: { ...f0, balls: [v] } })) : []);
+    const byClubs = mem0.length && !mem0[0].key.startsWith("any:") && !mem0[0].key.startsWith("y:") && (f0.clubs?.length && !(f0.balls?.length > 1 && f0.clubs.length === 1));
+    const byBalls = mem0.length && !byClubs && !mem0[0].key.startsWith("any:") && !mem0[0].key.startsWith("y:");
+    const keep = new Set(mem0.map((m) => m.key)), added = new Map();
+    const yrs = new Set(f0.years || []);
+    let name = sel.name, q = "";
+    // the other models of the same kind(s), with this group's other settings (seasons, ball)
+    const cat = products(allRounds());
+    const kinds = byClubs ? cat.filter((k) => k.items.some((o) => mem0.some((m) => m.key === o.value))) : byBalls ? cat.filter((k) => k.group === "Ball") : [];
+    const pool = kinds.flatMap((k) => k.items).filter((o) => !mem0.some((m) => m.key === o.value));
+    const body = el("div", { class: "wl-pop-body cmp-ge" });
+    const paint = () => {
+      const chip = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n} rds`) : null]); b.addEventListener("click", click); return b; };
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const more = pool.filter((o) => words.every((w) => `${o.label} ${o.value}`.toLowerCase().includes(w)));
+      const nameIn = el("input", { type: "text", class: "cmp-name", value: name, maxLength: 60, "aria-label": "Name" });
+      nameIn.addEventListener("input", () => { name = nameIn.value; });
+      const search = pool.length > 8 ? el("input", { type: "search", class: "cmp-chip-search cmp-ge-q", placeholder: "Find a model\u2026", value: q }) : null;
+      search?.addEventListener("input", () => { const pos = search.selectionStart; q = search.value; paint(); const a = body.querySelector(".cmp-ge-q"); if (a) { a.focus(); try { a.setSelectionRange(pos, pos); } catch {} } });
+      mount(body, [
+        el("label", { class: "cmp-field" }, [el("span", {}, "Name"), nameIn]),
+        el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "In this group (tap to take one out)"), el("div", { class: "cmp-chips" }, mem0.map((m) => chip(keep.has(m.key), m.name, null, () => { keep.has(m.key) ? keep.delete(m.key) : keep.add(m.key); paint(); })))]),
+        pool.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, `Add more ${byBalls ? "balls" : kinds.length === 1 ? groupName(kinds[0].group).toLowerCase() : "clubs"}`), search, el("div", { class: "cmp-chips" }, more.map((o) => chip(added.has(o.value), o.label, o.n, () => { added.has(o.value) ? added.delete(o.value) : added.set(o.value, o.label); paint(); })))]) : null,
+        (byClubs || byBalls) && opts.years.length > 1 ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Seasons (none = any season)"), el("div", { class: "cmp-chips" }, opts.years.map((y) => chip(yrs.has(y.value), y.label, null, () => { yrs.has(y.value) ? yrs.delete(y.value) : yrs.add(y.value); paint(); })))]) : null,
+        el("div", { class: "cmp-guide-row" }, [save, cancel]),
+      ]);
+    };
+    const save = el("button", { type: "button", class: "btn cmp-add" }, "Save the group");
+    const cancel = el("button", { type: "button", class: "btn ghost" }, "Cancel");
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Edit the group" }, el("div", { class: "gx-pop wl-pop cmp-rd-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Edit the group"), el("h2", {}, [el("i", { class: "cmp-dot", style: `--c:${sel.color}` }), sel.name]), el("p", { class: "gx-sub" }, "Take some out, add more of the same kind, or change the seasons. Everything on the page updates.")]), close]),
+      body]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    close.addEventListener("click", shut); cancel.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    save.addEventListener("click", () => {
+      const mem = [...mem0.filter((m) => keep.has(m.key)), ...[...added].map(([v, l]) => ({ key: v, name: gearName(v) || l, f: byBalls ? { ...f0, balls: [v] } : { ...f0, clubs: [v] } }))];
+      if (!mem.length) { flashNote("A group needs at least one."); return; }
+      const yearsF = byClubs || byBalls ? { years: [...yrs].sort() } : {};
+      const named = name.trim() && name.trim() !== sel.name ? name.trim() : null;
+      shut();
+      setMembers(id, mem, { f: yearsF, name: named });
+    });
+    paint();
+    document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll"); document.body.appendChild(overlay); close.focus();
   }
   function selectedBar(items) {
     const clear = el("button", { type: "button", class: "link cmp-clear" }, "Clear all");
@@ -1275,8 +1393,13 @@ export async function render(main) {
       const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": it.base ? `Remove ${sels.find((s) => s.id === it.base)?.name} (for every player)` : `Remove ${it.name}` }, "\u2715");
       x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== (it.base || it.id)); touched = true; if (!sels.length) backToStart(); else draw(); });
       const sid = it.base || it.id, on = joinPick.has(sid);
+      // (update 246) a group (several models, balls, seasons or picks): open it to drop some or add more
+      const selNow = sels.find((s0) => s0.id === sid);
+      const ed = selNow && editable(selNow) ? el("button", { type: "button", class: "cmp-key-ed", title: "Open this group: drop some, add more", "aria-label": `Edit ${selNow.name}` }, "\u270e") : null;
+      ed?.addEventListener("click", (e) => { e.stopPropagation(); openGroupEdit(sid); });
       const key = el("span", { class: `cmp-key cmp-key-pick${on ? " picked" : ""}`, style: `--c:${it.color}`, title: `${it.full || it.name} (tap to pick it for combining)`, role: "button", tabindex: "0", "aria-pressed": String(on) }, [el("i", { "aria-hidden": "true" }), on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]);
-      const flip = (e) => { if (e.target.closest(".cmp-key-x")) return; on ? joinPick.delete(sid) : joinPick.add(sid); draw(); };
+      if (ed) key.insertBefore(ed, key.querySelector(".cmp-key-x"));
+      const flip = (e) => { if (e.target.closest(".cmp-key-x") || e.target.closest(".cmp-key-ed")) return; on ? joinPick.delete(sid) : joinPick.add(sid); draw(); };
       key.addEventListener("click", flip); key.addEventListener("keydown", (e) => { if (e.key === "Enter") flip(e); });
       return hoverable(key, it.i);
     }), joinB, hint, clear]);

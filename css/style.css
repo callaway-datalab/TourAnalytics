@@ -4095,3 +4095,20 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .cmp-askres-a { font-size: 1.05rem; line-height: 1.5; margin: 0 0 0.6rem; }
 .cmp-askres-read { margin: 0 0 0.5rem 1.1rem; padding: 0; font-size: 0.86rem; line-height: 1.55; color: var(--muted); }
 .cmp-askres-read strong { color: var(--text, #f5f5f7); }
+/* (update 246) inside the groups, and editing a group */
+.cmp-inside .cmp-in-g { padding: 0.7rem 0 0.4rem; border-top: 1px solid rgba(255,255,255,0.06); }
+.cmp-inside .cmp-in-g:first-of-type { border-top: 0; }
+.cmp-in-h { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.cmp-in-h .link { margin-left: auto; }
+.cmp-in-say { margin: 0.25rem 0 0.4rem; }
+.cmp-in-say strong { color: var(--text, #f5f5f7); }
+.cmp-inside .cmp-cond { grid-template-columns: minmax(0, 1.4fr) minmax(0, 2fr) 3.4rem 3.4rem 1.6rem; }
+.cmp-in-row.star { background: linear-gradient(90deg, rgba(212,180,131,0.14), transparent); border-radius: 10px; }
+.cmp-in-drop { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.8rem; padding: 0.2rem; border-radius: 6px; }
+.cmp-in-drop:hover { color: #ff8a80; background: rgba(255,138,128,0.1); }
+.cmp-key-ed { border: 0; background: rgba(255,255,255,0.08); color: inherit; cursor: pointer; border-radius: 999px; width: 1.5rem; height: 1.5rem; margin-left: 0.25rem; font-size: 0.78rem; line-height: 1; }
+.cmp-key-ed:hover { background: rgba(212,180,131,0.3); }
+.cmp-ge { display: grid; gap: 0.6rem; }
+.cmp-ge .cmp-field { display: flex; gap: 0.5rem; align-items: center; }
+.cmp-ge .cmp-name { flex: 1; }
+@media (max-width: 640px) { .cmp-inside .cmp-cond { grid-template-columns: minmax(0, 1fr) 3.6rem 3.2rem 1.6rem; } }
