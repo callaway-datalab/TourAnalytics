@@ -20,6 +20,7 @@ import {
   products, insights, fmtSigned, includeShots, shotScope, statBlocks, productUsage, sgRounds, sureWords,
 } from "../compareData.js";
 import { renderBlocks } from "../badgePopup.js";
+import { readAsk, productGroups, matchEvents } from "../compareAsk.js";
 
 const LS_PLAYER = "ta:cmp:player";
 const NS = "http://www.w3.org/2000/svg";
@@ -117,12 +118,19 @@ export async function render(main) {
   // (update 222) the Tour filter: only the rounds on the tours picked (none picked = every tour), everywhere on the page
   let tourSel = new Set();
   const tourCache = new Map();
+  // (update 244) Leave out: tournaments (a year's playing of one), date ranges and round numbers, taken out of every
+  // player's rounds everywhere on the page (every selection, leaderboard, table and report)
+  const excl = { events: new Map(), ranges: [], rounds: new Set() }; // events: "event|year" → label
+  const exclOn = () => excl.events.size || excl.ranges.length || excl.rounds.size;
+  const exclKey = () => `${[...excl.events.keys()].sort().join(";")}#${excl.ranges.map((r) => `${r.from}~${r.to}`).join(";")}#${[...excl.rounds].sort().join(",")}`;
+  const dk10 = (d) => String(d || "").slice(0, 10);
+  const leftOut = (rd) => excl.events.has(`${rd.event}|${yr(rd)}`) || excl.rounds.has(String(rd.roundNo || "")) || excl.ranges.some((r) => (!r.from || dk10(rd.date) >= r.from) && (!r.to || dk10(rd.date) <= r.to));
   const roundsOfKey = (k) => {
     const raw = rawOfKey(k);
-    if (!tourSel.size) return raw;
-    const key = [...tourSel].sort().join("|"), c = tourCache.get(k);
+    if (!tourSel.size && !exclOn()) return raw;
+    const key = `${[...tourSel].sort().join("|")}@${exclKey()}`, c = tourCache.get(k);
     if (c && c.src === raw && c.key === key) return c.out;
-    const out = raw.filter((rd) => tourSel.has(rd.tour || ""));
+    const out = raw.filter((rd) => (!tourSel.size || tourSel.has(rd.tour || "")) && !leftOut(rd));
     tourCache.set(k, { src: raw, key, out });
     return out;
   };
@@ -138,6 +146,43 @@ export async function render(main) {
     return el("div", { class: "panel cmp-tourbar" }, [el("span", { class: "cmp-chip-gt" }, "Tour"),
       el("div", { class: "cmp-chips" }, [pill(!tourSel.size, "All tours", null, () => { tourSel = new Set(); redo(); }),
         ...[...counts].sort((a, b) => b[1] - a[1]).map(([t, n]) => pill(tourSel.has(t), t, n, () => { tourSel.has(t) ? tourSel.delete(t) : tourSel.add(t); redo(); }))])]);
+  }
+  let exclOpen = false, exclQ = "";
+  function leaveOutBar() {
+    if (!player || !data) return null;
+    const redo = () => { allMemo = null; if (data) opts = options(allRounds()); draw(); };
+    const chips = [
+      ...[...excl.events].map(([k, l]) => [l, () => excl.events.delete(k)]),
+      ...excl.ranges.map((r, i) => [`${r.from ? dateTxt(r.from) : "Start"} \u2013 ${r.to ? dateTxt(r.to) : "now"}`, () => excl.ranges.splice(i, 1)]),
+      ...[...excl.rounds].sort().map((n) => [`Round ${n}s`, () => excl.rounds.delete(n)]),
+    ].map(([l, off]) => { const b = el("button", { type: "button", class: "cmp-chip small cmp-excl-chip", title: "Put it back" }, [l, el("span", { class: "cmp-excl-x", "aria-hidden": "true" }, " \u2715")]); b.addEventListener("click", () => { off(); redo(); }); return b; });
+    const toggle = el("button", { type: "button", class: "link small" }, exclOpen ? "Done" : chips.length ? "\uff0b Leave out more" : "\uff0b Leave out a tournament, dates or rounds");
+    toggle.addEventListener("click", () => { exclOpen = !exclOpen; draw(); });
+    let editor = null;
+    if (exclOpen) {
+      // tournaments: every one these players played (each year on its own), searchable
+      const evs = new Map();
+      for (const p of inPlay()) for (const rd of sgRounds(rawOfKey(p.key))) { if (!rd.event) continue; const k = `${rd.event}|${yr(rd)}`; const e = evs.get(k) || evs.set(k, { k, label: `${yr(rd)} ${rd.event}`, n: 0, d: dk10(rd.date) }).get(k); e.n++; if (dk10(rd.date) > e.d) e.d = dk10(rd.date); }
+      const words = exclQ.toLowerCase().split(/\s+/).filter(Boolean);
+      const list = [...evs.values()].filter((e) => !excl.events.has(e.k) && words.every((w) => e.label.toLowerCase().includes(w))).sort((a, b) => b.d.localeCompare(a.d)).slice(0, 14);
+      const q = el("input", { type: "search", class: "cmp-chip-search cmp-excl-q", placeholder: "Find a tournament (e.g. 2025 Players)\u2026", value: exclQ, autocomplete: "off" });
+      q.addEventListener("input", () => { const pos = q.selectionStart; exclQ = q.value; draw(); const again = root.querySelector(".cmp-excl-q"); if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch {} } });
+      const evChips = list.map((e) => { const b = el("button", { type: "button", class: "cmp-chip small" }, [e.label, el("span", { class: "cmp-chip-n" }, `${e.n} rds`)]); b.addEventListener("click", () => { excl.events.set(e.k, e.label); redo(); }); return b; });
+      const from = el("input", { type: "date", class: "cmp-date", "aria-label": "From" }), to = el("input", { type: "date", class: "cmp-date", "aria-label": "To" });
+      const addR = el("button", { type: "button", class: "btn ghost small" }, "Leave out these dates");
+      addR.addEventListener("click", () => { if (!from.value && !to.value) { flashNote("Pick a start or end date (or both)."); return; } excl.ranges.push({ from: from.value || null, to: to.value || null }); redo(); });
+      const rnds = [...new Set(inPlay().flatMap((p) => sgRounds(rawOfKey(p.key)).map((rd) => String(rd.roundNo || "")).filter(Boolean)))].sort((a, b) => a - b);
+      const rChips = rnds.map((n) => { const on = excl.rounds.has(n); const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}` }, `Round ${n}s`); b.addEventListener("click", () => { on ? excl.rounds.delete(n) : excl.rounds.add(n); redo(); }); return b; });
+      editor = el("div", { class: "cmp-excl-edit" }, [
+        el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Tournaments"), q, el("div", { class: "cmp-chips" }, evChips.length ? evChips : [el("span", { class: "muted small" }, "Nothing matches.")])]),
+        el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Dates"), el("div", { class: "cmp-custom" }, [el("label", { class: "cmp-field" }, [el("span", {}, "From"), from]), el("label", { class: "cmp-field" }, [el("span", {}, "To"), to]), addR])]),
+        rnds.length > 1 ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Round numbers"), el("div", { class: "cmp-chips" }, rChips)]) : null,
+      ]);
+    }
+    return el("div", { class: `panel cmp-tourbar cmp-exclbar${chips.length ? " set" : ""}` }, [
+      el("div", { class: "cmp-excl-top" }, [el("span", { class: "cmp-chip-gt" }, "Leave out"), chips.length ? el("div", { class: "cmp-chips" }, chips) : el("span", { class: "muted small" }, "Nothing left out."), toggle]),
+      editor,
+    ]);
   }
   const roundsOf = (it) => roundsOfKey(it.pk || inPlay()[0]?.key);
   let allMemo = null; // (the same arrays give the same pooled array, so the work done on it is kept)
@@ -289,11 +334,13 @@ export async function render(main) {
     const inc = incNow();
     const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
     // (update 206) while the questions are open, they're all there is: no filters or numbers until they're answered or skipped
-    if (g.open) { mount(root, [head, tourBar(), guideBox()]); window.scrollTo(0, y); return; }
-    if (placeDim && !sels.length) { mount(root, [head, tourBar(), guideBox(), placeSection(), editBox()]); window.scrollTo(0, y); root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; }); return; }
+    if (g.open) { mount(root, [head, tourBar(), g.what && g.what !== "place" ? leaveOutBar() : null, guideBox()]); window.scrollTo(0, y); return; }
+    if (placeDim && !sels.length) { mount(root, [head, tourBar(), leaveOutBar(), guideBox(), placeSection(), editBox()]); window.scrollTo(0, y); root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; }); return; }
     placeDim = null;
     mount(root, [
       head, tourBar(), // (update 222)
+      leaveOutBar(), // (update 244)
+      items.length ? askPanel(items) : null,
       guideBox(),
       editBox(),
       items.length ? reportBar(items) : null,
@@ -337,7 +384,7 @@ export async function render(main) {
     draw();
   }
   // (update 211/212) no player: back to the very start (for staff, "Compare everyone"). Start over does this too.
-  function clearAll(keepPicks = false) { placeDim = null; player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; pb.pair = null; pb.season = "any"; if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
+  function clearAll(keepPicks = false) { askRes = null; askErr = ""; excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear(); exclOpen = false; placeDim = null; player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; pb.pair = null; pb.seasons.clear(); if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
   /* (update 214) the start screen: who to look at. Everyone, one player, several, or a player (or several) and everyone.
      Next goes on to the question that fits: one player or everyone → what to compare; several → how to compare them. */
   let startPicks = []; // [{ key, label }] (EVERY = everyone in the data)
@@ -371,7 +418,14 @@ export async function render(main) {
       : withEvery ? `${nm(picksP)} against everyone in the data.` : `${nm(picksP)} side by side. Next: on their own, in groups, or one against the rest.`;
     const next = el("button", { type: "button", class: "btn cmp-add", disabled: startPicks.length ? null : true }, "Next \u2192");
     next.addEventListener("click", startNext);
-    return el("section", { class: "panel cmp-guide cmp-start" }, [
+    // (update 244) two routes: build it by hand, or ask for it in plain English
+    const routes = el("div", { class: "cmp-routes", role: "tablist", "aria-label": "How" }, [["manual", "Manually create comparisons", "Pick the players, then what to compare, step by step."], ["ask", "\u2728 Ask AI", "Say what you want compared, in your own words."]].map(([v, l, sub]) => {
+      const b = el("button", { type: "button", role: "tab", class: `cmp-route${route === v ? " on" : ""}`, "aria-selected": String(route === v) }, [el("strong", {}, l), el("span", {}, sub)]);
+      b.addEventListener("click", () => { if (route === v) return; route = v; draw(); if (v === "ask") root.querySelector(".cmp-ask-in")?.focus(); });
+      return b;
+    }));
+    if (route === "ask") return el("div", { class: "cmp-start-wrap" }, [routes, askBox()]);
+    return el("div", { class: "cmp-start-wrap" }, [routes, el("section", { class: "panel cmp-guide cmp-start" }, [
       el("p", { class: "cmp-guide-k" }, "Set up a comparison"),
       el("h2", {}, one ? "Which player?" : "Which players?"),
       el("div", { class: "cmp-guide-free" }, [
@@ -382,6 +436,123 @@ export async function render(main) {
         el("div", { class: "cmp-guide-row" }, [next]),
       ]),
       gnote,
+    ])]);
+  }
+  /* ------------------------------ (update 244) Ask AI ------------------------------ */
+  let route = "manual", askText = "", askBusy = "", askErr = "", askRes = null;
+  const ASK_EX = ["Compare all Callaway drivers played by Xander Schauffele from 2024-2026 and tell me which was best. Exclude the 2025 Masters.",
+    "Compare all TRTL putters from 2025-2026 against all Jailbird putters from 2024-2026, excluding the 2025 Players Championship.",
+    "Callaway drivers vs TaylorMade drivers for everyone in 2026.",
+    "Scottie Scheffler: 2026 vs 2025."];
+  function askBox() {
+    const ta = el("textarea", { class: "cmp-ask-in", rows: 4, placeholder: "e.g. Compare all Callaway drivers played by Xander Schauffele from 2024-2026 and tell me which was best. Exclude the 2025 Masters.", "aria-label": "What to compare" });
+    ta.value = askText;
+    ta.addEventListener("input", () => { askText = ta.value; });
+    ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go.click(); } });
+    const go = el("button", { type: "button", class: "btn cmp-add", disabled: askBusy ? true : null }, askBusy ? "Working\u2026" : "Compare \u2192");
+    go.addEventListener("click", () => { askText = ta.value; if (!askText.trim()) { ta.focus(); return; } runAsk(askText.trim()); });
+    const ex = ASK_EX.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small cmp-ask-ex" }, t); b.addEventListener("click", () => { askText = t; draw(); root.querySelector(".cmp-ask-in")?.focus(); }); return b; });
+    return el("section", { class: "panel cmp-guide cmp-start cmp-ask" }, [
+      el("p", { class: "cmp-guide-k" }, "Ask AI"),
+      el("h2", {}, "What do you want to compare?"),
+      el("p", { class: "muted small" }, "Name the player (or say everyone), the clubs, balls or seasons, and anything to leave out. The comparison opens with the answer on top, and you can change anything after."),
+      ta,
+      el("div", { class: "cmp-guide-row" }, [go, askBusy ? el("span", { class: "muted small" }, askBusy) : null]),
+      askErr ? el("p", { class: "cmp-ask-err" }, askErr) : null,
+      el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Try"), el("div", { class: "cmp-chips cmp-ask-exs" }, ex)]),
+    ]);
+  }
+  // the AI service (when it's set up) reads the request into the same parts; otherwise it's read here
+  async function aiRead(text) {
+    const url = window.PORTAL_CONFIG?.insightsUrl;
+    if (!url) return null;
+    try {
+      const token = await getState().user?.getIdToken?.();
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ ask: { text, today: new Date().toISOString().slice(0, 10) } }) });
+      if (!res.ok) return null;
+      const out = await res.json();
+      return typeof out?.rewrite === "string" && out.rewrite.trim() ? out.rewrite.trim() : null;
+    } catch { return null; }
+  }
+  async function runAsk(text) {
+    askErr = ""; askBusy = "Reading the request\u2026"; draw();
+    const maxYear = new Date().getFullYear();
+    const rewrite = await aiRead(text); // (a plainer version of the request, when the AI service is there)
+    const ask = readAsk(rewrite || text, { players, maxYear });
+    if (rewrite && !ask.players.length) { const a0 = readAsk(text, { players, maxYear }); ask.players = a0.players; } // (names as typed)
+    let ps = ask.players.slice(0, 4);
+    if (!ps.length && !ask.everyone && !staff && players.length) ps = [{ key: players[0][0], label: players[0][1] }];
+    if (!ps.length && !ask.everyone) { askBusy = ""; askErr = "Which player? Name one (or say \u201ceveryone\u201d)."; draw(); return; }
+    if (!ps.length && !everyStartOk()) { askBusy = ""; askErr = lite ? "Everyone needs a computer: it\u2019s every player\u2019s rounds. Name a player instead." : "Name a player."; draw(); return; }
+    askBusy = "Loading the rounds\u2026"; draw();
+    // the players, then their rounds
+    excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear();
+    if (ps.length) {
+      player = { key: ps[0].key, label: ps[0].label }; productsOnly = false; staged = new Map();
+      chosen = ask.everyone ? [...ps, { key: EVERY, label: "Everyone" }] : [...ps];
+      g = { open: false, who: ps.length > 1 || ask.everyone ? "several" : "one", playersDone: true, phow: "each" };
+      await load();
+    } else { await startProducts(); }
+    if (!data) { askBusy = ""; askErr = "Couldn\u2019t load the rounds. Try again."; draw(); return; }
+    // what to leave out
+    const evs = new Map();
+    for (const p of inPlay()) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.event) { const k = `${rd.event}|${yr(rd)}`; if (!evs.has(k)) evs.set(k, { k, event: rd.event, year: yr(rd) }); }
+    const evHit = matchEvents(ask.excl, [...evs.values()]);
+    for (const [k, l] of evHit) excl.events.set(k, l);
+    for (const n of ask.exclRounds) excl.rounds.add(n);
+    allMemo = null; opts = options(allRounds());
+    const missed = ask.excl.filter((ph) => ![...matchEvents([ph], [...evs.values()]).keys()].length);
+    // what to compare: clubs and balls, else seasons or recent form
+    const catalog = products(allRounds()).map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
+    let groups = productGroups(ask, catalog, { maxYear });
+    let kind = "product";
+    if (!groups.length) {
+      kind = "time";
+      if (ask.last) { const n = ask.last.n, ev = ask.last.unit === "events"; groups = [{ name: `The ${n} ${ev ? "events" : "rounds"} before that`, f: ev ? { prevEv: n } : { prev: n }, id: `windows:${ev ? "prevev" : "prev"}:${n}` }, { name: `Last ${n} ${ev ? "events" : "rounds"}`, f: ev ? { lastEv: n } : { last: n }, id: `windows:${ev ? "lastev" : "last"}:${n}` }]; }
+      else {
+        const ys = (ask.years.length ? ask.years : opts.years.slice(0, 2).map((y) => y.value)).filter((y) => opts.years.some((q) => q.value === y));
+        groups = (ask.years.length > 1 || !ask.years.length ? ys : opts.years.slice(0, 2).map((y) => y.value)).map((y) => ({ name: y, f: { years: [y] }, id: `years:${y}`, mode: "years", values: [y] }));
+      }
+    }
+    if (ask.kinds.length && kind === "time") askErr = `Couldn\u2019t find those ${ask.kinds.join(" / ").toLowerCase()}s in ${inPlay().map((p) => p.label).join(", ")}\u2019s rounds, so here are their seasons instead.`;
+    const cap = Math.max(2, Math.floor(MAX_SEL / Math.max(1, inPlay().length)));
+    sels = groups.slice(0, cap).map((x, i) => ({ id: x.id || `ask:${i}:${x.name}`, name: x.name, f: x.f, mode: x.mode || (kind === "product" ? "product" : "windows"), values: x.values || x.f.clubs || x.f.balls || null, color: COLORS[i % COLORS.length] }));
+    mode = kind === "product" ? "product" : "windows"; g.what = kind === "product" ? "gear" : "time"; g.open = false; touched = true; placeDim = null; backToPlace = null;
+    askRes = { text, rewrite, ask, kind, dropped: Math.max(0, groups.length - cap), missed };
+    askBusy = "";
+    draw();
+    root.querySelector(".cmp-askres")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  // the answer, on top of the comparison
+  function askPanel(items) {
+    if (!askRes) return null;
+    const live = items.filter((it) => it.s.n);
+    const md = (t) => t.split(/\*\*/).map((p0, i) => (i % 2 ? el("strong", {}, p0) : p0));
+    const read = [];
+    const who = inPlay().map((p) => p.label);
+    read.push(`**Who:** ${who.join(", ")}`);
+    read.push(`**Compared:** ${sels.map((x) => x.name).join("  \u00b7  ")}${askRes.dropped ? ` (and ${askRes.dropped} more that didn\u2019t fit)` : ""}`);
+    if (exclOn()) read.push(`**Left out:** ${[...excl.events.values(), ...[...excl.rounds].map((n) => `Round ${n}s`)].join(", ")}`);
+    if (askRes.missed.length) read.push(`**Couldn\u2019t find to leave out:** ${askRes.missed.join(", ")}`);
+    let answer = "Nothing to compare: none of these had rounds.";
+    if (live.length === 1) answer = `**${live[0].name}**: **${fmtSG(live[0].s.sg.TOTAL)}** strokes gained a round over ${live[0].s.n} rounds. There\u2019s only one, so nothing to compare it with.`;
+    if (live.length >= 2) {
+      const o = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), a = o[0], b = o[1];
+      const f = fitStory(a, b);
+      answer = `**${a.name}** was best: **${fmtSG(a.s.sg.TOTAL)}** strokes gained a round over ${a.s.n} rounds, **${(a.s.sg.TOTAL - b.s.sg.TOTAL).toFixed(2)}** ahead of ${b.name} (${fmtSG(b.s.sg.TOTAL)}, ${b.s.n} rounds).${o.length > 2 ? ` Then: ${o.slice(2).map((x) => `${x.name} ${fmtSG(x.s.sg.TOTAL)}`).join(", ")}.` : ""} ${f.sum}`;
+      if (a.s.n < FEW || b.s.n < FEW) answer += " Few rounds, so treat it as a hint.";
+    }
+    const x = el("button", { type: "button", class: "gx-pop-x cmp-askres-x", "aria-label": "Close" }, "\u2715");
+    x.addEventListener("click", () => { askRes = null; draw(); });
+    const again = el("button", { type: "button", class: "link small" }, "Ask something else");
+    again.addEventListener("click", () => { askRes = null; route = "ask"; clearAll(); });
+    return el("section", { class: "panel cmp-askres" }, [
+      el("div", { class: "cmp-askres-top" }, [el("p", { class: "cmp-guide-k" }, "\u2728 You asked"), x]),
+      el("p", { class: "cmp-askres-q" }, `\u201c${askRes.text}\u201d`),
+      el("p", { class: "cmp-askres-a" }, md(answer)),
+      askErr ? el("p", { class: "cmp-ask-err" }, askErr) : null,
+      el("ul", { class: "cmp-askres-read" }, read.map((t) => el("li", {}, md(t)))),
+      el("div", { class: "cmp-guide-row" }, [again, el("span", { class: "muted small" }, "Change anything with the filters below.")]),
     ]);
   }
   async function startNext() {
@@ -468,7 +639,7 @@ export async function render(main) {
   // (update 240) everything cleared: back to where these picks were made (the courses table, or the filters open on
   // the same tab: time windows, products …), not to the start
   const backToStart = () => {
-    sels = []; joinPick = new Set(); touched = true;
+    sels = []; joinPick = new Set(); touched = true; askRes = null;
     if (backToPlace) { placeDim = backToPlace; g.open = false; }
     else editOpen = true;
     draw();
@@ -554,13 +725,13 @@ export async function render(main) {
   /* ------------------------------ (update 210) building product groups ------------------------------ */
   // Kind of club, then brands, then (optionally) models, and a season: each pick becomes a group, e.g. "All Callaway
   // drivers" against "All TaylorMade drivers", "Callaway drivers · 2026" against "· 2025", or two models against one.
-  const pb = { kind: null, brands: new Set(), models: new Set(), season: "any", groups: [], q: "", pair: null };
+  const pb = { kind: null, brands: new Set(), models: new Set(), seasons: new Set(), groups: [], q: "", pair: null }; // (update 244: several seasons)
   function productBuilder(inGuide) {
     // (update 217) the season first: every other pill (and its round count) is only what was used that season
     const kindsAny = products(allRounds());
     const yearsWith = opts.years.length > 1 ? opts.years : [];
-    if (pb.season !== "any" && !yearsWith.some((y) => y.value === pb.season)) pb.season = "any";
-    const kinds = pb.season === "any" ? kindsAny : products(roundsFor(allRounds(), { years: [pb.season] }));
+    for (const y of [...pb.seasons]) if (!yearsWith.some((q) => q.value === y)) pb.seasons.delete(y);
+    const kinds = !pb.seasons.size ? kindsAny : products(roundsFor(allRounds(), { years: [...pb.seasons] }));
     if (!kindsAny.length) return el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s clubType, clubBrand, clubModel, ballBrand and ballModel, every product shows here.")]);
     // (update 212) the search box: every pill below narrows to what matches as you type (kind, brand or model)
     const words = (pb.q || "").toLowerCase().split(/\s+/).filter(Boolean);
@@ -599,20 +770,34 @@ export async function render(main) {
     const oneBrand = pb.brands.size === 1 ? [...pb.brands][0] : null;
     const mLabel = (o) => (oneBrand && o.brand === oneBrand ? o.model || o.label.replace(new RegExp(`^${oneBrand}\\s+`), "") : o.label); // (update 222)
     const modelRow = modelPills.length ? row(!pb.brands.size ? "Model (or pick a brand above for all its models)" : "Model (none picked = every model of those brands)", modelPills.map((o) => pill(pb.models.has(o.value), mLabel(o), o.n, () => { if (pb.models.has(o.value)) pb.models.delete(o.value); else pb.models.add(o.value); draw(); /* (update 221: models of any brand, no brand needed) */ }))) : null;
+    // (update 244) more than two to pick from: Select all (and Clear)
+    const allBtn = (rowEl, vals, set) => {
+      if (!rowEl || vals.length <= 2) return;
+      const all = vals.every((v) => set.has(v));
+      const b = el("button", { type: "button", class: "cmp-chip cmp-selall" }, all ? "Clear" : "Select all");
+      b.addEventListener("click", () => { if (all) for (const v of vals) set.delete(v); else for (const v of vals) set.add(v); draw(); });
+      rowEl.querySelector(".cmp-chips")?.prepend(b);
+    };
+    allBtn(brandRow, brands, pb.brands);
+    allBtn(modelRow, modelPills.map((o) => o.value), pb.models);
     // (update 217) each season's rounds with what's picked so far (the kind, its brands, its models); none: not offered
     const pickedNow = new Set(pb.models.size ? [...pb.models] : pb.brands.size ? (kindsAny.find((k) => k.group === pb.kind)?.items || []).filter((o) => pb.brands.has(gearInfo(o.value).brand)).map((o) => o.value) : (kindsAny.find((k) => k.group === pb.kind)?.items || []).map((o) => o.value));
     const isBall = pb.kind === "Ball";
     const useIt = (rd) => rd.shots.some((x) => pickedNow.has(isBall ? (x.ball ? `Ball|${x.ball}` : "") : x.gear));
     const yrCount = new Map(yearsWith.map((y) => [y.value, roundsFor(allRounds(), { years: [y.value] }).filter(useIt).length]));
-    const seasonRow = yearsWith.length ? row("Season", [["any", "Any season", null], ...yearsWith.filter((y) => yrCount.get(y.value) || pb.season === y.value).map((y) => [y.value, y.label, yrCount.get(y.value)])].map(([v, l, n]) => pill(pb.season === v, l, n, () => { pb.season = v; draw(); }))) : null;
+    // (update 244) one season or several (2024 and 2025 together, say); none = any season
+    const seasonRow = yearsWith.length ? row("Season (pick one or more)", [pill(!pb.seasons.size, "Any season", null, () => { pb.seasons.clear(); draw(); }),
+      ...yearsWith.filter((y) => yrCount.get(y.value) || pb.seasons.has(y.value)).map((y) => pill(pb.seasons.has(y.value), y.label, yrCount.get(y.value), () => { pb.seasons.has(y.value) ? pb.seasons.delete(y.value) : pb.seasons.add(y.value); draw(); }))]) : null;
     // the group the picks make
     const pickVals = pb.models.size ? [...pb.models] : shown.map((o) => o.value);
-    const yrs = pb.season === "any" ? null : [pb.season];
+    const yrs = pb.seasons.size ? [...pb.seasons].sort() : null;
+    // 2024, 2025 and 2026: "2024\u20132026"; 2024 and 2026: "2024 + 2026"
+    const yrsTxt = (ys) => { const n = ys.map(Number); return n.length > 1 && n.every((v, i) => !i || v === n[i - 1] + 1) ? `${ys[0]}\u2013${ys.at(-1)}` : ys.join(" + "); };
     const nameOf = (vals, all) => {
       const ls = vals.map((v) => items.find((o) => o.value === v)?.label || v);
       const bs = [...new Set(vals.map((v) => items.find((o) => o.value === v)?.brand))];
       const base = all ? `All ${bs.length === 1 ? `${bs[0]} ` : bs.length === 2 ? `${bs[0]} + ${bs[1]} ` : ""}${kindName.toLowerCase()}` : ls.length === 1 ? ls[0] : ls.length === 2 ? `${ls[0]} + ${ls[1]}` : `${ls[0]}, ${ls[1]} + ${ls.length - 2} more`;
-      return `${base}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`;
+      return `${base}${yrs ? ` \u00b7 ${yrsTxt(yrs)}` : ""}`;
     };
     // (update 217) combined with another product (a driver with one ball, say): only the shots hit with both
     const pair = pb.pair, isBallNow = pb.kind === "Ball";
@@ -620,7 +805,7 @@ export async function render(main) {
       let clubs = vals, balls = null;
       if (pair) { if (isBallNow) { clubs = pair.clubs; balls = [...new Set([...pair.balls, ...vals])]; } else { clubs = [...new Set([...pair.clubs, ...vals])]; balls = pair.balls.length ? pair.balls : null; } }
       const f = { clubs, ...(balls ? { balls } : {}), ...(yrs ? { years: yrs } : {}) };
-      return { id: `product:${[...clubs].sort().join("|")}${balls ? `+${[...balls].sort().join("|")}` : ""}${yrs ? `@${yrs[0]}` : ""}`, name: pair ? `${pair.name} + ${name}` : name, f, n: roundsFor(allRounds(), f).length };
+      return { id: `product:${[...clubs].sort().join("|")}${balls ? `+${[...balls].sort().join("|")}` : ""}${yrs ? `@${yrs.join(",")}` : ""}`, name: pair ? `${pair.name} + ${name}` : name, f, n: roundsFor(allRounds(), f).length };
     };
     const cur = pickVals.length ? groupOfVals(pickVals, nameOf(pickVals, !pb.models.size)) : null;
     const taken = new Set((inGuide ? pb.groups : sels.filter((s) => s.f?.clubs)).flatMap((x) => x.f.clubs || []));
@@ -640,13 +825,13 @@ export async function render(main) {
       addB = el("button", { type: "button", class: "btn ghost" }, `\uff0b Combine them into one group (${cur.n} rds)`);
     } else addB = el("button", { type: "button", class: "btn cmp-add", disabled: cur ? null : true }, cur ? `\uff0b Add \u201c${cur.name}\u201d (${cur.n} rds)` : "Pick a brand (and models) to make a group");
     addB.addEventListener("click", () => addGroup(cur));
-    const restB = restVals.length && (taken.size || cur) ? el("button", { type: "button", class: "btn ghost" }, `\uff0b All the other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`) : null;
-    restB?.addEventListener("click", () => { if (cur) addGroup(cur); const g2 = groupOfVals(restVals.filter((v) => !(cur?.f.clubs || []).includes(v)), `All other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrs[0]}` : ""}`); if (g2.f.clubs.length) addGroup(g2); });
+    const restB = restVals.length && (taken.size || cur) ? el("button", { type: "button", class: "btn ghost" }, `\uff0b All the other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrsTxt(yrs)}` : ""}`) : null;
+    restB?.addEventListener("click", () => { if (cur) addGroup(cur); const g2 = groupOfVals(restVals.filter((v) => !(cur?.f.clubs || []).includes(v)), `All other ${kindName.toLowerCase()}${yrs ? ` \u00b7 ${yrsTxt(yrs)}` : ""}`); if (g2.f.clubs.length) addGroup(g2); });
     // (update 217) "Combine with another product": keep this pick, then pick a ball (or another club) to go with it
     const pairB = cur && !pair ? el("button", { type: "button", class: "btn ghost" }, "\ud83d\udd17 Combine with another product\u2026") : null;
     pairB?.addEventListener("click", () => {
       const vals = pb.models.size ? [...pb.models] : shown.map((o) => o.value);
-      pb.pair = { clubs: isBallNow ? [] : vals, balls: isBallNow ? vals : [], name: nameOf(vals, !pb.models.size).replace(/ \u00b7 \d{4}$/, ""), kind: pb.kind };
+      pb.pair = { clubs: isBallNow ? [] : vals, balls: isBallNow ? vals : [], name: nameOf(vals, !pb.models.size).replace(/ \u00b7 [\d\u2013+ ]+$/, ""), kind: pb.kind };
       pb.kind = isBallNow ? (kindsAll.find((k) => k.group !== "Ball")?.group || pb.kind) : kindsAll.some((k) => k.group === "Ball") ? "Ball" : pb.kind;
       pb.brands.clear(); pb.models.clear(); draw();
     });
@@ -792,7 +977,7 @@ export async function render(main) {
   // everything you can set by hand, folded away under one line (open when you skip the questions)
   function editBox() {
     return el("details", { class: "panel cmp-edit", open: editOpen ? true : null }, [
-      el("summary", {}, [el("span", { class: "cmp-edit-t" }, "Edit the filters yourself"), el("span", { class: "muted small" }, "Players, seasons, tournaments, products, which shots count…")]),
+      el("summary", {}, [el("span", { class: "cmp-edit-t" }, "Edit the filters yourself"), el("span", { class: "muted small" }, g.what === "time" || g.what === "versus" ? "Players, seasons, rounds, months, dates, which shots count\u2026" : g.what === "gear" ? "Players, clubs and balls, seasons, which shots count\u2026" : g.what === "place" ? "Players, tournaments, courses, which shots count\u2026" : "Players, seasons, tournaments, products, which shots count\u2026")]),
       playersRow(), builder(),
     ]);
   }
@@ -808,14 +993,29 @@ export async function render(main) {
 
   /* ------------------------------ choosing what to compare ------------------------------ */
   function builder() {
-    const modes = MODES.filter(([m]) => !["years", "tournaments", "courses", "rounds", "months", "tours"].includes(m)); // (update 216: all in "Tournaments & courses") (update 233: seasons are in Time windows)
-    if (!modes.some(([m]) => m === mode)) mode = "windows";
-    const tabs = el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
-      const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
-      b.addEventListener("click", () => { if (mode === m) return; mode = m; chipFilter = ""; staged = new Map(); draw(); });
-      return b;
-    }));
-    const hint = el("p", { class: "cmp-hint" }, modes.find(([m]) => m === mode)[2]);
+    // (update 244) the filters follow the question picked: over time, only time (Seasons, Rounds, Months, Date
+    // range); a club or ball, only products; where and when, only tournaments and courses. No question: everything.
+    const br = g.what === "time" || g.what === "versus" ? "time" : g.what === "gear" ? "gear" : g.what === "place" ? "place" : null;
+    let modes = MODES.filter(([m]) => !["years", "tournaments", "courses", "rounds", "months", "tours"].includes(m)); // (update 216: all in "Tournaments & courses") (update 233: seasons are in Time windows)
+    if (br === "gear") modes = modes.filter(([m]) => m === "product");
+    if (br === "place") modes = modes.filter(([m]) => m === "filters");
+    if (!modes.some(([m]) => m === mode)) mode = br === "gear" ? "product" : br === "place" ? "filters" : "windows";
+    const TT = [["season", "Seasons", "Each season, the last one, or the whole career."], ["rounds", "Rounds", "Recent form against the rounds or events before, or Round 1s against Round 4s."], ["months", "Months", "The time of year: every year, or one season\u2019s months."], ["dates", "Date range", "Your own dates (and round numbers)."]];
+    const tabOn = (t) => (t === "dates" ? mode === "custom" : mode === "windows" && winTab === t);
+    const tabs = br === "time"
+      ? el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, TT.map(([t, l]) => {
+        const b = el("button", { type: "button", role: "tab", class: `cmp-mode${tabOn(t) ? " on" : ""}`, "aria-selected": String(tabOn(t)) }, l);
+        b.addEventListener("click", () => { if (tabOn(t)) return; if (t === "dates") mode = "custom"; else { mode = "windows"; winTab = t; } chipFilter = ""; staged = new Map(); draw(); });
+        return b;
+      }))
+      : modes.length > 1 ? el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
+        const b = el("button", { type: "button", role: "tab", class: `cmp-mode${mode === m ? " on" : ""}`, "aria-selected": String(mode === m) }, l);
+        b.addEventListener("click", () => { if (mode === m) return; mode = m; chipFilter = ""; staged = new Map(); draw(); });
+        return b;
+      })) : null;
+    if (br === "time" && mode !== "custom") mode = "windows";
+    const hint = el("p", { class: "cmp-hint" }, br === "time" ? (TT.find(([t]) => tabOn(t)) || TT[1])[2] : modes.find(([m]) => m === mode)[2]);
+    const timeTabs = br === "time";
     let body;
     if (mode === "custom") body = customForm();
     else if (mode === "filters") body = facetBuilder();
@@ -829,7 +1029,10 @@ export async function render(main) {
       const search = long ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find ${FIND[mode] || "one"}\u2026`, value: chipFilter }) : null;
       const chipsBox = el("div", { class: "cmp-chips-wrap" });
       const addRow = el("div", { class: "cmp-addrow" });
+      // (update 244) already in the comparison: not offered again
+      const inUse = (o) => mode === "windows" && (has(`windows:${o.value}`) || (o.value.startsWith("year:") && sels.some((x) => x.id === `years:${o.value.slice(5)}`)) || (/^(last|prev)(ev)?:\d+$/.test(o.value) && sels.some((x) => x.id === `windows:${o.value}`)));
       const chip = (o) => {
+        if (inUse(o)) return null;
         const on = staged.has(o.value);
         // (a small dot for each selection already in the comparison that includes it)
         const inSel = multi() ? [] : sels.filter((x) => x.mode === mode && x.values?.includes(o.value));
@@ -874,7 +1077,7 @@ export async function render(main) {
             const ms = [...cnt].sort((a, b) => a[0] - b[0]).map(([m, n]) => ({ value: `mo:${m}|${winYear}`, label: winYear ? `${MNS[m].slice(0, 3)} ${winYear}` : MNS[m], long: winYear ? `${MNS[m]} ${winYear}` : `${MNS[m]} (every year)`, n, f: winYear ? { months: [String(m)], years: [winYear] } : { months: [String(m)] } }));
             content = [ys.length > 1 ? grp("Year", [el("div", { class: "cmp-chips" }, [yPill("", "Every year"), ...ys.map((y) => yPill(y, y))])]) : null, grp("Month", [el("div", { class: "cmp-chips" }, ms.map(chip))])];
           }
-          mount(chipsBox, [tabRow, ...content]);
+          mount(chipsBox, [timeTabs ? null : tabRow, ...content]);
         } else if (mode === "product") {
           mount(chipsBox, prods.length ? prods.map((g) => { const xs = g.items.filter((o) => shown.includes(o)); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g.group === "Other" ? "Other clubs" : g.group === "Ball" ? "Golf balls" : g.group === "Non-Driver" ? "Non-Driver (tee shots)" : `${g.group}s`), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; })
             : el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s equipment (clubType, clubBrand, clubModel, ballBrand and ballModel columns), every club model shows here, grouped by type (drivers, fairway woods, hybrids, irons, wedges, putters), with the golf balls after them. Pick one model against another to see how they play with each.")]));

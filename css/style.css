@@ -4065,3 +4065,33 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 /* (update 241) every tile, Total included: the trend under the rank pill */
 .wl-tile-f { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; }
 @media (max-width: 720px) { .wl-tile-f { align-items: center; } }
+/* (update 244) Select all */
+.cmp-chip.cmp-selall { border-style: dashed; color: var(--gold, #d4b483); font-weight: 700; }
+/* (update 244) Leave out */
+.cmp-exclbar .cmp-excl-top { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.cmp-exclbar.set { border-color: rgba(255,122,107,0.35); }
+.cmp-excl-chip { border-color: rgba(255,122,107,0.45) !important; }
+.cmp-excl-x { opacity: 0.7; }
+.cmp-excl-edit { margin-top: 0.6rem; display: grid; gap: 0.5rem; }
+.cmp-excl-edit .cmp-excl-q { max-width: 360px; margin-bottom: 0.35rem; }
+/* (update 244) the two routes, and Ask AI */
+.cmp-start-wrap { display: grid; gap: 0.9rem; }
+.cmp-routes { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+.cmp-route { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; text-align: left; padding: 0.9rem 1rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: inherit; cursor: pointer; font: inherit; }
+.cmp-route strong { font-size: 1rem; }
+.cmp-route span { font-size: 0.8rem; color: var(--muted); }
+.cmp-route:hover { border-color: rgba(212,180,131,0.35); }
+.cmp-route.on { border-color: rgba(212,180,131,0.6); background: linear-gradient(160deg, rgba(212,180,131,0.16), rgba(212,180,131,0.03)); }
+@media (max-width: 560px) { .cmp-routes { grid-template-columns: 1fr; } }
+.cmp-ask-in { width: 100%; box-sizing: border-box; min-height: 6.5rem; resize: vertical; padding: 0.8rem 0.9rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: inherit; font: inherit; font-size: 0.98rem; line-height: 1.45; margin: 0.4rem 0 0.2rem; }
+.cmp-ask-in:focus { outline: none; border-color: rgba(212,180,131,0.6); }
+.cmp-ask-exs { flex-direction: column; align-items: stretch; }
+.cmp-ask-ex { text-align: left; white-space: normal; line-height: 1.35; }
+.cmp-ask-err { color: #ffb4a8; font-size: 0.86rem; margin: 0.4rem 0; }
+.cmp-askres { border-color: rgba(212,180,131,0.4); background: linear-gradient(160deg, rgba(212,180,131,0.12), rgba(212,180,131,0.02)); }
+.cmp-askres-top { display: flex; align-items: center; justify-content: space-between; }
+.cmp-askres-x { position: static; }
+.cmp-askres-q { font-style: italic; color: var(--muted); margin: 0.2rem 0 0.6rem; }
+.cmp-askres-a { font-size: 1.05rem; line-height: 1.5; margin: 0 0 0.6rem; }
+.cmp-askres-read { margin: 0 0 0.5rem 1.1rem; padding: 0; font-size: 0.86rem; line-height: 1.55; color: var(--muted); }
+.cmp-askres-read strong { color: var(--text, #f5f5f7); }
