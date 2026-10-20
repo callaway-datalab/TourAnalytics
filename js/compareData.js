@@ -137,7 +137,7 @@ export function sureWords(a, b) {
   const swing = Math.max(sd(a), sd(b)); // (update 237: no "rounds needed" line)
   if (az >= 2) return `That gap is very likely real (${na} and ${nb} rounds).`;
   if (az >= 1.6) return `That gap is probably real, but not certain yet (${na} and ${nb} rounds).`;
-  return `But with only ${na} and ${nb} rounds, and single rounds swinging by about \u00b1${swing.toFixed(1)}, it could still be luck.`;
+  void swing; return ""; // (update 239: no "could be luck")
 }
 /** Strokes gained by distance (per category), a round or a shot: { cat: [{ dist, values: [per selection], w: [...] }] } */
 export function distanceProfile(sets, per = "round") {
@@ -319,7 +319,7 @@ export function insights(sels) {
   if (byTot.length >= 3) out.push({ tone: "", text: `In order: ${byTot.map((x, i) => `${i + 1}. ${x.name} ${fmt(x.s.sg.TOTAL)}${i ? ` (${(byTot[i - 1].s.sg.TOTAL - x.s.sg.TOTAL).toFixed(2)} behind)` : ""}`).join("; ")}.` });
   // where the gap comes from (best vs worst)
   const usedCats = CATEGORIES.filter(([k]) => ok.some((x) => Math.abs(x.s.sg[k] || 0) >= 0.005));
-  const parts = usedCats.map(([k, l]) => ({ l, d: best.s.sg[k] - worst.s.sg[k] })).sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  const parts = usedCats.map(([k, l]) => ({ l, d: best.s.sg[k] - worst.s.sg[k] })).filter((x) => x.d > 0).sort((a, b) => b.d - a.d); // (update 239: only the parts that helped)
   if (usedCats.length > 1 && parts[0] && Math.abs(parts[0].d) >= 0.1) out.push({ tone: "", text: `Most of that is ${parts[0].l} (${fmt(parts[0].d)} a round)${parts[1] && Math.abs(parts[1].d) >= 0.1 ? `, then ${parts[1].l} (${fmt(parts[1].d)})` : ""}.` });
   // each category's leader
   for (const [k, l] of usedCats.length > 1 ? usedCats : []) {

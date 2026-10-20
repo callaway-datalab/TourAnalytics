@@ -1523,6 +1523,109 @@ export async function render(main) {
     });
     return el("div", { class: "cmp-ai" }, [b, status]);
   }
+  /* (update 239) the insight engine for the report. Two selections: the better one (A) against the other (B); three
+     or more: the best against the worst, with the order. For each part of the game: did it help or hurt, by how much,
+     and which stats moved (Hit Green % up, Made Putt % down …), including when the stats and strokes gained disagree.
+     Then the scoring pattern (birdies, bogeys, pars), each one's biggest weapon and weak spot against the field, and
+     steadiness. **bold** marks what matters. */
+  function deepInsights(live, blocks) {
+    const ord0 = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL);
+    const two = live.length === 2;
+    // two stretches of time, one after the other (this season and last; the last 5 events and the 5 before): the
+    // later one against the earlier, as a change ("improved", "slipped"), whichever is better
+    const dk0 = (v) => String(v || "").slice(0, 10);
+    const timeWise = two && live.every((it) => it.s.from && it.s.to) && (dk0(live[0].s.to) <= dk0(live[1].s.from) || dk0(live[1].s.to) <= dk0(live[0].s.from));
+    const A = timeWise ? [...live].sort((a, b) => dk0(b.s.to).localeCompare(dk0(a.s.to)))[0] : ord0[0];
+    const B = timeWise ? live.find((x) => x !== A) : two ? ord0[1] : ord0.at(-1), ia = live.indexOf(A), ib = live.indexOf(B);
+    const UP = timeWise ? "improved" : `was better (${A.name} over ${B.name})`, DOWN = timeWise ? "slipped" : `was worse (${A.name} against ${B.name})`;
+    const catName = Object.fromEntries(CATEGORIES);
+    const cats = usedCats(live).map(([k]) => k);
+    const sg2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
+    const strokes = (v) => `${Math.abs(v).toFixed(2)} a round`;
+    const list = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+    const gap = A.s.sg.TOTAL - B.s.sg.TOTAL;
+    const D = Object.fromEntries(cats.map((c) => [c, (A.s.sg[c] ?? 0) - (B.s.sg[c] ?? 0)]));
+    const STEP = 0.03;
+    const ups = cats.filter((c) => D[c] >= STEP).sort((a, b) => D[b] - D[a]), downs = cats.filter((c) => D[c] <= -STEP).sort((a, b) => D[a] - D[b]);
+    const upSum = ups.reduce((t, c) => t + D[c], 0), downSum = downs.reduce((t, c) => t + D[c], 0);
+    // the stats: each category's (and scoring's) rows, A against B
+    const statsOf = (cat) => (blocks.find((b) => b.cat === cat)?.rows || []).filter((r) => !r.dist && r.values[ia] != null && r.values[ib] != null)
+      .map((r) => { const d = r.values[ia] - r.values[ib], good = r.def.higher == null ? null : (r.def.higher === false ? -d : d) > 0; const rel = Math.abs(d) / Math.max(Math.abs(r.values[ib]), 1e-9); return { r, d, good, rel }; });
+    const vTxt = (x, i) => fmtStat(x.r.def, x.r.values[i]);
+    const dTxt = (x) => `${x.d >= 0 ? "+" : "\u2212"}${fmtStat({ ...x.r.def, pct: false, unit: x.r.def.pct ? " pct" : x.r.def.unit }, Math.abs(x.d))}`;
+    const MEAN = (x) => (x.r.def.pct ? Math.abs(x.d) >= 1 : x.rel >= 0.01); // a move worth mentioning (1 pct, or 1%)
+    const statLine = (x) => `${x.r.def.label} **${vTxt(x, ia)}** vs ${vTxt(x, ib)} (${dTxt(x)})`;
+    const who = two ? B.name : `${B.name} (the lowest)`;
+    const story = [], hi = [], lo = [];
+
+    /* the story */
+    story.push(timeWise ? `From **${B.name}** to **${A.name}**, strokes gained ${gap >= 0 ? "**rose**" : "**fell**"} by **${strokes(gap)}** (**${sg2(B.s.sg.TOTAL)}** to **${sg2(A.s.sg.TOTAL)}**).`
+      : `**${A.name}** ${two ? "beat" : "is best of " + live.length + ", beating"} **${who}** by **${strokes(gap)}** overall (**${sg2(A.s.sg.TOTAL)}** against **${sg2(B.s.sg.TOTAL)}**).`);
+    if (cats.length > 1) {
+      const nm = (cs) => list(cs.map((c) => `**${catName[c]}** (${sg2(D[c])})`));
+      if (ups.length && !downs.length) story.push(`${timeWise ? "It got better" : "It was better"} almost everywhere, led by ${nm(ups.slice(0, 2))}.`);
+      else if (!ups.length && downs.length >= 2 && timeWise) story.push(`It slipped almost everywhere, most in ${nm(downs.slice(0, 2))}.`);
+      else if (ups.length && downs.length) {
+        const others = cats.filter((c) => c !== ups[0]), allOthers = ups.length === 1 && downs.length === others.length;
+        story.push(`${ups.length === 1 ? `It all came from ${nm(ups)}` : `The gain came from ${nm(ups)}`}. ${allOthers ? `**Every other part of the game got worse**: ${nm(downs)}` : `Meanwhile ${nm(downs)} ${downs.length === 1 ? "went" : "all went"} the other way`}, **${sg2(downSum)} a round** combined.`);
+        story.push(upSum + downSum > 0 ? `So the ${ups.length === 1 ? catName[ups[0]] : "gains"} ${ups.length === 1 ? (timeWise ? "improvement was" : "edge was") : "were"} big enough (**${sg2(upSum)}**) to more than cover the ${timeWise ? "slide" : "rest"}, and it still came out **${strokes(gap)} better**. ${downs.length >= 2 ? `The upside: if ${downs.length === 2 ? "those two" : "those"} get back to where ${downs.length === 2 ? "they were" : "they were"}, there\u2019s about **${strokes(-downSum)}** more on the table.` : ""}`.trim()
+          : `${timeWise ? "The slide" : "The rest"} outweighed ${ups.length === 1 ? `the ${catName[ups[0]]} gain` : "the gains"} (**${sg2(upSum)}** against **${sg2(downSum)}**), so it came out **${strokes(gap)} ${gap >= 0 ? "better" : "worse"}**.`);
+      } else if (downs.length) story.push(`Even so, ${nm(downs)} ${downs.length === 1 ? "was" : "were"} worse; the rest made up for it.`);
+      else story.push(`No single part of the game stands out: the gap is a little from everywhere.`);
+    }
+
+    /* highlights: what got better (and why), the scoring pattern, the biggest weapon */
+    for (const c of ups) {
+      const st = statsOf(c).filter(MEAN), good = st.filter((x) => x.good === true).sort((a, b) => b.rel - a.rel).slice(0, 2), bad = st.filter((x) => x.good === false).sort((a, b) => b.rel - a.rel)[0];
+      hi.push(`**${catName[c]}** ${ups[0] === c && ups.length === 1 && downs.length && gap > 0 ? "made the whole difference" : UP}: **${sg2(D[c])} a round** (${sg2(A.s.sg[c])} vs ${sg2(B.s.sg[c])}).${good.length ? ` Behind it: ${list(good.map(statLine))}.` : ""}${bad ? (good.length ? ` (${bad.r.def.label} dipped a little: ${vTxt(bad, ia)} vs ${vTxt(bad, ib)}.)` : ` That\u2019s despite ${bad.r.def.label} going the wrong way (${vTxt(bad, ia)} vs ${vTxt(bad, ib)}), so the gain came from somewhere else.`) : ""}`);
+    }
+    // scoring: birdies, bogeys, pars
+    {
+      const sc = statsOf("ROUND"), g = (k) => sc.find((x) => x.r.key === k);
+      const avg = g("scoring"), bir = g("birdiesRd"), bog = g("bogeysRd"), dbl = g("dblBogeysRd"), par = g("parsRd"), eag = g("eagles");
+      const good = [], bad = [];
+      if (avg && Math.abs(avg.d) >= 0.05) (avg.good ? good : bad).push(`scoring average **${vTxt(avg, ia)}** vs ${vTxt(avg, ib)}`);
+      if (bir && bog && Math.abs(bir.d) >= 0.1 && Math.abs(bog.d) >= 0.1) {
+        const pattern = bir.d < 0 && bog.d < 0 ? `**fewer mistakes rather than more birdies**: bogeys down ${Math.abs(bog.d).toFixed(2)} a round${par && par.d > 0 ? ` and pars up ${par.d.toFixed(2)}` : ""}, while birdies fell ${Math.abs(bir.d).toFixed(2)}`
+          : bir.d > 0 && bog.d > 0 ? `**more aggressive**: ${bir.d.toFixed(2)} more birdies a round, but ${bog.d.toFixed(2)} more bogeys too`
+          : bir.d > 0 ? `**more birdies and fewer bogeys** (birdies +${bir.d.toFixed(2)}, bogeys \u2212${Math.abs(bog.d).toFixed(2)} a round)` : `**fewer birdies and more bogeys** (birdies \u2212${Math.abs(bir.d).toFixed(2)}, bogeys +${bog.d.toFixed(2)} a round)`;
+        (bir.d < 0 && bog.d > 0 ? bad : good).push(`the scorecard shows ${pattern}`);
+      }
+      if (eag && eag.d >= 0.03) good.push(`eagles up to ${vTxt(eag, ia)} a round`);
+      if (dbl && Math.abs(dbl.d) >= 0.05) (dbl.d < 0 ? good : bad).push(`double bogeys ${dbl.d < 0 ? "down" : "up"}: **${vTxt(dbl, ia)}** a round vs ${vTxt(dbl, ib)}${dbl.d > 0 && bog && bog.d < 0 ? ", so fewer mistakes overall, but the big ones crept in" : ""}`);
+      const say = (xs) => `**Scoring.** ${xs[0].charAt(0).toUpperCase()}${xs[0].slice(1)}${xs.length > 1 ? `; ${xs.slice(1).join("; ")}` : ""}.`;
+      if (good.length) hi.push(say(good));
+      if (bad.length) lo.push(say(bad));
+    }
+    // the biggest weapon (against the field: 0 is tour average)
+    if (cats.length > 1) {
+      const w = [...cats].sort((a, b) => (A.s.sg[b] ?? 0) - (A.s.sg[a] ?? 0))[0];
+      if ((A.s.sg[w] ?? 0) >= 0.2) hi.push(`**${catName[w]}** is ${timeWise ? "still " : ""}the biggest weapon: **${sg2(A.s.sg[w])} a round** against the field${D[w] <= -STEP ? (timeWise ? `, even after slipping ${strokes(D[w])}` : `, though ${strokes(D[w])} less than for ${B.name}`) : D[w] >= STEP ? (timeWise ? ", and getting better" : `, and better than for ${B.name}`) : ""}.`);
+    }
+    // steadiness
+    if (A.s.sd != null && B.s.sd != null) {
+      const dd = A.s.sd - B.s.sd;
+      if (dd <= -0.2) hi.push(`**Steadier**: rounds within about \u00b1${A.s.sd.toFixed(1)} of the average, against \u00b1${B.s.sd.toFixed(1)}${A.s.gaining != null ? `, and **${Math.round(A.s.gaining * 100)}%** of rounds gaining strokes` : ""}.`);
+      else if (dd >= 0.2) lo.push(`**More up and down**: single rounds swing about \u00b1${A.s.sd.toFixed(1)} (from ${sg2(A.s.worst)} to ${sg2(A.s.best)}), against \u00b1${B.s.sd.toFixed(1)}. ${gap > 0 ? "A better average, but" : "And"} less predictable week to week.`);
+    }
+
+    /* lowlights: what got worse (and why), and where it still loses to the field */
+    for (const c of downs) {
+      const st = statsOf(c).filter(MEAN), bad = st.filter((x) => x.good === false).sort((a, b) => b.rel - a.rel).slice(0, 2), good = st.filter((x) => x.good === true).sort((a, b) => b.rel - a.rel)[0];
+      lo.push(`**${catName[c]}** ${DOWN} by **${strokes(D[c])}** (${sg2(A.s.sg[c])} vs ${sg2(B.s.sg[c])}).${bad.length ? ` ${list(bad.map(statLine))} ${bad.length === 1 ? "explains" : "explain"} it.` : ""}${good ? (bad.length ? ` (${good.r.def.label} did rise, ${vTxt(good, ia)} vs ${vTxt(good, ib)}, so the misses cost more.)` : ` That\u2019s despite ${good.r.def.label} improving (${vTxt(good, ia)} vs ${vTxt(good, ib)}): the shots that went wrong cost more than before.`) : ""}${(A.s.sg[c] ?? 0) <= -0.05 ? ` It\u2019s now a **net loss against the field** (${sg2(A.s.sg[c])} a round): the clearest place to find strokes.` : ""}`);
+    }
+    for (const c of cats) if ((A.s.sg[c] ?? 0) <= -0.05 && !downs.includes(c)) lo.push(`**${catName[c]}** is still a net loss against the field: **${sg2(A.s.sg[c])} a round**. ${D[c] >= STEP ? (timeWise ? "Better than before, but the clearest room to grow." : "Better than for " + B.name + ", but the clearest room to grow.") : "The clearest place to find strokes."}`);
+    // nothing worse: the part of the game with the most room to grow
+    if (!lo.length && cats.length > 1) { const w = [...cats].sort((a, b) => (A.s.sg[a] ?? 0) - (A.s.sg[b] ?? 0))[0]; lo.push(`${timeWise ? "Nothing got worse" : `${A.name} wasn\u2019t worse anywhere`}, but **${catName[w]}** adds the least: ${sg2(A.s.sg[w] ?? 0)} a round against the field, the part of the game with **the most room to grow**.`); }
+    // three or more: the order
+    if (!two) story.push(`In order: ${ord0.map((x, i) => `${i + 1}. **${x.name}** ${sg2(x.s.sg.TOTAL)}`).join("; ")}.`);
+    const few = live.filter((it) => it.s.n < FEW);
+    if (few.length) lo.push(`Only a few rounds for ${list(few.map((it) => `**${it.name}** (${it.s.n})`))}: treat ${few.length === 1 ? "it" : "them"} as a hint, not a verdict.`);
+    // the parts of the game first, then scoring and steadiness
+    const rank = (t) => (cats.some((c) => t.startsWith(`**${catName[c]}**`)) ? 0 : t.startsWith("**Scoring") ? 1 : 2);
+    const byRank = (xs) => xs.map((t, i) => [t, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([t]) => t);
+    return { story, hi: byRank(hi).slice(0, 6), lo: byRank(lo).slice(0, 6) };
+  }
   async function makeReport(live0, say) {
     say("Working out the highlights\u2026");
     // (names that all start the same, "Everyone · …", lose the shared start; it goes in the subtitle)
@@ -1558,7 +1661,15 @@ export async function render(main) {
       for (const r of main) rows.push({ label: r.label, cells: r.values.map((v) => fmtStat(r.def, v)), tones: tones(r.values, r.def.higher) });
     }
     rows.push({ group: "Rounds" }, { label: "Rounds", cells: live.map((it) => String(it.s.n)) });
-    const fallback = insights(live.map((it) => ({ name: it.name, s: it.s }))).map((x) => x.text).join(" ");
+    let fallback = insights(live.map((it) => ({ name: it.name, s: it.s }))).map((x) => x.text).join(" ");
+    // (update 239) the story: where the gap really came from (what got better, what got worse, and what it netted),
+    // and highlights / lowlights backed by the stats behind each part of the game
+    let story = null;
+    if (live.length > 1) {
+      story = deepInsights(live, statBlocks(obsSets, incNow()));
+      hi.length = 0; hi.push(...story.hi); lo.length = 0; lo.push(...story.lo);
+      fallback = story.story.join(" ");
+    }
     // the AI summary, when the service is set up
     let summary = null;
     const url = window.PORTAL_CONFIG?.insightsUrl;
@@ -1585,7 +1696,7 @@ export async function render(main) {
         if (live.length < 2) return {};
         const o = by("TOTAL"), a0 = o[0], b0 = o[1], gap = a0.s.sg.TOTAL - b0.s.sg.TOTAL;
         const c = confidence(a0.s.rounds, b0.s.rounds), az = Math.abs(c.z);
-        const sure = a0.s.n < 3 || b0.s.n < 3 ? { word: "Too few rounds", tone: "warn" } : az >= 2.5 ? { word: "Clear gap", tone: "up" } : az >= 2 ? { word: "Very likely real", tone: "up" } : az >= 1.6 ? { word: "Probably real", tone: "" } : { word: "Could be luck", tone: "warn" };
+        const sure = a0.s.n < 3 || b0.s.n < 3 ? { word: "Too few rounds", tone: "warn" } : az >= 2.5 ? { word: "Clear gap", tone: "up" } : az >= 2 ? { word: "Very likely real", tone: "up" } : az >= 1.6 ? { word: "Probably real", tone: "" } : null; // (update 239: no "could be luck")
         const f = fitStory(a0, b0);
         return { sure, verdict: { lines: [`${a0.name} is ${Math.abs(gap) < 0.05 ? "best, but only just" : "best"}: ${f2s(a0.s.sg.TOTAL)} strokes gained a round against ${f2s(b0.s.sg.TOTAL)} for ${b0.name}${live.length > 2 ? ", the next best" : ""}. ${sureWords(a0.s.rounds, b0.s.rounds)}`, `${f.sum} ${f.lines.join(" ")}`] } };
       })(),

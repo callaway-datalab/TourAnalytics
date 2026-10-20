@@ -44,10 +44,10 @@ export function buildComparePdf(r) {
     d.rect(v >= 0 ? zx : zx - Math.min(rr, w), yy, Math.min(rr, w), h, { fill });
   };
   /* (update 238) bold for what matters: the selections' names, the strokes-gained numbers, and the key words
-     ("unusually good", "clear", "could still be luck" …). **like this** in a text is bold too. */
+     ("unusually good", "probably real" …). **like this** in a text is bold too. */
   const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const KEY = ["unusually good", "unusually bad", "better than usual", "worse than usual", "about their usual", "is best", "best overall", "trails the rest", "only just",
-    "clear", "very likely real", "probably real", "could still be luck", "too few rounds", "most consistent", "most up and down", "a hint, not a verdict", "Most of that is"];
+    "very likely real", "probably real", "too few rounds", "most consistent", "most up and down", "a hint, not a verdict", "Most of that is"];
   const emphRe = (() => {
     const names = [...new Set(sels.map((q) => q.name).filter((n) => n && n.length > 1))].sort((a, b) => b.length - a.length).map(esc);
     const parts = [...names, "[+\u2212-]\\d+\\.\\d+(?: strokes? a round)?", "\\d+\\.\\d+ strokes? a round", "\\d+(?:\\.\\d+)? (?:better|worse) than", ...KEY.map(esc)];
@@ -194,25 +194,27 @@ export function buildComparePdf(r) {
   noteBox(r.summary ? "The short version  ·  AI summary" : "The short version", [r.summary || r.fallback || ""], P.ink, P.mist, 9.5);
 
   /* ---------- highlights and lowlights: cards ---------- */
+  // (update 239) full width, one under the other: the insights are sentences with the stats behind them
   {
-    const colW = (W - 14) / 2;
     const hl = r.highlights.length ? r.highlights : ["Nothing stands out above the rest."], ll = r.lowlights.length ? r.lowlights : ["No clear weak spot."];
-    const hOf = (list) => list.reduce((t, s) => t + 18 + richWrap(s, colW - 28, 8.8).length * 11.5, 0) + 20;
-    section("Highlights", "What stands out", Math.min(300, Math.max(hOf(hl), hOf(ll))));
-    const col = (x, title, list, accent, tint) => {
-      let yy = y + 4;
-      cap(title, x, yy + 6, accent); yy += 14;
+    const cw = W - 30, sz = 9.2, lh = 12.6;
+    const cardH = (t) => 18 + richWrap(t, cw, sz).length * lh;
+    section("Highlights", "What stands out", cardH(hl[0]) + 20);
+    const group = (title, list, accent, tint, first) => {
+      if (!first) y += 8;
+      need(20 + cardH(list[0]));
+      cap(title, M, y + 8, accent); y += 16;
       for (const t of list) {
-        const lines = richWrap(t, colW - 28, 8.8), h = 16 + lines.length * 11.5;
-        if (yy + h > H - 50) break;
-        d.roundRect(x, yy, colW, h, 8, { fill: tint });
-        d.roundRect(x, yy, 4, h, 2, { fill: accent });
-        lines.forEach((l, i) => richLine(l, x + 14, yy + 14 + i * 11.5, 8.8, "#3a3a3c"));
-        yy += h + 6;
+        const lines = richWrap(t, cw, sz), h = 18 + lines.length * lh;
+        need(h + 6);
+        d.roundRect(M, y, W, h, 8, { fill: tint });
+        d.roundRect(M, y, 4, h, 2, { fill: accent });
+        lines.forEach((l, i) => richLine(l, M + 16, y + 15 + i * lh, sz, "#3a3a3c"));
+        y += h + 6;
       }
-      return yy;
     };
-    y = Math.max(col(M, "Highlights", hl, P.up, P.upTint), col(M + colW + 14, "Lowlights", ll, P.down, P.downTint)) + 4;
+    group("Highlights", hl, P.up, P.upTint, true);
+    group("Lowlights", ll, P.down, P.downTint, false);
   }
 
   /* ---------- where the strokes come from: each part of the game, every selection ---------- */
