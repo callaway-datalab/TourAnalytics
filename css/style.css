@@ -4062,3 +4062,6 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .cmp-fit-l { margin: 0.3rem 0 0.3rem 1.1rem; padding: 0; font-size: 0.86rem; line-height: 1.5; }
 /* (update 240) the stats table's note */
 .sg-full-note { margin: 0.6rem 0.2rem 0; line-height: 1.45; }
+/* (update 241) every tile, Total included: the trend under the rank pill */
+.wl-tile-f { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; }
+@media (max-width: 720px) { .wl-tile-f { align-items: center; } }
