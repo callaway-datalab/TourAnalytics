@@ -1112,7 +1112,7 @@ export async function render(main) {
         : rest.slice(0, 4).map((b) => el("p", { class: "cmp-verdict-row" }, [el("i", { class: "cmp-dot", style: `--c:${b.color}` }), b.name, el("strong", { class: tone(-gap(top, b, k)) }, ` ${gap(top, b, k).toFixed(2)} behind`)]))),
       rest.length > 4 ? el("p", { class: "muted small" }, `+ ${rest.length - 4} more`) : null,
       rest.length === 1 ? el("p", { class: "cmp-verdict-fit" }, fitStory(top, rest[0]).sum) : null, // (update 234)
-      el("p", { class: "muted small cmp-verdict-sure" }, sureWords(top.s.rounds, rest.at(-1).s.rounds)), // (update 222: how sure, and how many rounds would settle it)
+      el("p", { class: "muted small cmp-verdict-sure" }, sureWords(top.s.rounds, rest.at(-1).s.rounds)), // (update 222: how sure)
       el("p", { class: "cmp-card-tap" }, "Tap for why \u203a"),
     ]);
     function b0() { return rest[0]; }
@@ -1577,7 +1577,18 @@ export async function render(main) {
       title: live.length > 1 ? live.map((it) => it.name).slice(0, 3).join(" vs ") + (live.length > 3 ? ` + ${live.length - 3} more` : "") : live[0].name,
       subtitle: g.what ? guideSummary() : `${pre ? `${pre.replace(/ \u00b7 $/, "")} \u00b7 ` : ""}${live.length} selection${live.length === 1 ? "" : "s"}`,
       summary, fallback, highlights: hi.slice(0, 6), lowlights: lo.slice(0, 6),
-      cols: live.map((it) => ({ name: it.name, n: it.s.n, few: it.s.n < FEW })), rows,
+      cols: live.map((it) => ({ name: it.name, n: it.s.n, few: it.s.n < FEW, color: it.color })), rows,
+      // (update 237) the hero cards, the visuals and the verdict
+      sels: live.map((it) => ({ name: it.name, color: it.color, n: it.s.n, events: it.s.events, few: it.s.n < FEW, sg: it.s.sg, best: it.s.best, worst: it.s.worst, median: it.s.median, q1: it.s.q1, q3: it.s.q3, sd: it.s.sd, gaining: it.s.gaining, rounds: it.s.rounds })),
+      cats: used.length > 1 ? used : [],
+      ...(() => {
+        if (live.length < 2) return {};
+        const o = by("TOTAL"), a0 = o[0], b0 = o[1], gap = a0.s.sg.TOTAL - b0.s.sg.TOTAL;
+        const c = confidence(a0.s.rounds, b0.s.rounds), az = Math.abs(c.z);
+        const sure = a0.s.n < 3 || b0.s.n < 3 ? { word: "Too few rounds", tone: "warn" } : az >= 2.5 ? { word: "Clear gap", tone: "up" } : az >= 2 ? { word: "Very likely real", tone: "up" } : az >= 1.6 ? { word: "Probably real", tone: "" } : { word: "Could be luck", tone: "warn" };
+        const f = fitStory(a0, b0);
+        return { sure, verdict: { lines: [`${a0.name} is ${Math.abs(gap) < 0.05 ? "best, but only just" : "best"}: ${f2s(a0.s.sg.TOTAL)} strokes gained a round against ${f2s(b0.s.sg.TOTAL)} for ${b0.name}${live.length > 2 ? ", the next best" : ""}. ${sureWords(a0.s.rounds, b0.s.rounds)}`, `${f.sum} ${f.lines.join(" ")}`] } };
+      })(),
       usage: lastUsage?.rows ? { cols: lastUsage.cols, rows: lastUsage.rows } : null,
       notes: ["Strokes gained scores every shot against the baseline in the data: + means strokes gained, \u2212 strokes lost. A round\u2019s total is the sum of its shots; the numbers here are averages a round.",
         "Green is the best in a row and red the worst (for stats like Proximity, lower is better).",

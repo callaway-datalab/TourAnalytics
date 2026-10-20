@@ -127,19 +127,17 @@ export function confidence(a, b) {
   return { z, word: az >= 2.5 ? "clear" : az >= 1.6 ? "likely" : az >= 1 ? "possible" : "too close to call" };
 }
 
-/** (update 222) how sure the gap between two sets of rounds is, in plain words, and how many rounds would settle it:
- *  the same gap, with both sides growing in proportion, until it's twice the chance swing (95% sure). */
+/** (update 222) how sure the gap between two sets of rounds is, in plain words
+ */
 export function sureWords(a, b) {
   const na = a?.length || 0, nb = b?.length || 0;
   if (na < 3 || nb < 3) return `There are too few rounds (${na} and ${nb}) to say whether that\u2019s real yet.`;
   const c = confidence(a, b), az = Math.abs(c.z);
   if (az >= 2.5) return `That gap is clear: far bigger than round-to-round luck (${na} and ${nb} rounds).`;
-  const k = az ? (2 / az) ** 2 : Infinity, xa = Math.ceil(na * k), xb = Math.ceil(nb * k);
-  const swing = Math.max(sd(a), sd(b));
-  const need = !Number.isFinite(k) || xa + xb > 4000 ? "They\u2019re so close that no realistic number of rounds would separate them." : `At the same gap, about ${xa.toLocaleString()} and ${xb.toLocaleString()} rounds would make it conclusive.`;
+  const swing = Math.max(sd(a), sd(b)); // (update 237: no "rounds needed" line)
   if (az >= 2) return `That gap is very likely real (${na} and ${nb} rounds).`;
-  if (az >= 1.6) return `That gap is probably real, but not certain yet (${na} and ${nb} rounds). ${need}`;
-  return `But with only ${na} and ${nb} rounds, and single rounds swinging by about \u00b1${swing.toFixed(1)}, it could still be luck. ${need}`;
+  if (az >= 1.6) return `That gap is probably real, but not certain yet (${na} and ${nb} rounds).`;
+  return `But with only ${na} and ${nb} rounds, and single rounds swinging by about \u00b1${swing.toFixed(1)}, it could still be luck.`;
 }
 /** Strokes gained by distance (per category), a round or a shot: { cat: [{ dist, values: [per selection], w: [...] }] } */
 export function distanceProfile(sets, per = "round") {
