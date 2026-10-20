@@ -464,6 +464,16 @@ export async function render(main) {
   /* ------------------------------ (update 203) the guide: a few plain questions set the filters ------------------------------ */
   // Who → what → the detail, then the comparison is set up; everything stays editable under "Edit the filters yourself".
   let g = { open: !pickParam, step: null }, editOpen = false;
+  let backToPlace = null; // (update 240) the "Where they play best" table these picks came from (Clear all goes back to it)
+  // (update 240) everything cleared: back to where these picks were made (the courses table, or the filters open on
+  // the same tab: time windows, products …), not to the start
+  const backToStart = () => {
+    sels = []; joinPick = new Set(); touched = true;
+    if (backToPlace) { placeDim = backToPlace; g.open = false; }
+    else editOpen = true;
+    draw();
+    root.querySelector(backToPlace ? ".career-sec" : ".cmp-edit")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const SEASONS = [["this", "This season", { season: "this" }], ["last", "Last season", { season: "last" }], ["l20", "Their last 20 rounds", { last: 20 }], ["all", "Their whole career", {}]];
   const groupNameOf = (k) => groupName(k);
   const groupName = (k) => ({ Driver: "Drivers", "Non-Driver": "Non-driver tee shots", "Fairway Wood": "Fairway woods", Hybrid: "Hybrids", Iron: "Irons", Wedge: "Wedges", Putter: "Putters", Ball: "Golf balls", Other: "Other clubs" }[k] || k);
@@ -524,7 +534,7 @@ export async function render(main) {
       } else if (g.how === "groups") out = [0, 1].map((x) => g.models.filter((v) => (g.groups[v] ?? 0) === x)).filter((vs) => vs.length).map((vs) => one(vs));
       else out = g.models.map((v) => one([v]));
     }
-    placeDim = null;
+    placeDim = null; backToPlace = null;
     if (g.what === "place") { placeDim = g.place; } // (update 216: every course / tournament / month / round, ranked; no selections)
     if (false) {
       if (g.place === "rounds") { mode = "rounds"; out = opts.rounds.map((o) => mk(`rounds:${o.value}`, o.label, { roundNos: [o.value] }, "rounds", [o.value])); }
@@ -1040,14 +1050,14 @@ export async function render(main) {
   }
   function selectedBar(items) {
     const clear = el("button", { type: "button", class: "link cmp-clear" }, "Clear all");
-    clear.addEventListener("click", () => { sels = []; joinPick = new Set(); touched = true; draw(); });
+    clear.addEventListener("click", backToStart);
     for (const id of [...joinPick]) if (!sels.some((s) => s.id === id)) joinPick.delete(id);
     const joinB = joinPick.size >= 2 ? el("button", { type: "button", class: "btn small cmp-join" }, `Combine these ${joinPick.size}`) : null;
     joinB?.addEventListener("click", combineSels);
     const hint = sels.length >= 2 ? el("span", { class: "muted small cmp-join-hint" }, joinPick.size ? (joinPick.size === 1 ? "Tap another to combine them" : "") : "Tap two or more to combine them") : null;
     return el("div", { class: "cmp-selbar" }, [...items.map((it) => {
       const x = el("button", { type: "button", class: "cmp-key-x", "aria-label": it.base ? `Remove ${sels.find((s) => s.id === it.base)?.name} (for every player)` : `Remove ${it.name}` }, "\u2715");
-      x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== (it.base || it.id)); touched = true; draw(); });
+      x.addEventListener("click", () => { sels = sels.filter((s) => s.id !== (it.base || it.id)); touched = true; if (!sels.length) backToStart(); else draw(); });
       const sid = it.base || it.id, on = joinPick.has(sid);
       const key = el("span", { class: `cmp-key cmp-key-pick${on ? " picked" : ""}`, style: `--c:${it.color}`, title: `${it.full || it.name} (tap to pick it for combining)`, role: "button", tabindex: "0", "aria-pressed": String(on) }, [el("i", { "aria-hidden": "true" }), on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]);
       const flip = (e) => { if (e.target.closest(".cmp-key-x")) return; on ? joinPick.delete(sid) : joinPick.add(sid); draw(); };
@@ -1123,7 +1133,31 @@ export async function render(main) {
   /* (update 234) is the winner unusually good, or the other unusually bad? Each one against that player's usual
      (their average over every round here, over the same parts of the game), so "better at A than B" says whether
      A is a strength, B a weak spot, or both. */
+  /* (update 240) a club or ball against the average one of its kind: a driver against every driver (everyone's, or
+     the player's own: "their average driver"), a putter against every putter, a ball against every ball. Counted the
+     same way as the pick: only those shots, in the rounds they were used. */
+  const KIND_WORD = { Driver: "driver", "Non-Driver": "non-driver tee club", "Fairway Wood": "fairway wood", Hybrid: "hybrid", Iron: "iron", Wedge: "wedge", Putter: "putter", Ball: "ball", Other: "club" };
+  const baseMemo = new WeakMap(); // (each player's rounds → kind → the average)
+  const prodBase = (it) => {
+    const f = it.f || {};
+    if (!f.clubs?.length && !f.balls?.length) return null;
+    const kinds = f.clubs?.length ? [...new Set(it.rs.flatMap((rd) => rd.shots.map((x) => x.clubCat)).filter(Boolean))].sort() : [];
+    const ball = !f.clubs?.length || !!f.balls?.length;
+    if (f.clubs?.length && !kinds.length) return null;
+    const pk = it.pk || inPlay()[0]?.key, key = `${kinds.join(",")}|${ball}`, rsK = roundsOfKey(pk);
+    const memo = baseMemo.get(rsK) || (baseMemo.set(rsK, new Map()), baseMemo.get(rsK));
+    if (!memo.has(key)) {
+      const ks = new Set(kinds), hit = (x) => (!ks.size || ks.has(x.clubCat)) && (!ball || !!x.ball);
+      let t = 0, n = 0;
+      for (const rd of sgRounds(rsK)) { let sum = 0, any = false; for (const x of rd.shots) if (hit(x)) { sum += x.sg; any = true; } if (any) { t += sum; n++; } }
+      const word = kinds.length === 1 ? KIND_WORD[kinds[0]] || "club" : kinds.length ? "club of the same kind" : "ball";
+      memo.set(key, { v: n ? t / n : 0, label: `${pk === EVERY ? "the" : "their"} average ${word}${kinds.length && ball ? ` (with any ball)` : ""}` });
+    }
+    return memo.get(key);
+  };
   const usualOf = (it) => {
+    const pb0 = prodBase(it);
+    if (pb0) return pb0.v;
     const pk = it.pk || inPlay()[0]?.key, cs = [...new Set(it.rs.flatMap((rd) => rd.shots.map((x) => x.cat)))];
     const rs = sgRounds(roundsOfKey(pk)), all4 = cs.length >= 4;
     return rs.length ? rs.reduce((t, rd) => t + (all4 ? rdSG(rd, "TOTAL") : cs.reduce((u, c) => u + rdSG(rd, c), 0)), 0) / rs.length : 0;
@@ -1132,7 +1166,8 @@ export async function render(main) {
   function fitStory(a, b) {
     const ua = usualOf(a), ub = usualOf(b), va = a.s.sg.TOTAL, vb = b.s.sg.TOTAL, da = va - ua, db = vb - ub;
     const same = (a.pk || "") === (b.pk || "");
-    const vs = (d) => (Math.abs(d) < BAND ? "about their usual" : `${Math.abs(d).toFixed(2)} ${d > 0 ? "better" : "worse"} than their usual`);
+    const ref = prodBase(a)?.label || "their usual"; // (update 240: a club or ball against the average one of its kind)
+    const vs = (d) => (Math.abs(d) < BAND ? `about ${ref}` : `${Math.abs(d).toFixed(2)} ${d > 0 ? "better" : "worse"} than ${ref}`);
     const line = (it, v, d, u) => `${it.name}: ${fmtSigned(v)} a round, ${vs(d)}${same ? "" : ` (${fmtSigned(u)})`}.`;
     const up = (d) => d >= BAND, down = (d) => d <= -BAND;
     const sum = up(da) && down(db) ? `So it\u2019s both: ${a.name} is better than usual and ${b.name} is worse.`
@@ -1140,18 +1175,26 @@ export async function render(main) {
       : down(da) && down(db) ? `Both are worse than usual; ${b.name} is just more so.`
       : up(da) ? `So the gap is ${a.name} being unusually good, not ${b.name} being bad.`
       : down(db) ? `So the gap is ${b.name} being unusually bad, not ${a.name} being especially good.`
-      : `Both are about their usual, so neither stands out much on its own.`;
-    return { lines: [line(a, va, da, ua), line(b, vb, db, ub)], sum, usual: same ? ua : null };
+      : `Both are about ${ref}, so neither stands out much on its own.`;
+    return { lines: [line(a, va, da, ua), line(b, vb, db, ub)], sum, usual: same ? ua : null, ref };
   }
   const cut = (t) => (t.length > 16 ? `${t.slice(0, 15).trim()}\u2026` : t);
+  // (update 240) two clubs or balls: the Why goes deep on their part of the game only
+  const deepFor = (a, b) => {
+    if (!prodBase(a) || !prodBase(b)) return null;
+    const cats = new Set([...a.rs, ...b.rs].flatMap((rd) => rd.shots.map((x) => x.cat)).filter(Boolean));
+    if (!cats.size || cats.size >= 4) return null;
+    const ob = (it) => includeShots(statSets(roundsOf(it), [it.f])[0] || [], null);
+    return { cats, obsA: ob(a), obsB: ob(b) };
+  };
   function openWhy(top, rest) {
     const say = (b) => (lead) => `Mostly ${lead.l}: ${top.name} ${lead.d >= 0 ? "gains" : "loses"} ${Math.abs(lead.d).toFixed(2)} a round ${lead.d >= 0 ? "more than" : "against"} ${b.name}.`;
     // (update 221) the columns are A and B (each with its colour); their full names are spelled out above
     const tag = (it, L) => el("span", { class: "cmp-why-tag" }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), L]);
     const blocks = rest.map((b) => el("div", { class: "wl-pop-block" }, [
       el("div", { class: "cmp-why-key" }, [el("p", {}, [tag(top, "A"), " ", el("strong", {}, top.name), el("span", { class: "muted" }, ` \u00b7 ${fmtSG(top.s.sg.TOTAL)} a round`)]), el("p", {}, [tag(b, "B"), " ", el("strong", {}, b.name), el("span", { class: "muted" }, ` \u00b7 ${fmtSG(b.s.sg.TOTAL)} a round`)])]),
-      (() => { const f = fitStory(top, b); return el("div", { class: "cmp-fit" }, [el("p", { class: "cmp-why-h" }, [el("strong", {}, "Strength or weak spot? "), f.sum]), el("ul", { class: "cmp-fit-l" }, f.lines.map((t) => el("li", {}, t))), f.usual != null ? el("p", { class: "muted small" }, `Their usual: ${fmtSigned(f.usual)} a round over every round here. Within ${BAND.toFixed(2)} of it counts as about usual.`) : el("p", { class: "muted small" }, `Each against their own usual (in brackets): their average over every round here.`)]); })(),
-      whyCore(top.rs, b.rs, () => tag(top, "A"), () => tag(b, "B"), say(b), true)]));
+      (() => { const f = fitStory(top, b); return el("div", { class: "cmp-fit" }, [el("p", { class: "cmp-why-h" }, [el("strong", {}, "Strength or weak spot? "), f.sum]), el("ul", { class: "cmp-fit-l" }, f.lines.map((t) => el("li", {}, t))), f.usual != null ? el("p", { class: "muted small" }, (f.ref === "their usual" ? `Their usual: ${fmtSigned(f.usual)} a round over every round here.` : `${f.ref.charAt(0).toUpperCase()}${f.ref.slice(1)}: ${fmtSigned(f.usual)} a round.`) + ` Within ${BAND.toFixed(2)} of it counts as about the same.`) : el("p", { class: "muted small" }, `Each against their own usual (in brackets): their average over every round here.`)]); })(),
+      whyCore(top.rs, b.rs, () => tag(top, "A"), () => tag(b, "B"), say(b), true, deepFor(top, b))]));
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Comparison" }, el("div", { class: "gx-pop wl-pop cmp-rd-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Verdict"), el("h2", {}, `Why ${top.name} is best`), el("p", { class: "gx-sub" }, "Where the difference comes from: strokes gained in each part of the game, and the stats behind it.")]), close]),
@@ -1234,23 +1277,60 @@ export async function render(main) {
     return whyCore(x.rds, all, "Here", "Usual", (lead, better) => `${better ? "Mostly" : "Mostly down to"} ${lead.l}: ${fmtSigned(lead.d)} a round ${lead.d >= 0 ? "better" : "worse"} than their usual here.`, x.v >= per(all, "TOTAL"));
   }
   // (update 218) the parts of the game, and the stats, of one set of rounds (a) against another (b)
-  function whyCore(aRds, bRds, la, lb, say, better) {
+  function whyCore(aRds, bRds, la, lb, say, better, deep = null) {
     const per = (rds, k) => rds.reduce((t, rd) => t + rdSG(rd, k), 0) / rds.length;
     const x = { rds: aRds }, all = bRds;
-    const cats = CATEGORIES.map(([k, l]) => ({ k, l, here: per(x.rds, k), usual: per(all, k) })).map((c) => ({ ...c, d: c.here - c.usual })).filter((c) => Math.abs(c.here) >= 0.005 || Math.abs(c.usual) >= 0.005); // (update 221: not a part of the game neither has)
     const L = (v) => (typeof v === "function" ? v() : v); // (a label can be made fresh for each table)
+    const good = (d, def) => (def.higher == null || Math.abs(d) < 1e-9 ? "" : (def.higher === false ? -d : d) > 0 ? "pos" : "neg");
+    const dTxt = (d, def) => { const f = fmtStat({ ...def, pct: false, unit: def.pct ? " pct" : def.unit }, Math.abs(d)); return `${d > 0 ? "+" : d < 0 ? "\u2212" : ""}${f}`; };
+    const head3 = (t) => el("thead", {}, el("tr", {}, [el("th", {}, t), el("th", { class: "num" }, L(la)), el("th", { class: "num" }, L(lb)), el("th", { class: "num" }, "Diff")]));
+    if (deep) {
+      /* (update 240) a club or ball against another: only its part of the game, as deep as the data goes. Strokes
+         gained a round, a shot and shots a round; then by distance; then every stat of that part of the game, each
+         at every distance (a putter: Made Putt % and Good Lag % from 3 feet, 10 feet, 30 feet …). */
+      const cats = CATEGORIES.filter(([k]) => deep.cats.has(k));
+      const shotsOf = (rds, k) => rds.reduce((t, rd) => t + rd.shots.reduce((u, s0) => u + (s0.cat === k ? s0.w || 1 : 0), 0), 0);
+      const sumOf = (rds, k) => rds.reduce((t, rd) => t + rdSG(rd, k), 0);
+      const prof = distanceProfile([aRds, bRds], "round"), profS = distanceProfile([aRds, bRds], "shot");
+      const sgRows = [], dRows = [];
+      for (const [k, l] of cats) {
+        const a = per(aRds, k), b = per(bRds, k), na = shotsOf(aRds, k), nb = shotsOf(bRds, k);
+        sgRows.push({ l: `${l}: a round`, a, b, d: a - b, strong: true });
+        if (na && nb) { const sa = sumOf(aRds, k) / na, sb = sumOf(bRds, k) / nb; sgRows.push({ l: "A shot", a: sa, b: sb, d: sa - sb, f3: true, sub: true }); sgRows.push({ l: "Shots a round", a: na / aRds.length, b: nb / bRds.length, d: na / aRds.length - nb / bRds.length, plain: true, sub: true }); }
+        for (const r of prof[k] || []) { const [ra, rb] = r.values; if (ra == null || rb == null) continue; const sr = (profS[k] || []).find((q) => q.dist === r.dist); dRows.push({ l: r.dist, a: ra, b: rb, d: ra - rb, sa: sr?.values[0], sb: sr?.values[1], cat: l }); }
+      }
+      const n3 = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`);
+      const leadD = [...dRows].sort((p, q) => (better ? q.d - p.d : p.d - q.d))[0];
+      const tot = sgRows.find((r) => r.strong);
+      const why = !tot ? "" : leadD && Math.abs(leadD.d) >= 0.02 ? `${Math.abs(tot.d) < 0.02 ? "Level overall, but" : "Mostly"} from **${leadD.l}**: ${fmtSigned(leadD.d)} a round${leadD.sa != null && leadD.sb != null ? ` (${n3(leadD.sa - leadD.sb)} a shot)` : ""}.` : `No one distance stands out: it\u2019s a little from everywhere.`;
+      const fmtR = (r, v) => (r.plain ? (v == null ? "\u2014" : v.toFixed(1)) : r.f3 ? n3(v) : fmtSG(v));
+      const sgT = el("table", { class: "cmp-table cmp-why-t" }, [head3("Strokes gained"), el("tbody", {}, [
+        ...sgRows.map((r) => el("tr", { class: `${r.strong ? "strong" : ""}${r.sub ? " cmp-sub" : ""}` }, [el("td", {}, r.l), el("td", { class: `num ${r.plain ? "" : tone(r.a)}` }, fmtR(r, r.a)), el("td", { class: "num muted" }, fmtR(r, r.b)), el("td", { class: `num ${r.plain ? "" : tone(r.d)}` }, r.plain ? (r.d >= 0 ? "+" : "\u2212") + Math.abs(r.d).toFixed(1) : r.f3 ? n3(r.d) : fmtSigned(r.d))])),
+        ...(dRows.length ? [el("tr", { class: "cmp-grp" }, el("td", { colspan: 4 }, "By distance: a round (a shot)"))] : []),
+        ...dRows.map((r) => el("tr", { class: `cmp-sub${r === leadD && Math.abs(r.d) >= 0.02 ? " strong" : ""}` }, [el("td", {}, r.l), el("td", { class: `num ${tone(r.a)}` }, [fmtSG(r.a), r.sa != null ? el("span", { class: "muted small" }, ` (${n3(r.sa)})`) : null]), el("td", { class: "num muted" }, [fmtSG(r.b), r.sb != null ? el("span", { class: "small" }, ` (${n3(r.sb)})`) : null]), el("td", { class: `num ${tone(r.d)}` }, fmtSigned(r.d))])),
+      ])]);
+      const blocks = statBlocks([deep.obsA || [], deep.obsB || []]).filter((bk) => deep.cats.has(bk.cat));
+      const statT = blocks.length ? el("table", { class: "cmp-table cmp-why-t" }, [head3("Stats"), el("tbody", {}, blocks.flatMap((bk) => [
+        ...(blocks.length > 1 ? [el("tr", { class: "cmp-grp" }, el("td", { colspan: 4 }, bk.label))] : []),
+        ...bk.rows.filter((r) => r.values[0] != null || r.values[1] != null).map((r) => { const [a, b] = r.values, d = a != null && b != null ? a - b : null; return el("tr", { class: r.dist ? "cmp-sub" : "strong" }, [el("td", {}, r.dist ? r.dist : r.def.label), el("td", { class: "num" }, fmtStat(r.def, a)), el("td", { class: "num muted" }, fmtStat(r.def, b)), el("td", { class: `num ${d == null ? "" : good(d, r.def)}` }, d == null ? "\u2014" : dTxt(d, r.def))]); }),
+      ]))]) : null;
+      const md = (t) => t.split(/\*\*/).map((p0, i) => (i % 2 ? el("strong", {}, p0) : p0));
+      return el("div", { class: "cmp-why" }, [
+        el("p", { class: "cmp-why-h" }, [el("strong", {}, "Why? "), ...md(why)]),
+        el("div", { class: "cmp-why-grid" }, [sgT, statT]),
+      ]);
+    }
+    const cats = CATEGORIES.map(([k, l]) => ({ k, l, here: per(x.rds, k), usual: per(all, k) })).map((c) => ({ ...c, d: c.here - c.usual })).filter((c) => Math.abs(c.here) >= 0.005 || Math.abs(c.usual) >= 0.005); // (update 221: not a part of the game neither has)
     const lead = [...cats].sort((a, b) => (better ? b.d - a.d : a.d - b.d))[0];
     const agg = (rds, k) => { let s = 0, w = 0, s2 = 0, w2 = 0; for (const rd of rds) for (const o of rd.obs || []) { if (o.k !== k || o.v == null || !Number.isFinite(o.v)) continue; const ww = o.w || 1; if (!o.dist) { s += o.v * ww; w += ww; } else { s2 += o.v * ww; w2 += ww; } } return w ? s / w : w2 ? s2 / w2 : null; };
     const stats = WHY_STATS.map((k) => { const def = k === "gir" ? { ...statDef(k), label: "GIR %" } : statDef(k); const here = agg(x.rds, k), usual = agg(all, k); return here == null || usual == null ? null : { def, here, usual, d: here - usual }; }).filter(Boolean);
-    const good = (d, def) => (def.higher == null || Math.abs(d) < 1e-9 ? "" : (def.higher === false ? -d : d) > 0 ? "pos" : "neg");
-    const dTxt = (d, def) => { const f = fmtStat({ ...def, pct: false, unit: def.pct ? " pct" : def.unit }, Math.abs(d)); return `${d > 0 ? "+" : d < 0 ? "\u2212" : ""}${f}`; };
     const why = Math.abs(lead.d) < 0.05 ? `No one part of the game stands out: it\u2019s a little from everywhere.` : say(lead, better);
     return el("div", { class: "cmp-why" }, [
       el("p", { class: "cmp-why-h" }, [el("strong", {}, "Why? "), why]),
       el("div", { class: "cmp-why-grid" }, [
-        el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Strokes gained a round"), el("th", { class: "num" }, L(la)), el("th", { class: "num" }, L(lb)), el("th", { class: "num" }, "Diff")])),
+        el("table", { class: "cmp-table cmp-why-t" }, [head3("Strokes gained a round"),
           el("tbody", {}, cats.map((c) => el("tr", { class: c === lead && Math.abs(lead.d) >= 0.05 ? "strong" : "" }, [el("td", {}, c.l), el("td", { class: `num ${tone(c.here)}` }, fmtSG(c.here)), el("td", { class: "num muted" }, fmtSG(c.usual)), el("td", { class: `num ${tone(c.d)}` }, fmtSigned(c.d))])))]),
-        stats.length ? el("table", { class: "cmp-table cmp-why-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Stats"), el("th", { class: "num" }, L(la)), el("th", { class: "num" }, L(lb)), el("th", { class: "num" }, "Diff")])),
+        stats.length ? el("table", { class: "cmp-table cmp-why-t" }, [head3("Stats"),
           el("tbody", {}, stats.map((st) => el("tr", {}, [el("td", {}, st.def.label), el("td", { class: "num" }, fmtStat(st.def, st.here)), el("td", { class: "num muted" }, fmtStat(st.def, st.usual)), el("td", { class: `num ${good(st.d, st.def)}` }, dTxt(st.d, st.def))])))]) : null,
       ]),
     ]);
@@ -1263,7 +1343,7 @@ export async function render(main) {
     // (update 236) several of them as one: their filters merged (any of these courses / tournaments / months …)
     const merged = (keys) => { const f = {}; for (const k of keys) for (const [field, vs] of Object.entries(fOf(k, groups.get(k)))) f[field] = [...new Set([...(f[field] || []), ...vs])]; return f; };
     const plural = `${dimL.toLowerCase()}s`;
-    const show = (list) => { sels = list.map((x, i) => ({ mode: "filters", color: COLORS[i % COLORS.length], ...x })); mode = "filters"; placePick = new Set(); touched = true; g.open = false; draw(); root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+    const show = (list) => { backToPlace = placeDim; sels = list.map((x, i) => ({ mode: "filters", color: COLORS[i % COLORS.length], ...x })); mode = "filters"; placePick = new Set(); touched = true; g.open = false; draw(); root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
     const go = el("button", { type: "button", class: "btn cmp-add small", disabled: n >= 2 ? null : true }, n >= 2 ? `Compare these ${n} \u2192` : `Tick two or more numbers to compare them`);
     go.addEventListener("click", () => {
       const list = [...placePick].slice(0, Math.max(2, Math.floor(MAX_SEL / Math.max(1, inPlay().length))));
@@ -1355,7 +1435,9 @@ export async function render(main) {
     if (live.length < 2) return null;
     const avgOf = new Map();
     // (update 221) "their average" over the same parts of the game the pick has (a driver: their Off-the-Tee average)
+    // (update 240) a club or ball: the average one of its kind
     const usual = (it) => {
+      if (prodBase(it)) return prodBase(it).v;
       const pk = it.pk || inPlay()[0]?.key, cs = [...new Set(it.rs.flatMap((rd) => rd.shots.map((x) => x.cat)))].sort(), key = `${pk}|${cs.join(",")}`;
       if (!avgOf.has(key)) { const rs = sgRounds(roundsOfKey(pk)), all4 = cs.length >= 4; avgOf.set(key, rs.length ? rs.reduce((t, rd) => t + (all4 ? rdSG(rd, "TOTAL") : cs.reduce((u, c) => u + rdSG(rd, c), 0)), 0) / rs.length : 0); }
       return avgOf.get(key);
@@ -1376,9 +1458,14 @@ export async function render(main) {
       return hoverable(row, x.it.i);
     });
     const avgTxt = pks.size === 1 && new Set(live.map(usual)).size === 1 ? ` (${fmtSG(usual(live[0]))})` : "";
+    // (update 240) clubs and balls: against the average one of its kind
+    const pbs = live.map(prodBase), prodAll = pbs.every(Boolean), sameKind = prodAll && new Set(pbs.map((x) => x.label)).size === 1;
+    const midL = prodAll ? (sameKind ? pbs[0].label : "the average of its kind") : pks.size === 1 ? "their average" : "their averages";
+    const descr = prodAll ? `Best first: strokes gained a round with each, and how far above or below ${sameKind ? pbs[0].label : "the average club or ball of its kind"}${sameKind ? ` (${fmtSG(pbs[0].v)}: every ${pbs[0].label.replace(/^(the|their) average /, "")}\u2019s shots${pks.has(EVERY) ? "" : " of theirs"}, in the rounds it was used)` : ""}. Tap one for its card and tournaments.`
+      : `Best first: strokes gained a round, and how far above or below ${pks.size === 1 ? "their" : "each player\u2019s"} average over every round (in the same parts of the game)${avgTxt}. Tap one for its card and tournaments.`;
     return el("section", { class: "panel cmp-sec career-sec cmp-board" }, [
-      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Leaderboard"), el("p", { class: "muted small" }, `Best first: strokes gained a round, and how far above or below ${pks.size === 1 ? "their" : "each player\u2019s"} average over every round (in the same parts of the game)${avgTxt}. Tap one for its card and tournaments.`)]),
-      el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, pks.size === 1 ? "their average" : "their averages"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
+      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Leaderboard"), el("p", { class: "muted small" }, descr)]),
+      el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, midL), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
     ]);
   }
   function timelineSection(items) {
@@ -1695,10 +1782,9 @@ export async function render(main) {
       ...(() => {
         if (live.length < 2) return {};
         const o = by("TOTAL"), a0 = o[0], b0 = o[1], gap = a0.s.sg.TOTAL - b0.s.sg.TOTAL;
-        const c = confidence(a0.s.rounds, b0.s.rounds), az = Math.abs(c.z);
-        const sure = a0.s.n < 3 || b0.s.n < 3 ? { word: "Too few rounds", tone: "warn" } : az >= 2.5 ? { word: "Clear gap", tone: "up" } : az >= 2 ? { word: "Very likely real", tone: "up" } : az >= 1.6 ? { word: "Probably real", tone: "" } : null; // (update 239: no "could be luck")
+        const sure = a0.s.n < 3 || b0.s.n < 3 ? { word: "Too few rounds", tone: "warn" } : null; // (update 240: no "clear gap" / "probably real")
         const f = fitStory(a0, b0);
-        return { sure, verdict: { lines: [`${a0.name} is ${Math.abs(gap) < 0.05 ? "best, but only just" : "best"}: ${f2s(a0.s.sg.TOTAL)} strokes gained a round against ${f2s(b0.s.sg.TOTAL)} for ${b0.name}${live.length > 2 ? ", the next best" : ""}. ${sureWords(a0.s.rounds, b0.s.rounds)}`, `${f.sum} ${f.lines.join(" ")}`] } };
+        return { sure, verdict: { lines: [`${a0.name} is ${Math.abs(gap) < 0.05 ? "best, but only just" : "best"}: ${f2s(a0.s.sg.TOTAL)} strokes gained a round against ${f2s(b0.s.sg.TOTAL)} for ${b0.name}${live.length > 2 ? ", the next best" : ""}. ${sureWords(a0.s.rounds, b0.s.rounds)}`.trim(), `${f.sum} ${f.lines.join(" ")}`] } };
       })(),
       usage: lastUsage?.rows ? { cols: lastUsage.cols, rows: lastUsage.rows } : null,
       notes: ["Strokes gained scores every shot against the baseline in the data: + means strokes gained, \u2212 strokes lost. A round\u2019s total is the sum of its shots; the numbers here are averages a round.",

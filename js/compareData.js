@@ -130,14 +130,11 @@ export function confidence(a, b) {
 /** (update 222) how sure the gap between two sets of rounds is, in plain words
  */
 export function sureWords(a, b) {
+  // (update 240) no labels on the gap ("clear", "very likely real", "probably real"): only a warning when there are
+  // too few rounds to read anything into it
   const na = a?.length || 0, nb = b?.length || 0;
   if (na < 3 || nb < 3) return `There are too few rounds (${na} and ${nb}) to say whether that\u2019s real yet.`;
-  const c = confidence(a, b), az = Math.abs(c.z);
-  if (az >= 2.5) return `That gap is clear: far bigger than round-to-round luck (${na} and ${nb} rounds).`;
-  const swing = Math.max(sd(a), sd(b)); // (update 237: no "rounds needed" line)
-  if (az >= 2) return `That gap is very likely real (${na} and ${nb} rounds).`;
-  if (az >= 1.6) return `That gap is probably real, but not certain yet (${na} and ${nb} rounds).`;
-  void swing; return ""; // (update 239: no "could be luck")
+  return "";
 }
 /** Strokes gained by distance (per category), a round or a shot: { cat: [{ dist, values: [per selection], w: [...] }] } */
 export function distanceProfile(sets, per = "round") {

@@ -1271,9 +1271,7 @@ export function sgDashboard(container, opts) {
     }
     // the field: rank among the players ranked; "All Players": the players compared (Top N)
     const ranked = rankedField(slicedField).filter((p) => p.key !== me?.key);
-    const cmp = topPlayers(slicedField).filter((p) => p.key !== me?.key);
     const fieldMaps = ranked.map((p) => rowVals(p.rounds, cat));
-    const cmpMaps = cmp.map((p) => rowVals(p.rounds, cat));
     const avg = (maps, k) => { const v = maps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
     const rankOfRow = (k, v, higher) => { if (v == null || higher == null) return null; const vs = fieldMaps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
     // trend: the last 10 rounds against the 10 before (fewer: half and half, at least 3 each)
@@ -1288,14 +1286,18 @@ export function sgDashboard(container, opts) {
       for (const { rd, m } of perRd) { const v = m.get(row.key); if (v == null || !Number.isFinite(v)) continue; if (row.key.startsWith("s:") && !(rd.obs || []).some((o) => o.v != null)) continue; if (!best || (row.higher ? v > best.v : v < best.v)) best = { v, rd }; }
       return best;
     };
-    // (update 231) against a rank (picked above the table): each value less the value of the player ranked #N in that row
+    // (update 240) against a rank (picked above the table): the player ranked #N overall (SG: Total a round in this
+    // selection, not counting the player on screen), every row from that one player: #1 is the same golfer all the way down
     const vsN = st.vsRank ? Number(st.vsRank) : null;
-    const nthOf = (k, higher) => { const vs = fieldMaps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)).sort((a, b) => (higher === false ? a - b : b - a)); return vs.length ? vs[Math.min(vsN, vs.length) - 1] : null; };
-    const relNow = !!vsN;
+    const refP = vsN ? (() => { const byTot = ranked.map((p) => ({ p, t: rowVals(p.rounds, "").get("c:TOTAL") })).filter((x) => x.t != null && Number.isFinite(x.t)).sort((a, b) => b.t - a.t); return byTot.length ? byTot[Math.min(vsN, byTot.length) - 1].p : null; })() : null;
+    const refMap = refP ? rowVals(refP.rounds, cat) : null;
+    // no rank picked: each stat coloured against the player's own career average (every round of theirs)
+    const careerMap = me?.rounds?.length ? rowVals(me.rounds, cat) : null;
+    const relNow = !!refMap;
     const tr = [];
     for (const row of R) {
       if (row.grp) { tr.push(el("tr", { class: "cmp-grp" }, el("td", { colspan: 4 }, row.grp))); continue; }
-      const v = meV.get(row.key) ?? null, fAvg = vsN ? nthOf(row.key, row.higher) : avg(cmpMaps, row.key);
+      const v = meV.get(row.key) ?? null, fAvg = refMap ? refMap.get(row.key) ?? null : careerMap?.get(row.key) ?? null;
       const good = (d) => (d == null || row.higher == null || Math.abs(d) < 1e-9 ? "" : (row.higher ? d > 0 : d < 0) ? "pos" : "neg");
       const shown = relNow && v != null && fAvg != null ? (row.fmt === sgF || row.fmt === sg3 ? row.fmt(v - fAvg) : `${v - fAvg >= 0 ? "+" : "−"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(v - fAvg))}`) : row.fmt(v);
       const vCls = relNow && v != null && fAvg != null ? (row.higher == null ? "" : good(v - fAvg)) : row.tone ? sgTone(v) : good(v != null && fAvg != null ? v - fAvg : null);
@@ -1313,9 +1315,13 @@ export function sgDashboard(container, opts) {
     return [
       el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? `Each value less the value of the player ranked #${vsN} (or the last one ranked, in a smaller field)` : "" }, relNow ? `Vs #${vsN}` : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)` : "" }, relNow ? `Vs #${vsN} ${refP.label || ""}`.trim() : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
         el("tbody", {}, tr),
       ])),
+      // (update 240) what the colours mean
+      el("p", { class: "muted small sg-full-note" }, relNow
+        ? `Each value is the difference from ${refP.label || "that player"}, ranked #${vsN} overall (SG: Total a round in this selection); every row is the same golfer. Green: better than them; red: worse. Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap the rank comparison again to see the player\u2019s own values.`
+        : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a rank comparison above to see each stat against the player ranked there overall.`),
     ];
   }
   /* ------------------------------ category detail ------------------------------ */
