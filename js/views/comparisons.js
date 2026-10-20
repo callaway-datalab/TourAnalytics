@@ -120,11 +120,12 @@ export async function render(main) {
   const tourCache = new Map();
   // (update 244) Leave out: tournaments (a year's playing of one), date ranges and round numbers, taken out of every
   // player's rounds everywhere on the page (every selection, leaderboard, table and report)
-  const excl = { events: new Map(), ranges: [], rounds: new Set() }; // events: "event|year" → label
-  const exclOn = () => excl.events.size || excl.ranges.length || excl.rounds.size;
-  const exclKey = () => `${[...excl.events.keys()].sort().join(";")}#${excl.ranges.map((r) => `${r.from}~${r.to}`).join(";")}#${[...excl.rounds].sort().join(",")}`;
+  // (update 248) evRounds: one round of one tournament ("event|year|3" → "2026 BMW Championship R3")
+  const excl = { events: new Map(), ranges: [], rounds: new Set(), evRounds: new Map() }; // events: "event|year" → label
+  const exclOn = () => excl.events.size || excl.ranges.length || excl.rounds.size || excl.evRounds.size;
+  const exclKey = () => `${[...excl.events.keys()].sort().join(";")}#${excl.ranges.map((r) => `${r.from}~${r.to}`).join(";")}#${[...excl.rounds].sort().join(",")}#${[...excl.evRounds.keys()].sort().join(";")}`;
   const dk10 = (d) => String(d || "").slice(0, 10);
-  const leftOut = (rd) => excl.events.has(`${rd.event}|${yr(rd)}`) || excl.rounds.has(String(rd.roundNo || "")) || excl.ranges.some((r) => (!r.from || dk10(rd.date) >= r.from) && (!r.to || dk10(rd.date) <= r.to));
+  const leftOut = (rd) => excl.events.has(`${rd.event}|${yr(rd)}`) || excl.evRounds.has(`${rd.event}|${yr(rd)}|${rd.roundNo || ""}`) || excl.rounds.has(String(rd.roundNo || "")) || excl.ranges.some((r) => (!r.from || dk10(rd.date) >= r.from) && (!r.to || dk10(rd.date) <= r.to));
   const roundsOfKey = (k) => {
     const raw = rawOfKey(k);
     if (!tourSel.size && !exclOn()) return raw;
@@ -147,12 +148,13 @@ export async function render(main) {
       el("div", { class: "cmp-chips" }, [pill(!tourSel.size, "All tours", null, () => { tourSel = new Set(); redo(); }),
         ...[...counts].sort((a, b) => b[1] - a[1]).map(([t, n]) => pill(tourSel.has(t), t, n, () => { tourSel.has(t) ? tourSel.delete(t) : tourSel.add(t); redo(); }))])]);
   }
-  let exclOpen = false, exclQ = "";
+  let exclOpen = false, exclQ = "", exclBy = "events";
   function leaveOutBar() {
     if (!player || !data) return null;
     const redo = () => { allMemo = null; if (data) opts = options(allRounds()); draw(); };
     const chips = [
       ...[...excl.events].map(([k, l]) => [l, () => excl.events.delete(k)]),
+      ...[...excl.evRounds].map(([k, l]) => [l, () => excl.evRounds.delete(k)]),
       ...excl.ranges.map((r, i) => [`${r.from ? dateTxt(r.from) : "Start"} \u2013 ${r.to ? dateTxt(r.to) : "now"}`, () => excl.ranges.splice(i, 1)]),
       ...[...excl.rounds].sort().map((n) => [`Round ${n}s`, () => excl.rounds.delete(n)]),
     ].map(([l, off]) => { const b = el("button", { type: "button", class: "cmp-chip small cmp-excl-chip", title: "Put it back" }, [l, el("span", { class: "cmp-excl-x", "aria-hidden": "true" }, " \u2715")]); b.addEventListener("click", () => { off(); redo(); }); return b; });
@@ -167,16 +169,29 @@ export async function render(main) {
       const list = [...evs.values()].filter((e) => !excl.events.has(e.k) && words.every((w) => e.label.toLowerCase().includes(w))).sort((a, b) => b.d.localeCompare(a.d)).slice(0, 14);
       const q = el("input", { type: "search", class: "cmp-chip-search cmp-excl-q", placeholder: "Find a tournament (e.g. 2025 Players)\u2026", value: exclQ, autocomplete: "off" });
       q.addEventListener("input", () => { const pos = q.selectionStart; exclQ = q.value; draw(); const again = root.querySelector(".cmp-excl-q"); if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch {} } });
-      const evChips = list.map((e) => { const b = el("button", { type: "button", class: "cmp-chip small" }, [e.label, el("span", { class: "cmp-chip-n" }, `${e.n} rds`)]); b.addEventListener("click", () => { excl.events.set(e.k, e.label); redo(); }); return b; });
+      const evChips = exclBy === "rounds"
+        ? list.map((e) => {
+          // (update 248) one round of one tournament: R3 at the BMW, R4 at the Travelers
+          const [ev, y] = e.k.split("|");
+          const rns = [...new Set(inPlay().flatMap((p) => sgRounds(rawOfKey(p.key)).filter((rd) => rd.event === ev && yr(rd) === y).map((rd) => String(rd.roundNo || ""))))].filter(Boolean).sort();
+          return el("span", { class: "cmp-excl-ev" }, [el("span", { class: "cmp-excl-evl" }, e.label), ...rns.map((n) => {
+            const k = `${ev}|${y}|${n}`, on = excl.evRounds.has(k);
+            const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}`, "aria-pressed": String(on), title: `Leave out round ${n} of the ${e.label}` }, `R${n}`);
+            b.addEventListener("click", () => { on ? excl.evRounds.delete(k) : excl.evRounds.set(k, `${e.label} R${n}`); redo(); });
+            return b;
+          })]);
+        })
+        : list.map((e) => { const b = el("button", { type: "button", class: "cmp-chip small" }, [e.label, el("span", { class: "cmp-chip-n" }, `${e.n} rds`)]); b.addEventListener("click", () => { excl.events.set(e.k, e.label); redo(); }); return b; });
+      const bySeg = el("div", { class: "cmp-seg small" }, [["events", "Whole tournaments"], ["rounds", "Single rounds"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${exclBy === v ? " on" : ""}` }, l); b.addEventListener("click", () => { exclBy = v; draw(); }); return b; }));
       const from = el("input", { type: "date", class: "cmp-date", "aria-label": "From" }), to = el("input", { type: "date", class: "cmp-date", "aria-label": "To" });
       const addR = el("button", { type: "button", class: "btn ghost small" }, "Leave out these dates");
       addR.addEventListener("click", () => { if (!from.value && !to.value) { flashNote("Pick a start or end date (or both)."); return; } excl.ranges.push({ from: from.value || null, to: to.value || null }); redo(); });
       const rnds = [...new Set(inPlay().flatMap((p) => sgRounds(rawOfKey(p.key)).map((rd) => String(rd.roundNo || "")).filter(Boolean)))].sort((a, b) => a - b);
       const rChips = rnds.map((n) => { const on = excl.rounds.has(n); const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}` }, `Round ${n}s`); b.addEventListener("click", () => { on ? excl.rounds.delete(n) : excl.rounds.add(n); redo(); }); return b; });
       editor = el("div", { class: "cmp-excl-edit" }, [
-        el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Tournaments"), q, el("div", { class: "cmp-chips" }, evChips.length ? evChips : [el("span", { class: "muted small" }, "Nothing matches.")])]),
+        el("div", { class: "cmp-chip-group" }, [el("div", { class: "cmp-excl-th" }, [el("p", { class: "cmp-chip-gt" }, "Tournaments"), bySeg]), q, el("div", { class: `cmp-chips${exclBy === "rounds" ? " cmp-excl-evs" : ""}` }, evChips.length ? evChips : [el("span", { class: "muted small" }, "Nothing matches.")])]),
         el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Dates"), el("div", { class: "cmp-custom" }, [el("label", { class: "cmp-field" }, [el("span", {}, "From"), from]), el("label", { class: "cmp-field" }, [el("span", {}, "To"), to]), addR])]),
-        rnds.length > 1 ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Round numbers"), el("div", { class: "cmp-chips" }, rChips)]) : null,
+        rnds.length > 1 ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, "Round numbers (every tournament)"), el("div", { class: "cmp-chips" }, rChips)]) : null,
       ]);
     }
     return el("div", { class: `panel cmp-tourbar cmp-exclbar${chips.length ? " set" : ""}` }, [
@@ -385,7 +400,7 @@ export async function render(main) {
     draw();
   }
   // (update 211/212) no player: back to the very start (for staff, "Compare everyone"). Start over does this too.
-  function clearAll(keepPicks = false) { askRes = null; askErr = ""; excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear(); exclOpen = false; placeDim = null; player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; pb.pair = null; pb.seasons.clear(); if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
+  function clearAll(keepPicks = false) { askRes = null; askErr = ""; excl.evRounds.clear(); excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear(); exclOpen = false; placeDim = null; player = null; data = null; chosen = []; productsOnly = false; sels = []; staged = new Map(); touched = false; g = { open: true }; loadingFor = null; h2h = false; pb.brands.clear(); pb.models.clear(); pb.groups = []; pb.q = ""; pb.pair = null; pb.seasons.clear(); if (!keepPicks) startPicks = []; ls.set(LS_PLAYER, ""); draw(); window.scrollTo(0, 0); }
   /* (update 214) the start screen: who to look at. Everyone, one player, several, or a player (or several) and everyone.
      Next goes on to the question that fits: one player or everyone → what to compare; several → how to compare them. */
   let startPicks = []; // [{ key, label }] (EVERY = everyone in the data)
@@ -487,7 +502,7 @@ export async function render(main) {
     if (!ps.length && !everyStartOk()) { askBusy = ""; askErr = lite ? "Everyone needs a computer: it\u2019s every player\u2019s rounds. Name a player instead." : "Name a player."; draw(); return; }
     askBusy = "Loading the rounds\u2026"; draw();
     // the players, then their rounds
-    excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear();
+    excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear(); excl.evRounds.clear();
     if (ps.length) {
       player = { key: ps[0].key, label: ps[0].label }; productsOnly = false; staged = new Map();
       chosen = ask.everyone ? [...ps, { key: EVERY, label: "Everyone" }] : [...ps];
@@ -884,7 +899,7 @@ export async function render(main) {
     const who = g.who === "everyone" ? "Everyone in the data" : g.who === "several" ? inPlay().map((p) => p.label).join(", ") : player.label;
     const what = g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", formev: "the latest events against the ones before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
       : g.what === "gear" ? "products" : g.what === "place" ? "where and when they play best" : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
-    return `${who} · ${what}`;
+    return `${who} · ${what || sels.map((x) => x.name).join(" vs ") || "your picks"}`; // (update 248: from Ask AI there's no question answered: the picks)
   }
   function guideBox() {
     if (!g.open) {
@@ -1027,12 +1042,12 @@ export async function render(main) {
     if (br === "gear") modes = modes.filter(([m]) => m === "product");
     if (br === "place") modes = modes.filter(([m]) => m === "filters");
     if (!modes.some(([m]) => m === mode)) mode = br === "gear" ? "product" : br === "place" ? "filters" : "windows";
-    const TT = [["season", "Seasons", "Each season, the last one, or the whole career."], ["rounds", "Rounds", "Recent form against the rounds or events before, or Round 1s against Round 4s."], ["months", "Months", "The time of year: every year, or one season\u2019s months."], ["dates", "Date range", "Your own dates (and round numbers)."]];
-    const tabOn = (t) => (t === "dates" ? mode === "custom" : mode === "windows" && winTab === t);
+    const TT = [["season", "Seasons", "Each season, the last one, or the whole career."], ["rounds", "Rounds", "Recent form against the rounds or events before, or Round 1s against Round 4s."], ["months", "Months", "The time of year: every year, or one season\u2019s months."], ["dates", "Date range", "Your own dates (and round numbers)."], ["places", "Tournaments / Courses", "Open a filter, pick from it, and the other filters only offer what still fits."]];
+    const tabOn = (t) => (t === "dates" ? mode === "custom" : t === "places" ? mode === "filters" : mode === "windows" && winTab === t);
     const tabs = br === "time"
       ? el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, TT.map(([t, l]) => {
         const b = el("button", { type: "button", role: "tab", class: `cmp-mode${tabOn(t) ? " on" : ""}`, "aria-selected": String(tabOn(t)) }, l);
-        b.addEventListener("click", () => { if (tabOn(t)) return; if (t === "dates") mode = "custom"; else { mode = "windows"; winTab = t; } chipFilter = ""; staged = new Map(); draw(); });
+        b.addEventListener("click", () => { if (tabOn(t)) return; if (t === "dates") mode = "custom"; else if (t === "places") mode = "filters"; else { mode = "windows"; winTab = t; } chipFilter = ""; staged = new Map(); draw(); });
         return b;
       }))
       : modes.length > 1 ? el("div", { class: "cmp-modes", role: "tablist", "aria-label": "Compare by" }, modes.map(([m, l]) => {
@@ -1040,7 +1055,7 @@ export async function render(main) {
         b.addEventListener("click", () => { if (mode === m) return; mode = m; chipFilter = ""; staged = new Map(); draw(); });
         return b;
       })) : null;
-    if (br === "time" && mode !== "custom") mode = "windows";
+    if (br === "time" && mode !== "custom" && mode !== "filters") mode = "windows";
     const hint = el("p", { class: "cmp-hint" }, br === "time" ? (TT.find(([t]) => tabOn(t)) || TT[1])[2] : modes.find(([m]) => m === mode)[2]);
     const timeTabs = br === "time";
     let body;
@@ -1185,12 +1200,16 @@ export async function render(main) {
         const shown = all.filter(([v]) => !t || lab(v).toLowerCase().includes(t));
         const search = all.length > 12 ? el("input", { type: "search", class: "cmp-chip-search", placeholder: `Find a ${l.toLowerCase()}\u2026`, value: fx.q }) : null;
         search?.addEventListener("input", () => { const pos = search.selectionStart; fx.q = search.value; redraw(); const a = box.querySelector(".cmp-chip-search"); if (a) { a.focus(); try { a.setSelectionRange(pos, pos); } catch {} } });
-        opts_ = el("div", { class: "cmp-fx-opts" }, [search, el("div", { class: "cmp-chips" }, shown.slice(0, t ? 200 : 40).map(([v, n]) => {
+        // (update 248) lots to pick from: Select all (the ones showing, so a search narrows it first) and Clear
+        const showVals = shown.slice(0, t ? 200 : 40).filter(([, n]) => n).map(([v]) => v);
+        const allOn = showVals.length && showVals.every((v) => fx[k].has(v));
+        const selAll = showVals.length > 2 ? (() => { const b = el("button", { type: "button", class: "cmp-chip cmp-selall" }, allOn ? "Clear" : t ? "Select all these" : "Select all"); b.addEventListener("click", () => { for (const v of showVals) allOn ? fx[k].delete(v) : fx[k].add(v); redraw(); }); return b; })() : null;
+        opts_ = el("div", { class: "cmp-fx-opts" }, [search, el("div", { class: "cmp-chips" }, [selAll, ...shown.slice(0, t ? 200 : 40).map(([v, n]) => {
           const on = fx[k].has(v);
           const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}${!n && !on ? " off" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, lab(v), el("span", { class: "cmp-chip-n" }, `${n} rd${n === 1 ? "" : "s"}`)]);
           b.addEventListener("click", () => { on ? fx[k].delete(v) : fx[k].add(v); redraw(); });
           return b;
-        })), !t && shown.length > 40 ? el("p", { class: "muted small" }, `Showing 40 of ${shown.length}: type to find others.`) : null]);
+        })]), !t && shown.length > 40 ? el("p", { class: "muted small" }, `Showing 40 of ${shown.length}: type to find others.`) : null]);
       }
       // what the picks make, and adding it
       const picked = facets.filter(([k]) => fx[k].size);
@@ -1289,7 +1308,46 @@ export async function render(main) {
     if (f.years?.length > 1) return f.years.map((y) => ({ key: `y:${y}`, name: y, f: { ...f, years: [y] } }));
     return null;
   }
-  const editable = (sel) => !!(membersOf(sel) || sel.f?.clubs?.length || sel.f?.balls?.length);
+  // (update 248) a time window (the last 12 rounds, the 12 before): its number can be changed
+  const winOf = (sel) => { const f = sel?.f || {}; return f.last ? ["last", f.last] : f.prev ? ["prev", f.prev] : f.lastEv ? ["lastev", f.lastEv] : f.prevEv ? ["prevev", f.prevEv] : null; };
+  const winSel = (kind, n) => { const ev = kind === "lastev" || kind === "prevev", u = ev ? "events" : "rounds"; return { id: `windows:${kind}:${n}`, name: kind.startsWith("last") ? `Last ${n} ${u}` : `The ${n} ${u} before that`, f: windowFilter(`${kind}:${n}`), mode: "windows", values: [`${kind}:${n}`] }; };
+  const editable = (sel) => !!(winOf(sel) || membersOf(sel) || sel.f?.clubs?.length || sel.f?.balls?.length);
+  function openWindowEdit(id) {
+    const sel = sels.find((s0) => s0.id === id), w = winOf(sel);
+    if (!w) return;
+    const [kind, n0] = w, ev = kind === "lastev" || kind === "prevev", unit = ev ? "events" : "rounds";
+    const twin = kind.startsWith("last") ? kind.replace("last", "prev") : kind.replace("prev", "last");
+    const pair = sels.find((s0) => { const w2 = winOf(s0); return w2 && w2[0] === twin && w2[1] === n0; });
+    const have = ev ? opts.events : opts.total;
+    const inp = el("input", { type: "number", min: 1, max: 999, class: "cmp-own-n cmp-win-n", value: String(n0), "aria-label": `How many ${unit}` });
+    const both = pair ? el("input", { type: "checkbox", checked: true }) : null;
+    const quick = [5, 10, 12, 20, 40].filter((q) => (kind.startsWith("last") ? q <= have : 2 * q <= have)).map((q) => { const b = el("button", { type: "button", class: `cmp-chip small${q === n0 ? " on" : ""}` }, String(q)); b.addEventListener("click", () => { inp.value = String(q); }); return b; });
+    const save = el("button", { type: "button", class: "btn cmp-add" }, "Save");
+    const cancel = el("button", { type: "button", class: "btn ghost" }, "Cancel");
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Change the window" }, el("div", { class: "gx-pop wl-pop cmp-rd-pop cmp-win-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Change the window"), el("h2", {}, [el("i", { class: "cmp-dot", style: `--c:${sel.color}` }), sel.name]), el("p", { class: "gx-sub" }, `They have ${have} ${unit} here.`)]), close]),
+      el("div", { class: "wl-pop-body cmp-ge" }, [
+        el("label", { class: "cmp-field" }, [el("span", {}, kind.startsWith("last") ? `Last` : "The"), inp, el("span", {}, kind.startsWith("last") ? unit : `${unit} before that`)]),
+        el("div", { class: "cmp-chips" }, quick),
+        pair ? el("label", { class: "cmp-combine" }, [both, el("span", {}, `Change \u201c${pair.name}\u201d to match`)]) : null,
+        el("div", { class: "cmp-guide-row" }, [save, cancel]),
+      ])]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+    const onKey = (e) => { if (e.key === "Escape") shut(); if (e.key === "Enter" && e.target === inp) save.click(); };
+    close.addEventListener("click", shut); cancel.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    save.addEventListener("click", () => {
+      const n = Math.round(Number(inp.value));
+      if (!n || n < 1) { inp.focus(); return; }
+      const chg = both?.checked && pair;
+      if (kind.startsWith("last") ? n > have : 2 * n > have) { flashNote(`They have ${have} ${unit} here.`); return; }
+      if (chg && 2 * n > have) { flashNote(`Only ${have} ${unit} here: ${Math.floor(have / 2)} at most, so there are that many before them.`); return; }
+      shut();
+      sels = sels.map((s0) => (s0.id === id ? { ...s0, ...winSel(kind, n) } : chg && s0.id === pair.id ? { ...s0, ...winSel(twin, n) } : s0));
+      touched = true; draw();
+    });
+    document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll"); document.body.appendChild(overlay); inp.focus(); inp.select();
+  }
   function insideSection(items) {
     const live = items.filter((it) => it.s.n);
     const groups = live.map((it) => ({ it, sel: sels.find((s0) => s0.id === (it.base || it.id)) })).map((x) => ({ ...x, mem: membersOf(x.sel) })).filter((x) => x.mem);
@@ -1408,8 +1466,8 @@ export async function render(main) {
       const sid = it.base || it.id, on = joinPick.has(sid);
       // (update 246) a group (several models, balls, seasons or picks): open it to drop some or add more
       const selNow = sels.find((s0) => s0.id === sid);
-      const ed = selNow && editable(selNow) ? el("button", { type: "button", class: "cmp-key-ed", title: "Open this group: drop some, add more", "aria-label": `Edit ${selNow.name}` }, "\u270e") : null;
-      ed?.addEventListener("click", (e) => { e.stopPropagation(); openGroupEdit(sid); });
+      const ed = selNow && editable(selNow) ? el("button", { type: "button", class: "cmp-key-ed", title: winOf(selNow) ? "Change how many" : "Open this group: drop some, add more", "aria-label": `Edit ${selNow.name}` }, "\u270e") : null;
+      ed?.addEventListener("click", (e) => { e.stopPropagation(); if (winOf(selNow)) openWindowEdit(sid); else openGroupEdit(sid); });
       const key = el("span", { class: `cmp-key cmp-key-pick${on ? " picked" : ""}`, style: `--c:${it.color}`, title: `${it.full || it.name} (tap to pick it for combining)`, role: "button", tabindex: "0", "aria-pressed": String(on) }, [el("i", { "aria-hidden": "true" }), on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, el("span", {}, it.name), el("span", { class: "cmp-key-n" }, `${it.s.n}`), x]);
       if (ed) key.insertBefore(ed, key.querySelector(".cmp-key-x"));
       const flip = (e) => { if (e.target.closest(".cmp-key-x") || e.target.closest(".cmp-key-ed")) return; on ? joinPick.delete(sid) : joinPick.add(sid); draw(); };
