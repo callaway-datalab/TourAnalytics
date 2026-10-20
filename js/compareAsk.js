@@ -62,9 +62,12 @@ export function readAsk(text, { players = [], maxYear = null } = {}) {
   const sides = t.split(SPLIT).map((s) => s.trim().replace(/[\s.!?,;:]+$/, "")).filter(Boolean);
   const kinds = KINDS.filter(([re]) => re.test(t)).map(([, k]) => k);
   const together = /\b(together|combined|as one|as a group|pooled|all in one)\b/.test(t);
+  // (update 247) a part of the game: only its strokes gained and stats ("his approach game", "putting", "short game")
+  const cats = [[/\bapproach(?:es| shots?| play| game)?\b|\biron play\b/, "APP"], [/\boff[- ]the[- ]tee\b|\bdriving\b|\btee shots?\b|\btee ball\b/, "OTT"],
+    [/\baround[- ]the[- ]green\b|\bshort game\b|\bchipping\b|\bpitching\b|\bwedge play\b/, "ARG"], [/\bputting\b|\bon the greens?\b|\bwith the putter\b/, "PUTT"]].filter(([re]) => re.test(t)).map(([, c]) => c);
   const lm = /\blast\s+(\d+)\s+(rounds?|events?|tournaments?)\b/.exec(t);
   const last = lm ? { n: Number(lm[1]), unit: /round/.test(lm[2]) ? "rounds" : "events" } : null;
-  return { players: [...found].map(([key, label]) => ({ key, label })), everyone, years, sides: sides.length > 1 ? sides : [t], excl, exclRounds, together, last, kinds, text: t };
+  return { cats, players: [...found].map(([key, label]) => ({ key, label })), everyone, years, sides: sides.length > 1 ? sides : [t], excl, exclRounds, together, last, kinds, text: t };
 }
 
 /**

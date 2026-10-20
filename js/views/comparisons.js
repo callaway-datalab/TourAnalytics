@@ -502,6 +502,7 @@ export async function render(main) {
     for (const [k, l] of evHit) excl.events.set(k, l);
     for (const n of ask.exclRounds) excl.rounds.add(n);
     allMemo = null; opts = options(allRounds());
+    incCats = new Set(ask.cats); incDists = new Set(); // (update 247: "his approach game": only approach shots count)
     const missed = ask.excl.filter((ph) => ![...matchEvents([ph], [...evs.values()]).keys()].length);
     // what to compare: clubs and balls, else seasons or recent form
     const catalog = products(allRounds()).map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
@@ -544,16 +545,28 @@ export async function render(main) {
     const read = [];
     const who = inPlay().map((p) => p.label);
     read.push(`**Who:** ${who.join(", ")}`);
+    const catNames = Object.fromEntries(CATEGORIES);
+    const only = [...incCats].map((c) => catNames[c]).filter(Boolean);
+    if (only.length) read.push(`**Only:** ${only.join(" + ")} (strokes gained from those shots)`);
     read.push(`**Compared:** ${sels.map((x) => x.name).join("  \u00b7  ")}${askRes.dropped ? ` (and ${askRes.dropped} more that didn\u2019t fit)` : ""}`);
     if (exclOn()) read.push(`**Left out:** ${[...excl.events.values(), ...[...excl.rounds].map((n) => `Round ${n}s`)].join(", ")}`);
     if (askRes.empties?.length) read.push(`**No rounds with:** ${askRes.empties.join(", ")}`);
     if (askRes.missed.length) read.push(`**Couldn\u2019t find to leave out:** ${askRes.missed.join(", ")}`);
+    const what = only.length ? `${only.join(" + ")}: ` : "";
     let answer = "Nothing to compare: none of these had rounds.";
-    if (live.length === 1) answer = `**${live[0].name}**: **${fmtSG(live[0].s.sg.TOTAL)}** strokes gained a round over ${live[0].s.n} rounds. There\u2019s only one, so nothing to compare it with.`;
-    if (live.length >= 2) {
+    if (live.length === 1) answer = `${what}**${live[0].name}**: **${fmtSG(live[0].s.sg.TOTAL)}** strokes gained a round over ${live[0].s.n} rounds. There\u2019s only one, so nothing to compare it with.`;
+    // (update 247) two stretches of time (the last 12 rounds and the 12 before): told as a trend, latest first
+    const dk0 = (v) => String(v || "").slice(0, 10);
+    const trend = live.length === 2 && live.every((it) => it.s.from && it.s.to) && (dk0(live[0].s.to) <= dk0(live[1].s.from) || dk0(live[1].s.to) <= dk0(live[0].s.from));
+    if (trend) {
+      const [late, early] = [...live].sort((a, b) => dk0(b.s.to).localeCompare(dk0(a.s.to))), d = late.s.sg.TOTAL - early.s.sg.TOTAL;
+      const f = fitStory(late, early);
+      answer = `${what}**${late.name}**: **${fmtSG(late.s.sg.TOTAL)}** strokes gained a round over ${late.s.n} rounds, ${Math.abs(d) < 0.05 ? "**about the same as**" : `**${d > 0 ? "up" : "down"} ${Math.abs(d).toFixed(2)}** from`} ${early.name.toLowerCase()} (${fmtSG(early.s.sg.TOTAL)}). ${f.sum}`;
+      if (late.s.n < FEW || early.s.n < FEW) answer += " Few rounds, so treat it as a hint.";
+    } else if (live.length >= 2) {
       const o = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), a = o[0], b = o[1];
       const f = fitStory(a, b);
-      answer = `**${a.name}** was best: **${fmtSG(a.s.sg.TOTAL)}** strokes gained a round over ${a.s.n} rounds, **${(a.s.sg.TOTAL - b.s.sg.TOTAL).toFixed(2)}** ahead of ${b.name} (${fmtSG(b.s.sg.TOTAL)}, ${b.s.n} rounds).${o.length > 2 ? ` Then: ${o.slice(2).map((x) => `${x.name} ${fmtSG(x.s.sg.TOTAL)}`).join(", ")}.` : ""} ${f.sum}`;
+      answer = `${what}**${a.name}** was best: **${fmtSG(a.s.sg.TOTAL)}** strokes gained a round over ${a.s.n} rounds, **${(a.s.sg.TOTAL - b.s.sg.TOTAL).toFixed(2)}** ahead of ${b.name} (${fmtSG(b.s.sg.TOTAL)}, ${b.s.n} rounds).${o.length > 2 ? ` Then: ${o.slice(2).map((x) => `${x.name} ${fmtSG(x.s.sg.TOTAL)}`).join(", ")}.` : ""} ${f.sum}`;
       if (a.s.n < FEW || b.s.n < FEW) answer += " Few rounds, so treat it as a hint.";
     }
     const x = el("button", { type: "button", class: "gx-pop-x cmp-askres-x", "aria-label": "Close" }, "\u2715");
