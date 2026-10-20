@@ -211,9 +211,10 @@ export async function render(main, { flash, routeId }) {
       let pend = null;
       const onPlayer = (k, p) => { if (p) rowsCache.set(`${ds.id}|${k}`, p); loaded.add(k); if (!pend) pend = setTimeout(() => { pend = null; advance(); }, 120); };
       try {
-        const { players } = await loadDatasetPlayers(ds.id, { ds, order, onPlayer });
+        const { players, failed } = await loadDatasetPlayers(ds.id, { ds, order, onPlayer });
+        if (failed?.length) job.partial = true; // (some players' rows didn't load: nothing is published from this)
         for (const [k, p] of players) { if (p) rowsCache.set(`${ds.id}|${k}`, p); loaded.add(k); }
-      } catch (err) { console.warn(err); for (const k of keys) loaded.add(k); }
+      } catch (err) { console.warn(err); job.partial = true; for (const k of keys) loaded.add(k); }
       clearTimeout(pend);
       // everyone: every stage, then anyone left over
       for (let i = 0; i < keys.length; i++) { prepOne(keys[i]); if (i % 40 === 39) await new Promise((res) => setTimeout(res, 0)); }
@@ -223,7 +224,7 @@ export async function render(main, { flash, routeId }) {
       preparedCache.set(pk, keys.map((k) => job.prepared.get(k)).filter(Boolean));
       job.done = true; finishFirst();
       job.onUpdate?.();
-      publishIfStale(ds);
+      if (!job.partial) publishIfStale(ds, [...job.prepared.values()].map((p) => ({ ...p, label: displayLabels.get(p.key) || p.label || p.key.replace(/^c_/, "") })));
     })().catch((err) => { console.warn(err); finishFirst(); });
     return job;
   }
@@ -390,12 +391,13 @@ export async function render(main, { flash, routeId }) {
   }
 
   // Keep the players' rankings (the published per-round summary) in step with this file.
-  async function publishIfStale(ds) {
+  async function publishIfStale(ds, players = null) {
     if (loadNote) return; // (not while some players' rows are missing: the shared summary would leave them out)
     try {
       const uploaded = ds.uploadedAt?.toMillis?.() ?? 0;
       const src = await fieldStatsSource(ds.id);
-      const asPublished = () => fieldPlayers.map((p) => ({ key: p.key, name: p.label, rounds: p.rounds }));
+      // (update 243) the players given (the staged loading's, for this file), else the ones on screen
+      const asPublished = () => (players || fieldPlayers).map((p) => ({ key: p.key, name: p.label, rounds: p.rounds }));
       if (src === null || src < uploaded) await publishFieldStats(ds.id, buildFieldSummary(asPublished()), Date.now());
       // the per-round lie / distance detail for phones and players' portals (Cloud Storage)
       const dsrc = await detailSource(ds.id);

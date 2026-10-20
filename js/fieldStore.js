@@ -18,7 +18,7 @@ const SDK = "https://www.gstatic.com/firebasejs/12.12.1/firebase-storage.js";
 const cfg = window.PORTAL_CONFIG || {};
 // the default bucket of a project set up on Blaze: <project id>.firebasestorage.app (config can name another)
 const BUCKET = cfg.fieldDetailBucket || `${cfg.firebase?.projectId}.firebasestorage.app`;
-const FORMAT = 1;
+const FORMAT = 2; // (update 243: each shot's club model and ball kept, for the club and ball breakdowns)
 
 let storageP = null;
 function storage() {
