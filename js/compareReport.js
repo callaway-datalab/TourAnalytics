@@ -29,7 +29,7 @@ export function buildComparePdf(r) {
   const footer = () => { d.line(M, H - 34, M + W, H - 34, { color: P.hair, width: 0.5 }); cap("Tour Analytics  ·  Comparison Report", M, H - 20, P.faint); cap(`Page ${page}`, M + W, H - 20, P.faint, "right"); };
   const newPage = () => { footer(); d.addPage(); page++; y = 46; };
   const need = (h) => { if (y + h > H - 50) newPage(); };
-  const section = (kicker, title, room = 60) => { y += 12; need(40 + room); d.rect(M, y - 7, 3, 9, { fill: P.gold }); cap(kicker, M + 9, y, P.gold); y += 23; d.text(title, M, y, { size: 17, bold: true, color: P.ink }); y += 14; };
+  const section = (kicker, title, room = 60) => { y += 26; /* (update 238: a little more room between sections) */ need(40 + room); d.rect(M, y - 7, 3, 9, { fill: P.gold }); cap(kicker, M + 9, y, P.gold); y += 23; d.text(title, M, y, { size: 17, bold: true, color: P.ink }); y += 14; };
   const badge = (text, x, yy, fill, color = "#ffffff") => {
     const T = String(text).toUpperCase(), w = textWidth(T, 7, true) + 1.1 * (T.length - 1) + 16;
     d.roundRect(x, yy - 10, w, 15, 7.5, { fill });
@@ -42,6 +42,41 @@ export function buildComparePdf(r) {
     const x0 = v >= 0 ? zx : zx - w, rr = Math.min(h / 2, w / 2);
     d.roundRect(x0, yy, w, h, rr, { fill });
     d.rect(v >= 0 ? zx : zx - Math.min(rr, w), yy, Math.min(rr, w), h, { fill });
+  };
+  /* (update 238) bold for what matters: the selections' names, the strokes-gained numbers, and the key words
+     ("unusually good", "clear", "could still be luck" …). **like this** in a text is bold too. */
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const KEY = ["unusually good", "unusually bad", "better than usual", "worse than usual", "about their usual", "is best", "best overall", "trails the rest", "only just",
+    "clear", "very likely real", "probably real", "could still be luck", "too few rounds", "most consistent", "most up and down", "a hint, not a verdict", "Most of that is"];
+  const emphRe = (() => {
+    const names = [...new Set(sels.map((q) => q.name).filter((n) => n && n.length > 1))].sort((a, b) => b.length - a.length).map(esc);
+    const parts = [...names, "[+\u2212-]\\d+\\.\\d+(?: strokes? a round)?", "\\d+\\.\\d+ strokes? a round", "\\d+(?:\\.\\d+)? (?:better|worse) than", ...KEY.map(esc)];
+    return new RegExp(`\\*\\*(.+?)\\*\\*|(${parts.join("|")})`, "g");
+  })();
+  // a text as words, each bold or not
+  const richWords = (t) => {
+    const out = [], push = (str, b) => { for (const w of str.split(/(\s+)/)) if (w) out.push({ w, b }); };
+    let last = 0;
+    for (const m of String(t).matchAll(emphRe)) { push(t.slice(last, m.index), false); push(m[1] ?? m[2], true); last = m.index + m[0].length; }
+    push(String(t).slice(last), false);
+    return out;
+  };
+  const richWrap = (t, maxW, size) => {
+    const lines = []; let line = [], w = 0;
+    for (const x of richWords(t)) {
+      const ww = textWidth(x.w, size, x.b);
+      if (/^\s+$/.test(x.w)) { if (line.length) { line.push(x); w += ww; } continue; }
+      if (w + ww > maxW && line.length) { while (line.length && /^\s+$/.test(line.at(-1).w)) line.pop(); lines.push(line); line = []; w = 0; }
+      line.push(x); w += ww;
+    }
+    if (line.length) lines.push(line);
+    return lines;
+  };
+  const richLine = (line, x, yy, size, color) => {
+    let cx = x, seg = "", b = null;
+    const flush = () => { if (seg) cx += d.text(seg, cx, yy, { size, bold: b, color: b ? P.ink : color }); seg = ""; };
+    for (const q of line) { if (q.b !== b && !/^\s+$/.test(q.w)) { flush(); b = q.b; } seg += q.w; }
+    flush();
   };
   const ranked = [...sels].sort((a, b) => (b.sg.TOTAL ?? -99) - (a.sg.TOTAL ?? -99));
   const top = ranked[0], second = ranked[1];
@@ -145,13 +180,13 @@ export function buildComparePdf(r) {
 
   /* ---------- the verdict, and the short version ---------- */
   const noteBox = (title, texts, accent, fill, size = 9.5) => {
-    const lines = texts.flatMap((t, i) => [...wrap(t, W - 32, size), ...(i < texts.length - 1 ? [""] : [])]);
+    const lines = texts.flatMap((t, i) => [...richWrap(t, W - 32, size), ...(i < texts.length - 1 ? [[]] : [])]);
     const h = 30 + lines.length * size * 1.42;
     need(h + 8);
     d.roundRect(M, y, W, h, 10, { fill });
     d.roundRect(M, y, 4, h, 2, { fill: accent });
     cap(title, M + 16, y + 17, accent, "left", 7.5);
-    lines.forEach((l, i) => d.text(l, M + 16, y + 33 + i * size * 1.42, { size, color: P.ink }));
+    lines.forEach((l, i) => richLine(l, M + 16, y + 33 + i * size * 1.42, size, "#3a3a3c"));
     y += h + 10;
   };
   y += 4;
@@ -162,17 +197,17 @@ export function buildComparePdf(r) {
   {
     const colW = (W - 14) / 2;
     const hl = r.highlights.length ? r.highlights : ["Nothing stands out above the rest."], ll = r.lowlights.length ? r.lowlights : ["No clear weak spot."];
-    const hOf = (list) => list.reduce((t, s) => t + 18 + wrap(s, colW - 28, 8.8).length * 11.5, 0) + 20;
+    const hOf = (list) => list.reduce((t, s) => t + 18 + richWrap(s, colW - 28, 8.8).length * 11.5, 0) + 20;
     section("Highlights", "What stands out", Math.min(300, Math.max(hOf(hl), hOf(ll))));
     const col = (x, title, list, accent, tint) => {
       let yy = y + 4;
       cap(title, x, yy + 6, accent); yy += 14;
       for (const t of list) {
-        const lines = wrap(t, colW - 28, 8.8), h = 16 + lines.length * 11.5;
+        const lines = richWrap(t, colW - 28, 8.8), h = 16 + lines.length * 11.5;
         if (yy + h > H - 50) break;
         d.roundRect(x, yy, colW, h, 8, { fill: tint });
         d.roundRect(x, yy, 4, h, 2, { fill: accent });
-        lines.forEach((l, i) => d.text(l, x + 14, yy + 14 + i * 11.5, { size: 8.8, color: "#2c2c2e" }));
+        lines.forEach((l, i) => richLine(l, x + 14, yy + 14 + i * 11.5, 8.8, "#3a3a3c"));
         yy += h + 6;
       }
       return yy;
