@@ -1090,6 +1090,7 @@ export async function render(main) {
       ...(rest.length === 1 ? [cats.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${cats.length},1fr)` }, cats.map(([c]) => el("div", {}, [el("span", {}, c), el("strong", { class: tone(gap(top, b0(), c)) }, fmtSigned(gap(top, b0(), c)))]))) : null]
         : rest.slice(0, 4).map((b) => el("p", { class: "cmp-verdict-row" }, [el("i", { class: "cmp-dot", style: `--c:${b.color}` }), b.name, el("strong", { class: tone(-gap(top, b, k)) }, ` ${gap(top, b, k).toFixed(2)} behind`)]))),
       rest.length > 4 ? el("p", { class: "muted small" }, `+ ${rest.length - 4} more`) : null,
+      rest.length === 1 ? el("p", { class: "cmp-verdict-fit" }, fitStory(top, rest[0]).sum) : null, // (update 234)
       el("p", { class: "muted small cmp-verdict-sure" }, sureWords(top.s.rounds, rest.at(-1).s.rounds)), // (update 222: how sure, and how many rounds would settle it)
       el("p", { class: "cmp-card-tap" }, "Tap for why \u203a"),
     ]);
@@ -1098,6 +1099,29 @@ export async function render(main) {
     node.addEventListener("click", go); node.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
     return [node];
   }
+  /* (update 234) is the winner unusually good, or the other unusually bad? Each one against that player's usual
+     (their average over every round here, over the same parts of the game), so "better at A than B" says whether
+     A is a strength, B a weak spot, or both. */
+  const usualOf = (it) => {
+    const pk = it.pk || inPlay()[0]?.key, cs = [...new Set(it.rs.flatMap((rd) => rd.shots.map((x) => x.cat)))];
+    const rs = sgRounds(roundsOfKey(pk)), all4 = cs.length >= 4;
+    return rs.length ? rs.reduce((t, rd) => t + (all4 ? rdSG(rd, "TOTAL") : cs.reduce((u, c) => u + rdSG(rd, c), 0)), 0) / rs.length : 0;
+  };
+  const BAND = 0.2; // within 0.2 a round of their usual: about their usual
+  function fitStory(a, b) {
+    const ua = usualOf(a), ub = usualOf(b), va = a.s.sg.TOTAL, vb = b.s.sg.TOTAL, da = va - ua, db = vb - ub;
+    const same = (a.pk || "") === (b.pk || "");
+    const vs = (d) => (Math.abs(d) < BAND ? "about their usual" : `${Math.abs(d).toFixed(2)} ${d > 0 ? "better" : "worse"} than their usual`);
+    const line = (it, v, d, u) => `${it.name}: ${fmtSigned(v)} a round, ${vs(d)}${same ? "" : ` (${fmtSigned(u)})`}.`;
+    const up = (d) => d >= BAND, down = (d) => d <= -BAND;
+    const sum = up(da) && down(db) ? `So it\u2019s both: ${a.name} is better than usual and ${b.name} is worse.`
+      : up(da) && up(db) ? `Both are better than usual; ${a.name} is just more so.`
+      : down(da) && down(db) ? `Both are worse than usual; ${b.name} is just more so.`
+      : up(da) ? `So the gap is ${a.name} being unusually good, not ${b.name} being bad.`
+      : down(db) ? `So the gap is ${b.name} being unusually bad, not ${a.name} being especially good.`
+      : `Both are about their usual, so neither stands out much on its own.`;
+    return { lines: [line(a, va, da, ua), line(b, vb, db, ub)], sum, usual: same ? ua : null };
+  }
   const cut = (t) => (t.length > 16 ? `${t.slice(0, 15).trim()}\u2026` : t);
   function openWhy(top, rest) {
     const say = (b) => (lead) => `Mostly ${lead.l}: ${top.name} ${lead.d >= 0 ? "gains" : "loses"} ${Math.abs(lead.d).toFixed(2)} a round ${lead.d >= 0 ? "more than" : "against"} ${b.name}.`;
@@ -1105,6 +1129,7 @@ export async function render(main) {
     const tag = (it, L) => el("span", { class: "cmp-why-tag" }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), L]);
     const blocks = rest.map((b) => el("div", { class: "wl-pop-block" }, [
       el("div", { class: "cmp-why-key" }, [el("p", {}, [tag(top, "A"), " ", el("strong", {}, top.name), el("span", { class: "muted" }, ` \u00b7 ${fmtSG(top.s.sg.TOTAL)} a round`)]), el("p", {}, [tag(b, "B"), " ", el("strong", {}, b.name), el("span", { class: "muted" }, ` \u00b7 ${fmtSG(b.s.sg.TOTAL)} a round`)])]),
+      (() => { const f = fitStory(top, b); return el("div", { class: "cmp-fit" }, [el("p", { class: "cmp-why-h" }, [el("strong", {}, "Strength or weak spot? "), f.sum]), el("ul", { class: "cmp-fit-l" }, f.lines.map((t) => el("li", {}, t))), f.usual != null ? el("p", { class: "muted small" }, `Their usual: ${fmtSigned(f.usual)} a round over every round here. Within ${BAND.toFixed(2)} of it counts as about usual.`) : el("p", { class: "muted small" }, `Each against their own usual (in brackets): their average over every round here.`)]); })(),
       whyCore(top.rs, b.rs, () => tag(top, "A"), () => tag(b, "B"), say(b), true)]));
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Comparison" }, el("div", { class: "gx-pop wl-pop cmp-rd-pop" }, [
