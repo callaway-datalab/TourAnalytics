@@ -32,7 +32,7 @@ const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { retur
 
 const MODES = [
   ["years", "Seasons", "Each season side by side."],
-  ["windows", "Time windows", "Recent form against what came before, or the whole career."],
+  ["windows", "Time windows", "Seasons, recent rounds and events, round numbers, or months."],
   // (update 216) seasons, tournaments, courses, rounds, months and tours together: each choice narrows the others
   ["filters", "Tournaments & courses", "Open a filter, pick from it, and the other filters only offer what still fits."],
   ["tournaments", "Tournaments", "Any events, this year or any year."],
@@ -67,6 +67,7 @@ export async function render(main) {
   let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
   let staged = new Map(); // value → { label, f }
+  let winTab = "rounds", winYear = ""; // (update 235) Time windows: which filter is open; the months' season
   let combine = false;
   let h2h = false; // (update 208) players against each other: only the rounds they played together (same tournament, same round) // (update 206) several picks: compared against each other unless this is ticked
   // (update 190) untouched: the default comparison, so the whole-career tables (better or worse, best conditions) show
@@ -824,27 +825,46 @@ export async function render(main) {
         const inSel = multi() ? [] : sels.filter((x) => x.mode === mode && x.values?.includes(o.value));
         const b = el("button", { type: "button", class: `cmp-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, mode === "windows" ? o.label.replace(/ before that$/, " before") : o.label, o.n == null ? null : el("span", { class: "cmp-chip-n" }, `${o.n} rd${o.n === 1 ? "" : "s"}`),
           inSel.length ? el("span", { class: "cmp-chip-dots", title: `In: ${inSel.map((x) => x.name).join(", ")}` }, inSel.map((x) => el("i", { style: `background:${x.color}` }))) : null]);
-        b.addEventListener("click", () => { if (on) staged.delete(o.value); else staged.set(o.value, { label: o.long || o.label, f: filterOf(o) }); drawChips(); drawAdd(); });
+        b.addEventListener("click", () => { if (on) staged.delete(o.value); else staged.set(o.value, { label: o.long || o.label, f: o.f || filterOf(o) }); drawChips(); drawAdd(); });
         return b;
       };
       const drawChips = () => {
         const t = chipFilter.trim().toLowerCase();
         const shown = list.filter((o) => !t || o.label.toLowerCase().includes(t)).slice(0, long && !t ? 30 : 200);
         if (mode === "windows") {
-          // (update 189) in three groups: recent form, the rounds just before, seasons and career
-          // (update 190) the first two also take a number of your own
-          const groups = [["Recent form", (o) => /^last(ev)?:/.test(o.value) && !o.own, "last"], ["The rounds or events just before", (o) => /^prev(ev)?:/.test(o.value) && !o.own, "prev"], ["Seasons and career", (o) => o.value.startsWith("year:") || o.value === "all", null]];
-          const ownStaged = [...staged].filter(([v]) => !list.some((o) => o.value === v) && /^(last|prev)(ev)?:/.test(v)).map(([v, x]) => ({ value: v, label: x.label, n: Number(v.split(":")[1]) }));
-          // (update 217) rounds or tournaments, each with a number of your own
-          // (update 233) the rounds on one row, the events on the next
-          mount(chipsBox, groups.map(([g, test, kind]) => {
-            const xs = [...shown.filter(test), ...ownStaged.filter((o) => kind && (o.value.startsWith(kind + ":") || o.value.startsWith(kind + "ev:")))];
-            if (!kind) return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g), el("div", { class: "cmp-chips" }, xs.map(chip))]);
-            const rds = xs.filter((o) => o.value.startsWith(kind + ":")), evs = xs.filter((o) => o.value.startsWith(kind + "ev:"));
-            return el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g),
-              el("div", { class: "cmp-chips cmp-win-row" }, [...rds.map(chip), ownWindow(kind)]),
-              el("div", { class: "cmp-chips cmp-win-row" }, [...evs.map(chip), ownWindow(kind + "ev")])]);
+          // (update 235) three filters: Season, Rounds, Months (seasons, months and round numbers moved here from
+          // Tournaments & courses). Rounds: recent form and the rounds / events just before (rounds on one row,
+          // events on the next), then each round number.
+          const tabsW = [["season", "Season"], ["rounds", "Rounds"], ["months", "Months"]];
+          const nIn = (t) => [...staged.keys()].filter((v) => (t === "season" ? /^(year:|all$)/.test(v) : t === "months" ? v.startsWith("mo:") : /^(last|prev)(ev)?:|^rn:/.test(v))).length;
+          const tabRow = el("div", { class: "cmp-fx-heads cmp-win-tabs" }, tabsW.map(([t, l]) => {
+            const n = nIn(t);
+            const b = el("button", { type: "button", class: `cmp-fx-h${winTab === t ? " open" : ""}${n ? " set" : ""}`, "aria-expanded": String(winTab === t) }, [l, n ? el("span", { class: "cmp-fx-n" }, String(n)) : null]);
+            b.addEventListener("click", () => { winTab = t; drawChips(); });
+            return b;
           }));
+          const grp = (title, rows) => el("div", { class: "cmp-chip-group" }, [title ? el("p", { class: "cmp-chip-gt" }, title) : null, ...rows]);
+          let content;
+          if (winTab === "season") {
+            content = [grp(null, [el("div", { class: "cmp-chips" }, list.filter((o) => o.value.startsWith("year:") || o.value === "all").map(chip))])];
+          } else if (winTab === "rounds") {
+            const ownStaged = [...staged].filter(([v]) => !list.some((o) => o.value === v) && /^(last|prev)(ev)?:/.test(v)).map(([v, x]) => ({ value: v, label: x.label, n: Number(v.split(":")[1]) }));
+            const row = (re, kind) => el("div", { class: "cmp-chips cmp-win-row" }, [...[...list, ...ownStaged].filter((o) => re.test(o.value)).map(chip), ownWindow(kind)]);
+            const rnds = (opts.rounds || []).map((o) => ({ value: `rn:${o.value}`, label: `Round ${o.value}s`, long: `Round ${o.value}s`, n: o.n, f: { roundNos: [o.value] } }));
+            content = [grp("Recent form", [row(/^last:/, "last"), row(/^lastev:/, "lastev")]), grp("The rounds or events just before", [row(/^prev:/, "prev"), row(/^prevev:/, "prevev")]),
+              rnds.length > 1 ? grp("Round number", [el("div", { class: "cmp-chips" }, rnds.map(chip))]) : null];
+          } else {
+            // months: in every season, or one season's (the season pills narrow them)
+            const rsAll = sgRounds(allRounds());
+            const ys = [...new Set(rsAll.map(yr))].sort().reverse();
+            if (winYear && !ys.includes(winYear)) winYear = "";
+            const yPill = (v, l) => { const on = winYear === v; const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}`, "aria-pressed": String(on) }, l); b.addEventListener("click", () => { winYear = v; drawChips(); }); return b; };
+            const cnt = new Map(); for (const rd of rsAll) { if (winYear && yr(rd) !== winYear) continue; const m = /^\d{4}-(\d{2})/.exec(String(rd.date || "")); if (m) { const k = Number(m[1]) - 1; cnt.set(k, (cnt.get(k) || 0) + 1); } }
+            const MNS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const ms = [...cnt].sort((a, b) => a[0] - b[0]).map(([m, n]) => ({ value: `mo:${m}|${winYear}`, label: winYear ? `${MNS[m].slice(0, 3)} ${winYear}` : MNS[m], long: winYear ? `${MNS[m]} ${winYear}` : `${MNS[m]} (every year)`, n, f: winYear ? { months: [String(m)], years: [winYear] } : { months: [String(m)] } }));
+            content = [ys.length > 1 ? grp("Year", [el("div", { class: "cmp-chips" }, [yPill("", "Every year"), ...ys.map((y) => yPill(y, y))])]) : null, grp("Month", [el("div", { class: "cmp-chips" }, ms.map(chip))])];
+          }
+          mount(chipsBox, [tabRow, ...content]);
         } else if (mode === "product") {
           mount(chipsBox, prods.length ? prods.map((g) => { const xs = g.items.filter((o) => shown.includes(o)); return xs.length ? el("div", { class: "cmp-chip-group" }, [el("p", { class: "cmp-chip-gt" }, g.group === "Other" ? "Other clubs" : g.group === "Ball" ? "Golf balls" : g.group === "Non-Driver" ? "Non-Driver (tee shots)" : `${g.group}s`), el("div", { class: "cmp-chips" }, xs.map(chip))]) : null; })
             : el("div", { class: "cmp-empty-note" }, [el("strong", {}, "No club data in this file yet."), el("p", { class: "muted small" }, "Once the data has each shot\u2019s equipment (clubType, clubBrand, clubModel, ballBrand and ballModel columns), every club model shows here, grouped by type (drivers, fairway woods, hybrids, irons, wedges, putters), with the golf balls after them. Pick one model against another to see how they play with each.")]));
@@ -888,7 +908,7 @@ export async function render(main) {
      it; every other filter then only offers what's left (2026 picked: only 2026's tournaments and courses). */
   const fx = { years: new Set(), tours: new Set(), events: new Set(), courses: new Set(), roundNos: new Set(), months: new Set(), open: "events", q: "" };
   const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const FACETS = [
+  const FACETS_ALL = [
     ["years", "Season", "Seasons", (rd) => yr(rd), (v) => v],
     ["tours", "Tour", "Tours", (rd) => rd.tour || null, (v) => v],
     ["events", "Tournament", "Tournaments", (rd) => rd.event || null, (v) => v],
@@ -896,6 +916,7 @@ export async function render(main) {
     ["roundNos", "Round", "Rounds", (rd) => (rd.roundNo ? String(rd.roundNo) : null), (v) => `Round ${v}`],
     ["months", "Month", "Months", (rd) => { const m = /^\d{4}-(\d{2})/.exec(String(rd.date || "")); return m ? String(Number(m[1]) - 1) : null; }, (v) => MON[Number(v)] || v],
   ];
+  const FACETS = FACETS_ALL.filter(([k]) => !["years", "roundNos", "months"].includes(k)); // (update 235: those are in Time windows)
   function facetBuilder() {
     const rs = sgRounds(allRounds());
     const facets = FACETS.filter(([k, , , f]) => new Set(rs.map(f).filter(Boolean)).size > 1 || fx[k].size);
