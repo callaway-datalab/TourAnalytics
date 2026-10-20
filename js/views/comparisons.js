@@ -1256,20 +1256,36 @@ export async function render(main) {
     ]);
   }
   // (update 219) the picked ones, side by side (every table and chart), as selections
-  function placeBar(groups, dimL) {
+  function placeBar(groups, dimL, order = [...groups.keys()]) {
     for (const k of [...placePick]) if (!groups.has(k)) placePick.delete(k);
     const n = placePick.size;
+    const fOf = (k, rds) => ({ tournaments: { events: [...new Set(rds.map(evk))] }, weeks: { events: [...new Set(rds.map(evk))] }, courses: { courses: [k] }, months: { months: [String(MN.indexOf(k))] }, rounds: { roundNos: [k.replace("Round ", "")] }, seasons: { years: [k] } }[placeDim]);
+    // (update 236) several of them as one: their filters merged (any of these courses / tournaments / months …)
+    const merged = (keys) => { const f = {}; for (const k of keys) for (const [field, vs] of Object.entries(fOf(k, groups.get(k)))) f[field] = [...new Set([...(f[field] || []), ...vs])]; return f; };
+    const plural = `${dimL.toLowerCase()}s`;
+    const show = (list) => { sels = list.map((x, i) => ({ mode: "filters", color: COLORS[i % COLORS.length], ...x })); mode = "filters"; placePick = new Set(); touched = true; g.open = false; draw(); root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
     const go = el("button", { type: "button", class: "btn cmp-add small", disabled: n >= 2 ? null : true }, n >= 2 ? `Compare these ${n} \u2192` : `Tick two or more numbers to compare them`);
     go.addEventListener("click", () => {
-      const fOf = (k, rds) => ({ tournaments: { events: [...new Set(rds.map(evk))] }, weeks: { events: [...new Set(rds.map(evk))] }, courses: { courses: [k] }, months: { months: [String(MN.indexOf(k))] }, rounds: { roundNos: [k.replace("Round ", "")] }, seasons: { years: [k] } }[placeDim]);
       const list = [...placePick].slice(0, Math.max(2, Math.floor(MAX_SEL / Math.max(1, inPlay().length))));
-      sels = list.map((k, i) => ({ id: `place:${placeDim}:${k}`, name: k, full: `${dimL}: ${k}`, f: fOf(k, groups.get(k)), mode: "filters", color: COLORS[i % COLORS.length] }));
-      mode = "filters"; placePick = new Set(); touched = true; g.open = false; draw();
-      root.querySelector(".cmp-cards")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      show(list.map((k) => ({ id: `place:${placeDim}:${k}`, name: k, full: `${dimL}: ${k}`, f: fOf(k, groups.get(k)) })));
     });
+    // (update 236) the ticked ones together against all the others ("my top 5 courses vs the rest")
+    const restKeys = order.filter((k) => !placePick.has(k));
+    const vsRest = n >= 1 && restKeys.length ? el("button", { type: "button", class: "btn cmp-add small ghost" }, `${n === 1 ? "This one" : `These ${n} together`} vs the rest \u2192`) : null;
+    vsRest?.addEventListener("click", () => {
+      const picked = order.filter((k) => placePick.has(k));
+      const isTop = picked.every((k, i) => order[i] === k);
+      const name = n === 1 ? picked[0] : isTop ? `Top ${n} ${plural}` : n <= 3 ? picked.join(" + ") : `${n} picked ${plural}`;
+      show([
+        { id: `place:${placeDim}:grp:${picked.join("+")}`, name, full: `${dimL}: ${picked.join(", ")}`, f: merged(picked) },
+        { id: `place:${placeDim}:rest:${picked.join("+")}`, name: `Every other ${dimL.toLowerCase()} (${restKeys.length})`, full: `${dimL}: every one but ${name}`, f: merged(restKeys) },
+      ]);
+    });
+    // quick picks: the best few
+    const tops = [3, 5, 10].filter((t) => t < order.length).map((t) => { const b = el("button", { type: "button", class: "link" }, `Top ${t}`); b.addEventListener("click", () => { placePick = new Set(order.slice(0, t)); draw(); }); return b; });
     const clear = n ? el("button", { type: "button", class: "link" }, "Clear picks") : null;
     clear?.addEventListener("click", () => { placePick = new Set(); draw(); });
-    return el("div", { class: "cmp-place-bar" }, [go, clear]);
+    return el("div", { class: "cmp-place-bar" }, [go, vsRest, tops.length ? el("span", { class: "cmp-place-tops muted small" }, ["Tick: ", ...tops.flatMap((b, i) => (i ? [" \u00b7 ", b] : [b]))]) : null, clear]);
   }
   function placeSection() {
     const ps = inPlay().filter((p) => p.key !== EVERY).slice(0, 4);
@@ -1328,7 +1344,7 @@ export async function render(main) {
     return el("section", { class: "panel cmp-sec career-sec" }, [
       el("div", { class: "cmp-sec-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), el("p", { class: "muted small" }, `Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total a round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit and why, or tick numbers to compare them side by side.`)]),
       tabs,
-      placeBar(groups, dimL),
+      placeBar(groups, dimL, list.map((x) => x.k)),
       el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
     ]);
   }
