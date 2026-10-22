@@ -2220,15 +2220,15 @@ export async function render(main) {
       hi.length = 0; hi.push(...story.hi); lo.length = 0; lo.push(...story.lo);
       fallback = story.story.join(" ");
     }
-    // the AI summary, when the service is set up
+    // the AI summary: (update 253) not used; the report's own written summary (the AI service is for Ask AI only)
     let summary = null;
-    const url = window.PORTAL_CONFIG?.insightsUrl;
+    const url = null;
     if (url) {
       say("Writing the summary\u2026");
       try {
         const token = await getState().user?.getIdToken?.();
         const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ comparison: { what: guideSummary(), selections: live.map((it) => ({ name: it.name, rounds: it.s.n, sg: it.s.sg, best: it.s.best, worst: it.s.worst, steadiness: it.s.sd })), highlights: hi, lowlights: lo, table: rows.filter((r) => !r.group).map((r) => [r.label, ...r.cells]), usage: lastUsage?.rows || null } }) });
+          body: JSON.stringify({ comparison: { what: guideSummary(), selections: live.map((it) => ({ name: it.name, rounds: it.s.n, sg: it.s.sg, best: it.s.best, worst: it.s.worst, steadiness: it.s.sd })), highlights: hi, lowlights: lo, table: rows.filter((r) => !r.group).map((r) => [r.label, ...r.cells]), usage: lastUsage?.rows || null } }, (k, v) => (typeof v === "number" ? Math.round(v * 100) / 100 : v)) }); // (update 252: numbers to 2 places)
         if (res.ok) summary = (await res.json()).summary || null;
       } catch { /* the report still works without it */ }
     }

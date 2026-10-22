@@ -31,6 +31,24 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
  * me: { key, label, rounds }  field: [{ key, label, rounds, summaryOnly? }]  (prepared rounds, as on the stats page)
  * opts: { from, to (ms or null), cats: ["OTT", …], byProduct, idx }
  */
+/** (update 252) What the AI summary is given: the headline numbers, each part of the game, the trend, the strengths
+ *  and what's costing strokes, the best and toughest rounds. Not every round (that's what made each summary cost
+ *  about 3 cents). */
+export function aiDigest(a) {
+  const pick = (o, ks) => (o ? Object.fromEntries(ks.filter((k) => o[k] != null).map((k) => [k, o[k]])) : null);
+  const rd = (x) => ({ event: x.event, date: String(x.date || "").slice(0, 10), round: x.roundNo, sg: x.value });
+  return {
+    player: a.me?.label, from: a.from ? String(new Date(a.from).toISOString()).slice(0, 10) : null, to: a.to ? String(new Date(a.to).toISOString()).slice(0, 10) : null,
+    tour: a.tour || null, comparedWith: a.compared, minRounds: a.minRounds,
+    overall: pick(a.overall, ["value", "rounds", "rank", "of", "fieldAvg"]),
+    byCategory: (a.byCat || []).map((c) => pick(c, ["name", "value", "rank", "of", "fieldAvg"])),
+    trendByCategory: (a.catTrend || []).map((t) => ({ cat: t.cat, change: t.change })),
+    form: a.form ? pick(a.form, ["first", "last"]) : null, halves: a.halves ? pick(a.halves, ["n", "early", "late"]) : null,
+    strengths: (a.elite || []).map((e) => e.title), rising: (a.rising || []).map((r) => r.title),
+    costingStrokes: (a.focus || []).slice(0, 4).map((f) => ({ title: f.title, detail: f.detail })),
+    bestRounds: (a.peaks || []).slice(0, 3).map(rd), toughestRounds: (a.valleys || []).slice(0, 3).map(rd),
+  };
+}
 export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null, tour = null } = {}) {
   const cats = CATEGORIES.map(([k]) => k).filter((k) => catsIn.includes(k));
   const inRange = (rd) => { const t = day(rd.date); return t == null || ((from == null || t >= from) && (to == null || t <= to)); };
@@ -1010,12 +1028,12 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       const from = fromIn.value ? Date.parse(`${fromIn.value}T00:00:00`) : null, to = toIn.value ? Date.parse(`${toIn.value}T23:59:59`) : null;
       const a = analyzePerformance(data.me, field, { from, to, cats, byProduct: product.checked, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null, tour: source.value === startSource ? tour : null });
       let aiSummary = null;
-      const url = window.PORTAL_CONFIG?.insightsUrl;
+      const url = null; // (update 253: the report's own written summary; the AI service is for Compare's Ask AI only)
       if (url && a.overall.rounds) {
         status.textContent = "Writing the summary\u2026";
         try {
           const token = await getState().user?.getIdToken?.();
-          const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ analysis: { ...a, groups: a.groups.slice(0, 40) } }) });
+          const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ analysis: aiDigest(a) }, (k, v) => (typeof v === "number" ? Math.round(v * 100) / 100 : v)) }); // (update 252: just what the summary needs, numbers to 2 places: a few hundred words, not every round)
           if (res.ok) aiSummary = (await res.json()).summary || null;
         } catch { /* the report still works without it */ }
       }
