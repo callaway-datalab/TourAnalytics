@@ -4128,3 +4128,8 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .wl-reordering .wl-card:not(.wl-dragging) { transition: transform 0.15s; }
 .wl-reordering { cursor: grabbing; }
 .cmp-askres-b { font-size: 0.95rem; line-height: 1.5; margin: 0 0 0.5rem; }
+
+/* (update 255) Usage: the 7 days / 30 days / 90 days / All time filter stays on one line */
+.usage-top .seg { flex: 0 0 auto; flex-wrap: nowrap; }
+.usage-top .seg-btn { flex: 0 0 auto; white-space: nowrap; min-height: 2.4rem; padding: 0 1rem; }
+@media (max-width: 520px) { .usage-top .seg { width: 100%; } .usage-top .seg-btn { flex: 1 1 0; padding: 0 0.4rem; font-size: 0.85rem; } }

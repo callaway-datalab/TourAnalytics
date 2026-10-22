@@ -62,8 +62,9 @@ async function claude(prompt, maxTokens, model = MODEL) {
   if (!r.ok) return { error: true };
   const data = await r.json();
   const u = data.usage || {};
-  await addSpend(((u.input_tokens || inTok) * priceOf(model)[0] + (u.output_tokens || maxTokens) * priceOf(model)[1]) / 1e6);
-  return { text: (data.content || []).map((c) => c.text || "").join("").trim() };
+  const usd = ((u.input_tokens || inTok) * priceOf(model)[0] + (u.output_tokens || maxTokens) * priceOf(model)[1]) / 1e6;
+  await addSpend(usd);
+  return { text: (data.content || []).map((c) => c.text || "").join("").trim(), usd };
 }
 
 functions.http("insights", async (req, res) => {
@@ -73,7 +74,8 @@ functions.http("insights", async (req, res) => {
   if (req.method === "OPTIONS") return res.status(204).send("");
   if (req.method !== "POST") return res.status(405).send("POST only");
   // only signed-in portal users
-  try { await admin.auth().verifyIdToken(String(req.headers.authorization || "").replace(/^Bearer /, "")); }
+  let who;
+  try { who = await admin.auth().verifyIdToken(String(req.headers.authorization || "").replace(/^Bearer /, "")); }
   catch { return res.status(401).send("Sign in first"); }
   if (!process.env.ANTHROPIC_API_KEY) return res.status(503).send("No API key set");
 
@@ -154,6 +156,9 @@ ${JSON.stringify(body.analysis).slice(0, 9000)}`;
     const out = await claude(prompt, maxTokens, model);
     if (out.capped) return res.status(402).json({ capped: true, cap: CAP }); // (the portal falls back to its built-in version)
     if (out.error || !out.text) return res.status(502).send("The AI didn't answer");
+    // (update 255) each answer: who asked and what it cost, for the admin's At a glance (AI Questions, AI Cost by person)
+    await db.collection("aiCalls").add({ uid: who.uid, at: admin.firestore.FieldValue.serverTimestamp(), usd: out.usd || 0, model,
+      kind: body.ask?.text ? "ask" : body.comparison ? "compareReport" : "report" }).catch((e) => console.error("aiCalls", e));
     if (body.ask?.text) {
       // (update 254) the plan, as JSON (anything around it, like a code fence, is trimmed off)
       const m = /\{[\s\S]*\}/.exec(out.text);

@@ -5,7 +5,7 @@ import { sameNamePlayers } from "../playerPicker.js";
 import { plainName } from "../names.js";
 import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
-  UserError, adminStats, editAccess, syncTeams,
+  UserError, adminStats, editAccess, syncTeams, aiUsage, reportRunsList,
   refreshInvite, deleteInvite, storageEstimate, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
   createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels,
 } from "../store.js";
@@ -46,10 +46,55 @@ export async function render(main, { flash }) {
   // Weekly Sign-ins / Weekly Users open a list (who, and when) under the boxes; tap again to close it.
   let weekly = [], openList = null;
   const weekBox = el("div", { class: "week-list", hidden: true });
+  // (update 255) AI use (config/aiSpend: everything; aiCalls: each answer, who and what it cost) and reports by player
+  let ai = null, runs = null, whoP = null;
+  const money = (usd) => (usd > 0 && usd < 0.995 ? `${(usd * 100).toFixed(usd * 100 < 10 ? 1 : 0)}\u00a2` : `$${(usd || 0).toFixed(2)}`);
+  const who = () => (whoP ||= adminAllClients().then(async (c) => {
+    const me = (await import("../auth.js")).getState().user?.uid;
+    const names = new Map((c.usersSnap?.docs || []).map((d) => [d.id, d.data().name || d.data().email || "Someone"]));
+    return { nameOf: (uid) => (uid === me ? "You" : names.get(uid) || "Someone (account removed)"), labels: c.labels };
+  }).catch(() => ({ nameOf: () => "Someone", labels: new Map() })));
+  const msOf = (t) => t?.toMillis?.() ?? 0;
+  const table = (title, head, rows, note) => [el("h3", {}, title), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
+    el("thead", {}, el("tr", {}, head.map(([l, n]) => el("th", n ? { class: "num" } : {}, l)))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", head[i][1] ? { class: "num" } : head[i][2] ? { class: "nowrap muted" } : {}, c))))),
+  ])), note ? el("p", { class: "muted small" }, note) : null];
+  async function drawAi(sortBy) {
+    if (!ai) { mount(weekBox, el("p", { class: "muted small" }, "Loading\u2026")); ai = await aiUsage().catch(() => ({ spend: null, calls: [] })); if (openList !== sortBy) return; }
+    const { nameOf } = await who();
+    const people = new Map();
+    for (const c of ai.calls) { const p = people.get(c.uid) || people.set(c.uid, { name: nameOf(c.uid), q: 0, other: 0, usd: 0, last: null }).get(c.uid); if (c.kind === "ask") p.q++; else p.other++; p.usd += Number(c.usd || 0); if (msOf(c.at) > msOf(p.last)) p.last = c.at; }
+    const rows = [...people.values()].sort((a, b) => (sortBy === "aic" ? b.usd - a.usd : b.q - a.q) || a.name.localeCompare(b.name));
+    const logged = ai.calls.reduce((t, c) => t + Number(c.usd || 0), 0);
+    const earlierN = Math.max(0, Number(ai.spend?.calls || 0) - ai.calls.length), earlierUsd = Math.max(0, Number(ai.spend?.usd || 0) - logged);
+    const out = rows.map((p) => [p.name, String(p.q), money(p.usd), p.usd && p.q ? money(p.usd / p.q) : "\u2014", p.last ? formatWhen(p.last) : "\u2014"]);
+    if (earlierN || earlierUsd > 0.0005) out.push([el("span", { class: "muted" }, "Earlier AI calls (before update 255: who and what weren\u2019t kept)"), String(earlierN), money(earlierUsd), "\u2014", "\u2014"]);
+    const cap = Number(ai.spend?.cap || 1), spent = Number(ai.spend?.usd || 0);
+    mount(weekBox, table(`AI use by person${rows.length ? ` (${rows.length})` : ""}`, [["Who"], ["Questions", 1], ["Cost", 1], ["A question", 1], ["Last", 0, 1]],
+      out.length ? out : [[el("span", { class: "muted" }, "No AI questions yet."), "", "", "", ""]],
+      `Spent ${money(spent)} of the ${money(cap)} cap (${money(Math.max(0, cap - spent))} left). Names are kept from update 255 on; anything earlier is in the last row. Cost includes the few older AI report summaries.`));
+  }
+  async function drawRuns() {
+    if (!runs) { mount(weekBox, el("p", { class: "muted small" }, "Loading\u2026")); runs = await reportRunsList().catch(() => []); if (openList !== "reports") return; }
+    const { nameOf, labels } = await who();
+    const by = new Map();
+    for (const r of runs) {
+      const k = r.playerKey || "";
+      const p = by.get(k) || by.set(k, { name: k ? labels.get(k) || plainName(k.replace(/^c_/, "")) : "No player recorded", n: 0, last: null, makers: new Map() }).get(k);
+      p.n++; if (msOf(r.at) > msOf(p.last)) p.last = r.at;
+      const m = nameOf(r.uid); p.makers.set(m, (p.makers.get(m) || 0) + 1);
+    }
+    const rows = [...by.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    mount(weekBox, table(`Reports by player (${rows.length})`, [["Player"], ["Reports", 1], ["Made by"], ["Last", 0, 1]],
+      rows.length ? rows.map((p) => [p.name, String(p.n), [...p.makers].sort((a, b) => b[1] - a[1]).map(([m, n]) => (p.makers.size > 1 ? `${m} (${n})` : m)).join(", "), p.last ? formatWhen(p.last) : "\u2014"])
+        : [[el("span", { class: "muted" }, "No reports yet."), "", "", ""]]));
+  }
   const drawWeek = () => {
     weekBox.hidden = !openList;
     statsBox.querySelectorAll(".glance-btn").forEach((b) => b.setAttribute("aria-expanded", b.dataset.list === openList ? "true" : "false"));
     if (!openList) return;
+    if (openList === "aiq" || openList === "aic") { drawAi(openList); return; }
+    if (openList === "reports") { drawRuns(); return; }
     if (!weekly.length) { mount(weekBox, el("p", { class: "muted" }, "No sign-ins yet this week.")); return; }
     if (openList === "signins") {
       mount(weekBox, [el("h3", {}, `Sign-ins this week (${weekly.length})`), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
@@ -66,18 +111,25 @@ export async function render(main, { flash }) {
       ]))]);
     }
   };
-  const loadStats = () => adminStats().then((stats) => {
+  const loadStats = () => Promise.all([adminStats(), ai ? Promise.resolve(ai) : aiUsage().catch(() => null)]).then(([stats, aiNow]) => {
     weekly = stats.weekly || [];
+    if (aiNow) ai = aiNow;
+    runs = null; // (re-read when the list is opened again: new reports since)
+    const aiQ = ai ? ai.calls.filter((c) => c.kind === "ask").length : null; // (counted from update 255: earlier calls have no name or kind)
     mount(statsBox, [
       ["Players in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
       ["Weekly Sign-ins", stats.weeklySignIns, "Since Monday, everyone combined. Tap to see them.", "signins"],
       ["Weekly Users", stats.weeklyUsers, "Different people who signed in since Monday. Tap to see who.", "users"],
       // (update 169) every AI Insights report made, by anyone, since update 169
-      ["Reports generated", stats.reports ?? 0, "AI reports made with Generate AI Report, everyone combined (counted from update 169)."],
+      ["Reports generated", stats.reports ?? 0, "Performance reports made, everyone combined (counted from update 169). Tap to see them by player.", "reports"],
+      // (update 255) Ask AI: questions asked and what the AI has cost, everyone combined; tap for each person
+      ["AI Questions", aiQ ?? "\u2014", "Ask AI questions answered by the AI, everyone combined (counted from update 255). Tap to see who asked.", "aiq"],
+      ["AI Cost", ai?.spend ? money(Number(ai.spend.usd || 0)) : "$0.00", `Everything the AI has cost so far${ai?.spend ? `, of the ${money(Number(ai.spend.cap || 1))} cap` : ""}. Tap to see it by person.`, "aic"],
     ].map(([label, value, title, list]) => {
-      if (!list) return el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, num(value))]);
-      const b = el("div", { class: "glance-btn", role: "button", tabindex: "0", title, "data-list": list, "aria-expanded": "false" }, [el("dt", {}, label), el("dd", {}, num(value))]);
-      const toggle = () => { openList = openList === list ? null : list; drawWeek(); };
+      const shown = typeof value === "number" ? num(value) : String(value);
+      if (!list) return el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, shown)]);
+      const b = el("div", { class: "glance-btn", role: "button", tabindex: "0", title, "data-list": list, "aria-expanded": "false" }, [el("dt", {}, label), el("dd", {}, shown)]);
+      const toggle = () => { openList = openList === list ? null : list; if (openList === "aiq" || openList === "aic") ai = null; drawWeek(); };
       b.addEventListener("click", toggle);
       b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
       return b;
