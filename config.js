@@ -19,4 +19,6 @@ window.PORTAL_CONFIG = {
   // Your admin account's Firebase Auth UID (Console -> Authentication -> your user -> "User UID").
   // Must exactly match the UID(s) you put in firestore.rules, or the admin screens will look empty.
   adminUids: ["gpz41RIE02U2Jxteu8H6AGCUjCx1"],
+
+  insightsUrl: "https://insights-226979865222.us-west1.run.app",
 };
