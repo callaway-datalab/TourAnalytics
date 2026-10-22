@@ -61,6 +61,14 @@ export function options(rounds) {
 const withSeason = (rounds, f) => { if (!f?.season) return f; const ys = [...new Set(sgRounds(rounds).map(yearOf))].sort().reverse(); const y = ys[f.season === "last" ? 1 : 0]; return { ...f, season: null, years: [y || "none"] }; };
 export function roundsFor(rounds, f = {}) {
   f = withSeason(rounds, f);
+  // (update 254) every round of the rest of the filter except the ones in f.except ("the rest", "his other rounds")
+  if (f.except) {
+    const id = (rd) => rd.key || `${dk(rd.date)}|${evKey(rd)}|${rd.roundNo || ""}`; // (a club's rounds are copies)
+    const drop = new Set(roundsFor(rounds, f.except).map(id));
+    return roundsFor(rounds, { ...f, except: null }).filter((rd) => !drop.has(id(rd)));
+  }
+  // (update 254) the best (or worst) run of N rounds in a row, within the rest of the filter: "his best 12-round stretch"
+  if (f.stretch) return stretchOf(roundsFor(rounds, { ...f, stretch: null }), f.stretch);
   // (update 250) the best (or worst) rounds of the rest of the filter: the top 25%, the best 10 …
   if (f.top || f.topPct || f.bottom || f.bottomPct) {
     const base = roundsFor(rounds, { ...f, top: null, topPct: null, bottom: null, bottomPct: null });
@@ -86,6 +94,21 @@ export function roundsFor(rounds, f = {}) {
     && (!rnds || rnds.has(String(rd.roundNo || ""))) && (!months || months.has(String(monthOf(rd)))) && (!tours || tours.has(rd.tour || ""))
     && (!f.from || dk(rd.date) >= f.from) && (!f.to || dk(rd.date) <= f.to));
   return rs;
+}
+/** (update 254) The N rounds in a row (oldest first) with the highest (best) or lowest (worst) strokes gained a round.
+ * s: { n, worst?, cat? } (cat: a part of the game, e.g. "PUTT"; default the total). Fewer than N rounds: all of them. */
+export function stretchOf(rs, s) {
+  const n = Math.max(1, Math.round(Number(s?.n) || 0));
+  if (rs.length <= n) return rs;
+  const v = rs.map((rd) => sgOf(rd, s.cat || null));
+  let t = 0;
+  for (let i = 0; i < n; i++) t += v[i];
+  let at = 0, bestT = t;
+  for (let i = n; i < v.length; i++) {
+    t += v[i] - v[i - n];
+    if (s.worst ? t < bestT - 1e-9 : t > bestT + 1e-9) { bestT = t; at = i - n + 1; }
+  }
+  return rs.slice(at, at + n);
 }
 const gearMatch = (x, cs) => cs.has(x.gear) || (x.ball && cs.has(`Ball|${x.ball}`));
 const comboMatch = (x, cs, bs) => (!cs || gearMatch(x, cs)) && (!bs || (x.ball && bs.has(`Ball|${x.ball}`)));
@@ -177,7 +200,7 @@ export function statSets(rounds, filters) {
       return one({ ...f, clubs: null, balls: null }).map((rd) => { const obs = (rd.obs || []).filter((o) => comboMatch(o, cs, bs)); return { ...rd, obs, has: new Set(obs.map((o) => o.k)), shots: [] }; }).filter((rd) => rd.obs.length);
     }
     if (f.any) { const seen = new Set(); return f.any.flatMap((g) => one(g)).filter((rd) => (seen.has(rd) ? false : (seen.add(rd), true))); } // (update 189)
-    if (f.last || f.prev || f.lastEv || f.prevEv || f.top || f.topPct || f.bottom || f.bottomPct) { const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
+    if (f.last || f.prev || f.lastEv || f.prevEv || f.top || f.topPct || f.bottom || f.bottomPct || f.stretch || f.except) { /* (update 254: stretch, except) */ const sg = roundsFor(rounds, f); const keys = new Set(sg.map(evKey)); const dates = new Set(sg.map((rd) => dk(rd.date))); return all.filter((rd) => keys.has(evKey(rd)) && (dates.has(dk(rd.date)) || rd.eventLevel)); }
     const g = { ...f };
     const set = (v) => (v && v.length ? new Set(v.map(String)) : null);
     const years = set(g.years), events = set(g.events), courses = set(g.courses), rnds = set(g.roundNos), months = set(g.months), tours = set(g.tours);

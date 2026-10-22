@@ -28,6 +28,7 @@ const mk = (t, a = {}, text = null) => { const n = document.createElementNS(NS, 
 const HALO = { stroke: "#121214", "stroke-width": 3.5, "stroke-linejoin": "round", "paint-order": "stroke" };
 const INK = "rgba(235,235,245,0.62)", GRID = "rgba(255,255,255,0.07)";
 const tone = (v) => (v == null ? "" : Math.round(v * 100) === 0 ? "zero" : v > 0 ? "pos" : "neg");
+const norm0 = (t) => String(t || "").toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[\u2013\u2014]/g, "-"); // (update 254)
 const dateTxt = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); const t = m ? new Date(+m[1], m[2] - 1, +m[3]) : new Date(d); return isNaN(t) ? String(d || "") : t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }); };
 const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* */ } } };
 
@@ -459,7 +460,8 @@ export async function render(main) {
   const ASK_EX = ["Compare all Callaway drivers played by Xander Schauffele from 2024-2026 and tell me which was best. Exclude the 2025 Masters.",
     "Compare all TRTL putters from 2025-2026 against all Jailbird putters from 2024-2026, excluding the 2025 Players Championship.",
     "Callaway drivers vs TaylorMade drivers for everyone in 2026.",
-    "Scottie Scheffler: 2026 vs 2025."];
+    "Scottie Scheffler: 2026 vs 2025.",
+    "When was Xander Schauffele\u2019s best 12-round stretch in the last 24 months, and how does it compare with his most recent 12 rounds?"]; // (update 254)
   function askBox() {
     const ta = el("textarea", { class: "cmp-ask-in", rows: 4, placeholder: "e.g. Compare all Callaway drivers played by Xander Schauffele from 2024-2026 and tell me which was best. Exclude the 2025 Masters.", "aria-label": "What to compare" });
     ta.value = askText;
@@ -487,15 +489,92 @@ export async function render(main) {
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ ask: { text, today: new Date().toISOString().slice(0, 10) } }) });
       if (!res.ok) return null;
       const out = await res.json();
-      return typeof out?.rewrite === "string" && out.rewrite.trim() ? out.rewrite.trim() : null;
+      // (update 254) the AI service now answers with a plan (what to compare, as data); an older one, a sentence
+      if (out?.plan && typeof out.plan === "object" && Array.isArray(out.plan.groups)) return { plan: out.plan };
+      return typeof out?.rewrite === "string" && out.rewrite.trim() ? { rewrite: out.rewrite.trim() } : null;
     } catch { return null; }
+  }
+  // (update 254) the AI's plan, checked: only the things the portal knows how to do, in the shapes it expects
+  function cleanPlan(p) {
+    const int = (v, hi = 999) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 && n <= hi ? n : null; };
+    const str = (v, n = 80) => (typeof v === "string" ? v.trim().slice(0, n) : "");
+    const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
+    const list = (v) => (Array.isArray(v) ? v : []);
+    const groups = list(p.groups).slice(0, MAX_SEL).map((g0, i) => {
+      const r = g0?.rounds && typeof g0.rounds === "object" ? g0.rounds : {};
+      const f = {};
+      const ys = list(r.years).map(String).filter((y) => /^20\d\d$/.test(y)); if (ys.length) f.years = [...new Set(ys)].sort();
+      if (day(r.from)) f.from = day(r.from);
+      if (day(r.to)) f.to = day(r.to);
+      for (const [k, to] of [["last", "last"], ["before_last", "prev"], ["last_events", "lastEv"], ["before_last_events", "prevEv"], ["best", "top"], ["worst", "bottom"]]) if (int(r[k])) f[to] = int(r[k]);
+      if (int(r.best_pct, 99)) f.topPct = int(r.best_pct, 99);
+      if (int(r.worst_pct, 99)) f.bottomPct = int(r.worst_pct, 99);
+      if (int(r.best_stretch)) f.stretch = { n: int(r.best_stretch) };
+      else if (int(r.worst_stretch)) f.stretch = { n: int(r.worst_stretch), worst: true };
+      const ex = Number(r.except_group);
+      return { label: str(g0?.label, 40) || `Group ${i + 1}`, f, gear: str(g0?.gear), except: Number.isInteger(ex) && ex !== i && ex >= 0 ? ex : null };
+    });
+    return {
+      players: list(p.players).map((x) => str(x)).filter(Boolean).slice(0, 4),
+      everyone: p.everyone === true,
+      parts: list(p.parts).filter((c) => ["OTT", "APP", "ARG", "PUTT"].includes(c)),
+      excl: list(p.exclude?.events).map((x) => str(x)).filter(Boolean),
+      exclRounds: list(p.exclude?.rounds).map((n) => int(n, 4)).filter(Boolean).map(String),
+      groups, each: p.each === true,
+      unsupported: str(p.unsupported, 300) || null,
+    };
+  }
+  // (update 254) the plan's groups, matched to the data: [{ name, f, id?, mode? }] and what kind of comparison it is
+  function planGroups(plan, catalog, maxYear) {
+    const out = [], noGear = [];
+    const fs = plan.groups.map((g0) => ({ ...g0.f, ...(g0.f.stretch && plan.parts.length === 1 ? { stretch: { ...g0.f.stretch, cat: plan.parts[0] } } : {}) }));
+    plan.groups.forEach((g0, i) => { if (g0.except != null && fs[g0.except]) fs[i] = { ...fs[i], except: { ...fs[g0.except], except: null } }; });
+    // clubs and balls: every group that names some, read together (so "all the other putters" knows what the others are)
+    const gearIdx = plan.groups.map((g0, i) => (g0.gear ? i : -1)).filter((i) => i >= 0);
+    const byIdx = new Map();
+    if (gearIdx.length) {
+      const sides = gearIdx.map((i) => plan.groups[i].gear);
+      const pg = productGroups({ text: norm0(sides.join(" vs ")), sides: sides.map(norm0), together: !(plan.each && sides.length === 1), years: [] }, catalog, { maxYear });
+      for (const x of pg) { const i = gearIdx[x.side ?? 0]; (byIdx.get(i) || byIdx.set(i, []).get(i)).push(x); }
+    }
+    plan.groups.forEach((g0, i) => {
+      const f = fs[i];
+      if (g0.gear) {
+        const hits = byIdx.get(i) || [];
+        if (!hits.length) { noGear.push(`${g0.label} (couldn\u2019t find \u201c${g0.gear}\u201d)`); return; }
+        for (const x of hits) out.push({ name: hits.length > 1 ? x.name.replace(/ \u00b7 .*$/, "") : g0.label, f: { ...x.f, ...f, ...(f.years ? {} : x.f.years ? { years: x.f.years } : {}) }, product: true });
+        return;
+      }
+      const ks = Object.keys(f);
+      const win = ks.length === 1 && ["last", "prev", "lastEv", "prevEv"].includes(ks[0]);
+      if (win) { const w = { last: "last", prev: "prev", lastEv: "lastev", prevEv: "prevev" }[ks[0]]; out.push({ name: g0.label, f, id: `windows:${w}:${f[ks[0]]}` }); }
+      else if (ks.length === 1 && f.years?.length === 1) out.push({ name: g0.label, f, id: `years:${f.years[0]}`, mode: "years", values: f.years });
+      else out.push({ name: g0.label, f, id: `ask:plan:${i}:${JSON.stringify(f)}`, mode: "custom" });
+    });
+    const kind = out.some((x) => x.product) ? "product" : out.some((x) => x.f.top || x.f.topPct || x.f.bottom || x.f.bottomPct || x.f.stretch || x.f.except) ? "rounds" : "time";
+    return { groups: out.map(({ product, ...x }) => x), kind, noGear };
   }
   async function runAsk(text) {
     askErr = ""; askBusy = "Reading the request\u2026"; draw();
     const maxYear = new Date().getFullYear();
-    const rewrite = await aiRead(text); // (a plainer version of the request, when the AI service is there)
+    const ai = await aiRead(text); // (update 254: a plan, or from an older AI service a plainer version of the request)
+    const rewrite = ai?.rewrite || null, plan = ai?.plan ? cleanPlan(ai.plan) : null;
     const ask = readAsk(rewrite || text, { players, maxYear });
     if (rewrite && !ask.players.length) { const a0 = readAsk(text, { players, maxYear }); ask.players = a0.players; } // (names as typed)
+    let planNotes = [];
+    if (plan) {
+      // (update 254) who, what to leave out and which part of the game: from the plan
+      const found = [], missing = [];
+      for (const nm of plan.players) { const hit = readAsk(nm, { players, maxYear }).players[0]; if (hit) { if (!found.some((p) => p.key === hit.key)) found.push(hit); } else missing.push(nm); }
+      if (found.length) ask.players = found;
+      ask.everyone = plan.everyone;
+      ask.excl = plan.excl; ask.exclRounds = plan.exclRounds; ask.cats = plan.parts; ask.since = null;
+      if (missing.length && !found.length && !plan.everyone && staff) { askBusy = ""; askErr = `Couldn\u2019t find ${missing.join(", ")} in the players you can see. Check the spelling, or pick them with \u201cManually create comparisons\u201d.`; draw(); return; }
+      if (missing.length) planNotes.push(`Couldn\u2019t find ${missing.join(", ")}, so they\u2019re not in this.`);
+      if (!plan.groups.length) { askBusy = ""; askErr = plan.unsupported ? `I can\u2019t compare that yet: ${plan.unsupported}` : "I couldn\u2019t tell what to compare from that."; draw(); return; }
+    } else if (ask.stretchUnread) {
+      askBusy = ""; askErr = "How many rounds in a row? Say it like \u201chis best 12-round stretch\u201d or \u201chis worst 8 rounds in a row\u201d."; draw(); return;
+    }
     let ps = ask.players.slice(0, 4);
     if (!ps.length && !ask.everyone && !staff && players.length) ps = [{ key: players[0][0], label: players[0][1] }];
     if (!ps.length && !ask.everyone) { askBusy = ""; askErr = "Which player? Name one (or say \u201ceveryone\u201d)."; draw(); return; }
@@ -521,12 +600,22 @@ export async function render(main) {
     const missed = ask.excl.filter((ph) => ![...matchEvents([ph], [...evs.values()]).keys()].length);
     // what to compare: clubs and balls, else seasons or recent form
     const catalog = products(allRounds()).map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
-    let groups = ask.roundSets ? [] : productGroups(ask, catalog, { maxYear });
+    let groups = plan || ask.roundSets || ask.stretch ? [] : productGroups(ask, catalog, { maxYear });
     let kind = "product";
+    if (plan) { const pg = planGroups(plan, catalog, maxYear); groups = pg.groups; kind = pg.kind; planNotes.push(...(pg.noGear.length ? [`No rounds with: ${pg.noGear.join(", ")}`] : [])); }
     // (update 250) a stretch back from today ("the past 12 months") and sets of rounds by how good they were
     const base = { ...(ask.since ? { from: ask.since.from } : {}), ...(ask.years.length && !ask.since ? { years: ask.years } : {}) };
-    if (ask.since) for (const x of groups) x.f = { ...x.f, from: ask.since.from };
-    if (ask.roundSets) {
+    if (ask.since && !plan) for (const x of groups) x.f = { ...x.f, from: ask.since.from };
+    // (update 254) the best (or worst) run of N rounds in a row, against their latest rounds (or all their rounds)
+    if (!plan && ask.stretch) {
+      kind = "rounds";
+      const st = ask.stretch, nm = `${st.worst ? "Worst" : "Best"} ${st.n}-round stretch`;
+      groups.push({ name: nm, f: { ...base, stretch: { n: st.n, ...(st.worst ? { worst: true } : {}), ...(ask.cats.length === 1 ? { cat: ask.cats[0] } : {}) } } });
+      if (ask.last) groups.push(ask.last.unit === "events" ? { name: `Last ${ask.last.n} events`, f: { lastEv: ask.last.n } } : { name: `Last ${ask.last.n} rounds`, f: { last: ask.last.n } });
+      else groups.push({ name: ask.since ? `Every round, ${ask.since.label}` : "Every round", f: { ...base } });
+      groups = groups.map((x, i) => ({ ...x, id: `ask:stretch:${i}:${JSON.stringify(x.f)}`, mode: "custom" }));
+    }
+    if (!plan && ask.roundSets) {
       kind = "rounds";
       const rs0 = ask.roundSets, total = roundsFor(allRounds(), base).length;
       const setName = (word, x) => (x.n ? `${word} ${x.n} rounds` : `${word} ${x.pct}% of rounds`);
@@ -547,13 +636,14 @@ export async function render(main) {
     let empties = [];
     if (groups.length) {
       empties = groups.filter((x) => !nOf(x.f)).map((x) => x.name);
-      if (empties.length === groups.length && groups.some((x) => x.f.years)) {
+      if (!plan && empties.length === groups.length && groups.some((x) => x.f.years)) {
         const again = productGroups({ ...ask, years: [], sides: ask.sides.map((t) => t.replace(/\b(?:since|from|after|in|for|during|starting(?: in| from)?|beginning(?: in)?)?\s*(?:the\s+)?(?:(?:start|beginning)\s+of\s+)?(?:the\s+)?20\d\d(?:\s*(?:-|to|through|thru|until|till)\s*20\d\d)?(?:\s+seasons?)?/g, " ")), text: ask.text.replace(/\b20\d\d\b/g, " ") }, catalog, { maxYear });
         if (again.some((x) => nOf(x.f))) { askErr = `None of these were used in ${ask.years.join(", ")}, so this is every season.`; groups = again; empties = groups.filter((x) => !nOf(x.f)).map((x) => x.name); }
       }
       groups = groups.filter((x) => nOf(x.f));
     }
     // nothing to go on (no clubs, no sets of rounds, no seasons, windows or dates): say so, don't guess
+    if (plan && !groups.length) { askBusy = ""; const keep = text; clearAll(); route = "ask"; askText = keep; askErr = `None of that had any rounds${planNotes.length ? ` (${planNotes.join("; ")})` : ""}.`; draw(); return; }
     if (!groups.length && !ask.last && !ask.years.length && !ask.since && !ask.kinds.length && !/\bseasons?\b|\byears?\b/.test(ask.text)) {
       const keep = text;
       clearAll(); route = "ask"; askText = keep;
@@ -574,11 +664,14 @@ export async function render(main) {
         groups = (ask.years.length > 1 || !ask.years.length ? ys : opts.years.slice(0, 2).map((y) => y.value)).map((y) => ({ name: y, f: { years: [y] }, id: `years:${y}`, mode: "years", values: [y] }));
       }
     }
-    if (ask.kinds.length && kind === "time") askErr = `Couldn\u2019t find those ${ask.kinds.join(" / ").toLowerCase()}s in ${inPlay().map((p) => p.label).join(", ")}\u2019s rounds, so here are their seasons instead.`;
+    if (!plan && ask.kinds.length && kind === "time") askErr = `Couldn\u2019t find those ${ask.kinds.join(" / ").toLowerCase()}s in ${inPlay().map((p) => p.label).join(", ")}\u2019s rounds, so here are their seasons instead.`;
     const cap = Math.max(2, Math.floor(MAX_SEL / Math.max(1, inPlay().length)));
     sels = groups.slice(0, cap).map((x, i) => ({ id: x.id || `ask:${i}:${x.name}`, name: x.name, f: x.f, mode: x.mode || (kind === "product" ? "product" : "windows"), values: x.values || x.f.clubs || x.f.balls || null, color: COLORS[i % COLORS.length] }));
     mode = kind === "product" ? "product" : "windows"; g.what = kind === "product" ? "gear" : "time"; g.open = false; touched = true; placeDim = null; backToPlace = null;
-    askRes = { text, rewrite, ask, kind, dropped: Math.max(0, groups.length - cap), missed, empties };
+    // (update 254) anything the plan couldn't do, said plainly (never answered as something else)
+    if (plan?.unsupported) planNotes.unshift(`Not in this answer: ${plan.unsupported}`);
+    if (planNotes.length) askErr = [askErr, ...planNotes].filter(Boolean).join(" ");
+    askRes = { text, rewrite, plan, ask, kind, dropped: Math.max(0, groups.length - cap), missed, empties };
     askBusy = "";
     draw();
     root.querySelector(".cmp-askres")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -595,6 +688,15 @@ export async function render(main) {
     const only = [...incCats].map((c) => catNames[c]).filter(Boolean);
     if (only.length) read.push(`**Only:** ${only.join(" + ")} (strokes gained from those shots)`);
     if (askRes.ask.since) read.push(`**When:** ${askRes.ask.since.label} (since ${dateTxt(askRes.ask.since.from)})`);
+    // (update 254) a plan's groups all from the same day: when
+    const froms = [...new Set(sels.map((x) => x.f?.from || ""))];
+    if (askRes.plan && froms.length === 1 && froms[0] && !sels.some((x) => x.f?.last || x.f?.prev)) read.push(`**When:** since ${dateTxt(froms[0])}`);
+    // (update 254) a run of rounds in a row: when it was, and which tournaments
+    for (const it of live) {
+      if (!it.f?.stretch || !it.rs?.length) continue;
+      const evs = [...new Set(it.rs.map((rd) => rd.event).filter(Boolean))];
+      read.push(`**${it.name}:** ${dateTxt(it.s.from)} to ${dateTxt(it.s.to)}${evs.length ? `, ${evs.length === 1 ? evs[0] : `${evs[0]} to ${evs.at(-1)} (${evs.length} events)`}` : ""}`);
+    }
     read.push(`**Compared:** ${sels.map((x) => x.name).join("  \u00b7  ")}${askRes.dropped ? ` (and ${askRes.dropped} more that didn\u2019t fit)` : ""}`);
     if (exclOn()) read.push(`**Left out:** ${[...excl.events.values(), ...[...excl.rounds].map((n) => `Round ${n}s`)].join(", ")}`);
     if (askRes.empties?.length) read.push(`**No rounds with:** ${askRes.empties.join(", ")}`);
@@ -625,7 +727,7 @@ export async function render(main) {
       const [late, early] = [...live].sort((a, b) => dk0(b.s.to).localeCompare(dk0(a.s.to))), d = late.s.sg.TOTAL - early.s.sg.TOTAL;
       const f = fitStory(late, early);
       pairDetail(late, early);
-      answer = `${what}**${late.name}**: **${fmtSG(late.s.sg.TOTAL)}** strokes gained a round over ${late.s.n} rounds, ${Math.abs(d) < 0.05 ? "**about the same as**" : `**${d > 0 ? "up" : "down"} ${Math.abs(d).toFixed(2)}** from`} ${early.name.toLowerCase()} (${fmtSG(early.s.sg.TOTAL)}). ${f.sum}`;
+      answer = `${what}**${late.name}**: **${fmtSG(late.s.sg.TOTAL)}** strokes gained a round over ${late.s.n} rounds, ${Math.abs(d) < 0.05 ? "**about the same as**" : `**${d > 0 ? "up" : "down"} ${Math.abs(d).toFixed(2)}** from`} ${/^(best|worst|most|least)\b/i.test(early.name) ? "the " : ""}${early.name.toLowerCase()} (${fmtSG(early.s.sg.TOTAL)}). ${f.sum}`;
       if (late.s.n < FEW || early.s.n < FEW) answer += " Few rounds, so treat it as a hint.";
     } else if (live.length >= 2) {
       const o = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), a = o[0], b = o[1];
@@ -1633,11 +1735,17 @@ export async function render(main) {
     const vs = (d) => (Math.abs(d) < BAND ? `about ${ref}` : `${Math.abs(d).toFixed(2)} ${d > 0 ? "better" : "worse"} than ${ref}`);
     const line = (it, v, d, u) => `${it.name}: ${fmtSigned(v)} a round, ${vs(d)}${same ? "" : ` (${fmtSigned(u)})`}.`;
     const up = (d) => d >= BAND, down = (d) => d <= -BAND;
-    const sum = up(da) && down(db) ? `So it\u2019s both: ${a.name} is better than usual and ${b.name} is worse.`
-      : up(da) && up(db) ? `Both are better than usual; ${a.name} is just more so.`
-      : down(da) && down(db) ? `Both are worse than usual; ${b.name} is just more so.`
-      : up(da) ? `So the gap is ${a.name} being unusually good, not ${b.name} being bad.`
-      : down(db) ? `So the gap is ${b.name} being unusually bad, not ${a.name} being especially good.`
+    // (update 254) told from whichever is higher: a time comparison passes the latest first, and it can be the lower one
+    // (it used to say "both are about their usual" for +1.02 against +3.78); names mid-sentence start lower case
+    const mid = (n) => String(n).replace(/^(The|All|Every) /, (w) => w.toLowerCase()).replace(/^(Best|Worst|Most|Last|Latest) /, (w) => `the ${w.toLowerCase()}`);
+    const [hi, lo, dh, dl] = va >= vb ? [a, b, da, db] : [b, a, db, da];
+    const sum = up(dh) && down(dl) ? `So it\u2019s both: ${mid(hi.name)} is better than usual and ${mid(lo.name)} is worse.`
+      : up(dh) && up(dl) ? `Both are better than usual; ${mid(hi.name)} is just more so.`
+      : down(dh) && down(dl) ? `Both are worse than usual; ${mid(lo.name)} is just more so.`
+      : up(dh) ? `So the gap is ${mid(hi.name)} being unusually good, not ${mid(lo.name)} being bad.`
+      : down(dl) ? `So the gap is ${mid(lo.name)} being unusually bad, not ${mid(hi.name)} being especially good.`
+      : down(dh) ? `Both are at or below ${ref}; ${mid(lo.name)} is just lower.`
+      : up(dl) ? `Both are at or above ${ref}; ${mid(hi.name)} is just higher.`
       : `Both are about ${ref}, so neither stands out much on its own.`;
     return { lines: [line(a, va, da, ua), line(b, vb, db, ub)], sum, usual: same ? ua : null, ref };
   }

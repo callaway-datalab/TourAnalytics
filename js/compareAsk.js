@@ -33,7 +33,8 @@ export function yearsIn(text, maxYear) {
 
 /**
  * Step one: read the request. players: [[key, label]]. Returns
- * { players: [{ key, label }], everyone, years, sides: [text], excl: [text], exclRounds: [n], together, last, kinds, text }
+ * { players: [{ key, label }], everyone, years, sides: [text], excl: [text], exclRounds: [n], together, last, kinds, text,
+ *   stretch: { n, worst } | null, stretchUnread }   (update 254)
  */
 export function readAsk(text, { players = [], maxYear = null } = {}) {
   let t = norm(text);
@@ -56,6 +57,11 @@ export function readAsk(text, { players = [], maxYear = null } = {}) {
     const lastOf = new Map();
     for (const [k, l, n] of lower) { const last = n.split(/\s+/).pop(); if (last.length > 3) (lastOf.get(last) || lastOf.set(last, []).get(last)).push([k, l]); }
     for (const [last, list] of lastOf) if (list.length === 1 && wordIn(t, last)) found.set(list[0][0], list[0][1]);
+  }
+  if (!found.size) { // (update 254) a first name when only one player has it ("xander's best stretch")
+    const firstOf = new Map();
+    for (const [k, l, n] of lower) { const first = n.split(/\s+/)[0]; if (first.length > 3 && n.includes(" ")) (firstOf.get(first) || firstOf.set(first, []).get(first)).push([k, l]); }
+    for (const [first, list] of firstOf) if (list.length === 1 && new RegExp(`(^|[^a-z0-9])${esc(first)}(?:'s)?($|[^a-z0-9])`).test(t)) found.set(list[0][0], list[0][1]);
   }
   const everyone = /\b(everyone|everybody|all players|every player|the field|whole field|all of tour|across tour|tour players)\b/.test(t);
   const years = yearsIn(t, maxYear);
@@ -81,13 +87,26 @@ export function readAsk(text, { players = [], maxYear = null } = {}) {
     const n = Number(m[2] || m[5] || 0), pct = !!(m[3] || m[6]);
     return n ? (pct ? { pct: n } : { n }) : { pct: 25 };
   };
-  const best = setOf("best|top|good|great|low(?:est)?"), worst = setOf("worst|bottom|bad|poor|high(?:est)?");
+  // (update 254) a run of rounds in a row: "his best 12-round stretch", "best stretch of 12 rounds", "worst 8 rounds in a row"
+  const NUMW = { five: 5, six: 6, eight: 8, ten: 10, twelve: 12, fifteen: 15, twenty: 20 };
+  const numOf = (w) => Number(w) || NUMW[w] || 0;
+  const N_ = "(\\d+|five|six|eight|ten|twelve|fifteen|twenty)";
+  const RUNW = "(?:stretch|run|streak|span|spell|window|sequence|patch|string)";
+  const GOOD = "best|hottest|strongest|top|greatest|finest", BAD = "worst|coldest|weakest|poorest|roughest";
+  const sm = new RegExp(`\\b(${GOOD}|${BAD})\\s+${N_}[\\s-]*(?:rounds?|rds?)[\\s-]*(?:${RUNW}|in a row|back[- ]to[- ]back|straight)\\b`).exec(t)
+    || new RegExp(`\\b(${GOOD}|${BAD})\\s+${RUNW}\\s+(?:of\\s+)?${N_}\\s+(?:straight\\s+|consecutive\\s+)?rounds?\\b`).exec(t)
+    || new RegExp(`\\b(${GOOD}|${BAD})\\s+${N_}\\s+(?:straight|consecutive)\\s+rounds?\\b`).exec(t);
+  const stretch = sm && numOf(sm[2]) ? { n: numOf(sm[2]), worst: new RegExp(`^(?:${BAD})$`).test(sm[1]) } : null;
+  // a run of rounds was asked about, but not in a way that's read here: say so rather than answer something else
+  const stretchUnread = !stretch && new RegExp(`\\b${RUNW}\\b|\\bin a row\\b|\\bconsecutive\\b`).test(t) && /\b(best|worst|hottest|coldest|strongest|weakest)\b/.test(t);
+  const best = stretch ? null : setOf("best|top|good|great|low(?:est)?"), worst = stretch ? null : setOf("worst|bottom|bad|poor|high(?:est)?");
   const usual = /\b(average|typical|normal|usual|other|all(?: of)?(?: his| her| their)?|regular|median)\s+rounds?\b|\bthe rest\b|\b(?:his|her|their) average\b/.test(t);
   const rest = /\bthe rest\b|\bother rounds\b|\bthe others\b|\beverything else\b/.test(t);
   const roundSets = best || worst ? { best, worst, usual: usual || !(best && worst), rest } : null;
-  const lm = /\blast\s+(\d+)\s+(rounds?|events?|tournaments?)\b/.exec(t);
-  const last = lm ? { n: Number(lm[1]), unit: /round/.test(lm[2]) ? "rounds" : "events" } : null;
-  return { since, roundSets, cats, players: [...found].map(([key, label]) => ({ key, label })), everyone, years, sides: sides.length > 1 ? sides : [t], excl, exclRounds, together, last, kinds, text: t };
+  // (update 254) also "his most recent 12 rounds", "the latest 5 events", "his recent 10 starts"
+  const lm = /\b(?:last|latest|most recent|recent|past)\s+(\d+|five|six|eight|ten|twelve|fifteen|twenty)\s+(rounds?|events?|tournaments?|starts?)\b/.exec(t);
+  const last = lm && numOf(lm[1]) ? { n: numOf(lm[1]), unit: /round/.test(lm[2]) ? "rounds" : "events" } : null;
+  return { stretch, stretchUnread, since, roundSets, cats, players: [...found].map(([key, label]) => ({ key, label })), everyone, years, sides: sides.length > 1 ? sides : [t], excl, exclRounds, together, last, kinds, text: t };
 }
 
 /**
@@ -135,8 +154,9 @@ export function productGroups(ask, catalog, { maxYear = null } = {}) {
     const vals = [...new Set(list.map((o) => o.value))];
     const f = isBall ? { balls: vals } : { clubs: vals };
     if (years?.length) f.years = years;
-    groups.push({ name: `${name}${years?.length ? ` · ${yrsTxt(years)}` : ""}`, f });
+    groups.push({ name: `${name}${years?.length ? ` · ${yrsTxt(years)}` : ""}`, f, side: curSide }); // (update 254: which side it's from)
   };
+  let curSide = 0;
   // each side's clubs; a "the rest" side is everything of its kind the other sides aren't
   const poolOf = (s) => {
     let pool = items;
@@ -155,6 +175,7 @@ export function productGroups(ask, catalog, { maxYear = null } = {}) {
     s.restOf = pools.filter((_, j) => j !== i && !specs[j].rest).flat();
   });
   for (const [si, s] of specs.entries()) {
+    curSide = si;
     const years = s.years.length ? s.years : anyYears || [];
     const pool = pools[si];
     if (!pool.length) continue;
