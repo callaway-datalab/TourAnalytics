@@ -65,6 +65,47 @@ To switch downloads back on: Analyze on a phone shows **Resume** in its status l
 or set `paused` to `false` in Firestore → `config/billing`. After a Resume it won't pause again
 until next month's budget period.
 
+## 4. The AI service (optional: Ask AI and the report summaries)
+
+Without it, Ask AI reads requests itself and the reports use their own written summary. With it, Claude
+reads free-form Ask AI requests and writes the summaries. It never spends more than its cap (default **$1.00**,
+counted from the tokens Anthropic reports for each answer). Once the next answer could pass the cap, it stops
+calling the AI and the portal quietly goes back to the built-in versions.
+
+**A. An Anthropic API key**
+1. console.anthropic.com → sign up / sign in → **Billing**: add a card and buy the smallest amount of
+   credit it offers. Leave **auto-reload off**: then Anthropic can't charge more than the credit you bought,
+   whatever happens.
+2. **Settings → Limits**: if it offers a monthly spend limit, set it (a second safety net).
+3. **API Keys → Create Key** ("tour-analytics"). Copy it (it's shown once).
+
+**B. Keep the key secret** (Google Cloud console, same project)
+1. Search **Secret Manager** → enable it if asked → **Create secret**: name `anthropic-api-key`,
+   secret value = the key → **Create**.
+
+**C. The function**
+1. **Cloud Run** → **Write a function**. Service name `insights`, region **us-west1**, runtime **Node.js 22**.
+2. **Authentication: Allow unauthenticated invocations** (the function checks each person is signed in to
+   the portal itself).
+3. Open **Container(s), Volumes, Networking, Security** → **Variables & secrets**:
+   - **Add variable**: `FIREBASE_PROJECT_ID` = your project id (as in config.js).
+   - (optional) `AI_CAP_USD` = `1` (the most it will ever spend; change it later the same way).
+   - (optional) `AI_CAP_PERIOD` = `month` to make the cap a monthly one. Left out: the cap is for good.
+   - (optional) `INSIGHTS_MODEL` = `claude-haiku-5-5` for about 20x cheaper (Sonnet writes better summaries).
+   - **Reference a secret**: name `ANTHROPIC_API_KEY`, secret `anthropic-api-key`, version **latest**,
+     exposed as an **environment variable**. If it asks to grant access to the secret, click **Grant**.
+4. **Create**. In the source editor, replace `index.js` and `package.json` with the two files in
+   `functions/insights/`. Set **Function entry point** to `insights`. **Save and redeploy**.
+5. Permission to keep the running total: Cloud Run → `insights` → **Security** shows its service account.
+   IAM & Admin → **IAM** → **Grant access** → that account → role **Cloud Datastore User** → Save
+   (skip if it already has Editor).
+6. Copy the service's **URL** (top of its Cloud Run page) and add it to `config.js`:
+   `insightsUrl: "https://insights-….run.app",` (inside `window.PORTAL_CONFIG`). Upload config.js.
+
+**Checking the spend:** Firestore → `config` → `aiSpend` shows the total so far (`usd`), the number of
+answers (`calls`) and the cap. To switch it back on after it's reached the cap: raise `AI_CAP_USD`
+(Edit & deploy new revision) or delete the `aiSpend` document to start the count again.
+
 ## On each device
 
 Each phone or browser keeps one copy of the detail per year (IndexedDB), downloaded once per upload.
