@@ -48,53 +48,119 @@ export async function render(main, { flash }) {
   const weekBox = el("div", { class: "week-list", hidden: true });
   // (update 255) AI use (config/aiSpend: everything; aiCalls: each answer, who and what it cost) and reports by player
   let ai = null, runs = null, whoP = null;
-  const money = (usd) => (usd > 0 && usd < 0.995 ? `${(usd * 100).toFixed(usd * 100 < 10 ? 1 : 0)}\u00a2` : `$${(usd || 0).toFixed(2)}`);
+  const money = (usd) => (usd > 0 && usd < 0.995 ? `${(usd * 100).toFixed(usd * 100 < 10 ? 1 : 0)}¢` : `$${(usd || 0).toFixed(2)}`);
   const who = () => (whoP ||= adminAllClients().then(async (c) => {
     const me = (await import("../auth.js")).getState().user?.uid;
     const names = new Map((c.usersSnap?.docs || []).map((d) => [d.id, d.data().name || d.data().email || "Someone"]));
-    return { nameOf: (uid) => (uid === me ? "You" : names.get(uid) || "Someone (account removed)"), labels: c.labels };
-  }).catch(() => ({ nameOf: () => "Someone", labels: new Map() })));
+    const byName = new Map([...c.labels.values()].map((l) => [plainName(l).toLowerCase(), plainName(l)]));
+    return { nameOf: (uid) => (uid === me ? "You" : names.get(uid) || "Someone (account removed)"), labels: c.labels, byName };
+  }).catch(() => ({ nameOf: () => "Someone", labels: new Map(), byName: new Map() })));
   const msOf = (t) => t?.toMillis?.() ?? 0;
-  const table = (title, head, rows, note) => [el("h3", {}, title), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
-    el("thead", {}, el("tr", {}, head.map(([l, n]) => el("th", n ? { class: "num" } : {}, l)))),
-    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", head[i][1] ? { class: "num" } : head[i][2] ? { class: "nowrap muted" } : {}, c))))),
-  ])), note ? el("p", { class: "muted small" }, note) : null];
+  const whenTxt = (t) => (t ? formatWhen(t) : "—");
+  const topList = (m, n = 3) => { const l = [...m].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])); return l.slice(0, n).map(([k, c]) => (m.size > 1 ? `${k} (${c})` : k)).join(", ") + (l.length > n ? `, +${l.length - n} more` : ""); };
+  const bump = (m, k, n = 1) => m.set(k, (m.get(k) || 0) + n);
+
+  /* (update 256) a table whose columns sort (tap a heading; again to flip), for the lists here and Usage */
+  const SORTS = new Map(); // table id → { key, dir }
+  function sortTable(id, cols, rows, redraw, def, { tail = [], cls = "" } = {}) {
+    const st = SORTS.get(id) || SORTS.set(id, { ...def }).get(id);
+    const col = cols.find((c) => c.key === st.key) || cols[0];
+    const cmp = (x, y) => (typeof x === "number" && typeof y === "number" ? x - y : String(x ?? "").localeCompare(String(y ?? ""), undefined, { numeric: true, sensitivity: "base" }));
+    const sorted = [...rows].sort((a, b) => cmp(col.get(a), col.get(b)) * st.dir || cmp(cols[0].get(a), cols[0].get(b)));
+    const head = cols.map((c) => {
+      const on = c.key === col.key;
+      const h = el("th", { class: `sortable${c.num ? " num" : ""}${on ? " on" : ""}`, tabindex: "0", "aria-sort": on ? (st.dir > 0 ? "ascending" : "descending") : "none", title: "Sort by this" }, [c.label, el("span", { class: "sort-arrow", "aria-hidden": "true" }, on ? (st.dir > 0 ? " ▲" : " ▼") : "")]);
+      const go = () => { if (on) st.dir = -st.dir; else { st.key = c.key; st.dir = c.num || c.date ? -1 : 1; } redraw(); };
+      h.addEventListener("click", go);
+      h.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      return h;
+    });
+    const tr = (r, extra = "") => el("tr", { class: extra }, cols.map((c) => el("td", c.num ? { class: "num" } : c.date ? { class: "nowrap muted" } : {}, c.show ? c.show(r) : String(c.get(r) ?? "—"))));
+    return el("div", { class: "table-scroll five-rows" }, el("table", { class: `plain sort-table ${cls}` }, [
+      el("thead", {}, el("tr", {}, head)),
+      el("tbody", {}, [...sorted.map((r) => tr(r)), ...tail.map((r) => tr(r, "muted"))]),
+    ]));
+  }
+
+  /* (update 256) the lists under Reports generated / AI Questions / AI Cost: by player or by person, filtered, sorted */
+  const dview = { ai: "person", reports: "player" };
+  let dq = "";
+  const words = () => dq.toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = (...ts) => { const w = words(); if (!w.length) return true; const hay = ts.flat().join(" ").toLowerCase(); return w.every((x) => hay.includes(x)); };
+  function controls(kind) {
+    const seg = el("div", { class: "seg small glance-seg" }, [["player", "By player"], ["person", "By person"]].map(([v, l]) => {
+      const bt = el("button", { type: "button", class: `seg-btn${dview[kind] === v ? " on" : ""}`, "aria-pressed": String(dview[kind] === v) }, l);
+      bt.addEventListener("click", () => { if (dview[kind] === v) return; dview[kind] = v; drawWeek(); });
+      return bt;
+    }));
+    const q = el("input", { type: "search", class: "glance-q", placeholder: "Filter by player or person…", value: dq, autocomplete: "off", "aria-label": "Filter by player or person" });
+    q.addEventListener("input", async () => { const pos = q.selectionStart; dq = q.value; await drawWeek(); const again = weekBox.querySelector(".glance-q"); if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch { /* */ } } });
+    return el("div", { class: "glance-ctl" }, [seg, q]);
+  }
+  const listHead = (title, kind, note) => [el("div", { class: "glance-list-top" }, [el("h3", {}, title), controls(kind)]), note ? el("p", { class: "muted small glance-note" }, note) : null];
+
   async function drawAi(sortBy) {
-    if (!ai) { mount(weekBox, el("p", { class: "muted small" }, "Loading\u2026")); ai = await aiUsage().catch(() => ({ spend: null, calls: [] })); if (openList !== sortBy) return; }
-    const { nameOf } = await who();
-    const people = new Map();
-    for (const c of ai.calls) { const p = people.get(c.uid) || people.set(c.uid, { name: nameOf(c.uid), q: 0, other: 0, usd: 0, last: null }).get(c.uid); if (c.kind === "ask") p.q++; else p.other++; p.usd += Number(c.usd || 0); if (msOf(c.at) > msOf(p.last)) p.last = c.at; }
-    const rows = [...people.values()].sort((a, b) => (sortBy === "aic" ? b.usd - a.usd : b.q - a.q) || a.name.localeCompare(b.name));
+    if (!ai) { mount(weekBox, el("p", { class: "muted small" }, "Loading…")); ai = await aiUsage().catch(() => ({ spend: null, calls: [] })); if (openList !== sortBy) return; }
+    const { nameOf, byName } = await who();
+    const playerName = (n) => byName.get(String(n).toLowerCase()) || String(n).replace(/\b\w/g, (c) => c.toUpperCase());
+    // each question, with its person and players, filtered on either
+    const calls = ai.calls.map((c) => ({ ...c, person: nameOf(c.uid), ps: Array.isArray(c.players) ? (c.players.length ? c.players.map(playerName) : ["No player named"]) : ["Player not recorded"] }))
+      .filter((c) => hit(c.person, c.ps));
+    const redraw = () => drawAi(sortBy);
+    const redo = () => { if (openList === sortBy) redraw(); };
+    let rows, cols, id = `ai-${dview.ai}`;
+    if (dview.ai === "person") {
+      const m = new Map();
+      for (const c of calls) { const p = m.get(c.uid) || m.set(c.uid, { name: c.person, q: 0, usd: 0, last: null, ps: new Map() }).get(c.uid); if (c.kind === "ask") p.q++; p.usd += Number(c.usd || 0); if (msOf(c.at) > msOf(p.last)) p.last = c.at; for (const x of c.ps) if (!/^(No player named|Player not recorded)$/.test(x)) bump(p.ps, x); }
+      rows = [...m.values()];
+      cols = [{ key: "name", label: "Who", get: (r) => r.name }, { key: "q", label: "Questions", num: 1, get: (r) => r.q }, { key: "usd", label: "Cost", num: 1, get: (r) => r.usd, show: (r) => money(r.usd) },
+        { key: "avg", label: "A question", num: 1, get: (r) => (r.q ? r.usd / r.q : 0), show: (r) => (r.q && !r.earlier ? money(r.usd / r.q) : "—") },
+        { key: "ps", label: "Players asked about", get: (r) => topList(r.ps) || "—" }, { key: "last", label: "Last", date: 1, get: (r) => msOf(r.last), show: (r) => whenTxt(r.last) }];
+    } else {
+      const m = new Map();
+      for (const c of calls) for (const x of c.ps) { const p = m.get(x) || m.set(x, { name: x, q: 0, usd: 0, last: null, who: new Map() }).get(x); if (c.kind === "ask") p.q++; p.usd += Number(c.usd || 0) / c.ps.length; if (msOf(c.at) > msOf(p.last)) p.last = c.at; bump(p.who, c.person); }
+      rows = [...m.values()];
+      cols = [{ key: "name", label: "Player", get: (r) => r.name }, { key: "q", label: "Questions", num: 1, get: (r) => r.q }, { key: "usd", label: "Cost", num: 1, get: (r) => r.usd, show: (r) => money(r.usd) },
+        { key: "who", label: "Asked by", get: (r) => topList(r.who) }, { key: "last", label: "Last", date: 1, get: (r) => msOf(r.last), show: (r) => whenTxt(r.last) }];
+    }
     const logged = ai.calls.reduce((t, c) => t + Number(c.usd || 0), 0);
     const earlierN = Math.max(0, Number(ai.spend?.calls || 0) - ai.calls.length), earlierUsd = Math.max(0, Number(ai.spend?.usd || 0) - logged);
-    const out = rows.map((p) => [p.name, String(p.q), money(p.usd), p.usd && p.q ? money(p.usd / p.q) : "\u2014", p.last ? formatWhen(p.last) : "\u2014"]);
-    if (earlierN || earlierUsd > 0.0005) out.push([el("span", { class: "muted" }, "Earlier AI calls (before update 255: who and what weren\u2019t kept)"), String(earlierN), money(earlierUsd), "\u2014", "\u2014"]);
+    const tail = !words().length && (earlierN || earlierUsd > 0.0005) ? [{ name: "Earlier AI calls (before update 255: who and what weren’t kept)", q: earlierN, usd: earlierUsd, ps: new Map(), who: new Map(), last: null, earlier: true }] : [];
+    const tailCols = (r) => r; // (shown with the same columns)
     const cap = Number(ai.spend?.cap || 1), spent = Number(ai.spend?.usd || 0);
-    mount(weekBox, table(`AI use by person${rows.length ? ` (${rows.length})` : ""}`, [["Who"], ["Questions", 1], ["Cost", 1], ["A question", 1], ["Last", 0, 1]],
-      out.length ? out : [[el("span", { class: "muted" }, "No AI questions yet."), "", "", "", ""]],
-      `Spent ${money(spent)} of the ${money(cap)} cap (${money(Math.max(0, cap - spent))} left). Names are kept from update 255 on; anything earlier is in the last row. Cost includes the few older AI report summaries.`));
+    const def = { key: sortBy === "aic" ? "usd" : "q", dir: -1 };
+    mount(weekBox, [
+      ...listHead(`AI use by ${dview.ai}${rows.length ? ` (${rows.length})` : ""}`, "ai"),
+      rows.length || tail.length ? sortTable(id, cols, rows, redo, def, { tail: tail.map(tailCols) }) : el("p", { class: "muted small" }, words().length ? "Nothing matches that filter." : "No AI questions yet."),
+      el("p", { class: "muted small" }, `Spent ${money(spent)} of the ${money(cap)} cap (${money(Math.max(0, cap - spent))} left). Names are kept from update 255 on and players from update 256; anything earlier is in the last row.${dview.ai === "player" ? " A question about two players counts for both, with its cost split between them." : ""}`),
+    ]);
   }
   async function drawRuns() {
-    if (!runs) { mount(weekBox, el("p", { class: "muted small" }, "Loading\u2026")); runs = await reportRunsList().catch(() => []); if (openList !== "reports") return; }
+    if (!runs) { mount(weekBox, el("p", { class: "muted small" }, "Loading…")); runs = await reportRunsList().catch(() => []); if (openList !== "reports") return; }
     const { nameOf, labels } = await who();
-    const by = new Map();
-    for (const r of runs) {
-      const k = r.playerKey || "";
-      const p = by.get(k) || by.set(k, { name: k ? labels.get(k) || plainName(k.replace(/^c_/, "")) : "No player recorded", n: 0, last: null, makers: new Map() }).get(k);
-      p.n++; if (msOf(r.at) > msOf(p.last)) p.last = r.at;
-      const m = nameOf(r.uid); p.makers.set(m, (p.makers.get(m) || 0) + 1);
+    const list = runs.map((r) => ({ ...r, person: nameOf(r.uid), player: r.playerKey ? labels.get(r.playerKey) || plainName(String(r.playerKey).replace(/^c_/, "")) : "No player recorded" })).filter((r) => hit(r.person, r.player));
+    const redo = () => { if (openList === "reports") drawRuns(); };
+    const m = new Map();
+    let cols;
+    if (dview.reports === "player") {
+      for (const r of list) { const p = m.get(r.player) || m.set(r.player, { name: r.player, n: 0, last: null, other: new Map() }).get(r.player); p.n++; if (msOf(r.at) > msOf(p.last)) p.last = r.at; bump(p.other, r.person); }
+      cols = [{ key: "name", label: "Player", get: (r) => r.name }, { key: "n", label: "Reports", num: 1, get: (r) => r.n }, { key: "other", label: "Made by", get: (r) => topList(r.other) }, { key: "last", label: "Last", date: 1, get: (r) => msOf(r.last), show: (r) => whenTxt(r.last) }];
+    } else {
+      for (const r of list) { const p = m.get(r.uid) || m.set(r.uid, { name: r.person, n: 0, last: null, other: new Map() }).get(r.uid); p.n++; if (msOf(r.at) > msOf(p.last)) p.last = r.at; bump(p.other, r.player); }
+      cols = [{ key: "name", label: "Who", get: (r) => r.name }, { key: "n", label: "Reports", num: 1, get: (r) => r.n }, { key: "other", label: "Players", get: (r) => topList(r.other) }, { key: "last", label: "Last", date: 1, get: (r) => msOf(r.last), show: (r) => whenTxt(r.last) }];
     }
-    const rows = [...by.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-    mount(weekBox, table(`Reports by player (${rows.length})`, [["Player"], ["Reports", 1], ["Made by"], ["Last", 0, 1]],
-      rows.length ? rows.map((p) => [p.name, String(p.n), [...p.makers].sort((a, b) => b[1] - a[1]).map(([m, n]) => (p.makers.size > 1 ? `${m} (${n})` : m)).join(", "), p.last ? formatWhen(p.last) : "\u2014"])
-        : [[el("span", { class: "muted" }, "No reports yet."), "", "", ""]]));
+    const rows = [...m.values()];
+    mount(weekBox, [
+      ...listHead(`Reports by ${dview.reports} (${rows.length})`, "reports"),
+      rows.length ? sortTable(`reports-${dview.reports}`, cols, rows, redo, { key: "n", dir: -1 }) : el("p", { class: "muted small" }, words().length ? "Nothing matches that filter." : "No reports yet."),
+    ]);
   }
   const drawWeek = () => {
     weekBox.hidden = !openList;
     statsBox.querySelectorAll(".glance-btn").forEach((b) => b.setAttribute("aria-expanded", b.dataset.list === openList ? "true" : "false"));
     if (!openList) return;
-    if (openList === "aiq" || openList === "aic") { drawAi(openList); return; }
-    if (openList === "reports") { drawRuns(); return; }
+    if (openList === "aiq" || openList === "aic") return drawAi(openList); // (update 256: returned, so the filter box can be focused again after)
+    if (openList === "reports") return drawRuns();
     if (!weekly.length) { mount(weekBox, el("p", { class: "muted" }, "No sign-ins yet this week.")); return; }
     if (openList === "signins") {
       mount(weekBox, [el("h3", {}, `Sign-ins this week (${weekly.length})`), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
@@ -129,7 +195,12 @@ export async function render(main, { flash }) {
       const shown = typeof value === "number" ? num(value) : String(value);
       if (!list) return el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, shown)]);
       const b = el("div", { class: "glance-btn", role: "button", tabindex: "0", title, "data-list": list, "aria-expanded": "false" }, [el("dt", {}, label), el("dd", {}, shown)]);
-      const toggle = () => { openList = openList === list ? null : list; if (openList === "aiq" || openList === "aic") ai = null; drawWeek(); };
+      const toggle = () => {
+        const was = openList; openList = openList === list ? null : list;
+        if (openList === "aiq" || openList === "aic") { ai = null; SORTS.delete("ai-person"); SORTS.delete("ai-player"); } // (each tile opens sorted by its own number)
+        if (openList !== was) dq = "";
+        drawWeek();
+      };
       b.addEventListener("click", toggle);
       b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
       return b;
@@ -172,18 +243,15 @@ export async function render(main, { flash }) {
   const pageName = (k) => PAGE_NAMES[k] || String(k).replace(/^admin-/, "Admin: ").replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase());
   const dur = (sec) => { sec = Math.round(sec || 0); if (sec < 60) return `${sec}s`; const m = Math.round(sec / 60); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); return `${h}h ${m % 60}m`; };
   const usageBox = el("section", { class: "usage-box" }, el("p", { class: "muted small" }, "Loading usage\u2026"));
-  let usageSpan = "30", usageSort = "time";
+  let usageSpan = "30";
+  const usageCache = new Map(); // (update 256) span → its docs, so sorting a table doesn't read them again
   const loadUsageBox = async () => {
     const { loadUsage, dayOf } = await import("../usage.js");
     const back = { "7": 6, "30": 29, "90": 89 }[usageSpan];
     const since = back == null ? null : dayOf(new Date(Date.now() - back * 864e5));
     let docs = [];
-    try { docs = await loadUsage(since); } catch (err) { mount(usageBox, el("p", { class: "muted small" }, `Couldn\u2019t load usage (${err?.code || "error"}). Republish firestore.rules from this update.`)); return; }
-    let usersSnap = null;
-    try { usersSnap = (await (await import("../store.js")).adminAllClients()).usersSnap; } catch { /* names unknown */ }
-    const names = new Map((usersSnap?.docs || []).map((d) => [d.id, d.data().name || d.data().email || "Someone"]));
-    const me = (await import("../auth.js")).getState().user?.uid;
-    const nameOf = (uid) => (uid === me ? "You" : names.get(uid) || "Someone (account removed)");
+    try { docs = usageCache.get(usageSpan) || await loadUsage(since); usageCache.set(usageSpan, docs); } catch (err) { mount(usageBox, el("p", { class: "muted small" }, `Couldn\u2019t load usage (${err?.code || "error"}). Republish firestore.rules from this update.`)); return; }
+    const { nameOf } = await who();
     const people = new Map(), pages = new Map();
     let total = 0, views = 0;
     for (const d of docs) {
@@ -192,11 +260,10 @@ export async function render(main, { flash }) {
       for (const [k, n] of Object.entries(d.pages || {})) { p.views += n; views += n; p.pages.set(k, (p.pages.get(k) || 0) + n); const g = pages.get(k) || pages.set(k, { views: 0, sec: 0, who: new Set() }).get(k); g.views += n; g.who.add(d.uid); }
       for (const [k, v] of Object.entries(d.pageSec || {})) { const g = pages.get(k) || pages.set(k, { views: 0, sec: 0, who: new Set() }).get(k); g.sec += v; g.who.add(d.uid); }
     }
-    const ppl = [...people.values()].sort((a, b) => (usageSort === "time" ? b.sec - a.sec : usageSort === "days" ? b.days - a.days : b.views - a.views));
+    const ppl = [...people.values()];
     const personDays = docs.length;
-    const seg = el("div", { class: "seg small" }, [["7", "7 days"], ["30", "30 days"], ["90", "90 days"], ["all", "All time"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${usageSpan === v ? " on" : ""}` }, l); b.addEventListener("click", () => { usageSpan = v; loadUsageBox(); }); return b; }));
+    const seg = el("div", { class: "seg small" }, [["7", "7 days"], ["30", "30 days"], ["90", "90 days"], ["all", "All time"]].map(([v, l]) => { const b = el("button", { type: "button", class: `seg-btn${usageSpan === v ? " on" : ""}` }, l); b.addEventListener("click", () => { usageSpan = v; usageCache.delete(v); loadUsageBox(); }); return b; }));
     const kpi = (label, value, title) => el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, value)]);
-    const th = (label, key) => { const b = el("th", { class: `num${key ? " sortable" : ""}${usageSort === key ? " on" : ""}` }, label); if (key) b.addEventListener("click", () => { usageSort = key; loadUsageBox(); }); return b; };
     mount(usageBox, [
       el("div", { class: "usage-top" }, [el("h3", {}, "Usage"), seg]),
       docs.length ? null : el("p", { class: "muted small" }, "No usage recorded yet for this period. It\u2019s counted from this update on, once firestore.rules is republished."),
@@ -208,14 +275,15 @@ export async function render(main, { flash }) {
         kpi("Page views", views.toLocaleString(), "Pages opened, everyone combined."),
       ]),
       pages.size ? el("div", { class: "usage-cols" }, [
-        el("div", {}, [el("h4", {}, "Most visited pages"), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain" }, [
-          el("thead", {}, el("tr", {}, [el("th", {}, "Page"), el("th", { class: "num" }, "Views"), el("th", { class: "num" }, "Time"), el("th", { class: "num" }, "People")])),
-          el("tbody", {}, [...pages].sort((a, b) => b[1].views - a[1].views || b[1].sec - a[1].sec).map(([k, g]) => el("tr", {}, [el("td", {}, pageName(k)), el("td", { class: "num" }, g.views.toLocaleString()), el("td", { class: "num" }, dur(g.sec)), el("td", { class: "num" }, String(g.who.size))]))),
-        ]))]),
-        el("div", {}, [el("h4", {}, "By person"), el("div", { class: "table-scroll five-rows" }, el("table", { class: "plain usage-people" }, [
-          el("thead", {}, el("tr", {}, [el("th", {}, "Who"), th("Days", "days"), th("Total time", "time"), el("th", { class: "num" }, "Avg a day"), th("Views", "views"), el("th", {}, "Most used"), el("th", {}, "Last")])),
-          el("tbody", {}, ppl.map((p) => { const top = [...p.pages].sort((a, b) => b[1] - a[1])[0]; return el("tr", {}, [el("td", {}, p.name), el("td", { class: "num" }, String(p.days)), el("td", { class: "num" }, dur(p.sec)), el("td", { class: "num" }, dur(p.sec / p.days)), el("td", { class: "num" }, String(p.views)), el("td", {}, top ? pageName(top[0]) : "\u2014"), el("td", { class: "nowrap muted" }, p.last)]); })),
-        ]))]),
+        // (update 256) both tables sort by any column (tap a heading; again to flip)
+        el("div", {}, [el("h4", {}, "Most visited pages"), sortTable("pages", [
+          { key: "page", label: "Page", get: (r) => pageName(r[0]) }, { key: "views", label: "Views", num: 1, get: (r) => r[1].views, show: (r) => r[1].views.toLocaleString() },
+          { key: "sec", label: "Time", num: 1, get: (r) => r[1].sec, show: (r) => dur(r[1].sec) }, { key: "who", label: "People", num: 1, get: (r) => r[1].who.size }], [...pages], loadUsageBox, { key: "views", dir: -1 })]),
+        el("div", {}, [el("h4", {}, "By person"), sortTable("people", [
+          { key: "name", label: "Who", get: (p) => p.name }, { key: "days", label: "Days", num: 1, get: (p) => p.days }, { key: "sec", label: "Total time", num: 1, get: (p) => p.sec, show: (p) => dur(p.sec) },
+          { key: "avg", label: "Avg a day", num: 1, get: (p) => p.sec / p.days, show: (p) => dur(p.sec / p.days) }, { key: "views", label: "Views", num: 1, get: (p) => p.views },
+          { key: "top", label: "Most used", get: (p) => { const t = [...p.pages].sort((a, b) => b[1] - a[1])[0]; return t ? pageName(t[0]) : "\u2014"; } },
+          { key: "last", label: "Last", date: 1, get: (p) => p.last }], ppl, loadUsageBox, { key: "sec", dir: -1 }, { cls: "usage-people" })]),
       ]) : null,
     ]);
   };

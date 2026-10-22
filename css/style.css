@@ -4133,3 +4133,24 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .usage-top .seg { flex: 0 0 auto; flex-wrap: nowrap; }
 .usage-top .seg-btn { flex: 0 0 auto; white-space: nowrap; min-height: 2.4rem; padding: 0 1rem; }
 @media (max-width: 520px) { .usage-top .seg { width: 100%; } .usage-top .seg-btn { flex: 1 1 0; padding: 0 0.4rem; font-size: 0.85rem; } }
+
+/* (update 256) At a glance: every label on one line (a little smaller), so every number sits at the same height */
+.glance-section .facts.glance > div { display: flex; flex-direction: column; min-width: 0; }
+.glance-section .facts.glance dt { font-size: 0.6rem !important; letter-spacing: 0.08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.glance-section .facts.glance dd { margin-top: auto; padding-top: 0.45rem; }
+/* phones: labels may take two lines, but every label keeps room for two, so the numbers still line up */
+@media (max-width: 520px) { .glance-section .facts.glance dt { white-space: normal; min-height: 2.4em; } }
+/* (update 256) the lists under the tiles: By player / By person, a filter, and columns that sort */
+.glance-list-top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.glance-list-top h3 { margin: 0; }
+.glance-ctl { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.glance-seg { flex: 0 0 auto; }
+.glance-seg .seg-btn { flex: 0 0 auto; white-space: nowrap; min-height: 2.3rem; padding: 0 0.9rem; }
+.glance-q { width: 16rem !important; min-width: 0; min-height: 2.3rem; margin: 0 !important; }
+.glance-ctl { flex-wrap: nowrap; }
+.sort-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.sort-table th.sortable:hover, .sort-table th.sortable.on { color: var(--ink); }
+.sort-table .sort-arrow { font-size: 0.7em; }
+.sort-table tr.muted td { color: var(--muted); }
+@media (max-width: 620px) { .glance-ctl { width: 100%; flex-wrap: wrap; } .glance-q { width: 100% !important; } }
+.sort-table th.sortable, .usage-people.sort-table th.sortable { text-decoration: none; } /* (update 256: the same look in every sortable table) */

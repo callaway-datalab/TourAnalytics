@@ -157,16 +157,20 @@ ${JSON.stringify(body.analysis).slice(0, 9000)}`;
     if (out.capped) return res.status(402).json({ capped: true, cap: CAP }); // (the portal falls back to its built-in version)
     if (out.error || !out.text) return res.status(502).send("The AI didn't answer");
     // (update 255) each answer: who asked and what it cost, for the admin's At a glance (AI Questions, AI Cost by person)
-    await db.collection("aiCalls").add({ uid: who.uid, at: admin.firestore.FieldValue.serverTimestamp(), usd: out.usd || 0, model,
-      kind: body.ask?.text ? "ask" : body.comparison ? "compareReport" : "report" }).catch((e) => console.error("aiCalls", e));
+    // (update 256) and which players it was about (Ask AI: the names in its plan; "Everyone" for the whole field)
+    const logCall = (players) => db.collection("aiCalls").add({ uid: who.uid, at: admin.firestore.FieldValue.serverTimestamp(), usd: out.usd || 0, model,
+      kind: body.ask?.text ? "ask" : body.comparison ? "compareReport" : "report", ...(players ? { players } : {}) }).catch((e) => console.error("aiCalls", e));
     if (body.ask?.text) {
       // (update 254) the plan, as JSON (anything around it, like a code fence, is trimmed off)
       const m = /\{[\s\S]*\}/.exec(out.text);
       let plan = null;
       try { plan = m ? JSON.parse(m[0]) : null; } catch { plan = null; }
-      if (!plan || typeof plan !== "object" || !Array.isArray(plan.groups)) return res.status(502).send("The AI's plan couldn't be read");
+      if (!plan || typeof plan !== "object" || !Array.isArray(plan.groups)) { await logCall([]); return res.status(502).send("The AI's plan couldn't be read"); }
+      const players = [...(Array.isArray(plan.players) ? plan.players : []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().slice(0, 60)).slice(0, 4), ...(plan.everyone === true ? ["Everyone"] : [])];
+      await logCall(players);
       return res.json({ plan });
     }
+    await logCall(null);
     return res.json({ summary: out.text });
   } catch (err) {
     console.error(err);
