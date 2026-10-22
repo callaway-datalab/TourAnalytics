@@ -279,6 +279,7 @@ var ALIASES = {
   ballBrand: ["ballbrand", "ballmake", "ballmanufacturer"],
   ballModel: ["ballmodel", "ball", "balltype"]
 };
+var GEAR = /* @__PURE__ */ new Map();
 function clubGroup(name) {
   const s = String(name).toLowerCase().replace(/\s+/g, "");
   if (/driver|^1w$/.test(s)) return "Driver";
@@ -439,7 +440,10 @@ function prepare(rows, idx) {
     const clubCat = src ? /non[\s-]*driver/i.test(src) ? "Non-Driver" : clubMemo(src) : null;
     const brand = known(get(r, "clubBrand")), model = known(get(r, "clubModel"));
     const bb = known(get(r, "ballBrand")), bm = known(get(r, "ballModel"));
-    return { club, clubCat, gear: brand && model ? `${clubCat || "Other"}|${brand} ${model}` : null, ball: bb && bm ? `${bb} ${bm}` : null };
+    const gear = brand && model ? `${clubCat || "Other"}|${brand} ${model}` : null, ball = bb && bm ? `${bb} ${bm}` : null;
+    if (gear && !GEAR.has(gear)) GEAR.set(gear, { kind: clubCat || "Other", brand, model });
+    if (ball && !GEAR.has(`Ball|${ball}`)) GEAR.set(`Ball|${ball}`, { kind: "Ball", brand: bb, model: bm });
+    return { club, clubCat, gear, ball };
   };
   const hasEquip = ["club", "clubType", "clubBrand", "clubModel", "ballBrand", "ballModel"].some((f) => idx[f] !== void 0);
   for (const r of rows) {
