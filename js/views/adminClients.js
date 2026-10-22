@@ -111,14 +111,14 @@ export async function render(main, { flash }) {
     let rows, cols, id = `ai-${dview.ai}`;
     if (dview.ai === "person") {
       const m = new Map();
-      for (const c of calls) { const p = m.get(c.uid) || m.set(c.uid, { name: c.person, q: 0, usd: 0, last: null, ps: new Map() }).get(c.uid); if (c.kind === "ask") p.q++; p.usd += Number(c.usd || 0); if (msOf(c.at) > msOf(p.last)) p.last = c.at; for (const x of c.ps) if (!/^(No player named|Player not recorded)$/.test(x)) bump(p.ps, x); }
+      for (const c of calls) { const p = m.get(c.uid) || m.set(c.uid, { name: c.person, q: 0, usd: 0, last: null, ps: new Map() }).get(c.uid); if (c.kind === "ask" || c.kind === "callie") p.q++; p.usd += Number(c.usd || 0); if (msOf(c.at) > msOf(p.last)) p.last = c.at; for (const x of c.ps) if (!/^(No player named|Player not recorded)$/.test(x)) bump(p.ps, x); }
       rows = [...m.values()];
       cols = [{ key: "name", label: "Who", get: (r) => r.name }, { key: "q", label: "Questions", num: 1, get: (r) => r.q }, { key: "usd", label: "Cost", num: 1, get: (r) => r.usd, show: (r) => money(r.usd) },
         { key: "avg", label: "A question", num: 1, get: (r) => (r.q ? r.usd / r.q : 0), show: (r) => (r.q && !r.earlier ? money(r.usd / r.q) : "—") },
         { key: "ps", label: "Players asked about", get: (r) => topList(r.ps) || "—" }, { key: "last", label: "Last", date: 1, get: (r) => msOf(r.last), show: (r) => whenTxt(r.last) }];
     } else {
       const m = new Map();
-      for (const c of calls) for (const x of c.ps) { const p = m.get(x) || m.set(x, { name: x, q: 0, usd: 0, last: null, who: new Map() }).get(x); if (c.kind === "ask") p.q++; p.usd += Number(c.usd || 0) / c.ps.length; if (msOf(c.at) > msOf(p.last)) p.last = c.at; bump(p.who, c.person); }
+      for (const c of calls) for (const x of c.ps) { const p = m.get(x) || m.set(x, { name: x, q: 0, usd: 0, last: null, who: new Map() }).get(x); if (c.kind === "ask" || c.kind === "callie") p.q++; p.usd += Number(c.usd || 0) / c.ps.length; if (msOf(c.at) > msOf(p.last)) p.last = c.at; bump(p.who, c.person); }
       rows = [...m.values()];
       cols = [{ key: "name", label: "Player", get: (r) => r.name }, { key: "q", label: "Questions", num: 1, get: (r) => r.q }, { key: "usd", label: "Cost", num: 1, get: (r) => r.usd, show: (r) => money(r.usd) },
         { key: "who", label: "Asked by", get: (r) => topList(r.who) }, { key: "last", label: "Last", date: 1, get: (r) => msOf(r.last), show: (r) => whenTxt(r.last) }];
@@ -181,7 +181,7 @@ export async function render(main, { flash }) {
     weekly = stats.weekly || [];
     if (aiNow) ai = aiNow;
     runs = null; // (re-read when the list is opened again: new reports since)
-    const aiQ = ai ? ai.calls.filter((c) => c.kind === "ask").length : null; // (counted from update 255: earlier calls have no name or kind)
+    const aiQ = ai ? ai.calls.filter((c) => c.kind === "ask" || c.kind === "callie").length : null; // (update 258: and Callie's) // (counted from update 255: earlier calls have no name or kind)
     mount(statsBox, [
       ["Players in your data", stats.clients], ["Accounts created", stats.accounts], ["Unused access codes", stats.openInvites],
       ["Weekly Sign-ins", stats.weeklySignIns, "Since Monday, everyone combined. Tap to see them.", "signins"],
@@ -189,7 +189,7 @@ export async function render(main, { flash }) {
       // (update 169) every AI Insights report made, by anyone, since update 169
       ["Reports generated", stats.reports ?? 0, "Performance reports made, everyone combined (counted from update 169). Tap to see them by player.", "reports"],
       // (update 255) Ask AI: questions asked and what the AI has cost, everyone combined; tap for each person
-      ["AI Questions", aiQ ?? "\u2014", "Ask AI questions answered by the AI, everyone combined (counted from update 255). Tap to see who asked.", "aiq"],
+      ["AI Questions", aiQ ?? "\u2014", "Questions answered by the AI (Callie, and Compare's plans), everyone combined (counted from update 255). Tap to see who asked.", "aiq"],
       ["AI Cost", ai?.spend ? money(Number(ai.spend.usd || 0)) : "$0.00", `Everything the AI has cost so far${ai?.spend ? `, of the ${money(Number(ai.spend.cap || 1))} cap` : ""}. Tap to see it by person.`, "aic"],
     ].map(([label, value, title, list]) => {
       const shown = typeof value === "number" ? num(value) : String(value);

@@ -58,6 +58,8 @@ export function icon(name) {
     bubble: "M4 3h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9.5L5 17.5V14H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
     bag: "M6.6 7.3h5.8v9.9a1.5 1.5 0 0 1-1.5 1.5H8.1a1.5 1.5 0 0 1-1.5-1.5zm1.6 3.4v3.4h2.6v-3.4zM6 5.2h7v1.8H6zm.9-.3V3.3a1.7 1.7 0 0 1 1.7-1.7h.8v3.3zm3.3 0V1.4h1.1l1.8 1.4-.6.9-1.1-.7v1.9zm2.9 3.2c2.3.4 3.1 3.8 1.5 6.8l-1.1-.6c1.2-2.4.7-4.5-.4-4.8z",
     menu: "M3 5h14v2H3zm0 4h14v2H3zm0 4h14v2H3z",
+    // (update 258) Callie, the AI assistant: a small robot (antenna, head with eyes and a smile cut out, ears, shoulders)
+    robot: "M9.25 1.2h1.5v2.4H15a2 2 0 0 1 2 2v6.6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5.6a2 2 0 0 1 2-2h4.25zM7.1 6.9a1.35 1.35 0 1 0 0 2.7 1.35 1.35 0 0 0 0-2.7zm5.8 0a1.35 1.35 0 1 0 0 2.7 1.35 1.35 0 0 0 0-2.7zM7 11.1v1.3h6v-1.3zM.9 7.2h1.3v3.6H.9zm16.9 0h1.3v3.6h-1.3zM5.6 15.4h8.8l1.1 3.4h-11z",
     people: "M7 9a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm6 1a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zM1 17c0-3 2.5-5 6-5s6 2 6 5zm12-4.5c2.6 0 5 1.4 5 4.5h-3.5c0-1.9-.7-3.5-1.5-4.5z",
     user: "M10 10a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM3 17c0-3.5 3-5.5 7-5.5s7 2 7 5.5z",
     // (update 188) Live Feed: a dot with signal rings
@@ -68,7 +70,7 @@ export function icon(name) {
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", paths[name] || "");
-  if (name === "bag") path.setAttribute("fill-rule", "evenodd"); // (the pocket is a cut-out)
+  if (name === "bag" || name === "robot") path.setAttribute("fill-rule", "evenodd"); // (the pocket, and the robot's face, are cut-outs)
   svg.appendChild(path);
   return svg;
 }
@@ -209,6 +211,13 @@ document.addEventListener("click", (e) => { const m = currentAccountMenu; if (m 
 document.addEventListener("keydown", (e) => { const m = currentAccountMenu; if (m && e.key === "Escape" && !m.menu.hidden) { m.setOpen(false); m.btn.focus(); } });
 window.addEventListener("hashchange", () => currentAccountMenu?.setOpen(false));
 
+/** (update 258) Callie in the header: opens her chat panel over whatever page is showing. */
+function callieButton() {
+  const b = el("button", { type: "button", class: "hdr-icon callie-link", "aria-label": "Ask Callie", title: "Ask Callie: any question about a player\u2019s data" }, [icon("robot"), el("span", { class: "callie-name" }, "Callie")]);
+  b.addEventListener("click", () => import("./callie.js").then((m) => m.openCallie()).catch((err) => console.error(err)));
+  return b;
+}
+
 export function renderShell(root, { previewClient, currentRoute }) {
   const state = window.__authState;
   const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
@@ -235,7 +244,8 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
   // Chat (with Questions inside it) first, then Account; both look like the other header links.
   const footItems = [
-    // WITB (a golf bag) and Chat (a word bubble), then the Account menu
+    // (update 258) Callie (a robot: ask anything about a player's data), WITB (a golf bag) and Chat (a word bubble), then the Account menu
+    callieButton(),
     el("a", { class: "hdr-icon witb-link", href: "#/witb", "aria-label": "WITB", title: "WITB", "aria-current": currentRoute === "witb" ? "page" : null }, [icon("bag")]),
     el("a", { class: "ask-link hdr-icon", href: admin ? "#/admin/questions" : "#/questions", "aria-label": "Chat", title: "Chat", "aria-current": ["questions", "question-new", "thread", "admin-questions", "admin-thread"].includes(currentRoute) ? "page" : null }, [icon("bubble"), askBadge]),
     accountMenu(state),
@@ -256,7 +266,8 @@ subscribe((s) => { window.__authState = s; });
 
 // (update 188) Live Feed in the top bar: live when liveFeed/status says an event is on (the admin sets it),
 // greyed out (and not a link) otherwise
-let liveOn = false, liveWatching = false;
+// (update 259) the Live Feed always has the latest tournaments to show now, so it's always open
+let liveOn = true, liveWatching = true;
 function paintLive() {
   document.querySelectorAll("[data-live-link]").forEach((a) => {
     a.classList.toggle("nav-off", !liveOn);

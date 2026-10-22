@@ -20,7 +20,7 @@ const ROUTES = [
   ["/goals", "client", () => import("./views/goals.js"), "goals"],
   ["/course-reports", "client", () => Promise.resolve({ render: () => { location.hash = "#/course-prep"; } }), "course-reports"],
   ["/course-prep", "signed-in", () => import("./views/practice.js").then((m) => ({ render: (main, ctx) => m.render(main, { ...ctx, coursePrep: true }) })), "course-prep"],
-  ["/live", "signed-in", () => import("./views/comingSoon.js"), "live"],
+  ["/live", "signed-in", () => import("./views/live.js"), "live"], // (update 259: the latest tournaments, round by round)
   ["/comparisons", "signed-in", () => import("./views/comparisons.js"), "comparisons"], // (update 188)
   ["/product-usage", "signed-in", () => Promise.resolve({ render: () => { location.hash = "#/comparisons"; } }), "product-usage"], // (update 209: product usage is in Compare)
   ["/practice", "signed-in", () => import("./views/practice.js"), "practice"],

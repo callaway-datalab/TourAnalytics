@@ -9,7 +9,7 @@
  * a row there opens this page on that comparison (?pick=win:10 / cond:course:Riviera). Include: which shots count.
  * Hover a selection (its card or its key) to pick it out in every chart.
  */
-import { el, mount } from "../ui.js";
+import { el, mount, icon } from "../ui.js";
 import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
@@ -435,13 +435,10 @@ export async function render(main) {
       : withEvery ? `${nm(picksP)} against everyone in the data.` : `${nm(picksP)} side by side. Next: on their own, in groups, or one against the rest.`;
     const next = el("button", { type: "button", class: "btn cmp-add", disabled: startPicks.length ? null : true }, "Next \u2192");
     next.addEventListener("click", startNext);
-    // (update 244) two routes: build it by hand, or ask for it in plain English
-    const routes = el("div", { class: "cmp-routes", role: "tablist", "aria-label": "How" }, [["manual", "Manually create comparisons", "Pick the players, then what to compare, step by step."], ["ask", "\u2728 Ask AI", "Say what you want compared, in your own words."]].map(([v, l, sub]) => {
-      const b = el("button", { type: "button", role: "tab", class: `cmp-route${route === v ? " on" : ""}`, "aria-selected": String(route === v) }, [el("strong", {}, l), el("span", {}, sub)]);
-      b.addEventListener("click", () => { if (route === v) return; route = v; draw(); if (v === "ask") root.querySelector(".cmp-ask-in")?.focus(); });
-      return b;
-    }));
-    if (route === "ask") return el("div", { class: "cmp-start-wrap" }, [routes, askBox()]);
+    // (update 258) Ask AI moved to Callie in the header: a comparison asked there opens here (#/comparisons?ask=…).
+    // When one couldn't be read, its box shows here with what went wrong, to change and try again.
+    const routes = null;
+    if (route === "ask") return el("div", { class: "cmp-start-wrap" }, [askBox()]);
     return el("div", { class: "cmp-start-wrap" }, [routes, el("section", { class: "panel cmp-guide cmp-start" }, [
       el("p", { class: "cmp-guide-k" }, "Set up a comparison"),
       el("h2", {}, one ? "Which player?" : "Which players?"),
@@ -471,7 +468,7 @@ export async function render(main) {
     go.addEventListener("click", () => { askText = ta.value; if (!askText.trim()) { ta.focus(); return; } runAsk(askText.trim()); });
     const ex = ASK_EX.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small cmp-ask-ex" }, t); b.addEventListener("click", () => { askText = t; draw(); root.querySelector(".cmp-ask-in")?.focus(); }); return b; });
     return el("section", { class: "panel cmp-guide cmp-start cmp-ask" }, [
-      el("p", { class: "cmp-guide-k" }, "Ask AI"),
+      el("p", { class: "cmp-guide-k cal-k" }, [icon("robot"), " Callie \u00b7 compare"]),
       el("h2", {}, "What do you want to compare?"),
       el("p", { class: "muted small" }, "Name the player (or say everyone), the clubs, balls or seasons, and anything to leave out. The comparison opens with the answer on top, and you can change anything after."),
       ta,
@@ -554,10 +551,10 @@ export async function render(main) {
     const kind = out.some((x) => x.product) ? "product" : out.some((x) => x.f.top || x.f.topPct || x.f.bottom || x.f.bottomPct || x.f.stretch || x.f.except) ? "rounds" : "time";
     return { groups: out.map(({ product, ...x }) => x), kind, noGear };
   }
-  async function runAsk(text) {
+  async function runAsk(text, preset = null) {
     askErr = ""; askBusy = "Reading the request\u2026"; draw();
     const maxYear = new Date().getFullYear();
-    const ai = await aiRead(text); // (update 254: a plan, or from an older AI service a plainer version of the request)
+    const ai = preset ? { plan: preset } : await aiRead(text); // (update 259: a plan Callie already made needs no second AI call) // (update 254: a plan, or from an older AI service a plainer version of the request)
     const rewrite = ai?.rewrite || null, plan = ai?.plan ? cleanPlan(ai.plan) : null;
     const ask = readAsk(rewrite || text, { players, maxYear });
     if (rewrite && !ask.players.length) { const a0 = readAsk(text, { players, maxYear }); ask.players = a0.players; } // (names as typed)
@@ -577,6 +574,7 @@ export async function render(main) {
     }
     let ps = ask.players.slice(0, 4);
     if (!ps.length && !ask.everyone && !staff && players.length) ps = [{ key: players[0][0], label: players[0][1] }];
+    if (!ps.length && !ask.everyone && self) ps = [{ key: self[0], label: self[1] }]; // (update 258: a player asking about themselves)
     if (!ps.length && !ask.everyone) { askBusy = ""; askErr = "Which player? Name one (or say \u201ceveryone\u201d)."; draw(); return; }
     if (!ps.length && !everyStartOk()) { askBusy = ""; askErr = lite ? "Everyone needs a computer: it\u2019s every player\u2019s rounds. Name a player instead." : "Name a player."; draw(); return; }
     askBusy = "Loading the rounds\u2026"; draw();
@@ -739,10 +737,10 @@ export async function render(main) {
     }
     const x = el("button", { type: "button", class: "gx-pop-x cmp-askres-x", "aria-label": "Close" }, "\u2715");
     x.addEventListener("click", () => { askRes = null; draw(); });
-    const again = el("button", { type: "button", class: "link small" }, "Ask something else");
-    again.addEventListener("click", () => { askRes = null; route = "ask"; clearAll(); });
+    const again = el("button", { type: "button", class: "link small" }, "Ask Callie something else"); // (update 258)
+    again.addEventListener("click", () => { import("../callie.js").then((m) => m.openCallie()).catch(() => {}); });
     return el("section", { class: "panel cmp-askres" }, [
-      el("div", { class: "cmp-askres-top" }, [el("p", { class: "cmp-guide-k" }, "\u2728 You asked"), x]),
+      el("div", { class: "cmp-askres-top" }, [el("p", { class: "cmp-guide-k cal-k" }, [icon("robot"), " You asked Callie"]), x]),
       el("p", { class: "cmp-askres-q" }, `\u201c${askRes.text}\u201d`),
       el("p", { class: "cmp-askres-a" }, md(answer)),
       biggest ? el("p", { class: "cmp-askres-b" }, md(biggest)) : null,
@@ -2515,7 +2513,11 @@ export async function render(main) {
     return el("div", { class: "cmp-chart" }, svg);
   }
 
-  draw();
-  if (player) load();
+  // (update 258) a comparison handed over by Callie: run it straight away
+  const askParam = q.get("ask");
+  let preset = null;
+  if (askParam && q.get("plan")) { try { preset = JSON.parse(sessionStorage.getItem("callie.plan") || "null"); sessionStorage.removeItem("callie.plan"); } catch { preset = null; } }
+  if (askParam) { route = "ask"; askText = askParam; draw(); runAsk(askParam, preset && Array.isArray(preset.groups) ? preset : null); }
+  else { draw(); if (player) load(); }
   return () => {};
 }
