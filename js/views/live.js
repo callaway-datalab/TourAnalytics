@@ -204,21 +204,21 @@ export async function render(main) {
     mount(head, [
       el("div", {}, [el("p", { class: "gx-eyebrow" }, "Live"), el("h1", {}, "Event Feed")]),
       el("div", { class: "lv-head-r" }, [refreshing && refreshing !== "busy" ? el("span", { class: "muted small" }, refreshing) : null, again,
-        st ? el("span", { class: `lv-status${st === "live" ? " on" : ""}` }, [el("i", { "aria-hidden": "true" }), st === "live" ? (sel.t?.api ? "Live" : "In progress") : st === "upcoming" ? "Upcoming" : "Final"]) : null]),
-      stale,
+        el("span", { class: `lv-status${st === "live" ? " on" : ""}` }, [el("i", { "aria-hidden": "true" }), st === "live" ? (sel.t?.api ? "Live" : "In progress") : st === "upcoming" ? "Upcoming" : st ? "Final" : "Not live"])]),
+      null, // (update 285: no "nothing in progress" note; the card says No Live Events)
     ]);
   }
   // (update 283) tour pills (PGA TOUR / Korn Ferry) on top; under them the tour's current tournaments (in progress or
   // upcoming) as cards, and every finished one in an "Archived Events" list
   const tourPills = el("nav", { class: "subnav sg-tours lv-tourpills", role: "radiogroup", "aria-label": "Tour" }); // (update 284: like the Stats page's)
   const isFinal = (e) => statusOf(e) === "final";
-  const firstOf = (t) => t.events.find((e) => !isFinal(e)) || t.events[0];
+  const firstOf = (t) => t?.events.find((e) => !isFinal(e)) || null; // (update 285: nothing on: nothing picked until you choose an archived one)
   function drawTours() {
-    const cur = tours.find((t) => sel.t && t.tour === sel.t.tour) || tours[0];
+    const cur = tours.find((t) => t.tour === (sel.t?.tour || sel.tour)) || tours[0];
     mount(tourPills, tours.length > 1 ? tours.map((t) => {
       const on = t === cur, live = t.events.some((e) => statusOf(e) === "live");
       const a = el("a", { href: "#", role: "radio", "aria-checked": String(on), "aria-current": on ? "page" : null }, [live ? el("i", { class: "lv-dot", "aria-hidden": "true" }) : null, t.tour]);
-      a.addEventListener("click", (ev) => { ev.preventDefault(); if (!on) pickEvent(firstOf(t)); });
+      a.addEventListener("click", (ev) => { ev.preventDefault(); if (!on) { sel.chosen = true; showTour(t); } });
       return a;
     }) : null);
     tourPills.hidden = tours.length < 2;
@@ -240,12 +240,14 @@ export async function render(main) {
     arch?.addEventListener("change", () => { if (arch.value) pickEvent(events.find((e) => e.id === arch.value)); });
     mount(tourBox, el("div", { class: "lv-tour-box" }, [
       ...current.map(card), ...showing.map(card),
-      !current.length && !showing.length ? el("p", { class: "muted small lv-none-now" }, "Nothing in progress on this tour right now.") : null,
+      !current.length ? el("div", { class: "lv-tour lv-tour-none" }, el("span", { class: "lv-tour-n muted" }, "No Live Events")) : null, // (update 285)
       arch,
     ]));
   }
   mount(root, [head, tourPills, el("div", { class: "lv-pick" }, [tourBox, roundBox]), grid]);
-  function pickEvent(e) { if (!e) return; sel.t = e; sel.view = "latest"; sel.chosen = true; refresh(); }
+  function pickEvent(e) { if (!e) return; sel.t = e; sel.tour = e.tour; sel.view = "latest"; sel.chosen = true; refresh(); }
+  /** (update 285) A tour: its live tournament, or nothing picked (the leaderboard waits for an archived one). */
+  function showTour(t) { if (!t) return; sel.tour = t.tour; const e = firstOf(t); if (e) { pickEvent(e); return; } sel.t = null; refresh(); }
   function drawRounds(active) {
     mount(roundBox, ROUNDS.map(([v, l]) => {
       const on = v === active;
@@ -426,7 +428,8 @@ export async function render(main) {
 
   // ------------------------------------------------------------------ loading
   async function refresh() {
-    if (!sel.t) return;
+    roundBox.hidden = grid.hidden = !sel.t; // (update 285: they show once a tournament is picked)
+    if (!sel.t) { stopEvent?.(); stopEvent = null; watchedRel = null; file = null; lb = null; drawTours(); drawHead(); return; }
     const t = sel.t, id = ++reqId;
     drawTours(); drawHead();
     // (update 264) an API tournament: its file (and watch it, so a new half-hour update shows by itself)
@@ -473,13 +476,14 @@ export async function render(main) {
     if (!events.length) { if (!loadErr) loadErr = "No tournaments with strokes gained yet. They appear once a stats file has been uploaded, or once the PGA Tour API feed has run."; drawHead(); drawTours(); drawBoard(); return; }
     loadErr = "";
     // stay on the same tournament (or tour) when the data is refreshed
-    const sameTour = sel.t && tours.find((t) => famOf(t.tour) === famOf(sel.t.tour));
+    const sameTour = tours.find((t) => famOf(t.tour) === famOf(sel.t?.tour || sel.tour || ""));
     // (update 284) until you pick one yourself, it opens on what's live (the PGA TOUR first), even if the uploaded
     // tournaments arrive before the API's
     const liveTour = tours.find((t) => t.events.some((e) => statusOf(e) === "live"));
-    const keep = !sel.chosen ? firstOf(liveTour || tours[0]) : sel.t && (events.find((e) => e.id === sel.t.id) || (sameTour && firstOf(sameTour)));
+    const tour = !sel.chosen ? liveTour || tours[0] : sameTour || tours[0];
+    const keep = !sel.chosen ? firstOf(tour) : (sel.t && events.find((e) => e.id === sel.t.id)) || firstOf(tour);
     if (sel.auto || !keep || keep.id !== sel.t?.id) sel.view = "latest"; // (update 263: keep up with a new round)
-    sel.t = keep || firstOf(tours[0]);
+    sel.tour = tour.tour; sel.t = keep || null;
     refresh();
   }
   function useField(f) { field = f; uploadEvents = tournaments(field); rebuild(); }
