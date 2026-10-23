@@ -4497,7 +4497,7 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   .lv-grid > .lv-side { display: contents; }
   .lv-side > .lv-q { order: 0; } .lv-side > .lv-results { order: 0; margin: -0.4rem 0 0; }
   .lv-grid > .lv-main { order: 1; }
-  .lv-side > .lv-player { order: 2; background: var(--panel, #141416); border: 1px solid var(--line); border-radius: var(--radius, 18px); padding: 1rem; }
+  .lv-side > .lv-player { order: 0; margin-bottom: 0.2rem; /* (update 287: right under the search, above the leaderboard) */ background: var(--panel, #141416); border: 1px solid var(--line); border-radius: var(--radius, 18px); padding: 1rem; }
   .lv-side > .lv-player:has(> .lv-hint) { display: none; }
 }
 /* (update 285) Event Feed: the heading row never moves (title left; Refresh now and the status right, on one line) */

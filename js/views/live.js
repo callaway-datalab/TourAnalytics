@@ -392,7 +392,11 @@ export async function render(main) {
   function pick(p) {
     sel.player = p; q = ""; searchIn.value = ""; searchIn.blur(); drawResults();
     drawBoard(true); drawPlayer();
-    if (window.innerWidth < 900) playerBox.scrollIntoView({ behavior: "smooth", block: "start" });
+    // (update 287) bring the top of the player's card into view, just under the pinned header (not past it)
+    if (window.innerWidth < 900) requestAnimationFrame(() => {
+      const rail = document.querySelector(".rail"), pinned = rail && ["sticky", "fixed"].includes(getComputedStyle(rail).position) ? Math.max(0, rail.getBoundingClientRect().bottom) : 0;
+      window.scrollTo({ top: Math.max(0, window.scrollY + playerBox.getBoundingClientRect().top - pinned - 12), behavior: "smooth" });
+    });
   }
   function drawPlayer() {
     if (!sel.player) { mount(playerBox, el("p", { class: "muted small lv-hint" }, "Search for a player, or tap a row on the leaderboard.")); return; }
