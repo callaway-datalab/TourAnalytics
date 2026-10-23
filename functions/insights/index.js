@@ -145,7 +145,11 @@ number itself; you only turn the question into a JSON plan it can carry out. Rep
   "breakdown": null | "season" | "event" | "round" | "category" | "distance" | "lie" | "club" | "ball" (how to split a player's numbers:
      "where does he lose strokes" = "category"; "by distance / from 150 yards" = "distance"; "best tournament" = "event"; "best round" = "round";
      "year by year" = "season"; "which putter / driver model" = "club"),
-  "part": "OTT" | "APP" | "ARG" | "PUTT" | null (the part of the game a distance / lie / club breakdown is for: approach shots = "APP", putts = "PUTT"),
+  "part": "OTT" | "APP" | "ARG" | "PUTT" | null (the part of the game a distance / lie / club question is about: approach shots = "APP", putts = "PUTT"),
+  "distance": a distance to narrow to, or null: { "min": number or null, "max": number or null, "unit": "ft" or "yds" }. "inside 10 ft" = {"min":null,"max":10,"unit":"ft"};
+     "from 150-200 yards" = {"min":150,"max":200,"unit":"yds"}; "outside 20 feet" = {"min":20,"max":null,"unit":"ft"}. The portal combines its distance bands
+     to fit (e.g. "<5 ft" + "5-10 ft"), so a distance filter is always supported: don't put it in "unsupported". Use "breakdown": "distance" only for "by distance".
+  "lie": a lie to narrow to as written ("rough", "fairway", "sand", "fringe"), or null ("from the rough" = "rough"),
   "order": "best" | "worst" (for rankings and for picking best / worst events or rounds; default "best"),
   "limit": N (how many to list; default 10),
   "min_rounds": N only if they say a minimum number of rounds,
@@ -158,7 +162,8 @@ sg_putt (putting / putter), sg_t2g (tee to green); and stats: scoring (scoring a
 parsRd, bogeysRd, dblBogeysRd, birdie (birdie %), parOrBetter, bogey (bogey avoidance), gir (greens in regulation), scramble (scrambling),
 putts (putts a round), fwy (fairways hit), drive (driving distance), hitGreen, pinHigh, onLine, prox (proximity to the hole), ud (up and down),
 make (putts made %), goodLag (lag putting), threePutt (3-putt avoidance). For "who putts best" use sg_putt; "most accurate driver" fwy; "longest
-hitter" drive; "best ball striker" sg_t2g.
+hitter" drive; "best ball striker" sg_t2g. "Best putter inside 10 ft" = metric sg_putt, part "PUTT", distance {"max":10,"unit":"ft"}; "best from the rough
+on approach" = metric sg_app, part "APP", lie "rough"; "make % from 5-10 ft" = metric make, part "PUTT", distance {"min":5,"max":10,"unit":"ft"}.
 Periods: "this season" / "this year" = years [current year]; "last season" = the year before; "past 12 months" = from today minus 12 months;
 "lately" / "recent form" with no number = "last": 20. Leave "period" {} when they don't say one.
 
