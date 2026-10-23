@@ -87,28 +87,39 @@ export async function deleteFieldDetail(datasetId) {
  *   why: "none" (never built), "stale" (built from an older upload), "paused" (budget reached), "error".
  * uploadedAt: the data file's upload time (ms): detail built from an older upload isn't used.
  */
+const shared = { key: null, promise: null }; // (update 296)
 export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null } = {}) {
   try {
     const snap = await getDoc(doc(db, "fieldStats", datasetId));
     const d = snap.exists() ? snap.data().detail : null;
     if (!d || d.format !== FORMAT || !d.years?.length) return { players: null, why: "none" };
     if (uploadedAt && (d.sourceUploadedAt ?? 0) < uploadedAt) return { players: null, why: "stale" };
-    const lists = [];
-    let paused = null;
-    for (const [i, year] of d.years.entries()) {
-      const key = `${datasetId}|${year}|${d.sourceUploadedAt}`;
-      let gz = await cacheGet(key);
-      if (!gz) {
-        paused ??= (await billingState()).paused;
-        if (paused) return { players: null, why: "paused" };
-        const { m, s } = await storage();
-        gz = new Uint8Array(await m.getBytes(m.ref(s, pathOf(datasetId, year))));
-        await cachePut(key, gz, datasetId);
-      }
-      lists.push(decodeFieldDetail(await gunzip(gz)));
-      onProgress?.(i + 1, d.years.length);
-    }
-    return { players: mergeYears(lists), why: null };
+    // (update 296) one copy in memory, shared by every page that asks (Watchlist, Stats, Leaderboards, Cal, reports):
+    // each used to unpack its own, and a phone ran out of memory and reloaded the page ("A problem repeatedly occurred")
+    const mk = `${datasetId}|${d.sourceUploadedAt}|${d.years.join(",")}`;
+    if (shared.key !== mk || !shared.promise) {
+      shared.key = mk; // (the previous copy, if any, is let go)
+      shared.promise = (async () => {
+        const lists = [];
+        let paused = null;
+        for (const [i, year] of d.years.entries()) {
+          const key = `${datasetId}|${year}|${d.sourceUploadedAt}`;
+          let gz = await cacheGet(key);
+          if (!gz) {
+            paused ??= (await billingState()).paused;
+            if (paused) return { players: null, why: "paused" };
+            const { m, s: st } = await storage();
+            gz = new Uint8Array(await m.getBytes(m.ref(st, pathOf(datasetId, year))));
+            await cachePut(key, gz, datasetId);
+          }
+          lists.push(decodeFieldDetail(await gunzip(gz)));
+          onProgress?.(i + 1, d.years.length);
+        }
+        return { players: mergeYears(lists), why: null };
+      })();
+      shared.promise.then((r) => { if (!r.players && shared.key === mk) { shared.key = null; shared.promise = null; } }, () => { if (shared.key === mk) { shared.key = null; shared.promise = null; } });
+    } else onProgress?.(d.years.length, d.years.length);
+    return await shared.promise;
   } catch (err) {
     console.error("Couldn't load the field detail", err);
     return { players: null, why: err?.code === "storage/unauthorized" ? "paused" : "error" };
