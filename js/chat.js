@@ -578,5 +578,8 @@ export function renderChat(container, { flash }) {
 
   open(current);
   shell.classList.remove("show-thread"); // phones start on the list
+  // (update 304) a question forwarded from Cal: open the Callaway Analyst chat with the message written, ready to send
+  let pre = null; try { pre = sessionStorage.getItem("chat.prefill"); sessionStorage.removeItem("chat.prefill"); } catch { /* */ }
+  if (pre && !staff) setTimeout(async () => { await startCallaway(); box.value = pre; box.focus(); flash("Your question from Cal is drafted below for Callaway Analyst. It hasn\u2019t been sent: edit it if you like, then press Send.", "ok"); try { box.setSelectionRange(box.value.length, box.value.length); } catch { /* */ } }, 700);
   return () => { stopMsgs(); unsubs.forEach((u) => u()); nameWatch.forEach((u) => u()); };
 }

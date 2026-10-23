@@ -348,7 +348,7 @@ async function answerPlayer(plan, ps) {
   const out = [];
   const datas = await Promise.all(ps.map(async (p) => ({ p, rounds: await roundsOf(p.key, p.label) })));
   const withData = datas.filter((d) => sgRds(d.rounds).length);
-  if (!withData.length) return [{ text: `I couldn’t find any strokes-gained rounds for ${ps.map((p) => p.label).join(" or ")}.` }];
+  if (!withData.length) return [{ cant: true, text: `I couldn’t find any strokes-gained rounds for ${ps.map((p) => p.label).join(" or ")}.` }];
   const bd = plan.breakdown || (!plan.metric && !plan.distance && !plan.lie ? "category" : null);
   // several players, one number or the parts of the game: one table, a row each
   if (withData.length > 1 && (!bd || bd === "category")) {
@@ -602,7 +602,7 @@ async function ask(question) {
   if (pending) { pending = null; for (const m of chat) delete m.choices; }
   chat.push({ who: "me", text: question });
   busy = true; draw();
-  const reply = (o) => { chat.push({ who: "callie", ...o }); busy = false; draw(); };
+  const reply = (o) => { chat.push({ who: "callie", q: question, ...o }); busy = false; draw(); };
   try {
     const list = await playersYouCanSee();
     const local = readLocal(question, list);
@@ -621,17 +621,17 @@ async function ask(question) {
       if (a) return reply({ ...a, go: { href, label: "Open in Compare for more details \u2192", plan: cp } });
       return reply({ text: cp?.everyone ? "That one pools everyone in the data, so it\u2019s best seen in **Compare**." : "That\u2019s a comparison I\u2019ll leave to **Compare**.", go: { href, label: "Open it in Compare \u2192", plan: cp } });
     }
-    if (plan.intent === "unsupported") return reply({ text: plan.unsupported ? `I can\u2019t work that out from the data: ${plan.unsupported}` : "I can\u2019t work that out from the data. Ask about strokes gained or a stat for a player, a tournament or a period, or who leads the tour in something." });
+    if (plan.intent === "unsupported") return reply({ cant: true, text: plan.unsupported ? `I can\u2019t work that out from the data: ${plan.unsupported}` : "I can\u2019t work that out from the data. Ask about strokes gained or a stat for a player, a tournament or a period, or who leads the tour in something." });
     if (plan.intent !== "field") {
       if (!ps.length && PRONOUN.test(question) && lastPlayers.length) ps = lastPlayers;
       if (!ps.length && list.length === 1) ps = [{ key: list[0][0], label: list[0][1] }];
-      if (!ps.length) return reply({ text: missing.length ? `I couldn\u2019t find ${missing.join(", ")} among the players you can see.` : "Which player? Put their name in the question, or ask who leads the tour in something." });
+      if (!ps.length) return reply({ cant: !!missing.length, text: missing.length ? `I couldn\u2019t find ${missing.join(", ")} among the players you can see.` : "Which player? Put their name in the question, or ask who leads the tour in something." });
       ps = ps.slice(0, MAX_PLAYERS); lastPlayers = ps;
     }
     await respond(plan, ps, missing);
   } catch (err) {
     console.error(err);
-    reply({ text: "Something went wrong working that out. Try asking another way.", err: true });
+    reply({ text: "Something went wrong working that out. Try asking another way.", err: true, cant: true });
   }
 }
 
@@ -682,9 +682,15 @@ function draw() {
   for (const m of chat) {
     if (m.who === "me") { items.push(el("div", { class: "cal-msg me" }, el("p", {}, m.text))); continue; }
     const go = m.go ? el("a", { class: "link small cal-go", href: m.go.href }, m.go.label) : null;
+    // (update 304) a question Cal couldn't answer: hand it to a person (Chat, with Callaway Analyst, the message written)
+    const st0 = getState(), staffer = st0.isAdmin || st0.profile?.kind === "analyst";
+    const askQ = m.q || [...chat].slice(0, chat.indexOf(m)).reverse().find((x) => x.who === "me")?.text || "";
+    const fwd = m.cant && askQ && !staffer ? el("div", { class: "cal-fwd" }, [el("a", { class: "link small cal-go", href: "#/questions" }, "Forward this question to a human analyst?"),
+      el("p", { class: "muted small cal-fwd-note" }, "Opens Chat with a draft to Callaway Analyst. Nothing is sent until you press Send there.")]) : null;
+    fwd?.querySelector("a").addEventListener("click", () => { try { sessionStorage.setItem("chat.prefill", `Question for an analyst (Cal couldn\u2019t answer it): ${askQ}`); } catch { /* */ } closeCallie(); });
     if (go && m.go.plan) go.addEventListener("click", () => { try { sessionStorage.setItem("callie.plan", JSON.stringify(m.go.plan)); } catch { /* */ } }); // (update 264: Compare opens with this plan, no second AI call)
     const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
-    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go]));
+    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd]));
   }
   if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Cal is working it out" }, [el("i"), el("i"), el("i")]));
   mount(log, items);

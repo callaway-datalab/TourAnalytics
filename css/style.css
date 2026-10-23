@@ -4634,3 +4634,5 @@ table td > :is(.row-actions, .type-tags, .cd-actions) { justify-content: center;
 .cmp-table tr.cmp-sub td:first-child { padding-left: 0.35rem; padding-right: 0.35rem; }
 .cmp-table tbody tr > td:first-child { padding-left: 0.35rem; padding-right: 0.35rem; }
 .cmp-rd-row td:first-child, .club-table tr.in-set td.c-club { padding-left: 0.35rem; padding-right: 0.35rem; } /* (update 303: same centre line) */
+.cal-fwd { display: inline-block; margin-top: 0.45rem; } /* (update 304) */
+.cal-fwd-note { margin: 0.2rem 0 0; }
