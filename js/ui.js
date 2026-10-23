@@ -110,7 +110,11 @@ export function confirmAction(message) {
 const teamCount = () => Object.keys(effectiveTeam(window.__authState || {}).teamAccess || {}).length;
 const sectionsFor = (kind) => {
   const admin = kind === "admin", player = kind === "client";
+  // (update 164) Watchlist: anyone with more than one player (Home for a player, or one player's coach)
+  const multi = admin || (kind === "team" && teamCount() > 1);
   const dataItems = [
+    // (update 292) the Watchlist is the first page of Analyze (and what Analyze opens on)
+    [multi ? "Watchlist" : "Home", "#/watchlist", ["watchlist"]],
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
     ["Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
@@ -122,15 +126,12 @@ const sectionsFor = (kind) => {
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
   const planItems = [
+    ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (update 292: first, and what Play opens on)
     ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"]],
-    ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (was Track Round; Add Data before that)
     ["Practice", "#/practice", ["practice"]],
     ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
   ];
-  // (update 164) Watchlist: anyone with more than one player (Home for a player, or one player's coach)
-  const multi = admin || (kind === "team" && teamCount() > 1);
   return [
-    { id: "home", label: multi ? "Watchlist" : "Home", icon: multi ? "star" : "home", items: [[multi ? "Watchlist" : "Home", "#/watchlist", ["watchlist"]]] },
     { id: "data", label: "Analyze", icon: "data", items: dataItems },
     { id: "plan", label: "Play", icon: "doc", items: planItems },
   ];

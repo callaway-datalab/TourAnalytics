@@ -26,7 +26,7 @@ export function attachPicker() {
 }
 
 /** Clickable chips for a message's attachments. Images and PDFs open in a new tab; others download. */
-export function attachmentLinks(threadId, attachments, flash) {
+export function attachmentLinks(threadId, attachments, flash, opener = null) { // (update 292: opener, for a chat's files)
   if (!attachments?.length) return null;
   return el("ul", { class: "attach-list in-message" }, attachments.map((att) => {
     const link = el("a", { href: "#" }, `\u{1F4CE} ${att.name}`);
@@ -39,7 +39,7 @@ export function attachmentLinks(threadId, attachments, flash) {
       const tab = viewable ? openTabNow() : null; // on the tap, so phones allow it
       link.textContent = "Opening\u2026";
       try {
-        const url = await getAttachmentBlobUrl(threadId, att);
+        const url = opener ? await opener(att) : await getAttachmentBlobUrl(threadId, att);
         if (viewable) {
           tab.show(url, att.name);
         } else {

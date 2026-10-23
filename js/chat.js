@@ -17,6 +17,9 @@ import {
   collection, addDoc, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, orderBy, query, where, limit, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase-init.js";
+import { attachmentLinks } from "./attachments.js";
+import { readableSize, MAX_ATTACHMENTS, UserError } from "./data.js";
+import { uploadChatFiles, getChatFileUrl } from "./store.js";
 import { el, mount, formatWhen, confirmAction } from "./ui.js";
 import { getState } from "./auth.js";
 import { isTeamKey } from "./data.js";
@@ -151,7 +154,15 @@ export function renderChat(container, { flash }) {
   const msgs = el("ol", { class: "chat-list", "aria-live": "polite" });
   const box = el("textarea", { rows: 2, maxLength: 2000, placeholder: "Message\u2026", "aria-label": "Message", enterkeyhint: "send" });
   const sendBtn = el("button", { class: "btn", type: "submit" }, "Send");
-  const form = el("form", { class: "chat-form", onSubmit: (e) => { e.preventDefault(); send(); } }, [box, sendBtn]);
+  // (update 292) attach files: a paperclip by the box; what's picked shows above it until it's sent
+  let files = [];
+  const fileIn = el("input", { type: "file", multiple: true, class: "visually-hidden", "aria-label": "Attach files" });
+  const clip = el("label", { class: "chat-clip", title: "Attach files" }, ["\u{1F4CE}", fileIn]);
+  const picked = el("ul", { class: "attach-list chat-picked" });
+  const drawPicked = () => mount(picked, files.map((f, i) => el("li", {}, [el("span", {}, `\u{1F4CE} ${f.name}`), el("span", { class: "muted" }, readableSize(f.size)),
+    el("button", { class: "link danger", type: "button", title: `Remove ${f.name}`, onClick: () => { files.splice(i, 1); drawPicked(); } }, "\u00d7")])));
+  fileIn.addEventListener("change", () => { files = [...files, ...fileIn.files].slice(0, MAX_ATTACHMENTS); fileIn.value = ""; drawPicked(); });
+  const form = el("form", { class: "chat-form", onSubmit: (e) => { e.preventDefault(); send(); } }, [picked, clip, box, sendBtn]);
   box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
   const newDm = el("button", { type: "button", class: "btn ghost chat-new-btn" }, "\u270E  New message");
   const picker = el("div", { class: "chat-picker", hidden: true }); // (adding people to an open chat)
@@ -340,7 +351,8 @@ export function renderChat(container, { flash }) {
           seen.length ? (room?.type === "dm" || (room?.members?.length || 0) <= 2 ? "Seen" : `Seen by ${seen.length}`) : "Sent") : null;
         return el("li", { class: "chat-msg" + (mine ? " mine" : "") }, [
           el("div", { class: "chat-meta" }, [el("strong", {}, mine ? "You" : authorOf(room, m)), el("span", { class: "muted" }, m.createdAt ? formatWhen(m.createdAt) : "sending\u2026"), act]),
-          el("p", { class: "chat-body" }, m.body),
+          m.fileOnly ? null : el("p", { class: "chat-body" }, m.body),
+          m.attachments?.length ? attachmentLinks(roomId, m.attachments, flash, (att) => getChatFileUrl(roomId, att)) : null, // (update 292)
           status,
         ]);
       }) : el("li", { class: "empty" }, "No messages yet. Say hello."));
@@ -396,7 +408,7 @@ export function renderChat(container, { flash }) {
 
   async function send() {
     const body = box.value.trim();
-    if (!body || !current) return;
+    if ((!body && !files.length) || !current) return;
     if (current === NEW) {
       if (!to.length) { flash("Add who it's to.", "error"); return; }
       sendBtn.disabled = true;
@@ -408,12 +420,16 @@ export function renderChat(container, { flash }) {
       const room = roomNow();
       // (update 170) staff writing where outsiders can read it: signed as Callaway Analyst (staff still see who)
       const outsiders = staff && room && !room.staffRoom && room.members.some((m) => !isStaffId(m));
-      await addDoc(msgsOf(current), { uid, name: outsiders ? "Callaway Analyst" : myName, body, createdAt: serverTimestamp() });
+      let attachments = [];
+      if (files.length) { sendBtn.textContent = "Sending\u2026"; attachments = await uploadChatFiles(current, files, uid); }
+      const text = body || attachments.map((a) => `\u{1F4CE} ${a.name}`).join(", ");
+      await addDoc(msgsOf(current), { uid, name: outsiders ? "Callaway Analyst" : myName, body: text, createdAt: serverTimestamp(), ...(attachments.length ? { attachments, ...(body ? {} : { fileOnly: true }) } : {}) });
+      files = []; drawPicked();
       if (staff && room?.callaway && !room.staffRoom) setTriage(current, { state: "answered", by: uid, assignedBy: null, unable: [] });
-      await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
+      await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: (body || "\u{1F4CE} Attachment").slice(0, 120), lastBy: uid }).catch(() => {});
       box.value = ""; box.focus();
-    } catch { flash("Couldn't send that message. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
-    finally { sendBtn.disabled = false; }
+    } catch (err) { flash(err instanceof UserError ? err.message : "Couldn't send that message. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
+    finally { sendBtn.disabled = false; sendBtn.textContent = "Send"; }
   }
 
   // ---- New message (update 153, like Teams): To: people picked from a search, a + to add more ----

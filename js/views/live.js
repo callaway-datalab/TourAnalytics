@@ -12,6 +12,7 @@ import { getState } from "../auth.js";
 import { CATEGORIES, statRounds, statAgg, statsIn, statDef, fmtStat } from "../sg.js";
 import { watchNewestDataset, fieldOf } from "../fieldSummary.js";
 import { watchLiveFile, liveFile } from "../liveData.js";
+import { favoriteKeys, loadWatch } from "../watchlist.js";
 
 const SPLITS = CATEGORIES.map(([k, l]) => [k, l]); // OTT, APP, ARG, PUTT
 const COLS = [["TOTAL", "Total"], ...SPLITS, ["T2G", "Tee-to-Green"]];
@@ -136,6 +137,15 @@ export async function render(main) {
   const famOpen = {}, subOpen = {};
   let ranksCache = {};
 
+  // (update 292) favorites, matched by name (the live feed's players have the PGA Tour's ids, the Watchlist the portal's)
+  let favAdd = new Set(ls.get("favAdd", [])), favOff = new Set(ls.get("favOff", []));
+  const watchNames = () => { try { const keys = new Set(favoriteKeys()); return new Set(field.filter((p) => keys.has(p.key)).map((p) => norm(p.name))); } catch { return new Set(); } };
+  const isFav = (name) => { const n = norm(name); return !favOff.has(n) && (favAdd.has(n) || watchNames().has(n)); };
+  const toggleFav = (name) => {
+    const n = norm(name);
+    if (isFav(name)) { favAdd.delete(n); if (watchNames().has(n)) favOff.add(n); } else { favOff.delete(n); favAdd.add(n); }
+    ls.set("favAdd", [...favAdd]); ls.set("favOff", [...favOff]);
+  };
   const valKey = () => (sel.view === "event" ? "event" : "round");
   const saveVisible = () => ls.set(curVis || "cols3", visible); // (update 264: the API's stats and the uploaded ones are chosen separately)
   const allKeys = () => BASE_KEYS.concat(statsMeta.map((m) => `x:${m.id}`));
@@ -166,6 +176,7 @@ export async function render(main) {
   const playerBox = el("div", { class: "lv-player" });
   const toolbar = el("div", { class: "lv-tools" });
   const colPanel = el("div", { class: "lv-colpanel", hidden: true });
+  const favWrap = el("div", { class: "lv-favs", hidden: true }); // (update 292)
   const boardWrap = el("div", { class: "lv-board" }, el("p", { class: "muted lv-msg ta-loading" }, "Loading…"));
   const warnBar = el("p", { class: "lv-warn", hidden: true }, "Some values on this tournament failed an automatic check. Treat the numbers with caution until the next update."); // (update 264)
   const meta = el("p", { class: "muted small lv-meta" });
@@ -173,7 +184,7 @@ export async function render(main) {
     el("section", { class: "panel lv-side" }, [searchIn, results, playerBox]),
     el("section", { class: "panel lv-main" }, [
       el("div", { class: "lv-main-top" }, [el("div", {}, [el("h2", {}, "Leaderboard"), meta]), toolbar]),
-      colPanel, warnBar, boardWrap,
+      colPanel, warnBar, favWrap, boardWrap,
       el("details", { class: "lv-legend" }, [el("summary", {}, "How to read this"),
         el("p", { class: "muted small" }, "Each round shows the strokes gained and stats of that round. The Event tab adds each player’s strokes gained up over the rounds they played (RDS); other stats are averaged over those rounds, weighted by attempts. The small grey number under each value is its rank (T = tied) among the players shown; for lower-is-better stats the lowest value ranks first, and the first tap on its heading sorts lowest first. A * next to a value means it comes from very few attempts (under 3 in a round, under 5 for the event): it\u2019s shown, but left out of the ranks and sorting. A tournament marked Live comes from the PGA Tour\u2019s API, updated about every 30 minutes; \u201cthru N\u201d marks a round still in progress, so its totals only cover the holes played so far (and Tee-to-Green and Total come straight from the Tour\u2019s feed, so they won\u2019t equal the sum of the parts until the round is final). Earlier tournaments are your uploaded data, the same as Leaderboards. The page updates by itself.")]),
     ]),
@@ -233,11 +244,36 @@ export async function render(main) {
     };
     const current = cur.events.filter((e) => !isFinal(e)), archived = cur.events.filter(isFinal);
     const showing = []; // (update 284: a finished one stays in the Archived list, picked there)
-    const arch = archived.length ? el("select", { class: "lv-ev", "aria-label": `${cur.tour}: archived events` }, [
-      el("option", { value: "", selected: !(sel.t && isFinal(sel.t)) }, `Archived Events (${archived.length})`),
-      ...archived.slice(0, 80).map((e) => el("option", { value: e.id, selected: sel.t?.id === e.id }, `${e.event} (${dayTxt(e.start)}, ${e.year})`)),
-    ]) : null;
-    arch?.addEventListener("change", () => { if (arch.value) pickEvent(events.find((e) => e.id === arch.value)); });
+    // (update 292) Archived Events: a button that opens a list with a search box (type part of a name, a course or a year)
+    const picked = sel.t && isFinal(sel.t) && archived.includes(sel.t) ? sel.t : null;
+    const label = (e) => `${e.event} (${dayTxt(e.start)}, ${e.year})`;
+    let arch = null;
+    if (archived.length) {
+      const btn = el("button", { type: "button", class: "lv-ev lv-arch-btn", "aria-haspopup": "listbox", "aria-expanded": "false" }, [el("span", {}, picked ? label(picked) : `Archived Events (${archived.length})`), el("span", { class: "lv-arch-car", "aria-hidden": "true" }, "\u25BE")]);
+      const q = el("input", { type: "search", class: "lv-arch-q", placeholder: "Search archived events\u2026", autocomplete: "off", "aria-label": "Search archived events" });
+      const list = el("ul", { class: "lv-arch-list", role: "listbox" });
+      const pop = el("div", { class: "lv-arch-pop", hidden: true }, [q, list]);
+      const fill = () => {
+        const toks = norm(q.value).split(/\s+/).filter(Boolean);
+        const hits = archived.filter((e) => { const hay = norm(`${e.event} ${e.course || ""} ${e.year} ${dayTxt(e.start)}`); return toks.every((t) => hay.includes(t)); });
+        mount(list, hits.length ? hits.slice(0, 150).map((e) => {
+          const o = el("li", { role: "option", "aria-selected": String(picked?.id === e.id), tabindex: "-1", class: picked?.id === e.id ? "on" : null }, [el("span", {}, e.event), el("small", { class: "muted" }, `${dayTxt(e.start)}, ${e.year}`)]);
+          o.addEventListener("click", () => { close(); pickEvent(e); });
+          return o;
+        }) : el("li", { class: "muted small lv-arch-none" }, "No archived event matches."));
+      };
+      const close = () => { pop.hidden = true; btn.setAttribute("aria-expanded", "false"); document.removeEventListener("pointerdown", outside, true); };
+      const outside = (e) => { if (!arch.contains(e.target)) close(); };
+      btn.addEventListener("click", () => {
+        if (!pop.hidden) { close(); return; }
+        pop.hidden = false; btn.setAttribute("aria-expanded", "true"); q.value = ""; fill();
+        document.addEventListener("pointerdown", outside, true);
+        if (window.matchMedia("(pointer: fine)").matches) q.focus(); // (on a phone the keyboard waits for a tap in the box)
+      });
+      q.addEventListener("input", fill);
+      q.addEventListener("keydown", (e) => { if (e.key === "Escape") { close(); btn.focus(); } if (e.key === "Enter") list.querySelector("li[role=option]")?.click(); });
+      arch = el("div", { class: "lv-arch" }, [btn, pop]);
+    }
     mount(tourBox, el("div", { class: "lv-tour-box" }, [
       ...current.map(card), ...showing.map(card),
       !current.length ? el("div", { class: "lv-tour lv-tour-none" }, el("span", { class: "lv-tour-n muted" }, "No Live Events")) : null, // (update 285)
@@ -333,6 +369,7 @@ export async function render(main) {
     if (!table) return;
     const most = 3; // (update 288: phones shrink to fit too, so the strokes-gained columns fit without scrolling sideways)
     for (let d = 0; d <= most; d++) { boardWrap.dataset.density = String(d); if (table.scrollWidth <= boardWrap.clientWidth + 1) break; }
+    favWrap.querySelector(".lv-board")?.setAttribute("data-density", boardWrap.dataset.density); // (update 292: the favorites match)
   }
   function drawMeta() {
     if (!sel.t) { meta.textContent = ""; return; }
@@ -354,7 +391,7 @@ export async function render(main) {
     const vals = rows.map(get), rankNum = [], tally = {}; // ties share a place: T3, T3, 5
     vals.forEach((v, i) => { rankNum[i] = v == null ? null : i > 0 && vals[i - 1] != null && Math.abs(vals[i - 1] - v) < 1e-9 ? rankNum[i - 1] : i + 1; if (rankNum[i] != null) tally[rankNum[i]] = (tally[rankNum[i]] || 0) + 1; });
     const place = (i) => (rankNum[i] == null ? "–" : tally[rankNum[i]] > 1 ? `T${rankNum[i]}` : String(rankNum[i]));
-    const heads = [["#"], ["Player"], ...cols.map((c) => [c.label, c.key, c.tip, c.lower]), ...(sel.view === "event" ? [["RDS"]] : [])].map(([label, key, tip, lower]) => {
+    const heads = () => [["#"], ["Player"], ...cols.map((c) => [c.label, c.key, c.tip, c.lower]), ...(sel.view === "event" ? [["RDS"]] : [])].map(([label, key, tip, lower]) => {
       const on = key && key === sortKey;
       const short = { TOTAL: "Total", OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT", T2G: "T2G" }[key]; // (update 284: short headings on a phone)
       const th = el("th", { title: tip || (short ? label : null), class: key ? "lv-sort" : null, "aria-sort": on ? (sortDir < 0 ? "descending" : "ascending") : null, tabindex: key ? "0" : null }, [...(short ? [el("span", { class: "lv-h-full" }, label), el("span", { class: "lv-h-short" }, short)] : [label]), on ? el("span", { class: "lv-arrow", "aria-hidden": "true" }, sortDir < 0 ? " ▼" : " ▲") : null]);
@@ -365,7 +402,7 @@ export async function render(main) {
       }
       return th;
     });
-    const body = rows.map((r, i) => {
+    const rowOf = (r, i) => {
       const cells = cols.map((c) => {
         let v, cls, title = null;
         if (c.id) {
@@ -376,11 +413,20 @@ export async function render(main) {
         const rt = showRanks ? rankText(c.key, r.player_id) : null;
         return el("td", { class: cls, title }, [el("span", { class: "lv-v" }, v), rt ? el("small", { class: "lv-rk" }, rt) : null]);
       });
-      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : null]), ...cells, sel.view === "event" ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
+      const fav = isFav(r.name);
+      const star = el("button", { type: "button", class: `lv-star${fav ? " on" : ""}`, "aria-pressed": String(fav), "aria-label": `${fav ? "Remove" : "Add"} ${r.name} ${fav ? "from" : "to"} favorites`, title: fav ? "Favorite (tap to remove)" : "Add to favorites" }, fav ? "\u2605" : "\u2606");
+      star.addEventListener("click", (e) => { e.stopPropagation(); toggleFav(r.name); drawBoard(); });
+      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [star, el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : null]), ...cells, sel.view === "event" ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
       tr.addEventListener("click", () => pick({ player_id: r.player_id, name: r.name }));
       return tr;
-    });
-    mount(boardWrap, el("table", { class: "lv-table" }, [el("thead", {}, el("tr", {}, heads)), el("tbody", {}, body)]));
+    };
+    // (update 292) Favorites: the starred players' rows (and everyone on your Watchlist), copied into a table above
+    // the leaderboard, in the same order and with the same places and ranks
+    const favs = rows.map((r, i) => [r, i]).filter(([r]) => isFav(r.name));
+    mount(favWrap, favs.length ? [el("p", { class: "cmp-chip-gt lv-fav-h" }, `Favorites (${favs.length})`),
+      el("div", { class: "lv-board lv-favboard" }, el("table", { class: "lv-table" }, [el("thead", {}, el("tr", {}, heads())), el("tbody", {}, favs.map(([r, i]) => rowOf(r, i)))]))] : null);
+    favWrap.hidden = !favs.length;
+    mount(boardWrap, el("table", { class: "lv-table" }, [el("thead", {}, el("tr", {}, heads())), el("tbody", {}, rows.map(rowOf))]));
     fitTable();
     boardWrap.scrollTop = keepTop; boardWrap.scrollLeft = keepLeft;
     const s = boardWrap.querySelector("tr.sel");
@@ -523,6 +569,7 @@ export async function render(main) {
   }
 
   drawHead(); drawTools(); drawPlayer();
+  loadWatch().then(() => { if (lb && root.isConnected) drawBoard(); }).catch(() => {}); // (update 292: Watchlist players are favorites)
   const stopApi = watchLiveFile("current.json", (m) => { if (!root.isConnected) { stopApi?.(); return; } useApi(m); }); // (update 264)
   const stop = watchNewestDataset(async (ds) => {
     if (!root.isConnected) { stop?.(); return; }

@@ -644,8 +644,27 @@ function tableOf(t) {
     el("tbody", {}, t.rows.map((r, ri) => el("tr", { class: t.mark?.has(ri) ? "on" : null }, r.map((c, i) => el("td", { class: t.num?.includes(i) ? "num" : null }, c))))),
   ]));
 }
-function examples(list) {
-  const n = list.length === 1 ? list[0][1] : list.find(([, l]) => /schauffele/i.test(l))?.[1] || list[0]?.[1] || "Xander Schauffele";
+// (update 292) the examples name whoever leads the PGA TOUR in SG: Total this season (the latest season in the data,
+// among players with enough rounds), worked out once a visit
+let leaderP = null;
+function tourLeader() {
+  if (!leaderP) leaderP = (async () => {
+    const { currentField } = await import("./fieldSummary.js");
+    const { defaultMinRounds } = await import("./sg.js");
+    const cur = await currentField();
+    const yr = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+    const pga = (rd) => /^(pga( tour)?|r)$/i.test(String(rd.tour || "").trim());
+    const rows = (cur?.field || []).map((p) => ({ name: p.label || p.name, rs: (p.rounds || []).filter((rd) => !rd.eventLevel && rd.shots?.length && pga(rd)) }));
+    const latest = rows.flatMap((r) => r.rs.map(yr)).sort().pop();
+    const inYr = rows.map((r) => ({ name: r.name, rs: r.rs.filter((rd) => yr(rd) === latest) })).filter((r) => r.rs.length);
+    const minR = defaultMinRounds(Math.max(0, ...inYr.map((r) => r.rs.length)));
+    const best = inYr.filter((r) => r.rs.length >= minR).map((r) => ({ name: r.name, v: r.rs.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + (x.sg || 0), 0), 0) / r.rs.length })).sort((a, b) => b.v - a.v)[0];
+    return best?.name || null;
+  })().catch(() => null);
+  return leaderP;
+}
+function examples(list, leader = null) {
+  const n = list.length === 1 ? list[0][1] : leader || list[0]?.[1] || "Scottie Scheffler";
   const last = n.split(" ").pop();
   return list.length > 1
     ? ["Who putts best on Tour?", `Where does ${last} gain and lose strokes this season?`, `What was ${last}’s best tournament this year?`, `How does ${last} do on approach shots by distance?`, `Compare ${last} 2026 vs 2025`]
@@ -698,7 +717,8 @@ export async function openCallie() {
   }
   panel.hidden = false;
   document.documentElement.classList.add("cal-open");
-  exList = examples(await playersYouCanSee());
+  const seen = await playersYouCanSee();
+  exList = examples(seen, seen.length > 1 ? await tourLeader() : null);
   draw();
 }
 export function closeCallie() {

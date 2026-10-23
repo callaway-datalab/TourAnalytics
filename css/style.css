@@ -4563,3 +4563,35 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 body::before, body::after { transition: filter 0.35s ease, opacity 0.35s ease; }
 html.ta-only-loading body::before { filter: grayscale(0.15) brightness(0.6) contrast(1.05); }
 html.ta-only-loading body::after { opacity: 0.45; }
+/* (update 292) Event Feed favorites: a star by each name, and their rows in a table above the leaderboard */
+.lv-star { background: none; border: 0; padding: 0 0.3rem 0 0; margin: 0; cursor: pointer; color: rgba(255, 255, 255, 0.35); font-size: 0.95em; line-height: 1; }
+.lv-star.on { color: #d4b483; }
+.lv-star:hover { color: #f3dfbd; }
+.lv-favs { margin-bottom: 0.9rem; }
+.lv-fav-h { margin: 0 0 0.4rem; }
+.lv-favboard { max-height: none !important; }
+/* (update 292) Archived Events: a searchable list */
+.lv-arch { position: relative; }
+.lv-arch-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; text-align: left; cursor: pointer;
+  background: var(--field, #1c1c1f); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem 0.9rem; font: inherit; font-size: 0.9rem; }
+.lv-arch-btn > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-arch-car { color: var(--muted); }
+.lv-arch-pop { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 0.35rem); background: #16161a; border: 1px solid var(--line-2, rgba(255,255,255,0.14)); border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55); padding: 0.5rem; }
+.lv-arch-pop[hidden] { display: none; }
+.lv-arch-q { width: 100%; margin: 0 0 0.4rem !important; }
+.lv-arch-list { list-style: none; margin: 0; padding: 0; max-height: 18rem; overflow-y: auto; }
+.lv-arch-list li[role=option] { display: flex; justify-content: space-between; gap: 0.8rem; padding: 0.5rem 0.6rem; border-radius: 8px; cursor: pointer; font-size: 0.88rem; }
+.lv-arch-list li[role=option]:hover, .lv-arch-list li.on { background: rgba(212, 180, 131, 0.14); }
+.lv-arch-list li small { white-space: nowrap; }
+.lv-arch-none { padding: 0.5rem 0.6rem; }
+/* (update 292) chat attachments: a paperclip by the message box; picked files above it; files in a message */
+.chat-form { flex-wrap: wrap; }
+.chat-picked { flex: 0 0 100%; margin: 0; }
+.chat-picked:empty { display: none; }
+.chat-clip { display: inline-grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: 12px; border: 1px solid var(--line); cursor: pointer; font-size: 1.1rem; flex: none; }
+.chat-clip:hover { background: rgba(255, 255, 255, 0.06); }
+.chat-msg .attach-list.in-message { margin: 0.35rem 0 0; }
+/* (update 292) the same space from Cal to WITB as from WITB to Chat */
+.rail-foot .hdr-icon.callie-link { margin-right: -7px !important; }
+@media (max-width: 520px) { .rail-foot .hdr-icon.callie-link { margin-right: -3px !important; } }

@@ -877,6 +877,30 @@ async function uploadAttachments(threadId, files, uid, onProgress) {
   return out;
 }
 
+/* (update 292) Files in a chat: chatRooms/{roomId}/attachments/{id} (+ /chunks/n), the same way as a question's. */
+export async function uploadChatFiles(roomId, files, uid, onProgress) {
+  checkAttachments(files);
+  const out = [];
+  const total = files.reduce((n, f) => n + f.size, 0) || 1;
+  let before = 0;
+  for (const file of files) {
+    const chunks = splitString(await fileToBase64(file), DOC_CHUNK_CHARS);
+    const ref = doc(collection(db, "chatRooms", roomId, "attachments"));
+    await commitInChunks(
+      chunks.map((data, i) => sized((b) => b.set(doc(ref, "chunks", String(i)), { data }), data.length)),
+      onProgress && ((done, all) => onProgress(before + (file.size * done) / all, total)),
+    );
+    const meta = { name: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size, chunkCount: chunks.length };
+    await setDoc(ref, { ...meta, uploaderUid: uid, createdAt: serverTimestamp() });
+    out.push({ id: ref.id, ...meta });
+    before += file.size;
+  }
+  return out;
+}
+export function getChatFileUrl(roomId, att) {
+  return base64ChunksToBlobUrl((i) => getDoc(doc(db, "chatRooms", roomId, "attachments", att.id, "chunks", String(i))), att.chunkCount, att.mimeType);
+}
+
 export function getAttachmentBlobUrl(threadId, att) {
   return base64ChunksToBlobUrl(
     (i) => getDoc(doc(db, "threads", threadId, "attachments", att.id, "chunks", String(i))), att.chunkCount, att.mimeType);
