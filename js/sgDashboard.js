@@ -1288,12 +1288,32 @@ export function sgDashboard(container, opts) {
     };
     // (update 240) against a rank (picked above the table): the player ranked #N overall (SG: Total a round in this
     // selection, not counting the player on screen), every row from that one player: #1 is the same golfer all the way down
-    const vsN = st.vsRank ? Number(st.vsRank) : null;
+    const peakOn = st.vsRank === "peak"; // (update 260) or against the player's own peak
+    const vsN = st.vsRank && !peakOn ? Number(st.vsRank) : null;
     const refP = vsN ? (() => { const byTot = ranked.map((p) => ({ p, t: rowVals(p.rounds, "").get("c:TOTAL") })).filter((x) => x.t != null && Number.isFinite(x.t)).sort((a, b) => b.t - a.t); return byTot.length ? byTot[Math.min(vsN, byTot.length) - 1].p : null; })() : null;
-    const refMap = refP ? rowVals(refP.rounds, cat) : null;
+    // (update 260) Personal Peak: for each row, the player's best run of N rounds in a row (the Peak Length, default 10)
+    // in this selection: the best average of any N consecutive rounds, each row on its own (lower is better where it is)
+    const peakN = Math.max(2, Math.round(Number(st.peakN) || 10));
+    const peak = peakOn ? (() => {
+      const out = new Map(), at = new Map();
+      if (ordered.length < peakN) return { map: out, at, short: true };
+      for (let i = 0; i + peakN <= ordered.length; i++) {
+        const win = ordered.slice(i, i + peakN), m = rowVals(win, cat);
+        for (const row of R) {
+          if (!row.key || row.higher == null) continue;
+          const v = m.get(row.key);
+          if (v == null || !Number.isFinite(v)) continue;
+          const cur = out.get(row.key);
+          if (cur == null || (row.higher ? v > cur : v < cur)) { out.set(row.key, v); at.set(row.key, [win[0], win.at(-1)]); }
+        }
+      }
+      return { map: out, at, short: false };
+    })() : null;
+    const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
+    const dTxt = (rd) => String(rd?.date || "").slice(0, 10);
     // no rank picked: each stat coloured against the player's own career average (every round of theirs)
     const careerMap = me?.rounds?.length ? rowVals(me.rounds, cat) : null;
-    const relNow = !!refMap;
+    const relNow = !!refMap && (!peak || peak.map.size > 0);
     const tr = [];
     for (const row of R) {
       if (row.grp) { tr.push(el("tr", { class: "cmp-grp" }, el("td", { colspan: 4 }, row.grp))); continue; }
@@ -1305,9 +1325,10 @@ export function sgDashboard(container, opts) {
       const a = lastV?.get(row.key), b = prevV?.get(row.key), ch = a != null && b != null ? a - b : null;
       const chTxt = ch == null ? "—" : Math.abs(ch) < (row.tone ? 0.005 : 1e-9) ? "◆ steady" : `${ch > 0 ? "▲" : "▼"} ${row.fmt === sg3 ? Math.abs(ch).toFixed(3) : row.fmt === sgF ? Math.abs(ch).toFixed(2) : row.def ? fmtStat({ ...row.def, pct: false, unit: row.def.pct ? " pct" : row.def.unit }, Math.abs(ch)) : Math.abs(ch).toFixed(1)}`;
       void bestOf; // (update 229: no Best round or All Players columns)
+      const pk = peak?.at.get(row.key); // (update 260) when the peak was, and what it was
       tr.push(el("tr", { class: row.sub ? "cmp-sub" : "" }, [
         el("td", {}, row.label),
-        el("td", { class: `num strong ${vCls}` }, shown),
+        el("td", { class: `num strong ${vCls}`, title: pk ? `Peak ${row.fmt(peak.map.get(row.key))}: ${dTxt(pk[0])} to ${dTxt(pk[1])} (${peakN} rounds)` : null }, shown),
         el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "—"),
         el("td", { class: `num ${ch == null ? "" : good(ch)}` }, chTxt),
       ]));
@@ -1315,11 +1336,13 @@ export function sgDashboard(container, opts) {
     return [
       el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)` : "" }, relNow ? `Vs #${vsN} ${refP.label || ""}`.trim() : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row` : `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)`) : "" }, relNow ? (peak ? `Vs peak (${peakN} rds)` : `Vs #${vsN} ${refP.label || ""}`.trim()) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
         el("tbody", {}, tr),
       ])),
       // (update 240) what the colours mean
-      el("p", { class: "muted small sg-full-note" }, relNow
+      el("p", { class: "muted small sg-full-note" }, peak && peak.short ? `${me?.label || "The player"} has ${ordered.length} rounds in this selection: fewer than the Peak Length (${peakN}), so there\u2019s no peak to compare with. Shorten the Peak Length or widen the selection.`
+        : peak ? `Each value is the difference from ${me?.label || "the player"}\u2019s own peak in this selection: for each row on its own, the best average over ${peakN} rounds in a row (hover a value for when). Zero means they\u2019re playing at their peak; the further from zero, the further off it they are (red). Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above to look at shorter or longer runs.`
+        : relNow
         ? `Each value is the difference from ${refP.label || "that player"}, ranked #${vsN} overall (SG: Total a round in this selection); every row is the same golfer. Green: better than them; red: worse. Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap the rank comparison again to see the player\u2019s own values.`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a rank comparison above to see each stat against the player ranked there overall.`),
     ];
@@ -1685,17 +1708,28 @@ export function sgDashboard(container, opts) {
   }
   // (update 231) Rank comparisons above the stats table: none (the player's own values) or #1 / #10 / #25 / #50.
   // Tap the one picked again to go back to none. The pick also sets who the gold dots on the charts are.
+  // (update 260) and Personal Peak: each stat against the player's own best run of rounds (Peak Length, default 10)
   function vsPills() {
-    return el("div", { class: "top-pills" }, [el("span", { class: "ms-label" }, "Rank comparisons"), el("div", { class: "seg small vs-pills" }, [["1", "#1"], ["10", "#10"], ["25", "#25"], ["50", "#50"]].map(([v, l]) => {
-      const on = st.vsRank === v;
-      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on), title: `Show each stat against the player ranked #${v}` }, l);
+    const pills = el("div", { class: "seg small vs-pills" }, [["1", "#1"], ["10", "#10"], ["25", "#25"], ["50", "#50"], ["peak", "Personal Peak"]].map(([v, l]) => {
+      const on = st.vsRank === v, isPeak = v === "peak";
+      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}${isPeak ? " vs-peak" : ""}`, "aria-pressed": String(on), title: isPeak ? "Show each stat against the player\u2019s own best run of rounds (the Peak Length)" : `Show each stat against the player ranked #${v}` }, l);
       b.addEventListener("click", () => {
-        if (on) { st.vsRank = null; st.rankTopManual = false; st.rankTopFor = null; }
+        if (on) { st.vsRank = null; if (!isPeak) { st.rankTopManual = false; st.rankTopFor = null; } }
+        else if (isPeak) st.vsRank = "peak"; // (the gold dots on the charts stay as they were)
         else { st.vsRank = v; st.rankTop = v; st.rankTopManual = true; st.rankTopFor = me?.key; }
         draw();
       });
       return b;
-    }))]);
+    }));
+    let len = null;
+    if (st.vsRank === "peak") {
+      const inp = el("input", { type: "number", class: "peak-len", min: "2", max: "100", step: "1", value: String(st.peakN || 10), inputmode: "numeric", "aria-label": "Peak Length: rounds in a row" });
+      const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 2) { inp.value = String(st.peakN || 10); return; } const v = Math.min(100, n); if (v === (st.peakN || 10)) return; st.peakN = v; draw(); setTimeout(() => document.querySelector(".peak-len")?.focus(), 0); };
+      inp.addEventListener("change", apply);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
+      len = el("label", { class: "peak-len-wrap", title: "How many rounds in a row are averaged to find the peak" }, [el("span", { class: "ms-label" }, "Peak Length"), inp, el("span", { class: "muted small" }, "rounds")]);
+    }
+    return el("div", { class: "top-pills" }, [el("span", { class: "ms-label" }, "Rank comparisons"), pills, len]);
   }
   function rankPicker() {
     const sel = el("select", { class: "rank-pick", "aria-label": "Compare with",

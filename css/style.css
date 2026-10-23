@@ -4343,3 +4343,13 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .cal-table tr:last-child td { border-bottom: 0; }
 .cal-table .num { text-align: right; white-space: nowrap; }
 .cal-table tr.on td { background: rgba(212, 180, 131, 0.12); color: #f3dfbd; }
+/* (update 260) Rank comparisons: Personal Peak, and its Peak Length */
+.vs-pills .seg-btn.vs-peak { white-space: nowrap; padding: 0 0.85rem; flex: 0 0 auto; }
+.peak-len-wrap { display: inline-flex; align-items: center; gap: 0.45rem; margin-left: 0.4rem; }
+.peak-len { width: 4.2rem !important; min-height: 2.2rem; margin: 0 !important; text-align: center; padding: 0.25rem 0.4rem !important; }
+.top-pills { flex-wrap: wrap; row-gap: 0.5rem; }
+/* (update 261) Callie asks which range: the choices */
+.cal-choices { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.6rem; }
+.cal-choice { flex-direction: column; align-items: flex-start; gap: 0.1rem; border-color: rgba(212, 180, 131, 0.5); }
+.cal-choice:hover { background: rgba(212, 180, 131, 0.12); }
+.cal-choice .cmp-chip-n { font-size: 0.68rem; }

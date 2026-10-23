@@ -52,3 +52,24 @@ export function currentField() {
     });
   });
 }
+
+/**
+ * (update 260) Once: the newest file's field WITH shot detail (distances and lies), for questions that narrow to them
+ * ("inside 10 ft", "from the rough"). It's the per-round detail Analyze builds (kept on the device once downloaded).
+ * { field, uploadedAt } or { why } when there's none: "nofile", "none" (never built), "stale", "paused", "error".
+ */
+export async function currentFieldDetail() {
+  const ds = await new Promise((resolve) => { let done = false, stop = () => {}; stop = watchNewestDataset((d) => { if (done) return; done = true; setTimeout(() => stop(), 0); resolve(d); }); });
+  if (!ds) return { why: "nofile" };
+  const at = ds.uploadedAt?.toMillis?.() ?? 0;
+  const v = `${ds.id}|${at}|detail`;
+  if (!summaries.has(v)) {
+    summaries.set(v, (async () => {
+      const { getFieldDetail } = await import("./fieldStore.js");
+      const r = await getFieldDetail(ds.id, at);
+      if (!r?.players?.length) return { why: r?.why || "none" };
+      return { field: r.players.map((p) => ({ key: p.key, name: nameOf(p.key, p.name), rounds: p.rounds })).filter((p) => p.rounds.length), uploadedAt: at };
+    })().catch(() => { summaries.delete(v); return { why: "error" }; }));
+  }
+  return summaries.get(v);
+}

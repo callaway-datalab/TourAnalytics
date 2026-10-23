@@ -15,6 +15,7 @@ import { CATEGORIES, statRounds, statAgg, statDef, fmtStat, distLead } from "./s
 
 const MAX_PLAYERS = 3;
 const chat = []; // [{ who: "me" | "callie", text, table?, note?, err? }] (kept while the portal is open)
+let pending = null; // (update 261) Callie asked which range: { plan, ps, missing, options }
 let lastPlayers = [], busy = false, panel = null, playersP = null, exList = [];
 const roundsCache = new Map(); // player key → their rounds (full detail)
 
@@ -71,7 +72,19 @@ function readLocal(question, list) {
     : has(/\b(model|club|clubs|which (driver|putter|irons?|wedge))\b/) ? "club" : has(/\bball\b/) ? "ball"
     : has(/\b(tournament|event)s?\b/) ? "event" : has(/\brounds?\b/) && has(/\b(best|worst|lowest|highest)\b/) && !ra.last ? "round"
     : has(/\b(year by year|by season|each season|every season|by year|each year)\b/) ? "season" : null;
-  const part = breakdown === "distance" || breakdown === "lie" || breakdown === "club" ? (metric && SG_METRICS[metric]?.[0] && SG_METRICS[metric][0] !== "T2G" ? SG_METRICS[metric][0] : has(/putt/) ? "PUTT" : has(/chip|around/) ? "ARG" : has(/driv|tee/) ? "OTT" : "APP") : null;
+  // (update 260) a distance or a lie to narrow to: "inside 10 ft", "from 150-200 yards", "outside 20 feet", "from the rough"
+  const U = "(ft|feet|foot|'|yds?|yards?)";
+  const unitOf = (u) => (/^(ft|feet|foot|')$/.test(u) ? "ft" : "yds");
+  let distance = null;
+  const rg = new RegExp(`\\b(?:from\\s+|between\\s+)?(\\d+)\\s*(?:-|to|and)\\s*(\\d+)\\s*${U}`).exec(t);
+  const mx = new RegExp(`\\b(?:inside|within|under|less than|shorter than|closer than|in)\\s+(\\d+)\\s*${U}`).exec(t);
+  const mn = new RegExp(`\\b(?:outside|over|beyond|more than|longer than|further than|from beyond|past)\\s+(\\d+)\\s*${U}`).exec(t);
+  if (rg) distance = { min: Number(rg[1]), max: Number(rg[2]), unit: unitOf(rg[3]) };
+  else if (mx) distance = { min: null, max: Number(mx[1]), unit: unitOf(mx[2]) };
+  else if (mn) distance = { min: Number(mn[1]), max: null, unit: unitOf(mn[2]) };
+  const lm = /\b(?:from|out of|in|off) the (rough|fairway|sand|bunker|fringe|first cut|primary rough|intermediate rough|recovery|tee)\b/.exec(t);
+  const lie = lm ? lm[1] : null;
+  const part = distance || lie ? (metric && SG_METRICS[metric]?.[0] && !["T2G"].includes(SG_METRICS[metric][0]) ? SG_METRICS[metric][0] : has(/putt/) ? "PUTT" : has(/chip|around|short game/) ? "ARG" : has(/driv|off the tee/) ? "OTT" : distance?.unit === "ft" ? "PUTT" : "APP") : breakdown === "distance" || breakdown === "lie" || breakdown === "club" ? (metric && SG_METRICS[metric]?.[0] && SG_METRICS[metric][0] !== "T2G" ? SG_METRICS[metric][0] : has(/putt/) ? "PUTT" : has(/chip|around/) ? "ARG" : has(/driv|tee/) ? "OTT" : "APP") : null;
   const period = {};
   if (ra.since) period.from = ra.since.from; else if (ra.years.length) period.years = ra.years;
   if (ra.last) period[ra.last.unit === "events" ? "last_events" : "last"] = ra.last.n;
@@ -82,7 +95,7 @@ function readLocal(question, list) {
   return {
     intent: compare ? "compare" : field ? "field" : "player",
     players, tour: has(/korn ferry/) ? "Korn Ferry Tour" : has(/\bpga\b/) ? "PGA TOUR" : null,
-    metric, period, breakdown, part, order: has(/\b(worst|lowest|least|bottom|weakest)\b/) && !has(/lowest scor|fewest putts/) ? "worst" : "best",
+    metric, period, breakdown: (distance && breakdown === "distance") || (lie && breakdown === "lie") ? null : breakdown, part, distance, lie, order: has(/\b(worst|lowest|least|bottom|weakest)\b/) && !has(/lowest scor|fewest putts/) ? "worst" : "best",
     limit: lim ? Number(lim[1] || lim[2]) : null, compare: null, unsupported: null, local: true,
   };
 }
@@ -116,6 +129,8 @@ function cleanPlan(p, local) {
     metric: metricOf(p.metric) ? p.metric : null,
     period, breakdown: BREAKDOWNS.includes(p.breakdown) ? p.breakdown : null,
     part: ["OTT", "APP", "ARG", "PUTT"].includes(p.part) ? p.part : null,
+    distance: (() => { const d = p.distance; if (!d || typeof d !== "object") return null; const n = (v) => (v == null || v === "" ? null : Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null); const o = { min: n(d.min), max: n(d.max), unit: /y/i.test(String(d.unit || "")) ? "yds" : "ft" }; return o.min == null && o.max == null ? null : o; })(),
+    lie: typeof p.lie === "string" && p.lie.trim() ? p.lie.trim().slice(0, 40) : null,
     order: p.order === "worst" ? "worst" : "best", limit: int(p.limit, 25), min_rounds: int(p.min_rounds, 200),
     compare: p.compare && typeof p.compare === "object" && Array.isArray(p.compare.groups) && p.compare.groups.length ? p.compare : null,
     unsupported: typeof p.unsupported === "string" && p.unsupported.trim() ? p.unsupported.trim().slice(0, 300) : null,
@@ -144,10 +159,85 @@ function inPeriod(rs, period, defMonths) {
   if (p.last_events) { const evs = [...new Set(out.map(evOf))].slice(-p.last_events); out = out.filter((rd) => evs.includes(evOf(rd))); label = `over the last ${p.last_events} events`; }
   return { rounds: out, label: label || "across all their data" };
 }
-/** A metric over some rounds: { v, n (rounds), w (attempts, stats) } */
-function valueOf(rs, m) {
-  if (m.sg) { const r = rs.filter((rd) => rd.shots.length); return { v: r.length ? r.reduce((t, rd) => t + sgOf(rd, m.cat), 0) / r.length : null, n: r.length }; }
-  const a = statAgg(statRounds(rs, m.key));
+/* (update 260) Narrowing to a distance and/or a lie. The data's distance buckets ("<5 ft", "5-10 ft", "150-200 yds",
+   "30+ ft") are read as ranges; a question's range takes every bucket that lies inside it ("inside 10 ft" = "<5 ft" + "5-10 ft"). */
+function bucketRange(label) {
+  const t = String(label || "").toLowerCase().replace(/\s+/g, "");
+  const unit = /ft|feet|'/.test(t) ? "ft" : /yd|yard/.test(t) ? "yds" : null;
+  if (!unit) return null;
+  const n = [...t.matchAll(/\d+(?:\.\d+)?/g)].map((x) => Number(x[0])), k = unit === "yds" ? 3 : 1;
+  if (!n.length) return null;
+  if (/^(<|under|inside|lessthan)/.test(t)) return { lo: 0, hi: n[0] * k };
+  if (/^(>|over|outside)/.test(t) || /\+/.test(t)) return { lo: n[0] * k, hi: Infinity };
+  return n.length >= 2 ? { lo: n[0] * k, hi: n[1] * k } : null;
+}
+/** What to narrow shots to: { test(shot), label, part } (null = nothing to narrow); { err } when nothing in the data fits. */
+function narrowFor(plan, m, rounds) {
+  if (!plan.distance && !plan.lie) return null;
+  const part = plan.part || (m.sg && m.cat && m.cat !== "T2G" ? m.cat : plan.distance?.unit === "ft" ? "PUTT" : "APP");
+  const partName = CATEGORIES.find(([c]) => c === part)?.[1] || "";
+  const seen = new Map(), lies = new Set();
+  for (const rd of rounds) for (const s of rd.shots) if (s.cat === part) { if (s.dist) seen.set(s.dist, bucketRange(s.dist)); if (s.lie) lies.add(s.lie); }
+  let dists = null, distTxt = "", range = "";
+  if (plan.distance) {
+    // (update 261) the bands that fit the question exactly; when they don't, ask which way to go (the bands inside
+    // the range, or the ones that reach past it), and say the range the data really covers, not just the one asked for
+    const u = plan.distance.unit, k = u === "yds" ? 3 : 1, lo = (plan.distance.min ?? 0) * k, hi = plan.distance.max == null ? Infinity : plan.distance.max * k;
+    const near = (a, b) => (a === Infinity || b === Infinity ? a === b : Math.abs(a - b) < 1e-6);
+    const bands = [...seen].filter(([, r]) => r).map(([d, r]) => ({ d, ...r })).sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+    const want = rangeTxt(lo, hi, u, k);
+    const inside = bands.filter((x) => x.lo >= lo - 1e-6 && x.hi <= hi + 1e-6);
+    const touch = bands.filter((x) => x.hi > lo + 1e-6 && x.lo < hi - 1e-6);
+    const spanOf = (list) => ({ lo: Math.min(...list.map((x) => x.lo)), hi: Math.max(...list.map((x) => x.hi)) });
+    const joined = (list) => list.every((x, i) => !i || near(x.lo, list[i - 1].hi));
+    const exact = inside.length && joined(inside) && near(spanOf(inside).lo, lo) && near(spanOf(inside).hi, hi);
+    if (!exact) {
+      const opts = [];
+      for (const list of [inside, touch]) {
+        if (!list.length || !joined(list)) continue;
+        const sp = spanOf(list), label = rangeTxt(sp.lo, sp.hi, u, k);
+        if (opts.some((o) => o.label === label)) continue;
+        opts.push({ label, bands: list.map((x) => x.d), distance: { min: sp.lo ? sp.lo / k : null, max: sp.hi === Infinity ? null : sp.hi / k, unit: u } });
+      }
+      if (!opts.length) return { err: `There\u2019s no ${partName.toLowerCase()} distance band ${want} in the data${bands.length ? `: it has ${bands.map((x) => x.d).join(", ")}` : " (it needs shot-level detail)"}.` };
+      // where the bands don't line up with the question ("don't split at 150")
+      const at = [lo > 0 && !bands.some((x) => near(x.lo, lo)) ? lo / k : null, hi !== Infinity && !bands.some((x) => near(x.hi, hi)) ? hi / k : null].filter((x) => x != null);
+      const why = `Your data\u2019s ${partName.toLowerCase()} bands ${at.length ? `don\u2019t split at ${at.join(" or ")} ${u}` : `don\u2019t cover ${want} exactly`}`;
+      const text = opts.length > 1 ? `${why}. Would you like to look at **${opts[0].label}** or **${opts[1].label}**?` : `${why}. The closest is **${opts[0].label}**. Would you like to look at that?`;
+      return { ask: { text, note: `Its bands: ${bands.map((x) => x.d).join(", ")}.`, options: opts } };
+    }
+    const list = inside.map((x) => x.d);
+    dists = new Set(list);
+    range = want;
+    distTxt = `${/^\d/.test(want) ? "from " : ""}${want}${list.length > 1 ? ` (${list.join(" + ")})` : !want.endsWith(list[0]) && list[0] !== want ? ` (${list[0]})` : ""}`;
+  }
+  let lieSet = null;
+  if (plan.lie) {
+    const w = sq(plan.lie).replace(/^the/, "").replace(/bunker/, "sand");
+    lieSet = new Set([...lies].filter((l) => { const x = sq(l).replace(/bunker/, "sand"); return x.includes(w) || w.includes(x); }));
+    if (!lieSet.size) return { err: `There\u2019s no \u201c${plan.lie}\u201d lie for ${partName.toLowerCase()} in the data${lies.size ? `: it has ${[...lies].join(", ")}` : ""}.` };
+  }
+  const test = (s) => s.cat === part && (!dists || dists.has(s.dist)) && (!lieSet || lieSet.has(s.lie));
+  const lieTxt = lieSet ? `from the ${[...lieSet].join(" / ").toLowerCase()}` : "";
+  return { test, part, partName, label: [distTxt, lieTxt].filter(Boolean).join(" "), short: [range, lieTxt].filter(Boolean).join(", ") };
+}
+/** (update 261) A range in the question's unit: "inside 10 ft", "160-200 yds", "20+ ft". (lo, hi in feet; k: feet per unit) */
+function rangeTxt(lo, hi, u, k) {
+  const f = (x) => String(Math.round((x / k) * 10) / 10);
+  return lo <= 1e-6 ? (hi === Infinity ? `any distance` : `inside ${f(hi)} ${u}`) : hi === Infinity ? `${f(lo)}+ ${u}` : `${f(lo)}-${f(hi)} ${u}`;
+}
+/** A metric over some rounds: { v, n (rounds), w (attempts / shots), per (SG a shot, narrowed) } */
+function valueOf(rs, m, nar = null) {
+  if (m.sg) {
+    const r = rs.filter((rd) => rd.shots.length);
+    if (!nar) return { v: r.length ? r.reduce((t, rd) => t + sgOf(rd, m.cat), 0) / r.length : null, n: r.length };
+    let sg = 0, w = 0;
+    for (const rd of r) for (const sh of rd.shots) if (nar.test(sh)) { sg += sh.sg || 0; w += sh.w || 1; }
+    return { v: r.length && w ? sg / r.length : null, n: r.length, w: Math.round(w), per: w ? sg / w : null };
+  }
+  if (!nar) { const a = statAgg(statRounds(rs, m.key)); return { v: a.value, n: a.rounds, w: a.w }; }
+  const rs2 = rs.map((rd) => ({ ...rd, obs: (rd.obs || []).filter((o) => o.k === m.key && nar.test(o)) }));
+  const a = statAgg(statRounds(rs2, m.key), true);
   return { v: a.value, n: a.rounds, w: a.w };
 }
 const fmtM = (m, v) => { if (v == null) return "\u2014"; if (!m.sg) return fmtStat(m.def, v); const r = Math.round(v * 100) / 100; return `${r > 0 ? "+" : r < 0 ? "\u2212" : ""}${Math.abs(r).toFixed(2)}`; };
@@ -157,9 +247,15 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /** Every player in the field with a value for a metric over a period on a tour, best first (by the metric's direction). */
 async function fieldTable(plan, m) {
-  const { currentField } = await import("./fieldSummary.js");
-  const cur = await currentField();
+  const { currentField, currentFieldDetail } = await import("./fieldSummary.js");
+  // (update 260) narrowed to a distance or a lie: the field's shot detail (the summary only has each part of the game)
+  const narrowed = !!(plan.distance || plan.lie);
+  const cur = narrowed ? await currentFieldDetail() : await currentField();
+  if (narrowed && !cur?.field) return { err: { nofile: "There\u2019s no field data to rank yet (it comes with an uploaded stats file).", paused: "The field\u2019s shot detail is switched off right now (the monthly storage budget was reached), so I can\u2019t rank by distance or lie until it\u2019s back on.", stale: "The field\u2019s shot detail is from an older upload. It\u2019s rebuilt when an admin opens Analyze on a computer; then I can rank by distance or lie." }[cur?.why] || "The field\u2019s shot detail (distances and lies) hasn\u2019t been built yet. It\u2019s built when an admin opens Analyze on a computer; then I can rank by distance or lie." };
   if (!cur?.field?.length) return { err: "There’s no field data to rank yet (it comes with an uploaded stats file)." };
+  const nar = narrowed ? narrowFor(plan, m, cur.field.slice(0, 200).flatMap((p) => p.rounds.slice(-60))) : null;
+  if (nar?.err) return { err: nar.err };
+  if (nar?.ask) return { ask: nar.ask }; // (update 261)
   // the tour: as asked, else the one with the most rounds
   const count = new Map();
   for (const p of cur.field) for (const rd of p.rounds) if (rd.tour) count.set(rd.tour, (count.get(rd.tour) || 0) + 1);
@@ -173,7 +269,7 @@ async function fieldTable(plan, m) {
     const per = inPeriod(mine, plan.period, 12);
     label = per.label;
     if (!per.rounds.length) continue;
-    const x = valueOf(per.rounds, m);
+    const x = valueOf(per.rounds, m, nar);
     if (x.v == null) continue;
     rows.push({ key: p.key, name: p.name, ...x });
   }
@@ -183,7 +279,7 @@ async function fieldTable(plan, m) {
   const minR = plan.min_rounds || Math.max(plan.period?.last ? Math.min(plan.period.last, 8) : 8, Math.min(30, Math.round(p90 * 0.4)));
   const hiFirst = better(m, plan.order);
   const all = rows.filter((r) => r.n >= minR).sort((a, b) => (hiFirst ? b.v - a.v : a.v - b.v));
-  return { all, rows, minR, tour, label, uploadedAt: cur.uploadedAt };
+  return { all, rows, minR, tour, label, nar, uploadedAt: cur.uploadedAt };
 }
 
 /* ---------------------------------------------------------------- the answers */
@@ -191,7 +287,9 @@ async function answerField(plan) {
   const m = metricOf(plan.metric || "sg_total");
   const f = await fieldTable(plan, m);
   if (f.err) return { text: f.err };
-  const { all, minR, tour, label } = f;
+  if (f.ask) return { ask: f.ask };
+  const { all, minR, tour, label, nar } = f;
+  if (nar) return answerFieldNarrowed(plan, m, f);
   if (!all.length) return { text: `No one has ${minR}+ rounds ${label}${tour ? ` on ${tour}` : ""}, so there’s no fair ranking. Try a longer period.` };
   const n = Math.min(plan.limit || 10, 25), top = all.slice(0, n), lead = top[0];
   const word = plan.order === "worst" ? (m.higher === false ? "the highest" : "the lowest") : m.higher === false ? "the lowest" : m.higher == null ? "the most" : "the best";
@@ -210,18 +308,46 @@ async function answerField(plan) {
   };
 }
 
+/** (update 260) A ranking narrowed to a distance / lie: strokes gained a round from those shots, and a shot. */
+function answerFieldNarrowed(plan, m, f) {
+  const { all, minR, tour, label, nar } = f;
+  if (!all.length) return { text: `No one has ${minR}+ rounds ${label}${tour ? ` on ${tour}` : ""}, so there\u2019s no fair ranking. Try a longer period.` };
+  const n = Math.min(plan.limit || 10, 25), top = all.slice(0, n), lead = top[0];
+  const what = m.sg ? `${nar.partName} ${nar.label}` : `${m.label} ${nar.label}`;
+  const f3 = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`);
+  const shotWord = nar.part === "PUTT" ? "putt" : "shot";
+  const best = plan.order === "worst" ? "the least" : "the most";
+  const lines = [m.sg
+    ? `**${lead.name}** gains ${best} on ${what.toLowerCase().replace(/^putting/, "putts")} ${tour ? `on ${tour} ` : ""}${label}: **${fmtM(m, lead.v)}** a round (${f3(lead.per)} a ${shotWord} over ${lead.w} ${shotWord}s, ${plural(lead.n, "round")}).`
+    : `**${lead.name}** has ${plan.order === "worst" ? "the lowest" : "the best"} ${what} ${tour ? `on ${tour} ` : ""}${label}: **${fmtM(m, lead.v)}** (${Math.round(lead.w)} attempts).`];
+  if (top.length > 1) lines.push(`Then ${top.slice(1, 4).map((r) => `${r.name} ${fmtM(m, r.v)}`).join(", ")}.`);
+  const named = plan.players.map((nm) => { const k = sq(nm); return f.rows.find((r) => sq(r.name) === k || sq(r.name).endsWith(k)); }).filter(Boolean);
+  for (const r of named) { const at = all.findIndex((x) => x.key === r.key), place = plan.order === "worst" ? all.length - at : at + 1; lines.push(at >= 0 ? `${r.name}: ${fmtM(m, r.v)}, ranks ${ordinal(place)} of ${all.length}.` : `${r.name}: ${fmtM(m, r.v)} over ${plural(r.n, "round")}, under the ${minR}-round minimum, so not ranked.`); }
+  return {
+    text: lines.join("\n\n"),
+    table: m.sg ? { head: ["#", "Player", `SG a round, ${nar.short}`, `SG a ${shotWord}`, `${shotWord[0].toUpperCase()}${shotWord.slice(1)}s`, "Rounds"], num: [0, 2, 3, 4, 5], rows: top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), f3(r.per), String(r.w), String(r.n)]), mark: new Set(named.map((r) => top.findIndex((x) => x.key === r.key)).filter((i) => i >= 0)) }
+      : { head: ["#", "Player", `${m.label}, ${nar.short}`, "Attempts", "Rounds"], num: [0, 2, 3, 4], rows: top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), String(Math.round(r.w || 0)), String(r.n)]) },
+    note: `${nar.partName} shots ${nar.label}, ${label}${tour ? ` on ${tour}` : ""}: players with ${minR}+ rounds (${all.length} qualify). SG a round: those shots\u2019 strokes gained, spread over every round played.`,
+  };
+}
+
 async function answerPlayer(plan, ps) {
   const out = [];
   const datas = await Promise.all(ps.map(async (p) => ({ p, rounds: await roundsOf(p.key, p.label) })));
   const withData = datas.filter((d) => sgRds(d.rounds).length);
   if (!withData.length) return [{ text: `I couldn’t find any strokes-gained rounds for ${ps.map((p) => p.label).join(" or ")}.` }];
-  const bd = plan.breakdown || (!plan.metric ? "category" : null);
+  const bd = plan.breakdown || (!plan.metric && !plan.distance && !plan.lie ? "category" : null);
   // several players, one number or the parts of the game: one table, a row each
   if (withData.length > 1 && (!bd || bd === "category")) {
     const ms = bd === "category" ? ["sg_total", "sg_ott", "sg_app", "sg_arg", "sg_putt"].map(metricOf) : [metricOf(plan.metric)];
     let label = "";
-    const rows = withData.map(({ p, rounds }) => { const per = inPeriod(rounds, plan.period, 12); label = per.label; return { name: p.label, n: per.rounds.length, vals: ms.map((m) => valueOf(per.rounds, m).v) }; });
+    let narErr = null, narLabel = "", narAsk = null;
+    const rows = withData.map(({ p, rounds }) => { const per = inPeriod(rounds, plan.period, 12); label = per.label;
+      return { name: p.label, n: per.rounds.length, vals: ms.map((m) => { const nar = narrowFor(plan, m, per.rounds); if (nar?.err) { narErr = nar.err; return null; } if (nar?.ask) { narAsk = nar.ask; return null; } if (nar) narLabel = ` ${nar.label}`; return valueOf(per.rounds, m, nar).v; }) }; });
     if (rows.every((r) => !r.n)) return [{ text: `None of them have rounds ${label}.` }];
+    if (narAsk) return [{ ask: narAsk }];
+    if (narErr && rows.every((r) => r.vals.every((v) => v == null))) return [{ text: narErr }];
+    if (narLabel) label = `${label}, ${narLabel.trim()}`;
     const m0 = ms[0], hiFirst = better(m0, "best");
     const lead = [...rows].filter((r) => r.vals[0] != null).sort((a, b) => (hiFirst ? b.vals[0] - a.vals[0] : a.vals[0] - b.vals[0]))[0];
     out.push({ text: lead ? `${label.charAt(0).toUpperCase()}${label.slice(1)}, **${lead.name}** leads on ${m0.label}: **${fmtM(m0, lead.vals[0])}**.` : "None of them have those numbers.",
@@ -237,6 +363,12 @@ async function onePlayer(plan, p, rounds, bd) {
   const per = inPeriod(rounds, plan.period, bd === "season" ? null : 12);
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   if (!per.rounds.length) return { text: `${name} has no rounds ${per.label}.` };
+  // (update 260) narrowed to a distance / lie ("inside 10 ft"): every number below counts only those shots
+  const nar = narrowFor(plan, m, per.rounds);
+  if (nar?.err) return { text: nar.err };
+  if (nar?.ask) return { ask: nar.ask }; // (update 261)
+  if (nar && (bd === "distance" || bd === "lie" || bd === "category")) bd = null;
+  const narTxt = nar ? ` ${nar.label}` : "";
   const few = (n) => (n < 10 ? ` That’s only ${plural(n, "round")}, so treat it as a hint.` : "");
   if (bd === "category") {
     const cats = CATEGORIES.map(([c, l]) => ({ l, v: per.rounds.reduce((t, rd) => t + sgOf(rd, c), 0) / per.rounds.length, car: sgRds(rounds).reduce((t, rd) => t + sgOf(rd, c), 0) / sgRds(rounds).length }));
@@ -246,21 +378,21 @@ async function onePlayer(plan, p, rounds, bd) {
   }
   if (bd === "season") {
     const ys = [...new Set(per.rounds.map(yr))].sort().reverse();
-    const rows = ys.map((y) => { const x = valueOf(per.rounds.filter((rd) => yr(rd) === y), m); return { y, ...x }; }).filter((r) => r.v != null);
+    const rows = ys.map((y) => { const x = valueOf(per.rounds.filter((rd) => yr(rd) === y), m, nar); return { y, ...x }; }).filter((r) => r.v != null);
     const best = [...rows].sort((a, b) => (better(m, "best") ? b.v - a.v : a.v - b.v))[0];
-    return { text: best ? `${name}’s best season for ${m.label} is **${best.y}**: **${fmtM(m, best.v)}** over ${plural(best.n, "round")}.` : `${name} has no ${m.label} by season.`,
+    return { text: best ? `${name}’s best season for ${m.label}${narTxt} is **${best.y}**: **${fmtM(m, best.v)}** over ${plural(best.n, "round")}.` : `${name} has no ${m.label} by season.`,
       table: { head: ["Season", m.label, "Rounds"], num: [1, 2], rows: rows.map((r) => [r.y, fmtM(m, r.v), String(r.n)]) } };
   }
   if (bd === "event" || bd === "round") {
     const groups = new Map();
     for (const rd of per.rounds) { const k = bd === "event" ? evOf(rd) : rd; (groups.get(k) || groups.set(k, []).get(k)).push(rd); }
-    const rows = [...groups.values()].map((rs) => ({ rs, ...valueOf(rs, m) })).filter((r) => r.v != null && (bd === "round" || r.n >= 2 || groups.size < 4));
+    const rows = [...groups.values()].map((rs) => ({ rs, ...valueOf(rs, m, nar) })).filter((r) => r.v != null && (bd === "round" || r.n >= 2 || groups.size < 4));
     const hiFirst = better(m, plan.order);
     rows.sort((a, b) => (hiFirst ? b.v - a.v : a.v - b.v));
     const top = rows.slice(0, Math.min(plan.limit || 8, 25));
     if (!top.length) return { text: `${name} has no ${m.label} ${per.label}.` };
     const r0 = top[0].rs[0], what = bd === "event" ? `${r0.event} (${yr(r0)})` : `${r0.event} R${r0.roundNo || "?"}, ${dateTxt(dk(r0))}`;
-    return { text: `${name}’s ${plan.order === "worst" ? "worst" : "best"} ${bd} for ${m.label} ${per.label} was **${what}**: **${fmtM(m, top[0].v)}**${m.sg ? " a round" : ""}${bd === "event" ? ` over ${plural(top[0].n, "round")}` : ""}.`,
+    return { text: `${name}’s ${plan.order === "worst" ? "worst" : "best"} ${bd} for ${m.label}${narTxt} ${per.label} was **${what}**: **${fmtM(m, top[0].v)}**${m.sg ? " a round" : ""}${bd === "event" ? ` over ${plural(top[0].n, "round")}` : ""}.`,
       table: bd === "event" ? { head: ["Tournament", "Dates", m.label + (m.sg ? " / rd" : ""), "Rounds"], num: [2, 3], rows: top.map((r) => [`${r.rs[0].event} ${yr(r.rs[0])}`, `${dateTxt(dk(r.rs[0]))}`, fmtM(m, r.v), String(r.n)]) }
         : { head: ["Date", "Tournament", "Round", m.label], num: [2, 3], rows: top.map((r) => [dateTxt(dk(r.rs[0])), r.rs[0].event, String(r.rs[0].roundNo || "–"), fmtM(m, r.v)]) } };
   }
@@ -293,20 +425,60 @@ async function onePlayer(plan, p, rounds, bd) {
   const onTour = (rs) => (mainTour ? rs.filter((rd) => tourIs(rd.tour, mainTour)) : rs);
   const per2 = inPeriod(onTour(rounds), plan.period, 12);
   if (per2.rounds.length) per.rounds = per2.rounds;
-  const x = valueOf(per.rounds, m), car = valueOf(sgRds(onTour(rounds)), m);
-  const lines = [`${cap(per.label)}${mainTour && tourCount.size > 1 ? ` on ${mainTour}` : ""}, ${name}’s ${m.label} is **${fmtM(m, x.v)}**${m.sg ? " a round" : ""} over ${plural(x.n, "round")}${x.w && !m.sg && (m.def?.pct || m.key === "prox") ? ` (${Math.round(x.w)} attempts)` : ""}. Across all their data: ${fmtM(m, car.v)}.${few(x.n)}`];
+  const x = valueOf(per.rounds, m, nar), car = valueOf(sgRds(onTour(rounds)), m, nar);
+  const what = nar && m.sg ? `${nar.partName}${narTxt}` : `${m.label}${narTxt}`;
+  const perShot = nar && m.sg && x.per != null ? ` (${x.per >= 0 ? "+" : "\u2212"}${Math.abs(x.per).toFixed(3)} a ${nar.part === "PUTT" ? "putt" : "shot"} over ${x.w})` : "";
+  const lines = [`${cap(per.label)}${mainTour && tourCount.size > 1 ? ` on ${mainTour}` : ""}, ${name}\u2019s ${what} is **${fmtM(m, x.v)}**${m.sg ? " a round" : ""}${perShot} over ${plural(x.n, "round")}${x.w && !m.sg && (m.def?.pct || m.key === "prox") ? ` (${Math.round(x.w)} attempts)` : ""}. Across all their data: ${fmtM(m, car.v)}.${few(x.n)}`];
   let table = null;
   try {
     const f = await fieldTable({ ...plan, tour: mainTour, order: "best", players: [] }, m);
     const at = f.all ? f.all.findIndex((r) => r.key === p.key) : -1;
     if (at >= 0) lines.push(`That ranks **${ordinal(at + 1)} of ${f.all.length}** on ${f.tour || "the tour"} ${f.label} (players with ${f.minR}+ rounds).`);
-    if (f.all?.length) { const top = f.all.slice(0, 5); table = { head: ["#", "Player", m.label, "Rounds"], num: [0, 2, 3], rows: [...top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), String(r.n)]), ...(at >= 5 ? [[String(at + 1), f.all[at].name, fmtM(m, f.all[at].v), String(f.all[at].n)]] : [])], mark: new Set([at < 5 ? at : 5]) }; }
+    if (f.all?.length) { const top = f.all.slice(0, 5); table = { head: ["#", "Player", nar ? `${what} / rd` : m.label, "Rounds"], num: [0, 2, 3], rows: [...top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), String(r.n)]), ...(at >= 5 ? [[String(at + 1), f.all[at].name, fmtM(m, f.all[at].v), String(f.all[at].n)]] : [])], mark: new Set([at < 5 ? at : 5]) }; }
   } catch { /* the field isn't there: just their numbers */ }
   return { text: lines.join("\n\n"), table };
 }
 
 /* ---------------------------------------------------------------- asking */
+/** (update 261) Work out a plan's answer and show it; when Callie needs to ask which range first, ask and wait. */
+async function respond(plan, ps, missing = []) {
+  const answers = plan.intent === "field" ? [await answerField(plan)] : await answerPlayer(plan, ps);
+  const q = answers.find((a) => a.ask);
+  if (q) { pending = { plan, ps, missing, options: q.ask.options }; chat.push({ who: "callie", text: q.ask.text, note: q.ask.note, choices: q.ask.options }); busy = false; draw(); return; }
+  pending = null;
+  answers.forEach((a, i) => {
+    const extra = i === answers.length - 1 ? [missing.length ? `(Couldn\u2019t find ${missing.join(", ")}.)` : null, plan.unsupported ? `(Not in this answer: ${plan.unsupported})` : null] : [];
+    chat.push({ who: "callie", ...a, text: [a.text, ...extra].filter(Boolean).join("\n\n") });
+  });
+  busy = false; draw();
+}
+/** (update 261) The answer to Callie's question ("160-200 yds"): a tap on a choice, or typed ("the first", "160", "140-200"). */
+function pickedOption(text) {
+  if (!pending) return null;
+  const t = text.toLowerCase(), opts = pending.options;
+  if (/\b(first|former|1st|option 1)\b/.test(t)) return opts[0];
+  if (/\b(second|latter|2nd|option 2)\b/.test(t) && opts[1]) return opts[1];
+  if (/^\s*(yes|yeah|yep|sure|ok|okay|that|do that|please)\b/.test(t) && opts.length === 1) return opts[0];
+  const nums = (x) => (x.match(/\d+(?:\.\d+)?/g) || []).map(Number);
+  const tn = nums(t);
+  if (!tn.length || tn.length > 2 || t.length > 40) return null;
+  const hit = opts.filter((o) => { const on = nums(o.label); return tn.every((n) => on.includes(n)); });
+  return hit.length === 1 ? hit[0] : null;
+}
+async function choose(opt, typed = null) {
+  const p = pending;
+  if (!p || busy) return;
+  chat.push({ who: "me", text: typed || opt.label });
+  for (const m of chat) delete m.choices; // (the question is answered)
+  busy = true; draw();
+  try { await respond({ ...p.plan, distance: opt.distance }, p.ps, p.missing); }
+  catch (err) { console.error(err); pending = null; chat.push({ who: "callie", text: "Something went wrong working that out. Try asking another way.", err: true }); busy = false; draw(); }
+}
+
 async function ask(question) {
+  const picked = pickedOption(question);
+  if (picked) return choose(picked, question);
+  if (pending) { pending = null; for (const m of chat) delete m.choices; }
   chat.push({ who: "me", text: question });
   busy = true; draw();
   const reply = (o) => { chat.push({ who: "callie", ...o }); busy = false; draw(); };
@@ -327,21 +499,14 @@ async function ask(question) {
       setTimeout(() => { location.hash = href; }, 450);
       return;
     }
-    if (plan.intent === "unsupported") return reply({ text: plan.unsupported ? `I can’t work that out from the data: ${plan.unsupported}` : "I can’t work that out from the data. Ask about strokes gained or a stat for a player, a tournament or a period, or who leads the tour in something." });
-    if (plan.intent === "field") {
-      const a = await answerField(plan);
-      return reply({ ...a, text: [a.text, plan.unsupported ? `(Not in this answer: ${plan.unsupported})` : null].filter(Boolean).join("\n\n") });
+    if (plan.intent === "unsupported") return reply({ text: plan.unsupported ? `I can\u2019t work that out from the data: ${plan.unsupported}` : "I can\u2019t work that out from the data. Ask about strokes gained or a stat for a player, a tournament or a period, or who leads the tour in something." });
+    if (plan.intent !== "field") {
+      if (!ps.length && PRONOUN.test(question) && lastPlayers.length) ps = lastPlayers;
+      if (!ps.length && list.length === 1) ps = [{ key: list[0][0], label: list[0][1] }];
+      if (!ps.length) return reply({ text: missing.length ? `I couldn\u2019t find ${missing.join(", ")} among the players you can see.` : "Which player? Put their name in the question, or ask who leads the tour in something." });
+      ps = ps.slice(0, MAX_PLAYERS); lastPlayers = ps;
     }
-    if (!ps.length && PRONOUN.test(question) && lastPlayers.length) ps = lastPlayers;
-    if (!ps.length && list.length === 1) ps = [{ key: list[0][0], label: list[0][1] }];
-    if (!ps.length) return reply({ text: missing.length ? `I couldn’t find ${missing.join(", ")} among the players you can see.` : "Which player? Put their name in the question, or ask who leads the tour in something." });
-    ps = ps.slice(0, MAX_PLAYERS); lastPlayers = ps;
-    const answers = await answerPlayer(plan, ps);
-    answers.forEach((a, i) => {
-      const extra = i === answers.length - 1 ? [missing.length ? `(Couldn’t find ${missing.join(", ")}.)` : null, plan.unsupported ? `(Not in this answer: ${plan.unsupported})` : null] : [];
-      chat.push({ who: "callie", ...a, text: [a.text, ...extra].filter(Boolean).join("\n\n") });
-    });
-    busy = false; draw();
+    await respond(plan, ps, missing);
   } catch (err) {
     console.error(err);
     reply({ text: "Something went wrong working that out. Try asking another way.", err: true });
@@ -376,7 +541,8 @@ function draw() {
   for (const m of chat) {
     if (m.who === "me") { items.push(el("div", { class: "cal-msg me" }, el("p", {}, m.text))); continue; }
     const go = m.go ? el("a", { class: "link small cal-go", href: m.go.href }, m.go.label) : null;
-    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go]));
+    const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
+    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go]));
   }
   if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Callie is working it out" }, [el("i"), el("i"), el("i")]));
   mount(log, items);
@@ -394,7 +560,7 @@ export async function openCallie() {
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close Callie" }, "✕");
     close.addEventListener("click", closeCallie);
     const fresh = el("button", { type: "button", class: "link small" }, "New chat");
-    fresh.addEventListener("click", () => { chat.length = 0; lastPlayers = []; busy = false; draw(); });
+    fresh.addEventListener("click", () => { chat.length = 0; lastPlayers = []; pending = null; busy = false; draw(); });
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Callie, your data assistant" }, [
