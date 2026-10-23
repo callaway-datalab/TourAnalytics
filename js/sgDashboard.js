@@ -1903,7 +1903,7 @@ export function sgDashboard(container, opts) {
       const fresh = el("canvas", {});
       canvas.replaceWith(fresh); canvas = fresh;
       // (update 308) Hide Comps: this card's dots and legend off (remembered per chart while the page is open)
-      hideCompsNow = !!(key && st.hideComps?.[key]); cmpSeen = false;
+      hideCompsNow = !!(key && !st.showComps?.[key]); cmpSeen = false; // (update 311: hidden until Show Comps)
       chart = make(canvas, (key && st.chartTypes[key]) || "bar");
       hideCompsNow = false;
       charts.push(chart);
@@ -1943,13 +1943,13 @@ export function sgDashboard(container, opts) {
     if (!card) return;
     const keys = new Set((card.dataset.ckeys || "").split("|").filter(Boolean)); keys.add(key);
     card.dataset.ckeys = [...keys].join("|");
-    const hidden = () => [...keys].every((k) => st.hideComps?.[k]);
+    const hidden = () => ![...keys].some((k) => st.showComps?.[k]);
     let b = card.querySelector(":scope > .comp-toggle");
     if (!b) {
       b = el("button", { type: "button", class: "comp-toggle" });
       b.addEventListener("click", () => {
-        const ks = (card.dataset.ckeys || "").split("|").filter(Boolean), on = !ks.every((k) => st.hideComps?.[k]);
-        st.hideComps = { ...(st.hideComps || {}) }; ks.forEach((k) => { st.hideComps[k] = on; });
+        const ks = (card.dataset.ckeys || "").split("|").filter(Boolean), show = !ks.some((k) => st.showComps?.[k]);
+        st.showComps = { ...(st.showComps || {}) }; ks.forEach((k) => { st.showComps[k] = show; });
         draw();
       });
       card.classList.add("has-comp-toggle");
