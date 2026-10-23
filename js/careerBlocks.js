@@ -20,19 +20,22 @@ export function compareLink(key, source, pick) {
   return `#/comparisons?${q}`;
 }
 
-export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, redraw = () => {}, only = null } = {}) {
+export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, redraw = () => {}, only = null, cols = null } = {}) {
   const rs = sgRounds(rounds || []);
   if (rs.length < 6) return [];
   const go = (pick) => { location.hash = compareLink(key, source, pick); };
   // (update 205) only: "trajectory" (right under the hero card) or "conditions" (at the bottom)
-  return [only !== "conditions" ? trajectoryBlock(rs) : null, only !== "trajectory" ? conditionsBlock(rs, go, ui, redraw) : null].filter(Boolean);
+  return [only !== "conditions" ? trajectoryBlock(rs, cols) : null, only !== "trajectory" ? conditionsBlock(rs, go, ui, redraw) : null].filter(Boolean);
 }
 
 // (update 218) just the last 10 against the 10 before, and the last 40 against the 40 before; tapping one opens its
 // rounds (a bar chart, the two stretches highlighted, each one's average dashed) and the change in each category
-const sgOfRd = (rd, k = "TOTAL") => rd.shots.reduce((t, x) => t + (k === "TOTAL" || x.cat === k || (k === "T2G" && x.cat !== "PUTT") ? x.sg : 0), 0);
+const sgOfRd = (rd, k = "TOTAL") => rd.shots.reduce((t, x) => t + (k === "TOTAL" || x.cat === k || (k === "T2G" && x.cat !== "PUTT") || (k.startsWith("d:") && x.dist === k.slice(2)) ? x.sg : 0), 0);
+// (update 283) the table's columns: [key, heading, name in the pop-up] (Total and the four categories, unless the filters say otherwise)
+const DEFAULT_COLS = SG_ROWS.slice(0, 5).map(([k, l]) => [k, k === "TOTAL" ? "Total" : k, k === "TOTAL" ? "SG: Total" : l]);
+const changeOf = (rs, n, cols) => { const last = rs.slice(-n), prev = rs.slice(-2 * n, -n), avg = (xs, k) => xs.reduce((t, rd) => t + sgOfRd(rd, k), 0) / xs.length; return Object.fromEntries(cols.map(([k]) => [k, avg(last, k) - avg(prev, k)])); };
 const dShort = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : String(d || ""); };
-function openTrajectory(rs, x) {
+function openTrajectory(rs, x, cols = DEFAULT_COLS) {
   const n = x.n, show = rs.slice(-2 * n), prev = show.slice(0, n), last = show.slice(n);
   const avg = (xs, k) => xs.reduce((t, rd) => t + sgOfRd(rd, k), 0) / xs.length;
   openBadge({ text: `Last ${n} rounds vs the ${n} before`, info: () => ({
@@ -40,7 +43,7 @@ function openTrajectory(rs, x) {
     blocks: [
       { kind: "bars", fmt: "sg", items: show.map((rd, i) => ({ label: dShort(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: sgOfRd(rd), on: i >= n })), ref: [{ v: avg(prev, "TOTAL"), label: `Before`, from: 0, to: n }, { v: avg(last, "TOTAL"), label: `Last ${n}`, from: n, to: 2 * n }] },
       { kind: "table", title: "By category (a round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
-        rows: SG_ROWS.slice(0, 5).map(([k, l]) => ({ strong: k === "TOTAL", cells: [k === "TOTAL" ? "SG: Total" : l, { sg: avg(prev, k) }, { sg: avg(last, k) }, { sg: avg(last, k) - avg(prev, k), arrow: true }] })) },
+        rows: cols.map(([k, , l]) => ({ strong: k === "TOTAL", cells: [l, { sg: avg(prev, k) }, { sg: avg(last, k) }, { sg: avg(last, k) - avg(prev, k), arrow: true }] })) },
     ] }) }, "Getting better or worse?");
 }
 // (update 281) the summary in long-term (last 40 vs the 40 before) and short-term (last 10 vs the 10 before) words
@@ -52,8 +55,9 @@ function termWords(tr) {
   const one = lt || st;
   return `${word(one)} over the ${one === lt ? "long" : "short"}-term.`;
 }
-function trajectoryBlock(rs) {
-  const tr = trajectory(rs).filter((x) => x.n === 10 || x.n === 40);
+function trajectoryBlock(rs, cols0) {
+  const cols = cols0 || DEFAULT_COLS;
+  const tr = trajectory(rs).filter((x) => x.n === 10 || x.n === 40).map((x) => ({ ...x, ch: { ...x.ch, ...changeOf(rs, x.n, cols) } }));
   if (!tr.length) return null;
   const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [
@@ -61,12 +65,12 @@ function trajectoryBlock(rs) {
     el("p", { class: "cmp-traj-words" }, termWords(tr)),
     el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
       // (update 205) just the change in each category (no Before / Latest / Change columns)
-      el("thead", {}, el("tr", {}, ["Rounds", ...SG_ROWS.slice(0, 5).map(([k]) => (k === "TOTAL" ? "Total" : k))].map((h, i) => el("th", { class: i ? "num" : "" }, h)))), // (update 208: Total back, first)
+      el("thead", {}, el("tr", {}, ["Rounds", ...cols.map(([, h]) => h)].map((h, i) => el("th", { class: i ? "num" : "" }, h)))), // (update 208: Total back, first; update 283: the filters' columns)
       el("tbody", {}, tr.map((x) => {
         const row = el("tr", { class: "cmp-tap", tabindex: "0", title: `See the last ${x.n} and the ${x.n} before`, "aria-haspopup": "dialog" }, [
           el("td", {}, `Last ${x.n} vs ${x.n} before`),
-          ...SG_ROWS.slice(0, 5).map(([k]) => cell(x.ch[k], k === "TOTAL"))]);
-        row.addEventListener("click", () => openTrajectory(rs, x)); row.addEventListener("keydown", (e) => { if (e.key === "Enter") openTrajectory(rs, x); });
+          ...cols.map(([k]) => cell(x.ch[k], k === "TOTAL"))]);
+        row.addEventListener("click", () => openTrajectory(rs, x, cols)); row.addEventListener("keydown", (e) => { if (e.key === "Enter") openTrajectory(rs, x, cols); });
         return row;
       })),
     ])),

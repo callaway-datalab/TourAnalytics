@@ -4423,12 +4423,11 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 .ta-loading::after { top: calc(0.3rem + 12px); width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: #f1f1f1 url("../icons/loader-ball.jpg") center / 110%;
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.35); animation: taCup 1.4s linear infinite; }
 @keyframes taCup { from { transform: rotate(0deg) translateX(11.3px) rotate(0deg); } to { transform: rotate(360deg) translateX(11.3px) rotate(-360deg); } }
-.ta-loading-inline::before { content: ""; display: inline-block; vertical-align: -7px; width: 24px; height: 24px; margin-right: 0.4em;
-  background: radial-gradient(circle, #fafafa 0 2.4px, #bdbdbd 3px, transparent 3.6px) no-repeat,
-    radial-gradient(circle, transparent 7.3px, #fff 7.6px 8.6px, transparent 9px) no-repeat,
-    radial-gradient(circle, #050505 0 4px, #3b3b3b 5.5px, #6a6a6a 7.4px, transparent 7.6px) no-repeat;
-  background-size: 7px 7px, 24px 24px, 24px 24px; animation: taCupBg 1.4s linear infinite; }
-@keyframes taCupBg { 0.0% { background-position: 16.6px 8.5px, center, center; } 5.0% { background-position: 16.2px 11.0px, center, center; } 10.0% { background-position: 15.05px 13.26px, center, center; } 15.0% { background-position: 13.26px 15.05px, center, center; } 20.0% { background-position: 11.0px 16.2px, center, center; } 25.0% { background-position: 8.5px 16.6px, center, center; } 30.0% { background-position: 6.0px 16.2px, center, center; } 35.0% { background-position: 3.74px 15.05px, center, center; } 40.0% { background-position: 1.95px 13.26px, center, center; } 45.0% { background-position: 0.8px 11.0px, center, center; } 50.0% { background-position: 0.4px 8.5px, center, center; } 55.0% { background-position: 0.8px 6.0px, center, center; } 60.0% { background-position: 1.95px 3.74px, center, center; } 65.0% { background-position: 3.74px 1.95px, center, center; } 70.0% { background-position: 6.0px 0.8px, center, center; } 75.0% { background-position: 8.5px 0.4px, center, center; } 80.0% { background-position: 11.0px 0.8px, center, center; } 85.0% { background-position: 13.26px 1.95px, center, center; } 90.0% { background-position: 15.05px 3.74px, center, center; } 95.0% { background-position: 16.2px 6.0px, center, center; } 100.0% { background-position: 16.6px 8.5px, center, center; } }
+/* (update 283) the small one uses the same cup picture (round, with its white rim), big enough to see into */
+.ta-loading-inline::before { content: ""; display: inline-block; vertical-align: -8px; width: 26px; height: 26px; margin-right: 0.4em;
+  background: radial-gradient(circle, #fafafa 0 2.6px, #c4c4c4 3.2px, transparent 3.75px) no-repeat, url("../icons/loader-cup.png") center / 20px 20px no-repeat;
+  background-size: 7.5px 7.5px, 20px 20px; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5)); animation: taCupBg 1.4s linear infinite; }
+@keyframes taCupBg { 0.0% { background-position: 18.35px 9.25px, center; } 5.0% { background-position: 17.9px 12.06px, center; } 10.0% { background-position: 16.61px 14.6px, center; } 15.0% { background-position: 14.6px 16.61px, center; } 20.0% { background-position: 12.06px 17.9px, center; } 25.0% { background-position: 9.25px 18.35px, center; } 30.0% { background-position: 6.44px 17.9px, center; } 35.0% { background-position: 3.9px 16.61px, center; } 40.0% { background-position: 1.89px 14.6px, center; } 45.0% { background-position: 0.6px 12.06px, center; } 50.0% { background-position: 0.15px 9.25px, center; } 55.0% { background-position: 0.6px 6.44px, center; } 60.0% { background-position: 1.89px 3.9px, center; } 65.0% { background-position: 3.9px 1.89px, center; } 70.0% { background-position: 6.44px 0.6px, center; } 75.0% { background-position: 9.25px 0.15px, center; } 80.0% { background-position: 12.06px 0.6px, center; } 85.0% { background-position: 14.6px 1.89px, center; } 90.0% { background-position: 16.61px 3.9px, center; } 95.0% { background-position: 17.9px 6.44px, center; } 100.0% { background-position: 18.35px 9.25px, center; } }
 @media (prefers-reduced-motion: reduce) { .ta-loading::after, .ta-loading-inline::before { animation-duration: 4s; } }
 .ta-loading:not(.boot-msg) { margin-top: 0.6rem; margin-bottom: 0.6rem; }
 .cmp-busy .ta-loading, .cmp-empty .ta-loading { margin: 0.4rem 0; }
@@ -4440,4 +4439,29 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   .rail > nav:not(.subhead) > a, .rail > nav:not(.subhead) > a:hover, .rail > nav:not(.subhead) > a[aria-current="page"] {
     font-size: 0.76rem !important; padding: 0.4rem 0.42rem !important; letter-spacing: 0 !important; }
   .rail > nav:not(.subhead) { gap: 0.1rem 0.05rem !important; }
+}
+
+/* (update 283) Event Feed: tour pills, the archived list, and an easier leaderboard on a phone */
+.lv-tourpills { display: inline-flex; margin: 0 0 0.75rem; }
+.lv-tourpills[hidden] { display: none; }
+.lv-tourpills .seg-btn { display: inline-flex; align-items: center; gap: 0.4rem; }
+.lv-none-now { margin: 0.2rem 0; }
+.lv-nm-short { display: none; }
+@media (max-width: 700px) {
+  .lv-tourpills { display: flex; width: 100%; } .lv-tourpills .seg-btn { flex: 1 1 0; justify-content: center; }
+  .lv-grid { display: flex; flex-direction: column; }
+  .lv-grid > .lv-main { order: 1; } .lv-grid > .lv-side { order: 2; }   /* the leaderboard first */
+  .lv-main { padding: 0.9rem 0.6rem !important; }
+  .lv-main-top { flex-direction: column; align-items: stretch !important; gap: 0.5rem; }
+  .lv-tools { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .lv-nm-full { display: none; } .lv-nm-short { display: inline; }
+  .lv-table { font-size: 0.88rem; }
+  .lv-table th, .lv-table td { padding: 0.7rem 0.5rem; }
+  .lv-table thead th { font-size: 0.72rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  .lv-table th:nth-child(1), .lv-table td:nth-child(1) { width: 2.2rem; min-width: 2.2rem; max-width: 2.2rem; }
+  .lv-table th:nth-child(2), .lv-table td:nth-child(2) { left: 2.2rem; max-width: 7.5rem; min-width: 6.5rem; }
+  .lv-table .lv-rk { font-size: 0.66rem; }
+  .lv-board[data-density="1"] .lv-table { font-size: 0.84rem; } .lv-board[data-density="1"] .lv-table :is(th, td) { padding: 0.62rem 0.42rem; }
+  .lv-board { border-radius: 10px; -webkit-overflow-scrolling: touch; }
+  .lv-tour { padding: 0.7rem 0.85rem; }
 }

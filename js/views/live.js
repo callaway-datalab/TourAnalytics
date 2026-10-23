@@ -59,6 +59,7 @@ const ls = {
 };
 const norm = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[.\-]/g, " ").trim();
 const fmt = (n) => { if (n == null) return "\u2013"; const r = Math.round(n * 100) / 100; return (r > 0 ? "+" : r < 0 ? "\u2212" : "") + Math.abs(r).toFixed(2); }; // (rounds first: no "\u22120.00")
+const shortName = (n) => { const w = String(n || "").trim().split(/\s+/); return w.length > 1 ? `${w[0][0]}. ${w.slice(1).join(" ")}` : n; }; // (update 283: "S. Scheffler" on phones)
 const tone = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "");
 const ago = (ms) => { const m = Math.max(0, Math.round((Date.now() - ms) / 60000)); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 const dayTxt = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }) : "");
@@ -129,7 +130,7 @@ export async function render(main) {
   let apiEvents = [], apiOverrides = {}, apiPlayers = [], uploadEvents = [], apiSeen = false, curVis = null, refreshing = "", stopEvent = null, watchedRel = null, reqId = 0;
   let field = [], tours = [], events = [], lb = null, file = null, statsMeta = [], metaById = {}, uploadedAt = null, loadErr = "", version = null;
   let visible = ls.get("cols2", null); // null = the default columns
-  let showRanks = ls.get("ranks", true), minOn = ls.get("min", true), wide = ls.get("wide", false);
+  let showRanks = ls.get("ranks", window.innerWidth >= 700), minOn = ls.get("min", true), wide = ls.get("wide", false);
   let sel = { player: null, t: null, view: "latest" }, sortKey = "TOTAL", sortDir = -1;
   let colsOpen = false, pickerQ = "", q = "";
   const famOpen = {}, subOpen = {};
@@ -177,7 +178,7 @@ export async function render(main) {
         el("p", { class: "muted small" }, "Each round shows the strokes gained and stats of that round. The Event tab adds each player’s strokes gained up over the rounds they played (RDS); other stats are averaged over those rounds, weighted by attempts. The small grey number under each value is its rank (T = tied) among the players shown; for lower-is-better stats the lowest value ranks first, and the first tap on its heading sorts lowest first. Min Sample greys out percentages and averages built on very few attempts (under 3 in a round, under 5 for the event) and leaves them out of ranks and sorting. A tournament marked Live comes from the PGA Tour\u2019s API, updated about every 30 minutes; \u201cthru N\u201d marks a round still in progress, so its totals only cover the holes played so far (and Tee-to-Green and Total come straight from the Tour\u2019s feed, so they won\u2019t equal the sum of the parts until the round is final). Earlier tournaments are your uploaded data, the same as Leaderboards. The page updates by itself.")]),
     ]),
   ]);
-  mount(root, [head, el("div", { class: "lv-pick" }, [tourBox, roundBox]), grid]);
+  // (the page is put together once the tour pills exist, below)
 
   // ------------------------------------------------------------------ header, tours, rounds, toolbar
   function drawHead() {
@@ -207,20 +208,43 @@ export async function render(main) {
       stale,
     ]);
   }
+  // (update 283) tour pills (PGA TOUR / Korn Ferry) on top; under them the tour's current tournaments (in progress or
+  // upcoming) as cards, and every finished one in an "Archived Events" list
+  const tourPills = el("div", { class: "seg lv-tourpills", role: "group", "aria-label": "Tour" });
+  const isFinal = (e) => statusOf(e) === "final";
+  const firstOf = (t) => t.events.find((e) => !isFinal(e)) || t.events[0];
   function drawTours() {
-    mount(tourBox, tours.map((t) => {
-      const shown = sel.t && sel.t.tour === t.tour ? sel.t : t.events[0];
-      const on = sel.t?.tour === t.tour, live = statusOf(shown) === "live";
-      const card = el("button", { type: "button", class: `lv-tour${on ? " on" : ""}`, "aria-pressed": String(on) }, [
-        el("span", { class: "lv-tour-k" }, [live ? el("i", { class: "lv-dot", "aria-hidden": "true" }) : null, t.tour]),
-        el("span", { class: "lv-tour-n" }, shown.event), el("span", { class: "lv-tour-s muted" }, `${dayTxt(shown.start)}${shown.end && shown.end !== shown.start ? `\u2013${dayTxt(shown.end)}` : ""}, ${shown.year} \u00b7 ${live ? (shown.api ? "live" : "in progress") : statusOf(shown) === "upcoming" ? "upcoming" : "final"}${shown.players.size ? ` \u00b7 ${shown.players.size} players` : ""}`)]);
-      card.addEventListener("click", () => { if (on) return; pickEvent(t.events[0]); });
-      // earlier tournaments of this tour
-      const pick = t.events.length > 1 ? el("select", { class: "lv-ev", "aria-label": `${t.tour} tournament` }, t.events.slice(0, 60).map((e, i) => el("option", { value: e.id, selected: shown.id === e.id }, `${i === 0 ? "Latest: " : ""}${e.event} (${dayTxt(e.start)}, ${e.year})`))) : null;
-      pick?.addEventListener("change", () => pickEvent(events.find((e) => e.id === pick.value)));
-      return el("div", { class: "lv-tour-box" }, [card, pick]);
-    }));
+    const cur = tours.find((t) => sel.t && t.tour === sel.t.tour) || tours[0];
+    mount(tourPills, tours.length > 1 ? tours.map((t) => {
+      const on = t === cur, live = t.events.some((e) => statusOf(e) === "live");
+      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on) }, [live ? el("i", { class: "lv-dot", "aria-hidden": "true" }) : null, t.tour]);
+      b.addEventListener("click", () => { if (!on) pickEvent(firstOf(t)); });
+      return b;
+    }) : null);
+    tourPills.hidden = tours.length < 2;
+    if (!cur) { mount(tourBox, null); return; }
+    const card = (e) => {
+      const on = sel.t?.id === e.id, st = statusOf(e), live = st === "live";
+      const b = el("button", { type: "button", class: `lv-tour${on ? " on" : ""}`, "aria-pressed": String(on) }, [
+        el("span", { class: "lv-tour-k" }, [live ? el("i", { class: "lv-dot", "aria-hidden": "true" }) : null, live ? (e.api ? "Live" : "In progress") : st === "upcoming" ? "Upcoming" : "Final"]),
+        el("span", { class: "lv-tour-n" }, e.event), el("span", { class: "lv-tour-s muted" }, `${dayTxt(e.start)}${e.end && e.end !== e.start ? `\u2013${dayTxt(e.end)}` : ""}, ${e.year}${e.players.size ? ` \u00b7 ${e.players.size} players` : ""}`)]);
+      b.addEventListener("click", () => { if (!on) pickEvent(e); });
+      return b;
+    };
+    const current = cur.events.filter((e) => !isFinal(e)), archived = cur.events.filter(isFinal);
+    const showing = sel.t && isFinal(sel.t) && sel.t.tour === cur.tour ? [sel.t] : []; // a finished one that's open shows as a card too
+    const arch = archived.length ? el("select", { class: "lv-ev", "aria-label": `${cur.tour}: archived events` }, [
+      el("option", { value: "", selected: !(sel.t && isFinal(sel.t)) }, `Archived Events (${archived.length})`),
+      ...archived.slice(0, 80).map((e) => el("option", { value: e.id, selected: sel.t?.id === e.id }, `${e.event} (${dayTxt(e.start)}, ${e.year})`)),
+    ]) : null;
+    arch?.addEventListener("change", () => { if (arch.value) pickEvent(events.find((e) => e.id === arch.value)); });
+    mount(tourBox, el("div", { class: "lv-tour-box" }, [
+      ...current.map(card), ...showing.map(card),
+      !current.length && !showing.length ? el("p", { class: "muted small lv-none-now" }, "Nothing in progress on this tour right now.") : null,
+      arch,
+    ]));
   }
+  mount(root, [head, tourPills, el("div", { class: "lv-pick" }, [tourBox, roundBox]), grid]);
   function pickEvent(e) { if (!e) return; sel.t = e; sel.view = "latest"; refresh(); }
   function drawRounds(active) {
     mount(roundBox, ROUNDS.map(([v, l]) => {
@@ -295,7 +319,8 @@ export async function render(main) {
   function fitTable() {
     const table = boardWrap.querySelector("table");
     if (!table) return;
-    for (let d = 0; d <= 3; d++) { boardWrap.dataset.density = String(d); if (table.scrollWidth <= boardWrap.clientWidth + 1) break; }
+    const most = window.innerWidth < 700 ? 1 : 3; // (update 283: on a phone it scrolls sideways rather than shrinking to tiny text)
+    for (let d = 0; d <= most; d++) { boardWrap.dataset.density = String(d); if (table.scrollWidth <= boardWrap.clientWidth + 1) break; }
   }
   function drawMeta() {
     if (!sel.t) { meta.textContent = ""; return; }
@@ -338,7 +363,7 @@ export async function render(main) {
         const rt = showRanks ? rankText(c.key, r.player_id) : null;
         return el("td", { class: cls, title }, [el("span", { class: "lv-v" }, v), rt ? el("small", { class: "lv-rk" }, rt) : null]);
       });
-      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [r.name, r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : null]), ...cells, sel.view === "event" ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
+      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : null]), ...cells, sel.view === "event" ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
       tr.addEventListener("click", () => pick({ player_id: r.player_id, name: r.name }));
       return tr;
     });
@@ -447,9 +472,10 @@ export async function render(main) {
     if (!events.length) { if (!loadErr) loadErr = "No tournaments with strokes gained yet. They appear once a stats file has been uploaded, or once the PGA Tour API feed has run."; drawHead(); drawTours(); drawBoard(); return; }
     loadErr = "";
     // stay on the same tournament (or tour) when the data is refreshed
-    const keep = sel.t && (events.find((e) => e.id === sel.t.id) || tours.find((t) => famOf(t.tour) === famOf(sel.t.tour))?.events[0]);
+    const sameTour = sel.t && tours.find((t) => famOf(t.tour) === famOf(sel.t.tour));
+    const keep = sel.t && (events.find((e) => e.id === sel.t.id) || (sameTour && firstOf(sameTour)));
     if (sel.auto || !keep || keep.id !== sel.t?.id) sel.view = "latest"; // (update 263: keep up with a new round)
-    sel.t = keep || tours[0].events[0];
+    sel.t = keep || firstOf(tours[0]);
     refresh();
   }
   function useField(f) { field = f; uploadEvents = tournaments(field); rebuild(); }

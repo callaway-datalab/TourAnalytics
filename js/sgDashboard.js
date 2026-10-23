@@ -45,6 +45,21 @@ const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || "All categories
  *   state:  optional shared object so filters survive re-renders (e.g. switching players)
  * }
  */
+/** (update 283) The Personal Peak's note: when it was (first to last date), then each of its rounds. */
+function peakNote(peak, me, cat, peakN, tn) {
+  const day = (rd) => { const d = new Date(`${String(rd.date || "").slice(0, 10)}T12:00:00`); return isNaN(d) ? String(rd.date || "") : d; };
+  const md = (d) => (d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : d);
+  const mdy = (d) => (d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : d);
+  const rs = [...peak.rounds].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const a = day(rs[0]), b = day(rs.at(-1));
+  const span = a instanceof Date && b instanceof Date && a.getFullYear() === b.getFullYear() ? `${md(a)} \u2013 ${mdy(b)}` : `${mdy(a)} \u2013 ${mdy(b)}`;
+  const by = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
+  const list = rs.slice(0, 15).map((rd) => `${md(day(rd))} ${rd.event || ""}${rd.roundNo ? ` R${rd.roundNo}` : ""}`.trim()).join("; ") + (rs.length > 15 ? "; \u2026" : "");
+  return `Personal Peak: ${me?.label || "the player"}\u2019s ${peakN} best rounds by ${by}, played ${span}. The rounds: ${list}. `
+    + `Each value is the difference from that peak, with every row from those same rounds (hover a value for theirs). Zero means they\u2019re playing at that level; red is how far below it. `
+    + `Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above to use more or fewer best rounds.`;
+}
+
 export function sgDashboard(container, opts) {
   const { idx, mode } = opts;
   const showRanks = opts.rankings !== false && !opts.entered; // (update 183: entered rounds are never ranked, no wins or top 10s)
@@ -96,12 +111,24 @@ export function sgDashboard(container, opts) {
 
   // (update 194) at the bottom: getting better or worse, and where they play their best (their whole career on this tour)
   const careerUi = {};
-  function careerBox(only = "conditions") {
+  function careerBox(only = "conditions", f = null) {
     if (!meAll || opts.practice || opts.emptyNote || !isSG()) return null;
     const tours = !opts.entered && st.tour?.length ? new Set(st.tour) : null;
     let rs = statRounds(meAll.rounds, "sg").filter((rd) => !tours || tours.has(rd.tour || ""));
-    if (st.gear?.length) rs = applyFilters(rs, { gear: st.gear }); // (update 219: a product picked: only its shots, in the rounds it was used)
-    const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw(), only });
+    let cols = null;
+    if (only === "trajectory" && f) {
+      // (update 283) the filters apply (all but the dates: this is about how the latest rounds compare with the ones
+      // before them); one category picked: its total, then each of its distances
+      rs = applyFilters(rs, { ...f, year: [], months: 0 });
+      if (st.cats.length === 1) {
+        const c = st.cats[0], name = CATEGORIES.find(([k]) => k === c)?.[1] || c;
+        const bands = (st.dist.length ? st.dist.filter((d) => d.startsWith(`${c}|`)).map((d) => d.slice(c.length + 1)) : filterOptions(rs, [c]).dist);
+        cols = [["TOTAL", "Total", `SG: ${name}`], ...bands.map((d) => [`d:${d}`, d, `${name}: ${d}`])];
+      } else if (st.cats.length > 1) {
+        cols = [["TOTAL", "Total", "SG: Total (these categories)"], ...CATEGORIES.filter(([k]) => st.cats.includes(k)).map(([k, l]) => [k, k, l])];
+      }
+    } else if (st.gear?.length) rs = applyFilters(rs, { gear: st.gear }); // (update 219: a product picked: only its shots, in the rounds it was used)
+    const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw(), only, cols });
     return blocks.length ? el("div", { class: "cmp career" }, blocks) : null;
   }
   function draw() {
@@ -213,7 +240,7 @@ export function sgDashboard(container, opts) {
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         // (update 205) "Getting better or worse?" right under the hero card
-        return [heroBox(mine, slicedField, f), careerBox("trajectory"), me ? summaryBox(mine, slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
+        return [heroBox(mine, slicedField, f), careerBox("trajectory", f), me ? summaryBox(mine, slicedField) : null, ...blocks, ...(!me ? tourBlocks(slicedField) : [])];
       })()),
       // (update 219) "Where they play their best" is on the Compare page now
     ]);
@@ -1349,7 +1376,7 @@ export function sgDashboard(container, opts) {
       ])),
       // (update 240) what the colours mean
       el("p", { class: "muted small sg-full-note" }, peak && peak.short ? `${me?.label || "The player"} has ${peak.have} ${cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} ` : ""}rounds in this selection: fewer than the Peak Length (${peakN}), so there\u2019s no peak to compare with. Shorten the Peak Length or widen the selection.`
-        : peak ? `Each value is the difference from ${me?.label || "the player"}\u2019s Personal Peak: their ${peakN} best rounds in this selection by ${cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total"} (${[...new Set(peak.rounds.map((rd) => rd.event).filter(Boolean))].slice(0, 6).join(", ")}${new Set(peak.rounds.map((rd) => rd.event)).size > 6 ? "\u2026" : ""}; ${dTxt(peak.rounds[0])} to ${dTxt(peak.rounds.at(-1))}), with every row from those same rounds (hover a value for theirs). Zero means they\u2019re playing at that level; red is how far below it. Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above to use more or fewer best rounds.`
+        : peak ? peakNote(peak, me, cat, peakN, tn) // (update 283: says when the peak was, round by round)
         : relNow
         ? `Each value is the difference from ${refP.label || "that player"}, ranked #${vsN} overall (SG: Total a round in this selection); every row is the same golfer. Green: better than them; red: worse. Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap the rank comparison again to see the player\u2019s own values.`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a rank comparison above to see each stat against the player ranked there overall.`),
