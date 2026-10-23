@@ -158,7 +158,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
 
   // by product: club models (the club as recorded on each shot)
   let products = null;
-  if (byProduct) {
+  if (false) { // (update 274: replaced by the by-product page, which compares models of the same kind of club)
     const m = new Map();
     for (const rd of mine) for (const s of rd.shots) {
       const club = s.club || (s.r && idx.club !== undefined ? s.r[idx.club] : null);
@@ -169,21 +169,28 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     products = [...m.values()].map((g) => ({ club: g.club, group: g.cat, shots: g.shots, rounds: g.rounds.size, perShot: g.sg / g.shots, total: g.sg }))
       .sort((a, b) => b.shots - a.shots);
   }
-  // (update 210) each club model (brand + model) for Off-the-Tee, Approach and Putting: strokes gained a round with
-  // it (in the rounds it was used), and the stats recorded with it; a model with only a few rounds is flagged
+  // (update 274) by product, always: each kind of club (and the ball) the player has used more than one model of,
+  // with strokes gained a round with each model (in the rounds it was used) and the stats recorded with it. A kind
+  // with only one model (one driver all year, one ball) is left out: there's nothing to compare it with.
   let productTable = null;
   if (byProduct) {
-    const SECS = [["OTT", "Off-the-Tee", [["drive", "Driving Distance"], ["fwy", "Fairway %"]]], ["APP", "Approach", [["hitGreen", "Hit Green %"], ["prox", "Proximity"]]], ["PUTT", "Putting", [["make", "Made Putt %"], ["goodLag", "Good Lag %"]]]];
-    productTable = SECS.map(([cat, name, stats]) => {
-      const m = new Map();
-      for (const rd of mine) {
-        for (const s of rd.shots) { if (s.cat !== cat || !s.gear) continue; const g = m.get(s.gear) || m.set(s.gear, { value: s.gear, sg: 0, shots: 0, rounds: new Set(), obs: {} }).get(s.gear); g.sg += s.sg; g.shots += s.w || 1; g.rounds.add(rd.key); }
-        for (const o of rd.obs || []) { if (!o.gear || (o.cat && o.cat !== cat) || !m.has(o.gear) || !stats.some(([k]) => k === o.k)) continue; const x = m.get(o.gear).obs[o.k] ||= { s: 0, w: 0 }; x.s += o.v * o.w; x.w += o.w; }
-      }
-      const rows = [...m.values()].map((g) => { const gi = gearInfo(g.value); return { label: `${gi.brand} ${gi.model}`.trim(), kind: gi.kind, rounds: g.rounds.size, shots: g.shots, perRound: g.sg / Math.max(1, g.rounds.size), stats: stats.map(([k]) => (g.obs[k]?.w ? { v: g.obs[k].s / g.obs[k].w, def: statDef(k) } : null)) }; })
+    const STATS = { OTT: [["drive", "Driving Distance"], ["fwy", "Fairway %"]], APP: [["hitGreen", "Hit Green %"], ["prox", "Proximity"]], PUTT: [["make", "Made Putt %"], ["goodLag", "Good Lag %"]] };
+    const KINDS = [["Driver", "Drivers", STATS.OTT], ["Non-Driver", "Tee clubs", STATS.OTT], ["Fairway Wood", "Fairway Woods", STATS.APP], ["Hybrid", "Hybrids", STATS.APP], ["Iron", "Irons", STATS.APP],
+      ["Wedge", "Wedges", STATS.APP], ["Putter", "Putters", STATS.PUTT], ["Ball", "Balls", [...STATS.OTT.slice(0, 1), ...STATS.APP.slice(1)]]];
+    const ofShot = (s) => [s.gear, s.ball ? `Ball|${s.ball}` : null].filter(Boolean);
+    const m = new Map();
+    for (const rd of mine) {
+      for (const s of rd.shots) for (const v of ofShot(s)) { const g = m.get(v) || m.set(v, { value: v, info: gearInfo(v), sg: 0, shots: 0, rounds: new Set(), obs: {} }).get(v); g.sg += s.sg; g.shots += s.w || 1; g.rounds.add(rd.key); }
+      for (const o of rd.obs || []) for (const v of ofShot(o)) { const g = m.get(v); if (!g) continue; const x = g.obs[o.k] ||= { s: 0, w: 0 }; x.s += o.v * o.w; x.w += o.w; }
+    }
+    const known = new Set(KINDS.map(([k]) => k));
+    const kinds = [...KINDS, ...[...new Set([...m.values()].map((g) => g.info.kind))].filter((k) => !known.has(k)).map((k) => [k, k, []])];
+    productTable = kinds.map(([kind, name, stats]) => {
+      const rows = [...m.values()].filter((g) => g.info.kind === kind).map((g) => ({ label: `${g.info.brand} ${g.info.model}`.trim(), kind, rounds: g.rounds.size, shots: g.shots, perRound: g.sg / Math.max(1, g.rounds.size),
+        stats: stats.map(([k]) => (g.obs[k]?.w ? { v: g.obs[k].s / g.obs[k].w, def: statDef(k) } : null)) }))
         .sort((a, b) => b.rounds - a.rounds || b.perRound - a.perRound);
-      return { cat, name, statNames: stats.map(([, l]) => l), rows };
-    }).filter((s) => s.rows.length);
+      return { cat: kind, name, statNames: stats.map(([, l]) => l), rows };
+    }).filter((sec) => sec.rows.length > 1);
     if (!productTable.length) productTable = null;
   }
 
@@ -702,7 +709,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y += 10;
   }
   /* ---------- by product ---------- */
-  if (a.products && !a.productTable) {
+  if (a.products && !a.productTable && false) { // (update 274: off; see the by-product page)
     section("Equipment", "By club model", 40 + Math.min(16, a.products.length) * 20);
     if (!a.products.length) { y = d.para("No club information on these shots: clubs come from Data Entry (with WITB) or a club column in an uploaded file.", M, y, W, { size: 9, color: P.grey }) + 6; }
     else {
@@ -850,7 +857,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.rect(M, y - 7, 3, 9, { fill: P.gold });
     cap("Equipment", M + 9, y, P.gold); y += 23;
     d.text("By Product", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
-    d.text("Each club model (brand and model): strokes gained a round in the rounds it was used, and the stats recorded with it. * Fewer than 10 rounds: read with care.", M, y + 4, { size: 7.5, color: P.grey });
+    d.text("Each kind of club (and ball) you've used more than one model of: strokes gained a round in the rounds each was used, and the stats recorded with it. * Fewer than 10 rounds: read with care.", M, y + 4, { size: 7.5, color: P.grey });
     y += 16;
     const FEW = 10;
     for (const sec of a.productTable) {
@@ -956,7 +963,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   // dates
   const fromIn = el("input", { type: "date", "aria-label": "From" }), toIn = el("input", { type: "date", "aria-label": "To" });
   const iso = (t) => new Date(t).toISOString().slice(0, 10);
-  const presets = [["30", "Last 30 days"], ["90", "Last 90 days"], ["365", "Last 12 months"], ["year", "This year"], ["all", "All time"]];
+  const presets = [["30", "Last 30 days"], ["90", "Last 90 days"], ["365", "Last 12 months"], ["all", "All time"]]; // (update 274: no "This year"; the seasons below cover it)
   // (update 227) and each season in the player's data (added once their rounds are looked up)
   let seasonsLoaded = false;
   const loadSeasons = async () => {
@@ -965,6 +972,8 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       const d0 = await loadSource("tour", playerKey, playerLabel, { detail: false });
       const ys = [...new Set((d0?.me?.rounds || []).map((rd) => String(rd.year || String(rd.date || "").slice(0, 4))).filter((y) => /^\d{4}$/.test(y)))].sort().reverse();
       for (const y of ys) if (!presets.some(([v]) => v === `y:${y}`)) presets.push([`y:${y}`, `${y} season`]);
+      // (update 274) start on the latest season (unless dates were already picked)
+      if (ys.length && preset === "all" && !fromIn.value && !toIn.value) { preset = `y:${ys[0]}`; fromIn.value = `${ys[0]}-01-01`; toIn.value = `${ys[0]}-12-31`; }
       drawPresets();
     } catch { /* the usual presets only */ }
   };
@@ -997,7 +1006,6 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   // data and product
   // (update 223) no Tour Events / Entered Rounds choice: the player's rounds are both together
   const source = { value: "tour" }, startSource = "tour"; void startSource0;
-  const product = el("input", { type: "checkbox", "aria-label": "Differentiate by product" });
   // Min. rounds for Tour Avg and ranks: the Stats page's number when it opened this; empty = the default
   const minIn = el("input", { type: "number", min: 1, max: 999, inputmode: "numeric", class: "report-min-in", placeholder: "Auto", value: minRounds ?? "", "aria-label": "Minimum rounds for Tour Avg and ranks" });
   const go = el("button", { type: "button", class: "btn" }, "Generate report");
@@ -1026,7 +1034,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       }
       status.textContent = "Working out the insights\u2026";
       const from = fromIn.value ? Date.parse(`${fromIn.value}T00:00:00`) : null, to = toIn.value ? Date.parse(`${toIn.value}T23:59:59`) : null;
-      const a = analyzePerformance(data.me, field, { from, to, cats, byProduct: product.checked, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null, tour: source.value === startSource ? tour : null });
+      const a = analyzePerformance(data.me, field, { from, to, cats, byProduct: true, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null, tour: source.value === startSource ? tour : null });
       let aiSummary = null;
       const url = null; // (update 253: the report's own written summary; the AI service is for Compare's Ask AI only)
       if (url && a.overall.rounds) {
@@ -1072,7 +1080,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
   mount(panel, [
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Dates"), presetBox, el("div", { class: "report-dates" }, [el("label", { class: "date-field" }, ["Start Date", fromIn]), el("label", { class: "date-field" }, ["End Date", toIn])])]),
     el("div", { class: "report-field" }, [el("span", { class: "field-label" }, "Categories"), catBox]),
-    el("div", { class: "report-row" }, [el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: 33% of the most rounds played, rounded down to a 5." }, ["Min. rounds", minIn]), el("label", { class: "report-check" }, [product, "Differentiate by product (club models)"])]),
+    el("div", { class: "report-row" }, [el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: 33% of the most rounds played, rounded down to a 5." }, ["Min. rounds", minIn])]),
     el("div", { class: "report-gen-actions" }, [go]), status, result,
   ]);
   mount(wrapEl, [openBtn, panel]);

@@ -8,7 +8,7 @@ import { el, mount, formatWhen, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
 import { UserError } from "../store.js";
 import { createRound, saveHole, saveQuickHole, updateRound, deleteRound, watchRound, watchPlayerRounds, watchMyRounds } from "../rounds.js";
-import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundHoleScore, roundToPrepared } from "../roundCalc.js";
+import { LIES, END_LIES, unitFor, strokesGained, holeScore, roundHoleScore, roundToPrepared, categoryOf } from "../roundCalc.js";
 import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "../scorecardReader.js";
 import { detectCardGrid, gridValues, splitRow } from "../cardGrid.js";
 import { tesseractEngine } from "../scorecardReader.js";
@@ -761,11 +761,15 @@ function renderRound(main, params, flash, previewClient) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 600);
   }
-  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart, club, clubMake, clubCat, clubId }) => ({
+  const missNum = (v) => (v === "" || v == null || !Number.isFinite(Number(v)) || !Number(v) ? null : Math.round(Number(v) * 10) / 10);
+  const cleanStrokes = () => strokes.map(({ startLie, startDist, endLie, endDist, manualStart, club, clubMake, clubCat, clubId, missLong, missOff }) => ({
     ...(club ? { club } : {}), ...(club && clubMake ? { clubMake } : {}), ...(club && clubCat ? { clubCat } : {}), ...(club && clubId ? { clubId } : {}),
     startLie, startDist: startDist === "" || startDist === null ? null : Number(startDist), endLie,
     endDist: endLie === "Holed" ? 0 : endDist === "" || endDist === null || endDist === undefined ? null : Number(endDist),
     ...(manualStart ? { manualStart: true } : {}),
+    // (update 274) the miss, optional: long (+) / short (−) and offline right (+) / left (−), in the "distance left" unit
+    ...(endLie !== "Holed" && missNum(missLong) != null ? { missLong: missNum(missLong) } : {}),
+    ...(endLie !== "Holed" && missNum(missOff) != null ? { missOff: missNum(missOff) } : {}),
   }));
   async function save() {
     const h = hole();
@@ -1161,6 +1165,26 @@ function renderRound(main, params, flash, previewClient) {
       });
       return el("div", { class: "dist" }, [inp, el("span", { class: "unit" }, unit)]);
     };
+    // (update 274) Approach, Around-the-Green and Putting: which way it missed (optional), long/short and offline
+    const missRow = (s, i) => {
+      if (s.endLie === "Holed" || !s.startLie || categoryOf(s, i, hole().par) === "OTT") return null;
+      const u = unitFor(s.endLie === "Penalty" || !s.endLie ? s.startLie : s.endLie);
+      const box = (key, label, minus, plus) => {
+        const inp = el("input", { type: "text", inputmode: "decimal", value: s[key] ?? "", placeholder: "0", disabled: ro, "aria-label": `Shot ${i + 1} ${label} (${minus} is minus)` });
+        const parse = (v) => { const t = String(v).trim().replace(/[\u2212\u2013]/g, "-").replace(",", "."); const m = new RegExp(`^(?:(${plus[0]})|(${minus[0]}))\\s*([\\d.]+)$|^([\\d.]+)\\s*(?:(${plus[0]})|(${minus[0]}))`, "i").exec(t);
+          if (m) return (m[1] || m[5] ? 1 : -1) * Number(m[3] || m[4]); return t === "" ? "" : Number(t); };
+        const set = () => { const n = parse(inp.value); s[key] = n === "" || Number.isFinite(n) ? n : s[key]; changed(false); };
+        inp.addEventListener("input", set);
+        const pm = el("button", { type: "button", class: "pr-pm", disabled: ro, "aria-label": `Switch ${plus} / ${minus}`, title: `${plus} (+) or ${minus} (\u2212)` }, "\u00b1");
+        pm.addEventListener("click", () => { const n = parse(inp.value); inp.value = Number.isFinite(n) && n ? String(-n) : inp.value.trim().startsWith("-") ? inp.value.trim().slice(1) : `-${inp.value.trim()}`; set(); inp.focus(); });
+        return el("label", { class: "miss-field" }, [el("span", { class: "miss-name" }, label), el("span", { class: "miss-in" }, [inp, el("span", { class: "unit" }, u), pm])]);
+      };
+      return el("div", { class: "miss-row" }, [
+        el("p", { class: "shot-label" }, ["Miss ", el("em", {}, "optional")]),
+        el("div", { class: "miss-fields" }, [box("missLong", "Long / Short", "Short", "Long"), box("missOff", "Offline", "Left", "Right")]),
+        el("p", { class: "muted small miss-tip" }, "Long / Short: minus is short. Offline: minus is left. \u00b1 flips it."),
+      ]);
+    };
     const after = strokes.slice(0, i).some((x) => x.endLie === "Holed");
     const card = el("section", { class: "shot-card" + (after ? " after-holed" : ""), "data-i": String(i) }, [
       el("div", { class: "shot-head" }, [
@@ -1181,6 +1205,7 @@ function renderRound(main, params, flash, previewClient) {
         changed(true, i);
       }, `Shot ${i + 1} result`),
       s.endLie === "Holed" ? el("p", { class: "holed-note" }, "\u26F3 In the hole") : distInput(s.endDist, unitFor(s.endLie === "Penalty" ? s.startLie : s.endLie), (v) => { s.endDist = v; changed(false); }, `Shot ${i + 1} distance left`, "end"),
+      missRow(s, i),
       // Done is always there; it switches on as soon as the shot has a start, a finish and the distance left.
       ro ? null : (() => {
         const d = el("button", { type: "button", class: "btn ghost done-shot", disabled: !isComplete(s), title: "Fill in where it finished to fold this shot" }, "Done \u2713");

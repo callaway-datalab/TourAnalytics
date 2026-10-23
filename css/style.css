@@ -4378,3 +4378,17 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   padding-left: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-left, 0px)); padding-right: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-right, 0px)); }
 .cal-head { padding-top: calc(0.9rem + env(safe-area-inset-top, 0px)); }
 .tapper { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* (update 274) Long / Short beside Offline */
+.pr-hit-row.has-ls { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 560px) { .pr-hit-row.has-ls { grid-template-columns: 1fr 1fr; } .pr-hit-row.has-ls > label:nth-child(3) { grid-column: 1 / -1; } }
+/* Enter New Round, full shots: which way an approach, chip or putt missed (optional) */
+.miss-row { margin-top: 0.2rem; }
+.miss-row .shot-label em { font-style: normal; color: var(--muted); font-weight: 400; }
+.miss-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.miss-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.miss-name { font-size: 0.78rem; color: var(--muted); }
+.miss-in { display: flex; align-items: center; gap: 0.35rem; }
+.miss-in input { flex: 1; min-width: 0; width: 100%; font-size: 16px; padding: 0.6rem 0.7rem; border-radius: 10px; }
+.miss-in .unit { color: var(--muted); font-size: 0.85rem; }
+.miss-tip { margin: 0.35rem 0 0; }

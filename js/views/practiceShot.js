@@ -252,6 +252,44 @@ export function offInput(value, label, attrs = {}) {
   });
   return { input, pm, box: el("span", { class: "pr-off-box" }, [input, pm]) };
 }
+/*
+ * Long / Short (update 274): one number, minus = short, plus = long ("S5" / "5 long" work too), next to Offline.
+ * It's the other way to say how far the shot went: Hit (or Rolled) = the target's distance + long/short, and the
+ * two boxes follow each other.
+ */
+export function parseLS(v) {
+  const t = String(v ?? "").trim().replace(/[\u2212\u2013]/g, "-").replace(",", ".");
+  if (!t) return 0;
+  const m = /^(long|short|l|s)\s*([\d.]+)$/i.exec(t) || /^([\d.]+)\s*(long|short|l|s)$/i.exec(t);
+  if (m) { const [w, n] = /^[\d.]+$/.test(m[1]) ? [m[2], m[1]] : [m[1], m[2]]; return (/^s/i.test(w) ? -1 : 1) * Number(n); }
+  const n = Number(t);
+  return Number.isFinite(n) ? n : NaN;
+}
+export function lsInput(value, label, attrs = {}) {
+  const input = el("input", { type: "text", inputmode: "decimal", value: value ?? "", "aria-label": label, placeholder: "e.g. \u22125", autocomplete: "off", ...attrs });
+  const pm = el("button", { type: "button", class: "pr-pm", "aria-label": "Switch long / short", title: "Short (\u2212) or long (+)" }, "\u00b1");
+  pm.addEventListener("click", () => {
+    const n = parseLS(input.value);
+    if (!n) { input.value = input.value.trim().startsWith("-") ? input.value.trim().slice(1) : `-${input.value.trim()}`; }
+    else input.value = fmtOff(-n);
+    input.dispatchEvent(new Event("input", { bubbles: true })); input.dispatchEvent(new Event("change", { bubbles: true })); input.focus();
+  });
+  return { input, pm, box: el("span", { class: "pr-off-box" }, [input, pm]) };
+}
+/** Keep a Hit / Rolled box and its Long / Short box in step: hit = target + long/short. target() is the distance to aim at. */
+export function linkLS(hitIn, lsIn, target, round = (v) => Math.round(v)) {
+  let fromLS = false; // (the Long / Short box is being typed in: don't write over it)
+  const fromHit = () => { if (fromLS) return; const h = Number(String(hitIn.value).replace(",", ".")), t = target(); lsIn.value = h > 0 && t > 0 ? fmtOff(round(h - t)) || "0" : ""; };
+  hitIn.addEventListener("input", fromHit);
+  lsIn.addEventListener("input", () => {
+    const v = parseLS(lsIn.value), t = target();
+    if (String(lsIn.value).trim() === "" || !Number.isFinite(v) || !(t > 0)) return;
+    hitIn.value = String(round(t + v));
+    fromLS = true; hitIn.dispatchEvent(new Event("input", { bubbles: true })); fromLS = false;
+  });
+  lsIn.addEventListener("change", () => hitIn.dispatchEvent(new Event("change", { bubbles: true })));
+  if (hitIn.value) fromHit();
+}
 export function inputsFor(shot, setResult, next, { aim = null } = {}) {
   const r = shot.result;
   const nextBtn = next ? el("button", { type: "button", class: "btn pr-next", disabled: r || next.always ? null : true }, next.label) : null;
@@ -314,8 +352,10 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
     rolled.addEventListener("change", apply); off.addEventListener("change", apply);
     const pv = () => { const h = Number(rolled.value), o = parseOff(off.value); previewAt(rolled, h > 0 && Number.isFinite(o) ? { x: o, y: h - D } : null); };
     rolled.addEventListener("input", pv); off.addEventListener("input", pv);
-    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Rolled (ft)"), rolled]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (ft)"), offBox])]), hint,
-      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Rolled: how far the ball went (past the hole is more than the putt's length). Offline: minus is left. Say “made it” or “2 feet long”.")];
+    const { input: ls, box: lsBox } = lsInput("", "Long or short ft, minus is short");
+    linkLS(rolled, ls, () => D, (v) => Math.round(v * 10) / 10);
+    return [el("div", { class: "pr-fields" }, [made, el("label", {}, [el("span", { class: "rd-label" }, "Rolled (ft)"), rolled]), el("label", {}, [el("span", { class: "rd-label" }, "Long / Short (ft)"), lsBox]), el("label", {}, [el("span", { class: "rd-label" }, "Offline (ft)"), offBox])]), hint,
+      el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Rolled: how far the ball went (past the hole is more than the putt's length), or Long / Short: minus is short. Offline: minus is left. Say “made it” or “2 feet long”.")];
   }
   // approach / around the green: how far it went towards the pin, and how far offline (or tap where it finished)
   // (along your target line: at the pin unless you've moved it)
@@ -337,7 +377,9 @@ export function inputsFor(shot, setResult, next, { aim = null } = {}) {
   hit.addEventListener("change", apply); off.addEventListener("change", apply);
   const pv = () => { const h = Number(hit.value), a = parseOff(off.value); if (!(h > 0) || !Number.isFinite(a)) { previewAt(hit, null); return; } previewAt(hit, { x: fx + ux * h + uy * a, y: fy + uy * h - ux * a }); };
   hit.addEventListener("input", pv); off.addEventListener("input", pv);
-  return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.hypot(aim.x - shot.pin.x, aim.y - shot.pin.y) >= 1.5 ? "Offline from aim line (yds)" : "Offline (yds)"), offBox]), holed]), hint,
-    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went along your target line; offline: how far off it, minus for left. Where it finished, and what's left, are worked out. Or tap where it finished.")];
+  const { input: ls, box: lsBox } = lsInput("", "Long or short yds, minus is short");
+  linkLS(hit, ls, () => dd);
+  return [el("div", { class: "pr-fields" }, [el("label", {}, [el("span", { class: "rd-label" }, "Hit Distance (yds)"), hit]), el("label", {}, [el("span", { class: "rd-label" }, "Long / Short (yds)"), lsBox]), el("label", {}, [el("span", { class: "rd-label" }, aim && Math.hypot(aim.x - shot.pin.x, aim.y - shot.pin.y) >= 1.5 ? "Offline from aim line (yds)" : "Offline (yds)"), offBox]), holed]), hint,
+    el("div", { class: "pr-actions" }, [say, nextBtn]), el("p", { class: "muted small pr-tip" }, "Hit: how far it went along your target line, or Long / Short of the target (minus is short); offline: how far off it, minus for left. Where it finished, and what's left, are worked out. Or tap where it finished.")];
 
 }

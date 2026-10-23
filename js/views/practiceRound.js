@@ -16,7 +16,7 @@ import { gameProgress, personalBest, targetText, passedIt, gameOf } from "../pra
 import { wordsToNumbers, golfFix } from "../voiceShots.js";
 import { expectedStrokes } from "../roundCalc.js";
 import { trendSvg, holeSvg, greenSvg, puttSvg } from "../practice/draw.js";
-import { SG, sgCls, tile, SpeechRec, sayKids, clubSelect, parseOff, fmtOff, offInput } from "./practiceShot.js";
+import { SG, sgCls, tile, SpeechRec, sayKids, clubSelect, parseOff, fmtOff, offInput, lsInput, linkLS } from "./practiceShot.js";
 
 const sumOf = (s) => roundSummary(s.holes, { noPutts: !!s.opts?.noPutts });
 const toParText = (d) => (d === 0 ? "E" : d > 0 ? `+${d}` : `−${Math.abs(d)}`);
@@ -418,11 +418,17 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
     const where = r.lie === "Holed" ? "In the hole!" : r.penalty === "ob" ? `${r.zone || "Out of bounds"} · replay, a stroke added` : r.penalty ? `${r.zone || "Water"} · penalty stroke, ${fmtD(r.dist, "yds")} left` : r.unit === "ft" ? `${r.lie === "Fringe" ? "Fringe" : "On the green"}, ${fmtD(r.dist, "ft")} from the pin` : `${r.zone || r.lie}, ${fmtD(r.dist, "yds")} left`;
     mount(line, [el("span", {}, where), el("strong", { class: `pr-sgchip ${sgCls(sg)}` }, `${SG(sg)} SG`)]);
   };
+  // (update 274) Long / Short of the target (Approach, Around-the-Green, Putting): the other way to give how far it went
+  const lsOn = putt || vis?.kind !== "tee";
+  const lsTarget = () => { if (putt || !vis) return shot.startDist; const t = typeof tgt === "function" ? tgt() : tgt; return Math.hypot((t?.x ?? vis.pin.x) - vis.from.x, (t?.y ?? vis.pin.y) - vis.from.y); };
+  const ls = lsOn ? lsInput("", putt ? "Long or short (ft), minus is short" : "Long or short (yds), minus is short", { class: "pr-bignum", placeholder: "0" }) : null;
+  if (ls) { linkLS(hitIn, ls.input, lsTarget, putt ? (v) => Math.round(v * 10) / 10 : (v) => Math.round(v)); ls.input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !nextBtn.disabled) next(); }); }
   [hitIn, offIn].forEach((x) => { x.addEventListener("input", update); x.addEventListener("keydown", (e) => { if (e.key === "Enter" && !nextBtn.disabled) next(); }); });
   const wrap = el("div", { class: "pr-dist-entry pr-hit-entry" }, [
     line,
-    el("div", { class: "pr-hit-row" }, [
+    el("div", { class: `pr-hit-row${ls ? " has-ls" : ""}` }, [
       el("label", { class: "pr-dist-big" }, [el("span", { class: "rd-label" }, putt ? "Rolled" : "Hit Distance"), el("div", { class: "pr-dist-in" }, [hitIn, el("span", { class: "pr-unit" }, putt ? "ft" : "yds")])]),
+      ls ? el("label", { class: "pr-dist-big" }, [el("span", { class: "rd-label" }, "Long / Short"), el("div", { class: "pr-off-row" }, [el("div", { class: "pr-dist-in" }, [ls.input, el("span", { class: "pr-unit" }, putt ? "ft" : "yds")]), ls.pm])]) : null,
       el("label", { class: "pr-dist-big" }, [el("span", { class: "rd-label" }, vis ? "Offline from aim line" : "Offline"), el("div", { class: "pr-off-row" }, [el("div", { class: "pr-dist-in" }, [offIn, el("span", { class: "pr-unit" }, putt ? "ft" : "yds")]), offPm])]),
     ]),
     lieBox ? el("div", {}, [el("span", { class: "rd-label" }, "Finished in"), lieBox]) : null,
@@ -435,7 +441,7 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
     holed = false;
     hitIn.value = String(putt ? Math.round(h * 10) / 10 : Math.round(h));
     offIn.value = fmtOff(putt ? Math.round(off * 10) / 10 : Math.round(off));
-    update();
+    hitIn.dispatchEvent(new Event("input", { bubbles: true })); // (update() runs from it; Long / Short follows)
   };
   drawLies(); update();
   return wrap;
