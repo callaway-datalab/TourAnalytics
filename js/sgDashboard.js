@@ -1254,6 +1254,17 @@ export function sgDashboard(container, opts) {
     const dW = new Map(); if (cat) for (const rd of mine) for (const x of rd.shots) if (x.cat === cat && x.dist) dW.set(x.dist, (dW.get(x.dist) || 0) + (x.w || 1));
     const dists = [...dW].filter(([, w]) => w >= 3).map(([d]) => d).sort((a, b) => lead(a) - lead(b) || String(a).localeCompare(String(b)));
     const sec = cat ? statBlocksCmp([mine]).find((b) => b.cat === cat) : null;
+    // (update 265) the rows always add up: a player with no shots from a distance (or in a category) gained 0 there, and
+    // "Other distances" holds the rest (bands with under 3 attempts, and shots with no distance), so the distance rows
+    // sum to SG a round, for the player, the one they're compared with, and the difference between them
+    const OTHER = "d:__other";
+    const gv = (m, k) => {
+      if (!m) return undefined;
+      if (k === OTHER) { if (!m.has("sg")) return undefined; return m.get("sg") - dists.reduce((t, d) => t + (m.get(`d:${d}`) || 0), 0); }
+      const v = m.get(k);
+      if (v == null && (k.startsWith("d:") ? m.has("sg") : k.startsWith("c:") ? m.has("c:TOTAL") : false)) return 0;
+      return v;
+    };
     const sgF = (v) => fmtSG(v), sg3 = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`);
     const R = [];
     if (!cat) {
@@ -1266,14 +1277,18 @@ export function sgDashboard(container, opts) {
     R.push({ grp: "Strokes gained" });
     R.push({ key: "sg", label: "SG a round", fmt: sgF, higher: true, tone: true });
     if (meV.has("sga")) { R.push({ key: "sga", label: "SG an attempt", fmt: sg3, higher: true, tone: true, sub: true }); R.push({ key: "att", label: "Attempts a round", fmt: (v) => (v == null ? "—" : v.toFixed(1)), higher: null, sub: true }); }
-    if (dists.length > 1) { R.push({ grp: "Strokes gained a round, by distance" }); for (const d of dists) R.push({ key: `d:${d}`, label: d, fmt: sgF, higher: true, tone: true, sub: true }); }
+    if (dists.length > 1) {
+      R.push({ grp: "Strokes gained a round, by distance" });
+      for (const d of dists) R.push({ key: `d:${d}`, label: d, fmt: sgF, higher: true, tone: true, sub: true });
+      R.push({ key: OTHER, label: "Other distances", fmt: sgF, higher: true, tone: true, sub: true, other: true, tip: "Bands with fewer than 3 attempts, and shots with no distance, so the rows above add up to SG a round" });
+    }
     if (sec) { R.push({ grp: `${sec.label} stats` }); for (const x of sec.rows) R.push({ key: `s:${x.key}|${x.dist || ""}`, label: x.dist || x.label, fmt: (v) => fmtStat(x.def, v), def: x.def, higher: x.def.higher == null ? null : x.def.higher !== false, sub: !!x.dist }); }
     }
     // the field: rank among the players ranked; "All Players": the players compared (Top N)
     const ranked = rankedField(slicedField).filter((p) => p.key !== me?.key);
     const fieldMaps = ranked.map((p) => rowVals(p.rounds, cat));
-    const avg = (maps, k) => { const v = maps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-    const rankOfRow = (k, v, higher) => { if (v == null || higher == null) return null; const vs = fieldMaps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
+    const avg = (maps, k) => { const v = maps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    const rankOfRow = (k, v, higher) => { if (v == null || higher == null) return null; const vs = fieldMaps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
     // trend: the last 10 rounds against the 10 before (fewer: half and half, at least 3 each)
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const tn = Math.min(10, Math.floor(ordered.length / 2));
@@ -1291,23 +1306,15 @@ export function sgDashboard(container, opts) {
     const peakOn = st.vsRank === "peak"; // (update 260) or against the player's own peak
     const vsN = st.vsRank && !peakOn ? Number(st.vsRank) : null;
     const refP = vsN ? (() => { const byTot = ranked.map((p) => ({ p, t: rowVals(p.rounds, "").get("c:TOTAL") })).filter((x) => x.t != null && Number.isFinite(x.t)).sort((a, b) => b.t - a.t); return byTot.length ? byTot[Math.min(vsN, byTot.length) - 1].p : null; })() : null;
-    // (update 260) Personal Peak: for each row, the player's best run of N rounds in a row (the Peak Length, default 10)
-    // in this selection: the best average of any N consecutive rounds, each row on its own (lower is better where it is)
+    // (update 266) Personal Peak: the player's N best rounds (the Peak Length, default 10) in this selection, ranked by the
+    // strokes gained the filters are about (SG: Total, or the one category picked: their best Off-the-Tee rounds), and
+    // every row is those same rounds' value, so the rows still add up and read as "how I play on my best days"
     const peakN = Math.max(2, Math.round(Number(st.peakN) || 10));
     const peak = peakOn ? (() => {
-      const out = new Map(), at = new Map();
-      if (ordered.length < peakN) return { map: out, at, short: true };
-      for (let i = 0; i + peakN <= ordered.length; i++) {
-        const win = ordered.slice(i, i + peakN), m = rowVals(win, cat);
-        for (const row of R) {
-          if (!row.key || row.higher == null) continue;
-          const v = m.get(row.key);
-          if (v == null || !Number.isFinite(v)) continue;
-          const cur = out.get(row.key);
-          if (cur == null || (row.higher ? v > cur : v < cur)) { out.set(row.key, v); at.set(row.key, [win[0], win.at(-1)]); }
-        }
-      }
-      return { map: out, at, short: false };
+      const scored = ordered.map((rd) => { let t = 0, any = false; for (const x of rd.shots) if (!cat || x.cat === cat) { t += x.sg; any = true; } return { rd, t, any }; }).filter((x) => x.any);
+      if (scored.length < peakN) return { map: new Map(), rounds: [], short: true, have: scored.length };
+      const best = scored.sort((x, y) => y.t - x.t).slice(0, peakN).map((x) => x.rd).sort((x, y) => String(x.date).localeCompare(String(y.date)));
+      return { map: rowVals(best, cat), rounds: best, short: false };
     })() : null;
     const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
     const dTxt = (rd) => String(rd?.date || "").slice(0, 10);
@@ -1317,18 +1324,19 @@ export function sgDashboard(container, opts) {
     const tr = [];
     for (const row of R) {
       if (row.grp) { tr.push(el("tr", { class: "cmp-grp" }, el("td", { colspan: 4 }, row.grp))); continue; }
-      const v = meV.get(row.key) ?? null, fAvg = refMap ? refMap.get(row.key) ?? null : careerMap?.get(row.key) ?? null;
+      const v = gv(meV, row.key) ?? null, fAvg = refMap ? gv(refMap, row.key) ?? null : gv(careerMap, row.key) ?? null;
+      if (row.other && Math.abs(v || 0) < 0.005 && (!relNow || Math.abs(fAvg || 0) < 0.005)) continue; // (nothing outside the bands shown)
       const good = (d) => (d == null || row.higher == null || Math.abs(d) < 1e-9 ? "" : (row.higher ? d > 0 : d < 0) ? "pos" : "neg");
       const shown = relNow && v != null && fAvg != null ? (row.fmt === sgF || row.fmt === sg3 ? row.fmt(v - fAvg) : `${v - fAvg >= 0 ? "+" : "−"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(v - fAvg))}`) : row.fmt(v);
       const vCls = relNow && v != null && fAvg != null ? (row.higher == null ? "" : good(v - fAvg)) : row.tone ? sgTone(v) : good(v != null && fAvg != null ? v - fAvg : null);
       const rk = showRanks ? rankOfRow(row.key, v, row.higher) : null;
-      const a = lastV?.get(row.key), b = prevV?.get(row.key), ch = a != null && b != null ? a - b : null;
+      const a = gv(lastV, row.key), b = gv(prevV, row.key), ch = a != null && b != null ? a - b : null;
       const chTxt = ch == null ? "—" : Math.abs(ch) < (row.tone ? 0.005 : 1e-9) ? "◆ steady" : `${ch > 0 ? "▲" : "▼"} ${row.fmt === sg3 ? Math.abs(ch).toFixed(3) : row.fmt === sgF ? Math.abs(ch).toFixed(2) : row.def ? fmtStat({ ...row.def, pct: false, unit: row.def.pct ? " pct" : row.def.unit }, Math.abs(ch)) : Math.abs(ch).toFixed(1)}`;
       void bestOf; // (update 229: no Best round or All Players columns)
-      const pk = peak?.at.get(row.key); // (update 260) when the peak was, and what it was
+      const pk = peak && !peak.short ? gv(peak.map, row.key) : null; // (update 266) the best rounds' own value
       tr.push(el("tr", { class: row.sub ? "cmp-sub" : "" }, [
-        el("td", {}, row.label),
-        el("td", { class: `num strong ${vCls}`, title: pk ? `Peak ${row.fmt(peak.map.get(row.key))}: ${dTxt(pk[0])} to ${dTxt(pk[1])} (${peakN} rounds)` : null }, shown),
+        el("td", { title: row.tip || null }, row.label),
+        el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds: ${row.fmt(pk)}` : null }, shown),
         el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "—"),
         el("td", { class: `num ${ch == null ? "" : good(ch)}` }, chTxt),
       ]));
@@ -1336,12 +1344,12 @@ export function sgDashboard(container, opts) {
     return [
       el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row` : `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)`) : "" }, relNow ? (peak ? `Vs peak (${peakN} rds)` : `Vs #${vsN} ${refP.label || ""}`.trim()) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their ${peakN} best rounds${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `Vs #${vsN} ${refP.label || ""}`.trim()) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
         el("tbody", {}, tr),
       ])),
       // (update 240) what the colours mean
-      el("p", { class: "muted small sg-full-note" }, peak && peak.short ? `${me?.label || "The player"} has ${ordered.length} rounds in this selection: fewer than the Peak Length (${peakN}), so there\u2019s no peak to compare with. Shorten the Peak Length or widen the selection.`
-        : peak ? `Each value is the difference from ${me?.label || "the player"}\u2019s own peak in this selection: for each row on its own, the best average over ${peakN} rounds in a row (hover a value for when). Zero means they\u2019re playing at their peak; the further from zero, the further off it they are (red). Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above to look at shorter or longer runs.`
+      el("p", { class: "muted small sg-full-note" }, peak && peak.short ? `${me?.label || "The player"} has ${peak.have} ${cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} ` : ""}rounds in this selection: fewer than the Peak Length (${peakN}), so there\u2019s no peak to compare with. Shorten the Peak Length or widen the selection.`
+        : peak ? `Each value is the difference from ${me?.label || "the player"}\u2019s Personal Peak: their ${peakN} best rounds in this selection by ${cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total"} (${[...new Set(peak.rounds.map((rd) => rd.event).filter(Boolean))].slice(0, 6).join(", ")}${new Set(peak.rounds.map((rd) => rd.event)).size > 6 ? "\u2026" : ""}; ${dTxt(peak.rounds[0])} to ${dTxt(peak.rounds.at(-1))}), with every row from those same rounds (hover a value for theirs). Zero means they\u2019re playing at that level; red is how far below it. Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above to use more or fewer best rounds.`
         : relNow
         ? `Each value is the difference from ${refP.label || "that player"}, ranked #${vsN} overall (SG: Total a round in this selection); every row is the same golfer. Green: better than them; red: worse. Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap the rank comparison again to see the player\u2019s own values.`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a rank comparison above to see each stat against the player ranked there overall.`),
@@ -1712,7 +1720,7 @@ export function sgDashboard(container, opts) {
   function vsPills() {
     const pills = el("div", { class: "seg small vs-pills" }, [["1", "#1"], ["10", "#10"], ["25", "#25"], ["50", "#50"], ["peak", "Personal Peak"]].map(([v, l]) => {
       const on = st.vsRank === v, isPeak = v === "peak";
-      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}${isPeak ? " vs-peak" : ""}`, "aria-pressed": String(on), title: isPeak ? "Show each stat against the player\u2019s own best run of rounds (the Peak Length)" : `Show each stat against the player ranked #${v}` }, l);
+      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}${isPeak ? " vs-peak" : ""}`, "aria-pressed": String(on), title: isPeak ? "Show each stat against the player\u2019s own best rounds (as many as the Peak Length)" : `Show each stat against the player ranked #${v}` }, l);
       b.addEventListener("click", () => {
         if (on) { st.vsRank = null; if (!isPeak) { st.rankTopManual = false; st.rankTopFor = null; } }
         else if (isPeak) st.vsRank = "peak"; // (the gold dots on the charts stay as they were)
@@ -1723,11 +1731,11 @@ export function sgDashboard(container, opts) {
     }));
     let len = null;
     if (st.vsRank === "peak") {
-      const inp = el("input", { type: "number", class: "peak-len", min: "2", max: "100", step: "1", value: String(st.peakN || 10), inputmode: "numeric", "aria-label": "Peak Length: rounds in a row" });
+      const inp = el("input", { type: "number", class: "peak-len", min: "2", max: "100", step: "1", value: String(st.peakN || 10), inputmode: "numeric", "aria-label": "Peak Length: how many best rounds" });
       const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 2) { inp.value = String(st.peakN || 10); return; } const v = Math.min(100, n); if (v === (st.peakN || 10)) return; st.peakN = v; draw(); setTimeout(() => document.querySelector(".peak-len")?.focus(), 0); };
       inp.addEventListener("change", apply);
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
-      len = el("label", { class: "peak-len-wrap", title: "How many rounds in a row are averaged to find the peak" }, [el("span", { class: "ms-label" }, "Peak Length"), inp, el("span", { class: "muted small" }, "rounds")]);
+      len = el("label", { class: "peak-len-wrap", title: "How many of the best rounds (by the strokes gained the filters are about) make the peak" }, [el("span", { class: "ms-label" }, "Peak Length"), inp, el("span", { class: "muted small" }, "rounds")]);
     }
     return el("div", { class: "top-pills" }, [el("span", { class: "ms-label" }, "Rank comparisons"), pills, len]);
   }
