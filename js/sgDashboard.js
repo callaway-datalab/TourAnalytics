@@ -1446,8 +1446,10 @@ export function sgDashboard(container, opts) {
         a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
         return a;
       })),
-      (() => { const b = el("button", { type: "button", class: `cmp-chip small trend-prod${prodOn ? " on" : ""}`, "aria-pressed": String(prodOn) }, [prodOn ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, "Show Product"]);
-        b.addEventListener("click", () => { st.showProduct = !prodOn; draw(); }); return b; })(),
+      // (update 306) the same pill as Round / Event / Month / Year (white when on), so it lines up and keeps its size
+      (() => { const b = el("a", { href: "#", role: "button", "aria-pressed": String(prodOn), "aria-current": prodOn ? "page" : null }, "Show Product");
+        b.addEventListener("click", (e) => { e.preventDefault(); st.showProduct = !prodOn; draw(); });
+        return el("div", { class: "subnav small trend-prod" }, b); })(),
     ]);
     if (prodOn) { blocks.push(productTrend(mine, cat, toggles)); return blocks; }
     const t = trend(mine, cat || null, st.trendBy);

@@ -4646,3 +4646,16 @@ dialog.issue-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .issue-form textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 6rem; font: inherit; }
 .issue-msg:empty { display: none; }
 .issue-btns { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+/* (update 306) SG Trends: Show Product sits on the same line as Round / Event / Month / Year, same height, and
+   stays put when it's on; the product-type pills a size smaller on phones so they fit on one line */
+.sg-box .trend-row { flex-wrap: nowrap; justify-content: center; gap: 0.5rem; margin: -0.25rem 0 0.75rem; }
+.sg-box .trend-row > .subnav { margin: 0 !important; flex: 0 0 auto; }
+.trend-prod { margin-left: 0; }
+@media (max-width: 640px) { .sg-box .trend-row { margin-top: 1.4rem; } }
+@media (max-width: 520px) {
+  .sg-box .trend-row { gap: 0.35rem; }
+  .sg-panel .subnav.small.trend-kinds, .subnav.small.trend-kinds { flex-wrap: nowrap !important; max-width: 100%; }
+  .sg-panel .subnav.small.trend-kinds a, .subnav.small.trend-kinds a { font-size: 0.64rem !important; padding: 0.32rem 0.42rem !important; white-space: nowrap; }
+}
+.sg-box .subnav.small.trend-kinds { margin-left: auto !important; margin-right: auto !important; }
