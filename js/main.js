@@ -6,6 +6,8 @@ import { setUnreadCount } from "./ui.js";
 
 // The build this page loaded (main.js?v= in index.html), so other files can tell if they're an older copy
 window.__taBuild = new URL(import.meta.url).searchParams.get("v");
+import { minimalKeyboard } from "./keyboard.js";
+minimalKeyboard(); // (update 267) no word suggestions or contact autofill on the phone keyboard
 startRouter();
 
 // (update 170) a tab acting as a fake user says so, with a way back to your own sign-in
