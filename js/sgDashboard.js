@@ -1341,7 +1341,7 @@ export function sgDashboard(container, opts) {
     // selection, not counting the player on screen), every row from that one player: #1 is the same golfer all the way down
     const peakOn = st.vsRank === "peak"; // (update 260) or against the player's own peak
     const vsN = st.vsRank && !peakOn ? Number(st.vsRank) : null;
-    const refP = vsN ? refPlayer(slicedField, vsN) : null; // (update 308: the same player as the charts' dots)
+    const refP = vsN ? refPlayer(slicedField, vsN, cat) : null; // (update 308: the same player as the charts' dots)
     // (update 266) Personal Peak: the player's N best rounds (the Peak Length, default 10) in this selection, ranked by the
     // strokes gained the filters are about (SG: Total, or the one category picked: their best Off-the-Tee rounds), and
     // every row is those same rounds' value, so the rows still add up and read as "how I play on my best days"
@@ -1795,9 +1795,10 @@ export function sgDashboard(container, opts) {
     return ref ? [ref] : [];
   }
   const vsNum = () => { const v = st.vsRank && st.vsRank !== "peak" ? st.vsRank : st.rankTop && st.rankTop !== "all" ? st.rankTop : null; return v ? Number(v) : null; };
-  /** The player ranked #n by SG: Total a round in this selection (not counting the player on screen), as the table uses. */
-  function refPlayer(slicedField, n) {
-    const byTot = rankedField(slicedField).filter((p) => p.key !== me?.key).map((p) => ({ p, t: rowVals(p.rounds, "").get("c:TOTAL") }))
+  /** (update 315) The player ranked #n in this selection by the strokes gained on screen (SG: Total, or the one category
+   *  picked: the #1 putter on Putting), the player on screen included: when they're #1, #1 is them. Table and dots alike. */
+  function refPlayer(slicedField, n, cat = peakCtx?.cat || "") {
+    const byTot = rankedField(slicedField).map((p) => ({ p, t: rowVals(p.rounds, cat).get(cat ? "sg" : "c:TOTAL") }))
       .filter((x) => x.t != null && Number.isFinite(x.t)).sort((a, b) => b.t - a.t);
     return byTot.length ? byTot[Math.min(n, byTot.length) - 1].p : null;
   }
