@@ -222,7 +222,10 @@ async function renderNew(main, flash, viewing = null) {
    * (update 163) Phones: the number pad has no Next key, so while a yardage or handicap box has the keyboard up, a bar
    * sits just above it: ‹ Prev, Next hole ›, Done. Tapping it keeps the keyboard up (the box keeps focus).
    */
-  const touchOnly = (() => { try { return matchMedia("(pointer: coarse)").matches; } catch { return false; } })();
+  // (update 268) not on an iPhone or iPad: Safari puts its own ‹ › ✓ bar above every keyboard, and two bars (with
+  // Safari's address bar between them) crowded the screen. There, ✓ is Done, › the next box, and a full yardage moves on by itself.
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const touchOnly = !isIOS && (() => { try { return matchMedia("(pointer: coarse)").matches; } catch { return false; } })();
   let barFor = null;
   const kbBar = (() => {
     const btn = (label, cls, fn) => {
