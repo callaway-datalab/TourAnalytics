@@ -47,6 +47,7 @@ export function mount(node, children) {
   }
 }
 
+let robotN = 0;
 export function icon(name) {
   const paths = {
     home: "M3 9.5 10 3l7 6.5V17H12v-4H8v4H3z",
@@ -68,6 +69,16 @@ export function icon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 20 20");
   svg.setAttribute("aria-hidden", "true");
+  // (update 278) Callie is drawn from her picture (icons/callie.png: the robot in white), in the text colour
+  if (name === "robot") {
+    const ns = "http://www.w3.org/2000/svg", id = `callie-m${++robotN}`;
+    const mask = document.createElementNS(ns, "mask"); mask.setAttribute("id", id);
+    const img = document.createElementNS(ns, "image"); img.setAttribute("href", "icons/callie.png"); img.setAttribute("width", "20"); img.setAttribute("height", "20");
+    mask.appendChild(img);
+    const rect = document.createElementNS(ns, "rect"); rect.setAttribute("width", "20"); rect.setAttribute("height", "20"); rect.setAttribute("fill", "currentColor"); rect.setAttribute("mask", `url(#${id})`);
+    svg.append(mask, rect); svg.classList.add("ico-callie");
+    return svg;
+  }
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", paths[name] || "");
   if (name === "bag" || name === "robot") path.setAttribute("fill-rule", "evenodd"); // (the pocket, and the robot's face, are cut-outs)

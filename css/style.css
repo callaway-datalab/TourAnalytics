@@ -1,4 +1,4 @@
-:root {
+:root { --sat: env(safe-area-inset-top, 0px); --sat-gap: 0px;
   /* Dark "range at night" theme: white text over a darkened photo, bright green accents. */
   color-scheme: dark;
   --bg: #000;
@@ -246,7 +246,7 @@ a { color: var(--brand); }
 .rail {
   position: sticky; top: 0; z-index: 10; height: auto;
   flex-direction: row; align-items: center; flex-wrap: wrap; gap: 0.6rem 1.25rem;
-  padding: 0.7rem clamp(0.75rem, 3vw, 2rem); padding-top: max(0.7rem, env(safe-area-inset-top, 0px));
+  padding: 0.7rem clamp(0.75rem, 3vw, 2rem); padding-top: max(0.7rem, var(--sat));
   background: rgba(0, 0, 0, 0.6); color: #fff;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.18);
@@ -1418,7 +1418,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 /* --- Pointing to the rows on a scorecard photo --- */
 body.tapping { overflow: hidden; }
 .tapper { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; background: rgba(8, 8, 10, 0.97); }
-.tap-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: calc(0.7rem + env(safe-area-inset-top, 0px)) 1rem 0.7rem; border-bottom: 1px solid var(--line); }
+.tap-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: calc(0.7rem + var(--sat)) 1rem 0.7rem; border-bottom: 1px solid var(--line); }
 .tap-say { flex: 1 1 16rem; margin: 0; font: 600 1rem/1.35 var(--font-body); color: var(--ink); }
 .tap-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .tap-actions .btn { min-height: 2.6rem; padding: 0.45rem 1rem; }
@@ -4372,11 +4372,11 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 
 /* (update 272) Home Screen app: the page runs edge to edge (viewport-fit=cover, translucent status bar), so the
    header sits under the clock/notch with its own padding, and nothing hides behind the home bar or rounded corners */
-.rail { padding-top: calc(0.7rem + env(safe-area-inset-top, 0px));
+.rail { padding-top: calc(0.7rem + var(--sat));
   padding-left: max(clamp(0.75rem, 3vw, 2rem), env(safe-area-inset-left, 0px)); padding-right: max(clamp(0.75rem, 3vw, 2rem), env(safe-area-inset-right, 0px)); }
 main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   padding-left: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-left, 0px)); padding-right: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-right, 0px)); }
-.cal-head { padding-top: calc(0.9rem + env(safe-area-inset-top, 0px)); }
+.cal-head { padding-top: calc(0.9rem + var(--sat)); }
 .tapper { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
 /* (update 274) Long / Short beside Offline */
@@ -4396,8 +4396,14 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 /* (update 275/276) Home Screen app: iPhone blurs whatever sits under the clock, and a header pinned right at the top
    got caught in that blur. A solid strip sits under the clock, and the header is pinned just below it. */
 @media (display-mode: standalone) {
-  /* (update 276) the header stays pinned, just below the clock: the strip covers the clock's area, the header starts under it */
-  .rail { position: sticky; top: env(safe-area-inset-top, 0px); padding-top: 0.7rem; background: #000; -webkit-backdrop-filter: none; backdrop-filter: none; }
-  body { padding-top: env(safe-area-inset-top, 0px); }
-  html::after { content: ""; position: fixed; left: 0; right: 0; top: 0; height: env(safe-area-inset-top, 0px); background: #000; z-index: 9000; pointer-events: none; }
+  /* (update 277) a solid black band covers the clock's area plus a little more (iOS blurs the top edge of the page
+     just below the clock too), and the header is pinned just under it, clear of the blur */
+  .rail { position: sticky; top: calc(var(--sat) + var(--sat-gap)); padding-top: 0.7rem; background: #000; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  body { padding-top: calc(var(--sat) + var(--sat-gap)); }
+  html::after { content: ""; position: fixed; left: 0; right: 0; top: 0; height: calc(var(--sat) + var(--sat-gap)); background: #000; z-index: 9000; pointer-events: none; }
 }
+@media (display-mode: standalone) { :root { --sat-gap: 10px; } }
+/* (update 278) Callie's new picture: a touch bigger so her face reads */
+.rail-foot .hdr-icon.callie-link svg.ico-callie { width: 24px; height: 24px; }
+.cal-ava svg.ico-callie { width: 26px; height: 26px; }
+.cal-k svg.ico-callie { width: 16px; height: 16px; }
