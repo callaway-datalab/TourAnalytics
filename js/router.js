@@ -82,12 +82,14 @@ export function navigate(hash) { location.hash = hash; }
 // the log-in page is still loading) stops instead of drawing the wrong page over the right one.
 let renderGen = 0;
 
+let renderedFor; // (update 291)
 async function render() {
   const gen = ++renderGen;
   const raw = location.hash.slice(1) || "/login";
 
   const state = await whenReady();
   if (gen !== renderGen) return;
+  renderedFor = state.user?.uid ?? null; // (update 291: the sign-in this page was drawn for)
   const team = effectiveTeam(state); // a real team member, or the admin previewing one
 
   // Admin: preview any account's portal. Players go to their own view; team members and
@@ -283,6 +285,9 @@ export function startRouter() {
   subscribe((state) => {
     if (state.status === "loading") return;
     const uid = state.user?.uid ?? null;
+    // (update 291) the first news from sign-in, for the person the page was already drawn for, isn't a reason to draw
+    // it again (that second draw was the page "refreshing by itself" a moment after it opened)
+    if (lastUid === undefined && uid === renderedFor) { lastUid = uid; return; }
     if (uid !== lastUid) {
       if (lastUid !== undefined && uid !== lastUid) { previewClient = null; lastTeamPlayer = null; setPreviewTeam(null); } // different person
       lastUid = uid;

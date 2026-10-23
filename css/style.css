@@ -4559,3 +4559,7 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   .cd-actions { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; padding-top: 0.3rem; font-size: 0.8rem; }
   .cd-actions .row-actions { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; }
 }
+/* (update 291) only the ball and cup on screen: the course photo shows behind it, as on the first loading screen */
+body::before, body::after { transition: filter 0.35s ease, opacity 0.35s ease; }
+html.ta-only-loading body::before { filter: grayscale(0.15) brightness(0.6) contrast(1.05); }
+html.ta-only-loading body::after { opacity: 0.45; }

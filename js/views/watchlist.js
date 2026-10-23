@@ -260,17 +260,11 @@ export async function render(main, { previewClient }) {
   }
 
   function emptyState() {
-    // suggestions: your players (a coach), else this season's leaders
-    const sugg = team.isTeam ? teamKeys : [...field].map((p) => ({ k: p.key, v: p.rounds.length >= 10 ? p.rounds.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + s.sg, 0), 0) / p.rounds.length : -99 })).sort((a, b) => b.v - a.v).slice(0, 8).map((x) => x.k);
+    // (update 291) just the message: players are added with the search above (no suggested-player chips)
     return el("section", { class: "panel wl-empty" }, [
       el("div", { class: "wl-empty-star", "aria-hidden": "true" }, "★"),
       el("h2", {}, "Build your Watchlist"),
       el("p", { class: "muted" }, "Add the players you follow: their strokes gained, ranks, trends and alerts all land here, and they sit at the top of every player search."),
-      el("div", { class: "wl-sugg" }, sugg.filter((k) => labels.has(k) || field.some((p) => p.key === k)).map((k) => {
-        const b = el("button", { type: "button", class: "wl-chip" }, ["＋ ", nameOf(k)]);
-        b.addEventListener("click", () => { saveWatch({ players: [...watchPrefs().players, k] }); draw(); });
-        return b;
-      })),
     ]);
   }
 

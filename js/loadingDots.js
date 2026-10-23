@@ -9,8 +9,28 @@ function check(node) {
   e.classList.toggle("ta-loading-inline", on);
   e.classList.toggle("ta-just", on && /^\s*Loading\s*(\u2026|\.\.\.)?\s*$/.test(e.textContent)); // (update 282: just the animation)
 }
+// (update 291) the page is just the ball and cup (nothing else to read yet): show the course photo behind it, as on
+// the first loading screen
+function onlyLoading() {
+  const page = document.querySelector("#app main") || document.getElementById("app");
+  const loader = page?.querySelector(".ta-loading");
+  let only = false;
+  if (loader) {
+    only = true;
+    const w = document.createTreeWalker(page, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (!n.textContent.trim() || n.parentElement?.closest(".ta-loading, script, style, [hidden]")) continue;
+      only = false; break;
+    }
+  }
+  document.documentElement.classList.toggle("ta-only-loading", only);
+}
+let pend = 0;
+const later = () => { if (!pend) pend = requestAnimationFrame(() => { pend = 0; onlyLoading(); }); };
 export function loadingDots() {
+  onlyLoading();
   new MutationObserver((list) => {
+    later();
     for (const m of list) {
       if (m.type === "characterData") check(m.target);
       else { check(m.target); m.addedNodes.forEach((n) => { if (n.nodeType === 1) { check(n); n.querySelectorAll?.("p, span, div, li").forEach(check); } }); }

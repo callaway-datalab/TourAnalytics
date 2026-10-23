@@ -656,7 +656,7 @@ function draw() {
   const log = panel.querySelector(".cal-log"), input = panel.querySelector(".cal-in"), send = panel.querySelector(".cal-send");
   const items = [];
   if (!chat.length) {
-    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal, your AI data caddy."), el("p", {}, "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare."), el("p", {}, "What would you like to know first?"),
+    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal,"), el("p", {}, "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare."), el("p", {}, "What would you like to know first?"),
       el("p", { class: "muted small" }, "Every number I show is worked out from the data available on this site.")])); // (update 290)
     items.push(el("div", { class: "cal-ex" }, exList.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small" }, t); b.addEventListener("click", () => { if (!busy) ask(t); }); return b; })));
   }
@@ -687,7 +687,7 @@ export async function openCallie() {
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [
-        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your golf data caddy")]), fresh, close]),
+        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your AI data caddy")]), fresh, close]),
         el("div", { class: "cal-log", "aria-live": "polite" }),
         el("div", { class: "cal-foot" }, [input, send]),
       ]),
