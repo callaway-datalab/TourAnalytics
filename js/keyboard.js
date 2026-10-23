@@ -5,8 +5,19 @@
 // anything marked data-keep-keyboard.
 const TEXT = new Set(["", "text", "search", "url", "tel", "number"]);
 let n = 0;
+// (update 271) A number pad stays cleanest with nothing but inputmode (test N on an iPhone): autocomplete="off",
+// pattern, maxlength or enterkeyhint each bring back the "one-time code" suggestion above the keys. So those come
+// off any text box with a number pad, and the length limit is kept by trimming what's typed instead.
+function numPad(box) {
+  for (const a of ["autocomplete", "autocorrect", "spellcheck", "pattern", "enterkeyhint", "name"]) box.removeAttribute(a);
+  const max = box.maxLength > 0 ? box.maxLength : 0;
+  box.removeAttribute("maxlength");
+  if (max) box.addEventListener("input", () => { if (box.value.length > max) box.value = box.value.slice(0, max); }, true);
+  box.dataset.kbQuiet = "1";
+}
 function quiet(box) {
   if (box.dataset.keepKeyboard != null || box.dataset.kbQuiet) return;
+  if (box instanceof HTMLInputElement && box.type === "text" && /^(numeric|decimal)$/.test(box.inputMode)) return numPad(box);
   if (box instanceof HTMLInputElement && !TEXT.has(box.type)) return;
   const ac = box.getAttribute("autocomplete");
   if (ac && ac !== "off") return; // (email, password, name: their autofill is wanted)

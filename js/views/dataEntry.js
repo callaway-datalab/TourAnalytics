@@ -272,10 +272,11 @@ async function renderNew(main, flash, viewing = null) {
     mount(grid, nines.map(([from, to, sumName]) => {
       const hs = holes.slice(from, to);
       const numIn = (h, i, k, max, label) => {
-        const inp = el("input", { type: "text", inputmode: "numeric", pattern: "[0-9]*", maxLength: k === "yards" ? 3 : 2, autocomplete: "off", enterkeyhint: "next",
+        // (update 271) just inputmode, as in keyboard test N: nothing above the number pad (the length is trimmed here)
+        const inp = el("input", { type: "text", inputmode: "numeric",
           value: h[k] ?? "", "aria-label": `Hole ${h.n} ${label}`, "data-row": k, class: "sc-in" });
         inp.addEventListener("input", (e) => {
-          inp.value = inp.value.replace(/\D/g, "");
+          inp.value = inp.value.replace(/\D/g, "").slice(0, k === "yards" ? 3 : 2);
           const v = inp.value === "" ? null : Math.min(max, Number(inp.value));
           holes[i][k] = v;
           drawTotals(); cardChanged();

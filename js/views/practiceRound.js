@@ -243,8 +243,8 @@ function drawCourseEditor(ctx) {
   const grid = el("div", { class: "pr-card-grid" }, holes.map((h, i) => {
     const par = el("button", { type: "button", class: "pr-par", "aria-label": `Hole ${i + 1} par, tap to change` }, String(h.par));
     par.addEventListener("click", () => { h.par = h.par === 4 ? 5 : h.par === 5 ? 3 : 4; par.textContent = String(h.par); });
-    const yd = el("input", { type: "text", inputmode: "numeric", maxLength: 3, placeholder: "yds", "aria-label": `Hole ${i + 1} yards` });
-    yd.addEventListener("input", () => { h.yards = yd.value.replace(/\D/g, ""); });
+    const yd = el("input", { type: "text", inputmode: "numeric", placeholder: "yds", "aria-label": `Hole ${i + 1} yards` });
+    yd.addEventListener("input", () => { yd.value = yd.value.replace(/\D/g, "").slice(0, 3); h.yards = yd.value; });
     return el("div", { class: "pr-card-hole" }, [el("span", { class: "pr-card-n" }, String(i + 1)), par, yd]);
   }));
   const save = el("button", { type: "button", class: "btn pr-go" }, "Save and pick holes ▶");
