@@ -663,21 +663,22 @@ export async function render(main, { flash }) {
       else if (inv.revoked) { status = el("span", { class: "tag muted-tag" }, "Revoked"); statusText = "revoked"; }
       else { status = el("span", { class: "tag hot" }, "Unused"); statusText = "unused"; }
 
-      const teamOf = !isTeamKey(inv.clientKey) ? el("span", { class: "muted" }, "\u2014")
+      const teamOfMake = () => !isTeamKey(inv.clientKey) ? el("span", { class: "muted" }, "\u2014")
         : (inv.kind === "analyst" || inv.kind === "employee") && (user?.allPlayers ?? inv.allPlayers) ? linkButton("All players", () => showPlayers(user?.name || inv.clientLabel || "This person", grants))
         : grants.length === 0 ? el("span", { class: "muted" }, "\u2014")
         : grants.length === 1 ? grants[0].label
         : linkButton(`${grants.length} players`, () => showPlayers(user?.name || inv.clientLabel || "This person", grants));
+      const teamOf = teamOfMake(); // (update 290: made again for the phone's opened row)
       const haystack = [inv.code, formatCode(inv.code), inv.clientLabel, clientsCache.labels.get(inv.clientKey), email, user?.name, isTeamKey(inv.clientKey) ? "" : inv.note, note, statusText, ...grants.map((g) => g.label)]
         .filter(Boolean).join(" ").toLowerCase();
-      return { inv, user, grants, types, typeLabels, email, status, teamOf, haystack };
+      return { inv, user, grants, types, typeLabels, email, status, teamOf, teamOfMake, haystack };
     }).filter((r) => r.types.some((t) => shown.has(t)) && (!q || r.haystack.includes(q)))
       .sort((a, b) => nameOf(a).localeCompare(nameOf(b), undefined, { sensitivity: "base" }));
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
       el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Sign-ins", "Last sign-in", ""].map((h) => el("th", {}, h)))),
-      el("tbody", {}, rows.map(({ inv, user, grants, typeLabels, email, status, teamOf }) => el("tr", {}, [
+      el("tbody", {}, rows.flatMap(({ inv, user, grants, typeLabels, email, status, teamOf, teamOfMake }) => { const tr = el("tr", { class: "code-row" }, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
           user?.name || (!isTeamKey(inv.clientKey) && clientsCache.labels.get(inv.clientKey)) || inv.clientLabel || el("span", { class: "muted" }, "No name yet"),
@@ -691,7 +692,20 @@ export async function render(main, { flash }) {
         el("td", { class: "num" }, user ? num(user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")),
         el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
         el("td", { class: "actions" }, codeActions(inv, user, grants)),
-      ]))),
+      ]);
+      // (update 290) on a phone only Name, User Type and Status show; tapping the person opens the rest underneath
+      const line = (k, v) => el("div", { class: "cd-line" }, [el("span", { class: "cd-k" }, k), el("span", { class: "cd-v" }, v)]);
+      const more = el("tr", { class: "code-more", hidden: true }, el("td", { colspan: "10" }, el("div", { class: "cd-grid" }, [
+        line("Code", el("code", {}, formatCode(inv.code))), line("Email", email || "\u2014"), line("Team of", teamOfMake()),
+        line("Cal", calToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
+        line("Last sign-in", user?.lastSignInAt ? formatWhen(user.lastSignInAt) : user ? "Not yet" : "\u2014"),
+        el("div", { class: "cd-actions" }, codeActions(inv, user, grants)),
+      ])));
+      tr.addEventListener("click", (e) => {
+        if (window.innerWidth > 700 || e.target.closest("a, button, input, select, label")) return;
+        more.hidden = !more.hidden; tr.classList.toggle("open", !more.hidden);
+      });
+      return [tr, more]; })),
     ])));
   }
 
@@ -718,6 +732,7 @@ export async function render(main, { flash }) {
   }
 
   /* ============================== Page ============================== */
+  main.classList.add("ua-page"); // (update 290: smaller tables here)
   mount(main, [
     subNav([["#/admin/clients", "Users"], ["#/admin/datasets", "Upload Data"]], "#/admin/clients"), // (Upload Data lives here)
     el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, weekBox, usageBox, storageBox]),

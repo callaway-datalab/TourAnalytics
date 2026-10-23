@@ -656,8 +656,8 @@ function draw() {
   const log = panel.querySelector(".cal-log"), input = panel.querySelector(".cal-in"), send = panel.querySelector(".cal-send");
   const items = [];
   if (!chat.length) {
-    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal, your AI data caddy. You can ask me anything about the data: a player’s stats over any stretch of time, who leads the tour in something, or how two products compare. What would you like to know?"),
-      el("p", { class: "muted small" }, "Every number I show is worked out by the portal from your data.")]));
+    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal, your AI data caddy."), el("p", {}, "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare."), el("p", {}, "What would you like to know first?"),
+      el("p", { class: "muted small" }, "Every number I show is worked out from the data available on this site.")])); // (update 290)
     items.push(el("div", { class: "cal-ex" }, exList.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small" }, t); b.addEventListener("click", () => { if (!busy) ask(t); }); return b; })));
   }
   for (const m of chat) {

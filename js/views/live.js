@@ -130,7 +130,7 @@ export async function render(main) {
   let apiEvents = [], apiOverrides = {}, apiPlayers = [], uploadEvents = [], apiSeen = false, curVis = null, refreshing = "", stopEvent = null, watchedRel = null, reqId = 0;
   let field = [], tours = [], events = [], lb = null, file = null, statsMeta = [], metaById = {}, uploadedAt = null, loadErr = "", version = null;
   let visible = ls.get("cols3", null); // null = the default columns (update 284: just strokes gained; new keys, so the new defaults apply)
-  let showRanks = ls.get("ranks2", true), minOn = ls.get("min2", true), wide = ls.get("wide2", false);
+  let showRanks = ls.get("ranks2", true), minOn = true, wide = ls.get("wide2", false);
   let sel = { player: null, t: null, view: "latest" }, sortKey = "TOTAL", sortDir = -1;
   let colsOpen = false, pickerQ = "", q = "";
   const famOpen = {}, subOpen = {};
@@ -175,7 +175,7 @@ export async function render(main) {
       el("div", { class: "lv-main-top" }, [el("div", {}, [el("h2", {}, "Leaderboard"), meta]), toolbar]),
       colPanel, warnBar, boardWrap,
       el("details", { class: "lv-legend" }, [el("summary", {}, "How to read this"),
-        el("p", { class: "muted small" }, "Each round shows the strokes gained and stats of that round. The Event tab adds each player’s strokes gained up over the rounds they played (RDS); other stats are averaged over those rounds, weighted by attempts. The small grey number under each value is its rank (T = tied) among the players shown; for lower-is-better stats the lowest value ranks first, and the first tap on its heading sorts lowest first. Min Sample greys out percentages and averages built on very few attempts (under 3 in a round, under 5 for the event) and leaves them out of ranks and sorting. A tournament marked Live comes from the PGA Tour\u2019s API, updated about every 30 minutes; \u201cthru N\u201d marks a round still in progress, so its totals only cover the holes played so far (and Tee-to-Green and Total come straight from the Tour\u2019s feed, so they won\u2019t equal the sum of the parts until the round is final). Earlier tournaments are your uploaded data, the same as Leaderboards. The page updates by itself.")]),
+        el("p", { class: "muted small" }, "Each round shows the strokes gained and stats of that round. The Event tab adds each player’s strokes gained up over the rounds they played (RDS); other stats are averaged over those rounds, weighted by attempts. The small grey number under each value is its rank (T = tied) among the players shown; for lower-is-better stats the lowest value ranks first, and the first tap on its heading sorts lowest first. A * next to a value means it comes from very few attempts (under 3 in a round, under 5 for the event): it\u2019s shown, but left out of the ranks and sorting. A tournament marked Live comes from the PGA Tour\u2019s API, updated about every 30 minutes; \u201cthru N\u201d marks a round still in progress, so its totals only cover the holes played so far (and Tee-to-Green and Total come straight from the Tour\u2019s feed, so they won\u2019t equal the sum of the parts until the round is final). Earlier tournaments are your uploaded data, the same as Leaderboards. The page updates by itself.")]),
     ]),
   ]);
   // (the page is put together once the tour pills exist, below)
@@ -262,7 +262,6 @@ export async function render(main) {
     mount(toolbar, [
       tg(`Columns (${columns().length})`, colsOpen, "Choose which stats show", () => { colsOpen = !colsOpen; colPanel.hidden = !colsOpen; drawTools(); if (colsOpen) drawPicker(); }, "lv-colbtn"),
       tg("Ranks", showRanks, "Show each value’s rank under it", () => { showRanks = !showRanks; ls.set("ranks2", showRanks); drawTools(); drawBoard(); }),
-      tg("Min Sample", minOn, "Grey out small samples and leave them out of ranks and sorting", () => { minOn = !minOn; ls.set("min2", minOn); ranksCache = {}; drawTools(); drawBoard(); drawPlayer(); }),
       tg("Full Width", wide, "Give the leaderboard the whole width", () => { wide = !wide; ls.set("wide2", wide); grid.classList.toggle("wide", wide); drawTools(); fitTable(); }, "lv-widebtn"),
     ]);
   }
@@ -372,7 +371,7 @@ export async function render(main) {
         if (c.id) {
           const e = r.x?.[c.id];
           v = e?.d ?? "–"; cls = "lv-ex";
-          if (lowSample(c.id, e)) { cls += " lv-low"; title = `Fewer than ${MIN_N[k]} attempts: not ranked or sorted`; }
+          if (lowSample(c.id, e)) { v = `${v}*`; cls += " lv-few"; title = `Fewer than ${MIN_N[k]} attempts: not ranked or sorted`; } // (update 289: a *, explained in How to read this)
         } else { const n = r[c.key]?.[k]; v = fmt(n); cls = tone(n); }
         const rt = showRanks ? rankText(c.key, r.player_id) : null;
         return el("td", { class: cls, title }, [el("span", { class: "lv-v" }, v), rt ? el("small", { class: "lv-rk" }, rt) : null]);
