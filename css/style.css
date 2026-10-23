@@ -4514,3 +4514,4 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 .lv-grid[hidden], .lv-rounds[hidden] { display: none !important; } /* (update 285: until a tournament is picked) */
 .lv-head h1 { white-space: nowrap; }
 @media (max-width: 420px) { .lv-head h1 { font-size: 1.5rem; } .lv-head-r .btn.small { font-size: 0.8rem; padding: 0.45rem 0.7rem; } .lv-head-r .lv-status { font-size: 0.66rem; min-width: 6rem; } }
+.lv-p-ev, .lv-p-rd { margin: 0.1rem 0 0; } /* (update 286) */

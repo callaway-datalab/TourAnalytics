@@ -403,13 +403,16 @@ export async function render(main) {
     const close = el("button", { type: "button", class: "gx-pop-x lv-x", "aria-label": "Close" }, "✕");
     close.addEventListener("click", () => { sel.player = null; drawPlayer(); drawBoard(); });
     const top = [el("div", { class: "lv-p-top" }, [el("div", {}, [el("h2", {}, sel.player.name),
-      el("p", { class: "muted small" }, [sel.t?.event, lb?.round ? (sel.view === "event" ? `Event total · ${row?.rounds || 0} rounds` : `Round ${lb.round}`) : null, row?.thru != null ? `thru ${row.thru}` : null].filter(Boolean).join(" · "))]), close]), toBoard];
+      // (update 286) the tournament on its own line; the round (and how far through it) under it
+      el("p", { class: "muted small lv-p-ev" }, sel.t?.event || ""),
+      el("p", { class: "muted small lv-p-rd" }, [lb?.round ? (sel.view === "event" ? `Event total · ${row?.rounds || 0} rounds` : `Round ${lb.round}`) : null, row?.thru != null ? `thru ${row.thru}` : null].filter(Boolean).join(" · "))]), close]), toBoard];
     if (!lb) { mount(playerBox, top); return; }
     if (!row) { mount(playerBox, [...top, el("p", { class: "muted lv-msg" }, "No strokes gained for this player in this round. They may not be in the field, or haven’t played it.")]); return; }
-    const t = row.TOTAL?.[k], trk = rankText("TOTAL", pid), t2g = row.T2G?.[k], t2r = rankText("T2G", pid);
+    const t = row.TOTAL?.[k], trk = rankText("TOTAL", pid);
     const max = Math.max(3, ...SPLITS.map(([s]) => Math.abs(row[s]?.[k] ?? 0)));
     const parts = [...top,
-      el("div", { class: "lv-total" }, [el("strong", { class: tone(t) }, fmt(t)), el("span", { class: "muted" }, [`Strokes gained${trk ? ` · rank ${trk} of ${ranksFor("TOTAL").n}` : ""}`, t2g != null ? el("br") : null, t2g != null ? `Tee-to-Green ${fmt(t2g)}${t2r ? ` · rank ${t2r}` : ""}` : null])]),
+      // (update 286) "Strokes Gained Total", its rank under it (Tee-to-Green is in the leaderboard's columns)
+      el("div", { class: "lv-total" }, [el("strong", { class: tone(t) }, fmt(t)), el("span", { class: "muted" }, ["Strokes Gained Total", trk ? el("br") : null, trk ? `Rank ${trk} of ${ranksFor("TOTAL").n}` : null])]),
       el("div", { class: "lv-splits" }, SPLITS.map(([s, label]) => {
         const v = row[s]?.[k], r = rankText(s, pid), w = v == null ? 0 : Math.min(Math.abs(v) / max, 1) * 50;
         return el("div", { class: "lv-split" }, [
