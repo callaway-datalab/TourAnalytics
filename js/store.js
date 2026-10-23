@@ -460,6 +460,7 @@ async function deleteCollection(colRef) {
  * name/description as entered by the admin. Uploading the same name again replaces it.
  */
 export async function uploadDataset(name, description, dataset, onProgress) {
+  clearDataCache();
   const existing = await getDocs(query(collection(db, "datasets"), where("name", "==", name)));
   const datasetId = existing.empty ? doc(collection(db, "datasets")).id : existing.docs[0].id;
   const oldClientKeys = existing.empty ? [] : existing.docs[0].data().clientKeys || [];
@@ -533,15 +534,27 @@ export async function fieldStatsSource(datasetId) {
 }
 
 /** The published field stats for a data file, or null. */
+// (update 312) read once per upload while the app is open (it's loaded up front, then every page reuses it)
+const statsMemo = new Map(); // datasetId → { ver, promise }
 export async function getFieldStats(datasetId) {
   const snap = await getDoc(doc(db, "fieldStats", datasetId));
   if (!snap.exists()) return null;
+  const ver = `${snap.data().sourceUploadedAt?.toMillis?.() ?? snap.data().sourceUploadedAt ?? ""}|${snap.data().chunkCount}`;
+  const m = statsMemo.get(datasetId);
+  if (m && m.ver === ver) return m.promise;
+  const promise = readFieldStats(datasetId, snap);
+  statsMemo.set(datasetId, { ver, promise });
+  promise.then((r) => { if (!r) statsMemo.delete(datasetId); }, () => statsMemo.delete(datasetId));
+  return promise;
+}
+async function readFieldStats(datasetId, snap) {
   const pieces = await Promise.all(Array.from({ length: snap.data().chunkCount }, (_, i) => getDoc(doc(db, "fieldStats", datasetId, "chunks", String(i)))));
   try { return { ...JSON.parse(pieces.map((p) => p.data().data).join("")), sourceUploadedAt: snap.data().sourceUploadedAt }; }
   catch { return null; }
 }
 
 export async function deleteDataset(datasetId) {
+  clearDataCache();
   const snap = await getDoc(doc(db, "datasets", datasetId));
   if (!snap.exists()) return;
   for (const key of snap.data().clientKeys || []) {
@@ -568,7 +581,8 @@ export async function getDatasetMeta(clientKey, datasetId) {
   return { id: snap.id, ...snap.data() };
 }
 
-export async function getDatasetRows(clientKey, datasetId, chunkCount) {
+export function getDatasetRows(clientKey, datasetId, chunkCount) { return memoRows(`R|${clientKey}|${datasetId}|${chunkCount}`, () => fetchRows(clientKey, datasetId, chunkCount)); }
+async function fetchRows(clientKey, datasetId, chunkCount) {
   const chunks = await Promise.all(
     Array.from({ length: chunkCount }, (_, i) => getDoc(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)))));
   return chunks.flatMap((snap) => parseChunk(snap.data().data));
@@ -581,13 +595,27 @@ export async function getDatasetRecord(datasetId) {
 }
 
 /** The admin: one player's rows in one request (lists the pieces, so it needs no record read first). */
-export async function getDatasetRowsListed(clientKey, datasetId) {
+// (update 312) a player's rows, kept while the app is open (cleared when a data file is uploaded or deleted)
+const rowsMemo = new Map();
+export function clearDataCache() { rowsMemo.clear(); statsMemo.clear(); clientsMemo = null; }
+const memoRows = (k, fn) => { if (!rowsMemo.has(k)) { const p = fn(); rowsMemo.set(k, p); p.catch(() => rowsMemo.delete(k)); } return rowsMemo.get(k); };
+export function getDatasetRowsListed(clientKey, datasetId) { return memoRows(`L|${clientKey}|${datasetId}`, () => fetchRowsListed(clientKey, datasetId)); }
+async function fetchRowsListed(clientKey, datasetId) {
   const snap = await getDocs(collection(db, "clientData", clientKey, "datasets", datasetId, "chunks"));
   return snap.docs.sort((a, b) => Number(a.id) - Number(b.id)).flatMap((d) => parseChunk(d.data().data));
 }
 
 /** Every clientKey known to the system, with a display label, from users/invites/datasets. */
-export async function adminAllClients() {
+// (update 312) kept for two minutes, so the Watchlist and Stats don't each read every user, code and file again
+let clientsMemo = null;
+export function adminAllClients() {
+  if (clientsMemo && Date.now() - clientsMemo.at < 120000) return clientsMemo.promise;
+  const promise = fetchAllClients();
+  clientsMemo = { at: Date.now(), promise };
+  promise.catch(() => { if (clientsMemo?.promise === promise) clientsMemo = null; });
+  return promise;
+}
+async function fetchAllClients() {
   const [usersSnap, invitesSnap, datasetsSnap] = await Promise.all([
     getDocs(collection(db, "users")), getDocs(collection(db, "invites")), getDocs(collection(db, "datasets")),
   ]);

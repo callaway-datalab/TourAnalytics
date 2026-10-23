@@ -83,6 +83,7 @@ export function navigate(hash) { location.hash = hash; }
 let renderGen = 0;
 
 let renderedFor; // (update 291)
+let warmFor = null, warmP = null; // (update 312)
 async function render() {
   const gen = ++renderGen;
   const raw = location.hash.slice(1) || "/login";
@@ -90,6 +91,22 @@ async function render() {
   const state = await whenReady();
   if (gen !== renderGen) return;
   renderedFor = state.user?.uid ?? null; // (update 291: the sign-in this page was drawn for)
+  // (update 312) the first page after signing in (or opening the app): load the data every page uses first, on the
+  // loading screen, so the pages afterwards open without waiting
+  if (state.user && (state.isAdmin || state.profile) && !raw.startsWith("/login")) {
+    if (warmFor !== state.user.uid) {
+      warmFor = state.user.uid;
+      const root = document.getElementById("app");
+      const sub = document.createElement("span"); sub.className = "boot-sub"; sub.textContent = "This may take a few seconds";
+      const line = document.createElement("span"); line.className = "boot-line"; line.textContent = "Loading Data\u2026";
+      const msg = document.createElement("p"); msg.className = "boot-msg ta-loading boot-data"; msg.append(line, sub);
+      root.replaceChildren(msg);
+      const step = (t) => { if (t) line.textContent = t; };
+      warmP = import("./preload.js").then((m) => Promise.race([m.warmUp(state, step), new Promise((r) => setTimeout(r, 90000))])).catch(() => {});
+    }
+    await warmP;
+    if (gen !== renderGen) return;
+  }
   const team = effectiveTeam(state); // a real team member, or the admin previewing one
 
   // Admin: preview any account's portal. Players go to their own view; team members and

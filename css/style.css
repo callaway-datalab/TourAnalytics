@@ -4680,3 +4680,8 @@ dialog.issue-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .sg-box > .comp-toggle, .sg-box > .comp-toggle[aria-pressed="true"] { color: var(--muted, #8e8e93); border-color: var(--line); background: transparent; }
 .sg-box > .comp-toggle:hover { color: var(--ink-2, #d1d1d6); }
 .sg-box.has-comp-toggle > h3 { padding-right: 5.5rem; }
+
+/* (update 312) the first loading screen while the data loads: the ball round the cup, then two lines under it */
+.boot-msg.boot-data { padding-top: 2.6rem !important; }
+.boot-data .boot-line, .boot-data .boot-sub { display: block; color: #f2f2f7; font: 600 0.95rem/1.4 var(--font-body); letter-spacing: 0.01em; }
+.boot-data .boot-sub { color: rgba(235, 235, 245, 0.62); font-weight: 400; font-size: 0.8rem; margin-top: 0.15rem; }

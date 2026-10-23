@@ -78,9 +78,11 @@ export async function render(main, { previewClient }) {
     ownCache.set(key, r);
     return r;
   }
-  if (ds) import("../fieldStore.js").then(({ getFieldDetail }) => getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0)).then((res) => {
-    if (res?.players?.length) { detail = res.players; for (const [k, v] of ownCache) if (!v) ownCache.delete(k); if (src() === "tour") draw(); } // (update 172: anyone without rounds yet gets them from the detail)
-  }).catch(() => {});
+  // (update 312) the field's detail (loaded up front, while the app opens): waited for here, so each player's rounds
+  // come from it rather than being fetched one by one
+  if (ds) {
+    try { const res = await (await import("../fieldStore.js")).getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0); if (res?.players?.length) detail = res.players; } catch { /* the rows, one by one */ }
+  }
 
   // ---- (update 169) Entered Rounds: the rounds entered in Enter New Round, yours included ----
   // You: your own entered rounds (add yourself with "＋ Me"). The admin sees everyone's; a coach their players' and
@@ -102,10 +104,10 @@ export async function render(main, { previewClient }) {
   };
   let enteredField = null, enteredLoading = null;
   const loadEntered = () => (enteredLoading ||= (async () => {
-    const { watchAllRounds, watchPlayerRounds, isPlayerKey } = await import("../rounds.js");
+    const { liveAllRounds, watchPlayerRounds, isPlayerKey } = await import("../rounds.js");
     const { enteredPlayers } = await import("../roundCalc.js");
     const keysToLoad = [...new Set([...(multi ? teamKeys : [single]), myKey].filter(Boolean))];
-    const rounds = admin ? ((await once((cb) => watchAllRounds(cb))) || []).filter((r) => isPlayerKey(r.playerKey) || r.playerKey === myKey) : (await Promise.all(keysToLoad.map((k) => once((cb) => watchPlayerRounds(k, cb))))).flat();
+    const rounds = admin ? ((await liveAllRounds()) || []).filter((r) => isPlayerKey(r.playerKey) || r.playerKey === myKey) : (await Promise.all(keysToLoad.map((k) => once((cb) => watchPlayerRounds(k, cb))))).flat();
     enteredField = enteredPlayers(rounds || [], (r) => (r.playerKey === myKey && multi ? youLabel : labels.get(r.playerKey) || plainName(r.playerLabel || r.playerKey.replace(/^c_/, ""))));
     for (const p of enteredField) if (!labels.has(p.key)) labels.set(p.key, p.label);
     return enteredField;

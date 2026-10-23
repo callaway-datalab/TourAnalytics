@@ -6,7 +6,7 @@
 import {
   collection, collectionGroup, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { db } from "./firebase-init.js";
+import { db, auth } from "./firebase-init.js";
 
 const roundsOf = (playerKey) => collection(db, "entries", playerKey, "rounds");
 
@@ -153,9 +153,23 @@ export function watchAllRounds(cb) {
 }
 /** (update 307) a player's key: not a coach / caddy / analyst / employee (t_…) or the admin's own (a_…) */
 export const isPlayerKey = (k) => typeof k === "string" && !k.startsWith("t_") && !k.startsWith("a_");
+/** (update 312) the admin: every entered round, kept up to date by one listener for the whole visit (started while
+ *  the app loads), so the Watchlist and Stats have them at once. */
+let allLive = null;
+export function liveAllRounds() {
+  const uid = auth.currentUser?.uid || null;
+  if (allLive && allLive.uid !== uid) { allLive.stop?.(); allLive = null; }
+  if (!allLive) {
+    let res; const ready = new Promise((r) => { res = r; });
+    allLive = { uid, list: null, ready };
+    allLive.stop = watchAllRounds((l) => { if (allLive) allLive.list = l; res(l); });
+  }
+  const me = allLive;
+  return me.ready.then(() => me.list || []);
+}
 /** Every player's entered rounds (the field for comparisons and rankings): non-players' own rounds are left out. */
 export async function getAllRounds() {
-  return listOf(await getDocs(collectionGroup(db, "rounds"))).filter((r) => isPlayerKey(r.playerKey));
+  return (await liveAllRounds()).filter((r) => isPlayerKey(r.playerKey));
 }
 
 /** Every round you own: your own rounds, plus any you entered for a player under the earlier
