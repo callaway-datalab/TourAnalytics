@@ -4600,3 +4600,21 @@ html.ta-only-loading body::after { opacity: 0.45; }
 table th, table td, table thead th, table tbody td { text-align: center !important; }
 table th > *, table td > * { margin-left: auto; margin-right: auto; }
 table td > :is(.row-actions, .type-tags, .cd-actions) { justify-content: center; }
+
+/* (update 299) phones, the Stats page: the rank-comparison, round/event/month/year and product pills a little smaller,
+   so none of them scroll sideways */
+@media (max-width: 520px) {
+  .sg-panel .seg.small .seg-btn, .sg-panel .subnav.small a, .top-pills .seg-btn { font-size: 0.72rem !important; padding: 0.32rem 0.5rem !important; }
+  .sg-panel .subnav.small, .top-pills .seg { gap: 0.1rem !important; flex-wrap: wrap; overflow-x: visible !important; }
+  .top-pills { flex-wrap: wrap; gap: 0.4rem; }
+  .peak-len { width: 3.2rem; }
+}
+/* Show Product: the colour legend and the product-type pills */
+.trend-kinds { margin: 0.5rem 0 0.2rem; }
+.prod-legend { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; margin: 0.6rem 0 0.2rem; font-size: 0.78rem; color: var(--ink-2, #d1d1d6); }
+.prod-key { display: inline-flex; align-items: center; gap: 0.4rem; }
+.prod-key i { width: 0.75rem; height: 0.75rem; border-radius: 3px; display: inline-block; }
+/* (update 299) Where they play their best: SG and VS AVG headings centred over their numbers */
+.cmp-cond-v, .cmp-cond-d { text-align: center !important; }
+.cmp-cond-h > span:nth-last-child(1), .cmp-cond-h > span:nth-last-child(2) { text-align: center; }
+.trend-prod { margin-left: 0.35rem; }

@@ -55,9 +55,9 @@ function peakNote(peak, me, cat, peakN, tn) {
   const span = a instanceof Date && b instanceof Date && a.getFullYear() === b.getFullYear() ? `${md(a)} \u2013 ${mdy(b)}` : `${mdy(a)} \u2013 ${mdy(b)}`;
   const by = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
   const list = rs.slice(0, 15).map((rd) => `${md(day(rd))} ${rd.event || ""}${rd.roundNo ? ` R${rd.roundNo}` : ""}`.trim()).join("; ") + (rs.length > 15 ? "; \u2026" : "");
-  return `Personal Peak: ${me?.label || "the player"}\u2019s ${peakN} best rounds by ${by}, played ${span}. The rounds: ${list}. `
+  return `Personal Peak: ${me?.label || "the player"}\u2019s best ${peakN} rounds in a row by ${by}, ${span}. The rounds: ${list}. `
     + `Each value is the difference from that peak, with every row from those same rounds (hover a value for theirs). Zero means they\u2019re playing at that level; red is how far below it. `
-    + `Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above to use more or fewer best rounds.`;
+    + `Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above for a longer or shorter stretch.`;
 }
 
 export function sgDashboard(container, opts) {
@@ -1340,7 +1340,11 @@ export function sgDashboard(container, opts) {
     const peak = peakOn ? (() => {
       const scored = ordered.map((rd) => { let t = 0, any = false; for (const x of rd.shots) if (!cat || x.cat === cat) { t += x.sg; any = true; } return { rd, t, any }; }).filter((x) => x.any);
       if (scored.length < peakN) return { map: new Map(), rounds: [], short: true, have: scored.length };
-      const best = scored.sort((x, y) => y.t - x.t).slice(0, peakN).map((x) => x.rd).sort((x, y) => String(x.date).localeCompare(String(y.date)));
+      // (update 299) the best stretch of N rounds in a row (oldest first), by the filters' total
+      const seq = [...scored].sort((x, y) => String(x.rd.date || "").localeCompare(String(y.rd.date || "")));
+      let sum = 0, bestSum = -Infinity, bestAt = 0;
+      seq.forEach((x, i) => { sum += x.t; if (i >= peakN) sum -= seq[i - peakN].t; if (i >= peakN - 1 && sum > bestSum) { bestSum = sum; bestAt = i - peakN + 1; } });
+      const best = seq.slice(bestAt, bestAt + peakN).map((x) => x.rd);
       return { map: rowVals(best, cat), rounds: best, short: false };
     })() : null;
     const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
@@ -1363,7 +1367,7 @@ export function sgDashboard(container, opts) {
       const pk = peak && !peak.short ? gv(peak.map, row.key) : null; // (update 266) the best rounds' own value
       tr.push(el("tr", { class: row.sub ? "cmp-sub" : "" }, [
         el("td", { title: row.tip || null }, row.label),
-        el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds: ${row.fmt(pk)}` : null }, shown),
+        el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds in a row: ${row.fmt(pk)}` : null }, shown),
         el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "—"),
         el("td", { class: `num ${ch == null ? "" : good(ch)}` }, chTxt),
       ]));
@@ -1371,7 +1375,7 @@ export function sgDashboard(container, opts) {
     return [
       el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their ${peakN} best rounds${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `Vs #${vsN} ${refP.label || ""}`.trim()) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `Vs #${vsN} ${refP.label || ""}`.trim()) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
         el("tbody", {}, tr),
       ])),
       // (update 240) what the colours mean
@@ -1430,16 +1434,22 @@ export function sgDashboard(container, opts) {
           title: "SG / round", compare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
         }), "", `${cat}-${fieldName}`, { rankPick: !fieldIsSummary() })));
       }
-      const byClubC = sgByClubBox(mine, cat); if (byClubC) visuals.push(byClubC);
+      // (update 299) no SG by Club chart: products are on SG Trends (Show Product)
       if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
     }
 
+    const prodOn = !!st.showProduct; // (update 299) Show Product: each bar coloured by the product used
+    const toggles = el("div", { class: "subnav small trend-toggles" }, [
+      ...[["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
+        const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
+        a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
+        return a;
+      }),
+      (() => { const a = el("a", { href: "#", class: "trend-prod", "aria-pressed": String(prodOn), "aria-current": prodOn ? "page" : null }, "Show Product");
+        a.addEventListener("click", (e) => { e.preventDefault(); st.showProduct = !prodOn; draw(); }); return a; })(),
+    ]);
+    if (prodOn) { blocks.push(productTrend(mine, cat, toggles)); return blocks; }
     const t = trend(mine, cat || null, st.trendBy);
-    const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
-      const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
-      a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
-      return a;
-    }));
     // Each round / event / month / year: the best result there (Top 1), the average of the best few (Top 10 …)
     // or of everyone (All), among the players who played it, this player included (so if they had the best
     // round, their bar meets the dot).
@@ -1690,6 +1700,58 @@ export function sgDashboard(container, opts) {
   // (update 210) SG by Club: strokes gained a round with each club model (brand + model), best first.
   // A model with only a few rounds is marked, so 3 rounds isn't read like 60.
   const FEW = 10;
+  /* (update 299) SG Trends with Show Product: one kind of product (pills; one always picked), each bar coloured by the
+     model used most in it, a legend on top, the products in the tap-up. Off-the-Tee's Driver / Non-Driver / Irons
+     are its Tee Shot (Driver) / (Wood) / (Iron) shots. */
+  const PROD_KINDS = { Driver: ["Driver"], "Non-Driver": ["Non-Driver", "Fairway Wood", "Hybrid"], Irons: ["Iron"], Wedges: ["Wedge"], Putters: ["Putter"], Balls: ["Ball"] };
+  const PROD_FOR = { "": ["Driver", "Non-Driver", "Irons", "Wedges", "Putters", "Balls"], PUTT: ["Putters", "Balls"], OTT: ["Driver", "Non-Driver", "Irons", "Balls"],
+    APP: ["Non-Driver", "Irons", "Wedges", "Balls"], ARG: ["Wedges", "Irons", "Balls"] };
+  const PROD_COLORS = ["#d4b483", "#2f9bff", "#30d158", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff", "#ffd60a", "#ac8e68", "#5e5ce6", "#ff6482", "#a2845e"];
+  function productTrend(mine, cat, toggles) {
+    const ottBand = { Driver: /driver/i, "Non-Driver": /wood|hybrid|non.?driver|3w|5w/i, Irons: /iron/i };
+    const prodOf = (s, kind) => (kind === "Balls" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear || null);
+    const fits = (s, kind) => {
+      if (cat && s.cat !== cat) return false;
+      if (kind === "Balls") return !!s.ball;
+      if (cat === "OTT" && ottBand[kind]) return ottBand[kind].test(String(s.dist || "")) && !!s.gear;
+      return !!s.gear && PROD_KINDS[kind].includes(gearInfo(s.gear).kind);
+    };
+    const kinds = PROD_FOR[cat || ""] || PROD_FOR[""];
+    const has = kinds.filter((k) => mine.some((rd) => rd.shots.some((s) => fits(s, k))));
+    if (!has.includes(st.productKind)) st.productKind = has[0] || kinds[0];
+    const kind = st.productKind;
+    const pills = el("div", { class: "subnav small trend-kinds", role: "radiogroup", "aria-label": "Product type" }, kinds.map((k) => {
+      const on = k === kind, any = has.includes(k);
+      const a = el("a", { href: "#", role: "radio", "aria-checked": String(on), "aria-current": on ? "page" : null, class: any ? null : "nav-off", title: any ? null : "No shots with this kind of product in this selection" }, k);
+      a.addEventListener("click", (e) => { e.preventDefault(); if (any && !on) { st.productKind = k; draw(); } });
+      return a;
+    }));
+    // the rounds, with only this kind's shots (rounds without any left out)
+    const rs = mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => fits(s, kind)) })).filter((rd) => rd.shots.length);
+    if (!rs.length) return panelBox("SG Trends", [toggles, pills, el("p", { class: "muted small" }, "No product information on these shots: products come from Enter New Round (with WITB) or a club column in an uploaded file.")], "full");
+    // grouped as SG Trends groups (round, event, month or year)
+    const keyOf = (rd, i) => { const d = new Date(rd.date), ok = !isNaN(d);
+      return st.trendBy === "round" ? `r${i}` : st.trendBy === "year" ? (ok ? String(d.getFullYear()) : "Unknown") : st.trendBy === "month" ? (ok ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown") : (rd.event || rd.date || rd.key); };
+    const groups = new Map();
+    rs.forEach((rd, i) => {
+      const k = keyOf(rd, i), d = new Date(rd.date);
+      const g = groups.get(k) || groups.set(k, { label: st.trendBy === "round" ? `${isNaN(d) ? rd.date : shortDate(d)}${rd.roundNo ? ` R${rd.roundNo}` : ""}` : st.trendBy === "month" && k !== "Unknown" ? new Date(`${k}-15T12:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : k,
+        short: st.trendBy === "event" && !isNaN(d) ? shortDate(d) : null, sg: 0, rounds: 0, event: rd.event, prods: new Map() }).get(k);
+      g.rounds++; for (const s of rd.shots) { g.sg += s.sg; const p = prodOf(s, kind); if (p) g.prods.set(p, (g.prods.get(p) || 0) + (s.w || 1)); }
+    });
+    const list = [...groups.values()].map((g) => ({ ...g, value: g.sg / g.rounds, top: [...g.prods].sort((a, b) => b[1] - a[1])[0]?.[0] || null }));
+    const used = new Map(); for (const g of list) for (const [p, n] of g.prods) used.set(p, (used.get(p) || 0) + n);
+    const order = [...used].sort((a, b) => b[1] - a[1]).map(([p]) => p);
+    const colorOf = (p) => PROD_COLORS[order.indexOf(p) % PROD_COLORS.length] || "#8e8e93";
+    const nameOf = (p) => { const gi = gearInfo(p); return `${gi.brand} ${gi.model}`.trim() || p; };
+    const legend = el("div", { class: "prod-legend" }, order.map((p) => el("span", { class: "prod-key" }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p)])));
+    return panelBox("SG Trends", [toggles, pills, legend, chartBox((c, as) => barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
+      title: `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
+      shortLabels: list.map((g) => g.short),
+      tooltip: (i) => { const g = list[i], all = [...g.prods].sort((a, b) => b[1] - a[1]);
+        return [st.trendBy === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`)].filter(Boolean); },
+    }), "wide", "trend-prod")], "full");
+  }
   function sgByClubBox(mine, cat) {
     if (!isSG() || !mine?.length) return null;
     const rs = cat ? mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === cat) })) : mine;
@@ -1747,7 +1809,7 @@ export function sgDashboard(container, opts) {
   function vsPills() {
     const pills = el("div", { class: "seg small vs-pills" }, [["1", "#1"], ["10", "#10"], ["25", "#25"], ["50", "#50"], ["peak", "Personal Peak"]].map(([v, l]) => {
       const on = st.vsRank === v, isPeak = v === "peak";
-      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}${isPeak ? " vs-peak" : ""}`, "aria-pressed": String(on), title: isPeak ? "Show each stat against the player\u2019s own best rounds (as many as the Peak Length)" : `Show each stat against the player ranked #${v}` }, l);
+      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}${isPeak ? " vs-peak" : ""}`, "aria-pressed": String(on), title: isPeak ? "Show each stat against the player\u2019s own best stretch of rounds in a row (as many as the Peak Length)" : `Show each stat against the player ranked #${v}` }, l);
       b.addEventListener("click", () => {
         if (on) { st.vsRank = null; if (!isPeak) { st.rankTopManual = false; st.rankTopFor = null; } }
         else if (isPeak) st.vsRank = "peak"; // (the gold dots on the charts stay as they were)
@@ -1758,11 +1820,11 @@ export function sgDashboard(container, opts) {
     }));
     let len = null;
     if (st.vsRank === "peak") {
-      const inp = el("input", { type: "number", class: "peak-len", min: "2", max: "100", step: "1", value: String(st.peakN || 10), inputmode: "numeric", "aria-label": "Peak Length: how many best rounds" });
+      const inp = el("input", { type: "number", class: "peak-len", min: "2", max: "100", step: "1", value: String(st.peakN || 10), inputmode: "numeric", "aria-label": "Peak Length: how many rounds in a row" });
       const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 2) { inp.value = String(st.peakN || 10); return; } const v = Math.min(100, n); if (v === (st.peakN || 10)) return; st.peakN = v; draw(); setTimeout(() => document.querySelector(".peak-len")?.focus(), 0); };
       inp.addEventListener("change", apply);
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
-      len = el("label", { class: "peak-len-wrap", title: "How many of the best rounds (by the strokes gained the filters are about) make the peak" }, [el("span", { class: "ms-label" }, "Peak Length"), inp, el("span", { class: "muted small" }, "rounds")]);
+      len = el("label", { class: "peak-len-wrap", title: "How many rounds in a row make the peak (the best stretch, by the strokes gained the filters are about)" }, [el("span", { class: "ms-label" }, "Peak Length"), inp, el("span", { class: "muted small" }, "rounds")]);
     }
     return el("div", { class: "top-pills" }, [el("span", { class: "ms-label" }, "Rank comparisons"), pills, len]);
   }
@@ -1872,7 +1934,7 @@ export function sgDashboard(container, opts) {
     const w = Math.max(0.04, frac), cf = Math.max(0.04, colorFrac);
     return `width:${w * 100}%;background:linear-gradient(90deg, ${near}, ${far});background-size:${100 / cf}% 100%;background-repeat:no-repeat`;
   };
-  function barChart(canvas, labels, values0, { title: title0, compare: compare0, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar" } = {}) {
+  function barChart(canvas, labels, values0, { title: title0, compare: compare0, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar", colors = null } = {}) {
     // (update 228) Relative to Avg: each bar less the compared players' value at it (the dots become the zero line)
     const relNow = relOn() && Array.isArray(compare0) && compare0.some((x) => x != null);
     const values = relNow ? values0.map((v, i) => (v != null && compare0[i] != null ? v - compare0[i] : null)) : values0;
@@ -1891,7 +1953,7 @@ export function sgDashboard(container, opts) {
       // square where they meet zero, rounded at the tip; a glint on hover; growing from zero when drawn.
       : { type: "bar", label: title || "", data: values, order: 2, maxBarThickness: 46, categoryPercentage: 0.72, barPercentage: 0.9,
           borderRadius: 8, borderSkipped: "start",
-          backgroundColor: (c) => barFill(c, single), hoverBackgroundColor: (c) => barFill(c, single),
+          backgroundColor: colors ? colors : (c) => barFill(c, single), hoverBackgroundColor: colors ? colors : (c) => barFill(c, single), // (update 299: a colour per bar, by product)
           borderWidth: 0 }];
     // Reference marks: "All players" as blue dashes at each bar, "Average" as a yellow dashed line.
     // the other players: gold dots in front of the bars
