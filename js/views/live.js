@@ -130,7 +130,7 @@ export async function render(main) {
   // (update 264) the API's side: its tournaments, its stat names, its players (for the search)
   let apiEvents = [], apiOverrides = {}, apiPlayers = [], uploadEvents = [], apiSeen = false, curVis = null, refreshing = "", stopEvent = null, watchedRel = null, reqId = 0;
   let field = [], tours = [], events = [], lb = null, file = null, statsMeta = [], metaById = {}, uploadedAt = null, loadErr = "", version = null;
-  let visible = ls.get("cols3", null); // null = the default columns (update 284: just strokes gained; new keys, so the new defaults apply)
+  let visible = ls.get("cols4", null); // null = the default columns (update 284: just strokes gained; new keys, so the new defaults apply)
   let showRanks = ls.get("ranks2", true), minOn = true, wide = ls.get("wide2", false);
   let sel = { player: null, t: null, view: "latest" }, sortKey = "TOTAL", sortDir = -1;
   let colsOpen = false, pickerQ = "", q = "";
@@ -147,9 +147,9 @@ export async function render(main) {
     ls.set("favAdd", [...favAdd]); ls.set("favOff", [...favOff]);
   };
   const valKey = () => (sel.view === "event" ? "event" : "round");
-  const saveVisible = () => ls.set(curVis || "cols3", visible); // (update 264: the API's stats and the uploaded ones are chosen separately)
-  const allKeys = () => BASE_KEYS.concat(statsMeta.map((m) => `x:${m.id}`));
-  const defaultKeys = () => BASE_KEYS; // (update 284) the strokes-gained columns; other stats from Columns
+  const saveVisible = () => ls.set(curVis || "cols4", visible); // (update 264: the API's stats and the uploaded ones are chosen separately)
+  const allKeys = () => BASE_KEYS.concat(["RDS"], statsMeta.map((m) => `x:${m.id}`));
+  const defaultKeys = () => BASE_KEYS.filter((k) => k !== "T2G"); // (update 284/293) the strokes-gained columns but Tee-to-Green; RDS and other stats from Columns
   const isOn = (key) => (visible === null ? defaultKeys().includes(key) : visible.includes(key));
   const columns = () => COLS.filter(([k]) => isOn(k)).map(([key, label]) => ({ key, label }))
     .concat(statsMeta.filter((m) => isOn(`x:${m.id}`)).map((m) => ({ key: `x:${m.id}`, label: m.label, tip: (m.tip || "") + (m.lower ? " (Lower is better.)" : ""), id: m.id, lower: m.lower })));
@@ -313,6 +313,7 @@ export async function render(main) {
       F.map[group].items.push({ key, label, def, group });
     };
     COLS.forEach(([k, l]) => add("Strokes Gained", k, l, true));
+    add("Strokes Gained", "RDS", "Rounds played (Event)", false); // (update 293: RDS is a column you can turn on)
     statsMeta.forEach((m) => add(m.group || "More Stats", `x:${m.id}`, m.label, m.default !== false));
     return fams;
   }
@@ -391,7 +392,7 @@ export async function render(main) {
     const vals = rows.map(get), rankNum = [], tally = {}; // ties share a place: T3, T3, 5
     vals.forEach((v, i) => { rankNum[i] = v == null ? null : i > 0 && vals[i - 1] != null && Math.abs(vals[i - 1] - v) < 1e-9 ? rankNum[i - 1] : i + 1; if (rankNum[i] != null) tally[rankNum[i]] = (tally[rankNum[i]] || 0) + 1; });
     const place = (i) => (rankNum[i] == null ? "–" : tally[rankNum[i]] > 1 ? `T${rankNum[i]}` : String(rankNum[i]));
-    const heads = () => [["#"], ["Player"], ...cols.map((c) => [c.label, c.key, c.tip, c.lower]), ...(sel.view === "event" ? [["RDS"]] : [])].map(([label, key, tip, lower]) => {
+    const heads = () => [["#"], ["Player"], ...cols.map((c) => [c.label, c.key, c.tip, c.lower]), ...(sel.view === "event" && isOn("RDS") ? [["RDS"]] : [])].map(([label, key, tip, lower]) => {
       const on = key && key === sortKey;
       const short = { TOTAL: "Total", OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT", T2G: "T2G" }[key]; // (update 284: short headings on a phone)
       const th = el("th", { title: tip || (short ? label : null), class: key ? "lv-sort" : null, "aria-sort": on ? (sortDir < 0 ? "descending" : "ascending") : null, tabindex: key ? "0" : null }, [...(short ? [el("span", { class: "lv-h-full" }, label), el("span", { class: "lv-h-short" }, short)] : [label]), on ? el("span", { class: "lv-arrow", "aria-hidden": "true" }, sortDir < 0 ? " ▼" : " ▲") : null]);
@@ -416,7 +417,7 @@ export async function render(main) {
       const fav = isFav(r.name);
       const star = el("button", { type: "button", class: `lv-star${fav ? " on" : ""}`, "aria-pressed": String(fav), "aria-label": `${fav ? "Remove" : "Add"} ${r.name} ${fav ? "from" : "to"} favorites`, title: fav ? "Favorite (tap to remove)" : "Add to favorites" }, fav ? "\u2605" : "\u2606");
       star.addEventListener("click", (e) => { e.stopPropagation(); toggleFav(r.name); drawBoard(); });
-      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [star, el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : null]), ...cells, sel.view === "event" ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
+      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [star, el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : null]), ...cells, sel.view === "event" && isOn("RDS") ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
       tr.addEventListener("click", () => pick({ player_id: r.player_id, name: r.name }));
       return tr;
     };
@@ -516,7 +517,7 @@ export async function render(main) {
     file = t.api ? t.file : board(t);
     statsMeta = file.meta || file.stats.map((k) => { const d = statDef(k); return { id: k, label: d.label, group: GROUP[k] || "More Stats", tip: d.help || "", lower: d.higher === false, rank: d.higher != null, counts: !!(d.pct || k === "prox"), default: ON.has(k) }; });
     metaById = Object.fromEntries(statsMeta.map((m) => [m.id, m]));
-    const vk = t.api ? "colsApi2" : "cols3"; if (vk !== curVis) { curVis = vk; visible = ls.get(vk, null); }
+    const vk = t.api ? "colsApi3" : "cols4"; if (vk !== curVis) { curVis = vk; visible = ls.get(vk, null); }
     warnBar.hidden = !(file.warnings && file.warnings.length);
     // (update 263) opening a tournament: a final one on the Event (the whole tournament), one in progress on its latest round
     let view = sel.view;

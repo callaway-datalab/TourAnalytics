@@ -12,16 +12,21 @@ function check(node) {
 // (update 291) the page is just the ball and cup (nothing else to read yet): show the course photo behind it, as on
 // the first loading screen
 function onlyLoading() {
+  // (update 293) "only the loader": a ball-and-cup on screen and, apart from it, no more than a heading's worth of
+  // words (a page title, tour pills, a button or two), so the screen is otherwise empty
   const page = document.querySelector("#app main") || document.getElementById("app");
-  const loader = page?.querySelector(".ta-loading");
+  const loaders = [...(page?.querySelectorAll(".ta-loading") || [])].filter((x) => x.getClientRects().length);
   let only = false;
-  if (loader) {
-    only = true;
+  if (loaders.length) {
+    let chars = 0;
     const w = document.createTreeWalker(page, NodeFilter.SHOW_TEXT);
     for (let n = w.nextNode(); n; n = w.nextNode()) {
-      if (!n.textContent.trim() || n.parentElement?.closest(".ta-loading, script, style, [hidden]")) continue;
-      only = false; break;
+      const t = n.textContent.trim(), p = n.parentElement;
+      if (!t || !p || p.closest(".ta-loading, script, style, [hidden], .section-nav, .subnav") || !p.getClientRects().length) continue;
+      chars += t.length;
+      if (chars > 160) break;
     }
+    only = chars <= 160;
   }
   document.documentElement.classList.toggle("ta-only-loading", only);
 }

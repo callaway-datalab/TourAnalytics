@@ -127,6 +127,9 @@ export async function render(main, { previewClient }) {
   const evenBadges = () => {
     const bs = [...root.querySelectorAll(".wl-cards .wl-badges")];
     bs.forEach((b) => { b.style.minHeight = ""; });
+    // (update 294) cards in one column (a phone): nothing to line up, so no padding under the badges
+    const cards0 = [...root.querySelectorAll(".wl-cards .wl-card")];
+    if (cards0.length < 2 || new Set(cards0.map((c) => Math.round(c.getBoundingClientRect().left))).size < 2) { cards0.forEach((c) => { c.style.minHeight = ""; }); return; }
     const max = Math.max(0, ...bs.map((b) => b.getBoundingClientRect().height));
     bs.forEach((b) => { b.style.minHeight = `${max}px`; });
     // and anything else (a tour switch on one card): every folded card as tall as the tallest folded one
