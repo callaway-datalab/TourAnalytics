@@ -151,8 +151,11 @@ export function watchRoundsFor(playerKeys, cb) {
 export function watchAllRounds(cb) {
   return onSnapshot(collectionGroup(db, "rounds"), (s) => cb(listOf(s).sort((a, b) => String(b.date).localeCompare(String(a.date)))), () => cb([]));
 }
+/** (update 307) a player's key: not a coach / caddy / analyst / employee (t_…) or the admin's own (a_…) */
+export const isPlayerKey = (k) => typeof k === "string" && !k.startsWith("t_") && !k.startsWith("a_");
+/** Every player's entered rounds (the field for comparisons and rankings): non-players' own rounds are left out. */
 export async function getAllRounds() {
-  return listOf(await getDocs(collectionGroup(db, "rounds")));
+  return listOf(await getDocs(collectionGroup(db, "rounds"))).filter((r) => isPlayerKey(r.playerKey));
 }
 
 /** Every round you own: your own rounds, plus any you entered for a player under the earlier

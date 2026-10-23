@@ -99,7 +99,7 @@ async function render() {
     const u = await getUserProfile(decodeURIComponent(raw.slice("/view-as-member/".length).split("?")[0])).catch(() => null);
     if (!u) { navigate(homeFor(state)); return; }
     if (isTeamKey(u.clientKey)) {
-      setPreviewTeam({ uid: u.uid, name: u.name, email: u.email, kind: u.kind || null, access: u.access || {} });
+      setPreviewTeam({ uid: u.uid, name: u.name, email: u.email, kind: u.kind || null, access: u.access || {}, clientKey: u.clientKey }); // (update 307: clientKey, their own rounds)
       previewClient = null;
       navigate("/team");
     } else {
@@ -121,7 +121,7 @@ async function render() {
       if (person) t = { uid: null, name: person.name, email: id, kind: null, access: person.access };
     } else {
       const inv = await fetchInvite(id).catch(() => null);
-      if (inv) t = { uid: null, name: inv.clientLabel || "this person", email: inv.email || null, kind: inv.kind || null, access: inv.access || {} };
+      if (inv) t = { uid: null, name: inv.clientLabel || "this person", email: inv.email || null, kind: inv.kind || null, access: inv.access || {}, clientKey: inv.clientKey || null };
     }
     if (!t) { navigate(homeFor(state)); return; }
     setPreviewTeam(t);
@@ -140,6 +140,8 @@ async function render() {
     const to = ["/dashboard", "/documents", "/course-reports"].includes(qs.get("to")) ? qs.get("to") : "/dashboard";
     if (!team.preview && state.isTeam && key === state.profile?.clientKey) {
       previewClient = { key, label: state.profile?.name || "Me", self: true }; // a team member's own entered rounds
+    } else if (team.preview && team.selfKey && key === team.selfKey) {
+      previewClient = { key, label: team.name || label, teamSelf: true }; // (update 307) the admin, in their portal: their own rounds
     } else if (team.isTeam && team.teamAccess[key]) {
       previewClient = { key, label: teamLabels(team.teamAccess).get(key) || label, role: team.teamAccess[key].role };
     } else if (state.isAdmin) {
@@ -161,7 +163,7 @@ async function render() {
     return;
   }
   // A team member whose access to this player was just removed goes back to their list.
-  if (previewClient && !previewClient.self && team.isTeam && !team.teamAccess[previewClient.key]) previewClient = null;
+  if (previewClient && !previewClient.self && !previewClient.teamSelf && team.isTeam && !team.teamAccess[previewClient.key]) previewClient = null;
   const path = raw.split("?")[0];
   const found = match(path);
 
@@ -185,8 +187,10 @@ async function render() {
   if (["course-prep", "practice"].includes(routeId) && !(state.isAdmin && !previewClient && !getPreviewTeam())) { navigate("/entry"); return; }
   if (routeId === "team") {
     const keys = teamKeys();
-    if (keys.length > 1) { navigate("/player-stats"); return; }
+    // (update 307) their own entered rounds count as one more to pick from; with no players, it's just theirs
+    if (keys.length + (team.selfKey ? 1 : 0) > 1) { navigate("/player-stats"); return; }
     if (keys.length) { teamPick(keys); navigate("/dashboard"); return; }
+    if (team.selfKey) { previewClient = team.preview ? { key: team.selfKey, label: team.name || "Them", teamSelf: true } : { key: team.selfKey, label: state.profile?.name || "Me", self: true }; navigate("/dashboard"); return; }
   }
   if (previewClient?.role) lastTeamPlayer = previewClient.key;
   if (guard === "client" && team.isTeam && !previewClient && PLAYER_PAGES.includes(routeId)) {

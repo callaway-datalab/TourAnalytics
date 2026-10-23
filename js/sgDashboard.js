@@ -62,7 +62,11 @@ function peakNote(peak, me, cat, peakN, tn) {
 
 export function sgDashboard(container, opts) {
   const { idx, mode } = opts;
-  const showRanks = opts.rankings !== false && !opts.entered; // (update 183: entered rounds are never ranked, no wins or top 10s)
+  const ranksAllowed = opts.rankings !== false && !opts.entered; // (update 183: entered rounds are never ranked, no wins or top 10s)
+  let showRanks = ranksAllowed;
+  // (update 307) a tour that's only the player's own entered rounds (Practice, or a tour they typed in): just them,
+  // no comparison dots and no rankings
+  let soloTour = false;
   const st = opts.state || {};
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
@@ -174,6 +178,10 @@ export function sgDashboard(container, opts) {
         st.tour = [pga || byRounds[0]];
       } else st.tour = [st.tour[0]];
     } else st.tour = [];
+    soloTour = !!(me && st.tour.length && (/^practice$/i.test(String(st.tour[0]).trim())
+      || ![...me.rounds, ...field.flatMap((p) => p.rounds)].some((rd) => !rd.entered && (rd.tour || "") === st.tour[0])));
+    showRanks = ranksAllowed && !soloTour;
+    if (soloTour) field = field.filter((p) => p.key === me.key);
     // Linked filters (update 166): each dropdown lists only what the other picks leave (the tour's courses,
     // a tournament's course, the last month's tournaments). A pick that's no longer there goes.
     const roundPicks = () => ({ months: Number(st.span), year: st.year, tour: st.tour, event: opts.practice ? [] : st.event, course: st.course, roundNo: st.roundNo, ptype: st.ptype });

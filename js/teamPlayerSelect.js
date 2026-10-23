@@ -10,13 +10,13 @@ export function teamPlayerSelect(previewClient, page) {
   const state = getState();
   const team = effectiveTeam(state);
   if (!team.isTeam || !previewClient) return null;
-  // A coach / caddy / analyst can also look at their own entered rounds ("Me").
-  const selfKey = !team.preview ? state.profile?.clientKey : null;
+  // A coach / caddy / analyst can also look at their own entered rounds ("Me"); the admin in their portal, theirs
+  const selfKey = team.selfKey;
   const names = teamLabels(team.teamAccess);
   const players = Object.keys(team.teamAccess)
     .map((key) => ({ key, label: names.get(key) }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  if (selfKey) players.unshift({ key: selfKey, label: state.profile?.name || "Me" }); // you, by your Profile name
+  if (selfKey) players.unshift({ key: selfKey, label: (team.preview ? team.name : state.profile?.name) || "Me" }); // you, by your Profile name
   if (players.length < 2) return null;
   const sel = el("select", { "aria-label": "Player" }, players.map((p) =>
     el("option", { value: p.key, selected: p.key === previewClient.key }, p.label)));
@@ -33,10 +33,10 @@ export function teamPlayerSelect(previewClient, page) {
 export function teamPlayerSearch(previewClient) {
   const state = getState();
   const team = effectiveTeam(state);
-  if (!team.isTeam || Object.keys(team.teamAccess).length < 2) return null;
-  const selfKey = !team.preview ? state.profile?.clientKey : null;
+  const selfKey = team.selfKey; // (update 307: their own rounds count as one to pick, and the admin sees them in their portal)
+  if (!team.isTeam || Object.keys(team.teamAccess).length + (selfKey ? 1 : 0) < 2) return null;
   const names = teamLabels(team.teamAccess);
-  const labels = new Map([...(selfKey ? [[selfKey, state.profile?.name || "Me"]] : []), ...Object.keys(team.teamAccess).map((k) => [k, names.get(k)])]);
+  const labels = new Map([...(selfKey ? [[selfKey, (team.preview ? team.name : state.profile?.name) || "Me"]] : []), ...Object.keys(team.teamAccess).map((k) => [k, names.get(k)])]);
   const picker = playerPicker(labels, (p) => {
     if (!p) { location.hash = "#/player-stats"; return; }
     if (p.key === previewClient?.key) return;

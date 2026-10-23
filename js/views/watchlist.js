@@ -102,10 +102,10 @@ export async function render(main, { previewClient }) {
   };
   let enteredField = null, enteredLoading = null;
   const loadEntered = () => (enteredLoading ||= (async () => {
-    const { watchAllRounds, watchPlayerRounds } = await import("../rounds.js");
+    const { watchAllRounds, watchPlayerRounds, isPlayerKey } = await import("../rounds.js");
     const { enteredPlayers } = await import("../roundCalc.js");
     const keysToLoad = [...new Set([...(multi ? teamKeys : [single]), myKey].filter(Boolean))];
-    const rounds = admin ? await once((cb) => watchAllRounds(cb)) : (await Promise.all(keysToLoad.map((k) => once((cb) => watchPlayerRounds(k, cb))))).flat();
+    const rounds = admin ? ((await once((cb) => watchAllRounds(cb))) || []).filter((r) => isPlayerKey(r.playerKey) || r.playerKey === myKey) : (await Promise.all(keysToLoad.map((k) => once((cb) => watchPlayerRounds(k, cb))))).flat();
     enteredField = enteredPlayers(rounds || [], (r) => (r.playerKey === myKey && multi ? youLabel : labels.get(r.playerKey) || plainName(r.playerLabel || r.playerKey.replace(/^c_/, ""))));
     for (const p of enteredField) if (!labels.has(p.key)) labels.set(p.key, p.label);
     return enteredField;

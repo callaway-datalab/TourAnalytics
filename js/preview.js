@@ -8,7 +8,8 @@ export const setPreviewTeam = (t) => { previewTeam = t; };
 /** The team view being shown: the admin's preview of someone, or the signed-in team member's own. */
 export function effectiveTeam(state) {
   if (state.isAdmin && previewTeam) {
-    return { isTeam: true, preview: true, teamAccess: previewTeam.access || {}, uid: previewTeam.uid, email: previewTeam.email, name: previewTeam.name };
+    // (update 307) selfKey: their own entered rounds (the admin can see them in their portal)
+    return { isTeam: true, preview: true, teamAccess: previewTeam.access || {}, uid: previewTeam.uid, email: previewTeam.email, name: previewTeam.name, selfKey: previewTeam.clientKey || null };
   }
-  return { isTeam: !!state.isTeam, preview: false, teamAccess: state.teamAccess || {}, uid: state.user?.uid, email: state.user?.email, name: state.profile?.name };
+  return { isTeam: !!state.isTeam, preview: false, teamAccess: state.teamAccess || {}, uid: state.user?.uid, email: state.user?.email, name: state.profile?.name, selfKey: state.isTeam ? state.profile?.clientKey || null : null };
 }
