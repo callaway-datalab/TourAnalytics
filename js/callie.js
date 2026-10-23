@@ -656,7 +656,7 @@ function draw() {
   const log = panel.querySelector(".cal-log"), input = panel.querySelector(".cal-in"), send = panel.querySelector(".cal-send");
   const items = [];
   if (!chat.length) {
-    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal. Ask me about a player’s numbers (strokes gained, stats, seasons, tournaments, rounds, distances, lies, clubs), who leads the tour in something, or to compare two things."),
+    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal, your AI data caddy. You can ask me anything about the data: a player’s stats over any stretch of time, who leads the tour in something, or how two products compare. What would you like to know?"),
       el("p", { class: "muted small" }, "Every number I show is worked out by the portal from your data.")]));
     items.push(el("div", { class: "cal-ex" }, exList.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small" }, t); b.addEventListener("click", () => { if (!busy) ask(t); }); return b; })));
   }

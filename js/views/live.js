@@ -318,10 +318,21 @@ export async function render(main) {
   }
 
   // ------------------------------------------------------------------ the leaderboard
+  // (update 288) on a computer, the leaderboard reaches down as far as the player panel beside it (when it has the rows)
+  function fitHeight() {
+    boardWrap.style.maxHeight = "";
+    if (window.innerWidth < 900 || wide || grid.hidden) return;
+    const side = grid.querySelector(".lv-side"), main = grid.querySelector(".lv-main");
+    if (!side || !main) return;
+    const m = main.getBoundingClientRect(), b = boardWrap.getBoundingClientRect();
+    const room = side.offsetHeight - (b.top - m.top) - (m.bottom - b.bottom);
+    if (room > window.innerHeight * 0.7) boardWrap.style.maxHeight = `${Math.round(room)}px`;
+  }
   function fitTable() {
+    requestAnimationFrame(fitHeight);
     const table = boardWrap.querySelector("table");
     if (!table) return;
-    const most = window.innerWidth < 700 ? 1 : 3; // (update 283: on a phone it scrolls sideways rather than shrinking to tiny text)
+    const most = 3; // (update 288: phones shrink to fit too, so the strokes-gained columns fit without scrolling sideways)
     for (let d = 0; d <= most; d++) { boardWrap.dataset.density = String(d); if (table.scrollWidth <= boardWrap.clientWidth + 1) break; }
   }
   function drawMeta() {
@@ -431,6 +442,7 @@ export async function render(main) {
       return el("div", { class: "lv-stat" }, [el("span", { title: m.tip || null }, m.label), el("span", { class: "lv-stat-v" }, [el("strong", {}, row.x[m.id].d), xr ? el("small", { class: "muted" }, `rank ${xr}`) : null])]);
     })]));
     mount(playerBox, parts);
+    requestAnimationFrame(fitHeight); // (update 288)
   }
 
   // ------------------------------------------------------------------ loading
