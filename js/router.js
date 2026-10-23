@@ -181,7 +181,8 @@ async function render() {
     previewClient = { key, label: teamLabels(team.teamAccess).get(key) || key.replace(/^c_/, ""), role: team.teamAccess[key].role };
   };
   // (update 297) Course Prep and Practice are the admin's only, for now
-  if (["course-prep", "practice"].includes(routeId) && !state.isAdmin) { navigate("/entry"); return; }
+  // (update 298) and not in someone's portal you're looking at as the admin (it shows what they'd see)
+  if (["course-prep", "practice"].includes(routeId) && !(state.isAdmin && !previewClient && !getPreviewTeam())) { navigate("/entry"); return; }
   if (routeId === "team") {
     const keys = teamKeys();
     if (keys.length > 1) { navigate("/player-stats"); return; }

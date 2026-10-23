@@ -109,7 +109,7 @@ export function confirmAction(message) {
 //   [label, href, routeIds, { soon, q }]  (q: a ?cat= the link needs to count as current)
 const teamCount = () => Object.keys(effectiveTeam(window.__authState || {}).teamAccess || {}).length;
 // (update 297) Course Prep and Practice: open to the admin only for now; greyed out for everyone else
-const soonFor = () => (window.__authState?.isAdmin ? {} : { off: true, offTitle: "Coming soon" });
+const soonFor = () => (shellKind() === "admin" ? {} : { off: true, offTitle: "Coming soon" }); // (update 298: in someone else's portal too)
 const sectionsFor = (kind) => {
   const admin = kind === "admin", player = kind === "client";
   // (update 164) Watchlist: anyone with more than one player (Home for a player, or one player's coach)
