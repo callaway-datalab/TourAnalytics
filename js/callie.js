@@ -687,7 +687,7 @@ export async function openCallie() {
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Callie, your data assistant" }, [
-        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Callie"), el("span", { class: "muted small" }, "Your golf data assistant")]), fresh, close]),
+        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Callie"), el("span", { class: "muted small" }, "Your golf data caddy")]), fresh, close]),
         el("div", { class: "cal-log", "aria-live": "polite" }),
         el("div", { class: "cal-foot" }, [input, send]),
       ]),

@@ -4369,3 +4369,12 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .rd-saved-what strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rd-saved-act { display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0; }
 .rd-saved-del.sure { color: #ff6b6b; border-color: #ff6b6b; }
+
+/* (update 272) Home Screen app: the page runs edge to edge (viewport-fit=cover, translucent status bar), so the
+   header sits under the clock/notch with its own padding, and nothing hides behind the home bar or rounded corners */
+.rail { padding-top: calc(0.7rem + env(safe-area-inset-top, 0px));
+  padding-left: max(clamp(0.75rem, 3vw, 2rem), env(safe-area-inset-left, 0px)); padding-right: max(clamp(0.75rem, 3vw, 2rem), env(safe-area-inset-right, 0px)); }
+main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  padding-left: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-left, 0px)); padding-right: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-right, 0px)); }
+.cal-head { padding-top: calc(0.9rem + env(safe-area-inset-top, 0px)); }
+.tapper { padding-bottom: env(safe-area-inset-bottom, 0px); }
