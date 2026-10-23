@@ -4392,3 +4392,12 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 .miss-in input { flex: 1; min-width: 0; width: 100%; font-size: 16px; padding: 0.6rem 0.7rem; border-radius: 10px; }
 .miss-in .unit { color: var(--muted); font-size: 0.85rem; }
 .miss-tip { margin: 0.35rem 0 0; }
+
+/* (update 275/276) Home Screen app: iPhone blurs whatever sits under the clock, and a header pinned right at the top
+   got caught in that blur. A solid strip sits under the clock, and the header is pinned just below it. */
+@media (display-mode: standalone) {
+  /* (update 276) the header stays pinned, just below the clock: the strip covers the clock's area, the header starts under it */
+  .rail { position: sticky; top: env(safe-area-inset-top, 0px); padding-top: 0.7rem; background: #000; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  body { padding-top: env(safe-area-inset-top, 0px); }
+  html::after { content: ""; position: fixed; left: 0; right: 0; top: 0; height: env(safe-area-inset-top, 0px); background: #000; z-index: 9000; pointer-events: none; }
+}
