@@ -108,6 +108,8 @@ export function confirmAction(message) {
 // Two levels: a few headers in the top bar, each with its own row of pages under it.
 //   [label, href, routeIds, { soon, q }]  (q: a ?cat= the link needs to count as current)
 const teamCount = () => Object.keys(effectiveTeam(window.__authState || {}).teamAccess || {}).length;
+// (update 297) Course Prep and Practice: open to the admin only for now; greyed out for everyone else
+const soonFor = () => (window.__authState?.isAdmin ? {} : { off: true, offTitle: "Coming soon" });
 const sectionsFor = (kind) => {
   const admin = kind === "admin", player = kind === "client";
   // (update 164) Watchlist: anyone with more than one player (Home for a player, or one player's coach)
@@ -127,8 +129,8 @@ const sectionsFor = (kind) => {
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
   const planItems = [
     ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (update 292: first, and what Play opens on)
-    ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"]],
-    ["Practice", "#/practice", ["practice"]],
+    ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], soonFor()],
+    ["Practice", "#/practice", ["practice"], soonFor()],
     ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
   ];
   return [
@@ -167,7 +169,7 @@ export function sectionNav(currentRoute) {
     const [label, href, , opt = {}] = it;
     const on = itemOn(it, currentRoute);
     // (update 205) greyed out until it has data; (update 207) a link with no address, so it's styled exactly like its neighbours
-    if (opt.off) return el("a", { class: "nav-off", role: "link", "aria-disabled": "true", title: "Available once there\u2019s product data" }, label);
+    if (opt.off) return el("a", { class: "nav-off", role: "link", "aria-disabled": "true", title: opt.offTitle || "Available once there\u2019s product data" }, label);
     return el("a", { href, "aria-current": on ? "page" : null, class: opt.soon ? "soon" : null }, [label, opt.soon ? el("span", { class: "soon-tag" }, "Soon") : null]);
   }));
 }

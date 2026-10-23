@@ -180,6 +180,8 @@ async function render() {
     const key = lastTeamPlayer && team.teamAccess[lastTeamPlayer] ? lastTeamPlayer : keys[0];
     previewClient = { key, label: teamLabels(team.teamAccess).get(key) || key.replace(/^c_/, ""), role: team.teamAccess[key].role };
   };
+  // (update 297) Course Prep and Practice are the admin's only, for now
+  if (["course-prep", "practice"].includes(routeId) && !state.isAdmin) { navigate("/entry"); return; }
   if (routeId === "team") {
     const keys = teamKeys();
     if (keys.length > 1) { navigate("/player-stats"); return; }
