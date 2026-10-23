@@ -1217,7 +1217,7 @@ function renderRound(main, params, flash, previewClient) {
         changed(true, i);
       }, `Shot ${i + 1} result`),
       s.endLie === "Holed" ? el("p", { class: "holed-note" }, "\u26F3 In the hole") : distInput(s.endDist, unitFor(s.endLie === "Penalty" ? s.startLie : s.endLie), (v) => { s.endDist = v; changed(false); }, `Shot ${i + 1} distance left`, "end"),
-      missRow(s, i),
+      // (update 295: no Long / Short or Offline here)
       // Done is always there; it switches on as soon as the shot has a start, a finish and the distance left.
       ro ? null : (() => {
         const d = el("button", { type: "button", class: "btn ghost done-shot", disabled: !isComplete(s), title: "Fill in where it finished to fold this shot" }, "Done \u2713");
