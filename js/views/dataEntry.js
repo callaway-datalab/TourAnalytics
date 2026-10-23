@@ -611,7 +611,7 @@ async function renderNew(main, flash, viewing = null) {
     ]),
     el("section", { class: "entry-section rd-card" }, [
       el("div", { class: "sc-head" }, [el("h2", {}, "Scorecard"), el("div", { class: "sc-head-r" }, [el("span", { class: "rd-label" }, "Holes"), countPills])]),
-      el("div", { class: "sc-tools" }, [photoBtn, el("label", { class: "tees-label sc-tees" }, [el("span", { class: "rd-label" }, "Tees"), teesBox])]),
+      el("div", { class: "sc-tools" }, [/* (update 281: no scorecard photo) */ el("label", { class: "tees-label sc-tees" }, [el("span", { class: "rd-label" }, "Tees"), teesBox])]),
       tapBtn,
       photoStatus,
       grid,
@@ -1173,7 +1173,19 @@ function renderRound(main, params, flash, previewClient) {
         const inp = el("input", { type: "text", inputmode: "decimal", value: s[key] ?? "", placeholder: "0", disabled: ro, "aria-label": `Shot ${i + 1} ${label} (${minus} is minus)` });
         const parse = (v) => { const t = String(v).trim().replace(/[\u2212\u2013]/g, "-").replace(",", "."); const m = new RegExp(`^(?:(${plus[0]})|(${minus[0]}))\\s*([\\d.]+)$|^([\\d.]+)\\s*(?:(${plus[0]})|(${minus[0]}))`, "i").exec(t);
           if (m) return (m[1] || m[5] ? 1 : -1) * Number(m[3] || m[4]); return t === "" ? "" : Number(t); };
-        const set = () => { const n = parse(inp.value); s[key] = n === "" || Number.isFinite(n) ? n : s[key]; changed(false); };
+        // (update 281) the distance left follows from long/short and offline (a² + b² = c²), unless you've typed your own
+        const hyp = () => { const a = Number(s.missLong) || 0, b = Number(s.missOff) || 0; return a || b ? Math.round(Math.hypot(a, b) * 10) / 10 : ""; };
+        const set = () => {
+          const before = hyp(), n = parse(inp.value);
+          s[key] = n === "" || Number.isFinite(n) ? n : s[key];
+          const after = hyp(), cur = s.endDist === "" || s.endDist == null ? null : Number(s.endDist);
+          if (cur == null || (before !== "" && Math.abs(cur - before) < 0.11)) {
+            s.endDist = after;
+            const endIn = inp.closest(".shot-card")?.querySelector('input[data-role="end"]');
+            if (endIn) endIn.value = after === "" ? "" : String(after);
+          }
+          changed(false);
+        };
         inp.addEventListener("input", set);
         const pm = el("button", { type: "button", class: "pr-pm", disabled: ro, "aria-label": `Switch ${plus} / ${minus}`, title: `${plus} (+) or ${minus} (\u2212)` }, "\u00b1");
         pm.addEventListener("click", () => { const n = parse(inp.value); inp.value = Number.isFinite(n) && n ? String(-n) : inp.value.trim().startsWith("-") ? inp.value.trim().slice(1) : `-${inp.value.trim()}`; set(); inp.focus(); });
@@ -1182,7 +1194,7 @@ function renderRound(main, params, flash, previewClient) {
       return el("div", { class: "miss-row" }, [
         el("p", { class: "shot-label" }, ["Miss ", el("em", {}, "optional")]),
         el("div", { class: "miss-fields" }, [box("missLong", "Long / Short", "Short", "Long"), box("missOff", "Offline", "Left", "Right")]),
-        el("p", { class: "muted small miss-tip" }, "Long / Short: minus is short. Offline: minus is left. \u00b1 flips it."),
+        el("p", { class: "muted small miss-tip" }, "Long / Short: minus is short. Offline: minus is left. \u00b1 flips it. The distance left fills in from these."),
       ]);
     };
     const after = strokes.slice(0, i).some((x) => x.endLie === "Holed");

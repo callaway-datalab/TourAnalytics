@@ -201,7 +201,7 @@ export async function render(main) {
       drawHead(); setTimeout(() => { if (refreshing !== "busy") { refreshing = ""; drawHead(); } }, 8000);
     });
     mount(head, [
-      el("div", {}, [el("p", { class: "gx-eyebrow" }, "Live"), el("h1", {}, "Live Feed")]),
+      el("div", {}, [el("p", { class: "gx-eyebrow" }, "Live"), el("h1", {}, "Event Feed")]),
       el("div", { class: "lv-head-r" }, [refreshing && refreshing !== "busy" ? el("span", { class: "muted small" }, refreshing) : null, again,
         st ? el("span", { class: `lv-status${st === "live" ? " on" : ""}` }, [el("i", { "aria-hidden": "true" }), st === "live" ? (sel.t?.api ? "Live" : "In progress") : st === "upcoming" ? "Upcoming" : "Final"]) : null]),
       stale,

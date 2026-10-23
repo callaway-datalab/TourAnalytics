@@ -4,7 +4,7 @@
 //   ui: an object kept between redraws (which grouping tab is open).
 import { el } from "./ui.js";
 import { fmtSG } from "./sg.js";
-import { trajectory, trajectoryWords, conditions, DIMENSIONS, fmtSigned, SG_ROWS, sgRounds } from "./compareData.js";
+import { trajectory, conditions, DIMENSIONS, fmtSigned, SG_ROWS, sgRounds } from "./compareData.js";
 import { openBadge } from "./badgePopup.js";
 
 const tone = (v) => (v == null ? "" : Math.round(v * 100) === 0 ? "zero" : v > 0 ? "pos" : "neg");
@@ -43,13 +43,22 @@ function openTrajectory(rs, x) {
         rows: SG_ROWS.slice(0, 5).map(([k, l]) => ({ strong: k === "TOTAL", cells: [k === "TOTAL" ? "SG: Total" : l, { sg: avg(prev, k) }, { sg: avg(last, k) }, { sg: avg(last, k) - avg(prev, k), arrow: true }] })) },
     ] }) }, "Getting better or worse?");
 }
+// (update 281) the summary in long-term (last 40 vs the 40 before) and short-term (last 10 vs the 10 before) words
+function termWords(tr) {
+  const word = (x) => (x.ch.TOTAL > 0.15 ? "improving" : x.ch.TOTAL < -0.15 ? "regressing" : "holding steady");
+  const lt = tr.find((x) => x.n === 40), st = tr.find((x) => x.n === 10);
+  const cap = (t) => `${t[0].toUpperCase()}${t.slice(1)}.`;
+  if (lt && st) return word(lt) === word(st) ? cap(`${word(lt)} over both the long-term and the short-term`) : cap(`${word(lt)} over the long-term; ${word(st)} over the short-term`);
+  const one = lt || st;
+  return cap(`${word(one)} over the ${one === lt ? "long" : "short"}-term`);
+}
 function trajectoryBlock(rs) {
   const tr = trajectory(rs).filter((x) => x.n === 10 || x.n === 40);
   if (!tr.length) return null;
   const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [
     secHead("Getting better or worse?", "Their latest rounds against the same number just before. Tap a row to see the rounds."),
-    el("p", { class: "cmp-traj-words" }, trajectoryWords(tr)),
+    el("p", { class: "cmp-traj-words" }, termWords(tr)),
     el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
       // (update 205) just the change in each category (no Before / Latest / Change columns)
       el("thead", {}, el("tr", {}, ["Rounds", ...SG_ROWS.slice(0, 5).map(([k]) => (k === "TOTAL" ? "Total" : k))].map((h, i) => el("th", { class: i ? "num" : "" }, h)))), // (update 208: Total back, first)

@@ -10,6 +10,8 @@ import { minimalKeyboard } from "./keyboard.js";
 minimalKeyboard(); // (update 267) no word suggestions or contact autofill on the phone keyboard
 import { fixStatusBar } from "./statusBar.js";
 fixStatusBar(); // (update 277) the Home Screen app's top edge, under the clock
+import { loadingDots } from "./loadingDots.js";
+loadingDots(); // (update 281) the small ball-round-the-cup in front of "Loading…" status lines
 startRouter();
 
 // (update 170) a tab acting as a fake user says so, with a way back to your own sign-in

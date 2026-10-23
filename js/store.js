@@ -1010,3 +1010,17 @@ export function markThreadReadByAdmin(threadId) {
 export function markThreadReadByUser(threadId) {
   return updateDoc(doc(db, "threads", threadId), { userUnread: false });
 }
+
+/* (update 281) Cal (the AI assistant) is turned on per person by the admin: calAccess/{access code} { on }.
+   Keyed by the code, so it can be set before they sign up and follows them after. */
+export function watchCalAccess(cb) {
+  return onSnapshot(collection(db, "calAccess"), (snap) => cb(new Map(snap.docs.map((d) => [d.id, !!d.data().on]))), () => cb(new Map()));
+}
+export async function setCalAccess(code, on) {
+  await setDoc(doc(db, "calAccess", code), { on: !!on, updatedAt: serverTimestamp() });
+}
+/** Whether Cal is on for this signed-in person (their profile's access code). */
+export async function myCalAccess(inviteCode) {
+  if (!inviteCode) return false;
+  try { const s = await getDoc(doc(db, "calAccess", inviteCode)); return !!(s.exists() && s.data().on); } catch { return false; }
+}

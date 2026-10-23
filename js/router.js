@@ -3,7 +3,7 @@ import { isTeamKey, rosterByEmail } from "./data.js";
 import { teamLabels } from "./names.js";
 import { getUserProfile, getTeamRoster, fetchInvite } from "./store.js";
 import { whenReady, getState, subscribe } from "./auth.js";
-import { renderShell, sectionNav, flash } from "./ui.js";
+import { renderShell, sectionNav, flash, placeSubhead } from "./ui.js";
 
 // [pattern, guard, loader, routeId] — routeId drives which nav item is "current".
 const ROUTES = [
@@ -226,7 +226,8 @@ async function render() {
     // (update 139: a sub-header that hangs from the top bar, under Analyze / Play, rather than pills on the page)
     const sub = sectionNav(routeId);
     const rail = document.querySelector(".rail");
-    if (sub && rail) { sub.classList.add("subhead"); rail.appendChild(sub); }
+    sub?.classList.add("subhead");
+    if (rail) placeSubhead(rail, sub); // (update 281: kept when it's the same row)
   }
 
   try {

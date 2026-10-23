@@ -7,7 +7,7 @@ import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
   UserError, adminStats, editAccess, syncTeams, aiUsage, reportRunsList,
   refreshInvite, deleteInvite, storageEstimate, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
-  createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels,
+  createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels, watchCalAccess, setCalAccess,
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, ANALYST_ROLE } from "../data.js";
 
@@ -17,6 +17,7 @@ const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy
 export async function render(main, { flash }) {
   let clientsCache = { labels: new Map() };
   let invitesCache = [];
+  let calCache = new Map(); // (update 281) access code → Cal on
   let usersCache = [];
   let fakeMap = new Map(), unFake = () => {}; // (update 170) fake users: uid → { name, email }
   let expiryCleared = false;
@@ -239,7 +240,7 @@ export async function render(main, { flash }) {
     practice: "Practice", "course-prep": "Course Prep", questions: "Questions", "question-new": "New question", thread: "Question", account: "Account", witb: "WITB",
     entry: "Enter Rounds", "entry-new": "New round", "entry-round": "Entering a round", team: "Team home", "admin-clients": "Player Access", "admin-datasets": "Data",
     "admin-analyze": "Analyze: Leaderboards", "admin-player-stats": "Analyze: Player Stats", "admin-goals": "Goals (admin)", "admin-documents": "Documents",
-    "admin-reports-view": "Reports", "admin-questions": "Questions (admin)", "admin-thread": "Question (admin)", dataset: "Data file", live: "Live" };
+    "admin-reports-view": "Reports", "admin-questions": "Questions (admin)", "admin-thread": "Question (admin)", dataset: "Data file", live: "Event Feed" };
   const pageName = (k) => PAGE_NAMES[k] || String(k).replace(/^admin-/, "Admin: ").replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase());
   const dur = (sec) => { sec = Math.round(sec || 0); if (sec < 60) return `${sec}s`; const m = Math.round(sec / 60); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); return `${h}h ${m % 60}m`; };
   const usageBox = el("section", { class: "usage-box" }, el("p", { class: "muted small ta-loading" }, "Loading usage\u2026"));
@@ -389,6 +390,8 @@ export async function render(main, { flash }) {
   typeSel.addEventListener("change", drawFields);
 
   const fakeBox = el("input", { type: "checkbox", "aria-label": "Fake user" });
+  const calBox = el("input", { type: "checkbox", "aria-label": "Enable Cal" }); // (update 281)
+  const calAfter = async (code) => { if (!calBox.checked || !code) return; try { await setCalAccess(code, true); } catch { flash("Made the code, but couldn\u2019t turn Cal on for it. Republish the Firestore rules from update 281, then tick Cal on its row.", "error"); } calBox.checked = false; };
   fakeBox.addEventListener("change", () => { createBtn.textContent = fakeBox.checked ? "Create fake user" : "Create code"; });
   async function makeFake(code, name) {
     const { createFakeUser } = await import("../fakeUsers.js");
@@ -426,6 +429,7 @@ export async function render(main, { flash }) {
           const id = knownId && knownId.toLowerCase() !== typed.toLowerCase() ? knownId : typed;
           const shown = hit ? hit.label : typed;
           const code = await createInvite({ clientKey: key, clientLabel: id, note: fields.note.value.trim() || (fakeBox.checked ? "Fake user" : ""), days: 0 });
+          await calAfter(code);
           if (fakeBox.checked) await makeFake(code, shown);
           else flash(`Access code for ${shown}: ${formatCode(code)}` + (clientsCache.labels.has(key) ? "" : " (No uploaded data matches this ID yet.)"), "ok");
         } else {
@@ -436,6 +440,7 @@ export async function render(main, { flash }) {
           const code = type === "analyst" || type === "employee"
             ? await createAnalystAccess({ name, playerKeys, allPlayers, labels: clientsCache.labels, days: 0, kind: type })
             : await createTeamAccess({ name, role: type === "other" ? fields.role.value.trim() : type, playerKeys, labels: clientsCache.labels });
+          await calAfter(code);
           if (fakeBox.checked) await makeFake(code, name || `Test ${USER_TYPES.find(([v]) => v === type)?.[1].toLowerCase() || "user"}`);
           else flash(`Access code${name ? ` for ${name}` : ""}: ${formatCode(code)}. Send it with the sign-up link; whoever signs up with it gets this access.`, "ok");
         }
@@ -451,6 +456,7 @@ export async function render(main, { flash }) {
     el("div", { class: "inline-form" }, [el("label", { class: "type-pick" }, ["User Type", typeSel])]),
     fieldsBox,
     // (update 170) a fake user: the code is used straight away by a test account you can act as
+    el("label", { class: "fake-row cal-row" }, [calBox, el("span", {}, [el("strong", {}, "Enable Cal"), el("span", { class: "muted small fake-hint" }, "Let them ask Cal, the AI assistant (each question costs a little). You can change it later on their row.")])]),
     el("label", { class: "fake-row" }, [fakeBox, el("span", {}, [el("strong", {}, "Fake user"), el("span", { class: "muted small fake-hint" }, "Make a test account with this access now, and act as it (nobody else gets the code).")])]),
     el("div", {}, createBtn),
   ]);
@@ -615,6 +621,18 @@ export async function render(main, { flash }) {
     return links.length ? el("span", { class: "row-actions" }, links) : null;
   }
 
+  // (update 281) Cal on or off for this person (their code)
+  function calToggle(inv, user) {
+    const gone = inv.revoked || (inv.usedBy && !user);
+    const box = el("input", { type: "checkbox", checked: !!calCache.get(inv.code), disabled: !!gone, "aria-label": `Cal for ${user?.name || inv.clientLabel || formatCode(inv.code)}`, title: "Let them ask Cal, the AI assistant" });
+    box.addEventListener("change", async () => {
+      box.disabled = true;
+      try { await setCalAccess(inv.code, box.checked); flash(box.checked ? "Cal is on for them." : "Cal is off for them.", "ok"); }
+      catch (err) { box.checked = !box.checked; flash(err?.code === "permission-denied" ? "The database refused: republish the Firestore rules from update 281, then try again." : "Couldn\u2019t change that. Try again.", "error"); }
+      box.disabled = false;
+    });
+    return box;
+  }
   const nameOf = (r) => r.user?.name || (!isTeamKey(r.inv.clientKey) && clientsCache.labels.get(r.inv.clientKey)) || r.inv.clientLabel || "";
   function renderInvites() {
     if (!invitesCache.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes yet.")); return; }
@@ -658,7 +676,7 @@ export async function render(main, { flash }) {
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Sign-ins", "Last sign-in", ""].map((h) => el("th", {}, h)))),
+      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Sign-ins", "Last sign-in", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows.map(({ inv, user, grants, typeLabels, email, status, teamOf }) => el("tr", {}, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
@@ -669,6 +687,7 @@ export async function render(main, { flash }) {
         el("td", {}, el("span", { class: "type-tags" }, [...typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)), user && fakeMap.has(user.uid) ? el("span", { class: "tag type-fake", title: "A test account you made" }, "Fake") : null])),
         el("td", {}, teamOf),
         el("td", {}, status),
+        el("td", { class: "cal-cell" }, calToggle(inv, user)),
         el("td", { class: "num" }, user ? num(user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")),
         el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
         el("td", { class: "actions" }, codeActions(inv, user, grants)),
@@ -714,6 +733,7 @@ export async function render(main, { flash }) {
     ]),
   ]);
 
+  const unCal = watchCalAccess((m) => { calCache = m; renderInvites(); });
   const unInv = watchInvites((invites) => {
     invitesCache = invites;
     if (!expiryCleared) { expiryCleared = true; clearInviteExpiry(invites).catch(() => {}); } // codes no longer expire
@@ -725,5 +745,5 @@ export async function render(main, { flash }) {
   const clientsInterval = setInterval(refreshClients, 15000);
   refreshClients();
 
-  return () => { unInv(); unUsers(); unFake(); clearInterval(clientsInterval); clearInterval(statsInterval); dialog.remove(); };
+  return () => { unCal(); unInv(); unUsers(); unFake(); clearInterval(clientsInterval); clearInterval(statsInterval); dialog.remove(); };
 }

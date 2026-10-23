@@ -223,8 +223,20 @@ document.addEventListener("keydown", (e) => { const m = currentAccountMenu; if (
 window.addEventListener("hashchange", () => currentAccountMenu?.setOpen(false));
 
 /** (update 258) Callie in the header: opens her chat panel over whatever page is showing. */
+// (update 281) Cal is on per person (the admin turns him on); the admin always has him
+let calOn = null, calFor = null;
+export function calAllowed() { const st = window.__authState; return !!st?.isAdmin || calOn === true; }
+function checkCal() {
+  const st = window.__authState, uid = st?.user?.uid;
+  if (st?.isAdmin || !uid || calFor === uid) return;
+  calFor = uid; calOn = null;
+  import("./store.js").then((m) => m.myCalAccess(st.profile?.inviteCode)).then((on) => {
+    calOn = on; document.querySelectorAll(".callie-link").forEach((x) => { x.hidden = !on; });
+  }).catch(() => {});
+}
 function callieButton() {
-  const b = el("button", { type: "button", class: "hdr-icon callie-link", "aria-label": "Ask Cal", title: "Ask Cal: any question about a player\u2019s data" }, [icon("robot"), el("span", { class: "callie-name" }, "Cal")]);
+  checkCal();
+  const b = el("button", { type: "button", class: "hdr-icon callie-link", hidden: !calAllowed(), "aria-label": "Ask Cal", title: "Ask Cal: any question about a player\u2019s data" }, [icon("robot"), el("span", { class: "callie-name" }, "Cal")]);
   b.addEventListener("click", () => import("./callie.js").then((m) => m.openCallie()).catch((err) => console.error(err)));
   return b;
 }
@@ -262,15 +274,49 @@ export function renderShell(root, { previewClient, currentRoute }) {
     accountMenu(state),
   ];
 
-  mount(root, el("div", { class: "shell" }, [
-    el("aside", { class: "rail" }, [
-      el("a", { class: "brand", href: "#/watchlist" }, [logoImg(), portalName]),
-      nav,
-      el("div", { class: "rail-foot" }, footItems),
-    ]),
-    el("main", { id: "main" }),
-  ]));
+  const rail = el("aside", { class: "rail" }, [
+    el("a", { class: "brand", href: "#/watchlist" }, [logoImg(), portalName]),
+    nav,
+    el("div", { class: "rail-foot" }, footItems),
+  ]);
+  // (update 281) Going to another page keeps the header that's already there (no flicker): when it would come out the
+  // same, only which link is lit changes, and just the page below is replaced.
+  const old = root.querySelector(":scope > .shell > .rail");
+  if (old && keepHeader(old, rail)) {
+    const main = el("main", { id: "main" });
+    root.querySelector(":scope > .shell > main")?.replaceWith(main);
+    return main;
+  }
+  mount(root, el("div", { class: "shell" }, [rail, el("main", { id: "main" })]));
   return document.getElementById("main");
+}
+/** The same header, apart from which link is lit? Then light the right ones in the old one, and keep it. */
+const headerKey = (node) => {
+  const c = node.cloneNode(true);
+  c.querySelectorAll(".subhead").forEach((x) => x.remove());
+  c.querySelectorAll("[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+  // (things the header sets on itself after it's drawn: the Event Feed link, a logo that didn't load)
+  c.querySelectorAll("[data-live-link]").forEach((x) => { ["href", "title", "aria-disabled", "class"].forEach((k) => x.removeAttribute(k)); });
+  c.querySelectorAll(".brand-logo").forEach((x) => x.removeAttribute("hidden"));
+  c.querySelectorAll(".callie-link").forEach((x) => x.removeAttribute("hidden"));
+  return c.outerHTML.replace(/callie-m\d+/g, "");
+};
+function keepHeader(oldNode, newNode) {
+  if (headerKey(oldNode) !== headerKey(newNode)) return false;
+  syncCurrent(oldNode, newNode);
+  return true;
+}
+function syncCurrent(oldNode, newNode) {
+  const skip = (x) => !x.closest(".subhead") || newNode.classList?.contains("subhead");
+  const o = [...oldNode.querySelectorAll("a, button")].filter(skip), n = [...newNode.querySelectorAll("a, button")];
+  o.forEach((x, i) => { const v = n[i]?.getAttribute("aria-current"); if (v) x.setAttribute("aria-current", v); else x.removeAttribute("aria-current"); });
+}
+/** (update 281) The row of pages under the header: kept as it is when it's the same row (just the lit link moves). */
+export function placeSubhead(rail, sub) {
+  const old = rail.querySelector(":scope > .subhead");
+  if (old && sub && headerKey(old) === headerKey(sub)) { syncCurrent(old, sub); return; }
+  old?.remove();
+  if (sub) rail.appendChild(sub);
 }
 
 subscribe((s) => { window.__authState = s; });
@@ -282,12 +328,12 @@ let liveOn = true, liveWatching = true;
 function paintLive() {
   document.querySelectorAll("[data-live-link]").forEach((a) => {
     a.classList.toggle("nav-off", !liveOn);
-    if (liveOn) { a.setAttribute("href", "#/live"); a.removeAttribute("aria-disabled"); a.title = "Live Feed"; }
-    else { a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); a.title = "Live Feed: no live event right now"; }
+    if (liveOn) { a.setAttribute("href", "#/live"); a.removeAttribute("aria-disabled"); a.title = "Event Feed"; }
+    else { a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); a.title = "Event Feed: no live event right now"; }
   });
 }
 function liveLink(currentRoute) {
-  const a = el("a", { class: "live-link", dataset: { liveLink: "1" }, "aria-current": currentRoute === "live" ? "page" : null }, [icon("live"), text(" Live Feed")]);
+  const a = el("a", { class: "live-link", dataset: { liveLink: "1" }, "aria-current": currentRoute === "live" ? "page" : null }, [icon("live"), text(" Event Feed")]);
   if (!liveWatching) {
     liveWatching = true;
     Promise.all([import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js"), import("./firebase-init.js")])
