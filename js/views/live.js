@@ -186,7 +186,7 @@ export async function render(main) {
       el("div", { class: "lv-main-top" }, [el("div", {}, [el("h2", {}, "Leaderboard"), meta]), toolbar]),
       colPanel, warnBar, favWrap, boardWrap,
       el("details", { class: "lv-legend" }, [el("summary", {}, "How to read this"),
-        el("p", { class: "muted small" }, "Each round shows the strokes gained and stats of that round. The Event tab adds each player’s strokes gained up over the rounds they played (RDS); other stats are averaged over those rounds, weighted by attempts. The small grey number under each value is its rank (T = tied) among the players shown; for lower-is-better stats the lowest value ranks first, and the first tap on its heading sorts lowest first. A * next to a value means it comes from very few attempts (under 3 in a round, under 5 for the event): it\u2019s shown, but left out of the ranks and sorting. A tournament marked Live comes from the PGA Tour\u2019s API, updated about every 30 minutes; \u201cthru N\u201d marks a round still in progress, so its totals only cover the holes played so far (and Tee-to-Green and Total come straight from the Tour\u2019s feed, so they won\u2019t equal the sum of the parts until the round is final). Earlier tournaments are your uploaded data, the same as Leaderboards. The page updates by itself.")]),
+        el("p", { class: "muted small" }, "Each round shows the strokes gained and stats of that round. The Event tab adds each player’s strokes gained up over the rounds they played (RDS); other stats are averaged over those rounds, weighted by attempts. The small grey number under each value is its rank (T = tied) among the players shown; for lower-is-better stats the lowest value ranks first, and the first tap on its heading sorts lowest first. A * next to a value means it comes from very few attempts (under 3 in a round, under 5 for the event): it\u2019s shown, but left out of the ranks and sorting. A tournament marked Live comes from the PGA Tour\u2019s API, updated about every 30 minutes; \u201cthru N\u201d marks a round still in progress, so its totals only cover the holes played so far (and Tee-to-Green and Total come straight from the Tour\u2019s feed, so they won\u2019t equal the sum of the parts until the round is final). A tournament stays here for a day after its final round; earlier ones are on Leaderboards. The page updates by itself.")]),
     ]),
   ]);
   // (the page is put together once the tour pills exist, below)
@@ -223,7 +223,7 @@ export async function render(main) {
   // upcoming) as cards, and every finished one in an "Archived Events" list
   const tourPills = el("nav", { class: "subnav sg-tours lv-tourpills", role: "radiogroup", "aria-label": "Tour" }); // (update 284: like the Stats page's)
   const isFinal = (e) => statusOf(e) === "final";
-  const firstOf = (t) => t?.events.find((e) => !isFinal(e)) || null; // (update 285: nothing on: nothing picked until you choose an archived one)
+  const firstOf = (t) => t?.events[0] || null; // (update 301: what's on, else the one that just finished) // (update 285: nothing on: nothing picked until you choose an archived one)
   function drawTours() {
     const cur = tours.find((t) => t.tour === (sel.t?.tour || sel.tour)) || tours[0];
     mount(tourPills, tours.length > 1 ? tours.map((t) => {
@@ -242,7 +242,7 @@ export async function render(main) {
       b.addEventListener("click", () => { if (!on) pickEvent(e); });
       return b;
     };
-    const current = cur.events.filter((e) => !isFinal(e)), archived = cur.events.filter(isFinal);
+    const current = cur.events, archived = []; // (update 301: no Archived Events)
     const showing = []; // (update 284: a finished one stays in the Archived list, picked there)
     // (update 292) Archived Events: a button that opens a list with a search box (type part of a name, a course or a year)
     const picked = sel.t && isFinal(sel.t) && archived.includes(sel.t) ? sel.t : null;
@@ -532,19 +532,22 @@ export async function render(main) {
   }
   /** (update 264) The tournaments: the API's current ones, then the uploaded ones (one in both shows the API's), by tour. */
   function rebuild() {
-    const shown = apiEvents.map((e) => { const up = uploadEvents.find((u) => famOf(u.tour) === famOf(e.tour)); return up ? Object.assign(e, { tour: up.tour }) : e; });
-    const rest = uploadEvents.filter((u) => !shown.some((e) => famOf(e.tour) === famOf(u.tour) && e.year === u.year && sameName(e.event, u.event)));
-    events = [...shown, ...rest].sort((a, b) => String(b.end || b.start || "").localeCompare(String(a.end || a.start || "")) || (b.api ? 1 : 0) - (a.api ? 1 : 0));
-    const byTour = new Map();
-    for (const e of events) (byTour.get(e.tour) || byTour.set(e.tour, []).get(e.tour)).push(e);
-    tours = [...byTour].map(([tour, evs]) => ({ tour, events: evs })).sort((a, b) => famOf(a.tour) === "pga" ? -1 : famOf(b.tour) === "pga" ? 1 : String(b.events[0].end).localeCompare(String(a.events[0].end)));
-    if (!events.length) { if (!loadErr) loadErr = "No tournaments with strokes gained yet. They appear once a stats file has been uploaded, or once the PGA Tour API feed has run."; drawHead(); drawTours(); drawBoard(); return; }
+    // (update 301) just the PGA Tour API's tournaments that are on now (or about to start), and a finished one for a
+    // day after its final round; no archived (uploaded) tournaments
+    const dayAfter = (e) => { const end = new Date(`${String(e.end || e.start || "").slice(0, 10)}T23:59:59`); return Number.isNaN(end.getTime()) ? false : Date.now() <= end.getTime() + 864e5; };
+    events = apiEvents.filter((e) => statusOf(e) !== "final" || dayAfter(e))
+      .sort((a, b) => (statusOf(a) === "live" ? 0 : 1) - (statusOf(b) === "live" ? 0 : 1) || String(b.end || b.start || "").localeCompare(String(a.end || a.start || "")));
+    const byTour = new Map([["PGA TOUR", []], ["Korn Ferry Tour", []]]); // (both tours' pills always show)
+    for (const e of events) { const k = famOf(e.tour) === "pga" ? "PGA TOUR" : famOf(e.tour) === "kft" ? "Korn Ferry Tour" : e.tour; e.tour = k; (byTour.get(k) || byTour.set(k, []).get(k)).push(e); }
+    tours = [...byTour].map(([tour, evs]) => ({ tour, events: evs }));
+    loadErr = "";
+    if (!events.length) { sel.t = null; sel.tour = sel.tour || tours[0].tour; refresh(); return; }
     loadErr = "";
     // stay on the same tournament (or tour) when the data is refreshed
     const sameTour = tours.find((t) => famOf(t.tour) === famOf(sel.t?.tour || sel.tour || ""));
     // (update 284) until you pick one yourself, it opens on what's live (the PGA TOUR first), even if the uploaded
     // tournaments arrive before the API's
-    const liveTour = tours.find((t) => t.events.some((e) => statusOf(e) === "live"));
+    const liveTour = tours.find((t) => t.events.some((e) => statusOf(e) === "live")) || tours.find((t) => t.events.length);
     const tour = !sel.chosen ? liveTour || tours[0] : sameTour || tours[0];
     const keep = !sel.chosen ? firstOf(tour) : (sel.t && events.find((e) => e.id === sel.t.id)) || firstOf(tour);
     if (sel.auto || !keep || keep.id !== sel.t?.id) sel.view = "latest"; // (update 263: keep up with a new round)
