@@ -97,7 +97,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
   const folded = new Set();      // "TOTAL" folded hides the categories
   const shownSkills = new Set(); // categories whose skills are shown (hidden to start)
   const whose = own || label === "My" ? "My" : `${label}'s`;
-  mount(container, el("p", { class: "gx-muted gx-center" }, "Loading\u2026"));
+  mount(container, el("p", { class: "gx-muted gx-center ta-loading" }, "Loading\u2026"));
   (async () => {
     try {
       const [tour, entered] = await Promise.all([loadSource("tour", playerKey, label, { detail: false }).catch(() => null), loadSource("entered", playerKey, label).catch(() => null)]);

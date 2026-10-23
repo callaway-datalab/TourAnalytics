@@ -76,7 +76,7 @@ export async function render(main, { previewClient, flash }) {
   const practiceState = {};
   function loadPractice() {
     if (practiceLoading) return;
-    mount(practiceBox, el("p", { class: "empty center" }, "Loading practice\u2026"));
+    mount(practiceBox, el("p", { class: "empty center ta-loading" }, "Loading practice\u2026"));
     practiceLoading = (async () => {
       const { practiceOwner } = await import("../practice/store.js");
       const { loadPracticeFor } = await import("../practice/toStats.js");
@@ -107,7 +107,7 @@ export async function render(main, { previewClient, flash }) {
     stopDataset(); stopDataset = () => {};
     const idx = detectColumns(d.columns || []);
     if (isShotData(idx)) {
-      mount(box, el("p", { class: "empty center" }, "Loading\u2026"));
+      mount(box, el("p", { class: "empty center ta-loading" }, "Loading\u2026"));
       const [rows, summary] = await Promise.all([getDatasetRows(clientKey, d.id, d.chunkCount), getFieldStats(d.id).catch(() => null)]);
       if (shownVersion !== version) return;
       // Names without "(ID)": a coach keeps the ID only for their own players who share a name.

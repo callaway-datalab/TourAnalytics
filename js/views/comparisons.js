@@ -329,11 +329,11 @@ export async function render(main) {
   function draw() {
     // (update 189) just the player search at the top; everything else once a player is picked
     const head = null; // (update 214: no player search at the top; the start screen asks who)
-    if (!player) { mount(root, [head, busy ? el("section", { class: "panel cmp-empty cmp-busy" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, busy)]) : startBox()]); return; }
-    if (!data) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, `Loading ${player.label}\u2019s rounds\u2026`)])]); return; }
+    if (!player) { mount(root, [head, busy ? el("section", { class: "panel cmp-empty cmp-busy" }, [el("p", { class: "muted ta-loading" }, busy)]) : startBox()]); return; }
+    if (!data) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("p", { class: "muted ta-loading" }, `Loading ${player.label}\u2019s rounds\u2026`)])]); return; }
     if (!opts.total) { mount(root, [head, el("section", { class: "panel cmp-empty" }, [el("h2", {}, "No rounds to compare"), el("p", { class: "muted" }, source === "tour" ? `${player.label} has no Tour Events rounds with strokes gained yet.` : `${player.label} hasn\u2019t entered any rounds yet.`)])]); return; }
 
-    if (busy) { mount(root, [head, playersRow(), el("section", { class: "panel cmp-empty cmp-busy" }, [el("div", { class: "cmp-spin", "aria-hidden": "true" }), el("p", { class: "muted" }, busy)])]); return; }
+    if (busy) { mount(root, [head, playersRow(), el("section", { class: "panel cmp-empty cmp-busy" }, [el("p", { class: "muted ta-loading" }, busy)])]); return; }
     const y = window.scrollY;
     // (update 192) with more than one player: each selection for each of them ("Pat · 2026", "Lee · 2026", …)
     const solo = inPlay()[0];

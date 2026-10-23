@@ -4412,3 +4412,13 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 .rail-foot .hdr-icon.callie-link:hover, .cal-open .rail-foot .hdr-icon.callie-link { color: #f3dfbd !important; }
 .cal-ava { background: transparent; border: 0; width: auto; height: auto; }
 .cal-k svg.ico-callie { width: 16px; height: 16px; }
+
+/* (update 280) Loading: a golf ball rolling round the cup (from the old site), above the message */
+.ta-loading { position: relative; display: block; text-align: center !important; padding-top: 4.4rem !important; min-height: 4.4rem; }
+.ta-loading::before, .ta-loading::after { content: ""; position: absolute; left: 50%; border-radius: 50%; pointer-events: none; }
+.ta-loading::before { top: 0.35rem; width: 46px; height: 46px; margin-left: -23px; background: #2f5a1c url("../icons/loader-hole.jpg") center / 110%; border: 2px solid #fff; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45); }
+.ta-loading::after { top: calc(0.35rem + 23px); width: 18px; height: 18px; margin: -9px 0 0 -9px; background: #f1f1f1 url("../icons/loader-ball.jpg") center / 110%;
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.35); animation: taCup 1.6s linear infinite; }
+@keyframes taCup { from { transform: rotate(0deg) translateX(21px) rotate(0deg); } to { transform: rotate(360deg) translateX(21px) rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) { .ta-loading::after { animation-duration: 4s; } }
+.cmp-busy .ta-loading, .cmp-empty .ta-loading { margin: 0; }

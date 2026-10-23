@@ -302,7 +302,7 @@ export async function render(main, { flash, routeId }) {
     }
     const me = meFrom();
     if (!fieldPlayers.length) {
-      mount(body, el("p", { class: "empty center" }, player ? `Loading ${player.label}\u2026` : "Pick a player above."));
+      mount(body, el("p", { class: "empty center ta-loading" }, player ? `Loading ${player.label}\u2026` : "Pick a player above."));
       showPills();
       if (player) pickerRef?.select?.(player.key);
       return;

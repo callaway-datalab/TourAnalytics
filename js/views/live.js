@@ -165,7 +165,7 @@ export async function render(main) {
   const playerBox = el("div", { class: "lv-player" });
   const toolbar = el("div", { class: "lv-tools" });
   const colPanel = el("div", { class: "lv-colpanel", hidden: true });
-  const boardWrap = el("div", { class: "lv-board" }, el("p", { class: "muted lv-msg" }, "Loading…"));
+  const boardWrap = el("div", { class: "lv-board" }, el("p", { class: "muted lv-msg ta-loading" }, "Loading…"));
   const warnBar = el("p", { class: "lv-warn", hidden: true }, "Some values on this tournament failed an automatic check. Treat the numbers with caution until the next update."); // (update 264)
   const meta = el("p", { class: "muted small lv-meta" });
   const grid = el("div", { class: `lv-grid${wide ? " wide" : ""}` }, [
@@ -407,7 +407,7 @@ export async function render(main) {
     if (t.api) {
       if (watchedRel !== t.api.path) { stopEvent?.(); watchedRel = t.api.path; let first = true; stopEvent = watchLiveFile(t.api.path, (m) => { if (first) { first = false; return; } if (m && sel.t?.api?.path === t.api.path) { t.file = null; t.entry = m; refresh(); } }); }
       if (!t.file) {
-        loadErr = ""; mount(boardWrap, el("p", { class: "muted lv-msg" }, "Loading the live data\u2026"));
+        loadErr = ""; mount(boardWrap, el("p", { class: "muted lv-msg ta-loading" }, "Loading the live data\u2026"));
         try {
           const b = await liveFile(t.api.path, t.entry || null);
           if (id !== reqId) return;

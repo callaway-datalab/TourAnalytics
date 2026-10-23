@@ -35,7 +35,7 @@ export async function render(main, { flash }) {
     // you (your own entered rounds) or a player; your own report is for downloading (it isn't anyone's Reports page)
     const self = player && player.key === myEntryKey(getState());
     builder = player ? reportBuilder({ playerKey: player.key, playerLabel: player.label, canSave: !self, flash, source: self ? "entered" : "tour" }) : null;
-    mount(results, el("p", { class: "empty center" }, "Loading\u2026"));
+    mount(results, el("p", { class: "empty center ta-loading" }, "Loading\u2026"));
     // No player picked: the reports shared with everyone. A player: everything they can see.
     const watch = player ? (cb) => watchVisibleDocuments(player.key, cb) : watchEveryoneDocuments;
     unsub = watch((docs) => {

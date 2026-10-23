@@ -42,7 +42,7 @@ export async function render(main, { flash }) {
   ]);
 
   /* ============================ At a glance ============================ */
-  const statsBox = el("dl", { class: "facts glance" }, el("p", { class: "muted" }, "Loading\u2026"));
+  const statsBox = el("dl", { class: "facts glance" }, el("p", { class: "muted ta-loading" }, "Loading\u2026"));
   // Weekly Sign-ins / Weekly Users open a list (who, and when) under the boxes; tap again to close it.
   let weekly = [], openList = null;
   const weekBox = el("div", { class: "week-list", hidden: true });
@@ -100,7 +100,7 @@ export async function render(main, { flash }) {
   const listHead = (title, kind, note) => [el("div", { class: "glance-list-top" }, [el("h3", {}, title), controls(kind)]), note ? el("p", { class: "muted small glance-note" }, note) : null];
 
   async function drawAi(sortBy) {
-    if (!ai) { mount(weekBox, el("p", { class: "muted small" }, "Loading…")); ai = await aiUsage().catch(() => ({ spend: null, calls: [] })); if (openList !== sortBy) return; }
+    if (!ai) { mount(weekBox, el("p", { class: "muted small ta-loading" }, "Loading…")); ai = await aiUsage().catch(() => ({ spend: null, calls: [] })); if (openList !== sortBy) return; }
     const { nameOf, byName } = await who();
     const playerName = (n) => byName.get(String(n).toLowerCase()) || String(n).replace(/\b\w/g, (c) => c.toUpperCase());
     // each question, with its person and players, filtered on either
@@ -136,7 +136,7 @@ export async function render(main, { flash }) {
     ]);
   }
   async function drawRuns() {
-    if (!runs) { mount(weekBox, el("p", { class: "muted small" }, "Loading…")); runs = await reportRunsList().catch(() => []); if (openList !== "reports") return; }
+    if (!runs) { mount(weekBox, el("p", { class: "muted small ta-loading" }, "Loading…")); runs = await reportRunsList().catch(() => []); if (openList !== "reports") return; }
     const { nameOf, labels } = await who();
     const list = runs.map((r) => ({ ...r, person: nameOf(r.uid), player: r.playerKey ? labels.get(r.playerKey) || plainName(String(r.playerKey).replace(/^c_/, "")) : "No player recorded" })).filter((r) => hit(r.person, r.player));
     const redo = () => { if (openList === "reports") drawRuns(); };
@@ -242,7 +242,7 @@ export async function render(main, { flash }) {
     "admin-reports-view": "Reports", "admin-questions": "Questions (admin)", "admin-thread": "Question (admin)", dataset: "Data file", live: "Live" };
   const pageName = (k) => PAGE_NAMES[k] || String(k).replace(/^admin-/, "Admin: ").replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase());
   const dur = (sec) => { sec = Math.round(sec || 0); if (sec < 60) return `${sec}s`; const m = Math.round(sec / 60); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); return `${h}h ${m % 60}m`; };
-  const usageBox = el("section", { class: "usage-box" }, el("p", { class: "muted small" }, "Loading usage\u2026"));
+  const usageBox = el("section", { class: "usage-box" }, el("p", { class: "muted small ta-loading" }, "Loading usage\u2026"));
   let usageSpan = "30";
   const usageCache = new Map(); // (update 256) span → its docs, so sorting a table doesn't read them again
   const loadUsageBox = async () => {

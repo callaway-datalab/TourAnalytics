@@ -67,7 +67,7 @@ export const forCourse = (d, name) => {
 };
 /** (no longer on the page: a course's reports are under Course Maps) */
 export function reportsPanel(ctx) {
-  const list = el("ul", { class: "rows" }, el("p", { class: "muted" }, "Loading…"));
+  const list = el("ul", { class: "rows" }, el("p", { class: "muted ta-loading" }, "Loading…"));
   const admin = ctx.state.isAdmin && !effectiveTeam(ctx.state).preview;
   courseDocs(ctx).then((docs) => {
     const items = docs.filter((d) => reportCategory(d) === "course");
@@ -105,7 +105,7 @@ export function drawPrepMenu(ctx, course) {
 export async function drawMaps(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
-  const list = el("ul", { class: "rows" }, el("p", { class: "muted" }, "Loading…"));
+  const list = el("ul", { class: "rows" }, el("p", { class: "muted ta-loading" }, "Loading…"));
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel" }, [el("p", { class: "pr-eyebrow" }, course.name), el("h1", {}, "Course Maps"), list])]);
   const docs = await courseDocs(ctx).catch(() => []);
   const maps = docs.filter((d) => forCourse(d, course.name));
@@ -157,7 +157,7 @@ export async function drawHistory(ctx, course) {
 
   async function show() {
     if (!who) { mount(out, el("p", { class: "empty center" }, state.isAdmin ? "Pick a player." : "No player yet.")); return; }
-    mount(out, el("p", { class: "muted center" }, "Loading…"));
+    mount(out, el("p", { class: "muted center ta-loading" }, "Loading…"));
     const me = who;
     let data;
     try { data = await playerData(me.key); } catch (err) { console.error(err); mount(out, el("p", { class: "empty center" }, "Couldn't load the stats. Try again.")); return; }

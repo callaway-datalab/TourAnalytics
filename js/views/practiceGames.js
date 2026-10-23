@@ -54,7 +54,7 @@ export async function render(ctx) {
   if (v.name === "gameEdit") return drawEditor(ctx, v.game, v.isNew);
   if (v.name === "gameSend") return drawSend(ctx, v.game);
   if (!mine || !assigned) {
-    mount(ctx.body, el("p", { class: "muted pr-loading" }, "Loading games…"));
+    mount(ctx.body, el("p", { class: "muted pr-loading ta-loading" }, "Loading games…"));
     const isPlayer = !ctx.state.isAdmin && !ctx.state.isTeam && ctx.state.profile?.clientKey;
     [mine, assigned] = await Promise.all([listMyGames(ctx.owner), isPlayer ? listAssigned(ctx.state.profile.clientKey) : []]);
     if (ctx.view.name !== "home" && !ctx.view.name.startsWith("game")) return;
@@ -239,7 +239,7 @@ function drawEditor(ctx, g, isNew) {
 
 /* ---------------------------------------------- sending a game to players ---------------------------------------------- */
 async function drawSend(ctx, g) {
-  mount(ctx.body, el("p", { class: "muted pr-loading" }, "Loading your players…"));
+  mount(ctx.body, el("p", { class: "muted pr-loading ta-loading" }, "Loading your players…"));
   const players = await sendTargets(ctx);
   const picked = new Set();
   const note = el("input", { type: "text", maxLength: 140, placeholder: "A note (optional): e.g. “Do this twice before Thursday”" });

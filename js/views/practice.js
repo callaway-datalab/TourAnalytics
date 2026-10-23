@@ -173,7 +173,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     courseFor,
   };
 
-  drawPills(); mount(body, el("p", { class: "muted pr-loading" }, "Loading your practice\u2026"));
+  drawPills(); mount(body, el("p", { class: "muted pr-loading ta-loading" }, "Loading your practice\u2026"));
   // your clubs for the Club picker on each shot: your WITB bag, else the usual set (update 145)
   ctx.clubs = ["Driver", "3w", "5w", "4H", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "50\u00b0", "54\u00b0", "58\u00b0"];
   // how far each club carries (course prep's target, update 153): Launch Monitor Data launch data, else your WITB stock yardage, else a typical carry
@@ -449,7 +449,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
       save(s);
       ctx.playSession(s);
     });
-    mount(box, el("p", { class: "muted" }, "Loading your spots\u2026"));
+    mount(box, el("p", { class: "muted ta-loading" }, "Loading your spots\u2026"));
     listSpots(owner).then((list) => { spots = list; list.forEach((x) => picked.add(x.id)); drawList(); }).catch((err) => { console.error(err); spots = []; drawList(); });
     return box;
   }

@@ -41,7 +41,7 @@ export async function render(main, { previewClient }) {
     if (version === shownVersion) return;
     shownVersion = version;
     stop();
-    mount(box, el("p", { class: "empty center" }, "Loading…"));
+    mount(box, el("p", { class: "empty center ta-loading" }, "Loading…"));
     const summary = await getFieldStats(d.id).catch(() => null);
     if (shownVersion !== version) return;
     const field = summaryPlayers(summary).map((p) => ({ ...p, label: shown(p.key, p.name) })).filter((p) => p.rounds.length);

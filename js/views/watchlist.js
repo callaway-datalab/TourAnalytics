@@ -31,7 +31,7 @@ export async function render(main, { previewClient }) {
 
   const root = el("div", { class: "wl" });
   mount(main, root);
-  const loadingNote = el("p", { class: "muted center wl-loading" }, "Loading…");
+  const loadingNote = el("p", { class: "muted center wl-loading ta-loading" }, "Loading…");
   mount(root, [heroShell(), loadingNote]);
   if (!multi && !single) { mount(root, [heroShell(), el("section", { class: "panel" }, el("p", { class: "empty center" }, "No players have been added to your account yet."))]); return () => {}; }
 

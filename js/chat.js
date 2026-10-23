@@ -321,7 +321,7 @@ export function renderChat(container, { flash }) {
     if (!roomId) { mount(msgs, el("li", { class: "empty" }, "Pick a chat, or start one.")); form.hidden = true; shell.classList.remove("show-thread"); return; }
     form.hidden = false;
     shell.classList.add("show-thread");
-    mount(msgs, el("li", { class: "empty" }, "Loading\u2026"));
+    mount(msgs, el("li", { class: "empty ta-loading" }, "Loading\u2026"));
     // (update 176) read receipts: chatRooms/{id}/reads/{uid} = when each person last looked. Your own message can be
     // unsent until someone else in the chat has seen it; your latest one says Sent or Seen.
     let first = true, items = [], reads = {}, gotMsgs = false;

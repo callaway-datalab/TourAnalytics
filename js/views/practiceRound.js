@@ -130,7 +130,7 @@ async function myCourses(ctx) {
 
 let coursesCache = null;
 async function drawHome(ctx) {
-  mount(ctx.body, [hero(), el("p", { class: "muted pr-loading" }, "Loading your courses…")]);
+  mount(ctx.body, [hero(), el("p", { class: "muted pr-loading ta-loading" }, "Loading your courses…")]);
   const courses = coursesCache || (coursesCache = await myCourses(ctx));
   if (ctx.view.name !== "home") return;
   const pool = courses.flatMap((c) => c.par.map((p, i) => (Number(c.yards[i]) > 0 ? { par: p, yards: Number(c.yards[i]), course: c.name, n: i + 1 } : null)).filter(Boolean));
