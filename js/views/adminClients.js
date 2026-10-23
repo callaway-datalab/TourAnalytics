@@ -189,7 +189,7 @@ export async function render(main, { flash }) {
       // (update 169) every AI Insights report made, by anyone, since update 169
       ["Reports generated", stats.reports ?? 0, "Performance reports made, everyone combined (counted from update 169). Tap to see them by player.", "reports"],
       // (update 255) Ask AI: questions asked and what the AI has cost, everyone combined; tap for each person
-      ["AI Questions", aiQ ?? "\u2014", "Questions answered by the AI (Callie, and Compare's plans), everyone combined (counted from update 255). Tap to see who asked.", "aiq"],
+      ["AI Questions", aiQ ?? "\u2014", "Questions answered by the AI (Cal, and Compare's plans), everyone combined (counted from update 255). Tap to see who asked.", "aiq"],
       ["AI Cost", ai?.spend ? money(Number(ai.spend.usd || 0)) : "$0.00", `Everything the AI has cost so far${ai?.spend ? `, of the ${money(Number(ai.spend.cap || 1))} cap` : ""}. Tap to see it by person.`, "aic"],
     ].map(([label, value, title, list]) => {
       const shown = typeof value === "number" ? num(value) : String(value);

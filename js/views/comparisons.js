@@ -468,7 +468,7 @@ export async function render(main) {
     go.addEventListener("click", () => { askText = ta.value; if (!askText.trim()) { ta.focus(); return; } runAsk(askText.trim()); });
     const ex = ASK_EX.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small cmp-ask-ex" }, t); b.addEventListener("click", () => { askText = t; draw(); root.querySelector(".cmp-ask-in")?.focus(); }); return b; });
     return el("section", { class: "panel cmp-guide cmp-start cmp-ask" }, [
-      el("p", { class: "cmp-guide-k cal-k" }, [icon("robot"), " Callie \u00b7 compare"]),
+      el("p", { class: "cmp-guide-k cal-k" }, [icon("robot"), " Cal \u00b7 compare"]),
       el("h2", {}, "What do you want to compare?"),
       el("p", { class: "muted small" }, "Name the player (or say everyone), the clubs, balls or seasons, and anything to leave out. The comparison opens with the answer on top, and you can change anything after."),
       ta,
@@ -737,10 +737,10 @@ export async function render(main) {
     }
     const x = el("button", { type: "button", class: "gx-pop-x cmp-askres-x", "aria-label": "Close" }, "\u2715");
     x.addEventListener("click", () => { askRes = null; draw(); });
-    const again = el("button", { type: "button", class: "link small" }, "Ask Callie something else"); // (update 258)
+    const again = el("button", { type: "button", class: "link small" }, "Ask Cal something else"); // (update 258)
     again.addEventListener("click", () => { import("../callie.js").then((m) => m.openCallie()).catch(() => {}); });
     return el("section", { class: "panel cmp-askres" }, [
-      el("div", { class: "cmp-askres-top" }, [el("p", { class: "cmp-guide-k cal-k" }, [icon("robot"), " You asked Callie"]), x]),
+      el("div", { class: "cmp-askres-top" }, [el("p", { class: "cmp-guide-k cal-k" }, [icon("robot"), " You asked Cal"]), x]),
       el("p", { class: "cmp-askres-q" }, `\u201c${askRes.text}\u201d`),
       el("p", { class: "cmp-askres-a" }, md(answer)),
       biggest ? el("p", { class: "cmp-askres-b" }, md(biggest)) : null,

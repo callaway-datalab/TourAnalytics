@@ -656,7 +656,7 @@ function draw() {
   const log = panel.querySelector(".cal-log"), input = panel.querySelector(".cal-in"), send = panel.querySelector(".cal-send");
   const items = [];
   if (!chat.length) {
-    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Callie. Ask me about a player’s numbers (strokes gained, stats, seasons, tournaments, rounds, distances, lies, clubs), who leads the tour in something, or to compare two things."),
+    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal. Ask me about a player’s numbers (strokes gained, stats, seasons, tournaments, rounds, distances, lies, clubs), who leads the tour in something, or to compare two things."),
       el("p", { class: "muted small" }, "Every number I show is worked out by the portal from your data.")]));
     items.push(el("div", { class: "cal-ex" }, exList.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small" }, t); b.addEventListener("click", () => { if (!busy) ask(t); }); return b; })));
   }
@@ -667,7 +667,7 @@ function draw() {
     const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
     items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go]));
   }
-  if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Callie is working it out" }, [el("i"), el("i"), el("i")]));
+  if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Cal is working it out" }, [el("i"), el("i"), el("i")]));
   mount(log, items);
   log.scrollTop = log.scrollHeight;
   input.disabled = busy; send.disabled = busy;
@@ -675,19 +675,19 @@ function draw() {
 }
 export async function openCallie() {
   if (!panel) {
-    const input = el("textarea", { class: "cal-in", rows: 2, placeholder: "Ask Callie…", "aria-label": "Your question" });
+    const input = el("textarea", { class: "cal-in", rows: 2, placeholder: "Ask Cal…", "aria-label": "Your question" });
     const send = el("button", { type: "button", class: "btn cal-send", "aria-label": "Send" }, "Ask");
     const go = () => { const t = input.value.trim(); if (!t || busy) return; input.value = ""; ask(t); };
     send.addEventListener("click", go);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
-    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close Callie" }, "✕");
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close Cal" }, "✕");
     close.addEventListener("click", closeCallie);
     const fresh = el("button", { type: "button", class: "link small" }, "New chat");
     fresh.addEventListener("click", () => { chat.length = 0; lastPlayers = []; pending = null; busy = false; draw(); });
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
-      el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Callie, your data assistant" }, [
-        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Callie"), el("span", { class: "muted small" }, "Your golf data caddy")]), fresh, close]),
+      el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [
+        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your golf data caddy")]), fresh, close]),
         el("div", { class: "cal-log", "aria-live": "polite" }),
         el("div", { class: "cal-foot" }, [input, send]),
       ]),

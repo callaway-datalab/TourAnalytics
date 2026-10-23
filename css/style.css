@@ -4404,6 +4404,11 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }
 @media (display-mode: standalone) { :root { --sat-gap: 10px; } }
 /* (update 278) Callie's new picture: a touch bigger so her face reads */
-.rail-foot .hdr-icon.callie-link svg.ico-callie { width: 24px; height: 24px; }
+.rail-foot .hdr-icon.callie-link svg.ico-callie { width: 21px; height: 21px; }
 .cal-ava svg.ico-callie { width: 26px; height: 26px; }
+/* (update 279) Cal in the header: just the robot, no circle, on the header's own black */
+.rail-foot .hdr-icon.callie-link, .rail-foot .hdr-icon.callie-link:hover, .cal-open .rail-foot .hdr-icon.callie-link {
+  border: 0 !important; background: transparent !important; box-shadow: none !important; }
+.rail-foot .hdr-icon.callie-link:hover, .cal-open .rail-foot .hdr-icon.callie-link { color: #f3dfbd !important; }
+.cal-ava { background: transparent; border: 0; width: auto; height: auto; }
 .cal-k svg.ico-callie { width: 16px; height: 16px; }

@@ -224,7 +224,7 @@ window.addEventListener("hashchange", () => currentAccountMenu?.setOpen(false));
 
 /** (update 258) Callie in the header: opens her chat panel over whatever page is showing. */
 function callieButton() {
-  const b = el("button", { type: "button", class: "hdr-icon callie-link", "aria-label": "Ask Callie", title: "Ask Callie: any question about a player\u2019s data" }, [icon("robot"), el("span", { class: "callie-name" }, "Callie")]);
+  const b = el("button", { type: "button", class: "hdr-icon callie-link", "aria-label": "Ask Cal", title: "Ask Cal: any question about a player\u2019s data" }, [icon("robot"), el("span", { class: "callie-name" }, "Cal")]);
   b.addEventListener("click", () => import("./callie.js").then((m) => m.openCallie()).catch((err) => console.error(err)));
   return b;
 }
