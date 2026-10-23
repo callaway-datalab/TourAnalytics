@@ -45,12 +45,12 @@ function openTrajectory(rs, x) {
 }
 // (update 281) the summary in long-term (last 40 vs the 40 before) and short-term (last 10 vs the 10 before) words
 function termWords(tr) {
-  const word = (x) => (x.ch.TOTAL > 0.15 ? "improving" : x.ch.TOTAL < -0.15 ? "regressing" : "holding steady");
+  // (update 282) "Up over the long-term; Down over the short-term"
+  const word = (x) => (x.ch.TOTAL > 0.15 ? "Up" : x.ch.TOTAL < -0.15 ? "Down" : "Steady");
   const lt = tr.find((x) => x.n === 40), st = tr.find((x) => x.n === 10);
-  const cap = (t) => `${t[0].toUpperCase()}${t.slice(1)}.`;
-  if (lt && st) return word(lt) === word(st) ? cap(`${word(lt)} over both the long-term and the short-term`) : cap(`${word(lt)} over the long-term; ${word(st)} over the short-term`);
+  if (lt && st) return word(lt) === word(st) ? `${word(lt)} over both the long-term and the short-term.` : `${word(lt)} over the long-term; ${word(st)} over the short-term.`;
   const one = lt || st;
-  return cap(`${word(one)} over the ${one === lt ? "long" : "short"}-term`);
+  return `${word(one)} over the ${one === lt ? "long" : "short"}-term.`;
 }
 function trajectoryBlock(rs) {
   const tr = trajectory(rs).filter((x) => x.n === 10 || x.n === 40);

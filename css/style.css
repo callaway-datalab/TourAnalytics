@@ -4402,7 +4402,7 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   body { padding-top: calc(var(--sat) + var(--sat-gap)); }
   html::after { content: ""; position: fixed; left: 0; right: 0; top: 0; height: calc(var(--sat) + var(--sat-gap)); background: #000; z-index: 9000; pointer-events: none; }
 }
-@media (display-mode: standalone) { :root { --sat-gap: 10px; } }
+@media (display-mode: standalone) { :root { --sat-gap: 22px; } } /* (update 282: a little more, the blur reaches further down) */
 /* (update 278) Callie's new picture: a touch bigger so her face reads */
 .rail-foot .hdr-icon.callie-link svg.ico-callie { width: 21px; height: 21px; }
 .cal-ava svg.ico-callie { width: 26px; height: 26px; }
@@ -4413,18 +4413,31 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 .cal-ava { background: transparent; border: 0; width: auto; height: auto; }
 .cal-k svg.ico-callie { width: 16px; height: 16px; }
 
-/* (update 280/281) Loading: a golf ball rolling round the cup (from the old site), spinner-sized, above the message;
-   and a smaller one in front of a one-line status ("Loading players…") */
-.ta-loading { position: relative; display: block; text-align: center !important; padding-top: 2.3rem !important; min-height: 2.3rem; }
+/* (update 280-282) Loading: just a golf ball rolling round the cup (from the old site), spinner-sized; the ball rides
+   the cup's rim, half in and half out. Block messages show only the animation (the words are kept for screen readers);
+   a one-line status ("Loading players… 12 of 40") keeps its words, with a small one in front. */
+.ta-loading { position: relative; display: block; min-height: 2.1rem; padding: 0 !important;
+  font-size: 0 !important; line-height: 0 !important; color: transparent !important; text-align: center !important; }
 .ta-loading::before, .ta-loading::after { content: ""; position: absolute; left: 50%; border-radius: 50%; pointer-events: none; }
-.ta-loading::before { top: 0.2rem; width: 24px; height: 24px; margin-left: -12px; background: #2f5a1c url("../icons/loader-hole.jpg") center / 110%; border: 1.5px solid #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45); }
-.ta-loading::after { top: calc(0.2rem + 12px); width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: #f1f1f1 url("../icons/loader-ball.jpg") center / 110%;
-  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.35); animation: taCup 1.4s linear infinite; --r: 11px; }
-.ta-loading-inline::before { content: ""; display: inline-block; vertical-align: -4px; width: 18px; height: 18px; margin-right: 0.45em; border-radius: 50%; border: 1px solid #fff;
-  background: radial-gradient(circle, #f6f6f6 0 2.6px, #b9b9b9 3.1px, transparent 3.7px) no-repeat, #2f5a1c url("../icons/loader-hole.jpg") center / 110% no-repeat;
-  background-size: 8px 8px, 110%; animation: taCupBg 1.4s linear infinite; }
-@keyframes taCupBg { 0.0% { background-position: 9.0px 4.0px, center; } 6.25% { background-position: 8.62px 5.91px, center; } 12.5% { background-position: 7.54px 7.54px, center; } 18.75% { background-position: 5.91px 8.62px, center; } 25.0% { background-position: 4.0px 9.0px, center; } 31.25% { background-position: 2.09px 8.62px, center; } 37.5% { background-position: 0.46px 7.54px, center; } 43.75% { background-position: -0.62px 5.91px, center; } 50.0% { background-position: -1.0px 4.0px, center; } 56.25% { background-position: -0.62px 2.09px, center; } 62.5% { background-position: 0.46px 0.46px, center; } 68.75% { background-position: 2.09px -0.62px, center; } 75.0% { background-position: 4.0px -1.0px, center; } 81.25% { background-position: 5.91px -0.62px, center; } 87.5% { background-position: 7.54px 0.46px, center; } 93.75% { background-position: 8.62px 2.09px, center; } 100.0% { background-position: 9.0px 4.0px, center; } }
-@keyframes taCup { from { transform: rotate(0deg) translateX(var(--r, 11px)) rotate(0deg); } to { transform: rotate(360deg) translateX(var(--r, 11px)) rotate(-360deg); } }
+.ta-loading::before { top: 0.3rem; width: 24px; height: 24px; margin-left: -12px; background: #2f5a1c url("../icons/loader-hole.jpg") center / 110%; border: 1.5px solid #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45); }
+.ta-loading::after { top: calc(0.3rem + 12px); width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: #f1f1f1 url("../icons/loader-ball.jpg") center / 110%;
+  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.35); animation: taCup 1.4s linear infinite; }
+@keyframes taCup { from { transform: rotate(0deg) translateX(11.3px) rotate(0deg); } to { transform: rotate(360deg) translateX(11.3px) rotate(-360deg); } }
+.ta-loading-inline::before { content: ""; display: inline-block; vertical-align: -7px; width: 24px; height: 24px; margin-right: 0.4em;
+  background: radial-gradient(circle, #fafafa 0 2.4px, #bdbdbd 3px, transparent 3.6px) no-repeat,
+    radial-gradient(circle, transparent 7.3px, #fff 7.6px 8.6px, transparent 9px) no-repeat,
+    radial-gradient(circle, #050505 0 4px, #3b3b3b 5.5px, #6a6a6a 7.4px, transparent 7.6px) no-repeat;
+  background-size: 7px 7px, 24px 24px, 24px 24px; animation: taCupBg 1.4s linear infinite; }
+@keyframes taCupBg { 0.0% { background-position: 16.6px 8.5px, center, center; } 5.0% { background-position: 16.2px 11.0px, center, center; } 10.0% { background-position: 15.05px 13.26px, center, center; } 15.0% { background-position: 13.26px 15.05px, center, center; } 20.0% { background-position: 11.0px 16.2px, center, center; } 25.0% { background-position: 8.5px 16.6px, center, center; } 30.0% { background-position: 6.0px 16.2px, center, center; } 35.0% { background-position: 3.74px 15.05px, center, center; } 40.0% { background-position: 1.95px 13.26px, center, center; } 45.0% { background-position: 0.8px 11.0px, center, center; } 50.0% { background-position: 0.4px 8.5px, center, center; } 55.0% { background-position: 0.8px 6.0px, center, center; } 60.0% { background-position: 1.95px 3.74px, center, center; } 65.0% { background-position: 3.74px 1.95px, center, center; } 70.0% { background-position: 6.0px 0.8px, center, center; } 75.0% { background-position: 8.5px 0.4px, center, center; } 80.0% { background-position: 11.0px 0.8px, center, center; } 85.0% { background-position: 13.26px 1.95px, center, center; } 90.0% { background-position: 15.05px 3.74px, center, center; } 95.0% { background-position: 16.2px 6.0px, center, center; } 100.0% { background-position: 16.6px 8.5px, center, center; } }
 @media (prefers-reduced-motion: reduce) { .ta-loading::after, .ta-loading-inline::before { animation-duration: 4s; } }
-.cmp-busy .ta-loading, .cmp-empty .ta-loading { margin: 0; }
+.ta-loading:not(.boot-msg) { margin-top: 0.6rem; margin-bottom: 0.6rem; }
+.cmp-busy .ta-loading, .cmp-empty .ta-loading { margin: 0.4rem 0; }
+.ta-loading-inline.ta-just { font-size: 0 !important; } /* a status that only said "Loading…": just the ball and cup */
+.ta-loading-inline.ta-just::before { margin-right: 0; }
 .rail-foot .hdr-icon.callie-link[hidden] { display: none !important; } /* (update 281) Cal isn't on for everyone */
+/* (update 282) phones: the header links a touch smaller, so all five (to Event Feed) fit on one line */
+@media (max-width: 520px) {
+  .rail > nav:not(.subhead) > a, .rail > nav:not(.subhead) > a:hover, .rail > nav:not(.subhead) > a[aria-current="page"] {
+    font-size: 0.76rem !important; padding: 0.4rem 0.42rem !important; letter-spacing: 0 !important; }
+  .rail > nav:not(.subhead) { gap: 0.1rem 0.05rem !important; }
+}

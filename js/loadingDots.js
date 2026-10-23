@@ -7,6 +7,7 @@ function check(node) {
   if (e.matches("script, style, title, option, textarea, input, button, a")) return;
   const on = !e.firstElementChild && isLoading(e.textContent) && e.textContent.length < 160;
   e.classList.toggle("ta-loading-inline", on);
+  e.classList.toggle("ta-just", on && /^\s*Loading\s*(\u2026|\.\.\.)?\s*$/.test(e.textContent)); // (update 282: just the animation)
 }
 export function loadingDots() {
   new MutationObserver((list) => {
