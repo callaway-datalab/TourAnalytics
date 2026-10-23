@@ -4659,3 +4659,18 @@ dialog.issue-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
   .sg-panel .subnav.small.trend-kinds a, .subnav.small.trend-kinds a { font-size: 0.64rem !important; padding: 0.32rem 0.42rem !important; white-space: nowrap; }
 }
 .sg-box .subnav.small.trend-kinds { margin-left: auto !important; margin-right: auto !important; }
+
+/* (update 308) Hide Comps / Show Comps: top right of each chart card with comparison dots */
+.sg-box > .comp-toggle { position: absolute; top: 0.85rem; right: 0.9rem; z-index: 2; font: 600 0.72rem/1 var(--font-body); letter-spacing: 0.02em;
+  padding: 0.4rem 0.7rem; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.06); color: var(--ink-2, #d1d1d6); cursor: pointer; }
+.sg-box > .comp-toggle:hover { color: #fff; border-color: rgba(255, 255, 255, 0.4); }
+.sg-box > .comp-toggle[aria-pressed="true"] { color: #d4b483; border-color: rgba(212, 180, 131, 0.5); }
+.sg-box.has-comp-toggle > h3 { padding-right: 7.5rem; }
+
+/* (update 309) Peak Length: the same height as the Rank comparisons pills and the same size text */
+.top-pills .peak-len { height: 25px !important; min-height: 0 !important; width: 3.4rem !important; font: 500 0.78rem/1 var(--font-body) !important;
+  padding: 0 0.3rem !important; border-radius: 12px; box-sizing: border-box; }
+@media (max-width: 520px) {
+  /* (16px text inside, drawn at 0.72 so it matches the pills: phones don't zoom in on it when it's tapped) */
+  .top-pills .peak-len { font-size: 16px !important; zoom: 0.72; height: 43px !important; width: 4.4rem !important; border-radius: 16px; }
+}

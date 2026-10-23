@@ -218,6 +218,7 @@ export function sgDashboard(container, opts) {
       sgEligible = new Set(sgCounts.filter(([, n]) => n >= sgMinR).map(([k]) => k));
     }
     const mine = me ? nz(applyFilters(me.rounds, f)) : null;
+    peakCtx = { mine: mine || [], cat: st.cats.length === 1 ? st.cats[0] : "" }; // (update 308: Personal Peak dots)
     // Gold dots (Top 1 / 10 / 25 / 50 / All): until picked by hand, the next group up from the player's rank
     // (Min. rounds applies): 100th → Top 50, 18th → Top 10, 2nd-10th → Top 1; the leader compares with the Top 10.
     if (me && !(st.rankTopManual && st.rankTopFor === me.key)) {
@@ -1340,21 +1341,12 @@ export function sgDashboard(container, opts) {
     // selection, not counting the player on screen), every row from that one player: #1 is the same golfer all the way down
     const peakOn = st.vsRank === "peak"; // (update 260) or against the player's own peak
     const vsN = st.vsRank && !peakOn ? Number(st.vsRank) : null;
-    const refP = vsN ? (() => { const byTot = ranked.map((p) => ({ p, t: rowVals(p.rounds, "").get("c:TOTAL") })).filter((x) => x.t != null && Number.isFinite(x.t)).sort((a, b) => b.t - a.t); return byTot.length ? byTot[Math.min(vsN, byTot.length) - 1].p : null; })() : null;
+    const refP = vsN ? refPlayer(slicedField, vsN) : null; // (update 308: the same player as the charts' dots)
     // (update 266) Personal Peak: the player's N best rounds (the Peak Length, default 10) in this selection, ranked by the
     // strokes gained the filters are about (SG: Total, or the one category picked: their best Off-the-Tee rounds), and
     // every row is those same rounds' value, so the rows still add up and read as "how I play on my best days"
     const peakN = Math.max(2, Math.round(Number(st.peakN) || 10));
-    const peak = peakOn ? (() => {
-      const scored = ordered.map((rd) => { let t = 0, any = false; for (const x of rd.shots) if (!cat || x.cat === cat) { t += x.sg; any = true; } return { rd, t, any }; }).filter((x) => x.any);
-      if (scored.length < peakN) return { map: new Map(), rounds: [], short: true, have: scored.length };
-      // (update 299) the best stretch of N rounds in a row (oldest first), by the filters' total
-      const seq = [...scored].sort((x, y) => String(x.rd.date || "").localeCompare(String(y.rd.date || "")));
-      let sum = 0, bestSum = -Infinity, bestAt = 0;
-      seq.forEach((x, i) => { sum += x.t; if (i >= peakN) sum -= seq[i - peakN].t; if (i >= peakN - 1 && sum > bestSum) { bestSum = sum; bestAt = i - peakN + 1; } });
-      const best = seq.slice(bestAt, bestAt + peakN).map((x) => x.rd);
-      return { map: rowVals(best, cat), rounds: best, short: false };
-    })() : null;
+    const peak = peakOn ? peakOf(ordered, cat, peakN) : null; // (update 308: the same rounds as the charts' dots)
     const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
     const dTxt = (rd) => String(rd?.date || "").slice(0, 10);
     // no rank picked: each stat coloured against the player's own career average (every round of theirs)
@@ -1383,7 +1375,7 @@ export function sgDashboard(container, opts) {
     return [
       el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less ${refP.label || refP.key}\u2019s (ranked #${vsN} overall)`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `Vs #${vsN} ${refP.label || ""}`.trim()) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less the #${vsN} player\u2019s`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `VS #${vsN}`) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
         el("tbody", {}, tr),
       ])),
       // (update 240) what the colours mean
@@ -1409,7 +1401,7 @@ export function sgDashboard(container, opts) {
       const byCat = panelBox("SG by Category", [chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), {
         title: "SG / round", as, compare: catCompare, compareLabel: compareName() }), "", "by-category", { rankPick: cmpField.length > 0 })]);
       const lies = sgBy(mine, idx, null, "lie");
-      const lieCompare = lies && !fieldIsSummary() ? lies.map((g) => avgOf(cmpField.map((p) => (sgBy(p.rounds, idx, null, "lie") || []).find((x) => x.label === g.label)?.perRound))) : null;
+      const lieCompare = lies && cmpDetailOK() ? lies.map((g) => avgOf(cmpField.map((p) => (sgBy(p.rounds, idx, null, "lie") || []).find((x) => x.label === g.label)?.perRound))) : null;
       blocks.push(lies && lies.length > 1
         ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,
             title: "SG / round", compare: lieCompare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie", { rankPick: !!lieCompare }))])
@@ -1434,7 +1426,7 @@ export function sgDashboard(container, opts) {
         if (!groups || (groups.length < 2 && fieldName !== "distanceRange")) continue;
         // "All players" markers only where the others' detail is available (admin).
         const compareField = topPlayers(slicedField);
-        const compare = fieldIsSummary() ? null : groups.map((g) => {
+        const compare = !cmpDetailOK() ? null : groups.map((g) => {
           const vals = compareField.map((p) => (sgBy(p.rounds, idx, cat, fieldName) || []).find((x) => x.label === g.label)?.perRound).filter((v) => v !== undefined);
           return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
         });
@@ -1466,7 +1458,10 @@ export function sgDashboard(container, opts) {
     // round, their bar meets the dot).
     const others = rankedField(slicedField).filter((p) => p.key !== me.key);
     const otherTrends = others.map((p) => trend(p.rounds, cat || null, st.trendBy));
-    const tCompare = others.length ? t.map((g) => topMean([g.value, ...otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value)])) : null;
+    // (update 308) Personal Peak: its average (the same rounds as the table) as the dot on every bar
+    const pkT = st.vsRank === "peak" && !soloTour ? curPeak() : null;
+    const pkV = pkT && !pkT.short ? pkT.rounds.reduce((tt, rd) => tt + rd.shots.reduce((a, x) => a + (!cat || x.cat === cat ? x.sg : 0), 0), 0) / pkT.rounds.length : null;
+    const tCompare = pkV != null ? t.map(() => pkV) : others.length ? t.map((g) => topMean([g.value, ...otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value)])) : null;
     const unit = { round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event";
     blocks.push(panelBox("SG Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
       title: "SG / round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(unit),
@@ -1531,7 +1526,7 @@ export function sgDashboard(container, opts) {
   function statDetail(mine, slicedField) {
     const blocks = [], visuals = [];
     const cat = st.cats.length === 1 ? st.cats[0] : catsAvail.length === 1 ? catsAvail[0][0] : "";
-    const detailOK = !fieldIsSummary(); // others' lie / distance detail (the admin); the shared summary has categories only
+    const detailOK = cmpDetailOK(); // others' lie / distance detail (the admin); the shared summary has categories only
     // the gold dots: the same players as on the strokes-gained charts (none when there's nobody else to compare with)
     const cmpField = rankedField(slicedField).some((p) => p.key !== me.key) ? topPlayers(slicedField) : [];
     const tip = (groups) => (i) => `${Math.round(groups[i].w).toLocaleString()} ${Math.round(groups[i].w) === 1 ? "attempt" : "attempts"}`;
@@ -1787,27 +1782,64 @@ export function sgDashboard(container, opts) {
   }
   // Rank filter for the dashed comparison: everyone, or just the top 1 / 10 / 25 / 50 players by SG / round.
   const RANK_TOPS = [["1", "Top 1"], ["10", "Top 10"], ["25", "Top 25"], ["50", "Top 50"], ["all", "All"]];
+  // (update 308) who the gold dots on the charts are, matching the comparison picked above the stats table:
+  //   Personal Peak: the player's own best run of rounds (the same rounds as the table's "Vs best N rds");
+  //   #1 / #10 / #25 / #50: that one player (the same golfer the table's "VS #N" uses), not an average of a group;
+  //   All: every ranked player's average
   function topPlayers(list) {
-    list = rankedField(list); // the gold dots (Tour avg) use the same players as the rankings (Min. rounds)
-    const n = st.rankTop && st.rankTop !== "all" ? Number(st.rankTop) : null;
-    if (!n) return list;
-    return list.filter((p) => p.rounds.length).map((p) => ({ p, v: metric(p.rounds) })).filter((x) => x.v != null)
-      .sort(byBest).slice(0, n).map((x) => x.p);
+    if (soloTour) return []; // (update 307: Practice or a typed-in tour: no comparisons)
+    if (st.vsRank === "peak") { const pk = curPeak(); return pk && !pk.short ? [{ key: "__peak", label: "Personal Peak", rounds: pk.rounds }] : []; }
+    const n = vsNum();
+    if (!n) return rankedField(list); // the gold dots use the same players as the rankings (Min. rounds)
+    const ref = refPlayer(list, n);
+    return ref ? [ref] : [];
   }
+  const vsNum = () => { const v = st.vsRank && st.vsRank !== "peak" ? st.vsRank : st.rankTop && st.rankTop !== "all" ? st.rankTop : null; return v ? Number(v) : null; };
+  /** The player ranked #n by SG: Total a round in this selection (not counting the player on screen), as the table uses. */
+  function refPlayer(slicedField, n) {
+    const byTot = rankedField(slicedField).filter((p) => p.key !== me?.key).map((p) => ({ p, t: rowVals(p.rounds, "").get("c:TOTAL") }))
+      .filter((x) => x.t != null && Number.isFinite(x.t)).sort((a, b) => b.t - a.t);
+    return byTot.length ? byTot[Math.min(n, byTot.length) - 1].p : null;
+  }
+  /** The player's best run of N rounds in a row (Peak Length), by the strokes gained the filters are about. */
+  function peakOf(rounds, cat, peakN) {
+    const ordered = [...rounds].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const scored = ordered.map((rd) => { let t = 0, any = false; for (const x of rd.shots) if (!cat || x.cat === cat) { t += x.sg; any = true; } return { rd, t, any }; }).filter((x) => x.any);
+    if (scored.length < peakN) return { map: new Map(), rounds: [], short: true, have: scored.length };
+    // (update 299) the best stretch of N rounds in a row (oldest first), by the filters' total
+    const seq = [...scored].sort((x, y) => String(x.rd.date || "").localeCompare(String(y.rd.date || "")));
+    let sum = 0, bestSum = -Infinity, bestAt = 0;
+    seq.forEach((x, i) => { sum += x.t; if (i >= peakN) sum -= seq[i - peakN].t; if (i >= peakN - 1 && sum > bestSum) { bestSum = sum; bestAt = i - peakN + 1; } });
+    const best = seq.slice(bestAt, bestAt + peakN).map((x) => x.rd);
+    return { map: rowVals(best, cat), rounds: best, short: false };
+  }
+  let peakCtx = null, peakMemo = null;
+  const curPeak = () => {
+    if (!peakCtx?.mine?.length) return null;
+    const n = Math.max(2, Math.round(Number(st.peakN) || 10));
+    if (peakMemo && peakMemo.mine === peakCtx.mine && peakMemo.cat === peakCtx.cat && peakMemo.n === n) return peakMemo.pk;
+    const pk = peakOf(peakCtx.mine, peakCtx.cat, n);
+    peakMemo = { mine: peakCtx.mine, cat: peakCtx.cat, n, pk };
+    return pk;
+  };
+  const cmpDetailOK = () => !fieldIsSummary() || (st.vsRank === "peak" && !soloTour); // (lie / distance dots need full rows: the peak is the player's own)
   // what the gold dots are: on the trends, the best result(s) each round / event / month / year among the
   // players who played it; on the other charts, the best players over the selected time frame
   const compareName = (each = null) => {
+    if (st.vsRank === "peak") return `Personal Peak: best ${Math.max(2, Math.round(Number(st.peakN) || 10))} rds in a row (avg)`;
     const n = st.rankTop && st.rankTop !== "all" ? st.rankTop : null;
-    if (each) return n === "1" ? `Best player each ${each}` : n ? `Top ${n} each ${each} (avg)` : `All players each ${each} (avg)`;
-    return n === "1" ? "Best player overall" : n ? `Top ${n} overall (avg)` : "All players (avg)";
+    if (each) { const v0 = vsNum(); return v0 ? `#${v0} player each ${each}` : `All players each ${each} (avg)`; } // (update 309)
+    const v = vsNum(); // (update 308) one player: the one ranked #N
+    return v ? `#${v} player (avg)` : "All players (avg)";
   };
   // the best n of a set of results (lower is better for some stats), averaged
   const topMean = (vals, higher = true) => {
     const v = vals.filter((x) => x != null && Number.isFinite(x)).sort((p, q) => (higher ? q - p : p - q));
     if (!v.length) return null;
-    const n = st.rankTop && st.rankTop !== "all" ? Number(st.rankTop) : v.length;
-    const top = v.slice(0, n);
-    return top.reduce((t, x) => t + x, 0) / top.length;
+    // (update 309) a rank picked (#1 / #10 / #25 / #50): the one result ranked #N there (the last one when fewer played)
+    const n = vsNum();
+    if (n) return v[Math.min(n, v.length) - 1];
+    return v.reduce((t, x) => t + x, 0) / v.length;
   };
   const topName = () => (RANK_TOPS.find(([v]) => v === (st.rankTop || "all"))?.[1] || "All").replace(/^All$/, "All Players");
   function topPills(label = null) {
@@ -1870,8 +1902,12 @@ export function sgDashboard(container, opts) {
       if (chart) { const i = charts.indexOf(chart); if (i >= 0) charts.splice(i, 1); chart.destroy(); }
       const fresh = el("canvas", {});
       canvas.replaceWith(fresh); canvas = fresh;
+      // (update 308) Hide Comps: this card's dots and legend off (remembered per chart while the page is open)
+      hideCompsNow = !!(key && st.hideComps?.[key]); cmpSeen = false;
       chart = make(canvas, (key && st.chartTypes[key]) || "bar");
+      hideCompsNow = false;
       charts.push(chart);
+      if (key && cmpSeen) compsToggle(wrap, key);
       // Only a chart whose bars changed grows in again; the rest appear as they were. When just the gold
       // dots changed (Top 1 / 10 / 25 / 50 / All), the bars stay put and the dots glide to their new places.
       try {
@@ -1899,6 +1935,28 @@ export function sgDashboard(container, opts) {
     // (update 142: no bar / line switch; each chart keeps its own style)
     void rankPick; // (update 228: no dropdown on the charts; the Top pills sit on the stats table / category chart)
     return key ? el("div", { class: "chart-holder" }, [wrap]) : wrap;
+  }
+  // (update 308) the Hide Comps / Show Comps button in the top right of each chart card that has comparison dots
+  let hideCompsNow = false, cmpSeen = false;
+  function compsToggle(wrap, key) {
+    const card = wrap.closest(".sg-box");
+    if (!card) return;
+    const keys = new Set((card.dataset.ckeys || "").split("|").filter(Boolean)); keys.add(key);
+    card.dataset.ckeys = [...keys].join("|");
+    const hidden = () => [...keys].every((k) => st.hideComps?.[k]);
+    let b = card.querySelector(":scope > .comp-toggle");
+    if (!b) {
+      b = el("button", { type: "button", class: "comp-toggle" });
+      b.addEventListener("click", () => {
+        const ks = (card.dataset.ckeys || "").split("|").filter(Boolean), on = !ks.every((k) => st.hideComps?.[k]);
+        st.hideComps = { ...(st.hideComps || {}) }; ks.forEach((k) => { st.hideComps[k] = on; });
+        draw();
+      });
+      card.classList.add("has-comp-toggle");
+      card.appendChild(b);
+    }
+    b.textContent = hidden() ? "Show Comps" : "Hide Comps";
+    b.setAttribute("aria-pressed", String(hidden()));
   }
   function baseOptions() {
     const muted = "#8e8e93", grid = "rgba(255,255,255,0.06)";
@@ -1950,7 +2008,9 @@ export function sgDashboard(container, opts) {
     const w = Math.max(0.04, frac), cf = Math.max(0.04, colorFrac);
     return `width:${w * 100}%;background:linear-gradient(90deg, ${near}, ${far});background-size:${100 / cf}% 100%;background-repeat:no-repeat`;
   };
-  function barChart(canvas, labels, values0, { title: title0, compare: compare0, compareLabel = "All players", average, single, tooltip, shortLabels = null, as = "bar", colors = null } = {}) {
+  function barChart(canvas, labels, values0, { title: title0, compare: compareIn, compareLabel = "All players", average: averageIn, single, tooltip, shortLabels = null, as = "bar", colors = null } = {}) {
+    if ((Array.isArray(compareIn) && compareIn.some((x) => x != null)) || averageIn !== undefined) cmpSeen = true;
+    const compare0 = hideCompsNow ? null : compareIn, average = hideCompsNow ? undefined : averageIn; // (update 308: Hide Comps)
     // (update 228) Relative to Avg: each bar less the compared players' value at it (the dots become the zero line)
     const relNow = relOn() && Array.isArray(compare0) && compare0.some((x) => x != null);
     const values = relNow ? values0.map((v, i) => (v != null && compare0[i] != null ? v - compare0[i] : null)) : values0;
