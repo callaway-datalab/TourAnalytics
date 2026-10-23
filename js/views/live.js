@@ -129,17 +129,17 @@ export async function render(main) {
   // (update 264) the API's side: its tournaments, its stat names, its players (for the search)
   let apiEvents = [], apiOverrides = {}, apiPlayers = [], uploadEvents = [], apiSeen = false, curVis = null, refreshing = "", stopEvent = null, watchedRel = null, reqId = 0;
   let field = [], tours = [], events = [], lb = null, file = null, statsMeta = [], metaById = {}, uploadedAt = null, loadErr = "", version = null;
-  let visible = ls.get("cols2", null); // null = the default columns
-  let showRanks = ls.get("ranks", window.innerWidth >= 700), minOn = ls.get("min", true), wide = ls.get("wide", false);
+  let visible = ls.get("cols3", null); // null = the default columns (update 284: just strokes gained; new keys, so the new defaults apply)
+  let showRanks = ls.get("ranks2", true), minOn = ls.get("min2", true), wide = ls.get("wide2", false);
   let sel = { player: null, t: null, view: "latest" }, sortKey = "TOTAL", sortDir = -1;
   let colsOpen = false, pickerQ = "", q = "";
   const famOpen = {}, subOpen = {};
   let ranksCache = {};
 
   const valKey = () => (sel.view === "event" ? "event" : "round");
-  const saveVisible = () => ls.set(curVis || "cols2", visible); // (update 264: the API's stats and the uploaded ones are chosen separately)
+  const saveVisible = () => ls.set(curVis || "cols3", visible); // (update 264: the API's stats and the uploaded ones are chosen separately)
   const allKeys = () => BASE_KEYS.concat(statsMeta.map((m) => `x:${m.id}`));
-  const defaultKeys = () => BASE_KEYS.concat(statsMeta.filter((m) => m.default !== false).map((m) => `x:${m.id}`));
+  const defaultKeys = () => BASE_KEYS; // (update 284) the strokes-gained columns; other stats from Columns
   const isOn = (key) => (visible === null ? defaultKeys().includes(key) : visible.includes(key));
   const columns = () => COLS.filter(([k]) => isOn(k)).map(([key, label]) => ({ key, label }))
     .concat(statsMeta.filter((m) => isOn(`x:${m.id}`)).map((m) => ({ key: `x:${m.id}`, label: m.label, tip: (m.tip || "") + (m.lower ? " (Lower is better.)" : ""), id: m.id, lower: m.lower })));
@@ -210,16 +210,16 @@ export async function render(main) {
   }
   // (update 283) tour pills (PGA TOUR / Korn Ferry) on top; under them the tour's current tournaments (in progress or
   // upcoming) as cards, and every finished one in an "Archived Events" list
-  const tourPills = el("div", { class: "seg lv-tourpills", role: "group", "aria-label": "Tour" });
+  const tourPills = el("nav", { class: "subnav sg-tours lv-tourpills", role: "radiogroup", "aria-label": "Tour" }); // (update 284: like the Stats page's)
   const isFinal = (e) => statusOf(e) === "final";
   const firstOf = (t) => t.events.find((e) => !isFinal(e)) || t.events[0];
   function drawTours() {
     const cur = tours.find((t) => sel.t && t.tour === sel.t.tour) || tours[0];
     mount(tourPills, tours.length > 1 ? tours.map((t) => {
       const on = t === cur, live = t.events.some((e) => statusOf(e) === "live");
-      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on) }, [live ? el("i", { class: "lv-dot", "aria-hidden": "true" }) : null, t.tour]);
-      b.addEventListener("click", () => { if (!on) pickEvent(firstOf(t)); });
-      return b;
+      const a = el("a", { href: "#", role: "radio", "aria-checked": String(on), "aria-current": on ? "page" : null }, [live ? el("i", { class: "lv-dot", "aria-hidden": "true" }) : null, t.tour]);
+      a.addEventListener("click", (ev) => { ev.preventDefault(); if (!on) pickEvent(firstOf(t)); });
+      return a;
     }) : null);
     tourPills.hidden = tours.length < 2;
     if (!cur) { mount(tourBox, null); return; }
@@ -232,7 +232,7 @@ export async function render(main) {
       return b;
     };
     const current = cur.events.filter((e) => !isFinal(e)), archived = cur.events.filter(isFinal);
-    const showing = sel.t && isFinal(sel.t) && sel.t.tour === cur.tour ? [sel.t] : []; // a finished one that's open shows as a card too
+    const showing = []; // (update 284: a finished one stays in the Archived list, picked there)
     const arch = archived.length ? el("select", { class: "lv-ev", "aria-label": `${cur.tour}: archived events` }, [
       el("option", { value: "", selected: !(sel.t && isFinal(sel.t)) }, `Archived Events (${archived.length})`),
       ...archived.slice(0, 80).map((e) => el("option", { value: e.id, selected: sel.t?.id === e.id }, `${e.event} (${dayTxt(e.start)}, ${e.year})`)),
@@ -245,7 +245,7 @@ export async function render(main) {
     ]));
   }
   mount(root, [head, tourPills, el("div", { class: "lv-pick" }, [tourBox, roundBox]), grid]);
-  function pickEvent(e) { if (!e) return; sel.t = e; sel.view = "latest"; refresh(); }
+  function pickEvent(e) { if (!e) return; sel.t = e; sel.view = "latest"; sel.chosen = true; refresh(); }
   function drawRounds(active) {
     mount(roundBox, ROUNDS.map(([v, l]) => {
       const on = v === active;
@@ -259,9 +259,9 @@ export async function render(main) {
     const tg = (label, on, title, click, cls = "") => { const b = el("button", { type: "button", class: `cmp-chip small lv-tg${on ? " on" : ""} ${cls}`, "aria-pressed": String(on), title }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "✓") : null, label]); b.addEventListener("click", click); return b; };
     mount(toolbar, [
       tg(`Columns (${columns().length})`, colsOpen, "Choose which stats show", () => { colsOpen = !colsOpen; colPanel.hidden = !colsOpen; drawTools(); if (colsOpen) drawPicker(); }, "lv-colbtn"),
-      tg("Ranks", showRanks, "Show each value’s rank under it", () => { showRanks = !showRanks; ls.set("ranks", showRanks); drawTools(); drawBoard(); }),
-      tg("Min Sample", minOn, "Grey out small samples and leave them out of ranks and sorting", () => { minOn = !minOn; ls.set("min", minOn); ranksCache = {}; drawTools(); drawBoard(); drawPlayer(); }),
-      tg("Full Width", wide, "Give the leaderboard the whole width", () => { wide = !wide; ls.set("wide", wide); grid.classList.toggle("wide", wide); drawTools(); fitTable(); }, "lv-widebtn"),
+      tg("Ranks", showRanks, "Show each value’s rank under it", () => { showRanks = !showRanks; ls.set("ranks2", showRanks); drawTools(); drawBoard(); }),
+      tg("Min Sample", minOn, "Grey out small samples and leave them out of ranks and sorting", () => { minOn = !minOn; ls.set("min2", minOn); ranksCache = {}; drawTools(); drawBoard(); drawPlayer(); }),
+      tg("Full Width", wide, "Give the leaderboard the whole width", () => { wide = !wide; ls.set("wide2", wide); grid.classList.toggle("wide", wide); drawTools(); fitTable(); }, "lv-widebtn"),
     ]);
   }
 
@@ -344,7 +344,8 @@ export async function render(main) {
     const place = (i) => (rankNum[i] == null ? "–" : tally[rankNum[i]] > 1 ? `T${rankNum[i]}` : String(rankNum[i]));
     const heads = [["#"], ["Player"], ...cols.map((c) => [c.label, c.key, c.tip, c.lower]), ...(sel.view === "event" ? [["RDS"]] : [])].map(([label, key, tip, lower]) => {
       const on = key && key === sortKey;
-      const th = el("th", { title: tip || null, class: key ? "lv-sort" : null, "aria-sort": on ? (sortDir < 0 ? "descending" : "ascending") : null, tabindex: key ? "0" : null }, [label, on ? el("span", { class: "lv-arrow", "aria-hidden": "true" }, sortDir < 0 ? " ▼" : " ▲") : null]);
+      const short = { TOTAL: "Total", OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT", T2G: "T2G" }[key]; // (update 284: short headings on a phone)
+      const th = el("th", { title: tip || (short ? label : null), class: key ? "lv-sort" : null, "aria-sort": on ? (sortDir < 0 ? "descending" : "ascending") : null, tabindex: key ? "0" : null }, [...(short ? [el("span", { class: "lv-h-full" }, label), el("span", { class: "lv-h-short" }, short)] : [label]), on ? el("span", { class: "lv-arrow", "aria-hidden": "true" }, sortDir < 0 ? " ▼" : " ▲") : null]);
       if (key) {
         const go = () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = lower ? 1 : -1; } drawBoard(); };
         th.addEventListener("click", go);
@@ -448,7 +449,7 @@ export async function render(main) {
     file = t.api ? t.file : board(t);
     statsMeta = file.meta || file.stats.map((k) => { const d = statDef(k); return { id: k, label: d.label, group: GROUP[k] || "More Stats", tip: d.help || "", lower: d.higher === false, rank: d.higher != null, counts: !!(d.pct || k === "prox"), default: ON.has(k) }; });
     metaById = Object.fromEntries(statsMeta.map((m) => [m.id, m]));
-    const vk = t.api ? "colsApi" : "cols2"; if (vk !== curVis) { curVis = vk; visible = ls.get(vk, null); }
+    const vk = t.api ? "colsApi2" : "cols3"; if (vk !== curVis) { curVis = vk; visible = ls.get(vk, null); }
     warnBar.hidden = !(file.warnings && file.warnings.length);
     // (update 263) opening a tournament: a final one on the Event (the whole tournament), one in progress on its latest round
     let view = sel.view;
@@ -473,7 +474,10 @@ export async function render(main) {
     loadErr = "";
     // stay on the same tournament (or tour) when the data is refreshed
     const sameTour = sel.t && tours.find((t) => famOf(t.tour) === famOf(sel.t.tour));
-    const keep = sel.t && (events.find((e) => e.id === sel.t.id) || (sameTour && firstOf(sameTour)));
+    // (update 284) until you pick one yourself, it opens on what's live (the PGA TOUR first), even if the uploaded
+    // tournaments arrive before the API's
+    const liveTour = tours.find((t) => t.events.some((e) => statusOf(e) === "live"));
+    const keep = !sel.chosen ? firstOf(liveTour || tours[0]) : sel.t && (events.find((e) => e.id === sel.t.id) || (sameTour && firstOf(sameTour)));
     if (sel.auto || !keep || keep.id !== sel.t?.id) sel.view = "latest"; // (update 263: keep up with a new round)
     sel.t = keep || firstOf(tours[0]);
     refresh();

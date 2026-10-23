@@ -4442,13 +4442,10 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* (update 283) Event Feed: tour pills, the archived list, and an easier leaderboard on a phone */
-.lv-tourpills { display: inline-flex; margin: 0 0 0.75rem; }
 .lv-tourpills[hidden] { display: none; }
-.lv-tourpills .seg-btn { display: inline-flex; align-items: center; gap: 0.4rem; }
 .lv-none-now { margin: 0.2rem 0; }
 .lv-nm-short { display: none; }
 @media (max-width: 700px) {
-  .lv-tourpills { display: flex; width: 100%; } .lv-tourpills .seg-btn { flex: 1 1 0; justify-content: center; }
   .lv-grid { display: flex; flex-direction: column; }
   .lv-grid > .lv-main { order: 1; } .lv-grid > .lv-side { order: 2; }   /* the leaderboard first */
   .lv-main { padding: 0.9rem 0.6rem !important; }
@@ -4464,4 +4461,42 @@ main { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   .lv-board[data-density="1"] .lv-table { font-size: 0.84rem; } .lv-board[data-density="1"] .lv-table :is(th, td) { padding: 0.62rem 0.42rem; }
   .lv-board { border-radius: 10px; -webkit-overflow-scrolling: touch; }
   .lv-tour { padding: 0.7rem 0.85rem; }
+}
+
+/* (update 284) Event Feed: the tour pills like the Stats page's, centred; a smaller leaderboard so the headings fit */
+.lv-tourpills { display: flex; justify-content: center; margin: 0 auto 0.9rem; width: fit-content; max-width: 100%; }
+.lv-tourpills a { display: inline-flex; align-items: center; gap: 0.4rem; }
+.lv-tourpills .lv-dot { margin: 0; }
+.lv-pick { justify-content: center; }
+.lv-tours { flex: 0 1 34rem; justify-content: center; }
+.lv-tour-box { flex: 1 1 100%; max-width: 34rem; margin: 0 auto; }
+.lv-rounds { align-self: center; }
+.lv-table { font-size: 0.82rem; }
+.lv-table th, .lv-table td { padding: 0.5rem 0.45rem; }
+.lv-table thead th { font-size: 0.64rem; letter-spacing: 0.04em; line-height: 1.15; }
+.lv-board[data-density="1"] .lv-table { font-size: 0.78rem; } .lv-board[data-density="1"] .lv-table :is(th, td) { padding: 0.42rem 0.36rem; }
+.lv-board[data-density="2"] .lv-table { font-size: 0.74rem; }
+.lv-board[data-density="3"] .lv-table { font-size: 0.7rem; }
+@media (max-width: 700px) {
+  .lv-tours, .lv-tour-box { max-width: none; }
+  .lv-table { font-size: 0.8rem; }
+  .lv-table th, .lv-table td { padding: 0.6rem 0.4rem; }
+  .lv-table thead th { font-size: 0.6rem; padding-top: 0.45rem; padding-bottom: 0.45rem; }
+  .lv-board[data-density="1"] .lv-table { font-size: 0.76rem; } .lv-board[data-density="1"] .lv-table :is(th, td) { padding: 0.55rem 0.34rem; }
+}
+/* (update 284) the round pills under the tournament picks, all centred */
+.lv-pick { flex-direction: column; align-items: center; gap: 0.6rem; }
+.lv-pick > .lv-tours { flex: none; width: 100%; max-width: 34rem; }
+.lv-pick > .lv-rounds { align-self: center; }
+.lv-h-short { display: none; }
+@media (max-width: 700px) {
+  .lv-pick > .lv-tours { max-width: none; }
+  .lv-pick > .lv-rounds { width: 100%; }
+  .lv-h-full { display: none; } .lv-h-short { display: inline; }
+  /* on a phone: the player search above the leaderboard, the player's card below it */
+  .lv-grid > .lv-side { display: contents; }
+  .lv-side > .lv-q { order: 0; } .lv-side > .lv-results { order: 0; margin: -0.4rem 0 0; }
+  .lv-grid > .lv-main { order: 1; }
+  .lv-side > .lv-player { order: 2; background: var(--panel, #141416); border: 1px solid var(--line); border-radius: var(--radius, 18px); padding: 1rem; }
+  .lv-side > .lv-player:has(> .lv-hint) { display: none; }
 }
