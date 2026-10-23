@@ -21,5 +21,5 @@ window.PORTAL_CONFIG = {
   adminUids: ["gpz41RIE02U2Jxteu8H6AGCUjCx1"],
 
   insightsUrl: "https://insights-226979865222.us-west1.run.app",
-  liveFeedUrl: "https://live-feed-xxxxx.us-west1.run.app",
+  liveFeedUrl: "https://live-feed-226979865222.us-west1.run.app",
 };
