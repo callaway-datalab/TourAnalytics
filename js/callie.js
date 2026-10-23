@@ -102,14 +102,14 @@ function readLocal(question, list) {
   };
 }
 /** The AI's plan (or null when it isn't there / out of budget / unreadable). */
-async function aiPlan(question) {
+async function aiPlan(question, me = null) {
   const url = window.PORTAL_CONFIG?.insightsUrl;
   if (!url) return null;
   try {
     const token = await getState().user?.getIdToken?.();
     const history = chat.filter((m) => m.who === "me").slice(-3).map((m) => m.text);
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ callie: { question, history, today: new Date().toISOString().slice(0, 10) } }) });
+      body: JSON.stringify({ callie: { question, history, today: new Date().toISOString().slice(0, 10), ...(me ? { me } : {}) } }) }); // (update 314: me: whose data "I / my" means)
     if (!res.ok) return null;
     const out = await res.json();
     return out?.plan && typeof out.plan === "object" ? out.plan : null;
@@ -608,8 +608,16 @@ async function ask(question) {
   try {
     const list = await playersYouCanSee();
     const local = readLocal(question, list);
-    const ai = await aiPlan(question);
+    // (update 314) a player's portal (one player you can see): "I", "me", "my" are them
+    const me = list.length === 1 ? list[0][1] : null;
+    const ai = await aiPlan(question, me);
     const plan = ai ? cleanPlan(ai, local) : local;
+    // ... and the AI's "no player was named" isn't a gap when the player is already known
+    const aboutName = (t) => /\b(player|name|whose|who)\b/i.test(t || "");
+    if (me && plan.unsupported && aboutName(plan.unsupported)) {
+      if (plan.intent === "unsupported") plan.intent = local.intent === "field" ? "field" : local.intent === "compare" ? "compare" : "player";
+      plan.unsupported = null;
+    }
     if (ai && !plan.metric && local.metric && plan.intent !== "compare") plan.metric = local.metric;
     // players: the names the plan gives, matched to the players you can see
     const match = (nm) => readAsk(nm, { players: list }).players[0] || null;
