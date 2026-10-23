@@ -1,0 +1,684 @@
+[
+ {
+  "id": "101",
+  "label": "Driving Distance",
+  "group": "Driving",
+  "tip": "Average drive length in yards (measured holes).",
+  "counts": true
+ },
+ {
+  "id": "102",
+  "label": "Driving Accuracy",
+  "group": "Driving",
+  "counts": true,
+  "pct": true,
+  "tip": "Percent of tee shots that finish in the fairway."
+ },
+ {
+  "id": "02422",
+  "label": "Left Tendency",
+  "group": "Driving - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of tee shots that finish left of the fairway.",
+  "counts": true,
+  "missing_means_zero": true,
+  "complement": "02423",
+  "rank": false
+ },
+ {
+  "id": "02423",
+  "label": "Right Tendency",
+  "group": "Driving - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of tee shots that finish right of the fairway.",
+  "counts": true,
+  "missing_means_zero": true,
+  "complement": "02422",
+  "rank": false
+ },
+ {
+  "id": "459",
+  "label": "Left Rough Tendency",
+  "group": "Driving - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of tee shots that finish in the left rough.",
+  "counts": true,
+  "rank": false
+ },
+ {
+  "id": "460",
+  "label": "Right Rough Tendency",
+  "group": "Driving - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of tee shots that finish in the right rough.",
+  "counts": true,
+  "rank": false
+ },
+ {
+  "id": "213",
+  "label": "Hit Fairway Percentage",
+  "group": "Driving - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of tee shots that finish in the fairway or on the green (shot-level data).",
+  "counts": true
+ },
+ {
+  "id": "02420",
+  "label": "Distance to Fwy Edge",
+  "group": "Driving - More",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the edge of the fairway when the fairway is missed.",
+  "counts": true
+ },
+ {
+  "id": "02421",
+  "label": "Distance to Fwy Center",
+  "group": "Driving - More",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the center of the fairway when the fairway is hit.",
+  "counts": true
+ },
+ {
+  "id": "02722",
+  "label": "Drives in Water",
+  "group": "Driving - More",
+  "lower": true,
+  "default": false,
+  "tip": "Percent of holes where the tee shot finished in water (lower is better).",
+  "pct": true
+ },
+ {
+  "id": "103",
+  "label": "Greens in Regulation",
+  "group": "Approach",
+  "counts": true,
+  "pct": true,
+  "tip": "Percent of holes where the green was hit in regulation."
+ },
+ {
+  "id": "326",
+  "label": "GIR 200+ yds",
+  "group": "Approach - GIR by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Greens in regulation when the approach was over 200 yards.",
+  "counts": true
+ },
+ {
+  "id": "327",
+  "label": "GIR 175-200 yds",
+  "group": "Approach - GIR by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Greens in regulation from 175-200 yards.",
+  "counts": true
+ },
+ {
+  "id": "328",
+  "label": "GIR 150-175 yds",
+  "group": "Approach - GIR by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Greens in regulation from 150-175 yards.",
+  "counts": true
+ },
+ {
+  "id": "329",
+  "label": "GIR 125-150 yds",
+  "group": "Approach - GIR by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Greens in regulation from 125-150 yards.",
+  "counts": true
+ },
+ {
+  "id": "330",
+  "label": "GIR <125 yds",
+  "group": "Approach - GIR by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Greens in regulation from under 125 yards.",
+  "counts": true
+ },
+ {
+  "id": "190",
+  "label": "GIR Percentage from Fairway",
+  "group": "Approach - GIR by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Greens in regulation when the tee shot finished in the fairway.",
+  "counts": true
+ },
+ {
+  "id": "336",
+  "label": "Proximity >200 yds",
+  "group": "Approach - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after approaches over 200 yards (fairway).",
+  "counts": true
+ },
+ {
+  "id": "337",
+  "label": "Proximity 175-200 yds",
+  "group": "Approach - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after approaches from 175-200 yards.",
+  "counts": true
+ },
+ {
+  "id": "338",
+  "label": "Proximity 150-175 yds",
+  "group": "Approach - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after approaches from 150-175 yards.",
+  "counts": true
+ },
+ {
+  "id": "339",
+  "label": "Proximity 125-150 yds",
+  "group": "Approach - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after approaches from 125-150 yards.",
+  "counts": true
+ },
+ {
+  "id": "340",
+  "label": "Proximity 50-125 yds",
+  "group": "Approach - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after approaches from 50-125 yards.",
+  "counts": true
+ },
+ {
+  "id": "431",
+  "label": "Fairway Proximity",
+  "group": "Approach - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after approaches hit from the fairway.",
+  "counts": true
+ },
+ {
+  "id": "419",
+  "label": "Going for Green",
+  "group": "Approach - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of time the player goes for the green on a par 4 or par 5 where it is an option.",
+  "counts": true
+ },
+ {
+  "id": "361",
+  "label": "50-125 yds Scoring Conversion",
+  "group": "Approach - More",
+  "pct": true,
+  "default": false,
+  "tip": "Birdie or better percentage after approaches under 125 yards.",
+  "counts": true
+ },
+ {
+  "id": "472",
+  "label": "Approach < 125 yards (RTP Score)",
+  "group": "Approach - More",
+  "lower": true,
+  "default": false,
+  "tip": "Average score relative to par after approaches from 50-125 yards."
+ },
+ {
+  "id": "111",
+  "label": "Sand Saves",
+  "group": "Short Game",
+  "counts": true,
+  "pct": true,
+  "tip": "Percent of greenside bunker shots that led to an up-and-down."
+ },
+ {
+  "id": "130",
+  "label": "Scrambling",
+  "group": "Short Game",
+  "counts": true,
+  "pct": true,
+  "tip": "Percent of missed greens where the player still made par or better."
+ },
+ {
+  "id": "362",
+  "label": "Scrambling Sand",
+  "group": "Short Game - Scrambling",
+  "pct": true,
+  "default": false,
+  "tip": "Scrambling percentage from the sand.",
+  "counts": true
+ },
+ {
+  "id": "363",
+  "label": "Scrambling Rough",
+  "group": "Short Game - Scrambling",
+  "pct": true,
+  "default": false,
+  "tip": "Scrambling percentage from the rough.",
+  "counts": true
+ },
+ {
+  "id": "365",
+  "label": "Scrambling Other",
+  "group": "Short Game - Scrambling",
+  "pct": true,
+  "default": false,
+  "tip": "Scrambling percentage from other locations.",
+  "counts": true
+ },
+ {
+  "id": "366",
+  "label": "Scrambling >30 yds",
+  "group": "Short Game - Scrambling",
+  "pct": true,
+  "default": false,
+  "tip": "Scrambling percentage from over 30 yards.",
+  "counts": true
+ },
+ {
+  "id": "367",
+  "label": "Scrambling 20-30 yds",
+  "group": "Short Game - Scrambling",
+  "pct": true,
+  "default": false,
+  "tip": "Scrambling percentage from 20-30 yards.",
+  "counts": true
+ },
+ {
+  "id": "368",
+  "label": "Scrambling 10-20 yds",
+  "group": "Short Game - Scrambling",
+  "pct": true,
+  "default": false,
+  "tip": "Scrambling percentage from 10-20 yards.",
+  "counts": true
+ },
+ {
+  "id": "369",
+  "label": "Scrambling <10 yds",
+  "group": "Short Game - Scrambling",
+  "pct": true,
+  "default": false,
+  "tip": "Scrambling percentage from under 10 yards.",
+  "counts": true
+ },
+ {
+  "id": "370",
+  "label": "Sand Saves >30 yds",
+  "group": "Short Game - Sand Saves",
+  "pct": true,
+  "default": false,
+  "tip": "Up-and-down percentage from a greenside bunker, over 30 yards.",
+  "counts": true
+ },
+ {
+  "id": "371",
+  "label": "Sand Saves 20-30 yds",
+  "group": "Short Game - Sand Saves",
+  "pct": true,
+  "default": false,
+  "tip": "Up-and-down percentage from a greenside bunker, 20-30 yards.",
+  "counts": true
+ },
+ {
+  "id": "372",
+  "label": "Sand Saves 10-20 yds",
+  "group": "Short Game - Sand Saves",
+  "pct": true,
+  "default": false,
+  "tip": "Up-and-down percentage from a greenside bunker, 10-20 yards.",
+  "counts": true
+ },
+ {
+  "id": "373",
+  "label": "Sand Saves <10 yds",
+  "group": "Short Game - Sand Saves",
+  "pct": true,
+  "default": false,
+  "tip": "Up-and-down percentage from a greenside bunker, under 10 yards.",
+  "counts": true
+ },
+ {
+  "id": "374",
+  "label": "Scrambling Proximity",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from around the green.",
+  "counts": true
+ },
+ {
+  "id": "481",
+  "label": "Scrambling Avg Distance to Hole",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after the shot that follows a missed green.",
+  "counts": true
+ },
+ {
+  "id": "375",
+  "label": "Proximity Sand",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from a bunker.",
+  "counts": true
+ },
+ {
+  "id": "376",
+  "label": "Proximity Rough",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from the rough.",
+  "counts": true
+ },
+ {
+  "id": "378",
+  "label": "Proximity Other",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from other locations.",
+  "counts": true
+ },
+ {
+  "id": "379",
+  "label": "Proximity >30 yds",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from over 30 yards.",
+  "counts": true
+ },
+ {
+  "id": "380",
+  "label": "Proximity 20-30 yds",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from 20-30 yards.",
+  "counts": true
+ },
+ {
+  "id": "381",
+  "label": "Proximity 10-20 yds",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from 10-20 yards.",
+  "counts": true
+ },
+ {
+  "id": "382",
+  "label": "Proximity <10 yds",
+  "group": "Short Game - Proximity",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance from the hole after a shot onto the green from under 10 yards.",
+  "counts": true
+ },
+ {
+  "id": "104",
+  "label": "Putts per GIR",
+  "group": "Putting",
+  "lower": true,
+  "tip": "Average number of putts on greens hit in regulation (lower is better).",
+  "counts": true,
+  "ratio": true
+ },
+ {
+  "id": "438",
+  "label": "Feet of Putts Made",
+  "group": "Putting",
+  "agg": "sum",
+  "tip": "Total length, in feet and inches, of all putts holed."
+ },
+ {
+  "id": "119",
+  "label": "Putts Per Round",
+  "group": "Putting - More",
+  "lower": true,
+  "default": false,
+  "tip": "Total putts in the round."
+ },
+ {
+  "id": "349",
+  "label": "Approach Putt Performance",
+  "group": "Putting - More",
+  "lower": true,
+  "default": false,
+  "tip": "Average distance left after the first putt.",
+  "counts": true
+ },
+ {
+  "id": "02428",
+  "label": "Total Putting",
+  "group": "Putting - More",
+  "lower": true,
+  "default": false,
+  "tip": "Composite putting rating (rank based).",
+  "enabled": false
+ },
+ {
+  "id": "426",
+  "label": "3-Putt Avoidance",
+  "group": "Putting - More",
+  "lower": true,
+  "pct": true,
+  "default": false,
+  "tip": "Percent of holes with 3 or more putts (lower is better).",
+  "counts": true
+ },
+ {
+  "id": "02427",
+  "label": "Putting 3-5 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "403",
+  "label": "Putting <5 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "485",
+  "label": "Putting 4-8 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "484",
+  "label": "Putting <10 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "404",
+  "label": "Putting 5-10 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "405",
+  "label": "Putting 10-15 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "406",
+  "label": "Putting 15-20 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "407",
+  "label": "Putting 20-25 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "408",
+  "label": "Putting >25 feet",
+  "group": "Putting - by Distance",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of putts made from this distance (needs enough attempts, so single rounds are often blank).",
+  "counts": true
+ },
+ {
+  "id": "106",
+  "label": "Eagles",
+  "group": "Scoring",
+  "agg": "sum",
+  "tip": "Holes played at eagle or better."
+ },
+ {
+  "id": "107",
+  "label": "Birdies",
+  "group": "Scoring",
+  "agg": "sum",
+  "tip": "Holes played at birdie."
+ },
+ {
+  "id": "523",
+  "label": "Pars",
+  "group": "Scoring",
+  "agg": "sum",
+  "source": "live",
+  "tip": "Holes played at par."
+ },
+ {
+  "id": "184",
+  "label": "Bogeys",
+  "group": "Scoring",
+  "agg": "sum",
+  "source": "live",
+  "tip": "Holes played at bogey.",
+  "lower": true
+ },
+ {
+  "id": "520",
+  "label": "Double Bogeys",
+  "group": "Scoring",
+  "agg": "sum",
+  "source": "live",
+  "tip": "Holes played at double bogey.",
+  "lower": true
+ },
+ {
+  "id": "521",
+  "label": "Others",
+  "group": "Scoring",
+  "agg": "sum",
+  "source": "live",
+  "tip": "Holes played at triple bogey or worse.",
+  "lower": true
+ },
+ {
+  "id": "171",
+  "label": "Par 3 Performance",
+  "group": "Scoring - More",
+  "lower": true,
+  "agg": "sum",
+  "default": false,
+  "tip": "Total strokes relative to par on par 3s.",
+  "enabled": false
+ },
+ {
+  "id": "172",
+  "label": "Par 4 Performance",
+  "group": "Scoring - More",
+  "lower": true,
+  "agg": "sum",
+  "default": false,
+  "tip": "Total strokes relative to par on par 4s.",
+  "enabled": false
+ },
+ {
+  "id": "173",
+  "label": "Par 5 Performance",
+  "group": "Scoring - More",
+  "lower": true,
+  "agg": "sum",
+  "default": false,
+  "tip": "Total strokes relative to par on par 5s.",
+  "enabled": false
+ },
+ {
+  "id": "02414",
+  "label": "Bogey Avoidance",
+  "group": "Scoring - More",
+  "lower": true,
+  "pct": true,
+  "default": false,
+  "tip": "Percent of holes played at bogey or worse (lower is better).",
+  "counts": true
+ },
+ {
+  "id": "02415",
+  "label": "Birdie to Bogey Ratio",
+  "group": "Scoring - More",
+  "default": false,
+  "tip": "Birdies or better divided by bogeys or worse.",
+  "counts": true,
+  "ratio": true
+ },
+ {
+  "id": "352",
+  "label": "Birdie/Eagle %",
+  "group": "Scoring - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of holes played at birdie or better.",
+  "counts": true
+ },
+ {
+  "id": "160",
+  "label": "Bounce Back",
+  "group": "Scoring - More",
+  "pct": true,
+  "default": false,
+  "tip": "Percent of the time a hole over par is followed by a hole under par.",
+  "counts": true
+ }
+]

@@ -10,7 +10,7 @@ import { el, mount, icon } from "./ui.js";
 import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
-import { readAsk } from "./compareAsk.js";
+import { readAsk, productGroups, matchEvents } from "./compareAsk.js";
 import { CATEGORIES, statRounds, statAgg, statDef, fmtStat, distLead } from "./sg.js";
 
 const MAX_PLAYERS = 3;
@@ -452,6 +452,106 @@ async function onePlayer(plan, p, rounds, bd) {
   return { text: lines.join("\n\n"), table };
 }
 
+/* ---------------------------------------------------------------- (update 264) comparisons, answered here */
+// A Compare plan (the AI's, or one read here) worked out with Compare's own maths, for a short answer in the chat; the
+// full comparison is a tap away ("Open in Compare"). Everyone in the data (the whole field pooled) stays in Compare.
+const SGCOLS = [["TOTAL", "Total"], ["OTT", "OTT"], ["APP", "APP"], ["ARG", "ARG"], ["PUTT", "PUTT"]];
+function compareFilters(cp) {
+  const int = (v, hi = 999) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 && n <= hi ? n : null; };
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
+  const parts = (Array.isArray(cp.parts) ? cp.parts : []).filter((c) => ["OTT", "APP", "ARG", "PUTT"].includes(c));
+  const groups = (Array.isArray(cp.groups) ? cp.groups : []).slice(0, 8).map((g, i) => {
+    const r = g?.rounds && typeof g.rounds === "object" ? g.rounds : {}, f = {};
+    const ys = (Array.isArray(r.years) ? r.years : []).map(String).filter((y) => /^20\d\d$/.test(y)); if (ys.length) f.years = ys;
+    if (day(r.from)) f.from = day(r.from); if (day(r.to)) f.to = day(r.to);
+    for (const [k, to] of [["last", "last"], ["before_last", "prev"], ["last_events", "lastEv"], ["before_last_events", "prevEv"], ["best", "top"], ["worst", "bottom"]]) if (int(r[k])) f[to] = int(r[k]);
+    if (int(r.best_pct, 99)) f.topPct = int(r.best_pct, 99); if (int(r.worst_pct, 99)) f.bottomPct = int(r.worst_pct, 99);
+    if (int(r.best_stretch)) f.stretch = { n: int(r.best_stretch), ...(parts.length === 1 ? { cat: parts[0] } : {}) };
+    else if (int(r.worst_stretch)) f.stretch = { n: int(r.worst_stretch), worst: true, ...(parts.length === 1 ? { cat: parts[0] } : {}) };
+    const ex = Number(r.except_group);
+    return { label: String(g?.label || `Group ${i + 1}`).slice(0, 40), f, gear: typeof g?.gear === "string" ? g.gear.trim() : "", except: Number.isInteger(ex) && ex !== i ? ex : null };
+  });
+  groups.forEach((g, i) => { if (g.except != null && groups[g.except]) groups[i].f = { ...g.f, except: { ...groups[g.except].f, except: null } }; });
+  return { groups, parts, each: cp.each === true };
+}
+/** A plan read here, for the plain shapes (seasons, recent form, a stretch, the past N months); null for anything else. */
+function localCompare(question, list) {
+  const a = readAsk(question, { players: list, maxYear: new Date().getFullYear() });
+  if (a.kinds.length || a.everyone) return null; // (clubs, balls and the whole field: Compare reads those itself)
+  const g = (label, rounds) => ({ label, rounds });
+  let groups = null;
+  if (a.stretch) groups = [g(`${a.stretch.worst ? "Worst" : "Best"} ${a.stretch.n}-round stretch`, { ...(a.since ? { from: a.since.from } : {}), [a.stretch.worst ? "worst_stretch" : "best_stretch"]: a.stretch.n }), a.last ? g(`Last ${a.last.n} rounds`, { last: a.last.n }) : g("Every round", a.since ? { from: a.since.from } : {})];
+  else if (a.years.length >= 2) groups = a.years.slice().reverse().slice(0, 4).map((y) => g(y, { years: [y] }));
+  else if (a.last) groups = a.last.unit === "events" ? [g(`Last ${a.last.n} events`, { last_events: a.last.n }), g(`The ${a.last.n} events before`, { before_last_events: a.last.n })] : [g(`Last ${a.last.n} rounds`, { last: a.last.n }), g(`The ${a.last.n} rounds before`, { before_last: a.last.n })];
+  else if (a.since) { const from = new Date(a.since.from), days = Math.round((Date.now() - from) / 864e5), before = new Date(from.getTime() - days * 864e5).toISOString().slice(0, 10), to0 = new Date(from.getTime() - 864e5).toISOString().slice(0, 10); groups = [g(a.since.label.replace(/^the p/, "P"), { from: a.since.from }), g("The same stretch before", { from: before, to: to0 })]; }
+  if (!groups) return null;
+  return { players: a.players.map((p) => p.label), everyone: false, parts: a.cats, exclude: { events: a.excl, rounds: a.exclRounds }, groups, each: false };
+}
+async function answerCompare(cp, question, list) {
+  if (cp.everyone) return null;
+  const match = (nm) => readAsk(nm, { players: list }).players[0] || null;
+  let ps = [...new Map((cp.players || []).map(match).filter(Boolean).map((p) => [p.key, p])).values()];
+  if (!ps.length && PRONOUN.test(question) && lastPlayers.length) ps = lastPlayers;
+  if (!ps.length && list.length === 1) ps = [{ key: list[0][0], label: list[0][1] }];
+  if (!ps.length) return null;
+  ps = ps.slice(0, 3); lastPlayers = ps;
+  const { roundsFor, includeShots, summarize, products } = await import("./compareData.js");
+  const { gearInfo } = await import("./sg.js");
+  const plan = compareFilters(cp);
+  if (!plan.groups.length) return null;
+  const cats = plan.parts.length ? new Set(plan.parts) : null;
+  const rows = [], skipped = [];
+  for (const p of ps) {
+    let rounds = await roundsOf(p.key, p.label);
+    // what to leave out
+    const evs = new Map(); for (const rd of rounds) if (rd.event) { const k = `${rd.event}|${yr(rd)}`; if (!evs.has(k)) evs.set(k, { k, event: rd.event, year: yr(rd) }); }
+    const out = matchEvents(cp.exclude?.events || [], [...evs.values()]), outR = new Set((cp.exclude?.rounds || []).map(String));
+    if (out.size || outR.size) rounds = rounds.filter((rd) => !out.has(`${rd.event}|${yr(rd)}`) && !outR.has(String(rd.roundNo || "")));
+    // the groups: clubs and balls matched to this player's (as Compare does), the rest as they are
+    const gearIdx = plan.groups.map((g, i) => (g.gear ? i : -1)).filter((i) => i >= 0);
+    const byIdx = new Map();
+    if (gearIdx.length) {
+      const catalog = products(rounds).map((k) => ({ ...k, items: k.items.map((o) => ({ ...o, ...gearInfo(o.value) })) }));
+      const sides = gearIdx.map((i) => plan.groups[i].gear.toLowerCase());
+      for (const x of productGroups({ text: sides.join(" vs "), sides, together: !(plan.each && sides.length === 1), years: [] }, catalog)) { const i = gearIdx[x.side ?? 0]; (byIdx.get(i) || byIdx.set(i, []).get(i)).push(x); }
+    }
+    plan.groups.forEach((g, i) => {
+      const list0 = g.gear ? (byIdx.get(i) || []).map((x) => ({ label: (byIdx.get(i).length > 1 ? x.name.replace(/ \u00b7 .*$/, "") : g.label), f: { ...x.f, ...g.f } })) : [{ label: g.label, f: g.f }];
+      if (g.gear && !list0.length) { skipped.push(`${g.label} (no \u201c${g.gear}\u201d in ${p.label}\u2019s rounds)`); return; }
+      for (const x of list0) {
+        let rs = roundsFor(rounds, x.f);
+        if (cats) rs = includeShots(rs, { cats });
+        const s = summarize(rs);
+        if (!s.n) { skipped.push(`${ps.length > 1 ? `${p.label} \u00b7 ` : ""}${x.label} (no rounds)`); continue; }
+        const used = new Set(rs.flatMap((rd) => rd.shots.map((sh) => sh.cat))); // (the parts of the game these rounds have shots in: a driver's are all off the tee)
+        rows.push({ label: ps.length > 1 ? `${p.label} \u00b7 ${x.label}` : x.label, s, used, stretch: !!x.f.stretch });
+      }
+    });
+  }
+  if (!rows.length) return { text: `None of that had any rounds${skipped.length ? `: ${skipped.join(", ")}` : ""}.` };
+  const partsTxt = plan.parts.length ? `${plan.parts.map((c) => CATEGORIES.find(([k]) => k === c)?.[1]).join(" + ")} only: ` : "";
+  const f2 = (v) => fmtM({ sg: true }, v);
+  const mid = (t) => String(t).replace(/^(The|Every|All) /, (w) => w.toLowerCase()).replace(/^(Last|Best|Worst|Most) /, (w) => `the ${w.toLowerCase()}`); // ("against +0.80 for the 12 rounds before")
+  const lines = [];
+  if (rows.length === 1) lines.push(`${partsTxt}**${rows[0].label}**: **${f2(rows[0].s.sg.TOTAL)}** strokes gained a round over ${plural(rows[0].s.n, "round")}. There\u2019s nothing to compare it with${skipped.length ? ` (${skipped.join(", ")})` : ""}.`);
+  else {
+    const o = [...rows].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), a = o[0], b = o[1], d = a.s.sg.TOTAL - b.s.sg.TOTAL;
+    lines.push(`${partsTxt}**${a.label}** comes out ahead: **${f2(a.s.sg.TOTAL)}** a round over ${plural(a.s.n, "round")}, against ${f2(b.s.sg.TOTAL)} for ${mid(b.label)} (${plural(b.s.n, "round")}), **${Math.abs(d).toFixed(2)}** a round apart.${o.length > 2 ? ` Then ${o.slice(2).map((x) => `${x.label} ${f2(x.s.sg.TOTAL)}`).join(", ")}.` : ""}`);
+    const used = new Set(rows.flatMap((r) => [...r.used]));
+    const catsShown = SGCOLS.slice(1).filter(([k]) => (!cats || cats.has(k)) && used.has(k));
+    if (catsShown.length > 1) { const ds = catsShown.map(([k]) => ({ l: CATEGORIES.find(([c]) => c === k)?.[1] || k, d: (a.s.sg[k] ?? 0) - (b.s.sg[k] ?? 0) })).sort((x, y) => Math.abs(y.d) - Math.abs(x.d)); lines.push(`The biggest difference is **${ds[0].l}** (${f2(ds[0].d)} a round${ds[0].d >= 0 ? ` for ${a.label}` : ` against ${a.label}`}).`); }
+    // a run of rounds in a row: when it was
+    for (const r of rows.filter((x) => x.stretch && x.s.from)) lines.push(`${r.label}: ${dateTxt(dk({ date: r.s.from }))} to ${dateTxt(dk({ date: r.s.to }))}.`);
+    if (a.s.n < 10 || b.s.n < 10) lines.push("Few rounds on one side, so treat it as a hint.");
+    if (skipped.length) lines.push(`(Not in this: ${skipped.join(", ")}.)`);
+  }
+  // the columns: the parts of the game that were used (and Total only when there's more than one of them)
+  const usedAll = new Set(rows.flatMap((r) => [...r.used]));
+  const partCols = SGCOLS.slice(1).filter(([k]) => (!cats || cats.has(k)) && usedAll.has(k));
+  const cols = partCols.length > 1 ? [SGCOLS[0], ...partCols] : partCols.length ? partCols : [SGCOLS[0]];
+  return { text: lines.join("\n\n"), table: { head: ["", ...cols.map(([, l]) => l), "Rounds"], num: cols.map((_, i) => i + 1).concat(cols.length + 1), rows: rows.map((r) => [r.label, ...cols.map(([k]) => f2(r.s.sg[k])), String(r.s.n)]) } };
+}
+
 /* ---------------------------------------------------------------- asking */
 /** (update 261) Work out a plan's answer and show it; when Callie needs to ask which range first, ask and wait. */
 async function respond(plan, ps, missing = []) {
@@ -514,11 +614,12 @@ async function ask(question) {
     let ps = [...new Map(plan.players.map(match).filter(Boolean).map((p) => [p.key, p])).values()];
     const missing = plan.players.filter((nm) => !match(nm));
     if (plan.intent === "compare") {
-      const href = `#/comparisons?ask=${encodeURIComponent(question)}${plan.compare ? "&plan=1" : ""}`;
-      if (plan.compare) { try { sessionStorage.setItem("callie.plan", JSON.stringify(plan.compare)); } catch { /* */ } }
-      reply({ text: "That’s a comparison, so I’ve set it up in **Compare**.", go: { href, label: "Open in Compare →" } });
-      setTimeout(() => { location.hash = href; }, 450);
-      return;
+      // (update 264) worked out here, in short, with the full comparison a tap away
+      const cp = plan.compare || localCompare(question, list);
+      const href = `#/comparisons?ask=${encodeURIComponent(question)}${cp ? "&plan=1" : ""}`;
+      const a = cp ? await answerCompare(cp, question, list).catch((err) => { console.error(err); return null; }) : null;
+      if (a) return reply({ ...a, go: { href, label: "Open in Compare for more details \u2192", plan: cp } });
+      return reply({ text: cp?.everyone ? "That one pools everyone in the data, so it\u2019s best seen in **Compare**." : "That\u2019s a comparison I\u2019ll leave to **Compare**.", go: { href, label: "Open it in Compare \u2192", plan: cp } });
     }
     if (plan.intent === "unsupported") return reply({ text: plan.unsupported ? `I can\u2019t work that out from the data: ${plan.unsupported}` : "I can\u2019t work that out from the data. Ask about strokes gained or a stat for a player, a tournament or a period, or who leads the tour in something." });
     if (plan.intent !== "field") {
@@ -562,6 +663,7 @@ function draw() {
   for (const m of chat) {
     if (m.who === "me") { items.push(el("div", { class: "cal-msg me" }, el("p", {}, m.text))); continue; }
     const go = m.go ? el("a", { class: "link small cal-go", href: m.go.href }, m.go.label) : null;
+    if (go && m.go.plan) go.addEventListener("click", () => { try { sessionStorage.setItem("callie.plan", JSON.stringify(m.go.plan)); } catch { /* */ } }); // (update 264: Compare opens with this plan, no second AI call)
     const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
     items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go]));
   }

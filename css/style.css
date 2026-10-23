@@ -4353,3 +4353,8 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 .cal-choice { flex-direction: column; align-items: flex-start; gap: 0.1rem; border-color: rgba(212, 180, 131, 0.5); }
 .cal-choice:hover { background: rgba(212, 180, 131, 0.12); }
 .cal-choice .cmp-chip-n { font-size: 0.68rem; }
+/* (update 263) Live Feed: how current the data is, when nothing is in progress */
+.lv-stale { flex-basis: 100%; margin: 0; padding: 0.65rem 0.9rem; border-radius: var(--radius-sm, 12px); background: rgba(255, 214, 10, 0.08); border: 1px solid rgba(255, 214, 10, 0.3); font-size: 0.86rem; color: var(--ink-2, #d1d1d6); }
+/* (update 264) Live Feed: the header's right side (Refresh now for the admin, and the status) */
+.lv-head-r { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; justify-content: flex-end; }
+.lv-refresh { min-height: 2.1rem; }
