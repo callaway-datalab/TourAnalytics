@@ -6,7 +6,7 @@
 //   intent "player":  one to three players' numbers, by season, event, round, part of the game, distance, lie or club
 //   intent "field":   who leads (or trails) a tour in strokes gained or a stat, over a period, with enough rounds
 //   intent "compare": set up in Compare (the plan goes with it, so there's no second AI call)
-import { el, mount, icon } from "./ui.js";
+import { el, mount, icon, analystAllowed } from "./ui.js";
 import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
@@ -685,7 +685,7 @@ function draw() {
     // (update 304) a question Cal couldn't answer: hand it to a person (Chat, with Callaway Analyst, the message written)
     const st0 = getState(), staffer = st0.isAdmin || st0.profile?.kind === "analyst";
     const askQ = m.q || [...chat].slice(0, chat.indexOf(m)).reverse().find((x) => x.who === "me")?.text || "";
-    const fwd = m.cant && askQ && !staffer ? el("div", { class: "cal-fwd" }, [el("a", { class: "link small cal-go", href: "#/questions" }, "Forward this question to a human analyst?"),
+    const fwd = m.cant && askQ && !staffer && analystAllowed() ? el("div", { class: "cal-fwd" }, [el("a", { class: "link small cal-go", href: "#/questions" }, "Forward this question to a human analyst?"),
       el("p", { class: "muted small cal-fwd-note" }, "Opens Chat with a draft to Callaway Analyst. Nothing is sent until you press Send there.")]) : null;
     fwd?.querySelector("a").addEventListener("click", () => { try { sessionStorage.setItem("chat.prefill", `Question for an analyst (Cal couldn\u2019t answer it): ${askQ}`); } catch { /* */ } closeCallie(); });
     if (go && m.go.plan) go.addEventListener("click", () => { try { sessionStorage.setItem("callie.plan", JSON.stringify(m.go.plan)); } catch { /* */ } }); // (update 264: Compare opens with this plan, no second AI call)

@@ -4636,3 +4636,13 @@ table td > :is(.row-actions, .type-tags, .cd-actions) { justify-content: center;
 .cmp-rd-row td:first-child, .club-table tr.in-set td.c-club { padding-left: 0.35rem; padding-right: 0.35rem; } /* (update 303: same centre line) */
 .cal-fwd { display: inline-block; margin-top: 0.45rem; } /* (update 304) */
 .cal-fwd-note { margin: 0.2rem 0 0; }
+
+/* (update 305) Report an issue */
+dialog.issue-dialog { border: 1px solid var(--line, #333); border-radius: 12px; padding: 0; width: min(440px, calc(100vw - 32px)); background: var(--surface-solid, #141416); color: #fff; }
+dialog.issue-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.issue-form { display: flex; flex-direction: column; gap: 0.6rem; padding: 1.1rem 1.1rem 1rem; }
+.issue-form h3 { margin: 0; }
+.issue-form p { margin: 0; }
+.issue-form textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 6rem; font: inherit; }
+.issue-msg:empty { display: none; }
+.issue-btns { display: flex; justify-content: flex-end; gap: 0.5rem; }

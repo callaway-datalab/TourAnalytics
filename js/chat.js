@@ -19,7 +19,7 @@ import {
 import { db } from "./firebase-init.js";
 import { attachmentLinks } from "./attachments.js";
 import { readableSize, MAX_ATTACHMENTS, UserError } from "./data.js";
-import { uploadChatFiles, getChatFileUrl } from "./store.js";
+import { uploadChatFiles, getChatFileUrl, myAnalystAccess } from "./store.js";
 import { el, mount, formatWhen, confirmAction } from "./ui.js";
 import { getState } from "./auth.js";
 import { isTeamKey } from "./data.js";
@@ -65,6 +65,9 @@ export function renderChat(container, { flash }) {
   const unsubs = [];
   const redraw = () => { drawList(); drawHead(); if (current === NEW) drawCompose(); };
   const NEW = "__new"; // the New message page (update 153)
+  // (update 305) may this person message Callaway Analyst? (the admin can turn it off per person; staff always can)
+  let caOk = true;
+  if (!staff) myAnalystAccess(state.profile?.inviteCode).then((ok) => { caOk = ok; redraw(); });
 
   // ---- me: my name in the chat directory, my email (so friends can find me) ----
   if (state.isAdmin) syncChatCircles().catch(() => {});
@@ -134,11 +137,11 @@ export function renderChat(container, { flash }) {
   const STAFF_ROOM = "ca_staff"; // (update 164) the analysts' own chat
   // (update 177) whose Callaway Analyst chat it is: the uid in its id (staff can start one for a player)
   const ownerOf = (r) => (r.callaway && !r.staffRoom && String(r.id || "").startsWith("ca_") ? String(r.id).slice(3) : r.createdBy);
-  const roomName = (r) => (r.staffRoom ? "Callaway Analyst" : r.callaway ? (ownerOf(r) === uid ? "Callaway Analyst" : `${nameOf(ownerOf(r))} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
+  const roomName = (r) => (r.issue ? (r.createdBy === uid ? "Report an issue" : `${nameOf(r.createdBy)} \u00b7 Issue report`) : r.staffRoom ? "Callaway Analyst" : r.callaway ? (ownerOf(r) === uid ? "Callaway Analyst" : `${nameOf(ownerOf(r))} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
   // in your Callaway Analyst chat, Callaway's replies show as "Callaway Analyst (Sam)"
   const first = (n) => String(n || "").trim().split(/\s+/)[0] || "";
   // (update 170) outside Callaway every analyst is "Callaway Analyst"; inside, staff see which of them wrote it
-  const authorOf = (r, m) => (!staff ? (isStaffId(m.uid) ? "Callaway Analyst" : m.name || nameOf(m.uid))
+  const authorOf = (r, m) => (r?.issue && !staff && adminUids.includes(m.uid) ? "Admin" : !staff ? (isStaffId(m.uid) ? "Callaway Analyst" : m.name || nameOf(m.uid))
     : isStaffId(m.uid) ? nameOf(m.uid) : m.name || nameOf(m.uid));
   const roomNow = () => rooms.find((x) => x.id === current);
   let hidden = {}; // (update 175) roomId → when you deleted it (ms)
@@ -175,7 +178,7 @@ export function renderChat(container, { flash }) {
 
   function drawList() {
     const all = allRooms();
-    const icon = (r) => (r.callaway ? "\u2605" : r.type === "group" ? "\u25CE" : "\u25CF");
+    const icon = (r) => (r.issue ? "\u26A0" : r.callaway ? "\u2605" : r.type === "group" ? "\u25CE" : "\u25CF");
     const item = (r) => {
       const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
       const b = el("button", { type: "button", class: "chat-room" + (r.callaway ? " chat-ca" : "") + (r.id === current ? " on" : ""), "aria-current": r.id === current ? "true" : null }, [
@@ -188,8 +191,8 @@ export function renderChat(container, { flash }) {
       return el("li", {}, b);
     };
     // Callaway Analyst: always first, starred (yours; Callaway's staff see each person's)
-    const mine = staff ? null : all.find((r) => r.id === caId) || { id: caId, callaway: true, createdBy: uid, members: [], type: "group", lastText: "" };
-    const rest = all.filter((r) => r.id !== caId && r.id !== STAFF_ROOM && !(staff && r.callaway));
+    const mine = staff || !caOk ? null : all.find((r) => r.id === caId) || { id: caId, callaway: true, createdBy: uid, members: [], type: "group", lastText: "" };
+    const rest = all.filter((r) => r.id !== caId && r.id !== STAFF_ROOM && !(staff && r.callaway) && !(r.callaway && !staff));
     // (update 163) Callaway's staff: a permanent, starred Callaway Analyst at the top too, holding every person's
     // Callaway Analyst conversation (newest first); tap it to open or fold the list
     // (update 164) the star opens the Callaway Analyst team chat (every analyst and the admin); the arrow folds the
@@ -230,14 +233,14 @@ export function renderChat(container, { flash }) {
     const back = el("button", { type: "button", class: "link chat-back", "aria-label": "Back to chats" }, "\u2039 Chats");
     back.addEventListener("click", () => shell.classList.remove("show-thread"));
     const other = r.type === "dm" ? r.members.find((m) => m !== uid) : null;
-    const sub = r.staffRoom ? `${r.members.length} people \u00b7 ${r.members.map(nameOf).join(", ")}` : r.callaway ? (ownerOf(r) === uid ? "Callaway's analysts" : `${nameOf(ownerOf(r))} \u00b7 to Callaway's analysts`) : r.type === "dm" ? (roleOf(other) || "Direct message") : [...new Set(r.members.map(nameOf))].join(", ");
+    const sub = r.issue ? (r.createdBy === uid ? "Goes only to the admin" : "Issue report \u00b7 only you see this") : r.staffRoom ? `${r.members.length} people \u00b7 ${r.members.map(nameOf).join(", ")}` : r.callaway ? (ownerOf(r) === uid ? "Callaway's analysts" : `${nameOf(ownerOf(r))} \u00b7 to Callaway's analysts`) : r.type === "dm" ? (roleOf(other) || "Direct message") : [...new Set(r.members.map(nameOf))].join(", ");
     const actions = [];
-    if (!r.callaway && !r.staffRoom) {
+    if (!r.callaway && !r.staffRoom && !r.issue) {
       const plus = el("button", { type: "button", class: "btn ghost chat-plus", title: "Add people", "aria-label": "Add people" }, "\uFF0B");
       plus.addEventListener("click", () => openPicker("add", r));
       actions.push(plus);
     }
-    if (r.type === "group" && !r.callaway && !r.staffRoom) {
+    if (r.type === "group" && !r.callaway && !r.staffRoom && !r.issue) {
       const leave = el("button", { type: "button", class: "link danger" }, "Leave");
       leave.addEventListener("click", async () => {
         if (!confirmAction(`Leave \u201c${r.name}\u201d?`)) return;
@@ -423,7 +426,7 @@ export function renderChat(container, { flash }) {
       let attachments = [];
       if (files.length) { sendBtn.textContent = "Sending\u2026"; attachments = await uploadChatFiles(current, files, uid); }
       const text = body || attachments.map((a) => `\u{1F4CE} ${a.name}`).join(", ");
-      await addDoc(msgsOf(current), { uid, name: outsiders ? "Callaway Analyst" : myName, body: text, createdAt: serverTimestamp(), ...(attachments.length ? { attachments, ...(body ? {} : { fileOnly: true }) } : {}) });
+      await addDoc(msgsOf(current), { uid, name: outsiders ? (room.issue ? "Admin" : "Callaway Analyst") : myName, body: text, createdAt: serverTimestamp(), ...(attachments.length ? { attachments, ...(body ? {} : { fileOnly: true }) } : {}) });
       files = []; drawPicked();
       if (staff && room?.callaway && !room.staffRoom) setTriage(current, { state: "answered", by: uid, assignedBy: null, unable: [] });
       await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: (body || "\u{1F4CE} Attachment").slice(0, 120), lastBy: uid }).catch(() => {});
@@ -447,7 +450,7 @@ export function renderChat(container, { flash }) {
         .sort((a, b) => (isStaffId(b) - isStaffId(a)) || nameOf(a).localeCompare(nameOf(b))).slice(0, q ? 30 : Math.max(8, allStaff().length));
       const items = ids.map((id) => { const b = el("button", { type: "button", class: "chat-person" }, personLabel(id)); b.addEventListener("click", () => { input.value = ""; onPick(id); }); return el("li", {}, b); });
       // (update 170) outside Callaway: one "Callaway Analyst" (the analysts' shared inbox), never a named analyst
-      if (!staff && !exclude.length && (!q || "callaway analyst".includes(q) || q.includes("analyst") || q.includes("callaway"))) {
+      if (!staff && caOk && !exclude.length && (!q || "callaway analyst".includes(q) || q.includes("analyst") || q.includes("callaway"))) {
         const b = el("button", { type: "button", class: "chat-person chat-person-ca" }, ["\u2605 Callaway Analyst", el("span", { class: "muted small" }, " \u00b7 any of Callaway's analysts")]);
         b.addEventListener("click", () => { input.value = ""; startCallaway(); });
         items.unshift(el("li", {}, b));
@@ -513,6 +516,7 @@ export function renderChat(container, { flash }) {
     return id;
   }
   async function startCallaway() {
+    if (!staff && !caOk) { flash("Messaging Callaway Analyst isn\u2019t turned on for your account. Ask Callaway if you need it.", "info"); return; }
     // Callaway's analysts and the admin (always the admin, analysts or not)
     const team = [...new Set([...adminUids, ...staffIds])].filter((x) => x !== uid);
     try {
@@ -580,6 +584,6 @@ export function renderChat(container, { flash }) {
   shell.classList.remove("show-thread"); // phones start on the list
   // (update 304) a question forwarded from Cal: open the Callaway Analyst chat with the message written, ready to send
   let pre = null; try { pre = sessionStorage.getItem("chat.prefill"); sessionStorage.removeItem("chat.prefill"); } catch { /* */ }
-  if (pre && !staff) setTimeout(async () => { await startCallaway(); box.value = pre; box.focus(); flash("Your question from Cal is drafted below for Callaway Analyst. It hasn\u2019t been sent: edit it if you like, then press Send.", "ok"); try { box.setSelectionRange(box.value.length, box.value.length); } catch { /* */ } }, 700);
+  if (pre && !staff) setTimeout(async () => { caOk = await myAnalystAccess(state.profile?.inviteCode); if (!caOk) { redraw(); return; } await startCallaway(); box.value = pre; box.focus(); flash("Your question from Cal is drafted below for Callaway Analyst. It hasn\u2019t been sent: edit it if you like, then press Send.", "ok"); try { box.setSelectionRange(box.value.length, box.value.length); } catch { /* */ } }, 700);
   return () => { stopMsgs(); unsubs.forEach((u) => u()); nameWatch.forEach((u) => u()); };
 }

@@ -209,6 +209,7 @@ function accountMenu(state) {
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
+    el("button", { class: "menu-item menu-issue", type: "button", role: "menuitem", onClick: () => { setOpen(false); reportIssueDialog(); } }, "Report an issue"),
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
   ]);
   const wrap = el("div", { class: "account" }, [btn, menu]);
@@ -219,6 +220,45 @@ function accountMenu(state) {
   currentAccountMenu = { wrap, btn, menu, setOpen };
   return wrap;
 }
+/** (update 305) "Report an issue": a short note that goes only to the admin (it lands in their Chat; they can reply there). */
+function reportIssueDialog() {
+  const st = window.__authState;
+  if (!st?.user) return;
+  document.querySelector("dialog.issue-dialog")?.remove();
+  const text = el("textarea", { rows: 5, maxLength: 1800, placeholder: "What went wrong? What were you doing when it happened?", "aria-label": "Describe the issue" });
+  const msg = el("p", { class: "muted small issue-msg", role: "status" });
+  const send = el("button", { class: "btn", type: "submit" }, "Send");
+  const cancel = el("button", { class: "btn ghost", type: "button" }, "Cancel");
+  const form = el("form", { class: "issue-form" }, [
+    el("h3", {}, "Report an issue"),
+    el("p", { class: "muted small" }, st.isAdmin ? "You’re the admin: reports from everyone arrive in your Chat, marked ⚠." : "This goes only to the admin, not to analysts or anyone else. Any reply shows in your Chat."),
+    text, msg, el("div", { class: "issue-btns" }, [cancel, send]),
+  ]);
+  const dlg = el("dialog", { class: "issue-dialog", "aria-label": "Report an issue" }, form);
+  const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+  cancel.addEventListener("click", close);
+  dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) close(); });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = text.value.trim();
+    if (!body) { msg.textContent = "Write a line or two about what happened."; text.focus(); return; }
+    if (st.isAdmin) { msg.textContent = "As the admin you’d be sending this to yourself."; return; }
+    send.disabled = true; send.textContent = "Sending…";
+    try {
+      const { reportIssue } = await import("./store.js");
+      await reportIssue({ uid: st.user.uid, name: st.profile?.name || st.user.displayName || st.user.email || "", text: body, page: (location.hash || "#/").slice(0, 120) });
+      mount(form, [el("h3", {}, "Thanks: sent"), el("p", { class: "muted small" }, "The admin has it. If they reply, you’ll see it in Chat under “Report an issue”."),
+        el("div", { class: "issue-btns" }, el("button", { class: "btn", type: "button", onClick: close }, "Close"))]);
+    } catch {
+      msg.textContent = "Couldn’t send that. Try again in a moment.";
+      send.disabled = false; send.textContent = "Send";
+    }
+  });
+  document.body.append(dlg);
+  try { dlg.showModal(); } catch { dlg.setAttribute("open", ""); }
+  text.focus();
+}
 // One set of page-wide listeners for whichever Account menu is on screen (the header is redrawn often).
 let currentAccountMenu = null;
 document.addEventListener("click", (e) => { const m = currentAccountMenu; if (m && !m.wrap.contains(e.target)) m.setOpen(false); });
@@ -228,11 +268,14 @@ window.addEventListener("hashchange", () => currentAccountMenu?.setOpen(false));
 /** (update 258) Callie in the header: opens her chat panel over whatever page is showing. */
 // (update 281) Cal is on per person (the admin turns him on); the admin always has him
 let calOn = null, calFor = null;
+let caMsgOn = null; // (update 305) may they message Callaway Analyst (null: not known yet = yes)
+export function analystAllowed() { const st = window.__authState; return !!st?.isAdmin || st?.profile?.kind === "analyst" || caMsgOn !== false; }
 export function calAllowed() { const st = window.__authState; return !!st?.isAdmin || calOn === true; }
 function checkCal() {
   const st = window.__authState, uid = st?.user?.uid;
   if (st?.isAdmin || !uid || calFor === uid) return;
-  calFor = uid; calOn = null;
+  calFor = uid; calOn = null; caMsgOn = null;
+  import("./store.js").then((m) => m.myAnalystAccess(st.profile?.inviteCode)).then((on) => { caMsgOn = on; }).catch(() => {});
   import("./store.js").then((m) => m.myCalAccess(st.profile?.inviteCode)).then((on) => {
     calOn = on; document.querySelectorAll(".callie-link").forEach((x) => { x.hidden = !on; });
   }).catch(() => {});

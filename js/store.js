@@ -1036,15 +1036,36 @@ export function markThreadReadByUser(threadId) {
 }
 
 /* (update 281) Cal (the AI assistant) is turned on per person by the admin: calAccess/{access code} { on }.
-   Keyed by the code, so it can be set before they sign up and follows them after. */
+   Keyed by the code, so it can be set before they sign up and follows them after.
+   (update 305) the same doc says whether they may message Callaway Analyst: { analyst } (missing = yes). */
 export function watchCalAccess(cb) {
-  return onSnapshot(collection(db, "calAccess"), (snap) => cb(new Map(snap.docs.map((d) => [d.id, !!d.data().on]))), () => cb(new Map()));
+  return onSnapshot(collection(db, "calAccess"), (snap) => cb(new Map(snap.docs.map((d) => [d.id, { on: !!d.data().on, analyst: d.data().analyst !== false }]))), () => cb(new Map()));
 }
 export async function setCalAccess(code, on) {
-  await setDoc(doc(db, "calAccess", code), { on: !!on, updatedAt: serverTimestamp() });
+  await setDoc(doc(db, "calAccess", code), { on: !!on, updatedAt: serverTimestamp() }, { merge: true });
+}
+export async function setAnalystAccess(code, on) {
+  await setDoc(doc(db, "calAccess", code), { analyst: !!on, updatedAt: serverTimestamp() }, { merge: true });
 }
 /** Whether Cal is on for this signed-in person (their profile's access code). */
 export async function myCalAccess(inviteCode) {
   if (!inviteCode) return false;
   try { const s = await getDoc(doc(db, "calAccess", inviteCode)); return !!(s.exists() && s.data().on); } catch { return false; }
+}
+/** (update 305) Whether this signed-in person may message Callaway Analyst (yes unless the admin turned it off). */
+export async function myAnalystAccess(inviteCode) {
+  if (!inviteCode) return true;
+  try { const s = await getDoc(doc(db, "calAccess", inviteCode)); return !(s.exists() && s.data().analyst === false); } catch { return true; }
+}
+/** (update 305) "Report an issue": a conversation with only the admin (issue_{uid}), plus the message. */
+export async function reportIssue({ uid, name, text, page }) {
+  const { adminUids } = await import("./firebase-init.js");
+  const admins = adminUids.filter((x) => x !== uid);
+  if (!admins.length) throw new Error("no admin");
+  const id = `issue_${uid}`, ref = doc(db, "chatRooms", id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) await setDoc(ref, { type: "group", issue: true, name: "Report an issue", members: [uid, ...admins], createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "" });
+  const body = `${text}${page ? `\n\n(Page: ${page})` : ""}`.slice(0, 2000);
+  await addDoc(collection(db, "chatRooms", id, "messages"), { uid, name: name || "", body, createdAt: serverTimestamp() });
+  await updateDoc(ref, { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid });
 }
