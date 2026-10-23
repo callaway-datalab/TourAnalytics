@@ -4358,3 +4358,14 @@ button.cmp-board-row { width: 100%; text-align: left; font: inherit; color: inhe
 /* (update 264) Live Feed: the header's right side (Refresh now for the admin, and the status) */
 .lv-head-r { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; justify-content: flex-end; }
 .lv-refresh { min-height: 2.1rem; }
+
+/* (update 270) Enter New Round: your saved scorecards, to delete any */
+.rd-saved { grid-column: 1 / -1; margin-top: -0.2rem; }
+.rd-saved-toggle { padding: 0.2rem 0; }
+.rd-saved-list { list-style: none; margin: 0.35rem 0 0; padding: 0; border: 1px solid var(--border, #333); border-radius: 10px; overflow: hidden; }
+.rd-saved-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.55rem 0.75rem; }
+.rd-saved-list li + li { border-top: 1px solid var(--border, #333); }
+.rd-saved-what { display: flex; flex-direction: column; min-width: 0; }
+.rd-saved-what strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-saved-act { display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0; }
+.rd-saved-del.sure { color: #ff6b6b; border-color: #ff6b6b; }

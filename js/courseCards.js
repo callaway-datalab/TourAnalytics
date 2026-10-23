@@ -1,7 +1,7 @@
 // Your saved scorecards (update 135): every scorecard you fill in on Enter New Round is kept for you, by course,
 // so picking that course again fills the card (pars, handicaps and each set of tees you've entered).
 // Only you can read or change yours:  courseCards/{your uid}/cards/{course}
-import { collection, doc, getDocs, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { collection, doc, getDocs, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase-init.js";
 
 const slug = (s) => String(s || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
@@ -29,4 +29,10 @@ export async function saveCourseCard(uid, card) {
     par: clean(card.par), hcp: clean(card.hcp), tees, lastTees: String(card.lastTees || "").slice(0, 30), updatedAt: serverTimestamp(),
   });
   return id;
+}
+
+/** (update 270) Delete one of your saved cards. */
+export async function deleteCourseCard(uid, id) {
+  if (!uid || !id) return;
+  await deleteDoc(doc(db, "courseCards", uid, "cards", id));
 }

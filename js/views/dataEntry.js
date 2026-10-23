@@ -13,7 +13,7 @@ import { readScorecard, readScorecardFromTaps, rotateImage, analyzeCard } from "
 import { detectCardGrid, gridValues, splitRow } from "../cardGrid.js";
 import { tesseractEngine } from "../scorecardReader.js";
 import { courseCombobox, courseHistory } from "../courseSearch.js";
-import { myCourseCards, saveCourseCard } from "../courseCards.js";
+import { myCourseCards, saveCourseCard, deleteCourseCard } from "../courseCards.js";
 import { getBag, clubLabel, clubRank, clubMake, shaftText } from "../bag.js";
 import { parseShots, golfFix, golfScore } from "../voiceShots.js";
 import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
@@ -337,8 +337,9 @@ async function renderNew(main, flash, viewing = null) {
   const fromCards = savedCards.map((c) => ({ name: c.name, location: c.location || "", tees: c.lastTees || "", saved: c,
     holes: Array.from({ length: c.holes || 18 }, (_, i) => ({ n: i + 1, par: c.par?.[i] ?? 4, hcp: c.hcp?.[i] ?? null, yards: (c.tees?.[c.lastTees] || [])[i] ?? null })) }));
   const seen = new Set(fromCards.map((c) => c.name.trim().toLowerCase()));
+  const courseHist = [...fromCards, ...courseHistory(pastRounds).filter((c) => !seen.has(c.name.trim().toLowerCase()))];
   const courseBox = courseCombobox(course, {
-    history: [...fromCards, ...courseHistory(pastRounds).filter((c) => !seen.has(c.name.trim().toLowerCase()))],
+    history: courseHist, // (update 270: the same list, so a deleted card leaves the suggestions at once)
     onPick: (c) => {
       if (c.location) locationIn.value = c.location;
       if (c.tees && !teesIn.value) teesIn.value = c.tees;
@@ -358,6 +359,37 @@ async function renderNew(main, flash, viewing = null) {
       }
     },
   });
+
+  // (update 270) Your saved scorecards, to delete any you don't want (a course you won't play again, one entered wrong)
+  const savedBox = el("div", { class: "rd-saved" });
+  let savedOpen = false, asking = null;
+  const drawSaved = () => {
+    const cards = fromCards.map((c) => c.saved);
+    if (!cards.length) { mount(savedBox, null); return; }
+    const toggle = el("button", { type: "button", class: "link small rd-saved-toggle", "aria-expanded": String(savedOpen) }, `${savedOpen ? "\u25be" : "\u25b8"} Saved scorecards (${cards.length})`);
+    toggle.addEventListener("click", () => { savedOpen = !savedOpen; asking = null; drawSaved(); });
+    const list = savedOpen ? el("ul", { class: "rd-saved-list" }, cards.map((c) => {
+      const tees = Object.keys(c.tees || {});
+      const sure = asking === c.id;
+      const del = el("button", { type: "button", class: `btn ghost small rd-saved-del${sure ? " sure" : ""}`, "aria-label": `Delete the saved scorecard for ${c.name}` }, sure ? "Yes, delete" : "Delete");
+      del.addEventListener("click", async () => {
+        if (!sure) { asking = c.id; drawSaved(); return; }
+        del.disabled = true; del.textContent = "Deleting\u2026";
+        try {
+          await deleteCourseCard(state.user?.uid, c.id);
+          const i = fromCards.findIndex((x) => x.saved.id === c.id); if (i >= 0) fromCards.splice(i, 1);
+          const j = courseHist.findIndex((x) => x.saved?.id === c.id); if (j >= 0) courseHist.splice(j, 1);
+          asking = null; flash(`Deleted the saved scorecard for ${c.name}.`, "success");
+        } catch { flash("Couldn\u2019t delete it. Check your connection and try again.", "error"); asking = null; }
+        drawSaved();
+      });
+      const no = sure ? el("button", { type: "button", class: "link small" }, "Cancel") : null;
+      no?.addEventListener("click", () => { asking = null; drawSaved(); });
+      return el("li", {}, [el("div", { class: "rd-saved-what" }, [el("strong", {}, c.name), el("span", { class: "muted small" }, [c.location, `${c.holes || 18} holes`, tees.length ? `${tees.length} set${tees.length === 1 ? "" : "s"} of tees` : null].filter(Boolean).join(" \u00b7 "))]), el("div", { class: "rd-saved-act" }, [no, del])]);
+    })) : null;
+    mount(savedBox, [toggle, list]);
+  };
+  drawSaved();
 
   // Every scorecard you fill in is saved for you in the background (a moment after you stop typing),
   // by course: next time, picking the course fills it in. Only yours; never anyone else's.
@@ -567,6 +599,7 @@ async function renderNew(main, flash, viewing = null) {
       el("h2", {}, "Round details"),
       el("div", { class: "rd-grid" }, [
         el("label", { class: "course-label rd-course" }, [el("span", { class: "rd-label" }, "Course"), courseBox.node]),
+        savedBox, // (update 270)
         el("label", { class: "rd-date" }, [el("span", { class: "rd-label" }, "Date"), date]),
         el("label", { class: "rd-loc" }, [el("span", { class: "rd-label" }, ["Location ", el("em", {}, "optional")]), locationIn]),
         el("div", { class: "field rd-type" }, [el("span", { class: "rd-label" }, "Tour"), typePills]),
