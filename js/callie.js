@@ -192,13 +192,26 @@ function narrowFor(plan, m, rounds) {
     const joined = (list) => list.every((x, i) => !i || near(x.lo, list[i - 1].hi));
     const exact = inside.length && joined(inside) && near(spanOf(inside).lo, lo) && near(spanOf(inside).hi, hi);
     if (!exact) {
-      const opts = [];
-      for (const list of [inside, touch]) {
-        if (!list.length || !joined(list)) continue;
-        const sp = spanOf(list), label = rangeTxt(sp.lo, sp.hi, u, k);
-        if (opts.some((o) => o.label === label)) continue;
-        opts.push({ label, bands: list.map((x) => x.d), distance: { min: sp.lo ? sp.lo / k : null, max: sp.hi === Infinity ? null : sp.hi / k, unit: u } });
+      // (update 262) the choices: every run of bands in a row that reaches into the range, the closest first, by how far
+      // each end is from the question's ("155-175": 160-180 is 5 + 5 off, 140-180 is 15 + 5, 140-160 is 15 + 15)
+      const off = (a, b) => (a === Infinity && b === Infinity ? 0 : a === Infinity || b === Infinity ? 1e6 : Math.abs(a - b));
+      const runs = [];
+      for (let i = 0; i < bands.length; i++) for (let j = i; j < bands.length; j++) {
+        const list = bands.slice(i, j + 1);
+        if (!joined(list)) break;
+        const sp = spanOf(list);
+        if (!(sp.hi > lo + 1e-6 && sp.lo < hi - 1e-6)) continue; // (has to reach into the range)
+        runs.push({ list, sp, score: off(sp.lo, lo) + off(sp.hi, hi) });
       }
+      runs.sort((a, b) => a.score - b.score || (a.sp.hi - a.sp.lo) - (b.sp.hi - b.sp.lo));
+      const opts = [];
+      for (const r of runs) {
+        if (opts.length === 2 || (opts.length && r.score > Math.max(runs[0].score * 3, runs[0].score + 3 * k))) break; // (a second choice only when it's nearly as close)
+        const label = rangeTxt(r.sp.lo, r.sp.hi, u, k);
+        if (opts.some((o) => o.label === label)) continue;
+        opts.push({ label, bands: r.list.map((x) => x.d), distance: { min: r.sp.lo ? r.sp.lo / k : null, max: r.sp.hi === Infinity ? null : r.sp.hi / k, unit: u } });
+      }
+      void inside; void touch;
       if (!opts.length) return { err: `There\u2019s no ${partName.toLowerCase()} distance band ${want} in the data${bands.length ? `: it has ${bands.map((x) => x.d).join(", ")}` : " (it needs shot-level detail)"}.` };
       // where the bands don't line up with the question ("don't split at 150")
       const at = [lo > 0 && !bands.some((x) => near(x.lo, lo)) ? lo / k : null, hi !== Infinity && !bands.some((x) => near(x.hi, hi)) ? hi / k : null].filter((x) => x != null);
@@ -478,6 +491,14 @@ async function choose(opt, typed = null) {
 async function ask(question) {
   const picked = pickedOption(question);
   if (picked) return choose(picked, question);
+  // (update 262) "yes" / "either" when there are two choices: ask again which one (not a new question)
+  if (pending && /^\s*(yes|yeah|yep|sure|ok|okay|either|both|whichever|any|either one|that one)\b[\s.!?]*$/i.test(question)) {
+    if (/^\s*(either|whichever|any|either one)\b/i.test(question)) return choose(pending.options[0], question);
+    chat.push({ who: "me", text: question });
+    for (const m of chat) delete m.choices;
+    chat.push({ who: "callie", text: `Which one: **${pending.options.map((o) => o.label).join("** or **")}**?`, choices: pending.options });
+    draw(); return;
+  }
   if (pending) { pending = null; for (const m of chat) delete m.choices; }
   chat.push({ who: "me", text: question });
   busy = true; draw();
