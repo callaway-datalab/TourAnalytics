@@ -4618,3 +4618,19 @@ table td > :is(.row-actions, .type-tags, .cd-actions) { justify-content: center;
 .cmp-cond-v, .cmp-cond-d { text-align: center !important; }
 .cmp-cond-h > span:nth-last-child(1), .cmp-cond-h > span:nth-last-child(2) { text-align: center; }
 .trend-prod { margin-left: 0.35rem; }
+
+/* (update 302) phones: the Rankings and Rounds pop-ups (from the badges at the top of the Stats card) a size smaller,
+   so their tables fit the screen without sliding sideways */
+@media (max-width: 520px) {
+  .rank-scroll table.plain :is(th, td), .hero-tourn-scroll table.plain :is(th, td) { font-size: 0.72rem !important; padding: 0.5rem 0.25rem !important; }
+  .rank-scroll table.plain th, .hero-tourn-scroll table.plain th { font-size: 0.54rem !important; letter-spacing: 0.03em; }
+  .rank-scroll table.plain td:nth-child(2), .hero-tourn-scroll table.plain td:nth-child(2) { max-width: 6.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* Show Product: a toggle of its own, to the right of the Round / Event / Month / Year pills */
+.trend-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.75rem; }
+.prod-key b { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* (update 303) centred tables: no left indent on the sub-rows (Off-the-Tee, Par 3 Scoring Avg …), so every row's
+   label sits on the same centre line as SG: Total and Scoring Avg */
+.cmp-table tr.cmp-sub td:first-child { padding-left: 0.35rem; padding-right: 0.35rem; }
+.cmp-table tbody tr > td:first-child { padding-left: 0.35rem; padding-right: 0.35rem; }
+.cmp-rd-row td:first-child, .club-table tr.in-set td.c-club { padding-left: 0.35rem; padding-right: 0.35rem; } /* (update 303: same centre line) */

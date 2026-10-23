@@ -1439,14 +1439,15 @@ export function sgDashboard(container, opts) {
     }
 
     const prodOn = !!st.showProduct; // (update 299) Show Product: each bar coloured by the product used
-    const toggles = el("div", { class: "subnav small trend-toggles" }, [
-      ...[["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
+    // (update 302) Show Product: its own toggle, to the right of the Round / Event / Month / Year pills
+    const toggles = el("div", { class: "trend-row" }, [
+      el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
         const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
         a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
         return a;
-      }),
-      (() => { const a = el("a", { href: "#", class: "trend-prod", "aria-pressed": String(prodOn), "aria-current": prodOn ? "page" : null }, "Show Product");
-        a.addEventListener("click", (e) => { e.preventDefault(); st.showProduct = !prodOn; draw(); }); return a; })(),
+      })),
+      (() => { const b = el("button", { type: "button", class: `cmp-chip small trend-prod${prodOn ? " on" : ""}`, "aria-pressed": String(prodOn) }, [prodOn ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, "Show Product"]);
+        b.addEventListener("click", () => { st.showProduct = !prodOn; draw(); }); return b; })(),
     ]);
     if (prodOn) { blocks.push(productTrend(mine, cat, toggles)); return blocks; }
     const t = trend(mine, cat || null, st.trendBy);
@@ -1741,10 +1742,15 @@ export function sgDashboard(container, opts) {
     });
     const list = [...groups.values()].map((g) => ({ ...g, value: g.sg / g.rounds, top: [...g.prods].sort((a, b) => b[1] - a[1])[0]?.[0] || null }));
     const used = new Map(); for (const g of list) for (const [p, n] of g.prods) used.set(p, (used.get(p) || 0) + n);
+    // (update 302) each product's average: strokes gained a round with it (these shots), over the rounds it was used in
+    const avgOf = new Map();
+    for (const rd of rs) { const per = new Map(); for (const s of rd.shots) { const p = prodOf(s, kind); if (p) per.set(p, (per.get(p) || 0) + s.sg); } for (const [p, v] of per) { const a = avgOf.get(p) || { sg: 0, n: 0 }; a.sg += v; a.n++; avgOf.set(p, a); } }
     const order = [...used].sort((a, b) => b[1] - a[1]).map(([p]) => p);
     const colorOf = (p) => PROD_COLORS[order.indexOf(p) % PROD_COLORS.length] || "#8e8e93";
     const nameOf = (p) => { const gi = gearInfo(p); return `${gi.brand} ${gi.model}`.trim() || p; };
-    const legend = el("div", { class: "prod-legend" }, order.map((p) => el("span", { class: "prod-key" }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p)])));
+    const legend = el("div", { class: "prod-legend" }, order.map((p) => { const a = avgOf.get(p);
+      const v = a && a.n ? a.sg / a.n : null;
+      return el("span", { class: "prod-key", title: a ? `${a.n} round${a.n === 1 ? "" : "s"} with it` : null }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p), v != null ? el("b", { class: v >= 0 ? "pos" : "neg" }, ` ${fmtSG(v)} avg`) : null]); }));
     return panelBox("SG Trends", [toggles, pills, legend, chartBox((c, as) => barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
       title: `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
       shortLabels: list.map((g) => g.short),
