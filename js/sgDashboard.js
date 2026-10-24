@@ -276,7 +276,9 @@ export function sgDashboard(container, opts) {
       })()),
       // (update 219) "Where they play their best" is on the Compare page now
     ]);
-    if (focusKey) {
+    // (update 326) a drop-down isn't focused again after its pick redraws the page: on a phone that opened its list a
+    // second time (so a stat took two picks)
+    if (focusKey && focusTag !== "SELECT") {
       const again = [...container.querySelectorAll(focusTag || "*")].find((n) => (n.getAttribute("aria-label") || n.textContent).trim() === focusKey);
       again?.focus({ preventScroll: true });
     }
@@ -931,7 +933,7 @@ export function sgDashboard(container, opts) {
   function statSelect() {
     if (statList.length < 2) return null;
     const sel = el("select", { class: "stat-select", "aria-label": "Stat type" }, statList.map((k) => el("option", { value: k, selected: k === statKey }, statDef(k).label)));
-    sel.addEventListener("change", () => { st.statWanted = sel.value; st.openFilter = null; draw(); });
+    sel.addEventListener("change", () => { st.statWanted = sel.value; st.openFilter = null; sel.blur(); draw(); });
     return el("label", { class: "stat-pick" }, [sel]); // (no "Stat Type" heading, update 166)
   }
   function tourButtons() {
@@ -1521,6 +1523,11 @@ export function sgDashboard(container, opts) {
     if (me && mine && mine.length) {
       const v = metric(mine);
       lines.push(`${me.label}: ${def.label} ${fmtV(v)} over ${rw(mine.length)}${what ? ` (${what})` : ""}${r.rank && r.of > 1 ? `, ${ordinal(r.rank)} of ${r.of} players` : ""}.`);
+      // (update 326) a percentage: how many of how many (made / hit, and the attempts)
+      if (def.pct) {
+        const a = statAgg(mine, narrowedNow());
+        if (a.w > 0 && a.value != null) lines.push(`${Math.round((a.value * a.w) / 100).toLocaleString()} of ${Math.round(a.w).toLocaleString()} (successes of attempts).`);
+      }
       if (avg != null && r.of > 1 && v != null) {
         const b = better(v, avg);
         lines.push(`Tour Players\u2019 average: ${fmtV(avg)}${b === null || Math.abs(v - avg) < 1e-9 ? "." : `, so ${b ? "better" : "worse"} than average.`}`);
@@ -1559,7 +1566,9 @@ export function sgDashboard(container, opts) {
     const detailOK = cmpDetailOK(); // others' lie / distance detail (the admin); the shared summary has categories only
     // the gold dots: the same players as on the strokes-gained charts (none when there's nobody else to compare with)
     const cmpField = rankedField(slicedField).some((p) => p.key !== me.key) ? topPlayers(slicedField) : [];
-    const tip = (groups) => (i) => `${Math.round(groups[i].w).toLocaleString()} ${Math.round(groups[i].w) === 1 ? "attempt" : "attempts"}`;
+    const tip = (groups) => (i) => (def.pct && groups[i].value != null // (update 326: a percentage: successes of attempts)
+      ? `${Math.round((groups[i].value * groups[i].w) / 100).toLocaleString()} of ${Math.round(groups[i].w).toLocaleString()} attempts`
+      : `${Math.round(groups[i].w).toLocaleString()} ${Math.round(groups[i].w) === 1 ? "attempt" : "attempts"}`);
     if (!cat && catsAvail.length > 1) {
       const shown = catsAvail.filter(([k]) => !st.cats.length || st.cats.includes(k));
       const bars = shown.map(([k, l]) => ({ label: l, value: metric(mine, k) }));

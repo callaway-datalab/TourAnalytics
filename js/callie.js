@@ -592,7 +592,18 @@ async function choose(opt, typed = null) {
   catch (err) { console.error(err); pending = null; chat.push({ who: "callie", text: "Something went wrong working that out. Try asking another way.", err: true }); busy = false; draw(); }
 }
 
+/* (update 326) your past questions, newest first (this device), to ask again */
+const histKey = () => `cal.history.${getState().user?.uid || "anon"}`;
+function history() { try { const a = JSON.parse(localStorage.getItem(histKey()) || "[]"); return Array.isArray(a) ? a.filter((x) => typeof x === "string") : []; } catch { return []; } }
+function remember(q) {
+  const t = String(q || "").trim();
+  if (!t || t.length < 4 || /^\s*(yes|yeah|yep|sure|ok|okay|either|both|no)\b/i.test(t)) return;
+  const a = [t, ...history().filter((x) => x.toLowerCase() !== t.toLowerCase())].slice(0, 30);
+  try { localStorage.setItem(histKey(), JSON.stringify(a)); } catch { /* */ }
+}
+let showHist = false;
 async function ask(question) {
+  if (!pending) remember(question);
   const picked = pickedOption(question);
   if (picked) return choose(picked, question);
   // (update 262) "yes" / "either" when there are two choices: ask again which one (not a new question)
@@ -685,7 +696,22 @@ function examples(list, leader = null) {
 function draw() {
   if (!panel) return;
   const log = panel.querySelector(".cal-log"), input = panel.querySelector(".cal-in"), send = panel.querySelector(".cal-send");
+  const hb = panel.querySelector(".cal-hist-btn"); if (hb) hb.textContent = showHist ? "Back" : "History";
   const items = [];
+  // (update 326) History: your past questions; tap one to ask it again
+  if (showHist) {
+    const h = history();
+    const clear = el("button", { type: "button", class: "link small" }, "Clear history");
+    clear.addEventListener("click", () => { try { localStorage.removeItem(histKey()); } catch { /* */ } draw(); });
+    items.push(el("div", { class: "cal-hist" }, [
+      el("p", { class: "cal-hist-t" }, "Your past questions"),
+      h.length ? el("ul", {}, h.map((q) => { const b = el("button", { type: "button", class: "cal-hist-q" }, q); b.addEventListener("click", () => { if (busy) return; showHist = false; ask(q); }); return el("li", {}, b); }))
+        : el("p", { class: "muted small" }, "Nothing yet. Questions you ask show up here."),
+      h.length ? clear : null,
+    ]));
+    mount(log, items);
+    return;
+  }
   if (!chat.length) {
     items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal,"), el("p", {}, oneData() ? "You can ask me anything about your data. For example, you could ask about your stats over a specific stretch of time, where you rank on tour in a certain category, or how two products compare." : "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare."), el("p", {}, "What would you like to know first?"),
       el("p", { class: "muted small" }, "Every number I show is worked out from the data available on this site.")])); // (update 290)
@@ -719,12 +745,14 @@ export async function openCallie() {
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close Cal" }, "✕");
     close.addEventListener("click", closeCallie);
+    const histBtn = el("button", { type: "button", class: "link small cal-hist-btn" }, "History");
+    histBtn.addEventListener("click", () => { showHist = !showHist; histBtn.textContent = showHist ? "Back" : "History"; draw(); });
     const fresh = el("button", { type: "button", class: "link small" }, "New chat");
-    fresh.addEventListener("click", () => { chat.length = 0; lastPlayers = []; pending = null; busy = false; draw(); });
+    fresh.addEventListener("click", () => { showHist = false; histBtn.textContent = "History"; chat.length = 0; lastPlayers = []; pending = null; busy = false; draw(); });
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [
-        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your AI data caddy")]), fresh, close]),
+        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your AI data caddy")]), histBtn, fresh, close]),
         el("div", { class: "cal-log", "aria-live": "polite" }),
         el("div", { class: "cal-foot" }, [input, send]),
       ]),
