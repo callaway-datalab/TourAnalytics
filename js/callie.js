@@ -563,7 +563,9 @@ async function respond(plan, ps, missing = []) {
   pending = null;
   answers.forEach((a, i) => {
     const extra = i === answers.length - 1 ? [missing.length ? `(Couldn\u2019t find ${missing.join(", ")}.)` : null, plan.unsupported ? `(Not in this answer: ${plan.unsupported})` : null] : [];
-    chat.push({ who: "callie", ...a, text: [a.text, ...extra].filter(Boolean).join("\n\n") });
+    // (update 324) part of the question left out ("Not in this answer"): offer to forward it to an analyst too
+    const partial = i === answers.length - 1 && !!(plan.unsupported || missing.length);
+    chat.push({ who: "callie", ...a, ...(partial ? { cant: true } : {}), text: [a.text, ...extra].filter(Boolean).join("\n\n") });
   });
   busy = false; draw();
 }
