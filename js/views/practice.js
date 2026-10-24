@@ -29,8 +29,9 @@ const LS_CAT = "ta:practice:cat";
 const LS_TOOL = "ta:practice:tool";
 // (update 157) no Games tab: Course Prep's filters cover it (old games still open from your history)
 // (update 160) Course Prep is its own page under Play (#/course-prep); Practice is Custom and Launch Monitor Data
-const TOOLS = { CUSTOM: "Custom", PREP: "Course Prep", BAG: "Launch Monitor Data" };
-const TOOL_ORDER = ["CUSTOM", "BAG"];
+// (update 342) Plan: the drills added from Stats, ready to start
+const TOOLS = { PLAN: "Plan", CUSTOM: "Custom", PREP: "Course Prep", BAG: "Launch Monitor Data" };
+const TOOL_ORDER = ["PLAN", "CUSTOM", "BAG"];
 
 const DEF_TOTAL = { OTT: 14, APP: 20, ARG: 20, PUTT: 24 };
 
@@ -221,6 +222,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     }
     if (view.name.startsWith("game")) { const m = await import("./practiceGames.js"); return m.render(ctx); }
     if (tool === "BAG" || view.name.startsWith("bag")) { const m = await import("./practiceClubs.js"); return m.render(ctx); }
+    if (view.name.startsWith("drill") || (tool === "PLAN" && view.name === "home")) { const m = await import("./practicePlan.js"); return m.render(ctx); }
     if (view.name === "plan") return drawPlan();
     return drawHome();
   }

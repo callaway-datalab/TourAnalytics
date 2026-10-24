@@ -5,7 +5,7 @@
 import { el, mount } from "../ui.js";
 import { getState } from "../auth.js";
 import { loadSource } from "../reportGen.js";
-import { goalLevels, watchGoals, saveGoalSets, setsOf, saveChallenges, CH_STATS, CH_WHEN, challengeText, challengeStatus } from "../goals.js";
+import { goalLevels, watchGoals, saveGoalSets, setsOf, saveChallenges, CH_STATS, CH_WHEN, challengeText, challengeStatus, chStatOf } from "../goals.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
 
 const fmt = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
@@ -245,8 +245,8 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
 
   /* ---------------- a quick goal's words, value and rounds ---------------- */
   function chInfo({ ch, st }) {
-    const S = CH_STATS.find((x) => x.key === ch.stat) || CH_STATS[0];
-    const val = st.value == null ? "\u2014" : S.kind === "sg" ? fmt(st.value) : S.unit === "%" ? `${st.value.toFixed(1)}%` : st.value.toFixed(1);
+    const S = chStatOf(ch);
+    const val = st.value == null ? "\u2014" : S.kind === "sg" ? fmt(st.value) : S.unit === "%" ? `${st.value.toFixed(1)}%` : `${st.value.toFixed(1)}${S.unit || ""}`;
     const words = { waiting: "Waiting for a round", progress: st.met ? "On track" : "Behind", done: "Achieved", missed: "Missed" }[st.status];
     const open = () => roundsPopup(challengeText(ch), `Since ${ch.start} \u00b7 ${words}${st.value == null ? "" : ` \u00b7 ${st.status === "done" || st.status === "missed" ? "result" : "so far"} ${val}`}`, st.each, S.kind === "sg", Number(ch.target), S);
     return { S, val, words, open };
@@ -313,7 +313,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
 
   /* ---------------- the round-by-round pop-up ---------------- */
   function roundsPopup(title, sub, rounds, isSG, target, stat = null) {
-    const fv = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : isSG ? fmt(v) : stat?.unit === "%" ? `${v.toFixed(1)}%` : v.toFixed(1));
+    const fv = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : isSG ? fmt(v) : stat?.unit === "%" ? `${v.toFixed(1)}%` : `${v.toFixed(1)}${stat?.unit || ""}`);
     const vals = rounds.map((r) => r.v).filter((v) => v != null && Number.isFinite(v));
     const mx = Math.max(0.01, ...vals.map(Math.abs), Math.abs(target || 0));
     const good = (v) => (stat && stat.higher === false ? v <= target : v >= target);
@@ -343,8 +343,9 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
   /* ---------------- a challenge: "Hit [70]% [fairways] in [my next round]" ---------------- */
   function challengeEditor() {
     const ch = chEditing;
-    const S = () => CH_STATS.find((x) => x.key === ch.stat) || CH_STATS[0];
-    const statSel = el("select", { class: "gx-field gx-sel", "aria-label": "Stat" }, [
+    const S = () => chStatOf(ch);
+    const fixedStat = ["obs", "skill", "lie"].includes(ch.stat); // (update 342: a goal from the practice plan keeps its stat)
+    const statSel = fixedStat ? el("span", { class: "gx-fixed-stat" }, `${S().label}${ch.stat === "obs" && ch.dist ? ` from ${ch.dist}` : ""}`) : el("select", { class: "gx-field gx-sel", "aria-label": "Stat" }, [
       el("optgroup", { label: "Strokes gained" }, CH_STATS.filter((x) => x.kind === "sg").map((x) => el("option", { value: x.key, selected: ch.stat === x.key }, x.label))),
       el("optgroup", { label: basicRounds.length ? "Round stats" : "Round stats (from entered rounds)" }, CH_STATS.filter((x) => x.kind === "basic").map((x) => el("option", { value: x.key, selected: ch.stat === x.key }, x.label))),
     ]);
@@ -358,7 +359,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     const dIn = el("input", { type: "date", class: "gx-field gx-date", value: ch.date || "", "aria-label": "By date" });
     const sentence = el("p", { class: "gx-ch-preview" });
     const sync = () => { sentence.textContent = challengeText({ ...ch, target: Number(ch.target) || 0 }); };
-    statSel.addEventListener("change", () => {
+    if (!fixedStat) statSel.addEventListener("change", () => {
       ch.stat = statSel.value; const st = S();
       ch.target = st.kind === "sg" ? 0.5 : st.unit === "%" ? 60 : st.key === "putts" ? 30 : st.key === "score" ? 72 : 3; // a sensible starting target
       challengeEditor();
@@ -374,7 +375,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     save.addEventListener("click", async () => {
       if (ch.when === "date" && !ch.date) { flash("Pick the date.", "error"); return; }
       const st = S();
-      const item = { id: ch.id || `c${Date.now().toString(36)}`, stat: ch.stat, target: Number(ch.target) || 0, measure: st.kind === "sg" ? ch.measure : "round", when: ch.when,
+      const item = { ...(fixedStat ? ch : {}), id: ch.id || `c${Date.now().toString(36)}`, stat: ch.stat, target: Number(ch.target) || 0, measure: st.kind === "sg" ? ch.measure : "round", when: ch.when,
         n: ch.when === "nextN" ? ch.n : null, date: ch.when === "date" ? ch.date : null, start: ch.start || new Date().toISOString().slice(0, 10) };
       const next = ch.id ? challenges().map((x) => (x.id === ch.id ? item : x)) : [...challenges(), item];
       save.disabled = true;
@@ -387,7 +388,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       el("section", { class: "gx-group" }, [
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "Stat"), statSel]),
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, st.kind === "sg" ? "Gain" : st.higher ? "At least" : "At most"),
-          target, st.unit === "%" ? el("span", { class: "gx-unit" }, "%") : null, st.kind === "sg" ? measure : null]),
+          target, st.unit ? el("span", { class: "gx-unit" }, st.unit.trim()) : null, st.kind === "sg" ? measure : null]),
         el("div", { class: "gx-row gx-dlrow" }, [el("span", { class: "gx-row-label" }, "When"), whenSel, ch.when === "nextN" ? el("span", { class: "gx-rounds" }, [nIn, "rounds"]) : null, ch.when === "date" ? dIn : null]),
       ]),
       el("div", { class: "gx-ch-sentence" }, [el("span", { class: "gx-eyebrow" }, "Your goal"), sentence,

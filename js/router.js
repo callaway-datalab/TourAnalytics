@@ -205,6 +205,8 @@ async function render() {
   };
   // (update 297) Course Prep and Practice are the admin's only, for now
   // (update 298) and not in someone's portal you're looking at as the admin (it shows what they'd see)
+  // (update 342) whether Practice is open to whoever's looking (Stats offers "Add to practice plan" only then)
+  window.__taCanPractice = !!(state.isAdmin && !previewClient && !getPreviewTeam());
   if (["course-prep", "practice"].includes(routeId) && !(state.isAdmin && !previewClient && !getPreviewTeam())) { navigate("/entry"); return; }
   if (routeId === "team") {
     const keys = teamKeys();

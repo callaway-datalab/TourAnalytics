@@ -75,6 +75,29 @@ export const CH_STATS = [
   { key: "score", label: "Score (per 18 holes)", short: "score", kind: "basic", unit: "", higher: false, get: (c) => (c.holes ? (c.score / c.holes) * 18 : null) },
   { key: "birdies", label: "Birdies per round", short: "birdies a round", kind: "basic", unit: "", higher: true, get: (c, n) => per(c, n, c.birdies / n) },
 ];
+/**
+ * (update 342) A challenge's stat. Besides the fixed list, goals made from the practice plan track:
+ *   stat "obs":   a plain stat at a part of the game and distance (statKey "make", cat "PUTT", dist "15-20 ft"), from the
+ *                 rounds' stats; label, unit, higher, dp come with the goal
+ *   stat "skill": strokes gained for a part of the game and distance (cat, dist)
+ *   stat "lie":   attempts a round from a lie (cat "APP", lie "Rough"): fewer is better
+ */
+export function chStatOf(ch) {
+  const catName = (k) => CAT[k] || k;
+  if (ch?.stat === "obs") return { key: "obs", label: ch.label, short: ch.label, kind: "obs", unit: ch.unit ?? "", higher: ch.higher !== false, dp: ch.dp ?? 1 };
+  if (ch?.stat === "skill") return { key: "skill", label: `${catName(ch.cat)}${ch.dist ? ` \u00b7 ${ch.dist}` : ""} strokes gained`, short: `${catName(ch.cat)}${ch.dist ? ` (${ch.dist})` : ""}`, kind: "sg", cat: ch.cat, dist: ch.dist || null, higher: true };
+  if (ch?.stat === "lie") return { key: "lie", label: `${ch.cat === "ARG" ? "Short-game shots" : "Approaches"} from the ${String(ch.lie).toLowerCase()}`, short: `${ch.cat === "ARG" ? "short-game shots" : "approaches"} from the ${String(ch.lie).toLowerCase()} a round`, kind: "lie", unit: "", higher: false, dp: 1 };
+  return CH_STATS.find((x) => x.key === ch?.stat) || CH_STATS[0];
+}
+/** Does a shot count for a challenge's strokes gained (its category, and its distance for a skill goal)? */
+const sgIn = (st, x) => (!st.cat || x.cat === st.cat) && (!st.dist || x.dist === st.dist);
+/** A plan goal's value in some rounds (obs: weighted average; lie: attempts a round). */
+function planValue(ch, rs) {
+  if (ch.stat === "lie") { if (!rs.length) return null; let n = 0; for (const r of rs) for (const x of r.shots || []) if (x.cat === ch.cat && x.lie === ch.lie) n += x.w || 1; return n / rs.length; }
+  let t = 0, w = 0;
+  for (const r of rs) for (const o of r.obs || []) if (o.k === ch.statKey && (o.cat || "") === (ch.cat || "") && (o.dist || "") === (ch.dist || "")) { t += o.v * o.w; w += o.w; }
+  return w ? t / w : null;
+}
 export const CH_WHEN = [["next", "my next round"], ["nextN", "my next … rounds"], ["week", "this week"], ["month", "this month"], ["date", "by a date"]];
 const dayOf = (d) => String(d || "").slice(0, 10);
 function windowOf(ch) {
@@ -86,11 +109,13 @@ function windowOf(ch) {
 }
 /** A challenge's sentence: "Hit at least 70% fairways in my next round". */
 export function challengeText(ch) {
-  const st = CH_STATS.find((x) => x.key === ch.stat) || CH_STATS[0];
+  const st = chStatOf(ch);
   const when = ch.when === "nextN" ? `in my next ${ch.n} rounds` : ch.when === "next" ? "in my next round" : ch.when === "week" ? "this week" : ch.when === "month" ? "this month" : `by ${new Date(`${ch.date}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
   const t = Number(ch.target);
   if (st.kind === "sg") return `Gain ${t >= 0 ? "+" : "\u2212"}${Math.abs(t).toFixed(2)} ${st.short === "SG" ? "strokes" : `${st.short} strokes`}${ch.measure === "total" ? " in total" : " a round"} ${when}`;
-  const v = st.unit === "%" ? `${t}%` : String(t);
+  const v = st.unit === "%" ? `${t}%` : `${t}${st.unit || ""}`;
+  if (st.kind === "obs") return `${st.label}${ch.dist ? ` from ${ch.dist}` : ""}: ${v} or ${st.higher ? "better" : "lower"} ${when}`;
+  if (st.kind === "lie") return `${st.label}: ${v} a round or fewer ${when}`;
   return st.higher ? `Hit ${v} ${st.short} or better ${when}` : `Average ${v} ${st.short} or fewer ${when}`;
 }
 /**
@@ -98,17 +123,18 @@ export function challengeText(ch) {
  * sgRounds: prepared rounds (tour and entered); basicRounds: entered rounds (with their traditional counts).
  */
 export function challengeStatus(ch, sgRounds, basicRounds, today = new Date()) {
-  const st = CH_STATS.find((x) => x.key === ch.stat) || CH_STATS[0];
-  const pool = (st.kind === "sg" ? sgRounds : basicRounds).filter((r) => dayOf(r.date) >= ch.start).sort((a, b) => dayOf(a.date).localeCompare(dayOf(b.date)));
+  const st = chStatOf(ch);
+  const pool = (st.kind !== "basic" ? sgRounds : basicRounds).filter((r) => dayOf(r.date) >= ch.start).sort((a, b) => dayOf(a.date).localeCompare(dayOf(b.date)));
   const w = windowOf(ch), todayS = dayOf(today.toISOString());
   const rs = w.count ? pool.slice(0, w.count) : pool.filter((r) => dayOf(r.date) >= w.from && dayOf(r.date) <= w.to);
   const closed = w.count ? rs.length >= w.count : todayS > w.to;
   let value = null;
   if (rs.length) {
     if (st.kind === "sg") {
-      const tot = rs.reduce((t, r) => t + r.shots.reduce((u, x) => u + (!st.cat || x.cat === st.cat ? x.sg : 0), 0), 0);
+      const tot = rs.reduce((t, r) => t + r.shots.reduce((u, x) => u + (sgIn(st, x) ? x.sg : 0), 0), 0);
       value = ch.measure === "total" ? tot : tot / rs.length;
-    } else {
+    } else if (st.kind === "obs" || st.kind === "lie") value = planValue(ch, rs);
+    else {
       const c = {}; for (const r of rs) for (const [k, v] of Object.entries(r.basic || {})) c[k] = (c[k] || 0) + v;
       value = st.get(c, rs.length);
     }
@@ -121,7 +147,8 @@ export function challengeStatus(ch, sgRounds, basicRounds, today = new Date()) {
   // each counted round's own value (for the round-by-round pop-up)
   const each = rs.map((r) => {
     let v = null;
-    if (st.kind === "sg") v = r.shots.reduce((u, x) => u + (!st.cat || x.cat === st.cat ? x.sg : 0), 0);
+    if (st.kind === "sg") v = r.shots.reduce((u, x) => u + (sgIn(st, x) ? x.sg : 0), 0);
+    else if (st.kind === "obs" || st.kind === "lie") v = planValue(ch, [r]);
     else v = st.get(r.basic || {}, 1);
     return { date: r.date, event: r.event || r.course || "", roundNo: r.roundNo || "", v };
   });
