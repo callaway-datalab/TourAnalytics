@@ -17,31 +17,36 @@ import { getState } from "./auth.js";
 import { drillFor, drillLine, practiceOpen } from "./practice/plan.js"; // (update 342)
 const PLAN_ADDED = new Set(); // drills added to the practice plan this visit
 /* (update 345) Per shot or how often? A difference in strokes gained a round for a part of the game and distance splits
- * exactly in two:  A attempts a round x (A per shot - B per shot)   [playing it better]
- *               +  (A attempts - B attempts) x B per shot           [facing it more or less often]
+ * exactly in two (update 348: weighed by their usual per-shot level, U, over the whole time frame, so a strength or a weakness
+ * is the same whichever rounds are compared):
+ *    A attempts x (A per shot - U) - B attempts x (B per shot - U)   [playing it better]
+ *  + (A attempts - B attempts) x U                                     [facing it more or less often]
  * So elite rounds can look better at something just because they had fewer of their weak shots (or more of their strong
  * ones): that's strategy (or the shot before), not practice. */
-// keyed part of the game | distance | lie (the finest the data has), so a change in lies counts as "how often" too
+// keyed part of the game | distance (update 348: not split by lie, so the per-shot numbers shown are the ones split)
 function bucketsOf(rs, pred = () => true) {
   const m = new Map();
-  for (const rd of rs) for (const x of rd.shots) if (x.cat && pred(x)) { const k = `${x.cat}|${x.dist || ""}|${x.lie || ""}`; const o = m.get(k) || m.set(k, { sg: 0, n: 0 }).get(k); o.sg += x.sg; o.n += x.w || 1; }
+  for (const rd of rs) for (const x of rd.shots) if (x.cat && pred(x)) { const k = `${x.cat}|${x.dist || ""}|`; const o = m.get(k) || m.set(k, { sg: 0, n: 0 }).get(k); o.sg += x.sg; o.n += x.w || 1; }
   return m;
 }
 /** The split for a group (every lie of "APP|100-140 yds", or every distance of "APP"), added up from its finest pieces. */
-function groupSplit(bA, nA, bB, nB, match) {
+function groupSplit(bA, nA, bB, nB, match, bU = null) {
   const keys = [...new Set([...bA.keys(), ...bB.keys()])].filter(match);
-  const t = sumSplit(keys.map((k) => splitOf(bA.get(k), nA, bB.get(k), nB)));
+  const t = sumSplit(keys.map((k) => splitOf(bA.get(k), nA, bB.get(k), nB, bU?.get(k))));
   const agg = (b) => keys.reduce((o, k) => { const x = b.get(k); if (x) { o.sg += x.sg; o.n += x.n; } return o; }, { sg: 0, n: 0 });
   const A = agg(bA), B = agg(bB);
-  return { ...t, ae: A.n / nA, ab: B.n / nB, pe: A.n ? A.sg / A.n : 0, pb: B.n ? B.sg / B.n : 0 };
+  const U = bU ? agg(bU) : { sg: A.sg + B.sg, n: A.n + B.n };
+  return { ...t, ae: A.n / nA, ab: B.n / nB, pe: A.n ? A.sg / A.n : 0, pb: B.n ? B.sg / B.n : 0, pu: U.n ? U.sg / U.n : 0 };
 }
 const sgn2 = (v) => (Math.abs(v) < 0.005 ? "+0.00" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
-function splitOf(a, nA, b, nB) {
+function splitOf(a, nA, b, nB, u = null) {
   const ae = a ? a.n / nA : 0, ab = b ? b.n / nB : 0;
-  const pe = a && a.n ? a.sg / a.n : b && b.n ? b.sg / b.n : 0, pb = b && b.n ? b.sg / b.n : pe;
-  const mix = (ae - ab) * pb;
-  // (update 346) "how often" in two: a shot they gain on (a strength) faced more or less often, or one they lose on (a weakness)
-  return { ae, ab, pe, pb, skill: ae * (pe - pb), mix, strong: pb > 0 ? mix : 0, weak: pb < 0 ? mix : 0, total: ae * pe - ab * pb };
+  const pe = a && a.n ? a.sg / a.n : 0, pb = b && b.n ? b.sg / b.n : 0;
+  // their usual level on this shot (every round in the time frame), else the two sets together
+  const pu = u && u.n ? u.sg / u.n : (a?.n || 0) + (b?.n || 0) ? ((a?.sg || 0) + (b?.sg || 0)) / ((a?.n || 0) + (b?.n || 0)) : 0;
+  const mix = (ae - ab) * pu;
+  // (update 346) "how often" in two: a shot they usually gain on (a strength) faced more or less often, or one they usually lose on
+  return { ae, ab, pe, pb, pu, skill: ae * (pe - pu) - ab * (pb - pu), mix, strong: pu > 0 ? mix : 0, weak: pu < 0 ? mix : 0, total: ae * pe - ab * pb };
 }
 const sumSplit = (list) => list.reduce((t, x) => ({ skill: t.skill + x.skill, mix: t.mix + x.mix, strong: t.strong + x.strong, weak: t.weak + x.weak, total: t.total + x.total }), { skill: 0, mix: 0, strong: 0, weak: 0, total: 0 });
 /** "+0.10 from more of their strong shots, +0.40 from fewer of their weak ones" (each part only when it counts). */
@@ -2175,7 +2180,10 @@ export function sgDashboard(container, opts) {
     // (update 334) Elite Round Share for each mark: the most of their best rounds (any order) that together still reach it
     const desc = seq.map((x) => x.t).sort((a, b) => b - a);
     const shareFor = (target) => { let k = 0, sum = 0; for (let i = 0; i < desc.length; i++) { sum += desc[i]; if (rankOf(sum / (i + 1)) <= target) k = i + 1; else break; } return { k, of: desc.length, pct: desc.length ? k / desc.length : 0 }; };
-    return [1, 10, 25, 50].map((target) => ({ ...rung(target), share: shareFor(target) }));
+    const out = [1, 10, 25, 50].map((target) => ({ ...rung(target), share: shareFor(target) }));
+    // (update 348) for the profile: every round (best first), how to rank an average, the field size, the overall rank
+    out.prof = { desc, rankOf, N: others.length + 1, seasonRank };
+    return out;
     function rung(target) {
       if (seasonRank <= target) return { target, already: true, rank: seasonRank };
       for (let n = seq.length; n >= 1; n--) {
@@ -2202,9 +2210,9 @@ export function sgDashboard(container, opts) {
     const f2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
     // the parts of the game (or, one category picked: its distances) that gained the most against the other rounds, each
     // split (update 345) into playing better per shot and facing different shots (more of the strong, fewer of the weak)
-    const bS = bucketsOf(stretch), bN = bucketsOf(season);
+    const bS = bucketsOf(stretch), bN = bucketsOf(season), bU = bucketsOf(season0);
     const nN = Math.max(1, season.length);
-    const sp = (pre) => groupSplit(bS, stretch.length, bN, nN, (k) => k.startsWith(pre));
+    const sp = (pre) => groupSplit(bS, stretch.length, bN, nN, (k) => k.startsWith(pre), bU);
     const dists = (c) => [...new Set([...bS.keys(), ...bN.keys()].filter((k) => k.startsWith(`${c}|`)).map((k) => k.split("|")[1]).filter(Boolean))];
     const parts = cat ? dists(cat).map((d) => ({ name: d, pre: `${cat}|${d}|` })) : CATEGORIES.map(([c]) => ({ name: catName(c), k: c, pre: `${c}|` }));
     const gains = parts.map((p) => { const t = sp(p.pre); return { ...p, ...t, a: t.ae * t.pe, b: t.ab * t.pb }; })
@@ -2244,7 +2252,7 @@ export function sgDashboard(container, opts) {
     const sel = st.vsRank === "peak" ? Math.max(1, Math.round(Number(st.peakN) || 10)) : null;
     const help = el("details", { class: "bs-help" }, [el("summary", { "aria-label": "What is this?" }, "\u24d8"),
       el("p", { class: "muted small" }, "Elite Round Share asks how much of a player\u2019s golf was at each level. Take their best rounds, in any order, and keep adding the next best while the average of the ones taken would still rank #1 (or #10, #25, #50) for the selected time frame. The share is how many rounds that is, out of all their rounds. Tap a box to see those elite rounds (tap it again to clear): what was working, what was in the bag, and every stat from them next to the player\u2019s average."),
-      el("p", { class: "muted small" }, "The shape of the four shares says what kind of player this is. A high #1 share with a low #50 share is boom or bust: great rounds are in there, but poor ones drag the average down, so cutting out the bad rounds is worth more than adding great ones. A low #1 share with a high #50 share is steady with a lower ceiling: the work is adding more great rounds. High at both ends is elite and steady. Because #10, #25 and #50 can borrow weaker rounds to make up the average, the gap between the #1 share and the #50 share is a measure of how spread out their golf is."),
+      el("p", { class: "muted small" }, "The line under the boxes says what kind of player this is. Take the rounds that together reach a #1 level (or the highest level some do), then rank the average of all their other rounds against the tour\u2019s season averages. A big drop (40 rounds at #1, the other 30 at #95) is boom or bust, whatever the overall rank: cutting out the bad rounds is worth more than adding great ones. A small drop (the rest still at #15) is a high floor: the work is adding more great rounds."),
       el("p", { class: "muted small" }, "Path back to Elite compares the elite rounds with the player\u2019s most recent rounds (10 to start; change the number). It shows the gap in strokes, the five parts of the game and distances that make up most of it, a target in plain stats where the file has one, when their elite rounds tend to come, and practice to match. What hurts in the non-elite rounds (under What was working) shows a part of the game costing a stroke or more and too many attempts from bad lies, traced back to the shot that put them there unless they also lost ground from that lie. It\u2019s worked out from the numbers on the page, not by AI."),
       el("p", { class: "muted small" }, "Per shot or how often: every difference in strokes gained is split in two. Per shot is playing the same shots better. How often is facing different shots at the same level per shot (by distance and lie), split again into more of their strong shots (ones they gain strokes on) and fewer of their weak ones (ones they lose strokes on). When a difference is mostly how often, it\u2019s a strategy question (or the shot before it), so it gets a strategy note instead of a drill; Where the shots came from lists the biggest of these.")]);
     // (update 342) no rankings (only the player's own practice or entered rounds): no #1 / #10 ladder to measure against,
@@ -2313,8 +2321,8 @@ export function sgDashboard(container, opts) {
           el("ul", { class: "bs-list" }, whatWorked(pk.rounds, season, cat).map((t) => el("li", {}, t))),
           ...(() => { const hurt = whatHurts(pk.rounds, season, cat); return hurt.length ? [el("p", { class: "bs-sub bs-sub2" }, `What hurts in the ${showRanks ? "non-elite" : "other"} rounds`), el("ul", { class: "bs-list" }, hurt.map((t) => el("li", {}, t)))] : []; })(),
           ...(() => { const { items, total } = shotMix(pk.rounds, season, cat); if (!items.length) return [];
-            const sum = total && Math.abs(total.mix) >= 0.02 ? `In all, the mix of shots was worth ${sgn2(total.mix)} a round: ${mixWords(total, sgn2)}. Playing better per shot was worth ${sgn2(total.skill)}.` : "";
-            return [el("p", { class: "bs-sub bs-sub2" }, "Where the shots came from"), el("p", { class: "muted small bs-mix-note" }, `Not playing better, just facing different shots. ${sum}`), el("ul", { class: "bs-list" }, items.map((t) => el("li", {}, t)))]; })(),
+            const sum = total ? `Of the ${sgn2(total.total)} a round between elite and non-elite rounds, ${sgn2(total.skill)} came from playing better per shot and ${sgn2(total.mix)} from the mix of shots they faced${Math.abs(total.mix) >= 0.02 ? ` (${mixWords(total, sgn2)})` : ""}. These are the biggest pieces of that mix:` : "";
+            return [el("p", { class: "bs-sub bs-sub2" }, "Where the shots came from"), el("p", { class: "muted small bs-mix-note" }, sum), el("ul", { class: "bs-list" }, items.map((t) => el("li", {}, t)))]; })(),
         ]);
       }
     }
@@ -2333,17 +2341,17 @@ export function sgDashboard(container, opts) {
     const eSet = new Set(elite), rest = season.filter((rd) => !eSet.has(rd));
     if (!rest.length) return { items: [], total: null };
     const inCat = (x) => !cat || x.cat === cat;
-    const bE = bucketsOf(elite, inCat), bN = bucketsOf(rest, inCat);
-    const total = groupSplit(bE, elite.length, bN, rest.length, () => true);
+    const bE = bucketsOf(elite, inCat), bN = bucketsOf(rest, inCat), bU = bucketsOf(season, inCat);
+    const total = groupSplit(bE, elite.length, bN, rest.length, () => true, bU);
     const f2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
     const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
     const items = [...new Set([...bE.keys(), ...bN.keys()])].filter((k) => k.split("|")[1])
-      .map((k) => ({ k, s: splitOf(bE.get(k), elite.length, bN.get(k), rest.length) }))
+      .map((k) => ({ k, s: splitOf(bE.get(k), elite.length, bN.get(k), rest.length, bU.get(k)) }))
       .filter((x) => x.s.mix >= 0.08 && (bN.get(x.k)?.n || 0) >= 5).sort((a, b) => b.s.mix - a.s.mix).slice(0, 4)
       .map(({ k, s: x }) => { const [c, d, lie] = k.split("|"); const fewer = x.ae < x.ab;
-        const tag = x.pb < 0 ? "Fewer weak shots" : "More strong shots";
+        const tag = x.pu < 0 ? "Fewer weak shots" : "More strong shots";
         const where = `${catName(c)} \u00b7 ${d}${lie && !/^(fairway|green|tee)/i.test(lie) ? ` from the ${lie.toLowerCase()}` : ""}`;
-        return `${tag} \u00b7 ${where}: ${x.ae.toFixed(1)} attempts a round in elite rounds, ${x.ab.toFixed(1)} in non-elite, where they ${x.pb < 0 ? `lose ${Math.abs(x.pb).toFixed(2)}` : `gain ${x.pb.toFixed(2)}`} a shot. ${fewer ? "Fewer" : "More"} of them was worth ${f2(x.mix)} a round. ${MIX_CAUSE[c] || ""}`; });
+        return `${tag} \u00b7 ${where}: ${x.ae.toFixed(1)} attempts a round in elite rounds, ${x.ab.toFixed(1)} in non-elite, where they usually ${x.pu < 0 ? `lose ${Math.abs(x.pu).toFixed(2)}` : `gain ${x.pu.toFixed(2)}`} a shot. ${fewer ? "Fewer" : "More"} of them was worth ${f2(x.mix)} a round. ${MIX_CAUSE[c] || ""}`; });
     return { items, total };
   }
   /* (update 343) What hurts in the other rounds (moved up under What was working): a part of the game costing a stroke
@@ -2398,18 +2406,24 @@ export function sgDashboard(container, opts) {
     avoid.sort((a, b) => b.v - a.v);
     return avoid.slice(0, 3).map((a) => a.t);
   }
-  /* (update 338) What the ladder's shape says: how often they reach the very top (#1 share) against how often they're at
-   * least solid (#50 share). Many great rounds but a low floor: boom or bust; few great rounds but a high floor: steady. */
+  /* (update 348) What kind of player: take the rounds that together reach a #1 level (the #1 Elite Round Share), and rank
+   * the average of all their OTHER rounds against the tour\u2019s season averages. Great rounds at #1 with the rest at #95 is
+   * boom or bust; the rest still at #15 is a high floor. (If no rounds reach #1, the highest level some do.) */
   function profileLine(rows) {
-    if (!rows) return null;
-    const p = (t) => rows.find((r) => r.target === t)?.share?.pct ?? 0;
-    const top = p(1), mid = p(10), floor = p(50);
-    const kind = top >= 0.12 && floor >= 0.7 ? ["Elite and steady", "Plenty of #1-level rounds, and most of their golf holds up at a top-50 level."]
-      : top >= 0.08 && floor < 0.55 ? ["Boom or bust", "Has #1-level rounds in them, but too many poor ones drag the rest down: cutting out the bad rounds matters more than adding great ones."]
-      : top < 0.05 && floor >= 0.7 ? ["Steady, lower ceiling", "Rarely at a #1 level, but very consistent: the next step is more great rounds, not fewer bad ones."]
-      : floor < 0.35 ? ["Building", "Few rounds at any of these levels yet: the floor (the #50 share) is the first thing to raise."]
-      : ["In between", "A mix of great, solid and poor rounds; the plan below shows where the gap is."];
-    return el("p", { class: "bs-profile" }, [el("strong", {}, `${kind[0]}. `), el("span", { class: "muted" }, `${kind[1]} (#1 ${Math.round(top * 100)}% \u00b7 #10 ${Math.round(mid * 100)}% \u00b7 #50 ${Math.round(floor * 100)}%)`)]);
+    const P = rows?.prof;
+    if (!P || P.desc.length < 6) return null;
+    const tier = rows.find((r) => (r.share?.k || 0) >= 2) || null;
+    if (!tier) return el("p", { class: "bs-profile" }, [el("strong", {}, "Building. "), el("span", { class: "muted" }, `No run of their best rounds reaches a #50 level yet (overall #${P.seasonRank} of ${P.N}).`)]);
+    const k = tier.share.k, n = P.desc.length, T = tier.target;
+    if (k >= n) return el("p", { class: "bs-profile" }, [el("strong", {}, "Elite and steady. "), el("span", { class: "muted" }, `Every round together reaches a #${T} level.`)]);
+    const rest = P.desc.slice(k), restAvg = rest.reduce((t, v) => t + v, 0) / rest.length;
+    const R = P.rankOf(restAvg), rp = R / P.N, s = k / n;
+    const top = T === 1;
+    const kind = rp <= 0.2 ? (top && s >= 0.3 ? ["Elite and steady", `Even their other rounds hold up at a #${R} level.`] : ["High floor", `Their other rounds still hold up at a #${R} level: the floor is solid, so the next step is more great rounds.`])
+      : rp >= 0.6 ? (s >= 0.25 ? ["Boom or bust", `Their best golf is #${T}-level, but the rest falls to a #${R} level: cutting out the bad rounds matters more than adding great ones.`] : ["Building", `Few rounds at a #${T} level and the rest at #${R}: raise the floor first.`])
+      : s >= 0.4 ? ["Leans boom or bust", `A clear drop from their best (#${T}) to the rest (#${R}): fewer bad rounds would move them most.`]
+      : ["In between", `Their best reaches #${T} and the rest sits at #${R}.`];
+    return el("p", { class: "bs-profile" }, [el("strong", {}, `${kind[0]}. `), el("span", { class: "muted" }, `${kind[1]} (${k} of ${n} rounds together reach a #${T} level; the other ${n - k} average ${sgn2(restAvg)} a round, a #${R} level of ${P.N}. Overall #${P.seasonRank}.)`)]);
   }
   /* (update 338) Path back to Elite: the player's last N rounds (10 to start; changeable) against their elite rounds. The gap
    * in strokes, where it comes from (biggest first) with a target in plain stats for each, what hurts in their other rounds
@@ -2424,10 +2438,10 @@ export function sgDashboard(container, opts) {
     const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
     const eAvg = tot(elite), rAvg = tot(recent), gap = eAvg - rAvg;
     // where the strokes go: per part of the game and distance, a round
-    const bE = bucketsOf(elite, inCat), bR = bucketsOf(recent, inCat);
+    const bE = bucketsOf(elite, inCat), bR = bucketsOf(recent, inCat), bU = bucketsOf(season, inCat);
     const keys = new Set([...bE.keys(), ...bR.keys()].map((k) => k.split("|").slice(0, 2).join("|")));
     // (update 345) each piece split into playing it better (per shot) and facing it more or less often (lies included)
-    const gaps = [...keys].map((k) => { const sp = groupSplit(bE, elite.length, bR, recent.length, (x) => x.startsWith(`${k}|`)); const [c, d] = k.split("|"); return { k, c, d, e: sp.ae * sp.pe, r: sp.ab * sp.pb, g: sp.total, sp }; })
+    const gaps = [...keys].map((k) => { const sp = groupSplit(bE, elite.length, bR, recent.length, (x) => x.startsWith(`${k}|`), bU); const [c, d] = k.split("|"); return { k, c, d, e: sp.ae * sp.pe, r: sp.ab * sp.pb, g: sp.total, sp }; })
       .filter((x) => x.g > 0.04).sort((a, b) => b.g - a.g).slice(0, 5); // (update 343: top 5)
     // a target in plain stats for a part of the game / distance: the stat that moved most between elite and recent rounds
     const statAvg = (rs, pred) => { const m = new Map(); for (const rd of rs) for (const o of rd.obs || []) if (pred(o)) { const a = m.get(o.k) || m.set(o.k, { s: 0, w: 0 }).get(o.k); a.s += o.v * o.w; a.w += o.w; } return m; };
@@ -2467,8 +2481,10 @@ export function sgDashboard(container, opts) {
       const sp = g.sp, share = g.g > 0 ? sp.skill / g.g : 0;
       const kind = share >= 0.6 ? "skill" : share <= 0.3 ? "mix" : "both";
       const fewer = sp.ae < sp.ab;
-      const why = `Per shot: ${sgn2(sp.pb)} now, ${sgn2(sp.pe)} in elite rounds (worth ${sgn2(sp.skill)} a round).${Math.abs(sp.mix) >= 0.02 ? ` How often: ${sp.ab.toFixed(1)} attempts a round now, ${sp.ae.toFixed(1)} in elite rounds (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)}).` : ""}`;
-      const strategy = kind === "skill" ? null : `${kind === "mix" ? "Mostly how often, not how well:" : "Partly how often:"} ${mixLead(sp)} in elite rounds${sp.pb < 0 && fewer ? ` (they lose ${Math.abs(sp.pb).toFixed(2)} a shot here)` : sp.pb > 0 && !fewer ? ` (they gain ${sp.pb.toFixed(2)} a shot here)` : ""}. ${MIX_CAUSE[g.c] || ""}`;
+      // (update 348) a strength in the elite rounds that's a weakness now (or the other way) is said so
+      const flip = sp.pe > 0.005 && sp.pb < -0.005 ? " A strength in the elite rounds, a weakness now." : sp.pe < -0.005 && sp.pb > 0.005 ? " A weakness in the elite rounds, a strength now." : "";
+      const why = `Per shot: ${sgn2(sp.pb)} now, ${sgn2(sp.pe)} in elite rounds, ${sgn2(sp.pu)} usually (worth ${sgn2(sp.skill)} a round).${flip}${Math.abs(sp.mix) >= 0.02 ? ` How often: ${sp.ab.toFixed(1)} attempts a round now, ${sp.ae.toFixed(1)} in elite rounds (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)}).` : ""}`;
+      const strategy = kind === "skill" ? null : `${kind === "mix" ? "Mostly how often, not how well:" : "Partly how often:"} ${mixLead(sp)} in elite rounds${sp.pu < 0 && fewer ? ` (they usually lose ${Math.abs(sp.pu).toFixed(2)} a shot here)` : sp.pu > 0 && !fewer ? ` (they usually gain ${sp.pu.toFixed(2)} a shot here)` : ""}. ${MIX_CAUSE[g.c] || ""}`;
       return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}: ${g.g.toFixed(2)} of the gap`, sub: `${f2(g.r)} a round now, ${f2(g.e)} in elite rounds.`, why, strategy, target: kind === "mix" ? null : tText(t), thin: !!t?.thin,
         drills: kind === "mix" ? [] : [{ drill: drillFor(g.c, d, t), goal }].filter((x) => x.drill) };
     });
