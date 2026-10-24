@@ -99,14 +99,14 @@ export function goalText(d, best = null) {
 }
 /** Where the goal comes from, in words. */
 export function goalSource(d) {
-  if (d.goalFrom === "elite") return `their elite rounds\u2019 ${d.stat}${d.whole && d.dist ? ` (all ${({ PUTT: "putts", APP: "approaches", ARG: "short-game shots" })[d.cat] || "shots"})` : ""}: ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? " ft" : "%"}`;
+  if (d.goalFrom === "elite") return `their ${d.from || "kept rounds"}\u2019 ${d.stat}${d.whole && d.dist ? ` (all ${({ PUTT: "putts", APP: "approaches", ARG: "short-game shots" })[d.cat] || "shots"})` : ""}: ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? " ft" : "%"}`;
   return null;
 }
 /** The drill as one line of text (Stats shows this to everyone). */
 export const nounOf = (d) => ({ make: "putts", lag: "putts", fairway: "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
 export function drillLine(d) {
   const src = goalSource(d);
-  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : " (no stat for this in their elite rounds to set it from)"}. Aim for 3 sets that reach it.`;
+  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (no stat for this in their ${d.from || "kept rounds"} to set it from)`}. Aim for 3 sets that reach it.`;
 }
 
 /* ---------------- a set's score ---------------- */
