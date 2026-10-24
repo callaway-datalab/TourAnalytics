@@ -46,13 +46,13 @@ const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || "All categories
  * }
  */
 /** (update 283) The Personal Peak's note: when it was (first to last date), then each of its rounds. */
-function peakNote(peak, me, cat, peakN, tn) {
+function peakNote(peak, me, cat, peakN, tn, onRange = null) {
   const day = (rd) => { const d = new Date(`${String(rd.date || "").slice(0, 10)}T12:00:00`); return isNaN(d) ? String(rd.date || "") : d; };
   const md = (d) => (d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : d);
   const mdy = (d) => (d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : d);
   const rs = [...peak.rounds].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const a = day(rs[0]), b = day(rs.at(-1));
-  const span = a instanceof Date && b instanceof Date && a.getFullYear() === b.getFullYear() ? `${md(a)} \u2013 ${mdy(b)}` : `${mdy(a)} \u2013 ${mdy(b)}`;
+  const span = a instanceof Date && b instanceof Date && a.getTime() === b.getTime() ? mdy(a) : a instanceof Date && b instanceof Date && a.getFullYear() === b.getFullYear() ? `${md(a)} \u2013 ${mdy(b)}` : `${mdy(a)} \u2013 ${mdy(b)}`;
   const by = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
   // (update 319) by tournament: "4 rounds at THE PLAYERS Championship, 4 rounds at the Valspar Championship and the
   // first 2 rounds of The Masters" (all of their rounds there, or the first / last few)
@@ -73,9 +73,13 @@ function peakNote(peak, me, cat, peakN, tn) {
   };
   const parts = groups.map(part);
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] || "";
-  return `Personal Peak: ${me?.label || "the player"}\u2019s best ${peakN} rounds in a row by ${by}, ${span}. The rounds: ${list}. `
+  // (update 322) the first sentence: bold, and a tap filters the page to those dates
+  const head = `Personal Peak: ${me?.label || "the player"}\u2019s best ${peakN} ${peakN === 1 ? "round" : "rounds in a row"} by ${by}, ${span}`;
+  const link = el("a", { href: "#", class: "peak-range", title: "Show just these dates" }, head);
+  link.addEventListener("click", (e) => { e.preventDefault(); onRange?.({ from: String(rs[0].date || "").slice(0, 10), to: String(rs.at(-1).date || "").slice(0, 10), label: span }); });
+  return [link, `. The rounds: ${list}. `
     + `Each value is the difference from that peak, with every row from those same rounds (hover a value for theirs). Zero means they\u2019re playing at that level; red is how far below it. `
-    + `Peak Rank: where that peak would rank in each row if it were the player\u2019s average for this selection (against everyone else\u2019s average). Peak Avg: the peak\u2019s own value in each row. Change the Peak Length above for a longer or shorter stretch.`;
+    + `Peak Rank: where that peak would rank in each row if it were the player\u2019s average for this selection (against everyone else\u2019s average). Peak Avg: the peak\u2019s own value in each row. Change the Peak Length above for a longer or shorter stretch, or tap Needed for #1.`];
 }
 
 export function sgDashboard(container, opts) {
@@ -202,7 +206,7 @@ export function sgDashboard(container, opts) {
     if (soloTour) field = field.filter((p) => p.key === me.key);
     // Linked filters (update 166): each dropdown lists only what the other picks leave (the tour's courses,
     // a tournament's course, the last month's tournaments). A pick that's no longer there goes.
-    const roundPicks = () => ({ months: Number(st.span), year: st.year, tour: st.tour, event: opts.practice ? [] : st.event, course: st.course, roundNo: st.roundNo, ptype: st.ptype });
+    const roundPicks = () => ({ months: Number(st.span), from: st.dateRange?.from, to: st.dateRange?.to, year: st.year, tour: st.tour, event: opts.practice ? [] : st.event, course: st.course, roundNo: st.roundNo, ptype: st.ptype });
     const leaving = (k) => base.filter(roundFilter({ ...roundPicks(), [k]: [] }));
     if (opts.practice) st.event = [];
     else st.event = st.event.filter((e) => eventOptions(leaving("event")).some((o) => o.value === e));
@@ -219,7 +223,7 @@ export function sgDashboard(container, opts) {
     st.lie = st.lie.filter((l) => opt.lie.includes(l));
     st.club = st.club.filter((c) => opt.club.includes(c));
     st.gear = st.gear.filter((c) => opt.gear.includes(c));
-    const f = { months: Number(st.span), year: st.year, tour: st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, gear: st.gear, ptype: st.ptype };
+    const f = { months: Number(st.span), from: st.dateRange?.from, to: st.dateRange?.to, year: st.year, tour: st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, gear: st.gear, ptype: st.ptype };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [], gear: [] } : f; // (update 219: nor product)
     lastRankF = rankF;
@@ -260,6 +264,7 @@ export function sgDashboard(container, opts) {
       opts.note && isSG() ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       opts.slot || null, // the page's player search, then the Filters panel
       filtersPanel(opt),
+      rangeChip(), // (update 322)
       el("div", { class: "sg-panel" }, (() => {
         // nothing to show (no player picked, or no rounds yet): the same Filters panel, and why it's empty
         if (opts.emptyNote) return [el("section", { class: "panel sg-empty-note" }, el("p", { class: "empty center" }, opts.emptyNote))];
@@ -1363,7 +1368,7 @@ export function sgDashboard(container, opts) {
     // (update 266) Personal Peak: the player's N best rounds (the Peak Length, default 10) in this selection, ranked by the
     // strokes gained the filters are about (SG: Total, or the one category picked: their best Off-the-Tee rounds), and
     // every row is those same rounds' value, so the rows still add up and read as "how I play on my best days"
-    const peakN = Math.max(2, Math.round(Number(st.peakN) || 10));
+    const peakN = Math.max(1, Math.round(Number(st.peakN) || 10));
     const peak = peakOn ? peakOf(ordered, cat, peakN) : null; // (update 308: the same rounds as the charts' dots)
     const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
     const dTxt = (rd) => String(rd?.date || "").slice(0, 10);
@@ -1405,7 +1410,7 @@ export function sgDashboard(container, opts) {
       ])),
       // (update 240) what the colours mean
       el("p", { class: "muted small sg-full-note" }, peak && peak.short ? `${me?.label || "The player"} has ${peak.have} ${cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} ` : ""}rounds in this selection: fewer than the Peak Length (${peakN}), so there\u2019s no peak to compare with. Shorten the Peak Length or widen the selection.`
-        : peak ? peakNote(peak, me, cat, peakN, tn) // (update 283: says when the peak was, round by round)
+        : peak ? peakNote(peak, me, cat, peakN, tn, setRange) // (update 283: says when the peak was, round by round)
         : relNow
         ? `Each value is the difference from the player ranked #${vsN} in this selection (by ${cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total"} a round); every row is the same golfer. Green: better than them; red: worse. #${vsN} Avg: that player\u2019s own value in each row. Rank: where the player sits in each row. Tap the rank comparison again to see the player\u2019s own values.`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a rank comparison above to see each stat against the player ranked there overall.`),
@@ -1842,17 +1847,58 @@ export function sgDashboard(container, opts) {
   let peakCtx = null, peakMemo = null;
   const curPeak = () => {
     if (!peakCtx?.mine?.length) return null;
-    const n = Math.max(2, Math.round(Number(st.peakN) || 10));
+    const n = Math.max(1, Math.round(Number(st.peakN) || 10));
     if (peakMemo && peakMemo.mine === peakCtx.mine && peakMemo.cat === peakCtx.cat && peakMemo.n === n) return peakMemo.pk;
     const pk = peakOf(peakCtx.mine, peakCtx.cat, n);
     peakMemo = { mine: peakCtx.mine, cat: peakCtx.cat, n, pk };
     return pk;
   };
+  // (update 322) the peak's dates as a filter: the page shows just those rounds (from the top); a chip clears it
+  function setRange(r) {
+    if (!r?.from || !r?.to) return;
+    st.dateRange = r;
+    const ys = [...new Set([r.from.slice(0, 4), r.to.slice(0, 4)])];
+    st.year = ys; st.yearKept = ys; st.span = 0;
+    draw();
+    setTimeout(() => { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { window.scrollTo(0, 0); } }, 80); // (after the redraw puts your place back)
+  }
+  function rangeChip() {
+    if (!st.dateRange) return null;
+    const b = el("button", { type: "button", class: "range-chip", title: "Show every date again" }, [`Dates: ${st.dateRange.label}`, el("span", { "aria-hidden": "true" }, " \u00d7")]);
+    b.addEventListener("click", () => { st.dateRange = null; draw(); });
+    return el("div", { class: "range-chip-row" }, b);
+  }
+  // (update 322) Needed for #1: the longest run of rounds in a row whose average would still rank #1 (else #10, #25,
+  // #50), by the strokes gained on screen, against everyone else's average for this selection
+  function peakNeeded() {
+    const { mine = [], cat = "" } = peakCtx || {};
+    const key = cat ? "sg" : "c:TOTAL";
+    const others = rankedField(lastSliced || []).filter((p) => p.key !== me?.key).map((p) => rowVals(p.rounds, cat).get(key)).filter((v) => v != null && Number.isFinite(v));
+    const seq = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+      .map((rd) => { let t = 0, any = false; for (const x of rd.shots) if (!cat || x.cat === cat) { t += x.sg; any = true; } return any ? t : null; }).filter((t) => t != null);
+    if (!seq.length || !others.length) { st.peakMsg = "Not enough rounds or players in this selection."; draw(); return; }
+    const pre = [0]; for (const t of seq) pre.push(pre.at(-1) + t);
+    const bestAvg = (n) => { let best = -Infinity; for (let i = n; i < pre.length; i++) best = Math.max(best, pre[i] - pre[i - n]); return best / n; };
+    const rankOf = (v) => 1 + others.filter((x) => x > v + 1e-12).length;
+    const who = me?.label || "The player";
+    for (const target of [1, 10, 25, 50]) {
+      for (let n = seq.length; n >= 1; n--) {
+        if (rankOf(bestAvg(n)) <= target) {
+          st.peakN = n; st.peakMsgN = n;
+          st.peakMsg = `#${target} from best ${n} ${n === 1 ? "round" : "rounds"}`; // (update 323)
+          draw(); return;
+        }
+      }
+    }
+    st.peakN = 1; st.peakMsgN = 1;
+    st.peakMsg = `${who}\u2019s best single round would rank ${ordinal(rankOf(bestAvg(1)))}.`;
+    draw();
+  }
   const cmpDetailOK = () => !fieldIsSummary() || (st.vsRank === "peak" && !soloTour); // (lie / distance dots need full rows: the peak is the player's own)
   // what the gold dots are: on the trends, the best result(s) each round / event / month / year among the
   // players who played it; on the other charts, the best players over the selected time frame
   const compareName = (each = null) => {
-    if (st.vsRank === "peak") return `Personal Peak: best ${Math.max(2, Math.round(Number(st.peakN) || 10))} rds in a row (avg)`;
+    if (st.vsRank === "peak") return `Personal Peak: best ${Math.max(1, Math.round(Number(st.peakN) || 10))} rds in a row (avg)`;
     const n = st.rankTop && st.rankTop !== "all" ? st.rankTop : null;
     if (each) { const v0 = vsNum(); return v0 ? `#${v0} player each ${each}` : `All players each ${each} (avg)`; } // (update 309)
     const v = vsNum(); // (update 308) one player: the one ranked #N
@@ -1894,11 +1940,15 @@ export function sgDashboard(container, opts) {
     }));
     let len = null;
     if (st.vsRank === "peak") {
-      const inp = el("input", { type: "number", class: "peak-len", min: "2", max: "100", step: "1", value: String(st.peakN || 10), inputmode: "numeric", "aria-label": "Peak Length: how many rounds in a row" });
-      const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 2) { inp.value = String(st.peakN || 10); return; } const v = Math.min(100, n); if (v === (st.peakN || 10)) return; st.peakN = v; draw(); setTimeout(() => document.querySelector(".peak-len")?.focus(), 0); };
+      const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(st.peakN || 10), inputmode: "numeric", "aria-label": "Peak Length: how many rounds in a row" });
+      const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 1) { inp.value = String(st.peakN || 10); return; } const v = Math.min(500, n); if (v === (st.peakN || 10)) return; st.peakN = v; draw(); setTimeout(() => document.querySelector(".peak-len")?.focus(), 0); };
       inp.addEventListener("change", apply);
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
+      const need = el("button", { type: "button", class: "btn ghost small peak-need", title: "Set the Peak Length to the most rounds in a row that would still rank #1 (or #10, #25, #50)" }, "Needed for #1");
+      need.addEventListener("click", () => peakNeeded());
       len = el("label", { class: "peak-len-wrap", title: "How many rounds in a row make the peak (the best stretch, by the strokes gained the filters are about)" }, [el("span", { class: "ms-label" }, "Peak Length"), inp, el("span", { class: "muted small" }, "rounds")]);
+      const msg = st.peakMsg && st.peakMsgN === (st.peakN || 10) ? el("span", { class: "muted small peak-need-msg", role: "status" }, st.peakMsg) : null;
+      len = el("div", { class: "peak-len-row" }, [len, need, msg]);
     }
     return el("div", { class: "top-pills" }, [el("span", { class: "ms-label" }, "Rank comparisons"), pills, len]);
   }

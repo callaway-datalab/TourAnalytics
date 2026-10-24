@@ -4741,3 +4741,12 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .ptr.back { transition: transform 0.22s ease, opacity 0.22s ease; }
 .ptr.spin svg { animation: ptrSpin 0.7s linear infinite; }
 @keyframes ptrSpin { to { transform: rotate(360deg); } }
+
+/* (update 322) Needed for #1, beside the Peak Length; the peak's dates as a chip; the bold peak sentence */
+.peak-len-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.7rem; }
+.peak-len-row .peak-len-wrap { margin-left: 0.4rem; }
+.btn.small.peak-need { font-size: 0.74rem; padding: 0.3rem 0.75rem; min-height: 0; line-height: 1.2; }
+.peak-need-msg { flex-basis: 100%; margin-left: 0.4rem; color: var(--ink-2, #d1d1d6); }
+.range-chip-row { display: flex; justify-content: center; margin: 0.5rem 0 0.25rem; }
+.range-chip { font: 600 0.78rem/1 var(--font-body); color: #d4b483; background: rgba(212, 180, 131, 0.1); border: 1px solid rgba(212, 180, 131, 0.45); border-radius: 999px; padding: 0.45rem 0.8rem; cursor: pointer; }
+.sg-full-note a.peak-range { font-weight: 700; color: var(--ink, #f2f2f7); text-decoration: underline; text-decoration-color: rgba(212, 180, 131, 0.6); text-underline-offset: 3px; }

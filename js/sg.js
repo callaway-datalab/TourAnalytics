@@ -717,12 +717,16 @@ export function roundFilter(f = {}) {
     const last = new Date(y, m + 1, 0).getDate(); // (31 Oct, back a month: 30 Sep)
     cut = Date.UTC(y, m, Math.min(now.getDate(), last));
   }
+  const isoDay = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || "")); return m ? Date.UTC(+m[1], m[2] - 1, +m[3]) : null; };
+  const from = isoDay(f.from), to = isoDay(f.to);
   const dayOf = (d) => { const s = String(d || ""), iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); if (iso) return Date.UTC(+iso[1], iso[2] - 1, +iso[3]);
     const t = new Date(s); return isNaN(t) ? NaN : Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()); };
   // (the Tournament filter: an entered round's tournament, or "Practice Rounds"; practice: its kind of session)
   return (rd) => (!years || years.has(String(rd.year))) && (!events || events.has(String(rd.tfilter ?? rd.event))) && (!ptypes || ptypes.has(rd.ptype || ""))
     && (!roundNos || roundNos.has(String(rd.roundNo))) && (!tours || rd.tour === undefined || tours.has(rd.tour || "")) && (!courses || courses.has(rd.course || ""))
-    && (cut == null || dayOf(rd.date) >= cut);
+    && (cut == null || dayOf(rd.date) >= cut)
+    // (update 322) a date range (Personal Peak's "show me those rounds"): from / to, ISO days, both ends kept
+    && (!from || dayOf(rd.date) >= from) && (!to || dayOf(rd.date) <= to);
 }
 
 /**
