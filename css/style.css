@@ -4732,3 +4732,12 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .peak-len-wrap { display: inline-flex !important; align-items: center !important; }
 .peak-len-wrap > * { margin-top: 0 !important; margin-bottom: 0 !important; line-height: 1 !important; align-self: center; }
 .peak-len-wrap .ms-label { display: inline-block; }
+
+/* (update 321) pull down to refresh (the Home Screen app) */
+.ptr { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 0.5rem); z-index: 9999; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; background: #1c1d1f; color: #d4b483; border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); opacity: 0; transform: translate(-50%, 0); pointer-events: none; will-change: transform; }
+.ptr.ready { color: #fff; border-color: rgba(212, 180, 131, 0.7); }
+.ptr.back { transition: transform 0.22s ease, opacity 0.22s ease; }
+.ptr.spin svg { animation: ptrSpin 0.7s linear infinite; }
+@keyframes ptrSpin { to { transform: rotate(360deg); } }

@@ -12,6 +12,8 @@ import { fixStatusBar } from "./statusBar.js";
 fixStatusBar(); // (update 277) the Home Screen app's top edge, under the clock
 import { loadingDots } from "./loadingDots.js";
 loadingDots(); // (update 281) the small ball-round-the-cup in front of "Loading…" status lines
+import { pullToRefresh } from "./pullRefresh.js";
+pullToRefresh(); // (update 321) the Home Screen app: drag down at the top of a page to reload it
 startRouter();
 
 // (update 170) a tab acting as a fake user says so, with a way back to your own sign-in
