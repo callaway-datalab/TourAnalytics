@@ -12,7 +12,34 @@ const mean = (a) => (a.length ? sum(a) / a.length : null);
 const sd = (a) => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(sum(a.map((x) => (x - m) ** 2)) / (a.length - 1)); };
 const byDate = (a, b) => String(a.date).localeCompare(String(b.date));
 const sgOf = (rd, cat = null) => rd.shots.reduce((t, s) => t + (!cat || cat === "TOTAL" || s.cat === cat || (cat === "T2G" && s.cat !== "PUTT") ? s.sg : 0), 0);
-export const perRound = (rs, cat = null) => (rs.length ? sum(rs.map((rd) => sgOf(rd, cat))) / rs.length : null);
+// (update 328) worked out once per list of rounds: all five at once (one pass over the shots), then reused
+const prMemo = new WeakMap();
+export const perRound = (rs, cat = null) => {
+  if (!rs.length) return null;
+  let m = prMemo.get(rs);
+  if (!m) {
+    const t = { TOTAL: 0, OTT: 0, APP: 0, ARG: 0, PUTT: 0, T2G: 0 };
+    for (const rd of rs) { // (each round summed first, then the rounds: the same sums as before)
+      const r = { TOTAL: 0, OTT: 0, APP: 0, ARG: 0, PUTT: 0, T2G: 0 };
+      for (const x of rd.shots) { r.TOTAL += x.sg; if (x.cat === "OTT" || x.cat === "APP" || x.cat === "ARG" || x.cat === "PUTT") r[x.cat] += x.sg; if (x.cat !== "PUTT") r.T2G += x.sg; }
+      for (const k in t) t[k] += r[k];
+    }
+    m = new Map(Object.entries(t).map(([k, v]) => [k, v / rs.length])); prMemo.set(rs, m);
+  }
+  const k = !cat ? "TOTAL" : cat;
+  if (m.has(k)) return m.get(k);
+  const v = sum(rs.map((rd) => sgOf(rd, cat))) / rs.length; m.set(k, v); return v;
+};
+// (update 328) a player's rounds for a period and tour, kept per field and filter (every card on the Watchlist asks
+// for the same field, so it's sliced once, not once a card)
+const sliceMemo = new WeakMap();
+function sliced(field, p, f) {
+  let byF = sliceMemo.get(field); if (!byF) { byF = new Map(); sliceMemo.set(field, byF); }
+  const fk = JSON.stringify(f); let m = byF.get(fk); if (!m) { m = new Map(); byF.set(fk, m); }
+  if (!m.has(p.key)) m.set(p.key, applyFilters(statRounds(p.rounds, "sg"), f));
+  return m.get(p.key);
+}
+const bucketMemo = new WeakMap();
 
 /** The period's filter: this season (the latest year in the data), the last 6 months, or everything. */
 export function periodFilter(period, rounds) {
@@ -167,7 +194,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const f = { ...pf, tour: tour ? [tour] : [] };
   const mine = applyFilters(sgOnly(mineAll), f).sort(byDate);
   // the field on the same tour and period (this player with their full rounds)
-  const fieldF = field.map((p) => ({ key: p.key, rounds: p.key === key ? mine : applyFilters(sgOnly(p.rounds), f) })).filter((p) => p.rounds.length);
+  const fieldF = field.map((p) => ({ key: p.key, rounds: p.key === key ? mine : sliced(field, p, f) })).filter((p) => p.rounds.length);
   if (!fieldF.some((p) => p.key === key) && mine.length) fieldF.push({ key, rounds: mine });
   const most = Math.max(0, ...fieldF.map((p) => p.rounds.length));
   const minR = most >= 15 ? defaultMinRounds(most) : Math.max(1, Math.floor(most * 0.33));
@@ -190,10 +217,10 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
 
   // ---- distances: strokes gained a shot by category and distance (enough attempts to mean something) ----
   const MIN_ATT = 8;
-  const bucketsOf = (rounds) => { const m = new Map(); for (const rd of rounds) for (const s of rd.shots) if (s.dist) { const b = `${s.cat}|${s.dist}`; const o = m.get(b) || m.set(b, { sg: 0, w: 0 }).get(b); o.sg += s.sg; o.w += s.w; } return m; };
+  const bucketsOf = (rounds) => { if (bucketMemo.has(rounds)) return bucketMemo.get(rounds); const m = new Map(); bucketMemo.set(rounds, m); for (const rd of rounds) for (const s of rd.shots) if (s.dist) { const b = `${s.cat}|${s.dist}`; const o = m.get(b) || m.set(b, { sg: 0, w: 0 }).get(b); o.sg += s.sg; o.w += s.w; } return m; };
   const minePeriod = own?.length ? applyFilters(sgOnly(own), f) : mine;
   const myB = bucketsOf(minePeriod);
-  const fieldB = detail?.length ? detail.map((p) => { const rs = p.key === key ? minePeriod : applyFilters(sgOnly(p.rounds), f); return { key: p.key, n: rs.length, b: p.key === key ? myB : bucketsOf(rs) }; }) : null;
+  const fieldB = detail?.length ? detail.map((p) => { const rs = p.key === key ? minePeriod : sliced(detail, p, f); return { key: p.key, n: rs.length, b: p.key === key ? myB : bucketsOf(rs) }; }) : null;
   // (update 173) strokes gained per round at each distance (all their rounds in the period count)
   const nMine = minePeriod.length;
   const dl = [...myB].filter(([, o]) => o.w >= MIN_ATT && nMine).map(([b, o]) => {

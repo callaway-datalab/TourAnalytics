@@ -113,6 +113,24 @@ export function sgDashboard(container, opts) {
   // (another stat: a round counts only where it has a value in the selection, e.g. an approach for Hit Green %)
   const nz = (rs) => (isSG() ? rs : rs.filter((rd) => rd.shots.length));
   let facet = { picked: [], events: [], sessions: [] }; // the Filters panel's lists (see draw)
+  let sliceMemo = { src: null, key: null, val: null }; // (update 328)
+  // (update 328) the filter choices (years, tours, lies, distances …): over a whole field that's every shot, so they're
+  // kept per selection while the data is the same
+  let optMemo = { src: null, m: new Map() };
+  const optsOnce = (key, make) => {
+    const src = me ? meAll : fieldAll;
+    if (optMemo.src !== src) optMemo = { src, m: new Map() };
+    if (!optMemo.m.has(key)) { if (optMemo.m.size > 40) optMemo.m.clear(); optMemo.m.set(key, make()); }
+    return optMemo.m.get(key);
+  };
+  const sliceMemos = new Map(); // (update 328) other slices of the field (the hero's tiles), kept while the filters don't change
+  function sliceOnce(name, fl) {
+    const key = `${statKey}|${soloTour ? me?.key : ""}|${JSON.stringify(fl)}`, m = sliceMemos.get(name);
+    if (m && m.src === fieldAll && m.key === key) return m.val;
+    const val = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, fl)) }));
+    sliceMemos.set(name, { src: fieldAll, key, val });
+    return val;
+  }
   let lastSliced = []; // the field as sliced on screen (for the hero card's pop-ups)
   let lastRankF = {}; // the filters the field was sliced with (the rankings can't follow lie / distance from the shared summary)
   const fieldIsSummary = () => field.some((p) => p.summaryOnly);
@@ -184,7 +202,8 @@ export function sgDashboard(container, opts) {
     st.cats = st.cats.filter((k) => catSeen.has(k));
     // Keep only choices that still exist: distances of the picked categories, lies seen in them.
     if (st.cats.length) st.dist = st.dist.filter((d) => st.cats.includes(d.split("|")[0]));
-    const fullOpt = filterOptions(base, st.cats);
+    const baseSig = `${me ? `me:${me.key}` : "field"}|${statKey}`; // (update 328: the choices are worked out once per selection)
+    const fullOpt = optsOnce(`full|${baseSig}|${st.cats.join(",")}`, () => filterOptions(base, st.cats));
     if (!st.yearStarted && fullOpt.year.length) { st.yearStarted = true; if (!st.year.length) st.year = [[...fullOpt.year].sort().pop()]; } // the latest year to start
     // One tour at a time (each tour's numbers come from its own source and scale, so they're never mixed).
     // A player starts on the tour they have the most rounds on; with no player, the PGA TOUR (or the biggest).
@@ -218,7 +237,7 @@ export function sgDashboard(container, opts) {
     if (opts.practice) { const ps = new Set(sessionOptions(leaving("ptype")).map((o) => o.value)); st.ptype = st.ptype.filter((v) => ps.has(v)); }
     // lie, distance and club: what the rounds picked have
     const picked = base.filter(roundFilter(roundPicks()));
-    const opt = { ...filterOptions(picked, st.cats), year: fullOpt.year, tour: fullOpt.tour, course: courseList, roundNo: roundList };
+    const opt = { ...optsOnce(`picked|${baseSig}|${st.cats.join(",")}|${JSON.stringify(roundPicks())}`, () => filterOptions(picked, st.cats)), year: fullOpt.year, tour: fullOpt.tour, course: courseList, roundNo: roundList };
     facet = { picked, events: opts.practice ? [] : eventOptions(leaving("event")), sessions: opts.practice ? sessionOptions(leaving("ptype")) : [] };
     st.lie = st.lie.filter((l) => opt.lie.includes(l));
     st.club = st.club.filter((c) => opt.club.includes(c));
@@ -227,7 +246,11 @@ export function sgDashboard(container, opts) {
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [], gear: [] } : f; // (update 219: nor product)
     lastRankF = rankF;
-    const slicedField = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, rankF)) }));
+    // (update 328) the field sliced by the filters: kept while the filters stay the same, so a tap that doesn't change
+    // them (a rank comparison, Personal Peak, a chart toggle) reuses it and everything worked out from it
+    const sliceKey = `${statKey}|${soloTour ? me?.key : ""}|${JSON.stringify(rankF)}`;
+    const slicedField = sliceMemo.src === fieldAll && sliceMemo.key === sliceKey ? sliceMemo.val
+      : (sliceMemo = { src: fieldAll, key: sliceKey, val: field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, rankF)) })) }).val;
     lastSliced = slicedField;
     // Who's ranked, for every stat: players with at least Min. rounds of strokes-gained data in the selection
     // (year, tour, tournament, round, span). Other stats' rows don't line up with rounds (some are one row per
@@ -419,7 +442,7 @@ export function sgDashboard(container, opts) {
     // Distances, grouped under their category; with categories picked, only theirs show.
     const base = facet.picked;
     const distOpts = catsAvail.filter(([k]) => !st.cats.length || st.cats.includes(k))
-      .flatMap(([k, label]) => filterOptions(base, k).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
+      .flatMap(([k, label]) => optsOnce(`dist|${me ? `me:${me.key}` : "field"}|${statKey}|${k}`, () => filterOptions(base, k)).dist.map((d) => ({ value: `${k}|${d}`, label: d, group: label })));
     const simple = (vals, fmt = (v) => v) => vals.map((v) => ({ value: v, label: fmt(v) }));
     // On phones the filters fold behind a "Filters" button (with how many are in use).
     const inUse = ["event", "course", "roundNo", "lie", "dist", "club", "gear", "ptype"].filter((k) => st[k].length).length + (Number(st.span) > 0 ? 1 : 0);
@@ -508,14 +531,14 @@ export function sgDashboard(container, opts) {
       }
       // a tile per category this stat has (with its rank among the same players, every category counted)
       const allCats = nz(applyFilters(me.rounds, { ...f, cats: [] }));
-      const fieldAllCats = catsAvail.length > 1 ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...lastRankF, cats: [] })) })) : [];
+      const fieldAllCats = catsAvail.length > 1 ? sliceOnce("allcats", { ...lastRankF, cats: [] }) : []; // (update 328: kept while the filters don't change)
       // A lie / distance / club filter belongs to the category picked: the other categories' tiles keep their
       // own numbers (only the year / tour / tournament / round / span filters apply), dimmed and not clickable.
       const apart = (k) => !!(narrowed() && st.cats.length && !st.cats.includes(k));
       const noShot = { lie: [], dist: [], club: [] };
       const anyApart = catsAvail.some(([k]) => apart(k));
       const allCatsBare = anyApart ? nz(applyFilters(me.rounds, { ...f, ...noShot, cats: [] })) : null;
-      const fieldBare = anyApart ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...lastRankF, ...noShot, cats: [] })) })) : [];
+      const fieldBare = anyApart ? sliceOnce("bare", { ...lastRankF, ...noShot, cats: [] }) : [];
       const avgIn = (list, k) => { const v = rankedField(list).map((p) => metric(p.rounds, k)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
       const tiles = catsAvail.length < 2 ? [] : catsAvail.map(([k, l]) => {
         const off = apart(k), mineK = off ? allCatsBare : allCats, fieldK = off ? fieldBare : fieldAllCats;
@@ -1098,10 +1121,15 @@ export function sgDashboard(container, opts) {
   const ordinal = (n) => { const t = ["th", "st", "nd", "rd"], v = n % 100; return n + (t[(v - 20) % 10] || t[v] || t[0]); };
   const isZero = (v) => v != null && Math.round(v * 100) === 0; // shows as +0.00
   const signCls = (v) => (isZero(v) ? "zero" : v >= 0 ? "pos" : "neg");
+  const proMemo = new WeakMap(); // (update 328) rounds list → category → strokes gained a round
   const perRoundOf = (rounds, cat = null) => {
     if (!rounds.length) return null;
+    let m = proMemo.get(rounds); if (!m) { m = new Map(); proMemo.set(rounds, m); }
+    const k = cat || "";
+    if (m.has(k)) return m.get(k);
     let t = 0; for (const rd of rounds) for (const x of rd.shots) if (!cat || x.cat === cat) t += x.sg;
-    return t / rounds.length;
+    const v = t / rounds.length; m.set(k, v);
+    return v;
   };
   // The number a player is ranked on: strokes gained a round, or the stat's attempt-weighted average.
   const narrowedNow = () => !!(st.cats.length || st.lie.length || st.dist.length);

@@ -237,7 +237,9 @@ const truthy = (v) => {
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 // The number a distance label starts at, for sorting: "<5 ft" comes before "5-10 ft", "30+ ft" after "20-30 ft".
 export const distLead = (s) => lead(s); // (update 179: "<5 ft" before "5-10 ft", ">220 yds" after "200-220 yds")
-const lead = (s) => {
+const leadMemo = new Map(); // (update 328: the same few labels, asked about millions of times)
+const lead = (s) => { const k = String(s); let v = leadMemo.get(k); if (v === undefined) { v = lead0(k); if (leadMemo.size < 5000) leadMemo.set(k, v); } return v; };
+const lead0 = (s) => {
   const t = String(s), m = t.match(/-?\d+(\.\d+)?/);
   if (!m) return Infinity;
   const n = Number(m[0]);
@@ -446,13 +448,15 @@ export function sgBy(rounds, idx, cat, field) {
 /** Compact dates for chart labels: 12/25/26. */
 export const shortDate = (d) => `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
 
+// (update 328) a round's strokes gained (one category, or all), without making a filtered copy of its shots
+const sgSum = (rd, cat) => { let t = 0; for (const s of rd.shots) if (!cat || s.cat === cat) t += s.sg; return t; };
 export function trend(rounds, cat, by = "event") {
   if (by === "round") {
     // One bar per round, oldest first, labeled with its date (and round number when there is one).
     return rounds.map((rd) => {
       const d = new Date(rd.date);
       const day = isNaN(d) ? rd.date : shortDate(d);
-      return { label: `${day}${rd.roundNo ? ` R${rd.roundNo}` : ""}`, value: rd.shots.filter((s) => !cat || s.cat === cat).reduce((a, s) => a + s.sg, 0), rounds: 1, event: rd.event };
+      return { label: `${day}${rd.roundNo ? ` R${rd.roundNo}` : ""}`, value: sgSum(rd, cat), rounds: 1, event: rd.event };
     });
   }
   const groups = new Map();
@@ -463,7 +467,7 @@ export function trend(rounds, cat, by = "event") {
       : by === "month" ? (valid ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown")
       : (rd.event || rd.date || rd.key);
     const g = groups.get(key) || { label: key, sg: 0, rounds: 0, first: groups.size, date: valid ? d : null };
-    g.sg += rd.shots.filter((s) => !cat || s.cat === cat).reduce((a, s) => a + s.sg, 0);
+    g.sg += sgSum(rd, cat);
     g.rounds++;
     groups.set(key, g);
   }
