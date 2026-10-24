@@ -11,6 +11,11 @@ let tick = null;                      // the running clock
 const stopClock = () => { if (tick) { clearInterval(tick); tick = null; } };
 const fmtDay = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
 const unitOf = (d) => (d.kind === "prox" ? " ft" : ` of ${d.reps}`);
+// (update 349) a session is as many sets as you like (Redo after each); the aim is 3 sets that meet the goal
+const SETS_AIM = 3;
+const metOf = (s) => s.metCount ?? (s.sets || []).filter((x) => x.met).length;
+const triedOf = (s) => s.tried ?? (s.sets || []).length;
+const tally = (s) => `${metOf(s)} of ${triedOf(s)} ${triedOf(s) === 1 ? "set" : "sets"} met`;
 const scoreText = (d, v) => (v == null ? "—" : `${v}${unitOf(d)}`);
 
 export async function render(ctx) {
@@ -43,7 +48,7 @@ function drawHome(ctx) {
     const ss = drillSessions(ctx, d), done = ss.filter((s) => s.status === "done").sort((a, b) => String(b.endedAt || b.startedAt).localeCompare(String(a.endedAt || a.startedAt)));
     const live = ss.find((s) => s.status === "active"), last = done[0], best = bestOf(d, ctx.sessions);
     const src = goalSource(d);
-    const lastTxt = last ? (last.markSet ? `Last: set the mark, ${scoreText(d, last.sets?.[0]?.score)} \u00b7 ${fmtDay(last.endedAt || last.startedAt)}` : last.metIn ? `Last: met on set ${last.metIn} · ${mmss(last.secs || 0)} · ${fmtDay(last.endedAt || last.startedAt)}` : `Last: not met in ${last.sets?.filter((x) => x.score != null).length || 0} ${last.sets?.length === 1 ? "set" : "sets"} · ${mmss(last.secs || 0)} · ${fmtDay(last.endedAt || last.startedAt)}`) : "Not tried yet";
+    const lastTxt = last ? `Last: ${tally(last)} \u00b7 ${mmss(last.secs || 0)} \u00b7 ${fmtDay(last.endedAt || last.startedAt)}` : "Not tried yet";
     const go = el("button", { type: "button", class: "btn dp-start" }, live ? `▶  Resume (set ${live.sets.length})` : "▶  Start");
     go.addEventListener("click", () => start(ctx, d));
     const del = el("button", { type: "button", class: "entry-del dp-del", "aria-label": "Take this drill out of the plan", title: "Take out of the plan" }, "✕");
@@ -54,7 +59,7 @@ function drawHome(ctx) {
     return el("article", { class: "dp-card" }, [
       el("div", { class: "dp-card-top" }, [el("h3", { class: "dp-title" }, d.title), ro ? null : del]),
       el("p", { class: "dp-goal" }, [el("strong", {}, goalText(d, best)), src ? el("span", { class: "muted" }, ` · ${src}`) : null]),
-      el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)}, ${d.kind === "prox" ? "typing how far each one finishes" : "one tap each"}; repeat sets until you meet it.`),
+      el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)} a set, ${d.kind === "prox" ? "typing how far each one finishes" : "one tap each"}; aim for ${SETS_AIM} sets that meet the goal.`),
       d.goalText ? el("p", { class: "small dp-round-goal" }, `In rounds: ${d.goalText}`) : null,
       el("p", { class: "muted small dp-last" }, [lastTxt, best != null ? ` · best set ${scoreText(d, best)}` : "", done.length > 1 ? ` · ${done.length} sessions` : ""]),
       ro ? null : go,
@@ -63,14 +68,14 @@ function drawHome(ctx) {
   const hist = ctx.sessions.filter((s) => s.mode === "drill" && s.status === "done").sort((a, b) => String(b.endedAt || b.startedAt).localeCompare(String(a.endedAt || a.startedAt))).slice(0, 12);
   mount(ctx.body, el("div", { class: "dp" }, [
     el("div", { class: "dp-head" }, [el("h2", {}, ro ? `${ctx.viewing}’s practice plan` : "Your practice plan"),
-      el("p", { class: "muted small" }, "Drills added from Stats (Path back to Elite). Each one is a challenge: repeat sets until you meet it. Your time and the sets it took are kept.")]),
+      el("p", { class: "muted small" }, `Drills added from Stats (Path back to Elite). Each set is a challenge: aim for ${SETS_AIM} sets that meet the goal, and redo sets as often as you like. The sets you try, the sets you meet and your time are kept.`)]),
     plan.length ? el("div", { class: "dp-list" }, plan.map(card))
       : el("p", { class: "empty dp-empty" }, "Nothing in the plan yet. In Stats, tap an Elite Round Share box, then “Add to practice plan” under Path back to Elite."),
     hist.length ? el("h3", { class: "dp-hist-h" }, "Recent drill sessions") : null,
     hist.length ? el("ul", { class: "dp-hist" }, hist.map((s) => {
       const d = s.drill || {};
       const row = el("li", { class: "dp-hist-row" }, [el("span", {}, [el("strong", {}, d.title || "Drill"), el("span", { class: "muted" }, ` · ${fmtDay(s.endedAt || s.startedAt)}`)]),
-        el("span", { class: s.metIn ? "pos" : "muted" }, s.markSet ? `Mark set \u00b7 ${mmss(s.secs || 0)}` : s.metIn ? `Met on set ${s.metIn} · ${mmss(s.secs || 0)}` : `Not met · ${mmss(s.secs || 0)}`)]);
+        el("span", { class: metOf(s) >= SETS_AIM ? "pos" : "muted" }, `${tally(s)} \u00b7 ${mmss(s.secs || 0)}`)]);
       return ctx.rowWithDelete(row, s, "drill session");
     })) : null,
   ]));
@@ -92,8 +97,8 @@ function drawDrill(ctx, s) {
   };
   const undo = el("button", { type: "button", class: "link dp-undo", disabled: !n }, "Undo last");
   undo.addEventListener("click", () => { set.marks.pop(); ctx.save(s); drawDrill(ctx, s); });
-  const stop = el("button", { type: "button", class: "link dp-stop" }, "Stop for today");
-  stop.addEventListener("click", () => { if (n && !confirmAction("Stop now? This set won’t count.")) return; if (n) set.marks = []; endSession(ctx, s, null); });
+  const stop = el("button", { type: "button", class: "link dp-stop" }, "Finish");
+  stop.addEventListener("click", () => { if (n && !confirmAction("Finish now? This set won’t count.")) return; if (n) set.marks = []; endSession(ctx, s); });
   // the input: two big buttons, or the feet for an approach shot
   let input;
   if (d.kind === "prox") {
@@ -127,37 +132,44 @@ function drawDrill(ctx, s) {
     input,
     el("div", { class: "dp-dots", "aria-label": "This set" }, Array.from({ length: d.reps }, (_, i) => {
       const m = set.marks[i];
-      return el("span", { class: `pp-dot${m == null ? "" : d.kind === "prox" ? " ft" : m.v ? " yes" : " no"}` }, m == null ? "" : d.kind === "prox" ? String(m.v) : m.v ? "✓" : "✕");
+      return el("span", { class: `dp-dot${m == null ? "" : d.kind === "prox" ? " ft" : m.v ? " yes" : " no"}` }, m == null ? "" : d.kind === "prox" ? String(m.v) : m.v ? "✓" : "✕");
     })),
     el("div", { class: "dp-play-foot" }, [undo, stop]),
-    s.sets.length > 1 ? el("p", { class: "muted small dp-prev" }, `Earlier sets: ${s.sets.slice(0, -1).map((x) => scoreText(d, x.score)).join(", ")}`) : null,
+    s.sets.length > 1 ? el("p", { class: "muted small dp-prev" }, `Earlier sets: ${s.sets.slice(0, -1).map((x) => `${scoreText(d, x.score)}${x.met ? " \u2713" : ""}`).join(", ")} \u00b7 ${metOf({ sets: s.sets.slice(0, -1) })} of ${s.sets.length - 1} met`) : null,
   ]));
 }
 
 function finishSet(ctx, s) {
   const d = s.drill, set = s.sets.at(-1);
   set.score = setScore(d, set.marks);
-  set.met = setMet(d, set.score, s.best ?? null);
-  if (set.met) return endSession(ctx, s, s.sets.length);
+  // beat your best, with nothing to beat yet: this first set sets the mark, and later sets have to beat it
+  const marking = d.goal == null && s.best == null;
+  set.met = marking ? false : setMet(d, set.score, s.best ?? null); // (the mark itself isn't a met set)
+  if (marking) { set.mark = true; s.best = set.score; }
   ctx.save(s, true);
   stopClock();
-  const again = el("button", { type: "button", class: "btn dp-again" }, "▶  Next set");
-  again.addEventListener("click", () => { s.sets.push({ marks: [] }); ctx.save(s); drawDrill(ctx, s); });
-  const stop = el("button", { type: "button", class: "link" }, "Stop for today");
-  stop.addEventListener("click", () => endSession(ctx, s, null));
+  const met = metOf(s), tried = s.sets.length, reached = met >= SETS_AIM;
+  const redo = el("button", { type: "button", class: `btn ${reached ? "ghost " : ""}dp-again` }, "\u21BB  Redo");
+  redo.addEventListener("click", () => { s.sets.push({ marks: [] }); ctx.save(s); drawDrill(ctx, s); });
+  const fin = el("button", { type: "button", class: reached ? "btn dp-again" : "link" }, "Finish");
+  fin.addEventListener("click", () => endSession(ctx, s));
   const goal = d.goal ?? s.best;
+  const verdict = set.mark ? `Mark set: ${scoreText(d, set.score)}. From here on, beat it.` : set.met ? "Goal met \u2713" : `Not this time. ${d.kind === "prox" ? `The goal is an average inside ${goal} ft.` : d.goal != null ? `The goal is ${goal}${unitOf(d)}.` : `Your best is ${goal}${unitOf(d)}: beat it.`}`;
   mount(ctx.body, el("div", { class: "dp dp-play dp-setend" }, [
     el("h2", { class: "dp-title" }, d.title),
-    el("p", { class: "dp-big" }, `Set ${s.sets.length}: ${scoreText(d, set.score)}`),
-    el("p", { class: "muted" }, `Not yet. ${d.kind === "prox" ? `The goal is an average inside ${goal} ft.` : d.goal != null ? `The goal is ${goal}${unitOf(d)}.` : `Your best is ${goal}${unitOf(d)}: beat it.`} ${mmss(activeSecs(s))} so far.`),
-    el("div", { class: "dp-setend-btns" }, [again, stop]),
+    el("p", { class: `dp-big${set.met ? " pos" : ""}` }, `Set ${tried}: ${scoreText(d, set.score)}`),
+    el("p", {}, verdict),
+    el("p", { class: "muted" }, `${met} of ${tried} ${tried === 1 ? "set" : "sets"} met so far (aim: ${SETS_AIM}) \u00b7 ${mmss(activeSecs(s))}.${reached ? ` That\u2019s ${SETS_AIM}: finish, or keep going.` : ""}`),
+    el("div", { class: "dp-setend-btns" }, reached ? [fin, redo] : [redo, fin]),
   ]));
 }
 
-function endSession(ctx, s, metIn) {
+function endSession(ctx, s) {
   stopClock();
   s.sets = s.sets.filter((x) => x.marks.length === s.drill.reps);
-  s.status = "done"; s.metIn = metIn; s.markSet = !!metIn && s.drill.goal == null && s.best == null; s.endedAt = new Date().toISOString(); s.secs = activeSecs(s);
+  s.status = "done"; s.endedAt = new Date().toISOString(); s.secs = activeSecs(s);
+  s.tried = s.sets.length; s.metCount = s.sets.filter((x) => x.met).length;
+  s.metIn = (s.sets.findIndex((x) => x.met) + 1) || null; s.markSet = s.sets.some((x) => x.mark);
   s.balls = s.sets.length * s.drill.reps;
   if (!s.sets.length) { ctx.remove(s.id).then(() => ctx.home()); return; } // (nothing played: no session)
   ctx.save(s, true);
@@ -166,18 +178,18 @@ function endSession(ctx, s, metIn) {
 
 function drawDone(ctx, s) {
   const d = s.drill;
-  const first = d.goal == null && s.best == null;
+  const met = metOf(s), tried = triedOf(s);
   const back = el("button", { type: "button", class: "btn dp-again" }, "Back to the plan");
   back.addEventListener("click", () => ctx.home());
   mount(ctx.body, el("div", { class: "dp dp-play dp-done" }, [
     el("h2", { class: "dp-title" }, d.title),
-    el("p", { class: `pp-big${s.metIn ? " pos" : ""}` }, s.metIn ? (first ? "Mark set" : `Challenge met on set ${s.metIn}`) : "Not met today"),
+    el("p", { class: `dp-big${met >= SETS_AIM ? " pos" : ""}` }, `${met} of ${tried} ${tried === 1 ? "set" : "sets"} met${met >= SETS_AIM ? " \u2713" : ""}`),
     el("div", { class: "dp-stat" }, [
       el("div", {}, [el("span", { class: "muted small" }, "Time"), el("strong", {}, mmss(s.secs || 0))]),
-      el("div", {}, [el("span", { class: "muted small" }, "Sets"), el("strong", {}, String(s.sets.length))]),
+      el("div", {}, [el("span", { class: "muted small" }, "Met"), el("strong", {}, `${met} / ${tried}`)]),
       el("div", {}, [el("span", { class: "muted small" }, "Balls"), el("strong", {}, String(s.balls || 0))]),
     ]),
-    el("p", { class: "muted small" }, `Sets: ${s.sets.map((x) => scoreText(d, x.score)).join(", ")}.${first ? ` Next time, beat ${scoreText(d, s.sets[0].score)}.` : ""}`),
+    el("p", { class: "muted small" }, `Sets: ${s.sets.map((x) => `${scoreText(d, x.score)}${x.mark ? " (mark)" : x.met ? " \u2713" : ""}`).join(", ")}.${met < SETS_AIM ? ` Aim for ${SETS_AIM} met sets next time.` : ""}`),
     d.goalText ? el("p", { class: "small dp-round-goal" }, `Now take it to the course: ${d.goalText} (in Goals).`) : null,
     back,
   ]));

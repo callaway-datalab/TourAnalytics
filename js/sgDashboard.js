@@ -14,7 +14,7 @@
 import { careerBlocks } from "./careerBlocks.js";
 import { statBlocks as statBlocksCmp } from "./compareData.js"; // (update 227: the full stats table)
 import { getState } from "./auth.js";
-import { drillFor, drillLine, practiceOpen } from "./practice/plan.js"; // (update 342)
+import { drillFor, drillLine, practiceOpen, goalStatsFor } from "./practice/plan.js"; // (update 342)
 const PLAN_ADDED = new Set(); // drills added to the practice plan this visit
 /* (update 345) Per shot or how often? A difference in strokes gained a round for a part of the game and distance splits
  * exactly in two (update 348: weighed by their usual per-shot level, U, over the whole time frame, so a strength or a weakness
@@ -1284,9 +1284,12 @@ export function sgDashboard(container, opts) {
   // field, and wins. Any stat (update 159): its own form, round-to-round swing, and who led the field in it.
   // (update 332) Best Stretches on the Leaderboards: each player's longest run of rounds in a row whose average would
   // rank #1 in this selection (by the strokes gained the filters are about), longest first
-  function stretchBoard(slicedField) {
-    const cat = st.cats.length === 1 ? st.cats[0] : "";
-    const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
+  /** (update 350) Every player's longest run of rounds in a row whose average beats the best of everyone else (a #1 level),
+   * longest first. Kept per field and category (the Leaderboards table and the line under the Elite Round Share boxes). */
+  const stretchesMemo = { src: null, map: new Map() };
+  function longestStretches(slicedField, cat) {
+    if (stretchesMemo.src !== slicedField) { stretchesMemo.src = slicedField; stretchesMemo.map = new Map(); }
+    if (stretchesMemo.map.has(cat || "")) return stretchesMemo.map.get(cat || "");
     const ranked = rankedField(slicedField);
     const avgOf = new Map(ranked.map((p) => [p.key, perRoundOf(p.rounds, cat || null)]));
     const vals = [...avgOf.values()].filter((v) => v != null && Number.isFinite(v)).sort((a, b) => b - a);
@@ -1302,9 +1305,16 @@ export function sgDashboard(container, opts) {
       for (let n = seq.length; n >= 1 && !found; n--) {
         for (let i = n; i < pre.length; i++) if ((pre[i] - pre[i - n]) / n > bar + 1e-12) { found = { n, from: seq[i - n].rd.date, to: seq[i - 1].rd.date, whole: n === seq.length }; break; }
       }
-      rows.push({ p, ...(found || { n: 0 }), of: seq.length });
+      rows.push({ p, ...(found || { n: 0 }), of: seq.length, bar });
     }
     rows.sort((a, b) => b.n - a.n || (avgOf.get(b.p.key) ?? -1e9) - (avgOf.get(a.p.key) ?? -1e9));
+    stretchesMemo.map.set(cat || "", rows);
+    return rows;
+  }
+  function stretchBoard(slicedField) {
+    const cat = st.cats.length === 1 ? st.cats[0] : "";
+    const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
+    const rows = longestStretches(slicedField, cat);
     const all = st.stretchAll; const shown = all ? rows : rows.slice(0, 25);
     const name = (p) => (pickable(p.key) ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, starred(p.key, p.label)); b.addEventListener("click", () => opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, starred(p.key, p.label)));
     let place = 0, prevN = null;
@@ -2252,7 +2262,7 @@ export function sgDashboard(container, opts) {
     const sel = st.vsRank === "peak" ? Math.max(1, Math.round(Number(st.peakN) || 10)) : null;
     const help = el("details", { class: "bs-help" }, [el("summary", { "aria-label": "What is this?" }, "\u24d8"),
       el("p", { class: "muted small" }, "Elite Round Share asks how much of a player\u2019s golf was at each level. Take their best rounds, in any order, and keep adding the next best while the average of the ones taken would still rank #1 (or #10, #25, #50) for the selected time frame. The share is how many rounds that is, out of all their rounds. Tap a box to see those elite rounds (tap it again to clear): what was working, what was in the bag, and every stat from them next to the player\u2019s average."),
-      el("p", { class: "muted small" }, "The line under the boxes says what kind of player this is. Take the rounds that together reach a #1 level (or the highest level some do), then rank the average of all their other rounds against the tour\u2019s season averages. A big drop (40 rounds at #1, the other 30 at #95) is boom or bust, whatever the overall rank: cutting out the bad rounds is worth more than adding great ones. A small drop (the rest still at #15) is a high floor: the work is adding more great rounds."),
+      el("p", { class: "muted small" }, "The line under the boxes says how much #1-level golf is in them, and their best stretch: the longest run of rounds in a row whose average on its own would rank #1, and where that ranks among every player\u2019s longest (the Elite Stretches table on the Leaderboards). Tap its dates to see just those rounds."),
       el("p", { class: "muted small" }, "Path back to Elite compares the elite rounds with the player\u2019s most recent rounds (10 to start; change the number). It shows the gap in strokes, the five parts of the game and distances that make up most of it, a target in plain stats where the file has one, when their elite rounds tend to come, and practice to match. What hurts in the non-elite rounds (under What was working) shows a part of the game costing a stroke or more and too many attempts from bad lies, traced back to the shot that put them there unless they also lost ground from that lie. It\u2019s worked out from the numbers on the page, not by AI."),
       el("p", { class: "muted small" }, "Per shot or how often: every difference in strokes gained is split in two. Per shot is playing the same shots better. How often is facing different shots at the same level per shot (by distance and lie), split again into more of their strong shots (ones they gain strokes on) and fewer of their weak ones (ones they lose strokes on). When a difference is mostly how often, it\u2019s a strategy question (or the shot before it), so it gets a strategy note instead of a drill; Where the shots came from lists the biggest of these.")]);
     // (update 342) no rankings (only the player's own practice or entered rounds): no #1 / #10 ladder to measure against,
@@ -2332,7 +2342,7 @@ export function sgDashboard(container, opts) {
     return el("div", { class: "bs" }, [
       el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `${what ? `${what.trim()} ` : ""}Elite Round Share`), help]),
       el("p", { class: "muted small bs-intro" }, "How much of the player\u2019s golf was at a #1, #10, #25 or #50 level: their best rounds, in any order, that together would rank there."),
-      ladder, profileLine(rows), detail,
+      ladder, profileLine(mine, cat, rows), detail,
     ]);
   }
   /* (update 345) Where the shots came from: the parts of the game and distances where elite rounds simply had more of the
@@ -2406,24 +2416,81 @@ export function sgDashboard(container, opts) {
     avoid.sort((a, b) => b.v - a.v);
     return avoid.slice(0, 3).map((a) => a.t);
   }
-  /* (update 348) What kind of player: take the rounds that together reach a #1 level (the #1 Elite Round Share), and rank
-   * the average of all their OTHER rounds against the tour\u2019s season averages. Great rounds at #1 with the rest at #95 is
-   * boom or bust; the rest still at #15 is a high floor. (If no rounds reach #1, the highest level some do.) */
-  function profileLine(rows) {
-    const P = rows?.prof;
-    if (!P || P.desc.length < 6) return null;
-    const tier = rows.find((r) => (r.share?.k || 0) >= 2) || null;
-    if (!tier) return el("p", { class: "bs-profile" }, [el("strong", {}, "Building. "), el("span", { class: "muted" }, `No run of their best rounds reaches a #50 level yet (overall #${P.seasonRank} of ${P.N}).`)]);
-    const k = tier.share.k, n = P.desc.length, T = tier.target;
-    if (k >= n) return el("p", { class: "bs-profile" }, [el("strong", {}, "Elite and steady. "), el("span", { class: "muted" }, `Every round together reaches a #${T} level.`)]);
-    const rest = P.desc.slice(k), restAvg = rest.reduce((t, v) => t + v, 0) / rest.length;
-    const R = P.rankOf(restAvg), rp = R / P.N, s = k / n;
-    const top = T === 1;
-    const kind = rp <= 0.2 ? (top && s >= 0.3 ? ["Elite and steady", `Even their other rounds hold up at a #${R} level.`] : ["High floor", `Their other rounds still hold up at a #${R} level: the floor is solid, so the next step is more great rounds.`])
-      : rp >= 0.6 ? (s >= 0.25 ? ["Boom or bust", `Their best golf is #${T}-level, but the rest falls to a #${R} level: cutting out the bad rounds matters more than adding great ones.`] : ["Building", `Few rounds at a #${T} level and the rest at #${R}: raise the floor first.`])
-      : s >= 0.4 ? ["Leans boom or bust", `A clear drop from their best (#${T}) to the rest (#${R}): fewer bad rounds would move them most.`]
-      : ["In between", `Their best reaches #${T} and the rest sits at #${R}.`];
-    return el("p", { class: "bs-profile" }, [el("strong", {}, `${kind[0]}. `), el("span", { class: "muted" }, `${kind[1]} (${k} of ${n} rounds together reach a #${T} level; the other ${n - k} average ${sgn2(restAvg)} a round, a #${R} level of ${P.N}. Overall #${P.seasonRank}.)`)]);
+  /* (update 350) The best stretch in a pop-up: every round in order as a bar, the stretch\u2019s rounds in gold, the #1 level
+   * as a dashed line. Tap a bar for that round. "Show just these rounds" filters the page to the stretch\u2019s dates. */
+  function stretchPopup(row, cat, when, place, withN) {
+    const seq = stretchSeq(row.p.rounds, cat);
+    const day = (rd) => String(rd.date || "").slice(0, 10);
+    const i0 = seq.findIndex((x) => day(x.rd) === String(row.from).slice(0, 10));
+    const inSt = (i) => i >= i0 && i < i0 + row.n;
+    const avg = seq.slice(i0, i0 + row.n).reduce((t, x) => t + x.t, 0) / row.n;
+    const W = 340, H = 170, pad = 6, n = seq.length;
+    const mx = Math.max(0.5, ...seq.map((x) => Math.abs(x.t)), Math.abs(row.bar || 0));
+    const y0 = H / 2, sc = (H / 2 - pad) / mx, bw = W / n;
+    const NS = "http://www.w3.org/2000/svg";
+    const mk = (tag, a) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "bs-st-svg", role: "img", "aria-label": `Every round, the best stretch of ${row.n} highlighted` });
+    // the stretch's span behind its bars, the zero line and the #1 level
+    if (i0 >= 0) svg.appendChild(mk("rect", { x: i0 * bw, y: 0, width: row.n * bw, height: H, fill: "rgba(212,180,131,0.10)" }));
+    svg.appendChild(mk("line", { x1: 0, x2: W, y1: y0, y2: y0, stroke: "rgba(255,255,255,0.25)", "stroke-width": 1 }));
+    const yb = y0 - (row.bar || 0) * sc;
+    svg.appendChild(mk("line", { x1: 0, x2: W, y1: yb, y2: yb, stroke: "#d4b483", "stroke-width": 1, "stroke-dasharray": "4 3", opacity: 0.8 }));
+    const info = el("p", { class: "bs-st-info muted small" }, "Tap a bar for that round.");
+    const bars = seq.map((x, i) => {
+      const h = Math.max(1, Math.abs(x.t) * sc), on = inSt(i);
+      const r = mk("rect", { x: i * bw + bw * 0.12, width: Math.max(0.8, bw * 0.76), y: x.t >= 0 ? y0 - h : y0, height: h, rx: Math.min(2, bw * 0.2),
+        fill: on ? "#d4b483" : x.t >= 0 ? "rgba(48,209,88,0.35)" : "rgba(255,69,58,0.35)", class: "bs-st-bar" });
+      // a wider invisible target so thin bars are easy to tap
+      const hit = mk("rect", { x: i * bw, width: bw, y: 0, height: H, fill: "transparent", style: "cursor:pointer" });
+      hit.addEventListener("click", () => {
+        bars.forEach((b, j) => b.setAttribute("stroke", j === i ? "#fff" : "none"));
+        mount(info, [el("strong", {}, `${shortDay(x.rd.date)} ${String(x.rd.date || "").slice(0, 4)}`), ` \u00b7 ${x.rd.event || "Round"}${x.rd.roundNo ? ` R${x.rd.roundNo}` : ""} \u00b7 `,
+          el("span", { class: x.t >= 0 ? "pos" : "neg" }, `${sgn2(x.t)} a round`), on ? " \u00b7 in the stretch" : ""]);
+      });
+      svg.appendChild(r); svg.appendChild(hit);
+      return r;
+    });
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const show = el("button", { type: "button", class: "btn ghost small" }, "Show just these rounds");
+    const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop bs-st-pop" }, [
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Best stretch"), el("h2", {}, `${row.n} ${row.n === 1 ? "round" : "rounds in a row"} \u00b7 ${when}`),
+        el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the #1 level is ${sgn2(row.bar || 0)} (the best of everyone else). The ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN}.`)]), close]),
+      svg,
+      el("div", { class: "bs-st-legend muted small" }, [el("span", { class: "bs-st-key gold" }), " The stretch ", el("span", { class: "bs-st-key line" }), " #1 level ", el("span", { class: "bs-st-key other" }), ` Other rounds (${n} in all, oldest first)`]),
+      info,
+      el("div", { class: "bs-st-foot" }, [show]),
+    ]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    close.addEventListener("click", shut);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    document.addEventListener("keydown", onKey);
+    show.addEventListener("click", () => { shut(); setRange({ from: String(row.from).slice(0, 10), to: String(row.to).slice(0, 10), label: when }); });
+    document.body.appendChild(overlay);
+    close.focus();
+  }
+  /* (update 350) Under the boxes: how much #1-level golf is in them, and their best stretch: the longest run of rounds in a
+   * row that on its own would rank #1, and where that run ranks among every player's longest (as on the Leaderboards). */
+  function profileLine(mine, cat, rows) {
+    if (!rows || !me) return null;
+    const all = longestStretches(lastSliced || [], cat);
+    const mineRow = all.find((r) => r.p.key === me.key);
+    const s = rows.find((r) => r.target === 1)?.share?.pct ?? 0;
+    const amount = s >= 0.3 ? "Plenty of" : s >= 0.1 ? "Some" : s > 0 ? "A little" : "No";
+    const lead = `${amount} #1-level golf in them (${Math.round(s * 100)}% of their rounds).`;
+    if (!mineRow || !mineRow.n) {
+      const r1 = rows.find((r) => r.target === 1);
+      return el("p", { class: "bs-profile" }, [el("strong", {}, `${lead} `), el("span", { class: "muted" }, `No run of rounds reaches a #1 level yet${r1?.bestRound ? `; their best single round ranks ${ordinal(r1.bestRound)}` : ""}.`)]);
+    }
+    if (mineRow.whole) return el("p", { class: "bs-profile" }, [el("strong", {}, `${lead} `), el("span", { class: "muted" }, `All ${mineRow.n} of their rounds together already rank #1.`)]);
+    // its place among everyone's longest (players with the same length share a place)
+    const place = 1 + all.filter((r) => r.n > mineRow.n).length, withN = all.filter((r) => r.n > 0).length;
+    const when = mineRow.from === mineRow.to ? shortDay(mineRow.from) : `${shortDay(mineRow.from)} \u2013 ${shortDay(mineRow.to)}`;
+    const link = el("button", { type: "button", class: "link bs-stretch-link", title: "Every round, with this stretch picked out" }, when);
+    link.addEventListener("click", () => stretchPopup(mineRow, cat, when, place, withN));
+    return el("p", { class: "bs-profile" }, [el("strong", {}, `${lead} `), el("span", { class: "muted" }, [
+      `Their best stretch: ${mineRow.n} ${mineRow.n === 1 ? "round" : "rounds in a row"}, `, link, `, enough on ${mineRow.n === 1 ? "its" : "their"} own for #1 (the ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN} ${withN === 1 ? "player" : "players"} with one).`])]);
   }
   /* (update 338) Path back to Elite: the player's last N rounds (10 to start; changeable) against their elite rounds. The gap
    * in strokes, where it comes from (biggest first) with a target in plain stats for each, what hurts in their other rounds
@@ -2474,6 +2541,16 @@ export function sgDashboard(container, opts) {
       ? { stat: "obs", statKey: t.k, cat: t.exact ? c : null, dist: t.exact ? d || null : null, label: t.def.label, unit: t.def.pct ? "%" : t.def.unit || "", higher: t.def.higher !== false, dp: t.def.dp ?? 1,
         target: Math.round(t.ve * (t.def.pct ? 10 : 10 ** Math.min(2, t.def.dp ?? 1))) / (t.def.pct ? 10 : 10 ** Math.min(2, t.def.dp ?? 1)), measure: "round", when: "nextN", n: N_GOAL }
       : null);
+    // (update 349) the drill's goal: the elite rounds' own value of the stat that fits it (that distance's, else the
+    // whole round's), whether or not it moved, as long as there are enough attempts behind it
+    const eliteStat = (c, d) => {
+      for (const re of goalStatsFor(c, d)) for (const exactOnly of [true, false]) {
+        let t0 = 0, w = 0, k = null;
+        for (const rd of elite) for (const o of rd.obs || []) if (re.test(o.k) && (exactOnly ? o.cat === c && (d ? o.dist === d : !o.dist) : !o.cat)) { t0 += o.v * o.w; w += o.w; k = o.k; }
+        if (k && enough(statDef(k), w)) return { k, def: statDef(k), ve: t0 / w, exact: exactOnly };
+      }
+      return null;
+    };
     const prios = gaps.map((g) => {
       const t = target(g.c, g.d || null), d = g.d || null;
       const goal = statGoal(g.c, d, t) || { stat: "skill", cat: g.c, dist: d, target: Math.round(g.e * 100) / 100, measure: "round", when: "nextN", n: N_GOAL };
@@ -2486,7 +2563,7 @@ export function sgDashboard(container, opts) {
       const why = `Per shot: ${sgn2(sp.pb)} now, ${sgn2(sp.pe)} in elite rounds, ${sgn2(sp.pu)} usually (worth ${sgn2(sp.skill)} a round).${flip}${Math.abs(sp.mix) >= 0.02 ? ` How often: ${sp.ab.toFixed(1)} attempts a round now, ${sp.ae.toFixed(1)} in elite rounds (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)}).` : ""}`;
       const strategy = kind === "skill" ? null : `${kind === "mix" ? "Mostly how often, not how well:" : "Partly how often:"} ${mixLead(sp)} in elite rounds${sp.pu < 0 && fewer ? ` (they usually lose ${Math.abs(sp.pu).toFixed(2)} a shot here)` : sp.pu > 0 && !fewer ? ` (they usually gain ${sp.pu.toFixed(2)} a shot here)` : ""}. ${MIX_CAUSE[g.c] || ""}`;
       return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}: ${g.g.toFixed(2)} of the gap`, sub: `${f2(g.r)} a round now, ${f2(g.e)} in elite rounds.`, why, strategy, target: kind === "mix" ? null : tText(t), thin: !!t?.thin,
-        drills: kind === "mix" ? [] : [{ drill: drillFor(g.c, d, t), goal }].filter((x) => x.drill) };
+        drills: kind === "mix" ? [] : [{ drill: drillFor(g.c, d, eliteStat(g.c, d)), goal }].filter((x) => x.drill) };
     });
     // when elite rounds happen: after a week off, early or late in the event
     const evKey = (rd) => `${rd.event}|${String(rd.date || "").slice(0, 4)}`;

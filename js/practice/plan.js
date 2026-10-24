@@ -15,9 +15,8 @@
  *   fairway  driving: Fairway / Missed; goal: how many
  *   green    approach from the rough, recovery: On the green / Missed; goal: how many
  *   bunker   bunker: Inside 10 ft / Outside; goal: how many
- * The goal is the player's own number from their elite rounds when there's a trusted one, else the Tour average where
- * that's well known (make rates by distance, fairways, up and downs, approach proximity), else "beat your best": the first
- * set sets the mark and every later session has to beat it.
+ * Every drill is 10 shots. The goal is the player's own number from their elite rounds (update 349: never a Tour figure);
+ * with no stat for it, "beat your best": the first set sets the mark and every later session has to beat it.
  */
 // (Firestore loads only when something is saved or listed, so Stats can show the drills without it)
 const fsP = () => Promise.all([import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js"), import("../firebase-init.js")]).then(([f, i]) => ({ ...f, db: i.db }));
@@ -41,16 +40,6 @@ export function planOwner(state) {
 /** Is Practice open to the person looking? (The admin's only for now, and not in a portal they're previewing.) */
 export const practiceOpen = () => !!window.__taCanPractice;
 
-/* ---------------- Tour references (well known averages) ---------------- */
-// make rate by distance (Broadie, PGA Tour): ft -> %
-const MAKE = [[2, 99], [3, 96], [4, 88], [5, 77], [6, 66], [7, 58], [8, 50], [10, 40], [15, 23], [20, 14], [25, 10], [30, 7]];
-// approach proximity by distance: yds -> ft (about the Tour average)
-const PROX = [[50, 15], [75, 17], [100, 19], [125, 22], [150, 26], [175, 31], [200, 36], [225, 42], [250, 50]];
-const interp = (tbl, x) => {
-  if (x <= tbl[0][0]) return tbl[0][1];
-  for (let i = 1; i < tbl.length; i++) if (x <= tbl[i][0]) { const [x0, y0] = tbl[i - 1], [x1, y1] = tbl[i]; return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0); }
-  return tbl.at(-1)[1];
-};
 /** The middle of a distance band ("15-20 ft" → 17.5, "<5 ft" → 4, "25+ ft" → 30). */
 export function midOf(d) {
   const n = String(d || "").match(/\d+(\.\d+)?/g)?.map(Number) || [];
@@ -66,37 +55,38 @@ const ofReps = (pct, reps) => Math.max(1, Math.min(reps, Math.round((pct / 100) 
  * player's elite rounds, or null). lie: for the "what hurts" drills (rough, bunker, recovery).
  */
 export function drillFor(cat, dist, t = null, lie = null) {
+  // (update 349) every drill is 10 shots, and the goal comes only from the player's own elite rounds (t: { k, def, ve },
+  // the elite rounds' value of the stat that fits the drill). No stat to go on: beat your best.
   const ok = t && !t.thin ? t : null, is = (re) => !!(ok && re.test(ok.k));
   const at = dist ? ` from ${dist}` : "";
-  const mine = (pct) => ({ goalFrom: "elite", stat: ok.def.label, statV: ok.ve, pct });
+  const R = 10;
+  const pctGoal = () => ({ goal: ofReps(ok.ve, R), goalFrom: "elite", stat: ok.def.label, statV: ok.ve, pct: ok.ve, whole: ok.exact === false });
   if (lie) {
-    if (/sand|bunker/i.test(lie)) return { kind: "bunker", cat: "ARG", lie, reps: 10, goal: null, title: "Bunker shots", what: "Bunker shots from different lies", tap: ["Inside 10 ft", "Outside"] };
-    if (/recover|tree|other/i.test(lie)) return { kind: "green", cat: "APP", lie, reps: 10, goal: null, title: "Recovery shots", what: "Punch-outs and low runners to a fairway-sized target", tap: ["In play", "Not"] };
-    return { kind: "green", cat: "APP", lie, reps: 10, goal: null, title: `Approaches from the ${String(lie).toLowerCase()}`, what: `Approaches from light and heavy ${String(lie).toLowerCase()} to a green-sized target`, tap: ["On the green", "Missed"] };
+    if (/sand|bunker/i.test(lie)) return { kind: "bunker", cat: "ARG", lie, reps: R, goal: null, title: "Bunker shots", what: "Bunker shots from different lies", tap: ["Inside 10 ft", "Outside"] };
+    if (/recover|tree|other/i.test(lie)) return { kind: "green", cat: "APP", lie, reps: R, goal: null, title: "Recovery shots", what: "Punch-outs and low runners to a fairway-sized target", tap: ["In play", "Not"] };
+    return { kind: "green", cat: "APP", lie, reps: R, goal: null, title: `Approaches from the ${String(lie).toLowerCase()}`, what: `Approaches from light and heavy ${String(lie).toLowerCase()} to a green-sized target`, tap: ["On the green", "Missed"] };
   }
   if (cat === "PUTT") {
     const ft = midOf(dist) ?? 5;
-    if (ft > 20) {
-      const g = is(/goodLag/) ? { goal: ofReps(ok.ve, 10), ...mine(ok.ve) } : { goal: null };
-      return { kind: "lag", cat, dist, reps: 10, ...g, title: `Lag putting${at}`, what: `Long putts${at}`, tap: ["Inside 3 ft", "Outside"] };
-    }
-    const g = is(/^make/) ? { goal: ofReps(ok.ve, 10), ...mine(ok.ve) } : { goal: ofReps(interp(MAKE, ft), 10), goalFrom: "tour", pct: interp(MAKE, ft) };
-    return { kind: "make", cat, dist, reps: 10, ...g, title: `${ft <= 8 ? "Short putts" : "Putting"}${at}`, what: `Putts${at}, all round the hole`, tap: ["Holed", "Missed"] };
+    if (ft > 20) return { kind: "lag", cat, dist, reps: R, ...(is(/^goodLag/) ? pctGoal() : { goal: null }), title: `Lag putting${at}`, what: `Long putts${at}`, tap: ["Inside 3 ft", "Outside"] };
+    return { kind: "make", cat, dist, reps: R, ...(is(/^make/) ? pctGoal() : { goal: null }), title: `${ft <= 8 ? "Short putts" : "Putting"}${at}`, what: `Putts${at}, all round the hole`, tap: ["Holed", "Missed"] };
   }
   if (cat === "APP") {
-    const yds = midOf(dist) ?? 150;
-    const g = is(/^prox/) ? { goal: Math.round(ok.ve * 10) / 10, ...mine(null) } : { goal: Math.round(interp(PROX, yds)), goalFrom: "tour" };
-    return { kind: "prox", cat, dist, reps: 10, ...g, title: `Approach${at}`, what: `Approaches${at} to a pin, measuring how far each finishes from the hole`, unit: "ft" };
+    if (is(/^hitGreen|^gir/)) return { kind: "green", cat, dist, reps: R, ...pctGoal(), title: `Approach${at}`, what: `Approaches${at} to a green`, tap: ["On the green", "Missed"] };
+    const g = is(/^prox/) ? { goal: Math.round(ok.ve * 10) / 10, goalFrom: "elite", stat: ok.def.label, statV: ok.ve, whole: ok.exact === false } : { goal: null };
+    return { kind: "prox", cat, dist, reps: R, ...g, title: `Approach${at}`, what: `Approaches${at} to a pin, measuring how far each finishes from the hole`, unit: "ft" };
   }
-  if (cat === "ARG") {
-    const g = is(/^ud|scramble/) ? { goal: ofReps(ok.ve, 10), ...mine(ok.ve) } : { goal: 6, goalFrom: "tour", pct: 60 };
-    return { kind: "updown", cat, dist, reps: 10, ...g, title: `Short game${at}`, what: `Chips and pitches${at}, then hole out`, tap: ["Up and down", "Not"] };
-  }
-  if (cat === "OTT") {
-    const g = is(/^fwy|fairway/) ? { goal: ofReps(ok.ve, 14), ...mine(ok.ve) } : { goal: 8, goalFrom: "tour", pct: 60 };
-    return { kind: "fairway", cat: "OTT", dist: null, reps: 14, ...g, title: "Driving", what: "Drives to a target 30 yards wide, about a tour fairway", tap: ["Fairway", "Missed"] };
-  }
+  if (cat === "ARG") return { kind: "updown", cat, dist, reps: R, ...(is(/^ud|^scramble/) ? pctGoal() : { goal: null }), title: `Short game${at}`, what: `Chips and pitches${at}, then hole out`, tap: ["Up and down", "Not"] };
+  if (cat === "OTT") return { kind: "fairway", cat: "OTT", dist: null, reps: R, ...(is(/^fwy|fairway/) ? pctGoal() : { goal: null }), title: "Driving", what: "Drives to a target 30 yards wide, about a tour fairway", tap: ["Fairway", "Missed"] };
   return null;
+}
+/** (update 349) Which stat sets each drill's goal (from the elite rounds), by part of the game and distance. */
+export function goalStatsFor(cat, dist) {
+  if (cat === "PUTT") return (midOf(dist) ?? 5) > 20 ? [/^goodLag$/] : [/^make$/];
+  if (cat === "APP") return [/^prox$/, /^hitGreen$/, /^gir$/];
+  if (cat === "ARG") return [/^ud$/, /^scramble$/];
+  if (cat === "OTT") return [/^fwy$/];
+  return [];
 }
 
 /** The goal in words: "Hole 3 of 10", "Average inside 22 ft", "Beat your best". */
@@ -109,15 +99,14 @@ export function goalText(d, best = null) {
 }
 /** Where the goal comes from, in words. */
 export function goalSource(d) {
-  if (d.goalFrom === "elite") return `their elite rounds${d.pct != null ? `, ${d.stat} ${Math.round(d.pct * 10) / 10}%` : d.statV != null ? `, ${d.stat} ${Math.round(d.statV * 10) / 10}${d.kind === "prox" ? " ft" : ""}` : ""}`;
-  if (d.goalFrom === "tour") return d.kind === "prox" ? "about the Tour average from there" : `the Tour average, ${Math.round(d.pct)}%`;
+  if (d.goalFrom === "elite") return `their elite rounds\u2019 ${d.stat}${d.whole && d.dist ? ` (all ${({ PUTT: "putts", APP: "approaches", ARG: "short-game shots" })[d.cat] || "shots"})` : ""}: ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? " ft" : "%"}`;
   return null;
 }
 /** The drill as one line of text (Stats shows this to everyone). */
 export const nounOf = (d) => ({ make: "putts", lag: "putts", fairway: "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
 export function drillLine(d) {
   const src = goalSource(d);
-  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ""}. Repeat sets until you reach it.`;
+  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : " (no stat for this in their elite rounds to set it from)"}. Aim for 3 sets that reach it.`;
 }
 
 /* ---------------- a set's score ---------------- */

@@ -4918,3 +4918,14 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-why { margin-top: 2px; line-height: 1.45; }
 .bs-strategy { margin-top: 3px; color: #64d2ff; font-size: 12.5px; line-height: 1.45; }
 .bs-mix-note { margin: 0 0 4px; }
+/* (update 350) best stretch pop-up */
+.bs-stretch-link { font: inherit; color: #d4b483; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+.bs-st-pop { width: min(40rem, 100%); }
+.bs-st-svg { width: 100%; height: auto; margin: 10px 0 4px; display: block; }
+.bs-st-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bs-st-key { display: inline-block; width: 12px; height: 10px; border-radius: 2px; }
+.bs-st-key.gold { background: #d4b483; }
+.bs-st-key.other { background: rgba(48,209,88,0.35); }
+.bs-st-key.line { height: 0; border-top: 1.5px dashed #d4b483; width: 14px; }
+.bs-st-info { min-height: 1.4em; margin: 8px 0 4px; }
+.bs-st-foot { padding: 6px 0 10px; }
