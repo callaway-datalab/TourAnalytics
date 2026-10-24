@@ -4770,3 +4770,33 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .cal-hist-q:hover { border-color: rgba(212, 180, 131, 0.5); }
 .cal-hist > .link { align-self: flex-start; }
 .cal-head .cal-hist-btn { margin-left: auto; }
+
+/* (update 330) Best Stretches: the ladder, your own length, and the selected stretch */
+.bs { display: flex; flex-direction: column; gap: 0.55rem; width: 100%; }
+.bs-title { display: flex; align-items: center; gap: 0.4rem; }
+.bs-help { display: inline; position: relative; }
+.bs-help > summary { list-style: none; cursor: pointer; color: #8e8e93; font-size: 0.85rem; line-height: 1; }
+.bs-help > summary::-webkit-details-marker { display: none; }
+.bs-help[open] > p { position: absolute; z-index: 20; left: -0.5rem; top: 1.4rem; width: min(22rem, 80vw); background: #1c1d1f; border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 0.7rem 0.85rem; box-shadow: 0 12px 28px rgba(0,0,0,0.55); color: #d1d1d6; }
+.bs-intro { margin: -0.2rem 0 0; }
+.bs-ladder { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.45rem; }
+.bs-row { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; text-align: left; padding: 0.55rem 0.65rem; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: inherit; font: inherit; cursor: pointer; min-width: 0; }
+.bs-row.flat { cursor: default; }
+.bs-row:not(.flat):hover { border-color: rgba(212,180,131,0.45); }
+.bs-row.on { border-color: #d4b483; background: rgba(212,180,131,0.12); }
+.bs-rank { font: 700 1rem/1 var(--font-body); color: #d4b483; }
+.bs-need { font: 600 0.8rem/1.25 var(--font-body); color: var(--ink, #f2f2f7); }
+.bs-when { font-size: 0.72rem; line-height: 1.25; }
+.bs-pick { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.5rem; margin-left: 0 !important; }
+.bs-pick .btn.small { font-size: 0.74rem; padding: 0.3rem 0.75rem; min-height: 0; line-height: 1.2; }
+.bs-detail { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.bs-head { margin: 0; font-size: 0.86rem; color: var(--ink-2, #d1d1d6); }
+.bs-head a.peak-range { font-weight: 700; color: var(--ink, #f2f2f7); text-decoration: underline; text-decoration-color: rgba(212,180,131,0.6); text-underline-offset: 3px; }
+.bs-sub { margin: 0.3rem 0 0; font: 600 0.7rem/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: #d4b483; }
+.bs-list { margin: 0; padding-left: 1.1rem; font-size: 0.84rem; color: var(--ink-2, #d1d1d6); display: flex; flex-direction: column; gap: 0.2rem; }
+@media (max-width: 520px) {
+  .bs-ladder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bs-row { padding: 0.45rem 0.55rem; }
+}
+.bs-pick .peak-len { height: 28px !important; min-height: 0 !important; width: 3.4rem !important; font: 500 0.8rem/1 var(--font-body) !important; padding: 0 0.3rem !important; border-radius: 10px; margin: 0 !important; text-align: center; box-sizing: border-box; }
+@media (max-width: 520px) { .bs-pick .peak-len { font-size: 16px !important; zoom: 0.75; height: 38px !important; width: 4.4rem !important; } }
