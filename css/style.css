@@ -4968,3 +4968,22 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 @media (max-width: 520px) { .bs-lv-pick { font-size: 16px; zoom: 0.82; } }
 .bs-lv-next { margin: 4px 0 8px; }
 .bs-prios-note { margin: 8px 0 4px; }
+/* (update 356) easier to read: a heading line per item, then short labelled lines */
+.bs-item-head { margin: 2px 0 4px; line-height: 1.4; }
+.bs-item-head strong { color: #f2f2f7; }
+.bs-kv { display: grid; grid-template-columns: 5.6rem 1fr; gap: 8px; font-size: 12.5px; line-height: 1.45; padding: 3px 0; border-top: 1px solid rgba(255,255,255,0.05); }
+.bs-k { color: #8e8e93; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; padding-top: 1px; }
+.bs-v { color: #d1d1d6; }
+.bs-kv.bs-strategy .bs-v { color: #64d2ff; }
+.bs-kv.bs-target .bs-v { color: #d4b483; }
+.bs-kv.bs-target.thin .bs-v { color: #8e8e93; font-style: italic; }
+.bs-kv.bs-drill .bs-v { color: #b8b8be; }
+.bs-list > li { margin-bottom: 10px; }
+.bs-prios > li { margin-bottom: 14px; }
+.bs-kit { list-style: none; padding: 0; margin: 0; }
+.bs-kit li { padding: 4px 0; border-top: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+.bs-kit-kind { display: inline-block; min-width: 4.4rem; color: #8e8e93; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.bs-kit-better { margin: 2px 0 0 4.4rem; }
+.bs-drill-row { display: block; }
+.bs-drill-row .bs-plan-add { margin: 4px 0 0 6rem; }
+@media (max-width: 520px) { .bs-kv { grid-template-columns: 4.6rem 1fr; } .bs-drill-row .bs-plan-add { margin-left: 5rem; } .bs-kit-better { margin-left: 0; } }

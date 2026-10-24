@@ -40,6 +40,8 @@ function groupSplit(bA, nA, bB, nB, match, bU = null) {
   const U = bU ? agg(bU) : { sg: A.sg + B.sg, n: A.n + B.n };
   return { ...t, ae: A.n / nA, ab: B.n / nB, pe: A.n ? A.sg / A.n : 0, pb: B.n ? B.sg / B.n : 0, pu: U.n ? U.sg / U.n : 0 };
 }
+/** (update 356) one labelled line: a small label on the left, the value beside it */
+const kv = (k, v, cls = "") => el("div", { class: `bs-kv ${cls}`.trim() }, [el("span", { class: "bs-k" }, k), el("span", { class: "bs-v" }, v)]);
 const sgn2 = (v) => (Math.abs(v) < 0.005 ? "+0.00" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
 function splitOf(a, nA, b, nB, u = null) {
   const ae = a ? a.n / nA : 0, ab = b ? b.n / nB : 0;
@@ -2251,15 +2253,16 @@ export function sgDashboard(container, opts) {
     const parts = cat ? dists(cat).map((d) => ({ name: d, pre: `${cat}|${d}|` })) : CATEGORIES.map(([c]) => ({ name: catName(c), k: c, pre: `${c}|` }));
     const gains = parts.map((p) => { const t = sp(p.pre); return { ...p, ...t, a: t.ae * t.pe, b: t.ab * t.pb }; })
       .filter((p) => p.total > 0.005).sort((x, y) => y.total - x.total).slice(0, 2);
+    // (update 356) each part of the game as a heading line, then one short labelled line per point
     for (const g of gains) {
-      let extra = "";
+      const rowsOut = [kv("Per shot", `${sgn2(g.skill)} a round`)];
+      if (Math.abs(g.mix) >= 0.02) rowsOut.push(kv("Mix of shots", `${sgn2(g.mix)} a round (${mixWords(g, sgn2)})`));
+      if (g.mix > 0 && g.mix >= 0.7 * g.total) rowsOut.push(kv("Note", `Mostly how often, not how well: ${mixLead(g)}. ${MIX_CAUSE[g.k || cat] || ""}`));
       if (!cat && g.k) { // the distance they played best (per shot) in these rounds
         const ds = dists(g.k).map((d) => ({ d, s: sp(`${g.k}|${d}|`) })).filter((x) => x.s.skill > 0.005).sort((a, b) => b.s.skill - a.s.skill);
-        if (ds[0]) extra = ` Played best from ${ds[0].d}: ${sgn2(ds[0].s.pe)} a shot against ${sgn2(ds[0].s.pb)} (worth ${sgn2(ds[0].s.skill)} a round).`;
+        if (ds[0]) rowsOut.push(kv("Best from", `${ds[0].d}: ${sgn2(ds[0].s.pe)} a shot against ${sgn2(ds[0].s.pb)} (worth ${sgn2(ds[0].s.skill)} a round)`));
       }
-      const mostlyMix = g.mix > 0 && g.mix >= 0.7 * g.total;
-      const split = Math.abs(g.mix) >= 0.02 ? `: ${sgn2(g.skill)} from playing better per shot, ${sgn2(g.mix)} from the mix of shots they faced (${mixWords(g, sgn2)}).` : `, all of it from playing better per shot.`;
-      out.push(`${g.name}: ${sgn2(g.a)} a round, against ${sgn2(g.b)} in ${restName}${split}${mostlyMix ? ` Mostly how often, not how well: ${mixLead(g)}. ${MIX_CAUSE[g.k || cat] || ""}` : ""}${extra}`);
+      out.push([el("div", { class: "bs-item-head" }, [el("strong", {}, g.name), el("span", { class: "muted" }, ` ${sgn2(g.a)} a round, against ${sgn2(g.b)} in ${restName}`)]), ...rowsOut]);
     }
     if (!gains.length) out.push("No part of the game stands out: it was a little better everywhere.");
     // (update 337) the equipment: in each kind, what was used most in these rounds; and, if another of that kind was used
@@ -2271,9 +2274,10 @@ export function sgDashboard(container, opts) {
       const most = [...list].sort((a, b) => b.shots - a.shots)[0];
       const per = (g) => (g.shots ? g.sg / g.shots : null);
       const better = list.filter((g) => g !== most && g.shots >= 5 && per(g) != null && per(most) != null && per(g) > per(most) + 1e-9).sort((a, b) => per(b) - per(a))[0];
-      return { shots: most.shots, text: `${nm(most)} ${String(most.kind || "").toLowerCase()}${better ? ` (played better with the ${nm(better)}: ${f3(per(better))} a shot against ${f3(per(most))})` : ""}` };
+      return { shots: most.shots, text: [el("span", { class: "bs-kit-kind" }, String(most.kind || "").replace(/^\w/, (c) => c.toUpperCase())), ` ${nm(most)}`,
+        better ? el("div", { class: "bs-kit-better muted small" }, `Played better with the ${nm(better)}: ${f3(per(better))} a shot against ${f3(per(most))}`) : null] };
     }).sort((a, b) => b.shots - a.shots).slice(0, 6).map((x) => x.text);
-    if (kit.length) out.push(`In the bag: ${kit.join(", ")}.`);
+    if (kit.length) out.push([el("div", { class: "bs-item-head" }, el("strong", {}, "In the bag")), el("ul", { class: "bs-kit" }, kit.map((t) => el("li", {}, t)))]);
     return out;
   }
   // (update 335) Elite Round Share, above the stats table: for #1, #10, #25 and #50, the most of the player's best rounds
@@ -2333,45 +2337,45 @@ export function sgDashboard(container, opts) {
       if (!pk || pk.short) detail = el("p", { class: "muted small" }, `Only ${pk?.have ?? 0} ${what}rounds in the selected time frame: fewer than ${sel}. Pick fewer or widen the filters.`);
       else {
         const season = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
-        const evs = new Set(pk.rounds.map((rd) => `${rd.event}|${String(rd.date || "").slice(0, 4)}`)).size;
-        const first = pk.rounds[0]?.date, last = pk.rounds.at(-1)?.date;
         const share = Math.round((sel / Math.max(1, season.length)) * 100);
-        // (update 337) the tournaments those rounds came from: tap to list them (rounds there, which ones, and their average)
-        const byEv = new Map();
-        for (const rd of pk.rounds) { const k2 = `${rd.event}|${String(rd.date || "").slice(0, 4)}`; const g = byEv.get(k2) || byEv.set(k2, { event: rd.event || "Tournament", first: rd.date, rs: [] }).get(k2); g.rs.push(rd); }
-        const allAt = (g) => season.filter((rd) => rd.event === g.event && String(rd.date || "").slice(0, 4) === String(g.first || "").slice(0, 4)).length;
         const sgR = (rd) => { let t = 0; for (const x of rd.shots) if (!cat || x.cat === cat) t += x.sg; return t; };
-        const evLink = el("button", { type: "button", class: "link bs-evs-btn", "aria-expanded": String(!!st.eliteEvOpen) }, `${evs} ${evs === 1 ? "tournament" : "tournaments"} ${st.eliteEvOpen ? "\u25B4" : "\u25BE"}`);
-        evLink.addEventListener("click", () => { st.eliteEvOpen = !st.eliteEvOpen; draw(); });
-        const byEvent = () => el("ul", { class: "bs-evs" }, [...byEv.values()].map((g) => ({ ...g, avg: g.rs.reduce((t, rd) => t + sgR(rd), 0) / g.rs.length })).sort((a, b) => b.avg - a.avg).map((g) => {
-          const nums = g.rs.map((rd) => rd.roundNo).filter((x) => x != null && x !== "").sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0)).map((x) => `R${x}`);
-          const avg = g.avg; // (update 341: best to worst)
-          return el("li", {}, [el("span", { class: "bs-ev-name" }, g.event), el("span", { class: "muted" }, ` \u00b7 ${shortDay(g.first)} \u00b7 ${g.rs.length} of ${allAt(g)} ${allAt(g) === 1 ? "round" : "rounds"}${nums.length ? ` (${nums.join(", ")})` : ""} \u00b7 `), el("span", { class: avg >= 0 ? "pos" : "neg" }, `${avg >= 0 ? "+" : "\u2212"}${Math.abs(avg).toFixed(2)} a round`)]);
-        }));
-        // (update 343) or round by round: every elite round, best first
-        const byRound = () => el("ul", { class: "bs-evs" }, [...pk.rounds].map((rd) => ({ rd, v: sgR(rd) })).sort((a, b) => b.v - a.v).map(({ rd, v }) =>
-          el("li", {}, [el("span", { class: v >= 0 ? "pos" : "neg" }, `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`), el("span", { class: "muted" }, " \u00b7 "), el("span", { class: "bs-ev-name" }, rd.event || "Tournament"),
-            el("span", { class: "muted" }, `${rd.roundNo != null && rd.roundNo !== "" ? ` \u00b7 R${rd.roundNo}` : ""} \u00b7 ${shortDay(rd.date)}`)])));
-        const evMode = st.eliteEvMode === "round" ? "round" : "event";
-        const modeSeg = el("div", { class: "seg bs-evs-mode", role: "group", "aria-label": "Show the kept rounds" }, [["event", "By tournament"], ["round", "By round"]].map(([v, l]) => {
-          const b = el("button", { type: "button", class: `seg-btn${evMode === v ? " on" : ""}`, "aria-pressed": String(evMode === v) }, l);
-          b.addEventListener("click", () => { st.eliteEvMode = v; draw(); }); return b;
-        }));
-        const evList = st.eliteEvOpen ? el("div", { class: "bs-evs-wrap" }, [modeSeg, evMode === "round" ? byRound() : byEvent()]) : null;
-        // (update 353) for a level below Best on Tour: the rounds to cut to get there, worst first
+        // (update 357) one line for a set of rounds, the kept ones or the cut ones: how many, which tournaments (tap for the
+        // list: by tournament, or round by round), and the dates. Kept: best first; cut: worst first.
+        function roundsLine(label, rounds, key, worstFirst) {
+          const byDate = [...rounds].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+          const evs = new Set(rounds.map((rd) => `${rd.event}|${String(rd.date || "").slice(0, 4)}`)).size;
+          const first = byDate[0]?.date, last = byDate.at(-1)?.date;
+          const open = !!st[`${key}EvOpen`];
+          const byEv = new Map();
+          for (const rd of rounds) { const k2 = `${rd.event}|${String(rd.date || "").slice(0, 4)}`; const g = byEv.get(k2) || byEv.set(k2, { event: rd.event || "Tournament", first: rd.date, rs: [] }).get(k2); g.rs.push(rd); }
+          const allAt = (g) => season.filter((rd) => rd.event === g.event && String(rd.date || "").slice(0, 4) === String(g.first || "").slice(0, 4)).length;
+          const dir = worstFirst ? 1 : -1;
+          const link = el("button", { type: "button", class: "link bs-evs-btn", "aria-expanded": String(open) }, `${evs} ${evs === 1 ? "tournament" : "tournaments"} ${open ? "\u25B4" : "\u25BE"}`);
+          link.addEventListener("click", () => { st[`${key}EvOpen`] = !open; draw(); });
+          const byEvent = () => el("ul", { class: "bs-evs" }, [...byEv.values()].map((g) => ({ ...g, avg: g.rs.reduce((t, rd) => t + sgR(rd), 0) / g.rs.length })).sort((a, b) => dir * (a.avg - b.avg)).map((g) => {
+            const nums = g.rs.map((rd) => rd.roundNo).filter((x) => x != null && x !== "").sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0)).map((x) => `R${x}`);
+            return el("li", {}, [el("span", { class: "bs-ev-name" }, g.event), el("span", { class: "muted" }, ` \u00b7 ${shortDay(g.first)} \u00b7 ${g.rs.length} of ${allAt(g)} ${allAt(g) === 1 ? "round" : "rounds"}${nums.length ? ` (${nums.join(", ")})` : ""} \u00b7 `), el("span", { class: g.avg >= 0 ? "pos" : "neg" }, `${sgn2(g.avg)} a round`)]);
+          }));
+          const byRound = () => el("ul", { class: "bs-evs" }, rounds.map((rd) => ({ rd, v: sgR(rd) })).sort((a, b) => dir * (a.v - b.v)).map(({ rd, v }) =>
+            el("li", {}, [el("span", { class: v >= 0 ? "pos" : "neg" }, sgn2(v)), el("span", { class: "muted" }, " \u00b7 "), el("span", { class: "bs-ev-name" }, rd.event || "Tournament"),
+              el("span", { class: "muted" }, `${rd.roundNo != null && rd.roundNo !== "" ? ` \u00b7 R${rd.roundNo}` : ""} \u00b7 ${shortDay(rd.date)}`)])));
+          const mode = st[`${key}EvMode`] === "round" ? "round" : "event";
+          const seg = el("div", { class: "seg bs-evs-mode", role: "group", "aria-label": `Show the ${label.toLowerCase()}` }, [["event", "By tournament"], ["round", "By round"]].map(([v, l]) => {
+            const b = el("button", { type: "button", class: `seg-btn${mode === v ? " on" : ""}`, "aria-pressed": String(mode === v) }, l);
+            b.addEventListener("click", () => { st[`${key}EvMode`] = v; draw(); }); return b;
+          }));
+          const pct = Math.round((rounds.length / Math.max(1, season.length)) * 100);
+          return [el("p", { class: "bs-head" }, [el("strong", {}, `${label}: the ${worstFirst ? "worst" : "best"} ${rounds.length} of ${season.length} (${pct}%) by ${cat ? `SG: ${what.trim()}` : "SG: Total"}`),
+            ...(rounds.length ? [` \u00b7 from `, link, `${first ? `, ${shortDay(first)} \u2013 ${shortDay(last)}` : ""}.`] : ["."])]),
+            open && rounds.length ? el("div", { class: "bs-evs-wrap" }, [seg, mode === "round" ? byRound() : byEvent()]) : null];
+        }
         const N0 = NM();
         const keptSet = new Set(pk.rounds);
-        const cutList = N0.T && N0.T !== 1 ? season.filter((rd) => !keptSet.has(rd)).map((rd) => ({ rd, v: sgR(rd) })).sort((a, b) => a.v - b.v) : [];
-        const cutRow = ({ rd, v }) => el("li", {}, [el("span", { class: "neg" }, sgn2(v)), el("span", { class: "muted" }, " \u00b7 "), el("span", { class: "bs-ev-name" }, rd.event || "Tournament"), el("span", { class: "muted" }, `${rd.roundNo != null && rd.roundNo !== "" ? ` \u00b7 R${rd.roundNo}` : ""} \u00b7 ${shortDay(rd.date)}`)]);
-        const cutBlock = cutList.length ? [el("p", { class: "bs-sub bs-sub2" }, `The ${cutList.length} ${cutList.length === 1 ? "round" : "rounds"} to cut, worst first`),
-          el("ul", { class: "bs-evs bs-cut" }, cutList.slice(0, st.cutAll ? cutList.length : 8).map(cutRow)),
-          cutList.length > 8 ? (() => { const m = el("button", { type: "button", class: "link small" }, st.cutAll ? "Show fewer" : `Show all ${cutList.length}`); m.addEventListener("click", () => { st.cutAll = !st.cutAll; draw(); }); return m; })() : null] : [];
+        const cutRounds = season.filter((rd) => !keptSet.has(rd));
         detail = el("div", { class: "bs-detail" }, [
           ...(N0.T && N0.T !== 1 ? [el("p", { class: "bs-head" }, el("strong", {}, `${N0.lvl} (#${N0.T}): their best ${sel} of ${season.length} rounds would rank #${N0.T}.`))] : []),
-          ...cutBlock,
-          el("p", { class: "bs-head" }, [el("strong", {}, `Kept rounds: the best ${sel} of ${season.length} (${share}%) by ${cat ? `SG: ${what.trim()}` : "SG: Total"}`),
-            ` \u00b7 from `, evLink, `${first ? `, ${shortDay(first)} \u2013 ${shortDay(last)}` : ""}.`]),
-          evList,
+          ...roundsLine("Kept rounds", pk.rounds, "kept", false),
+          ...roundsLine("Cut rounds", cutRounds, "cut", true),
           el("p", { class: "bs-sub" }, `What helped during the ${NM().kept}`),
           el("ul", { class: "bs-list" }, whatWorked(pk.rounds, season, cat).map((t) => el("li", {}, t))),
           ...(() => { const hurt = whatHurts(pk.rounds, season, cat); return hurt.length ? [el("p", { class: "bs-sub bs-sub2" }, `What hurt during the ${NM().cut}`), el("ul", { class: "bs-list" }, hurt.map((t) => el("li", {}, t)))] : []; })(),
@@ -2574,7 +2578,7 @@ export function sgDashboard(container, opts) {
   function pathBack(elite, season, cat, lv = null) {
     // (update 355) the level aimed at (picked here): its rounds (their best rounds that together reach it) against their
     // last N rounds (10 to start; changeable)
-    const lvName = lv ? `${LEVELS[lv.T]} rounds` : "best rounds";
+    const lvName = lv ? "level rounds" : "best rounds"; // (update 356: named once above the list, short in the rows)
     const NN = { kept: lvName, cut: "recent rounds" };
     const N = Math.max(3, Math.min(season.length, Math.round(Number(st.recentN) || 10)));
     const recent = season.slice(-N);
@@ -2643,11 +2647,13 @@ export function sgDashboard(container, opts) {
       const fewer = sp.ae < sp.ab;
       // (update 348) a strength in the best rounds that's a weakness now (or the other way) is said so
       const flip = sp.pe >= 0.01 && sp.pb <= -0.01 ? ` A strength in their ${NN.kept}, a weakness now.` : sp.pe <= -0.01 && sp.pb >= 0.01 ? ` A weakness in their ${NN.kept}, a strength now.` : "";
-      const why = `Per shot: ${sgn2(sp.pb)} now, ${sgn2(sp.pe)} in their ${NN.kept}, ${sgn2(sp.pu)} usually (worth ${sgn2(sp.skill)} a round).${flip}${Math.abs(sp.mix) >= 0.02 ? ` How often: ${sp.ab.toFixed(1)} attempts a round now, ${sp.ae.toFixed(1)} in ${NN.kept} (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)}).` : ""}`;
+      // (update 356) as separate labelled lines
+      const perShot = `${sgn2(sp.pb)} now \u00b7 ${sgn2(sp.pe)} in their ${NN.kept} \u00b7 ${sgn2(sp.pu)} usually (worth ${sgn2(sp.skill)} a round)`;
+      const howOften = Math.abs(sp.mix) >= 0.02 ? `${sp.ab.toFixed(1)} attempts a round now \u00b7 ${sp.ae.toFixed(1)} in their ${NN.kept} (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)})` : null;
       const strategy = kind === "skill" ? null : `${kind === "mix" ? "Mostly how often, not how well:" : "Partly how often:"} ${mixLead(sp)} in ${NN.kept}${sp.pu < 0 && fewer ? ` (they usually lose ${Math.abs(sp.pu).toFixed(2)} a shot here)` : sp.pu > 0 && !fewer ? ` (they usually gain ${sp.pu.toFixed(2)} a shot here)` : ""}. ${MIX_CAUSE[g.c] || ""}`;
       // (update 354) too few attempts to compare, but enough in the kept rounds: their number is still the target
       const tg = (() => { if (!t?.thin) return { text: tText(t), thin: false }; const es = eliteStat(g.c, d); return es ? { text: `${es.def.label}: ${fmtStat(es.def, es.ve)} in their ${NN.kept} (too few attempts in the last ${N} rounds to compare)`, thin: false } : { text: tText(t), thin: true }; })();
-      return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}: ${sgn2(g.g)} a round better in their ${NN.kept}`, sub: `${f2(g.r)} a round now, ${f2(g.e)} in their ${NN.kept}.`, why, strategy, target: kind === "mix" ? null : tg.text, thin: tg.thin,
+      return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}`, better: `${sgn2(g.g)} a round better in their ${NN.kept}`, sub: `${f2(g.r)} a round now \u00b7 ${f2(g.e)} in their ${NN.kept}`, perShot, howOften, flip, strategy, target: kind === "mix" ? null : tg.text, thin: tg.thin,
         drills: kind === "mix" ? [] : [{ drill: (() => { const dr = drillFor(g.c, d, eliteStat(g.c, d)); if (dr) dr.from = NN.kept; return dr; })(), goal }].filter((x) => x.drill) };
     });
     // when elite rounds happen: after a week off, early or late in the event
@@ -2680,7 +2686,7 @@ export function sgDashboard(container, opts) {
     };
     const rowBtns = [];
     function drillRow(x) {
-      const line = el("div", { class: "bs-drill" }, `Practice: ${drillLine(x.drill)}`);
+      const line = kv("Practice", drillLine(x.drill), "bs-drill");
       if (!canAdd) return line;
       const on = PLAN_ADDED.has(sig(x));
       const b = el("button", { type: "button", class: `bs-plan-add${on ? " done" : ""}`, disabled: on }, on ? "\u2713 In practice plan" : "\uFF0B Add to practice plan");
@@ -2710,11 +2716,14 @@ export function sgDashboard(container, opts) {
       // already at this level lately: no gap to close here, so point to the next level up
       ...(there ? [lv.above ? (() => { const go = el("button", { type: "button", class: "btn ghost small bs-lv-next" }, `Aim for ${LEVELS[lv.above]} (#${lv.above}) \u2192`); go.addEventListener("click", () => { st.pathT = lv.above; draw(); }); return go; })()
         : el("p", { class: "muted small" }, `That\u2019s the top level.`)] : []),
-      !there && prios.length ? el("p", { class: "muted small bs-prios-note" }, `Where their ${NN.kept} were better than the last ${N}, biggest first:`) : null,
-      !there && prios.length ? el("ol", { class: "bs-prios" }, prios.map((p) => el("li", {}, [el("strong", {}, p.head), el("span", { class: "muted" }, ` \u00b7 ${p.sub}`),
-        el("div", { class: "muted small bs-why" }, p.why),
-        ...(p.strategy ? [el("div", { class: "bs-strategy" }, `Strategy: ${p.strategy}`)] : []),
-        ...(p.target ? [el("div", { class: p.thin ? "bs-target thin muted" : "bs-target" }, p.thin ? p.target : `Target \u2192 ${p.target}`)] : []),
+      !there && prios.length ? el("p", { class: "muted small bs-prios-note" }, lv ? `Level rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. Where those were better than the last ${N}, biggest first:` : `Where their best rounds were better than the last ${N}, biggest first:`) : null,
+      !there && prios.length ? el("ol", { class: "bs-prios" }, prios.map((p) => el("li", {}, [el("div", { class: "bs-item-head" }, [el("strong", {}, p.head), el("span", { class: "muted" }, ` ${p.better}`)]),
+        kv("Now", p.sub),
+        kv("Per shot", p.perShot),
+        ...(p.howOften ? [kv("How often", p.howOften)] : []),
+        ...(p.flip ? [kv("Note", p.flip.trim())] : []),
+        ...(p.strategy ? [kv("Strategy", p.strategy, "bs-strategy")] : []),
+        ...(p.target ? [kv("Target", p.target, p.thin ? "bs-target thin" : "bs-target")] : []),
         ...p.drills.map(drillRow)]))) : null,
       when.length ? el("p", { class: "bs-sub bs-sub2" }, `When the ${NN.kept} happen`) : null,
       when.length ? el("ul", { class: "bs-list" }, when.map((t) => el("li", {}, t))) : null,
