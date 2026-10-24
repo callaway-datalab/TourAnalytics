@@ -291,6 +291,8 @@ export function sgDashboard(container, opts) {
         // nothing to show (no player picked, or no rounds yet): the same Filters panel, and why it's empty
         if (opts.emptyNote) return [el("section", { class: "panel sg-empty-note" }, el("p", { class: "empty center" }, opts.emptyNote))];
         if (!isSG()) return statBlocks(mine, slicedField, f);
+        if (!me && st.statWanted === "stretch") return [stretchBoard(slicedField)]; // (update 332: the Leaderboards' Best Stretches)
+        if (!me && st.statWanted === "form1") return [formBoard(slicedField)]; // (update 333: #1 Form)
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         // (update 205) "Getting better or worse?" right under the hero card
@@ -953,8 +955,13 @@ export function sgDashboard(container, opts) {
   }
   // Stat Type: every stat found in the data on screen. The tables and charts below follow what that stat has.
   function statSelect() {
-    if (statList.length < 2) return null;
-    const sel = el("select", { class: "stat-select", "aria-label": "Stat type" }, statList.map((k) => el("option", { value: k, selected: k === statKey }, statDef(k).label)));
+    // (update 332) Leaderboards (no player): also Best Stretches, the players ranked by how long they played at a #1 level
+    const withStretch = !me && !opts.entered && !opts.practice && statList.includes("sg");
+    if (statList.length < 2 && !withStretch) return null;
+    const stretchOn = withStretch && st.statWanted === "stretch", formOn = withStretch && st.statWanted === "form1";
+    const sel = el("select", { class: "stat-select", "aria-label": "Stat type" }, [...statList.flatMap((k) => [el("option", { value: k, selected: !stretchOn && !formOn && k === statKey }, statDef(k).label),
+      k === "sg" && withStretch ? el("option", { value: "stretch", selected: stretchOn }, "Elite Stretches (rounds in a row at a #1 level)") : null,
+      k === "sg" && withStretch ? el("option", { value: "form1", selected: formOn }, "Elite Round Share (share of rounds at a #1 level)") : null]).filter(Boolean)]);
     sel.addEventListener("change", () => { st.statWanted = sel.value; st.openFilter = null; sel.blur(); draw(); });
     return el("label", { class: "stat-pick" }, [sel]); // (no "Stat Type" heading, update 166)
   }
@@ -1224,6 +1231,89 @@ export function sgDashboard(container, opts) {
   /* ------------------------------ the whole tour (no player picked; update 142) ------------------------------ */
   // Category leaders (strokes gained), hot and cold form, the steadiest players, each tournament's best in the
   // field, and wins. Any stat (update 159): its own form, round-to-round swing, and who led the field in it.
+  // (update 332) Best Stretches on the Leaderboards: each player's longest run of rounds in a row whose average would
+  // rank #1 in this selection (by the strokes gained the filters are about), longest first
+  function stretchBoard(slicedField) {
+    const cat = st.cats.length === 1 ? st.cats[0] : "";
+    const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
+    const ranked = rankedField(slicedField);
+    const avgOf = new Map(ranked.map((p) => [p.key, perRoundOf(p.rounds, cat || null)]));
+    const vals = [...avgOf.values()].filter((v) => v != null && Number.isFinite(v)).sort((a, b) => b - a);
+    const rows = [];
+    for (const p of ranked) {
+      const mineAvg = avgOf.get(p.key);
+      if (mineAvg == null) continue;
+      const bar = vals[0] === mineAvg && vals.length > 1 ? vals[1] : vals[0]; // (the best of everyone else)
+      const seq = stretchSeq(p.rounds, cat);
+      if (!seq.length) continue;
+      const pre = [0]; for (const x of seq) pre.push(pre.at(-1) + x.t);
+      let found = null;
+      for (let n = seq.length; n >= 1 && !found; n--) {
+        for (let i = n; i < pre.length; i++) if ((pre[i] - pre[i - n]) / n > bar + 1e-12) { found = { n, from: seq[i - n].rd.date, to: seq[i - 1].rd.date, whole: n === seq.length }; break; }
+      }
+      rows.push({ p, ...(found || { n: 0 }), of: seq.length });
+    }
+    rows.sort((a, b) => b.n - a.n || (avgOf.get(b.p.key) ?? -1e9) - (avgOf.get(a.p.key) ?? -1e9));
+    const all = st.stretchAll; const shown = all ? rows : rows.slice(0, 25);
+    const name = (p) => (pickable(p.key) ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, starred(p.key, p.label)); b.addEventListener("click", () => opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, starred(p.key, p.label)));
+    let place = 0, prevN = null;
+    const body = shown.map((r, i) => { if (r.n !== prevN) { place = i + 1; prevN = r.n; } return el("tr", {}, [
+      el("td", { class: "num" }, r.n ? String(place) : "\u2014"), el("td", {}, name(r.p)),
+      el("td", { class: "num strong" }, r.n ? (r.whole ? `${r.n} (all)` : String(r.n)) : "\u2014"),
+      el("td", { class: "num muted" }, r.n ? (r.from === r.to ? shortDay(r.from) : `${shortDay(r.from)} \u2013 ${shortDay(r.to)}`) : "No round at a #1 level"),
+      el("td", { class: "num muted" }, String(r.of)),
+    ]); });
+    const more = rows.length > 25 ? (() => { const b = el("button", { type: "button", class: "link small" }, all ? "Show the top 25" : `Show all ${rows.length}`); b.addEventListener("click", () => { st.stretchAll = !all; draw(); }); return b; })() : null;
+    return panelBox(`Elite Stretches \u00b7 ${what}`, [
+      el("p", { class: "muted small" }, `Each player\u2019s longest run of rounds in a row that, as their average, would rank #1 in this selection: the longer, the longer they played at a #1 level. \u201call\u201d: their whole selection already ranks #1.`),
+      el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-stretch-board" }, [
+        el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num", title: "The longest run of rounds in a row at a #1 level" }, "Rounds"), el("th", { class: "num" }, "When"), el("th", { class: "num", title: "Rounds in this selection" }, "Of")])),
+        el("tbody", {}, body),
+      ])),
+      more,
+    ], "full");
+  }
+  // (update 333; 334: named Elite Round Share) on the Leaderboards: like Best Stretches, but the rounds don't have to be in a row. The most of a
+  // player's rounds that, taken together (their best ones), average at a #1 level for this selection, and that as a share
+  // of all their rounds; ranked by the share
+  function formBoard(slicedField) {
+    const cat = st.cats.length === 1 ? st.cats[0] : "";
+    const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
+    const ranked = rankedField(slicedField);
+    const avgOf = new Map(ranked.map((p) => [p.key, perRoundOf(p.rounds, cat || null)]));
+    const vals = [...avgOf.values()].filter((v) => v != null && Number.isFinite(v)).sort((a, b) => b - a);
+    const rows = [];
+    for (const p of ranked) {
+      const mineAvg = avgOf.get(p.key);
+      if (mineAvg == null) continue;
+      const bar = vals[0] === mineAvg && vals.length > 1 ? vals[1] : vals[0]; // (the best of everyone else)
+      const ts = stretchSeq(p.rounds, cat).map((x) => x.t).sort((a, b) => b - a);
+      if (!ts.length) continue;
+      // the best k rounds' average only falls as k grows: the largest k still above the bar
+      let k = 0, sum = 0;
+      for (let i = 0; i < ts.length; i++) { sum += ts[i]; if (sum / (i + 1) > bar + 1e-12) k = i + 1; else break; }
+      rows.push({ p, k, of: ts.length, pct: k / ts.length });
+    }
+    rows.sort((a, b) => b.pct - a.pct || b.k - a.k);
+    const all = st.formAll; const shown = all ? rows : rows.slice(0, 25);
+    const name = (p) => (pickable(p.key) ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, starred(p.key, p.label)); b.addEventListener("click", () => opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, starred(p.key, p.label)));
+    let place = 0, prev = null;
+    const body = shown.map((r, i) => { const pc = Math.round(r.pct * 1000) / 10; if (pc !== prev) { place = i + 1; prev = pc; } return el("tr", {}, [
+      el("td", { class: "num" }, r.k ? String(place) : "\u2014"), el("td", {}, name(r.p)),
+      el("td", { class: "num strong" }, r.k ? `${pc.toFixed(1)}%` : "\u2014"),
+      el("td", { class: "num" }, r.k ? String(r.k) : "0"),
+      el("td", { class: "num muted" }, String(r.of)),
+    ]); });
+    const more = rows.length > 25 ? (() => { const b = el("button", { type: "button", class: "link small" }, all ? "Show the top 25" : `Show all ${rows.length}`); b.addEventListener("click", () => { st.formAll = !all; draw(); }); return b; })() : null;
+    return panelBox(`Elite Round Share \u00b7 ${what}`, [
+      el("p", { class: "muted small" }, `How much of each player\u2019s golf was at a #1 level: the most of their rounds (their best ones, in any order) whose average would still rank #1 in this selection, as a share of all their rounds. 100%: their whole selection already ranks #1.`),
+      el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-stretch-board" }, [
+        el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num", title: "Share of their rounds at a #1 level" }, "Share"), el("th", { class: "num", title: "Their best rounds that together average at a #1 level" }, "Rounds"), el("th", { class: "num", title: "Rounds in this selection" }, "Of")])),
+        el("tbody", {}, body),
+      ])),
+      more,
+    ], "full");
+  }
   function tourBlocks(slicedField) {
     const P = rankedField(slicedField).filter((p) => p.rounds.length);
     if (P.length < 3) return [];
@@ -1358,7 +1448,13 @@ export function sgDashboard(container, opts) {
     if (!cat) {
       R.push({ grp: "Strokes gained a round" });
       R.push({ key: "c:TOTAL", label: "SG: Total", fmt: sgF, higher: true, tone: true });
-      for (const [k, l] of CATEGORIES) if (meV.has(`c:${k}`)) R.push({ key: `c:${k}`, label: l, fmt: sgF, higher: true, tone: true, sub: true });
+      // (update 332) tap a part of the game to open its distances under it (and again to fold them)
+      const distsFor = (k) => { const w = new Map(); for (const rd of mine) for (const x of rd.shots) if (x.cat === k && x.dist) w.set(x.dist, (w.get(x.dist) || 0) + (x.w || 1)); return [...w].filter(([, n]) => n >= 3).map(([d]) => d).sort((a, b) => lead(a) - lead(b) || String(a).localeCompare(String(b))); };
+      for (const [k, l] of CATEGORIES) if (meV.has(`c:${k}`)) {
+        const open = (st.expCats || []).includes(k);
+        R.push({ key: `c:${k}`, label: l, fmt: sgF, higher: true, tone: true, sub: true, expand: k, open });
+        if (open) for (const d of distsFor(k)) R.push({ key: `d:${d}`, c: k, label: d, fmt: sgF, higher: true, tone: true, sub: true, deep: true });
+      }
       const sk = SCORING_KEYS.filter((k) => meV.has(`s:${k}|`));
       if (sk.length) { R.push({ grp: "Scoring" }); for (const k of sk) { const def0 = statDef(k); R.push({ key: `s:${k}|`, label: def0.label, fmt: (v) => fmtStat(def0, v), def: def0, higher: def0.higher == null ? null : def0.higher !== false, sub: k !== "scoring" }); } }
     } else {
@@ -1397,51 +1493,65 @@ export function sgDashboard(container, opts) {
     // strokes gained the filters are about (SG: Total, or the one category picked: their best Off-the-Tee rounds), and
     // every row is those same rounds' value, so the rows still add up and read as "how I play on my best days"
     const peakN = Math.max(1, Math.round(Number(st.peakN) || 10));
-    const peak = peakOn ? peakOf(ordered, cat, peakN) : null; // (update 308: the same rounds as the charts' dots)
+    const peak = peakOn ? (st.peakMode === "stretch" ? peakOf(ordered, cat, peakN) : eliteOf(ordered, cat, peakN)) : null; // (update 335: elite rounds; the same rounds as the charts' dots)
     const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
     const dTxt = (rd) => String(rd?.date || "").slice(0, 10);
     // no rank picked: each stat coloured against the player's own career average (every round of theirs)
     const careerMap = me?.rounds?.length ? rowVals(me.rounds, cat) : null;
     const relNow = !!refMap && (!peak || peak.map.size > 0);
     const stretchOn = !!(peak && !peak.short); // (update 330) a stretch picked: Stretch | Selection | Difference | Stretch Rank
+    // (update 332) an opened part of the game's distance rows: the same columns, worked out for that part of the game
+    const mapsMemo = new Map();
+    const M = (c) => {
+      if (!mapsMemo.has(c)) mapsMemo.set(c, { me: rowVals(mine, c), field: ranked.map((p) => rowVals(p.rounds, c)), last: tn >= 3 ? rowVals(ordered.slice(-tn), c) : null, prev: tn >= 3 ? rowVals(ordered.slice(-2 * tn, -tn), c) : null,
+        peak: stretchOn ? rowVals(peak.rounds, c) : null, career: me?.rounds?.length ? rowVals(me.rounds, c) : null });
+      return mapsMemo.get(c);
+    };
+    const rankIn = (maps, k, v, higher) => { if (v == null || higher == null) return null; const vs = maps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
+    const toggleCat = (k) => { const a = new Set(st.expCats || []); a.has(k) ? a.delete(k) : a.add(k); st.expCats = [...a]; draw(); };
     const tr = [];
     for (const row of R) {
       if (row.grp) { tr.push(el("tr", { class: "cmp-grp" }, el("td", { colspan: stretchOn ? 5 : 4 }, row.grp))); continue; }
-      const v = gv(meV, row.key) ?? null, fAvg = refMap ? gv(refMap, row.key) ?? null : gv(careerMap, row.key) ?? null;
+      const X = row.c ? M(row.c) : null; // (update 332: a distance row under an opened part of the game)
+      const v = gv(X ? X.me : meV, row.key) ?? null, fAvg = X ? (stretchOn ? gv(X.peak, row.key) : gv(X.career, row.key)) ?? null : refMap ? gv(refMap, row.key) ?? null : gv(careerMap, row.key) ?? null;
+      const label = row.expand ? [el("span", { class: "sg-exp", "aria-hidden": "true" }, row.open ? "\u25BE " : "\u25B8 "), row.label] : row.label;
       if (row.other && Math.abs(v || 0) < 0.005 && (!relNow || Math.abs(fAvg || 0) < 0.005)) continue; // (nothing outside the bands shown)
       const good = (d) => (d == null || row.higher == null || Math.abs(d) < 1e-9 ? "" : (row.higher ? d > 0 : d < 0) ? "pos" : "neg");
       const shown = relNow && v != null && fAvg != null ? (row.fmt === sgF || row.fmt === sg3 ? row.fmt(v - fAvg) : `${v - fAvg >= 0 ? "+" : "−"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(v - fAvg))}`) : row.fmt(v);
       const vCls = relNow && v != null && fAvg != null ? (row.higher == null ? "" : good(v - fAvg)) : row.tone ? sgTone(v) : good(v != null && fAvg != null ? v - fAvg : null);
       // (update 319) Personal Peak: the Peak Rank, where the peak's value would rank if it were their average
-      const pkRow = peak && !peak.short ? gv(peak.map, row.key) : null;
-      const rk = showRanks ? rankOfRow(row.key, peak && !peak.short ? pkRow : v, row.higher) : null;
-      const a = gv(lastV, row.key), b = gv(prevV, row.key), ch = a != null && b != null ? a - b : null;
+      const pkRow = peak && !peak.short ? gv(X ? X.peak : peak.map, row.key) : null;
+      const rk = showRanks ? (X ? rankIn(X.field, row.key, stretchOn ? pkRow : v, row.higher) : rankOfRow(row.key, peak && !peak.short ? pkRow : v, row.higher)) : null;
+      const a = gv(X ? X.last : lastV, row.key), b = gv(X ? X.prev : prevV, row.key), ch = a != null && b != null ? a - b : null;
       const chTxt = ch == null ? "—" : Math.abs(ch) < (row.tone ? 0.005 : 1e-9) ? "◆ steady" : `${ch > 0 ? "▲" : "▼"} ${row.fmt === sg3 ? Math.abs(ch).toFixed(3) : row.fmt === sgF ? Math.abs(ch).toFixed(2) : row.def ? fmtStat({ ...row.def, pct: false, unit: row.def.pct ? " pct" : row.def.unit }, Math.abs(ch)) : Math.abs(ch).toFixed(1)}`;
       void bestOf; // (update 229: no Best round or All Players columns)
-      const pk = peak && !peak.short ? gv(peak.map, row.key) : null; // (update 266) the best rounds' own value
+      const pk = peak && !peak.short ? gv(X ? X.peak : peak.map, row.key) : null; // (update 266) the best rounds' own value
       if (stretchOn) {
         const d = pk != null && v != null ? pk - v : null;
         const dTxt2 = d == null ? "\u2014" : row.fmt === sgF || row.fmt === sg3 ? row.fmt(d) : `${d >= 0 ? "+" : "\u2212"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(d))}`;
-        tr.push(el("tr", { class: row.sub ? "cmp-sub" : "" }, [
-          el("td", { title: row.tip || null }, row.label),
-          el("td", { class: "num strong" }, pk == null ? "\u2014" : row.fmt(pk)), // (update 331: only the difference is coloured)
-          el("td", { class: "num" }, row.fmt(v)),
+        const srow = el("tr", { class: `${row.sub ? "cmp-sub" : ""}${row.deep ? " cmp-deep" : ""}${row.expand ? " sg-tap" : ""}`, ...(row.expand ? { role: "button", tabindex: "0", "aria-expanded": String(!!row.open), title: `${row.label}: ${row.open ? "hide" : "show"} its distances` } : {}) });
+        if (row.expand) { srow.addEventListener("click", () => toggleCat(row.expand)); srow.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCat(row.expand); } }); }
+        tr.push((mount(srow, [
+          el("td", { title: row.tip || null }, label),
+          el("td", { class: "num" }, row.fmt(v)), // (update 335: Avg | Elite | Diff | Elite Rank; only the difference is coloured)
+          el("td", { class: "num strong" }, pk == null ? "\u2014" : row.fmt(pk)),
           el("td", { class: `num ${good(d)}` }, dTxt2),
           el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "\u2014"),
-        ]));
+        ]), srow));
         continue;
       }
       // (update 331) tap a stat: its round by round bars (the last 10 against the 10 before), as on the Watchlist
-      const trow = el("tr", { class: `${row.sub ? "cmp-sub" : ""} sg-tap`, role: "button", tabindex: "0", title: `${row.label}: round by round` });
+      const trow = el("tr", { class: `${row.sub ? "cmp-sub" : ""}${row.deep ? " cmp-deep" : ""} sg-tap`, role: "button", tabindex: "0", ...(row.expand ? { "aria-expanded": String(!!row.open) } : {}), title: row.expand ? `${row.label}: ${row.open ? "hide" : "show"} its distances` : `${row.label}: round by round` });
       const openForm = async () => {
         const [{ formInfo }, { openBadge }] = await Promise.all([import("./watchlistData.js"), import("./badgePopup.js")]);
-        const val = (rs) => (rs.length ? gv(rowVals(rs, cat), row.key) ?? null : null);
+        const val = (rs) => (rs.length ? gv(rowVals(rs, row.c ?? cat), row.key) ?? null : null);
         openBadge({ text: row.label, info: () => formInfo(ordered, val, { label: row.label, fmtFn: (x) => row.fmt(x), chFn: (d) => (row.fmt === sgF ? Math.abs(d).toFixed(2) : row.fmt === sg3 ? Math.abs(d).toFixed(3) : row.def ? fmtStat({ ...row.def, pct: false, unit: row.def.pct ? " pct" : row.def.unit }, Math.abs(d)) : Math.abs(d).toFixed(1)), higher: row.higher, signed: !!row.tone }) }, me?.label || "");
       };
-      trow.addEventListener("click", openForm);
-      trow.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openForm(); } });
+      const act = row.expand ? () => toggleCat(row.expand) : openForm; // (update 332: a part of the game opens its distances)
+      trow.addEventListener("click", act);
+      trow.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
       tr.push((mount(trow, [
-        el("td", { title: row.tip || null }, row.label),
+        el("td", { title: row.tip || null }, label),
         el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds in a row: ${row.fmt(pk)}` : null }, shown),
         // (update 320) Trend before Rank; with a comparison picked, the value compared against in its place
         relNow ? (() => { const rv = gv(refMap, row.key); return el("td", { class: "num cmp-refv" }, rv == null ? "\u2014" : row.fmt(rv)); })()
@@ -1453,10 +1563,10 @@ export function sgDashboard(container, opts) {
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
         el("thead", {}, el("tr", {}, stretchOn ? [el("th", {}, ""), // (update 330)
-          el("th", { class: "num", title: `The average of the best ${peakN} ${peakN === 1 ? "round" : "rounds in a row"}` }, "Stretch"),
           el("th", { class: "num", title: "The player\u2019s average over the selected time frame (every round in the filters)" }, "Avg"),
-          el("th", { class: "num", title: "The stretch less the average: green where the stretch was better" }, "Diff"),
-          el("th", { class: "num", title: "Where the stretch\u2019s value would rank if it were the player\u2019s average for the selected time frame" }, "Stretch Rank")]
+          el("th", { class: "num", title: `The average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (the elite rounds)` }, "Elite"),
+          el("th", { class: "num", title: "Elite less the average: green where the elite rounds were better" }, "Diff"),
+          el("th", { class: "num", title: "Where the elite rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, "Elite Rank")]
           : [el("th", {}, ""), el("th", { class: "num" }, me?.label || "Player"),
           el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend"),
           el("th", { class: "num" }, "Rank")])),
@@ -1464,8 +1574,8 @@ export function sgDashboard(container, opts) {
       ])),
       // (update 240) what the colours mean
       el("p", { class: "muted small sg-full-note" }, stretchOn // (update 330)
-        ? `Stretch: the average of the best ${peakN} ${peakN === 1 ? "round" : "rounds in a row"} (shown above). Avg: ${me?.label || "the player"}\u2019s average over the selected time frame. Diff: the stretch less the average, green where the stretch was better. Stretch Rank: where the stretch\u2019s value would rank if it were their average for the selected time frame.`
-        : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a stretch above to see how they played at their best.`),
+        ? `Avg: ${me?.label || "the player"}\u2019s average over the selected time frame. Elite: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (shown above). Diff: elite less the average, green where the elite rounds were better. Elite Rank: where the elite rounds\u2019 value would rank if it were their average for the selected time frame.`
+        : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`),
     ];
   }
   /* ------------------------------ category detail ------------------------------ */
@@ -1878,7 +1988,7 @@ export function sgDashboard(container, opts) {
   function topPlayers(list) {
     if (soloTour) return []; // (update 307: Practice or a typed-in tour: no comparisons)
     // (update 330) the dots are the selected stretch (Best Stretches above the stats table); nothing selected: no dots
-    if (st.vsRank === "peak" && isSG()) { const pk = curPeak(); return pk && !pk.short ? [{ key: "__peak", label: "Best stretch", rounds: pk.rounds }] : []; }
+    if (st.vsRank === "peak" && isSG()) { const pk = curPeak(); return pk && !pk.short ? [{ key: "__peak", label: "Elite rounds", rounds: pk.rounds }] : []; }
     void list;
     return [];
   }
@@ -1902,13 +2012,22 @@ export function sgDashboard(container, opts) {
     const best = seq.slice(bestAt, bestAt + peakN).map((x) => x.rd);
     return { map: rowVals(best, cat), rounds: best, short: false };
   }
+  /** (update 335) Elite rounds: the player's best n rounds by the strokes gained the filters are about, in any order
+   *  (oldest first, as everywhere). */
+  function eliteOf(rounds, cat, n) {
+    const scored = stretchSeq(rounds, cat);
+    if (scored.length < n) return { map: new Map(), rounds: [], short: true, have: scored.length };
+    const best = [...scored].sort((a, b) => b.t - a.t).slice(0, n).map((x) => x.rd).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+    return { map: rowVals(best, cat), rounds: best, short: false, elite: true };
+  }
   let peakCtx = null, peakMemo = null;
   const curPeak = () => {
     if (!peakCtx?.mine?.length) return null;
     const n = Math.max(1, Math.round(Number(st.peakN) || 10));
-    if (peakMemo && peakMemo.mine === peakCtx.mine && peakMemo.cat === peakCtx.cat && peakMemo.n === n) return peakMemo.pk;
-    const pk = peakOf(peakCtx.mine, peakCtx.cat, n);
-    peakMemo = { mine: peakCtx.mine, cat: peakCtx.cat, n, pk };
+    const mode = st.peakMode === "stretch" ? "stretch" : "elite"; // (update 335: elite rounds, any order)
+    if (peakMemo && peakMemo.mine === peakCtx.mine && peakMemo.cat === peakCtx.cat && peakMemo.n === n && peakMemo.mode === mode) return peakMemo.pk;
+    const pk = mode === "elite" ? eliteOf(peakCtx.mine, peakCtx.cat, n) : peakOf(peakCtx.mine, peakCtx.cat, n);
+    peakMemo = { mine: peakCtx.mine, cat: peakCtx.cat, n, pk, mode };
     return pk;
   };
   // (update 322) the peak's dates as a filter: the page shows just those rounds (from the top); a chip clears it
@@ -1956,7 +2075,7 @@ export function sgDashboard(container, opts) {
   // what the gold dots are: on the trends, the best result(s) each round / event / month / year among the
   // players who played it; on the other charts, the best players over the selected time frame
   const compareName = (each = null) => {
-    if (st.vsRank === "peak") { const n = Math.max(1, Math.round(Number(st.peakN) || 10)); return `Best ${n} ${n === 1 ? "round" : "rounds in a row"} (avg)`; }
+    if (st.vsRank === "peak") { const n = Math.max(1, Math.round(Number(st.peakN) || 10)); return `Elite: best ${n} ${n === 1 ? "round" : "rounds"} (avg)`; }
     const n = st.rankTop && st.rankTop !== "all" ? st.rankTop : null;
     if (each) { const v0 = vsNum(); return v0 ? `#${v0} player each ${each}` : `All players each ${each} (avg)`; } // (update 309)
     const v = vsNum(); // (update 308) one player: the one ranked #N
@@ -1997,14 +2116,18 @@ export function sgDashboard(container, opts) {
     const rankOf = (v) => 1 + others.filter((x) => x > v + 1e-12).length;
     const seasonRank = rankOf(pre.at(-1) / seq.length);
     const memo = new Map(); const bestM = (n) => (memo.has(n) ? memo.get(n) : (memo.set(n, best(n)), memo.get(n)));
-    return [1, 10, 25, 50].map((target) => {
+    // (update 334) Elite Round Share for each mark: the most of their best rounds (any order) that together still reach it
+    const desc = seq.map((x) => x.t).sort((a, b) => b - a);
+    const shareFor = (target) => { let k = 0, sum = 0; for (let i = 0; i < desc.length; i++) { sum += desc[i]; if (rankOf(sum / (i + 1)) <= target) k = i + 1; else break; } return { k, of: desc.length, pct: desc.length ? k / desc.length : 0 }; };
+    return [1, 10, 25, 50].map((target) => ({ ...rung(target), share: shareFor(target) }));
+    function rung(target) {
       if (seasonRank <= target) return { target, already: true, rank: seasonRank };
       for (let n = seq.length; n >= 1; n--) {
         const b = bestM(n);
         if (rankOf(b.avg) <= target) return { target, n, from: seq[b.at].rd.date, to: seq[b.at + n - 1].rd.date };
       }
       return { target, none: true, bestRound: rankOf(bestM(1).avg) };
-    });
+    }
   }
   const shortDay = (d) => { const x = new Date(`${String(d || "").slice(0, 10)}T12:00:00`); return isNaN(x) ? String(d || "") : x.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
   function selectStretch(n, target = null) {
@@ -2042,45 +2165,53 @@ export function sgDashboard(container, opts) {
     if (kit.length) out.push(`In the bag: ${kit.join(", ")}.`);
     return out;
   }
+  // (update 335) Elite Round Share, above the stats table: for #1, #10, #25 and #50, the most of the player's best rounds
+  // (in any order) that together average at that rank, as a share of all their rounds. Tap one (or pick a number of
+  // rounds) to see those rounds: what was working, the equipment, and every stat next to their average.
   function stretchesBlock(mine, cat) {
     const what = cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} ` : "";
     const rows = ladderRows(mine, cat);
+    st.peakMode = "elite";
     const sel = st.vsRank === "peak" ? Math.max(1, Math.round(Number(st.peakN) || 10)) : null;
-    const help = el("details", { class: "bs-help" }, [el("summary", { "aria-label": "What is this?" }, "ⓘ"),
-      el("p", { class: "muted small" }, "A stretch is a run of rounds in a row. For each length, we find the player’s best one, then ask: if they\u2019d played like that over the whole selected time frame, where would they rank on Tour? The ladder shows the longest stretch that reaches each mark. The longer the stretch, the longer they held that level, and the better a sign it’s really in their game. Tap a row, or pick a length, to see the dates, what was working, and every stat from the stretch next to their average.")]);
+    const help = el("details", { class: "bs-help" }, [el("summary", { "aria-label": "What is this?" }, "\u24d8"),
+      el("p", { class: "muted small" }, "Elite Round Share asks how much of a player\u2019s golf was at each level. Take their best rounds, in any order, and keep adding the next best while the average of the ones taken would still rank #1 (or #10, #25, #50) for the selected time frame. The share is how many rounds that is, out of all their rounds. Tap a box, or pick a number of rounds, to see those elite rounds: what was working, what was in the bag, and every stat from them next to the player\u2019s average.")]);
     const ladder = rows ? el("div", { class: "bs-ladder", role: "list" }, rows.map((r) => {
-      const on = !!(sel && r.n && sel === r.n && st.ladderT === r.target);
-      const body = r.already ? [el("span", { class: "bs-need" }, `Already there: ${ordinal(r.rank)} for the selected time frame`), el("span", { class: "bs-when muted" }, "")]
-        : r.none ? [el("span", { class: "bs-need muted" }, "Out of reach"), el("span", { class: "bs-when muted" }, `best round ranks ${ordinal(r.bestRound)}`)]
-        : [el("span", { class: "bs-need" }, `${r.n} ${r.n === 1 ? "round" : "rounds in a row"}`), el("span", { class: "bs-when muted" }, r.from === r.to ? shortDay(r.from) : `${shortDay(r.from)} – ${shortDay(r.to)}`)];
-      const b = el(r.n ? "button" : "div", { type: r.n ? "button" : null, class: `bs-row${on ? " on" : ""}${r.n ? "" : " flat"}`, role: "listitem", "aria-pressed": r.n ? String(on) : null }, [el("span", { class: "bs-rank" }, `#${r.target}`), ...body]);
-      if (r.n) b.addEventListener("click", () => selectStretch(r.n, r.target));
+      const k = r.share?.k || 0;
+      const on = !!(sel && k && sel === k && st.ladderT === r.target);
+      const body = [el("span", { class: "bs-pct" }, `${Math.round((r.share?.pct || 0) * 100)}%`),
+        el("span", { class: "bs-when muted" }, r.already ? `all ${r.share.of} rounds \u00b7 already ${ordinal(r.rank)}` : k ? `${k} of ${r.share.of} rounds` : `best round ranks ${ordinal(r.bestRound ?? r.share?.bestRound ?? 0)}`)];
+      const b = el(k ? "button" : "div", { type: k ? "button" : null, class: `bs-row${on ? " on" : ""}${k ? "" : " flat"}`, role: "listitem", "aria-pressed": k ? String(on) : null }, [el("span", { class: "bs-rank" }, `#${r.target}`), ...body]);
+      if (k) b.addEventListener("click", () => selectStretch(k, r.target));
       return b;
-    })) : el("p", { class: "muted small" }, "Not enough rounds or players in the selected time frame for a ladder.");
-    const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(sel && st.ladderT == null ? sel : 10), inputmode: "numeric", "aria-label": "Stretch length: rounds in a row" }); // (update 331: 10 unless you picked a length)
+    })) : el("p", { class: "muted small" }, "Not enough rounds or players in the selected time frame.");
+    const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(sel && st.ladderT == null ? sel : 10), inputmode: "numeric", "aria-label": "How many of their best rounds" });
     const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 1) { inp.value = "10"; return; } const v = Math.min(500, n); if (sel === v && st.ladderT == null) return; st.vsRank = "peak"; st.peakN = v; st.ladderT = null; draw(); };
     inp.addEventListener("change", apply);
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
     const show = el("button", { type: "button", class: "btn ghost small bs-go" }, "Show");
     show.addEventListener("click", apply);
     const clear = sel ? (() => { const c = el("button", { type: "button", class: "link small" }, "Clear"); c.addEventListener("click", () => { st.vsRank = null; st.ladderT = null; draw(); }); return c; })() : null;
-    const pick = el("div", { class: "bs-pick peak-len-wrap" }, [el("span", { class: "muted small" }, "Or choose a length: best"), inp, el("span", { class: "muted small" }, "rounds in a row"), show, clear]);
+    const pick = el("div", { class: "bs-pick peak-len-wrap" }, [el("span", { class: "muted small" }, "Or choose: their best"), inp, el("span", { class: "muted small" }, "rounds"), show, clear]);
     let detail = null;
     if (sel) {
       const pk = curPeak();
-      if (!pk || pk.short) detail = el("p", { class: "muted small" }, `Only ${pk?.have ?? 0} ${what}rounds in the selected time frame: fewer than ${sel}. Pick a shorter stretch or widen the filters.`);
+      if (!pk || pk.short) detail = el("p", { class: "muted small" }, `Only ${pk?.have ?? 0} ${what}rounds in the selected time frame: fewer than ${sel}. Pick fewer or widen the filters.`);
       else {
         const season = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+        const evs = new Set(pk.rounds.map((rd) => `${rd.event}|${String(rd.date || "").slice(0, 4)}`)).size;
+        const first = pk.rounds[0]?.date, last = pk.rounds.at(-1)?.date;
+        const share = Math.round((sel / Math.max(1, season.length)) * 100);
         detail = el("div", { class: "bs-detail" }, [
-          el("p", { class: "bs-head" }, peakNote(pk, me, cat, sel, 0, setRange)),
+          el("p", { class: "bs-head" }, [el("strong", {}, `Elite rounds: the best ${sel} of ${season.length} (${share}%) by ${cat ? `SG: ${what.trim()}` : "SG: Total"}`),
+            ` \u00b7 from ${evs} ${evs === 1 ? "tournament" : "tournaments"}${first ? `, ${shortDay(first)} \u2013 ${shortDay(last)}` : ""}.`]),
           el("p", { class: "bs-sub" }, "What was working"),
           el("ul", { class: "bs-list" }, whatWorked(pk.rounds, season, cat).map((t) => el("li", {}, t))),
         ]);
       }
     }
     return el("div", { class: "bs" }, [
-      el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `Best ${what ? `${what.trim()} ` : ""}Stretches`), help]),
-      el("p", { class: "muted small bs-intro" }, "The player’s best runs of rounds in a row, and where they’d rank if they’d played like that all along."),
+      el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `${what ? `${what.trim()} ` : ""}Elite Round Share`), help]),
+      el("p", { class: "muted small bs-intro" }, "How much of the player\u2019s golf was at a #1, #10, #25 or #50 level: their best rounds, in any order, that together would rank there."),
       ladder, pick, detail,
     ]);
   }

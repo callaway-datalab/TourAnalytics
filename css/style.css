@@ -4815,3 +4815,12 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
   .sg-full-t:has(th:nth-child(5)) thead th { font-size: 0.56rem; letter-spacing: 0.04em; white-space: normal; }
   .sg-full-t:has(th:nth-child(5)) td:first-child { font-size: 0.72rem; }
 }
+
+/* (update 332) a part of the game opened to its distances */
+.sg-exp { color: #d4b483; font-size: 0.8em; }
+.sg-full-t tr.cmp-deep td { font-size: 0.86em; background: rgba(255, 255, 255, 0.02); }
+.sg-full-t tr.cmp-deep td:first-child { color: var(--muted, #8e8e93); }
+.bs-share { margin-top: 0.15rem; font: 600 0.68rem/1.25 var(--font-body); color: #d4b483; } /* (update 334) */
+.bs-share-n { display: block; font-weight: 400; color: var(--muted, #8e8e93); }
+.bs-pct { font: 700 1.25rem/1.1 var(--font-body); color: var(--ink, #f2f2f7); } /* (update 335) */
+.bs-pct { font: 700 1.25rem/1.1 var(--font-body); color: var(--ink, #f2f2f7); } /* (update 335) */
