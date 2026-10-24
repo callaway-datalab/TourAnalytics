@@ -166,7 +166,13 @@ export async function render(main, { previewClient }) {
     const keys = (multi ? prefs.players : [single]).filter((k) => labels.has(k) || fieldNow.some((p) => p.key === k));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered" }));
+    const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered" }));
+    // (update 319) the order: yours (drag to change), A–Z, or by SG: Total rank (best first)
+    let sortBy = "mine"; try { sortBy = localStorage.getItem("wl.sort") || "mine"; } catch { /* */ }
+    const lastName = (c) => String(c.label || "").trim().split(/\s+/).slice(-1)[0] || "";
+    const cards = !multi || sortBy === "mine" ? cards0 : [...cards0].sort((a, b) => sortBy === "az"
+      ? lastName(a).localeCompare(lastName(b)) || String(a.label).localeCompare(String(b.label))
+      : (a.sg?.[0]?.rank ?? 1e9) - (b.sg?.[0]?.rank ?? 1e9) || String(a.label).localeCompare(String(b.label)));
     const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow, { noRanks: source === "entered" });
     // (update 213) metrics picked before that aren't offered any more: listed so they can be taken off
     {
@@ -240,7 +246,12 @@ export async function render(main, { previewClient }) {
       b.addEventListener("click", () => { if (rel === v) return; saveWatch({ rel: v }); draw(); });
       return b;
     }));
-    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, metricsBtn, meBtn, multi ? pickerBox : null]);
+    const sortSeg = multi && keys.length > 1 ? el("div", { class: "wl-period wl-sort", role: "group", "aria-label": "Order" }, [["mine", "My Order"], ["az", "A\u2013Z"], ["rank", "SG Rank"]].map(([v, l]) => {
+      const b = el("button", { type: "button", class: `wl-per${sortBy === v ? " on" : ""}`, "aria-pressed": String(sortBy === v), title: v === "mine" ? "Your order (hold a card and drag it)" : v === "az" ? "By last name" : "By SG: Total rank, best first" }, l);
+      b.addEventListener("click", () => { try { localStorage.setItem("wl.sort", v); } catch { /* */ } draw(); });
+      return b;
+    })) : null;
+    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, sortSeg, metricsBtn, meBtn, multi ? pickerBox : null]);
     const where = source === "entered" ? "entered rounds" : "ranked on their tour";
     // (update 186) just how many players
     const sub = multi ? (keys.length ? `${keys.length} Player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about")
@@ -250,10 +261,10 @@ export async function render(main, { previewClient }) {
 
     // ---- the cards ----
     const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map((c) => { const n = cardView(c); n.dataset.key = c.key; return n; }));
-    if (multi && keys.length > 1 && !watchIsPreview()) dragToReorder(body); // (update 249)
+    if (multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine") dragToReorder(body); // (update 249; 319: only in your own order)
     // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
-    const dragHint = multi && keys.length > 1 && !watchIsPreview() ? el("p", { class: "muted small center wl-drag-hint" }, "Hold a card and drag it to change the order.") : null; // (update 249)
+    const dragHint = multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine" ? el("p", { class: "muted small center wl-drag-hint" }, "Hold a card and drag it to change the order.") : null; // (update 249)
     mount(root, [heroShell(controls, subLine), menu, body, dragHint,
       el("p", { class: "muted small center wl-foot" }, source === "entered"
         ? `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`

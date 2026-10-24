@@ -54,10 +54,28 @@ function peakNote(peak, me, cat, peakN, tn) {
   const a = day(rs[0]), b = day(rs.at(-1));
   const span = a instanceof Date && b instanceof Date && a.getFullYear() === b.getFullYear() ? `${md(a)} \u2013 ${mdy(b)}` : `${mdy(a)} \u2013 ${mdy(b)}`;
   const by = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
-  const list = rs.slice(0, 15).map((rd) => `${md(day(rd))} ${rd.event || ""}${rd.roundNo ? ` R${rd.roundNo}` : ""}`.trim()).join("; ") + (rs.length > 15 ? "; \u2026" : "");
+  // (update 319) by tournament: "4 rounds at THE PLAYERS Championship, 4 rounds at the Valspar Championship and the
+  // first 2 rounds of The Masters" (all of their rounds there, or the first / last few)
+  const yrOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+  const evKey = (rd) => `${rd.event || "?"}|${yrOf(rd)}`;
+  const groups = [];
+  for (const rd of rs) { const k = evKey(rd); const g = groups.at(-1); if (g && g.k === k) g.rs.push(rd); else groups.push({ k, name: rd.event || "an event", rs: [rd] }); }
+  const allAt = (k) => (me?.rounds || []).filter((rd) => evKey(rd) === k && !rd.eventLevel);
+  const nums = (x) => x.map((rd) => Number(rd.roundNo)).filter((n) => Number.isFinite(n));
+  const words = ["", "", "2", "3", "4", "5", "6"];
+  const part = (g) => {
+    const n = g.rs.length, all = allAt(g.k), mine = nums(g.rs), theirs = [...new Set(nums(all))];
+    const rds = (k) => (k === 1 ? "round" : `${words[k] || k} rounds`);
+    if (n >= 4 || n >= Math.max(theirs.length, 1) || !mine.length || !theirs.length) return `${n} ${n === 1 ? "round" : "rounds"} at ${g.name}`;
+    if (Math.min(...mine) === Math.min(...theirs)) return `the first ${rds(n)} of ${g.name}`;
+    if (Math.max(...mine) === Math.max(...theirs)) return n === 1 ? `the final round of ${g.name}` : `the last ${rds(n)} of ${g.name}`;
+    return `${n} ${n === 1 ? "round" : "rounds"} at ${g.name}`;
+  };
+  const parts = groups.map(part);
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] || "";
   return `Personal Peak: ${me?.label || "the player"}\u2019s best ${peakN} rounds in a row by ${by}, ${span}. The rounds: ${list}. `
     + `Each value is the difference from that peak, with every row from those same rounds (hover a value for theirs). Zero means they\u2019re playing at that level; red is how far below it. `
-    + `Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above for a longer or shorter stretch.`;
+    + `Peak Rank: where that peak would rank in each row if it were the player\u2019s average for this selection (against everyone else\u2019s average). Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above for a longer or shorter stretch.`;
 }
 
 export function sgDashboard(container, opts) {
@@ -1360,7 +1378,9 @@ export function sgDashboard(container, opts) {
       const good = (d) => (d == null || row.higher == null || Math.abs(d) < 1e-9 ? "" : (row.higher ? d > 0 : d < 0) ? "pos" : "neg");
       const shown = relNow && v != null && fAvg != null ? (row.fmt === sgF || row.fmt === sg3 ? row.fmt(v - fAvg) : `${v - fAvg >= 0 ? "+" : "−"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(v - fAvg))}`) : row.fmt(v);
       const vCls = relNow && v != null && fAvg != null ? (row.higher == null ? "" : good(v - fAvg)) : row.tone ? sgTone(v) : good(v != null && fAvg != null ? v - fAvg : null);
-      const rk = showRanks ? rankOfRow(row.key, v, row.higher) : null;
+      // (update 319) Personal Peak: the Peak Rank, where the peak's value would rank if it were their average
+      const pkRow = peak && !peak.short ? gv(peak.map, row.key) : null;
+      const rk = showRanks ? rankOfRow(row.key, peak && !peak.short ? pkRow : v, row.higher) : null;
       const a = gv(lastV, row.key), b = gv(prevV, row.key), ch = a != null && b != null ? a - b : null;
       const chTxt = ch == null ? "—" : Math.abs(ch) < (row.tone ? 0.005 : 1e-9) ? "◆ steady" : `${ch > 0 ? "▲" : "▼"} ${row.fmt === sg3 ? Math.abs(ch).toFixed(3) : row.fmt === sgF ? Math.abs(ch).toFixed(2) : row.def ? fmtStat({ ...row.def, pct: false, unit: row.def.pct ? " pct" : row.def.unit }, Math.abs(ch)) : Math.abs(ch).toFixed(1)}`;
       void bestOf; // (update 229: no Best round or All Players columns)
@@ -1375,7 +1395,7 @@ export function sgDashboard(container, opts) {
     return [
       el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less the #${vsN} player\u2019s`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `VS #${vsN}`) : me?.label || "Player"), el("th", { class: "num" }, "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less the #${vsN} player\u2019s`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `VS #${vsN}`) : me?.label || "Player"), el("th", { class: "num", title: peak && !peak.short ? "Where the peak would rank if it were the player\u2019s average for this selection" : null }, peak && !peak.short ? "Peak Rank" : "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
         el("tbody", {}, tr),
       ])),
       // (update 240) what the colours mean
