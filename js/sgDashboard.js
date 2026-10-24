@@ -74,7 +74,7 @@ import { el, mount, loadScript } from "./ui.js";
 import {
   CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds,
-  statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList,
+  statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList, distLead,
 } from "./sg.js";
 
 const CHART_JS = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
@@ -1644,9 +1644,9 @@ export function sgDashboard(container, opts) {
         el("tbody", {}, tr),
       ])),
       // (update 240) what the colours mean
-      el("p", { class: "muted small sg-full-note" }, stretchOn // (update 330)
-        ? `${NM().Cut}: ${me?.label || "the player"}\u2019s ${NM().cut} in the selected time frame. ${NM().Kept}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (shown above). Diff: ${NM().kept} less ${NM().cut}, green where the ${NM().kept} were better.${showRanks ? ` ${NM().Kept} Rank: where the ${NM().kept}\u2019 value would rank if it were their average for the selected time frame.` : ""}`
-        : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`),
+      // (update 363) with kept / cut rounds picked, what the columns mean sits behind a small ⓘ
+      (() => { const txt = (stretchOn ? `${NM().Cut}: ${me?.label || "the player"}\u2019s ${NM().cut} in the selected time frame. ${NM().Kept}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (shown above). Diff: ${NM().kept} less ${NM().cut}, green where the ${NM().kept} were better.${showRanks ? ` ${NM().Kept} Rank: where the ${NM().kept}\u2019 value would rank if it were their average for the selected time frame.` : ""}`
+        : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`); return stretchOn ? el("details", { class: "bs-help sg-full-note-i" }, [el("summary", { "aria-label": "What the columns mean" }, "\u24d8"), el("p", { class: "muted small" }, txt)]) : el("p", { class: "muted small sg-full-note" }, txt); })(),
       // (update 341) Path back to Elite, below the table
       // (update 355) with rankings, the path has its own level to aim at (the next one up to start); without, the best
       // rounds picked above
@@ -2363,18 +2363,39 @@ export function sgDashboard(container, opts) {
             const nums = g.rs.map((rd) => rd.roundNo).filter((x) => x != null && x !== "").sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0)).map((x) => `R${x}`);
             return el("li", {}, [el("span", { class: "bs-ev-name" }, g.event), el("span", { class: "muted" }, ` \u00b7 ${shortDay(g.first)} \u00b7 ${g.rs.length} of ${allAt(g)} ${allAt(g) === 1 ? "round" : "rounds"}${nums.length ? ` (${nums.join(", ")})` : ""} \u00b7 `), el("span", { class: g.avg >= 0 ? "pos" : "neg" }, `${sgn2(g.avg)} a round`)]);
           }));
-          const byRound = () => el("ul", { class: "bs-evs" }, rounds.map((rd) => ({ rd, v: sgR(rd) })).sort((a, b) => dir * (a.v - b.v)).map(({ rd, v }) =>
-            el("li", {}, [el("span", { class: v >= 0 ? "pos" : "neg" }, sgn2(v)), el("span", { class: "muted" }, " \u00b7 "), el("span", { class: "bs-ev-name" }, rd.event || "Tournament"),
-              el("span", { class: "muted" }, `${rd.roundNo != null && rd.roundNo !== "" ? ` \u00b7 R${rd.roundNo}` : ""} \u00b7 ${shortDay(rd.date)}`)])));
-          const mode = st[`${key}EvMode`] === "round" ? "round" : "event";
-          const seg = el("div", { class: "seg bs-evs-mode", role: "group", "aria-label": `Show the ${label.toLowerCase()}` }, [["event", "By tournament"], ["round", "By round"]].map(([v, l]) => {
-            const b = el("button", { type: "button", class: `seg-btn${mode === v ? " on" : ""}`, "aria-pressed": String(mode === v) }, l);
-            b.addEventListener("click", () => { st[`${key}EvMode`] = v; draw(); }); return b;
+          // (update 363) always round by round; tap a round for its strokes gained by part of the game, and each part
+          // of the game for its distances
+          const rKey = (rd) => `${String(rd.date || "").slice(0, 10)}|${rd.event || ""}|${rd.roundNo ?? ""}`;
+          const roundDetail = (rd) => {
+            const by = new Map();
+            for (const x of rd.shots) { if (!x.cat) continue; const c = by.get(x.cat) || by.set(x.cat, { sg: 0, n: 0, d: new Map() }).get(x.cat); c.sg += x.sg; c.n += x.w || 1; if (x.dist) { const dd = c.d.get(x.dist) || c.d.set(x.dist, { sg: 0, n: 0 }).get(x.dist); dd.sg += x.sg; dd.n += x.w || 1; } }
+            const open = new Set(st.rdCats || []);
+            return el("div", { class: "bs-rd" }, CATEGORIES.filter(([c]) => by.has(c)).flatMap(([c, l]) => {
+              const v = by.get(c), ds = [...v.d].sort((a, b) => distLead(a[0]) - distLead(b[0]) || a[0].localeCompare(b[0]));
+              const row = el("button", { type: "button", class: "bs-rd-row", "aria-expanded": String(open.has(c)), disabled: !ds.length }, [
+                el("span", { class: "bs-rd-l" }, [ds.length ? el("span", { class: "cmp-caret" }, open.has(c) ? "\u25BE " : "\u25B8 ") : null, l]),
+                el("span", { class: `bs-rd-v ${v.sg >= 0 ? "pos" : "neg"}` }, sgn2(v.sg))]);
+              row.addEventListener("click", (e) => { e.stopPropagation(); const n = new Set(st.rdCats || []); n.has(c) ? n.delete(c) : n.add(c); st.rdCats = [...n]; draw(); });
+              // (shots with no distance in the file: one more line, so the distances add up to the part of the game)
+              const restSg = v.sg - ds.reduce((t, [, x]) => t + x.sg, 0), restN = v.n - ds.reduce((t, [, x]) => t + x.n, 0);
+              const sub = (lbl, sg, n) => el("div", { class: "bs-rd-row sub" }, [el("span", { class: "bs-rd-l" }, `${lbl} \u00b7 ${Math.round(n)} ${Math.round(n) === 1 ? "shot" : "shots"}`), el("span", { class: `bs-rd-v ${sg >= 0 ? "pos" : "neg"}` }, sgn2(sg))]);
+              return [row, ...(open.has(c) ? [...ds.map(([d, x]) => sub(d, x.sg, x.n)), ...(Math.abs(restSg) >= 0.005 && restN > 0 ? [sub("Other shots", restSg, restN)] : [])] : [])];
+            }));
+          };
+          const byRound = () => el("ul", { class: "bs-evs" }, rounds.map((rd) => ({ rd, v: sgR(rd) })).sort((a, b) => dir * (a.v - b.v)).map(({ rd, v }) => {
+            const on = st.rdOpen === rKey(rd);
+            const li = el("li", { class: `bs-rd-li${on ? " on" : ""}`, role: "button", tabindex: "0", "aria-expanded": String(on) }, [
+              el("div", { class: "bs-rd-head" }, [el("span", { class: v >= 0 ? "pos" : "neg" }, sgn2(v)), el("span", { class: "muted" }, " \u00b7 "), el("span", { class: "bs-ev-name" }, rd.event || "Tournament"),
+                el("span", { class: "muted" }, `${rd.roundNo != null && rd.roundNo !== "" ? ` \u00b7 R${rd.roundNo}` : ""} \u00b7 ${shortDay(rd.date)}`)]),
+              on ? roundDetail(rd) : null]);
+            const tog = () => { st.rdOpen = on ? null : rKey(rd); draw(); };
+            li.addEventListener("click", tog); li.addEventListener("keydown", (e) => { if (e.target === li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); tog(); } });
+            return li;
           }));
           const pct = Math.round((rounds.length / Math.max(1, season.length)) * 100);
           return [el("p", { class: "bs-head" }, [el("strong", {}, `${label}: the ${worstFirst ? "worst" : "best"} ${rounds.length} of ${season.length} (${pct}%) by ${cat ? `SG: ${what.trim()}` : "SG: Total"}`),
             ...(rounds.length ? [` \u00b7 from `, link, `${first ? `, ${shortDay(first)} \u2013 ${shortDay(last)}` : ""}.`] : ["."])]),
-            open && rounds.length ? el("div", { class: "bs-evs-wrap" }, [seg, mode === "round" ? byRound() : byEvent()]) : null];
+            open && rounds.length ? el("div", { class: "bs-evs-wrap" }, [byRound()]) : null];
         }
         const N0 = NM();
         const keptSet = new Set(pk.rounds);
@@ -2742,9 +2763,13 @@ export function sgDashboard(container, opts) {
       sel.addEventListener("change", () => { st.pathT = Number(sel.value); draw(); });
       return el("label", { class: "bs-lv-row" }, [el("span", { class: "muted small" }, `Now ${ordinal(lv.rank)} on the season${lv.formRank ? `, a #${lv.formRank} level over the last ${N}` : ""}. Aim for:`), sel]);
     })() : null;
-    return el("div", { class: "bs-path" }, [
-      el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, lv ? `Path to ${LEVELS[lv.T]}` : "Path back to their best"), addAll]),
-      lvPick,
+    // (update 363) folded to start: tap the heading to open it
+    const pathOpen = !!st.pathOpen;
+    const tgl = el("button", { type: "button", class: "bs-path-toggle", "aria-expanded": String(pathOpen) }, [el("span", { class: "cmp-caret" }, pathOpen ? "\u25BE " : "\u25B8 "), lv ? `Path to ${LEVELS[lv.T]}` : "Path back to their best"]);
+    tgl.addEventListener("click", () => { st.pathOpen = !pathOpen; draw(); });
+    return el("div", { class: `bs-path${pathOpen ? "" : " closed"}` }, [
+      el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), pathOpen ? addAll : null]),
+      ...(pathOpen ? [      lvPick,
       el("div", { class: "bs-path-gap" }, [
         el("div", {}, bar != null ? [`${LEVELS[lv.T]} needs: `, el("strong", {}, f2(bar)), ` a round (to rank #${lv.T})`] : [`Their best ${elite.length}: `, el("strong", {}, f2(eAvg)), ` a round`]),
         el("div", {}, [`Last `, nIn, ` rounds: `, el("strong", {}, f2(rAvg)), ` a round${lv?.formRank ? ` (a #${lv.formRank} level)` : ""}`]),
@@ -2755,15 +2780,11 @@ export function sgDashboard(container, opts) {
       !there && prios.length ? el("p", { class: "muted small bs-prios-note" }, `${lv ? `\u201c${LEVELS[lv.T]}\u201d rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Below: where those were better than the last ${N} (\u201clately\u201d), biggest first. All numbers are strokes against the tour average: + is better than average, \u2212 is worse.`) : null,
       !there && prios.length ? el("ol", { class: "bs-prios" }, prios.map((p) => el("li", {}, [el("div", { class: "bs-item-head" }, [el("strong", {}, p.head), el("span", { class: "muted" }, ` ${p.better}`)]),
         kv("Takeaway", p.take, "bs-take"),
-        kv("Each round", p.roundLines.map((x) => el("div", {}, x))),
-        kv("Each shot", p.shotLines.map((x) => el("div", {}, x))),
-        kv("How often", p.oftenLines.map((x) => el("div", {}, x))),
-        ...(p.strategy ? [kv("Strategy", p.strategy, "bs-strategy")] : []),
         ...(p.targetLines ? [kv("Target", p.targetLines.map((x, k) => el("div", { class: k ? "bs-tl" : "bs-th" }, x)), "bs-target")] : []),
         ...p.drills.map(drillRow)]))) : null,
       when.length ? el("p", { class: "bs-sub bs-sub2" }, `When the ${NN.kept} happen`) : null,
       when.length ? el("ul", { class: "bs-list" }, when.map((t) => el("li", {}, t))) : null,
-      canAdd ? status : null,
+      canAdd ? status : null] : []),
     ]);
   }
   function rankPicker() {

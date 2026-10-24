@@ -532,9 +532,9 @@ export async function render(main) {
   }
   /** (update 264) The tournaments: the API's current ones, then the uploaded ones (one in both shows the API's), by tour. */
   function rebuild() {
-    // (update 301) just the PGA Tour API's tournaments that are on now (or about to start), and a finished one for a
-    // day after its final round; no archived (uploaded) tournaments
-    const dayAfter = (e) => { const end = new Date(`${String(e.end || e.start || "").slice(0, 10)}T23:59:59`); return Number.isNaN(end.getTime()) ? false : Date.now() <= end.getTime() + 864e5; };
+    // (update 301) just the PGA Tour API's tournaments that are on now (or about to start), and a finished one for
+    // 48 hours after its final round (update 363; it was a day); no archived (uploaded) tournaments
+    const dayAfter = (e) => { const end = new Date(`${String(e.end || e.start || "").slice(0, 10)}T23:59:59`); return Number.isNaN(end.getTime()) ? false : Date.now() <= end.getTime() + 2 * 864e5; };
     events = apiEvents.filter((e) => statusOf(e) !== "final" || dayAfter(e))
       .sort((a, b) => (statusOf(a) === "live" ? 0 : 1) - (statusOf(b) === "live" ? 0 : 1) || String(b.end || b.start || "").localeCompare(String(a.end || a.start || "")));
     const byTour = new Map([["PGA TOUR", []], ["Korn Ferry Tour", []]]); // (both tours' pills always show)
