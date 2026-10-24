@@ -92,8 +92,10 @@ const shared = { key: null, promise: null, result: null }; // (update 296)
 export function detailInfo() {
   const ps = shared.result?.players;
   if (!ps) return { players: 0, rounds: 0, shots: 0 };
-  let rounds = 0, shots = 0; for (const p of ps) { rounds += p.rounds.length; for (const r of p.rounds) shots += r.shots?.length || 0; }
-  return { players: ps.length, rounds, shots };
+  let rounds = 0, shots = 0; const tables = new Set();
+  for (const p of ps) { rounds += p.rounds.length; for (const r of p.rounds) { shots += r.shots?.length || 0; if (r.shots?.t) tables.add(r.shots.t); if (r.obs?.t) tables.add(r.obs.t); } }
+  let bytes = 0; for (const t of tables) bytes += (t.I?.byteLength || 0) + (t.F?.byteLength || 0); // (update 327: the packed columns)
+  return { players: ps.length, rounds, shots, mb: tables.size ? Math.round(bytes / 1048576) : null };
 }
 export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null } = {}) {
   try {

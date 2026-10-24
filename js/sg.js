@@ -357,7 +357,8 @@ export function statRounds(rounds, key) {
   if (m.has(key)) return m.get(key);
   const has = (rd) => (rd.has ? rd.has.has(key) : key === "sg" && rd.shots?.length > 0);
   const out = key === "sg" ? rounds.filter(has)
-    : rounds.filter(has).map((rd) => ({ ...rd, shots: rd.obs.filter((o) => o.k === key).map((o) => ({ cat: o.cat, lie: o.lie, dist: o.dist, v: o.v, w: o.w, sg: 0, club: null, clubCat: null, gear: o.gear, ball: o.ball })) }));
+    : rounds.filter(has).map((rd) => ({ ...rd, shots: rd.obs.asStat?.(key) // (update 327: the field detail's columns: a light list, no object per entry)
+      || rd.obs.filter((o) => o.k === key).map((o) => ({ cat: o.cat, lie: o.lie, dist: o.dist, v: o.v, w: o.w, sg: 0, club: null, clubCat: null, gear: o.gear, ball: o.ball })) }));
   m.set(key, out);
   return out;
 }
@@ -518,7 +519,7 @@ const STATS = {
 };
 
 function statValue(def, rounds, idx, cat) {
-  const shots = rounds.flatMap((rd) => rd.shots.filter((s) => s.cat === cat).map((s) => ({ ...s, rd })));
+  const shots = rounds.flatMap((rd) => rd.shots.filter((s) => s.cat === cat).map((s) => ({ ...(s.toJSON ? s.toJSON() : s), rd }))); // (update 327: a shot may be a view over the columns)
   const col = (s, f) => (idx[f] === undefined || !s.r ? null : s.r[idx[f]]);
   switch (def.kind) {
     case "mean": {
@@ -680,7 +681,7 @@ export const fmtSG = (v) => {
 export function filterOptions(rounds, cat) {
   const uniq = (vals) => [...new Set(vals.filter((v) => v !== null && v !== undefined && v !== ""))];
   const cats = !cat ? null : Array.isArray(cat) ? (cat.length ? cat : null) : [cat];
-  const shots = rounds.flatMap((rd) => rd.shots.filter((s) => !cats || cats.includes(s.cat)));
+  const shots = rounds.flatMap((rd) => [...rd.shots.filter((s) => !cats || cats.includes(s.cat))]); // (update 327: a real array)
   const byNum = (a, b) => lead(a) - lead(b) || a.localeCompare(b);
   const lieRank = (l) => { const i = LIE_ORDER.indexOf(squash(l)); return i < 0 ? 99 : i; };
   const dists = uniq(shots.map((s) => s.dist));

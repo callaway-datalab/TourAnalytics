@@ -61,6 +61,85 @@ function encodeYear(players) {
   return out;
 }
 
+/* (update 327) Compact columns. A whole field is about a million shots: as a million little objects that was more than
+ * an iPhone lets a page hold, so the page was restarted ("A problem repeatedly occurred"). Now the shots (and the
+ * other stats) stay in the file's packed number arrays, and each round's `shots` / `obs` is a light list over its
+ * slice of them. It works like the array it replaces (length, for…of, filter, map, reduce, some …); a shot is read
+ * from the columns only while it's being looked at, so almost nothing per shot is kept in memory. */
+const r4 = (x) => Math.round(x * 10000) / 10000; // (float32 back to the number as written: 0.484, not 0.48399999737739563)
+const own = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
+class ShotV {
+  constructor(t, i) { this.t = t; this.i = i; }
+  get cat() { return this.t.d[this.t.I[this.i * this.t.N]]; } set cat(v) { own(this, "cat", v); }
+  get lie() { return this.t.d[this.t.I[this.i * this.t.N + 1]]; } set lie(v) { own(this, "lie", v); }
+  get dist() { return this.t.d[this.t.I[this.i * this.t.N + 2]]; } set dist(v) { own(this, "dist", v); }
+  get club() { return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 3]] : undefined; } set club(v) { own(this, "club", v); }
+  get clubCat() { return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 4]] : undefined; } set clubCat(v) { own(this, "clubCat", v); }
+  get gear() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 5] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { own(this, "gear", v); }
+  get ball() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 6] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { own(this, "ball", v); }
+  get sg() { return r4(this.t.F[this.i * 2]); } set sg(v) { own(this, "sg", v); }
+  get w() { return r4(this.t.F[this.i * 2 + 1]); } set w(v) { own(this, "w", v); }
+  toJSON() { return { cat: this.cat, sg: this.sg, w: this.w, lie: this.lie, dist: this.dist, club: this.club, clubCat: this.clubCat, gear: this.gear, ball: this.ball }; }
+}
+class ObsV {
+  constructor(t, i) { this.t = t; this.i = i; }
+  get k() { return this.t.d[this.t.I[this.i * this.t.N]]; } set k(v) { own(this, "k", v); }
+  get cat() { return this.t.d[this.t.I[this.i * this.t.N + 1]]; } set cat(v) { own(this, "cat", v); }
+  get lie() { return this.t.d[this.t.I[this.i * this.t.N + 2]]; } set lie(v) { own(this, "lie", v); }
+  get dist() { return this.t.d[this.t.I[this.i * this.t.N + 3]]; } set dist(v) { own(this, "dist", v); }
+  get gear() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 4] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { own(this, "gear", v); }
+  get ball() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 5] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { own(this, "ball", v); }
+  get v() { return r4(this.t.F[this.i * 2]); } set v(x) { own(this, "v", x); }
+  get w() { return r4(this.t.F[this.i * 2 + 1]); } set w(x) { own(this, "w", x); }
+  toJSON() { return { k: this.k, cat: this.cat, lie: this.lie, dist: this.dist, gear: this.gear, ball: this.ball, v: this.v, w: this.w }; }
+}
+/** One stat's entries read as shots (what statRounds() makes: no strokes gained, no club). */
+class StatV extends ObsV {
+  get sg() { return 0; } set sg(v) { own(this, "sg", v); }
+  get club() { return null; } set club(v) { own(this, "club", v); }
+  get clubCat() { return null; } set clubCat(v) { own(this, "clubCat", v); }
+  toJSON() { return { cat: this.cat, lie: this.lie, dist: this.dist, v: this.v, w: this.w, sg: 0, club: null, clubCat: null, gear: this.gear, ball: this.ball }; }
+}
+/** A round's shots (or stats) over the columns: a start and a count, or (after a filter) a list of positions. */
+export class ColList {
+  constructor(t, View, start, n, idx = null) { this.t = t; this.View = View; this.start = start; this.n = n; this.idx = idx; }
+  get length() { return this.n; }
+  pos(j) { return this.idx ? this.idx[j] : this.start + j; }
+  at(j) { if (j < 0) j += this.n; return j >= 0 && j < this.n ? new this.View(this.t, this.pos(j)) : undefined; }
+  [Symbol.iterator]() { let j = 0; const me = this; return { next: () => (j < me.n ? { value: new me.View(me.t, me.pos(j++)), done: false } : { value: undefined, done: true }), [Symbol.iterator]() { return this; } }; }
+  forEach(f) { for (let j = 0; j < this.n; j++) f(new this.View(this.t, this.pos(j)), j, this); }
+  map(f) { const out = new Array(this.n); for (let j = 0; j < this.n; j++) out[j] = f(new this.View(this.t, this.pos(j)), j, this); return out; }
+  flatMap(f) { return this.map(f).flat(); }
+  filter(f) {
+    const keep = new Uint32Array(this.n); let m = 0;
+    for (let j = 0; j < this.n; j++) { const p = this.pos(j); if (f(new this.View(this.t, p), j, this)) keep[m++] = p; }
+    return new ColList(this.t, this.View, 0, m, keep.slice(0, m));
+  }
+  reduce(f, init) {
+    let j = 0, acc = init;
+    if (arguments.length < 2) { if (!this.n) throw new TypeError("Reduce of empty list with no initial value"); acc = new this.View(this.t, this.pos(0)); j = 1; }
+    for (; j < this.n; j++) acc = f(acc, new this.View(this.t, this.pos(j)), j, this);
+    return acc;
+  }
+  some(f) { for (let j = 0; j < this.n; j++) if (f(new this.View(this.t, this.pos(j)), j, this)) return true; return false; }
+  every(f) { for (let j = 0; j < this.n; j++) if (!f(new this.View(this.t, this.pos(j)), j, this)) return false; return true; }
+  find(f) { for (let j = 0; j < this.n; j++) { const v = new this.View(this.t, this.pos(j)); if (f(v, j, this)) return v; } return undefined; }
+  findIndex(f) { for (let j = 0; j < this.n; j++) if (f(new this.View(this.t, this.pos(j)), j, this)) return j; return -1; }
+  slice(a = 0, b = this.n) { if (a < 0) a += this.n; if (b < 0) b += this.n; a = Math.max(0, Math.min(this.n, a)); b = Math.max(a, Math.min(this.n, b)); const idx = new Uint32Array(b - a); for (let j = a; j < b; j++) idx[j - a] = this.pos(j); return new ColList(this.t, this.View, 0, b - a, idx); }
+  concat(...more) { return [...this, ...more.flatMap((x) => (x && typeof x[Symbol.iterator] === "function" && typeof x !== "string" ? [...x] : [x]))]; }
+  sort(f) { return [...this].sort(f); }
+  toArray() { return [...this]; }
+  /** (stats only) this round's entries of one stat, as shots, without making an object for each */
+  asStat(key) {
+    if (this.View !== ObsV) return null;
+    const keep = new Uint32Array(this.n); let m = 0;
+    const { d, I, N } = this.t;
+    for (let j = 0; j < this.n; j++) { const p = this.pos(j); if (d[I[p * N]] === key) keep[m++] = p; }
+    return new ColList(this.t, StatV, 0, m, keep.slice(0, m));
+  }
+  toJSON() { return this.toArray(); }
+}
+
 /** One packed year back into players: [{ key, name, rounds }]. */
 export function decodeFieldDetail(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -74,34 +153,26 @@ export function decodeFieldDetail(bytes) {
   const buf = u8.byteOffset % 4 === 0 ? u8.buffer : u8.slice().buffer, base = u8.byteOffset % 4 === 0 ? u8.byteOffset : 0;
   const I = h.wide ? Uint32Array : Uint16Array, isz = h.wide ? 4 : 2;
   let off = pad4(8 + hl);
-  const take = (T, n, sz) => { const t = new T(buf, base + off, n); off = pad4(off + n * sz); return t; };
+  // (each column copied out of the file into its own array, so the rest of the file (the header text) can be let go)
+  const take = (T, n, sz) => { const t = new T(buf, base + off, n).slice(); off = pad4(off + n * sz); return t; };
   const sI = take(I, h.nS * SN, isz), sF = take(Float32Array, h.nS * 2, 4), oI = take(I, h.nO * ON, isz), oF = take(Float32Array, h.nO * 2, 4);
   const d = h.dict;
-  let a = 0, b = 0;
-  const year = String(h.year ?? "");
-  const r4 = (x) => Math.round(x * 10000) / 10000; // (float32 back to the number as written: 0.484, not 0.48399999737739563)
   let clubs = false;
   for (let i = 0; i < h.nS && !clubs; i++) if (sI[i * SN + 3] || (SN === 7 && (sI[i * SN + 5] || sI[i * SN + 6]))) clubs = true;
+  const st = { d, I: sI, F: sF, N: SN, clubs }, ot = { d, I: oI, F: oF, N: ON };
+  const year = String(h.year ?? "");
+  let a = 0, b = 0;
   return h.players.map(([key, name, rounds]) => ({
     key, name,
     rounds: rounds.map(([rk, di, ei, roundNo, ti, ev, ns, no, ci]) => {
-      const shots = new Array(ns), obs = new Array(no);
-      // (club only when the file has clubs: two fewer fields on every shot, which adds up over a whole field)
-      if (clubs) for (let i = 0; i < ns; i++, a++) {
-        const q = a * SN, sh = { cat: d[sI[q]], sg: r4(sF[a * 2]), w: r4(sF[a * 2 + 1]), lie: d[sI[q + 1]], dist: d[sI[q + 2]], club: d[sI[q + 3]], clubCat: d[sI[q + 4]] };
-        if (SN === 7) { if (sI[q + 5]) sh.gear = d[sI[q + 5]]; if (sI[q + 6]) sh.ball = d[sI[q + 6]]; }
-        shots[i] = sh;
-      }
-      else for (let i = 0; i < ns; i++, a++) shots[i] = { cat: d[sI[a * SN]], sg: r4(sF[a * 2]), w: r4(sF[a * 2 + 1]), lie: d[sI[a * SN + 1]], dist: d[sI[a * SN + 2]] };
-      for (let i = 0; i < no; i++, b++) {
-        const q = b * ON, ob = { k: d[oI[q]], cat: d[oI[q + 1]], lie: d[oI[q + 2]], dist: d[oI[q + 3]], v: r4(oF[b * 2]), w: r4(oF[b * 2 + 1]) };
-        if (ON === 6) { if (oI[q + 4]) ob.gear = d[oI[q + 4]]; if (oI[q + 5]) ob.ball = d[oI[q + 5]]; }
-        obs[i] = ob;
-      }
+      const shots = new ColList(st, ShotV, a, ns), obs = new ColList(ot, ObsV, b, no);
+      const has = new Set();
+      for (let i = 0; i < no; i++) has.add(d[oI[(b + i) * ON]]);
+      if (ns) has.add("sg");
+      a += ns; b += no;
       const date = d[di] ?? "", event = d[ei] ?? "";
       const rd = { key: rk ?? `${date}|${event}|${roundNo}`, date, event, roundNo, year, tour: d[ti] ?? "", ...(ci && d[ci] ? { course: d[ci] } : {}), shots, obs, ...(ev ? { eventLevel: true } : {}) };
-      rd.has = new Set(obs.map((o) => o.k));
-      if (shots.length) rd.has.add("sg");
+      rd.has = has;
       return rd;
     }),
   }));

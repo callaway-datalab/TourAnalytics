@@ -56,7 +56,7 @@ async function update() {
   const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   panel.querySelector(".perf-body").innerHTML = `
     <p><b>Memory used</b> ${s.heap}</p>
-    <p><b>Field detail</b> ${n(s.detail?.players)} players · ${n(s.detail?.rounds)} rounds · ${n(s.detail?.shots)} shots</p>
+    <p><b>Field detail</b> ${n(s.detail?.players)} players · ${n(s.detail?.rounds)} rounds · ${n(s.detail?.shots)} shots${s.detail?.mb != null ? ` · packed in ${s.detail.mb} MB` : ""}</p>
     <p><b>Full rows</b> ${n(s.rows?.players)} players · ${n(s.rows?.rows)} rows${s.rows?.files ? "" : " (none: phones use the detail)"}</p>
     <p><b>Kept copies</b> ${n(s.memo?.players)} players' rows · ${n(s.memo?.stats)} summaries${s.analyze ? ` · Stats: ${s.analyze.prepared} prepared, ${s.analyze.detail} detail, ${s.analyze.rows} rows` : ""}</p>
     <p><b>On screen</b> ${n(s.charts)} charts · ${n(s.nodes)} page elements</p>
