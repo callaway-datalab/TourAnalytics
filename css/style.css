@@ -5019,3 +5019,17 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-there { color: #30d158; }
 /* (update 361) phone Watchlist: the time pills a touch smaller still */
 @media (max-width: 520px) { .wl-period .wl-per { font-size: 0.64rem !important; letter-spacing: -0.01em; padding: 0.3rem 0.15rem !important; } }
+/* (update 362) the best stretch pop-up stays on screen: it fits the visible height and scrolls inside */
+.bs-now { margin: 2px 0 10px; font-size: 14px; }
+.bs-st-overlay { align-items: start; padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom)); overflow-y: auto; }
+.bs-st-overlay .bs-st-pop { max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; margin: auto 0; }
+@supports not (height: 100dvh) { .bs-st-overlay .bs-st-pop { max-height: calc(100vh - 1.5rem); } }
+/* (update 362) Cal: the Difference row */
+.cal-table tr.cal-diff td { border-top: 1px solid rgba(212,180,131,0.45); color: #d4b483; font-weight: 600; }
+/* (update 362) Compare: rows that open to their distances; the By distance pills on one line */
+.cmp-tap-row { cursor: pointer; }
+.cmp-tap-row:hover td { background: rgba(255,255,255,0.03); }
+.cmp-caret { color: #d4b483; font-size: 0.8em; }
+.cmp-dist-tabs { flex-wrap: nowrap !important; overflow-x: auto; max-width: 100%; }
+.cmp-dist-tabs .cmp-seg-b { font-size: 11.5px !important; padding: 4px 8px !important; white-space: nowrap; min-height: 0 !important; }
+@media (max-width: 520px) { .cmp-dist-tabs .cmp-seg-b { font-size: 10.5px !important; padding: 4px 6px !important; } .cmp-ctrls { flex-wrap: wrap; } }

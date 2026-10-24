@@ -2383,15 +2383,7 @@ export function sgDashboard(container, opts) {
           ...(N0.T && N0.T !== 1 ? [el("p", { class: "bs-head" }, el("strong", {}, `${N0.lvl} (#${N0.T}): their best ${sel} of ${season.length} rounds would rank #${N0.T}.`))] : []),
           ...roundsLine("Kept rounds", pk.rounds, "kept", false),
           ...roundsLine("Cut rounds", cutRounds, "cut", true),
-          el("p", { class: "bs-sub" }, `What helped during the ${NM().kept}`),
-          el("ul", { class: "bs-list" }, whatWorked(pk.rounds, season, cat).map((t) => el("li", {}, t))),
-          ...(() => { const hurt = whatHurts(pk.rounds, season, cat); return hurt.length ? [el("p", { class: "bs-sub bs-sub2" }, `What hurt during the ${NM().cut}`), el("ul", { class: "bs-list" }, hurt.map((t) => el("li", {}, t)))] : []; })(),
-          ...(() => { const { items, total } = shotMix(pk.rounds, season, cat); if (!total) return [];
-            // (update 358) a small mix effect is one plain line, not a section
-            const small = Math.abs(total.mix) < Math.max(0.15, Math.abs(total.total) * 0.1);
-            if (small || !items.length) return [el("p", { class: "bs-sub bs-sub2" }, "Where the shots came from"), kv("Takeaway", `Almost all of the ${sgn2(total.total)} a round between the ${NM().kept} and ${NM().cut} came from hitting the same kinds of shots better (${sgn2(total.skill)}). Facing different shots (${sgn2(total.mix)}) hardly mattered, so this is about playing better, not strategy.`)];
-            const sum = `Of the ${sgn2(total.total)} a round between the ${NM().kept} and ${NM().cut}, ${sgn2(total.skill)} came from hitting the same kinds of shots better and ${sgn2(total.mix)} from facing different shots (${mixWords(total, sgn2)}). The biggest pieces of that:`;
-            return [el("p", { class: "bs-sub bs-sub2" }, "Where the shots came from"), el("p", { class: "muted small bs-mix-note" }, sum), el("ul", { class: "bs-list" }, items.map((t) => el("li", {}, t)))]; })(),
+          // (update 362) What helped / What hurt / Where the shots came from: taken out (the path below covers it)
         ]);
       }
     }
@@ -2401,6 +2393,7 @@ export function sgDashboard(container, opts) {
     return el("div", { class: "bs" }, [
       el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `${what ? `${what.trim()} ` : ""}Elite Round Share`), help]),
       el("p", { class: "muted small bs-intro" }, "How much of the player\u2019s golf was at each level (their best rounds, in any order, that together would rank there), and the other way round: how many of their worst rounds they\u2019d have to cut to get there."),
+      rows?.prof ? el("p", { class: "bs-now" }, [`Currently `, el("strong", {}, ordinal(rows.prof.seasonRank)), ` of ${rows.prof.N} (${sgn2(rows.prof.avg)} a round)`]) : null,
       ladder, profileLine(mine, cat, rows), detail,
     ]);
   }
@@ -2547,7 +2540,7 @@ export function sgDashboard(container, opts) {
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const show = el("button", { type: "button", class: "btn ghost small" }, "Show just these rounds");
     const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
-    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop bs-st-pop" }, [
+    const overlay = el("div", { class: "gx-pop-overlay bs-st-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop bs-st-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Best stretch"), el("h2", {}, `${row.n} ${row.n === 1 ? "round" : "rounds in a row"} \u00b7 ${when}`),
         el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best of everyone else). The ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN}.`)]), close]),
       svg,

@@ -366,7 +366,8 @@ async function answerPlayer(plan, ps) {
     const m0 = ms[0], hiFirst = better(m0, "best");
     const lead = [...rows].filter((r) => r.vals[0] != null).sort((a, b) => (hiFirst ? b.vals[0] - a.vals[0] : a.vals[0] - b.vals[0]))[0];
     out.push({ text: lead ? `${label.charAt(0).toUpperCase()}${label.slice(1)}, **${lead.name}** leads on ${m0.label}: **${fmtM(m0, lead.vals[0])}**.` : "None of them have those numbers.",
-      table: { head: ["Player", ...ms.map((m) => m.label.replace(/^SG: /, "")), "Rounds"], num: ms.map((_, i) => i + 1).concat(ms.length + 1), rows: rows.map((r) => [r.name, ...r.vals.map((v, i) => fmtM(ms[i], v)), String(r.n)]) } });
+      table: { head: ["Player", ...ms.map((m) => m.label.replace(/^SG: /, "")), "Rounds"], num: ms.map((_, i) => i + 1).concat(ms.length + 1), rows: [...rows.map((r) => [r.name, ...r.vals.map((v, i) => fmtM(ms[i], v)), String(r.n)]),
+        ...(rows.length === 2 && ms.some((m, i) => rows[0].vals[i] != null && rows[1].vals[i] != null) ? [["Difference", ...ms.map((m, i) => (rows[0].vals[i] != null && rows[1].vals[i] != null ? (m.sg ? fmtM(m, rows[0].vals[i] - rows[1].vals[i]) : `${rows[0].vals[i] - rows[1].vals[i] >= 0 ? "+" : "\u2212"}${fmtStat(m.def, Math.abs(rows[0].vals[i] - rows[1].vals[i]))}`) : "\u2014")), ""]] : [])], diff: rows.length === 2 ? 2 : null } });
     return out;
   }
   for (const { p, rounds } of withData) out.push(await onePlayer(plan, p, rounds, bd));
@@ -551,7 +552,11 @@ async function answerCompare(cp, question, list) {
   const usedAll = new Set(rows.flatMap((r) => [...r.used]));
   const partCols = SGCOLS.slice(1).filter(([k]) => (!cats || cats.has(k)) && usedAll.has(k));
   const cols = partCols.length > 1 ? [SGCOLS[0], ...partCols] : partCols.length ? partCols : [SGCOLS[0]];
-  return { text: lines.join("\n\n"), table: { head: ["", ...cols.map(([, l]) => l), "Rounds"], num: cols.map((_, i) => i + 1).concat(cols.length + 1), rows: rows.map((r) => [r.label, ...cols.map(([k]) => f2(r.s.sg[k])), String(r.s.n)]) } };
+  // (update 362) two of them: a Difference row underneath (the first less the second)
+  // (only for exactly two, both with rounds, and only when they share a number to take one from the other)
+  const diffOk = rows.length === 2 && rows.every((r) => r.s.n > 0) && cols.some(([k]) => rows[0].s.sg[k] != null && rows[1].s.sg[k] != null);
+  const diffRow = diffOk ? [["Difference", ...cols.map(([k]) => f2((rows[0].s.sg[k] ?? 0) - (rows[1].s.sg[k] ?? 0))), ""]] : [];
+  return { text: lines.join("\n\n"), table: { head: ["", ...cols.map(([, l]) => l), "Rounds"], num: cols.map((_, i) => i + 1).concat(cols.length + 1), rows: [...rows.map((r) => [r.label, ...cols.map(([k]) => f2(r.s.sg[k])), String(r.s.n)]), ...diffRow], diff: diffRow.length ? rows.length : null } };
 }
 
 /* ---------------------------------------------------------------- asking */
@@ -664,7 +669,7 @@ const rich = (text) => String(text).split(/\n\s*\n/).map((para) => el("p", {}, p
 function tableOf(t) {
   return el("div", { class: "cal-tw" }, el("table", { class: "cal-table" }, [
     el("thead", {}, el("tr", {}, t.head.map((h, i) => el("th", { class: t.num?.includes(i) ? "num" : null }, h)))),
-    el("tbody", {}, t.rows.map((r, ri) => el("tr", { class: t.mark?.has(ri) ? "on" : null }, r.map((c, i) => el("td", { class: t.num?.includes(i) ? "num" : null }, c))))),
+    el("tbody", {}, t.rows.map((r, ri) => el("tr", { class: ri === t.diff ? "cal-diff" : t.mark?.has(ri) ? "on" : null }, r.map((c, i) => el("td", { class: t.num?.includes(i) ? "num" : null }, c))))),
   ]));
 }
 // (update 292) the examples name whoever leads the PGA TOUR in SG: Total this season (the latest season in the data,

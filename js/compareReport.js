@@ -46,7 +46,7 @@ export function buildComparePdf(r) {
   /* (update 238) bold for what matters: the selections' names, the strokes-gained numbers, and the key words
      ("unusually good", "probably real" …). **like this** in a text is bold too. */
   const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const KEY = ["unusually good", "unusually bad", "better than usual", "worse than usual", "about their usual", "is best", "best overall", "trails the rest", "only just",
+  const KEY = ["unusually good", "unusually bad", "better than usual", "worse than usual", "well above their usual", "below their usual", "above their usual", "about their usual", "is best", "best overall", "trails the rest", "only just",
     "very likely real", "probably real", "too few rounds", "most consistent", "most up and down", "a hint, not a verdict", "Most of that is"];
   const emphRe = (() => {
     const names = [...new Set(sels.map((q) => q.name).filter((n) => n && n.length > 1))].sort((a, b) => b.length - a.length).map(esc);

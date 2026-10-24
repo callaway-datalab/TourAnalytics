@@ -1684,7 +1684,7 @@ export async function render(main) {
       ...(rest.length === 1 ? [cats.length > 1 ? el("div", { class: "cmp-card-cats", style: `grid-template-columns:repeat(${cats.length},1fr)` }, cats.map(([c]) => el("div", {}, [el("span", {}, c), el("strong", { class: tone(gap(top, b0(), c)) }, fmtSigned(gap(top, b0(), c)))]))) : null]
         : rest.slice(0, 4).map((b) => el("p", { class: "cmp-verdict-row" }, [el("i", { class: "cmp-dot", style: `--c:${b.color}` }), b.name, el("strong", { class: tone(-gap(top, b, k)) }, ` ${gap(top, b, k).toFixed(2)} behind`)]))),
       rest.length > 4 ? el("p", { class: "muted small" }, `+ ${rest.length - 4} more`) : null,
-      rest.length === 1 ? el("p", { class: "cmp-verdict-fit" }, fitStory(top, rest[0]).sum) : null, // (update 234)
+      // (update 362: no "So the gap is…" line in the collapsed verdict; it's in the Why)
       el("p", { class: "muted small cmp-verdict-sure" }, sureWords(top.s.rounds, rest.at(-1).s.rounds)), // (update 222: how sure)
       el("p", { class: "cmp-card-tap" }, "Tap for why \u203a"),
     ]);
@@ -1730,18 +1730,18 @@ export async function render(main) {
     const ua = usualOf(a), ub = usualOf(b), va = a.s.sg.TOTAL, vb = b.s.sg.TOTAL, da = va - ua, db = vb - ub;
     const same = (a.pk || "") === (b.pk || "");
     const ref = prodBase(a)?.label || "their usual"; // (update 240: a club or ball against the average one of its kind)
-    const vs = (d) => (Math.abs(d) < BAND ? `about ${ref}` : `${Math.abs(d).toFixed(2)} ${d > 0 ? "better" : "worse"} than ${ref}`);
+    const vs = (d) => (Math.abs(d) < BAND ? `about ${ref}` : `${Math.abs(d).toFixed(2)} ${d > 0 ? "above" : "below"} ${ref}`);
     const line = (it, v, d, u) => `${it.name}: ${fmtSigned(v)} a round, ${vs(d)}${same ? "" : ` (${fmtSigned(u)})`}.`;
     const up = (d) => d >= BAND, down = (d) => d <= -BAND;
     // (update 254) told from whichever is higher: a time comparison passes the latest first, and it can be the lower one
     // (it used to say "both are about their usual" for +1.02 against +3.78); names mid-sentence start lower case
     const mid = (n) => String(n).replace(/^(The|All|Every) /, (w) => w.toLowerCase()).replace(/^(Best|Worst|Most|Last|Latest) /, (w) => `the ${w.toLowerCase()}`);
     const [hi, lo, dh, dl] = va >= vb ? [a, b, da, db] : [b, a, db, da];
-    const sum = up(dh) && down(dl) ? `So it\u2019s both: ${mid(hi.name)} is better than usual and ${mid(lo.name)} is worse.`
-      : up(dh) && up(dl) ? `Both are better than usual; ${mid(hi.name)} is just more so.`
-      : down(dh) && down(dl) ? `Both are worse than usual; ${mid(lo.name)} is just more so.`
-      : up(dh) ? `So the gap is ${mid(hi.name)} being unusually good, not ${mid(lo.name)} being bad.`
-      : down(dl) ? `So the gap is ${mid(lo.name)} being unusually bad, not ${mid(hi.name)} being especially good.`
+    const sum = up(dh) && down(dl) ? `So it\u2019s both: ${mid(hi.name)} is above their usual and ${mid(lo.name)} is below it.`
+      : up(dh) && up(dl) ? `Both are above their usual; ${mid(hi.name)} is just more so.`
+      : down(dh) && down(dl) ? `Both are below their usual; ${mid(lo.name)} is just more so.`
+      : up(dh) ? `So the gap is ${mid(hi.name)} being well above their usual, not ${mid(lo.name)} being below it.`
+      : down(dl) ? `So the gap is ${mid(lo.name)} being below their usual, not ${mid(hi.name)} being especially good.`
       : down(dh) ? `Both are at or below ${ref}; ${mid(lo.name)} is just lower.`
       : up(dl) ? `Both are at or above ${ref}; ${mid(hi.name)} is just higher.`
       : `Both are about ${ref}, so neither stands out much on its own.`;
@@ -2104,20 +2104,38 @@ export async function render(main) {
     const rowsShown = sgRowsFor(live);
     const shadeBy = (vals, v, higher = true) => { const xs = vals.filter((x) => x != null); if (xs.length < 2 || v == null || higher == null) return ""; const best = higher === false ? Math.min(...xs) : Math.max(...xs), worst = higher === false ? Math.max(...xs) : Math.min(...xs); return Math.abs(best - worst) < 1e-9 ? "" : v === best ? "hi" : v === worst ? "lo" : ""; };
     const head = (t) => el("tr", { class: "cmp-grp" }, el("td", { colspan: items.length + 1 }, t));
-    const rows = [head("Strokes gained a round"), ...rowsShown.map(([k, l]) => {
+    // (update 362) each part of the game, and each stat, opens to its distances (closed to start)
+    const toggle = (key) => { openRows.has(key) ? openRows.delete(key) : openRows.add(key); draw(); };
+    const tapRow = (tr, key) => { tr.classList.add("cmp-tap-row"); tr.setAttribute("role", "button"); tr.tabIndex = 0; tr.setAttribute("aria-expanded", String(openRows.has(key)));
+      tr.addEventListener("click", () => toggle(key)); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(key); } }); return tr; };
+    const caret = (key) => el("span", { class: "cmp-caret", "aria-hidden": "true" }, openRows.has(key) ? "\u25BE " : "\u25B8 ");
+    const prof = distanceProfile(items.map((it) => it.rs), "round");
+    const rows = [head("Strokes gained a round")];
+    for (const [k, l] of rowsShown) {
       const vals = items.map((it) => it.s.sg[k]);
-      return el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, l), ...items.map((it, j) => el("td", { class: `num ${tone(vals[j])} ${shadeBy(vals, vals[j])}`, "data-s": it.i }, vals[j] == null ? "—" : fmtSG(vals[j])))]);
-    })];
+      const dRows = k !== "TOTAL" ? prof[k] || [] : [], key = `sg:${k}`;
+      const tr = el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, dRows.length ? [caret(key), l] : l), ...items.map((it, j) => el("td", { class: `num ${tone(vals[j])} ${shadeBy(vals, vals[j])}`, "data-s": it.i }, vals[j] == null ? "—" : fmtSG(vals[j])))]);
+      rows.push(dRows.length ? tapRow(tr, key) : tr);
+      if (dRows.length && openRows.has(key)) for (const r of dRows) rows.push(el("tr", { class: "cmp-sub" }, [el("td", {}, r.dist),
+        ...items.map((it, j) => el("td", { class: `num ${tone(r.values[j])} ${shadeBy(r.values, r.values[j])}`, "data-s": it.i, title: r.w?.[j] ? `${Math.round(r.w[j])} attempts` : "" }, r.values[j] == null ? "\u2014" : fmtSG(r.values[j])))]));
+    }
     // the other stats, by category (and distance), for the same selections
     const obsSets = items.map((it) => statSets(roundsOf(it), [it.f])[0] || []);
     for (const bk of statBlocks(obsSets, incNow())) {
       const keep = bk.rows.filter((r) => r.values.some((v) => v != null && Math.abs(v) > 1e-9));
       if (!keep.length) continue;
       rows.push(head(bk.label));
-      for (const r of keep) rows.push(el("tr", { class: r.dist ? "cmp-sub" : "" }, [
-        el("td", { title: r.def.help || "" }, r.dist ? r.dist : r.label),
-        ...items.map((it, j) => el("td", { class: `num ${shadeBy(r.values, r.values[j], r.def.higher)}`, "data-s": it.i, title: r.w[j] ? `${Math.round(r.w[j])} attempts` : "" }, fmtStat(r.def, r.values[j]))),
-      ]));
+      // a stat's distance rows follow it: they show when the stat is opened
+      for (let ri = 0; ri < keep.length; ri++) {
+        const r = keep[ri], key = `st:${bk.label}:${r.key}`;
+        if (r.dist) { const parent = [...keep.slice(0, ri)].reverse().find((x) => !x.dist); if (!openRows.has(`st:${bk.label}:${parent?.key}`)) continue; }
+        const hasKids = !r.dist && keep.slice(ri + 1).findIndex((x) => !x.dist) !== 0 && keep[ri + 1]?.dist;
+        const tr = el("tr", { class: r.dist ? "cmp-sub" : "" }, [
+          el("td", { title: r.def.help || "" }, r.dist ? r.dist : hasKids ? [caret(key), r.label] : r.label),
+          ...items.map((it, j) => el("td", { class: `num ${shadeBy(r.values, r.values[j], r.def.higher)}`, "data-s": it.i, title: r.w[j] ? `${Math.round(r.w[j])} attempts` : "" }, fmtStat(r.def, r.values[j]))),
+        ]);
+        rows.push(hasKids ? tapRow(tr, key) : tr);
+      }
     }
     const table = el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, ""), ...items.map((it) => hoverable(el("th", { class: "num", "data-s": it.i }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.name, it.s.n < FEW ? el("span", { class: "cmp-few-mark", title: `Only ${it.s.n} rounds` }, " *") : null]), it.i))])),
@@ -2151,7 +2169,7 @@ export async function render(main) {
     const cats = CATEGORIES.filter(([k]) => prof[k]);
     if (!cats.length) return null;
     if (!prof[distCat]) distCat = cats[0][0];
-    const tabs = el("div", { class: "cmp-seg small" }, cats.map(([k, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${distCat === k ? " on" : ""}` }, l); b.addEventListener("click", () => { distCat = k; draw(); }); return b; }));
+    const tabs = el("div", { class: "cmp-seg small cmp-dist-tabs" }, cats.map(([k, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${distCat === k ? " on" : ""}` }, l); b.addEventListener("click", () => { distCat = k; draw(); }); return b; }));
     const per = el("div", { class: "cmp-seg small" }, [["round", "A round"], ["shot", "A shot"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${distPer === v ? " on" : ""}` }, l); b.addEventListener("click", () => { distPer = v; draw(); }); return b; }));
     const rows = prof[distCat];
     return el("section", { class: "panel cmp-sec" }, [
@@ -2163,6 +2181,7 @@ export async function render(main) {
   // (update 194) the stats for each category of shot (Driving Distance, Fairways and GIR off the tee; Hit Green %,
   // Proximity, Pin-High and On-Line for approaches; Good Lag and Made Putt % on the green), and at each distance
   const FEW = 10; // (update 210) fewer rounds than this: flagged everywhere
+  const openRows = new Set(); // (update 362) the Side by side rows opened to their distances
   const statsSection = () => null; // (update 209: part of "Side by side" now)
   // (update 209) product usage across everyone in the data: how many use it, share, switching, how long they stay
   /* ------------------------------ (update 211) Generate AI Report ------------------------------ */
