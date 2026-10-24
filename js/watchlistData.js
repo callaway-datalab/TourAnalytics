@@ -173,7 +173,7 @@ export const metricLabel = (id) => {
  * One player's card. field: everyone's rounds (the shared summary, or full detail); detail: the field with lie /
  * distance detail (for distance ranks), or null; own: this player's full rounds (lie / distance), or null.
  */
-export function playerCard(key, { field, detail = null, own = null, label = "", period = "season", metrics = [], tour: wantTour = null, nameOf = null, noRanks = false }) {
+export function playerCard(key, { field, detail = null, own = null, label = "", period = "season", metrics = [], tour: wantTour = null, nameOf = null, noRanks = false, lite = false }) {
   const me0 = field.find((p) => p.key === key);
   const srcAll = own?.length ? own : me0?.rounds || [];
   const mineAll = srcAll.filter((rd) => rd.shots.length);
@@ -214,6 +214,10 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const sgVals = new Map(SG_KEYS.map(([k]) => [k, new Map(ranked.map((p) => [p.key, perRound(p.rounds, k)]))]));
   const nm = (k) => (k === key ? label : nameOf?.(k) || String(k).replace(/^c_/, ""));
   // (update 171: the SG Total rank trend chart is gone from the card)
+
+  // (update 329) a folded card shows only the five ranks: the rest (distances, results, metrics, badges) is worked out
+  // when it's opened
+  if (lite) return { ...card, lite: true };
 
   // ---- distances: strokes gained a shot by category and distance (enough attempts to mean something) ----
   const MIN_ATT = 8;

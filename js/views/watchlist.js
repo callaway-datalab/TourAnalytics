@@ -166,16 +166,18 @@ export async function render(main, { previewClient }) {
     const keys = (multi ? prefs.players : [single]).filter((k) => labels.has(k) || fieldNow.some((p) => p.key === k));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
     const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
-    const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered" }));
+    const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered",
+      lite: multi && !openCards.has(k) })); // (update 329: folded cards: just their ranks; the rest when opened)
     // (update 319) the order: yours (drag to change), A–Z, or by SG: Total rank (best first)
     let sortBy = "mine"; try { sortBy = localStorage.getItem("wl.sort") || "mine"; } catch { /* */ }
     const lastName = (c) => String(c.label || "").trim().split(/\s+/).slice(-1)[0] || "";
     const cards = !multi || sortBy === "mine" ? cards0 : [...cards0].sort((a, b) => sortBy === "az"
       ? lastName(a).localeCompare(lastName(b)) || String(a.label).localeCompare(String(b.label))
       : (a.sg?.[0]?.rank ?? 1e9) - (b.sg?.[0]?.rank ?? 1e9) || String(a.label).localeCompare(String(b.label)));
-    const catalog = metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow, { noRanks: source === "entered" });
+    // (update 329) the list of metrics to pick from is only worked out when the + Metrics menu is open
+    const catalog = menuOpen ? metricCatalog(fieldNow, owns.filter(Boolean).map((rounds) => ({ rounds })), detailNow, { noRanks: source === "entered" }) : [];
     // (update 213) metrics picked before that aren't offered any more: listed so they can be taken off
-    {
+    if (menuOpen) {
       const offered = new Set(catalog.flatMap((g) => g.items.flatMap(([id, , rg]) => [id, ...(rg || []).map((x) => x.id)])));
       const old = [...new Set(listFor(menuFor))].filter((m) => !offered.has(m));
       if (old.length) catalog.push({ group: "No longer offered (untick to remove)", items: old.map((m) => [m, metricLabel(m), []]) });
@@ -439,6 +441,7 @@ export async function render(main, { previewClient }) {
     const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics, ...clubs]);
     const card = el("article", { class: `panel wl-card${isOpen ? " open" : ""}${multi && !isOpen ? " compact" : ""}` }, [head, badges, sg, more]); // (update 317: folded = compact: the name, then each category and its rank) // (update 226: every card the same, no glow for some)
     moreBtn.addEventListener("click", () => {
+      if (c.lite) { openCards.add(c.key); draw(); return; } // (update 329: a folded card works out the rest now)
       const open = !openCards.has(c.key);
       if (open) openCards.add(c.key); else openCards.delete(c.key);
       more.hidden = !open; card.classList.toggle("open", open); card.classList.toggle("compact", multi && !open); // (update 318: open: everything back)
