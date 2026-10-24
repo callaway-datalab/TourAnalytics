@@ -4929,3 +4929,35 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-st-key.line { height: 0; border-top: 1.5px dashed #d4b483; width: 14px; }
 .bs-st-info { min-height: 1.4em; margin: 8px 0 4px; }
 .bs-st-foot { padding: 6px 0 10px; }
+.bs-st-legend { gap: 6px 14px; }
+.bs-st-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.bs-st-key.up { background: rgba(48,209,88,0.45); }
+.bs-st-key.down { background: rgba(255,69,58,0.45); }
+.bs-st-count { margin: 6px 0 0; }
+/* (update 352) stretch pop-up: the rounds table */
+.bs-st-pop { max-height: min(88vh, 52rem); }
+.bs-st-tw { overflow-y: auto; min-height: 0; flex: 1 1 auto; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
+.bs-st-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bs-st-table th { position: sticky; top: 0; background: #1c1c1e; text-align: left; font-weight: 600; color: #8e8e93; padding: 6px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.bs-st-table td { padding: 6px 6px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.bs-st-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.bs-st-table tr.in td { background: rgba(212,180,131,0.12); }
+.bs-st-table tr.in td:first-child { box-shadow: inset 3px 0 0 #d4b483; }
+.bs-st-table tr.picked td { background: rgba(255,255,255,0.12); }
+.bs-st-pop .bs-st-svg { flex: none; }
+.bs-st-pop .gx-pop-head, .bs-st-pop .bs-st-count, .bs-st-pop .bs-st-foot { flex: none; }
+.bs-st-table td, .bs-st-table th { text-align: left !important; vertical-align: middle; }
+.bs-st-table td.num, .bs-st-table th.num { text-align: right !important; }
+.bs-st-table td:first-child { white-space: nowrap; color: #b8b8be; width: 1%; padding-right: 12px; }
+.bs-st-tw { min-height: 9rem; }
+/* (update 353) level names and next steps */
+.bs-rank { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+.bs-lvl { font-weight: 700; font-size: 12.5px; line-height: 1.2; }
+.bs-lvl-n { font-size: 11px; color: #8e8e93; font-weight: 500; }
+.bs-next { margin: 10px 0 4px; }
+.bs-next-now { margin: 0 0 4px; }
+.bs-next-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bs-next-btn { width: 100%; text-align: left; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 9px 12px; color: inherit; font: inherit; font-size: 13.5px; line-height: 1.4; cursor: pointer; }
+.bs-next-btn:hover { background: rgba(255,255,255,0.07); }
+.bs-next-btn.on { border-color: #d4b483; background: rgba(212,180,131,0.1); }
+.bs-cut li { font-size: 13px; }
