@@ -5,6 +5,38 @@
  */
 import { el, mount, confirmAction } from "../ui.js";
 import { listPlan, deletePlanItem, goalText, goalSource, setScore, setMet, bestOf, activeSecs, mmss, nounOf } from "../practice/plan.js";
+import { parseDrillSpeech } from "../practice/voiceParse.js";
+
+/* (update 359) Voice: the phone's own speech recognition (free, the same as Enter New Round). Turn it on once and it keeps
+ * listening through every shot and set until it's turned off (remembered on this device). Where the browser has none,
+ * a box to type in (or use the keyboard's own 🎤). */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const LS_VOICE = "ta.drillVoice";
+const voice = { on: (() => { try { return localStorage.getItem(LS_VOICE) === "1"; } catch { return false; } })(), rec: null, handler: null, heard: "", did: "" };
+function listen() {
+  if (!SR || voice.rec || !voice.on || !voice.handler) return;
+  const rec = new SR();
+  rec.lang = navigator.language || "en-US"; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) voice.handler?.(e.results[i][0].transcript); };
+  rec.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { voice.on = false; voice.did = "Microphone access is blocked: allow it for this site in the browser\u2019s settings."; voice.handler?.(null); } };
+  rec.onend = () => { voice.rec = null; if (voice.on && voice.handler) setTimeout(listen, 300); }; // (phones stop after a pause: start again)
+  try { rec.start(); voice.rec = rec; } catch { /* already going */ }
+}
+function quiet() { const r = voice.rec; voice.rec = null; try { r?.abort?.(); } catch { /* */ } }
+function setVoice(on) { voice.on = on; voice.heard = ""; voice.did = ""; try { localStorage.setItem(LS_VOICE, on ? "1" : "0"); } catch { /* */ } if (on) listen(); else quiet(); }
+/** The Voice switch and what it heard (or, with no speech recognition, a box to type in). */
+function voiceBar(redraw, onText, hint) {
+  if (!SR) {
+    const box = el("input", { type: "text", class: "dp-voice-type", placeholder: hint, "aria-label": "Type what happened", enterkeyhint: "done" });
+    box.addEventListener("keydown", (e) => { if (e.key === "Enter" && box.value.trim()) { e.preventDefault(); onText(box.value); } });
+    return el("div", { class: "dp-voice" }, [box, voice.heard ? el("p", { class: "muted small dp-voice-status" }, [`\u201c${voice.heard}\u201d`, voice.did ? ` \u2192 ${voice.did}` : ""]) : null]);
+  }
+  const b = el("button", { type: "button", class: `dp-voice-btn${voice.on ? " on" : ""}`, "aria-pressed": String(voice.on) }, voice.on ? "\u{1F399}\uFE0F Voice on" : "\u{1F399}\uFE0F Voice");
+  b.addEventListener("click", () => { setVoice(!voice.on); redraw(); });
+  const status = voice.on ? el("p", { class: "muted small dp-voice-status" }, voice.heard ? [`Heard \u201c${voice.heard}\u201d`, voice.did ? ` \u2192 ${voice.did}` : ""] : `Listening\u2026 ${hint}`)
+    : voice.did ? el("p", { class: "muted small dp-voice-status" }, voice.did) : null;
+  return el("div", { class: "dp-voice" }, [b, status]);
+}
 
 let plan = null, planOwnerKey = null; // loaded once a visit (per owner)
 let tick = null;                      // the running clock
@@ -20,6 +52,7 @@ const scoreText = (d, v) => (v == null ? "—" : `${v}${unitOf(d)}`);
 
 export async function render(ctx) {
   stopClock();
+  if (ctx.view.name !== "drill") { voice.handler = null; quiet(); } // (voice is for the drill screens only)
   const v = ctx.view;
   if (v.name === "drill") return drawDrill(ctx, v.session);
   if (v.name === "drillDone") return drawDone(ctx, v.session);
@@ -95,6 +128,41 @@ function drawDrill(ctx, s) {
     if (set.marks.length >= d.reps) return finishSet(ctx, s);
     ctx.save(s); drawDrill(ctx, s);
   };
+  // (update 359) what was said: a whole set ("made 8 of 10"), one shot after another ("made the first", "missed"), or undo
+  const shotName = (nounOf(d).replace(/s$/, "") || "shot").replace(/^\w/, (c) => c.toUpperCase());
+  const valName = (v) => (d.kind === "prox" ? `${v} ft` : (d.tap || ["Yes", "No"])[v ? 0 : 1]);
+  const apply = (text) => {
+    if (text == null) { drawDrill(ctx, s); return; }
+    const r = parseDrillSpeech(text, { kind: d.kind, reps: d.reps });
+    voice.heard = String(text).trim(); voice.did = "";
+    const now = new Date().toISOString();
+    if (r.cmd === "undo") { if (set.marks.length) { set.marks.pop(); voice.did = "took back the last one"; } }
+    else if (r.cmd === "finish") { endSession(ctx, s); return; }
+    else if (r.summary) {
+      if (d.kind === "prox") {
+        const have = set.marks.reduce((t, m) => t + Number(m.v || 0), 0), left = d.reps - set.marks.length;
+        const each = left ? Math.max(0, Math.round(((r.summary.avg * d.reps - have) / left) * 10) / 10) : 0;
+        for (let k = 0; k < left; k++) set.marks.push({ v: each, at: now });
+        voice.did = `set averaged ${r.summary.avg} ft`;
+      } else {
+        set.marks = Array.from({ length: d.reps }, (_, k) => ({ v: k < r.summary.made ? 1 : 0, at: now, said: true }));
+        voice.did = `${r.summary.made} of ${d.reps}`;
+      }
+    } else if (r.events.length) {
+      const done = [];
+      for (const ev of r.events) {
+        const i = ev.i != null && ev.i < set.marks.length ? ev.i : set.marks.length; // (an earlier one: a correction)
+        if (i >= d.reps) continue;
+        if (i < set.marks.length) set.marks[i] = { v: ev.v, at: now }; else set.marks.push({ v: ev.v, at: now });
+        done.push(`${shotName} ${i + 1}: ${valName(ev.v)}`);
+      }
+      voice.did = done.join(", ");
+    } else voice.did = "nothing to fill in";
+    if (set.marks.length >= d.reps) { set.marks = set.marks.slice(0, d.reps); return finishSet(ctx, s); }
+    ctx.save(s); drawDrill(ctx, s);
+  };
+  voice.handler = apply; listen();
+  const hint = d.kind === "prox" ? "Say \u201c12 feet\u201d, \u201cthe third one was 30 feet\u201d, \u201choled it\u201d or \u201caveraged 18 feet\u201d." : `Say \u201c${(d.tap || ["made"])[0].toLowerCase()} the first\u201d, \u201c${(d.tap || ["", "missed"])[1].toLowerCase()}\u201d, or \u201c8 of 10\u201d for the whole set.`;
   const undo = el("button", { type: "button", class: "link dp-undo", disabled: !n }, "Undo last");
   undo.addEventListener("click", () => { set.marks.pop(); ctx.save(s); drawDrill(ctx, s); });
   const stop = el("button", { type: "button", class: "link dp-stop" }, "Finish");
@@ -108,7 +176,7 @@ function drawDrill(ctx, s) {
     next.addEventListener("click", go);
     box.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
     input = el("div", { class: "dp-prox" }, [el("label", { class: "dp-prox-q" }, "How far from the hole?"), el("div", { class: "dp-prox-row" }, [box, el("span", { class: "dp-ft-u" }, "ft"), next])]);
-    setTimeout(() => box.focus(), 0);
+    if (!voice.on) setTimeout(() => box.focus(), 0); // (talking: no keyboard popping up)
   } else {
     const [yes, no] = d.tap || ["Yes", "No"];
     const by = el("button", { type: "button", class: "dp-tap yes" }, yes), bn = el("button", { type: "button", class: "dp-tap no" }, no);
@@ -134,6 +202,7 @@ function drawDrill(ctx, s) {
       const m = set.marks[i];
       return el("span", { class: `dp-dot${m == null ? "" : d.kind === "prox" ? " ft" : m.v ? " yes" : " no"}` }, m == null ? "" : d.kind === "prox" ? String(m.v) : m.v ? "✓" : "✕");
     })),
+    voiceBar(() => drawDrill(ctx, s), apply, hint),
     el("div", { class: "dp-play-foot" }, [undo, stop]),
     s.sets.length > 1 ? el("p", { class: "muted small dp-prev" }, `Earlier sets: ${s.sets.slice(0, -1).map((x) => `${scoreText(d, x.score)}${x.met ? " \u2713" : ""}`).join(", ")} \u00b7 ${metOf({ sets: s.sets.slice(0, -1) })} of ${s.sets.length - 1} met`) : null,
   ]));
@@ -153,6 +222,18 @@ function finishSet(ctx, s) {
   redo.addEventListener("click", () => { s.sets.push({ marks: [] }); ctx.save(s); drawDrill(ctx, s); });
   const fin = el("button", { type: "button", class: reached ? "btn dp-again" : "link" }, "Finish");
   fin.addEventListener("click", () => endSession(ctx, s));
+  // (update 359) voice on the set's end: "redo" / "next set", "finish", or just carry on with the next set\u2019s shots
+  voice.handler = (t) => {
+    if (t == null) return;
+    const r = parseDrillSpeech(t, { kind: d.kind, reps: d.reps });
+    if (r.cmd === "finish") { voice.heard = ""; endSession(ctx, s); return; }
+    if (r.cmd === "redo" || r.events.length || r.summary) {
+      s.sets.push({ marks: [] }); ctx.save(s); voice.heard = String(t).trim();
+      drawDrill(ctx, s);
+      if (!r.cmd) voice.handler?.(t); // (the shots said go into the new set)
+    }
+  };
+  listen();
   const goal = d.goal ?? s.best;
   const verdict = set.mark ? `Mark set: ${scoreText(d, set.score)}. From here on, beat it.` : set.met ? "Goal met \u2713" : `Not this time. ${d.kind === "prox" ? `The goal is an average inside ${goal} ft.` : d.goal != null ? `The goal is ${goal}${unitOf(d)}.` : `Your best is ${goal}${unitOf(d)}: beat it.`}`;
   mount(ctx.body, el("div", { class: "dp dp-play dp-setend" }, [
@@ -161,11 +242,13 @@ function finishSet(ctx, s) {
     el("p", {}, verdict),
     el("p", { class: "muted" }, `${met} of ${tried} ${tried === 1 ? "set" : "sets"} met so far (aim: ${SETS_AIM}) \u00b7 ${mmss(activeSecs(s))}.${reached ? ` That\u2019s ${SETS_AIM}: finish, or keep going.` : ""}`),
     el("div", { class: "dp-setend-btns" }, reached ? [fin, redo] : [redo, fin]),
+    SR && voice.on ? el("p", { class: "muted small dp-voice-status" }, "\u{1F399}\uFE0F Say \u201credo\u201d (or just start the next set\u2019s shots), or \u201cfinish\u201d.") : null,
   ]));
 }
 
 function endSession(ctx, s) {
   stopClock();
+  voice.handler = null; quiet();
   s.sets = s.sets.filter((x) => x.marks.length === s.drill.reps);
   s.status = "done"; s.endedAt = new Date().toISOString(); s.secs = activeSecs(s);
   s.tried = s.sets.length; s.metCount = s.sets.filter((x) => x.met).length;

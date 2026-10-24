@@ -2255,14 +2255,16 @@ export function sgDashboard(container, opts) {
       .filter((p) => p.total > 0.005).sort((x, y) => y.total - x.total).slice(0, 2);
     // (update 356) each part of the game as a heading line, then one short labelled line per point
     for (const g of gains) {
-      const rowsOut = [kv("Per shot", `${sgn2(g.skill)} a round`)];
-      if (Math.abs(g.mix) >= 0.02) rowsOut.push(kv("Mix of shots", `${sgn2(g.mix)} a round (${mixWords(g, sgn2)})`));
-      if (g.mix > 0 && g.mix >= 0.7 * g.total) rowsOut.push(kv("Note", `Mostly how often, not how well: ${mixLead(g)}. ${MIX_CAUSE[g.k || cat] || ""}`));
+      // (update 358) the plain-English takeaway first, then the numbers behind it
+      const mostlyMix = g.mix > 0 && g.mix >= 0.7 * g.total, mostlySkill = g.skill >= 0.7 * g.total;
+      const take = `${g.name} was ${sgn2(g.total)} a round better in the ${NM().kept}: ${mostlySkill ? "nearly all of it from hitting the same shots better." : mostlyMix ? `mostly from facing different shots (${mixLead(g)}), not from hitting them better. ${MIX_CAUSE[g.k || cat] || ""}` : `partly from hitting the shots better, partly from facing different ones (${mixLead(g)}).`}`;
+      const rowsOut = [kv("Takeaway", take, "bs-take"), kv("Hitting it better", `${sgn2(g.skill)} a round`)];
+      if (Math.abs(g.mix) >= 0.02) rowsOut.push(kv("Facing different shots", `${sgn2(g.mix)} a round (${mixWords(g, sgn2)})`));
       if (!cat && g.k) { // the distance they played best (per shot) in these rounds
         const ds = dists(g.k).map((d) => ({ d, s: sp(`${g.k}|${d}|`) })).filter((x) => x.s.skill > 0.005).sort((a, b) => b.s.skill - a.s.skill);
-        if (ds[0]) rowsOut.push(kv("Best from", `${ds[0].d}: ${sgn2(ds[0].s.pe)} a shot against ${sgn2(ds[0].s.pb)} (worth ${sgn2(ds[0].s.skill)} a round)`));
+        if (ds[0]) rowsOut.push(kv("Biggest change", `${ds[0].d}: ${sgn2(ds[0].s.pe)} a shot in the ${NM().kept}, against ${sgn2(ds[0].s.pb)} in the ${NM().cut} (worth ${sgn2(ds[0].s.skill)} a round)`));
       }
-      out.push([el("div", { class: "bs-item-head" }, [el("strong", {}, g.name), el("span", { class: "muted" }, ` ${sgn2(g.a)} a round, against ${sgn2(g.b)} in ${restName}`)]), ...rowsOut]);
+      out.push([el("div", { class: "bs-item-head" }, [el("strong", {}, g.name), el("span", { class: "muted" }, ` ${sgn2(g.a)} a round in the ${NM().kept} \u00b7 ${sgn2(g.b)} in the ${restName}`)]), ...rowsOut]);
     }
     if (!gains.length) out.push("No part of the game stands out: it was a little better everywhere.");
     // (update 337) the equipment: in each kind, what was used most in these rounds; and, if another of that kind was used
@@ -2379,8 +2381,11 @@ export function sgDashboard(container, opts) {
           el("p", { class: "bs-sub" }, `What helped during the ${NM().kept}`),
           el("ul", { class: "bs-list" }, whatWorked(pk.rounds, season, cat).map((t) => el("li", {}, t))),
           ...(() => { const hurt = whatHurts(pk.rounds, season, cat); return hurt.length ? [el("p", { class: "bs-sub bs-sub2" }, `What hurt during the ${NM().cut}`), el("ul", { class: "bs-list" }, hurt.map((t) => el("li", {}, t)))] : []; })(),
-          ...(() => { const { items, total } = shotMix(pk.rounds, season, cat); if (!items.length) return [];
-            const sum = total ? `Of the ${sgn2(total.total)} a round between the ${NM().kept} and ${NM().cut}, ${sgn2(total.skill)} came from playing better per shot and ${sgn2(total.mix)} from the mix of shots they faced${Math.abs(total.mix) >= 0.02 ? ` (${mixWords(total, sgn2)})` : ""}. These are the biggest pieces of that mix:` : "";
+          ...(() => { const { items, total } = shotMix(pk.rounds, season, cat); if (!total) return [];
+            // (update 358) a small mix effect is one plain line, not a section
+            const small = Math.abs(total.mix) < Math.max(0.15, Math.abs(total.total) * 0.1);
+            if (small || !items.length) return [el("p", { class: "bs-sub bs-sub2" }, "Where the shots came from"), kv("Takeaway", `Almost all of the ${sgn2(total.total)} a round between the ${NM().kept} and ${NM().cut} came from hitting the same kinds of shots better (${sgn2(total.skill)}). Facing different shots (${sgn2(total.mix)}) hardly mattered, so this is about playing better, not strategy.`)];
+            const sum = `Of the ${sgn2(total.total)} a round between the ${NM().kept} and ${NM().cut}, ${sgn2(total.skill)} came from hitting the same kinds of shots better and ${sgn2(total.mix)} from facing different shots (${mixWords(total, sgn2)}). The biggest pieces of that:`;
             return [el("p", { class: "bs-sub bs-sub2" }, "Where the shots came from"), el("p", { class: "muted small bs-mix-note" }, sum), el("ul", { class: "bs-list" }, items.map((t) => el("li", {}, t)))]; })(),
         ]);
       }
@@ -2404,13 +2409,17 @@ export function sgDashboard(container, opts) {
     const total = groupSplit(bE, elite.length, bN, rest.length, () => true, bU);
     const f2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
     const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
+    // (update 358) the biggest pieces both ways (helped and hurt), so the list adds up to the summary; putting and short-game
+    // counts are a result of the shot before, not a choice
     const items = [...new Set([...bE.keys(), ...bN.keys()])].filter((k) => k.split("|")[1])
       .map((k) => ({ k, s: splitOf(bE.get(k), elite.length, bN.get(k), rest.length, bU.get(k)) }))
-      .filter((x) => x.s.mix >= 0.08 && (bN.get(x.k)?.n || 0) >= 5).sort((a, b) => b.s.mix - a.s.mix).slice(0, 4)
-      .map(({ k, s: x }) => { const [c, d, lie] = k.split("|"); const fewer = x.ae < x.ab;
-        const tag = x.pu < 0 ? "Fewer weak shots" : "More strong shots";
-        const where = `${catName(c)} \u00b7 ${d}${lie && !/^(fairway|green|tee)/i.test(lie) ? ` from the ${lie.toLowerCase()}` : ""}`;
-        return `${tag} \u00b7 ${where}: ${x.ae.toFixed(1)} attempts a round in ${NM().kept}, ${x.ab.toFixed(1)} in ${NM().cut}, where they usually ${x.pu < 0 ? `lose ${Math.abs(x.pu).toFixed(2)}` : `gain ${x.pu.toFixed(2)}`} a shot. ${fewer ? "Fewer" : "More"} of them was worth ${f2(x.mix)} a round. ${MIX_CAUSE[c] || ""}`; });
+      .filter((x) => Math.abs(x.s.mix) >= 0.08 && (bN.get(x.k)?.n || 0) >= 5).sort((a, b) => Math.abs(b.s.mix) - Math.abs(a.s.mix)).slice(0, 4)
+      .map(({ k, s: x }) => { const [c, d] = k.split("|"); const fewer = x.ae < x.ab, helped = x.mix > 0;
+        const choice = c === "OTT" || c === "APP";
+        const kindTxt = x.pu < 0 ? "a shot they usually lose strokes on" : "a shot they usually gain strokes on";
+        return [el("div", { class: "bs-item-head" }, [el("strong", {}, `${catName(c)} \u00b7 ${d}`), el("span", { class: helped ? "pos" : "neg" }, ` ${helped ? "helped" : "hurt"} ${sgn2(x.mix)} a round`)]),
+          kv("Takeaway", `The ${NM().kept} had ${fewer ? "fewer" : "more"} of these (${x.ae.toFixed(1)} a round, against ${x.ab.toFixed(1)}), and it\u2019s ${kindTxt} (${sgn2(x.pu)} a shot). ${choice ? MIX_CAUSE[c] : "That comes from the shot before, not a choice."}`)];
+      });
     return { items, total };
   }
   /* (update 343) What hurts in the other rounds (moved up under What was working): a part of the game costing a stroke
@@ -2648,12 +2657,23 @@ export function sgDashboard(container, opts) {
       // (update 348) a strength in the best rounds that's a weakness now (or the other way) is said so
       const flip = sp.pe >= 0.01 && sp.pb <= -0.01 ? ` A strength in their ${NN.kept}, a weakness now.` : sp.pe <= -0.01 && sp.pb >= 0.01 ? ` A weakness in their ${NN.kept}, a strength now.` : "";
       // (update 356) as separate labelled lines
-      const perShot = `${sgn2(sp.pb)} now \u00b7 ${sgn2(sp.pe)} in their ${NN.kept} \u00b7 ${sgn2(sp.pu)} usually (worth ${sgn2(sp.skill)} a round)`;
-      const howOften = Math.abs(sp.mix) >= 0.02 ? `${sp.ab.toFixed(1)} attempts a round now \u00b7 ${sp.ae.toFixed(1)} in their ${NN.kept} (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)})` : null;
+      const perShot = `Lately ${sgn2(sp.pb)} \u00b7 ${NN.kept === "level rounds" ? "Level rounds" : "Best rounds"} ${sgn2(sp.pe)} \u00b7 Usually ${sgn2(sp.pu)} (worth ${sgn2(sp.skill)} a round)`;
+      const howOften = Math.abs(sp.mix) >= 0.02 ? `Lately ${sp.ab.toFixed(1)} a round \u00b7 ${NN.kept === "level rounds" ? "Level rounds" : "Best rounds"} ${sp.ae.toFixed(1)} (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)})` : null;
+      // (update 358) what it means, in plain words
+      const amt = (v) => Math.abs(v).toFixed(2), verb = (v) => (Math.abs(v) < 0.005 ? "break even" : v > 0 ? `gain ${amt(v)}` : `lose ${amt(v)}`);
+      let take;
+      if (kind === "mix") take = `They\u2019re not hitting these worse lately; they\u2019re facing ${fewer ? "fewer" : "more"} of them (${sp.ab.toFixed(1)} a round lately, ${sp.ae.toFixed(1)} in their ${NN.kept}). ${MIX_CAUSE[g.c] || ""}`;
+      else {
+        take = `Lately they ${verb(sp.pb)} strokes a shot here; in their ${NN.kept} they ${verb(sp.pe)}. Getting back to that is worth about ${amt(sp.skill)} a round.`;
+        const weak = sp.pu <= -0.015; // (a weak spot: they usually lose at least 0.015 a shot here)
+        if (sp.pb < sp.pu - 0.01) take += weak ? ` It\u2019s usually a weak spot (${sgn2(sp.pu)} a shot), and lately it\u2019s worse.` : ` It\u2019s a recent slump: normally they ${verb(sp.pu)} a shot here.`;
+        else if (weak) take += ` It\u2019s a long-standing weak spot (${sgn2(sp.pu)} a shot usually), not just a recent one.`;
+        if (kind === "both") take += ` Part of it is facing ${fewer ? "fewer" : "more"} of these, which is more strategy than practice.`;
+      }
       const strategy = kind === "skill" ? null : `${kind === "mix" ? "Mostly how often, not how well:" : "Partly how often:"} ${mixLead(sp)} in ${NN.kept}${sp.pu < 0 && fewer ? ` (they usually lose ${Math.abs(sp.pu).toFixed(2)} a shot here)` : sp.pu > 0 && !fewer ? ` (they usually gain ${sp.pu.toFixed(2)} a shot here)` : ""}. ${MIX_CAUSE[g.c] || ""}`;
       // (update 354) too few attempts to compare, but enough in the kept rounds: their number is still the target
       const tg = (() => { if (!t?.thin) return { text: tText(t), thin: false }; const es = eliteStat(g.c, d); return es ? { text: `${es.def.label}: ${fmtStat(es.def, es.ve)} in their ${NN.kept} (too few attempts in the last ${N} rounds to compare)`, thin: false } : { text: tText(t), thin: true }; })();
-      return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}`, better: `${sgn2(g.g)} a round better in their ${NN.kept}`, sub: `${f2(g.r)} a round now \u00b7 ${f2(g.e)} in their ${NN.kept}`, perShot, howOften, flip, strategy, target: kind === "mix" ? null : tg.text, thin: tg.thin,
+      return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}`, better: `${sgn2(g.g)} a round better in their ${NN.kept}`, sub: `Lately ${f2(g.r)} \u00b7 ${NN.kept === "level rounds" ? "Level rounds" : "Best rounds"} ${f2(g.e)}`, perShot, howOften, flip, strategy, take, target: kind === "mix" ? null : tg.text, thin: tg.thin,
         drills: kind === "mix" ? [] : [{ drill: (() => { const dr = drillFor(g.c, d, eliteStat(g.c, d)); if (dr) dr.from = NN.kept; return dr; })(), goal }].filter((x) => x.drill) };
     });
     // when elite rounds happen: after a week off, early or late in the event
@@ -2716,12 +2736,12 @@ export function sgDashboard(container, opts) {
       // already at this level lately: no gap to close here, so point to the next level up
       ...(there ? [lv.above ? (() => { const go = el("button", { type: "button", class: "btn ghost small bs-lv-next" }, `Aim for ${LEVELS[lv.above]} (#${lv.above}) \u2192`); go.addEventListener("click", () => { st.pathT = lv.above; draw(); }); return go; })()
         : el("p", { class: "muted small" }, `That\u2019s the top level.`)] : []),
-      !there && prios.length ? el("p", { class: "muted small bs-prios-note" }, lv ? `Level rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. Where those were better than the last ${N}, biggest first:` : `Where their best rounds were better than the last ${N}, biggest first:`) : null,
+      !there && prios.length ? el("p", { class: "muted small bs-prios-note" }, `${lv ? `Level rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Below: where those were better than the last ${N} (\u201clately\u201d), biggest first. All numbers are strokes against the tour average: + is better than average, \u2212 is worse.`) : null,
       !there && prios.length ? el("ol", { class: "bs-prios" }, prios.map((p) => el("li", {}, [el("div", { class: "bs-item-head" }, [el("strong", {}, p.head), el("span", { class: "muted" }, ` ${p.better}`)]),
-        kv("Now", p.sub),
-        kv("Per shot", p.perShot),
+        kv("Takeaway", p.take, "bs-take"),
+        kv("Each round", p.sub),
+        kv("Each shot", p.perShot),
         ...(p.howOften ? [kv("How often", p.howOften)] : []),
-        ...(p.flip ? [kv("Note", p.flip.trim())] : []),
         ...(p.strategy ? [kv("Strategy", p.strategy, "bs-strategy")] : []),
         ...(p.target ? [kv("Target", p.target, p.thin ? "bs-target thin" : "bs-target")] : []),
         ...p.drills.map(drillRow)]))) : null,

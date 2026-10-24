@@ -4987,3 +4987,13 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-drill-row { display: block; }
 .bs-drill-row .bs-plan-add { margin: 4px 0 0 6rem; }
 @media (max-width: 520px) { .bs-kv { grid-template-columns: 4.6rem 1fr; } .bs-drill-row .bs-plan-add { margin-left: 5rem; } .bs-kit-better { margin-left: 0; } }
+/* (update 358) the plain-English takeaway */
+.bs-kv.bs-take .bs-v { color: #f2f2f7; }
+.bs-kv { grid-template-columns: 6.4rem 1fr; }
+@media (max-width: 520px) { .bs-kv { grid-template-columns: 5.4rem 1fr; } }
+/* (update 359) drill voice */
+.dp-voice { margin: 2px 0 10px; text-align: center; }
+.dp-voice-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16); color: inherit; border-radius: 999px; padding: 8px 16px; font: 600 14px/1 var(--font-body); cursor: pointer; }
+.dp-voice-btn.on { background: rgba(255,69,58,0.16); border-color: #ff453a; color: #ff9f97; }
+.dp-voice-status { margin: 6px 0 0; line-height: 1.4; }
+.dp-voice-type { width: 100%; max-width: 420px; }
