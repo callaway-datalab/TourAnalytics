@@ -4727,3 +4727,8 @@ dialog.issue-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 
 /* (update 318) once the app has loaded, changing pages shows no loading signs: no ball and cup, no "Loading…" lines */
 html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !important; }
+
+/* (update 320) Peak Length: its label, box and "rounds" on one centre line */
+.peak-len-wrap { display: inline-flex !important; align-items: center !important; }
+.peak-len-wrap > * { margin-top: 0 !important; margin-bottom: 0 !important; line-height: 1 !important; align-self: center; }
+.peak-len-wrap .ms-label { display: inline-block; }

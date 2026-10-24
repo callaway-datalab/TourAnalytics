@@ -75,7 +75,7 @@ function peakNote(peak, me, cat, peakN, tn) {
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] || "";
   return `Personal Peak: ${me?.label || "the player"}\u2019s best ${peakN} rounds in a row by ${by}, ${span}. The rounds: ${list}. `
     + `Each value is the difference from that peak, with every row from those same rounds (hover a value for theirs). Zero means they\u2019re playing at that level; red is how far below it. `
-    + `Peak Rank: where that peak would rank in each row if it were the player\u2019s average for this selection (against everyone else\u2019s average). Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Change the Peak Length above for a longer or shorter stretch.`;
+    + `Peak Rank: where that peak would rank in each row if it were the player\u2019s average for this selection (against everyone else\u2019s average). Peak Avg: the peak\u2019s own value in each row. Change the Peak Length above for a longer or shorter stretch.`;
 }
 
 export function sgDashboard(container, opts) {
@@ -1388,21 +1388,26 @@ export function sgDashboard(container, opts) {
       tr.push(el("tr", { class: row.sub ? "cmp-sub" : "" }, [
         el("td", { title: row.tip || null }, row.label),
         el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds in a row: ${row.fmt(pk)}` : null }, shown),
+        // (update 320) Trend before Rank; with a comparison picked, the value compared against in its place
+        relNow ? (() => { const rv = gv(refMap, row.key); return el("td", { class: "num cmp-refv" }, rv == null ? "\u2014" : row.fmt(rv)); })()
+          : el("td", { class: `num ${ch == null ? "" : good(ch)}` }, chTxt),
         el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "—"),
-        el("td", { class: `num ${ch == null ? "" : good(ch)}` }, chTxt),
       ]));
     }
     return [
       el("div", { class: "sg-full-top" }, [vsPills()]), // (update 231)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less the #${vsN} player\u2019s`) : "" }, relNow ? (peak ? `Vs best ${peakN} rds` : `VS #${vsN}`) : me?.label || "Player"), el("th", { class: "num", title: peak && !peak.short ? "Where the peak would rank if it were the player\u2019s average for this selection" : null }, peak && !peak.short ? "Peak Rank" : "Rank"), el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num", title: relNow ? (peak ? `Each value less ${me?.label || "the player"}\u2019s own peak: their best ${peakN} rounds in a row${cat ? ` by SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : ""}` : `Each value less the #${vsN} player\u2019s`) : "" }, relNow ? (peak ? "VS Peak" : `VS #${vsN}`) : me?.label || "Player"),
+          relNow ? el("th", { class: "num", title: peak ? `The average of ${me?.label || "the player"}\u2019s best ${peakN} rounds in a row` : `The #${vsN} player\u2019s average` }, peak ? "Peak Avg" : `#${vsN} Avg`)
+            : el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend"),
+          el("th", { class: "num", title: peak && !peak.short ? "Where the peak would rank if it were the player\u2019s average for this selection" : null }, peak && !peak.short ? "Peak Rank" : "Rank")])),
         el("tbody", {}, tr),
       ])),
       // (update 240) what the colours mean
       el("p", { class: "muted small sg-full-note" }, peak && peak.short ? `${me?.label || "The player"} has ${peak.have} ${cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} ` : ""}rounds in this selection: fewer than the Peak Length (${peakN}), so there\u2019s no peak to compare with. Shorten the Peak Length or widen the selection.`
         : peak ? peakNote(peak, me, cat, peakN, tn) // (update 283: says when the peak was, round by round)
         : relNow
-        ? `Each value is the difference from ${refP.label || "that player"}, ranked #${vsN} overall (SG: Total a round in this selection); every row is the same golfer. Green: better than them; red: worse. Rank: where the player sits in each row. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap the rank comparison again to see the player\u2019s own values.`
+        ? `Each value is the difference from the player ranked #${vsN} in this selection (by ${cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total"} a round); every row is the same golfer. Green: better than them; red: worse. #${vsN} Avg: that player\u2019s own value in each row. Rank: where the player sits in each row. Tap the rank comparison again to see the player\u2019s own values.`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a rank comparison above to see each stat against the player ranked there overall.`),
     ];
   }
