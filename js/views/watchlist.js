@@ -426,7 +426,7 @@ export async function render(main, { previewClient }) {
       t.cols.some((x) => x.rounds < 10) ? el("p", { class: "muted small wl-few-note" }, "* Fewer than 10 rounds: read with care.") : null,
     ]));
     const more = el("div", { class: "wl-more", hidden: !isOpen }, [meta, dists, metrics, ...clubs]);
-    const card = el("article", { class: `panel wl-card${isOpen ? " open" : ""}` }, [head, badges, sg, more]); // (update 226: every card the same, no glow for some)
+    const card = el("article", { class: `panel wl-card${isOpen ? " open" : ""}${multi && !isOpen ? " compact" : ""}` }, [head, badges, sg, more]); // (update 317: folded = compact: the name, then each category and its rank) // (update 226: every card the same, no glow for some)
     moreBtn.addEventListener("click", () => {
       const open = !openCards.has(c.key);
       if (open) openCards.add(c.key); else openCards.delete(c.key);
