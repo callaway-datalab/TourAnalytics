@@ -1424,30 +1424,39 @@ export function sgDashboard(container, opts) {
         const dTxt2 = d == null ? "\u2014" : row.fmt === sgF || row.fmt === sg3 ? row.fmt(d) : `${d >= 0 ? "+" : "\u2212"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(d))}`;
         tr.push(el("tr", { class: row.sub ? "cmp-sub" : "" }, [
           el("td", { title: row.tip || null }, row.label),
-          el("td", { class: `num strong ${row.tone ? sgTone(pk) : ""}` }, pk == null ? "\u2014" : row.fmt(pk)),
-          el("td", { class: `num ${row.tone ? sgTone(v) : ""}` }, row.fmt(v)),
+          el("td", { class: "num strong" }, pk == null ? "\u2014" : row.fmt(pk)), // (update 331: only the difference is coloured)
+          el("td", { class: "num" }, row.fmt(v)),
           el("td", { class: `num ${good(d)}` }, dTxt2),
           el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "\u2014"),
         ]));
         continue;
       }
-      tr.push(el("tr", { class: row.sub ? "cmp-sub" : "" }, [
+      // (update 331) tap a stat: its round by round bars (the last 10 against the 10 before), as on the Watchlist
+      const trow = el("tr", { class: `${row.sub ? "cmp-sub" : ""} sg-tap`, role: "button", tabindex: "0", title: `${row.label}: round by round` });
+      const openForm = async () => {
+        const [{ formInfo }, { openBadge }] = await Promise.all([import("./watchlistData.js"), import("./badgePopup.js")]);
+        const val = (rs) => (rs.length ? gv(rowVals(rs, cat), row.key) ?? null : null);
+        openBadge({ text: row.label, info: () => formInfo(ordered, val, { label: row.label, fmtFn: (x) => row.fmt(x), chFn: (d) => (row.fmt === sgF ? Math.abs(d).toFixed(2) : row.fmt === sg3 ? Math.abs(d).toFixed(3) : row.def ? fmtStat({ ...row.def, pct: false, unit: row.def.pct ? " pct" : row.def.unit }, Math.abs(d)) : Math.abs(d).toFixed(1)), higher: row.higher, signed: !!row.tone }) }, me?.label || "");
+      };
+      trow.addEventListener("click", openForm);
+      trow.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openForm(); } });
+      tr.push((mount(trow, [
         el("td", { title: row.tip || null }, row.label),
         el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds in a row: ${row.fmt(pk)}` : null }, shown),
         // (update 320) Trend before Rank; with a comparison picked, the value compared against in its place
         relNow ? (() => { const rv = gv(refMap, row.key); return el("td", { class: "num cmp-refv" }, rv == null ? "\u2014" : row.fmt(rv)); })()
           : el("td", { class: `num ${ch == null ? "" : good(ch)}` }, chTxt),
         el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "—"),
-      ]));
+      ]), trow));
     }
     return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t" }, [
         el("thead", {}, el("tr", {}, stretchOn ? [el("th", {}, ""), // (update 330)
           el("th", { class: "num", title: `The average of the best ${peakN} ${peakN === 1 ? "round" : "rounds in a row"}` }, "Stretch"),
-          el("th", { class: "num", title: "Every round in the filters" }, "Selection"),
-          el("th", { class: "num", title: "The stretch less the selection: green where the stretch was better" }, "Difference"),
-          el("th", { class: "num", title: "Where the stretch\u2019s value would rank if it were the player\u2019s average for the selection" }, "Stretch Rank")]
+          el("th", { class: "num", title: "The player\u2019s average over the selected time frame (every round in the filters)" }, "Avg"),
+          el("th", { class: "num", title: "The stretch less the average: green where the stretch was better" }, "Diff"),
+          el("th", { class: "num", title: "Where the stretch\u2019s value would rank if it were the player\u2019s average for the selected time frame" }, "Stretch Rank")]
           : [el("th", {}, ""), el("th", { class: "num" }, me?.label || "Player"),
           el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend"),
           el("th", { class: "num" }, "Rank")])),
@@ -1455,7 +1464,7 @@ export function sgDashboard(container, opts) {
       ])),
       // (update 240) what the colours mean
       el("p", { class: "muted small sg-full-note" }, stretchOn // (update 330)
-        ? `Stretch: the average of the best ${peakN} ${peakN === 1 ? "round" : "rounds in a row"} (shown above). Selection: every round in the filters. Difference: the stretch less the selection, green where the stretch was better. Stretch Rank: where the stretch\u2019s value would rank if it were ${me?.label || "the player"}\u2019s average for the selection.`
+        ? `Stretch: the average of the best ${peakN} ${peakN === 1 ? "round" : "rounds in a row"} (shown above). Avg: ${me?.label || "the player"}\u2019s average over the selected time frame. Diff: the stretch less the average, green where the stretch was better. Stretch Rank: where the stretch\u2019s value would rank if it were their average for the selected time frame.`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Pick a stretch above to see how they played at their best.`),
     ];
   }
@@ -2020,7 +2029,7 @@ export function sgDashboard(container, opts) {
           .map((d) => ({ d, v: per(stretch, (x) => x.cat === g.k && x.dist === d) - per(season, (x) => x.cat === g.k && x.dist === d) })).filter((x) => x.v > 0.005).sort((a, b) => b.v - a.v);
         if (ds[0]) extra = `, most of all ${ds[0].d} (${f2(ds[0].v)})`;
       }
-      out.push(`${g.name}: ${f2(g.a)} a round, against ${f2(g.b)} over the selection${extra}.`);
+      out.push(`${g.name}: ${f2(g.a)} a round, against ${f2(g.b)} on average in the selected time frame${extra}.`);
     }
     if (!gains.length) out.push("No part of the game stands out: it was a little better everywhere.");
     // the equipment: what was used most in the stretch (and if it differs from the selection as a whole)
@@ -2038,18 +2047,18 @@ export function sgDashboard(container, opts) {
     const rows = ladderRows(mine, cat);
     const sel = st.vsRank === "peak" ? Math.max(1, Math.round(Number(st.peakN) || 10)) : null;
     const help = el("details", { class: "bs-help" }, [el("summary", { "aria-label": "What is this?" }, "ⓘ"),
-      el("p", { class: "muted small" }, "A stretch is a run of rounds in a row. For each length, we find the player’s best one, then ask: if they’d played like that over this whole selection, where would they rank on Tour? The ladder shows the longest stretch that reaches each mark. The longer the stretch, the longer they held that level, and the better a sign it’s really in their game. Tap a row, or pick a length, to see the dates, what was working, and every stat from the stretch next to the selection as a whole.")]);
+      el("p", { class: "muted small" }, "A stretch is a run of rounds in a row. For each length, we find the player’s best one, then ask: if they\u2019d played like that over the whole selected time frame, where would they rank on Tour? The ladder shows the longest stretch that reaches each mark. The longer the stretch, the longer they held that level, and the better a sign it’s really in their game. Tap a row, or pick a length, to see the dates, what was working, and every stat from the stretch next to their average.")]);
     const ladder = rows ? el("div", { class: "bs-ladder", role: "list" }, rows.map((r) => {
       const on = !!(sel && r.n && sel === r.n && st.ladderT === r.target);
-      const body = r.already ? [el("span", { class: "bs-need" }, `Already there: ${ordinal(r.rank)} over the selection`), el("span", { class: "bs-when muted" }, "")]
+      const body = r.already ? [el("span", { class: "bs-need" }, `Already there: ${ordinal(r.rank)} for the selected time frame`), el("span", { class: "bs-when muted" }, "")]
         : r.none ? [el("span", { class: "bs-need muted" }, "Out of reach"), el("span", { class: "bs-when muted" }, `best round ranks ${ordinal(r.bestRound)}`)]
         : [el("span", { class: "bs-need" }, `${r.n} ${r.n === 1 ? "round" : "rounds in a row"}`), el("span", { class: "bs-when muted" }, r.from === r.to ? shortDay(r.from) : `${shortDay(r.from)} – ${shortDay(r.to)}`)];
       const b = el(r.n ? "button" : "div", { type: r.n ? "button" : null, class: `bs-row${on ? " on" : ""}${r.n ? "" : " flat"}`, role: "listitem", "aria-pressed": r.n ? String(on) : null }, [el("span", { class: "bs-rank" }, `#${r.target}`), ...body]);
       if (r.n) b.addEventListener("click", () => selectStretch(r.n, r.target));
       return b;
-    })) : el("p", { class: "muted small" }, "Not enough rounds or players in this selection for a ladder.");
-    const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(sel || st.peakN || 10), inputmode: "numeric", "aria-label": "Stretch length: rounds in a row" });
-    const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 1) { inp.value = String(sel || st.peakN || 10); return; } const v = Math.min(500, n); if (sel === v && st.ladderT == null) return; st.vsRank = "peak"; st.peakN = v; st.ladderT = null; draw(); };
+    })) : el("p", { class: "muted small" }, "Not enough rounds or players in the selected time frame for a ladder.");
+    const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(sel && st.ladderT == null ? sel : 10), inputmode: "numeric", "aria-label": "Stretch length: rounds in a row" }); // (update 331: 10 unless you picked a length)
+    const apply = () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 1) { inp.value = "10"; return; } const v = Math.min(500, n); if (sel === v && st.ladderT == null) return; st.vsRank = "peak"; st.peakN = v; st.ladderT = null; draw(); };
     inp.addEventListener("change", apply);
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
     const show = el("button", { type: "button", class: "btn ghost small bs-go" }, "Show");
@@ -2059,7 +2068,7 @@ export function sgDashboard(container, opts) {
     let detail = null;
     if (sel) {
       const pk = curPeak();
-      if (!pk || pk.short) detail = el("p", { class: "muted small" }, `Only ${pk?.have ?? 0} ${what}rounds in this selection: fewer than ${sel}. Pick a shorter stretch or widen the filters.`);
+      if (!pk || pk.short) detail = el("p", { class: "muted small" }, `Only ${pk?.have ?? 0} ${what}rounds in the selected time frame: fewer than ${sel}. Pick a shorter stretch or widen the filters.`);
       else {
         const season = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
         detail = el("div", { class: "bs-detail" }, [

@@ -461,7 +461,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
  *   signed: strokes gained-like (bars from zero, coloured by sign); otherwise bars rise from just under the
  *   lowest, coloured by better / worse than the previous average.
  */
-function formInfo(ordered, val, { label, fmtFn, chFn = (d) => Math.abs(d).toFixed(2), higher = true, signed = true, rows = null, what = "round" }) {
+export function formInfo(ordered, val, { label, fmtFn, chFn = (d) => Math.abs(d).toFixed(2), higher = true, signed = true, rows = null, what = "round" }) {
   const fmt = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : fmtFn(v));
   const roundSub = (rd) => [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 ");
   const n = Math.min(10, Math.floor(ordered.length / 2));
