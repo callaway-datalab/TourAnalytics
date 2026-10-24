@@ -20,7 +20,9 @@ export const ENTERED_NOTE = "Entered rounds: strokes gained is measured against 
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 // (update 227) kept while the app is open (not just while this page is), so coming back to Analyze is instant
 const ROWS = new Map(), PREPARED = new Map(), DETAIL = new Map(), DETAIL_WHY = new Map(), STAGED = new Map();
-const keepFew = (m, n = 4) => { while (m.size > n) m.delete(m.keys().next().value); };
+// (update 325) fewer copies kept: one prepared field on a phone, two on a computer (was four), and old loading jobs go
+const keepFew = (m, n = (isLiteDevice() ? 1 : 2)) => { while (m.size > n) m.delete(m.keys().next().value); };
+export const analyzeMemoryInfo = () => ({ rows: ROWS.size, prepared: PREPARED.size, detail: DETAIL.size, staged: STAGED.size });
 
 export async function render(main, { flash, routeId }) {
   const board = routeId !== "admin-player-stats"; // Leaderboards (no player) or Player Stats
@@ -170,7 +172,8 @@ export async function render(main, { flash, routeId }) {
   function startStaged(ds, pk, idx) {
     const job = { prepared: new Map(), covered: new Set(), combos: new Set(), firstDone: false, done: false, onUpdate: null };
     let firstResolve; job.first = new Promise((res) => { firstResolve = res; });
-    STAGED.set(pk, job);
+    keepFew(STAGED); STAGED.set(pk, job);
+    for (const k of [...ROWS.keys()]) if (!k.startsWith(`${ds.id}|`)) ROWS.delete(k); // (update 325: an older file's rows go)
     const finishFirst = () => { if (!job.firstDone) { job.firstDone = true; firstResolve(); } };
     (async () => {
       const keys = ds.clientKeys || [];
@@ -286,7 +289,7 @@ export async function render(main, { flash, routeId }) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
     const { players, why } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0);
     detailWhy.set(dk, why);
-    if (players) { keepFew(detailCache, 2); detailCache.set(dk, players); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
+    if (players) { keepFew(detailCache, 1); detailCache.set(dk, players); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
     if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
   }
 

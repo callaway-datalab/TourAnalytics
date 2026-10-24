@@ -11,6 +11,9 @@ import { getDatasetRecord, getDatasetRowsListed } from "./store.js";
 const DB_NAME = "ta-cache", STORE = "datasets", PREFIX = "ds:";
 const FORMAT = 1; // bump if the stored shape changes
 const memory = new Map(); // datasetId -> { version, players: Map<key, { label, rows }> }
+// (update 325) only one data file's rows in memory at a time (the newest one asked for); an older file's go
+const keepOne = (id) => { for (const k of [...memory.keys()]) if (k !== id) memory.delete(k); };
+export const memoryInfo = () => [...memory.values()].reduce((o, m) => { o.files++; for (const p of m.players.values()) if (p) { o.players++; o.rows += p.rows?.length || 0; } return o; }, { files: 0, players: 0, rows: 0 });
 const inflight = new Map(); // datasetId|version -> Promise
 
 function openDb() {
@@ -64,7 +67,7 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
       const copy = await readCopy(datasetId);
       if (copy && copy.format === FORMAT && copy.version === version && copy.players?.length === keys.length) {
         const players = new Map(copy.players.map(([k, label, rows]) => [k, { label: nameOf(ds, k) || label, rows }]));
-        memory.set(datasetId, { version, players });
+        keepOne(datasetId), memory.set(datasetId, { version, players });
         return { players, from: "device" };
       }
     }
@@ -88,11 +91,11 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
     await Promise.all(Array.from({ length: 16 }, next));
     if (failedKeys.length) {
       // keep what did load (so a redraw doesn't fetch everyone again) and say who didn't, and why
-      if (version != null) memory.set(datasetId, { version, players, failed: failedKeys });
+      if (version != null) keepOne(datasetId), memory.set(datasetId, { version, players, failed: failedKeys });
       return { players, from: "network", failed: failedKeys, error };
     }
     if (version != null) {
-      memory.set(datasetId, { version, players });
+      keepOne(datasetId), memory.set(datasetId, { version, players });
       // saved after the page has drawn, so it never slows this load down
       setTimeout(() => writeCopy(datasetId, { format: FORMAT, version, savedAt: Date.now(), players: [...players].map(([k, p]) => [k, p.label, p.rows]) }), 1500);
     }

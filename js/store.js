@@ -598,7 +598,14 @@ export async function getDatasetRecord(datasetId) {
 // (update 312) a player's rows, kept while the app is open (cleared when a data file is uploaded or deleted)
 const rowsMemo = new Map();
 export function clearDataCache() { rowsMemo.clear(); statsMemo.clear(); clientsMemo = null; }
-const memoRows = (k, fn) => { if (!rowsMemo.has(k)) { const p = fn(); rowsMemo.set(k, p); p.catch(() => rowsMemo.delete(k)); } return rowsMemo.get(k); };
+// (update 325) at most 8 players' rows (the oldest asked for goes first): a phone looking through many players doesn't pile them up
+const memoRows = (k, fn) => {
+  if (rowsMemo.has(k)) { const p = rowsMemo.get(k); rowsMemo.delete(k); rowsMemo.set(k, p); return p; }
+  const p = fn(); rowsMemo.set(k, p); p.catch(() => rowsMemo.delete(k));
+  while (rowsMemo.size > 8) rowsMemo.delete(rowsMemo.keys().next().value);
+  return p;
+};
+export const rowsMemoInfo = () => ({ players: rowsMemo.size, stats: statsMemo.size });
 export function getDatasetRowsListed(clientKey, datasetId) { return memoRows(`L|${clientKey}|${datasetId}`, () => fetchRowsListed(clientKey, datasetId)); }
 async function fetchRowsListed(clientKey, datasetId) {
   const snap = await getDocs(collection(db, "clientData", clientKey, "datasets", datasetId, "chunks"));

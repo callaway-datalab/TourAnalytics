@@ -87,7 +87,14 @@ export async function deleteFieldDetail(datasetId) {
  *   why: "none" (never built), "stale" (built from an older upload), "paused" (budget reached), "error".
  * uploadedAt: the data file's upload time (ms): detail built from an older upload isn't used.
  */
-const shared = { key: null, promise: null }; // (update 296)
+const shared = { key: null, promise: null, result: null }; // (update 296)
+/** (update 325) what the shared detail holds: players, rounds and shots */
+export function detailInfo() {
+  const ps = shared.result?.players;
+  if (!ps) return { players: 0, rounds: 0, shots: 0 };
+  let rounds = 0, shots = 0; for (const p of ps) { rounds += p.rounds.length; for (const r of p.rounds) shots += r.shots?.length || 0; }
+  return { players: ps.length, rounds, shots };
+}
 export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null } = {}) {
   try {
     const snap = await getDoc(doc(db, "fieldStats", datasetId));
@@ -98,7 +105,7 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null 
     // each used to unpack its own, and a phone ran out of memory and reloaded the page ("A problem repeatedly occurred")
     const mk = `${datasetId}|${d.sourceUploadedAt}|${d.years.join(",")}`;
     if (shared.key !== mk || !shared.promise) {
-      shared.key = mk; // (the previous copy, if any, is let go)
+      shared.key = mk; shared.result = null; // (the previous copy, if any, is let go)
       shared.promise = (async () => {
         const lists = [];
         let paused = null;
@@ -115,7 +122,9 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null 
           lists.push(decodeFieldDetail(await gunzip(gz)));
           onProgress?.(i + 1, d.years.length);
         }
-        return { players: mergeYears(lists), why: null };
+        const out = { players: mergeYears(lists), why: null };
+        shared.result = out; // (update 325: for the admin's Performance readout)
+        return out;
       })();
       shared.promise.then((r) => { if (!r.players && shared.key === mk) { shared.key = null; shared.promise = null; } }, () => { if (shared.key === mk) { shared.key = null; shared.promise = null; } });
     } else onProgress?.(d.years.length, d.years.length);

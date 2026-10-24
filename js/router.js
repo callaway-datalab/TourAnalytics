@@ -86,6 +86,7 @@ let renderedFor; // (update 291)
 let warmFor = null, warmP = null; // (update 312)
 async function render() {
   const gen = ++renderGen;
+  const t0 = performance.now(); // (update 325: how long the page took, for the Performance readout)
   const raw = location.hash.slice(1) || "/login";
 
   const state = await whenReady();
@@ -102,7 +103,9 @@ async function render() {
       const msg = document.createElement("p"); msg.className = "boot-msg ta-loading boot-data"; msg.append(line, sub);
       root.replaceChildren(msg);
       const step = (t) => { if (t) line.textContent = t; };
-      warmP = import("./preload.js").then((m) => Promise.race([m.warmUp(state, step), new Promise((r) => setTimeout(r, 90000))])).catch(() => {});
+      const tb = performance.now();
+      warmP = import("./preload.js").then((m) => Promise.race([m.warmUp(state, step), new Promise((r) => setTimeout(r, 90000))])).catch(() => {})
+        .then(() => import("./perf.js").then((p) => p.markBoot(performance.now() - tb)).catch(() => {}));
     }
     await warmP;
     document.documentElement.classList.add("ta-booted"); // (update 318: after this, pages change without any loading signs)
@@ -264,6 +267,8 @@ async function render() {
     const cleanup = await mod.render(main, { params, previewClient, routeId, flash: (msg, type) => flash(main, msg, type) });
     if (gen !== renderGen) { if (typeof cleanup === "function") cleanup(); return; }
     currentCleanup = cleanup;
+    // (after the page has drawn: the next frame)
+    requestAnimationFrame(() => import("./perf.js").then((p) => p.markPage(`#${raw.split("?")[0]}`, performance.now() - t0)).catch(() => {}));
   } catch (err) {
     console.error(err);
     main.textContent = "Something went wrong loading this page. Reloading the page usually fixes it.";

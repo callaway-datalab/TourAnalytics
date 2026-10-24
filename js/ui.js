@@ -210,6 +210,7 @@ function accountMenu(state) {
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     el("button", { class: "menu-item menu-issue", type: "button", role: "menuitem", onClick: () => { setOpen(false); reportIssueDialog(); } }, "Report an issue"),
+    state.isAdmin ? el("button", { class: "menu-item menu-perf", type: "button", role: "menuitem", onClick: () => { setOpen(false); import("./perf.js").then((m) => m.togglePerf()); } }, "Performance") : null, // (update 325)
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
   ]);
   const wrap = el("div", { class: "account" }, [btn, menu]);

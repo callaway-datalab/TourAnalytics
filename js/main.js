@@ -13,6 +13,8 @@ fixStatusBar(); // (update 277) the Home Screen app's top edge, under the clock
 import { loadingDots } from "./loadingDots.js";
 loadingDots(); // (update 281) the small ball-round-the-cup in front of "Loading…" status lines
 import { pullToRefresh } from "./pullRefresh.js";
+import { watchReloads } from "./perf.js";
+watchReloads(); // (update 325) notices when the last visit ended in a forced reload (for the admin's Performance readout)
 pullToRefresh(); // (update 321) the Home Screen app: drag down at the top of a page to reload it
 startRouter();
 
