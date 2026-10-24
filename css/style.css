@@ -4824,3 +4824,24 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-share-n { display: block; font-weight: 400; color: var(--muted, #8e8e93); }
 .bs-pct { font: 700 1.25rem/1.1 var(--font-body); color: var(--ink, #f2f2f7); } /* (update 335) */
 .bs-pct { font: 700 1.25rem/1.1 var(--font-body); color: var(--ink, #f2f2f7); } /* (update 335) */
+
+/* (update 337) the tournaments behind the elite rounds */
+.bs-evs-btn { font: inherit; padding: 0; color: #d4b483; text-decoration: underline; text-underline-offset: 3px; }
+.bs-evs { list-style: none; margin: 0.1rem 0 0.2rem; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; }
+.bs-evs li { padding: 0.35rem 0.55rem; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.bs-ev-name { color: var(--ink, #f2f2f7); font-weight: 600; }
+.bs-evs .pos { color: #34c759; } .bs-evs .neg { color: #ff453a; }
+
+
+
+/* (update 338) Path back to Elite + ladder profile */
+.bs-profile { margin: 8px 0 2px; font-size: 13px; line-height: 1.4; }
+.bs-path { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); }
+.bs-path-gap { margin: 4px 0 8px; font-size: 13.5px; line-height: 1.6; }
+.bs-path-gap .peak-len { width: 52px; margin: 0 3px; }
+.bs-prios { margin: 0 0 6px; padding-left: 20px; font-size: 13px; line-height: 1.45; }
+.bs-prios li { margin-bottom: 8px; }
+.bs-target { margin-top: 2px; color: #d4b46a; }
+.bs-drill { margin-top: 2px; color: #b8b8be; font-size: 12.5px; }
+.bs-sub2 { margin-top: 10px; }
+.bs-path-gap .peak-len { display: inline-block; width: 44px; height: 24px; padding: 0 4px; font-size: 13px; vertical-align: baseline; text-align: center; }
