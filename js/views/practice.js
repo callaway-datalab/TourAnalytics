@@ -188,6 +188,22 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     const deg = parseFloat(String(t)); // a wedge by loft: 46° ~ 125 … 60° ~ 80
     return deg >= 44 && deg <= 64 ? Math.round(125 - (deg - 46) * 3.2) : null;
   };
+  // (update 318) the club a shot of this length most likely is: the one whose carry (your launch data, else your
+  // WITB stock yardage, else a typical carry) is nearest. Fills the Club picker in before you touch it.
+  ctx.clubFor = (yds) => {
+    const d = Number(yds);
+    if (!(d > 0) || !ctx.clubs?.length) return null;
+    let best = null;
+    for (const c of ctx.clubs) { const carry = ctx.carryFor(c); if (!carry) continue; const gap = Math.abs(carry - d); if (!best || gap < best.gap) best = { c, gap }; }
+    return best?.c || null;
+  };
+  /** A shot's club, filled in from its distance when none is picked yet (not putts). */
+  ctx.prefillClub = (shot) => {
+    if (!shot || shot.clubUsed || shot.unit === "ft" || shot.kind === "putt") return;
+    const d = shot.startDist ?? (shot.kind === "tee" ? shot.carry || shot.hole : null);
+    const c = ctx.clubFor(d);
+    if (c) shot.clubUsed = c;
+  };
   import("../bag.js").then(async (m) => { const bag = await m.getBag(uid); if (bag?.length) { ctx.clubs = [...bag].sort((a, b) => m.clubRank(m.clubLabel(a)) - m.clubRank(m.clubLabel(b))).map((c) => m.clubLabel(c)).filter((x) => x && !/putter/i.test(x)); for (const c of bag) { const y = Number(c.yards); if (y > 0) stock[m.clubLabel(c)] = y; } } }).catch(() => {});
   try { sessions = await listSessions(owner, { oldUid: !viewKey && owner !== uid ? uid : null }); } catch (err) { console.error(err); flash?.("Couldn't load your practice sessions. Check your connection.", "error"); }
   drawPills(); draw();
@@ -478,6 +494,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     const finish = el("button", { type: "button", class: "btn ghost pr-finish" }, "Finish");
     finish.addEventListener("click", () => finishSession(s));
     const monitor = (shot.kind === "tee" || shot.kind === "green") && s.cat !== "ARG" ? monitorButton(s, at, (n) => { flash?.(`Filled ${n} shot${n === 1 ? "" : "s"} from the file.`, "ok"); draw(); }) : null;
+    if (!game) ctx.prefillClub(shot); // (update 318)
     const card = shotCard({
       // a game (update 153): aim straight down the middle (or at the pin), the club the game says, no aim map
       shot, stimp: s.plan?.stimp || 11, aim: game ? null : aimFor(shot), fixedAim: !!game, eyebrow: `${game ? `${game.title} \u00b7 ` : ""}Shot ${at + 1} of ${shots.length}`,

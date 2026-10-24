@@ -105,6 +105,7 @@ async function render() {
       warmP = import("./preload.js").then((m) => Promise.race([m.warmUp(state, step), new Promise((r) => setTimeout(r, 90000))])).catch(() => {});
     }
     await warmP;
+    document.documentElement.classList.add("ta-booted"); // (update 318: after this, pages change without any loading signs)
     if (gen !== renderGen) return;
   }
   const team = effectiveTeam(state); // a real team member, or the admin previewing one

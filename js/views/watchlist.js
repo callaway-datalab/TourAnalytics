@@ -430,7 +430,7 @@ export async function render(main, { previewClient }) {
     moreBtn.addEventListener("click", () => {
       const open = !openCards.has(c.key);
       if (open) openCards.add(c.key); else openCards.delete(c.key);
-      more.hidden = !open; card.classList.toggle("open", open);
+      more.hidden = !open; card.classList.toggle("open", open); card.classList.toggle("compact", multi && !open); // (update 318: open: everything back)
       moreBtn.setAttribute("aria-expanded", String(open)); moreBtn.title = open ? "Show less" : "Show more";
       moreBtn.setAttribute("aria-label", `${open ? "Show less" : "Show more"} for ${c.label}`);
     });

@@ -566,6 +566,7 @@ function simVisual(ctx, s, hole, shot) {
     label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Gold: to your target; grey: on to the pin. Tap the picture where your shot finished; hold the target's circle and drag to move it.`;
   };
   // a club: its carry becomes the target's distance (same direction)
+  ctx.prefillClub?.(shot); // (update 318: from its distance and your stock yardages)
   const club = shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (c) => {
     shot.clubUsed = c || undefined;
     const carry = c ? ctx.carryFor?.(c) : null;
@@ -674,7 +675,7 @@ function drawRound(ctx, s) {
     ]),
     // a random course: its made-up hole from above; a real one: the strip down the hole
     s.mode === "sim" ? simVisual(ctx, s, hole, shot) : holeStrip(hole, shot),
-    s.mode !== "sim" && shot.unit !== "ft" && ctx.clubs ? clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); }) : null,
+    s.mode !== "sim" && shot.unit !== "ft" && ctx.clubs ? (ctx.prefillClub?.(shot), clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); })) : null,
     entryPanel(shot, { vis: s.mode === "sim" ? shot.vis : null, target: () => shot.target, noPutts: !!s.opts?.noPutts }, (r) => { shot.result = r || undefined; ctx.save(s); }, commit),
     el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [reset, pick, end])]),
   ]);
