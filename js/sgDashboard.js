@@ -16,6 +16,50 @@ import { statBlocks as statBlocksCmp } from "./compareData.js"; // (update 227: 
 import { getState } from "./auth.js";
 import { drillFor, drillLine, practiceOpen } from "./practice/plan.js"; // (update 342)
 const PLAN_ADDED = new Set(); // drills added to the practice plan this visit
+/* (update 345) Per shot or how often? A difference in strokes gained a round for a part of the game and distance splits
+ * exactly in two:  A attempts a round x (A per shot - B per shot)   [playing it better]
+ *               +  (A attempts - B attempts) x B per shot           [facing it more or less often]
+ * So elite rounds can look better at something just because they had fewer of their weak shots (or more of their strong
+ * ones): that's strategy (or the shot before), not practice. */
+// keyed part of the game | distance | lie (the finest the data has), so a change in lies counts as "how often" too
+function bucketsOf(rs, pred = () => true) {
+  const m = new Map();
+  for (const rd of rs) for (const x of rd.shots) if (x.cat && pred(x)) { const k = `${x.cat}|${x.dist || ""}|${x.lie || ""}`; const o = m.get(k) || m.set(k, { sg: 0, n: 0 }).get(k); o.sg += x.sg; o.n += x.w || 1; }
+  return m;
+}
+/** The split for a group (every lie of "APP|100-140 yds", or every distance of "APP"), added up from its finest pieces. */
+function groupSplit(bA, nA, bB, nB, match) {
+  const keys = [...new Set([...bA.keys(), ...bB.keys()])].filter(match);
+  const t = sumSplit(keys.map((k) => splitOf(bA.get(k), nA, bB.get(k), nB)));
+  const agg = (b) => keys.reduce((o, k) => { const x = b.get(k); if (x) { o.sg += x.sg; o.n += x.n; } return o; }, { sg: 0, n: 0 });
+  const A = agg(bA), B = agg(bB);
+  return { ...t, ae: A.n / nA, ab: B.n / nB, pe: A.n ? A.sg / A.n : 0, pb: B.n ? B.sg / B.n : 0 };
+}
+const sgn2 = (v) => (Math.abs(v) < 0.005 ? "+0.00" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
+function splitOf(a, nA, b, nB) {
+  const ae = a ? a.n / nA : 0, ab = b ? b.n / nB : 0;
+  const pe = a && a.n ? a.sg / a.n : b && b.n ? b.sg / b.n : 0, pb = b && b.n ? b.sg / b.n : pe;
+  const mix = (ae - ab) * pb;
+  // (update 346) "how often" in two: a shot they gain on (a strength) faced more or less often, or one they lose on (a weakness)
+  return { ae, ab, pe, pb, skill: ae * (pe - pb), mix, strong: pb > 0 ? mix : 0, weak: pb < 0 ? mix : 0, total: ae * pe - ab * pb };
+}
+const sumSplit = (list) => list.reduce((t, x) => ({ skill: t.skill + x.skill, mix: t.mix + x.mix, strong: t.strong + x.strong, weak: t.weak + x.weak, total: t.total + x.total }), { skill: 0, mix: 0, strong: 0, weak: 0, total: 0 });
+/** "+0.10 from more of their strong shots, +0.40 from fewer of their weak ones" (each part only when it counts). */
+function mixWords(x, sgn) {
+  const parts = [];
+  if (Math.abs(x.strong) >= 0.01) parts.push(`${sgn(x.strong)} from ${x.strong >= 0 ? "more" : "fewer"} of their strong shots`);
+  if (Math.abs(x.weak) >= 0.01) parts.push(`${sgn(x.weak)} from ${x.weak >= 0 ? "fewer" : "more"} of their weak ones`);
+  return parts.join(", ");
+}
+/** Which side of "how often" leads: "fewer weak shots" or "more strong shots". */
+const mixLead = (x) => (Math.abs(x.weak) >= Math.abs(x.strong) ? (x.weak >= 0 ? "fewer of their weak shots" : "more of their weak shots") : (x.strong >= 0 ? "more of their strong shots" : "fewer of their strong shots"));
+/** Why facing a shot more or less often happens, by part of the game: a strategy question, or the shot before. */
+const MIX_CAUSE = {
+  OTT: "That\u2019s club choice off the tee (and the courses\u2019 par 3s and 5s): strategy more than practice.",
+  APP: "That\u2019s where the tee shots leave them (club and line off the tee, or the courses): strategy more than practice.",
+  ARG: "That comes from the approach play (how often greens are missed, and where), not the short game itself.",
+  PUTT: "That comes from the shots before (how close approaches and chips finish), not the putting itself.",
+};
 import { favoriteKeys } from "./watchlist.js";
 import { el, mount, loadScript } from "./ui.js";
 import {
@@ -1502,11 +1546,16 @@ export function sgDashboard(container, opts) {
     const careerMap = me?.rounds?.length ? rowVals(me.rounds, cat) : null;
     const relNow = !!refMap && (!peak || peak.map.size > 0);
     const stretchOn = !!(peak && !peak.short); // (update 330) a stretch picked: Stretch | Selection | Difference | Stretch Rank
+    // (update 343) the elite rounds against the rest (their other rounds in the selection), not the average, which
+    // already has the elite rounds in it
+    const eliteSet = stretchOn ? new Set(peak.rounds) : null;
+    const rest = stretchOn ? mine.filter((rd) => !eliteSet.has(rd)) : null;
+    const restV = stretchOn ? rowVals(rest, cat) : null;
     // (update 332) an opened part of the game's distance rows: the same columns, worked out for that part of the game
     const mapsMemo = new Map();
     const M = (c) => {
       if (!mapsMemo.has(c)) mapsMemo.set(c, { me: rowVals(mine, c), field: ranked.map((p) => rowVals(p.rounds, c)), last: tn >= 3 ? rowVals(ordered.slice(-tn), c) : null, prev: tn >= 3 ? rowVals(ordered.slice(-2 * tn, -tn), c) : null,
-        peak: stretchOn ? rowVals(peak.rounds, c) : null, career: me?.rounds?.length ? rowVals(me.rounds, c) : null });
+        peak: stretchOn ? rowVals(peak.rounds, c) : null, rest: stretchOn ? rowVals(rest, c) : null, career: me?.rounds?.length ? rowVals(me.rounds, c) : null });
       return mapsMemo.get(c);
     };
     const rankIn = (maps, k, v, higher) => { if (v == null || higher == null) return null; const vs = maps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
@@ -1529,6 +1578,7 @@ export function sgDashboard(container, opts) {
       void bestOf; // (update 229: no Best round or All Players columns)
       const pk = peak && !peak.short ? gv(X ? X.peak : peak.map, row.key) : null; // (update 266) the best rounds' own value
       if (stretchOn) {
+        const v = gv(X ? X.rest : restV, row.key) ?? null; // (update 343: the non-elite rounds)
         const d = pk != null && v != null ? pk - v : null;
         const dTxt2 = d == null ? "\u2014" : row.fmt === sgF || row.fmt === sg3 ? row.fmt(d) : `${d >= 0 ? "+" : "\u2212"}${fmtStat({ ...(row.def || {}), pct: false, unit: row.def?.pct ? " pct" : row.def?.unit }, Math.abs(d))}`;
         const srow = el("tr", { class: `${row.sub ? "cmp-sub" : ""}${row.deep ? " cmp-deep" : ""}${row.expand ? " sg-tap" : ""}`, ...(row.expand ? { role: "button", tabindex: "0", "aria-expanded": String(!!row.open), title: `${row.label}: ${row.open ? "hide" : "show"} its distances` } : {}) });
@@ -1565,7 +1615,7 @@ export function sgDashboard(container, opts) {
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
       el("div", { class: "cmp-tw" }, el("table", { class: `cmp-table sg-full-t${stretchOn && !showRanks ? " no-rank" : ""}` }, [
         el("thead", {}, el("tr", {}, stretchOn ? [el("th", {}, ""), // (update 330)
-          el("th", { class: "num", title: "The player\u2019s average over the selected time frame (every round in the filters)" }, "Avg"),
+          el("th", { class: "num", title: `The player\u2019s other rounds in the selected time frame: every round except the ${showRanks ? "elite" : "best"} ones` }, showRanks ? "Non-elite" : "Rest"),
           el("th", { class: "num", title: `The average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"}${showRanks ? " (the elite rounds)" : ""}` }, showRanks ? "Elite" : "Best"),
           el("th", { class: "num", title: "Elite less the average: green where the elite rounds were better" }, "Diff"),
           el("th", { class: "num", title: "Where the elite rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, "Elite Rank")]
@@ -1576,7 +1626,7 @@ export function sgDashboard(container, opts) {
       ])),
       // (update 240) what the colours mean
       el("p", { class: "muted small sg-full-note" }, stretchOn // (update 330)
-        ? `Avg: ${me?.label || "the player"}\u2019s average over the selected time frame. Elite: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (shown above). Diff: elite less the average, green where the elite rounds were better. Elite Rank: where the elite rounds\u2019 value would rank if it were their average for the selected time frame.`
+        ? `${showRanks ? "Non-elite" : "Rest"}: ${me?.label || "the player"}\u2019s other rounds in the selected time frame (every round except the ${showRanks ? "elite" : "best"} ones). ${showRanks ? "Elite" : "Best"}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (shown above). Diff: ${showRanks ? "elite" : "best"} less the rest, green where the ${showRanks ? "elite" : "best"} rounds were better.${showRanks ? " Elite Rank: where the elite rounds\u2019 value would rank if it were their average for the selected time frame." : ""}`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`),
       // (update 341) Path back to Elite, below the table
       (() => { if (!stretchOn) return null; const pk = peak;
@@ -2142,23 +2192,32 @@ export function sgDashboard(container, opts) {
     draw();
   }
   /** What was working in the stretch: where it gained most over the season, and the equipment in the bag. */
-  function whatWorked(stretch, season, cat) {
+  function whatWorked(stretch, season0, cat) {
     const out = [];
+    // (update 344) against the non-elite rounds (every round in the time frame except these), not the average with them in
+    const inStretch = new Set(stretch), season = season0.filter((rd) => !inStretch.has(rd));
+    const restName = showRanks ? "non-elite rounds" : "their other rounds";
     const per = (rs, f) => { if (!rs.length) return 0; let t = 0; for (const rd of rs) for (const x of rd.shots) if (f(x)) t += x.sg; return t / rs.length; };
     const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
     const f2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
-    // the parts of the game (or, one category picked: its distances) that gained the most over the season
-    const parts = cat ? [...new Set(season.flatMap((rd) => [...rd.shots].filter((x) => x.cat === cat && x.dist).map((x) => x.dist)))].map((d) => ({ name: d, f: (x) => x.cat === cat && x.dist === d }))
-      : CATEGORIES.map(([k]) => ({ name: catName(k), k, f: (x) => x.cat === k }));
-    const gains = parts.map((p) => ({ ...p, a: per(stretch, p.f), b: per(season, p.f) })).map((p) => ({ ...p, d: p.a - p.b })).filter((p) => p.d > 0.005).sort((x, y) => y.d - x.d).slice(0, 2);
+    // the parts of the game (or, one category picked: its distances) that gained the most against the other rounds, each
+    // split (update 345) into playing better per shot and facing different shots (more of the strong, fewer of the weak)
+    const bS = bucketsOf(stretch), bN = bucketsOf(season);
+    const nN = Math.max(1, season.length);
+    const sp = (pre) => groupSplit(bS, stretch.length, bN, nN, (k) => k.startsWith(pre));
+    const dists = (c) => [...new Set([...bS.keys(), ...bN.keys()].filter((k) => k.startsWith(`${c}|`)).map((k) => k.split("|")[1]).filter(Boolean))];
+    const parts = cat ? dists(cat).map((d) => ({ name: d, pre: `${cat}|${d}|` })) : CATEGORIES.map(([c]) => ({ name: catName(c), k: c, pre: `${c}|` }));
+    const gains = parts.map((p) => { const t = sp(p.pre); return { ...p, ...t, a: t.ae * t.pe, b: t.ab * t.pb }; })
+      .filter((p) => p.total > 0.005).sort((x, y) => y.total - x.total).slice(0, 2);
     for (const g of gains) {
       let extra = "";
-      if (!cat && g.k) { // its best distance band in the stretch, against the season
-        const ds = [...new Set(stretch.flatMap((rd) => [...rd.shots].filter((x) => x.cat === g.k && x.dist).map((x) => x.dist)))]
-          .map((d) => ({ d, v: per(stretch, (x) => x.cat === g.k && x.dist === d) - per(season, (x) => x.cat === g.k && x.dist === d) })).filter((x) => x.v > 0.005).sort((a, b) => b.v - a.v);
-        if (ds[0]) extra = `, most of all ${ds[0].d} (${f2(ds[0].v)})`;
+      if (!cat && g.k) { // the distance they played best (per shot) in these rounds
+        const ds = dists(g.k).map((d) => ({ d, s: sp(`${g.k}|${d}|`) })).filter((x) => x.s.skill > 0.005).sort((a, b) => b.s.skill - a.s.skill);
+        if (ds[0]) extra = ` Played best from ${ds[0].d}: ${sgn2(ds[0].s.pe)} a shot against ${sgn2(ds[0].s.pb)} (worth ${sgn2(ds[0].s.skill)} a round).`;
       }
-      out.push(`${g.name}: ${f2(g.a)} a round, against ${f2(g.b)} on average in the selected time frame${extra}.`);
+      const mostlyMix = g.mix > 0 && g.mix >= 0.7 * g.total;
+      const split = Math.abs(g.mix) >= 0.02 ? `: ${sgn2(g.skill)} from playing better per shot, ${sgn2(g.mix)} from the mix of shots they faced (${mixWords(g, sgn2)}).` : `, all of it from playing better per shot.`;
+      out.push(`${g.name}: ${sgn2(g.a)} a round, against ${sgn2(g.b)} in ${restName}${split}${mostlyMix ? ` Mostly how often, not how well: ${mixLead(g)}. ${MIX_CAUSE[g.k || cat] || ""}` : ""}${extra}`);
     }
     if (!gains.length) out.push("No part of the game stands out: it was a little better everywhere.");
     // (update 337) the equipment: in each kind, what was used most in these rounds; and, if another of that kind was used
@@ -2186,7 +2245,8 @@ export function sgDashboard(container, opts) {
     const help = el("details", { class: "bs-help" }, [el("summary", { "aria-label": "What is this?" }, "\u24d8"),
       el("p", { class: "muted small" }, "Elite Round Share asks how much of a player\u2019s golf was at each level. Take their best rounds, in any order, and keep adding the next best while the average of the ones taken would still rank #1 (or #10, #25, #50) for the selected time frame. The share is how many rounds that is, out of all their rounds. Tap a box to see those elite rounds (tap it again to clear): what was working, what was in the bag, and every stat from them next to the player\u2019s average."),
       el("p", { class: "muted small" }, "The shape of the four shares says what kind of player this is. A high #1 share with a low #50 share is boom or bust: great rounds are in there, but poor ones drag the average down, so cutting out the bad rounds is worth more than adding great ones. A low #1 share with a high #50 share is steady with a lower ceiling: the work is adding more great rounds. High at both ends is elite and steady. Because #10, #25 and #50 can borrow weaker rounds to make up the average, the gap between the #1 share and the #50 share is a measure of how spread out their golf is."),
-      el("p", { class: "muted small" }, "Path back to Elite compares the elite rounds with the player\u2019s most recent rounds (10 to start; change the number). It shows the gap in strokes, the three parts of the game and distances that make up most of it, a target in plain stats where the file has one, what keeps going wrong in their other rounds (a part of the game costing a stroke or more, too many attempts from bad lies, traced back to the shot that put them there unless they also lost ground from that lie) and when their elite rounds tend to come, with practice to match. It\u2019s worked out from the numbers on the page, not by AI.")]);
+      el("p", { class: "muted small" }, "Path back to Elite compares the elite rounds with the player\u2019s most recent rounds (10 to start; change the number). It shows the gap in strokes, the five parts of the game and distances that make up most of it, a target in plain stats where the file has one, when their elite rounds tend to come, and practice to match. What hurts in the non-elite rounds (under What was working) shows a part of the game costing a stroke or more and too many attempts from bad lies, traced back to the shot that put them there unless they also lost ground from that lie. It\u2019s worked out from the numbers on the page, not by AI."),
+      el("p", { class: "muted small" }, "Per shot or how often: every difference in strokes gained is split in two. Per shot is playing the same shots better. How often is facing different shots at the same level per shot (by distance and lie), split again into more of their strong shots (ones they gain strokes on) and fewer of their weak ones (ones they lose strokes on). When a difference is mostly how often, it\u2019s a strategy question (or the shot before it), so it gets a strategy note instead of a drill; Where the shots came from lists the biggest of these.")]);
     // (update 342) no rankings (only the player's own practice or entered rounds): no #1 / #10 ladder to measure against,
     // so it's simply their best N rounds (10 to start)
     if (!showRanks) {
@@ -2230,17 +2290,31 @@ export function sgDashboard(container, opts) {
         const sgR = (rd) => { let t = 0; for (const x of rd.shots) if (!cat || x.cat === cat) t += x.sg; return t; };
         const evLink = el("button", { type: "button", class: "link bs-evs-btn", "aria-expanded": String(!!st.eliteEvOpen) }, `${evs} ${evs === 1 ? "tournament" : "tournaments"} ${st.eliteEvOpen ? "\u25B4" : "\u25BE"}`);
         evLink.addEventListener("click", () => { st.eliteEvOpen = !st.eliteEvOpen; draw(); });
-        const evList = st.eliteEvOpen ? el("ul", { class: "bs-evs" }, [...byEv.values()].map((g) => ({ ...g, avg: g.rs.reduce((t, rd) => t + sgR(rd), 0) / g.rs.length })).sort((a, b) => b.avg - a.avg).map((g) => {
+        const byEvent = () => el("ul", { class: "bs-evs" }, [...byEv.values()].map((g) => ({ ...g, avg: g.rs.reduce((t, rd) => t + sgR(rd), 0) / g.rs.length })).sort((a, b) => b.avg - a.avg).map((g) => {
           const nums = g.rs.map((rd) => rd.roundNo).filter((x) => x != null && x !== "").sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0)).map((x) => `R${x}`);
           const avg = g.avg; // (update 341: best to worst)
           return el("li", {}, [el("span", { class: "bs-ev-name" }, g.event), el("span", { class: "muted" }, ` \u00b7 ${shortDay(g.first)} \u00b7 ${g.rs.length} of ${allAt(g)} ${allAt(g) === 1 ? "round" : "rounds"}${nums.length ? ` (${nums.join(", ")})` : ""} \u00b7 `), el("span", { class: avg >= 0 ? "pos" : "neg" }, `${avg >= 0 ? "+" : "\u2212"}${Math.abs(avg).toFixed(2)} a round`)]);
-        })) : null;
+        }));
+        // (update 343) or round by round: every elite round, best first
+        const byRound = () => el("ul", { class: "bs-evs" }, [...pk.rounds].map((rd) => ({ rd, v: sgR(rd) })).sort((a, b) => b.v - a.v).map(({ rd, v }) =>
+          el("li", {}, [el("span", { class: v >= 0 ? "pos" : "neg" }, `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`), el("span", { class: "muted" }, " \u00b7 "), el("span", { class: "bs-ev-name" }, rd.event || "Tournament"),
+            el("span", { class: "muted" }, `${rd.roundNo != null && rd.roundNo !== "" ? ` \u00b7 R${rd.roundNo}` : ""} \u00b7 ${shortDay(rd.date)}`)])));
+        const evMode = st.eliteEvMode === "round" ? "round" : "event";
+        const modeSeg = el("div", { class: "seg bs-evs-mode", role: "group", "aria-label": "Show the elite rounds" }, [["event", "By tournament"], ["round", "By round"]].map(([v, l]) => {
+          const b = el("button", { type: "button", class: `seg-btn${evMode === v ? " on" : ""}`, "aria-pressed": String(evMode === v) }, l);
+          b.addEventListener("click", () => { st.eliteEvMode = v; draw(); }); return b;
+        }));
+        const evList = st.eliteEvOpen ? el("div", { class: "bs-evs-wrap" }, [modeSeg, evMode === "round" ? byRound() : byEvent()]) : null;
         detail = el("div", { class: "bs-detail" }, [
           el("p", { class: "bs-head" }, [el("strong", {}, `${showRanks ? "Elite rounds" : "Best rounds"}: the best ${sel} of ${season.length} (${share}%) by ${cat ? `SG: ${what.trim()}` : "SG: Total"}`),
             ` \u00b7 from `, evLink, `${first ? `, ${shortDay(first)} \u2013 ${shortDay(last)}` : ""}.`]),
           evList,
           el("p", { class: "bs-sub" }, "What was working"),
           el("ul", { class: "bs-list" }, whatWorked(pk.rounds, season, cat).map((t) => el("li", {}, t))),
+          ...(() => { const hurt = whatHurts(pk.rounds, season, cat); return hurt.length ? [el("p", { class: "bs-sub bs-sub2" }, `What hurts in the ${showRanks ? "non-elite" : "other"} rounds`), el("ul", { class: "bs-list" }, hurt.map((t) => el("li", {}, t)))] : []; })(),
+          ...(() => { const { items, total } = shotMix(pk.rounds, season, cat); if (!items.length) return [];
+            const sum = total && Math.abs(total.mix) >= 0.02 ? `In all, the mix of shots was worth ${sgn2(total.mix)} a round: ${mixWords(total, sgn2)}. Playing better per shot was worth ${sgn2(total.skill)}.` : "";
+            return [el("p", { class: "bs-sub bs-sub2" }, "Where the shots came from"), el("p", { class: "muted small bs-mix-note" }, `Not playing better, just facing different shots. ${sum}`), el("ul", { class: "bs-list" }, items.map((t) => el("li", {}, t)))]; })(),
         ]);
       }
     }
@@ -2252,6 +2326,77 @@ export function sgDashboard(container, opts) {
       el("p", { class: "muted small bs-intro" }, "How much of the player\u2019s golf was at a #1, #10, #25 or #50 level: their best rounds, in any order, that together would rank there."),
       ladder, profileLine(rows), detail,
     ]);
+  }
+  /* (update 345) Where the shots came from: the parts of the game and distances where elite rounds simply had more of the
+   * player's strong shots or fewer of their weak ones (at the same per-shot level), and what that was worth. */
+  function shotMix(elite, season, cat) {
+    const eSet = new Set(elite), rest = season.filter((rd) => !eSet.has(rd));
+    if (!rest.length) return { items: [], total: null };
+    const inCat = (x) => !cat || x.cat === cat;
+    const bE = bucketsOf(elite, inCat), bN = bucketsOf(rest, inCat);
+    const total = groupSplit(bE, elite.length, bN, rest.length, () => true);
+    const f2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
+    const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
+    const items = [...new Set([...bE.keys(), ...bN.keys()])].filter((k) => k.split("|")[1])
+      .map((k) => ({ k, s: splitOf(bE.get(k), elite.length, bN.get(k), rest.length) }))
+      .filter((x) => x.s.mix >= 0.08 && (bN.get(x.k)?.n || 0) >= 5).sort((a, b) => b.s.mix - a.s.mix).slice(0, 4)
+      .map(({ k, s: x }) => { const [c, d, lie] = k.split("|"); const fewer = x.ae < x.ab;
+        const tag = x.pb < 0 ? "Fewer weak shots" : "More strong shots";
+        const where = `${catName(c)} \u00b7 ${d}${lie && !/^(fairway|green|tee)/i.test(lie) ? ` from the ${lie.toLowerCase()}` : ""}`;
+        return `${tag} \u00b7 ${where}: ${x.ae.toFixed(1)} attempts a round in elite rounds, ${x.ab.toFixed(1)} in non-elite, where they ${x.pb < 0 ? `lose ${Math.abs(x.pb).toFixed(2)}` : `gain ${x.pb.toFixed(2)}`} a shot. ${fewer ? "Fewer" : "More"} of them was worth ${f2(x.mix)} a round. ${MIX_CAUSE[c] || ""}`; });
+    return { items, total };
+  }
+  /* (update 343) What hurts in the other rounds (moved up under What was working): a part of the game costing a stroke
+   * or more in a round, and bad positions traced back to the shot that put them there. Text only. */
+  function whatHurts(elite, season, cat) {
+    const eSet = new Set(elite), others = season.filter((rd) => !eSet.has(rd));
+    const f2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
+    const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
+    // what hurts: a part of the game costing a stroke or more in a round, and bad positions (approach / short game from rough, sand,
+    // recovery) that happen more often in non-elite rounds than in elite ones
+    const avoid = [];
+    const per = (rs, pred) => (rs.length ? rs.reduce((t, rd) => { let n = 0; for (const x of rd.shots) if (pred(x)) n += x.w || 1; return t + n; }, 0) / rs.length : 0);
+    // (the data is grouped by part of the game, lie and distance, not single shots, so "bad" is judged a round at a time:
+    // how often a part of the game cost them a stroke or more in a round, in non-elite rounds against elite rounds)
+    const roundSg = (rd, c) => { let t = 0; for (const x of rd.shots) if (x.cat === c) t += x.sg; return t; };
+    const badShare = (rs, c) => (rs.length ? rs.filter((rd) => roundSg(rd, c) <= -1).length / rs.length : 0);
+    const where = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
+    for (const [c] of CATEGORIES) {
+      if (cat && c !== cat) continue;
+      const o = badShare(others, c), e = badShare(elite, c);
+      if (others.length >= 3 && o - e >= 0.15) avoid.push({ v: (o - e) * 1.5, t: `${where[c] || catName(c)} cost them a stroke or more in ${Math.round(o * 100)}% of non-elite rounds, against ${Math.round(e * 100)}% of elite rounds.` });
+    }
+    // bad lies: more approaches from the rough (or short-game shots from off the green) usually isn't a rough problem, it's
+    // the shot before. So: if they played as well as usual from there, point at the shot that put them there (driving for
+    // approaches, approach for the short game); only if they also played worse from there is the lie itself something to work on.
+    const pa = (rs, pL) => { let sg = 0, n = 0; for (const rd of rs) for (const x of rd.shots) if (pL(x)) { sg += x.sg; n += x.w || 1; } return { v: n ? sg / n : null, n }; };
+    const rootOf = { APP: { c: "OTT", what: "getting there off the tee", stat: /^fwy/i }, ARG: { c: "APP", what: "missing greens", stat: /^gir/i } };
+    for (const c of ["APP", "ARG"]) {
+      if (cat && c !== cat) continue;
+      const lies = new Set(); for (const rd of others) for (const x of rd.shots) if (x.cat === c && x.lie && !/fairway|green|tee/i.test(x.lie)) lies.add(x.lie);
+      for (const lie of lies) {
+        const pL = (x) => x.cat === c && x.lie === lie;
+        const o = per(others, pL), e = per(elite, pL);
+        if (o - e < 0.5) continue;
+        // strokes gained already allows for how hard the lie is, so the test is against the tour baseline (zero): losing
+        // 0.08 or more an attempt from there is a problem with the shots themselves. (Elite rounds were picked for being
+        // good, so their numbers from the rough are flattered and aren't a fair yardstick.)
+        const po = pa(others, pL);
+        const worse = po.v != null && po.v <= -0.08;
+        const root = rootOf[c], lieName = String(lie).toLowerCase();
+        // the stat behind the root cause (fairways for driving, greens hit for approach), when the file has it
+        const sm = (rs) => { let t = 0, w = 0; for (const rd of rs) for (const ob of rd.obs || []) if (!ob.cat && root.stat.test(ob.k)) { t += ob.v * ob.w; w += ob.w; } return w ? t / w : null; };
+        const so = sm(others), se = sm(elite);
+        const statBit = so != null && se != null && se > so ? ` ${c === "APP" ? "Fairways hit" : "Greens hit"}: ${so.toFixed(0)}% in non-elite rounds, ${se.toFixed(0)}% in elite rounds.` : "";
+        const head = `${c === "APP" ? "Approaches" : "Short-game shots"} from the ${lieName}: ${o.toFixed(1)} attempts a round in non-elite rounds, ${e.toFixed(1)} in elite rounds.`;
+        const t = worse
+          ? `${head} They also lost ground from there (${f2(po.v)} an attempt against the tour baseline), so it\u2019s both: ${root.what} and the shots from the ${lieName}.${statBit}`
+          : `${head} From there they held their own (${f2(po.v)} an attempt against the tour baseline), so the problem is ${root.what}, not the ${lieName} shots.${statBit}`;
+        avoid.push({ v: (o - e) * 0.3 + (worse ? -po.v * o : 0), t });
+      }
+    }
+    avoid.sort((a, b) => b.v - a.v);
+    return avoid.slice(0, 3).map((a) => a.t);
   }
   /* (update 338) What the ladder's shape says: how often they reach the very top (#1 share) against how often they're at
    * least solid (#50 share). Many great rounds but a low floor: boom or bust; few great rounds but a high floor: steady. */
@@ -2279,11 +2424,11 @@ export function sgDashboard(container, opts) {
     const catName = (k) => CATEGORIES.find(([c]) => c === k)?.[1] || k;
     const eAvg = tot(elite), rAvg = tot(recent), gap = eAvg - rAvg;
     // where the strokes go: per part of the game and distance, a round
-    const bucketsOf = (rs) => { const m = new Map(); for (const rd of rs) for (const x of rd.shots) if (inCat(x) && x.cat) { const k = `${x.cat}|${x.dist || ""}`; const o = m.get(k) || m.set(k, { sg: 0, n: 0 }).get(k); o.sg += x.sg; o.n += x.w || 1; } return m; };
-    const bE = bucketsOf(elite), bR = bucketsOf(recent);
-    const keys = new Set([...bE.keys(), ...bR.keys()]);
-    const gaps = [...keys].map((k) => { const e = bE.get(k), r = bR.get(k); const ev = e ? e.sg / elite.length : 0, rv = r ? r.sg / recent.length : 0; const [c, d] = k.split("|"); return { k, c, d, e: ev, r: rv, g: ev - rv }; })
-      .filter((x) => x.g > 0.04).sort((a, b) => b.g - a.g).slice(0, 3);
+    const bE = bucketsOf(elite, inCat), bR = bucketsOf(recent, inCat);
+    const keys = new Set([...bE.keys(), ...bR.keys()].map((k) => k.split("|").slice(0, 2).join("|")));
+    // (update 345) each piece split into playing it better (per shot) and facing it more or less often (lies included)
+    const gaps = [...keys].map((k) => { const sp = groupSplit(bE, elite.length, bR, recent.length, (x) => x.startsWith(`${k}|`)); const [c, d] = k.split("|"); return { k, c, d, e: sp.ae * sp.pe, r: sp.ab * sp.pb, g: sp.total, sp }; })
+      .filter((x) => x.g > 0.04).sort((a, b) => b.g - a.g).slice(0, 5); // (update 343: top 5)
     // a target in plain stats for a part of the game / distance: the stat that moved most between elite and recent rounds
     const statAvg = (rs, pred) => { const m = new Map(); for (const rd of rs) for (const o of rd.obs || []) if (pred(o)) { const a = m.get(o.k) || m.set(o.k, { s: 0, w: 0 }).get(o.k); a.s += o.v * o.w; a.w += o.w; } return m; };
     const WHOLE = { OTT: /^(fwy|drive|fairway)/i, APP: /^(gir|prox)/i, ARG: /^(scramble|updown|sand)/i, PUTT: /^(putts|onePutt|threePutt|make)/i };
@@ -2318,56 +2463,15 @@ export function sgDashboard(container, opts) {
     const prios = gaps.map((g) => {
       const t = target(g.c, g.d || null), d = g.d || null;
       const goal = statGoal(g.c, d, t) || { stat: "skill", cat: g.c, dist: d, target: Math.round(g.e * 100) / 100, measure: "round", when: "nextN", n: N_GOAL };
-      return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}: ${g.g.toFixed(2)} of the gap`, sub: `${f2(g.r)} a round now, ${f2(g.e)} in elite rounds.`, target: tText(t), thin: !!t?.thin, drills: [{ drill: drillFor(g.c, d, t), goal }].filter((x) => x.drill) };
+      // how much is playing it better, and how much is facing it more or less often (strategy, or the shot before)
+      const sp = g.sp, share = g.g > 0 ? sp.skill / g.g : 0;
+      const kind = share >= 0.6 ? "skill" : share <= 0.3 ? "mix" : "both";
+      const fewer = sp.ae < sp.ab;
+      const why = `Per shot: ${sgn2(sp.pb)} now, ${sgn2(sp.pe)} in elite rounds (worth ${sgn2(sp.skill)} a round).${Math.abs(sp.mix) >= 0.02 ? ` How often: ${sp.ab.toFixed(1)} attempts a round now, ${sp.ae.toFixed(1)} in elite rounds (worth ${sgn2(sp.mix)} a round: ${mixWords(sp, sgn2)}).` : ""}`;
+      const strategy = kind === "skill" ? null : `${kind === "mix" ? "Mostly how often, not how well:" : "Partly how often:"} ${mixLead(sp)} in elite rounds${sp.pb < 0 && fewer ? ` (they lose ${Math.abs(sp.pb).toFixed(2)} a shot here)` : sp.pb > 0 && !fewer ? ` (they gain ${sp.pb.toFixed(2)} a shot here)` : ""}. ${MIX_CAUSE[g.c] || ""}`;
+      return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}: ${g.g.toFixed(2)} of the gap`, sub: `${f2(g.r)} a round now, ${f2(g.e)} in elite rounds.`, why, strategy, target: kind === "mix" ? null : tText(t), thin: !!t?.thin,
+        drills: kind === "mix" ? [] : [{ drill: drillFor(g.c, d, t), goal }].filter((x) => x.drill) };
     });
-    // what hurts: a part of the game costing a stroke or more in a round, and bad positions (approach / short game from rough, sand,
-    // recovery) that happen more often in their other rounds than in elite ones
-    const avoid = [];
-    const per = (rs, pred) => (rs.length ? rs.reduce((t, rd) => { let n = 0; for (const x of rd.shots) if (pred(x)) n += x.w || 1; return t + n; }, 0) / rs.length : 0);
-    // (the data is grouped by part of the game, lie and distance, not single shots, so "bad" is judged a round at a time:
-    // how often a part of the game cost them a stroke or more in a round, in their other rounds against elite rounds)
-    const roundSg = (rd, c) => { let t = 0; for (const x of rd.shots) if (x.cat === c) t += x.sg; return t; };
-    const badShare = (rs, c) => (rs.length ? rs.filter((rd) => roundSg(rd, c) <= -1).length / rs.length : 0);
-    const where = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
-    for (const [c] of CATEGORIES) {
-      if (cat && c !== cat) continue;
-      const o = badShare(others, c), e = badShare(elite, c);
-      if (others.length >= 3 && o - e >= 0.15) avoid.push({ v: (o - e) * 1.5, t: `${where[c] || catName(c)} cost them a stroke or more in ${Math.round(o * 100)}% of their other rounds, against ${Math.round(e * 100)}% of elite rounds.` });
-    }
-    // bad lies: more approaches from the rough (or short-game shots from off the green) usually isn't a rough problem, it's
-    // the shot before. So: if they played as well as usual from there, point at the shot that put them there (driving for
-    // approaches, approach for the short game); only if they also played worse from there is the lie itself something to work on.
-    const pa = (rs, pL) => { let sg = 0, n = 0; for (const rd of rs) for (const x of rd.shots) if (pL(x)) { sg += x.sg; n += x.w || 1; } return { v: n ? sg / n : null, n }; };
-    const rootOf = { APP: { c: "OTT", what: "getting there off the tee", stat: /^fwy/i }, ARG: { c: "APP", what: "missing greens", stat: /^gir/i } };
-    for (const c of ["APP", "ARG"]) {
-      if (cat && c !== cat) continue;
-      const lies = new Set(); for (const rd of others) for (const x of rd.shots) if (x.cat === c && x.lie && !/fairway|green|tee/i.test(x.lie)) lies.add(x.lie);
-      for (const lie of lies) {
-        const pL = (x) => x.cat === c && x.lie === lie;
-        const o = per(others, pL), e = per(elite, pL);
-        if (o - e < 0.5) continue;
-        // strokes gained already allows for how hard the lie is, so the test is against the tour baseline (zero): losing
-        // 0.08 or more an attempt from there is a problem with the shots themselves. (Elite rounds were picked for being
-        // good, so their numbers from the rough are flattered and aren't a fair yardstick.)
-        const po = pa(others, pL);
-        const worse = po.v != null && po.v <= -0.08;
-        const root = rootOf[c], lieName = String(lie).toLowerCase();
-        // the stat behind the root cause (fairways for driving, greens hit for approach), when the file has it
-        const sm = (rs) => { let t = 0, w = 0; for (const rd of rs) for (const ob of rd.obs || []) if (!ob.cat && root.stat.test(ob.k)) { t += ob.v * ob.w; w += ob.w; } return w ? t / w : null; };
-        const so = sm(others), se = sm(elite);
-        const statBit = so != null && se != null && se > so ? ` ${c === "APP" ? "Fairways hit" : "Greens hit"}: ${so.toFixed(0)}% in their other rounds, ${se.toFixed(0)}% in elite rounds.` : "";
-        const head = `${c === "APP" ? "Approaches" : "Short-game shots"} from the ${lieName}: ${o.toFixed(1)} attempts a round in their other rounds, ${e.toFixed(1)} in elite rounds.`;
-        const t = worse
-          ? `${head} They also lost ground from there (${f2(po.v)} an attempt against the tour baseline), so it\u2019s both: ${root.what} and the shots from the ${lieName}.${statBit}`
-          : `${head} From there they held their own (${f2(po.v)} an attempt against the tour baseline), so the problem is ${root.what}, not the ${lieName} shots.${statBit}`;
-        // the goal in real rounds is the same number: fewer attempts a round from there, down to the elite rounds' level
-        const lieGoal = { stat: "lie", cat: c, lie, target: Math.round(e * 10) / 10, measure: "round", when: "nextN", n: N_GOAL };
-        const rt = target(root.c, null);
-        const drills = [{ drill: drillFor(root.c, null, rt), goal: lieGoal }, worse ? { drill: drillFor(c, null, null, lie), goal: null } : null].filter((x) => x?.drill);
-        avoid.push({ v: (o - e) * 0.3 + (worse ? -po.v * o : 0), t, drills });
-      }
-    }
-    avoid.sort((a, b) => b.v - a.v);
     // when elite rounds happen: after a week off, early or late in the event
     const evKey = (rd) => `${rd.event}|${String(rd.date || "").slice(0, 4)}`;
     const starts = new Map(); for (const rd of season) { const k = evKey(rd); const d0 = String(rd.date || "").slice(0, 10); if (!starts.has(k) || d0 < starts.get(k).first) starts.set(k, { first: d0, last: d0 }); if (d0 > starts.get(k).last) starts.get(k).last = d0; }
@@ -2384,7 +2488,7 @@ export function sgDashboard(container, opts) {
     const setN = () => { const v = Math.round(Number(nIn.value)); if (Number.isFinite(v) && v >= 3) { st.recentN = v; draw(); } else nIn.value = String(N); };
     nIn.addEventListener("change", setN); nIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nIn.blur(); } });
     // (update 342) where Practice is open: add a drill (or all of them) to the practice plan, with a goal for each
-    const shown = [...prios.flatMap((p) => p.drills), ...avoid.slice(0, 3).flatMap((a) => a.drills || [])];
+    const shown = prios.flatMap((p) => p.drills);
     const sig = (x) => `${me?.key}|${x.drill.kind}|${x.drill.dist || ""}|${x.drill.lie || ""}`;
     const canAdd = practiceOpen();
     const status = el("p", { class: "muted small bs-plan-status" });
@@ -2418,10 +2522,10 @@ export function sgDashboard(container, opts) {
         el("div", {}, [`Last `, nIn, ` rounds: `, el("strong", {}, f2(rAvg)), ` a round`]),
         el("div", {}, gap > 0.02 ? [`Gap: `, el("strong", {}, `${gap.toFixed(2)} strokes`), ` a round`] : [`No gap: they\u2019re playing at an elite level right now.`])]),
       prios.length ? el("ol", { class: "bs-prios" }, prios.map((p) => el("li", {}, [el("strong", {}, p.head), el("span", { class: "muted" }, ` \u00b7 ${p.sub}`),
+        el("div", { class: "muted small bs-why" }, p.why),
+        ...(p.strategy ? [el("div", { class: "bs-strategy" }, `Strategy: ${p.strategy}`)] : []),
         ...(p.target ? [el("div", { class: p.thin ? "bs-target thin muted" : "bs-target" }, p.thin ? p.target : `Target \u2192 ${p.target}`)] : []),
         ...p.drills.map(drillRow)]))) : null,
-      avoid.length ? el("p", { class: "bs-sub bs-sub2" }, "What hurts in the other rounds") : null,
-      avoid.length ? el("ul", { class: "bs-list" }, avoid.slice(0, 3).map((a) => el("li", {}, [a.t, ...(a.drills || []).map(drillRow)]))) : null,
       when.length ? el("p", { class: "bs-sub bs-sub2" }, "When elite rounds happen") : null,
       when.length ? el("ul", { class: "bs-list" }, when.map((t) => el("li", {}, t))) : null,
       canAdd ? status : null,

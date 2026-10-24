@@ -94,7 +94,7 @@ export function drillFor(cat, dist, t = null, lie = null) {
   }
   if (cat === "OTT") {
     const g = is(/^fwy|fairway/) ? { goal: ofReps(ok.ve, 14), ...mine(ok.ve) } : { goal: 8, goalFrom: "tour", pct: 60 };
-    return { kind: "fairway", cat: "OTT", dist: null, reps: 14, ...g, title: "Driving", what: "Drives to a target about a tour fairway wide (30 yards)", tap: ["Fairway", "Missed"] };
+    return { kind: "fairway", cat: "OTT", dist: null, reps: 14, ...g, title: "Driving", what: "Drives to a target 30 yards wide, about a tour fairway", tap: ["Fairway", "Missed"] };
   }
   return null;
 }
@@ -109,8 +109,8 @@ export function goalText(d, best = null) {
 }
 /** Where the goal comes from, in words. */
 export function goalSource(d) {
-  if (d.goalFrom === "elite") return `their elite rounds${d.pct != null ? ` (${d.stat} ${Math.round(d.pct * 10) / 10}%)` : d.statV != null ? ` (${d.stat} ${Math.round(d.statV * 10) / 10}${d.kind === "prox" ? " ft" : ""})` : ""}`;
-  if (d.goalFrom === "tour") return d.kind === "prox" ? "about the Tour average from there" : `the Tour average (${Math.round(d.pct)}%)`;
+  if (d.goalFrom === "elite") return `their elite rounds${d.pct != null ? `, ${d.stat} ${Math.round(d.pct * 10) / 10}%` : d.statV != null ? `, ${d.stat} ${Math.round(d.statV * 10) / 10}${d.kind === "prox" ? " ft" : ""}` : ""}`;
+  if (d.goalFrom === "tour") return d.kind === "prox" ? "about the Tour average from there" : `the Tour average, ${Math.round(d.pct)}%`;
   return null;
 }
 /** The drill as one line of text (Stats shows this to everyone). */

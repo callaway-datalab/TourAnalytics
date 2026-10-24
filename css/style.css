@@ -4911,3 +4911,10 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .gx-fixed-stat { font-weight: 600; }
 /* (update 342) best rounds with no rankings: no rank column */
 .sg-full-t.no-rank th:last-child, .sg-full-t.no-rank tr:not(.cmp-grp) td:last-child { display: none; }
+/* (update 343) elite rounds: by tournament or by round */
+.bs-evs-mode { margin: 6px 0 4px; }
+.bs-evs-mode .seg-btn { font-size: 12px; padding: 4px 10px; }
+/* (update 345) per shot or how often */
+.bs-why { margin-top: 2px; line-height: 1.45; }
+.bs-strategy { margin-top: 3px; color: #64d2ff; font-size: 12.5px; line-height: 1.45; }
+.bs-mix-note { margin: 0 0 4px; }
