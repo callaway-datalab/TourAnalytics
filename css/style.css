@@ -5014,3 +5014,8 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-evs-mode .seg-btn { flex: none !important; min-height: 0 !important; padding: 3px 10px !important; font-size: 12px; line-height: 1.3; }
 @media (max-width: 520px) { .wl-period .wl-per { min-height: 0 !important; line-height: 1.25; } }
 .seg.bs-evs-mode { width: fit-content !important; max-width: 100%; }
+/* (update 361) the cards carry the next steps */
+.bs-row .bs-when { display: block; }
+.bs-there { color: #30d158; }
+/* (update 361) phone Watchlist: the time pills a touch smaller still */
+@media (max-width: 520px) { .wl-period .wl-per { font-size: 0.64rem !important; letter-spacing: -0.01em; padding: 0.3rem 0.15rem !important; } }

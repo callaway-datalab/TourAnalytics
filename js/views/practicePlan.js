@@ -93,7 +93,7 @@ function drawHome(ctx) {
       el("div", { class: "dp-card-top" }, [el("h3", { class: "dp-title" }, d.title), ro ? null : del]),
       el("p", { class: "dp-goal" }, [el("strong", {}, goalText(d, best)), src ? el("span", { class: "muted" }, ` · ${src}`) : null]),
       el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)} a set, ${d.kind === "prox" ? "typing how far each one finishes" : "one tap each"}; aim for ${SETS_AIM} sets that meet the goal.`),
-      d.goalText ? el("p", { class: "small dp-round-goal" }, `In rounds: ${d.goalText}`) : null,
+      d.goalText ? el("p", { class: "small dp-round-goal" }, `Added goal: ${d.goalText}`) : null,
       el("p", { class: "muted small dp-last" }, [lastTxt, best != null ? ` · best set ${scoreText(d, best)}` : "", done.length > 1 ? ` · ${done.length} sessions` : ""]),
       ro ? null : go,
     ]);

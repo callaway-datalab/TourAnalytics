@@ -151,12 +151,13 @@ export async function addToPlan(state, { items, playerKey, playerLabel }) {
     const { getDoc, doc, db } = await fsP();
     const ref = doc(db, "goals", playerKey);
     const cur = await getDoc(ref).then((s) => (s.exists() ? s.data().challenges || [] : [])).catch(() => []);
-    // the same goal already there (same stat, still going): keep that one
     const same = (a, b) => a.stat === b.stat && (a.statKey || "") === (b.statKey || "") && (a.cat || "") === (b.cat || "") && (a.dist || "") === (b.dist || "") && (a.lie || "") === (b.lie || "");
-    const fresh = goals.filter((g) => !cur.some((c) => same(c, g) && c.start >= today));
+    // (update 361) adding a drill again replaces the goal it made before (from the practice plan, same stat), so the goal
+    // always matches the drill; goals set by hand in Goals are left alone
     const { saveChallenges, challengeText } = await import("../goals.js");
-    if (fresh.length) await saveChallenges(playerKey, [...cur, ...fresh], state.user.uid);
-    goals.forEach((g, i) => { const x = items.filter((y) => y.goal)[i]; if (x) { const kept = cur.find((c) => same(c, g) && c.start >= today); x.goalId = (kept || g).id; x.goalText = challengeText(kept || g); } });
+    const keep = cur.filter((c) => !(c.from === "plan" && goals.some((g) => same(c, g))));
+    await saveChallenges(playerKey, [...keep, ...goals], state.user.uid);
+    goals.forEach((g, i) => { const x = items.filter((y) => y.goal)[i]; if (x) { x.goalId = g.id; x.goalText = challengeText(g); } });
   }
   const existing = await listPlan(owner);
   let n = 0;
