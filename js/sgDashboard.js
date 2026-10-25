@@ -2637,7 +2637,7 @@ export function sgDashboard(container, opts) {
     const keys = new Set([...bE.keys(), ...bR.keys()].map((k) => k.split("|").slice(0, 2).join("|")));
     // (update 345) each piece split into playing it better (per shot) and facing it more or less often (lies included)
     const gaps = [...keys].map((k) => { const sp = groupSplit(bE, elite.length, bR, recent.length, (x) => x.startsWith(`${k}|`), bU); const [c, d] = k.split("|"); return { k, c, d, e: sp.ae * sp.pe, r: sp.ab * sp.pb, g: sp.total, sp }; })
-      .filter((x) => x.g > 0.04).sort((a, b) => b.g - a.g).slice(0, 5); // (update 343: top 5)
+      .filter((x) => x.g > 0.04 && x.sp.ab >= 0.5).sort((a, b) => b.g - a.g).slice(0, 5); // (update 343: top 5; update 367: not shots they rarely face lately, under one every two rounds)
     // a target in plain stats for a part of the game / distance: the stat that moved most between elite and recent rounds
     const statAvg = (rs, pred) => { const m = new Map(); for (const rd of rs) for (const o of rd.obs || []) if (pred(o)) { const a = m.get(o.k) || m.set(o.k, { s: 0, w: 0 }).get(o.k); a.s += o.v * o.w; a.w += o.w; } return m; };
     const WHOLE = { OTT: /^(fwy|drive|fairway)/i, APP: /^(gir|prox)/i, ARG: /^(scramble|updown|sand)/i, PUTT: /^(putts|onePutt|threePutt|make)/i };
@@ -2714,16 +2714,18 @@ export function sgDashboard(container, opts) {
         if (!es) return t && !t.thin ? [`${t.def.label}`, `${fmtStat(t.def, t.vr)} ${LN.toLowerCase()}`, `${fmtStat(t.def, t.ve)} in ${NN.kept}`] : null;
         const pred = (o) => o.k === es.k && (es.exact ? o.cat === g.c && (d ? o.dist === d : !o.dist) : !o.cat);
         let t0 = 0, w = 0; for (const rd of recent) for (const o of rd.obs || []) if (pred(o)) { t0 += o.v * o.w; w += o.w; }
-        if (!w || !enough(es.def, w)) return [`${es.def.label}: ${fmtStat(es.def, es.ve)} in ${NN.kept}`, `(too few attempts in the last ${N} rounds to compare)`];
+        if (!w || !enough(es.def, w)) return null; // (update 367: too few lately to compare: no point training for it)
         const vr = t0 / w, diff = es.ve - vr, better = es.def.higher === false ? diff < 0 : diff > 0;
         let head = `${es.def.label}: ${diff >= 0 ? "+" : "\u2212"}${es.def.pct ? `${Math.abs(diff).toFixed(1)} pts` : fmtStat({ ...es.def, pct: false }, Math.abs(diff))}${better ? "" : `: already ahead of their ${NN.kept}`}`;
         if (es.def.pct && better) { const extra = (Math.abs(diff) / 100) * (w / recent.length); if (extra > 0.001) head += extra >= 1 ? ` (about ${Math.round(extra)} more a round)` : ` (1 more every ${Math.max(1, Math.round(1 / extra))} ${Math.round(1 / extra) === 1 ? "round" : "rounds"})`; }
         return [head, `${fmtStat(es.def, vr)} ${LN.toLowerCase()}`, `${fmtStat(es.def, es.ve)} in ${NN.kept}`];
       })();
-      // the goal in real rounds is that same stat at their level rounds' number (else strokes gained there)
+      // the goal in real rounds is that same stat at their level rounds' number (else strokes gained there); with a stat
+      // that the last N rounds have too few attempts of, no target, drill or goal (update 367)
+      const thinLately = !!es && !targetLines;
       const goal2 = es ? statGoal(g.c, d, { ...es, exact: es.exact }) : goal;
       return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}`, better: `${sgn2(g.g)} a round better in their ${NN.kept}`, roundLines, shotLines, oftenLines, strategy, take, targetLines: kind === "mix" ? null : targetLines,
-        drills: kind === "mix" ? [] : [{ drill: (() => { const dr = drillFor(g.c, d, es); if (dr) dr.from = NN.kept; return dr; })(), goal: goal2 }].filter((x) => x.drill) };
+        drills: kind === "mix" || thinLately ? [] : [{ drill: (() => { const dr = drillFor(g.c, d, es); if (dr) dr.from = NN.kept; return dr; })(), goal: goal2 }].filter((x) => x.drill) };
     });
     // when elite rounds happen: after a week off, early or late in the event
     const evKey = (rd) => `${rd.event}|${String(rd.date || "").slice(0, 4)}`;
