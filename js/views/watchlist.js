@@ -367,7 +367,7 @@ export async function render(main, { previewClient }) {
     box.addEventListener("dragstart", (e) => e.preventDefault());
   }
   // the alerts first (biggest first), then the rest of the badges
-  const sortBadges = (bs) => [...bs].sort((x, y) => (y.alert ? y.sev || 1 : 0) - (x.alert ? x.sev || 1 : 0));
+  const sortBadges = (bs) => [...bs].sort((x, y) => (y.kind === "form") - (x.kind === "form") || (y.alert ? y.sev || 1 : 0) - (x.alert ? x.sev || 1 : 0)); // (update 372: current form first)
   function cardView(c) {
     const name = el("button", { type: "button", class: "wl-name", title: `Open ${c.label}'s stats` }, c.label);
     name.addEventListener("click", () => openPlayer(c.key));

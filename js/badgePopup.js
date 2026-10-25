@@ -60,8 +60,19 @@ function table(b) {
     b.title ? el("p", { class: "wl-pop-t" }, b.title) : null,
     el("div", { class: "wl-pop-tw" }, el("table", { class: "wl-pop-table" }, [
       el("thead", {}, el("tr", {}, b.cols.map(([t, k]) => el("th", { class: k === "num" ? "num" : "" }, t)))),
-      el("tbody", {}, b.rows.map((r) => (r.gap ? el("tr", { class: "gap" }, el("td", { colspan: b.cols.length }, "⋯"))
-        : el("tr", { class: `${r.me ? "me" : ""}${r.strong ? " strong" : ""}` }, r.cells.map((c, i) => cell(c, b.cols[i]?.[1] === "num")))))),
+      el("tbody", {}, b.rows.flatMap((r) => {
+        if (r.gap) return [el("tr", { class: "gap" }, el("td", { colspan: b.cols.length }, "⋯"))];
+        const cells = r.cells.map((c, i) => cell(c, b.cols[i]?.[1] === "num"));
+        if (!r.kids?.length) return [el("tr", { class: `${r.me ? "me" : ""}${r.strong ? " strong" : ""}` }, cells)];
+        // (update 372) a row that opens to more rows under it (a part of the game's distances)
+        const caret = el("span", { class: "wl-pop-caret", "aria-hidden": "true" }, "\u25B8 ");
+        cells[0].prepend(caret);
+        const kids = r.kids.map((k) => el("tr", { class: "wl-pop-kid", hidden: true }, k.cells.map((c, i) => cell(c, b.cols[i]?.[1] === "num"))));
+        const tr = el("tr", { class: `wl-pop-exp${r.strong ? " strong" : ""}`, role: "button", tabindex: "0", "aria-expanded": "false" }, cells);
+        const flip = () => { const open = tr.getAttribute("aria-expanded") !== "true"; tr.setAttribute("aria-expanded", String(open)); caret.textContent = open ? "\u25BE " : "\u25B8 "; kids.forEach((k) => { k.hidden = !open; }); };
+        tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+        return [tr, ...kids];
+      })),
     ])),
   ]);
 }

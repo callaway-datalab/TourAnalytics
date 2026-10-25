@@ -130,7 +130,7 @@ const sectionsFor = (kind) => {
   const planItems = [
     ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (update 292: first, and what Play opens on)
     ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], soonFor()],
-    ["Practice", "#/practice", ["practice"], soonFor()],
+    ["Practice", "#/practice", ["practice"], {}], // (update 372: open to everyone; Course Prep is still the admin's)
     ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
   ];
   return [

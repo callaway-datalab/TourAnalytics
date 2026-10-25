@@ -7,7 +7,7 @@ import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
   UserError, adminStats, editAccess, syncTeams, aiUsage, reportRunsList,
   refreshInvite, deleteInvite, storageEstimate, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
-  createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels, watchCalAccess, setCalAccess, setAnalystAccess,
+  createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels, watchCalAccess, setCalAccess, setAnalystAccess, setCoachAccess,
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, ANALYST_ROLE } from "../data.js";
 
@@ -394,7 +394,10 @@ export async function render(main, { flash }) {
   // (update 305) may they message Callaway Analyst (on unless unticked)
   const caBox = el("input", { type: "checkbox", checked: true, "aria-label": "Allow messaging Callaway Analyst" });
   const caAfter = async (code) => { if (caBox.checked || !code) { caBox.checked = true; return; } try { await setAnalystAccess(code, false); } catch { flash("Made the code, but couldn\u2019t turn off Callaway Analyst for it. Republish the Firestore rules from update 305, then untick Analyst on its row.", "error"); } caBox.checked = true; };
-  const calAfter = async (code) => { await caAfter(code); if (!calBox.checked || !code) return; try { await setCalAccess(code, true); } catch { flash("Made the code, but couldn\u2019t turn Cal on for it. Republish the Firestore rules from update 281, then tick Cal on its row.", "error"); } calBox.checked = false; };
+  // (update 371) Allow coaching: they can send practice plans to their players (off unless ticked)
+  const coachBox = el("input", { type: "checkbox", "aria-label": "Allow coaching" });
+  const coachAfter = async (code) => { if (!coachBox.checked || !code) return; try { await setCoachAccess(code, true); } catch { flash("Made the code, but couldn\u2019t turn on coaching for it. Republish the Firestore rules from update 371, then tick Coaching on its row.", "error"); } coachBox.checked = false; };
+  const calAfter = async (code) => { await caAfter(code); await coachAfter(code); if (!calBox.checked || !code) return; try { await setCalAccess(code, true); } catch { flash("Made the code, but couldn\u2019t turn Cal on for it. Republish the Firestore rules from update 281, then tick Cal on its row.", "error"); } calBox.checked = false; };
   fakeBox.addEventListener("change", () => { createBtn.textContent = fakeBox.checked ? "Create fake user" : "Create code"; });
   async function makeFake(code, name) {
     const { createFakeUser } = await import("../fakeUsers.js");
@@ -461,6 +464,7 @@ export async function render(main, { flash }) {
     // (update 170) a fake user: the code is used straight away by a test account you can act as
     el("label", { class: "fake-row cal-row" }, [calBox, el("span", {}, [el("strong", {}, "Enable Cal"), el("span", { class: "muted small fake-hint" }, "Let them ask Cal, the AI assistant (each question costs a little). You can change it later on their row.")])]),
     el("label", { class: "fake-row cal-row" }, [caBox, el("span", {}, [el("strong", {}, "Allow messaging Callaway Analyst"), el("span", { class: "muted small fake-hint" }, "Let them start a chat with Callaway\u2019s analysts (and forward questions Cal can\u2019t answer). You can change it later on their row.")])]),
+    el("label", { class: "fake-row cal-row" }, [coachBox, el("span", {}, [el("strong", {}, "Allow coaching"), el("span", { class: "muted small fake-hint" }, "Let them send practice plans (drills and goals from Stats) to the players they work with. For coaches, caddies and players; most employees and analysts don\u2019t need it. You can change it later on their row.")])]),
     el("label", { class: "fake-row" }, [fakeBox, el("span", {}, [el("strong", {}, "Fake user"), el("span", { class: "muted small fake-hint" }, "Make a test account with this access now, and act as it (nobody else gets the code).")])]),
     el("div", {}, createBtn),
   ]);
@@ -650,6 +654,18 @@ export async function render(main, { flash }) {
     });
     return box;
   }
+  // (update 371) Allow coaching on or off for this person (their code); off unless turned on
+  function coachToggle(inv, user) {
+    const gone = inv.revoked || (inv.usedBy && !user);
+    const box = el("input", { type: "checkbox", checked: !!calCache.get(inv.code)?.coach, disabled: !!gone, "aria-label": `Coaching for ${user?.name || inv.clientLabel || formatCode(inv.code)}`, title: "Let them send practice plans to their players" });
+    box.addEventListener("change", async () => {
+      box.disabled = true;
+      try { await setCoachAccess(inv.code, box.checked); flash(box.checked ? "They can send practice plans to their players." : "They can no longer send practice plans.", "ok"); }
+      catch (err) { box.checked = !box.checked; flash(err?.code === "permission-denied" ? "The database refused: republish the Firestore rules from update 371, then try again." : "Couldn\u2019t change that. Try again.", "error"); }
+      box.disabled = false;
+    });
+    return box;
+  }
   const nameOf = (r) => r.user?.name || (!isTeamKey(r.inv.clientKey) && clientsCache.labels.get(r.inv.clientKey)) || r.inv.clientLabel || "";
   function renderInvites() {
     if (!invitesCache.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes yet.")); return; }
@@ -694,7 +710,7 @@ export async function render(main, { flash }) {
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Analyst Chat", "Sign-ins", "Last sign-in", ""].map((h) => el("th", {}, h)))),
+      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Analyst Chat", "Coaching", "Sign-ins", "Last sign-in", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows.flatMap(({ inv, user, grants, typeLabels, email, status, teamOf, teamOfMake }) => { const tr = el("tr", { class: "code-row" }, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
@@ -705,7 +721,7 @@ export async function render(main, { flash }) {
         el("td", {}, el("span", { class: "type-tags" }, [...typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)), user && fakeMap.has(user.uid) ? el("span", { class: "tag type-fake", title: "A test account you made" }, "Fake") : null])),
         el("td", {}, teamOf),
         el("td", {}, status),
-        el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, caToggle(inv, user)),
+        el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, caToggle(inv, user)), el("td", { class: "cal-cell" }, coachToggle(inv, user)),
         el("td", { class: "num" }, user ? num(user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")),
         el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
         el("td", { class: "actions" }, codeActions(inv, user, grants)),
@@ -714,7 +730,7 @@ export async function render(main, { flash }) {
       const line = (k, v) => el("div", { class: "cd-line" }, [el("span", { class: "cd-k" }, k), el("span", { class: "cd-v" }, v)]);
       const more = el("tr", { class: "code-more", hidden: true }, el("td", { colspan: "11" }, el("div", { class: "cd-grid" }, [
         line("Code", el("code", {}, formatCode(inv.code))), line("Email", email || "\u2014"), line("Team of", teamOfMake()),
-        line("Cal", calToggle(inv, user)), line("Analyst chat", caToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
+        line("Cal", calToggle(inv, user)), line("Analyst chat", caToggle(inv, user)), line("Coaching", coachToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
         line("Last sign-in", user?.lastSignInAt ? formatWhen(user.lastSignInAt) : user ? "Not yet" : "\u2014"),
         el("div", { class: "cd-actions" }, codeActions(inv, user, grants)),
       ])));

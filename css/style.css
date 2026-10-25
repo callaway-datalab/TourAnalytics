@@ -5075,3 +5075,22 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-path-t th { white-space: nowrap; }
 .bs-path-t tr.bs-path-det td, .bs-path-t tr.bs-path-det td * { text-align: left; }
 .bs-path-t tr.bs-path-det .bs-drill-row { align-items: flex-start; }
+
+/* (update 371) Add to practice plan: what's going in, changeable first */
+.dp-dialog { width: min(34rem, calc(100vw - 2rem)); max-height: calc(100vh - 3rem); overflow: auto; background: var(--panel, #1c1c1e); color: inherit; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px; padding: 1.1rem 1.1rem 0.9rem; }
+.dp-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.dp-dialog h3 { margin: 0 0 0.3rem; }
+.dp-ed-list { display: grid; gap: 0.8rem; margin: 0.8rem 0 1rem; }
+.dp-ed { padding: 0.7rem 0.8rem; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.dp-ed-t { margin: 0 0 0.5rem; }
+.dp-ed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: 0.5rem 0.7rem; }
+.dp-ed-grid label { display: flex; flex-direction: column; gap: 0.2rem; }
+.dp-num { width: 100%; }
+.dp-from { margin: -0.2rem 0 0.3rem; }
+
+/* (update 372) form pop-up: a part of the game opens to its distances */
+.wl-pop-table tr.wl-pop-exp { cursor: pointer; }
+.wl-pop-table tr.wl-pop-exp[aria-expanded="true"] td:first-child { color: #f0d9a8; font-weight: 600; text-decoration: underline; text-decoration-color: #d4b483; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.wl-pop-caret { color: #d4b483; font-size: 0.8em; }
+.wl-pop-table tr.wl-pop-kid td { font-size: 0.88em; background: rgba(255, 255, 255, 0.025); }
+.wl-pop-table tr.wl-pop-kid td:first-child { padding-left: 1.6em; color: var(--muted, #8e8e93); }

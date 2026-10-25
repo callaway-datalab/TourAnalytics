@@ -37,8 +37,17 @@ export function planOwner(state) {
   const key = state.profile?.clientKey;
   return !state.isAdmin && !state.isTeam && key ? key : state.user?.uid;
 }
-/** Is Practice open to the person looking? (The admin's only for now, and not in a portal they're previewing.) */
-export const practiceOpen = () => !!window.__taCanPractice;
+/**
+ * (update 371) May the person looking send drills to this player's practice plan? The admin (not in a portal they're
+ * previewing) to anyone; a team member with Allow coaching to the players they work with. Without a player: the admin.
+ */
+export const practiceOpen = (playerKey = null) => !!window.__taCanPractice
+  || (!!playerKey && playerKey === window.__taSelfKey) // (update 372: your own stats, into your own plan)
+  || (!!playerKey && !!window.__taCoach && (window.__taTeamKeys || []).includes(playerKey));
+/** Is this player the person looking (their own stats)? */
+export const isMine = (playerKey) => !!playerKey && playerKey === window.__taSelfKey;
+/** (update 371) Whose plan a drill goes to: your own (your own stats), else that player's (practice/{playerKey}/plan). */
+export const planOwnerFor = (state, playerKey) => (!playerKey || isMine(playerKey) ? planOwner(state) : playerKey);
 
 /** The middle of a distance band ("15-20 ft" → 17.5, "<5 ft" → 4, "25+ ft" → 30). */
 export function midOf(d) {
@@ -48,7 +57,7 @@ export function midOf(d) {
   if (n.length === 1) return /\+|>/.test(d) ? n[0] * 1.2 : n[0];
   return (n[0] + n[1]) / 2;
 }
-const ofReps = (pct, reps) => Math.max(1, Math.min(reps, Math.round((pct / 100) * reps)));
+const ofReps = (pct, reps) => Math.max(1, Math.min(reps, Math.ceil((pct / 100) * reps - 1e-9))); // (update 371: rounded up: 75% of 10 is 8)
 
 /**
  * A drill for a part of the game and distance. t: the target from Path back to Elite ({ k, def, ve, vr } from the
@@ -110,7 +119,7 @@ export function goalSource(d) {
 export const nounOf = (d) => ({ make: "putts", lag: "putts", fairway: /^Tee shots/.test(d.title || "") ? "tee shots" : "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
 export function drillLine(d) {
   const src = goalSource(d);
-  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (no stat for this in their ${d.from || "kept rounds"} to set it from)`}. Aim for 3 sets that reach it.`;
+  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (no stat for this in their ${d.from || "kept rounds"} to set it from)`}. Aim for ${d.setsAim || 3} sets that reach it.`;
 }
 
 /* ---------------- a set's score ---------------- */
@@ -147,7 +156,7 @@ export const mmss = (secs) => `${Math.floor(secs / 60)}:${String(secs % 60).padS
  * a challenge (goals.js) or null. Returns how many were added.
  */
 export async function addToPlan(state, { items, playerKey, playerLabel }) {
-  const owner = planOwner(state);
+  const owner = planOwnerFor(state, playerKey); // (update 371: the player's own plan, not the sender's)
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
   const goals = items.map((x) => x.goal).filter(Boolean).map((g, i) => ({ ...g, id: `c${Date.now().toString(36)}${i}`, start: today, from: "plan" }));
@@ -168,7 +177,8 @@ export async function addToPlan(state, { items, playerKey, playerLabel }) {
   for (const x of items) {
     const d = x.drill;
     const dup = existing.find((p) => p.kind === d.kind && (p.dist || "") === (d.dist || "") && (p.lie || "") === (d.lie || "") && p.playerKey === playerKey);
-    const item = { ...(dup || {}), ...d, id: dup?.id || newPlanId(), player: playerLabel || "", playerKey: playerKey || "", addedAt: dup?.addedAt || now, updatedAt: now, goalId: x.goalId || dup?.goalId || null, goalText: x.goalText || dup?.goalText || null };
+    const item = { ...(dup || {}), ...d, id: dup?.id || newPlanId(), player: playerLabel || "", playerKey: playerKey || "",
+      sentBy: owner === planOwner(state) ? null : { uid: state.user?.uid || null, name: state.profile?.name || (state.isAdmin ? "Callaway" : "") }, addedAt: dup?.addedAt || now, updatedAt: now, goalId: x.goalId || dup?.goalId || null, goalText: x.goalText || dup?.goalText || null };
     await savePlanItem(owner, item);
     n++;
   }

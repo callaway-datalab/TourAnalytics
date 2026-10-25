@@ -14,7 +14,7 @@
 import { careerBlocks } from "./careerBlocks.js";
 import { statBlocks as statBlocksCmp } from "./compareData.js"; // (update 227: the full stats table)
 import { getState } from "./auth.js";
-import { drillFor, drillLine, practiceOpen, goalStatsFor } from "./practice/plan.js"; // (update 342)
+import { drillFor, drillLine, practiceOpen, goalStatsFor, isMine } from "./practice/plan.js"; // (update 342)
 // (update 353) the four levels, named for what they mean on Tour
 const LEVELS = { 1: "Best on Tour", 10: "Contender", 25: "Tour Championship level", 50: "Signature event level" };
 const PLAN_ADDED = new Set(); // drills added to the practice plan this visit
@@ -133,6 +133,53 @@ function peakNote(peak, me, cat, peakN, tn, onRange = null) {
   const link = el("a", { href: "#", class: "peak-range", title: "Show just these dates" }, head);
   link.addEventListener("click", (e) => { e.preventDefault(); onRange?.({ from: String(rs[0].date || "").slice(0, 10), to: String(rs.at(-1).date || "").slice(0, 10), label: span }); });
   return [link, el("span", {}, ` \u00b7 ${list.charAt(0).toUpperCase()}${list.slice(1)}.`)];
+}
+
+// (update 371) before drills go into a practice plan: what's being added, with the shots a set, the goal a set, how many
+// sets to meet it in, and the goal in real rounds, each changeable. onOk gets the edited list.
+function planEditor(list, whose, onOk) {
+  const dlg = el("dialog", { class: "dp-dialog" });
+  document.body.appendChild(dlg);
+  const num = (v, attrs = {}) => el("input", { type: "number", inputmode: "decimal", class: "dp-num", value: v == null ? "" : String(v), ...attrs });
+  const rows = list.map((x) => {
+    const d = x.drill, prox = d.kind === "prox";
+    const reps = num(d.reps, { min: "1", max: "50", step: "1", "aria-label": "Shots a set" });
+    const goal = num(d.goal, { min: prox ? "0.5" : "1", step: prox ? "0.5" : "1", placeholder: "Beat your best", "aria-label": prox ? "Average inside (ft)" : "Successes a set" });
+    const sets = num(d.setsAim || 3, { min: "1", max: "20", step: "1", "aria-label": "Sets to meet the goal" });
+    const rg = x.goal && x.goal.target != null ? num(x.goal.target, { step: "any", "aria-label": "Goal in rounds" }) : null;
+    const node = el("div", { class: "dp-ed" }, [
+      el("p", { class: "dp-ed-t" }, [el("strong", {}, d.title), el("span", { class: "muted small" }, ` \u00b7 ${d.what}`)]),
+      el("div", { class: "dp-ed-grid" }, [
+        el("label", {}, [el("span", { class: "muted small" }, "Shots a set"), reps]),
+        el("label", {}, [el("span", { class: "muted small" }, prox ? "Average inside (ft)" : "Successes needed"), goal]),
+        el("label", {}, [el("span", { class: "muted small" }, "Sets to meet it"), sets]),
+        rg ? el("label", {}, [el("span", { class: "muted small" }, `In rounds: ${x.goal.label || "goal"}${x.goal.unit === "%" ? (/%/.test(x.goal.label || "") ? "" : " (%)") : x.goal.unit ? ` (${x.goal.unit.trim()})` : ""}`), rg]) : null,
+      ]),
+    ]);
+    const value = () => {
+      const r = Math.max(1, Math.min(50, Math.round(Number(reps.value)) || d.reps));
+      const gRaw = goal.value.trim() === "" ? null : Number(goal.value);
+      const gv = gRaw == null || !Number.isFinite(gRaw) ? null : prox ? Math.max(0.5, gRaw) : Math.max(1, Math.min(r, Math.round(gRaw)));
+      const changed = gv !== d.goal || r !== d.reps;
+      const nd = { ...d, reps: r, goal: gv, setsAim: Math.max(1, Math.min(20, Math.round(Number(sets.value)) || 3)), ...(changed ? { goalFrom: gv == null ? null : "set" } : {}) };
+      const tg = rg ? Number(rg.value) : null;
+      return { ...x, drill: nd, goal: x.goal ? { ...x.goal, ...(rg && Number.isFinite(tg) ? { target: tg } : {}) } : x.goal };
+    };
+    return { node, value };
+  });
+  const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+  const ok = el("button", { type: "button", class: "btn" }, `Add to ${whose} plan`);
+  ok.addEventListener("click", () => { const out = rows.map((r) => r.value()); close(); onOk(out); });
+  const cancel = el("button", { type: "button", class: "btn ghost" }, "Cancel");
+  cancel.addEventListener("click", close);
+  dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+  mount(dlg, [
+    el("h3", {}, list.length === 1 ? `Add to ${whose} practice plan` : `Add ${list.length} drills to ${whose} practice plan`),
+    el("p", { class: "muted small" }, "Change anything before it\u2019s added: the shots in a set, the goal for a set (leave it empty to beat your best), how many sets should meet it, and the goal in real rounds."),
+    el("div", { class: "dp-ed-list" }, rows.map((r) => r.node)),
+    el("div", { class: "thread-actions" }, [ok, cancel]),
+  ]);
+  if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
 }
 
 export function sgDashboard(container, opts) {
@@ -2692,6 +2739,22 @@ export function sgDashboard(container, opts) {
       }
       return null;
     };
+    // (update 371) the plain stat to aim at for a part of the game and distance: the first (that distance's, then the whole
+    // round's) where their level's rounds were better than the last N, with enough attempts in both to compare
+    const targetStat = (c, d) => {
+      const res = [...goalStatsFor(c, d), ...(WHOLE[c] ? [WHOLE[c]] : [])];
+      for (const re of res) for (const exactOnly of [true, false]) {
+        const scope = (o) => re.test(o.k) && (exactOnly ? o.cat === c && (d ? o.dist === d : !o.dist) : !o.cat);
+        const mE = statAvg(elite, scope), mR = statAvg(recent, scope);
+        for (const [k, a] of mE) {
+          const def = statDef(k), b = mR.get(k);
+          if (!b || def.higher == null || !enough(def, a.w) || b.w < (def.pct ? 8 : 5)) continue;
+          const ve = a.s / a.w, vr = b.s / b.w;
+          if (def.higher !== false ? ve > vr + 1e-9 : ve < vr - 1e-9) return { k, def, ve, vr, w: b.w, exact: exactOnly };
+        }
+      }
+      return null;
+    };
     const itemOf = (g) => { // (update 370: any row of the Path table, opened)
       const t = target(g.c, g.d || null), d = g.d || null;
       const goal = statGoal(g.c, d, t) || { stat: "skill", cat: g.c, dist: d, target: Math.round(g.e * 100) / 100, measure: "round", when: "nextN", n: N_GOAL };
@@ -2722,24 +2785,22 @@ export function sgDashboard(container, opts) {
       const strategy = kind === "skill" ? null : `${kind === "mix" ? "Mostly how often, not how well:" : "Partly how often:"} ${mixLead(sp)} in ${NN.kept}${sp.pu < 0 && fewer ? ` (they usually lose ${Math.abs(sp.pu).toFixed(2)} a shot here)` : sp.pu > 0 && !fewer ? ` (they usually gain ${sp.pu.toFixed(2)} a shot here)` : ""}. ${MIX_CAUSE[g.c] || ""}`;
       // (update 361) the target: the stat their level rounds had (the same one the drill and the goal use), against the
       // last N rounds, and what the difference means in makes
-      const es = eliteStat(g.c, d);
-      // (update 369) when no stat can be compared, the target is strokes gained a shot, which every listed shot has
-      const sgTarget = () => [`Strokes gained a shot: ${sgn2(sp.pe - sp.pb)}`, `${sgn2(sp.pb)} ${LN.toLowerCase()}`, `${sgn2(sp.pe)} in ${NN.kept}`];
+      // (update 371) the target is always a plain stat (fairways, distance, proximity, greens, up and downs, makes…),
+      // never strokes gained: the one their level's rounds were better at than the last N rounds, the stat for that
+      // distance first, else the whole round's. None better (or too few attempts to compare): no target.
+      const tgt = targetStat(g.c, d);
+      const es = tgt && goalStatsFor(g.c, d).some((re) => re.test(tgt.k)) ? tgt : eliteStat(g.c, d);
       const targetLines = (() => {
-        if (!es) return sgTarget();
-        const pred = (o) => o.k === es.k && (es.exact ? o.cat === g.c && (d ? o.dist === d : !o.dist) : !o.cat);
-        let t0 = 0, w = 0; for (const rd of recent) for (const o of rd.obs || []) if (pred(o)) { t0 += o.v * o.w; w += o.w; }
-        if (!w || w < (es.def.pct ? 8 : 5)) return sgTarget(); // (update 369: too few lately for the stat: strokes gained a shot instead)
-        const vr = t0 / w, diff = es.ve - vr, better = es.def.higher === false ? diff < 0 : diff > 0;
-        if (!better) return sgTarget(); // (update 369: the stat's already as good: the shots themselves are the target)
-        let head = `${es.def.label}: ${diff >= 0 ? "+" : "\u2212"}${es.def.pct ? `${Math.abs(diff).toFixed(1)} pts` : fmtStat({ ...es.def, pct: false }, Math.abs(diff))}${better ? "" : `: already ahead of their ${NN.kept}`}`;
-        if (es.def.pct && better) { const extra = (Math.abs(diff) / 100) * (w / recent.length); if (extra > 0.001) head += extra >= 1 ? ` (about ${Math.round(extra)} more a round)` : ` (1 more every ${Math.max(1, Math.round(1 / extra))} ${Math.round(1 / extra) === 1 ? "round" : "rounds"})`; }
-        return [head, `${fmtStat(es.def, vr)} ${LN.toLowerCase()}`, `${fmtStat(es.def, es.ve)} in ${NN.kept}`];
+        if (!tgt) return null;
+        const { def } = tgt, diff = Math.abs(tgt.ve - tgt.vr), up = def.higher !== false;
+        const amtTxt = def.pct ? `${diff.toFixed(1)} ${Math.round(diff * 10) === 10 ? "point" : "points"}` : fmtStat({ ...def, pct: false }, diff);
+        const head = `${up ? "Raise" : "Bring down"} ${def.label} by ${amtTxt}`;
+        const lines = [head, `From ${fmtStat(def, tgt.vr)} over the last ${N} rounds to ${fmtStat(def, tgt.ve)} (their ${NN.kept})`];
+        if (def.pct) { const extra = (diff / 100) * (tgt.w / recent.length); if (extra > 0.001) lines.push(extra >= 1 ? `That\u2019s about ${Math.round(extra)} more a round` : `That\u2019s 1 more every ${Math.max(1, Math.round(1 / extra))} ${Math.round(1 / extra) === 1 ? "round" : "rounds"}`); }
+        return lines;
       })();
-      // the goal in real rounds is that same stat at their level rounds' number (else strokes gained there); with a stat
-      // that the last N rounds have too few attempts of, no target, drill or goal (update 367)
       const thinLately = false; // (update 369: shots they rarely face are already left out of the list)
-      const goal2 = es ? statGoal(g.c, d, { ...es, exact: es.exact }) : goal;
+      const goal2 = tgt ? statGoal(g.c, d, tgt) : es ? statGoal(g.c, d, { ...es, exact: es.exact }) : goal;
       return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}`, better: `${sgn2(g.g)} a round better in their ${NN.kept}`, roundLines, shotLines, oftenLines, strategy, take, targetLines: kind === "mix" ? null : targetLines,
         drills: kind === "mix" || thinLately ? [] : [{ drill: (() => { const dr = drillFor(g.c, d, es); if (dr) dr.from = NN.kept; return dr; })(), goal: goal2 }].filter((x) => x.drill) };
     };
@@ -2759,16 +2820,20 @@ export function sgDashboard(container, opts) {
     // (update 342) where Practice is open: add a drill (or all of them) to the practice plan, with a goal for each
     const shown = there ? [] : prios.flatMap((p) => p.drills);
     const sig = (x) => `${me?.key}|${x.drill.kind}|${x.drill.dist || ""}|${x.drill.lie || ""}`;
-    const canAdd = practiceOpen();
+    const canAdd = practiceOpen(me?.key); // (update 371: the admin, or a coach of this player with Allow coaching)
+    const mineNow = isMine(me?.key);
+    const whose = mineNow || !me?.label ? "your" : `${me.label}\u2019s`;
     const status = el("p", { class: "muted small bs-plan-status" });
-    const add = async (list, btns) => {
+    const add = (list, btns) => planEditor(list, whose, (edited) => send(edited, btns));
+    const send = async (list, btns) => {
       btns.forEach((b) => { b.disabled = true; });
       try {
         const { addToPlan } = await import("./practice/plan.js");
         const n = await addToPlan(getState(), { items: list.map((x) => ({ ...x })), playerKey: me?.key, playerLabel: me?.label });
         list.forEach((x) => PLAN_ADDED.add(sig(x)));
         const g = list.filter((x) => x.goal).length;
-        mount(status, [`Added ${n} ${n === 1 ? "drill" : "drills"} to your practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to ${me?.label ? `${me.label}\u2019s` : "the"} Goals` : ""}. `, el("a", { href: "#/practice?tool=PLAN", class: "link" }, "Open Practice \u2192")]);
+        mount(status, [`Added ${n} ${n === 1 ? "drill" : "drills"} to ${whose} practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to ${me?.label ? `${me.label}\u2019s` : "the"} Goals` : ""}. `,
+          window.__taCanPractice || mineNow ? el("a", { href: mineNow ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(me?.key || "")}`, class: "link" }, "Open Practice \u2192") : null]);
         btns.forEach((b) => { b.textContent = "\u2713 In practice plan"; b.classList.add("done"); });
       } catch (err) { console.error(err); btns.forEach((b) => { b.disabled = false; }); mount(status, "Couldn\u2019t add that just now. Try again."); }
     };
@@ -2806,7 +2871,7 @@ export function sgDashboard(container, opts) {
       const openCats = new Set(st.pathCats || []);
       const bgOf = (d, max) => { if (d == null || Math.abs(d) < 0.005 || !(max > 0)) return "color:#fff"; const t = Math.min(1, Math.abs(d) / max); return `color:#fff;background:rgba(${d > 0 ? "48,209,88" : "255,69,58"},${(0.05 + 0.4 * t * t).toFixed(3)})`; };
       const maxOf = (rs) => Math.max(0, ...rs.map((x) => Math.abs(x.g)));
-      const cells = (x, max, bold = false) => [el("td", { class: "num" }, f2(x.r)), el("td", { class: `num${bold ? " strong" : ""}` }, f2(x.e)), el("td", { class: "num bs-diff", style: bgOf(x.g, max) }, f2(x.g))];
+      const cells = (x, max, bold = false) => [el("td", { class: "num" }, f2(x.r)), el("td", { class: `num${bold ? " strong" : ""}` }, f2(x.e)), el("td", { class: "num bs-diff", style: bgOf(-x.g, max) }, f2(-x.g))]; // (update 371: last N less the level: red where they're behind)
       const tapRow = (cls, open, onTap, label, rest) => {
         const tr = el("tr", { class: `sg-tap ${cls}`, role: "button", tabindex: "0", "aria-expanded": String(open) }, [el("td", {}, label), ...rest]);
         tr.addEventListener("click", onTap); tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onTap(); } });
@@ -2838,7 +2903,7 @@ export function sgDashboard(container, opts) {
         }
       }
       return el("div", { class: "bs-path-tw" }, [
-        infoTip(`${lv ? `${lvHead} rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Each row is strokes gained a round: the last ${N} rounds, the level\u2019s rounds, and the difference (green: the level\u2019s rounds were better, so there\u2019s something to gain). #1 to #${gaps.length || 5} mark the biggest gaps. Tap a part of the game for its distances, and a distance for the takeaway, target and practice.`),
+        infoTip(`${lv ? `${lvHead} rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Each row is strokes gained a round: the last ${N} rounds, the level\u2019s rounds, and the difference: the last ${N} less the level\u2019s rounds (red: behind the level there, so there\u2019s something to gain; green: already ahead). #1 to #${gaps.length || 5} mark the biggest gaps. Tap a part of the game for its distances, and a distance for the takeaway, target and practice.`),
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t" }, [
           el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, `Last ${N}`), el("th", { class: "num", title: `${lvHead} rounds` }, lvShort), el("th", { class: "num" }, "Diff")])),
           el("tbody", {}, body)])),

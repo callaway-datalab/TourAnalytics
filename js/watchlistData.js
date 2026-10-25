@@ -202,13 +202,16 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const card = { key, label, tour, tours: tours.filter((t) => t.tour), rounds: mine.length, minR, of: ranked.length, period, sg: [], dists: { best: [], worst: [] }, metrics: [], badges: [], alerts: [] };
   if (!mine.length) return { ...card, empty: true };
 
+  // (update 372) a part of the game's row in a form pop-up, opening to its distances (strokes gained a round)
+  const distsOf = (c) => { const w = new Map(); for (const rd of mine) for (const x of rd.shots || []) if (x.cat === c && x.dist) w.set(x.dist, (w.get(x.dist) || 0) + (x.w || 1)); return [...w].filter(([, n]) => n >= 3).map(([d]) => d).sort((a, b) => distLead(a) - distLead(b) || String(a).localeCompare(String(b))); };
+  const catRow = (c, l) => ({ label: l, val: (rs) => perRound(rs, c), children: c === "TOTAL" ? null : distsOf(c).map((d) => ({ label: d, val: (rs) => { if (!rs.length) return null; let t = 0; for (const rd of rs) for (const x of rd.shots || []) if (x.cat === c && x.dist === d) t += x.sg; return t / rs.length; } })) });
   // ---- the five strokes gained ----
   for (const [k, l, short] of SG_KEYS) {
     const vals = new Map(ranked.map((p) => [p.key, perRound(p.rounds, k)]));
     const r = rankOf(vals, key);
     card.sg.push({ k, label: l, short, v: vals.get(key), rank: r.rank, of: r.of, avg: r.avg, avgO: r.avgO, trend: trendOf(mine, (rs) => perRound(rs, k)),
       // (update 182) its form; SG: Total's also says where the change came from
-      info: () => formInfo(mine, (rs) => perRound(rs, k), { label: l, fmtFn: fmtSG, rows: k === "TOTAL" ? SG_KEYS.map(([kk, ll]) => ({ label: ll, val: (rs) => perRound(rs, kk) })) : null }) });
+      info: () => formInfo(mine, (rs) => perRound(rs, k), { label: l, fmtFn: fmtSG, rows: k === "TOTAL" ? SG_KEYS.map(([kk, ll]) => catRow(kk, ll)) : [catRow(k, l)] }) });
   }
   const total = card.sg[0];
   const sgVals = new Map(SG_KEYS.map(([k]) => [k, new Map(ranked.map((p) => [p.key, perRound(p.rounds, k)]))]));
@@ -380,6 +383,17 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   };
   if ((sign > 0 && run >= 5) || (avg5 != null && avg5 >= 1.5)) add({ kind: "hot", icon: "🔥", tone: "up", text: run >= 5 && sign > 0 ? `Hot · ${run} rds gaining` : `Hot · ${fmtSG(avg5)}/rd, last 5`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign > 0));
   if ((sign < 0 && run >= 5) || (avg5 != null && avg5 <= -1.5)) add({ kind: "cold", icon: "🧊", tone: "down", text: run >= 5 && sign < 0 ? `Slump · ${run} rds losing` : `Slump · ${fmtSG(avg5)}/rd, last 5`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign < 0));
+  // (update 372) current form, on every card: their last 10 rounds' strokes gained a round, and the rank it plays at
+  if (mine.length >= 3) {
+    const fn = Math.min(10, mine.length), fAvg = perRound(mine.slice(-fn));
+    const tv = [...(sgVals.get("TOTAL") || new Map())].filter(([k, v]) => k !== key && v != null);
+    const lvl = !noRanks && tv.length && fAvg != null ? 1 + tv.filter(([, v]) => v > fAvg + 1e-12).length : null;
+    if (fAvg != null) add({ kind: "form", icon: "\uD83D\uDCC8", tone: fAvg > 0.005 ? "up" : fAvg < -0.005 ? "down" : "", text: `Form ${fmtSG(fAvg)}/rd, last ${fn}${lvl ? ` \u00b7 #${lvl} level` : ""}` }, () => {
+      const fi = formInfo(mine, (rs) => perRound(rs, "TOTAL"), { label: "SG: Total", fmtFn: fmtSG, rows: SG_KEYS.map(([kk, ll]) => catRow(kk, ll)) });
+      fi.sub = `Current form: ${fmtSG(fAvg)} a round over the last ${fn} rounds${lvl ? `, which would rank ${ordinal(lvl)} of ${tv.length + 1} as a season average` : ""}. ${fi.sub}`;
+      return fi;
+    });
+  }
   // big moves: the last 10 against the 10 before
   if (total.trend && Math.abs(total.trend.ch) >= 0.75) add({ kind: total.trend.ch > 0 ? "up" : "down", icon: total.trend.ch > 0 ? "⬆" : "⬇", tone: total.trend.ch > 0 ? "up" : "down", text: `${total.trend.ch > 0 ? "Up" : "Down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd · last ${total.trend.n}`, alert: true, sev: 2 }, () => {
     const n = total.trend.n, show = mine.slice(-2 * n);
@@ -471,13 +485,15 @@ export function formInfo(ordered, val, { label, fmtFn, chFn = (d) => Math.abs(d)
   const toneOf = (v) => (signed ? null : better(v, pv) == null ? "gold" : better(v, pv) || Math.abs(v - pv) < 1e-9 ? "pos" : "neg");
   const cell = (v) => ({ text: fmt(v), tone: signed && v != null ? (Math.round(v * 1000) === 0 ? "zero" : v > 0 ? "pos" : "neg") : "" });
   const change = (a, b) => (a == null || b == null ? { text: "\u2014" } : { text: `${Math.abs(a - b) < 1e-9 ? "" : a > b ? "\u25B2 " : "\u25BC "}${chFn(a - b)}`, tone: better(a, b) == null || Math.abs(a - b) < 1e-9 ? "" : better(a, b) ? "pos" : "neg" });
-  const tableRows = (rows || [{ label, val }]).map((r, i) => { const a = r.val(lastR), b = r.val(prevR); return { strong: i === 0 && (rows?.length || 0) > 1, cells: [r.label, cell(b), cell(a), change(a, b)] }; });
+  const rowOf = (r, i, kid = false) => { const a = r.val(lastR), b = r.val(prevR); return { strong: !kid && i === 0 && (rows?.length || 0) > 1, cells: [r.label, cell(b), cell(a), change(a, b)],
+    kids: !kid && r.children?.length ? r.children.map((ch, j) => rowOf(ch, j, true)) : null }; }; // (update 372: a part of the game opens to its distances)
+  const tableRows = (rows || [{ label, val }]).map((r, i) => rowOf(r, i));
   return {
     sub: `${label} in each ${what}: the last ${n} (highlighted) against the ${n} before.`,
     blocks: [
       { kind: "bars", fmtFn, zero: signed, items: [...prevR, ...lastR].map((rd, i) => { const v = val([rd]); return { label: dateShort(rd.date), sub: roundSub(rd), v, on: i >= prevR.length, tone: toneOf(v) }; }),
         ref: [{ v: pv, label: `Previous ${n}`, from: 0, to: prevR.length }, { v: lv, label: `Last ${n}`, from: prevR.length, to: prevR.length + lastR.length }] },
-      { kind: "table", title: rows?.length > 1 ? `By category (a ${what})` : null, cols: [[rows?.length > 1 ? "Category" : ""], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: tableRows },
+      { kind: "table", title: rows?.length > 1 ? `By category (a ${what}, tap one for its distances)` : rows?.[0]?.children?.length ? `By distance (a ${what}, tap to open)` : null, cols: [[rows?.length > 1 ? "Category" : ""], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: tableRows },
     ],
   };
 }

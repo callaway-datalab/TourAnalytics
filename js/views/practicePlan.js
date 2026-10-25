@@ -4,7 +4,7 @@
  * session keeps how long it took and how many sets it needed; the plan card shows the last one and the best set.
  */
 import { el, mount, confirmAction } from "../ui.js";
-import { listPlan, deletePlanItem, goalText, goalSource, setScore, setMet, bestOf, activeSecs, mmss, nounOf } from "../practice/plan.js";
+import { listPlan, deletePlanItem, savePlanItem, practiceOpen, isMine, goalText, goalSource, setScore, setMet, bestOf, activeSecs, mmss, nounOf } from "../practice/plan.js";
 import { parseDrillSpeech } from "../practice/voiceParse.js";
 
 /* (update 359) Voice: the phone's own speech recognition (free, the same as Enter New Round). Turn it on once and it keeps
@@ -45,6 +45,7 @@ const fmtDay = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLo
 const unitOf = (d) => (d.kind === "prox" ? " ft" : ` of ${d.reps}`);
 // (update 349) a session is as many sets as you like (Redo after each); the aim is 3 sets that meet the goal
 const SETS_AIM = 3;
+const aimOf = (d) => Math.max(1, Math.round(Number(d?.setsAim) || SETS_AIM)); // (update 371: set per drill when it's added)
 const metOf = (s) => s.metCount ?? (s.sets || []).filter((x) => x.met).length;
 const triedOf = (s) => s.tried ?? (s.sets || []).length;
 const tally = (s) => `${metOf(s)} of ${triedOf(s)} ${triedOf(s) === 1 ? "set" : "sets"} met`;
@@ -59,6 +60,15 @@ export async function render(ctx) {
   if (!plan || planOwnerKey !== ctx.owner) {
     mount(ctx.body, el("p", { class: "muted pr-loading ta-loading" }, "Loading your plan…"));
     plan = await listPlan(ctx.owner); planOwnerKey = ctx.owner;
+    // (update 371) your plan is only drills from your own stats: ones added earlier from another player's stats move to
+    // that player's plan (once)
+    if (!ctx.readOnly && practiceOpen()) {
+      const away = plan.filter((d) => d.playerKey && !isMine(d.playerKey) && d.playerKey !== ctx.playerKey);
+      for (const d of away) {
+        try { await savePlanItem(d.playerKey, { ...d, sentBy: d.sentBy || { uid: ctx.uid || null, name: "Callaway" } }); await deletePlanItem(ctx.owner, d.id); plan = plan.filter((x) => x.id !== d.id); }
+        catch (err) { console.error(err); break; }
+      }
+    }
     if (ctx.view.name !== "home") return;
   }
   drawHome(ctx);
@@ -77,6 +87,7 @@ function start(ctx, d) {
 /* ---------------- the plan ---------------- */
 function drawHome(ctx) {
   const ro = ctx.readOnly;
+  const canEdit = !ro || practiceOpen(ctx.playerKey); // (update 371: whoever can send this player drills can take one out)
   const card = (d) => {
     const ss = drillSessions(ctx, d), done = ss.filter((s) => s.status === "done").sort((a, b) => String(b.endedAt || b.startedAt).localeCompare(String(a.endedAt || a.startedAt)));
     const live = ss.find((s) => s.status === "active"), last = done[0], best = bestOf(d, ctx.sessions);
@@ -86,13 +97,14 @@ function drawHome(ctx) {
     go.addEventListener("click", () => start(ctx, d));
     const del = el("button", { type: "button", class: "entry-del dp-del", "aria-label": "Take this drill out of the plan", title: "Take out of the plan" }, "✕");
     del.addEventListener("click", async () => {
-      if (!confirmAction("Take this drill out of your plan? Its sessions stay in your history.")) return;
+      if (!confirmAction(ro ? `Take this drill out of ${ctx.viewing}\u2019s plan? Their sessions stay in their history.` : "Take this drill out of your plan? Its sessions stay in your history.")) return;
       try { await deletePlanItem(ctx.owner, d.id); plan = plan.filter((x) => x.id !== d.id); drawHome(ctx); } catch (err) { console.error(err); ctx.flash?.("Couldn’t take it out just now.", "error"); }
     });
     return el("article", { class: "dp-card" }, [
-      el("div", { class: "dp-card-top" }, [el("h3", { class: "dp-title" }, d.title), ro ? null : del]),
+      el("div", { class: "dp-card-top" }, [el("h3", { class: "dp-title" }, d.title), canEdit ? del : null]),
+      d.sentBy?.name ? el("p", { class: "muted small dp-from" }, `From ${d.sentBy.name}`) : null,
       el("p", { class: "dp-goal" }, [el("strong", {}, goalText(d, best)), src ? el("span", { class: "muted" }, ` · ${src}`) : null]),
-      el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)} a set, ${d.kind === "prox" ? "typing how far each one finishes" : "one tap each"}; aim for ${SETS_AIM} sets that meet the goal.`),
+      el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)} a set, ${d.kind === "prox" ? "typing how far each one finishes" : "one tap each"}; aim for ${aimOf(d)} ${aimOf(d) === 1 ? "set" : "sets"} that meet the goal.`),
       d.goalText ? el("p", { class: "small dp-round-goal" }, `Added goal: ${d.goalText}`) : null,
       el("p", { class: "muted small dp-last" }, [lastTxt, best != null ? ` · best set ${scoreText(d, best)}` : "", done.length > 1 ? ` · ${done.length} sessions` : ""]),
       ro ? null : go,
@@ -101,14 +113,14 @@ function drawHome(ctx) {
   const hist = ctx.sessions.filter((s) => s.mode === "drill" && s.status === "done").sort((a, b) => String(b.endedAt || b.startedAt).localeCompare(String(a.endedAt || a.startedAt))).slice(0, 12);
   mount(ctx.body, el("div", { class: "dp" }, [
     el("div", { class: "dp-head" }, [el("h2", {}, ro ? `${ctx.viewing}’s practice plan` : "Your practice plan"),
-      el("p", { class: "muted small" }, `Drills added from Stats (Path back to Elite). Each set is a challenge: aim for ${SETS_AIM} sets that meet the goal, and redo sets as often as you like. The sets you try, the sets you meet and your time are kept.`)]),
+      el("p", { class: "muted small" }, `Drills added from Stats (Path to…). Each set is a challenge: meet the goal in the number of sets each drill asks for, and redo sets as often as you like. The sets you try, the sets you meet and your time are kept.`)]),
     plan.length ? el("div", { class: "dp-list" }, plan.map(card))
-      : el("p", { class: "empty dp-empty" }, "Nothing in the plan yet. In Stats, tap an Elite Round Share box, then “Add to practice plan” under Path back to Elite."),
+      : el("p", { class: "empty dp-empty" }, ro ? `Nothing in ${ctx.viewing}\u2019s plan yet.` : "Nothing in the plan yet. In Stats, open Path to… and tap a distance, then “Add to practice plan”."),
     hist.length ? el("h3", { class: "dp-hist-h" }, "Recent drill sessions") : null,
     hist.length ? el("ul", { class: "dp-hist" }, hist.map((s) => {
       const d = s.drill || {};
       const row = el("li", { class: "dp-hist-row" }, [el("span", {}, [el("strong", {}, d.title || "Drill"), el("span", { class: "muted" }, ` · ${fmtDay(s.endedAt || s.startedAt)}`)]),
-        el("span", { class: metOf(s) >= SETS_AIM ? "pos" : "muted" }, `${tally(s)} \u00b7 ${mmss(s.secs || 0)}`)]);
+        el("span", { class: metOf(s) >= aimOf(s.drill) ? "pos" : "muted" }, `${tally(s)} \u00b7 ${mmss(s.secs || 0)}`)]);
       return ctx.rowWithDelete(row, s, "drill session");
     })) : null,
   ]));
@@ -217,7 +229,7 @@ function finishSet(ctx, s) {
   if (marking) { set.mark = true; s.best = set.score; }
   ctx.save(s, true);
   stopClock();
-  const met = metOf(s), tried = s.sets.length, reached = met >= SETS_AIM;
+  const met = metOf(s), tried = s.sets.length, reached = met >= aimOf(d);
   const redo = el("button", { type: "button", class: `btn ${reached ? "ghost " : ""}dp-again` }, "\u21BB  Redo");
   redo.addEventListener("click", () => { s.sets.push({ marks: [] }); ctx.save(s); drawDrill(ctx, s); });
   const fin = el("button", { type: "button", class: reached ? "btn dp-again" : "link" }, "Finish");
@@ -240,7 +252,7 @@ function finishSet(ctx, s) {
     el("h2", { class: "dp-title" }, d.title),
     el("p", { class: `dp-big${set.met ? " pos" : ""}` }, `Set ${tried}: ${scoreText(d, set.score)}`),
     el("p", {}, verdict),
-    el("p", { class: "muted" }, `${met} of ${tried} ${tried === 1 ? "set" : "sets"} met so far (aim: ${SETS_AIM}) \u00b7 ${mmss(activeSecs(s))}.${reached ? ` That\u2019s ${SETS_AIM}: finish, or keep going.` : ""}`),
+    el("p", { class: "muted" }, `${met} of ${tried} ${tried === 1 ? "set" : "sets"} met so far (aim: ${aimOf(d)}) \u00b7 ${mmss(activeSecs(s))}.${reached ? ` That\u2019s ${aimOf(d)}: finish, or keep going.` : ""}`),
     el("div", { class: "dp-setend-btns" }, reached ? [fin, redo] : [redo, fin]),
     SR && voice.on ? el("p", { class: "muted small dp-voice-status" }, "\u{1F399}\uFE0F Say \u201credo\u201d (or just start the next set\u2019s shots), or \u201cfinish\u201d.") : null,
   ]));
@@ -266,13 +278,13 @@ function drawDone(ctx, s) {
   back.addEventListener("click", () => ctx.home());
   mount(ctx.body, el("div", { class: "dp dp-play dp-done" }, [
     el("h2", { class: "dp-title" }, d.title),
-    el("p", { class: `dp-big${met >= SETS_AIM ? " pos" : ""}` }, `${met} of ${tried} ${tried === 1 ? "set" : "sets"} met${met >= SETS_AIM ? " \u2713" : ""}`),
+    el("p", { class: `dp-big${met >= aimOf(d) ? " pos" : ""}` }, `${met} of ${tried} ${tried === 1 ? "set" : "sets"} met${met >= aimOf(d) ? " \u2713" : ""}`),
     el("div", { class: "dp-stat" }, [
       el("div", {}, [el("span", { class: "muted small" }, "Time"), el("strong", {}, mmss(s.secs || 0))]),
       el("div", {}, [el("span", { class: "muted small" }, "Met"), el("strong", {}, `${met} / ${tried}`)]),
       el("div", {}, [el("span", { class: "muted small" }, "Balls"), el("strong", {}, String(s.balls || 0))]),
     ]),
-    el("p", { class: "muted small" }, `Sets: ${s.sets.map((x) => `${scoreText(d, x.score)}${x.mark ? " (mark)" : x.met ? " \u2713" : ""}`).join(", ")}.${met < SETS_AIM ? ` Aim for ${SETS_AIM} met sets next time.` : ""}`),
+    el("p", { class: "muted small" }, `Sets: ${s.sets.map((x) => `${scoreText(d, x.score)}${x.mark ? " (mark)" : x.met ? " \u2713" : ""}`).join(", ")}.${met < aimOf(d) ? ` Aim for ${aimOf(d)} met ${aimOf(d) === 1 ? "set" : "sets"} next time.` : ""}`),
     d.goalText ? el("p", { class: "small dp-round-goal" }, `Now take it to the course: ${d.goalText} (in Goals).`) : null,
     back,
   ]));

@@ -62,7 +62,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     if (viewKey) pp.preset(viewKey);
     inp?.addEventListener("focus", () => { if (inp.value) { inp.value = ""; inp.dispatchEvent(new Event("input")); } });
     inp?.addEventListener("blur", () => setTimeout(() => { if (!inp.value && viewKey) pp.preset(viewKey); }, 300));
-    return el("div", { class: "pr-who" }, [pp.node, viewing ? el("p", { class: "muted small pr-who-note" }, `${viewing}\u2019s practice and launch monitor data, to look at (only ${viewing} can add to it).`) : null]);
+    return el("div", { class: "pr-who" }, [pp.node, viewing ? el("p", { class: "muted small pr-who-note" }, `${viewing}\u2019s practice and launch monitor data, to look at. Their Plan tab shows the drills sent to them from Stats.`) : null]);
   })() : null;
   const ls = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   let cat = q.get("cat") || ls(LS_CAT) || "APP";

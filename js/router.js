@@ -207,7 +207,15 @@ async function render() {
   // (update 298) and not in someone's portal you're looking at as the admin (it shows what they'd see)
   // (update 342) whether Practice is open to whoever's looking (Stats offers "Add to practice plan" only then)
   window.__taCanPractice = !!(state.isAdmin && !previewClient && !getPreviewTeam());
-  if (["course-prep", "practice"].includes(routeId) && !(state.isAdmin && !previewClient && !getPreviewTeam())) { navigate("/entry"); return; }
+  // (update 371) who may send practice plans from Stats: the admin to anyone; a team member with Allow coaching, to the
+  // players they work with; your own stats go to your own plan
+  window.__taSelfKey = !previewClient && !getPreviewTeam() ? state.profile?.clientKey || null : null;
+  window.__taTeamKeys = !getPreviewTeam() && state.isTeam ? Object.keys(state.teamAccess || {}) : [];
+  if (state.isTeam && !getPreviewTeam() && state.profile?.inviteCode && window.__taCoachFor !== state.user?.uid) {
+    window.__taCoachFor = state.user?.uid; window.__taCoach = false;
+    import("./store.js").then((m) => m.myCoachAccess(state.profile.inviteCode)).then((on) => { window.__taCoach = !!on; }).catch(() => {});
+  }
+  if (routeId === "course-prep" && !(state.isAdmin && !previewClient && !getPreviewTeam())) { navigate("/entry"); return; } // (update 372: Practice is open to everyone)
   if (routeId === "team") {
     const keys = teamKeys();
     // (update 307) their own entered rounds count as one more to pick from; with no players, it's just theirs

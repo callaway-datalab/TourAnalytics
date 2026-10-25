@@ -1074,13 +1074,21 @@ export function markThreadReadByUser(threadId) {
    Keyed by the code, so it can be set before they sign up and follows them after.
    (update 305) the same doc says whether they may message Callaway Analyst: { analyst } (missing = yes). */
 export function watchCalAccess(cb) {
-  return onSnapshot(collection(db, "calAccess"), (snap) => cb(new Map(snap.docs.map((d) => [d.id, { on: !!d.data().on, analyst: d.data().analyst !== false }]))), () => cb(new Map()));
+  return onSnapshot(collection(db, "calAccess"), (snap) => cb(new Map(snap.docs.map((d) => [d.id, { on: !!d.data().on, analyst: d.data().analyst !== false, coach: !!d.data().coach }]))), () => cb(new Map()));
 }
 export async function setCalAccess(code, on) {
   await setDoc(doc(db, "calAccess", code), { on: !!on, updatedAt: serverTimestamp() }, { merge: true });
 }
 export async function setAnalystAccess(code, on) {
   await setDoc(doc(db, "calAccess", code), { analyst: !!on, updatedAt: serverTimestamp() }, { merge: true });
+}
+/** (update 371) Allow coaching: may they send practice plans to the players they work with (off unless turned on). */
+export async function setCoachAccess(code, on) {
+  await setDoc(doc(db, "calAccess", code), { coach: !!on, updatedAt: serverTimestamp() }, { merge: true });
+}
+export async function myCoachAccess(inviteCode) {
+  if (!inviteCode) return false;
+  try { const s = await getDoc(doc(db, "calAccess", inviteCode)); return !!(s.exists() && s.data().coach); } catch { return false; }
 }
 /** Whether Cal is on for this signed-in person (their profile's access code). */
 export async function myCalAccess(inviteCode) {
