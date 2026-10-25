@@ -386,7 +386,8 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   // (update 372) current form, on every card: their last 10 rounds' strokes gained a round, and the rank it plays at
   if (mine.length >= 3) {
     const fn = Math.min(10, mine.length), fAvg = perRound(mine.slice(-fn));
-    if (fAvg != null) add({ kind: "form", icon: "\uD83D\uDCC8", tone: fAvg > 0.005 ? "up" : fAvg < -0.005 ? "down" : "", text: `Form: ${fmtSG(fAvg)}/rd, last ${fn}${total.trend && Math.abs(total.trend.ch) >= 0.005 ? ` \u2022 ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
+const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the change on the rounds before, not the sign of the average
+    if (fAvg != null) add({ kind: "form", icon: fch < -0.005 ? "\uD83D\uDCC9" : "\uD83D\uDCC8", tone: fch > 0.005 ? "up" : fch < -0.005 ? "down" : "", text: `Form: ${fmtSG(fAvg)}/rd, last ${fn}${total.trend && Math.abs(total.trend.ch) >= 0.005 ? ` \u2022 ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
       const fi = formInfo(mine, (rs) => perRound(rs, "TOTAL"), { label: "SG: Total", fmtFn: fmtSG, rows: SG_KEYS.map(([kk, ll]) => catRow(kk, ll)) });
       fi.sub = `Current form: ${fmtSG(fAvg)} a round over the last ${fn} rounds. ${fi.sub}`; // (update 373: no rank level)
       return fi;

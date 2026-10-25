@@ -2917,9 +2917,10 @@ export function sgDashboard(container, opts) {
       el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), pathOpen ? addAll : null]),
       ...(pathOpen ? [      lvPick,
       el("div", { class: "bs-path-gap" }, [
-        el("div", {}, bar != null ? [`${LEVELS[lv.T]} needs: `, el("strong", {}, f2(bar)), ` a round (to rank #${lv.T})`] : [`Their best ${elite.length}: `, el("strong", {}, f2(eAvg)), ` a round`]),
+        // (update 374) the level's rounds (the same numbers as the table below), with what it takes to rank there alongside
+        el("div", {}, bar != null ? [`\u201c${LEVELS[lv.T]}\u201d rounds: `, el("strong", {}, f2(eAvg)), ` a round `, el("span", { class: "muted" }, `(their best ${elite.length}; ranking #${lv.T} takes ${f2(bar)})`)] : [`Their best ${elite.length}: `, el("strong", {}, f2(eAvg)), ` a round`]),
         el("div", {}, [`Last `, nIn, ` rounds: `, el("strong", {}, f2(rAvg)), ` a round${lv?.formRank ? ` (a #${lv.formRank} level)` : ""}`]),
-        el("div", {}, there ? [el("strong", { class: "pos" }, `Already there: `), `their last ${N} rounds play at ${/level$/.test(LEVELS[lv.T]) ? LEVELS[lv.T] : `a ${LEVELS[lv.T]} level`}.`] : gap > 0.005 ? [`Gap: `, el("strong", {}, `${gap.toFixed(2)} strokes`), ` a round`] : [`No gap: they\u2019re playing at that level right now.`])]),
+        el("div", {}, there ? [el("strong", { class: "pos" }, `Already there: `), `their last ${N} rounds play at ${/level$/.test(LEVELS[lv.T]) ? LEVELS[lv.T] : `a ${LEVELS[lv.T]} level`}.`] : eAvg - rAvg > 0.005 ? [`Gap: `, el("strong", {}, `${(eAvg - rAvg).toFixed(2)} strokes`), ` a round`] : [`No gap: they\u2019re playing at that level right now.`])]),
       // already at this level lately: no gap to close here, so point to the next level up
       ...(there ? [lv.above ? (() => { const go = el("button", { type: "button", class: "btn ghost small bs-lv-next" }, `Aim for ${LEVELS[lv.above]} (#${lv.above}) \u2192`); go.addEventListener("click", () => { st.pathT = lv.above; draw(); }); return go; })()
         : el("p", { class: "muted small" }, `That\u2019s the top level.`)] : []),
