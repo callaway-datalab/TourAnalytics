@@ -386,21 +386,14 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   // (update 372) current form, on every card: their last 10 rounds' strokes gained a round, and the rank it plays at
   if (mine.length >= 3) {
     const fn = Math.min(10, mine.length), fAvg = perRound(mine.slice(-fn));
-    const tv = [...(sgVals.get("TOTAL") || new Map())].filter(([k, v]) => k !== key && v != null);
-    const lvl = !noRanks && tv.length && fAvg != null ? 1 + tv.filter(([, v]) => v > fAvg + 1e-12).length : null;
-    if (fAvg != null) add({ kind: "form", icon: "\uD83D\uDCC8", tone: fAvg > 0.005 ? "up" : fAvg < -0.005 ? "down" : "", text: `Form ${fmtSG(fAvg)}/rd, last ${fn}${lvl ? ` \u00b7 #${lvl} level` : ""}` }, () => {
+    if (fAvg != null) add({ kind: "form", icon: "\uD83D\uDCC8", tone: fAvg > 0.005 ? "up" : fAvg < -0.005 ? "down" : "", text: `Form: ${fmtSG(fAvg)}/rd, last ${fn}${total.trend && Math.abs(total.trend.ch) >= 0.005 ? ` \u2022 ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
       const fi = formInfo(mine, (rs) => perRound(rs, "TOTAL"), { label: "SG: Total", fmtFn: fmtSG, rows: SG_KEYS.map(([kk, ll]) => catRow(kk, ll)) });
-      fi.sub = `Current form: ${fmtSG(fAvg)} a round over the last ${fn} rounds${lvl ? `, which would rank ${ordinal(lvl)} of ${tv.length + 1} as a season average` : ""}. ${fi.sub}`;
+      fi.sub = `Current form: ${fmtSG(fAvg)} a round over the last ${fn} rounds. ${fi.sub}`; // (update 373: no rank level)
       return fi;
     });
   }
   // big moves: the last 10 against the 10 before
-  if (total.trend && Math.abs(total.trend.ch) >= 0.75) add({ kind: total.trend.ch > 0 ? "up" : "down", icon: total.trend.ch > 0 ? "⬆" : "⬇", tone: total.trend.ch > 0 ? "up" : "down", text: `${total.trend.ch > 0 ? "Up" : "Down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd · last ${total.trend.n}`, alert: true, sev: 2 }, () => {
-    const n = total.trend.n, show = mine.slice(-2 * n);
-    return { sub: `Strokes gained in each round: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
-      blocks: [{ kind: "bars", fmt: "sg", items: show.map((rd, i) => rdItem(rd, i >= n)), ref: [{ v: total.trend.prev, label: `Previous ${n}`, from: 0, to: n }, { v: total.trend.last, label: `Last ${n}`, from: n, to: 2 * n }] },
-        { kind: "table", title: "By category (a round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: card.sg.map((x) => { const t = trendOf(mine, (rs) => perRound(rs, x.k)); return { strong: x.k === "TOTAL", cells: [x.label, { sg: t?.prev }, { sg: t?.last }, { sg: t?.ch, arrow: true }] }; }) }] };
-  });
+  // (update 373) no "Up / Down x a round, last 10" badge: the form badge (always there) covers it
   // (update 168: no badge for a category moving up or down: its tile shows that)
   // form landmarks: the rolling 10-round average at its best (or worst) of the period
   const rolls = mine.length >= 20 ? mine.map((_, i) => (i >= 9 ? perRound(mine.slice(i - 9, i + 1)) : null)).filter((x) => x != null) : [];
@@ -459,7 +452,12 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
         const trail = rankTrail(key, mine, ranked, minR, total.rank), dates = mine.map((rd) => rd.date);
         const pts = rankDates(mine).map((d, i) => ({ label: dateShort(d), v: trail[i], on: i === trail.length - 1 })).filter((x) => x.v != null);
         return { sub: `Their SG: Total rank after each round this ${period === "season" ? "season" : "period"}: ${ordinal(was)} 10 rounds ago, ${ordinal(total.rank)} now.`,
-          blocks: [{ kind: "line", fmt: "rank", invert: true, items: pts }, { ...roundsTable(mine.slice(-10)), title: "The last 10 rounds" }] };
+          blocks: [{ kind: "line", fmt: "rank", invert: true, items: pts }, (() => {
+            // (update 373) with their rank after each of those rounds
+            const last = mine.slice(-10), rk = rankTrail(key, mine, ranked, minR, total.rank, last.map((rd) => String(rd.date || "")));
+            return { kind: "table", title: "The last 10 rounds", cols: [["Date"], ["Tournament"], ["SG", "num"], ["Rank", "num"]],
+              rows: last.map((rd, i) => ({ cells: [dateShort(rd.date), [rd.event || "\u2014", rd.roundNo ? ` R${rd.roundNo}` : ""].join(""), { sg: sgOf(rd) }, rk[i] ? ordinal(rk[i]) : "\u2014"] })).reverse() };
+          })()] };
       });
     }
   }
@@ -499,13 +497,13 @@ export function formInfo(ordered, val, { label, fmtFn, chFn = (d) => Math.abs(d)
 }
 /** SG Total rank after each of the player's rounds (at most 40 points, spread evenly; always the latest). */
 const rankDates = (mine) => { let d = [...new Set(mine.map((rd) => String(rd.date || "")))]; if (d.length > 40) { const step = (d.length - 1) / 39; d = Array.from({ length: 40 }, (_, i) => d[Math.round(i * step)]); } return d; };
-function rankTrail(key, mine, ranked, minR, nowRank) {
+function rankTrail(key, mine, ranked, minR, nowRank, dates = null) {
   const dk = (d) => String(d || "");
   const sorted = ranked.map((p) => ({ key: p.key, rs: (p.key === key ? mine : [...p.rounds]).sort((a, b) => dk(a.date).localeCompare(dk(b.date))) }));
   const cum = sorted.map((p) => { let t = 0; return p.rs.map((rd) => (t += sgOf(rd))); });
   const mostNow = Math.max(1, ...sorted.map((p) => p.rs.length));
   const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
-  const out = rankDates(mine).map((d) => {
+  const out = (dates || rankDates(mine)).map((d) => {
     const counts = sorted.map((p) => upTo(p.rs, d));
     const need = Math.max(1, Math.round((minR * Math.max(1, ...counts)) / mostNow));
     const vals = [];
