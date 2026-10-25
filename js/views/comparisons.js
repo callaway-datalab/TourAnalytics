@@ -2102,6 +2102,21 @@ export async function render(main) {
     const live = all.filter((it) => it.s.n), items = live; // (a selection with no rounds: no column of dashes)
     if (!live.length) return null;
     const rowsShown = sgRowsFor(live);
+    // (update 364) colours as gradients: the bigger the number (or the gap), the brighter the green or red
+    const G = "48,209,88", R = "255,69,58";
+    const textStyle = (v, scale) => (v == null || Math.abs(v) < 0.005 ? "" : `color:rgba(${v > 0 ? G : R},${(0.42 + 0.58 * Math.min(1, Math.abs(v) / scale)).toFixed(3)})`);
+    // each cell against the row's average: how far, in the better or worse direction (strokes gained against a scale;
+    // percentages in points; other stats as a share of the average)
+    const bgStyle = (vals, v, higher = true, def = null, scale = 0.5) => {
+      const xs = vals.filter((x) => x != null);
+      if (xs.length < 2 || v == null || higher == null) return "";
+      const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const d = (v - mean) * (higher === false ? -1 : 1);
+      const sc = def == null ? scale : def.pct ? 6 : Math.max(Math.abs(mean) * 0.06, 1e-6);
+      const t = Math.min(1, Math.abs(d) / sc);
+      return t < 0.04 ? "" : `background:rgba(${d > 0 ? G : R},${((d > 0 ? 0.04 : 0.035) + (d > 0 ? 0.24 : 0.2) * t).toFixed(3)})`;
+    };
+    const styleOf = (...xs) => xs.filter(Boolean).join(";");
     const shadeBy = (vals, v, higher = true) => { const xs = vals.filter((x) => x != null); if (xs.length < 2 || v == null || higher == null) return ""; const best = higher === false ? Math.min(...xs) : Math.max(...xs), worst = higher === false ? Math.max(...xs) : Math.min(...xs); return Math.abs(best - worst) < 1e-9 ? "" : v === best ? "hi" : v === worst ? "lo" : ""; };
     const head = (t) => el("tr", { class: "cmp-grp" }, el("td", { colspan: items.length + 1 }, t));
     // (update 362) each part of the game, and each stat, opens to its distances (closed to start)
@@ -2114,10 +2129,10 @@ export async function render(main) {
     for (const [k, l] of rowsShown) {
       const vals = items.map((it) => it.s.sg[k]);
       const dRows = k !== "TOTAL" ? prof[k] || [] : [], key = `sg:${k}`;
-      const tr = el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, dRows.length ? [caret(key), l] : l), ...items.map((it, j) => el("td", { class: `num ${tone(vals[j])} ${shadeBy(vals, vals[j])}`, "data-s": it.i }, vals[j] == null ? "—" : fmtSG(vals[j])))]);
+      const tr = el("tr", { class: k === "TOTAL" ? "strong" : "" }, [el("td", {}, dRows.length ? [caret(key), l] : l), ...items.map((it, j) => el("td", { class: "num", style: styleOf(textStyle(vals[j], k === "TOTAL" ? 2.5 : 1), bgStyle(vals, vals[j], true, null, k === "TOTAL" ? 1 : 0.5)), "data-s": it.i }, vals[j] == null ? "—" : fmtSG(vals[j])))]);
       rows.push(dRows.length ? tapRow(tr, key) : tr);
       if (dRows.length && openRows.has(key)) for (const r of dRows) rows.push(el("tr", { class: "cmp-sub" }, [el("td", {}, r.dist),
-        ...items.map((it, j) => el("td", { class: `num ${tone(r.values[j])} ${shadeBy(r.values, r.values[j])}`, "data-s": it.i, title: r.w?.[j] ? `${Math.round(r.w[j])} attempts` : "" }, r.values[j] == null ? "\u2014" : fmtSG(r.values[j])))]));
+        ...items.map((it, j) => el("td", { class: "num", style: styleOf(textStyle(r.values[j], 0.5), bgStyle(r.values, r.values[j], true, null, 0.25)), "data-s": it.i, title: r.w?.[j] ? `${Math.round(r.w[j])} attempts` : "" }, r.values[j] == null ? "\u2014" : fmtSG(r.values[j])))]));
     }
     // the other stats, by category (and distance), for the same selections
     const obsSets = items.map((it) => statSets(roundsOf(it), [it.f])[0] || []);
@@ -2132,7 +2147,7 @@ export async function render(main) {
         const hasKids = !r.dist && keep.slice(ri + 1).findIndex((x) => !x.dist) !== 0 && keep[ri + 1]?.dist;
         const tr = el("tr", { class: r.dist ? "cmp-sub" : "" }, [
           el("td", { title: r.def.help || "" }, r.dist ? r.dist : hasKids ? [caret(key), r.label] : r.label),
-          ...items.map((it, j) => el("td", { class: `num ${shadeBy(r.values, r.values[j], r.def.higher)}`, "data-s": it.i, title: r.w[j] ? `${Math.round(r.w[j])} attempts` : "" }, fmtStat(r.def, r.values[j]))),
+          ...items.map((it, j) => el("td", { class: "num", style: bgStyle(r.values, r.values[j], r.def.higher, r.def), "data-s": it.i, title: r.w[j] ? `${Math.round(r.w[j])} attempts` : "" }, fmtStat(r.def, r.values[j]))),
         ]);
         rows.push(hasKids ? tapRow(tr, key) : tr);
       }
@@ -2148,7 +2163,7 @@ export async function render(main) {
       const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
       conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${s[0].name} is ${Math.abs(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL).toFixed(2)} a round better than ${s.at(-1).name}. `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, sureWords(s[0].s.rounds, s.at(-1).s.rounds))]); // (update 222)
     }
-    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained, then the other stats by part of the game and distance. The best in each row is shaded green, the worst red (lower is better for some, like Proximity). Hover a stat for how many attempts it’s from."), table, fewNote, conf]);
+    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained, then the other stats by part of the game and distance. Each cell is shaded by how far it is from the row\u2019s average: the further better, the brighter the green; the further worse, the brighter the red (lower is better for some, like Proximity). Strokes gained numbers are brighter the bigger they are. Hover a stat for how many attempts it’s from."), table, fewNote, conf]);
   }
   // every round as a dot, and how each selection unfolded (a 5-round rolling average)
   function roundsSection(items) {
