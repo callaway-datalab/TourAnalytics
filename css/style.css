@@ -5059,3 +5059,19 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .info-tip[open] { flex-basis: 100%; display: block; }
 .info-tip[open] > p { position: static !important; width: auto !important; margin: 0.4rem 0 0.2rem; box-shadow: none !important; background: rgba(255,255,255,0.04) !important; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 0.6rem 0.75rem; text-align: left; }
 .wl-foot .info-tip > summary { font-size: 1rem; }
+
+/* (update 368/369) an opened part of the game: its name glows and is underlined in gold so it's clear it's open */
+.sg-full-t tr.sg-tap[aria-expanded="true"] td:first-child { color: #f0d9a8; font-weight: 600; text-shadow: 0 0 10px rgba(212, 180, 131, 0.55); text-decoration: underline; text-decoration-color: #d4b483; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.sg-full-t tr.cmp-deep td:first-child { padding-left: 1.6em; }
+
+/* (update 370) the Path as a table: last N rounds against the level's rounds; a distance opens its takeaway, target and practice */
+.bs-path-tw { margin-top: 0.6rem; }
+.bs-path-t tr.bs-path-total td { font-weight: 600; }
+.bs-path-t tr.bs-path-det td { text-align: left; padding: 0.4rem 0.6rem 0.9rem; background: rgba(255, 255, 255, 0.025); white-space: normal; }
+.bs-path-t tr.bs-path-det .bs-kv { margin-top: 0.35rem; }
+.bs-top-b { display: inline-block; margin-left: 0.4em; padding: 0 0.4em; border-radius: 0.6em; font-size: 0.72em; font-weight: 700; line-height: 1.5; color: #1c1c1e; background: #d4b483; vertical-align: 0.1em; }
+.bs-top-n { font-size: 0.8em; }
+.bs-path-t th:first-child, .bs-path-t td:first-child { white-space: nowrap; }
+.bs-path-t th { white-space: nowrap; }
+.bs-path-t tr.bs-path-det td, .bs-path-t tr.bs-path-det td * { text-align: left; }
+.bs-path-t tr.bs-path-det .bs-drill-row { align-items: flex-start; }

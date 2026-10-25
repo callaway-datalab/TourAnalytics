@@ -77,7 +77,11 @@ export function drillFor(cat, dist, t = null, lie = null) {
     return { kind: "prox", cat, dist, reps: R, ...g, title: `Approach${at}`, what: `Approaches${at} to a pin, measuring how far each finishes from the hole`, unit: "ft" };
   }
   if (cat === "ARG") return { kind: "updown", cat, dist, reps: R, ...(is(/^ud|^scramble/) ? pctGoal() : { goal: null }), title: `Short game${at}`, what: `Chips and pitches${at}, then hole out`, tap: ["Up and down", "Not"] };
-  if (cat === "OTT") return { kind: "fairway", cat: "OTT", dist: null, reps: R, ...(is(/^fwy|fairway/) ? pctGoal() : { goal: null }), title: "Driving", what: "Drives to a target 30 yards wide, about a tour fairway", tap: ["Fairway", "Missed"] };
+  if (cat === "OTT") {
+    // (update 369) the club the gap is with: driver, or a wood or iron off the tee
+    const club = /iron/i.test(dist || "") ? "iron" : /wood/i.test(dist || "") ? "wood" : null;
+    return { kind: "fairway", cat: "OTT", dist: null, reps: R, ...(is(/^fwy|fairway/) ? pctGoal() : { goal: null }), title: club ? `Tee shots with a ${club}` : "Driving", what: club ? `Tee shots with a ${club} to a target 30 yards wide, about a tour fairway` : "Drives to a target 30 yards wide, about a tour fairway", tap: ["Fairway", "Missed"] };
+  }
   return null;
 }
 /** (update 349) Which stat sets each drill's goal (from the elite rounds), by part of the game and distance. */
@@ -103,7 +107,7 @@ export function goalSource(d) {
   return null;
 }
 /** The drill as one line of text (Stats shows this to everyone). */
-export const nounOf = (d) => ({ make: "putts", lag: "putts", fairway: "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
+export const nounOf = (d) => ({ make: "putts", lag: "putts", fairway: /^Tee shots/.test(d.title || "") ? "tee shots" : "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
 export function drillLine(d) {
   const src = goalSource(d);
   return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (no stat for this in their ${d.from || "kept rounds"} to set it from)`}. Aim for 3 sets that reach it.`;
