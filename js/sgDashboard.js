@@ -70,7 +70,7 @@ const MIX_CAUSE = {
   PUTT: "That comes from the shots before (how close approaches and chips finish), not the putting itself.",
 };
 import { favoriteKeys } from "./watchlist.js";
-import { el, mount, loadScript } from "./ui.js";
+import { el, mount, loadScript, infoTip } from "./ui.js";
 import {
   CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds,
@@ -805,7 +805,7 @@ export function sgDashboard(container, opts) {
         el("td", { class: `num ${isSG() ? signCls(x.v) : ""}` }, fmtV(x.v)), el("td", { class: `num ht-win ${x.rank === 1 ? "ht-won" : ""}` }, [String(x.rank), el("span", { class: "ht-of" }, ` of ${x.of}`)])]))),
     ])) : el("p", { class: "empty center" }, `No ${what.toLowerCase()} in this selection.`);
     popup(what, me.label, `${list.length} ${list.length === 1 ? "tournament" : "tournaments"} \u00b7 ${isSG() ? "strokes gained a round" : def.label}, newest first`, [...chart, table,
-      el("p", { class: "muted small" }, `${what === "Wins" ? "Best in the field" : "Top 10 in the field"} in ${isSG() ? "strokes gained a round" : def.label}, among the players who played every round there.`)], what);
+      infoTip(`${what === "Wins" ? "Best in the field" : "Top 10 in the field"} in ${isSG() ? "strokes gained a round" : def.label}, among the players who played every round there.`)], what);
   }
   // the Rankings table, in a pop-up (Min. rounds there redraws the page and opens it again)
   let rankShut = null; // (only one rankings pop-up at a time)
@@ -839,7 +839,7 @@ export function sgDashboard(container, opts) {
     const events = new Set(ordered.map((rd) => `${rd.event}|${yearOf(rd)}`)).size;
     popup(eyebrow || `${isSG() ? "SG" : def.label} trend`, me.label, `${rw(ordered.length)} \u00b7 ${events} ${events === 1 ? "tournament" : "tournaments"} \u00b7 newest first`, [
       el("div", { class: "table-scroll hero-tourn-scroll" }, roundsTable([...ordered].reverse(), { rank: rankCell })),
-      el("p", { class: "muted small" }, `Rank: where that ${unit} placed among everyone in the field who played it.`),
+      infoTip(`Rank: where that ${unit} placed among everyone in the field who played it.`),
     ], unit === "event" ? "Tournaments" : "Rounds");
   }
   // (update 174) The hero chart's table: one row per tournament, newest first: their average there and where it
@@ -1129,7 +1129,7 @@ export function sgDashboard(container, opts) {
         cell("Rounds", String(t.rounds)),
         !showRanks ? null : cell(fieldIsSummary() && narrowed() ? `Rank \u00b7 ${catsName()}` : "Rank", r ? `${r.rank} of ${r.of}` : "\u2014"),
       ]),
-      fieldIsSummary() && narrowed() ? el("p", { class: "muted small center" }, "Rank uses the category and rounds you've picked; rankings don't break down by lie or distance.") : null,
+      fieldIsSummary() && narrowed() ? infoTip("Rank uses the category and rounds you've picked; rankings don't break down by lie or distance.") : null,
     ]);
   }
 
@@ -1330,7 +1330,7 @@ export function sgDashboard(container, opts) {
     ]); });
     const more = rows.length > 25 ? (() => { const b = el("button", { type: "button", class: "link small" }, all ? "Show the top 25" : `Show all ${rows.length}`); b.addEventListener("click", () => { st.stretchAll = !all; draw(); }); return b; })() : null;
     return panelBox(`Elite Stretches \u00b7 ${what}`, [
-      el("p", { class: "muted small" }, `Each player\u2019s longest run of rounds in a row that, as their average, would rank #1 in this selection: the longer, the longer they played at a #1 level. \u201call\u201d: their whole selection already ranks #1.`),
+      infoTip(`Each player\u2019s longest run of rounds in a row that, as their average, would rank #1 in this selection: the longer, the longer they played at a #1 level. \u201call\u201d: their whole selection already ranks #1.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-stretch-board" }, [
         el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num", title: "The longest run of rounds in a row at a #1 level" }, "Rounds"), el("th", { class: "num" }, "When"), el("th", { class: "num", title: "Rounds in this selection" }, "Of")])),
         el("tbody", {}, body),
@@ -1371,7 +1371,7 @@ export function sgDashboard(container, opts) {
     ]); });
     const more = rows.length > 25 ? (() => { const b = el("button", { type: "button", class: "link small" }, all ? "Show the top 25" : `Show all ${rows.length}`); b.addEventListener("click", () => { st.formAll = !all; draw(); }); return b; })() : null;
     return panelBox(`Elite Round Share \u00b7 ${what}`, [
-      el("p", { class: "muted small" }, `How much of each player\u2019s golf was at a #1 level: the most of their rounds (their best ones, in any order) whose average would still rank #1 in this selection, as a share of all their rounds. 100%: their whole selection already ranks #1.`),
+      infoTip(`How much of each player\u2019s golf was at a #1 level: the most of their rounds (their best ones, in any order) whose average would still rank #1 in this selection, as a share of all their rounds. 100%: their whole selection already ranks #1.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-stretch-board" }, [
         el("thead", {}, el("tr", {}, [el("th", { class: "num" }, "Rank"), el("th", {}, "Player"), el("th", { class: "num", title: "Share of their rounds at a #1 level" }, "Share"), el("th", { class: "num", title: "Their best rounds that together average at a #1 level" }, "Rounds"), el("th", { class: "num", title: "Rounds in this selection" }, "Of")])),
         el("tbody", {}, body),
@@ -1508,6 +1508,17 @@ export function sgDashboard(container, opts) {
       if (v == null && (k.startsWith("d:") ? m.has("sg") : k.startsWith("c:") ? m.has("c:TOTAL") : false)) return 0;
       return v;
     };
+    // (update 365) the Diff column (kept less cut): a background that's brighter the bigger the difference, white text.
+    // Full colour at about 2 strokes (SG: Total), 1 (a part of the game), 0.5 (a distance), 0.05 a shot; 6 points for a
+    // percentage; 6% for other stats
+    const diffBg = (row, d, a, b, X) => {
+      if (d == null || row.higher == null) return "color:#fff";
+      const better = row.higher === false ? -d : d;
+      const sc = row.fmt === sg3 ? 0.05 : row.fmt === sgF ? (row.key === "c:TOTAL" && !X ? 2 : X || row.sub ? 0.5 : 1) : row.def?.pct ? 6 : Math.max(Math.abs(((a ?? 0) + (b ?? 0)) / 2) * 0.06, 1e-6);
+      const t = Math.min(1, Math.abs(better) / sc);
+      if (t < 0.04) return "color:#fff";
+      return `color:#fff;background:rgba(${better > 0 ? "48,209,88" : "255,69,58"},${((better > 0 ? 0.06 : 0.05) + (better > 0 ? 0.34 : 0.3) * t).toFixed(3)})`;
+    };
     const sgF = (v) => fmtSG(v), sg3 = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`);
     const R = [];
     if (!cat) {
@@ -1606,7 +1617,7 @@ export function sgDashboard(container, opts) {
           el("td", { title: row.tip || null }, label),
           el("td", { class: "num" }, row.fmt(v)), // (update 335: Avg | Elite | Diff | Elite Rank; only the difference is coloured)
           el("td", { class: "num strong" }, pk == null ? "\u2014" : row.fmt(pk)),
-          el("td", { class: `num ${good(d)}` }, dTxt2),
+          el("td", { class: "num bs-diff", style: diffBg(row, d, pk, v, X) }, dTxt2),
           el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "\u2014"),
         ]), srow));
         continue;
@@ -1646,7 +1657,7 @@ export function sgDashboard(container, opts) {
       // (update 240) what the colours mean
       // (update 363) with kept / cut rounds picked, what the columns mean sits behind a small ⓘ
       (() => { const txt = (stretchOn ? `${NM().Cut}: ${me?.label || "the player"}\u2019s ${NM().cut} in the selected time frame. ${NM().Kept}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (shown above). Diff: ${NM().kept} less ${NM().cut}, green where the ${NM().kept} were better.${showRanks ? ` ${NM().Kept} Rank: where the ${NM().kept}\u2019 value would rank if it were their average for the selected time frame.` : ""}`
-        : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`); return stretchOn ? el("details", { class: "bs-help sg-full-note-i" }, [el("summary", { "aria-label": "What the columns mean" }, "\u24d8"), el("p", { class: "muted small" }, txt)]) : el("p", { class: "muted small sg-full-note" }, txt); })(),
+        : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`); return el("details", { class: "bs-help sg-full-note-i" }, [el("summary", { "aria-label": "What the columns mean" }, "\u24d8"), el("p", { class: "muted small" }, txt)]); })(), // (update 366: always behind the ⓘ)
       // (update 341) Path back to Elite, below the table
       // (update 355) with rankings, the path has its own level to aim at (the next one up to start); without, the best
       // rounds picked above
@@ -1874,7 +1885,7 @@ export function sgDashboard(container, opts) {
         el("tr", { class: "mx-total" }, [el("td", {}, "All distances"), ...lies.map((l) => td(`*|${l}`, true)), td("*|*", true)])]),
     ]);
     return panelBox(`${def.label} by Distance and Lie \u00b7 ${catLabel}`, [el("div", { class: "table-scroll" }, table),
-      el("p", { class: "muted small" }, "The small number is how many attempts each value comes from.")], "full");
+      infoTip("The small number is how many attempts each value comes from.")], "full");
   }
   function statTrend(mine, slicedField) {
     const groups = groupBy(mine, st.trendBy);
@@ -1984,8 +1995,8 @@ export function sgDashboard(container, opts) {
       searchable ? glass : null,
       searchable ? searchBox : null,
       ranked.length ? rankScroll : el("p", { class: "empty" }, "No rounds match these filters."),
-      fieldIsSummary() && narrowed() ? el("p", { class: "muted small" }, "Rankings follow year, tournament, round and category, not lie or distance.") : null,
-      !sg && def.higher === false ? el("p", { class: "muted small" }, "Lower is better, so the lowest is ranked first.") : !sg && def.higher == null ? el("p", { class: "muted small" }, "Ranked highest first (the file doesn\u2019t say whether higher is better).") : null,
+      fieldIsSummary() && narrowed() ? infoTip("Rankings follow year, tournament, round and category, not lie or distance.") : null,
+      !sg && def.higher === false ? infoTip("Lower is better, so the lowest is ranked first.") : !sg && def.higher == null ? infoTip("Ranked highest first (the file doesn\u2019t say whether higher is better).") : null,
     ], "full");
   }
 
@@ -2299,6 +2310,7 @@ export function sgDashboard(container, opts) {
     st.peakMode = "elite";
     const sel = st.vsRank === "peak" ? Math.max(1, Math.round(Number(st.peakN) || 10)) : null;
     const help = el("details", { class: "bs-help" }, [el("summary", { "aria-label": "What is this?" }, "\u24d8"),
+      el("p", { class: "muted small" }, "How much of the player\u2019s golf was at each level (their best rounds, in any order, that together would rank there), and the other way round: how many of their worst rounds they\u2019d have to cut to get there."),
       el("p", { class: "muted small" }, "The four levels are named for what they mean on Tour. Best on Tour (#1): the season average of the best player in this selection. Contender (#10): a top-10 player, in contention most weeks. Tour Championship level (#25): around the top 30 who make the Tour Championship. Signature event level (#50): the top 50 who earn spots in the signature events. Each level is the average a player would need over the selected rounds to rank there in this field, so on other tours\u2019 data the names are a guide, not a fact."),
       el("p", { class: "muted small" }, "Elite Round Share asks how much of a player\u2019s golf was at each level. Take their best rounds, in any order, and keep adding the next best while the average of the ones taken would still rank at that level. The share is how many rounds that is, out of all their rounds. Seen the other way, the rest are the rounds they\u2019d have to cut: Next steps lists, from where they sit now, how many of their worst rounds each level above would take to cut (or how much better every round would have to be). Tap a box or a step to see the rounds: the ones to cut, what set the kept rounds apart, what hurt in the cut ones, and the path to get there."),
       el("p", { class: "muted small" }, "The line under the boxes says how much #1-level golf is in them, and their best stretch: the longest run of rounds in a row whose average on its own would rank #1, and where that ranks among every player\u2019s longest (the Elite Stretches table on the Leaderboards). Tap its dates to see just those rounds."),
@@ -2413,7 +2425,7 @@ export function sgDashboard(container, opts) {
     const detail = showRanks ? elitePart() : null;
     return el("div", { class: "bs" }, [
       el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `${what ? `${what.trim()} ` : ""}Elite Round Share`), help]),
-      el("p", { class: "muted small bs-intro" }, "How much of the player\u2019s golf was at each level (their best rounds, in any order, that together would rank there), and the other way round: how many of their worst rounds they\u2019d have to cut to get there."),
+
       rows?.prof ? el("p", { class: "bs-now" }, [`Currently `, el("strong", {}, ordinal(rows.prof.seasonRank)), ` of ${rows.prof.N} (${sgn2(rows.prof.avg)} a round)`]) : null,
       ladder, profileLine(mine, cat, rows), detail,
     ]);
@@ -2777,7 +2789,7 @@ export function sgDashboard(container, opts) {
       // already at this level lately: no gap to close here, so point to the next level up
       ...(there ? [lv.above ? (() => { const go = el("button", { type: "button", class: "btn ghost small bs-lv-next" }, `Aim for ${LEVELS[lv.above]} (#${lv.above}) \u2192`); go.addEventListener("click", () => { st.pathT = lv.above; draw(); }); return go; })()
         : el("p", { class: "muted small" }, `That\u2019s the top level.`)] : []),
-      !there && prios.length ? el("p", { class: "muted small bs-prios-note" }, `${lv ? `\u201c${LEVELS[lv.T]}\u201d rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Below: where those were better than the last ${N} (\u201clately\u201d), biggest first. All numbers are strokes against the tour average: + is better than average, \u2212 is worse.`) : null,
+      !there && prios.length ? infoTip(`${lv ? `\u201c${LEVELS[lv.T]}\u201d rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Below: where those were better than the last ${N} (\u201clately\u201d), biggest first. All numbers are strokes against the tour average: + is better than average, \u2212 is worse.`) : null,
       !there && prios.length ? el("ol", { class: "bs-prios" }, prios.map((p) => el("li", {}, [el("div", { class: "bs-item-head" }, [el("strong", {}, p.head), el("span", { class: "muted" }, ` ${p.better}`)]),
         kv("Takeaway", p.take, "bs-take"),
         ...(p.targetLines ? [kv("Target", p.targetLines.map((x, k) => el("div", { class: k ? "bs-tl" : "bs-th" }, x)), "bs-target")] : []),

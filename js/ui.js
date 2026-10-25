@@ -436,3 +436,9 @@ function keepPanelsOnScreen() {
 }
 document.addEventListener("click", () => requestAnimationFrame(keepPanelsOnScreen), true);
 document.addEventListener("click", () => requestAnimationFrame(keepPanelsOnScreen));
+
+/** (update 366) An explainer behind a small ⓘ: tap it to read the note (one paragraph, or a list of them). */
+export function infoTip(content, label = "What this means") {
+  const paras = (Array.isArray(content) && content.every((x) => typeof x === "string") ? content : [content]).filter((x) => x != null && x !== "");
+  return el("details", { class: "bs-help info-tip" }, [el("summary", { "aria-label": label, title: label }, "ⓘ"), ...paras.map((x) => el("p", { class: "muted small" }, x))]);
+}

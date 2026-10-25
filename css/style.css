@@ -5052,3 +5052,10 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .bs-rd-v { font-variant-numeric: tabular-nums; }
 .sg-full-note-i { margin: 6px 0 0; }
 .wl-controls .wl-me-btn { display: inline-flex; align-items: center; }
+/* (update 366) explainers behind a small ⓘ: beside a heading, opening full width under it */
+.info-head, .cmp-tl-head > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.info-head > h2, .cmp-tl-head > div:first-child > h2 { margin-bottom: 0; }
+.info-tip { display: inline-block; }
+.info-tip[open] { flex-basis: 100%; display: block; }
+.info-tip[open] > p { position: static !important; width: auto !important; margin: 0.4rem 0 0.2rem; box-shadow: none !important; background: rgba(255,255,255,0.04) !important; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 0.6rem 0.75rem; text-align: left; }
+.wl-foot .info-tip > summary { font-size: 1rem; }

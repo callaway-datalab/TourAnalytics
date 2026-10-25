@@ -16,6 +16,7 @@ import { pullToRefresh } from "./pullRefresh.js";
 import { watchReloads } from "./perf.js";
 watchReloads(); // (update 325) notices when the last visit ended in a forced reload (for the admin's Performance readout)
 pullToRefresh(); // (update 321) the Home Screen app: drag down at the top of a page to reload it
+import("./cellPaint.js").then((m) => m.startCellPaint()).catch(() => {}); // (update 365) coloured table cells get coloured backgrounds
 startRouter();
 
 // (update 170) a tab acting as a fake user says so, with a way back to your own sign-in

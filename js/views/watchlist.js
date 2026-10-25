@@ -7,7 +7,7 @@
  *   hot streaks and slumps, form landmarks, best rounds, wins and milestones (on each card; update 167 took the alerts
  *   row off the top).
  */
-import { el, mount } from "../ui.js";
+import { el, mount, infoTip } from "../ui.js";
 import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
@@ -268,9 +268,9 @@ export async function render(main, { previewClient }) {
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
     const dragHint = multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine" ? el("p", { class: "muted small center wl-drag-hint" }, "Hold a card and drag it to change the order.") : null; // (update 249)
     mount(root, [heroShell(controls, subLine), menu, body, dragHint,
-      el("p", { class: "muted small center wl-foot" }, source === "entered"
+      el("div", { class: "center wl-foot" }, infoTip(source === "entered"
         ? `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
-        : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`)]);
+        : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });

@@ -9,7 +9,7 @@
  * a row there opens this page on that comparison (?pick=win:10 / cond:course:Riviera). Include: which shots count.
  * Hover a selection (its card or its key) to pick it out in every chart.
  */
-import { el, mount, icon } from "../ui.js";
+import { el, mount, icon, infoTip } from "../ui.js";
 import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
@@ -372,7 +372,7 @@ export async function render(main) {
       items.length ? distanceSection(items) : null,
       items.length ? timelineSection(items) : null, // (update 215)
       items.length ? statsSection(items) : null,
-      el("p", { class: "muted small center cmp-foot" }, "Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
+      infoTip("Strokes gained values represent per round averages. Each selection counts the strokes-gained rounds that fall in it; a round can be in more than one."),
     ]);
     window.scrollTo(0, y);
     root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; });
@@ -470,7 +470,7 @@ export async function render(main) {
     return el("section", { class: "panel cmp-guide cmp-start cmp-ask" }, [
       el("p", { class: "cmp-guide-k cal-k" }, [icon("robot"), " Cal \u00b7 compare"]),
       el("h2", {}, "What do you want to compare?"),
-      el("p", { class: "muted small" }, "Name the player (or say everyone), the clubs, balls or seasons, and anything to leave out. The comparison opens with the answer on top, and you can change anything after."),
+      infoTip("Name the player (or say everyone), the clubs, balls or seasons, and anything to leave out. The comparison opens with the answer on top, and you can change anything after."),
       ta,
       el("div", { class: "cmp-guide-row" }, [go, askBusy ? el("span", { class: "muted small" }, askBusy) : null]),
       askErr ? el("p", { class: "cmp-ask-err" }, askErr) : null,
@@ -1533,7 +1533,7 @@ export async function render(main) {
     }).filter(Boolean);
     if (!blocks.length) return null;
     return el("section", { class: "panel cmp-sec cmp-inside" }, [
-      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Inside the groups"), el("p", { class: "muted small" }, "Each model (or ball, season or pick) in a group on its own: strokes gained a round, and how far above or below the group as a whole. \u2715 takes one out of the group; Edit group adds more.")]),
+      el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, "Inside the groups"), infoTip("Each model (or ball, season or pick) in a group on its own: strokes gained a round, and how far above or below the group as a whole. \u2715 takes one out of the group; Edit group adds more.")]),
       ...blocks,
     ]);
   }
@@ -1991,7 +1991,7 @@ export async function render(main) {
       return [row, whyBox(x, all), det];
     });
     return el("section", { class: "panel cmp-sec career-sec" }, [
-      el("div", { class: "cmp-sec-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), el("p", { class: "muted small" }, `Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total a round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit and why, or tick numbers to compare them side by side.`)]),
+      el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), infoTip(`Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total a round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit and why, or tick numbers to compare them side by side.`)]),
       tabs,
       placeBar(groups, dimL, list.map((x) => x.k)),
       el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
@@ -2059,7 +2059,7 @@ export async function render(main) {
     if (!blocks.length) return null;
     return el("section", { class: "panel cmp-sec" }, [
       el("div", { class: "cmp-sec-head cmp-tl-head" }, [el("div", {}, [el("h2", {}, tlBy === "rounds" ? "Round by round" : "Tournament by tournament"),
-        el("p", { class: "muted small" }, `SG: Total ${tlBy === "rounds" ? "in every round" : "a round at every tournament"}, in order. The ones being compared are in their colour; each dashed line is that group\u2019s average.`)]),
+        infoTip(`SG: Total ${tlBy === "rounds" ? "in every round" : "a round at every tournament"}, in order. The ones being compared are in their colour; each dashed line is that group\u2019s average.`)]),
         el("div", { class: "cmp-seg small" }, [["rounds", "Rounds"], ["events", "Tournaments"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${tlBy === v ? " on" : ""}` }, l); b.addEventListener("click", () => { tlBy = v; draw(); }); return b; }))]),
       el("div", { class: "cmp-legend" }, items.filter((it) => it.s.n).map((it) => el("span", { class: "cmp-legend-i" }, [el("i", { style: `background:${it.color}` }), it.name]))),
       ...renderBlocks(blocks),
@@ -2081,7 +2081,7 @@ export async function render(main) {
     const big = Math.max(...rows.map((x) => Math.abs(x.ch)));
     const tabs = el("div", { class: "cmp-seg small" }, [["event", "Tournaments"], ["course", "Courses"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${yoyBy === v ? " on" : ""}` }, l); b.addEventListener("click", () => { yoyBy = v; draw(); }); return b; }));
     return el("section", { class: "panel cmp-sec cmp-yoy" }, [
-      el("div", { class: "cmp-sec-head cmp-tl-head" }, [el("div", {}, [el("h2", {}, "Year over year"), el("p", { class: "muted small" }, `${yoyBy === "event" ? "Tournaments" : "Courses"} played in more than one of these seasons: SG: Total a round each year${yoyBy === "event" && finishes.size ? " (and where they finished)" : ""}, biggest improvement first.`)]), tabs]),
+      el("div", { class: "cmp-sec-head cmp-tl-head" }, [el("div", {}, [el("h2", {}, "Year over year"), infoTip(`${yoyBy === "event" ? "Tournaments" : "Courses"} played in more than one of these seasons: SG: Total a round each year${yoyBy === "event" && finishes.size ? " (and where they finished)" : ""}, biggest improvement first.`)]), tabs]),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, yoyBy === "event" ? "Tournament" : "Course"), ...cols.map((it) => el("th", { class: "num" }, [el("i", { class: "cmp-dot", style: `--c:${it.color}` }), it.f.years[0]])), el("th", { class: "num" }, "Change")])),
         el("tbody", {}, rows.map((x) => el("tr", { class: Math.abs(x.ch) === big ? "strong" : "" }, [el("td", {}, x.k),
@@ -2104,7 +2104,7 @@ export async function render(main) {
     const rowsShown = sgRowsFor(live);
     // (update 364) colours as gradients: the bigger the number (or the gap), the brighter the green or red
     const G = "48,209,88", R = "255,69,58";
-    const textStyle = (v, scale) => (v == null || Math.abs(v) < 0.005 ? "" : `color:rgba(${v > 0 ? G : R},${(0.42 + 0.58 * Math.min(1, Math.abs(v) / scale)).toFixed(3)})`);
+    const textStyle = () => "color:#fff"; // (update 365: white text; the colour is all in the background)
     // each cell against the row's average: how far, in the better or worse direction (strokes gained against a scale;
     // percentages in points; other stats as a share of the average)
     const bgStyle = (vals, v, higher = true, def = null, scale = 0.5) => {
@@ -2114,7 +2114,7 @@ export async function render(main) {
       const d = (v - mean) * (higher === false ? -1 : 1);
       const sc = def == null ? scale : def.pct ? 6 : Math.max(Math.abs(mean) * 0.06, 1e-6);
       const t = Math.min(1, Math.abs(d) / sc);
-      return t < 0.04 ? "" : `background:rgba(${d > 0 ? G : R},${((d > 0 ? 0.04 : 0.035) + (d > 0 ? 0.24 : 0.2) * t).toFixed(3)})`;
+      return t < 0.04 ? "" : `background:rgba(${d > 0 ? G : R},${((d > 0 ? 0.05 : 0.045) + (d > 0 ? 0.3 : 0.26) * t).toFixed(3)})`;
     };
     const styleOf = (...xs) => xs.filter(Boolean).join(";");
     const shadeBy = (vals, v, higher = true) => { const xs = vals.filter((x) => x != null); if (xs.length < 2 || v == null || higher == null) return ""; const best = higher === false ? Math.min(...xs) : Math.max(...xs), worst = higher === false ? Math.max(...xs) : Math.min(...xs); return Math.abs(best - worst) < 1e-9 ? "" : v === best ? "hi" : v === worst ? "lo" : ""; };
@@ -2147,7 +2147,7 @@ export async function render(main) {
         const hasKids = !r.dist && keep.slice(ri + 1).findIndex((x) => !x.dist) !== 0 && keep[ri + 1]?.dist;
         const tr = el("tr", { class: r.dist ? "cmp-sub" : "" }, [
           el("td", { title: r.def.help || "" }, r.dist ? r.dist : hasKids ? [caret(key), r.label] : r.label),
-          ...items.map((it, j) => el("td", { class: "num", style: bgStyle(r.values, r.values[j], r.def.higher, r.def), "data-s": it.i, title: r.w[j] ? `${Math.round(r.w[j])} attempts` : "" }, fmtStat(r.def, r.values[j]))),
+          ...items.map((it, j) => el("td", { class: "num", style: styleOf("color:#fff", bgStyle(r.values, r.values[j], r.def.higher, r.def)), "data-s": it.i, title: r.w[j] ? `${Math.round(r.w[j])} attempts` : "" }, fmtStat(r.def, r.values[j]))),
         ]);
         rows.push(hasKids ? tapRow(tr, key) : tr);
       }
@@ -2163,7 +2163,7 @@ export async function render(main) {
       const s = [...live].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), c = confidence(s[0].s.rounds, s.at(-1).s.rounds);
       conf = el("p", { class: "muted small" }, [`Best against worst in SG: ${used1(live)}: ${s[0].name} is ${Math.abs(s[0].s.sg.TOTAL - s.at(-1).s.sg.TOTAL).toFixed(2)} a round better than ${s.at(-1).name}. `, el("strong", { class: `cmp-conf c-${c.word.replace(/ /g, "-")}` }, sureWords(s[0].s.rounds, s.at(-1).s.rounds))]); // (update 222)
     }
-    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained, then the other stats by part of the game and distance. Each cell is shaded by how far it is from the row\u2019s average: the further better, the brighter the green; the further worse, the brighter the red (lower is better for some, like Proximity). Strokes gained numbers are brighter the bigger they are. Hover a stat for how many attempts it’s from."), table, fewNote, conf]);
+    return el("section", { class: "panel cmp-sec" }, [secHead("Side by side", "Strokes gained, then the other stats by part of the game and distance. Each cell is shaded by how far it is from the row\u2019s average: the further better, the brighter the green; the further worse, the brighter the red (lower is better for some, like Proximity).  Hover a stat for how many attempts it’s from."), table, fewNote, conf]);
   }
   // every round as a dot, and how each selection unfolded (a 5-round rolling average)
   function roundsSection(items) {
@@ -2456,7 +2456,8 @@ export async function render(main) {
   }
   // (update 189) a colour key above every chart
   const legend = (items) => el("div", { class: "cmp-legend", "aria-hidden": "true" }, items.map((it) => hoverable(el("span", { class: "cmp-legend-i", title: it.full || it.name }, [el("i", { style: `background:${it.color}` }), it.name]), it.i)));
-  const secHead = (t, sub) => el("div", { class: "cmp-sec-head" }, [el("h2", {}, t), sub ? el("p", { class: "muted small" }, sub) : null]);
+  // (update 366) a section's explainer sits behind a small ⓘ beside its title
+  const secHead = (t, sub) => el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, t), sub ? infoTip(sub) : null]);
 
   /* ------------------------------ charts (SVG) ------------------------------ */
   // (a phone gets a narrower drawing, so the labels stay readable when it's scaled to fit)
