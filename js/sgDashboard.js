@@ -2656,7 +2656,7 @@ export function sgDashboard(container, opts) {
       bodyRows.push(tr, det);
     });
     // (update 380) the stretch in numbers: each part of the game over the stretch against their whole selection
-    const stRds = seq.filter((_, i) => inSt(i)).map((x) => x.rd), allRds = seq.map((x) => x.rd);
+    const stRds = seq.filter((_, i) => inSt(i)).map((x) => x.rd), allRds = seq.filter((_, i) => !inSt(i)).map((x) => x.rd); // (update 385: the rest, outside the stretch)
     const catAvg = (rs, c) => (rs.length ? rs.reduce((t, rd) => t + (rd.shots || []).reduce((u, x) => u + (!c || x.cat === c ? x.sg : 0), 0), 0) / rs.length : null);
     const stVals = seq.filter((_, i) => inSt(i)).map((x) => x.t);
     const bestI = stVals.indexOf(Math.max(...stVals)), worstI = stVals.indexOf(Math.min(...stVals));
@@ -2668,7 +2668,7 @@ export function sgDashboard(container, opts) {
         el("span", {}, [el("strong", {}, `${stVals.filter((v) => v > 0).length} of ${row.n}`), " gaining"]),
         stVals.length ? el("span", {}, ["Best ", el("strong", { class: "pos" }, sgn2(stVals[bestI])), " \u00b7 worst ", el("strong", { class: stVals[worstI] >= 0 ? "pos" : "neg" }, sgn2(stVals[worstI]))]) : null]),
       el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table bs-st-cats" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, "A round"), el("th", { class: "num" }, "Stretch"), el("th", { class: "num", title: "All their rounds in the selection" }, "All"), el("th", { class: "num" }, "Diff")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, "A round"), el("th", { class: "num" }, "Stretch"), el("th", { class: "num", title: "Their other rounds in the selection (outside the stretch)" }, "Rest"), el("th", { class: "num", title: "Stretch less rest" }, "Diff")])),
         el("tbody", {}, [sumRow("SG: Total", catAvg(stRds, null), catAvg(allRds, null), true), ...CATEGORIES.map(([c, l]) => sumRow(l, catAvg(stRds, c), catAvg(allRds, c)))])])),
     ]);
     const table = el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Event"), el("th", { class: "num" }, "SG")])), el("tbody", {}, bodyRows)])); // (update 377: just the stretch's rounds; 380: each opens)
