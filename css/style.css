@@ -5097,3 +5097,22 @@ html.ta-booted #app main :is(.ta-loading, .ta-loading-inline) { display: none !i
 .pr-mixrow.off { opacity: 0.5; }
 .pr-mixrow.off .pr-bon { opacity: 1; }
 .hero-id > .tour-chips { margin: 0.95rem 0 0.15rem; } /* (update 376: under the big number; 379: a little more room above) */
+/* (update 380) the hero's tour pills: the same height as the pills under them, and the same gap as between those rows */
+.hero-id > .tour-chips { margin-bottom: 0; }
+.hero-id > .tour-chips .tour-chip { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; padding: calc(0.3rem - 1px) 0.75rem; align-items: center; line-height: 1.55; }
+.hero-id > .tour-chips + .hero-chips { margin-top: 0.4rem; }
+/* (update 380) best stretch pop-up: the stretch in numbers, and rounds that open */
+.bs-st-sum { margin: 0.6rem 0 0.4rem; }
+.bs-st-facts { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.9rem; margin-bottom: 0.5rem; }
+.bs-st-cats tr.strong td { font-weight: 700; }
+.bs-st-table tr.bs-st-tap { cursor: pointer; }
+.bs-st-table tr.bs-st-tap[aria-expanded="true"] td:first-child { color: #f0d9a8; font-weight: 600; }
+.bs-st-table tr.bs-st-det td { padding: 0.2rem 0.4rem 0.6rem; background: rgba(255, 255, 255, 0.025); }
+.bs-st-cats { width: 100%; font-size: 0.86rem; }
+.bs-st-cats th, .bs-st-cats td { padding-left: 0.35rem; padding-right: 0.35rem; }
+.bs-st-cats td:first-child { white-space: nowrap; }
+/* (update 381) Personal Peak above the stats table */
+.sg-peak-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; margin: 0 0 0.7rem; }
+.sg-peak-ctl .peak-len { width: 4.2rem; }
+.pp-tog { font: inherit; font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.8rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.05); color: var(--ink); cursor: pointer; }
+.pp-tog.on { background: rgba(212, 180, 131, 0.16); border-color: #d4b483; color: #f1e2c8; }

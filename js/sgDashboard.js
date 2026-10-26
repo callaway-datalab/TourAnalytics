@@ -1614,13 +1614,15 @@ export function sgDashboard(container, opts) {
     };
     // (update 240) against a rank (picked above the table): the player ranked #N overall (SG: Total a round in this
     // selection, not counting the player on screen), every row from that one player: #1 is the same golfer all the way down
-    const peakOn = mode === "elite" && st.vsRank === "peak"; // (update 260) or against the player's own peak (update 370: not the table)
+    // (update 381) the table's own Personal Peak: their best N rounds against the rest (st.tablePeak), apart from the level cards
+    const tPeak = mode === "table" ? Math.max(0, Math.round(Number(st.tablePeak) || 0)) : 0;
+    const peakOn = tPeak > 0 || (mode === "elite" && st.vsRank === "peak"); // (update 260) or against the player's own peak (update 370: not the table)
     const vsN = null, refP = null; // (update 330: no #N player comparisons)
     // (update 266) Personal Peak: the player's N best rounds (the Peak Length, default 10) in this selection, ranked by the
     // strokes gained the filters are about (SG: Total, or the one category picked: their best Off-the-Tee rounds), and
     // every row is those same rounds' value, so the rows still add up and read as "how I play on my best days"
-    const peakN = Math.max(1, Math.round(Number(st.peakN) || 10));
-    const peak = peakOn ? (st.peakMode === "stretch" ? peakOf(ordered, cat, peakN) : eliteOf(ordered, cat, peakN)) : null; // (update 335: elite rounds; the same rounds as the charts' dots)
+    const peakN = tPeak || Math.max(1, Math.round(Number(st.peakN) || 10));
+    const peak = peakOn ? (!tPeak && st.peakMode === "stretch" ? peakOf(ordered, cat, peakN) : eliteOf(ordered, cat, peakN)) : null; // (update 335: elite rounds; the same rounds as the charts' dots)
     const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
     const dTxt = (rd) => String(rd?.date || "").slice(0, 10);
     // no rank picked: each stat coloured against the player's own career average (every round of theirs)
@@ -1699,17 +1701,29 @@ export function sgDashboard(container, opts) {
     { const max = new Map(); for (const c of relCells) max.set(c.g, Math.max(max.get(c.g) || 0, Math.abs(c.d)));
       for (const c of relCells) { const m = max.get(c.g) || 0; const t = m > 0 ? Math.abs(c.d) / m : 0; if (Math.abs(c.d) < 0.005) continue;
         const up = c.d > 0; c.td.style.background = `rgba(${up ? "48,209,88" : "255,69,58"},${(0.04 + 0.4 * t * t).toFixed(3)})`; } }
+    const TN = tPeak ? { kept: `best ${peakN} rounds`, cut: "other rounds", Kept: `Best ${peakN}`, Cut: "Rest" } : NM();
+    // (update 381) Personal Peak, picked above the table: their best N rounds (any order) against the rest
+    const peakCtl = mode === "table" && me ? (() => {
+      const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(tPeak || Number(st.tablePeakLast) || 10), inputmode: "numeric", "aria-label": "How many of their best rounds" });
+      const apply = () => { const v = Math.round(Number(inp.value)); if (!Number.isFinite(v) || v < 1) { inp.value = String(tPeak || 10); return; } st.tablePeak = Math.min(500, v); st.tablePeakLast = st.tablePeak; draw(); };
+      inp.addEventListener("change", () => { if (tPeak) apply(); });
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); inp.blur(); } });
+      const tog = el("button", { type: "button", class: `pp-tog${tPeak ? " on" : ""}`, "aria-pressed": String(!!tPeak) }, tPeak ? "\u2713 Personal Peak" : "Personal Peak");
+      tog.addEventListener("click", () => { if (tPeak) { st.tablePeak = 0; draw(); } else apply(); });
+      return el("div", { class: "sg-peak-ctl" }, [tog, el("span", { class: "muted small" }, "their best"), inp, el("span", { class: "muted small" }, "rounds vs the rest")]);
+    })() : null;
     if (mode === "elite") return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
       pathOf(),
     ];
     return [
+      peakCtl,
       el("div", { class: "cmp-tw" }, el("table", { class: `cmp-table sg-full-t${stretchOn && !showRanks ? " no-rank" : ""}` }, [
         el("thead", {}, el("tr", {}, stretchOn ? [el("th", {}, ""), // (update 330)
-          el("th", { class: "num", title: `The player\u2019s ${NM().cut} in the selected time frame` }, NM().Cut),
-          el("th", { class: "num", title: `The average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (the ${NM().kept})` }, NM().Kept),
-          el("th", { class: "num", title: "Kept less cut: green where the kept rounds were better" }, "Diff"),
-          el("th", { class: "num", title: "Where the kept rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, `${NM().Kept} Rank`)]
+          el("th", { class: "num", title: `The player\u2019s ${TN.cut} in the selected time frame` }, TN.Cut),
+          el("th", { class: "num", title: `The average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (the ${TN.kept})` }, TN.Kept),
+          el("th", { class: "num", title: `${TN.Kept} less ${TN.Cut.toLowerCase()}: green where the ${TN.kept} were better` }, "Diff"),
+          el("th", { class: "num", title: "Where the kept rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, tPeak ? "Peak Rank" : `${NM().Kept} Rank`)]
           : [el("th", {}, ""), el("th", { class: "num" }, me?.label || "Player"),
           el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend"),
           el("th", { class: "num" }, "Rank")])),
@@ -1717,7 +1731,7 @@ export function sgDashboard(container, opts) {
       ])),
       // (update 240) what the colours mean
       // (update 363) with kept / cut rounds picked, what the columns mean sits behind a small ⓘ
-      (() => { const txt = (stretchOn ? `${NM().Cut}: ${me?.label || "the player"}\u2019s ${NM().cut} in the selected time frame. ${NM().Kept}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (shown above). Diff: ${NM().kept} less ${NM().cut}, green where the ${NM().kept} were better.${showRanks ? ` ${NM().Kept} Rank: where the ${NM().kept}\u2019 value would rank if it were their average for the selected time frame.` : ""}`
+      (() => { const txt = (stretchOn ? `${TN.Cut}: ${me?.label || "the player"}\u2019s ${TN.cut} in the selected time frame. ${TN.Kept}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} . Diff: ${TN.kept} less ${TN.cut}, green where the ${TN.kept} were better.${showRanks ? ` ${TN.Kept} Rank: where the ${TN.kept}\u2019 value would rank if it were their average for the selected time frame.` : ""}`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`); return el("details", { class: "bs-help sg-full-note-i" }, [el("summary", { "aria-label": "What the columns mean" }, "\u24d8"), el("p", { class: "muted small" }, txt)]); })(), // (update 366: always behind the ⓘ)
     ];
     // (update 341) Path back to Elite
@@ -2612,11 +2626,51 @@ export function sgDashboard(container, opts) {
     svg.appendChild(mk("line", { x1: 0, x2: W, y1: yb, y2: yb, stroke: "#d4b483", "stroke-width": 1, "stroke-dasharray": "4 3", opacity: 0.8 }));
     const lbl = mk("text", { x: W - 2, y: yb - 3, "text-anchor": "end", fill: "#d4b483", "font-size": 9 }); lbl.textContent = LEVELS[1]; svg.appendChild(lbl);
     // (update 352) every round in a table below, oldest first; the stretch's rows highlighted; a bar's row is picked out
+    // (update 380) a round opens to its strokes gained by part of the game, and each part of the game to its distances
+    const rdBreak = (rd) => {
+      const by = new Map();
+      for (const x of rd.shots || []) { if (!x.cat) continue; const c = by.get(x.cat) || by.set(x.cat, { sg: 0, n: 0, d: new Map() }).get(x.cat); c.sg += x.sg; c.n += x.w || 1; if (x.dist) { const dd = c.d.get(x.dist) || c.d.set(x.dist, { sg: 0, n: 0 }).get(x.dist); dd.sg += x.sg; dd.n += x.w || 1; } }
+      return el("div", { class: "bs-rd" }, CATEGORIES.filter(([c]) => by.has(c)).flatMap(([c, l]) => {
+        const v = by.get(c), ds = [...v.d].sort((a, b) => distLead(a[0]) - distLead(b[0]) || a[0].localeCompare(b[0]));
+        const restSg = v.sg - ds.reduce((t, [, x]) => t + x.sg, 0), restN = v.n - ds.reduce((t, [, x]) => t + x.n, 0);
+        const sub = (lbl, sg, n) => el("div", { class: "bs-rd-row sub", style: "display:none" }, [el("span", { class: "bs-rd-l" }, `${lbl} \u00b7 ${Math.round(n)} ${Math.round(n) === 1 ? "shot" : "shots"}`), el("span", { class: `bs-rd-v ${sg >= 0 ? "pos" : "neg"}` }, sgn2(sg))]);
+        const subs = [...ds.map(([d, x]) => sub(d, x.sg, x.n)), ...(Math.abs(restSg) >= 0.005 && restN > 0 ? [sub("Other shots", restSg, restN)] : [])];
+        const caret = ds.length ? el("span", { class: "cmp-caret" }, "\u25B8 ") : null;
+        const row = el("button", { type: "button", class: "bs-rd-row", "aria-expanded": "false", disabled: !ds.length }, [el("span", { class: "bs-rd-l" }, [caret, l]), el("span", { class: `bs-rd-v ${v.sg >= 0 ? "pos" : "neg"}` }, sgn2(v.sg))]);
+        row.addEventListener("click", (e) => { e.stopPropagation(); const open = row.getAttribute("aria-expanded") !== "true"; row.setAttribute("aria-expanded", String(open)); if (caret) caret.textContent = open ? "\u25BE " : "\u25B8 "; subs.forEach((x) => { x.style.display = open ? "" : "none"; }); });
+        return [row, ...subs];
+      }));
+    };
     const trs = seq.map((x, i) => el("tr", { class: inSt(i) ? "in" : "" }, [
-      el("td", {}, `${shortDay(x.rd.date)} ${String(x.rd.date || "").slice(2, 4) ? `\u2019${String(x.rd.date).slice(2, 4)}` : ""}`),
+      el("td", {}, [el("span", { class: "cmp-caret" }, "\u25B8 "), `${shortDay(x.rd.date)} ${String(x.rd.date || "").slice(2, 4) ? `\u2019${String(x.rd.date).slice(2, 4)}` : ""}`]),
       el("td", {}, `${x.rd.event || "Round"}${x.rd.roundNo ? ` \u00b7 R${x.rd.roundNo}` : ""}`),
       el("td", { class: `num ${x.t >= 0 ? "pos" : "neg"}` }, sgn2(x.t))]));
-    const table = el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Event"), el("th", { class: "num" }, "SG")])), el("tbody", {}, trs.filter((_, i) => inSt(i)))])); // (update 377: just the stretch's rounds)
+    const bodyRows = [];
+    seq.forEach((x, i) => {
+      if (!inSt(i)) return;
+      const tr = trs[i], det = el("tr", { class: "bs-st-det", hidden: true }, el("td", { colspan: 3 }, rdBreak(x.rd)));
+      tr.classList.add("bs-st-tap"); tr.setAttribute("role", "button"); tr.setAttribute("tabindex", "0"); tr.setAttribute("aria-expanded", "false");
+      const flip = () => { const open = tr.getAttribute("aria-expanded") !== "true"; tr.setAttribute("aria-expanded", String(open)); tr.querySelector(".cmp-caret").textContent = open ? "\u25BE " : "\u25B8 "; det.hidden = !open; };
+      tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+      bodyRows.push(tr, det);
+    });
+    // (update 380) the stretch in numbers: each part of the game over the stretch against their whole selection
+    const stRds = seq.filter((_, i) => inSt(i)).map((x) => x.rd), allRds = seq.map((x) => x.rd);
+    const catAvg = (rs, c) => (rs.length ? rs.reduce((t, rd) => t + (rd.shots || []).reduce((u, x) => u + (!c || x.cat === c ? x.sg : 0), 0), 0) / rs.length : null);
+    const stVals = seq.filter((_, i) => inSt(i)).map((x) => x.t);
+    const bestI = stVals.indexOf(Math.max(...stVals)), worstI = stVals.indexOf(Math.min(...stVals));
+    const evN = new Set(stRds.map((rd) => `${rd.event}|${String(rd.date || "").slice(0, 4)}`)).size;
+    const sumRow = (l, a, b, strong = false) => el("tr", { class: strong ? "strong" : "" }, [el("td", {}, l), el("td", { class: `num ${a >= 0 ? "pos" : "neg"}` }, sgn2(a)), el("td", { class: "num" }, sgn2(b)), el("td", { class: `num ${a - b >= 0 ? "pos" : "neg"}` }, sgn2(a - b))]);
+    const summary = el("div", { class: "bs-st-sum" }, [
+      el("div", { class: "bs-st-facts" }, [
+        el("span", {}, [el("strong", {}, String(row.n)), ` ${row.n === 1 ? "round" : "rounds"} \u00b7 ${evN} ${evN === 1 ? "event" : "events"}`]),
+        el("span", {}, [el("strong", {}, `${stVals.filter((v) => v > 0).length} of ${row.n}`), " gaining"]),
+        stVals.length ? el("span", {}, ["Best ", el("strong", { class: "pos" }, sgn2(stVals[bestI])), " \u00b7 worst ", el("strong", { class: stVals[worstI] >= 0 ? "pos" : "neg" }, sgn2(stVals[worstI]))]) : null]),
+      el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table bs-st-cats" }, [
+        el("thead", {}, el("tr", {}, [el("th", {}, "A round"), el("th", { class: "num" }, "Stretch"), el("th", { class: "num", title: "All their rounds in the selection" }, "All"), el("th", { class: "num" }, "Diff")])),
+        el("tbody", {}, [sumRow("SG: Total", catAvg(stRds, null), catAvg(allRds, null), true), ...CATEGORIES.map(([c, l]) => sumRow(l, catAvg(stRds, c), catAvg(allRds, c)))])])),
+    ]);
+    const table = el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Event"), el("th", { class: "num" }, "SG")])), el("tbody", {}, bodyRows)])); // (update 377: just the stretch's rounds; 380: each opens)
     const bars = seq.map((x, i) => {
       const h = Math.max(1, Math.abs(x.t) * sc), on = inSt(i);
       const r = mk("rect", { x: i * bw + bw * 0.12, width: Math.max(0.8, bw * 0.76), y: x.t >= 0 ? y0 - h : y0, height: h, rx: Math.min(2, bw * 0.2),
@@ -2638,7 +2692,8 @@ export function sgDashboard(container, opts) {
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Best stretch"), el("h2", {}, `${row.n} ${row.n === 1 ? "round" : "rounds in a row"} \u00b7 ${when}`),
         el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best of everyone else). The ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN}.`)]), close]),
       svg,
-      el("p", { class: "muted small bs-st-count" }, `All ${n} rounds in the chart, oldest first, the stretch bright. The table lists the ${row.n} ${row.n === 1 ? "round" : "rounds"} in the stretch; tap one of its bars to find it.`),
+      summary,
+      el("p", { class: "muted small bs-st-count" }, `All ${n} rounds in the chart, oldest first, the stretch bright. Below, the ${row.n} ${row.n === 1 ? "round" : "rounds"} in the stretch: tap one for its strokes gained by part of the game and distance.`),
       table,
       el("div", { class: "bs-st-foot" }, [show]),
     ]));
@@ -3104,15 +3159,18 @@ export function sgDashboard(container, opts) {
     // its date; tapping a bar shows the full name.
     const narrow = (canvas.parentElement?.clientWidth || 800) < 640;
     // (update 227) the full name under each bar, wrapped onto as many lines as it needs (never cut short)
-    const few = labels.length <= (narrow ? 8 : 14);
-    const wrapAt = narrow ? 10 : 14;
+    // (update 381) only when each bar has room for it (about 6.5px a letter at this size); else the short label
+    // (a date), tilted and thinned out so no two labels overlap
+    const fsz = narrow ? 9 : 11, perBar = Math.max(1, (canvas.parentElement?.clientWidth || 800) - 50) / Math.max(1, labels.length);
+    const few = perBar >= (narrow ? 58 : 70);
+    const wrapAt = Math.max(6, Math.floor(perBar / (fsz * 0.62)));
     const wrapL = (l) => { const out = []; let cur = ""; for (const w of String(l).split(/\s+/)) { if (cur && (cur + " " + w).length > wrapAt) { out.push(cur); cur = w; } else cur = cur ? `${cur} ${w}` : w; } if (cur) out.push(cur); return out.length > 1 ? out : out[0] || ""; };
     const shortOf = (i) => {
       const l = String(labels[i] ?? "");
-      if (narrow && !few && shortLabels?.[i]) return shortLabels[i];
-      return few ? wrapL(l) : l;
+      if (!few && shortLabels?.[i]) return shortLabels[i];
+      return few ? wrapL(l) : l.length > 16 ? `${l.slice(0, 15)}\u2026` : l;
     };
-    o.scales.x = { ...(o.scales.x || {}), ticks: { ...((o.scales.x || {}).ticks || {}), callback: (v, i) => shortOf(i), autoSkip: !few, maxRotation: few ? 0 : narrow ? 60 : 45, minRotation: 0, font: { size: narrow ? 9 : 11 } } };
+    o.scales.x = { ...(o.scales.x || {}), ticks: { ...((o.scales.x || {}).ticks || {}), callback: (v, i) => shortOf(i), autoSkip: !few, autoSkipPadding: 8, maxRotation: few ? 0 : 50, minRotation: 0, font: { size: fsz } } };
     o.plugins.tooltip.callbacks = { ...(o.plugins.tooltip.callbacks || {}), title: (items) => String(labels[items[0].dataIndex] ?? "") };
     if (title) o.scales.y.title = { display: true, text: title, color: "#8e8e93" };
     return new Chart(canvas, { data: { labels, datasets }, options: o });
