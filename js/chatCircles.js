@@ -36,12 +36,19 @@ export function syncChatCircles() {
       if (u.clientKey && !isTeamKey(u.clientKey) && u.kind !== "analyst" && u.kind !== "employee") (teamOf.get(u.clientKey) || teamOf.set(u.clientKey, new Set()).get(u.clientKey)).add(u.uid);
       if (u.kind !== "analyst" && u.kind !== "employee") for (const k of Object.keys(u.access || {})) (teamOf.get(k) || teamOf.set(k, new Set()).get(k)).add(u.uid);
     }
+    // (update 377) Player chat: a team member reaches the players themselves only with it on for their access code
+    // (calAccess/{code}.playerChat); otherwise they add the player as a friend first. Not set yet: on for coaches, caddies
+    // and other team roles (as before), off for employees.
+    const calAcc = new Map((await getDocs(collection(db, "calAccess")).catch(() => ({ docs: [] }))).docs.map((d) => [d.id, d.data()]));
+    const playerUids = new Set(users.filter((u) => u.clientKey && !isTeamKey(u.clientKey) && u.kind !== "analyst" && u.kind !== "employee").map((u) => u.uid));
     const reach = new Map();
     for (const u of users) {
       if (isStaff(u.uid)) continue;
       const keys = isTeamKey(u.clientKey) ? Object.keys(u.access || {}) : u.clientKey ? [u.clientKey] : [];
       const set = new Set([u.uid, ...staffIds]);
-      for (const k of keys) for (const x of teamOf.get(k) || []) set.add(x);
+      const pc = calAcc.get(u.inviteCode)?.playerChat;
+      const toPlayers = playerUids.has(u.uid) || (pc ?? u.kind !== "employee");
+      for (const k of keys) for (const x of teamOf.get(k) || []) if (toPlayers || !playerUids.has(x) || x === u.uid) set.add(x);
       reach.set(u.uid, [...set].sort());
     }
     const emails = new Map(users.filter((u) => u.email).map((u) => [String(u.email).toLowerCase(), u.uid]));

@@ -666,6 +666,7 @@ export function sgDashboard(container, opts) {
             el("h2", { class: "hero-name" }, me.label),
             el("div", { class: "hero-big" }, [el("strong", { class: showCls(total, heroRef, fieldAvg) }, showV(total, heroRef)), el("span", {}, relOn() && heroRef != null ? `${sg ? "strokes gained a round" : def.label} vs the field (${fmtV(heroRef)})` : sg ? "strokes gained a round" : def.label)]),
             sg ? null : el("p", { class: "hero-help" }, def.help),
+            tourButtons(), // (update 376: the tour, right under the big number, above the pills)
             // (update 159: each pill opens a table: the rankings, every round, the form, the wins and top 10s)
             el("div", { class: "hero-chips" }, [
               // (coloured by rank, as in the report: top 10, 11-50, 51-100, 101-150, past 150)
@@ -719,7 +720,6 @@ export function sgDashboard(container, opts) {
             return box;
           })(),
         ]),
-        tourButtons(), // (one row across the card, under Generate AI Insights)
         tiles.length ? el("div", { class: `hero-tiles n${tiles.length}` }, tiles) : null,
         foot,
       ]);
@@ -2615,7 +2615,7 @@ export function sgDashboard(container, opts) {
       el("td", {}, `${shortDay(x.rd.date)} ${String(x.rd.date || "").slice(2, 4) ? `\u2019${String(x.rd.date).slice(2, 4)}` : ""}`),
       el("td", {}, `${x.rd.event || "Round"}${x.rd.roundNo ? ` \u00b7 R${x.rd.roundNo}` : ""}`),
       el("td", { class: `num ${x.t >= 0 ? "pos" : "neg"}` }, sgn2(x.t))]));
-    const table = el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Event"), el("th", { class: "num" }, "SG")])), el("tbody", {}, trs)]));
+    const table = el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Event"), el("th", { class: "num" }, "SG")])), el("tbody", {}, trs.filter((_, i) => inSt(i)))])); // (update 377: just the stretch's rounds)
     const bars = seq.map((x, i) => {
       const h = Math.max(1, Math.abs(x.t) * sc), on = inSt(i);
       const r = mk("rect", { x: i * bw + bw * 0.12, width: Math.max(0.8, bw * 0.76), y: x.t >= 0 ? y0 - h : y0, height: h, rx: Math.min(2, bw * 0.2),
@@ -2625,7 +2625,7 @@ export function sgDashboard(container, opts) {
       hit.addEventListener("click", () => {
         bars.forEach((b, j) => b.setAttribute("stroke", j === i ? "#fff" : "none"));
         trs.forEach((t, j) => t.classList.toggle("picked", j === i));
-        trs[i].scrollIntoView({ block: "nearest", behavior: "smooth" });
+        if (inSt(i)) trs[i].scrollIntoView({ block: "nearest", behavior: "smooth" });
       });
       svg.appendChild(r); svg.appendChild(hit);
       return r;
@@ -2637,7 +2637,7 @@ export function sgDashboard(container, opts) {
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Best stretch"), el("h2", {}, `${row.n} ${row.n === 1 ? "round" : "rounds in a row"} \u00b7 ${when}`),
         el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best of everyone else). The ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN}.`)]), close]),
       svg,
-      el("p", { class: "muted small bs-st-count" }, `All ${n} rounds, oldest first; the stretch is bright. Tap a bar to find it in the list.`),
+      el("p", { class: "muted small bs-st-count" }, `All ${n} rounds in the chart, oldest first, the stretch bright. The table lists the ${row.n} ${row.n === 1 ? "round" : "rounds"} in the stretch; tap one of its bars to find it.`),
       table,
       el("div", { class: "bs-st-foot" }, [show]),
     ]));

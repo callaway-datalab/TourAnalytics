@@ -293,12 +293,14 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     let total = DEF_TOTAL[cat];
     let mode = "even"; // even | focus | custom
     let counts = {};
-    const weightsFor = (m) => buckets.map((b) => {
-      if (m !== "focus") return 1;
-      // more shots where you lose the most (on course, else in practice); a little for everything
-      const v = course[b.id]?.n >= 8 ? course[b.id].sgPer : pastAll.byBucket.find((x) => x.id === b.id)?.sgPer;
-      return v == null ? 0.6 : Math.max(0.25, 0.6 - v * (cat === "PUTT" ? 6 : 4));
-    });
+    // (update 376) Focus on weak spots: only the distances where you lose strokes (on course, else in practice), more
+    // shots the more you lose; none losing (or no numbers yet): even
+    const sgAt = (b) => (course[b.id]?.n >= 8 ? course[b.id].sgPer : pastAll.byBucket.find((x) => x.id === b.id)?.sgPer);
+    const weightsFor = (m) => {
+      if (m !== "focus") return buckets.map(() => 1);
+      const w = buckets.map((b) => { const v = sgAt(b); return v != null && v < -0.0005 && !off.has(b.id) ? -v : 0; });
+      return w.some((v) => v > 0) ? w : buckets.map(() => 1);
+    };
     // (update 160) tick a club / distance off and its shots go to the ones still on (225-250 starts off)
     const off = new Set(buckets.filter((b) => cat === "APP" && b.lo >= 225).map((b) => b.id));
     const reflow = () => {
@@ -327,7 +329,10 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     const modes = el("div", { class: "seg seg-sm pr-modes", role: "group", "aria-label": "Spread the shots" });
     const drawModes = () => mount(modes, [["even", "Even"], ["focus", "Focus on weak spots"]].map(([m, l]) => {
       const b = el("button", { type: "button", class: `seg-btn${mode === m ? " on" : ""}` }, l);
-      b.addEventListener("click", () => { mode = m; reflow(); drawRows(); drawModes(); });
+      b.addEventListener("click", () => {
+        mode = m; reflow(); drawRows(); drawModes();
+        if (m === "focus" && !buckets.some((x) => { const v = sgAt(x); return v != null && v < -0.0005 && !off.has(x.id); })) flash?.("No distances where you\u2019re losing strokes yet, so the shots are spread evenly.", "ok");
+      });
       return b;
     }));
     const rows = el("div", { class: "pr-brows" });
@@ -355,10 +360,17 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
       const box = el("div", { class: "pr-mix" });
       const drawMix = () => {
         const sum = Object.values(mixes[m.id]).reduce((a, b) => a + b, 0) || 1;
-        mount(box, [el("span", { class: "rd-label" }, m.label), ...m.options.map(([k, l]) => {
+        mount(box, [el("span", { class: "rd-label" }, m.label), ...m.options.map(([k, l, d0]) => {
           const val = el("span", { class: "pr-cnt" }, `${Math.round((mixes[m.id][k] / sum) * 100)}%`);
           const set = (d) => { mixes[m.id][k] = Math.max(0, mixes[m.id][k] + d); drawMix(); };
-          return el("div", { class: "pr-mixrow" }, [el("span", {}, l), el("span", { class: "pr-stepper sm" }, [stepBtn("−", () => set(-5), `Less ${l}`), val, stepBtn("+", () => set(5), `More ${l}`)])]);
+          // (update 376) untick a choice to leave it out (its share goes to the rest); tick it again for its usual share
+          const on = mixes[m.id][k] > 0;
+          const cb = el("input", { type: "checkbox", class: "pr-bon", checked: on, "aria-label": `Include ${l}` });
+          cb.addEventListener("change", () => {
+            if (!cb.checked && Object.entries(mixes[m.id]).filter(([kk, v]) => kk !== k && v > 0).length === 0) { cb.checked = true; flash?.(`Keep at least one ${m.label.toLowerCase()}.`, "error"); return; }
+            mixes[m.id][k] = cb.checked ? (d0 || 10) : 0; drawMix();
+          });
+          return el("div", { class: `pr-mixrow${on ? "" : " off"}` }, [el("label", { class: "pr-bl-t" }, [cb, l]), el("span", { class: "pr-stepper sm" }, [stepBtn("−", () => set(-5), `Less ${l}`), val, stepBtn("+", () => set(5), `More ${l}`)])]);
         })]);
       };
       drawMix();
@@ -385,7 +397,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
         el("div", { class: "pr-plan-head" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, `New session · ${CATS[cat].label}`), el("h1", {}, "Plan your session")]), totalBox]),
         el("div", { class: "pr-plan-grid" }, [
           el("div", {}, [el("div", { class: "pr-sub" }, [el("h2", {}, cat === "OTT" ? "Clubs" : "Distances"), modes]), rows,
-            el("p", { class: "muted small" }, `Untick a ${cat === "OTT" ? "club" : "distance"} to leave it out: its shots go to the rest. On course and practice: strokes gained per shot against the Tour baselines (0.00). “Focus on weak spots” puts more shots where you lose the most.`)]),
+            el("p", { class: "muted small" }, `Untick a ${cat === "OTT" ? "club" : "distance"} to leave it out: its shots go to the rest. On course and practice: strokes gained per shot against the Tour baselines (0.00). “Focus on weak spots” puts the shots only where you lose strokes, more where you lose the most.`)]),
           el("div", {}, [el("h2", {}, "Mix"), mixBox, stimpIn ? el("label", { class: "pr-stimp" }, [el("span", { class: "rd-label" }, "Green speed (stimp)"), stimpIn]) : null,
             el("p", { class: "muted small" }, "Every shot is drawn at random from this plan, in a random order, so no two in a row are the same.")]),
         ]),
