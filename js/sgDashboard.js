@@ -1710,7 +1710,7 @@ export function sgDashboard(container, opts) {
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); inp.blur(); } });
       const tog = el("button", { type: "button", class: `pp-tog${tPeak ? " on" : ""}`, "aria-pressed": String(!!tPeak) }, tPeak ? "\u2713 Personal Peak" : "Personal Peak");
       tog.addEventListener("click", () => { if (tPeak) { st.tablePeak = 0; draw(); } else apply(); });
-      return el("div", { class: "sg-peak-ctl" }, [tog, el("span", { class: "muted small" }, "their best"), inp, el("span", { class: "muted small" }, "rounds vs the rest")]);
+      return el("div", { class: "sg-peak-ctl" }, [tog, el("span", { class: "muted small sg-peak-l" }, ["(best ", inp, " rounds)"])]); // (update 382)
     })() : null;
     if (mode === "elite") return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
