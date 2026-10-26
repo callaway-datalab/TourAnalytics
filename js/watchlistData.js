@@ -199,6 +199,9 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const most = Math.max(0, ...fieldF.map((p) => p.rounds.length));
   const minR = most >= 15 ? defaultMinRounds(most) : Math.max(1, Math.floor(most * 0.33));
   const ranked = fieldF.filter((p) => p.rounds.length >= minR || p.key === key);
+  // (update 378) the players with enough rounds: the distances, stats and clubs are ranked among these too (not everyone)
+  const okKey = new Set(ranked.map((p) => p.key));
+  const detailOk = detail?.length ? detail.filter((p) => okKey.has(p.key) || p.key === key) : detail;
   const card = { key, label, tour, tours: tours.filter((t) => t.tour), rounds: mine.length, minR, of: ranked.length, period, sg: [], dists: { best: [], worst: [] }, metrics: [], badges: [], alerts: [] };
   if (!mine.length) return { ...card, empty: true };
 
@@ -227,7 +230,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   const bucketsOf = (rounds) => { if (bucketMemo.has(rounds)) return bucketMemo.get(rounds); const m = new Map(); bucketMemo.set(rounds, m); for (const rd of rounds) for (const s of rd.shots) if (s.dist) { const b = `${s.cat}|${s.dist}`; const o = m.get(b) || m.set(b, { sg: 0, w: 0 }).get(b); o.sg += s.sg; o.w += s.w; } return m; };
   const minePeriod = own?.length ? applyFilters(sgOnly(own), f) : mine;
   const myB = bucketsOf(minePeriod);
-  const fieldB = detail?.length ? detail.map((p) => { const rs = p.key === key ? minePeriod : sliced(detail, p, f); return { key: p.key, n: rs.length, b: p.key === key ? myB : bucketsOf(rs) }; }) : null;
+  const fieldB = detailOk?.length ? detailOk.map((p) => { const rs = p.key === key ? minePeriod : sliced(detail, p, f); return { key: p.key, n: rs.length, b: p.key === key ? myB : bucketsOf(rs) }; }) : null;
   // (update 173) strokes gained per round at each distance (all their rounds in the period count)
   const nMine = minePeriod.length;
   const dl = [...myB].filter(([, o]) => o.w >= MIN_ATT && nMine).map(([b, o]) => {
@@ -288,7 +291,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       const [ck0, ...dd] = id.startsWith("sg:sd@") ? id.slice(6).split("|") : [], ck = ck0 || undefined, cd = dd.length ? dd.join("|") : null;
       const rdVal = (rd) => (cd ? rd.shots.reduce((t, s) => t + (s.cat === ck && s.dist === cd ? s.sg : 0), 0) : sgOf(rd, ck));
       const swing = (rs) => sd(rs.map(rdVal));
-      const pool = cd ? (detail?.length ? detail.map((p) => ({ key: p.key, rounds: p.key === key ? minePeriod : applyFilters(sgOnly(p.rounds), f) })) : [{ key, rounds: minePeriod }]) : ranked;
+      const pool = cd ? (detailOk?.length ? detailOk.map((p) => ({ key: p.key, rounds: p.key === key ? minePeriod : applyFilters(sgOnly(p.rounds), f) })) : [{ key, rounds: minePeriod }]) : ranked;
       const myRs = cd ? [...minePeriod].sort(byDate) : mine;
       const vals = new Map(pool.filter((p) => p.rounds.length >= 8 || p.key === key).map((p) => [p.key, swing(p.rounds)]));
       v = vals.get(key); r = cd && !detail?.length ? { rank: null, of: 0 } : rankOf(vals, key, false); higher = false; fmt = (x) => (x == null ? "—" : `±${x.toFixed(cd ? 3 : 2)}`);
@@ -320,7 +323,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       const statAll = (rs) => applyFilters(statRounds(rs, k), fr).filter((rd) => rd.shots.length);
       const agg = (rs) => statAgg(rs, true);
       const myS = statAll(srcAll).sort(byDate);
-      const vals = new Map((detail || []).filter((p) => p.key !== key).map((p) => { const a = agg(statAll(p.rounds)); return [p.key, a.w >= MIN_ATT ? a.value : null]; }));
+      const vals = new Map((detailOk || []).filter((p) => p.key !== key).map((p) => { const a = agg(statAll(p.rounds)); return [p.key, a.w >= MIN_ATT ? a.value : null]; }));
       vals.set(key, agg(myS).value);
       v = vals.get(key); r = detail?.length ? rankOf(vals, key, higher) : { rank: null, of: 0 }; fmt = (x) => fmtStat(def, x);
       trend = trendOf(myS, (rs) => agg(rs).value);
@@ -332,7 +335,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       const val = (rs) => statAgg(statRounds(rs, k), false).value;
       const statAll = (rs) => applyFilters(statRounds(rs, k), f);
       const myS = statAll(srcAll).sort(byDate);
-      const vals = new Map(field.map((p) => [p.key, p.key === key ? val(myS) : (() => { const rs = statAll(p.rounds); return rs.length >= Math.max(1, minR) ? val(rs) : null; })()]));
+      const vals = new Map(field.filter((p) => okKey.has(p.key) || p.key === key).map((p) => [p.key, p.key === key ? val(myS) : (() => { const rs = statAll(p.rounds); return rs.length >= Math.max(1, minR) ? val(rs) : null; })()]));
       v = vals.get(key); r = rankOf(vals, key, higher); fmt = (x) => fmtStat(def, x);
       trend = trendOf(myS, val);
       if (def.higher == null) higher = null;
@@ -344,7 +347,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       const gv = (rs) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + (withG(s) ? s.sg : 0), 0), 0) / rs.length : null);
       const used = minePeriod.filter((rd) => rd.shots.some(withG)).length;
       v = used ? gv(minePeriod) : null;
-      if (detail?.length && v != null) r = rankOf(new Map(detail.map((p) => { const rs = p.key === key ? minePeriod : applyFilters(sgOnly(p.rounds), f); return [p.key, p.key === key ? v : rs.some((rd) => rd.shots.some(withG)) ? gv(rs) : null]; })), key);
+      if (detailOk?.length && v != null) r = rankOf(new Map(detailOk.map((p) => { const rs = p.key === key ? minePeriod : applyFilters(sgOnly(p.rounds), f); return [p.key, p.key === key ? v : rs.some((rd) => rd.shots.some(withG)) ? gv(rs) : null]; })), key);
       fmt = (y) => (y == null ? "\u2014" : `${fmtSG(y)}${used && used < 10 ? ` (${used} rd${used === 1 ? "" : "s"})` : ""}`);
       trend = trendOf([...minePeriod].sort(byDate), gv);
       info = () => { const fi = formInfo([...minePeriod].sort(byDate), gv, { label: `${gearLabel(g)} (strokes gained a round)`, fmtFn: fmtSG }); if (!used) fi.sub = `Not used in this period. ${fi.sub}`; else if (used < 10) fi.sub = `Only ${used} round${used === 1 ? "" : "s"} with it this period, so read this with care. ${fi.sub}`; return fi; };
