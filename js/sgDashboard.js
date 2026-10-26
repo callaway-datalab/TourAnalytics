@@ -1622,7 +1622,7 @@ export function sgDashboard(container, opts) {
     // strokes gained the filters are about (SG: Total, or the one category picked: their best Off-the-Tee rounds), and
     // every row is those same rounds' value, so the rows still add up and read as "how I play on my best days"
     const peakN = tPeak || Math.max(1, Math.round(Number(st.peakN) || 10));
-    const peak = peakOn ? (!tPeak && st.peakMode === "stretch" ? peakOf(ordered, cat, peakN) : eliteOf(ordered, cat, peakN)) : null; // (update 335: elite rounds; the same rounds as the charts' dots)
+    const peak = peakOn ? (tPeak || st.peakMode === "stretch" ? peakOf(ordered, cat, peakN) : eliteOf(ordered, cat, peakN)) : null; // (update 383: the table's Personal Peak is rounds in a row) // (update 335: elite rounds; the same rounds as the charts' dots)
     const refMap = peak ? peak.map : refP ? rowVals(refP.rounds, cat) : null;
     const dTxt = (rd) => String(rd?.date || "").slice(0, 10);
     // no rank picked: each stat coloured against the player's own career average (every round of theirs)
@@ -1672,8 +1672,8 @@ export function sgDashboard(container, opts) {
         if (row.expand) { srow.addEventListener("click", () => toggleCat(row.expand)); srow.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCat(row.expand); } }); }
         tr.push((mount(srow, [
           el("td", { title: row.tip || null }, label),
-          el("td", { class: "num" }, row.fmt(v)), // (update 335: Avg | Elite | Diff | Elite Rank; only the difference is coloured)
-          el("td", { class: "num strong" }, pk == null ? "\u2014" : row.fmt(pk)),
+          ...(() => { const restTd = el("td", { class: "num" }, row.fmt(v)), pkTd = el("td", { class: "num strong" }, pk == null ? "\u2014" : row.fmt(pk));
+            return tPeak ? [pkTd, restTd] : [restTd, pkTd]; })(), // (update 335: Avg | Elite | Diff | Elite Rank; update 384: Personal Peak is Peak | Rest)
           (() => { const g = relGroup(row); const td = el("td", { class: "num bs-diff", style: g ? "color:#fff" : diffBg(row, d, pk, v, X) }, dTxt2); if (g && d != null) relCells.push({ td, g, d }); return td; })(),
           el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "\u2014"),
         ]), srow));
@@ -1701,7 +1701,7 @@ export function sgDashboard(container, opts) {
     { const max = new Map(); for (const c of relCells) max.set(c.g, Math.max(max.get(c.g) || 0, Math.abs(c.d)));
       for (const c of relCells) { const m = max.get(c.g) || 0; const t = m > 0 ? Math.abs(c.d) / m : 0; if (Math.abs(c.d) < 0.005) continue;
         const up = c.d > 0; c.td.style.background = `rgba(${up ? "48,209,88" : "255,69,58"},${(0.04 + 0.4 * t * t).toFixed(3)})`; } }
-    const TN = tPeak ? { kept: `best ${peakN} rounds`, cut: "other rounds", Kept: `Best ${peakN}`, Cut: "Rest" } : NM();
+    const TN = tPeak ? { kept: `best ${peakN}-round stretch`, cut: "other rounds", Kept: "Peak", Cut: "Rest" } : NM();
     // (update 381) Personal Peak, picked above the table: their best N rounds (any order) against the rest
     const peakCtl = mode === "table" && me ? (() => {
       const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(tPeak || Number(st.tablePeakLast) || 10), inputmode: "numeric", "aria-label": "How many of their best rounds" });
@@ -1710,7 +1710,7 @@ export function sgDashboard(container, opts) {
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); inp.blur(); } });
       const tog = el("button", { type: "button", class: `pp-tog${tPeak ? " on" : ""}`, "aria-pressed": String(!!tPeak) }, tPeak ? "\u2713 Personal Peak" : "Personal Peak");
       tog.addEventListener("click", () => { if (tPeak) { st.tablePeak = 0; draw(); } else apply(); });
-      return el("div", { class: "sg-peak-ctl" }, [tog, el("span", { class: "muted small sg-peak-l" }, ["(best ", inp, " rounds)"])]); // (update 382)
+      return el("div", { class: "sg-peak-ctl" }, [tog, el("span", { class: "muted small sg-peak-l" }, ["(best ", inp, " round stretch)"])]); // (update 382)
     })() : null;
     if (mode === "elite") return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
@@ -1720,8 +1720,9 @@ export function sgDashboard(container, opts) {
       peakCtl,
       el("div", { class: "cmp-tw" }, el("table", { class: `cmp-table sg-full-t${stretchOn && !showRanks ? " no-rank" : ""}` }, [
         el("thead", {}, el("tr", {}, stretchOn ? [el("th", {}, ""), // (update 330)
-          el("th", { class: "num", title: `The player\u2019s ${TN.cut} in the selected time frame` }, TN.Cut),
-          el("th", { class: "num", title: `The average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (the ${TN.kept})` }, TN.Kept),
+          ...(() => { const restTh = el("th", { class: "num", title: `The player\u2019s ${TN.cut} in the selected time frame` }, TN.Cut),
+            pkTh = el("th", { class: "num", title: `The average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} (the ${TN.kept})` }, TN.Kept);
+            return tPeak ? [pkTh, restTh] : [restTh, pkTh]; })(),
           el("th", { class: "num", title: `${TN.Kept} less ${TN.Cut.toLowerCase()}: green where the ${TN.kept} were better` }, "Diff"),
           el("th", { class: "num", title: "Where the kept rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, tPeak ? "Peak Rank" : `${NM().Kept} Rank`)]
           : [el("th", {}, ""), el("th", { class: "num" }, me?.label || "Player"),
