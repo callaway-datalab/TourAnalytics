@@ -470,15 +470,19 @@ export async function render(main) {
     if (!lb) { mount(playerBox, top); return; }
     if (!row) { mount(playerBox, [...top, el("p", { class: "muted lv-msg" }, "No strokes gained for this player in this round. They may not be in the field, or haven’t played it.")]); return; }
     const t = row.TOTAL?.[k], trk = rankText("TOTAL", pid);
-    const max = Math.max(3, ...SPLITS.map(([s]) => Math.abs(row[s]?.[k] ?? 0)));
+    // (update 389) one scale for every part of the game: the right end is the best anyone in the field has in any of them,
+    // the left end the worst, so a bar's length says how near the best (or worst) it is, and compares across parts
+    const vals = lb.rows.flatMap((r) => SPLITS.map(([s]) => r[s]?.[k])).filter((x) => x != null && Number.isFinite(x));
+    // (update 390) zero always in the middle: the gain side runs to the best, the loss side to the worst
+    const hiV = Math.max(0.01, ...vals), loV = Math.min(-0.01, ...vals);
     const parts = [...top,
       // (update 286) "Strokes Gained Total", its rank under it (Tee-to-Green is in the leaderboard's columns)
       el("div", { class: "lv-total" }, [el("strong", { class: tone(t) }, fmt(t)), el("span", { class: "muted" }, ["Strokes Gained Total", trk ? el("br") : null, trk ? `Rank ${trk} of ${ranksFor("TOTAL").n}` : null])]),
       el("div", { class: "lv-splits" }, SPLITS.map(([s, label]) => {
-        const v = row[s]?.[k], r = rankText(s, pid), w = v == null ? 0 : Math.min(Math.abs(v) / max, 1) * 50;
+        const v = row[s]?.[k], r = rankText(s, pid), w = v == null ? 0 : Math.min(1, v > 0 ? v / hiV : -v / -loV) * 50;
         return el("div", { class: "lv-split" }, [
           el("div", { class: "lv-split-top" }, [el("span", {}, label), el("span", {}, [el("strong", { class: tone(v) }, fmt(v)), r ? el("small", { class: "muted" }, `rank ${r}`) : null])]),
-          el("div", { class: "lv-track" }, el("span", { class: v > 0 ? "pos" : "neg", style: `${v > 0 ? "left" : "right"}:50%;width:${w}%` })),
+          el("div", { class: "lv-track", title: `Scale: ${fmt(loV)} (the worst in the field) on the left, ${fmt(hiV)} (the best) on the right, zero in the middle; the same for every part of the game` }, el("span", { class: v > 0 ? "pos" : "neg", style: `${v > 0 ? "left" : "right"}:50%;width:${w.toFixed(2)}%` })),
         ]);
       })),
     ];
