@@ -5138,3 +5138,6 @@ tr.row-muted td, tr.row-muted td * { color: var(--muted, #8e8e93) !important; ba
 .wl-card.compact .wl-id .wl-tours { display: flex !important; }
 .wl-card .wl-id .wl-tour { font-size: 0.64rem; padding: 0.12rem 0.45rem; line-height: 1.35; white-space: nowrap; }
 .cal-notit { margin: 0.5rem 0 0; }
+/* (update 391) the rail trimmed to this part of the game's best and worst in the field (the shared scale stays) */
+.lv-track.lv-track-fit { background: transparent; }
+.lv-track.lv-track-fit::before { content: ""; position: absolute; top: 0; bottom: 0; left: var(--rl, 0%); right: calc(100% - var(--rr, 100%)); border-radius: 999px; background: rgba(255, 255, 255, 0.06); }

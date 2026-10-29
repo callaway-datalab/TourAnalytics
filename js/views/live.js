@@ -482,7 +482,8 @@ export async function render(main) {
         const v = row[s]?.[k], r = rankText(s, pid), w = v == null ? 0 : Math.min(1, v > 0 ? v / hiV : -v / -loV) * 50;
         return el("div", { class: "lv-split" }, [
           el("div", { class: "lv-split-top" }, [el("span", {}, label), el("span", {}, [el("strong", { class: tone(v) }, fmt(v)), r ? el("small", { class: "muted" }, `rank ${r}`) : null])]),
-          el("div", { class: "lv-track", title: `Scale: ${fmt(loV)} (the worst in the field) on the left, ${fmt(hiV)} (the best) on the right, zero in the middle; the same for every part of the game` }, el("span", { class: v > 0 ? "pos" : "neg", style: `${v > 0 ? "left" : "right"}:50%;width:${w.toFixed(2)}%` })),
+          // (update 391) the grey rail runs only as far as this part of the game's best and worst in the field
+          el("div", { class: "lv-track lv-track-fit", style: (() => { const cv = lb.rows.map((x) => x[s]?.[k]).filter((x) => x != null && Number.isFinite(x)); const ch = Math.max(0, ...cv), cl = Math.min(0, ...cv); return `--rl:${(50 - Math.min(1, -cl / -loV) * 50).toFixed(2)}%;--rr:${(50 + Math.min(1, ch / hiV) * 50).toFixed(2)}%`; })(), title: `Scale: ${fmt(loV)} (the worst in the field) on the left, ${fmt(hiV)} (the best) on the right, zero in the middle; the same for every part of the game` }, el("span", { class: v > 0 ? "pos" : "neg", style: `${v > 0 ? "left" : "right"}:50%;width:${w.toFixed(2)}%` })),
         ]);
       })),
     ];
