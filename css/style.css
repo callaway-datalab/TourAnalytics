@@ -5141,3 +5141,13 @@ tr.row-muted td, tr.row-muted td * { color: var(--muted, #8e8e93) !important; ba
 /* (update 391) the rail trimmed to this part of the game's best and worst in the field (the shared scale stays) */
 .lv-track.lv-track-fit { background: transparent; }
 .lv-track.lv-track-fit::before { content: ""; position: absolute; top: 0; bottom: 0; left: var(--rl, 0%); right: calc(100% - var(--rr, 100%)); border-radius: 999px; background: rgba(255, 255, 255, 0.06); }
+/* (update 392) phones: the name, its tour pills and the open / star buttons on one line */
+@media (max-width: 640px) {
+  .wl-card .wl-card-head { flex-wrap: nowrap !important; align-items: center; gap: 0.5rem; }
+  .wl-card .wl-id { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; gap: 0.3rem 0.4rem; }
+  .wl-card .wl-name { font-size: 1.15rem; white-space: nowrap; }
+  .wl-card .wl-id .wl-tours { flex: none; gap: 0.2rem; }
+  .wl-card .wl-id .wl-tour { font-size: 0.58rem; padding: 0.1rem 0.38rem; }
+  .wl-card .wl-head-r { gap: 0.35rem; align-items: center; }
+  .wl-card .wl-more-btn, .wl-card .wl-star { width: 1.65rem; height: 1.65rem; font-size: 0.9rem; }
+}
