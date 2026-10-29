@@ -150,6 +150,29 @@ export function activeSecs(s, now = null) {
 }
 export const mmss = (secs) => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 
+/** (update 387) The drills in a player's plan (to show which ones Stats has already added). */
+export async function planFor(state, playerKey) {
+  const list = await listPlan(planOwnerFor(state, playerKey));
+  return list.filter((p) => (p.playerKey || "") === (playerKey || ""));
+}
+/** (update 387) Take a drill out of a player's plan from Stats, with the goal it made in Goals. Returns how many came out. */
+export async function removeFromPlan(state, { drill, playerKey }) {
+  const owner = planOwnerFor(state, playerKey);
+  const list = await listPlan(owner);
+  const hits = list.filter((p) => p.kind === drill.kind && (p.dist || "") === (drill.dist || "") && (p.lie || "") === (drill.lie || "") && (p.playerKey || "") === (playerKey || ""));
+  for (const p of hits) await deletePlanItem(owner, p.id);
+  const goalIds = hits.map((p) => p.goalId).filter(Boolean);
+  if (goalIds.length && playerKey) {
+    try {
+      const { getDoc, doc, db } = await fsP();
+      const cur = await getDoc(doc(db, "goals", playerKey)).then((s) => (s.exists() ? s.data().challenges || [] : [])).catch(() => []);
+      const keep = cur.filter((c) => !(c.from === "plan" && goalIds.includes(c.id)));
+      if (keep.length !== cur.length) { const { saveChallenges } = await import("../goals.js"); await saveChallenges(playerKey, keep, state.user.uid); }
+    } catch (err) { console.error(err); }
+  }
+  return hits.length;
+}
+
 /* ---------------- goals in real rounds ---------------- */
 /**
  * Add drills to the plan, and a goal on the same stat in real rounds for each. items: [{ drill, goal }] where goal is

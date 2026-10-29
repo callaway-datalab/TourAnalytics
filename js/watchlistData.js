@@ -226,7 +226,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   if (lite) return { ...card, lite: true };
 
   // ---- distances: strokes gained a shot by category and distance (enough attempts to mean something) ----
-  const MIN_ATT = 8;
+  const MIN_ATT = noRanks ? 3 : 8; // (update 387: practice / entered rounds: fewer shots, so every distance with 3 or more shows)
   const bucketsOf = (rounds) => { if (bucketMemo.has(rounds)) return bucketMemo.get(rounds); const m = new Map(); bucketMemo.set(rounds, m); for (const rd of rounds) for (const s of rd.shots) if (s.dist) { const b = `${s.cat}|${s.dist}`; const o = m.get(b) || m.set(b, { sg: 0, w: 0 }).get(b); o.sg += s.sg; o.w += s.w; } return m; };
   const minePeriod = own?.length ? applyFilters(sgOnly(own), f) : mine;
   const myB = bucketsOf(minePeriod);

@@ -34,11 +34,18 @@ function paintTable(table) {
   }
 }
 
+// (update 387) with a part of the game opened in a table, the other parts of the game lose their colours (so the open
+// one and its distances stand out); closing it brings them back
+function muteOthers(table) {
+  const tops = [...table.querySelectorAll("tbody > tr[aria-expanded]")].filter((tr) => !tr.classList.contains("cmp-deep") && !tr.closest(".bs-st-det"));
+  const anyOpen = tops.some((tr) => tr.getAttribute("aria-expanded") === "true");
+  for (const tr of tops) tr.classList.toggle("row-muted", anyOpen && tr.getAttribute("aria-expanded") !== "true");
+}
 let queued = false;
-function paintAll() { queued = false; document.querySelectorAll(TABLES).forEach(paintTable); }
+function paintAll() { queued = false; document.querySelectorAll(TABLES).forEach((t) => { paintTable(t); muteOthers(t); }); }
 /** Watch the page: whenever a table is drawn or redrawn, paint its coloured cells. */
 export function startCellPaint() {
   const obs = new MutationObserver(() => { if (!queued) { queued = true; requestAnimationFrame(paintAll); } });
-  obs.observe(document.body, { childList: true, subtree: true });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-expanded"] }); // (update 387: and rows opening in place)
   paintAll();
 }

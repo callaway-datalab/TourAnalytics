@@ -168,10 +168,26 @@ export function renderChat(container, { flash }) {
   const form = el("form", { class: "chat-form", onSubmit: (e) => { e.preventDefault(); send(); } }, [picked, clip, box, sendBtn]);
   box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
   const newDm = el("button", { type: "button", class: "btn ghost chat-new-btn" }, "\u270E  New message");
+  // (update 387) Add friend: by their email; once they accept you can message each other and see each other's stats
+  const addFriendBtn = el("button", { type: "button", class: "btn ghost chat-new-btn chat-add-friend" }, "\uFF0B  Add friend");
+  addFriendBtn.addEventListener("click", () => {
+    const dlg = el("dialog", { class: "dp-dialog chat-friend-dlg" });
+    const inp = el("input", { type: "email", placeholder: "Their email", autocomplete: "off", "aria-label": "Their email" });
+    const send = el("button", { type: "submit", class: "btn" }, "Send request");
+    const cancel = el("button", { type: "button", class: "btn ghost" }, "Cancel");
+    const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+    cancel.addEventListener("click", close);
+    const form = el("form", { class: "stack" }, [
+      el("h3", {}, "Add a friend"),
+      el("p", { class: "muted small" }, "Once they accept, you can message each other, and each of you can see the other\u2019s stats and practice in the portal."),
+      inp, el("div", { class: "thread-actions" }, [send, cancel])]);
+    form.addEventListener("submit", async (e) => { e.preventDefault(); const em = inp.value.trim().toLowerCase(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { inp.focus(); return; } send.disabled = true; await askEmail(em); close(); });
+    mount(dlg, form); document.body.appendChild(dlg); dlg.showModal?.(); inp.focus();
+  });
   const picker = el("div", { class: "chat-picker", hidden: true }); // (adding people to an open chat)
   const compose = el("div", { class: "chat-compose", hidden: true });
   const shell = el("section", { class: "panel chat chat-shell" }, [
-    el("aside", { class: "chat-side" }, [el("div", { class: "chat-side-top" }, [el("h3", {}, "Chats"), el("div", { class: "chat-new" }, [newDm])]), list]),
+    el("aside", { class: "chat-side" }, [el("div", { class: "chat-side-top" }, [el("h3", {}, "Chats"), el("div", { class: "chat-new" }, [addFriendBtn, newDm])]), list]),
     el("div", { class: "chat-main" }, [head, picker, compose, msgs, form]),
   ]);
   mount(container, shell);
@@ -216,7 +232,7 @@ export function renderChat(container, { flash }) {
       const ok = el("button", { type: "button", class: "link chat-accept" }, "Accept"), no = el("button", { type: "button", class: "link" }, "Decline");
       ok.addEventListener("click", () => accept(r));
       no.addEventListener("click", async () => { try { await deleteDoc(doc(db, "friendRequests", r.id)); } catch { flash("Couldn't decline that.", "error"); } });
-      return el("li", { class: "chat-ask" }, [el("span", {}, [el("strong", {}, nameOf(r.from)), " wants to chat with you"]), el("span", { class: "chat-friend-btns" }, [ok, no])]);
+      return el("li", { class: "chat-ask" }, [el("span", {}, [el("strong", {}, nameOf(r.from)), " wants to be friends (chat and see each other\u2019s stats)"]), el("span", { class: "chat-friend-btns" }, [ok, no])]);
     });
     mount(list, [...asks, mine ? item(mine) : null, ...caHead, ...(rest.length ? rest.map(item) : [el("li", { class: "empty chat-empty" }, "No other chats yet. Start one with New message.")])]);
   }
@@ -564,7 +580,7 @@ export function renderChat(container, { flash }) {
       const back = incoming.find((r) => r.from === other);
       if (back) { await accept(back); return; }
       await setDoc(doc(db, "friendRequests", `${uid}_${other}`), { from: uid, to: other, createdAt: serverTimestamp() });
-      flash("Asked. You can message each other once they accept.");
+      flash("Asked. Once they accept, you can message each other and see each other\u2019s stats.");
     } catch { flash("Couldn't send that request. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
   }
   async function accept(r) {

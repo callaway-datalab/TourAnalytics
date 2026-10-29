@@ -299,7 +299,8 @@ export async function render(main, { previewClient }) {
     const good = higher == null ? null : higher ? t.ch > 0 : t.ch < 0;
     return el("span", { class: `wl-tr ${flat ? "flat" : good == null ? "" : good ? "up" : "down"}`, title: `Last ${t.n}: ${t.last?.toFixed?.(2)} · previous ${t.n}: ${t.prev?.toFixed?.(2)}` }, flat ? "◆ steady" : `${t.ch > 0 ? "▲" : "▼"} ${fmt(t.ch)}`);
   };
-  const rankPill = (r, of) => (src() === "entered" ? null : r ? el("span", { class: `wl-rank ${rkCls(r)}`, title: `${ordinal(r)} of ${of}` }, ordinal(r)) : el("span", { class: "wl-rank none" }, "—"));
+  // (update 387) nothing ranked (practice rounds): no rank pill at all
+  const rankPill = (r, of) => (src() === "entered" || !of ? null : r ? el("span", { class: `wl-rank ${rkCls(r)}`, title: `${ordinal(r)} of ${of}` }, ordinal(r)) : el("span", { class: "wl-rank none" }, "—"));
 
   /* (update 249) hold a card, then drag it: the order is saved (this week's guys at the top). A hold (a third of a
      second without moving) starts it, so taps, clicks and scrolling work as before. */

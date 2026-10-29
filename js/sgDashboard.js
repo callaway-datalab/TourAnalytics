@@ -17,7 +17,8 @@ import { getState } from "./auth.js";
 import { drillFor, drillLine, practiceOpen, goalStatsFor, isMine } from "./practice/plan.js"; // (update 342)
 // (update 353) the four levels, named for what they mean on Tour
 const LEVELS = { 1: "Best on Tour", 10: "Contender", 25: "Tour Championship level", 50: "Signature event level" };
-const PLAN_ADDED = new Set(); // drills added to the practice plan this visit
+const PLAN_ADDED = new Set(); // drills in the player's practice plan (update 387: read from the plan itself)
+const PLAN_SEEN = { key: null, at: 0, busy: false };
 /* (update 345) Per shot or how often? A difference in strokes gained a round for a part of the game and distance splits
  * exactly in two (update 348: weighed by their usual per-shot level, U, over the whole time frame, so a strength or a weakness
  * is the same whichever rounds are compared):
@@ -424,7 +425,8 @@ export function sgDashboard(container, opts) {
     const chosen = new Set(st[key]);
     // nothing picked = everything: shown with every box ticked, unless you just pressed None (all unticked)
     st.noneShown ||= {};
-    const allTicked = !chosen.size && !st.noneShown[key];
+    // (update 387) nothing ticked to start (which still means everything); All ticks every box, until one is changed
+    const allTicked = !chosen.size && !!st.allShown?.[key];
     const labelOf = (v) => options.find((o) => o.value === v)?.label ?? fmt(v);
     const summary = !chosen.size || (options.length > 1 && chosen.size === options.length) ? allLabel // nothing or everything ticked = all
       : chosen.size <= 2 ? [...chosen].map(labelOf).join(", ") : `${chosen.size} ${plural}`;
@@ -436,7 +438,8 @@ export function sgDashboard(container, opts) {
       if (allTicked && !on) st[key] = options.map((o) => o.value).filter((x) => x !== v); // (from "all": everything but this one)
       else st[key] = on ? [...st[key], v] : st[key].filter((x) => x !== v);
       st.noneShown[key] = false;
-      if (st[key].length && st[key].length === options.length) st[key] = []; // (everything ticked: back to "all")
+      if (st[key].length && st[key].length === options.length) { st[key] = []; st.allShown = { ...(st.allShown || {}), [key]: true }; } // (everything ticked: back to "all", shown ticked)
+      else st.allShown = { ...(st.allShown || {}), [key]: false };
       if (key === "dist" && on) { // a distance belongs to a category: make sure that category is picked
         const c = v.split("|")[0];
         if (!st.cats.length || st.cats.length === CATEGORIES.length) st.cats = [c]; else if (!st.cats.includes(c)) st.cats = [...st.cats, c];
@@ -455,9 +458,9 @@ export function sgDashboard(container, opts) {
     }
     // All: tick every option. None: untick them all (then tick just the ones you want; nothing ticked shows everything).
     const all = el("button", { type: "button", class: "link ms-all" }, "All");
-    all.addEventListener("click", () => { st[key] = []; st.noneShown[key] = false; if (key === "club" || key === "gear") followClubs(); st.openFilter = key; draw(); });
+    all.addEventListener("click", () => { st[key] = []; st.allShown = { ...(st.allShown || {}), [key]: true }; st.noneShown[key] = false; if (key === "club" || key === "gear") followClubs(); st.openFilter = key; draw(); });
     const none = el("button", { type: "button", class: "link ms-all" }, "None");
-    none.addEventListener("click", () => { st[key] = []; st.noneShown[key] = true; if (key === "club" || key === "gear") followClubs(); st.openFilter = key; draw(); });
+    none.addEventListener("click", () => { st[key] = []; st.noneShown[key] = false; st.allShown = { ...(st.allShown || {}), [key]: false }; if (key === "club" || key === "gear") followClubs(); st.openFilter = key; draw(); });
     // (update 227) a search box over a long list (Products, Tournaments, …): narrows the list as you type
     st.msQ ||= {};
     const optBox = el("div", { class: "ms-options" }, rows.length ? rows : el("p", { class: "muted small" }, empty));
@@ -1523,14 +1526,14 @@ export function sgDashboard(container, opts) {
       m.set("c:TOTAL", by.TOTAL / n);
       for (const k of any) m.set(`c:${k}`, by[k] / n);
       const sec = statBlocksCmp([rounds]).find((b) => b.cat === "ROUND");
-      for (const x of sec?.rows || []) if (!x.dist && x.values[0] != null && SCORING_KEYS.includes(x.key)) m.set(`s:${x.key}|`, x.values[0]);
+      for (const x of sec?.rows || []) if (!x.dist && x.values[0] != null && SCORING_KEYS.includes(x.key)) { m.set(`s:${x.key}|`, x.values[0]); if (x.w?.[0]) m.set(`w:s:${x.key}|`, x.w[0]); }
     } else if (n) {
       let tot = 0, att = 0; const byD = new Map();
       for (const rd of rounds) for (const x of rd.shots) if (x.cat === cat) { tot += x.sg; att += x.w || 1; if (x.dist) { const o = byD.get(x.dist) || byD.set(x.dist, { sg: 0, w: 0 }).get(x.dist); o.sg += x.sg; o.w += x.w || 1; } }
       if (att) { m.set("sg", tot / n); m.set("sga", tot / att); m.set("att", att / n); }
       for (const [d, o] of byD) if (o.w >= 1) m.set(`d:${d}`, o.sg / n);
       const sec = statBlocksCmp([rounds]).find((b) => b.cat === cat);
-      for (const x of sec?.rows || []) if (x.values[0] != null) m.set(`s:${x.key}|${x.dist || ""}`, x.values[0]);
+      for (const x of sec?.rows || []) if (x.values[0] != null) { m.set(`s:${x.key}|${x.dist || ""}`, x.values[0]); if (x.w?.[0]) m.set(`w:s:${x.key}|${x.dist || ""}`, x.w[0]); } // (update 387: and its attempts)
     }
     if (!rowMemo.has(rounds)) rowMemo.set(rounds, new Map());
     rowMemo.get(rounds).set(cat, m);
@@ -1643,6 +1646,9 @@ export function sgDashboard(container, opts) {
     };
     const rankIn = (maps, k, v, higher) => { if (v == null || higher == null) return null; const vs = maps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
     const toggleCat = (k) => { const a = new Set(st.expCats || []); a.has(k) ? a.delete(k) : a.add(k); st.expCats = [...a]; draw(); };
+    // (update 387) Show Attempts: a percentage with how many of how many, "50% (6/12)"
+    const attOn = mode === "table" && !!st.showAtt;
+    const att = (map, row) => { if (!attOn || !row.def?.pct || !map) return ""; const w = map.get(`w:${row.key}`), v = map.get(row.key); return w && v != null ? ` (${Math.round((v * w) / 100)}/${Math.round(w)})` : ""; };
     const tr = [];
     // (update 368) strokes gained rows below SG: Total are coloured against their own group (the four parts of the game
     // against each other; an opened part's distances against each other), so the biggest in the group is the brightest
@@ -1672,7 +1678,7 @@ export function sgDashboard(container, opts) {
         if (row.expand) { srow.addEventListener("click", () => toggleCat(row.expand)); srow.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCat(row.expand); } }); }
         tr.push((mount(srow, [
           el("td", { title: row.tip || null }, label),
-          ...(() => { const restTd = el("td", { class: "num" }, row.fmt(v)), pkTd = el("td", { class: "num strong" }, pk == null ? "\u2014" : row.fmt(pk));
+          ...(() => { const restTd = el("td", { class: "num" }, `${row.fmt(v)}${att(X ? X.rest : restV, row)}`), pkTd = el("td", { class: "num strong" }, pk == null ? "\u2014" : `${row.fmt(pk)}${att(X ? X.peak : peak.map, row)}`);
             return tPeak ? [pkTd, restTd] : [restTd, pkTd]; })(), // (update 335: Avg | Elite | Diff | Elite Rank; update 384: Personal Peak is Peak | Rest)
           (() => { const g = relGroup(row); const td = el("td", { class: "num bs-diff", style: g ? "color:#fff" : diffBg(row, d, pk, v, X) }, dTxt2); if (g && d != null) relCells.push({ td, g, d }); return td; })(),
           el("td", { class: "num" }, rk ? `${rk.rank} of ${rk.of}` : "\u2014"),
@@ -1691,7 +1697,7 @@ export function sgDashboard(container, opts) {
       trow.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
       tr.push((mount(trow, [
         el("td", { title: row.tip || null }, label),
-        el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds in a row: ${row.fmt(pk)}` : null }, shown),
+        el("td", { class: `num strong ${vCls}`, title: pk != null ? `Your best ${peakN} rounds in a row: ${row.fmt(pk)}` : null }, relNow ? shown : `${shown}${att(X ? X.me : meV, row)}`),
         // (update 320) Trend before Rank; with a comparison picked, the value compared against in its place
         relNow ? (() => { const rv = gv(refMap, row.key); return el("td", { class: "num cmp-refv" }, rv == null ? "\u2014" : row.fmt(rv)); })()
           : el("td", { class: `num ${ch == null ? "" : good(ch)}` }, chTxt),
@@ -1704,13 +1710,32 @@ export function sgDashboard(container, opts) {
     const TN = tPeak ? { kept: `best ${peakN}-round stretch`, cut: "other rounds", Kept: "Peak", Cut: "Rest" } : NM();
     // (update 381) Personal Peak, picked above the table: their best N rounds (any order) against the rest
     const peakCtl = mode === "table" && me ? (() => {
-      const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(tPeak || Number(st.tablePeakLast) || 10), inputmode: "numeric", "aria-label": "How many of their best rounds" });
-      const apply = () => { const v = Math.round(Number(inp.value)); if (!Number.isFinite(v) || v < 1) { inp.value = String(tPeak || 10); return; } st.tablePeak = Math.min(500, v); st.tablePeakLast = st.tablePeak; draw(); };
+      // (update 387) to start: the length of their longest Best on Tour stretch (else 10)
+      const all = longestStretches(lastSliced || [], cat), myRow = all.find((x) => x.p.key === me.key), best1 = myRow?.n > 0 ? myRow : null;
+      const defN = best1 ? best1.n : 10;
+      const inp = el("input", { type: "number", class: "peak-len", min: "1", max: "500", step: "1", value: String(tPeak || Number(st.tablePeakLast) || defN), inputmode: "numeric", "aria-label": "How many rounds in a row" });
+      const apply = () => { const v = Math.round(Number(inp.value)); if (!Number.isFinite(v) || v < 1) { inp.value = String(tPeak || defN); return; } st.tablePeak = Math.min(500, v); st.tablePeakLast = st.tablePeak; draw(); };
       inp.addEventListener("change", () => { if (tPeak) apply(); });
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); inp.blur(); } });
       const tog = el("button", { type: "button", class: `pp-tog${tPeak ? " on" : ""}`, "aria-pressed": String(!!tPeak) }, tPeak ? "\u2713 Personal Peak" : "Personal Peak");
-      tog.addEventListener("click", () => { if (tPeak) { st.tablePeak = 0; draw(); } else apply(); });
-      return el("div", { class: "sg-peak-ctl" }, [tog, el("span", { class: "muted small sg-peak-l" }, ["(best ", inp, " round stretch)"])]); // (update 382)
+      tog.addEventListener("click", () => { if (tPeak) { st.tablePeak = 0; draw(); } else { st.tablePeak = Math.min(500, Math.round(Number(st.tablePeakLast) || defN)); draw(); } });
+      const attTog = el("button", { type: "button", class: `pp-tog${st.showAtt ? " on" : ""}`, "aria-pressed": String(!!st.showAtt), title: "Percentages with how many of how many, e.g. 50% (6/12)" }, st.showAtt ? "\u2713 Show Attempts" : "Show Attempts");
+      attTog.addEventListener("click", () => { st.showAtt = !st.showAtt; draw(); });
+      const tip = infoTip(`Personal Peak compares their best run of rounds in a row (the stretch with the highest strokes gained) with the rest of their rounds in the selection. It starts at the length of their longest ${LEVELS[1]} stretch: the longest run whose average on its own beats every other player\u2019s season average${best1 ? ` (${best1.n} rounds for ${me.label})` : ""}, or 10 rounds if they don\u2019t have one. Change the number for a shorter or longer stretch.`);
+      // the stretch it picked, with its dates (tap for every round)
+      const line = tPeak && peak && !peak.short && peak.rounds.length ? (() => {
+        const rs = peak.rounds, from = rs[0].date, to = rs.at(-1).date, n = rs.length;
+        const avgT = rs.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + (!cat || x.cat === cat ? x.sg : 0), 0), 0) / n;
+        const bar = myRow?.bar ?? all[0]?.bar ?? null, enough = bar != null && avgT > bar + 1e-12;
+        const when = from === to ? shortDay(from) : `${shortDay(from)} \u2013 ${shortDay(to)}`;
+        const place = best1 && n === best1.n ? 1 + all.filter((r) => r.n > best1.n).length : null, withN = all.filter((r) => r.n > 0).length;
+        const link = el("button", { type: "button", class: "link bs-stretch-link", title: "Every round, with this stretch picked out" }, when);
+        link.addEventListener("click", () => stretchPopup({ p: { key: me.key, rounds: mine }, n, from, to, bar: bar ?? 0 }, cat, when, place, withN));
+        return el("p", { class: "muted small sg-peak-line" }, [`Their best ${n}-round stretch: `, link, `, ${sgn2(avgT)} a round${enough ? `, enough on its own for ${LEVELS[1]}` : ""}.`]);
+      })() : null;
+      return el("div", { class: "sg-peak-wrap" }, [
+        el("div", { class: "sg-peak-ctl" }, [attTog, tog, tPeak ? el("span", { class: "muted small sg-peak-l" }, ["(best ", inp, " round stretch)"]) : null, tip]), // (update 382; 387: the number only once it's on)
+        line]);
     })() : null;
     if (mode === "elite") return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
@@ -2691,7 +2716,7 @@ export function sgDashboard(container, opts) {
     const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
     const overlay = el("div", { class: "gx-pop-overlay bs-st-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop bs-st-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Best stretch"), el("h2", {}, `${row.n} ${row.n === 1 ? "round" : "rounds in a row"} \u00b7 ${when}`),
-        el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best of everyone else). The ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN}.`)]), close]),
+        el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best season average of any other player).${place ? ` The ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN}.` : ""}`)]), close]),
       svg,
       summary,
       el("p", { class: "muted small bs-st-count" }, `All ${n} rounds in the chart, oldest first, the stretch bright. Below, the ${row.n} ${row.n === 1 ? "round" : "rounds"} in the stretch: tap one for its strokes gained by part of the game and distance.`),
@@ -2833,7 +2858,7 @@ export function sgDashboard(container, opts) {
       let take;
       if (kind === "mix") take = `They\u2019re not hitting these worse in the last ${N} rounds; they\u2019re facing ${fewer ? "fewer" : "more"} of them (${sp.ab.toFixed(1)} a round, against ${sp.ae.toFixed(1)} in their ${NN.kept}). ${MIX_CAUSE[g.c] || ""}`;
       else {
-        take = `Over the last ${N} rounds they ${Math.abs(sp.pb) < 0.005 ? "break even here" : `${verb(sp.pb)} strokes a shot here`}; in their ${NN.kept} they ${verb(sp.pe)}. Getting back to that is worth about ${amt(sp.skill)} a round.`;
+        take = `Over the last ${N} rounds they ${Math.abs(sp.pb) < 0.005 ? "break even here" : `${verb(sp.pb)} strokes a shot here`}; in their ${NN.kept} they ${verb(sp.pe)}. Getting back to that is worth about ${amt(g.g)} a round${Math.abs(sp.mix) >= 0.01 ? ` (${amt(sp.skill)} from playing these shots better, ${sp.mix > 0 ? "plus" : "less"} ${amt(sp.mix)} because their ${NN.kept} had ${sp.ae < sp.ab ? "fewer" : "more"} of them)` : ""}.`; // (update 386: the same number as the table's Diff)
         const weak = sp.pu <= -0.015; // (a weak spot: they usually lose at least 0.015 a shot here)
         if (sp.pb < sp.pu - 0.01) take += weak ? ` It\u2019s usually a weak spot (${sgn2(sp.pu)} a shot), and it\u2019s been worse lately.` : ` It\u2019s a recent slump: on average they ${verb(sp.pu)} a shot here.`;
         else if (weak) take += ` It\u2019s a long-standing weak spot (${sgn2(sp.pu)} a shot on average), not just a recent one.`;
@@ -2881,6 +2906,21 @@ export function sgDashboard(container, opts) {
     const mineNow = isMine(me?.key);
     const whose = mineNow || !me?.label ? "your" : `${me.label}\u2019s`;
     const status = el("p", { class: "muted small bs-plan-status" });
+    if (st.planMsg && st.planMsg.key === me?.key && Date.now() - st.planMsg.at < 120000) { const { n, g } = st.planMsg;
+      mount(status, [`Added ${n} ${n === 1 ? "drill" : "drills"} to ${whose} practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to ${me?.label ? `${me.label}\u2019s` : "the"} Goals` : ""}. `,
+        el("a", { href: mineNow ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(me?.key || "")}`, class: "link" }, "Open Practice \u2192")]); }
+    // (update 387) which drills are really in the plan (one taken out in Practice can be added again): read now and then
+    if (canAdd && me?.key && !PLAN_SEEN.busy && (PLAN_SEEN.key !== me.key || Date.now() - PLAN_SEEN.at > 15000)) {
+      PLAN_SEEN.busy = true;
+      import("./practice/plan.js").then((m) => m.planFor(getState(), me.key)).then((items) => {
+        const before = [...PLAN_ADDED].filter((x) => x.startsWith(`${me.key}|`)).sort().join(",");
+        for (const x of [...PLAN_ADDED]) if (x.startsWith(`${me.key}|`)) PLAN_ADDED.delete(x);
+        for (const p of items) PLAN_ADDED.add(`${me.key}|${p.kind}|${p.dist || ""}|${p.lie || ""}`);
+        const after = [...PLAN_ADDED].filter((x) => x.startsWith(`${me.key}|`)).sort().join(",");
+        PLAN_SEEN.key = me.key; PLAN_SEEN.at = Date.now(); PLAN_SEEN.busy = false;
+        if (before !== after) draw();
+      }).catch(() => { PLAN_SEEN.busy = false; PLAN_SEEN.key = me.key; PLAN_SEEN.at = Date.now(); });
+    }
     const add = (list, btns) => planEditor(list, whose, (edited) => send(edited, btns));
     const send = async (list, btns) => {
       btns.forEach((b) => { b.disabled = true; });
@@ -2889,9 +2929,8 @@ export function sgDashboard(container, opts) {
         const n = await addToPlan(getState(), { items: list.map((x) => ({ ...x })), playerKey: me?.key, playerLabel: me?.label });
         list.forEach((x) => PLAN_ADDED.add(sig(x)));
         const g = list.filter((x) => x.goal).length;
-        mount(status, [`Added ${n} ${n === 1 ? "drill" : "drills"} to ${whose} practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to ${me?.label ? `${me.label}\u2019s` : "the"} Goals` : ""}. `,
-          window.__taCanPractice || mineNow ? el("a", { href: mineNow ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(me?.key || "")}`, class: "link" }, "Open Practice \u2192") : null]);
-        btns.forEach((b) => { b.textContent = "\u2713 In practice plan"; b.classList.add("done"); });
+        st.planMsg = { key: me?.key, n, g, at: Date.now() }; // (update 387: redrawn, with Remove under each one added)
+        draw();
       } catch (err) { console.error(err); btns.forEach((b) => { b.disabled = false; }); mount(status, "Couldn\u2019t add that just now. Try again."); }
     };
     const rowBtns = [];
@@ -2902,7 +2941,17 @@ export function sgDashboard(container, opts) {
       const b = el("button", { type: "button", class: `bs-plan-add${on ? " done" : ""}`, disabled: on }, on ? "\u2713 In practice plan" : "\uFF0B Add to practice plan");
       b.addEventListener("click", () => add([x], [b]));
       rowBtns.push({ b, x });
-      return el("div", { class: "bs-drill-row" }, [line, b]);
+      // (update 387) and out again
+      const rm = on ? el("button", { type: "button", class: "link small bs-plan-rm" }, "Remove from practice plan") : null;
+      rm?.addEventListener("click", async () => {
+        rm.disabled = true;
+        try {
+          const { removeFromPlan } = await import("./practice/plan.js");
+          await removeFromPlan(getState(), { drill: x.drill, playerKey: me?.key });
+          PLAN_ADDED.delete(sig(x)); PLAN_SEEN.at = 0; draw();
+        } catch (err) { console.error(err); rm.disabled = false; mount(status, "Couldn\u2019t take that out just now. Try again."); }
+      });
+      return el("div", { class: "bs-drill-row" }, [line, el("div", { class: "bs-plan-btns" }, [b, rm])]);
     }
     const addAll = canAdd && shown.length > 1 ? (() => { const b = el("button", { type: "button", class: "btn ghost small bs-plan-all" }, "\uFF0B Add all to practice plan");
       b.addEventListener("click", () => { const left = shown.filter((x) => !PLAN_ADDED.has(sig(x))); if (!left.length) return; add(left, [b, ...rowBtns.filter((r) => left.some((x) => sig(x) === sig(r.x))).map((r) => r.b)]); }); return b; })() : null;

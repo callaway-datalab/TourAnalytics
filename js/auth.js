@@ -1,7 +1,7 @@
 import {
   onAuthStateChanged, signOut as fbSignOut,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
-import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { doc, onSnapshot, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { auth, db, adminUids } from "./firebase-init.js";
 import { isTeamKey } from "./data.js";
 
@@ -12,6 +12,31 @@ import { isTeamKey } from "./data.js";
 const state = { status: "loading", user: null, profile: null, isAdmin: false, isTeam: false, teamAccess: {} };
 const listeners = new Set();
 let profileUnsub = null;
+// (update 387) friends (from Chat) see each other's data: a team member's friends join their players (role "friend")
+let friendsUnsub = null, friendAccess = {}, friendsFor = null;
+const sameKeys = (a, b) => JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort());
+function watchFriends(uid) {
+  if (friendsFor === uid) return;
+  friendsUnsub?.(); friendsFor = uid; friendAccess = {};
+  friendsUnsub = onSnapshot(doc(db, "chatFriends", uid), async (snap) => {
+    const uids = snap.exists() ? snap.data().uids || [] : [];
+    const next = {};
+    await Promise.all(uids.map(async (f) => { try { const d = await getDoc(doc(db, "userKeys", f)); const k = d.exists() ? d.data().key : null; if (k) next[k] = { role: "friend", label: d.data().name || "" }; } catch { /* not shared */ } }));
+    if (sameKeys(next, friendAccess)) return;
+    friendAccess = next;
+    if (state.isTeam) { state.teamAccess = { ...friendAccess, ...(state.profile?.access || {}) }; notify(); }
+  }, () => {});
+}
+/** Where my data is, so friends' access can find it (keyOwners/{key} for the rules, userKeys/{uid} for the app). */
+let keysSaved = null;
+function saveMyKey(user, profile) {
+  const key = profile?.clientKey;
+  if (!key || keysSaved === `${user.uid}|${key}`) return;
+  keysSaved = `${user.uid}|${key}`;
+  const name = profile.name || "";
+  setDoc(doc(db, "keyOwners", key), { uid: user.uid }).catch(() => {});
+  setDoc(doc(db, "userKeys", user.uid), { key, name }).catch(() => {});
+}
 
 function notify() {
   for (const fn of listeners) fn(state);
@@ -29,6 +54,7 @@ export function getState() {
 
 onAuthStateChanged(auth, (user) => {
   if (profileUnsub) { profileUnsub(); profileUnsub = null; }
+  if (friendsUnsub && friendsFor !== user?.uid) { friendsUnsub(); friendsUnsub = null; friendsFor = null; friendAccess = {}; }
   state.user = user;
   state.profile = null;
   state.isTeam = false;
@@ -53,7 +79,8 @@ onAuthStateChanged(auth, (user) => {
       import("./store.js").then((m) => m.syncProfileEmail(user.uid, user.email.toLowerCase()));
     }
     state.isTeam = !state.isAdmin && !!profile && isTeamKey(profile.clientKey);
-    state.teamAccess = (state.isTeam && profile.access) || {};
+    state.teamAccess = state.isTeam ? { ...friendAccess, ...(profile.access || {}) } : {};
+    if (!state.isAdmin && profile) { saveMyKey(user, profile); watchFriends(user.uid); }
     state.status = "ready";
     // Count a sign-in once per browser session (opening the portal signed in).
     try {
