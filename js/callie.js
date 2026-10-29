@@ -71,7 +71,8 @@ function readLocal(question, list) {
   if (!metric && has(/\b(overall|best player|total|strokes gained)\b/)) metric = "sg_total";
   const breakdown = has(/\b(where|which part|what part)\b.*\b(lose|gain|lost|gained|strength|weak)|\bby category|parts? of (his|her|their|the) game\b/) ? "category"
     : has(/\bby distance|\bfrom \d+|\bdistances?\b|\byards?\b|\bfeet\b|\bft\b/) ? "distance" : has(/\bby lie|\blies?\b|\brough\b|\bfairway lie|\bsand\b/) ? "lie"
-    : has(/\b(model|club|clubs|which (driver|putter|irons?|wedge))\b/) ? "club" : has(/\bball\b/) ? "ball"
+    : has(/\bballs?\b/) && has(/\b(which|what|best|worked|model|brand)\b/) ? "ball"
+    : has(/\b(models?|brands?|clubs?|equipment|gear|heads?|shafts?|which (driver|putter|irons?|wedges?|woods?|hybrids?)|what (driver|putter|irons?|wedges?|woods?|hybrids?)|(driver|putter|iron|wedge|wood|hybrid)s? (worked|works|was|is|did|does|performed|best))\b/) ? "club"
     : has(/\b(tournament|event)s?\b/) ? "event" : has(/\brounds?\b/) && has(/\b(best|worst|lowest|highest)\b/) && !ra.last ? "round"
     : has(/\b(year by year|by season|each season|every season|by year|each year)\b/) ? "season" : null;
   // (update 260) a distance or a lie to narrow to: "inside 10 ft", "from 150-200 yards", "outside 20 feet", "from the rough"
@@ -86,7 +87,10 @@ function readLocal(question, list) {
   else if (mn) distance = { min: Number(mn[1]), max: null, unit: unitOf(mn[2]) };
   const lm = /\b(?:from|out of|in|off) the (rough|fairway|sand|bunker|fringe|first cut|primary rough|intermediate rough|recovery|tee)\b/.exec(t);
   const lie = lm ? lm[1] : null;
-  const part = distance || lie ? (metric && SG_METRICS[metric]?.[0] && !["T2G"].includes(SG_METRICS[metric][0]) ? SG_METRICS[metric][0] : has(/putt/) ? "PUTT" : has(/chip|around|short game/) ? "ARG" : has(/driv|off the tee/) ? "OTT" : distance?.unit === "ft" ? "PUTT" : "APP") : breakdown === "distance" || breakdown === "lie" || breakdown === "club" ? (metric && SG_METRICS[metric]?.[0] && SG_METRICS[metric][0] !== "T2G" ? SG_METRICS[metric][0] : has(/putt/) ? "PUTT" : has(/chip|around/) ? "ARG" : has(/driv|tee/) ? "OTT" : "APP") : null;
+  const part0 = distance || lie ? (metric && SG_METRICS[metric]?.[0] && !["T2G"].includes(SG_METRICS[metric][0]) ? SG_METRICS[metric][0] : has(/putt/) ? "PUTT" : has(/chip|around|short game/) ? "ARG" : has(/driv|off the tee/) ? "OTT" : distance?.unit === "ft" ? "PUTT" : "APP") : breakdown === "distance" || breakdown === "lie" || breakdown === "club" ? (metric && SG_METRICS[metric]?.[0] && SG_METRICS[metric][0] !== "T2G" ? SG_METRICS[metric][0] : has(/putt/) ? "PUTT" : has(/chip|around/) ? "ARG" : has(/driv|tee/) ? "OTT" : "APP") : null;
+  const clubPart = { Driver: "OTT", Putter: "PUTT", Wedge: null, Hybrid: null, "Fairway Wood": null, Iron: null };
+  const kindN = has(/\bdrivers?\b/) ? "Driver" : has(/\bputters?\b/) ? "Putter" : null;
+  const part = breakdown === "club" && kindN ? clubPart[kindN] : part0;
   const period = {};
   if (ra.since) period.from = ra.since.from; else if (ra.years.length) period.years = ra.years;
   if (ra.last) period[ra.last.unit === "events" ? "last_events" : "last"] = ra.last.n;
@@ -94,7 +98,10 @@ function readLocal(question, list) {
   const compare = has(/\b(vs\.?|versus|compare[ds]?|comparing|compared|against)\b/) && !has(/\bagainst the (field|tour)\b/);
   const field = !players.length && !(PRONOUN.test(t) && lastPlayers.length) && (has(/\b(who|whose|which players?|tour|field|rank|ranks|ranked|ranking|leaders?|leads?|top \d+|everyone|anyone)\b/) || list.length > 1);
   const lim = /\btop (\d+)\b|\b(\d+) (best|worst)\b/.exec(t);
+  // (update 388) which kind of club, when one is named ("what driver worked best"): its shots only, split by model
+  const club = has(/\bdrivers?\b/) ? "Driver" : has(/\bputters?\b/) ? "Putter" : has(/\bwedges?\b/) ? "Wedge" : has(/\bhybrids?\b/) ? "Hybrid" : has(/\b(fairway )?woods?\b/) ? "Fairway Wood" : has(/\birons?\b/) ? "Iron" : null;
   return {
+    club: breakdown === "club" ? club : null,
     intent: compare ? "compare" : field ? "field" : "player",
     players, tour: has(/korn ferry/) ? "Korn Ferry Tour" : has(/\bpga\b/) ? "PGA TOUR" : null,
     metric, period, breakdown: (distance && breakdown === "distance") || (lie && breakdown === "lie") ? null : breakdown, part, distance, lie, order: has(/\b(worst|lowest|least|bottom|weakest)\b/) && !has(/lowest scor|fewest putts/) ? "worst" : "best",
@@ -413,23 +420,33 @@ async function onePlayer(plan, p, rounds, bd) {
         : { head: ["Date", "Tournament", "Round", m.label], num: [2, 3], rows: top.map((r) => [dateTxt(dk(r.rs[0])), r.rs[0].event, String(r.rs[0].roundNo || "–"), fmtM(m, r.v)]) } };
   }
   if (bd === "distance" || bd === "lie" || bd === "club" || bd === "ball") {
-    const part = plan.part || (m.sg && m.cat && m.cat !== "T2G" ? m.cat : bd === "ball" ? null : "APP");
-    const partName = part ? CATEGORIES.find(([c]) => c === part)?.[1] : "all shots";
+    const kindOnly = bd === "club" ? plan.club || null : null; // (update 388: "Driver": tee shots with a driver)
+    const part = kindOnly ? plan.part || null : plan.part || (m.sg && m.cat && m.cat !== "T2G" ? m.cat : bd === "ball" ? null : "APP");
+    const partName = kindOnly ? `${kindOnly} shots` : part ? CATEGORIES.find(([c]) => c === part)?.[1] : "all shots";
     const keyOf = { distance: (s) => s.dist, lie: (s) => s.lie, club: (s) => (s.gear ? String(s.gear).split("|").pop() : null), ball: (s) => s.ball || null }[bd];
     const g = new Map();
     for (const rd of per.rounds) for (const s of rd.shots) {
       if (part && s.cat !== part) continue;
+      if (kindOnly && !(String(s.gear || "").split("|")[0] === kindOnly || (!s.gear && s.clubCat === kindOnly))) continue;
       const k = keyOf(s);
       if (k == null || k === "" || /^(none|null|na)$/i.test(String(k))) continue;
       const x = g.get(k) || g.set(k, { sg: 0, w: 0, rds: new Set() }).get(k);
       x.sg += s.sg || 0; x.w += s.w || 1; x.rds.add(rd);
     }
     let rows = [...g].map(([k, x]) => ({ k: String(k), per: x.sg / x.w, w: Math.round(x.w), rds: x.rds.size, perRd: x.sg / per.rounds.length })).filter((r) => r.w >= 5);
-    if (!rows.length) return { text: `There’s no ${bd} detail for ${name}’s ${partName.toLowerCase()} ${per.label}. (It needs shot-level data in the uploaded file.)` };
+    if (!rows.length) return { cant: true, compare: true, text: `There\u2019s no ${kindOnly ? `${kindOnly.toLowerCase()} model` : bd} detail for ${name}\u2019s ${partName.toLowerCase()} ${per.label}, so I can\u2019t say which one worked best. (It needs the club model on each shot in the uploaded file.)` };
     const s = [...rows].filter((r) => r.w >= 15).sort((a, b) => b.per - a.per);
     if (bd === "distance") rows.sort((a, b) => distLead(a.k) - distLead(b.k) || a.k.localeCompare(b.k)); else rows.sort((a, b) => b.w - a.w);
     const f3 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`;
     const head = { distance: "Distance", lie: "Lie", club: "Club", ball: "Ball" }[bd];
+    if (kindOnly) { // (update 388) "what driver worked best": each model of that club, strokes gained a shot with it
+      const kl = kindOnly.toLowerCase();
+      return { text: s.length > 1 ? `${cap(per.label)}, ${name}\u2019s best ${kl} was the **${s[0].k}**: **${f3(s[0].per)}** a shot over ${s[0].w} shots. The weakest was the **${s.at(-1).k}** (${f3(s.at(-1).per)} a shot over ${s.at(-1).w}).`
+        : s.length === 1 ? `${cap(per.label)}, ${name} used ${rows.length > 1 ? "mostly " : ""}the **${s[0].k}** ${kl}: **${f3(s[0].per)}** a shot over ${s[0].w} shots.${rows.length > 1 ? " The others have too few shots to compare." : " There\u2019s no other model to compare it with."}`
+          : `${cap(per.label)}, here\u2019s ${name}\u2019s ${kl} by model. None has many shots yet, so treat it as a hint.`,
+        table: { head: [kindOnly, "SG a shot", "Shots", "SG a round"], num: [1, 2, 3], rows: rows.map((r) => [r.k, f3(r.per), String(r.w), fmtM({ sg: true }, r.perRd)]) },
+        note: `Shots hit with a ${kl} ${per.label} (${plural(per.rounds.length, "round")}), by the model in the file. SG a round: what those shots add up to, spread over every round.` };
+    }
     return { text: s.length === 1 ? `${cap(per.label)}, ${name}\u2019s ${partName.toLowerCase()} ${bd === "distance" ? "from" : "with"} **${s[0].k}**: **${f3(s[0].per)}** a shot over ${s[0].w} shots.` : s.length ? `${cap(per.label)}, ${name}’s ${partName.toLowerCase()} is best ${bd === "distance" ? "from" : "with"} **${s[0].k}** (**${f3(s[0].per)}** a shot) and ${s.at(-1).per < 0 ? "loses the most" : "weakest"} ${bd === "distance" ? "from" : "with"} **${s.at(-1).k}** (${f3(s.at(-1).per)} a shot).` : `${cap(per.label)}, here’s ${name}’s ${partName.toLowerCase()} by ${bd}. None has many shots yet, so treat it as a hint.`,
       table: { head: [head, "SG a shot", "Shots", "SG a round"], num: [1, 2, 3], rows: rows.map((r) => [r.k, f3(r.per), String(r.w), fmtM({ sg: true }, r.perRd)]) },
       note: `${partName} shots ${per.label} (${plural(per.rounds.length, "round")}). SG a round: what those shots add up to, spread over every round.` };
@@ -607,6 +624,7 @@ function remember(q) {
   try { localStorage.setItem(histKey(), JSON.stringify(a)); } catch { /* */ }
 }
 let showHist = false;
+const ps0 = (plan, local) => (plan.players?.length || local.players?.length) > 0;
 async function ask(question) {
   if (!pending) remember(question);
   const picked = pickedOption(question);
@@ -637,6 +655,13 @@ async function ask(question) {
       plan.unsupported = null;
     }
     if (ai && !plan.metric && local.metric && plan.intent !== "compare") plan.metric = local.metric;
+    // (update 388) a question about equipment ("what driver worked best") is answered by club model, whatever the AI read
+    if (local.breakdown === "club" || local.breakdown === "ball") {
+      if (plan.intent === "unsupported") { plan.intent = "player"; plan.unsupported = null; }
+      plan.breakdown = local.breakdown; plan.club = local.club; plan.part = local.part ?? (local.club ? null : plan.part);
+      if (plan.intent === "field" && ps0(plan, local)) plan.intent = "player";
+      if (plan.metric && local.club) plan.metric = null;
+    } else if (ai && !plan.breakdown && local.breakdown) plan.breakdown = local.breakdown;
     // players: the names the plan gives, matched to the players you can see
     const match = (nm) => readAsk(nm, { players: list }).players[0] || null;
     let ps = [...new Map(plan.players.map(match).filter(Boolean).map((p) => [p.key, p])).values()];
@@ -730,10 +755,18 @@ function draw() {
     const askQ = m.q || [...chat].slice(0, chat.indexOf(m)).reverse().find((x) => x.who === "me")?.text || "";
     const fwd = m.cant && askQ && !staffer && analystAllowed() ? el("div", { class: "cal-fwd" }, [el("a", { class: "link small cal-go", href: "#/questions" }, "Forward this question to a human analyst?"),
       el("p", { class: "muted small cal-fwd-note" }, "Opens Chat with a draft to Callaway Analyst. Nothing is sent until you press Send there.")]) : null;
+    // (update 388) every answer: if it isn't what was asked, try Compare (and, for players and coaches, a human analyst)
+    const cmpHref = askQ ? `#/comparisons?ask=${encodeURIComponent(askQ)}` : null;
+    const notIt = !m.go && !m.choices?.length && askQ && !m.err ? (() => {
+      const a = el("a", { class: "link small cal-go", href: cmpHref }, m.cant ? "Try it in Compare \u2192" : "Open in Compare \u2192");
+      const h = !staffer && analystAllowed() && !fwd ? el("a", { class: "link small cal-go", href: "#/questions" }, "Ask a human analyst") : null;
+      h?.addEventListener("click", () => { try { sessionStorage.setItem("chat.prefill", `Question for an analyst: ${askQ}`); } catch { /* */ } closeCallie(); });
+      return el("p", { class: "cal-notit muted small" }, [m.cant ? "" : "Not what you asked? ", a, h ? " \u00b7 " : null, h]);
+    })() : null;
     fwd?.querySelector("a").addEventListener("click", () => { try { sessionStorage.setItem("chat.prefill", `Question for an analyst (Cal couldn\u2019t answer it): ${askQ}`); } catch { /* */ } closeCallie(); });
     if (go && m.go.plan) go.addEventListener("click", () => { try { sessionStorage.setItem("callie.plan", JSON.stringify(m.go.plan)); } catch { /* */ } }); // (update 264: Compare opens with this plan, no second AI call)
     const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
-    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd]));
+    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd, notIt]));
   }
   if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Cal is working it out" }, [el("i"), el("i"), el("i")]));
   mount(log, items);
