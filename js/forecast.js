@@ -1,3 +1,5 @@
+// standard normal CDF (Abramowitz–Stegun 7.1.26)
+const ncdf = (z) => { const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z / 2); return z >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y); };
 /*
  * The forecaster (update 410: rebuilt). Next season's strokes gained for a player, and the two after, from the data on
  * this site alone. Every number in it is learned from the data; nothing is picked by hand.
@@ -329,19 +331,22 @@ function learn(D, { tour = null } = {}) {
   const minPool = minRoundsOf(Math.max(0, ...recentN.values()));
   const pool = [...recentN].filter(([, n]) => n >= minPool).map(([p]) => p);
   const fieldProj = [1, 2, 3].map((h) => pool.map((p) => ({ k: D.players[p].key, v: project(p, h)?.total, sd: project(p, h)?.sd })).filter((x) => x.v != null).sort((a, b) => b.v - a.v));
+  // (update 417) the pool spans two seasons, so it's bigger than one season's rankings: scale ranks to a typical season
+  const seasonN = Math.max(rankedIn(last, rawT).length, last > 0 ? rankedIn(last - 1, rawT).length : 0) || (fieldProj[0].length);
+  const rankScale = (n) => Math.max(1, seasonN - 1) / Math.max(1, n);
   const chanceMemo = new Map();
   const chances = (key, h, mine, sdM) => {
     const id = `${key}|${h}`; if (chanceMemo.has(id)) return chanceMemo.get(id);
     const others = fieldProj[h - 1].filter((x) => x.k !== key);
     // (update 414: top 100 too)
-    if (others.length >= 100 && mine + 5 * sdM < others[99].v - 5 * (others[99].sd || sdM)) { const o = { top10: 0, top50: 0, top100: 0 }; chanceMemo.set(id, o); return o; }
-    const r = rng(12345 + h); let t10 = 0, t50 = 0, t100 = 0; const S = 3000;
+    if (others.length >= 100 && rankScale(others.length) <= 1 && mine + 5 * sdM < others[99].v - 5 * (others[99].sd || sdM)) { const o = { top10: 0, top50: 0, top100: 0 }; chanceMemo.set(id, o); return o; }
+    const r = rng(12345 + h); let t10 = 0, t50 = 0, t100 = 0; const S = 3000, sc = rankScale(others.length), cut = 100 / sc;
     for (let s = 0; s < S; s++) {
       const me = mine + gauss(r) * sdM; let better = 0;
-      for (const o of others) { if (o.v + gauss(r) * o.sd > me) { better++; if (better >= 100) break; } }
-      if (better < 10) t10++; if (better < 50) t50++; if (better < 100) t100++;
+      for (const o of others) { if (o.v + gauss(r) * o.sd > me) { better++; if (better >= cut) break; } }
+      const b = better * sc; if (b < 10) t10++; if (b < 50) t50++; if (b < 100) t100++;
     }
-    const out = { top10: others.length >= 10 ? t10 / S : null, top50: others.length >= 50 ? t50 / S : null, top100: others.length >= 100 ? t100 / S : null };
+    const out = { top10: seasonN >= 10 ? t10 / S : null, top50: seasonN >= 50 ? t50 / S : null, top100: seasonN >= 100 ? t100 / S : null };
     chanceMemo.set(id, out); return out;
   };
 
@@ -363,7 +368,7 @@ function learn(D, { tour = null } = {}) {
   const pIndex = new Map(D.players.map((p, i) => [p.key, i]));
   return {
     target, years: yrs, lastYear, params, ageOk, agePlayers: params.age.players, err, outOfSample, sig2Tot, typicalN,
-    project, fieldProj, chances, ageCurve, meanAdj, pIndex, players: D.players, rawT, adjT, NY, nowRank,
+    project, fieldProj, seasonN, rankScale, chances, ageCurve, meanAdj, pIndex, players: D.players, rawT, adjT, NY, nowRank,
     nameOf: new Map(D.players.map((p) => [p.key, p.name])), birthOf: new Map(D.players.map((p) => [p.key, p.birth])),
   };
 }
@@ -386,9 +391,16 @@ export function forecastPlayer(model, key) {
     const pr = model.project(p, h);
     if (!pr) return null;
     const others = model.fieldProj[h - 1].filter((x) => x.k !== key);
-    const rank = 1 + others.filter((x) => x.v > pr.total).length;
+    // (update 417) the rank a score would earn in a real season: everyone else's season has their own ups and downs too,
+    // so count each other player by their chance of finishing above it (ranking point projections against each other
+    // squeezes the field toward the middle and flatters an average score)
+    const sc = model.rankScale(others.length);
+    const rankAt = (v) => Math.max(1, Math.round(1 + sc * others.reduce((t, x) => t + ncdf((x.v - v) / Math.max(1e-6, x.sd || pr.sd)), 0)));
+    const rank = rankAt(pr.total);
+    // the rank at the top and the bottom of their likely range
+    const rankHi = rankAt(pr.total + 1.2816 * pr.sd), rankLo = rankAt(pr.total - 1.2816 * pr.sd);
     const ch = model.chances(key, h, pr.total, pr.sd);
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, of: others.length + 1, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
   }
   const lastS = histAdj.at(-1), prev = histAdj.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
   const careerPutt = wsum ? prev.reduce((t, s) => t + s.cats.PUTT * s.n, 0) / wsum : null;
