@@ -1999,6 +1999,32 @@ export async function render(main) {
   }
   /* (update 220) the leaderboard at the top of every comparison: best first, each bar against that player's usual
      (their average over every round here). Tap one for its tournaments. */
+  // (update 393) the leaderboard's bar scale: the best and worst season average on tour over the same dates, tours and
+  // parts of the game (players with enough rounds), worked out from the field once and kept
+  const tourRangeMemo = new Map();
+  function tourRange(live) {
+    if (source !== "tour") return null;
+    const rs = live.flatMap((it) => it.rs || []);
+    if (!rs.length) return null;
+    const ds = rs.map((rd) => String(rd.date || "").slice(0, 10)).filter(Boolean).sort();
+    const tours = [...new Set(rs.map((rd) => rd.tour || "").filter(Boolean))].sort();
+    const cats = [...new Set(rs.flatMap((rd) => rd.shots.map((x) => x.cat)))].sort();
+    const all4 = cats.length >= 4;
+    const key = `${ds[0]}|${ds.at(-1)}|${tours.join(",")}|${all4 ? "ALL" : cats.join(",")}`;
+    if (tourRangeMemo.has(key)) return tourRangeMemo.get(key);
+    tourRangeMemo.set(key, null);
+    import("../fieldSummary.js").then((m) => m.currentField()).then((cf) => {
+      if (!cf?.field?.length) return;
+      const vals = [];
+      const per = cf.field.map((p) => { const r = p.rounds.filter((rd) => { const d = String(rd.date || "").slice(0, 10); return d >= ds[0] && d <= ds.at(-1) && (!tours.length || tours.includes(rd.tour || "")); }); return { r, n: r.length }; });
+      const most = Math.max(0, ...per.map((x) => x.n)), minR = Math.max(1, Math.floor((most * 0.33) / 5) * 5);
+      for (const { r, n } of per) { if (n < minR || !n) continue; vals.push(r.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + (all4 || cats.includes(x.cat) ? x.sg || 0 : 0), 0), 0) / n); }
+      if (vals.length < 2) return;
+      tourRangeMemo.set(key, { best: Math.max(...vals), worst: Math.min(...vals), n: vals.length });
+      draw();
+    }).catch(() => {});
+    return null;
+  }
   function boardSection(items) {
     const live = items.filter((it) => it.s.n);
     if (live.length < 2) return null;
@@ -2012,16 +2038,18 @@ export async function render(main) {
       return avgOf.get(key);
     };
     const list = [...live].map((it) => ({ it, v: it.s.sg.TOTAL, d: it.s.sg.TOTAL - usual(it) })).sort((a, b) => b.v - a.v);
-    const max = Math.max(0.05, ...list.map((x) => Math.abs(x.d)));
+    // (update 393) the bar is the value itself: zero (the tour average) in the middle, the right end the best season
+    // average on tour, the left end the worst (until the field is in: the biggest here)
+    const tr = tourRange(live);
+    const hiE = Math.max(0.05, tr?.best ?? 0, ...list.map((x) => x.v)), loE = Math.min(-0.05, tr?.worst ?? 0, ...list.map((x) => x.v));
     const pks = new Set(live.map((it) => it.pk || inPlay()[0]?.key));
     const rows = list.map((x, i) => {
-      const w = Math.abs(x.d) / max * 50;
+      const w = Math.min(1, x.v >= 0 ? x.v / hiE : x.v / loE) * 50;
       const row = el("button", { type: "button", class: "cmp-cond cmp-tap cmp-board-row", title: "See its tournaments", "data-s": x.it.i }, [
         el("span", { class: "cmp-cond-rank" }, String(i + 1)),
         el("span", { class: "cmp-cond-l" }, [el("i", { class: "cmp-dot", style: `--c:${x.it.color}` }), x.it.name, el("span", { class: "muted" }, ` \u00b7 ${x.it.s.n} rd${x.it.s.n === 1 ? "" : "s"}`), x.it.s.n < FEW ? el("span", { class: "cmp-few-mark", title: "Only a few rounds" }, " *") : null]),
-        el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.d >= 0 ? "pos" : "neg"}`, style: x.d >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
+        el("span", { class: "cmp-cond-bar" }, [el("span", { class: "mid" }), el("span", { class: `b ${x.v >= 0 ? "pos" : "neg"}`, style: x.v >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })]),
         el("strong", { class: `cmp-cond-v ${tone(x.v)}` }, fmtSG(x.v)),
-        el("span", { class: `cmp-cond-d ${tone(x.d)}` }, fmtSigned(x.d)),
       ]);
       row.addEventListener("click", () => openRounds(x.it));
       return hoverable(row, x.it.i);
@@ -2031,10 +2059,12 @@ export async function render(main) {
     const pbs = live.map(prodBase), prodAll = pbs.every(Boolean), sameKind = prodAll && new Set(pbs.map((x) => x.label)).size === 1;
     const midL = prodAll ? (sameKind ? pbs[0].label : "the average of its kind") : pks.size === 1 ? "their average" : "their averages";
     const descr = prodAll ? `Best first: strokes gained a round with each, and how far above or below ${sameKind ? pbs[0].label : "the average club or ball of its kind"}${sameKind ? ` (${fmtSG(pbs[0].v)}: every ${pbs[0].label.replace(/^(the|their) average /, "")}\u2019s shots${pks.has(EVERY) ? "" : " of theirs"}, in the rounds it was used)` : ""}. Tap one for its card and tournaments.`
-      : `Best first: strokes gained a round, and how far above or below ${pks.size === 1 ? "their" : "each player\u2019s"} average over every round (in the same parts of the game)${avgTxt}. Tap one for its card and tournaments.`;
+      : `Best first: strokes gained a round.`;
+    void descr;
+    const scaleTxt = `Best first: strokes gained a round. The bar is the value itself: zero (the tour average) in the middle, ${tr ? `the right end the best season average on tour over the same dates (${fmtSG(tr.best)}), the left end the worst (${fmtSG(tr.worst)}), among ${tr.n} players with enough rounds` : "the ends the best and worst here"}. Tap one for its card and tournaments.`;
     return el("section", { class: "panel cmp-sec career-sec cmp-board" }, [
-      el("div", { class: "cmp-sec-head" }, [el("h2", {}, "Leaderboard"), el("p", { class: "muted small" }, descr)]),
-      el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, midL), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),
+      el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, "Leaderboard"), infoTip(scaleTxt)]),
+      el("div", { class: "cmp-conds cmp-board-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, tr ? `${fmtSG(tr.worst)} worst` : "worse"), el("span", {}, "tour avg"), el("span", {}, tr ? `best ${fmtSG(tr.best)}` : "better")]), el("span", {}, "SG")]), ...rows]),
     ]);
   }
   function timelineSection(items) {

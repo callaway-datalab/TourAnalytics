@@ -5151,3 +5151,35 @@ tr.row-muted td, tr.row-muted td * { color: var(--muted, #8e8e93) !important; ba
   .wl-card .wl-head-r { gap: 0.35rem; align-items: center; }
   .wl-card .wl-more-btn, .wl-card .wl-star { width: 1.65rem; height: 1.65rem; font-size: 0.9rem; }
 }
+/* (update 393) Compare's leaderboard: no "vs avg" column */
+.cmp-board-conds .cmp-cond { grid-template-columns: 1.6rem minmax(7rem, 1.2fr) minmax(8rem, 2fr) 4rem; }
+@media (max-width: 640px) { .cmp-board-conds .cmp-cond { grid-template-columns: 1.2rem minmax(0, 1fr) 4.2rem; } }
+/* (update 393) press and hold on the hero chart: a line, the point, and that week's numbers */
+.hero-chart { position: relative; }
+.hero-chart.scrubbing { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.hc-scrub { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.hc-scrub[hidden] { display: none; }
+.hc-line { position: absolute; width: 1px; background: rgba(243, 223, 189, 0.75); transform: translateX(-0.5px); }
+.hc-dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #f3dfbd; box-shadow: 0 0 0 3px rgba(212, 180, 131, 0.35); transform: translate(-50%, -50%); }
+.hc-tip { position: absolute; display: flex; flex-direction: column; gap: 0.1rem; padding: 0.4rem 0.6rem; border-radius: 10px; background: rgba(20, 20, 22, 0.94); border: 1px solid rgba(212, 180, 131, 0.35); font-size: 0.76rem; line-height: 1.35; white-space: nowrap; color: var(--ink); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.hc-tip strong { color: #f3dfbd; }
+.hc-tip .hc-tip-ev { color: var(--muted, #8e8e93); }
+.hc-tip b { font-weight: 700; }
+.hc-tip b.pos { color: #3ef07e; } .hc-tip b.neg { color: #ff6b5e; }
+/* (update 393) Hypothetical rankings */
+.bs-hypo { margin-top: 0.8rem; }
+.hy-ctl { display: inline-flex; align-items: center; gap: 0.35rem; }
+.hy-step { width: 1.55rem; height: 1.55rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.05); color: var(--ink); font: 600 0.9rem/1 var(--font-body, inherit); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.hy-step:hover { border-color: #d4b483; }
+.hy-moved { text-decoration: underline; text-decoration-color: #d4b483; text-underline-offset: 3px; }
+.hy-mv { font-size: 0.78em; font-weight: 700; }
+.hy-t td, .hy-t th { white-space: nowrap; }
+@media (max-width: 640px) {
+  .hy-t { font-size: 0.82rem; }
+  .hy-t th, .hy-t td { padding-left: 0.25rem !important; padding-right: 0.25rem !important; }
+  .hy-t td:first-child { white-space: normal; }
+  .hy-ctl { gap: 0.2rem; }
+  .hy-step { width: 1.3rem; height: 1.3rem; font-size: 0.8rem; }
+}
+.hy-d { display: block; font-size: 0.72em; font-weight: 700; margin-top: 0.1rem; }
+.hy-sum { margin: 0.3rem 0 0.5rem; font-size: 0.88rem; }

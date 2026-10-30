@@ -719,7 +719,52 @@ export function sgDashboard(container, opts) {
               el("span", { class: "hero-chart-label" }, [titleEl, showRanks ? el("span", { class: "hero-chart-ctrls" }, [seg]) : null]),
               chartEl]);
             const openT = () => eventsPopup(ordered, slicedField, r);
-            box.addEventListener("click", openT);
+            // (update 393) press and hold on the chart: a thin line where you touch, the point on the curve, and that
+            // week's numbers; slide to move it, let go to put it away (a quick tap still opens every tournament)
+            let holdT = null, scrubbing = false, skipClick = false, sx = 0, sy = 0;
+            const evAt = new Map(); for (const rd of ordered) { const d = String(rd.date || ""); const k = `${rd.event}|${yearOf(rd)}`; const cur = evAt.get(k); if (!cur || d > cur.end) evAt.set(k, { end: d, event: rd.event, k }); }
+            const evByEnd = new Map([...evAt.values()].map((x) => [x.end, x]));
+            const weekSG = (k) => { const rs = ordered.filter((rd) => `${rd.event}|${yearOf(rd)}` === k); return rs.length ? { v: metric(rs), n: rs.length } : null; };
+            const scrub = el("div", { class: "hc-scrub", hidden: true }, [el("i", { class: "hc-line" }), el("i", { class: "hc-dot" }), el("div", { class: "hc-tip" })]);
+            const place = (clientX) => {
+              const cv = box.querySelector("canvas"), ch = cv && typeof Chart !== "undefined" && Chart.getChart ? Chart.getChart(cv) : null;
+              if (!ch) return;
+              const pts = ch.getDatasetMeta(0)?.data || [];
+              if (!pts.length) return;
+              const cr = cv.getBoundingClientRect(), br = box.getBoundingClientRect(), x = clientX - cr.left;
+              let i = 0; for (let j = 1; j < pts.length; j++) if (Math.abs(pts[j].x - x) < Math.abs(pts[i].x - x)) i = j;
+              const pt = pts[i], h = hist[i]; if (!h) return;
+              const ox = cr.left - br.left, oy = cr.top - br.top;
+              scrub.hidden = false;
+              const [line, dot, tip] = scrub.children;
+              line.style.cssText = `left:${ox + pt.x}px;top:${oy + (ch.chartArea?.top ?? 0)}px;height:${(ch.chartArea?.bottom ?? cr.height) - (ch.chartArea?.top ?? 0)}px`;
+              dot.style.cssText = `left:${ox + pt.x}px;top:${oy + pt.y}px`;
+              const ev = evByEnd.get(String(h.date)), wk = ev ? weekSG(ev.k) : null;
+              const d = new Date(`${String(h.date).slice(0, 10)}T12:00:00`);
+              mount(tip, [el("strong", {}, isNaN(d) ? String(h.date) : d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })),
+                ev?.event ? el("span", { class: "hc-tip-ev" }, ev.event) : null,
+                mode() === "rank" && h.rank ? el("span", {}, [`Rank `, el("b", {}, `${ordinal(h.rank)} of ${h.of}`)]) : null,
+                h.avg != null ? el("span", {}, [`Rolling average `, el("b", { class: isSG() ? (h.avg >= 0 ? "pos" : "neg") : "" }, fmtV(h.avg))]) : null,
+                wk && wk.v != null ? el("span", {}, [`That week `, el("b", { class: isSG() ? (wk.v >= 0 ? "pos" : "neg") : "" }, fmtV(wk.v)), ` (${wk.n} ${wk.n === 1 ? "round" : "rounds"})`]) : null]);
+              const tw = tip.offsetWidth || 160, left = Math.max(4, Math.min(br.width - tw - 4, ox + pt.x - tw / 2));
+              tip.style.left = `${left}px`; tip.style.top = `4px`;
+            };
+            const endScrub = () => { clearTimeout(holdT); holdT = null; if (scrubbing) { scrubbing = false; skipClick = true; scrub.hidden = true; box.classList.remove("scrubbing"); } };
+            box.addEventListener("pointerdown", (e) => {
+              if (e.target.closest(".hero-chart-ctrls")) return;
+              sx = e.clientX; sy = e.clientY;
+              clearTimeout(holdT);
+              holdT = setTimeout(() => { scrubbing = true; box.classList.add("scrubbing"); try { box.setPointerCapture(e.pointerId); } catch { /* */ } place(sx); }, 280);
+            });
+            box.addEventListener("pointermove", (e) => {
+              if (scrubbing) { place(e.clientX); return; }
+              if (holdT && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) { clearTimeout(holdT); holdT = null; } // (scrolling, not holding)
+            });
+            for (const ev of ["pointerup", "pointercancel", "pointerleave"]) box.addEventListener(ev, endScrub);
+            box.addEventListener("touchmove", (e) => { if (scrubbing) e.preventDefault(); }, { passive: false });
+            box.addEventListener("contextmenu", (e) => { if (scrubbing || holdT) e.preventDefault(); });
+            box.appendChild(scrub);
+            box.addEventListener("click", (e) => { if (skipClick) { skipClick = false; e.stopPropagation(); return; } openT(); });
             box.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openT(); } });
             return box;
           })(),
@@ -1740,6 +1785,7 @@ export function sgDashboard(container, opts) {
     if (mode === "elite") return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
       pathOf(),
+      showRanks ? hypoOf() : null, // (update 393)
     ];
     return [
       peakCtl,
@@ -1760,6 +1806,62 @@ export function sgDashboard(container, opts) {
       (() => { const txt = (stretchOn ? `${TN.Cut}: ${me?.label || "the player"}\u2019s ${TN.cut} in the selected time frame. ${TN.Kept}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} . Diff: ${TN.kept} less ${TN.cut}, green where the ${TN.kept} were better.${showRanks ? ` ${TN.Kept} Rank: where the ${TN.kept}\u2019 value would rank if it were their average for the selected time frame.` : ""}`
         : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`); return el("details", { class: "bs-help sg-full-note-i" }, [el("summary", { "aria-label": "What the columns mean" }, "\u24d8"), el("p", { class: "muted small" }, txt)]); })(), // (update 366: always behind the ⓘ)
     ];
+    // (update 393) Hypothetical rankings: the last N rounds' strokes gained in each part of the game, each one nudged up or
+    // down with − / +, and where that would rank over the time frame picked (against everyone else's averages there)
+    function hypoOf() {
+      const season = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+      if (season.length < 3) return null;
+      const N = Math.max(3, Math.min(season.length, Math.round(Number(st.hypoN) || 10)));
+      const recent = rowVals(season.slice(-N), cat);
+      const others = rankedField(slicedField).filter((p) => p.key !== me?.key).map((p) => rowVals(p.rounds, cat));
+      if (!others.length) return null;
+      const parts = cat ? dists.map((d) => ({ key: `d:${d}`, label: d })) : CATEGORIES.map(([k, l]) => ({ key: `c:${k}`, label: l }));
+      const totKey = cat ? "sg" : "c:TOTAL", totLabel = cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} (a round)` : "SG: Total";
+      const adj = st.hypoAdj && st.hypoAdj.cat === (cat || "") ? st.hypoAdj.d : {};
+      const valOf = (k) => (recent.get(k) ?? 0) + (adj[k] || 0);
+      const base = parts.filter((p) => recent.has(p.key));
+      const other = (recent.get(totKey) ?? 0) - base.reduce((t, p) => t + (recent.get(p.key) ?? 0), 0); // (shots outside the parts listed)
+      const total = base.reduce((t, p) => t + valOf(p.key), 0) + other;
+      const rankOf = (k, v) => { const vs = others.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); return { rank: 1 + vs.filter((x) => x > v + 1e-12).length, of: vs.length + 1 }; };
+      const step = cat ? 0.02 : 0.05;
+      const bump = (k, d) => { const cur = st.hypoAdj && st.hypoAdj.cat === (cat || "") ? { ...st.hypoAdj.d } : {}; cur[k] = Math.round(((cur[k] || 0) + d) * 1000) / 1000; if (Math.abs(cur[k]) < 1e-9) delete cur[k]; st.hypoAdj = { cat: cat || "", d: cur }; draw(); };
+      const open = !!st.hypoOpen;
+      const tgl = el("button", { type: "button", class: "bs-path-toggle", "aria-expanded": String(open) }, [el("span", { class: "cmp-caret" }, open ? "\u25BE " : "\u25B8 "), "Hypothetical rankings"]);
+      tgl.addEventListener("click", () => { st.hypoOpen = !open; draw(); });
+      if (!open) return el("div", { class: "bs-path closed bs-hypo" }, [el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl)])]);
+      const nIn = el("input", { type: "number", class: "peak-len", min: "3", max: "500", step: "1", value: String(N), inputmode: "numeric", "aria-label": "How many recent rounds" });
+      const setN = () => { const v = Math.round(Number(nIn.value)); if (Number.isFinite(v) && v >= 3) { st.hypoN = v; draw(); } else nIn.value = String(N); };
+      nIn.addEventListener("change", setN); nIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nIn.blur(); } });
+      const rkTxt = (r) => `${ordinal(r.rank)} of ${r.of}`;
+      const row = (k, label, v, isTot) => {
+        const d = isTot ? total - (recent.get(totKey) ?? 0) : adj[k] || 0, r = rankOf(k, v), r0 = rankOf(k, isTot ? recent.get(totKey) ?? 0 : recent.get(k) ?? 0);
+        const btn = (txt, dv, lab) => { const b = el("button", { type: "button", class: "hy-step", "aria-label": `${lab} ${label}` }, txt); b.addEventListener("click", () => bump(k, dv)); return b; };
+        const moved = r.rank !== r0.rank;
+        return el("tr", { class: isTot ? "bs-path-total" : "" }, [
+          el("td", {}, label),
+          el("td", { class: "num" }, fmtSG(isTot ? recent.get(totKey) ?? 0 : recent.get(k) ?? 0)),
+          el("td", { class: "num hy-val" }, [isTot ? el("strong", { class: v >= 0 ? "pos" : "neg" }, fmtSG(v)) : el("span", { class: "hy-ctl" }, [btn("\u2212", -step, "Worse"), el("strong", { class: `${v >= 0 ? "pos" : "neg"}${d ? " hy-moved" : ""}` }, fmtSG(v)), btn("+", step, "Better")]),
+            Math.abs(d) > 1e-9 ? el("span", { class: `hy-d ${d > 0 ? "pos" : "neg"}`, title: isTot ? "All the changes added up" : "Changed by" }, `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(2)}`) : null]), // (update 393: the change, and the total of them all)
+          el("td", { class: "num" }, [rkTxt(r), moved ? el("span", { class: `hy-mv ${r.rank < r0.rank ? "pos" : "neg"}` }, ` ${r.rank < r0.rank ? "\u25B2" : "\u25BC"}${Math.abs(r0.rank - r.rank)}`) : null]),
+        ]);
+      };
+      const anyAdj = Object.keys(adj).length > 0;
+      // (update 393) every change added up, in one line
+      const adjList = base.filter((p) => adj[p.key]).map((p) => `${p.label} ${adj[p.key] > 0 ? "+" : "\u2212"}${Math.abs(adj[p.key]).toFixed(2)}`);
+      const adjSum = base.reduce((t, p) => t + (adj[p.key] || 0), 0);
+      const sumLine = anyAdj ? el("p", { class: "hy-sum" }, [`Changes: `, el("strong", { class: adjSum >= 0 ? "pos" : "neg" }, `${adjSum >= 0 ? "+" : "\u2212"}${Math.abs(adjSum).toFixed(2)} a round`), ` in all`, el("span", { class: "muted" }, ` (${adjList.join(", ")})`)]) : null;
+      const reset = anyAdj ? (() => { const b = el("button", { type: "button", class: "link small" }, "Reset"); b.addEventListener("click", () => { st.hypoAdj = null; draw(); }); return b; })() : null;
+      return el("div", { class: "bs-path bs-hypo" }, [
+        el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), reset]),
+        el("div", { class: "bs-path-gap" }, [el("div", {}, [`Last `, nIn, ` rounds, ranked against everyone\u2019s averages over the time frame picked`]),
+          infoTip(`Start from their last ${N} rounds: strokes gained a round in each ${cat ? "distance" : "part of the game"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap); the total moves with them. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
+        sumLine,
+        el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [
+          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, `Last ${N}`), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Rank")])),
+          el("tbody", {}, [row(totKey, totLabel, total, true), ...base.map((p) => row(p.key, p.label, valOf(p.key), false))]),
+        ])),
+      ]);
+    }
     // (update 341) Path back to Elite
     // (update 355) with rankings, the path has its own level to aim at (the next one up to start); without, the best
     // rounds picked above
