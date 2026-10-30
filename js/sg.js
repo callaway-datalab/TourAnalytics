@@ -472,28 +472,30 @@ export const shortDate = (d) => `${d.getMonth() + 1}/${d.getDate()}/${String(d.g
 
 // (update 328) a round's strokes gained (one category, or all), without making a filtered copy of its shots
 const sgSum = (rd, cat) => { let t = 0; for (const s of rd.shots) if (!cat || s.cat === cat) t += s.sg; return t; };
+/** (update 404) "2024-04-11" as that day here (new Date() reads it as midnight UTC: the day before, west of London). */
+export const localDay = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || "")); return m ? new Date(+m[1], m[2] - 1, +m[3]) : new Date(v); };
 export function trend(rounds, cat, by = "event") {
   if (by === "round") {
     // One bar per round, oldest first, labeled with its date (and round number when there is one).
     return rounds.map((rd) => {
-      const d = new Date(rd.date);
+      const d = localDay(rd.date);
       const day = isNaN(d) ? rd.date : shortDate(d);
       return { label: `${day}${rd.roundNo ? ` R${rd.roundNo}` : ""}`, value: sgSum(rd, cat), rounds: 1, event: rd.event };
     });
   }
   const groups = new Map();
   for (const rd of rounds) {
-    const d = new Date(rd.date);
+    const d = localDay(rd.date);
     const valid = !isNaN(d);
     const key = by === "year" ? (valid ? String(d.getFullYear()) : "Unknown")
       : by === "month" ? (valid ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown")
-      : (rd.event || rd.date || rd.key);
-    const g = groups.get(key) || { label: key, sg: 0, rounds: 0, first: groups.size, date: valid ? d : null };
+      : `${rd.event || rd.date || rd.key}|${valid ? d.getFullYear() : rd.year || ""}`; // (update 404: each year's playing of a tournament its own bar)
+    const g = groups.get(key) || { id: key, label: by === "event" ? (rd.event ? `${rd.event} ${valid ? d.getFullYear() : rd.year || ""}`.trim() : rd.date || rd.key) : key, sg: 0, rounds: 0, first: groups.size, date: valid ? d : null };
     g.sg += sgSum(rd, cat);
     g.rounds++;
     groups.set(key, g);
   }
-  return [...groups.values()].map((g) => ({ label: by === "month" ? monthLabel(g.label) : g.label, value: g.sg / g.rounds, rounds: g.rounds,
+  return [...groups.values()].map((g) => ({ id: g.id, label: by === "month" ? monthLabel(g.label) : g.label, value: g.sg / g.rounds, rounds: g.rounds,
     // a short label for small screens: an event's date (its name is in the tap-up)
     short: by === "event" && g.date ? shortDate(g.date) : null }));
 }

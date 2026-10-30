@@ -76,6 +76,7 @@ import {
   CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate,
   missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds,
   statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList, distLead,
+  localDay,
 } from "./sg.js";
 
 const CHART_JS = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
@@ -1139,10 +1140,10 @@ export function sgDashboard(container, opts) {
   function groupBy(rounds, by) {
     const m = new Map();
     for (const rd of [...rounds].sort((a, b2) => String(a.date).localeCompare(String(b2.date)))) {
-      const d = new Date(rd.date), ok = !isNaN(d);
+      const d = localDay(rd.date), ok = !isNaN(d);
       const key = by === "year" ? (ok ? String(d.getFullYear()) : "?") : by === "month" ? (ok ? `${d.getMonth() + 1}/${String(d.getFullYear()).slice(2)}` : "?")
-        : by === "round" ? `${rd.key}` : (rd.event || rd.date);
-      const g = m.get(key) || { label: by === "round" ? (ok ? `${shortDate(d)}` : rd.date) : key, short: ok ? shortDate(d) : null, rounds: [] };
+        : by === "round" ? `${rd.key}` : `${rd.event || rd.date}|${ok ? d.getFullYear() : rd.year || ""}`; // (update 404: each year's playing its own bar)
+      const g = m.get(key) || { id: key, label: by === "round" ? (ok ? `${shortDate(d)}` : rd.date) : by === "event" ? (rd.event ? `${rd.event} ${ok ? d.getFullYear() : rd.year || ""}`.trim() : rd.date) : key, short: ok ? shortDate(d) : null, rounds: [] };
       g.rounds.push(rd); m.set(key, g);
     }
     return [...m.values()];
@@ -2010,7 +2011,7 @@ export function sgDashboard(container, opts) {
     // (update 308) Personal Peak: its average (the same rounds as the table) as the dot on every bar
     const pkT = st.vsRank === "peak" && !soloTour ? curPeak() : null;
     const pkV = pkT && !pkT.short ? pkT.rounds.reduce((tt, rd) => tt + rd.shots.reduce((a, x) => a + (!cat || x.cat === cat ? x.sg : 0), 0), 0) / pkT.rounds.length : null;
-    const tCompare = pkV != null ? t.map(() => pkV) : others.length ? t.map((g) => topMean([g.value, ...otherTrends.map((ot) => ot.find((x) => x.label === g.label)?.value)])) : null;
+    const tCompare = pkV != null ? t.map(() => pkV) : others.length ? t.map((g) => topMean([g.value, ...otherTrends.map((ot) => ot.find((x) => (x.id ?? x.label) === (g.id ?? g.label))?.value)])) : null;
     const unit = { round: "round", event: "event", month: "month", year: "year" }[st.trendBy] || "event";
     blocks.push(panelBox("SG Trends", [toggles, chartBox((c, as) => barChart(c, t.map((g) => g.label), t.map((g) => g.value), {
       title: "SG / round", as, compare: tCompare && tCompare.some((v) => v != null) ? tCompare : null, compareLabel: compareName(unit),
@@ -2142,7 +2143,7 @@ export function sgDashboard(container, opts) {
     // each round / event / month / year: the best result(s) there among the players who played it (this player included)
     const others = rankedField(slicedField).filter((p) => p.key !== me.key);
     const otherGroups = others.map((p) => groupBy(p.rounds, st.trendBy));
-    const cmp = others.length ? groups.map((g, i) => topMean([vals[i], ...otherGroups.map((og) => { const x = og.find((y) => y.label === g.label); return x ? metric(x.rounds) : null; })], def.higher !== false)) : null;
+    const cmp = others.length ? groups.map((g, i) => topMean([vals[i], ...otherGroups.map((og) => { const x = og.find((y) => y.id === g.id); return x ? metric(x.rounds) : null; })], def.higher !== false)) : null;
     const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].filter(([v]) => unit !== "event" || v !== "round").map(([v, l]) => {
       const a = el("a", { href: "#", "aria-current": v === st.trendBy ? "page" : null }, l);
       a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
@@ -2292,12 +2293,12 @@ export function sgDashboard(container, opts) {
     const rs = mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => fits(s, kind)) })).filter((rd) => rd.shots.length);
     if (!rs.length) return panelBox("SG Trends", [toggles, pills, el("p", { class: "muted small" }, "No product information on these shots: products come from Enter New Round (with WITB) or a club column in an uploaded file.")], "full");
     // grouped as SG Trends groups (round, event, month or year)
-    const keyOf = (rd, i) => { const d = new Date(rd.date), ok = !isNaN(d);
-      return st.trendBy === "round" ? `r${i}` : st.trendBy === "year" ? (ok ? String(d.getFullYear()) : "Unknown") : st.trendBy === "month" ? (ok ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown") : (rd.event || rd.date || rd.key); };
+    const keyOf = (rd, i) => { const d = localDay(rd.date), ok = !isNaN(d);
+      return st.trendBy === "round" ? `r${i}` : st.trendBy === "year" ? (ok ? String(d.getFullYear()) : "Unknown") : st.trendBy === "month" ? (ok ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown") : `${rd.event || rd.date || rd.key}|${ok ? d.getFullYear() : rd.year || ""}`; }; // (update 404: per year)
     const groups = new Map();
     rs.forEach((rd, i) => {
-      const k = keyOf(rd, i), d = new Date(rd.date);
-      const g = groups.get(k) || groups.set(k, { label: st.trendBy === "round" ? `${isNaN(d) ? rd.date : shortDate(d)}${rd.roundNo ? ` R${rd.roundNo}` : ""}` : st.trendBy === "month" && k !== "Unknown" ? new Date(`${k}-15T12:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : k,
+      const k = keyOf(rd, i), d = localDay(rd.date);
+      const g = groups.get(k) || groups.set(k, { label: st.trendBy === "round" ? `${isNaN(d) ? rd.date : shortDate(d)}${rd.roundNo ? ` R${rd.roundNo}` : ""}` : st.trendBy === "month" && k !== "Unknown" ? new Date(`${k}-15T12:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : st.trendBy === "event" ? (rd.event ? `${rd.event} ${isNaN(d) ? rd.year || "" : d.getFullYear()}`.trim() : rd.date || k) : k,
         short: st.trendBy === "event" && !isNaN(d) ? shortDate(d) : null, sg: 0, rounds: 0, event: rd.event, prods: new Map() }).get(k);
       g.rounds++; for (const s of rd.shots) { g.sg += s.sg; const p = prodOf(s, kind); if (p) g.prods.set(p, (g.prods.get(p) || 0) + (s.w || 1)); }
     });

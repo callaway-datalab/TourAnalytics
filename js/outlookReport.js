@@ -173,16 +173,17 @@ function groupOdds(fcs) {
 }
 
 /** A small line of a player's seasons (SVG), zero marked. */
-function spark(vals, lo, hi) {
-  const W = 220, Hh = 54, pad = 6, n = vals.length;
-  if (n < 2) return "";
-  const x = (i) => pad + (i * (W - 2 * pad)) / (n - 1), y = (v) => pad + ((hi - v) * (Hh - 2 * pad)) / (hi - lo || 1);
-  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  return `<svg class="spark" viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" aria-hidden="true"><line x1="${pad}" x2="${W - pad}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" class="zero"/><polyline points="${pts}" class="ln"/>${vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" class="${v >= 0 ? "p" : "n"}"/>`).join("")}</svg>`;
+function spark(pts, years, lo, hi) {
+  // (update 406) every card on the same seasons (so they line up), each one labelled underneath
+  const W = 220, Hh = 66, pad = 8, B = 14, n = years.length;
+  if (!pts.length || n < 2) return "";
+  const x = (yr) => pad + (years.indexOf(yr) * (W - 2 * pad)) / (n - 1), y = (v) => pad + ((hi - v) * (Hh - B - 2 * pad)) / (hi - lo || 1);
+  const line = pts.map(([yr, v]) => `${x(yr).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" aria-hidden="true"><line x1="${pad}" x2="${W - pad}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" class="zero"/>${pts.length > 1 ? `<polyline points="${line}" class="ln"/>` : ""}${pts.map(([yr, v]) => `<circle cx="${x(yr).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" class="${v >= 0 ? "p" : "n"}"/>`).join("")}${years.map((yr) => `<text x="${x(yr).toFixed(1)}" y="${Hh - 2}" class="ax" text-anchor="middle">${esc(yy(yr))}</text>`).join("")}</svg>`;
 }
 
 /** The projection chart: each player's last season, then the next three, with their likely ranges. */
-function projChart(fcs, lastYear, colors) {
+function projChart(fcs, lastYear, colors, names = []) {
   const W = 470, Hh = 210, L = 44, R = 14, Tp = 12, B = 26;
   const cols = [String(lastYear), ...fcs[0].years.map((y) => y.year)];
   const vals = fcs.flatMap((f) => [f.now?.total, ...f.years.flatMap((y) => [y.lo, y.hi])]).filter((v) => v != null);
@@ -198,7 +199,9 @@ function projChart(fcs, lastYear, colors) {
     const pts = [f.now ? [x(0), y(f.now.total)] : null, ...f.years.map((yv, i) => [x(i + 1), y(yv.total)])].filter(Boolean);
     g += `<polyline points="${pts.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${c}" stroke-width="2.4"/>` + pts.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.4" fill="${c}"/>`).join("");
   });
-  return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" style="max-width:${W}px" aria-label="Projection chart">${g}</svg>`;
+  // (update 406) a key: who each line is
+  const key = `<div class="legend">${fcs.map((f, k) => `<span><i style="background:${colors[k % colors.length]}"></i>${esc(names[k] || f.name)}</span>`).join("")}<span class="muted">shaded: likely range</span></div>`;
+  return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" style="max-width:${W}px" aria-label="Projection chart">${g}</svg>${key}`;
 }
 
 /**
@@ -281,6 +284,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     }
     out.seasonsTxt = seas.length ? `${yy(seas[0][0])}–${yy(seas.at(-1)[0])}: ${seas.map(([, o]) => f2(o.v.TOTAL)).join(" · ")}` : "";
     out.sparkVals = seas.map(([, o]) => o.v.TOTAL);
+    out.sparkPts = seas.map(([yr, o]) => [yr, o.v.TOTAL]);
     insight.set(f.key, out);
   }
 
@@ -344,7 +348,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     const L = lastOf(f.key), ins = insight.get(f.key);
     return `<div class="card" style="--c:${colors[i % colors.length]}"><div class="who">${nm(f)}${ageOf(f) != null ? ` <small>· Age ${ageOf(f)}</small>` : ""}</div>
       ${L ? `<div class="big ${tone(L.v.TOTAL)}">${f2(L.v.TOTAL)}</div><div class="muted">SG total a round · #${L.rk.TOTAL} of ${L.of.TOTAL} · ${L.n} rounds</div>` : `<div class="muted">No rounds in the last 12 months</div>`}
-      ${spark(ins.sparkVals, sparkLo, sparkHi)}
+      ${spark(ins.sparkPts, showYears, sparkLo, sparkHi)}
       ${L ? `<div class="mix"><span>Ball-striking <b class="${tone(ins.mix.bs)}">${f2(ins.mix.bs)}</b></span><span>Short game <b class="${tone(ins.mix.sh)}">${f2(ins.mix.sh)}</b></span></div>` : ""}
       <div class="muted small">${esc(ins.seasonsTxt)}</div><p>${esc(ins.oneLine || "")}</p></div>`;
   }).join("");
@@ -389,9 +393,9 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
       <ul>${fcNotes.map((t) => `<li>${t}</li>`).join("")}</ul>
       <p class="foot">Events split at the middle field strength (the average season SG of the players in each event). Drop = weaker-field SG minus stronger-field SG. Strokes gained is against the field each week, so beating a weak field is easier.</p></div>` : ""}
     <div><h3>Projected SG total a round (likely range)</h3><table><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}<th>3-season avg</th></tr>${projRows}</table>
-      ${projChart(order, model.lastYear, order.map((f) => colors[fcs.indexOf(f) % colors.length]))}
+      ${projChart(order, model.lastYear, order.map((f) => colors[fcs.indexOf(f) % colors.length]), order.map((f) => f.name))}
       <ul>${projLines.map((t) => `<li>${t}</li>`).join("")}</ul></div></div>
-    <p class="foot">Against the ${esc(target)} average. Range: 8 times in 10 the season should land inside it. ~# = the rank it would mean against ${model.fieldN || "the"} players forecast the same way.${model.ageOk ? " Includes the typical change for each player’s age." : " No birth dates, so age isn’t in it."}</p></section>`);
+    <p class="foot">Strokes gained a round, on the same scale as the Stats page. Range: 8 times in 10 the season should land inside it. ~# = the rank it would mean against ${model.fieldN || "the"} players forecast the same way.${model.ageOk ? " Includes the typical change for each player’s age." : " No birth dates, so age isn’t in it."}</p></section>`);
   // 5 · odds, the take, how it works
   const oddsTbl = odds ? `<table><tr><th>Chance of ranking best of the ${fcs.length}</th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f, i) => `<tr><td><b>${nm(f)}</b></td>${odds.best[i].map((p) => `<td>${pct(p)}</td>`).join("")}</tr>`).join("")}</table>
     <h3>Likeliest orders in ${esc(yrs[0])}</h3><table>${odds.orders.map((o) => `<tr><td>${o.order.map((i) => ln(order[i])).join(" › ")}</td><td>${pct(o.p)}</td></tr>`).join("")}</table>` : "";
@@ -408,7 +412,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     <li><b>Pulled back to the tour average</b> by how much each part carries into the next season here: ${CATS.map((c) => `${CATS_SHORT[c]} ${Math.round(pr.carry[c] * 100)}%`).join(", ")} of a full season.</li>
     <li><b>Two and three seasons out,</b> ${Math.round(pr.H[1] * 100)}% and ${Math.round(pr.H[2] * 100)}% of next season’s edge still holds.</li>
     <li><b>Age:</b> ${model.ageOk ? `${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")} a season (from ${pr.age.players} players’ birth dates).` : "no birth dates in the data, so not used."}</li>
-    <li><b>Accuracy</b> ${pr.outOfSample ? "on seasons it hadn’t seen" : "on the seasons it learned from"}: off by about ${acc.map((a) => `${a.mae.toFixed(2)} ${a.h === 1 ? "one season ahead" : `${a.h} seasons ahead`}`).join(", ")} a round on average.</li>
+    <li><b>Accuracy</b> ${pr.outOfSample ? "on seasons it hadn\u2019t seen" : "on the seasons it learned from"}, players with 20+ rounds: off by about ${acc.map((a) => `${a.mae.toFixed(2)} ${a.h === 1 ? "one season ahead" : `${a.h} seasons ahead`}`).join(", ")} a round on average.${model.err[0]?.bt ? ` Simple guesses on the same seasons, one ahead: their latest season ${model.err[0].bt.last.toFixed(2)}, the tour average ${model.err[0].bt.avg.toFixed(2)}.` : ""}</li>
     <li>Every weight above is learned from this data, not chosen. Odds from 20,000 simulated seasons.</li></ul>`;
   const before = [
     fcs.some((f) => f.age == null) ? `Add birth dates for ${fcs.filter((f) => f.age == null).map(ln).join(", ")} (age is left out without them).` : "",
@@ -431,7 +435,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   table{border-collapse:collapse;width:100%;margin:2px 0 8px}th,td{border-bottom:1px solid #e3e6ea;padding:4px 6px;text-align:right;vertical-align:top}th{font-size:10px;color:#4a535e;font-weight:600;text-transform:uppercase;letter-spacing:.03em}th:first-child,td:first-child{text-align:left}tr.hl td{background:#f4f7fb;font-weight:600}tr.muted td{color:#6b7480}
   .cards{display:grid;gap:10px;margin:6px 0 10px}.cards.n1{grid-template-columns:1fr}.cards.n2{grid-template-columns:1fr 1fr}.cards.n3{grid-template-columns:1fr 1fr 1fr}.cards.n4{grid-template-columns:1fr 1fr 1fr 1fr}
   .card{border:1px solid #e3e6ea;border-top:4px solid var(--c);border-radius:8px;padding:8px 10px}.card .who{font-weight:700;font-size:13.5px}.card .big{font-size:26px;font-weight:700;line-height:1.1;margin-top:4px}.card p{margin:4px 0 0}
-  .mix{display:flex;gap:12px;font-size:11px;margin:2px 0}.spark{display:block;margin:4px 0;max-width:100%}.spark .zero{stroke:#b9c0c8;stroke-dasharray:3 3}.spark .ln{fill:none;stroke:var(--c);stroke-width:2}.spark .p{fill:#1e8a4c}.spark .n{fill:#c8372d}
+  .mix{display:flex;gap:12px;font-size:11px;margin:2px 0}.spark{display:block;margin:4px 0;max-width:100%}.spark .zero{stroke:#b9c0c8;stroke-dasharray:3 3}.spark text.ax{font-size:9.5px;fill:#6b7480}.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;margin:2px 0 4px}.legend span{display:inline-flex;align-items:center;gap:5px}.legend i{width:14px;height:4px;border-radius:2px;display:inline-block}.spark .ln{fill:none;stroke:var(--c);stroke-width:2}.spark .p{fill:#1e8a4c}.spark .n{fill:#c8372d}
   .two{display:grid;grid-template-columns:1.05fr 1fr;gap:18px}ul{margin:4px 0;padding-left:16px}li{margin:3px 0}
   .profile{border-left:4px solid var(--c);padding:2px 0 4px 10px;margin:6px 0 12px}table.prof td,table.prof th{padding:4px 5px;font-size:11.5px}
   .boxes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.box{border:1px solid #e3e6ea;border-radius:6px;padding:6px 8px}.box p{margin:2px 0 0;font-size:12px}.bt{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:700}.box.s .bt{color:#1e8a4c}.box.w .bt{color:#c8372d}.box.a .bt{color:#2f6fdb}.box.d .bt{color:#7a5af5}

@@ -12,7 +12,7 @@ import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, prepare, summaryPlayers, fmtSG } from "../sg.js";
-import { playerCard, metricCatalog, metricLabel, PERIODS, ordinal } from "../watchlistData.js";
+import { playerCard, metricCatalog, metricLabel, PERIODS, ordinal, normMetricId } from "../watchlistData.js";
 import { watchPrefs, loadWatch, saveWatch, watchIsPreview } from "../watchlist.js";
 import { playerPicker } from "../playerPicker.js";
 
@@ -120,8 +120,9 @@ export async function render(main, { previewClient }) {
   let menuOpen = false;
   // (update 180) metrics for everyone, or a player's own (watchlists.metricsFor[key]: theirs instead of everyone's)
   let menuFor = "all";
-  const metricsOf = (k) => (Array.isArray(prefs.metricsFor?.[k]) ? prefs.metricsFor[k] : prefs.metrics);
-  const listFor = (who) => (who === "all" ? prefs.metrics : metricsOf(who));
+  const normList = (l) => [...new Set((l || []).map(normMetricId))]; // (update 406)
+  const metricsOf = (k) => normList(Array.isArray(prefs.metricsFor?.[k]) ? prefs.metricsFor[k] : prefs.metrics);
+  const listFor = (who) => (who === "all" ? normList(prefs.metrics) : metricsOf(who));
   const setList = (who, m) => (who === "all" ? saveWatch({ metrics: m }) : saveWatch({ metricsFor: { ...(prefs.metricsFor || {}), [who]: m } }));
   // (update 171) each card starts folded (name, badges, the five strokes gained); opened ones stay open while you're
   // on the page. A player on more than one tour: the tour picked on their card (this visit).
@@ -425,7 +426,7 @@ export async function render(main, { previewClient }) {
     };
     const dists = el("div", { class: "wl-two" }, [distList("Best distances", c.dists.best, "best"), distList("Toughest distances", c.dists.worst, "worst")]);
     const metrics = c.metrics.length ? el("div", { class: "wl-metrics" }, [el("p", { class: "wl-col-t" }, "Additional Metrics"), el("div", { class: "wl-mrows" }, c.metrics.map((m) => tappable(el("div", { class: "wl-mrow" }, [
-      el("span", { class: "wl-m-l" }, m.label), rel && m.v != null && m.avgO != null ? (() => { const dd = m.v - m.avgO, good = m.higher == null || Math.abs(dd) < 1e-9 ? "" : (m.higher === false ? dd < 0 : dd > 0) ? "pos" : "neg"; return el("strong", { class: `wl-m-v ${good}`, title: `${m.text}; the rest average ${m.fmtCh(m.avgO)}` }, `${dd >= 0 ? "+" : "\u2212"}${m.fmtCh(dd)}`); })() : el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") || /^sg:sd@.*\|/.test(m.id) ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
+      el("span", { class: "wl-m-l" }, m.label), rel && m.v != null && m.avgO != null ? (() => { const dd = m.v - m.avgO, good = m.higher == null || Math.abs(dd) < 1e-9 ? "" : (m.higher === false ? dd < 0 : dd > 0) ? "pos" : "neg"; return el("strong", { class: `wl-m-v ${good}`, title: `${m.text}; the rest average ${m.fmtCh(m.avgO)}` }, `${dd >= 0 ? "+" : "\u2212"}${m.fmtCh(dd)}`); })() : el("strong", { class: "wl-m-v" }, m.text), rankPill(m.rank, m.of) || el("span", { class: "wl-rank wl-rank-none", "aria-hidden": "true" }), trendEl(m.trend, { higher: m.higher, fmt: m.fmtCh, band: m.id.startsWith("dist:") || /^sg:sd@.*\|/.test(m.id) ? 0.005 : m.id.startsWith("stat:") ? Math.max(0.01, Math.abs(m.trend?.prev || 0) * 0.005) : 0.05 }),
     ]), m.label, m.info)))]) : null;
     // (update 211) club breakdowns: each model side by side (a model with under 10 rounds is marked)
     const clubs = (c.clubTables || []).map((t) => el("div", { class: "wl-clubs" }, [

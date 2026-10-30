@@ -287,7 +287,8 @@ function learnModel(field, { tour = null } = {}) {
         const act = m.get(years[t]); if (!act) continue;
         const pr = projectWith(Pt, Pt.built.seasons, key, i, h); if (!pr) continue;
         const a = CATS.reduce((s0, c) => s0 + act.d[c], 0);
-        resid[h].push({ r: a - pr.total, n: act.n, nb: pr.n });
+        const prev = m.get(years[i]); // (update 406: the simple guesses, on the same cases: their latest season as it was, and the tour average)
+        resid[h].push({ r: a - pr.total, n: act.n, nb: pr.n, rLast: prev && prev.n >= 10 ? a - CATS.reduce((s0, c) => s0 + prev.d[c], 0) : null, rAvg: a });
       }
     }
   }
@@ -306,10 +307,20 @@ function learnModel(field, { tour = null } = {}) {
     const den = sw * sxx - sx * sx;
     let b = den > 0 ? (sw * sxy - sx * sy) / den : 0, a = (sy - b * sx) / sw;
     if (b < 0) { b = 0; a = sy / sw; } if (a < 0) { a = 0; b = sy / sx; }
-    const mae = R.reduce((t, x) => t + Math.abs(x.r), 0) / R.length;
-    return { a, b, n: R.length, mae, sd: Math.sqrt(R.reduce((t, x) => t + x.r * x.r, 0) / R.length) };
+    // (update 406) the accuracy as reported: players with a real season to check against (20+ rounds), not a handful
+    // of starts (a 4-round season's average is mostly luck, which made the typical miss look like a stroke a round)
+    const Q = R.filter((x) => x.n >= 20), QQ = Q.length >= 10 ? Q : R;
+    const mae = QQ.reduce((t, x) => t + Math.abs(x.r), 0) / QQ.length;
+    const B = QQ.filter((x) => x.rLast != null);
+    const bt = B.length >= 10 ? { n: B.length, model: B.reduce((t, x) => t + Math.abs(x.r), 0) / B.length, last: B.reduce((t, x) => t + Math.abs(x.rLast), 0) / B.length, avg: B.reduce((t, x) => t + Math.abs(x.rAvg), 0) / B.length } : null;
+    return { a, b, n: QQ.length, mae, bt, sd: Math.sqrt(QQ.reduce((t, x) => t + x.r * x.r, 0) / QQ.length) };
   });
   // a forecast's range for a full season (the tour's typical rounds a season for ranked players)
+  // (update 406) "0" in the model is the average ranked player on the tour. Shown on the Stats page's scale (strokes
+  // gained against the field each week) by adding that back: each past season its own, the next three the average of
+  // the last three seasons'. Ranks and chances don't change.
+  const lvlYears = years.slice(-3);
+  const level = Object.fromEntries(CATS.map((c) => [c, lvlYears.reduce((t, y) => t + (meanOn.get(y)?.[c] || 0), 0) / Math.max(1, lvlYears.length)]));
   const typicalN = (() => { const ns = []; for (const m of P.built.seasons.values()) { const s = m.get(lastYear); if (s) ns.push(s.n); } ns.sort((a, b) => a - b); return ns.length ? ns[Math.floor(ns.length * 0.75)] : 60; })();
   const sdFor = (h, n = typicalN) => Math.sqrt(spread[h - 1].a + spread[h - 1].b / Math.max(1, n));
   const project = (key, h) => projectWith(P, P.built.seasons, key, years.length - 1, h);
@@ -344,7 +355,7 @@ function learnModel(field, { tour = null } = {}) {
   };
   return {
     target, years, lastYear, params, K: P.K, ageOk: P.age.pts >= 2 && P.age.bw != null, agePlayers: P.age.players || 0,
-    err: spread.map((s) => (s.n ? { sd: s.sd, mae: s.mae, n: s.n } : null)), outOfSample,
+    err: spread.map((s) => (s.n ? { sd: s.sd, mae: s.mae, n: s.n, bt: s.bt } : null)), outOfSample, level,
     seasons: P.built.seasons, birthOf, nameOf, project, sdFor, fieldProj, chances, ageCurve: (a) => P.age.curve(a), meanOn,
   };
 }
@@ -384,7 +395,12 @@ export function forecastPlayer(model, key) {
     fewRounds: (lastS?.n || 0) < model.params.typicalN / 2,
     noBirth: !birth,
   };
-  return { key, name: model.nameOf.get(key) || key, birth, age, now: lastS?.year === lastYear ? lastS : null, hist, years, flags, tour: model.target };
+  // (update 406) on the Stats page's scale (see level above): the flags were worked out first, on the model's own scale
+  const L = model.level || { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, Lt = CATS.reduce((t, c) => t + L[c], 0);
+  const histOut = hist.map((h) => { const mu = model.meanOn?.get(h.year) || L; const cats = Object.fromEntries(CATS.map((c) => [c, h.cats[c] + mu[c]])); return { ...h, cats, total: CATS.reduce((t, c) => t + cats[c], 0) }; });
+  const yearsOut = years.map((y) => ({ ...y, total: y.total + Lt, lo: y.lo + Lt, hi: y.hi + Lt, cats: Object.fromEntries(CATS.map((c) => [c, y.cats[c] + L[c]])) }));
+  const lastOut = histOut.at(-1);
+  return { key, name: model.nameOf.get(key) || key, birth, age, now: lastOut?.year === lastYear ? lastOut : null, hist: histOut, years: yearsOut, flags, tour: model.target, level: Lt };
 }
 
 /** The write-up for a few players' forecasts, in plain words (best first over the three seasons). */

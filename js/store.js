@@ -531,10 +531,13 @@ async function deleteImportsOf(datasetId) {
 export async function publishFieldStats(datasetId, summary, sourceUploadedAt) {
   const ref = doc(db, "fieldStats", datasetId);
   const old = await getDoc(ref);
-  const pieces = splitString(JSON.stringify(summary), DOC_CHUNK_CHARS);
-  await commitInChunks(pieces.map((data, i) => sized((b) => b.set(doc(ref, "chunks", String(i)), { data }), data.length)));
-  for (let i = pieces.length; i < (old.exists() ? old.data().chunkCount || 0 : 0); i++) await deleteDoc(doc(ref, "chunks", String(i)));
-  await setDoc(ref, { chunkCount: pieces.length, sourceUploadedAt: sourceUploadedAt ?? null, publishedAt: serverTimestamp(), format: 3 });
+  // (update 406) the new pieces under new names, then the pointer to them, then the old ones go: someone reading while
+  // it's written gets the old rankings or the new, never half of each (which read as no rankings at all)
+  const pieces = splitString(JSON.stringify(summary), DOC_CHUNK_CHARS), prefix = `${Date.now()}_`;
+  await commitInChunks(pieces.map((data, i) => sized((b) => b.set(doc(ref, "chunks", `${prefix}${i}`), { data }), data.length)));
+  await setDoc(ref, { chunkCount: pieces.length, chunkPrefix: prefix, sourceUploadedAt: sourceUploadedAt ?? null, publishedAt: serverTimestamp(), format: 3 });
+  const op = old.exists() ? old.data().chunkPrefix || "" : null;
+  if (op !== null) for (let i = 0; i < (old.data().chunkCount || 0); i++) await deleteDoc(doc(ref, "chunks", `${op}${i}`)).catch(() => {});
 }
 
 /** When the field stats for a data file were last built from it (ms), or null if never. */
@@ -559,7 +562,8 @@ export async function getFieldStats(datasetId) {
   return promise;
 }
 async function readFieldStats(datasetId, snap) {
-  const pieces = await Promise.all(Array.from({ length: snap.data().chunkCount }, (_, i) => getDoc(doc(db, "fieldStats", datasetId, "chunks", String(i)))));
+  const pre = snap.data().chunkPrefix || ""; // (update 406)
+  const pieces = await Promise.all(Array.from({ length: snap.data().chunkCount }, (_, i) => getDoc(doc(db, "fieldStats", datasetId, "chunks", `${pre}${i}`))));
   try { return { ...JSON.parse(pieces.map((p) => p.data().data).join("")), sourceUploadedAt: snap.data().sourceUploadedAt }; }
   catch { return null; }
 }
@@ -576,7 +580,7 @@ export async function deleteDataset(datasetId) {
   await deleteImportsOf(datasetId);
   const fs = await getDoc(doc(db, "fieldStats", datasetId));
   if (fs.exists()) {
-    for (let i = 0; i < (fs.data().chunkCount || 0); i++) await deleteDoc(doc(db, "fieldStats", datasetId, "chunks", String(i)));
+    for (let i = 0; i < (fs.data().chunkCount || 0); i++) await deleteDoc(doc(db, "fieldStats", datasetId, "chunks", `${fs.data().chunkPrefix || ""}${i}`));
     await deleteDoc(fs.ref);
   }
 }

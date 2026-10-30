@@ -264,7 +264,18 @@ export async function render(main, { flash, routeId }) {
     const summary = await getFieldStats(ds.id).catch(() => null);
     if (token !== loadToken) return;
     const pk = `lite|${ds.id}|${uploaded}`;
-    if (!preparedCache.has(pk)) { keepFew(preparedCache); preparedCache.set(pk, summaryPlayers(summary).filter((p) => p.rounds.length)); }
+    if (!preparedCache.has(pk)) {
+      const sp = summaryPlayers(summary).filter((p) => p.rounds.length);
+      // (update 406) no rankings to read (not built yet, or being rebuilt right now): the player's own numbers, unranked,
+      // not a field that grows by one with every player opened (1 of 1, then 2 of 2 …)
+      if (!sp.length) {
+        const full0 = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
+        const own = full0 ? [{ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full0.rows, idx) }] : [];
+        drawLite(ds, idx, own, "The rankings can\u2019t be read right now: they\u2019re not built yet, or a rebuild is writing them. Here are the player\u2019s own numbers; ranks appear once the rebuild on Upload Data shows Live (then reload).", false, { noRanks: true });
+        return;
+      }
+      keepFew(preparedCache); preparedCache.set(pk, sp);
+    }
     // (the player picked, with their full rows, in place of their summary line)
     const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
     fieldPlayers = preparedCache.get(pk).map((p) => {
@@ -289,11 +300,11 @@ export async function render(main, { flash, routeId }) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
     const { players, why } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0);
     detailWhy.set(dk, why);
-    if (players) { keepFew(detailCache, 1); detailCache.set(dk, players); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
+    if (players?.length) { keepFew(detailCache, 1); detailCache.set(dk, players); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
     if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
   }
 
-  function drawLite(ds, idx, players, note, paused = false) {
+  function drawLite(ds, idx, players, note, paused = false, opt = {}) {
     fieldPlayers = players;
     const notes = [pendingNote, note]; pendingNote = "";
     status.textContent = notes.filter(Boolean).join(" ");
@@ -312,7 +323,7 @@ export async function render(main, { flash, routeId }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts() });
+    dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts(), ...(opt.noRanks ? { rankings: false } : {}) });
     // (never published from here: this field is the summary itself)
     if (player && (!me || me.summaryOnly)) pickerRef?.select?.(player.key); // fetch the picked player's full rows
   }
@@ -486,7 +497,7 @@ export async function render(main, { flash, routeId }) {
             rowsCache.set(`${cur.id}|${p.key}`, { label: p.label, rows });
             const one = { key: p.key, label: displayLabels.get(p.key) || p.label, rounds };
             fieldPlayers = [...fieldPlayers.filter((q) => q.key !== p.key), one];
-            for (const [k, list] of preparedCache) preparedCache.set(k, [...list.filter((q) => q.key !== p.key), one]);
+            for (const [k, list] of preparedCache) if (list.length) preparedCache.set(k, [...list.filter((q) => q.key !== p.key), one]);
             status.textContent = "";
             if (dash) dash.update({ field: fieldPlayers, me: one }); else refresh();
           }).catch((err) => {

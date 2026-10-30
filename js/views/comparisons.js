@@ -2082,7 +2082,8 @@ export async function render(main) {
       rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, "Chance of a top 10 / top 50 season"), el("td", {}, ""), ...f.years.map((y) => el("td", { class: "num small" }, `${pct(y.top10)} / ${pct(y.top50)}`))]));
     });
     const e1 = m.err[0];
-    const acc = e1 ? `${m.outOfSample ? "Checked on seasons it hadn’t seen" : "Checked on past seasons"}: one season ahead, it was off by about ${e1.mae.toFixed(2)} a round on average (${e1.n} player-seasons).` : "";
+    // (update 406) on players with a real season to check (20+ rounds), against the two simple guesses on the same seasons
+    const acc = e1 ? `${m.outOfSample ? "Checked on seasons it hadn\u2019t seen" : "Checked on past seasons"}: one season ahead, off by about ${e1.mae.toFixed(2)} a round on average (${e1.n} seasons of 20+ rounds)${e1.bt ? `; their latest season alone was off by ${e1.bt.last.toFixed(2)}, the tour average by ${e1.bt.avg.toFixed(2)}` : ""}.` : "";
     const ageNote = !m.ageOk ? "No birth dates in the data yet (add a birth_date column), so age isn’t taken into account." : `Age from ${m.agePlayers} players’ birth dates.`;
     // (update 397) what it learned from the data, in plain words
     const pr = m.params, pctS = (v) => `${Math.round(v * 100)}%`;
@@ -2094,7 +2095,7 @@ export async function render(main) {
         el("li", {}, `How much of next season’s forecast still holds two and three seasons ahead: ${pctS(pr.H[1])} and ${pctS(pr.H[2])}.`),
         el("li", {}, m.ageOk ? `Age (from ${pr.age.players} players’ birth dates, ${pr.age.pairs} season-to-season changes): a typical change in a season of ${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")}. Nearby ages pooled within about ${pr.age.bandwidth.toFixed(1)} years.` : "Age: no birth dates in the data yet, so it isn’t learned or used."),
         pr.tours.length ? el("li", {}, `Other tours, moved onto ${m.target}: ${pr.tours.map((t) => `${t.tour} ${f2(t.offset)} a round`).join(", ")} (from players on both in the same season).`) : null,
-        el("li", {}, `${pr.outOfSample ? "On seasons it hadn’t seen (each forecast only from the seasons before it)" : "On the seasons it learned from (too few seasons yet to hold some back)"}, it was off by about ${pr.spread.map((x, i) => (x.n ? `${x.mae.toFixed(2)} ${i ? `${i + 1} seasons ahead` : "one season ahead"}` : "")).filter(Boolean).join(", ")} a round on average.`),
+        el("li", {}, `${pr.outOfSample ? "On seasons it hadn\u2019t seen (each forecast only from the seasons before it)" : "On the seasons it learned from (too few seasons yet to hold some back)"}, for players with 20+ rounds, it was off by about ${pr.spread.map((x, i) => (x.n ? `${x.mae.toFixed(2)} ${i ? `${i + 1} seasons ahead` : "one season ahead"}${x.bt ? ` (latest season alone ${x.bt.last.toFixed(2)}, tour average ${x.bt.avg.toFixed(2)})` : ""}` : "")).filter(Boolean).join("; ")} a round on average. Lower is better.`),
       ])]);
     // (update 402) the full report: individual profiles and comparisons, 5 pages or fewer
     const exp = el("button", { type: "button", class: "btn small" }, "⭳ Export report");
@@ -2117,7 +2118,7 @@ export async function render(main) {
     });
     return wrap([
       el("div", { class: "fc-foot fc-top" }, [exp, el("span", { class: "muted small" }, "A report of 5 pages or fewer: each player, side by side, and the projection")]),
-      el("p", { class: "muted small" }, `Strokes gained a round on ${m.target || "the tour"} (against the tour average), with the likely range and the rank it would mean. Tap a player for each part of the game and their chances.`),
+      el("p", { class: "muted small" }, `Strokes gained a round on ${m.target || "the tour"}, on the same scale as the Stats page, with the likely range and the rank it would mean. Tap a player for each part of the game and their chances.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table fc-t" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, String(m.lastYear) === String(new Date().getFullYear()) ? `${m.lastYear} so far` : String(m.lastYear)), ...yrs.map((y) => el("th", { class: "num" }, y))])),
         el("tbody", {}, rows)])),
@@ -2134,7 +2135,7 @@ export async function render(main) {
     const rowsH = order.map((f, i) => `<tr><td><b>${i + 1}. ${esc(f.name)}</b>${f.age != null ? ` (${Math.floor(f.age)})` : ""}</td><td>${f.now ? `${f2(f.now.total)} <small>${f.now.n} rds</small>` : "&mdash;"}</td>${f.years.map((y) => `<td><b>${f2(y.total)}</b><br><small>${f2(y.lo)} to ${f2(y.hi)} &middot; ~${ordinal(y.rank)}</small></td>`).join("")}</tr>`).join("");
     const catH = order.map((f) => `<h3>${esc(f.name)}</h3><table><tr><th></th><th>${o.last}</th>${o.years.map((y) => `<th>${y}</th>`).join("")}</tr>${["OTT", "APP", "ARG", "PUTT"].map((c) => `<tr><td>${({ OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" })[c]}</td><td>${f.now ? f2(f.now.cats[c]) : "&mdash;"}</td>${f.years.map((y) => `<td>${f2(y.cats[c])}</td>`).join("")}</tr>`).join("")}</table>`).join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Outlook ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</title><style>body{font:14px/1.45 -apple-system,Segoe UI,Inter,sans-serif;color:#111;max-width:820px;margin:28px auto;padding:0 18px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:22px 0 8px}h3{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%;margin:6px 0 10px}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left}small{color:#666}.muted{color:#666;font-size:12px}@media print{body{margin:0}}</style></head><body>
-<h1>Outlook: ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</h1><p class="muted">Strokes gained a round on ${esc(o.tour || "the tour")}, against the tour average. Tour Analytics forecast, ${new Date().toLocaleDateString()}.</p>
+<h1>Outlook: ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</h1><p class="muted">Strokes gained a round on ${esc(o.tour || "the tour")}, on the same scale as the Stats page. Tour Analytics forecast, ${new Date().toLocaleDateString()}.</p>
 <table><tr><th></th><th>${esc(o.last)} so far</th>${o.years.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${rowsH}</table>
 <h2>The take</h2>${story.map((t) => `<p>${esc(t)}</p>`).join("")}
 <h2>By part of the game</h2>${catH}

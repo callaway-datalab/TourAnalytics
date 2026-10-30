@@ -6,7 +6,7 @@
 import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds, gearList, gearLabel, gearInfo } from "./sg.js";
 
 export const SG_KEYS = [["TOTAL", "SG: Total", "Total"], ["OTT", "Off-the-Tee", "OTT"], ["APP", "Approach", "APP"], ["ARG", "Around-the-Green", "ARG"], ["PUTT", "Putting", "PUTT"]];
-const CAT_SHORT = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
+const CAT_SHORT = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" }; // (update 406: the site's names)
 const sum = (a) => a.reduce((t, x) => t + x, 0);
 const mean = (a) => (a.length ? sum(a) / a.length : null);
 const sd = (a) => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(sum(a.map((x) => (x - m) ** 2)) / (a.length - 1)); };
@@ -53,7 +53,10 @@ export const PERIODS = [["season", "Season"], ["l3", "Last 3 months"], ["l6", "L
 
 /** (update 172) The stats that can be split by distance on the Watchlist. */
 export const RANGE_STATS = ["hitGreen", "pinHigh", "onLine", "prox", "ud", "make", "fwy", "gir", "drive", "ballSpeed", "goodLag"]; // (update 214: + Good Lag %) // (update 187: + Hit Fairway %, GIR %, Driving Distance)
-const ONE_CAT = { ud: "ARG", make: "PUTT", fwy: "OTT", drive: "OTT", goodLag: "PUTT" }; // (their distances need no category in the label)
+const ONE_CAT = { ud: "ARG", make: "PUTT", fwy: "OTT", drive: "OTT", ballSpeed: "OTT", goodLag: "PUTT" }; // (their distances need no category in the label)
+/** (update 406) A stat that belongs to one part of the game, picked as "that stat in that part" (Ball Speed · Off-the-Tee):
+    the whole stat, ranked against everyone from the shared summary. */
+export const normMetricId = (id) => { if (!String(id).startsWith("stat:")) return id; const { k, cat, dist } = parseStatId(id); return cat && !dist && ONE_CAT[k] === cat ? `stat:${k}` : id; };
 /** A stat metric id: "stat:<key>" (all distances) or "stat:<key>@<cat>|<distance>". */
 export const parseStatId = (id) => { const body = id.slice(5), at = body.indexOf("@"); if (at < 0) return { k: body, cat: null, dist: null }; const [cat, ...d] = body.slice(at + 1).split("|"); return { k: body.slice(0, at), cat, dist: d.join("|") }; };
 const rangeLabel = (k, cat, dist) => `${ONE_CAT[k] === cat ? "" : `${CAT_SHORT[cat] || cat} `}${dist}`;
