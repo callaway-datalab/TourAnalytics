@@ -411,6 +411,7 @@ export function forecastPlayer(model, key) {
     puttLed: !!lastS && lastS.total > swing && lastS.cats.PUTT > lastS.total / 2,
     puttAboveUsual: careerPutt != null && lastS ? lastS.cats.PUTT - careerPutt : null,
     vsUsual: careerTot != null && lastS ? lastS.total - careerTot : null,
+    lastYear: lastS?.year ?? null, lastTot: lastS?.total ?? null, usualTot: careerTot, usualFrom: prev[0]?.year ?? null, usualTo: prev.at(-1)?.year ?? null, lastPutt: lastS?.cats.PUTT ?? null,
     swing, ballStriking: lastS ? lastS.cats.OTT + lastS.cats.APP : null,
     fewRounds: (lastS?.n || 0) < model.typicalN / 2, noBirth: !birth,
   };
