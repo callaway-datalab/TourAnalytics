@@ -408,7 +408,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
       ${ins.best ? `<p><b>${lastOf(f.key).v[ins.best] > 0.005 ? "Build on" : "Least costly"}:</b> ${CATN[ins.best]} (${f2(lastOf(f.key).v[ins.best])}).</p>` : ""}${risk.length ? `<p><b>Risks:</b> ${esc(risk.join("; "))}.</p>` : ""}</div>`;
   }).join("");
   const method = `<ul class="meth">
-    <li><b>Seasons blended:</b> latest ${Math.round((pr.weights[0] / wsum) * 100)}%, the one before ${Math.round((pr.weights[1] / wsum) * 100)}%, the one before that ${Math.round((pr.weights[2] / wsum) * 100)}% (for the same rounds).</li>
+    <li><b>Seasons blended:</b> latest ${Math.round((pr.weights[0] / wsum) * 100)}%, the one before ${Math.round((pr.weights[1] / wsum) * 100)}%, the one before that ${Math.round((pr.weights[2] / wsum) * 100)}% (for the same rounds).${(() => { const ck = pr.checks, morePct = (x) => (ck && ck.learned > 0 ? Math.round(((x * x) / (ck.learned * ck.learned) - 1) * 100) : null); return ck ? ` The latest season alone would miss by ${morePct(ck.latest)}% more.` : ""; })()}</li>
     <li><b>Pulled back to the tour average</b> by how much each part carries into the next season here: ${CATS.map((c) => `${CATS_SHORT[c]} ${Math.round(pr.carry[c] * 100)}%`).join(", ")} of a full season.</li>
     <li><b>Two and three seasons out,</b> ${Math.round(pr.H[1] * 100)}% and ${Math.round(pr.H[2] * 100)}% of next season’s edge still holds.</li>
     <li><b>Age:</b> ${model.ageOk ? `${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")} a season (from ${pr.age.players} players’ birth dates).` : "no birth dates in the data, so not used."}</li>

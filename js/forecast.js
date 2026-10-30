@@ -174,9 +174,13 @@ function learnModel(field, { tour = null } = {}) {
     for (let k = 0; k < pk.N; k++) { let t = 0; for (let j = 0; j < 3; j++) { const v = W[j] * pk.n[j][k]; t += v; for (const c of CATS) dev[c][k] += v * pk.d[c][j][k]; } wn[k] = t; }
     return { wn, dev };
   };
-  const errK = (pk, bl, c, k) => { let e = 0, w = 0; const y = pk.y[c], dv = bl.dev[c], wn = bl.wn, ww = pk.w; for (let i = 0; i < pk.N; i++) { if (wn[i] <= 0) continue; const r = y[i] - dv[i] / (wn[i] + k); e += ww[i] * r * r; w += ww[i]; } return w ? e / w : Infinity; };
+  // (update 409) every case counts whatever the weights: a case the weights leave nothing for (only older seasons
+  // behind it, and those weighted 0) is forecast at the tour average, not dropped. Dropping it let "the latest season
+  // only" look best by quietly leaving out the hard cases (players coming back from a missed or partial season).
+  const errK = (pk, bl, c, k) => { let e = 0, w = 0; const y = pk.y[c], dv = bl.dev[c], wn = bl.wn, ww = pk.w; for (let i = 0; i < pk.N; i++) { const r = wn[i] > 0 ? y[i] - dv[i] / (wn[i] + k) : y[i]; e += ww[i] * r * r; w += ww[i]; } return w ? e / w : Infinity; };
   // (2) the season weights and the pull-back for each part of the game, learned together on one-season-ahead cases
   // (the tour offsets use the pull-back, so they're refined with it: two passes)
+  let checks = null;
   const fitCore = (maxY = null) => {
     let K = { OTT: 100, APP: 100, ARG: 100, PUTT: 100 }, W = [1, 0.5, 0.25], built = build(K);
     for (let pass = 0; pass < 2; pass++) {
@@ -188,6 +192,7 @@ function learnModel(field, { tour = null } = {}) {
       let w2 = W[1], w3 = W[2];
       for (let r = 0; r < 1; r++) { w2 = bestOn((w) => total([1, w, w3]), 0, 1.5, { steps: 12 }).x; w3 = bestOn((w) => total([1, w2, w]), 0, 1.5, { steps: 12 }).x; }
       W = [1, w2, w3];
+      if (pass === 1 && maxY === null) checks = { latest: total([1, 0, 0]), three: total([1, 0.8, 0.6]), learned: total(W), n: pk.N }; // (update 409: shown in "what it learned")
       const bl = blendPack(pk, W);
       K = Object.fromEntries(CATS.map((c) => [c, bestOn((k) => errK(pk, bl, c, k), 0.5, 20000, { log: true }).x]));
     }
@@ -351,7 +356,7 @@ function learnModel(field, { tour = null } = {}) {
     carry: Object.fromEntries(CATS.map((c) => [c, (typicalN) / (typicalN + P.K[c])])), // (how much of a full season's number carries over)
     age: { pairs: P.age.pts, players: P.age.players, bandwidth: P.age.bw, hold: P.age.s, at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + P.age.curve(a)[c], 0)])) },
     tours: [...pairs].map(([t, a]) => ({ tour: t, rounds: Math.round(a.w), offset: CATS.reduce((s0, c) => s0 + (P.built.tourAdj.get(t)?.[c] || 0), 0) })),
-    typicalN, outOfSample, spread,
+    typicalN, outOfSample, spread, checks: checks && { ...checks, latest: Math.sqrt(checks.latest / 4), three: Math.sqrt(checks.three / 4), learned: Math.sqrt(checks.learned / 4) },
   };
   return {
     target, years, lastYear, params, K: P.K, ageOk: P.age.pts >= 2 && P.age.bw != null, agePlayers: P.age.players || 0,
