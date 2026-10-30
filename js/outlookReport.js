@@ -304,8 +304,10 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     let ageLine = "";
     if (f.age != null && model.ageOk) {
       const per = model.ageAt?.[f.key] ?? 0;
-      ageLine = ` At ${Math.floor(f.age)}, players in this data typically ${Math.abs(per) < 0.02 ? "hold steady" : per > 0 ? `gain about ${abs2(per)} a round a season` : `lose about ${abs2(per)} a round a season`}.`;
+      const sc = model.params?.age?.scale;
+      ageLine = ` At ${Math.floor(f.age)}, the projection ${Math.abs(per) < 0.02 ? "holds them steady for age" : per > 0 ? `adds about ${abs2(per)} a round a season for age` : `takes off about ${abs2(per)} a round a season for age`}${sc != null && sc < 1 ? ` (the age effect at ${Math.round(sc * 100)}% strength, what best predicted past seasons)` : ""}.`;
     } else if (f.age == null) ageLine = " No birth date in the data, so age isn’t taken into account.";
+    else if (model.params?.age?.tried) ageLine = ` At ${Math.floor(f.age)}. Age is left out of the projection: it predicted past seasons better without it.`;
     out.lines.speed = sp.trim(); out.lines.age = ageLine.trim(); // (update 419: two boxes)
     // distances
     const own = ownRounds ? ownRounds(f.key) : null;
@@ -454,7 +456,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     <div class="cols c55"><div><h3>Projected strokes gained a round <small>against an average ${esc(target)} field · likely range · rank it would mean</small></h3>
         <table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}<th>Projected avg</th></tr>${projRows}</table></div>
       <div><h3>Best and worst projected ranks <small>top and bottom of the likely range · out of ~${order[0].years[0].of} ranked a season</small></h3><table class="bw"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b>${ordinal(y.rankHi)}</b> to <b>${ordinal(y.rankLo)}</b></td>`).join("")}</tr>`).join("")}</table>
-        ${oddsLines.length ? `<ul class="pts">${oddsLines.map((t) => `<li>${t}</li>`).join("")}</ul>` : ""}</div></div>
+        ${oddsLines.length ? `<ul class="pts">${oddsLines.slice(0, 3).map((t) => `<li>${t}</li>`).join("")}</ul>` : ""}</div></div>
     <div class="cols c3">${yrs.map((_, h) => topTable(h)).join("")}</div></section>`);
 
   // 3+ · a page for each player: their card and projection, then their numbers
@@ -514,7 +516,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   svg text.ax{font-size:10px;fill:#6b7480}svg line.grid{stroke:#eceff2}svg line.zero{stroke:#9aa3ad;stroke-dasharray:3 3}
   .brandbar{display:flex;align-items:center;gap:10px;background:#111418;color:#fff;border-radius:6px;padding:5px 12px;margin:0 0 8px}.brandbar img{height:22px;width:auto}.brandbar span{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase}.brandbar em{margin-left:auto;font-style:normal;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#b9c0c8}
   .agebig{font-size:20px;font-weight:500;color:#4a535e;text-transform:none;letter-spacing:0;margin-left:8px}
-  .side h3{font-size:13.5px;margin:14px 0 6px}.side td,.side th{padding:7px 8px;font-size:13px}.side th{font-size:11px}.side small{font-size:10.5px}.side table.seas td,.side table.seas th{font-size:12.5px;padding:7px 5px}.side table.seas small{font-size:10px}.side table.topn td,.side table.topn th{font-size:13.5px;padding:7px 8px}.side ul.pts li{font-size:12.5px}.side.many h3{margin:8px 0 4px;font-size:12.5px}.side.many td,.side.many th{padding:4px 6px;font-size:12px}.side.many table.seas td,.side.many table.seas th{padding:4px 4px;font-size:11.5px}.side.many table.topn td,.side.many table.topn th{padding:4px 6px;font-size:12px}.side.many ul.pts li{font-size:11.5px;margin:2px 0}.side .cols{gap:22px;margin-bottom:4px}
+  .side h3{font-size:13.5px;margin:10px 0 5px}.side td,.side th{padding:6px 8px;font-size:13px}.side th{font-size:11px}.side small{font-size:10.5px}.side table.seas td,.side table.seas th{font-size:12.5px;padding:7px 5px}.side table.seas small{font-size:10px}.side table.topn td,.side table.topn th{font-size:13.5px;padding:7px 8px}.side ul.pts li{font-size:12.5px}.side.many h3{margin:8px 0 4px;font-size:12.5px}.side.many td,.side.many th{padding:4px 6px;font-size:12px}.side.many table.seas td,.side.many table.seas th{padding:4px 4px;font-size:11.5px}.side.many table.topn td,.side.many table.topn th{padding:4px 6px;font-size:12px}.side.many ul.pts li{font-size:11.5px;margin:2px 0}.side .cols{gap:22px;margin-bottom:4px}
   table.seas td,table.seas th{white-space:nowrap;padding:4px 4px;font-size:11.5px}table.seas small{font-size:9px}
   h1,h2,h3{text-transform:uppercase;letter-spacing:.04em}h1 small,h2 small,h3 small{text-transform:none;letter-spacing:0}h3{font-size:12px}
   .c3{grid-template-columns:1fr 1fr 1fr}.c40{grid-template-columns:0.85fr 1.15fr;align-items:start}
@@ -525,7 +527,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   .card.band{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.2fr;gap:18px;align-items:start;padding:10px 14px}.card.band .lab{margin-top:2px}.boxes.b2{grid-template-columns:1fr 1fr;align-content:start;margin-top:6px}.c64{grid-template-columns:1.35fr 1fr}.player table.proj td{white-space:nowrap}.player table.proj td:first-child{white-space:normal}.side td:last-child{white-space:nowrap}.box.p .bt{color:#d0861c}.boxes.b2 .box.wide{grid-column:1/-1}.runkey{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:3px;margin-right:2px}.card .sr2{margin-top:8px}.card.big1 ul.sr li{font-size:12px}
   .tks li{font-size:12px;line-height:1.28;margin:2px 0}.take ul.sr li{font-size:11px;line-height:1.25}.take .lab{margin:2px 0 0}.take{padding:6px 9px}h3.vh{margin-top:6px}
   .labq{text-transform:none;letter-spacing:0;font-weight:400;color:#6b7480;margin-left:3px}
-  .side .cols{gap:40px}.side .cols.c3{gap:56px}.side td:first-child{white-space:nowrap}.side td small{white-space:nowrap}.side table{margin-bottom:10px}.side td,.side th{padding:7px 5px}.side h3.ctr{text-align:center}.side table.topn td:not(:first-child),.side table.topn th:not(:first-child){text-align:center}
+  .side .cols{gap:40px}.side .cols.c3{gap:56px}.side td:first-child{white-space:nowrap}.side td small{white-space:nowrap}.side table{margin-bottom:10px}.side td,.side th{padding:6px 5px}.side h3.ctr{text-align:center}.side table.topn td:not(:first-child),.side table.topn th:not(:first-child){text-align:center}
   .bar{position:sticky;top:0;background:#1b1f24;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:12px;z-index:2}.bar button{font:inherit;padding:5px 12px;border-radius:6px;border:0;background:#fff;color:#1b1f24;font-weight:600;cursor:pointer}@media print{.bar{display:none}}`;
   const title = `${fcs.map((f) => lastName(f.name)).join(", ")} · Outlook ${yrs[0]}–${yrs.at(-1)}`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${css}</style></head><body>
