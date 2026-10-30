@@ -1,62 +1,44 @@
 /*
- * The forecaster (update 396; update 397: every setting learned from the data). Next season's strokes gained for a
- * player, and the two after, from the data on this site alone. A "Marcel"-style projection: a weighted blend of recent
- * seasons, pulled back toward the tour average, plus an age change. Nothing in it is a number picked by hand: each
- * setting is the value that best forecast the past seasons in this data.
+ * The forecaster (update 410: rebuilt). Next season's strokes gained for a player, and the two after, from the data on
+ * this site alone. Every number in it is learned from the data; nothing is picked by hand.
  *
- *   Learned here (from every player's seasons):
- *     tour offsets      how much harder or easier each other tour is (players on both tours in one season)
- *     season weights    how much the season before last, and the one before that, count against the latest
- *     pull-back (k)     per part of the game: how many "average rounds" are mixed in (how much carries over)
- *     horizon factors   how much of next season's forecast still holds two and three seasons ahead
- *     age curve         the change from one season to the next at each age, and how widely nearby ages are pooled
- *                       and how strongly a thinly measured age is held toward no change (both by cross-validation)
- *     ranges            how far off the forecast was on seasons it hadn't seen (rolling: each season forecast only
- *                       from the seasons before it), and how that shrinks with more rounds
- *   Chances (top 10 / top 50): simulated, every player's season drawn from their own forecast and range.
+ *   1. Field strength. Strokes gained is against the field each week, so +1 in a weak field isn't +1 in a strong one.
+ *      Each event's strength (per part of the game) is the average level of the players in it, worked out back and
+ *      forth with the players' levels until they settle. Every round is then credited for its field, which also puts
+ *      every tour on one scale (a Korn Ferry field is simply a weaker field). 0 = an average field on the tour picked.
+ *   2. A Kalman filter per player and part of the game, event by event. A player's true level drifts over time and is
+ *      only seen through noisy rounds; after each event the estimate moves toward what was seen, by as much as that
+ *      event deserves (more rounds, and a part of the game that's less noisy, move it more). Between events it drifts
+ *      back toward the average a little, the longer the gap the more. Its four settings per part of the game (how noisy
+ *      a round is, how far apart players' levels are, how fast a level drifts back, and where back is) are the ones
+ *      that make the data most likely (maximum likelihood).
+ *   3. Age. How players' levels change with age, per part of the game, read from where the filter kept being
+ *      surprised in the same direction at the same age; pooled over nearby ages by as much as cross-validation says.
+ *   4. Ranges. The spread of a season's result (the player's level is uncertain, and a season is a limited number of
+ *      rounds), scaled so that 8 in 10 past seasons it hadn't seen landed inside.
+ *   5. Checked: each season from the fourth on forecast from a model learned only on the seasons before it, against
+ *      two simple guesses on the same seasons (the latest season as it was, and the tour average).
  *
- *   forecastModel(field, { tour })  → model
- *   forecastPlayer(model, key)      → { name, age, years: [{ year, total, cats, lo, hi, rank, of, top10, top50 }], flags }
+ *   forecastInput(field)            → the compact form the worker learns from
+ *   forecastModel(field | input, { tour })  → model
+ *   forecastPlayer(model, key)      → { name, age, now, hist, years: [{ year, total, cats, lo, hi, rank, of, top10, top50 }], flags }
  *   forecastStory(model, fcs)       → paragraphs
  */
 const CATS = ["OTT", "APP", "ARG", "PUTT"];
+const NC = 4;
 const sq = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const minRoundsOf = (most) => Math.max(1, Math.floor((Math.max(0, Number(most) || 0) * 0.33) / 5) * 5); // (the site's rankings rule)
-
-const ageAt = (birth, year) => {
-  if (!birth) return null;
-  const b = new Date(`${birth}T12:00:00Z`);
-  if (isNaN(b)) return null;
-  return (Date.UTC(Number(year), 6, 1) - b.getTime()) / (365.25 * 864e5); // (at the middle of the season)
-};
-// a seeded random number, so the same data always gives the same chances
+/** A date as a year with a fraction ("2026-07-01" → about 2026.5). */
+const tOf = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); if (!m) return NaN; return +m[1] + (Date.UTC(+m[1], m[2] - 1, +m[3]) - Date.UTC(+m[1], 0, 1)) / (365.25 * 864e5); };
+const ageAt = (birth, year) => { const b = tOf(birth); return Number.isFinite(b) ? Number(year) + 0.5 - b : null; }; // (at the middle of the season)
 const rng = (seed) => () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const gauss = (r) => { let u = 0, v = 0; while (!u) u = r(); while (!v) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
-
-function seasonsOf(field) {
-  const out = new Map();
-  for (const p of field) {
-    const m = new Map();
-    for (const rd of p.rounds || []) {
-      if (!rd.shots?.length || rd.eventLevel) continue;
-      const y = String(rd.year || String(rd.date || "").slice(0, 4));
-      if (!/^\d{4}$/.test(y)) continue;
-      const t = rd.tour || "";
-      const s = m.get(`${y}|${t}`) || m.set(`${y}|${t}`, { y, t, n: 0, sum: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 } }).get(`${y}|${t}`);
-      s.n++;
-      for (const x of rd.shots) if (s.sum[x.cat] != null) s.sum[x.cat] += x.sg || 0;
-    }
-    out.set(p.key, [...m.values()]);
-  }
-  return out;
-}
-// a search for the best value on a scale (golden section, on a log scale for k): f(x) → error
-function bestOn(f, lo, hi, { log = false, steps = 40 } = {}) {
+// the best value on a scale (a coarse scan, then a golden-section search around the best), optionally on a log scale
+function bestOn(f, lo, hi, { log = false, steps = 30, scan = 12 } = {}) {
   const T = (x) => (log ? Math.exp(x) : x), a0 = log ? Math.log(lo) : lo, b0 = log ? Math.log(hi) : hi;
-  // a coarse scan first (the error can have more than one dip), then a fine search around the best
-  let best = a0, be = Infinity; const N = 16;
-  for (let i = 0; i <= N; i++) { const x = a0 + ((b0 - a0) * i) / N, e = f(T(x)); if (e < be) { be = e; best = x; } }
-  let a = Math.max(a0, best - (b0 - a0) / N), b = Math.min(b0, best + (b0 - a0) / N);
+  let best = a0, be = Infinity;
+  for (let i = 0; i <= scan; i++) { const x = a0 + ((b0 - a0) * i) / scan, e = f(T(x)); if (e < be) { be = e; best = x; } }
+  let a = Math.max(a0, best - (b0 - a0) / scan), b = Math.min(b0, best + (b0 - a0) / scan);
   const g = (Math.sqrt(5) - 1) / 2;
   let c = b - g * (b - a), d = a + g * (b - a), fc = f(T(c)), fd = f(T(d));
   for (let i = 0; i < steps; i++) { if (fc < fd) { b = d; d = c; fd = fc; c = b - g * (b - a); fc = f(T(c)); } else { a = c; c = d; fc = fd; d = a + g * (b - a); fd = f(T(d)); } }
@@ -64,348 +46,360 @@ function bestOn(f, lo, hi, { log = false, steps = 40 } = {}) {
   return e <= be ? { x: T(x), e } : { x: T(best), e: be };
 }
 
-// (learning it takes a few seconds on a full field: kept for the field and tour, so Compare and Cal share it)
+/** The field in the compact form the model learns from (small enough to hand to a worker): one entry per round. */
+export function forecastInput(field) {
+  if (field?.kind === "rounds") return field;
+  const yearsM = new Map(), toursM = new Map(), eventsM = new Map();
+  const id = (m, k) => { let i = m.get(k); if (i === undefined) { i = m.size; m.set(k, i); } return i; };
+  let N = 0;
+  for (const p of field) for (const rd of p.rounds || []) if (rd.shots?.length && !rd.eventLevel) N++;
+  const T = new Float64Array(N), V = new Float32Array(N * NC), M = new Uint8Array(N), Y = new Int16Array(N), TO = new Int16Array(N), E = new Int32Array(N), P = new Int32Array(N);
+  const players = [];
+  let k = 0;
+  field.forEach((p) => {
+    const a = k;
+    const rs = [];
+    for (const rd of p.rounds || []) { if (!rd.shots?.length || rd.eventLevel) continue; const t = tOf(rd.date); const y = String(rd.year || String(rd.date || "").slice(0, 4)); if (Number.isFinite(t) && /^\d{4}$/.test(y)) rs.push({ rd, t, y }); }
+    rs.sort((x, z) => x.t - z.t);
+    for (const { rd, t, y } of rs) {
+      T[k] = t; Y[k] = id(yearsM, y); TO[k] = id(toursM, rd.tour || ""); E[k] = id(eventsM, `${y}|${rd.tour || ""}|${rd.event || rd.date}`); P[k] = players.length;
+      for (const x of rd.shots) { const ci = CATS.indexOf(x.cat); if (ci >= 0) { V[k * NC + ci] += x.sg || 0; M[k] |= 1 << ci; } }
+      k++;
+    }
+    players.push({ key: p.key, name: p.name || p.key, birth: p.birth || null, a, b: k });
+  });
+  return { kind: "rounds", players, n: k, T: T.slice(0, k), V: V.slice(0, k * NC), M: M.slice(0, k), Y: Y.slice(0, k), TO: TO.slice(0, k), E: E.slice(0, k), P: P.slice(0, k), years: [...yearsM.keys()], tours: [...toursM.keys()], nEvents: eventsM.size };
+}
+
+// (learning takes a few seconds on a full field: kept per field and tour, so Compare and Cal share it)
 const modelMemo = new WeakMap();
 export function forecastModel(field, { tour = null } = {}) {
   const byTour = modelMemo.get(field) || (modelMemo.set(field, new Map()), modelMemo.get(field));
-  const id = sq(tour || "");
-  if (!byTour.has(id)) byTour.set(id, learnModel(field, { tour }));
-  return byTour.get(id);
+  const k = sq(tour || "");
+  if (!byTour.has(k)) byTour.set(k, learn(forecastInput(field), { tour }));
+  return byTour.get(k);
 }
-/** (update 403) What the model learns from, small enough to hand to a worker: each player's season totals, birth date
-    and name (one pass over the field). forecastModel takes this or the field itself. */
-export function forecastInput(field) {
-  return { lines: [...seasonsOf(field)], births: field.map((p) => [p.key, p.birth || null]), names: field.map((p) => [p.key, p.name || p.key]) };
-}
-function learnModel(field, { tour = null } = {}) {
-  const inp = field.lines ? field : forecastInput(field);
-  const lines = new Map(inp.lines);
-  const tn = new Map(); for (const ls of lines.values()) for (const l of ls) tn.set(l.t, (tn.get(l.t) || 0) + l.n);
-  const target = tour ? [...tn.keys()].find((t) => sq(t) === sq(tour)) ?? [...tn.keys()].find((t) => sq(t).includes(sq(tour)) || sq(tour).includes(sq(t))) ?? tour : [...tn].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-  const yearsAll = [...new Set([...lines.values()].flatMap((ls) => ls.map((l) => l.y)))].sort();
-  // the tour average each season: the players who'd be ranked on the target tour that season (the site's rule)
-  const meanOn = new Map();
-  for (const y of yearsAll) {
-    const ls = [...lines.values()].map((a) => a.find((l) => l.y === y && l.t === target)).filter(Boolean);
-    const minR = minRoundsOf(Math.max(0, ...ls.map((l) => l.n)));
-    const q = ls.filter((l) => l.n >= minR);
-    meanOn.set(y, Object.fromEntries(CATS.map((c) => [c, q.length ? q.reduce((t, l) => t + l.sum[c] / l.n, 0) / q.length : 0])));
-  }
-  // (1) other tours: the gap for players on both in one season, weighted by the smaller number of rounds; how far to
-  // trust it is learned with the pull-back below (k for that part of the game), so a thin tour gets a small offset
-  const pairs = new Map();
-  for (const ls of lines.values()) {
-    const byY = new Map(); for (const l of ls) (byY.get(l.y) || byY.set(l.y, []).get(l.y)).push(l);
-    for (const arr of byY.values()) {
-      const main = arr.find((l) => l.t === target); if (!main) continue;
-      for (const o of arr) {
-        if (o.t === target) continue;
-        const a = pairs.get(o.t) || pairs.set(o.t, { OTT: 0, APP: 0, ARG: 0, PUTT: 0, w: 0 }).get(o.t);
-        const w = (main.n * o.n) / (main.n + o.n);
-        for (const c of CATS) a[c] += w * (main.sum[c] / main.n - o.sum[c] / o.n);
-        a.w += w;
-      }
+
+function learn(D, { tour = null } = {}) {
+  const NP = D.players.length, N = D.n;
+  // seasons in order; each round's season as its place in that order
+  const yrs = [...D.years].sort(), yRank = D.years.map((y) => yrs.indexOf(y)), NY = yrs.length;
+  const YS = new Int16Array(N); for (let i = 0; i < N; i++) YS[i] = yRank[D.Y[i]];
+  // the tour: the one asked for, else the one with most rounds
+  const tourN = new Map(); for (let i = 0; i < N; i++) tourN.set(D.TO[i], (tourN.get(D.TO[i]) || 0) + 1);
+  const tName = (i) => D.tours[i];
+  let TT = tour != null ? D.tours.findIndex((t) => sq(t) === sq(tour)) : -1;
+  if (TT < 0 && tour) TT = D.tours.findIndex((t) => sq(t).includes(sq(tour)) || sq(tour).includes(sq(t)));
+  if (TT < 0) TT = [...tourN].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+  const target = tName(TT) ?? "";
+  const birthT = D.players.map((p) => tOf(p.birth));
+
+  /* ---------------- 1. field strength (rounds up to season `cut`) ---------------- */
+  const adjust = (cut) => {
+    const NE = D.nEvents;
+    const skill = new Float64Array(NP * NY * NC), cnt = new Float64Array(NP * NY * NC);
+    const str = new Float64Array(NE * NC), scnt = new Float64Array(NE * NC);
+    const adj = new Float32Array(N * NC);
+    for (let i = 0; i < N * NC; i++) adj[i] = D.V[i];
+    for (let it = 0; it < 4; it++) {
+      skill.fill(0); cnt.fill(0);
+      for (let i = 0; i < N; i++) { if (YS[i] > cut) continue; const base = (D.P[i] * NY + YS[i]) * NC; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { skill[base + c] += adj[i * NC + c]; cnt[base + c]++; } }
+      for (let j = 0; j < skill.length; j++) if (cnt[j]) skill[j] /= cnt[j];
+      str.fill(0); scnt.fill(0);
+      for (let i = 0; i < N; i++) { if (YS[i] > cut) continue; const base = (D.P[i] * NY + YS[i]) * NC; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { str[D.E[i] * NC + c] += skill[base + c]; scnt[D.E[i] * NC + c]++; } }
+      for (let j = 0; j < str.length; j++) if (scnt[j]) str[j] /= scnt[j];
+      for (let i = 0; i < N; i++) for (let c = 0; c < NC; c++) adj[i * NC + c] = D.V[i * NC + c] + str[D.E[i] * NC + c];
     }
-  }
-  const birthOf = new Map(inp.births);
-  const nameOf = new Map(inp.names);
-  const build = (K) => {
-    const tourAdj = new Map([[target, { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }]]);
-    for (const [t, a] of pairs) if (a.w > 0) tourAdj.set(t, Object.fromEntries(CATS.map((c) => [c, a[c] / (a.w + (K?.[c] ?? 0))])));
-    const seasons = new Map();
-    for (const [key, ls] of lines) {
-      const byY = new Map();
-      for (const l of ls) {
-        const adj = tourAdj.get(l.t); if (!adj) continue;
-        const s = byY.get(l.y) || byY.set(l.y, { n: 0, sum: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 } }).get(l.y);
-        s.n += l.n; for (const c of CATS) s.sum[c] += l.sum[c] + adj[c] * l.n;
-      }
-      const m = new Map();
-      for (const [y, s] of byY) { const mu = meanOn.get(y); m.set(y, { n: s.n, d: Object.fromEntries(CATS.map((c) => [c, s.sum[c] / s.n - mu[c]])) }); }
-      seasons.set(key, m);
-    }
-    return { tourAdj, seasons };
+    // 0 = an average field on the tour picked (its events in the last two seasons in), so adjusted ≈ raw there
+    const S0 = new Float64Array(NC), w0 = new Float64Array(NC);
+    for (let i = 0; i < N; i++) { if (YS[i] > cut || YS[i] < cut - 1 || D.TO[i] !== TT) continue; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { S0[c] += str[D.E[i] * NC + c]; w0[c]++; } }
+    for (let c = 0; c < NC; c++) S0[c] = w0[c] ? S0[c] / w0[c] : 0;
+    for (let i = 0; i < N; i++) for (let c = 0; c < NC; c++) adj[i * NC + c] -= S0[c];
+    // how much field strength moves a round: the middle 80% of events on the tour picked
+    const sTot = []; const seen = new Set();
+    for (let i = 0; i < N; i++) { if (YS[i] > cut || YS[i] < cut - 1 || D.TO[i] !== TT || seen.has(D.E[i])) continue; seen.add(D.E[i]); let s = 0; for (let c = 0; c < NC; c++) s += str[D.E[i] * NC + c] - S0[c]; sTot.push(s); }
+    sTot.sort((a, b) => a - b);
+    return { adj, spread: sTot.length ? [sTot[Math.floor(sTot.length * 0.1)], sTot[Math.floor(sTot.length * 0.9)]] : [0, 0], events: seen.size };
   };
-  const years = yearsAll, lastYear = years.at(-1);
-  // the blend of the seasons up to year index i: weights W = [1, w2, w3] × rounds
-  const blendAt = (seasons, key, i, W) => {
-    const m = seasons.get(key); if (!m) return null;
-    let wn = 0, n = 0; const dev = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 };
-    for (let j = 0; j < W.length && i - j >= 0; j++) {
-      const s = m.get(years[i - j]); if (!s) continue;
-      const w = W[j] * s.n;
-      for (const c of CATS) dev[c] += w * s.d[c];
-      wn += w; n += s.n;
-    }
-    return wn > 0 ? { dev, wn, n } : null;
-  };
-  // every (player, season → a later season) the history offers, h seasons ahead, weighted by the later season's rounds
-  const casesOf = (seasons, h, W, maxY = null) => {
-    const out = [];
-    for (let i = 0; i + h < years.length; i++) {
-      if (maxY && years[i + h] > maxY) continue;
-      for (const [key, m] of seasons) {
-        const next = m.get(years[i + h]); if (!next) continue;
-        const b = blendAt(seasons, key, i, W); if (!b) continue;
-        out.push({ key, b, next, i, h, w: next.n });
+
+  /* ---------------- the events each player played (the filter's observations) ---------------- */
+  const observe = (A, cut) => {
+    const oP = [], oT = [], oN = [], oY = [];
+    const pStart = new Int32Array(NP + 1);
+    for (let p = 0; p < NP; p++) {
+      pStart[p] = oP.length;
+      const { a, b } = D.players[p];
+      let i = a;
+      while (i < b) {
+        if (YS[i] > cut) { i++; continue; }
+        const e = D.E[i]; let j = i, t = 0, n = 0; const ns = [0, 0, 0, 0], ys = [0, 0, 0, 0];
+        while (j < b && D.E[j] === e) { if (YS[j] <= cut) { t += D.T[j]; n++; for (let c = 0; c < NC; c++) if (D.M[j] & (1 << c)) { ns[c]++; ys[c] += A[j * NC + c]; } } j++; }
+        if (n) { oP.push(p); oT.push(t / n); oN.push(...ns); oY.push(...ys.map((v, c) => (ns[c] ? v / ns[c] : 0))); }
+        i = j;
       }
     }
+    pStart[NP] = oP.length;
+    return { n: oP.length, P: Int32Array.from(oP), T: Float64Array.from(oT), Nn: Float32Array.from(oN), Yv: Float64Array.from(oY), pStart };
+  };
+
+  /* ---------------- 2. the Kalman filter ---------------- */
+  // age drift per part of the game: a curve on a grid of ages (per year of age, strokes a round)
+  const A0 = 15, AS = 0.25, AN = 200;
+  const ageIdx = (age) => Math.max(0, Math.min(AN - 1, Math.round((age - A0) / AS)));
+  // one part of the game, every player: the negative log-likelihood (and, if asked, each surprise and each end state)
+  const run = (O, c, th, drift, collect = null) => {
+    const { sig2, s2, lam, mu } = th;
+    let nll = 0;
+    for (let p = 0; p < NP; p++) {
+      const a = O.pStart[p], b = O.pStart[p + 1];
+      if (a === b) { if (collect?.ends) collect.ends[p] = null; continue; }
+      let x = mu, P = s2, tp = O.T[a];
+      const bt = birthT[p], hasAge = Number.isFinite(bt) && drift;
+      for (let k = a; k < b; k++) {
+        const n = O.Nn[k * NC + c];
+        const dt = O.T[k] - tp;
+        if (dt > 0) {
+          const f = Math.exp(-lam * dt);
+          let dr = 0;
+          if (hasAge) dr = drift[ageIdx((tp + O.T[k]) / 2 - bt)] * dt;
+          x = mu + (x - mu) * f + dr; P = P * f * f + s2 * (1 - f * f);
+          tp = O.T[k];
+        }
+        if (!n) continue;
+        const R = sig2 / n, S = P + R, v = O.Yv[k * NC + c] - x;
+        nll += 0.5 * (Math.log(S) + (v * v) / S);
+        if (collect?.inn && dt > 0 && Number.isFinite(bt)) collect.inn.push({ p, age: (O.T[k] + tp - dt) / 2 - bt, dt, v, S });
+        const K = P / S; x += K * v; P *= 1 - K;
+      }
+      if (collect?.ends) collect.ends[p] = { x, P, t: tp };
+    }
+    return nll;
+  };
+  // (a wide search from plain averages; from a fit already made (warm), a narrow one around it)
+  const fitTheta = (O, c, drift, start, sweeps = 2, warm = false) => {
+    let th = { ...start }; const o = { log: true, steps: warm ? 8 : 11, scan: warm ? 4 : 8 };
+    for (let s = 0; s < sweeps; s++) {
+      th.sig2 = bestOn((v) => run(O, c, { ...th, sig2: v }, drift), th.sig2 / (warm ? 1.5 : 3), th.sig2 * (warm ? 1.5 : 3), o).x;
+      th.s2 = bestOn((v) => run(O, c, { ...th, s2: v }, drift), Math.max(1e-5, th.s2 / (warm ? 2 : 10)), th.s2 * (warm ? 2 : 10), o).x;
+      th.lam = bestOn((v) => run(O, c, { ...th, lam: v }, drift), warm ? th.lam / 3 : 0.005, warm ? th.lam * 3 : 5, o).x;
+      th.mu = bestOn((v) => run(O, c, { ...th, mu: v }, drift), th.mu - (warm ? 0.3 : 1), th.mu + (warm ? 0.3 : 1), { ...o, log: false }).x;
+    }
+    return th;
+  };
+  const startOf = (O, c) => {
+    // starting points from plain averages: a round's spread around the player's own average, and the players' spread
+    let sw = 0, sx = 0, sxx = 0;
+    const pm = [];
+    for (let p = 0; p < NP; p++) { let t = 0, n = 0; for (let k = O.pStart[p]; k < O.pStart[p + 1]; k++) { const m = O.Nn[k * NC + c]; t += O.Yv[k * NC + c] * m; n += m; } if (n >= 10) pm.push([t / n, n]); }
+    for (let k = 0; k < O.n; k++) { const m = O.Nn[k * NC + c]; if (m) { sw += m; sx += O.Yv[k * NC + c] * m; sxx += O.Yv[k * NC + c] ** 2 * m; } }
+    const mean = sw ? sx / sw : 0, varR = sw ? Math.max(1e-4, sxx / sw - mean * mean) : 1;
+    const pmMean = pm.length ? pm.reduce((t, [v]) => t + v, 0) / pm.length : mean;
+    const varP = pm.length ? pm.reduce((t, [v]) => t + (v - pmMean) ** 2, 0) / pm.length : 0.05;
+    return { sig2: Math.max(1e-3, varR * 2), s2: Math.max(1e-3, varP), lam: 0.3, mu: pmMean };
+  };
+  // 3. age: the change in a player's level per year of age, per part of the game, learned together with the filter
+  // (maximum likelihood, like its other settings): a value at each of a few ages, straight lines between them
+  const KNOTS = [22, 27, 32, 37, 42];
+  const gridOf = (kv) => { const g = new Float64Array(AN); for (let i = 0; i < AN; i++) { const a = A0 + i * AS; if (a <= KNOTS[0]) g[i] = kv[0]; else if (a >= KNOTS.at(-1)) g[i] = kv.at(-1); else { const j = KNOTS.findIndex((k) => k > a) - 1; const u = (a - KNOTS[j]) / (KNOTS[j + 1] - KNOTS[j]); g[i] = kv[j] * (1 - u) + kv[j + 1] * u; } } return g; };
+  const ageCount = (O) => { const seen = new Set(); let pts = 0; for (let p = 0; p < NP; p++) if (Number.isFinite(birthT[p]) && O.pStart[p + 1] > O.pStart[p]) { seen.add(p); pts += O.pStart[p + 1] - O.pStart[p]; } return { players: seen.size, pts }; };
+  const fitDrift = (O, c, th, start, sweeps, width) => {
+    const kv = [...start];
+    for (let s = 0; s < sweeps; s++) for (let k = 0; k < KNOTS.length; k++) {
+      kv[k] = bestOn((v) => { const t = [...kv]; t[k] = v; return run(O, c, th, gridOf(t)); }, kv[k] - width, kv[k] + width, { steps: 8, scan: 6 }).x;
+    }
+    return kv;
+  };
+
+  // the whole fit on the seasons up to `cut`: field strength, then per part of the game the filter's settings, the
+  // age curve, then the settings again with the age curve in (warm: from a fit already made, narrower and quicker)
+  const fit = (cut, { warm = null } = {}) => {
+    const F = adjust(cut), O = observe(F.adj, cut);
+    const th = [], drift = [], knots = [];
+    const ac = ageCount(O), useAge = ac.players >= 20;
+    for (let c = 0; c < NC; c++) {
+      let t, kv = null;
+      if (warm) {
+        t = { ...warm.th[c], ends: undefined }; kv = warm.knots[c] ? [...warm.knots[c]] : null;
+        t = fitTheta(O, c, kv ? gridOf(kv) : null, t, 1, true);
+        if (kv) kv = fitDrift(O, c, t, kv, 1, 0.08);
+      } else {
+        t = fitTheta(O, c, null, startOf(O, c), 2);
+        if (useAge) { kv = fitDrift(O, c, t, [0, 0, 0, 0, 0], 2, 0.3); t = fitTheta(O, c, gridOf(kv), t, 1, true); kv = fitDrift(O, c, t, kv, 1, 0.08); }
+      }
+      const g = kv ? gridOf(kv) : null;
+      const ends = new Array(NP); run(O, c, t, g, { ends });
+      t.ends = ends; th.push(t); drift.push(g); knots.push(kv);
+    }
+    return { F, O, th, drift, knots, age: ac, useAge, cut };
+  };
+
+  /* ---------------- seasons as they were (raw for show, adjusted for checks) ---------------- */
+  const seasonStats = (A, cut, onlyTarget) => {
+    // per player per season: rounds and the average per part of the game
+    const sums = new Map();
+    for (let i = 0; i < N; i++) {
+      if (YS[i] > cut || (onlyTarget && D.TO[i] !== TT)) continue;
+      const key = D.P[i] * NY + YS[i];
+      let s = sums.get(key); if (!s) { s = { n: 0, t: [0, 0, 0, 0], m: [0, 0, 0, 0] }; sums.set(key, s); }
+      s.n++; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { s.t[c] += A[i * NC + c]; s.m[c]++; }
+    }
+    const out = new Map();
+    for (const [key, s] of sums) out.set(key, { n: s.n, cats: s.t.map((v, c) => (s.m[c] ? v / s.m[c] : 0)) });
     return out;
   };
-  // flat arrays for one-season-ahead cases: rounds and values of the three seasons behind each, and the result
-  const packOf = (seasons, h, maxY = null) => {
-    const rows = [];
-    for (let i = 0; i + h < years.length; i++) {
-      if (maxY && years[i + h] > maxY) continue;
-      for (const [, m] of seasons) {
-        const next = m.get(years[i + h]); if (!next) continue;
-        const back = [0, 1, 2].map((j) => (i - j >= 0 ? m.get(years[i - j]) : null));
-        if (!back.some(Boolean)) continue;
-        rows.push({ next, back });
-      }
+
+  /* ---------------- the full model ---------------- */
+  const last = NY - 1, lastYear = yrs[last];
+  const M = fit(last);
+  const rawT = seasonStats(D.V, last, true), adjT = seasonStats(M.F.adj, last, true);
+  // a round's total spread around the player's own season average (for the luck in a season of n rounds)
+  const sig2Tot = (() => { let e = 0, w = 0; const mean = new Map(); for (const [k, s] of adjT) mean.set(k, s.cats.reduce((a, b) => a + b, 0));
+    for (let i = 0; i < N; i++) { if (D.TO[i] !== TT || D.M[i] !== 15) continue; const k = D.P[i] * NY + YS[i], s = adjT.get(k); if (!s || s.n < 10) continue; let t = 0; for (let c = 0; c < NC; c++) t += M.F.adj[i * NC + c]; e += (t - mean.get(k)) ** 2 * (s.n / (s.n - 1)); w++; }
+    return w ? e / w : 8; })();
+  // the rankings rule on the tour picked, each season: who'd be ranked, and their average (for the story's flags)
+  const rankedIn = (y, S) => { const list = [...S].filter(([k]) => k % NY === y).map(([k, s]) => [Math.floor(k / NY), s]); const minR = minRoundsOf(Math.max(0, ...list.map(([, s]) => s.n))); return list.filter(([, s]) => s.n >= minR); };
+  const typicalN = (() => { const ns = rankedIn(last, rawT).map(([, s]) => s.n).sort((a, b) => a - b); return ns.length ? ns[Math.floor(ns.length * 0.5)] : 60; })();
+
+  // a player's projection h seasons on (from where the filter left them): per part of the game, the mean and the
+  // uncertainty of their level, and how much of the change is age
+  const projectWith = (Mx, p, Y) => {
+    const tY = Number(Y) + 0.5, bt = birthT[p];
+    const cats = {}, vlev = { s: 0 }; let ageAdd = 0, any = false;
+    for (let c = 0; c < NC; c++) {
+      const e = Mx.th[c].ends[p]; if (!e) return null;
+      any = true;
+      const { s2, lam, mu } = Mx.th[c], g = Mx.drift[c];
+      // stepped a quarter-season at a time so the age curve follows the player's age
+      let x = e.x, P = e.P, t = e.t, a = 0;
+      while (t < tY - 1e-9) { const dt = Math.min(0.25, tY - t), f = Math.exp(-lam * dt); const dr = g && Number.isFinite(bt) ? g[ageIdx(t + dt / 2 - bt)] * dt : 0; x = mu + (x - mu) * f + dr; a = a * f + dr; P = P * f * f + s2 * (1 - f * f); t += dt; }
+      cats[CATS[c]] = x; vlev.s += P; ageAdd += a;
     }
-    const N = rows.length, n = [0, 1, 2].map(() => new Float64Array(N)), d = Object.fromEntries(CATS.map((c) => [c, [0, 1, 2].map(() => new Float64Array(N))])), y = Object.fromEntries(CATS.map((c) => [c, new Float64Array(N)])), w = new Float64Array(N);
-    rows.forEach((r, k) => { w[k] = r.next.n; for (const c of CATS) y[c][k] = r.next.d[c]; r.back.forEach((b, j) => { if (!b) return; n[j][k] = b.n; for (const c of CATS) d[c][j][k] = b.d[c]; }); });
-    return { N, n, d, y, w };
+    if (!any) return null;
+    return { cats, total: CATS.reduce((t, c) => t + cats[c], 0), varLevel: vlev.s, ageAdd };
   };
-  // for weights W: each case's weighted rounds (wn) and the weighted deviation per part of the game
-  const blendPack = (pk, W) => {
-    const wn = new Float64Array(pk.N), dev = Object.fromEntries(CATS.map((c) => [c, new Float64Array(pk.N)]));
-    for (let k = 0; k < pk.N; k++) { let t = 0; for (let j = 0; j < 3; j++) { const v = W[j] * pk.n[j][k]; t += v; for (const c of CATS) dev[c][k] += v * pk.d[c][j][k]; } wn[k] = t; }
-    return { wn, dev };
-  };
-  // (update 409) every case counts whatever the weights: a case the weights leave nothing for (only older seasons
-  // behind it, and those weighted 0) is forecast at the tour average, not dropped. Dropping it let "the latest season
-  // only" look best by quietly leaving out the hard cases (players coming back from a missed or partial season).
-  const errK = (pk, bl, c, k) => { let e = 0, w = 0; const y = pk.y[c], dv = bl.dev[c], wn = bl.wn, ww = pk.w; for (let i = 0; i < pk.N; i++) { const r = wn[i] > 0 ? y[i] - dv[i] / (wn[i] + k) : y[i]; e += ww[i] * r * r; w += ww[i]; } return w ? e / w : Infinity; };
-  // (2) the season weights and the pull-back for each part of the game, learned together on one-season-ahead cases
-  // (the tour offsets use the pull-back, so they're refined with it: two passes)
-  let checks = null;
-  const fitCore = (maxY = null) => {
-    let K = { OTT: 100, APP: 100, ARG: 100, PUTT: 100 }, W = [1, 0.5, 0.25], built = build(K);
-    for (let pass = 0; pass < 2; pass++) {
-      built = build(K);
-      const pk = packOf(built.seasons, 1, maxY);
-      if (!pk.N) break;
-      const total = (W2) => { const bl = blendPack(pk, W2); let e = 0; for (const c of CATS) e += bestOn((k) => errK(pk, bl, c, k), 0.5, 20000, { log: true, steps: 8 }).e; return e; };
-      // w2 then w3 (each 0 to 1.5 of the latest season's weight), each with the pull-back re-learned inside; twice round
-      let w2 = W[1], w3 = W[2];
-      for (let r = 0; r < 1; r++) { w2 = bestOn((w) => total([1, w, w3]), 0, 1.5, { steps: 12 }).x; w3 = bestOn((w) => total([1, w2, w]), 0, 1.5, { steps: 12 }).x; }
-      W = [1, w2, w3];
-      if (pass === 1 && maxY === null) checks = { latest: total([1, 0, 0]), three: total([1, 0.8, 0.6]), learned: total(W), n: pk.N }; // (update 409: shown in "what it learned")
-      const bl = blendPack(pk, W);
-      K = Object.fromEntries(CATS.map((c) => [c, bestOn((k) => errK(pk, bl, c, k), 0.5, 20000, { log: true }).x]));
-    }
-    built = build(K);
-    return { K, W, built };
-  };
-  // (3) how much of the forecast holds two and three seasons ahead: the least-squares factor on those cases
-  const fitHorizon = (core, maxY = null) => {
-    const H = [1];
-    for (const h of [2, 3]) {
-      const cs = casesOf(core.built.seasons, h, core.W, maxY);
-      let num = 0, den = 0;
-      for (const x of cs) for (const c of CATS) { const p = x.b.dev[c] / (x.b.wn + core.K[c]); num += x.w * p * x.next.d[c]; den += x.w * p * p; }
-      H.push(den > 0 ? Math.max(0, Math.min(1.5, num / den)) : H.at(-1));
-    }
-    return H;
-  };
-  // (4) age: each player's change from one season to the next (both seasons' strokes gained against the tour average),
-  // weighted by how many rounds are behind it, less the change the pull-back already expects; pooled over nearby
-  // ages (how widely: cross-validated) and held toward no change where it's thin (how strongly: cross-validated)
-  const fitAge = (core, maxY = null) => {
-    const pts = [];
-    for (const [key, m] of core.built.seasons) {
-      const birth = birthOf.get(key); if (!birth) continue;
-      for (let i = 0; i + 1 < years.length; i++) {
-        if (maxY && years[i + 1] > maxY) continue;
-        const next = m.get(years[i + 1]); if (!next) continue;
-        const b = blendAt(core.built.seasons, key, i, core.W); if (!b) continue;
-        const age = ageAt(birth, years[i]); if (age == null || age < 15 || age > 65) continue;
-        // what's left after the forecast without age: the part age explains (plus noise)
-        pts.push({ age, key, w: (next.n * b.n) / (next.n + b.n), r: Object.fromEntries(CATS.map((c) => [c, next.d[c] - b.dev[c] / (b.wn + core.K[c])])) });
-      }
-    }
-    // the points summed into quarter-year bins (weights and weighted changes), per fold, so a curve is quick to draw
-    const binsOf = (P) => { const m = new Map(); for (const x of P) { const a = Math.round(x.age * 4) / 4; const b = m.get(a) || m.set(a, { age: a, w: 0, OTT: 0, APP: 0, ARG: 0, PUTT: 0 }).get(a); b.w += x.w; for (const c of CATS) b[c] += x.w * x.r[c]; } return [...m.values()]; };
-    const curveOf = (P, bw, s, B = binsOf(P)) => (age) => {
-      const out = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }; let w = 0;
-      for (const b of B) { const k = Math.exp(-((b.age - age) ** 2) / (2 * bw * bw)); w += k * b.w; for (const c of CATS) out[c] += k * b[c]; }
-      if (!w) return out;
-      for (const c of CATS) out[c] /= w + s; // (held toward no change by s "rounds" of no change)
-      return out;
-    };
-    if (pts.length < 2) return { pts: 0, curve: () => ({ OTT: 0, APP: 0, ARG: 0, PUTT: 0 }), bw: null, s: null, players: 0 };
-    // 5 groups of players: each group's changes forecast from a curve learned on the other four
-    const fold = (k) => { let h = 0; for (const ch of String(k)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 5; };
-    const folds = [0, 1, 2, 3, 4].map((f) => { const tr = pts.filter((x) => fold(x.key) !== f), te = pts.filter((x) => fold(x.key) === f); return { tr, te, B: binsOf(tr) }; });
-    // each fold's test changes, summed by half-year of age; the training curve's kernel sums there, kept per bandwidth
-    for (const f of folds) { const m = new Map(); for (const x of f.te) { const a = Math.round(x.age * 2) / 2; const g = m.get(a) || m.set(a, { a, w: 0, r: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, rr: 0, xs: [] }).get(a); g.xs.push(x); } f.g = [...m.values()]; }
-    const sumMemo = new Map();
-    const sumsFor = (fi, bw) => {
-      const id = `${fi}|${bw}`; if (sumMemo.has(id)) return sumMemo.get(id);
-      const { B, g } = folds[fi], inv = 1 / (2 * bw * bw);
-      const out = g.map((gr) => { let w = 0; const sc = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }; for (const b of B) { const k = Math.exp(-((b.age - gr.a) ** 2) * inv); w += k * b.w; for (const c of CATS) sc[c] += k * b[c]; } return { w, sc }; });
-      sumMemo.set(id, out); return out;
-    };
-    const cv = (bw, s) => {
-      let e = 0, w = 0;
-      folds.forEach((f, fi) => {
-        if (!f.tr.length || !f.te.length) return;
-        const S = sumsFor(fi, bw);
-        f.g.forEach((gr, gi) => { const { w: sw, sc } = S[gi]; for (const x of gr.xs) for (const c of CATS) { const p = sw ? sc[c] / (sw + s) : 0, r = x.r[c] - p; e += x.w * r * r; w += x.w; } });
-      });
-      return w ? e / w : Infinity;
-    };
-    const span = Math.max(1, Math.max(...pts.map((x) => x.age)) - Math.min(...pts.map((x) => x.age)));
-    let bw = 3, s = 100;
-    for (let it = 0; it < 2; it++) {
-      bw = bestOn((v) => cv(v, s), 0.5, Math.max(1, span), { log: true, steps: 12 }).x;
-      s = bestOn((v) => cv(bw, v), 1, 1e6, { log: true, steps: 12 }).x;
-    }
-    const cur = curveOf(pts, bw, s), memo = new Map();
-    return { pts: pts.length, players: new Set(pts.map((x) => x.key)).size, bw, s, curve: (age) => { const a = Math.round(age * 4) / 4; if (!memo.has(a)) memo.set(a, cur(a)); return memo.get(a); } };
-  };
-  const projectWith = (P, seasons, key, i, h) => {
-    const b = blendAt(seasons, key, i, P.W); if (!b) return null;
-    const age0 = ageAt(birthOf.get(key), years[i]);
-    const cats = {}; let ageAdd = 0;
-    for (const c of CATS) {
-      let a = 0;
-      if (age0 != null) for (let j = 0; j < h; j++) a += P.age.curve(age0 + j)[c];
-      cats[c] = (b.dev[c] / (b.wn + P.K[c])) * P.H[h - 1] + a; ageAdd += a;
-    }
-    return { cats, total: CATS.reduce((t, c) => t + cats[c], 0), n: b.n, ageAdd };
-  };
-  const fitAll = (maxY = null) => { const core = fitCore(maxY); const H = fitHorizon(core, maxY); const age = fitAge(core, maxY); return { K: core.K, W: core.W, H, age, built: core.built }; };
-  const P = fitAll();
-  // (5) how far off it is on seasons it hasn't seen: each season from the fourth on, forecast from a model learned only
-  // on the seasons before it (with fewer seasons than that, the error on the seasons it learned from, and it says so)
+
+  /* ---------------- 5. checked on seasons it hadn't seen ---------------- */
   const resid = { 1: [], 2: [], 3: [] };
   let outOfSample = false;
-  for (let t = 3; t < years.length; t++) {
-    const Pt = fitAll(years[t - 1]);
+  for (let t = 3; t < NY; t++) {
+    const Mt = fit(t - 1, { warm: M });
     outOfSample = true;
-    for (const h of [1, 2, 3]) {
-      const i = t - h; if (i < 0) continue;
-      for (const [key, m] of Pt.built.seasons) {
-        const act = m.get(years[t]); if (!act) continue;
-        const pr = projectWith(Pt, Pt.built.seasons, key, i, h); if (!pr) continue;
-        const a = CATS.reduce((s0, c) => s0 + act.d[c], 0);
-        const prev = m.get(years[i]); // (update 406: the simple guesses, on the same cases: their latest season as it was, and the tour average)
-        resid[h].push({ r: a - pr.total, n: act.n, nb: pr.n, rLast: prev && prev.n >= 10 ? a - CATS.reduce((s0, c) => s0 + prev.d[c], 0) : null, rAvg: a });
+    const prevS = seasonStats(Mt.F.adj, t - 1, false);
+    const prevAvg = (() => { const r = rankedIn(t - 1, seasonStats(Mt.F.adj, t - 1, true)); return r.length ? r.reduce((s0, [, s]) => s0 + s.cats.reduce((a, b) => a + b, 0), 0) / r.length : 0; })();
+    for (let h = 1; h <= 3 && t - 1 + h < NY; h++) {
+      const yAct = t - 1 + h;
+      for (const [key, s] of adjT) {
+        if (key % NY !== yAct || s.n < 20) continue;
+        const p = Math.floor(key / NY);
+        const pr = projectWith(Mt, p, yrs[yAct]); if (!pr) continue;
+        const act = s.cats.reduce((a, b) => a + b, 0);
+        const sd = Math.sqrt(pr.varLevel + sig2Tot / s.n);
+        const pv = prevS.get(p * NY + (t - 1));
+        resid[h].push({ r: act - pr.total, z: (act - pr.total) / sd, n: s.n, rLast: pv && pv.n >= 10 ? act - pv.cats.reduce((a, b) => a + b, 0) : null, rAvg: act - prevAvg });
       }
     }
   }
-  if (!outOfSample) for (const h of [1, 2, 3]) for (let i = 0; i + h < years.length; i++) for (const [key, m] of P.built.seasons) {
-    const act = m.get(years[i + h]); if (!act) continue;
-    const pr = projectWith(P, P.built.seasons, key, i, h); if (!pr) continue;
-    resid[h].push({ r: CATS.reduce((s0, c) => s0 + act.d[c], 0) - pr.total, n: act.n, nb: pr.n });
-  }
-  // the spread of a season's result: a part from the player (how much their level moves) and a part from the rounds
-  // (luck that evens out over more of them): r² ≈ a + b / rounds, fitted by least squares
-  const spread = [1, 2, 3].map((h) => {
-    const R = resid[h].length ? resid[h] : resid[1];
-    if (R.length < 3) return { a: 0.3, b: 30, n: R.length };
-    let sx = 0, sy = 0, sxx = 0, sxy = 0, sw = 0;
-    for (const x of R) { const u = 1 / Math.max(1, x.n), y = x.r * x.r, w = x.n; sw += w; sx += w * u; sy += w * y; sxx += w * u * u; sxy += w * u * y; }
-    const den = sw * sxx - sx * sx;
-    let b = den > 0 ? (sw * sxy - sx * sy) / den : 0, a = (sy - b * sx) / sw;
-    if (b < 0) { b = 0; a = sy / sw; } if (a < 0) { a = 0; b = sy / sx; }
-    // (update 406) the accuracy as reported: players with a real season to check against (20+ rounds), not a handful
-    // of starts (a 4-round season's average is mostly luck, which made the typical miss look like a stroke a round)
-    const Q = R.filter((x) => x.n >= 20), QQ = Q.length >= 10 ? Q : R;
-    const mae = QQ.reduce((t, x) => t + Math.abs(x.r), 0) / QQ.length;
-    const B = QQ.filter((x) => x.rLast != null);
+  // the ranges: scaled so 8 in 10 seasons it hadn't seen land inside (one season ahead)
+  const kappa = (() => { const z = resid[1].map((x) => Math.abs(x.z)).sort((a, b) => a - b); return z.length >= 20 ? Math.max(0.5, Math.min(3, z[Math.floor(z.length * 0.8)] / 1.2816)) : 1; })();
+  const err = [1, 2, 3].map((h) => {
+    const R = resid[h]; if (R.length < 10) return null;
+    const mae = R.reduce((t, x) => t + Math.abs(x.r), 0) / R.length;
+    const B = R.filter((x) => x.rLast != null);
     const bt = B.length >= 10 ? { n: B.length, model: B.reduce((t, x) => t + Math.abs(x.r), 0) / B.length, last: B.reduce((t, x) => t + Math.abs(x.rLast), 0) / B.length, avg: B.reduce((t, x) => t + Math.abs(x.rAvg), 0) / B.length } : null;
-    return { a, b, n: QQ.length, mae, bt, sd: Math.sqrt(QQ.reduce((t, x) => t + x.r * x.r, 0) / QQ.length) };
+    const inside = R.filter((x) => Math.abs(x.z) <= 1.2816 * kappa).length / R.length;
+    return { mae, n: R.length, bt, inside, bias: R.reduce((t, x) => t + x.r, 0) / R.length, sd: Math.sqrt(R.reduce((t, x) => t + x.r * x.r, 0) / R.length) };
   });
-  // a forecast's range for a full season (the tour's typical rounds a season for ranked players)
-  // (update 406) "0" in the model is the average ranked player on the tour. Shown on the Stats page's scale (strokes
-  // gained against the field each week) by adding that back: each past season its own, the next three the average of
-  // the last three seasons'. Ranks and chances don't change.
-  const lvlYears = years.slice(-3);
-  const level = Object.fromEntries(CATS.map((c) => [c, lvlYears.reduce((t, y) => t + (meanOn.get(y)?.[c] || 0), 0) / Math.max(1, lvlYears.length)]));
-  const typicalN = (() => { const ns = []; for (const m of P.built.seasons.values()) { const s = m.get(lastYear); if (s) ns.push(s.n); } ns.sort((a, b) => a - b); return ns.length ? ns[Math.floor(ns.length * 0.75)] : 60; })();
-  const sdFor = (h, n = typicalN) => Math.sqrt(spread[h - 1].a + spread[h - 1].b / Math.max(1, n));
-  const project = (key, h) => projectWith(P, P.built.seasons, key, years.length - 1, h);
+
+  /* ---------------- the future seasons, everyone ranked ---------------- */
+  const sdOf = (pr, n = typicalN) => kappa * Math.sqrt(pr.varLevel + sig2Tot / Math.max(1, n));
+  const projMemo = new Map();
+  const project = (key, h) => {
+    const p = typeof key === "number" ? key : D.players.findIndex((x) => x.key === key);
+    if (p < 0) return null;
+    const id = `${p}|${h}`; if (projMemo.has(id)) return projMemo.get(id);
+    const pr = projectWith(M, p, Number(lastYear) + h);
+    const out = pr ? { ...pr, sd: sdOf(pr) } : null;
+    projMemo.set(id, out); return out;
+  };
   // the field each future season: the players who'd be ranked on this tour over the last two seasons (the site's rule)
-  const recentYears = new Set(years.slice(-2));
-  const recentN = [...lines].map(([k, ls]) => [k, ls.filter((l) => l.t === target && recentYears.has(l.y)).reduce((t, l) => t + l.n, 0)]);
-  const minPool = minRoundsOf(Math.max(0, ...recentN.map(([, n]) => n)));
-  const pool = recentN.filter(([, n]) => n >= minPool).map(([k]) => k);
-  const fieldProj = [1, 2, 3].map((h) => pool.map((k) => ({ k, v: project(k, h)?.total })).filter((x) => x.v != null).sort((a, b) => b.v - a.v));
-  // (6) chances: 3,000 simulated seasons, each player drawn from their own forecast and range
+  const recentN = new Map(); for (const [k, s] of rawT) { const y = k % NY; if (y >= last - 1) recentN.set(Math.floor(k / NY), (recentN.get(Math.floor(k / NY)) || 0) + s.n); }
+  const minPool = minRoundsOf(Math.max(0, ...recentN.values()));
+  const pool = [...recentN].filter(([, n]) => n >= minPool).map(([p]) => p);
+  const fieldProj = [1, 2, 3].map((h) => pool.map((p) => ({ k: D.players[p].key, v: project(p, h)?.total, sd: project(p, h)?.sd })).filter((x) => x.v != null).sort((a, b) => b.v - a.v));
   const chanceMemo = new Map();
-  const chances = (key, h, mine) => {
+  const chances = (key, h, mine, sdM) => {
     const id = `${key}|${h}`; if (chanceMemo.has(id)) return chanceMemo.get(id);
-    const others = fieldProj[h - 1].filter((x) => x.k !== key), sdO = sdFor(h), sdM = sdFor(h);
-    // (far below the 50th best even in a great season: no chance worth drawing for)
-    if (others.length >= 50 && mine + 5 * sdM < others[49].v - 5 * sdO) { const o = { top10: 0, top50: 0 }; chanceMemo.set(id, o); return o; }
+    const others = fieldProj[h - 1].filter((x) => x.k !== key);
+    if (others.length >= 50 && mine + 5 * sdM < others[49].v - 5 * (others[49].sd || sdM)) { const o = { top10: 0, top50: 0 }; chanceMemo.set(id, o); return o; }
     const r = rng(12345 + h); let t10 = 0, t50 = 0; const S = 3000;
     for (let s = 0; s < S; s++) {
       const me = mine + gauss(r) * sdM; let better = 0;
-      for (const o of others) { if (o.v + gauss(r) * sdO > me) { better++; if (better >= 50) break; } }
+      for (const o of others) { if (o.v + gauss(r) * o.sd > me) { better++; if (better >= 50) break; } }
       if (better < 10) t10++; if (better < 50) t50++;
     }
     const out = { top10: others.length >= 10 ? t10 / S : null, top50: others.length >= 50 ? t50 / S : null };
     chanceMemo.set(id, out); return out;
   };
+
+  /* ---------------- what it learned, for the page ---------------- */
+  const cats = Object.fromEntries(CATS.map((c, i) => { const t = M.th[i]; return [c, { noise: Math.sqrt(t.sig2), spread: Math.sqrt(t.s2), halfLife: Math.log(2) / t.lam, mean: t.mu,
+    // how much of a full season (typical rounds) a forecast takes from the player rather than the average
+    carry: t.s2 / (t.s2 + t.sig2 / typicalN) }]; }));
+  const ageOk = M.drift.some(Boolean);
+  const ageCurve = (age) => Object.fromEntries(CATS.map((c, i) => [c, M.drift[i] ? M.drift[i][ageIdx(age)] : 0]));
   const params = {
-    weights: P.W, K: P.K, H: P.H,
-    carry: Object.fromEntries(CATS.map((c) => [c, (typicalN) / (typicalN + P.K[c])])), // (how much of a full season's number carries over)
-    age: { pairs: P.age.pts, players: P.age.players, bandwidth: P.age.bw, hold: P.age.s, at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + P.age.curve(a)[c], 0)])) },
-    tours: [...pairs].map(([t, a]) => ({ tour: t, rounds: Math.round(a.w), offset: CATS.reduce((s0, c) => s0 + (P.built.tourAdj.get(t)?.[c] || 0), 0) })),
-    typicalN, outOfSample, spread, checks: checks && { ...checks, latest: Math.sqrt(checks.latest / 4), three: Math.sqrt(checks.three / 4), learned: Math.sqrt(checks.learned / 4) },
+    kind: "kalman", cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
+    field: { events: M.F.events, spread: M.F.spread },
+    age: { players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, knots: KNOTS,
+      at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + ageCurve(a)[c], 0)])) },
+    spread: err.map((e) => e || { n: 0 }),
   };
+  // each season's average of the ranked players on the tour picked (adjusted), for the story's flags
+  const meanAdj = new Map(); for (let y = 0; y < NY; y++) { const r = rankedIn(y, adjT); if (r.length) meanAdj.set(yrs[y], r.reduce((t, [, s]) => t + s.cats.reduce((a, b) => a + b, 0), 0) / r.length); }
+  const pIndex = new Map(D.players.map((p, i) => [p.key, i]));
   return {
-    target, years, lastYear, params, K: P.K, ageOk: P.age.pts >= 2 && P.age.bw != null, agePlayers: P.age.players || 0,
-    err: spread.map((s) => (s.n ? { sd: s.sd, mae: s.mae, n: s.n, bt: s.bt } : null)), outOfSample, level,
-    seasons: P.built.seasons, birthOf, nameOf, project, sdFor, fieldProj, chances, ageCurve: (a) => P.age.curve(a), meanOn,
+    target, years: yrs, lastYear, params, ageOk, agePlayers: params.age.players, err, outOfSample, sig2Tot, typicalN,
+    project, fieldProj, chances, ageCurve, meanAdj, pIndex, players: D.players, rawT, adjT, NY,
+    nameOf: new Map(D.players.map((p) => [p.key, p.name])), birthOf: new Map(D.players.map((p) => [p.key, p.birth])),
   };
 }
 
-/** One player's forecast (null without any season to go on). */
+/** One player's forecast (null without anything to go on). */
 export function forecastPlayer(model, key) {
-  const { lastYear, seasons } = model;
-  const m = seasons.get(key);
-  if (!m || !lastYear || !m.size) return null;
+  const p = model.pIndex.get(key);
+  if (p == null) return null;
+  const { lastYear, years: yrs, NY } = model;
   const birth = model.birthOf.get(key) || null;
   const age = birth ? ageAt(birth, lastYear) : null;
-  const hist = [...m].sort((a, b) => a[0].localeCompare(b[0])).map(([y, s]) => ({ year: y, n: s.n, total: CATS.reduce((t, c) => t + s.d[c], 0), cats: { ...s.d } }));
+  // their seasons on the tour picked, as on the Stats page (raw), and adjusted for the field (for the flags)
+  const hist = [], histAdj = [];
+  for (let y = 0; y < NY; y++) {
+    const s = model.rawT.get(p * NY + y); if (s) hist.push({ year: yrs[y], n: s.n, total: s.cats.reduce((a, b) => a + b, 0), cats: Object.fromEntries(CATS.map((c, i) => [c, s.cats[i]])) });
+    const a = model.adjT.get(p * NY + y); if (a) { const mu = model.meanAdj.get(yrs[y]) || 0; histAdj.push({ year: yrs[y], n: a.n, total: a.cats.reduce((x, z) => x + z, 0) - mu, cats: Object.fromEntries(CATS.map((c, i) => [c, a.cats[i] - mu / 4])) }); }
+  }
   const years = [];
   for (const h of [1, 2, 3]) {
-    const pr = model.project(key, h);
+    const pr = model.project(p, h);
     if (!pr) return null;
-    const sd = model.sdFor(h);
     const others = model.fieldProj[h - 1].filter((x) => x.k !== key);
     const rank = 1 + others.filter((x) => x.v > pr.total).length;
-    const ch = model.chances(key, h, pr.total);
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, cats: pr.cats, lo: pr.total - 1.2816 * sd, hi: pr.total + 1.2816 * sd, sd, rank, of: others.length + 1, top10: ch.top10, top50: ch.top50 });
+    const ch = model.chances(key, h, pr.total, pr.sd);
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, of: others.length + 1, top10: ch.top10, top50: ch.top50 });
   }
-  const lastS = hist.at(-1);
-  const prev = hist.slice(0, -1).slice(-3);
-  const wsum = prev.reduce((t, s) => t + s.n, 0);
+  const lastS = histAdj.at(-1), prev = histAdj.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
   const careerPutt = wsum ? prev.reduce((t, s) => t + s.cats.PUTT * s.n, 0) / wsum : null;
   const careerTot = wsum ? prev.reduce((t, s) => t + s.total * s.n, 0) / wsum : null;
-  // a season's luck is told against how much it would normally swing with this many rounds (the model's own spread)
-  const swing = Math.sqrt(model.params.spread[0].b / Math.max(1, lastS?.n || 1));
+  const swing = Math.sqrt(model.sig2Tot / Math.max(1, lastS?.n || 1));
   const flags = {
     rounds: hist.reduce((t, s) => t + s.n, 0), lastN: lastS?.n || 0,
     puttLed: !!lastS && lastS.total > swing && lastS.cats.PUTT > lastS.total / 2,
     puttAboveUsual: careerPutt != null && lastS ? lastS.cats.PUTT - careerPutt : null,
     vsUsual: careerTot != null && lastS ? lastS.total - careerTot : null,
-    swing,
-    ballStriking: lastS ? lastS.cats.OTT + lastS.cats.APP : null,
-    fewRounds: (lastS?.n || 0) < model.params.typicalN / 2,
-    noBirth: !birth,
+    swing, ballStriking: lastS ? lastS.cats.OTT + lastS.cats.APP : null,
+    fewRounds: (lastS?.n || 0) < model.typicalN / 2, noBirth: !birth,
   };
-  // (update 406) on the Stats page's scale (see level above): the flags were worked out first, on the model's own scale
-  const L = model.level || { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, Lt = CATS.reduce((t, c) => t + L[c], 0);
-  const histOut = hist.map((h) => { const mu = model.meanOn?.get(h.year) || L; const cats = Object.fromEntries(CATS.map((c) => [c, h.cats[c] + mu[c]])); return { ...h, cats, total: CATS.reduce((t, c) => t + cats[c], 0) }; });
-  const yearsOut = years.map((y) => ({ ...y, total: y.total + Lt, lo: y.lo + Lt, hi: y.hi + Lt, cats: Object.fromEntries(CATS.map((c) => [c, y.cats[c] + L[c]])) }));
-  const lastOut = histOut.at(-1);
-  return { key, name: model.nameOf.get(key) || key, birth, age, now: lastOut?.year === lastYear ? lastOut : null, hist: histOut, years: yearsOut, flags, tour: model.target, level: Lt };
+  const lastH = hist.at(-1);
+  return { key, name: model.nameOf.get(key) || key, birth, age, now: lastH?.year === lastYear ? lastH : null, hist, years, flags, tour: model.target };
 }
 
 /** The write-up for a few players' forecasts, in plain words (best first over the three seasons). */
@@ -427,9 +421,9 @@ export function forecastStory(model, fcs) {
     const ageBit = Math.abs(y3.ageAdd) >= 0.05 ? ` (age ${y3.ageAdd > 0 ? "adds" : "takes off"} about ${Math.abs(y3.ageAdd).toFixed(2)} by then)` : "";
     bits.push(`${f.name}${f.age != null ? ` (${Math.floor(f.age)})` : ""}: ${f2(y1.total)} a round in ${y1.year} (likely ${f2(y1.lo)} to ${f2(y1.hi)}), ${f2(y3.total)} by ${y3.year}${Math.abs(trend) >= 0.05 ? `, ${trend > 0 ? "rising" : "declining"}${ageBit}` : ageBit}. About ${ordinal(y1.rank)} on tour next season.`);
     const fl = f.flags;
-    if (fl.puttLed) bits.push(`Most of their last season came from putting, and in this data only about ${Math.round(carry.PUTT * 100)}% of a putting number carries into the next season, so the forecast pulls it back.`);
+    if (fl.puttLed) bits.push(`Most of their last season came from putting, and a season of putting tells the least about the next (about ${Math.round(carry.PUTT * 100)}% of it carries over in this data), so the forecast leans on it least.`);
     else if (fl.puttAboveUsual != null && Math.abs(fl.puttAboveUsual) > fl.swing / 2) bits.push(`Their putting was ${fl.puttAboveUsual > 0 ? "well above" : "well below"} their usual (${f2(fl.puttAboveUsual)}): ${fl.puttAboveUsual > 0 ? "expect some of it to come back" : "likely to bounce back some"}.`);
-    if (fl.vsUsual != null && Math.abs(fl.vsUsual) > fl.swing) bits.push(`Last season was ${fl.vsUsual > 0 ? "well above" : "well below"} their own recent average (${f2(fl.vsUsual)}).`);
+    if (fl.vsUsual != null && Math.abs(fl.vsUsual) > fl.swing) bits.push(`Last season was ${fl.vsUsual > 0 ? "well above" : "well below"} their own recent average (${f2(fl.vsUsual)}), after crediting each round for its field.`);
     if (fl.ballStriking != null && fl.ballStriking > fl.swing) bits.push(`Their ball-striking (Off-the-Tee and Approach, ${f2(fl.ballStriking)}) is the part that holds best (about ${Math.round(((carry.OTT + carry.APP) / 2) * 100)}% carries over).`);
     if (fl.fewRounds) bits.push(`Only ${fl.lastN} rounds last season, so treat it as a rougher guess.`);
     if (fl.noBirth) bits.push(`No birth date in the data, so age isn't taken into account.`);

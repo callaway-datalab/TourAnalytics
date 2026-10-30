@@ -2039,7 +2039,7 @@ export async function render(main) {
   function outlookSection() {
     const ps = inPlay().filter((p) => p.key && p.key !== EVERY && !p.members);
     const head = el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, "Future Outlook: the next three seasons"),
-      infoTip("A forecast learned from this site’s own data. It blends each player’s last three seasons and pulls that back toward the tour average, by however much each part of the game has carried over from one season to the next in this data; then adds what players of their age have typically gained or lost (when the data has their birth date). Every weight and setting is learned, not chosen: see “What the forecast learned” below. The range and the accuracy are from forecasting past seasons using only the seasons before them. Ranks and chances are against every player ranked on the tour, forecast the same way; the chances come from 3,000 simulated seasons.")]);
+      infoTip("A forecast learned from this site\u2019s own data (update 410). Every round is first credited for the strength of its field. Then a Kalman filter follows each player event by event, per part of the game: their level moves toward what they show, by as much as each event deserves, and drifts back toward the average between events; plus what players of their age typically gain or lose (when the data has their birth date). Every setting is learned, not chosen: see \u201cWhat the forecast learned\u201d below. The range and the accuracy are from forecasting past seasons using only the seasons before them. Ranks and chances are against every player ranked on the tour, forecast the same way; the chances come from 3,000 simulated seasons.")]);
     const wrap = (kids) => el("section", { class: "panel cmp-sec cmp-outlook" }, [head, ...kids]);
     if (!ps.length) return wrap([el("p", { class: "muted small" }, "Pick one or more players to see their outlook.")]);
     // the tour: the one picked above, else the one these players have most rounds on
@@ -2055,7 +2055,7 @@ export async function render(main) {
         fc.res = await FC.runForecast(cf.field, { tour, players }); fc.key = want;
       }).catch((err) => { console.error(err); fc.err = "Couldn’t work out the forecast just now."; fc.key = want; }).finally(() => { fc.busy = false; if (g.what === "outlook") draw(); });
     }
-    if (fc.key !== key || fc.busy) return wrap([el("p", { class: "muted small ta-loading" }, "Working out the forecast… (the page stays usable while it does)")]);
+    if (fc.key !== key || fc.busy) return wrap([el("p", { class: "muted small ta-loading" }, "Working out the forecast… (up to a minute on a big file; the page stays usable while it does)")]);
     if (fc.err) return wrap([el("p", { class: "muted small" }, fc.err)]);
     const { fcs, story, info } = fc.res, m = info;
     const ok = fcs.filter(Boolean);
@@ -2083,19 +2083,21 @@ export async function render(main) {
     });
     const e1 = m.err[0];
     // (update 406) on players with a real season to check (20+ rounds), against the two simple guesses on the same seasons
-    const acc = e1 ? `${m.outOfSample ? "Checked on seasons it hadn\u2019t seen" : "Checked on past seasons"}: one season ahead, off by about ${e1.mae.toFixed(2)} a round on average (${e1.n} seasons of 20+ rounds)${e1.bt ? `; their latest season alone was off by ${e1.bt.last.toFixed(2)}, the tour average by ${e1.bt.avg.toFixed(2)}` : ""}.` : "";
+    const acc = e1 ? `${m.outOfSample ? "Checked on seasons it hadn\u2019t seen" : "Checked on past seasons"}: one season ahead, off by about ${(e1.bt?.model ?? e1.mae).toFixed(2)} a round on average (${e1.bt?.n ?? e1.n} seasons of 20+ rounds)${e1.bt ? `; their latest season alone was off by ${e1.bt.last.toFixed(2)}, the tour average by ${e1.bt.avg.toFixed(2)}` : ""}.` : "";
     const ageNote = !m.ageOk ? "No birth dates in the data yet (add a birth_date column), so age isn’t taken into account." : `Age from ${m.agePlayers} players’ birth dates.`;
     // (update 397) what it learned from the data, in plain words
-    const pr = m.params, pctS = (v) => `${Math.round(v * 100)}%`;
-    const wsum = pr.weights.reduce((t, v) => t + v, 0);
+    // (update 410) what the new forecaster learned, in plain words
+    const pr = m.params, pctS = (v) => `${Math.round(v * 100)}%`, pc = pr.cats || {};
     const learned = el("details", { class: "fc-learned" }, [el("summary", {}, "What the forecast learned from this data"),
       el("ul", { class: "fc-learned-l" }, [
-        el("li", {}, `Season weights: the latest season ${pctS(pr.weights[0] / wsum)}, the one before ${pctS(pr.weights[1] / wsum)}, the one before that ${pctS(pr.weights[2] / wsum)} (for the same number of rounds).${(() => { const ck = pr.checks, morePct = (x) => (ck && ck.learned > 0 ? Math.round(((x * x) / (ck.learned * ck.learned) - 1) * 100) : null); return ck ? ` Checked on ${ck.n.toLocaleString()} past seasons: the latest season alone misses by ${morePct(ck.latest)}% more (squared error), a fixed 100/80/60 blend by ${morePct(ck.three)}% more.` : ""; })()}`),
-        el("li", {}, `How much of a full season (${pr.typicalN} rounds) carries into the next: ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ${pctS(pr.carry[c])}`).join(", ")}. The rest is pulled back to the tour average.`),
-        el("li", {}, `How much of next season’s forecast still holds two and three seasons ahead: ${pctS(pr.H[1])} and ${pctS(pr.H[2])}.`),
-        el("li", {}, m.ageOk ? `Age (from ${pr.age.players} players’ birth dates, ${pr.age.pairs} season-to-season changes): a typical change in a season of ${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")}. Nearby ages pooled within about ${pr.age.bandwidth.toFixed(1)} years.` : "Age: no birth dates in the data yet, so it isn’t learned or used."),
-        pr.tours.length ? el("li", {}, `Other tours, moved onto ${m.target}: ${pr.tours.map((t) => `${t.tour} ${f2(t.offset)} a round`).join(", ")} (from players on both in the same season).`) : null,
-        el("li", {}, `${pr.outOfSample ? "On seasons it hadn\u2019t seen (each forecast only from the seasons before it)" : "On the seasons it learned from (too few seasons yet to hold some back)"}, for players with 20+ rounds, it was off by about ${pr.spread.map((x, i) => (x.n ? `${x.mae.toFixed(2)} ${i ? `${i + 1} seasons ahead` : "one season ahead"}${x.bt ? ` (latest season alone ${x.bt.last.toFixed(2)}, tour average ${x.bt.avg.toFixed(2)})` : ""}` : "")).filter(Boolean).join("; ")} a round on average. Lower is better.`),
+        el("li", {}, `Field strength: every round is credited for the strength of its field (the average level of the players in it, worked out together with theirs), so a weak-field week counts for less and every tour sits on one scale. On ${m.target}, a field moves a round by ${f2(pr.field?.spread?.[0] ?? 0)} to ${f2(pr.field?.spread?.[1] ?? 0)} (the middle 80% of ${pr.field?.events ?? 0} events, last two seasons).`),
+        el("li", {}, `Event by event (a Kalman filter): after each event a player’s level moves toward what they showed, by as much as that event deserves; recent events count most. A single round swings around a player’s level by about ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ±${(pc[c]?.noise ?? 0).toFixed(2)}`).join(", ")}.`),
+        el("li", {}, `How far apart players are: ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ±${(pc[c]?.spread ?? 0).toFixed(2)}`).join(", ")}. So a full season (${pr.typicalN} rounds) is ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${pctS(pr.carry[c])} of the ${CATN[c]} forecast`).join(", ")}; the rest comes from the average.`),
+        el("li", {}, `How long an edge lasts: half of a player’s edge over the average fades in about ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${(pc[c]?.halfLife ?? 0).toFixed(1)} years (${CATN[c]})`).join(", ")}.`),
+        el("li", {}, m.ageOk ? `Age (from ${pr.age.players} players’ birth dates): a typical change in a season of ${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")}, learned with the rest (values at ages ${pr.age.knots.join(", ")}, straight lines between).` : "Age: no birth dates in the data yet, so it isn’t learned or used."),
+        el("li", {}, `Ranges: scaled so 8 in 10 past seasons it hadn’t seen landed inside. ${m.err.map((e, i) => (e ? `${pctS(e.inside)} did ${i ? `${i + 1} seasons ahead` : "one season ahead"}` : "")).filter(Boolean).join(", ")}.`),
+        el("li", {}, `${pr.outOfSample ? "On seasons it hadn’t seen (each forecast only from the seasons before it)" : "On the seasons it learned from (too few seasons yet to hold some back)"}, for players with 20+ rounds, it was off by about ${m.err.map((x, i) => (x ? `${(x.bt?.model ?? x.mae).toFixed(2)} ${i ? `${i + 1} seasons ahead` : "one season ahead"}${x.bt ? ` (latest season alone ${x.bt.last.toFixed(2)}, tour average ${x.bt.avg.toFixed(2)})` : ""}` : "")).filter(Boolean).join("; ")} a round on average. Lower is better.`),
+        el("li", {}, "Every setting above is learned from this data (maximum likelihood, and the checks on past seasons), not chosen."),
       ])]);
     // (update 402) the full report: individual profiles and comparisons, 5 pages or fewer
     const exp = el("button", { type: "button", class: "btn small" }, "⭳ Export report");
@@ -2118,7 +2120,7 @@ export async function render(main) {
     });
     return wrap([
       el("div", { class: "fc-foot fc-top" }, [exp, el("span", { class: "muted small" }, "A report of 5 pages or fewer: each player, side by side, and the projection")]),
-      el("p", { class: "muted small" }, `Strokes gained a round on ${m.target || "the tour"}, on the same scale as the Stats page, with the likely range and the rank it would mean. Tap a player for each part of the game and their chances.`),
+      el("p", { class: "muted small" }, `Strokes gained a round against an average ${m.target || "tour"} field (each round credited for the strength of its field; close to the Stats page for a typical schedule). This season so far is as on the Stats page. With the likely range and the rank it would mean. Tap a player for each part of the game and their chances.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table fc-t" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, String(m.lastYear) === String(new Date().getFullYear()) ? `${m.lastYear} so far` : String(m.lastYear)), ...yrs.map((y) => el("th", { class: "num" }, y))])),
         el("tbody", {}, rows)])),
@@ -2135,7 +2137,7 @@ export async function render(main) {
     const rowsH = order.map((f, i) => `<tr><td><b>${i + 1}. ${esc(f.name)}</b>${f.age != null ? ` (${Math.floor(f.age)})` : ""}</td><td>${f.now ? `${f2(f.now.total)} <small>${f.now.n} rds</small>` : "&mdash;"}</td>${f.years.map((y) => `<td><b>${f2(y.total)}</b><br><small>${f2(y.lo)} to ${f2(y.hi)} &middot; ~${ordinal(y.rank)}</small></td>`).join("")}</tr>`).join("");
     const catH = order.map((f) => `<h3>${esc(f.name)}</h3><table><tr><th></th><th>${o.last}</th>${o.years.map((y) => `<th>${y}</th>`).join("")}</tr>${["OTT", "APP", "ARG", "PUTT"].map((c) => `<tr><td>${({ OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" })[c]}</td><td>${f.now ? f2(f.now.cats[c]) : "&mdash;"}</td>${f.years.map((y) => `<td>${f2(y.cats[c])}</td>`).join("")}</tr>`).join("")}</table>`).join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Outlook ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</title><style>body{font:14px/1.45 -apple-system,Segoe UI,Inter,sans-serif;color:#111;max-width:820px;margin:28px auto;padding:0 18px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:22px 0 8px}h3{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%;margin:6px 0 10px}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left}small{color:#666}.muted{color:#666;font-size:12px}@media print{body{margin:0}}</style></head><body>
-<h1>Outlook: ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</h1><p class="muted">Strokes gained a round on ${esc(o.tour || "the tour")}, on the same scale as the Stats page. Tour Analytics forecast, ${new Date().toLocaleDateString()}.</p>
+<h1>Outlook: ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</h1><p class="muted">Strokes gained a round against an average ${esc(o.tour || "tour")} field. Tour Analytics forecast, ${new Date().toLocaleDateString()}.</p>
 <table><tr><th></th><th>${esc(o.last)} so far</th>${o.years.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${rowsH}</table>
 <h2>The take</h2>${story.map((t) => `<p>${esc(t)}</p>`).join("")}
 <h2>By part of the game</h2>${catH}
