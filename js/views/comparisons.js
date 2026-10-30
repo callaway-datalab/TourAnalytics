@@ -2071,7 +2071,7 @@ export async function render(main) {
       const open = fc.open.has(f.key);
       const tr = el("tr", { class: "sg-tap", role: "button", tabindex: "0", "aria-expanded": String(open) }, [
         el("td", {}, [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "▾ " : "▸ "), el("strong", {}, `${i + 1}. ${f.name}`), el("span", { class: "muted small" }, f.age != null ? ` · ${Math.floor(f.age)}` : " · age ?")]),
-        el("td", { class: "num" }, f.now ? [el("span", { class: f.now.total >= 0 ? "pos" : "neg" }, f2(f.now.total)), el("span", { class: "muted small fc-sub" }, `${f.now.n} rds`)] : "—"),
+        el("td", { class: "num" }, f.now ? [el("span", { class: f.now.total >= 0 ? "pos" : "neg" }, f2(f.now.total)), el("span", { class: "muted small fc-sub" }, `${f.now.n} rds`), f.now.rank ? el("span", { class: "small fc-sub", title: f.now.ranked ? "This season so far, as the Stats page ranks it" : "Not enough rounds to be ranked yet: where they'd sit" }, `${ordinal(f.now.rank)}${f.now.ranked ? "" : "*"}`) : null] : "\u2014"), // (update 413: this season's rank)
         ...f.years.map((y) => el("td", { class: "num" }, [el("strong", { class: y.total >= 0 ? "pos" : "neg" }, f2(y.total)), el("span", { class: "muted small fc-sub" }, `${f2(y.lo)} to ${f2(y.hi)}`), el("span", { class: "small fc-sub" }, `~${ordinal(y.rank)}`)])),
       ]);
       const flip = () => { open ? fc.open.delete(f.key) : fc.open.add(f.key); draw(); };
@@ -2122,7 +2122,7 @@ export async function render(main) {
       el("div", { class: "fc-foot fc-top" }, [exp, el("span", { class: "muted small" }, "A report of 5 pages or fewer: each player, side by side, and the projection")]),
       el("p", { class: "muted small" }, `Strokes gained a round against an average ${m.target || "tour"} field (each round credited for the strength of its field; close to the Stats page for a typical schedule). This season so far is as on the Stats page. With the likely range and the rank it would mean. Tap a player for each part of the game and their chances.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table fc-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, String(m.lastYear) === String(new Date().getFullYear()) ? `${m.lastYear} so far` : String(m.lastYear)), ...yrs.map((y) => el("th", { class: "num" }, y))])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, String(m.lastYear)), ...yrs.map((y) => el("th", { class: "num" }, y))])),
         el("tbody", {}, rows)])),
       el("div", { class: "fc-story" }, story.map((t) => el("p", {}, t))),
       missing.length ? el("p", { class: "muted small" }, `Not enough rounds on ${m.target} to forecast ${missing.join(", ")}.`) : null,
@@ -2138,7 +2138,7 @@ export async function render(main) {
     const catH = order.map((f) => `<h3>${esc(f.name)}</h3><table><tr><th></th><th>${o.last}</th>${o.years.map((y) => `<th>${y}</th>`).join("")}</tr>${["OTT", "APP", "ARG", "PUTT"].map((c) => `<tr><td>${({ OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" })[c]}</td><td>${f.now ? f2(f.now.cats[c]) : "&mdash;"}</td>${f.years.map((y) => `<td>${f2(y.cats[c])}</td>`).join("")}</tr>`).join("")}</table>`).join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Outlook ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</title><style>body{font:14px/1.45 -apple-system,Segoe UI,Inter,sans-serif;color:#111;max-width:820px;margin:28px auto;padding:0 18px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:22px 0 8px}h3{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%;margin:6px 0 10px}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left}small{color:#666}.muted{color:#666;font-size:12px}@media print{body{margin:0}}</style></head><body>
 <h1>Outlook: ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</h1><p class="muted">Strokes gained a round against an average ${esc(o.tour || "tour")} field. Tour Analytics forecast, ${new Date().toLocaleDateString()}.</p>
-<table><tr><th></th><th>${esc(o.last)} so far</th>${o.years.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${rowsH}</table>
+<table><tr><th></th><th>${esc(o.last)}</th>${o.years.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${rowsH}</table>
 <h2>The take</h2>${story.map((t) => `<p>${esc(t)}</p>`).join("")}
 <h2>By part of the game</h2>${catH}
 <p class="muted">${esc(o.acc)} ${esc(o.ageNote)} ${o.missing.length ? `Not enough rounds to forecast ${esc(o.missing.join(", "))}.` : ""} How it works: each player's last three seasons, blended (the latest counts most) and pulled back toward the tour average by how much each part of the game carries over from year to year in this data, plus the typical change for their age. A projection, not a promise: injuries, swing or equipment changes and schedules aren't in it.</p>

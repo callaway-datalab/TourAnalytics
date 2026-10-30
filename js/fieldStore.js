@@ -111,7 +111,8 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null 
   try {
     const snap = await getDoc(doc(db, "fieldStats", datasetId));
     const d = snap.exists() ? snap.data().detail : null;
-    if (!d || d.format !== FORMAT || !d.years?.length) return { players: null, why: "none" };
+    // (update 412) the cloud rebuild labelled its files format 1 by mistake (they're the same files): read those too
+    if (!d || (d.format !== FORMAT && d.format !== 1) || !d.years?.length) return { players: null, why: "none" };
     if (uploadedAt && (d.sourceUploadedAt ?? 0) < uploadedAt) return { players: null, why: "stale" };
     // (update 296) one copy in memory, shared by every page that asks (Watchlist, Stats, Leaderboards, Cal, reports):
     // each used to unpack its own, and a phone ran out of memory and reloaded the page ("A problem repeatedly occurred")

@@ -259,6 +259,9 @@ function learn(D, { tour = null } = {}) {
   // the rankings rule on the tour picked, each season: who'd be ranked, and their average (for the story's flags)
   const rankedIn = (y, S) => { const list = [...S].filter(([k]) => k % NY === y).map(([k, s]) => [Math.floor(k / NY), s]); const minR = minRoundsOf(Math.max(0, ...list.map(([, s]) => s.n))); return list.filter(([, s]) => s.n >= minR); };
   const typicalN = (() => { const ns = rankedIn(last, rawT).map(([, s]) => s.n).sort((a, b) => a - b); return ns.length ? ns[Math.floor(ns.length * 0.5)] : 60; })();
+  // (update 413) this season's rank so far on the tour picked, as the Stats page ranks it (raw, the rankings rule)
+  const nowRanked = rankedIn(last, rawT).map(([p, s0]) => [p, s0.cats.reduce((a, b) => a + b, 0)]);
+  const nowRank = (p) => { const s0 = rawT.get(p * NY + last); if (!s0) return null; const v = s0.cats.reduce((a, b) => a + b, 0); const others = nowRanked.filter(([q]) => q !== p); return { rank: 1 + others.filter(([, x]) => x > v).length, of: others.length + 1, ranked: nowRanked.some(([q]) => q === p) }; };
 
   // a player's projection h seasons on (from where the filter left them): per part of the game, the mean and the
   // uncertainty of their level, and how much of the change is age
@@ -359,7 +362,7 @@ function learn(D, { tour = null } = {}) {
   const pIndex = new Map(D.players.map((p, i) => [p.key, i]));
   return {
     target, years: yrs, lastYear, params, ageOk, agePlayers: params.age.players, err, outOfSample, sig2Tot, typicalN,
-    project, fieldProj, chances, ageCurve, meanAdj, pIndex, players: D.players, rawT, adjT, NY,
+    project, fieldProj, chances, ageCurve, meanAdj, pIndex, players: D.players, rawT, adjT, NY, nowRank,
     nameOf: new Map(D.players.map((p) => [p.key, p.name])), birthOf: new Map(D.players.map((p) => [p.key, p.birth])),
   };
 }
@@ -399,7 +402,8 @@ export function forecastPlayer(model, key) {
     fewRounds: (lastS?.n || 0) < model.typicalN / 2, noBirth: !birth,
   };
   const lastH = hist.at(-1);
-  return { key, name: model.nameOf.get(key) || key, birth, age, now: lastH?.year === lastYear ? lastH : null, hist, years, flags, tour: model.target };
+  const now = lastH?.year === lastYear ? { ...lastH, ...(model.nowRank?.(p) || {}) } : null;
+  return { key, name: model.nameOf.get(key) || key, birth, age, now, hist, years, flags, tour: model.target };
 }
 
 /** The write-up for a few players' forecasts, in plain words (best first over the three seasons). */

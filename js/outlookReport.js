@@ -40,7 +40,10 @@ function buildTables(field, target, keys) {
   const onT = (rd) => sq(rd.tour) === sq(target);
   let maxT = -Infinity;
   for (const p of field) for (const rd of p.rounds || []) if (onT(rd) && rd.shots?.length && !rd.eventLevel) { const t = toT(rd.date); if (t > maxT) maxT = t; }
-  const from12 = maxT - 365 * dayMs;
+  // (update 413) the recent window: the last 12 months, or from August on the last 6 (by then a season and the last 12
+  // months are nearly the same rounds)
+  const winMonths = Number.isFinite(maxT) && new Date(maxT).getUTCMonth() >= 7 ? 6 : 12;
+  const from12 = Number.isFinite(maxT) ? Date.UTC(new Date(maxT).getUTCFullYear(), new Date(maxT).getUTCMonth() - winMonths, new Date(maxT).getUTCDate()) : NaN;
   const blank = () => ({ n: 0, sum: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, st: {} });
   const add = (s, rd) => {
     s.n++;
@@ -92,7 +95,7 @@ function buildTables(field, target, keys) {
   };
   const seasons = new Map(years.map((y) => [y, rankSet((m) => m.seasons.get(y))]));
   const last = rankSet((m) => m.last);
-  return { per, years, seasons, last, maxT, from12 };
+  return { per, years, seasons, last, maxT, from12, winMonths };
 }
 
 /** Each event's field strength: the average season SG of the players in it (two latest seasons). */
@@ -191,7 +194,7 @@ function projChart(fcs, lastYear, colors, names = []) {
   const x = (i) => L + (i * (W - L - R)) / (cols.length - 1), y = (v) => Tp + ((hi - v) * (Hh - Tp - B)) / (hi - lo);
   const ticks = []; for (let t = Math.ceil(lo * 2) / 2; t <= hi; t += 0.5) ticks.push(t);
   let g = ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" class="${Math.abs(t) < 1e-9 ? "zero" : "grid"}"/><text x="${L - 6}" y="${y(t) + 3.5}" class="ax" text-anchor="end">${f2(t)}</text>`).join("");
-  g += cols.map((c, i) => `<text x="${x(i)}" y="${Hh - 8}" class="ax" text-anchor="middle">${esc(i === 0 ? `${c} (so far)` : c)}</text>`).join("");
+  g += cols.map((c, i) => `<text x="${x(i)}" y="${Hh - 8}" class="ax" text-anchor="middle">${esc(c)}</text>`).join("");
   fcs.forEach((f, k) => {
     const c = colors[k % colors.length];
     const band = f.years.map((yv, i) => `${x(i + 1)},${y(yv.hi)}`).join(" ") + " " + [...f.years].reverse().map((yv, i) => `${x(f.years.length - i)},${y(yv.lo)}`).join(" ");
@@ -218,7 +221,8 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const FC = fieldCheck(T, keys);
   const colors = ["#2f6fdb", "#e0782f", "#2a9d6f", "#9b4fc9"];
   const cur = String(new Date().getFullYear());
-  const yLabel = (y) => (String(y) === cur ? `${y} so far` : String(y));
+  const yLabel = (y) => String(y); // (update 413: the current season as just its year)
+  const WIN = `Last ${T.winMonths} months`, win = WIN.toLowerCase();
   const nm = (f) => esc(f.name), ln = (f) => esc(lastName(f.name));
   const ageOf = (f) => (f.age != null ? Math.floor(f.age + (Number(cur) - Number(model.lastYear))) : null); // (age now)
   const lastOf = (k) => T.last.out.get(k);
@@ -229,7 +233,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const hasStat = (k) => keys.some((key) => [...T.seasons.values(), T.last].some((r) => r.out.get(key)?.v?.[k] != null));
   const teeCols = TEE_STATS.filter(hasStat);
   const thru = Number.isFinite(T.maxT) ? dateTxt(T.maxT) : "";
-  const fromTxt = Number.isFinite(T.from12) ? dateTxt(T.from12 + dayMs) : "";
+  const fromTxt = Number.isFinite(T.from12) ? dateTxt(T.from12) : "";
   const lastPool = T.last.pool;
 
   /* ---------- the insights for each player ---------- */
@@ -242,7 +246,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
       const bestC = byRank[0], worstC = byRank.at(-1);
       out.best = bestC; out.worst = worstC;
       const posN = seas.filter(([, o]) => o.v[bestC] > 0).length;
-      out.lines.strength = `${L.v[bestC] > 0.005 ? "" : "No part of the game gains strokes yet; the least costly: "}${CATN[bestC]} is ${f2(L.v[bestC])} a round (#${L.rk[bestC]} of ${L.of[bestC]}) over the last 12 months${seas.length > 1 ? (posN === seas.length ? `, and positive in every season shown` : `; positive in ${posN} of ${seas.length} seasons shown`) : ""}.`;
+      out.lines.strength = `${L.v[bestC] > 0.005 ? "" : "No part of the game gains strokes yet; the least costly: "}${CATN[bestC]} is ${f2(L.v[bestC])} a round (#${L.rk[bestC]} of ${L.of[bestC]}) over the ${win}${seas.length > 1 ? (posN === seas.length ? `, and positive in every season shown` : `; positive in ${posN} of ${seas.length} seasons shown`) : ""}.`;
       const negN = seas.filter(([, o]) => o.v[worstC] < 0).length;
       let watch = `${CATN[worstC]} is ${f2(L.v[worstC])} (#${L.rk[worstC]})${seas.length > 1 ? `, below average in ${negN} of ${seas.length} seasons` : ""}.`;
       // a part of the game that's faded the most since the first season shown
@@ -294,7 +298,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   if (withL.length >= 2) {
     const byTot = [...withL].sort((a, b) => lastOf(b.key).v.TOTAL - lastOf(a.key).v.TOTAL);
     const a = byTot[0], b = byTot[1], z = byTot.at(-1);
-    cmp.push(`${nm(a)} leads over the last 12 months at ${f2(lastOf(a.key).v.TOTAL)} a round (#${lastOf(a.key).rk.TOTAL}), ${abs2(lastOf(a.key).v.TOTAL - lastOf(b.key).v.TOTAL)} ahead of ${nm(b)}${byTot.length > 2 ? ` and ${abs2(lastOf(a.key).v.TOTAL - lastOf(z.key).v.TOTAL)} ahead of ${nm(z)}` : ""}.`);
+    cmp.push(`${nm(a)} leads over the ${win} at ${f2(lastOf(a.key).v.TOTAL)} a round (#${lastOf(a.key).rk.TOTAL}), ${abs2(lastOf(a.key).v.TOTAL - lastOf(b.key).v.TOTAL)} ahead of ${nm(b)}${byTot.length > 2 ? ` and ${abs2(lastOf(a.key).v.TOTAL - lastOf(z.key).v.TOTAL)} ahead of ${nm(z)}` : ""}.`);
     // the biggest gap in one part of the game
     let gap = null;
     for (const c of CATS) { const s = [...withL].sort((x, y) => lastOf(y.key).v[c] - lastOf(x.key).v[c]), d = lastOf(s[0].key).v[c] - lastOf(s.at(-1).key).v[c]; if (!gap || d > gap.d) gap = { c, d, hi: s[0], lo: s.at(-1) }; }
@@ -346,7 +350,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const cards = fcs.map((f, i) => {
     const L = lastOf(f.key), ins = insight.get(f.key);
     return `<div class="card" style="--c:${colors[i % colors.length]}"><div class="who">${nm(f)}${ageOf(f) != null ? ` <small>· Age ${ageOf(f)}</small>` : ""}</div>
-      ${L ? `<div class="big ${tone(L.v.TOTAL)}">${f2(L.v.TOTAL)}</div><div class="muted">SG total a round · #${L.rk.TOTAL} of ${L.of.TOTAL} · ${L.n} rounds</div>` : `<div class="muted">No rounds in the last 12 months</div>`}
+      ${L ? `<div class="big ${tone(L.v.TOTAL)}">${f2(L.v.TOTAL)}</div><div class="muted"><b>${WIN}</b> · SG total a round · #${L.rk.TOTAL} of ${L.of.TOTAL} · ${L.n} rounds</div>` : `<div class="muted">No rounds in the ${win}</div>`}
       ${spark(ins.sparkPts, showYears, sparkLo, sparkHi)}
       ${L ? `<div class="mix"><span>Ball-striking <b class="${tone(ins.mix.bs)}">${f2(ins.mix.bs)}</b></span><span>Short game <b class="${tone(ins.mix.sh)}">${f2(ins.mix.sh)}</b></span></div>` : ""}
       <div class="muted small">${esc(ins.seasonsTxt)}</div><p>${esc(ins.oneLine || "")}</p></div>`;
@@ -357,18 +361,18 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     <h1>${fcs.map(ln).join(" · ")}</h1>
     <p class="sub">Current skill on strokes gained and a 3-season projection, ${esc(yrs[0])}–${esc(yrs.at(-1))} · ${esc(target)} · data through ${esc(thru)}</p>
     <div class="cards n${fcs.length}">${cards}</div>
-    <div class="two"><div><h3>Total strokes gained a round (tour rank)</h3><table><tr><th></th>${showYears.map((y) => `<th>${esc(yLabel(y))}</th>`).join("")}<th>Last 12 months</th></tr>${seasonRows}</table></div>
+    <div class="two"><div><h3>Total strokes gained a round (tour rank)</h3><table><tr><th></th>${showYears.map((y) => `<th>${esc(yLabel(y))}</th>`).join("")}<th>${WIN}</th></tr>${seasonRows}</table></div>
     <div><h3>Side by side</h3><ul>${cmp.map((t) => `<li>${t}</li>`).join("") || "<li>Pick two or more players to compare them.</li>"}</ul></div></div>
-    <p class="foot">Last 12 months = ${esc(fromTxt)} to ${esc(thru)}. Ball-striking = Off-the-Tee + Approach; short game = Around-the-Green + Putting. Ranks against players with enough rounds on ${esc(target)} that season (the site’s rankings rule).</p></section>`);
+    <p class="foot">${WIN} = ${esc(fromTxt)} to ${esc(thru)}. Ball-striking = Off-the-Tee + Approach; short game = Around-the-Green + Putting. Ranks against players with enough rounds on ${esc(target)} that season (the site’s rankings rule).</p></section>`);
   // 2–3 · profiles, two a page
   const profile = (f, i) => {
     const ins = insight.get(f.key);
-    const rows = [...showYears.map((y) => [yLabel(y), T.seasons.get(y).out.get(f.key)]), ["Last 12 months", lastOf(f.key)]].filter(([, o]) => o);
+    const rows = [...showYears.map((y) => [yLabel(y), T.seasons.get(y).out.get(f.key)]), [WIN, lastOf(f.key)]].filter(([, o]) => o);
     const tbl = `<table class="prof"><tr><th>Season</th><th>Rds</th><th>Total</th>${CATS.map((c) => `<th>${CATS_SHORT[c]}</th>`).join("")}${teeCols.map((k) => `<th>${esc(statDef(k).label)}</th>`).join("")}</tr>
-      ${rows.map(([lab, o]) => `<tr${lab === "Last 12 months" ? ' class="hl"' : ""}><td>${esc(lab)}</td><td>${o.n}</td><td>${cell(o, "TOTAL")}</td>${CATS.map((c) => `<td>${cell(o, c)}</td>`).join("")}${teeCols.map((k) => `<td>${statCell(o, k)}</td>`).join("")}</tr>`).join("")}</table>`;
+      ${rows.map(([lab, o]) => `<tr${lab === WIN ? ' class="hl"' : ""}><td>${esc(lab)}</td><td>${o.n}</td><td>${cell(o, "TOTAL")}</td>${CATS.map((c) => `<td>${cell(o, c)}</td>`).join("")}${teeCols.map((k) => `<td>${statCell(o, k)}</td>`).join("")}</tr>`).join("")}</table>`;
     const box = (cls, title, txt) => (txt ? `<div class="box ${cls}"><div class="bt">${title}</div><p>${esc(txt)}</p></div>` : "");
     return `<div class="profile" style="--c:${colors[i % colors.length]}"><h2>${nm(f)}${ageOf(f) != null ? ` <small>· Age ${ageOf(f)}</small>` : ""}</h2>${tbl}
-      <div class="boxes">${box("s", "Strength", ins.lines.strength)}${box("w", "Watch", ins.lines.watch)}${box("a", spK(ins) ? "Speed and age" : "Age", ins.lines.speed)}${box("d", "By distance (last 12 months)", ins.lines.dist)}</div></div>`;
+      <div class="boxes">${box("s", "Strength", ins.lines.strength)}${box("w", "Watch", ins.lines.watch)}${box("a", spK(ins) ? "Speed and age" : "Age", ins.lines.speed)}${box("d", `By distance (${win})`, ins.lines.dist)}</div></div>`;
   };
   const spK = (ins) => /Ball Speed|Driving Distance/.test(ins.lines.speed || "");
   for (let i = 0; i < fcs.length; i += 2) {
