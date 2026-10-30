@@ -305,7 +305,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     if (f.age != null && model.ageOk) {
       const per = model.ageAt?.[f.key] ?? 0;
       const sc = model.params?.age?.trust ? (() => { const tr = model.params.age.trust, ks = Object.keys(tr).map(Number); const a0 = ks.reduce((b, k) => (Math.abs(k - f.age) < Math.abs(b - f.age) ? k : b), ks[0]); return tr[a0]; })() : null;
-      ageLine = ` At ${Math.floor(f.age)}, the projection ${Math.abs(per) < 0.02 ? "holds them steady for age" : per > 0 ? `adds about ${abs2(per)} a round a season for age` : `takes off about ${abs2(per)} a round a season for age`}${sc != null && sc < 0.95 ? ` (the age effect at about ${Math.round(sc * 100)}% strength: fewer players of this age in the data)` : ""}.`;
+      ageLine = ` At ${Math.floor(f.age)}, the projection ${Math.abs(per) < 0.02 ? "holds them steady for age" : per > 0 ? `adds about ${abs2(per)} a round a season for age` : `takes off about ${abs2(per)} a round a season for age`}.`;
     } else if (f.age == null) ageLine = " No birth date in the data, so age isn’t taken into account.";
     else if (model.params?.age?.none) ageLine = ` At ${Math.floor(f.age)}. Age is left out of the projection: it predicted past seasons better without it.`;
     out.lines.speed = sp.trim(); out.lines.age = ageLine.trim(); // (update 419: two boxes)
