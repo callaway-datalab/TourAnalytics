@@ -2079,7 +2079,7 @@ export async function render(main) {
       rows.push(tr);
       if (!open) return;
       for (const c of ["OTT", "APP", "ARG", "PUTT"]) rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, CATN[c]), el("td", { class: "num" }, f.now ? f2(f.now.cats[c]) : "—"), ...f.years.map((y) => el("td", { class: "num" }, f2(y.cats[c])))]));
-      rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, "Chance of a top 10 / top 50 season"), el("td", {}, ""), ...f.years.map((y) => el("td", { class: "num small" }, `${pct(y.top10)} / ${pct(y.top50)}`))]));
+      rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, "Chance of a top 10 / 50 / 100 season"), el("td", {}, ""), ...f.years.map((y) => el("td", { class: "num small" }, `${pct(y.top10)} / ${pct(y.top50)} / ${pct(y.top100)}`))])); // (update 414: + top 100)
     });
     const e1 = m.err[0];
     // (update 406) on players with a real season to check (20+ rounds), against the two simple guesses on the same seasons

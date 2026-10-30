@@ -333,14 +333,15 @@ function learn(D, { tour = null } = {}) {
   const chances = (key, h, mine, sdM) => {
     const id = `${key}|${h}`; if (chanceMemo.has(id)) return chanceMemo.get(id);
     const others = fieldProj[h - 1].filter((x) => x.k !== key);
-    if (others.length >= 50 && mine + 5 * sdM < others[49].v - 5 * (others[49].sd || sdM)) { const o = { top10: 0, top50: 0 }; chanceMemo.set(id, o); return o; }
-    const r = rng(12345 + h); let t10 = 0, t50 = 0; const S = 3000;
+    // (update 414: top 100 too)
+    if (others.length >= 100 && mine + 5 * sdM < others[99].v - 5 * (others[99].sd || sdM)) { const o = { top10: 0, top50: 0, top100: 0 }; chanceMemo.set(id, o); return o; }
+    const r = rng(12345 + h); let t10 = 0, t50 = 0, t100 = 0; const S = 3000;
     for (let s = 0; s < S; s++) {
       const me = mine + gauss(r) * sdM; let better = 0;
-      for (const o of others) { if (o.v + gauss(r) * o.sd > me) { better++; if (better >= 50) break; } }
-      if (better < 10) t10++; if (better < 50) t50++;
+      for (const o of others) { if (o.v + gauss(r) * o.sd > me) { better++; if (better >= 100) break; } }
+      if (better < 10) t10++; if (better < 50) t50++; if (better < 100) t100++;
     }
-    const out = { top10: others.length >= 10 ? t10 / S : null, top50: others.length >= 50 ? t50 / S : null };
+    const out = { top10: others.length >= 10 ? t10 / S : null, top50: others.length >= 50 ? t50 / S : null, top100: others.length >= 100 ? t100 / S : null };
     chanceMemo.set(id, out); return out;
   };
 
@@ -387,7 +388,7 @@ export function forecastPlayer(model, key) {
     const others = model.fieldProj[h - 1].filter((x) => x.k !== key);
     const rank = 1 + others.filter((x) => x.v > pr.total).length;
     const ch = model.chances(key, h, pr.total, pr.sd);
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, of: others.length + 1, top10: ch.top10, top50: ch.top50 });
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, of: others.length + 1, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
   }
   const lastS = histAdj.at(-1), prev = histAdj.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
   const careerPutt = wsum ? prev.reduce((t, s) => t + s.cats.PUTT * s.n, 0) / wsum : null;
