@@ -451,7 +451,8 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
 
   // 2 · side by side: by season, against strong and weak fields, the projection and the odds
   const seasonRows = order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${showYears.map((y) => `<td>${cell(T.seasons.get(y).out.get(f.key), "TOTAL")}</td>`).join("")}<td class="hlc">${cell(L1(f), "TOTAL")}</td></tr>`).join("");
-  const fcRows = FC ? FC.rows.map((r) => {
+  // (update 427) least drop first (better in strong fields at the top), no data last
+  const fcRows = FC ? [...FC.rows].sort((a, b) => (a.drop ?? Infinity) - (b.drop ?? Infinity)).map((r) => {
     const f = fcs.find((x) => x.key === r.key), s0 = r.r.strong, w = r.r.weak;
     const label = r.drop == null ? "—" : r.pctile == null ? "" : r.pctile < 0.4 ? "Holds up better" : r.pctile > 0.6 ? "Drops more" : "About typical";
     return `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td><td>${w.n ? `<span class="${tone(w.tot / w.n)}">${f2(w.tot / w.n)}</span> <small>${w.n} rds</small>` : "—"}</td><td>${s0.n ? `<span class="${tone(s0.tot / s0.n)}">${f2(s0.tot / s0.n)}</span> <small>${s0.n} rds</small>` : "—"}</td><td>${r.drop == null ? "—" : f2(r.drop)}</td><td><b>${label}</b>${r.pctile != null ? ` <small>${ordinal(Math.round(r.pctile * 100))} pct.</small>` : ""}</td></tr>`;
