@@ -67,7 +67,7 @@ def _say(msg, t0=None):
 # The upload
 # --------------------------------------------------------------------------------------------------------------
 
-def upload_dataframe(df, name, description="", id_column="playerID", wait=True, timeout=1800, key_path=None, mode="direct", fmt=None):
+def upload_dataframe(df, name, description="", id_column="playerID", wait=True, timeout=3600, key_path=None, mode="direct", fmt=None):
     """Upload a pandas DataFrame as the data file `name` (the same name replaces that file).
 
     df           the data, with the same columns as a file you'd upload by hand
@@ -90,7 +90,7 @@ def upload_dataframe(df, name, description="", id_column="playerID", wait=True, 
     return _upload_direct(df, str(name).strip(), description or "", id_column, wait, timeout, key_path)
 
 
-def upload_file(path, name=None, description="", id_column="playerID", wait=True, timeout=1800, key_path=None, mode="direct"):
+def upload_file(path, name=None, description="", id_column="playerID", wait=True, timeout=3600, key_path=None, mode="direct"):
     """Upload a .csv, .csv.gz or .parquet file you already have (name defaults to the file name)."""
     import pandas as pd
 
@@ -372,6 +372,9 @@ def build_dataset(df, id_column="playerID", progress=None):
     return {"idColumn": columns[id_i], "columns": cols, "players": players, "rowCount": len(df), "blankIdRows": blank}
 
 
+build_website_dataset = build_dataset  # (the name some copies of this file used)
+
+
 def _writer(db):
     """Firestore's BulkWriter (many writes in parallel) when this version has it, else plain batches."""
     if hasattr(db, "bulk_writer"):
@@ -531,7 +534,7 @@ def _upload_to_cloud(df, name, description, id_column, wait, timeout, key_path, 
     return wait_for(blob.generation, timeout=timeout, key_path=key_path)
 
 
-def wait_for(status_id, timeout=1800, key_path=None, marker_generation=None):
+def wait_for(status_id, timeout=3600, key_path=None, marker_generation=None):
     """Wait for an upload (or its rankings) to finish, printing each step. Raises RuntimeError if it failed or was
     stopped (no heartbeat for 12 minutes: the cloud ran out of time or memory)."""
     app = _connect(key_path)
@@ -555,14 +558,14 @@ def wait_for(status_id, timeout=1800, key_path=None, marker_generation=None):
             when = d.get("updatedAt")
             if hasattr(when, "timestamp") and time.time() - when.timestamp() > STALE_SECONDS:
                 raise RuntimeError("the cloud step stopped (no progress for 12 minutes: it ran out of time or memory). "
-                                   "Give the data-import function 4 GiB of memory, or open Analyze on a computer to rebuild the rankings.")
+                                   "Redeploy the data-import function from update 403 or later (it rebuilds in parts), then click Rebuild rankings on Upload Data.")
         if marker is not None:
             m = marker.get()
             md = m.to_dict() if m.exists else None
             if md and md.get("status") == "error":
                 raise RuntimeError("the data-import function in the cloud is an older version that doesn't know this step. "
                                    "Paste functions/data-import/index.js from update 165 into it (see DEPLOY_PYTHON.md), "
-                                   "or open Analyze on a computer to rebuild the rankings.")
+                                   "then click Rebuild rankings on Upload Data.")
         time.sleep(3)
     print("Still working. It'll finish on its own: check Upload Data in the portal.", flush=True)
     return {"status": "waiting", "statusId": status_id}
