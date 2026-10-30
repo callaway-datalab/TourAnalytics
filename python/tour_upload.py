@@ -35,6 +35,7 @@ from firebase_admin import credentials, firestore, storage
 BUCKET = "touranalytics-dd46e.firebasestorage.app"
 DEFAULT_KEY = os.path.join(os.path.expanduser("~"), "touranalytics-key.json")
 MAX_CHUNK_CHARS = 300000  # as js/data.js: JSON characters per stored piece (Firestore documents hold ~1 MiB)
+ZIP_MAX_BYTES = 900000    # (update 399) gzipped bytes per stored piece, as js/data.js ZIP_MAX_BYTES
 STALE_SECONDS = 12 * 60   # a cloud step with no heartbeat for this long has been stopped
 
 _app = None
@@ -296,6 +297,38 @@ def chunk_rows(rows, max_chars=MAX_CHUNK_CHARS):
     return chunks
 
 
+def chunk_rows_z(rows, max_bytes=ZIP_MAX_BYTES):
+    """(update 399) Rows into gzipped stored pieces (bytes), as js/data.js chunkRowsZ: each piece packed as
+    pack_rows, then gzipped, about a fifth of the space. The site reads these and the older text pieces alike."""
+    chunks = []
+
+    def emit(run):
+        if not run:
+            return
+        z = gzip.compress(pack_rows(run).encode("utf-8"), compresslevel=6)
+        if len(z) <= max_bytes or len(run) == 1:
+            chunks.append(z)
+            return
+        h = (len(run) + 1) // 2
+        emit(run[:h])
+        emit(run[h:])
+
+    run, size, budget = [], 0, 12_000_000
+    for r in rows:
+        n = len(_DUMPS(r))
+        if n + 2 > 800000:
+            raise ValueError("One row in this file is too large to store.")
+        if run and size + n + 1 > budget:
+            emit(run)
+            run, size = [], 0
+        run.append(r)
+        size += n + 1
+    emit(run)
+    if not chunks:
+        chunks.append(gzip.compress(pack_rows([]).encode("utf-8")))
+    return chunks
+
+
 def build_dataset(df, id_column="playerID", progress=None):
     """The DataFrame split per player, as the Upload Data page splits a file (js/data.js buildDataset)."""
     columns = [str(c) for c in df.columns]
@@ -335,7 +368,7 @@ def build_dataset(df, id_column="playerID", progress=None):
     for k in order:
         pos = groups[k]
         name = next((str(names[p]).strip() for p in pos if names is not None and not _blank(names[p])), None) if names is not None else None
-        players.append({"key": client_key(k), "label": k, "name": name, "rows": len(pos), "chunks": chunk_rows([rows_all[p] for p in pos])})
+        players.append({"key": client_key(k), "label": k, "name": name, "rows": len(pos), "chunks": chunk_rows_z([rows_all[p] for p in pos])})
     return {"idColumn": columns[id_i], "columns": cols, "players": players, "rowCount": len(df), "blankIdRows": blank}
 
 
@@ -352,7 +385,8 @@ def _writer(db):
         state.update(batch=db.batch(), n=0, bytes=0)
 
     def add(kind, ref, data=None):
-        size = len(json.dumps(data, default=str)) if data is not None else 100
+        size = (len(data["z"]) + 200 if isinstance((data or {}).get("z"), bytes)
+                else len(json.dumps(data, default=str)) if data is not None else 100)
         if state["n"] and (state["n"] >= 400 or state["bytes"] + size > 8_000_000):
             flush()
         (state["batch"].set(ref, data) if kind == "set" else state["batch"].delete(ref))
@@ -394,7 +428,7 @@ def _upload_direct(df, name, description, id_column, wait, timeout, key_path):
         for p in ds["players"]:
             base = db.collection("clientData").document(p["key"]).collection("datasets").document(dataset_id)
             for i, data in enumerate(p["chunks"]):
-                set_doc(base.collection("chunks").document(str(i)), {"data": data})
+                set_doc(base.collection("chunks").document(str(i)), {"z": data})  # (update 399: gzipped bytes)
                 done_docs += 1
             if time.time() - last > 20:
                 last = time.time()
