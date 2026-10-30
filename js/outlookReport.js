@@ -354,7 +354,8 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const H = fcs[0].years.length, CLOSE = 0.03;
   const bestAt = Array.from({ length: H }, (_, h) => { const s0 = [...fcs].sort((a, b) => b.years[h].total - a.years[h].total); return { f: s0[0], next: s0[1] || null, gap: s0[1] ? s0[0].years[h].total - s0[1].years[h].total : null, close: s0[1] ? s0[0].years[h].total - s0[1].years[h].total < CLOSE : false }; });
   const firstBest = (f) => { const h = bestAt.findIndex((b) => b.f === f); return h < 0 ? H : h; };
-  const order = [...fcs].sort((a, b) => firstBest(a) - firstBest(b) || b.years[0].total - a.years[0].total);
+  // (update 425) everything in the order of the last season projected (the one that matters most)
+  const order = [...fcs].sort((a, b) => b.years.at(-1).total - a.years.at(-1).total);
   const outTxt = (h) => `${h + 1} year${h ? "s" : ""} out`;
   const odds = fcs.length >= 2 ? groupOdds(order) : null;
   const yrs = order[0].years.map((y) => y.year);
@@ -392,10 +393,20 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     if (f.years[0].hi - f.years[0].lo > 1.7) out.push(`Wide ${f.years[0].year} range: ${f2(f.years[0].lo)} to ${f2(f.years[0].hi)}`);
     return out;
   };
+  // (update 425) other positives: the mirror of the other risks
+  const posOf = (f) => {
+    const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = f.flags || {};
+    if (FCr?.drop != null && FCr.drop < 0) out.push(`Stronger fields: ${abs2(FCr.drop)} a round better than in weaker ones, ${FC.years.join("–")}`);
+    else if (FCr?.drop != null && FCr.pctile != null && FCr.pctile < 0.25) out.push(`Stronger fields: only ${abs2(FCr.drop)} a round worse than weaker ones, ${FC.years.join("–")} (a smaller drop than ${Math.round((1 - FCr.pctile) * 100)}% of players)`);
+    if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(`${fl.lastYear} vs. own ${fl.usualFrom === fl.usualTo ? fl.usualFrom : `${fl.usualFrom}–${fl.usualTo}`} average: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} (${f2(fl.vsUsual)})`);
+    const y3 = f.years.at(-1);
+    if (f.age != null && model.ageOk && y3.ageAdd >= 0.1) out.push(`Age: about ${f2(y3.ageAdd)} a round by ${y3.year}`);
+    return out;
+  };
   const strengthsOf = (f) => { const L0 = L1(f); if (!L0) return []; const good = CATS.filter((c) => L0.v[c] > 0.005).sort((a, b) => L0.v[b] - L0.v[a]); const b0 = insight.get(f.key).best; return good.length ? good.map((c) => `${CATN[c]}: ${f2(L0.v[c])} a round`) : [`None gaining strokes on the field; closest is ${CATN[b0]} (${f2(L0.v[b0])})`]; };
   const lst = (a) => `<ul class="sr">${a.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
   const strHead = `<div class="lab s">Strengths <span class="labq">vs. the field, ${esc(win)}</span></div>`, wkHead = `<div class="lab w">Weaknesses <span class="labq">vs. the field, ${esc(win)}</span></div>`;
-  const srBlock = (f) => { const st = strengthsOf(f), wk = weakOf(f), rk = risksOf(f); return `${st.length ? strHead + lst(st) : ""}${wk.length ? wkHead + lst(wk) : ""}${rk.length ? `<div class="lab w">Other risks</div>${lst(rk)}` : ""}`; };
+  const srBlock = (f) => { const st = strengthsOf(f), wk = weakOf(f), rk = risksOf(f); const po = posOf(f); return `${st.length ? strHead + lst(st) : ""}${po.length ? `<div class="lab s">Other positives</div>${lst(po)}` : ""}${wk.length ? wkHead + lst(wk) : ""}${rk.length ? `<div class="lab w">Other risks</div>${lst(rk)}` : ""}`; };
 
   // the key takeaways (each a label and a sentence)
   const TK = [];
@@ -411,8 +422,6 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   if (tr[0] && tr[0][1] >= 0.05) TK.push(["Rising", `${nm(tr[0][0])}: ${f2(tr[0][0].years[0].total)} in ${yrs[0]} to ${f2(tr[0][0].years.at(-1).total)} by ${yrs.at(-1)}.`]);
   const fall = tr.at(-1);
   if (fall && fall[1] <= -0.05 && fall[0] !== tr[0][0]) { const ad = fall[0].years.at(-1).ageAdd; TK.push(["Fading", `${nm(fall[0])}: ${f2(fall[0].years[0].total)} in ${yrs[0]} to ${f2(fall[0].years.at(-1).total)} by ${yrs.at(-1)}${ad <= -0.1 ? `, mostly age (about ${abs2(ad)} a round)` : ""}.`]); }
-  if (withL.length >= 2) { let gap = null; for (const c of CATS) { const s0 = [...withL].sort((x, y) => L1(y).v[c] - L1(x).v[c]), d = L1(s0[0]).v[c] - L1(s0.at(-1)).v[c]; if (!gap || d > gap.d) gap = { c, d, hi: s0[0], lo: s0.at(-1) }; }
-    TK.push(["Biggest difference", `${CATN[gap.c]}: ${ln(gap.hi)} ${f2(L1(gap.hi).v[gap.c])} against ${ln(gap.lo)} ${f2(L1(gap.lo).v[gap.c])} a round over the ${win}.`]); }
   if (FC && FC.rows.filter((r) => r.drop != null).length >= 2) { const rs = FC.rows.filter((r) => r.drop != null).sort((a, b) => a.drop - b.drop), hold = fcs.find((x) => x.key === rs[0].key), drop = fcs.find((x) => x.key === rs.at(-1).key);
     TK.push(["Against strong fields", `${ln(hold)} holds up best; ${ln(drop)} gives back the most (${abs2(rs.at(-1).drop)} a round worse than in weaker fields).`]); }
 
@@ -421,7 +430,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const verdict = order.map((f, i) => {
     const y1 = f.years[0];
     return `<div class="take" style="--c:${colorOf(f)}"><div class="tk">${esc(roleOf(f, i))}</div><div class="who">${nm(f)}${ageTxt(f)}</div>
-      <div class="nums">${(() => { const o = curS?.out.get(f.key); return o?.n ? `<span><b class="${tone(o.v.TOTAL)}">${f2(o.v.TOTAL)}</b> in ${esc(curY)} (#${o.rk.TOTAL}, ${o.n} rds)</span>` : ""; })()}<span><b class="${tone(y1.total)}">${f2(y1.total)}</b> projected in ${esc(yrs[0])} (~${ordinal(y1.rank)})</span><span>projected ${f.years.slice(1).map((y) => `<b class="${tone(y.total)}">${f2(y.total)}</b> in ${esc(y.year)}`).join(" · ")}</span>${odds ? `<span><b>${pct(odds.best[i][0])}</b> best of the ${fcs.length} in ${esc(yrs[0])} · <b>${pct(odds.best[i].at(-1))}</b> in ${esc(yrs.at(-1))}</span>` : ""}</div>
+      <div class="nums">${(() => { const o = curS?.out.get(f.key); return o?.n ? `<span><b class="${tone(o.v.TOTAL)}">${f2(o.v.TOTAL)}</b> in ${esc(curY)} (#${o.rk.TOTAL}, ${o.n} rds)</span>` : ""; })()}</div><div class="lab pj">Projections</div><div class="nums">${f.years.map((y, h) => `<span><b class="${tone(y.total)}">${f2(y.total)}</b> in ${esc(y.year)} (~${ordinal(y.rank)})${odds ? ` · ${pct(odds.best[i][h])} best${fcs.length >= 4 ? "" : ` of the ${fcs.length}`}` : ""}</span>`).join("")}</div>
       ${srBlock(f)}</div>`;
   }).join("");
   const projRows = order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b class="${tone(y.total)}">${f2(y.total)}</b> <small>~${ordinal(y.rank)}</small><br><small>${f2(y.lo)} to ${f2(y.hi)}</small></td>`).join("")}</tr>`).join("");
@@ -431,7 +440,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const chartH = Math.round(Math.max(175, Math.min(330, tkPx - 95)));
   // 1 · overview
   pages.push(`<section class="page"><div class="kicker">Player evaluation · Skill and 3-season projection · ${esc(target)} · Data through ${esc(thru)}</div>
-    <h1>${fcs.map(ln).join(" · ")}</h1>
+    <h1>${order.map(ln).join(" · ")}</h1>
     <div class="banner">${esc(headline)}</div>
     <div class="cols c55"><div class="tkbox"><h3>Key takeaways</h3><ol class="tks">${TK.map(([l, t]) => `<li><b>${esc(l)}.</b> ${t}</li>`).join("")}</ol></div>
       <div><h3>Where they’re headed <small>strokes gained a round against an average ${esc(target)} field</small></h3>
@@ -439,7 +448,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     <h3 class="vh">The verdict</h3><div class="takes n${order.length}">${verdict}</div></section>`);
 
   // 2 · side by side: by season, against strong and weak fields, the projection and the odds
-  const seasonRows = fcs.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${showYears.map((y) => `<td>${cell(T.seasons.get(y).out.get(f.key), "TOTAL")}</td>`).join("")}<td class="hlc">${cell(L1(f), "TOTAL")}</td></tr>`).join("");
+  const seasonRows = order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${showYears.map((y) => `<td>${cell(T.seasons.get(y).out.get(f.key), "TOTAL")}</td>`).join("")}<td class="hlc">${cell(L1(f), "TOTAL")}</td></tr>`).join("");
   const fcRows = FC ? FC.rows.map((r) => {
     const f = fcs.find((x) => x.key === r.key), s0 = r.r.strong, w = r.r.weak;
     const label = r.drop == null ? "—" : r.pctile == null ? "" : r.pctile < 0.4 ? "Holds up better" : r.pctile > 0.6 ? "Drops more" : "About typical";
@@ -471,7 +480,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     const card = `<div class="card big1 band" style="--c:${colorOf(f)}"><div>
       ${L ? `<div class="bigrow"><div class="big ${tone(L.v.TOTAL)}">${f2(L.v.TOTAL)}</div><div class="bl"><b>${WIN}</b><br>SG total a round · #${L.rk.TOTAL} of ${L.of.TOTAL}<br>${L.n} rounds</div></div>` : `<div class="muted">No rounds in the ${win}</div>`}
       ${L ? `<div class="mix"><span>Ball-striking <b class="${tone(ins.mix.bs)}">${f2(ins.mix.bs)}</b></span><span>Short game <b class="${tone(ins.mix.sh)}">${f2(ins.mix.sh)}</b></span></div>` : ""}
-      </div><div>${strHead}${lst(strengthsOf(f))}</div><div>${wkHead}${lst(weakOf(f))}</div><div>${risksOf(f).length ? `<div class="lab w">Other risks</div>${lst(risksOf(f))}` : ""}</div></div>`;
+      </div><div>${strHead}${lst(strengthsOf(f))}${posOf(f).length ? `<div class="lab s">Other positives</div>${lst(posOf(f))}` : ""}</div><div>${wkHead}${lst(weakOf(f))}</div><div>${risksOf(f).length ? `<div class="lab w">Other risks</div>${lst(risksOf(f))}` : ""}</div></div>`;
     const proj = `<div><h3>Projection <small>against an average ${esc(target)} field</small></h3><table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>
       <tr><td>Strokes gained a round</td>${f.years.map((y) => `<td><b class="${tone(y.total)}">${f2(y.total)}</b><br><small>${f2(y.lo)} to ${f2(y.hi)}</small></td>`).join("")}</tr>
       <tr><td>Rank it would mean <small>of ~${f.years[0].of}</small></td>${f.years.map((y) => `<td>~${ordinal(y.rank)}</td>`).join("")}</tr>
@@ -530,7 +539,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   .player{display:flex;flex-direction:column}.pbody{flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:6px}@media screen{.player{height:8.5in}}
   .card.band{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.2fr;gap:18px;align-items:start;padding:10px 14px}.card.band .lab{margin-top:2px}.boxes.b2{grid-template-columns:1fr 1fr;align-content:start;margin-top:6px}.c64{grid-template-columns:1.35fr 1fr}.player table.proj td{white-space:nowrap}.player table.proj td:first-child{white-space:normal}.side td:last-child{white-space:nowrap}.box.p .bt{color:#d0861c}.boxes.b2 .box.wide{grid-column:1/-1}.runkey{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:3px;margin-right:2px}.card .sr2{margin-top:8px}.card.big1 ul.sr li{font-size:12px}
   .tks li{font-size:12px;line-height:1.28;margin:2px 0}.take ul.sr li{font-size:11px;line-height:1.25}.take .lab{margin:2px 0 0}.take{padding:6px 9px}h3.vh{margin-top:6px}
-  .labq{text-transform:none;letter-spacing:0;font-weight:400;color:#6b7480;margin-left:3px}
+  .take .nums{flex-direction:column;gap:1px}.lab.pj{color:#2f6fdb}.labq{text-transform:none;letter-spacing:0;font-weight:400;color:#6b7480;margin-left:3px}
   .side .cols{gap:40px}.side .cols.c3{gap:56px}.side td:first-child{white-space:nowrap}.side td small{white-space:nowrap}.side table{margin-bottom:10px}.side td,.side th{padding:6px 5px}.side h3.ctr{text-align:center}.side table.topn td:not(:first-child),.side table.topn th:not(:first-child){text-align:center}
   .bar{position:sticky;top:0;background:#1b1f24;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:12px;z-index:2}.bar button{font:inherit;padding:5px 12px;border-radius:6px;border:0;background:#fff;color:#1b1f24;font-weight:600;cursor:pointer}@media print{.bar{display:none}}`;
   const title = `${fcs.map((f) => lastName(f.name)).join(", ")} · Outlook ${yrs[0]}–${yrs.at(-1)}`;
