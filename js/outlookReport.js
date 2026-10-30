@@ -382,8 +382,21 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   // (update 418) weaknesses: parts of the game losing strokes to the field over the recent window (the worst one when none is)
   const weakOf = (f) => { const L0 = L1(f); if (!L0) return []; const bad = CATS.filter((c) => L0.v[c] < -0.1).sort((a, b) => L0.v[a] - L0.v[b]).slice(0, 2); const w0 = insight.get(f.key).worst; return bad.length ? bad.map((c) => `${CATN[c]}: ${f2(L0.v[c])} a round`) : w0 ? [`None losing much; weakest is ${CATN[w0]} (${f2(L0.v[w0])})`] : []; };
   // risks: other things that could pull them down, each with what it compares and over what time
+  // (update 428) the season flags from the same numbers as the season table (every round on the tour, averaged over
+  // all of them), so "putting carried" and "vs. their own average" always match the table
+  const flagsOf = (f) => {
+    const fl0 = f.flags || {}, ys = T.years.filter((y) => T.seasons.get(y)?.out.get(f.key)?.n);
+    const ly = ys.at(-1), lo = ly ? T.seasons.get(ly).out.get(f.key) : null;
+    if (!lo) return { ...fl0, vsUsual: null, puttLed: false, lastPutt: null };
+    const prev = ys.slice(0, -1).slice(-3).map((y) => T.seasons.get(y).out.get(f.key)), wn = prev.reduce((t, o) => t + o.n, 0);
+    const usual = wn ? prev.reduce((t, o) => t + o.v.TOTAL * o.n, 0) / wn : null;
+    const swing = fl0.swing != null && fl0.lastN ? fl0.swing * Math.sqrt(fl0.lastN / lo.n) : 0.15;
+    const tot = lo.v.TOTAL, putt = lo.v.PUTT;
+    return { ...fl0, lastYear: ly, lastTot: tot, lastPutt: putt, lastN: lo.n, swing, usualTot: usual, usualFrom: wn ? ys[Math.max(0, ys.length - 1 - prev.length)] : null, usualTo: wn ? ys.at(-2) : null,
+      vsUsual: usual != null ? tot - usual : null, puttLed: tot > swing && putt > tot / 2 };
+  };
   const risksOf = (f) => {
-    const L0 = L1(f), FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = f.flags || {};
+    const L0 = L1(f), FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
     if (FCr?.pctile > 0.6 && FCr.drop != null) out.push(`Stronger fields: ${abs2(FCr.drop)} a round worse than weaker ones, ${FC.years.join("–")}`);
     if (fl.vsUsual != null && fl.vsUsual < -fl.swing) out.push(vsTxt(fl));
     if (fl.puttLed && fl.lastPutt != null) out.push(`Putting carried ${fl.lastYear}: ${f2(fl.lastPutt)} of ${f2(fl.lastTot)} a round`);
@@ -397,7 +410,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const vsTxt = (fl) => `${fl.lastYear} vs. ${fl.usualFrom === fl.usualTo ? fl.usualFrom : `own ${fl.usualFrom}–${fl.usualTo} average`}: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} (${f2(fl.vsUsual)})`;
   // (update 425) other positives: the mirror of the other risks
   const posOf = (f) => {
-    const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = f.flags || {};
+    const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
     if (FCr?.drop != null && FCr.drop < 0) out.push(`Stronger fields: ${abs2(FCr.drop)} a round better than in weaker ones, ${FC.years.join("–")}`);
     else if (FCr?.drop != null && FCr.pctile != null && FCr.pctile < 0.25) out.push(`Stronger fields: only ${abs2(FCr.drop)} a round worse than weaker ones, ${FC.years.join("–")} (a smaller drop than ${Math.round((1 - FCr.pctile) * 100)}% of players)`);
     if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(vsTxt(fl));

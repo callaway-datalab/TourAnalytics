@@ -250,7 +250,8 @@ function learn(D, { tour = null } = {}) {
       s.n++; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { s.t[c] += A[i * NC + c]; s.m[c]++; }
     }
     const out = new Map();
-    for (const [key, s] of sums) out.set(key, { n: s.n, cats: s.t.map((v, c) => (s.m[c] ? v / s.m[c] : 0)) });
+    // (update 428) averaged over every round, as the site's tables do (a round with no shot of a kind gained 0 there)
+    for (const [key, s] of sums) out.set(key, { n: s.n, cats: s.t.map((v) => v / s.n) });
     return out;
   };
 
