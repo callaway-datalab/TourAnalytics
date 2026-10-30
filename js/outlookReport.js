@@ -398,24 +398,22 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   // 5 · odds, the take, how it works
   const oddsTbl = odds ? `<table><tr><th>Chance of ranking best of the ${fcs.length}</th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f, i) => `<tr><td><b>${nm(f)}</b></td>${odds.best[i].map((p) => `<td>${pct(p)}</td>`).join("")}</tr>`).join("")}</table>
     <h3>Likeliest orders in ${esc(yrs[0])}</h3><table>${odds.orders.map((o) => `<tr><td>${o.order.map((i) => ln(order[i])).join(" › ")}</td><td>${pct(o.p)}</td></tr>`).join("")}</table>` : "";
-  const roleOf = (f, i) => (i === 0 ? "Best over three seasons" : f === nextBest ? `Best in ${yrs[0]}` : f.years.at(-1).total - f.years[0].total >= 0.1 ? "Rising" : i === order.length - 1 ? "Furthest back" : "In the middle");
+  // (update 411) where each finishes over the three seasons (and who's best next season, when that's someone else)
+  const roleOf = (f, i) => `${ordinal(i + 1)} over three seasons${f === nextBest ? ` \u00b7 best in ${yrs[0]}` : ""}`;
   const takes = order.map((f, i) => {
     const ins = insight.get(f.key), FCr = FC?.rows.find((r) => r.key === f.key);
     const risk = [f.flags?.fewRounds ? "few rounds last season" : "", FCr?.pctile > 0.6 ? "numbers lean on weaker fields" : "", ins.worst && lastOf(f.key)?.v?.[ins.worst] < -0.2 ? `${CATN[ins.worst].toLowerCase()} (${f2(lastOf(f.key).v[ins.worst])})` : "", f.age != null && model.ageOk && f.years.at(-1).ageAdd <= -0.1 ? "age" : ""].filter(Boolean);
-    return `<div class="take" style="--c:${colors[fcs.indexOf(f) % colors.length]}"><div class="tk">${i + 1} · ${esc(roleOf(f, i))}</div><div class="who">${nm(f)}</div>
+    return `<div class="take" style="--c:${colors[fcs.indexOf(f) % colors.length]}"><div class="tk">${esc(roleOf(f, i))}</div><div class="who">${nm(f)}</div>
       <p>${f2(f.years[0].total)} in ${esc(yrs[0])}, ${f2(sum3(f))} a season over ${esc(yrs[0])}–${esc(yrs.at(-1))}.${odds ? ` Best of the ${fcs.length} in ${esc(yrs[0])}: ${pct(odds.best[i][0])}.` : ""}</p>
-      ${ins.best ? `<p><b>${lastOf(f.key).v[ins.best] > 0.005 ? "Build on" : "Least costly"}:</b> ${CATN[ins.best]} (${f2(lastOf(f.key).v[ins.best])}).</p>` : ""}${risk.length ? `<p><b>Risks:</b> ${esc(risk.join("; "))}.</p>` : ""}</div>`;
+      ${ins.best ? `<p><b>Strengths:</b> ${(() => { const L0 = lastOf(f.key), good = CATS.filter((c) => L0.v[c] > 0.005).sort((a, b) => L0.v[b] - L0.v[a]); return good.length ? good.map((c) => `${CATN[c]} (${f2(L0.v[c])})`).join(", ") : `none gaining strokes yet; closest is ${CATN[ins.best]} (${f2(L0.v[ins.best])})`; })()}.</p>` : ""}${risk.length ? `<p><b>Risks:</b> ${esc(risk.join("; "))}.</p>` : ""}</div>`;
   }).join("");
-  // (update 410) how the projection works, and the backtest (as a table, like a slide)
-  const ec = (e) => (e ? e.toFixed(2) : "\u2014");
-  const btRows = [0, 1, 2].map((h) => { const e = model.err?.[h]; return e ? `<tr><td>${h + 1} season${h ? "s" : ""} ahead</td><td><b>${ec(e.bt?.model ?? e.mae)}</b></td><td>${ec(e.bt?.last)}</td><td>${ec(e.bt?.avg)}</td><td>${Math.round((e.inside ?? 0) * 100)}%</td></tr>` : ""; }).join("");
+  // (update 410) how the projection works
   const pc = pr.cats || {};
   const method = `<ul class="meth">
     <li><b>Field strength.</b> Every round is credited for the strength of its field (the average level of the players in it), so a weak-field week counts for less and every tour sits on one scale. On ${esc(target)}, a field moves a round by ${f2(pr.field?.spread?.[0] ?? 0)} to ${f2(pr.field?.spread?.[1] ?? 0)} (middle 80% of events).</li>
     <li><b>Event by event.</b> A Kalman filter per part of the game: after each event a player\u2019s level moves toward what they showed, by how much that event deserves. Recent events count most. Learned from the data: a round\u2019s noise (${CATS.map((c) => `${CATS_SHORT[c]} \u00b1${(pc[c]?.noise ?? 0).toFixed(2)}`).join(", ")}) and how long half an edge lasts (${CATS.map((c) => `${CATS_SHORT[c]} ${(pc[c]?.halfLife ?? 0).toFixed(1)} yrs`).join(", ")}).</li>
     <li><b>Age:</b> ${model.ageOk ? `${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")} a season (learned from ${pr.age.players} players\u2019 birth dates).` : "no birth dates in the data, so not used."}</li>
-    <li>Every setting is learned from this data (maximum likelihood), not chosen. Ranges scaled so 8 in 10 past seasons landed inside. Odds from 20,000 simulated seasons.</li></ul>
-    ${btRows ? `<h3>Backtest: seasons it hadn\u2019t seen, players with 20+ rounds</h3><table class="bt"><tr><th></th><th>Model</th><th>Latest season</th><th>Tour avg</th><th>In 80% range</th></tr>${btRows}</table><p class="foot">Typical miss in strokes gained a round (lower is better). Latest season: their last season as it was. Tour avg: everyone at the average.</p>` : ""}`;
+    <li>Every setting is learned from this data (maximum likelihood), not chosen. Ranges scaled so 8 in 10 past seasons landed inside. Odds from 20,000 simulated seasons.</li></ul>`;
   const before = [
     fcs.some((f) => f.age == null) ? `Add birth dates for ${fcs.filter((f) => f.age == null).map(ln).join(", ")} (age is left out without them).` : "",
     fcs.some((f) => f.flags?.fewRounds) ? `Few rounds last season for ${fcs.filter((f) => f.flags?.fewRounds).map(ln).join(", ")}: revisit after more rounds.` : "",
