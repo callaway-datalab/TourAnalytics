@@ -476,7 +476,9 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   // How much this file takes once stored (all players' pieces), for the storage bar. Checked before anything
   // is deleted: the free Spark plan stores 1 GiB in all, so a file that would fill most of it is refused.
   // (update 399) gzipped pieces, saved as bytes
-  const pieces = new Map(await Promise.all([...dataset.byClient].map(async ([k, g]) => [k, await chunkRowsZ(g.rows)])));
+  // (update 401) one player at a time: compressing everyone at once ran the page out of memory on big files
+  const pieces = new Map();
+  for (const [k, g] of dataset.byClient) pieces.set(k, await chunkRowsZ(g.rows));
   const storedBytes = [...pieces.values()].flat().reduce((n, d) => n + d.length, 0);
   if (storedBytes > 600 * 1024 * 1024) throw new UserError(`Stored, this file would take about ${Math.round(storedBytes / 1024 / 1024).toLocaleString()} MB. The free Firebase plan holds 1 GB in all (the portal's other data included), so it can't be uploaded as it is. Upload part of it (recent years, say), or move to the Blaze plan.`);
   // Clean up client data this upload no longer covers, and any stale data for clients it still covers.

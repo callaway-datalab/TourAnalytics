@@ -363,7 +363,7 @@ export async function chunkRowsZ(rows) {
     await emit(run.slice(0, h)); await emit(run.slice(h));
   };
   let run = [], size = 0;
-  const budget = 12000000; // (plain characters a piece: packed and gzipped, usually well under the limit)
+  const budget = 6000000; // (plain characters a piece: packed and gzipped, usually well under the limit)
   for (const row of rows) {
     const n = JSON.stringify(row).length;
     if (run.length && size + n + 1 > budget) { await emit(run); run = []; size = 0; }
