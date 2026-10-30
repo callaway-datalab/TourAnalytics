@@ -15,7 +15,7 @@ const ncdf = (z) => { const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2), 
  *      a round is, how far apart players' levels are, how fast a level drifts back, and where back is) are the ones
  *      that make the data most likely (maximum likelihood).
  *   3. Age. How players' levels change with age, per part of the game, read from where the filter kept being
- *      surprised in the same direction at the same age; then used at the strength (0–100%) that best predicted seasons it hadn’t seen.
+ *      surprised in the same direction at the same age; trusted fully at ages with plenty of seasons and less at the thin extremes, by the amount that best predicted unseen seasons.
  *   4. Ranges. The spread of a season's result (the player's level is uncertain, and a season is a limited number of
  *      rounds), scaled so that 8 in 10 past seasons it hadn't seen landed inside.
  *   5. Checked: each season from the fourth on forecast from a model learned only on the seasons before it, against
@@ -156,14 +156,14 @@ function learn(D, { tour = null } = {}) {
       const a = O.pStart[p], b = O.pStart[p + 1];
       if (a === b) { if (collect?.ends) collect.ends[p] = null; continue; }
       let x = mu, P = s2, tp = O.T[a];
-      const bt = birthT[p], hasAge = Number.isFinite(bt) && drift;
+      const bt = birthT[p], hasAge = Number.isFinite(bt) && drift, shared = drift && !hasAge ? drift.mean || 0 : 0;
       for (let k = a; k < b; k++) {
         const n = O.Nn[k * NC + c];
         const dt = O.T[k] - tp;
         if (dt > 0) {
           const f = Math.exp(-lam * dt);
           let dr = 0;
-          if (hasAge) dr = drift[ageIdx((tp + O.T[k]) / 2 - bt)] * dt;
+          if (hasAge) dr = drift[ageIdx((tp + O.T[k]) / 2 - bt)] * dt; else if (shared) dr = shared * dt;
           x = mu + (x - mu) * f + dr; P = P * f * f + s2 * (1 - f * f);
           tp = O.T[k];
         }
@@ -202,12 +202,16 @@ function learn(D, { tour = null } = {}) {
   // 3. age: the change in a player's level per year of age, per part of the game, learned together with the filter
   // (maximum likelihood, like its other settings): a value at each of a few ages, straight lines between them
   const KNOTS = [22, 27, 32, 37, 42];
-  const gridOf = (kv) => { const g = new Float64Array(AN); for (let i = 0; i < AN; i++) { const a = A0 + i * AS; if (a <= KNOTS[0]) g[i] = kv[0]; else if (a >= KNOTS.at(-1)) g[i] = kv.at(-1); else { const j = KNOTS.findIndex((k) => k > a) - 1; const u = (a - KNOTS[j]) / (KNOTS[j + 1] - KNOTS[j]); g[i] = kv[j] * (1 - u) + kv[j + 1] * u; } } return g; };
+  const gridOf = (kv, O = null) => { const g = new Float64Array(AN); for (let i = 0; i < AN; i++) { const a = A0 + i * AS; if (a <= KNOTS[0]) g[i] = kv[0]; else if (a >= KNOTS.at(-1)) g[i] = kv.at(-1); else { const j = KNOTS.findIndex((k) => k > a) - 1; const u = (a - KNOTS[j]) / (KNOTS[j + 1] - KNOTS[j]); g[i] = kv[j] * (1 - u) + kv[j + 1] * u; } } g.mean = O ? meanOver(O, g) : 0; return g; };
+  // (update 422) the part of the drift every player shares (on SG against the field, mostly the tour getting stronger):
+  // the curve averaged over the ages seen; what's left is age itself (how a player's age makes them differ from that)
+  const ageWOf = (O) => { if (O.aw) return O.aw; const w = new Float64Array(AN); for (let p = 0; p < NP; p++) { const bt = birthT[p]; if (!Number.isFinite(bt)) continue; for (let k = O.pStart[p]; k < O.pStart[p + 1]; k++) w[ageIdx(O.T[k] - bt)] += 1; } O.aw = w; return w; };
+  const meanOver = (O, g) => { const w = ageWOf(O); let t = 0, n = 0; for (let i = 0; i < AN; i++) if (w[i]) { t += w[i] * g[i]; n += w[i]; } return n ? t / n : 0; };
   const ageCount = (O) => { const seen = new Set(); let pts = 0; for (let p = 0; p < NP; p++) if (Number.isFinite(birthT[p]) && O.pStart[p + 1] > O.pStart[p]) { seen.add(p); pts += O.pStart[p + 1] - O.pStart[p]; } return { players: seen.size, pts }; };
   const fitDrift = (O, c, th, start, sweeps, width) => {
     const kv = [...start];
     for (let s = 0; s < sweeps; s++) for (let k = 0; k < KNOTS.length; k++) {
-      kv[k] = bestOn((v) => { const t = [...kv]; t[k] = v; return run(O, c, th, gridOf(t)); }, kv[k] - width, kv[k] + width, { steps: 8, scan: 6 }).x;
+      kv[k] = bestOn((v) => { const t = [...kv]; t[k] = v; return run(O, c, th, gridOf(t, O)); }, kv[k] - width, kv[k] + width, { steps: 8, scan: 6 }).x;
     }
     return kv;
   };
@@ -222,13 +226,13 @@ function learn(D, { tour = null } = {}) {
       let t, kv = null;
       if (warm) {
         t = { ...warm.th[c], ends: undefined }; kv = warm.knots[c] ? [...warm.knots[c]] : null;
-        t = fitTheta(O, c, kv ? gridOf(kv) : null, t, 1, true);
+        t = fitTheta(O, c, kv ? gridOf(kv, O) : null, t, 1, true);
         if (kv) kv = fitDrift(O, c, t, kv, 1, 0.08);
       } else {
         t = fitTheta(O, c, null, startOf(O, c), 2);
-        if (useAge) { kv = fitDrift(O, c, t, [0, 0, 0, 0, 0], 2, 0.3); t = fitTheta(O, c, gridOf(kv), t, 1, true); kv = fitDrift(O, c, t, kv, 1, 0.08); }
+        if (useAge) { kv = fitDrift(O, c, t, [0, 0, 0, 0, 0], 2, 0.3); t = fitTheta(O, c, gridOf(kv, O), t, 1, true); kv = fitDrift(O, c, t, kv, 1, 0.08); }
       }
-      const g = kv ? gridOf(kv) : null;
+      const g = kv ? gridOf(kv, O) : null;
       const ends = new Array(NP); run(O, c, t, g, { ends });
       t.ends = ends; th.push(t); drift.push(g); knots.push(kv);
     }
@@ -267,7 +271,23 @@ function learn(D, { tour = null } = {}) {
 
   // a player's projection h seasons on (from where the filter left them): per part of the game, the mean and the
   // uncertainty of their level, and how much of the change is age
-  const projectWith = (Mx, p, Y, sc = 1) => {
+  // (update 422) how far to trust the age curve at each age: fully where many seasons were seen at that age, less where
+  // few were (the extremes); k sets how many is "many" (a share of the typical age's count), picked on unseen seasons
+  const AGE_K = [0, 0.1, 0.3, 1, 3, Infinity];
+  const trustOf = (Mx, kc) => {
+    Mx.trust ||= new Map(); if (Mx.trust.has(kc)) return Mx.trust.get(kc);
+    const tw = new Float64Array(AN);
+    if (kc === 0) tw.fill(1);
+    else if (kc !== Infinity) {
+      const w = ageWOf(Mx.O), dens = new Float64Array(AN);
+      for (let i = 0; i < AN; i++) { let t = 0; for (let j = Math.max(0, i - 8); j <= Math.min(AN - 1, i + 8); j++) t += w[j]; dens[i] = t; }
+      const seen = [...dens].filter((v) => v > 0).sort((a, b) => a - b), med = seen.length ? seen[Math.floor(seen.length / 2)] : 0, k = kc * med;
+      for (let i = 0; i < AN; i++) tw[i] = dens[i] + k > 0 ? dens[i] / (dens[i] + k) : 0;
+    }
+    Mx.trust.set(kc, tw); return tw;
+  };
+  const projectWith = (Mx, p, Y, kc = 0) => {
+    const tw = trustOf(Mx, kc);
     const tY = Number(Y) + 0.5, bt = birthT[p];
     const cats = {}, vlev = { s: 0 }; let ageAdd = 0, any = false;
     for (let c = 0; c < NC; c++) {
@@ -276,7 +296,7 @@ function learn(D, { tour = null } = {}) {
       const { s2, lam, mu } = Mx.th[c], g = Mx.drift[c];
       // stepped a quarter-season at a time so the age curve follows the player's age
       let x = e.x, P = e.P, t = e.t, a = 0;
-      while (t < tY - 1e-9) { const dt = Math.min(0.25, tY - t), f = Math.exp(-lam * dt); const dr = g && Number.isFinite(bt) && sc ? sc * g[ageIdx(t + dt / 2 - bt)] * dt : 0; x = mu + (x - mu) * f + dr; a = a * f + dr; P = P * f * f + s2 * (1 - f * f); t += dt; }
+      while (t < tY - 1e-9) { const dt = Math.min(0.25, tY - t), f = Math.exp(-lam * dt); const m0 = g ? g.mean || 0 : 0, da = g && Number.isFinite(bt) ? tw[ageIdx(t + dt / 2 - bt)] * (g[ageIdx(t + dt / 2 - bt)] - m0) * dt : 0, dr = m0 * dt + da; x = mu + (x - mu) * f + dr; a = a * f + da; P = P * f * f + s2 * (1 - f * f); t += dt; }
       cats[CATS[c]] = x; vlev.s += P; ageAdd += a;
     }
     if (!any) return null;
@@ -285,7 +305,7 @@ function learn(D, { tour = null } = {}) {
 
   /* ---------------- 5. checked on seasons it hadn't seen ---------------- */
   const resid = { 1: [], 2: [], 3: [] };
-  const AGE_SC = [0, 0.25, 0.5, 0.75, 1], ageErr = AGE_SC.map(() => 0); let ageErrN = 0;
+  const ageErr = AGE_K.map(() => 0); let ageErrN = 0;
   let outOfSample = false;
   for (let t = 3; t < NY; t++) {
     const Mt = fit(t - 1, { warm: M });
@@ -300,7 +320,7 @@ function learn(D, { tour = null } = {}) {
         const pr = projectWith(Mt, p, yrs[yAct]); if (!pr) continue;
         const act = s.cats.reduce((a, b) => a + b, 0);
         // (update 420) how much of the age curve to use: tried at several strengths on these unseen seasons
-        const preds = Number.isFinite(birthT[p]) && M.useAge ? AGE_SC.map((sc) => (sc === 1 ? pr : projectWith(Mt, p, yrs[yAct], sc)).total) : null;
+        const preds = Number.isFinite(birthT[p]) && M.useAge ? AGE_K.map((kc) => (kc === 0 ? pr : projectWith(Mt, p, yrs[yAct], kc)).total) : null;
         if (preds) { preds.forEach((v, i) => { ageErr[i] += s.n * (act - v) ** 2; }); ageErrN += s.n; }
         const sd = Math.sqrt(pr.varLevel + sig2Tot / s.n);
         const pv = prevS.get(p * NY + (t - 1));
@@ -308,9 +328,10 @@ function learn(D, { tour = null } = {}) {
       }
     }
   }
-  // (update 420) the age curve at the strength that predicted these unseen seasons best (all of it, some, or none)
-  const ageScale = ageErrN >= 600 ? AGE_SC[ageErr.indexOf(Math.min(...ageErr))] : 1;
-  if (ageScale !== 1) for (const h of [1, 2, 3]) for (const x of resid[h]) if (x.preds) { const v = x.preds[AGE_SC.indexOf(ageScale)]; x.r = x.act - v; x.z = x.r / x.sd; }
+  // (update 422) how far to trust the age curve, by how much data each age has: the setting that predicted these unseen seasons best
+  const ageK = ageErrN >= 600 ? AGE_K[ageErr.indexOf(Math.min(...ageErr))] : 0;
+  if (ageK !== 0) for (const h of [1, 2, 3]) for (const x of resid[h]) if (x.preds) { const v = x.preds[AGE_K.indexOf(ageK)]; x.r = x.act - v; x.z = x.r / x.sd; }
+  const trustAt = (age) => trustOf(M, ageK)[ageIdx(age)];
   // the ranges: scaled so 8 in 10 seasons it hadn't seen land inside (one season ahead)
   const kappa = (() => { const z = resid[1].map((x) => Math.abs(x.z)).sort((a, b) => a - b); return z.length >= 20 ? Math.max(0.5, Math.min(3, z[Math.floor(z.length * 0.8)] / 1.2816)) : 1; })();
   const err = [1, 2, 3].map((h) => {
@@ -329,7 +350,7 @@ function learn(D, { tour = null } = {}) {
     const p = typeof key === "number" ? key : D.players.findIndex((x) => x.key === key);
     if (p < 0) return null;
     const id = `${p}|${h}`; if (projMemo.has(id)) return projMemo.get(id);
-    const pr = projectWith(M, p, Number(lastYear) + h, ageScale);
+    const pr = projectWith(M, p, Number(lastYear) + h, ageK);
     const out = pr ? { ...pr, sd: sdOf(pr) } : null;
     projMemo.set(id, out); return out;
   };
@@ -361,12 +382,13 @@ function learn(D, { tour = null } = {}) {
   const cats = Object.fromEntries(CATS.map((c, i) => { const t = M.th[i]; return [c, { noise: Math.sqrt(t.sig2), spread: Math.sqrt(t.s2), halfLife: Math.log(2) / t.lam, mean: t.mu,
     // how much of a full season (typical rounds) a forecast takes from the player rather than the average
     carry: t.s2 / (t.s2 + t.sig2 / typicalN) }]; }));
-  const ageOk = M.drift.some(Boolean) && ageScale > 0;
-  const ageCurve = (age) => Object.fromEntries(CATS.map((c, i) => [c, M.drift[i] ? ageScale * M.drift[i][ageIdx(age)] : 0]));
+  const ageOk = M.drift.some(Boolean) && ageK !== Infinity;
+  const ageCurve = (age) => Object.fromEntries(CATS.map((c, i) => [c, M.drift[i] ? trustAt(age) * (M.drift[i][ageIdx(age)] - (M.drift[i].mean || 0)) : 0]));
+  const sharedDrift = M.drift.reduce((t, g) => t + (g ? g.mean || 0 : 0), 0);
   const params = {
     kind: "kalman", cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
     field: { events: M.F.events, spread: M.F.spread },
-    age: { scale: ageScale, tried: ageErrN >= 600 ? AGE_SC.map((sc, i) => ({ sc, rmse: Math.sqrt(ageErr[i] / ageErrN) })) : null, players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, knots: KNOTS,
+    age: { shared: sharedDrift, k: ageK, none: ageK === Infinity, trust: Object.fromEntries([22, 26, 30, 34, 38, 42, 46, 50].map((a) => [a, trustAt(a)])), tried: ageErrN >= 600 ? AGE_K.map((k, i) => ({ k, rmse: Math.sqrt(ageErr[i] / ageErrN) })) : null, players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, knots: KNOTS,
       at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + ageCurve(a)[c], 0)])) },
     spread: err.map((e) => e || { n: 0 }),
   };
