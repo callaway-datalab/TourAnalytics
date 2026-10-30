@@ -108,7 +108,8 @@ export async function render(main, { flash }) {
         const state = x.status === "done" ? el("span", { class: "py-ok" }, "Live")
           : x.status === "error" ? el("span", { class: "py-err" }, x.stopped ? "Stopped" : "Failed")
           : el("span", { class: "py-run" }, x.step ? `${x.step}\u2026` : "Working\u2026");
-        const detail = x.status === "done" ? `${num(x.rows)} rows for ${num(x.people)} ${x.people === 1 ? "person" : "people"}${x.blankIdRows ? ` \u00b7 ${num(x.blankIdRows)} rows had no ID` : ""}`
+        // (update 408) a "Rebuild rankings" run has no rows of its own: say what it did
+        const detail = x.status === "done" ? (x.rows == null ? `Rankings rebuilt${x.people ? ` for ${num(x.people)} players` : ""}` : `${num(x.rows)} rows for ${num(x.people)} ${x.people === 1 ? "person" : "people"}${x.blankIdRows ? ` \u00b7 ${num(x.blankIdRows)} rows had no ID` : ""}${x.rankings === false ? "" : " \u00b7 rankings updated"}`)
           : x.status === "error" ? x.message || "" : x.rows ? `${num(x.rows)} rows for ${num(x.people)} people` : "";
         const x2 = el("button", { type: "button", class: "link py-x", title: "Clear from this list", "aria-label": `Clear ${x.name || x.file} from this list` }, "\u2715");
         x2.addEventListener("click", async () => { x2.disabled = true; try { await deleteImport(x.id); } catch { x2.disabled = false; flash("Couldn't clear it. Republish the Firestore rules (update 146).", "error"); } });
