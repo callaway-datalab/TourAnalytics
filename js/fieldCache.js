@@ -110,7 +110,20 @@ export async function loadDatasetPlayers(datasetId, { ds = null, onProgress = nu
  * Safari reloads it), and every player's full rows of a big file is far more than that. On these, Analyze and
  * the reports use the shared field summary for everyone else and load full rows only for the player picked.
  */
+// (update 403) A big data file: every page works the way it does on a phone (the field from the published rankings and
+// detail, full rows only for the player picked), on a computer too. Holding every player's full rows in a tab is what
+// crashed the site (and crashed it again on reload, as it loaded them while opening).
+export const BIG_ROWS = 1500000;
+let bigData = false;
+try { bigData = localStorage.getItem("ta.bigData") === "1"; } catch { /* */ }
+export function setBigData(rowCount) {
+  bigData = Number(rowCount) > BIG_ROWS;
+  try { localStorage.setItem("ta.bigData", bigData ? "1" : "0"); } catch { /* */ }
+  return bigData;
+}
+export const isBigData = () => bigData;
 export function isLiteDevice() {
+  if (bigData) return true;
   try {
     const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
     const lowMem = typeof navigator !== "undefined" && navigator.deviceMemory && navigator.deviceMemory < 4;

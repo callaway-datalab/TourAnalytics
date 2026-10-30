@@ -72,8 +72,14 @@ export function forecastModel(field, { tour = null } = {}) {
   if (!byTour.has(id)) byTour.set(id, learnModel(field, { tour }));
   return byTour.get(id);
 }
+/** (update 403) What the model learns from, small enough to hand to a worker: each player's season totals, birth date
+    and name (one pass over the field). forecastModel takes this or the field itself. */
+export function forecastInput(field) {
+  return { lines: [...seasonsOf(field)], births: field.map((p) => [p.key, p.birth || null]), names: field.map((p) => [p.key, p.name || p.key]) };
+}
 function learnModel(field, { tour = null } = {}) {
-  const lines = seasonsOf(field);
+  const inp = field.lines ? field : forecastInput(field);
+  const lines = new Map(inp.lines);
   const tn = new Map(); for (const ls of lines.values()) for (const l of ls) tn.set(l.t, (tn.get(l.t) || 0) + l.n);
   const target = tour ? [...tn.keys()].find((t) => sq(t) === sq(tour)) ?? [...tn.keys()].find((t) => sq(t).includes(sq(tour)) || sq(tour).includes(sq(t))) ?? tour : [...tn].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
   const yearsAll = [...new Set([...lines.values()].flatMap((ls) => ls.map((l) => l.y)))].sort();
@@ -101,8 +107,8 @@ function learnModel(field, { tour = null } = {}) {
       }
     }
   }
-  const birthOf = new Map(field.map((p) => [p.key, p.birth || null]));
-  const nameOf = new Map(field.map((p) => [p.key, p.name || p.key]));
+  const birthOf = new Map(inp.births);
+  const nameOf = new Map(inp.names);
   const build = (K) => {
     const tourAdj = new Map([[target, { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }]]);
     for (const [t, a] of pairs) if (a.w > 0) tourAdj.set(t, Object.fromEntries(CATS.map((c) => [c, a[c] / (a.w + (K?.[c] ?? 0))])));

@@ -52,7 +52,7 @@ export function periodFilter(period, rounds) {
 export const PERIODS = [["season", "Season"], ["l3", "Last 3 months"], ["l6", "Last 6 months"], ["all", "All"]];
 
 /** (update 172) The stats that can be split by distance on the Watchlist. */
-export const RANGE_STATS = ["hitGreen", "pinHigh", "onLine", "prox", "ud", "make", "fwy", "gir", "drive", "goodLag"]; // (update 214: + Good Lag %) // (update 187: + Hit Fairway %, GIR %, Driving Distance)
+export const RANGE_STATS = ["hitGreen", "pinHigh", "onLine", "prox", "ud", "make", "fwy", "gir", "drive", "ballSpeed", "goodLag"]; // (update 214: + Good Lag %) // (update 187: + Hit Fairway %, GIR %, Driving Distance)
 const ONE_CAT = { ud: "ARG", make: "PUTT", fwy: "OTT", drive: "OTT", goodLag: "PUTT" }; // (their distances need no category in the label)
 /** A stat metric id: "stat:<key>" (all distances) or "stat:<key>@<cat>|<distance>". */
 export const parseStatId = (id) => { const body = id.slice(5), at = body.indexOf("@"); if (at < 0) return { k: body, cat: null, dist: null }; const [cat, ...d] = body.slice(at + 1).split("|"); return { k: body.slice(0, at), cat, dist: d.join("|") }; };
@@ -149,7 +149,7 @@ export function metricCatalog(field, own = [], detail = null, { noRanks = false 
   const clubKinds = CLUB_KINDS.filter(([k, , , menu]) => menu && gl.some((g) => g.kind === k));
   return [
     { group: "Scoring", items: scoring },
-    catGroup("OTT", "Off-the-Tee", ["gir", "fwy", "drive"]),
+    catGroup("OTT", "Off-the-Tee", ["gir", "fwy", "drive", "ballSpeed"]),
     catGroup("APP", "Approach", ["hitGreen", "pinHigh", "onLine", "prox"]),
     catGroup("ARG", "Around the Green", ["prox", "ud"]),
     catGroup("PUTT", "Putting", ["make", "goodLag"]),

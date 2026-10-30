@@ -23,7 +23,7 @@ const roundsCache = new Map(); // player key → their rounds (full detail)
 
 /* ---------------------------------------------------------------- what can be asked about */
 const SG_METRICS = { sg_total: [null, "SG: Total"], sg_ott: ["OTT", "SG: Off-the-Tee"], sg_app: ["APP", "SG: Approach"], sg_arg: ["ARG", "SG: Around-the-Green"], sg_putt: ["PUTT", "SG: Putting"], sg_t2g: ["T2G", "SG: Tee-to-Green"] };
-const STAT_KEYS = ["scoring", "par3", "par4", "par5", "eagles", "birdiesRd", "parsRd", "bogeysRd", "dblBogeysRd", "birdie", "parOrBetter", "bogey", "gir", "scramble", "putts", "fwy", "drive", "hitGreen", "pinHigh", "onLine", "prox", "ud", "make", "goodLag", "threePutt"];
+const STAT_KEYS = ["scoring", "par3", "par4", "par5", "eagles", "birdiesRd", "parsRd", "bogeysRd", "dblBogeysRd", "birdie", "parOrBetter", "bogey", "gir", "scramble", "putts", "fwy", "drive", "ballSpeed", "hitGreen", "pinHigh", "onLine", "prox", "ud", "make", "goodLag", "threePutt"];
 const metricOf = (key) => {
   if (SG_METRICS[key]) { const [cat, label] = SG_METRICS[key]; return { key, sg: true, cat, label, higher: true }; }
   if (STAT_KEYS.includes(key)) { const d = statDef(key); return { key, sg: false, label: d.label, higher: d.higher, def: d }; }
@@ -64,14 +64,14 @@ function readLocal(question, list) {
   let metric = null;
   for (const [re, k] of [[/\bputt(s|ing|er)?\b|\bon the greens?\b/, "sg_putt"], [/\bapproach|iron play|irons?\b/, "sg_app"], [/\baround[- ]the[- ]green|short game|chipping|pitching|bunker/, "sg_arg"],
     [/\btee[- ]to[- ]green|ball[- ]?strik/, "sg_t2g"], [/\boff[- ]the[- ]tee|\bdriving\b(?! distance)|\bdriver\b|tee shots?/, "sg_ott"]]) if (has(re)) { metric = k; break; }
-  for (const [re, k] of [[/driving distance|longest|how far|distance off the tee/, "drive"], [/fairways?( hit)?|driving accuracy|most accurate/, "fwy"], [/greens in regulation|\bgir\b/, "gir"],
+  for (const [re, k] of [[/ball ?speed|swing speed|\bspeed\b/, "ballSpeed"], [/driving distance|longest|how far|distance off the tee/, "drive"], [/fairways?( hit)?|driving accuracy|most accurate/, "fwy"], [/greens in regulation|\bgir\b/, "gir"],
     [/proximity|closest to the (hole|pin)/, "prox"], [/scrambl/, "scramble"], [/up[- ]and[- ]down/, "ud"], [/3[- ]putt|three[- ]putt/, "threePutt"], [/putts per round|putts a round|fewest putts/, "putts"],
     [/birdies?/, "birdiesRd"], [/bogeys? (avoid|free)|bogey avoidance/, "bogey"], [/double bogey/, "dblBogeysRd"], [/\bbogeys?\b/, "bogeysRd"], [/eagles?/, "eagles"], [/scoring average|scoring avg|lowest scor/, "scoring"]])
     if (has(re)) { metric = k; break; }
   if (!metric && has(/\b(overall|best player|total|strokes gained)\b/)) metric = "sg_total";
   const breakdown = has(/\b(where|which part|what part)\b.*\b(lose|gain|lost|gained|strength|weak)|\bby category|parts? of (his|her|their|the) game\b/) ? "category"
     : has(/\bby distance|\bfrom \d+|\bdistances?\b|\byards?\b|\bfeet\b|\bft\b/) ? "distance" : has(/\bby lie|\blies?\b|\brough\b|\bfairway lie|\bsand\b/) ? "lie"
-    : has(/\bballs?\b/) && has(/\b(which|what|best|worked|model|brand)\b/) ? "ball"
+    : has(/\bballs?\b(?! ?speed)/) && has(/\b(which|what|best|worked|model|brand)\b/) ? "ball"
     : has(/\b(models?|brands?|clubs?|equipment|gear|heads?|shafts?|which (driver|putter|irons?|wedges?|woods?|hybrids?)|what (driver|putter|irons?|wedges?|woods?|hybrids?)|(driver|putter|iron|wedge|wood|hybrid)s? (worked|works|was|is|did|does|performed|best))\b/) ? "club"
     : has(/\b(tournament|event)s?\b/) ? "event" : has(/\brounds?\b/) && has(/\b(best|worst|lowest|highest)\b/) && !ra.last ? "round"
     : has(/\b(year by year|by season|each season|every season|by year|each year)\b/) ? "season" : null;
@@ -273,7 +273,7 @@ async function fieldTable(plan, m) {
   // (update 260) narrowed to a distance or a lie: the field's shot detail (the summary only has each part of the game)
   const narrowed = !!(plan.distance || plan.lie);
   const cur = narrowed ? await currentFieldDetail() : await currentField();
-  if (narrowed && !cur?.field) return { err: { nofile: "There\u2019s no field data to rank yet (it comes with an uploaded stats file).", paused: "The field\u2019s shot detail is switched off right now (the monthly storage budget was reached), so I can\u2019t rank by distance or lie until it\u2019s back on.", stale: "The field\u2019s shot detail is from an older upload. It\u2019s rebuilt when an admin opens Analyze on a computer; then I can rank by distance or lie." }[cur?.why] || "The field\u2019s shot detail (distances and lies) hasn\u2019t been built yet. It\u2019s built when an admin opens Analyze on a computer; then I can rank by distance or lie." };
+  if (narrowed && !cur?.field) return { err: { nofile: "There\u2019s no field data to rank yet (it comes with an uploaded stats file).", paused: "The field\u2019s shot detail is switched off right now (the monthly storage budget was reached), so I can\u2019t rank by distance or lie until it\u2019s back on.", stale: "The field\u2019s shot detail is from an older upload. It\u2019s rebuilt when an admin uses Rebuild rankings on Upload Data; then I can rank by distance or lie." }[cur?.why] || "The field\u2019s shot detail (distances and lies) hasn\u2019t been built yet. It\u2019s built when an admin uses Rebuild rankings on Upload Data; then I can rank by distance or lie." };
   if (!cur?.field?.length) return { err: "There’s no field data to rank yet (it comes with an uploaded stats file)." };
   const nar = narrowed ? narrowFor(plan, m, cur.field.slice(0, 200).flatMap((p) => p.rounds.slice(-60))) : null;
   if (nar?.err) return { err: nar.err };
@@ -627,29 +627,27 @@ let showHist = false;
 // (update 396) forecast questions, and the answer: each player's next three seasons, best first, with the write-up
 const FORECAST_Q = /\b(next|coming|upcoming|following)\s+(\d+|one|two|three|four|five|few|couple( of)?)?\s*(years?|seasons?)\b|\bforecast|\bprojections?\b|\bproject(ed)?\b(?! to)|\bin the future\b|\bfuture\b|\boutlook\b|\bpredict|\bgoing to (be|do|play|rank)\b|\bwill (he|she|they|\w+) (be|do|play|rank)\b|\bby 20\d\d\b/i;
 async function answerForecast(ps, question, local) {
-  const [{ currentField }, F] = await Promise.all([import("./fieldSummary.js"), import("./forecast.js")]);
+  const [{ currentField }, FC] = await Promise.all([import("./fieldSummary.js"), import("./forecastClient.js")]); // (update 403: off the page)
   const cf = await currentField().catch(() => null);
-  if (!cf?.field?.length) return { cant: true, text: "The forecast needs the field\u2019s rankings, which aren\u2019t built yet. Open Analyze on a computer once, then ask again." };
+  if (!cf?.field?.length) return { cant: true, text: "The forecast needs the field\u2019s rankings, which aren\u2019t built yet. Rebuild them on Upload Data (it runs in the cloud), then ask again." };
   const tour = local?.tour || null;
-  const model = F.forecastModel(cf.field, { tour });
-  const fcs = ps.map((p) => { const f = F.forecastPlayer(model, p.key); if (f) f.name = p.label; return f; });
+  const { fcs, story, info: model } = await FC.runForecast(cf.field, { tour, players: ps.map((p) => ({ key: p.key, label: p.label })) });
   const ok = fcs.filter(Boolean), missing = ps.filter((p, i) => !fcs[i]).map((p) => p.label);
   if (!ok.length) return { cant: true, text: `There aren\u2019t enough rounds on ${model.target || "the tour"} to forecast ${missing.join(", ")}.` };
   const f2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
   const order = [...ok].sort((a, b) => b.years.reduce((t, y) => t + y.total, 0) - a.years.reduce((t, y) => t + y.total, 0));
-  const story = F.forecastStory(model, ok);
   const yrs = ok[0].years.map((y) => y.year);
   const lead = order.length > 1 ? `Over ${yrs[0]}\u2013${yrs.at(-1)}, best first: ${order.map((f, i) => `**${i + 1}. ${f.name}**`).join(", ")}.` : `${order[0].name}\u2019s next three seasons:`;
   const e1 = model.err[0];
   const note = [`Strokes gained a round on ${model.target || "the tour"}, forecast from this site\u2019s data: their last three seasons, pulled back toward the tour average by how much each part of the game carries over from year to year${model.ageOk ? ", plus the typical change for their age" : ""}.`,
     e1 ? `On past seasons, one season ahead, it was off by about ${e1.mae.toFixed(2)} a round on average.` : "", !model.ageOk ? "No birth dates in the data yet, so age isn\u2019t in it." : "",
     missing.length ? `Not enough rounds to forecast ${missing.join(", ")}.` : ""].filter(Boolean).join(" ");
-  const plan = { players: ok.map((f) => f.name.toLowerCase()), everyone: false, parts: [], exclude: { events: [], rounds: [] }, each: false, unsupported: null, groups: [{ label: String(model.lastYear), rounds: { years: [String(model.lastYear)] } }] };
+  const plan = { outlook: true, players: ok.map((f) => f.name.toLowerCase()), everyone: false, parts: [], exclude: { events: [], rounds: [] }, each: false, unsupported: null, groups: [{ label: String(model.lastYear), rounds: { years: [String(model.lastYear)] } }] };
   return {
     text: [lead, ...story].join("\n\n"),
     table: { head: ["Player", "Age", ...yrs.map((y) => `${y} (rank)`)], num: [1, 2, 3, 4], rows: order.map((f) => [f.name, f.age != null ? String(Math.floor(f.age)) : "\u2014", ...f.years.map((y) => `${f2(y.total)} (~${ordinal(y.rank)})`)]) },
     note,
-    go: { href: `#/comparisons?ask=${encodeURIComponent(question)}&plan=1`, label: "See the full Outlook in Compare \u2192", plan },
+    go: { href: `#/comparisons?ask=${encodeURIComponent(question)}&plan=1`, label: "See the Future Outlook in Compare \u2192", plan },
   };
 }
 const ps0 = (plan, local) => (plan.players?.length || local.players?.length) > 0;

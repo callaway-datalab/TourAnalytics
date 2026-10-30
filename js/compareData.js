@@ -213,7 +213,7 @@ export function statSets(rounds, filters) {
 /* (update 194) The stats for each category of shot, and at each distance: [{ cat, label, rows: [{ key, label, def, dist, values, w }] }]
  * obsSets: each selection's rounds with their stats (statSets). A stat recorded for the whole round (no category)
  * goes with the category it belongs to (Driving Distance and Fairways off the tee, Make % with putting …). */
-const HOME = { drive: ["OTT"], fwy: ["OTT"], gir: ["OTT"], // (update 209: GIR off the tee only, as "GIR % (Par 4/5)")
+const HOME = { drive: ["OTT"], ballSpeed: ["OTT"], fwy: ["OTT"], gir: ["OTT"], // (update 209: GIR off the tee only, as "GIR % (Par 4/5)")
   hitGreen: ["APP"], prox: ["APP"], pinHigh: ["APP"], onLine: ["APP"], ud: ["ARG"], scramble: ["ARG"], putts: ["PUTT"], make: ["PUTT"], goodLag: ["PUTT"], threePutt: ["PUTT"] };
 export function statBlocks(obsSets, inc = null) {
   const SECTIONS = [...CATEGORIES, ["ROUND", "Scoring"]];

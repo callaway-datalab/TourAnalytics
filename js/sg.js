@@ -109,6 +109,7 @@ export const isShotData = (idx) => (idx.statType !== undefined && idx.statValue 
 const SG_TYPES = ["strokesgained", "sg", "strokesgainedattempt", "strokesgainedperattempt", "sgperattempt"];
 const STAT_TYPES = {
   drive: ["drivingdistance", "drivedistance", "avgdrivingdistance", "driving", "drivingdistanceyds"],
+  ballSpeed: ["ballspeed", "ballspeedmph", "driverballspeed", "avgballspeed", "ballspeeddriver"], // (update 402)
   fwy: ["hitfwy", "hitfairway", "fairwayshit", "fairwayhit", "fwy", "fwyhit", "drivingaccuracy", "fairways"],
   gir: ["gir", "greensinregulation", "hitgir", "girpct"],
   hitGreen: ["hitgreen", "greenshit", "hitgreenpct"],
@@ -161,6 +162,7 @@ export const STAT_DEFS = {
   putts: { label: "Putts / Round", higher: false, dp: 2, help: "Putts per 18 holes. Lower is better." },
   fwy: { label: "Hit Fairway %", pct: true, higher: true, help: "Tee shots on par 4s and 5s that finished in the fairway." },
   drive: { label: "Driving Distance", unit: " yds", dp: 1, higher: true, help: "Average tee shot distance in yards." },
+  ballSpeed: { label: "Ball Speed", unit: " mph", dp: 1, higher: true, help: "Average ball speed on tee shots with the driver, in mph. Faster is better." }, // (update 402)
   hitGreen: { label: "Hit Green %", pct: true, higher: true, help: "Approach and around-the-green shots that finished on the green (or in the hole)." },
   pinHigh: { label: "Pin-High %", pct: true, higher: true, help: "Shots that finished pin high: within 10 ft short or long of the hole." },
   onLine: { label: "On-Line %", pct: true, higher: true, help: "Shots that finished on line: within 10 ft left or right of the hole." },

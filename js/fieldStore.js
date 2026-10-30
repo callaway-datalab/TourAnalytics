@@ -20,6 +20,16 @@ const cfg = window.PORTAL_CONFIG || {};
 const BUCKET = cfg.fieldDetailBucket || `${cfg.firebase?.projectId}.firebasestorage.app`;
 const FORMAT = 2; // (update 243: each shot's club model and ball kept, for the club and ball breakdowns)
 
+/** (update 403) Ask the cloud (the data-import function) to rebuild a file's rankings and lie / distance detail from its
+    saved rows: a small marker in incoming/_rebuild/, as tour_upload.py drops. Progress shows on Upload Data. */
+export async function requestRebuild(datasetId, name = "") {
+  const { m, s } = await storage();
+  const statusId = `rebuild_${datasetId}_${Date.now()}`;
+  await m.uploadBytes(m.ref(s, `incoming/_rebuild/${datasetId}.json`), new Blob([JSON.stringify({ datasetId })], { type: "application/json" }),
+    { contentType: "application/json", customMetadata: { kind: "rebuild", datasetId, statusId, name: String(name || "").slice(0, 200) } });
+  return statusId;
+}
+
 let storageP = null;
 function storage() {
   storageP ||= import(SDK).then((m) => ({ m, s: m.getStorage(app, `gs://${BUCKET}`) }));

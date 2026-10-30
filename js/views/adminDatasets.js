@@ -43,22 +43,27 @@ export async function render(main, { flash }) {
           submit.textContent = `Uploading (${people} people)\u2026 ${Math.min(99, Math.round((done / total) * 100))}%`;
         });
 
-        // Strokes-gained files: publish the per-round summary players' rankings are built from.
+        // Strokes-gained files: the rankings and the lie / distance detail. (update 403) Built in the cloud from the rows
+        // just saved (the data-import function), not in this tab: on a big file that ran the page out of memory.
         const idx = detectColumns(dataset.columns);
+        let rebuildNote = "";
         if (isShotData(idx)) {
-          submit.textContent = "Updating rankings\u2026";
-          try {
-            const { labels } = await adminAllClients();
-            const players = [...dataset.byClient].map(([key, g]) => ({ key, name: labels.get(key) || g.name || g.label, rounds: prepare(g.rows, idx) }));
-            await publishFieldStats(result.datasetId, buildFieldSummary(players), Date.now());
-            // the per-round lie / distance detail for phones and players' portals (Cloud Storage)
-            submit.textContent = "Updating lie and distance detail\u2026";
-            const { publishFieldDetail } = await import("../fieldStore.js");
-            await publishFieldDetail(result.datasetId, players, Date.now());
-          } catch (err) { console.error("Couldn't publish rankings", err); }
+          submit.textContent = "Asking the cloud to update the rankings\u2026";
+          try { const { requestRebuild } = await import("../fieldStore.js"); await requestRebuild(result.datasetId, displayName); rebuildNote = " The rankings are updating in the cloud (shown above); players see them in a few minutes."; }
+          catch (err) {
+            console.warn("Couldn't ask the cloud to rebuild; building here instead", err);
+            // (the Storage rules from before update 403: built here as before, if this computer can)
+            try {
+              const { labels } = await adminAllClients();
+              const players = [...dataset.byClient].map(([key, g]) => ({ key, name: labels.get(key) || g.name || g.label, rounds: prepare(g.rows, idx) }));
+              await publishFieldStats(result.datasetId, buildFieldSummary(players), Date.now());
+              const { publishFieldDetail } = await import("../fieldStore.js");
+              await publishFieldDetail(result.datasetId, players, Date.now());
+            } catch (err2) { console.error("Couldn't publish rankings", err2); rebuildNote = " The rankings couldn\u2019t be updated: republish the Storage rules (update 403), then use Rebuild rankings below."; }
+          }
         }
 
-        let msg = `Added "${displayName}": ${num(dataset.rowCount)} rows for ${num(result.clients)} ${result.clients === 1 ? "person" : "people"}.`;
+        let msg = `Added "${displayName}": ${num(dataset.rowCount)} rows for ${num(result.clients)} ${result.clients === 1 ? "person" : "people"}.${rebuildNote}`;
         if (dataset.blankIdRows) msg += ` ${num(dataset.blankIdRows)} rows have no value in "${dataset.idColumn}" and won't be shown to anyone.`;
         flash(msg, "ok");
         form.reset(); idColumn.value = "playerID";
@@ -98,7 +103,7 @@ export async function render(main, { flash }) {
         // (update 165) no heartbeat for 15 minutes: the cloud stopped it (time or memory), so say so
         const beat = x0.updatedAt?.toMillis?.() ?? x0.startedAt?.toMillis?.() ?? 0;
         const x = x0.status === "running" && beat && Date.now() - beat > 15 * 60 * 1000
-          ? { ...x0, status: "error", stopped: true, message: x0.rows ? "Stopped while updating the rankings (the rows are live). Opening Analyze on a computer rebuilds them." : "Stopped: the cloud ran out of time or memory reading a file this big. Send it again with tour_upload.py from update 165, which splits it on your computer first." }
+          ? { ...x0, status: "error", stopped: true, message: x0.rows || /^rebuild_/.test(x0.id || "") ? "Stopped while updating the rankings (the rows are live). Use Rebuild rankings below to try again." : "Stopped: the cloud ran out of time or memory reading a file this big. Send it again with tour_upload.py from update 165, which splits it on your computer first." }
           : x0;
         const state = x.status === "done" ? el("span", { class: "py-ok" }, "Live")
           : x.status === "error" ? el("span", { class: "py-err" }, x.stopped ? "Stopped" : "Failed")
@@ -130,10 +135,18 @@ export async function render(main, { flash }) {
           try { await deleteDataset(d.id); import("../fieldStore.js").then((m) => m.deleteFieldDetail(d.id)).catch(() => {}); flash(`Deleted "${d.name}".`, "ok"); }
           catch { flash("Couldn't delete that dataset.", "error"); del.disabled = false; del.textContent = "Delete"; }
         });
+        // (update 403) the rankings and detail, rebuilt in the cloud from the saved rows (nothing heavy in this tab)
+        const reb = isShotData(detectColumns(d.columns || [])) ? el("button", { class: "link", type: "button", title: "Rebuild the rankings and the lie / distance detail in the cloud" }, "Rebuild rankings") : null;
+        reb?.addEventListener("click", async () => {
+          reb.disabled = true; reb.textContent = "Asking\u2026";
+          try { const { requestRebuild } = await import("../fieldStore.js"); await requestRebuild(d.id, d.name); flash(`Rebuilding the rankings for "${d.name}" in the cloud. Progress shows above; it takes a few minutes.`, "ok"); }
+          catch (err) { console.error(err); flash("Couldn\u2019t ask the cloud to rebuild. Republish the Storage rules (update 403) and try again.", "error"); }
+          finally { reb.disabled = false; reb.textContent = "Rebuild rankings"; }
+        });
         return el("tr", {}, [
           el("td", {}, el("strong", {}, d.name)), el("td", {}, d.idColumn),
           el("td", { class: "num" }, num(d.rowCount)), el("td", { class: "num" }, num((d.clientKeys || []).length)),
-          el("td", {}, [formatWhen(d.uploadedAt), d.source === "python" ? el("span", { class: "py-tag" }, "Python") : null]), el("td", { class: "actions" }, del),
+          el("td", {}, [formatWhen(d.uploadedAt), d.source === "python" ? el("span", { class: "py-tag" }, "Python") : null]), el("td", { class: "actions" }, [reb, reb ? " " : null, del]),
         ]);
       })),
     ]);

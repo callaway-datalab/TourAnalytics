@@ -4,7 +4,7 @@
 //   Entered Rounds or Practice). Players see the same dashboard on their own My Stats page (see sgDashboard.js).
 import { el, mount, num, subNav, relocateSectionNav } from "../ui.js";
 import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource, getFieldStats } from "../store.js";
-import { loadDatasetPlayers, loadErrorText, reloadPlayerRows, isLiteDevice } from "../fieldCache.js";
+import { loadDatasetPlayers, loadErrorText, reloadPlayerRows, isLiteDevice, setBigData } from "../fieldCache.js";
 import { publishFieldDetail, detailSource, getFieldDetail, billingState, resumeDownloads } from "../fieldStore.js";
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary, summaryPlayers } from "../sg.js";
@@ -274,10 +274,10 @@ export async function render(main, { flash, routeId }) {
     if (full && !fieldPlayers.some((p) => p.key === player.key)) fieldPlayers.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
     const ranked = fieldPlayers.some((p) => p.summaryOnly);
     const why = detailWhy.get(dk);
-    const note = !ranked ? "The rankings for this file haven\u2019t been built yet. Open Analyze once on a computer to build them; here you can still pick a player to see their own numbers."
+    const note = !ranked ? "The rankings for this file haven\u2019t been built yet: use Rebuild rankings on Upload Data (it runs in the cloud). Here you can still pick a player to see their own numbers."
       : why === undefined || why === null ? "Loading lie and distance detail\u2026"
       : why === "paused" ? "Lie and distance ranks are paused: this month\u2019s budget was reached."
-      : why === "none" || why === "stale" ? "Lie and distance ranks appear once Analyze has been opened on a computer since the last upload."
+      : why === "none" || why === "stale" ? "Lie and distance ranks appear once the rankings are rebuilt (Upload Data \u2192 Rebuild rankings)."
       : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
     drawLite(ds, idx, fieldPlayers, note, why === "paused");
     if (why === undefined) loadDetailLite(ds, dk);
@@ -445,6 +445,7 @@ export async function render(main, { flash, routeId }) {
   const stopFiles = watchAdminDatasets((list) => {
     datasets = list; // newest first
     const sg = list.find((d) => isShotData(detectColumns(d.columns || [])));
+    if (sg) setBigData(sg.rowCount); // (update 403: a big file works as on a phone)
     fileId = (sg || list[0])?.id || "";
     if (source === "tour") refresh();
   });

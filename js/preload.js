@@ -37,12 +37,13 @@ export async function warmUp(state, onStep = () => {}) {
     if (ds) {
       const up = ds.uploadedAt?.toMillis?.() ?? 0;
       jobs.push(store.getFieldStats(ds.id).catch(() => null));
-      jobs.push(getFieldDetail(ds.id, up, { onProgress: (i, n) => onStep(n > 1 ? `Loading Data… (${i} of ${n} seasons)` : "") }));
-      // the admin on a computer: every player's full rows, for Stats and Leaderboards (phones use the detail instead)
-      if (state.isAdmin) {
-        const fc = await import("./fieldCache.js");
-        if (!fc.isLiteDevice()) jobs.push(fc.loadDatasetPlayers(ds.id, { ds, onProgress: (i, n) => onStep(`Loading Data… (${i} of ${n} players)`) }).catch(() => null));
-      }
+      // (update 403) the admin with a big file: the detail loads when a page needs it, so the app always opens (and Upload
+      // Data, where the rankings are rebuilt, is always reachable)
+      const big = state.isAdmin && (await import("./fieldCache.js")).setBigData(ds.rowCount);
+      if (!big) jobs.push(getFieldDetail(ds.id, up, { onProgress: (i, n) => onStep(n > 1 ? `Loading Data… (${i} of ${n} seasons)` : "") }));
+      // (update 403) no longer every player's full rows while the app opens: on a big file that crashed the tab (and
+      // again on every reload). Pages load what they need when they're opened; a big file works as on a phone.
+
     }
     await Promise.allSettled(jobs);
   } catch (err) { console.warn("Preload", err); }

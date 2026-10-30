@@ -85,6 +85,8 @@ export async function render(main) {
   const staff = !team.preview && (state.isAdmin || (state.isTeam && ["analyst", "employee"].includes(state.profile?.kind)));
   const EVERY = "*";
   const lite = staff ? await import("../fieldCache.js").then((m) => m.isLiteDevice()).catch(() => false) : false; // (a phone can't hold everyone's rounds)
+  const bigFile = staff ? await import("../fieldCache.js").then((m) => m.isBigData()).catch(() => false) : false; // (update 403)
+  const isBigData = () => bigFile;
   let chosen = player ? [player] : []; // (staff) [] = everyone
   let everyN = 0, dsInfo = null, busy = "";
   // (update 216) finishing positions at each tournament: by SG: Total among the players who played every round there
@@ -351,7 +353,9 @@ export async function render(main) {
     const inc = incNow();
     const items = base.map((s, i) => { const rs = includeShots(raw[i], inc); return { ...s, i, rs, s: summarize(rs) }; });
     // (update 206) while the questions are open, they're all there is: no filters or numbers until they're answered or skipped
-    if (g.open) { mount(root, [head, tourBar(), g.what && g.what !== "place" ? leaveOutBar() : null, guideBox()]); window.scrollTo(0, y); return; }
+    if (g.open) { mount(root, [head, tourBar(), g.what && g.what !== "place" && g.what !== "outlook" ? leaveOutBar() : null, guideBox()]); window.scrollTo(0, y); return; }
+    // (update 403) Future Outlook: its own page (the forecast runs off the page, so nothing freezes)
+    if (g.what === "outlook") { mount(root, [head, tourBar(), guideBox(), outlookSection()]); window.scrollTo(0, y); return; }
     if (placeDim && !sels.length) { mount(root, [head, tourBar(), leaveOutBar(), guideBox(), placeSection(), editBox()]); window.scrollTo(0, y); root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; }); return; }
     placeDim = null;
     mount(root, [
@@ -363,7 +367,6 @@ export async function render(main) {
       items.length ? reportBar(items) : null,
       items.length ? selectedBar(items) : null,
       items.length >= 2 ? boardSection(items) : null, // (update 220)
-      outlookSection(), // (update 396)
       insideSection(items), // (update 246)
       items.length ? cards(items) : el("section", { class: "panel cmp-empty small" }, el("p", { class: "muted" }, "Pick two or more above to compare them.")),
       items.length >= 2 ? standout(items) : null,
@@ -431,7 +434,7 @@ export async function render(main) {
       adder = el("div", { class: "cmp-pl-add" }, pp.node);
     }
     const nm = (ps) => (ps.length === 1 ? ps[0].label : ps.length === 2 ? `${ps[0].label} and ${ps[1].label}` : `${ps.slice(0, -1).map((p) => p.label).join(", ")} and ${ps.at(-1).label}`);
-    const hint = !startPicks.length ? (one ? "Pick a player." : `Pick Everyone, one player, several players, or players and Everyone.${lite ? " (Everyone needs a computer.)" : ""}`)
+    const hint = !startPicks.length ? (one ? "Pick a player." : `Pick Everyone, one player, several players, or players and Everyone.${lite ? (isBigData() ? " (Everyone isn\u2019t offered with a data file this big.)" : " (Everyone needs a computer.)") : ""}`)
       : !picksP.length ? "Everyone in the data together: products (who uses what, and how it performs), seasons, courses\u2026"
       : picksP.length === 1 && !withEvery ? `Just ${picksP[0].label}\u2019s rounds.`
       : withEvery ? `${nm(picksP)} against everyone in the data.` : `${nm(picksP)} side by side. Next: on their own, in groups, or one against the rest.`;
@@ -521,6 +524,7 @@ export async function render(main) {
       exclRounds: list(p.exclude?.rounds).map((n) => int(n, 4)).filter(Boolean).map(String),
       groups, each: p.each === true,
       unsupported: str(p.unsupported, 300) || null,
+      outlook: p.outlook === true, // (update 403: from Cal's forecast answer: open on Future Outlook)
     };
   }
   // (update 254) the plan's groups, matched to the data: [{ name, f, id?, mode? }] and what kind of comparison it is
@@ -578,7 +582,7 @@ export async function render(main) {
     if (!ps.length && !ask.everyone && !staff && players.length) ps = [{ key: players[0][0], label: players[0][1] }];
     if (!ps.length && !ask.everyone && self) ps = [{ key: self[0], label: self[1] }]; // (update 258: a player asking about themselves)
     if (!ps.length && !ask.everyone) { askBusy = ""; askErr = "Which player? Name one (or say \u201ceveryone\u201d)."; draw(); return; }
-    if (!ps.length && !everyStartOk()) { askBusy = ""; askErr = lite ? "Everyone needs a computer: it\u2019s every player\u2019s rounds. Name a player instead." : "Name a player."; draw(); return; }
+    if (!ps.length && !everyStartOk()) { askBusy = ""; askErr = lite ? (isBigData() ? "Everyone isn\u2019t offered with a data file this big (it\u2019s every player\u2019s rounds). Name a player instead." : "Everyone needs a computer: it\u2019s every player\u2019s rounds. Name a player instead.") : "Name a player."; draw(); return; }
     askBusy = "Loading the rounds\u2026"; draw();
     // the players, then their rounds
     excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear(); excl.evRounds.clear();
@@ -589,6 +593,7 @@ export async function render(main) {
       await load();
     } else { await startProducts(); }
     if (!data) { askBusy = ""; askErr = "Couldn\u2019t load the rounds. Try again."; draw(); return; }
+    if (plan?.outlook && source === "tour") { g.what = "outlook"; askBusy = ""; draw(); root.querySelector(".cmp-outlook")?.scrollIntoView({ behavior: "smooth", block: "start" }); return; } // (update 403)
     // what to leave out
     const evs = new Map();
     for (const p of inPlay()) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.event) { const k = `${rd.event}|${yr(rd)}`; if (!evs.has(k)) evs.set(k, { k, event: rd.event, year: yr(rd) }); }
@@ -917,7 +922,7 @@ export async function render(main) {
     incCats = new Set(); incDists = new Set(); staged = new Map(); chipFilter = "";
     touched = true; g.open = false;
     draw();
-    root.querySelector(placeDim ? ".career-sec" : ".cmp-cards, .cmp-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }); // (update 218: the ranked list, not the bottom)
+    root.querySelector(g.what === "outlook" ? ".cmp-outlook" : placeDim ? ".career-sec" : ".cmp-cards, .cmp-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }); // (update 218: the ranked list, not the bottom)
   }
   /* ------------------------------ (update 210) building product groups ------------------------------ */
   // Kind of club, then brands, then (optionally) models, and a season: each pick becomes a group, e.g. "All Callaway
@@ -1052,7 +1057,7 @@ export async function render(main) {
   }
   function guideSummary() {
     const who = g.who === "everyone" ? "Everyone in the data" : g.who === "several" ? inPlay().map((p) => p.label).join(", ") : player.label;
-    const what = g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", formev: "the latest events against the ones before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
+    const what = g.what === "outlook" ? "future outlook, the next three seasons" : g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", formev: "the latest events against the ones before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
       : g.what === "gear" ? "products" : g.what === "place" ? "where and when they play best" : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
     return `${who} · ${what || sels.map((x) => x.name).join(" vs ") || "your picks"}`; // (update 248: from Ask AI there's no question answered: the picks)
   }
@@ -1112,6 +1117,7 @@ export async function render(main) {
         opt("time", "How they’re playing over time", "This season against last, or recent form"),
         products(allRounds()).length ? opt("gear", "One club or ball against another", "Drivers, irons, putters, golf balls…") : null,
         opt("place", "Where and when they play best", "Courses, tournaments, rounds or months"),
+        source === "tour" ? opt("outlook", "Future Outlook", "Where they\u2019re headed over the next three seasons, and a report") : null, // (update 403)
         inPlay().length > 1 ? opt("versus", "The players against each other", "Over the same stretch of rounds") : null,
       ];
     } else if (step === "when") {
@@ -1842,7 +1848,7 @@ export async function render(main) {
   let weekTag = new Map(), placePick = new Set();
   const WEEKS = ["First event back", "2nd week in a row", "3rd+ week in a row"];
   // (update 217) why they play better (or worse) there: each part of the game, and the stats behind it, against their usual
-  const WHY_STATS = ["drive", "fwy", "gir", "hitGreen", "prox", "scramble", "ud", "make", "goodLag", "putts"];
+  const WHY_STATS = ["drive", "ballSpeed", "fwy", "gir", "hitGreen", "prox", "scramble", "ud", "make", "goodLag", "putts"];
   function whyBox(x, all) {
     const per = (rds, k) => rds.reduce((t, rd) => t + rdSG(rd, k), 0) / rds.length;
     return whyCore(x.rds, all, "Here", "Usual", (lead, better) => `${better ? "Mostly" : "Mostly down to"} ${lead.l}: ${fmtSigned(lead.d)} a round ${lead.d >= 0 ? "better" : "worse"} than their usual here.`, x.v >= per(all, "TOTAL"));
@@ -2028,34 +2034,35 @@ export async function render(main) {
     return null;
   }
   // (update 396) Outlook: each player picked, forecast for the next three seasons (js/forecast.js), from the whole field
-  const fc = { key: null, model: null, busy: false, err: null, open: new Set(), at: null };
+  // (update 403) its own option ("Future Outlook"), and worked out in a worker (js/forecastClient.js) so the page never freezes
+  const fc = { key: null, res: null, busy: false, err: null, open: new Set(), field: null };
   function outlookSection() {
-    if (source !== "tour") return null;
-    const ps = inPlay().filter((p) => p.key && p.key !== EVERY);
-    if (!ps.length) return null;
+    const ps = inPlay().filter((p) => p.key && p.key !== EVERY && !p.members);
+    const head = el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, "Future Outlook: the next three seasons"),
+      infoTip("A forecast learned from this site’s own data. It blends each player’s last three seasons and pulls that back toward the tour average, by however much each part of the game has carried over from one season to the next in this data; then adds what players of their age have typically gained or lost (when the data has their birth date). Every weight and setting is learned, not chosen: see “What the forecast learned” below. The range and the accuracy are from forecasting past seasons using only the seasons before them. Ranks and chances are against every player ranked on the tour, forecast the same way; the chances come from 3,000 simulated seasons.")]);
+    const wrap = (kids) => el("section", { class: "panel cmp-sec cmp-outlook" }, [head, ...kids]);
+    if (!ps.length) return wrap([el("p", { class: "muted small" }, "Pick one or more players to see their outlook.")]);
     // the tour: the one picked above, else the one these players have most rounds on
     const tc = new Map(); for (const p of ps) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.tour) tc.set(rd.tour, (tc.get(rd.tour) || 0) + 1);
     const tour = tourSel.size === 1 ? [...tourSel][0] : [...tc].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-    const key = `${tour}`;
+    const players = ps.map((p) => ({ key: p.key, label: p.label }));
+    const key = `${tour}|${players.map((p) => p.key).join(",")}`;
     if (fc.key !== key && !fc.busy) {
-      fc.busy = true; fc.err = null;
-      Promise.all([import("../fieldSummary.js").then((m) => m.currentField()), import("../forecast.js")]).then(([cf, F]) => {
-        fc.F = F;
-        if (!cf?.field?.length) { fc.err = "The field\u2019s rankings aren\u2019t built yet (open Analyze on a computer)."; return; }
-        fc.model = F.forecastModel(cf.field, { tour }); fc.key = key; fc.withBirth = cf.field.filter((p) => p.birth).length; fc.fieldN = cf.field.length;
-      }).catch((err) => { console.error(err); fc.err = "Couldn\u2019t work out the forecast just now."; }).finally(() => { fc.busy = false; draw(); });
+      fc.busy = true; fc.err = null; const want = key;
+      Promise.all([import("../fieldSummary.js").then((m) => m.currentField()), import("../forecastClient.js")]).then(async ([cf, FC]) => {
+        if (!cf?.field?.length) { fc.err = "The field’s rankings aren’t built yet."; fc.key = want; return; }
+        fc.field = cf.field;
+        fc.res = await FC.runForecast(cf.field, { tour, players }); fc.key = want;
+      }).catch((err) => { console.error(err); fc.err = "Couldn’t work out the forecast just now."; fc.key = want; }).finally(() => { fc.busy = false; if (g.what === "outlook") draw(); });
     }
-    const head = el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, "Outlook: the next three seasons"),
-      infoTip("A forecast learned from this site\u2019s own data. It blends each player\u2019s last three seasons and pulls that back toward the tour average, by however much each part of the game has carried over from one season to the next in this data; then adds what players of their age have typically gained or lost (when the data has their birth date). Every weight and setting is learned, not chosen: see \u201cWhat the forecast learned\u201d below. The range and the accuracy are from forecasting past seasons using only the seasons before them. Ranks and chances are against every player ranked on the tour, forecast the same way; the chances come from 3,000 simulated seasons.")]);
-    if (fc.err) return el("section", { class: "panel cmp-sec cmp-outlook" }, [head, el("p", { class: "muted small" }, fc.err)]);
-    if (!fc.model || fc.key !== key) return el("section", { class: "panel cmp-sec cmp-outlook" }, [head, el("p", { class: "muted small ta-loading" }, "Working out the forecast\u2026")]);
-    const F = fc.F, m = fc.model;
-    const fcs = ps.map((p) => { const f = F.forecastPlayer(m, p.key); if (f) f.name = p.label || f.name; return f; });
+    if (fc.key !== key || fc.busy) return wrap([el("p", { class: "muted small ta-loading" }, "Working out the forecast… (the page stays usable while it does)")]);
+    if (fc.err) return wrap([el("p", { class: "muted small" }, fc.err)]);
+    const { fcs, story, info } = fc.res, m = info;
     const ok = fcs.filter(Boolean);
     const missing = ps.filter((p, i) => !fcs[i]).map((p) => p.label);
-    if (!ok.length) return el("section", { class: "panel cmp-sec cmp-outlook" }, [head, el("p", { class: "muted small" }, `Not enough rounds on ${m.target || "the tour"} to forecast ${missing.join(", ")}.`)]);
-    const f2 = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
-    const pct = (v) => (v == null ? "\u2014" : v < 0.005 ? "<1%" : v > 0.995 ? ">99%" : `${Math.round(v * 100)}%`);
+    if (!ok.length) return wrap([el("p", { class: "muted small" }, `Not enough rounds on ${m.target || "the tour"} to forecast ${missing.join(", ")}.`)]);
+    const f2 = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`);
+    const pct = (v) => (v == null ? "—" : v < 0.005 ? "<1%" : v > 0.995 ? ">99%" : `${Math.round(v * 100)}%`);
     const yrs = ok[0].years.map((y) => y.year);
     const order = [...ok].sort((a, b) => b.years.reduce((t, y) => t + y.total, 0) - a.years.reduce((t, y) => t + y.total, 0));
     const CATN = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
@@ -2063,38 +2070,53 @@ export async function render(main) {
     order.forEach((f, i) => {
       const open = fc.open.has(f.key);
       const tr = el("tr", { class: "sg-tap", role: "button", tabindex: "0", "aria-expanded": String(open) }, [
-        el("td", {}, [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 "), el("strong", {}, `${i + 1}. ${f.name}`), el("span", { class: "muted small" }, f.age != null ? ` \u00b7 ${Math.floor(f.age)}` : " \u00b7 age ?")]),
-        el("td", { class: "num" }, f.now ? [el("span", { class: f.now.total >= 0 ? "pos" : "neg" }, f2(f.now.total)), el("span", { class: "muted small fc-sub" }, `${f.now.n} rds`)] : "\u2014"),
+        el("td", {}, [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "▾ " : "▸ "), el("strong", {}, `${i + 1}. ${f.name}`), el("span", { class: "muted small" }, f.age != null ? ` · ${Math.floor(f.age)}` : " · age ?")]),
+        el("td", { class: "num" }, f.now ? [el("span", { class: f.now.total >= 0 ? "pos" : "neg" }, f2(f.now.total)), el("span", { class: "muted small fc-sub" }, `${f.now.n} rds`)] : "—"),
         ...f.years.map((y) => el("td", { class: "num" }, [el("strong", { class: y.total >= 0 ? "pos" : "neg" }, f2(y.total)), el("span", { class: "muted small fc-sub" }, `${f2(y.lo)} to ${f2(y.hi)}`), el("span", { class: "small fc-sub" }, `~${ordinal(y.rank)}`)])),
       ]);
       const flip = () => { open ? fc.open.delete(f.key) : fc.open.add(f.key); draw(); };
       tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
       rows.push(tr);
       if (!open) return;
-      for (const c of ["OTT", "APP", "ARG", "PUTT"]) rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, CATN[c]), el("td", { class: "num" }, f.now ? f2(f.now.cats[c]) : "\u2014"), ...f.years.map((y) => el("td", { class: "num" }, f2(y.cats[c])))]));
+      for (const c of ["OTT", "APP", "ARG", "PUTT"]) rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, CATN[c]), el("td", { class: "num" }, f.now ? f2(f.now.cats[c]) : "—"), ...f.years.map((y) => el("td", { class: "num" }, f2(y.cats[c])))]));
       rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, "Chance of a top 10 / top 50 season"), el("td", {}, ""), ...f.years.map((y) => el("td", { class: "num small" }, `${pct(y.top10)} / ${pct(y.top50)}`))]));
     });
-    const story = F.forecastStory(m, ok);
     const e1 = m.err[0];
-    const acc = e1 ? `${m.outOfSample ? "Checked on seasons it hadn\u2019t seen" : "Checked on past seasons"}: one season ahead, it was off by about ${e1.mae.toFixed(2)} a round on average (${e1.n} player-seasons).` : "";
-    const ageNote = !m.ageOk ? "No birth dates in the data yet (add a birth_date column), so age isn\u2019t taken into account." : `Age from ${m.agePlayers} players\u2019 birth dates.`;
+    const acc = e1 ? `${m.outOfSample ? "Checked on seasons it hadn’t seen" : "Checked on past seasons"}: one season ahead, it was off by about ${e1.mae.toFixed(2)} a round on average (${e1.n} player-seasons).` : "";
+    const ageNote = !m.ageOk ? "No birth dates in the data yet (add a birth_date column), so age isn’t taken into account." : `Age from ${m.agePlayers} players’ birth dates.`;
     // (update 397) what it learned from the data, in plain words
     const pr = m.params, pctS = (v) => `${Math.round(v * 100)}%`;
     const wsum = pr.weights.reduce((t, v) => t + v, 0);
-    const CATL = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
     const learned = el("details", { class: "fc-learned" }, [el("summary", {}, "What the forecast learned from this data"),
       el("ul", { class: "fc-learned-l" }, [
         el("li", {}, `Season weights: the latest season ${pctS(pr.weights[0] / wsum)}, the one before ${pctS(pr.weights[1] / wsum)}, the one before that ${pctS(pr.weights[2] / wsum)} (for the same number of rounds).`),
-        el("li", {}, `How much of a full season (${pr.typicalN} rounds) carries into the next: ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATL[c]} ${pctS(pr.carry[c])}`).join(", ")}. The rest is pulled back to the tour average.`),
-        el("li", {}, `How much of next season\u2019s forecast still holds two and three seasons ahead: ${pctS(pr.H[1])} and ${pctS(pr.H[2])}.`),
-        el("li", {}, m.ageOk ? `Age (from ${pr.age.players} players\u2019 birth dates, ${pr.age.pairs} season-to-season changes): a typical change in a season of ${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")}. Nearby ages pooled within about ${pr.age.bandwidth.toFixed(1)} years.` : "Age: no birth dates in the data yet, so it isn\u2019t learned or used."),
+        el("li", {}, `How much of a full season (${pr.typicalN} rounds) carries into the next: ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ${pctS(pr.carry[c])}`).join(", ")}. The rest is pulled back to the tour average.`),
+        el("li", {}, `How much of next season’s forecast still holds two and three seasons ahead: ${pctS(pr.H[1])} and ${pctS(pr.H[2])}.`),
+        el("li", {}, m.ageOk ? `Age (from ${pr.age.players} players’ birth dates, ${pr.age.pairs} season-to-season changes): a typical change in a season of ${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")}. Nearby ages pooled within about ${pr.age.bandwidth.toFixed(1)} years.` : "Age: no birth dates in the data yet, so it isn’t learned or used."),
         pr.tours.length ? el("li", {}, `Other tours, moved onto ${m.target}: ${pr.tours.map((t) => `${t.tour} ${f2(t.offset)} a round`).join(", ")} (from players on both in the same season).`) : null,
-        el("li", {}, `${pr.outOfSample ? "On seasons it hadn\u2019t seen (each forecast only from the seasons before it)" : "On the seasons it learned from (too few seasons yet to hold some back)"}, it was off by about ${pr.spread.map((x, i) => (x.n ? `${x.mae.toFixed(2)} ${i ? `${i + 1} seasons ahead` : "one season ahead"}` : "")).filter(Boolean).join(", ")} a round on average.`),
+        el("li", {}, `${pr.outOfSample ? "On seasons it hadn’t seen (each forecast only from the seasons before it)" : "On the seasons it learned from (too few seasons yet to hold some back)"}, it was off by about ${pr.spread.map((x, i) => (x.n ? `${x.mae.toFixed(2)} ${i ? `${i + 1} seasons ahead` : "one season ahead"}` : "")).filter(Boolean).join(", ")} a round on average.`),
       ])]);
-    const exp = el("button", { type: "button", class: "btn ghost small" }, "\u2B73 Export report");
-    exp.addEventListener("click", () => outlookReport(order, story, { tour: m.target, years: yrs, last: m.lastYear, acc, ageNote, missing }));
-    return el("section", { class: "panel cmp-sec cmp-outlook" }, [
-      head,
+    // (update 402) the full report: individual profiles and comparisons, 5 pages or fewer
+    const exp = el("button", { type: "button", class: "btn small" }, "⭳ Export report");
+    exp.addEventListener("click", async () => {
+      if (exp.disabled) return;
+      exp.disabled = true; exp.textContent = "Building the report…";
+      const win = window.open("", "_blank"); // (opened now, while it's still a tap: pop-up blockers allow it)
+      try {
+        const [{ buildOutlookReport }, FS] = await Promise.all([import("../outlookReport.js"), import("../fieldSummary.js")]);
+        // the field's distances, for ranks by distance (skipped if it isn't on hand within a few seconds)
+        const det = await Promise.race([FS.currentFieldDetail().catch(() => null), new Promise((r) => setTimeout(() => r(null), 8000))]);
+        const html = buildOutlookReport({ field: fc.field, detail: det?.field || null, fcs: order, info: m, ownRounds: (k) => sgRounds(rawOfKey(k)), extra: missing });
+        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        if (win) win.location.href = url; else { const a = document.createElement("a"); a.href = url; a.download = "outlook-report.html"; a.click(); }
+        setTimeout(() => URL.revokeObjectURL(url), 120000);
+      } catch (err) {
+        console.error(err); win?.close();
+        outlookReport(order, story, { tour: m.target, years: yrs, last: m.lastYear, acc, ageNote, missing }); // (the short version)
+      } finally { exp.disabled = false; exp.textContent = "⭳ Export report"; }
+    });
+    return wrap([
+      el("div", { class: "fc-foot fc-top" }, [exp, el("span", { class: "muted small" }, "A report of 5 pages or fewer: each player, side by side, and the projection")]),
       el("p", { class: "muted small" }, `Strokes gained a round on ${m.target || "the tour"} (against the tour average), with the likely range and the rank it would mean. Tap a player for each part of the game and their chances.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table fc-t" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, String(m.lastYear) === String(new Date().getFullYear()) ? `${m.lastYear} so far` : String(m.lastYear)), ...yrs.map((y) => el("th", { class: "num" }, y))])),
@@ -2103,7 +2125,6 @@ export async function render(main) {
       missing.length ? el("p", { class: "muted small" }, `Not enough rounds on ${m.target} to forecast ${missing.join(", ")}.`) : null,
       el("p", { class: "muted small" }, [acc, " ", ageNote]),
       learned,
-      el("div", { class: "fc-foot" }, [exp]),
     ]);
   }
   // (update 396) the Outlook as a page to print or save as a PDF

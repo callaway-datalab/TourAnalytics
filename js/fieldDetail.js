@@ -61,6 +61,68 @@ function encodeYear(players) {
   return out;
 }
 
+/* (update 403) The same files, built a player at a time: each player's rounds go straight into packed number arrays, so
+ * a whole field never sits in memory as little objects (what ran the cloud rebuild out of memory on big files).
+ * detailBuilder().add({ key, name, rounds }) … .finish() → [{ year, bytes }], as encodeFieldDetail. mergeDetailYears
+ * joins one year's files built from different players (the cloud rebuild in parts) into one. */
+function yearBuilder(year) {
+  const dict = [null], at = new Map([[null, 0]]);
+  const id = (s) => { const k = s === undefined || s === null ? null : String(s); let i = at.get(k); if (i === undefined) { i = dict.length; at.set(k, i); dict.push(k); } return i; };
+  const grow = (a, need) => { if (need <= a.length) return a; const b = new a.constructor(Math.max(need, a.length * 2)); b.set(a); return b; };
+  let sI = new Uint32Array(7 * 4096), sF = new Float32Array(2 * 4096), oI = new Uint32Array(6 * 1024), oF = new Float32Array(2 * 1024), nS = 0, nO = 0;
+  const hp = [];
+  return {
+    add(p, rounds) {
+      const rs = [];
+      for (const rd of rounds) {
+        const ns = rd.shots.length, obs = rd.obs || [], no = obs.length;
+        sI = grow(sI, (nS + ns) * 7); sF = grow(sF, (nS + ns) * 2); oI = grow(oI, (nO + no) * 6); oF = grow(oF, (nO + no) * 2);
+        for (const x of rd.shots) { const b = nS * 7; sI[b] = id(x.cat); sI[b + 1] = id(x.lie); sI[b + 2] = id(x.dist); sI[b + 3] = id(x.club); sI[b + 4] = id(x.clubCat); sI[b + 5] = id(x.gear); sI[b + 6] = id(x.ball); sF[nS * 2] = x.sg; sF[nS * 2 + 1] = x.w; nS++; }
+        for (const o of obs) { const b = nO * 6; oI[b] = id(o.k); oI[b + 1] = id(o.cat); oI[b + 2] = id(o.lie); oI[b + 3] = id(o.dist); oI[b + 4] = id(o.gear); oI[b + 5] = id(o.ball); oF[nO * 2] = o.v; oF[nO * 2 + 1] = o.w; nO++; }
+        const plain = rd.key === `${rd.date}|${rd.event}|${rd.roundNo}`;
+        rs.push([plain ? null : rd.key, id(rd.date), id(rd.event), rd.roundNo, id(rd.tour), rd.eventLevel ? 1 : 0, ns, no, id(rd.course || null)]);
+      }
+      hp.push([p.key, p.name ?? p.label ?? null, rs]);
+    },
+    finish() {
+      const wide = dict.length > 65535, I = wide ? Uint32Array : Uint16Array;
+      const header = new TextEncoder().encode(JSON.stringify({ v: 2, year, wide, nS, nO, dict, players: hp }));
+      const parts = [I.from(sI.subarray(0, nS * 7)), sF.subarray(0, nS * 2), I.from(oI.subarray(0, nO * 6)), oF.subarray(0, nO * 2)];
+      const pad4 = (n) => (n + 3) & ~3;
+      let size = pad4(8 + header.length);
+      for (const t of parts) size = pad4(size + t.byteLength);
+      const out = new Uint8Array(size);
+      out.set(new TextEncoder().encode(MAGIC), 0);
+      new DataView(out.buffer).setUint32(4, header.length, true);
+      out.set(header, 8);
+      let off = pad4(8 + header.length);
+      for (const t of parts) { out.set(new Uint8Array(t.buffer, t.byteOffset, t.byteLength), off); off = pad4(off + t.byteLength); }
+      return out;
+    },
+  };
+}
+export function detailBuilder() {
+  const years = new Map();
+  return {
+    add(p) {
+      const by = new Map();
+      for (const rd of p.rounds) { const y = String(rd.year ?? ""); (by.get(y) || by.set(y, []).get(y)).push(rd); }
+      for (const [y, rs] of by) (years.get(y) || years.set(y, yearBuilder(y)).get(y)).add(p, rs);
+    },
+    finish() { return [...years].map(([year, b]) => ({ year, bytes: b.finish() })); },
+  };
+}
+/** One year's files (uncompressed bytes), each from different players, as one file. */
+export function mergeDetailYears(list) {
+  if (list.length === 1) return list[0];
+  let b = null;
+  for (const bytes of list) {
+    const ps = decodeFieldDetail(bytes);
+    for (const p of ps) { b ||= yearBuilder(p.rounds[0]?.year ?? ""); b.add(p, p.rounds); }
+  }
+  return (b || yearBuilder("")).finish();
+}
+
 /* (update 327) Compact columns. A whole field is about a million shots: as a million little objects that was more than
  * an iPhone lets a page hold, so the page was restarted ("A problem repeatedly occurred"). Now the shots (and the
  * other stats) stay in the file's packed number arrays, and each round's `shots` / `obs` is a light list over its

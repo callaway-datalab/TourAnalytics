@@ -174,7 +174,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // with only one model (one driver all year, one ball) is left out: there's nothing to compare it with.
   let productTable = null;
   if (byProduct) {
-    const STATS = { OTT: [["drive", "Driving Distance"], ["fwy", "Fairway %"]], APP: [["hitGreen", "Hit Green %"], ["prox", "Proximity"]], PUTT: [["make", "Made Putt %"], ["goodLag", "Good Lag %"]] };
+    const STATS = { OTT: [["drive", "Driving Distance"], ["ballSpeed", "Ball Speed"], ["fwy", "Fairway %"]], APP: [["hitGreen", "Hit Green %"], ["prox", "Proximity"]], PUTT: [["make", "Made Putt %"], ["goodLag", "Good Lag %"]] };
     const KINDS = [["Driver", "Drivers", STATS.OTT], ["Non-Driver", "Tee clubs", STATS.OTT], ["Fairway Wood", "Fairway Woods", STATS.APP], ["Hybrid", "Hybrids", STATS.APP], ["Iron", "Irons", STATS.APP],
       ["Wedge", "Wedges", STATS.APP], ["Putter", "Putters", STATS.PUTT], ["Ball", "Balls", [...STATS.OTT.slice(0, 1), ...STATS.APP.slice(1)]]];
     const ofShot = (s) => [s.gear, s.ball ? `Ball|${s.ball}` : null].filter(Boolean);
@@ -329,7 +329,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const teeKinds = new Set(["drive", "fwy"].flatMap((k) => statRounds(myAll, k).flatMap((rd) => rd.shots.filter((o) => o.cat === "OTT").map((o) => kindOf(o.dist)))));
   const teeSplit = teeKinds.has("Driver") && teeKinds.has("Non-Driver");
   // (GIR % goes here too; a stat the data doesn't split by club shows on an "All" row, with everyone's overall value)
-  const teeGrid = ["drive", "fwy", "gir"].filter((k) => present.includes(k)).map((k) => {
+  const teeGrid = ["drive", "ballSpeed", "fwy", "gir"].filter((k) => present.includes(k)).map((k) => {
     const split = teeSplit ? ["Driver", "Non-Driver"].map((kind) => entryFor(k, (o) => o.cat === "OTT" && kindOf(o.dist) === kind, `${statDef(k).label} \u00b7 ${kind}`)) : [];
     // the "All" value: its tee shots (par 4s and 5s) when the data has them, so GIR % here is the par 4 / 5 GIR %
     // (a par 3's green in regulation comes from an approach, which belongs in Approach)
@@ -347,7 +347,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     return e ? { ...e, key: k } : null;
   });
   for (const k of present) {
-    if (k === "goodLag" || k === "drive" || k === "fwy" || k === "par3" || k === "par4" || k === "par5") continue; // (Good Lag isn't shown; the tee stats are a grid)
+    if (k === "goodLag" || k === "drive" || k === "ballSpeed" || k === "fwy" || k === "par3" || k === "par4" || k === "par5") continue; // (Good Lag isn't shown; the tee stats are a grid)
     if (k === "make") {
       // Made Putt %: each putting distance in the data (0-3 ft, 3-5 ft …), in a grid on the page
       const labels = [...new Set(statRounds(myAll, k).flatMap((rd) => rd.shots.filter((o) => o.cat === "PUTT" && o.dist).map((o) => String(o.dist))))]
@@ -833,7 +833,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // Putting: Made Putt % at each distance
     if (a.puttGrid) section("Putting - Make %", a.puttGrid.labels, [{ name: "", cells: a.puttGrid.cells }]);
     // anything else (Scrambling, Putts / Round …): one row, a column per stat
-    const shown = new Set([...Object.keys(SHORT), "drive", "fwy", "gir", "hitGreen", "prox", "pinHigh", "onLine", "goodLag"]);
+    const shown = new Set([...Object.keys(SHORT), "drive", "ballSpeed", "fwy", "gir", "hitGreen", "prox", "pinHigh", "onLine", "goodLag"]);
     const other = a.basics.filter((b) => !shown.has(b.key) && !(a.udGrid && b.key === "ud") && !(a.puttGrid && b.key === "make"));
     section("Other", other.map((b) => b.def.label), other.length ? [{ name: "", cells: other }] : []);
     const appr = queued.find(([t]) => t === "Approach by distance");
@@ -941,7 +941,8 @@ export async function loadSource(source, playerKey, label, { detail = true } = {
 export async function loadFullField(datasetId, field, me, idx) {
   const st = getState();
   if (!st.isAdmin || !datasetId) return null;
-  const { loadDatasetPlayers } = await import("./fieldCache.js");
+  const { loadDatasetPlayers, isLiteDevice } = await import("./fieldCache.js");
+  if (isLiteDevice()) return null; // (update 403: a phone, or a file too big to hold every player's rows: the detail does)
   const { players } = await loadDatasetPlayers(datasetId).catch(() => ({ players: new Map() }));
   const full = field.map((p) => {
     if (p.key === me.key) return me;
