@@ -385,7 +385,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const risksOf = (f) => {
     const L0 = L1(f), FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = f.flags || {};
     if (FCr?.pctile > 0.6 && FCr.drop != null) out.push(`Stronger fields: ${abs2(FCr.drop)} a round worse than weaker ones, ${FC.years.join("–")}`);
-    if (fl.vsUsual != null && fl.vsUsual < -fl.swing) out.push(`${fl.lastYear} vs. own ${fl.usualFrom === fl.usualTo ? fl.usualFrom : `${fl.usualFrom}–${fl.usualTo}`} average: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} (${f2(fl.vsUsual)})`);
+    if (fl.vsUsual != null && fl.vsUsual < -fl.swing) out.push(vsTxt(fl));
     if (fl.puttLed && fl.lastPutt != null) out.push(`Putting carried ${fl.lastYear}: ${f2(fl.lastPutt)} of ${f2(fl.lastTot)} a round`);
     if ((L0 && L0.n < 30) || fl.fewRounds) out.push(`Limited data: ${L0?.n ?? fl.lastN ?? 0} rounds, ${win}`);
     const y3 = f.years.at(-1);
@@ -393,12 +393,14 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     if (f.years[0].hi - f.years[0].lo > 1.7) out.push(`Wide ${f.years[0].year} range: ${f2(f.years[0].lo)} to ${f2(f.years[0].hi)}`);
     return out;
   };
+  // (update 426) a season against the ones before it, on the same numbers as the season table
+  const vsTxt = (fl) => `${fl.lastYear} vs. ${fl.usualFrom === fl.usualTo ? fl.usualFrom : `own ${fl.usualFrom}–${fl.usualTo} average`}: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} (${f2(fl.vsUsual)})`;
   // (update 425) other positives: the mirror of the other risks
   const posOf = (f) => {
     const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = f.flags || {};
     if (FCr?.drop != null && FCr.drop < 0) out.push(`Stronger fields: ${abs2(FCr.drop)} a round better than in weaker ones, ${FC.years.join("–")}`);
     else if (FCr?.drop != null && FCr.pctile != null && FCr.pctile < 0.25) out.push(`Stronger fields: only ${abs2(FCr.drop)} a round worse than weaker ones, ${FC.years.join("–")} (a smaller drop than ${Math.round((1 - FCr.pctile) * 100)}% of players)`);
-    if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(`${fl.lastYear} vs. own ${fl.usualFrom === fl.usualTo ? fl.usualFrom : `${fl.usualFrom}–${fl.usualTo}`} average: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} (${f2(fl.vsUsual)})`);
+    if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(vsTxt(fl));
     const y3 = f.years.at(-1);
     if (f.age != null && model.ageOk && y3.ageAdd >= 0.1) out.push(`Age: about ${f2(y3.ageAdd)} a round by ${y3.year}`);
     return out;
