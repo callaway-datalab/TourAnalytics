@@ -350,8 +350,12 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   }
 
   /* ---------- the forecast ---------- */
-  const sum3 = (f) => f.years.reduce((t, y) => t + y.total, 0) / f.years.length;
-  const order = [...fcs].sort((a, b) => sum3(b) - sum3(a));
+  // (update 424) who's best each season ahead (1 year out, 2, 3), and how close the next one is; no 3-season average
+  const H = fcs[0].years.length, CLOSE = 0.03;
+  const bestAt = Array.from({ length: H }, (_, h) => { const s0 = [...fcs].sort((a, b) => b.years[h].total - a.years[h].total); return { f: s0[0], next: s0[1] || null, gap: s0[1] ? s0[0].years[h].total - s0[1].years[h].total : null, close: s0[1] ? s0[0].years[h].total - s0[1].years[h].total < CLOSE : false }; });
+  const firstBest = (f) => { const h = bestAt.findIndex((b) => b.f === f); return h < 0 ? H : h; };
+  const order = [...fcs].sort((a, b) => firstBest(a) - firstBest(b) || b.years[0].total - a.years[0].total);
+  const outTxt = (h) => `${h + 1} year${h ? "s" : ""} out`;
   const odds = fcs.length >= 2 ? groupOdds(order) : null;
   const yrs = order[0].years.map((y) => y.year);
   const projLines = order.map((f) => {
@@ -361,8 +365,8 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const nextBest = [...fcs].sort((a, b) => b.years[0].total - a.years[0].total)[0];
   const headline = (() => {
     if (fcs.length === 1) return `${nm(fcs[0])}: ${f2(fcs[0].years[0].total)} a round projected for ${yrs[0]}`;
-    if (nextBest === order[0]) return `${ln(order[0])} projects best next season and over all three`;
-    return `${ln(nextBest)} leads ${yrs[0]}; ${ln(order[0])} leads over three seasons`;
+    if (bestAt.every((b) => b.f === bestAt[0].f)) return `${ln(bestAt[0].f)} projects best in all ${H === 3 ? "three" : H} seasons${bestAt.some((b) => b.close) ? " (close in places)" : ""}`;
+    return bestAt.map((b, h) => `${ln(b.f)} best in ${yrs[h]}${b.close ? " (barely)" : ""}`).join(" · ");
   })();
   const pr = model.params;
   const acc = model.err.map((e, i) => (e ? { h: i + 1, mae: e.mae, n: e.n } : null)).filter(Boolean);
@@ -401,8 +405,8 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const curY = String(model.lastYear), curS = T.seasons.get(curY);
   const curOrder = fcs.map((f) => [f, curS?.out.get(f.key)]).filter(([, o]) => o?.n).sort((a, b) => b[1].v.TOTAL - a[1].v.TOTAL);
   if (curOrder.length) { const [a, oa] = curOrder[0], b = curOrder[1]; TK.push([`Best in ${curY}`, `${nm(a)}: ${f2(oa.v.TOTAL)} a round this season (#${oa.rk.TOTAL} on tour, ${oa.n} rounds)${b ? `, ${abs2(oa.v.TOTAL - b[1].v.TOTAL)} ahead of ${ln(b[0])}` : ""}.`]); }
-  if (fcs.length > 1) TK.push([`Best in ${yrs[0]}`, `${nm(nextBest)}: projected ${f2(nextBest.years[0].total)} (about ${ordinal(nextBest.years[0].rank)} on tour)${odds ? `, best of the ${fcs.length} in ${pct(odds.best[order.indexOf(nextBest)][0])} of simulated seasons` : ""}.`]);
-  TK.push([fcs.length > 1 ? "Best over the next three seasons" : "Next three seasons", `${nm(order[0])}: projected ${f2(sum3(order[0]))} a season on average, ${yrs[0]}–${yrs.at(-1)}.`]);
+  if (fcs.length > 1) TK.push(["Best each season ahead", bestAt.map((b, h) => `${yrs[h]}: ${ln(b.f)} (${f2(b.f.years[h].total)}${b.close ? `; too close to call, ${ln(b.next)} ${abs2(b.gap)} behind` : b.next ? `, ${abs2(b.gap)} ahead of ${ln(b.next)}` : ""})`).join(". ") + "."]);
+  else TK.push(["Next three seasons", `${nm(fcs[0])}: ${fcs[0].years.map((y) => `${f2(y.total)} in ${y.year}`).join(", ")}.`]);
   const tr = fcs.map((f) => [f, f.years.at(-1).total - f.years[0].total]).sort((a, b) => b[1] - a[1]);
   if (tr[0] && tr[0][1] >= 0.05) TK.push(["Rising", `${nm(tr[0][0])}: ${f2(tr[0][0].years[0].total)} in ${yrs[0]} to ${f2(tr[0][0].years.at(-1).total)} by ${yrs.at(-1)}.`]);
   const fall = tr.at(-1);
@@ -412,15 +416,15 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   if (FC && FC.rows.filter((r) => r.drop != null).length >= 2) { const rs = FC.rows.filter((r) => r.drop != null).sort((a, b) => a.drop - b.drop), hold = fcs.find((x) => x.key === rs[0].key), drop = fcs.find((x) => x.key === rs.at(-1).key);
     TK.push(["Against strong fields", `${ln(hold)} holds up best; ${ln(drop)} gives back the most (${abs2(rs.at(-1).drop)} a round worse than in weaker fields).`]); }
 
-  // the verdict: one card each, in order over the next three seasons
-  const roleOf = (f, i) => `${ordinal(i + 1)} over the next three seasons${f === nextBest && fcs.length > 1 ? ` · Best in ${yrs[0]}` : ""}`;
+  // the verdict: one card each, in the order they're best (next season first)
+  const roleOf = (f) => { if (fcs.length < 2) return "Projection"; const hs = bestAt.map((b, h) => (b.f === f ? h : -1)).filter((h) => h >= 0); const barely = hs.some((h) => bestAt[h].close) ? ", barely" : ""; if (!hs.length) return `Not projected best in ${yrs[0]}–${yrs.at(-1)}`; if (hs.length === H) return `Best every season ahead (${yrs[0]}–${yrs.at(-1)})${barely}`; return `Best ${hs.map((h) => h + 1).join(" and ")} year${hs.length > 1 || hs[0] ? "s" : ""} out (${hs.map((h) => yrs[h]).join(", ")})${barely}`; };
   const verdict = order.map((f, i) => {
     const y1 = f.years[0];
     return `<div class="take" style="--c:${colorOf(f)}"><div class="tk">${esc(roleOf(f, i))}</div><div class="who">${nm(f)}${ageTxt(f)}</div>
-      <div class="nums">${(() => { const o = curS?.out.get(f.key); return o?.n ? `<span><b class="${tone(o.v.TOTAL)}">${f2(o.v.TOTAL)}</b> in ${esc(curY)} (#${o.rk.TOTAL}, ${o.n} rds)</span>` : ""; })()}<span><b class="${tone(y1.total)}">${f2(y1.total)}</b> projected in ${esc(yrs[0])} (~${ordinal(y1.rank)})</span><span><b class="${tone(sum3(f))}">${f2(sum3(f))}</b> projected average, ${esc(yrs[0])}–${esc(yrs.at(-1))}</span>${odds ? `<span><b>${pct(odds.best[i][0])}</b> best of the ${fcs.length} in ${esc(yrs[0])} · <b>${pct(odds.best[i].at(-1))}</b> in ${esc(yrs.at(-1))}</span>` : ""}</div>
+      <div class="nums">${(() => { const o = curS?.out.get(f.key); return o?.n ? `<span><b class="${tone(o.v.TOTAL)}">${f2(o.v.TOTAL)}</b> in ${esc(curY)} (#${o.rk.TOTAL}, ${o.n} rds)</span>` : ""; })()}<span><b class="${tone(y1.total)}">${f2(y1.total)}</b> projected in ${esc(yrs[0])} (~${ordinal(y1.rank)})</span><span>projected ${f.years.slice(1).map((y) => `<b class="${tone(y.total)}">${f2(y.total)}</b> in ${esc(y.year)}`).join(" · ")}</span>${odds ? `<span><b>${pct(odds.best[i][0])}</b> best of the ${fcs.length} in ${esc(yrs[0])} · <b>${pct(odds.best[i].at(-1))}</b> in ${esc(yrs.at(-1))}</span>` : ""}</div>
       ${srBlock(f)}</div>`;
   }).join("");
-  const projRows = order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b class="${tone(y.total)}">${f2(y.total)}</b> <small>~${ordinal(y.rank)}</small><br><small>${f2(y.lo)} to ${f2(y.hi)}</small></td>`).join("")}<td><b class="${tone(sum3(f))}">${f2(sum3(f))}</b></td></tr>`).join("");
+  const projRows = order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b class="${tone(y.total)}">${f2(y.total)}</b> <small>~${ordinal(y.rank)}</small><br><small>${f2(y.lo)} to ${f2(y.hi)}</small></td>`).join("")}</tr>`).join("");
 
   // (update 417) the chart grows to the height of the takeaways beside it (about 76 characters a line, 16.75px a line)
   const tkPx = 40 + TK.reduce((t, [l, x]) => t + 4 + 15.4 * Math.ceil((l.length + 2 + String(x).replace(/<[^>]+>/g, "").length) / 79), 0);
@@ -454,7 +458,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
       <div>${FC ? `<h3>Weaker vs. stronger fields <small>${esc(FC.years.join("–"))} · it’s easier to gain strokes in a weak field${FC.typical ? `; a typical player drops ${abs2(FC.typical.med)} in the stronger half` : ""}</small></h3>
         <table><tr><th></th><th>Weaker fields</th><th>Stronger fields</th><th>Drop</th><th>Vs. other players</th></tr>${fcRows}</table>` : ""}</div></div>
     <div class="cols c55"><div><h3>Projected strokes gained a round <small>against an average ${esc(target)} field · likely range · rank it would mean</small></h3>
-        <table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}<th>Projected avg</th></tr>${projRows}</table></div>
+        <table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${projRows}</table></div>
       <div><h3>Best and worst projected ranks <small>top and bottom of the likely range · out of ~${order[0].years[0].of} ranked a season</small></h3><table class="bw"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b>${ordinal(y.rankHi)}</b> to <b>${ordinal(y.rankLo)}</b></td>`).join("")}</tr>`).join("")}</table>
         ${oddsLines.length ? `<ul class="pts">${oddsLines.slice(0, 3).map((t) => `<li>${t}</li>`).join("")}</ul>` : ""}</div></div>
     <div class="cols c3">${yrs.map((_, h) => topTable(h)).join("")}</div></section>`);
