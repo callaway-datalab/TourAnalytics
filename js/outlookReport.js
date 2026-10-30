@@ -114,13 +114,19 @@ function fieldCheck(T, keys) {
     for (const [ev, e] of T.per.get(k)?.events || []) { const s = strength.get(ev); if (s == null) continue; const b = s >= med ? r.strong : r.weak; b.n += e.n; b.tot += e.tot; b.ev++; }
     return r;
   };
-  const MIN = 30;
+  const MIN = 20;
   const drops = [];
   for (const k of T.per.keys()) { const r = split(k); if (r.strong.n >= MIN && r.weak.n >= MIN) drops.push(r.weak.tot / r.weak.n - r.strong.tot / r.strong.n); }
   drops.sort((a, b) => a - b);
   const q = (p) => drops[Math.min(drops.length - 1, Math.max(0, Math.round(p * (drops.length - 1))))];
+  // (update 429) each player's rank in weaker fields and in stronger fields
+  const poolW = [], poolS = [];
+  // the same players in both lists (those with enough rounds in each half), so the two ranks compare like with like
+  for (const k of T.per.keys()) { const r = split(k); if (r.weak.n >= MIN && r.strong.n >= MIN) { poolW.push([k, r.weak.tot / r.weak.n]); poolS.push([k, r.strong.tot / r.strong.n]); } }
+  const rankIn = (pool, k, v) => { const others = pool.filter(([q]) => q !== k); const rank = 1 + others.filter(([, x]) => x > v).length, of = others.length + 1; return { rank, of, top: rank / of }; };
   const rows = keys.map((k) => {
     const r = split(k);
+    r.weak.rk = r.weak.n ? rankIn(poolW, k, r.weak.tot / r.weak.n) : null; r.strong.rk = r.strong.n ? rankIn(poolS, k, r.strong.tot / r.strong.n) : null;
     if (!r.strong.n || !r.weak.n) return { key: k, r, drop: null };
     const drop = r.weak.tot / r.weak.n - r.strong.tot / r.strong.n;
     const pctile = drops.length ? drops.filter((d) => d < drop).length / drops.length : null;
@@ -395,9 +401,11 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     return { ...fl0, lastYear: ly, lastTot: tot, lastPutt: putt, lastN: lo.n, swing, usualTot: usual, usualFrom: wn ? ys[Math.max(0, ys.length - 1 - prev.length)] : null, usualTo: wn ? ys.at(-2) : null,
       vsUsual: usual != null ? tot - usual : null, puttLed: tot > swing && putt > tot / 2 };
   };
+  const topTxt = (rk) => `top ${Math.max(1, Math.round(rk.top * 100))}%`;
+  const fieldRead = (r) => { const w = r.r.weak.rk, s0 = r.r.strong.rk; if (!w || !s0) return ""; const d = s0.top - w.top; return w.top <= 0.25 && s0.top <= 0.25 ? "Strong in both" : d >= 0.25 ? "Better in weak fields" : d <= -0.25 ? "Better in strong fields" : w.top > 0.6 && s0.top > 0.6 ? "Behind in both" : "Similar in both"; };
   const risksOf = (f) => {
     const L0 = L1(f), FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
-    if (FCr?.pctile > 0.6 && FCr.drop != null) out.push(`Stronger fields: ${abs2(FCr.drop)} a round worse than weaker ones, ${FC.years.join("–")}`);
+    if (FCr && fieldRead(FCr) === "Better in weak fields") out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there, against #${FCr.r.weak.rk.rank} of ${FCr.r.weak.rk.of} in weaker ones, ${FC.years.join("–")}`);
     if (fl.vsUsual != null && fl.vsUsual < -fl.swing) out.push(vsTxt(fl));
     if (fl.puttLed && fl.lastPutt != null) out.push(`Putting carried ${fl.lastYear}: ${f2(fl.lastPutt)} of ${f2(fl.lastTot)} a round`);
     if ((L0 && L0.n < 30) || fl.fewRounds) out.push(`Limited data: ${L0?.n ?? fl.lastN ?? 0} rounds, ${win}`);
@@ -411,8 +419,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   // (update 425) other positives: the mirror of the other risks
   const posOf = (f) => {
     const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
-    if (FCr?.drop != null && FCr.drop < 0) out.push(`Stronger fields: ${abs2(FCr.drop)} a round better than in weaker ones, ${FC.years.join("–")}`);
-    else if (FCr?.drop != null && FCr.pctile != null && FCr.pctile < 0.25) out.push(`Stronger fields: only ${abs2(FCr.drop)} a round worse than weaker ones, ${FC.years.join("–")} (a smaller drop than ${Math.round((1 - FCr.pctile) * 100)}% of players)`);
+    if (FCr && ["Better in strong fields", "Strong in both"].includes(fieldRead(FCr))) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there (${topTxt(FCr.r.strong.rk)}), ${FC.years.join("–")}`);
     if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(vsTxt(fl));
     const y3 = f.years.at(-1);
     if (f.age != null && model.ageOk && y3.ageAdd >= 0.1) out.push(`Age: about ${f2(y3.ageAdd)} a round by ${y3.year}`);
@@ -437,8 +444,8 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   if (tr[0] && tr[0][1] >= 0.05) TK.push(["Rising", `${nm(tr[0][0])}: ${f2(tr[0][0].years[0].total)} in ${yrs[0]} to ${f2(tr[0][0].years.at(-1).total)} by ${yrs.at(-1)}.`]);
   const fall = tr.at(-1);
   if (fall && fall[1] <= -0.05 && fall[0] !== tr[0][0]) { const ad = fall[0].years.at(-1).ageAdd; TK.push(["Fading", `${nm(fall[0])}: ${f2(fall[0].years[0].total)} in ${yrs[0]} to ${f2(fall[0].years.at(-1).total)} by ${yrs.at(-1)}${ad <= -0.1 ? `, mostly age (about ${abs2(ad)} a round)` : ""}.`]); }
-  if (FC && FC.rows.filter((r) => r.drop != null).length >= 2) { const rs = FC.rows.filter((r) => r.drop != null).sort((a, b) => a.drop - b.drop), hold = fcs.find((x) => x.key === rs[0].key), drop = fcs.find((x) => x.key === rs.at(-1).key);
-    TK.push(["Against strong fields", `${ln(hold)} holds up best; ${ln(drop)} gives back the most (${abs2(rs.at(-1).drop)} a round worse than in weaker fields).`]); }
+  if (FC && FC.rows.filter((r) => r.r.strong.rk).length >= 2) { const rs = FC.rows.filter((r) => r.r.strong.rk).sort((a, b) => a.r.strong.rk.top - b.r.strong.rk.top), hi = fcs.find((x) => x.key === rs[0].key), lo = fcs.find((x) => x.key === rs.at(-1).key);
+    TK.push(["Against strong fields", `${ln(hi)} ranks best there (#${rs[0].r.strong.rk.rank} of ${rs[0].r.strong.rk.of}); ${ln(lo)} lowest (#${rs.at(-1).r.strong.rk.rank}).`]); }
 
   // the verdict: one card each, in the order they're best (next season first)
   const roleOf = (f) => { if (fcs.length < 2) return "Projection"; const hs = bestAt.map((b, h) => (b.f === f ? h : -1)).filter((h) => h >= 0); const barely = hs.some((h) => bestAt[h].close) ? ", barely" : ""; if (!hs.length) return `Not projected best in ${yrs[0]}–${yrs.at(-1)}`; if (hs.length === H) return `Best every season ahead (${yrs[0]}–${yrs.at(-1)})${barely}`; return `Best ${hs.map((h) => h + 1).join(" and ")} year${hs.length > 1 || hs[0] ? "s" : ""} out (${hs.map((h) => yrs[h]).join(", ")})${barely}`; };
@@ -464,11 +471,12 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
 
   // 2 · side by side: by season, against strong and weak fields, the projection and the odds
   const seasonRows = order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${showYears.map((y) => `<td>${cell(T.seasons.get(y).out.get(f.key), "TOTAL")}</td>`).join("")}<td class="hlc">${cell(L1(f), "TOTAL")}</td></tr>`).join("");
-  // (update 427) least drop first (better in strong fields at the top), no data last
-  const fcRows = FC ? [...FC.rows].sort((a, b) => (a.drop ?? Infinity) - (b.drop ?? Infinity)).map((r) => {
+  // (update 429) where each player ranks in weaker fields and in stronger ones (not the drop: a player can drop a lot just
+  // by being exceptional in weak fields); best in stronger fields first
+  const fcRows = FC ? [...FC.rows].sort((a, b) => (a.r.strong.rk?.top ?? 9) - (b.r.strong.rk?.top ?? 9)).map((r) => {
     const f = fcs.find((x) => x.key === r.key), s0 = r.r.strong, w = r.r.weak;
-    const label = r.drop == null ? "—" : r.pctile == null ? "" : r.pctile < 0.4 ? "Holds up better" : r.pctile > 0.6 ? "Drops more" : "About typical";
-    return `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td><td>${w.n ? `<span class="${tone(w.tot / w.n)}">${f2(w.tot / w.n)}</span> <small>${w.n} rds</small>` : "—"}</td><td>${s0.n ? `<span class="${tone(s0.tot / s0.n)}">${f2(s0.tot / s0.n)}</span> <small>${s0.n} rds</small>` : "—"}</td><td>${r.drop == null ? "—" : f2(r.drop)}</td><td><b>${label}</b>${r.pctile != null ? ` <small>${ordinal(Math.round(r.pctile * 100))} pct.</small>` : ""}</td></tr>`;
+    const c = (b) => (b.n ? `<span class="${tone(b.tot / b.n)}">${f2(b.tot / b.n)}</span> <small>${b.n} rds</small><br><small>#${b.rk.rank} of ${b.rk.of} · ${topTxt(b.rk)}</small>` : "—");
+    return `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td><td>${c(w)}</td><td>${c(s0)}</td><td><b>${fieldRead(r)}</b></td></tr>`;
   }).join("") : "";
   const oddsLines = [];
   if (odds) for (let i = 0; i < order.length; i++) for (let j = 0; j < order.length; j++) {
@@ -480,8 +488,8 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   pages.push(`<section class="page side${fcs.length >= 4 ? " many" : ""}"><div class="kicker">Side by side</div>
     <div class="cols c50"><div><h3>Strokes gained a round, by season <small>tour rank in brackets · ${esc(WIN)}: ${esc(fromTxt)} to ${esc(thru)}</small></h3>
         <table class="seas"><tr><th></th>${showYears.map((y) => `<th>${esc(yLabel(y))}</th>`).join("")}<th class="hlc">${esc(WIN)}</th></tr>${seasonRows}</table></div>
-      <div>${FC ? `<h3>Weaker vs. stronger fields <small>${esc(FC.years.join("–"))} · it’s easier to gain strokes in a weak field${FC.typical ? `; a typical player drops ${abs2(FC.typical.med)} in the stronger half` : ""}</small></h3>
-        <table><tr><th></th><th>Weaker fields</th><th>Stronger fields</th><th>Drop</th><th>Vs. other players</th></tr>${fcRows}</table>` : ""}</div></div>
+      <div>${FC ? `<h3>Weaker vs. stronger fields <small>${esc(FC.years.join("–"))} · each ranked among the same players (20+ rounds in both halves)</small></h3>
+        <table><tr><th></th><th>Weaker fields</th><th>Stronger fields</th><th>Read</th></tr>${fcRows}</table>` : ""}</div></div>
     <div class="cols c55"><div><h3>Projected strokes gained a round <small>against an average ${esc(target)} field · likely range · rank it would mean</small></h3>
         <table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${projRows}</table></div>
       <div><h3>Best and worst projected ranks <small>top and bottom of the likely range · out of ~${order[0].years[0].of} ranked a season</small></h3><table class="bw"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b>${ordinal(y.rankHi)}</b> to <b>${ordinal(y.rankLo)}</b></td>`).join("")}</tr>`).join("")}</table>
