@@ -1853,6 +1853,8 @@ export function sgDashboard(container, opts) {
       const rankIn = (maps, k, v) => { const vs = maps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); return { rank: 1 + vs.filter((x) => x > v + 1e-12).length, of: vs.length + 1 }; };
       const step = cat ? 0.02 : 0.05, kidStep = 0.02;
       const bump = (k, d) => { const cur = st.hypoAdj && st.hypoAdj.cat === (cat || "") ? { ...st.hypoAdj.d } : {}; cur[k] = Math.round(((cur[k] || 0) + d) * 1000) / 1000; if (Math.abs(cur[k]) < 1e-9) delete cur[k]; st.hypoAdj = { cat: cat || "", d: cur }; draw(); };
+      // (update 419) or type the value itself: the change becomes whatever gets it there
+      const setAdj = (k, d) => { const cur = st.hypoAdj && st.hypoAdj.cat === (cat || "") ? { ...st.hypoAdj.d } : {}; cur[k] = Math.round(d * 1000) / 1000; if (Math.abs(cur[k]) < 1e-9) delete cur[k]; st.hypoAdj = { cat: cat || "", d: cur }; draw(); };
       const open = !!st.hypoOpen;
       const tgl = el("button", { type: "button", class: "bs-path-toggle", "aria-expanded": String(open) }, [el("span", { class: "cmp-caret" }, open ? "\u25BE " : "\u25B8 "), "Hypothetical rankings"]);
       tgl.addEventListener("click", () => { st.hypoOpen = !open; draw(); });
@@ -1867,12 +1869,32 @@ export function sgDashboard(container, opts) {
       // one row: k its key; v0 the last N rounds' value; v the what-if; d the change; r / r0 the ranks
       const row = ({ k, label, v0, v, d, r, r0, isTot = false, kid = false, stepBy = step, expand = null }) => {
         const btn = (txt, dv, lab) => { const b = el("button", { type: "button", class: "hy-step", "aria-label": `${lab} ${label}` }, txt); b.addEventListener("click", (e) => { e.stopPropagation(); bump(k, dv); }); return b; };
+        const typeable = () => {
+          const sv = el("strong", { class: `hy-type ${v >= 0 ? "pos" : "neg"}${d ? " hy-moved" : ""}`, role: "button", tabindex: "0", title: "Click to type a value", "aria-label": `Type a value for ${label}` }, kid ? f3h(v) : fmtSG(v));
+          const edit = (e) => {
+            e.stopPropagation(); e.preventDefault();
+            const inp = el("input", { type: "text", inputmode: "decimal", class: "hy-in", value: v.toFixed(kid ? 3 : 2), "aria-label": `Value for ${label}` });
+            let done = false;
+            const commit = (keep) => {
+              if (done) return; done = true;
+              const t = Number(String(inp.value).trim().replace(/[\u2212\u2013]/g, "-").replace(/^\+/, ""));
+              if (keep && String(inp.value).trim() !== "" && Number.isFinite(t)) setAdj(k, t - (v - (adj[k] || 0))); else draw();
+            };
+            inp.addEventListener("click", (ev) => ev.stopPropagation());
+            inp.addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Enter") { ev.preventDefault(); commit(true); } else if (ev.key === "Escape") { ev.preventDefault(); commit(false); } });
+            inp.addEventListener("blur", () => commit(true));
+            sv.replaceWith(inp); inp.focus(); inp.select();
+          };
+          sv.addEventListener("click", edit);
+          sv.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") edit(e); });
+          return sv;
+        };
         const moved = r.rank !== r0.rank;
         const lab = expand ? [el("span", { class: "sg-exp", "aria-hidden": "true" }, expand.open ? "\u25BE " : "\u25B8 "), label] : label;
         const tr = el("tr", { class: `${isTot ? "bs-path-total" : ""}${kid ? " cmp-sub cmp-deep" : ""}${expand ? " sg-tap" : ""}`, ...(expand ? { role: "button", tabindex: "0", "aria-expanded": String(expand.open) } : {}) }, [
           el("td", {}, lab),
           el("td", { class: "num" }, kid ? f3h(v0) : fmtSG(v0)),
-          el("td", { class: "num hy-val" }, [isTot ? el("strong", { class: v >= 0 ? "pos" : "neg" }, fmtSG(v)) : el("span", { class: "hy-ctl" }, [btn("\u2212", -stepBy, "Worse"), el("strong", { class: `${v >= 0 ? "pos" : "neg"}${d ? " hy-moved" : ""}` }, kid ? f3h(v) : fmtSG(v)), btn("+", stepBy, "Better")]),
+          el("td", { class: "num hy-val" }, [isTot ? el("strong", { class: v >= 0 ? "pos" : "neg" }, fmtSG(v)) : el("span", { class: "hy-ctl" }, [btn("\u2212", -stepBy, "Worse"), typeable(), btn("+", stepBy, "Better")]),
             Math.abs(d) > 1e-9 ? el("span", { class: `hy-d ${d > 0 ? "pos" : "neg"}`, title: isTot ? "All the changes added up" : expand ? "Its changes added up (with its distances)" : "Changed by" }, fmtD(d)) : null]),
           el("td", { class: "num" }, [rkTxt(r), moved ? el("span", { class: `hy-mv ${r.rank < r0.rank ? "pos" : "neg"}` }, ` ${r.rank < r0.rank ? "\u25B2" : "\u25BC"}${Math.abs(r0.rank - r.rank)}`) : null]),
         ]);

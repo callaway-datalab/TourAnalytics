@@ -2113,9 +2113,17 @@ export async function render(main) {
         const dataUrl = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(String(r.status)); const b = await r.blob(); if (!/^image\//.test(b.type)) throw new Error("not an image"); return await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); }); };
         const logo = await dataUrl("media/logo.png").catch(() => dataUrl("icons/icon-192.png")).catch(() => null);
         const html = buildOutlookReport({ field: fc.field, detail: det?.field || null, fcs: order, info: m, ownRounds: (k) => sgRounds(rawOfKey(k)), extra: missing, logo });
-        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-        if (win) win.location.href = url; else { const a = document.createElement("a"); a.href = url; a.download = "outlook-report.html"; a.click(); }
-        setTimeout(() => URL.revokeObjectURL(url), 120000);
+        // (update 419) the report is written into the new tab and its print button wired from here: the site's security
+        // policy carries over to that tab and blocks the page's own inline handler, so the button did nothing before
+        if (win) {
+          win.document.open(); win.document.write(html.replace(' onclick="print()"', "")); win.document.close();
+          const wire = () => { const b = win.document.getElementById("printBtn"); if (b && !b.dataset.wired) { b.dataset.wired = "1"; b.addEventListener("click", () => { win.focus(); win.print(); }); } };
+          wire(); win.addEventListener("load", wire);
+        } else {
+          const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+          const a = document.createElement("a"); a.href = url; a.download = "outlook-report.html"; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 120000);
+        }
       } catch (err) {
         console.error(err); win?.close();
         outlookReport(order, story, { tour: m.target, years: yrs, last: m.lastYear, acc, ageNote, missing }); // (the short version)

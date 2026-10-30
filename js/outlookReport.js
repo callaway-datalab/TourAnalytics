@@ -188,22 +188,31 @@ function spark(pts, years, lo, hi) {
 /** The projection chart: each player's last season, then the next three, with their likely ranges. */
 function projChart(fcs, lastYear, colors, names = [], Hh = 175) {
   const W = 470, L = 44, R = 14, Tp = 8, B = 22;
-  const cols = [String(lastYear), ...fcs[0].years.map((y) => y.year)];
-  const vals = fcs.flatMap((f) => [f.now?.total, ...f.years.flatMap((y) => [y.lo, y.hi])]).filter((v) => v != null);
+  // (update 419) as many past seasons as seasons projected, ending with the current one
+  const nP = fcs[0].years.length, past = Array.from({ length: nP }, (_, i) => String(Number(lastYear) - nP + 1 + i));
+  const cols = [...past, ...fcs[0].years.map((y) => y.year)];
+  const pastV = (f, y) => (y === String(lastYear) && f.now ? f.now.total : (f.hist || []).find((h) => String(h.year) === y)?.total ?? null);
+  const vals = fcs.flatMap((f) => [...past.map((y) => pastV(f, y)), ...f.years.flatMap((y) => [y.lo, y.hi])]).filter((v) => v != null);
   const hi = Math.max(0.3, ...vals) + 0.1, lo = Math.min(-0.3, ...vals) - 0.1;
   const x = (i) => L + (i * (W - L - R)) / (cols.length - 1), y = (v) => Tp + ((hi - v) * (Hh - Tp - B)) / (hi - lo);
   const ticks = []; for (let t = Math.ceil(lo * 2) / 2; t <= hi; t += 0.5) ticks.push(t);
   let g = ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" class="${Math.abs(t) < 1e-9 ? "zero" : "grid"}"/><text x="${L - 6}" y="${y(t) + 3.5}" class="ax" text-anchor="end">${f2(t)}</text>`).join("");
   g += cols.map((c, i) => `<text x="${x(i)}" y="${Hh - 8}" class="ax" text-anchor="middle">${esc(c)}</text>`).join("");
+  g += `<line x1="${(x(nP - 1) + x(nP)) / 2}" x2="${(x(nP - 1) + x(nP)) / 2}" y1="${Tp}" y2="${Hh - B}" stroke="#c9ced5" stroke-dasharray="2 3"/><text x="${(x(nP - 1) + x(nP)) / 2 + 4}" y="${Tp + 9}" class="ax">projected →</text>`;
   fcs.forEach((f, k) => {
     const c = colors[k % colors.length];
-    const band = f.years.map((yv, i) => `${x(i + 1)},${y(yv.hi)}`).join(" ") + " " + [...f.years].reverse().map((yv, i) => `${x(f.years.length - i)},${y(yv.lo)}`).join(" ");
+    const band = f.years.map((yv, i) => `${x(nP + i)},${y(yv.hi)}`).join(" ") + " " + [...f.years].reverse().map((yv, i) => `${x(nP + f.years.length - 1 - i)},${y(yv.lo)}`).join(" ");
     g += `<polygon points="${band}" fill="${c}" opacity="0.10"/>`;
-    const pts = [f.now ? [x(0), y(f.now.total)] : null, ...f.years.map((yv, i) => [x(i + 1), y(yv.total)])].filter(Boolean);
-    g += `<polyline points="${pts.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${c}" stroke-width="2.4"/>` + pts.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.4" fill="${c}"/>`).join("");
+    const hp = past.map((yy, i) => { const v = pastV(f, yy); return v == null ? null : [x(i), y(v)]; }).filter(Boolean);
+    const fp = f.years.map((yv, i) => [x(nP + i), y(yv.total)]);
+    const join = pastV(f, String(lastYear)) != null ? [[x(nP - 1), y(pastV(f, String(lastYear)))], ...fp] : fp;
+    // actual seasons solid with filled dots; the projection dashed with open dots
+    if (hp.length > 1) g += `<polyline points="${hp.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${c}" stroke-width="2.4"/>`;
+    g += `<polyline points="${join.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${c}" stroke-width="2.4" stroke-dasharray="6 4"/>`;
+    g += hp.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.4" fill="${c}"/>`).join("") + fp.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.4" fill="#fff" stroke="${c}" stroke-width="2"/>`).join("");
   });
   // (update 406) a key: who each line is
-  const key = `<div class="legend">${fcs.map((f, k) => `<span><i style="background:${colors[k % colors.length]}"></i>${esc(names[k] || f.name)}</span>`).join("")}<span class="muted">shaded: likely range</span></div>`;
+  const key = `<div class="legend">${fcs.map((f, k) => `<span><i style="background:${colors[k % colors.length]}"></i>${esc(names[k] || f.name)}</span>`).join("")}<span class="muted">solid: actual · dashed: projected · shaded: likely range</span></div>`;
   return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" style="max-width:${W}px" aria-label="Projection chart">${g}</svg>${key}`;
 }
 
@@ -223,7 +232,7 @@ function monthChart(rounds, target, color) {
   }
   const ms = [...by].sort((a, b) => a[0].localeCompare(b[0])).map(([k, x]) => ({ k, v: x.s / x.n, n: x.n }));
   if (ms.length < 2) return "";
-  const W = 1000, Hh = 104, L = 40, R = 8, Tp = 5, B = 20;
+  const W = 1000, Hh = 92, L = 40, R = 8, Tp = 5, B = 20;
   const run = ms.map((_, i) => { let s0 = 0, n0 = 0; for (let j = Math.max(0, i - 2); j <= i; j++) { s0 += ms[j].v * ms[j].n; n0 += ms[j].n; } return s0 / n0; });
   const hi = Math.max(0.5, ...ms.map((x) => x.v)) + 0.2, lo = Math.min(-0.5, ...ms.map((x) => x.v)) - 0.2;
   const bw = (W - L - R) / ms.length, x = (i) => L + bw * (i + 0.5), y = (v) => Tp + ((hi - v) * (Hh - Tp - B)) / (hi - lo);
@@ -297,7 +306,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
       const per = model.ageAt?.[f.key] ?? 0;
       ageLine = ` At ${Math.floor(f.age)}, players in this data typically ${Math.abs(per) < 0.02 ? "hold steady" : per > 0 ? `gain about ${abs2(per)} a round a season` : `lose about ${abs2(per)} a round a season`}.`;
     } else if (f.age == null) ageLine = " No birth date in the data, so age isn’t taken into account.";
-    out.lines.speed = (sp + ageLine).trim();
+    out.lines.speed = sp.trim(); out.lines.age = ageLine.trim(); // (update 419: two boxes)
     // distances
     const own = ownRounds ? ownRounds(f.key) : null;
     const det = detail?.find?.((p) => p.key === f.key)?.rounds;
@@ -470,7 +479,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     pages.push(`<section class="page player" style="--c:${colorOf(f)}"><div class="kicker">Player profile · ${esc(roleOf(f, i))}</div>
       <h1>${nm(f)}${ageOf(f) != null ? ` <span class="agebig">Age ${ageOf(f)}</span>` : ""}</h1>
       <div class="pbody">${card}
-      <div class="cols c64">${proj}<div class="boxes b2">${box("s", "Strength", ins.lines.strength)}${box("w", "Watch", ins.lines.watch)}${box("a", spK(ins) ? "Speed and age" : "Age", ins.lines.speed)}${box("d", `By distance (${win})`, ins.lines.dist)}</div></div>
+      <div class="cols c64">${proj}<div class="boxes b2">${box("s", "Strength", ins.lines.strength)}${box("w", "Watch", ins.lines.watch)}${box("p", "Speed", ins.lines.speed)}${box("a", "Age", ins.lines.age)}${box(`d${ins.lines.speed && ins.lines.age ? " wide" : ""}`, `By distance (${win})`, ins.lines.dist)}</div></div>
       <div><h3>By season <small>strokes gained a round, tour rank in brackets</small></h3>${tbl}</div>
       ${(() => { const mc = monthChart(field.find((p) => p.key === f.key)?.rounds, target, colorOf(f)); return mc ? `<div><h3>Month by month <small>strokes gained a round on ${esc(target)} · <span style="color:#2a9d6f">■</span> above average · <span style="color:#d0574c">■</span> below · <i class="runkey" style="background:${colorOf(f)}"></i> 3-month running average</small></h3>${mc}</div>` : ""; })()}</div></section>`);
   }
@@ -511,15 +520,15 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   .c3{grid-template-columns:1fr 1fr 1fr}.c40{grid-template-columns:0.85fr 1.15fr;align-items:start}
   .lab{display:block;font-size:9.5px;font-weight:700;margin:6px 0 1px}ul.sr{margin:0 0 1px;padding-left:15px}ul.sr li{font-size:11.5px;margin:0;line-height:1.3}.take .lab{margin:3px 0 0}.take .nums{margin:2px 0 2px}.sr2{gap:14px;margin-top:4px}
   .card.big1 .big{font-size:40px}.card.big1 .bl{font-size:12px}.card.big1 p{font-size:13px}.card.big1 .spark{width:100%;height:auto}.card.big1 .mix{font-size:13px}
-  .player table.prof td,.player table.prof th{padding:2px 6px;font-size:11.5px}.player table.proj td{padding:3px 6px}.player ul.sr li{font-size:11.5px}.player .boxes .box{padding:4px 8px}.player .boxes .box p{font-size:11.5px}.player h1{font-size:26px;margin:0 0 6px}.player h3{margin:6px 0 3px}.player .card{border-top-width:5px}
+  .player table.prof td,.player table.prof th{padding:1px 6px;font-size:11.5px}.player table.proj td{padding:3px 6px}.player ul.sr li{font-size:11.5px}.player .boxes .box{padding:4px 8px}.player .boxes .box p{font-size:11px;line-height:1.25}.player h1{font-size:26px;margin:0 0 6px}.player h3{margin:6px 0 3px}.player .card{border-top-width:5px}
   .player{display:flex;flex-direction:column}.pbody{flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:6px}@media print{.player{height:7.7in}}@media screen{.player{height:8.5in}}
-  .card.band{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.2fr;gap:18px;align-items:start;padding:10px 14px}.card.band .lab{margin-top:2px}.boxes.b2{grid-template-columns:1fr 1fr;align-content:start;margin-top:6px}.c64{grid-template-columns:1.35fr 1fr}.player table.proj td{white-space:nowrap}.player table.proj td:first-child{white-space:normal}.side td:last-child{white-space:nowrap}.runkey{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:3px;margin-right:2px}.card .sr2{margin-top:8px}.card.big1 ul.sr li{font-size:12px}
+  .card.band{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.2fr;gap:18px;align-items:start;padding:10px 14px}.card.band .lab{margin-top:2px}.boxes.b2{grid-template-columns:1fr 1fr;align-content:start;margin-top:6px}.c64{grid-template-columns:1.35fr 1fr}.player table.proj td{white-space:nowrap}.player table.proj td:first-child{white-space:normal}.side td:last-child{white-space:nowrap}.box.p .bt{color:#d0861c}.boxes.b2 .box.wide{grid-column:1/-1}.runkey{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:3px;margin-right:2px}.card .sr2{margin-top:8px}.card.big1 ul.sr li{font-size:12px}
   .tks li{font-size:12px;line-height:1.28;margin:2px 0}.take ul.sr li{font-size:11px;line-height:1.25}.take .lab{margin:2px 0 0}.take{padding:6px 9px}h3.vh{margin-top:6px}
   .labq{text-transform:none;letter-spacing:0;font-weight:400;color:#6b7480;margin-left:3px}
   .side .cols{gap:40px}.side .cols.c3{gap:56px}.side td:first-child{white-space:nowrap}.side td small{white-space:nowrap}.side table{margin-bottom:10px}.side td,.side th{padding:7px 5px}.side h3.ctr{text-align:center}.side table.topn td:not(:first-child),.side table.topn th:not(:first-child){text-align:center}
   .bar{position:sticky;top:0;background:#1b1f24;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:12px;z-index:2}.bar button{font:inherit;padding:5px 12px;border-radius:6px;border:0;background:#fff;color:#1b1f24;font-weight:600;cursor:pointer}@media print{.bar{display:none}}`;
   const title = `${fcs.map((f) => lastName(f.name)).join(", ")} · Outlook ${yrs[0]}–${yrs.at(-1)}`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${css}</style></head><body>
-<div class="bar"><span>${esc(title)} · ${pages.length} pages</span><button onclick="print()">Print or save as PDF</button>${moreThan4 ? `<span>(the first 4 players picked)</span>` : ""}</div>
+<div class="bar"><span>${esc(title)} · ${pages.length} pages</span><button id="printBtn" onclick="print()">Print or save as PDF</button>${moreThan4 ? `<span>(the first 4 players picked)</span>` : ""}</div>
 ${pages.join("\n")}</body></html>`;
 }
