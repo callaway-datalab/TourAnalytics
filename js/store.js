@@ -450,6 +450,14 @@ async function commitInChunks(ops, onProgress) {
   if (count) await flush();
 }
 
+/** (update 400) A player's stored row pieces for one data file, deleted by number (from the piece count) so
+    none of them is downloaded first: before this, replacing a file downloaded all of its old rows. */
+async function deleteRowPieces(key, datasetId) {
+  const meta = await getDoc(doc(db, "clientData", key, "datasets", datasetId));
+  const n = meta.exists() ? meta.data().chunkCount || 0 : 0;
+  await commitInChunks(Array.from({ length: n }, (_, i) => (batch) => batch.delete(doc(db, "clientData", key, "datasets", datasetId, "chunks", String(i)))));
+}
+
 async function deleteCollection(colRef) {
   const snap = await getDocs(colRef);
   await commitInChunks(snap.docs.map((d) => (batch) => batch.delete(d.ref)));
@@ -474,7 +482,7 @@ export async function uploadDataset(name, description, dataset, onProgress) {
   // Clean up client data this upload no longer covers, and any stale data for clients it still covers.
   const newClientKeys = [...dataset.byClient.keys()];
   for (const key of new Set([...oldClientKeys, ...newClientKeys])) {
-    await deleteCollection(collection(db, "clientData", key, "datasets", datasetId, "chunks"));
+    await deleteRowPieces(key, datasetId);
   }
 
   const ops = [];
@@ -559,7 +567,7 @@ export async function deleteDataset(datasetId) {
   const snap = await getDoc(doc(db, "datasets", datasetId));
   if (!snap.exists()) return;
   for (const key of snap.data().clientKeys || []) {
-    await deleteCollection(collection(db, "clientData", key, "datasets", datasetId, "chunks"));
+    await deleteRowPieces(key, datasetId);
     await deleteDoc(doc(db, "clientData", key, "datasets", datasetId));
   }
   await deleteDoc(doc(db, "datasets", datasetId));
