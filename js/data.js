@@ -337,6 +337,43 @@ export function chunkRows(rows, maxChars = MAX_CHUNK_CHARS) {
   return chunks;
 }
 
+/* (update 399) Stored pieces, gzipped: each piece is packed as above, then compressed and saved as bytes ({ z }), about
+   a fifth of the size. Pieces saved before this ({ data: text }) still read the same. Works in the browser and in Node
+   (CompressionStream is in both). */
+export const ZIP_MAX_BYTES = 900000; // (a Firestore document holds a little over 1 MiB)
+const streamBytes = async (u8, stream) => new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(stream)).arrayBuffer());
+export const gzipText = (str) => streamBytes(new TextEncoder().encode(str), new CompressionStream("gzip"));
+export const gunzipText = async (u8) => new TextDecoder().decode(await streamBytes(u8, new DecompressionStream("gzip")));
+/** A stored piece's bytes, whichever way they come back (the web SDK's Bytes, Node's Buffer, a Uint8Array). */
+const bytesOf = (z) => (z instanceof Uint8Array ? z : typeof z?.toUint8Array === "function" ? z.toUint8Array() : z?._byteString?.binaryString ? Uint8Array.from(z._byteString.binaryString, (c) => c.charCodeAt(0)) : new Uint8Array(z));
+/** One stored piece (the document's data: { z } or { data }) back into rows. */
+export async function readChunk(d) {
+  if (!d) return [];
+  if (d.z != null) return parseChunk(await gunzipText(bytesOf(d.z)));
+  return parseChunk(d.data);
+}
+/** Rows into gzipped pieces (each under ZIP_MAX_BYTES): Uint8Array[]. */
+export async function chunkRowsZ(rows) {
+  const out = [];
+  const emit = async (run) => {
+    if (!run.length) return;
+    const z = await gzipText(packRows(run));
+    if (z.length <= ZIP_MAX_BYTES || run.length === 1) { out.push(z); return; }
+    const h = Math.ceil(run.length / 2);
+    await emit(run.slice(0, h)); await emit(run.slice(h));
+  };
+  let run = [], size = 0;
+  const budget = 12000000; // (plain characters a piece: packed and gzipped, usually well under the limit)
+  for (const row of rows) {
+    const n = JSON.stringify(row).length;
+    if (run.length && size + n + 1 > budget) { await emit(run); run = []; size = 0; }
+    run.push(row); size += n + 1;
+  }
+  await emit(run);
+  if (!out.length) out.push(await gzipText(packRows([])));
+  return out;
+}
+
 export function splitString(str, size) {
   const out = [];
   for (let i = 0; i < str.length; i += size) out.push(str.slice(i, i + size));

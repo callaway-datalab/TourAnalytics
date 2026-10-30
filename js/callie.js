@@ -624,6 +624,34 @@ function remember(q) {
   try { localStorage.setItem(histKey(), JSON.stringify(a)); } catch { /* */ }
 }
 let showHist = false;
+// (update 396) forecast questions, and the answer: each player's next three seasons, best first, with the write-up
+const FORECAST_Q = /\b(next|coming|upcoming|following)\s+(\d+|one|two|three|four|five|few|couple( of)?)?\s*(years?|seasons?)\b|\bforecast|\bprojections?\b|\bproject(ed)?\b(?! to)|\bin the future\b|\bfuture\b|\boutlook\b|\bpredict|\bgoing to (be|do|play|rank)\b|\bwill (he|she|they|\w+) (be|do|play|rank)\b|\bby 20\d\d\b/i;
+async function answerForecast(ps, question, local) {
+  const [{ currentField }, F] = await Promise.all([import("./fieldSummary.js"), import("./forecast.js")]);
+  const cf = await currentField().catch(() => null);
+  if (!cf?.field?.length) return { cant: true, text: "The forecast needs the field\u2019s rankings, which aren\u2019t built yet. Open Analyze on a computer once, then ask again." };
+  const tour = local?.tour || null;
+  const model = F.forecastModel(cf.field, { tour });
+  const fcs = ps.map((p) => { const f = F.forecastPlayer(model, p.key); if (f) f.name = p.label; return f; });
+  const ok = fcs.filter(Boolean), missing = ps.filter((p, i) => !fcs[i]).map((p) => p.label);
+  if (!ok.length) return { cant: true, text: `There aren\u2019t enough rounds on ${model.target || "the tour"} to forecast ${missing.join(", ")}.` };
+  const f2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
+  const order = [...ok].sort((a, b) => b.years.reduce((t, y) => t + y.total, 0) - a.years.reduce((t, y) => t + y.total, 0));
+  const story = F.forecastStory(model, ok);
+  const yrs = ok[0].years.map((y) => y.year);
+  const lead = order.length > 1 ? `Over ${yrs[0]}\u2013${yrs.at(-1)}, best first: ${order.map((f, i) => `**${i + 1}. ${f.name}**`).join(", ")}.` : `${order[0].name}\u2019s next three seasons:`;
+  const e1 = model.err[0];
+  const note = [`Strokes gained a round on ${model.target || "the tour"}, forecast from this site\u2019s data: their last three seasons, pulled back toward the tour average by how much each part of the game carries over from year to year${model.ageOk ? ", plus the typical change for their age" : ""}.`,
+    e1 ? `On past seasons, one season ahead, it was off by about ${e1.mae.toFixed(2)} a round on average.` : "", !model.ageOk ? "No birth dates in the data yet, so age isn\u2019t in it." : "",
+    missing.length ? `Not enough rounds to forecast ${missing.join(", ")}.` : ""].filter(Boolean).join(" ");
+  const plan = { players: ok.map((f) => f.name.toLowerCase()), everyone: false, parts: [], exclude: { events: [], rounds: [] }, each: false, unsupported: null, groups: [{ label: String(model.lastYear), rounds: { years: [String(model.lastYear)] } }] };
+  return {
+    text: [lead, ...story].join("\n\n"),
+    table: { head: ["Player", "Age", ...yrs.map((y) => `${y} (rank)`)], num: [1, 2, 3, 4], rows: order.map((f) => [f.name, f.age != null ? String(Math.floor(f.age)) : "\u2014", ...f.years.map((y) => `${f2(y.total)} (~${ordinal(y.rank)})`)]) },
+    note,
+    go: { href: `#/comparisons?ask=${encodeURIComponent(question)}&plan=1`, label: "See the full Outlook in Compare \u2192", plan },
+  };
+}
 const ps0 = (plan, local) => (plan.players?.length || local.players?.length) > 0;
 async function ask(question) {
   if (!pending) remember(question);
@@ -644,6 +672,13 @@ async function ask(question) {
   try {
     const list = await playersYouCanSee();
     const local = readLocal(question, list);
+    // (update 396) "how will they rank over the next 3 years", "forecast", "next season": the forecaster
+    if (FORECAST_Q.test(question)) {
+      let fps = readAsk(question, { players: list }).players.map((p) => ({ key: p.key, label: p.label }));
+      if (!fps.length && PRONOUN.test(question) && lastPlayers.length) fps = lastPlayers;
+      if (!fps.length && list.length === 1) fps = [{ key: list[0][0], label: list[0][1] }];
+      if (fps.length) { lastPlayers = fps.slice(0, 8); return reply(await answerForecast(fps.slice(0, 8), question, local)); }
+    }
     // (update 314) a player's portal (one player you can see): "I", "me", "my" are them
     const me = list.length === 1 ? list[0][1] : null;
     const ai = await aiPlan(question, me);

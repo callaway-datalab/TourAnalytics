@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
-  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup, limit, deleteField, getCountFromServer,
+  runTransaction, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, increment, collectionGroup, limit, deleteField, getCountFromServer, Bytes,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, db } from "./firebase-init.js";
 import {
-  chunkRows, parseChunk, splitString, DOC_CHUNK_CHARS, UserError, ANALYST_ROLE, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, readableSize, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
+  chunkRows, chunkRowsZ, readChunk, parseChunk, splitString, DOC_CHUNK_CHARS, UserError, ANALYST_ROLE, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, readableSize, makeCode, isTeamKey, normRole, teamKey, norm, rosterByEmail, sameAccess,
 } from "./data.js";
 
 export { UserError };
@@ -467,7 +467,8 @@ export async function uploadDataset(name, description, dataset, onProgress) {
 
   // How much this file takes once stored (all players' pieces), for the storage bar. Checked before anything
   // is deleted: the free Spark plan stores 1 GiB in all, so a file that would fill most of it is refused.
-  const pieces = new Map([...dataset.byClient].map(([k, g]) => [k, chunkRows(g.rows)]));
+  // (update 399) gzipped pieces, saved as bytes
+  const pieces = new Map(await Promise.all([...dataset.byClient].map(async ([k, g]) => [k, await chunkRowsZ(g.rows)])));
   const storedBytes = [...pieces.values()].flat().reduce((n, d) => n + d.length, 0);
   if (storedBytes > 600 * 1024 * 1024) throw new UserError(`Stored, this file would take about ${Math.round(storedBytes / 1024 / 1024).toLocaleString()} MB. The free Firebase plan holds 1 GB in all (the portal's other data included), so it can't be uploaded as it is. Upload part of it (recent years, say), or move to the Blaze plan.`);
   // Clean up client data this upload no longer covers, and any stale data for clients it still covers.
@@ -494,8 +495,8 @@ export async function uploadDataset(name, description, dataset, onProgress) {
       name, description: description || "", idColumn: dataset.idColumn, columns: dataset.columns,
       clientLabel: group.label, playerName: group.name || null, rowCount: group.rows.length, chunkCount: chunks.length, uploadedAt: serverTimestamp(),
     }));
-    chunks.forEach((data, i) => ops.push(sized((batch) =>
-      batch.set(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)), { data }), data.length * 2)));
+    chunks.forEach((z, i) => ops.push(sized((batch) =>
+      batch.set(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)), { z: Bytes.fromUint8Array(z) }), z.length + 200)));
   }
   await commitInChunks(ops, onProgress);
   return { datasetId, clients: newClientKeys.length };
@@ -585,7 +586,7 @@ export function getDatasetRows(clientKey, datasetId, chunkCount) { return memoRo
 async function fetchRows(clientKey, datasetId, chunkCount) {
   const chunks = await Promise.all(
     Array.from({ length: chunkCount }, (_, i) => getDoc(doc(db, "clientData", clientKey, "datasets", datasetId, "chunks", String(i)))));
-  return chunks.flatMap((snap) => parseChunk(snap.data().data));
+  return (await Promise.all(chunks.map((snap) => readChunk(snap.data())))).flat(); // (update 399: gzipped or not)
 }
 
 /** The admin: one data file's catalogue record (its players, their names, when it was uploaded). */
@@ -609,7 +610,7 @@ export const rowsMemoInfo = () => ({ players: rowsMemo.size, stats: statsMemo.si
 export function getDatasetRowsListed(clientKey, datasetId) { return memoRows(`L|${clientKey}|${datasetId}`, () => fetchRowsListed(clientKey, datasetId)); }
 async function fetchRowsListed(clientKey, datasetId) {
   const snap = await getDocs(collection(db, "clientData", clientKey, "datasets", datasetId, "chunks"));
-  return snap.docs.sort((a, b) => Number(a.id) - Number(b.id)).flatMap((d) => parseChunk(d.data().data));
+  return (await Promise.all(snap.docs.sort((a, b) => Number(a.id) - Number(b.id)).map((d) => readChunk(d.data())))).flat();
 }
 
 /** Every clientKey known to the system, with a display label, from users/invites/datasets. */

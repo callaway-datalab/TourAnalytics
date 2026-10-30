@@ -17,6 +17,7 @@ const ALIASES = {
   successes: ["successes", "success"],
   statValue: ["statvalue", "statval", "metricvalue"],
   tour: ["tour", "tourname", "league"],
+  birth: ["birthdate", "birthdata", "dob", "dateofbirth", "birthday", "born", "playerbirthdate"], // (update 396: for the forecaster's age; blank is fine)
   category: ["category", "shotcategory", "sgcategory", "shottype"],
   sg: ["cdsg", "sg", "strokesgained", "sgshot", "sgvalue", "sgtotal"],
   // Aggregated files: strokes gained per attempt, times the number of attempts in that row.
@@ -247,6 +248,23 @@ const lead0 = (s) => {
 };
 
 /** Turn one player's rows into shots grouped by round, oldest round first. */
+/** (update 396) A birth date as YYYY-MM-DD, or null (blank, "None", unreadable or not a believable golfer's birth year). */
+export function birthOf(v) {
+  if (v == null || isNull(v)) return null;
+  let s = String(v).trim();
+  if (/^\d{8}$/.test(s)) s = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}`;
+  if (/^\d+(\.\d+)?$/.test(s) && Number(s) > 20000 && Number(s) < 60000) { const d = new Date(Date.UTC(1899, 11, 30) + Number(s) * 864e5); s = d.toISOString().slice(0, 10); } // (an Excel serial day)
+  // "1996-06-21", or written out ("June 21, 1996", "21 Jun 1996", "6/21/1996"): read as that calendar day wherever the
+  // computer is (update 397: a written-out date was read at local midnight, a day early east of London)
+  let y, mo, da;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) { y = Number(s.slice(0, 4)); mo = Number(s.slice(5, 7)); da = Number(s.slice(8, 10)); }
+  else { const d = new Date(s.replace(/\bsept\b/i, "Sep")); if (isNaN(d)) return null; y = d.getFullYear(); mo = d.getMonth() + 1; da = d.getDate(); }
+  if (!(mo >= 1 && mo <= 12 && da >= 1 && da <= 31)) return null;
+  return y >= 1930 && y <= new Date().getUTCFullYear() - 12 ? `${y}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}` : null;
+}
+/** (update 396) A player's birth date from their rounds (the first one given), or null. */
+export const birthOfRounds = (rounds) => { for (const rd of rounds || []) if (rd.birth) return rd.birth; return null; };
+
 export function prepare(rows, idx) {
   const get = (r, f) => (idx[f] === undefined ? null : r[idx[f]]);
   const shotCols = ["onGreen", "proximity", "upDown", "holeOut", "hitFwy", "missDir", "driveDist"].some((f) => idx[f] !== undefined);
@@ -262,6 +280,8 @@ export function prepare(rows, idx) {
       // A row with no round number covers the whole tournament (e.g. Birdies / Round over its rounds): an "event" round.
       const noRound = idx.round !== undefined && isNull(rnd);
       rounds.set(key, { key, date: String(date), event: String(event), roundNo: noRound || isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, ...(course ? { course } : {}), shots: [], ...(noRound ? { eventLevel: true } : {}) });
+      const bd = idx.birth !== undefined ? birthOf(get(r, "birth")) : null; // (update 396)
+      if (bd) rounds.get(key).birth = bd;
     }
     return rounds.get(key);
   };
@@ -770,7 +790,7 @@ export function sliceTotals(rounds) {
 export function buildFieldSummary(players) {
   return {
     players: players.map((p) => ({
-      key: p.key, name: p.name,
+      key: p.key, name: p.name, ...(birthOfRounds(p.rounds) ? { b: birthOfRounds(p.rounds) } : {}), // (update 396)
       rounds: p.rounds.map((rd) => {
         const c = {};
         for (const s of rd.shots) { const x = (c[s.cat] ||= [0, 0]); x[0] += s.sg; x[1] += s.w; }
@@ -788,7 +808,7 @@ export function buildFieldSummary(players) {
 /** Turn a published summary back into the { key, name, rounds } shape the dashboard uses. */
 export function summaryPlayers(summary) {
   return (summary?.players || []).map((p) => ({
-    key: p.key, name: p.name, summaryOnly: true,
+    key: p.key, name: p.name, summaryOnly: true, birth: p.b || null, // (update 396)
     rounds: p.rounds.map((rd, i) => ({
       key: `${rd.d}|${rd.e}|${rd.r}|${i}`, date: rd.d, event: rd.e, roundNo: rd.r, year: rd.y, tour: rd.t, ...(rd.co ? { course: rd.co } : {}), ...(rd.ev ? { eventLevel: true } : {}), // (undefined: a summary from before tours were kept)
       shots: Object.entries(rd.c).map(([cat, [sg, w]]) => ({ cat, sg, w, lie: null, dist: null })),

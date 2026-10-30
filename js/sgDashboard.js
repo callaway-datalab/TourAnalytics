@@ -746,8 +746,16 @@ export function sgDashboard(container, opts) {
                 mode() === "rank" && h.rank ? el("span", {}, [`Rank `, el("b", {}, `${ordinal(h.rank)} of ${h.of}`)]) : null,
                 h.avg != null ? el("span", {}, [`Rolling average `, el("b", { class: isSG() ? (h.avg >= 0 ? "pos" : "neg") : "" }, fmtV(h.avg))]) : null,
                 wk && wk.v != null ? el("span", {}, [`That week `, el("b", { class: isSG() ? (wk.v >= 0 ? "pos" : "neg") : "" }, fmtV(wk.v)), ` (${wk.n} ${wk.n === 1 ? "round" : "rounds"})`]) : null]);
-              const tw = tip.offsetWidth || 160, left = Math.max(4, Math.min(br.width - tw - 4, ox + pt.x - tw / 2));
-              tip.style.left = `${left}px`; tip.style.top = `4px`;
+              // (update 395) beside the line, never over the dot: to its right in the left half of the chart, to its left in
+              // the right half, level with the dot (kept inside the chart)
+              const tw = tip.offsetWidth || 160, th = tip.offsetHeight || 80, dx = ox + pt.x, dy = oy + pt.y, gap = 14;
+              let left = dx < br.width / 2 ? dx + gap : dx - gap - tw;
+              left = Math.max(4, Math.min(br.width - tw - 4, left));
+              const top = Math.max(4, Math.min(br.height - th - 4, dy - th / 2));
+              // (squeezed on a narrow chart so it can't sit beside it: above or below the dot instead)
+              const overlapX = dx >= left - 6 && dx <= left + tw + 6;
+              tip.style.left = `${left}px`;
+              tip.style.top = `${overlapX ? (dy > br.height / 2 ? Math.max(4, dy - th - gap) : Math.min(br.height - th - 4, dy + gap)) : top}px`;
             };
             const endScrub = () => { clearTimeout(holdT); holdT = null; if (scrubbing) { scrubbing = false; skipClick = true; scrub.hidden = true; box.classList.remove("scrubbing"); } };
             box.addEventListener("pointerdown", (e) => {
@@ -1146,10 +1154,12 @@ export function sgDashboard(container, opts) {
   //   tap a picked pill → un-pick it;  tap a kept pill → unlock it (it stays picked)
   //   double-tap → keep it (🔒), so the next taps add to it
   let lastTap = null; // { key, value, at, was: "kept" | "on" | "off" } (pills are redrawn on every tap, so remember by value)
-  function tapPill(key, value, order) {
+  function tapPill(key, value, order, ev = null) {
     const keepKey = `${key}Kept`;
     st[keepKey] = (st[keepKey] || []).filter((v) => st[key].includes(v));
-    const now = Date.now();
+    // (update 394) when the tap happened, not when it's handled: the first tap's redraw can take a while (un-picking the
+    // only year redraws every year's data), and the second tap waits behind it, so it looked too late to be a double-tap
+    const now = ev && Number.isFinite(ev.timeStamp) ? performance.timeOrigin + ev.timeStamp : Date.now();
     const dbl = lastTap && lastTap.key === key && lastTap.value === value && now - lastTap.at < 400;
     if (dbl) {
       // the first tap did its single-tap part; the second makes it kept (and picked)
@@ -1178,7 +1188,7 @@ export function sgDashboard(container, opts) {
       const on = st.year.includes(y), isKept = kept.includes(y);
       const a = el("a", { href: "#", class: isKept ? "kept" : "", "aria-current": on ? "page" : null, "aria-pressed": on ? "true" : "false",
         title: isKept ? "Kept: double-tap to let it go" : "Tap to pick; double-tap to keep it and add more" }, y);
-      a.addEventListener("click", (e) => { e.preventDefault(); tapPill("year", y, (p, q) => p.localeCompare(q)); });
+      a.addEventListener("click", (e) => { e.preventDefault(); tapPill("year", y, (p, q) => p.localeCompare(q), e); });
       return a;
     }), all]);
   }
@@ -1194,7 +1204,7 @@ export function sgDashboard(container, opts) {
         title: isKept ? "Kept: double-tap to let it go" : "Tap to pick; double-tap to keep it and add more" }, label);
       a.addEventListener("click", (e) => {
         e.preventDefault();
-        tapPill("cats", k, (x, y) => CATEGORIES.findIndex(([c]) => c === x) - CATEGORIES.findIndex(([c]) => c === y));
+        tapPill("cats", k, (x, y) => CATEGORIES.findIndex(([c]) => c === x) - CATEGORIES.findIndex(([c]) => c === y), e);
       });
       return a;
     })]);
@@ -1812,18 +1822,35 @@ export function sgDashboard(container, opts) {
       const season = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
       if (season.length < 3) return null;
       const N = Math.max(3, Math.min(season.length, Math.round(Number(st.hypoN) || 10)));
-      const recent = rowVals(season.slice(-N), cat);
-      const others = rankedField(slicedField).filter((p) => p.key !== me?.key).map((p) => rowVals(p.rounds, cat));
+      const last = season.slice(-N);
+      const recent = rowVals(last, cat);
+      const field0 = rankedField(slicedField).filter((p) => p.key !== me?.key);
+      const others = field0.map((p) => rowVals(p.rounds, cat));
       if (!others.length) return null;
       const parts = cat ? dists.map((d) => ({ key: `d:${d}`, label: d })) : CATEGORIES.map(([k, l]) => ({ key: `c:${k}`, label: l }));
       const totKey = cat ? "sg" : "c:TOTAL", totLabel = cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} (a round)` : "SG: Total";
       const adj = st.hypoAdj && st.hypoAdj.cat === (cat || "") ? st.hypoAdj.d : {};
-      const valOf = (k) => (recent.get(k) ?? 0) + (adj[k] || 0);
+      // (update 394) a part of the game opens to its distances: each can be nudged too, and they add up into it
+      const kidMemo = new Map();
+      const kidsOf = (p) => {
+        if (cat) return [];
+        const c = p.key.slice(2);
+        if (!kidMemo.has(c)) {
+          const rv = rowVals(last, c);
+          const ds = [...rv.keys()].filter((k) => k.startsWith("d:")).sort((a, b) => distLead(a.slice(2)) - distLead(b.slice(2)) || a.localeCompare(b));
+          kidMemo.set(c, { rv, ds, field: null });
+        }
+        const m = kidMemo.get(c);
+        return m.ds.map((dk) => ({ key: `${p.key}>${dk}`, label: dk.slice(2), dk, c, rv: m.rv }));
+      };
+      const kidField = (c) => { const m = kidMemo.get(c); if (!m.field) m.field = field0.map((p) => rowVals(p.rounds, c)); return m.field; };
+      const kidAdj = (pk) => Object.entries(adj).reduce((t, [k, v]) => t + (k.startsWith(`${pk}>`) ? v : 0), 0);
+      const valOf = (k) => (recent.get(k) ?? 0) + (adj[k] || 0) + kidAdj(k);
       const base = parts.filter((p) => recent.has(p.key));
       const other = (recent.get(totKey) ?? 0) - base.reduce((t, p) => t + (recent.get(p.key) ?? 0), 0); // (shots outside the parts listed)
       const total = base.reduce((t, p) => t + valOf(p.key), 0) + other;
-      const rankOf = (k, v) => { const vs = others.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); return { rank: 1 + vs.filter((x) => x > v + 1e-12).length, of: vs.length + 1 }; };
-      const step = cat ? 0.02 : 0.05;
+      const rankIn = (maps, k, v) => { const vs = maps.map((m) => m.get(k)).filter((x) => x != null && Number.isFinite(x)); return { rank: 1 + vs.filter((x) => x > v + 1e-12).length, of: vs.length + 1 }; };
+      const step = cat ? 0.02 : 0.05, kidStep = 0.02;
       const bump = (k, d) => { const cur = st.hypoAdj && st.hypoAdj.cat === (cat || "") ? { ...st.hypoAdj.d } : {}; cur[k] = Math.round(((cur[k] || 0) + d) * 1000) / 1000; if (Math.abs(cur[k]) < 1e-9) delete cur[k]; st.hypoAdj = { cat: cat || "", d: cur }; draw(); };
       const open = !!st.hypoOpen;
       const tgl = el("button", { type: "button", class: "bs-path-toggle", "aria-expanded": String(open) }, [el("span", { class: "cmp-caret" }, open ? "\u25BE " : "\u25B8 "), "Hypothetical rankings"]);
@@ -1833,32 +1860,51 @@ export function sgDashboard(container, opts) {
       const setN = () => { const v = Math.round(Number(nIn.value)); if (Number.isFinite(v) && v >= 3) { st.hypoN = v; draw(); } else nIn.value = String(N); };
       nIn.addEventListener("change", setN); nIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nIn.blur(); } });
       const rkTxt = (r) => `${ordinal(r.rank)} of ${r.of}`;
-      const row = (k, label, v, isTot) => {
-        const d = isTot ? total - (recent.get(totKey) ?? 0) : adj[k] || 0, r = rankOf(k, v), r0 = rankOf(k, isTot ? recent.get(totKey) ?? 0 : recent.get(k) ?? 0);
-        const btn = (txt, dv, lab) => { const b = el("button", { type: "button", class: "hy-step", "aria-label": `${lab} ${label}` }, txt); b.addEventListener("click", () => bump(k, dv)); return b; };
+      const openCats = new Set(st.hypoCats || []);
+      const f3h = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`; // (a distance: a smaller number)
+      const fmtD = (d) => `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(2)}`;
+      // one row: k its key; v0 the last N rounds' value; v the what-if; d the change; r / r0 the ranks
+      const row = ({ k, label, v0, v, d, r, r0, isTot = false, kid = false, stepBy = step, expand = null }) => {
+        const btn = (txt, dv, lab) => { const b = el("button", { type: "button", class: "hy-step", "aria-label": `${lab} ${label}` }, txt); b.addEventListener("click", (e) => { e.stopPropagation(); bump(k, dv); }); return b; };
         const moved = r.rank !== r0.rank;
-        return el("tr", { class: isTot ? "bs-path-total" : "" }, [
-          el("td", {}, label),
-          el("td", { class: "num" }, fmtSG(isTot ? recent.get(totKey) ?? 0 : recent.get(k) ?? 0)),
-          el("td", { class: "num hy-val" }, [isTot ? el("strong", { class: v >= 0 ? "pos" : "neg" }, fmtSG(v)) : el("span", { class: "hy-ctl" }, [btn("\u2212", -step, "Worse"), el("strong", { class: `${v >= 0 ? "pos" : "neg"}${d ? " hy-moved" : ""}` }, fmtSG(v)), btn("+", step, "Better")]),
-            Math.abs(d) > 1e-9 ? el("span", { class: `hy-d ${d > 0 ? "pos" : "neg"}`, title: isTot ? "All the changes added up" : "Changed by" }, `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(2)}`) : null]), // (update 393: the change, and the total of them all)
+        const lab = expand ? [el("span", { class: "sg-exp", "aria-hidden": "true" }, expand.open ? "\u25BE " : "\u25B8 "), label] : label;
+        const tr = el("tr", { class: `${isTot ? "bs-path-total" : ""}${kid ? " cmp-sub cmp-deep" : ""}${expand ? " sg-tap" : ""}`, ...(expand ? { role: "button", tabindex: "0", "aria-expanded": String(expand.open) } : {}) }, [
+          el("td", {}, lab),
+          el("td", { class: "num" }, kid ? f3h(v0) : fmtSG(v0)),
+          el("td", { class: "num hy-val" }, [isTot ? el("strong", { class: v >= 0 ? "pos" : "neg" }, fmtSG(v)) : el("span", { class: "hy-ctl" }, [btn("\u2212", -stepBy, "Worse"), el("strong", { class: `${v >= 0 ? "pos" : "neg"}${d ? " hy-moved" : ""}` }, kid ? f3h(v) : fmtSG(v)), btn("+", stepBy, "Better")]),
+            Math.abs(d) > 1e-9 ? el("span", { class: `hy-d ${d > 0 ? "pos" : "neg"}`, title: isTot ? "All the changes added up" : expand ? "Its changes added up (with its distances)" : "Changed by" }, fmtD(d)) : null]),
           el("td", { class: "num" }, [rkTxt(r), moved ? el("span", { class: `hy-mv ${r.rank < r0.rank ? "pos" : "neg"}` }, ` ${r.rank < r0.rank ? "\u25B2" : "\u25BC"}${Math.abs(r0.rank - r.rank)}`) : null]),
         ]);
+        if (expand) { tr.addEventListener("click", expand.flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); expand.flip(); } }); }
+        return tr;
       };
+      const body = [row({ k: totKey, label: totLabel, v0: recent.get(totKey) ?? 0, v: total, d: total - (recent.get(totKey) ?? 0), r: rankIn(others, totKey, total), r0: rankIn(others, totKey, recent.get(totKey) ?? 0), isTot: true })];
+      for (const p of base) {
+        const kids = kidsOf(p), isOpen = openCats.has(p.key), v0 = recent.get(p.key) ?? 0, v = valOf(p.key);
+        const flip = () => { const a = new Set(st.hypoCats || []); a.has(p.key) ? a.delete(p.key) : a.add(p.key); st.hypoCats = [...a]; draw(); };
+        body.push(row({ k: p.key, label: p.label, v0, v, d: v - v0, r: rankIn(others, p.key, v), r0: rankIn(others, p.key, v0), expand: kids.length ? { open: isOpen, flip } : null }));
+        if (!isOpen) continue;
+        const f = kidField(kids[0]?.c);
+        for (const x of kids) {
+          const kv0 = x.rv.get(x.dk) ?? 0, kd = adj[x.key] || 0, kv = kv0 + kd;
+          body.push(row({ k: x.key, label: x.label, v0: kv0, v: kv, d: kd, r: rankIn(f, x.dk, kv), r0: rankIn(f, x.dk, kv0), kid: true, stepBy: kidStep }));
+        }
+      }
       const anyAdj = Object.keys(adj).length > 0;
-      // (update 393) every change added up, in one line
-      const adjList = base.filter((p) => adj[p.key]).map((p) => `${p.label} ${adj[p.key] > 0 ? "+" : "\u2212"}${Math.abs(adj[p.key]).toFixed(2)}`);
-      const adjSum = base.reduce((t, p) => t + (adj[p.key] || 0), 0);
-      const sumLine = anyAdj ? el("p", { class: "hy-sum" }, [`Changes: `, el("strong", { class: adjSum >= 0 ? "pos" : "neg" }, `${adjSum >= 0 ? "+" : "\u2212"}${Math.abs(adjSum).toFixed(2)} a round`), ` in all`, el("span", { class: "muted" }, ` (${adjList.join(", ")})`)]) : null;
+      // (update 393) every change added up, in one line (update 394: distances too)
+      const nameOfKey = (k) => { if (!k.includes(">")) return parts.find((p) => p.key === k)?.label || k; const [pk, dk] = k.split(">"); return `${parts.find((p) => p.key === pk)?.label || pk} \u00b7 ${dk.slice(2)}`; };
+      const adjList = Object.entries(adj).filter(([, v]) => Math.abs(v) > 1e-9).map(([k, v]) => `${nameOfKey(k)} ${fmtD(v)}`);
+      const adjSum = Object.values(adj).reduce((t, v) => t + v, 0);
+      const sumLine = anyAdj ? el("p", { class: "hy-sum" }, [`Changes: `, el("strong", { class: adjSum >= 0 ? "pos" : "neg" }, `${fmtD(adjSum)} a round`), ` in all`, el("span", { class: "muted" }, ` (${adjList.join(", ")})`)]) : null;
       const reset = anyAdj ? (() => { const b = el("button", { type: "button", class: "link small" }, "Reset"); b.addEventListener("click", () => { st.hypoAdj = null; draw(); }); return b; })() : null;
       return el("div", { class: "bs-path bs-hypo" }, [
         el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), reset]),
         el("div", { class: "bs-path-gap" }, [el("div", {}, [`Last `, nIn, ` rounds, ranked against everyone\u2019s averages over the time frame picked`]),
-          infoTip(`Start from their last ${N} rounds: strokes gained a round in each ${cat ? "distance" : "part of the game"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap); the total moves with them. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
+          infoTip(`Start from their last ${N} rounds: strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
         sumLine,
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [
           el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, `Last ${N}`), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Rank")])),
-          el("tbody", {}, [row(totKey, totLabel, total, true), ...base.map((p) => row(p.key, p.label, valOf(p.key), false))]),
+          el("tbody", {}, body),
         ])),
       ]);
     }
