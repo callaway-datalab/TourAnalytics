@@ -2109,7 +2109,10 @@ export async function render(main) {
         const [{ buildOutlookReport }, FS] = await Promise.all([import("../outlookReport.js"), import("../fieldSummary.js")]);
         // the field's distances, for ranks by distance (skipped if it isn't on hand within a few seconds)
         const det = await Promise.race([FS.currentFieldDetail().catch(() => null), new Promise((r) => setTimeout(() => r(null), 8000))]);
-        const html = buildOutlookReport({ field: fc.field, detail: det?.field || null, fcs: order, info: m, ownRounds: (k) => sgRounds(rawOfKey(k)), extra: missing });
+        // (update 416) the site's logo, carried inside the report (it opens on its own, away from the site's files)
+        const dataUrl = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(String(r.status)); const b = await r.blob(); if (!/^image\//.test(b.type)) throw new Error("not an image"); return await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); }); };
+        const logo = await dataUrl("media/logo.png").catch(() => dataUrl("icons/icon-192.png")).catch(() => null);
+        const html = buildOutlookReport({ field: fc.field, detail: det?.field || null, fcs: order, info: m, ownRounds: (k) => sgRounds(rawOfKey(k)), extra: missing, logo });
         const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
         if (win) win.location.href = url; else { const a = document.createElement("a"); a.href = url; a.download = "outlook-report.html"; a.click(); }
         setTimeout(() => URL.revokeObjectURL(url), 120000);
