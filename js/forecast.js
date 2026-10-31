@@ -470,7 +470,7 @@ function learn(D, { tour = null } = {}) {
   const recentN = new Map(); for (const [k, s] of rawT) { const y = k % NY; if (y >= last - 1) recentN.set(Math.floor(k / NY), (recentN.get(Math.floor(k / NY)) || 0) + s.n); }
   const minPool = minRoundsOf(Math.max(0, ...recentN.values()));
   const pool = [...recentN].filter(([, n]) => n >= minPool).map(([p]) => p);
-  const fieldProj = [1, 2, 3].map((h) => pool.map((p) => ({ k: D.players[p].key, v: project(p, h)?.total, sd: project(p, h)?.sd })).filter((x) => x.v != null).sort((a, b) => b.v - a.v));
+  const fieldProj = [1, 2, 3].map((h) => pool.map((p) => ({ k: D.players[p].key, v: project(p, h)?.total, sd: project(p, h)?.sd, sd1: project(p, 1)?.sd })).filter((x) => x.v != null).sort((a, b) => b.v - a.v));
   // (update 417) the pool spans two seasons, so it's bigger than one season's rankings: scale ranks to a typical season
   const seasonN = Math.max(rankedIn(last, rawT).length, last > 0 ? rankedIn(last - 1, rawT).length : 0) || (fieldProj[0].length);
   const rankScale = (n) => Math.max(1, seasonN - 1) / Math.max(1, n);
@@ -539,7 +539,9 @@ export function forecastPlayer(model, key) {
     // so count each other player by their chance of finishing above it (ranking point projections against each other
     // squeezes the field toward the middle and flatters an average score)
     const sc = model.rankScale(others.length);
-    const rankAt = (v) => Math.max(1, Math.round(1 + sc * others.reduce((t, x) => t + ncdf((x.v - v) / Math.max(1e-6, x.sd || pr.sd)), 0)));
+    // (update 441) where a score would rank in a season: everyone else's season spread as one season's luck makes it
+    // (the next-season spread, every year: a season in 2029 isn't luckier than one in 2027, only harder to foresee)
+    const rankAt = (v) => Math.max(1, Math.round(1 + sc * others.reduce((t, x) => t + ncdf((x.v - v) / Math.max(1e-6, x.sd1 || x.sd || pr.sd)), 0)));
     const rank = rankAt(pr.total);
     // the rank at the top and the bottom of their likely range
     const sdL = pr.sdLevel ?? pr.sd, rankHi = rankAt(pr.total + 0.6745 * sdL), rankLo = rankAt(pr.total - 0.6745 * sdL);
