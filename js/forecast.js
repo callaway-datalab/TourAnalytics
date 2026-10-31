@@ -188,8 +188,11 @@ function learn(D, { tour = null } = {}) {
       if (y >= cut || s.n < 10 || !Number.isFinite(birthT[p])) continue;
       const nx = S.get(p * NY + y + 1), a = ageAtT(p, seasonEnd[y]), ai = ageIdx(a);
       let next = null, w = 0;
-      if (nx && nx.n >= 10) { next = nx.cats; w = (2 * s.n * nx.n) / (s.n + nx.n); }
-      else if (y + 1 < cut && s.n >= 20) { const tl = talent(p, y); if (tl) { next = tl; w = s.n; } } // (a phantom season)
+      // (update 436) the next season as played; when it's missing or thin (a bad year often costs a player their starts:
+      // leaving them out makes the players who stayed, the lucky ones, look like they declined), the season they'd have
+      // been expected to have instead (baseball's survivor fix). Weighted by the first season's rounds.
+      if (nx && nx.n >= 20) { next = nx.cats; w = s.n; }
+      else if (y + 1 < cut && s.n >= 20) { const tl = talent(p, y); if (tl) { next = nx && nx.n ? tl.map((v, c) => (v * 20 + nx.cats[c] * nx.n) / (20 + nx.n)) : tl; w = s.n; } }
       if (!next) continue;
       pts.players.add(p); pts.pairs++;
       for (let c = 0; c < NC; c++) { acc[c].v[ai] += w * (next[c] - s.cats[c]); acc[c].w[ai] += w; }
@@ -268,7 +271,9 @@ function learn(D, { tour = null } = {}) {
     const cats = {}; let vl = 0, ageAdd = 0, lasting = 0;
     for (let c = 0; c < NC; c++) {
       const g = Mx.curves?.[c]; let a = 0, sh = 0;
-      if (g) for (let t = t0; t < tY - 1e-9; t += 0.25) { const dt = Math.min(0.25, tY - t), m0 = g.mean || 0; sh += m0 * dt; if (Number.isFinite(bt)) a += tw[ageIdx(t + dt / 2 - bt)] * (g[ageIdx(t + dt / 2 - bt)] - m0) * dt; }
+      // (update 436) only how a player's age makes them differ from the average change (as Marcel's age adjustment is
+      // centered): the average change itself is already in the next-season fit, and it mostly reflects who keeps playing
+      if (g) for (let t = t0; t < tY - 1e-9; t += 0.25) { const dt = Math.min(0.25, tY - t), m0 = g.mean || 0; if (Number.isFinite(bt)) a += tw[ageIdx(t + dt / 2 - bt)] * (g[ageIdx(t + dt / 2 - bt)] - m0) * dt; }
       const v = Mx.b[c] * (est[c] + sh + a);
       cats[CATS[c]] = v; ageAdd += Mx.b[c] * a; lasting += Mx.b[c] * est[c];
       const { W } = Mx.sumsFor(Mx.best[c].hl), wv = W[(p * NY + y0) * NC + c];
