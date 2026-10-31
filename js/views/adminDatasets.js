@@ -9,6 +9,7 @@ export async function render(main, { flash }) {
   const description = el("input", { maxLength: 200 });
   const submit = el("button", { class: "btn", type: "submit" }, "Upload data");
   const listBox = el("div");
+  const heatBox = heatPanel(flash);
   const importsBox = el("section", { class: "py-imports", hidden: true });
 
   const form = el("form", {
@@ -88,6 +89,7 @@ export async function render(main, { flash }) {
     el("section", {}, [el("h2", {}, "Upload a data file"), form]),
     importsBox,
     el("section", {}, [el("h2", {}, "Uploaded files"), listBox]),
+    heatBox, // (update 456) Strategy Maps
   ]);
 
   // files sent from Python (tour_upload.py -> the data-import function): progress and result (update 146)
@@ -154,4 +156,59 @@ export async function render(main, { flash }) {
     mount(listBox, el("div", { class: "table-scroll" }, table));
   });
   return () => { unsub(); unsubImports(); };
+}
+
+/* (update 456) Strategy Maps for Course Prep: the scoring file (a CSV of zones) and the hole images (a zip, a folder a course) */
+function heatPanel(flash) {
+  const csv = el("input", { type: "file", accept: ".csv" }), zip = el("input", { type: "file", accept: ".zip,application/zip" });
+  const csvBtn = el("button", { class: "btn", type: "button" }, "Upload scoring"), zipBtn = el("button", { class: "btn", type: "button" }, "Upload images");
+  const list = el("div", {}, el("p", { class: "muted small" }, "Loading…"));
+  const drawList = async (fresh = true) => {
+    const { listHeatCourses, deleteHeatCourse } = await import("../courseHeat.js");
+    const cs = (await listHeatCourses(fresh)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!cs.length) { mount(list, el("p", { class: "empty" }, "No courses yet.")); return; }
+    mount(list, el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
+      el("thead", {}, el("tr", {}, ["Course", "Images", "Zones", "Updated", ""].map((h, i) => el("th", { class: i === 1 || i === 2 ? "num" : null }, h)))),
+      el("tbody", {}, cs.map((c) => {
+        const del = el("button", { class: "link danger", type: "button" }, "Delete");
+        del.addEventListener("click", async () => { if (!confirmAction(`Delete the Strategy Maps for ${c.name}? Its images and zones go.`)) return; del.disabled = true; try { await deleteHeatCourse(c.id); flash(`Deleted ${c.name}.`, "ok"); drawList(); } catch (err) { console.error(err); flash("Couldn’t delete that.", "error"); del.disabled = false; } });
+        const nImg = Object.keys(c.holes || {}).length;
+        const when = [c.dataAt, c.imgAt].map((t) => t?.toMillis?.() ?? 0).reduce((a, b) => Math.max(a, b), 0);
+        return el("tr", {}, [el("td", {}, el("strong", {}, c.name)), el("td", { class: "num" }, nImg ? String(nImg) : "—"), el("td", { class: "num" }, c.zones ? num(c.zones) : "—"),
+          el("td", {}, when ? formatWhen(new Date(when)) : "—"), el("td", { class: "actions" }, del)]);
+      })),
+    ])));
+  };
+  csvBtn.addEventListener("click", async () => {
+    const f = csv.files[0]; if (!f) { flash("Choose the scoring CSV.", "error"); return; }
+    csvBtn.disabled = true; csvBtn.textContent = "Reading…";
+    try {
+      const { uploadHeatScoring } = await import("../courseHeat.js");
+      const names = await uploadHeatScoring(parseCsv(await f.text()), (t) => { csvBtn.textContent = t; });
+      flash(`Scoring saved for ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.`, "ok"); csv.value = ""; drawList();
+    } catch (err) { console.error(err); flash(err?.message && !/permission/i.test(err.message) ? err.message : "Couldn’t save the scoring. Republish the Firestore rules (update 456) and try again.", "error"); }
+    finally { csvBtn.disabled = false; csvBtn.textContent = "Upload scoring"; }
+  });
+  zipBtn.addEventListener("click", async () => {
+    const f = zip.files[0]; if (!f) { flash("Choose the images zip.", "error"); return; }
+    zipBtn.disabled = true;
+    try {
+      const { uploadHeatImages } = await import("../courseHeat.js");
+      const names = await uploadHeatImages(f, (t) => { zipBtn.textContent = t; });
+      flash(`Images saved for ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.`, "ok"); zip.value = ""; drawList();
+    } catch (err) { console.error(err); flash(err?.message && !/permission/i.test(err.message) ? err.message : "Couldn’t save the images. Republish the Firestore rules (update 456) and try again.", "error"); }
+    finally { zipBtn.disabled = false; zipBtn.textContent = "Upload images"; }
+  });
+  drawList(false).catch(() => mount(list, el("p", { class: "muted small" }, "Couldn’t load the courses (republish the Firestore rules, update 456).")));
+  return el("section", { class: "heat-admin" }, [
+    el("h2", {}, "Strategy Maps (Course Prep)"),
+    el("p", { class: "muted small" }, "Each course’s hole images with its scoring zones over them, under Course Prep › the course › Strategy Maps. The course names in the CSV and the folder names in the zip need to match (close spellings do)."),
+    el("div", { class: "stack narrow" }, [
+      el("label", {}, ["Scoring (.csv)", csv, el("small", {}, "One row per zone and lie: course, hole, par, pin_id, pin_x, pin_y, shotcluster, x, y, radius, lie, distanceRange, scoring_avg, attempts. x, y and radius are pixels on that hole’s image (shotStartX/Y_projected_Hole); pin_x, pin_y the pin (pinX/Y_projected_Hole). scoring_avg is the hole score (or score to par) from that zone. yards and category are optional. Uploading a course again replaces its zones.")]),
+      el("div", {}, csvBtn),
+      el("label", {}, ["Hole images (.zip)", zip, el("small", {}, "A folder for each course, named as it should show on the site, with an image for each hole named by its number (1.png, Hole 1.png or 1/Hole.png). The same images the x, y were measured on. A zip per course inside the zip works too.")]),
+      el("div", {}, zipBtn),
+    ]),
+    list,
+  ]);
 }

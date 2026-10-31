@@ -216,7 +216,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     if (view.name === "play") return drawPlay();
     if (view.name === "monitorUpload") return drawMonitorUpload(view.session);
     if (view.name === "summary") return drawSummary(view.session);
-    if (["round", "roundEnd", "prepCourse", "prepNew", "prepRandom", "prepMenu", "prepMaps", "prepHistory"].includes(view.name) || (tool === "PREP" && view.name === "home")) {
+    if (["round", "roundEnd", "prepCourse", "prepNew", "prepRandom", "prepMenu", "prepMaps", "prepHistory", "prepHeat"].includes(view.name) || (tool === "PREP" && view.name === "home")) {
       const m = await import("./practiceRound.js");
       return m.render(ctx);
     }

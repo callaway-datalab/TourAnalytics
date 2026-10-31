@@ -32,6 +32,7 @@ export async function render(ctx) {
   if (v.name === "prepCourse") return drawPrepSetup(ctx, v.course);
   if (v.name === "prepNew") return drawCourseEditor(ctx);
   // (update 160) a real course: Course Maps, Course History or Simulate Round
+  if (v.name === "prepHeat") return (await import("./coursePrepHeat.js")).drawHeat(ctx, v.course); // (update 456: Strategy Maps)
   if (["prepMenu", "prepMaps", "prepHistory"].includes(v.name)) {
     const m = await import("./coursePrepExtras.js");
     return v.name === "prepMenu" ? m.drawPrepMenu(ctx, v.course) : v.name === "prepMaps" ? m.drawMaps(ctx, v.course) : m.drawHistory(ctx, v.course);
@@ -135,6 +136,16 @@ async function myCourses(ctx) {
       else out.set(k, { name: b.name, location: b.location, par: [...b.par], yards: [...b.yards], tees: b.tees, from: "Tour course \u00b7 hole maps", rounds: [], holeMaps: b.holeMaps });
     }
   } catch { /* */ }
+  // (update 456) the courses with Strategy Maps (uploaded on Upload Data): a course they already have gets the maps
+  try {
+    const [{ listHeatCourses }, { sameCourse }] = await Promise.all([import("../courseHeat.js"), import("../sg.js")]);
+    for (const h of await listHeatCourses()) {
+      const c = [...out.values()].find((x) => sameCourse(x.name, h.name));
+      const par = (h.par || []).map((p) => p || 4), yards = h.yards || [];
+      if (c) { c.heat = h; if (!c.yards.some(Boolean) && yards.some(Boolean)) c.yards = [...yards]; }
+      else if (par.length) out.set(h.name.toLowerCase(), { name: h.name, location: "", par, yards: par.map((_, i) => yards[i] || null), tees: "", from: "Tour course \u00b7 strategy maps", rounds: [], heat: h });
+    }
+  } catch (err) { console.warn(err); }
   return [...out.values()].sort((a, b) => b.rounds.length - a.rounds.length || a.name.localeCompare(b.name));
 }
 

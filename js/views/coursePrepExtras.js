@@ -98,6 +98,7 @@ export function drawPrepMenu(ctx, course) {
     el("p", { class: "muted" }, [course.location, `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
       opt("Course Maps", course.holeMaps ? "A map of every hole, and the course reports" : "The course reports and maps for this course", nMaps, () => ctx.go({ name: "prepMaps", course })),
+      course.heat ? opt("Strategy Maps", "Where to aim and what to stay away from on every hole and pin, from the tour\u2019s scoring (and your own game)", el("span", { class: "cp-opt-n" }, `${Object.keys(course.heat.holes || {}).length || course.heat.par?.length || ""} holes`), () => ctx.go({ name: "prepHeat", course })) : null, // (update 456)
       opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
       opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })),
     ]),
@@ -175,7 +176,7 @@ function holeViewer(course, start) {
 /* ------------------------------------------------ Course History ------------------------------------------------ */
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; un = watch(fin); setTimeout(() => fin([]), 8000); });
 const roundsCache = new Map(); // player key → { rounds, field, ds }
-async function playerData(key) {
+export async function playerData(key) {
   if (roundsCache.has(key)) return roundsCache.get(key);
   const store = await import("../store.js");
   const list = await once((cb) => store.watchClientDatasets(key, cb));
@@ -189,19 +190,14 @@ async function playerData(key) {
 const perRound = (rs, cat = null) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + (!cat || s.cat === cat ? s.sg : 0), 0), 0) / rs.length : null);
 const scoring = (rs) => { let v = 0, w = 0; for (const rd of rs) for (const o of rd.obs || []) if (o.k === "scoring") { v += o.v * o.w; w += o.w; } return w ? v / w : null; };
 
-/** Whose history: a player sees theirs; a coach picks one of their players; the admin searches. */
-export async function drawHistory(ctx, course) {
-  const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
-  back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
+/** (update 456) Whose numbers: a player sees theirs; a coach picks one of their players; the admin searches. */
+export async function pickWho(ctx, onPick) {
   const state = ctx.state, team = effectiveTeam(state);
-  const out = el("div", {});
-  let who = null; // { key, label }
-  let picker = null;
+  let who = null, node = null;
   if (state.isAdmin && !team.preview) {
     const [{ adminAllClients }, { playerPicker }] = await Promise.all([import("../store.js"), import("../playerPicker.js")]);
     const { labels, ids } = await adminAllClients();
-    const pp = playerPicker(labels, (p) => { who = p; show(); }, ids);
-    picker = pp.node;
+    node = playerPicker(labels, (p) => onPick(p), ids).node;
   } else if (team.isTeam) {
     const names = teamLabels(team.teamAccess);
     const keys = Object.keys(team.teamAccess).sort((a, b) => (names.get(a) || a).localeCompare(names.get(b) || b));
@@ -209,10 +205,21 @@ export async function drawHistory(ctx, course) {
     who = pref ? { key: pref, label: names.get(pref) || pref } : null;
     if (keys.length > 1) {
       const sel = el("select", { "aria-label": "Player" }, keys.map((k) => el("option", { value: k, selected: k === pref }, names.get(k) || k)));
-      sel.addEventListener("change", () => { who = { key: sel.value, label: names.get(sel.value) || sel.value }; show(); });
-      picker = el("label", { class: "inline-select" }, ["Player", sel]);
+      sel.addEventListener("change", () => onPick({ key: sel.value, label: names.get(sel.value) || sel.value }));
+      node = el("label", { class: "inline-select" }, ["Player", sel]);
     }
   } else if (state.profile?.clientKey) who = { key: state.profile.clientKey, label: state.profile.name || "You" };
+  return { who, node };
+}
+/** Whose history: a player sees theirs; a coach picks one of their players; the admin searches. */
+export async function drawHistory(ctx, course) {
+  const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
+  back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
+  const state = ctx.state;
+  const out = el("div", {});
+  let who = null;
+  const W = await pickWho(ctx, (p) => { who = p; show(); }); // (update 456: shared with Strategy Maps)
+  who = W.who; const picker = W.node;
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel" }, [el("p", { class: "pr-eyebrow" }, course.name), el("h1", {}, "Course History"), picker]), out]);
 
   async function show() {

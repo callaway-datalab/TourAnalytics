@@ -5302,3 +5302,40 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
 .bs-wi-list .bs-wi-tot { list-style: none; margin-left: -18px; margin-top: 4px; }
 .prod-cmp-row { margin: 4px 0 8px; }
 .gx-ch-added { margin: 2px 0 0; font-size: 0.78em; color: #8e8e93; }
+
+/* (update 456) Course Prep › Strategy Maps */
+.sh-title { display: flex; align-items: center; gap: 8px; }
+.sh-who { margin: 6px 0 0; }
+.sh-panel { padding-top: 12px; }
+.sh-holes { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: thin; }
+.sh-hole { flex: 0 0 auto; min-width: 36px; height: 34px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.sh-hole.on { background: #d4b483; color: #111; border-color: #d4b483; }
+.sh-head h2 { margin: 4px 0 8px; }
+.sh-ctl { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
+.sh-pins { display: flex; flex-wrap: wrap; gap: 6px; }
+.sh-pin { border-radius: 999px; border: 1px solid rgba(255,214,10,0.45); background: transparent; color: inherit; font: inherit; font-size: 0.9em; padding: 5px 12px; cursor: pointer; }
+.sh-pin.on { background: #ffd60a; color: #111; border-color: #ffd60a; font-weight: 600; }
+.sh-sw { display: flex; flex-wrap: wrap; gap: 8px; }
+.sh-stage { position: relative; width: 100%; border-radius: 10px; overflow: hidden; background: #0c0c0e; }
+.sh-stage.loading::after { content: "Loading the hole\2026"; position: absolute; inset: 0; display: grid; place-items: center; color: #8e8e93; font-size: 0.9em; }
+.sh-stage.noimg { min-height: 120px; }
+.sh-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
+.sh-cv { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: pan-y; }
+.sh-pop { position: absolute; z-index: 3; max-width: calc(100% - 16px); background: rgba(18,18,20,0.97); border: 1px solid rgba(212,180,131,0.5); border-radius: 10px; padding: 10px 12px; font-size: 0.86em; box-shadow: 0 8px 28px rgba(0,0,0,0.5); }
+.sh-pop p { margin: 4px 0; }
+.sh-pop-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sh-pop-x { background: none; border: 0; color: #8e8e93; font-size: 1.1em; cursor: pointer; padding: 2px 4px; }
+.sh-pop-t { width: 100%; margin-top: 6px; font-size: 0.95em; }
+.sh-pop-t th, .sh-pop-t td { padding: 3px 4px; }
+.sh-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 8px 0 4px; font-size: 0.85em; }
+.sh-lg { display: inline-flex; align-items: center; gap: 6px; }
+.sh-lg i { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
+.sh-sw-g { background: rgba(48,209,88,0.8); } .sh-sw-r { background: rgba(255,69,58,0.8); } .sh-sw-p { background: #ffd60a; border-radius: 2px !important; transform: rotate(45deg) scale(0.75); }
+.sh-lg i.sh-grad { width: 140px; height: 10px; border-radius: 5px; }
+.sh-keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 16px; margin-top: 8px; }
+.sh-k-h { margin: 4px 0; font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em; }
+.sh-key { display: block; width: 100%; text-align: left; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: inherit; font: inherit; font-size: 0.88em; padding: 6px 10px; margin-bottom: 4px; cursor: pointer; }
+.sh-key.target strong { color: #30d158; } .sh-key.avoid strong { color: #ff453a; }
+.sh-nav { display: flex; justify-content: space-between; margin-top: 10px; }
+.heat-admin { margin-top: 24px; }
+.sh-sw .seg-btn { padding-left: 12px; padding-right: 12px; white-space: nowrap; }
