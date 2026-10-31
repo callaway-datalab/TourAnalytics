@@ -132,8 +132,8 @@ export async function uploadHeatScoring(rows, onStatus = () => {}) {
     const n = Math.max(holes.at(-1) || 0, Object.keys(old?.holes || {}).length);
     const par = Array.from({ length: n }, (_, k) => data.holes[k + 1]?.par || old?.par?.[k] || null);
     const yards = Array.from({ length: n }, (_, k) => data.holes[k + 1]?.yards || old?.yards?.[k] || null);
-    const chunks = await writeChunks(id, "data", JSON.stringify(data), old?.dataChunks || 0);
-    await setDoc(doc(db, "courseHeat", id), { name, ...(cn != null ? { courseNum: String(cn) } : {}), par, yards, dataChunks: chunks, dataAt: serverTimestamp(), zones: Object.values(data.holes).reduce((t, h) => t + Object.values(h.pins).reduce((u, p) => u + p.rows.length, 0), 0) }, { merge: true });
+    const json = JSON.stringify(data), chunks = await writeChunks(id, "data", json, old?.dataChunks || 0);
+    await setDoc(doc(db, "courseHeat", id), { name, ...(cn != null ? { courseNum: String(cn) } : {}), par, yards, dataChunks: chunks, dataBytes: json.length, /* (update 460: for Storage on Users) */ dataAt: serverTimestamp(), zones: Object.values(data.holes).reduce((t, h) => t + Object.values(h.pins).reduce((u, p) => u + p.rows.length, 0), 0) }, { merge: true });
   }
   listCache = null;
   return names;
@@ -214,7 +214,7 @@ export async function uploadHeatImages(file, onStatus = () => {}) {
       onStatus(`${name}: hole ${h} (${k + 1} of ${nums.length}), course ${ci + 1} of ${names.length}…`);
       const img = await toWebp(await byCourse[name][h].blob());
       const chunks = await writeChunks(id, `h${h}`, img.b64, holes[h]?.chunks || 0);
-      holes[h] = { w: img.w, h: img.h, chunks, type: img.type };
+      holes[h] = { w: img.w, h: img.h, chunks, type: img.type, bytes: img.b64.length };
     }
     const n = Math.max(...Object.keys(holes).map(Number));
     const par = Array.from({ length: n }, (_, k) => old?.par?.[k] || null);

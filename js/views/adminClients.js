@@ -223,11 +223,13 @@ export async function render(main, { flash }) {
         el("span", { class: "seg-reports", style: `width:${(st.reports * 1.1 / st.quota) * 100}%`, title: `Reports: ${mb(st.reports)}` }),
         el("span", { class: "seg-data", style: `width:${(st.data * 1.1 / st.quota) * 100}%`, title: `Data files: ${mb(st.data)}` }),
         el("span", { class: "seg-att", style: `width:${(st.attachments * 1.1 / st.quota) * 100}%`, title: `Question attachments: ${mb(st.attachments)}` }),
+        el("span", { class: "seg-maps", style: `width:${((st.maps || 0) * 1.1 / st.quota) * 100}%`, title: `Strategy Maps: ${mb(st.maps || 0)}` }), // (update 460)
       ]),
       el("div", { class: "storage-legend" }, [
         el("span", {}, [el("i", { class: "seg-reports" }), `Reports ${mb(st.reports)}`]),
         el("span", {}, [el("i", { class: "seg-data" }), `Data files ${mb(st.data)}`]),
         el("span", {}, [el("i", { class: "seg-att" }), `Attachments ${mb(st.attachments)}`]),
+        el("span", {}, [el("i", { class: "seg-maps" }), `Strategy Maps ${mb(st.maps || 0)}`]),
       ]),
       el("p", { class: "muted small" }, `About ${mb(left)} left: room for roughly ${num(Math.floor(left / pdfStored))} more reports the size of yours (${mb(st.typicalPdf)} average). An estimate on Firebase's free plan (1 GB); Firebase \u2192 Firestore \u2192 Usage has the exact figure.`),
     ]);

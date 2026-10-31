@@ -5339,3 +5339,5 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
 .sh-nav { display: flex; justify-content: space-between; margin-top: 10px; }
 .heat-admin { margin-top: 24px; }
 .sh-sw .seg-btn { padding-left: 12px; padding-right: 12px; white-space: nowrap; }
+@media (max-width: 420px) { .sh-sw .seg-btn { padding-left: 8px; padding-right: 8px; font-size: 0.85em; } }
+.seg-maps { background: #64d2ff; } /* (update 460) */

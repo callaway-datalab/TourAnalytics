@@ -713,10 +713,14 @@ export function weekStart(now = new Date()) {
 // (base64), about 4/3 of their size; data files by what was written when they were uploaded.
 export const STORAGE_QUOTA = 1024 ** 3;
 export async function storageEstimate() {
-  const [docs, datasets, atts] = await Promise.all([
+  const [docs, datasets, atts, heat] = await Promise.all([
     getDocs(collection(db, "documents")), getDocs(collection(db, "datasets")),
     getDocs(collectionGroup(db, "attachments")).catch(() => ({ docs: [] })),
+    getDocs(collection(db, "courseHeat")).catch(() => ({ docs: [] })),
   ]);
+  // (update 460) Strategy Maps: the zones and hole images as stored (uploads before 460: about half a chunk each)
+  const maps = heat.docs.reduce((n, d) => { const v = d.data(), est = (k) => (k || 0) * 450000;
+    return n + (v.dataBytes ?? est(v.dataChunks)) + Object.values(v.holes || {}).reduce((t, h) => t + (h.bytes ?? est(h.chunks)), 0); }, 0);
   const fileBytes = (snap) => snap.docs.reduce((n, d) => n + (d.data().sizeBytes || 0), 0) * 4 / 3;
   const reports = fileBytes(docs), attachments = fileBytes(atts);
   const data = datasets.docs.reduce((n, d) => {
@@ -724,8 +728,8 @@ export async function storageEstimate() {
     return n + (v.storedBytes || (v.rowCount || 0) * ((v.columns || []).length || 6) * 8); // older files: estimated
   }, 0);
   const pdfSizes = docs.docs.map((d) => d.data().sizeBytes || 0).filter(Boolean);
-  const used = (reports + attachments + data) * 1.1; // + ~10% for names, indexes and everything else
-  return { used, quota: STORAGE_QUOTA, reports, attachments, data, typicalPdf: pdfSizes.length ? pdfSizes.reduce((a, b) => a + b, 0) / pdfSizes.length : 2 * 1024 ** 2 };
+  const used = (reports + attachments + data + maps) * 1.1; // + ~10% for names, indexes and everything else
+  return { used, quota: STORAGE_QUOTA, reports, attachments, data, maps, typicalPdf: pdfSizes.length ? pdfSizes.reduce((a, b) => a + b, 0) / pdfSizes.length : 2 * 1024 ** 2 };
 }
 
 export async function adminStats() {
