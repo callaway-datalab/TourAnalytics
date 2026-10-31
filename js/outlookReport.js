@@ -386,7 +386,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const L1 = (f) => lastOf(f.key);
   // the risks for each player (always at least one: their weakest area when nothing else stands out)
   // (update 418) weaknesses: parts of the game losing strokes to the field over the recent window (the worst one when none is)
-  const weakOf = (f) => { const L0 = L1(f); if (!L0) return []; const bad = CATS.filter((c) => L0.v[c] < -0.1).sort((a, b) => L0.v[a] - L0.v[b]).slice(0, 2); const w0 = insight.get(f.key).worst; return bad.length ? bad.map((c) => `${CATN[c]}: ${f2(L0.v[c])} a round`) : w0 ? [`None losing much; weakest is ${CATN[w0]} (${f2(L0.v[w0])})`] : []; };
+  const weakOf = (f) => { const L0 = L1(f); if (!L0) return []; const bad = CATS.filter((c) => L0.v[c] < -0.1).sort((a, b) => L0.v[a] - L0.v[b]).slice(0, 2); const w0 = insight.get(f.key).worst; return bad.length ? bad.map((c) => `${CATN[c]}: ${f2(L0.v[c])}`) : w0 ? [`None; weakest is ${CATN[w0]} (${f2(L0.v[w0])})`] : []; };
   // risks: other things that could pull them down, each with what it compares and over what time
   // (update 428) the season flags from the same numbers as the season table (every round on the tour, averaged over
   // all of them), so "putting carried" and "vs. their own average" always match the table
@@ -403,13 +403,15 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   };
   const topTxt = (rk) => `top ${Math.max(1, Math.round(rk.top * 100))}%`;
   // (update 430) the takeaway in plain rank terms, each half on its own: top 20%, above average, average, behind
-  const TIERS = ["top 20%", "above average", "average", "behind"];
+  const TIERS = ["top 20%", "above average", "average", "below average"];
   const tierOf = (rk) => (rk.top <= 0.2 ? 0 : rk.top <= 0.4 ? 1 : rk.top <= 0.6 ? 2 : 3);
   const fieldTiers = (r) => (r.r.weak.rk && r.r.strong.rk ? { w: tierOf(r.r.weak.rk), s: tierOf(r.r.strong.rk) } : null);
-  const fieldRead = (r) => { const t = fieldTiers(r); if (!t) return ""; return t.w === t.s ? cap(`${TIERS[t.w]} in both`) : `${cap(TIERS[t.w])} in weak<br>${cap(TIERS[t.s])} in strong`; };
+  // (update 431) and when they actually gain more strokes against strong fields than weak ones (rare: strong fields are harder), say so
+  const betterStrong = (r) => (r.r.weak.n && r.r.strong.n ? r.r.strong.tot / r.r.strong.n - r.r.weak.tot / r.r.weak.n : null);
+  const fieldRead = (r) => { const t = fieldTiers(r); if (!t) return ""; const b = betterStrong(r); return (t.w === t.s ? cap(`${TIERS[t.w]} in both`) : `${cap(TIERS[t.w])} in weak<br>${cap(TIERS[t.s])} in strong`) + (b != null && b > 0 ? `<br><span class="pos">Better in strong (${f2(b)})</span>` : ""); };
   const risksOf = (f) => {
     const L0 = L1(f), FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
-    if (FCr && fieldTiers(FCr) && fieldTiers(FCr).s > fieldTiers(FCr).w) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there, against #${FCr.r.weak.rk.rank} of ${FCr.r.weak.rk.of} in weaker ones, ${FC.years.join("–")}`);
+    if (FCr && fieldTiers(FCr) && fieldTiers(FCr).s > fieldTiers(FCr).w) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} vs. #${FCr.r.weak.rk.rank} in weaker, ${FC.years[0]}–${String(FC.years.at(-1)).slice(2)}`);
     if (fl.vsUsual != null && fl.vsUsual < -fl.swing) out.push(vsTxt(fl));
     if (fl.puttLed && fl.lastPutt != null) out.push(`Putting carried ${fl.lastYear}: ${f2(fl.lastPutt)} of ${f2(fl.lastTot)} a round`);
     if ((L0 && L0.n < 30) || fl.fewRounds) out.push(`Limited data: ${L0?.n ?? fl.lastN ?? 0} rounds, ${win}`);
@@ -419,19 +421,20 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     return out;
   };
   // (update 426) a season against the ones before it, on the same numbers as the season table
-  const vsTxt = (fl) => `${fl.lastYear} vs. ${fl.usualFrom === fl.usualTo ? fl.usualFrom : `own ${fl.usualFrom}–${fl.usualTo} average`}: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} (${f2(fl.vsUsual)})`;
+  const vsTxt = (fl) => `${fl.lastYear}: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} ${fl.usualFrom === fl.usualTo ? `in ${fl.usualFrom}` : `avg. ${fl.usualFrom}–${String(fl.usualTo).slice(2)}`} (${f2(fl.vsUsual)})`;
   // (update 425) other positives: the mirror of the other risks
   const posOf = (f) => {
     const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
-    if (FCr && fieldTiers(FCr) && fieldTiers(FCr).s <= 1 && fieldTiers(FCr).s <= fieldTiers(FCr).w) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there (${topTxt(FCr.r.strong.rk)}), ${FC.years.join("–")}`);
+    if (FCr && betterStrong(FCr) > 0) out.push(`Better in stronger fields: ${f2(FCr.r.strong.tot / FCr.r.strong.n)} vs. ${f2(FCr.r.weak.tot / FCr.r.weak.n)} in weaker (${f2(betterStrong(FCr))}), ${FC.years[0]}–${String(FC.years.at(-1)).slice(2)}`);
+    else if (FCr && fieldTiers(FCr) && fieldTiers(FCr).s <= 1 && fieldTiers(FCr).s <= fieldTiers(FCr).w) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} (${topTxt(FCr.r.strong.rk)}), ${FC.years[0]}–${String(FC.years.at(-1)).slice(2)}`);
     if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(vsTxt(fl));
     const y3 = f.years.at(-1);
     if (f.age != null && model.ageOk && y3.ageAdd >= 0.1) out.push(`Age: about ${f2(y3.ageAdd)} a round by ${y3.year}`);
     return out;
   };
-  const strengthsOf = (f) => { const L0 = L1(f); if (!L0) return []; const good = CATS.filter((c) => L0.v[c] > 0.005).sort((a, b) => L0.v[b] - L0.v[a]); const b0 = insight.get(f.key).best; return good.length ? good.map((c) => `${CATN[c]}: ${f2(L0.v[c])} a round`) : [`None gaining strokes on the field; closest is ${CATN[b0]} (${f2(L0.v[b0])})`]; };
+  const strengthsOf = (f) => { const L0 = L1(f); if (!L0) return []; const good = CATS.filter((c) => L0.v[c] > 0.005).sort((a, b) => L0.v[b] - L0.v[a]); const b0 = insight.get(f.key).best; return good.length ? good.map((c) => `${CATN[c]}: ${f2(L0.v[c])}`) : [`None; closest is ${CATN[b0]} (${f2(L0.v[b0])})`]; };
   const lst = (a) => `<ul class="sr">${a.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
-  const strHead = `<div class="lab s">Strengths <span class="labq">vs. the field, ${esc(win)}</span></div>`, wkHead = `<div class="lab w">Weaknesses <span class="labq">vs. the field, ${esc(win)}</span></div>`;
+  const strHead = `<div class="lab s">Strengths <span class="labq">SG a round vs. the field, ${esc(win)}</span></div>`, wkHead = `<div class="lab w">Weaknesses <span class="labq">SG a round vs. the field, ${esc(win)}</span></div>`;
   const srBlock = (f) => { const st = strengthsOf(f), wk = weakOf(f), rk = risksOf(f); const po = posOf(f); return `${st.length ? strHead + lst(st) : ""}${po.length ? `<div class="lab s">Other positives</div>${lst(po)}` : ""}${wk.length ? wkHead + lst(wk) : ""}${rk.length ? `<div class="lab w">Other risks</div>${lst(rk)}` : ""}`; };
 
   // the key takeaways (each a label and a sentence)
@@ -505,10 +508,14 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const spK = (ins) => /Ball Speed|Driving Distance/.test(ins.lines.speed || "");
   for (const f of order) {
     const L = L1(f), ins = insight.get(f.key), i = order.indexOf(f);
-    const card = `<div class="card big1 band" style="--c:${colorOf(f)}"><div>
+    // (update 431) one column per list that has something in it, sharing the width (less wrapping)
+    const bandList = [[strHead, strengthsOf(f)], [`<div class="lab s">Other positives</div>`, posOf(f)], [wkHead, weakOf(f)], [`<div class="lab w">Other risks</div>`, risksOf(f)]].filter(([, a], i) => a.length || i === 0 || i === 2);
+    const bandCols = bandList.map(([h, a]) => h + lst(a));
+    const bandW = bandList.map(([, a]) => Math.max(34, ...a.map((t) => Math.min(52, t.length)))); // (each column's width by its longest line)
+    const card = `<div class="card big1 band" style="--c:${colorOf(f)};grid-template-columns:auto ${bandW.map((w) => `minmax(0, ${w}fr)`).join(" ")}"><div>
       ${L ? `<div class="bigrow"><div class="big ${tone(L.v.TOTAL)}">${f2(L.v.TOTAL)}</div><div class="bl"><b>${WIN}</b><br>SG total a round · #${L.rk.TOTAL} of ${L.of.TOTAL}<br>${L.n} rounds</div></div>` : `<div class="muted">No rounds in the ${win}</div>`}
       ${L ? `<div class="mix"><span>Ball-striking <b class="${tone(ins.mix.bs)}">${f2(ins.mix.bs)}</b></span><span>Short game <b class="${tone(ins.mix.sh)}">${f2(ins.mix.sh)}</b></span></div>` : ""}
-      </div><div>${strHead}${lst(strengthsOf(f))}${posOf(f).length ? `<div class="lab s">Other positives</div>${lst(posOf(f))}` : ""}</div><div>${wkHead}${lst(weakOf(f))}</div><div>${risksOf(f).length ? `<div class="lab w">Other risks</div>${lst(risksOf(f))}` : ""}</div></div>`;
+      </div>${bandCols.map((c) => `<div>${c}</div>`).join("")}</div>`;
     const proj = `<div><h3>Projection <small>against an average ${esc(target)} field</small></h3><table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>
       <tr><td>Strokes gained a round</td>${f.years.map((y) => `<td><b class="${tone(y.total)}">${f2(y.total)}</b><br><small>${f2(y.lo)} to ${f2(y.hi)}</small></td>`).join("")}</tr>
       <tr><td>Rank it would mean <small>of ~${f.years[0].of}</small></td>${f.years.map((y) => `<td>~${ordinal(y.rank)}</td>`).join("")}</tr>
@@ -565,7 +572,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   .card.big1 .big{font-size:40px}.card.big1 .bl{font-size:12px}.card.big1 p{font-size:13px}.card.big1 .spark{width:100%;height:auto}.card.big1 .mix{font-size:13px}
   .player table.prof td,.player table.prof th{padding:1px 6px;font-size:11.5px}.player table.proj td{padding:3px 6px}.player ul.sr li{font-size:11.5px}.player .boxes .box{padding:4px 8px}.player .boxes .box p{font-size:11px;line-height:1.25}.player h1{font-size:26px;margin:0 0 6px}.player h3{margin:6px 0 3px}.player .card{border-top-width:5px}
   .player{display:flex;flex-direction:column}.pbody{flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:6px}@media screen{.player{height:8.5in}}
-  .card.band{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.2fr;gap:18px;align-items:start;padding:10px 14px}.card.band .lab{margin-top:2px}.boxes.b2{grid-template-columns:1fr 1fr;align-content:start;margin-top:6px}.c64{grid-template-columns:1.35fr 1fr}.player table.proj td{white-space:nowrap}.player table.proj td:first-child{white-space:normal}.side td:last-child{white-space:nowrap}.box.p .bt{color:#d0861c}.boxes.b2 .box.wide{grid-column:1/-1}.runkey{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:3px;margin-right:2px}.card .sr2{margin-top:8px}.card.big1 ul.sr li{font-size:12px}
+  .card.band{display:grid;gap:22px;align-items:start;padding:10px 14px}.card.band .lab{margin-top:2px}.card.band .labq{display:block;margin:0}.card.band ul.sr li{font-size:12px}.boxes.b2{grid-template-columns:1fr 1fr;align-content:start;margin-top:6px}.c64{grid-template-columns:1.35fr 1fr}.player table.proj td{white-space:nowrap}.player table.proj td:first-child{white-space:normal}.side td:last-child{white-space:nowrap}.box.p .bt{color:#d0861c}.boxes.b2 .box.wide{grid-column:1/-1}.runkey{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:3px;margin-right:2px}.card .sr2{margin-top:8px}.card.big1 ul.sr li{font-size:12px}
   .tks li{font-size:12px;line-height:1.28;margin:2px 0}.take ul.sr li{font-size:11px;line-height:1.25}.take .lab{margin:2px 0 0}.take{padding:6px 9px}h3.vh{margin-top:6px}
   .take .nums{flex-direction:column;gap:1px}.lab.pj{color:#2f6fdb}.labq{text-transform:none;letter-spacing:0;font-weight:400;color:#6b7480;margin-left:3px}
   .side .cols{gap:40px}.side .cols.c3{gap:56px}.side td:first-child{white-space:nowrap}.side td small{white-space:nowrap}.side table{margin-bottom:10px}.side td,.side th{padding:6px 5px}.side h3.ctr{text-align:center}.side table.topn td:not(:first-child),.side table.topn th:not(:first-child){text-align:center}
