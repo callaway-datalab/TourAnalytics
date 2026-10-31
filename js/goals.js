@@ -96,6 +96,9 @@ function planValue(ch, rs) {
   if (ch.stat === "lie") { if (!rs.length) return null; let n = 0; for (const r of rs) for (const x of r.shots || []) if (x.cat === ch.cat && x.lie === ch.lie) n += x.w || 1; return n / rs.length; }
   let t = 0, w = 0;
   for (const r of rs) for (const o of r.obs || []) if (o.k === ch.statKey && (o.cat || "") === (ch.cat || "") && (o.dist || "") === (ch.dist || "")) { t += o.v * o.w; w += o.w; }
+  // (update 454) a goal on a whole part of the game (no distance) in a shot-by-shot file, where every stat sits on a
+  // distance: every distance of it counts
+  if (!w && ch.cat && !ch.dist) for (const r of rs) for (const o of r.obs || []) if (o.k === ch.statKey && o.cat === ch.cat) { t += o.v * o.w; w += o.w; }
   return w ? t / w : null;
 }
 export const CH_WHEN = [["next", "my next round"], ["nextN", "my next … rounds"], ["week", "this week"], ["month", "this month"], ["date", "by a date"]];

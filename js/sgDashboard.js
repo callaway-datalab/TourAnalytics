@@ -3182,10 +3182,12 @@ export function sgDashboard(container, opts) {
     const target = (c, d) => {
       // the stat for that part of the game and distance; if the file has none, the whole-round stat for that part of the game.
       // The one that moved most (better in the best rounds), only where both sets of rounds have enough attempts.
+      // (update 454) a shot-by-shot file puts every stat on a distance: the part of the game is then any distance of it
       const exact = (o) => o.cat === c && (d ? o.dist === d : !o.dist);
+      const anyDist = (o) => !d && o.cat === c;
       const whole = (o) => !o.cat && WHOLE[c]?.test(o.k);
       const has = (f) => elite.some((rd) => { for (const o of rd.obs || []) if (f(o)) return true; return false; });
-      const pred = has(exact) ? exact : whole, isExact = pred === exact;
+      const pred = has(exact) ? exact : has(anyDist) ? anyDist : whole, isExact = pred !== whole;
       const mE = statAvg(elite, pred), mR = statAvg(recent, pred);
       let best = null, thin = null, anyOk = false;
       for (const [k, a] of mE) {
@@ -3207,10 +3209,15 @@ export function sgDashboard(container, opts) {
       : null);
     // (update 349) the drill's goal: the elite rounds' own value of the stat that fits it (that distance's, else the
     // whole round's), whether or not it moved, as long as there are enough attempts behind it
+    // (update 454) the part of the game's own stat: at that distance; or, with no distance, the part of the game's stat
+    // with no distance (a summary file), else any distance of it (a shot-by-shot file has every stat on a distance)
+    const hasNoDist = (c) => elite.some((rd) => (rd.obs || []).some((o) => o.cat === c && !o.dist));
+    const inScope = (exactOnly, c, d, o) => (exactOnly ? o.cat === c && (d ? o.dist === d : hasNoDistM(c) ? !o.dist : true) : !o.cat);
+    const noDistMemo = new Map(), hasNoDistM = (c) => (noDistMemo.has(c) ? noDistMemo.get(c) : noDistMemo.set(c, hasNoDist(c)).get(c));
     const eliteStat = (c, d) => {
       for (const re of goalStatsFor(c, d)) for (const exactOnly of [true, false]) {
         let t0 = 0, w = 0, k = null;
-        for (const rd of elite) for (const o of rd.obs || []) if (re.test(o.k) && (exactOnly ? o.cat === c && (d ? o.dist === d : !o.dist) : !o.cat)) { t0 += o.v * o.w; w += o.w; k = o.k; }
+        for (const rd of elite) for (const o of rd.obs || []) if (re.test(o.k) && inScope(exactOnly, c, d, o)) { t0 += o.v * o.w; w += o.w; k = o.k; }
         if (k && enough(statDef(k), w)) return { k, def: statDef(k), ve: t0 / w, exact: exactOnly };
       }
       return null;
@@ -3220,7 +3227,7 @@ export function sgDashboard(container, opts) {
     const targetStat = (c, d) => {
       const res = [...goalStatsFor(c, d), ...(WHOLE[c] ? [WHOLE[c]] : [])];
       for (const re of res) for (const exactOnly of [true, false]) {
-        const scope = (o) => re.test(o.k) && (exactOnly ? o.cat === c && (d ? o.dist === d : !o.dist) : !o.cat);
+        const scope = (o) => re.test(o.k) && inScope(exactOnly, c, d, o);
         const mE = statAvg(elite, scope), mR = statAvg(recent, scope);
         for (const [k, a] of mE) {
           const def = statDef(k), b = mR.get(k);
