@@ -395,10 +395,13 @@ function lieMap(img, zones, W, gw, gh) {
   const px = img?.naturalWidth ? pixelsOf(img, gw, gh) : null;
   const lies = [...new Set(zones.map((z) => z.L))];
   if (!px || lies.length < 2) return null; // (one lie, or no picture to read: no edges to find)
-  const s = gw / W, at = (i, j) => { const o = (j * gw + i) * 4; return [px[o], px[o + 1], px[o + 2]]; };
+  const s = gw / W, at = (i, j) => { const o = (j * gw + i) * 4; return [px[o], px[o + 1], px[o + 2], px[o + 3]]; };
+  // (update 464) only the course itself: see-through pixels (round the hole) and near-black ones are no lie, and a zone
+  // centre sitting on them (out of bounds, "Other") teaches nothing about what a lie looks like
+  const blank = (c) => c[3] < 128 || c[0] + c[1] + c[2] < 45;
   // the look of each zone centre: the average of the pixels close around it
   let samples = zones.map((z) => { const ci = Math.round(z.x * s), cj = Math.round(z.y * s); let r = 0, g = 0, b = 0, n = 0;
-    for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) if (i >= 0 && j >= 0 && i < gw && j < gh) { const c = at(i, j); r += c[0]; g += c[1]; b += c[2]; n++; }
+    for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) if (i >= 0 && j >= 0 && i < gw && j < gh) { const c = at(i, j); if (blank(c)) continue; r += c[0]; g += c[1]; b += c[2]; n++; }
     return n ? { L: lies.indexOf(z.L), c: [r / n, g / n, b / n] } : null; }).filter(Boolean);
   // a centre right on an edge can look like the lie next door: dropped when it's nearer another lie's usual look
   const med = lies.map((_, li) => { const cs = samples.filter((q) => q.L === li).map((q) => q.c); if (!cs.length) return null; return [0, 1, 2].map((k) => cs.map((c) => c[k]).sort((a, b) => a - b)[Math.floor(cs.length / 2)]); });
@@ -410,7 +413,9 @@ function lieMap(img, zones, W, gw, gh) {
   const cls = new Int8Array(gw * gh).fill(-1);
   const cache = new Map();
   for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
-    const o = (j * gw + i) * 4, key = ((px[o] >> 2) << 12) | ((px[o + 1] >> 2) << 6) | (px[o + 2] >> 2);
+    const o = (j * gw + i) * 4;
+    if (px[o + 3] < 128 || px[o] + px[o + 1] + px[o + 2] < 45) { cls[j * gw + i] = -1; continue; }
+    const key = ((px[o] >> 2) << 12) | ((px[o + 1] >> 2) << 6) | (px[o + 2] >> 2);
     let L = cache.get(key);
     if (L === undefined) { let bd = Infinity; L = -1; const c = [px[o], px[o + 1], px[o + 2]]; for (const q of samples) { const d = d2(c, q.c); if (d < bd) { bd = d; L = q.L; } } if (bd > tol) L = -1; cache.set(key, L); }
     cls[j * gw + i] = L;
@@ -421,7 +426,8 @@ function lieMap(img, zones, W, gw, gh) {
     cnt.fill(0);
     for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const x = i + a, y = j + b; if (x < 0 || y < 0 || x >= gw || y >= gh) continue; cnt[cls[y * gw + x] + 1]++; }
     let best = 0; for (let k = 1; k < cnt.length; k++) if (cnt[k] > cnt[best]) best = k;
-    out[j * gw + i] = cnt[best] >= 4 ? best - 1 : cls[j * gw + i];
+    const o = (j * gw + i) * 4;
+    out[j * gw + i] = px[o + 3] < 128 || px[o] + px[o + 1] + px[o + 2] < 45 ? -1 : cnt[best] >= 4 ? best - 1 : cls[j * gw + i];
   }
   return { cls: out, lies };
 }
@@ -431,6 +437,7 @@ export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 
   const off = document.createElement("canvas"); off.width = gw; off.height = gh;
   if (!zones.length) return { canvas: off, map: null, s };
   const map = lieMap(img, zones, W, gw, gh);
+  const px = img?.naturalWidth ? pixelsOf(img, gw, gh) : null; // (update 464: nothing outside the hole, even with one lie)
   const N = gw * gh, sum = new Float32Array(N), wt = new Float32Array(N), cov = new Float32Array(N);
   for (const z of zones) {
     const zl = map ? map.lies.indexOf(z.L) : -1, R = z.rk * 2.2 * s, cx = z.x * s, cy = z.y * s, rk = z.rk * s;
@@ -438,7 +445,7 @@ export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 
     const i0 = Math.max(0, Math.floor(cx - R)), i1 = Math.min(gw - 1, Math.ceil(cx + R)), j0 = Math.max(0, Math.floor(cy - R)), j1 = Math.min(gh - 1, Math.ceil(cy + R));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const k = j * gw + i;
-      if (map && map.cls[k] !== zl) continue; // (only its own lie)
+      if (map ? map.cls[k] !== zl : px && (px[k * 4 + 3] < 128 || px[k * 4] + px[k * 4 + 1] + px[k * 4 + 2] < 45)) continue; // (only its own lie; never off the course)
       const d = Math.hypot(i - cx, j - cy) / rk; if (d > 2.2) continue;
       const e = Math.exp(-0.9 * d * d);
       sum[k] += e * nw * val; wt[k] += e * nw; cov[k] += e;
@@ -477,10 +484,15 @@ export function paintHeat(canvas, { zones }, ov, { W, H, pin = null, rot = false
 }
 /** The zone under a point (image pixels): the nearest zone of the lie under it (from the overlay's lie map), else the nearest. */
 export function zoneAt(zones, x, y, ov = null) {
+  // (update 464) the zone that colours this spot most (of the lie under it), as the picture does: close to it, and the
+  // more shots the more it counts; nothing when no zone of that lie is near (no colour there)
   let L = null;
   if (ov?.map) { const i = Math.round(x * ov.s), j = Math.round(y * ov.s); if (i >= 0 && j >= 0 && i < ov.gw && j < ov.gh) { const c = ov.map.cls[j * ov.gw + i]; L = c >= 0 ? ov.map.lies[c] : "none"; } }
-  let best = null, bd = Infinity;
-  for (const z of zones) { if (L && L !== "none" && z.L !== L) continue; const d = Math.hypot(x - z.x, y - z.y) / (z.rk || 1); if (d < bd) { bd = d; best = z; } }
-  return best && bd <= (L === "none" ? 0.6 : 2.2) ? best : null;
+  if (L === "none") return null;
+  let best = null, bw = 0;
+  for (const z of zones) { if (L && z.L !== L) continue; const d = Math.hypot(x - z.x, y - z.y) / (z.rk || 1); if (d > 1.2) continue; const w = Math.exp(-0.9 * d * d) * Math.sqrt(z.n || 1); if (w > bw) { bw = w; best = z; } }
+  return best;
 }
+/** (update 464) a zone's part of the game: from the tee, the green, around it (30 yards in) or an approach */
+export const zoneCat = (z) => (z.L === "tee" ? "OTT" : z.L === "green" ? "PUTT" : z.dp != null && z.dp <= 30 ? "ARG" : "APP");
 export const fmtPar = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0.005 ? "+" : v < -0.005 ? "−" : ""}${Math.abs(v).toFixed(2)}`);

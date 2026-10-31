@@ -7,7 +7,8 @@
 import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
 import { effectiveTeam } from "../preview.js";
-import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
+const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
+import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 
 const st = { hole: 1, pin: {}, view: "field", mode: "score" }; // (kept while the app is open)
@@ -164,7 +165,7 @@ export async function drawHeat(ctx, course) {
     const r = cv.getBoundingClientRect(), DW = rot ? size.h : size.w, DH = rot ? size.w : size.h;
     const [x, y] = toImg(((e.clientX - r.left) / r.width) * DW, ((e.clientY - r.top) / r.height) * DH, size.w, rot);
     const z = zoneAt(Z.zones, x, y, ov);
-    if (!z) { pop.hidden = true; hideDot(); return; }
+    if (!z) { pop.hidden = true; hideDot(); return; } // (no colour there: nothing to show)
     openZone(z, { x, y });
   });
   // (update 461) the spot tapped: a dot there (it follows zoom and drag), and the popup beside it, never over it
@@ -196,15 +197,19 @@ export async function drawHeat(ctx, course) {
   function openZone(z, at = null) {
     tapAt = at || { x: z.x, y: z.y };
     const usePlayer = st.view === "player" && !!ix;
-    const share = Z.total ? Math.round((100 * (z.n || 0)) / Z.total) : null;
+    const cat = zoneCat(z), catN = Z.zones.filter((o) => zoneCat(o) === cat).reduce((t, o) => t + (o.n || 0), 0);
+    const catShare = catN ? Math.round((100 * (z.n || 0)) / catN) : null;
     const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "✕"); x.addEventListener("click", () => { pop.hidden = true; hideDot(); });
     const ttl = z.key ? (z.key.kind === "target" ? `Aim here (${z.key.n})` : `Stay away (${z.key.n})`) : "This spot";
     const rows = [...z.rows].sort((a, b) => (b.n || 0) - (a.n || 0));
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { class: z.key?.kind === "target" ? "pos" : z.key?.kind === "avoid" ? "neg" : "" }, ttl), x]),
       z.toGo ? el("p", {}, [`Strokes to hole out: `, el("strong", {}, z.raw.toFixed(2)), ...(usePlayer && z.rawP != null ? [` · ${who.label.split(" ")[0]} `, el("strong", {}, z.rawP.toFixed(2))] : [])]) : null,
-      el("p", {}, [z.toGo ? `Hole score from here${z.k != null ? ` (${z.k === 0 ? "from the tee" : `in ${z.k} ${z.k === 1 ? "shot" : "shots"}`})` : ""}: ` : `Scoring from here: `, el("strong", {}, `${(par + z.field).toFixed(2)}`), ` (${fmtPar(z.field)} to par)`]),
+      z.toGo ? null : el("p", {}, [`Scoring from here: `, el("strong", {}, `${(par + z.field).toFixed(2)}`), ` (${fmtPar(z.field)} to par)`]),
       usePlayer && z.player != null && !z.toGo ? el("p", {}, [`${who.label}: `, el("strong", {}, `${(par + z.player).toFixed(2)}`), ` (${fmtPar(z.player)}), from their strokes gained from here`]) : null,
-      el("p", { class: "muted small" }, [z.L === "tee" ? "The tee" : `${fmtPar(z.diff)} against zones about as far from the pin${z.dp ? ` (${Math.round(z.dp)} yds)` : ""}`, Z.hasN && z.n ? ` · ${z.n.toLocaleString()} shots${share != null ? ` (${share < 1 ? "under 1" : share}% of this pin’s)` : ""}` : ""]),
+      // (update 464) in plain words: harder or easier than the usual from that far out, and its share of that part of the
+      // game's attempts on this hole (this pin)
+      el("p", { class: "muted small" }, [z.L === "tee" ? "The tee" : `${Math.abs(z.diff) < 0.005 ? "Plays about average" : `Plays ${Math.abs(z.diff).toFixed(2)} ${Math.abs(z.diff) >= 0.995 && Math.abs(z.diff) < 1.005 ? "stroke" : "strokes"} ${z.diff > 0 ? "harder" : "easier"} than average`} from this distance${z.dp ? ` (${Math.round(z.dp)} yds)` : ""}`,
+        Z.hasN && z.n ? ` · ${z.n.toLocaleString()} ${z.n === 1 ? "shot" : "shots"}${catShare != null ? ` (${catShare < 1 ? "under 1" : catShare}% of the ${CAT_NAME[cat]} attempts on this hole)` : ""}` : ""]),
       el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Lie"), el("th", {}, "Distance"), Z.hasN ? el("th", { class: "num" }, "Shots") : null, el("th", { class: "num" }, z.toGo ? "To hole out" : "Tour"), usePlayer ? el("th", { class: "num" }, who.label.split(" ")[0]) : null])),
         el("tbody", {}, rows.map((q) => el("tr", {}, [el("td", {}, q.lie || "—"), el("td", {}, q.d || "—"), Z.hasN ? el("td", { class: "num" }, q.n ? q.n.toLocaleString() : "—") : null, el("td", { class: "num" }, z.toGo ? q.v.toFixed(2) : fmtPar(q.f)),
           usePlayer ? el("td", { class: "num", title: q.sk ? `${q.sk.sg >= 0 ? "Gains" : "Loses"} ${Math.abs(q.sk.sg).toFixed(3)} a shot${q.sk.band ? ` at ${q.sk.band}` : ""}${q.sk.lie ? ` from the ${q.sk.lie}` : ""} (${Math.round(q.sk.shots)} shots)` : null }, z.toGo ? (q.v - (q.sk?.sg || 0)).toFixed(2) : fmtPar(q.p)) : null])))]),
