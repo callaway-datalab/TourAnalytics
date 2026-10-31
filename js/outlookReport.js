@@ -434,7 +434,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   };
   const strengthsOf = (f) => { const L0 = L1(f); if (!L0) return []; const good = CATS.filter((c) => L0.v[c] > 0.005).sort((a, b) => L0.v[b] - L0.v[a]); const b0 = insight.get(f.key).best; return good.length ? good.map((c) => `${CATN[c]}: ${f2(L0.v[c])}`) : [`None; closest is ${CATN[b0]} (${f2(L0.v[b0])})`]; };
   const lst = (a) => `<ul class="sr">${a.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
-  const strHead = `<div class="lab s">Strengths <span class="labq">SG a round vs. the field, ${esc(win)}</span></div>`, wkHead = `<div class="lab w">Weaknesses <span class="labq">SG a round vs. the field, ${esc(win)}</span></div>`;
+  const strHead = `<div class="lab s">Strengths <span class="labq">SG a round, ${esc(win)}</span></div>`, wkHead = `<div class="lab w">Weaknesses <span class="labq">SG a round, ${esc(win)}</span></div>`;
   const srBlock = (f) => { const st = strengthsOf(f), wk = weakOf(f), rk = risksOf(f); const po = posOf(f); return `${st.length ? strHead + lst(st) : ""}${po.length ? `<div class="lab s">Other positives</div>${lst(po)}` : ""}${wk.length ? wkHead + lst(wk) : ""}${rk.length ? `<div class="lab w">Other risks</div>${lst(rk)}` : ""}`; };
 
   // the key takeaways (each a label and a sentence)
