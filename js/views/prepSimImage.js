@@ -47,7 +47,8 @@ function geoOf(heat, n, pinId) {
 }
 /** The hole's pin for this round (one picked for each hole, kept with the round). */
 function pinFor(s, heat, n) {
-  const pins = Object.keys(heat.data.holes?.[n]?.pins || {});
+  const off = new Set(heat.meta.pinsOff || []); // (update 463: not the pins the admin deleted)
+  const pins = Object.keys(heat.data.holes?.[n]?.pins || {}).filter((p) => !off.has(`${n}|${p}`));
   if (!pins.length) return null;
   s.simPins ||= {};
   if (!pins.includes(s.simPins[n])) s.simPins[n] = pins[Math.floor(Math.random() * pins.length)];

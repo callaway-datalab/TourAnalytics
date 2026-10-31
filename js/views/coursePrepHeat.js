@@ -6,7 +6,8 @@
  */
 import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
-import { heatData, heatImage, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
+import { effectiveTeam } from "../preview.js";
+import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 
 const st = { hole: 1, pin: {}, view: "field", mode: "score" }; // (kept while the app is open)
@@ -81,10 +82,10 @@ export async function drawHeat(ctx, course) {
     mount(head, [el("h2", {}, `Hole ${n} · Par ${par}${yds ? ` · ${yds} yds` : ""}`)]);
     drawHoleBar();
     prev.disabled = holeNums.indexOf(n) <= 0; next.disabled = holeNums.indexOf(n) >= holeNums.length - 1;
-    const pins = Object.keys(H.pins || {}).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+    const pins = pinsOn(meta, data, n); // (update 463: not the ones the admin deleted)
     if (!pins.includes(st.pin[n])) st.pin[n] = pins[0];
     // the pins: a switch each (the picture stays; only the zones change)
-    mount(pinBar, pins.length ? pins.map((p, i) => { const b = el("button", { type: "button", class: `sh-pin${st.pin[n] === p ? " on" : ""}`, "aria-pressed": String(st.pin[n] === p) }, /^\d+$/.test(p) ? `Pin ${p}` : String(p).replace(/[-_]+/g, " ")); /* (update 458: its own name) */ b.title = String(p); b.addEventListener("click", () => { if (st.pin[n] === p) return; st.pin[n] = p; [...pinBar.children].forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); }); paint(); }); return b; }) : el("span", { class: "muted small" }, "No zones for this hole yet."));
+    drawPins(n, pins);
     // the picture: only when the hole changes
     if (hm) {
       size = { w: hm.w, h: hm.h }; setGeom();
@@ -99,6 +100,39 @@ export async function drawHeat(ctx, course) {
     } else { size = { w: 0, h: 0 }; img.removeAttribute("src"); imgFor = null; setGeom(); base.getContext("2d").clearRect(0, 0, base.width, base.height); }
     stage.classList.toggle("noimg", !hm);
     paint();
+  }
+  // (update 463) the pins: a switch each (the picture stays; only the zones change). The admin can rename or delete them
+  // (Edit pins); deleted ones can be brought back.
+  const isAdmin = ctx.state?.isAdmin && !effectiveTeam(ctx.state).preview;
+  let editPins = false;
+  function drawPins(n, pins) {
+    const items = pins.map((p) => {
+      const b = el("button", { type: "button", class: `sh-pin${st.pin[n] === p ? " on" : ""}`, "aria-pressed": String(st.pin[n] === p), title: String(p) }, pinLabel(meta, n, p));
+      b.addEventListener("click", () => { if (st.pin[n] === p) return; st.pin[n] = p; [...pinBar.querySelectorAll(".sh-pin")].forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); }); paint(); });
+      if (!editPins) return b;
+      const ren = el("button", { type: "button", class: "sh-pin-ed", "aria-label": `Rename ${pinLabel(meta, n, p)}`, title: "Rename" }, "\u270E");
+      ren.addEventListener("click", () => {
+        const inp = el("input", { type: "text", class: "sh-pin-in", value: pinLabel(meta, n, p), maxLength: 60, "aria-label": "Pin name" });
+        let done = false;
+        const save = async (keep) => { if (done) return; done = true; const v = inp.value.trim(); if (keep && v !== pinLabel(meta, n, p)) { try { await renamePin(meta, n, p, v === p ? "" : v); } catch (err) { console.error(err); alert("Couldn\u2019t rename that pin. Try again."); } } drawPins(n, pinsOn(meta, data, n)); };
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(true); } else if (e.key === "Escape") save(false); });
+        inp.addEventListener("blur", () => save(true));
+        wrap.replaceWith(inp); inp.focus(); inp.select();
+      });
+      const del = el("button", { type: "button", class: "sh-pin-ed del", "aria-label": `Delete ${pinLabel(meta, n, p)}`, title: "Delete" }, "\u2715");
+      del.addEventListener("click", async () => {
+        if (!confirm(`Delete ${pinLabel(meta, n, p)} on hole ${n}? It stops showing for everyone (in Strategy Maps and Simulate Round). You can bring it back with Edit pins.`)) return;
+        try { await setPinOff(meta, n, p, true); } catch (err) { console.error(err); alert("Couldn\u2019t delete that pin. Try again."); return; }
+        const left = pinsOn(meta, data, n); if (st.pin[n] === p) st.pin[n] = left[0]; drawPins(n, left); paint();
+      });
+      const wrap = el("span", { class: "sh-pin-wrap" }, [b, ren, del]);
+      return wrap;
+    });
+    const off = isAdmin ? Object.keys(data.holes?.[n]?.pins || {}).filter((p) => !pins.includes(p)) : [];
+    const restore = editPins && off.length ? el("select", { class: "sh-pin-restore", "aria-label": "Bring back a deleted pin" }, [el("option", { value: "" }, `Bring back (${off.length})`), ...off.map((p) => el("option", { value: p }, pinLabel(meta, n, p)))]) : null;
+    restore?.addEventListener("change", async () => { const p = restore.value; if (!p) return; try { await setPinOff(meta, n, p, false); } catch (err) { console.error(err); alert("Couldn\u2019t bring that pin back."); } st.pin[n] ||= p; drawPins(n, pinsOn(meta, data, n)); paint(); });
+    const edit = isAdmin ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, editPins ? "Done" : "Edit pins"); b.addEventListener("click", () => { editPins = !editPins; drawPins(n, pinsOn(meta, data, n)); }); return b; })() : null;
+    mount(pinBar, [...(items.length ? items : [el("span", { class: "muted small" }, off.length ? "Every pin on this hole is deleted." : "No zones for this hole yet.")]), restore, edit]);
   }
   function paint() {
     pop.hidden = true; hideDot();

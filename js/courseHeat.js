@@ -11,7 +11,7 @@
  * Stored in Firestore like the reports (Cloud Storage would need billing): courseHeat/{id} (the course: holes, pars, image
  * sizes, chunk counts) and courseHeat/{id}/chunks/{file_i} (the data as JSON, each image as webp, in pieces).
  */
-import { doc, getDoc, getDocs, setDoc, deleteDoc, collection, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase-init.js";
 
 import { courseKey, sameCourse } from "./sg.js";
@@ -53,6 +53,26 @@ export async function heatImage(meta, hole) {
   const k = `${meta.id}|${hole}|${meta.imgAt?.toMillis?.() ?? ""}`;
   if (!imgMemo.has(k)) imgMemo.set(k, readChunks(meta.id, `h${hole}`, h.chunks).then((b64) => URL.createObjectURL(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: h.type || "image/webp" }))));
   return imgMemo.get(k);
+}
+/* (update 463) the admin's pin edits: names and deleted pins, kept on the course (so they last through a new scoring
+ * file): pinNames { "hole|pin": "name" }, pinsOff ["hole|pin"] */
+const pinKey = (hole, pid) => `${hole}|${pid}`;
+export const pinOff = (meta, hole, pid) => (meta?.pinsOff || []).includes(pinKey(hole, pid));
+export const pinLabel = (meta, hole, pid) => meta?.pinNames?.[pinKey(hole, pid)] || (/^\d+$/.test(pid) ? `Pin ${pid}` : String(pid).replace(/[-_]+/g, " "));
+/** A hole's pins that show (not deleted), in order. */
+export const pinsOn = (meta, data, hole) => Object.keys(data?.holes?.[hole]?.pins || {}).filter((p) => !pinOff(meta, hole, p)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+export async function renamePin(meta, hole, pid, name) {
+  const pinNames = { ...(meta.pinNames || {}) }, k = pinKey(hole, pid), t = String(name || "").trim().slice(0, 60);
+  if (t) pinNames[k] = t; else delete pinNames[k];
+  await updateDoc(doc(db, "courseHeat", meta.id), { pinNames }); // (the whole map replaced, so a cleared name goes)
+  meta.pinNames = pinNames; listCache = null;
+}
+export async function setPinOff(meta, hole, pid, off) {
+  const k = pinKey(hole, pid), cur = new Set(meta.pinsOff || []);
+  if (off) cur.add(k); else cur.delete(k);
+  const pinsOff = [...cur];
+  await updateDoc(doc(db, "courseHeat", meta.id), { pinsOff });
+  meta.pinsOff = pinsOff; listCache = null;
 }
 export async function deleteHeatCourse(id) {
   const snap = await getDocs(collection(db, "courseHeat", id, "chunks"));

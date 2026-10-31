@@ -5367,3 +5367,13 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
 /* (update 461) Simulate Round on a course with Strategy Maps: the hole's own image */
 .pr-himg-wrap { display: flex; flex-direction: column; gap: 6px; }
 .pr-himg { display: block; width: 100%; height: auto; max-height: 72vh; border-radius: 10px; background: #0c0c0e; cursor: crosshair; touch-action: manipulation; }
+.pr-course[hidden], .pr-course-grid [hidden] { display: none !important; } /* (update 462: the search hides them) */
+/* (update 463) Strategy Maps: the admin's pin editing */
+.sh-pins { align-items: center; }
+.sh-pin-wrap { display: inline-flex; align-items: center; gap: 2px; padding-right: 2px; border-radius: 999px; background: rgba(255,255,255,0.04); }
+.sh-pin-ed { background: none; border: 0; color: #a1a1a6; cursor: pointer; font-size: 0.85em; padding: 3px 5px; border-radius: 6px; }
+.sh-pin-ed:hover { color: #fff; background: rgba(255,255,255,0.08); }
+.sh-pin-ed.del:hover { color: #ff453a; }
+.sh-pin-in { width: 9em; padding: 4px 10px; border-radius: 999px; border: 1px solid #ffd60a; background: rgba(0,0,0,0.3); color: inherit; font: inherit; font-size: 0.9em; }
+.sh-pin-restore { font: inherit; font-size: 0.8em; padding: 3px 6px; border-radius: 8px; background: rgba(255,255,255,0.05); color: inherit; border: 1px solid rgba(255,255,255,0.16); }
+.sh-pin-edit { margin-left: 4px; }

@@ -84,11 +84,7 @@ export function drawPrepMenu(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, "← Course Prep");
   back.addEventListener("click", () => ctx.home());
   const par = course.par.reduce((a, b) => a + (b || 0), 0), yds = course.yards.reduce((a, b) => a + (Number(b) || 0), 0);
-  // (update 461) no Course Maps page (the hole pictures are in Strategy Maps): its reports show as Course Reports, when
-  // there are some for this course
-  const nMaps = el("span", { class: "cp-opt-n" });
-  let repBtn = null;
-  courseDocs(ctx).then((docs) => { const n = docs.filter((d) => forCourse(d, course.name)).length; nMaps.textContent = n ? `${n} report${n === 1 ? "" : "s"}` : ""; if (repBtn) repBtn.hidden = !n; }).catch(() => {});
+  // (update 462) no Course Maps or Course Reports: Strategy Maps, Course History and Simulate Round
   const opt = (title, sub, extra, go) => {
     const b = el("button", { type: "button", class: "cp-opt" }, [el("strong", {}, title), el("span", { class: "muted small" }, sub), extra]);
     b.addEventListener("click", go);
@@ -98,7 +94,6 @@ export function drawPrepMenu(ctx, course) {
     el("p", { class: "pr-eyebrow" }, "Course Prep"), el("h1", {}, course.name),
     el("p", { class: "muted" }, [course.location, `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
-      (repBtn = opt("Course Reports", "The reports and maps shared for this course", nMaps, () => ctx.go({ name: "prepMaps", course })), repBtn.hidden = true, repBtn),
       course.heat ? opt("Strategy Maps", "Where to aim and what to stay away from on every hole and pin, from the tour\u2019s scoring (and your own game)", el("span", { class: "cp-opt-n" }, `${Object.keys(course.heat.holes || {}).length || course.heat.par?.length || ""} holes`), () => ctx.go({ name: "prepHeat", course })) : null, // (update 456)
       opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
       opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })),
