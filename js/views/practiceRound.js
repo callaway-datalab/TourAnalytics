@@ -16,6 +16,7 @@ import { gameProgress, personalBest, targetText, passedIt, gameOf } from "../pra
 import { wordsToNumbers, golfFix } from "../voiceShots.js";
 import { expectedStrokes } from "../roundCalc.js";
 import { trendSvg, holeSvg, greenSvg, puttSvg } from "../practice/draw.js";
+import { simImage, readyFor } from "./prepSimImage.js"; // (update 461)
 import { SG, sgCls, tile, SpeechRec, sayKids, clubSelect, parseOff, fmtOff, offInput, lsInput, linkLS } from "./practiceShot.js";
 
 const sumOf = (s) => roundSummary(s.holes, { noPutts: !!s.opts?.noPutts });
@@ -187,11 +188,13 @@ async function drawHome(ctx) {
     go,
   ]);
 
-  const add = el("button", { type: "button", class: "btn ghost" }, "＋  Type in a course");
-  add.addEventListener("click", () => ctx.go({ name: "prepNew" }));
+  // (update 461) a search box to find a course in the list (in place of Type in a course)
+  const add = el("input", { type: "search", class: "pr-course-q", placeholder: "Search courses", "aria-label": "Search courses", autocomplete: "off" });
+  add.addEventListener("input", () => { const q = add.value.trim().toLowerCase(); let shown = 0; for (const b of cards?.querySelectorAll?.(".pr-course") || []) { const on = !q || b.dataset.name.includes(q); b.hidden = !on; if (on) shown++; } noHit.hidden = !q || shown > 0; });
+  const noHit = el("p", { class: "muted small", hidden: true }, "No course by that name.");
   const cards = courses.length ? el("div", { class: "pr-course-grid" }, courses.map((c) => {
     const par = c.par.reduce((a, b) => a + (b || 0), 0), yds = c.yards.reduce((a, b) => a + (Number(b) || 0), 0);
-    const b = el("button", { type: "button", class: "pr-course" }, [
+    const b = el("button", { type: "button", class: "pr-course", "data-name": `${c.name} ${c.location || ""}`.toLowerCase() }, [
       el("strong", {}, c.name),
       el("span", { class: "muted small" }, [c.location, `${c.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
       el("span", { class: "pr-sess-tag" }, c.rounds.length ? `${c.rounds.length} round${c.rounds.length === 1 ? "" : "s"} played` : c.from),
@@ -202,7 +205,7 @@ async function drawHome(ctx) {
   // (update 160) a real course, then a random one (update 162: a course's reports are inside it, under Course Maps)
   mount(ctx.body, [
     hero(), ...resumeRows(ctx),
-    el("section", { class: "panel" }, [el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "Prepare for a real course"), el("p", { class: "muted small" }, "Pick a course for its maps, your history there, or to simulate a round.")]), add]), cards]),
+    el("section", { class: "panel" }, [el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "Prepare for a real course"), el("p", { class: "muted small" }, "Pick a course for its maps, your history there, or to simulate a round.")]), add]), cards, noHit]),
     random,
     historyPanel(ctx),
   ]);
@@ -457,6 +460,7 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
     el("p", { class: "muted small pr-tip" }, putt ? "Rolled: how far the ball went (past the hole is more than the putt's length). Offline: minus is left." : vis ? "Offline: off your target line, minus is left, plus is right (\u00b1 flips it). Where it finished, and what's left, come from the hole." : "Offline: minus is left, plus is right. What's left is worked out from how far you hit it and how far offline."),
   ]);
   wrap.__update = update; // (the target moved: what it finished as, and the dot, follow)
+  wrap.__setLie = (l) => { if (!lieBox) return; endLie = l; drawLies(); }; // (update 461: from the hole's image)
   // (update 169) a tap on the picture: the shot finished there (how far, and how far off the target line)
   wrap.__place = (h, off) => {
     holed = false;
@@ -687,15 +691,19 @@ function drawRound(ctx, s) {
   const end = el("button", { type: "button", class: "link danger" }, game ? "End game" : "End round");
   end.addEventListener("click", () => finishRound(ctx, s, true));
   const what = shot.unit === "ft" ? `Putt · ${fmtD(shot.startDist, "ft")}` : shot.startLie === "Tee box" ? `Tee shot · ${shot.startDist} yds` : `${fmtD(shot.startDist, "yds")} to go`;
-  const card = el("section", { class: "panel pr-shot pr-dshot" }, [
+  // (update 461) the course's Strategy Maps, when it has them: loaded once, then the round is drawn again with them
+  const simImg = s.mode !== "sim" && s.course?.name ? readyFor(s.course.name, () => { if (ctx.view?.name === "round" && ctx.view.session === s) drawRound(ctx, s); }) : null;
+  let card = null;
+  card = el("section", { class: "panel pr-shot pr-dshot" }, [
     el("div", { class: "pr-shot-t" }, [
       el("p", { class: "pr-eyebrow" }, `${hole.short ? `Spot ${hole.n}` : `Hole ${hole.n}`} · Par ${hole.par}${hole.short ? "" : ` · ${hole.length} yds`} · Shot ${shot.n}`),
       el("h2", {}, what),
       el("p", { class: "pr-shot-sub" }, `${CATS[shot.rcat].label} · Tour baseline from here ${(shot.unit === "ft" ? expectedStrokes("Green", shot.startDist) : expectedStrokes(shot.startLie === "Tee box" ? "Tee box" : "Fairway", shot.startDist)).toFixed(2)} strokes`),
       hole.from ? el("p", { class: "muted small" }, `From ${hole.from}`) : null,
     ]),
-    // a random course: its made-up hole from above; a real one: the strip down the hole
-    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : holeStrip(hole, shot),
+    // a random course: its made-up hole from above; a real one: the strip down the hole, or (update 461) the hole's own
+    // image when the course has Strategy Maps
+    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : (simImg ? (() => { const v = simImage(ctx, s, hole, shot, () => card?.querySelector(".pr-hit-entry"), simImg); return v ? el("div", { class: "pr-visual pr-himg-wrap" }, [v, el("p", { class: "muted small pr-target" }, "Tap the picture where your shot finished: the distance, offline and the lie fill in.")]) : null; })() : null) || holeStrip(hole, shot),
     s.mode !== "sim" && shot.unit !== "ft" && ctx.clubs ? (ctx.prefillClub?.(shot), clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); })) : null,
     entryPanel(shot, { vis: s.mode === "sim" ? shot.vis : null, target: () => shot.target, noPutts: !!s.opts?.noPutts }, (r) => { shot.result = r || undefined; ctx.save(s); }, commit),
     el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [reset, pick, end])]),

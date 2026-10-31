@@ -190,7 +190,7 @@ async function toWebp(blob) {
   const w = bmp.width, h = bmp.height, s = Math.min(1, 2400 / w);
   const cv = document.createElement("canvas"); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
   cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
-  const out = await new Promise((res) => cv.toBlob(res, "image/webp", 0.86));
+  const out = await new Promise((res) => cv.toBlob(res, "image/webp", 0.95));
   const type = out?.type === "image/webp" ? "image/webp" : "image/png";
   const b = out?.type === "image/webp" ? out : await new Promise((res) => cv.toBlob(res, "image/png"));
   const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(b); });
@@ -332,23 +332,28 @@ export function keyZones({ zones, total, hasPin, hasN }, usePlayer = false) {
 /* ------------------------------------------------ drawing ------------------------------------------------ */
 // matplotlib's RdBu_r (blue: birdie, white: par, red: bogey)
 const RDBU = [[5, 48, 97], [33, 102, 172], [67, 147, 195], [146, 197, 222], [209, 229, 240], [247, 247, 247], [253, 219, 199], [244, 165, 130], [214, 96, 77], [178, 24, 43], [103, 0, 31]];
-const rdbu = (t) => { const x = Math.max(0, Math.min(1, t)) * (RDBU.length - 1), i = Math.min(RDBU.length - 2, Math.floor(x)), f = x - i; return RDBU[i].map((c, k) => Math.round(c + (RDBU[i + 1][k] - c) * f)); };
+const rdbu = (t) => { const x = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5)) * (RDBU.length - 1), i = Math.min(RDBU.length - 2, Math.floor(x)), f = x - i; return RDBU[i].map((c, k) => Math.round(c + (RDBU[i + 1][k] - c) * f)); };
 /** As in the course report: par 3s and 4s from −0.5 to +0.5, par 5s from −1 to +0.5 (par in the middle of each). */
 export const scoreT = (v, par) => (par >= 5 ? (v < -0.5 ? 0.5 * (v + 1) / 0.5 : 0.5 + 0.5 * (v + 0.5) / 1) : 0.5 + v);
 /** The zones over an image: mode "zones" (aim / avoid against zones as far out) or "score" (the scoring itself). */
+// (update 461) a canvas as big as it shows (zoomed in too, so it stays sharp), kept under what phones allow (~16 MP)
+const sizeOf = (canvas) => { const box = canvas.getBoundingClientRect(); let k = Math.min(2, window.devicePixelRatio || 1); const a = box.width * box.height * k * k; if (a > 14e6) k *= Math.sqrt(14e6 / a); return { cw: Math.max(1, Math.round(box.width * k)), ch: Math.max(1, Math.round(box.height * k)), k }; };
 // (rot: turned upright for phones, tee at the bottom: the image's (x, y) shows at (y, W − x))
 export const toDisp = (x, y, W, rot) => (rot ? [y, W - x] : [x, y]);
 export const toImg = (dx, dy, W, rot) => (rot ? [W - dy, dx] : [dx, dy]);
 /** The hole image itself on a canvas (turned when rot). */
 export function paintBase(canvas, img, { W, H, rot = false }) {
-  const box = canvas.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = Math.max(1, Math.round(box.width * dpr)), ch = Math.max(1, Math.round(box.height * dpr));
+  const { cw, ch } = sizeOf(canvas);
   canvas.width = cw; canvas.height = ch;
   const ctx = canvas.getContext("2d"); ctx.clearRect(0, 0, cw, ch);
   if (!img?.naturalWidth) return;
-  ctx.imageSmoothingQuality = "high";
-  if (rot) { ctx.save(); ctx.translate(0, ch); ctx.rotate(-Math.PI / 2); ctx.drawImage(img, 0, 0, ch, cw); ctx.restore(); }
-  else ctx.drawImage(img, 0, 0, cw, ch);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  // (update 461) shrunk in halves to near the size shown, then the last step: a big drop in one go leaves jagged edges
+  const tw = rot ? ch : cw, th = rot ? cw : ch;
+  let src = img, sw = img.naturalWidth, sh = img.naturalHeight;
+  while (sw / 2 >= tw * 1.05 && sh / 2 >= th * 1.05) { const c = document.createElement("canvas"); c.width = Math.round(sw / 2); c.height = Math.round(sh / 2); const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); src = c; sw = c.width; sh = c.height; }
+  if (rot) { ctx.save(); ctx.translate(0, ch); ctx.rotate(-Math.PI / 2); ctx.drawImage(src, 0, 0, ch, cw); ctx.restore(); }
+  else ctx.drawImage(src, 0, 0, cw, ch);
 }
 /*
  * (update 457) The lie on the image: every zone's centre shows what its lie looks like on this hole (a few pixels around
@@ -401,8 +406,8 @@ function lieMap(img, zones, W, gw, gh) {
   return { cls: out, lies };
 }
 /** The zones as a picture the size of the hole image (worked out once per pin and view; turned and scaled when drawn). */
-export function buildOverlay(img, { zones }, { W, H, par, mode = "zones" }) {
-  const gw = Math.max(40, Math.min(900, Math.round(W))), gh = Math.max(1, Math.round(H * gw / W)), s = gw / W;
+export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 2400 }) {
+  const gw = Math.max(40, Math.min(res, Math.round(W))), gh = Math.max(1, Math.round(H * gw / W)), s = gw / W;
   const off = document.createElement("canvas"); off.width = gw; off.height = gh;
   if (!zones.length) return { canvas: off, map: null, s };
   const map = lieMap(img, zones, W, gw, gh);
@@ -433,30 +438,19 @@ export function buildOverlay(img, { zones }, { W, H, par, mode = "zones" }) {
 }
 /** The overlay over the image (turned when rot), then the key zones' rings and labels and the pin. */
 export function paintHeat(canvas, { zones }, ov, { W, H, pin = null, rot = false }) {
-  const box = canvas.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = Math.max(1, Math.round(box.width * dpr)), chh = Math.max(1, Math.round(box.height * dpr));
+  const { cw, ch: chh, k: dpr } = sizeOf(canvas);
   canvas.width = cw; canvas.height = chh;
   const ctx = canvas.getContext("2d"); ctx.clearRect(0, 0, cw, chh);
   if (!zones.length || !W || !H || !ov) return;
   const DW = rot ? H : W, DH = rot ? W : H, sx = cw / DW, sy = chh / DH;
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
-  if (rot) { ctx.save(); ctx.translate(0, chh); ctx.rotate(-Math.PI / 2); ctx.drawImage(ov.canvas, 0, 0, chh, cw); ctx.restore(); }
-  else ctx.drawImage(ov.canvas, 0, 0, cw, chh);
-  // the key zones: a ring and a label (\u2713 aim, \u2715 avoid)
-  const fs = Math.max(10, Math.round(11 * dpr));
-  ctx.font = `700 ${fs}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  for (const z of zones) {
-    if (!z.key) continue;
-    const [zx, zy] = toDisp(z.x, z.y, W, rot), cx = zx * sx, cy = zy * sy, rr = Math.max(8 * dpr, Math.min(22 * dpr, z.r * Math.min(sx, sy)));
-    const col = z.key.kind === "target" ? "#30d158" : "#ff453a";
-    ctx.lineWidth = 2 * dpr; ctx.strokeStyle = col; ctx.setLineDash(z.key.kind === "avoid" ? [5 * dpr, 4 * dpr] : []);
-    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-    const lab = `${z.key.kind === "target" ? "\u2713" : "\u2715"}${z.key.n}`, lw = ctx.measureText(lab).width + 8 * dpr;
-    ctx.fillStyle = "rgba(10,10,12,0.82)"; ctx.fillRect(cx - lw / 2, cy - rr - fs - 4 * dpr, lw, fs + 4 * dpr);
-    ctx.fillStyle = col; ctx.fillText(lab, cx, cy - rr - fs / 2 - 2 * dpr);
-  }
-  if (pin && pin.x != null) { // the pin: a gold diamond
-    const [qx, qy] = toDisp(pin.x, pin.y, W, rot), px = qx * sx, py = qy * sy, s = 5 * dpr;
+  let src = ov.canvas, sw = src.width, sh = src.height; const tw = rot ? chh : cw, th = rot ? cw : chh;
+  while (sw / 2 >= tw * 1.05 && sh / 2 >= th * 1.05) { const c = document.createElement("canvas"); c.width = Math.round(sw / 2); c.height = Math.round(sh / 2); const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); src = c; sw = c.width; sh = c.height; }
+  if (rot) { ctx.save(); ctx.translate(0, chh); ctx.rotate(-Math.PI / 2); ctx.drawImage(src, 0, 0, chh, cw); ctx.restore(); }
+  else ctx.drawImage(src, 0, 0, cw, chh);
+  if (pin && pin.x != null) { // the pin: a gold diamond (the same size on screen however far in)
+    const z = Math.max(1, canvas.getBoundingClientRect().width / (canvas.offsetWidth || 1));
+    const [qx, qy] = toDisp(pin.x, pin.y, W, rot), px = qx * sx, py = qy * sy, s = (5 * dpr) * Math.min(z, 2);
     ctx.fillStyle = "#ffd60a"; ctx.strokeStyle = "#111"; ctx.lineWidth = 1.5 * dpr;
     ctx.beginPath(); ctx.moveTo(px, py - s); ctx.lineTo(px + s, py); ctx.lineTo(px, py + s); ctx.lineTo(px - s, py); ctx.closePath(); ctx.fill(); ctx.stroke();
   }

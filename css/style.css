@@ -5338,6 +5338,32 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
 .sh-key.target strong { color: #30d158; } .sh-key.avoid strong { color: #ff453a; }
 .sh-nav { display: flex; justify-content: space-between; margin-top: 10px; }
 .heat-admin { margin-top: 24px; }
-.sh-sw .seg-btn { padding-left: 12px; padding-right: 12px; white-space: nowrap; }
-@media (max-width: 420px) { .sh-sw .seg-btn { padding-left: 8px; padding-right: 8px; font-size: 0.85em; } }
 .seg-maps { background: #64d2ff; } /* (update 460) */
+
+/* (update 461) Strategy Maps: zoom, the spot tapped, smaller controls */
+.sh-stage { touch-action: pan-y; }
+.sh-stage.zoomed { touch-action: none; cursor: grab; }
+.sh-zoom { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+.sh-dot { position: absolute; z-index: 2; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #fff; border: 3px solid #111; box-shadow: 0 0 0 2px rgba(255,255,255,0.85), 0 2px 8px rgba(0,0,0,0.6); pointer-events: none; }
+.sh-zbar { position: absolute; right: 8px; bottom: 8px; z-index: 2; display: flex; gap: 4px; }
+.sh-zb { min-width: 32px; height: 32px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(14,14,16,0.82); color: #fff; font: inherit; font-size: 1.05em; font-weight: 600; cursor: pointer; padding: 0 8px; }
+.sh-zb:disabled { opacity: 0.4; cursor: default; }
+.sh-zfit { font-size: 0.8em; }
+.sh-sw .seg { display: inline-flex; }
+.sh-sw .seg-btn { font-size: 0.8em; padding: 6px 18px; min-width: 76px; line-height: 1.2; }
+@media (max-width: 600px) {
+  .sh-hole { min-width: 30px; height: 28px; font-size: 0.82em; border-radius: 7px; }
+  .sh-pin { font-size: 0.78em; padding: 4px 10px; }
+  .sh-head h2 { font-size: 1.1em; }
+  .sh-sw .seg-btn { font-size: 0.76em; padding: 5px 14px; min-width: 64px; }
+}
+.pr-course-q { min-width: 0; width: 240px; max-width: 100%; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.05); color: inherit; font: inherit; font-size: 0.9em; }
+@media (max-width: 600px) { .pr-course-q { width: 100%; } }
+/* (update 461) Course History tables: tighter, so they fit on a phone */
+.ch-t { font-size: 0.92em; }
+.ch-t .cmp-deep td:first-child { padding-left: 22px; color: #a1a1a6; }
+@media (max-width: 600px) { .ch-t { font-size: 0.78em; } .ch-t th, .ch-t td { padding: 5px 6px; } .ch-t th { font-size: 0.9em; } }
+.sh-pop-t th { font-size: 0.78em; white-space: normal; line-height: 1.2; }
+/* (update 461) Simulate Round on a course with Strategy Maps: the hole's own image */
+.pr-himg-wrap { display: flex; flex-direction: column; gap: 6px; }
+.pr-himg { display: block; width: 100%; height: auto; max-height: 72vh; border-radius: 10px; background: #0c0c0e; cursor: crosshair; touch-action: manipulation; }

@@ -8,7 +8,7 @@ import { el, mount, formatWhen, openTabNow } from "../ui.js";
 import { reportCategory } from "../data.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels } from "../names.js";
-import { CATEGORIES, detectColumns, isShotData, prepare, summaryPlayers, sameCourse, courseKey, fmtSG } from "../sg.js";
+import { CATEGORIES, detectColumns, isShotData, prepare, summaryPlayers, sameCourse, courseKey, fmtSG, distLead } from "../sg.js";
 import { tile, SG, sgCls } from "./practiceShot.js";
 
 /* ------------------------------------------------ the documents you can see ------------------------------------------------ */
@@ -84,10 +84,11 @@ export function drawPrepMenu(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, "← Course Prep");
   back.addEventListener("click", () => ctx.home());
   const par = course.par.reduce((a, b) => a + (b || 0), 0), yds = course.yards.reduce((a, b) => a + (Number(b) || 0), 0);
+  // (update 461) no Course Maps page (the hole pictures are in Strategy Maps): its reports show as Course Reports, when
+  // there are some for this course
   const nMaps = el("span", { class: "cp-opt-n" });
-  const holesTxt = course.holeMaps ? `${course.par.length} hole maps` : "";
-  if (holesTxt) nMaps.textContent = holesTxt;
-  courseDocs(ctx).then((docs) => { const n = docs.filter((d) => forCourse(d, course.name)).length; nMaps.textContent = [holesTxt, n ? `${n} report${n === 1 ? "" : "s"}` : holesTxt ? "" : "None yet"].filter(Boolean).join(" \u00b7 "); }).catch(() => {});
+  let repBtn = null;
+  courseDocs(ctx).then((docs) => { const n = docs.filter((d) => forCourse(d, course.name)).length; nMaps.textContent = n ? `${n} report${n === 1 ? "" : "s"}` : ""; if (repBtn) repBtn.hidden = !n; }).catch(() => {});
   const opt = (title, sub, extra, go) => {
     const b = el("button", { type: "button", class: "cp-opt" }, [el("strong", {}, title), el("span", { class: "muted small" }, sub), extra]);
     b.addEventListener("click", go);
@@ -97,7 +98,7 @@ export function drawPrepMenu(ctx, course) {
     el("p", { class: "pr-eyebrow" }, "Course Prep"), el("h1", {}, course.name),
     el("p", { class: "muted" }, [course.location, `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
-      opt("Course Maps", course.holeMaps ? "A map of every hole, and the course reports" : "The course reports and maps for this course", nMaps, () => ctx.go({ name: "prepMaps", course })),
+      (repBtn = opt("Course Reports", "The reports and maps shared for this course", nMaps, () => ctx.go({ name: "prepMaps", course })), repBtn.hidden = true, repBtn),
       course.heat ? opt("Strategy Maps", "Where to aim and what to stay away from on every hole and pin, from the tour\u2019s scoring (and your own game)", el("span", { class: "cp-opt-n" }, `${Object.keys(course.heat.holes || {}).length || course.heat.par?.length || ""} holes`), () => ctx.go({ name: "prepHeat", course })) : null, // (update 456)
       opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
       opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })),
@@ -109,9 +110,8 @@ export async function drawMaps(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
   const list = el("ul", { class: "rows" }, el("p", { class: "muted ta-loading" }, "Loading…"));
-  const holes = course.holeMaps ? holeGrid(course) : null;
-  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel" }, [el("p", { class: "pr-eyebrow" }, course.name), el("h1", {}, "Course Maps"),
-    holes, holes ? el("h2", { class: "cp-rep-h" }, "Course reports") : null, list])]);
+  const holes = null; // (update 461: the hole pictures are in Strategy Maps)
+  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel" }, [el("p", { class: "pr-eyebrow" }, course.name), el("h1", {}, "Course Reports"), list])]);
   const docs = await courseDocs(ctx).catch(() => []);
   const maps = docs.filter((d) => forCourse(d, course.name));
   mount(list, maps.length ? maps.map((d) => docRow(ctx, d)) : el("p", { class: "empty" }, `No ${holes ? "reports" : "reports or maps"} for ${course.name} yet.${ctx.state.isAdmin ? " Upload one with this course's name in Course." : " Ask your Callaway analyst."}`));
@@ -187,7 +187,9 @@ export async function playerData(key) {
   roundsCache.set(key, out);
   return out;
 }
-const perRound = (rs, cat = null) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + (!cat || s.cat === cat ? s.sg : 0), 0), 0) / rs.length : null);
+const perRound = (rs, cat = null, dist = null) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + ((!cat || s.cat === cat) && (!dist || s.dist === dist) ? s.sg : 0), 0), 0) / rs.length : null);
+/** (update 461) a category's distances in these rounds, nearest first */
+const distsOf = (rs, cat) => { const m = new Set(); for (const rd of rs) for (const s of rd.shots) if (s.cat === cat && s.dist) m.add(s.dist); return [...m].sort((a, b) => distLead(a) - distLead(b) || a.localeCompare(b)); };
 const scoring = (rs) => { let v = 0, w = 0; for (const rd of rs) for (const o of rd.obs || []) if (o.k === "scoring") { v += o.v * o.w; w += o.w; } return w ? v / w : null; };
 
 /** (update 456) Whose numbers: a player sees theirs; a coach picks one of their players; the admin searches. */
@@ -229,12 +231,17 @@ export async function drawHistory(ctx, course) {
     let data;
     try { data = await playerData(me.key); } catch (err) { console.error(err); mount(out, el("p", { class: "empty center" }, "Couldn't load the stats. Try again.")); return; }
     if (who !== me) return;
-    mount(out, historyBody(course, me, data));
+    // (update 461) the distances open under each category; the winners' distances need the field's round detail, which
+    // loads after (the page shows first, the column fills in when it's here)
+    const ui = { open: new Set() };
+    const draw = (detail) => mount(out, historyBody(course, me, data, ui, detail, () => draw(detail)));
+    draw(null);
+    if (data.ds) import("../fieldStore.js").then((m) => m.getFieldDetail(data.ds.id, data.ds.uploadedAt?.toMillis?.() ?? 0)).then((r) => { if (who === me && r?.players?.length) draw(r.players); }).catch(() => {});
   }
   show();
 }
 
-function historyBody(course, who, { rounds, field, ds }) {
+function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() }, detail = null, redraw = () => {}) {
   if (!ds) return el("section", { class: "panel" }, el("p", { class: "empty" }, `No stats file for ${who.label} yet.`));
   const anyCourse = rounds.some((rd) => rd.course);
   const here = rounds.filter((rd) => sameCourse(rd.course, course.name));
@@ -263,6 +270,21 @@ function historyBody(course, who, { rounds, field, ds }) {
     const i = list.findIndex((x) => x.key === who.key);
     return i < 0 ? (e.rs.length < most ? "MC" : null) : `${i + 1} of ${list.length}`;
   };
+  // (update 461) the winner of each tournament here (the best strokes gained a round among those who played every round),
+  // from the shared summary; their distances from the field's round detail, once it's loaded
+  const evHere = new Map();
+  for (const p of field) for (const rd of p.rounds) if (rd.event && sameCourse(rd.course, course.name)) { const k = `${rd.event}|${rd.year}`; const e = evHere.get(k) || evHere.set(k, new Map()).get(k); (e.get(p.key) || e.set(p.key, []).get(p.key)).push(rd); }
+  const winners = [...evHere].map(([k, byP]) => { const most = Math.max(...[...byP.values()].map((rs) => rs.length)); let best = null; for (const [pk, rs] of byP) { if (rs.length < most) continue; const v = perRound(rs); if (v != null && (!best || v > best.v)) best = { key: pk, v, k }; } return best; }).filter(Boolean);
+  const detailBy = new Map((detail || []).map((p) => [p.key, p]));
+  const winAvg = (cat = null, dist = null) => {
+    const vs = winners.map((w) => {
+      if (!dist) { const rs = evHere.get(w.k).get(w.key); return perRound(rs, cat); }
+      const p = detailBy.get(w.key); if (!p) return null;
+      const [ev, yr] = w.k.split("|"); const rs = p.rounds.filter((rd) => rd.event === ev && String(rd.year) === yr);
+      return rs.length ? perRound(rs, cat, dist) : null;
+    }).filter((v) => v != null);
+    return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+  };
   const sc = scoring(here), scAll = scoring(rounds);
   const best = [...here].sort((a, b) => perRound([b]) - perRound([a]));
   const dateTxt = (d) => { const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
@@ -277,14 +299,23 @@ function historyBody(course, who, { rounds, field, ds }) {
         sc != null ? tile("Scoring avg here", sc.toFixed(2), scAll != null ? (sc < scAll ? "pos" : sc > scAll ? "neg" : "") : "", scAll != null ? `${scAll.toFixed(2)} everywhere` : "") : null,
       ].filter(Boolean)),
     ]),
-    el("section", { class: "panel" }, [el("h2", {}, "By category"), el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, "Category"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Everywhere"), el("th", { class: "num" }, "Difference"), others.length ? el("th", { class: "num" }, "Field here") : null])),
-      el("tbody", {}, [[null, "Total"], ...CATEGORIES].map(([k, l]) => {
-        const h = perRound(here, k), a = perRound(rounds, k), f = fieldAvg(k);
-        return el("tr", {}, [el("td", {}, l), el("td", { class: `num ${sgCls(h)}` }, fmtSG(h)), el("td", { class: `num ${sgCls(a)}` }, fmtSG(a)), el("td", { class: `num ${sgCls(h - a)}` }, fmtSG(h - a)), others.length ? el("td", { class: `num ${sgCls(f)}` }, fmtSG(f)) : null]);
+    el("section", { class: "panel" }, [el("h2", {}, "By category"), el("p", { class: "muted small" }, "Tap a category for its distances. Avg Winner: strokes gained a round by the winner of each tournament here, averaged."), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
+      el("thead", {}, el("tr", {}, [el("th", {}, "Category"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Everywhere"), el("th", { class: "num" }, "Diff"), el("th", { class: "num" }, "Avg Winner")])),
+      el("tbody", {}, [[null, "Total"], ...CATEGORIES].flatMap(([k, l]) => {
+        const h = perRound(here, k), a = perRound(rounds, k), w = winAvg(k);
+        const ds = k ? distsOf(here, k) : [];
+        const open = k && ui.open.has(k);
+        const tr = el("tr", { class: ds.length ? "sg-tap" : "", ...(ds.length ? { role: "button", tabindex: "0", "aria-expanded": String(!!open) } : {}) }, [
+          el("td", {}, [ds.length ? el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 ") : null, l]),
+          el("td", { class: `num ${sgCls(h)}` }, fmtSG(h)), el("td", { class: `num ${sgCls(a)}` }, fmtSG(a)), el("td", { class: `num ${sgCls(h - a)}` }, fmtSG(h - a)), el("td", { class: `num ${sgCls(w)}` }, fmtSG(w))]);
+        if (ds.length) { const flip = () => { ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k); redraw(); }; tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } }); }
+        if (!open) return [tr];
+        return [tr, ...ds.map((d) => { const hd = perRound(here, k, d), ad = perRound(rounds, k, d), wd = winAvg(k, d);
+          return el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, d), el("td", { class: `num ${sgCls(hd)}` }, fmtSG(hd)), el("td", { class: `num ${sgCls(ad)}` }, fmtSG(ad)), el("td", { class: `num ${sgCls(hd - ad)}` }, fmtSG(hd - ad)),
+            el("td", { class: `num ${sgCls(wd)}`, title: wd == null && !detail ? "Loading the field\u2019s distances\u2026" : null }, wd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(wd))]); })];
       })),
     ]))]),
-    el("section", { class: "panel" }, [el("h2", {}, "Tournaments here"), el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
+    el("section", { class: "panel" }, [el("h2", {}, "Tournaments here"), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), el("th", { class: "num" }, "SG / round"), el("th", { class: "num" }, "Finish")])),
       el("tbody", {}, [...events.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).map((e) => { const v = perRound(e.rs); return el("tr", {}, [el("td", {}, dateTxt(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.rs.length)), el("td", { class: `num ${sgCls(v)}` }, fmtSG(v)), el("td", { class: "num" }, finish(e) || "—")]); })),
     ])),
