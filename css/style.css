@@ -5197,3 +5197,15 @@ tr.row-muted td, tr.row-muted td * { color: var(--muted, #8e8e93) !important; ba
 .fc-learned summary { cursor: pointer; color: #d4b483; font-size: 0.86rem; }
 .fc-learned-l { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.84rem; line-height: 1.5; color: var(--ink-2, #c7c7cc); }
 .fc-learned-l li { margin-bottom: 0.3rem; }
+
+/* (update 442) several top-gap numbers side by side; the path table's Last N box; All Rounds */
+.bs-top-b + .bs-top-b { margin-left: 3px; }
+.bs-path-t th.bs-lastn { white-space: nowrap; }
+.bs-path-t th.bs-lastn input.peak-len { width: 2.6em !important; min-width: 0; min-height: 0; height: auto; margin: 0 0 0 3px !important; padding: 1px 3px !important; font-size: 0.8rem; line-height: 1.2; border-radius: 6px; display: inline-block; vertical-align: baseline; }
+.bs-all { margin: 0.4rem 0 0.6rem; }
+.bs-all-sort { margin: 0.35rem 0; display: flex; gap: 0.4rem; align-items: center; }
+.bs-path-flat { margin-top: 0.6rem; }
+@media (max-width: 640px) {
+  .bs-path-flat .bs-path-t th, .bs-path-flat .bs-path-t td { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
+  .bs-path-flat .bs-path-t td:first-child { white-space: normal; }
+}

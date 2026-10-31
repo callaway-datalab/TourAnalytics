@@ -1674,7 +1674,9 @@ export function sgDashboard(container, opts) {
     // (update 240) against a rank (picked above the table): the player ranked #N overall (SG: Total a round in this
     // selection, not counting the player on screen), every row from that one player: #1 is the same golfer all the way down
     // (update 381) the table's own Personal Peak: their best N rounds against the rest (st.tablePeak), apart from the level cards
-    const tPeak = mode === "table" ? Math.max(0, Math.round(Number(st.tablePeak) || 0)) : 0;
+    // (update 442) no Personal Peak or Show Attempts buttons on this table any more
+    st.tablePeak = 0; st.showAtt = false;
+    const tPeak = 0;
     const peakOn = tPeak > 0 || (mode === "elite" && st.vsRank === "peak"); // (update 260) or against the player's own peak (update 370: not the table)
     const vsN = null, refP = null; // (update 330: no #N player comparisons)
     // (update 266) Personal Peak: the player's N best rounds (the Peak Length, default 10) in this selection, ranked by the
@@ -1765,7 +1767,7 @@ export function sgDashboard(container, opts) {
         const up = c.d > 0; c.td.style.background = `rgba(${up ? "48,209,88" : "255,69,58"},${(0.04 + 0.4 * t * t).toFixed(3)})`; } }
     const TN = tPeak ? { kept: `best ${peakN}-round stretch`, cut: "other rounds", Kept: "Peak", Cut: "Rest" } : NM();
     // (update 381) Personal Peak, picked above the table: their best N rounds (any order) against the rest
-    const peakCtl = mode === "table" && me ? (() => {
+    const peakCtl = false ? (() => {
       // (update 387) to start: the length of their longest Best on Tour stretch (else 10)
       const all = longestStretches(lastSliced || [], cat), myRow = all.find((x) => x.p.key === me.key), best1 = myRow?.n > 0 ? myRow : null;
       const defN = best1 ? best1.n : 10;
@@ -1825,7 +1827,13 @@ export function sgDashboard(container, opts) {
       const N = Math.max(3, Math.min(season.length, Math.round(Number(st.hypoN) || 10)));
       const last = season.slice(-N);
       const recent = rowVals(last, cat);
-      const field0 = rankedField(slicedField).filter((p) => p.key !== me?.key);
+      // (update 442) ranked on the season: where these numbers would put them if they were their season average, against
+      // everyone's averages for the season (the year of their latest round, or the year picked), whatever time frame is picked
+      const seasonYear = (Array.isArray(lastRankF.year) && lastRankF.year.length === 1) ? String(lastRankF.year[0]) : String(season.at(-1)?.year || String(season.at(-1)?.date || "").slice(0, 4));
+      const seasonF = { ...lastRankF, months: 0, from: null, to: null, year: [seasonYear], event: [], course: [], roundNo: [] };
+      const seasonAll = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, seasonF)) })).filter((p) => p.rounds.length);
+      const seasonMin = minRoundsFor(seasonAll);
+      const field0 = seasonAll.filter((p) => p.key !== me?.key && p.rounds.length >= seasonMin);
       const others = field0.map((p) => rowVals(p.rounds, cat));
       if (!others.length) return null;
       const parts = cat ? dists.map((d) => ({ key: `d:${d}`, label: d })) : CATEGORIES.map(([k, l]) => ({ key: `c:${k}`, label: l }));
@@ -1922,11 +1930,11 @@ export function sgDashboard(container, opts) {
       const reset = anyAdj ? (() => { const b = el("button", { type: "button", class: "link small" }, "Reset"); b.addEventListener("click", () => { st.hypoAdj = null; draw(); }); return b; })() : null;
       return el("div", { class: "bs-path bs-hypo" }, [
         el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), reset]),
-        el("div", { class: "bs-path-gap" }, [el("div", {}, [`Last `, nIn, ` rounds, ranked against everyone\u2019s averages over the time frame picked`]),
+        el("div", { class: "bs-path-gap" }, [el("div", {}, [`Last `, nIn, ` rounds as a season average: where they\u2019d rank on the ${seasonYear} season`]),
           infoTip(`Start from their last ${N} rounds: strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
         sumLine,
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [
-          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, `Last ${N}`), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Rank")])),
+          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, `Last ${N}`), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Season rank")])),
           el("tbody", {}, body),
         ])),
       ]);
@@ -1946,10 +1954,12 @@ export function sgDashboard(container, opts) {
         const recentAvg = recentT.length ? recentT.reduce((a, v) => a + v, 0) / recentT.length : P.avg;
         const formRank = P.rankOf(recentAvg);
         const reach = rows.filter((r) => r.share?.k);
-        if (!reach.length) return null;
+        // (update 442) no card picked: their last N rounds against the rest of their rounds; a card picked: against that
+        // level's rounds
+        const pick = st.vsRank === "peak" && st.ladderT ? reach.find((r) => r.target === st.ladderT) : null;
+        if (!pick) { const rest = season.slice(0, -nR); return rest.length ? pathBack(rest, season, cat, null, { rest: true }) : null; }
         const byLevel = [...reach].sort((a, b) => b.target - a.target); // #50 first
         const nextUp = byLevel.find((r) => r.target < formRank) || byLevel.at(-1);
-        const pick = reach.find((r) => r.target === st.pathT) || nextUp;
         const kept = eliteOf(mine, cat, pick.share.k)?.rounds || [];
         if (!kept.length) return null;
         // the bar: the season average of the player ranked at that level (beat it to rank there)
@@ -2694,12 +2704,52 @@ export function sgDashboard(container, opts) {
     }
     return detail;
     }
-    const detail = showRanks ? elitePart() : null;
+    const detail = null; // (update 442: no kept / cut lines under the cards; the table below compares them)
+    // (update 442) every round, best to worst (or by date), each one opening to its parts of the game and distances
+    const roundDetailOf = (rd) => {
+      const by = new Map();
+      for (const x of rd.shots) { if (!x.cat) continue; const c = by.get(x.cat) || by.set(x.cat, { sg: 0, n: 0, d: new Map() }).get(x.cat); c.sg += x.sg; c.n += x.w || 1; if (x.dist) { const dd = c.d.get(x.dist) || c.d.set(x.dist, { sg: 0, n: 0 }).get(x.dist); dd.sg += x.sg; dd.n += x.w || 1; } }
+      const open = new Set(st.rdCats || []);
+      return el("div", { class: "bs-rd" }, CATEGORIES.filter(([c]) => by.has(c)).flatMap(([c, l]) => {
+        const v = by.get(c), ds = [...v.d].sort((a, b) => distLead(a[0]) - distLead(b[0]) || a[0].localeCompare(b[0]));
+        const row = el("button", { type: "button", class: "bs-rd-row", "aria-expanded": String(open.has(c)), disabled: !ds.length }, [
+          el("span", { class: "bs-rd-l" }, [ds.length ? el("span", { class: "cmp-caret" }, open.has(c) ? "\u25BE " : "\u25B8 ") : null, l]),
+          el("span", { class: `bs-rd-v ${v.sg >= 0 ? "pos" : "neg"}` }, sgn2(v.sg))]);
+        row.addEventListener("click", (e) => { e.stopPropagation(); const n = new Set(st.rdCats || []); n.has(c) ? n.delete(c) : n.add(c); st.rdCats = [...n]; draw(); });
+        // (shots with no distance in the file: one more line, so the distances add up to the part of the game)
+        const restSg = v.sg - ds.reduce((t, [, x]) => t + x.sg, 0), restN = v.n - ds.reduce((t, [, x]) => t + x.n, 0);
+        const sub = (lbl, sg, n) => el("div", { class: "bs-rd-row sub" }, [el("span", { class: "bs-rd-l" }, `${lbl} \u00b7 ${Math.round(n)} ${Math.round(n) === 1 ? "shot" : "shots"}`), el("span", { class: `bs-rd-v ${sg >= 0 ? "pos" : "neg"}` }, sgn2(sg))]);
+        return [row, ...(open.has(c) ? [...ds.map(([d, x]) => sub(d, x.sg, x.n)), ...(Math.abs(restSg) >= 0.005 && restN > 0 ? [sub("Other shots", restSg, restN)] : [])] : [])];
+      }));
+    };
+    const sgOfRd = (rd) => { let t = 0; for (const x of rd.shots) if (!cat || x.cat === cat) t += x.sg; return t; };
+    const allRounds = showRanks && mine.length ? (() => {
+      const open = !!st.allRoundsOpen, byDate = st.allRoundsSort === "date";
+      const tog = el("button", { type: "button", class: "link bs-evs-btn bs-all-btn", "aria-expanded": String(open) }, `All Rounds (${mine.length}) ${open ? "\u25B4" : "\u25BE"}`);
+      tog.addEventListener("click", () => { st.allRoundsOpen = !open; draw(); });
+      if (!open) return el("div", { class: "bs-all" }, tog);
+      const sortBtn = (k, lab) => { const on = (k === "date") === byDate; const b = el("button", { type: "button", class: `pp-tog${on ? " on" : ""}`, "aria-pressed": String(on) }, lab); b.addEventListener("click", () => { st.allRoundsSort = k; draw(); }); return b; };
+      const rKey = (rd) => `${String(rd.date || "").slice(0, 10)}|${rd.event || ""}|${rd.roundNo ?? ""}`;
+      const list = mine.map((rd) => ({ rd, v: sgOfRd(rd) })).sort((a, b) => (byDate ? String(b.rd.date || "").localeCompare(String(a.rd.date || "")) || (parseFloat(b.rd.roundNo) || 0) - (parseFloat(a.rd.roundNo) || 0) : b.v - a.v));
+      return el("div", { class: "bs-all" }, [tog,
+        el("div", { class: "sg-peak-ctl bs-all-sort" }, [el("span", { class: "muted small" }, "Sort:"), sortBtn("sg", "Best to worst"), sortBtn("date", "By date")]),
+        el("div", { class: "bs-evs-wrap" }, el("ul", { class: "bs-evs" }, list.map(({ rd, v }) => {
+          const on = st.rdOpen === rKey(rd);
+          const li = el("li", { class: `bs-rd-li${on ? " on" : ""}`, role: "button", tabindex: "0", "aria-expanded": String(on) }, [
+            el("div", { class: "bs-rd-head" }, [el("span", { class: v >= 0 ? "pos" : "neg" }, sgn2(v)), el("span", { class: "muted" }, " \u00b7 "), el("span", { class: "bs-ev-name" }, rd.event || "Tournament"),
+              el("span", { class: "muted" }, `${rd.roundNo != null && rd.roundNo !== "" ? ` \u00b7 R${rd.roundNo}` : ""} \u00b7 ${shortDay(rd.date)}`)]),
+            on ? roundDetailOf(rd) : null]);
+          const t2 = () => { st.rdOpen = on ? null : rKey(rd); draw(); };
+          li.addEventListener("click", t2); li.addEventListener("keydown", (e) => { if (e.target === li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); t2(); } });
+          return li;
+        })))]);
+    })() : null;
+
     return el("div", { class: "bs" }, [
       el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `${what ? `${what.trim()} ` : ""}Elite Round Share`), help]),
 
       rows?.prof ? el("p", { class: "bs-now" }, [`Currently `, el("strong", {}, ordinal(rows.prof.seasonRank)), ` of ${rows.prof.N} (${sgn2(rows.prof.avg)} a round)`]) : null,
-      ladder, profileLine(mine, cat, rows), detail,
+      ladder, profileLine(mine, cat, rows), allRounds, detail,
     ]);
   }
   /* (update 345) Where the shots came from: the parts of the game and distances where elite rounds simply had more of the
@@ -2928,11 +2978,11 @@ export function sgDashboard(container, opts) {
   /* (update 338) Path back to Elite: the player's last N rounds (10 to start; changeable) against their elite rounds. The gap
    * in strokes, where it comes from (biggest first) with a target in plain stats for each, what hurts in their other rounds
    * (parts of the game costing a stroke or more, bad lies), when the elite rounds tend to happen, and what to practise. Worked out here, by rule. */
-  function pathBack(elite, season, cat, lv = null) {
+  function pathBack(elite, season, cat, lv = null, { rest = false } = {}) {
     // (update 355) the level aimed at (picked here): its rounds (their best rounds that together reach it) against their
     // last N rounds (10 to start; changeable)
-    const lvName = lv ? `\u201c${LEVELS[lv.T]}\u201d rounds` : "best rounds"; // (update 360: the level by name: their "Contender" rounds)
-    const LvCap = lv ? `\u201c${LEVELS[lv.T]}\u201d rounds` : "Best rounds";
+    const lvName = rest ? "other rounds" : lv ? `\u201c${LEVELS[lv.T]}\u201d rounds` : "best rounds"; // (update 360: the level by name: their "Contender" rounds)
+    const LvCap = rest ? "Other rounds" : lv ? `\u201c${LEVELS[lv.T]}\u201d rounds` : "Best rounds";
     const NN = { kept: lvName, cut: "recent rounds" };
     const N = Math.max(3, Math.min(season.length, Math.round(Number(st.recentN) || 10)));
     const recent = season.slice(-N);
@@ -3139,8 +3189,8 @@ export function sgDashboard(container, opts) {
     // (update 370) the path as a table: the last N rounds against the level's rounds, a round, for SG: Total, each part
     // of the game (tap to open its distances) and each distance (tap to see the takeaway, target and practice)
     function pathTable() {
-      const lvHead = lv ? `\u201c${LEVELS[lv.T]}\u201d` : "Best rounds";
-      const lvShort = lv ? ({ 1: "Best on Tour", 10: "Contender", 25: "Tour Champ.", 50: "Signature" }[lv.T] || LEVELS[lv.T]) : "Best";
+      const lvHead = rest ? "The rest" : lv ? `\u201c${LEVELS[lv.T]}\u201d` : "Best rounds";
+      const lvShort = rest ? "The rest" : lv ? ({ 1: "Best on Tour", 10: "Contender", 25: "Tour Champ.", 50: "Signature" }[lv.T] || LEVELS[lv.T]) : "Best";
       const rowOf = (match) => { const sp = groupSplit(bE, elite.length, bR, recent.length, match, bU); return { sp, r: sp.ab * sp.pb, e: sp.ae * sp.pe, g: sp.total }; };
       const topIdx = new Map(gaps.map((x, i) => [x.k, i + 1]));
       const cats = CATEGORIES.map(([c]) => c).filter((c) => [...keys].some((k) => k.startsWith(`${c}|`)));
@@ -3168,7 +3218,7 @@ export function sgDashboard(container, opts) {
         const open = openCats.has(cr.c);
         const nTop = [...topIdx.keys()].filter((k) => k.startsWith(`${cr.c}|`)).length;
         body.push(tapRow("cmp-sub", open, () => { const a = new Set(st.pathCats || []); a.has(cr.c) ? a.delete(cr.c) : a.add(cr.c); st.pathCats = [...a]; draw(); },
-          [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 "), catName(cr.c), nTop && !open ? el("span", { class: "bs-top-b", title: `${nTop} of the ${gaps.length} biggest gaps` }, String(nTop)) : null], cells(cr, cMax)));
+          [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 "), catName(cr.c), ...(!open ? [...topIdx].filter(([k]) => k.startsWith(`${cr.c}|`)).map(([, i]) => i).sort((x, y) => x - y).map((i) => el("span", { class: "bs-top-b", title: `Number ${i} of the ${gaps.length} biggest gaps` }, `#${i}`)) : [])], cells(cr, cMax)));
         if (!open) continue;
         const ds = [...keys].filter((k) => k.startsWith(`${cr.c}|`)).map((k) => { const d = k.split("|")[1]; return { k, c: cr.c, d, ...rowOf((x) => x.startsWith(`${k}|`)) }; })
           .sort((a, b) => (a.d ? distLead(a.d) : 1e9) - (b.d ? distLead(b.d) : 1e9) || String(a.d).localeCompare(String(b.d)));
@@ -3182,29 +3232,16 @@ export function sgDashboard(container, opts) {
       return el("div", { class: "bs-path-tw" }, [
         infoTip(`${lv ? `${lvHead} rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Each row is strokes gained a round: the last ${N} rounds, the level\u2019s rounds, and the difference: the last ${N} less the level\u2019s rounds (red: behind the level there, so there\u2019s something to gain; green: already ahead). #1 to #${gaps.length || 5} mark the biggest gaps. Tap a part of the game for its distances, and a distance for the takeaway, target and practice.`),
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t" }, [
-          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, `Last ${N}`), el("th", { class: "num", title: `${lvHead} rounds` }, lvShort), el("th", { class: "num" }, "Diff")])),
+          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num bs-lastn" }, ["Last ", nIn]), el("th", { class: "num", title: rest ? `Their other ${season.length - N} rounds` : `${lvHead} rounds` }, lvShort), el("th", { class: "num" }, "Diff")])),
           el("tbody", {}, body)])),
       ]);
     }
-    // (update 363) folded to start: tap the heading to open it
-    const pathOpen = !!st.pathOpen;
-    const tgl = el("button", { type: "button", class: "bs-path-toggle", "aria-expanded": String(pathOpen) }, [el("span", { class: "cmp-caret" }, pathOpen ? "\u25BE " : "\u25B8 "), lv ? `Path to ${LEVELS[lv.T]}` : "Path back to their best"]);
-    tgl.addEventListener("click", () => { st.pathOpen = !pathOpen; draw(); });
-    return el("div", { class: `bs-path${pathOpen ? "" : " closed"}` }, [
-      el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), pathOpen ? addAll : null]),
-      ...(pathOpen ? [      lvPick,
-      el("div", { class: "bs-path-gap" }, [
-        // (update 374) the level's rounds (the same numbers as the table below), with what it takes to rank there alongside
-        el("div", {}, bar != null ? [`\u201c${LEVELS[lv.T]}\u201d rounds: `, el("strong", {}, f2(eAvg)), ` a round `, el("span", { class: "muted" }, `(their best ${elite.length}; ranking #${lv.T} takes ${f2(bar)})`)] : [`Their best ${elite.length}: `, el("strong", {}, f2(eAvg)), ` a round`]),
-        el("div", {}, [`Last `, nIn, ` rounds: `, el("strong", {}, f2(rAvg)), ` a round${lv?.formRank ? ` (a #${lv.formRank} level)` : ""}`]),
-        el("div", {}, there ? [el("strong", { class: "pos" }, `Already there: `), `their last ${N} rounds play at ${/level$/.test(LEVELS[lv.T]) ? LEVELS[lv.T] : `a ${LEVELS[lv.T]} level`}.`] : eAvg - rAvg > 0.005 ? [`Gap: `, el("strong", {}, `${(eAvg - rAvg).toFixed(2)} strokes`), ` a round`] : [`No gap: they\u2019re playing at that level right now.`])]),
-      // already at this level lately: no gap to close here, so point to the next level up
-      ...(there ? [lv.above ? (() => { const go = el("button", { type: "button", class: "btn ghost small bs-lv-next" }, `Aim for ${LEVELS[lv.above]} (#${lv.above}) \u2192`); go.addEventListener("click", () => { st.pathT = lv.above; draw(); }); return go; })()
-        : el("p", { class: "muted small" }, `That\u2019s the top level.`)] : []),
-      !there ? pathTable() : null,
+    // (update 442) always open, right under the best-stretch line: just the table (and when the kept rounds happen)
+    return el("div", { class: "bs-path bs-path-flat" }, [
+      pathTable(),
       when.length ? el("p", { class: "bs-sub bs-sub2" }, `When the ${NN.kept} happen`) : null,
       when.length ? el("ul", { class: "bs-list" }, when.map((t) => el("li", {}, t))) : null,
-      canAdd ? status : null] : []),
+      canAdd ? status : null,
     ]);
   }
   function rankPicker() {
