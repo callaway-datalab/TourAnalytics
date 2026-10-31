@@ -109,6 +109,7 @@ function learn(D, { tour = null } = {}) {
     const skill = new Float64Array(NP * NY * NC), cnt = new Float64Array(NP * NY * NC);
     const str = new Float64Array(NE * NC), scnt = new Float64Array(NE * NC);
     const adj = new Float32Array(N * NC);
+    const evYear = new Int16Array(NE).fill(-1); for (let i = 0; i < N; i++) evYear[D.E[i]] = YS[i];
     for (let i = 0; i < N * NC; i++) adj[i] = D.V[i];
     for (let it = 0; it < 4; it++) {
       skill.fill(0); cnt.fill(0);
@@ -117,6 +118,14 @@ function learn(D, { tour = null } = {}) {
       str.fill(0); scnt.fill(0);
       for (let i = 0; i < N; i++) { if (YS[i] > cut) continue; const base = (D.P[i] * NY + YS[i]) * NC; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { str[D.E[i] * NC + c] += skill[base + c]; scnt[D.E[i] * NC + c]++; } }
       for (let j = 0; j < str.length; j++) if (scnt[j]) str[j] /= scnt[j];
+      // (update 439) each season on its own scale: the average field on the tour picked that season is 0 (as Data Golf
+      // benchmarks to the average PGA Tour player in a given year). Seasons share no players' levels, so nothing else
+      // ties one season's level to another's, and without this the passes drift a season's level up or down (that
+      // showed as everyone losing about a quarter of a stroke a season)
+      const sy = new Float64Array(NY * NC), sn = new Float64Array(NY * NC);
+      for (let i = 0; i < N; i++) { if (YS[i] > cut || D.TO[i] !== TT) continue; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { sy[YS[i] * NC + c] += str[D.E[i] * NC + c]; sn[YS[i] * NC + c]++; } }
+      for (let j = 0; j < sy.length; j++) if (sn[j]) sy[j] /= sn[j];
+      for (let e = 0; e < NE; e++) { const y = evYear[e]; if (y < 0) continue; for (let c = 0; c < NC; c++) str[e * NC + c] -= sy[y * NC + c]; }
       for (let i = 0; i < N; i++) for (let c = 0; c < NC; c++) adj[i * NC + c] = D.V[i * NC + c] + str[D.E[i] * NC + c];
     }
     // 0 = an average field on the tour picked (its events in the last two seasons in), so adjusted ≈ raw there
@@ -362,7 +371,7 @@ function learn(D, { tour = null } = {}) {
         if (preds) { preds.forEach((v, i) => { ageErr[i] += s.n * (act - v) ** 2; }); ageErrN += s.n; }
         const sd = Math.sqrt(pr.varLevel + sig2Tot / s.n);
         const pv = prevS.get(p * NY + (t - 1));
-        const rec = { act, preds, sd, r: act - pr.total, z: (act - pr.total) / sd, n: s.n, rLast: pv && pv.n >= 10 ? act - pv.cats.reduce((a, b) => a + b, 0) : null, rAvg: act - prevAvg };
+        const rec = { act, preds, sd, vl: pr.varLevel, r: act - pr.total, z: (act - pr.total) / sd, n: s.n, rLast: pv && pv.n >= 10 ? act - pv.cats.reduce((a, b) => a + b, 0) : null, rAvg: act - prevAvg };
         resid[h].push(rec);
         const zz = sigOf(Mt, p); if (zz) sigRecs.push({ rec, h, cut: t - 1, z: zz });
       }
@@ -414,6 +423,12 @@ function learn(D, { tour = null } = {}) {
   const kappaH = [1, 2, 3].map((h) => kapOf(resid[h])); for (let h = 0; h < 3; h++) if (kappaH[h] == null) kappaH[h] = h ? kappaH[h - 1] * 1.15 : 1;
   for (let h = 1; h < 3; h++) kappaH[h] = Math.max(kappaH[h], kappaH[h - 1]); // (never narrower further out)
   const kappa = kappaH[0];
+  // (update 439) the likely range of a player's LEVEL (not of one season's result, which adds that season's luck on top):
+  // how far forecasts missed on unseen seasons, minus the part a season's luck alone explains, scaled onto each player's
+  // own uncertainty (more rounds, narrower)
+  const levelK = [1, 2, 3].map((h) => { const R = resid[h]; if (R.length < 20) return null; let e = 0, nz = 0, vl = 0; for (const x of R) { e += x.r * x.r; nz += sig2Tot / x.n; vl += x.vl; } const lv = Math.max(0.0025 * R.length, e - nz); return vl > 0 ? Math.sqrt(lv / vl) : null; });
+  for (let h = 0; h < 3; h++) if (levelK[h] == null) levelK[h] = h ? levelK[h - 1] : 1;
+  for (let h = 1; h < 3; h++) levelK[h] = Math.max(levelK[h], levelK[h - 1]);
   const err = [1, 2, 3].map((h) => {
     const R = resid[h]; if (R.length < 10) return null;
     const mae = R.reduce((t, x) => t + Math.abs(x.r), 0) / R.length;
@@ -432,7 +447,7 @@ function learn(D, { tour = null } = {}) {
     const id = `${p}|${h}`; if (projMemo.has(id)) return projMemo.get(id);
     const pr = projectWith(M, p, Number(lastYear) + h, ageK, ageSh);
     let out = null;
-    if (pr) { const sg = sigAddOf(p, h); out = { ...pr, total: pr.total + sg.add, sigAdd: sg.add, sigParts: sg.parts }; out.sd = sdOf(out, typicalN, h); }
+    if (pr) { const sg = sigAddOf(p, h); out = { ...pr, total: pr.total + sg.add, sigAdd: sg.add, sigParts: sg.parts }; out.sd = sdOf(out, typicalN, h); out.sdLevel = levelK[h - 1] * Math.sqrt(pr.varLevel); }
     projMemo.set(id, out); return out;
   };
   // the field each future season: the players who'd be ranked on this tour over the last two seasons (the site's rule)
@@ -469,7 +484,7 @@ function learn(D, { tour = null } = {}) {
   const ageCurve = (age) => Object.fromEntries(CATS.map((c, i) => { const g = M.curves?.[i]; if (!g || ageK === Infinity) return [c, 0]; const ia = ageIdx(age), w0 = trustAt(age); return [c, M.b[i] * (w0 * g[ia] + (1 - w0) * g.wide[ia] - (ageSh ? 0 : g.mean || 0))]; }));
   const sharedDrift = M.curves ? M.curves.reduce((t, g, i) => t + M.b[i] * (g.mean || 0), 0) : 0;
   const params = {
-    kind: "marcel", cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
+    kind: "marcel", sig2Tot, cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
     field: { events: M.F.events, spread: M.F.spread },
     age: { shared: sharedDrift, k: ageK, none: ageK === Infinity, trust: Object.fromEntries([22, 26, 30, 34, 38, 42, 46, 50].map((a) => [a, trustAt(a)])), sharedOn: !!ageSh, tried: ageErrN >= 600 ? AGE_K.map((k) => ({ k, rmse: Math.sqrt(Math.min(...AGE_OPTS.map((o, i) => (o.kc === k ? ageErr[i] : Infinity))) / ageErrN) })) : null, players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, method: "delta",
       at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + ageCurve(a)[c], 0)])) },
@@ -511,9 +526,9 @@ export function forecastPlayer(model, key) {
     const rankAt = (v) => Math.max(1, Math.round(1 + sc * others.reduce((t, x) => t + ncdf((x.v - v) / Math.max(1e-6, x.sd || pr.sd)), 0)));
     const rank = rankAt(pr.total);
     // the rank at the top and the bottom of their likely range
-    const rankHi = rankAt(pr.total + 1.2816 * pr.sd), rankLo = rankAt(pr.total - 1.2816 * pr.sd);
+    const sdL = pr.sdLevel ?? pr.sd, rankHi = rankAt(pr.total + 1.2816 * sdL), rankLo = rankAt(pr.total - 1.2816 * sdL);
     const ch = model.chances(key, h, pr.total, pr.sd);
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 1.2816 * (pr.sdLevel ?? pr.sd), hi: pr.total + 1.2816 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
   }
   // (update 426) on the tour picked, raw, as the report's season table shows them (not field-adjusted), so the numbers match
   const lastS = hist.at(-1), prev = hist.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
