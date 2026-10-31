@@ -218,7 +218,7 @@ function projChart(fcs, lastYear, colors, names = [], Hh = 175) {
     g += hp.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.4" fill="${c}"/>`).join("") + fp.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="3.4" fill="#fff" stroke="${c}" stroke-width="2"/>`).join("");
   });
   // (update 406) a key: who each line is
-  const key = `<div class="legend">${fcs.map((f, k) => `<span><i style="background:${colors[k % colors.length]}"></i>${esc(names[k] || f.name)}</span>`).join("")}<span class="muted">solid: actual · dashed: projected · shaded: likely range of their level</span></div>`;
+  const key = `<div class="legend">${fcs.map((f, k) => `<span><i style="background:${colors[k % colors.length]}"></i>${esc(names[k] || f.name)}</span>`).join("")}<span class="muted">solid: actual · dashed: projected · shaded: middle half of their likely level</span></div>`;
   return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" style="max-width:${W}px" aria-label="Projection chart">${g}</svg>${key}`;
 }
 
@@ -505,9 +505,9 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
         <table class="seas"><tr><th></th>${showYears.map((y) => `<th>${esc(yLabel(y))}</th>`).join("")}<th class="hlc">${esc(WIN)}</th></tr>${seasonRows}</table></div>
       <div>${FC ? `<h3>Weaker vs. stronger fields <small>${esc(FC.years.join("–"))} · each ranked among the same players (20+ rounds in both halves)</small></h3>
         <table><tr><th></th><th>Weaker fields</th><th>Stronger fields</th><th>Takeaway</th></tr>${fcRows}</table>` : ""}</div></div>
-    <div class="cols c55"><div><h3>Projected strokes gained a round <small>against an average ${esc(target)} field · likely range of their level · rank it would mean</small></h3>
+    <div class="cols c55"><div><h3>Projected strokes gained a round <small>against an average ${esc(target)} field · middle half of their likely level · rank it would mean</small></h3>
         <table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${projRows}</table></div>
-      <div><h3>Best and worst projected ranks <small>top and bottom of the likely range of their level · out of ~${order[0].years[0].of} ranked a season</small></h3><table class="bw"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b>${ordinal(y.rankHi)}</b> to <b>${ordinal(y.rankLo)}</b></td>`).join("")}</tr>`).join("")}</table>
+      <div><h3>Best and worst projected ranks <small>top and bottom of the middle half of their likely level · out of ~${order[0].years[0].of} ranked a season</small></h3><table class="bw"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b>${ordinal(y.rankHi)}</b> to <b>${ordinal(y.rankLo)}</b></td>`).join("")}</tr>`).join("")}</table>
         ${oddsLines.length ? `<ul class="pts">${oddsLines.slice(0, 3).map((t) => `<li>${t}</li>`).join("")}</ul>` : ""}</div></div>
     <div class="cols c3">${yrs.map((_, h) => topTable(h)).join("")}</div></section>`);
 

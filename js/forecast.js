@@ -273,8 +273,19 @@ function learn(D, { tour = null } = {}) {
     }
     Mx.trust.set(kc, tw); return tw;
   };
-  const projectWith = (Mx, p, Y, kc = 0, shOn = 1) => {
+  // (update 440) trend-following, by the user's choice: each player's direction over the last two seasons (the change in
+  // their talent estimate a season), carried forward and fading by TREND_FADE a season
+  const TREND_FADE = 0.6, TREND_CAP = 0.4;
+  const trendOf = (Mx, p) => {
+    Mx.tr ||= new Map(); if (Mx.tr.has(p)) return Mx.tr.get(p);
+    const y0 = Mx.cut, e0 = Mx.estAt(p, y0), e1 = y0 >= 1 ? Mx.estAt(p, y0 - 1) : null, e2 = y0 >= 2 ? Mx.estAt(p, y0 - 2) : null;
+    const out = !e0 || !e1 ? null : e0.map((v, c) => Math.max(-TREND_CAP, Math.min(TREND_CAP, e2 ? (v - e2[c]) / 2 : v - e1[c])));
+    Mx.tr.set(p, out); return out;
+  };
+  const projectWith = (Mx, p, Y, kc = 0, shOn = 1, trendOn = 0) => {
     const y0 = Mx.cut, est = Mx.estAt(p, y0); if (!est) return null;
+    const hz = Math.max(0, Math.round(Number(Y) - Number(yrs[y0]))), trF = (() => { let t = 0; for (let j = 1; j <= hz; j++) t += TREND_FADE ** j; return t; })(), tr = trendOn ? trendOf(Mx, p) : null;
+    let trendAdd = 0;
     const tw = trustOf(Mx, kc), bt = birthT[p];
     // from the middle of the last season (where the weighted average sits, roughly) to the middle of season Y
     const t0 = Number(yrs[y0]) + 0.5, tY = Number(Y) + 0.5;
@@ -285,12 +296,13 @@ function learn(D, { tour = null } = {}) {
       // itself is already in the next-season fit). Each season after that: the full change for their age (the average
       // change across players, plus how their age differs from it, trusted by how much data that age has)
       if (g) for (let t = t0; t < tY - 1e-9; t += 0.25) { const dt = Math.min(0.25, tY - t), m0 = g.mean || 0; if (shOn && t >= t0 + 1 - 1e-9) sh += m0 * dt; if (Number.isFinite(bt) && kc !== Infinity) { const ia = ageIdx(t + dt / 2 - bt), w0 = tw[ia]; a += (w0 * g[ia] + (1 - w0) * g.wide[ia] - m0) * dt; } }
-      const v = Mx.b[c] * (est[c] + sh + a);
+      const td = tr ? tr[c] * trF : 0; trendAdd += Mx.b[c] * td;
+      const v = Mx.b[c] * (est[c] + sh + a + td);
       cats[CATS[c]] = v; ageAdd += Mx.b[c] * (a + sh); lasting += Mx.b[c] * est[c];
       const { W } = Mx.sumsFor(Mx.best[c].hl), wv = W[(p * NY + y0) * NC + c];
       vl += Mx.b[c] ** 2 * Mx.sig2[c] / (wv + Mx.best[c].K);
     }
-    return { cats, total: CATS.reduce((t, c) => t + cats[c], 0), varLevel: vl, ageAdd, lasting, temp: 0, trend: 0 };
+    return { cats, total: CATS.reduce((t, c) => t + cats[c], 0), varLevel: vl, ageAdd, lasting, temp: 0, trend: trendAdd };
   };
 
   /* ---------------- the full model ---------------- */
@@ -371,7 +383,8 @@ function learn(D, { tour = null } = {}) {
         if (preds) { preds.forEach((v, i) => { ageErr[i] += s.n * (act - v) ** 2; }); ageErrN += s.n; }
         const sd = Math.sqrt(pr.varLevel + sig2Tot / s.n);
         const pv = prevS.get(p * NY + (t - 1));
-        const rec = { act, preds, sd, vl: pr.varLevel, r: act - pr.total, z: (act - pr.total) / sd, n: s.n, rLast: pv && pv.n >= 10 ? act - pv.cats.reduce((a, b) => a + b, 0) : null, rAvg: act - prevAvg };
+        const prU = projectWith(Mt, p, yrs[yAct], 0, 0, 1);
+        const rec = { act, preds, uPred: prU.total, sd, vl: pr.varLevel, r: act - pr.total, z: (act - pr.total) / sd, n: s.n, rLast: pv && pv.n >= 10 ? act - pv.cats.reduce((a, b) => a + b, 0) : null, rAvg: act - prevAvg };
         resid[h].push(rec);
         const zz = sigOf(Mt, p); if (zz) sigRecs.push({ rec, h, cut: t - 1, z: zz });
       }
@@ -379,8 +392,11 @@ function learn(D, { tour = null } = {}) {
   }
   // (update 422) how far to trust the age curve, by how much data each age has: the setting that predicted these unseen seasons best
   const ageOpt = ageErrN >= 600 ? AGE_OPTS[ageErr.indexOf(Math.min(...ageErr))] : { kc: 0, sh: 0 };
-  const ageK = ageOpt.kc, ageSh = ageOpt.sh;
-  if (ageK !== 0) for (const h of [1, 2, 3]) for (const x of resid[h]) if (x.preds) { const v = x.preds[AGE_OPTS.indexOf(ageOpt)]; x.r = x.act - v; x.z = x.r / x.sd; }
+  // (update 440) the user's settings: age trusted fully at every age, and trend-following. What the data alone would
+  // have picked is kept for comparison (both checked on the same unseen seasons)
+  const ageK = 0, ageSh = 0, dataAgeK = ageOpt.kc;
+  const cmpErr = [1, 2, 3].map((h) => { const R = resid[h]; if (R.length < 10) return null; let u = 0, d = 0, w = 0; for (const x of R) { const dv = x.preds ? x.preds[AGE_OPTS.indexOf(ageOpt)] : x.act - x.r; u += Math.abs(x.act - x.uPred); d += Math.abs(x.act - dv); w++; } return { yours: u / w, dataOnly: d / w }; });
+  for (const h of [1, 2, 3]) for (const x of resid[h]) { x.r = x.act - x.uPred; x.z = x.r / x.sd; }
   const trustAt = (age) => trustOf(M, ageK)[ageIdx(age)];
   // (update 433) the signals: standardized, then added one at a time while they make the unseen seasons' forecasts
   // better (each season held out in turn, the effects learned on the others); only those are kept
@@ -445,7 +461,7 @@ function learn(D, { tour = null } = {}) {
     const p = typeof key === "number" ? key : D.players.findIndex((x) => x.key === key);
     if (p < 0) return null;
     const id = `${p}|${h}`; if (projMemo.has(id)) return projMemo.get(id);
-    const pr = projectWith(M, p, Number(lastYear) + h, ageK, ageSh);
+    const pr = projectWith(M, p, Number(lastYear) + h, ageK, ageSh, 1);
     let out = null;
     if (pr) { const sg = sigAddOf(p, h); out = { ...pr, total: pr.total + sg.add, sigAdd: sg.add, sigParts: sg.parts }; out.sd = sdOf(out, typicalN, h); out.sdLevel = levelK[h - 1] * Math.sqrt(pr.varLevel); }
     projMemo.set(id, out); return out;
@@ -484,7 +500,7 @@ function learn(D, { tour = null } = {}) {
   const ageCurve = (age) => Object.fromEntries(CATS.map((c, i) => { const g = M.curves?.[i]; if (!g || ageK === Infinity) return [c, 0]; const ia = ageIdx(age), w0 = trustAt(age); return [c, M.b[i] * (w0 * g[ia] + (1 - w0) * g.wide[ia] - (ageSh ? 0 : g.mean || 0))]; }));
   const sharedDrift = M.curves ? M.curves.reduce((t, g, i) => t + M.b[i] * (g.mean || 0), 0) : 0;
   const params = {
-    kind: "marcel", sig2Tot, cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
+    kind: "marcel", sig2Tot, choices: { trendFade: TREND_FADE, ageFull: true, dataAgeK, cmp: cmpErr }, cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
     field: { events: M.F.events, spread: M.F.spread },
     age: { shared: sharedDrift, k: ageK, none: ageK === Infinity, trust: Object.fromEntries([22, 26, 30, 34, 38, 42, 46, 50].map((a) => [a, trustAt(a)])), sharedOn: !!ageSh, tried: ageErrN >= 600 ? AGE_K.map((k) => ({ k, rmse: Math.sqrt(Math.min(...AGE_OPTS.map((o, i) => (o.kc === k ? ageErr[i] : Infinity))) / ageErrN) })) : null, players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, method: "delta",
       at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + ageCurve(a)[c], 0)])) },
@@ -526,9 +542,9 @@ export function forecastPlayer(model, key) {
     const rankAt = (v) => Math.max(1, Math.round(1 + sc * others.reduce((t, x) => t + ncdf((x.v - v) / Math.max(1e-6, x.sd || pr.sd)), 0)));
     const rank = rankAt(pr.total);
     // the rank at the top and the bottom of their likely range
-    const sdL = pr.sdLevel ?? pr.sd, rankHi = rankAt(pr.total + 1.2816 * sdL), rankLo = rankAt(pr.total - 1.2816 * sdL);
+    const sdL = pr.sdLevel ?? pr.sd, rankHi = rankAt(pr.total + 0.6745 * sdL), rankLo = rankAt(pr.total - 0.6745 * sdL);
     const ch = model.chances(key, h, pr.total, pr.sd);
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 1.2816 * (pr.sdLevel ?? pr.sd), hi: pr.total + 1.2816 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 0.6745 * (pr.sdLevel ?? pr.sd), hi: pr.total + 0.6745 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
   }
   // (update 426) on the tour picked, raw, as the report's season table shows them (not field-adjusted), so the numbers match
   const lastS = hist.at(-1), prev = hist.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
