@@ -5201,7 +5201,7 @@ tr.row-muted td, tr.row-muted td * { color: var(--muted, #8e8e93) !important; ba
 /* (update 442) several top-gap numbers side by side; the path table's Last N box; All Rounds */
 .bs-top-b + .bs-top-b { margin-left: 3px; }
 .bs-path-t th.bs-lastn { white-space: nowrap; }
-.bs-path-t th.bs-lastn input.peak-len { width: 2.6em !important; min-width: 0; min-height: 0; height: auto; margin: 0 0 0 3px !important; padding: 1px 3px !important; font-size: 0.8rem; line-height: 1.2; border-radius: 6px; display: inline-block; vertical-align: baseline; }
+.bs-path-t th.bs-lastn input.peak-len { width: 2.6em !important; min-width: 0; min-height: 0; height: auto; margin: 0 0 0 3px !important; padding: 1px 3px !important; font-size: 0.8rem !important; font-weight: 600; line-height: 1.2; border-radius: 6px; display: inline-block; vertical-align: baseline; }
 .bs-all { margin: 0.4rem 0 0.6rem; }
 .bs-all-sort { margin: 0.35rem 0; display: flex; gap: 0.4rem; align-items: center; }
 .bs-path-flat { margin-top: 0.6rem; }
@@ -5209,3 +5209,13 @@ tr.row-muted td, tr.row-muted td * { color: var(--muted, #8e8e93) !important; ba
   .bs-path-flat .bs-path-t th, .bs-path-flat .bs-path-t td { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
   .bs-path-flat .bs-path-t td:first-child { white-space: normal; }
 }
+
+/* (update 443) Watchlist: the years, then the last 1 / 3 / 6 months */
+.wl-periods { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; }
+.bs-profile .bs-all-btn { font-size: inherit; white-space: nowrap; }
+
+/* (update 443) the Outlook report over the page on phones / the installed app */
+html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
+.rep-ov { position: fixed; inset: 0; z-index: 9999; background: #111418; display: flex; flex-direction: column; }
+.rep-ov-bar { display: flex; gap: 0.5rem; align-items: center; padding: calc(env(safe-area-inset-top, 0px) + 0.5rem) 0.75rem 0.5rem; background: #111418; }
+.rep-ov-frame { flex: 1; width: 100%; border: 0; background: #eef1f5; }

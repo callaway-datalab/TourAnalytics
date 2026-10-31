@@ -279,7 +279,7 @@ export const rolling = (vals, k = 5) => vals.map((_, i) => (i + 1 >= Math.min(k,
 /** The latest n rounds against the n before, for several n: [{ n, last, prev, ch: { TOTAL, OTT, … }, conf }] */
 export function trajectory(rounds) {
   const rs = sgRounds(rounds);
-  return [5, 10, 20, 40, 80].filter((n) => rs.length >= 2 * n).map((n) => {
+  return [6, 12, 24, 48, 96].filter((n) => rs.length >= 2 * n).map((n) => {
     const last = rs.slice(-n), prev = rs.slice(-2 * n, -n);
     const ch = Object.fromEntries(SG_ROWS.map(([k]) => [k, perRound(last, k) - perRound(prev, k)]));
     return { n, last: perRound(last), prev: perRound(prev), ch, conf: confidence(last.map((rd) => sgOf(rd)), prev.map((rd) => sgOf(rd))), from: prev[0]?.date, to: last.at(-1)?.date };
@@ -287,7 +287,7 @@ export function trajectory(rounds) {
 }
 /** One sentence on the direction across time scales. */
 export function trajectoryWords(tr) {
-  if (!tr.length) return "Not enough rounds yet to compare time scales (at least 10).";
+  if (!tr.length) return "Not enough rounds yet to compare time scales (at least 12).";
   const dir = (x) => (x.ch.TOTAL > 0.15 ? "up" : x.ch.TOTAL < -0.15 ? "down" : "flat");
   const w = { up: "better", down: "worse", flat: "about the same" };
   if (tr.length === 1) return `Over the last ${tr[0].n} rounds against the ${tr[0].n} before: ${w[dir(tr[0])]} (${fmt(tr[0].ch.TOTAL)} a round).`;

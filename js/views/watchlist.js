@@ -12,7 +12,15 @@ import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, prepare, summaryPlayers, fmtSG } from "../sg.js";
-import { playerCard, metricCatalog, metricLabel, PERIODS, ordinal, normMetricId } from "../watchlistData.js";
+// (update 443) the years in the data, newest first (kept per field)
+const yearsMemo = new WeakMap();
+function yearsOf(field, owns) {
+  let ys = yearsMemo.get(field);
+  if (!ys) { const set = new Set(); for (const p of field || []) for (const r of p.rounds || []) { const y = String(r.year || String(r.date || "").slice(0, 4)); if (/^\d{4}$/.test(y)) set.add(y); } ys = [...set]; if (field) yearsMemo.set(field, ys); }
+  const set = new Set(ys); for (const rs of owns || []) for (const r of rs || []) { const y = String(r.year || String(r.date || "").slice(0, 4)); if (/^\d{4}$/.test(y)) set.add(y); }
+  return [...set].sort((a, b) => b.localeCompare(a));
+}
+import { playerCard, metricCatalog, metricLabel, RECENT_PERIODS, periodLabel, ordinal, normMetricId } from "../watchlistData.js";
 import { watchPrefs, loadWatch, saveWatch, watchIsPreview } from "../watchlist.js";
 import { playerPicker } from "../playerPicker.js";
 
@@ -166,7 +174,11 @@ export async function render(main, { previewClient }) {
     const fieldNow = withEntered(field) || [], detailNow = withEntered(detail);
     const keys = (multi ? prefs.players : [single]).filter((k) => labels.has(k) || fieldNow.some((p) => p.key === k));
     const owns = await Promise.all(keys.map((k) => ownRounds(k)));
-    const cur = PERIODS.some(([v]) => v === prefs.period) ? prefs.period : "season";
+    // (update 443) the years in the data (newest first), and the last 1 / 3 / 6 months; "season" is the newest year
+    const years = yearsOf(fieldNow, owns);
+    const ok = (p) => RECENT_PERIODS.some(([v]) => v === p) || (/^y:\d{4}$/.test(String(p)) && years.includes(String(p).slice(2)));
+    let cur = ok(prefs.period) ? prefs.period : "season";
+    if (cur === "season" && years.length) cur = `y:${years[0]}`;
     const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered",
       lite: multi && !openCards.has(k) })); // (update 329: folded cards: just their ranks; the rest when opened)
     // (update 319) the order: yours (drag to change), A–Z, or by SG: Total rank (best first)
@@ -185,11 +197,15 @@ export async function render(main, { previewClient }) {
     }
 
     // ---- controls ----
-    const period = el("div", { class: "wl-period", role: "group", "aria-label": "Period" }, PERIODS.map(([v, l]) => {
+    const perBtn = ([v, l]) => {
       const b = el("button", { type: "button", class: `wl-per${cur === v ? " on" : ""}`, "aria-pressed": String(cur === v) }, l);
       b.addEventListener("click", () => { saveWatch({ period: v }); draw(); });
       return b;
-    }));
+    };
+    const period = el("div", { class: "wl-periods" }, [
+      el("div", { class: "wl-period", role: "group", "aria-label": "Year" }, years.map((y) => perBtn([`y:${y}`, y]))),
+      el("div", { class: "wl-period", role: "group", "aria-label": "Recent" }, RECENT_PERIODS.map(perBtn)),
+    ]);
     const metricsBtn = el("button", { type: "button", class: "btn ghost wl-metrics-btn", "aria-expanded": String(menuOpen) }, ["＋ Metrics", prefs.metrics.length ? el("span", { class: "wl-count" }, String(prefs.metrics.length)) : null]);
     metricsBtn.addEventListener("click", () => { menuOpen = !menuOpen; draw(); });
     // (update 180) whose metrics: everyone's, or one player's own (starting from everyone's)
@@ -258,7 +274,7 @@ export async function render(main, { previewClient }) {
     const where = source === "entered" ? "entered rounds" : "ranked on their tour";
     // (update 186) just how many players
     const sub = multi ? (keys.length ? `${keys.length} Player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about")
-      : `${nameOf(single)} · ${PERIODS.find(([v]) => v === cur)[1].toLowerCase()} · ${source === "entered" ? "entered rounds" : "ranked on the tour"}`;
+      : `${nameOf(single)} · ${/^y:/.test(cur) ? periodLabel(cur) : periodLabel(cur).toLowerCase()} · ${source === "entered" ? "entered rounds" : "ranked on the tour"}`;
     // (update 168) previewing someone: their own Watchlist, and changes aren't kept
     const subLine = multi && watchIsPreview() ? `${sub} · their Watchlist (changes in a preview aren't saved)` : sub;
 
@@ -270,8 +286,8 @@ export async function render(main, { previewClient }) {
     const dragHint = multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine" ? el("p", { class: "muted small center wl-drag-hint" }, "Hold a card and drag it to change the order.") : null; // (update 249)
     mount(root, [heroShell(controls, subLine), menu, body, dragHint,
       el("div", { class: "center wl-foot" }, infoTip(source === "entered"
-        ? `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
-        : `Strokes Gained values represent per round averages. Trends: the last 10 rounds against the 10 before; with fewer than 20 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
+        ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before; with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
+        : `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before; with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });

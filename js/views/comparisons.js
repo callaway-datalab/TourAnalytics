@@ -2108,7 +2108,10 @@ export async function render(main) {
     exp.addEventListener("click", async () => {
       if (exp.disabled) return;
       exp.disabled = true; exp.textContent = "Building the report…";
-      const win = window.open("", "_blank"); // (opened now, while it's still a tap: pop-up blockers allow it)
+      // (update 443) on a phone or the installed app, a new tab can't be closed to get back: the report opens over the
+      // page instead, with Close and Print buttons
+      const inApp = (() => { try { return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); } catch { return false; } })();
+      const win = inApp ? null : window.open("", "_blank"); // (opened now, while it's still a tap: pop-up blockers allow it)
       try {
         const [{ buildOutlookReport }, FS] = await Promise.all([import("../outlookReport.js"), import("../fieldSummary.js")]);
         // the field's distances, for ranks by distance (skipped if it isn't on hand within a few seconds)
@@ -2119,9 +2122,13 @@ export async function render(main) {
         const html = buildOutlookReport({ field: fc.field, detail: det?.field || null, fcs: order, info: m, ownRounds: (k) => sgRounds(rawOfKey(k)), extra: missing, logo });
         // (update 419) the report is written into the new tab and its print button wired from here: the site's security
         // policy carries over to that tab and blocks the page's own inline handler, so the button did nothing before
-        if (win) {
+        if (inApp) showReportOverlay(html);
+        else if (win) {
           win.document.open(); win.document.write(html.replace(' onclick="print()"', "")); win.document.close();
-          const wire = () => { const b = win.document.getElementById("printBtn"); if (b && !b.dataset.wired) { b.dataset.wired = "1"; b.addEventListener("click", () => { win.focus(); win.print(); }); } };
+          const wire = () => {
+            const b = win.document.getElementById("printBtn"); if (b && !b.dataset.wired) { b.dataset.wired = "1"; b.addEventListener("click", () => { win.focus(); win.print(); }); }
+            const c = win.document.getElementById("closeBtn"); if (c && !c.dataset.wired) { c.dataset.wired = "1"; c.addEventListener("click", () => { win.close(); if (!win.closed) { try { window.focus(); } catch { /* */ } } }); }
+          };
           wire(); win.addEventListener("load", wire);
         } else {
           const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
@@ -2723,4 +2730,21 @@ export async function render(main) {
   if (askParam) { route = "ask"; askText = askParam; draw(); runAsk(askParam, preset && Array.isArray(preset.groups) ? preset : null); }
   else { draw(); if (player) load(); }
   return () => {};
+}
+
+/** (update 443) The report over the page (phones and the installed app): a full-screen frame with Close and Print. */
+function showReportOverlay(html) {
+  document.querySelector(".rep-ov")?.remove();
+  const frame = el("iframe", { class: "rep-ov-frame", title: "Outlook report" });
+  frame.srcdoc = html.replace(/<div class="bar">[\s\S]*?<\/div>\n/, "");
+  const close = el("button", { type: "button", class: "btn small rep-ov-close" }, "\u2715 Close");
+  const print = el("button", { type: "button", class: "btn ghost small rep-ov-print" }, "Print or save as PDF");
+  const ov = el("div", { class: "rep-ov", role: "dialog", "aria-modal": "true", "aria-label": "Outlook report" }, [el("div", { class: "rep-ov-bar" }, [close, print]), frame]);
+  const done = () => { ov.remove(); document.documentElement.classList.remove("rep-ov-open"); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") done(); };
+  close.addEventListener("click", done);
+  print.addEventListener("click", () => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (err) { console.error(err); } });
+  document.addEventListener("keydown", onKey);
+  document.documentElement.classList.add("rep-ov-open");
+  document.body.append(ov);
 }

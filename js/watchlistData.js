@@ -43,6 +43,8 @@ const bucketMemo = new WeakMap();
 
 /** The period's filter: this season (the latest year in the data), the last 6 months, or everything. */
 export function periodFilter(period, rounds) {
+  if (/^y:\d{4}$/.test(String(period))) return { year: [String(period).slice(2)] }; // (update 443: a year picked)
+  if (period === "l1") return { months: 1 }; // (update 443)
   if (period === "l3") return { months: 3 }; // (update 172)
   if (period === "l6" || period === "l12") return { months: 6 }; // (update 167: Last 6 months; an old "l12" pick lands here)
   if (period === "all") return {};
@@ -50,6 +52,10 @@ export function periodFilter(period, rounds) {
   return years.length ? { year: [years.at(-1)] } : {};
 }
 export const PERIODS = [["season", "Season"], ["l3", "Last 3 months"], ["l6", "Last 6 months"], ["all", "All"]];
+// (update 443) the periods: a year (each year in the data), or the last 1, 3 or 6 months
+export const RECENT_PERIODS = [["l1", "Last 1 month"], ["l3", "Last 3 months"], ["l6", "Last 6 months"]];
+export const isSeasonPeriod = (p) => p === "season" || /^y:\d{4}$/.test(String(p));
+export const periodLabel = (p) => (/^y:\d{4}$/.test(String(p)) ? String(p).slice(2) : RECENT_PERIODS.find(([v]) => v === p)?.[1] || PERIODS.find(([v]) => v === p)?.[1] || "Season");
 
 /** (update 172) The stats that can be split by distance on the Watchlist. */
 export const RANGE_STATS = ["hitGreen", "pinHigh", "onLine", "prox", "ud", "make", "fwy", "gir", "drive", "ballSpeed", "goodLag"]; // (update 214: + Good Lag %) // (update 187: + Hit Fairway %, GIR %, Driving Distance)
@@ -78,7 +84,7 @@ function rankOf(values, key, higher = true) {
 
 /** Last n rounds against the n before (n up to 10, at least 3). */
 function trendOf(ordered, value) {
-  const n = Math.min(10, Math.floor(ordered.length / 2));
+  const n = Math.min(12, Math.floor(ordered.length / 2));
   if (n < 3) return null;
   const last = value(ordered.slice(-n)), prev = value(ordered.slice(-2 * n, -n));
   return last == null || prev == null ? null : { n, last, prev, ch: last - prev };
@@ -304,10 +310,10 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       info = () => { const fi = formInfo(myRs, perRd, { label: ck ? (cd ? `${sdLab} (strokes gained a round)` : metricLabel(`sgcat:${ck}`)) : "SG: Total", fmtFn: cd ? (y) => `${y >= 0 ? "+" : "\u2212"}${Math.abs(y).toFixed(3)}` : fmtSG }); const t = trendOf(myRs, swing);
         if (t) fi.blocks[1] = { kind: "table", title: "Steadiness (round-to-round swing; lower is steadier)", cols: [[""], [`Previous ${t.n}`, "num"], [`Last ${t.n}`, "num"], ["Change", "num"]],
           rows: [{ cells: ["Swing", { text: `\u00b1${t.prev.toFixed(2)}` }, { text: `\u00b1${t.last.toFixed(2)}` }, { text: `${t.ch > 0 ? "\u25B2 " : "\u25BC "}${Math.abs(t.ch).toFixed(2)}`, tone: t.ch < 0 ? "pos" : "neg" }] }] };
-        fi.sub = "Strokes gained in each round (the last 10 highlighted), and how much they swing from round to round."; return fi; };
+        fi.sub = "Strokes gained in each round (the last 12 highlighted), and how much they swing from round to round."; return fi; };
     } else if (id === "sg:best") { const vals = new Map(ranked.map((p) => [p.key, Math.max(...p.rounds.map((rd) => sgOf(rd)))])); v = vals.get(key); r = rankOf(vals, key);
       info = () => { const bestRd = mine.reduce((m, rd) => (sgOf(rd) > sgOf(m) ? rd : m), mine[0]);
-        return { sub: `Every round this ${period === "season" ? "season" : "period"}, the best highlighted: ${fmtSG(sgOf(bestRd))} at ${bestRd.event || "a tournament"}, ${dateShort(bestRd.date)}.`,
+        return { sub: `Every round this ${isSeasonPeriod(period) ? "season" : "period"}, the best highlighted: ${fmtSG(sgOf(bestRd))} at ${bestRd.event || "a tournament"}, ${dateShort(bestRd.date)}.`,
           blocks: [{ kind: "bars", fmt: "sg", items: mine.map((rd) => ({ label: dateShort(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: sgOf(rd), on: rd === bestRd })) },
             { kind: "table", cols: [["Category"], ["That round", "num"], ["Average Round", "num"]], rows: SG_KEYS.map(([kk, ll]) => ({ strong: kk === "TOTAL", cells: [ll, { sg: sgOf(bestRd, kk) }, { sg: perRound(mine, kk) }] })) }] }; }; }
     else if (id === "res:wins" || id === "res:top10") {
@@ -391,7 +397,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   if ((sign < 0 && run >= 5) || (avg5 != null && avg5 <= -1.5)) add({ kind: "cold", icon: "🧊", tone: "down", text: run >= 5 && sign < 0 ? `Slump · ${run} rds losing` : `Slump · ${fmtSG(avg5)}/rd, last 5`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign < 0));
   // (update 372) current form, on every card: their last 10 rounds' strokes gained a round, and the rank it plays at
   if (mine.length >= 3) {
-    const fn = Math.min(10, mine.length), fAvg = perRound(mine.slice(-fn));
+    const fn = Math.min(12, mine.length), fAvg = perRound(mine.slice(-fn));
 const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the change on the rounds before, not the sign of the average
     if (fAvg != null) add({ kind: "form", icon: fch < -0.005 ? "\uD83D\uDCC9" : "\uD83D\uDCC8", tone: fch > 0.005 ? "up" : fch < -0.005 ? "down" : "", text: `Form: ${fmtSG(fAvg)}/rd, last ${fn}${total.trend && Math.abs(total.trend.ch) >= 0.005 ? ` \u2022 ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
       const fi = formInfo(mine, (rs) => perRound(rs, "TOTAL"), { label: "SG: Total", fmtFn: fmtSG, rows: SG_KEYS.map(([kk, ll]) => catRow(kk, ll)) });
@@ -403,14 +409,14 @@ const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the ch
   // (update 373) no "Up / Down x a round, last 10" badge: the form badge (always there) covers it
   // (update 168: no badge for a category moving up or down: its tile shows that)
   // form landmarks: the rolling 10-round average at its best (or worst) of the period
-  const rolls = mine.length >= 20 ? mine.map((_, i) => (i >= 9 ? perRound(mine.slice(i - 9, i + 1)) : null)).filter((x) => x != null) : [];
+  const rolls = mine.length >= 24 ? mine.map((_, i) => (i >= 11 ? perRound(mine.slice(i - 11, i + 1)) : null)).filter((x) => x != null) : [];
   if (rolls.length >= 5) {
     const now = rolls.at(-1);
     const avgRoll = mean(rolls);
-    const formInfo = (best) => () => ({ sub: `Their average over 10 rounds, after each round of the ${period === "season" ? "season" : "period"}. It's at its ${best ? "highest" : "lowest"} now.`,
-      blocks: [{ kind: "line", fmt: "sg", items: mine.slice(9).map((rd, i) => ({ label: dateShort(rd.date), sub: rd.event, v: rolls[i], on: i === rolls.length - 1 })), ref: [{ v: avgRoll, label: "Average" }] }] });
-    if (now >= Math.max(...rolls) - 1e-9 && now - avgRoll >= 0.3) add({ kind: "best", icon: "⛰", tone: "up", text: `${period === "season" ? "Season" : "Period"}-best form · ${fmtSG(now)}`, alert: true, sev: 2 }, formInfo(true));
-    else if (now <= Math.min(...rolls) + 1e-9 && avgRoll - now >= 0.3) add({ kind: "low", icon: "⚠", tone: "down", text: `${period === "season" ? "Season" : "Period"}-low form · ${fmtSG(now)}`, alert: true, sev: 2 }, formInfo(false));
+    const formInfo = (best) => () => ({ sub: `Their average over 12 rounds, after each round of the ${isSeasonPeriod(period) ? "season" : "period"}. It's at its ${best ? "highest" : "lowest"} now.`,
+      blocks: [{ kind: "line", fmt: "sg", items: mine.slice(11).map((rd, i) => ({ label: dateShort(rd.date), sub: rd.event, v: rolls[i], on: i === rolls.length - 1 })), ref: [{ v: avgRoll, label: "Average" }] }] });
+    if (now >= Math.max(...rolls) - 1e-9 && now - avgRoll >= 0.3) add({ kind: "best", icon: "⛰", tone: "up", text: `${isSeasonPeriod(period) ? "Season" : "Period"}-best form · ${fmtSG(now)}`, alert: true, sev: 2 }, formInfo(true));
+    else if (now <= Math.min(...rolls) + 1e-9 && avgRoll - now >= 0.3) add({ kind: "low", icon: "⚠", tone: "down", text: `${isSeasonPeriod(period) ? "Season" : "Period"}-low form · ${fmtSG(now)}`, alert: true, sev: 2 }, formInfo(false));
   }
   // best rounds: a career-best (everything in the data) or season-best round in their last 3
   const careerRs = sgOnly(mineAll).filter((rd) => !tour || rd.tour === tour || !rd.tour);
@@ -419,12 +425,12 @@ const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the ch
   const top = recent.reduce((b, rd) => (sgOf(rd) > sgOf(b) ? rd : b), recent[0]);
   const bestInfo = (pool, what) => () => {
     const next = [...pool].sort((a, b) => sgOf(b) - sgOf(a)).slice(0, 6);
-    return { sub: `${top.event || "A tournament"}${top.roundNo ? `, round ${top.roundNo}` : ""}, ${dateShort(top.date)}: the round by category, against the average round this ${period === "season" ? "season" : "period"}.`,
+    return { sub: `${top.event || "A tournament"}${top.roundNo ? `, round ${top.roundNo}` : ""}, ${dateShort(top.date)}: the round by category, against the average round this ${isSeasonPeriod(period) ? "season" : "period"}.`,
       blocks: [{ kind: "table", cols: [["Category"], ["That round", "num"], ["Average Round", "num"], ["Difference", "num"]], rows: SG_KEYS.map(([k, l]) => { const a = sgOf(top, k), m = perRound(mine, k); return { strong: k === "TOTAL", cells: [l, { sg: a }, { sg: m }, { sg: m == null ? null : a - m, arrow: true }] }; }) },
         { kind: "table", title: `Best Rounds (${what})`, cols: [["Date"], ["Tournament"], ["SG", "num"]], rows: next.map((rd) => ({ me: rd === top, cells: [dateShort(rd.date), [rd.event || "\u2014", rd.roundNo ? ` R${rd.roundNo}` : ""].join(""), { sg: sgOf(rd) }] })) }] };
   };
   if (top && careerRs.length >= 20 && sgOf(top) >= careerBest - 1e-9) add({ kind: "career", icon: "⭐", tone: "gold", text: `Career-best rd · ${fmtSG(sgOf(top))}`, alert: true, sev: 4 }, bestInfo(careerRs, "everything in the data"));
-  else if (top && mine.length >= 10 && sgOf(top) >= Math.max(...rs) - 1e-9) add({ kind: "season", icon: "✨", tone: "gold", text: `${period === "season" ? "Season" : "Period"}-best rd · ${fmtSG(sgOf(top))}`, alert: true, sev: 2 }, bestInfo(mine, period === "season" ? "this season" : "this period"));
+  else if (top && mine.length >= 10 && sgOf(top) >= Math.max(...rs) - 1e-9) add({ kind: "season", icon: "✨", tone: "gold", text: `${isSeasonPeriod(period) ? "Season" : "Period"}-best rd · ${fmtSG(sgOf(top))}`, alert: true, sev: 2 }, bestInfo(mine, isSeasonPeriod(period) ? "this season" : "this period"));
   // wins and milestones
   const lastEvent = events.at(-1);
   const evRounds = (e) => e.by.get(key)?.length ?? 0;
@@ -450,19 +456,19 @@ const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the ch
   if (firsts.length) add({ kind: "rank", icon: "🥇", tone: "gold", text: `No. 1 in ${firsts.join(", ")}` }, () => ({
     sub: `Strokes gained a round${tour ? ` on the ${tour}` : ""}, among players with ${minR} or more rounds in this period: the top 10 in each category they lead.`,
     blocks: firstsS.map((x) => ({ kind: "table", title: x.label, cols: [["Rank"], ["Player"], ["Rounds", "num"], ["SG / round", "num"]], rows: leaders(sgVals.get(x.k)) })) })); // (update 175: the full top 10, like SG: Total)
-  if (mine.length >= 20 && lastRound) {
-    const cut = mine.at(-11)?.date;
+  if (mine.length >= 24 && lastRound) {
+    const cut = mine.at(-13)?.date;
     if (cut) {
       const before = new Map(ranked.map((p) => [p.key, perRound(p.rounds.filter((rd) => String(rd.date) <= String(cut)))]).filter(([, v]) => v != null));
       const was = rankOf(before, key).rank;
       if (was && total.rank && Math.abs(was - total.rank) >= 10) add({ kind: total.rank < was ? "up" : "down", icon: total.rank < was ? "⬆" : "⬇", tone: total.rank < was ? "up" : "down", text: `${total.rank < was ? "Up" : "Down"} ${Math.abs(was - total.rank)} spots, to ${ordinal(total.rank)}`, alert: true, sev: 3 }, () => {
         const trail = rankTrail(key, mine, ranked, minR, total.rank), dates = mine.map((rd) => rd.date);
         const pts = rankDates(mine).map((d, i) => ({ label: dateShort(d), v: trail[i], on: i === trail.length - 1 })).filter((x) => x.v != null);
-        return { sub: `Their SG: Total rank after each round this ${period === "season" ? "season" : "period"}: ${ordinal(was)} 10 rounds ago, ${ordinal(total.rank)} now.`,
+        return { sub: `Their SG: Total rank after each round this ${isSeasonPeriod(period) ? "season" : "period"}: ${ordinal(was)} 12 rounds ago, ${ordinal(total.rank)} now.`,
           blocks: [{ kind: "line", fmt: "rank", invert: true, items: pts }, (() => {
             // (update 373) with their rank after each of those rounds
-            const last = mine.slice(-10), rk = rankTrail(key, mine, ranked, minR, total.rank, last.map((rd) => String(rd.date || "")));
-            return { kind: "table", title: "The last 10 rounds", cols: [["Date"], ["Tournament"], ["SG", "num"], ["Rank", "num"]],
+            const last = mine.slice(-12), rk = rankTrail(key, mine, ranked, minR, total.rank, last.map((rd) => String(rd.date || "")));
+            return { kind: "table", title: "The last 12 rounds", cols: [["Date"], ["Tournament"], ["SG", "num"], ["Rank", "num"]],
               rows: last.map((rd, i) => ({ cells: [dateShort(rd.date), [rd.event || "\u2014", rd.roundNo ? ` R${rd.roundNo}` : ""].join(""), { sg: sgOf(rd) }, rk[i] ? ordinal(rk[i]) : "\u2014"] })).reverse() };
           })()] };
       });
@@ -483,8 +489,8 @@ const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the ch
 export function formInfo(ordered, val, { label, fmtFn, chFn = (d) => Math.abs(d).toFixed(2), higher = true, signed = true, rows = null, what = "round" }) {
   const fmt = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : fmtFn(v));
   const roundSub = (rd) => [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 ");
-  const n = Math.min(10, Math.floor(ordered.length / 2));
-  if (n < 2) return { sub: `${label} in each ${what}. Not enough ${what}s yet to compare the last 10 with the 10 before.`, blocks: [{ kind: "bars", fmtFn, zero: signed, items: ordered.map((rd) => ({ label: dateShort(rd.date), sub: roundSub(rd), v: val([rd]), on: true, tone: signed ? null : "gold" })) }] };
+  const n = Math.min(12, Math.floor(ordered.length / 2));
+  if (n < 2) return { sub: `${label} in each ${what}. Not enough ${what}s yet to compare the last 12 with the 12 before.`, blocks: [{ kind: "bars", fmtFn, zero: signed, items: ordered.map((rd) => ({ label: dateShort(rd.date), sub: roundSub(rd), v: val([rd]), on: true, tone: signed ? null : "gold" })) }] };
   const prevR = ordered.slice(-2 * n, -n), lastR = ordered.slice(-n), pv = val(prevR), lv = val(lastR);
   const better = (a, b) => (higher == null || a == null || b == null ? null : higher ? a > b : a < b);
   const toneOf = (v) => (signed ? null : better(v, pv) == null ? "gold" : better(v, pv) || Math.abs(v - pv) < 1e-9 ? "pos" : "neg");

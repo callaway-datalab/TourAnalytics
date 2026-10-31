@@ -111,7 +111,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const xs = series.map((_, i) => i), mx = mean(xs), my = mean(series.map((s) => s.value));
     slope = xs.reduce((t, x, i) => t + (x - mx) * (series[i].value - my), 0) / xs.reduce((t, x) => t + (x - mx) ** 2, 0);
   }
-  const half = Math.min(10, Math.floor(series.length / 2));
+  const half = Math.min(12, Math.floor(series.length / 2));
   const late = series.slice(series.length - half), early = series.slice(series.length - 2 * half, series.length - half); // the last 10 vs the 10 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= 2 ? { n: half, early: span(early), late: span(late) } : null;
@@ -241,7 +241,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
     text: `Previous ${half} rounds: ${fmtSG(t.early)} a round. Last ${half} rounds: ${fmtSG(t.late)} a round. That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
-  const n10 = Math.min(10, Math.floor(series.length / 2));
+  const n10 = Math.min(12, Math.floor(series.length / 2));
   const form = n10 >= 2 ? { n: n10, first: mean(series.slice(-2 * n10, -n10).map((q) => q.value)), last: mean(series.slice(-n10).map((q) => q.value)), firstSpan: span(series.slice(-2 * n10, -n10)), lastSpan: span(series.slice(-n10)) } : null;
   // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
   // game (how much each swings round to round), and the biggest upside (matching the group's best where the
@@ -253,7 +253,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const swings = cats.map((k) => ({ cat: k, sd: sd(series.map((q) => q.byCat[k])) })).filter((x) => x.sd != null).sort((p, q) => p.sd - q.sd);
   // Biggest upside: the player's own best stretch (their best average over a run of rounds) in each category,
   // against their average now; the category where getting back to that is worth the most.
-  const win = Math.min(10, Math.max(3, Math.floor(series.length / 3)));
+  const win = Math.min(12, Math.max(3, Math.floor(series.length / 3)));
   const upside = series.length >= win ? byCat.filter((c) => c.value != null).map((c) => {
     let bestAvg = -Infinity, at = 0;
     for (let i = 0; i + win <= series.length; i++) { const v = mean(series.slice(i, i + win).map((q) => q.byCat[c.cat] ?? 0)); if (v > bestAvg) { bestAvg = v; at = i; } }
@@ -287,7 +287,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     // (nobody else has it, e.g. a player's own report has no one else's distances: no rank)
     const rank = def.higher == null || !vals.length ? null : 1 + vals.filter((v) => better(v, value)).length;
     // the last 10 rounds (or events) against the 10 before, pooled
-    const n = Math.min(10, Math.floor(mineK.length / 2));
+    const n = Math.min(12, Math.floor(mineK.length / 2));
     const last = n >= 2 ? statAgg(mineK.slice(-n), !!keep).value : null, prev = n >= 2 ? statAgg(mineK.slice(-2 * n, -n), !!keep).value : null;
     // its value in each category it has (Hit Green %: Approach and Around-the-Green)
     const byCat = keep ? [] : CATEGORIES.map(([c, name]) => { const rs = mineK.map((rd) => ({ ...rd, shots: rd.shots.filter((o) => o.cat === c) })); const v = statAgg(rs, true).value; return v == null ? null : { cat: c, name, value: v }; }).filter(Boolean);
@@ -570,7 +570,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
 
   /* ---------- SG form: total and each category ---------- */
   const formChart = (title, vals) => {
-    const n = Math.min(10, Math.floor(vals.length / 2));
+    const n = Math.min(12, Math.floor(vals.length / 2));
     const first = n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = n >= 2 ? mean(vals.slice(-n)) : null; // the 10 before, the last 10
     const top = y + 22, ht = 70, left = M + 22, wd = W - 22;
     need(ht + 52);

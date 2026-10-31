@@ -28,7 +28,7 @@ export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, red
   return [only !== "conditions" ? trajectoryBlock(rs, cols) : null, only !== "trajectory" ? conditionsBlock(rs, go, ui, redraw) : null].filter(Boolean);
 }
 
-// (update 218) just the last 10 against the 10 before, and the last 40 against the 40 before; tapping one opens its
+// (update 218; 444: 12 and 48) just the last 12 against the 12 before, and the last 48 against the 48 before; tapping one opens its
 // rounds (a bar chart, the two stretches highlighted, each one's average dashed) and the change in each category
 const sgOfRd = (rd, k = "TOTAL") => rd.shots.reduce((t, x) => t + (k === "TOTAL" || x.cat === k || (k === "T2G" && x.cat !== "PUTT") || (k.startsWith("d:") && x.dist === k.slice(2)) ? x.sg : 0), 0);
 // (update 283) the table's columns: [key, heading, name in the pop-up] (Total and the four categories, unless the filters say otherwise)
@@ -46,18 +46,18 @@ function openTrajectory(rs, x, cols = DEFAULT_COLS) {
         rows: cols.map(([k, , l]) => ({ strong: k === "TOTAL", cells: [l, { sg: avg(prev, k) }, { sg: avg(last, k) }, { sg: avg(last, k) - avg(prev, k), arrow: true }] })) },
     ] }) }, "Getting better or worse?");
 }
-// (update 281) the summary in long-term (last 40 vs the 40 before) and short-term (last 10 vs the 10 before) words
+// (update 281) the summary in long-term (last 48 vs the 48 before) and short-term (last 12 vs the 12 before) words
 function termWords(tr) {
   // (update 282) "Up over the long-term; Down over the short-term"
   const word = (x) => (x.ch.TOTAL > 0.15 ? "Up" : x.ch.TOTAL < -0.15 ? "Down" : "Steady");
-  const lt = tr.find((x) => x.n === 40), st = tr.find((x) => x.n === 10);
+  const lt = tr.find((x) => x.n === 48), st = tr.find((x) => x.n === 12);
   if (lt && st) return word(lt) === word(st) ? `${word(lt)} over both the long-term and the short-term.` : `${word(lt)} over the long-term; ${word(st)} over the short-term.`;
   const one = lt || st;
   return `${word(one)} over the ${one === lt ? "long" : "short"}-term.`;
 }
 function trajectoryBlock(rs, cols0) {
   const cols = cols0 || DEFAULT_COLS;
-  const tr = trajectory(rs).filter((x) => x.n === 10 || x.n === 40).map((x) => ({ ...x, ch: { ...x.ch, ...changeOf(rs, x.n, cols) } }));
+  const tr = trajectory(rs).filter((x) => x.n === 12 || x.n === 48).map((x) => ({ ...x, ch: { ...x.ch, ...changeOf(rs, x.n, cols) } }));
   if (!tr.length) return null;
   const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [

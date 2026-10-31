@@ -627,7 +627,7 @@ export function sgDashboard(container, opts) {
       const per = ordered.map((rd) => metric([rd]));
       // (update 168) the rank after each round: where they stood in the field on that date, this selection
       const hist = showRanks ? rankHistory(ordered, slicedField, r) : rollingOnly(ordered); // (update 183: no ranks: the rolling average alone)
-      const n = Math.min(10, Math.floor(per.length / 2));
+      const n = Math.min(12, Math.floor(per.length / 2));
       let form = null;
       if (n >= 2) {
         const last = metric(ordered.slice(-n)), prev = metric(ordered.slice(-2 * n, -n));
@@ -858,7 +858,7 @@ export function sgDashboard(container, opts) {
   // averages, then where the change came from, category by category
   async function formPopup(ordered) {
     const { renderBlocks } = await import("./badgePopup.js");
-    const n = Math.min(10, Math.floor(ordered.length / 2));
+    const n = Math.min(12, Math.floor(ordered.length / 2));
     const last = ordered.slice(-n), prev = ordered.slice(-2 * n, -n), sg = isSG();
     const goodTone = (v, ref) => (sg ? null : def.higher == null || v == null || ref == null ? "gold" : better(v, ref) ? "pos" : "neg");
     const prevAvg = metric(prev), lastAvg = metric(last);
@@ -1364,9 +1364,9 @@ export function sgDashboard(container, opts) {
         const ds = [...m].map(([d, t]) => ({ d, v: t / mine.length })).sort((a, b) => b.v - a.v);
         if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${fmtSG(ds[0].v)} a round); lowest from ${ds[ds.length - 1].d} (${fmtSG(ds[ds.length - 1].v)}).`);
       }
-      // form: the last 10 rounds against the 10 before them
+      // form: the last 12 rounds against the 12 before them
       const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-      const n = Math.min(10, Math.floor(ordered.length / 2));
+      const n = Math.min(12, Math.floor(ordered.length / 2));
       if (n >= 2) {
         const last = perRoundOf(ordered.slice(-n)), prev = perRoundOf(ordered.slice(-2 * n, -n)), ch = last - prev;
         lines.push(Math.abs(ch) < 0.05 ? `Form is steady: ${fmtSG(last)} a round over the last ${n} rounds, about the same as the ${n} before.`
@@ -1505,20 +1505,20 @@ export function sgDashboard(container, opts) {
       })), "full"));
     }
 
-    // 2. hot and cold: the last 10 rounds against the 10 before them
+    // 2. hot and cold: the last 12 rounds against the 12 before them
     const series = (p) => [...p.rounds].filter((rd) => !sg || !rd.eventLevel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     {
       const form = P.map((p) => {
         const rs = series(p).filter((rd) => metric([rd]) != null);
         if (rs.length < 20) return null;
-        const last = metric(rs.slice(-10)), before = metric(rs.slice(-20, -10));
+        const last = metric(rs.slice(-12)), before = metric(rs.slice(-24, -12));
         return last == null || before == null ? null : { p, last, before, ch: last - before };
       }).filter(Boolean);
       if (form.length >= 4) {
         const up = (x) => (def.higher === false ? -x.ch : x.ch); // how much better (or just higher, when neither is better)
         const hot = form.filter((x) => up(x) > 0).sort((a, b) => up(b) - up(a)).slice(0, 5), cold = form.filter((x) => up(x) < 0).sort((a, b) => up(a) - up(b)).slice(0, 5);
         const cls = (ch) => { const g = good(ch); return g == null ? "" : g ? "pos" : "neg"; };
-        const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtV(x.last)} last 10, ${fmtV(x.before)} previous 10`)]), el("strong", { class: `ti-v ${cls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${fmtDelta(x.ch)}`)]))) : el("p", { class: "muted small" }, "No one."));
+        const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${fmtV(x.last)} last 12, ${fmtV(x.before)} previous 12`)]), el("strong", { class: `ti-v ${cls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${fmtDelta(x.ch)}`)]))) : el("p", { class: "muted small" }, "No one."));
         blocks.push(panelBox("Hot & Cold", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, def.higher == null ? "Going up" : "Heating up"), list(hot)]), el("div", {}, [el("p", { class: "ti-col-title" }, def.higher == null ? "Going down" : "Cooling off"), list(cold)])])]));
       }
     }
@@ -1659,9 +1659,9 @@ export function sgDashboard(container, opts) {
     const fieldMaps = ranked.map((p) => rowVals(p.rounds, cat));
     const avg = (maps, k) => { const v = maps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
     const rankOfRow = (k, v, higher) => { if (v == null || higher == null) return null; const vs = fieldMaps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
-    // trend: the last 10 rounds against the 10 before (fewer: half and half, at least 3 each)
+    // trend: the last 12 rounds against the 12 before (fewer: half and half, at least 3 each)
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const tn = Math.min(10, Math.floor(ordered.length / 2));
+    const tn = Math.min(12, Math.floor(ordered.length / 2));
     const lastV = tn >= 3 ? rowVals(ordered.slice(-tn), cat) : null, prevV = tn >= 3 ? rowVals(ordered.slice(-2 * tn, -tn), cat) : null;
     // best round: the best single-round value (each round on its own)
     const perRd = ordered.map((rd) => ({ rd, m: rowVals([rd], cat) }));
@@ -1798,7 +1798,7 @@ export function sgDashboard(container, opts) {
     if (mode === "elite") return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
       pathOf(),
-      showRanks ? hypoOf() : null, // (update 393)
+      showRanks ? (() => { try { return hypoOf(); } catch (err) { console.error(err); return null; } })() : null, // (update 393)
     ];
     return [
       peakCtl,
@@ -1810,7 +1810,7 @@ export function sgDashboard(container, opts) {
           el("th", { class: "num", title: `${TN.Kept} less ${TN.Cut.toLowerCase()}: green where the ${TN.kept} were better` }, "Diff"),
           el("th", { class: "num", title: "Where the kept rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, tPeak ? "Peak Rank" : `${NM().Kept} Rank`)]
           : [el("th", {}, ""), el("th", { class: "num" }, me?.label || "Player"),
-          el("th", { class: "num", title: `Last ${tn || 10} rounds against the ${tn || 10} before` }, "Trend"),
+          el("th", { class: "num", title: `Last ${tn || 12} rounds against the ${tn || 12} before` }, "Trend"),
           el("th", { class: "num" }, "Rank")])),
         el("tbody", {}, tr),
       ])),
@@ -1824,7 +1824,7 @@ export function sgDashboard(container, opts) {
     function hypoOf() {
       const season = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
       if (season.length < 3) return null;
-      const N = Math.max(3, Math.min(season.length, Math.round(Number(st.hypoN) || 10)));
+      const N = Math.max(3, Math.min(season.length, Math.round(Number(st.hypoN) || 12)));
       const last = season.slice(-N);
       const recent = rowVals(last, cat);
       // (update 442) ranked on the season: where these numbers would put them if they were their season average, against
@@ -1833,7 +1833,8 @@ export function sgDashboard(container, opts) {
       const seasonF = { ...lastRankF, months: 0, from: null, to: null, year: [seasonYear], event: [], course: [], roundNo: [] };
       const seasonAll = field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, seasonF)) })).filter((p) => p.rounds.length);
       const seasonMin = minRoundsFor(seasonAll);
-      const field0 = seasonAll.filter((p) => p.key !== me?.key && p.rounds.length >= seasonMin);
+      let field0 = seasonAll.filter((p) => p.key !== me?.key && p.rounds.length >= seasonMin);
+      if (!field0.length) field0 = rankedField(slicedField).filter((p) => p.key !== me?.key); // (no season field: the time frame's)
       const others = field0.map((p) => rowVals(p.rounds, cat));
       if (!others.length) return null;
       const parts = cat ? dists.map((d) => ({ key: `d:${d}`, label: d })) : CATEGORIES.map(([k, l]) => ({ key: `c:${k}`, label: l }));
@@ -1949,14 +1950,15 @@ export function sgDashboard(container, opts) {
         const P = rows?.prof;
         if (!P) return null;
         // (update 355) current form: where their last N rounds' average would rank; the default is the next level above that
-        const nR = Math.max(3, Math.min(season.length, Math.round(Number(st.recentN) || 10)));
+        const nR = Math.max(3, Math.min(season.length, Math.round(Number(st.recentN) || 12)));
         const recentT = stretchSeq(season.slice(-nR), cat).map((x) => x.t);
         const recentAvg = recentT.length ? recentT.reduce((a, v) => a + v, 0) / recentT.length : P.avg;
         const formRank = P.rankOf(recentAvg);
         const reach = rows.filter((r) => r.share?.k);
         // (update 442) no card picked: their last N rounds against the rest of their rounds; a card picked: against that
         // level's rounds
-        const pick = st.vsRank === "peak" && st.ladderT ? reach.find((r) => r.target === st.ladderT) : null;
+        // (update 444) only while that card shows as picked (same level and same number of rounds); otherwise the rest
+        const pick = st.vsRank === "peak" && st.ladderT ? reach.find((r) => r.target === st.ladderT && r.share.k === Math.max(1, Math.round(Number(st.peakN) || 0))) : null;
         if (!pick) { const rest = season.slice(0, -nR); return rest.length ? pathBack(rest, season, cat, null, { rest: true }) : null; }
         const byLevel = [...reach].sort((a, b) => b.target - a.target); // #50 first
         const nextUp = byLevel.find((r) => r.target < formRank) || byLevel.at(-1);
@@ -1973,21 +1975,7 @@ export function sgDashboard(container, opts) {
     const blocks = [];
     const cat = st.cats.length === 1 ? st.cats[0] : ""; // one category: its full detail
     if (!cat) {
-      // All, or several categories: where the strokes are gained and lost among the ones picked.
-      const shown = CATEGORIES.filter(([k]) => !st.cats.length || st.cats.includes(k));
-      const bars = shown.map(([k, l]) => ({ label: l, value: sliceTotals(mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => s.cat === k) }))).sgPerRound ?? 0 }));
-      // the chosen players (Top 1 / 10 / 25 / 50 / All) for the same categories / lies
-      const cmpField = topPlayers(slicedField);
-      const avgOf = (vals) => { const v = vals.filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-      const catCompare = cmpField.length ? shown.map(([k]) => avgOf(cmpField.map((p) => sliceTotals(p.rounds.map((rd) => ({ ...rd, shots: rd.shots.filter((x) => x.cat === k) }))).sgPerRound))) : null;
-      const byCat = panelBox("SG by Category", [chartBox((c, as) => barChart(c, bars.map((b) => b.label), bars.map((b) => b.value), {
-        title: "SG / round", as, compare: catCompare, compareLabel: compareName() }), "", "by-category", { rankPick: cmpField.length > 0 })]);
-      const lies = sgBy(mine, idx, null, "lie");
-      const lieCompare = lies && cmpDetailOK() ? lies.map((g) => avgOf(cmpField.map((p) => (sgBy(p.rounds, idx, null, "lie") || []).find((x) => x.label === g.label)?.perRound))) : null;
-      blocks.push(lies && lies.length > 1
-        ? el("div", { class: "sg-grid" }, [byCat, panelBox("SG by Lie", chartBox((c, as) => barChart(c, lies.map((g) => g.label), lies.map((g) => g.perRound), { as,
-            title: "SG / round", compare: lieCompare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(lies[i].shots)} attempts` }), "", "all-lie", { rankPick: !!lieCompare }))])
-        : byCat);
+      // (update 444) no SG by Category or SG by Lie charts: the SG Trends chart is the one chart kept
       // (update 218) SG by Club: only with one category picked (below)
       // (update 229) the stats table with no category: SG: Total and each category, and the scoring averages
       blocks.unshift(panelBox(describe(), fullStatTable(mine, "", slicedField)), el("section", { class: "panel sg-box" }, fullStatTable(mine, "", slicedField, "elite")));
@@ -2003,19 +1991,7 @@ export function sgDashboard(container, opts) {
         if (pts) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c) => scatterChart(c, pts, LEAVE_SCALE[cat]), "tall")));
         else { const hist = leaveHistogram(mine, idx, cat); if (hist) visuals.push(panelBox("Leave Distribution (ft)", chartBox((c, as) => barChart(c, hist.map((h) => h.label), hist.map((h) => h.count), { single: "blue", title: "Shots", as }), "", `${cat}-leave`))); }
       }
-      for (const [fieldName, title] of BREAKDOWNS[cat]) {
-        const groups = sgBy(mine, idx, cat, fieldName);
-        if (!groups || (groups.length < 2 && fieldName !== "distanceRange")) continue;
-        // "All players" markers only where the others' detail is available (admin).
-        const compareField = topPlayers(slicedField);
-        const compare = !cmpDetailOK() ? null : groups.map((g) => {
-          const vals = compareField.map((p) => (sgBy(p.rounds, idx, cat, fieldName) || []).find((x) => x.label === g.label)?.perRound).filter((v) => v !== undefined);
-          return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-        });
-        visuals.push(panelBox(title, chartBox((c, as) => barChart(c, groups.map((g) => g.label), groups.map((g) => g.perRound), { as,
-          title: "SG / round", compare, compareLabel: compareName(), tooltip: (i) => `${nf1.format(groups[i].shots)} attempts`,
-        }), "", `${cat}-${fieldName}`, { rankPick: !fieldIsSummary() })));
-      }
+      // (update 444) no SG by distance / lie / … bar charts
       // (update 299) no SG by Club chart: products are on SG Trends (Show Product)
       if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
     }
@@ -2092,7 +2068,7 @@ export function sgDashboard(container, opts) {
         if (ds.length > 1) lines.push(`Best from ${ds[0].label} (${fmtV(ds[0].value)}, ${Math.round(ds[0].w)} attempts); lowest from ${ds[ds.length - 1].label} (${fmtV(ds[ds.length - 1].value)}, ${Math.round(ds[ds.length - 1].w)} attempts).`);
       }
       const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-      const n = Math.min(10, Math.floor(ordered.length / 2));
+      const n = Math.min(12, Math.floor(ordered.length / 2));
       if (n >= 2) {
         const last = metric(ordered.slice(-n)), prev = metric(ordered.slice(-2 * n, -n));
         if (last != null && prev != null) {
@@ -2727,11 +2703,11 @@ export function sgDashboard(container, opts) {
       const open = !!st.allRoundsOpen, byDate = st.allRoundsSort === "date";
       const tog = el("button", { type: "button", class: "link bs-evs-btn bs-all-btn", "aria-expanded": String(open) }, `All Rounds (${mine.length}) ${open ? "\u25B4" : "\u25BE"}`);
       tog.addEventListener("click", () => { st.allRoundsOpen = !open; draw(); });
-      if (!open) return el("div", { class: "bs-all" }, tog);
+      if (!open) return { tog, list: null };
       const sortBtn = (k, lab) => { const on = (k === "date") === byDate; const b = el("button", { type: "button", class: `pp-tog${on ? " on" : ""}`, "aria-pressed": String(on) }, lab); b.addEventListener("click", () => { st.allRoundsSort = k; draw(); }); return b; };
       const rKey = (rd) => `${String(rd.date || "").slice(0, 10)}|${rd.event || ""}|${rd.roundNo ?? ""}`;
       const list = mine.map((rd) => ({ rd, v: sgOfRd(rd) })).sort((a, b) => (byDate ? String(b.rd.date || "").localeCompare(String(a.rd.date || "")) || (parseFloat(b.rd.roundNo) || 0) - (parseFloat(a.rd.roundNo) || 0) : b.v - a.v));
-      return el("div", { class: "bs-all" }, [tog,
+      return { tog, list: el("div", { class: "bs-all" }, [
         el("div", { class: "sg-peak-ctl bs-all-sort" }, [el("span", { class: "muted small" }, "Sort:"), sortBtn("sg", "Best to worst"), sortBtn("date", "By date")]),
         el("div", { class: "bs-evs-wrap" }, el("ul", { class: "bs-evs" }, list.map(({ rd, v }) => {
           const on = st.rdOpen === rKey(rd);
@@ -2742,14 +2718,14 @@ export function sgDashboard(container, opts) {
           const t2 = () => { st.rdOpen = on ? null : rKey(rd); draw(); };
           li.addEventListener("click", t2); li.addEventListener("keydown", (e) => { if (e.target === li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); t2(); } });
           return li;
-        })))]);
+        })))]) };
     })() : null;
 
     return el("div", { class: "bs" }, [
       el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `${what ? `${what.trim()} ` : ""}Elite Round Share`), help]),
 
       rows?.prof ? el("p", { class: "bs-now" }, [`Currently `, el("strong", {}, ordinal(rows.prof.seasonRank)), ` of ${rows.prof.N} (${sgn2(rows.prof.avg)} a round)`]) : null,
-      ladder, profileLine(mine, cat, rows), allRounds, detail,
+      ladder, profileLine(mine, cat, rows, allRounds?.tog), allRounds?.list, detail,
     ]);
   }
   /* (update 345) Where the shots came from: the parts of the game and distances where elite rounds simply had more of the
@@ -2955,7 +2931,9 @@ export function sgDashboard(container, opts) {
   }
   /* (update 350) Under the boxes: how much #1-level golf is in them, and their best stretch: the longest run of rounds in a
    * row that on its own would rank #1, and where that run ranks among every player's longest (as on the Leaderboards). */
-  function profileLine(mine, cat, rows) {
+  // (update 443) All Rounds at the end of the line, in the same type
+  function profileLine(mine, cat, rows, tail = null) { const p = profileLine0(mine, cat, rows); if (p && tail) p.append(" ", tail); return p || tail; }
+  function profileLine0(mine, cat, rows) {
     if (!rows || !me) return null;
     const all = longestStretches(lastSliced || [], cat);
     const mineRow = all.find((r) => r.p.key === me.key);
@@ -2984,7 +2962,7 @@ export function sgDashboard(container, opts) {
     const lvName = rest ? "other rounds" : lv ? `\u201c${LEVELS[lv.T]}\u201d rounds` : "best rounds"; // (update 360: the level by name: their "Contender" rounds)
     const LvCap = rest ? "Other rounds" : lv ? `\u201c${LEVELS[lv.T]}\u201d rounds` : "Best rounds";
     const NN = { kept: lvName, cut: "recent rounds" };
-    const N = Math.max(3, Math.min(season.length, Math.round(Number(st.recentN) || 10)));
+    const N = Math.max(3, Math.min(season.length, Math.round(Number(st.recentN) || 12)));
     const recent = season.slice(-N);
     const eSet = new Set(elite), others = season.filter((rd) => !eSet.has(rd));
     const inCat = (x) => !cat || x.cat === cat;
