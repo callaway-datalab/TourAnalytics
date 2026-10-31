@@ -114,7 +114,8 @@ export function challengeText(ch) {
   const t = Number(ch.target);
   if (st.kind === "sg") return `Gain ${t >= 0 ? "+" : "\u2212"}${Math.abs(t).toFixed(2)} ${st.short === "SG" ? "strokes" : `${st.short} strokes`}${ch.measure === "total" ? " in total" : " a round"} ${when}`;
   const v = st.unit === "%" ? `${t}%` : `${t}${st.unit || ""}`;
-  if (st.kind === "obs") return `${st.label}${ch.dist ? ` from ${ch.dist}` : ""}: ${v} or ${st.higher ? "better" : "lower"} ${when}`;
+  const recTag = ch.recFrom === "tour" ? " (target from the tour)" : ch.recFrom === "you" ? " (target from my own rounds)" : ""; // (update 448)
+  if (st.kind === "obs") return `${st.label}${ch.dist ? ` from ${ch.dist}` : ""}: ${v} or ${st.higher ? "better" : "lower"} ${when}${recTag}`;
   if (st.kind === "lie") return `${st.label}: ${v} a round or fewer ${when}`;
   return st.higher ? `Hit ${v} ${st.short} or better ${when}` : `Average ${v} ${st.short} or fewer ${when}`;
 }

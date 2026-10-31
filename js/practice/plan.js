@@ -85,11 +85,19 @@ export function drillFor(cat, dist, t = null, lie = null) {
     const g = is(/^prox/) ? { goal: Math.round(ok.ve * 10) / 10, goalFrom: "elite", stat: ok.def.label, statV: ok.ve, whole: ok.exact === false } : { goal: null };
     return { kind: "prox", cat, dist, reps: R, ...g, title: `Approach${at}`, what: `Approaches${at} to a pin, measuring how far each finishes from the hole`, unit: "ft" };
   }
+  if (cat === "ARG") {
+    // (update 447) a short-game goal can be proximity or hitting the green too (from Hypothetical rankings)
+    if (is(/^prox/)) return { kind: "prox", cat, dist, reps: R, goal: Math.round(ok.ve * 10) / 10, goalFrom: "elite", stat: ok.def.label, statV: ok.ve, whole: ok.exact === false, title: `Short game${at}`, what: `Chips and pitches${at} to a pin, measuring how far each finishes from the hole`, unit: "ft" };
+    if (is(/^hitGreen/)) return { kind: "green", cat, dist, reps: R, ...pctGoal(), title: `Short game${at}`, what: `Chips and pitches${at} that have to finish on the green`, tap: ["On the green", "Missed"] };
+  }
   if (cat === "ARG") return { kind: "updown", cat, dist, reps: R, ...(is(/^ud|^scramble/) ? pctGoal() : { goal: null }), title: `Short game${at}`, what: `Chips and pitches${at}, then hole out`, tap: ["Up and down", "Not"] };
   if (cat === "OTT") {
     // (update 369) the club the gap is with: driver, or a wood or iron off the tee
     const club = /iron/i.test(dist || "") ? "iron" : /wood/i.test(dist || "") ? "wood" : null;
-    return { kind: "fairway", cat: "OTT", dist: null, reps: R, ...(is(/^fwy|fairway/) ? pctGoal() : { goal: null }), title: club ? `Tee shots with a ${club}` : "Driving", what: club ? `Tee shots with a ${club} to a target 30 yards wide, about a tour fairway` : "Drives to a target 30 yards wide, about a tour fairway", tap: ["Fairway", "Missed"] };
+    // (update 447) driving distance: a number drill in yards, higher is better. Never with an iron or a wood off the tee:
+    // those are only ever about hitting the fairway.
+    if (!club && is(/^drive$/)) return { kind: "prox", cat: "OTT", dist: "Driver", reps: R, goal: Math.round(ok.ve), goalFrom: "elite", stat: ok.def.label, statV: ok.ve, whole: ok.exact === false, title: "Driving distance", what: "Drives with the driver, measuring how far each one goes", unit: "yds", higher: true };
+    return { kind: "fairway", cat: "OTT", dist: club ? dist : null, reps: R, ...(is(/^fwy|fairway/) ? pctGoal() : { goal: null }), title: club ? `Tee shots with ${club === "iron" ? "an" : "a"} ${club}` : "Driving", what: club ? `Tee shots with ${club === "iron" ? "an" : "a"} ${club} to a target 30 yards wide, about a tour fairway` : "Drives to a target 30 yards wide, about a tour fairway", tap: ["Fairway", "Missed"] };
   }
   return null;
 }
@@ -104,19 +112,21 @@ export function goalStatsFor(cat, dist) {
 
 /** The goal in words: "Hole 3 of 10", "Average inside 22 ft", "Beat your best". */
 export function goalText(d, best = null) {
-  if (d.goal == null) return best == null ? "Set your mark, then beat it" : `Beat your best: ${best}${d.kind === "prox" ? " ft" : ` of ${d.reps}`}`;
-  if (d.kind === "prox") return `Average inside ${d.goal} ft`;
+  if (d.goal == null) return best == null ? "Set your mark, then beat it" : `Beat your best: ${best}${d.kind === "prox" ? ` ${d.unit || "ft"}` : ` of ${d.reps}`}`;
+  if (d.kind === "prox") return d.higher ? `Average ${d.goal} ${d.unit || "yds"} or more` : `Average inside ${d.goal} ft`;
   const verb = { make: "Hole", lag: "Leave", updown: "Get up and down", fairway: "Hit", green: "Hit", bunker: "Leave" }[d.kind] || "Get";
-  const tail = { lag: " inside 3 ft", fairway: " fairways", green: " greens", bunker: " inside 10 ft" }[d.kind] || "";
+  const tail = { lag: " inside 3 ft", fairway: " fairways", ...(d.cat === "ARG" ? { green: " onto the green" } : {}), green: " greens", bunker: " inside 10 ft" }[d.kind] || "";
   return `${verb} ${d.goal} of ${d.reps}${tail}`;
 }
 /** Where the goal comes from, in words. */
 export function goalSource(d) {
-  if (d.goalFrom === "elite") return `their ${d.from || "kept rounds"}\u2019 ${d.stat}${d.whole && d.dist ? ` (all ${({ PUTT: "putts", APP: "approaches", ARG: "short-game shots" })[d.cat] || "shots"})` : ""}: ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? " ft" : "%"}`;
+  // (update 448) from Hypothetical rankings: say whether it came from the player's own rounds or the tour's
+  if (d.goalFrom === "elite" && d.recFrom) return `${d.recFrom === "tour" ? "From the tour: rounds by other players" : "From their own rounds:"} ${d.recFrom === "tour" ? "that match the what-if had" : "the ones that match the what-if had"} ${d.stat} ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? ` ${d.unit || "ft"}` : "%"}`;
+  if (d.goalFrom === "elite") return `their ${d.from || "kept rounds"}\u2019 ${d.stat}${d.whole && d.dist ? ` (all ${({ PUTT: "putts", APP: "approaches", ARG: "short-game shots" })[d.cat] || "shots"})` : ""}: ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? ` ${d.unit || "ft"}` : "%"}`;
   return null;
 }
 /** The drill as one line of text (Stats shows this to everyone). */
-export const nounOf = (d) => ({ make: "putts", lag: "putts", fairway: /^Tee shots/.test(d.title || "") ? "tee shots" : "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
+export const nounOf = (d) => (d.kind === "prox" && d.higher ? "drives" : null) || ({ make: "putts", lag: "putts", fairway: /^Tee shots/.test(d.title || "") ? "tee shots" : "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
 export function drillLine(d) {
   const src = goalSource(d);
   return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (no stat for this in their ${d.from || "kept rounds"} to set it from)`}. Aim for ${d.setsAim || 3} sets that reach it.`;
@@ -133,13 +143,13 @@ export function setScore(d, marks) {
 export function setMet(d, score, best) {
   const goal = d.goal ?? best;
   if (goal == null) return true; // the first ever set sets the mark
-  return d.kind === "prox" ? score <= goal : d.goal != null ? score >= goal : score > goal;
+  return d.kind === "prox" ? (d.higher ? score >= goal : score <= goal) : d.goal != null ? score >= goal : score > goal;
 }
 /** The best set so far for a drill, across its sessions. */
 export function bestOf(d, sessions) {
   const scores = sessions.filter((s) => s.mode === "drill" && s.drillId === d.id).flatMap((s) => (s.sets || []).filter((x) => x.marks?.length === d.reps).map((x) => x.score));
   if (!scores.length) return null;
-  return d.kind === "prox" ? Math.min(...scores) : Math.max(...scores);
+  return d.kind === "prox" && !d.higher ? Math.min(...scores) : Math.max(...scores);
 }
 /** Time spent: the gaps between taps, each capped at 2 minutes (so walking off for lunch doesn't count). */
 export function activeSecs(s, now = null) {

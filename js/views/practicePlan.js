@@ -42,7 +42,8 @@ let plan = null, planOwnerKey = null; // loaded once a visit (per owner)
 let tick = null;                      // the running clock
 const stopClock = () => { if (tick) { clearInterval(tick); tick = null; } };
 const fmtDay = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
-const unitOf = (d) => (d.kind === "prox" ? " ft" : ` of ${d.reps}`);
+// (update 447) a number drill can be feet from the hole (lower is better) or yards of carry (d.unit "yds", d.higher)
+const unitOf = (d) => (d.kind === "prox" ? ` ${d.unit || "ft"}` : ` of ${d.reps}`);
 // (update 349) a session is as many sets as you like (Redo after each); the aim is 3 sets that meet the goal
 const SETS_AIM = 3;
 const aimOf = (d) => Math.max(1, Math.round(Number(d?.setsAim) || SETS_AIM)); // (update 371: set per drill when it's added)
@@ -104,7 +105,7 @@ function drawHome(ctx) {
       el("div", { class: "dp-card-top" }, [el("h3", { class: "dp-title" }, d.title), canEdit ? del : null]),
       d.sentBy?.name ? el("p", { class: "muted small dp-from" }, `From ${d.sentBy.name}`) : null,
       el("p", { class: "dp-goal" }, [el("strong", {}, goalText(d, best)), src ? el("span", { class: "muted" }, ` · ${src}`) : null]),
-      el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)} a set, ${d.kind === "prox" ? "typing how far each one finishes" : "one tap each"}; aim for ${aimOf(d)} ${aimOf(d) === 1 ? "set" : "sets"} that meet the goal.`),
+      el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)} a set, ${d.kind === "prox" ? (d.higher ? "typing how far each one goes" : "typing how far each one finishes") : "one tap each"}; aim for ${aimOf(d)} ${aimOf(d) === 1 ? "set" : "sets"} that meet the goal.`),
       d.goalText ? el("p", { class: "small dp-round-goal" }, `Added goal: ${d.goalText}`) : null,
       el("p", { class: "muted small dp-last" }, [lastTxt, best != null ? ` · best set ${scoreText(d, best)}` : "", done.length > 1 ? ` · ${done.length} sessions` : ""]),
       ro ? null : go,
@@ -142,7 +143,7 @@ function drawDrill(ctx, s) {
   };
   // (update 359) what was said: a whole set ("made 8 of 10"), one shot after another ("made the first", "missed"), or undo
   const shotName = (nounOf(d).replace(/s$/, "") || "shot").replace(/^\w/, (c) => c.toUpperCase());
-  const valName = (v) => (d.kind === "prox" ? `${v} ft` : (d.tap || ["Yes", "No"])[v ? 0 : 1]);
+  const valName = (v) => (d.kind === "prox" ? `${v} ${d.unit || "ft"}` : (d.tap || ["Yes", "No"])[v ? 0 : 1]);
   const apply = (text) => {
     if (text == null) { drawDrill(ctx, s); return; }
     const r = parseDrillSpeech(text, { kind: d.kind, reps: d.reps });
@@ -174,7 +175,7 @@ function drawDrill(ctx, s) {
     ctx.save(s); drawDrill(ctx, s);
   };
   voice.handler = apply; listen();
-  const hint = d.kind === "prox" ? "Say \u201c12 feet\u201d, \u201cthe third one was 30 feet\u201d, \u201choled it\u201d or \u201caveraged 18 feet\u201d." : `Say \u201c${(d.tap || ["made"])[0].toLowerCase()} the first\u201d, \u201c${(d.tap || ["", "missed"])[1].toLowerCase()}\u201d, or \u201c8 of 10\u201d for the whole set.`;
+  const hint = d.kind === "prox" && d.higher ? "Say \u201c275 yards\u201d or \u201caveraged 280\u201d." : d.kind === "prox" ? "Say \u201c12 feet\u201d, \u201cthe third one was 30 feet\u201d, \u201choled it\u201d or \u201caveraged 18 feet\u201d." : `Say \u201c${(d.tap || ["made"])[0].toLowerCase()} the first\u201d, \u201c${(d.tap || ["", "missed"])[1].toLowerCase()}\u201d, or \u201c8 of 10\u201d for the whole set.`;
   const undo = el("button", { type: "button", class: "link dp-undo", disabled: !n }, "Undo last");
   undo.addEventListener("click", () => { set.marks.pop(); ctx.save(s); drawDrill(ctx, s); });
   const stop = el("button", { type: "button", class: "link dp-stop" }, "Finish");
@@ -182,12 +183,13 @@ function drawDrill(ctx, s) {
   // the input: two big buttons, or the feet for an approach shot
   let input;
   if (d.kind === "prox") {
-    const box = el("input", { type: "number", inputmode: "decimal", min: "0", step: "0.5", class: "dp-ft", placeholder: "ft", "aria-label": "Feet from the hole" });
+    const U = d.unit || "ft";
+    const box = el("input", { type: "number", inputmode: "decimal", min: "0", step: d.higher ? "1" : "0.5", class: "dp-ft", placeholder: U, "aria-label": d.higher ? "Distance in yards" : "Feet from the hole" });
     const next = el("button", { type: "button", class: "btn dp-next" }, "Next");
     const go = () => { const ft = Number(box.value); if (!(ft >= 0) || box.value === "") { box.focus(); return; } record(Math.round(ft * 10) / 10); };
     next.addEventListener("click", go);
     box.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
-    input = el("div", { class: "dp-prox" }, [el("label", { class: "dp-prox-q" }, "How far from the hole?"), el("div", { class: "dp-prox-row" }, [box, el("span", { class: "dp-ft-u" }, "ft"), next])]);
+    input = el("div", { class: "dp-prox" }, [el("label", { class: "dp-prox-q" }, d.higher ? "How far did it go?" : "How far from the hole?"), el("div", { class: "dp-prox-row" }, [box, el("span", { class: "dp-ft-u" }, U), next])]);
     if (!voice.on) setTimeout(() => box.focus(), 0); // (talking: no keyboard popping up)
   } else {
     const [yes, no] = d.tap || ["Yes", "No"];
@@ -206,7 +208,7 @@ function drawDrill(ctx, s) {
     el("div", { class: "dp-stat" }, [
       el("div", {}, [el("span", { class: "muted small" }, "Set"), el("strong", {}, String(s.sets.length))]),
       el("div", {}, [el("span", { class: "muted small" }, "Ball"), el("strong", {}, `${Math.min(n + 1, d.reps)} of ${d.reps}`)]),
-      el("div", {}, [el("span", { class: "muted small" }, d.kind === "prox" ? "Average" : "So far"), el("strong", {}, score == null ? "—" : d.kind === "prox" ? `${score} ft` : String(score))]),
+      el("div", {}, [el("span", { class: "muted small" }, d.kind === "prox" ? "Average" : "So far"), el("strong", {}, score == null ? "—" : d.kind === "prox" ? `${score} ${d.unit || "ft"}` : String(score))]),
     ]),
     needTxt ? el("p", { class: "muted small dp-need" }, needTxt) : null,
     input,
@@ -247,7 +249,7 @@ function finishSet(ctx, s) {
   };
   listen();
   const goal = d.goal ?? s.best;
-  const verdict = set.mark ? `Mark set: ${scoreText(d, set.score)}. From here on, beat it.` : set.met ? "Goal met \u2713" : `Not this time. ${d.kind === "prox" ? `The goal is an average inside ${goal} ft.` : d.goal != null ? `The goal is ${goal}${unitOf(d)}.` : `Your best is ${goal}${unitOf(d)}: beat it.`}`;
+  const verdict = set.mark ? `Mark set: ${scoreText(d, set.score)}. From here on, beat it.` : set.met ? "Goal met \u2713" : `Not this time. ${d.kind === "prox" ? (d.higher ? `The goal is an average of ${goal} ${d.unit || "yds"} or more.` : `The goal is an average inside ${goal} ft.`) : d.goal != null ? `The goal is ${goal}${unitOf(d)}.` : `Your best is ${goal}${unitOf(d)}: beat it.`}`;
   mount(ctx.body, el("div", { class: "dp dp-play dp-setend" }, [
     el("h2", { class: "dp-title" }, d.title),
     el("p", { class: `dp-big${set.met ? " pos" : ""}` }, `Set ${tried}: ${scoreText(d, set.score)}`),

@@ -5238,3 +5238,10 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
   .fc-foot.fc-top .btn { width: 100%; min-height: 2.9rem; font-size: 1rem; justify-content: center; }
   .fc-foot.fc-top .muted { text-align: center; }
 }
+/* (update 447) Hypothetical rankings: Create practice plan */
+.hy-plan-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 6px 0 8px; }
+.hy-plan-row .hy-plan-msg { margin: 0; }
+.hy-plan-why ul { margin: 4px 0 8px 18px; padding: 0; }
+.hy-plan-why li { margin: 2px 0; }
+.hy-plan-why .hy-src { font-weight: 600; margin: 0 0 6px; padding: 6px 10px; border-radius: 8px; background: rgba(46, 125, 50, 0.1); }
+.hy-plan-why .hy-src.tour { background: rgba(21, 101, 192, 0.1); }

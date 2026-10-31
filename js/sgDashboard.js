@@ -139,21 +139,22 @@ function peakNote(peak, me, cat, peakN, tn, onRange = null) {
 
 // (update 371) before drills go into a practice plan: what's being added, with the shots a set, the goal a set, how many
 // sets to meet it in, and the goal in real rounds, each changeable. onOk gets the edited list.
-function planEditor(list, whose, onOk) {
+function planEditor(list, whose, onOk, intro = null) {
   const dlg = el("dialog", { class: "dp-dialog" });
   document.body.appendChild(dlg);
   const num = (v, attrs = {}) => el("input", { type: "number", inputmode: "decimal", class: "dp-num", value: v == null ? "" : String(v), ...attrs });
   const rows = list.map((x) => {
     const d = x.drill, prox = d.kind === "prox";
     const reps = num(d.reps, { min: "1", max: "50", step: "1", "aria-label": "Shots a set" });
-    const goal = num(d.goal, { min: prox ? "0.5" : "1", step: prox ? "0.5" : "1", placeholder: "Beat your best", "aria-label": prox ? "Average inside (ft)" : "Successes a set" });
+    const proxLab = d.higher ? `Average (${d.unit || "yds"})` : "Average inside (ft)"; // (update 447: driving distance, higher is better)
+    const goal = num(d.goal, { min: prox ? "0.5" : "1", step: prox ? (d.higher ? "1" : "0.5") : "1", placeholder: "Beat your best", "aria-label": prox ? proxLab : "Successes a set" });
     const sets = num(d.setsAim || 3, { min: "1", max: "20", step: "1", "aria-label": "Sets to meet the goal" });
     const rg = x.goal && x.goal.target != null ? num(x.goal.target, { step: "any", "aria-label": "Goal in rounds" }) : null;
     const node = el("div", { class: "dp-ed" }, [
       el("p", { class: "dp-ed-t" }, [el("strong", {}, d.title), el("span", { class: "muted small" }, ` \u00b7 ${d.what}`)]),
       el("div", { class: "dp-ed-grid" }, [
         el("label", {}, [el("span", { class: "muted small" }, "Shots a set"), reps]),
-        el("label", {}, [el("span", { class: "muted small" }, prox ? "Average inside (ft)" : "Successes needed"), goal]),
+        el("label", {}, [el("span", { class: "muted small" }, prox ? proxLab : "Successes needed"), goal]),
         el("label", {}, [el("span", { class: "muted small" }, "Sets to meet it"), sets]),
         rg ? el("label", {}, [el("span", { class: "muted small" }, `In rounds: ${x.goal.label || "goal"}${x.goal.unit === "%" ? (/%/.test(x.goal.label || "") ? "" : " (%)") : x.goal.unit ? ` (${x.goal.unit.trim()})` : ""}`), rg]) : null,
       ]),
@@ -177,6 +178,7 @@ function planEditor(list, whose, onOk) {
   dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
   mount(dlg, [
     el("h3", {}, list.length === 1 ? `Add to ${whose} practice plan` : `Add ${list.length} drills to ${whose} practice plan`),
+    intro,
     el("p", { class: "muted small" }, "Change anything before it\u2019s added: the shots in a set, the goal for a set (leave it empty to beat your best), how many sets should meet it, and the goal in real rounds."),
     el("div", { class: "dp-ed-list" }, rows.map((r) => r.node)),
     el("div", { class: "thread-actions" }, [ok, cancel]),
@@ -1906,7 +1908,7 @@ export function sgDashboard(container, opts) {
       nIn.addEventListener("change", setN); nIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nIn.blur(); } });
       const rkTxt = (r) => `${ordinal(r.rank)} of ${r.of}`;
       const openCats = new Set(st.hypoCats || []);
-      const f3h = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`; // (a distance: a smaller number)
+      const f3h = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`; // (a distance: update 447, two decimals like the rest)
       const fmtD = (d) => `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(2)}`;
       // one row: k its key; v0 the last N rounds' value; v the what-if; d the change; r / r0 the ranks
       const row = ({ k, label, v0, v, d, r, r0, isTot = false, kid = false, stepBy = step, expand = null }) => {
@@ -1915,7 +1917,7 @@ export function sgDashboard(container, opts) {
           const sv = el("strong", { class: `hy-type ${v >= 0 ? "pos" : "neg"}${d ? " hy-moved" : ""}`, role: "button", tabindex: "0", title: "Click to type a value", "aria-label": `Type a value for ${label}` }, kid ? f3h(v) : fmtSG(v));
           const edit = (e) => {
             e.stopPropagation(); e.preventDefault();
-            const inp = el("input", { type: "text", inputmode: "decimal", class: "hy-in", value: v.toFixed(kid ? 3 : 2), "aria-label": `Value for ${label}` });
+            const inp = el("input", { type: "text", inputmode: "decimal", class: "hy-in", value: v.toFixed(2), "aria-label": `Value for ${label}` });
             let done = false;
             const commit = (keep) => {
               if (done) return; done = true;
@@ -1961,12 +1963,155 @@ export function sgDashboard(container, opts) {
       const adjList = Object.entries(adj).filter(([, v]) => Math.abs(v) > 1e-9).map(([k, v]) => `${nameOfKey(k)} ${fmtD(v)}`);
       const adjSum = Object.values(adj).reduce((t, v) => t + v, 0);
       const sumLine = anyAdj ? el("p", { class: "hy-sum" }, [`Changes: `, el("strong", { class: adjSum >= 0 ? "pos" : "neg" }, `${fmtD(adjSum)} a round`), ` in all`, el("span", { class: "muted" }, ` (${adjList.join(", ")})`)]) : null;
+      // (update 447) Create practice plan: the plainest way to the what-if numbers. Their own rounds closest to the
+      // what-if breakdown (every part of the game, and any distance changed) show what the plain stats were when they
+      // played like that; each part made better gets the one stat that moved most in those rounds (the fewest stats to
+      // work on), with a drill and a goal in real rounds.
+      const planOn = practiceOpen(me?.key);
+      const ups = [];
+      if (cat) { for (const p of base) { const dv = valOf(p.key) - (recent.get(p.key) ?? 0); if (dv > 0.009) ups.push({ c: cat, d: p.label, label: `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} · ${p.label}`, need: dv }); } }
+      else for (const p of base) {
+        const c = p.key.slice(2);
+        const kidUp = Object.entries(adj).filter(([k, v]) => k.startsWith(`${p.key}>`) && v > 0.009);
+        if (kidUp.length) for (const [k, v] of kidUp) { const d = k.split(">")[1].slice(2); ups.push({ c, d, label: `${p.label} · ${d}`, need: v }); }
+        else { const dv = valOf(p.key) - (recent.get(p.key) ?? 0); if (dv > 0.009) ups.push({ c, d: null, label: p.label, need: dv }); }
+      }
+      const hypoPlan = () => {
+        const rs = last;
+        if (rs.length < 8) return { err: `It needs at least 8 rounds in the season to find rounds like this (${rs.length} so far).` };
+        // (update 449) up: a part made better in the what-if; the rounds picked must be at least that good there
+        const dims = cat ? base.map((p) => ({ c: cat, d: p.label, t: valOf(p.key), up: valOf(p.key) - (recent.get(p.key) ?? 0) > 0.009 }))
+          : [...base.map((p) => ({ c: p.key.slice(2), d: null, t: valOf(p.key), up: valOf(p.key) - (recent.get(p.key) ?? 0) > 0.009 })),
+            ...Object.entries(adj).filter(([k]) => k.includes(">")).map(([k, v]) => { const [pk, dk] = k.split(">"); const c = pk.slice(2); return { c, d: dk.slice(2), t: (rowVals(last, c).get(dk) ?? 0) + v, up: v > 0.009 }; })];
+        // (update 448) the rounds that, together, average out to the what-if: picked one at a time, each the round that
+        // brings the group's average closest to it (with a nudge toward rounds that are close on their own). The group
+        // has to land within 0.10 a round of every part of the game (0.05 for a distance); their own rounds first, and if
+        // theirs can't get there, every other player's rounds this season (the tour). Neither: no plan.
+        const vecOf = (rd) => dims.map(({ c, d }) => { let s0 = 0; for (const x of rd.shots || []) if (x.cat === c && (!d || x.dist === d)) s0 += x.sg || 0; return s0; });
+        const V0 = rs.map(vecOf);
+        const sdv = dims.map((_, j) => { const xs = V0.map((v) => v[j]); const m = xs.reduce((a, b) => a + b, 0) / xs.length; return Math.max(0.15, Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, xs.length - 1))); });
+        const tolOf = (j) => (dims[j].d ? 0.05 : 0.10);
+        // (update 449) a part made better: the group has to be at or above the what-if (never below it), up to the
+        // tolerance above; aimed at the middle of that. Every other part: within the tolerance either way.
+        const aimOf = (j) => (dims[j].up ? dims[j].t + tolOf(j) / 2 : dims[j].t);
+        const spanOf = (j) => (dims[j].up ? tolOf(j) / 2 : tolOf(j));
+        const fits = (x, j) => (dims[j].up ? x >= dims[j].t - 1e-9 && x <= dims[j].t + tolOf(j) + 1e-9 : Math.abs(x - dims[j].t) <= tolOf(j) + 1e-9);
+        const pick = (pool, K) => {
+          const V = pool.map(vecOf), used = new Uint8Array(pool.length), sum = dims.map(() => 0), sel = [];
+          const own = V.map((v) => v.reduce((t, x, j) => t + ((x - dims[j].t) / sdv[j]) ** 2, 0) / dims.length);
+          const errOf = (sm, n) => { let e = 0; for (let j = 0; j < dims.length; j++) { const g = (sm[j] / n - aimOf(j)) / spanOf(j); e += (dims[j].up && g < 0 ? 4 : 1) * g * g; } return e; };
+          const kk = Math.min(K, pool.length);
+          for (let n = 1; n <= kk; n++) {
+            let bi = -1, be = Infinity;
+            for (let i = 0; i < pool.length; i++) {
+              if (used[i]) continue;
+              const e = errOf(sum.map((x, j) => x + V[i][j]), n) + 0.01 * own[i];
+              if (e < be) { be = e; bi = i; }
+            }
+            used[bi] = 1; sel.push(bi); V[bi].forEach((x, j) => { sum[j] += x; });
+          }
+          // (update 449) then swap rounds in and out while that brings the group closer (a first pick can box it in)
+          let cur = errOf(sum, kk);
+          for (let pass = 0; pass < 15 && cur > 1e-6; pass++) {
+            let moved = false;
+            for (let a = 0; a < sel.length; a++) {
+              const out0 = sel[a]; let bi = -1, be = cur - 1e-9;
+              const base0 = sum.map((x, j) => x - V[out0][j]);
+              for (let i = 0; i < pool.length; i++) {
+                if (used[i]) continue;
+                const e = errOf(base0.map((x, j) => x + V[i][j]), kk);
+                if (e < be) { be = e; bi = i; }
+              }
+              if (bi >= 0) { used[out0] = 0; used[bi] = 1; sel[a] = bi; for (let j = 0; j < dims.length; j++) sum[j] = base0[j] + V[bi][j]; cur = errOf(sum, kk); moved = true; }
+            }
+            if (!moved) break;
+          }
+          const avg = sum.map((x) => x / kk);
+          return { rounds: sel.map((i) => pool[i]), ok: avg.every(fits), avg };
+        };
+        let src = "you", got = pick(rs, Math.max(5, Math.min(15, Math.round(rs.length / 4))));
+        if (!got.ok) {
+          const tour = field0.flatMap((p) => p.rounds || []).filter((rd) => (rd.shots || []).length);
+          const tg = tour.length >= 50 ? pick(tour, 25) : null;
+          if (!tg || !tg.ok) return { err: "No rounds this season, theirs or anyone else\u2019s on tour, match this what-if: at least as good as it in every part made better (and no more than 0.10 a round better), and within 0.10 a round everywhere else. Try smaller changes." };
+          src = "tour"; got = tg;
+        }
+        const near = got.rounds, K = near.length;
+        // the stats to use for each part of the game; the second list only when the data has none of the first
+        const CAND = (c, d) => (c === "OTT" ? [/iron|wood/i.test(d || "") ? ["fwy"] : ["drive", "fwy"]] : c === "APP" ? [["prox", "hitGreen"], ["gir"]] : c === "ARG" ? [["prox", "hitGreen"], ["ud", "scramble"]] : c === "PUTT" ? [["make"], ["goodLag"]] : []);
+        const scopes = (c, d) => [...(d ? [["exact", (o) => o.cat === c && o.dist === d]] : []), ["cat", (o) => o.cat === c && !o.dist], ["whole", (o) => !o.cat]];
+        const avgOf = (rounds, k, f) => { let s0 = 0, w = 0; for (const rd of rounds) for (const o of rd.obs || []) if (o.k === k && f(o)) { s0 += o.v * o.w; w += o.w; } return w ? { v: s0 / w, w } : null; };
+        const items = [], notes = [];
+        for (const u of ups) {
+          let best = null, seen = false;
+          for (const tier of CAND(u.c, u.d)) { if (seen) break; for (const k of tier) {
+            const def = statDef(k);
+            for (const [scope, f] of scopes(u.c, u.d)) {
+              const a = avgOf(near, k, f), b = avgOf(rs, k, f);
+              if (!a || !b) continue;
+              if (a.w < (def.pct ? 8 : 4) || b.w < (def.pct ? 20 : 8)) continue; // (too few attempts there: the wider scope)
+              // how far it moved, against how much it swings round to round
+              const per = rs.map((rd) => avgOf([rd], k, f)).filter(Boolean).map((x) => x.v);
+              const m = per.reduce((t, v) => t + v, 0) / (per.length || 1);
+              const sd = Math.max(1e-6, Math.sqrt(per.reduce((t, v) => t + (v - m) ** 2, 0) / Math.max(1, per.length - 1)));
+              const z = ((a.v - b.v) / sd) * (def.higher === false ? -1 : 1);
+              seen = true;
+              // (update 449) only a stat that's really better than now, still better once rounded for the goal
+              const dpK = def.pct ? 1 : def.dp ?? 1, rN = Math.round(a.v * 10 ** dpK), rS = Math.round(b.v * 10 ** dpK);
+              const better = def.higher === false ? rN < rS : rN > rS;
+              if (better && z > 0.05 && (!best || z > best.z)) best = { k, def, vn: a.v, vs: b.v, z, scope };
+              break;
+            }
+          } }
+          if (!best) { notes.push(`${u.label}: none of its plain stats were better in those rounds than in ${src === "tour" ? "their" : "the"} season, so no drill for it.`); continue; }
+          const { k, def, vn, vs, scope } = best;
+          const dp = def.pct ? 1 : def.dp ?? 1, tgt = Math.round(vn * 10 ** dp) / 10 ** dp;
+          const goal = { stat: "obs", statKey: k, cat: scope === "whole" ? null : u.c, dist: scope === "exact" ? u.d : null, label: def.label, unit: def.pct ? "%" : def.unit || "", higher: def.higher !== false, dp, target: tgt, measure: "round", when: "nextN", n: 12 };
+          const dr = drillFor(u.c, u.d, { k, def, ve: vn, exact: scope !== "whole" });
+          if (dr) { dr.from = src === "tour" ? "tour rounds like this" : "own rounds like this"; dr.recFrom = src; }
+          goal.recFrom = src;
+          items.push({ drill: dr, goal, why: `${u.label}: ${def.label} ${fmtStat(def, vs)} now \u2192 ${fmtStat(def, vn)} in ${src === "tour" ? "tour rounds" : "their rounds"} like this` });
+        }
+        // one goal per stat: two drills on the same stat (an iron and a wood off the tee, say) share it
+        const seenG = new Set();
+        for (const x of items) { const gk = `${x.goal.statKey}|${x.goal.cat || ""}|${x.goal.dist || ""}`; if (seenG.has(gk)) x.goal = null; else seenG.add(gk); }
+        return { items: items.filter((x) => x.drill), notes, K, n: rs.length, src };
+      };
+      const planMsg = st.hypoPlanMsg && st.hypoPlanMsg.key === me?.key && Date.now() - st.hypoPlanMsg.at < 120000 ? st.hypoPlanMsg : null;
+      const planBtn = ups.length && planOn ? (() => {
+        const b = el("button", { type: "button", class: "btn ghost small hy-plan" }, "Create practice plan");
+        b.addEventListener("click", () => {
+          let P; try { P = hypoPlan(); } catch (err) { console.error(err); P = { err: "Couldn’t work that out just now." }; }
+          if (P.err || !P.items.length) { st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: P.err || P.notes.join(" ") || "Nothing to practise for these changes." }; draw(); return; }
+          const whoseP = isMine(me?.key) || !me?.label ? "your" : `${me.label}’s`;
+          const intro = el("div", { class: "hy-plan-why" }, [
+            el("p", { class: `hy-src ${P.src}` }, P.src === "tour" ? `From the tour: ${whoseP === "your" ? "your" : "their"} own rounds don\u2019t match this what-if closely enough, so these come from the ${P.K} rounds by other players this season that average out to it.` : `From ${whoseP === "your" ? "your" : "their"} own rounds: ${P.K} of ${P.n} this season average out to this what-if.`),
+            el("p", { class: "small" }, "The fewest stats to work on:"),
+            el("ul", { class: "small" }, P.items.map((x) => el("li", {}, x.why))),
+            P.notes.length ? el("p", { class: "muted small" }, P.notes.join(" ")) : null]);
+          planEditor(P.items.map(({ drill, goal }) => ({ drill, goal })), whoseP, async (list) => {
+            b.disabled = true;
+            try {
+              const { addToPlan } = await import("./practice/plan.js");
+              const n = await addToPlan(getState(), { items: list.map((x) => ({ ...x })), playerKey: me?.key, playerLabel: me?.label });
+              for (const x of list) PLAN_ADDED.add(`${me?.key}|${x.drill.kind}|${x.drill.dist || ""}|${x.drill.lie || ""}`);
+              const g = list.filter((x) => x.goal).length;
+              st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: `Added ${n} ${n === 1 ? "drill" : "drills"} to ${whoseP} practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to Goals` : ""} (from ${P.src === "tour" ? "tour rounds" : `${whoseP === "your" ? "your" : "their"} own rounds`}).`, link: true };
+              draw();
+            } catch (err) { console.error(err); b.disabled = false; st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: "Couldn’t add that just now. Try again." }; draw(); }
+          }, intro);
+        });
+        return b;
+      })() : null;
+      const planLine = planMsg ? el("p", { class: "muted small hy-plan-msg" }, [planMsg.text, planMsg.link ? " " : null,
+        planMsg.link ? el("a", { href: isMine(me?.key) ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(me?.key || "")}`, class: "link" }, "Open Practice →") : null]) : null;
       const reset = anyAdj ? (() => { const b = el("button", { type: "button", class: "link small" }, "Reset"); b.addEventListener("click", () => { st.hypoAdj = null; draw(); }); return b; })() : null;
       return el("div", { class: "bs-path bs-hypo" }, [
         el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), reset]),
         el("div", { class: "bs-path-gap" }, [
           infoTip(`Start from their season average (${N} rounds): strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
         sumLine,
+        planBtn || planLine ? el("div", { class: "hy-plan-row" }, [planBtn, planLine]) : null,
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [
           el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, "Avg"), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Season rank")])),
           el("tbody", {}, body),
@@ -3023,6 +3168,8 @@ export function sgDashboard(container, opts) {
     const WHOLE = { OTT: /^(fwy|drive|fairway)/i, APP: /^(gir|prox)/i, ARG: /^(scramble|updown|sand)/i, PUTT: /^(putts|onePutt|threePutt|make)/i };
     // (update 341) enough attempts to trust a stat: 20 for a percentage (a make rate from 3 putts means nothing), 8 otherwise
     const enough = (def, w) => w >= (def.pct ? 20 : 8);
+    // (update 447) tee shots with an iron or a wood are only ever about the fairway, never distance
+    const okK = (c, d, k) => !(c === "OTT" && /iron|wood/i.test(d || "") && !/^(fwy|fairway)/i.test(k));
     const target = (c, d) => {
       // the stat for that part of the game and distance; if the file has none, the whole-round stat for that part of the game.
       // The one that moved most (better in the best rounds), only where both sets of rounds have enough attempts.
@@ -3033,7 +3180,7 @@ export function sgDashboard(container, opts) {
       const mE = statAvg(elite, pred), mR = statAvg(recent, pred);
       let best = null, thin = null, anyOk = false;
       for (const [k, a] of mE) {
-        const b = mR.get(k); const def = statDef(k); if (!b || def.higher == null) continue;
+        const b = mR.get(k); const def = statDef(k); if (!b || def.higher == null || !okK(c, d, k)) continue;
         if (!enough(def, a.w) || !enough(def, b.w)) { thin ||= def; continue; }
         anyOk = true;
         const ve = a.s / a.w, vr = b.s / b.w; const better = def.higher !== false ? ve > vr : ve < vr; if (!better) continue;
@@ -3068,7 +3215,7 @@ export function sgDashboard(container, opts) {
         const mE = statAvg(elite, scope), mR = statAvg(recent, scope);
         for (const [k, a] of mE) {
           const def = statDef(k), b = mR.get(k);
-          if (!b || def.higher == null || !enough(def, a.w) || b.w < (def.pct ? 8 : 5)) continue;
+          if (!b || def.higher == null || !okK(c, d, k) || !enough(def, a.w) || b.w < (def.pct ? 8 : 5)) continue;
           const ve = a.s / a.w, vr = b.s / b.w;
           if (def.higher !== false ? ve > vr + 1e-9 : ve < vr - 1e-9) return { k, def, ve, vr, w: b.w, exact: exactOnly };
         }

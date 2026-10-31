@@ -2,17 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<!-- (update 447: Save PDF makes the PDF on the phone itself, html2canvas + jsPDF from cdnjs, then Share / Save to Files) -->
 <!-- (update 446) the Outlook report on its own page (phones and the installed app): the page is report-wide, so it fits
      the screen to start and pinch-zooms like any page; Print saves a PDF; Close goes back -->
 <meta name="viewport" content="width=1120">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#111418">
 <title>Outlook report</title>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'">
-<style>html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{margin:0;background:#eef1f5;font:16px -apple-system,"Segoe UI",Inter,Roboto,sans-serif}.ov-empty{padding:40px;text-align:center;color:#4a535e}.bar{font-size:24px!important;padding:16px 24px!important;gap:20px!important}.bar button{font-size:24px!important;padding:12px 28px!important;border-radius:12px!important}</style>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'">
+<style>html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{margin:0;background:#eef1f5;font:16px -apple-system,"Segoe UI",Inter,Roboto,sans-serif}.ov-empty{padding:40px;text-align:center;color:#4a535e}.bar{font-size:24px!important;padding:16px 24px!important;gap:20px!important}.pdf-snap .page{width:11in!important;height:8.5in!important;min-height:0!important;margin:0!important;box-shadow:none!important;overflow:hidden!important;padding:calc(0.35in + 4px) calc(0.35in + 2px)!important}.pdf-snap .bar{display:none!important}.bar .pdf-msg{font-size:18px!important;color:#c9d1db}.bar button{font-size:24px!important;padding:12px 28px!important;border-radius:12px!important}</style>
 </head>
 <body>
 <p class="ov-empty" id="ovEmpty">Loading the report…</p>
-<script src="js/outlookView.js?v=446"></script>
+<script src="js/outlookView.js?v=447"></script>
 </body>
 </html>
