@@ -139,7 +139,7 @@ async function myCourses(ctx) {
   // (update 456) the courses with Strategy Maps (uploaded on Upload Data): a course they already have gets the maps
   try {
     const [{ listHeatCourses }, { sameCourse }] = await Promise.all([import("../courseHeat.js"), import("../sg.js")]);
-    for (const h of await listHeatCourses()) {
+    for (const h of (await listHeatCourses()).filter((x) => x.dataChunks)) { // (update 458: once its scoring is in)
       const c = [...out.values()].find((x) => sameCourse(x.name, h.name));
       const par = (h.par || []).map((p) => p || 4), yards = h.yards || [];
       if (c) { c.heat = h; if (!c.yards.some(Boolean) && yards.some(Boolean)) c.yards = [...yards]; }

@@ -202,11 +202,11 @@ function heatPanel(flash) {
   drawList(false).catch(() => mount(list, el("p", { class: "muted small" }, "Couldn’t load the courses (republish the Firestore rules, update 456).")));
   return el("section", { class: "heat-admin" }, [
     el("h2", {}, "Strategy Maps (Course Prep)"),
-    el("p", { class: "muted small" }, "Each course’s hole images with its scoring zones over them, under Course Prep › the course › Strategy Maps. The course names in the CSV and the folder names in the zip need to match (close spellings do)."),
+    el("p", { class: "muted small" }, "Each course’s hole images with its scoring zones over them, under Course Prep › the course › Strategy Maps. Image folders are matched to the scoring file by courseNum (or by course name)."),
     el("div", { class: "stack narrow" }, [
-      el("label", {}, ["Scoring (.csv)", csv, el("small", {}, "One row per zone and lie: course, hole, par, pin_id, pin_x, pin_y, shotcluster, x, y, radius, lie, distanceRange, scoring_avg, attempts. x, y and radius are pixels on that hole’s image (shotStartX/Y_projected_Hole); pin_x, pin_y the pin (pinX/Y_projected_Hole). scoring_avg is the hole score (or score to par) from that zone. yards and category are optional. Uploading a course again replaces its zones.")]),
+      el("label", {}, ["Scoring (.csv)", csv, el("small", {}, "One row per cluster: courseNum, course, hole, par, pin_id, shotCluster, lie, x, y, scoring_avg, pin_x, pin_y, distance. x, y are the cluster centre in pixels on that hole\u2019s image (shotStartX/Y_projected_Hole); pin_x, pin_y the pin. scoring_avg is the strokes to hole out from there; distance the distance from the pin (yards, feet on the green). The zones blend into each other and stop where the lie changes on the image. Uploading a course again replaces its zones.")]),
       el("div", {}, csvBtn),
-      el("label", {}, ["Hole images (.zip)", zip, el("small", {}, "A folder for each course, named as it should show on the site, with an image for each hole named by its number (1.png, Hole 1.png or 1/Hole.png). The same images the x, y were measured on. A zip per course inside the zip works too.")]),
+      el("label", {}, ["Hole images (.zip)", zip, el("small", {}, "A CourseImages folder with a folder for each course, named with its courseNum (or its course name), and in it an image for each hole named by its number (1.png, or 1/Hole.png). The same images the x, y were measured on. The site shows the course name from the scoring file.")]),
       el("div", {}, zipBtn),
     ]),
     list,

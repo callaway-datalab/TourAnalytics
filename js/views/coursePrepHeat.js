@@ -6,7 +6,7 @@
  */
 import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
-import { heatData, heatImage, zonesOf, keyZones, paintHeat, paintBase, toDisp, toImg, zoneAt, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
+import { heatData, heatImage, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 
 const st = { hole: 1, pin: {}, view: "field", mode: "zones" }; // (kept while the app is open)
@@ -22,7 +22,7 @@ export async function drawHeat(ctx, course) {
   const whoLine = el("p", { class: "muted small sh-who" });
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel sh" }, [
     el("p", { class: "pr-eyebrow" }, course.name), el("div", { class: "sh-title" }, [el("h1", {}, "Strategy Maps"),
-      infoTip("Each zone is a cluster of shots the tour has played from on this hole and pin, drawn as an area the size of the cluster. Aim / Avoid compares each zone with the zones about as far from the pin: green scores better than its neighbours (somewhere to aim), red worse (somewhere to stay away from); ✓ marks the best three, ✕ the worst three. Scoring shows the scoring itself, birdie (blue) to bogey (red), as in the course report. With a player picked, Player weights every zone by their own strokes gained from that distance and lie, against the tour.")]),
+      infoTip("Each zone is the centre of a cluster of shots the tour has played from on this hole and pin; the colour blends from one zone to the next, and stops where the lie changes on the image (a fairway zone colours only the fairway, a rough zone only the rough). Aim / Avoid compares each zone with the zones about as far from the pin: green scores better than its neighbours (somewhere to aim), red worse (somewhere to stay away from); ✓ marks the best three, ✕ the worst three. Scoring shows the scoring itself, birdie (blue) to bogey (red), as in the course report. With a player picked, Player weights every zone by their own strokes gained from that distance and lie, against the tour.")]),
     W.node, whoLine]), body]);
   let data;
   try { data = await heatData(meta); } catch (err) { console.error(err); mount(body, el("p", { class: "empty" }, "Couldn’t load the zones. Try again.")); return; }
@@ -50,8 +50,11 @@ export async function drawHeat(ctx, course) {
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
   const setGeom = () => { rot = !!size.w && matchMedia("(max-width: 600px)").matches && size.w > size.h * 1.25; stage.style.aspectRatio = size.w ? (rot ? `${size.h} / ${size.w}` : `${size.w} / ${size.h}`) : "16 / 9"; stage.classList.toggle("rot", rot); };
-  const drawAll = () => { paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, { W: size.w, H: size.h, par, mode: st.mode, pin: pinNow, rot }); };
-  img.addEventListener("load", () => drawAll());
+  // (update 457) the zones' picture is worked out once (it reads the image for the edges of each lie), then only drawn
+  let ov = null;
+  const rebuild = () => { ov = Z && size.w ? buildOverlay(img.naturalWidth ? img : null, Z, { W: size.w, H: size.h, par, mode: st.mode }) : null; };
+  const drawAll = () => { paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin: pinNow, rot }); };
+  img.addEventListener("load", () => { rebuild(); drawAll(); });
   const seg = (box, list, key, onSet) => mount(box, list.map(([v, l, dis]) => { const b = el("button", { type: "button", class: `seg-btn${st[key] === v ? " on" : ""}`, "aria-pressed": String(st[key] === v), disabled: !!dis, title: dis || null }, l); b.addEventListener("click", () => { if (st[key] === v) return; st[key] = v; onSet(); }); return b; }));
   const go = (d) => { const i = holeNums.indexOf(st.hole) + d; if (i >= 0 && i < holeNums.length) { st.hole = holeNums[i]; showHole(); } };
   function drawHoleBar() {
@@ -69,7 +72,7 @@ export async function drawHeat(ctx, course) {
     const pins = Object.keys(H.pins || {}).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
     if (!pins.includes(st.pin[n])) st.pin[n] = pins[0];
     // the pins: a switch each (the picture stays; only the zones change)
-    mount(pinBar, pins.length ? pins.map((p, i) => { const b = el("button", { type: "button", class: `sh-pin${st.pin[n] === p ? " on" : ""}`, "aria-pressed": String(st.pin[n] === p) }, /^\d+$/.test(p) ? `Pin ${p}` : pins.length > 1 ? `Pin ${i + 1}` : "Pin"); b.title = String(p); b.addEventListener("click", () => { if (st.pin[n] === p) return; st.pin[n] = p; [...pinBar.children].forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); }); paint(); }); return b; }) : el("span", { class: "muted small" }, "No zones for this hole yet."));
+    mount(pinBar, pins.length ? pins.map((p, i) => { const b = el("button", { type: "button", class: `sh-pin${st.pin[n] === p ? " on" : ""}`, "aria-pressed": String(st.pin[n] === p) }, /^\d+$/.test(p) ? `Pin ${p}` : String(p).replace(/[-_]+/g, " ")); /* (update 458: its own name) */ b.title = String(p); b.addEventListener("click", () => { if (st.pin[n] === p) return; st.pin[n] = p; [...pinBar.children].forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); }); paint(); }); return b; }) : el("span", { class: "muted small" }, "No zones for this hole yet."));
     // the picture: only when the hole changes
     if (hm) {
       size = { w: hm.w, h: hm.h }; setGeom();
@@ -93,12 +96,14 @@ export async function drawHeat(ctx, course) {
     seg(viewSeg, [["field", "Field"], ["player", who ? who.label.split(" ")[0] || "Player" : "Player", !who ? "Pick a player" : !ix ? "Loading their stats…" : null]], "view", paint);
     if (!pin || !size.w) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); Z = null; mount(keys, size.w ? null : el("p", { class: "muted small" }, "No image for this hole yet: upload the course’s images zip on Upload Data.")); drawLegend(); return; }
     const usePlayer = st.view === "player" && !!ix;
-    Z = zonesOf(pin, par, ix);
+    const Hn = data.holes?.[n] || {};
+    Z = zonesOf(pin, par, ix, { toGo: !!data.toGo, yards: Hn.yards || meta.yards?.[n - 1] || course.yards?.[n - 1] || null }); // (update 458)
     const K = keyZones(Z, usePlayer);
-    paintHeat(cv, Z, { W: size.w, H: size.h, par, mode: st.mode, pin, rot });
+    rebuild();
+    paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin, rot });
     drawLegend();
     // the key zones in words
-    const line = (z) => { const b = el("button", { type: "button", class: `sh-key ${z.key.kind}` }, [el("strong", {}, `${z.key.kind === "target" ? "✓" : "✕"}${z.key.n}`), ` ${lieList(z)} · ${fmtPar(z.v)} to par`, el("span", { class: "muted" }, ` (${fmtPar(z.diff)} vs zones as far out)`)]); b.addEventListener("click", () => openZone(z)); return b; };
+    const line = (z) => { const b = el("button", { type: "button", class: `sh-key ${z.key.kind}` }, [el("strong", {}, `${z.key.kind === "target" ? "✓" : "✕"}${z.key.n}`), ` ${lieList(z)}${z.dp ? ` · ${Math.round(z.dp)} yds out` : ""} · ${z.toGo ? `${z.raw.toFixed(2)} to hole out` : `${fmtPar(z.v)} to par`}`, el("span", { class: "muted" }, ` (${fmtPar(z.diff)} vs zones as far out)`)]); b.addEventListener("click", () => openZone(z)); return b; };
     mount(keys, [K.target.length ? el("div", {}, [el("p", { class: "sh-k-h pos" }, "Aim here"), ...K.target.map(line)]) : null, K.avoid.length ? el("div", {}, [el("p", { class: "sh-k-h neg" }, "Stay away from"), ...K.avoid.map(line)]) : null,
       !K.target.length && !K.avoid.length ? el("p", { class: "muted small" }, "No zone stands out from the ones around it on this pin.") : null]);
   }
@@ -106,7 +111,7 @@ export async function drawHeat(ctx, course) {
     if (st.mode === "zones") { mount(legend, [el("span", { class: "sh-lg" }, [el("i", { class: "sh-sw-g" }), "Scores better than zones as far out"]), el("span", { class: "sh-lg" }, [el("i", { class: "sh-sw-r" }), "Scores worse"]), el("span", { class: "sh-lg" }, [el("i", { class: "sh-sw-p" }), "Pin"])]); return; }
     const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => { const v = par >= 5 ? (t <= 0.5 ? -1 + t : -0.5 + (t - 0.5) * 2) : t - 0.5; return [t, scoreT(v, par)]; });
     const bar = el("i", { class: "sh-grad" }); bar.style.background = `linear-gradient(90deg, ${stops.map(([t]) => `rgb(${rgbAt(t)}) ${t * 100}%`).join(", ")})`;
-    mount(legend, [el("span", { class: "sh-lg" }, [par >= 5 ? "Eagle" : "Birdie", bar, "Bogey"]), el("span", { class: "muted small" }, par >= 5 ? "−1 to +0.5 to par (birdie in the middle)" : "−0.5 to +0.5 to par (par in the middle)")]);
+    mount(legend, [el("span", { class: "sh-lg" }, [par >= 5 ? "Eagle" : "Birdie", bar, "Bogey"]), el("span", { class: "muted small" }, `${par >= 5 ? "−1 to +0.5 to par (birdie in the middle)" : "−0.5 to +0.5 to par (par in the middle)"}: the hole score from there, reached in regulation`)]);
   }
   const lieList = (z) => { const m = new Map(); for (const r of z.rows) m.set(r.lie || "Any lie", (m.get(r.lie || "Any lie") || 0) + (r.n || 1)); return [...m].sort((a, b) => b[1] - a[1]).map(([l]) => l).slice(0, 2).join(" / "); };
   // tap: the zone under the finger
@@ -114,7 +119,7 @@ export async function drawHeat(ctx, course) {
     if (!Z || !size.w) return;
     const r = cv.getBoundingClientRect(), DW = rot ? size.h : size.w, DH = rot ? size.w : size.h;
     const [x, y] = toImg(((e.clientX - r.left) / r.width) * DW, ((e.clientY - r.top) / r.height) * DH, size.w, rot);
-    const z = zoneAt(Z.zones, x, y);
+    const z = zoneAt(Z.zones, x, y, ov);
     if (!z) { pop.hidden = true; return; }
     openZone(z, e.clientX - r.left, e.clientY - r.top);
   });
@@ -127,12 +132,13 @@ export async function drawHeat(ctx, course) {
     const ttl = z.key ? (z.key.kind === "target" ? `Aim here ✓${z.key.n}` : `Stay away ✕${z.key.n}`) : "Zone";
     const rows = [...z.rows].sort((a, b) => (b.n || 0) - (a.n || 0));
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { class: z.key?.kind === "target" ? "pos" : z.key?.kind === "avoid" ? "neg" : "" }, ttl), x]),
-      el("p", {}, [`Scoring from here: `, el("strong", {}, `${(par + z.field).toFixed(2)}`), ` (${fmtPar(z.field)} to par)`]),
-      usePlayer && z.player != null ? el("p", {}, [`${who.label}: `, el("strong", {}, `${(par + z.player).toFixed(2)}`), ` (${fmtPar(z.player)}), from their strokes gained from here`]) : null,
-      el("p", { class: "muted small" }, [`${fmtPar(z.diff)} against zones about as far from the pin`, z.n ? ` · ${z.n.toLocaleString()} shots${share != null ? ` (${share}% of this pin’s)` : ""}` : ""]),
-      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Lie"), el("th", {}, "Distance"), el("th", { class: "num" }, "Shots"), el("th", { class: "num" }, "Tour"), usePlayer ? el("th", { class: "num" }, who.label.split(" ")[0]) : null])),
-        el("tbody", {}, rows.map((q) => el("tr", {}, [el("td", {}, q.lie || "—"), el("td", {}, q.d || "—"), el("td", { class: "num" }, q.n ? q.n.toLocaleString() : "—"), el("td", { class: "num" }, fmtPar(q.f)),
-          usePlayer ? el("td", { class: "num", title: q.sk ? `${q.sk.sg >= 0 ? "Gains" : "Loses"} ${Math.abs(q.sk.sg).toFixed(3)} a shot${q.sk.band ? ` at ${q.sk.band}` : ""}${q.sk.lie ? ` from the ${q.sk.lie}` : ""} (${Math.round(q.sk.shots)} shots)` : null }, fmtPar(q.p)) : null])))]),
+      z.toGo ? el("p", {}, [`Strokes to hole out: `, el("strong", {}, z.raw.toFixed(2)), usePlayer && z.rawP != null ? [` · ${who.label.split(" ")[0]} `, el("strong", {}, z.rawP.toFixed(2))] : null]) : null,
+      el("p", {}, [z.toGo ? `Hole score from here${z.k != null ? ` (${z.k === 0 ? "from the tee" : `in ${z.k} ${z.k === 1 ? "shot" : "shots"}`})` : ""}: ` : `Scoring from here: `, el("strong", {}, `${(par + z.field).toFixed(2)}`), ` (${fmtPar(z.field)} to par)`]),
+      usePlayer && z.player != null && !z.toGo ? el("p", {}, [`${who.label}: `, el("strong", {}, `${(par + z.player).toFixed(2)}`), ` (${fmtPar(z.player)}), from their strokes gained from here`]) : null,
+      el("p", { class: "muted small" }, [z.L === "tee" ? "The tee" : `${fmtPar(z.diff)} against zones about as far from the pin${z.dp ? ` (${Math.round(z.dp)} yds)` : ""}`, Z.hasN && z.n ? ` · ${z.n.toLocaleString()} shots${share != null ? ` (${share < 1 ? "under 1" : share}% of this pin’s)` : ""}` : ""]),
+      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Lie"), el("th", {}, "Distance"), Z.hasN ? el("th", { class: "num" }, "Shots") : null, el("th", { class: "num" }, z.toGo ? "To hole out" : "Tour"), usePlayer ? el("th", { class: "num" }, who.label.split(" ")[0]) : null])),
+        el("tbody", {}, rows.map((q) => el("tr", {}, [el("td", {}, q.lie || "—"), el("td", {}, q.d || "—"), Z.hasN ? el("td", { class: "num" }, q.n ? q.n.toLocaleString() : "—") : null, el("td", { class: "num" }, z.toGo ? q.v.toFixed(2) : fmtPar(q.f)),
+          usePlayer ? el("td", { class: "num", title: q.sk ? `${q.sk.sg >= 0 ? "Gains" : "Loses"} ${Math.abs(q.sk.sg).toFixed(3)} a shot${q.sk.band ? ` at ${q.sk.band}` : ""}${q.sk.lie ? ` from the ${q.sk.lie}` : ""} (${Math.round(q.sk.shots)} shots)` : null }, z.toGo ? (q.v - (q.sk?.sg || 0)).toFixed(2) : fmtPar(q.p)) : null])))]),
     ]);
     pop.hidden = false;
     const pw = Math.min(320, r.width - 16); pop.style.width = `${pw}px`;
