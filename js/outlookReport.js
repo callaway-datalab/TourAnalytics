@@ -402,10 +402,14 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
       vsUsual: usual != null ? tot - usual : null, puttLed: tot > swing && putt > tot / 2 };
   };
   const topTxt = (rk) => `top ${Math.max(1, Math.round(rk.top * 100))}%`;
-  const fieldRead = (r) => { const w = r.r.weak.rk, s0 = r.r.strong.rk; if (!w || !s0) return ""; const d = s0.top - w.top; return w.top <= 0.25 && s0.top <= 0.25 ? "Strong in both" : d >= 0.25 ? "Better in weak fields" : d <= -0.25 ? "Better in strong fields" : w.top > 0.6 && s0.top > 0.6 ? "Behind in both" : "Similar in both"; };
+  // (update 430) the takeaway in plain rank terms, each half on its own: top 20%, above average, average, behind
+  const TIERS = ["top 20%", "above average", "average", "behind"];
+  const tierOf = (rk) => (rk.top <= 0.2 ? 0 : rk.top <= 0.4 ? 1 : rk.top <= 0.6 ? 2 : 3);
+  const fieldTiers = (r) => (r.r.weak.rk && r.r.strong.rk ? { w: tierOf(r.r.weak.rk), s: tierOf(r.r.strong.rk) } : null);
+  const fieldRead = (r) => { const t = fieldTiers(r); if (!t) return ""; return t.w === t.s ? cap(`${TIERS[t.w]} in both`) : `${cap(TIERS[t.w])} in weak<br>${cap(TIERS[t.s])} in strong`; };
   const risksOf = (f) => {
     const L0 = L1(f), FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
-    if (FCr && fieldRead(FCr) === "Better in weak fields") out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there, against #${FCr.r.weak.rk.rank} of ${FCr.r.weak.rk.of} in weaker ones, ${FC.years.join("–")}`);
+    if (FCr && fieldTiers(FCr) && fieldTiers(FCr).s > fieldTiers(FCr).w) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there, against #${FCr.r.weak.rk.rank} of ${FCr.r.weak.rk.of} in weaker ones, ${FC.years.join("–")}`);
     if (fl.vsUsual != null && fl.vsUsual < -fl.swing) out.push(vsTxt(fl));
     if (fl.puttLed && fl.lastPutt != null) out.push(`Putting carried ${fl.lastYear}: ${f2(fl.lastPutt)} of ${f2(fl.lastTot)} a round`);
     if ((L0 && L0.n < 30) || fl.fewRounds) out.push(`Limited data: ${L0?.n ?? fl.lastN ?? 0} rounds, ${win}`);
@@ -419,7 +423,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   // (update 425) other positives: the mirror of the other risks
   const posOf = (f) => {
     const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
-    if (FCr && ["Better in strong fields", "Strong in both"].includes(fieldRead(FCr))) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there (${topTxt(FCr.r.strong.rk)}), ${FC.years.join("–")}`);
+    if (FCr && fieldTiers(FCr) && fieldTiers(FCr).s <= 1 && fieldTiers(FCr).s <= fieldTiers(FCr).w) out.push(`Stronger fields: #${FCr.r.strong.rk.rank} of ${FCr.r.strong.rk.of} there (${topTxt(FCr.r.strong.rk)}), ${FC.years.join("–")}`);
     if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(vsTxt(fl));
     const y3 = f.years.at(-1);
     if (f.age != null && model.ageOk && y3.ageAdd >= 0.1) out.push(`Age: about ${f2(y3.ageAdd)} a round by ${y3.year}`);
@@ -473,7 +477,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const seasonRows = order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${showYears.map((y) => `<td>${cell(T.seasons.get(y).out.get(f.key), "TOTAL")}</td>`).join("")}<td class="hlc">${cell(L1(f), "TOTAL")}</td></tr>`).join("");
   // (update 429) where each player ranks in weaker fields and in stronger ones (not the drop: a player can drop a lot just
   // by being exceptional in weak fields); best in stronger fields first
-  const fcRows = FC ? [...FC.rows].sort((a, b) => (a.r.strong.rk?.top ?? 9) - (b.r.strong.rk?.top ?? 9)).map((r) => {
+  const fcRows = FC ? [...FC.rows].sort((a, b) => order.findIndex((f) => f.key === a.key) - order.findIndex((f) => f.key === b.key)).map((r) => {
     const f = fcs.find((x) => x.key === r.key), s0 = r.r.strong, w = r.r.weak;
     const c = (b) => (b.n ? `<span class="${tone(b.tot / b.n)}">${f2(b.tot / b.n)}</span> <small>${b.n} rds</small><br><small>#${b.rk.rank} of ${b.rk.of} · ${topTxt(b.rk)}</small>` : "—");
     return `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td><td>${c(w)}</td><td>${c(s0)}</td><td><b>${fieldRead(r)}</b></td></tr>`;
@@ -489,7 +493,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     <div class="cols c50"><div><h3>Strokes gained a round, by season <small>tour rank in brackets · ${esc(WIN)}: ${esc(fromTxt)} to ${esc(thru)}</small></h3>
         <table class="seas"><tr><th></th>${showYears.map((y) => `<th>${esc(yLabel(y))}</th>`).join("")}<th class="hlc">${esc(WIN)}</th></tr>${seasonRows}</table></div>
       <div>${FC ? `<h3>Weaker vs. stronger fields <small>${esc(FC.years.join("–"))} · each ranked among the same players (20+ rounds in both halves)</small></h3>
-        <table><tr><th></th><th>Weaker fields</th><th>Stronger fields</th><th>Read</th></tr>${fcRows}</table>` : ""}</div></div>
+        <table><tr><th></th><th>Weaker fields</th><th>Stronger fields</th><th>Takeaway</th></tr>${fcRows}</table>` : ""}</div></div>
     <div class="cols c55"><div><h3>Projected strokes gained a round <small>against an average ${esc(target)} field · likely range · rank it would mean</small></h3>
         <table class="proj"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${projRows}</table></div>
       <div><h3>Best and worst projected ranks <small>top and bottom of the likely range · out of ~${order[0].years[0].of} ranked a season</small></h3><table class="bw"><tr><th></th>${yrs.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${order.map((f) => `<tr><td><i class="dot" style="background:${colorOf(f)}"></i><b>${ln(f)}</b></td>${f.years.map((y) => `<td><b>${ordinal(y.rankHi)}</b> to <b>${ordinal(y.rankLo)}</b></td>`).join("")}</tr>`).join("")}</table>
