@@ -373,7 +373,10 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   const headline = (() => {
     if (fcs.length === 1) return `${nm(fcs[0])}: ${f2(fcs[0].years[0].total)} a round projected for ${yrs[0]}`;
     if (bestAt.every((b) => b.f === bestAt[0].f)) return `${ln(bestAt[0].f)} projects best in all ${H === 3 ? "three" : H} seasons${bestAt.some((b) => b.close) ? " (close in places)" : ""}`;
-    return bestAt.map((b, h) => `${ln(b.f)} best in ${yrs[h]}${b.close ? " (barely)" : ""}`).join(" · ");
+    // (update 446) one entry a player, their years together: "Schauffele best in 2027 & 2028 · Burns best in 2029"
+    const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} & ${xs.at(-1)}`);
+    const byP = []; bestAt.forEach((b, h) => { let g = byP.find((x) => x.f === b.f); if (!g) byP.push((g = { f: b.f, ys: [], close: [] })); g.ys.push(yrs[h]); if (b.close) g.close.push(yrs[h]); });
+    return byP.map((g) => `${ln(g.f)} best in ${and(g.ys)}${g.close.length ? (g.close.length === g.ys.length ? " (barely)" : ` (barely in ${and(g.close)})`) : ""}`).join(" · ");
   })();
   const pr = model.params;
   const acc = model.err.map((e, i) => (e ? { h: i + 1, mae: e.mae, n: e.n } : null)).filter(Boolean);

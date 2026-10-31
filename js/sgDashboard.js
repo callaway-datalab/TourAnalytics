@@ -1968,7 +1968,7 @@ export function sgDashboard(container, opts) {
           infoTip(`Start from their season average (${N} rounds): strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
         sumLine,
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [
-          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, "Season Avg"), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Season rank")])),
+          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, "Avg"), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Season rank")])),
           el("tbody", {}, body),
         ])),
       ]);

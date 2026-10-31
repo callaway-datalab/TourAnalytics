@@ -1,7 +1,7 @@
 // Offline: keeps a copy of the app itself so it opens with no signal (Data Entry on the course).
 // The page and the app's files: fresh when online, the saved copy when not. The Firebase libraries
 // (versioned, never change): the saved copy first. Data goes through Firebase, not here.
-const CACHE = "tour-analytics-v445";
+const CACHE = "tour-analytics-v446";
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html", "./css/style.css", "./config.js"]).catch(() => {}))); });
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (e) => {
@@ -10,6 +10,7 @@ self.addEventListener("fetch", (e) => {
   const sameOrigin = url.origin === self.location.origin;
   const sdk = url.hostname === "www.gstatic.com" && url.pathname.includes("/firebasejs/");
   if (!sameOrigin && !sdk) return; // Firestore, sign-in and other services: leave alone
+  if (req.mode === "navigate" && /\/outlook\.html$/.test(url.pathname)) { e.respondWith(fetch(req, { cache: "no-cache" }).catch(() => caches.match("./index.html"))); return; } // (update 446: the report page, not saved as the app)
   if (req.mode === "navigate") { // the page: fresh when online, the saved copy when not
     e.respondWith(fetch(req, { cache: "no-cache" }).then((r) => { caches.open(CACHE).then((c) => c.put("./index.html", r.clone())); return r; }).catch(() => caches.match("./index.html")));
     return;

@@ -5201,7 +5201,7 @@ tr.row-muted td, tr.row-muted td * { color: var(--muted, #8e8e93) !important; ba
 /* (update 442) several top-gap numbers side by side; the path table's Last N box; All Rounds */
 .bs-top-b + .bs-top-b { margin-left: 3px; }
 .bs-path-t th.bs-lastn { white-space: nowrap; }
-.bs-path-t th.bs-lastn input.peak-len { width: 2.6em !important; min-width: 0; min-height: 0; height: auto; margin: 0 0 0 3px !important; padding: 1px 3px !important; font-size: 0.8rem !important; font-weight: 600; line-height: 1.2; border-radius: 6px; display: inline-block; vertical-align: baseline; }
+.bs-path-t th.bs-lastn input.peak-len { width: 3.3em !important; min-width: 0; min-height: 0; height: auto; margin: 0 -0.35em 0 0 !important; padding: 1px 3px !important; font-size: 16px !important; transform: scale(0.8); transform-origin: left center; font-weight: 600; line-height: 1.2; border-radius: 6px; display: inline-block; vertical-align: baseline; }
 .bs-all { margin: 0.4rem 0 0.6rem; }
 .bs-all-sort { margin: 0.35rem 0; display: flex; gap: 0.4rem; align-items: center; }
 .bs-path-flat { margin-top: 0.6rem; }
@@ -5228,4 +5228,13 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
   .hero-hypo .hy-ctl { gap: 0.12rem; }
   .hero-hypo .hy-step { width: 1.15rem; height: 1.15rem; font-size: 0.75rem; }
   .hero-hypo .hy-t td:first-child { white-space: normal; }
+}
+
+/* (update 446) phones zoom the page in on a text box under 16px: every box at 16px there */
+@media (max-width: 640px) { input[type="number"], input[type="text"], input[type="search"], select, textarea { font-size: 16px; } }
+/* (update 446) Export report: a full-width button on a phone */
+@media (max-width: 640px) {
+  .fc-foot.fc-top { flex-direction: column; align-items: stretch; gap: 0.35rem; }
+  .fc-foot.fc-top .btn { width: 100%; min-height: 2.9rem; font-size: 1rem; justify-content: center; }
+  .fc-foot.fc-top .muted { text-align: center; }
 }

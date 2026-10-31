@@ -2122,7 +2122,9 @@ export async function render(main) {
         const html = buildOutlookReport({ field: fc.field, detail: det?.field || null, fcs: order, info: m, ownRounds: (k) => sgRounds(rawOfKey(k)), extra: missing, logo });
         // (update 419) the report is written into the new tab and its print button wired from here: the site's security
         // policy carries over to that tab and blocks the page's own inline handler, so the button did nothing before
-        if (inApp) showReportOverlay(html);
+        // (update 446) phones and the installed app: the report on a page of its own in this tab (fits the screen, zooms,
+        // prints to PDF; Close comes back here); the pop-over only if it can't be handed over
+        if (inApp) { let ok = false; try { sessionStorage.setItem("ta.outlookReport", html); ok = true; } catch { /* */ } if (ok) location.href = "outlook.html"; else showReportOverlay(html); }
         else if (win) {
           win.document.open(); win.document.write(html.replace(' onclick="print()"', "")); win.document.close();
           const wire = () => {
