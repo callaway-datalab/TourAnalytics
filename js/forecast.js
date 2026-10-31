@@ -338,9 +338,11 @@ function learn(D, { tour = null } = {}) {
 
   /* ---------------- 5. checked on seasons it hadn't seen ---------------- */
   const resid = { 1: [], 2: [], 3: [] };
-  // (update 437) the age settings tried together: how far to trust each age, and whether seasons after next also get
-  // the average change across players
-  const AGE_OPTS = AGE_K.flatMap((kc) => [0, 1].map((sh) => ({ kc, sh })));
+  // (update 438) the age settings tried: how far to trust each age. The average change across players (mostly the tour
+  // getting stronger) is never added: it would move everyone down by the same amount, which changes no rank or chance,
+  // only makes every line slope down. Projections are against today's average field, as Marcel's are against today's
+  // league (its age adjustment is centered the same way).
+  const AGE_OPTS = AGE_K.map((kc) => ({ kc, sh: 0 }));
   const ageErr = AGE_OPTS.map(() => 0); let ageErrN = 0;
   let outOfSample = false;
   for (let t = 3; t < NY; t++) {
@@ -353,10 +355,10 @@ function learn(D, { tour = null } = {}) {
       for (const [key, s] of adjT) {
         if (key % NY !== yAct || s.n < 20) continue;
         const p = Math.floor(key / NY);
-        const pr = projectWith(Mt, p, yrs[yAct]); if (!pr) continue;
+        const pr = projectWith(Mt, p, yrs[yAct], 0, 0); if (!pr) continue;
         const act = s.cats.reduce((a, b) => a + b, 0);
         // (update 420) how much of the age curve to use: tried at several strengths on these unseen seasons
-        const preds = Mt.curves ? AGE_OPTS.map((o) => (o.kc === 0 && o.sh === 1 ? pr : projectWith(Mt, p, yrs[yAct], o.kc, o.sh)).total) : null;
+        const preds = Mt.curves ? AGE_OPTS.map((o) => (o.kc === 0 ? pr : projectWith(Mt, p, yrs[yAct], o.kc, o.sh)).total) : null;
         if (preds) { preds.forEach((v, i) => { ageErr[i] += s.n * (act - v) ** 2; }); ageErrN += s.n; }
         const sd = Math.sqrt(pr.varLevel + sig2Tot / s.n);
         const pv = prevS.get(p * NY + (t - 1));
@@ -367,9 +369,9 @@ function learn(D, { tour = null } = {}) {
     }
   }
   // (update 422) how far to trust the age curve, by how much data each age has: the setting that predicted these unseen seasons best
-  const ageOpt = ageErrN >= 600 ? AGE_OPTS[ageErr.indexOf(Math.min(...ageErr))] : { kc: 0, sh: 1 };
+  const ageOpt = ageErrN >= 600 ? AGE_OPTS[ageErr.indexOf(Math.min(...ageErr))] : { kc: 0, sh: 0 };
   const ageK = ageOpt.kc, ageSh = ageOpt.sh;
-  if (ageK !== 0 || ageSh !== 1) for (const h of [1, 2, 3]) for (const x of resid[h]) if (x.preds) { const v = x.preds[AGE_OPTS.indexOf(ageOpt)]; x.r = x.act - v; x.z = x.r / x.sd; }
+  if (ageK !== 0) for (const h of [1, 2, 3]) for (const x of resid[h]) if (x.preds) { const v = x.preds[AGE_OPTS.indexOf(ageOpt)]; x.r = x.act - v; x.z = x.r / x.sd; }
   const trustAt = (age) => trustOf(M, ageK)[ageIdx(age)];
   // (update 433) the signals: standardized, then added one at a time while they make the unseen seasons' forecasts
   // better (each season held out in turn, the effects learned on the others); only those are kept
