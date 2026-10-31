@@ -4,6 +4,7 @@ import { UserError, tableFromObjects } from "./data.js";
 // build comes first: it's one ready-to-run module. The package's own source files are the fallback.
 const CORE = [
   "https://cdn.jsdelivr.net/npm/hyparquet@1/+esm",
+  "https://cdn.jsdelivr.net/npm/hyparquet@1/src/index.js", // (update 459: the source's entry in newer versions)
   "https://cdn.jsdelivr.net/npm/hyparquet@1/src/hyparquet.js",
 ];
 // zstd / gzip / brotli / lz4 files (snappy, pandas' default, needs nothing extra)
