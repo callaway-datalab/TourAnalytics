@@ -2729,7 +2729,31 @@ export async function render(main) {
   const askParam = q.get("ask");
   let preset = null;
   if (askParam && q.get("plan")) { try { preset = JSON.parse(sessionStorage.getItem("callie.plan") || "null"); sessionStorage.removeItem("callie.plan"); } catch { preset = null; } }
+  // (update 455) Open in Compare from the Stats page's SG Trends by Product: those products (each its own group), over the
+  // chart's dates, with the part of the game picked there
+  let prodPreset = null;
+  if (q.get("prods")) { try { prodPreset = JSON.parse(sessionStorage.getItem("ta.cmpProducts") || "null"); sessionStorage.removeItem("ta.cmpProducts"); } catch { prodPreset = null; } }
+  async function runProducts(pp) {
+    const want = pp.player && (self?.[0] === pp.player ? self : players.find(([k]) => k === pp.player));
+    if (want) player = { key: want[0], label: want[1] };
+    if (!player) { draw(); return; }
+    productsOnly = false; staged = new Map(); chosen = [player];
+    g = { open: false, who: "one", playersDone: true, phow: "each" };
+    draw(); await load();
+    if (!data) { draw(); return; }
+    excl.events.clear(); excl.ranges.length = 0; excl.rounds.clear(); excl.evRounds.clear();
+    allMemo = null; opts = options(allRounds());
+    incCats = new Set((pp.cats || []).filter((c) => ["OTT", "APP", "ARG", "PUTT"].includes(c))); incDists = new Set();
+    const when = { ...(pp.from ? { from: String(pp.from).slice(0, 10) } : {}), ...(pp.to ? { to: String(pp.to).slice(0, 10) } : {}) };
+    sels = (pp.items || []).slice(0, MAX_SEL).map((x, i) => {
+      const ball = String(x.value).startsWith("Ball|"), f = { ...when, ...(ball ? { balls: [x.value] } : { clubs: [x.value] }) };
+      return { id: `product:${x.value}`, name: x.name || x.value, f, mode: "product", values: [x.value], color: COLORS[i % COLORS.length] };
+    });
+    mode = "product"; g.what = "gear"; g.open = !sels.length; touched = true; placeDim = null; backToPlace = null;
+    draw();
+  }
   if (askParam) { route = "ask"; askText = askParam; draw(); runAsk(askParam, preset && Array.isArray(preset.groups) ? preset : null); }
+  else if (prodPreset && Array.isArray(prodPreset.items)) runProducts(prodPreset);
   else { draw(); if (player) load(); }
   return () => {};
 }

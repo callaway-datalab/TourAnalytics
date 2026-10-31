@@ -7,6 +7,7 @@ import { getState } from "../auth.js";
 import { loadSource } from "../reportGen.js";
 import { goalLevels, watchGoals, saveGoalSets, setsOf, saveChallenges, CH_STATS, CH_WHEN, challengeText, challengeStatus, chStatOf } from "../goals.js";
 import { teamPlayerSelect } from "../teamPlayerSelect.js";
+import { addedText } from "../practice/plan.js"; // (update 455)
 
 const fmt = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
 const fmtDay = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -223,6 +224,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       const card = el("article", { class: `gx-ch gx-tap ${st.status}${st.status === "progress" && !st.met ? " behind" : ""}`, tabindex: "0", role: "button", "aria-label": `${challengeText(ch)}: rounds so far` }, [
         el("div", { class: "gx-ch-top" }, [el("span", { class: "gx-ch-badge" }, st.status === "done" ? "\u2713" : st.status === "missed" ? "\u2715" : st.status === "waiting" ? "\u2022\u2022\u2022" : "\u25B6"), el("span", { class: "gx-ch-status" }, words), edit, del]),
         el("p", { class: "gx-ch-text" }, challengeText(ch)),
+        el("p", { class: "gx-ch-added" }, addedText(ch.addedAt, ch.start)), // (update 455)
         el("div", { class: "gx-ch-now" }, [el("strong", {}, val), el("span", {}, st.rounds ? `${st.rounds} round${st.rounds === 1 ? "" : "s"} so far` : st.needs === "entered" ? "from your entered rounds" : "no rounds yet")]),
       ]);
       card.addEventListener("click", open); card.addEventListener("keydown", (e) => { if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } });
@@ -267,7 +269,8 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
     const row = (x) => {
       const { val, words, open } = chInfo(x);
       const { ch, st } = x;
-      const dates = kind === "live" ? `Set ${fmtDay(ch.start)} \u00b7 ${words}` : `Set ${fmtDay(ch.start)} \u00b7 ${kind === "done" ? "achieved" : "missed"} ${fmtDay(st.ended || ch.start)}`;
+      const setOn = ch.addedAt ? addedText(ch.addedAt).replace(/^Added /, "") : fmtDay(ch.start); // (update 455: with the time)
+      const dates = kind === "live" ? `Set ${setOn} \u00b7 ${words}` : `Set ${setOn} \u00b7 ${kind === "done" ? "achieved" : "missed"} ${fmtDay(st.ended || ch.start)}`;
       const del = el("button", { type: "button", class: "gx-link gx-danger gx-hist-del", "aria-label": "Delete this goal" }, "\u2715");
       const li = el("li", { class: `gx-hist-row gx-tap ${st.status}${st.status === "progress" && !st.met ? " behind" : ""}`, tabindex: "0", role: "button", "aria-label": `${challengeText(ch)}: rounds` }, [
         el("span", { class: "gx-ch-badge" }, st.status === "done" ? "\u2713" : st.status === "missed" ? "\u2715" : st.status === "waiting" ? "\u2022\u2022\u2022" : "\u25B6"),
@@ -376,7 +379,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       if (ch.when === "date" && !ch.date) { flash("Pick the date.", "error"); return; }
       const st = S();
       const item = { ...(fixedStat ? ch : {}), id: ch.id || `c${Date.now().toString(36)}`, stat: ch.stat, target: Number(ch.target) || 0, measure: st.kind === "sg" ? ch.measure : "round", when: ch.when,
-        n: ch.when === "nextN" ? ch.n : null, date: ch.when === "date" ? ch.date : null, start: ch.start || new Date().toISOString().slice(0, 10) };
+        n: ch.when === "nextN" ? ch.n : null, date: ch.when === "date" ? ch.date : null, start: ch.start || new Date().toISOString().slice(0, 10), addedAt: ch.addedAt || new Date().toISOString() };
       const next = ch.id ? challenges().map((x) => (x.id === ch.id ? item : x)) : [...challenges(), item];
       save.disabled = true;
       try { await saveChallenges(playerKey, next, state.user.uid); goals = { ...(goals || {}), challenges: next }; chEditing = null; draw(); flash(ch.id ? "Goal saved." : "Goal added.", "ok"); }

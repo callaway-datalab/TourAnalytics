@@ -158,6 +158,12 @@ export function activeSecs(s, now = null) {
   let t = 0; for (let i = 1; i < ts.length; i++) t += Math.min(120000, ts[i] - ts[i - 1]);
   return Math.round(t / 1000);
 }
+/** (update 455) When a drill or goal was added, with the time: "Added Oct 31, 2026, 3:42 PM" (older ones: the day only). */
+export function addedText(at, day = null) {
+  const d = at ? new Date(at) : day ? new Date(`${String(day).slice(0, 10)}T12:00:00`) : null;
+  if (!d || isNaN(d)) return "";
+  return `Added ${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}${at ? `, ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : ""}`;
+}
 export const mmss = (secs) => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 
 /** (update 387) The drills in a player's plan (to show which ones Stats has already added). */
@@ -192,7 +198,7 @@ export async function addToPlan(state, { items, playerKey, playerLabel }) {
   const owner = planOwnerFor(state, playerKey); // (update 371: the player's own plan, not the sender's)
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
-  const goals = items.map((x) => x.goal).filter(Boolean).map((g, i) => ({ ...g, id: `c${Date.now().toString(36)}${i}`, start: today, from: "plan" }));
+  const goals = items.map((x) => x.goal).filter(Boolean).map((g, i) => ({ ...g, id: `c${Date.now().toString(36)}${i}`, start: today, addedAt: now, from: "plan" })); // (update 455: addedAt, the date and time)
   if (goals.length && playerKey) {
     const { getDoc, doc, db } = await fsP();
     const ref = doc(db, "goals", playerKey);

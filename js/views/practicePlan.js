@@ -4,7 +4,7 @@
  * session keeps how long it took and how many sets it needed; the plan card shows the last one and the best set.
  */
 import { el, mount, confirmAction } from "../ui.js";
-import { listPlan, deletePlanItem, savePlanItem, practiceOpen, isMine, goalText, goalSource, setScore, setMet, bestOf, activeSecs, mmss, nounOf } from "../practice/plan.js";
+import { listPlan, deletePlanItem, savePlanItem, practiceOpen, isMine, goalText, goalSource, setScore, setMet, bestOf, activeSecs, mmss, nounOf, addedText } from "../practice/plan.js";
 import { parseDrillSpeech } from "../practice/voiceParse.js";
 
 /* (update 359) Voice: the phone's own speech recognition (free, the same as Enter New Round). Turn it on once and it keeps
@@ -107,6 +107,7 @@ function drawHome(ctx) {
       el("p", { class: "dp-goal" }, [el("strong", {}, goalText(d, best)), src ? el("span", { class: "muted" }, ` · ${src}`) : null]),
       el("p", { class: "muted small dp-what" }, `${d.what}. ${d.reps} ${nounOf(d)} a set, ${d.kind === "prox" ? (d.higher ? "typing how far each one goes" : "typing how far each one finishes") : "one tap each"}; aim for ${aimOf(d)} ${aimOf(d) === 1 ? "set" : "sets"} that meet the goal.`),
       d.goalText ? el("p", { class: "small dp-round-goal" }, `Added goal: ${d.goalText}`) : null,
+      d.addedAt ? el("p", { class: "muted small dp-added" }, addedText(d.addedAt)) : null, // (update 455)
       el("p", { class: "muted small dp-last" }, [lastTxt, best != null ? ` · best set ${scoreText(d, best)}` : "", done.length > 1 ? ` · ${done.length} sessions` : ""]),
       ro ? null : go,
     ]);

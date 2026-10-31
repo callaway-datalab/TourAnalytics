@@ -5280,3 +5280,25 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
   .cp-hv { width: 96vw; padding: 10px; }
   .cp-hv-img { height: min(72vh, 900px); width: 100%; object-fit: contain; }
 }
+
+/* (update 455) Form popup: tap a category or distance to chart it */
+.wl-pop-table tr.wl-pick-row { cursor: pointer; }
+.wl-pop-table tr.wl-picked td { background: rgba(212, 180, 131, 0.16); }
+.wl-pop-table tr.wl-picked td:first-child { box-shadow: inset 3px 0 0 #d4b483; }
+
+/* (update 455) best stretch picked; Path what-if */
+.bs-best-btn { font: inherit; color: #d4b483; text-decoration: underline dotted; text-underline-offset: 3px; }
+.bs-best-btn.on { color: #111; background: #d4b483; border-radius: 4px; padding: 0 4px; text-decoration: none; font-weight: 600; }
+.bs-profile.bs-on { border-left: 3px solid #d4b483; padding-left: 8px; }
+.bs-wi { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.bs-wi p { flex-basis: 100%; margin: 2px 0 0; }
+.bs-wi-row { display: inline-flex; align-items: center; gap: 6px; }
+.bs-wi-in { width: 6.5em; }
+.bs-wi-chip { margin-left: 6px; font-size: 0.78em; padding: 1px 5px; border-radius: 8px; border: 1px solid currentColor; }
+.bs-wi-head { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid rgba(212,180,131,0.45); border-radius: 8px; background: rgba(212,180,131,0.08); }
+.bs-wi-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bs-wi-rank { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.bs-wi-list { margin: 6px 0 0; padding-left: 18px; }
+.bs-wi-list .bs-wi-tot { list-style: none; margin-left: -18px; margin-top: 4px; }
+.prod-cmp-row { margin: 4px 0 8px; }
+.gx-ch-added { margin: 2px 0 0; font-size: 0.78em; color: #8e8e93; }
