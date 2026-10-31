@@ -5219,3 +5219,13 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
 .rep-ov { position: fixed; inset: 0; z-index: 9999; background: #111418; display: flex; flex-direction: column; }
 .rep-ov-bar { display: flex; gap: 0.5rem; align-items: center; padding: calc(env(safe-area-inset-top, 0px) + 0.5rem) 0.75rem 0.5rem; background: #111418; }
 .rep-ov-frame { flex: 1; width: 100%; border: 0; background: #eef1f5; }
+/* (update 445) Hypothetical rankings in the hero card: fitted to a phone */
+.hero-hypo { margin-top: 0.8rem; }
+@media (max-width: 640px) {
+  .hero-hypo .hy-t { font-size: 0.76rem; }
+  .hero-hypo .hy-t th, .hero-hypo .hy-t td { padding-left: 0.18rem !important; padding-right: 0.18rem !important; }
+  .hero-hypo .hy-t th { font-size: 0.62rem; letter-spacing: 0.02em; white-space: normal; }
+  .hero-hypo .hy-ctl { gap: 0.12rem; }
+  .hero-hypo .hy-step { width: 1.15rem; height: 1.15rem; font-size: 0.75rem; }
+  .hero-hypo .hy-t td:first-child { white-space: normal; }
+}

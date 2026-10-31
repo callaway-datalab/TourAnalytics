@@ -277,7 +277,9 @@ export function sgDashboard(container, opts) {
     const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw(), only, cols });
     return blocks.length ? el("div", { class: "cmp career" }, blocks) : null;
   }
+  let heroHypo = null; // (update 445: Hypothetical rankings, shown in the hero card)
   function draw() {
+    heroHypo = null;
     if (st.vsRank && st.vsRank !== "peak") st.vsRank = null; // (update 330: the #N player comparisons are gone)
     favSet = favs();
     destroyCharts();
@@ -779,6 +781,7 @@ export function sgDashboard(container, opts) {
           })(),
         ]),
         tiles.length ? el("div", { class: `hero-tiles n${tiles.length}` }, tiles) : null,
+        heroHypo ? el("div", { class: "hero-hypo" }, heroHypo) : null,
         foot,
       ]);
     }
@@ -848,10 +851,33 @@ export function sgDashboard(container, opts) {
     const head = same ? "Steadiness is about the same" : ch < 0 ? "Steadiness is improving" : "Steadiness is declining";
     return `${head}: \u00b1${fmtDelta(a)} a ${unit} (standard deviation) over the last ${rw(n)}, against \u00b1${fmtDelta(b)} in the ${n} before${same ? "" : ` (${ch < 0 ? "steadier" : "streakier"} by ${fmtDelta(ch)})`}.`;
   }
+  // (update 445) a set of rounds by part of the game, a round each, each part opening to its distances (strokes gained)
+  const distsIn = (rs, c) => { const m = new Map(); for (const rd of rs) for (const x of rd.shots || []) if (x.cat === c && x.dist) m.set(x.dist, 1); return [...m.keys()].sort((a, b) => distLead(a) - distLead(b) || a.localeCompare(b)); };
+  const perRd = (rs, c = null, d = null) => (rs.length ? rs.reduce((t, rd) => t + (rd.shots || []).reduce((u, x) => u + ((!c || x.cat === c) && (!d || x.dist === d) ? x.sg || 0 : 0), 0), 0) / rs.length : null);
+  const sgBreakdown = (rs) => el("div", { class: "bs-rd" }, CATEGORIES.filter(([c]) => rs.some((rd) => (rd.shots || []).some((x) => x.cat === c))).flatMap(([c, l]) => {
+    const v = perRd(rs, c), ds = distsIn(rs, c);
+    const subs = ds.map((d) => { const dv = perRd(rs, c, d); return el("div", { class: "bs-rd-row sub", style: "display:none" }, [el("span", { class: "bs-rd-l" }, d), el("span", { class: `bs-rd-v ${dv >= 0 ? "pos" : "neg"}` }, sgn2(dv))]); });
+    const caret = ds.length ? el("span", { class: "cmp-caret" }, "\u25B8 ") : null;
+    const row = el("button", { type: "button", class: "bs-rd-row", "aria-expanded": "false", disabled: !ds.length }, [el("span", { class: "bs-rd-l" }, [caret, l]), el("span", { class: `bs-rd-v ${v >= 0 ? "pos" : "neg"}` }, sgn2(v))]);
+    row.addEventListener("click", (e) => { e.stopPropagation(); const open = row.getAttribute("aria-expanded") !== "true"; row.setAttribute("aria-expanded", String(open)); if (caret) caret.textContent = open ? "\u25BE " : "\u25B8 "; subs.forEach((x) => { x.style.display = open ? "" : "none"; }); });
+    return [row, ...subs];
+  }));
+  // a table row that opens to a detail row under it
+  const openRow = (tr, ncol, detailOf) => {
+    const det = el("tr", { class: "bs-st-det", hidden: true }, el("td", { colspan: ncol }, ""));
+    const caret = el("span", { class: "cmp-caret" }, "\u25B8 "); tr.firstChild?.prepend(caret);
+    tr.classList.add("bs-st-tap"); tr.setAttribute("role", "button"); tr.setAttribute("tabindex", "0"); tr.setAttribute("aria-expanded", "false");
+    let built = false;
+    const flip = () => { const open = tr.getAttribute("aria-expanded") !== "true"; tr.setAttribute("aria-expanded", String(open)); caret.textContent = open ? "\u25BE " : "\u25B8 "; if (open && !built) { built = true; det.firstChild.replaceChildren(detailOf()); } det.hidden = !open; };
+    tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+    return [tr, det];
+  };
   const roundsTable = (rs, { rank = null } = {}) => el("table", { class: "plain rankings hero-tourn" }, [
     el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rd"), el("th", { class: "num" }, isSG() ? "SG" : def.label), rank ? el("th", { class: "num" }, "Rank") : null])),
-    el("tbody", {}, rs.map((rd) => { const v = metric([rd]); return el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(rd.date)), el("td", { class: "ht-name" }, rd.event || "\u2014"),
-      unit === "event" ? null : el("td", { class: "num" }, rd.roundNo || "\u2014"), el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v)), rank ? rank(rd) : null]); })),
+    el("tbody", {}, rs.flatMap((rd) => { const v = metric([rd]); const tr = el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(rd.date)), el("td", { class: "ht-name" }, rd.event || "\u2014"),
+      unit === "event" ? null : el("td", { class: "num" }, rd.roundNo || "\u2014"), el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v)), rank ? rank(rd) : null]);
+      // (update 445) a round opens to its parts of the game, each to its distances
+      return isSG() && (rd.shots || []).some((x) => x.cat) ? openRow(tr, rank ? 5 : 4, () => sgBreakdown([rd])) : [tr]; })),
   ]);
   // Form: the last n rounds and their average, then the n before and theirs
   // (update 181) Form, like the Watchlist's Big move: each round as a bar (the last n coloured) with the two
@@ -870,7 +896,9 @@ export function sgDashboard(container, opts) {
       return { text: `${same ? "" : d > 0 ? "\u25B2 " : "\u25BC "}${fmtDelta(d)}`, tone: same || def.higher == null ? "" : better(a, b) ? "pos" : "neg" }; };
     const rows = [[null, sg ? "SG: Total" : catsAvail.length > 1 ? "All" : def.label], ...(catsAvail.length > 1 ? catsAvail : [])].map(([k, l]) => {
       const a = metric(last, k), b = metric(prev, k);
-      return { strong: !k, cells: [l, cell(b), cell(a), change(a, b)] };
+      // (update 445) each part of the game opens to its distances
+      const kids = sg && k ? distsIn([...prev, ...last], k).map((d) => { const da = perRd(last, k, d), db = perRd(prev, k, d); return { cells: [d, { sg: db }, { sg: da }, { sg: da - db, arrow: true }] }; }) : null;
+      return { strong: !k, cells: [l, cell(b), cell(a), change(a, b)], ...(kids?.length ? { kids } : {}) };
     });
     const blocks = [
       { kind: "bars", fmtFn: fmtV, zero: sg, items, ref: [{ v: prevAvg, label: `Previous ${n}`, from: 0, to: prev.length }, { v: lastAvg, label: `Last ${n}`, from: prev.length, to: prev.length + last.length }] },
@@ -972,9 +1000,11 @@ export function sgDashboard(container, opts) {
     const table = el("table", { class: "plain rankings hero-tourn hero-events" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rds"),
         ...(rolling ? [el("th", { class: "num" }, "Rolling Avg"), showRanks ? el("th", { class: "num" }, "Rolling Rank") : null] : [el("th", { class: "num" }, "Event Avg"), showRanks ? el("th", { class: "num" }, "Event Rank") : null])])),
-      el("tbody", {}, rows.map((x) => el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(x.end)), el("td", { class: "ht-name" }, x.event || "\u2014"),
+      el("tbody", {}, rows.flatMap((x) => { const tr = el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(x.end)), el("td", { class: "ht-name" }, x.event || "\u2014"),
         unit === "event" ? null : el("td", { class: "num" }, String(x.rs.length)),
-        ...(rolling ? [valTd(x.roll?.avg ?? null), showRanks ? rankTd(x.roll) : null] : [valTd(x.v), showRanks ? rankTd(x.fin, true) : null])]))),
+        ...(rolling ? [valTd(x.roll?.avg ?? null), showRanks ? rankTd(x.roll) : null] : [valTd(x.v), showRanks ? rankTd(x.fin, true) : null])]);
+        // (update 445) an event opens to its parts of the game (a round), each to its distances
+        return isSG() && x.rs.some((rd) => (rd.shots || []).some((y) => y.cat)) ? openRow(tr, 3 + (unit === "event" ? 0 : 1) + (showRanks ? 1 : 0), () => sgBreakdown(x.rs)) : [tr]; })),
     ]);
     popup(rolling ? `${isSG() ? "SG" : def.label} history` : "Events", me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${rw(ordered.length)} \u00b7 newest first`, [
       el("div", { class: "table-scroll hero-tourn-scroll" }, table),
@@ -1798,7 +1828,8 @@ export function sgDashboard(container, opts) {
     if (mode === "elite") return [
       el("div", { class: "sg-full-top" }, [stretchesBlock(mine, cat)]), // (update 330: Best Stretches)
       pathOf(),
-      showRanks ? (() => { try { return hypoOf(); } catch (err) { console.error(err); return null; } })() : null, // (update 393)
+      // (update 445) Hypothetical rankings: built here, shown at the bottom of the hero card, under the category cards
+      (() => { if (showRanks) { try { heroHypo = hypoOf(); } catch (err) { console.error(err); heroHypo = null; } } return null; })(), // (update 393)
     ];
     return [
       peakCtl,
@@ -1824,9 +1855,9 @@ export function sgDashboard(container, opts) {
     function hypoOf() {
       const season = [...mine].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
       if (season.length < 3) return null;
-      const N = Math.max(3, Math.min(season.length, Math.round(Number(st.hypoN) || 12)));
-      const last = season.slice(-N);
-      const recent = rowVals(last, cat);
+      // (update 445) starting from their season average (the season below), each part nudged up or down, ranked on the season
+      const N = season.length;
+      let last = season, recent = null;
       // (update 442) ranked on the season: where these numbers would put them if they were their season average, against
       // everyone's averages for the season (the year of their latest round, or the year picked), whatever time frame is picked
       const seasonYear = (Array.isArray(lastRankF.year) && lastRankF.year.length === 1) ? String(lastRankF.year[0]) : String(season.at(-1)?.year || String(season.at(-1)?.date || "").slice(0, 4));
@@ -1835,6 +1866,8 @@ export function sgDashboard(container, opts) {
       const seasonMin = minRoundsFor(seasonAll);
       let field0 = seasonAll.filter((p) => p.key !== me?.key && p.rounds.length >= seasonMin);
       if (!field0.length) field0 = rankedField(slicedField).filter((p) => p.key !== me?.key); // (no season field: the time frame's)
+      { const mySeason = nz(applyFilters(me.rounds, seasonF)).sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))); if (mySeason.length) last = mySeason; }
+      recent = rowVals(last, cat);
       const others = field0.map((p) => rowVals(p.rounds, cat));
       if (!others.length) return null;
       const parts = cat ? dists.map((d) => ({ key: `d:${d}`, label: d })) : CATEGORIES.map(([k, l]) => ({ key: `c:${k}`, label: l }));
@@ -1931,11 +1964,11 @@ export function sgDashboard(container, opts) {
       const reset = anyAdj ? (() => { const b = el("button", { type: "button", class: "link small" }, "Reset"); b.addEventListener("click", () => { st.hypoAdj = null; draw(); }); return b; })() : null;
       return el("div", { class: "bs-path bs-hypo" }, [
         el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), reset]),
-        el("div", { class: "bs-path-gap" }, [el("div", {}, [`Last `, nIn, ` rounds as a season average: where they\u2019d rank on the ${seasonYear} season`]),
-          infoTip(`Start from their last ${N} rounds: strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
+        el("div", { class: "bs-path-gap" }, [
+          infoTip(`Start from their season average (${N} rounds): strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
         sumLine,
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [
-          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, `Last ${N}`), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Season rank")])),
+          el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, "Season Avg"), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Season rank")])),
           el("tbody", {}, body),
         ])),
       ]);
@@ -1996,7 +2029,8 @@ export function sgDashboard(container, opts) {
       if (visuals.length) blocks.push(el("div", { class: "sg-grid" }, visuals));
     }
 
-    const prodOn = !!st.showProduct; // (update 299) Show Product: each bar coloured by the product used
+    // (update 445) always by product (no Show Product button); the plain chart only when no shot has a product on it
+    const prodOn = mine.some((rd) => rd.shots.some((x) => x.gear || x.ball));
     // (update 302) Show Product: its own toggle, to the right of the Round / Event / Month / Year pills
     const toggles = el("div", { class: "trend-row" }, [
       el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
@@ -2004,10 +2038,6 @@ export function sgDashboard(container, opts) {
         a.addEventListener("click", (e) => { e.preventDefault(); st.trendBy = v; draw(); });
         return a;
       })),
-      // (update 306) the same pill as Round / Event / Month / Year (white when on), so it lines up and keeps its size
-      (() => { const b = el("a", { href: "#", role: "button", "aria-pressed": String(prodOn), "aria-current": prodOn ? "page" : null }, "Show Product");
-        b.addEventListener("click", (e) => { e.preventDefault(); st.showProduct = !prodOn; draw(); });
-        return el("div", { class: "subnav small trend-prod" }, b); })(),
     ]);
     if (prodOn) { blocks.push(productTrend(mine, cat, toggles)); return blocks; }
     const t = trend(mine, cat || null, st.trendBy);
@@ -2299,7 +2329,7 @@ export function sgDashboard(container, opts) {
     }));
     // the rounds, with only this kind's shots (rounds without any left out)
     const rs = mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => fits(s, kind)) })).filter((rd) => rd.shots.length);
-    if (!rs.length) return panelBox("SG Trends", [toggles, pills, el("p", { class: "muted small" }, "No product information on these shots: products come from Enter New Round (with WITB) or a club column in an uploaded file.")], "full");
+    if (!rs.length) return panelBox("SG Trends by Product", [toggles, pills, el("p", { class: "muted small" }, "No product information on these shots: products come from Enter New Round (with WITB) or a club column in an uploaded file.")], "full");
     // grouped as SG Trends groups (round, event, month or year)
     const keyOf = (rd, i) => { const d = localDay(rd.date), ok = !isNaN(d);
       return st.trendBy === "round" ? `r${i}` : st.trendBy === "year" ? (ok ? String(d.getFullYear()) : "Unknown") : st.trendBy === "month" ? (ok ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "Unknown") : `${rd.event || rd.date || rd.key}|${ok ? d.getFullYear() : rd.year || ""}`; }; // (update 404: per year)
@@ -2321,7 +2351,7 @@ export function sgDashboard(container, opts) {
     const legend = el("div", { class: "prod-legend" }, order.map((p) => { const a = avgOf.get(p);
       const v = a && a.n ? a.sg / a.n : null;
       return el("span", { class: "prod-key", title: a ? `${a.n} round${a.n === 1 ? "" : "s"} with it` : null }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p), v != null ? el("b", { class: v >= 0 ? "pos" : "neg" }, ` ${fmtSG(v)} avg`) : null]); }));
-    return panelBox("SG Trends", [toggles, pills, legend, chartBox((c, as) => barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
+    return panelBox("SG Trends by Product", [toggles, pills, legend, chartBox((c, as) => barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
       title: `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
       shortLabels: list.map((g) => g.short),
       tooltip: (i) => { const g = list[i], all = [...g.prods].sort((a, b) => b[1] - a[1]);
@@ -2699,7 +2729,7 @@ export function sgDashboard(container, opts) {
       }));
     };
     const sgOfRd = (rd) => { let t = 0; for (const x of rd.shots) if (!cat || x.cat === cat) t += x.sg; return t; };
-    const allRounds = showRanks && mine.length ? (() => {
+    const allRounds = false ? (() => { // (update 445: All Rounds taken out)
       const open = !!st.allRoundsOpen, byDate = st.allRoundsSort === "date";
       const tog = el("button", { type: "button", class: "link bs-evs-btn bs-all-btn", "aria-expanded": String(open) }, `All Rounds (${mine.length}) ${open ? "\u25B4" : "\u25BE"}`);
       tog.addEventListener("click", () => { st.allRoundsOpen = !open; draw(); });
@@ -2891,7 +2921,16 @@ export function sgDashboard(container, opts) {
         stVals.length ? el("span", {}, ["Best ", el("strong", { class: "pos" }, sgn2(stVals[bestI])), " \u00b7 worst ", el("strong", { class: stVals[worstI] >= 0 ? "pos" : "neg" }, sgn2(stVals[worstI]))]) : null]),
       el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table bs-st-cats" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, "A round"), el("th", { class: "num" }, "Stretch"), el("th", { class: "num", title: "Their other rounds in the selection (outside the stretch)" }, "Rest"), el("th", { class: "num", title: "Stretch less rest" }, "Diff")])),
-        el("tbody", {}, [sumRow("SG: Total", catAvg(stRds, null), catAvg(allRds, null), true), ...CATEGORIES.map(([c, l]) => sumRow(l, catAvg(stRds, c), catAvg(allRds, c)))])])),
+        el("tbody", {}, [sumRow("SG: Total", catAvg(stRds, null), catAvg(allRds, null), true), ...CATEGORIES.flatMap(([c, l]) => {
+          // (update 445) each part of the game opens to its distances
+          const tr = sumRow(l, catAvg(stRds, c), catAvg(allRds, c)), ds = distsIn([...stRds, ...allRds], c);
+          if (!ds.length) return [tr];
+          const kids = ds.map((d) => { const k = sumRow(d, perRd(stRds, c, d), perRd(allRds, c, d)); k.classList.add("bs-st-kid"); k.hidden = true; return k; });
+          const caret = el("span", { class: "cmp-caret" }, "\u25B8 "); tr.firstChild.prepend(caret); tr.classList.add("bs-st-tap"); tr.setAttribute("role", "button"); tr.setAttribute("tabindex", "0"); tr.setAttribute("aria-expanded", "false");
+          const flip = () => { const open = tr.getAttribute("aria-expanded") !== "true"; tr.setAttribute("aria-expanded", String(open)); caret.textContent = open ? "\u25BE " : "\u25B8 "; kids.forEach((x) => { x.hidden = !open; }); };
+          tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+          return [tr, ...kids];
+        })])])),
     ]);
     const table = el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Event"), el("th", { class: "num" }, "SG")])), el("tbody", {}, bodyRows)])); // (update 377: just the stretch's rounds; 380: each opens)
     const bars = seq.map((x, i) => {
