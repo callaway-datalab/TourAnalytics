@@ -134,7 +134,7 @@ function learn(D, { tour = null } = {}) {
 
   /* ---------------- the events each player played (the filter's observations) ---------------- */
   const observe = (A, cut) => {
-    const oP = [], oT = [], oN = [], oY = [];
+    const oP = [], oT = [], oN = [], oY = [], oS = [];
     const pStart = new Int32Array(NP + 1);
     for (let p = 0; p < NP; p++) {
       pStart[p] = oP.length;
@@ -144,12 +144,12 @@ function learn(D, { tour = null } = {}) {
         if (YS[i] > cut) { i++; continue; }
         const e = D.E[i]; let j = i, t = 0, n = 0; const ns = [0, 0, 0, 0], ys = [0, 0, 0, 0];
         while (j < b && D.E[j] === e) { if (YS[j] <= cut) { t += D.T[j]; n++; for (let c = 0; c < NC; c++) if (D.M[j] & (1 << c)) { ns[c]++; ys[c] += A[j * NC + c]; } } j++; }
-        if (n) { oP.push(p); oT.push(t / n); oN.push(...ns); oY.push(...ys.map((v, c) => (ns[c] ? v / ns[c] : 0))); }
+        if (n) { oP.push(p); oT.push(t / n); oS.push(YS[i]); oN.push(...ns); oY.push(...ys.map((v, c) => (ns[c] ? v / ns[c] : 0))); }
         i = j;
       }
     }
     pStart[NP] = oP.length;
-    return { n: oP.length, P: Int32Array.from(oP), T: Float64Array.from(oT), Nn: Float32Array.from(oN), Yv: Float64Array.from(oY), pStart };
+    return { n: oP.length, P: Int32Array.from(oP), T: Float64Array.from(oT), S: Int16Array.from(oS), Nn: Float32Array.from(oN), Yv: Float64Array.from(oY), pStart };
   };
 
   /* ---------------- 2. the Kalman filter ---------------- */
@@ -197,6 +197,7 @@ function learn(D, { tour = null } = {}) {
         const kL = hL / S, kT = hT / S, kS = hS / S;
         st.L += kL * v; st.T += kT * v; st.S += kS * v;
         st.LL -= kL * hL; st.LT -= kL * hT; st.LS -= kL * hS; st.TT -= kT * hT; st.TS -= kT * hS; st.SS -= kS * hS;
+        if (collect?.snap) (collect.snap[p] ||= [])[O.S[k]] = { ...st, t: O.T[k] };
       }
       if (collect?.ends) collect.ends[p] = { ...st, t: tp };
     }
@@ -205,9 +206,10 @@ function learn(D, { tour = null } = {}) {
   // its eight settings per part of the game, by maximum likelihood (a wide search from plain averages; from a fit
   // already made (warm), a narrow one around it). A setting can go to ~0: no lasting change, no spells, no trends.
   const RANGE = { sig2: [1e-3, 50], pL: [1e-5, 2], qL: [1e-6, 0.3], vT: [1e-6, 1], kT: [0.05, 20], vS: [1e-6, 0.3], kS: [0.05, 20] };
-  const fitTheta = (O, c, drift, start, sweeps = 2, warm = false) => {
+  const fitTheta = (O, c, drift, start, sweeps = 2, warm = false, kTmin = 0) => {
     let th = { ...start }; const o = { log: true, steps: warm ? 7 : 10, scan: warm ? 4 : 7 };
-    const span = (kk, x, s0) => { const [lo, hi] = RANGE[kk], w = warm ? (kk === "sig2" ? 1.5 : 3) : s0 === 0 && kk !== "sig2" ? Infinity : kk === "sig2" ? 3 : 10; return w === Infinity ? [lo, hi] : [Math.max(lo, x / w), Math.min(hi, x * w)]; };
+    if (kTmin) th.kT = Math.max(th.kT, kTmin);
+    const span = (kk, x, s0) => { const lo = kk === "kT" ? Math.max(RANGE.kT[0], kTmin) : RANGE[kk][0], hi = RANGE[kk][1], w = warm ? (kk === "sig2" ? 1.5 : 3) : s0 === 0 && kk !== "sig2" ? Infinity : kk === "sig2" ? 3 : 10; return w === Infinity ? [lo, hi] : [Math.max(lo, x / w), Math.max(Math.min(hi, x * w), Math.min(hi, lo * 3))]; };
     for (let s = 0; s < sweeps; s++) {
       for (const kk of ["sig2", "pL", "vT", "kT", "qL", "vS", "kS"]) { const [lo, hi] = span(kk, th[kk], s); th[kk] = bestOn((v) => run(O, c, { ...th, [kk]: v }, drift), lo, hi, o).x; }
       th.mu = bestOn((v) => run(O, c, { ...th, mu: v }, drift), th.mu - (warm ? 0.3 : 1), th.mu + (warm ? 0.3 : 1), { ...o, log: false }).x;
@@ -244,7 +246,7 @@ function learn(D, { tour = null } = {}) {
 
   // the whole fit on the seasons up to `cut`: field strength, then per part of the game the filter's settings, the
   // age curve, then the settings again with the age curve in (warm: from a fit already made, narrower and quicker)
-  const fit = (cut, { warm = null } = {}) => {
+  const fit = (cut, { warm = null, kTmin = warm?.kTmin || 0 } = {}) => {
     const F = adjust(cut), O = observe(F.adj, cut);
     const th = [], drift = [], knots = [];
     const ac = ageCount(O), useAge = ac.players >= 20;
@@ -252,17 +254,17 @@ function learn(D, { tour = null } = {}) {
       let t, kv = null;
       if (warm) {
         t = { ...warm.th[c], ends: undefined }; kv = warm.knots[c] ? [...warm.knots[c]] : null;
-        t = fitTheta(O, c, kv ? gridOf(kv, O) : null, t, 1, true);
+        t = fitTheta(O, c, kv ? gridOf(kv, O) : null, t, 1, true, kTmin);
         if (kv) kv = fitDrift(O, c, t, kv, 1, 0.08);
       } else {
-        t = fitTheta(O, c, null, startOf(O, c), 2);
-        if (useAge) { kv = fitDrift(O, c, t, [0, 0, 0, 0, 0], 2, 0.3); t = fitTheta(O, c, gridOf(kv, O), t, 1, true); kv = fitDrift(O, c, t, kv, 1, 0.08); }
+        t = fitTheta(O, c, null, startOf(O, c), 2, false, kTmin);
+        if (useAge) { kv = fitDrift(O, c, t, [0, 0, 0, 0, 0], 2, 0.3); t = fitTheta(O, c, gridOf(kv, O), t, 1, true, kTmin); kv = fitDrift(O, c, t, kv, 1, 0.08); }
       }
       const g = kv ? gridOf(kv, O) : null;
       const ends = new Array(NP); run(O, c, t, g, { ends });
       t.ends = ends; th.push(t); drift.push(g); knots.push(kv);
     }
-    return { F, O, th, drift, knots, age: ac, useAge, cut };
+    return { F, O, th, drift, knots, age: ac, useAge, cut, kTmin };
   };
 
   /* ---------------- seasons as they were (raw for show, adjusted for checks) ---------------- */
@@ -280,21 +282,6 @@ function learn(D, { tour = null } = {}) {
     for (const [key, s] of sums) out.set(key, { n: s.n, cats: s.t.map((v) => v / s.n) });
     return out;
   };
-
-  /* ---------------- the full model ---------------- */
-  const last = NY - 1, lastYear = yrs[last];
-  const M = fit(last);
-  const rawT = seasonStats(D.V, last, true), adjT = seasonStats(M.F.adj, last, true);
-  // a round's total spread around the player's own season average (for the luck in a season of n rounds)
-  const sig2Tot = (() => { let e = 0, w = 0; const mean = new Map(); for (const [k, s] of adjT) mean.set(k, s.cats.reduce((a, b) => a + b, 0));
-    for (let i = 0; i < N; i++) { if (D.TO[i] !== TT || D.M[i] !== 15) continue; const k = D.P[i] * NY + YS[i], s = adjT.get(k); if (!s || s.n < 10) continue; let t = 0; for (let c = 0; c < NC; c++) t += M.F.adj[i * NC + c]; e += (t - mean.get(k)) ** 2 * (s.n / (s.n - 1)); w++; }
-    return w ? e / w : 8; })();
-  // the rankings rule on the tour picked, each season: who'd be ranked, and their average (for the story's flags)
-  const rankedIn = (y, S) => { const list = [...S].filter(([k]) => k % NY === y).map(([k, s]) => [Math.floor(k / NY), s]); const minR = minRoundsOf(Math.max(0, ...list.map(([, s]) => s.n))); return list.filter(([, s]) => s.n >= minR); };
-  const typicalN = (() => { const ns = rankedIn(last, rawT).map(([, s]) => s.n).sort((a, b) => a - b); return ns.length ? ns[Math.floor(ns.length * 0.5)] : 60; })();
-  // (update 413) this season's rank so far on the tour picked, as the Stats page ranks it (raw, the rankings rule)
-  const nowRanked = rankedIn(last, rawT).map(([p, s0]) => [p, s0.cats.reduce((a, b) => a + b, 0)]);
-  const nowRank = (p) => { const s0 = rawT.get(p * NY + last); if (!s0) return null; const v = s0.cats.reduce((a, b) => a + b, 0); const others = nowRanked.filter(([q]) => q !== p); return { rank: 1 + others.filter(([, x]) => x > v).length, of: others.length + 1, ranked: nowRanked.some(([q]) => q === p) }; };
 
   // a player's projection h seasons on (from where the filter left them): per part of the game, the mean and the
   // uncertainty of their level, and how much of the change is age
@@ -332,6 +319,46 @@ function learn(D, { tour = null } = {}) {
     // takes the lasting level by then (age and the drift every player shares are apart from it)
     return { cats, total: CATS.reduce((t, c) => t + cats[c], 0), varLevel: vlev.s, ageAdd, lasting, temp, trend };
   };
+
+  /* ---------------- the full model ---------------- */
+  const last = NY - 1, lastYear = yrs[last];
+  // (update 434) how long a spell may last before it counts as a real change: the filter's settings are learned event
+  // by event, which can let a slow "spell" stand in for a player's real level and pull everyone back toward the
+  // average over the years. So the fit is redone with spells capped at several lengths, and the one whose forecasts of
+  // whole seasons 1-3 years ahead (made only from what the filter knew at the time) are closest is kept.
+  const SPELL_CAPS = [Infinity, 3, 1.5, 0.75, 0.35];
+  const seasonAhead = (Mx) => {
+    const act = seasonStats(Mx.F.adj, Mx.cut, true), snaps = Mx.th.map((t, c) => { const snap = []; run(Mx.O, c, t, Mx.drift[c], { snap }); return snap; });
+    let e = 0, w = 0;
+    for (let y = 0; y < Mx.cut; y++) {
+      const My = { O: Mx.O, drift: Mx.drift, th: Mx.th.map((t) => ({ ...t, ends: {} })) };
+      const endsBy = Mx.th.map((_, c) => (p) => snaps[c][p]?.[y] || null);
+      for (let h = 1; h <= 3 && y + h <= Mx.cut; h++) for (const [key, s0] of act) {
+        if (key % NY !== y + h || s0.n < 20) continue;
+        const p = Math.floor(key / NY); let ok = true;
+        for (let c = 0; c < NC; c++) { const st = endsBy[c](p); if (!st) { ok = false; break; } My.th[c].ends[p] = st; }
+        if (!ok) continue;
+        const pr = projectWith(My, p, yrs[y + h]); if (!pr) continue;
+        e += s0.n * Math.abs(s0.cats.reduce((a, b) => a + b, 0) - pr.total); w += s0.n;
+      }
+    }
+    return w ? e / w : Infinity;
+  };
+  const spellTried = [];
+  let M = null;
+  { const M0 = fit(last); const e0 = seasonAhead(M0); spellTried.push({ cap: Infinity, err: e0 }); M = M0; let bestE = e0;
+    for (const cap of SPELL_CAPS.slice(1)) { const Mc = fit(last, { warm: M0, kTmin: Math.log(2) / cap }); const ec = seasonAhead(Mc); spellTried.push({ cap, err: ec }); if (ec < bestE - 1e-4) { bestE = ec; M = Mc; } } }
+  const rawT = seasonStats(D.V, last, true), adjT = seasonStats(M.F.adj, last, true);
+  // a round's total spread around the player's own season average (for the luck in a season of n rounds)
+  const sig2Tot = (() => { let e = 0, w = 0; const mean = new Map(); for (const [k, s] of adjT) mean.set(k, s.cats.reduce((a, b) => a + b, 0));
+    for (let i = 0; i < N; i++) { if (D.TO[i] !== TT || D.M[i] !== 15) continue; const k = D.P[i] * NY + YS[i], s = adjT.get(k); if (!s || s.n < 10) continue; let t = 0; for (let c = 0; c < NC; c++) t += M.F.adj[i * NC + c]; e += (t - mean.get(k)) ** 2 * (s.n / (s.n - 1)); w++; }
+    return w ? e / w : 8; })();
+  // the rankings rule on the tour picked, each season: who'd be ranked, and their average (for the story's flags)
+  const rankedIn = (y, S) => { const list = [...S].filter(([k]) => k % NY === y).map(([k, s]) => [Math.floor(k / NY), s]); const minR = minRoundsOf(Math.max(0, ...list.map(([, s]) => s.n))); return list.filter(([, s]) => s.n >= minR); };
+  const typicalN = (() => { const ns = rankedIn(last, rawT).map(([, s]) => s.n).sort((a, b) => a - b); return ns.length ? ns[Math.floor(ns.length * 0.5)] : 60; })();
+  // (update 413) this season's rank so far on the tour picked, as the Stats page ranks it (raw, the rankings rule)
+  const nowRanked = rankedIn(last, rawT).map(([p, s0]) => [p, s0.cats.reduce((a, b) => a + b, 0)]);
+  const nowRank = (p) => { const s0 = rawT.get(p * NY + last); if (!s0) return null; const v = s0.cats.reduce((a, b) => a + b, 0); const others = nowRanked.filter(([q]) => q !== p); return { rank: 1 + others.filter(([, x]) => x > v).length, of: others.length + 1, ranked: nowRanked.some(([q]) => q === p) }; };
 
   /* ---------------- 4b. signals: what might say a player will keep rising or falling ---------------- */
   // (update 433) each is worked out from the seasons up to the cut, then tested on seasons the model hadn't seen: only
@@ -508,6 +535,7 @@ function learn(D, { tour = null } = {}) {
     age: { shared: sharedDrift, k: ageK, none: ageK === Infinity, trust: Object.fromEntries([22, 26, 30, 34, 38, 42, 46, 50].map((a) => [a, trustAt(a)])), tried: ageErrN >= 600 ? AGE_K.map((k, i) => ({ k, rmse: Math.sqrt(ageErr[i] / ageErrN) })) : null, players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, knots: KNOTS,
       at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + ageCurve(a)[c], 0)])) },
     spread: err.map((e) => e || { n: 0 }),
+    spells: { cap: M.kTmin ? Math.log(2) / M.kTmin : null, tried: spellTried.map((x) => ({ cap: Number.isFinite(x.cap) ? x.cap : null, err: x.err })) },
     signals: { tried: sigTried, kept: kept.map((k) => ({ key: SIGS[k].key, label: SIGS[k].label, perSd: sigB.map((b) => b[kept.indexOf(k)] || 0), sd: sigStd[k].sd })) },
   };
   // each season's average of the ranked players on the tour picked (adjusted), for the story's flags
