@@ -639,7 +639,7 @@ async function answerForecast(ps, question, local) {
   const yrs = ok[0].years.map((y) => y.year);
   const lead = order.length > 1 ? `Over ${yrs[0]}\u2013${yrs.at(-1)}, best first: ${order.map((f, i) => `**${i + 1}. ${f.name}**`).join(", ")}.` : `${order[0].name}\u2019s next three seasons:`;
   const e1 = model.err[0];
-  const note = [`Strokes gained a round on ${model.target || "the tour"}, forecast from this site\u2019s data: every round credited for its field, then each player followed event by event (recent events count most) and drawn back toward the average by as much as the data says${model.ageOk ? ", plus the typical change for their age" : ""}.`,
+  const note = [`Strokes gained a round on ${model.target || "the tour"}, forecast from this site\u2019s data: every round credited for its field, then each player followed event by event as a lasting level, a fading spell and a trend, each as big as the data says${model.ageOk ? ", plus the typical change for their age" : ""}.`,
     e1 ? `On past seasons, one season ahead, it was off by about ${e1.mae.toFixed(2)} a round on average for players with 20+ rounds${e1.bt ? ` (their latest season alone: ${e1.bt.last.toFixed(2)})` : ""}.` : "", !model.ageOk ? "No birth dates in the data yet, so age isn\u2019t in it." : "",
     missing.length ? `Not enough rounds to forecast ${missing.join(", ")}.` : ""].filter(Boolean).join(" ");
   const plan = { outlook: true, players: ok.map((f) => f.name.toLowerCase()), everyone: false, parts: [], exclude: { events: [], rounds: [] }, each: false, unsupported: null, groups: [{ label: String(model.lastYear), rounds: { years: [String(model.lastYear)] } }] };

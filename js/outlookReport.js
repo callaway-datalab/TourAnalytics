@@ -417,11 +417,18 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     if ((L0 && L0.n < 30) || fl.fewRounds) out.push(`Limited data: ${L0?.n ?? fl.lastN ?? 0} rounds, ${win}`);
     const y3 = f.years.at(-1);
     if (f.age != null && model.ageOk && y3.ageAdd <= -0.1) out.push(`Age: about ${f2(y3.ageAdd)} a round by ${y3.year}`);
+    out.push(...partsOf(f, -1));
     if (f.years[0].hi - f.years[0].lo > 1.7) out.push(`Wide ${f.years[0].year} range: ${f2(f.years[0].lo)} to ${f2(f.years[0].hi)}`);
     return out;
   };
   // (update 426) a season against the ones before it, on the same numbers as the season table
   const vsTxt = (fl) => `${fl.lastYear}: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} ${fl.usualFrom === fl.usualTo ? `in ${fl.usualFrom}` : `avg. ${fl.usualFrom}–${String(fl.usualTo).slice(2)}`} (${f2(fl.vsUsual)})`;
+  // (update 433) the new forecaster's parts: their own trend, a spell that's fading, and the signals it kept
+  const SIGN = { ballSpeed: "Ball speed change", drive: "Driving distance change", puttLed: "Season led by putting", recentGap: "Last 6 months vs. lasting level", otherTours: "Other tours", rounds: "Rounds played" };
+  const partsOf = (f, sign) => { const y1 = f.years[0], y3 = f.years.at(-1), out = [];
+    if (y3.trend != null && sign * y3.trend >= 0.08) out.push(`Trend: ${sign > 0 ? "climbing" : "sliding"}, about ${f2(y3.trend)} a round by ${y3.year}`);
+    for (const [k, v] of Object.entries(y1.sigParts || {})) if (sign * v >= 0.04) out.push(`${SIGN[k] || k}: ${f2(v)} a round in ${y1.year}`);
+    return out; };
   // (update 425) other positives: the mirror of the other risks
   const posOf = (f) => {
     const FCr = FC?.rows.find((r) => r.key === f.key), out = [], fl = flagsOf(f);
@@ -430,6 +437,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
     if (fl.vsUsual != null && fl.vsUsual > fl.swing) out.push(vsTxt(fl));
     const y3 = f.years.at(-1);
     if (f.age != null && model.ageOk && y3.ageAdd >= 0.1) out.push(`Age: about ${f2(y3.ageAdd)} a round by ${y3.year}`);
+    out.push(...partsOf(f, 1));
     return out;
   };
   const strengthsOf = (f) => { const L0 = L1(f); if (!L0) return []; const good = CATS.filter((c) => L0.v[c] > 0.005).sort((a, b) => L0.v[b] - L0.v[a]); const b0 = insight.get(f.key).best; return good.length ? good.map((c) => `${CATN[c]}: ${f2(L0.v[c])}`) : [`None; closest is ${CATN[b0]} (${f2(L0.v[b0])})`]; };

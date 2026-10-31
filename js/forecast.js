@@ -8,12 +8,13 @@ const ncdf = (z) => { const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2), 
  *      Each event's strength (per part of the game) is the average level of the players in it, worked out back and
  *      forth with the players' levels until they settle. Every round is then credited for its field, which also puts
  *      every tour on one scale (a Korn Ferry field is simply a weaker field). 0 = an average field on the tour picked.
- *   2. A Kalman filter per player and part of the game, event by event. A player's true level drifts over time and is
- *      only seen through noisy rounds; after each event the estimate moves toward what was seen, by as much as that
- *      event deserves (more rounds, and a part of the game that's less noisy, move it more). Between events it drifts
- *      back toward the average a little, the longer the gap the more. Its four settings per part of the game (how noisy
- *      a round is, how far apart players' levels are, how fast a level drifts back, and where back is) are the ones
- *      that make the data most likely (maximum likelihood).
+ *   2. A Kalman filter per player and part of the game, event by event (update 433). Each player is three things the
+ *      data can't see directly: a lasting level (who they are; it only moves when real change shows up and is never
+ *      pulled back to an average), a temporary spell (hot or cold; fades back to 0) and a trend (the lasting level
+ *      climbing or sliding; carries on, fading at the rate the data shows). Its eight settings per part of the game
+ *      (round noise, how far apart new players are and where they start, how much a lasting level moves, how big and
+ *      how long spells and trends are) are the ones that make the data most likely (maximum likelihood); any can go to
+ *      ~0 if the data says that piece isn't there.
  *   3. Age. How players' levels change with age, per part of the game, read from where the filter kept being
  *      surprised in the same direction at the same age; trusted fully at ages with plenty of seasons and less at the thin extremes, by the amount that best predicted unseen seasons.
  *   4. Ranges. The spread of a season's result (the player's level is uncertain, and a season is a limited number of
@@ -21,6 +22,9 @@ const ncdf = (z) => { const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2), 
  *   5. Checked: each season from the fourth on forecast from a model learned only on the seasons before it, against
  *      two simple guesses on the same seasons (the latest season as it was, and the tour average).
  *
+ *   6. Signals (update 433): ball speed and driving distance changes, a season led by putting, the last 6 months vs.
+ *      the lasting level, other tours, rounds played. Each tested on the unseen seasons (each held out in turn); only
+ *      those that make those forecasts better, overall and in most seasons, are kept.
  *   forecastInput(field)            → the compact form the worker learns from
  *   forecastModel(field | input, { tour })  → model
  *   forecastPlayer(model, key)      → { name, age, now, hist, years: [{ year, total, cats, lo, hi, rank, of, top10, top50 }], flags }
@@ -56,6 +60,9 @@ export function forecastInput(field) {
   let N = 0;
   for (const p of field) for (const rd of p.rounds || []) if (rd.shots?.length && !rd.eventLevel) N++;
   const T = new Float64Array(N), V = new Float32Array(N * NC), M = new Uint8Array(N), Y = new Int16Array(N), TO = new Int16Array(N), E = new Int32Array(N), P = new Int32Array(N);
+  // (update 433) each round's ball speed and driving distance (NaN when not there), for the signals
+  const BS = new Float32Array(N).fill(NaN), DD = new Float32Array(N).fill(NaN);
+  const obsAvg = (rd, key) => { let t = 0, w = 0; for (const o of rd.obs || []) if (o.k === key && Number.isFinite(o.v) && o.v > 0) { const ww = Number(o.w) > 0 ? Number(o.w) : 1; t += o.v * ww; w += ww; } return w ? t / w : NaN; };
   const players = [];
   let k = 0;
   field.forEach((p) => {
@@ -66,11 +73,12 @@ export function forecastInput(field) {
     for (const { rd, t, y } of rs) {
       T[k] = t; Y[k] = id(yearsM, y); TO[k] = id(toursM, rd.tour || ""); E[k] = id(eventsM, `${y}|${rd.tour || ""}|${rd.event || rd.date}`); P[k] = players.length;
       for (const x of rd.shots) { const ci = CATS.indexOf(x.cat); if (ci >= 0) { V[k * NC + ci] += x.sg || 0; M[k] |= 1 << ci; } }
+      BS[k] = obsAvg(rd, "ballSpeed"); DD[k] = obsAvg(rd, "drive");
       k++;
     }
     players.push({ key: p.key, name: p.name || p.key, birth: p.birth || null, a, b: k });
   });
-  return { kind: "rounds", players, n: k, T: T.slice(0, k), V: V.slice(0, k * NC), M: M.slice(0, k), Y: Y.slice(0, k), TO: TO.slice(0, k), E: E.slice(0, k), P: P.slice(0, k), years: [...yearsM.keys()], tours: [...toursM.keys()], nEvents: eventsM.size };
+  return { kind: "rounds", players, n: k, T: T.slice(0, k), V: V.slice(0, k * NC), M: M.slice(0, k), Y: Y.slice(0, k), TO: TO.slice(0, k), E: E.slice(0, k), P: P.slice(0, k), BS: BS.slice(0, k), DD: DD.slice(0, k), years: [...yearsM.keys()], tours: [...toursM.keys()], nEvents: eventsM.size };
 }
 
 // (learning takes a few seconds on a full field: kept per field and tour, so Compare and Cal share it)
@@ -148,42 +156,60 @@ function learn(D, { tour = null } = {}) {
   // age drift per part of the game: a curve on a grid of ages (per year of age, strokes a round)
   const A0 = 15, AS = 0.25, AN = 200;
   const ageIdx = (age) => Math.max(0, Math.min(AN - 1, Math.round((age - A0) / AS)));
-  // one part of the game, every player: the negative log-likelihood (and, if asked, each surprise and each end state)
+  // (update 433) one part of the game, every player, event by event. Each player is three things the data can't see
+  // directly: a LASTING level (who they are: it only moves when real change shows up, and it is never pulled back to an
+  // average), a TEMPORARY part (hot and cold spells, luck that lasts a while: it fades back to 0), and a TREND (whether
+  // the lasting level is climbing or sliding; trends carry on, and fade at the rate the data shows). What's seen each
+  // event is lasting + temporary + that event's noise. Returns the negative log-likelihood (and, if asked, the surprises
+  // and each player's end state).
+  const step = (st, dt, th, dr) => {
+    const { qL, vT, kT, vS, kS } = th;
+    const fT = Math.exp(-kT * dt), fS = Math.exp(-kS * dt), g = kS > 1e-9 ? (1 - fS) / kS : dt;
+    st.L += g * st.S + dr; st.T *= fT; st.S *= fS;
+    const { LL, LT, LS, TT, TS, SS } = st;
+    st.LL = LL + 2 * g * LS + g * g * SS + qL * dt; st.LT = fT * (LT + g * TS); st.LS = fS * (LS + g * SS);
+    st.TT = fT * fT * TT + vT * (1 - fT * fT); st.TS = fT * fS * TS; st.SS = fS * fS * SS + vS * (1 - fS * fS);
+  };
   const run = (O, c, th, drift, collect = null) => {
-    const { sig2, s2, lam, mu } = th;
+    const { sig2, mu, pL, vT, vS } = th;
     let nll = 0;
     for (let p = 0; p < NP; p++) {
       const a = O.pStart[p], b = O.pStart[p + 1];
       if (a === b) { if (collect?.ends) collect.ends[p] = null; continue; }
-      let x = mu, P = s2, tp = O.T[a];
+      // a new player: their lasting level is like the players before them (mu, spread pL); no spell, no trend yet
+      const st = { L: mu, T: 0, S: 0, LL: pL, LT: 0, LS: 0, TT: vT, TS: 0, SS: vS };
+      let tp = O.T[a];
       const bt = birthT[p], hasAge = Number.isFinite(bt) && drift, shared = drift && !hasAge ? drift.mean || 0 : 0;
       for (let k = a; k < b; k++) {
         const n = O.Nn[k * NC + c];
         const dt = O.T[k] - tp;
         if (dt > 0) {
-          const f = Math.exp(-lam * dt);
           let dr = 0;
           if (hasAge) dr = drift[ageIdx((tp + O.T[k]) / 2 - bt)] * dt; else if (shared) dr = shared * dt;
-          x = mu + (x - mu) * f + dr; P = P * f * f + s2 * (1 - f * f);
+          step(st, dt, th, dr);
           tp = O.T[k];
         }
         if (!n) continue;
-        const R = sig2 / n, S = P + R, v = O.Yv[k * NC + c] - x;
+        const hL = st.LL + st.LT, hT = st.LT + st.TT, hS = st.LS + st.TS;
+        const S = hL + hT + sig2 / n, v = O.Yv[k * NC + c] - (st.L + st.T);
         nll += 0.5 * (Math.log(S) + (v * v) / S);
         if (collect?.inn && dt > 0 && Number.isFinite(bt)) collect.inn.push({ p, age: (O.T[k] + tp - dt) / 2 - bt, dt, v, S });
-        const K = P / S; x += K * v; P *= 1 - K;
+        const kL = hL / S, kT = hT / S, kS = hS / S;
+        st.L += kL * v; st.T += kT * v; st.S += kS * v;
+        st.LL -= kL * hL; st.LT -= kL * hT; st.LS -= kL * hS; st.TT -= kT * hT; st.TS -= kT * hS; st.SS -= kS * hS;
       }
-      if (collect?.ends) collect.ends[p] = { x, P, t: tp };
+      if (collect?.ends) collect.ends[p] = { ...st, t: tp };
     }
     return nll;
   };
-  // (a wide search from plain averages; from a fit already made (warm), a narrow one around it)
+  // its eight settings per part of the game, by maximum likelihood (a wide search from plain averages; from a fit
+  // already made (warm), a narrow one around it). A setting can go to ~0: no lasting change, no spells, no trends.
+  const RANGE = { sig2: [1e-3, 50], pL: [1e-5, 2], qL: [1e-6, 0.3], vT: [1e-6, 1], kT: [0.05, 20], vS: [1e-6, 0.3], kS: [0.05, 20] };
   const fitTheta = (O, c, drift, start, sweeps = 2, warm = false) => {
-    let th = { ...start }; const o = { log: true, steps: warm ? 8 : 11, scan: warm ? 4 : 8 };
+    let th = { ...start }; const o = { log: true, steps: warm ? 7 : 10, scan: warm ? 4 : 7 };
+    const span = (kk, x, s0) => { const [lo, hi] = RANGE[kk], w = warm ? (kk === "sig2" ? 1.5 : 3) : s0 === 0 && kk !== "sig2" ? Infinity : kk === "sig2" ? 3 : 10; return w === Infinity ? [lo, hi] : [Math.max(lo, x / w), Math.min(hi, x * w)]; };
     for (let s = 0; s < sweeps; s++) {
-      th.sig2 = bestOn((v) => run(O, c, { ...th, sig2: v }, drift), th.sig2 / (warm ? 1.5 : 3), th.sig2 * (warm ? 1.5 : 3), o).x;
-      th.s2 = bestOn((v) => run(O, c, { ...th, s2: v }, drift), Math.max(1e-5, th.s2 / (warm ? 2 : 10)), th.s2 * (warm ? 2 : 10), o).x;
-      th.lam = bestOn((v) => run(O, c, { ...th, lam: v }, drift), warm ? th.lam / 3 : 0.005, warm ? th.lam * 3 : 5, o).x;
+      for (const kk of ["sig2", "pL", "vT", "kT", "qL", "vS", "kS"]) { const [lo, hi] = span(kk, th[kk], s); th[kk] = bestOn((v) => run(O, c, { ...th, [kk]: v }, drift), lo, hi, o).x; }
       th.mu = bestOn((v) => run(O, c, { ...th, mu: v }, drift), th.mu - (warm ? 0.3 : 1), th.mu + (warm ? 0.3 : 1), { ...o, log: false }).x;
     }
     return th;
@@ -197,7 +223,7 @@ function learn(D, { tour = null } = {}) {
     const mean = sw ? sx / sw : 0, varR = sw ? Math.max(1e-4, sxx / sw - mean * mean) : 1;
     const pmMean = pm.length ? pm.reduce((t, [v]) => t + v, 0) / pm.length : mean;
     const varP = pm.length ? pm.reduce((t, [v]) => t + (v - pmMean) ** 2, 0) / pm.length : 0.05;
-    return { sig2: Math.max(1e-3, varR * 2), s2: Math.max(1e-3, varP), lam: 0.3, mu: pmMean };
+    return { sig2: Math.max(1e-3, varR), mu: pmMean, pL: Math.max(1e-4, varP), qL: 0.003, vT: Math.max(1e-4, varP * 0.3), kT: 1, vS: 0.002, kS: 0.7 };
   };
   // 3. age: the change in a player's level per year of age, per part of the game, learned together with the filter
   // (maximum likelihood, like its other settings): a value at each of a few ages, straight lines between them
@@ -290,19 +316,59 @@ function learn(D, { tour = null } = {}) {
   const projectWith = (Mx, p, Y, kc = 0) => {
     const tw = trustOf(Mx, kc);
     const tY = Number(Y) + 0.5, bt = birthT[p];
-    const cats = {}, vlev = { s: 0 }; let ageAdd = 0, any = false;
+    const cats = {}, vlev = { s: 0 }; let ageAdd = 0, any = false, lasting = 0, temp = 0, trend = 0;
     for (let c = 0; c < NC; c++) {
       const e = Mx.th[c].ends[p]; if (!e) return null;
       any = true;
-      const { s2, lam, mu } = Mx.th[c], g = Mx.drift[c];
+      const th = Mx.th[c], g = Mx.drift[c];
       // stepped a quarter-season at a time so the age curve follows the player's age
-      let x = e.x, P = e.P, t = e.t, a = 0;
-      while (t < tY - 1e-9) { const dt = Math.min(0.25, tY - t), f = Math.exp(-lam * dt); const m0 = g ? g.mean || 0 : 0, da = g && Number.isFinite(bt) ? tw[ageIdx(t + dt / 2 - bt)] * (g[ageIdx(t + dt / 2 - bt)] - m0) * dt : 0, dr = m0 * dt + da; x = mu + (x - mu) * f + dr; a = a * f + da; P = P * f * f + s2 * (1 - f * f); t += dt; }
-      cats[CATS[c]] = x; vlev.s += P; ageAdd += a;
+      const st = { ...e }; let t = e.t, a = 0, sh = 0; const L0 = e.L;
+      while (t < tY - 1e-9) { const dt = Math.min(0.25, tY - t); const m0 = g ? g.mean || 0 : 0, da = g && Number.isFinite(bt) ? tw[ageIdx(t + dt / 2 - bt)] * (g[ageIdx(t + dt / 2 - bt)] - m0) * dt : 0; step(st, dt, th, m0 * dt + da); a += da; sh += m0 * dt; t += dt; }
+      cats[CATS[c]] = st.L + st.T; vlev.s += st.LL + 2 * st.LT + st.TT; ageAdd += a;
+      lasting += e.L; temp += st.T; trend += st.L - L0 - a - sh;
     }
     if (!any) return null;
-    return { cats, total: CATS.reduce((t, c) => t + cats[c], 0), varLevel: vlev.s, ageAdd };
+    // lasting: their lasting level now; temp: what's left of their current spell by then; trend: where their own trend
+    // takes the lasting level by then (age and the drift every player shares are apart from it)
+    return { cats, total: CATS.reduce((t, c) => t + cats[c], 0), varLevel: vlev.s, ageAdd, lasting, temp, trend };
   };
+
+  /* ---------------- 4b. signals: what might say a player will keep rising or falling ---------------- */
+  // (update 433) each is worked out from the seasons up to the cut, then tested on seasons the model hadn't seen: only
+  // the ones that make those forecasts better are kept. Age is already in the filter (above).
+  const SIGS = [
+    { key: "ballSpeed", label: "Ball speed change (mph, latest season vs. the one before)" },
+    { key: "drive", label: "Driving distance change (yds, latest season vs. the one before)" },
+    { key: "puttLed", label: "Putting ahead of the rest of their game (latest season)" },
+    { key: "recentGap", label: "Last 6 months vs. their lasting level" },
+    { key: "otherTours", label: "Other tours (Korn Ferry etc., credited for field strength) vs. their lasting level" },
+    { key: "rounds", label: "Rounds played (latest season)" },
+  ];
+  const endOfCut = new Map();
+  const sigOf = (Mx, p) => {
+    Mx.sig ||= new Map(); if (Mx.sig.has(p)) return Mx.sig.get(p);
+    const cut = Mx.cut, A = Mx.F.adj;
+    if (!endOfCut.has(cut)) { let e = -Infinity; for (let i = 0; i < N; i++) if (YS[i] <= cut && D.T[i] > e) e = D.T[i]; endOfCut.set(cut, e); }
+    const tEnd = endOfCut.get(cut);
+    let level = 0; for (let c = 0; c < NC; c++) { const e = Mx.th[c].ends[p]; if (!e) { Mx.sig.set(p, null); return null; } level += e.L; }
+    const { a, b } = D.players[p];
+    const bs = [[0, 0], [0, 0]], dd = [[0, 0], [0, 0]], ct = [0, 0, 0, 0]; let n = 0, rN = 0, rT = 0, oN = 0, oT = 0;
+    for (let i = a; i < b; i++) {
+      if (YS[i] > cut) continue;
+      let tot = 0; for (let c = 0; c < NC; c++) tot += A[i * NC + c];
+      if (D.T[i] > tEnd - 0.5) { rN++; rT += tot; }
+      const yy = cut - YS[i]; if (yy > 1) continue;
+      if (D.BS && Number.isFinite(D.BS[i])) { bs[yy][0] += D.BS[i]; bs[yy][1]++; }
+      if (D.DD && Number.isFinite(D.DD[i])) { dd[yy][0] += D.DD[i]; dd[yy][1]++; }
+      if (yy) continue;
+      n++; for (let c = 0; c < NC; c++) ct[c] += A[i * NC + c];
+      if (D.TO[i] !== TT) { oN++; oT += tot; }
+    }
+    const chg = (x) => (x[0][1] >= 5 && x[1][1] >= 5 ? x[0][0] / x[0][1] - x[1][0] / x[1][1] : NaN);
+    const z = [chg(bs), chg(dd), n >= 10 ? ct[3] / n - (ct[0] + ct[1] + ct[2]) / n / 3 : NaN, rN >= 8 ? rT / rN - level : NaN, oN >= 4 ? (oT / oN - level) * (oN / n) : 0, Math.log1p(n)];
+    Mx.sig.set(p, z); return z;
+  };
+  const sigRecs = [];
 
   /* ---------------- 5. checked on seasons it hadn't seen ---------------- */
   const resid = { 1: [], 2: [], 3: [] };
@@ -325,7 +391,9 @@ function learn(D, { tour = null } = {}) {
         if (preds) { preds.forEach((v, i) => { ageErr[i] += s.n * (act - v) ** 2; }); ageErrN += s.n; }
         const sd = Math.sqrt(pr.varLevel + sig2Tot / s.n);
         const pv = prevS.get(p * NY + (t - 1));
-        resid[h].push({ act, preds, sd, r: act - pr.total, z: (act - pr.total) / sd, n: s.n, rLast: pv && pv.n >= 10 ? act - pv.cats.reduce((a, b) => a + b, 0) : null, rAvg: act - prevAvg });
+        const rec = { act, preds, sd, r: act - pr.total, z: (act - pr.total) / sd, n: s.n, rLast: pv && pv.n >= 10 ? act - pv.cats.reduce((a, b) => a + b, 0) : null, rAvg: act - prevAvg };
+        resid[h].push(rec);
+        const zz = sigOf(Mt, p); if (zz) sigRecs.push({ rec, h, cut: t - 1, z: zz });
       }
     }
   }
@@ -333,6 +401,41 @@ function learn(D, { tour = null } = {}) {
   const ageK = ageErrN >= 600 ? AGE_K[ageErr.indexOf(Math.min(...ageErr))] : 0;
   if (ageK !== 0) for (const h of [1, 2, 3]) for (const x of resid[h]) if (x.preds) { const v = x.preds[AGE_K.indexOf(ageK)]; x.r = x.act - v; x.z = x.r / x.sd; }
   const trustAt = (age) => trustOf(M, ageK)[ageIdx(age)];
+  // (update 433) the signals: standardized, then added one at a time while they make the unseen seasons' forecasts
+  // better (each season held out in turn, the effects learned on the others); only those are kept
+  const sigStd = SIGS.map((_, k) => { const v = sigRecs.map((x) => x.z[k]).filter(Number.isFinite); const m = v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; const sd = v.length > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1)) : 0; return { m, sd, n: v.length }; });
+  const zstd = (z, k) => (Number.isFinite(z[k]) && sigStd[k].sd > 1e-9 ? (z[k] - sigStd[k].m) / sigStd[k].sd : 0);
+  const solve = (A, bv) => { const n = bv.length, M2 = A.map((r, i) => [...r, bv[i]]); for (let i = 0; i < n; i++) { let piv = i; for (let r = i + 1; r < n; r++) if (Math.abs(M2[r][i]) > Math.abs(M2[piv][i])) piv = r; [M2[i], M2[piv]] = [M2[piv], M2[i]]; const d = M2[i][i] || 1e-12; for (let r = 0; r < n; r++) if (r !== i) { const f = M2[r][i] / d; for (let c = i; c <= n; c++) M2[r][c] -= f * M2[i][c]; } } return M2.map((r, i) => r[n] / (r[i] || 1e-12)); };
+  const fitB = (recs, ks) => [1, 2, 3].map((h) => {
+    const R = recs.filter((x) => x.h === h); if (!ks.length || R.length < 30) return ks.map(() => 0);
+    const A = ks.map(() => ks.map(() => 0)), bv = ks.map(() => 0); let wsum = 0;
+    for (const x of R) { const w = 1 / (x.rec.sd * x.rec.sd), zz = ks.map((k) => zstd(x.z, k)); wsum += w; for (let i = 0; i < ks.length; i++) { bv[i] += w * zz[i] * x.rec.r; for (let j = 0; j < ks.length; j++) A[i][j] += w * zz[i] * zz[j]; } }
+    for (let i = 0; i < ks.length; i++) A[i][i] += 0.01 * wsum; // (a little shrinkage)
+    return solve(A, bv);
+  });
+  const predOf = (B, ks, x) => { const b = B[x.h - 1] || B[0]; let v = 0; ks.forEach((k, i) => { v += (b[i] || 0) * zstd(x.z, k); }); return v; };
+  const cuts = [...new Set(sigRecs.map((x) => x.cut))];
+  const cvBy = (ks) => cuts.map((c0) => { const B = fitB(sigRecs.filter((x) => x.cut !== c0), ks); let e = 0; for (const x of sigRecs) if (x.cut === c0) { const w = 1 / (x.rec.sd * x.rec.sd); e += w * (x.rec.r - predOf(B, ks, x)) ** 2; } return e; });
+  const cvErr = (ks) => cvBy(ks).reduce((a, b) => a + b, 0);
+  let kept = [], sigTried = null;
+  if (cuts.length >= 2 && sigRecs.length >= 200) {
+    const base = cvErr([]); let cur = base; sigTried = [];
+    const avail = SIGS.map((_, k) => k).filter((k) => sigStd[k].n >= 50 && sigStd[k].sd > 1e-9);
+    for (;;) {
+      let best = null; const curBy = cvBy(kept);
+      for (const k of avail) { if (kept.includes(k)) continue; const by = cvBy([...kept, k]), e = by.reduce((a, b) => a + b, 0); if (!best || e < best.e) best = { k, e, wins: by.filter((v, i) => v < curBy[i]).length }; }
+      // it has to help by more than chance would: overall, and in most of the seasons held out
+      if (!best || best.e > cur * 0.997 || best.wins < Math.ceil(cuts.length * 0.6)) break;
+      kept.push(best.k); cur = best.e;
+    }
+    for (const k of avail) sigTried.push({ key: SIGS[k].key, label: SIGS[k].label, kept: kept.includes(k), alone: 1 - cvErr([k]) / base });
+    sigTried.push({ key: "all", gain: 1 - cur / base });
+  }
+  const sigB = fitB(sigRecs, kept);
+  // the kept signals' effect on the checks too (so the ranges are scaled on the forecasts as they'll be made)
+  if (kept.length) for (const x of sigRecs) { const v = predOf(sigB, kept, x); x.rec.r -= v; x.rec.z = x.rec.r / x.rec.sd; }
+  const sigAddOf = (p, h) => { if (!kept.length) return { add: 0, parts: {} }; const z = sigOf(M, p); if (!z) return { add: 0, parts: {} }; const b = sigB[h - 1] || sigB[0], parts = {}; let add = 0; kept.forEach((k, i) => { const v = (b[i] || 0) * zstd(z, k); parts[SIGS[k].key] = v; add += v; }); return { add, parts }; };
+
   // the ranges: scaled so 8 in 10 seasons it hadn't seen land inside (one season ahead)
   const kappa = (() => { const z = resid[1].map((x) => Math.abs(x.z)).sort((a, b) => a - b); return z.length >= 20 ? Math.max(0.5, Math.min(3, z[Math.floor(z.length * 0.8)] / 1.2816)) : 1; })();
   const err = [1, 2, 3].map((h) => {
@@ -352,7 +455,8 @@ function learn(D, { tour = null } = {}) {
     if (p < 0) return null;
     const id = `${p}|${h}`; if (projMemo.has(id)) return projMemo.get(id);
     const pr = projectWith(M, p, Number(lastYear) + h, ageK);
-    const out = pr ? { ...pr, sd: sdOf(pr) } : null;
+    let out = null;
+    if (pr) { const sg = sigAddOf(p, h); out = { ...pr, total: pr.total + sg.add, sigAdd: sg.add, sigParts: sg.parts }; out.sd = sdOf(out); }
     projMemo.set(id, out); return out;
   };
   // the field each future season: the players who'd be ranked on this tour over the last two seasons (the site's rule)
@@ -380,9 +484,21 @@ function learn(D, { tour = null } = {}) {
   };
 
   /* ---------------- what it learned, for the page ---------------- */
-  const cats = Object.fromEntries(CATS.map((c, i) => { const t = M.th[i]; return [c, { noise: Math.sqrt(t.sig2), spread: Math.sqrt(t.s2), halfLife: Math.log(2) / t.lam, mean: t.mu,
-    // how much of a full season (typical rounds) a forecast takes from the player rather than the average
-    carry: t.s2 / (t.s2 + t.sig2 / typicalN) }]; }));
+  // how much of a full season (typical rounds) above or below where a player was expected shows up in next season's
+  // forecast, for an established player (the filter run a season at a time until it settles)
+  const carryOf = (t) => {
+    const st = { L: 0, T: 0, S: 0, LL: t.pL, LT: 0, LS: 0, TT: t.vT, TS: 0, SS: t.vS }; let k = [0, 0, 0];
+    for (let y = 0; y < 30; y++) { step(st, 1, t, 0); const hL = st.LL + st.LT, hT = st.LT + st.TT, hS = st.LS + st.TS, S = hL + hT + t.sig2 / typicalN; k = [hL / S, hT / S, hS / S]; st.LL -= k[0] * hL; st.LT -= k[0] * hT; st.LS -= k[0] * hS; st.TT -= k[1] * hT; st.TS -= k[1] * hS; st.SS -= k[2] * hS; }
+    const fS = Math.exp(-t.kS), g = (1 - fS) / t.kS;
+    return Math.max(0, Math.min(1, k[0] + k[1] * Math.exp(-t.kT) + k[2] * g));
+  };
+  const cats = Object.fromEntries(CATS.map((c, i) => { const t = M.th[i];
+    // of the change in a player's true level from one season to the next, the share that lasts (lasting moves and
+    // trends) rather than fades (spells)
+    const g1 = (1 - Math.exp(-t.kS)) / t.kS, lastV = t.qL + t.vS * g1 * g1, tempV = 2 * t.vT * (1 - Math.exp(-t.kT));
+    return [c, { noise: Math.sqrt(t.sig2), spread: Math.sqrt(t.pL), mean: t.mu, lastingMove: Math.sqrt(t.qL), spell: Math.sqrt(t.vT), spellHalfLife: Math.log(2) / t.kT,
+      trend: Math.sqrt(t.vS), trendHalfLife: Math.log(2) / t.kS, lastingShare: lastV / Math.max(1e-12, lastV + tempV),
+      carry: carryOf(t) }]; }));
   const ageOk = M.drift.some(Boolean) && ageK !== Infinity;
   const ageCurve = (age) => Object.fromEntries(CATS.map((c, i) => [c, M.drift[i] ? trustAt(age) * (M.drift[i][ageIdx(age)] - (M.drift[i].mean || 0)) : 0]));
   const sharedDrift = M.drift.reduce((t, g) => t + (g ? g.mean || 0 : 0), 0);
@@ -392,6 +508,7 @@ function learn(D, { tour = null } = {}) {
     age: { shared: sharedDrift, k: ageK, none: ageK === Infinity, trust: Object.fromEntries([22, 26, 30, 34, 38, 42, 46, 50].map((a) => [a, trustAt(a)])), tried: ageErrN >= 600 ? AGE_K.map((k, i) => ({ k, rmse: Math.sqrt(ageErr[i] / ageErrN) })) : null, players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, knots: KNOTS,
       at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + ageCurve(a)[c], 0)])) },
     spread: err.map((e) => e || { n: 0 }),
+    signals: { tried: sigTried, kept: kept.map((k) => ({ key: SIGS[k].key, label: SIGS[k].label, perSd: sigB.map((b) => b[kept.indexOf(k)] || 0), sd: sigStd[k].sd })) },
   };
   // each season's average of the ranked players on the tour picked (adjusted), for the story's flags
   const meanAdj = new Map(); for (let y = 0; y < NY; y++) { const r = rankedIn(y, adjT); if (r.length) meanAdj.set(yrs[y], r.reduce((t, [, s]) => t + s.cats.reduce((a, b) => a + b, 0), 0) / r.length); }
@@ -430,7 +547,7 @@ export function forecastPlayer(model, key) {
     // the rank at the top and the bottom of their likely range
     const rankHi = rankAt(pr.total + 1.2816 * pr.sd), rankLo = rankAt(pr.total - 1.2816 * pr.sd);
     const ch = model.chances(key, h, pr.total, pr.sd);
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 1.2816 * pr.sd, hi: pr.total + 1.2816 * pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
   }
   // (update 426) on the tour picked, raw, as the report's season table shows them (not field-adjusted), so the numbers match
   const lastS = hist.at(-1), prev = hist.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
