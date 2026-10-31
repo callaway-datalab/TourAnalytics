@@ -85,7 +85,9 @@ export function drawPrepMenu(ctx, course) {
   back.addEventListener("click", () => ctx.home());
   const par = course.par.reduce((a, b) => a + (b || 0), 0), yds = course.yards.reduce((a, b) => a + (Number(b) || 0), 0);
   const nMaps = el("span", { class: "cp-opt-n" });
-  courseDocs(ctx).then((docs) => { const n = docs.filter((d) => forCourse(d, course.name)).length; nMaps.textContent = n ? `${n} report${n === 1 ? "" : "s"}` : "None yet"; }).catch(() => {});
+  const holesTxt = course.holeMaps ? `${course.par.length} hole maps` : "";
+  if (holesTxt) nMaps.textContent = holesTxt;
+  courseDocs(ctx).then((docs) => { const n = docs.filter((d) => forCourse(d, course.name)).length; nMaps.textContent = [holesTxt, n ? `${n} report${n === 1 ? "" : "s"}` : holesTxt ? "" : "None yet"].filter(Boolean).join(" \u00b7 "); }).catch(() => {});
   const opt = (title, sub, extra, go) => {
     const b = el("button", { type: "button", class: "cp-opt" }, [el("strong", {}, title), el("span", { class: "muted small" }, sub), extra]);
     b.addEventListener("click", go);
@@ -95,7 +97,7 @@ export function drawPrepMenu(ctx, course) {
     el("p", { class: "pr-eyebrow" }, "Course Prep"), el("h1", {}, course.name),
     el("p", { class: "muted" }, [course.location, `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
-      opt("Course Maps", "The course reports and maps for this course", nMaps, () => ctx.go({ name: "prepMaps", course })),
+      opt("Course Maps", course.holeMaps ? "A map of every hole, and the course reports" : "The course reports and maps for this course", nMaps, () => ctx.go({ name: "prepMaps", course })),
       opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
       opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })),
     ]),
@@ -106,10 +108,64 @@ export async function drawMaps(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
   const list = el("ul", { class: "rows" }, el("p", { class: "muted ta-loading" }, "Loading…"));
-  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel" }, [el("p", { class: "pr-eyebrow" }, course.name), el("h1", {}, "Course Maps"), list])]);
+  const holes = course.holeMaps ? holeGrid(course) : null;
+  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel" }, [el("p", { class: "pr-eyebrow" }, course.name), el("h1", {}, "Course Maps"),
+    holes, holes ? el("h2", { class: "cp-rep-h" }, "Course reports") : null, list])]);
   const docs = await courseDocs(ctx).catch(() => []);
   const maps = docs.filter((d) => forCourse(d, course.name));
-  mount(list, maps.length ? maps.map((d) => docRow(ctx, d)) : el("p", { class: "empty" }, `No reports or maps for ${course.name} yet.${ctx.state.isAdmin ? " Upload one with this course's name in Course." : " Ask your Callaway analyst."}`));
+  mount(list, maps.length ? maps.map((d) => docRow(ctx, d)) : el("p", { class: "empty" }, `No ${holes ? "reports" : "reports or maps"} for ${course.name} yet.${ctx.state.isAdmin ? " Upload one with this course's name in Course." : " Ask your Callaway analyst."}`));
+}
+
+/* (update 452) a built-in course's hole maps: a card for each hole (tap for the big view, with previous / next) */
+const holeUrl = (course, n) => `${course.holeMaps}/${n}.webp?v=1`;
+function holeGrid(course) {
+  const n = course.par.length;
+  const nine = (from) => el("div", { class: "cp-holes" }, Array.from({ length: Math.min(9, n - from) }, (_, i) => {
+    const h = from + i + 1;
+    const b = el("button", { type: "button", class: "cp-hole", "aria-label": `Hole ${h}, par ${course.par[h - 1]}, ${course.yards[h - 1] || "?"} yards` }, [
+      el("img", { src: holeUrl(course, h), alt: "", loading: "lazy", decoding: "async" }),
+      el("span", { class: "cp-hole-t" }, [el("strong", {}, `${h}`), el("span", {}, `Par ${course.par[h - 1]}${course.yards[h - 1] ? ` \u00b7 ${course.yards[h - 1]} yds` : ""}`)]),
+    ]);
+    b.addEventListener("click", () => holeViewer(course, h));
+    return b;
+  }));
+  const sum = (a, b) => a.slice(b[0], b[1]).reduce((t, v) => t + (Number(v) || 0), 0);
+  const head = (lab, r) => el("p", { class: "cp-nine" }, [el("strong", {}, lab), el("span", { class: "muted small" }, ` \u00b7 par ${sum(course.par, r)} \u00b7 ${sum(course.yards, r).toLocaleString()} yds`)]);
+  return el("div", { class: "cp-holemaps" }, [
+    el("p", { class: "muted small" }, `${course.tees ? `${course.tees} tees. ` : ""}Tee on the left, green on the right. Tap a hole to see it bigger.`),
+    head("Front nine", [0, 9]), nine(0), n > 9 ? head("Back nine", [9, 18]) : null, n > 9 ? nine(9) : null]);
+}
+function holeViewer(course, start) {
+  const n = course.par.length;
+  let h = start;
+  const dlg = el("dialog", { class: "cp-hv" });
+  document.body.appendChild(dlg);
+  const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); document.removeEventListener("keydown", key); };
+  const img = el("img", { class: "cp-hv-img", alt: "" });
+  const title = el("h3", {});
+  const prev = el("button", { type: "button", class: "btn ghost small", "aria-label": "Previous hole" }, "\u2190 Prev");
+  const next = el("button", { type: "button", class: "btn ghost small", "aria-label": "Next hole" }, "Next \u2192");
+  const x = el("button", { type: "button", class: "btn ghost small", "aria-label": "Close" }, "\u2715");
+  const show = () => {
+    img.src = holeUrl(course, h); img.alt = `Hole ${h} map`;
+    title.textContent = `Hole ${h} \u00b7 Par ${course.par[h - 1]}${course.yards[h - 1] ? ` \u00b7 ${course.yards[h - 1]} yds` : ""}`;
+    prev.disabled = h <= 1; next.disabled = h >= n;
+    if (h < n) { const pre = new Image(); pre.src = holeUrl(course, h + 1); }
+  };
+  prev.addEventListener("click", () => { if (h > 1) { h--; show(); } });
+  next.addEventListener("click", () => { if (h < n) { h++; show(); } });
+  x.addEventListener("click", close);
+  dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) close(); });
+  // swipe left / right for the next / previous hole
+  let sx = null;
+  img.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; }, { passive: true });
+  img.addEventListener("touchend", (e) => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; sx = null; if (Math.abs(dx) > 50) { if (dx < 0 && h < n) h++; else if (dx > 0 && h > 1) h--; show(); } });
+  const key = (e) => { if (e.key === "ArrowRight" && h < n) { h++; show(); } else if (e.key === "ArrowLeft" && h > 1) { h--; show(); } };
+  document.addEventListener("keydown", key);
+  mount(dlg, [el("div", { class: "cp-hv-head" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, course.name), title]), x]), el("div", { class: "cp-hv-pic" }, img), el("div", { class: "cp-hv-nav" }, [prev, next])]);
+  show();
+  if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
 }
 
 /* ------------------------------------------------ Course History ------------------------------------------------ */

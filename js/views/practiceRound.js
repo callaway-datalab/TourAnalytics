@@ -125,6 +125,16 @@ async function myCourses(ctx) {
       if (!c.yards.some(Boolean) && r.holes.some((h) => h.yards)) c.yards = r.holes.map((h) => h.yards || null);
     }
   } catch { /* */ }
+  // (update 452) the courses built in (Torrey Pines South…): theirs to prep for too, with a map of every hole. A course
+  // they already have (a scorecard or rounds there) keeps their card and gets the maps.
+  try {
+    const { BUILTIN_COURSES } = await import("../practice/builtinCourses.js");
+    for (const b of BUILTIN_COURSES) {
+      const k = b.name.toLowerCase(), c = out.get(k);
+      if (c) { c.holeMaps = b.holeMaps; c.location ||= b.location; if (!c.yards.some(Boolean)) c.yards = [...b.yards]; }
+      else out.set(k, { name: b.name, location: b.location, par: [...b.par], yards: [...b.yards], tees: b.tees, from: "Tour course \u00b7 hole maps", rounds: [], holeMaps: b.holeMaps });
+    }
+  } catch { /* */ }
   return [...out.values()].sort((a, b) => b.rounds.length - a.rounds.length || a.name.localeCompare(b.name));
 }
 
