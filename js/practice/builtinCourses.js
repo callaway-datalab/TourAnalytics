@@ -1,6 +1,7 @@
 /*
  * (update 452) Courses built into Course Prep, for everyone: the tour card (par and yards from the championship tees)
- * and a map of each hole (media/courses/<id>/<hole>.webp, drawn in the practice games' flyover style).
+ * and a map of each hole, as uploaded: media/courses/<id>/h/<hole>.webp (turned flat, tee on the left, for wide screens)
+ * and v/<hole>.webp (turned upright, tee at the bottom, for phones). (update 453)
  */
 export const BUILTIN_COURSES = [
   {
@@ -14,4 +15,4 @@ export const BUILTIN_COURSES = [
   },
 ];
 /** The picture of a hole, or null. */
-export const holeMapUrl = (course, n) => (course?.holeMaps ? `${course.holeMaps}/${n}.webp?v=1` : null);
+export const holeMapUrl = (course, n, upright = false) => (course?.holeMaps ? `${course.holeMaps}/${upright ? "v" : "h"}/${n}.webp?v=2` : null);

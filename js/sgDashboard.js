@@ -2035,11 +2035,13 @@ export function sgDashboard(container, opts) {
         const near = got.rounds, K = near.length;
         // the stats to use for each part of the game; the second list only when the data has none of the first
         const CAND = (c, d) => (c === "OTT" ? [/iron|wood/i.test(d || "") ? ["fwy"] : ["drive", "fwy"]] : c === "APP" ? [["prox", "hitGreen"], ["gir"]] : c === "ARG" ? [["prox", "hitGreen"], ["ud", "scramble"]] : c === "PUTT" ? [["make"], ["goodLag"]] : []);
-        const scopes = (c, d) => [...(d ? [["exact", (o) => o.cat === c && o.dist === d]] : []), ["cat", (o) => o.cat === c && !o.dist], ["whole", (o) => !o.cat]];
+        // (update 453) a shot-by-shot file puts every stat on a distance, a summary file on the part of the game: so the
+        // part of the game is every distance of it, whichever the file has
+        const scopes = (c, d) => [...(d ? [["exact", (o) => o.cat === c && o.dist === d]] : []), ["cat", (o) => o.cat === c], ["whole", (o) => !o.cat]];
         const avgOf = (rounds, k, f) => { let s0 = 0, w = 0; for (const rd of rounds) for (const o of rd.obs || []) if (o.k === k && f(o)) { s0 += o.v * o.w; w += o.w; } return w ? { v: s0 / w, w } : null; };
         const items = [], notes = [];
         for (const u1 of [u]) { const u = u1;
-          let best = null, seen = false;
+          let best = null, seen = false; const looked = [];
           for (const tier of CAND(u.c, u.d)) { if (seen) break; for (const k of tier) {
             const def = statDef(k);
             for (const [scope, f] of scopes(u.c, u.d)) {
@@ -2051,15 +2053,21 @@ export function sgDashboard(container, opts) {
               const m = per.reduce((t, v) => t + v, 0) / (per.length || 1);
               const sd = Math.max(1e-6, Math.sqrt(per.reduce((t, v) => t + (v - m) ** 2, 0) / Math.max(1, per.length - 1)));
               const z = ((a.v - b.v) / sd) * (def.higher === false ? -1 : 1);
-              seen = true;
+              seen = true; looked.push({ def, vn: a.v, vs: b.v });
               // (update 449) only a stat that's really better than now, still better once rounded for the goal
               const dpK = def.pct ? 1 : def.dp ?? 1, rN = Math.round(a.v * 10 ** dpK), rS = Math.round(b.v * 10 ** dpK);
               const better = def.higher === false ? rN < rS : rN > rS;
-              if (better && z > 0.05 && (!best || z > best.z)) best = { k, def, vn: a.v, vs: b.v, z, scope };
+              if (better && z > 0 && (!best || z > best.z)) best = { k, def, vn: a.v, vs: b.v, z, scope };
               break;
             }
           } }
-          if (!best) { notes.push(`${u.label}: none of its plain stats were better in those rounds than in ${src === "tour" ? "their" : "the"} season, so no drill for it.`); continue; }
+          if (!best) {
+            // (update 453) say why: no stat in the data, or the stats weren't better (with the numbers)
+            const names = CAND(u.c, u.d).flat().map((k) => statDef(k).label);
+            notes.push(!looked.length ? `${u.label}: the data has no ${names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names.at(-1)}` : names[0] || "stats"} for these rounds, so there\u2019s nothing to set a goal from.`
+              : `${u.label}: in the ${K} rounds like this, ${looked.map((x) => `${x.def.label} was ${fmtStat(x.def, x.vn)} (season ${fmtStat(x.def, x.vs)})`).join(", ")}: not better, so no drill for it.`);
+            continue;
+          }
           const { k, def, vn, vs, scope } = best;
           const dp = def.pct ? 1 : def.dp ?? 1, tgt = Math.round(vn * 10 ** dp) / 10 ** dp;
           const goal = { stat: "obs", statKey: k, cat: scope === "whole" ? null : u.c, dist: scope === "exact" ? u.d : null, label: def.label, unit: def.pct ? "%" : def.unit || "", higher: def.higher !== false, dp, target: tgt, measure: "round", when: "nextN", n: 12 };
@@ -2079,7 +2087,7 @@ export function sgDashboard(container, opts) {
         b.addEventListener("click", (e) => {
           e.stopPropagation();
           let P; try { P = hypoPlan(u); } catch (err) { console.error(err); P = { err: "Couldn’t work that out just now." }; }
-          if (P.err || !P.items.length) { st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: `${u.label}: ${P.err || (P.notes.join(" ").replace(/^[^:]*:\s*/, "")) || "nothing to practise for this change."}` }; draw(); return; }
+          if (P.err || !P.items.length) { st.hypoPlanMsg = { key: me?.key, row: u.label, at: Date.now(), text: `${P.err || (P.notes.join(" ").replace(/^[^:]*:\s*/, "")) || "nothing to practise for this change."}` }; draw(); return; }
           const whoseP = isMine(me?.key) || !me?.label ? "your" : `${me.label}’s`;
           const intro = el("div", { class: "hy-plan-why" }, [
             el("p", { class: `hy-src ${P.src}` }, P.src === "tour" ? `From the tour: ${whoseP === "your" ? "your" : "their"} own rounds don\u2019t match this what-if closely enough, so these come from the ${P.K} rounds by other players this season that average out to it.` : `From ${whoseP === "your" ? "your" : "their"} own rounds: ${P.K} of ${P.n} this season average out to this what-if.`),
@@ -2093,15 +2101,18 @@ export function sgDashboard(container, opts) {
               const n = await addToPlan(getState(), { items: list.map((x) => ({ ...x })), playerKey: me?.key, playerLabel: me?.label });
               for (const x of list) PLAN_ADDED.add(`${me?.key}|${x.drill.kind}|${x.drill.dist || ""}|${x.drill.lie || ""}`);
               const g = list.filter((x) => x.goal).length;
-              st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: `Added ${n} ${n === 1 ? "drill" : "drills"} to ${whoseP} practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to Goals` : ""} (from ${P.src === "tour" ? "tour rounds" : `${whoseP === "your" ? "your" : "their"} own rounds`}).`, link: true };
+              st.hypoPlanMsg = { key: me?.key, row: u.label, at: Date.now(), text: `Added ${n} ${n === 1 ? "drill" : "drills"} to ${whoseP} practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to Goals` : ""} (from ${P.src === "tour" ? "tour rounds" : `${whoseP === "your" ? "your" : "their"} own rounds`}).`, link: true };
               draw();
-            } catch (err) { console.error(err); b.disabled = false; st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: "Couldn’t add that just now. Try again." }; draw(); }
+            } catch (err) { console.error(err); b.disabled = false; st.hypoPlanMsg = { key: me?.key, row: u.label, at: Date.now(), text: "Couldn’t add that just now. Try again." }; draw(); }
           }, intro);
         });
         return b;
       };
-      for (const [c, u] of planSlots) mount(c, planCell(u));
-      const planLine = planMsg ? el("p", { class: "muted small hy-plan-msg" }, [planMsg.text, planMsg.link ? " " : null,
+      // (update 451) what happened shows right under the button that was tapped
+      const msgEl = (m) => el("p", { class: "hy-plan-msg" }, [m.text, m.link ? " " : null,
+        m.link ? el("a", { href: isMine(me?.key) ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(me?.key || "")}`, class: "link" }, "Open Practice \u2192") : null]);
+      for (const [c, u] of planSlots) mount(c, [planCell(u), planMsg && planMsg.row === u.label ? msgEl(planMsg) : null]);
+      const planLine = planMsg && !planSlots.some(([, u]) => u.label === planMsg.row) ? el("p", { class: "muted small hy-plan-msg" }, [planMsg.text, planMsg.link ? " " : null,
         planMsg.link ? el("a", { href: isMine(me?.key) ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(me?.key || "")}`, class: "link" }, "Open Practice →") : null]) : null;
       const reset = anyAdj ? (() => { const b = el("button", { type: "button", class: "link small" }, "Reset"); b.addEventListener("click", () => { st.hypoAdj = null; draw(); }); return b; })() : null;
       return el("div", { class: "bs-path bs-hypo" }, [

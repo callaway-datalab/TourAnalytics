@@ -117,13 +117,16 @@ export async function drawMaps(ctx, course) {
 }
 
 /* (update 452) a built-in course's hole maps: a card for each hole (tap for the big view, with previous / next) */
-const holeUrl = (course, n) => `${course.holeMaps}/${n}.webp?v=1`;
+// (update 453) the uploaded maps as they are, turned flat for wide screens and upright (tee at the bottom) for phones
+const holeUrl = (course, n, upright = false) => `${course.holeMaps}/${upright ? "v" : "h"}/${n}.webp?v=2`;
+const PHONE = "(max-width: 600px)";
+const holePic = (course, n, attrs = {}) => { const img = el("img", { src: holeUrl(course, n), alt: "", decoding: "async", ...attrs }); return { pic: el("picture", {}, [el("source", { media: PHONE, srcset: holeUrl(course, n, true) }), img]), img }; };
 function holeGrid(course) {
   const n = course.par.length;
   const nine = (from) => el("div", { class: "cp-holes" }, Array.from({ length: Math.min(9, n - from) }, (_, i) => {
     const h = from + i + 1;
     const b = el("button", { type: "button", class: "cp-hole", "aria-label": `Hole ${h}, par ${course.par[h - 1]}, ${course.yards[h - 1] || "?"} yards` }, [
-      el("img", { src: holeUrl(course, h), alt: "", loading: "lazy", decoding: "async" }),
+      holePic(course, h, { loading: "lazy" }).pic,
       el("span", { class: "cp-hole-t" }, [el("strong", {}, `${h}`), el("span", {}, `Par ${course.par[h - 1]}${course.yards[h - 1] ? ` \u00b7 ${course.yards[h - 1]} yds` : ""}`)]),
     ]);
     b.addEventListener("click", () => holeViewer(course, h));
@@ -132,7 +135,7 @@ function holeGrid(course) {
   const sum = (a, b) => a.slice(b[0], b[1]).reduce((t, v) => t + (Number(v) || 0), 0);
   const head = (lab, r) => el("p", { class: "cp-nine" }, [el("strong", {}, lab), el("span", { class: "muted small" }, ` \u00b7 par ${sum(course.par, r)} \u00b7 ${sum(course.yards, r).toLocaleString()} yds`)]);
   return el("div", { class: "cp-holemaps" }, [
-    el("p", { class: "muted small" }, `${course.tees ? `${course.tees} tees. ` : ""}Tee on the left, green on the right. Tap a hole to see it bigger.`),
+    el("p", { class: "muted small" }, `${course.tees ? `${course.tees} tees. ` : ""}${matchMedia(PHONE).matches ? "Tee at the bottom, green at the top." : "Tee on the left, green on the right."} Tap a hole to see it bigger.`),
     head("Front nine", [0, 9]), nine(0), n > 9 ? head("Back nine", [9, 18]) : null, n > 9 ? nine(9) : null]);
 }
 function holeViewer(course, start) {
@@ -141,16 +144,17 @@ function holeViewer(course, start) {
   const dlg = el("dialog", { class: "cp-hv" });
   document.body.appendChild(dlg);
   const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); document.removeEventListener("keydown", key); };
-  const img = el("img", { class: "cp-hv-img", alt: "" });
+  const { pic, img } = holePic(course, start, { class: "cp-hv-img" });
+  const src = pic.querySelector("source");
   const title = el("h3", {});
   const prev = el("button", { type: "button", class: "btn ghost small", "aria-label": "Previous hole" }, "\u2190 Prev");
   const next = el("button", { type: "button", class: "btn ghost small", "aria-label": "Next hole" }, "Next \u2192");
   const x = el("button", { type: "button", class: "btn ghost small", "aria-label": "Close" }, "\u2715");
   const show = () => {
-    img.src = holeUrl(course, h); img.alt = `Hole ${h} map`;
+    img.src = holeUrl(course, h); src.srcset = holeUrl(course, h, true); img.alt = `Hole ${h} map`;
     title.textContent = `Hole ${h} \u00b7 Par ${course.par[h - 1]}${course.yards[h - 1] ? ` \u00b7 ${course.yards[h - 1]} yds` : ""}`;
     prev.disabled = h <= 1; next.disabled = h >= n;
-    if (h < n) { const pre = new Image(); pre.src = holeUrl(course, h + 1); }
+    if (h < n) { const pre = new Image(); pre.src = holeUrl(course, h + 1, matchMedia(PHONE).matches); }
   };
   prev.addEventListener("click", () => { if (h > 1) { h--; show(); } });
   next.addEventListener("click", () => { if (h < n) { h++; show(); } });
@@ -163,7 +167,7 @@ function holeViewer(course, start) {
   img.addEventListener("touchend", (e) => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; sx = null; if (Math.abs(dx) > 50) { if (dx < 0 && h < n) h++; else if (dx > 0 && h > 1) h--; show(); } });
   const key = (e) => { if (e.key === "ArrowRight" && h < n) { h++; show(); } else if (e.key === "ArrowLeft" && h > 1) { h--; show(); } };
   document.addEventListener("keydown", key);
-  mount(dlg, [el("div", { class: "cp-hv-head" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, course.name), title]), x]), el("div", { class: "cp-hv-pic" }, img), el("div", { class: "cp-hv-nav" }, [prev, next])]);
+  mount(dlg, [el("div", { class: "cp-hv-head" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, course.name), title]), x]), el("div", { class: "cp-hv-pic" }, pic), el("div", { class: "cp-hv-nav" }, [prev, next])]);
   show();
   if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
 }
