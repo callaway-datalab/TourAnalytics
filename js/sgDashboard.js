@@ -1911,7 +1911,10 @@ export function sgDashboard(container, opts) {
       const f3h = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`; // (a distance: update 447, two decimals like the rest)
       const fmtD = (d) => `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(2)}`;
       // one row: k its key; v0 the last N rounds' value; v the what-if; d the change; r / r0 the ranks
-      const row = ({ k, label, v0, v, d, r, r0, isTot = false, kid = false, stepBy = step, expand = null }) => {
+      // (update 450) Add to practice, under the rank of any row made better (filled in below, used on a tap)
+      const planOn = practiceOpen(me?.key);
+      let planCell = null; const planSlots = [];
+      const row = ({ k, label, v0, v, d, r, r0, isTot = false, kid = false, stepBy = step, expand = null, plan = null }) => {
         const btn = (txt, dv, lab) => { const b = el("button", { type: "button", class: "hy-step", "aria-label": `${lab} ${label}` }, txt); b.addEventListener("click", (e) => { e.stopPropagation(); bump(k, dv); }); return b; };
         const typeable = () => {
           const sv = el("strong", { class: `hy-type ${v >= 0 ? "pos" : "neg"}${d ? " hy-moved" : ""}`, role: "button", tabindex: "0", title: "Click to type a value", "aria-label": `Type a value for ${label}` }, kid ? f3h(v) : fmtSG(v));
@@ -1940,7 +1943,8 @@ export function sgDashboard(container, opts) {
           el("td", { class: "num" }, kid ? f3h(v0) : fmtSG(v0)),
           el("td", { class: "num hy-val" }, [isTot ? el("strong", { class: v >= 0 ? "pos" : "neg" }, fmtSG(v)) : el("span", { class: "hy-ctl" }, [btn("\u2212", -stepBy, "Worse"), typeable(), btn("+", stepBy, "Better")]),
             Math.abs(d) > 1e-9 ? el("span", { class: `hy-d ${d > 0 ? "pos" : "neg"}`, title: isTot ? "All the changes added up" : expand ? "Its changes added up (with its distances)" : "Changed by" }, fmtD(d)) : null]),
-          el("td", { class: "num" }, [rkTxt(r), moved ? el("span", { class: `hy-mv ${r.rank < r0.rank ? "pos" : "neg"}` }, ` ${r.rank < r0.rank ? "\u25B2" : "\u25BC"}${Math.abs(r0.rank - r.rank)}`) : null]),
+          el("td", { class: "num" }, [rkTxt(r), moved ? el("span", { class: `hy-mv ${r.rank < r0.rank ? "pos" : "neg"}` }, ` ${r.rank < r0.rank ? "\u25B2" : "\u25BC"}${Math.abs(r0.rank - r.rank)}`) : null,
+            plan && planOn && !isTot && d > 0.009 ? (() => { const c = el("div", { class: "hy-plan-cell" }); planSlots.push([c, plan]); return c; })() : null]),
         ]);
         if (expand) { tr.addEventListener("click", expand.flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); expand.flip(); } }); }
         return tr;
@@ -1949,12 +1953,13 @@ export function sgDashboard(container, opts) {
       for (const p of base) {
         const kids = kidsOf(p), isOpen = openCats.has(p.key), v0 = recent.get(p.key) ?? 0, v = valOf(p.key);
         const flip = () => { const a = new Set(st.hypoCats || []); a.has(p.key) ? a.delete(p.key) : a.add(p.key); st.hypoCats = [...a]; draw(); };
-        body.push(row({ k: p.key, label: p.label, v0, v, d: v - v0, r: rankIn(others, p.key, v), r0: rankIn(others, p.key, v0), expand: kids.length ? { open: isOpen, flip } : null }));
+        const planU = cat ? { c: cat, d: p.label, t: v, label: `${CATEGORIES.find(([q]) => q === cat)?.[1] || cat} \u00b7 ${p.label}` } : { c: p.key.slice(2), d: null, t: v, label: p.label };
+        body.push(row({ k: p.key, label: p.label, v0, v, d: v - v0, r: rankIn(others, p.key, v), r0: rankIn(others, p.key, v0), expand: kids.length ? { open: isOpen, flip } : null, plan: planU }));
         if (!isOpen) continue;
         const f = kidField(kids[0]?.c);
         for (const x of kids) {
           const kv0 = x.rv.get(x.dk) ?? 0, kd = adj[x.key] || 0, kv = kv0 + kd;
-          body.push(row({ k: x.key, label: x.label, v0: kv0, v: kv, d: kd, r: rankIn(f, x.dk, kv), r0: rankIn(f, x.dk, kv0), kid: true, stepBy: kidStep }));
+          body.push(row({ k: x.key, label: x.label, v0: kv0, v: kv, d: kd, r: rankIn(f, x.dk, kv), r0: rankIn(f, x.dk, kv0), kid: true, stepBy: kidStep, plan: { c: x.c, d: x.label, t: kv, label: `${p.label} \u00b7 ${x.label}` } }));
         }
       }
       const anyAdj = Object.keys(adj).length > 0;
@@ -1967,22 +1972,13 @@ export function sgDashboard(container, opts) {
       // what-if breakdown (every part of the game, and any distance changed) show what the plain stats were when they
       // played like that; each part made better gets the one stat that moved most in those rounds (the fewest stats to
       // work on), with a drill and a goal in real rounds.
-      const planOn = practiceOpen(me?.key);
-      const ups = [];
-      if (cat) { for (const p of base) { const dv = valOf(p.key) - (recent.get(p.key) ?? 0); if (dv > 0.009) ups.push({ c: cat, d: p.label, label: `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} · ${p.label}`, need: dv }); } }
-      else for (const p of base) {
-        const c = p.key.slice(2);
-        const kidUp = Object.entries(adj).filter(([k, v]) => k.startsWith(`${p.key}>`) && v > 0.009);
-        if (kidUp.length) for (const [k, v] of kidUp) { const d = k.split(">")[1].slice(2); ups.push({ c, d, label: `${p.label} · ${d}`, need: v }); }
-        else { const dv = valOf(p.key) - (recent.get(p.key) ?? 0); if (dv > 0.009) ups.push({ c, d: null, label: p.label, need: dv }); }
-      }
-      const hypoPlan = () => {
+      // (update 450) one row at a time: u = { c, d, t, label } (a part of the game, or one of its distances); the rounds
+      // only have to match that one number, not the whole bag
+      const hypoPlan = (u) => {
         const rs = last;
         if (rs.length < 8) return { err: `It needs at least 8 rounds in the season to find rounds like this (${rs.length} so far).` };
         // (update 449) up: a part made better in the what-if; the rounds picked must be at least that good there
-        const dims = cat ? base.map((p) => ({ c: cat, d: p.label, t: valOf(p.key), up: valOf(p.key) - (recent.get(p.key) ?? 0) > 0.009 }))
-          : [...base.map((p) => ({ c: p.key.slice(2), d: null, t: valOf(p.key), up: valOf(p.key) - (recent.get(p.key) ?? 0) > 0.009 })),
-            ...Object.entries(adj).filter(([k]) => k.includes(">")).map(([k, v]) => { const [pk, dk] = k.split(">"); const c = pk.slice(2); return { c, d: dk.slice(2), t: (rowVals(last, c).get(dk) ?? 0) + v, up: v > 0.009 }; })];
+        const dims = [{ c: u.c, d: u.d, t: u.t, up: true }];
         // (update 448) the rounds that, together, average out to the what-if: picked one at a time, each the round that
         // brings the group's average closest to it (with a nudge toward rounds that are close on their own). The group
         // has to land within 0.10 a round of every part of the game (0.05 for a distance); their own rounds first, and if
@@ -2042,7 +2038,7 @@ export function sgDashboard(container, opts) {
         const scopes = (c, d) => [...(d ? [["exact", (o) => o.cat === c && o.dist === d]] : []), ["cat", (o) => o.cat === c && !o.dist], ["whole", (o) => !o.cat]];
         const avgOf = (rounds, k, f) => { let s0 = 0, w = 0; for (const rd of rounds) for (const o of rd.obs || []) if (o.k === k && f(o)) { s0 += o.v * o.w; w += o.w; } return w ? { v: s0 / w, w } : null; };
         const items = [], notes = [];
-        for (const u of ups) {
+        for (const u1 of [u]) { const u = u1;
           let best = null, seen = false;
           for (const tier of CAND(u.c, u.d)) { if (seen) break; for (const k of tier) {
             const def = statDef(k);
@@ -2078,15 +2074,16 @@ export function sgDashboard(container, opts) {
         return { items: items.filter((x) => x.drill), notes, K, n: rs.length, src };
       };
       const planMsg = st.hypoPlanMsg && st.hypoPlanMsg.key === me?.key && Date.now() - st.hypoPlanMsg.at < 120000 ? st.hypoPlanMsg : null;
-      const planBtn = ups.length && planOn ? (() => {
-        const b = el("button", { type: "button", class: "btn ghost small hy-plan" }, "Create practice plan");
-        b.addEventListener("click", () => {
-          let P; try { P = hypoPlan(); } catch (err) { console.error(err); P = { err: "Couldn’t work that out just now." }; }
-          if (P.err || !P.items.length) { st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: P.err || P.notes.join(" ") || "Nothing to practise for these changes." }; draw(); return; }
+      planCell = (u) => {
+        const b = el("button", { type: "button", class: "hy-plan", "aria-label": `Add ${u.label} to practice` }, "\uFF0B Practice");
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          let P; try { P = hypoPlan(u); } catch (err) { console.error(err); P = { err: "Couldn’t work that out just now." }; }
+          if (P.err || !P.items.length) { st.hypoPlanMsg = { key: me?.key, at: Date.now(), text: `${u.label}: ${P.err || (P.notes.join(" ").replace(/^[^:]*:\s*/, "")) || "nothing to practise for this change."}` }; draw(); return; }
           const whoseP = isMine(me?.key) || !me?.label ? "your" : `${me.label}’s`;
           const intro = el("div", { class: "hy-plan-why" }, [
             el("p", { class: `hy-src ${P.src}` }, P.src === "tour" ? `From the tour: ${whoseP === "your" ? "your" : "their"} own rounds don\u2019t match this what-if closely enough, so these come from the ${P.K} rounds by other players this season that average out to it.` : `From ${whoseP === "your" ? "your" : "their"} own rounds: ${P.K} of ${P.n} this season average out to this what-if.`),
-            el("p", { class: "small" }, "The fewest stats to work on:"),
+            el("p", { class: "small" }, "The stat to work on:"),
             el("ul", { class: "small" }, P.items.map((x) => el("li", {}, x.why))),
             P.notes.length ? el("p", { class: "muted small" }, P.notes.join(" ")) : null]);
           planEditor(P.items.map(({ drill, goal }) => ({ drill, goal })), whoseP, async (list) => {
@@ -2102,7 +2099,8 @@ export function sgDashboard(container, opts) {
           }, intro);
         });
         return b;
-      })() : null;
+      };
+      for (const [c, u] of planSlots) mount(c, planCell(u));
       const planLine = planMsg ? el("p", { class: "muted small hy-plan-msg" }, [planMsg.text, planMsg.link ? " " : null,
         planMsg.link ? el("a", { href: isMine(me?.key) ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(me?.key || "")}`, class: "link" }, "Open Practice →") : null]) : null;
       const reset = anyAdj ? (() => { const b = el("button", { type: "button", class: "link small" }, "Reset"); b.addEventListener("click", () => { st.hypoAdj = null; draw(); }); return b; })() : null;
@@ -2111,7 +2109,7 @@ export function sgDashboard(container, opts) {
         el("div", { class: "bs-path-gap" }, [
           infoTip(`Start from their season average (${N} rounds): strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
         sumLine,
-        planBtn || planLine ? el("div", { class: "hy-plan-row" }, [planBtn, planLine]) : null,
+        planLine ? el("div", { class: "hy-plan-row" }, [planLine]) : null,
         el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [
           el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, "Avg"), el("th", { class: "num" }, "What if"), el("th", { class: "num" }, "Season rank")])),
           el("tbody", {}, body),
