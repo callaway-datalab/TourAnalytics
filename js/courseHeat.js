@@ -391,8 +391,11 @@ function pixelsOf(img, gw, gh) {
   pixMemo.set(img, { gw, src: img.src, data });
   return data;
 }
-function lieMap(img, zones, W, gw, gh) {
+function lieMap(img, zones, W, gw, gh, learn = null) {
   const px = img?.naturalWidth ? pixelsOf(img, gw, gh) : null;
+  // (update 465) what each lie looks like: learned from every pin's zones on the hole (learn), not just this pin's, so a
+  // bunker with no shots from it on this pin is still known as a bunker (not taken for the nearest look: fairway)
+  if (learn?.length) zones = learn;
   const lies = [...new Set(zones.map((z) => z.L))];
   if (!px || lies.length < 2) return null; // (one lie, or no picture to read: no edges to find)
   const s = gw / W, at = (i, j) => { const o = (j * gw + i) * 4; return [px[o], px[o + 1], px[o + 2], px[o + 3]]; };
@@ -409,7 +412,7 @@ function lieMap(img, zones, W, gw, gh) {
   samples = samples.filter((q) => { const own = d2(q.c, med[q.L]); return !med.some((m, li) => m && li !== q.L && d2(q.c, m) + 300 < own); });
   if (!samples.length) return null;
   // the spread of each lie's own look (how far a pixel can be from it and still count)
-  const tol = 55 * 55;
+  const tol = 42 * 42; // (update 465: stricter, so sand, paths and the like aren't taken for grass)
   const cls = new Int8Array(gw * gh).fill(-1);
   const cache = new Map();
   for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
@@ -432,11 +435,11 @@ function lieMap(img, zones, W, gw, gh) {
   return { cls: out, lies };
 }
 /** The zones as a picture the size of the hole image (worked out once per pin and view; turned and scaled when drawn). */
-export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 2400 }) {
+export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 2400, learn = null }) {
   const gw = Math.max(40, Math.min(res, Math.round(W))), gh = Math.max(1, Math.round(H * gw / W)), s = gw / W;
   const off = document.createElement("canvas"); off.width = gw; off.height = gh;
   if (!zones.length) return { canvas: off, map: null, s };
-  const map = lieMap(img, zones, W, gw, gh);
+  const map = lieMap(img, zones, W, gw, gh, learn);
   const px = img?.naturalWidth ? pixelsOf(img, gw, gh) : null; // (update 464: nothing outside the hole, even with one lie)
   const N = gw * gh, sum = new Float32Array(N), wt = new Float32Array(N), cov = new Float32Array(N);
   for (const z of zones) {
@@ -489,10 +492,13 @@ export function zoneAt(zones, x, y, ov = null) {
   let L = null;
   if (ov?.map) { const i = Math.round(x * ov.s), j = Math.round(y * ov.s); if (i >= 0 && j >= 0 && i < ov.gw && j < ov.gh) { const c = ov.map.cls[j * ov.gw + i]; L = c >= 0 ? ov.map.lies[c] : "none"; } }
   if (L === "none") return null;
+  if (L && !zones.some((z) => z.L === L)) return { none: true, L }; // (update 465: a lie with no shots from it on this pin)
   let best = null, bw = 0;
   for (const z of zones) { if (L && z.L !== L) continue; const d = Math.hypot(x - z.x, y - z.y) / (z.rk || 1); if (d > 1.2) continue; const w = Math.exp(-0.9 * d * d) * Math.sqrt(z.n || 1); if (w > bw) { bw = w; best = z; } }
   return best;
 }
+/** (update 465) every pin's zone centres on a hole, with their lie: what the lies look like on its image */
+export const learnOf = (hole) => Object.values(hole?.pins || {}).flatMap((p) => p.rows.map((r) => ({ x: r.x, y: r.y, L: lieOf(r.lie) || "any" })));
 /** (update 464) a zone's part of the game: from the tee, the green, around it (30 yards in) or an approach */
 export const zoneCat = (z) => (z.L === "tee" ? "OTT" : z.L === "green" ? "PUTT" : z.dp != null && z.dp <= 30 ? "ARG" : "APP");
 export const fmtPar = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0.005 ? "+" : v < -0.005 ? "−" : ""}${Math.abs(v).toFixed(2)}`);

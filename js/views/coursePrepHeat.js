@@ -8,7 +8,7 @@ import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
 import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
-import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
+import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 
 const st = { hole: 1, pin: {}, view: "field", mode: "score" }; // (kept while the app is open)
@@ -63,7 +63,7 @@ export async function drawHeat(ctx, course) {
   const rebuild = () => {
     if (!Z || !size.w) { ov = null; return; }
     const k = `${st.hole}|${st.pin[st.hole]}|${st.view === "player" && ix ? `p:${who?.key}` : "f"}|${img.naturalWidth ? 1 : 0}`;
-    ov = ovMemo.get(k) || buildOverlay(img.naturalWidth ? img : null, Z, { W: size.w, H: size.h, par, mode: "score" });
+    ov = ovMemo.get(k) || buildOverlay(img.naturalWidth ? img : null, Z, { W: size.w, H: size.h, par, mode: "score", learn: learnOf(data.holes?.[st.hole]) });
     if (ovMemo.size > 24) ovMemo.clear();
     ovMemo.set(k, ov);
   };
@@ -166,6 +166,13 @@ export async function drawHeat(ctx, course) {
     const [x, y] = toImg(((e.clientX - r.left) / r.width) * DW, ((e.clientY - r.top) / r.height) * DH, size.w, rot);
     const z = zoneAt(Z.zones, x, y, ov);
     if (!z) { pop.hidden = true; hideDot(); return; } // (no colour there: nothing to show)
+    if (z.none) { // (update 465) a lie with no shots from it for this pin (a bunker no one found): said so
+      tapAt = { x, y };
+      const xb = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); xb.addEventListener("click", () => { pop.hidden = true; hideDot(); });
+      const name = { bunker: "bunker", fairway: "fairway", rough: "rough", green: "green", tee: "tee" }[z.L] || z.L;
+      mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", {}, "This spot"), xb]), el("p", { class: "muted small" }, `No shots from the ${name} near here on this pin.`)]);
+      pop.hidden = false; placeDot(); requestAnimationFrame(placeDot); return;
+    }
     openZone(z, { x, y });
   });
   // (update 461) the spot tapped: a dot there (it follows zoom and drag), and the popup beside it, never over it

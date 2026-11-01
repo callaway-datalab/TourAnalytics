@@ -85,7 +85,8 @@ async function lieAt(heat, n, pinId, x, y, im) {
     const { zonesOf, keyZones, buildOverlay } = await import("../courseHeat.js");
     const img = new Image(); img.src = im.url; await img.decode().catch(() => {});
     const Z = zonesOf(heat.data.holes[n].pins[pinId], heat.data.holes[n].par || 4); keyZones(Z);
-    const ov = buildOverlay(img.naturalWidth ? img : null, Z, { W: im.w, H: im.h, par: 4, mode: "score", res: 1200 });
+    const { learnOf } = await import("../courseHeat.js");
+    const ov = buildOverlay(img.naturalWidth ? img : null, Z, { W: im.w, H: im.h, par: 4, mode: "score", res: 1200, learn: learnOf(heat.data.holes[n]) });
     lieMaps.set(k, ov.map ? { ...ov.map, s: ov.s, gw: ov.gw, gh: ov.gh } : null);
   }
   const m = lieMaps.get(k); if (!m) return null;
