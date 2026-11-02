@@ -6,6 +6,7 @@
  * Yards on the image: from the scoring file (each zone's distance from the pin against its pixels from the pin).
  */
 import { svgEl } from "../practice/scene.js";
+import { el } from "../ui.js";
 import { sameCourse } from "../sg.js";
 
 const cache = new Map(); // course name → Promise<{ meta, data } | null>
@@ -16,10 +17,10 @@ const lieMaps = new Map(); // `${id}|${hole}|${pin}` → { cls, lies, s, gw, gh 
 export function simHeat(name) {
   if (!name) return Promise.resolve(null);
   if (!cache.has(name)) cache.set(name, (async () => {
-    const { listHeatCourses, heatData } = await import("../courseHeat.js");
+    const { listHeatCourses, heatData, withMerges } = await import("../courseHeat.js");
     const meta = (await listHeatCourses()).find((c) => c.dataChunks && sameCourse(c.name, name));
     if (!meta) return null;
-    return { meta, data: await heatData(meta) };
+    return { meta, data: withMerges(meta, await heatData(meta)) }; // (update 468: the admin's combined pins too)
   })().catch(() => null));
   return cache.get(name);
 }
@@ -48,7 +49,8 @@ function geoOf(heat, n, pinId) {
 /** The hole's pin for this round (one picked for each hole, kept with the round). */
 function pinFor(s, heat, n) {
   const off = new Set(heat.meta.pinsOff || []); // (update 463: not the pins the admin deleted)
-  const pins = Object.keys(heat.data.holes?.[n]?.pins || {}).filter((p) => !off.has(`${n}|${p}`));
+  const inMerge = new Set((heat.meta.pinMerges || []).filter((m) => String(m.hole) === String(n)).flatMap((m) => m.of));
+  const pins = Object.keys(heat.data.holes?.[n]?.pins || {}).filter((p) => !off.has(`${n}|${p}`) && !inMerge.has(p));
   if (!pins.length) return null;
   s.simPins ||= {};
   if (!pins.includes(s.simPins[n])) s.simPins[n] = pins[Math.floor(Math.random() * pins.length)];
@@ -61,9 +63,11 @@ function ballAt(g, shots) {
     const r = x.result; if (!r) break;
     if (r.lie === "Holed") { cur = { ...g.pin }; continue; }
     if (r.penalty === "ob") continue;
-    const dx = g.pin.x - cur.x, dy = g.pin.y - cur.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
+    // (update 468) along the line to where they aimed (tapped first), else to the pin
+    const to = x.imgAim && x.unit !== "ft" ? x.imgAim : g.pin;
+    const dx = to.x - cur.x, dy = to.y - cur.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
     const k = (x.unit === "ft" ? 1 / 3 : 1) * g.ppy;
-    if (r.penalty || r.hit == null) { const left = (r.unit === "ft" ? r.dist / 3 : r.dist) * g.ppy; cur = { x: g.pin.x - ux * left, y: g.pin.y - uy * left }; continue; }
+    if (r.penalty || r.hit == null) { const px = g.pin.x - cur.x, py = g.pin.y - cur.y, pd = Math.hypot(px, py) || 1, left = (r.unit === "ft" ? r.dist / 3 : r.dist) * g.ppy; cur = { x: g.pin.x - (px / pd) * left, y: g.pin.y - (py / pd) * left }; continue; }
     const h = r.hit * k, off = (r.off || 0) * k;
     cur = { x: cur.x + ux * h - uy * off, y: cur.y + uy * h + ux * off }; // (right of the line: + off)
   }
@@ -131,24 +135,47 @@ export function simImage(ctx, s, hole, shot, getEntry, heat) {
   // the shots so far, the line to the pin, the ball and the pin
   let cur = { ...g.tee };
   before.forEach((x, i) => { const nx = ballAt(g, before.slice(0, i + 1)); root.appendChild(svgEl("line", { x1: cur.x, y1: cur.y, x2: nx.x, y2: nx.y, stroke: "#fff", "stroke-width": u * 0.9, opacity: 0.85 })); root.appendChild(svgEl("circle", { cx: nx.x, cy: nx.y, r: u * 1.6, fill: "#fff", stroke: "#111", "stroke-width": u * 0.4 })); cur = nx; });
-  root.appendChild(svgEl("line", { x1: ball.x, y1: ball.y, x2: g.pin.x, y2: g.pin.y, stroke: "#d4b483", "stroke-width": u * 0.7, "stroke-dasharray": `${u * 3} ${u * 2}`, opacity: 0.9 }));
+  // (update 468) where they aim: tapped first (the pin until then, for a putt always), then where it finished
+  root.appendChild(svgEl("line", { x1: ball.x, y1: ball.y, x2: g.pin.x, y2: g.pin.y, stroke: "#fff", "stroke-width": u * 0.5, "stroke-dasharray": `${u * 2} ${u * 2}`, opacity: 0.45 }));
+  const aimLine = svgEl("line", { x1: ball.x, y1: ball.y, stroke: "#d4b483", "stroke-width": u * 0.8, "stroke-dasharray": `${u * 3} ${u * 2}`, visibility: "hidden" });
+  const aimMark = svgEl("g", { visibility: "hidden" }, [svgEl("circle", { r: u * 3.2, fill: "none", stroke: "#d4b483", "stroke-width": u * 0.8 }), svgEl("circle", { r: u * 0.9, fill: "#d4b483" })]);
+  root.appendChild(aimLine);
   const s5 = u * 3;
   root.appendChild(svgEl("path", { d: `M${g.pin.x} ${g.pin.y - s5}L${g.pin.x + s5} ${g.pin.y}L${g.pin.x} ${g.pin.y + s5}L${g.pin.x - s5} ${g.pin.y}Z`, fill: "#ffd60a", stroke: "#111", "stroke-width": u * 0.5 }));
+  root.appendChild(aimMark);
   root.appendChild(svgEl("circle", { cx: ball.x, cy: ball.y, r: u * 2.4, fill: "#fff", stroke: "#111", "stroke-width": u * 0.7 }));
   const mark = svgEl("circle", { r: u * 2.6, fill: "#ff453a", stroke: "#fff", "stroke-width": u * 0.7, visibility: "hidden" });
   root.appendChild(mark);
-  // a tap: where it finished. Hit: along the line to the pin; offline: off it (right is plus); the lie from the image
+  const caption = el("p", { class: "muted small pr-target" });
+  const moveAim = el("button", { type: "button", class: "link small", hidden: true }, "Move aim");
+  const aimOf = () => (putt ? g.pin : shot.imgAim || null);
+  const showAim = () => {
+    const a = aimOf();
+    if (a && !putt) { aimLine.setAttribute("x2", a.x); aimLine.setAttribute("y2", a.y); aimLine.setAttribute("visibility", "visible"); aimMark.setAttribute("transform", `translate(${a.x} ${a.y})`); aimMark.setAttribute("visibility", "visible"); }
+    else { aimLine.setAttribute("visibility", "hidden"); aimMark.setAttribute("visibility", "hidden"); }
+    moveAim.hidden = putt || !shot.imgAim;
+    const yd = a ? Math.round(Math.hypot(a.x - ball.x, a.y - ball.y) / g.ppy) : null;
+    caption.textContent = putt ? "Tap where the putt finished." : !a ? "First tap where you’re aiming." : `Aiming ${yd} yds (gold). Now tap where the shot finished: the distance, offline from your aim line and the lie fill in.`;
+  };
+  let aiming = !putt && !shot.imgAim;
+  moveAim.addEventListener("click", () => { aiming = true; caption.textContent = "Tap where you’re aiming."; });
+  showAim();
+  // a tap: the aim first; then where it finished. Hit: along the aim line; offline: off it (right is plus); what's left:
+  // from there to the pin, on the image; the lie from the image
   svg.addEventListener("click", async (e) => {
     const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
     const m = root.getScreenCTM(); if (!m) return; // (the image's own pixels, turned or not)
     const p = pt.matrixTransform(m.inverse());
+    if (aiming) { shot.imgAim = { x: p.x, y: p.y }; aiming = false; ctx?.save?.(s); showAim(); getEntry()?.__update?.(); return; }
+    const a = aimOf(); if (!a) return;
     mark.setAttribute("cx", p.x); mark.setAttribute("cy", p.y); mark.setAttribute("visibility", "visible");
-    const dx = g.pin.x - ball.x, dy = g.pin.y - ball.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
+    const dx = a.x - ball.x, dy = a.y - ball.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
     const vx = p.x - ball.x, vy = p.y - ball.y, k = putt ? g.ppy / 3 : g.ppy;
     const along = (vx * ux + vy * uy) / k, off = (-vx * uy + vy * ux) / k;
+    const left = Math.hypot(g.pin.x - p.x, g.pin.y - p.y) / g.ppy;
     const entry = getEntry();
     if (!putt) { const im = imgs.get(`${heat.meta.id}|${n}`); const L = im ? await lieAt(heat, n, pinId, p.x, p.y, im).catch((err) => { console.warn("lie", err); return null; }) : null; if (L && CHIP[L]) entry?.__setLie?.(CHIP[L]); }
-    entry?.__place?.(Math.max(0.1, along), off);
+    entry?.__place?.(Math.max(0.1, along), off, putt ? null : left);
   });
-  return svg;
+  return el("div", { class: "pr-himg-box" }, [svg, el("div", { class: "pr-himg-cap" }, [caption, moveAim])]);
 }

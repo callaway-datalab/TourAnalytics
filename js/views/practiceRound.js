@@ -147,7 +147,7 @@ async function myCourses(ctx) {
       else if (par.length) out.set(h.name.toLowerCase(), { name: h.name, location: "", par, yards: par.map((_, i) => yards[i] || null), tees: "", from: "Tour course \u00b7 strategy maps", rounds: [], heat: h });
     }
   } catch (err) { console.warn(err); }
-  return [...out.values()].sort((a, b) => b.rounds.length - a.rounds.length || a.name.localeCompare(b.name));
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })); // (update 468: A to Z, every course)
 }
 
 let coursesCache = null;
@@ -200,8 +200,27 @@ async function drawHome(ctx) {
       el("span", { class: "pr-sess-tag" }, c.rounds.length ? `${c.rounds.length} round${c.rounds.length === 1 ? "" : "s"} played` : c.from),
     ]);
     b.addEventListener("click", () => ctx.go({ name: "prepMenu", course: c }));
+    b.__course = c;
     return b;
   })) : el("p", { class: "muted" }, "No courses yet. Courses you save a scorecard for in Enter New Round show up here, or type one in.");
+  // (update 468) under each course: the tournaments played there, from the stats (the newest data file's field: each
+  // round's course and tournament), with their years
+  if (courses.length) import("../fieldSummary.js").then((m) => m.currentField()).then(async (cf) => {
+    if (!cf?.field?.length) return;
+    const { sameCourse } = await import("../sg.js");
+    const byCourse = new Map(); // course name in the stats → Map(event → Set(years))
+    for (const p of cf.field) for (const rd of p.rounds) { if (!rd.course || !rd.event) continue; const m = byCourse.get(rd.course) || byCourse.set(rd.course, new Map()).get(rd.course); (m.get(rd.event) || m.set(rd.event, new Set()).get(rd.event)).add(String(rd.year || String(rd.date || "").slice(0, 4))); }
+    const yrs = (set) => { const ys = [...set].filter(Boolean).map(Number).sort((a, b) => a - b); if (!ys.length) return ""; return ys.length === 1 ? ` (${ys[0]})` : ` (${ys[0]}\u2013${ys.at(-1)})`; };
+    for (const b of cards?.querySelectorAll?.(".pr-course") || []) {
+      const c = b.__course; if (!c) continue;
+      const evs = new Map(); for (const [name, m] of byCourse) if (sameCourse(name, c.name)) for (const [e, ys] of m) { const t = evs.get(e) || evs.set(e, new Set()).get(e); ys.forEach((y) => t.add(y)); }
+      if (!evs.size) continue;
+      const list = [...evs].sort((a, b2) => b2[1].size - a[1].size || a[0].localeCompare(b2[0])).map(([e, ys]) => `${e}${yrs(ys)}`);
+      b.querySelector(".pr-course-ev")?.remove();
+      b.insertBefore(el("span", { class: "muted small pr-course-ev" }, list.join(" \u00b7 ")), b.children[1] || null);
+      b.dataset.name += ` ${[...evs.keys()].join(" ").toLowerCase()}`; // (the search finds a course by its tournament too)
+    }
+  }).catch(() => {});
   // (update 160) a real course, then a random one (update 162: a course's reports are inside it, under Course Maps)
   mount(ctx.body, [
     hero(), ...resumeRows(ctx),
@@ -396,6 +415,7 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
   const nextBtn = el("button", { type: "button", class: "btn pr-next", disabled: true }, "Next shot ›");
   nextBtn.addEventListener("click", () => next());
   let pt = null; // (update 157) where it finished on the picture: the red dot
+  let leftAt = null, placing = false; // (update 468) what's left (yds), from a tap on the hole's image; typing clears it
   const compute = () => {
     const target = typeof tgt === "function" ? tgt() : tgt;
     pt = null;
@@ -419,11 +439,11 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
       if (g.unit === "ft" && g.dist <= 0.3) return { lie: "Holed", dist: 0, unit: "ft", ...keep };
       return { lie: g.lie, dist: g.dist, unit: g.unit, ...(g.penalty ? { penalty: g.penalty } : {}), ...(g.zone ? { zone: g.zone } : {}), ...(g.adj ? { adj: g.adj } : {}), ...keep };
     }
-    // a real course: straight down the line to the hole
-    const left = Math.max(1, Math.round(Math.hypot(shot.startDist - h, off)));
+    // a real course: straight down the line to the hole (update 468: or, tapped on the hole's image, from where it finished)
+    const left = leftAt != null ? Math.max(1, Math.round(leftAt)) : Math.max(1, Math.round(Math.hypot(shot.startDist - h, off)));
     if (endLie === "OB") return { lie: "OB", dist: shot.startDist, unit: "yds", penalty: "ob", endLie, ...keep };
     if (endLie === "Water") return { lie: "Penalty", dist: left, unit: "yds", penalty: "water", endLie, ...keep };
-    if (endLie === "Green" || endLie === "Fringe") return { lie: endLie, dist: Math.round(Math.hypot(shot.startDist - h, off) * 3 * 10) / 10, unit: "ft", endLie, ...keep };
+    if (endLie === "Green" || endLie === "Fringe") return { lie: endLie, dist: Math.round((leftAt != null ? leftAt : Math.hypot(shot.startDist - h, off)) * 3 * 10) / 10, unit: "ft", endLie, ...keep };
     return { lie: endLie, dist: left, unit: "yds", endLie, ...keep };
   };
   const update = () => {
@@ -447,7 +467,7 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
   const lsTarget = () => { if (putt || !vis) return shot.startDist; const t = typeof tgt === "function" ? tgt() : tgt; return Math.hypot((t?.x ?? vis.pin.x) - vis.from.x, (t?.y ?? vis.pin.y) - vis.from.y); };
   const ls = lsOn ? lsInput("", putt ? "Long or short (ft), minus is short" : "Long or short (yds), minus is short", { class: "pr-bignum", placeholder: "0" }) : null;
   if (ls) { linkLS(hitIn, ls.input, lsTarget, putt ? (v) => Math.round(v * 10) / 10 : (v) => Math.round(v)); ls.input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !nextBtn.disabled) next(); }); }
-  [hitIn, offIn].forEach((x) => { x.addEventListener("input", update); x.addEventListener("keydown", (e) => { if (e.key === "Enter" && !nextBtn.disabled) next(); }); });
+  [hitIn, offIn].forEach((x) => { x.addEventListener("input", () => { if (!placing) leftAt = null; }); x.addEventListener("input", update); x.addEventListener("keydown", (e) => { if (e.key === "Enter" && !nextBtn.disabled) next(); }); });
   const wrap = el("div", { class: "pr-dist-entry pr-hit-entry" }, [
     line,
     el("div", { class: `pr-hit-row${ls ? " has-ls" : ""}` }, [
@@ -462,11 +482,12 @@ function entryPanel(shot, { vis = null, target: tgt = null, noPutts = false } = 
   wrap.__update = update; // (the target moved: what it finished as, and the dot, follow)
   wrap.__setLie = (l) => { if (!lieBox) return; endLie = l; drawLies(); }; // (update 461: from the hole's image)
   // (update 169) a tap on the picture: the shot finished there (how far, and how far off the target line)
-  wrap.__place = (h, off) => {
+  wrap.__place = (h, off, left = null) => {
     holed = false;
     hitIn.value = String(putt ? Math.round(h * 10) / 10 : Math.round(h));
     offIn.value = fmtOff(putt ? Math.round(off * 10) / 10 : Math.round(off));
-    hitIn.dispatchEvent(new Event("input", { bubbles: true })); // (update() runs from it; Long / Short follows)
+    leftAt = left; placing = true;
+    try { hitIn.dispatchEvent(new Event("input", { bubbles: true })); } finally { placing = false; } // (update() runs from it; Long / Short follows)
   };
   drawLies(); update();
   return wrap;
@@ -703,7 +724,7 @@ function drawRound(ctx, s) {
     ]),
     // a random course: its made-up hole from above; a real one: the strip down the hole, or (update 461) the hole's own
     // image when the course has Strategy Maps
-    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : (simImg ? (() => { const v = simImage(ctx, s, hole, shot, () => card?.querySelector(".pr-hit-entry"), simImg); return v ? el("div", { class: "pr-visual pr-himg-wrap" }, [v, el("p", { class: "muted small pr-target" }, "Tap the picture where your shot finished: the distance, offline and the lie fill in.")]) : null; })() : null) || holeStrip(hole, shot),
+    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : (simImg ? (() => { const v = simImage(ctx, s, hole, shot, () => card?.querySelector(".pr-hit-entry"), simImg); return v ? el("div", { class: "pr-visual pr-himg-wrap" }, [v]) : null; })() : null) || holeStrip(hole, shot),
     s.mode !== "sim" && shot.unit !== "ft" && ctx.clubs ? (ctx.prefillClub?.(shot), clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); })) : null,
     entryPanel(shot, { vis: s.mode === "sim" ? shot.vis : null, target: () => shot.target, noPutts: !!s.opts?.noPutts }, (r) => { shot.result = r || undefined; ctx.save(s); }, commit),
     el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [reset, pick, end])]),

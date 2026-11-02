@@ -213,7 +213,7 @@ export async function drawHistory(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
   const state = ctx.state;
-  const out = el("div", {});
+  const out = el("div", { class: "ch-page" }); // (update 468: its own phone sizes)
   let who = null;
   const W = await pickWho(ctx, (p) => { who = p; show(); }); // (update 456: shared with Strategy Maps)
   who = W.who; const picker = W.node;

@@ -8,7 +8,7 @@ import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
 import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
-import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
+import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 
 const st = { hole: 1, pin: {}, view: "field", mode: "score" }; // (kept while the app is open)
@@ -26,8 +26,8 @@ export async function drawHeat(ctx, course) {
     el("p", { class: "pr-eyebrow" }, course.name), el("div", { class: "sh-title" }, [el("h1", {}, "Strategy Maps"),
       infoTip("Each zone is the centre of a cluster of shots the tour has played from on this hole and pin; the colour blends from one zone to the next, and stops where the lie changes on the image (a fairway zone colours only the fairway, a rough zone only the rough). The colours are the scoring, birdie (blue) to bogey (red), as in the course report. Pinch or scroll to zoom in, and drag to look around. With a player picked, Player weights every zone by their own strokes gained from that distance and lie, against the tour.")]),
     W.node, whoLine]), body]);
-  let data;
-  try { data = await heatData(meta); } catch (err) { console.error(err); mount(body, el("p", { class: "empty" }, "Couldn’t load the zones. Try again.")); return; }
+  let data, raw;
+  try { raw = await heatData(meta); data = withMerges(meta, raw); /* (update 468: with the admin's combined pins) */ } catch (err) { console.error(err); mount(body, el("p", { class: "empty" }, "Couldn’t load the zones. Try again.")); return; }
   const holeNums = [...new Set([...Object.keys(data.holes || {}), ...Object.keys(meta.holes || {})].map(Number))].filter((n) => n > 0).sort((a, b) => a - b);
   if (!holeNums.length) { mount(body, el("p", { class: "empty" }, "No holes for this course yet.")); return; }
   if (!holeNums.includes(st.hole) || st.course !== meta.id) { st.hole = holeNums[0]; st.course = meta.id; st.pin = {}; }
@@ -105,8 +105,22 @@ export async function drawHeat(ctx, course) {
   // (update 463) the pins: a switch each (the picture stays; only the zones change). The admin can rename or delete them
   // (Edit pins); deleted ones can be brought back.
   const isAdmin = ctx.state?.isAdmin && !effectiveTeam(ctx.state).preview;
-  let editPins = false;
+  let editPins = false, picking = null; // (update 468) picking: the pins ticked to combine
   function drawPins(n, pins) {
+    if (picking) { // pick two or more, then Combine
+      const tick = pins.map((p) => { const on = picking.has(p); const b = el("button", { type: "button", class: `sh-pin sh-pick${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? "\u2713 " : "", pinLabel(meta, n, p)]); b.addEventListener("click", () => { on ? picking.delete(p) : picking.add(p); drawPins(n, pins); }); return b; });
+      const go = el("button", { type: "button", class: "link small sh-pin-edit", disabled: picking.size < 2 }, `Combine (${picking.size})`);
+      go.addEventListener("click", async () => {
+        const of = pins.filter((p) => picking.has(p)); if (of.length < 2) return;
+        const name = prompt("Name for the combined pin:", of.map((p) => pinLabel(meta, n, p)).join(" + "));
+        if (name === null) return;
+        let id; try { id = await mergePins(meta, n, of, name); } catch (err) { console.error(err); alert("Couldn\u2019t combine those pins. Try again."); return; }
+        picking = null; data = withMerges(meta, raw); ovMemo.clear(); st.pin[n] = id; drawPins(n, pinsOn(meta, data, n)); paint();
+      });
+      const cancel = el("button", { type: "button", class: "link small sh-pin-edit" }, "Cancel"); cancel.addEventListener("click", () => { picking = null; drawPins(n, pins); });
+      mount(pinBar, [el("span", { class: "muted small" }, "Pick the pins to combine:"), ...tick, go, cancel]);
+      return;
+    }
     const items = pins.map((p) => {
       const b = el("button", { type: "button", class: `sh-pin${st.pin[n] === p ? " on" : ""}`, "aria-pressed": String(st.pin[n] === p), title: String(p) }, pinLabel(meta, n, p));
       b.addEventListener("click", () => { if (st.pin[n] === p) return; st.pin[n] = p; [...pinBar.querySelectorAll(".sh-pin")].forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); }); paint(); });
@@ -120,8 +134,14 @@ export async function drawHeat(ctx, course) {
         inp.addEventListener("blur", () => save(true));
         wrap.replaceWith(inp); inp.focus(); inp.select();
       });
-      const del = el("button", { type: "button", class: "sh-pin-ed del", "aria-label": `Delete ${pinLabel(meta, n, p)}`, title: "Delete" }, "\u2715");
-      del.addEventListener("click", async () => {
+      const merged = !!data.holes?.[n]?.pins?.[p]?.merged;
+      const del = el("button", { type: "button", class: "sh-pin-ed del", "aria-label": merged ? `Split ${pinLabel(meta, n, p)}` : `Delete ${pinLabel(meta, n, p)}`, title: merged ? "Split back into its pins" : "Delete" }, "\u2715");
+      if (merged) del.addEventListener("click", async () => { // (update 468: a combined pin splits back into its pins)
+        if (!confirm(`Split ${pinLabel(meta, n, p)} back into ${data.holes[n].pins[p].merged.map((q) => pinLabel(meta, n, q)).join(", ")}?`)) return;
+        try { await splitPins(meta, n, p); } catch (err) { console.error(err); alert("Couldn\u2019t split that pin. Try again."); return; }
+        data = withMerges(meta, raw); ovMemo.clear(); st.pin[n] = pinsOn(meta, data, n)[0]; drawPins(n, pinsOn(meta, data, n)); paint();
+      });
+      else del.addEventListener("click", async () => {
         if (!confirm(`Delete ${pinLabel(meta, n, p)} on hole ${n}? It stops showing for everyone (in Strategy Maps and Simulate Round). You can bring it back with Edit pins.`)) return;
         try { await setPinOff(meta, n, p, true); } catch (err) { console.error(err); alert("Couldn\u2019t delete that pin. Try again."); return; }
         const left = pinsOn(meta, data, n); if (st.pin[n] === p) st.pin[n] = left[0]; drawPins(n, left); paint();
@@ -129,11 +149,12 @@ export async function drawHeat(ctx, course) {
       const wrap = el("span", { class: "sh-pin-wrap" }, [b, ren, del]);
       return wrap;
     });
-    const off = isAdmin ? Object.keys(data.holes?.[n]?.pins || {}).filter((p) => !pins.includes(p)) : [];
+    const off = isAdmin ? Object.keys(data.holes?.[n]?.pins || {}).filter((p) => (meta.pinsOff || []).includes(`${n}|${p}`)) : []; // (deleted ones, not ones in a combined pin)
     const restore = editPins && off.length ? el("select", { class: "sh-pin-restore", "aria-label": "Bring back a deleted pin" }, [el("option", { value: "" }, `Bring back (${off.length})`), ...off.map((p) => el("option", { value: p }, pinLabel(meta, n, p)))]) : null;
     restore?.addEventListener("change", async () => { const p = restore.value; if (!p) return; try { await setPinOff(meta, n, p, false); } catch (err) { console.error(err); alert("Couldn\u2019t bring that pin back."); } st.pin[n] ||= p; drawPins(n, pinsOn(meta, data, n)); paint(); });
     const edit = isAdmin ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, editPins ? "Done" : "Edit pins"); b.addEventListener("click", () => { editPins = !editPins; drawPins(n, pinsOn(meta, data, n)); }); return b; })() : null;
-    mount(pinBar, [...(items.length ? items : [el("span", { class: "muted small" }, off.length ? "Every pin on this hole is deleted." : "No zones for this hole yet.")]), restore, edit]);
+    const combine = isAdmin && editPins && pins.length >= 2 ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, "Combine pins"); b.addEventListener("click", () => { picking = new Set(); drawPins(n, pins); }); return b; })() : null;
+    mount(pinBar, [...(items.length ? items : [el("span", { class: "muted small" }, off.length ? "Every pin on this hole is deleted." : "No zones for this hole yet.")]), restore, combine, edit]);
   }
   function paint() {
     pop.hidden = true; hideDot();

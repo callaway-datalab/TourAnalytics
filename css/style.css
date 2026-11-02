@@ -5416,3 +5416,17 @@ html.rep-ov-open, html.rep-ov-open body { overflow: hidden; }
 .bs-st-kind td { color: #d4b483; font-size: 0.72rem !important; text-transform: uppercase; letter-spacing: 0.05em; padding-top: 8px; }
 .bs-st-prod-t { width: 100%; table-layout: auto; }
 @media (max-width: 600px) { .bs-st-prod-t td, .bs-st-prod-t th { font-size: 0.72rem; padding: 4px 5px; } .bs-st-prod-t td:first-child { white-space: normal; } }
+/* (update 468) a search box or dropdown that's open is always on top: the box it's in (a panel, a section…) is lifted
+   above the ones after it (each panel's blur makes its own layer, so the list's own z-index can't get out of it) */
+:is(.panel, section, .sg-box, .cmp, .table-scroll, .entry-section, .entry-card, .sg-card, .chart-panel, .team-card):has(:is(.pp-list, .ms-panel, .combo-list, .pr-dd-list, .account-menu, [role="listbox"]):not([hidden])),
+:is(.panel, section, .sg-box, .cmp, .entry-section, .entry-card):has(.player-picker input:focus) { position: relative; z-index: 80; }
+/* (update 468) Course History on a phone: smaller tables and tiles, so everything fits */
+@media (max-width: 600px) {
+  .ch-t { font-size: 0.7em; }
+  .ch-t th, .ch-t td { padding: 4px 5px; }
+  .ch-page .pr-tiles { gap: 6px; }
+  .ch-page .pr-tile { padding: 8px 10px; }
+  .ch-page .pr-tile * { font-size: 0.86em; }
+}
+.pr-course-ev { color: #d4b483; font-size: 0.78em; line-height: 1.35; }
+.pr-himg-cap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; } .pr-himg-cap .pr-target { margin: 0; }

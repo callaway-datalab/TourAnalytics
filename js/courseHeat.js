@@ -58,9 +58,54 @@ export async function heatImage(meta, hole) {
  * file): pinNames { "hole|pin": "name" }, pinsOff ["hole|pin"] */
 const pinKey = (hole, pid) => `${hole}|${pid}`;
 export const pinOff = (meta, hole, pid) => (meta?.pinsOff || []).includes(pinKey(hole, pid));
-export const pinLabel = (meta, hole, pid) => meta?.pinNames?.[pinKey(hole, pid)] || (/^\d+$/.test(pid) ? `Pin ${pid}` : String(pid).replace(/[-_]+/g, " "));
-/** A hole's pins that show (not deleted), in order. */
-export const pinsOn = (meta, data, hole) => Object.keys(data?.holes?.[hole]?.pins || {}).filter((p) => !pinOff(meta, hole, p)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+export const pinLabel = (meta, hole, pid) => meta?.pinNames?.[pinKey(hole, pid)] || mergedOf(meta, hole).find((m) => m.id === pid)?.name || (/^\d+$/.test(pid) ? `Pin ${pid}` : String(pid).replace(/[-_]+/g, " "));
+/* (update 468) combined pins: pinMerges [{ hole, id, name, of: [pin ids] }]. The combined pin sits at the pins' average
+ * spot; zones of the same lie at (nearly) the same spot are averaged (by attempts), each one's distance measured again to
+ * the new pin. The pins it's made of stop showing while it's there. */
+const mergedOf = (meta, hole) => (meta?.pinMerges || []).filter((m) => String(m.hole) === String(hole));
+const inMerge = (meta, hole, pid) => mergedOf(meta, hole).some((m) => m.of.includes(pid));
+const mergeMemo = new WeakMap();
+export function withMerges(meta, data) {
+  if (!data || !(meta?.pinMerges || []).length) return data;
+  const sig = JSON.stringify(meta.pinMerges), hit = mergeMemo.get(data);
+  if (hit && hit.sig === sig) return hit.out;
+  const holes = { ...data.holes };
+  for (const m of meta.pinMerges) {
+    const H = holes[m.hole]; if (!H) continue;
+    const pins = m.of.map((id) => H.pins?.[id]).filter(Boolean); if (pins.length < 2) continue;
+    const withXY = pins.filter((p) => p.x != null);
+    const px = withXY.length ? withXY.reduce((t, p) => t + p.x, 0) / withXY.length : null, py = withXY.length ? withXY.reduce((t, p) => t + p.y, 0) / withXY.length : null;
+    // pixels a yard (each zone's pixels from its own pin against its distance), to measure distances to the new pin
+    const ratios = pins.flatMap((p) => p.x == null ? [] : p.rows.filter((r) => r.dist > 15 && lieOf(r.lie) !== "green").map((r) => Math.hypot(r.x - p.x, r.y - p.y) / r.dist)).sort((a, b) => a - b);
+    const ppy = ratios.length ? ratios[Math.floor(ratios.length / 2)] : null;
+    const out = [];
+    for (const r of pins.flatMap((p) => p.rows)) {
+      const L = lieOf(r.lie), w = r.n || 1;
+      const near = out.find((o) => o.L === L && Math.hypot(o.x - r.x, o.y - r.y) <= Math.max(4, (ppy || 1) * 2));
+      if (near) { const W = near.w + w; near.x = (near.x * near.w + r.x * w) / W; near.y = (near.y * near.w + r.y * w) / W; near.v = (near.v * near.w + r.v * w) / W; near.n = (near.n || 0) + (r.n || 0); near.w = W; }
+      else out.push({ ...r, L, w });
+    }
+    const rows = out.map(({ L, w, ...r }) => { if (ppy && px != null) { const yd = Math.hypot(r.x - px, r.y - py) / ppy, dist = L === "green" ? yd * 3 : yd; return { ...r, dist, d: `${Math.round(dist)} ${L === "green" ? "ft" : "yds"}` }; } return r; });
+    holes[m.hole] = { ...H, pins: { ...H.pins, [m.id]: { x: px, y: py, rows, merged: m.of } } };
+  }
+  const res = { ...data, holes };
+  mergeMemo.set(data, { sig, out: res });
+  return res;
+}
+/** A hole's pins that show (not deleted, not part of a combined one), in order. */
+export const pinsOn = (meta, data, hole) => Object.keys(data?.holes?.[hole]?.pins || {}).filter((p) => !pinOff(meta, hole, p) && !inMerge(meta, hole, p)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+export async function mergePins(meta, hole, of, name) {
+  const id = `merge-${Date.now().toString(36)}`;
+  const pinMerges = [...(meta.pinMerges || []), { hole: String(hole), id, name: String(name || "").trim().slice(0, 60) || "Combined", of: [...of] }];
+  await updateDoc(doc(db, "courseHeat", meta.id), { pinMerges });
+  meta.pinMerges = pinMerges; listCache = null;
+  return id;
+}
+export async function splitPins(meta, hole, id) {
+  const pinMerges = (meta.pinMerges || []).filter((m) => !(String(m.hole) === String(hole) && m.id === id));
+  await updateDoc(doc(db, "courseHeat", meta.id), { pinMerges });
+  meta.pinMerges = pinMerges; listCache = null;
+}
 export async function renamePin(meta, hole, pid, name) {
   const pinNames = { ...(meta.pinNames || {}) }, k = pinKey(hole, pid), t = String(name || "").trim().slice(0, 60);
   if (t) pinNames[k] = t; else delete pinNames[k];
