@@ -405,14 +405,29 @@ function lieMap(img, zones, W, gw, gh, learn = null) {
   // the look of each zone centre: the average of the pixels close around it
   let samples = zones.map((z) => { const ci = Math.round(z.x * s), cj = Math.round(z.y * s); let r = 0, g = 0, b = 0, n = 0;
     for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) if (i >= 0 && j >= 0 && i < gw && j < gh) { const c = at(i, j); if (blank(c)) continue; r += c[0]; g += c[1]; b += c[2]; n++; }
-    return n ? { L: lies.indexOf(z.L), c: [r / n, g / n, b / n] } : null; }).filter(Boolean);
+    return n ? { L: lies.indexOf(z.L), c: [r / n, g / n, b / n], x: z.x, y: z.y } : null; }).filter(Boolean);
   // a centre right on an edge can look like the lie next door: dropped when it's nearer another lie's usual look
   const med = lies.map((_, li) => { const cs = samples.filter((q) => q.L === li).map((q) => q.c); if (!cs.length) return null; return [0, 1, 2].map((k) => cs.map((c) => c[k]).sort((a, b) => a - b)[Math.floor(cs.length / 2)]); });
   const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
   samples = samples.filter((q) => { const own = d2(q.c, med[q.L]); return !med.some((m, li) => m && li !== q.L && d2(q.c, m) + 300 < own); });
+  // (update 466) and one that looks unlike most of its own lie (a "rough" centre sitting on sand, say on a bunker's lip):
+  // dropped too, so sand, paths and the like aren't learned as that lie (with no bunker shots, nothing else would say so)
+  samples = samples.filter((q, _, all) => {
+    const own = all.filter((o) => o.L === q.L); if (own.length < 4) return true;
+    const ds = own.map((o) => Math.sqrt(d2(o.c, med[q.L]))).sort((a, b) => a - b), mid = ds[Math.floor(ds.length / 2)];
+    return Math.sqrt(d2(q.c, med[q.L])) <= Math.max(30, mid * 2.5);
+  });
   if (!samples.length) return null;
   // the spread of each lie's own look (how far a pixel can be from it and still count)
-  const tol = 42 * 42; // (update 465: stricter, so sand, paths and the like aren't taken for grass)
+  // (update 466) how far a pixel can be from a lie's look and still count: from how much that lie's own centres vary on
+  // this hole (flat rough: tight, so a bunker's shading a few shades off isn't rough; striped fairway: looser)
+  // (each centre against its three closest-looking centres of the same lie: a lie that looks two ways, green rough and tan
+  // rough, keeps a tight tolerance for each look)
+  for (const q of samples) {
+    const ds = samples.filter((o) => o !== q && o.L === q.L).map((o) => Math.sqrt(d2(o.c, q.c))).sort((a, b) => a - b).slice(0, 3);
+    const spread = ds.length ? ds[Math.floor(ds.length / 2)] : 10, t = Math.max(20, Math.min(42, 3 * spread + 12));
+    q.tol = t * t;
+  }
   const cls = new Int8Array(gw * gh).fill(-1);
   const cache = new Map();
   for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
@@ -420,7 +435,7 @@ function lieMap(img, zones, W, gw, gh, learn = null) {
     if (px[o + 3] < 128 || px[o] + px[o + 1] + px[o + 2] < 45) { cls[j * gw + i] = -1; continue; }
     const key = ((px[o] >> 2) << 12) | ((px[o + 1] >> 2) << 6) | (px[o + 2] >> 2);
     let L = cache.get(key);
-    if (L === undefined) { let bd = Infinity; L = -1; const c = [px[o], px[o + 1], px[o + 2]]; for (const q of samples) { const d = d2(c, q.c); if (d < bd) { bd = d; L = q.L; } } if (bd > tol) L = -1; cache.set(key, L); }
+    if (L === undefined) { let bd = Infinity; L = -1; const c = [px[o], px[o + 1], px[o + 2]]; let bq = null; for (const q of samples) { const d = d2(c, q.c); if (d < bd) { bd = d; L = q.L; bq = q; } } if (bq && bd > bq.tol) L = -1; cache.set(key, L); }
     cls[j * gw + i] = L;
   }
   // tidy: a pixel takes the lie most of its neighbours have (mowing stripes and specks don't make edges)
@@ -432,6 +447,31 @@ function lieMap(img, zones, W, gw, gh, learn = null) {
     const o = (j * gw + i) * 4;
     out[j * gw + i] = px[o + 3] < 128 || px[o] + px[o + 1] + px[o + 2] < 45 ? -1 : cnt[best] >= 4 ? best - 1 : cls[j * gw + i];
   }
+  // (update 466) a lie only where it can be reached from its own zone centres without crossing an edge: each lie spreads out
+  // from its centres over pixels that look like it, stopping wherever the colour jumps (against four pixels back too, so a
+  // blurred edge or a gradual shade still stops it). A bunker's shaded lip that looks a little like the rough next to it, but sits across the bunker's edge,
+  // stays no lie.
+  const N = gw * gh, reach = new Int8Array(N).fill(-1), par = new Int32Array(N).fill(-1), queue = new Int32Array(N);
+  const cd = (a, b) => { const x = a * 4, y = b * 4; return (px[x] - px[y]) ** 2 + (px[x + 1] - px[y + 1]) ** 2 + (px[x + 2] - px[y + 2]) ** 2; };
+  const STEP = 26 * 26, STEP4 = 30 * 30; // (one pixel, and four back: a soft edge or a shaded lip adds up over a few pixels)
+  for (let li = 0; li < lies.length; li++) {
+    let qh = 0, qt = 0;
+    for (const q of samples) {
+      if (q.L !== li) continue;
+      const k = Math.round(q.y * s) * gw + Math.round(q.x * s);
+      if (k < 0 || k >= N || out[k] !== li || reach[k] === li) continue;
+      reach[k] = li; par[k] = k; queue[qt++] = k;
+    }
+    while (qh < qt) {
+      const k = queue[qh++], i = k % gw, pk = par[par[par[k]]];
+      for (const nk of [i > 0 ? k - 1 : -1, i < gw - 1 ? k + 1 : -1, k - gw, k + gw]) {
+        if (nk < 0 || nk >= N || reach[nk] === li || out[nk] !== li) continue;
+        if (cd(k, nk) > STEP || cd(pk, nk) > STEP4) continue;
+        reach[nk] = li; par[nk] = k; queue[qt++] = nk;
+      }
+    }
+  }
+  for (let k = 0; k < N; k++) if (reach[k] !== out[k]) out[k] = -1;
   return { cls: out, lies };
 }
 /** The zones as a picture the size of the hole image (worked out once per pin and view; turned and scaled when drawn). */
