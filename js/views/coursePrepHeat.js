@@ -24,7 +24,7 @@ export async function drawHeat(ctx, course) {
   const whoLine = el("p", { class: "muted small sh-who" });
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel sh" }, [
     el("p", { class: "pr-eyebrow" }, course.name), el("div", { class: "sh-title" }, [el("h1", {}, "Strategy Maps"),
-      infoTip("Each zone is the centre of a cluster of shots the tour has played from on this hole and pin; the colour blends from one zone to the next, and stops where the lie changes on the image (a fairway zone colours only the fairway, a rough zone only the rough). The colours are the scoring, birdie (blue) to bogey (red), as in the course report. Aim here and Stay away from list the spots that score best and worst against the others as far from the pin. Pinch or scroll to zoom in, and drag to look around. With a player picked, Player weights every zone by their own strokes gained from that distance and lie, against the tour.")]),
+      infoTip("Each zone is the centre of a cluster of shots the tour has played from on this hole and pin; the colour blends from one zone to the next, and stops where the lie changes on the image (a fairway zone colours only the fairway, a rough zone only the rough). The colours are the scoring, birdie (blue) to bogey (red), as in the course report. Pinch or scroll to zoom in, and drag to look around. With a player picked, Player weights every zone by their own strokes gained from that distance and lie, against the tour.")]),
     W.node, whoLine]), body]);
   let data;
   try { data = await heatData(meta); } catch (err) { console.error(err); mount(body, el("p", { class: "empty" }, "Couldn’t load the zones. Try again.")); return; }
@@ -150,8 +150,7 @@ export async function drawHeat(ctx, course) {
     drawLegend();
     // the key zones in words
     const line = (z) => { const b = el("button", { type: "button", class: `sh-key ${z.key.kind}` }, [el("strong", {}, `${z.key.n}`), ` ${lieList(z)}${z.dp ? ` · ${Math.round(z.dp)} yds out` : ""} · ${z.toGo ? `${z.raw.toFixed(2)} to hole out` : `${fmtPar(z.v)} to par`}`, el("span", { class: "muted" }, ` (${fmtPar(z.diff)} vs zones as far out)`)]); b.addEventListener("click", () => openZone(z)); return b; };
-    mount(keys, [K.target.length ? el("div", {}, [el("p", { class: "sh-k-h pos" }, "Aim here"), ...K.target.map(line)]) : null, K.avoid.length ? el("div", {}, [el("p", { class: "sh-k-h neg" }, "Stay away from"), ...K.avoid.map(line)]) : null,
-      !K.target.length && !K.avoid.length ? el("p", { class: "muted small" }, "No zone stands out from the ones around it on this pin.") : null]);
+    mount(keys, null); // (update 467: no Aim here / Stay away from lists)
   }
   function drawLegend() {
     const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => { const v = par >= 5 ? (t <= 0.5 ? -1 + t : -0.5 + (t - 0.5) * 2) : t - 0.5; return [t, scoreT(v, par)]; });

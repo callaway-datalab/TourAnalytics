@@ -2535,7 +2535,7 @@ export function sgDashboard(container, opts) {
       return el("span", { class: "prod-key", title: a ? `${a.n} round${a.n === 1 ? "" : "s"} with it` : null }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p), v != null ? el("b", { class: v >= 0 ? "pos" : "neg" }, ` ${fmtSG(v)} avg`) : null]); }));
     // (update 455) Open in Compare: these products, over the dates in the chart (and the part of the game picked)
     const toCmp = me && order.length ? (() => {
-      const b = el("button", { type: "button", class: "btn ghost small prod-cmp" }, "Open in Compare \u2192");
+      const b = el("button", { type: "button", class: "prod-cmp" }, "Open in Compare \u2192"); // (update 467: small, the legend's size)
       b.addEventListener("click", () => {
         const ds = rs.map((rd) => String(rd.date || "").slice(0, 10)).filter(Boolean).sort();
         const pp = { player: me.key, items: order.slice(0, 8).map((p) => ({ value: p, name: p.startsWith("Ball|") ? p.slice(5) : nameOf(p) })), from: ds[0] || null, to: ds.at(-1) || null, cats: cat ? [cat] : [] };
@@ -3142,6 +3142,34 @@ export function sgDashboard(container, opts) {
       return r;
     });
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    // (update 467) the products used during the stretch, by kind: strokes gained a round with each (its shots, over the
+    // rounds it was used in), how many shots and how many rounds
+    const prodBlock = (() => {
+      const by = new Map();
+      for (const rd of stRds) {
+        const per = new Map();
+        for (const x of rd.shots || []) {
+          if (cat && x.cat !== cat) continue;
+          for (const v of [x.gear || null, x.ball ? `Ball|${x.ball}` : null]) { if (!v) continue; const a = per.get(v) || per.set(v, { sg: 0, w: 0 }).get(v); a.sg += x.sg || 0; a.w += x.w || 1; }
+        }
+        for (const [v, a] of per) { const t = by.get(v) || by.set(v, { sg: 0, w: 0, rounds: 0 }).get(v); t.sg += a.sg; t.w += a.w; t.rounds++; }
+      }
+      if (!by.size) return null;
+      const KIND_ORDER = ["Driver", "Non-Driver", "Fairway Wood", "Hybrid", "Iron", "Wedge", "Putter", "Ball", "Other"];
+      const groups = new Map();
+      for (const [v, t] of by) { const gi = gearInfo(v), k = gi.kind || "Other"; (groups.get(k) || groups.set(k, []).get(k)).push({ name: `${gi.brand} ${gi.model}`.trim() || v, ...t }); }
+      const kinds = [...groups.keys()].sort((a, b) => (KIND_ORDER.indexOf(a) + 1 || 99) - (KIND_ORDER.indexOf(b) + 1 || 99));
+      const kindName = (k) => ({ Ball: "Golf ball", "Non-Driver": "Fairway woods & hybrids" }[k] || (k.endsWith("s") ? k : `${k}s`));
+      return el("div", { class: "bs-st-prods" }, [
+        el("p", { class: "bs-st-prods-h" }, "Products used in the stretch"),
+        el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table bs-st-prod-t" }, [
+          el("thead", {}, el("tr", {}, [el("th", {}, "Product"), el("th", { class: "num" }, "SG / rd"), el("th", { class: "num" }, "Shots"), el("th", { class: "num", title: "Rounds" }, "Rds")])),
+          el("tbody", {}, kinds.flatMap((k) => [el("tr", { class: "bs-st-kind" }, el("td", { colspan: 4 }, kindName(k))),
+            ...groups.get(k).sort((a, b) => b.w - a.w).map((t) => { const v = t.rounds ? t.sg / t.rounds : 0; return el("tr", {}, [el("td", {}, t.name), el("td", { class: `num ${v >= 0 ? "pos" : "neg"}` }, sgn2(v)), el("td", { class: "num" }, String(Math.round(t.w))), el("td", { class: "num" }, String(t.rounds))]); })])),
+        ])),
+        el("p", { class: "muted small" }, "SG / rd: strokes gained a round on the shots hit with it, over the rounds it was used in."),
+      ]);
+    })();
     const show = el("button", { type: "button", class: "btn ghost small" }, "Show just these rounds");
     const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
     const overlay = el("div", { class: "gx-pop-overlay bs-st-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop bs-st-pop" }, [
@@ -3149,6 +3177,7 @@ export function sgDashboard(container, opts) {
         el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best season average of any other player).${place ? ` The ${place === 1 ? "longest" : `${ordinal(place)}-longest`} elite stretch of ${withN}.` : ""}`)]), close]),
       svg,
       summary,
+      prodBlock,
       el("p", { class: "muted small bs-st-count" }, `All ${n} rounds in the chart, oldest first, the stretch bright. Below, the ${row.n} ${row.n === 1 ? "round" : "rounds"} in the stretch: tap one for its strokes gained by part of the game and distance.`),
       table,
       el("div", { class: "bs-st-foot" }, [show]),
@@ -3422,7 +3451,10 @@ export function sgDashboard(container, opts) {
       const openCats = new Set(st.pathCats || []);
       const bgOf = (d, max) => { if (d == null || Math.abs(d) < 0.005 || !(max > 0)) return "color:#fff"; const t = Math.min(1, Math.abs(d) / max); return `color:#fff;background:rgba(${d > 0 ? "48,209,88" : "255,69,58"},${(0.05 + 0.4 * t * t).toFixed(3)})`; };
       const maxOf = (rs) => Math.max(0, ...rs.map((x) => Math.abs(x.g)));
-      const cells = (x, max, bold = false) => [el("td", { class: "num" }, f2(x.r)), el("td", { class: `num${bold ? " strong" : ""}` }, f2(x.e)), el("td", { class: "num bs-diff", style: bgOf(-x.g, max) }, f2(-x.g))]; // (update 371: last N less the level: red where they're behind)
+      // (update 467) the what-if changes picked show in Last N and Diff: a distance's own change, a part of the game's its
+      // distances' added up, the total every one of them
+      const cells = (x, max, bold = false, wi = 0) => { const r = x.r + wi, g = x.g - wi, adj = Math.abs(wi) > 1e-9;
+        return [el("td", { class: `num${adj ? " bs-wi-adj" : ""}`, title: adj ? `${f2(x.r)} now, ${f2(wi)} with the what-if` : null }, f2(r)), el("td", { class: `num${bold ? " strong" : ""}` }, f2(x.e)), el("td", { class: `num bs-diff${adj ? " bs-wi-adj" : ""}`, style: bgOf(-g, max) }, f2(-g))]; }; // (update 371: last N less the level: red where they're behind)
       const tapRow = (cls, open, onTap, label, rest) => {
         const tr = el("tr", { class: `sg-tap ${cls}`, role: "button", tabindex: "0", "aria-expanded": String(open) }, [el("td", {}, label), ...rest]);
         tr.addEventListener("click", onTap); tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onTap(); } });
@@ -3444,27 +3476,37 @@ export function sgDashboard(container, opts) {
         inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); commit(); } });
         inp.addEventListener("change", commit);
         const gap = Math.round(g.g * 100) / 100;
-        const reachB = gap > 0 ? (() => { const b = el("button", { type: "button", class: "btn ghost small" }, `Reach target (${fmtCh(gap)})`); b.addEventListener("click", (e) => { e.stopPropagation(); setWI(g.k, gap); }); return b; })() : null;
+        const reachB = gap > 0 ? (() => { const b = el("button", { type: "button", class: "bs-wi-btn" }, `Reach target (${fmtCh(gap)})`); b.addEventListener("click", (e) => { e.stopPropagation(); setWI(g.k, gap); }); return b; })() : null;
         const clr = cur ? (() => { const b = el("button", { type: "button", class: "link small" }, "Clear"); b.addEventListener("click", (e) => { e.stopPropagation(); setWI(g.k, null); }); return b; })() : null;
         return kv("What-if", el("div", { class: "bs-wi" }, [
-          el("label", { class: "bs-wi-row" }, [el("span", { class: "small" }, "Change a round"), inp]), reachB, clr,
-          el("p", { class: "muted small" }, gap > 0 ? `Reach target adds the difference: their ${NN.kept} ${best ? "was" : "were"} ${gap.toFixed(2)} a round better here than the last ${N} rounds.` : `Type a change a round, like +0.25. It adds into the total above the table.`)]), "bs-whatif");
+          el("label", { class: "bs-wi-row" }, [el("span", {}, "Change a round"), inp]), reachB, clr]), "bs-whatif"); // (update 467: no explanation line)
       };
       const hypoLine = () => {
         const ks = Object.keys(WI); if (!ks.length) return null;
         const sum = ks.reduce((t, k) => t + WI[k], 0), base = rAvg ?? 0, tot = base + sum;
-        const list = st.pathWIOpen;
-        const head = rk ? ["Hypothetical season rank: ", el("strong", {}, `${ordinal(rk.rankOf(tot))} of ${rk.of}`), el("span", { class: "muted" }, ` (the last ${N} rounds now: ${ordinal(rk.rankOf(base))})`)]
+        const list = st.pathWIOpen !== false; // (update 467: open to start)
+        const head = rk ? ["Hypothetical season rank: ", el("strong", {}, `${ordinal(rk.rankOf(tot))} of ${rk.of}`)]
           : ["Hypothetical: ", el("strong", {}, fmtCh(tot))];
         const b = el("button", { type: "button", class: "bs-wi-rank", "aria-expanded": String(!!list), title: "Show every change" }, [el("span", { class: "cmp-caret" }, list ? "\u25BE " : "\u25B8 "), ...head]);
         b.addEventListener("click", () => { st.pathWIOpen = !list; draw(); });
+        // (update 467) every distance made better: its drill and goal, all at once (the same as each one's own button)
+        const allPlan = canAdd ? (() => {
+          const items = ks.filter((k) => WI[k] > 0).flatMap((k) => { const [c, d] = k.split("|"); const g = { k, c, d, ...rowOf((x) => x.startsWith(`${k}|`)) }; try { return itemOf(g).drills; } catch { return []; } });
+          const left = items.filter((x) => !PLAN_ADDED.has(sig(x)));
+          if (!items.length) return null;
+          const btn = el("button", { type: "button", class: "bs-wi-btn bs-wi-all", disabled: !left.length }, left.length ? `\uFF0B Add all to practice (${left.length})` : "\u2713 All in the practice plan");
+          btn.addEventListener("click", () => { if (left.length) add(left, [btn]); });
+          return btn;
+        })() : null;
         const reset = el("button", { type: "button", class: "link small" }, "Reset"); reset.addEventListener("click", () => { st.pathWI = null; draw(); });
         const nm = (k) => { const [c, d] = k.split("|"); return `${catName(c)} \u00b7 ${d || "Other shots"}`; };
         return el("div", { class: "bs-wi-head" }, [
           el("div", { class: "bs-wi-top" }, [b, reset]),
-          list ? el("ul", { class: "bs-wi-list small" }, [
+          rk ? el("p", { class: "bs-wi-now muted" }, `The last ${N} rounds now: ${ordinal(rk.rankOf(base))}`) : null,
+          list ? el("ul", { class: "bs-wi-list" }, [
             ...ks.sort((a, b2) => WI[b2] - WI[a]).map((k) => el("li", {}, [nm(k), ": ", el("strong", { class: WI[k] >= 0 ? "pos" : "neg" }, `${fmtCh(WI[k])} a round`)])),
-            el("li", { class: "bs-wi-tot" }, [`${cat ? catName(cat) : "SG: Total"}: ${fmtCh(base)} over the last ${N} rounds \u2192 `, el("strong", { class: tot >= 0 ? "pos" : "neg" }, fmtCh(tot)), ` (${fmtCh(sum)} in all)`])]) : null]);
+            el("li", { class: "bs-wi-tot" }, [`${cat ? catName(cat) : "SG: Total"}: ${fmtCh(base)} \u2192 `, el("strong", { class: tot >= 0 ? "pos" : "neg" }, fmtCh(tot)), ` (${fmtCh(sum)} in all)`])]) : null,
+          allPlan ? el("div", { class: "bs-wi-foot" }, allPlan) : null]);
       };
       const badge = (k) => (topIdx.has(k) ? el("span", { class: "bs-top-b", title: `Number ${topIdx.get(k)} of the biggest gaps` }, `#${topIdx.get(k)}`) : null);
       const detail = (g) => {
@@ -3475,20 +3517,21 @@ export function sgDashboard(container, opts) {
         // (update 455) the takeaway gives way to the what-if: a change typed in, or Reach target (the difference)
         return [whatIfBox(g), ...(p.targetLines ? [kv("Target", p.targetLines.map((x, k) => el("div", { class: k ? "bs-tl" : "bs-th" }, x)), "bs-target")] : []), ...p.drills.map(drillRow)];
       };
-      const body = [el("tr", { class: "bs-path-total" }, [el("td", {}, cat ? `${catName(cat)}` : "SG: Total"), ...cells({ r: rAvg ?? 0, e: eAvg ?? 0, g: (eAvg ?? 0) - (rAvg ?? 0) }, Math.max(0.5, Math.abs((eAvg ?? 0) - (rAvg ?? 0))), true)])];
+      const wiSum = (pre = "") => Object.entries(WI).reduce((t, [k, v]) => t + (!pre || k.startsWith(pre) ? v : 0), 0);
+      const body = [el("tr", { class: "bs-path-total" }, [el("td", {}, cat ? `${catName(cat)}` : "SG: Total"), ...cells({ r: rAvg ?? 0, e: eAvg ?? 0, g: (eAvg ?? 0) - (rAvg ?? 0) }, Math.max(0.5, Math.abs((eAvg ?? 0) - (rAvg ?? 0))), true, wiSum())])];
       const cMax = maxOf(catRows);
       for (const cr of catRows) {
         const open = openCats.has(cr.c);
         const nTop = [...topIdx.keys()].filter((k) => k.startsWith(`${cr.c}|`)).length;
         body.push(tapRow("cmp-sub", open, () => { const a = new Set(st.pathCats || []); a.has(cr.c) ? a.delete(cr.c) : a.add(cr.c); st.pathCats = [...a]; draw(); },
-          [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 "), catName(cr.c), ...(!open ? [...topIdx].filter(([k]) => k.startsWith(`${cr.c}|`)).map(([, i]) => i).sort((x, y) => x - y).map((i) => el("span", { class: "bs-top-b", title: `Number ${i} of the ${gaps.length} biggest gaps` }, `#${i}`)) : [])], cells(cr, cMax)));
+          [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 "), catName(cr.c), ...(!open ? [...topIdx].filter(([k]) => k.startsWith(`${cr.c}|`)).map(([, i]) => i).sort((x, y) => x - y).map((i) => el("span", { class: "bs-top-b", title: `Number ${i} of the ${gaps.length} biggest gaps` }, `#${i}`)) : [])], cells(cr, cMax, false, wiSum(`${cr.c}|`))));
         if (!open) continue;
         const ds = [...keys].filter((k) => k.startsWith(`${cr.c}|`)).map((k) => { const d = k.split("|")[1]; return { k, c: cr.c, d, ...rowOf((x) => x.startsWith(`${k}|`)) }; })
           .sort((a, b) => (a.d ? distLead(a.d) : 1e9) - (b.d ? distLead(b.d) : 1e9) || String(a.d).localeCompare(String(b.d)));
         const dMax = maxOf(ds);
         for (const g of ds) {
           const on = st.pathRow === g.k;
-          body.push(tapRow("cmp-sub cmp-deep", on, () => { st.pathRow = on ? null : g.k; draw(); }, [g.d || "Other shots", badge(g.k), wiChip(g.k)], cells(g, dMax)));
+          body.push(tapRow("cmp-sub cmp-deep", on, () => { st.pathRow = on ? null : g.k; draw(); }, [g.d || "Other shots", badge(g.k), wiChip(g.k)], cells(g, dMax, false, WI[g.k] || 0)));
           if (on) body.push(el("tr", { class: "bs-path-det" }, el("td", { colspan: 4 }, detail(g))));
         }
       }
