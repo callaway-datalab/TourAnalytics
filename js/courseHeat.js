@@ -517,7 +517,44 @@ function lieMap(img, zones, W, gw, gh, learn = null) {
     }
   }
   for (let k = 0; k < N; k++) if (reach[k] !== out[k]) out[k] = -1;
+  // (update 469) small gaps inside a lie (mowing marks, shading, specks on a green) take that lie: a patch of no lie that's
+  // small and ringed by one lie, and doesn't look far from it. A bunker, a path or water is bigger, or looks unlike it,
+  // so stays out.
+  {
+    const seen = new Uint8Array(N), comp = new Int32Array(N), MAXA = Math.max(60, Math.round(N * 0.0012));
+    const blankAt = (k) => px[k * 4 + 3] < 128 || px[k * 4] + px[k * 4 + 1] + px[k * 4 + 2] < 45;
+    const look = lies.map((_, li) => { const cs = samples.filter((q) => q.L === li).map((q) => q.c); return cs.length ? [0, 1, 2].map((c) => cs.reduce((t, x) => t + x[c], 0) / cs.length) : null; });
+    for (let k0 = 0; k0 < N; k0++) {
+      if (seen[k0] || out[k0] !== -1 || blankAt(k0)) continue;
+      let n = 0, qh = 0, big = false; const ring = new Map(); let r = 0, gg = 0, b = 0;
+      comp[n++] = k0; seen[k0] = 1;
+      while (qh < n) {
+        const k = comp[qh++], i = k % gw; r += px[k * 4]; gg += px[k * 4 + 1]; b += px[k * 4 + 2];
+        for (const nk of [i > 0 ? k - 1 : -1, i < gw - 1 ? k + 1 : -1, k - gw, k + gw]) {
+          if (nk < 0 || nk >= N) { big = true; continue; }
+          if (out[nk] >= 0) { ring.set(out[nk], (ring.get(out[nk]) || 0) + 1); continue; }
+          if (blankAt(nk)) { big = true; continue; } // (touches the edge of the course: not a hole)
+          if (!seen[nk]) { seen[nk] = 1; comp[n++] = nk; } // (the whole patch, however big, so none of it is judged again)
+        }
+      }
+      if (big || n > MAXA || !ring.size) continue;
+      const [L, cnt] = [...ring].sort((a, c) => c[1] - a[1])[0], tot = [...ring.values()].reduce((t, v) => t + v, 0);
+      if (cnt / tot < 0.85 || !look[L]) continue;
+      const m = [r / qh, gg / qh, b / qh];
+      if (d2(m, look[L]) > 70 * 70) continue; // (sand inside the rough, say, looks nothing like it)
+      for (let t = 0; t < qh; t++) out[comp[t]] = L;
+    }
+  }
   return { cls: out, lies };
+}
+/** (update 469) a light blur (two passes of a 3 x 3 box, on colour weighted by alpha): smooth edges, nothing spread far */
+function softenRGBA(d, w, h) {
+  const n = w * h, a = new Float32Array(n * 4);
+  for (let k = 0; k < n; k++) { const al = d[k * 4 + 3] / 255; a[k * 4] = d[k * 4] * al; a[k * 4 + 1] = d[k * 4 + 1] * al; a[k * 4 + 2] = d[k * 4 + 2] * al; a[k * 4 + 3] = al; }
+  const tmp = new Float32Array(n * 4);
+  const pass = (src, dst, dx, dy) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const k = (j * w + i) * 4; let c = 0; for (let t = -1; t <= 1; t++) { const x = i + t * dx, y = j + t * dy; if (x < 0 || y < 0 || x >= w || y >= h) continue; const o = (y * w + x) * 4; dst[k] += src[o]; dst[k + 1] += src[o + 1]; dst[k + 2] += src[o + 2]; dst[k + 3] += src[o + 3]; c++; } dst[k] /= c; dst[k + 1] /= c; dst[k + 2] /= c; dst[k + 3] /= c; } };
+  for (let it = 0; it < 2; it++) { tmp.fill(0); pass(a, tmp, 1, 0); a.fill(0); pass(tmp, a, 0, 1); }
+  for (let k = 0; k < n; k++) { const al = a[k * 4 + 3]; if (al <= 0.002) { d[k * 4 + 3] = 0; continue; } d[k * 4] = a[k * 4] / al; d[k * 4 + 1] = a[k * 4 + 1] / al; d[k * 4 + 2] = a[k * 4 + 2] / al; d[k * 4 + 3] = Math.round(al * 255); }
 }
 /** The zones as a picture the size of the hole image (worked out once per pin and view; turned and scaled when drawn). */
 export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 2400, learn = null }) {
@@ -548,6 +585,8 @@ export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 
     else { rgb = rdbu(scoreT(v, par)); a = 0.72 * c; }
     im.data[o] = rgb[0]; im.data[o + 1] = rgb[1]; im.data[o + 2] = rgb[2]; im.data[o + 3] = Math.round(255 * Math.min(0.85, a));
   }
+  // (update 469) softened by about a pixel (colour and edge), so edges are smooth, not stepped, when zoomed in
+  softenRGBA(im.data, gw, gh);
   g.putImageData(im, 0, 0);
   return { canvas: off, map, s, gw, gh };
 }
