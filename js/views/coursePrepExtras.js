@@ -91,7 +91,7 @@ export function drawPrepMenu(ctx, course) {
     return b;
   };
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
-    el("p", { class: "pr-eyebrow" }, "Course Prep"), el("h1", {}, course.name),
+    el("p", { class: "pr-eyebrow" }, "Course Prep"), el("h1", {}, course.name), course.mapEvents ? el("p", { class: "muted small" }, course.mapEvents) : null, /* (update 486: which event's map) */
     el("p", { class: "muted" }, [course.location, `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
       course.heat ? opt("Strategy Maps", "Where to aim and what to stay away from on every hole and pin, from the tour\u2019s scoring (and your own game)", el("span", { class: "cp-opt-n" }, `${Object.keys(course.heat.holes || {}).length || course.heat.par?.length || ""} holes`), () => ctx.go({ name: "prepHeat", course })) : null, // (update 456)

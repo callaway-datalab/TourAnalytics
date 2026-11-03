@@ -20,7 +20,7 @@ import { clientKey } from "./data.js";
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLS = { year: ["year", "season"], courseNum: ["coursenum", "coursenumber", "courseid"], course: ["course", "coursename"], player: ["player", "playername", "name"], playerID: ["playerid", "player_id", "pid"],
   round: ["round", "rnd", "roundno"], hole: ["hole"], par: ["par", "holepar"], pin: ["pinid", "pin", "pinlocation"], lie: ["lie", "fromlocation"], strokes: ["strokes", "stroke", "shotnum", "shotnumber"],
-  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"] };
+  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"] };
 export function shotColumns(header) {
   const h = header.map(norm), ix = {};
   for (const [k, names] of Object.entries(COLS)) { const i = names.map((n) => h.indexOf(norm(n))).find((x) => x >= 0); if (i != null && i >= 0) ix[k] = i; }
@@ -64,7 +64,9 @@ function sameCourses(list) {
   const up = list.map((_, i) => i), find = (i) => (up[i] === i ? i : (up[i] = find(up[i])));
   for (let i = 0; i < list.length; i++) for (let j = 0; j < i; j++) {
     const a = list[i], b = list[j];
-    if ((a.courseNum && a.courseNum === b.courseNum) || sameCourse(a.name, b.name)) up[find(i)] = find(j);
+    // (update 486) a map per courseNum: a course that hosted two events (two courseNums) has a map for each, on its own
+    // images; one courseNum spelled two ways is one map. Without courseNums, the same name is one map.
+    if (a.courseNum ? a.courseNum === b.courseNum : !b.courseNum && sameCourse(a.name, b.name)) up[find(i)] = find(j);
   }
   const groups = new Map(); list.forEach((c, i) => (groups.get(find(i)) || groups.set(find(i), []).get(find(i))).push(c));
   const out = [];
@@ -74,10 +76,12 @@ function sameCourses(list) {
     const dropped = g.filter((c) => !keep.includes(c)).map((c) => ({ courseNum: c.courseNum, name: c.name, shots: c.n, offset: Math.round(offsetOf(big, c) * 100) }));
     // (the first courseNum's pin ids stay as they are, so the admin's pin names and edits keep working week to week)
     keep.sort((a, b) => String(a.courseNum ?? "").localeCompare(String(b.courseNum ?? ""), undefined, { numeric: true }) || b.n - a.n);
-    const M = { name: big.name, names: new Map(), courseNum: keep[0].courseNum, holes: new Map(), players: new Map(), years: new Set(), n: 0 };
+    const M = { name: big.name, names: new Map(), courseNum: keep[0].courseNum, holes: new Map(), players: new Map(), years: new Set(), events: new Map(), n: 0 };
     for (const c of keep) mergeSource(M, c);
     M.courseNums = [...new Set(keep.map((c) => c.courseNum).filter(Boolean))];
     M.dropped = dropped;
+    // (update 486) every courseNum's shots and how far its tees and pins are from the biggest one's, to report
+    M.sources = g.map((c) => { const o = c === big ? 0 : offsetOf(big, c); return { courseNum: c.courseNum, name: c.name, shots: c.n, offset: o == null ? null : Math.round(o * 100), kept: keep.includes(c), biggest: c === big }; });
     out.push(M);
   }
   return out;
@@ -86,6 +90,7 @@ function mergeSource(M, C) {
   const ren = new Map();
   for (const [nm, k] of C.names) M.names.set(nm, (M.names.get(nm) || 0) + k);
   for (const y of C.years) M.years.add(y);
+  for (const [e, ys] of C.events) { const t = M.events.get(e) || M.events.set(e, new Set()).get(e); ys.forEach((y) => t.add(y)); }
   M.n += C.n;
   for (const [h, HC] of C.holes) {
     let HM = M.holes.get(h);
@@ -120,7 +125,7 @@ export function shotAggregator() {
   // (update 485) read as sources, one per courseNum and spelling; finish() puts together the sources that are the same
   // course (a shared courseNum, or the same name: one course that hosted two events has two courseNums), so each course is
   // one map
-  const courseOf = (name, cn) => { const k = `${cn ?? ""}|${name}`; const C = courses.get(k) || courses.set(k, { name, names: new Map([[name, 0]]), courseNum: cn, holes: new Map(), players: new Map(), years: new Set(), n: 0 }).get(k); C.names.set(name, C.names.get(name) + 1); C.n++; return C; };
+  const courseOf = (name, cn) => { const k = `${cn ?? ""}|${name}`; const C = courses.get(k) || courses.set(k, { name, names: new Map([[name, 0]]), courseNum: cn, holes: new Map(), players: new Map(), years: new Set(), events: new Map(), n: 0 }).get(k); C.names.set(name, C.names.get(name) + 1); C.n++; return C; };
   return {
     get rows() { return rowsIn; },
     add({ columns, rows }) {
@@ -134,6 +139,8 @@ export function shotAggregator() {
         const cn = ix.courseNum != null && r[ix.courseNum] != null && r[ix.courseNum] !== "" ? String(num(r[ix.courseNum]) ?? r[ix.courseNum]) : null;
         const C = courseOf(name, cn); if (cn && !C.courseNum) C.courseNum = cn;
         const year = ix.year != null ? String(num(r[ix.year]) ?? r[ix.year] ?? "") : ""; if (year) C.years.add(year);
+        const ev = ix.event != null ? String(r[ix.event] ?? "").trim() : ""; // (update 486: the tournament, when the file has it)
+        if (ev) { const e = C.events.get(ev) || C.events.set(ev, new Set()).get(ev); if (year) e.add(year); }
         const H = C.holes.get(hole) || C.holes.set(hole, { par: null, pins: new Map(), tee: [], tx: 0, ty: 0, tn: 0 }).get(hole);
         const par = ix.par != null ? num(r[ix.par]) : null; if (par) H.par = par;
         const pid = ix.pin != null ? String(r[ix.pin] ?? "1").trim() || "1" : "1";
@@ -200,7 +207,7 @@ export function shotAggregator() {
         }
         const players = new Map();
         for (const [key, T] of C.players) players.set(key, { name: T.name, trails: [...T.trails.values()].map((t) => ({ ...t, shots: t.shots.sort((a, b) => a[0] - b[0]) })) });
-        out.push({ name: [...C.names].sort((a, b) => b[1] - a[1])[0]?.[0] || C.name, courseNum: C.courseNum, courseNums: C.courseNums, dropped: C.dropped, years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES }, players });
+        out.push({ name: [...C.names].sort((a, b) => b[1] - a[1])[0]?.[0] || C.name, courseNum: C.courseNum, courseNums: C.courseNums, dropped: C.dropped, sources: C.sources, events: [...C.events].map(([name, ys]) => ({ name, years: [...ys].sort() })), years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES }, players });
       }
       return out;
     },
@@ -214,8 +221,12 @@ export async function uploadShotCourses(list, onStatus = () => {}) {
     onStatus(`Saving ${c.name} (${ci + 1} of ${list.length})…`);
     // (update 485) the map already there: any of its courseNums, else the same name
     const nums = (c.courseNums?.length ? c.courseNums : [c.courseNum]).filter((x) => x != null).map(String);
-    const old = existing.find((x) => [x.courseNum, ...(x.courseNums || [])].some((n) => n != null && nums.includes(String(n)))) || existing.find((x) => sameCourse(x.name, c.name));
-    const id = old?.id || (c.courseNum != null ? `c${heatId(String(c.courseNum))}` : heatId(c.name));
+    // (update 486) the map already there: the one with this courseNum (each event's map is its own, with its own images);
+    // a course without courseNums, the one of the same name that has none either
+    const bn = c.courseNum != null ? String(c.courseNum) : "";
+    const old = bn ? existing.find((x) => String(x.courseNum ?? "") === bn) || existing.find((x) => !x.courseNum && sameCourse(x.name, c.name)) || null
+      : existing.find((x) => !x.courseNum && sameCourse(x.name, c.name)) || null;
+    const id = old?.id || (bn ? `c${heatId(bn)}` : heatId(c.name));
     const json = JSON.stringify(c.data), chunks = await writeChunks(id, "data", json, old?.dataChunks || 0);
     const players = {};
     let k = 0;
@@ -227,11 +238,12 @@ export async function uploadShotCourses(list, onStatus = () => {}) {
     const holesN = Object.keys(c.data.holes).map(Number), n = Math.max(0, ...holesN);
     const par = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.par || old?.par?.[i] || null), yards = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.yards || old?.yards?.[i] || null);
     const zones = Object.values(c.data.holes).reduce((t, h) => t + Object.values(h.pins).reduce((u, p) => u + p.rows.length, 0), 0);
-    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(c.courseNum != null ? { courseNum: String(c.courseNum) } : {}), courseNums: nums, par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true }, { merge: true });
+    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(bn ? { courseNum: bn } : {}), courseNums: nums, events: c.events || [], par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true }, { merge: true });
   }
   resetHeatList();
   // (update 485) what was left out: an event whose tees and pins don't line up with the rest
-  return list.map((c) => c.name + (c.dropped?.length ? ` (left out: ${c.dropped.map((d) => `courseNum ${d.courseNum ?? "—"}, ${d.shots.toLocaleString()} shots, tees/pins ${d.offset}% of the hole away`).join("; ")})` : ""));
+  const why = (c) => (c.sources?.length > 1 ? ` [${c.sources.map((s) => `courseNum ${s.courseNum ?? "—"}: ${s.shots.toLocaleString()} shots${s.biggest ? "" : `, ${s.offset ?? "?"}% off`}${s.kept ? "" : " (left out)"}`).join("; ")}]` : "") + "";
+  return list.map((c) => c.name + why(c) + (c.dropped?.length ? ` (left out: ${c.dropped.map((d) => `courseNum ${d.courseNum ?? "—"}, ${d.shots.toLocaleString()} shots, tees/pins ${d.offset}% of the hole away`).join("; ")})` : ""));
 }
 
 const trailMemo = new Map();

@@ -34,7 +34,8 @@ _COLS = {"year": ["year", "season"], "courseNum": ["coursenum", "coursenumber", 
          "player": ["player", "playername", "name"], "playerID": ["playerid", "player_id", "pid"], "round": ["round", "rnd", "roundno"],
          "hole": ["hole"], "par": ["par", "holepar"], "pin": ["pinid", "pin", "pinlocation"], "lie": ["lie", "fromlocation"],
          "strokes": ["strokes", "stroke", "shotnum", "shotnumber"], "shotFor": ["shotfor"], "holeOut": ["holeout"], "x": ["x"], "y": ["y"],
-         "v": ["scoringavg", "strokestoholeout"], "pinX": ["pinx"], "pinY": ["piny"], "dist": ["distance", "dist"]}
+         "v": ["scoringavg", "strokestoholeout"], "pinX": ["pinx"], "pinY": ["piny"], "dist": ["distance", "dist"],
+         "event": ["tournament", "tournamentname", "event", "eventname"]}
 
 
 def _norm(s):
@@ -214,7 +215,9 @@ def _same_courses(lst):
     for i in range(len(lst)):
         for j in range(i):
             a, b = lst[i], lst[j]
-            if (a["courseNum"] and a["courseNum"] == b["courseNum"]) or same_course(a["name"], b["name"]):
+            # (update 486) a map per courseNum (a course that hosted two events has one for each, on its own images); one
+            # courseNum spelled two ways is one map; without courseNums, the same name is one map
+            if (a["courseNum"] == b["courseNum"]) if a["courseNum"] else (not b["courseNum"] and same_course(a["name"], b["name"])):
                 up[find(i)] = find(j)
     groups = {}
     for i, c in enumerate(lst):
@@ -229,11 +232,17 @@ def _same_courses(lst):
             v = str(c["courseNum"] or "")
             return (0, float(v), "") if re.fullmatch(r"\d+(\.\d+)?", v) else (1, 0.0, v)
         keep.sort(key=lambda c: (num_key(c), -c["n"]))
-        M = {"name": big["name"], "names": {}, "courseNum": keep[0]["courseNum"], "holes": {}, "players": {}, "years": set(), "n": 0}
+        M = {"name": big["name"], "names": {}, "courseNum": keep[0]["courseNum"], "holes": {}, "players": {}, "years": set(), "events": {}, "n": 0}
         for c in keep:
             _merge_source(M, c)
         M["courseNums"] = list(dict.fromkeys(c["courseNum"] for c in keep if c["courseNum"]))
         M["dropped"] = dropped
+        # (update 486) every courseNum's shots and how far its tees and pins are from the biggest one's, to report
+        M["sources"] = []
+        for c in g:
+            o = 0 if c is big else offset_of(big, c)
+            M["sources"].append({"courseNum": c["courseNum"], "name": c["name"], "shots": c["n"], "offset": None if o is None else _round(o * 100),
+                                 "kept": any(c is k for k in keep), "biggest": c is big})
         out.append(M)
     return out
 
@@ -243,6 +252,8 @@ def _merge_source(M, C):
     for nm, k in C["names"].items():
         M["names"][nm] = M["names"].get(nm, 0) + k
     M["years"] |= C["years"]
+    for e, ys in C["events"].items():
+        M["events"].setdefault(e, set()).update(ys)
     M["n"] += C["n"]
     for h, HC in C["holes"].items():
         HM = M["holes"].get(h)
@@ -306,7 +317,7 @@ def aggregate(columns, rows):
         ck = f"{cn or ''}|{name}"
         C = courses.get(ck)
         if C is None:
-            C = courses[ck] = {"name": name, "names": {name: 0}, "courseNum": cn, "holes": {}, "players": {}, "years": set(), "n": 0}
+            C = courses[ck] = {"name": name, "names": {name: 0}, "courseNum": cn, "holes": {}, "players": {}, "years": set(), "events": {}, "n": 0}
         C["names"][name] += 1
         C["n"] += 1
         if cn and not C["courseNum"]:
@@ -315,6 +326,12 @@ def aggregate(columns, rows):
         year = "" if "year" not in ix or _missing(yv) else _idtext(yv)
         if year:
             C["years"].add(year)
+        evv = g(r, "event")
+        ev = "" if "event" not in ix or _missing(evv) else str(evv).strip()  # (update 486: the tournament, when the data has it)
+        if ev:
+            e = C["events"].setdefault(ev, set())
+            if year:
+                e.add(year)
         H = C["holes"].get(hole)
         if H is None:
             H = C["holes"][hole] = {"par": None, "pins": {}, "tee": [], "tx": 0.0, "ty": 0.0, "tn": 0}
@@ -433,7 +450,8 @@ def aggregate(columns, rows):
                 t["shots"] = sorted(t["shots"], key=lambda s: s[0] if s[0] is not None else 0)
                 trails.append(t)
             players[key] = {"name": T["name"], "trails": trails}
-        out.append({"name": max(C["names"].items(), key=lambda t: t[1])[0] if C["names"] else C["name"], "courseNum": C["courseNum"], "courseNums": C["courseNums"], "dropped": C["dropped"], "years": sorted(C["years"]),
+        out.append({"name": max(C["names"].items(), key=lambda t: t[1])[0] if C["names"] else C["name"], "courseNum": C["courseNum"], "courseNums": C["courseNums"], "dropped": C["dropped"], "sources": C["sources"],
+                    "events": [{"name": e, "years": sorted(ys)} for e, ys in C["events"].items()], "years": sorted(C["years"]),
                     "data": {"holes": holes, "toGo": True, "hasN": True, "shots": True, "lies": LIES}, "players": players})
     return out
 
@@ -448,10 +466,12 @@ def _pieces(s):
 
 
 def _save_course(db, c, existing, say):
-    # (update 485) the map already there: any of its courseNums, else the same name
     nums = [str(n) for n in (c.get("courseNums") or [c["courseNum"]]) if n is not None]
-    old = next((x for x in existing if any(n is not None and str(n) in nums for n in [x.get("courseNum"), *(x.get("courseNums") or [])])), None)
-    old = old or next((x for x in existing if same_course(x.get("name"), c["name"])), None)
+    # (update 486) the map already there: the one with this courseNum (each event's map is its own, with its own images);
+    # a course without courseNums, the one of the same name that has none either
+    bn = str(c["courseNum"]) if c["courseNum"] is not None else ""
+    old = ((next((x for x in existing if str(x.get("courseNum") or "") == bn), None) if bn else None)
+           or next((x for x in existing if not x.get("courseNum") and same_course(x.get("name"), c["name"])), None))
     cid = old["id"] if old else (f"c{heat_id(str(c['courseNum']))}" if c["courseNum"] is not None else heat_id(c["name"]))
     base = db.collection("courseHeat").document(cid)
     chunks = base.collection("chunks")
@@ -486,6 +506,7 @@ def _save_course(db, c, existing, say):
     if c["courseNum"] is not None:
         meta["courseNum"] = str(c["courseNum"])
     meta["courseNums"] = nums
+    meta["events"] = c.get("events") or []
     base.set(meta, merge=True)
     return cid, zones, len(js)
 
@@ -523,18 +544,6 @@ def upload_course(data, course=None, key_path=None):
             col = df.columns[ix["course"]]
             names = [n for n in df[col].dropna().astype(str).unique() if same_course(n, course) or str(n).strip().lower() == str(course).strip().lower()]
             mask = df[col].astype(str).isin(names)
-        # (update 485) and the rest of that course: its other courseNums (another event there) and spellings
-        if "course" in ix and mask.any():
-            ccol = df.columns[ix["course"]]
-            ncol = df.columns[ix["courseNum"]] if "courseNum" in ix else None
-            for _ in range(2):
-                names = set(df.loc[mask, ccol].dropna().astype(str))
-                all_names = df[ccol].dropna().astype(str).unique()
-                like = [n for n in all_names if any(same_course(n, m) or n == m for m in names)]
-                mask = mask | df[ccol].astype(str).isin(like)
-                if ncol is not None:
-                    nums = set(df.loc[mask, ncol].dropna().map(_idtext))
-                    mask = mask | df[ncol].map(lambda v: not _missing(v) and _idtext(v) in nums)
         df = df[mask]
         if not len(df):
             raise ValueError(f"No shots for course {course!r} in that data.")
@@ -555,14 +564,18 @@ def upload_course(data, course=None, key_path=None):
         shots = sum(len(t["shots"]) for p in c["players"].values() for t in p["trails"])
         pins = " ".join(f"{h}:{len(H['pins'])}" for h, H in sorted(c["data"]["holes"].items(), key=lambda t: float(t[0])))
         print(f"  Pins on each hole (hole:pins): {pins}", flush=True)
-        if len(c.get("courseNums") or []) > 1:
-            print(f"  One map from courseNums {', '.join(c['courseNums'])}", flush=True)
-        for d in c.get("dropped") or []:
-            print(f"  Left out courseNum {d['courseNum']} ({d['shots']:,} shots): its tees / pins are {d['offset']}% of the hole's length away "
-                  "from the rest (a different coordinate system), so only the data with the most shots is kept.", flush=True)
+        if len(c.get("sources") or []) > 1:
+            for s0 in c["sources"]:
+                print(f"  courseNum {s0['courseNum']}: {s0['shots']:,} shots" + (" (the most)" if s0["biggest"] else
+                      f", tees/pins {s0['offset'] if s0['offset'] is not None else '?'}% of the hole's length from the rest") + ("" if s0["kept"] else ": LEFT OUT"), flush=True)
+        if c.get("dropped"):
+            print(f"  (LEFT OUT: tees / pins over {round(OFFSET_MAX * 100)}% of the hole's length from the courseNum with the most shots,"
+                  " so a different coordinate system; only the data with the most shots is kept)", flush=True)
         results.append({"course": c["name"], "id": cid, "shots": shots, "players": len(c["players"]), "zones": zones})
         has_img = any(x["id"] == cid and x.get("holes") for x in existing)
-        print(f"Live: {c['name']} ({', '.join(c['years']) or 'no year'}): {len(c['players'])} players, {zones:,} zones, "
+        evs = " \u00b7 ".join(f"{e['name']} ({', '.join(e['years'])})" for e in c.get("events") or [])
+        num = f" #{c['courseNum']}" if c["courseNum"] else ""
+        print(f"Live: {c['name']}{num} ({evs or ', '.join(c['years']) or 'no year'}): {len(c['players'])} players, {zones:,} zones, "
               f"{size / 1e6:.1f} MB of map data.{'' if has_img else ' No hole images yet: upload the CourseImages zip on Upload Data.'}"
               f"  ({time.time() - t0:.0f}s)", flush=True)
     return results

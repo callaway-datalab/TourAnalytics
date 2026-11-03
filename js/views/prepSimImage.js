@@ -14,19 +14,23 @@ const imgs = new Map(); // `${id}|${hole}` → { url, w, h }
 const lieMaps = new Map(); // `${id}|${hole}|${pin}` → { cls, lies, s, gw, gh } | null
 
 /** The course's Strategy Maps, if it has them (loaded once). */
-export function simHeat(name) {
+export function simHeat(name, id = null) {
   if (!name) return Promise.resolve(null);
-  if (!cache.has(name)) cache.set(name, (async () => {
+  const ck = `${name}|${id || ""}`;
+  if (!cache.has(ck)) cache.set(ck, (async () => {
     const { listHeatCourses, heatData, withMerges } = await import("../courseHeat.js");
-    const meta = (await listHeatCourses()).find((c) => c.dataChunks && sameCourse(c.name, name));
+    // (update 486) the round's own map (a course with two events has two), else the course's
+    const list = (await listHeatCourses()).filter((c) => c.dataChunks);
+    const meta = (id && list.find((c) => c.id === id)) || list.find((c) => sameCourse(c.name, name));
     if (!meta) return null;
     return { meta, data: withMerges(meta, await heatData(meta)) }; // (update 468: the admin's combined pins too)
   })().catch(() => null));
-  return cache.get(name);
+  return cache.get(ck);
 }
 /** Loads it, then calls back once (to draw the round again with the picture). */
-export function readyFor(name, then) {
-  const p = simHeat(name);
+export function readyFor(name, id, then) {
+  if (typeof id === "function") { then = id; id = null; }
+  const p = simHeat(name, id);
   if (p.__v !== undefined) return p.__v;
   p.then((v) => { p.__v = v; if (v) then(); });
   return undefined;

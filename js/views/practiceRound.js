@@ -140,14 +140,24 @@ async function myCourses(ctx) {
   // (update 456) the courses with Strategy Maps (uploaded on Upload Data): a course they already have gets the maps
   try {
     const [{ listHeatCourses }, { sameCourse }] = await Promise.all([import("../courseHeat.js"), import("../sg.js")]);
-    for (const h of (await listHeatCourses()).filter((x) => x.dataChunks)) { // (update 458: once its scoring is in)
-      const c = [...out.values()].find((x) => sameCourse(x.name, h.name));
+    // (update 486) a map per courseNum: a course that hosted two events has two, each listed with its tournaments and
+    // years. The first goes on the course's card (a built-in course takes the data's name); any other is a card of its own.
+    const heats = (await listHeatCourses()).filter((x) => x.dataChunks).sort((a, b) => String(a.years?.[0] ?? "").localeCompare(String(b.years?.[0] ?? "")) || String(a.courseNum ?? "").localeCompare(String(b.courseNum ?? ""), undefined, { numeric: true }));
+    for (const h of heats) {
+      const c = [...out.values()].find((x) => !x.heat && sameCourse(x.name, h.name));
       const par = (h.par || []).map((p) => p || 4), yards = h.yards || [];
       if (c) {
         c.heat = h; if (!c.yards.some(Boolean) && yards.some(Boolean)) c.yards = [...yards];
         if (!c.rounds.length && c.holeMaps && c.name !== h.name) { out.delete(c.name.toLowerCase()); c.name = h.name; out.set(h.name.toLowerCase(), c); } // (update 483: the name in the data, not the built-in one's)
-      }
-      else if (par.length) out.set(h.name.toLowerCase(), { name: h.name, location: "", par, yards: par.map((_, i) => yards[i] || null), tees: "", from: "Tour course \u00b7 strategy maps", rounds: [], heat: h });
+      } else if (par.length) out.set(`${h.name.toLowerCase()}#${h.id}`, { name: h.name, location: "", par, yards: par.map((_, i) => yards[i] || null), tees: "", from: "Tour course \u00b7 strategy maps", rounds: [], heat: h });
+    }
+    // the maps' tournaments and years (from the shot data's tournament column; else the years and courseNum), on courses
+    // with more than one map
+    const all = [...out.values()];
+    for (const c of all) {
+      if (!c.heat || !all.some((o) => o !== c && o.heat && sameCourse(o.name, c.name))) continue;
+      const yrs = (ys) => { const v = [...ys].filter(Boolean).map(Number).sort((a, b) => a - b); return !v.length ? "" : v.length === 1 ? ` (${v[0]})` : ` (${v[0]}\u2013${v.at(-1)})`; };
+      c.mapEvents = c.heat.events?.length ? c.heat.events.map((e) => `${e.name}${yrs(e.years || [])}`).join(" \u00b7 ") : `Course #${c.heat.courseNum ?? "?"}${yrs(c.heat.years || [])}`;
     }
   } catch (err) { console.warn(err); }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })); // (update 468: A to Z, every course)
@@ -197,8 +207,9 @@ async function drawHome(ctx) {
   const noHit = el("p", { class: "muted small", hidden: true }, "No course by that name.");
   const cards = courses.length ? el("div", { class: "pr-course-grid" }, courses.map((c) => {
     const par = c.par.reduce((a, b) => a + (b || 0), 0), yds = c.yards.reduce((a, b) => a + (Number(b) || 0), 0);
-    const b = el("button", { type: "button", class: "pr-course", "data-name": `${c.name} ${c.location || ""}`.toLowerCase() }, [
+    const b = el("button", { type: "button", class: "pr-course", "data-name": `${c.name} ${c.location || ""} ${c.mapEvents || ""}`.toLowerCase() }, [
       el("strong", {}, c.name),
+      c.mapEvents ? el("span", { class: "muted small pr-course-ev" }, c.mapEvents) : null,
       el("span", { class: "muted small" }, [c.location, `${c.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
       el("span", { class: "pr-sess-tag" }, c.rounds.length ? `${c.rounds.length} round${c.rounds.length === 1 ? "" : "s"} played` : c.from),
     ]);
@@ -215,7 +226,7 @@ async function drawHome(ctx) {
     for (const p of cf.field) for (const rd of p.rounds) { if (!rd.course || !rd.event) continue; const m = byCourse.get(rd.course) || byCourse.set(rd.course, new Map()).get(rd.course); (m.get(rd.event) || m.set(rd.event, new Set()).get(rd.event)).add(String(rd.year || String(rd.date || "").slice(0, 4))); }
     const yrs = (set) => { const ys = [...set].filter(Boolean).map(Number).sort((a, b) => a - b); if (!ys.length) return ""; return ys.length === 1 ? ` (${ys[0]})` : ` (${ys[0]}\u2013${ys.at(-1)})`; };
     for (const b of cards?.querySelectorAll?.(".pr-course") || []) {
-      const c = b.__course; if (!c) continue;
+      const c = b.__course; if (!c || c.mapEvents) continue; // (update 486: a course with two maps shows each one's own)
       const evs = new Map(); for (const [name, m] of byCourse) if (sameCourse(name, c.name)) for (const [e, ys] of m) { const t = evs.get(e) || evs.set(e, new Set()).get(e); ys.forEach((y) => t.add(y)); }
       if (!evs.size) continue;
       const list = [...evs].sort((a, b2) => b2[1].size - a[1].size || a[0].localeCompare(b2[0])).map(([e, ys]) => `${e}${yrs(ys)}`);
@@ -357,12 +368,12 @@ function drawPrepSetup(ctx, course) {
     const holes = courseHoles({ par: course.par, yards: course.yards, only });
     const pf = playFilt(filt);
     const part = [only.length < n ? `${only.length} hole${only.length === 1 ? "" : "s"}` : "", filtText(pf)].filter(Boolean).join(" \u00b7 ");
-    startRound(ctx, { mode: "prep", course: { name: course.name, part }, opts: { filt: pf }, holes });
+    startRound(ctx, { mode: "prep", course: { name: course.name, part, ...(course.heat?.id ? { heatId: course.heat.id } : {}) }, opts: { filt: pf }, holes });
   });
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
-    el("p", { class: "pr-eyebrow" }, `Simulate Round${course.tees ? ` · ${course.tees} tees` : ""}`), el("h1", {}, course.name),
+    el("p", { class: "pr-eyebrow" }, `Simulate Round${course.tees ? ` · ${course.tees} tees` : ""}`), el("h1", {}, course.name), course.mapEvents ? el("p", { class: "muted small" }, course.mapEvents) : null,
     el("h2", {}, "What to play"), filters, table,
     el("p", { class: "muted small" }, avgs.length ? `“Your avg” is your score to par on each hole from ${course.rounds.length} round${course.rounds.length === 1 ? "" : "s"} you've tracked here. “Tour baseline” is the Tour's scoring average from that yardage.` : "“Tour baseline” is the Tour's scoring average from that yardage. Track a round here and your own average on each hole shows up, with the option to practise your toughest holes."),
     go,
@@ -716,7 +727,7 @@ function drawRound(ctx, s) {
   end.addEventListener("click", () => finishRound(ctx, s, true));
   const what = shot.unit === "ft" ? `Putt · ${fmtD(shot.startDist, "ft")}` : shot.startLie === "Tee box" ? `Tee shot · ${shot.startDist} yds` : `${fmtD(shot.startDist, "yds")} to go`;
   // (update 461) the course's Strategy Maps, when it has them: loaded once, then the round is drawn again with them
-  const simImg = s.mode !== "sim" && s.course?.name ? readyFor(s.course.name, () => { if (ctx.view?.name === "round" && ctx.view.session === s) drawRound(ctx, s); }) : null;
+  const simImg = s.mode !== "sim" && s.course?.name ? readyFor(s.course.name, s.course.heatId, () => { if (ctx.view?.name === "round" && ctx.view.session === s) drawRound(ctx, s); }) : null;
   let card = null;
   card = el("section", { class: "panel pr-shot pr-dshot" }, [
     el("div", { class: "pr-shot-t" }, [
