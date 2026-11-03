@@ -57,3 +57,32 @@ export async function readParquetFile(file) {
   }
   return tableFromObjects(objects);
 }
+
+/**
+ * (update 479) A big Parquet file a slice of rows at a time (so millions of rows don't all sit in memory as objects):
+ * onChunk({ columns, rows }, done, total) for each slice, awaited. The column names come from the file's schema.
+ */
+export async function readParquetChunks(file, onChunk, size = 200000) {
+  let core, compressors;
+  try {
+    const [c, extra] = await loadLib();
+    core = c.parquetReadObjects || c.parquetRead ? c : c.default || c;
+    compressors = extra?.compressors || extra?.default?.compressors;
+  } catch (err) {
+    throw new UserError(`Couldn't load the Parquet reader from cdn.jsdelivr.net (${err?.message || err}). If you're on a work network or VPN that blocks it, try another connection, or upload a CSV instead.`);
+  }
+  const buffer = await file.arrayBuffer();
+  let total = null;
+  try { const md = core.parquetMetadata ? core.parquetMetadata(buffer) : null; total = md ? Number(md.num_rows) : null; } catch { total = null; }
+  if (!total || !core.parquetReadObjects) { const t = await readParquetFile(file); await onChunk(t, t.rows.length, t.rows.length); return; } // (an older reader: all at once)
+  let columns = null;
+  for (let start = 0; start < total; start += size) {
+    let objects;
+    try { objects = await core.parquetReadObjects({ file: buffer, compressors, rowStart: start, rowEnd: Math.min(total, start + size) }); }
+    catch (err) { throw new UserError(`Couldn't read that Parquet file: ${err?.message || err}`); }
+    if (!objects.length) continue;
+    columns ||= Object.keys(objects[0]);
+    const rows = objects.map((o) => columns.map((c) => { const v = o[c]; return typeof v === "bigint" ? Number(v) : v instanceof Date ? (isNaN(v) ? "" : v.toISOString().slice(0, 10)) : v; }));
+    await onChunk({ columns, rows }, Math.min(total, start + size), total);
+  }
+}

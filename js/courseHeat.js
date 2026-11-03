@@ -29,13 +29,13 @@ export async function listHeatCourses(fresh = false) {
   listCache = { at: Date.now(), list };
   return list;
 }
-async function writeChunks(id, prefix, str, oldCount = 0) {
+export async function writeChunks(id, prefix, str, oldCount = 0) {
   const parts = []; for (let i = 0; i < str.length; i += CH) parts.push(str.slice(i, i + CH));
   for (let i = 0; i < parts.length; i++) await setDoc(doc(db, "courseHeat", id, "chunks", `${prefix}_${i}`), { data: parts[i] });
   for (let i = parts.length; i < oldCount; i++) await deleteDoc(doc(db, "courseHeat", id, "chunks", `${prefix}_${i}`)).catch(() => {});
   return parts.length;
 }
-async function readChunks(id, prefix, n) {
+export async function readChunks(id, prefix, n) {
   const snaps = await Promise.all(Array.from({ length: n }, (_, i) => getDoc(doc(db, "courseHeat", id, "chunks", `${prefix}_${i}`))));
   return snaps.map((s) => (s.exists() ? s.data().data : "")).join("");
 }
@@ -626,3 +626,6 @@ export const learnOf = (hole) => Object.values(hole?.pins || {}).flatMap((p) => 
 /** (update 464) a zone's part of the game: from the tee, the green, around it (30 yards in) or an approach */
 export const zoneCat = (z) => (z.L === "tee" ? "OTT" : z.L === "green" ? "PUTT" : z.dp != null && z.dp <= 30 ? "ARG" : "APP");
 export const fmtPar = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0.005 ? "+" : v < -0.005 ? "−" : ""}${Math.abs(v).toFixed(2)}`);
+/** (update 479) for courseShots.js: the course list read fresh next time, and the lie names */
+export const resetHeatList = () => { listCache = null; };
+export const lieName = (s) => lieOf(s);

@@ -184,11 +184,25 @@ function heatPanel(flash) {
     csvBtn.disabled = true; csvBtn.textContent = "Reading…";
     try {
       const { uploadHeatScoring } = await import("../courseHeat.js");
-      // (update 459) Parquet (as from pandas) or CSV
-      let rows;
-      if (/\.parquet$/i.test(f.name)) { const { readParquetFile } = await import("../parquet.js"); const t = await readParquetFile(f); rows = [t.columns, ...t.rows]; }
-      else rows = parseCsv(await f.text());
-      const names = await uploadHeatScoring(rows, (t) => { csvBtn.textContent = t; });
+      // (update 459) Parquet (as from pandas) or CSV. (update 479) A shot-level file (a row per shot: strokes, hole_out…)
+      // is read a slice at a time and boiled down here (zones, hole history, each player's trails) before it's saved.
+      const S = await import("../courseShots.js");
+      let names;
+      if (/\.parquet$/i.test(f.name)) {
+        const { readParquetChunks } = await import("../parquet.js");
+        let agg = null, flat = null;
+        await readParquetChunks(f, async (t, done, total) => {
+          if (!agg && !flat) { if (S.isShotFile(t.columns)) agg = S.shotAggregator(); else flat = [t.columns]; }
+          if (agg) agg.add(t); else flat.push(...t.rows);
+          csvBtn.textContent = `Reading\u2026 ${Math.round((done / total) * 100)}%`;
+        });
+        if (agg) { csvBtn.textContent = "Working out the zones\u2026"; await new Promise((r) => setTimeout(r, 30)); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); }
+        else names = await uploadHeatScoring(flat, (t) => { csvBtn.textContent = t; });
+      } else {
+        const rows = parseCsv(await f.text());
+        if (S.isShotFile(rows[0] || [])) { const agg = S.shotAggregator(); agg.add({ columns: rows[0], rows: rows.slice(1) }); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); }
+        else names = await uploadHeatScoring(rows, (t) => { csvBtn.textContent = t; });
+      }
       flash(`Scoring saved for ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.`, "ok"); csv.value = ""; drawList();
     } catch (err) { console.error(err); flash(err?.message && !/permission/i.test(err.message) ? err.message : "Couldn’t save the scoring. Republish the Firestore rules (update 456) and try again.", "error"); }
     finally { csvBtn.disabled = false; csvBtn.textContent = "Upload scoring"; }
@@ -208,7 +222,7 @@ function heatPanel(flash) {
     el("h2", {}, "Strategy Maps (Course Prep)"),
     el("p", { class: "muted small" }, "Each course’s hole images with its scoring zones over them, under Course Prep › the course › Strategy Maps. Image folders are matched to the scoring file by courseNum (or by course name)."),
     el("div", { class: "stack narrow" }, [
-      el("label", {}, ["Scoring (.parquet or .csv)", csv, el("small", {}, "One row per cluster: courseNum, course, hole, par, pin_id, shot_cluster, lie, x, y, scoring_avg, pin_x, pin_y, distance, attempts. x, y are the cluster centre in pixels on that hole\u2019s image (shotStartX/Y_projected_Hole); pin_x, pin_y the pin. scoring_avg is the strokes to hole out from there; distance the distance from the pin (yards, feet on the green). The zones blend into each other and stop where the lie changes on the image. Uploading a course again replaces its zones.")]),
+      el("label", {}, ["Scoring (.parquet or .csv)", csv, el("small", {}, "One row per shot (every shot of every player): year, courseNum, course, player, playerID, round, hole, par, pin_id, lie, strokes, shot_for, hole_out, x, y, scoring_avg, pin_x, pin_y, distance. It\u2019s boiled down on this computer into the map\u2019s zones, each hole\u2019s scoring history and each player\u2019s own shots. (A file of zones, one row per cluster, still works too.) x, y are the cluster centre in pixels on that hole\u2019s image (shotStartX/Y_projected_Hole); pin_x, pin_y the pin. scoring_avg is the strokes to hole out from there; distance the distance from the pin (yards, feet on the green). The zones blend into each other and stop where the lie changes on the image. Uploading a course again replaces its zones.")]),
       el("div", {}, csvBtn),
       el("label", {}, ["Hole images (.zip)", zip, el("small", {}, "A CourseImages folder with a folder for each course, named with its courseNum (or its course name), and in it an image for each hole named by its number (1.png, or 1/Hole.png). The same images the x, y were measured on. The site shows the course name from the scoring file.")]),
       el("div", {}, zipBtn),

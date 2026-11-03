@@ -5500,3 +5500,17 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 .fx-st-pop table.fx-st-t td:first-child, .fx-st-pop table.fx-st-t th:first-child { text-align: left; }
 .fx-sub { display: block; font-size: 0.85em; color: #a1a1a6; }
 @media (max-width: 600px) { .fx-st-pop table.fx-st-t td, .fx-st-pop table.fx-st-t th { font-size: var(--fs-xs); padding: 0.3rem 0.28rem; } .fx-st-pop table.fx-st-t th { font-size: var(--fs-2xs); } }
+/* (update 479) Strategy Maps: hole history and past shots */
+.sh-hist { display: grid; gap: 4px; margin: -2px 0 10px; font-size: var(--fs-note); }
+.sh-hl { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.sh-hl-k { color: #d4b483; font-weight: 600; min-width: 4.5em; }
+.sh-hl-c { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; color: #c7c7cc; }
+.sh-hl-b { display: inline-flex; align-items: center; gap: 4px; }
+.sh-hl-b i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.sh-trails { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.sh-trail-hit { pointer-events: stroke; cursor: pointer; }
+.sh-past { position: absolute; left: 8px; top: 8px; z-index: 2; font: inherit; font-size: var(--fs-control); padding: var(--ctl-y) var(--ctl-x); border-radius: var(--ctl-r); border: 1px solid rgba(212,180,131,0.7); background: rgba(14,14,16,0.85); color: #f0d9a8; cursor: pointer; }
+.sh-past.on { background: #d4b483; color: #111; }
+.sh-tr-list { margin: 6px 0 0; padding-left: 1.2rem; font-size: 0.95em; display: grid; gap: 2px; }
+.sh-tr-in { color: #30d158; font-weight: 600; }
+.sh-tr-in { margin: 4px 0 0; font-size: 0.95em; }
