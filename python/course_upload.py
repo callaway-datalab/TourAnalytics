@@ -470,7 +470,8 @@ def _save_course(db, c, existing, say):
     # (update 486) the map already there: the one with this courseNum (each event's map is its own, with its own images);
     # a course without courseNums, the one of the same name that has none either
     bn = str(c["courseNum"]) if c["courseNum"] is not None else ""
-    old = ((next((x for x in existing if str(x.get("courseNum") or "") == bn), None) if bn else None)
+    # (update 487) first the map made for that courseNum (its id, c{courseNum}, which no upload ever relabels)
+    old = ((next((x for x in existing if x["id"] == f"c{heat_id(bn)}"), None) or next((x for x in existing if str(x.get("courseNum") or "") == bn), None) if bn else None)
            or next((x for x in existing if not x.get("courseNum") and same_course(x.get("name"), c["name"])), None))
     cid = old["id"] if old else (f"c{heat_id(str(c['courseNum']))}" if c["courseNum"] is not None else heat_id(c["name"]))
     base = db.collection("courseHeat").document(cid)
@@ -579,6 +580,22 @@ def upload_course(data, course=None, key_path=None):
               f"{size / 1e6:.1f} MB of map data.{'' if has_img else ' No hole images yet: upload the CourseImages zip on Upload Data.'}"
               f"  ({time.time() - t0:.0f}s)", flush=True)
     return results
+
+
+def list_maps(key_path=None):
+    """(update 487) Every Strategy Maps course saved on the site: its id, name, courseNums, how many hole images, whether
+    it has scoring, its years and tournaments. To check what's there (e.g. which map has which images)."""
+    from firebase_admin import firestore
+    db = firestore.client(app=_connect(key_path))
+    rows = []
+    for snap in db.collection("courseHeat").stream():
+        d = snap.to_dict()
+        holes = d.get("holes") or {}
+        rows.append((snap.id, d.get("name"), d.get("courseNum"), d.get("courseNums"), len(holes), bool(d.get("dataChunks")),
+                     ", ".join(d.get("years") or []), " / ".join(e.get("name", "") for e in d.get("events") or [])))
+    for r in sorted(rows, key=lambda r: (str(r[1]), str(r[0]))):
+        print(f"{r[0]:<14} {str(r[1])[:45]:<45} courseNum {str(r[2]):<6} (all: {r[3]})  images {r[4]:>2}  scoring {'yes' if r[5] else 'no ':<3}  years {r[6] or '-'}  {r[7]}")
+    return rows
 
 
 if __name__ == "__main__":

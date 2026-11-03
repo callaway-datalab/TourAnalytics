@@ -282,7 +282,9 @@ export async function uploadHeatImages(file, onStatus = () => {}) {
     // (update 458) a folder named with a course number matches that number in the scoring file; else the course's name
     const isNum = /^\d+(\.0+)?$/.test(name), cn = isNum ? String(Number(name)) : null;
     // (update 486) a folder goes to the map with exactly that courseNum (each event keeps its own images), else one that has it
-    const old = (cn != null ? existing.find((c) => String(c.courseNum ?? "") === cn) || existing.find((c) => (c.courseNums || []).map(String).includes(cn)) : null) || (!isNum ? existing.find((c) => sameCourse(c.name, name)) : null);
+    // (update 487) first the map made for that courseNum (its id, c{courseNum}, which no upload ever relabels), then one with
+    // exactly that courseNum
+    const old = (cn != null ? existing.find((c) => c.id === `c${heatId(cn)}`) || existing.find((c) => String(c.courseNum ?? "") === cn) : null) || (!isNum ? existing.find((c) => sameCourse(c.name, name)) : null);
     const id = old?.id || (cn != null ? `c${heatId(cn)}` : heatId(name));
     const holes = { ...(old?.holes || {}) };
     const nums = Object.keys(byCourse[name]).map(Number).sort((a, b) => a - b);

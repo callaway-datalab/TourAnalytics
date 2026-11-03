@@ -157,7 +157,10 @@ async function myCourses(ctx) {
     for (const c of all) {
       if (!c.heat || !all.some((o) => o !== c && o.heat && sameCourse(o.name, c.name))) continue;
       const yrs = (ys) => { const v = [...ys].filter(Boolean).map(Number).sort((a, b) => a - b); return !v.length ? "" : v.length === 1 ? ` (${v[0]})` : ` (${v[0]}\u2013${v.at(-1)})`; };
-      c.mapEvents = c.heat.events?.length ? c.heat.events.map((e) => `${e.name}${yrs(e.years || [])}`).join(" \u00b7 ") : `Course #${c.heat.courseNum ?? "?"}${yrs(c.heat.years || [])}`;
+      // (update 487) never the courseNum: the tournaments (from the shot data's column, else from the stats once they load:
+      // see drawHome), the years meanwhile
+      if (c.heat.events?.length) c.mapEvents = c.heat.events.map((e) => `${e.name}${yrs(e.years || [])}`).join(" \u00b7 ");
+      else { c.mapEvents = yrs(c.heat.years || []).replace(/^ \((.*)\)$/, "$1") || "Strategy maps"; c.mapNeedsEvents = true; }
     }
   } catch (err) { console.warn(err); }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })); // (update 468: A to Z, every course)
@@ -225,6 +228,32 @@ async function drawHome(ctx) {
     const byCourse = new Map(); // course name in the stats → Map(event → Set(years))
     for (const p of cf.field) for (const rd of p.rounds) { if (!rd.course || !rd.event) continue; const m = byCourse.get(rd.course) || byCourse.set(rd.course, new Map()).get(rd.course); (m.get(rd.event) || m.set(rd.event, new Set()).get(rd.event)).add(String(rd.year || String(rd.date || "").slice(0, 4))); }
     const yrs = (set) => { const ys = [...set].filter(Boolean).map(Number).sort((a, b) => a - b); if (!ys.length) return ""; return ys.length === 1 ? ` (${ys[0]})` : ` (${ys[0]}\u2013${ys.at(-1)})`; };
+    // (update 487) a course with two maps and no tournament column: each tournament played there (in the stats) goes to the
+    // map whose years cover most of its years (a tie: the map with fewer years, the more particular one)
+    const needs = [...(cards?.querySelectorAll?.(".pr-course") || [])].filter((b) => b.__course?.mapNeedsEvents);
+    const done = new Set();
+    for (const b0 of needs) {
+      if (done.has(b0)) continue;
+      const grp = needs.filter((b) => sameCourse(b.__course.name, b0.__course.name)); grp.forEach((b) => done.add(b));
+      const evs = new Map(); for (const [name, m] of byCourse) if (sameCourse(name, b0.__course.name)) for (const [e, ys] of m) { const t = evs.get(e) || evs.set(e, new Set()).get(e); ys.forEach((y) => t.add(y)); }
+      const got = new Map(grp.map((b) => [b, []]));
+      for (const [e, ys] of evs) {
+        let best = null, bestN = 0;
+        for (const b of grp) {
+          const my = new Set((b.__course.heat.years || []).map(String)), n = [...ys].filter((y) => my.has(String(y))).length;
+          if (n > bestN || (n === bestN && n > 0 && my.size < (best.__course.heat.years || []).length)) { best = b; bestN = n; }
+        }
+        if (best) got.get(best).push([e, [...ys].filter((y) => (best.__course.heat.years || []).map(String).includes(String(y)))]);
+      }
+      for (const [b, list] of got) {
+        if (!list.length) continue;
+        const c = b.__course;
+        c.mapEvents = list.sort((x, y) => y[1].length - x[1].length || x[0].localeCompare(y[0])).map(([e, ys]) => `${e}${yrs(new Set(ys))}`).join(" \u00b7 ");
+        c.mapNeedsEvents = false;
+        const span = b.querySelector(".pr-course-ev"); if (span) span.textContent = c.mapEvents;
+        b.dataset.name += ` ${c.mapEvents.toLowerCase()}`;
+      }
+    }
     for (const b of cards?.querySelectorAll?.(".pr-course") || []) {
       const c = b.__course; if (!c || c.mapEvents) continue; // (update 486: a course with two maps shows each one's own)
       const evs = new Map(); for (const [name, m] of byCourse) if (sameCourse(name, c.name)) for (const [e, ys] of m) { const t = evs.get(e) || evs.set(e, new Set()).get(e); ys.forEach((y) => t.add(y)); }

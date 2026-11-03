@@ -5517,3 +5517,10 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 /* (update 482) Strategy Maps: which shot's results (All shots / Shot 1 / Shot 2 / Shot 3) */
 .sh-shot-row { margin: -2px 0 10px; }
 .sh-shot-row[hidden] { display: none; }
+/* (update 487) the past shots' key: each score a button that filters the trails */
+.sh-lg-btn { background: none; border: 1px solid var(--line, rgba(255,255,255,0.18)); border-radius: 999px; color: inherit; font: inherit; font-size: var(--fs-control); padding: 3px 10px 3px 6px; cursor: pointer; }
+.sh-lg-btn[aria-pressed="true"] { border-color: currentColor; }
+.sh-lg-btn.off { opacity: 0.4; }
+.sh-lg-all { margin-left: 4px; }
+.sh-tr-list li.on { font-weight: 600; }
+.sh-tr-list li.on::marker { color: #ffd60a; }

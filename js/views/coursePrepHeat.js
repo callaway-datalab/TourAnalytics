@@ -410,28 +410,53 @@ export async function drawHeat(ctx, course) {
     pastBtn.classList.toggle("on", !!st.showPast);
   }
   pastBtn.addEventListener("click", (e) => { e.stopPropagation(); st.showPast = !st.showPast; drawHist(); drawTrails(); });
+  // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
+  // the key (Birdie, Par …: tap to show only those, tap more to add, again to take away), one trail from a tap on it
+  const trState = { hole: null, scores: new Set(), one: null };
+  const legOf = (t, k, pin) => {
+    const pts = t.shots.map((q) => [q[1], q[2], q[0]]);
+    if (t.s != null && pin?.x != null) pts.push([pin.x, pin.y, Infinity]); // (the last shot went in)
+    if (!k) return pts;
+    const a = pts.findIndex((q) => q[2] === k);
+    return a < 0 || a + 1 >= pts.length ? null : [pts[a], pts[a + 1]];
+  };
   function drawTrails() {
     while (trSvg.firstChild) trSvg.removeChild(trSvg.firstChild);
     const show = st.showPast && st.view === "player" && who && size.w;
     trSvg.style.display = show ? "" : "none";
     trKey.hidden = !show;
-    if (show && !trKey.childNodes.length) mount(trKey, [el("span", { class: "muted small" }, "Past shots:"), ...[-2, -1, 0, 1, 2].map((v) => el("span", { class: "sh-lg" }, [el("i", { style: `background:${scColor(v)}` }), SC[String(v)]]))]);
     if (!show) return;
-    const W = size.w, Hh = size.h;
+    if (trState.hole !== `${meta.id}|${st.hole}`) { trState.hole = `${meta.id}|${st.hole}`; trState.scores.clear(); trState.one = null; }
+    const W = size.w, Hh = size.h, H = data.holes?.[st.hole], k = kOf(st.hole, par);
+    const sc = (t) => Math.max(-2, Math.min(2, t.s ?? 0));
+    const all = myTrails().map((t) => ({ t, leg: legOf(t, k, H?.pins?.[t.p]) })).filter((x) => x.leg && x.leg.length > 1);
+    if (trState.one && !all.some((x) => x.t === trState.one)) trState.one = null;
+    const shown = all.filter((x) => (trState.one ? x.t === trState.one : !trState.scores.size || trState.scores.has(sc(x.t))));
+    // the key: each score with how many, a button that filters
+    const counts = new Map(); for (const x of all) counts.set(sc(x.t), (counts.get(sc(x.t)) || 0) + 1);
+    const chips = [-2, -1, 0, 1, 2].filter((v) => counts.get(v)).map((v) => {
+      const on = !trState.one && (!trState.scores.size || trState.scores.has(v));
+      const b = el("button", { type: "button", class: `sh-lg sh-lg-btn${on ? "" : " off"}`, "aria-pressed": String(trState.scores.has(v)), title: `Only the ${SC[String(v)].toLowerCase()}s (tap more to add)` }, [el("i", { style: `background:${scColor(v)}` }), `${SC[String(v)]} ${counts.get(v)}`]);
+      b.addEventListener("click", () => { trState.one = null; if (trState.scores.has(v)) trState.scores.delete(v); else trState.scores.add(v); if (trState.scores.size === counts.size) trState.scores.clear(); pop.hidden = true; drawTrails(); });
+      return b;
+    });
+    const filtered = trState.one || trState.scores.size;
+    const allBtn = filtered ? el("button", { type: "button", class: "link small sh-lg-all" }, "Show all") : null;
+    allBtn?.addEventListener("click", () => { trState.one = null; trState.scores.clear(); pop.hidden = true; drawTrails(); });
+    mount(trKey, [el("span", { class: "muted small" }, k ? `Past shots, shot ${k}:` : "Past shots:"), ...chips, allBtn,
+      !all.length ? el("span", { class: "muted small" }, k ? `None played a shot ${k} here.` : "") : null]);
     trSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
     const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); trSvg.appendChild(g);
-    const H = data.holes?.[st.hole];
-    for (const t of myTrails()) {
-      const pin = H?.pins?.[t.p]; const pts = t.shots.map((q) => [q[1], q[2]]);
-      if (t.s != null && pin?.x != null) pts.push([pin.x, pin.y]); // (the last shot went in)
-      const d = pts.map((q, i) => `${i ? "L" : "M"}${q[0]} ${q[1]}`).join(" "), col = scColor(t.s ?? 0);
-      g.appendChild(sv("path", { d, fill: "none", stroke: "rgba(0,0,0,0.55)", "stroke-width": 4, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
-      g.appendChild(sv("path", { d, fill: "none", stroke: col, "stroke-width": 2, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
-      for (const q of t.shots) g.appendChild(sv("circle", { cx: q[1], cy: q[2], r: Math.max(W, Hh) / 400, fill: col, stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
+    const r0 = Math.max(W, Hh) / 400;
+    for (const { t, leg } of shown) {
+      const d = leg.map((q, i) => `${i ? "L" : "M"}${q[0]} ${q[1]}`).join(" "), col = scColor(t.s ?? 0), wide = trState.one === t;
+      g.appendChild(sv("path", { d, fill: "none", stroke: "rgba(0,0,0,0.55)", "stroke-width": wide ? 6 : 4, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
+      g.appendChild(sv("path", { d, fill: "none", stroke: col, "stroke-width": wide ? 3.5 : 2, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
+      for (const q of leg) if (Number.isFinite(q[2])) g.appendChild(sv("circle", { cx: q[0], cy: q[1], r: r0, fill: col, stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
       const hit = sv("path", { d, fill: "none", stroke: "transparent", "stroke-width": 14, "vector-effect": "non-scaling-stroke", class: "sh-trail-hit" });
-      const showIt = (e) => { e.stopPropagation(); trailPop(t, e); };
-      hit.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") showIt(e); });
-      hit.addEventListener("click", showIt);
+      hit.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse" && !trState.one) trailPop(t, e); });
+      // a tap: only this one (and its details); tapped again, all of them back
+      hit.addEventListener("click", (e) => { e.stopPropagation(); trState.one = trState.one === t ? null : t; drawTrails(); if (trState.one) trailPop(t, e); else pop.hidden = true; });
       g.appendChild(hit);
     }
   }
@@ -442,7 +467,7 @@ export async function drawHeat(ctx, course) {
     const fmtD = (q) => (q[4] == null ? "" : `${Math.round(q[4])} ${q[3] === 4 ? "ft" : "yds"}`);
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { style: `color:${scColor(t.s ?? 0)}` }, `${t.s != null ? `${scName(t.s)} (${par + t.s})` : "Unfinished"}`), x]),
       el("p", { class: "muted small" }, `${t.y ? `${t.y} \u00b7 ` : ""}Round ${t.r || "?"} \u00b7 ${pinName}`),
-      el("ol", { class: "sh-tr-list" }, [...t.shots.map((q) => el("li", {}, [el("strong", {}, LIE_NAMES[q[3]] || "Shot"), ` ${fmtD(q)}`, q[5] != null ? el("span", { class: "muted" }, ` \u00b7 ${Number(q[5]).toFixed(0)} to hole out`) : null])),]), t.s != null ? el("p", { class: "sh-tr-in" }, "\u2713 In the hole") : null]);
+      el("ol", { class: "sh-tr-list" }, [...t.shots.map((q) => el("li", { class: q[0] === kOf(st.hole, par) ? "on" : null }, [el("strong", {}, LIE_NAMES[q[3]] || "Shot"), ` ${fmtD(q)}`, q[5] != null ? el("span", { class: "muted" }, ` \u00b7 ${Number(q[5]).toFixed(0)} to hole out`) : null])),]), t.s != null ? el("p", { class: "sh-tr-in" }, "\u2713 In the hole") : null]);
     pop.hidden = false; tapAt = null; dot.hidden = true;
     requestAnimationFrame(() => placePop(px, py));
   }

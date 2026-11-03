@@ -224,7 +224,8 @@ export async function uploadShotCourses(list, onStatus = () => {}) {
     // (update 486) the map already there: the one with this courseNum (each event's map is its own, with its own images);
     // a course without courseNums, the one of the same name that has none either
     const bn = c.courseNum != null ? String(c.courseNum) : "";
-    const old = bn ? existing.find((x) => String(x.courseNum ?? "") === bn) || existing.find((x) => !x.courseNum && sameCourse(x.name, c.name)) || null
+    // (update 487) first the map made for that courseNum (its id, c{courseNum}, which no upload ever relabels)
+    const old = bn ? existing.find((x) => x.id === `c${heatId(bn)}`) || existing.find((x) => String(x.courseNum ?? "") === bn) || existing.find((x) => !x.courseNum && sameCourse(x.name, c.name)) || null
       : existing.find((x) => !x.courseNum && sameCourse(x.name, c.name)) || null;
     const id = old?.id || (bn ? `c${heatId(bn)}` : heatId(c.name));
     const json = JSON.stringify(c.data), chunks = await writeChunks(id, "data", json, old?.dataChunks || 0);
