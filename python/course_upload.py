@@ -153,6 +153,134 @@ def same_course(a, b):
     return x == y or (min(len(x), len(y)) >= 5 and (x in y or y in x))
 
 
+# ------------------------------------------------ one map a course ------------------------------------------------
+# (update 485, as js/courseShots.js sameCourses) Sources (a courseNum and spelling each) that are the same course (a shared
+# courseNum, or the same name: a course that hosted two events has two courseNums) make one map. Each is checked against the
+# biggest first: tees or pins somewhere else on the image (a different coordinate system: the median over its holes more
+# than a fifth of the hole's length away) and it's left out, keeping the data with the most shots. A pin id two events use
+# for different spots is kept apart: the second is "{pin}_e{courseNum}".
+
+OFFSET_MAX = 0.2
+
+
+def _centre(sx, sy, n):
+    return (sx / n, sy / n) if n else None
+
+
+def _pin_centre(H):
+    x = y = 0.0
+    n = 0
+    for P in H["pins"].values():
+        x += P["px"]
+        y += P["py"]
+        n += P["pn"]
+    return _centre(x, y, n)
+
+
+def _d(a, b):
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def offset_of(A, B):
+    """How far apart two sources' tees and pins are, as a share of the hole's length (median over their holes), or None."""
+    r = []
+    for h, HA in A["holes"].items():
+        HB = B["holes"].get(h)
+        if HB is None:
+            continue
+        tA, tB = _centre(HA["tx"], HA["ty"], HA["tn"]), _centre(HB["tx"], HB["ty"], HB["tn"])
+        pA, pB = _pin_centre(HA), _pin_centre(HB)
+        if not tA or not pA:
+            continue
+        ln = _d(tA, pA)
+        if ln < 1:
+            continue
+        if tB or pB:
+            r.append(max(_d(tA, tB) if tB else 0, _d(pA, pB) if pB else 0) / ln)
+    if not r:
+        return None
+    r.sort()
+    return r[len(r) // 2]
+
+
+def _same_courses(lst):
+    up = list(range(len(lst)))
+
+    def find(i):
+        while up[i] != i:
+            up[i] = up[up[i]]
+            i = up[i]
+        return i
+    for i in range(len(lst)):
+        for j in range(i):
+            a, b = lst[i], lst[j]
+            if (a["courseNum"] and a["courseNum"] == b["courseNum"]) or same_course(a["name"], b["name"]):
+                up[find(i)] = find(j)
+    groups = {}
+    for i, c in enumerate(lst):
+        groups.setdefault(find(i), []).append(c)
+    out = []
+    for g in groups.values():
+        big = sorted(g, key=lambda c: -c["n"])[0]
+        keep = [c for c in g if c is big or not ((offset_of(big, c) or 0) > OFFSET_MAX)]
+        dropped = [{"courseNum": c["courseNum"], "name": c["name"], "shots": c["n"], "offset": _round(offset_of(big, c) * 100)} for c in g if not any(c is k for k in keep)]
+
+        def num_key(c):
+            v = str(c["courseNum"] or "")
+            return (0, float(v), "") if re.fullmatch(r"\d+(\.\d+)?", v) else (1, 0.0, v)
+        keep.sort(key=lambda c: (num_key(c), -c["n"]))
+        M = {"name": big["name"], "names": {}, "courseNum": keep[0]["courseNum"], "holes": {}, "players": {}, "years": set(), "n": 0}
+        for c in keep:
+            _merge_source(M, c)
+        M["courseNums"] = list(dict.fromkeys(c["courseNum"] for c in keep if c["courseNum"]))
+        M["dropped"] = dropped
+        out.append(M)
+    return out
+
+
+def _merge_source(M, C):
+    ren = {}
+    for nm, k in C["names"].items():
+        M["names"][nm] = M["names"].get(nm, 0) + k
+    M["years"] |= C["years"]
+    M["n"] += C["n"]
+    for h, HC in C["holes"].items():
+        HM = M["holes"].get(h)
+        if HM is None:
+            HM = M["holes"][h] = {"par": None, "pins": {}, "tee": [], "tx": 0.0, "ty": 0.0, "tn": 0}
+        HM["par"] = HM["par"] or HC["par"]
+        HM["tee"].extend(HC["tee"])
+        tM, pM = _centre(HM["tx"], HM["ty"], HM["tn"]), _pin_centre(HM)
+        ln = _d(tM, pM) if tM and pM else None
+        HM["tx"] += HC["tx"]
+        HM["ty"] += HC["ty"]
+        HM["tn"] += HC["tn"]
+        for pid, PC in HC["pins"].items():
+            pid_new = pid
+            PM = HM["pins"].get(pid)
+            if PM and PM["pn"] and PC["pn"] and ln and _d(_centre(PM["px"], PM["py"], PM["pn"]), _centre(PC["px"], PC["py"], PC["pn"])) > 0.03 * ln:
+                pid_new = f"{pid}_e{C['courseNum'] or 'x'}"
+            ren[(h, pid)] = pid_new
+            T = HM["pins"].get(pid_new)
+            if T is None:
+                HM["pins"][pid_new] = {"px": PC["px"], "py": PC["py"], "pn": PC["pn"], "shots": PC["shots"], "hist": dict(PC["hist"])}
+                continue
+            T["px"] += PC["px"]
+            T["py"] += PC["py"]
+            T["pn"] += PC["pn"]
+            T["shots"].extend(PC["shots"])
+            for k, n in PC["hist"].items():
+                T["hist"][k] = T["hist"].get(k, 0) + n
+    for key, TC in C["players"].items():
+        TM = M["players"].get(key)
+        if TM is None:
+            TM = M["players"][key] = {"name": TC["name"], "trails": {}}
+        TM["name"] = TM["name"] or TC["name"]
+        for tk, tr in TC["trails"].items():
+            tr["p"] = ren.get((tr["h"], tr["p"]), tr["p"])
+            TM["trails"][tk] = tr
+
+
 # ------------------------------------------------ the boiling down ------------------------------------------------
 
 def aggregate(columns, rows):
@@ -174,12 +302,13 @@ def aggregate(columns, rows):
         hole = _jsn(hole)
         cnv = g(r, "courseNum")
         cn = None if "courseNum" not in ix or _missing(cnv) else _idtext(cnv)
-        # (update 483) a course is its courseNum when there is one (a name spelled two ways is still one course)
-        ck = f"#{cn}" if cn else name
+        # (update 485) read as sources, one per courseNum and spelling; put together per course at the end (_same_courses)
+        ck = f"{cn or ''}|{name}"
         C = courses.get(ck)
         if C is None:
-            C = courses[ck] = {"name": name, "names": {}, "courseNum": cn, "holes": {}, "players": {}, "years": set()}
-        C["names"][name] = C["names"].get(name, 0) + 1
+            C = courses[ck] = {"name": name, "names": {name: 0}, "courseNum": cn, "holes": {}, "players": {}, "years": set(), "n": 0}
+        C["names"][name] += 1
+        C["n"] += 1
         if cn and not C["courseNum"]:
             C["courseNum"] = cn
         yv = g(r, "year")
@@ -188,7 +317,7 @@ def aggregate(columns, rows):
             C["years"].add(year)
         H = C["holes"].get(hole)
         if H is None:
-            H = C["holes"][hole] = {"par": None, "pins": {}, "tee": []}
+            H = C["holes"][hole] = {"par": None, "pins": {}, "tee": [], "tx": 0.0, "ty": 0.0, "tn": 0}
         par = _num(g(r, "par"))
         par = _jsn(par) if par else None
         if par:
@@ -211,6 +340,10 @@ def aggregate(columns, rows):
             P["shots"].append((x, y, L, dist if dist is not None else -1, v, st if st is not None else 0))  # (update 482: and the stroke)
         if L == 0 and dist is not None:
             H["tee"].append(dist)
+        if st == 1:  # (update 485: where the tee shots start, to check two events line up)
+            H["tx"] += x
+            H["ty"] += y
+            H["tn"] += 1
         hp = par or H["par"]
         score = (sf if sf is not None else (st - hp if st is not None and hp else None)) if out else None
         if score is not None:
@@ -224,7 +357,7 @@ def aggregate(columns, rows):
             if T is None:
                 T = C["players"][key] = {"name": "" if _missing(plv) else _jstr(plv), "trails": {}}
             rv = g(r, "round")
-            tk = (year, _jstr(rv) if not _missing(rv) else "", hole)
+            tk = (year, _jstr(rv) if not _missing(rv) else "", hole, cn or "")  # (update 485: and the event's courseNum)
             tr = T["trails"].get(tk)
             if tr is None:
                 tr = T["trails"][tk] = {"y": year, "r": "" if "round" not in ix or _missing(rv) else _idtext(rv), "h": hole, "p": pid,
@@ -234,7 +367,7 @@ def aggregate(columns, rows):
             if score is not None:
                 tr["s"] = _round(score)
     out = []
-    for C in courses.values():
+    for C in _same_courses(list(courses.values())):
         holes = {}
         for h, H in C["holes"].items():
             pins, hole_hist = {}, {}
@@ -300,7 +433,7 @@ def aggregate(columns, rows):
                 t["shots"] = sorted(t["shots"], key=lambda s: s[0] if s[0] is not None else 0)
                 trails.append(t)
             players[key] = {"name": T["name"], "trails": trails}
-        out.append({"name": max(C["names"].items(), key=lambda t: t[1])[0] if C["names"] else C["name"], "courseNum": C["courseNum"], "years": sorted(C["years"]),
+        out.append({"name": max(C["names"].items(), key=lambda t: t[1])[0] if C["names"] else C["name"], "courseNum": C["courseNum"], "courseNums": C["courseNums"], "dropped": C["dropped"], "years": sorted(C["years"]),
                     "data": {"holes": holes, "toGo": True, "hasN": True, "shots": True, "lies": LIES}, "players": players})
     return out
 
@@ -315,9 +448,9 @@ def _pieces(s):
 
 
 def _save_course(db, c, existing, say):
-    old = None
-    if c["courseNum"] is not None:
-        old = next((x for x in existing if str(x.get("courseNum") or "") == str(c["courseNum"])), None)
+    # (update 485) the map already there: any of its courseNums, else the same name
+    nums = [str(n) for n in (c.get("courseNums") or [c["courseNum"]]) if n is not None]
+    old = next((x for x in existing if any(n is not None and str(n) in nums for n in [x.get("courseNum"), *(x.get("courseNums") or [])])), None)
     old = old or next((x for x in existing if same_course(x.get("name"), c["name"])), None)
     cid = old["id"] if old else (f"c{heat_id(str(c['courseNum']))}" if c["courseNum"] is not None else heat_id(c["name"]))
     base = db.collection("courseHeat").document(cid)
@@ -352,6 +485,7 @@ def _save_course(db, c, existing, say):
             "dataAt": _dt.datetime.now(_dt.timezone.utc), "zones": zones, "players": players, "years": c["years"], "shotLevel": True}
     if c["courseNum"] is not None:
         meta["courseNum"] = str(c["courseNum"])
+    meta["courseNums"] = nums
     base.set(meta, merge=True)
     return cid, zones, len(js)
 
@@ -389,6 +523,18 @@ def upload_course(data, course=None, key_path=None):
             col = df.columns[ix["course"]]
             names = [n for n in df[col].dropna().astype(str).unique() if same_course(n, course) or str(n).strip().lower() == str(course).strip().lower()]
             mask = df[col].astype(str).isin(names)
+        # (update 485) and the rest of that course: its other courseNums (another event there) and spellings
+        if "course" in ix and mask.any():
+            ccol = df.columns[ix["course"]]
+            ncol = df.columns[ix["courseNum"]] if "courseNum" in ix else None
+            for _ in range(2):
+                names = set(df.loc[mask, ccol].dropna().astype(str))
+                all_names = df[ccol].dropna().astype(str).unique()
+                like = [n for n in all_names if any(same_course(n, m) or n == m for m in names)]
+                mask = mask | df[ccol].astype(str).isin(like)
+                if ncol is not None:
+                    nums = set(df.loc[mask, ncol].dropna().map(_idtext))
+                    mask = mask | df[ncol].map(lambda v: not _missing(v) and _idtext(v) in nums)
         df = df[mask]
         if not len(df):
             raise ValueError(f"No shots for course {course!r} in that data.")
@@ -409,6 +555,11 @@ def upload_course(data, course=None, key_path=None):
         shots = sum(len(t["shots"]) for p in c["players"].values() for t in p["trails"])
         pins = " ".join(f"{h}:{len(H['pins'])}" for h, H in sorted(c["data"]["holes"].items(), key=lambda t: float(t[0])))
         print(f"  Pins on each hole (hole:pins): {pins}", flush=True)
+        if len(c.get("courseNums") or []) > 1:
+            print(f"  One map from courseNums {', '.join(c['courseNums'])}", flush=True)
+        for d in c.get("dropped") or []:
+            print(f"  Left out courseNum {d['courseNum']} ({d['shots']:,} shots): its tees / pins are {d['offset']}% of the hole's length away "
+                  "from the rest (a different coordinate system), so only the data with the most shots is kept.", flush=True)
         results.append({"course": c["name"], "id": cid, "shots": shots, "players": len(c["players"]), "zones": zones})
         has_img = any(x["id"] == cid and x.get("holes") for x in existing)
         print(f"Live: {c['name']} ({', '.join(c['years']) or 'no year'}): {len(c['players'])} players, {zones:,} zones, "

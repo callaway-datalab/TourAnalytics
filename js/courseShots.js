@@ -33,13 +33,94 @@ const num = (v) => { if (v == null || v === "") return null; const x = Number(v)
 const LIES = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
 const lieIx = (s) => { const L = lieName(s); const i = LIES.indexOf(L); return i >= 0 ? i : 6; };
 
+/*
+ * (update 485) One map a course. Sources (a courseNum and spelling each) that are the same course are put together: a
+ * shared courseNum, or the same course name. Before they're put together, each is checked against the biggest one: if its
+ * tee shots or its pins sit somewhere else on the image (a different coordinate system: on average more than a fifth of
+ * the hole's length away), it isn't used, and only the data with the most shots is kept. A pin id both use for different
+ * spots (pin 1 one week, pin 1 another) is kept apart: the second is "{pin}_e{courseNum}".
+ */
+const centre = (sx, sy, n) => (n ? [sx / n, sy / n] : null);
+const pinCentre = (H) => { let x = 0, y = 0, n = 0; for (const P of H.pins.values()) { x += P.px; y += P.py; n += P.pn; } return centre(x, y, n); };
+const dist2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+/** How far apart two sources' tees and pins are, as a share of the hole's length (the median over their holes), or null. */
+export function offsetOf(A, B) {
+  const r = [];
+  for (const [h, HA] of A.holes) {
+    const HB = B.holes.get(h); if (!HB) continue;
+    const tA = centre(HA.tx, HA.ty, HA.tn), tB = centre(HB.tx, HB.ty, HB.tn), pA = pinCentre(HA), pB = pinCentre(HB);
+    if (!tA || !pA) continue;
+    const len = dist2(tA, pA); if (len < 1) continue;
+    const off = Math.max(tB ? dist2(tA, tB) : 0, pB ? dist2(pA, pB) : 0);
+    if (tB || pB) r.push(off / len);
+  }
+  if (!r.length) return null;
+  r.sort((a, b) => a - b);
+  return r[Math.floor(r.length / 2)];
+}
+export const OFFSET_MAX = 0.2;
+function sameCourses(list) {
+  // the groups: sources joined by a courseNum or a name they share
+  const up = list.map((_, i) => i), find = (i) => (up[i] === i ? i : (up[i] = find(up[i])));
+  for (let i = 0; i < list.length; i++) for (let j = 0; j < i; j++) {
+    const a = list[i], b = list[j];
+    if ((a.courseNum && a.courseNum === b.courseNum) || sameCourse(a.name, b.name)) up[find(i)] = find(j);
+  }
+  const groups = new Map(); list.forEach((c, i) => (groups.get(find(i)) || groups.set(find(i), []).get(find(i))).push(c));
+  const out = [];
+  for (const g of groups.values()) {
+    const big = [...g].sort((a, b) => b.n - a.n)[0];
+    const keep = g.filter((c) => c === big || !((offsetOf(big, c) ?? 0) > OFFSET_MAX));
+    const dropped = g.filter((c) => !keep.includes(c)).map((c) => ({ courseNum: c.courseNum, name: c.name, shots: c.n, offset: Math.round(offsetOf(big, c) * 100) }));
+    // (the first courseNum's pin ids stay as they are, so the admin's pin names and edits keep working week to week)
+    keep.sort((a, b) => String(a.courseNum ?? "").localeCompare(String(b.courseNum ?? ""), undefined, { numeric: true }) || b.n - a.n);
+    const M = { name: big.name, names: new Map(), courseNum: keep[0].courseNum, holes: new Map(), players: new Map(), years: new Set(), n: 0 };
+    for (const c of keep) mergeSource(M, c);
+    M.courseNums = [...new Set(keep.map((c) => c.courseNum).filter(Boolean))];
+    M.dropped = dropped;
+    out.push(M);
+  }
+  return out;
+}
+function mergeSource(M, C) {
+  const ren = new Map();
+  for (const [nm, k] of C.names) M.names.set(nm, (M.names.get(nm) || 0) + k);
+  for (const y of C.years) M.years.add(y);
+  M.n += C.n;
+  for (const [h, HC] of C.holes) {
+    let HM = M.holes.get(h);
+    if (!HM) { HM = { par: null, pins: new Map(), tee: [], tx: 0, ty: 0, tn: 0 }; M.holes.set(h, HM); }
+    HM.par ||= HC.par;
+    for (const t of HC.tee) HM.tee.push(t);
+    const tM = centre(HM.tx, HM.ty, HM.tn), pM = pinCentre(HM), len = tM && pM ? dist2(tM, pM) : null;
+    HM.tx += HC.tx; HM.ty += HC.ty; HM.tn += HC.tn;
+    for (const [pid, PC] of HC.pins) {
+      let id = pid;
+      const PM = HM.pins.get(pid);
+      if (PM && PM.pn && PC.pn && len && dist2(centre(PM.px, PM.py, PM.pn), centre(PC.px, PC.py, PC.pn)) > 0.03 * len) id = `${pid}_e${C.courseNum ?? "x"}`;
+      ren.set(`${h}|${pid}`, id);
+      const T = HM.pins.get(id);
+      if (!T) { HM.pins.set(id, { px: PC.px, py: PC.py, pn: PC.pn, shots: PC.shots, hist: { ...PC.hist } }); continue; }
+      T.px += PC.px; T.py += PC.py; T.pn += PC.pn;
+      for (const v of PC.shots) T.shots.push(v);
+      for (const [k, n] of Object.entries(PC.hist)) T.hist[k] = (T.hist[k] || 0) + n;
+    }
+  }
+  for (const [key, TC] of C.players) {
+    const TM = M.players.get(key) || M.players.set(key, { name: TC.name, trails: new Map() }).get(key);
+    TM.name ||= TC.name;
+    for (const [tk, tr] of TC.trails) { tr.p = ren.get(`${tr.h}|${tr.p}`) ?? tr.p; TM.trails.set(tk, tr); }
+  }
+}
+
 /** Reads shot rows (a slice at a time) and keeps only what the maps need. */
 export function shotAggregator() {
   const courses = new Map(); // name → course
   let ix = null, rowsIn = 0;
-  // (update 483) a course is its courseNum when the file has one (a name spelled two ways is still one course), named by
-  // its commonest spelling
-  const courseOf = (name, cn) => { const k = cn ? `#${cn}` : name; const C = courses.get(k) || courses.set(k, { name, names: new Map(), courseNum: cn, holes: new Map(), players: new Map(), years: new Set() }).get(k); C.names.set(name, (C.names.get(name) || 0) + 1); return C; };
+  // (update 485) read as sources, one per courseNum and spelling; finish() puts together the sources that are the same
+  // course (a shared courseNum, or the same name: one course that hosted two events has two courseNums), so each course is
+  // one map
+  const courseOf = (name, cn) => { const k = `${cn ?? ""}|${name}`; const C = courses.get(k) || courses.set(k, { name, names: new Map([[name, 0]]), courseNum: cn, holes: new Map(), players: new Map(), years: new Set(), n: 0 }).get(k); C.names.set(name, C.names.get(name) + 1); C.n++; return C; };
   return {
     get rows() { return rowsIn; },
     add({ columns, rows }) {
@@ -53,7 +134,7 @@ export function shotAggregator() {
         const cn = ix.courseNum != null && r[ix.courseNum] != null && r[ix.courseNum] !== "" ? String(num(r[ix.courseNum]) ?? r[ix.courseNum]) : null;
         const C = courseOf(name, cn); if (cn && !C.courseNum) C.courseNum = cn;
         const year = ix.year != null ? String(num(r[ix.year]) ?? r[ix.year] ?? "") : ""; if (year) C.years.add(year);
-        const H = C.holes.get(hole) || C.holes.set(hole, { par: null, pins: new Map(), tee: [] }).get(hole);
+        const H = C.holes.get(hole) || C.holes.set(hole, { par: null, pins: new Map(), tee: [], tx: 0, ty: 0, tn: 0 }).get(hole);
         const par = ix.par != null ? num(r[ix.par]) : null; if (par) H.par = par;
         const pid = ix.pin != null ? String(r[ix.pin] ?? "1").trim() || "1" : "1";
         const P = H.pins.get(pid) || H.pins.set(pid, { px: 0, py: 0, pn: 0, shots: [], hist: {} }).get(pid);
@@ -62,6 +143,7 @@ export function shotAggregator() {
         const L = lieIx(r[ix.lie]), dist = ix.dist != null ? num(r[ix.dist]) : null, v = ix.v != null ? num(r[ix.v]) : null, st = num(r[ix.strokes]), out = num(r[ix.holeOut]) === 1, sf = ix.shotFor != null ? num(r[ix.shotFor]) : null;
         if (v != null) P.shots.push(x, y, L, dist ?? -1, v, st ?? 0); // (update 482: and which stroke it was)
         if (L === 0 && dist != null) H.tee.push(dist);
+        if (st === 1) { H.tx += x; H.ty += y; H.tn++; } // (update 485: where the tee shots start, to check two events line up)
         // the hole's score: shot_for on the shot that holed out (update 480: or, without it, the stroke less par)
         const score = out ? (sf != null ? sf : st != null && (par || H.par) ? st - (par || H.par) : null) : null;
         if (score != null) { const k = Math.max(-2, Math.min(2, Math.round(score))); P.hist[k] = (P.hist[k] || 0) + 1; }
@@ -69,7 +151,7 @@ export function shotAggregator() {
         const key = ix.playerID != null && r[ix.playerID] != null && r[ix.playerID] !== "" ? clientKey(String(num(r[ix.playerID]) ?? r[ix.playerID])) : ix.player != null ? clientKey(String(r[ix.player])) : null;
         if (key) {
           const T = C.players.get(key) || C.players.set(key, { name: ix.player != null ? String(r[ix.player] ?? "") : "", trails: new Map() }).get(key);
-          const tk = `${year}|${ix.round != null ? r[ix.round] : ""}|${hole}`;
+          const tk = `${year}|${ix.round != null ? r[ix.round] : ""}|${hole}|${cn ?? ""}`; // (update 485: and the event's courseNum)
           const tr = T.trails.get(tk) || T.trails.set(tk, { y: year, r: ix.round != null ? String(num(r[ix.round]) ?? r[ix.round]) : "", h: hole, p: pid, par: par || null, s: null, shots: [] }).get(tk);
           tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v]);
           if (score != null) tr.s = Math.round(score);
@@ -79,7 +161,7 @@ export function shotAggregator() {
     /** Each course, boiled down: { name, courseNum, years, data (zones and history), players: Map(key → trails JSON) } */
     finish() {
       const out = [];
-      for (const C of courses.values()) {
+      for (const C of sameCourses([...courses.values()])) {
         const holes = {};
         for (const [h, H] of C.holes) {
           const pins = {}, holeHist = {};
@@ -118,7 +200,7 @@ export function shotAggregator() {
         }
         const players = new Map();
         for (const [key, T] of C.players) players.set(key, { name: T.name, trails: [...T.trails.values()].map((t) => ({ ...t, shots: t.shots.sort((a, b) => a[0] - b[0]) })) });
-        out.push({ name: [...C.names].sort((a, b) => b[1] - a[1])[0]?.[0] || C.name, courseNum: C.courseNum, years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES }, players });
+        out.push({ name: [...C.names].sort((a, b) => b[1] - a[1])[0]?.[0] || C.name, courseNum: C.courseNum, courseNums: C.courseNums, dropped: C.dropped, years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES }, players });
       }
       return out;
     },
@@ -130,7 +212,9 @@ export async function uploadShotCourses(list, onStatus = () => {}) {
   const existing = await listHeatCourses(true);
   for (const [ci, c] of list.entries()) {
     onStatus(`Saving ${c.name} (${ci + 1} of ${list.length})…`);
-    const old = (c.courseNum != null && existing.find((x) => String(x.courseNum ?? "") === String(c.courseNum))) || existing.find((x) => sameCourse(x.name, c.name));
+    // (update 485) the map already there: any of its courseNums, else the same name
+    const nums = (c.courseNums?.length ? c.courseNums : [c.courseNum]).filter((x) => x != null).map(String);
+    const old = existing.find((x) => [x.courseNum, ...(x.courseNums || [])].some((n) => n != null && nums.includes(String(n)))) || existing.find((x) => sameCourse(x.name, c.name));
     const id = old?.id || (c.courseNum != null ? `c${heatId(String(c.courseNum))}` : heatId(c.name));
     const json = JSON.stringify(c.data), chunks = await writeChunks(id, "data", json, old?.dataChunks || 0);
     const players = {};
@@ -143,10 +227,11 @@ export async function uploadShotCourses(list, onStatus = () => {}) {
     const holesN = Object.keys(c.data.holes).map(Number), n = Math.max(0, ...holesN);
     const par = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.par || old?.par?.[i] || null), yards = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.yards || old?.yards?.[i] || null);
     const zones = Object.values(c.data.holes).reduce((t, h) => t + Object.values(h.pins).reduce((u, p) => u + p.rows.length, 0), 0);
-    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(c.courseNum != null ? { courseNum: String(c.courseNum) } : {}), par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true }, { merge: true });
+    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(c.courseNum != null ? { courseNum: String(c.courseNum) } : {}), courseNums: nums, par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true }, { merge: true });
   }
   resetHeatList();
-  return list.map((c) => c.name);
+  // (update 485) what was left out: an event whose tees and pins don't line up with the rest
+  return list.map((c) => c.name + (c.dropped?.length ? ` (left out: ${c.dropped.map((d) => `courseNum ${d.courseNum ?? "—"}, ${d.shots.toLocaleString()} shots, tees/pins ${d.offset}% of the hole away`).join("; ")})` : ""));
 }
 
 const trailMemo = new Map();

@@ -58,7 +58,9 @@ export async function heatImage(meta, hole) {
  * file): pinNames { "hole|pin": "name" }, pinsOff ["hole|pin"] */
 const pinKey = (hole, pid) => `${hole}|${pid}`;
 export const pinOff = (meta, hole, pid) => (meta?.pinsOff || []).includes(pinKey(hole, pid));
-export const pinLabel = (meta, hole, pid) => meta?.pinNames?.[pinKey(hole, pid)] || mergedOf(meta, hole).find((m) => m.id === pid)?.name || (/^\d+$/.test(pid) ? `Pin ${pid}` : String(pid).replace(/[-_]+/g, " "));
+export const pinLabel = (meta, hole, pid) => meta?.pinNames?.[pinKey(hole, pid)] || mergedOf(meta, hole).find((m) => m.id === pid)?.name || evPin(pid) || (/^\d+$/.test(pid) ? `Pin ${pid}` : String(pid).replace(/[-_]+/g, " "));
+// (update 485) a pin id another event used for a different spot: "3_e978" shows as "Pin 3 · course 978"
+const evPin = (pid) => { const m = /^(.+)_e([^_]+)$/.exec(String(pid)); return m ? `${/^\d+$/.test(m[1]) ? `Pin ${m[1]}` : m[1].replace(/[-_]+/g, " ")} · course ${m[2]}` : null; };
 /* (update 468) combined pins: pinMerges [{ hole, id, name, of: [pin ids] }]. The combined pin sits at the pins' average
  * spot; zones of the same lie at (nearly) the same spot are averaged (by attempts), each one's distance measured again to
  * the new pin. The pins it's made of stop showing while it's there. */
@@ -279,7 +281,7 @@ export async function uploadHeatImages(file, onStatus = () => {}) {
   for (const [ci, name] of names.entries()) {
     // (update 458) a folder named with a course number matches that number in the scoring file; else the course's name
     const isNum = /^\d+(\.0+)?$/.test(name), cn = isNum ? String(Number(name)) : null;
-    const old = (cn != null ? existing.find((c) => String(c.courseNum ?? "") === cn) : null) || (!isNum ? existing.find((c) => sameCourse(c.name, name)) : null);
+    const old = (cn != null ? existing.find((c) => String(c.courseNum ?? "") === cn || (c.courseNums || []).map(String).includes(cn)) : null) || (!isNum ? existing.find((c) => sameCourse(c.name, name)) : null);
     const id = old?.id || (cn != null ? `c${heatId(cn)}` : heatId(name));
     const holes = { ...(old?.holes || {}) };
     const nums = Object.keys(byCourse[name]).map(Number).sort((a, b) => a - b);
