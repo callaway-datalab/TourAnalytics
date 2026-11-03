@@ -84,10 +84,13 @@ let renderGen = 0;
 
 let renderedFor; // (update 291)
 let warmFor = null, warmP = null; // (update 312)
+let lastRaw = null;
 async function render() {
   const gen = ++renderGen;
   const t0 = performance.now(); // (update 325: how long the page took, for the Performance readout)
   const raw = location.hash.slice(1) || "/login";
+  // (update 476) a new page starts at the top (the same page drawn again keeps its place)
+  if (raw !== lastRaw) { lastRaw = raw; try { history.scrollRestoration = "manual"; } catch { /* */ } window.scrollTo(0, 0); }
 
   const state = await whenReady();
   if (gen !== renderGen) return;

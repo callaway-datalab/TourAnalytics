@@ -5486,3 +5486,4 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 .fx-st-pop { max-width: 520px; }
 .fx-st-svg { display: block; width: 100%; height: auto; margin: 0.4rem 0 0.6rem; }
 .fx-st-avg { margin: 0 0 0.6rem; font-size: var(--fs-base-); }
+.fx-pill.locked { box-shadow: inset 0 0 0 2px #111, 0 0 0 1px #d4b483; }

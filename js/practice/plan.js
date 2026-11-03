@@ -90,7 +90,8 @@ export function drillFor(cat, dist, t = null, lie = null) {
     if (is(/^prox/)) return { kind: "prox", cat, dist, reps: R, goal: Math.round(ok.ve * 10) / 10, goalFrom: "elite", stat: ok.def.label, statV: ok.ve, whole: ok.exact === false, title: `Short game${at}`, what: `Chips and pitches${at} to a pin, measuring how far each finishes from the hole`, unit: "ft" };
     if (is(/^hitGreen/)) return { kind: "green", cat, dist, reps: R, ...pctGoal(), title: `Short game${at}`, what: `Chips and pitches${at} that have to finish on the green`, tap: ["On the green", "Missed"] };
   }
-  if (cat === "ARG") return { kind: "updown", cat, dist, reps: R, ...(is(/^ud|^scramble/) ? pctGoal() : { goal: null }), title: `Short game${at}`, what: `Chips and pitches${at}, then hole out`, tap: ["Up and down", "Not"] };
+  // (update 476) the short game is always proximity: chips and pitches to a pin, how far each finishes (no stat to go on: beat your best)
+  if (cat === "ARG") return { kind: "prox", cat, dist, reps: R, goal: null, title: `Short game${at}`, what: `Chips and pitches${at} to a pin, measuring how far each finishes from the hole`, unit: "ft" };
   if (cat === "OTT") {
     // (update 369) the club the gap is with: driver, or a wood or iron off the tee
     const club = /iron/i.test(dist || "") ? "iron" : /wood/i.test(dist || "") ? "wood" : null;
@@ -105,7 +106,7 @@ export function drillFor(cat, dist, t = null, lie = null) {
 export function goalStatsFor(cat, dist) {
   if (cat === "PUTT") return (midOf(dist) ?? 5) > 20 ? [/^goodLag$/] : [/^make$/];
   if (cat === "APP") return [/^prox$/, /^hitGreen$/, /^gir$/];
-  if (cat === "ARG") return [/^ud$/, /^scramble$/];
+  if (cat === "ARG") return [/^prox/]; // (update 476: the short game is about proximity, not up and down)
   if (cat === "OTT") return [/^fwy$/];
   return [];
 }
@@ -129,7 +130,7 @@ export function goalSource(d) {
 export const nounOf = (d) => (d.kind === "prox" && d.higher ? "drives" : null) || ({ make: "putts", lag: "putts", fairway: /^Tee shots/.test(d.title || "") ? "tee shots" : "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
 export function drillLine(d) {
   const src = goalSource(d);
-  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (the data has no ${({ OTT: "fairway", APP: "proximity or greens", ARG: "up-and-down", PUTT: "make" })[d.cat] || "shot"} stat for this to set a number from)`}. Aim for ${d.setsAim || 3} sets that reach it.`;
+  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (the data has no ${({ OTT: "fairway", APP: "proximity or greens", ARG: "proximity", PUTT: "make" })[d.cat] || "shot"} stat for this to set a number from)`}. Aim for ${d.setsAim || 3} sets that reach it.`;
 }
 
 /* ---------------- a set's score ---------------- */

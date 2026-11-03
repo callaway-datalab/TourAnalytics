@@ -3,7 +3,7 @@
 // worth (a round, and on the season rank), a drill for each; whether the practice they've added is working (strokes
 // gained there since they added it); and what to keep doing. Full stats is one tap away (the switch above it).
 // Takes S first, like the other Stats page sections (see sgDashboard.js).
-import { el, mount, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
+import { el, mount, infoTip, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
 
 const CAT = Object.fromEntries(CATEGORIES);
 const f2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
@@ -43,8 +43,22 @@ export function focusView(S, mine, slicedField, f = {}) {
   const CATS = ["OTT", "APP", "ARG", "PUTT"];
   st.focusCats = (st.focusCats || []).filter((c) => CATS.includes(c));
   const on = st.focusCats.length && st.focusCats.length < 4 ? new Set(st.focusCats) : null;
+  // (update 476) one at a time; a double tap locks a pill in, so several can be picked (a tap on a locked one unlocks it)
+  st.focusLock = (st.focusLock || []).filter((c) => CATS.includes(c));
+  const lock = new Set(st.focusLock);
+  const tapPill = (c) => {
+    const now = Date.now(), last = st.focusTap;
+    st.focusTap = { c, t: now };
+    if (last && last.c === c && now - last.t < 400) { lock.add(c); st.focusLock = [...lock]; st.focusPick = null; st.focusTap = null; } // (double tap: locked in)
+    else if (lock.has(c)) { lock.delete(c); st.focusLock = [...lock]; }
+    else st.focusPick = st.focusPick === c ? null : c;
+    const sel = new Set([...lock, ...(st.focusPick ? [st.focusPick] : [])]);
+    st.focusCats = sel.size === 4 ? [] : [...sel];
+    S.draw();
+  };
   const pills = el("div", { class: "fx-pills", role: "group", "aria-label": "Parts of the game" }, [
-    ...CATS.map((c) => { const p = !!on?.has(c); const b = el("button", { type: "button", class: `fx-pill${p ? " on" : ""}`, "aria-pressed": String(p) }, { OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT" }[c]); b.title = CAT[c]; b.addEventListener("click", () => { const a = new Set(st.focusCats); a.has(c) ? a.delete(c) : a.add(c); st.focusCats = a.size === 4 ? [] : [...a]; S.draw(); }); return b; })]);
+    ...CATS.map((c) => { const p = !!on?.has(c), l = lock.has(c); const b = el("button", { type: "button", class: `fx-pill${p ? " on" : ""}${l ? " locked" : ""}`, "aria-pressed": String(p), title: `${CAT[c]}${l ? " (locked: tap to unlock)" : " (double-tap to lock it in and pick more)"}` }, [l ? "\uD83D\uDD12 " : "", c]); b.addEventListener("click", () => tapPill(c)); return b; }),
+    infoTip("Tap a part of the game to see just that one; tap it again for everything. Double-tap one to lock it in, then tap others to add them. Tap a locked one to unlock it.", "How the pills work")]);
   const sgIn = (x) => !on || on.has(x.cat);
   const picked = on ? [...on].sort((a, b) => CATS.indexOf(a) - CATS.indexOf(b)).map((c) => CAT[c]).join(" + ") : "Total"; // (update 475: named in every header)
   const all = [...mine].sort(byDate);
@@ -85,23 +99,31 @@ export function focusView(S, mine, slicedField, f = {}) {
   const setsFor = (cat) => {
     if (ladders.has(cat)) return ladders.get(cat);
     const sets = [];
-    // (update 473) first their best stretch for that part of the game (the longest run of rounds in a row that on its
-    // own reaches "Best on Tour"), if it's 5 rounds or more
-    try {
-      const bs = S.longestStretches(S.lastSliced || [], cat).find((r) => r.p.key === me.key);
-      if (bs?.n >= 5 && bs.rds?.length) {
-        const sig = (rd) => `${String(rd.date || "")}|${rd.event || ""}|${rd.roundNo || ""}`, ids = new Set(bs.rds.map(sig));
-        const rs = all.filter((rd) => ids.has(sig(rd)));
-        if (rs.length >= 5) sets.push({ from: `${rs.length} best-stretch rounds`, rounds: rs, stretch: { cat, rds: rs } });
-      }
-    } catch { /* (no stretch to go on) */ }
+    // (update 476: the best stretch is per distance now: goalFor, below)
     let rows = null; try { rows = S.ladderRows(all, cat); } catch { rows = null; }
     for (const T of [1, 10, 25, 50]) { const r = rows?.find((x) => x.target === T); const k = r?.share?.k || 0; if (k >= 5) { const e = S.eliteOf(all, cat, k); if (e.rounds?.length) sets.push({ from: `\u201c${LEVELS[T].replace(/ level$/, "")}\u201d rounds`, rounds: e.rounds }); } }
     const b10 = S.eliteOf(all, cat, Math.min(10, all.length)); if (b10.rounds?.length) sets.push({ from: "best 10 rounds", rounds: b10.rounds });
     ladders.set(cat, sets);
     return sets;
   };
+  // (update 476) their best stretch at that distance: the longest run of rounds in a row (5 or more) in which their
+  // strokes gained a round there beat the bar: the best season average there of any other player ("Best on Tour" for that
+  // shot), when the field's rounds have distances; else the tour average
+  const stretchMemo = new Map();
+  const distStretch = (cat, dist) => {
+    const key = `${cat}|${dist || ""}`; if (stretchMemo.has(key)) return stretchMemo.get(key);
+    const at = (rd) => (rd.shots || []).reduce((t, x) => t + (x.cat === cat && (!dist || x.dist === dist) ? x.sg || 0 : 0), 0);
+    const vals = (slicedField || []).filter((p) => p.key !== me.key).map((p) => { let sum = 0, has = false; for (const rd of p.rounds || []) for (const x of rd.shots || []) if (x.cat === cat && (!dist || x.dist === dist) && (dist ? true : x.dist == null || true)) { sum += x.sg || 0; if (!dist || x.dist) has = true; } return has && (p.rounds || []).length >= 10 ? sum / p.rounds.length : null; }).filter((v) => v != null && Number.isFinite(v));
+    const best = vals.length >= 10, bar = best ? Math.max(...vals) : 0;
+    const seq = all.map(at), pre = [0]; for (const v of seq) pre.push(pre.at(-1) + v);
+    let found = null;
+    for (let n = seq.length; n >= 5 && !found; n--) for (let i = n; i < pre.length; i++) if ((pre[i] - pre[i - n]) / n > bar + 1e-12) { found = { rds: all.slice(i - n, i), n, bar, best, avg: (pre[i] - pre[i - n]) / n }; break; }
+    stretchMemo.set(key, found);
+    return found;
+  };
   const goalFor = (cat, dist) => {
+    const ds = distStretch(cat, dist);
+    if (ds) { const gs = goalStat(ds.rounds = ds.rds, cat, dist); if (gs) return { gs, from: `${ds.n} best-stretch rounds`, stretch: { cat, dist, ...ds } }; }
     for (const set of setsFor(cat)) { const gs = goalStat(set.rounds, cat, dist); if (gs) return { gs, from: set.from, stretch: set.stretch || null }; }
     return { gs: null, from: "best 10 rounds" };
   };
@@ -138,11 +160,13 @@ export function focusView(S, mine, slicedField, f = {}) {
     const text = drillLine(item.drill), key = item.drill.from;
     if (!item.stretch || !key || !text.includes(key)) return el("span", {}, text);
     const at = text.indexOf(key), a = el("button", { type: "button", class: "fx-link" }, key);
-    a.addEventListener("click", () => stretchPop(item.stretch.cat, item.stretch.rds));
-    return el("span", {}, [text.slice(0, at), a, text.slice(at + key.length)]);
+    a.addEventListener("click", () => stretchPop(item.stretch));
+    return el("span", {}, [text.slice(0, at), a, " ", stretchInfo(item.stretch), text.slice(at + key.length)]);
   };
-  const stretchPop = (cat, rds) => {
-    const sgOf = (rd) => (rd.shots || []).reduce((t, x) => t + (!cat || x.cat === cat ? x.sg || 0 : 0), 0);
+  const stretchInfo = (st0) => infoTip(`Best stretch: the longest run of rounds in a row (5 or more) in which ${you === "you" ? "your" : "their"} strokes gained a round ${st0.dist ? `from ${st0.dist}` : `in ${CAT[st0.cat]}`} beat ${st0.best ? `the best season average there of any other player (${f2(st0.bar)} a round: \u201cBest on Tour\u201d for that shot)` : "the tour average (the other players\u2019 rounds here don\u2019t have distances to set a higher bar)"}. The drill\u2019s goal is ${you === "you" ? "your" : "their"} stat from those rounds. With no stretch of 5 rounds, the goal comes from ${you === "you" ? "your" : "their"} \u201cBest on Tour\u201d rounds, then \u201cContender\u201d and so on, then the best 10 rounds.`, "What a best stretch is");
+  const stretchPop = (st0) => {
+    const cat = st0.cat, dist = st0.dist || null, rds = st0.rds;
+    const sgOf = (rd) => (rd.shots || []).reduce((t, x) => t + ((!cat || x.cat === cat) && (!dist || x.dist === dist) ? x.sg || 0 : 0), 0);
     const inS = new Set(rds), n = all.length, vals = all.map(sgOf), mx = Math.max(0.5, ...vals.map(Math.abs));
     const W = 340, H = 140, y0 = H / 2, bw = W / n, sc = (H / 2 - 6) / mx;
     const NS = "http://www.w3.org/2000/svg", mk = (t, a) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
@@ -157,10 +181,10 @@ export function focusView(S, mine, slicedField, f = {}) {
     for (const rd of rds) { const k = `${rd.event || "Round"}|${String(rd.date || "").slice(0, 4)}`; (evs.get(k) || evs.set(k, { event: rd.event || "Round", year: String(rd.date || "").slice(0, 4), rs: [] }).get(k)).rs.push(rd); }
     const avg = rds.reduce((t, rd) => t + sgOf(rd), 0) / rds.length;
     const day = (d) => { const x = new Date(`${String(d).slice(0, 10)}T12:00:00`); return isNaN(x) ? String(d || "") : x.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
-    const what = cat ? `SG: ${CAT[cat]}` : "SG: Total";
+    const what = cat ? `SG: ${CAT[cat]}${dist ? ` \u00b7 ${dist}` : ""}` : "SG: Total";
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const ov = el("div", { class: "gx-pop-overlay fx-st-ov", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop fx-st-pop" }, [
-      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `Best stretch \u00b7 ${what}`), el("h2", {}, `${rds.length} rounds in a row \u00b7 ${day(rds[0].date)} \u2013 ${day(rds.at(-1).date)}`)]), close]),
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, [`Best stretch \u00b7 ${what} `, stretchInfo(st0)]), el("h2", {}, `${rds.length} rounds in a row \u00b7 ${day(rds[0].date)} \u2013 ${day(rds.at(-1).date)}`)]), close]),
       svg,
       el("p", { class: "fx-st-avg" }, ["Over the stretch: ", el("strong", { class: avg >= 0 ? "pos" : "neg" }, `${f2(avg)} a round`), el("span", { class: "muted" }, ` (${f2(vals.reduce((t, v) => t + v, 0) / (n || 1))} over all ${n} rounds)`)]),
       el("div", { class: "table-scroll" }, el("table", { class: "plain fx-st-t" }, [

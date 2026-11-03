@@ -438,7 +438,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
       }
       const near = got.rounds, K = near.length;
       // the stats to use for each part of the game; the second list only when the data has none of the first
-      const CAND = (c, d) => (c === "OTT" ? [/iron|wood/i.test(d || "") ? ["fwy"] : ["drive", "fwy"]] : c === "APP" ? [["prox", "hitGreen"], ["gir"]] : c === "ARG" ? [["prox", "hitGreen"], ["ud", "scramble"]] : c === "PUTT" ? [["make"], ["goodLag"]] : []);
+      const CAND = (c, d) => (c === "OTT" ? [/iron|wood/i.test(d || "") ? ["fwy"] : ["drive", "fwy"]] : c === "APP" ? [["prox", "hitGreen"], ["gir"]] : c === "ARG" ? [["prox"]] /* (update 476: the short game, proximity only) */ : c === "PUTT" ? [["make"], ["goodLag"]] : []);
       // (update 453) a shot-by-shot file puts every stat on a distance, a summary file on the part of the game: so the
       // part of the game is every distance of it, whichever the file has
       const scopes = (c, d) => [...(d ? [["exact", (o) => o.cat === c && o.dist === d]] : []), ["cat", (o) => o.cat === c], ["whole", (o) => !o.cat]];

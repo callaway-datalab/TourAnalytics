@@ -85,7 +85,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
   const pills = el("div", { class: "seg pr-catseg", role: "group", "aria-label": "Category" });
   const body = el("div", { class: "pr-body" });
   mount(main, [el("div", { class: "pr-wrap" }, [whoBox, coursePrep ? null : tools, body])]);
-  const pickTool = (t) => { tool = t; try { localStorage.setItem(LS_TOOL, t); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
+  const pickTool = (t) => { tool = t; try { localStorage.setItem(LS_TOOL, t); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); window.scrollTo(0, 0); };
   const pick = (c) => { cat = c; try { localStorage.setItem(LS_CAT, c); } catch { /* */ } view = { name: "home" }; drawPills(); draw(); };
   const drawPills = () => {
     mount(tools, TOOL_ORDER.map((t) => {
@@ -167,7 +167,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
     },
     aimFor, newId: newSessionId,
     heat: { get on() { return showHeat; }, set(v) { showHeat = v; } },
-    go(v) { view = v; draw(); }, home() { view = { name: "home" }; draw(); },
+    go(v) { view = v; draw(); window.scrollTo(0, 0); }, home() { view = { name: "home" }; draw(); window.scrollTo(0, 0); }, // (update 476: a new page starts at the top)
     get view() { return view; },
     playSession(s) { sessions = [s, ...sessions.filter((x) => x.id !== s.id)]; view = { name: "play", session: s, at: Math.max(0, s.shots.findIndex((x) => !x.result)) }; draw(); },
     showSummary(s) { view = { name: "summary", session: s }; draw(); },
