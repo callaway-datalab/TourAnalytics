@@ -78,15 +78,23 @@ export function withMerges(meta, data) {
     // pixels a yard (each zone's pixels from its own pin against its distance), to measure distances to the new pin
     const ratios = pins.flatMap((p) => p.x == null ? [] : p.rows.filter((r) => r.dist > 15 && lieOf(r.lie) !== "green").map((r) => Math.hypot(r.x - p.x, r.y - p.y) / r.dist)).sort((a, b) => a - b);
     const ppy = ratios.length ? ratios[Math.floor(ratios.length / 2)] : null;
-    const out = [];
-    for (const r of pins.flatMap((p) => p.rows)) {
-      const L = lieOf(r.lie), w = r.n || 1;
-      const near = out.find((o) => o.L === L && Math.hypot(o.x - r.x, o.y - r.y) <= Math.max(4, (ppy || 1) * 2));
-      if (near) { const W = near.w + w; near.x = (near.x * near.w + r.x * w) / W; near.y = (near.y * near.w + r.y * w) / W; near.v = (near.v * near.w + r.v * w) / W; near.n = (near.n || 0) + (r.n || 0); near.w = W; }
-      else out.push({ ...r, L, w });
-    }
-    const rows = out.map(({ L, w, ...r }) => { if (ppy && px != null) { const yd = Math.hypot(r.x - px, r.y - py) / ppy, dist = L === "green" ? yd * 3 : yd; return { ...r, dist, d: `${Math.round(dist)} ${L === "green" ? "ft" : "yds"}` }; } return r; });
-    holes[m.hole] = { ...H, pins: { ...H.pins, [m.id]: { x: px, y: py, rows, merged: m.of } } };
+    const combine = (all) => {
+      const out = [];
+      for (const r of all) {
+        const L = lieOf(r.lie), w = r.n || 1;
+        const near = out.find((o) => o.L === L && Math.hypot(o.x - r.x, o.y - r.y) <= Math.max(4, (ppy || 1) * 2));
+        if (near) { const W = near.w + w; near.x = (near.x * near.w + r.x * w) / W; near.y = (near.y * near.w + r.y * w) / W; near.v = (near.v * near.w + r.v * w) / W; near.n = (near.n || 0) + (r.n || 0); near.w = W; }
+        else out.push({ ...r, L, w });
+      }
+      return out.map(({ L, w, ...r }) => { if (ppy && px != null) { const yd = Math.hypot(r.x - px, r.y - py) / ppy, dist = L === "green" ? yd * 3 : yd; return { ...r, dist, d: `${Math.round(dist)} ${L === "green" ? "ft" : "yds"}` }; } return r; });
+    };
+    const rows = combine(pins.flatMap((p) => p.rows));
+    // (update 482) and each shot's results, combined the same way
+    const ks = [...new Set(pins.flatMap((p) => Object.keys(p.byShot || {})))];
+    const byShot = ks.length ? Object.fromEntries(ks.map((k) => [k, combine(pins.flatMap((p) => p.byShot?.[k] || []))])) : undefined;
+    // (update 480) its history: the pins' added up
+    const hist = {}; for (const p of pins) for (const [k, n] of Object.entries(p.hist || {})) hist[k] = (hist[k] || 0) + n;
+    holes[m.hole] = { ...H, pins: { ...H.pins, [m.id]: { x: px, y: py, rows, merged: m.of, hist, ...(byShot ? { byShot } : {}) } } };
   }
   const res = { ...data, holes };
   mergeMemo.set(data, { sig, out: res });
@@ -339,13 +347,61 @@ export function skillFor(ix, row) {
 }
 /** A pin's zones: rows with the same cluster together, each with its scoring (to par; the player's too) and how it compares
  *  with zones the same distance from the pin (what makes a zone one to aim at or to stay away from). */
-export function zonesOf(pin, par, ix = null, { toGo = false, yards = null } = {}) {
+/*
+ * (update 480) A shot-level file's zones are small and each has only a few shots, so their averages jump about (a
+ * splotchy map). Smoothed before they're drawn: merged into bigger zones (about 3 yards across by the green, growing to
+ * 16 yards far out), then each pulled toward the zones of the same lie around it, the more so the fewer shots it has.
+ */
+const smoothMemo = new WeakMap();
+export function smoothPin(pin) {
+  if (smoothMemo.has(pin)) return smoothMemo.get(pin);
+  const rows = pin.rows || [];
+  if (rows.length < 40 || pin.x == null) { smoothMemo.set(pin, pin); return pin; }
+  const ratios = rows.filter((r) => r.dist > 15 && lieOf(r.lie) !== "green").map((r) => Math.hypot(r.x - pin.x, r.y - pin.y) / r.dist).sort((a, b) => a - b);
+  const ppy = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 3;
+  const ydOf = (r) => (r.dist == null ? Math.hypot(r.x - pin.x, r.y - pin.y) / ppy : lieOf(r.lie) === "green" ? r.dist / 3 : r.dist);
+  const bandOf = (yd) => (yd < 15 ? 3 : yd < 40 ? 5 : yd < 90 ? 8 : yd < 170 ? 12 : 16);
+  const cells = new Map();
+  for (const r of rows) {
+    const L = lieOf(r.lie) || "any", yd = ydOf(r), band = bandOf(yd), size = band * ppy, w = r.n || 1;
+    const k = `${L}|${band}|${Math.floor(r.x / size)}|${Math.floor(r.y / size)}`;
+    const c = cells.get(k) || cells.set(k, { L, lie: r.lie, band, sx: 0, sy: 0, sv: 0, sd: 0, wd: 0, n: 0 }).get(k);
+    c.sx += r.x * w; c.sy += r.y * w; c.sv += r.v * w; c.n += w; if (r.dist != null) { c.sd += r.dist * w; c.wd += w; }
+  }
+  const cs = [...cells.values()].map((c) => ({ ...c, x: c.sx / c.n, y: c.sy / c.n, v: c.sv / c.n, dist: c.wd ? c.sd / c.wd : null }));
+  // each pulled toward its neighbours of the same lie (within about two of its own widths), weighted by their shots
+  const K = 12;
+  const byL = new Map(); for (const c of cs) (byL.get(c.L) || byL.set(c.L, []).get(c.L)).push(c);
+  for (const c of cs) {
+    const R = c.band * ppy * 2.2; let s0 = 0, w0 = 0;
+    for (const o of byL.get(c.L)) { if (o === c) continue; const d = Math.hypot(o.x - c.x, o.y - c.y); if (d > R) continue; const w = o.n * Math.exp(-2 * (d / R) ** 2); s0 += o.v * w; w0 += w; }
+    c.vs = w0 ? (c.n * c.v + K * (s0 / w0)) / (c.n + K) : c.v;
+  }
+  const out = { ...pin, rows: cs.map((c) => ({ x: c.x, y: c.y, lie: c.lie, d: c.dist != null ? `${Math.round(c.dist)} ${c.L === "green" ? "ft" : "yds"}` : "", dist: c.dist, v: c.vs, raw: c.v, n: c.n })) };
+  smoothMemo.set(pin, out);
+  return out;
+}
+/**
+ * (update 482) Where one shot finished: a pin's zones from the shots played next (shot 2's starting spots are where shot 1
+ * finished), coloured by the strokes to hole out from there. k: the shot (1 the tee shot); 0 or none, every shot.
+ */
+const shotMemo = new WeakMap();
+export function pinForShot(pin, k) {
+  if (!pin || !k) return pin;
+  const m = shotMemo.get(pin) || shotMemo.set(pin, new Map()).get(pin);
+  if (!m.has(k)) m.set(k, { x: pin.x, y: pin.y, hist: pin.hist, rows: pin.byShot?.[k] || [], shot: k });
+  return m.get(k);
+}
+/** (update 482) The shots a hole's filter offers: shot 1 on a par 3, 1 and 2 on a par 4, 1 to 3 on a par 5. */
+export const shotsFor = (par) => Array.from({ length: Math.max(1, Math.min(3, (par || 4) - 2)) }, (_, i) => i + 1);
+export function zonesOf(pin0, par, ix = null, { toGo = false, yards = null, dense = false, played = null } = {}) {
+  const pin = dense ? smoothPin(pin0) : pin0;
   const toPar = (v) => (v >= 1.5 ? v - par : v);
   // (update 458) strokes to hole out from a spot (the scoring file's usual kind): the hole score from there is the shots
   // already played plus those, taken as in regulation: none from the tee, one from where tee shots finish, on a par 5 two
   // from the lay-up range, and par less two from the green and around it (within 30 yards)
   const yd = (r) => (r.dist == null ? null : lieOf(r.lie) === "green" ? r.dist / 3 : r.dist);
-  const shotsIn = (r) => { const L = lieOf(r.lie), d = yd(r); if (L === "tee") return 0; if (par <= 3) return 1; if (L === "green" || (d != null && d <= 30)) return par - 2; if (par >= 5 && d != null && yards && d < yards - 320) return 2; return 1; };
+  const shotsIn = (r) => { if (played != null) return played; /* (update 482: one shot's results: exactly that many played) */ const L = lieOf(r.lie), d = yd(r); if (L === "tee") return 0; if (par <= 3) return 1; if (L === "green" || (d != null && d <= 30)) return par - 2; if (par >= 5 && d != null && yards && d < yards - 320) return 2; return 1; };
   // (update 457) a zone: a cluster centre and its lie (rows at the same centre and lie, at different distances, together)
   const by = new Map();
   for (const r of pin.rows) { const L = lieOf(r.lie) || "any", k = `${r.c}|${Math.round(r.x)}|${Math.round(r.y)}|${L}`; const z = by.get(k) || by.set(k, { id: k, L, rows: [], sx: 0, sy: 0, n: 0, k: 0 }).get(k); z.rows.push(r); const w = r.n || 1; z.sx += r.x * w; z.sy += r.y * w; z.k += w; z.n += r.n || 0; }
@@ -556,14 +612,21 @@ function softenRGBA(d, w, h) {
   for (let it = 0; it < 2; it++) { tmp.fill(0); pass(a, tmp, 1, 0); a.fill(0); pass(tmp, a, 0, 1); }
   for (let k = 0; k < n; k++) { const al = a[k * 4 + 3]; if (al <= 0.002) { d[k * 4 + 3] = 0; continue; } d[k * 4] = a[k * 4] / al; d[k * 4 + 1] = a[k * 4 + 1] / al; d[k * 4 + 2] = a[k * 4 + 2] / al; d[k * 4 + 3] = Math.round(al * 255); }
 }
+/** (update 482) How strong a spot's colour is, by how many shots were hit from around it: one shot very faint (about a
+ *  quarter), five about two thirds, fifteen or more full. */
+export const FAINT = (n) => 0.12 + 0.88 * (1 - Math.exp(-n / 5));
 /** The zones as a picture the size of the hole image (worked out once per pin and view; turned and scaled when drawn). */
-export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 2400, learn = null }) {
+const lieMapMemo = new Map(); // (update 480) the lie map is the same for every pin on a hole: worked out once
+export function buildOverlay(img, { zones, hasN }, { W, H, par, mode = "zones", res = 2400, learn = null, learnKey = null }) {
   const gw = Math.max(40, Math.min(res, Math.round(W))), gh = Math.max(1, Math.round(H * gw / W)), s = gw / W;
   const off = document.createElement("canvas"); off.width = gw; off.height = gh;
   if (!zones.length) return { canvas: off, map: null, s };
-  const map = lieMap(img, zones, W, gw, gh, learn);
+  const mk = learnKey && img?.src ? `${img.src}|${gw}|${learnKey}` : null;
+  let map;
+  if (mk && lieMapMemo.has(mk)) map = lieMapMemo.get(mk);
+  else { map = lieMap(img, zones, W, gw, gh, learn); if (mk) { if (lieMapMemo.size > 30) lieMapMemo.clear(); lieMapMemo.set(mk, map); } }
   const px = img?.naturalWidth ? pixelsOf(img, gw, gh) : null; // (update 464: nothing outside the hole, even with one lie)
-  const N = gw * gh, sum = new Float32Array(N), wt = new Float32Array(N), cov = new Float32Array(N);
+  const N = gw * gh, sum = new Float32Array(N), wt = new Float32Array(N), cov = new Float32Array(N), cnt = new Float32Array(N);
   for (const z of zones) {
     const zl = map ? map.lies.indexOf(z.L) : -1, R = z.rk * 2.2 * s, cx = z.x * s, cy = z.y * s, rk = z.rk * s;
     const val = mode === "zones" ? z.diff : z.v, nw = Math.sqrt(z.n || 1);
@@ -573,7 +636,7 @@ export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 
       if (map ? map.cls[k] !== zl : px && (px[k * 4 + 3] < 128 || px[k * 4] + px[k * 4 + 1] + px[k * 4 + 2] < 45)) continue; // (only its own lie; never off the course)
       const d = Math.hypot(i - cx, j - cy) / rk; if (d > 2.2) continue;
       const e = Math.exp(-0.9 * d * d);
-      sum[k] += e * nw * val; wt[k] += e * nw; cov[k] += e;
+      sum[k] += e * nw * val; wt[k] += e * nw; cov[k] += e; cnt[k] += e * (z.n || 1);
     }
   }
   const g = off.getContext("2d"), im = g.createImageData(gw, gh);
@@ -582,7 +645,7 @@ export function buildOverlay(img, { zones }, { W, H, par, mode = "zones", res = 
     const v = sum[k] / wt[k], c = 1 - Math.exp(-1.8 * cov[k]), o = k * 4;
     let rgb, a;
     if (mode === "zones") { const t = Math.min(1, Math.abs(v) / 0.25); rgb = v < 0 ? [48, 209, 88] : [255, 69, 58]; a = (0.12 + 0.68 * t) * c; }
-    else { rgb = rdbu(scoreT(v, par)); a = 0.72 * c; }
+    else { rgb = rdbu(scoreT(v, par)); a = 0.72 * c * (hasN ? FAINT(cnt[k]) : 1); }
     im.data[o] = rgb[0]; im.data[o + 1] = rgb[1]; im.data[o + 2] = rgb[2]; im.data[o + 3] = Math.round(255 * Math.min(0.85, a));
   }
   // (update 469) softened by about a pixel (colour and edge), so edges are smooth, not stepped, when zoomed in

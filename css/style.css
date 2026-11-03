@@ -5514,3 +5514,6 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 .sh-tr-list { margin: 6px 0 0; padding-left: 1.2rem; font-size: 0.95em; display: grid; gap: 2px; }
 .sh-tr-in { color: #30d158; font-weight: 600; }
 .sh-tr-in { margin: 4px 0 0; font-size: 0.95em; }
+/* (update 482) Strategy Maps: which shot's results (All shots / Shot 1 / Shot 2 / Shot 3) */
+.sh-shot-row { margin: -2px 0 10px; }
+.sh-shot-row[hidden] { display: none; }

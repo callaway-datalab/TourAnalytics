@@ -205,7 +205,7 @@ def aggregate(columns, rows):
         out = _num(g(r, "holeOut")) == 1
         sf = _num(g(r, "shotFor"))
         if v is not None:
-            P["shots"].append((x, y, L, dist if dist is not None else -1, v))
+            P["shots"].append((x, y, L, dist if dist is not None else -1, v, st if st is not None else 0))  # (update 482: and the stroke)
         if L == 0 and dist is not None:
             H["tee"].append(dist)
         hp = par or H["par"]
@@ -240,7 +240,7 @@ def aggregate(columns, rows):
                 pin_y = P["py"] / P["pn"] if P["pn"] else None
                 # pixels a yard on this image, for the zone sizes
                 ratios = []
-                for (sx, sy, L, d, _v) in P["shots"]:
+                for (sx, sy, L, d, _v, _s) in P["shots"]:
                     if len(ratios) >= 3000:
                         break
                     if pin_x is None or d <= 15 or L == 4:
@@ -248,31 +248,42 @@ def aggregate(columns, rows):
                     ratios.append(math.hypot(sx - pin_x, sy - pin_y) / d)
                 ratios.sort()
                 ppy = ratios[len(ratios) // 2] if ratios else 3
-                cells = {}
-                for (sx, sy, L, d, v) in P["shots"]:
-                    yd = ((math.hypot(sx - pin_x, sy - pin_y) / ppy if pin_x is not None else 50) if d < 0 else d / 3 if L == 4 else d)
-                    band = 2 if yd < 15 else 3 if yd < 40 else 5 if yd < 90 else 8 if yd < 170 else 12
-                    size = band * ppy
-                    k = (L, band, math.floor(sx / size), math.floor(sy / size))
-                    c = cells.get(k)
-                    if c is None:
-                        c = cells[k] = {"L": L, "sx": 0.0, "sy": 0.0, "sv": 0.0, "sd": 0.0, "nd": 0, "n": 0}
-                    c["sx"] += sx
-                    c["sy"] += sy
-                    c["sv"] += v
-                    c["n"] += 1
-                    if d >= 0:
-                        c["sd"] += d
-                        c["nd"] += 1
-                zrows = []
-                for c in cells.values():
-                    dist = c["sd"] / c["nd"] if c["nd"] else None
-                    zrows.append({"x": _r1(c["sx"] / c["n"]), "y": _r1(c["sy"] / c["n"]), "lie": LIES[c["L"]].capitalize(),
-                                  "d": f"{_round(dist)} {'ft' if c['L'] == 4 else 'yds'}" if dist is not None else "",
-                                  "dist": _r1(dist) if dist is not None else None,
-                                  "v": _jsn(_round(c["sv"] / c["n"] * 1000) / 1000), "n": c["n"]})
+                def zone_rows(want, P=P, pin_x=pin_x, pin_y=pin_y, ppy=ppy):
+                    cells = {}
+                    for (sx, sy, L, d, v, sk) in P["shots"]:
+                        if want and sk != want:
+                            continue
+                        yd = ((math.hypot(sx - pin_x, sy - pin_y) / ppy if pin_x is not None else 50) if d < 0 else d / 3 if L == 4 else d)
+                        band = 2 if yd < 15 else 3 if yd < 40 else 5 if yd < 90 else 8 if yd < 170 else 12
+                        size = band * ppy
+                        k = (L, band, math.floor(sx / size), math.floor(sy / size))
+                        c = cells.get(k)
+                        if c is None:
+                            c = cells[k] = {"L": L, "sx": 0.0, "sy": 0.0, "sv": 0.0, "sd": 0.0, "nd": 0, "n": 0}
+                        c["sx"] += sx
+                        c["sy"] += sy
+                        c["sv"] += v
+                        c["n"] += 1
+                        if d >= 0:
+                            c["sd"] += d
+                            c["nd"] += 1
+                    zrows = []
+                    for c in cells.values():
+                        dist = c["sd"] / c["nd"] if c["nd"] else None
+                        zrows.append({"x": _r1(c["sx"] / c["n"]), "y": _r1(c["sy"] / c["n"]), "lie": LIES[c["L"]].capitalize(),
+                                      "d": f"{_round(dist)} {'ft' if c['L'] == 4 else 'yds'}" if dist is not None else "",
+                                      "dist": _r1(dist) if dist is not None else None,
+                                      "v": _jsn(_round(c["sv"] / c["n"] * 1000) / 1000), "n": c["n"]})
+                    return zrows
+                zrows = zone_rows(0)
+                # (update 482) where each shot finished: the next shot's starting spots (shot 1 on a par 3; 1-2 on a par 4; 1-3 on a par 5)
+                by_shot = {}
+                for k in range(1, max(1, min(3, (H["par"] or 4) - 2)) + 1):
+                    r = zone_rows(k + 1)
+                    if r:
+                        by_shot[str(k)] = r
                 hist = {str(k): n for k, n in sorted(P["hist"].items())}
-                pins[pid] = {"x": _jsn(pin_x) if pin_x is not None else None, "y": _jsn(pin_y) if pin_y is not None else None, "rows": zrows, "hist": hist}
+                pins[pid] = {"x": _jsn(pin_x) if pin_x is not None else None, "y": _jsn(pin_y) if pin_y is not None else None, "rows": zrows, "hist": hist, "byShot": by_shot}
                 for k, n in P["hist"].items():
                     hole_hist[k] = hole_hist.get(k, 0) + n
             tee = sum(H["tee"]) / len(H["tee"]) if H["tee"] else None

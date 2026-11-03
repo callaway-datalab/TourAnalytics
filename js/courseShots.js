@@ -27,7 +27,7 @@ export function shotColumns(header) {
   return ix;
 }
 /** Is this a shot-level file (a row per shot)? */
-export const isShotFile = (header) => { const ix = shotColumns(header); return ix.strokes != null && ix.holeOut != null && ix.hole != null && ix.x != null; };
+export const isShotFile = (header) => { const ix = shotColumns(header); return ix.hole != null && ix.x != null && (ix.strokes != null || ix.holeOut != null || (ix.player != null && ix.round != null) || (ix.playerID != null && ix.round != null)); }; // (update 480: looser)
 
 const num = (v) => { if (v == null || v === "") return null; const x = Number(v); return Number.isFinite(x) ? x : null; };
 const LIES = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
@@ -58,10 +58,11 @@ export function shotAggregator() {
         const px = ix.pinX != null ? num(r[ix.pinX]) : null, py = ix.pinY != null ? num(r[ix.pinY]) : null;
         if (px != null && py != null) { P.px += px; P.py += py; P.pn++; }
         const L = lieIx(r[ix.lie]), dist = ix.dist != null ? num(r[ix.dist]) : null, v = ix.v != null ? num(r[ix.v]) : null, st = num(r[ix.strokes]), out = num(r[ix.holeOut]) === 1, sf = ix.shotFor != null ? num(r[ix.shotFor]) : null;
-        if (v != null) P.shots.push(x, y, L, dist ?? -1, v);
+        if (v != null) P.shots.push(x, y, L, dist ?? -1, v, st ?? 0); // (update 482: and which stroke it was)
         if (L === 0 && dist != null) H.tee.push(dist);
-        // the hole's score: shot_for on the shot that holed out
-        if (out && sf != null) { const k = Math.max(-2, Math.min(2, Math.round(sf))); P.hist[k] = (P.hist[k] || 0) + 1; }
+        // the hole's score: shot_for on the shot that holed out (update 480: or, without it, the stroke less par)
+        const score = out ? (sf != null ? sf : st != null && (par || H.par) ? st - (par || H.par) : null) : null;
+        if (score != null) { const k = Math.max(-2, Math.min(2, Math.round(score))); P.hist[k] = (P.hist[k] || 0) + 1; }
         // the player's trail for this hole
         const key = ix.playerID != null && r[ix.playerID] != null && r[ix.playerID] !== "" ? clientKey(String(num(r[ix.playerID]) ?? r[ix.playerID])) : ix.player != null ? clientKey(String(r[ix.player])) : null;
         if (key) {
@@ -69,7 +70,7 @@ export function shotAggregator() {
           const tk = `${year}|${ix.round != null ? r[ix.round] : ""}|${hole}`;
           const tr = T.trails.get(tk) || T.trails.set(tk, { y: year, r: ix.round != null ? String(num(r[ix.round]) ?? r[ix.round]) : "", h: hole, p: pid, par: par || null, s: null, shots: [] }).get(tk);
           tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v]);
-          if (out && sf != null) tr.s = Math.round(sf);
+          if (score != null) tr.s = Math.round(score);
         }
       }
     },
@@ -84,22 +85,30 @@ export function shotAggregator() {
             const pinX = P.pn ? P.px / P.pn : null, pinY = P.pn ? P.py / P.pn : null;
             // pixels a yard on this image (each shot's pixels from the pin against its yards), for the zone sizes
             const ratios = [];
-            for (let i = 0; i < P.shots.length && ratios.length < 3000; i += 5) { const L = P.shots[i + 2], d = P.shots[i + 3]; if (pinX == null || d <= 15 || L === 4) continue; ratios.push(Math.hypot(P.shots[i] - pinX, P.shots[i + 1] - pinY) / d); }
+            for (let i = 0; i < P.shots.length && ratios.length < 3000; i += 6) { const L = P.shots[i + 2], d = P.shots[i + 3]; if (pinX == null || d <= 15 || L === 4) continue; ratios.push(Math.hypot(P.shots[i] - pinX, P.shots[i + 1] - pinY) / d); }
             ratios.sort((a, b) => a - b);
             const ppy = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 3;
             // zones: shots of the same lie in the same square; squares about 2 yards across on and by the green, growing
             // to 12 yards far out (5% of the distance), so the map is fine where it matters and not huge
-            const cells = new Map();
-            for (let i = 0; i < P.shots.length; i += 5) {
-              const x = P.shots[i], y = P.shots[i + 1], L = P.shots[i + 2], d = P.shots[i + 3], v = P.shots[i + 4];
-              const yd = d < 0 ? (pinX != null ? Math.hypot(x - pinX, y - pinY) / ppy : 50) : L === 4 ? d / 3 : d;
-              const band = yd < 15 ? 2 : yd < 40 ? 3 : yd < 90 ? 5 : yd < 170 ? 8 : 12, size = band * ppy;
-              const k = `${L}|${band}|${Math.floor(x / size)}|${Math.floor(y / size)}`;
-              const c = cells.get(k) || cells.set(k, { L, sx: 0, sy: 0, sv: 0, sd: 0, nd: 0, n: 0 }).get(k);
-              c.sx += x; c.sy += y; c.sv += v; c.n++; if (d >= 0) { c.sd += d; c.nd++; }
-            }
-            const rows = [...cells.values()].map((c) => { const dist = c.nd ? c.sd / c.nd : null; return { x: Math.round(c.sx / c.n * 10) / 10, y: Math.round(c.sy / c.n * 10) / 10, lie: LIES[c.L][0].toUpperCase() + LIES[c.L].slice(1), d: dist != null ? `${Math.round(dist)} ${c.L === 4 ? "ft" : "yds"}` : "", dist: dist != null ? Math.round(dist * 10) / 10 : null, v: Math.round(c.sv / c.n * 1000) / 1000, n: c.n }; });
-            pins[pid] = { x: pinX, y: pinY, rows, hist: P.hist };
+            const zoneRows = (want) => {
+              const cells = new Map();
+              for (let i = 0; i < P.shots.length; i += 6) {
+                if (want && P.shots[i + 5] !== want) continue;
+                const x = P.shots[i], y = P.shots[i + 1], L = P.shots[i + 2], d = P.shots[i + 3], v = P.shots[i + 4];
+                const yd = d < 0 ? (pinX != null ? Math.hypot(x - pinX, y - pinY) / ppy : 50) : L === 4 ? d / 3 : d;
+                const band = yd < 15 ? 2 : yd < 40 ? 3 : yd < 90 ? 5 : yd < 170 ? 8 : 12, size = band * ppy;
+                const k = `${L}|${band}|${Math.floor(x / size)}|${Math.floor(y / size)}`;
+                const c = cells.get(k) || cells.set(k, { L, sx: 0, sy: 0, sv: 0, sd: 0, nd: 0, n: 0 }).get(k);
+                c.sx += x; c.sy += y; c.sv += v; c.n++; if (d >= 0) { c.sd += d; c.nd++; }
+              }
+              return [...cells.values()].map((c) => { const dist = c.nd ? c.sd / c.nd : null; return { x: Math.round(c.sx / c.n * 10) / 10, y: Math.round(c.sy / c.n * 10) / 10, lie: LIES[c.L][0].toUpperCase() + LIES[c.L].slice(1), d: dist != null ? `${Math.round(dist)} ${c.L === 4 ? "ft" : "yds"}` : "", dist: dist != null ? Math.round(dist * 10) / 10 : null, v: Math.round(c.sv / c.n * 1000) / 1000, n: c.n }; });
+            };
+            const rows = zoneRows(0);
+            // (update 482) where each shot finished: the zones of the next shot's starting spots (shot 1 on a par 3; 1 and 2
+            // on a par 4; 1 to 3 on a par 5)
+            const byShot = {};
+            for (let k = 1; k <= Math.max(1, Math.min(3, (H.par || 4) - 2)); k++) { const r = zoneRows(k + 1); if (r.length) byShot[k] = r; }
+            pins[pid] = { x: pinX, y: pinY, rows, hist: P.hist, byShot };
             for (const [k, n] of Object.entries(P.hist)) holeHist[k] = (holeHist[k] || 0) + n;
           }
           const tee = H.tee.length ? H.tee.reduce((t, x) => t + x, 0) / H.tee.length : null;
