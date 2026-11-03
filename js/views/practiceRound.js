@@ -143,7 +143,10 @@ async function myCourses(ctx) {
     for (const h of (await listHeatCourses()).filter((x) => x.dataChunks)) { // (update 458: once its scoring is in)
       const c = [...out.values()].find((x) => sameCourse(x.name, h.name));
       const par = (h.par || []).map((p) => p || 4), yards = h.yards || [];
-      if (c) { c.heat = h; if (!c.yards.some(Boolean) && yards.some(Boolean)) c.yards = [...yards]; }
+      if (c) {
+        c.heat = h; if (!c.yards.some(Boolean) && yards.some(Boolean)) c.yards = [...yards];
+        if (!c.rounds.length && c.holeMaps && c.name !== h.name) { out.delete(c.name.toLowerCase()); c.name = h.name; out.set(h.name.toLowerCase(), c); } // (update 483: the name in the data, not the built-in one's)
+      }
       else if (par.length) out.set(h.name.toLowerCase(), { name: h.name, location: "", par, yards: par.map((_, i) => yards[i] || null), tees: "", from: "Tour course \u00b7 strategy maps", rounds: [], heat: h });
     }
   } catch (err) { console.warn(err); }

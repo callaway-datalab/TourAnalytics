@@ -37,7 +37,9 @@ const lieIx = (s) => { const L = lieName(s); const i = LIES.indexOf(L); return i
 export function shotAggregator() {
   const courses = new Map(); // name → course
   let ix = null, rowsIn = 0;
-  const courseOf = (name, cn) => courses.get(name) || courses.set(name, { name, courseNum: cn, holes: new Map(), players: new Map(), years: new Set() }).get(name);
+  // (update 483) a course is its courseNum when the file has one (a name spelled two ways is still one course), named by
+  // its commonest spelling
+  const courseOf = (name, cn) => { const k = cn ? `#${cn}` : name; const C = courses.get(k) || courses.set(k, { name, names: new Map(), courseNum: cn, holes: new Map(), players: new Map(), years: new Set() }).get(k); C.names.set(name, (C.names.get(name) || 0) + 1); return C; };
   return {
     get rows() { return rowsIn; },
     add({ columns, rows }) {
@@ -116,7 +118,7 @@ export function shotAggregator() {
         }
         const players = new Map();
         for (const [key, T] of C.players) players.set(key, { name: T.name, trails: [...T.trails.values()].map((t) => ({ ...t, shots: t.shots.sort((a, b) => a[0] - b[0]) })) });
-        out.push({ name: C.name, courseNum: C.courseNum, years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES }, players });
+        out.push({ name: [...C.names].sort((a, b) => b[1] - a[1])[0]?.[0] || C.name, courseNum: C.courseNum, years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES }, players });
       }
       return out;
     },

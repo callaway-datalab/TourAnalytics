@@ -174,7 +174,7 @@ function heatPanel(flash) {
         del.addEventListener("click", async () => { if (!confirmAction(`Delete the Strategy Maps for ${c.name}? Its images and zones go.`)) return; del.disabled = true; try { await deleteHeatCourse(c.id); flash(`Deleted ${c.name}.`, "ok"); drawList(); } catch (err) { console.error(err); flash("Couldn’t delete that.", "error"); del.disabled = false; } });
         const nImg = Object.keys(c.holes || {}).length;
         const when = [c.dataAt, c.imgAt].map((t) => t?.toMillis?.() ?? 0).reduce((a, b) => Math.max(a, b), 0);
-        return el("tr", {}, [el("td", {}, el("strong", {}, c.name)), el("td", { class: "num" }, nImg ? String(nImg) : "—"), el("td", { class: "num" }, c.zones ? num(c.zones) : "—"),
+        return el("tr", {}, [el("td", {}, [el("strong", {}, c.name), " ", el("span", { class: "py-tag", title: c.shotLevel ? "Shot by shot: hole history and each player\u2019s past shots" : "Zones (no hole history or past shots)" }, c.shotLevel ? `Shots \u00b7 ${Object.keys(c.players || {}).length} players` : "Zones")]), el("td", { class: "num" }, nImg ? String(nImg) : "—"), el("td", { class: "num" }, c.zones ? num(c.zones) : "—"),
           el("td", {}, when ? formatWhen(new Date(when)) : "—"), el("td", { class: "actions" }, del)]);
       })),
     ])));

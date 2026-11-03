@@ -12,7 +12,7 @@ import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges
 import { pickWho, playerData } from "./coursePrepExtras.js";
 import { playerTrails, LIE_NAMES } from "../courseShots.js"; // (update 479)
 
-const st = { hole: 1, pin: {}, view: "field", mode: "score", shot: "all" }; // (kept while the app is open)
+const st = { hole: 1, pin: {}, view: "field", mode: "score", shot: "1" }; // (kept while the app is open)
 
 export async function drawHeat(ctx, course) {
   const meta = course.heat;
@@ -71,7 +71,8 @@ export async function drawHeat(ctx, course) {
   // (update 461) worked out at the image's own size (sharp edges where the lie changes), once for each hole, pin and view
   const ovMemo = new Map();
   // (update 482) the shot picked (where shot 1, 2 or 3 finished), when this hole has it: 0 for every shot
-  const kOf = (n, parN) => { const k = Number(st.shot) || 0, H = data.holes?.[n]; return k && shotsFor(parN).includes(k) && Object.values(H?.pins || {}).some((p) => p.byShot) ? k : 0; };
+  // (update 484) no All shots: shot 1 unless another is picked (0 only for courses uploaded before update 482)
+  const kOf = (n, parN) => { const H = data.holes?.[n]; if (!Object.values(H?.pins || {}).some((p) => p.byShot)) return 0; const k = Number(st.shot) || 1; return shotsFor(parN).includes(k) ? k : 1; };
   const vkOf = () => (st.view === "player" && ix ? `p:${who?.key}` : "f");
   const memoKey = (n, pid, parN, im = 1) => `${n}|${pid}|${vkOf()}|s${kOf(n, parN)}|${im}`;
   const zonesFor = (n, pid, parN) => {
@@ -131,6 +132,7 @@ export async function drawHeat(ctx, course) {
   async function showHole() {
     pop.hidden = true; hideDot(); resetZoom(false);
     const n = st.hole, H = data.holes?.[n] || { pins: {} }, hm = meta.holes?.[n] || null;
+    if (st.shotHole !== `${meta.id}|${n}`) { st.shotHole = `${meta.id}|${n}`; st.shot = "1"; } // (update 483; 484: a new hole starts on Shot 1)
     par = H.par || meta.par?.[n - 1] || course.par?.[n - 1] || 4;
     const yds = H.yards || meta.yards?.[n - 1] || course.yards?.[n - 1];
     mount(head, [el("h2", {}, `Hole ${n} · Par ${par}${yds ? ` · ${yds} yds` : ""}`)]);
@@ -235,9 +237,9 @@ export async function drawHeat(ctx, course) {
     shotRow.hidden = !has;
     if (!has) return;
     const k = kOf(st.hole, par);
-    mount(shotSeg, [["all", "All shots"], ...shotsFor(par).map((i) => [String(i), `Shot ${i}`])].map(([v, l]) => {
-      const on = v === "all" ? !k : Number(v) === k;
-      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on), title: v === "all" ? "Every shot on the hole, from where it was hit" : `Where shot ${v} finished: the spots shot ${Number(v) + 1} was hit from` }, l);
+    mount(shotSeg, shotsFor(par).map((i) => [String(i), `Shot ${i}`]).map(([v, l]) => {
+      const on = Number(v) === k;
+      const b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on), title: `Where shot ${v} finished: the spots shot ${Number(v) + 1} was hit from` }, l);
       b.addEventListener("click", () => { if (on) return; st.shot = v; paint(); });
       return b;
     }));

@@ -174,9 +174,12 @@ def aggregate(columns, rows):
         hole = _jsn(hole)
         cnv = g(r, "courseNum")
         cn = None if "courseNum" not in ix or _missing(cnv) else _idtext(cnv)
-        C = courses.get(name)
+        # (update 483) a course is its courseNum when there is one (a name spelled two ways is still one course)
+        ck = f"#{cn}" if cn else name
+        C = courses.get(ck)
         if C is None:
-            C = courses[name] = {"name": name, "courseNum": cn, "holes": {}, "players": {}, "years": set()}
+            C = courses[ck] = {"name": name, "names": {}, "courseNum": cn, "holes": {}, "players": {}, "years": set()}
+        C["names"][name] = C["names"].get(name, 0) + 1
         if cn and not C["courseNum"]:
             C["courseNum"] = cn
         yv = g(r, "year")
@@ -297,7 +300,7 @@ def aggregate(columns, rows):
                 t["shots"] = sorted(t["shots"], key=lambda s: s[0] if s[0] is not None else 0)
                 trails.append(t)
             players[key] = {"name": T["name"], "trails": trails}
-        out.append({"name": C["name"], "courseNum": C["courseNum"], "years": sorted(C["years"]),
+        out.append({"name": max(C["names"].items(), key=lambda t: t[1])[0] if C["names"] else C["name"], "courseNum": C["courseNum"], "years": sorted(C["years"]),
                     "data": {"holes": holes, "toGo": True, "hasN": True, "shots": True, "lies": LIES}, "players": players})
     return out
 
@@ -404,6 +407,8 @@ def upload_course(data, course=None, key_path=None):
         say(f"Saving {c['name']} ({len(c['players'])} players)")
         cid, zones, size = _save_course(db, c, existing, say)
         shots = sum(len(t["shots"]) for p in c["players"].values() for t in p["trails"])
+        pins = " ".join(f"{h}:{len(H['pins'])}" for h, H in sorted(c["data"]["holes"].items(), key=lambda t: float(t[0])))
+        print(f"  Pins on each hole (hole:pins): {pins}", flush=True)
         results.append({"course": c["name"], "id": cid, "shots": shots, "players": len(c["players"]), "zones": zones})
         has_img = any(x["id"] == cid and x.get("holes") for x in existing)
         print(f"Live: {c['name']} ({', '.join(c['years']) or 'no year'}): {len(c['players'])} players, {zones:,} zones, "

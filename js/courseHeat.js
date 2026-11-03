@@ -614,7 +614,9 @@ function softenRGBA(d, w, h) {
 }
 /** (update 482) How strong a spot's colour is, by how many shots were hit from around it: one shot very faint (about a
  *  quarter), five about two thirds, fifteen or more full. */
-export const FAINT = (n) => 0.12 + 0.88 * (1 - Math.exp(-n / 5));
+// (update 484) 1 shot 25%, 3 shots 50%, 5 shots 75%, 8 or more full (straight lines between)
+const FAINT_AT = [[0, 0], [1, 0.25], [3, 0.5], [5, 0.75], [8, 1]];
+export const FAINT = (n) => { if (n >= 8) return 1; for (let i = 1; i < FAINT_AT.length; i++) { const [n1, a1] = FAINT_AT[i], [n0, a0] = FAINT_AT[i - 1]; if (n <= n1) return a0 + (a1 - a0) * (n - n0) / (n1 - n0); } return 1; };
 /** The zones as a picture the size of the hole image (worked out once per pin and view; turned and scaled when drawn). */
 const lieMapMemo = new Map(); // (update 480) the lie map is the same for every pin on a hole: worked out once
 export function buildOverlay(img, { zones, hasN }, { W, H, par, mode = "zones", res = 2400, learn = null, learnKey = null }) {
@@ -642,11 +644,11 @@ export function buildOverlay(img, { zones, hasN }, { W, H, par, mode = "zones", 
   const g = off.getContext("2d"), im = g.createImageData(gw, gh);
   for (let k = 0; k < N; k++) {
     if (!wt[k]) continue;
-    const v = sum[k] / wt[k], c = 1 - Math.exp(-1.8 * cov[k]), o = k * 4;
+    const v = sum[k] / wt[k], c = 1 - Math.exp(-(mode === "zones" ? 1.8 : 3) * cov[k]), o = k * 4;
     let rgb, a;
     if (mode === "zones") { const t = Math.min(1, Math.abs(v) / 0.25); rgb = v < 0 ? [48, 209, 88] : [255, 69, 58]; a = (0.12 + 0.68 * t) * c; }
-    else { rgb = rdbu(scoreT(v, par)); a = 0.72 * c * (hasN ? FAINT(cnt[k]) : 1); }
-    im.data[o] = rgb[0]; im.data[o + 1] = rgb[1]; im.data[o + 2] = rgb[2]; im.data[o + 3] = Math.round(255 * Math.min(0.85, a));
+    else { rgb = rdbu(scoreT(v, par)); a = 0.92 * c * (hasN ? FAINT(cnt[k]) : 1); }
+    im.data[o] = rgb[0]; im.data[o + 1] = rgb[1]; im.data[o + 2] = rgb[2]; im.data[o + 3] = Math.round(255 * Math.min(mode === "zones" ? 0.85 : 0.92, a));
   }
   // (update 469) softened by about a pixel (colour and edge), so edges are smooth, not stepped, when zoomed in
   softenRGBA(im.data, gw, gh);
@@ -658,13 +660,15 @@ export function paintHeat(canvas, { zones }, ov, { W, H, pin = null, rot = false
   const { cw, ch: chh, k: dpr } = sizeOf(canvas);
   canvas.width = cw; canvas.height = chh;
   const ctx = canvas.getContext("2d"); ctx.clearRect(0, 0, cw, chh);
-  if (!zones.length || !W || !H || !ov) return;
+  if (!W || !H) return;
   const DW = rot ? H : W, DH = rot ? W : H, sx = cw / DW, sy = chh / DH;
+  if (zones.length && ov) {
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
   let src = ov.canvas, sw = src.width, sh = src.height; const tw = rot ? chh : cw, th = rot ? cw : chh;
   while (sw / 2 >= tw * 1.05 && sh / 2 >= th * 1.05) { const c = document.createElement("canvas"); c.width = Math.round(sw / 2); c.height = Math.round(sh / 2); const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); src = c; sw = c.width; sh = c.height; }
   if (rot) { ctx.save(); ctx.translate(0, chh); ctx.rotate(-Math.PI / 2); ctx.drawImage(src, 0, 0, chh, cw); ctx.restore(); }
   else ctx.drawImage(src, 0, 0, cw, chh);
+  }
   if (pin && pin.x != null) { // the pin: a gold diamond (the same size on screen however far in)
     const z = Math.max(1, canvas.getBoundingClientRect().width / (canvas.offsetWidth || 1));
     const [qx, qy] = toDisp(pin.x, pin.y, W, rot), px = qx * sx, py = qy * sy, s = (5 * dpr) * Math.min(z, 2);
