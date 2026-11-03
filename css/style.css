@@ -5473,3 +5473,11 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 .fx-btn:disabled { opacity: 0.6; cursor: default; }
 .fx-list { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; font-size: var(--fs-base-); }
 @media (max-width: 600px) { .fx-stat { padding: 0.5rem 0.55rem; } .fx-stat strong { font-size: var(--fs-lg); } }
+/* (update 471) Focus: the parts of the game, as pills (several at once; none is SG: Total) */
+.fx-head { padding-top: 0.8rem; padding-bottom: 0.7rem; }
+.fx-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fx-pill { font: inherit; font-size: var(--fs-control); font-weight: 600; letter-spacing: 0.04em; padding: var(--ctl-y) 0.85rem; border-radius: var(--ctl-r); border: 1px solid rgba(212,180,131,0.45); background: transparent; color: inherit; cursor: pointer; }
+.fx-pill.on { background: #d4b483; border-color: #d4b483; color: #111; }
+.fx-pills-l { margin-left: 4px; font-size: var(--fs-note); }
+.fx-when { margin: 0.45rem 0 0; }
+.fx-switch-row { margin-top: 0.25rem; }

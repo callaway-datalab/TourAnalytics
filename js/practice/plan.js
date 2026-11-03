@@ -129,7 +129,7 @@ export function goalSource(d) {
 export const nounOf = (d) => (d.kind === "prox" && d.higher ? "drives" : null) || ({ make: "putts", lag: "putts", fairway: /^Tee shots/.test(d.title || "") ? "tee shots" : "drives", updown: "shots", bunker: "shots", green: "shots" }[d.kind] || "balls");
 export function drillLine(d) {
   const src = goalSource(d);
-  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (no stat for this in their ${d.from || "kept rounds"} to set it from)`}. Aim for ${d.setsAim || 3} sets that reach it.`;
+  return `${d.what} (${d.reps} ${nounOf(d)}). Goal: ${goalText(d)}${src ? ` (${src})` : ` (the data has no ${({ OTT: "fairway", APP: "proximity or greens", ARG: "up-and-down", PUTT: "make" })[d.cat] || "shot"} stat for this to set a number from)`}. Aim for ${d.setsAim || 3} sets that reach it.`;
 }
 
 /* ---------------- a set's score ---------------- */

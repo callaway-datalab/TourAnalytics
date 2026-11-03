@@ -360,6 +360,12 @@ export function sgDashboard(container, opts) {
       sgEligible = new Set(sgCounts.filter(([, n]) => n >= sgMinR).map(([k]) => k));
     }
     const mine = me ? nz(applyFilters(me.rounds, f)) : null;
+    // (update 471) Focus: every shot of the rounds in the time frame (its own pills pick the parts of the game), against
+    // the field over the same rounds
+    const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 !== "full");
+    const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
+    const focusMine = focusOn ? nz(applyFilters(me.rounds, noShotF)) : null;
+    const focusField = focusOn ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...rankF, cats: [], lie: [], dist: [], club: [], gear: [] })) })) : null;
     peakCtx = { mine: mine || [], cat: st.cats.length === 1 ? st.cats[0] : "" }; // (update 308: Personal Peak dots)
     // Gold dots (Top 1 / 10 / 25 / 50 / All): until picked by hand, the next group up from the player's rank
     // (Min. rounds applies): 100th → Top 50, 18th → Top 10, 2nd-10th → Top 1; the leader compares with the Top 10.
@@ -383,8 +389,11 @@ export function sgDashboard(container, opts) {
       vp,
       opts.note && isSG() ? el("p", { class: "muted small center sg-note" }, opts.note) : null,
       opts.slot || null, // the page's player search, then the Filters panel
-      filtersPanel(opt),
-      rangeChip(), // (update 322)
+      // (update 471) a player's strokes gained: Focus / Full stats first; Focus has its own part-of-the-game pills
+      // in place of the filters
+      focusOn ? sgFocus.focusSwitch(S) : me && isSG() && !opts.emptyNote ? sgFocus.focusSwitch(S) : null,
+      focusOn ? null : filtersPanel(opt),
+      focusOn ? null : rangeChip(), // (update 322)
       el("div", { class: "sg-panel" }, (() => {
         // nothing to show (no player picked, or no rounds yet): the same Filters panel, and why it's empty
         if (opts.emptyNote) return [el("section", { class: "panel sg-empty-note" }, el("p", { class: "empty center" }, opts.emptyNote))];
@@ -392,13 +401,13 @@ export function sgDashboard(container, opts) {
         if (!me && st.statWanted === "stretch") return [stretchBoard(slicedField)]; // (update 332: the Leaderboards' Best Stretches)
         if (!me && st.statWanted === "form1") return [formBoard(slicedField)]; // (update 333: #1 Form)
         // (update 470) a player's strokes gained: Focus (the short story) or Full stats (everything), switched at the top
-        if (me && st.view2 !== "full") return [sgFocus.focusSwitch(S), ...sgFocus.focusView(S, mine, slicedField)];
+        if (focusOn) return sgFocus.focusView(S, focusMine, focusField, f);
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         // (update 205) "Getting better or worse?" right under the hero card
         // (update 370) the stats table right under the hero card, above "Getting better or worse?"
         // (update 379) the Summary right under the hero card, above the stats table
-        return [me ? sgFocus.focusSwitch(S) : null, heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, blocks[0] || null, careerBox("trajectory", f), ...blocks.slice(1), ...(!me ? tourBlocks(slicedField) : [])];
+        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, blocks[0] || null, careerBox("trajectory", f), ...blocks.slice(1), ...(!me ? tourBlocks(slicedField) : [])];
       })()),
       // (update 219) "Where they play their best" is on the Compare page now
     ]);
