@@ -5481,3 +5481,8 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 .fx-pills-l { margin-left: 4px; font-size: var(--fs-note); }
 .fx-when { margin: 0.45rem 0 0; }
 .fx-switch-row { margin-top: 0.25rem; }
+/* (update 474) Focus: the best stretch behind a goal, as a link and a small popup */
+.fx-link { font: inherit; color: #f0d9a8; background: none; border: 0; padding: 0; text-decoration: underline; text-decoration-color: rgba(212,180,131,0.7); text-underline-offset: 3px; cursor: pointer; }
+.fx-st-pop { max-width: 520px; }
+.fx-st-svg { display: block; width: 100%; height: auto; margin: 0.4rem 0 0.6rem; }
+.fx-st-avg { margin: 0 0 0.6rem; font-size: var(--fs-base-); }
