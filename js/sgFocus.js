@@ -130,7 +130,12 @@ export function focusView(S, mine, slicedField, f = {}) {
     const season = goalStat(all, cat, dist, { pctMin: 5, min: 3 });
     if (season) return { gs: season, from: "season rounds" };
     let n = 0; for (const re of goalStatsFor(cat, dist)) for (const rd of all) for (const o of rd.obs || []) if (re.test(o.k) && (o.cat === cat || !o.cat)) n += o.w || 0;
-    return { gs: null, from: "best 10 rounds", note: n > 0 ? `only ${Math.round(n)} ${Math.round(n) === 1 ? "attempt" : "attempts"} at this in the data, too few to set a number from` : null };
+    if (n > 0) return { gs: null, from: "best 10 rounds", note: `only ${Math.round(n)} ${Math.round(n) === 1 ? "attempt" : "attempts"} at this in the data, too few to set a number from` };
+    // (update 478) none at all: say what the data does have for this part of the game (so a stat under a name it doesn't
+    // know shows up here)
+    const have = new Set(); for (const rd of all) for (const o of rd.obs || []) if (o.cat === cat) have.add(statDef(o.k).label);
+    const want = { OTT: "fairway", APP: "proximity or greens", ARG: "proximity", PUTT: "make" }[cat] || "matching";
+    return { gs: null, from: "best 10 rounds", note: have.size ? `the data has no ${want} stat for ${CAT[cat]}; it has ${[...have].slice(0, 5).join(", ")}` : `the data has no ${CAT[cat]} stats besides strokes gained` };
   };
   const sig = (d) => `${me.key}|${d.kind}|${d.dist || ""}|${d.lie || ""}`;
   const itemFor = (b) => {

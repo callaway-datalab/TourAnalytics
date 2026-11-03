@@ -209,6 +209,8 @@ const looseStatKey = (q) => {
   const par = q.match(/par([345])s?(?!\d)/);
   if (par && /scor|avg|average|perf|strokes/.test(q) && !/gir|greens?inreg|birdie|bogey|eagle|par(or|orbetter)/.test(q)) return `par${par[1]}`;
   if ((/^gir/.test(q) || /gir(pct|percent|percentage)?$/.test(q) || /greens?inreg/.test(q)) && !/par3(?!\d)/.test(q)) return "gir";
+  // (update 478) proximity by any name: "Proximity to Hole (ft)", "Avg Proximity", "Distance to Pin", "Feet from Pin"…
+  if (/proxim|^prox|dist(ance)?to(the)?(pin|hole|cup)|(feet|ft)(from|to)(the)?(pin|hole|cup)/.test(q) && !/pct|percent|rank/.test(q)) return "prox";
   return null;
 };
 const statKeyOfRaw = (t) => { const q = squash(t); if (!q || SG_TYPES.includes(q)) return null; for (const [k, list] of Object.entries(STAT_TYPES)) if (list.includes(q)) return k; const loose = looseStatKey(q); if (loose) return loose; if (!xLabels.has(`x:${q}`)) xLabels.set(`x:${q}`, String(t).trim()); return `x:${q}`; };
