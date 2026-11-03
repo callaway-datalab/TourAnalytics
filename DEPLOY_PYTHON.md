@@ -109,6 +109,27 @@ return straight away without waiting). To send a file you already have:
 You'll also see each Python upload on **Upload Data → From Python** (Live, Working… or Failed with the reason).
 Files sent from Python are tagged **Python** in the list of uploaded files.
 
+## Strategy Maps: a course's shots from Python (update 481)
+
+`python/course_upload.py` sends a course's shot-level data straight to Strategy Maps. It does on your computer what
+**Upload Data → Strategy Maps → Scoring** does in the browser: zones, hole and pin history, and every player's past
+shots. Then it saves them in the same place, so the course's maps update the next time someone opens it. It uses the
+same key and setup as `tour_upload.py`. Put it in the same folder as `tour_upload.py`.
+
+```python
+from course_upload import upload_course
+
+upload_course(cluster_data, course=4)                      # by courseNum
+upload_course(cluster_data, course="Torrey Pines South")   # or by name
+upload_course("torrey_shots.parquet")                      # a file: every course in it
+```
+
+Each upload **replaces** that course's maps, history and past shots. Send every year you want on its map (last
+year's rounds plus this week's), not only this week's rounds. Other courses, and the course's hole images, aren't
+touched. A new course needs its images uploaded once on Upload Data (the script says so).
+
+From a terminal: `python course_upload.py shots.parquet 4`.
+
 ## Limits and cost
 
 - The cloud function only rebuilds the rankings now (a couple of million rows takes about a minute of its 9).
