@@ -5487,3 +5487,16 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 .fx-st-svg { display: block; width: 100%; height: auto; margin: 0.4rem 0 0.6rem; }
 .fx-st-avg { margin: 0 0 0.6rem; font-size: var(--fs-base-); }
 .fx-pill.locked { box-shadow: inset 0 0 0 2px #111, 0 0 0 1px #d4b483; }
+/* (update 477) the best stretch popup: never wider than the screen */
+.fx-st-ov .gx-pop { width: min(520px, calc(100vw - 20px)); max-width: calc(100vw - 20px); box-sizing: border-box; overflow-x: hidden; }
+.fx-st-pop .table-scroll { max-width: 100%; overflow-x: auto; }
+.fx-st-t { width: 100%; }
+.fx-st-t td:first-child, .fx-st-t th:first-child { text-align: left; white-space: normal; }
+.fx-st-t td.num, .fx-st-t th.num { white-space: nowrap; }
+.fx-st-t .fx-st-tot td { border-top: 1px solid rgba(255,255,255,0.18); font-weight: 600; }
+.fx-st-pop h2 { font-size: var(--fs-lg); }
+.fx-st-pop .gx-eyebrow { overflow-wrap: anywhere; }
+.fx-st-pop table.fx-st-t td, .fx-st-pop table.fx-st-t th { padding: 0.35rem 0.4rem; }
+.fx-st-pop table.fx-st-t td:first-child, .fx-st-pop table.fx-st-t th:first-child { text-align: left; }
+.fx-sub { display: block; font-size: 0.85em; color: #a1a1a6; }
+@media (max-width: 600px) { .fx-st-pop table.fx-st-t td, .fx-st-pop table.fx-st-t th { font-size: var(--fs-xs); padding: 0.3rem 0.28rem; } .fx-st-pop table.fx-st-t th { font-size: var(--fs-2xs); } }

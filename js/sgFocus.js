@@ -24,7 +24,7 @@ const nameOf = (b) => `${CAT[b.cat] || b.cat}${b.dist ? ` · ${b.dist}` : ""}`;
 
 /** (update 471) the drill's goal stat: the player's own season level of the plain stat that fits it (fairway %, proximity,
  *  up-and-down %, make %…), that distance's, else the part of the game's, when there are enough attempts behind it */
-function goalStat(rounds, cat, dist) {
+function goalStat(rounds, cat, dist, { pctMin = 20, min = 8 } = {}) {
   for (const re of goalStatsFor(cat, dist)) for (const exact of [true, false]) {
     let t = 0, w = 0, k = null;
     for (const rd of rounds) for (const o of rd.obs || []) {
@@ -32,7 +32,7 @@ function goalStat(rounds, cat, dist) {
       const ok = exact ? o.cat === cat && (dist ? o.dist === dist : !o.dist) : o.cat === cat || !o.cat;
       if (ok) { t += o.v * o.w; w += o.w; k = o.k; }
     }
-    if (k) { const def = statDef(k); if (w >= (def.pct ? 20 : 8)) return { k, def, ve: t / w, exact }; }
+    if (k) { const def = statDef(k); if (w >= (def.pct ? pctMin : min)) return { k, def, ve: t / w, exact, w }; }
   }
   return null;
 }
@@ -123,17 +123,23 @@ export function focusView(S, mine, slicedField, f = {}) {
   };
   const goalFor = (cat, dist) => {
     const ds = distStretch(cat, dist);
-    if (ds) { const gs = goalStat(ds.rounds = ds.rds, cat, dist); if (gs) return { gs, from: `${ds.n} best-stretch rounds`, stretch: { cat, dist, ...ds } }; }
+    if (ds) { const gs = goalStat(ds.rds, cat, dist); if (gs) return { gs, from: `${ds.n} best-stretch rounds`, stretch: { cat, dist, ...ds, gs } }; }
     for (const set of setsFor(cat)) { const gs = goalStat(set.rounds, cat, dist); if (gs) return { gs, from: set.from, stretch: set.stretch || null }; }
-    return { gs: null, from: "best 10 rounds" };
+    // (update 477) too few attempts in any of those (a shot faced less than once a round): their whole time frame, with 3
+    // attempts enough; and if even that's short, say how many there are (not that there's no stat)
+    const season = goalStat(all, cat, dist, { pctMin: 5, min: 3 });
+    if (season) return { gs: season, from: "season rounds" };
+    let n = 0; for (const re of goalStatsFor(cat, dist)) for (const rd of all) for (const o of rd.obs || []) if (re.test(o.k) && (o.cat === cat || !o.cat)) n += o.w || 0;
+    return { gs: null, from: "best 10 rounds", note: n > 0 ? `only ${Math.round(n)} ${Math.round(n) === 1 ? "attempt" : "attempts"} at this in the data, too few to set a number from` : null };
   };
   const sig = (d) => `${me.key}|${d.kind}|${d.dist || ""}|${d.lie || ""}`;
   const itemFor = (b) => {
     // (update 472) the drill's goal: the stat that fits it, in their own level rounds for that part of the game
-    const { gs, from, stretch } = goalFor(b.cat, b.dist);
+    const { gs, from, stretch, note } = goalFor(b.cat, b.dist);
     const drill = drillFor(b.cat, b.dist, gs);
     if (!drill) return null;
     drill.from = from;
+    if (note) drill.noStat = note; // (update 477)
     // the goal in real rounds: strokes gained there back to the tour average (0), over the next N rounds
     const goal = { stat: "skill", cat: b.cat, dist: b.dist, target: 0, measure: "round", when: "nextN", n: N };
     return { drill, goal, stretch };
@@ -180,6 +186,18 @@ export function focusView(S, mine, slicedField, f = {}) {
     const evs = new Map();
     for (const rd of rds) { const k = `${rd.event || "Round"}|${String(rd.date || "").slice(0, 4)}`; (evs.get(k) || evs.set(k, { event: rd.event || "Round", year: String(rd.date || "").slice(0, 4), rs: [] }).get(k)).rs.push(rd); }
     const avg = rds.reduce((t, rd) => t + sgOf(rd), 0) / rds.length;
+    // (update 477) attempts there (strokes-gained shots) and the drill's stat in those rounds
+    const gs = st0.gs || null, gsd = gs ? gs.def : null, gsShort = gsd ? (gsd.label.replace(/ %$/, "").replace(/^Made Putt$/, "Made").replace(/^Hit Fairway$|^Fairway$/, "Fwy").replace(/^Proximity$/, "Prox").slice(0, 10)) : "";
+    const shotsOf = (rs) => rs.reduce((t, rd) => t + (rd.shots || []).reduce((u, x) => u + ((!cat || x.cat === cat) && (!dist || x.dist === dist) ? x.w || 1 : 0), 0), 0);
+    const statOf = (rs) => {
+      if (!gs) return null;
+      let t = 0, w = 0;
+      for (const rd of rs) for (const o of rd.obs || []) { if (o.k !== gs.k) continue; const ok = gs.exact ? o.cat === cat && (dist ? o.dist === dist : !o.dist) : o.cat === cat || !o.cat; if (ok) { t += o.v * o.w; w += o.w; } }
+      if (!w) return "\u2014";
+      return gsd.pct ? [el("span", {}, `${Math.round(t / w)}%`), el("span", { class: "fx-sub" }, `${Math.round(t / 100)}/${Math.round(w)}`)] : [el("span", {}, `${(t / w).toFixed(1)}${gsd.unit || ""}`), el("span", { class: "fx-sub" }, `${Math.round(w)} shots`)];
+    };
+    const rowOf = (label, rs, strong = false) => { const v = rs.reduce((t, rd) => t + sgOf(rd), 0) / rs.length;
+      return el("tr", { class: strong ? "strong fx-st-tot" : "" }, [el("td", {}, label), el("td", { class: "num" }, String(rs.length)), el("td", { class: "num" }, String(Math.round(shotsOf(rs)))), gsd ? el("td", { class: "num" }, statOf(rs)) : null, el("td", { class: `num ${v >= 0 ? "pos" : "neg"}` }, f2(v))]); };
     const day = (d) => { const x = new Date(`${String(d).slice(0, 10)}T12:00:00`); return isNaN(x) ? String(d || "") : x.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
     const what = cat ? `SG: ${CAT[cat]}${dist ? ` \u00b7 ${dist}` : ""}` : "SG: Total";
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
@@ -188,8 +206,10 @@ export function focusView(S, mine, slicedField, f = {}) {
       svg,
       el("p", { class: "fx-st-avg" }, ["Over the stretch: ", el("strong", { class: avg >= 0 ? "pos" : "neg" }, `${f2(avg)} a round`), el("span", { class: "muted" }, ` (${f2(vals.reduce((t, v) => t + v, 0) / (n || 1))} over all ${n} rounds)`)]),
       el("div", { class: "table-scroll" }, el("table", { class: "plain fx-st-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), el("th", { class: "num" }, what)])),
-        el("tbody", {}, [...evs.values()].map((e) => { const v = e.rs.reduce((t, rd) => t + sgOf(rd), 0) / e.rs.length; return el("tr", {}, [el("td", {}, `${e.event} ${e.year}`), el("td", { class: "num" }, String(e.rs.length)), el("td", { class: `num ${v >= 0 ? "pos" : "neg"}` }, f2(v))]); })),
+        // (update 477) short headings (the long name is above), and each tournament's shots and the drill's stat:
+        // successes of attempts for a percentage (fairways hit, putts made…), the average for a number (proximity)
+        el("thead", {}, el("tr", {}, [el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), el("th", { class: "num" }, "Shots"), gsd ? el("th", { class: "num", title: gs.exact ? gsd.label : `${gsd.label}, every distance (the data has it only for the part of the game)` }, gs.exact ? gsShort : `${gsShort} (all)`) : null, el("th", { class: "num" }, "SG / rd")])),
+        el("tbody", {}, [...[...evs.values()].map((e) => rowOf(`${e.event} ${e.year}`, e.rs)), rowOf("The stretch", rds, true)]),
       ])),
     ]));
     const shut = () => { ov.remove(); document.removeEventListener("keydown", onKey); };
