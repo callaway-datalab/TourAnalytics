@@ -104,19 +104,26 @@ function scores(I) {
 
 /* ---------------- the game plan, in plain words ---------------- */
 function plan(H, openHole) {
+  // (update 497) each part of the plan: three big cards, the hole number large, the number that matters under it
   const top = (list, key, n = 3, min = -Infinity) => list.filter((x) => x[key] != null && x[key] > min).sort((a, b) => b[key] - a[key]).slice(0, n);
   const agg = H.map((x) => ({ ...x, ix: x.birdie - x.bogey }));
-  const cards = [
-    ["Attack", "pos", top(agg, "ix", 3, 0), (x) => `${Math.round(x.birdie)}% birdies, ${Math.round(x.bogey)}% bogeys`],
-    ["Play safe", "neg", agg.filter((x) => x.ix < 0).sort((a, b) => a.ix - b.ix).slice(0, 3), (x) => `${Math.round(x.bogey)}% bogeys, ${Math.round(x.birdie)}% birdies`],
-    ["Fairways matter", "", top(H, "fwy", 3, 0.05), (x) => `missing it costs ${x.fwy.toFixed(2)}`],
-    ["Greens matter", "", top(H, "gir", 3, 0.05), (x) => `missing it costs ${x.gir.toFixed(2)}`],
-    ["Go for it", "pos", top(H, "go", 3, 0.05), (x) => `saves ${x.go.toFixed(2)} on laying up`],
-    ["Tee miss to avoid", "neg", H.filter((x) => x.miss && x.miss.by >= 0.1).sort((a, b) => b.miss.by - a.miss.by).slice(0, 3), (x) => `miss ${x.miss.worse === "left" ? "right" : "left"}: ${x.miss.worse} costs ${x.miss.by.toFixed(2)} more`],
-  ].filter(([, , list]) => list.length);
-  return sec("GAME PLAN", [el("div", { class: "ci2-plan" }, cards.map(([t, tone, list, line]) => el("div", { class: `ci2-card ${tone}` }, [el("h3", {}, t),
-    ...list.map((x) => { const b = el("button", { type: "button", class: "ci2-item" }, [el("span", { class: "ci2-hn" }, String(x.h)), el("span", {}, line(x))]); b.addEventListener("click", () => openHole(x.h)); return b; })])))],
-    "Costs and saves are strokes on the hole, against those who did the opposite (hit the fairway, hit the green in regulation, laid up). Tap a hole for its numbers.");
+  const blocks = [
+    ["Attack", "pos", "most birdies against bogeys", top(agg, "ix", 3, 0), (x) => [`${Math.round(x.birdie)}%`, "birdies", `${Math.round(x.bogey)}% bogeys`]],
+    ["Play safe", "neg", "most bogeys against birdies", agg.filter((x) => x.ix < 0).sort((a, b) => a.ix - b.ix).slice(0, 3), (x) => [`${Math.round(x.bogey)}%`, "bogeys", `${Math.round(x.birdie)}% birdies`]],
+    ["Fairways matter", "", "strokes lost missing the fairway", top(H, "fwy", 3, 0.05), (x) => [x.fwy.toFixed(2), "strokes", "missing the fairway"]],
+    ["Greens matter", "", "strokes lost missing the green in regulation", top(H, "gir", 3, 0.05), (x) => [x.gir.toFixed(2), "strokes", "missing the green"]],
+    ["Go for it", "pos", "strokes saved going for it, against laying up", top(H, "go", 3, 0.05), (x) => [x.go.toFixed(2), "strokes", "saved going for it"]],
+    ["Tee miss to avoid", "neg", "the costlier side to miss off the tee", H.filter((x) => x.miss && x.miss.by >= 0.1).sort((a, b) => b.miss.by - a.miss.by).slice(0, 3), (x) => [x.miss.worse === "left" ? "Left" : "Right", "miss", `+${x.miss.by.toFixed(2)} vs the other side`]],
+  ].filter(([, , , list]) => list.length);
+  return sec("GAME PLAN", blocks.map(([t, tone, sub, list, val]) => el("div", { class: `ci2-blk ${tone}` }, [
+    el("div", { class: "ci2-blk-h" }, [el("h3", {}, t), el("span", { class: "muted small" }, sub)]),
+    el("div", { class: "ci2-cards" }, list.map((x) => {
+      const [big, unit, note] = val(x);
+      const b = el("button", { type: "button", class: "ci2-big" }, [el("span", { class: "ci2-big-l" }, `Hole \u00b7 Par ${x.par}`), el("strong", { class: "ci2-big-n" }, String(x.h)),
+        el("span", { class: "ci2-big-v" }, [el("b", {}, big), ` ${unit}`]), el("span", { class: "ci2-big-s" }, note)]);
+      b.addEventListener("click", () => openHole(x.h));
+      return b;
+    }))])), "Tap a hole for its numbers.");
 }
 
 /* ---------------- every hole as a tile; one open with its numbers ---------------- */

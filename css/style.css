@@ -5697,3 +5697,23 @@ button.ci2-vr { background: none; border: 0; color: inherit; font: inherit; font
 .heat-rebuild { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
 .heat-rebuild p { margin: 0; flex: 1 1 260px; }
 .py-tag.warn { background: rgba(255,159,67,0.18); color: #ffb26b; border-color: rgba(255,159,67,0.4); }
+.sh-ud-tog { margin-left: auto; }
+.sh-ud-tog.on { color: #ffd60a; }
+.sh-ud-l { white-space: normal; text-overflow: clip; line-height: 1.25; }
+/* (update 497) Course Insights game plan: three big cards a block, the hole number large */
+.ci2-blk { margin: 0 0 14px; }
+.ci2-blk:last-of-type { margin-bottom: 4px; }
+.ci2-blk-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }
+.ci2-blk-h h3 { margin: 0; font-size: var(--fs-md, 1.05rem); }
+.ci2-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ci2-big { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 10px 12px 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.ci2-big:hover { border-color: rgba(212,180,131,0.5); }
+.ci2-blk.pos .ci2-big { background: linear-gradient(160deg, rgba(61,156,255,0.18), rgba(61,156,255,0.04)); }
+.ci2-blk.neg .ci2-big { background: linear-gradient(160deg, rgba(255,107,94,0.18), rgba(255,107,94,0.04)); }
+.ci2-big-l { font-size: var(--fs-2xs); color: #a1a1a6; text-transform: uppercase; letter-spacing: 0.06em; }
+.ci2-big-n { font-size: 2.6rem; line-height: 1; font-weight: 800; margin: 2px 0 6px; }
+.ci2-big-v { font-size: var(--fs-note); color: #d1d1d6; }
+.ci2-big-v b { font-size: var(--fs-lg, 1.15rem); color: #fff; }
+.ci2-blk.pos .ci2-big-v b { color: #6cb8ff; } .ci2-blk.neg .ci2-big-v b { color: #ff8a7e; }
+.ci2-big-s { font-size: var(--fs-2xs); color: #8e8e93; margin-top: 2px; line-height: 1.25; }
+@media (max-width: 600px) { .ci2-big { padding: 8px 8px 10px; } .ci2-big-n { font-size: 2rem; } .ci2-cards { gap: 6px; } }

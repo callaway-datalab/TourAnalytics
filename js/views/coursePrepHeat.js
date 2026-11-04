@@ -53,7 +53,8 @@ export async function drawHeat(ctx, course) {
   // (update 479) the player's past shots on the hole, drawn over the map (inside the zoom, so they zoom with it)
   const NS = "http://www.w3.org/2000/svg", sv = (t, a = {}) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) if (v != null) e.setAttribute(k, v); return e; };
   const trSvg = sv("svg", { class: "sh-trails", preserveAspectRatio: "none", "aria-hidden": "true" });
-  const zoomBox = el("div", { class: "sh-zoom" }, [base, cv, trSvg]);
+  const bdSvg = sv("svg", { class: "sh-trails sh-board", preserveAspectRatio: "none", "aria-hidden": "true" }); // (update 497: the up & down board)
+  const zoomBox = el("div", { class: "sh-zoom" }, [base, cv, trSvg, bdSvg]);
   const pastBtn = el("button", { type: "button", class: "sh-past", hidden: true }, "Show Past Shots");
   const hist = el("div", { class: "sh-hist" });
   const trKey = el("div", { class: "sh-legend sh-tr-key", hidden: true }); // (the past shots' colours)
@@ -127,7 +128,7 @@ export async function drawHeat(ctx, course) {
       prewarm();
     }, 250);
   };
-  const drawAll = () => { drawTrails(); paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin: pinNow, rot }); placeDot(); };
+  const drawAll = () => { drawTrails(); drawBoard(); paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin: pinNow, rot }); placeDot(); };
   img.addEventListener("load", () => { rebuild(); drawAll(); });
   const seg = (box, list, key, onSet) => mount(box, list.map(([v, l, dis]) => { const b = el("button", { type: "button", class: `seg-btn${st[key] === v ? " on" : ""}`, "aria-pressed": String(st[key] === v), disabled: !!dis, title: dis || null }, l); b.addEventListener("click", () => { if (st[key] === v) return; st[key] = v; onSet(); }); return b; }));
   const go = (d) => { const i = holeNums.indexOf(st.hole) + d; if (i >= 0 && i < holeNums.length) { st.hole = holeNums[i]; showHole(); } };
@@ -221,7 +222,7 @@ export async function drawHeat(ctx, course) {
     pop.hidden = true; hideDot();
     const n = st.hole, H = data.holes?.[n] || { pins: {} }, pin = H.pins?.[st.pin[n]];
     pinNow = pin || null;
-    drawHist(); drawTrails(); drawTee(); drawUD(); // (update 479; 491: up & down; 492: tee misses)
+    drawHist(); drawTrails(); drawTee(); drawUD(); drawBoard(); // (update 479; 491: up & down; 492: tee misses)
     drawShotSeg();
     if (!pin || !size.w) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); Z = null; mount(keys, size.w ? null : el("p", { class: "muted small" }, "No image for this hole yet: upload the course’s images zip on Upload Data.")); drawLegend(); return; }
     const usePlayer = isP() && !!ix;
@@ -445,6 +446,26 @@ export async function drawHeat(ctx, course) {
     mount(teeBox, [el("span", { class: "sh-hl-k" }, ["Off the tee", el("small", {}, worse ? `${worse === "L" ? "left" : "right"} +${Math.abs(L - R).toFixed(2)}` : "avg score")]),
       el("span", { class: "sh-tee-chips" }, [chip("L", "Left", L), chip("C", "Fairway", C), chip("R", "Right", R)])]);
   }
+  // (update 497) the up & down board over the green for this pin's usual approach line: the green's front and back edges
+  // and its sides, the lines of a tic-tac-toe board (Show on map)
+  function drawBoard() {
+    while (bdSvg.firstChild) bdSvg.removeChild(bdSvg.firstChild);
+    const n = st.hole, ids = pinNow?.merged || [st.pin[n]], B = ids.map((id) => data.insights?.holes?.[n]?.udBoards?.[id]).find(Boolean);
+    const show = st.showBoard && B && size.w;
+    bdSvg.style.display = show ? "" : "none";
+    if (!show) return;
+    const W = size.w, Hh = size.h;
+    bdSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
+    const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); bdSvg.appendChild(g);
+    const P = (al, la) => [B.gx + al * B.ux - la * B.uy, B.gy + al * B.uy + la * B.ux], e = 0.8 * Math.max(B.a1 - B.a0, B.l1 - B.l0);
+    const line = (p, q) => { const d = `M${p[0]} ${p[1]} L${q[0]} ${q[1]}`; g.appendChild(sv("path", { d, stroke: "rgba(0,0,0,0.6)", "stroke-width": 4, "vector-effect": "non-scaling-stroke", fill: "none" })); g.appendChild(sv("path", { d, stroke: "#fff", "stroke-width": 2, "stroke-dasharray": "6 4", "vector-effect": "non-scaling-stroke", fill: "none" })); };
+    for (const al of [B.a0, B.a1]) line(P(al, B.l0 - e), P(al, B.l1 + e));
+    for (const la of [B.l0, B.l1]) line(P(B.a0 - e, la), P(B.a1 + e, la));
+    // the approach's direction: an arrow coming in from short of the green
+    const t0 = P(B.a0 - e * 1.6, 0), t1 = P(B.a0 - e * 0.25, 0);
+    g.appendChild(sv("path", { d: `M${t0[0]} ${t0[1]} L${t1[0]} ${t1[1]}`, stroke: "#ffd60a", "stroke-width": 2.5, "vector-effect": "non-scaling-stroke", fill: "none", "marker-end": "url(#sh-arrow)" }));
+    const defs = sv("defs"); const m = sv("marker", { id: "sh-arrow", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" }); m.appendChild(sv("path", { d: "M0 0 L10 5 L0 10 z", fill: "#ffd60a" })); defs.appendChild(m); bdSvg.insertBefore(defs, g);
+  }
   function drawUD() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
     const ids = pinNow?.merged || [pid], U = {};
@@ -461,7 +482,10 @@ export async function drawHeat(ctx, course) {
         el("span", { class: "sh-ud-l" }, p == null ? (tot[0] ? `${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}` : "") : lies.join(" \u00b7 ") || `${tot[0]} misses`)]);
     };
     udBox.hidden = false;
-    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), el("span", { class: "muted small" }, "this pin \u00b7 within 30 yds of the green")]),
+    const hasB = (pinNow?.merged || [pid]).some((id) => X?.udBoards?.[id]);
+    const tog = hasB ? el("button", { type: "button", class: `link small sh-ud-tog${st.showBoard ? " on" : ""}` }, st.showBoard ? "Hide on map" : "Show on map") : null;
+    tog?.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); if (st.showBoard) stage.scrollIntoView({ behavior: "smooth", block: "center" }); });
+    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), el("span", { class: "muted small" }, "this pin \u00b7 within 30 yds of the green"), tog]),
       el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), el("div", { class: "sh-ud-green", "aria-hidden": "true" }, el("i")), cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")])]);
   }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
