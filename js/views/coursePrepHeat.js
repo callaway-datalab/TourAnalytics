@@ -8,10 +8,11 @@ import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
 import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
-import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
+import { lieName, heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 import { playerTrails, LIE_NAMES } from "../courseShots.js"; // (update 479)
 import { BUILD_VERSION } from "../courseRaw.js"; // (update 498)
+import { clientKey } from "../data.js"; // (update 500)
 
 const st = { hole: 1, pin: {}, view: "field", mode: "score", shot: "1" }; // (kept while the app is open)
 
@@ -55,7 +56,8 @@ export async function drawHeat(ctx, course) {
   const NS = "http://www.w3.org/2000/svg", sv = (t, a = {}) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) if (v != null) e.setAttribute(k, v); return e; };
   const trSvg = sv("svg", { class: "sh-trails", preserveAspectRatio: "none", "aria-hidden": "true" });
   const bdSvg = sv("svg", { class: "sh-trails sh-board", preserveAspectRatio: "none", "aria-hidden": "true" }); // (update 497: the up & down board)
-  const zoomBox = el("div", { class: "sh-zoom" }, [base, cv, trSvg, bdSvg]);
+  const spSvg = sv("svg", { class: "sh-trails sh-spot", preserveAspectRatio: "none", "aria-hidden": "true" }); // (update 500: the circle tapped, its shots)
+  const zoomBox = el("div", { class: "sh-zoom" }, [base, cv, trSvg, bdSvg, spSvg]);
   const pastBtn = el("button", { type: "button", class: "sh-past", hidden: true }, "Show Past Shots");
   const hist = el("div", { class: "sh-hist" });
   const trKey = el("div", { class: "sh-legend sh-tr-key", hidden: true }); // (the past shots' colours)
@@ -129,7 +131,7 @@ export async function drawHeat(ctx, course) {
       prewarm();
     }, 250);
   };
-  const drawAll = () => { drawTrails(); drawBoard(); paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin: pinNow, rot }); placeDot(); };
+  const drawAll = () => { drawTrails(); drawBoard(); drawSpot(); paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin: pinNow, rot }); placeDot(); };
   img.addEventListener("load", () => { rebuild(); drawAll(); });
   const seg = (box, list, key, onSet) => mount(box, list.map(([v, l, dis]) => { const b = el("button", { type: "button", class: `seg-btn${st[key] === v ? " on" : ""}`, "aria-pressed": String(st[key] === v), disabled: !!dis, title: dis || null }, l); b.addEventListener("click", () => { if (st[key] === v) return; st[key] = v; onSet(); }); return b; }));
   const go = (d) => { const i = holeNums.indexOf(st.hole) + d; if (i >= 0 && i < holeNums.length) { st.hole = holeNums[i]; showHole(); } };
@@ -219,10 +221,16 @@ export async function drawHeat(ctx, course) {
     const combine = isAdmin && editPins && pins.length >= 2 ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, "Combine pins"); b.addEventListener("click", () => { picking = new Set(); drawPins(n, pins); }); return b; })() : null;
     mount(pinBar, [...(items.length ? items : [el("span", { class: "muted small" }, off.length ? "Every pin on this hole is deleted." : "No zones for this hole yet.")]), restore, combine, edit]);
   }
+  let paintKey = null;
   function paint() {
+    // (update 500) the popup closes when the hole, pin or shot picked changes, not when a player's numbers arrive (an open
+    // circle is worked out again with them)
+    const pk = `${st.hole}|${st.pin[st.hole]}|${st.shot}`, keep = pk === paintKey && spot && !pop.hidden ? { x: spot.x, y: spot.y } : null;
+    paintKey = pk;
     pop.hidden = true; hideDot();
     const n = st.hole, H = data.holes?.[n] || { pins: {} }, pin = H.pins?.[st.pin[n]];
     pinNow = pin || null;
+    if (keep) setTimeout(() => openSpot(keep.x, keep.y), 0);
     drawHist(); drawTrails(); drawTee(); drawUD(); drawBoard(); // (update 479; 491: up & down; 492: tee misses)
     drawShotSeg();
     if (!pin || !size.w) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); Z = null; mount(keys, size.w ? null : el("p", { class: "muted small" }, "No image for this hole yet: upload the course’s images zip on Upload Data.")); drawLegend(); return; }
@@ -262,6 +270,7 @@ export async function drawHeat(ctx, course) {
     if (!Z || !size.w || zm.moved) { zm.moved = false; return; }
     const r = cv.getBoundingClientRect(), DW = rot ? size.h : size.w, DH = rot ? size.w : size.h;
     const [x, y] = toImg(((e.clientX - r.left) / r.width) * DW, ((e.clientY - r.top) / r.height) * DH, size.w, rot);
+    if (meta.rawChunks) { openSpot(x, y); return; } // (update 500)
     const z = zoneAt(Z.zones, x, y, ov);
     if (!z) { pop.hidden = true; hideDot(); return; } // (no colour there: nothing to show)
     if (z.none) { // (update 465) a lie with no shots from it for this pin (a bunker no one found): said so
@@ -275,13 +284,13 @@ export async function drawHeat(ctx, course) {
   });
   // (update 461) the spot tapped: a dot there (it follows zoom and drag), and the popup beside it, never over it
   let tapAt = null;
-  const hideDot = () => { tapAt = null; dot.hidden = true; };
+  const hideDot = () => { tapAt = null; dot.hidden = true; spot = null; drawSpot(); };
   const screenOf = (ix0, iy0) => { const r = cv.getBoundingClientRect(), sr = stage.getBoundingClientRect(), [dx, dy] = toDisp(ix0, iy0, size.w, rot); return [r.left - sr.left + (dx / (rot ? size.h : size.w)) * r.width, r.top - sr.top + (dy / (rot ? size.w : size.h)) * r.height]; };
   function placeDot() {
     if (!tapAt || !size.w) { dot.hidden = true; return; }
     const [px, py] = screenOf(tapAt.x, tapAt.y), sr = stage.getBoundingClientRect();
     const inside = px >= 0 && py >= 0 && px <= sr.width && py <= sr.height;
-    dot.hidden = !inside; dot.style.left = `${px}px`; dot.style.top = `${py}px`;
+    dot.hidden = !inside || !!spot; dot.style.left = `${px}px`; dot.style.top = `${py}px`; // (update 500: a circle in its place)
     if (!pop.hidden) placePop(px, py);
   }
   function placePop(px, py) {
@@ -298,6 +307,87 @@ export async function drawHeat(ctx, course) {
       top = py < sr.height / 2 ? (below + ph <= sr.height - 4 || above < 4 ? below : above) : (above >= 4 || below + ph > sr.height ? Math.max(4, above) : below);
     }
     pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+  }
+  /* (update 500) a tap: a circle there (its size adjustable), every actual shot inside it, and the popup's numbers from
+   * just those shots: how many, their average strokes to hole out, by lie, against every shot from about as far out on
+   * this pin, and the player's own. The shots are the course's raw shots (kept on the site since update 496), the ones
+   * the Shot buttons pick (where shot 1, 2 … finished), on this pin. */
+  let spot = null, rawP = null;
+  const RAD = [2, 3, 5, 8, 10, 15, 20, 25];
+  st.spotR ||= 5;
+  const rawIndex = () => (rawP ||= import("../courseRaw.js").then((R) => R.loadRaw(meta)).then((rows) => {
+    const by = new Map(), num0 = (v) => (v == null || v === "" ? null : Number(v));
+    for (const r of rows) {
+      const h = num0(r[6]), x = num0(r[13]), y = num0(r[14]); if (!h || x == null || y == null) continue;
+      const idv = r[4] != null && r[4] !== "" ? r[4] : r[3];
+      (by.get(h) || by.set(h, []).get(h)).push({ pid: String(r[8] ?? "1").trim() || "1", st: num0(r[10]), lie: lieName(r[9]) || "other", v: num0(r[15]), d: num0(r[18]), x, y, px: num0(r[16]), py: num0(r[17]), key: idv != null ? clientKey(String(Number.isFinite(Number(idv)) ? Number(idv) : idv)) : null });
+    }
+    return by;
+  }).catch((err) => { console.warn(err); rawP = null; return null; }));
+  const ppyMemo = new Map();
+  const ppyOf = (n, list) => { if (ppyMemo.has(n)) return ppyMemo.get(n); const rs = list.filter((q) => q.lie !== "green" && q.d > 15 && q.px != null).slice(0, 4000).map((q) => Math.hypot(q.x - q.px, q.y - q.py) / q.d).sort((a, b) => a - b); const k = rs.length ? rs[Math.floor(rs.length / 2)] : 3; ppyMemo.set(n, k); return k; };
+  const ydOf = (q) => (q.d == null ? null : q.lie === "green" ? q.d / 3 : q.d);
+  const spotShots = async () => {
+    const by = await rawIndex(); if (!by) return null;
+    const n = st.hole, list = by.get(n) || [], ids = new Set(pinNow?.merged || [st.pin[n]]), k = kOf(n, par);
+    const pool = list.filter((q) => ids.has(q.pid) && q.v != null && (!k || q.st === k + 1));
+    return { pool, ppy: ppyOf(n, list) };
+  };
+  function drawSpot() {
+    while (spSvg.firstChild) spSvg.removeChild(spSvg.firstChild);
+    spSvg.style.display = spot && size.w ? "" : "none";
+    if (!spot || !size.w) return;
+    const W = size.w, Hh = size.h;
+    spSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
+    const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); spSvg.appendChild(g);
+    const r0 = Math.max(W, Hh) / 450;
+    for (const q of spot.inside || []) g.appendChild(sv("circle", { cx: q.x, cy: q.y, r: r0, fill: scColor(Math.max(-2, Math.min(2, Math.round(q.v - (spot.par0 ?? q.v))))), stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke", opacity: 0.9 }));
+    if (spot.R) {
+      g.appendChild(sv("circle", { cx: spot.x, cy: spot.y, r: spot.R, fill: "rgba(255,255,255,0.06)", stroke: "rgba(0,0,0,0.6)", "stroke-width": 4, "vector-effect": "non-scaling-stroke" }));
+      g.appendChild(sv("circle", { cx: spot.x, cy: spot.y, r: spot.R, fill: "none", stroke: "#fff", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }));
+    }
+  }
+  async function openSpot(x, y) {
+    tapAt = { x, y }; spot = { x, y, R: 0, inside: [] };
+    const xb = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); xb.addEventListener("click", () => { pop.hidden = true; hideDot(); });
+    mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", {}, "This spot"), xb]), el("p", { class: "muted small" }, "Loading the shots\u2026")]);
+    pop.hidden = false; placeDot(); drawSpot();
+    const got = await spotShots();
+    if (!spot || spot.x !== x || spot.y !== y) return;
+    if (!got) { spot = null; drawSpot(); const z = zoneAt(Z.zones, x, y, ov); if (z && !z.none) openZone(z, { x, y }); else { pop.hidden = true; hideDot(); } return; }
+    showSpot(got);
+  }
+  function showSpot({ pool, ppy }) {
+    const R = st.spotR * ppy, inside = pool.filter((q) => Math.hypot(q.x - spot.x, q.y - spot.y) <= R);
+    spot.R = R; spot.inside = inside;
+    const avg = (l) => (l.length ? l.reduce((t, q) => t + q.v, 0) / l.length : null);
+    const a = avg(inside), fmt = (v, n) => (n === 1 || Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(2));
+    spot.par0 = a != null ? Math.round(a) : null; // (the dots: their own strokes to hole out against the circle's usual)
+    drawSpot();
+    const xb = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); xb.addEventListener("click", () => { pop.hidden = true; hideDot(); });
+    const i = RAD.indexOf(st.spotR), less = el("button", { type: "button", class: "sh-zb sh-rad-b", "aria-label": "Smaller circle", disabled: i <= 0 }, "\u2212"), more = el("button", { type: "button", class: "sh-zb sh-rad-b", "aria-label": "Bigger circle", disabled: i >= RAD.length - 1 }, "+");
+    less.addEventListener("click", (e) => { e.stopPropagation(); st.spotR = RAD[Math.max(0, i - 1)]; showSpot({ pool, ppy }); });
+    more.addEventListener("click", (e) => { e.stopPropagation(); st.spotR = RAD[Math.min(RAD.length - 1, i + 1)]; showSpot({ pool, ppy }); });
+    const radRow = el("div", { class: "sh-rad" }, [el("span", { class: "muted small" }, "Circle"), less, el("strong", {}, `${st.spotR} yds`), more]);
+    const k = kOf(st.hole, par), what = k ? `${["", "tee shots", "second shots", "third shots"][k] || `shot ${k}s`} that finished` : "shots played from";
+    if (!inside.length) {
+      mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", {}, "This spot"), xb]), radRow, el("p", { class: "muted small" }, `No ${what} within ${st.spotR} yds of here on this pin. Make the circle bigger.`)]);
+      requestAnimationFrame(placeDot); return;
+    }
+    // against every shot from about as far out on this pin (within a tenth of the distance, 3 yds at least)
+    const ds = inside.map(ydOf).filter((v) => v != null), d0 = ds.length ? ds.reduce((t, v) => t + v, 0) / ds.length : null;
+    const same = d0 != null ? pool.filter((q) => { const yd = ydOf(q); return yd != null && Math.abs(yd - d0) <= Math.max(3, 0.1 * d0); }) : [];
+    const diff = same.length >= 5 ? a - avg(same) : null;
+    const lies = new Map(); for (const q of inside) (lies.get(q.lie) || lies.set(q.lie, []).get(q.lie)).push(q);
+    const nm = (l) => ({ green: "Green", fairway: "Fairway", rough: "Rough", bunker: "Bunker", tee: "Tee", water: "Water" }[l] || String(l).replace(/^./, (c) => c.toUpperCase()));
+    const mine = who ? inside.filter((q) => q.key === who.key) : [];
+    mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", {}, `${inside.length} ${inside.length === 1 ? "shot" : "shots"} here`), xb]), radRow,
+      el("p", {}, [`Strokes to hole out: `, el("strong", {}, fmt(a, inside.length)), d0 != null ? el("span", { class: "muted" }, ` \u00b7 ${Math.round(d0)} yds out`) : null]),
+      diff != null ? el("p", { class: "muted small" }, `${Math.abs(diff) < 0.005 ? "About the same as" : `${Math.abs(diff).toFixed(2)} ${diff > 0 ? "more" : "fewer"} than`} the ${same.length} shots from about as far out on this pin (${avg(same).toFixed(2)}).`) : null,
+      mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
+      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "To hole out"].map((h, j) => el("th", { class: j ? "num" : null }, h)))),
+        el("tbody", {}, [...lies].sort((x0, y0) => y0[1].length - x0[1].length).map(([l, qs]) => el("tr", {}, [el("td", {}, nm(l)), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, fmt(avg(qs), qs.length))])))])]);
+    requestAnimationFrame(placeDot);
   }
   // (update 499) a zone's actual strokes to hole out: its shots' own average (the map's colour is blended with the shots
   // around it where few were hit, so a lone shot doesn't paint a spot on its own)

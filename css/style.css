@@ -5724,3 +5724,8 @@ button.sh-ud-c { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .sh-ud-det { margin: 10px auto 0; max-width: 460px; padding: 10px 12px; border-radius: 12px; background: rgba(0,0,0,0.35); border: 1px solid rgba(212,180,131,0.4); }
 .sh-ud-det p { margin: 4px 0 8px; }
 .sh-ud-det td.good { color: #4CAF50; } .sh-ud-det td.mid { color: #FFB343; } .sh-ud-det td.bad { color: #ff453a; }
+/* (update 500) the circle tapped: its size */
+.sh-rad { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
+.sh-rad strong { min-width: 4.2em; text-align: center; font-variant-numeric: tabular-nums; }
+.sh-rad-b { position: static; width: 30px; height: 30px; }
+.sh-spot { pointer-events: none; }
