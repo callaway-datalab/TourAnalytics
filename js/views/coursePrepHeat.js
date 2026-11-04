@@ -329,7 +329,7 @@ export async function drawHeat(ctx, course) {
    * this pin, and the player's own. The shots are the course's raw shots (kept on the site since update 496), the ones
    * the Shot buttons pick (where shot 1, 2 … finished), on this pin. */
   let spot = null, rawP = null;
-  const RAD = [2, 3, 5, 8, 10, 15, 20, 25, 30]; // (update 503: up to 30 yds)
+  const RAD = [2, 3, 5, 8, 10, 15, 20, 25, 30, 40, 50]; // (update 503: up to 30 yds; 506: 50)
   st.spotR ||= 10; // (update 502: 10 yds to start)
   const rawIndex = () => (rawP ||= Promise.all([import("../courseRaw.js"), import("../courseShots.js")]).then(([R, CS]) => R.loadRaw(meta).then((rows) => {
     const by = new Map(), num0 = (v) => (v == null || v === "" ? null : Number(v)), LI = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
@@ -398,6 +398,14 @@ export async function drawHeat(ctx, course) {
     if (!got) { spot = null; drawSpot(); const z = zoneAt(Z.zones, x, y, ov); if (z && !z.none) openZone(z, { x, y }); else { pop.hidden = true; hideDot(); } return; }
     showSpot(got);
   }
+  // (update 506) how far the circle's centre is from the pin: feet on the green, yards off it
+  const toPin = (ppy) => {
+    const P = pinNow; if (!spot || P?.x == null || !ppy) return null;
+    let lie = null;
+    if (ov?.map) { const i = Math.round(spot.x * ov.s), j = Math.round(spot.y * ov.s); if (i >= 0 && j >= 0 && i < ov.gw && j < ov.gh) { const c = ov.map.cls[j * ov.gw + i]; lie = c >= 0 ? ov.map.lies[c] : null; } }
+    const yd = Math.hypot(spot.x - P.x, spot.y - P.y) / ppy;
+    return el("span", { class: "sh-topin" }, lie === "green" ? `${Math.round(yd * 3)} ft to pin` : `${Math.round(yd)} yds to pin`);
+  };
   function showSpot({ pool, ppy }) {
     spot.pool = pool; spot.ppy = ppy; // (update 502: for dragging the circle)
     pop.classList.add("sh-pop-spot"); // (update 504: the circle's compact popup)
@@ -414,7 +422,7 @@ export async function drawHeat(ctx, course) {
     const radRow = el("div", { class: "sh-rad" }, [el("span", { class: "muted small" }, "Circle"), less, el("strong", {}, `${st.spotR} yds`), more]);
     const k = kOf(st.hole, par), what = k ? `${["", "tee shots", "second shots", "third shots"][k] || `shot ${k}s`} that finished` : "shots played from";
     if (!inside.length) {
-      mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, xb]), el("p", { class: "muted small" }, `No ${what} within ${st.spotR} yds of here on this pin. Make the circle bigger.`)]);
+      mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, toPin(ppy), xb]), el("p", { class: "muted small" }, `No ${what} within ${st.spotR} yds of here on this pin. Make the circle bigger.`)]);
       requestAnimationFrame(placeDot); return;
     }
     // against every shot from about as far out on this pin (within a tenth of the distance, 3 yds at least)
@@ -427,18 +435,20 @@ export async function drawHeat(ctx, course) {
     const ud = (qs) => `${Math.round((100 * qs.filter((q) => q.v <= 2).length) / qs.length)}%`; // (update 502: holed in two from there)
     // (update 501) a small popup: the circle's size, the player's own shots, and the shots by lie
     const basedOn = el("p", { class: "muted sh-spot-note" }, k ? `Based on shot ${k} results` : "Based on every shot played from here"); // (update 505)
-    mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, xb]), basedOn,
+    mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, toPin(ppy), xb]), basedOn,
       mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
       // (update 504) by lie: shots, the average hole score, how the hole was scored (eagle+ to double+; a column that's 0%
       // in every row left out) and up & down
       (() => {
-        const rowsL = [...lies].sort((x0, y0) => y0[1].length - x0[1].length);
+        // (update 506) the lowest average score first
+        const avgN = (qs) => { const k = qs.filter((q) => q.s != null); return k.length ? k.reduce((t, q) => t + q.s, 0) / k.length : Infinity; };
+        const rowsL = [...lies].sort((x0, y0) => avgN(x0[1]) - avgN(y0[1]) || y0[1].length - x0[1].length);
         const cols = [["Eagle", (q) => q.s <= -2], ["Birdie", (q) => q.s === -1], ["Par", (q) => q.s === 0], ["Bogey", (q) => q.s === 1], ["Dbl+", (q) => q.s >= 2]];
         const pctOf = (qs, f) => { const k = qs.filter((q) => q.s != null); return k.length ? Math.round((100 * k.filter(f).length) / k.length) : null; };
         const keep = cols.filter(([, f]) => [...rowsL.map(([, qs]) => qs), inside].some((qs) => (pctOf(qs, f) || 0) > 0));
         const avgS = (qs) => { const k = qs.filter((q) => q.s != null); return k.length ? (par + k.reduce((t, q) => t + q.s, 0) / k.length).toFixed(2) : "\u2014"; };
         const SCV = { Eagle: -2, Birdie: -1, Par: 0, Bogey: 1, "Dbl+": 2 };
-        const row = (label, qs, cls = null) => el("tr", { class: cls }, [el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)), ...keep.map(([h, f]) => el("td", { class: "num", style: `color:${scColor(SCV[h])}` }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
+        const row = (label, qs, cls = null) => el("tr", { class: [cls, qs.length < 5 ? "sh-few" : null].filter(Boolean).join(" ") || null, title: qs.length < 5 ? "Fewer than 5 shots" : null }, [ /* (update 506: under 5 shots in italics) */el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)), ...keep.map(([h, f]) => el("td", { class: "num", style: `color:${scColor(SCV[h])}` }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
         const SCK = { Eagle: -2, Birdie: -1, Par: 0, Bogey: 1, "Dbl+": 2 }; // (update 505: each score column in its dots' colour)
         return el("table", { class: "plain sh-pop-t sh-spot-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "Avg", ...keep.map(([h]) => h), "U&D"].map((h, j2) => el("th", { class: j2 ? "num" : null, ...(h in SCK ? { style: `color:${scColor(SCK[h])}` } : {}) }, h)))),
           el("tbody", {}, [...rowsL.map(([l, qs]) => row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs)), lies.size > 1 ? row("All", inside, "sh-pop-tot") : null])]);

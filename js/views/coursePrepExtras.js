@@ -99,7 +99,14 @@ export function drawPrepMenu(ctx, course) {
       opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
       opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })),
     ]),
-  ])]);
+  ]), pdfRow(ctx, course)]);
+}
+/** (update 506) Generate PDF: the course strategy report (courseReport.js), for a player or the field */
+function pdfRow(ctx, course) {
+  if (!course.heat?.shotLevel) return null;
+  const b = el("button", { type: "button", class: "btn cp-pdf" }, "Generate PDF");
+  b.addEventListener("click", async () => { const m = await import("../courseReport.js"); m.openReportDialog(ctx, course, b); });
+  return el("div", { class: "cp-pdf-row" }, [b, el("span", { class: "muted small" }, "A course strategy report: the course insights, a page a hole with its strategy maps, scoring, tee misses and up & down.")]);
 }
 
 export async function drawMaps(ctx, course) {
@@ -295,20 +302,21 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
         sc != null ? tile("Scoring avg here", sc.toFixed(2), scAll != null ? (sc < scAll ? "pos" : sc > scAll ? "neg" : "") : "", scAll != null ? `${scAll.toFixed(2)} everywhere` : "") : null,
       ].filter(Boolean)),
     ]),
-    el("section", { class: "panel" }, [el("h2", {}, "By category"), el("p", { class: "muted small" }, "Tap a category for its distances. Avg Winner: strokes gained a round by the winner of each tournament here, averaged."), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, "Category"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Everywhere"), el("th", { class: "num" }, "Diff"), el("th", { class: "num" }, "Avg Winner")])),
+    el("section", { class: "panel" }, [el("h2", {}, "By category"), el("p", { class: "muted small" }, "Tap a category for its distances. Avg Winner: strokes gained a round by the winner of each tournament here, averaged. Diff from Winner: here less the winner\u2019s."), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
+      el("thead", {}, el("tr", {}, [el("th", {}, "Category"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Everywhere"), el("th", { class: "num" }, "Diff"), el("th", { class: "num" }, "Avg Winner"), el("th", { class: "num" }, "Diff from Winner")])), // (update 506)
       el("tbody", {}, [[null, "Total"], ...CATEGORIES].flatMap(([k, l]) => {
         const h = perRound(here, k), a = perRound(rounds, k), w = winAvg(k);
         const ds = k ? distsOf(here, k) : [];
         const open = k && ui.open.has(k);
         const tr = el("tr", { class: ds.length ? "sg-tap" : "", ...(ds.length ? { role: "button", tabindex: "0", "aria-expanded": String(!!open) } : {}) }, [
           el("td", {}, [ds.length ? el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 ") : null, l]),
-          el("td", { class: `num ${sgCls(h)}` }, fmtSG(h)), el("td", { class: `num ${sgCls(a)}` }, fmtSG(a)), el("td", { class: `num ${sgCls(h - a)}` }, fmtSG(h - a)), el("td", { class: `num ${sgCls(w)}` }, fmtSG(w))]);
+          el("td", { class: `num ${sgCls(h)}` }, fmtSG(h)), el("td", { class: `num ${sgCls(a)}` }, fmtSG(a)), el("td", { class: `num ${sgCls(h - a)}` }, fmtSG(h - a)), el("td", { class: `num ${sgCls(w)}` }, fmtSG(w)), el("td", { class: `num ${w == null || h == null ? "" : sgCls(h - w)}` }, w == null || h == null ? "\u2014" : fmtSG(h - w))]);
         if (ds.length) { const flip = () => { ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k); redraw(); }; tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } }); }
         if (!open) return [tr];
         return [tr, ...ds.map((d) => { const hd = perRound(here, k, d), ad = perRound(rounds, k, d), wd = winAvg(k, d);
           return el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, d), el("td", { class: `num ${sgCls(hd)}` }, fmtSG(hd)), el("td", { class: `num ${sgCls(ad)}` }, fmtSG(ad)), el("td", { class: `num ${sgCls(hd - ad)}` }, fmtSG(hd - ad)),
-            el("td", { class: `num ${sgCls(wd)}`, title: wd == null && !detail ? "Loading the field\u2019s distances\u2026" : null }, wd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(wd))]); })];
+            el("td", { class: `num ${sgCls(wd)}`, title: wd == null && !detail ? "Loading the field\u2019s distances\u2026" : null }, wd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(wd)),
+            el("td", { class: `num ${wd == null || hd == null ? "" : sgCls(hd - wd)}` }, wd == null || hd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(hd - wd))]); })];
       })),
     ]))]),
     el("section", { class: "panel" }, [el("h2", {}, "Tournaments here"), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [

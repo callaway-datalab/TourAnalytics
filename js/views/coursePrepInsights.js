@@ -55,7 +55,7 @@ export async function drawInsights(ctx, course) {
 }
 
 /** The subject's numbers (the field, or the player's own trails here) and the Top 10's (without them). */
-function subject(I, mine, key) {
+export function subject(I, mine, key) {
   const sc = () => ({ n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 });
   if (!mine) return { holes: Object.fromEntries(Object.entries(I.holes).map(([h, X]) => [h, X.field])), top: Object.fromEntries(Object.entries(I.holes).map(([h, X]) => [h, X.top])), sg: I.sg.field, rounds: I.sg.fieldRounds, topSg: I.sg.top, topRounds: I.sg.topRounds, attempts: I.attempts, field: true };
   const holes = {}, top = {}, sgS = {}, sgMeTop = {}, rs = new Set(), rsTop = new Set(), att = {}, topSet = new Set(I.top || []);
@@ -77,7 +77,7 @@ function subject(I, mine, key) {
 }
 
 /** Each hole's facts: scoring (field, subject, Top 10), how hard, what matters, the tee miss, fairway width. */
-function holeFacts(I, holeNums, yardsOf, S) {
+export function holeFacts(I, holeNums, yardsOf, S) {
   const val = (X, k) => { const o = X[k]; if (!o) return null; if (k === "go") { const g = o.go, l = o.lay; if (!g || !l || g[0] < 5 || l[0] < 5) return null; if (X.par === 4 && g[0] < 0.1 * (X.field.n || 1)) return null; return mean2(l) - mean2(g); } const h = o.hit, m = o.miss; if (!h || !m || h[0] < 5 || m[0] < 5) return null; return mean2(m) - mean2(h); };
   const out = holeNums.map((h) => {
     const X = I.holes[h], f = X.field, n = f.n || 1;
