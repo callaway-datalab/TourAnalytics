@@ -5717,3 +5717,4 @@ button.ci2-vr { background: none; border: 0; color: inherit; font: inherit; font
 .ci2-blk.pos .ci2-big-v b { color: #6cb8ff; } .ci2-blk.neg .ci2-big-v b { color: #ff8a7e; }
 .ci2-big-s { font-size: var(--fs-2xs); color: #8e8e93; margin-top: 2px; line-height: 1.25; }
 @media (max-width: 600px) { .ci2-big { padding: 8px 8px 10px; } .ci2-big-n { font-size: 2rem; } .ci2-cards { gap: 6px; } }
+.sh-ud-stale { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: rgba(255,159,67,0.14); color: #ffb26b; font-size: var(--fs-note); }

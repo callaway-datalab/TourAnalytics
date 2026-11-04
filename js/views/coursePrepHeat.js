@@ -11,6 +11,7 @@ const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green",
 import { heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 import { playerTrails, LIE_NAMES } from "../courseShots.js"; // (update 479)
+import { BUILD_VERSION } from "../courseRaw.js"; // (update 498)
 
 const st = { hole: 1, pin: {}, view: "field", mode: "score", shot: "1" }; // (kept while the app is open)
 
@@ -485,7 +486,9 @@ export async function drawHeat(ctx, course) {
     const hasB = (pinNow?.merged || [pid]).some((id) => X?.udBoards?.[id]);
     const tog = hasB ? el("button", { type: "button", class: `link small sh-ud-tog${st.showBoard ? " on" : ""}` }, st.showBoard ? "Hide on map" : "Show on map") : null;
     tog?.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); if (st.showBoard) stage.scrollIntoView({ behavior: "smooth", block: "center" }); });
-    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), el("span", { class: "muted small" }, "this pin \u00b7 within 30 yds of the green"), tog]),
+    // (update 498) the admin: maps an older version built (the up & down sides worked out the old way) say so
+    const stale = isAdmin && meta.builtVersion !== BUILD_VERSION ? el("p", { class: "sh-ud-stale" }, meta.rawChunks ? "These maps were built by an older version. Press Rebuild maps on Upload Data \u203a Strategy Maps to rebuild them from the saved shots." : "No shots saved on the site for this course yet, so its maps can\u2019t be rebuilt: upload it once with the new course_upload.py (update 496), then press Rebuild maps on Upload Data \u203a Strategy Maps.") : null;
+    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), el("span", { class: "muted small" }, "this pin \u00b7 within 30 yds of the green"), tog]), stale,
       el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), el("div", { class: "sh-ud-green", "aria-hidden": "true" }, el("i")), cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")])]);
   }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
