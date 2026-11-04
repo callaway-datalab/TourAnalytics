@@ -166,7 +166,7 @@ export function trailSG(t, par, E, into) {
  * (update 502) A hole's up & down boards, per pin. The line of play: from the middle of the fairway (halfway between the
  * farthest-left and farthest-right shots played from the fairway, across the line from the tee to the green) to the pin,
  * or from the tee on a par 3. The board's middle square: 20 x 20 ft around the pin (10 ft each way along and across that
- * line), less where the green runs out sooner (its edges: the 1st and 99th percentiles of where shots were played on it).
+ * line; update 503: 40 x 40 ft, 20 ft each way), less where the green runs out sooner (its edges: the 1st and 99th percentiles of where shots were played on it).
  * shots: [{ x, y, L, d, st }] (every shot on the hole, rounded as the trails are); pins: Map(pin id → [x, y]).
  */
 export function holeBoards(shots, pins, par) {
@@ -182,7 +182,7 @@ export function holeBoards(shots, pins, par) {
   }
   // pixels a yard (each shot's pixels from its pin against its yards), for the 10 ft
   const rs = []; for (const q of shots) { const P = pins.get(q.pid); if (P && q.L !== 4 && q.d != null && q.d > 15) rs.push(Math.hypot(q.x - P[0], q.y - P[1]) / q.d); }
-  rs.sort((a, b) => a - b); const ppy = rs.length ? rs[Math.floor(rs.length / 2)] : 3, ten = (10 / 3) * ppy;
+  rs.sort((a, b) => a - b); const ppy = rs.length ? rs[Math.floor(rs.length / 2)] : 3, ten = (20 / 3) * ppy; // (update 503: 40 x 40 ft, 20 ft each way)
   const memo = new Map();
   const boardOf = (pid) => {
     if (memo.has(pid)) return memo.get(pid);

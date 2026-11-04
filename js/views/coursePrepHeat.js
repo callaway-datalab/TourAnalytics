@@ -10,7 +10,7 @@ import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
 import { lieName, heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
-import { playerTrails, LIE_NAMES } from "../courseShots.js"; // (update 479)
+import { playerTrails, LIE_NAMES, eKey } from "../courseShots.js"; // (update 479; 503: eKey)
 import { BUILD_VERSION } from "../courseRaw.js"; // (update 498)
 import { clientKey } from "../data.js"; // (update 500)
 
@@ -326,7 +326,7 @@ export async function drawHeat(ctx, course) {
    * this pin, and the player's own. The shots are the course's raw shots (kept on the site since update 496), the ones
    * the Shot buttons pick (where shot 1, 2 … finished), on this pin. */
   let spot = null, rawP = null;
-  const RAD = [2, 3, 5, 8, 10, 15, 20, 25];
+  const RAD = [2, 3, 5, 8, 10, 15, 20, 25, 30]; // (update 503: up to 30 yds)
   st.spotR ||= 10; // (update 502: 10 yds to start)
   const rawIndex = () => (rawP ||= Promise.all([import("../courseRaw.js"), import("../courseShots.js")]).then(([R, CS]) => R.loadRaw(meta).then((rows) => {
     const by = new Map(), num0 = (v) => (v == null || v === "" ? null : Number(v)), LI = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
@@ -425,7 +425,7 @@ export async function drawHeat(ctx, course) {
     mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, xb]),
       mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
       el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "To hole out", "Up & down"].map((h, j) => el("th", { class: j ? "num" : null }, h)))),
-        el("tbody", {}, [...[...lies].sort((x0, y0) => y0[1].length - x0[1].length).map(([l, qs]) => el("tr", {}, [el("td", {}, nm(l)), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, fmt(avg(qs), qs.length)), el("td", { class: "num" }, ud(qs))])),
+        el("tbody", {}, [...[...lies].sort((x0, y0) => y0[1].length - x0[1].length).map(([l, qs]) => el("tr", {}, [el("td", {}, el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l))), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, fmt(avg(qs), qs.length)), el("td", { class: "num" }, ud(qs))])),
           lies.size > 1 ? el("tr", { class: "sh-pop-tot" }, [el("td", {}, "All"), el("td", { class: "num" }, String(inside.length)), el("td", { class: "num" }, fmt(a, inside.length)), el("td", { class: "num" }, ud(inside))]) : null])])]);
     requestAnimationFrame(placeDot);
   }
@@ -575,7 +575,8 @@ export async function drawHeat(ctx, course) {
     return el("div", { class: "sh-hl-wrap" }, [row, more, extra]);
   };
   const histKey = () => el("div", { class: "sh-hl-key" }, ["-2", "-1", "0", "1", "2"].map((k) => el("span", {}, [el("i", { style: `background:${scColor(Number(k))}` }), SC[k]])));
-  const myTrails = () => (trails?.trails || []).filter((t) => Number(t.h) === Number(st.hole));
+  // (update 503) the player's rounds on this hole, to the pin picked (a combined pin: any of its pins)
+  const myTrails = () => { const ids = new Set(pinNow?.merged || [st.pin[st.hole]]); return (trails?.trails || []).filter((t) => Number(t.h) === Number(st.hole) && ids.has(String(t.p))); };
   function drawHist() {
     const n = st.hole, H = data.holes?.[n];
     if (!data.shots || !H) { mount(hist, null); pastBtn.hidden = true; return; }
@@ -738,12 +739,20 @@ export async function drawHeat(ctx, course) {
       tg.appendChild(sv("path", { d, fill: "none", stroke: col, "stroke-width": wide ? 3.5 : 2, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
       for (const q of leg) if (Number.isFinite(q[2])) tg.appendChild(sv("circle", { cx: q[0], cy: q[1], r: r0, fill: col, stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
       const hit = sv("path", { d, fill: "none", stroke: "transparent", "stroke-width": 14, "vector-effect": "non-scaling-stroke", class: "sh-trail-hit" });
-      hit.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse" && !trState.one) trailPop(t, e); });
+      // (update 503) its popup only on a tap or click on the trail itself (not on hover)
       // a tap: only this one (and its details); tapped again, all of them back
       hit.addEventListener("click", (e) => { e.stopPropagation(); trState.one = trState.one === t ? null : t; drawTrails(); if (trState.one) trailPop(t, e); else pop.hidden = true; });
       g.appendChild(hit);
     }
   }
+  // (update 503) each shot's strokes gained, against this course's own field (as Course Insights): the expected strokes
+  // from where it was played less those from where it finished (none once holed), less the shot itself
+  const sgOf = (t, i) => {
+    const E = data.insights?.sg?.E; if (!E) return null;
+    const qs = t.shots, q = qs[i], k0 = eKey(q[3], q[4]); if (k0 == null || E[k0] == null) return null;
+    if (i + 1 < qs.length) { const k1 = eKey(qs[i + 1][3], qs[i + 1][4]); return k1 == null || E[k1] == null ? null : E[k0] - E[k1] - 1; }
+    return t.s != null ? E[k0] - 1 : null;
+  };
   function trailPop(t, e) {
     const sr = stage.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top;
     const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { pop.hidden = true; });
@@ -751,7 +760,8 @@ export async function drawHeat(ctx, course) {
     const fmtD = (q) => (q[4] == null ? "" : `${Math.round(q[4])} ${q[3] === 4 ? "ft" : "yds"}`);
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { style: `color:${scColor(t.s ?? 0)}` }, `${t.s != null ? `${scName(t.s)} (${par + t.s})` : "Unfinished"}`), x]),
       el("p", { class: "muted small" }, `${t.y ? `${t.y} \u00b7 ` : ""}Round ${t.r || "?"} \u00b7 ${pinName}`),
-      el("ol", { class: "sh-tr-list" }, [...t.shots.map((q) => el("li", { class: q[0] === kOf(st.hole, par) ? "on" : null }, [el("strong", {}, LIE_NAMES[q[3]] || "Shot"), ` ${fmtD(q)}`, q[5] != null ? el("span", { class: "muted" }, ` \u00b7 ${Number(q[5]).toFixed(0)} to hole out`) : null])),]), t.s != null ? el("p", { class: "sh-tr-in" }, "\u2713 In the hole") : null]);
+      el("ol", { class: "sh-tr-list" }, [...t.shots.map((q, i) => { const g = sgOf(t, i); return el("li", { class: q[0] === kOf(st.hole, par) ? "on" : null }, [el("strong", {}, LIE_NAMES[q[3]] || "Shot"), ` ${fmtD(q)}`, q[5] != null ? el("span", { class: "muted" }, ` \u00b7 ${Number(q[5]).toFixed(0)} to hole out`) : null,
+        g != null ? el("span", { class: `sh-tr-sg ${g > 0.005 ? "pos" : g < -0.005 ? "neg" : ""}` }, ` SG ${g > 0.005 ? "+" : g < -0.005 ? "\u2212" : ""}${Math.abs(g).toFixed(2)}`) : null]); }),]), t.s != null ? el("p", { class: "sh-tr-in" }, "\u2713 In the hole") : null]);
     pop.hidden = false; tapAt = null; dot.hidden = true;
     requestAnimationFrame(() => placePop(px, py));
   }

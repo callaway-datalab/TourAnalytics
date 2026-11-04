@@ -5740,3 +5740,12 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 /* (update 502) the circle's popup can be dragged */
 .sh-stage-wrap > .sh-pop { cursor: grab; touch-action: none; }
 .sh-stage-wrap > .sh-pop button, .sh-stage-wrap > .sh-pop table { cursor: auto; }
+/* (update 503) the circle's popup: each lie in its colour */
+.sh-lie { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 600; font-size: 0.95em; }
+.sh-lie-green { background: #9be15d; color: #10210a; }
+.sh-lie-fairway { background: #3f9b3a; color: #fff; }
+.sh-lie-rough { background: #1f4d22; color: #e6f2e6; }
+.sh-lie-bunker { background: #e2b33c; color: #2a1f05; }
+.sh-lie-other { background: #8e5bd6; color: #fff; }
+.sh-tr-sg { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sh-tr-sg.pos { color: #4cd964; } .sh-tr-sg.neg { color: #ff6b5e; }
