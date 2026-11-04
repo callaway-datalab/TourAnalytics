@@ -20,8 +20,7 @@ import { clientKey } from "./data.js";
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLS = { year: ["year", "season"], courseNum: ["coursenum", "coursenumber", "courseid"], course: ["course", "coursename"], player: ["player", "playername", "name"], playerID: ["playerid", "player_id", "pid"],
   round: ["round", "rnd", "roundno"], hole: ["hole"], par: ["par", "holepar"], pin: ["pinid", "pin", "pinlocation"], lie: ["lie", "fromlocation"], strokes: ["strokes", "stroke", "shotnum", "shotnumber"],
-  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"],
-  appSide: ["appsideloc", "appside", "approachside", "missside"], drive: ["drivedirection", "drivedir", "teedirection"] }; // (update 488)
+  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"] };
 export function shotColumns(header) {
   const h = header.map(norm), ix = {};
   for (const [k, names] of Object.entries(COLS)) { const i = names.map((n) => h.indexOf(norm(n))).find((x) => x >= 0); if (i != null && i >= 0) ix[k] = i; }
@@ -130,25 +129,6 @@ function mergeSource(M, C) {
  *   sg: strokes gained by distance (against this course's own field) of the field and of the Top 10, a round, and the
  *       expected strokes from each lie and distance, so a player's can be worked out the same way
  */
-const SIDES = ["Long-Left", "Long", "Long-Right", "Left", "Right", "Short-Left", "Short", "Short-Right"];
-export function sideOf(v) {
-  const t = String(v ?? "").toLowerCase().replace(/[^a-z]+/g, " ").trim(); if (!t) return null;
-  const ab = /^(s|l)(l|r)$/.exec(t.replace(/ /g, ""));
-  const lo = ab ? ab[1] === "l" : /long|over|back/.test(t), sh = ab ? ab[1] === "s" : /short|front/.test(t);
-  const le = ab ? ab[2] === "l" : /left/.test(t), ri = ab ? ab[2] === "r" : /right/.test(t);
-  const a = lo ? "Long" : sh ? "Short" : "", b = le ? "Left" : ri ? "Right" : "";
-  return a && b ? `${a}-${b}` : a || b || null;
-}
-// (update 493) a tee shot's direction by any common spelling: Left / L / Lft / Missed left, Right / R / Rgt, Fairway / Fwy /
-// Center / C / F / Middle / Hit
-export function driveOf(v) {
-  const t = String(v ?? "").toLowerCase().replace(/[^a-z]+/g, " ").trim(); if (!t) return null;
-  const w = t.split(" ");
-  if (/left/.test(t) || w.some((x) => ["l", "lft", "lt"].includes(x))) return "L";
-  if (/right/.test(t) || w.some((x) => ["r", "rgt", "rt"].includes(x))) return "R";
-  if (/fair|fwy|cent|middle|straight|hit/.test(t) || w.some((x) => ["c", "f", "m", "on"].includes(x))) return "C";
-  return null;
-}
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 export const ATT_B = ["3-5 ft", "5-10 ft", "10-15 ft", "15-20 ft", "20-25 ft", ">25 ft", "<30 yds", "30-50 yds", "50-100 yds", "100-120 yds", "120-140 yds", "140-160 yds", "160-180 yds", "180-200 yds", "200-220 yds", ">220 yds"];
 export const SG_B = ["<5 ft", ...ATT_B.slice(1), "Tee shot"];
@@ -211,6 +191,17 @@ export function courseInsights(C) {
     for (const [, t, qs] of all) { if (t.h !== h || rs.length >= 3000) continue; const P = H.pins.get(t.p); if (!P?.pn) continue; const px = P.px / P.pn, py = P.py / P.pn; for (const q of qs) if (q[3] !== 4 && q[4] != null && q[4] > 15 && rs.length < 3000) rs.push(Math.hypot(q[1] - px, q[2] - py) / q[4]); }
     rs.sort((a, b) => a - b); ppy.set(h, rs.length ? rs[Math.floor(rs.length / 2)] : null);
   }
+  // (update 494) tee misses and approach misses from the shots themselves (not the file's direction columns): the centre of
+  // each green (where every putt started), and where drives finish in the fairway (the line of play off the tee)
+  const gAcc = new Map(), fAcc = new Map();
+  for (const [, t, qs] of all) for (const q of qs) {
+    if (q[3] === 4) { const a = gAcc.get(t.h) || gAcc.set(t.h, [0, 0, 0, 0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; a[3] += q[1] * q[1]; a[4] += q[2] * q[2]; a[5] += q[1] * q[2]; }
+    if (q[0] === 2 && q[3] === 1) { const a = fAcc.get(t.h) || fAcc.set(t.h, [0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; }
+  }
+  const mid = (m, h) => { const a = m.get(h); return a && a[2] ? [a[0] / a[2], a[1] / a[2]] : null; };
+  // (update 495) the green's spread (where every putt started): its length and width along any line, as an oval
+  const spread = (h) => { const a = gAcc.get(h); if (!a || a[2] < 10) return null; const mx = a[0] / a[2], my = a[1] / a[2]; return [a[3] / a[2] - mx * mx, a[4] / a[2] - my * my, a[5] / a[2] - mx * my]; };
+  const SECT = { 0: "Long", 1: "Long-Right", 2: "Right", 3: "Short-Right", 4: "Short", "-4": "Short", "-1": "Long-Left", "-2": "Left", "-3": "Short-Left" };
   const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
   for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, land: [] };
   for (const [key, t, qs] of all) {
@@ -221,15 +212,32 @@ export function courseInsights(C) {
     const one = {}; trailSG({ ...t, shots: qs }, par, E, one);
     for (const [b, v] of Object.entries(one)) { sgF[b] = (sgF[b] || 0) + v; if (isTop) sgT[b] = (sgT[b] || 0) + v; }
     const at = (k) => qs.find((q) => q[0] === k);
-    // where approaches missed the green: up and down (in two from there) by side and lie, close to the green
-    for (const [k, side] of Object.entries(t.as || {})) {
-      const nq = at(Number(k) + 1); if (!nq || nq[4] == null || nq[4] > 30 || ![1, 2, 3].includes(nq[3])) continue;
+    // where approaches missed the green: the first shot played from off the green within 30 yards (after a shot from
+    // farther out); its side from the green's centre, along the line the approach came in on (update 494)
+    const g = mid(gAcc, t.h);
+    for (let i = 1; g && i < qs.length; i++) {
+      const nq = qs[i], pq = qs[i - 1];
+      if (nq[4] == null || nq[4] > 30 || ![1, 2, 3].includes(nq[3])) continue;
+      if (pq[3] === 4 || (pq[4] != null && pq[4] <= 30 && pq[3] !== 0)) break; // (a second chip: not the approach's miss)
+      const ux0 = g[0] - pq[1], uy0 = g[1] - pq[2], ul = Math.hypot(ux0, uy0) || 1, ux = ux0 / ul, uy = uy0 / ul, vx = nq[1] - g[0], vy = nq[2] - g[1];
+      // (update 495) a tic-tac-toe board over the green, square to the approach's line: short / long past the green's front
+      // and back edges, left / right past its sides (the edges: 2 standard deviations of where putts started, each way); a
+      // miss inside the board's middle (the fringe) by its angle
+      const along = vx * ux + vy * uy, lat = ux * vy - uy * vx, cv = spread(t.h);
+      let side = null;
+      if (cv) {
+        const su = Math.sqrt(Math.max(0, ux * ux * cv[0] + 2 * ux * uy * cv[2] + uy * uy * cv[1])), sn = Math.sqrt(Math.max(0, uy * uy * cv[0] - 2 * ux * uy * cv[2] + ux * ux * cv[1]));
+        const row = along > 2 * su ? "Long" : along < -2 * su ? "Short" : "", colm = lat > 2 * sn ? "Right" : lat < -2 * sn ? "Left" : "";
+        side = row && colm ? `${row}-${colm}` : row || colm || null;
+      }
+      side ||= SECT[String(Math.round((Math.atan2(lat, along) * 180) / Math.PI / 45))];
       const lie = LIES[nq[3]][0].toUpperCase() + LIES[nq[3]].slice(1), o = X.ud[side] || (X.ud[side] = {}), a = o[lie] || (o[lie] = [0, 0]);
       const made = nq[5] != null && nq[5] <= 2;
       a[0]++; if (made) a[1]++;
       // (update 491) and for the pin it was played to (Strategy Maps shows it with each pin)
       const U = X.udp[t.p] || (X.udp[t.p] = {}), o2 = U[side] || (U[side] = {}), a2 = o2[lie] || (o2[lie] = [0, 0]);
       a2[0]++; if (made) a2[1]++;
+      break;
     }
     if (t.s == null) continue;
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
@@ -238,9 +246,11 @@ export function courseInsights(C) {
     add2(X.gir, qs.some((q) => q[0] != null && q[0] <= par - 1 && q[3] === 4) || s <= -2 ? "hit" : "miss", s);
     const qg = par >= 5 ? at(3) : par === 4 ? q2 : null;
     if (qg) { const d = qg[3] === 4 ? 0 : qg[4]; if (d != null && d <= 30) add2(X.go, "go", s); else if (d != null && d <= 100) add2(X.go, "lay", s); }
-    const dd = t.dd || (t.dv != null ? (q2 && q2[3] === 1 ? "C" : t.dv < 0 ? "L" : t.dv > 0 ? "R" : null) : null); // (update 493: a number: in the fairway, else its side)
+    const q1 = at(1), fw = mid(fAcc, t.h);
+    let dd = null; // (update 494: from where the drive finished)
+    if (q1 && q2 && q2[3] !== 4) { if (q2[3] === 1) dd = "C"; else if (fw) { const lat = (fw[0] - q1[1]) * (q2[2] - q1[2]) - (fw[1] - q1[2]) * (q2[1] - q1[1]); dd = lat < 0 ? "L" : lat > 0 ? "R" : null; } }
     if (par >= 4 && dd) { add2(X.drive, dd, s); add2(X.drivep[t.p] || (X.drivep[t.p] = {}), dd, s); } // (update 492: and per pin)
-    const q1 = at(1); if (par >= 4 && q1 && q2 && q2[3] === 1) X.land.push([q1[1], q1[2], q2[1], q2[2]]);
+    if (par >= 4 && q1 && q2 && q2[3] === 1) X.land.push([q1[1], q1[2], q2[1], q2[2]]);
   }
   const out = {};
   for (const [h, X] of Object.entries(holes)) {
@@ -265,16 +275,12 @@ export function courseInsights(C) {
 export function shotAggregator() {
   const courses = new Map(); // name → course
   let ix = null, rowsIn = 0;
-  const reads = { drive: new Map(), side: new Map() };
-  const note = (m, v, got) => { const k = String(v ?? "").trim(); if (!k) return; const e = m.get(k) || (m.size < 60 ? m.set(k, { n: 0, as: got }).get(k) : null); if (e) e.n++; };
   // (update 485) read as sources, one per courseNum and spelling; finish() puts together the sources that are the same
   // course (a shared courseNum, or the same name: one course that hosted two events has two courseNums), so each course is
   // one map
   const courseOf = (name, cn) => { const k = `${cn ?? ""}|${name}`; const C = courses.get(k) || courses.set(k, { name, names: new Map([[name, 0]]), courseNum: cn, holes: new Map(), players: new Map(), years: new Set(), events: new Map(), n: 0 }).get(k); C.names.set(name, C.names.get(name) + 1); C.n++; return C; };
   return {
     get rows() { return rowsIn; },
-    /** (update 493) the values found in drive_direction and app_side_loc, and what each was read as (null: not understood) */
-    get reads() { return { drive: [...reads.drive].map(([v, e]) => ({ v, n: e.n, as: e.as })), side: [...reads.side].map(([v, e]) => ({ v, n: e.n, as: e.as })) }; },
     add({ columns, rows }) {
       ix ||= shotColumns(columns);
       const need = ["course", "hole", "x", "y", "strokes", "holeOut"].filter((k) => ix[k] == null);
@@ -309,16 +315,7 @@ export function shotAggregator() {
           const tr = T.trails.get(tk) || T.trails.set(tk, { y: year, r: ix.round != null ? String(num(r[ix.round]) ?? r[ix.round]) : "", h: hole, p: pid, par: par || null, s: null, shots: [] }).get(tk);
           tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v]);
           if (score != null) tr.s = Math.round(score);
-          // (update 488) where an approach finished around the green, and which way the tee shot went
-          const sd = ix.appSide != null ? sideOf(r[ix.appSide]) : null; if (sd) (tr.as ||= {})[st] = sd;
-          // (update 493) drive_direction: a number (below 0 left of the line, above 0 right: a miss unless the next shot is
-          // from the fairway, worked out in courseInsights) or words (Left, R, Fairway …)
-          const dRaw = ix.drive != null && st === 1 ? r[ix.drive] : null, dNum = typeof dRaw === "number" || (typeof dRaw === "string" && /^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test(dRaw)) ? num(dRaw) : null;
-          const dd = dNum == null && dRaw != null ? driveOf(dRaw) : null;
-          if (dNum != null) tr.dv = Math.round(dNum * 100) / 100; else if (dd) tr.dd = dd;
-          // what each value in the two columns was read as, to show after the upload
-          if (ix.drive != null && st === 1) { if (dNum != null) note(reads.drive, dNum < 0 ? "below 0" : dNum > 0 ? "above 0" : "0", dNum < 0 ? "L*" : dNum > 0 ? "R*" : "C*"); else note(reads.drive, dRaw, dd); }
-          if (ix.appSide != null) note(reads.side, r[ix.appSide], sd);
+          // (update 494: the tee and approach misses come from the shots themselves, not the file's direction columns)
         }
       }
     },
@@ -371,14 +368,16 @@ export function shotAggregator() {
   };
 }
 
-/** (update 493) the reads in words: "drive_direction: Left → left (1,204), L → left (90), Pushed → not understood (3)" */
-export function readsText(rd) {
-  const name = { L: "left", R: "right", C: "fairway", "L*": "left miss (unless in the fairway)", "R*": "right miss (unless in the fairway)", "C*": "fairway or straight" };
-  const part = (col, list, f) => (list.length ? `${col}: ${list.sort((a, b) => b.n - a.n).slice(0, 8).map((x) => `${x.v} \u2192 ${x.as ? f(x.as) : "not understood"} (${x.n.toLocaleString()})`).join(", ")}` : `${col}: not in the file`);
-  return `${part("drive_direction", rd.drive, (a) => name[a] || a)}. ${part("app_side_loc", rd.side, (a) => a.replace("-", " ").toLowerCase())}.`;
-}
 /** Admin: saves the boiled-down courses (zones and history in the course; each player's trails apart). */
-export async function uploadShotCourses(list, onStatus = () => {}) {
+/** (update 496) the map a course goes into: the one made for its courseNum (id c{courseNum}), else one with that courseNum,
+ *  else (no courseNum) one of the same name without one; a new one's id otherwise */
+export function mapIdFor(courseNum, name, existing) {
+  const bn = courseNum != null && courseNum !== "" ? String(courseNum) : "";
+  const old = bn ? existing.find((x) => x.id === `c${heatId(bn)}`) || existing.find((x) => String(x.courseNum ?? "") === bn) || existing.find((x) => !x.courseNum && sameCourse(x.name, name)) || null
+    : existing.find((x) => !x.courseNum && sameCourse(x.name, name)) || null;
+  return { old, id: old?.id || (bn ? `c${heatId(bn)}` : heatId(name)) };
+}
+export async function uploadShotCourses(list, onStatus = () => {}, { into = null } = {}) {
   const existing = await listHeatCourses(true);
   for (const [ci, c] of list.entries()) {
     onStatus(`Saving ${c.name} (${ci + 1} of ${list.length})…`);
@@ -388,9 +387,8 @@ export async function uploadShotCourses(list, onStatus = () => {}) {
     // a course without courseNums, the one of the same name that has none either
     const bn = c.courseNum != null ? String(c.courseNum) : "";
     // (update 487) first the map made for that courseNum (its id, c{courseNum}, which no upload ever relabels)
-    const old = bn ? existing.find((x) => x.id === `c${heatId(bn)}`) || existing.find((x) => String(x.courseNum ?? "") === bn) || existing.find((x) => !x.courseNum && sameCourse(x.name, c.name)) || null
-      : existing.find((x) => !x.courseNum && sameCourse(x.name, c.name)) || null;
-    const id = old?.id || (bn ? `c${heatId(bn)}` : heatId(c.name));
+    // (update 496) a rebuild goes into the map its raw shots are kept in
+    const { old, id } = into ? { old: existing.find((x) => x.id === into) || null, id: into } : mapIdFor(bn, c.name, existing);
     const json = JSON.stringify(c.data), chunks = await writeChunks(id, "data", json, old?.dataChunks || 0);
     const players = {};
     let k = 0;

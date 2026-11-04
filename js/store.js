@@ -720,7 +720,7 @@ export async function storageEstimate() {
   ]);
   // (update 460) Strategy Maps: the zones and hole images as stored (uploads before 460: about half a chunk each)
   const maps = heat.docs.reduce((n, d) => { const v = d.data(), est = (k) => (k || 0) * 450000;
-    return n + (v.dataBytes ?? est(v.dataChunks)) + Object.values(v.holes || {}).reduce((t, h) => t + (h.bytes ?? est(h.chunks)), 0); }, 0);
+    return n + (v.dataBytes ?? est(v.dataChunks)) + (v.rawBytes || 0) /* (update 496: the course's raw shots) */ + Object.values(v.holes || {}).reduce((t, h) => t + (h.bytes ?? est(h.chunks)), 0); }, 0);
   const fileBytes = (snap) => snap.docs.reduce((n, d) => n + (d.data().sizeBytes || 0), 0) * 4 / 3;
   const reports = fileBytes(docs), attachments = fileBytes(atts);
   const data = datasets.docs.reduce((n, d) => {

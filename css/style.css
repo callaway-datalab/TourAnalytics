@@ -5682,3 +5682,18 @@ button.ci2-vr { background: none; border: 0; color: inherit; font: inherit; font
 .sh-tee-c.mid { background: rgba(76,175,80,0.10); }
 .sh-tee-c.worse { background: rgba(255,69,58,0.12); outline: 1px solid rgba(255,69,58,0.6); }
 .sh-tee-c.worse strong { color: #ff6b5e; }
+/* (update 494) Strategy Maps: off the tee as one compact row under the scoring bar */
+.sh-tee { display: grid; grid-template-columns: 5.2em 1fr; align-items: center; gap: 10px; margin: 0 0 10px; font-size: var(--fs-note); }
+.sh-tee[hidden] { display: none; }
+.sh-tee .sh-hl-k { display: flex; flex-direction: column; line-height: 1.1; color: #d4b483; font-weight: 600; }
+.sh-tee .sh-hl-k small { color: #8e8e93; font-weight: 400; font-size: var(--fs-2xs); }
+.sh-tee-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.sh-tee-chip { display: flex; align-items: baseline; justify-content: center; gap: 6px; padding: 4px 6px; border-radius: 8px; background: rgba(255,255,255,0.05); }
+.sh-tee-chip small { color: #a1a1a6; font-size: var(--fs-2xs); }
+.sh-tee-chip strong { font-variant-numeric: tabular-nums; }
+.sh-tee-chip.worse { background: rgba(255,69,58,0.14); }
+.sh-tee-chip.worse strong { color: #ff6b5e; }
+/* (update 496) Strategy Maps admin: Rebuild maps */
+.heat-rebuild { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+.heat-rebuild p { margin: 0; flex: 1 1 260px; }
+.py-tag.warn { background: rgba(255,159,67,0.18); color: #ffb26b; border-color: rgba(255,159,67,0.4); }

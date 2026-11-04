@@ -163,9 +163,22 @@ function heatPanel(flash) {
   const csv = el("input", { type: "file", accept: ".csv,.parquet" }), zip = el("input", { type: "file", accept: ".zip,application/zip" });
   const csvBtn = el("button", { class: "btn", type: "button" }, "Upload scoring"), zipBtn = el("button", { class: "btn", type: "button" }, "Upload images");
   const list = el("div", {}, el("p", { class: "muted small" }, "Loading…"));
+  // (update 496) Rebuild maps: every course whose shots are newer than its maps, or whose maps an older version built
+  const rebuildBtn = el("button", { class: "btn", type: "button", disabled: true }, "Rebuild maps"), rebuildNote = el("p", { class: "muted small" });
+  rebuildBtn.addEventListener("click", async () => {
+    rebuildBtn.disabled = true;
+    try { const R = await import("../courseRaw.js"); const names = await R.buildAll((t) => { rebuildBtn.textContent = t; }); flash(`Rebuilt ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.`, "ok"); }
+    catch (err) { console.error(err); flash(err?.message || "Couldn\u2019t rebuild the maps.", "error"); }
+    finally { rebuildBtn.textContent = "Rebuild maps"; drawList(); }
+  });
   const drawList = async (fresh = true) => {
     const { listHeatCourses, deleteHeatCourse } = await import("../courseHeat.js");
     const cs = (await listHeatCourses(fresh)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const R = await import("../courseRaw.js");
+    const stale = cs.filter(R.needsBuild), noRaw = cs.filter((c) => c.shotLevel && !c.rawChunks);
+    mount(rebuildNote, stale.length ? `${stale.length} ${stale.length === 1 ? "course needs" : "courses need"} rebuilding: ${stale.map((c) => c.name).join(", ")}.` : cs.some((c) => c.rawChunks) ? "Every course\u2019s maps are up to date." : "");
+    rebuildBtn.disabled = !stale.length; rebuildBtn.textContent = stale.length ? `Rebuild maps (${stale.length})` : "Rebuild maps";
+    if (noRaw.length) mount(rebuildNote, [rebuildNote.textContent, " ", el("span", { class: "muted" }, `No shots saved yet for ${noRaw.map((c) => c.name).join(", ")}: upload them once more (course_upload.py, update 496) so they can be rebuilt here.`)]);
     if (!cs.length) { mount(list, el("p", { class: "empty" }, "No courses yet.")); return; }
     mount(list, el("div", { class: "table-scroll" }, el("table", { class: "plain" }, [
       el("thead", {}, el("tr", {}, ["Course", "Images", "Zones", "Updated", ""].map((h, i) => el("th", { class: i === 1 || i === 2 ? "num" : null }, h)))),
@@ -174,7 +187,7 @@ function heatPanel(flash) {
         del.addEventListener("click", async () => { if (!confirmAction(`Delete the Strategy Maps for ${c.name}? Its images and zones go.`)) return; del.disabled = true; try { await deleteHeatCourse(c.id); flash(`Deleted ${c.name}.`, "ok"); drawList(); } catch (err) { console.error(err); flash("Couldn’t delete that.", "error"); del.disabled = false; } });
         const nImg = Object.keys(c.holes || {}).length;
         const when = [c.dataAt, c.imgAt].map((t) => t?.toMillis?.() ?? 0).reduce((a, b) => Math.max(a, b), 0);
-        return el("tr", {}, [el("td", {}, [el("strong", {}, c.name), " ", el("span", { class: "py-tag", title: c.shotLevel ? "Shot by shot: hole history and each player\u2019s past shots" : "Zones (no hole history or past shots)" }, c.shotLevel ? `Shots \u00b7 ${Object.keys(c.players || {}).length} players` : "Zones"), c.courseNum ? el("span", { class: "muted small" }, ` #${[c.courseNum, ...(c.courseNums || []).filter((n) => String(n) !== String(c.courseNum))].join(", #")}`) : null]), el("td", { class: "num" }, nImg ? String(nImg) : "—"), el("td", { class: "num" }, c.zones ? num(c.zones) : "—"),
+        return el("tr", {}, [el("td", {}, [el("strong", {}, c.name), " ", el("span", { class: "py-tag", title: c.shotLevel ? "Shot by shot: hole history and each player\u2019s past shots" : "Zones (no hole history or past shots)" }, c.shotLevel ? `Shots \u00b7 ${Object.keys(c.players || {}).length} players` : "Zones"), R.needsBuild(c) ? el("span", { class: "py-tag warn" }, c.dataChunks ? "Needs rebuild" : "Not built yet") : null, c.courseNum ? el("span", { class: "muted small" }, ` #${[c.courseNum, ...(c.courseNums || []).filter((n) => String(n) !== String(c.courseNum))].join(", #")}`) : null]), el("td", { class: "num" }, nImg ? String(nImg) : "—"), el("td", { class: "num" }, c.zones ? num(c.zones) : "—"),
           el("td", {}, when ? formatWhen(new Date(when)) : "—"), el("td", { class: "actions" }, del)]);
       })),
     ])));
@@ -186,24 +199,35 @@ function heatPanel(flash) {
       const { uploadHeatScoring } = await import("../courseHeat.js");
       // (update 459) Parquet (as from pandas) or CSV. (update 479) A shot-level file (a row per shot: strokes, hole_out…)
       // is read a slice at a time and boiled down here (zones, hole history, each player's trails) before it's saved.
-      const S = await import("../courseShots.js");
-      let names, reads = ""; // (update 493: what the two direction columns were read as)
+      const S = await import("../courseShots.js"), R = await import("../courseRaw.js");
+      // (update 496) a shot file: its raw shots kept on the site (a map each), then each map built from them here
+      const saveAndBuild = async (raw) => {
+        const out = [];
+        for (const c of raw.courses) {
+          const id = await R.saveRaw(c, (t) => { csvBtn.textContent = t; });
+          const { listHeatCourses } = await import("../courseHeat.js");
+          const meta = (await listHeatCourses(true)).find((x) => x.id === id);
+          out.push(await R.buildCourse(meta, (t) => { csvBtn.textContent = t; }));
+        }
+        return out;
+      };
+      let names;
       if (/\.parquet$/i.test(f.name)) {
         const { readParquetChunks } = await import("../parquet.js");
-        let agg = null, flat = null;
+        let raw = null, flat = null;
         await readParquetChunks(f, async (t, done, total) => {
-          if (!agg && !flat) { if (S.isShotFile(t.columns)) agg = S.shotAggregator(); else flat = [t.columns]; }
-          if (agg) agg.add(t); else flat.push(...t.rows);
+          if (!raw && !flat) { if (S.isShotFile(t.columns)) raw = R.rawCollector(); else flat = [t.columns]; }
+          if (raw) raw.add(t); else flat.push(...t.rows);
           csvBtn.textContent = `Reading\u2026 ${Math.round((done / total) * 100)}%`;
         });
-        if (agg) { csvBtn.textContent = "Working out the zones\u2026"; await new Promise((r) => setTimeout(r, 30)); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); reads = S.readsText(agg.reads); }
+        if (raw) names = await saveAndBuild(raw);
         else names = await uploadHeatScoring(flat, (t) => { csvBtn.textContent = t; });
       } else {
         const rows = parseCsv(await f.text());
-        if (S.isShotFile(rows[0] || [])) { const agg = S.shotAggregator(); agg.add({ columns: rows[0], rows: rows.slice(1) }); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); reads = S.readsText(agg.reads); }
+        if (S.isShotFile(rows[0] || [])) { const raw = R.rawCollector(); raw.add({ columns: rows[0], rows: rows.slice(1) }); names = await saveAndBuild(raw); }
         else names = await uploadHeatScoring(rows, (t) => { csvBtn.textContent = t; });
       }
-      flash(`Scoring saved for ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.${reads ? ` ${reads}` : ""}`, "ok"); csv.value = ""; drawList();
+      flash(`Scoring saved for ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.`, "ok"); csv.value = ""; drawList();
     } catch (err) { console.error(err); flash(err?.message && !/permission/i.test(err.message) ? err.message : "Couldn’t save the scoring. Republish the Firestore rules (update 456) and try again.", "error"); }
     finally { csvBtn.disabled = false; csvBtn.textContent = "Upload scoring"; }
   });
@@ -220,9 +244,10 @@ function heatPanel(flash) {
   drawList(false).catch(() => mount(list, el("p", { class: "muted small" }, "Couldn’t load the courses (republish the Firestore rules, update 456).")));
   return el("section", { class: "heat-admin" }, [
     el("h2", {}, "Strategy Maps (Course Prep)"),
+    el("div", { class: "heat-rebuild" }, [rebuildBtn, rebuildNote]),
     el("p", { class: "muted small" }, "Each course’s hole images with its scoring zones over them, under Course Prep › the course › Strategy Maps. Image folders are matched to the scoring file by courseNum (or by course name)."),
     el("div", { class: "stack narrow" }, [
-      el("label", {}, ["Scoring (.parquet or .csv)", csv, el("small", {}, "One row per shot (every shot of every player): year, courseNum, course, player, playerID, round, hole, par, pin_id, lie, strokes, shot_for, hole_out, x, y, scoring_avg, pin_x, pin_y, distance. It\u2019s boiled down on this computer into the map\u2019s zones, each hole\u2019s scoring history and each player\u2019s own shots. (A file of zones, one row per cluster, still works too.) x, y are the cluster centre in pixels on that hole\u2019s image (shotStartX/Y_projected_Hole); pin_x, pin_y the pin. scoring_avg is the strokes to hole out from there; distance the distance from the pin (yards, feet on the green). The zones blend into each other and stop where the lie changes on the image. Uploading a course again replaces its zones.")]),
+      el("label", {}, ["Scoring (.parquet or .csv)", csv, el("small", {}, "One row per shot (every shot of every player): year, courseNum, course, player, playerID, round, hole, par, pin_id, lie, strokes, shot_for, hole_out, x, y, scoring_avg, pin_x, pin_y, distance. Its shots are kept on the site (a map for each courseNum), and the maps are built from them on this computer: the zones, each hole\u2019s scoring history, each player\u2019s own shots and Course Insights. When an update changes how the maps are worked out, press Rebuild maps (above): no need to upload again. course_upload.py (Python) sends the shots the same way. (A file of zones, one row per cluster, still works too.) x, y are the cluster centre in pixels on that hole\u2019s image (shotStartX/Y_projected_Hole); pin_x, pin_y the pin. scoring_avg is the strokes to hole out from there; distance the distance from the pin (yards, feet on the green). The zones blend into each other and stop where the lie changes on the image. Uploading a course again replaces its zones.")]),
       el("div", {}, csvBtn),
       el("label", {}, ["Hole images (.zip)", zip, el("small", {}, "A CourseImages folder with a folder for each course, named with its courseNum (or its course name), and in it an image for each hole named by its number (1.png, or 1/Hole.png). The same images the x, y were measured on. The site shows the course name from the scoring file.")]),
       el("div", {}, zipBtn),

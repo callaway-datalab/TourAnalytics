@@ -109,26 +109,29 @@ return straight away without waiting). To send a file you already have:
 You'll also see each Python upload on **Upload Data → From Python** (Live, Working… or Failed with the reason).
 Files sent from Python are tagged **Python** in the list of uploaded files.
 
-## Strategy Maps: a course's shots from Python (update 481)
+## Strategy Maps: a course's shots from Python (update 481; update 496: upload only)
 
-`python/course_upload.py` sends a course's shot-level data straight to Strategy Maps. It does on your computer what
-**Upload Data → Strategy Maps → Scoring** does in the browser: zones, hole and pin history, and every player's past
-shots. Then it saves them in the same place, so the course's maps update the next time someone opens it. It uses the
-same key and setup as `tour_upload.py`. Put it in the same folder as `tour_upload.py`.
+`python/course_upload.py` only gets a course's shots onto the site. It sends each map's raw shots (one map for each
+courseNum), packed and gzipped the same way `tour_upload.py` sends the stats. **Nothing is worked out in Python.** The
+website builds the maps from those shots: the zones, each hole's history, each player's past shots and Course Insights.
+It uses the same key and setup as `tour_upload.py`; keep it in the same folder.
 
 ```python
-from course_upload import upload_course
+from course_upload import upload_course, list_maps
 
 upload_course(cluster_data, course=4)                      # by courseNum
-upload_course(cluster_data, course="Torrey Pines South")   # or by name
-upload_course("torrey_shots.parquet")                      # a file: every course in it
+upload_course(cluster_data, course="Torrey Pines South")   # or by name (every courseNum under it)
+list_maps()                                                # what's on the site, and what needs rebuilding
 ```
 
-Each upload **replaces** that course's maps, history and past shots. Send every year you want on its map (last
-year's rounds plus this week's), not only this week's rounds. Other courses, and the course's hole images, aren't
-touched. A new course needs its images uploaded once on Upload Data (the script says so).
+Then open **Upload Data → Strategy Maps** and press **Rebuild maps**. It builds every course whose shots are newer than
+its maps, in your browser, from the shots already on the site.
 
-From a terminal: `python course_upload.py shots.parquet 4`.
+When a site update changes how the maps are worked out, the same button shows how many courses need rebuilding: press it
+and every course is rebuilt from its saved shots. No re-upload, and this Python file doesn't change.
+
+Each upload **replaces** that map's shots: send every year you want on its map (last year's rounds plus this week's).
+Other courses, and the hole images, aren't touched.
 
 ## Limits and cost
 

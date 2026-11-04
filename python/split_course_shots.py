@@ -24,8 +24,7 @@ import pandas as pd
 
 # the columns the site reads, in this order
 COLUMNS = ["year", "courseNum", "course", "tournament", "player", "playerID", "round", "hole", "par", "pin_id", "lie",
-           "strokes", "shot_for", "hole_out", "x", "y", "scoring_avg", "pin_x", "pin_y", "distance",
-           "app_side_loc", "drive_direction"]  # (tournament: optional, update 486; app_side_loc, drive_direction: update 488)
+           "strokes", "shot_for", "hole_out", "x", "y", "scoring_avg", "pin_x", "pin_y", "distance"]  # (tournament: optional, update 486)
 REQUIRED = ["course", "hole", "x", "y", "strokes", "hole_out", "scoring_avg", "lie"]
 
 

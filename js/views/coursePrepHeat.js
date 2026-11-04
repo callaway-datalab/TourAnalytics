@@ -37,7 +37,10 @@ export async function drawHeat(ctx, course) {
   // the page: holes, then pins and the switches, then the picture
   const holeBar = el("div", { class: "sh-holes", role: "tablist", "aria-label": "Hole" });
   const pinBar = el("div", { class: "sh-pins", role: "group", "aria-label": "Pin" });
-  const viewSeg = el("div", { class: "seg seg-sm", role: "group", "aria-label": "Whose scoring" });
+  // (update 494) the pins hardest first (by their scoring average to par; pins without scores last)
+  const pinAvg = (n, p) => { const h = data.holes?.[n]?.pins?.[p]?.hist || {}; let t = 0, c = 0; for (const [k, v] of Object.entries(h)) { t += Number(k) * v; c += v; } return c ? t / c : -Infinity; };
+  const pinsByHard = (n) => pinsOn(meta, data, n).map((p, i) => [p, pinAvg(n, p), i]).sort((a, b) => b[1] - a[1] || a[2] - b[2]).map((x) => x[0]);
+  const isP = () => !!who; // (update 494: no Field / Player switch: a player picked shows the player, else the field)
   const shotSeg = el("div", { class: "seg seg-sm", role: "group", "aria-label": "Which shot" }); // (update 482)
   const shotRow = el("div", { class: "sh-sw sh-shot-row", hidden: true }, shotSeg);
   const head = el("div", { class: "sh-head" });
@@ -60,11 +63,11 @@ export async function drawHeat(ctx, course) {
   const stage = el("div", { class: "sh-stage" }, [zoomBox, dot, pop, pastBtn, el("div", { class: "sh-zbar" }, [zIn, zOut, zFit])]);
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
-  const teeBox = el("div", { class: "sh-ud sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
+  const teeBox = el("div", { class: "sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
   const udBox = el("div", { class: "sh-ud", hidden: true }); // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
   prev.addEventListener("click", () => go(-1)); next.addEventListener("click", () => go(1));
-  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, head, hist, el("div", { class: "sh-ctl" }, [pinBar, el("div", { class: "sh-sw" }, [viewSeg])]), shotRow, stage, legend, trKey, teeBox, udBox, keys, el("div", { class: "sh-nav" }, [prev, next])]));
+  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, head, hist, teeBox, el("div", { class: "sh-ctl" }, [pinBar]), shotRow, stage, legend, trKey, udBox, keys, el("div", { class: "sh-nav" }, [prev, next])]));
 
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
@@ -76,7 +79,7 @@ export async function drawHeat(ctx, course) {
   // (update 482) the shot picked (where shot 1, 2 or 3 finished), when this hole has it: 0 for every shot
   // (update 484) no All shots: shot 1 unless another is picked (0 only for courses uploaded before update 482)
   const kOf = (n, parN) => { const H = data.holes?.[n]; if (!Object.values(H?.pins || {}).some((p) => p.byShot)) return 0; const k = Number(st.shot) || 1; return shotsFor(parN).includes(k) ? k : 1; };
-  const vkOf = () => (st.view === "player" && ix ? `p:${who?.key}` : "f");
+  const vkOf = () => (isP() && ix ? `p:${who?.key}` : "f");
   const memoKey = (n, pid, parN, im = 1) => `${n}|${pid}|${vkOf()}|s${kOf(n, parN)}|${im}`;
   const zonesFor = (n, pid, parN) => {
     const H = data.holes?.[n] || { pins: {} }, k = kOf(n, parN), p = pinForShot(H.pins[pid], k);
@@ -99,12 +102,12 @@ export async function drawHeat(ctx, course) {
     try {
       const url = await heatImage(meta, nx); if (!url) return;
       const im = new Image(); im.src = url; await im.decode();
-      const p0 = st.pin[nx] && pinsOn(meta, data, nx).includes(st.pin[nx]) ? st.pin[nx] : pinsOn(meta, data, nx)[0];
+      const p0 = st.pin[nx] && pinsByHard(nx).includes(st.pin[nx]) ? st.pin[nx] : pinsByHard(nx)[0];
       const parN = H.par || meta.par?.[nx - 1] || course.par?.[nx - 1] || 4;
       if (!p0 || ovMemo.has(memoKey(nx, p0, parN))) return;
       await new Promise((r) => setTimeout(r, 200));
       const Zp = zonesFor(nx, p0, parN);
-      keyZones(Zp, st.view === "player" && !!ix);
+      keyZones(Zp, isP() && !!ix);
       ovMemo.set(memoKey(nx, p0, parN), buildOverlay(im, Zp, { W: hm.w, H: hm.h, par: parN, mode: "score", learn: learnOf(H), learnKey: `${meta.id}|${nx}` }));
     } catch { /* (it's only a head start) */ }
   };
@@ -116,10 +119,10 @@ export async function drawHeat(ctx, course) {
       if (!img.naturalWidth || !size.w) return;
       const n = st.hole, H = data.holes?.[n]; if (!H) return;
       const vk = `${vkOf()}|s${Number(st.shot) || 0}`;
-      const next = pinsOn(meta, data, n).find((p) => !ovMemo.has(memoKey(n, p, par)));
+      const next = pinsByHard(n).find((p) => !ovMemo.has(memoKey(n, p, par)));
       if (!next) { warmNextHole(vk); return; }
       const Zp = zonesFor(n, next, par);
-      keyZones(Zp, st.view === "player" && !!ix);
+      keyZones(Zp, isP() && !!ix);
       ovMemo.set(memoKey(n, next, par), buildOverlay(img, Zp, { W: size.w, H: size.h, par, mode: "score", learn: learnOf(H), learnKey: `${meta.id}|${n}` }));
       prewarm();
     }, 250);
@@ -141,7 +144,7 @@ export async function drawHeat(ctx, course) {
     mount(head, [el("h2", {}, `Hole ${n} · Par ${par}${yds ? ` · ${yds} yds` : ""}`)]);
     drawHoleBar();
     prev.disabled = holeNums.indexOf(n) <= 0; next.disabled = holeNums.indexOf(n) >= holeNums.length - 1;
-    const pins = pinsOn(meta, data, n); // (update 463: not the ones the admin deleted)
+    const pins = pinsByHard(n); // (update 463: not the ones the admin deleted)
     if (!pins.includes(st.pin[n])) st.pin[n] = pins[0];
     // the pins: a switch each (the picture stays; only the zones change)
     drawPins(n, pins);
@@ -173,7 +176,7 @@ export async function drawHeat(ctx, course) {
         const name = prompt("Name for the combined pin:", of.map((p) => pinLabel(meta, n, p)).join(" + "));
         if (name === null) return;
         let id; try { id = await mergePins(meta, n, of, name); } catch (err) { console.error(err); alert("Couldn\u2019t combine those pins. Try again."); return; }
-        picking = null; data = withMerges(meta, raw); ovMemo.clear(); st.pin[n] = id; drawPins(n, pinsOn(meta, data, n)); paint();
+        picking = null; data = withMerges(meta, raw); ovMemo.clear(); st.pin[n] = id; drawPins(n, pinsByHard(n)); paint();
       });
       const cancel = el("button", { type: "button", class: "link small sh-pin-edit" }, "Cancel"); cancel.addEventListener("click", () => { picking = null; drawPins(n, pins); });
       mount(pinBar, [el("span", { class: "muted small" }, "Pick the pins to combine:"), ...tick, go, cancel]);
@@ -187,7 +190,7 @@ export async function drawHeat(ctx, course) {
       ren.addEventListener("click", () => {
         const inp = el("input", { type: "text", class: "sh-pin-in", value: pinLabel(meta, n, p), maxLength: 60, "aria-label": "Pin name" });
         let done = false;
-        const save = async (keep) => { if (done) return; done = true; const v = inp.value.trim(); if (keep && v !== pinLabel(meta, n, p)) { try { await renamePin(meta, n, p, v === p ? "" : v); } catch (err) { console.error(err); alert("Couldn\u2019t rename that pin. Try again."); } } drawPins(n, pinsOn(meta, data, n)); };
+        const save = async (keep) => { if (done) return; done = true; const v = inp.value.trim(); if (keep && v !== pinLabel(meta, n, p)) { try { await renamePin(meta, n, p, v === p ? "" : v); } catch (err) { console.error(err); alert("Couldn\u2019t rename that pin. Try again."); } } drawPins(n, pinsByHard(n)); };
         inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(true); } else if (e.key === "Escape") save(false); });
         inp.addEventListener("blur", () => save(true));
         wrap.replaceWith(inp); inp.focus(); inp.select();
@@ -197,20 +200,20 @@ export async function drawHeat(ctx, course) {
       if (merged) del.addEventListener("click", async () => { // (update 468: a combined pin splits back into its pins)
         if (!confirm(`Split ${pinLabel(meta, n, p)} back into ${data.holes[n].pins[p].merged.map((q) => pinLabel(meta, n, q)).join(", ")}?`)) return;
         try { await splitPins(meta, n, p); } catch (err) { console.error(err); alert("Couldn\u2019t split that pin. Try again."); return; }
-        data = withMerges(meta, raw); ovMemo.clear(); st.pin[n] = pinsOn(meta, data, n)[0]; drawPins(n, pinsOn(meta, data, n)); paint();
+        data = withMerges(meta, raw); ovMemo.clear(); st.pin[n] = pinsByHard(n)[0]; drawPins(n, pinsByHard(n)); paint();
       });
       else del.addEventListener("click", async () => {
         if (!confirm(`Delete ${pinLabel(meta, n, p)} on hole ${n}? It stops showing for everyone (in Strategy Maps and Simulate Round). You can bring it back with Edit pins.`)) return;
         try { await setPinOff(meta, n, p, true); } catch (err) { console.error(err); alert("Couldn\u2019t delete that pin. Try again."); return; }
-        const left = pinsOn(meta, data, n); if (st.pin[n] === p) st.pin[n] = left[0]; drawPins(n, left); paint();
+        const left = pinsByHard(n); if (st.pin[n] === p) st.pin[n] = left[0]; drawPins(n, left); paint();
       });
       const wrap = el("span", { class: "sh-pin-wrap" }, [b, ren, del]);
       return wrap;
     });
     const off = isAdmin ? Object.keys(data.holes?.[n]?.pins || {}).filter((p) => (meta.pinsOff || []).includes(`${n}|${p}`)) : []; // (deleted ones, not ones in a combined pin)
     const restore = editPins && off.length ? el("select", { class: "sh-pin-restore", "aria-label": "Bring back a deleted pin" }, [el("option", { value: "" }, `Bring back (${off.length})`), ...off.map((p) => el("option", { value: p }, pinLabel(meta, n, p)))]) : null;
-    restore?.addEventListener("change", async () => { const p = restore.value; if (!p) return; try { await setPinOff(meta, n, p, false); } catch (err) { console.error(err); alert("Couldn\u2019t bring that pin back."); } st.pin[n] ||= p; drawPins(n, pinsOn(meta, data, n)); paint(); });
-    const edit = isAdmin ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, editPins ? "Done" : "Edit pins"); b.addEventListener("click", () => { editPins = !editPins; drawPins(n, pinsOn(meta, data, n)); }); return b; })() : null;
+    restore?.addEventListener("change", async () => { const p = restore.value; if (!p) return; try { await setPinOff(meta, n, p, false); } catch (err) { console.error(err); alert("Couldn\u2019t bring that pin back."); } st.pin[n] ||= p; drawPins(n, pinsByHard(n)); paint(); });
+    const edit = isAdmin ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, editPins ? "Done" : "Edit pins"); b.addEventListener("click", () => { editPins = !editPins; drawPins(n, pinsByHard(n)); }); return b; })() : null;
     const combine = isAdmin && editPins && pins.length >= 2 ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, "Combine pins"); b.addEventListener("click", () => { picking = new Set(); drawPins(n, pins); }); return b; })() : null;
     mount(pinBar, [...(items.length ? items : [el("span", { class: "muted small" }, off.length ? "Every pin on this hole is deleted." : "No zones for this hole yet.")]), restore, combine, edit]);
   }
@@ -220,9 +223,8 @@ export async function drawHeat(ctx, course) {
     pinNow = pin || null;
     drawHist(); drawTrails(); drawTee(); drawUD(); // (update 479; 491: up & down; 492: tee misses)
     drawShotSeg();
-    seg(viewSeg, [["field", "Field"], ["player", who ? who.label.split(" ")[0] || "Player" : "Player", !who ? "Pick a player" : !ix && !trails?.trails?.length ? "Loading their stats…" : null]], "view", paint);
     if (!pin || !size.w) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); Z = null; mount(keys, size.w ? null : el("p", { class: "muted small" }, "No image for this hole yet: upload the course’s images zip on Upload Data.")); drawLegend(); return; }
-    const usePlayer = st.view === "player" && !!ix;
+    const usePlayer = isP() && !!ix;
     const Hn = data.holes?.[n] || {};
     Z = zonesFor(n, st.pin[n], par); // (update 458; 480: smoothed when shot by shot, or when there are lots of small zones; 482: or one shot's results)
     const K = keyZones(Z, usePlayer);
@@ -297,7 +299,7 @@ export async function drawHeat(ctx, course) {
   }
   function openZone(z, at = null) {
     tapAt = at || { x: z.x, y: z.y };
-    const usePlayer = st.view === "player" && !!ix;
+    const usePlayer = isP() && !!ix;
     const cat = zoneCat(z), catN = Z.zones.filter((o) => zoneCat(o) === cat).reduce((t, o) => t + (o.n || 0), 0);
     const catShare = catN ? Math.round((100 * (z.n || 0)) / catN) : null;
     const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "✕"); x.addEventListener("click", () => { pop.hidden = true; hideDot(); });
@@ -409,17 +411,17 @@ export async function drawHeat(ctx, course) {
     if (!data.shots || !H) { mount(hist, null); pastBtn.hidden = true; return; }
     const pinId = st.pin[n], P = H.pins?.[pinId];
     const pins = Object.keys(H.pins || {}).length;
-    const lines = [histLine(pins > 1 ? "This pin" : "Field", P?.hist), pins > 1 ? histLine("All pins", H.hist) : null];
-    const mine = st.view === "player" && who ? myTrails() : [];
+    const lines = [histLine(pins > 1 ? "This pin" : "Field", P?.hist)]; // (update 494: no All pins line)
+    const mine = isP() && who ? myTrails() : [];
     if (mine.length) { const h = {}; for (const t of mine) if (t.s != null) { const k = String(Math.max(-2, Math.min(2, t.s))); h[k] = (h[k] || 0) + 1; } lines.push(histLine(who.label.split(" ")[0] || who.label, h)); }
     // (update 480) Player view with no past shots: say why (not in this course's shot data, or not on this hole)
-    if (st.view === "player" && who && !mine.length && data.shots) {
+    if (isP() && who && !mine.length && data.shots) {
       const nP = Object.keys(meta.players || {}).length, inData = !!meta.players?.[who.key];
       lines.push(el("p", { class: "muted small sh-hl-none" }, inData ? `No past shots for ${who.label} on this hole.` : `No shots for ${who.label} in this course\u2019s shot data${nP ? ` (it has ${nP} players, matched by playerID)` : ""}.`));
     }
     const shown = lines.filter(Boolean);
     mount(hist, shown.length ? [...shown, histKey()] : null);
-    pastBtn.hidden = !(st.view === "player" && mine.length);
+    pastBtn.hidden = !(isP() && mine.length);
     pastBtn.textContent = st.showPast ? "Hide Past Shots" : `Show Past Shots (${mine.length})`;
     pastBtn.classList.toggle("on", !!st.showPast);
   }
@@ -437,10 +439,11 @@ export async function drawHeat(ctx, course) {
     const avg = (k) => (D[k]?.[0] >= 5 ? par + D[k][1] / D[k][0] : null), L = avg("L"), C = avg("C"), R = avg("R");
     if (L == null && R == null) { teeBox.hidden = true; mount(teeBox, null); return; }
     const worse = L != null && R != null && Math.abs(L - R) >= 0.02 ? (L > R ? "L" : "R") : null;
-    const cell = (k, label, v) => el("div", { class: `sh-tee-c${worse === k ? " worse" : ""}${k === "C" ? " mid" : ""}` }, [el("span", { class: "sh-ud-k" }, label), el("strong", {}, v == null ? "\u2014" : v.toFixed(2)), el("span", { class: "sh-ud-l" }, D[k]?.[0] ? `${D[k][0]} tee shots` : "")]);
+    // (update 494) one compact row under the scoring bar: left miss · fairway · right miss, the worse miss in red
+    const chip = (k, label, v) => el("span", { class: `sh-tee-chip${worse === k ? " worse" : ""}`, title: D[k]?.[0] ? `${D[k][0]} tee shots` : null }, [el("small", {}, label), el("strong", {}, v == null ? "\u2014" : v.toFixed(2))]);
     teeBox.hidden = false;
-    mount(teeBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Off the tee"), el("span", { class: "muted small" }, worse ? `the ${worse === "L" ? "left" : "right"} miss costs ${Math.abs(L - R).toFixed(2)} more` : "scoring average after each")]),
-      el("div", { class: "sh-tee-row" }, [cell("L", "Left miss", L), cell("C", "Fairway", C), cell("R", "Right miss", R)])]);
+    mount(teeBox, [el("span", { class: "sh-hl-k" }, ["Off the tee", el("small", {}, worse ? `${worse === "L" ? "left" : "right"} +${Math.abs(L - R).toFixed(2)}` : "avg score")]),
+      el("span", { class: "sh-tee-chips" }, [chip("L", "Left", L), chip("C", "Fairway", C), chip("R", "Right", R)])]);
   }
   function drawUD() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
@@ -473,14 +476,14 @@ export async function drawHeat(ctx, course) {
   };
   function drawTrails() {
     while (trSvg.firstChild) trSvg.removeChild(trSvg.firstChild);
-    const show = st.showPast && st.view === "player" && who && size.w;
+    const show = st.showPast && isP() && who && size.w;
     trSvg.style.display = show ? "" : "none";
     trKey.hidden = !show;
     if (!show) return;
     if (trState.hole !== `${meta.id}|${st.hole}`) { trState.hole = `${meta.id}|${st.hole}`; trState.scores.clear(); trState.one = null; }
     const W = size.w, Hh = size.h, H = data.holes?.[st.hole], k = kOf(st.hole, par);
     const sc = (t) => Math.max(-2, Math.min(2, t.s ?? 0));
-    const all = myTrails().map((t) => ({ t, leg: legOf(t, k, H?.pins?.[t.p]) })).filter((x) => x.leg && x.leg.length > 1);
+    const all = myTrails().map((t) => ({ t, leg: legOf(t, 0, H?.pins?.[t.p]) })).filter((x) => x.leg && x.leg.length > 1); // (update 494: the whole trail again)
     if (trState.one && !all.some((x) => x.t === trState.one)) trState.one = null;
     const shown = all.filter((x) => (trState.one ? x.t === trState.one : !trState.scores.size || trState.scores.has(sc(x.t))));
     // the key: each score with how many, a button that filters
@@ -494,16 +497,18 @@ export async function drawHeat(ctx, course) {
     const filtered = trState.one || trState.scores.size;
     const allBtn = filtered ? el("button", { type: "button", class: "link small sh-lg-all" }, "Show all") : null;
     allBtn?.addEventListener("click", () => { trState.one = null; trState.scores.clear(); pop.hidden = true; drawTrails(); });
-    mount(trKey, [el("span", { class: "muted small" }, k ? `Past shots, shot ${k}:` : "Past shots:"), ...chips, allBtn,
-      !all.length ? el("span", { class: "muted small" }, k ? `None played a shot ${k} here.` : "") : null]);
+    mount(trKey, [el("span", { class: "muted small" }, "Past shots:"), ...chips, allBtn,
+      null]);
     trSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
     const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); trSvg.appendChild(g);
     const r0 = Math.max(W, Hh) / 400;
     for (const { t, leg } of shown) {
       const d = leg.map((q, i) => `${i ? "L" : "M"}${q[0]} ${q[1]}`).join(" "), col = scColor(t.s ?? 0), wide = trState.one === t;
-      g.appendChild(sv("path", { d, fill: "none", stroke: "rgba(0,0,0,0.55)", "stroke-width": wide ? 6 : 4, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
-      g.appendChild(sv("path", { d, fill: "none", stroke: col, "stroke-width": wide ? 3.5 : 2, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
-      for (const q of leg) if (Number.isFinite(q[2])) g.appendChild(sv("circle", { cx: q[0], cy: q[1], r: r0, fill: col, stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
+      // (update 494) each trail a little see-through, so two on top of each other show darker
+      const tg = sv("g", { opacity: wide ? 1 : 0.6 }); g.appendChild(tg);
+      tg.appendChild(sv("path", { d, fill: "none", stroke: "rgba(0,0,0,0.55)", "stroke-width": wide ? 6 : 4, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
+      tg.appendChild(sv("path", { d, fill: "none", stroke: col, "stroke-width": wide ? 3.5 : 2, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
+      for (const q of leg) if (Number.isFinite(q[2])) tg.appendChild(sv("circle", { cx: q[0], cy: q[1], r: r0, fill: col, stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
       const hit = sv("path", { d, fill: "none", stroke: "transparent", "stroke-width": 14, "vector-effect": "non-scaling-stroke", class: "sh-trail-hit" });
       hit.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse" && !trState.one) trailPop(t, e); });
       // a tap: only this one (and its details); tapped again, all of them back
@@ -524,12 +529,11 @@ export async function drawHeat(ctx, course) {
   }
   async function loadWho() {
     ix = null; mineHere = null; trails = null;
-    if (!who) { whoLine.textContent = ""; st.view = "field"; paint(); return; }
+    if (!who) { whoLine.textContent = ""; paint(); return; }
     const me = who; whoLine.textContent = `Loading ${who.label}’s stats…`; paint();
     // (update 479) their own shots here first (they don't need a stats file)
     trails = await playerTrails(meta, me.key).catch(() => null);
     if (who !== me) return;
-    if (trails?.trails?.length && st.view !== "player") st.view = "player";
     paint();
     try {
       const d = await playerData(me.key);
@@ -541,7 +545,6 @@ export async function drawHeat(ctx, course) {
       // (update 461) one flat list (a list inside it is what made this say it couldn't load their stats)
       mount(whoLine, !d.rounds.length ? `No stats file for ${me.label} yet, so the zones show the field.` : [`Player view: the zones weighted by ${me.label}’s strokes gained from each distance and lie. `,
         ...(mineHere.length ? [`${mineHere.length} ${mineHere.length === 1 ? "round" : "rounds"} here (${sgR >= 0 ? "+" : "−"}${Math.abs(sgR).toFixed(2)} a round). `, link] : [`No rounds here in the stats yet.`])]);
-      if (ix && st.view !== "player" && st.autoPlayer !== false) st.view = "player";
     } catch (err) { console.error(err); whoLine.textContent = "Couldn’t load their stats, so the zones show the field."; }
     paint();
   }
