@@ -139,7 +139,16 @@ export function sideOf(v) {
   const a = lo ? "Long" : sh ? "Short" : "", b = le ? "Left" : ri ? "Right" : "";
   return a && b ? `${a}-${b}` : a || b || null;
 }
-export function driveOf(v) { const t = String(v ?? "").toLowerCase(); return /left/.test(t) ? "L" : /right/.test(t) ? "R" : /fair|cent|middle|straight|hit/.test(t) ? "C" : null; }
+// (update 493) a tee shot's direction by any common spelling: Left / L / Lft / Missed left, Right / R / Rgt, Fairway / Fwy /
+// Center / C / F / Middle / Hit
+export function driveOf(v) {
+  const t = String(v ?? "").toLowerCase().replace(/[^a-z]+/g, " ").trim(); if (!t) return null;
+  const w = t.split(" ");
+  if (/left/.test(t) || w.some((x) => ["l", "lft", "lt"].includes(x))) return "L";
+  if (/right/.test(t) || w.some((x) => ["r", "rgt", "rt"].includes(x))) return "R";
+  if (/fair|fwy|cent|middle|straight|hit/.test(t) || w.some((x) => ["c", "f", "m", "on"].includes(x))) return "C";
+  return null;
+}
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 export const ATT_B = ["3-5 ft", "5-10 ft", "10-15 ft", "15-20 ft", "20-25 ft", ">25 ft", "<30 yds", "30-50 yds", "50-100 yds", "100-120 yds", "120-140 yds", "140-160 yds", "160-180 yds", "180-200 yds", "200-220 yds", ">220 yds"];
 export const SG_B = ["<5 ft", ...ATT_B.slice(1), "Tee shot"];
@@ -229,7 +238,8 @@ export function courseInsights(C) {
     add2(X.gir, qs.some((q) => q[0] != null && q[0] <= par - 1 && q[3] === 4) || s <= -2 ? "hit" : "miss", s);
     const qg = par >= 5 ? at(3) : par === 4 ? q2 : null;
     if (qg) { const d = qg[3] === 4 ? 0 : qg[4]; if (d != null && d <= 30) add2(X.go, "go", s); else if (d != null && d <= 100) add2(X.go, "lay", s); }
-    if (par >= 4 && t.dd) { add2(X.drive, t.dd, s); add2(X.drivep[t.p] || (X.drivep[t.p] = {}), t.dd, s); } // (update 492: and per pin)
+    const dd = t.dd || (t.dv != null ? (q2 && q2[3] === 1 ? "C" : t.dv < 0 ? "L" : t.dv > 0 ? "R" : null) : null); // (update 493: a number: in the fairway, else its side)
+    if (par >= 4 && dd) { add2(X.drive, dd, s); add2(X.drivep[t.p] || (X.drivep[t.p] = {}), dd, s); } // (update 492: and per pin)
     const q1 = at(1); if (par >= 4 && q1 && q2 && q2[3] === 1) X.land.push([q1[1], q1[2], q2[1], q2[2]]);
   }
   const out = {};
@@ -255,12 +265,16 @@ export function courseInsights(C) {
 export function shotAggregator() {
   const courses = new Map(); // name → course
   let ix = null, rowsIn = 0;
+  const reads = { drive: new Map(), side: new Map() };
+  const note = (m, v, got) => { const k = String(v ?? "").trim(); if (!k) return; const e = m.get(k) || (m.size < 60 ? m.set(k, { n: 0, as: got }).get(k) : null); if (e) e.n++; };
   // (update 485) read as sources, one per courseNum and spelling; finish() puts together the sources that are the same
   // course (a shared courseNum, or the same name: one course that hosted two events has two courseNums), so each course is
   // one map
   const courseOf = (name, cn) => { const k = `${cn ?? ""}|${name}`; const C = courses.get(k) || courses.set(k, { name, names: new Map([[name, 0]]), courseNum: cn, holes: new Map(), players: new Map(), years: new Set(), events: new Map(), n: 0 }).get(k); C.names.set(name, C.names.get(name) + 1); C.n++; return C; };
   return {
     get rows() { return rowsIn; },
+    /** (update 493) the values found in drive_direction and app_side_loc, and what each was read as (null: not understood) */
+    get reads() { return { drive: [...reads.drive].map(([v, e]) => ({ v, n: e.n, as: e.as })), side: [...reads.side].map(([v, e]) => ({ v, n: e.n, as: e.as })) }; },
     add({ columns, rows }) {
       ix ||= shotColumns(columns);
       const need = ["course", "hole", "x", "y", "strokes", "holeOut"].filter((k) => ix[k] == null);
@@ -297,7 +311,14 @@ export function shotAggregator() {
           if (score != null) tr.s = Math.round(score);
           // (update 488) where an approach finished around the green, and which way the tee shot went
           const sd = ix.appSide != null ? sideOf(r[ix.appSide]) : null; if (sd) (tr.as ||= {})[st] = sd;
-          const dd = ix.drive != null && st === 1 ? driveOf(r[ix.drive]) : null; if (dd) tr.dd = dd;
+          // (update 493) drive_direction: a number (below 0 left of the line, above 0 right: a miss unless the next shot is
+          // from the fairway, worked out in courseInsights) or words (Left, R, Fairway …)
+          const dRaw = ix.drive != null && st === 1 ? r[ix.drive] : null, dNum = typeof dRaw === "number" || (typeof dRaw === "string" && /^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test(dRaw)) ? num(dRaw) : null;
+          const dd = dNum == null && dRaw != null ? driveOf(dRaw) : null;
+          if (dNum != null) tr.dv = Math.round(dNum * 100) / 100; else if (dd) tr.dd = dd;
+          // what each value in the two columns was read as, to show after the upload
+          if (ix.drive != null && st === 1) { if (dNum != null) note(reads.drive, dNum < 0 ? "below 0" : dNum > 0 ? "above 0" : "0", dNum < 0 ? "L*" : dNum > 0 ? "R*" : "C*"); else note(reads.drive, dRaw, dd); }
+          if (ix.appSide != null) note(reads.side, r[ix.appSide], sd);
         }
       }
     },
@@ -350,6 +371,12 @@ export function shotAggregator() {
   };
 }
 
+/** (update 493) the reads in words: "drive_direction: Left → left (1,204), L → left (90), Pushed → not understood (3)" */
+export function readsText(rd) {
+  const name = { L: "left", R: "right", C: "fairway", "L*": "left miss (unless in the fairway)", "R*": "right miss (unless in the fairway)", "C*": "fairway or straight" };
+  const part = (col, list, f) => (list.length ? `${col}: ${list.sort((a, b) => b.n - a.n).slice(0, 8).map((x) => `${x.v} \u2192 ${x.as ? f(x.as) : "not understood"} (${x.n.toLocaleString()})`).join(", ")}` : `${col}: not in the file`);
+  return `${part("drive_direction", rd.drive, (a) => name[a] || a)}. ${part("app_side_loc", rd.side, (a) => a.replace("-", " ").toLowerCase())}.`;
+}
 /** Admin: saves the boiled-down courses (zones and history in the course; each player's trails apart). */
 export async function uploadShotCourses(list, onStatus = () => {}) {
   const existing = await listHeatCourses(true);

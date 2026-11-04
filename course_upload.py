@@ -320,10 +320,48 @@ def side_of(v):
 
 
 def drive_of(v):
+    """(update 493) a tee shot's direction by any common spelling (as js/courseShots.js driveOf)."""
     if _missing(v):
         return None
-    t = str(v).lower()
-    return "L" if "left" in t else "R" if "right" in t else "C" if re.search("fair|cent|middle|straight|hit", t) else None
+    t = re.sub(r"[^a-z]+", " ", str(v).lower()).strip()
+    if not t:
+        return None
+    w = t.split(" ")
+    if "left" in t or any(x in ("l", "lft", "lt") for x in w):
+        return "L"
+    if "right" in t or any(x in ("r", "rgt", "rt") for x in w):
+        return "R"
+    if re.search("fair|fwy|cent|middle|straight|hit", t) or any(x in ("c", "f", "m", "on") for x in w):
+        return "C"
+    return None
+
+
+_NUMLIKE = re.compile(r"^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$")
+READS = {"drive": {}, "side": {}}  # (update 493) what the two direction columns were read as, printed after the upload
+
+
+def _note(m, v, got):
+    if _missing(v):
+        return
+    k = str(v).strip()
+    if not k:
+        return
+    if k not in m:
+        if len(m) >= 60:
+            return
+        m[k] = {"n": 0, "as": got}
+    m[k]["n"] += 1
+
+
+def reads_text():
+    name = {"L": "left", "R": "right", "C": "fairway", "L*": "left miss (unless in the fairway)", "R*": "right miss (unless in the fairway)", "C*": "fairway or straight"}
+
+    def part(col, m, f):
+        if not m:
+            return f"{col}: not in the file"
+        top = sorted(m.items(), key=lambda kv: -kv[1]["n"])[:8]
+        return f"{col}: " + ", ".join(f"{v} -> {f(e['as']) if e['as'] else 'not understood'} ({e['n']:,})" for v, e in top)
+    return part("drive_direction", READS["drive"], lambda a: name.get(a, a)) + "\n  " + part("app_side_loc", READS["side"], lambda a: a.replace("-", " ").lower())
 
 
 def _r4(x):
@@ -475,7 +513,7 @@ def course_insights(C):
         ppy[h] = rs[len(rs) // 2] if rs else None
     holes, attempts, sg_f, sg_t, r_f, r_t = {}, {}, {}, {}, set(), set()
     for h in C["holes"]:
-        holes[h] = {"par": par_of(h), "field": _sc5(), "top": _sc5(), "fwy": {}, "gir": {}, "go": {}, "drive": {}, "ud": {}, "land": []}
+        holes[h] = {"par": par_of(h), "field": _sc5(), "top": _sc5(), "fwy": {}, "gir": {}, "go": {}, "drive": {}, "ud": {}, "udp": {}, "drivep": {}, "land": []}
     for key, t, qs in allt:
         X = holes.get(t["h"])
         if X is None:
@@ -505,10 +543,16 @@ def course_insights(C):
             if not nq or nq[4] is None or nq[4] > 30 or nq[3] not in (1, 2, 3):
                 continue
             lie = LIES[nq[3]].capitalize()
+            made = nq[5] is not None and nq[5] <= 2
             a = X["ud"].setdefault(side, {}).setdefault(lie, [0, 0])
             a[0] += 1
-            if nq[5] is not None and nq[5] <= 2:
+            if made:
                 a[1] += 1
+            # (update 491) and for the pin it was played to (Strategy Maps shows it with each pin)
+            a2 = X["udp"].setdefault(t["p"], {}).setdefault(side, {}).setdefault(lie, [0, 0])
+            a2[0] += 1
+            if made:
+                a2[1] += 1
         if t["s"] is None:
             continue
         s = t["s"]
@@ -526,8 +570,10 @@ def course_insights(C):
                 _add2(X["go"], "go", s)
             elif d is not None and d <= 100:
                 _add2(X["go"], "lay", s)
-        if par >= 4 and t.get("dd"):
-            _add2(X["drive"], t["dd"], s)
+        dd = t.get("dd") or ((("C" if (q2 and q2[3] == 1) else "L" if t["dv"] < 0 else "R" if t["dv"] > 0 else None)) if t.get("dv") is not None else None)  # (update 493)
+        if par >= 4 and dd:
+            _add2(X["drive"], dd, s)
+            _add2(X["drivep"].setdefault(t["p"], {}), dd, s)  # (update 492: and per pin)
         q1 = at(1)
         if par >= 4 and q1 and q2 and q2[3] == 1:
             X["land"].append((q1[1], q1[2], q2[1], q2[2]))
@@ -553,7 +599,7 @@ def course_insights(C):
         def f2(o):
             return {kk: [a[0], _r4(a[1])] for kk, a in o.items()}
         out[str(h)] = {"par": X["par"], "field": fx(X["field"]), "top": fx(X["top"]), "fwy": f2(X["fwy"]), "gir": f2(X["gir"]),
-                       "go": f2(X["go"]), "drive": f2(X["drive"]), "ud": X["ud"], "widths": widths}
+                       "go": f2(X["go"]), "drive": f2(X["drive"]), "drivePins": {pp: f2(o) for pp, o in X["drivep"].items()}, "ud": X["ud"], "udPins": X["udp"], "widths": widths}
     return {"events": events, "holes": out, "attempts": attempts,
             "sg": {"field": {b: _r4(v) for b, v in sg_f.items()}, "top": {b: _r4(v) for b, v in sg_t.items()},
                    "fieldRounds": len(r_f), "topRounds": len(r_t), "E": E}, "top": top_list}
@@ -654,9 +700,23 @@ def aggregate(columns, rows):
             sd = side_of(g(r, "appSide")) if "appSide" in ix else None
             if sd:
                 tr.setdefault("as", {})[str(_jsn(st)) if st is not None else "null"] = sd
-            dd = drive_of(g(r, "drive")) if "drive" in ix and st == 1 else None
-            if dd:
+            # (update 493) drive_direction: a number (below 0 left, above 0 right: a miss unless the next shot is from the
+            # fairway, worked out in course_insights) or words (Left, R, Fairway ...)
+            d_raw = g(r, "drive") if "drive" in ix and st == 1 else None
+            is_num = (isinstance(d_raw, (int, float)) and not isinstance(d_raw, bool)) or (isinstance(d_raw, str) and _NUMLIKE.match(d_raw) is not None)
+            d_num = _num(d_raw) if is_num and not _missing(d_raw) else None
+            dd = drive_of(d_raw) if d_num is None and d_raw is not None else None
+            if d_num is not None:
+                tr["dv"] = _jsn(_round(d_num * 100) / 100)
+            elif dd:
                 tr["dd"] = dd
+            if "drive" in ix and st == 1:
+                if d_num is not None:
+                    _note(READS["drive"], "below 0" if d_num < 0 else "above 0" if d_num > 0 else "0", "L*" if d_num < 0 else "R*" if d_num > 0 else "C*")
+                else:
+                    _note(READS["drive"], d_raw, dd)
+            if "appSide" in ix:
+                _note(READS["side"], g(r, "appSide"), sd)
     out = []
     for C in _same_courses(list(courses.values())):
         holes = {}
@@ -826,7 +886,10 @@ def upload_course(data, course=None, key_path=None):
     print(f"Working out the zones, history and past shots for {len(df):,} shots...", flush=True)
     cols = [str(c) for c in df.columns]
     rows = df.astype(object).where(df.notna(), None).itertuples(index=False, name=None)
+    READS["drive"].clear()
+    READS["side"].clear()
     courses = aggregate(cols, rows)
+    print(f"  {reads_text()}", flush=True)  # (update 493: how the two direction columns were read)
     if not courses:
         raise ValueError("No usable shots (each needs a course, hole, x and y).")
     from firebase_admin import firestore

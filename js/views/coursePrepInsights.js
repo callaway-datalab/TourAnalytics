@@ -49,7 +49,7 @@ export async function drawInsights(ctx, course) {
     const holesSec = el("section", { class: "panel ci2-sec" });
     const drawHoles = () => mount(holesSec, holesBlock(H, S, name, (h) => { st.hole = st.hole === h ? null : h; drawHoles(); }, (h) => ctx.go({ name: "prepHeat", course: { ...course, startHole: h } })));
     drawHoles();
-    mount(body, [scores(I), plan(H, openHole), holesSec, faced(S, all, name), vsTop(H, S, name, first, openHole)].filter(Boolean));
+    mount(body, [scores(I), plan(H, openHole), holesSec, faced(S, all, name), ...vsTop(H, S, name, first, openHole)].filter(Boolean));
   }
   await draw();
 }
@@ -174,15 +174,18 @@ function faced(S, all, name) {
 function vsTop(H, S, name, first, openHole) {
   const holes = H.map((x) => { const a = x.me?.n ? x.me.sum / x.me.n : null, t = x.top?.n ? x.top.sum / x.top.n : null; return { ...x, v: a != null && t != null ? t - a : null }; }).filter((x) => x.v != null);
   const dists = SG_B.map((b) => { const me = S.rounds ? (S.sg[b] || 0) / S.rounds : null, tp = S.topRounds ? (S.topSg[b] || 0) / S.topRounds : null; return { b, v: me != null && tp != null ? me - tp : null }; }).filter((x) => x.v != null && (S.sg[x.b] != null || S.topSg[x.b] != null));
-  if (!holes.length && !dists.length) return null;
+  if (!holes.length && !dists.length) return [];
   const max = Math.max(...holes.map((x) => Math.abs(x.v)), ...dists.map((x) => Math.abs(x.v)), 0.01);
-  const row = (k, v, onTap = null) => { const r = el(onTap ? "button" : "div", { class: "ci2-vr", ...(onTap ? { type: "button" } : {}) }, [el("span", { class: "ci2-vr-k" }, k), el("span", { class: "ci2-vr-bar" }, el("i", { class: v < 0 ? "neg" : "pos", style: `width:${(Math.abs(v) / max) * 100}%` })), el("strong", { class: v < 0 ? "neg" : "pos" }, sgn(v))]); if (onTap) r.addEventListener("click", onTap); return r; };
-  const lose = (list, k, tap) => list.filter((x) => x.v < -0.005).sort((a, b) => a.v - b.v).slice(0, 5).map((x) => row(k(x), x.v, tap ? () => tap(x) : null));
-  const gain = (list, k, tap) => list.filter((x) => x.v > 0.005).sort((a, b) => b.v - a.v).slice(0, 3).map((x) => row(k(x), x.v, tap ? () => tap(x) : null));
+  const row = (k, v, onTap = null, max = 1) => { const r = el(onTap ? "button" : "div", { class: "ci2-vr", ...(onTap ? { type: "button" } : {}) }, [el("span", { class: "ci2-vr-k" }, k), el("span", { class: "ci2-vr-bar" }, el("i", { class: v < 0 ? "neg" : "pos", style: `width:${(Math.abs(v) / max) * 100}%` })), el("strong", { class: v < 0 ? "neg" : "pos" }, sgn(v))]); if (onTap) r.addEventListener("click", onTap); return r; };
+  const scale = (list) => Math.max(...list.map((x) => Math.abs(x.v)), 0.01); // (update 493: each card its own scale)
+  const lose = (list, k, tap) => list.filter((x) => x.v < -0.005).sort((a, b) => a.v - b.v).slice(0, 5).map((x) => row(k(x), x.v, tap ? () => tap(x) : null, scale(list)));
+  const gain = (list, k, tap) => list.filter((x) => x.v > 0.005).sort((a, b) => b.v - a.v).slice(0, 3).map((x) => row(k(x), x.v, tap ? () => tap(x) : null, scale(list)));
   const col = (title, rows) => (rows.length ? el("div", { class: "ci2-vcol" }, [el("h3", {}, title), ...rows]) : null);
-  return sec(`AGAINST THE TOP 10`, [
-    el("div", { class: "ci2-two" }, [
-      col("Where they gain most", [...lose(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h)), ...lose(dists, (x) => x.b)]),
-      col(`Where ${S.field ? "the field" : first} holds up`, [...gain(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h)), ...gain(dists, (x) => x.b)])])],
-    `Holes: the Top 10’s scoring average against ${S.field ? "the field’s" : `${first}’s`}, strokes a round. Distances: strokes gained a round from there (against this course’s own field), ${S.field ? "the field" : first} less the Top 10. Red: they’re better.`);
+  const who = S.field ? "the field" : first;
+  // (update 493) two cards: by hole, and by skill (distance)
+  const byHole = holes.length ? sec("AGAINST THE TOP 10 \u00b7 HOLES", [el("div", { class: "ci2-two" }, [col("Where they gain most", lose(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h))), col(`Where ${who} holds up`, gain(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h)))])],
+    `The Top 10\u2019s scoring average on each hole against ${S.field ? "the field\u2019s" : `${first}\u2019s`}, strokes a round. Red: they\u2019re better. Tap a hole for its numbers.`) : null;
+  const bySkill = dists.length ? sec("AGAINST THE TOP 10 \u00b7 SKILLS", [el("div", { class: "ci2-two" }, [col("Where they gain most", lose(dists, (x) => x.b)), col(`Where ${who} holds up`, gain(dists, (x) => x.b))])],
+    `Strokes gained a round from each distance (against this course\u2019s own field), ${who} less the Top 10. Red: they\u2019re better.`) : null;
+  return [byHole, bySkill];
 }

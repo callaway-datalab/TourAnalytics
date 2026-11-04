@@ -187,7 +187,7 @@ function heatPanel(flash) {
       // (update 459) Parquet (as from pandas) or CSV. (update 479) A shot-level file (a row per shot: strokes, hole_out…)
       // is read a slice at a time and boiled down here (zones, hole history, each player's trails) before it's saved.
       const S = await import("../courseShots.js");
-      let names;
+      let names, reads = ""; // (update 493: what the two direction columns were read as)
       if (/\.parquet$/i.test(f.name)) {
         const { readParquetChunks } = await import("../parquet.js");
         let agg = null, flat = null;
@@ -196,14 +196,14 @@ function heatPanel(flash) {
           if (agg) agg.add(t); else flat.push(...t.rows);
           csvBtn.textContent = `Reading\u2026 ${Math.round((done / total) * 100)}%`;
         });
-        if (agg) { csvBtn.textContent = "Working out the zones\u2026"; await new Promise((r) => setTimeout(r, 30)); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); }
+        if (agg) { csvBtn.textContent = "Working out the zones\u2026"; await new Promise((r) => setTimeout(r, 30)); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); reads = S.readsText(agg.reads); }
         else names = await uploadHeatScoring(flat, (t) => { csvBtn.textContent = t; });
       } else {
         const rows = parseCsv(await f.text());
-        if (S.isShotFile(rows[0] || [])) { const agg = S.shotAggregator(); agg.add({ columns: rows[0], rows: rows.slice(1) }); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); }
+        if (S.isShotFile(rows[0] || [])) { const agg = S.shotAggregator(); agg.add({ columns: rows[0], rows: rows.slice(1) }); names = await S.uploadShotCourses(agg.finish(), (t) => { csvBtn.textContent = t; }); reads = S.readsText(agg.reads); }
         else names = await uploadHeatScoring(rows, (t) => { csvBtn.textContent = t; });
       }
-      flash(`Scoring saved for ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.`, "ok"); csv.value = ""; drawList();
+      flash(`Scoring saved for ${names.length} ${names.length === 1 ? "course" : "courses"}: ${names.join(", ")}.${reads ? ` ${reads}` : ""}`, "ok"); csv.value = ""; drawList();
     } catch (err) { console.error(err); flash(err?.message && !/permission/i.test(err.message) ? err.message : "Couldn’t save the scoring. Republish the Firestore rules (update 456) and try again.", "error"); }
     finally { csvBtn.disabled = false; csvBtn.textContent = "Upload scoring"; }
   });
