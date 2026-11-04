@@ -160,22 +160,49 @@ export function trailSG(t, par, E, into) {
     into[b] = (into[b] || 0) + (E[k0] - nx - 1);
   }
 }
-/* (update 501) shared by the build and the map (which draws a miss square's shots): a green's tic-tac-toe boards (from
- * every spot a shot was played on it), the approach miss on a hole (the first shot from off the green within 30 yards,
- * after one from farther out) and its side */
-export function greenBoards(pts) {
-  if (!pts || pts.length < 20) return null;
-  const g = [pts.reduce((t, p) => t + p[0], 0) / pts.length, pts.reduce((t, p) => t + p[1], 0) / pts.length], memo = new Map();
-  return { g, boardFor(ux0, uy0) {
-    const bin = ((Math.round(Math.atan2(uy0, ux0) / (Math.PI / 36)) % 72) + 72) % 72;
-    if (memo.has(bin)) return memo.get(bin);
-    const ang = (bin * Math.PI) / 36, ux = Math.cos(ang), uy = Math.sin(ang);
-    const A = pts.map(([x, y]) => (x - g[0]) * ux + (y - g[1]) * uy).sort((a, b) => a - b), L = pts.map(([x, y]) => ux * (y - g[1]) - uy * (x - g[0])).sort((a, b) => a - b);
+/* (update 501) shared by the build and the map: the approach miss on a hole (the first shot from off the green within
+ * 30 yards, after one from farther out) */
+/*
+ * (update 502) A hole's up & down boards, per pin. The line of play: from the middle of the fairway (halfway between the
+ * farthest-left and farthest-right shots played from the fairway, across the line from the tee to the green) to the pin,
+ * or from the tee on a par 3. The board's middle square: 20 x 20 ft around the pin (10 ft each way along and across that
+ * line), less where the green runs out sooner (its edges: the 1st and 99th percentiles of where shots were played on it).
+ * shots: [{ x, y, L, d, st }] (every shot on the hole, rounded as the trails are); pins: Map(pin id → [x, y]).
+ */
+export function holeBoards(shots, pins, par) {
+  const avg = (l) => (l.length ? [l.reduce((t, q) => t + q.x, 0) / l.length, l.reduce((t, q) => t + q.y, 0) / l.length] : null);
+  const tees = shots.filter((q) => q.st === 1), greens = shots.filter((q) => q.L === 4), T = avg(tees), G = avg(greens);
+  if (!T || !G || greens.length < 20) return null;
+  let ref = T;
+  const fw = par >= 4 ? shots.filter((q) => q.L === 1) : [];
+  if (fw.length >= 2) {
+    const dx = G[0] - T[0], dy = G[1] - T[1], dl = Math.hypot(dx, dy) || 1, lat = (q) => (dx * (q.y - T[1]) - dy * (q.x - T[0])) / dl;
+    let lo = fw[0], hi = fw[0]; for (const q of fw) { if (lat(q) < lat(lo)) lo = q; if (lat(q) > lat(hi)) hi = q; }
+    ref = [(lo.x + hi.x) / 2, (lo.y + hi.y) / 2];
+  }
+  // pixels a yard (each shot's pixels from its pin against its yards), for the 10 ft
+  const rs = []; for (const q of shots) { const P = pins.get(q.pid); if (P && q.L !== 4 && q.d != null && q.d > 15) rs.push(Math.hypot(q.x - P[0], q.y - P[1]) / q.d); }
+  rs.sort((a, b) => a - b); const ppy = rs.length ? rs[Math.floor(rs.length / 2)] : 3, ten = (10 / 3) * ppy;
+  const memo = new Map();
+  const boardOf = (pid) => {
+    if (memo.has(pid)) return memo.get(pid);
+    const P = pins.get(pid); if (!P) { memo.set(pid, null); return null; }
+    const ux0 = P[0] - ref[0], uy0 = P[1] - ref[1], ul = Math.hypot(ux0, uy0) || 1, ux = ux0 / ul, uy = uy0 / ul;
+    const A = greens.map((q) => (q.x - P[0]) * ux + (q.y - P[1]) * uy).sort((a, b) => a - b), L = greens.map((q) => ux * (q.y - P[1]) - uy * (q.x - P[0])).sort((a, b) => a - b);
     const pc = (v, f) => v[Math.min(v.length - 1, Math.max(0, Math.round(f * (v.length - 1))))];
-    const b = { g, ux, uy, a0: pc(A, 0.01), a1: pc(A, 0.99), l0: pc(L, 0.01), l1: pc(L, 0.99) };
-    memo.set(bin, b);
+    const b = { gx: P[0], gy: P[1], ux, uy, a0: -Math.min(ten, Math.max(0, -pc(A, 0.01))), a1: Math.min(ten, Math.max(0, pc(A, 0.99))), l0: -Math.min(ten, Math.max(0, -pc(L, 0.01))), l1: Math.min(ten, Math.max(0, pc(L, 0.99))), ref };
+    memo.set(pid, b);
     return b;
-  } };
+  };
+  const sideOf = (pid, nq) => {
+    const B = boardOf(pid); if (!B) return null;
+    const vx = nq[1] - B.gx, vy = nq[2] - B.gy, along = vx * B.ux + vy * B.uy, lat = B.ux * vy - B.uy * vx;
+    const row = along > B.a1 ? "Long" : along < B.a0 ? "Short" : "", colm = lat > B.l1 ? "Right" : lat < B.l0 ? "Left" : "";
+    if (row || colm) return row && colm ? `${row}-${colm}` : row || colm;
+    const da = Math.min(B.a1 - along, along - B.a0), dl = Math.min(B.l1 - lat, lat - B.l0);
+    return da < dl ? (along > (B.a0 + B.a1) / 2 ? "Long" : "Short") : (lat > (B.l0 + B.l1) / 2 ? "Right" : "Left");
+  };
+  return { ref, ppy, boardOf, sideOf };
 }
 export function approachMiss(qs) {
   for (let i = 1; i < qs.length; i++) {
@@ -185,14 +212,6 @@ export function approachMiss(qs) {
     return { pq, nq };
   }
   return null;
-}
-export function missSide(GB, pq, nq) {
-  const ux0 = GB.g[0] - pq[1], uy0 = GB.g[1] - pq[2], B = GB.boardFor(ux0, uy0);
-  const vx = nq[1] - B.g[0], vy = nq[2] - B.g[1], along = vx * B.ux + vy * B.uy, lat = B.ux * vy - B.uy * vx;
-  const row = along > B.a1 ? "Long" : along < B.a0 ? "Short" : "", colm = lat > B.l1 ? "Right" : lat < B.l0 ? "Left" : "";
-  if (row || colm) return row && colm ? `${row}-${colm}` : row || colm;
-  const da = Math.min(B.a1 - along, along - B.a0) / ((B.a1 - B.a0) || 1), dl = Math.min(B.l1 - lat, lat - B.l0) / ((B.l1 - B.l0) || 1);
-  return da < dl ? (along > (B.a0 + B.a1) / 2 ? "Long" : "Short") : (lat > (B.l0 + B.l1) / 2 ? "Right" : "Left");
 }
 const add2 = (o, k, v) => { const a = o[k] || (o[k] = [0, 0]); a[0]++; a[1] += v; };
 const sc5 = () => ({ n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 });
@@ -227,17 +246,22 @@ export function courseInsights(C) {
   }
   // (update 494) tee misses and approach misses from the shots themselves (not the file's direction columns): the centre of
   // each green (where every putt started), and where drives finish in the fairway (the line of play off the tee)
-  const gAcc = new Map(), fAcc = new Map(), gPts = new Map();
+  const gAcc = new Map(), fAcc = new Map();
   for (const [, t, qs] of all) for (const q of qs) {
-    if (q[3] === 4) { const a = gAcc.get(t.h) || gAcc.set(t.h, [0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; (gPts.get(t.h) || gPts.set(t.h, []).get(t.h)).push([q[1], q[2]]); }
+    if (q[3] === 4) { const a = gAcc.get(t.h) || gAcc.set(t.h, [0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; }
     if (q[0] === 2 && q[3] === 1) { const a = fAcc.get(t.h) || fAcc.set(t.h, [0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; }
   }
   const mid = (m, h) => { const a = m.get(h); return a && a[2] ? [a[0] / a[2], a[1] / a[2]] : null; };
-  // (update 497; 501: shared with the map, greenBoards) each green's tic-tac-toe boards
-  const gbMemo = new Map(), gbOf = (h) => (gbMemo.has(h) ? gbMemo.get(h) : gbMemo.set(h, greenBoards(gPts.get(h))).get(h));
-  const boardFor = (h, ux0, uy0) => gbOf(h)?.boardFor(ux0, uy0) || null;
+  // (update 502; shared with the map) each hole's up & down boards, per pin: holeBoards
+  const hbMemo = new Map();
+  const hbOf = (h) => {
+    if (hbMemo.has(h)) return hbMemo.get(h);
+    const shots = []; for (const [, t, qs] of all) if (t.h === h) for (const q of qs) shots.push({ x: q[1], y: q[2], L: q[3], d: q[4], st: q[0], pid: t.p });
+    const H = C.holes.get(h), pins = new Map(); for (const [pid, P] of H?.pins || []) if (P.pn) pins.set(pid, [P.px / P.pn, P.py / P.pn]);
+    const hb = holeBoards(shots, pins, H?.par || 4); hbMemo.set(h, hb); return hb;
+  };
   const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
-  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, udDir: {}, drivep: {}, land: [] };
+  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, land: [] };
   for (const [key, t, qs] of all) {
     const X = holes[t.h]; if (!X) continue;
     const par = X.par, isTop = top.has(`${key}|${t.y}`), rk = `${key}|${t.y}|${t.r}`;
@@ -248,10 +272,9 @@ export function courseInsights(C) {
     const at = (k) => qs.find((q) => q[0] === k);
     // where approaches missed the green: the first shot played from off the green within 30 yards (after a shot from
     // farther out); its side from the green's centre, along the line the approach came in on (update 494)
-    const GB = gbOf(t.h), m = GB ? approachMiss(qs) : null;
-    if (m) {
-      const { pq, nq } = m, side = missSide(GB, pq, nq);
-      const ux0 = GB.g[0] - pq[1], uy0 = GB.g[1] - pq[2], D = X.udDir[t.p] || (X.udDir[t.p] = [0, 0]), dl0 = Math.hypot(ux0, uy0) || 1; D[0] += ux0 / dl0; D[1] += uy0 / dl0; // (the pin's usual approach line, to draw its board)
+    const HB = hbOf(t.h), m = HB ? approachMiss(qs) : null, side = m ? HB.sideOf(t.p, m.nq) : null;
+    if (side) {
+      const { nq } = m;
       const lie = LIES[nq[3]][0].toUpperCase() + LIES[nq[3]].slice(1), o = X.ud[side] || (X.ud[side] = {}), a = o[lie] || (o[lie] = [0, 0]);
       const made = nq[5] != null && nq[5] <= 2;
       a[0]++; if (made) a[1]++;
@@ -285,7 +308,7 @@ export function courseInsights(C) {
       widths[c] = Math.round(off[Math.floor(0.95 * (off.length - 1))] - off[Math.floor(0.05 * (off.length - 1))]);
     }
     const fx = (o) => ({ ...o, sum: r4(o.sum) }), f2 = (o) => Object.fromEntries(Object.entries(o).map(([kk, a]) => [kk, [a[0], r4(a[1])]]));
-    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, udBoards: Object.fromEntries(Object.entries(X.udDir).map(([pp, D]) => { const B = boardFor(Number(h), D[0], D[1]) || boardFor(h, D[0], D[1]); return [pp, B ? { gx: r1(B.g[0]), gy: r1(B.g[1]), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1) } : null]; }).filter(([, b]) => b)), widths };
+    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]) }; } return o; })(), widths };
   }
   const r4o = (o) => Object.fromEntries(Object.entries(o).map(([kk, v]) => [kk, r4(v)]));
   return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top] };

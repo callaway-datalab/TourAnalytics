@@ -298,7 +298,7 @@ export async function drawHeat(ctx, course) {
   }
   function placePop(px, py) {
     // (update 501) clear of the circle tapped: its radius on screen added to the gap
-    const sr = stage.getBoundingClientRect(), rs = spot?.R ? (() => { const [a] = screenOf(spot.x, spot.y), [b] = screenOf(spot.x + spot.R, spot.y), [, c] = screenOf(spot.x, spot.y), [, d] = screenOf(spot.x, spot.y + spot.R); return Math.max(Math.abs(b - a), Math.abs(d - c)); })() : 0, gap = 16 + rs;
+    const sr = stage.getBoundingClientRect(), rs = spot?.R ? (() => { const [a, b] = screenOf(spot.x, spot.y), [c, d] = screenOf(spot.x + spot.R, spot.y); return Math.hypot(c - a, d - b); })() : 0, gap = 16 + rs;
     const pw = Math.min(320, sr.width - 16); pop.style.width = `${pw}px`;
     const ph = pop.offsetHeight || 200;
     let left, top;
@@ -311,6 +311,14 @@ export async function drawHeat(ctx, course) {
       // (update 501) never over the circle: the side with more room, past the map's edge if need be
       top = rs ? (py < sr.height / 2 ? below : above) : py < sr.height / 2 ? (below + ph <= sr.height - 4 || above < 4 ? below : above) : (above >= 4 || below + ph > sr.height ? Math.max(4, above) : below);
     }
+    // (update 502) where the user dragged it to, from the circle; and never over the circle
+    if (spot?.R && st.popOff) { left = px + st.popOff.dx; top = py + st.popOff.dy; }
+    if (rs) for (let it = 0; it < 6; it++) {
+      const cx = Math.max(left, Math.min(px, left + pw)), cy = Math.max(top, Math.min(py, top + ph)), d = Math.hypot(px - cx, py - cy), need = rs + 10;
+      if (d >= need) break;
+      const mx = left + pw / 2 - px, my = top + ph / 2 - py, ml = Math.hypot(mx, my) || 1, k = need - d + 2;
+      left += (mx / ml) * k; top += (my / ml) * k;
+    }
     pop.style.left = `${left + stage.offsetLeft}px`; pop.style.top = `${top + stage.offsetTop}px`;
   }
   /* (update 500) a tap: a circle there (its size adjustable), every actual shot inside it, and the popup's numbers from
@@ -319,7 +327,7 @@ export async function drawHeat(ctx, course) {
    * the Shot buttons pick (where shot 1, 2 … finished), on this pin. */
   let spot = null, rawP = null;
   const RAD = [2, 3, 5, 8, 10, 15, 20, 25];
-  st.spotR ||= 5;
+  st.spotR ||= 10; // (update 502: 10 yds to start)
   const rawIndex = () => (rawP ||= Promise.all([import("../courseRaw.js"), import("../courseShots.js")]).then(([R, CS]) => R.loadRaw(meta).then((rows) => {
     const by = new Map(), num0 = (v) => (v == null || v === "" ? null : Number(v)), LI = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
     const trails = new Map();
@@ -327,7 +335,8 @@ export async function drawHeat(ctx, course) {
       const h = num0(r[6]), x = num0(r[13]), y = num0(r[14]); if (!h || x == null || y == null) continue;
       const idv = r[4] != null && r[4] !== "" ? r[4] : r[3], lie = lieName(r[9]) || "other";
       const q = { pid: String(r[8] ?? "1").trim() || "1", st: num0(r[10]), lie, L: Math.max(0, LI.indexOf(lie)) || (LI.includes(lie) ? 0 : 6), v: num0(r[15]), d: num0(r[18]), x, y, px: num0(r[16]), py: num0(r[17]), key: idv != null ? clientKey(String(Number.isFinite(Number(idv)) ? Number(idv) : idv)) : null, s: null };
-      const H = by.get(h) || by.set(h, { shots: [], trails: [] }).get(h);
+      const H = by.get(h) || by.set(h, { shots: [], trails: [], par: null }).get(h);
+      if (H.par == null && num0(r[7])) H.par = num0(r[7]);
       H.shots.push(q);
       // its trail (a player's hole in a round): the hole's score, from shot_for on the shot that holed out (or strokes less par)
       const tk = `${h}|${q.key}|${r[0]}|${r[5]}`;
@@ -336,12 +345,19 @@ export async function drawHeat(ctx, course) {
       if (num0(r[12]) === 1) { const sf = num0(r[11]), par0 = num0(r[7]); T.s = sf != null ? Math.round(sf) : q.st != null && par0 ? q.st - par0 : null; }
     }
     for (const T of trails.values()) { T.qs.sort((a, b) => (a.st ?? 0) - (b.st ?? 0)); for (const q of T.qs) q.s = T.s; }
-    // each green's boards and every trail's approach miss (the same as the build works them out: courseShots.js)
-    for (const H of by.values()) {
-      const GB = CS.greenBoards(H.shots.filter((q) => q.L === 4).map((q) => [q.x, q.y]));
+    // (update 502) each hole's boards and every trail's approach miss, the same as the build works them out (courseShots.js
+    // holeBoards): from the shots as the build keeps them (to a tenth of a pixel and of a yard)
+    const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
+    for (const [h, H] of by) {
+      const pins = new Map(), acc = new Map();
+      for (const q of H.shots) if (q.px != null && q.py != null) { const a = acc.get(q.pid) || acc.set(q.pid, [0, 0, 0]).get(q.pid); a[0] += q.px; a[1] += q.py; a[2]++; }
+      for (const [pid, a] of acc) pins.set(pid, [a[0] / a[2], a[1] / a[2]]);
+      const par0 = num0(H.par) || 4;
+      const shots = H.trails.flatMap((T) => T.qs.map((q) => ({ x: r1(q.x), y: r1(q.y), L: q.L, d: r1(q.d), st: q.st, pid: T.p })));
+      const HB = CS.holeBoards(shots, pins, par0);
       for (const T of H.trails) {
-        const arr = T.qs.map((q) => [q.st, q.x, q.y, q.L, q.d, q.v]), m = GB ? CS.approachMiss(arr) : null;
-        if (m) T.miss = { side: CS.missSide(GB, m.pq, m.nq), x: m.nq[1], y: m.nq[2], lie: m.nq[3], made: m.nq[5] != null && m.nq[5] <= 2 };
+        const arr = T.qs.map((q) => [q.st, r1(q.x), r1(q.y), q.L, r1(q.d), q.v]), m = HB ? CS.approachMiss(arr) : null, side = m ? HB.sideOf(T.p, m.nq) : null;
+        if (side) T.miss = { side, x: m.nq[1], y: m.nq[2], lie: m.nq[3], made: m.nq[5] != null && m.nq[5] <= 2 };
       }
     }
     return by;
@@ -380,6 +396,7 @@ export async function drawHeat(ctx, course) {
     showSpot(got);
   }
   function showSpot({ pool, ppy }) {
+    spot.pool = pool; spot.ppy = ppy; // (update 502: for dragging the circle)
     const R = st.spotR * ppy, inside = pool.filter((q) => Math.hypot(q.x - spot.x, q.y - spot.y) <= R);
     spot.R = R; spot.inside = inside;
     const avg = (l) => (l.length ? l.reduce((t, q) => t + q.v, 0) / l.length : null);
@@ -403,12 +420,13 @@ export async function drawHeat(ctx, course) {
     const lies = new Map(); for (const q of inside) (lies.get(q.lie) || lies.set(q.lie, []).get(q.lie)).push(q);
     const nm = (l) => ({ green: "Green", fairway: "Fairway", rough: "Rough", bunker: "Bunker", tee: "Tee", water: "Water" }[l] || String(l).replace(/^./, (c) => c.toUpperCase()));
     const mine = who ? inside.filter((q) => q.key === who.key) : [];
+    const ud = (qs) => `${Math.round((100 * qs.filter((q) => q.v <= 2).length) / qs.length)}%`; // (update 502: holed in two from there)
     // (update 501) a small popup: the circle's size, the player's own shots, and the shots by lie
     mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, xb]),
       mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
-      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "To hole out"].map((h, j) => el("th", { class: j ? "num" : null }, h)))),
-        el("tbody", {}, [...[...lies].sort((x0, y0) => y0[1].length - x0[1].length).map(([l, qs]) => el("tr", {}, [el("td", {}, nm(l)), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, fmt(avg(qs), qs.length))])),
-          lies.size > 1 ? el("tr", { class: "sh-pop-tot" }, [el("td", {}, "All"), el("td", { class: "num" }, String(inside.length)), el("td", { class: "num" }, fmt(a, inside.length))]) : null])])]);
+      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "To hole out", "Up & down"].map((h, j) => el("th", { class: j ? "num" : null }, h)))),
+        el("tbody", {}, [...[...lies].sort((x0, y0) => y0[1].length - x0[1].length).map(([l, qs]) => el("tr", {}, [el("td", {}, nm(l)), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, fmt(avg(qs), qs.length)), el("td", { class: "num" }, ud(qs))])),
+          lies.size > 1 ? el("tr", { class: "sh-pop-tot" }, [el("td", {}, "All"), el("td", { class: "num" }, String(inside.length)), el("td", { class: "num" }, fmt(a, inside.length)), el("td", { class: "num" }, ud(inside))]) : null])])]);
     requestAnimationFrame(placeDot);
   }
   // (update 499) a zone's actual strokes to hole out: its shots' own average (the map's colour is blended with the shots
@@ -474,17 +492,49 @@ export async function drawHeat(ctx, course) {
   stage.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse" || zm.z <= 1.001 || e.target.closest(".sh-pop, .sh-zbar")) return; md = { x: e.clientX, y: e.clientY, tx: zm.tx, ty: zm.ty }; zm.moved = false; });
   window.addEventListener("pointermove", (e) => { if (!md) return; const dx = e.clientX - md.x, dy = e.clientY - md.y; if (Math.abs(dx) + Math.abs(dy) > 4) zm.moved = true; zm.tx = md.tx + dx; zm.ty = md.ty + dy; clampZoom(); applyZoom(false); });
   window.addEventListener("pointerup", () => { if (md) { md = null; if (zm.moved) drawAll(); } });
+  // (update 502) drag the circle (press on it and move: its shots follow) and the popup (press on it and move: let go and
+  // it keeps that place from the circle)
+  let cdrag = null, pdrag = null;
+  const imgAt = (cx0, cy0) => { const r = cv.getBoundingClientRect(), DW = rot ? size.h : size.w, DH = rot ? size.w : size.h; return toImg(((cx0 - r.left) / r.width) * DW, ((cy0 - r.top) / r.height) * DH, size.w, rot); };
+  stage.addEventListener("pointerdown", (e) => {
+    if (!spot?.R || !spot.pool || e.target.closest(".sh-zbar, .sh-pop")) return;
+    const sr = stage.getBoundingClientRect(), [px, py] = screenOf(spot.x, spot.y), [ex, ey] = [e.clientX - sr.left, e.clientY - sr.top];
+    const [bx, by] = screenOf(spot.x + spot.R, spot.y), rsc = Math.max(Math.hypot(bx - px, by - py), 12);
+    if (Math.hypot(ex - px, ey - py) > rsc + 8) return;
+    const [ix, iy] = imgAt(e.clientX, e.clientY);
+    cdrag = { dx: spot.x - ix, dy: spot.y - iy, moved: false }; e.preventDefault(); e.stopPropagation();
+  }, true);
+  pop.addEventListener("pointerdown", (e) => {
+    if (!spot?.R || e.target.closest("button, a, input")) return;
+    pdrag = { x: e.clientX, y: e.clientY, l: pop.offsetLeft, t: pop.offsetTop, moved: false }; e.preventDefault();
+  });
+  let dragRaf = 0;
+  window.addEventListener("pointermove", (e) => {
+    if (cdrag) {
+      const [ix, iy] = imgAt(e.clientX, e.clientY); cdrag.moved = true; zm.moved = true;
+      spot.x = ix + cdrag.dx; spot.y = iy + cdrag.dy; tapAt = { x: spot.x, y: spot.y };
+      if (!dragRaf) dragRaf = requestAnimationFrame(() => { dragRaf = 0; if (spot?.pool) showSpot({ pool: spot.pool, ppy: spot.ppy }); });
+    } else if (pdrag) {
+      const dx = e.clientX - pdrag.x, dy = e.clientY - pdrag.y; if (Math.abs(dx) + Math.abs(dy) > 3) pdrag.moved = true;
+      pop.style.left = `${pdrag.l + dx}px`; pop.style.top = `${pdrag.t + dy}px`;
+    }
+  });
+  window.addEventListener("pointerup", () => {
+    if (cdrag) { cdrag = null; setTimeout(() => { zm.moved = false; }, 0); }
+    if (pdrag) { if (pdrag.moved && spot) { const [px, py] = screenOf(spot.x, spot.y); st.popOff = { dx: pop.offsetLeft - stage.offsetLeft - px, dy: pop.offsetTop - stage.offsetTop - py }; } pdrag = null; }
+  });
   // fingers: pinch to zoom, drag when zoomed, swipe for the next / previous hole when not
   let tg = null;
   const dist2 = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   stage.addEventListener("touchstart", (e) => {
-    if (e.target.closest(".sh-pop, .sh-zbar")) return;
+    if (e.target.closest(".sh-pop, .sh-zbar") || cdrag) return;
     const sr = stage.getBoundingClientRect(), t = e.touches;
     if (t.length === 2) tg = { pinch: true, d: dist2(t), z: zm.z, cx: (t[0].clientX + t[1].clientX) / 2 - sr.left, cy: (t[0].clientY + t[1].clientY) / 2 - sr.top, tx: zm.tx, ty: zm.ty };
     else if (t.length === 1) tg = { pinch: false, x: t[0].clientX, y: t[0].clientY, tx: zm.tx, ty: zm.ty, zoomed: zm.z > 1.001 };
     zm.moved = false;
   }, { passive: true });
   stage.addEventListener("touchmove", (e) => {
+    if (cdrag) { e.preventDefault(); return; } // (update 502: dragging the circle, not the page)
     if (!tg) return;
     const t = e.touches;
     if (tg.pinch && t.length === 2) {
@@ -562,7 +612,7 @@ export async function drawHeat(ctx, course) {
     // (update 494) one compact row under the scoring bar: left miss · fairway · right miss, the worse miss in red
     const chip = (k, label, v) => el("span", { class: `sh-tee-chip${worse === k ? " worse" : ""}`, title: D[k]?.[0] ? `${D[k][0]} tee shots` : null }, [el("small", {}, label), el("strong", {}, v == null ? "\u2014" : v.toFixed(2))]);
     teeBox.hidden = false;
-    mount(teeBox, [el("span", { class: "sh-hl-k" }, ["Off the tee", el("small", {}, worse ? `${worse === "L" ? "left" : "right"} +${Math.abs(L - R).toFixed(2)}` : "avg score")]),
+    mount(teeBox, [el("span", { class: "sh-hl-k" }, "Off the tee"), // (update 502: no note under it)
       el("span", { class: "sh-tee-chips" }, [chip("L", "Left", L), chip("C", "Fairway", C), chip("R", "Right", R)])]);
   }
   // (update 497) the up & down board over the green for this pin's usual approach line: the green's front and back edges
@@ -576,12 +626,12 @@ export async function drawHeat(ctx, course) {
     const W = size.w, Hh = size.h;
     bdSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
     const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); bdSvg.appendChild(g);
-    const P = (al, la) => [B.gx + al * B.ux - la * B.uy, B.gy + al * B.uy + la * B.ux], e = 0.8 * Math.max(B.a1 - B.a0, B.l1 - B.l0);
+    const P = (al, la) => [B.gx + al * B.ux - la * B.uy, B.gy + al * B.uy + la * B.ux], e = Math.max(1.2 * Math.max(B.a1 - B.a0, B.l1 - B.l0), Math.max(W, Hh) / 18);
     const line = (p, q) => { const d = `M${p[0]} ${p[1]} L${q[0]} ${q[1]}`; g.appendChild(sv("path", { d, stroke: "rgba(0,0,0,0.6)", "stroke-width": 4, "vector-effect": "non-scaling-stroke", fill: "none" })); g.appendChild(sv("path", { d, stroke: "#fff", "stroke-width": 2, "stroke-dasharray": "6 4", "vector-effect": "non-scaling-stroke", fill: "none" })); };
     for (const al of [B.a0, B.a1]) line(P(al, B.l0 - e), P(al, B.l1 + e));
     for (const la of [B.l0, B.l1]) line(P(B.a0 - e, la), P(B.a1 + e, la));
     // the approach's direction: an arrow coming in from short of the green
-    const t0 = P(B.a0 - e * 1.6, 0), t1 = P(B.a0 - e * 0.25, 0);
+    const t0 = B.rx != null ? [B.rx, B.ry] : P(B.a0 - e * 1.6, 0), t1 = P(B.a0 - e * 0.25, 0); // (update 502: from the middle of the fairway, or the tee)
     g.appendChild(sv("path", { d: `M${t0[0]} ${t0[1]} L${t1[0]} ${t1[1]}`, stroke: "#ffd60a", "stroke-width": 2.5, "vector-effect": "non-scaling-stroke", fill: "none", "marker-end": "url(#sh-arrow)" }));
     const defs = sv("defs"); const m = sv("marker", { id: "sh-arrow", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" }); m.appendChild(sv("path", { d: "M0 0 L10 5 L0 10 z", fill: "#ffd60a" })); defs.appendChild(m); bdSvg.insertBefore(defs, g);
   }

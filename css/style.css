@@ -5737,3 +5737,6 @@ button.sh-ud-c { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .sh-pop-tot td { font-weight: 700; border-top: 1px solid rgba(255,255,255,0.15); }
 button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 .sh-ud-green.on i { box-shadow: 0 0 0 3px #ffd60a; }
+/* (update 502) the circle's popup can be dragged */
+.sh-stage-wrap > .sh-pop { cursor: grab; touch-action: none; }
+.sh-stage-wrap > .sh-pop button, .sh-stage-wrap > .sh-pop table { cursor: auto; }
