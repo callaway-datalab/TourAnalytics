@@ -5776,3 +5776,7 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 .cr-dlg h2 { margin: 0 0 4px; }
 .cr-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .cr-check { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+/* (update 507) the circle's popup: a lie's row tapped out of All */
+.sh-spot-t tr.sh-tap-row { cursor: pointer; }
+.sh-spot-t tr.sh-off td { opacity: 0.35; text-decoration: line-through; text-decoration-color: rgba(255,255,255,0.4); }
+.sh-spot-t tr.sh-off .sh-lie { filter: grayscale(1); }

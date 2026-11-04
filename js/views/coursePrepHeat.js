@@ -331,6 +331,7 @@ export async function drawHeat(ctx, course) {
   let spot = null, rawP = null;
   const RAD = [2, 3, 5, 8, 10, 15, 20, 25, 30, 40, 50]; // (update 503: up to 30 yds; 506: 50)
   st.spotR ||= 10; // (update 502: 10 yds to start)
+  st.spotOff ||= new Set(); // (update 507: the lies left out of All)
   const rawIndex = () => (rawP ||= Promise.all([import("../courseRaw.js"), import("../courseShots.js")]).then(([R, CS]) => R.loadRaw(meta).then((rows) => {
     const by = new Map(), num0 = (v) => (v == null || v === "" ? null : Number(v)), LI = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
     const trails = new Map();
@@ -451,7 +452,12 @@ export async function drawHeat(ctx, course) {
         const row = (label, qs, cls = null) => el("tr", { class: [cls, qs.length < 5 ? "sh-few" : null].filter(Boolean).join(" ") || null, title: qs.length < 5 ? "Fewer than 5 shots" : null }, [ /* (update 506: under 5 shots in italics) */el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)), ...keep.map(([h, f]) => el("td", { class: "num", style: `color:${scColor(SCV[h])}` }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
         const SCK = { Eagle: -2, Birdie: -1, Par: 0, Bogey: 1, "Dbl+": 2 }; // (update 505: each score column in its dots' colour)
         return el("table", { class: "plain sh-pop-t sh-spot-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "Avg", ...keep.map(([h]) => h), "U&D"].map((h, j2) => el("th", { class: j2 ? "num" : null, ...(h in SCK ? { style: `color:${scColor(SCK[h])}` } : {}) }, h)))),
-          el("tbody", {}, [...rowsL.map(([l, qs]) => row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs)), lies.size > 1 ? row("All", inside, "sh-pop-tot") : null])]);
+          // (update 507) a tap on a lie's row greys it out and leaves it out of All (again: back in)
+          el("tbody", {}, [...rowsL.map(([l, qs]) => { const off = st.spotOff.has(l), tr = row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs, off ? "sh-off" : null);
+            tr.classList.add("sh-tap-row"); tr.title = off ? "Left out of All: tap to put it back" : "Tap to leave it out of All";
+            tr.addEventListener("click", (e) => { e.stopPropagation(); if (st.spotOff.has(l)) st.spotOff.delete(l); else st.spotOff.add(l); showSpot({ pool, ppy }); });
+            return tr; }),
+            lies.size > 1 ? row(st.spotOff.size ? "All (rest)" : "All", inside.filter((q) => !st.spotOff.has(q.lie)), "sh-pop-tot") : null])]);
       })(),
     ]);
     requestAnimationFrame(placeDot);

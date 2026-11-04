@@ -113,29 +113,8 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
   const subjLabel = mine ? esc(who.label) : "Field averages";
   const avgOf = (o, par) => (o?.n ? par + o.sum / o.n : null);
 
-  // 1. the cover
+  // 1. the cover, with the game plan on it (update 507: no course overview page)
   const tone = (v) => { if (v == null) return "#f1f3f5"; const t = Math.max(-1, Math.min(1, v / 0.35)); return t < 0 ? `rgba(61,156,255,${0.18 + 0.55 * -t})` : `rgba(255,${Math.round(159 - 90 * t)},${Math.round(67 - 9 * t)},${0.18 + 0.6 * t})`; };
-  page("Course strategy report", `<div class="cover">
-    <div class="ck">COURSE STRATEGY REPORT</div><h1>${esc(course.name)}</h1><div class="cev">${esc(events)}</div>
-    <div class="cwho">${mine ? `Prepared for <b>${esc(who.label)}</b>` : who ? `${esc(who.label)} has no shots at this course: <b>field averages</b>` : "<b>Field averages</b>"}</div>
-    <div class="scores">${[["Make the cut", av("cut"), "#c8372d"], ["Top 25", av("top25"), "#e07a1f"], ["Top 10", av("top10"), "#c99a00"], ["Win", av("win"), "#1e8a4c"]].filter(([, v]) => v != null).map(([l, v, c]) => `<div class="sc"><span>${l}</span><b style="color:${c}">${toPar(v)}</b></div>`).join("")}</div>
-    <div class="muted small">Scores to beat for the week, to par: the average of ${ev.length} ${ev.length === 1 ? "event" : "events"} here.</div>
-    <h3>EVERY HOLE <small>${mine ? `${esc(first)}’s` : "the field’s"} scoring to par (blue under, orange over), and how hard it plays</small></h3>
-    <div class="strip">${HF.map((x) => { const v = x.me?.n ? x.me.sum / x.me.n : null; return `<div class="t" style="background:${tone(v)}"><b>${x.h}</b><span>Par ${x.par}</span><em>${v == null ? "—" : sgn(v)}</em><i>${ord(x.hcp)}</i></div>`; }).join("")}</div>
-  </div>`, "cov");
-
-  // 2. the course overview: a row a hole
-  const q75 = (k) => { const v = HF.map((r) => r[k]).filter((x) => x != null).sort((a, b) => a - b); return v.length >= 4 ? v[Math.floor(0.75 * (v.length - 1))] : Infinity; };
-  const cut = { fwy: q75("fwy"), gir: q75("gir"), go: q75("go") };
-  const vcell = (r, k) => `<td class="${r[k] != null && r[k] >= cut[k] && r[k] > 0 ? "hi" : ""}">${r[k] == null ? "" : r[k].toFixed(2)}</td>`;
-  const udAll = (X) => { const t = Object.values(X.ud || {}).flatMap((o) => Object.values(o)).reduce((a, b) => [a[0] + b[0], a[1] + b[1]], [0, 0]); return t[0] ? Math.round((100 * t[1]) / t[0]) : null; };
-  page("Course overview", `<h2 class="h">COURSE OVERVIEW <small>${subjLabel} against the Top 10 finishers</small></h2>
-    <table class="ov"><thead><tr><th>Hole</th><th>Par</th><th>Yds</th><th>Hcp</th><th>Avg score</th><th>Top 10</th><th>Birdie+</th><th>Bogey+</th><th>Hit Fwy</th><th>Hit GIR</th><th>Go for it</th><th>Worse miss</th><th>Up &amp; down</th></tr></thead><tbody>
-    ${HF.map((x) => { const a = avgOf(x.me, x.par), t = avgOf(x.top, x.par), u = udAll(I.holes[x.h]); return `<tr><td><b>${x.h}</b></td><td>${x.par}</td><td>${x.yds || "—"}</td><td>${x.hcp}</td><td class="${a != null && t != null ? (a - t > 0.1 ? "neg" : a - t < -0.05 ? "pos" : "") : ""}"><b>${a == null ? "—" : a.toFixed(2)}</b></td><td>${t == null ? "—" : t.toFixed(2)}</td><td>${Math.round(x.birdie)}%</td><td>${Math.round(x.bogey)}%</td>${vcell(x, "fwy")}${vcell(x, "gir")}${vcell(x, "go")}<td>${x.miss && x.miss.by >= 0.05 ? `${x.miss.worse === "left" ? "Left" : "Right"} <small>+${x.miss.by.toFixed(2)}</small>` : "—"}</td><td class="${udCls(u)}">${u == null ? "—" : `${u}%`}</td></tr>`; }).join("")}
-    </tbody></table>
-    <p class="muted small">Hcp: 1 is the hardest hole here. Hit Fwy / Hit GIR: how much higher the scoring average is for those who missed the fairway / the green in regulation (shaded: the most important holes). Go for it: what going for it (inside 30 yds) saves on laying up (30–100 yds). Worse miss: the costlier side off the tee. Up &amp; down: approaches that missed the green, got up and down.</p>`);
-
-  // 3. the game plan
   const top3 = (list, key, min = -Infinity) => list.filter((x) => x[key] != null && x[key] > min).sort((a, b) => b[key] - a[key]).slice(0, 3);
   const agg = HF.map((x) => ({ ...x, ix: x.birdie - x.bogey }));
   const blocks = [
@@ -144,60 +123,91 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
     ["FAIRWAYS MATTER", "", top3(HF, "fwy", 0.05), (x) => [x.fwy.toFixed(2), "strokes", "missing the fairway"]],
     ["GREENS MATTER", "", top3(HF, "gir", 0.05), (x) => [x.gir.toFixed(2), "strokes", "missing the green"]],
     ["GO FOR IT", "pos", top3(HF, "go", 0.05), (x) => [x.go.toFixed(2), "strokes", "saved going for it"]],
-    ["TEE MISS TO AVOID", "neg", HF.filter((x) => x.miss && x.miss.by >= 0.1).sort((a, b) => b.miss.by - a.miss.by).slice(0, 3), (x) => [x.miss.worse === "left" ? "Left" : "Right", "miss", `+${x.miss.by.toFixed(2)} vs the other side`]],
+    ["TEE MISS TO AVOID", "neg", HF.filter((x) => x.miss && x.miss.by >= 0.1).sort((a, b) => b.miss.by - a.miss.by).slice(0, 3), (x) => [x.miss.worse === "left" ? "Left" : "Right", "miss", `+${x.miss.by.toFixed(2)} vs the opposite`]],
   ].filter(([, , l]) => l.length);
   const holesV = HF.map((x) => { const a = x.me?.n ? x.me.sum / x.me.n : null, t = x.top?.n ? x.top.sum / x.top.n : null; return { h: x.h, v: a != null && t != null ? t - a : null }; }).filter((x) => x.v != null);
   const dists = SG_B.map((b) => { const me = S.rounds ? (S.sg[b] || 0) / S.rounds : null, tp = S.topRounds ? (S.topSg[b] || 0) / S.topRounds : null; return { b, v: me != null && tp != null ? me - tp : null }; }).filter((x) => x.v != null && (S.sg[x.b] != null || S.topSg[x.b] != null));
-  const bars = (list, k, n, worst) => { const l = list.filter((x) => (worst ? x.v < -0.005 : x.v > 0.005)).sort((a, b) => (worst ? a.v - b.v : b.v - a.v)).slice(0, n), m = Math.max(...list.map((x) => Math.abs(x.v)), 0.01); return l.map((x) => `<div class="vr"><span>${esc(k(x))}</span><i><b class="${worst ? "neg" : "pos"}" style="width:${(Math.abs(x.v) / m) * 100}%"></b></i><em class="${worst ? "neg" : "pos"}">${sgn(x.v)}</em></div>`).join("") || `<p class="muted small">None</p>`; };
+  const bars = (list, k, n) => { const l = list.filter((x) => x.v < -0.005).sort((a, b) => a.v - b.v).slice(0, n), m = Math.max(...list.map((x) => Math.abs(x.v)), 0.01); return l.map((x) => `<div class="vr"><span>${esc(k(x))}</span><i><b class="neg" style="width:${(Math.abs(x.v) / m) * 100}%"></b></i><em class="neg">${sgn(x.v)}</em></div>`).join("") || `<p class="muted small">None</p>`; };
   const tour = {}; for (const c of all) for (const [b, n] of Object.entries(c.attempts || {})) tour[b] = (tour[b] || 0) + n;
   const tt = Object.values(tour).reduce((a, b) => a + b, 0), st2 = Object.values(S.attempts).reduce((a, b) => a + b, 0);
-  const faced = tt && st2 && all.length >= 2 ? ATT_B.map((b) => ({ b, d: (100 * (S.attempts[b] || 0)) / st2 - (100 * (tour[b] || 0)) / tt })).filter((r) => Math.abs(r.d) >= 0.5) : [];
-  page("Game plan", `<h2 class="h">GAME PLAN <small>${subjLabel}</small></h2>
-    <div class="plan">${blocks.map(([t, tn, l, val]) => `<div class="blk ${tn}"><h3>${t}</h3><div class="cards3">${l.map((x) => { const [big, unit, nt] = val(x); return `<div class="bc"><span>HOLE · PAR ${x.par}</span><b>${x.h}</b><em><strong>${big}</strong> ${unit}</em><small>${nt}</small></div>`; }).join("")}</div></div>`).join("")}</div>
+  const faced = tt && st2 && all.length >= 2 ? ATT_B.map((b) => ({ b, d: (100 * (S.attempts[b] || 0)) / st2 - (100 * (tour[b] || 0)) / tt })).filter((r) => r.d >= 0.5) : [];
+  page("Course strategy report", `<div class="cover">
+    <div class="chead"><div><div class="ck">COURSE STRATEGY REPORT</div><h1>${esc(course.name)}</h1><div class="cev">${esc(events)} \u00b7 ${mine ? `Prepared for <b>${esc(who.label)}</b>` : who ? `${esc(who.label)} has no shots here: <b>field averages</b>` : "<b>Field averages</b>"}</div></div>
+      <div class="scores">${[["Make the cut", av("cut"), "#c8372d"], ["Top 25", av("top25"), "#e07a1f"], ["Top 10", av("top10"), "#c99a00"], ["Win", av("win"), "#1e8a4c"]].filter(([, v]) => v != null).map(([l, v, c]) => `<div class="sc"><span>${l}</span><b style="color:${c}">${toPar(v)}</b></div>`).join("")}</div></div>
+    <div class="strip">${HF.map((x) => { const v = x.me?.n ? x.me.sum / x.me.n : null; return `<div class="t" style="background:${tone(v)}"><b>${x.h}</b><span>Par ${x.par}</span><em>${v == null ? "\u2014" : sgn(v)}</em><i>${ord(x.hcp)}</i></div>`; }).join("")}</div>
+    <div class="plan">${blocks.map(([t, tn, l, val]) => `<div class="blk ${tn}"><h3>${t}</h3><div class="cards3">${l.map((x) => { const [big, unit, nt] = val(x); return `<div class="bc"><span>HOLE \u00b7 PAR ${x.par}</span><b>${x.h}</b><em><strong>${big}</strong> ${unit}</em><small>${nt}</small></div>`; }).join("")}</div></div>`).join("")}</div>
     <div class="cols c3">
-      <div><h3>AGAINST THE TOP 10 · HOLES <small>where they gain most</small></h3>${bars(holesV.map((x) => ({ ...x, k: `Hole ${x.h}` })), (x) => x.k, 5, true)}</div>
-      <div><h3>AGAINST THE TOP 10 · SKILLS <small>where they gain most, a round</small></h3>${bars(dists, (x) => x.b, 5, true)}</div>
-      <div><h3>SHOTS YOU’LL FACE <small>against an average course</small></h3>${faced.length ? faced.sort((a, b) => b.d - a.d).slice(0, 6).map((r) => `<div class="vr"><span>${esc(r.b)}</span><i><b class="${r.d > 0 ? "gold" : "gray"}" style="width:${Math.min(100, Math.abs(r.d) * 12)}%"></b></i><em>${r.d > 0 ? "+" : "−"}${Math.abs(r.d).toFixed(1)}%</em></div>`).join("") : `<p class="muted small">About the same mix as an average course.</p>`}</div>
-    </div>`);
+      <div><h3>AGAINST THE TOP 10 \u00b7 HOLES</h3>${bars(holesV.map((x) => ({ ...x, k: `Hole ${x.h}` })), (x) => x.k, 5)}</div>
+      <div><h3>AGAINST THE TOP 10 \u00b7 SKILLS</h3>${bars(dists, (x) => x.b, 5)}</div>
+      <div><h3>SHOTS YOU\u2019LL FACE MORE THAN NORMAL</h3>${faced.length ? faced.sort((a, b) => b.d - a.d).slice(0, 5).map((r) => `<div class="vr"><span>${esc(r.b)}</span><i><b class="gold" style="width:${Math.min(100, r.d * 12)}%"></b></i><em>+${r.d.toFixed(1)}%</em></div>`).join("") : `<p class="muted small">About the same mix as an average course.</p>`}</div>
+    </div>
+    <p class="muted foot">Scores to beat: the week, to par, the average of ${ev.length} ${ev.length === 1 ? "event" : "events"} here. Tiles: ${mine ? `${esc(first)}\u2019s` : "the field\u2019s"} scoring to par on each hole (blue under, orange over) and how hard it plays. Against the Top 10: where they gain most on ${esc(first)}.</p>
+  </div>`, "cov");
 
-  // 4. a page a hole: its heatmaps, scoring, pins, tee misses, up & down
+  // 2. (update 507) the player's history at this course, from their stats: only when they have rounds here
+  if (who) {
+    try {
+      const [{ playerData }, { sameCourse }] = await Promise.all([import("./views/coursePrepExtras.js"), import("./sg.js")]);
+      onStatus("Loading the player\u2019s course history\u2026");
+      const d = await Promise.race([playerData(who.key), new Promise((r) => setTimeout(() => r(null), 12000))]); // (not waited on for ever)
+      const rounds = d?.rounds || [], here = rounds.filter((rd) => sameCourse(rd.course, course.name));
+      if (here.length) {
+        const per = (rs, cat = null) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + ((!cat || x.cat === cat) ? x.sg || 0 : 0), 0), 0) / rs.length : null);
+        const CATS = [[null, "Total"], ["OTT", "Off the tee"], ["APP", "Approach"], ["ARG", "Around the green"], ["PUTT", "Putting"]];
+        const evs = new Map(); for (const rd of here) { const k = `${rd.event}|${rd.year}`; (evs.get(k) || evs.set(k, { event: rd.event, year: rd.year, end: rd.date, rs: [] }).get(k)).rs.push(rd); const e = evs.get(k); if (String(rd.date) > String(e.end)) e.end = rd.date; }
+        const cls = (v) => (v == null ? "" : v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
+        page("Course history", `<h2 class="h">COURSE HISTORY <small>${esc(who.label)} at ${esc(course.name)}, from the stats</small></h2>
+          <div class="scores s3"><div class="sc"><span>Rounds here</span><b>${here.length}</b></div><div class="sc"><span>Strokes gained a round here</span><b class="${cls(per(here))}">${sgn(per(here))}</b></div><div class="sc"><span>Everywhere</span><b class="${cls(per(rounds))}">${sgn(per(rounds))}</b></div></div>
+          <div class="cols c2"><div><h3>BY CATEGORY</h3><table><thead><tr><th>Category</th><th>Here</th><th>Everywhere</th><th>Diff</th></tr></thead><tbody>${CATS.map(([k, l]) => { const h0 = per(here, k), a0 = per(rounds, k); return `<tr><td>${l}</td><td class="${cls(h0)}">${sgn(h0)}</td><td class="${cls(a0)}">${sgn(a0)}</td><td class="${cls(h0 - a0)}"><b>${sgn(h0 - a0)}</b></td></tr>`; }).join("")}</tbody></table></div>
+          <div><h3>TOURNAMENTS HERE</h3><table><thead><tr><th>Tournament</th><th>Rds</th><th>SG / round</th></tr></thead><tbody>${[...evs.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).map((e) => `<tr><td>${esc(e.event)} ${esc(e.year || "")}</td><td>${e.rs.length}</td><td class="${cls(per(e.rs))}">${sgn(per(e.rs))}</td></tr>`).join("")}</tbody></table></div></div>`);
+      }
+    } catch (err) { console.warn("course history", err); }
+  }
+
+  // 3. a page for every pin on every hole: its heatmaps, scoring, tee misses, up & down
   const mixRow = (label, o, par) => { if (!o?.n) return ""; const ks = ["e", "b", "p", "g"].filter((k) => o[k] > 0); return `<div class="mix"><span>${esc(label)}<small>${o.n} rds</small></span><i>${ks.map((k) => { const p = (100 * o[k]) / o.n; return `<b style="width:${p}%;background:${SCC[k]}">${p >= 14 ? `${Math.round(p)}%` : ""}</b>`; }).join("")}</i><em>${(par + o.sum / o.n).toFixed(2)}</em></div>`; };
-  for (const [hi, x] of HF.entries()) {
-    onStatus(`Drawing hole ${x.h} (${hi + 1} of ${HF.length})…`);
-    await new Promise((r) => setTimeout(r, 0));
+  const fromHist = (h) => { const o = { n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 }; for (const [k, v] of Object.entries(h || {})) { const s = Number(k); o.n += v; o.sum += s * v; o[s <= -2 ? "e" : s === -1 ? "b" : s === 0 ? "p" : "g"] += v; } return o; };
+  const fromTrails = (ts) => { const o = { n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 }; for (const t of ts) { if (t.s == null) continue; o.n++; o.sum += t.s; o[t.s <= -2 ? "e" : t.s === -1 ? "b" : t.s === 0 ? "p" : "g"]++; } return o; };
+  const total = HF.reduce((t, x) => t + pinsOn(meta, data, x.h).length, 0); let done = 0;
+  for (const x of HF) {
     const X = I.holes[x.h], H = data.holes?.[x.h] || { pins: {} }, hm = meta.holes?.[x.h], par = x.par;
-    const pins = pinsOn(meta, data, x.h), pinAvg = (p) => { const h = H.pins?.[p]?.hist || {}; let t = 0, c = 0; for (const [k, v] of Object.entries(h)) { t += Number(k) * v; c += v; } return c ? { avg: par + t / c, n: c } : null; };
-    // the pin most played, for the maps
-    const main = [...pins].sort((a, b) => (pinAvg(b)?.n || 0) - (pinAvg(a)?.n || 0))[0];
-    const maps = [];
-    if (hm && main) {
-      try {
-        const url = await heatImage(meta, x.h), img = await loadImg(url), P = H.pins[main], hasShot = !!P?.byShot;
-        const ks = hasShot ? (par <= 3 ? [1] : [1, par - 2]) : [0];
-        for (const k of ks) { const m = await holeMap(img, hm, H, P, par, k, `${meta.id}|${x.h}`); if (m) maps.push({ ...m, cap: k === 0 ? "EVERY SHOT" : k === 1 && par >= 4 ? "WHERE TEE SHOTS FINISH" : "WHERE APPROACHES FINISH" }); }
-      } catch (err) { console.warn("hole map", x.h, err); }
+    const pinAvg = (p) => { const o = fromHist(H.pins?.[p]?.hist); return o.n ? { avg: par + o.sum / o.n, n: o.n } : null; };
+    const pins = pinsOn(meta, data, x.h).sort((a, b) => (pinAvg(b)?.avg ?? -9) - (pinAvg(a)?.avg ?? -9)); // (hardest first)
+    let img = null; if (hm) { try { img = await loadImg(await heatImage(meta, x.h)); } catch (err) { console.warn("hole image", x.h, err); } }
+    for (const pid of pins) {
+      onStatus(`Drawing hole ${x.h}, ${pinLabel(meta, x.h, pid)} (${++done} of ${total})\u2026`);
+      await new Promise((r) => setTimeout(r, 0));
+      const P = H.pins[pid], ids = P?.merged || [pid], maps = [];
+      if (img && P) {
+        const ks = P.byShot ? (par <= 3 ? [1] : [1, par - 2]) : [0];
+        for (const k of ks) { try { const m = await holeMap(img, hm, H, P, par, k, `${meta.id}|${x.h}`); if (m) maps.push({ ...m, cap: k === 0 ? "EVERY SHOT" : k === 1 && par >= 4 ? "WHERE TEE SHOTS FINISH" : "WHERE APPROACHES FINISH" }); } catch (err) { console.warn("hole map", x.h, pid, err); } }
+      }
+      // this pin's tee misses and up & down (a combined pin: its pins added up; older builds: the hole's)
+      const D = {}; for (const o of X.drivePins ? ids.map((id) => X.drivePins[id]).filter(Boolean) : [X.drive]) for (const [k, a] of Object.entries(o || {})) { const b = (D[k] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
+      const U = {}; for (const id of ids) for (const [side, lies] of Object.entries(X.udPins?.[id] || {})) for (const [lie, a] of Object.entries(lies)) { const o = (U[side] ||= {}), b = (o[lie] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
+      const okD = (o) => o && o[0] >= 5, dAvg = (o) => (okD(o) ? par + o[1] / o[0] : null);
+      const worse = okD(D.L) && okD(D.R) ? (dAvg(D.L) > dAvg(D.R) ? "L" : "R") : null;
+      const cell = (side) => { const o = U[side] || {}, t = Object.values(o).reduce((a, b) => [a[0] + b[0], a[1] + b[1]], [0, 0]), p = t[0] >= 3 ? Math.round((100 * t[1]) / t[0]) : null; return `<div class="u ${udCls(p)}"><span>${side.replace("-", " ")}</span><b>${p == null ? "\u2014" : `${p}%`}</b><small>${t[0] ? `${t[0]} att` : ""}</small></div>`; };
+      const facts = [];
+      if (x.fwy != null) facts.push(`<b>Fairway</b> missing it costs ${x.fwy.toFixed(2)}`);
+      if (x.gir != null) facts.push(`<b>Green in regulation</b> missing it costs ${x.gir.toFixed(2)}`);
+      if (x.go != null) facts.push(`<b>Going for it</b> ${x.go >= 0 ? `saves ${x.go.toFixed(2)}` : `costs ${Math.abs(x.go).toFixed(2)}`} on laying up`);
+      if (x.widths.length) facts.push(`<b>Fairway width</b> about ${Math.min(...x.widths.map((w) => w[1]))}\u2013${Math.max(...x.widths.map((w) => w[1]))} yds where drives land`);
+      const myPin = mine ? fromTrails(mine.filter((t) => Number(t.h) === x.h && ids.includes(String(t.p)))) : null;
+      const tallMaps = maps.length && maps.every((m) => m.tall), pl = pinLabel(meta, x.h, pid);
+      page(`Hole ${x.h} \u00b7 ${pl}`, `<div class="hh"><h2 class="h">HOLE ${x.h} \u00b7 ${esc(pl.toUpperCase())} <small>Par ${par}${x.yds ? ` \u00b7 ${x.yds} yds` : ""} \u00b7 ${ord(x.hcp)} hardest hole${pins.length > 1 ? ` \u00b7 ${ord(pins.indexOf(pid) + 1)} hardest of its ${pins.length} pins` : ""}</small></h2></div>
+        <div class="hole ${tallMaps ? "tall" : ""}">
+          <div class="maps n${maps.length || 1}">${maps.length ? maps.map((m) => `<figure><figcaption>${m.cap}</figcaption><img src="${m.url}" alt=""></figure>`).join("") : `<p class="muted">No hole image for this hole yet.</p>`}
+            ${maps.length ? `<div class="lg"><span>Birdie</span><i></i><span>Bogey</span><small>The hole score from each spot</small></div>` : ""}</div>
+          <div class="side">
+            <h3>SCORING <small>this pin</small></h3>${mine && myPin?.n ? mixRow(first, myPin, par) : ""}${mixRow("Field", fromHist(P?.hist), par)}
+            <h3>THE HOLE <small>every pin</small></h3>${mine ? mixRow(first, x.me, par) : ""}${mixRow("Field", x.field, par)}${mixRow("Top 10", x.top, par)}
+            ${par >= 4 && (okD(D.L) || okD(D.R)) ? `<h3>OFF THE TEE <small>average score after</small></h3><div class="tee">${[["L", "Left miss", dAvg(D.L)], ["C", "Fairway", dAvg(D.C)], ["R", "Right miss", dAvg(D.R)]].map(([k, l, v]) => `<div class="${worse === k ? "worse" : ""}"><span>${l}</span><b>${v == null ? "\u2014" : v.toFixed(2)}</b></div>`).join("")}</div>` : ""}
+            ${Object.keys(U).length ? `<h3>UP &amp; DOWN BY MISS <small>this pin, within 30 yds</small></h3><div class="ud">${cell("Long-Left")}${cell("Long")}${cell("Long-Right")}${cell("Left")}<div class="u gr"><i></i></div>${cell("Right")}${cell("Short-Left")}${cell("Short")}${cell("Short-Right")}</div>` : ""}
+            ${facts.length ? `<h3>WHAT MATTERS</h3><ul class="facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul>` : ""}
+          </div>
+        </div>`, "holep");
     }
-    const L = X.drive?.L, C = X.drive?.C, R = X.drive?.R, okD = (o) => o && o[0] >= 5, dAvg = (o) => (okD(o) ? par + o[1] / o[0] : null);
-    const worse = okD(L) && okD(R) ? (dAvg(L) > dAvg(R) ? "L" : "R") : null;
-    const U = X.ud || {}, cell = (side) => { const o = U[side] || {}, t = Object.values(o).reduce((a, b) => [a[0] + b[0], a[1] + b[1]], [0, 0]), p = t[0] >= 3 ? Math.round((100 * t[1]) / t[0]) : null; return `<div class="u ${udCls(p)}"><span>${side.replace("-", " ")}</span><b>${p == null ? "—" : `${p}%`}</b><small>${t[0] ? `${t[0]} att` : ""}</small></div>`; };
-    const facts = [];
-    if (x.fwy != null) facts.push(`<b>Fairway</b> missing it costs ${x.fwy.toFixed(2)}`);
-    if (x.gir != null) facts.push(`<b>Green in regulation</b> missing it costs ${x.gir.toFixed(2)}`);
-    if (x.go != null) facts.push(`<b>Going for it</b> ${x.go >= 0 ? `saves ${x.go.toFixed(2)}` : `costs ${Math.abs(x.go).toFixed(2)}`} on laying up`);
-    if (x.widths.length) facts.push(`<b>Fairway width</b> about ${Math.min(...x.widths.map((w) => w[1]))}–${Math.max(...x.widths.map((w) => w[1]))} yds where drives land`);
-    const tallMaps = maps.length && maps.every((m) => m.tall);
-    page(`Hole ${x.h}`, `<div class="hh"><h2 class="h">HOLE ${x.h} <small>Par ${par}${x.yds ? ` · ${x.yds} yds` : ""} · ${ord(x.hcp)} hardest</small></h2></div>
-      <div class="hole ${tallMaps ? "tall" : ""}">
-        <div class="maps n${maps.length || 1}">${maps.length ? maps.map((m) => `<figure><figcaption>${m.cap}</figcaption><img src="${m.url}" alt=""></figure>`).join("") : `<p class="muted">No hole image for this hole yet.</p>`}
-          ${maps.length ? `<div class="lg"><span>Birdie</span><i></i><span>Bogey</span><small>The hole score from each spot · ${esc(pinLabel(meta, x.h, main))} pin</small></div>` : ""}</div>
-        <div class="side">
-          <h3>SCORING</h3>${mixRow(mine ? first : "Field", x.me, par)}${mine ? mixRow("Field", x.field, par) : ""}${mixRow("Top 10", x.top, par)}
-          ${pins.length > 1 ? `<h3>PINS <small>hardest first</small></h3><table class="pins">${pins.map((p) => [p, pinAvg(p)]).filter(([, a]) => a).sort((a, b) => b[1].avg - a[1].avg).map(([p, a]) => `<tr><td>${esc(pinLabel(meta, x.h, p))}</td><td>${a.avg.toFixed(2)}</td><td><small>${a.n} rds</small></td></tr>`).join("")}</table>` : ""}
-          ${par >= 4 && (okD(L) || okD(R)) ? `<h3>OFF THE TEE <small>average score after</small></h3><div class="tee">${[["L", "Left miss", dAvg(L)], ["C", "Fairway", dAvg(C)], ["R", "Right miss", dAvg(R)]].map(([k, l, v]) => `<div class="${worse === k ? "worse" : ""}"><span>${l}</span><b>${v == null ? "—" : v.toFixed(2)}</b></div>`).join("")}</div>` : ""}
-          ${Object.keys(U).length ? `<h3>UP &amp; DOWN BY MISS <small>within 30 yds</small></h3><div class="ud">${cell("Long-Left")}${cell("Long")}${cell("Long-Right")}${cell("Left")}<div class="u gr"><i></i></div>${cell("Right")}${cell("Short-Left")}${cell("Short")}${cell("Short-Right")}</div>` : ""}
-          ${facts.length ? `<h3>WHAT MATTERS</h3><ul class="facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul>` : ""}
-        </div>
-      </div>`, "holep");
   }
 
   const title = `${course.name} · Course Strategy Report${mine ? ` · ${who.label}` : ""}`;
@@ -215,7 +225,11 @@ body{font:12.5px/1.4 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;color:#1b1
 h1{font-size:34px;margin:2px 0 4px;letter-spacing:-.01em}h2.h{font-size:19px;margin:2px 0 8px;letter-spacing:.04em}h2 small,h3 small{font-weight:400;color:#6b7480;font-size:11px;letter-spacing:0;margin-left:6px;text-transform:none}
 h3{font-size:11.5px;margin:8px 0 4px;letter-spacing:.06em;color:#4a535e}
 .muted{color:#6b7480}small{font-size:10px;color:#6b7480}.small{font-size:10.5px}.pos{color:#1e8a4c}.neg{color:#c8372d}
-.cover .ck{font-size:12px;letter-spacing:.24em;color:#a07c3b;font-weight:800;margin-top:14px}.cover h1{font-size:40px;text-transform:uppercase;letter-spacing:.02em}.cev{font-size:15px;color:#4a535e}.cwho{margin:10px 0 14px;font-size:15px}
+.chead{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:end;margin:0 0 6px}.cover .ck{font-size:10px;letter-spacing:.24em;color:#a07c3b;font-weight:800}.cover h1{font-size:24px;text-transform:uppercase;letter-spacing:.02em;margin:0 0 2px}.cev{font-size:11.5px;color:#4a535e}
+.cover .scores{grid-template-columns:repeat(4,92px);gap:6px;margin:0}.cover .sc{padding:5px 8px}.cover .sc span{font-size:8.5px}.cover .sc b{font-size:22px}.cover .strip{gap:4px;margin:0 0 6px}.cover .strip .t{padding:3px 6px}.cover .strip b{font-size:13px}.cover .strip em{font-size:11px}.cover .strip span,.cover .strip i{font-size:8px}
+.cover .plan{gap:4px 12px}.cover .blk h3{margin:0 0 2px;font-size:10px}.cover .bc{padding:3px 6px}.cover .bc b{font-size:19px}.cover .bc em{font-size:9.5px}.cover .bc em strong{font-size:11px}.cover .bc small{font-size:8px}.cover .bc span{font-size:7.5px}
+.cover .cols{margin-top:4px;gap:16px}.cover .cols h3{font-size:10px;margin:4px 0 2px}.cover .vr{font-size:10px;padding:1px 0;grid-template-columns:66px 1fr 40px}.cover .vr i{height:7px}.foot{font-size:9px;margin:6px 0 0}
+.scores.s3{grid-template-columns:repeat(3,1fr);margin:4px 0 10px}.c2{grid-template-columns:1fr 1fr}
 .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0 4px}.sc{border:1px solid #e3e6ea;border-radius:10px;padding:12px 14px}.sc span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6b7480;font-weight:700}.sc b{font-size:38px;line-height:1.1}
 .strip{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin-top:4px}.strip .t{border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;line-height:1.15}.strip b{font-size:18px}.strip span,.strip i{font-size:9.5px;color:#4a535e;font-style:normal}.strip em{font-style:normal;font-weight:700;font-size:13px}
 table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e3e6ea;padding:5px 6px;text-align:right}th:first-child,td:first-child{text-align:left}th{font-size:9.5px;color:#4a535e;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
@@ -223,8 +237,8 @@ table.ov td{font-size:12px;padding:5.5px 6px}td.hi{background:#4db94b;color:#fff
 .plan{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 14px}.blk h3{margin:2px 0 4px}.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.bc{border:1px solid #e3e6ea;border-radius:8px;padding:5px 8px;display:flex;flex-direction:column;line-height:1.15}.blk.pos .bc{background:#eef6ff;border-color:#cfe3fb}.blk.neg .bc{background:#fff1ef;border-color:#f6d3cd}.bc span{font-size:8px;letter-spacing:.06em;color:#6b7480}.bc b{font-size:26px;font-weight:800}.bc em{font-style:normal;font-size:10.5px}.bc em strong{font-size:13px}.bc small{font-size:9px}
 .cols{display:grid;gap:18px;margin-top:6px}.c3{grid-template-columns:1fr 1fr 1fr}
 .vr{display:grid;grid-template-columns:72px 1fr 44px;gap:6px;align-items:center;font-size:11px;padding:2px 0}.vr i{height:9px;background:#f1f3f5;border-radius:5px;overflow:hidden;display:block}.vr i b{display:block;height:100%;border-radius:5px}.vr b.neg{background:#e8685a}.vr b.pos{background:#2fbf71}.vr b.gold{background:#d4b483}.vr b.gray{background:#b0b6bd}.vr em{font-style:normal;text-align:right;font-weight:700}
-.hh h2{margin:0 0 6px}.hole{display:grid;grid-template-columns:1fr 3.5in;gap:16px;height:calc(100% - 70px)}.hole.tall{grid-template-columns:1fr 3.6in}
-.maps{display:grid;gap:10px;align-content:start}.maps.n2{grid-template-columns:1fr 1fr}.hole:not(.tall) .maps.n2{grid-template-columns:1fr}.maps figure{margin:0}.maps figcaption{font-size:10px;font-weight:800;letter-spacing:.08em;color:#4a535e;margin:0 0 3px}.maps img{display:block;width:100%;max-height:6.1in;object-fit:contain;border-radius:6px;background:#0c0c0e;max-height:5.9in}.hole:not(.tall) .maps.n2 img{max-height:2.8in}
+.hh h2{margin:0 0 6px}.hole{display:grid;grid-template-columns:1fr 3.5in;gap:16px;height:calc(100% - 80px)}.hole.tall{grid-template-columns:1fr 3.6in}
+.maps{display:grid;gap:10px;align-content:start}.maps.n2{grid-template-columns:1fr 1fr}.hole:not(.tall) .maps.n2{grid-template-columns:1fr}.maps figure{margin:0}.maps figcaption{font-size:10px;font-weight:800;letter-spacing:.08em;color:#4a535e;margin:0 0 3px}.maps img{display:block;width:100%;max-height:6.1in;object-fit:contain;border-radius:6px;background:#0c0c0e;max-height:5.75in}.hole:not(.tall) .maps.n2 img{max-height:2.8in}
 .lg{grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:10px}.lg i{width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,#2166ac,#92c5de,#f7f7f7,#f4a582,#b2182b);display:inline-block}.lg small{margin-left:8px}
 .side h3:first-child{margin-top:0}.mix{display:grid;grid-template-columns:52px 1fr 38px;gap:6px;align-items:center;margin:3px 0}.mix span{font-weight:700;font-size:11px;line-height:1.05}.mix span small{display:block;font-weight:400;font-size:8.5px}.mix i{display:flex;height:15px;border-radius:4px;overflow:hidden;background:#f1f3f5}.mix i b{display:flex;align-items:center;justify-content:center;font-size:8.5px;color:#111}.mix em{font-style:normal;font-weight:800;text-align:right}
 table.pins td{padding:3px 4px;font-size:11px}.tee{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.tee div{border:1px solid #e3e6ea;border-radius:6px;padding:4px 6px;text-align:center}.tee span{display:block;font-size:9px;color:#6b7480}.tee b{font-size:14px}.tee .worse{background:#fff1ef;border-color:#e8685a}.tee .worse b{color:#c8372d}
