@@ -24,15 +24,21 @@ const nameOf = (b) => `${CAT[b.cat] || b.cat}${b.dist ? ` · ${b.dist}` : ""}`;
 
 /** (update 471) the drill's goal stat: the player's own season level of the plain stat that fits it (fairway %, proximity,
  *  up-and-down %, make %…), that distance's, else the part of the game's, when there are enough attempts behind it */
+/* (update 489) a distance by its numbers and unit, so "30-50 yds", "30 - 50 Yds" and "30 to 50 yards" are the same */
+export const distSig = (d) => { if (d == null || d === "") return ""; const t = String(d).toLowerCase(); const n = (t.match(/\d+(\.\d+)?/g) || []).map(Number).join("-"); return `${/<|under|inside|less/.test(t) ? "<" : />|over|\+|plus/.test(t) ? ">" : ""}${n}${/ft|feet|'/.test(t) ? "f" : "y"}`; };
+/** does a stat entry count for this part of the game and distance: mode "exact" (both), "dist" (that distance, filed
+ *  under any part of the game: proximity from 30-50 yds kept under Approach, say) or "cat" (that part, any distance) */
+export const obsFits = (o, cat, dist, mode) => (mode === "exact" ? o.cat === cat && (dist ? distSig(o.dist) === distSig(dist) : !o.dist)
+  : mode === "dist" ? !!dist && distSig(o.dist) === distSig(dist) : o.cat === cat || !o.cat);
 function goalStat(rounds, cat, dist, { pctMin = 20, min = 8 } = {}) {
-  for (const re of goalStatsFor(cat, dist)) for (const exact of [true, false]) {
+  for (const re of goalStatsFor(cat, dist)) for (const mode of ["exact", "dist", "cat"]) {
+    if (mode === "dist" && !dist) continue;
     let t = 0, w = 0, k = null;
     for (const rd of rounds) for (const o of rd.obs || []) {
       if (!re.test(o.k)) continue;
-      const ok = exact ? o.cat === cat && (dist ? o.dist === dist : !o.dist) : o.cat === cat || !o.cat;
-      if (ok) { t += o.v * o.w; w += o.w; k = o.k; }
+      if (obsFits(o, cat, dist, mode)) { t += o.v * o.w; w += o.w; k = o.k; }
     }
-    if (k) { const def = statDef(k); if (w >= (def.pct ? pctMin : min)) return { k, def, ve: t / w, exact, w }; }
+    if (k) { const def = statDef(k); if (w >= (def.pct ? pctMin : min)) return { k, def, ve: t / w, exact: mode === "exact", mode, w }; }
   }
   return null;
 }
@@ -129,13 +135,33 @@ export function focusView(S, mine, slicedField, f = {}) {
     // attempts enough; and if even that's short, say how many there are (not that there's no stat)
     const season = goalStat(all, cat, dist, { pctMin: 5, min: 3 });
     if (season) return { gs: season, from: "season rounds" };
-    let n = 0; for (const re of goalStatsFor(cat, dist)) for (const rd of all) for (const o of rd.obs || []) if (re.test(o.k) && (o.cat === cat || !o.cat)) n += o.w || 0;
+    // (update 489) none of their own: the field's at that distance (the best 10% of players there, as the bar to reach)
+    const fieldGoal = (() => {
+      for (const re of goalStatsFor(cat, dist)) for (const mode of ["exact", "dist", "cat"]) {
+        if (mode === "dist" && !dist) continue;
+        const per = [];
+        for (const p of slicedField || []) { if (p.key === me.key) continue; let t = 0, w = 0, k = null; for (const rd of p.rounds || []) for (const o of rd.obs || []) if (re.test(o.k) && obsFits(o, cat, dist, mode)) { t += o.v * o.w; w += o.w; k = o.k; } if (k && w >= 5) per.push({ k, v: t / w, w }); }
+        if (per.length < 10) continue;
+        const def = statDef(per[0].k), lower = def.higher === false || (def.higher == null && /prox/i.test(per[0].k));
+        per.sort((a, b) => (lower ? a.v - b.v : b.v - a.v));
+        const top = per.slice(0, Math.max(1, Math.round(per.length * 0.1)));
+        const W = top.reduce((a, x) => a + x.w, 0);
+        return { k: per[0].k, def, ve: top.reduce((a, x) => a + x.v * x.w, 0) / W, exact: mode === "exact", mode, w: W, field: true };
+      }
+      return null;
+    })();
+    if (fieldGoal) return { gs: fieldGoal, from: "the field\u2019s best 10% at this" };
+    let n = 0; for (const re of goalStatsFor(cat, dist)) for (const rd of all) for (const o of rd.obs || []) if (re.test(o.k) && (obsFits(o, cat, dist, "dist") || o.cat === cat || !o.cat)) n += o.w || 0;
     if (n > 0) return { gs: null, from: "best 10 rounds", note: `only ${Math.round(n)} ${Math.round(n) === 1 ? "attempt" : "attempts"} at this in the data, too few to set a number from` };
     // (update 478) none at all: say what the data does have for this part of the game (so a stat under a name it doesn't
     // know shows up here)
-    const have = new Set(); for (const rd of all) for (const o of rd.obs || []) if (o.cat === cat) have.add(statDef(o.k).label);
+    const have = new Set(); for (const rd of all) for (const o of rd.obs || []) if (o.cat === cat || (dist && distSig(o.dist) === distSig(dist))) have.add(statDef(o.k).label);
     const want = { OTT: "fairway", APP: "proximity or greens", ARG: "proximity", PUTT: "make" }[cat] || "matching";
-    return { gs: null, from: "best 10 rounds", note: have.size ? `the data has no ${want} stat for ${CAT[cat]}; it has ${[...have].slice(0, 5).join(", ")}` : `the data has no ${CAT[cat]} stats besides strokes gained` };
+    // (update 489) strokes gained there is all the data has: the goal in strokes gained a shot, from now to the tour average
+    let sg = 0, w = 0; for (const rd of all) for (const x of rd.shots || []) if (x.cat === cat && (!dist || distSig(x.dist) === distSig(dist))) { sg += x.sg || 0; w += x.w || 1; }
+    const per = w ? sg / w : null;
+    const sgGoal = per != null && per < 0 ? `; the goal is in strokes gained instead: from ${per.toFixed(2).replace("-", "\u2212")} a shot now to 0 (the tour average)` : "";
+    return { gs: null, from: "best 10 rounds", note: (have.size ? `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}; it has ${[...have].slice(0, 5).join(", ")}` : `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}, only strokes gained`) + sgGoal };
   };
   const sig = (d) => `${me.key}|${d.kind}|${d.dist || ""}|${d.lie || ""}`;
   const itemFor = (b) => {
@@ -145,6 +171,7 @@ export function focusView(S, mine, slicedField, f = {}) {
     if (!drill) return null;
     drill.from = from;
     if (note) drill.noStat = note; // (update 477)
+    if (gs?.field) drill.fieldGoal = true; // (update 489)
     // the goal in real rounds: strokes gained there back to the tour average (0), over the next N rounds
     const goal = { stat: "skill", cat: b.cat, dist: b.dist, target: 0, measure: "round", when: "nextN", n: N };
     return { drill, goal, stretch };
@@ -197,7 +224,7 @@ export function focusView(S, mine, slicedField, f = {}) {
     const statOf = (rs) => {
       if (!gs) return null;
       let t = 0, w = 0;
-      for (const rd of rs) for (const o of rd.obs || []) { if (o.k !== gs.k) continue; const ok = gs.exact ? o.cat === cat && (dist ? o.dist === dist : !o.dist) : o.cat === cat || !o.cat; if (ok) { t += o.v * o.w; w += o.w; } }
+      for (const rd of rs) for (const o of rd.obs || []) { if (o.k !== gs.k) continue; if (obsFits(o, cat, dist, gs.mode || (gs.exact ? "exact" : "cat"))) { t += o.v * o.w; w += o.w; } }
       if (!w) return "\u2014";
       return gsd.pct ? [el("span", {}, `${Math.round(t / w)}%`), el("span", { class: "fx-sub" }, `${Math.round(t / 100)}/${Math.round(w)}`)] : [el("span", {}, `${(t / w).toFixed(1)}${gsd.unit || ""}`), el("span", { class: "fx-sub" }, `${Math.round(w)} shots`)];
     };

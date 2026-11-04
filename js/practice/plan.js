@@ -123,6 +123,8 @@ export function goalText(d, best = null) {
 export function goalSource(d) {
   // (update 448) from Hypothetical rankings: say whether it came from the player's own rounds or the tour's
   if (d.goalFrom === "elite" && d.recFrom) return `${d.recFrom === "tour" ? "From the tour: rounds by other players" : "From their own rounds:"} ${d.recFrom === "tour" ? "that match the what-if had" : "the ones that match the what-if had"} ${d.stat} ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? ` ${d.unit || "ft"}` : "%"}`;
+  // (update 489) none of their own at this: the field's best 10% there
+  if (d.goalFrom === "elite" && d.fieldGoal) return `the field\u2019s best 10% at this, ${d.stat}: ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? ` ${d.unit || "ft"}` : "%"}`;
   if (d.goalFrom === "elite") return `their ${d.from || "kept rounds"}\u2019 ${d.stat}${d.whole && d.dist ? ` (all ${({ PUTT: "putts", APP: "approaches", ARG: "short-game shots" })[d.cat] || "shots"})` : ""}: ${Math.round((d.pct ?? d.statV) * 10) / 10}${d.kind === "prox" ? ` ${d.unit || "ft"}` : "%"}`;
   return null;
 }
