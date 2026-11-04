@@ -299,6 +299,10 @@ export async function drawHeat(ctx, course) {
     }
     pop.style.left = `${left}px`; pop.style.top = `${top}px`;
   }
+  // (update 499) a zone's actual strokes to hole out: its shots' own average (the map's colour is blended with the shots
+  // around it where few were hit, so a lone shot doesn't paint a spot on its own)
+  const actualOf = (z) => { let t = 0, w = 0; for (const r of z.rows) { const n = r.n || 1; t += (r.raw ?? r.v) * n; w += n; } return w ? t / w : z.raw; };
+  const fmtToGo = (v, n) => (n === 1 || Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(2));
   function openZone(z, at = null) {
     tapAt = at || { x: z.x, y: z.y };
     const usePlayer = isP() && !!ix;
@@ -308,7 +312,9 @@ export async function drawHeat(ctx, course) {
     const ttl = z.key ? (z.key.kind === "target" ? `Aim here (${z.key.n})` : `Stay away (${z.key.n})`) : "This spot";
     const rows = [...z.rows].sort((a, b) => (b.n || 0) - (a.n || 0));
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { class: z.key?.kind === "target" ? "pos" : z.key?.kind === "avoid" ? "neg" : "" }, ttl), x]),
-      z.toGo ? el("p", {}, [`Strokes to hole out: `, el("strong", {}, z.raw.toFixed(2)), ...(usePlayer && z.rawP != null ? [` · ${who.label.split(" ")[0]} `, el("strong", {}, z.rawP.toFixed(2))] : [])]) : null,
+      // (update 499) the shots' own average (one shot: its own strokes, a whole number), not the map's blended shade
+      z.toGo ? el("p", {}, [`Strokes to hole out: `, el("strong", {}, fmtToGo(actualOf(z), z.n)), ...(usePlayer && z.rawP != null ? [` · ${who.label.split(" ")[0]} `, el("strong", {}, z.rawP.toFixed(2))] : [])]) : null,
+      z.toGo && Math.abs(actualOf(z) - z.raw) >= 0.05 ? el("p", { class: "muted small" }, `The map\u2019s colour here is ${z.raw.toFixed(2)}: blended with the shots around it, as ${z.n ? `only ${z.n} ${z.n === 1 ? "shot was" : "shots were"}` : "few shots were"} hit from this spot.`) : null,
       z.toGo ? null : el("p", {}, [`Scoring from here: `, el("strong", {}, `${(par + z.field).toFixed(2)}`), ` (${fmtPar(z.field)} to par)`]),
       usePlayer && z.player != null && !z.toGo ? el("p", {}, [`${who.label}: `, el("strong", {}, `${(par + z.player).toFixed(2)}`), ` (${fmtPar(z.player)}), from their strokes gained from here`]) : null,
       // (update 464) in plain words: harder or easier than the usual from that far out, and its share of that part of the
@@ -317,7 +323,7 @@ export async function drawHeat(ctx, course) {
         Z.hasN && z.n ? (kOf(st.hole, par) ? ` · ${z.n.toLocaleString()} of ${Z.total.toLocaleString()} ${["", "tee shots", "second shots", "third shots"][kOf(st.hole, par)]} finished here (${Math.round((100 * z.n) / (Z.total || 1)) < 1 ? "under 1" : Math.round((100 * z.n) / (Z.total || 1))}%)`
           : ` · ${z.n.toLocaleString()} ${z.n === 1 ? "shot" : "shots"}${catShare != null ? ` (${catShare < 1 ? "under 1" : catShare}% of the ${CAT_NAME[cat]} attempts on this hole)` : ""}`) : ""]),
       el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Lie"), el("th", {}, "Distance"), Z.hasN ? el("th", { class: "num" }, "Shots") : null, el("th", { class: "num" }, z.toGo ? "To hole out" : "Tour"), usePlayer ? el("th", { class: "num" }, who.label.split(" ")[0]) : null])),
-        el("tbody", {}, rows.map((q) => el("tr", {}, [el("td", {}, q.lie || "—"), el("td", {}, q.d || "—"), Z.hasN ? el("td", { class: "num" }, q.n ? q.n.toLocaleString() : "—") : null, el("td", { class: "num" }, z.toGo ? q.v.toFixed(2) : fmtPar(q.f)),
+        el("tbody", {}, rows.map((q) => el("tr", {}, [el("td", {}, q.lie || "—"), el("td", {}, q.d || "—"), Z.hasN ? el("td", { class: "num" }, q.n ? q.n.toLocaleString() : "—") : null, el("td", { class: "num" }, z.toGo ? fmtToGo(q.raw ?? q.v, q.n) : fmtPar(q.f)),
           usePlayer ? el("td", { class: "num", title: q.sk ? `${q.sk.sg >= 0 ? "Gains" : "Loses"} ${Math.abs(q.sk.sg).toFixed(3)} a shot${q.sk.band ? ` at ${q.sk.band}` : ""}${q.sk.lie ? ` from the ${q.sk.lie}` : ""} (${Math.round(q.sk.shots)} shots)` : null }, z.toGo ? (q.v - (q.sk?.sg || 0)).toFixed(2) : fmtPar(q.p)) : null])))]),
     ]);
     pop.hidden = false;
@@ -477,11 +483,24 @@ export async function drawHeat(ctx, course) {
       const o = U[side] || {}, tot = Object.values(o).reduce((t, a) => [t[0] + a[0], t[1] + a[1]], [0, 0]);
       const p = tot[0] >= 3 ? Math.round((100 * tot[1]) / tot[0]) : null;
       const lies = [["Fairway", "Fwy"], ["Rough", "Rgh"], ["Bunker", "Bnk"]].filter(([l]) => o[l]?.[0] >= 3).map(([l, s2]) => `${s2} ${Math.round((100 * o[l][1]) / o[l][0])}`);
-      return el("div", { class: `sh-ud-c ${col(p)}`, title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
+      // (update 499) a tap: its lies, attempts and how many got up and down, below the grid
+      const b = el(tot[0] ? "button" : "div", { class: `sh-ud-c ${col(p)}${st.udSel === side ? " on" : ""}`, ...(tot[0] ? { type: "button", "aria-pressed": String(st.udSel === side) } : {}), title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
         el("span", { class: "sh-ud-k" }, side.replace("-", " ")),
         el("strong", {}, p == null ? "\u2014" : `${p}%`),
         el("span", { class: "sh-ud-l" }, p == null ? (tot[0] ? `${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}` : "") : lies.join(" \u00b7 ") || `${tot[0]} misses`)]);
+      if (tot[0]) b.addEventListener("click", () => { st.udSel = st.udSel === side ? null : side; drawUD(); });
+      return b;
     };
+    // the square picked: every lie it left, its attempts and how many got up and down
+    const sel = st.udSel && U[st.udSel] ? st.udSel : null;
+    const detail = sel ? (() => {
+      const o = U[sel], tot = Object.values(o).reduce((t, a) => [t[0] + a[0], t[1] + a[1]], [0, 0]);
+      const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { st.udSel = null; drawUD(); });
+      return el("div", { class: "sh-ud-det" }, [el("div", { class: "sh-pop-h" }, [el("strong", {}, `Missed ${sel.replace("-", " ").toLowerCase()}`), x]),
+        el("p", { class: "small" }, [el("strong", {}, `${Math.round((100 * tot[1]) / tot[0])}%`), ` got up and down: ${tot[1]} of ${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}`]),
+        el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Attempts", "Up & down", ""].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
+          el("tbody", {}, ["Fairway", "Rough", "Bunker"].filter((l) => o[l]?.[0]).map((l) => el("tr", {}, [el("td", {}, l), el("td", { class: "num" }, String(o[l][0])), el("td", { class: "num" }, String(o[l][1])), el("td", { class: `num ${col(Math.round((100 * o[l][1]) / o[l][0]))}` }, `${Math.round((100 * o[l][1]) / o[l][0])}%`)])))])]);
+    })() : null;
     udBox.hidden = false;
     const hasB = (pinNow?.merged || [pid]).some((id) => X?.udBoards?.[id]);
     const tog = hasB ? el("button", { type: "button", class: `link small sh-ud-tog${st.showBoard ? " on" : ""}` }, st.showBoard ? "Hide on map" : "Show on map") : null;
@@ -489,7 +508,7 @@ export async function drawHeat(ctx, course) {
     // (update 498) the admin: maps an older version built (the up & down sides worked out the old way) say so
     const stale = isAdmin && meta.builtVersion !== BUILD_VERSION ? el("p", { class: "sh-ud-stale" }, meta.rawChunks ? "These maps were built by an older version. Press Rebuild maps on Upload Data \u203a Strategy Maps to rebuild them from the saved shots." : "No shots saved on the site for this course yet, so its maps can\u2019t be rebuilt: upload it once with the new course_upload.py (update 496), then press Rebuild maps on Upload Data \u203a Strategy Maps.") : null;
     mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), el("span", { class: "muted small" }, "this pin \u00b7 within 30 yds of the green"), tog]), stale,
-      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), el("div", { class: "sh-ud-green", "aria-hidden": "true" }, el("i")), cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")])]);
+      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), el("div", { class: "sh-ud-green", "aria-hidden": "true" }, el("i")), cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]), detail]);
   }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
   // the key (Birdie, Par …: tap to show only those, tap more to add, again to take away), one trail from a tap on it

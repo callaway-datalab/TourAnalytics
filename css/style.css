@@ -5718,3 +5718,9 @@ button.ci2-vr { background: none; border: 0; color: inherit; font: inherit; font
 .ci2-big-s { font-size: var(--fs-2xs); color: #8e8e93; margin-top: 2px; line-height: 1.25; }
 @media (max-width: 600px) { .ci2-big { padding: 8px 8px 10px; } .ci2-big-n { font-size: 2rem; } .ci2-cards { gap: 6px; } }
 .sh-ud-stale { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: rgba(255,159,67,0.14); color: #ffb26b; font-size: var(--fs-note); }
+/* (update 499) up & down: a square tapped, its lies and attempts */
+button.sh-ud-c { border: 0; color: inherit; font: inherit; cursor: pointer; }
+.sh-ud-c.on { outline: 2px solid #d4b483; outline-offset: 1px; }
+.sh-ud-det { margin: 10px auto 0; max-width: 460px; padding: 10px 12px; border-radius: 12px; background: rgba(0,0,0,0.35); border: 1px solid rgba(212,180,131,0.4); }
+.sh-ud-det p { margin: 4px 0 8px; }
+.sh-ud-det td.good { color: #4CAF50; } .sh-ud-det td.mid { color: #FFB343; } .sh-ud-det td.bad { color: #ff453a; }
