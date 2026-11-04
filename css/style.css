@@ -5590,3 +5590,20 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 @media (max-width: 600px) { .ci-cols { min-width: 620px; gap: 4px; } }
 .ci-lg-i { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ci-lg-i .ci-sw { margin-right: 0; }
+/* (update 490) hole history: a row each (who, a bar of the scores, the average to par), one key below */
+.sh-hist { gap: 6px; }
+.sh-hl { display: grid; grid-template-columns: 5.2em 1fr 3.6em; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sh-hl-k { display: flex; flex-direction: column; line-height: 1.1; color: #d4b483; font-weight: 600; min-width: 0; }
+.sh-hl-k small { color: #8e8e93; font-weight: 400; font-size: var(--fs-2xs); }
+.sh-hb { display: flex; height: 18px; border-radius: 5px; overflow: hidden; background: rgba(255,255,255,0.06); }
+.sh-hb i { display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 11px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; min-width: 2px; }
+.sh-hb i.par { color: #111; }
+.sh-hl-avg { text-align: right; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.sh-hl-avg.neg { color: #ff9f43; } .sh-hl-avg.pos { color: #3d9cff; }
+.sh-hl-more { margin: 2px 0 0 calc(5.2em + 10px); }
+.sh-hl-key { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: var(--fs-2xs); color: #8e8e93; margin-left: calc(5.2em + 10px); }
+.sh-hl-key span { display: inline-flex; align-items: center; gap: 4px; }
+.sh-hl-key i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+/* (update 490) the whole hole on the screen: no taller than most of it (narrower to keep its shape) */
+.sh-stage { width: min(100%, calc(80vh * var(--ar, 1.78))); width: min(100%, calc(80svh * var(--ar, 1.78))); margin-left: auto; margin-right: auto; }
+@media (max-width: 600px) { .sh-stage { width: min(100%, calc(72vh * var(--ar, 1.78))); width: min(100%, calc(72svh * var(--ar, 1.78))); } }

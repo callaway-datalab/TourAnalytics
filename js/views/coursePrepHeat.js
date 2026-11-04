@@ -65,7 +65,7 @@ export async function drawHeat(ctx, course) {
 
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
-  const setGeom = () => { rot = !!size.w && matchMedia("(max-width: 600px)").matches && size.w > size.h * 1.25; stage.style.aspectRatio = size.w ? (rot ? `${size.h} / ${size.w}` : `${size.w} / ${size.h}`) : "16 / 9"; stage.classList.toggle("rot", rot); };
+  const setGeom = () => { rot = !!size.w && matchMedia("(max-width: 600px)").matches && size.w > size.h * 1.25; stage.style.aspectRatio = size.w ? (rot ? `${size.h} / ${size.w}` : `${size.w} / ${size.h}`) : "16 / 9"; stage.style.setProperty("--ar", size.w ? String(rot ? size.h / size.w : size.w / size.h) : "1.78"); /* (update 490: the width that keeps the whole hole on the screen) */ stage.classList.toggle("rot", rot); };
   // (update 457) the zones' picture is worked out once (it reads the image for the edges of each lie), then only drawn
   let ov = null;
   // (update 461) worked out at the image's own size (sharp edges where the lie changes), once for each hole, pin and view
@@ -384,12 +384,22 @@ export async function drawHeat(ctx, course) {
   const SC = { "-2": "Eagle+", "-1": "Birdie", "0": "Par", "1": "Bogey", "2": "Double+" };
   const scName = (s) => (s <= -2 ? "Eagle or better" : s === -1 ? "Birdie" : s === 0 ? "Par" : s === 1 ? "Bogey" : s === 2 ? "Double bogey" : s > 2 ? `+${s}` : "");
   const scColor = (s) => (s <= -2 ? "#7d6bff" : s === -1 ? "#3d9cff" : s === 0 ? "#f2f2f2" : s === 1 ? "#ff9f43" : "#ff453a");
+  // (update 490) a row each: who, a bar of how the hole was scored (eagle+ to double+), the average to par; the counts on a
+  // tap (or hover), the colours' key once below
   const histLine = (label, h, extra = null) => {
     const n = Object.values(h || {}).reduce((t, v) => t + v, 0); if (!n) return null;
     const avg = Object.entries(h).reduce((t, [k, v]) => t + Number(k) * v, 0) / n; // (doubles and worse counted as +2)
-    return el("div", { class: "sh-hl" }, [el("span", { class: "sh-hl-k" }, label), el("span", {}, [`${n} ${n === 1 ? "round" : "rounds"} \u00b7 avg `, el("strong", {}, (par + avg).toFixed(2)), ` (${avg >= 0 ? "+" : "\u2212"}${Math.abs(avg).toFixed(2)})`]),
-      el("span", { class: "sh-hl-c" }, ["-2", "-1", "0", "1", "2"].filter((k) => h[k]).map((k) => el("span", { class: "sh-hl-b" }, [el("i", { style: `background:${scColor(Number(k))}` }), `${SC[k]} ${h[k]}${k === "-1" || k === "0" || k === "1" ? ` (${Math.round((100 * h[k]) / n)}%)` : ""}`]))), extra]);
+    const ks = ["-2", "-1", "0", "1", "2"].filter((k) => h[k]);
+    const detail = `${n} ${n === 1 ? "round" : "rounds"} \u00b7 avg ${(par + avg).toFixed(2)} \u00b7 ${ks.map((k) => `${SC[k]} ${h[k]}`).join(", ")}`;
+    const bar = el("span", { class: "sh-hb" }, ks.map((k) => { const p = (100 * h[k]) / n; return el("i", { style: `width:${p}%;background:${scColor(Number(k))}`, class: k === "0" ? "par" : null }, p >= 14 ? `${Math.round(p)}%` : ""); }));
+    const row = el("button", { type: "button", class: "sh-hl", title: detail, "aria-label": `${label}: ${detail}` }, [
+      el("span", { class: "sh-hl-k" }, [label, el("small", {}, `${n} rds`)]), bar,
+      el("strong", { class: `sh-hl-avg ${avg > 0.005 ? "neg" : avg < -0.005 ? "pos" : ""}` }, avg > 0.005 ? `+${avg.toFixed(2)}` : avg < -0.005 ? `\u2212${Math.abs(avg).toFixed(2)}` : "E")]);
+    const more = el("div", { class: "muted small sh-hl-more", hidden: true }, detail);
+    row.addEventListener("click", () => { more.hidden = !more.hidden; });
+    return el("div", { class: "sh-hl-wrap" }, [row, more, extra]);
   };
+  const histKey = () => el("div", { class: "sh-hl-key" }, ["-2", "-1", "0", "1", "2"].map((k) => el("span", {}, [el("i", { style: `background:${scColor(Number(k))}` }), SC[k]])));
   const myTrails = () => (trails?.trails || []).filter((t) => Number(t.h) === Number(st.hole));
   function drawHist() {
     const n = st.hole, H = data.holes?.[n];
@@ -404,7 +414,8 @@ export async function drawHeat(ctx, course) {
       const nP = Object.keys(meta.players || {}).length, inData = !!meta.players?.[who.key];
       lines.push(el("p", { class: "muted small sh-hl-none" }, inData ? `No past shots for ${who.label} on this hole.` : `No shots for ${who.label} in this course\u2019s shot data${nP ? ` (it has ${nP} players, matched by playerID)` : ""}.`));
     }
-    mount(hist, lines.filter(Boolean));
+    const shown = lines.filter(Boolean);
+    mount(hist, shown.length ? [...shown, histKey()] : null);
     pastBtn.hidden = !(st.view === "player" && mine.length);
     pastBtn.textContent = st.showPast ? "Hide Past Shots" : `Show Past Shots (${mine.length})`;
     pastBtn.classList.toggle("on", !!st.showPast);
