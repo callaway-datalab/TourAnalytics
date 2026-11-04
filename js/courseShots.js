@@ -20,7 +20,8 @@ import { clientKey } from "./data.js";
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLS = { year: ["year", "season"], courseNum: ["coursenum", "coursenumber", "courseid"], course: ["course", "coursename"], player: ["player", "playername", "name"], playerID: ["playerid", "player_id", "pid"],
   round: ["round", "rnd", "roundno"], hole: ["hole"], par: ["par", "holepar"], pin: ["pinid", "pin", "pinlocation"], lie: ["lie", "fromlocation"], strokes: ["strokes", "stroke", "shotnum", "shotnumber"],
-  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"] };
+  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"],
+  appSide: ["appsideloc", "appside", "approachside", "missside"], drive: ["drivedirection", "drivedir", "teedirection"] }; // (update 488)
 export function shotColumns(header) {
   const h = header.map(norm), ix = {};
   for (const [k, names] of Object.entries(COLS)) { const i = names.map((n) => h.indexOf(norm(n))).find((x) => x >= 0); if (i != null && i >= 0) ix[k] = i; }
@@ -118,6 +119,134 @@ function mergeSource(M, C) {
   }
 }
 
+/*
+ * (update 488) Course Insights: what the course report's first pages show, worked out from the shots (also in
+ * course_upload.py: keep the two the same).
+ *   events: each year's winning, Top 10 and Top 25 scores (to par, of those who played every round) and the cut line
+ *   holes: scoring of the field and of the Top 10 finishers (eagle+, birdie, par, bogey+), what hitting the fairway, the
+ *          green in regulation and going for it are worth, fairway widths where tee shots land, the left and right tee
+ *          misses (drive_direction) and up & down by where the approach missed the green (app_side_loc) and the lie
+ *   attempts: shots by distance (not tee shots on par 4s and 5s), for the distribution against every course's
+ *   sg: strokes gained by distance (against this course's own field) of the field and of the Top 10, a round, and the
+ *       expected strokes from each lie and distance, so a player's can be worked out the same way
+ */
+const SIDES = ["Long-Left", "Long", "Long-Right", "Left", "Right", "Short-Left", "Short", "Short-Right"];
+export function sideOf(v) {
+  const t = String(v ?? "").toLowerCase().replace(/[^a-z]+/g, " ").trim(); if (!t) return null;
+  const ab = /^(s|l)(l|r)$/.exec(t.replace(/ /g, ""));
+  const lo = ab ? ab[1] === "l" : /long|over|back/.test(t), sh = ab ? ab[1] === "s" : /short|front/.test(t);
+  const le = ab ? ab[2] === "l" : /left/.test(t), ri = ab ? ab[2] === "r" : /right/.test(t);
+  const a = lo ? "Long" : sh ? "Short" : "", b = le ? "Left" : ri ? "Right" : "";
+  return a && b ? `${a}-${b}` : a || b || null;
+}
+export function driveOf(v) { const t = String(v ?? "").toLowerCase(); return /left/.test(t) ? "L" : /right/.test(t) ? "R" : /fair|cent|middle|straight|hit/.test(t) ? "C" : null; }
+const r4 = (x) => Math.round(x * 1e4) / 1e4;
+export const ATT_B = ["3-5 ft", "5-10 ft", "10-15 ft", "15-20 ft", "20-25 ft", ">25 ft", "<30 yds", "30-50 yds", "50-100 yds", "100-120 yds", "120-140 yds", "140-160 yds", "160-180 yds", "180-200 yds", "200-220 yds", ">220 yds"];
+export const SG_B = ["<5 ft", ...ATT_B.slice(1), "Tee shot"];
+const ydB = (d) => (d < 30 ? "<30 yds" : d < 50 ? "30-50 yds" : d < 100 ? "50-100 yds" : d < 120 ? "100-120 yds" : d < 140 ? "120-140 yds" : d < 160 ? "140-160 yds" : d < 180 ? "160-180 yds" : d < 200 ? "180-200 yds" : d < 220 ? "200-220 yds" : ">220 yds");
+const ftB = (d) => (d < 5 ? "<5 ft" : d < 10 ? "5-10 ft" : d < 15 ? "10-15 ft" : d < 20 ? "15-20 ft" : d < 25 ? "20-25 ft" : ">25 ft");
+/** a shot's distance bucket ([stroke, x, y, lie, dist, toHoleOut]): for strokes gained (sg) or the attempt distribution */
+export function bucketOf(q, par, sg) {
+  const L = q[3], d = q[4];
+  if (q[0] === 1 && par >= 4) return sg ? "Tee shot" : null;
+  if (d == null) return null;
+  if (L === 4) { if (!sg && d < 3) return null; const b = ftB(d); return sg ? b : b === "<5 ft" ? "3-5 ft" : b; }
+  return ydB(d);
+}
+/** the expected strokes key of a spot: its lie and distance, finer close in */
+export function eKey(L, d) {
+  if (d == null) return null;
+  const b = L === 4 ? (d < 10 ? Math.floor(d) : d < 30 ? 10 + Math.floor((d - 10) / 5) : Math.min(30, 14 + Math.floor((d - 30) / 10)))
+    : (d < 30 ? Math.floor(d / 5) : d < 100 ? 6 + Math.floor((d - 30) / 10) : Math.min(40, 13 + Math.floor((d - 100) / 20)));
+  return `${L}|${b}`;
+}
+/** strokes gained on each shot of a trail, by bucket, added to into (null when it can't be worked out) */
+export function trailSG(t, par, E, into) {
+  const qs = t.shots;
+  for (let i = 0; i < qs.length; i++) {
+    const k0 = eKey(qs[i][3], qs[i][4]); if (k0 == null || E[k0] == null) continue;
+    let nx;
+    if (i + 1 < qs.length) { const k1 = eKey(qs[i + 1][3], qs[i + 1][4]); if (k1 == null || E[k1] == null) continue; nx = E[k1]; } else if (t.s != null) nx = 0; else continue;
+    const b = bucketOf(qs[i], par, true); if (!b) continue;
+    into[b] = (into[b] || 0) + (E[k0] - nx - 1);
+  }
+}
+const add2 = (o, k, v) => { const a = o[k] || (o[k] = [0, 0]); a[0]++; a[1] += v; };
+const sc5 = () => ({ n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 });
+const addSc = (o, s) => { o.n++; o.sum += s; if (s <= -2) o.e++; else if (s === -1) o.b++; else if (s === 0) o.p++; else o.g++; };
+export function courseInsights(C) {
+  const all = []; // [key, trail] with its shots in order
+  for (const [key, T] of C.players) for (const t of T.trails.values()) all.push([key, t, [...t.shots].sort((a, b) => a[0] - b[0])]);
+  const parOf = (h) => C.holes.get(h)?.par || 4;
+  // the events: each year, those who played every hole of every round; Top 10 finishers (ties too)
+  const byY = new Map();
+  for (const [key, t] of all) { if (t.s == null) continue; const Y = byY.get(t.y) || byY.set(t.y, new Map()).get(t.y); const P = Y.get(key) || Y.set(key, { n: 0, tot: 0, rs: new Set(), r12: 0 }).get(key); P.n++; P.tot += t.s; P.rs.add(String(t.r)); const rn = num(t.r); if (rn != null && rn <= 2) P.r12 += t.s; }
+  const events = [], top = new Set();
+  for (const [y, Y] of byY) {
+    const ps = [...Y.entries()], maxN = Math.max(...ps.map(([, P]) => P.n)), maxR = Math.max(...ps.map(([, P]) => P.rs.size));
+    const full = ps.filter(([, P]) => P.n === maxN), tots = full.map(([, P]) => P.tot).sort((a, b) => a - b);
+    const t10 = tots[Math.min(9, tots.length - 1)];
+    for (const [k, P] of full) if (P.tot <= t10) top.add(`${k}|${y}`);
+    let cut = null;
+    if (maxR >= 3) { const made = ps.filter(([, P]) => P.rs.size >= 3), missed = ps.filter(([, P]) => P.rs.size === 2); if (made.length && missed.length) cut = Math.max(...made.map(([, P]) => P.r12)); }
+    events.push({ y, players: ps.length, full: full.length, rounds: maxR, win: tots[0] ?? null, top10: tots.length >= 10 ? tots[9] : null, top25: tots.length >= 25 ? tots[24] : null, cut });
+  }
+  // the expected strokes from each lie and distance (this course's own field)
+  const Es = {};
+  for (const [, , qs] of all) for (const q of qs) { if (q[5] == null) continue; const k = eKey(q[3], q[4]); if (k == null) continue; const a = Es[k] || (Es[k] = [0, 0]); a[0] += q[5]; a[1]++; }
+  const E = {}; for (const k of Object.keys(Es)) E[k] = r4(Es[k][0] / Es[k][1]);
+  // pixels a yard on each hole (shots' pixels from their pin against their yards), for the fairway widths
+  const ppy = new Map();
+  for (const [h, H] of C.holes) {
+    const rs = [];
+    for (const [, t, qs] of all) { if (t.h !== h || rs.length >= 3000) continue; const P = H.pins.get(t.p); if (!P?.pn) continue; const px = P.px / P.pn, py = P.py / P.pn; for (const q of qs) if (q[3] !== 4 && q[4] != null && q[4] > 15 && rs.length < 3000) rs.push(Math.hypot(q[1] - px, q[2] - py) / q[4]); }
+    rs.sort((a, b) => a - b); ppy.set(h, rs.length ? rs[Math.floor(rs.length / 2)] : null);
+  }
+  const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
+  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, land: [] };
+  for (const [key, t, qs] of all) {
+    const X = holes[t.h]; if (!X) continue;
+    const par = X.par, isTop = top.has(`${key}|${t.y}`), rk = `${key}|${t.y}|${t.r}`;
+    for (const q of qs) { const b = bucketOf(q, par, false); if (b) attempts[b] = (attempts[b] || 0) + 1; }
+    rF.add(rk); if (isTop) rT.add(rk);
+    const one = {}; trailSG({ ...t, shots: qs }, par, E, one);
+    for (const [b, v] of Object.entries(one)) { sgF[b] = (sgF[b] || 0) + v; if (isTop) sgT[b] = (sgT[b] || 0) + v; }
+    const at = (k) => qs.find((q) => q[0] === k);
+    // where approaches missed the green: up and down (in two from there) by side and lie, close to the green
+    for (const [k, side] of Object.entries(t.as || {})) {
+      const nq = at(Number(k) + 1); if (!nq || nq[4] == null || nq[4] > 30 || ![1, 2, 3].includes(nq[3])) continue;
+      const lie = LIES[nq[3]][0].toUpperCase() + LIES[nq[3]].slice(1), o = X.ud[side] || (X.ud[side] = {}), a = o[lie] || (o[lie] = [0, 0]);
+      a[0]++; if (nq[5] != null && nq[5] <= 2) a[1]++;
+    }
+    if (t.s == null) continue;
+    addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
+    const s = t.s, q2 = at(2);
+    if (par >= 4 && q2) add2(X.fwy, q2[3] === 1 ? "hit" : "miss", s);
+    add2(X.gir, qs.some((q) => q[0] != null && q[0] <= par - 1 && q[3] === 4) || s <= -2 ? "hit" : "miss", s);
+    const qg = par >= 5 ? at(3) : par === 4 ? q2 : null;
+    if (qg) { const d = qg[3] === 4 ? 0 : qg[4]; if (d != null && d <= 30) add2(X.go, "go", s); else if (d != null && d <= 100) add2(X.go, "lay", s); }
+    if (par >= 4 && t.dd) add2(X.drive, t.dd, s);
+    const q1 = at(1); if (par >= 4 && q1 && q2 && q2[3] === 1) X.land.push([q1[1], q1[2], q2[1], q2[2]]);
+  }
+  const out = {};
+  for (const [h, X] of Object.entries(holes)) {
+    // fairway widths where tee shots finished in the fairway, 250 to 325 yards out (the spread across the line of play)
+    const widths = {}, k = ppy.get(Number(h)) ?? ppy.get(h);
+    if (k) for (const c of [250, 275, 300, 325]) {
+      const pts = X.land.filter((l) => Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) / k - c) <= 12.5);
+      if (pts.length < 8) continue;
+      const tx = pts.reduce((a, l) => a + l[0], 0) / pts.length, ty = pts.reduce((a, l) => a + l[1], 0) / pts.length, cx = pts.reduce((a, l) => a + l[2], 0) / pts.length, cy = pts.reduce((a, l) => a + l[3], 0) / pts.length;
+      const dl = Math.hypot(cx - tx, cy - ty) || 1, ux = (cx - tx) / dl, uy = (cy - ty) / dl;
+      const off = pts.map((l) => ((l[2] - tx) * uy - (l[3] - ty) * ux) / k).sort((a, b) => a - b);
+      widths[c] = Math.round(off[Math.floor(0.95 * (off.length - 1))] - off[Math.floor(0.05 * (off.length - 1))]);
+    }
+    const fx = (o) => ({ ...o, sum: r4(o.sum) }), f2 = (o) => Object.fromEntries(Object.entries(o).map(([kk, a]) => [kk, [a[0], r4(a[1])]]));
+    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), ud: X.ud, widths };
+  }
+  const r4o = (o) => Object.fromEntries(Object.entries(o).map(([kk, v]) => [kk, r4(v)]));
+  return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top] };
+}
+
 /** Reads shot rows (a slice at a time) and keeps only what the maps need. */
 export function shotAggregator() {
   const courses = new Map(); // name → course
@@ -162,6 +291,9 @@ export function shotAggregator() {
           const tr = T.trails.get(tk) || T.trails.set(tk, { y: year, r: ix.round != null ? String(num(r[ix.round]) ?? r[ix.round]) : "", h: hole, p: pid, par: par || null, s: null, shots: [] }).get(tk);
           tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v]);
           if (score != null) tr.s = Math.round(score);
+          // (update 488) where an approach finished around the green, and which way the tee shot went
+          const sd = ix.appSide != null ? sideOf(r[ix.appSide]) : null; if (sd) (tr.as ||= {})[st] = sd;
+          const dd = ix.drive != null && st === 1 ? driveOf(r[ix.drive]) : null; if (dd) tr.dd = dd;
         }
       }
     },
@@ -207,7 +339,7 @@ export function shotAggregator() {
         }
         const players = new Map();
         for (const [key, T] of C.players) players.set(key, { name: T.name, trails: [...T.trails.values()].map((t) => ({ ...t, shots: t.shots.sort((a, b) => a[0] - b[0]) })) });
-        out.push({ name: [...C.names].sort((a, b) => b[1] - a[1])[0]?.[0] || C.name, courseNum: C.courseNum, courseNums: C.courseNums, dropped: C.dropped, sources: C.sources, events: [...C.events].map(([name, ys]) => ({ name, years: [...ys].sort() })), years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES }, players });
+        out.push({ name: [...C.names].sort((a, b) => b[1] - a[1])[0]?.[0] || C.name, courseNum: C.courseNum, courseNums: C.courseNums, dropped: C.dropped, sources: C.sources, events: [...C.events].map(([name, ys]) => ({ name, years: [...ys].sort() })), years: [...C.years].sort(), data: { holes, toGo: true, hasN: true, shots: true, lies: LIES, insights: courseInsights(C) }, players });
       }
       return out;
     },
@@ -239,7 +371,7 @@ export async function uploadShotCourses(list, onStatus = () => {}) {
     const holesN = Object.keys(c.data.holes).map(Number), n = Math.max(0, ...holesN);
     const par = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.par || old?.par?.[i] || null), yards = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.yards || old?.yards?.[i] || null);
     const zones = Object.values(c.data.holes).reduce((t, h) => t + Object.values(h.pins).reduce((u, p) => u + p.rows.length, 0), 0);
-    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(bn ? { courseNum: bn } : {}), courseNums: nums, events: c.events || [], par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true }, { merge: true });
+    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(bn ? { courseNum: bn } : {}), courseNums: nums, events: c.events || [], attempts: c.data.insights?.attempts || {}, /* (update 488: for the attempt distribution against every course) */ par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true }, { merge: true });
   }
   resetHeatList();
   // (update 485) what was left out: an event whose tees and pins don't line up with the rest

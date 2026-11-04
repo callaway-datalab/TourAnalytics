@@ -34,6 +34,7 @@ export async function render(ctx) {
   if (v.name === "prepNew") return drawCourseEditor(ctx);
   // (update 160) a real course: Course Maps, Course History or Simulate Round
   if (v.name === "prepHeat") return (await import("./coursePrepHeat.js")).drawHeat(ctx, v.course); // (update 456: Strategy Maps)
+  if (v.name === "prepInsights") return (await import("./coursePrepInsights.js")).drawInsights(ctx, v.course); // (update 488: Course Insights)
   if (["prepMenu", "prepMaps", "prepHistory"].includes(v.name)) {
     const m = await import("./coursePrepExtras.js");
     return v.name === "prepMenu" ? m.drawPrepMenu(ctx, v.course) : v.name === "prepMaps" ? m.drawMaps(ctx, v.course) : m.drawHistory(ctx, v.course);
