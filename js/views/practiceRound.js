@@ -120,12 +120,13 @@ async function myCourses(ctx) {
     const key = myEntryKey(ctx.state);
     const rounds = key ? await new Promise((res) => { let un = null, got = false; un = watchPlayerRounds(key, (list) => { if (got) return; got = true; res(list || []); setTimeout(() => un?.(), 0); }); setTimeout(() => { if (!got) { got = true; res([]); } }, 6000); }) : [];
     for (const r of rounds) {
-      if (!r.course || !r.holes?.length) continue;
-      const k = r.course.toLowerCase();
-      if (!out.has(k)) out.set(k, { name: r.course, location: "", par: r.holes.map((h) => h.par || 4), yards: r.holes.map((h) => h.yards || null), tees: r.tees || "", from: "Your round", rounds: [] });
+      if (!r.course?.trim()) continue; // (update 510: any round with its course, even one without hole by hole)
+      const k = r.course.trim().toLowerCase(), hs = r.holes || [];
+      if (!out.has(k)) out.set(k, { name: r.course.trim(), location: r.location || "", par: hs.map((h) => h.par || 4), yards: hs.map((h) => h.yards || null), tees: r.tees || "", from: "Your round", rounds: [] });
       const c = out.get(k);
       c.rounds.push(r);
-      if (!c.yards.some(Boolean) && r.holes.some((h) => h.yards)) c.yards = r.holes.map((h) => h.yards || null);
+      if (!c.par.length && hs.length) c.par = hs.map((h) => h.par || 4);
+      if (!c.yards.some(Boolean) && hs.some((h) => h.yards)) c.yards = hs.map((h) => h.yards || null);
     }
   } catch { /* */ }
   // (update 452) the courses built in (Torrey Pines South…): theirs to prep for too, with a map of every hole. A course
@@ -214,7 +215,7 @@ async function drawHome(ctx) {
     const b = el("button", { type: "button", class: "pr-course", "data-name": `${c.name} ${c.location || ""} ${c.mapEvents || ""}`.toLowerCase() }, [
       el("strong", {}, c.name),
       c.mapEvents ? el("span", { class: "muted small pr-course-ev" }, c.mapEvents) : null,
-      el("span", { class: "muted small" }, [c.location, `${c.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
+      el("span", { class: "muted small" }, [c.location, c.par.length ? `${c.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}` : null].filter(Boolean).join(" · ")),
       el("span", { class: "pr-sess-tag" }, c.rounds.length ? `${c.rounds.length} round${c.rounds.length === 1 ? "" : "s"} played` : c.from),
     ]);
     b.addEventListener("click", () => ctx.go({ name: "prepMenu", course: c }));

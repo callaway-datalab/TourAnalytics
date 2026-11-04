@@ -5804,3 +5804,11 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 .ci2-pair > .ci2-sec { margin: 0; }
 .ci2-pair .ci2-two { grid-template-columns: 1fr; gap: 10px; }
 @media (max-width: 860px) { .ci2-pair { grid-template-columns: 1fr; } }
+/* (update 510) Course Insights: one Against the Top 10 card, holes and skills side by side (stacked on a phone) */
+.ci2-pair2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; align-items: start; }
+.ci2-sub { margin: 0 0 6px; font-size: var(--fs-sm); text-transform: none; letter-spacing: 0; }
+@media (max-width: 760px) { .ci2-pair2 { grid-template-columns: 1fr; } }
+/* (update 510) Course Prep pages: the back button snug under the top bar, the page right under it */
+main:has(.pr-body > .crumb:first-child) { padding-top: 0.5rem !important; }
+.pr-body > .crumb:first-child { margin: 0 0 0.35rem !important; line-height: 1.2; }
+.pr-body > .crumb:first-child + * { margin-top: 0 !important; }

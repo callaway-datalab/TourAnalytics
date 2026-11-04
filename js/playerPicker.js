@@ -4,7 +4,13 @@
 import { el, mount } from "./ui.js";
 import { favoriteKeys } from "./watchlist.js";
 
-let lastPick = null; // { key, label }
+// (update 510) the last player chosen stays chosen on every page with a player search bar (and through a reload) until
+// Clear, the search box's x, or another player
+const LS = "ta.lastPlayer";
+let lastPick = (() => { try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } })(); // { key, label }
+const remember = (p) => { lastPick = p ? { key: p.key, label: p.label } : null; try { if (lastPick) localStorage.setItem(LS, JSON.stringify(lastPick)); else localStorage.removeItem(LS); } catch { /* private window */ } };
+/** The player last chosen in a search bar, if any ({ key, label }). */
+export const lastPlayer = () => lastPick;
 
 /** Players whose display label is "<name> (<id>)" for the typed name, i.e. the same name twice or more. */
 export function sameNamePlayers(players, text) {
@@ -32,7 +38,8 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
     return players.find((p) => p.label.toLowerCase() === t || p.id.toLowerCase() === t || p.key === t) || null;
   };
   const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
-  const choose = (p) => { lastPick = p; input.value = p ? p.label : ""; which.hidden = true; delete which.dataset.for; close(); onPick(p); };
+  let touched = false;
+  const choose = (p) => { touched = true; remember(p); input.value = p ? p.label : ""; which.hidden = true; delete which.dataset.for; close(); onPick(p); };
 
   const drawList = () => {
     const t = input.value.trim().toLowerCase();
@@ -68,6 +75,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
     if (p && p.key !== lastPick?.key && !dupes.length) choose(p);
   };
   input.addEventListener("input", () => {
+    if (!input.value && lastPick) { choose(null); drawList(); return; } // (update 510: the box's x, or emptied: no player)
     active = -1; drawList(); check();
     if (!which.hidden) close(); // a name two IDs share: the "Which one?" buttons take over from the list
   });
@@ -97,8 +105,10 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
   ]);
   const restore = () => { if (lastPick && players.some((p) => p.key === lastPick.key)) choose(players.find((p) => p.key === lastPick.key)); };
   /** Pick a player by key (e.g. from the leaderboard). */
-  const select = (key) => { const p = players.find((x) => x.key === key); if (p) choose(p); };
+  const select = (key) => { touched = true; const p = players.find((x) => x.key === key); if (p) choose(p); };
   /** Show a player as picked without acting on it (the page is already theirs). */
-  const preset = (key) => { const p = players.find((x) => x.key === key); if (p) { lastPick = p; input.value = p.label; } };
+  const preset = (key) => { const p = players.find((x) => x.key === key); touched = true; if (p) { remember(p); input.value = p.label; } };
+  // (update 510) a page that doesn't pick anyone itself starts on the player last chosen
+  for (const ms of [0, 150, 600, 1500]) setTimeout(() => { if (!touched && node.isConnected && lastPick && players.some((p) => p.key === lastPick.key)) restore(); }, ms);
   return { node, restore, select, preset };
 }

@@ -174,7 +174,7 @@ function faced(S, all, name) {
   const list = (title, rs, cls) => el("div", { class: `ci2-faced ${cls}` }, [el("h3", {}, title), ...rs.map((r) => el("div", { class: "ci2-fr" }, [el("span", { class: "ci2-fr-k" }, r.b), el("span", { class: "ci2-fr-bar" }, el("i", { style: `width:${(Math.abs(r.d) / max) * 100}%` })), el("strong", {}, `${r.d > 0 ? "+" : "−"}${Math.abs(r.d).toFixed(1)}%`)]))]);
   const more = rows.filter((r) => r.d > 0).sort((a, b) => b.d - a.d).slice(0, 6), less = rows.filter((r) => r.d < 0).sort((a, b) => a.d - b.d).slice(0, 6);
   return sec("SHOTS YOU’LL FACE", [el("div", { class: "ci2-two" }, [more.length ? list("More often here", more, "more") : null, less.length ? list("Less often here", less, "less") : null])],
-    `${S.field ? "The field’s" : `${name}’s`} shots here by distance (not tee shots on par 4s and 5s), against the average of the ${all.length} courses with shot data: points of the share of shots. Practise the ones that come up more.`);
+    `${S.field ? "The field’s" : `${name}’s`} shots here by distance (not tee shots on par 4s and 5s), against the average of the ${all.length} courses with shot data: points of the share of shots. Practice the ones that come up more.`);
 }
 
 /* ---------------- against the Top 10: where they gain, where the subject holds up ---------------- */
@@ -189,9 +189,9 @@ function vsTop(H, S, name, first, openHole) {
   const gain = (list, k, tap) => list.filter((x) => x.v > 0.005).sort((a, b) => b.v - a.v).slice(0, 3).map((x) => row(k(x), x.v, tap ? () => tap(x) : null, scale(list)));
   const col = (title, rows) => (rows.length ? el("div", { class: "ci2-vcol" }, [title ? el("h3", {}, title) : null, ...rows]) : null);
   const who = S.field ? "the field" : first;
-  // (update 493) two cards: by hole, and by skill (distance)
-  const byHole = holes.length ? sec("AGAINST THE TOP 10 \u00b7 HOLES", [el("div", { class: "ci2-two" }, [col(null, lose(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h))), col(`Where ${who} holds up`, gain(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h)))])]) : null; /* (update 509: no note) */
-  const bySkill = dists.length ? sec("AGAINST THE TOP 10 \u00b7 SKILLS", [el("div", { class: "ci2-two" }, [col(null, lose(dists, (x) => x.b)), col(`Where ${who} holds up`, gain(dists, (x) => x.b))])]) : null;
-  // (update 509) side by side (one above the other on a phone)
-  return byHole || bySkill ? [el("div", { class: "ci2-pair" }, [byHole, bySkill])] : [];
+  // (update 510) one card: every hole, then every skill, from the most strokes lost to the most gained
+  const all = (list, k, tap) => [...list].sort((a, b) => a.v - b.v).map((x) => row(k(x), x.v, tap ? () => tap(x) : null, scale(list)));
+  const part = (title, rows) => (rows.length ? el("div", { class: "ci2-vcol" }, [el("h3", { class: "ci2-sub" }, title), ...rows]) : null);
+  return [sec("AGAINST THE TOP 10", [el("div", { class: "ci2-pair2" }, [part("Holes", all(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h))), part("Skills", all(dists, (x) => x.b))])],
+    "Negative values (Red) indicate losing strokes vs average Top 10 finishers; Positive values (Green) indicate gaining strokes vs average Top 10 finishers")];
 }

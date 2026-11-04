@@ -92,12 +92,13 @@ export function drawPrepMenu(ctx, course) {
   };
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
     el("p", { class: "pr-eyebrow" }, "Course Prep"), el("h1", {}, course.name), course.mapEvents ? el("p", { class: "muted small" }, course.mapEvents) : null, /* (update 486: which event's map) */
-    el("p", { class: "muted" }, [course.location, `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}`].filter(Boolean).join(" · ")),
+    el("p", { class: "muted" }, [course.location, course.par.length ? `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}` : null].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
       course.heat ? opt("Strategy Maps", "Where to aim and what to stay away from on every hole and pin, from the tour\u2019s scoring (and your own game)", el("span", { class: "cp-opt-n" }, `${Object.keys(course.heat.holes || {}).length || course.heat.par?.length || ""} holes`), () => ctx.go({ name: "prepHeat", course })) : null, // (update 456)
       course.heat?.shotLevel ? opt("Course Insights", "The course report: scores to beat, each hole\u2019s shot values, the aggressiveness index, against the Top 10, the worse tee miss and up & down by miss", null, () => ctx.go({ name: "prepInsights", course })) : null, // (update 488)
       opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
-      opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })),
+      /* (update 510) a course only from your own rounds (not in the tour data, no hole images): just its history */
+      course.heat || course.holeMaps ? opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })) : null,
     ]),
   ]), pdfRow(ctx, course)]);
 }
@@ -182,11 +183,19 @@ const roundsCache = new Map(); // player key → { rounds, field, ds }
 export async function playerData(key) {
   if (roundsCache.has(key)) return roundsCache.get(key);
   const store = await import("../store.js");
+  // (update 510) the rounds they entered (Enter New Round) count too, alongside their stats file
+  const entered = (async () => {
+    try {
+      const [{ watchPlayerRounds }, { enteredPlayers }] = await Promise.all([import("../rounds.js"), import("../roundCalc.js")]);
+      const rs = await new Promise((res) => { let got = false, un = null; un = watchPlayerRounds(key, (l) => { if (got) return; got = true; res(l || []); setTimeout(() => un?.(), 0); }); setTimeout(() => { if (!got) { got = true; res([]); } }, 6000); });
+      return (enteredPlayers(rs.filter((r) => r.course), () => "")[0]?.rounds || []).filter((rd) => rd.shots.length);
+    } catch (err) { console.warn("entered rounds", err); return []; }
+  })();
   const list = await once((cb) => store.watchClientDatasets(key, cb));
   const ds = (list || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];
-  if (!ds) { const out = { rounds: [], field: [], ds: null }; roundsCache.set(key, out); return out; }
-  const [rows, summary] = await Promise.all([store.getDatasetRows(key, ds.id, ds.chunkCount), store.getFieldStats(ds.id).catch(() => null)]);
-  const out = { rounds: prepare(rows, detectColumns(ds.columns || [])).filter((rd) => rd.shots.length), field: summaryPlayers(summary).filter((p) => p.rounds.length), ds };
+  if (!ds) { const out = { rounds: await entered, field: [], ds: null }; roundsCache.set(key, out); return out; }
+  const [rows, summary, ent] = await Promise.all([store.getDatasetRows(key, ds.id, ds.chunkCount), store.getFieldStats(ds.id).catch(() => null), entered]);
+  const out = { rounds: [...prepare(rows, detectColumns(ds.columns || [])).filter((rd) => rd.shots.length), ...ent], field: summaryPlayers(summary).filter((p) => p.rounds.length), ds };
   roundsCache.set(key, out);
   return out;
 }
@@ -201,8 +210,11 @@ export async function pickWho(ctx, onPick) {
   let who = null, node = null;
   if (state.isAdmin && !team.preview) {
     const [{ adminAllClients }, { playerPicker }] = await Promise.all([import("../store.js"), import("../playerPicker.js")]);
-    const { labels, ids } = await adminAllClients();
-    node = playerPicker(labels, (p) => onPick(p), ids).node;
+    const { labels: all, ids } = await adminAllClients();
+    // (update 510) you too (your own entered rounds), at the top of the list
+    const { myEntryKey, myName } = await import("./dataEntry.js"), me = myEntryKey(state);
+    const labels = me && !all.has(me) ? new Map([[me, `${myName(state)} (me)`], ...all]) : all;
+    node = playerPicker(labels, (p) => onPick(p), ids, me).node;
   } else if (team.isTeam) {
     const names = teamLabels(team.teamAccess);
     const keys = Object.keys(team.teamAccess).sort((a, b) => (names.get(a) || a).localeCompare(names.get(b) || b));

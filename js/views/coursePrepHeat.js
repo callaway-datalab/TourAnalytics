@@ -278,7 +278,7 @@ export async function drawHeat(ctx, course) {
     const z = zoneAt(Z.zones, x, y, ov);
     if (!z) { pop.hidden = true; hideDot(); return; } // (no colour there: nothing to show)
     if (z.none) { // (update 465) a lie with no shots from it for this pin (a bunker no one found): said so
-      pop.classList.remove("sh-pop-spot");
+      pop.classList.remove("sh-pop-spot", "sh-pop-trail");
       tapAt = { x, y };
       const xb = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); xb.addEventListener("click", () => { pop.hidden = true; hideDot(); });
       const name = { bunker: "bunker", fairway: "fairway", rough: "rough", green: "green", tee: "tee" }[z.L] || z.L;
@@ -410,7 +410,7 @@ export async function drawHeat(ctx, course) {
   };
   function showSpot({ pool, ppy }) {
     spot.pool = pool; spot.ppy = ppy; // (update 502: for dragging the circle)
-    pop.classList.add("sh-pop-spot"); // (update 504: the circle's compact popup)
+    pop.classList.remove("sh-pop-trail"); pop.classList.add("sh-pop-spot"); // (update 504: the circle's compact popup)
     const R = st.spotR * ppy, inside = pool.filter((q) => Math.hypot(q.x - spot.x, q.y - spot.y) <= R);
     spot.R = R; spot.inside = inside;
     const avg = (l) => (l.length ? l.reduce((t, q) => t + q.v, 0) / l.length : null);
@@ -468,7 +468,7 @@ export async function drawHeat(ctx, course) {
   const actualOf = (z) => { let t = 0, w = 0; for (const r of z.rows) { const n = r.n || 1; t += (r.raw ?? r.v) * n; w += n; } return w ? t / w : z.raw; };
   const fmtToGo = (v, n) => (n === 1 || Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(2));
   function openZone(z, at = null) {
-    pop.classList.remove("sh-pop-spot");
+    pop.classList.remove("sh-pop-spot", "sh-pop-trail");
     tapAt = at || { x: z.x, y: z.y };
     const usePlayer = isP() && !!ix;
     const cat = zoneCat(z), catN = Z.zones.filter((o) => zoneCat(o) === cat).reduce((t, o) => t + (o.n || 0), 0);
@@ -540,7 +540,7 @@ export async function drawHeat(ctx, course) {
     cdrag = { dx: spot.x - ix, dy: spot.y - iy, moved: false }; e.preventDefault(); e.stopPropagation();
   }, true);
   pop.addEventListener("pointerdown", (e) => {
-    if (!spot?.R || e.target.closest("button, a, input")) return;
+    if ((!spot?.R && !pop.classList.contains("sh-pop-trail")) || e.target.closest("button, a, input")) return; /* (update 510: a trail's popup too) */
     pdrag = { x: e.clientX, y: e.clientY, l: pop.offsetLeft, t: pop.offsetTop, moved: false }; e.preventDefault();
   });
   let dragRaf = 0;
@@ -770,9 +770,9 @@ export async function drawHeat(ctx, course) {
     const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); trSvg.appendChild(g);
     const r0 = Math.max(W, Hh) / 400;
     for (const { t, leg } of shown) {
-      const d = leg.map((q, i) => `${i ? "L" : "M"}${q[0]} ${q[1]}`).join(" "), col = scColor(t.s ?? 0), wide = trState.one === t;
+      const d = leg.map((q, i) => `${i ? "L" : "M"}${q[0]} ${q[1]}`).join(" "), col = t.s === 0 ? "#ffffff" : scColor(t.s ?? 0), wide = trState.one === t;
       // (update 494) each trail a little see-through, so two on top of each other show darker
-      const tg = sv("g", { opacity: wide ? 1 : 0.6 }); g.appendChild(tg);
+      const tg = sv("g", { opacity: wide || t.s === 0 ? 1 : 0.6 }); g.appendChild(tg); /* (update 510: par trails at full strength, so they read white) */
       tg.appendChild(sv("path", { d, fill: "none", stroke: "rgba(0,0,0,0.55)", "stroke-width": wide ? 6 : 4, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
       tg.appendChild(sv("path", { d, fill: "none", stroke: col, "stroke-width": wide ? 3.5 : 2, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
       for (const q of leg) if (Number.isFinite(q[2])) tg.appendChild(sv("circle", { cx: q[0], cy: q[1], r: r0, fill: col, stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
@@ -792,9 +792,9 @@ export async function drawHeat(ctx, course) {
     return t.s != null ? E[k0] - 1 : null;
   };
   function trailPop(t, e) {
-    pop.classList.remove("sh-pop-spot");
+    pop.classList.remove("sh-pop-spot"); pop.classList.add("sh-pop-trail");
     const sr = stage.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top;
-    const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { pop.hidden = true; });
+    const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { pop.hidden = true; pop.classList.remove("sh-pop-trail"); trState.one = null; drawTrails(); }); /* (update 510: closing it lets the trail go) */
     const pinName = (() => { const b = [...pinBar.querySelectorAll(".sh-pin")].find((q) => q.title === String(t.p)); return b ? b.textContent : String(t.p).replace(/[-_]+/g, " "); })();
     const fmtD = (q) => (q[4] == null ? "" : `${Math.round(q[4])} ${q[3] === 4 ? "ft" : "yds"}`);
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { style: `color:${scColor(t.s ?? 0)}` }, `${t.s != null ? `${scName(t.s)} (${par + t.s})` : "Unfinished"}`), x]),
