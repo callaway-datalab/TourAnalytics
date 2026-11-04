@@ -26,13 +26,19 @@ const nameOf = (b) => `${CAT[b.cat] || b.cat}${b.dist ? ` · ${b.dist}` : ""}`;
  *  up-and-down %, make %…), that distance's, else the part of the game's, when there are enough attempts behind it */
 /* (update 489) a distance by its numbers and unit, so "30-50 yds", "30 - 50 Yds" and "30 to 50 yards" are the same */
 export const distSig = (d) => { if (d == null || d === "") return ""; const t = String(d).toLowerCase(); const n = (t.match(/\d+(\.\d+)?/g) || []).map(Number).join("-"); return `${/<|under|inside|less/.test(t) ? "<" : />|over|\+|plus/.test(t) ? ">" : ""}${n}${/ft|feet|'/.test(t) ? "f" : "y"}`; };
+/* (update 491) a distance as a range in its unit ("30-50 yds" → 30 to 50 yards; "<30 yds" → 0 to 30; ">25 ft" → 25 up) */
+export const distRange = (d) => { if (d == null || d === "") return null; const t = String(d).toLowerCase(), n = (t.match(/\d+(\.\d+)?/g) || []).map(Number); if (!n.length) return null; const u = /ft|feet|'/.test(t) ? "f" : "y";
+  if (/<|under|inside|less/.test(t)) return { u, lo: 0, hi: n[0] }; if (/>|over|\+|plus/.test(t)) return { u, lo: n[0], hi: Infinity }; return { u, lo: n[0], hi: n[1] ?? n[0] }; };
+const overlaps = (a, b) => { const x = distRange(a), y = distRange(b); return !!(x && y && x.u === y.u && x.lo < y.hi && y.lo < x.hi); };
 /** does a stat entry count for this part of the game and distance: mode "exact" (both), "dist" (that distance, filed
  *  under any part of the game: proximity from 30-50 yds kept under Approach, say) or "cat" (that part, any distance) */
 export const obsFits = (o, cat, dist, mode) => (mode === "exact" ? o.cat === cat && (dist ? distSig(o.dist) === distSig(dist) : !o.dist)
-  : mode === "dist" ? !!dist && distSig(o.dist) === distSig(dist) : o.cat === cat || !o.cat);
+  : mode === "dist" ? !!dist && distSig(o.dist) === distSig(dist)
+  : mode === "near" ? !!dist && (o.cat === cat || !o.cat || cat === "ARG") && overlaps(o.dist, dist) // (update 491: other distance bands that overlap it)
+  : o.cat === cat || !o.cat);
 function goalStat(rounds, cat, dist, { pctMin = 20, min = 8 } = {}) {
-  for (const re of goalStatsFor(cat, dist)) for (const mode of ["exact", "dist", "cat"]) {
-    if (mode === "dist" && !dist) continue;
+  for (const re of goalStatsFor(cat, dist)) for (const mode of ["exact", "dist", "near", "cat"]) {
+    if ((mode === "dist" || mode === "near") && !dist) continue;
     let t = 0, w = 0, k = null;
     for (const rd of rounds) for (const o of rd.obs || []) {
       if (!re.test(o.k)) continue;
@@ -63,14 +69,16 @@ export function focusView(S, mine, slicedField, f = {}) {
     S.draw();
   };
   const pills = el("div", { class: "fx-pills", role: "group", "aria-label": "Parts of the game" }, [
-    ...CATS.map((c) => { const p = !!on?.has(c), l = lock.has(c); const b = el("button", { type: "button", class: `fx-pill${p ? " on" : ""}${l ? " locked" : ""}`, "aria-pressed": String(p), title: `${CAT[c]}${l ? " (locked: tap to unlock)" : " (double-tap to lock it in and pick more)"}` }, [l ? "\uD83D\uDD12 " : "", c]); b.addEventListener("click", () => tapPill(c)); return b; }),
-    infoTip("Tap a part of the game to see just that one; tap it again for everything. Double-tap one to lock it in, then tap others to add them. Tap a locked one to unlock it.", "How the pills work")]);
+    ...CATS.map((c) => { const p = !!on?.has(c), l = lock.has(c); const b = el("button", { type: "button", class: `fx-pill${p ? " on" : ""}${l ? " locked" : ""}`, "aria-pressed": String(p), title: `${CAT[c]}${l ? " (locked: tap to unlock)" : " (double-tap to lock it in and pick more)"}` }, [l ? "\uD83D\uDD12 " : "", c]); b.addEventListener("click", () => tapPill(c)); return b; })
+  ]); // (update 492: no info button)
   const sgIn = (x) => !on || on.has(x.cat);
   const picked = on ? [...on].sort((a, b) => CATS.indexOf(a) - CATS.indexOf(b)).map((c) => CAT[c]).join(" + ") : "Total"; // (update 475: named in every header)
   const all = [...mine].sort(byDate);
   const when = [Array.isArray(f.year) && f.year.length ? f.year.join(", ") : Number(f.months) ? `last ${f.months} months` : "all seasons", Array.isArray(f.tour) && f.tour[0] ? f.tour[0] : null, `${all.length} rounds`].filter(Boolean).join(" \u00b7 ");
-  const head = el("section", { class: "panel fx fx-head" }, [pills, el("p", { class: "muted small fx-when" }, when)]);
-  if (all.length < 6) return [head, el("section", { class: "panel fx" }, el("p", { class: "empty" }, "Focus needs at least 6 rounds in this selection. Widen the time frame in Full stats."))];
+  // (update 492) the pills on their own, like the other filters; the time frame at the foot of Where you stand
+  const head = el("div", { class: "fx-pills-row" }, pills);
+  const whenLine = el("p", { class: "muted small fx-when" }, when);
+  if (all.length < 6) return [head, el("section", { class: "panel fx" }, [el("p", { class: "empty" }, "Focus needs at least 6 rounds in this selection. Widen the time frame in Full stats."), whenLine])];
   const N = Math.max(6, Math.min(all.length, Math.round(Number(st.recentN) || 12)));
   const recent = all.slice(-N);
   const tot = (rs) => rs.reduce((t, rd) => t + (rd.shots || []).reduce((u, x) => u + (x.cat && sgIn(x) ? x.sg || 0 : !x.cat && !on ? x.sg || 0 : 0), 0), 0) / (rs.length || 1);
@@ -90,6 +98,7 @@ export function focusView(S, mine, slicedField, f = {}) {
       el("div", { class: "fx-stat" }, [el("span", { class: "fx-k" }, `Last ${N}`), el("strong", { class: recentV >= 0 ? "pos" : "neg" }, f2(recentV)), el("span", { class: "fx-s" }, ranked ? `a ${ord(rankOf(recentV))} level` : "a round")]),
       el("div", { class: "fx-stat" }, [el("span", { class: "fx-k" }, "Trend"), el("strong", { class: trend >= 0 ? "pos" : "neg" }, `${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend).toFixed(2)}`), el("span", { class: "fx-s" }, Math.abs(trend) < 0.1 ? "steady" : trend > 0 ? "getting better" : "slipping")]),
     ]),
+    whenLine,
   ]);
 
   // 2 and 3. where they lose strokes lately, what it's worth, and the practice for it
@@ -137,8 +146,8 @@ export function focusView(S, mine, slicedField, f = {}) {
     if (season) return { gs: season, from: "season rounds" };
     // (update 489) none of their own: the field's at that distance (the best 10% of players there, as the bar to reach)
     const fieldGoal = (() => {
-      for (const re of goalStatsFor(cat, dist)) for (const mode of ["exact", "dist", "cat"]) {
-        if (mode === "dist" && !dist) continue;
+      for (const re of goalStatsFor(cat, dist)) for (const mode of ["exact", "dist", "near", "cat"]) {
+        if ((mode === "dist" || mode === "near") && !dist) continue;
         const per = [];
         for (const p of slicedField || []) { if (p.key === me.key) continue; let t = 0, w = 0, k = null; for (const rd of p.rounds || []) for (const o of rd.obs || []) if (re.test(o.k) && obsFits(o, cat, dist, mode)) { t += o.v * o.w; w += o.w; k = o.k; } if (k && w >= 5) per.push({ k, v: t / w, w }); }
         if (per.length < 10) continue;
@@ -161,7 +170,10 @@ export function focusView(S, mine, slicedField, f = {}) {
     let sg = 0, w = 0; for (const rd of all) for (const x of rd.shots || []) if (x.cat === cat && (!dist || distSig(x.dist) === distSig(dist))) { sg += x.sg || 0; w += x.w || 1; }
     const per = w ? sg / w : null;
     const sgGoal = per != null && per < 0 ? `; the goal is in strokes gained instead: from ${per.toFixed(2).replace("-", "\u2212")} a shot now to 0 (the tour average)` : "";
-    return { gs: null, from: "best 10 rounds", note: (have.size ? `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}; it has ${[...have].slice(0, 5).join(", ")}` : `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}, only strokes gained`) + sgGoal };
+    // (update 491) where that stat is in their data (part of the game and distance), so a mismatch shows
+    const where = new Map(); for (const re of goalStatsFor(cat, dist)) for (const rd of all) for (const o of rd.obs || []) if (re.test(o.k)) { const k2 = `${o.cat ? CAT[o.cat] || o.cat : "no category"} \u00b7 ${o.dist || "no distance"}`; where.set(k2, (where.get(k2) || 0) + (o.w || 1)); }
+    const whereTxt = where.size ? `; ${{ OTT: "Fairway", APP: "Proximity", ARG: "Proximity", PUTT: "Make" }[cat] || "It"} is in the data for ${[...where].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k2, n2]) => `${k2} (${Math.round(n2)})`).join(", ")}` : "";
+    return { gs: null, from: "best 10 rounds", note: whereTxt ? `no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}${whereTxt}` + sgGoal : (have.size ? `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}; it has ${[...have].slice(0, 5).join(", ")}` : `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}, only strokes gained`) + sgGoal };
   };
   const sig = (d) => `${me.key}|${d.kind}|${d.dist || ""}|${d.lie || ""}`;
   const itemFor = (b) => {

@@ -5607,3 +5607,78 @@ table.plain th, .cmp-table th, .wl-pop-table th, .bs-st-table th, .ch-t th, .sh-
 /* (update 490) the whole hole on the screen: no taller than most of it (narrower to keep its shape) */
 .sh-stage { width: min(100%, calc(80vh * var(--ar, 1.78))); width: min(100%, calc(80svh * var(--ar, 1.78))); margin-left: auto; margin-right: auto; }
 @media (max-width: 600px) { .sh-stage { width: min(100%, calc(72vh * var(--ar, 1.78))); width: min(100%, calc(72svh * var(--ar, 1.78))); } }
+/* (update 491) Strategy Maps: up & down by miss for the pin, a grid around the green */
+.sh-ud { margin: 12px 0 4px; padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
+.sh-ud[hidden] { display: none; }
+.sh-ud-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.sh-ud-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 460px; margin: 0 auto; }
+.sh-ud-c { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 4px; border-radius: 10px; background: rgba(255,255,255,0.04); text-align: center; min-width: 0; }
+.sh-ud-c strong { font-size: var(--fs-lg, 1.15rem); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.sh-ud-c.good strong { color: #4CAF50; } .sh-ud-c.mid strong { color: #FFB343; } .sh-ud-c.bad strong { color: #ff453a; }
+.sh-ud-c.good { background: rgba(76,175,80,0.10); } .sh-ud-c.bad { background: rgba(255,69,58,0.10); }
+.sh-ud-k { font-size: var(--fs-2xs); color: #a1a1a6; text-transform: uppercase; letter-spacing: 0.04em; }
+.sh-ud-l { font-size: var(--fs-2xs); color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sh-ud-green { display: flex; align-items: center; justify-content: center; }
+.sh-ud-green i { width: 46px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 45% 40%, #7fcf6a, #3e8e3a); box-shadow: 0 0 0 3px rgba(127,207,106,0.15); }
+/* (update 491) Course Insights, redesigned: cards, a game plan, hole tiles */
+.ci2 { display: grid; gap: 0; }
+.ci2-h { font-size: var(--fs-sm); letter-spacing: 0.08em; color: #d4b483; margin: 0 0 10px; }
+.ci2-note { margin: 10px 0 0; }
+.ci2-scores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ci2-score { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+.ci2-score span { font-size: var(--fs-label); color: #a1a1a6; }
+.ci2-score strong { font-size: 1.7rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ci2-score.cut strong { color: #ff6b5e; } .ci2-score.t25 strong { color: #ffa53d; } .ci2-score.t10 strong { color: #ffd60a; } .ci2-score.win strong { color: #4cd964; }
+.ci2-plan { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.ci2-card { padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-left: 3px solid #d4b483; display: flex; flex-direction: column; gap: 4px; }
+.ci2-card.pos { border-left-color: #3d9cff; } .ci2-card.neg { border-left-color: #ff9f43; }
+.ci2-card h3 { margin: 0 0 4px; font-size: var(--fs-sm); }
+.ci2-item { display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 4px 0; color: inherit; font: inherit; font-size: var(--fs-note); text-align: left; cursor: pointer; }
+.ci2-item:hover span:last-child { text-decoration: underline; }
+.ci2-hn { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.08); font-weight: 700; font-size: var(--fs-2xs); }
+.ci2-tiles { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; margin: 6px 0 10px; }
+.ci2-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 7px 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.ci2-tile.on { outline: 2px solid #d4b483; outline-offset: 1px; }
+.ci2-tile-n { font-weight: 800; font-size: var(--fs-sm); }
+.ci2-tile-p, .ci2-tile-h { font-size: var(--fs-2xs); color: #c7c7cc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ci2-tile strong { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.ci2-detail { border-radius: 14px; background: rgba(0,0,0,0.25); border: 1px solid rgba(212,180,131,0.35); padding: 12px; display: grid; gap: 10px; }
+.ci2-detail-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ci2-detail-h h3 { margin: 0; }
+.ci2-mixes { display: grid; gap: 6px; }
+.ci2-mix { display: grid; grid-template-columns: 5.2em 1fr 3.4em; align-items: center; gap: 10px; }
+.ci2-mix-k { display: flex; flex-direction: column; line-height: 1.1; color: #d4b483; font-weight: 600; font-size: var(--fs-note); }
+.ci2-mix-k small { color: #8e8e93; font-weight: 400; font-size: var(--fs-2xs); }
+.ci2-mix-v { text-align: right; font-variant-numeric: tabular-nums; } .ci2-mix-v.neg { color: #ff9f43; } .ci2-mix-v.pos { color: #3d9cff; }
+.ci2-facts { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: var(--fs-note); }
+.ci2-facts li { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,0.04); }
+.ci2-facts strong { color: #d4b483; }
+.ci2-detail-f { display: flex; justify-content: flex-end; }
+.ci2-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ci2-two h3, .ci2-vcol h3 { margin: 0 0 6px; font-size: var(--fs-sm); }
+.ci2-fr, .ci2-vr { display: grid; grid-template-columns: 6.5em 1fr 3.6em; align-items: center; gap: 8px; font-size: var(--fs-note); padding: 3px 0; width: 100%; }
+button.ci2-vr { background: none; border: 0; color: inherit; font: inherit; font-size: var(--fs-note); text-align: left; cursor: pointer; }
+.ci2-fr-k, .ci2-vr-k { color: #d1d1d6; white-space: nowrap; }
+.ci2-fr-bar, .ci2-vr-bar { height: 10px; border-radius: 5px; background: rgba(255,255,255,0.05); overflow: hidden; }
+.ci2-fr-bar i, .ci2-vr-bar i { display: block; height: 100%; border-radius: 5px; }
+.ci2-faced.more .ci2-fr-bar i { background: #d4b483; } .ci2-faced.less .ci2-fr-bar i { background: #636366; }
+.ci2-vr-bar i.neg { background: #ff6b5e; } .ci2-vr-bar i.pos { background: #4cd964; }
+.ci2-fr strong, .ci2-vr strong { text-align: right; font-variant-numeric: tabular-nums; }
+.ci2-vr strong.neg { color: #ff6b5e; } .ci2-vr strong.pos { color: #4cd964; }
+@media (max-width: 600px) {
+  .ci2-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ci2-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+  .ci2-tile { padding: 6px 5px; }
+  .ci2-tile-h { display: none; }
+  .ci2-two { grid-template-columns: 1fr; }
+}
+/* (update 492) Focus: the category pills on their own (like the other filters); the time frame at the foot of Where you stand */
+.fx-pills-row { margin: 0 0 12px; }
+.fx-stand .fx-when { margin: 10px 0 0; }
+/* (update 492) Strategy Maps: off the tee, left miss / fairway / right miss */
+.sh-tee-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 460px; margin: 0 auto; }
+.sh-tee-c { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 4px; border-radius: 10px; background: rgba(255,255,255,0.04); text-align: center; }
+.sh-tee-c strong { font-size: var(--fs-lg, 1.15rem); font-variant-numeric: tabular-nums; }
+.sh-tee-c.mid { background: rgba(76,175,80,0.10); }
+.sh-tee-c.worse { background: rgba(255,69,58,0.12); outline: 1px solid rgba(255,69,58,0.6); }
+.sh-tee-c.worse strong { color: #ff6b5e; }

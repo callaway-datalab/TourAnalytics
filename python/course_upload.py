@@ -35,7 +35,8 @@ _COLS = {"year": ["year", "season"], "courseNum": ["coursenum", "coursenumber", 
          "hole": ["hole"], "par": ["par", "holepar"], "pin": ["pinid", "pin", "pinlocation"], "lie": ["lie", "fromlocation"],
          "strokes": ["strokes", "stroke", "shotnum", "shotnumber"], "shotFor": ["shotfor"], "holeOut": ["holeout"], "x": ["x"], "y": ["y"],
          "v": ["scoringavg", "strokestoholeout"], "pinX": ["pinx"], "pinY": ["piny"], "dist": ["distance", "dist"],
-         "event": ["tournament", "tournamentname", "event", "eventname"]}
+         "event": ["tournament", "tournamentname", "event", "eventname"],
+         "appSide": ["appsideloc", "appside", "approachside", "missside"], "drive": ["drivedirection", "drivedir", "teedirection"]}  # (update 488)
 
 
 def _norm(s):
@@ -292,6 +293,279 @@ def _merge_source(M, C):
             TM["trails"][tk] = tr
 
 
+# ------------------------------------------------ Course Insights (update 488) ------------------------------------------------
+# As js/courseShots.js courseInsights (keep the two the same): events (winning, Top 10, Top 25 scores and cut line), each
+# hole's scoring for the field and the Top 10, fairway / green in regulation / going-for-it values, fairway widths, tee
+# misses left and right (drive_direction), up & down by approach miss side and lie (app_side_loc), attempts by distance and
+# strokes gained by distance against this course's own field.
+
+ATT_B = ["3-5 ft", "5-10 ft", "10-15 ft", "15-20 ft", "20-25 ft", ">25 ft", "<30 yds", "30-50 yds", "50-100 yds", "100-120 yds",
+         "120-140 yds", "140-160 yds", "160-180 yds", "180-200 yds", "200-220 yds", ">220 yds"]
+
+
+def side_of(v):
+    if _missing(v):
+        return None
+    t = re.sub(r"[^a-z]+", " ", str(v).lower()).strip()
+    if not t:
+        return None
+    ab = re.fullmatch(r"(s|l)(l|r)", t.replace(" ", ""))
+    lo = ab.group(1) == "l" if ab else bool(re.search("long|over|back", t))
+    sh = ab.group(1) == "s" if ab else bool(re.search("short|front", t))
+    le = ab.group(2) == "l" if ab else "left" in t
+    ri = ab.group(2) == "r" if ab else "right" in t
+    a = "Long" if lo else "Short" if sh else ""
+    b = "Left" if le else "Right" if ri else ""
+    return f"{a}-{b}" if a and b else (a or b or None)
+
+
+def drive_of(v):
+    if _missing(v):
+        return None
+    t = str(v).lower()
+    return "L" if "left" in t else "R" if "right" in t else "C" if re.search("fair|cent|middle|straight|hit", t) else None
+
+
+def _r4(x):
+    return _jsn(_round(x * 1e4) / 1e4)
+
+
+def _yd_b(d):
+    for lim, b in [(30, "<30 yds"), (50, "30-50 yds"), (100, "50-100 yds"), (120, "100-120 yds"), (140, "120-140 yds"), (160, "140-160 yds"),
+                   (180, "160-180 yds"), (200, "180-200 yds"), (220, "200-220 yds")]:
+        if d < lim:
+            return b
+    return ">220 yds"
+
+
+def _ft_b(d):
+    for lim, b in [(5, "<5 ft"), (10, "5-10 ft"), (15, "10-15 ft"), (20, "15-20 ft"), (25, "20-25 ft")]:
+        if d < lim:
+            return b
+    return ">25 ft"
+
+
+def bucket_of(q, par, sg):
+    L, d = q[3], q[4]
+    if q[0] == 1 and par >= 4:
+        return "Tee shot" if sg else None
+    if d is None:
+        return None
+    if L == 4:
+        if not sg and d < 3:
+            return None
+        b = _ft_b(d)
+        return b if sg else ("3-5 ft" if b == "<5 ft" else b)
+    return _yd_b(d)
+
+
+def e_key(L, d):
+    if d is None:
+        return None
+    if L == 4:
+        b = math.floor(d) if d < 10 else 10 + math.floor((d - 10) / 5) if d < 30 else min(30, 14 + math.floor((d - 30) / 10))
+    else:
+        b = math.floor(d / 5) if d < 30 else 6 + math.floor((d - 30) / 10) if d < 100 else min(40, 13 + math.floor((d - 100) / 20))
+    return f"{L}|{b}"
+
+
+def trail_sg(shots, s, par, E, into):
+    for i, q in enumerate(shots):
+        k0 = e_key(q[3], q[4])
+        if k0 is None or k0 not in E:
+            continue
+        if i + 1 < len(shots):
+            k1 = e_key(shots[i + 1][3], shots[i + 1][4])
+            if k1 is None or k1 not in E:
+                continue
+            nx = E[k1]
+        elif s is not None:
+            nx = 0
+        else:
+            continue
+        b = bucket_of(q, par, True)
+        if not b:
+            continue
+        into[b] = into.get(b, 0) + (E[k0] - nx - 1)
+
+
+def _add2(o, k, v):
+    a = o.setdefault(k, [0, 0])
+    a[0] += 1
+    a[1] += v
+
+
+def _sc5():
+    return {"n": 0, "sum": 0, "e": 0, "b": 0, "p": 0, "g": 0}
+
+
+def _add_sc(o, s):
+    o["n"] += 1
+    o["sum"] += s
+    o["e" if s <= -2 else "b" if s == -1 else "p" if s == 0 else "g"] += 1
+
+
+def course_insights(C):
+    allt = []
+    for key, T in C["players"].items():
+        for t in T["trails"].values():
+            allt.append((key, t, sorted(t["shots"], key=lambda q: q[0] if q[0] is not None else 0)))
+
+    def par_of(h):
+        H = C["holes"].get(h)
+        return (H and H["par"]) or 4
+    by_y = {}
+    for key, t, _ in allt:
+        if t["s"] is None:
+            continue
+        P = by_y.setdefault(t["y"], {}).setdefault(key, {"n": 0, "tot": 0, "rs": set(), "r12": 0})
+        P["n"] += 1
+        P["tot"] += t["s"]
+        P["rs"].add(str(t["r"]))
+        rn = _num(t["r"])
+        if rn is not None and rn <= 2:
+            P["r12"] += t["s"]
+    events, top = [], set()
+    top_list = []
+    for y, Y in by_y.items():
+        ps = list(Y.items())
+        max_n = max(P["n"] for _, P in ps)
+        max_r = max(len(P["rs"]) for _, P in ps)
+        full = [(k, P) for k, P in ps if P["n"] == max_n]
+        tots = sorted(P["tot"] for _, P in full)
+        t10 = tots[min(9, len(tots) - 1)]
+        for k, P in full:
+            if P["tot"] <= t10 and f"{k}|{y}" not in top:
+                top.add(f"{k}|{y}")
+                top_list.append(f"{k}|{y}")
+        cut = None
+        if max_r >= 3:
+            made = [P for _, P in ps if len(P["rs"]) >= 3]
+            missed = [P for _, P in ps if len(P["rs"]) == 2]
+            if made and missed:
+                cut = max(P["r12"] for P in made)
+        events.append({"y": y, "players": len(ps), "full": len(full), "rounds": max_r, "win": tots[0] if tots else None,
+                       "top10": tots[9] if len(tots) >= 10 else None, "top25": tots[24] if len(tots) >= 25 else None, "cut": cut})
+    Es = {}
+    for _, _, qs in allt:
+        for q in qs:
+            if q[5] is None:
+                continue
+            k = e_key(q[3], q[4])
+            if k is None:
+                continue
+            a = Es.setdefault(k, [0, 0])
+            a[0] += q[5]
+            a[1] += 1
+    E = {k: _r4(a[0] / a[1]) for k, a in Es.items()}
+    ppy = {}
+    for h, H in C["holes"].items():
+        rs = []
+        for _, t, qs in allt:
+            if t["h"] != h or len(rs) >= 3000:
+                continue
+            P = H["pins"].get(t["p"])
+            if not P or not P["pn"]:
+                continue
+            px, py = P["px"] / P["pn"], P["py"] / P["pn"]
+            for q in qs:
+                if q[3] != 4 and q[4] is not None and q[4] > 15 and len(rs) < 3000:
+                    rs.append(math.hypot(q[1] - px, q[2] - py) / q[4])
+        rs.sort()
+        ppy[h] = rs[len(rs) // 2] if rs else None
+    holes, attempts, sg_f, sg_t, r_f, r_t = {}, {}, {}, {}, set(), set()
+    for h in C["holes"]:
+        holes[h] = {"par": par_of(h), "field": _sc5(), "top": _sc5(), "fwy": {}, "gir": {}, "go": {}, "drive": {}, "ud": {}, "udp": {}, "drivep": {}, "land": []}
+    for key, t, qs in allt:
+        X = holes.get(t["h"])
+        if X is None:
+            continue
+        par = X["par"]
+        is_top = f"{key}|{t['y']}" in top
+        rk = f"{key}|{t['y']}|{t['r']}"
+        for q in qs:
+            b = bucket_of(q, par, False)
+            if b:
+                attempts[b] = attempts.get(b, 0) + 1
+        r_f.add(rk)
+        if is_top:
+            r_t.add(rk)
+        one = {}
+        trail_sg(qs, t["s"], par, E, one)
+        for b, v in one.items():
+            sg_f[b] = sg_f.get(b, 0) + v
+            if is_top:
+                sg_t[b] = sg_t.get(b, 0) + v
+
+        def at(k, qs=qs):
+            return next((q for q in qs if q[0] == k), None)
+        for k, side in (t.get("as") or {}).items():
+            kn = _num(k)
+            nq = at(kn + 1) if kn is not None else None
+            if not nq or nq[4] is None or nq[4] > 30 or nq[3] not in (1, 2, 3):
+                continue
+            lie = LIES[nq[3]].capitalize()
+            made = nq[5] is not None and nq[5] <= 2
+            a = X["ud"].setdefault(side, {}).setdefault(lie, [0, 0])
+            a[0] += 1
+            if made:
+                a[1] += 1
+            # (update 491) and for the pin it was played to (Strategy Maps shows it with each pin)
+            a2 = X["udp"].setdefault(t["p"], {}).setdefault(side, {}).setdefault(lie, [0, 0])
+            a2[0] += 1
+            if made:
+                a2[1] += 1
+        if t["s"] is None:
+            continue
+        s = t["s"]
+        _add_sc(X["field"], s)
+        if is_top:
+            _add_sc(X["top"], s)
+        q2 = at(2)
+        if par >= 4 and q2:
+            _add2(X["fwy"], "hit" if q2[3] == 1 else "miss", s)
+        _add2(X["gir"], "hit" if any(q[0] is not None and q[0] <= par - 1 and q[3] == 4 for q in qs) or s <= -2 else "miss", s)
+        qg = at(3) if par >= 5 else q2 if par == 4 else None
+        if qg:
+            d = 0 if qg[3] == 4 else qg[4]
+            if d is not None and d <= 30:
+                _add2(X["go"], "go", s)
+            elif d is not None and d <= 100:
+                _add2(X["go"], "lay", s)
+        if par >= 4 and t.get("dd"):
+            _add2(X["drive"], t["dd"], s)
+            _add2(X["drivep"].setdefault(t["p"], {}), t["dd"], s)  # (update 492: and per pin)
+        q1 = at(1)
+        if par >= 4 and q1 and q2 and q2[3] == 1:
+            X["land"].append((q1[1], q1[2], q2[1], q2[2]))
+    out = {}
+    for h, X in holes.items():
+        widths, k = {}, ppy.get(h)
+        if k:
+            for c in (250, 275, 300, 325):
+                pts = [l for l in X["land"] if abs(math.hypot(l[2] - l[0], l[3] - l[1]) / k - c) <= 12.5]
+                if len(pts) < 8:
+                    continue
+                n = len(pts)
+                tx, ty = sum(l[0] for l in pts) / n, sum(l[1] for l in pts) / n
+                cx, cy = sum(l[2] for l in pts) / n, sum(l[3] for l in pts) / n
+                dl = math.hypot(cx - tx, cy - ty) or 1
+                ux, uy = (cx - tx) / dl, (cy - ty) / dl
+                off = sorted(((l[2] - tx) * uy - (l[3] - ty) * ux) / k for l in pts)
+                widths[str(c)] = _round(off[math.floor(0.95 * (n - 1))] - off[math.floor(0.05 * (n - 1))])
+
+        def fx(o):
+            return {**o, "sum": _r4(o["sum"])}
+
+        def f2(o):
+            return {kk: [a[0], _r4(a[1])] for kk, a in o.items()}
+        out[str(h)] = {"par": X["par"], "field": fx(X["field"]), "top": fx(X["top"]), "fwy": f2(X["fwy"]), "gir": f2(X["gir"]),
+                       "go": f2(X["go"]), "drive": f2(X["drive"]), "drivePins": {pp: f2(o) for pp, o in X["drivep"].items()}, "ud": X["ud"], "udPins": X["udp"], "widths": widths}
+    return {"events": events, "holes": out, "attempts": attempts,
+            "sg": {"field": {b: _r4(v) for b, v in sg_f.items()}, "top": {b: _r4(v) for b, v in sg_t.items()},
+                   "fieldRounds": len(r_f), "topRounds": len(r_t), "E": E}, "top": top_list}
+
+
 # ------------------------------------------------ the boiling down ------------------------------------------------
 
 def aggregate(columns, rows):
@@ -383,6 +657,13 @@ def aggregate(columns, rows):
                                 _jsn(v) if v is not None else None])
             if score is not None:
                 tr["s"] = _round(score)
+            # (update 488) where an approach finished around the green, and which way the tee shot went
+            sd = side_of(g(r, "appSide")) if "appSide" in ix else None
+            if sd:
+                tr.setdefault("as", {})[str(_jsn(st)) if st is not None else "null"] = sd
+            dd = drive_of(g(r, "drive")) if "drive" in ix and st == 1 else None
+            if dd:
+                tr["dd"] = dd
     out = []
     for C in _same_courses(list(courses.values())):
         holes = {}
@@ -452,7 +733,7 @@ def aggregate(columns, rows):
             players[key] = {"name": T["name"], "trails": trails}
         out.append({"name": max(C["names"].items(), key=lambda t: t[1])[0] if C["names"] else C["name"], "courseNum": C["courseNum"], "courseNums": C["courseNums"], "dropped": C["dropped"], "sources": C["sources"],
                     "events": [{"name": e, "years": sorted(ys)} for e, ys in C["events"].items()], "years": sorted(C["years"]),
-                    "data": {"holes": holes, "toGo": True, "hasN": True, "shots": True, "lies": LIES}, "players": players})
+                    "data": {"holes": holes, "toGo": True, "hasN": True, "shots": True, "lies": LIES, "insights": course_insights(C)}, "players": players})
     return out
 
 
@@ -508,6 +789,7 @@ def _save_course(db, c, existing, say):
         meta["courseNum"] = str(c["courseNum"])
     meta["courseNums"] = nums
     meta["events"] = c.get("events") or []
+    meta["attempts"] = (c["data"].get("insights") or {}).get("attempts") or {}  # (update 488: the distribution against every course)
     base.set(meta, merge=True)
     return cid, zones, len(js)
 

@@ -32,6 +32,7 @@ export async function drawHeat(ctx, course) {
   const holeNums = [...new Set([...Object.keys(data.holes || {}), ...Object.keys(meta.holes || {})].map(Number))].filter((n) => n > 0).sort((a, b) => a - b);
   if (!holeNums.length) { mount(body, el("p", { class: "empty" }, "No holes for this course yet.")); return; }
   if (!holeNums.includes(st.hole) || st.course !== meta.id) { st.hole = holeNums[0]; st.course = meta.id; st.pin = {}; }
+  if (course.startHole && holeNums.includes(course.startHole)) { st.hole = course.startHole; delete course.startHole; } // (update 491: from Course Insights)
 
   // the page: holes, then pins and the switches, then the picture
   const holeBar = el("div", { class: "sh-holes", role: "tablist", "aria-label": "Hole" });
@@ -59,9 +60,11 @@ export async function drawHeat(ctx, course) {
   const stage = el("div", { class: "sh-stage" }, [zoomBox, dot, pop, pastBtn, el("div", { class: "sh-zbar" }, [zIn, zOut, zFit])]);
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
+  const teeBox = el("div", { class: "sh-ud sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
+  const udBox = el("div", { class: "sh-ud", hidden: true }); // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
   prev.addEventListener("click", () => go(-1)); next.addEventListener("click", () => go(1));
-  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, head, hist, el("div", { class: "sh-ctl" }, [pinBar, el("div", { class: "sh-sw" }, [viewSeg])]), shotRow, stage, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
+  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, head, hist, el("div", { class: "sh-ctl" }, [pinBar, el("div", { class: "sh-sw" }, [viewSeg])]), shotRow, stage, legend, trKey, teeBox, udBox, keys, el("div", { class: "sh-nav" }, [prev, next])]));
 
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
@@ -215,7 +218,7 @@ export async function drawHeat(ctx, course) {
     pop.hidden = true; hideDot();
     const n = st.hole, H = data.holes?.[n] || { pins: {} }, pin = H.pins?.[st.pin[n]];
     pinNow = pin || null;
-    drawHist(); drawTrails(); // (update 479)
+    drawHist(); drawTrails(); drawTee(); drawUD(); // (update 479; 491: up & down; 492: tee misses)
     drawShotSeg();
     seg(viewSeg, [["field", "Field"], ["player", who ? who.label.split(" ")[0] || "Player" : "Player", !who ? "Pick a player" : !ix && !trails?.trails?.length ? "Loading their stats…" : null]], "view", paint);
     if (!pin || !size.w) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); Z = null; mount(keys, size.w ? null : el("p", { class: "muted small" }, "No image for this hole yet: upload the course’s images zip on Upload Data.")); drawLegend(); return; }
@@ -421,6 +424,43 @@ export async function drawHeat(ctx, course) {
     pastBtn.classList.toggle("on", !!st.showPast);
   }
   pastBtn.addEventListener("click", (e) => { e.stopPropagation(); st.showPast = !st.showPast; drawHist(); drawTrails(); });
+  // (update 491) up & down by where the approach missed the green (app_side_loc), for this pin (a combined pin: its pins
+  // added up): a grid around the green, each side's share got up and down, then by the lie it left
+  // (update 492) off the tee: the scoring after a left miss, the fairway and a right miss (drive_direction), this pin (a
+  // combined pin: its pins added up; a course uploaded before update 492: the hole's)
+  function drawTee() {
+    const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
+    if (!X || (X.par || par) < 4) { teeBox.hidden = true; mount(teeBox, null); return; }
+    const ids = pinNow?.merged || [pid], D = {};
+    const src = X.drivePins ? ids.map((id) => X.drivePins[id]).filter(Boolean) : [X.drive];
+    for (const o of src) for (const [k, a] of Object.entries(o || {})) { const b = (D[k] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
+    const avg = (k) => (D[k]?.[0] >= 5 ? par + D[k][1] / D[k][0] : null), L = avg("L"), C = avg("C"), R = avg("R");
+    if (L == null && R == null) { teeBox.hidden = true; mount(teeBox, null); return; }
+    const worse = L != null && R != null && Math.abs(L - R) >= 0.02 ? (L > R ? "L" : "R") : null;
+    const cell = (k, label, v) => el("div", { class: `sh-tee-c${worse === k ? " worse" : ""}${k === "C" ? " mid" : ""}` }, [el("span", { class: "sh-ud-k" }, label), el("strong", {}, v == null ? "\u2014" : v.toFixed(2)), el("span", { class: "sh-ud-l" }, D[k]?.[0] ? `${D[k][0]} tee shots` : "")]);
+    teeBox.hidden = false;
+    mount(teeBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Off the tee"), el("span", { class: "muted small" }, worse ? `the ${worse === "L" ? "left" : "right"} miss costs ${Math.abs(L - R).toFixed(2)} more` : "scoring average after each")]),
+      el("div", { class: "sh-tee-row" }, [cell("L", "Left miss", L), cell("C", "Fairway", C), cell("R", "Right miss", R)])]);
+  }
+  function drawUD() {
+    const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
+    const ids = pinNow?.merged || [pid], U = {};
+    for (const id of ids) for (const [side, lies] of Object.entries(X?.udPins?.[id] || {})) for (const [lie, a] of Object.entries(lies)) { const o = (U[side] ||= {}), b = (o[lie] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
+    if (!Object.keys(U).length) { udBox.hidden = true; mount(udBox, null); return; }
+    const col = (p) => (p == null ? "" : p >= 75 ? "good" : p >= 50 ? "mid" : "bad");
+    const cell = (side) => {
+      const o = U[side] || {}, tot = Object.values(o).reduce((t, a) => [t[0] + a[0], t[1] + a[1]], [0, 0]);
+      const p = tot[0] >= 3 ? Math.round((100 * tot[1]) / tot[0]) : null;
+      const lies = [["Fairway", "Fwy"], ["Rough", "Rgh"], ["Bunker", "Bnk"]].filter(([l]) => o[l]?.[0] >= 3).map(([l, s2]) => `${s2} ${Math.round((100 * o[l][1]) / o[l][0])}`);
+      return el("div", { class: `sh-ud-c ${col(p)}`, title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
+        el("span", { class: "sh-ud-k" }, side.replace("-", " ")),
+        el("strong", {}, p == null ? "\u2014" : `${p}%`),
+        el("span", { class: "sh-ud-l" }, p == null ? (tot[0] ? `${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}` : "") : lies.join(" \u00b7 ") || `${tot[0]} misses`)]);
+    };
+    udBox.hidden = false;
+    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), el("span", { class: "muted small" }, "this pin \u00b7 within 30 yds of the green")]),
+      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), el("div", { class: "sh-ud-green", "aria-hidden": "true" }, el("i")), cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")])]);
+  }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
   // the key (Birdie, Par …: tap to show only those, tap more to add, again to take away), one trail from a tap on it
   const trState = { hole: null, scores: new Set(), one: null };

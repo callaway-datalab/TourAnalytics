@@ -203,7 +203,7 @@ export function courseInsights(C) {
     rs.sort((a, b) => a - b); ppy.set(h, rs.length ? rs[Math.floor(rs.length / 2)] : null);
   }
   const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
-  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, land: [] };
+  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, land: [] };
   for (const [key, t, qs] of all) {
     const X = holes[t.h]; if (!X) continue;
     const par = X.par, isTop = top.has(`${key}|${t.y}`), rk = `${key}|${t.y}|${t.r}`;
@@ -216,7 +216,11 @@ export function courseInsights(C) {
     for (const [k, side] of Object.entries(t.as || {})) {
       const nq = at(Number(k) + 1); if (!nq || nq[4] == null || nq[4] > 30 || ![1, 2, 3].includes(nq[3])) continue;
       const lie = LIES[nq[3]][0].toUpperCase() + LIES[nq[3]].slice(1), o = X.ud[side] || (X.ud[side] = {}), a = o[lie] || (o[lie] = [0, 0]);
-      a[0]++; if (nq[5] != null && nq[5] <= 2) a[1]++;
+      const made = nq[5] != null && nq[5] <= 2;
+      a[0]++; if (made) a[1]++;
+      // (update 491) and for the pin it was played to (Strategy Maps shows it with each pin)
+      const U = X.udp[t.p] || (X.udp[t.p] = {}), o2 = U[side] || (U[side] = {}), a2 = o2[lie] || (o2[lie] = [0, 0]);
+      a2[0]++; if (made) a2[1]++;
     }
     if (t.s == null) continue;
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
@@ -225,7 +229,7 @@ export function courseInsights(C) {
     add2(X.gir, qs.some((q) => q[0] != null && q[0] <= par - 1 && q[3] === 4) || s <= -2 ? "hit" : "miss", s);
     const qg = par >= 5 ? at(3) : par === 4 ? q2 : null;
     if (qg) { const d = qg[3] === 4 ? 0 : qg[4]; if (d != null && d <= 30) add2(X.go, "go", s); else if (d != null && d <= 100) add2(X.go, "lay", s); }
-    if (par >= 4 && t.dd) add2(X.drive, t.dd, s);
+    if (par >= 4 && t.dd) { add2(X.drive, t.dd, s); add2(X.drivep[t.p] || (X.drivep[t.p] = {}), t.dd, s); } // (update 492: and per pin)
     const q1 = at(1); if (par >= 4 && q1 && q2 && q2[3] === 1) X.land.push([q1[1], q1[2], q2[1], q2[2]]);
   }
   const out = {};
@@ -241,7 +245,7 @@ export function courseInsights(C) {
       widths[c] = Math.round(off[Math.floor(0.95 * (off.length - 1))] - off[Math.floor(0.05 * (off.length - 1))]);
     }
     const fx = (o) => ({ ...o, sum: r4(o.sum) }), f2 = (o) => Object.fromEntries(Object.entries(o).map(([kk, a]) => [kk, [a[0], r4(a[1])]]));
-    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), ud: X.ud, widths };
+    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, widths };
   }
   const r4o = (o) => Object.fromEntries(Object.entries(o).map(([kk, v]) => [kk, r4(v)]));
   return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top] };
