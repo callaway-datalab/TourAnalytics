@@ -5761,3 +5761,7 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 .sh-hl-avg small { font-size: var(--fs-2xs); color: #8e8e93; font-weight: 400; }
 .sh-hl-avg strong { font-variant-numeric: tabular-nums; }
 .sh-hl-avg.neg strong { color: #ff9f43; } .sh-hl-avg.pos strong { color: #3d9cff; }
+/* (update 505) Simulate Round: the aim can be dragged */
+.pr-aim-mark { cursor: grab; touch-action: none; }
+.pr-aim-mark:active { cursor: grabbing; }
+.sh-spot-note { margin: 0 0 4px; font-size: 10.5px; }

@@ -362,7 +362,7 @@ export function sgDashboard(container, opts) {
     const mine = me ? nz(applyFilters(me.rounds, f)) : null;
     // (update 471) Focus: every shot of the rounds in the time frame (its own pills pick the parts of the game), against
     // the field over the same rounds
-    const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 !== "full");
+    const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "focus"); // (update 505: Full stats unless Focus is picked)
     const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
     const focusMine = focusOn ? nz(applyFilters(me.rounds, noShotF)) : null;
     const focusField = focusOn ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...rankF, cats: [], lie: [], dist: [], club: [], gear: [] })) })) : null;

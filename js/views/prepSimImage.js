@@ -140,9 +140,9 @@ export function simImage(ctx, s, hole, shot, getEntry, heat) {
   let cur = { ...g.tee };
   before.forEach((x, i) => { const nx = ballAt(g, before.slice(0, i + 1)); root.appendChild(svgEl("line", { x1: cur.x, y1: cur.y, x2: nx.x, y2: nx.y, stroke: "#fff", "stroke-width": u * 0.9, opacity: 0.85 })); root.appendChild(svgEl("circle", { cx: nx.x, cy: nx.y, r: u * 1.6, fill: "#fff", stroke: "#111", "stroke-width": u * 0.4 })); cur = nx; });
   // (update 468) where they aim: tapped first (the pin until then, for a putt always), then where it finished
-  root.appendChild(svgEl("line", { x1: ball.x, y1: ball.y, x2: g.pin.x, y2: g.pin.y, stroke: "#fff", "stroke-width": u * 0.5, "stroke-dasharray": `${u * 2} ${u * 2}`, opacity: 0.45 }));
+  // (update 505: no dashed line from the ball to the pin)
   const aimLine = svgEl("line", { x1: ball.x, y1: ball.y, stroke: "#d4b483", "stroke-width": u * 0.8, "stroke-dasharray": `${u * 3} ${u * 2}`, visibility: "hidden" });
-  const aimMark = svgEl("g", { visibility: "hidden" }, [svgEl("circle", { r: u * 3.2, fill: "none", stroke: "#d4b483", "stroke-width": u * 0.8 }), svgEl("circle", { r: u * 0.9, fill: "#d4b483" })]);
+  const aimMark = svgEl("g", { visibility: "hidden", class: "pr-aim-mark" }, [svgEl("circle", { r: u * 6, fill: "transparent" }), svgEl("circle", { r: u * 3.2, fill: "none", stroke: "#d4b483", "stroke-width": u * 0.8 }), svgEl("circle", { r: u * 0.9, fill: "#d4b483" })]); // (update 505: a wider grip, to drag it)
   root.appendChild(aimLine);
   const s5 = u * 3;
   root.appendChild(svgEl("path", { d: `M${g.pin.x} ${g.pin.y - s5}L${g.pin.x + s5} ${g.pin.y}L${g.pin.x} ${g.pin.y + s5}L${g.pin.x - s5} ${g.pin.y}Z`, fill: "#ffd60a", stroke: "#111", "stroke-width": u * 0.5 }));
@@ -166,7 +166,15 @@ export function simImage(ctx, s, hole, shot, getEntry, heat) {
   showAim();
   // a tap: the aim first; then where it finished. Hit: along the aim line; offline: off it (right is plus); what's left:
   // from there to the pin, on the image; the lie from the image
+  // (update 505) the aim, once placed, dragged to a new spot (press on the gold ring and move)
+  const imgPt = (e) => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const m = root.getScreenCTM(); return m ? pt.matrixTransform(m.inverse()) : null; };
+  let drag = null, skipClick = false;
+  aimMark.addEventListener("pointerdown", (e) => { if (putt || !shot.imgAim) return; drag = { moved: false }; e.preventDefault(); e.stopPropagation(); try { aimMark.setPointerCapture(e.pointerId); } catch { /* */ } });
+  aimMark.addEventListener("pointermove", (e) => { if (!drag) return; const p = imgPt(e); if (!p) return; drag.moved = true; shot.imgAim = { x: p.x, y: p.y }; showAim(); });
+  const endDrag = () => { if (!drag) return; if (drag.moved) { skipClick = true; ctx?.save?.(s); getEntry()?.__update?.(); setTimeout(() => { skipClick = false; }, 0); } drag = null; };
+  aimMark.addEventListener("pointerup", endDrag); aimMark.addEventListener("pointercancel", endDrag);
   svg.addEventListener("click", async (e) => {
+    if (skipClick) { skipClick = false; return; }
     const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
     const m = root.getScreenCTM(); if (!m) return; // (the image's own pixels, turned or not)
     const p = pt.matrixTransform(m.inverse());

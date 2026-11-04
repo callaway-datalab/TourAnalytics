@@ -118,12 +118,13 @@ const sectionsFor = (kind) => {
     // (update 292) the Watchlist is the first page of Analyze (and what Analyze opens on)
     [multi ? "Watchlist" : "Home", "#/watchlist", ["watchlist"]],
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
-    ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
+    // (update 505) Watchlist, Stats, Compare, Leaderboards
     ["Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     ["Compare", "#/comparisons", ["comparisons"]], // (update 205: Deep Dives; 209: Compare)
+    ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
     // (update 209) no Product Usage tab: product usage is in Compare (staff can compare products across everyone)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals

@@ -426,7 +426,8 @@ export async function drawHeat(ctx, course) {
     const mine = who ? inside.filter((q) => q.key === who.key) : [];
     const ud = (qs) => `${Math.round((100 * qs.filter((q) => q.v <= 2).length) / qs.length)}%`; // (update 502: holed in two from there)
     // (update 501) a small popup: the circle's size, the player's own shots, and the shots by lie
-    mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, xb]),
+    const basedOn = el("p", { class: "muted sh-spot-note" }, k ? `Based on shot ${k} results` : "Based on every shot played from here"); // (update 505)
+    mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, xb]), basedOn,
       mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
       // (update 504) by lie: shots, the average hole score, how the hole was scored (eagle+ to double+; a column that's 0%
       // in every row left out) and up & down
@@ -436,8 +437,10 @@ export async function drawHeat(ctx, course) {
         const pctOf = (qs, f) => { const k = qs.filter((q) => q.s != null); return k.length ? Math.round((100 * k.filter(f).length) / k.length) : null; };
         const keep = cols.filter(([, f]) => [...rowsL.map(([, qs]) => qs), inside].some((qs) => (pctOf(qs, f) || 0) > 0));
         const avgS = (qs) => { const k = qs.filter((q) => q.s != null); return k.length ? (par + k.reduce((t, q) => t + q.s, 0) / k.length).toFixed(2) : "\u2014"; };
-        const row = (label, qs, cls = null) => el("tr", { class: cls }, [el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)), ...keep.map(([, f]) => el("td", { class: "num" }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
-        return el("table", { class: "plain sh-pop-t sh-spot-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "Avg", ...keep.map(([h]) => h), "U&D"].map((h, j2) => el("th", { class: j2 ? "num" : null }, h)))),
+        const SCV = { Eagle: -2, Birdie: -1, Par: 0, Bogey: 1, "Dbl+": 2 };
+        const row = (label, qs, cls = null) => el("tr", { class: cls }, [el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)), ...keep.map(([h, f]) => el("td", { class: "num", style: `color:${scColor(SCV[h])}` }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
+        const SCK = { Eagle: -2, Birdie: -1, Par: 0, Bogey: 1, "Dbl+": 2 }; // (update 505: each score column in its dots' colour)
+        return el("table", { class: "plain sh-pop-t sh-spot-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "Avg", ...keep.map(([h]) => h), "U&D"].map((h, j2) => el("th", { class: j2 ? "num" : null, ...(h in SCK ? { style: `color:${scColor(SCK[h])}` } : {}) }, h)))),
           el("tbody", {}, [...rowsL.map(([l, qs]) => row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs)), lies.size > 1 ? row("All", inside, "sh-pop-tot") : null])]);
       })(),
     ]);
@@ -580,7 +583,7 @@ export async function drawHeat(ctx, course) {
     const n = Object.values(h || {}).reduce((t, v) => t + v, 0); if (!n) return null;
     const avg = Object.entries(h).reduce((t, [k, v]) => t + Number(k) * v, 0) / n; // (doubles and worse counted as +2)
     const ks = ["-2", "-1", "0", "1", "2"].filter((k) => h[k]);
-    const detail = `${n} ${n === 1 ? "round" : "rounds"} \u00b7 avg ${(par + avg).toFixed(2)} \u00b7 ${ks.map((k) => `${SC[k]} ${h[k]}`).join(", ")}`;
+    const detail = `${n} ${n === 1 ? "round" : "rounds"} \u00b7 ${ks.map((k) => `${SC[k]} ${h[k]}`).join(", ")}`; // (update 505: no avg)
     const bar = el("span", { class: "sh-hb" }, ks.map((k) => { const p = (100 * h[k]) / n; return el("i", { style: `width:${p}%;background:${scColor(Number(k))}`, class: k === "0" ? "par" : null }, p >= 14 ? `${Math.round(p)}%` : ""); }));
     const row = el("button", { type: "button", class: "sh-hl", title: detail, "aria-label": `${label}: ${detail}` }, [
       el("span", { class: "sh-hl-k" }, [label, el("small", {}, `${n} rds`)]), bar,
@@ -683,7 +686,7 @@ export async function drawHeat(ctx, course) {
       const b = el(tot[0] ? "button" : "div", { class: `sh-ud-c ${col(p)}${st.udSel === side ? " on" : ""}`, ...(tot[0] ? { type: "button", "aria-pressed": String(st.udSel === side) } : {}), title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
         el("span", { class: "sh-ud-k" }, side.replace("-", " ")),
         el("strong", {}, p == null ? "\u2014" : `${p}%`),
-        el("span", { class: "sh-ud-l" }, p == null ? (tot[0] ? `${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}` : "") : lies.join(" \u00b7 ") || `${tot[0]} misses`)]);
+        el("span", { class: "sh-ud-l" }, tot[0] ? `${tot[0]} ${tot[0] === 1 ? "attempt" : "attempts"}` : "")]); // (update 505: the attempts from there)
       if (tot[0]) b.addEventListener("click", () => { st.udSel = st.udSel === side ? null : side; drawUD(); drawMisses(); if (st.udSel) stage.scrollIntoView({ behavior: "smooth", block: "center" }); });
       return b;
     };
