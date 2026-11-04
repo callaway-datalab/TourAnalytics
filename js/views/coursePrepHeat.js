@@ -70,10 +70,10 @@ export async function drawHeat(ctx, course) {
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
   const teeBox = el("div", { class: "sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
-  const udBox = el("div", { class: "sh-ud", hidden: true }); // (update 491) up & down by where the approach missed, this pin
+  const udBox = el("div", { class: "sh-ud sh-ud-sm", hidden: true }); // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
   prev.addEventListener("click", () => go(-1)); next.addEventListener("click", () => go(1));
-  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, head, hist, teeBox, el("div", { class: "sh-ctl" }, [pinBar, udBox]), shotRow, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
+  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, el("div", { class: "sh-ctl" }, [pinBar]), head, hist, shotRow, teeBox, udBox, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
 
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
@@ -147,7 +147,7 @@ export async function drawHeat(ctx, course) {
     if (st.shotHole !== `${meta.id}|${n}`) { st.shotHole = `${meta.id}|${n}`; st.shot = "1"; } // (update 483; 484: a new hole starts on Shot 1)
     par = H.par || meta.par?.[n - 1] || course.par?.[n - 1] || 4;
     const yds = H.yards || meta.yards?.[n - 1] || course.yards?.[n - 1];
-    mount(head, [el("h2", {}, `Hole ${n} · Par ${par}${yds ? ` · ${yds} yds` : ""}`)]);
+    headYds = yds; drawHead(); /* (update 509: with the pin picked) */
     drawHoleBar();
     prev.disabled = holeNums.indexOf(n) <= 0; next.disabled = holeNums.indexOf(n) >= holeNums.length - 1;
     const pins = pinsByHard(n); // (update 463: not the ones the admin deleted)
@@ -223,7 +223,8 @@ export async function drawHeat(ctx, course) {
     const combine = isAdmin && editPins && pins.length >= 2 ? (() => { const b = el("button", { type: "button", class: "link small sh-pin-edit" }, "Combine pins"); b.addEventListener("click", () => { picking = new Set(); drawPins(n, pins); }); return b; })() : null;
     mount(pinBar, [...(items.length ? items : [el("span", { class: "muted small" }, off.length ? "Every pin on this hole is deleted." : "No zones for this hole yet.")]), restore, combine, edit]);
   }
-  let paintKey = null;
+  let paintKey = null, headYds = null;
+  function drawHead() { const n = st.hole, pid = st.pin[n], pl = pid != null && data.holes?.[n]?.pins?.[pid] ? pinLabel(meta, n, pid) : null; mount(head, [el("h2", {}, `Hole ${n}${pl ? ` · ${pl}` : ""} · Par ${par}${headYds ? ` · ${headYds} yds` : ""}`)]); }
   function paint() {
     // (update 500) the popup closes when the hole, pin or shot picked changes, not when a player's numbers arrive (an open
     // circle is worked out again with them)
@@ -232,7 +233,7 @@ export async function drawHeat(ctx, course) {
     paintKey = pk;
     pop.hidden = true; hideDot();
     const n = st.hole, H = data.holes?.[n] || { pins: {} }, pin = H.pins?.[st.pin[n]];
-    pinNow = pin || null;
+    pinNow = pin || null; drawHead();
     if (keep) setTimeout(() => openSpot(keep.x, keep.y), 0);
     drawHist(); drawTrails(); drawTee(); drawUD(); drawBoard(); drawMisses(); // (update 479; 491: up & down; 492: tee misses)
     drawShotSeg();
@@ -383,7 +384,7 @@ export async function drawHeat(ctx, course) {
     spSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
     const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); spSvg.appendChild(g);
     const r0 = Math.max(W, Hh) / 450;
-    for (const q of spot.inside || []) g.appendChild(sv("circle", { cx: q.x, cy: q.y, r: r0, fill: q.s == null ? "#8e8e93" : scColor(Math.max(-2, Math.min(2, q.s))), /* (update 501: the hole's score) */ stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke", opacity: 0.9 }));
+    for (const q of spot.inside || []) if (!st.spotOff?.has(q.lie)) g.appendChild(sv("circle", { cx: q.x, cy: q.y, r: r0, fill: q.s == null ? "#8e8e93" : scColor(Math.max(-2, Math.min(2, q.s))), /* (update 501: the hole's score) */ stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke", opacity: 0.9 }));
     if (spot.R) {
       g.appendChild(sv("circle", { cx: spot.x, cy: spot.y, r: spot.R, fill: "rgba(255,255,255,0.06)", stroke: "rgba(0,0,0,0.6)", "stroke-width": 4, "vector-effect": "non-scaling-stroke" }));
       g.appendChild(sv("circle", { cx: spot.x, cy: spot.y, r: spot.R, fill: "none", stroke: "#fff", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }));
@@ -637,7 +638,8 @@ export async function drawHeat(ctx, course) {
   // combined pin: its pins added up; a course uploaded before update 492: the hole's)
   function drawTee() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
-    if (!X || (X.par || par) < 4) { teeBox.hidden = true; mount(teeBox, null); return; }
+    const k1 = kOf(n, par); /* (update 509) off the tee with Shot 1 only (up & down takes its place on later shots) */
+    if (!X || (X.par || par) < 4 || (k1 && k1 !== 1)) { teeBox.hidden = true; mount(teeBox, null); return; }
     const ids = pinNow?.merged || [pid], D = {};
     const src = X.drivePins ? ids.map((id) => X.drivePins[id]).filter(Boolean) : [X.drive];
     for (const o of src) for (const [k, a] of Object.entries(o || {})) { const b = (D[k] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
@@ -726,9 +728,8 @@ export async function drawHeat(ctx, course) {
     tog?.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); });
     // (update 498) the admin: maps an older version built (the up & down sides worked out the old way) say so
     const stale = isAdmin && meta.builtVersion !== BUILD_VERSION ? el("p", { class: "sh-ud-stale" }, meta.rawChunks ? "These maps were built by an older version. Press Rebuild maps on Upload Data \u203a Strategy Maps to rebuild them from the saved shots." : "No shots saved on the site for this course yet, so its maps can\u2019t be rebuilt: upload it once with the new course_upload.py (update 496), then press Rebuild maps on Upload Data \u203a Strategy Maps.") : null;
-    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), tog]), stale,
-      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), greenBtn, cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]),
-      el("p", { class: "sh-ud-note" }, "This pin \u00b7 within 30 yds \u00b7 italic: under 5"), detail]);
+    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("span", { class: "sh-hl-k" }, "Up & down by miss"), el("span", { class: "sh-ud-note" }, "This pin \u00b7 missed within 30 yds \u00b7 italic: under 5 tries"), tog]), stale,
+      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), greenBtn, cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]), detail]);
   }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
   // the key (Birdie, Par …: tap to show only those, tap more to add, again to take away), one trail from a tap on it

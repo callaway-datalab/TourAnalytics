@@ -96,8 +96,21 @@ async function holeMap(img, hm, H, P, par, k, learnKey) {
 export async function buildCourseReport(course, who, onStatus = () => {}) {
   const meta = course.heat;
   onStatus("Loading the course…");
-  const raw = await heatData(meta), data = withMerges(meta, raw), I = data?.insights;
+  const raw = await heatData(meta), data = withMerges(meta, raw);
+  let I = data?.insights;
   if (!I) throw new Error("this course has no insights yet: rebuild its maps on Upload Data");
+  // (update 509) maps built before update 508 have no numbers for each pin: worked out here from the course's saved shots
+  // (not saved; Rebuild maps on Upload Data saves them)
+  if (meta.rawChunks && Object.values(I.holes || {}).some((x) => !x.pinStats)) {
+    try {
+      onStatus("Working out each pin from the saved shots\u2026");
+      const [{ loadRaw, RAW_COLS }, { shotAggregator }] = await Promise.all([import("./courseRaw.js"), import("./courseShots.js")]);
+      const rows = await loadRaw(meta), agg = shotAggregator();
+      for (let i = 0; i < rows.length; i += 100000) agg.add({ columns: meta.rawCols || RAW_COLS, rows: rows.slice(i, i + 100000) });
+      const fresh = agg.finish().sort((x, y) => y.players.size - x.players.size)[0]?.data?.insights;
+      if (fresh?.holes) I = { ...I, holes: Object.fromEntries(Object.entries(I.holes).map(([h, x]) => [h, x.pinStats || !fresh.holes[h]?.pinStats ? x : { ...x, pinStats: fresh.holes[h].pinStats }])) };
+    } catch (err) { console.warn("pin numbers", err); }
+  }
   const [{ subject, holeFacts }, all] = await Promise.all([import("./views/coursePrepInsights.js"), listHeatCourses().catch(() => [])]);
   let mine = null;
   if (who) { const tr = await playerTrails(meta, who.key).catch(() => null); mine = tr?.trails?.length ? tr.trails : null; }
@@ -166,17 +179,26 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
         const dRow = (x) => `<tr><td>${CN[x.cat] || x.cat} \u00b7 ${esc(x.dist)}</td><td class="${cls(x.a)}">${sgn(x.a)}</td><td class="${cls(x.b)}">${sgn(x.b)}</td><td class="${cls(x.d)}"><b>${sgn(x.d)}</b></td></tr>`;
         const sorted = [...here].sort((a, b) => per([b]) - per([a])), best = sorted[0], worst = sorted.at(-1);
         const ph = per(here), pe = per(elsewhere);
-        page("Course history", `<h2 class="h">COURSE HISTORY <small>${esc(who.label)} at ${esc(course.name)} against everywhere else, from the stats</small></h2>
-          <div class="scores s5"><div class="sc"><span>Rounds here</span><b>${here.length}</b><small>${evs.size} ${evs.size === 1 ? "tournament" : "tournaments"}</small></div><div class="sc"><span>SG a round here</span><b class="${cls(ph)}">${sgn(ph)}</b></div><div class="sc"><span>Everywhere else</span><b class="${cls(pe)}">${sgn(pe)}</b><small>${elsewhere.length} rounds</small></div><div class="sc"><span>Here vs elsewhere</span><b class="${cls(ph - pe)}">${sgn(ph - pe)}</b></div>
-            <div class="sc"><span>Best round here</span><b class="${cls(per([best]))}">${sgn(per([best]))}</b><small>${esc(best.event || "")} ${esc(best.year || "")}</small></div></div>
-          <div class="cols c3h">
-            <div><h3>BY CATEGORY</h3><table><thead><tr><th>Category</th><th>Here</th><th>Elsewhere</th><th>Diff</th></tr></thead><tbody>${CATS.map(([k, l]) => { const h0 = per(here, k), a0 = per(elsewhere, k); return `<tr><td>${l}</td><td class="${cls(h0)}">${sgn(h0)}</td><td class="${cls(a0)}">${sgn(a0)}</td><td class="${cls(h0 - a0)}"><b>${sgn(h0 - a0)}</b></td></tr>`; }).join("")}</tbody></table>
-              <h3>BY YEAR HERE</h3><table><thead><tr><th>Year</th><th>Rds</th><th>SG / round</th></tr></thead><tbody>${[...yrs].sort((a, b) => b[0].localeCompare(a[0])).map(([y, rs]) => `<tr><td>${esc(y)}</td><td>${rs.length}</td><td class="${cls(per(rs))}">${sgn(per(rs))}</td></tr>`).join("")}</tbody></table></div>
-            <div><h3>BETTER HERE <small>a round, against elsewhere</small></h3><table><thead><tr><th>Shot</th><th>Here</th><th>Elsewhere</th><th>Diff</th></tr></thead><tbody>${gains.map(dRow).join("") || `<tr><td colspan="4" class="muted">None</td></tr>`}</tbody></table>
-              <h3>WORSE HERE <small>a round, against elsewhere</small></h3><table><thead><tr><th>Shot</th><th>Here</th><th>Elsewhere</th><th>Diff</th></tr></thead><tbody>${losses.map(dRow).join("") || `<tr><td colspan="4" class="muted">None</td></tr>`}</tbody></table></div>
-            <div><h3>TOURNAMENTS HERE</h3><table><thead><tr><th>Tournament</th><th>Rds</th><th>SG / round</th></tr></thead><tbody>${[...evs.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).map((e) => `<tr><td>${esc(e.event)} ${esc(e.year || "")}</td><td>${e.rs.length}</td><td class="${cls(per(e.rs))}">${sgn(per(e.rs))}</td></tr>`).join("")}</tbody></table>
-              ${here.length >= 2 ? `<p class="small">Toughest round here: <b class="${cls(per([worst]))}">${sgn(per([worst]))}</b> (${esc(worst.event || "")} ${esc(worst.year || "")})</p>` : ""}</div>
-          </div>`);
+        // (update 509) laid out to fill the page: the headline numbers, here against elsewhere by category (bars), by year and
+        // each tournament, then the shots they gain and lose most here
+        const catMax = Math.max(0.05, ...CATS.flatMap(([k]) => [Math.abs(per(here, k) || 0), Math.abs(per(elsewhere, k) || 0)]));
+        const hbar = (v, c) => `<div class="hb"><i class="${c}" style="${v < 0 ? "right:50%" : "left:50%"};width:${(Math.min(1, Math.abs(v || 0) / catMax) * 50).toFixed(1)}%"></i></div>`;
+        const tbl = (head, rows, empty) => `<table><thead><tr>${head.map((h, i2) => `<th${i2 ? ' class="n"' : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("") || `<tr><td colspan="${head.length}" class="muted">${empty}</td></tr>`}</tbody></table>`;
+        const dRow2 = (x) => `<tr><td>${CN[x.cat] || x.cat} \u00b7 ${esc(x.dist)}</td><td class="n ${cls(x.a)}">${sgn(x.a)}</td><td class="n ${cls(x.b)}">${sgn(x.b)}</td><td class="n ${cls(x.d)}"><b>${sgn(x.d)}</b></td></tr>`;
+        page("Course history", `<div class="hist"><h2 class="h">COURSE HISTORY <small>${esc(who.label)} at ${esc(course.name)} against everywhere else, from the stats</small></h2>
+          <div class="scores s6"><div class="sc"><span>Rounds here</span><b>${here.length}</b><small>${evs.size} ${evs.size === 1 ? "tournament" : "tournaments"}</small></div><div class="sc"><span>SG a round here</span><b class="${cls(ph)}">${sgn(ph)}</b><small>strokes gained</small></div><div class="sc"><span>Everywhere else</span><b class="${cls(pe)}">${sgn(pe)}</b><small>${elsewhere.length} rounds</small></div><div class="sc"><span>Here vs else</span><b class="${cls(ph - pe)}">${sgn(ph - pe)}</b><small>a round</small></div>
+            <div class="sc"><span>Best round here</span><b class="${cls(per([best]))}">${sgn(per([best]))}</b><small>${esc(best.event || "")} ${esc(best.year || "")}</small></div><div class="sc"><span>Toughest here</span><b class="${cls(per([worst]))}">${sgn(per([worst]))}</b><small>${esc(worst.event || "")} ${esc(worst.year || "")}</small></div></div>
+          <div class="hrow r1">
+            <div><h3>HERE AGAINST ELSEWHERE <small>strokes gained a round</small></h3>
+              <div class="hcat"><div class="hk"><div>Category</div><div><span class="hlg"><i class="here"></i>Here</span> <span class="hlg"><i class="else"></i>Elsewhere</span></div><div class="n">Here / else</div><div class="n">Diff</div></div>
+              ${CATS.map(([k, l]) => { const h0 = per(here, k), a0 = per(elsewhere, k); return `<div class="hc${k ? "" : " tot"}"><span class="l">${l}</span><div class="bars">${hbar(h0, "here")}${hbar(a0, "else")}</div><span class="v"><b class="${cls(h0)}">${sgn(h0)}</b><em class="${cls(a0)}">${sgn(a0)}</em></span><span class="n ${cls(h0 - a0)}"><b>${sgn(h0 - a0)}</b></span></div>`; }).join("")}</div></div>
+            <div><h3>BY YEAR HERE</h3>${tbl(["Year", "Rounds", "SG / round"], [...yrs].sort((a, b) => b[0].localeCompare(a[0])).map(([y, rs]) => `<tr><td>${esc(y)}</td><td class="n">${rs.length}</td><td class="n ${cls(per(rs))}"><b>${sgn(per(rs))}</b></td></tr>`), "None")}
+              <h3>TOURNAMENTS HERE</h3>${tbl(["Tournament", "Rounds", "SG / round"], [...evs.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).slice(0, 6).map((e) => `<tr><td>${esc(e.event)} ${esc(e.year || "")}</td><td class="n">${e.rs.length}</td><td class="n ${cls(per(e.rs))}"><b>${sgn(per(e.rs))}</b></td></tr>`), "None")}</div>
+          </div>
+          <div class="hrow r2">
+            <div><h3>BETTER HERE <small>shots where they gain most, a round</small></h3>${tbl(["Shot", "Here", "Elsewhere", "Diff"], gains.map(dRow2), "None")}</div>
+            <div><h3>WORSE HERE <small>shots where they lose most, a round</small></h3>${tbl(["Shot", "Here", "Elsewhere", "Diff"], losses.map(dRow2), "None")}</div>
+          </div></div>`, "hpage");
       }
     } catch (err) { console.warn("course history", err); }
   }
@@ -258,7 +280,16 @@ h3{font-size:11.5px;margin:8px 0 4px;letter-spacing:.06em;color:#4a535e}
 .cover .scores{grid-template-columns:repeat(4,118px);gap:8px;margin:0}.cover .sc{padding:8px 12px}.cover .sc span{font-size:9.5px}.cover .sc b{font-size:30px}.cover .strip{gap:5px;margin:0}.cover .strip .t{padding:6px 8px}.cover .strip b{font-size:17px}.cover .strip em{font-size:13px}.cover .strip span,.cover .strip i{font-size:9px}
 .cover .plan{gap:8px 16px}.cover .blk h3{margin:0 0 4px;font-size:11.5px}.cover .bc{padding:6px 9px}.cover .bc b{font-size:26px}.cover .bc em{font-size:11px}.cover .bc em strong{font-size:13.5px}.cover .bc small{font-size:9px}.cover .bc span{font-size:8.5px}
 .cover .cols{margin:0;gap:22px}.cover .cols h3{font-size:11.5px;margin:0 0 4px}.cover .vr{font-size:11.5px;padding:2px 0;grid-template-columns:80px 1fr 46px}.cover .vr i{height:9px}.foot{font-size:9.5px;margin:0}
-.scores.s3{grid-template-columns:repeat(3,1fr);margin:4px 0 10px}.scores.s5{grid-template-columns:repeat(5,1fr);gap:10px;margin:4px 0 10px}.scores.s5 .sc b{font-size:26px}.sc small{display:block;font-size:9.5px}.c2{grid-template-columns:1fr 1fr}.c3h{grid-template-columns:1fr 1.15fr 1fr}.c3h table td{font-size:11.5px;padding:4px 5px}
+.scores.s3{grid-template-columns:repeat(3,1fr);margin:4px 0 10px}.scores.s5{grid-template-columns:repeat(5,1fr);gap:10px;margin:4px 0 10px}
+/* (update 509) course history: fills the page */
+.hist{display:flex;flex-direction:column;height:calc(100% - 46px);gap:14px}.hist h2.h{margin:0}.hist h3{font-size:12px;margin:0 0 6px}.hist h3 small{font-weight:500;color:#6b7480;letter-spacing:0;text-transform:none;margin-left:6px}
+.scores.s6{grid-template-columns:repeat(6,1fr);gap:10px;margin:0}.scores.s6 .sc{padding:10px 12px}.scores.s6 .sc b{font-size:28px}.scores.s6 .sc small{font-size:9.5px;color:#6b7480;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist{justify-content:space-between}.hrow{display:grid;grid-template-columns:1.25fr 1fr;gap:26px}.hrow.r2{grid-template-columns:1fr 1fr}
+.hist table{width:100%;border-collapse:collapse;margin:0 0 10px}.hist th{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#6b7480;text-align:left;padding:5px 6px;border-bottom:1.5px solid #1b1e22}.hist td{font-size:12.5px;padding:6px 6px;border-bottom:1px solid #e6e8eb}.hist .n{text-align:right}
+.hcat{display:flex;flex-direction:column;gap:2px}.hk,.hc{display:grid;grid-template-columns:120px 1fr 92px 58px;gap:10px;align-items:center}.hk{font-size:9.5px;color:#6b7480;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px;border-bottom:1.5px solid #1b1e22}.hk .hlg{display:inline-flex;align-items:center;gap:4px;margin-right:10px}.hk .hlg i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.hc{padding:8px 0;border-bottom:1px solid #e6e8eb}.hc .l{font-size:13px;font-weight:600}.hc.tot .l{font-weight:800}.hc .v{display:flex;flex-direction:column;align-items:flex-end;font-size:12.5px;line-height:1.25}.hc .v em{font-style:normal;font-size:11px}.hc .n b{font-size:14px}
+.bars{display:flex;flex-direction:column;gap:3px}.hb{position:relative;height:10px;background:#f1f2f4;border-radius:3px}.hb::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:#9aa1a9}.hb i{position:absolute;top:0;bottom:0;border-radius:3px}
+i.here{background:#a07c3b}i.else{background:#b9bec5}.scores.s5 .sc b{font-size:26px}.sc small{display:block;font-size:9.5px}.c2{grid-template-columns:1fr 1fr}.c3h{grid-template-columns:1fr 1.15fr 1fr}.c3h table td{font-size:11.5px;padding:4px 5px}
 .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0 4px}.sc{border:1px solid #e3e6ea;border-radius:10px;padding:12px 14px}.sc span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6b7480;font-weight:700}.sc b{font-size:38px;line-height:1.1}
 .strip{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin-top:4px}.strip .t{border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;line-height:1.15}.strip b{font-size:18px}.strip span,.strip i{font-size:9.5px;color:#4a535e;font-style:normal}.strip em{font-style:normal;font-weight:700;font-size:13px}
 table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e3e6ea;padding:5px 6px;text-align:right}th:first-child,td:first-child{text-align:left}th{font-size:9.5px;color:#4a535e;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
@@ -271,6 +302,6 @@ table.ov td{font-size:12px;padding:5.5px 6px}td.hi{background:#4db94b;color:#fff
 .lg{grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:10px}.lg i{width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,#2166ac,#92c5de,#f7f7f7,#f4a582,#b2182b);display:inline-block}.lg small{margin-left:8px}
 .side h3:first-child{margin-top:0}.mix{display:grid;grid-template-columns:52px 1fr 38px;gap:6px;align-items:center;margin:3px 0}.mix span{font-weight:700;font-size:11px;line-height:1.05}.mix span small{display:block;font-weight:400;font-size:8.5px}.mix i{display:flex;height:15px;border-radius:4px;overflow:hidden;background:#f1f3f5}.mix i b{display:flex;align-items:center;justify-content:center;font-size:8.5px;color:#111}.mix em{font-style:normal;font-weight:800;text-align:right}
 table.pins td{padding:3px 4px;font-size:11px}.tee{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.tee div{border:1px solid #e3e6ea;border-radius:6px;padding:4px 6px;text-align:center}.tee span{display:block;font-size:9px;color:#6b7480}.tee b{font-size:14px}.tee .worse{background:#fff1ef;border-color:#e8685a}.tee .worse b{color:#c8372d}
-.ud{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.u{border:1px solid #e3e6ea;border-radius:6px;padding:3px 4px;text-align:center;line-height:1.1}.u span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.03em;color:#6b7480}.u b{font-size:14px}.u small{display:block;font-size:8px}.u.good b{color:#1e8a4c}.u.mid b{color:#c27c00}.u.bad b{color:#c8372d}.u.gr{display:flex;align-items:center;justify-content:center;border:0}.u em{display:block;font-style:normal;font-size:8.5px;line-height:1.2;color:#4a535e}.u em small{font-size:7.5px}.u em.few,.u.few b{font-style:italic;opacity:.8}.u.gr i{width:34px;height:24px;border-radius:50%;background:radial-gradient(circle at 45% 40%,#7fcf6a,#3e8e3a);display:block}
+.ud{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.u{border:1px solid #e3e6ea;border-radius:6px;padding:3px 4px;text-align:center;line-height:1.1}.u span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.03em;color:#6b7480}.u b{font-size:14px}.u small{display:block;font-size:8px}.u.good b{color:#1e8a4c}.u.mid b{color:#c27c00}.u.bad b{color:#c8372d}.u.gr{display:flex;align-items:center;justify-content:center;border:0}.u em{display:block;font-style:normal;font-size:8.5px;line-height:1.25;color:#4a535e;white-space:nowrap}.u em small{display:inline;font-size:7.5px}.u em small{font-size:7.5px}.u em.few,.u.few b{font-style:italic;opacity:.8}.u.gr i{width:34px;height:24px;border-radius:50%;background:radial-gradient(circle at 45% 40%,#7fcf6a,#3e8e3a);display:block}
 ul.facts{margin:2px 0;padding-left:15px}ul.facts li{font-size:11px;margin:2px 0}
 .bar{position:sticky;top:0;background:#1b1f24;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:12px;z-index:2}.bar button{font:inherit;padding:5px 12px;border-radius:6px;border:0;background:#fff;color:#1b1f24;font-weight:600;cursor:pointer}@media print{.bar{display:none}}`;

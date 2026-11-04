@@ -5780,29 +5780,27 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 .sh-spot-t tr.sh-tap-row { cursor: pointer; }
 .sh-spot-t tr.sh-off td { opacity: 0.35; text-decoration: line-through; text-decoration-color: rgba(255,255,255,0.4); }
 .sh-spot-t tr.sh-off .sh-lie { filter: grayscale(1); }
-/* (update 508) up & down: small, beside the pins (the approach shot only) */
-.sh-ctl .sh-ud { position: relative; margin: 0 0 0 auto; padding: 6px 8px; border-radius: 12px; width: 216px; flex: 0 0 auto; }
-.sh-ctl .sh-ud-h { margin-bottom: 4px; font-size: var(--fs-note); }
-.sh-ctl .sh-ud-grid { gap: 3px; max-width: none; }
-.sh-ctl .sh-ud-c { padding: 3px 2px; border-radius: 7px; gap: 0; }
-.sh-ctl .sh-ud-c strong { font-size: 0.92rem; }
-.sh-ctl .sh-ud-k { font-size: 0.56rem; letter-spacing: 0.02em; }
-.sh-ctl .sh-ud-l { font-size: 0.6rem; }
-.sh-ctl .sh-ud-green i { width: 34px; height: 24px; }
+/* (update 509) up & down: under the shot pills on later shots, in the off-the-tee row's place: label | 3 x 3 grid | details */
+.sh-ud-sm { position: relative; display: grid; grid-template-columns: minmax(120px, 170px) 230px minmax(0, 290px); gap: 6px 14px; align-items: start; margin: 0 0 10px; padding: 8px 10px; border-radius: 12px; }
+.sh-ud-sm[hidden] { display: none; }
+.sh-ud-sm .sh-ud-h { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0; }
+.sh-ud-sm .sh-ud-note { font-size: 0.66rem; color: #8e8e93; line-height: 1.3; }
+.sh-ud-sm .sh-ud-tog { margin: 0; font-size: 0.72rem; }
+.sh-ud-sm .sh-ud-stale { grid-column: 1 / -1; font-size: 0.68rem; padding: 4px 8px; margin: 0; }
+.sh-ud-sm .sh-ud-grid { gap: 3px; max-width: none; margin: 0; }
+.sh-ud-sm .sh-ud-c { padding: 2px; min-height: 32px; justify-content: center; border-radius: 7px; gap: 0; }
+.sh-ud-sm .sh-ud-c strong { font-size: 0.88rem; }
+.sh-ud-sm .sh-ud-l { font-size: 0.58rem; line-height: 1.1; }
+.sh-ud-sm .sh-ud-green i { width: 30px; height: 21px; }
 .sh-ud-c.few strong, .sh-ud-c.few .sh-ud-l, .sh-ud-det td.few { font-style: italic; opacity: 0.85; }
-.sh-ud-note { margin: 4px 0 0; font-size: 0.6rem; color: #8e8e93; text-align: center; }
-.sh-ctl .sh-ud-det { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 260px; margin: 0; background: rgba(12,12,14,0.96); }
-.sh-ctl .sh-ud-stale { font-size: 0.65rem; padding: 4px 6px; }
-@media (max-width: 560px) { .sh-ctl .sh-ud { margin: 0 auto; } }
-.sh-ctl:has(.sh-ud:not([hidden])) { align-items: flex-start; }
-.sh-ctl .sh-ud { width: 190px; padding: 5px 6px; }
-.sh-ctl .sh-ud-h { flex-wrap: nowrap; margin-bottom: 3px; white-space: nowrap; font-size: 0.72rem; }
-.sh-ctl .sh-ud-tog { font-size: 0.68rem; }
-.sh-ctl .sh-ud-c { padding: 2px; min-height: 30px; justify-content: center; }
-.sh-ctl .sh-ud-c strong { font-size: 0.85rem; }
-.sh-ctl .sh-ud-l { font-size: 0.56rem; line-height: 1.1; }
-.sh-ctl .sh-ud-green i { width: 28px; height: 20px; }
-.sh-ctl .sh-ud-note { font-size: 0.56rem; margin-top: 3px; }
-.sh-ctl .sh-ud-det { width: 270px; padding: 8px 10px; }
-.sh-ctl .sh-ud-det table { width: 100%; table-layout: fixed; }
-.sh-ctl .sh-ud-det th, .sh-ctl .sh-ud-det td { padding: 3px 4px; font-size: 0.72rem; }
+.sh-ud-sm .sh-ud-det { margin: 0; padding: 6px 10px; max-width: none; }
+.sh-ud-sm .sh-ud-det p { margin: 2px 0 4px; }
+.sh-ud-sm .sh-ud-det table { width: 100%; table-layout: fixed; }
+.sh-ud-sm .sh-ud-det th, .sh-ud-sm .sh-ud-det td { padding: 2px 4px; font-size: 0.72rem; }
+.sh-panel > .sh-ctl { margin: 6px 0 8px; }
+@media (max-width: 640px) { .sh-ud-sm { grid-template-columns: 1fr; } .sh-ud-sm .sh-ud-h { flex-direction: row; flex-wrap: wrap; align-items: baseline; } .sh-ud-sm .sh-ud-grid { width: 100%; max-width: 300px; margin: 0 auto; } }
+/* (update 509) Course Insights: the two Against the Top 10 cards side by side */
+.ci2-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.ci2-pair > .ci2-sec { margin: 0; }
+.ci2-pair .ci2-two { grid-template-columns: 1fr; gap: 10px; }
+@media (max-width: 860px) { .ci2-pair { grid-template-columns: 1fr; } }

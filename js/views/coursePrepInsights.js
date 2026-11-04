@@ -187,12 +187,11 @@ function vsTop(H, S, name, first, openHole) {
   const scale = (list) => Math.max(...list.map((x) => Math.abs(x.v)), 0.01); // (update 493: each card its own scale)
   const lose = (list, k, tap) => list.filter((x) => x.v < -0.005).sort((a, b) => a.v - b.v).slice(0, 5).map((x) => row(k(x), x.v, tap ? () => tap(x) : null, scale(list)));
   const gain = (list, k, tap) => list.filter((x) => x.v > 0.005).sort((a, b) => b.v - a.v).slice(0, 3).map((x) => row(k(x), x.v, tap ? () => tap(x) : null, scale(list)));
-  const col = (title, rows) => (rows.length ? el("div", { class: "ci2-vcol" }, [el("h3", {}, title), ...rows]) : null);
+  const col = (title, rows) => (rows.length ? el("div", { class: "ci2-vcol" }, [title ? el("h3", {}, title) : null, ...rows]) : null);
   const who = S.field ? "the field" : first;
   // (update 493) two cards: by hole, and by skill (distance)
-  const byHole = holes.length ? sec("AGAINST THE TOP 10 \u00b7 HOLES", [el("div", { class: "ci2-two" }, [col("Where they gain most", lose(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h))), col(`Where ${who} holds up`, gain(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h)))])],
-    `The Top 10\u2019s scoring average on each hole against ${S.field ? "the field\u2019s" : `${first}\u2019s`}, strokes a round. Red: they\u2019re better. Tap a hole for its numbers.`) : null;
-  const bySkill = dists.length ? sec("AGAINST THE TOP 10 \u00b7 SKILLS", [el("div", { class: "ci2-two" }, [col("Where they gain most", lose(dists, (x) => x.b)), col(`Where ${who} holds up`, gain(dists, (x) => x.b))])],
-    `Strokes gained a round from each distance (against this course\u2019s own field), ${who} less the Top 10. Red: they\u2019re better.`) : null;
-  return [byHole, bySkill];
+  const byHole = holes.length ? sec("AGAINST THE TOP 10 \u00b7 HOLES", [el("div", { class: "ci2-two" }, [col(null, lose(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h))), col(`Where ${who} holds up`, gain(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h)))])]) : null; /* (update 509: no note) */
+  const bySkill = dists.length ? sec("AGAINST THE TOP 10 \u00b7 SKILLS", [el("div", { class: "ci2-two" }, [col(null, lose(dists, (x) => x.b)), col(`Where ${who} holds up`, gain(dists, (x) => x.b))])]) : null;
+  // (update 509) side by side (one above the other on a phone)
+  return byHole || bySkill ? [el("div", { class: "ci2-pair" }, [byHole, bySkill])] : [];
 }
