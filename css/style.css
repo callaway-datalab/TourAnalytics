@@ -5780,3 +5780,29 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 .sh-spot-t tr.sh-tap-row { cursor: pointer; }
 .sh-spot-t tr.sh-off td { opacity: 0.35; text-decoration: line-through; text-decoration-color: rgba(255,255,255,0.4); }
 .sh-spot-t tr.sh-off .sh-lie { filter: grayscale(1); }
+/* (update 508) up & down: small, beside the pins (the approach shot only) */
+.sh-ctl .sh-ud { position: relative; margin: 0 0 0 auto; padding: 6px 8px; border-radius: 12px; width: 216px; flex: 0 0 auto; }
+.sh-ctl .sh-ud-h { margin-bottom: 4px; font-size: var(--fs-note); }
+.sh-ctl .sh-ud-grid { gap: 3px; max-width: none; }
+.sh-ctl .sh-ud-c { padding: 3px 2px; border-radius: 7px; gap: 0; }
+.sh-ctl .sh-ud-c strong { font-size: 0.92rem; }
+.sh-ctl .sh-ud-k { font-size: 0.56rem; letter-spacing: 0.02em; }
+.sh-ctl .sh-ud-l { font-size: 0.6rem; }
+.sh-ctl .sh-ud-green i { width: 34px; height: 24px; }
+.sh-ud-c.few strong, .sh-ud-c.few .sh-ud-l, .sh-ud-det td.few { font-style: italic; opacity: 0.85; }
+.sh-ud-note { margin: 4px 0 0; font-size: 0.6rem; color: #8e8e93; text-align: center; }
+.sh-ctl .sh-ud-det { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 260px; margin: 0; background: rgba(12,12,14,0.96); }
+.sh-ctl .sh-ud-stale { font-size: 0.65rem; padding: 4px 6px; }
+@media (max-width: 560px) { .sh-ctl .sh-ud { margin: 0 auto; } }
+.sh-ctl:has(.sh-ud:not([hidden])) { align-items: flex-start; }
+.sh-ctl .sh-ud { width: 190px; padding: 5px 6px; }
+.sh-ctl .sh-ud-h { flex-wrap: nowrap; margin-bottom: 3px; white-space: nowrap; font-size: 0.72rem; }
+.sh-ctl .sh-ud-tog { font-size: 0.68rem; }
+.sh-ctl .sh-ud-c { padding: 2px; min-height: 30px; justify-content: center; }
+.sh-ctl .sh-ud-c strong { font-size: 0.85rem; }
+.sh-ctl .sh-ud-l { font-size: 0.56rem; line-height: 1.1; }
+.sh-ctl .sh-ud-green i { width: 28px; height: 20px; }
+.sh-ctl .sh-ud-note { font-size: 0.56rem; margin-top: 3px; }
+.sh-ctl .sh-ud-det { width: 270px; padding: 8px 10px; }
+.sh-ctl .sh-ud-det table { width: 100%; table-layout: fixed; }
+.sh-ctl .sh-ud-det th, .sh-ctl .sh-ud-det td { padding: 3px 4px; font-size: 0.72rem; }

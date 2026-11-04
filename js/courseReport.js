@@ -152,14 +152,31 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
       const d = await Promise.race([playerData(who.key), new Promise((r) => setTimeout(() => r(null), 12000))]); // (not waited on for ever)
       const rounds = d?.rounds || [], here = rounds.filter((rd) => sameCourse(rd.course, course.name));
       if (here.length) {
-        const per = (rs, cat = null) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + ((!cat || x.cat === cat) ? x.sg || 0 : 0), 0), 0) / rs.length : null);
-        const CATS = [[null, "Total"], ["OTT", "Off the tee"], ["APP", "Approach"], ["ARG", "Around the green"], ["PUTT", "Putting"]];
+        // (update 508) here against everywhere else (their rounds at other courses); by category, by distance (where they
+        // gain and lose most here, against elsewhere), by year, best and toughest rounds, each tournament
+        const elsewhere = rounds.filter((rd) => !sameCourse(rd.course, course.name));
+        const per = (rs, cat = null, dist = null) => (rs.length ? rs.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + ((!cat || x.cat === cat) && (!dist || x.dist === dist) ? x.sg || 0 : 0), 0), 0) / rs.length : null);
+        const CATS = [[null, "Total"], ["OTT", "Off the tee"], ["APP", "Approach"], ["ARG", "Around the green"], ["PUTT", "Putting"]], CN = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
         const evs = new Map(); for (const rd of here) { const k = `${rd.event}|${rd.year}`; (evs.get(k) || evs.set(k, { event: rd.event, year: rd.year, end: rd.date, rs: [] }).get(k)).rs.push(rd); const e = evs.get(k); if (String(rd.date) > String(e.end)) e.end = rd.date; }
+        const yrs = new Map(); for (const rd of here) { const y = String(rd.year || String(rd.date || "").slice(0, 4)); (yrs.get(y) || yrs.set(y, []).get(y)).push(rd); }
         const cls = (v) => (v == null ? "" : v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
-        page("Course history", `<h2 class="h">COURSE HISTORY <small>${esc(who.label)} at ${esc(course.name)}, from the stats</small></h2>
-          <div class="scores s3"><div class="sc"><span>Rounds here</span><b>${here.length}</b></div><div class="sc"><span>Strokes gained a round here</span><b class="${cls(per(here))}">${sgn(per(here))}</b></div><div class="sc"><span>Everywhere</span><b class="${cls(per(rounds))}">${sgn(per(rounds))}</b></div></div>
-          <div class="cols c2"><div><h3>BY CATEGORY</h3><table><thead><tr><th>Category</th><th>Here</th><th>Everywhere</th><th>Diff</th></tr></thead><tbody>${CATS.map(([k, l]) => { const h0 = per(here, k), a0 = per(rounds, k); return `<tr><td>${l}</td><td class="${cls(h0)}">${sgn(h0)}</td><td class="${cls(a0)}">${sgn(a0)}</td><td class="${cls(h0 - a0)}"><b>${sgn(h0 - a0)}</b></td></tr>`; }).join("")}</tbody></table></div>
-          <div><h3>TOURNAMENTS HERE</h3><table><thead><tr><th>Tournament</th><th>Rds</th><th>SG / round</th></tr></thead><tbody>${[...evs.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).map((e) => `<tr><td>${esc(e.event)} ${esc(e.year || "")}</td><td>${e.rs.length}</td><td class="${cls(per(e.rs))}">${sgn(per(e.rs))}</td></tr>`).join("")}</tbody></table></div></div>`);
+        const shotsAt = (rs, cat, dist) => rs.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + (x.cat === cat && x.dist === dist ? x.w || 1 : 0), 0), 0);
+        const dl = []; const seen = new Set(); for (const rd of here) for (const x of rd.shots) { if (!x.cat || !x.dist) continue; const k = `${x.cat}|${x.dist}`; if (seen.has(k)) continue; seen.add(k); if (shotsAt(here, x.cat, x.dist) < 4) continue; const a = per(here, x.cat, x.dist), b = per(elsewhere, x.cat, x.dist); if (a != null && b != null) dl.push({ cat: x.cat, dist: x.dist, d: a - b, a, b }); }
+        const gains = dl.filter((x) => x.d > 0.005).sort((a, b) => b.d - a.d).slice(0, 5), losses = dl.filter((x) => x.d < -0.005).sort((a, b) => a.d - b.d).slice(0, 5);
+        const dRow = (x) => `<tr><td>${CN[x.cat] || x.cat} \u00b7 ${esc(x.dist)}</td><td class="${cls(x.a)}">${sgn(x.a)}</td><td class="${cls(x.b)}">${sgn(x.b)}</td><td class="${cls(x.d)}"><b>${sgn(x.d)}</b></td></tr>`;
+        const sorted = [...here].sort((a, b) => per([b]) - per([a])), best = sorted[0], worst = sorted.at(-1);
+        const ph = per(here), pe = per(elsewhere);
+        page("Course history", `<h2 class="h">COURSE HISTORY <small>${esc(who.label)} at ${esc(course.name)} against everywhere else, from the stats</small></h2>
+          <div class="scores s5"><div class="sc"><span>Rounds here</span><b>${here.length}</b><small>${evs.size} ${evs.size === 1 ? "tournament" : "tournaments"}</small></div><div class="sc"><span>SG a round here</span><b class="${cls(ph)}">${sgn(ph)}</b></div><div class="sc"><span>Everywhere else</span><b class="${cls(pe)}">${sgn(pe)}</b><small>${elsewhere.length} rounds</small></div><div class="sc"><span>Here vs elsewhere</span><b class="${cls(ph - pe)}">${sgn(ph - pe)}</b></div>
+            <div class="sc"><span>Best round here</span><b class="${cls(per([best]))}">${sgn(per([best]))}</b><small>${esc(best.event || "")} ${esc(best.year || "")}</small></div></div>
+          <div class="cols c3h">
+            <div><h3>BY CATEGORY</h3><table><thead><tr><th>Category</th><th>Here</th><th>Elsewhere</th><th>Diff</th></tr></thead><tbody>${CATS.map(([k, l]) => { const h0 = per(here, k), a0 = per(elsewhere, k); return `<tr><td>${l}</td><td class="${cls(h0)}">${sgn(h0)}</td><td class="${cls(a0)}">${sgn(a0)}</td><td class="${cls(h0 - a0)}"><b>${sgn(h0 - a0)}</b></td></tr>`; }).join("")}</tbody></table>
+              <h3>BY YEAR HERE</h3><table><thead><tr><th>Year</th><th>Rds</th><th>SG / round</th></tr></thead><tbody>${[...yrs].sort((a, b) => b[0].localeCompare(a[0])).map(([y, rs]) => `<tr><td>${esc(y)}</td><td>${rs.length}</td><td class="${cls(per(rs))}">${sgn(per(rs))}</td></tr>`).join("")}</tbody></table></div>
+            <div><h3>BETTER HERE <small>a round, against elsewhere</small></h3><table><thead><tr><th>Shot</th><th>Here</th><th>Elsewhere</th><th>Diff</th></tr></thead><tbody>${gains.map(dRow).join("") || `<tr><td colspan="4" class="muted">None</td></tr>`}</tbody></table>
+              <h3>WORSE HERE <small>a round, against elsewhere</small></h3><table><thead><tr><th>Shot</th><th>Here</th><th>Elsewhere</th><th>Diff</th></tr></thead><tbody>${losses.map(dRow).join("") || `<tr><td colspan="4" class="muted">None</td></tr>`}</tbody></table></div>
+            <div><h3>TOURNAMENTS HERE</h3><table><thead><tr><th>Tournament</th><th>Rds</th><th>SG / round</th></tr></thead><tbody>${[...evs.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).map((e) => `<tr><td>${esc(e.event)} ${esc(e.year || "")}</td><td>${e.rs.length}</td><td class="${cls(per(e.rs))}">${sgn(per(e.rs))}</td></tr>`).join("")}</tbody></table>
+              ${here.length >= 2 ? `<p class="small">Toughest round here: <b class="${cls(per([worst]))}">${sgn(per([worst]))}</b> (${esc(worst.event || "")} ${esc(worst.year || "")})</p>` : ""}</div>
+          </div>`);
       }
     } catch (err) { console.warn("course history", err); }
   }
@@ -187,12 +204,23 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
       const U = {}; for (const id of ids) for (const [side, lies] of Object.entries(X.udPins?.[id] || {})) for (const [lie, a] of Object.entries(lies)) { const o = (U[side] ||= {}), b = (o[lie] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
       const okD = (o) => o && o[0] >= 5, dAvg = (o) => (okD(o) ? par + o[1] / o[0] : null);
       const worse = okD(D.L) && okD(D.R) ? (dAvg(D.L) > dAvg(D.R) ? "L" : "R") : null;
-      const cell = (side) => { const o = U[side] || {}, t = Object.values(o).reduce((a, b) => [a[0] + b[0], a[1] + b[1]], [0, 0]), p = t[0] >= 3 ? Math.round((100 * t[1]) / t[0]) : null; return `<div class="u ${udCls(p)}"><span>${side.replace("-", " ")}</span><b>${p == null ? "\u2014" : `${p}%`}</b><small>${t[0] ? `${t[0]} att` : ""}</small></div>`; };
+      // (update 508) each square by lie (any attempts at all; fewer than 5 in italics)
+      const cell = (side) => {
+        const o = U[side] || {}, t = Object.values(o).reduce((a, b) => [a[0] + b[0], a[1] + b[1]], [0, 0]), p = t[0] ? Math.round((100 * t[1]) / t[0]) : null;
+        const lies = [["Fairway", "Fwy"], ["Rough", "Rgh"], ["Bunker", "Bnk"]].filter(([l]) => o[l]?.[0]).map(([l, sh]) => `<em class="${o[l][0] < 5 ? "few" : ""}">${sh} ${Math.round((100 * o[l][1]) / o[l][0])}% <small>(${o[l][0]})</small></em>`).join("");
+        return `<div class="u ${udCls(p)}${t[0] && t[0] < 5 ? " few" : ""}"><span>${side.replace("-", " ")}</span><b>${p == null ? "\u2014" : `${p}%`}</b>${lies || "<small></small>"}</div>`;
+      };
+      // (update 508) what matters, for this pin (a combined pin: its pins added up); a course built before update 508: the hole's
+      const PSs = ids.map((id) => X.pinStats?.[id]).filter(Boolean), sum2 = (k) => { const o = {}; for (const P0 of PSs) for (const [kk, a] of Object.entries(P0[k] || {})) { const b = (o[kk] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; } return o; };
+      const m2 = (a) => (a && a[0] ? a[1] / a[0] : null);
+      const valOf = (o, k) => { if (k === "go") { const g = o.go, l = o.lay; return g && l && g[0] >= 3 && l[0] >= 3 ? m2(l) - m2(g) : null; } const h = o.hit, m = o.miss; return h && m && h[0] >= 3 && m[0] >= 3 ? m2(m) - m2(h) : null; };
+      const pv = PSs.length ? { fwy: par >= 4 ? valOf(sum2("fwy"), "fwy") : null, gir: valOf(sum2("gir"), "gir"), go: par >= 4 ? valOf(sum2("go"), "go") : null, widths: Object.entries(PSs[0].widths || {}).map(([c, w]) => [Number(c), w]).sort((a, b) => a[0] - b[0]) } : { fwy: x.fwy, gir: x.gir, go: x.go, widths: x.widths };
+      const sumSc = (k) => { const o = { n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 }; for (const P0 of PSs) for (const kk of Object.keys(o)) o[kk] += P0[k]?.[kk] || 0; return o; };
       const facts = [];
-      if (x.fwy != null) facts.push(`<b>Fairway</b> missing it costs ${x.fwy.toFixed(2)}`);
-      if (x.gir != null) facts.push(`<b>Green in regulation</b> missing it costs ${x.gir.toFixed(2)}`);
-      if (x.go != null) facts.push(`<b>Going for it</b> ${x.go >= 0 ? `saves ${x.go.toFixed(2)}` : `costs ${Math.abs(x.go).toFixed(2)}`} on laying up`);
-      if (x.widths.length) facts.push(`<b>Fairway width</b> about ${Math.min(...x.widths.map((w) => w[1]))}\u2013${Math.max(...x.widths.map((w) => w[1]))} yds where drives land`);
+      if (pv.fwy != null) facts.push(`<b>Fairway</b> missing it costs ${pv.fwy.toFixed(2)}`);
+      if (pv.gir != null) facts.push(`<b>Green in regulation</b> missing it costs ${pv.gir.toFixed(2)}`);
+      if (pv.go != null) facts.push(`<b>Going for it</b> ${pv.go >= 0 ? `saves ${pv.go.toFixed(2)}` : `costs ${Math.abs(pv.go).toFixed(2)}`} on laying up`);
+      if (pv.widths.length) facts.push(`<b>Fairway width</b> about ${Math.min(...pv.widths.map((w) => w[1]))}\u2013${Math.max(...pv.widths.map((w) => w[1]))} yds where drives land`);
       const myPin = mine ? fromTrails(mine.filter((t) => Number(t.h) === x.h && ids.includes(String(t.p)))) : null;
       const tallMaps = maps.length && maps.every((m) => m.tall), pl = pinLabel(meta, x.h, pid);
       page(`Hole ${x.h} \u00b7 ${pl}`, `<div class="hh"><h2 class="h">HOLE ${x.h} \u00b7 ${esc(pl.toUpperCase())} <small>Par ${par}${x.yds ? ` \u00b7 ${x.yds} yds` : ""} \u00b7 ${ord(x.hcp)} hardest hole${pins.length > 1 ? ` \u00b7 ${ord(pins.indexOf(pid) + 1)} hardest of its ${pins.length} pins` : ""}</small></h2></div>
@@ -200,11 +228,10 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
           <div class="maps n${maps.length || 1}">${maps.length ? maps.map((m) => `<figure><figcaption>${m.cap}</figcaption><img src="${m.url}" alt=""></figure>`).join("") : `<p class="muted">No hole image for this hole yet.</p>`}
             ${maps.length ? `<div class="lg"><span>Birdie</span><i></i><span>Bogey</span><small>The hole score from each spot</small></div>` : ""}</div>
           <div class="side">
-            <h3>SCORING <small>this pin</small></h3>${mine && myPin?.n ? mixRow(first, myPin, par) : ""}${mixRow("Field", fromHist(P?.hist), par)}
-            <h3>THE HOLE <small>every pin</small></h3>${mine ? mixRow(first, x.me, par) : ""}${mixRow("Field", x.field, par)}${mixRow("Top 10", x.top, par)}
+            <h3>SCORING <small>this pin</small></h3>${mine && myPin?.n ? mixRow(first, myPin, par) : ""}${mixRow("Field", PSs.length ? sumSc("field") : fromHist(P?.hist), par)}${PSs.length ? mixRow("Top 10", sumSc("top"), par) : ""}
             ${par >= 4 && (okD(D.L) || okD(D.R)) ? `<h3>OFF THE TEE <small>average score after</small></h3><div class="tee">${[["L", "Left miss", dAvg(D.L)], ["C", "Fairway", dAvg(D.C)], ["R", "Right miss", dAvg(D.R)]].map(([k, l, v]) => `<div class="${worse === k ? "worse" : ""}"><span>${l}</span><b>${v == null ? "\u2014" : v.toFixed(2)}</b></div>`).join("")}</div>` : ""}
             ${Object.keys(U).length ? `<h3>UP &amp; DOWN BY MISS <small>this pin, within 30 yds</small></h3><div class="ud">${cell("Long-Left")}${cell("Long")}${cell("Long-Right")}${cell("Left")}<div class="u gr"><i></i></div>${cell("Right")}${cell("Short-Left")}${cell("Short")}${cell("Short-Right")}</div>` : ""}
-            ${facts.length ? `<h3>WHAT MATTERS</h3><ul class="facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul>` : ""}
+            ${facts.length ? `<h3>WHAT MATTERS <small>${PSs.length ? "this pin" : "the hole"}</small></h3><ul class="facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul>` : ""}
           </div>
         </div>`, "holep");
     }
@@ -225,11 +252,13 @@ body{font:12.5px/1.4 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;color:#1b1
 h1{font-size:34px;margin:2px 0 4px;letter-spacing:-.01em}h2.h{font-size:19px;margin:2px 0 8px;letter-spacing:.04em}h2 small,h3 small{font-weight:400;color:#6b7480;font-size:11px;letter-spacing:0;margin-left:6px;text-transform:none}
 h3{font-size:11.5px;margin:8px 0 4px;letter-spacing:.06em;color:#4a535e}
 .muted{color:#6b7480}small{font-size:10px;color:#6b7480}.small{font-size:10.5px}.pos{color:#1e8a4c}.neg{color:#c8372d}
-.chead{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:end;margin:0 0 6px}.cover .ck{font-size:10px;letter-spacing:.24em;color:#a07c3b;font-weight:800}.cover h1{font-size:24px;text-transform:uppercase;letter-spacing:.02em;margin:0 0 2px}.cev{font-size:11.5px;color:#4a535e}
-.cover .scores{grid-template-columns:repeat(4,92px);gap:6px;margin:0}.cover .sc{padding:5px 8px}.cover .sc span{font-size:8.5px}.cover .sc b{font-size:22px}.cover .strip{gap:4px;margin:0 0 6px}.cover .strip .t{padding:3px 6px}.cover .strip b{font-size:13px}.cover .strip em{font-size:11px}.cover .strip span,.cover .strip i{font-size:8px}
-.cover .plan{gap:4px 12px}.cover .blk h3{margin:0 0 2px;font-size:10px}.cover .bc{padding:3px 6px}.cover .bc b{font-size:19px}.cover .bc em{font-size:9.5px}.cover .bc em strong{font-size:11px}.cover .bc small{font-size:8px}.cover .bc span{font-size:7.5px}
-.cover .cols{margin-top:4px;gap:16px}.cover .cols h3{font-size:10px;margin:4px 0 2px}.cover .vr{font-size:10px;padding:1px 0;grid-template-columns:66px 1fr 40px}.cover .vr i{height:7px}.foot{font-size:9px;margin:6px 0 0}
-.scores.s3{grid-template-columns:repeat(3,1fr);margin:4px 0 10px}.c2{grid-template-columns:1fr 1fr}
+/* (update 508) the cover: spread over the whole page */
+.cover{display:flex;flex-direction:column;justify-content:space-between;height:calc(100% - 46px);gap:8px}
+.chead{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:end}.cover .ck{font-size:11px;letter-spacing:.24em;color:#a07c3b;font-weight:800}.cover h1{font-size:30px;text-transform:uppercase;letter-spacing:.02em;margin:2px 0 3px}.cev{font-size:13px;color:#4a535e}
+.cover .scores{grid-template-columns:repeat(4,118px);gap:8px;margin:0}.cover .sc{padding:8px 12px}.cover .sc span{font-size:9.5px}.cover .sc b{font-size:30px}.cover .strip{gap:5px;margin:0}.cover .strip .t{padding:6px 8px}.cover .strip b{font-size:17px}.cover .strip em{font-size:13px}.cover .strip span,.cover .strip i{font-size:9px}
+.cover .plan{gap:8px 16px}.cover .blk h3{margin:0 0 4px;font-size:11.5px}.cover .bc{padding:6px 9px}.cover .bc b{font-size:26px}.cover .bc em{font-size:11px}.cover .bc em strong{font-size:13.5px}.cover .bc small{font-size:9px}.cover .bc span{font-size:8.5px}
+.cover .cols{margin:0;gap:22px}.cover .cols h3{font-size:11.5px;margin:0 0 4px}.cover .vr{font-size:11.5px;padding:2px 0;grid-template-columns:80px 1fr 46px}.cover .vr i{height:9px}.foot{font-size:9.5px;margin:0}
+.scores.s3{grid-template-columns:repeat(3,1fr);margin:4px 0 10px}.scores.s5{grid-template-columns:repeat(5,1fr);gap:10px;margin:4px 0 10px}.scores.s5 .sc b{font-size:26px}.sc small{display:block;font-size:9.5px}.c2{grid-template-columns:1fr 1fr}.c3h{grid-template-columns:1fr 1.15fr 1fr}.c3h table td{font-size:11.5px;padding:4px 5px}
 .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0 4px}.sc{border:1px solid #e3e6ea;border-radius:10px;padding:12px 14px}.sc span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6b7480;font-weight:700}.sc b{font-size:38px;line-height:1.1}
 .strip{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin-top:4px}.strip .t{border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;line-height:1.15}.strip b{font-size:18px}.strip span,.strip i{font-size:9.5px;color:#4a535e;font-style:normal}.strip em{font-style:normal;font-weight:700;font-size:13px}
 table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e3e6ea;padding:5px 6px;text-align:right}th:first-child,td:first-child{text-align:left}th{font-size:9.5px;color:#4a535e;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
@@ -242,6 +271,6 @@ table.ov td{font-size:12px;padding:5.5px 6px}td.hi{background:#4db94b;color:#fff
 .lg{grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:10px}.lg i{width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,#2166ac,#92c5de,#f7f7f7,#f4a582,#b2182b);display:inline-block}.lg small{margin-left:8px}
 .side h3:first-child{margin-top:0}.mix{display:grid;grid-template-columns:52px 1fr 38px;gap:6px;align-items:center;margin:3px 0}.mix span{font-weight:700;font-size:11px;line-height:1.05}.mix span small{display:block;font-weight:400;font-size:8.5px}.mix i{display:flex;height:15px;border-radius:4px;overflow:hidden;background:#f1f3f5}.mix i b{display:flex;align-items:center;justify-content:center;font-size:8.5px;color:#111}.mix em{font-style:normal;font-weight:800;text-align:right}
 table.pins td{padding:3px 4px;font-size:11px}.tee{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.tee div{border:1px solid #e3e6ea;border-radius:6px;padding:4px 6px;text-align:center}.tee span{display:block;font-size:9px;color:#6b7480}.tee b{font-size:14px}.tee .worse{background:#fff1ef;border-color:#e8685a}.tee .worse b{color:#c8372d}
-.ud{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.u{border:1px solid #e3e6ea;border-radius:6px;padding:3px 4px;text-align:center;line-height:1.1}.u span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.03em;color:#6b7480}.u b{font-size:14px}.u small{display:block;font-size:8px}.u.good b{color:#1e8a4c}.u.mid b{color:#c27c00}.u.bad b{color:#c8372d}.u.gr{display:flex;align-items:center;justify-content:center;border:0}.u.gr i{width:34px;height:24px;border-radius:50%;background:radial-gradient(circle at 45% 40%,#7fcf6a,#3e8e3a);display:block}
+.ud{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.u{border:1px solid #e3e6ea;border-radius:6px;padding:3px 4px;text-align:center;line-height:1.1}.u span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.03em;color:#6b7480}.u b{font-size:14px}.u small{display:block;font-size:8px}.u.good b{color:#1e8a4c}.u.mid b{color:#c27c00}.u.bad b{color:#c8372d}.u.gr{display:flex;align-items:center;justify-content:center;border:0}.u em{display:block;font-style:normal;font-size:8.5px;line-height:1.2;color:#4a535e}.u em small{font-size:7.5px}.u em.few,.u.few b{font-style:italic;opacity:.8}.u.gr i{width:34px;height:24px;border-radius:50%;background:radial-gradient(circle at 45% 40%,#7fcf6a,#3e8e3a);display:block}
 ul.facts{margin:2px 0;padding-left:15px}ul.facts li{font-size:11px;margin:2px 0}
 .bar{position:sticky;top:0;background:#1b1f24;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:12px;z-index:2}.bar button{font:inherit;padding:5px 12px;border-radius:6px;border:0;background:#fff;color:#1b1f24;font-weight:600;cursor:pointer}@media print{.bar{display:none}}`;

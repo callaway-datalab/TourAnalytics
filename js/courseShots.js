@@ -261,7 +261,7 @@ export function courseInsights(C) {
     const hb = holeBoards(shots, pins, H?.par || 4); hbMemo.set(h, hb); return hb;
   };
   const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
-  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, land: [] };
+  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, ps: {}, land: [] };
   for (const [key, t, qs] of all) {
     const X = holes[t.h]; if (!X) continue;
     const par = X.par, isTop = top.has(`${key}|${t.y}`), rk = `${key}|${t.y}|${t.r}`;
@@ -284,31 +284,41 @@ export function courseInsights(C) {
     }
     if (t.s == null) continue;
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
+    // (update 508) and the same for its pin
+    const PS = X.ps[t.p] || (X.ps[t.p] = { field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, land: [] });
+    addSc(PS.field, t.s); if (isTop) addSc(PS.top, t.s);
     const s = t.s, q2 = at(2);
-    if (par >= 4 && q2) add2(X.fwy, q2[3] === 1 ? "hit" : "miss", s);
-    add2(X.gir, qs.some((q) => q[0] != null && q[0] <= par - 1 && q[3] === 4) || s <= -2 ? "hit" : "miss", s);
+    if (par >= 4 && q2) { add2(X.fwy, q2[3] === 1 ? "hit" : "miss", s); add2(PS.fwy, q2[3] === 1 ? "hit" : "miss", s); }
+    const gir = qs.some((q) => q[0] != null && q[0] <= par - 1 && q[3] === 4) || s <= -2 ? "hit" : "miss"; add2(X.gir, gir, s); add2(PS.gir, gir, s);
     const qg = par >= 5 ? at(3) : par === 4 ? q2 : null;
-    if (qg) { const d = qg[3] === 4 ? 0 : qg[4]; if (d != null && d <= 30) add2(X.go, "go", s); else if (d != null && d <= 100) add2(X.go, "lay", s); }
+    if (qg) { const d = qg[3] === 4 ? 0 : qg[4], gk = d != null && d <= 30 ? "go" : d != null && d <= 100 ? "lay" : null; if (gk) { add2(X.go, gk, s); add2(PS.go, gk, s); } }
     const q1 = at(1), fw = mid(fAcc, t.h);
     let dd = null; // (update 494: from where the drive finished)
     if (q1 && q2 && q2[3] !== 4) { if (q2[3] === 1) dd = "C"; else if (fw) { const lat = (fw[0] - q1[1]) * (q2[2] - q1[2]) - (fw[1] - q1[2]) * (q2[1] - q1[1]); dd = lat < 0 ? "L" : lat > 0 ? "R" : null; } }
     if (par >= 4 && dd) { add2(X.drive, dd, s); add2(X.drivep[t.p] || (X.drivep[t.p] = {}), dd, s); } // (update 492: and per pin)
-    if (par >= 4 && q1 && q2 && q2[3] === 1) X.land.push([q1[1], q1[2], q2[1], q2[2]]);
+    if (par >= 4 && q1 && q2 && q2[3] === 1) { X.land.push([q1[1], q1[2], q2[1], q2[2]]); PS.land.push([q1[1], q1[2], q2[1], q2[2]]); }
   }
   const out = {};
   for (const [h, X] of Object.entries(holes)) {
     // fairway widths where tee shots finished in the fairway, 250 to 325 yards out (the spread across the line of play)
-    const widths = {}, k = ppy.get(Number(h)) ?? ppy.get(h);
-    if (k) for (const c of [250, 275, 300, 325]) {
-      const pts = X.land.filter((l) => Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) / k - c) <= 12.5);
-      if (pts.length < 8) continue;
-      const tx = pts.reduce((a, l) => a + l[0], 0) / pts.length, ty = pts.reduce((a, l) => a + l[1], 0) / pts.length, cx = pts.reduce((a, l) => a + l[2], 0) / pts.length, cy = pts.reduce((a, l) => a + l[3], 0) / pts.length;
-      const dl = Math.hypot(cx - tx, cy - ty) || 1, ux = (cx - tx) / dl, uy = (cy - ty) / dl;
-      const off = pts.map((l) => ((l[2] - tx) * uy - (l[3] - ty) * ux) / k).sort((a, b) => a - b);
-      widths[c] = Math.round(off[Math.floor(0.95 * (off.length - 1))] - off[Math.floor(0.05 * (off.length - 1))]);
-    }
+    const k = ppy.get(Number(h)) ?? ppy.get(h);
+    const widthsOf = (land) => {
+      const widths = {};
+      if (k) for (const c of [250, 275, 300, 325]) {
+        const pts = land.filter((l) => Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) / k - c) <= 12.5);
+        if (pts.length < 8) continue;
+        const tx = pts.reduce((a, l) => a + l[0], 0) / pts.length, ty = pts.reduce((a, l) => a + l[1], 0) / pts.length, cx = pts.reduce((a, l) => a + l[2], 0) / pts.length, cy = pts.reduce((a, l) => a + l[3], 0) / pts.length;
+        const dl = Math.hypot(cx - tx, cy - ty) || 1, ux = (cx - tx) / dl, uy = (cy - ty) / dl;
+        const off = pts.map((l) => ((l[2] - tx) * uy - (l[3] - ty) * ux) / k).sort((a, b) => a - b);
+        widths[c] = Math.round(off[Math.floor(0.95 * (off.length - 1))] - off[Math.floor(0.05 * (off.length - 1))]);
+      }
+      return widths;
+    };
+    const widths = widthsOf(X.land);
     const fx = (o) => ({ ...o, sum: r4(o.sum) }), f2 = (o) => Object.fromEntries(Object.entries(o).map(([kk, a]) => [kk, [a[0], r4(a[1])]]));
-    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]) }; } return o; })(), widths };
+    // (update 508) each pin's own: scoring (field, Top 10), fairway / green / going for it, fairway widths
+    const pinStats = Object.fromEntries(Object.entries(X.ps).map(([pp, P]) => [pp, { field: fx(P.field), top: fx(P.top), fwy: f2(P.fwy), gir: f2(P.gir), go: f2(P.go), widths: widthsOf(P.land) }]));
+    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]) }; } return o; })(), widths };
   }
   const r4o = (o) => Object.fromEntries(Object.entries(o).map(([kk, v]) => [kk, r4(v)]));
   return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top] };

@@ -73,7 +73,7 @@ export async function drawHeat(ctx, course) {
   const udBox = el("div", { class: "sh-ud", hidden: true }); // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
   prev.addEventListener("click", () => go(-1)); next.addEventListener("click", () => go(1));
-  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, head, hist, teeBox, el("div", { class: "sh-ctl" }, [pinBar]), shotRow, stageWrap, legend, trKey, udBox, keys, el("div", { class: "sh-nav" }, [prev, next])]));
+  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, head, hist, teeBox, el("div", { class: "sh-ctl" }, [pinBar, udBox]), shotRow, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
 
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
@@ -691,24 +691,26 @@ export async function drawHeat(ctx, course) {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
     const ids = pinNow?.merged || [pid], U = {};
     for (const id of ids) for (const [side, lies] of Object.entries(X?.udPins?.[id] || {})) for (const [lie, a] of Object.entries(lies)) { const o = (U[side] ||= {}), b = (o[lie] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
-    if (!Object.keys(U).length) { udBox.hidden = true; mount(udBox, null); return; }
+    // (update 508) only with the approach picked (par 3: shot 1; par 4: shot 2; par 5: shot 2 or 3), beside the pins
+    const k0 = kOf(n, par), appr = !k0 || (par <= 3 ? k0 === 1 : par === 4 ? k0 === 2 : k0 === 2 || k0 === 3);
+    if (!appr && st.udSel) { st.udSel = null; drawMisses(); }
+    if (!appr && st.showBoard) { st.showBoard = false; drawBoard(); }
+    if (!Object.keys(U).length || !appr) { udBox.hidden = true; mount(udBox, null); return; }
     const col = (p) => (p == null ? "" : p >= 75 ? "good" : p >= 50 ? "mid" : "bad");
     const hasB = (pinNow?.merged || [pid]).some((id) => X?.udBoards?.[id]);
     const cell = (side) => {
       const o = U[side] || {}, tot = Object.values(o).reduce((t, a) => [t[0] + a[0], t[1] + a[1]], [0, 0]);
-      const p = tot[0] >= 3 ? Math.round((100 * tot[1]) / tot[0]) : null;
-      const lies = [["Fairway", "Fwy"], ["Rough", "Rgh"], ["Bunker", "Bnk"]].filter(([l]) => o[l]?.[0] >= 3).map(([l, s2]) => `${s2} ${Math.round((100 * o[l][1]) / o[l][0])}`);
+      const p = tot[0] ? Math.round((100 * tot[1]) / tot[0]) : null; /* (update 508) any attempts; under 5 in italics */
       // (update 499) a tap: its lies, attempts and how many got up and down, below the grid
-      const b = el(tot[0] ? "button" : "div", { class: `sh-ud-c ${col(p)}${st.udSel === side ? " on" : ""}`, ...(tot[0] ? { type: "button", "aria-pressed": String(st.udSel === side) } : {}), title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
-        el("span", { class: "sh-ud-k" }, side.replace("-", " ")),
+      const b = el(tot[0] ? "button" : "div", { class: `sh-ud-c ${col(p)}${st.udSel === side ? " on" : ""}${tot[0] && tot[0] < 5 ? " few" : ""}`, ...(tot[0] ? { type: "button", "aria-pressed": String(st.udSel === side) } : {}), title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
         el("strong", {}, p == null ? "\u2014" : `${p}%`),
-        el("span", { class: "sh-ud-l" }, tot[0] ? `${tot[0]} ${tot[0] === 1 ? "attempt" : "attempts"}` : "")]); // (update 505: the attempts from there)
-      if (tot[0]) b.addEventListener("click", () => { st.udSel = st.udSel === side ? null : side; drawUD(); drawMisses(); if (st.udSel) stage.scrollIntoView({ behavior: "smooth", block: "center" }); });
+        el("span", { class: "sh-ud-l" }, tot[0] ? `${tot[0]} att` : "")]); // (update 505: the attempts from there)
+      if (tot[0]) b.addEventListener("click", () => { st.udSel = st.udSel === side ? null : side; drawUD(); drawMisses(); });
       return b;
     };
     // (update 501) the green: a tap draws the board on the hole (as Show on map)
     const greenBtn = el(hasB ? "button" : "div", { class: `sh-ud-green${st.showBoard ? " on" : ""}`, ...(hasB ? { type: "button", "aria-label": st.showBoard ? "Hide the board on the map" : "Show the board on the map", title: "Show the board on the map" } : { "aria-hidden": "true" }) }, el("i"));
-    if (hasB) greenBtn.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); if (st.showBoard) stage.scrollIntoView({ behavior: "smooth", block: "center" }); });
+    if (hasB) greenBtn.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); });
     // the square picked: every lie it left, its attempts and how many got up and down
     const sel = st.udSel && U[st.udSel] ? st.udSel : null;
     const detail = sel ? (() => {
@@ -717,15 +719,16 @@ export async function drawHeat(ctx, course) {
       return el("div", { class: "sh-ud-det" }, [el("div", { class: "sh-pop-h" }, [el("strong", {}, `Missed ${sel.replace("-", " ").toLowerCase()}`), x]),
         el("p", { class: "small" }, [el("strong", {}, `${Math.round((100 * tot[1]) / tot[0])}%`), ` got up and down: ${tot[1]} of ${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}`]),
         el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Attempts", "Up & down", ""].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
-          el("tbody", {}, ["Fairway", "Rough", "Bunker"].filter((l) => o[l]?.[0]).map((l) => el("tr", {}, [el("td", {}, l), el("td", { class: "num" }, String(o[l][0])), el("td", { class: "num" }, String(o[l][1])), el("td", { class: `num ${col(Math.round((100 * o[l][1]) / o[l][0]))}` }, `${Math.round((100 * o[l][1]) / o[l][0])}%`)])))])]);
+          el("tbody", {}, ["Fairway", "Rough", "Bunker"].filter((l) => o[l]?.[0]).map((l) => el("tr", {}, [el("td", {}, l), el("td", { class: `num${o[l][0] < 5 ? " few" : ""}` }, String(o[l][0])), el("td", { class: "num" }, String(o[l][1])), el("td", { class: `num ${col(Math.round((100 * o[l][1]) / o[l][0]))}` }, `${Math.round((100 * o[l][1]) / o[l][0])}%`)])))])]);
     })() : null;
     udBox.hidden = false;
-    const tog = hasB ? el("button", { type: "button", class: `link small sh-ud-tog${st.showBoard ? " on" : ""}` }, st.showBoard ? "Hide on map" : "Show on map") : null;
-    tog?.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); if (st.showBoard) stage.scrollIntoView({ behavior: "smooth", block: "center" }); });
+    const tog = hasB ? el("button", { type: "button", class: `link small sh-ud-tog${st.showBoard ? " on" : ""}` }, st.showBoard ? "Hide board" : "Show board") : null;
+    tog?.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); });
     // (update 498) the admin: maps an older version built (the up & down sides worked out the old way) say so
     const stale = isAdmin && meta.builtVersion !== BUILD_VERSION ? el("p", { class: "sh-ud-stale" }, meta.rawChunks ? "These maps were built by an older version. Press Rebuild maps on Upload Data \u203a Strategy Maps to rebuild them from the saved shots." : "No shots saved on the site for this course yet, so its maps can\u2019t be rebuilt: upload it once with the new course_upload.py (update 496), then press Rebuild maps on Upload Data \u203a Strategy Maps.") : null;
-    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), el("span", { class: "muted small" }, "this pin \u00b7 within 30 yds of the green"), tog]), stale,
-      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), greenBtn, cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]), detail]);
+    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("strong", {}, "Up & down by miss"), tog]), stale,
+      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), greenBtn, cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]),
+      el("p", { class: "sh-ud-note" }, "This pin \u00b7 within 30 yds \u00b7 italic: under 5"), detail]);
   }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
   // the key (Birdie, Par …: tap to show only those, tap more to add, again to take away), one trail from a tap on it
