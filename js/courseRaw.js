@@ -13,7 +13,7 @@ import { listHeatCourses, resetHeatList } from "./courseHeat.js";
 import { shotColumns, shotAggregator, uploadShotCourses, mapIdFor } from "./courseShots.js";
 
 /** Bumped when the analysis changes: maps built by an older version are offered a rebuild. */
-export const BUILD_VERSION = 497; // (497: up & down sides from the green's real edges)
+export const BUILD_VERSION = 501; // (497: up & down sides from the green's real edges; 501: every green spot, as the map works them out)
 /** The columns kept, in order (also what course_upload.py sends). */
 export const RAW_COLS = ["year", "courseNum", "course", "player", "playerID", "round", "hole", "par", "pin_id", "lie", "strokes", "shot_for", "hole_out", "x", "y", "scoring_avg", "pin_x", "pin_y", "distance", "tournament"];
 const KEYS = ["year", "courseNum", "course", "player", "playerID", "round", "hole", "par", "pin", "lie", "strokes", "shotFor", "holeOut", "x", "y", "v", "pinX", "pinY", "dist", "event"];

@@ -5729,3 +5729,11 @@ button.sh-ud-c { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .sh-rad strong { min-width: 4.2em; text-align: center; font-variant-numeric: tabular-nums; }
 .sh-rad-b { position: static; width: 30px; height: 30px; }
 .sh-spot { pointer-events: none; }
+/* (update 501) the popup beside the map's frame; the circle's popup kept small; the green in the up & down grid a button */
+.sh-stage-wrap { position: relative; }
+.sh-stage-wrap > .sh-pop { z-index: 6; }
+.sh-rad-h { align-items: center; }
+.sh-rad-h .sh-rad { margin: 0; }
+.sh-pop-tot td { font-weight: 700; border-top: 1px solid rgba(255,255,255,0.15); }
+button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
+.sh-ud-green.on i { box-shadow: 0 0 0 3px #ffd60a; }

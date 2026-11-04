@@ -9,7 +9,7 @@ import { heatData, listHeatCourses } from "../courseHeat.js";
 import { pickWho } from "./coursePrepExtras.js";
 import { playerTrails, trailSG, bucketOf, ATT_B, SG_B } from "../courseShots.js";
 
-const SC = { e: ["Eagle+", "#7d6bff"], b: ["Birdie", "#3d9cff"], p: ["Par", "#f2f2f2"], g: ["Bogey+", "#ff9f43"] };
+const SC = { e: ["Eagle+", "#1f4fd1"], b: ["Birdie", "#8fd3ff"], p: ["Par", "#f2f2f2"], g: ["Bogey+", "#ff9f43"] };
 const toPar = (v) => (v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "E" : `−${Math.abs(v)}`);
 const sgn = (v, d = 2) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0.0049 ? "+" : v < -0.0049 ? "−" : ""}${Math.abs(v).toFixed(d)}`);
 const mean2 = (o) => (o && o[0] ? o[1] / o[0] : null);

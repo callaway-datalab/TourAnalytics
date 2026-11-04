@@ -160,6 +160,40 @@ export function trailSG(t, par, E, into) {
     into[b] = (into[b] || 0) + (E[k0] - nx - 1);
   }
 }
+/* (update 501) shared by the build and the map (which draws a miss square's shots): a green's tic-tac-toe boards (from
+ * every spot a shot was played on it), the approach miss on a hole (the first shot from off the green within 30 yards,
+ * after one from farther out) and its side */
+export function greenBoards(pts) {
+  if (!pts || pts.length < 20) return null;
+  const g = [pts.reduce((t, p) => t + p[0], 0) / pts.length, pts.reduce((t, p) => t + p[1], 0) / pts.length], memo = new Map();
+  return { g, boardFor(ux0, uy0) {
+    const bin = ((Math.round(Math.atan2(uy0, ux0) / (Math.PI / 36)) % 72) + 72) % 72;
+    if (memo.has(bin)) return memo.get(bin);
+    const ang = (bin * Math.PI) / 36, ux = Math.cos(ang), uy = Math.sin(ang);
+    const A = pts.map(([x, y]) => (x - g[0]) * ux + (y - g[1]) * uy).sort((a, b) => a - b), L = pts.map(([x, y]) => ux * (y - g[1]) - uy * (x - g[0])).sort((a, b) => a - b);
+    const pc = (v, f) => v[Math.min(v.length - 1, Math.max(0, Math.round(f * (v.length - 1))))];
+    const b = { g, ux, uy, a0: pc(A, 0.01), a1: pc(A, 0.99), l0: pc(L, 0.01), l1: pc(L, 0.99) };
+    memo.set(bin, b);
+    return b;
+  } };
+}
+export function approachMiss(qs) {
+  for (let i = 1; i < qs.length; i++) {
+    const nq = qs[i], pq = qs[i - 1];
+    if (nq[4] == null || nq[4] > 30 || ![1, 2, 3].includes(nq[3])) continue;
+    if (pq[3] === 4 || (pq[4] != null && pq[4] <= 30 && pq[3] !== 0)) return null; // (a second chip: not the approach's miss)
+    return { pq, nq };
+  }
+  return null;
+}
+export function missSide(GB, pq, nq) {
+  const ux0 = GB.g[0] - pq[1], uy0 = GB.g[1] - pq[2], B = GB.boardFor(ux0, uy0);
+  const vx = nq[1] - B.g[0], vy = nq[2] - B.g[1], along = vx * B.ux + vy * B.uy, lat = B.ux * vy - B.uy * vx;
+  const row = along > B.a1 ? "Long" : along < B.a0 ? "Short" : "", colm = lat > B.l1 ? "Right" : lat < B.l0 ? "Left" : "";
+  if (row || colm) return row && colm ? `${row}-${colm}` : row || colm;
+  const da = Math.min(B.a1 - along, along - B.a0) / ((B.a1 - B.a0) || 1), dl = Math.min(B.l1 - lat, lat - B.l0) / ((B.l1 - B.l0) || 1);
+  return da < dl ? (along > (B.a0 + B.a1) / 2 ? "Long" : "Short") : (lat > (B.l0 + B.l1) / 2 ? "Right" : "Left");
+}
 const add2 = (o, k, v) => { const a = o[k] || (o[k] = [0, 0]); a[0]++; a[1] += v; };
 const sc5 = () => ({ n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 });
 const addSc = (o, s) => { o.n++; o.sum += s; if (s <= -2) o.e++; else if (s === -1) o.b++; else if (s === 0) o.p++; else o.g++; };
@@ -195,26 +229,13 @@ export function courseInsights(C) {
   // each green (where every putt started), and where drives finish in the fairway (the line of play off the tee)
   const gAcc = new Map(), fAcc = new Map(), gPts = new Map();
   for (const [, t, qs] of all) for (const q of qs) {
-    if (q[3] === 4) { const a = gAcc.get(t.h) || gAcc.set(t.h, [0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; const P = gPts.get(t.h) || gPts.set(t.h, []).get(t.h); if (P.length < 6000) P.push([q[1], q[2]]); }
+    if (q[3] === 4) { const a = gAcc.get(t.h) || gAcc.set(t.h, [0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; (gPts.get(t.h) || gPts.set(t.h, []).get(t.h)).push([q[1], q[2]]); }
     if (q[0] === 2 && q[3] === 1) { const a = fAcc.get(t.h) || fAcc.set(t.h, [0, 0, 0]).get(t.h); a[0] += q[1]; a[1] += q[2]; a[2]++; }
   }
   const mid = (m, h) => { const a = m.get(h); return a && a[2] ? [a[0] / a[2], a[1] / a[2]] : null; };
-  // (update 497) the tic-tac-toe board over a green, square to an approach's line (in 5-degree steps): the green's front and
-  // back edges along that line and its sides across it, from where shots were played on the green (the 1st and 99th
-  // percentiles of them, every pin: the green's real edges, not just where the pins were)
-  const boards = new Map();
-  const boardFor = (h, ux0, uy0) => {
-    const g = mid(gAcc, h), P = gPts.get(h); if (!g || !P || P.length < 20) return null;
-    const bin = ((Math.round(Math.atan2(uy0, ux0) / (Math.PI / 36)) % 72) + 72) % 72, key = `${h}|${bin}`;
-    if (boards.has(key)) return boards.get(key);
-    const ang = (bin * Math.PI) / 36, ux = Math.cos(ang), uy = Math.sin(ang);
-    const A = P.map(([x, y]) => (x - g[0]) * ux + (y - g[1]) * uy).sort((a, b) => a - b), L = P.map(([x, y]) => ux * (y - g[1]) - uy * (x - g[0])).sort((a, b) => a - b);
-    const pc = (v, f) => v[Math.min(v.length - 1, Math.max(0, Math.round(f * (v.length - 1))))];
-    const b = { g, ux, uy, a0: pc(A, 0.01), a1: pc(A, 0.99), l0: pc(L, 0.01), l1: pc(L, 0.99) };
-    boards.set(key, b);
-    return b;
-  };
-  const SECT = { 0: "Long", 1: "Long-Right", 2: "Right", 3: "Short-Right", 4: "Short", "-4": "Short", "-1": "Long-Left", "-2": "Left", "-3": "Short-Left" };
+  // (update 497; 501: shared with the map, greenBoards) each green's tic-tac-toe boards
+  const gbMemo = new Map(), gbOf = (h) => (gbMemo.has(h) ? gbMemo.get(h) : gbMemo.set(h, greenBoards(gPts.get(h))).get(h));
+  const boardFor = (h, ux0, uy0) => gbOf(h)?.boardFor(ux0, uy0) || null;
   const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
   for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, udDir: {}, drivep: {}, land: [] };
   for (const [key, t, qs] of all) {
@@ -227,32 +248,16 @@ export function courseInsights(C) {
     const at = (k) => qs.find((q) => q[0] === k);
     // where approaches missed the green: the first shot played from off the green within 30 yards (after a shot from
     // farther out); its side from the green's centre, along the line the approach came in on (update 494)
-    const g = mid(gAcc, t.h);
-    for (let i = 1; g && i < qs.length; i++) {
-      const nq = qs[i], pq = qs[i - 1];
-      if (nq[4] == null || nq[4] > 30 || ![1, 2, 3].includes(nq[3])) continue;
-      if (pq[3] === 4 || (pq[4] != null && pq[4] <= 30 && pq[3] !== 0)) break; // (a second chip: not the approach's miss)
-      const ux0 = g[0] - pq[1], uy0 = g[1] - pq[2], B = boardFor(t.h, ux0, uy0);
-      let side;
-      if (B) {
-        // short / long: before the green's front edge or past its back edge along the approach's line; left / right: past
-        // its sides; inside the green's box (the fringe, a collar): the nearest edge (update 497)
-        const vx = nq[1] - B.g[0], vy = nq[2] - B.g[1], along = vx * B.ux + vy * B.uy, lat = B.ux * vy - B.uy * vx;
-        const row = along > B.a1 ? "Long" : along < B.a0 ? "Short" : "", colm = lat > B.l1 ? "Right" : lat < B.l0 ? "Left" : "";
-        if (row || colm) side = row && colm ? `${row}-${colm}` : row || colm;
-        else { const da = Math.min(B.a1 - along, along - B.a0) / ((B.a1 - B.a0) || 1), dl = Math.min(B.l1 - lat, lat - B.l0) / ((B.l1 - B.l0) || 1); side = da < dl ? (along > (B.a0 + B.a1) / 2 ? "Long" : "Short") : (lat > (B.l0 + B.l1) / 2 ? "Right" : "Left"); }
-        const D = X.udDir[t.p] || (X.udDir[t.p] = [0, 0]), dl0 = Math.hypot(ux0, uy0) || 1; D[0] += ux0 / dl0; D[1] += uy0 / dl0; // (the pin's usual approach line, to draw its board)
-      } else {
-        const ul = Math.hypot(ux0, uy0) || 1, ux = ux0 / ul, uy = uy0 / ul, vx = nq[1] - g[0], vy = nq[2] - g[1];
-        side = SECT[String(Math.round((Math.atan2(ux * vy - uy * vx, vx * ux + vy * uy) * 180) / Math.PI / 45))];
-      }
+    const GB = gbOf(t.h), m = GB ? approachMiss(qs) : null;
+    if (m) {
+      const { pq, nq } = m, side = missSide(GB, pq, nq);
+      const ux0 = GB.g[0] - pq[1], uy0 = GB.g[1] - pq[2], D = X.udDir[t.p] || (X.udDir[t.p] = [0, 0]), dl0 = Math.hypot(ux0, uy0) || 1; D[0] += ux0 / dl0; D[1] += uy0 / dl0; // (the pin's usual approach line, to draw its board)
       const lie = LIES[nq[3]][0].toUpperCase() + LIES[nq[3]].slice(1), o = X.ud[side] || (X.ud[side] = {}), a = o[lie] || (o[lie] = [0, 0]);
       const made = nq[5] != null && nq[5] <= 2;
       a[0]++; if (made) a[1]++;
       // (update 491) and for the pin it was played to (Strategy Maps shows it with each pin)
       const U = X.udp[t.p] || (X.udp[t.p] = {}), o2 = U[side] || (U[side] = {}), a2 = o2[lie] || (o2[lie] = [0, 0]);
       a2[0]++; if (made) a2[1]++;
-      break;
     }
     if (t.s == null) continue;
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
