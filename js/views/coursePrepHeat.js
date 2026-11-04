@@ -277,6 +277,7 @@ export async function drawHeat(ctx, course) {
     const z = zoneAt(Z.zones, x, y, ov);
     if (!z) { pop.hidden = true; hideDot(); return; } // (no colour there: nothing to show)
     if (z.none) { // (update 465) a lie with no shots from it for this pin (a bunker no one found): said so
+      pop.classList.remove("sh-pop-spot");
       tapAt = { x, y };
       const xb = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); xb.addEventListener("click", () => { pop.hidden = true; hideDot(); });
       const name = { bunker: "bunker", fairway: "fairway", rough: "rough", green: "green", tee: "tee" }[z.L] || z.L;
@@ -299,7 +300,7 @@ export async function drawHeat(ctx, course) {
   function placePop(px, py) {
     // (update 501) clear of the circle tapped: its radius on screen added to the gap
     const sr = stage.getBoundingClientRect(), rs = spot?.R ? (() => { const [a, b] = screenOf(spot.x, spot.y), [c, d] = screenOf(spot.x + spot.R, spot.y); return Math.hypot(c - a, d - b); })() : 0, gap = 16 + rs;
-    const pw = Math.min(320, sr.width - 16); pop.style.width = `${pw}px`;
+    const pw = pop.classList.contains("sh-pop-spot") ? Math.min(360, window.innerWidth - 16) : Math.min(320, sr.width - 16); pop.style.width = `${pw}px`; // (update 504: the circle's popup as wide as the screen allows)
     const ph = pop.offsetHeight || 200;
     let left, top;
     if (sr.width - px - gap >= pw + 8 || px - gap >= pw + 8) { // beside it
@@ -319,6 +320,8 @@ export async function drawHeat(ctx, course) {
       const mx = left + pw / 2 - px, my = top + ph / 2 - py, ml = Math.hypot(mx, my) || 1, k = need - d + 2;
       left += (mx / ml) * k; top += (my / ml) * k;
     }
+    // (update 504) a popup wider than the map: kept on the screen
+    left = Math.max(8 - sr.left, Math.min(window.innerWidth - sr.left - pw - 8, left));
     pop.style.left = `${left + stage.offsetLeft}px`; pop.style.top = `${top + stage.offsetTop}px`;
   }
   /* (update 500) a tap: a circle there (its size adjustable), every actual shot inside it, and the popup's numbers from
@@ -397,6 +400,7 @@ export async function drawHeat(ctx, course) {
   }
   function showSpot({ pool, ppy }) {
     spot.pool = pool; spot.ppy = ppy; // (update 502: for dragging the circle)
+    pop.classList.add("sh-pop-spot"); // (update 504: the circle's compact popup)
     const R = st.spotR * ppy, inside = pool.filter((q) => Math.hypot(q.x - spot.x, q.y - spot.y) <= R);
     spot.R = R; spot.inside = inside;
     const avg = (l) => (l.length ? l.reduce((t, q) => t + q.v, 0) / l.length : null);
@@ -424,9 +428,19 @@ export async function drawHeat(ctx, course) {
     // (update 501) a small popup: the circle's size, the player's own shots, and the shots by lie
     mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, xb]),
       mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
-      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "To hole out", "Up & down"].map((h, j) => el("th", { class: j ? "num" : null }, h)))),
-        el("tbody", {}, [...[...lies].sort((x0, y0) => y0[1].length - x0[1].length).map(([l, qs]) => el("tr", {}, [el("td", {}, el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l))), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, fmt(avg(qs), qs.length)), el("td", { class: "num" }, ud(qs))])),
-          lies.size > 1 ? el("tr", { class: "sh-pop-tot" }, [el("td", {}, "All"), el("td", { class: "num" }, String(inside.length)), el("td", { class: "num" }, fmt(a, inside.length)), el("td", { class: "num" }, ud(inside))]) : null])])]);
+      // (update 504) by lie: shots, the average hole score, how the hole was scored (eagle+ to double+; a column that's 0%
+      // in every row left out) and up & down
+      (() => {
+        const rowsL = [...lies].sort((x0, y0) => y0[1].length - x0[1].length);
+        const cols = [["Eagle", (q) => q.s <= -2], ["Birdie", (q) => q.s === -1], ["Par", (q) => q.s === 0], ["Bogey", (q) => q.s === 1], ["Dbl+", (q) => q.s >= 2]];
+        const pctOf = (qs, f) => { const k = qs.filter((q) => q.s != null); return k.length ? Math.round((100 * k.filter(f).length) / k.length) : null; };
+        const keep = cols.filter(([, f]) => [...rowsL.map(([, qs]) => qs), inside].some((qs) => (pctOf(qs, f) || 0) > 0));
+        const avgS = (qs) => { const k = qs.filter((q) => q.s != null); return k.length ? (par + k.reduce((t, q) => t + q.s, 0) / k.length).toFixed(2) : "\u2014"; };
+        const row = (label, qs, cls = null) => el("tr", { class: cls }, [el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)), ...keep.map(([, f]) => el("td", { class: "num" }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
+        return el("table", { class: "plain sh-pop-t sh-spot-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Shots", "Avg", ...keep.map(([h]) => h), "U&D"].map((h, j2) => el("th", { class: j2 ? "num" : null }, h)))),
+          el("tbody", {}, [...rowsL.map(([l, qs]) => row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs)), lies.size > 1 ? row("All", inside, "sh-pop-tot") : null])]);
+      })(),
+    ]);
     requestAnimationFrame(placeDot);
   }
   // (update 499) a zone's actual strokes to hole out: its shots' own average (the map's colour is blended with the shots
@@ -434,6 +448,7 @@ export async function drawHeat(ctx, course) {
   const actualOf = (z) => { let t = 0, w = 0; for (const r of z.rows) { const n = r.n || 1; t += (r.raw ?? r.v) * n; w += n; } return w ? t / w : z.raw; };
   const fmtToGo = (v, n) => (n === 1 || Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(2));
   function openZone(z, at = null) {
+    pop.classList.remove("sh-pop-spot");
     tapAt = at || { x: z.x, y: z.y };
     const usePlayer = isP() && !!ix;
     const cat = zoneCat(z), catN = Z.zones.filter((o) => zoneCat(o) === cat).reduce((t, o) => t + (o.n || 0), 0);
@@ -569,7 +584,7 @@ export async function drawHeat(ctx, course) {
     const bar = el("span", { class: "sh-hb" }, ks.map((k) => { const p = (100 * h[k]) / n; return el("i", { style: `width:${p}%;background:${scColor(Number(k))}`, class: k === "0" ? "par" : null }, p >= 14 ? `${Math.round(p)}%` : ""); }));
     const row = el("button", { type: "button", class: "sh-hl", title: detail, "aria-label": `${label}: ${detail}` }, [
       el("span", { class: "sh-hl-k" }, [label, el("small", {}, `${n} rds`)]), bar,
-      el("strong", { class: `sh-hl-avg ${avg > 0.005 ? "neg" : avg < -0.005 ? "pos" : ""}` }, avg > 0.005 ? `+${avg.toFixed(2)}` : avg < -0.005 ? `\u2212${Math.abs(avg).toFixed(2)}` : "E")]);
+      el("span", { class: `sh-hl-avg ${avg > 0.005 ? "neg" : avg < -0.005 ? "pos" : ""}` }, [el("small", {}, "Avg Score"), el("strong", {}, (par + avg).toFixed(2))])]); // (update 504)
     const more = el("div", { class: "muted small sh-hl-more", hidden: true }, detail);
     row.addEventListener("click", () => { more.hidden = !more.hidden; });
     return el("div", { class: "sh-hl-wrap" }, [row, more, extra]);
@@ -754,6 +769,7 @@ export async function drawHeat(ctx, course) {
     return t.s != null ? E[k0] - 1 : null;
   };
   function trailPop(t, e) {
+    pop.classList.remove("sh-pop-spot");
     const sr = stage.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top;
     const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { pop.hidden = true; });
     const pinName = (() => { const b = [...pinBar.querySelectorAll(".sh-pin")].find((q) => q.title === String(t.p)); return b ? b.textContent : String(t.p).replace(/[-_]+/g, " "); })();

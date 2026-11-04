@@ -5749,3 +5749,15 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 .sh-lie-other { background: #8e5bd6; color: #fff; }
 .sh-tr-sg { font-weight: 700; font-variant-numeric: tabular-nums; }
 .sh-tr-sg.pos { color: #4cd964; } .sh-tr-sg.neg { color: #ff6b5e; }
+/* (update 504) the circle's popup: compact; the scoring bar's Avg Score */
+.sh-pop.sh-pop-spot { font-size: 12px; padding: 8px 10px; max-width: calc(100vw - 16px); }
+.sh-pop-spot .sh-spot-t { width: 100%; }
+.sh-pop-spot .sh-spot-t th, .sh-pop-spot .sh-spot-t td { padding: 3px 4px !important; font-size: 11px !important; white-space: nowrap; }
+.sh-pop-spot .sh-spot-t th { font-size: 9.5px !important; }
+.sh-spot-t th { letter-spacing: 0.02em; }
+.sh-spot-t .sh-lie { padding: 0 6px; font-size: 0.95em; }
+.sh-hl { grid-template-columns: 5.2em 1fr 4.4em; }
+.sh-hl-avg { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; }
+.sh-hl-avg small { font-size: var(--fs-2xs); color: #8e8e93; font-weight: 400; }
+.sh-hl-avg strong { font-variant-numeric: tabular-nums; }
+.sh-hl-avg.neg strong { color: #ff9f43; } .sh-hl-avg.pos strong { color: #3d9cff; }
