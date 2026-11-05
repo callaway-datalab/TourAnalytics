@@ -376,7 +376,7 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
 // ✨ Generate AI Insights: the Reports page's report builder, in a pop-up, for the player on screen
 export function insightsButton(S, slicedField = []) {
   if (!S.me || !S.me.key) return null;
-  const btn = el("button", { type: "button", class: "hero-insights" }, "\u2728 Generate AI Report");
+  const btn = el("button", { type: "button", class: "hero-insights" }, "\u2728 Generate PDF Report");
   btn.addEventListener("click", async () => {
     const { reportBuilder } = await import("./reportGen.js");
     const state = getState();
@@ -386,7 +386,7 @@ export function insightsButton(S, slicedField = []) {
       fullField: S.fieldIsSummary() ? null : S.fieldAll }); // (the admin: everyone's rows, for ranks by distance)
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const body = el("div", { class: "hero-pop-body" }, builder.node || builder);
-    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate AI Report" }, el("div", { class: "gx-pop hero-pop" }, [
+    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate PDF Report" }, el("div", { class: "gx-pop hero-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Performance report"), el("h2", {}, S.me.label)]), close]), body]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape") shut(); };

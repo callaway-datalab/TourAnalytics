@@ -1011,7 +1011,7 @@ export async function loadFullField(datasetId, field, me, idx) {
 export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource0 = "tour", // eslint-disable-line no-unused-vars
    minRounds = null, tour = null, fullField = null }) {
   const wrapEl = el("div", { class: "report-gen" });
-  const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate AI Report");
+  const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate PDF Report");
   const panel = el("div", { class: "report-gen-panel", hidden: true });
   openBtn.addEventListener("click", () => { panel.hidden = !panel.hidden; openBtn.setAttribute("aria-expanded", panel.hidden ? "false" : "true"); if (!panel.hidden) loadSeasons(); });
 

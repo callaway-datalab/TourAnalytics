@@ -2382,7 +2382,7 @@ export async function render(main) {
   function reportBar(items) {
     const live = items.filter((it) => it.s.n);
     if (!live.length) return null;
-    const b = el("button", { type: "button", class: "hero-insights cmp-ai-btn" }, "\u2728 Generate AI Report");
+    const b = el("button", { type: "button", class: "hero-insights cmp-ai-btn" }, "\u2728 Generate PDF Report");
     const status = el("span", { class: "muted small" }, "");
     b.addEventListener("click", async () => {
       b.disabled = true;
