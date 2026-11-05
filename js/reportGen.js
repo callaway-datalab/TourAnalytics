@@ -891,6 +891,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const shade = (i, k) => {
         const ci = i - 1, vs = colVals[ci], v = vs?.[k], hi = higher[ci];
         if (v == null || hi == null) return null;
+        // (update 519) strokes gained splits at zero: gains in greens (the biggest gain the deepest), losses in reds
+        if (ci === 0) {
+          if (Math.abs(v) < 0.005) return null;
+          const big = Math.max(...vs.filter((x) => x != null && (v > 0 ? x > 0 : x < 0)).map(Math.abs)), t = 0.25 + 0.75 * (Math.abs(v) / (big || 1));
+          return v > 0 ? mix("#f4f4f6", "#9fdcb4", t) : mix("#f4f4f6", "#f1aaa4", t);
+        }
         const xs = vs.filter((x) => x != null); if (xs.length < 2) return null;
         const lo = Math.min(...xs), up = Math.max(...xs); if (up - lo < 1e-9) return null;
         let t = (v - lo) / (up - lo); if (!hi) t = 1 - t; // (t: 0 worst, 1 best)
