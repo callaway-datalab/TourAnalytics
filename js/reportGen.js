@@ -864,38 +864,37 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.rect(M, y - 7, 3, 9, { fill: P.gold });
     cap("Equipment", M + 9, y, P.gold); y += 23;
     d.text("By Product", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
-    d.text("Each kind of club (and ball) you've used more than one model of: strokes gained a round in the rounds each was used, and the stats recorded with it. * Fewer than 10 rounds: read with care.", M, y + 4, { size: 7.5, color: P.grey });
-    y += 16;
+    // (update 517: wrapped, so it never runs off the page)
+    for (const l of wrap("Each kind of club (and ball) you've used more than one model of: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its colour in the key. * Fewer than 10 rounds: read with care.", W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
+    y += 6;
     const FEW = 10;
+    // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
+    // colour; sized so two kinds fit a page, the columns spread over the page's width so nothing runs off it
+    const CH = { plotH: 78, dates: true, gap: 8, pad: 12 };
     for (const sec of a.productTable) {
-      const CH = { plotH: 95, dates: true, gap: 10 }; // (update 516: dates along the bottom, shorter: 2 or 3 kinds a page)
-      const chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) + 14 : 0; // (update 515: the table and its chart on one page)
-      const all = 40 + Math.min(12, sec.rows.length) * 18 + chH;
-      need(all < H - 120 ? all : 40 + Math.min(10, sec.rows.length) * 18);
-      y += 10; cap(sec.name, M, y, P.gold, "left", 8); y += 8;
-      // (only the stats that have a value for some model; columns spaced so the headings never touch)
       const keepS = sec.statNames.map((_, i) => i).filter((i) => sec.rows.some((r) => r.stats[i]));
-      const cx = [M, null, M + W * 0.42, M + W * 0.55, M + W * 0.78, M + W];
-      const heads = ["Model", "Rounds", "SG / Rd", ...keepS.map((i) => sec.statNames[i])];
-      heads.forEach((h, i) => cap(h, i ? cx[i + 1] : cx[0], y + 4, P.soft, i ? "right" : "left"));
-      y += 8;
-      for (const r of sec.rows.slice(0, 12)) {
-        need(18); y += 15;
+      const rows = sec.rows.slice(0, 10);
+      const chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) : 0;
+      need(22 + chH + 22 + rows.length * 15 + 10);
+      y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 2;
+      if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CH });
+      // the table: a colour square for each model, then its numbers in columns spread evenly across the page
+      const colorOf = new Map((sec.legend || []).map((L) => [L.name, L.color]));
+      const heads = ["Rounds", "SG / Rd", ...keepS.map((i) => sec.statNames[i])];
+      const sw = 22, colW = (W - sw) / heads.length, xr = (i) => M + sw + colW * (i + 1) - 4; // (right edge of each column)
+      y += 10;
+      heads.forEach((h, i) => { let t = h; while (textWidth(t.toUpperCase(), 6.5, true) + 1.4 * t.length > colW - 8 && t.length > 4) t = `${t.slice(0, -2)}\u2026`; cap(t, xr(i), y, P.soft, "right", 6.5); });
+      y += 4;
+      for (const r of rows) {
+        y += 14;
         const few = r.rounds < FEW, col = few ? P.grey : P.ink;
-        d.text(`${wrap(r.label, W * 0.44, 9.5, true)[0]}${few ? " *" : ""}`, cx[0], y, { size: 9.5, bold: !few, color: col });
-        d.text(String(r.rounds), cx[2], y, { size: 9.5, color: few ? P.down : P.grey, align: "right" });
-        d.text(fmt2(r.perRound), cx[3], y, { size: 9.5, bold: true, color: few ? P.grey : tone(r.perRound), align: "right" });
-        keepS.forEach((si, i) => { const x = r.stats[si]; d.text(x ? fmtStat(x.def, x.v) : "\u2014", cx[4 + i], y, { size: 9.5, color: col, align: "right" }); });
-        d.line(M, y + 5, M + W, y + 5, { color: P.hair, width: 0.4 });
+        d.rect(M + 2, y - 8, 9, 9, { fill: colorOf.get(r.label) || P.grey });
+        d.text(`${r.rounds}${few ? " *" : ""}`, xr(0), y, { size: 9, color: few ? P.down : P.grey, align: "right" });
+        d.text(fmt2(r.perRound), xr(1), y, { size: 9, bold: true, color: few ? P.grey : tone(r.perRound), align: "right" });
+        keepS.forEach((si, i) => { const x = r.stats[si]; d.text(x ? fmtStat(x.def, x.v) : "\u2014", xr(2 + i), y, { size: 9, color: col, align: "right" }); });
+        d.line(M, y + 4.5, M + W, y + 4.5, { color: P.hair, width: 0.4 });
       }
-      y += 8;
-      // (update 515) under each kind: every event, coloured by the model used in it
-      if (sec.events?.length) {
-        const h = eventBarsHeight(W, sec.events, sec.legend, CH);
-        need(h + 14); y += 6;
-        y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CH });
-      }
-      y += 14; // (a small gap before the next kind)
+      y += 18; // (a small gap before the next kind)
     }
   }
   footer();
