@@ -7,7 +7,7 @@
 import { el, mount, infoTip } from "../ui.js";
 import { heatData, listHeatCourses } from "../courseHeat.js";
 import { pickWho } from "./coursePrepExtras.js";
-import { playerTrails, trailSG, bucketOf, ATT_B, SG_B } from "../courseShots.js";
+import { playerTrails, trailSG, bucketOf, ATT_B, skillsOf } from "../courseShots.js";
 
 const SC = { e: ["Eagle+", "#1f4fd1"], b: ["Birdie", "#8fd3ff"], p: ["Par", "#f2f2f2"], g: ["Bogey+", "#ff9f43"] };
 const toPar = (v) => (v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "E" : `−${Math.abs(v)}`);
@@ -180,7 +180,7 @@ function faced(S, all, name) {
 /* ---------------- against the Top 10: where they gain, where the subject holds up ---------------- */
 function vsTop(H, S, name, first, openHole) {
   const holes = H.map((x) => { const a = x.me?.n ? x.me.sum / x.me.n : null, t = x.top?.n ? x.top.sum / x.top.n : null; return { ...x, v: a != null && t != null ? t - a : null }; }).filter((x) => x.v != null);
-  const dists = SG_B.map((b) => { const me = S.rounds ? (S.sg[b] || 0) / S.rounds : null, tp = S.topRounds ? (S.topSg[b] || 0) / S.topRounds : null; return { b, v: me != null && tp != null ? me - tp : null }; }).filter((x) => x.v != null && (S.sg[x.b] != null || S.topSg[x.b] != null));
+  const dists = skillsOf(S.sg, S.topSg).map((b) => { const me = S.rounds ? (S.sg[b] || 0) / S.rounds : null, tp = S.topRounds ? (S.topSg[b] || 0) / S.topRounds : null; return { b, v: me != null && tp != null ? me - tp : null }; }).filter((x) => x.v != null && (S.sg[x.b] != null || S.topSg[x.b] != null));
   if (!holes.length && !dists.length) return [];
   const max = Math.max(...holes.map((x) => Math.abs(x.v)), ...dists.map((x) => Math.abs(x.v)), 0.01);
   const row = (k, v, onTap = null, max = 1) => { const r = el(onTap ? "button" : "div", { class: "ci2-vr", ...(onTap ? { type: "button" } : {}) }, [el("span", { class: "ci2-vr-k" }, k), el("span", { class: "ci2-vr-bar" }, el("i", { class: v < 0 ? "neg" : "pos", style: `width:${(Math.abs(v) / max) * 100}%` })), el("strong", { class: v < 0 ? "neg" : "pos" }, sgn(v))]); if (onTap) r.addEventListener("click", onTap); return r; };

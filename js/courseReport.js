@@ -9,7 +9,7 @@
  */
 import { el, mount } from "./ui.js";
 import { heatData, heatImage, withMerges, zonesOf, keyZones, buildOverlay, learnOf, pinForShot, shotsFor, listHeatCourses, pinLabel, pinsOn } from "./courseHeat.js";
-import { playerTrails, SG_B, ATT_B } from "./courseShots.js";
+import { playerTrails, skillsOf, ATT_B } from "./courseShots.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const toPar = (v) => (v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "E" : `−${Math.abs(v)}`);
@@ -138,7 +138,7 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
     ["TEE MISS TO AVOID", "neg", HF.filter((x) => x.miss && x.miss.by >= 0.1).sort((a, b) => b.miss.by - a.miss.by).slice(0, 3), (x) => [x.miss.worse === "left" ? "Left" : "Right", "miss", `+${x.miss.by.toFixed(2)} vs the opposite`]],
   ].filter(([, , l]) => l.length);
   const holesV = HF.map((x) => { const a = x.me?.n ? x.me.sum / x.me.n : null, t = x.top?.n ? x.top.sum / x.top.n : null; return { h: x.h, v: a != null && t != null ? t - a : null }; }).filter((x) => x.v != null);
-  const dists = SG_B.map((b) => { const me = S.rounds ? (S.sg[b] || 0) / S.rounds : null, tp = S.topRounds ? (S.topSg[b] || 0) / S.topRounds : null; return { b, v: me != null && tp != null ? me - tp : null }; }).filter((x) => x.v != null && (S.sg[x.b] != null || S.topSg[x.b] != null));
+  const dists = skillsOf(S.sg, S.topSg).map((b) => { const me = S.rounds ? (S.sg[b] || 0) / S.rounds : null, tp = S.topRounds ? (S.topSg[b] || 0) / S.topRounds : null; return { b, v: me != null && tp != null ? me - tp : null }; }).filter((x) => x.v != null && (S.sg[x.b] != null || S.topSg[x.b] != null));
   const bars = (list, k, n) => { const l = list.filter((x) => x.v < -0.005).sort((a, b) => a.v - b.v).slice(0, n), m = Math.max(...list.map((x) => Math.abs(x.v)), 0.01); return l.map((x) => `<div class="vr"><span>${esc(k(x))}</span><i><b class="neg" style="width:${(Math.abs(x.v) / m) * 100}%"></b></i><em class="neg">${sgn(x.v)}</em></div>`).join("") || `<p class="muted small">None</p>`; };
   const tour = {}; for (const c of all) for (const [b, n] of Object.entries(c.attempts || {})) tour[b] = (tour[b] || 0) + n;
   const tt = Object.values(tour).reduce((a, b) => a + b, 0), st2 = Object.values(S.attempts).reduce((a, b) => a + b, 0);

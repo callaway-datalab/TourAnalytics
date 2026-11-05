@@ -20,7 +20,8 @@ import { clientKey } from "./data.js";
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLS = { year: ["year", "season"], courseNum: ["coursenum", "coursenumber", "courseid"], course: ["course", "coursename"], player: ["player", "playername", "name"], playerID: ["playerid", "player_id", "pid"],
   round: ["round", "rnd", "roundno"], hole: ["hole"], par: ["par", "holepar"], pin: ["pinid", "pin", "pinlocation"], lie: ["lie", "fromlocation"], strokes: ["strokes", "stroke", "shotnum", "shotnumber"],
-  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"] };
+  shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"],
+  skill: ["distance_range", "distancerange", "skill", "shotskill"] }; // (update 512: the file's distance_range (its skill) for each shot, for the skills against the Top 10)
 export function shotColumns(header) {
   const h = header.map(norm), ix = {};
   for (const [k, names] of Object.entries(COLS)) { const i = names.map((n) => h.indexOf(norm(n))).find((x) => x >= 0); if (i != null && i >= 0) ix[k] = i; }
@@ -132,11 +133,14 @@ function mergeSource(M, C) {
 const r4 = (x) => Math.round(x * 1e4) / 1e4, r1 = (x) => Math.round(x * 10) / 10;
 export const ATT_B = ["3-5 ft", "5-10 ft", "10-15 ft", "15-20 ft", "20-25 ft", ">25 ft", "<30 yds", "30-50 yds", "50-100 yds", "100-120 yds", "120-140 yds", "140-160 yds", "160-180 yds", "180-200 yds", "200-220 yds", ">220 yds"];
 export const SG_B = ["<5 ft", ...ATT_B.slice(1), "Tee shot"];
+/** (update 512) the skills with strokes gained: the shot file's skill column when it has one, else the distances */
+export const skillsOf = (...objs) => { const ks = new Set(); for (const o of objs) for (const k of Object.keys(o || {})) ks.add(k); return ks.size ? [...ks] : SG_B; };
 const ydB = (d) => (d < 30 ? "<30 yds" : d < 50 ? "30-50 yds" : d < 100 ? "50-100 yds" : d < 120 ? "100-120 yds" : d < 140 ? "120-140 yds" : d < 160 ? "140-160 yds" : d < 180 ? "160-180 yds" : d < 200 ? "180-200 yds" : d < 220 ? "200-220 yds" : ">220 yds");
 const ftB = (d) => (d < 5 ? "<5 ft" : d < 10 ? "5-10 ft" : d < 15 ? "10-15 ft" : d < 20 ? "15-20 ft" : d < 25 ? "20-25 ft" : ">25 ft");
 /** a shot's distance bucket ([stroke, x, y, lie, dist, toHoleOut]): for strokes gained (sg) or the attempt distribution */
 export function bucketOf(q, par, sg) {
   const L = q[3], d = q[4];
+  if (sg && q[6]) return String(q[6]); // (update 512) strokes gained by the file's skill column, when it has one
   if (q[0] === 1 && par >= 4) return sg ? "Tee shot" : null;
   if (d == null) return null;
   if (L === 4) { if (!sg && d < 3) return null; const b = ftB(d); return sg ? b : b === "<5 ft" ? "3-5 ft" : b; }
@@ -366,7 +370,8 @@ export function shotAggregator() {
           const T = C.players.get(key) || C.players.set(key, { name: ix.player != null ? String(r[ix.player] ?? "") : "", trails: new Map() }).get(key);
           const tk = `${year}|${ix.round != null ? r[ix.round] : ""}|${hole}|${cn ?? ""}`; // (update 485: and the event's courseNum)
           const tr = T.trails.get(tk) || T.trails.set(tk, { y: year, r: ix.round != null ? String(num(r[ix.round]) ?? r[ix.round]) : "", h: hole, p: pid, par: par || null, s: null, shots: [] }).get(tk);
-          tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v]);
+          const sk = ix.skill != null ? String(r[ix.skill] ?? "").trim() : ""; // (update 512: the shot's skill, kept 7th when the file has it)
+          tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v, ...(sk ? [sk] : [])]);
           if (score != null) tr.s = Math.round(score);
           // (update 494: the tee and approach misses come from the shots themselves, not the file's direction columns)
         }

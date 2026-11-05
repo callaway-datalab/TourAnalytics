@@ -13,10 +13,10 @@ import { listHeatCourses, resetHeatList } from "./courseHeat.js";
 import { shotColumns, shotAggregator, uploadShotCourses, mapIdFor } from "./courseShots.js";
 
 /** Bumped when the analysis changes: maps built by an older version are offered a rebuild. */
-export const BUILD_VERSION = 508; // (502: up & down along the line fairway centre → pin; 503: its middle square 40 x 40 ft; 508: each pin's own scoring, values and widths)
+export const BUILD_VERSION = 512; // (512: the distance_range column, each shot's skill; 502: up & down along the line fairway centre → pin; 503: its middle square 40 x 40 ft; 508: each pin's own scoring, values and widths)
 /** The columns kept, in order (also what course_upload.py sends). */
-export const RAW_COLS = ["year", "courseNum", "course", "player", "playerID", "round", "hole", "par", "pin_id", "lie", "strokes", "shot_for", "hole_out", "x", "y", "scoring_avg", "pin_x", "pin_y", "distance", "tournament"];
-const KEYS = ["year", "courseNum", "course", "player", "playerID", "round", "hole", "par", "pin", "lie", "strokes", "shotFor", "holeOut", "x", "y", "v", "pinX", "pinY", "dist", "event"];
+export const RAW_COLS = ["year", "courseNum", "course", "player", "playerID", "round", "hole", "par", "pin_id", "lie", "strokes", "shot_for", "hole_out", "x", "y", "scoring_avg", "pin_x", "pin_y", "distance", "tournament", "distance_range"];
+const KEYS = ["year", "courseNum", "course", "player", "playerID", "round", "hole", "par", "pin", "lie", "strokes", "shotFor", "holeOut", "x", "y", "v", "pinX", "pinY", "dist", "event", "skill"];
 const clean = (v) => { if (v == null || v === "") return null; if (typeof v === "bigint") return Number(v); if (typeof v === "number") return Number.isFinite(v) ? v : null; const t = String(v).trim(); return t === "" ? null : t; };
 const cnOf = (v) => { const c = clean(v); if (c == null) return null; const n = Number(c); return Number.isFinite(n) ? String(n) : String(c); };
 

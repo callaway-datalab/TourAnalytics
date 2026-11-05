@@ -28,11 +28,12 @@ from tour_upload import _connect, chunk_rows_z
 
 # the columns kept, in order (as js/courseRaw.js RAW_COLS), and the names each is found under (as js/courseShots.js COLS)
 RAW_COLS = ["year", "courseNum", "course", "player", "playerID", "round", "hole", "par", "pin_id", "lie", "strokes", "shot_for",
-            "hole_out", "x", "y", "scoring_avg", "pin_x", "pin_y", "distance", "tournament"]
+            "hole_out", "x", "y", "scoring_avg", "pin_x", "pin_y", "distance", "tournament", "distance_range"]
 _NAMES = [["year", "season"], ["coursenum", "coursenumber", "courseid"], ["course", "coursename"], ["player", "playername", "name"],
           ["playerid", "player_id", "pid"], ["round", "rnd", "roundno"], ["hole"], ["par", "holepar"], ["pinid", "pin", "pinlocation"],
           ["lie", "fromlocation"], ["strokes", "stroke", "shotnum", "shotnumber"], ["shotfor"], ["holeout"], ["x"], ["y"],
-          ["scoringavg", "strokestoholeout"], ["pinx"], ["piny"], ["distance", "dist"], ["tournament", "tournamentname", "event", "eventname"]]
+          ["scoringavg", "strokestoholeout"], ["pinx"], ["piny"], ["distance", "dist"], ["tournament", "tournamentname", "event", "eventname"],
+          ["distance_range", "distancerange", "skill", "shotskill"]]
 _REQUIRED = {"course": 2, "hole": 6, "x": 13, "y": 14, "strokes": 10, "hole_out": 12}
 
 
@@ -114,7 +115,7 @@ def upload_course(data, course=None, key_path=None):
 
     data      a pandas DataFrame, or a path to a .parquet / .csv: one row per shot (year, courseNum, course, player,
               playerID, round, hole, par, pin_id, lie, strokes, shot_for, hole_out, x, y, scoring_avg, pin_x, pin_y,
-              distance; tournament optional)
+              distance; tournament and distance_range optional: with distance_range, the skills against the Top 10 are that column's)
     course    which course: its courseNum (4) or name ("Torrey Pines South": every courseNum under that name). None: all.
     Replaces each map's shots. Then press Rebuild maps on Upload Data > Strategy Maps.
     Returns [{course, courseNum, id, shots}].
