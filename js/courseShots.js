@@ -21,7 +21,8 @@ const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLS = { year: ["year", "season"], courseNum: ["coursenum", "coursenumber", "courseid"], course: ["course", "coursename"], player: ["player", "playername", "name"], playerID: ["playerid", "player_id", "pid"],
   round: ["round", "rnd", "roundno"], hole: ["hole"], par: ["par", "holepar"], pin: ["pinid", "pin", "pinlocation"], lie: ["lie", "fromlocation"], strokes: ["strokes", "stroke", "shotnum", "shotnumber"],
   shotFor: ["shotfor"], holeOut: ["holeout"], x: ["x"], y: ["y"], v: ["scoringavg", "strokestoholeout"], pinX: ["pinx"], pinY: ["piny"], dist: ["distance", "dist"], event: ["tournament", "tournamentname", "event", "eventname"],
-  skill: ["distance_range", "distancerange", "skill", "shotskill"] }; // (update 512: the file's distance_range (its skill) for each shot, for the skills against the Top 10)
+  skill: ["distance_range", "distancerange", "skill", "shotskill"],
+  trueDist: ["true_distance", "truedistance"] }; // (update 526: the distance shown on a past shot) // (update 512: the file's distance_range (its skill) for each shot, for the skills against the Top 10)
 export function shotColumns(header) {
   const h = header.map(norm), ix = {};
   for (const [k, names] of Object.entries(COLS)) { const i = names.map((n) => h.indexOf(norm(n))).find((x) => x >= 0); if (i != null && i >= 0) ix[k] = i; }
@@ -371,7 +372,8 @@ export function shotAggregator() {
           const tk = `${year}|${ix.round != null ? r[ix.round] : ""}|${hole}|${cn ?? ""}`; // (update 485: and the event's courseNum)
           const tr = T.trails.get(tk) || T.trails.set(tk, { y: year, r: ix.round != null ? String(num(r[ix.round]) ?? r[ix.round]) : "", h: hole, p: pid, par: par || null, s: null, shots: [] }).get(tk);
           const sk = ix.skill != null ? String(r[ix.skill] ?? "").trim() : ""; // (update 512: the shot's skill, kept 7th when the file has it)
-          tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v, ...(sk ? [sk] : [])]);
+          const td = ix.trueDist != null ? num(r[ix.trueDist]) : null; // (update 526: kept 8th, for the past shot's popup)
+          tr.shots.push([st, Math.round(x * 10) / 10, Math.round(y * 10) / 10, L, dist != null ? Math.round(dist * 10) / 10 : null, v, ...(sk || td != null ? [sk || null] : []), ...(td != null ? [Math.round(td * 10) / 10] : [])]);
           if (score != null) tr.s = Math.round(score);
           // (update 494: the tee and approach misses come from the shots themselves, not the file's direction columns)
         }

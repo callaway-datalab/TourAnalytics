@@ -696,6 +696,33 @@ export async function drawHeat(ctx, course) {
     for (const q of pts) g.appendChild(sv("circle", { cx: q.x, cy: q.y, r: r0, fill: q.s == null ? "#8e8e93" : scColor(Math.max(-2, Math.min(2, q.s))), stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke", opacity: 0.92 }));
     msSvg.style.display = "";
   }
+  // (update 526) a miss square's table, from the saved shots: each lie it was missed to (in its colour), the attempts, the
+  // average hole score, how the hole was scored (a column that's 0% everywhere left out) and up & down; lowest average first
+  function udTable(side, ids) {
+    const box = el("div", { class: "sh-ud-tbox" }, el("p", { class: "muted small" }, "Loading the shots\u2026"));
+    const n = st.hole, idSet = new Set(ids);
+    rawIndex().then((by) => {
+      if (!by) { mount(box, el("p", { class: "muted small" }, "The shots behind this aren\u2019t saved on the site yet.")); return; }
+      const LI = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
+      const items = (by.get(n)?.trails || []).filter((T) => idSet.has(T.p) && T.miss?.side === side).map((T) => ({ lie: LI[T.miss.lie] || "other", s: T.s, made: !!T.miss.made }));
+      if (!items.length) { mount(box, el("p", { class: "muted small" }, "No misses here in the saved shots.")); return; }
+      const lies = new Map(); for (const q of items) (lies.get(q.lie) || lies.set(q.lie, []).get(q.lie)).push(q);
+      const nm = (l) => ({ green: "Green", fairway: "Fairway", rough: "Rough", bunker: "Bunker", tee: "Tee", water: "Water" }[l] || "Other");
+      const avgN = (qs) => { const k = qs.filter((q) => q.s != null); return k.length ? k.reduce((t, q) => t + q.s, 0) / k.length : Infinity; };
+      const rowsL = [...lies].sort((a, b) => avgN(a[1]) - avgN(b[1]) || b[1].length - a[1].length);
+      const cols = [["Eagle", (q) => q.s <= -2], ["Birdie", (q) => q.s === -1], ["Par", (q) => q.s === 0], ["Bogey", (q) => q.s === 1], ["Dbl+", (q) => q.s >= 2]];
+      const SCV = { Eagle: -2, Birdie: -1, Par: 0, Bogey: 1, "Dbl+": 2 };
+      const pctOf = (qs, f) => { const k = qs.filter((q) => q.s != null); return k.length ? Math.round((100 * k.filter(f).length) / k.length) : null; };
+      const keep = cols.filter(([, f]) => [...rowsL.map(([, qs]) => qs), items].some((qs) => (pctOf(qs, f) || 0) > 0));
+      const avgS = (qs) => { const k = qs.filter((q) => q.s != null); return k.length ? (par + k.reduce((t, q) => t + q.s, 0) / k.length).toFixed(2) : "\u2014"; };
+      const ud = (qs) => `${Math.round((100 * qs.filter((q) => q.made).length) / qs.length)}%`;
+      const row = (label, qs, cls = null) => el("tr", { class: [cls, qs.length < 5 ? "sh-few" : null].filter(Boolean).join(" ") || null, title: qs.length < 5 ? "Fewer than 5 attempts" : null }, [el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)),
+        ...keep.map(([h, f]) => el("td", { class: "num", style: `color:${scColor(SCV[h])}` }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
+      mount(box, el("table", { class: "plain sh-pop-t sh-spot-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Att", "Avg", ...keep.map(([h]) => h), "U&D"].map((h, j2) => el("th", { class: j2 ? "num" : null, ...(h in SCV ? { style: `color:${scColor(SCV[h])}` } : {}) }, h)))),
+        el("tbody", {}, [...rowsL.map(([l, qs]) => row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs)), lies.size > 1 ? row("All", items, "sh-pop-tot") : null])]));
+    }).catch(() => mount(box, el("p", { class: "muted small" }, "Couldn\u2019t load the shots.")));
+    return box;
+  }
   function drawUD() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
     const ids = pinNow?.merged || [pid], U = {};
@@ -727,15 +754,14 @@ export async function drawHeat(ctx, course) {
       const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { st.udSel = null; drawUD(); drawMisses(); });
       return el("div", { class: "sh-ud-det" }, [el("div", { class: "sh-pop-h" }, [el("strong", {}, `Missed ${sel.replace("-", " ").toLowerCase()}`), x]),
         el("p", { class: "small" }, [el("strong", {}, `${Math.round((100 * tot[1]) / tot[0])}%`), ` got up and down: ${tot[1]} of ${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}`]),
-        el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Attempts", "Up & down", ""].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
-          el("tbody", {}, ["Fairway", "Rough", "Bunker"].filter((l) => o[l]?.[0]).map((l) => el("tr", {}, [el("td", {}, l), el("td", { class: `num${o[l][0] < 5 ? " few" : ""}` }, String(o[l][0])), el("td", { class: "num" }, String(o[l][1])), el("td", { class: `num ${col(Math.round((100 * o[l][1]) / o[l][0]))}` }, `${Math.round((100 * o[l][1]) / o[l][0])}%`)])))])]);
+        udTable(sel, ids)]); // (update 526: as the circle's popup: each lie in its colour, how the holes were scored, up & down)
     })() : null;
     udBox.hidden = false;
     const tog = hasB ? el("button", { type: "button", class: `link small sh-ud-tog${st.showBoard ? " on" : ""}` }, st.showBoard ? "Hide board" : "Show board") : null;
     tog?.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); });
     // (update 498) the admin: maps an older version built (the up & down sides worked out the old way) say so
     const stale = isAdmin && meta.builtVersion !== BUILD_VERSION ? el("p", { class: "sh-ud-stale" }, meta.rawChunks ? "These maps were built by an older version. Press Rebuild maps on Upload Data \u203a Strategy Maps to rebuild them from the saved shots." : "No shots saved on the site for this course yet, so its maps can\u2019t be rebuilt: upload it once with the new course_upload.py (update 496), then press Rebuild maps on Upload Data \u203a Strategy Maps.") : null;
-    mount(udBox, [el("span", { class: "sh-hl-k", title: "This pin \u00b7 missed within 30 yds \u00b7 italic: under 5 tries" }, ["Up & down by miss", tog]),
+    mount(udBox, [el("span", { class: "sh-hl-k", title: "This pin \u00b7 missed within 30 yds \u00b7 italic: under 5 tries" }, ["Up & down by miss"]), // (update 526: no "Show board": the green in the middle does it)
       el("span", { class: "sh-tee-chips sh-ud3-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), greenBtn, cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]), stale, detail]);
   }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
@@ -803,10 +829,11 @@ export async function drawHeat(ctx, course) {
     const sr = stage.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top;
     const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { pop.hidden = true; pop.classList.remove("sh-pop-trail"); trState.one = null; drawTrails(); }); /* (update 510: closing it lets the trail go) */
     const pinName = (() => { const b = [...pinBar.querySelectorAll(".sh-pin")].find((q) => q.title === String(t.p)); return b ? b.textContent : String(t.p).replace(/[-_]+/g, " "); })();
-    const fmtD = (q) => (q[4] == null ? "" : `${Math.round(q[4])} ${q[3] === 4 ? "ft" : "yds"}`);
+    // (update 526) the file's true_distance (kept 8th) when it has it, else its distance
+    const fmtD = (q) => { const dd = q[7] != null ? q[7] : q[4]; return dd == null ? "" : `${Math.round(dd)} ${q[3] === 4 ? "ft" : "yds"}`; };
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { style: `color:${scColor(t.s ?? 0)}` }, `${t.s != null ? `${scName(t.s)} (${par + t.s})` : "Unfinished"}`), x]),
       el("p", { class: "muted small" }, `${t.y ? `${t.y} \u00b7 ` : ""}Round ${t.r || "?"} \u00b7 ${pinName}`),
-      el("ol", { class: "sh-tr-list" }, [...t.shots.map((q, i) => { const g = sgOf(t, i); return el("li", { class: q[0] === kOf(st.hole, par) ? "on" : null }, [el("strong", {}, LIE_NAMES[q[3]] || "Shot"), ` ${fmtD(q)}`, q[5] != null ? el("span", { class: "muted" }, ` \u00b7 ${Number(q[5]).toFixed(0)} to hole out`) : null,
+      el("ol", { class: "sh-tr-list" }, [...t.shots.map((q, i) => { const g = sgOf(t, i); return el("li", {}, [ /* (update 526: every step number white) */el("strong", {}, LIE_NAMES[q[3]] || "Shot"), ` ${fmtD(q)}`, q[5] != null ? el("span", { class: "muted" }, ` \u00b7 ${Number(q[5]).toFixed(0)} to hole out`) : null,
         g != null ? el("span", { class: `sh-tr-sg ${g > 0.005 ? "pos" : g < -0.005 ? "neg" : ""}` }, ` SG ${g > 0.005 ? "+" : g < -0.005 ? "\u2212" : ""}${Math.abs(g).toFixed(2)}`) : null]); }),]), t.s != null ? el("p", { class: "sh-tr-in" }, "\u2713 In the hole") : null]);
     pop.hidden = false; tapAt = null; dot.hidden = true;
     requestAnimationFrame(() => placePop(px, py));
