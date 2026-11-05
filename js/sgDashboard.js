@@ -525,7 +525,7 @@ export function sgDashboard(container, opts) {
     cats = cats && catsAvail.length > 1;
     const catDrop = cats ? el("div", { class: "cat-drop" }, multi("Category", "cats", catsAvail.map(([v, l]) => ({ value: v, label: l })), "All categories", { plural: "categories" })) : null;
     // two rows: data source, years and tour on top; the categories and Stat Type under them
-    const top = el("div", { class: "pill-row years-row stats-pills" }, [lead, yearPills(opt), tourPills()]);
+    const top = el("div", { class: "pill-row years-row stats-pills" }, [lead, yearPills(opt)]); // (update 522: no Tour filter here; the tour buttons on the player card still switch it)
     const stat = statSelect();
     const bottom = cats || stat ? el("div", { class: "pill-row stats-pills stats-row2" }, [stat, cats ? catPills() : null, catDrop]) : null; // (update 229: Relative / Raw moved to the stats table)
     return el("div", { class: "stats-rows" }, [top, bottom]);

@@ -51,14 +51,14 @@ function geoOf(heat, n, pinId) {
   return { pin: { x: pin.x, y: pin.y }, tee, ppy, rows };
 }
 /** The hole's pin for this round (one picked for each hole, kept with the round). */
-function pinFor(s, heat, n) {
+function pinFor(s, heat, n, key = n) {
   const off = new Set(heat.meta.pinsOff || []); // (update 463: not the pins the admin deleted)
   const inMerge = new Set((heat.meta.pinMerges || []).filter((m) => String(m.hole) === String(n)).flatMap((m) => m.of));
   const pins = Object.keys(heat.data.holes?.[n]?.pins || {}).filter((p) => !off.has(`${n}|${p}`) && !inMerge.has(p));
   if (!pins.length) return null;
   s.simPins ||= {};
-  if (!pins.includes(s.simPins[n])) s.simPins[n] = pins[Math.floor(Math.random() * pins.length)];
-  return s.simPins[n];
+  if (!pins.includes(s.simPins[key])) s.simPins[key] = pins[Math.floor(Math.random() * pins.length)];
+  return s.simPins[key];
 }
 /** Where the ball is after the shots so far (image pixels), from each shot's hit and offline along the line to the pin. */
 function ballAt(g, shots) {
@@ -109,9 +109,28 @@ const CHIP = { fairway: "Fairway", rough: "Rough", bunker: "Bunker", green: "Gre
  * The picture for this shot, or null when the course has no Strategy Maps (or not for this hole). getEntry: the shot's
  * entry panel (its __place(hit, off) and __setLie(lie)).
  */
-export function simImage(ctx, s, hole, shot, getEntry, heat) {
+/* (update 522) opts.n: the hole's number on that course (a random course of your own holes: hole 3 of the round can be
+   hole 12 of a course); opts.overlay: its scoring heatmap over the picture, as Strategy Maps shows it */
+const overlays = new Map(); // `${id}|${hole}|${pin}` → Promise<data URL | null> (a few kept)
+async function heatOverlay(heat, n, pinId, im) {
+  const k = `${heat.meta.id}|${n}|${pinId}`;
+  if (!overlays.has(k)) {
+    if (overlays.size > 6) overlays.delete(overlays.keys().next().value);
+    overlays.set(k, (async () => {
+      const { zonesOf, keyZones, buildOverlay, learnOf } = await import("../courseHeat.js");
+      const img = new Image(); img.src = im.url; await img.decode().catch(() => {});
+      const H = heat.data.holes[n], Z = zonesOf(H.pins[pinId], H.par || 4); keyZones(Z);
+      const ov = buildOverlay(img.naturalWidth ? img : null, Z, { W: im.w, H: im.h, par: H.par || 4, mode: "score", res: 1000, learn: learnOf(H), learnKey: `${heat.meta.id}|${n}` });
+      const url = ov?.canvas?.width ? ov.canvas.toDataURL("image/png") : null;
+      if (ov?.canvas) { ov.canvas.width = 0; ov.canvas.height = 0; } // (the picture's memory back)
+      return url;
+    })().catch(() => null));
+  }
+  return overlays.get(k);
+}
+export function simImage(ctx, s, hole, shot, getEntry, heat, opts = {}) {
   if (!heat) return null;
-  const n = hole.n, pinId = pinFor(s, heat, n), g = pinId ? geoOf(heat, n, pinId) : null, hm = heat.meta.holes?.[n];
+  const n = opts.n ?? hole.n, pinId = pinFor(s, heat, n, opts.n != null ? `${heat.meta.id}|${n}|${hole.n}` : n), g = pinId ? geoOf(heat, n, pinId) : null, hm = heat.meta.holes?.[n];
   if (!g || !hm) return null;
   const idx = hole.shots.indexOf(shot), before = hole.shots.slice(0, idx < 0 ? hole.shots.length : idx);
   const ball = ballAt(g, before);
@@ -134,7 +153,9 @@ export function simImage(ctx, s, hole, shot, getEntry, heat) {
   svg.appendChild(root);
   const image = svgEl("image", { x: 0, y: 0, width: W, height: H, preserveAspectRatio: "none" });
   root.appendChild(image);
-  imageOf(heat, n).then((im) => { if (im) image.setAttribute("href", im.url); });
+  const heatImg = opts.overlay ? svgEl("image", { x: 0, y: 0, width: W, height: H, preserveAspectRatio: "none", opacity: 0.8 }) : null;
+  if (heatImg) root.appendChild(heatImg);
+  imageOf(heat, n).then((im) => { if (!im) return; image.setAttribute("href", im.url); if (heatImg && pinId) heatOverlay(heat, n, pinId, im).then((u) => { if (u) heatImg.setAttribute("href", u); }); });
   const u = (rot ? vb[3] : vb[2]) / 300; // (a size that looks the same however close the view)
   // the shots so far, the line to the pin, the ball and the pin
   let cur = { ...g.tee };

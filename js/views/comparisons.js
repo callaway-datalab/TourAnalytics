@@ -11,6 +11,8 @@
  */
 import { el, mount, icon, infoTip } from "../ui.js";
 import { getState } from "../auth.js";
+// (update 522) Future Outlook: only for the admin, analysts and employees (Callaway Access)
+const canOutlook = () => { const st = getState(); return !!st?.isAdmin || ["analyst", "employee"].includes(st?.profile?.kind); };
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { playerPicker } from "../playerPicker.js";
@@ -593,7 +595,7 @@ export async function render(main) {
       await load();
     } else { await startProducts(); }
     if (!data) { askBusy = ""; askErr = "Couldn\u2019t load the rounds. Try again."; draw(); return; }
-    if (plan?.outlook && source === "tour") { g.what = "outlook"; askBusy = ""; draw(); root.querySelector(".cmp-outlook")?.scrollIntoView({ behavior: "smooth", block: "start" }); return; } // (update 403)
+    if (plan?.outlook && source === "tour" && canOutlook()) { g.what = "outlook"; askBusy = ""; draw(); root.querySelector(".cmp-outlook")?.scrollIntoView({ behavior: "smooth", block: "start" }); return; } // (update 403)
     // what to leave out
     const evs = new Map();
     for (const p of inPlay()) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.event) { const k = `${rd.event}|${yr(rd)}`; if (!evs.has(k)) evs.set(k, { k, event: rd.event, year: yr(rd) }); }
@@ -1117,7 +1119,7 @@ export async function render(main) {
         opt("time", "How they’re playing over time", "This season against last, or recent form"),
         products(allRounds()).length ? opt("gear", "One club or ball against another", "Drivers, irons, putters, golf balls…") : null,
         opt("place", "Where and when they play best", "Courses, tournaments, rounds or months"),
-        source === "tour" ? opt("outlook", "Future Outlook", "Where they\u2019re headed over the next three seasons, and a report") : null, // (update 403)
+        source === "tour" && canOutlook() ? opt("outlook", "Future Outlook", "Where they\u2019re headed over the next three seasons, and a report") : null, // (update 403)
         inPlay().length > 1 ? opt("versus", "The players against each other", "Over the same stretch of rounds") : null,
       ];
     } else if (step === "when") {
@@ -2519,7 +2521,7 @@ export async function render(main) {
     if (few.length) lo.push(`Only a few rounds for ${few.map((it) => `${it.name} (${it.s.n})`).join(", ")}: treat ${few.length === 1 ? "it" : "them"} as a hint, not a verdict.`);
     // the table: strokes gained, then the main stats (no distances)
     const tones = (vals, higher = true) => { const xs = vals.filter((v) => v != null); if (xs.length < 2) return vals.map(() => ""); const hiV = higher === false ? Math.min(...xs) : Math.max(...xs), loV = higher === false ? Math.max(...xs) : Math.min(...xs); return vals.map((v) => (v == null || Math.abs(hiV - loV) < 1e-9 ? "" : v === hiV ? "up" : v === loV ? "down" : "")); };
-    const rows = [{ group: "Strokes gained a round" }, ...sgRowsFor(live).map(([k, l]) => { const vals = live.map((it) => it.s.sg[k]); return { label: l, cells: vals.map(f2s), tones: tones(vals) }; })];
+    const rows = [{ group: "Strokes gained a round" }, ...sgRowsFor(live).map(([k, l]) => { const vals = live.map((it) => it.s.sg[k]); return { label: k === "TOTAL" ? "Total" : l, /* (update 522) */ cells: vals.map(f2s), tones: tones(vals) }; })];
     const obsSets = live.map((it) => statSets(roundsOf(it), [it.f])[0] || []);
     for (const bk of statBlocks(obsSets, incNow())) {
       const main = bk.rows.filter((r) => !r.dist && r.values.some((v) => v != null));
@@ -2573,12 +2575,12 @@ export async function render(main) {
         if (!prods.length) return [];
         const { eventBarsOf } = await import("../pdfCharts.js"), { gearInfo } = await import("../sg.js");
         const kindOf = (it) => (it.f?.balls?.length ? "Ball" : gearInfo(it.f.clubs[0]).kind || "Club");
-        const KN = { Driver: "Drivers", "Non-Driver": "Tee clubs", "Fairway Wood": "Fairway woods", Hybrid: "Hybrids", Iron: "Irons", Wedge: "Wedges", Putter: "Putters", Ball: "Balls" };
+        const KN = { Driver: "Driver", "Non-Driver": "Tee club", "Fairway Wood": "Fairway wood", Hybrid: "Hybrid", Iron: "Iron", Wedge: "Wedge", Putter: "Putter", Ball: "Ball" }; // (update 522: just the kind)
         const kinds = [...new Set(prods.map(kindOf))];
         return kinds.map((k) => {
           const its = prods.filter((it) => kindOf(it) === k).map((it) => ({ key: it.name, name: it.name, color: it.color,
             rounds: (it.rs || []).map((rd) => ({ event: rd.event, year: rd.year, date: rd.date, sg: rd.shots.reduce((t, x) => t + (x.sg || 0), 0), shots: rd.shots.reduce((t, x) => t + (x.w || 1), 0) })).filter((rd) => rd.shots) }));
-          return { title: `${KN[k] || k}: every event`, bars: eventBarsOf(its), legend: its.map((it) => ({ name: it.name, color: it.color })) };
+          return { title: KN[k] || k, bars: eventBarsOf(its), legend: its.map((it) => ({ name: it.name, color: it.color })) };
         }).filter((c) => c.bars.length);
       })(),
       notes: ["Strokes gained scores every shot against the baseline in the data: + means strokes gained, \u2212 strokes lost. A round\u2019s total is the sum of its shots; the numbers here are averages a round.",

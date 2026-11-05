@@ -218,7 +218,7 @@ async function render() {
     window.__taCoachFor = state.user?.uid; window.__taCoach = false;
     import("./store.js").then((m) => m.myCoachAccess(state.profile.inviteCode)).then((on) => { window.__taCoach = !!on; }).catch(() => {});
   }
-  if (routeId === "course-prep" && !(state.isAdmin && !previewClient && !getPreviewTeam())) { navigate("/entry"); return; } // (update 372: Practice is open to everyone)
+  // (update 522) Course Prep is open to everyone too
   if (routeId === "team") {
     const keys = teamKeys();
     // (update 307) their own entered rounds count as one more to pick from; with no players, it's just theirs

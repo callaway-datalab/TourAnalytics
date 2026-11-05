@@ -178,25 +178,30 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   if (byProduct) {
     const STATS = { OTT: [["drive", "Driving Distance"], ["ballSpeed", "Ball Speed"], ["fwy", "Fairway %"]], APP: [["hitGreen", "Hit Green %"], ["prox", "Proximity"]], PUTT: [["make", "Made Putt %"], ["goodLag", "Good Lag %"]] };
     const KINDS = [["Driver", "Drivers", STATS.OTT], ["Non-Driver", "Tee clubs", STATS.OTT], ["Fairway Wood", "Fairway Woods", STATS.APP], ["Hybrid", "Hybrids", STATS.APP], ["Iron", "Irons", STATS.APP],
-      ["Wedge", "Wedges", STATS.APP], ["Putter", "Putters", STATS.PUTT], ["Ball", "Balls", [...STATS.OTT.slice(0, 1), ...STATS.APP.slice(1)]]];
+      ["Wedge", "Wedges", STATS.APP], ["Putter", "Putters", STATS.PUTT], ["Ball", "Balls", []]]; // (update 522: a ball: strokes gained in each part of the game instead)
+    // (update 522) the strokes gained shown for each kind: its own part of the game (a ball: the total, then each part)
+    const SGC = { Driver: [["SG OTT / Rd", "OTT"]], "Non-Driver": [["SG OTT / Rd", "OTT"]], "Fairway Wood": [["SG APP / Rd", "APP"]], Hybrid: [["SG APP / Rd", "APP"]], Iron: [["SG APP / Rd", "APP"]],
+      Wedge: [["SG ARG / Rd", "ARG"]], Putter: [["SG PUTT / Rd", "PUTT"]], Ball: [["SG Total / Rd", null], ["SG OTT / Rd", "OTT"], ["SG APP / Rd", "APP"], ["SG ARG / Rd", "ARG"], ["SG PUTT / Rd", "PUTT"]] };
     const ofShot = (s) => [s.gear, s.ball ? `Ball|${s.ball}` : null].filter(Boolean);
     const m = new Map();
     for (const rd of mine) {
-      for (const s of rd.shots) for (const v of ofShot(s)) { const g = m.get(v) || m.set(v, { value: v, info: gearInfo(v), sg: 0, shots: 0, rounds: new Set(), obs: {} }).get(v); g.sg += s.sg; g.shots += s.w || 1; g.rounds.add(rd.key); }
+      for (const s of rd.shots) for (const v of ofShot(s)) { const g = m.get(v) || m.set(v, { value: v, info: gearInfo(v), sg: 0, byCat: {}, shots: 0, rounds: new Set(), obs: {} }).get(v); g.sg += s.sg; g.byCat[s.cat] = (g.byCat[s.cat] || 0) + s.sg; g.shots += s.w || 1; g.rounds.add(rd.key); }
       for (const o of rd.obs || []) for (const v of ofShot(o)) { const g = m.get(v); if (!g) continue; const x = g.obs[o.k] ||= { s: 0, w: 0 }; x.s += o.v * o.w; x.w += o.w; }
     }
     const known = new Set(KINDS.map(([k]) => k));
     const kinds = [...KINDS, ...[...new Set([...m.values()].map((g) => g.info.kind))].filter((k) => !known.has(k)).map((k) => [k, k, []])];
     productTable = kinds.map(([kind, name, stats]) => {
-      const rows = [...m.values()].filter((g) => g.info.kind === kind).map((g) => ({ label: `${g.info.brand} ${g.info.model}`.trim(), kind, rounds: g.rounds.size, shots: g.shots, perRound: g.sg / Math.max(1, g.rounds.size),
-        stats: stats.map(([k]) => (g.obs[k]?.w ? { v: g.obs[k].s / g.obs[k].w, def: statDef(k) } : null)) }))
-        .sort((a, b) => b.rounds - a.rounds || b.perRound - a.perRound);
+      const sgCols = SGC[kind] || [["SG / Rd", null]];
+      const rows = [...m.values()].filter((g) => g.info.kind === kind).map((g) => { const n = Math.max(1, g.rounds.size), sgs = sgCols.map(([, c]) => (c ? (g.byCat[c] || 0) : g.sg) / n);
+        return { label: `${g.info.brand} ${g.info.model}`.trim(), kind, rounds: g.rounds.size, shots: g.shots, perRound: sgs[0], sgs,
+          stats: stats.map(([k]) => (g.obs[k]?.w ? { v: g.obs[k].s / g.obs[k].w, def: statDef(k) } : null)) }; })
+        .sort((a, b) => b.perRound - a.perRound || b.rounds - a.rounds); // (update 521: best strokes gained a round first; 522: in its own part of the game)
       // (update 515) every event, coloured by the model used most in it: strokes gained a round with this kind's shots
       const vals = [...m.values()].filter((g) => g.info.kind === kind).sort((a, b) => b.rounds.size - a.rounds.size || b.sg - a.sg).map((g) => g.value);
       const colorOf = new Map(vals.map((v, i) => [v, PROD_COLORS[i % PROD_COLORS.length]]));
       const items = vals.map((v) => ({ key: v, name: `${gearInfo(v).brand} ${gearInfo(v).model}`.trim(), color: colorOf.get(v),
         rounds: mine.map((rd) => { let sg = 0, n = 0; for (const x of rd.shots) if (ofShot(x).includes(v)) { sg += x.sg; n += x.w || 1; } return n ? { event: rd.event, year: rd.year, date: rd.date, sg, shots: n } : null; }).filter(Boolean) }));
-      return { cat: kind, name, statNames: stats.map(([, l]) => l), rows, events: eventBarsOf(items), legend: items.map((it) => ({ name: it.name, color: it.color })) };
+      return { cat: kind, name, statNames: stats.map(([, l]) => l), sgNames: sgCols.map(([l]) => l), rows, events: eventBarsOf(items), legend: items.map((it) => ({ name: it.name, color: it.color })) };
     }).filter((sec) => sec.rows.length > 1);
     if (!productTable.length) productTable = null;
   }
@@ -873,26 +878,28 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
     // colour; sized so two kinds fit a page, the columns spread over the page's width so nothing runs off it
     const CH = { plotH: 78, dates: true, gap: 8, pad: 12 };
-    for (const sec of a.productTable) {
+    a.productTable.forEach((sec, si0) => {
       const keepS = sec.statNames.map((_, i) => i).filter((i) => sec.rows.some((r) => r.stats[i]));
       const rows = sec.rows.slice(0, 10);
       const chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) : 0;
-      need(22 + chH + 22 + rows.length * 15 + 10);
+      need(22 + chH + 22 + rows.length * 15 + 10 + (si0 ? 18 : 0));
+      if (si0 && y > 90) { d.rect(M, y - 12, W, 1.2, { fill: P.goldLight }); y += 6; } // (update 521: a thin champagne bar between kinds, not at a page's top)
       y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 2;
       if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CH });
       // the table: a colour square for each model, then its numbers in columns spread evenly across the page
       const colorOf = new Map((sec.legend || []).map((L) => [L.name, L.color]));
-      const heads = ["Rounds", "SG / Rd", ...keepS.map((i) => sec.statNames[i])];
+      const sgN = sec.sgNames || ["SG / Rd"], nS = sgN.length; // (update 522: named for its part of the game)
+      const heads = ["Rounds", ...sgN, ...keepS.map((i) => sec.statNames[i])];
       const sw = 22, colW = (W - sw) / heads.length, xr = (i) => M + sw + colW * (i + 1) - 4; // (right edge of each column)
       // a column's values, best to worst: SG higher is better; a stat by its own definition (lower better for proximity)
-      const colVals = [rows.map((r) => r.perRound), ...keepS.map((si) => rows.map((r) => r.stats[si]?.v ?? null))];
-      const higher = [true, ...keepS.map((si) => rows.map((r) => r.stats[si]?.def).find(Boolean)?.higher ?? null)];
+      const colVals = [...sgN.map((_, j) => rows.map((r) => (r.sgs ? r.sgs[j] : r.perRound))), ...keepS.map((si) => rows.map((r) => r.stats[si]?.v ?? null))];
+      const higher = [...sgN.map(() => true), ...keepS.map((si) => rows.map((r) => r.stats[si]?.def).find(Boolean)?.higher ?? null)];
       const mix = (a0, b0, t) => { const A = [1, 3, 5].map((k) => parseInt(a0.slice(k, k + 2), 16)), B = [1, 3, 5].map((k) => parseInt(b0.slice(k, k + 2), 16)); return `#${A.map((v, k) => Math.round(v + (B[k] - v) * t).toString(16).padStart(2, "0")).join("")}`; };
       const shade = (i, k) => {
         const ci = i - 1, vs = colVals[ci], v = vs?.[k], hi = higher[ci];
         if (v == null || hi == null) return null;
         // (update 519) strokes gained splits at zero: gains in greens (the biggest gain the deepest), losses in reds
-        if (ci === 0) {
+        if (ci < nS) {
           if (Math.abs(v) < 0.005) return null;
           const big = Math.max(...vs.filter((x) => x != null && (v > 0 ? x > 0 : x < 0)).map(Math.abs)), t = 0.25 + 0.75 * (Math.abs(v) / (big || 1));
           return v > 0 ? mix("#f4f4f6", "#9fdcb4", t) : mix("#f4f4f6", "#f1aaa4", t);
@@ -912,12 +919,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         d.text(`${r.rounds}${few ? " *" : ""}`, xr(0), y, { size: 9, color: few ? P.down : P.grey, align: "right" });
         // (update 518) each number on a colour from best (green) to worst (red) down its column
         const cell = (t, i, k, bold) => { const c = shade(i, k); if (c) d.roundRect(xr(i) - colW + 10, y - 9.5, colW - 6, 13, 3, { fill: c }); d.text(t, xr(i) - 3, y, { size: 9, bold, color: c ? P.ink : col, align: "right" }); };
-        cell(fmt2(r.perRound), 1, rows.indexOf(r), true);
-        keepS.forEach((si, i) => { const x = r.stats[si]; cell(x ? fmtStat(x.def, x.v) : "\u2014", 2 + i, rows.indexOf(r), false); });
+        sgN.forEach((_, j) => cell(fmt2(r.sgs ? r.sgs[j] : r.perRound), 1 + j, rows.indexOf(r), true));
+        keepS.forEach((si, i) => { const x = r.stats[si]; cell(x ? fmtStat(x.def, x.v) : "\u2014", 1 + nS + i, rows.indexOf(r), false); });
         d.line(M, y + 4.5, M + W, y + 4.5, { color: P.hair, width: 0.4 });
       }
-      y += 30; // (update 518: a little more room before the next kind)
-    }
+      y += 36; // (update 518, 521: more room before the next kind)
+    });
   }
   footer();
   return d.output();

@@ -248,6 +248,9 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
       const valOf = (o, k) => { if (k === "go") { const g = o.go, l = o.lay; return g && l && g[0] >= 3 && l[0] >= 3 ? m2(l) - m2(g) : null; } const h = o.hit, m = o.miss; return h && m && h[0] >= 3 && m[0] >= 3 ? m2(m) - m2(h) : null; };
       const pv = PSs.length ? { fwy: par >= 4 ? valOf(sum2("fwy"), "fwy") : null, gir: valOf(sum2("gir"), "gir"), go: par >= 4 ? valOf(sum2("go"), "go") : null, widths: Object.entries(PSs[0].widths || {}).map(([c, w]) => [Number(c), w]).sort((a, b) => a[0] - b[0]) } : { fwy: x.fwy, gir: x.gir, go: x.go, widths: x.widths };
       const sumSc = (k) => { const o = { n: 0, sum: 0, e: 0, b: 0, p: 0, g: 0 }; for (const P0 of PSs) for (const kk of Object.keys(o)) o[kk] += P0[k]?.[kk] || 0; return o; };
+      // (update 522) the fairway's worth from the same tee shots as OFF THE TEE: the left and right misses together against
+      // the fairway, so the two never disagree (the old way also counted penalties and lost balls as misses)
+      if (par >= 4 && okD(D.C) && (okD(D.L) || okD(D.R))) { const L0 = D.L || [0, 0], R0 = D.R || [0, 0]; pv.fwy = (L0[1] + R0[1]) / (L0[0] + R0[0]) - D.C[1] / D.C[0]; }
       const facts = [];
       if (pv.fwy != null) facts.push(`<b>Fairway</b> missing it costs ${pv.fwy.toFixed(2)}`);
       if (pv.gir != null) facts.push(`<b>Green in regulation</b> missing it costs ${pv.gir.toFixed(2)}`);

@@ -173,7 +173,7 @@ async function drawHome(ctx) {
   mount(ctx.body, [hero(), el("p", { class: "muted pr-loading ta-loading" }, "Loading your courses…")]);
   const courses = coursesCache || (coursesCache = await myCourses(ctx));
   if (ctx.view.name !== "home") return;
-  const pool = courses.flatMap((c) => c.par.map((p, i) => (Number(c.yards[i]) > 0 ? { par: p, yards: Number(c.yards[i]), course: c.name, n: i + 1 } : null)).filter(Boolean));
+  const pool = courses.flatMap((c) => c.par.map((p, i) => (Number(c.yards[i]) > 0 ? { par: p, yards: Number(c.yards[i]), course: c.name, n: i + 1, ...(c.heat?.id ? { heatId: c.heat.id } : {}) } : null)).filter(Boolean)); // (update 522: and its Strategy Maps)
 
   // simulate a random course
   const opts = { holes: 18, tees: "champ", real: false, noPutts: false };
@@ -758,7 +758,11 @@ function drawRound(ctx, s) {
   end.addEventListener("click", () => finishRound(ctx, s, true));
   const what = shot.unit === "ft" ? `Putt · ${fmtD(shot.startDist, "ft")}` : shot.startLie === "Tee box" ? `Tee shot · ${shot.startDist} yds` : `${fmtD(shot.startDist, "yds")} to go`;
   // (update 461) the course's Strategy Maps, when it has them: loaded once, then the round is drawn again with them
-  const simImg = s.mode !== "sim" && s.course?.name ? readyFor(s.course.name, s.course.heatId, () => { if (ctx.view?.name === "round" && ctx.view.session === s) drawRound(ctx, s); }) : null;
+  const redraw = () => { if (ctx.view?.name === "round" && ctx.view.session === s) drawRound(ctx, s); };
+  const simImg = s.mode !== "sim" && s.course?.name ? readyFor(s.course.name, s.course.heatId, redraw) : null;
+  // (update 522) a random course from your own holes: each hole's own image and scoring heatmap, when its course has Strategy Maps
+  const srcImg = s.mode === "sim" && hole.src?.course ? readyFor(hole.src.course, hole.src.heatId, redraw) : null;
+  const realView = srcImg ? (() => { const v = simImage(ctx, s, hole, shot, () => card?.querySelector(".pr-hit-entry"), srcImg, { n: hole.src.n, overlay: true }); return v ? el("div", { class: "pr-visual pr-himg-wrap" }, [v]) : null; })() : null;
   let card = null;
   card = el("section", { class: "panel pr-shot pr-dshot" }, [
     el("div", { class: "pr-shot-t" }, [
@@ -769,9 +773,9 @@ function drawRound(ctx, s) {
     ]),
     // a random course: its made-up hole from above; a real one: the strip down the hole, or (update 461) the hole's own
     // image when the course has Strategy Maps
-    s.mode === "sim" ? simVisual(ctx, s, hole, shot) : (simImg ? (() => { const v = simImage(ctx, s, hole, shot, () => card?.querySelector(".pr-hit-entry"), simImg); return v ? el("div", { class: "pr-visual pr-himg-wrap" }, [v]) : null; })() : null) || holeStrip(hole, shot),
+    realView || (s.mode === "sim" ? simVisual(ctx, s, hole, shot) : null) || (simImg ? (() => { const v = simImage(ctx, s, hole, shot, () => card?.querySelector(".pr-hit-entry"), simImg); return v ? el("div", { class: "pr-visual pr-himg-wrap" }, [v]) : null; })() : null) || holeStrip(hole, shot),
     s.mode !== "sim" && shot.unit !== "ft" && ctx.clubs ? (ctx.prefillClub?.(shot), clubSelect(ctx.clubs, shot.clubUsed || null, (v) => { shot.clubUsed = v || undefined; ctx.save(s); })) : null,
-    entryPanel(shot, { vis: s.mode === "sim" ? shot.vis : null, target: () => shot.target, noPutts: !!s.opts?.noPutts }, (r) => { shot.result = r || undefined; ctx.save(s); }, commit),
+    entryPanel(shot, { vis: s.mode === "sim" && !realView ? shot.vis : null, target: () => shot.target, noPutts: !!s.opts?.noPutts }, (r) => { shot.result = r || undefined; ctx.save(s); }, commit),
     el("div", { class: "pr-more" }, [undo, el("span", { class: "pr-more-links" }, [reset, pick, end])]),
   ]);
   const thru = sm.holes;

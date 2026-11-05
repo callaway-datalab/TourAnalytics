@@ -40,7 +40,7 @@ export function randomHoles({ holes = 18, scale = 1, pool = null, pars = null } 
     const picks = [];
     let bag = shuffle(pool);
     while (picks.length < holes) { if (!bag.length) bag = shuffle(pool); picks.push(bag.pop()); }
-    return picks.map((h, i) => ({ n: i + 1, par: h.par, length: Math.round(h.yards * scale / 5) * 5, from: `${h.course} #${h.n}`, shots: [], done: false, strokes: 0 }));
+    return picks.map((h, i) => ({ n: i + 1, par: h.par, length: Math.round(h.yards * scale / 5) * 5, from: `${h.course} #${h.n}`, src: { course: h.course, n: h.n, ...(h.heatId ? { heatId: h.heatId } : {}) }, shots: [], done: false, strokes: 0 })); // (update 522: the real hole, for its image)
   }
   const ps = PAR_ORDER.slice(0, holes);
   for (let k = 0; k < ps.length; k += 9) for (let i = Math.min(k + 8, ps.length - 1); i > k; i--) { const j = k + Math.floor(Math.random() * (i - k + 1)); [ps[i], ps[j]] = [ps[j], ps[i]]; }

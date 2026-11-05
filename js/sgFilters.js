@@ -164,7 +164,7 @@ export function filtersPanel(S, opt) {
   const more = ["event", "course", "roundNo", "lie", "dist", "club", "gear", "ptype"].filter((k) => (S.st[k] || []).length).length + (Number(S.st.span) > 0 ? 1 : 0);
   const btn = el("button", { type: "button", class: "filters-panel-btn", "aria-expanded": open ? "true" : "false" }, [
     el("span", { class: "fp-title" }, "Filters"),
-    el("span", { class: "fp-sum" }, [src, yrs, S.tourCounts.length ? S.tourName(S.st.tour[0] ?? "") : "", S.def.label, cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
+    el("span", { class: "fp-sum" }, [src, yrs, S.def.label, cats, more ? `${more} more` : ""].filter(Boolean).join(" \u00b7 ")),
     el("span", { class: "fp-caret", "aria-hidden": "true" }, open ? "\u25B4" : "\u25BE"),
   ]);
   btn.addEventListener("click", () => { S.st.panelOpen = !S.st.panelOpen; S.draw(); });
