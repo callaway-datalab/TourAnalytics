@@ -5871,3 +5871,6 @@ div.sh-ud3-green { cursor: default; }
 .sh-hl-avg small { position: absolute; right: 0; top: 0; line-height: 7.5px; white-space: nowrap; }
 .sh-hl-avg strong { position: absolute; right: 0; bottom: -2px; line-height: 10.5px; }
 .sh-hl-k small, .sh-hl-avg small, .sh-hl-avg strong { margin: 0; } /* (update 530: no stray margin) */
+/* (update 531) "Off the tee" and "Up & down by miss": centred on the middle of their blocks (the scoring rows' pinned
+   labels don't apply here) */
+.sh-tee > .sh-hl-k { position: static; display: flex; flex-direction: column; justify-content: center; align-self: center; height: auto; margin: 0; font-size: inherit; line-height: 1.15; }
