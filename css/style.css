@@ -5849,3 +5849,12 @@ div.sh-ud3-green { cursor: default; }
 .sh-ud3 > .sh-ud-stale, .sh-ud3 > .sh-ud-det { grid-column: 1 / -1; margin: 4px 0 0; }
 /* (update 527) Focus: the tour buttons above the category pills */
 .fx-tours { margin: 0 0 8px; }
+/* (update 528) the scoring rows: the name, rounds and Avg Score small enough to sit within the bar's height; the bars closer together */
+.sh-hist { gap: 9px; }
+.sh-hl { align-items: center; }
+.sh-hl-k, .sh-hl-avg { height: 18px; display: flex; flex-direction: column; justify-content: center; line-height: 1; overflow: visible; }
+.sh-hl-k { font-size: 10.5px; gap: 0; }
+.sh-hl-k small { font-size: 7.5px; line-height: 1; }
+.sh-hl-avg { font-size: 10.5px; gap: 0; }
+.sh-hl-avg small { font-size: 7.5px; line-height: 1; }
+.sh-hl-avg strong { font-size: 10.5px; line-height: 1; }
