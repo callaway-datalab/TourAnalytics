@@ -4,6 +4,7 @@
 // short version in plain English, highlight cards, then the visuals (where the strokes come from, round by round
 // spread) and the full table side by side. The AI summary, when the service is set up, is the short version.
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
+import { drawEventBars, eventBarsHeight } from "./pdfCharts.js";
 
 const P = { night: "#0a0a0b", night2: "#16201a", panel: "#141815", ink: "#1d1d1f", grey: "#5f6368", soft: "#86868b", faint: "#a1a1a6", hair: "#e3e3e8", mist: "#f5f5f7",
   gold: "#b08d57", goldLight: "#d4b483", up: "#1e8e4a", upLight: "#7ee2a2", upTint: "#e7f5ec", down: "#d0342c", downLight: "#ff8a80", downTint: "#fdecea", warn: "#b26a00", note: "#faf6ee", track: "#eceef1" };
@@ -139,11 +140,11 @@ export function buildComparePdf(r) {
   {
     const per = sels.length <= 2 ? sels.length : sels.length === 3 ? 3 : sels.length === 4 ? 4 : 3;
     const gap = 10, cw = (W - gap * (per - 1)) / Math.max(1, per), cats = r.cats || [];
-    const ch = 132 + cats.length * 13;
+    const ch = 132 + cats.length * 13 + (sels.some((s) => wrap(s.name, cw - 24, 10, true).length > 1) ? 12 : 0); // (update 515: room for a two-line name)
     const rankOf = new Map(ranked.map((s, i) => [s, i + 1]));
-    for (let i = 0; i < sels.length; i += per) {
+    for (let i = 0; i < ranked.length; i += per) {
       need(ch + 10);
-      sels.slice(i, i + per).forEach((s, j) => {
+      ranked.slice(i, i + per).forEach((s, j) => { /* (update 515: best to worst) */
         const x = M + j * (cw + gap), yy = y, rk = rankOf.get(s);
         d.roundRect(x, yy, cw, ch, 10, { fill: P.mist });
         d.roundRect(x, yy, cw, 5, 2.5, { fill: s.color }); d.rect(x, yy + 2.5, cw, 2.5, { fill: s.color });
@@ -191,7 +192,7 @@ export function buildComparePdf(r) {
   };
   y += 4;
   if (r.verdict?.lines?.length) noteBox("The verdict", r.verdict.lines, P.gold, P.note);
-  noteBox(r.summary ? "The short version  ·  AI summary" : "The short version", [r.summary || r.fallback || ""], P.ink, P.mist, 9.5);
+  // (update 515: no "The short version")
 
   /* ---------- highlights and lowlights: cards ---------- */
   // (update 239) full width, one under the other: the insights are sentences with the stats behind them
@@ -276,7 +277,11 @@ export function buildComparePdf(r) {
     section(kicker, title, 80);
     const n = cols.length, labelW = Math.min(170, W * 0.34), cw = (W - labelW) / Math.max(1, n);
     const xs = cols.map((_, i) => M + labelW + cw * (i + 1) - 8);
-    const heads = cols.map((c) => wrap(`${c.name}${c.few ? " *" : ""}`, cw - 18, 7.5, true).slice(0, 2));
+    // (update 515) headings wrapped as they're drawn (capitals, spaced out), so a long product name never runs into the next
+    const capW = (t) => textWidth(t.toUpperCase(), 7, true) + 1.1 * Math.max(0, t.length - 1);
+    const capWrap = (t, maxW) => { const out = []; let line = ""; for (const wd of String(t).split(/\s+/)) { const tryL = line ? `${line} ${wd}` : wd; if (capW(tryL) <= maxW || !line) line = tryL; else { out.push(line); line = wd; } } if (line) out.push(line);
+      return out.flatMap((l) => { if (capW(l) <= maxW) return [l]; const parts = []; let cur = ""; for (const ch of l) { if (capW(cur + ch) > maxW && cur) { parts.push(cur); cur = ch; } else cur += ch; } if (cur) parts.push(cur); return parts; }); };
+    const heads = cols.map((c) => capWrap(`${c.name}${c.few ? " *" : ""}`, cw - 14).slice(0, 5));
     const hh = Math.max(...heads.map((h) => h.length)) * 9 + 14;
     const head = () => {
       d.roundRect(M, y, W, hh, 6, { fill: P.night });
@@ -287,22 +292,34 @@ export function buildComparePdf(r) {
     let zebra = false;
     for (const row of rows) {
       if (row.group) { if (y + 40 > H - 50) { newPage(); head(); } y += 16; cap(row.group, M + 4, y, P.gold, "left", 7.5); y += 5; zebra = false; continue; }
-      if (y + 17 > H - 50) { newPage(); head(); }
-      if (zebra) d.rect(M, y, W, 16, { fill: "#fafafc" });
+      // (update 515) a long label or cell wraps onto more lines (the row grows) rather than running into the next column
+      const lab = wrap(row.label, labelW - 12, 9, !row.sub).slice(0, 3), cells = row.cells.map((c) => wrap(String(c), cw - 10, 9, true).slice(0, 4));
+      const lines = Math.max(lab.length, ...cells.map((c) => c.length)), rh = 16 + (lines - 1) * 10.5;
+      if (y + rh + 1 > H - 50) { newPage(); head(); }
+      if (zebra) d.rect(M, y, W, rh, { fill: "#fafafc" });
       zebra = !zebra;
-      d.text(wrap(row.label, labelW - 8, 9)[0], M + (row.sub ? 14 : 4), y + 11, { size: row.sub ? 8.5 : 9, bold: !row.sub, color: row.sub ? P.grey : P.ink });
-      row.cells.forEach((c, i) => {
+      lab.forEach((l, k) => d.text(l, M + (row.sub ? 14 : 4), y + 11 + k * 10.5, { size: row.sub ? 8.5 : 9, bold: !row.sub, color: row.sub ? P.grey : P.ink }));
+      cells.forEach((cl, i) => {
         const t = row.tones?.[i];
-        if (t === "up" || t === "down") { const tw = textWidth(c, 9, true) + 10; d.roundRect(xs[i] - tw + 5, y + 2.5, tw, 12, 6, { fill: t === "up" ? P.upTint : P.downTint }); }
-        d.text(c, xs[i], y + 11, { size: 9, bold: t === "up" || t === "down", color: t === "up" ? P.up : t === "down" ? P.down : P.ink, align: "right" });
+        if ((t === "up" || t === "down") && cl.length === 1) { const tw = textWidth(cl[0], 9, true) + 10; d.roundRect(xs[i] - tw + 5, y + 2.5, tw, 12, 6, { fill: t === "up" ? P.upTint : P.downTint }); }
+        cl.forEach((l, k) => d.text(l, xs[i], y + 11 + k * 10.5, { size: 9, bold: t === "up" || t === "down", color: t === "up" ? P.up : t === "down" ? P.down : P.ink, align: "right" }));
       });
-      y += 16;
+      y += rh;
     }
     if (note) { y += 12; for (const l of wrap(note, W, 8)) { need(12); d.text(l, M, y, { size: 8, color: P.warn }); y += 11; } }
     y += 10;
   };
   table(r.cols, r.rows, "The numbers", "Side by side", r.cols.some((c) => c.few) ? `* Only a few rounds (${r.cols.filter((c) => c.few).map((c) => `${c.name}: ${c.n}`).join(", ")}), so differences against ${r.cols.filter((c) => c.few).length === 1 ? "it" : "them"} may just be chance.` : null);
   if (r.usage) table(r.usage.cols.map((name) => ({ name })), r.usage.rows.map(([label, ...cells]) => ({ label, cells })), "Products", "Who uses them, and for how long", null);
+
+  /* ---------- (update 515) products: every event, coloured by the product used in it ---------- */
+  for (const ch of r.eventCharts || []) {
+    const h = eventBarsHeight(W, ch.bars, ch.legend);
+    section("By event", ch.title, h + 10);
+    d.text(ch.note || "Strokes gained a round in each tournament, the bar coloured by the product used most in it.", M, y + 1, { size: 8, color: P.grey });
+    y += 10; need(h);
+    y += drawEventBars(d, M, y, W, ch.bars, ch.legend, { ink: P.ink, grey: P.grey, hair: P.hair });
+  }
 
   /* ---------- how to read it ---------- */
   section("How to read this", "What the numbers mean", 60);

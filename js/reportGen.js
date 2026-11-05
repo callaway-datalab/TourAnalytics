@@ -15,6 +15,8 @@ import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, 
 import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
+import { eventBarsOf, drawEventBars, eventBarsHeight } from "./pdfCharts.js";
+const PROD_COLORS = ["#d4b483", "#2f9bff", "#30d158", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff", "#ffd60a", "#ac8e68", "#5e5ce6"]; // (as the Stats page)
 
 const CAT_NAME = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
 const STEADY = 0.05; // a change smaller than ±0.05 strokes a round counts as steady
@@ -189,7 +191,12 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       const rows = [...m.values()].filter((g) => g.info.kind === kind).map((g) => ({ label: `${g.info.brand} ${g.info.model}`.trim(), kind, rounds: g.rounds.size, shots: g.shots, perRound: g.sg / Math.max(1, g.rounds.size),
         stats: stats.map(([k]) => (g.obs[k]?.w ? { v: g.obs[k].s / g.obs[k].w, def: statDef(k) } : null)) }))
         .sort((a, b) => b.rounds - a.rounds || b.perRound - a.perRound);
-      return { cat: kind, name, statNames: stats.map(([, l]) => l), rows };
+      // (update 515) every event, coloured by the model used most in it: strokes gained a round with this kind's shots
+      const vals = [...m.values()].filter((g) => g.info.kind === kind).sort((a, b) => b.rounds.size - a.rounds.size || b.sg - a.sg).map((g) => g.value);
+      const colorOf = new Map(vals.map((v, i) => [v, PROD_COLORS[i % PROD_COLORS.length]]));
+      const items = vals.map((v) => ({ key: v, name: `${gearInfo(v).brand} ${gearInfo(v).model}`.trim(), color: colorOf.get(v),
+        rounds: mine.map((rd) => { let sg = 0, n = 0; for (const x of rd.shots) if (ofShot(x).includes(v)) { sg += x.sg; n += x.w || 1; } return n ? { event: rd.event, year: rd.year, date: rd.date, sg, shots: n } : null; }).filter(Boolean) }));
+      return { cat: kind, name, statNames: stats.map(([, l]) => l), rows, events: eventBarsOf(items), legend: items.map((it) => ({ name: it.name, color: it.color })) };
     }).filter((sec) => sec.rows.length > 1);
     if (!productTable.length) productTable = null;
   }
@@ -861,7 +868,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y += 16;
     const FEW = 10;
     for (const sec of a.productTable) {
-      need(40 + Math.min(10, sec.rows.length) * 18);
+      const chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, { plotH: 130 }) + 20 : 0; // (update 515: the table and its chart on one page)
+      const all = 40 + Math.min(12, sec.rows.length) * 18 + chH;
+      need(all < H - 120 ? all : 40 + Math.min(10, sec.rows.length) * 18);
       y += 10; cap(sec.name, M, y, P.gold, "left", 8); y += 8;
       // (only the stats that have a value for some model; columns spaced so the headings never touch)
       const keepS = sec.statNames.map((_, i) => i).filter((i) => sec.rows.some((r) => r.stats[i]));
@@ -879,6 +888,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         d.line(M, y + 5, M + W, y + 5, { color: P.hair, width: 0.4 });
       }
       y += 8;
+      // (update 515) under each kind: every event, coloured by the model used in it
+      if (sec.events?.length) {
+        const h = eventBarsHeight(W, sec.events, sec.legend, { plotH: 130 });
+        need(h + 20); y += 10;
+        y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, plotH: 130 });
+      }
     }
   }
   footer();

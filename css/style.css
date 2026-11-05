@@ -5821,7 +5821,7 @@ main:has(.pr-body > .crumb:first-child) { padding-top: 0.5rem !important; }
 .prod-table { width: 100%; font-size: var(--fs-sm); }
 .prod-table th { white-space: nowrap; }
 .prod-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.prod-table td.prod-name { display: flex; align-items: center; gap: 0.45rem; white-space: normal; min-width: 9rem; }
+.prod-table td.prod-name { width: 2.5rem; }
 .prod-table td.prod-name i { width: 0.75rem; height: 0.75rem; border-radius: 3px; flex: 0 0 auto; display: inline-block; }
 .prod-table td.pos { color: #4CAF50; } .prod-table td.neg { color: #ff6b5e; }
 .trend-prod + .prod-table-wrap + .prod-cmp-row, .prod-table-wrap + .prod-cmp-row { margin-top: 8px; }

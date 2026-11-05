@@ -91,6 +91,11 @@ export function distanceBucket(cat, st, par) {
 }
 
 /** The bag group of a club label, for shots saved before groups were recorded. */
+/** (update 515) An entered shot's product, from the WITB club picked for it: "Driver|Callaway Rogue ST Max" (none without a model). */
+export function gearOfStroke(st) {
+  if (!st?.club || !st.clubMake || !String(st.clubMake).trim()) return null;
+  return `${st.clubCat || clubGroupOf(st.club)}|${String(st.clubMake).trim()}`;
+}
 export function clubGroupOf(label) {
   const s = String(label || "");
   if (/^driver/i.test(s)) return "Driver";
@@ -178,7 +183,7 @@ export function basicCounts(round) {
  */
 export function roundObs(round) {
   const obs = [];
-  const add = (k, cat, lie, dist, v, w = 1) => { if (v !== null && v !== undefined && Number.isFinite(v) && w > 0) obs.push({ k, cat, lie, dist, v, w }); };
+  const add = (k, cat, lie, dist, v, w = 1, gear = null) => { if (v !== null && v !== undefined && Number.isFinite(v) && w > 0) obs.push({ k, cat, lie, dist, v, w, ...(gear ? { gear } : {}) }); }; // (update 515: and its club model, from WITB)
   const c = basicCounts(round);
   if (c.holes) {
     add("scoring", null, null, null, (c.score / c.holes) * 18, c.holes);
@@ -211,31 +216,31 @@ export function roundObs(round) {
     let argSeen = false, firstPutt = null, putts = 0;
     strokes.forEach((st, i) => {
       if (!st.startLie || st.startDist === "" || st.startDist == null || !st.endLie) return;
-      const cat = categoryOf(st, i, h.par), dist = distanceBucket(cat, st, h.par), lie = st.startLie;
+      const cat = categoryOf(st, i, h.par), dist = distanceBucket(cat, st, h.par), lie = st.startLie, g = gearOfStroke(st);
       if (cat === "OTT") {
-        add("fwy", cat, lie, dist, st.endLie === "Fairway" ? 100 : 0);
+        add("fwy", cat, lie, dist, st.endLie === "Fairway" ? 100 : 0, 1, g);
         const a = yds(st.startLie, st.startDist), b = st.endLie === "Holed" ? 0 : yds(st.endLie, st.endDist);
-        if (a != null && b != null && st.endLie !== "Penalty") add("drive", cat, lie, dist, a - b);
+        if (a != null && b != null && st.endLie !== "Penalty") add("drive", cat, lie, dist, a - b, 1, g);
       }
       if (cat === "APP" || cat === "ARG") {
         const on = st.endLie === "Green" || st.endLie === "Holed";
-        add("hitGreen", cat, lie, dist, on ? 100 : 0);
-        if (on) add("prox", cat, lie, dist, st.endLie === "Holed" ? 0 : Number(st.endDist));
+        add("hitGreen", cat, lie, dist, on ? 100 : 0, 1, g);
+        if (on) add("prox", cat, lie, dist, st.endLie === "Holed" ? 0 : Number(st.endDist), 1, g);
       }
       if (cat === "ARG" && !argSeen && done) {
         // up and down: from the first shot around the green, in the hole in two strokes or fewer (penalties count)
         argSeen = true;
         const rest = strokes.slice(i);
         const used = rest.length + rest.filter((x) => x.endLie === "Penalty").length;
-        add("ud", cat, lie, dist, used <= 2 ? 100 : 0);
+        add("ud", cat, lie, dist, used <= 2 ? 100 : 0, 1, g);
       }
       if (cat === "PUTT") {
         putts++;
-        if (!firstPutt) firstPutt = { lie, dist };
-        add("make", cat, lie, dist, st.endLie === "Holed" ? 100 : 0);
+        if (!firstPutt) firstPutt = { lie, dist, g };
+        add("make", cat, lie, dist, st.endLie === "Holed" ? 100 : 0, 1, g);
       }
     });
-    if (done && firstPutt) add("threePutt", "PUTT", firstPutt.lie, firstPutt.dist, putts >= 3 ? 100 : 0);
+    if (done && firstPutt) add("threePutt", "PUTT", firstPutt.lie, firstPutt.dist, putts >= 3 ? 100 : 0, 1, firstPutt.g);
   }
   return obs;
 }
@@ -251,7 +256,8 @@ export function roundToPrepared(round) {
       const cat = categoryOf(st, i, h.par);
       // Club: "7i · Titleist T100" when the brand / model is known; its group (Iron, Wedge…) for the filter.
       const club = st.club ? (st.clubMake ? `${st.club} \u00b7 ${st.clubMake}` : st.club) : null;
-      shots.push({ cat, sg, w: 1, lie: st.startLie, dist: distanceBucket(cat, st, h.par), club, clubCat: st.club ? (st.clubCat || clubGroupOf(st.club)) : null });
+      const gear = gearOfStroke(st); // (update 515: the WITB model as a product, as an uploaded file's club columns give it)
+      shots.push({ cat, sg, w: 1, lie: st.startLie, dist: distanceBucket(cat, st, h.par), club, clubCat: st.club ? (st.clubCat || clubGroupOf(st.club)) : null, hole: h.n, ...(gear ? { gear } : {}) });
     });
   }
   const d = new Date(round.date);

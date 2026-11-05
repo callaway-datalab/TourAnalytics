@@ -359,7 +359,7 @@ function prodTable(mine, kind, order, colorOf, nameOf) {
     Irons: [["SG APP", "sg:APP"], ["Hit Green %", "o:hitGreen"], ["Prox", "o:prox"]],
     Wedges: [["SG ARG", "sg:ARG"], ["Prox", "o:prox"], ["Up & Down %", "o:ud"]],
     Putters: [["SG PUTT", "sg:PUTT"], ["Putts / Rd", "putts"], ["3-Putts / Rd", "three"]],
-    Balls: [["SG OTT", "sg:OTT"], ["SG APP", "sg:APP"], ["SG ARG", "sg:ARG"], ["SG PUTT", "sg:PUTT"]],
+    Balls: [["SG OTT", "sg:OTT"], ["SG APP", "sg:APP"], ["SG ARG", "sg:ARG"], ["SG PUTT", "sg:PUTT"], ["SG Total", "sg:"]], /* (update 515: and the total) */
   }[kind] || [["SG", "sg:"]];
   const rowOf = (p) => {
     const rds = mine.filter((rd) => rd.shots.some((s) => own(s, p)));
@@ -379,7 +379,7 @@ function prodTable(mine, kind, order, colorOf, nameOf) {
       const k = key.slice(2), v = obs(k);
       return el("td", { class: "num" }, k === "drive" ? fmtN(v, 1, " yds") : k === "prox" ? fmtN(v, 1, " ft") : fmtN(v, 1, "%"));
     };
-    return el("tr", {}, [el("td", { class: "prod-name" }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p)]), el("td", { class: "num" }, String(n)), ...cols.map(([, k]) => val(k))]);
+    return el("tr", {}, [el("td", { class: "prod-name", title: nameOf(p) }, el("i", { style: `background:${colorOf(p)}`, role: "img", "aria-label": nameOf(p) })) /* (update 515: just its colour; the key above names it) */, el("td", { class: "num" }, String(n)), ...cols.map(([, k]) => val(k))]);
   };
   const rows = order.map(rowOf).filter(Boolean);
   if (!rows.length) return null;

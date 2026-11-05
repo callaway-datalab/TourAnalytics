@@ -2567,6 +2567,20 @@ export async function render(main) {
         return { sure, verdict: { lines: [`${a0.name} is ${Math.abs(gap) < 0.05 ? "best, but only just" : "best"}: ${f2s(a0.s.sg.TOTAL)} strokes gained a round against ${f2s(b0.s.sg.TOTAL)} for ${b0.name}${live.length > 2 ? ", the next best" : ""}. ${sureWords(a0.s.rounds, b0.s.rounds)}`.trim(), `${f.sum} ${f.lines.join(" ")}`] } };
       })(),
       usage: lastUsage?.rows ? { cols: lastUsage.cols, rows: lastUsage.rows } : null,
+      // (update 515) products: every event as a bar, coloured by the product used in it (a chart for each kind compared)
+      eventCharts: await (async () => {
+        const prods = live.filter((it) => it.f?.clubs?.length || it.f?.balls?.length);
+        if (!prods.length) return [];
+        const { eventBarsOf } = await import("../pdfCharts.js"), { gearInfo } = await import("../sg.js");
+        const kindOf = (it) => (it.f?.balls?.length ? "Ball" : gearInfo(it.f.clubs[0]).kind || "Club");
+        const KN = { Driver: "Drivers", "Non-Driver": "Tee clubs", "Fairway Wood": "Fairway woods", Hybrid: "Hybrids", Iron: "Irons", Wedge: "Wedges", Putter: "Putters", Ball: "Balls" };
+        const kinds = [...new Set(prods.map(kindOf))];
+        return kinds.map((k) => {
+          const its = prods.filter((it) => kindOf(it) === k).map((it) => ({ key: it.name, name: it.name, color: it.color,
+            rounds: (it.rs || []).map((rd) => ({ event: rd.event, year: rd.year, date: rd.date, sg: rd.shots.reduce((t, x) => t + (x.sg || 0), 0), shots: rd.shots.reduce((t, x) => t + (x.w || 1), 0) })).filter((rd) => rd.shots) }));
+          return { title: `${KN[k] || k}: every event`, bars: eventBarsOf(its), legend: its.map((it) => ({ name: it.name, color: it.color })) };
+        }).filter((c) => c.bars.length);
+      })(),
       notes: ["Strokes gained scores every shot against the baseline in the data: + means strokes gained, \u2212 strokes lost. A round\u2019s total is the sum of its shots; the numbers here are averages a round.",
         "Green is the best in a row and red the worst (for stats like Proximity, lower is better).",
         `Anything with fewer than ${FEW} rounds is marked *: with so few rounds a difference can be luck.`],

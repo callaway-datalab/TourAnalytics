@@ -73,11 +73,18 @@ export class PdfDoc {
     return this;
   }
   /** Text with its baseline at y. align: left | right | center (x is the anchor); spacing: extra points between letters. */
-  text(str, x, y, { size = 10, bold = false, color = "#111111", align = "left", spacing = 0 } = {}) {
+  text(str, x, y, { size = 10, bold = false, color = "#111111", align = "left", spacing = 0, rotate = 0 } = {}) {
     const bytes = toWinAnsi(str);
     const w = bytes.reduce((t, c) => t + charW(c, bold), 0) * size / 1000 + spacing * Math.max(0, bytes.length - 1);
-    const X = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
     const esc = bytes.map((c) => (c === 40 || c === 41 || c === 92 ? `\\${String.fromCharCode(c)}` : c < 128 ? String.fromCharCode(c) : `\\${c.toString(8).padStart(3, "0")}`)).join("");
+    if (rotate) {
+      // (update 515) turned rotate degrees anticlockwise about the anchor (align: which end of the text sits on it)
+      const a = (rotate * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), off = align === "right" ? w : align === "center" ? w / 2 : 0;
+      const X0 = x - off * c, Y0 = this.H - y - off * sn;
+      this.ops.push(`BT /${bold ? "F2" : "F1"} ${num(size)} Tf ${num(spacing)} Tc ${rgb(color).map(num).join(" ")} rg ${num(c)} ${num(sn)} ${num(-sn)} ${num(c)} ${num(X0)} ${num(Y0)} Tm (${esc}) Tj ET`);
+      return w;
+    }
+    const X = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
     this.ops.push(`BT /${bold ? "F2" : "F1"} ${num(size)} Tf ${num(spacing)} Tc ${rgb(color).map(num).join(" ")} rg ${num(X)} ${num(this.H - y)} Td (${esc}) Tj ET`);
     return w;
   }
