@@ -684,8 +684,10 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
 
   // ---------- appendix ----------
-  // Approach and Around-the-Green: distance + lie; Off-the-Tee and Putting: distance
-  const byDist = a.groups.filter((g) => (g.cat === "APP" || g.cat === "ARG" ? g.withLie : !g.withLie));
+  // (update 518) distance alone for every category, except Around-the-Green inside 30 yds: distance + lie
+  const upTo = (k) => { const t = String(k || "").split("|")[0], nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number); if (!nums.length) return null; return /^\s*>/.test(t) ? Infinity : Math.max(...nums); };
+  const argNear = (g) => g.cat === "ARG" && upTo(g.key) != null && upTo(g.key) <= 30;
+  const byDist = a.groups.filter((g) => (argNear(g) ? g.withLie : !g.withLie));
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
     section("Detail", "Every skill by distance and lie", 52);
@@ -882,6 +884,18 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const colorOf = new Map((sec.legend || []).map((L) => [L.name, L.color]));
       const heads = ["Rounds", "SG / Rd", ...keepS.map((i) => sec.statNames[i])];
       const sw = 22, colW = (W - sw) / heads.length, xr = (i) => M + sw + colW * (i + 1) - 4; // (right edge of each column)
+      // a column's values, best to worst: SG higher is better; a stat by its own definition (lower better for proximity)
+      const colVals = [rows.map((r) => r.perRound), ...keepS.map((si) => rows.map((r) => r.stats[si]?.v ?? null))];
+      const higher = [true, ...keepS.map((si) => rows.map((r) => r.stats[si]?.def).find(Boolean)?.higher ?? null)];
+      const mix = (a0, b0, t) => { const A = [1, 3, 5].map((k) => parseInt(a0.slice(k, k + 2), 16)), B = [1, 3, 5].map((k) => parseInt(b0.slice(k, k + 2), 16)); return `#${A.map((v, k) => Math.round(v + (B[k] - v) * t).toString(16).padStart(2, "0")).join("")}`; };
+      const shade = (i, k) => {
+        const ci = i - 1, vs = colVals[ci], v = vs?.[k], hi = higher[ci];
+        if (v == null || hi == null) return null;
+        const xs = vs.filter((x) => x != null); if (xs.length < 2) return null;
+        const lo = Math.min(...xs), up = Math.max(...xs); if (up - lo < 1e-9) return null;
+        let t = (v - lo) / (up - lo); if (!hi) t = 1 - t; // (t: 0 worst, 1 best)
+        return t >= 0.5 ? mix("#f4f4f6", "#bfe8cc", (t - 0.5) * 2) : mix("#f4c7c3", "#f4f4f6", t * 2);
+      };
       y += 10;
       heads.forEach((h, i) => { let t = h; while (textWidth(t.toUpperCase(), 6.5, true) + 1.4 * t.length > colW - 8 && t.length > 4) t = `${t.slice(0, -2)}\u2026`; cap(t, xr(i), y, P.soft, "right", 6.5); });
       y += 4;
@@ -890,11 +904,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         const few = r.rounds < FEW, col = few ? P.grey : P.ink;
         d.rect(M + 2, y - 8, 9, 9, { fill: colorOf.get(r.label) || P.grey });
         d.text(`${r.rounds}${few ? " *" : ""}`, xr(0), y, { size: 9, color: few ? P.down : P.grey, align: "right" });
-        d.text(fmt2(r.perRound), xr(1), y, { size: 9, bold: true, color: few ? P.grey : tone(r.perRound), align: "right" });
-        keepS.forEach((si, i) => { const x = r.stats[si]; d.text(x ? fmtStat(x.def, x.v) : "\u2014", xr(2 + i), y, { size: 9, color: col, align: "right" }); });
+        // (update 518) each number on a colour from best (green) to worst (red) down its column
+        const cell = (t, i, k, bold) => { const c = shade(i, k); if (c) d.roundRect(xr(i) - colW + 10, y - 9.5, colW - 6, 13, 3, { fill: c }); d.text(t, xr(i) - 3, y, { size: 9, bold, color: c ? P.ink : col, align: "right" }); };
+        cell(fmt2(r.perRound), 1, rows.indexOf(r), true);
+        keepS.forEach((si, i) => { const x = r.stats[si]; cell(x ? fmtStat(x.def, x.v) : "\u2014", 2 + i, rows.indexOf(r), false); });
         d.line(M, y + 4.5, M + W, y + 4.5, { color: P.hair, width: 0.4 });
       }
-      y += 18; // (a small gap before the next kind)
+      y += 30; // (update 518: a little more room before the next kind)
     }
   }
   footer();
