@@ -740,7 +740,7 @@ export async function drawHeat(ctx, course) {
       // (update 499) a tap: its lies, attempts and how many got up and down, below the grid
       const SH = { "Long-Left": "Long L", "Long-Right": "Long R", "Short-Left": "Short L", "Short-Right": "Short R" };
       const b = el(tot[0] ? "button" : "div", { class: `sh-tee-chip sh-ud3-c ${col(p)}${st.udSel === side ? " on" : ""}${tot[0] && tot[0] < 5 ? " few" : ""}`, ...(tot[0] ? { type: "button", "aria-pressed": String(st.udSel === side) } : {}), title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
-        el("small", {}, SH[side] || side), el("strong", {}, p == null ? "\u2014" : `${p}%`)]); // (update 525: as an Off the tee block; the attempts in its title)
+        el("small", {}, SH[side] || side), el("strong", {}, p == null ? "\u2014" : `${p}%`), tot[0] ? el("em", {}, `(${tot[1]}/${tot[0]})`) : null]); // (update 530: and the count) // (update 525: as an Off the tee block; the attempts in its title)
       if (tot[0]) b.addEventListener("click", () => { st.udSel = st.udSel === side ? null : side; drawUD(); drawMisses(); });
       return b;
     };

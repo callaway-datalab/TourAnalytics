@@ -5858,3 +5858,16 @@ div.sh-ud3-green { cursor: default; }
 .sh-hl-avg { font-size: 10.5px; gap: 0; }
 .sh-hl-avg small { font-size: 7.5px; line-height: 1; }
 .sh-hl-avg strong { font-size: 10.5px; line-height: 1; }
+/* (update 529) the name and Avg Score start level with the top of the bar */
+.sh-hl-k, .sh-hl-avg { justify-content: flex-start; align-self: start; padding-top: 0; }
+.sh-hl-k { margin-top: -1px; } .sh-hl-avg { margin-top: -1px; }
+/* (update 530) the name (or Avg Score) on the bar's top edge, the rounds (or the average) on its bottom edge */
+.sh-hl-k, .sh-hl-avg { height: 19px; justify-content: space-between; margin-top: -1px; }
+.sh-ud3-c em { font-style: normal; font-size: var(--fs-2xs); color: #8e8e93; }
+/* (update 530) pinned to the bar's edges: the name and "Avg Score" on its top, the rounds and the average on its bottom */
+.sh-hl-k, .sh-hl-avg { position: relative; display: block; height: 18px; margin-top: 0; }
+.sh-hl-k { line-height: 10.5px; }
+.sh-hl-k small { position: absolute; left: 0; bottom: -1.5px; line-height: 7.5px; white-space: nowrap; }
+.sh-hl-avg small { position: absolute; right: 0; top: 0; line-height: 7.5px; white-space: nowrap; }
+.sh-hl-avg strong { position: absolute; right: 0; bottom: -2px; line-height: 10.5px; }
+.sh-hl-k small, .sh-hl-avg small, .sh-hl-avg strong { margin: 0; } /* (update 530: no stray margin) */
