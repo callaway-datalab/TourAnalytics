@@ -319,9 +319,9 @@ export function productTrend(S, mine, cat, toggles) {
   const order = [...used].sort((a, b) => b[1] - a[1]).map(([p]) => p);
   const colorOf = (p) => S.PROD_COLORS[order.indexOf(p) % S.PROD_COLORS.length] || "#8e8e93";
   const nameOf = (p) => { const gi = gearInfo(p); return `${gi.brand} ${gi.model}`.trim() || p; };
-  const legend = el("div", { class: "prod-legend" }, order.map((p) => { const a = avgOf.get(p);
-    const v = a && a.n ? a.sg / a.n : null;
-    return el("span", { class: "prod-key", title: a ? `${a.n} round${a.n === 1 ? "" : "s"} with it` : null }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p), v != null ? el("b", { class: v >= 0 ? "pos" : "neg" }, ` ${fmtSG(v)} avg`) : null]); }));
+  // (update 514) the key above the chart: each product's colour and name; its numbers in the table under the chart
+  const legend = el("div", { class: "prod-legend" }, order.map((p) => el("span", { class: "prod-key" }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p)])));
+  const table = prodTable(mine, kind, order, colorOf, nameOf);
   // (update 455) Open in Compare: these products, over the dates in the chart (and the part of the game picked)
   const toCmp = S.me && order.length ? (() => {
     const b = el("button", { type: "button", class: "prod-cmp" }, "Open in Compare \u2192"); // (update 467: small, the legend's size)
@@ -333,12 +333,59 @@ export function productTrend(S, mine, cat, toggles) {
     });
     return el("div", { class: "prod-cmp-row" }, [b, order.length > 8 ? el("span", { class: "muted small" }, " (the 8 most used)") : null]);
   })() : null;
-  return S.panelBox("SG Trends by Product", [toggles, pills, legend, toCmp, S.chartBox((c, as) => S.barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
+  return S.panelBox("SG Trends by Product", [toggles, pills, legend, S.chartBox((c, as) => S.barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
     title: `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
     shortLabels: list.map((g) => g.short),
     tooltip: (i) => { const g = list[i], all = [...g.prods].sort((a, b) => b[1] - a[1]);
       return [S.st.trendBy === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`)].filter(Boolean); },
-  }), "wide", "trend-prod")], "full");
+  }), "wide", "trend-prod"), table, toCmp], "full");
+}
+/*
+ * (update 514) Each product's numbers, under the chart: its rounds (the rounds it was used in) and, by kind:
+ *   Driver / Non-Driver: SG off the tee, distance, accuracy (fairways hit)   Irons: SG approach, hit green %, proximity
+ *   Wedges: SG around the green, proximity, up & down %   Putters: SG putting, putts a round, 3-putts a round
+ *   Balls: SG off the tee, approach, around the green and putting
+ * Strokes gained: a round with it (its shots). The rest: the shot file's own columns on its shots (fairway, drive
+ * distance, on green, proximity, up & down), and for putters, its putts (3-putts: holes with 3 or more of them).
+ */
+function prodTable(mine, kind, order, colorOf, nameOf) {
+  if (!order.length) return null;
+  const ball = kind === "Balls";
+  const own = (x, p) => (ball ? (x.ball ? `Ball|${x.ball}` : null) : x.gear || null) === p;
+  const fmtN = (v, dp, unit = "") => (v == null || !Number.isFinite(v) ? "\u2014" : `${v.toFixed(dp)}${unit}`);
+  const cols = {
+    Driver: [["SG OTT", "sg:OTT"], ["Distance", "o:drive"], ["Accuracy", "o:fwy"]],
+    "Non-Driver": [["SG OTT", "sg:OTT"], ["Distance", "o:drive"], ["Accuracy", "o:fwy"]],
+    Irons: [["SG APP", "sg:APP"], ["Hit Green %", "o:hitGreen"], ["Prox", "o:prox"]],
+    Wedges: [["SG ARG", "sg:ARG"], ["Prox", "o:prox"], ["Up & Down %", "o:ud"]],
+    Putters: [["SG PUTT", "sg:PUTT"], ["Putts / Rd", "putts"], ["3-Putts / Rd", "three"]],
+    Balls: [["SG OTT", "sg:OTT"], ["SG APP", "sg:APP"], ["SG ARG", "sg:ARG"], ["SG PUTT", "sg:PUTT"]],
+  }[kind] || [["SG", "sg:"]];
+  const rowOf = (p) => {
+    const rds = mine.filter((rd) => rd.shots.some((s) => own(s, p)));
+    const n = rds.length; if (!n) return null;
+    const sgCat = (c) => rds.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + (own(s, p) && (!c || s.cat === c) ? s.sg : 0), 0), 0) / n;
+    const obs = (k) => { let v = 0, w = 0; for (const rd of rds) for (const o of rd.obs || []) if (o.k === k && own(o, p)) { const ww = o.w || 1; v += o.v * ww; w += ww; } return w ? v / w : null; };
+    const putts = () => rds.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + (own(s, p) && s.cat === "PUTT" ? s.w || 1 : 0), 0), 0) / n;
+    const three = () => {
+      let any = false, holes = 0;
+      for (const rd of rds) { const by = new Map(); for (const s of rd.shots) if (own(s, p) && s.cat === "PUTT" && s.hole != null && (s.w || 1) === 1) { any = true; by.set(s.hole, (by.get(s.hole) || 0) + 1); } for (const c of by.values()) if (c >= 3) holes++; }
+      return any ? holes / n : null;
+    };
+    const val = (key) => {
+      if (key.startsWith("sg:")) { const v = sgCat(key.slice(3) || null); return el("td", { class: `num ${v > 0.005 ? "pos" : v < -0.005 ? "neg" : ""}` }, fmtSG(v)); }
+      if (key === "putts") return el("td", { class: "num" }, fmtN(putts(), 1));
+      if (key === "three") return el("td", { class: "num" }, fmtN(three(), 2));
+      const k = key.slice(2), v = obs(k);
+      return el("td", { class: "num" }, k === "drive" ? fmtN(v, 1, " yds") : k === "prox" ? fmtN(v, 1, " ft") : fmtN(v, 1, "%"));
+    };
+    return el("tr", {}, [el("td", { class: "prod-name" }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p)]), el("td", { class: "num" }, String(n)), ...cols.map(([, k]) => val(k))]);
+  };
+  const rows = order.map(rowOf).filter(Boolean);
+  if (!rows.length) return null;
+  return el("div", { class: "table-scroll prod-table-wrap" }, el("table", { class: "plain prod-table" }, [
+    el("thead", {}, el("tr", {}, [el("th", {}, "Product"), el("th", { class: "num" }, "Rounds"), ...cols.map(([h]) => el("th", { class: "num" }, h))])),
+    el("tbody", {}, rows)]));
 }
 export function sgByClubBox(S, mine, cat) {
   if (!S.isSG() || !mine?.length) return null;

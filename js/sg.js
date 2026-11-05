@@ -332,7 +332,7 @@ export function prepare(rows, idx) {
     if (!cat || sg === null || w === null || w <= 0) continue;
     const lie = get(r, "lie"), dist = get(r, "distanceRange");
     const eq = hasEquip ? equip(r) : { club: null, clubCat: null, gear: null, ball: null };
-    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist), ...eq };
+    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist), ...eq, ...(idx.hole !== undefined ? { hole: num(get(r, "hole")) } : {}) }; // (update 514: the hole, for 3-putts by putter)
     const rd = roundOf(r);
     rd.shots.push(shot);
     if (shotCols) shotObs(rd, shot, r, idx);
