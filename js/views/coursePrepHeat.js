@@ -8,7 +8,7 @@ import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
 import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
-import { lieName, heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
+import { LOW_MEM, freeCanvases, lieName, heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 import { playerTrails, LIE_NAMES, eKey } from "../courseShots.js"; // (update 479; 503: eKey)
 import { BUILD_VERSION } from "../courseRaw.js"; // (update 498)
@@ -82,6 +82,13 @@ export async function drawHeat(ctx, course) {
   let ov = null;
   // (update 461) worked out at the image's own size (sharp edges where the lie changes), once for each hole, pin and view
   const ovMemo = new Map();
+  // (update 513) the painted overlays kept: a few on a phone (each is a picture the size of the hole image, and an iPhone
+  // reloads the page when pictures use too much memory), the least recently used let go and its memory handed back
+  const MEMO_MAX = LOW_MEM ? 4 : 24;
+  const memoPut = (k, o) => {
+    ovMemo.delete(k); ovMemo.set(k, o);
+    for (const [k0, o0] of ovMemo) { if (ovMemo.size <= MEMO_MAX) break; if (o0 === ov || o0 === o) continue; ovMemo.delete(k0); freeCanvases([o0?.canvas]); }
+  };
   // (update 482) the shot picked (where shot 1, 2 or 3 finished), when this hole has it: 0 for every shot
   // (update 484) no All shots: shot 1 unless another is picked (0 only for courses uploaded before update 482)
   const kOf = (n, parN) => { const H = data.holes?.[n]; if (!Object.values(H?.pins || {}).some((p) => p.byShot)) return 0; const k = Number(st.shot) || 1; return shotsFor(parN).includes(k) ? k : 1; };
@@ -95,8 +102,7 @@ export async function drawHeat(ctx, course) {
     if (!Z || !size.w) { ov = null; return; }
     const k = memoKey(st.hole, st.pin[st.hole], par, img.naturalWidth ? 1 : 0);
     ov = ovMemo.get(k) || buildOverlay(img.naturalWidth ? img : null, Z, { W: size.w, H: size.h, par, mode: "score", learn: learnOf(data.holes?.[st.hole]), learnKey: `${meta.id}|${st.hole}` });
-    if (ovMemo.size > 40) ovMemo.clear();
-    ovMemo.set(k, ov);
+    memoPut(k, ov);
     prewarm();
   };
   // (update 480) then the next hole: its picture and its first pin, so Next is quick too
@@ -114,13 +120,14 @@ export async function drawHeat(ctx, course) {
       await new Promise((r) => setTimeout(r, 200));
       const Zp = zonesFor(nx, p0, parN);
       keyZones(Zp, isP() && !!ix);
-      ovMemo.set(memoKey(nx, p0, parN), buildOverlay(im, Zp, { W: hm.w, H: hm.h, par: parN, mode: "score", learn: learnOf(H), learnKey: `${meta.id}|${nx}` }));
+      memoPut(memoKey(nx, p0, parN), buildOverlay(im, Zp, { W: hm.w, H: hm.h, par: parN, mode: "score", learn: learnOf(H), learnKey: `${meta.id}|${nx}` }));
     } catch { /* (it's only a head start) */ }
   };
   // (update 480) the hole's other pins worked out while the map is looked at, one at a time, so switching is instant
   let warmT = null;
   const prewarm = () => {
     clearTimeout(warmT);
+    if (LOW_MEM) return; // (update 513) not on a phone: each pin worked out ahead is another big picture kept
     warmT = setTimeout(() => {
       if (!img.naturalWidth || !size.w) return;
       const n = st.hole, H = data.holes?.[n]; if (!H) return;
@@ -129,7 +136,7 @@ export async function drawHeat(ctx, course) {
       if (!next) { warmNextHole(vk); return; }
       const Zp = zonesFor(n, next, par);
       keyZones(Zp, isP() && !!ix);
-      ovMemo.set(memoKey(n, next, par), buildOverlay(img, Zp, { W: size.w, H: size.h, par, mode: "score", learn: learnOf(H), learnKey: `${meta.id}|${n}` }));
+      memoPut(memoKey(n, next, par), buildOverlay(img, Zp, { W: size.w, H: size.h, par, mode: "score", learn: learnOf(H), learnKey: `${meta.id}|${n}` }));
       prewarm();
     }, 250);
   };

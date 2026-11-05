@@ -477,9 +477,11 @@ export function paintBase(canvas, img, { W, H, rot = false }) {
   // (update 461) shrunk in halves to near the size shown, then the last step: a big drop in one go leaves jagged edges
   const tw = rot ? ch : cw, th = rot ? cw : ch;
   let src = img, sw = img.naturalWidth, sh = img.naturalHeight;
-  while (sw / 2 >= tw * 1.05 && sh / 2 >= th * 1.05) { const c = document.createElement("canvas"); c.width = Math.round(sw / 2); c.height = Math.round(sh / 2); const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); src = c; sw = c.width; sh = c.height; }
+  const tmp = []; // (update 513: the in-between canvases, emptied after: a phone's canvas memory is small)
+  while (sw / 2 >= tw * 1.05 && sh / 2 >= th * 1.05) { const c = document.createElement("canvas"); c.width = Math.round(sw / 2); c.height = Math.round(sh / 2); const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); src = c; sw = c.width; sh = c.height; tmp.push(c); }
   if (rot) { ctx.save(); ctx.translate(0, ch); ctx.rotate(-Math.PI / 2); ctx.drawImage(src, 0, 0, ch, cw); ctx.restore(); }
   else ctx.drawImage(src, 0, 0, cw, ch);
+  freeCanvases(tmp);
 }
 /*
  * (update 457) The lie on the image: every zone's centre shows what its lie looks like on this hole (a few pixels around
@@ -494,6 +496,7 @@ function pixelsOf(img, gw, gh) {
   const c = document.createElement("canvas"); c.width = gw; c.height = gh;
   const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, gw, gh);
   let data = null; try { data = g.getImageData(0, 0, gw, gh).data; } catch { data = null; }
+  c.width = 0; c.height = 0; // (update 513: its memory back now)
   pixMemo.set(img, { gw, src: img.src, data });
   return data;
 }
@@ -623,15 +626,19 @@ function softenRGBA(d, w, h) {
 const FAINT_AT = [[0, 0], [1, 0.25], [3, 0.5], [5, 0.75], [8, 1]];
 export const FAINT = (n) => { if (n >= 8) return 1; for (let i = 1; i < FAINT_AT.length; i++) { const [n1, a1] = FAINT_AT[i], [n0, a0] = FAINT_AT[i - 1]; if (n <= n1) return a0 + (a1 - a0) * (n - n0) / (n1 - n0); } return 1; };
 /** The zones as a picture the size of the hole image (worked out once per pin and view; turned and scaled when drawn). */
+/** (update 513) a phone (or tablet): far less memory for pictures, so fewer kept and smaller ones */
+export const LOW_MEM = typeof navigator !== "undefined" && (/iphone|ipad|ipod|android/i.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+/** (update 513) a canvas's memory handed back straight away (iPhones count canvas memory against a small limit and reload the page past it) */
+export const freeCanvases = (list) => { for (const c of list || []) if (c) { c.width = 0; c.height = 0; } };
 const lieMapMemo = new Map(); // (update 480) the lie map is the same for every pin on a hole: worked out once
-export function buildOverlay(img, { zones, hasN }, { W, H, par, mode = "zones", res = 2400, learn = null, learnKey = null }) {
+export function buildOverlay(img, { zones, hasN }, { W, H, par, mode = "zones", res = LOW_MEM ? 1400 : 2400, learn = null, learnKey = null }) { // (update 513: smaller on a phone)
   const gw = Math.max(40, Math.min(res, Math.round(W))), gh = Math.max(1, Math.round(H * gw / W)), s = gw / W;
   const off = document.createElement("canvas"); off.width = gw; off.height = gh;
   if (!zones.length) return { canvas: off, map: null, s };
   const mk = learnKey && img?.src ? `${img.src}|${gw}|${learnKey}` : null;
   let map;
   if (mk && lieMapMemo.has(mk)) map = lieMapMemo.get(mk);
-  else { map = lieMap(img, zones, W, gw, gh, learn); if (mk) { if (lieMapMemo.size > 30) lieMapMemo.clear(); lieMapMemo.set(mk, map); } }
+  else { map = lieMap(img, zones, W, gw, gh, learn); if (mk) { if (lieMapMemo.size > (LOW_MEM ? 6 : 30)) lieMapMemo.clear(); lieMapMemo.set(mk, map); } }
   const px = img?.naturalWidth ? pixelsOf(img, gw, gh) : null; // (update 464: nothing outside the hole, even with one lie)
   const N = gw * gh, sum = new Float32Array(N), wt = new Float32Array(N), cov = new Float32Array(N), cnt = new Float32Array(N);
   for (const z of zones) {
@@ -670,9 +677,11 @@ export function paintHeat(canvas, { zones }, ov, { W, H, pin = null, rot = false
   if (zones.length && ov) {
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
   let src = ov.canvas, sw = src.width, sh = src.height; const tw = rot ? chh : cw, th = rot ? cw : chh;
-  while (sw / 2 >= tw * 1.05 && sh / 2 >= th * 1.05) { const c = document.createElement("canvas"); c.width = Math.round(sw / 2); c.height = Math.round(sh / 2); const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); src = c; sw = c.width; sh = c.height; }
+  const tmp = []; // (update 513: the in-between canvases, emptied after: a phone's canvas memory is small)
+  while (sw / 2 >= tw * 1.05 && sh / 2 >= th * 1.05) { const c = document.createElement("canvas"); c.width = Math.round(sw / 2); c.height = Math.round(sh / 2); const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); src = c; sw = c.width; sh = c.height; tmp.push(c); }
   if (rot) { ctx.save(); ctx.translate(0, chh); ctx.rotate(-Math.PI / 2); ctx.drawImage(src, 0, 0, chh, cw); ctx.restore(); }
   else ctx.drawImage(src, 0, 0, cw, chh);
+  freeCanvases(tmp);
   }
   if (pin && pin.x != null) { // the pin: a gold diamond (the same size on screen however far in)
     const z = Math.max(1, canvas.getBoundingClientRect().width / (canvas.offsetWidth || 1));
