@@ -12,6 +12,8 @@ import * as sgStretch from "./sgStretch.js";
 import * as sgPath from "./sgPath.js";
 import * as sgCharts from "./sgCharts.js";
 import * as sgFocus from "./sgFocus.js"; // (update 470) the Focus view
+/** (update 523) the DP World Tour (its file: one value an event, repeated on each round) */
+export const isDpwt = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
 
 export function sgDashboard(container, opts) {
   // (sgDashboard split) S: what the section modules read and write of this page's state and helpers, live
@@ -172,6 +174,7 @@ export function sgDashboard(container, opts) {
     get tourName() { return tourName; },
     get tournamentsPopup() { return tournamentsPopup; },
     get unit() { return unit; },
+    get eventView() { return eventView; }, // (update 523: DP World Tour data: one value an event, shown event by event)
     get Unit() { return Unit; },
     get updatedTxt() { return updatedTxt; },
     get yearOf() { return yearOf; },
@@ -199,7 +202,7 @@ export function sgDashboard(container, opts) {
   let statKey = "sg", def = statDef("sg"), statList = ["sg"], catsAvail = CATEGORIES;
   // Some stats come one row per tournament (no round number, e.g. Birdies / Round over its rounds): then
   // what's counted is events, not rounds, and the page says so.
-  let unit = "round";
+  let unit = "round", eventView = false;
   let sgEligible = null, sgMinR = 1; // the players ranked for every stat (see draw)
   const rw = (n) => `${Number(n).toLocaleString()} ${unit}${n === 1 ? "" : "s"}`;
   const Unit = () => (unit === "event" ? "Events" : "Rounds");
@@ -291,7 +294,9 @@ export function sgDashboard(container, opts) {
     field = fieldAll.map((p) => ({ ...p, rounds: statRounds(p.rounds, statKey) }));
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
     unit = base.length && base.every((rd) => rd.eventLevel) ? "event" : "round";
-    if (unit === "event" && st.trendBy === "round") st.trendBy = "event";
+    // (update 523) the DP World Tour's file has one value an event (repeated on each of its rounds): no round-by-round views
+    eventView = unit === "round" && (isDpwt(st.tour?.[0]) || (base.length > 0 && base.every((rd) => isDpwt(rd.tour))));
+    if ((unit === "event" || eventView) && st.trendBy === "round") st.trendBy = "event";
     // the categories this stat has (strokes gained: all four; Make %: Putting only; Scoring Avg: none)
     const catSeen = new Set(); for (const rd of base) for (const x of rd.shots) if (x.cat) catSeen.add(x.cat);
     catsAvail = CATEGORIES.filter(([k]) => catSeen.has(k));

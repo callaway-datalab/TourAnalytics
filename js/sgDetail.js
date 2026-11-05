@@ -32,7 +32,7 @@ export function detailBlocks(S, mine, slicedField) {
   const prodOn = mine.some((rd) => rd.shots.some((x) => x.gear || x.ball));
   // (update 302) Show Product: its own toggle, to the right of the Round / Event / Month / Year pills
   const toggles = el("div", { class: "trend-row" }, [
-    el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].map(([v, l]) => {
+    el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].filter(([v]) => !(S.eventView && v === "round")).map(([v, l]) => { /* (update 523) */
       const a = el("a", { href: "#", "aria-current": v === S.st.trendBy ? "page" : null }, l);
       a.addEventListener("click", (e) => { e.preventDefault(); S.st.trendBy = v; S.draw(); });
       return a;
@@ -179,7 +179,7 @@ export function statTrend(S, mine, slicedField) {
   const others = S.rankedField(slicedField).filter((p) => p.key !== S.me.key);
   const otherGroups = others.map((p) => S.groupBy(p.rounds, S.st.trendBy));
   const cmp = others.length ? groups.map((g, i) => S.topMean([vals[i], ...otherGroups.map((og) => { const x = og.find((y) => y.id === g.id); return x ? S.metric(x.rounds) : null; })], S.def.higher !== false)) : null;
-  const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].filter(([v]) => S.unit !== "event" || v !== "round").map(([v, l]) => {
+  const toggles = el("div", { class: "subnav small trend-toggles" }, [["round", "Round"], ["event", "Event"], ["month", "Month"], ["year", "Year"]].filter(([v]) => (S.unit !== "event" && !S.eventView) || v !== "round").map(([v, l]) => {
     const a = el("a", { href: "#", "aria-current": v === S.st.trendBy ? "page" : null }, l);
     a.addEventListener("click", (e) => { e.preventDefault(); S.st.trendBy = v; S.draw(); });
     return a;

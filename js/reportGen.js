@@ -258,27 +258,34 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
   // game (how much each swings round to round), and the biggest upside (matching the group's best where the
   // player is furthest behind).
-  const posRounds = series.filter((q) => q.value > 0).length;
+  // (update 523) DP World Tour data (one value an event, repeated on each of its rounds): these by event, not round
+  const isD = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
+  const byEvent = isD(tour) || (mine.length > 0 && mine.every((rd) => isD(rd.tour)));
+  const evOf = (list) => { const m = new Map(); for (const q of list) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); }
+    return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); };
+  const ser = byEvent ? evOf(series) : series;
+  const posRounds = ser.filter((q) => q.value > 0).length;
   let run = 0, best = { len: 0, from: null, to: null }, start = null;
-  series.forEach((q, i) => { if (q.value > 0) { if (!run) start = i; run++; if (run > best.len) best = { len: run, from: series[start].date, to: q.date }; } else run = 0; });
+  ser.forEach((q, i) => { if (q.value > 0) { if (!run) start = i; run++; if (run > best.len) best = { len: run, from: ser[start].date, to: q.date }; } else run = 0; });
   const sd = (vals) => { const m = mean(vals); return vals.length > 1 ? Math.sqrt(vals.reduce((t, v) => t + (v - m) ** 2, 0) / (vals.length - 1)) : null; };
-  const swings = cats.map((k) => ({ cat: k, sd: sd(series.map((q) => q.byCat[k])) })).filter((x) => x.sd != null).sort((p, q) => p.sd - q.sd);
+  const swings = cats.map((k) => ({ cat: k, sd: sd(ser.map((q) => q.byCat[k])) })).filter((x) => x.sd != null).sort((p, q) => p.sd - q.sd);
   // Biggest upside: the player's own best stretch (their best average over a run of rounds) in each category,
   // against their average now; the category where getting back to that is worth the most.
-  const win = Math.min(12, Math.max(3, Math.floor(series.length / 3)));
-  const upside = series.length >= win ? byCat.filter((c) => c.value != null).map((c) => {
+  const win = Math.min(12, Math.max(3, Math.floor(ser.length / 3)));
+  const upside = ser.length >= win ? byCat.filter((c) => c.value != null).map((c) => {
     let bestAvg = -Infinity, at = 0;
-    for (let i = 0; i + win <= series.length; i++) { const v = mean(series.slice(i, i + win).map((q) => q.byCat[c.cat] ?? 0)); if (v > bestAvg) { bestAvg = v; at = i; } }
-    return { cat: c.cat, gain: bestAvg - c.value, bestV: bestAvg, now: c.value, win, from: series[at].date, to: series[at + win - 1].date };
+    for (let i = 0; i + win <= ser.length; i++) { const v = mean(ser.slice(i, i + win).map((q) => q.byCat[c.cat] ?? 0)); if (v > bestAvg) { bestAvg = v; at = i; } }
+    return { cat: c.cat, gain: bestAvg - c.value, bestV: bestAvg, now: c.value, win, from: ser[at].date, to: ser[at + win - 1].date };
   }).sort((p, q) => q.gain - p.gain)[0] || null : null;
   // one category: the other players' typical swing in it (Tour Avg steadiness)
   let tourSd = null;
   if (cats.length === 1) {
     const k = cats[0];
-    const sds = others.map((p) => sd(p.rounds.map((rd) => rd.shots.filter((x) => x.cat === k).reduce((t, x) => t + x.sg, 0)))).filter((v) => v != null && Number.isFinite(v));
+    const one = (rd) => ({ date: rd.date, event: rd.event, value: 0, byCat: { [k]: rd.shots.filter((x) => x.cat === k).reduce((t, x) => t + x.sg, 0) } });
+    const sds = others.map((p) => { const rs = p.rounds.map(one); return sd((byEvent ? evOf(rs) : rs).map((q) => q.byCat[k])); }).filter((v) => v != null && Number.isFinite(v));
     tourSd = sds.length ? mean(sds) : null;
   }
-  const numbers = { posRounds, n: series.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside, tourSd };
+  const numbers = { unit: byEvent ? "event" : "round", posRounds, n: ser.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside, tourSd };
 
   // Basic stats (page 4): every other stat in the data (Scoring Avg, GIR %, Putts / Round …), in the same period and
   // tour, ranked among the same players as strokes gained (the same Min. rounds list).
@@ -382,7 +389,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (e) basics.push(e);
   }
   return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
+    formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
 
@@ -581,7 +588,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   y += 18;
 
   /* ---------- SG form: total and each category ---------- */
-  const formChart = (title, vals) => {
+  const formChart = (title, vals, src = a.series) => {
     const n = Math.min(12, Math.floor(vals.length / 2));
     const first = n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = n >= 2 ? mean(vals.slice(-n)) : null; // the 10 before, the last 10
     const top = y + 22, ht = 70, left = M + 22, wd = W - 22;
@@ -601,31 +608,33 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.polyline(ma(vals).map((v, i) => [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
     const every = Math.max(1, Math.ceil(vals.length / 8));
-    a.series.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
+    src.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
     y = top + ht + 26;
   };
   /* ---------- SG form: the total (of the categories in this report) ---------- */
-  if (a.series.length >= 2) {
-    section("SG Form", "Round by round", 150);
-    d.text("Each bar is one round (green = gained strokes, red = lost). The gold line is the rolling average of the last 10 rounds: when it rises, the player is playing better.", M, y + 6, { size: 8, color: P.grey });
+  const fs = a.formSeries || a.series, U = a.unit === "event" ? "event" : "round"; // (update 523: event by event for the DP World Tour)
+  if (fs.length >= 2) {
+    section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
+    d.text(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last 10 ${U}s: when it rises, the player is playing better.`, M, y + 6, { size: 8, color: P.grey });
     y += 14;
-    formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, a.series.map((q) => q.value)); // (no best / worst dots)
+    formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
   }
 
   /* ---------- by the numbers: four premium tiles ---------- */
   {
     const nb = a.numbers, tiles = [];
     const pct = nb.n ? nb.posRounds / nb.n : 0;
-    if (nb.n) tiles.push({ label: "Rounds in the green", big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of rounds.`, viz: "bar", v: pct });
-    if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? "round" : "rounds"}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
+    const u = nb.unit === "event" ? "event" : "round", Uc = u === "event" ? "Events" : "Rounds"; // (update 523)
+    if (nb.n) tiles.push({ label: `${Uc} in the green`, big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of ${u}s.`, viz: "bar", v: pct });
+    if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? u : `${u}s`}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
     if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`,
-      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-round stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, viz: "pair", v: nb.upside });
+      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-${u} stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, viz: "pair", v: nb.upside });
     else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "At peak", text: "Playing at their best stretch in every category in this report.", viz: null });
     if (nb.steady && a.cats.length === 1) {
       const v = nb.steady.sd, tv = nb.tourSd;
       tiles.push({ label: `${CAT_NAME[nb.steady.cat]} steadiness`, big: `\u00b1${v.toFixed(2)}`,
-        text: `Typical swing round to round.${tv != null ? ` Tour Avg: \u00b1${tv.toFixed(2)}, so ${Math.abs(v - tv) < 0.05 ? "about as steady as the others" : v < tv ? "steadier than the others" : "less steady than the others"}.` : ""}`, viz: "steadyVsTour", v: { mine: v, tour: tv } });
-    } else if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing round to round.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
+        text: `Typical swing ${u} to ${u}.${tv != null ? ` Tour Avg: \u00b1${tv.toFixed(2)}, so ${Math.abs(v - tv) < 0.05 ? "about as steady as the others" : v < tv ? "steadier than the others" : "less steady than the others"}.` : ""}`, viz: "steadyVsTour", v: { mine: v, tour: tv } });
+    } else if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing ${u} to ${u}.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
     if (tiles.length) {
       const cols = 2, gap = 12, tw = (W - gap) / cols, th = 92, rows = Math.ceil(tiles.length / cols);
       section("By the numbers", "At a glance", rows * (th + gap));

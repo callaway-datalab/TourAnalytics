@@ -222,14 +222,18 @@ export function focusView(S, mine, slicedField, f = {}) {
   const stretchPop = (st0) => {
     const cat = st0.cat, dist = st0.dist || null, rds = st0.rds;
     const sgOf = (rd) => (rd.shots || []).reduce((t, x) => t + ((!cat || x.cat === cat) && (!dist || x.dist === dist) ? x.sg || 0 : 0), 0);
-    const inS = new Set(rds), n = all.length, vals = all.map(sgOf), mx = Math.max(0.5, ...vals.map(Math.abs));
+    // (update 523) DP World Tour data (one value an event): a bar an event, not a round
+    const units = S.eventView ? (() => { const m = new Map(); for (const rd of all) { const k = `${rd.event || rd.date}|${String(rd.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } return [...m.values()]; })() : all.map((rd) => [rd]);
+    const word = S.eventView ? "event" : "round";
+    const inS = new Set(rds), n = units.length, vals = units.map((u) => u.reduce((t, rd) => t + sgOf(rd), 0) / u.length), mx = Math.max(0.5, ...vals.map(Math.abs));
+    const onU = units.map((u) => u.some((rd) => inS.has(rd))), nOn = onU.filter(Boolean).length;
     const W = 340, H = 140, y0 = H / 2, bw = W / n, sc = (H / 2 - 6) / mx;
     const NS = "http://www.w3.org/2000/svg", mk = (t, a) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
-    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "fx-st-svg", role: "img", "aria-label": `Every round, the best stretch of ${rds.length} highlighted` });
-    const i0 = all.indexOf(rds[0]);
-    if (i0 >= 0) svg.appendChild(mk("rect", { x: i0 * bw, y: 0, width: rds.length * bw, height: H, fill: "rgba(212,180,131,0.12)" }));
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, class: "fx-st-svg", role: "img", "aria-label": `Every ${word}, the best stretch of ${S.eventView ? nOn : rds.length} highlighted` });
+    const i0 = onU.indexOf(true);
+    if (i0 >= 0) svg.appendChild(mk("rect", { x: i0 * bw, y: 0, width: nOn * bw, height: H, fill: "rgba(212,180,131,0.12)" }));
     svg.appendChild(mk("line", { x1: 0, x2: W, y1: y0, y2: y0, stroke: "rgba(255,255,255,0.25)", "stroke-width": 1 }));
-    all.forEach((rd, i) => { const v = vals[i], on = inS.has(rd), h = Math.max(1, Math.abs(v) * sc);
+    units.forEach((u, i) => { const v = vals[i], on = onU[i], h = Math.max(1, Math.abs(v) * sc);
       svg.appendChild(mk("rect", { x: i * bw + bw * 0.15, width: Math.max(1, bw * 0.7), y: v >= 0 ? y0 - h : y0, height: h, fill: on ? (v >= 0 ? "#30d158" : "#ff453a") : (v >= 0 ? "rgba(48,209,88,0.25)" : "rgba(255,69,58,0.25)") })); });
     // the tournaments in the stretch: their rounds and strokes gained a round
     const evs = new Map();
@@ -251,9 +255,9 @@ export function focusView(S, mine, slicedField, f = {}) {
     const what = cat ? `SG: ${CAT[cat]}${dist ? ` \u00b7 ${dist}` : ""}` : "SG: Total";
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
     const ov = el("div", { class: "gx-pop-overlay fx-st-ov", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop fx-st-pop" }, [
-      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, [`Best stretch \u00b7 ${what} `, stretchInfo(st0)]), el("h2", {}, `${rds.length} rounds in a row \u00b7 ${day(rds[0].date)} \u2013 ${day(rds.at(-1).date)}`)]), close]),
+      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, [`Best stretch \u00b7 ${what} `, stretchInfo(st0)]), el("h2", {}, `${S.eventView ? `${nOn} event${nOn === 1 ? "" : "s"}` : `${rds.length} rounds`} in a row \u00b7 ${day(rds[0].date)} \u2013 ${day(rds.at(-1).date)}`)]), close]),
       svg,
-      el("p", { class: "fx-st-avg" }, ["Over the stretch: ", el("strong", { class: avg >= 0 ? "pos" : "neg" }, `${f2(avg)} a round`), el("span", { class: "muted" }, ` (${f2(vals.reduce((t, v) => t + v, 0) / (n || 1))} over all ${n} rounds)`)]),
+      el("p", { class: "fx-st-avg" }, ["Over the stretch: ", el("strong", { class: avg >= 0 ? "pos" : "neg" }, `${f2(avg)} a round`), el("span", { class: "muted" }, ` (${f2(vals.reduce((t, v) => t + v, 0) / (n || 1))} over all ${n} ${word}s)`)]),
       el("div", { class: "table-scroll" }, el("table", { class: "plain fx-st-t" }, [
         // (update 477) short headings (the long name is above), and each tournament's shots and the drill's stat:
         // successes of attempts for a percentage (fairways hit, putts made…), the average for a number (proximity)

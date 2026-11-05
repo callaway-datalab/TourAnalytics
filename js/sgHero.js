@@ -62,7 +62,7 @@ export function heroBox(S, mine, slicedField, f) {
             // (coloured by rank, as in the report: top 10, 11-50, 51-100, 101-150, past 150)
             S.showRanks && r.rank && r.of > 1 ? S.chipBtn(`hero-chip rank-chip ${r.rank <= 10 ? "rk-10" : r.rank <= 50 ? "rk-50" : r.rank <= 100 ? "rk-100" : r.rank <= 150 ? "rk-150" : "rk-out"}`,
               `${S.ordinal(r.rank)} of ${r.of}`, "Show the rankings", () => S.rankPopup()) : null,
-            S.chipBtn("hero-chip", S.rw(mine.length), `Show every ${S.unit}`, () => S.tournamentsPopup(ordered, slicedField, "Rounds")),
+            S.eventView ? el("span", { class: "hero-chip" }, S.rw(mine.length)) /* (update 523: DP World Tour: no round-by-round list) */ : S.chipBtn("hero-chip", S.rw(mine.length), `Show every ${S.unit}`, () => S.tournamentsPopup(ordered, slicedField, "Rounds")),
             // (update 175) Events: each tournament, their average there and where it placed
             S.unit === "event" ? null : (() => { const n = new Set(ordered.map((rd) => `${rd.event}|${S.yearOf(rd)}`)).size;
               return S.chipBtn("hero-chip", `${n} Event${n === 1 ? "" : "s"}`, "Show every tournament", () => S.eventsPopup(ordered, slicedField, r, "event")); })(),
