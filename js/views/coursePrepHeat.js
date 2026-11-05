@@ -70,7 +70,7 @@ export async function drawHeat(ctx, course) {
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
   const teeBox = el("div", { class: "sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
-  const udBox = el("div", { class: "sh-ud sh-ud-sm", hidden: true }); // (update 491) up & down by where the approach missed, this pin
+  const udBox = el("div", { class: "sh-tee sh-ud3", hidden: true }); // (update 525: laid out as the Off the tee row, its blocks 3 x 3) // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
   prev.addEventListener("click", () => go(-1)); next.addEventListener("click", () => go(1));
   mount(body, el("section", { class: "panel sh-panel" }, [holeBar, el("div", { class: "sh-ctl" }, [pinBar]), head, hist, shotRow, teeBox, udBox, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
@@ -711,14 +711,14 @@ export async function drawHeat(ctx, course) {
       const o = U[side] || {}, tot = Object.values(o).reduce((t, a) => [t[0] + a[0], t[1] + a[1]], [0, 0]);
       const p = tot[0] ? Math.round((100 * tot[1]) / tot[0]) : null; /* (update 508) any attempts; under 5 in italics */
       // (update 499) a tap: its lies, attempts and how many got up and down, below the grid
-      const b = el(tot[0] ? "button" : "div", { class: `sh-ud-c ${col(p)}${st.udSel === side ? " on" : ""}${tot[0] && tot[0] < 5 ? " few" : ""}`, ...(tot[0] ? { type: "button", "aria-pressed": String(st.udSel === side) } : {}), title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
-        el("strong", {}, p == null ? "\u2014" : `${p}%`),
-        el("span", { class: "sh-ud-l" }, tot[0] ? `${tot[0]} att` : "")]); // (update 505: the attempts from there)
+      const SH = { "Long-Left": "Long L", "Long-Right": "Long R", "Short-Left": "Short L", "Short-Right": "Short R" };
+      const b = el(tot[0] ? "button" : "div", { class: `sh-tee-chip sh-ud3-c ${col(p)}${st.udSel === side ? " on" : ""}${tot[0] && tot[0] < 5 ? " few" : ""}`, ...(tot[0] ? { type: "button", "aria-pressed": String(st.udSel === side) } : {}), title: tot[0] ? `${side.replace("-", " ")}: ${tot[1]} of ${tot[0]} got up and down` : null }, [
+        el("small", {}, SH[side] || side), el("strong", {}, p == null ? "\u2014" : `${p}%`)]); // (update 525: as an Off the tee block; the attempts in its title)
       if (tot[0]) b.addEventListener("click", () => { st.udSel = st.udSel === side ? null : side; drawUD(); drawMisses(); });
       return b;
     };
     // (update 501) the green: a tap draws the board on the hole (as Show on map)
-    const greenBtn = el(hasB ? "button" : "div", { class: `sh-ud-green${st.showBoard ? " on" : ""}`, ...(hasB ? { type: "button", "aria-label": st.showBoard ? "Hide the board on the map" : "Show the board on the map", title: "Show the board on the map" } : { "aria-hidden": "true" }) }, el("i"));
+    const greenBtn = el(hasB ? "button" : "div", { class: `sh-tee-chip sh-ud3-green${st.showBoard ? " on" : ""}`, ...(hasB ? { type: "button", "aria-label": st.showBoard ? "Hide the board on the map" : "Show the board on the map", title: "Show the board on the map" } : { "aria-hidden": "true" }) }, el("i"));
     if (hasB) greenBtn.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); });
     // the square picked: every lie it left, its attempts and how many got up and down
     const sel = st.udSel && U[st.udSel] ? st.udSel : null;
@@ -735,8 +735,8 @@ export async function drawHeat(ctx, course) {
     tog?.addEventListener("click", () => { st.showBoard = !st.showBoard; drawUD(); drawBoard(); });
     // (update 498) the admin: maps an older version built (the up & down sides worked out the old way) say so
     const stale = isAdmin && meta.builtVersion !== BUILD_VERSION ? el("p", { class: "sh-ud-stale" }, meta.rawChunks ? "These maps were built by an older version. Press Rebuild maps on Upload Data \u203a Strategy Maps to rebuild them from the saved shots." : "No shots saved on the site for this course yet, so its maps can\u2019t be rebuilt: upload it once with the new course_upload.py (update 496), then press Rebuild maps on Upload Data \u203a Strategy Maps.") : null;
-    mount(udBox, [el("div", { class: "sh-ud-h" }, [el("span", { class: "sh-hl-k" }, "Up & down by miss"), el("span", { class: "sh-ud-note" }, "This pin \u00b7 missed within 30 yds \u00b7 italic: under 5 tries"), tog]), stale,
-      el("div", { class: "sh-ud-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), greenBtn, cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]), detail]);
+    mount(udBox, [el("span", { class: "sh-hl-k", title: "This pin \u00b7 missed within 30 yds \u00b7 italic: under 5 tries" }, ["Up & down by miss", tog]),
+      el("span", { class: "sh-tee-chips sh-ud3-grid" }, [cell("Long-Left"), cell("Long"), cell("Long-Right"), cell("Left"), greenBtn, cell("Right"), cell("Short-Left"), cell("Short"), cell("Short-Right")]), stale, detail]);
   }
   // (update 487) the past shots: only the leg of the shot picked (Shot 1: tee to where it finished), a score's trails from
   // the key (Birdie, Par …: tap to show only those, tap more to add, again to take away), one trail from a tap on it

@@ -322,8 +322,12 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
         tile("SG / round here", SG(mine), sgCls(mine), `${SG(all)} elsewhere`),
         tile("Elsewhere", SG(all), sgCls(all), `${elsewhere.length} round${elsewhere.length === 1 ? "" : "s"} at other courses`),
         tile("Here vs elsewhere", SG(mine - all), sgCls(mine - all), "strokes a round"),
-        tile("Best round here", SG(perRound([best[0]])), sgCls(perRound([best[0]])), rdName(best[0])),
-        here.length >= 2 ? tile("Toughest here", SG(perRound([best.at(-1)])), sgCls(perRound([best.at(-1)])), rdName(best.at(-1))) : null,
+        // (update 525) one card: the best round here, and under it the toughest
+        (() => { const yr = (rd) => `(${[rd.year || String(rd.date || "").slice(0, 4), rd.roundNo ? `R${rd.roundNo}` : null].filter(Boolean).join(" \u00b7 ")})`;
+          const b0 = best[0], w0 = best.at(-1), bv = perRound([b0]), wv = perRound([w0]);
+          return el("div", { class: "pr-tile ch-best", title: `${rdName(b0)}${here.length >= 2 ? `; toughest: ${rdName(w0)}` : ""}` }, [el("span", { class: "pr-tile-k" }, "Best round here"),
+            el("strong", {}, [el("span", { class: sgCls(bv) }, SG(bv)), " ", el("span", { class: "ch-best-when" }, yr(b0))]),
+            here.length >= 2 ? el("span", { class: "pr-tile-s" }, ["Toughest here: ", el("b", { class: sgCls(wv) }, SG(wv)), ` ${yr(w0)}`]) : null]); })(),
         rank && ranked.length > 1 ? tile("Rank here", `${rank} of ${ranked.length}`, "", "players with 2+ rounds here") : null,
         sc != null ? tile("Scoring avg here", sc.toFixed(2), scAll != null ? (sc < scAll ? "pos" : sc > scAll ? "neg" : "") : "", scAll != null ? `${scAll.toFixed(2)} elsewhere` : "") : null,
       ].filter(Boolean)),
@@ -336,13 +340,13 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
         const open = k && ui.open.has(k);
         const tr = el("tr", { class: ds.length ? "sg-tap" : "", ...(ds.length ? { role: "button", tabindex: "0", "aria-expanded": String(!!open) } : {}) }, [
           el("td", {}, [ds.length ? el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "\u25BE " : "\u25B8 ") : null, l]),
-          el("td", { class: `num ${sgCls(h)}` }, fmtSG(h)), el("td", { class: `num ${sgCls(a)}` }, fmtSG(a)), el("td", { class: `num ${sgCls(h - a)}` }, fmtSG(h - a)), el("td", { class: `num ${sgCls(w)}` }, fmtSG(w)), el("td", { class: `num ${w == null || h == null ? "" : sgCls(h - w)}` }, w == null || h == null ? "\u2014" : fmtSG(h - w))]);
+          el("td", { class: `num ${sgCls(h)}` }, fmtSG(h)), el("td", { class: `num ${sgCls(a)}` }, fmtSG(a)), el("td", { class: `num ch-fill ${sgCls(h - a)}` }, fmtSG(h - a)), el("td", { class: `num ${sgCls(w)}` }, fmtSG(w)), el("td", { class: `num ch-fill ${w == null || h == null ? "" : sgCls(h - w)}` }, w == null || h == null ? "\u2014" : fmtSG(h - w))]); /* (update 525: the two differences as filled cells) */
         if (ds.length) { const flip = () => { ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k); redraw(); }; tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } }); }
         if (!open) return [tr];
         return [tr, ...ds.map((d) => { const hd = perRound(here, k, d), ad = perRound(elsewhere, k, d), wd = winAvg(k, d);
-          return el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, d), el("td", { class: `num ${sgCls(hd)}` }, fmtSG(hd)), el("td", { class: `num ${sgCls(ad)}` }, fmtSG(ad)), el("td", { class: `num ${sgCls(hd - ad)}` }, fmtSG(hd - ad)),
+          return el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, d), el("td", { class: `num ${sgCls(hd)}` }, fmtSG(hd)), el("td", { class: `num ${sgCls(ad)}` }, fmtSG(ad)), el("td", { class: `num ch-fill ${sgCls(hd - ad)}` }, fmtSG(hd - ad)),
             el("td", { class: `num ${sgCls(wd)}`, title: wd == null && !detail ? "Loading the field\u2019s distances\u2026" : null }, wd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(wd)),
-            el("td", { class: `num ${wd == null || hd == null ? "" : sgCls(hd - wd)}` }, wd == null || hd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(hd - wd))]); })];
+            el("td", { class: `num ch-fill ${wd == null || hd == null ? "" : sgCls(hd - wd)}` }, wd == null || hd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(hd - wd))]); })];
       })),
     ]))]),
     el("section", { class: "panel" }, [el("h2", {}, "Tournaments here"), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [

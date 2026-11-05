@@ -270,8 +270,7 @@ async function drawHome(ctx) {
   mount(ctx.body, [
     hero(), ...resumeRows(ctx),
     el("section", { class: "panel" }, [el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "Prepare for a real course"), el("p", { class: "muted small" }, "Pick a course for its maps, your history there, or to simulate a round.")]), add]), cards, noHit]),
-    random,
-    historyPanel(ctx),
+    historyPanel(ctx), // (update 525: no "Simulate a random course" here)
   ]);
 }
 const hero = () => el("section", { class: "panel pr-hero" }, [el("div", {}, [el("p", { class: "pr-eyebrow" }, "Play"), el("h1", {}, "Course Prep"),
@@ -291,6 +290,7 @@ function resumeRows(ctx) {
 /** Past rounds: averages, SG by category, a trend, and the list. */
 function historyPanel(ctx) {
   const done = ctx.sessions.filter((s) => s.cat === "ROUND" && s.mode !== "game" && s.status === "done");
+  if (!done.length) return null; // (update 525: no "How it works")
   if (!done.length) return el("section", { class: "panel pr-empty" }, [el("h2", {}, "How it works"), el("ol", {}, [
     "Simulate a random course, or pick one you've saved a scorecard for in Enter New Round, one you've played, or type one in.",
     "Pick what to play: every shot, or just some categories, distances, lies and pars (only the par 3s, only approaches, only around the green…). The rest are played for you at the Tour average.",

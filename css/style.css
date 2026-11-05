@@ -5827,3 +5827,23 @@ main:has(.pr-body > .crumb:first-child) { padding-top: 0.5rem !important; }
 .trend-prod + .prod-table-wrap + .prod-cmp-row, .prod-table-wrap + .prod-cmp-row { margin-top: 8px; }
 /* (update 516) a product with 2 rounds or fewer: italics */
 .prod-table tr.few td { font-style: italic; opacity: 0.85; }
+/* (update 525) Course History: the differences as filled cells; one best / toughest card; smaller card headings */
+.ch-t td.ch-fill { font-weight: 700; color: #fff; }
+.ch-t td.ch-fill.pos { background: rgba(48,209,88,0.28); }
+.ch-t td.ch-fill.neg { background: rgba(255,69,58,0.28); }
+.ch-page .pr-tile-k { font-size: 0.62rem; letter-spacing: 0.05em; white-space: nowrap; }
+.ch-best strong { display: flex; align-items: baseline; gap: 0.3rem; flex-wrap: nowrap; white-space: nowrap; }
+.ch-best-when { font-size: 0.72rem; color: var(--muted); font-weight: 500; }
+.ch-best .pr-tile-s b.pos { color: #4cd17e; } .ch-best .pr-tile-s b.neg { color: #ff6b5e; }
+/* (update 525) up & down by miss: the Off the tee row's look, its blocks 3 x 3 (the green in the middle shows the board) */
+.sh-ud3 .sh-hl-k .sh-ud-tog { margin: 2px 0 0; font-size: var(--fs-2xs); font-weight: 400; color: #8e8e93; }
+.sh-ud3 .sh-hl-k .sh-ud-tog.on { color: #ffd60a; }
+.sh-ud3-grid { grid-template-rows: repeat(3, auto); }
+button.sh-ud3-c { border: 0; color: inherit; font: inherit; cursor: pointer; }
+.sh-ud3-c.good strong { color: #4CAF50; } .sh-ud3-c.mid strong { color: #FFB343; } .sh-ud3-c.bad strong { color: #ff6b5e; }
+.sh-ud3-c.few strong { font-style: italic; opacity: 0.85; }
+.sh-ud3-c.on { outline: 1px solid #d4b483; }
+.sh-ud3-green { border: 0; cursor: pointer; background: radial-gradient(ellipse at 50% 50%, rgba(127,207,106,0.55), rgba(62,142,58,0.35)); min-height: 1.6em; }
+div.sh-ud3-green { cursor: default; }
+.sh-ud3-green.on { outline: 1px solid #ffd60a; }
+.sh-ud3 > .sh-ud-stale, .sh-ud3 > .sh-ud-det { grid-column: 1 / -1; margin: 4px 0 0; }
