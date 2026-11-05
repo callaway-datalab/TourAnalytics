@@ -690,7 +690,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const byDist = a.groups.filter((g) => (argNear(g) ? g.withLie : !g.withLie));
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
-    section("Detail", "Every skill by distance and lie", 52);
+    section("Detail", "Strokes Gained by Skill", 52); // (update 520)
     d.text("Strokes gained a round. Gains on the left (best first), losses on the right (worst first).", M, y + 1, { size: 8, color: P.grey });
     y += 22;
     // (rounded to 2 decimals; only ±0.01 or more; at most 25 each side)
