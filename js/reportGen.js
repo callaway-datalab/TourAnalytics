@@ -868,7 +868,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y += 16;
     const FEW = 10;
     for (const sec of a.productTable) {
-      const chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, { plotH: 130 }) + 20 : 0; // (update 515: the table and its chart on one page)
+      const CH = { plotH: 95, dates: true, gap: 10 }; // (update 516: dates along the bottom, shorter: 2 or 3 kinds a page)
+      const chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) + 14 : 0; // (update 515: the table and its chart on one page)
       const all = 40 + Math.min(12, sec.rows.length) * 18 + chH;
       need(all < H - 120 ? all : 40 + Math.min(10, sec.rows.length) * 18);
       y += 10; cap(sec.name, M, y, P.gold, "left", 8); y += 8;
@@ -890,10 +891,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       y += 8;
       // (update 515) under each kind: every event, coloured by the model used in it
       if (sec.events?.length) {
-        const h = eventBarsHeight(W, sec.events, sec.legend, { plotH: 130 });
-        need(h + 20); y += 10;
-        y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, plotH: 130 });
+        const h = eventBarsHeight(W, sec.events, sec.legend, CH);
+        need(h + 14); y += 6;
+        y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CH });
       }
+      y += 14; // (a small gap before the next kind)
     }
   }
   footer();

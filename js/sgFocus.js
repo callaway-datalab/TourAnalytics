@@ -211,9 +211,14 @@ export function focusView(S, mine, slicedField, f = {}) {
     if (!item.stretch || !key || !text.includes(key)) return el("span", {}, text);
     const at = text.indexOf(key), a = el("button", { type: "button", class: "fx-link" }, key);
     a.addEventListener("click", () => stretchPop(item.stretch));
-    return el("span", {}, [text.slice(0, at), a, " ", stretchInfo(item.stretch), text.slice(at + key.length)]);
+    return el("span", {}, [text.slice(0, at), a, text.slice(at + key.length)]); // (update 516: the note sits once, at the top of the block)
   };
-  const stretchInfo = (st0) => infoTip(`Best stretch: the longest run of rounds in a row (5 or more) in which ${you === "you" ? "your" : "their"} strokes gained a round ${st0.dist ? `from ${st0.dist}` : `in ${CAT[st0.cat]}`} beat ${st0.best ? `the best season average there of any other player (${f2(st0.bar)} a round: \u201cBest on Tour\u201d for that shot)` : "the tour average (the other players\u2019 rounds here don\u2019t have distances to set a higher bar)"}. The drill\u2019s goal is ${you === "you" ? "your" : "their"} stat from those rounds. With no stretch of 5 rounds, the goal comes from ${you === "you" ? "your" : "their"} \u201cBest on Tour\u201d rounds, then \u201cContender\u201d and so on, then the best 10 rounds.`, "What a best stretch is");
+  // (update 516) shorter: against the best season average of any other player ("Best on Tour"), or, when none of the
+  // stretches got there, against a Top 10 season ("Contender")
+  const stretchText = (best) => { const w = you === "you" ? "your" : "their";
+    return best ? `Best stretch: the longest run of rounds in a row in which ${w} strokes gained a round beat the best season average of any other player. The drill\u2019s goal is ${w} stat from those rounds.`
+      : `Best stretch: the longest run of rounds in a row in which ${w} strokes gained a round would be in the Top 10 if maintained for a full season. The drill\u2019s goal is ${w} stat from those rounds.`; };
+  const stretchInfo = (st0) => infoTip(stretchText(!!st0?.best));
   const stretchPop = (st0) => {
     const cat = st0.cat, dist = st0.dist || null, rds = st0.rds;
     const sgOf = (rd) => (rd.shots || []).reduce((t, x) => t + ((!cat || x.cat === cat) && (!dist || x.dist === dist) ? x.sg || 0 : 0), 0);
@@ -271,8 +276,9 @@ export function focusView(S, mine, slicedField, f = {}) {
       item ? el("div", { class: "fx-drill" }, [el("span", { class: "fx-k" }, "Practice"), lineWithStretch(item), addBtn([item], "＋ Add to practice")]) : null,
     ]);
   });
+  const stretched = losses.map(itemFor).filter((it) => it?.stretch);
   const loseBox = el("section", { class: "panel fx" }, [
-    el("p", { class: "fx-eyebrow" }, `Where ${you} lose${you === "you" ? "" : "s"} strokes \u00b7 ${picked} \u00b7 last ${N} rounds`),
+    el("p", { class: "fx-eyebrow" }, [`Where ${you} lose${you === "you" ? "" : "s"} strokes \u00b7 ${picked} \u00b7 last ${N} rounds`, stretched.length ? " " : null, stretched.length ? infoTip(stretchText(stretched.some((it) => it.stretch.best))) : null]), // (update 516: the best-stretch note, once)
     losses.length ? el("div", { class: "fx-cards" }, loseCards) : el("p", { class: "muted" }, `No part of the game is costing much over the last ${N} rounds. Keep doing what ${you === "you" ? "you’re" : "they’re"} doing.`),
     losses.length > 1 ? el("div", { class: "fx-total" }, [
       el("span", {}, ["All of them together: ", el("strong", { class: "pos" }, `${f2(allFix)} a round`), ranked ? ` — a ${ord(rankOf(recentV))} → ${ord(rankOf(recentV + allFix))} level` : ""]),

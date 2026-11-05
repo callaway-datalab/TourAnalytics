@@ -379,9 +379,12 @@ function prodTable(mine, kind, order, colorOf, nameOf) {
       const k = key.slice(2), v = obs(k);
       return el("td", { class: "num" }, k === "drive" ? fmtN(v, 1, " yds") : k === "prox" ? fmtN(v, 1, " ft") : fmtN(v, 1, "%"));
     };
-    return el("tr", {}, [el("td", { class: "prod-name", title: nameOf(p) }, el("i", { style: `background:${colorOf(p)}`, role: "img", "aria-label": nameOf(p) })) /* (update 515: just its colour; the key above names it) */, el("td", { class: "num" }, String(n)), ...cols.map(([, k]) => val(k))]);
+    const main = cols.find(([, k]) => k === "sg:") || cols[0]; // (update 516: rows best first by the table's strokes gained)
+    const tr = el("tr", { class: n <= 2 ? "few" : null, title: n <= 2 ? `Only ${n} round${n === 1 ? "" : "s"}` : null }, [el("td", { class: "prod-name", title: nameOf(p) }, el("i", { style: `background:${colorOf(p)}`, role: "img", "aria-label": nameOf(p) })) /* (update 515: just its colour; the key above names it) */, el("td", { class: "num" }, String(n)), ...cols.map(([, k]) => val(k))]);
+    tr.__sg = main[1].startsWith("sg:") ? sgCat(main[1].slice(3) || null) : 0;
+    return tr;
   };
-  const rows = order.map(rowOf).filter(Boolean);
+  const rows = order.map(rowOf).filter(Boolean).sort((a, b) => b.__sg - a.__sg);
   if (!rows.length) return null;
   return el("div", { class: "table-scroll prod-table-wrap" }, el("table", { class: "plain prod-table" }, [
     el("thead", {}, el("tr", {}, [el("th", {}, "Product"), el("th", { class: "num" }, "Rounds"), ...cols.map(([h]) => el("th", { class: "num" }, h))])),

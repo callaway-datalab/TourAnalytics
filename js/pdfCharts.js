@@ -28,7 +28,10 @@ export function eventBarsOf(items) {
  * Draws the bars: a key (colour and name) on top, the bars from a dashed zero line with each value, the events turned
  * under them. Returns the height used. The caller makes room first (see eventBarsHeight).
  */
-export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey = "#5f6368", hair = "#e3e3e8", plotH = 150 } = {}) {
+const md = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || "")); return m ? `${Number(m[2])}/${Number(m[3])}/${m[1].slice(2)}` : String(s || ""); };
+/* (update 516) dates: the x axis as dates (a few, level, spaced out) in place of every event's name; gap: the room
+   between the bars and the axis labels */
+export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey = "#5f6368", hair = "#e3e3e8", plotH = 150, dates = false, gap = 8 } = {}) {
   const y0 = y;
   // the key
   let lx = x, ly = y + 8;
@@ -50,9 +53,16 @@ export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey 
     if (showV) d.text(f2(b.v), cx, b.v >= 0 ? yv - 2.5 : yv + 7, { size: slot >= 16 ? 6.5 : 5.2, bold: true, color: ink, align: "center" });
   });
   d.line(x, zy, x + w, zy, { color: grey, width: 0.7, dash: [3, 2] });
+  d.line(x, top + plotH + 2, x + w, top + plotH + 2, { color: hair, width: 0.4 });
+  if (dates) {
+    // a date under every few bars, level, never closer than a label's width
+    const lw = 34, every = Math.max(1, Math.ceil(lw / slot)), by = top + plotH + 2 + gap + 6;
+    bars.forEach((b, i) => { if (i % every) return; const cx = x + slot * (i + 0.5); d.line(cx, top + plotH + 2, cx, top + plotH + 5, { color: grey, width: 0.4 }); d.text(md(b.date), cx, by, { size: 6.5, color: grey, align: "center" }); });
+    return by + 6 - y0;
+  }
   // the events, turned, ending under their bar
   const lsz = slot >= 12 ? 6.5 : 5.5, maxL = Math.min(110, Math.max(...bars.map((b) => textWidth(b.label, lsz))));
-  const base = top + plotH + 8;
+  const base = top + plotH + gap;
   const every = Math.max(1, Math.ceil(lsz * 1.25 / slot)); // (crowded: every other label, or fewer)
   bars.forEach((b, i) => {
     if (i % every) return;
@@ -61,14 +71,14 @@ export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey 
     let t = b.label; while (textWidth(t, lsz) > room && t.length > 4) t = `${t.slice(0, -2)}…`;
     d.text(t, cx + 2, base, { size: lsz, color: grey, align: "right", rotate: 55 });
   });
-  d.line(x, top + plotH + 2, x + w, top + plotH + 2, { color: hair, width: 0.4 });
   return base + maxL * Math.sin((55 * Math.PI) / 180) + 6 - y0;
 }
 
 /** The room drawEventBars will take (about). */
-export function eventBarsHeight(w, bars, legend, { plotH = 150 } = {}) {
+export function eventBarsHeight(w, bars, legend, { plotH = 150, dates = false, gap = 8 } = {}) {
   const keyRows = Math.max(1, Math.ceil(legend.reduce((t, L) => t + 30 + textWidth(L.name, 8, true), 0) / w));
   const lsz = w / Math.max(1, bars.length) >= 12 ? 6.5 : 5.5;
   const maxL = bars.length ? Math.min(110, Math.max(...bars.map((b) => textWidth(b.label, lsz)))) : 0;
-  return keyRows * 13 + 8 + 14 + 10 + plotH + 8 + maxL * 0.82 + 6;
+  if (dates) return keyRows * 13 + 8 + 14 + 10 + plotH + 2 + gap + 12;
+  return keyRows * 13 + 8 + 14 + 10 + plotH + gap + maxL * 0.82 + 6;
 }

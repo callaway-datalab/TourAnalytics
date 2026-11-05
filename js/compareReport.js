@@ -314,16 +314,14 @@ export function buildComparePdf(r) {
 
   /* ---------- (update 515) products: every event, coloured by the product used in it ---------- */
   for (const ch of r.eventCharts || []) {
-    const h = eventBarsHeight(W, ch.bars, ch.legend);
+    const h = eventBarsHeight(W, ch.bars, ch.legend, { gap: 18 });
     section("By event", ch.title, h + 10);
     d.text(ch.note || "Strokes gained a round in each tournament, the bar coloured by the product used most in it.", M, y + 1, { size: 8, color: P.grey });
     y += 10; need(h);
-    y += drawEventBars(d, M, y, W, ch.bars, ch.legend, { ink: P.ink, grey: P.grey, hair: P.hair });
+    y += drawEventBars(d, M, y, W, ch.bars, ch.legend, { ink: P.ink, grey: P.grey, hair: P.hair, gap: 18 }); /* (update 516: more room between the bars and the names) */
   }
 
-  /* ---------- how to read it ---------- */
-  section("How to read this", "What the numbers mean", 60);
-  for (const t of r.notes) { for (const line of wrap(t, W, 9)) { need(14); d.text(line, M, y + 9, { size: 9, color: P.grey }); y += 13; } y += 4; }
+  /* (update 516: no "How to read this") */
   footer();
   return d.output();
 }

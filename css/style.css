@@ -5825,3 +5825,5 @@ main:has(.pr-body > .crumb:first-child) { padding-top: 0.5rem !important; }
 .prod-table td.prod-name i { width: 0.75rem; height: 0.75rem; border-radius: 3px; flex: 0 0 auto; display: inline-block; }
 .prod-table td.pos { color: #4CAF50; } .prod-table td.neg { color: #ff6b5e; }
 .trend-prod + .prod-table-wrap + .prod-cmp-row, .prod-table-wrap + .prod-cmp-row { margin-top: 8px; }
+/* (update 516) a product with 2 rounds or fewer: italics */
+.prod-table tr.few td { font-style: italic; opacity: 0.85; }
