@@ -5847,3 +5847,5 @@ button.sh-ud3-c { border: 0; color: inherit; font: inherit; cursor: pointer; }
 div.sh-ud3-green { cursor: default; }
 .sh-ud3-green.on { outline: 1px solid #ffd60a; }
 .sh-ud3 > .sh-ud-stale, .sh-ud3 > .sh-ud-det { grid-column: 1 / -1; margin: 4px 0 0; }
+/* (update 527) Focus: the tour buttons above the category pills */
+.fx-tours { margin: 0 0 8px; }

@@ -76,7 +76,9 @@ export function focusView(S, mine, slicedField, f = {}) {
   const all = [...mine].sort(byDate);
   const when = [Array.isArray(f.year) && f.year.length ? f.year.join(", ") : Number(f.months) ? `last ${f.months} months` : "all seasons", Array.isArray(f.tour) && f.tour[0] ? f.tour[0] : null, `${all.length} rounds`].filter(Boolean).join(" \u00b7 ");
   // (update 492) the pills on their own, like the other filters; the time frame at the foot of Where you stand
-  const head = el("div", { class: "fx-pills-row" }, pills);
+  // (update 527) a player on more than one tour: the tour buttons above the category pills (most rounds first)
+  const tours = (S.tourCounts?.length || 0) > 1 ? S.tourButtons?.() || null : null;
+  const head = el("div", { class: "fx-pills-row" }, [tours ? el("div", { class: "fx-tours" }, tours) : null, pills]);
   const whenLine = el("p", { class: "muted small fx-when" }, when);
   if (all.length < 6) return [head, el("section", { class: "panel fx" }, [el("p", { class: "empty" }, "Focus needs at least 6 rounds in this selection. Widen the time frame in Full stats."), whenLine])];
   const N = Math.max(6, Math.min(all.length, Math.round(Number(st.recentN) || 12)));

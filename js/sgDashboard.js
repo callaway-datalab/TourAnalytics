@@ -311,7 +311,10 @@ export function sgDashboard(container, opts) {
     // A player starts on the tour they have the most rounds on; with no player, the PGA TOUR (or the biggest).
     const tourCount = new Map(); for (const rd of base) tourCount.set(rd.tour || "", (tourCount.get(rd.tour || "") || 0) + 1);
     const tourList = [...tourCount.keys()];
-    tourCounts = [...tourCount].sort((a, b) => b[1] - a[1]); // for the tour buttons
+    // (update 527) the tour buttons: most rounds first, counted in the years picked (what the page shows), then over every year
+    const yrSet = st.year?.length ? new Set(st.year.map(String)) : null, inYrs = new Map();
+    if (yrSet) for (const rd of base) if (yrSet.has(String(rd.year ?? String(rd.date || "").slice(0, 4)))) inYrs.set(rd.tour || "", (inYrs.get(rd.tour || "") || 0) + 1);
+    tourCounts = [...tourCount].sort((a, b) => (inYrs.get(b[0]) || 0) - (inYrs.get(a[0]) || 0) || b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); // for the tour buttons
     if (tourList.length > 1 || (tourList.length === 1 && tourList[0] !== "")) {
       const who = me?.key ?? "__field";
       if (st.tourFor !== who || !tourList.includes(st.tour?.[0])) {
