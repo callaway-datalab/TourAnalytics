@@ -5812,3 +5812,7 @@ button.sh-ud-green { border: 0; background: none; cursor: pointer; padding: 0; }
 main:has(.pr-body > .crumb:first-child) { padding-top: 0.5rem !important; }
 .pr-body > .crumb:first-child { margin: 0 0 0.35rem !important; line-height: 1.2; }
 .pr-body > .crumb:first-child + * { margin-top: 0 !important; }
+/* (update 511) Course History: better and worse here, side by side */
+.ch-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+.ch-two h3 { margin: 0.25rem 0 0.4rem; }
+@media (max-width: 760px) { .ch-two { grid-template-columns: 1fr; } }

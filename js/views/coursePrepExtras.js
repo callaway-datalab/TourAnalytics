@@ -257,7 +257,7 @@ export async function drawHistory(ctx, course) {
 }
 
 function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() }, detail = null, redraw = () => {}) {
-  if (!ds) return el("section", { class: "panel" }, el("p", { class: "empty" }, `No stats file for ${who.label} yet.`));
+  if (!ds && !rounds.length) return el("section", { class: "panel" }, el("p", { class: "empty" }, `No stats file or entered rounds for ${who.label} yet.`)); // (update 511: entered rounds count)
   const anyCourse = rounds.some((rd) => rd.course);
   const here = rounds.filter((rd) => sameCourse(rd.course, course.name));
   if (!here.length) {
@@ -267,7 +267,9 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
       anyCourse && names.length ? el("p", { class: "muted small" }, `Courses in ${who.label}’s stats: ${names.slice(0, 12).join(", ")}${names.length > 12 ? `, and ${names.length - 12} more` : ""}.`) : null,
     ]);
   }
-  const all = perRound(rounds), mine = perRound(here);
+  // (update 511) against elsewhere: their rounds at every other course (not every round, this one's too)
+  const elsewhere = rounds.filter((rd) => !sameCourse(rd.course, course.name));
+  const all = perRound(elsewhere), mine = perRound(here);
   // the field at this course (players with 2 or more rounds here), from the shared summary
   const fieldHere = field.map((p) => ({ p, rs: p.rounds.filter((rd) => sameCourse(rd.course, course.name)) })).filter((x) => x.rs.length >= 2 || x.p.key === who.key);
   const ranked = fieldHere.map((x) => ({ key: x.p.key, v: x.p.key === who.key ? mine : perRound(x.rs), rs: x.rs })).sort((a, b) => b.v - a.v);
@@ -300,7 +302,16 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
     }).filter((v) => v != null);
     return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
   };
-  const sc = scoring(here), scAll = scoring(rounds);
+  const sc = scoring(here), scAll = scoring(elsewhere);
+  // (update 511) as the PDF: the shots (category and distance) they gain and lose most here against elsewhere
+  const CN = Object.fromEntries(CATEGORIES), dl = [], seen = new Set();
+  const nAt = (rs, c, d) => rs.reduce((t, rd) => t + rd.shots.reduce((u, x) => u + (x.cat === c && x.dist === d ? x.w || 1 : 0), 0), 0);
+  for (const rd of here) for (const x of rd.shots) { if (!x.cat || !x.dist) continue; const k = `${x.cat}|${x.dist}`; if (seen.has(k)) continue; seen.add(k); if (nAt(here, x.cat, x.dist) < 4) continue; const a = perRound(here, x.cat, x.dist), b = perRound(elsewhere, x.cat, x.dist); if (a != null && b != null) dl.push({ cat: x.cat, dist: x.dist, d: a - b, a, b }); }
+  const gains = dl.filter((x) => x.d > 0.005).sort((a, b) => b.d - a.d).slice(0, 5), losses = dl.filter((x) => x.d < -0.005).sort((a, b) => a.d - b.d).slice(0, 5);
+  const shotTable = (title, list) => el("div", {}, [el("h3", {}, title), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
+    el("thead", {}, el("tr", {}, [el("th", {}, "Shot"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Elsewhere"), el("th", { class: "num" }, "Diff")])),
+    el("tbody", {}, list.length ? list.map((x) => el("tr", {}, [el("td", {}, `${CN[x.cat] || x.cat} \u00b7 ${x.dist}`), el("td", { class: `num ${sgCls(x.a)}` }, fmtSG(x.a)), el("td", { class: `num ${sgCls(x.b)}` }, fmtSG(x.b)), el("td", { class: `num ${sgCls(x.d)}` }, el("strong", {}, fmtSG(x.d)))])) : el("tr", {}, el("td", { colspan: "4", class: "muted" }, "None")))]))]);
+  const rdName = (rd) => `${rd.event || ""} ${rd.year || ""}${rd.roundNo ? ` \u00b7 Round ${rd.roundNo}` : ""}`.trim();
   const best = [...here].sort((a, b) => perRound([b]) - perRound([a]));
   const dateTxt = (d) => { const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" }); };
   return el("div", {}, [
@@ -308,16 +319,19 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
       el("h2", {}, who.label),
       el("div", { class: "pr-tiles" }, [
         tile("Rounds here", String(here.length), "", `${events.size} tournament${events.size === 1 ? "" : "s"}`),
-        tile("SG / round here", SG(mine), sgCls(mine), `${SG(all)} everywhere`),
-        tile("Here vs everywhere", SG(mine - all), sgCls(mine - all), "strokes a round"),
+        tile("SG / round here", SG(mine), sgCls(mine), `${SG(all)} elsewhere`),
+        tile("Elsewhere", SG(all), sgCls(all), `${elsewhere.length} round${elsewhere.length === 1 ? "" : "s"} at other courses`),
+        tile("Here vs elsewhere", SG(mine - all), sgCls(mine - all), "strokes a round"),
+        tile("Best round here", SG(perRound([best[0]])), sgCls(perRound([best[0]])), rdName(best[0])),
+        here.length >= 2 ? tile("Toughest here", SG(perRound([best.at(-1)])), sgCls(perRound([best.at(-1)])), rdName(best.at(-1))) : null,
         rank && ranked.length > 1 ? tile("Rank here", `${rank} of ${ranked.length}`, "", "players with 2+ rounds here") : null,
-        sc != null ? tile("Scoring avg here", sc.toFixed(2), scAll != null ? (sc < scAll ? "pos" : sc > scAll ? "neg" : "") : "", scAll != null ? `${scAll.toFixed(2)} everywhere` : "") : null,
+        sc != null ? tile("Scoring avg here", sc.toFixed(2), scAll != null ? (sc < scAll ? "pos" : sc > scAll ? "neg" : "") : "", scAll != null ? `${scAll.toFixed(2)} elsewhere` : "") : null,
       ].filter(Boolean)),
     ]),
     el("section", { class: "panel" }, [el("h2", {}, "By category"), el("p", { class: "muted small" }, "Tap a category for its distances. Avg Winner: strokes gained a round by the winner of each tournament here, averaged. Diff from Winner: here less the winner\u2019s."), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
-      el("thead", {}, el("tr", {}, [el("th", {}, "Category"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Everywhere"), el("th", { class: "num" }, "Diff"), el("th", { class: "num" }, "Avg Winner"), el("th", { class: "num" }, "Diff from Winner")])), // (update 506)
+      el("thead", {}, el("tr", {}, [el("th", {}, "Category"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Elsewhere"), el("th", { class: "num" }, "Diff"), el("th", { class: "num" }, "Avg Winner"), el("th", { class: "num" }, "Diff from Winner")])), // (update 506)
       el("tbody", {}, [[null, "Total"], ...CATEGORIES].flatMap(([k, l]) => {
-        const h = perRound(here, k), a = perRound(rounds, k), w = winAvg(k);
+        const h = perRound(here, k), a = perRound(elsewhere, k), w = winAvg(k);
         const ds = k ? distsOf(here, k) : [];
         const open = k && ui.open.has(k);
         const tr = el("tr", { class: ds.length ? "sg-tap" : "", ...(ds.length ? { role: "button", tabindex: "0", "aria-expanded": String(!!open) } : {}) }, [
@@ -325,7 +339,7 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
           el("td", { class: `num ${sgCls(h)}` }, fmtSG(h)), el("td", { class: `num ${sgCls(a)}` }, fmtSG(a)), el("td", { class: `num ${sgCls(h - a)}` }, fmtSG(h - a)), el("td", { class: `num ${sgCls(w)}` }, fmtSG(w)), el("td", { class: `num ${w == null || h == null ? "" : sgCls(h - w)}` }, w == null || h == null ? "\u2014" : fmtSG(h - w))]);
         if (ds.length) { const flip = () => { ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k); redraw(); }; tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } }); }
         if (!open) return [tr];
-        return [tr, ...ds.map((d) => { const hd = perRound(here, k, d), ad = perRound(rounds, k, d), wd = winAvg(k, d);
+        return [tr, ...ds.map((d) => { const hd = perRound(here, k, d), ad = perRound(elsewhere, k, d), wd = winAvg(k, d);
           return el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, d), el("td", { class: `num ${sgCls(hd)}` }, fmtSG(hd)), el("td", { class: `num ${sgCls(ad)}` }, fmtSG(ad)), el("td", { class: `num ${sgCls(hd - ad)}` }, fmtSG(hd - ad)),
             el("td", { class: `num ${sgCls(wd)}`, title: wd == null && !detail ? "Loading the field\u2019s distances\u2026" : null }, wd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(wd)),
             el("td", { class: `num ${wd == null || hd == null ? "" : sgCls(hd - wd)}` }, wd == null || hd == null ? (detail ? "\u2014" : "\u2026") : fmtSG(hd - wd))]); })];
@@ -335,6 +349,9 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
       el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Rds"), el("th", { class: "num" }, "SG / round"), el("th", { class: "num" }, "Finish")])),
       el("tbody", {}, [...events.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).map((e) => { const v = perRound(e.rs); return el("tr", {}, [el("td", {}, dateTxt(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.rs.length)), el("td", { class: `num ${sgCls(v)}` }, fmtSG(v)), el("td", { class: "num" }, finish(e) || "—")]); })),
     ])),
-    here.length >= 2 ? el("p", { class: "muted small" }, `Best round here: ${fmtSG(perRound([best[0]]))} (${best[0].event}, ${dateTxt(best[0].date)}). Toughest: ${fmtSG(perRound([best.at(-1)]))} (${best.at(-1).event}, ${dateTxt(best.at(-1).date)}).`) : null]),
+    ]),
+    // (update 511) the shots they're better and worse at here, against elsewhere (a round)
+    el("section", { class: "panel" }, [el("h2", {}, "Here against elsewhere, by shot"), el("p", { class: "muted small" }, "Strokes gained a round from each kind of shot (4 or more here), here against their rounds at other courses."),
+      el("div", { class: "ch-two" }, [shotTable("Better here", gains), shotTable("Worse here", losses)])]),
   ]);
 }
