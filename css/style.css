@@ -5874,3 +5874,16 @@ div.sh-ud3-green { cursor: default; }
 /* (update 531) "Off the tee" and "Up & down by miss": centred on the middle of their blocks (the scoring rows' pinned
    labels don't apply here) */
 .sh-tee > .sh-hl-k { position: static; display: flex; flex-direction: column; justify-content: center; align-self: center; height: auto; margin: 0; font-size: inherit; line-height: 1.15; }
+/* (update 540) the past shot's popup: each shot on one line (a little smaller, never wrapped) */
+.sh-tr-list { font-size: 0.82em; }
+.sh-tr-list li { white-space: nowrap; }
+@media (max-width: 640px) { .sh-tr-list { font-size: 0.74em; padding-left: 1.05rem; } }
+/* (update 540) up & down on a phone: its label above the blocks, each block's side, % and count stacked and smaller */
+@media (max-width: 640px) {
+  .sh-ud3 { grid-template-columns: 1fr; gap: 6px; }
+  .sh-ud3 > .sh-hl-k { align-self: start; }
+  .sh-ud3-c { flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 4px 2px; line-height: 1.15; min-width: 0; }
+  .sh-ud3-c small { font-size: 0.62rem; white-space: nowrap; }
+  .sh-ud3-c strong { font-size: 0.9rem; }
+  .sh-ud3-c em { font-size: 0.6rem; white-space: nowrap; }
+}
