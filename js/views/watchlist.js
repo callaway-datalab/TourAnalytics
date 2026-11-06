@@ -539,6 +539,7 @@ export async function render(main, { previewClient }) {
     // (update 562) just played: that event on its own, against the rest of the last 12 and the 12 before
     const justPlayed = (() => {
       if (!x.fresh || !rs.length) return null;
+      const byEvU = c.areas.unit === "events"; // (update 582: each unit is an event: no round counts)
       const lastR = rs.at(-1), yOf = (r) => String(r.date || "").slice(0, 4);
       let k0 = rs.length - 1; while (k0 > 0 && rs[k0 - 1].event === lastR.event && yOf(rs[k0 - 1]) === yOf(lastR)) k0--;
       const ev = a.sg.slice(k0), nE = ev.length; if (!nE || k0 < n) return null;
@@ -546,10 +547,10 @@ export async function render(main, { previewClient }) {
       const better = evAvg - (restAvg ?? a.prev) > 0, evN = lastR.event || "The last event";
       const line = dn ? (better ? `Trending down over the last ${n}, but ${evN} came back up: ${fmtSG(evAvg)} a round there.` : `${evN} kept it going: ${fmtSG(evAvg)} a round there.`)
         : (better ? `${evN} kept it going: ${fmtSG(evAvg)} a round there.` : `Trending up over the last ${n}, but ${evN} slipped back: ${fmtSG(evAvg)} a round there.`);
-      return el("div", { class: `wlh-jp ${better ? "up" : "down"}` }, [el("p", { class: "wlh-sec" }, `Just played \u00b7 ${evN} \u00b7 ${nE} round${nE === 1 ? "" : "s"} \u00b7 ${dateTxt(lastR.date)}`), el("p", { class: "wlh-jp-l" }, line),
+      return el("div", { class: `wlh-jp ${better ? "up" : "down"}` }, [el("p", { class: "wlh-sec" }, byEvU ? `Just played \u00b7 ${evN} \u00b7 ${dateTxt(lastR.date)}` : `Just played \u00b7 ${evN} \u00b7 ${nE} round${nE === 1 ? "" : "s"} \u00b7 ${dateTxt(lastR.date)}`), el("p", { class: "wlh-jp-l" }, line),
         ...renderBlocks([{ kind: "table", cols: [[areaName(a)], ["SG a round", "num"]], rows: [
-          { strong: true, cells: [`${evN} (${nE} rd${nE === 1 ? "" : "s"})`, { sg: evAvg }] },
-          ...(restAvg != null ? [{ cells: [`The rest of the last ${n} (${rest.length} rds)`, { sg: restAvg }] }] : []),
+          { strong: true, cells: [byEvU ? evN : `${evN} (${nE} rd${nE === 1 ? "" : "s"})`, { sg: evAvg }] },
+          ...(restAvg != null ? [{ cells: [`The rest of the last ${n} (${rest.length} ${byEvU ? (rest.length === 1 ? "event" : "events") : "rds"})`, { sg: restAvg }] }] : []),
           { cells: [`The ${n} before`, { sg: a.prev }] }] }])]);
     })();
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "✕");
@@ -591,7 +592,7 @@ export async function render(main, { previewClient }) {
     const badges = card.querySelector(".wl-badges"), sg = card.querySelector(".wl-sg"), more = card.querySelector(".wl-more");
     sg?.firstElementChild?.remove(); // (Total is the big number)
     if (more) { more.hidden = false; more.querySelector(".wl-meta")?.remove(); }
-    const openB = el("button", { type: "button", class: "btn" }, "Open stats \u00b7 make a report"); // (update 557: the PDF report is on the Stats page)
+    const openB = el("button", { type: "button", class: "btn" }, "Open stats"); // (update 557: the PDF report is on the Stats page)
     const rmB = el("button", { type: "button", class: "btn ghost" }, "Remove from Watchlist");
     const overlay = el("div", { class: "gx-pop-overlay wlh-ov", role: "dialog", "aria-modal": "true", "aria-label": c.label }, el("div", { class: "gx-pop wlh-pop" }, [
       top, el("div", { class: "wlh-body" }, [bin ? el("div", { class: `wlh-why wlb-${bin.kind}` }, [el("strong", {}, bin.title), el("span", {}, bin.why.join(" \u00b7 "))]) : null, big, latest, badges, sg, more, el("div", { class: "wlh-acts" }, [openB, watchIsPreview() ? null : rmB])]),

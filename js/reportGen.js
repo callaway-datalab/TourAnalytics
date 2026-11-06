@@ -724,7 +724,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text("0", M, Y(0) + 3, { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
-    d.polyline(ma(vals).map((v, i) => [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
+    d.polyline(ma(vals, isDP ? 3 : 10).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
     const every = Math.max(1, Math.ceil(vals.length / 8));
     src.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
@@ -735,7 +735,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
     // (update 577) wrapped to the page's width (it ran off the right edge)
-    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last 10 ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 3 : 10} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
     y -= 10;
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
@@ -870,14 +870,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (tiles.length) {
       // (update 564) with last season to compare: the cards a little smaller and shorter, and a third row across the page,
       // This season vs Last season
-      const yo = nb.yoy, cols = 2, gap = yo ? 7 : 12, tw = (W - gap) / cols, th = yo ? 56 : 92, rows = Math.ceil(Math.min(4, tiles.length) / cols), yoH = yo ? 104 : 0; // (update 565: shorter, so it all fits on one page)
+      const yo = nb.yoy, cols = 2, gap = yo ? 7 : 12, tw = (W - gap) / cols, th0 = yo ? 56 : 92, rows = Math.ceil(Math.min(4, tiles.length) / cols), yoH0 = yo ? 104 : 0; // (update 565: shorter, so it all fits on one page)
+      // (update 582) the DP World Tour's page 2 (Event by event, then this): the cards and This season vs Last season stretched
+      // to fill the rest of the page, each card's contents in its middle
+      let th = th0, yoH = yoH0;
+      if (isDP) { const base = rows * (th0 + gap) + (yo ? yoH0 + gap : 0), avail = H - 50 - (y + 12 + 40) - 6, f = Math.min(2.2, avail / base); if (f > 1) { th = th0 * f; yoH = yoH0 * f; } }
+      const cOff = (th - th0) / 2;
       section("By the numbers", "At a glance", rows * (th + gap) + (yo ? yoH + gap : 0));
       tiles.slice(0, 4).forEach((t, i) => {
-        const x = M + (i % cols) * (tw + gap), ty = y + Math.floor(i / cols) * (th + gap);
+        const x = M + (i % cols) * (tw + gap), ty0 = y + Math.floor(i / cols) * (th + gap), ty = ty0 + cOff;
         // a dark tile with rounded corners and a soft left-to-right blend
-        d.roundRect(x, ty, 24, th, 10, { fill: P.night });
-        d.roundRect(x + tw - 24, ty, 24, th, 10, { fill: P.night2 });
-        d.gradient(x + 12, ty, tw - 24, th, P.night, P.night2, { dir: "h", steps: 30 });
+        d.roundRect(x, ty0, 24, th, 10, { fill: P.night });
+        d.roundRect(x + tw - 24, ty0, 24, th, 10, { fill: P.night2 });
+        d.gradient(x + 12, ty0, tw - 24, th, P.night, P.night2, { dir: "h", steps: 30 });
         const sq = yo ? 1 : 0; // (update 564: the shorter cards)
         cap(t.label, x + 16, ty + (sq ? 13 : 20), P.goldLight, "left", 6.4);
         // the big number, as large as fits
