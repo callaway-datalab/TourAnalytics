@@ -12,10 +12,10 @@ export function heroBox(S, mine, slicedField, f) {
     const per = ordered.map((rd) => S.metric([rd]));
     // (update 168) the rank after each round: where they stood in the field on that date, this selection
     const hist = S.showRanks ? S.rankHistory(ordered, slicedField, r) : S.rollingOnly(ordered); // (update 183: no ranks: the rolling average alone)
-    const n = Math.min(12, Math.floor(per.length / 2));
+    const fu = formUnits(S, ordered), n = Math.min(12, Math.floor(fu.length / 2)); // (update 553: every tour, the last 12 rounds against the 12 before)
     let form = null;
     if (n >= 2) {
-      const last = S.metric(ordered.slice(-n)), prev = S.metric(ordered.slice(-2 * n, -n));
+      const last = S.metric(fu.slice(-n).flat()), prev = S.metric(fu.slice(-2 * n, -n).flat());
       if (last != null && prev != null) {
         const ch = last - prev, steady = Math.abs(ch) < S.steadyBand(prev);
         const amt = sg ? Math.abs(ch).toFixed(2) : fmtStat({ ...S.def, unit: S.def.pct ? "" : S.def.unit }, Math.abs(ch)).replace("%", S.def.pct ? " pct" : "");
@@ -233,10 +233,13 @@ export function steadinessLine(S, ordered, n) {
 // Form: the last n rounds and their average, then the n before and theirs
 // (update 181) Form, like the Watchlist's Big move: each round as a bar (the last n coloured) with the two
 // averages, then where the change came from, category by category
+// (update 553) what Form compares: each round, every tour (the DP World Tour too)
+export const formUnits = (S, ordered) => ordered.map((rd) => [rd]);
 export async function formPopup(S, ordered) {
   const { renderBlocks } = await import("./badgePopup.js");
-  const n = Math.min(12, Math.floor(ordered.length / 2));
-  const last = ordered.slice(-n), prev = ordered.slice(-2 * n, -n), sg = S.isSG();
+  const fu = formUnits(S, ordered), ev = S.eventView, n = Math.min(12, Math.floor(fu.length / 2));
+  const lastU = fu.slice(-n), prevU = fu.slice(-2 * n, -n);
+  const last = lastU.flat(), prev = prevU.flat(), sg = S.isSG();
   const goodTone = (v, ref) => (sg ? null : S.def.higher == null || v == null || ref == null ? "gold" : S.better(v, ref) ? "pos" : "neg");
   const prevAvg = S.metric(prev), lastAvg = S.metric(last);
   // (update 455) the bars follow the row picked in the table below: SG: Total to start, or a part of the game, or one
@@ -245,10 +248,11 @@ export async function formPopup(S, ordered) {
   const nameOf = (k, d) => (!k ? (sg ? "SG: Total" : S.def.label) : `${CATEGORIES.find(([q]) => q === k)?.[1] || k}${d ? ` \u00b7 ${d}` : ""}`);
   const holder = el("div", { class: "wl-form-bars" });
   const barsFor = (k = null, d = null) => {
+    if (ev) return; // (update 553: the DP World Tour: no bar chart, just the table)
     const pa = valOf(prev, k, d), la = valOf(last, k, d);
-    const items = [...prev, ...last].map((rd, i) => { const v = valOf([rd], k, d); return { label: S.dateTxt(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v, on: i >= prev.length, tone: sg ? null : goodTone(v, pa) }; });
+    const items = [...prevU, ...lastU].map((g, i) => { const rd = g.at(-1), v = valOf(g, k, d); return { label: S.dateTxt(rd.date), sub: [rd.event, !ev && rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v, on: i >= prevU.length, tone: sg ? null : goodTone(v, pa) }; }); // (update 552: a bar an event for the DP World Tour)
     mount(holder, [el("p", { class: "wl-pop-t" }, nameOf(k, d)),
-      ...renderBlocks([{ kind: "bars", fmtFn: S.fmtV, zero: sg, items, ref: [{ v: pa, label: `Previous ${n}`, from: 0, to: prev.length }, { v: la, label: `Last ${n}`, from: prev.length, to: prev.length + last.length }] }])]);
+      ...renderBlocks([{ kind: "bars", fmtFn: S.fmtV, zero: sg, items, ref: [{ v: pa, label: `Previous ${n}`, from: 0, to: prevU.length }, { v: la, label: `Last ${n}`, from: prevU.length, to: prevU.length + lastU.length }] }])]);
   };
   barsFor();
   const cell = (v) => (sg ? { sg: v } : { text: S.fmtV(v) });
@@ -263,10 +267,10 @@ export async function formPopup(S, ordered) {
     return { strong: !k, cells: [l, cell(b), cell(a), change(a, b)], pick: () => barsFor(k), picked: !k, ...(kids?.length ? { kids } : {}) };
   });
   const blocks = [
-    { kind: "table", title: S.catsAvail.length > 1 ? `By category (a ${S.unit})` : "The averages", note: S.catsAvail.length > 1 ? "Tap a category or a distance to chart it above." : null, cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows },
+    { kind: "table", title: S.catsAvail.length > 1 ? `By category (a ${S.unit})` : "The averages", note: S.catsAvail.length > 1 && !ev ? "Tap a category or a distance to chart it above." : null, cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows },
   ];
-  return S.popup("Form", S.me.label, `${sg ? "Strokes gained" : S.def.label} in each ${S.unit}: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
-    el("div", { class: "wl-pop-body" }, [holder, ...renderBlocks(blocks)]), "Form");
+  return S.popup("Form", S.me.label, ev ? `${sg ? "Strokes gained" : S.def.label} a round: the last ${n} rounds against the ${n} before, and where the change came from.` : `${sg ? "Strokes gained" : S.def.label} in each ${S.unit}: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
+    el("div", { class: "wl-pop-body" }, [ev ? null : holder, ...renderBlocks(blocks)].filter(Boolean)), "Form");
 }
 // Each tournament in the selection: who played the most rounds there, best first (the "winner" leads)
 export function eventsOf(S, players) {

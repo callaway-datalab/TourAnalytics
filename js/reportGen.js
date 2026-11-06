@@ -116,10 +116,15 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const xs = series.map((_, i) => i), mx = mean(xs), my = mean(series.map((s) => s.value));
     slope = xs.reduce((t, x, i) => t + (x - mx) * (series[i].value - my), 0) / xs.reduce((t, x) => t + (x - mx) ** 2, 0);
   }
-  const half = Math.min(12, Math.floor(series.length / 2));
-  const late = series.slice(series.length - half), early = series.slice(series.length - 2 * half, series.length - half); // the last 10 vs the 10 before them
+  // (update 553, 554) every tour, the DP World Tour too: the last 12 rounds against the 12 before
+  const isD = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
+  const byEvent = isD(tour) || (mine.length > 0 && mine.every((rd) => isD(rd.tour)));
+  const unitW = "rounds";
+  const units = series.map((q) => [q]);
+  const half = Math.min(12, Math.floor(units.length / 2)); // (update 554: 12 against 12 on every tour)
+  const late = units.slice(units.length - half).flat(), early = units.slice(units.length - 2 * half, units.length - half).flat(); // the last 12 vs the 12 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
-  const halves = half >= 2 ? { n: half, early: span(early), late: span(late) } : null;
+  const halves = half >= 2 ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
   const catTrend = cats.map((k) => {
     const a = mean(early.map((s) => s.byCat[k])), b = mean(late.map((s) => s.byCat[k]));
     return { cat: k, name: CAT_NAME[k], early: a, late: b, change: a != null && b != null ? b - a : null };
@@ -228,7 +233,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round here${g.fieldAvg != null ? ` (Tour Avg ${fmtSG(g.fieldAvg)})` : ""}, over ${Math.round(g.shots)} shots.` });
   }
   for (const t of catTrend) if (t.change != null && t.change < -0.2) focus.push({ cat: t.cat, kind: "trend", lost: -t.change / 2, title: `Slipping: ${t.name}`,
-    detail: `Previous ${half} rounds: ${fmtSG(t.early)} a round. Last ${half} rounds: ${fmtSG(t.late)} a round. That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
+    detail: `Previous ${half} ${unitW}: ${fmtSG(t.early)} a round. Last ${half} ${unitW}: ${fmtSG(t.late)} a round. That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
   if (products) for (const p of products) if (p.shots >= 10 && p.perShot < -0.05) focus.push({ cat: null, kind: "product", lost: -p.total / Math.max(1, mine.length), title: `${p.club}`,
     detail: `Loses ${Math.abs(p.perShot).toFixed(3)} strokes a shot, over ${Math.round(p.shots)} shots (about ${Math.abs(p.total / Math.max(1, mine.length)).toFixed(2)} a round).` });
   // keep the biggest, at most two per category, preferring the specific over the general
@@ -257,16 +262,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   elite.sort((p, q) => q.score - p.score);
   const rising = catTrend.filter((t) => t.change != null && t.change >= 0.2).sort((p, q) => q.change - p.change).map((t) => ({
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
-    text: `Previous ${half} rounds: ${fmtSG(t.early)} a round. Last ${half} rounds: ${fmtSG(t.late)} a round. That's ${t.change.toFixed(2)} strokes a round better.` }));
+    text: `Previous ${half} ${unitW}: ${fmtSG(t.early)} a round. Last ${half} ${unitW}: ${fmtSG(t.late)} a round. That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
-  const n10 = Math.min(12, Math.floor(series.length / 2));
-  const form = n10 >= 2 ? { n: n10, first: mean(series.slice(-2 * n10, -n10).map((q) => q.value)), last: mean(series.slice(-n10).map((q) => q.value)), firstSpan: span(series.slice(-2 * n10, -n10)), lastSpan: span(series.slice(-n10)) } : null;
+  const n10 = Math.min(12, Math.floor(units.length / 2)), fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat();
+  const form = n10 >= 2 ? { n: n10, unit: "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB) } : null;
   // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
   // game (how much each swings round to round), and the biggest upside (matching the group's best where the
   // player is furthest behind).
   // (update 523) DP World Tour data (one value an event, repeated on each of its rounds): these by event, not round
-  const isD = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
-  const byEvent = isD(tour) || (mine.length > 0 && mine.every((rd) => isD(rd.tour)));
   const evOf = (list) => { const m = new Map(); for (const q of list) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); }
     return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); };
   const ser = byEvent ? evOf(series) : series;
@@ -591,13 +594,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
     y += 36;
   }
-  d.text(a.halves ? `Better / Worse: the last ${a.halves.n} rounds (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Better / Worse: the last rounds compared with the ones before them, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
+  d.text(a.halves ? `Better / Worse: the last ${a.halves.n} ${a.halves.unit || "rounds"} (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Better / Worse: the last rounds compared with the ones before them, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
   /* ---------- SG form: total and each category ---------- */
   const formChart = (title, vals, src = a.series) => {
-    const n = Math.min(12, Math.floor(vals.length / 2));
-    const first = n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = n >= 2 ? mean(vals.slice(-n)) : null; // the 10 before, the last 10
+    // (update 553) the DP World Tour's chart is event by event, but its form is the last 12 rounds against the 12 before
+    const byRd = a.unit === "event" && a.form;
+    const n = byRd ? a.form.n : Math.min(12, Math.floor(vals.length / 2));
+    const first = byRd ? a.form.first : n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = byRd ? a.form.last : n >= 2 ? mean(vals.slice(-n)) : null; // the 12 before, the last 12
     const top = y + 22, ht = 70, left = M + 22, wd = W - 22;
     need(ht + 52);
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
@@ -666,11 +671,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           const n = Math.min(nb.n, 12), r = Math.min(4.5, vw / (n * 2.6)), stepX = vw / n;
           for (let k = 0; k < n; k++) d.dot(vx + stepX * (k + 0.5), vy + 16, r, k < Math.min(t.v, n) ? P.goldLight : "#3a3a3c");
         } else if (t.viz === "pair") {
+          // (update 552) from a zero line in the middle: a gain to the right, a loss to the left
           const mine = t.v.now ?? 0, best = t.v.bestV, mx = Math.max(Math.abs(mine), Math.abs(best), 0.01);
+          const tx = vx + 24, tw = vw - 58, mid = tx + tw / 2;
+          d.line(mid, vy + 2, mid, vy + 31, { color: "#5f6368", width: 0.6, dash: [2, 1.5] });
           for (const [j, v, lab, col] of [[0, mine, "Now", "#8e8e93"], [1, best, "Peak", P.goldLight]]) {
-            const yy = vy + 6 + j * 16;
+            const yy = vy + 6 + j * 16, len = Math.max(3, (tw / 2) * Math.abs(v) / mx);
             d.text(lab, vx, yy + 6, { size: 7, bold: true, color: col });
-            d.roundRect(vx + 24, yy, Math.max(4, (vw - 54) * Math.abs(v) / mx), 7, 3.5, { fill: col });
+            d.roundRect(v >= 0 ? mid : mid - len, yy, len, 7, 3.5, { fill: col });
             d.text(fmtSG(v), vx + vw, yy + 6.5, { size: 7.5, bold: true, color: col, align: "right" });
           }
         } else if (t.viz === "steadyVsTour") {
