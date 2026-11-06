@@ -370,6 +370,18 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   });
   const gridKeys = new Set(grid.map((g) => g.key));
   const basics = [];
+  // (update 571) for the Basic Stats page's charts: Scoring Avg at each event, and everyone's Driving Distance and Hit Fairway %
+  const extraCharts = (() => {
+    const yOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+    const sc = statRounds(myAll, "scoring"), evs = new Map();
+    for (const rd of sc) { const k = `${rd.event || rd.date}|${yOf(rd)}`; (evs.get(k) || evs.set(k, []).get(k)).push(rd); }
+    const scoring = [...evs.values()].map((rs) => ({ event: rs[0].event, date: rs.map((r) => String(r.date || "")).sort().at(-1), v: statAgg(rs).value })).filter((e) => e.v != null).sort((p, q) => p.date.localeCompare(q.date));
+    const scField = mean(othersAll.map((p) => statAgg(statRounds(p.rounds, "scoring")).value).filter((v) => v != null && Number.isFinite(v)));
+    const dv = (rounds, k) => statAgg(statRounds(rounds, k)).value;
+    const pts = othersAll.map((p) => ({ d: dv(p.rounds, "drive"), f: dv(p.rounds, "fwy") })).filter((q) => q.d != null && q.f != null && Number.isFinite(q.d) && Number.isFinite(q.f));
+    const mePt = { d: dv(myAll, "drive"), f: dv(myAll, "fwy") };
+    return { scoring: scoring.length >= 3 && scField != null ? { events: scoring, fieldAvg: scField } : null, drive: pts.length >= 5 && mePt.d != null && mePt.f != null ? { pts, me: mePt } : null };
+  })();
   const UD_BANDS = [["<30 yds", 0, 30], ["30-50 yds", 30, 50]], UD_LIES = ["Fairway", "Rough", "Bunker"];
   let udGrid = null, puttGrid = null;
   // Off-the-Tee: Driving Distance and Hit Fairway %, Driver and Non-Driver (the data's tee-shot "distance")
@@ -421,7 +433,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   }
   return { catShift, shiftSpan, me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
     byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
+    extraCharts, formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
 
@@ -601,7 +613,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // 0.00") ending at the page's right edge; the same size in every report
   const bW = (t) => { const T = t.toUpperCase(); return textWidth(T, 7, true) + 1.1 * (T.length - 1) + 16; };
   const valW = Math.max(textWidth("\u22120.00", 18, true), ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true))), badgeW = bW("Better by 0.00");
-  const gx = M + 150, gw = W - 150 - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
+  // (update 571) the bars start just past the longest name (or rank line) on the left, not a fixed 150 in
+  const labW = Math.max(...a.byCat.map((c) => Math.max(textWidth(c.name, 11.5, true), c.rank ? textWidth(`Rank ${c.rank} of ${c.of}`, 8, true) : 0)));
+  const lw = Math.min(150, labW + 16), gx = M + lw, gw = W - lw - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
   for (const c of a.byCat) {
     need(36);
     const t = (a.catShift || []).find((q) => q.cat === c.cat);
@@ -667,6 +681,40 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
   }
 
+  /* (update 571) the Basic Stats page's charts (a short page): Scoring Avg at each event against the field's average, and
+     Driving Distance against Hit Fairway % for everyone compared (this player in gold) */
+  function drawBasicCharts(ch, hh) {
+    y += 22;
+    const both = ch.scoring && ch.drive, gap = 18, cw = both ? (W - gap) * 0.58 : W, sw = both ? W - gap - cw : W;
+    const y0 = y;
+    if (ch.scoring) {
+      cap("Scoring Avg, event by event", M, y0, P.gold, "left", 7);
+      d.text(`Strokes a round better (green) or worse (red) than the field's average (${ch.scoring.fieldAvg.toFixed(2)})`, M, y0 + 11, { size: 7, color: P.grey });
+      const bars = ch.scoring.events.map((e) => { const v = ch.scoring.fieldAvg - e.v; return { label: e.event || e.date, date: e.date, v, color: v >= 0 ? P.up : P.down }; });
+      drawEventBars(d, M, y0 + 14, cw, bars, [], { ink: P.ink, grey: P.grey, hair: P.hair, plotH: hh - 70, dates: true, gap: 6, pad: 6 });
+    }
+    if (ch.drive) {
+      const x = ch.scoring ? M + cw + gap : M, w = sw, top = y0 + 26, h = hh - 58;
+      cap("Distance and accuracy", x, y0, P.gold, "left", 7);
+      d.text("Every player compared: Driving Distance across, Hit Fairway % up", x, y0 + 11, { size: 7, color: P.grey });
+      const all = [...ch.drive.pts, ch.drive.me], ds = all.map((q) => q.d), fs = all.map((q) => q.f);
+      const dLo = Math.min(...ds), dHi = Math.max(...ds), fLo = Math.min(...fs), fHi = Math.max(...fs);
+      const px0 = x + 26, px1 = x + w - 8, py0 = top, py1 = top + h;
+      const X = (v) => px0 + ((v - dLo) / ((dHi - dLo) || 1)) * (px1 - px0), Y = (v) => py1 - ((v - fLo) / ((fHi - fLo) || 1)) * (py1 - py0);
+      d.roundRect(x, py0 - 6, w, h + 26, 8, { fill: P.mist });
+      const mD = mean(ds), mF = mean(fs);
+      d.line(X(mD), py0, X(mD), py1, { color: "#c7c7cc", width: 0.6, dash: [3, 2] });
+      d.line(px0, Y(mF), px1, Y(mF), { color: "#c7c7cc", width: 0.6, dash: [3, 2] });
+      d.text("Longer and straighter", px1 - 2, py0 + 7, { size: 6, color: P.faint, align: "right" });
+      for (const q of ch.drive.pts) d.dot(X(q.d), Y(q.f), 2, "#b8b8bf");
+      const me0 = ch.drive.me; d.dot(X(me0.d), Y(me0.f), 4.5, "#ffffff"); d.dot(X(me0.d), Y(me0.f), 3.6, P.gold);
+      const fD = (v) => fmtStat(statDef("drive"), v), fF = (v) => fmtStat(statDef("fwy"), v);
+      d.text(`${fD(me0.d)} \u00b7 ${fF(me0.f)}`, Math.min(px1 - 2, X(me0.d) + 6), Y(me0.f) - 5, { size: 6.5, bold: true, color: P.ink, align: X(me0.d) > px1 - 60 ? "right" : "left" });
+      d.text(fD(dLo), px0, py1 + 12, { size: 6, color: P.grey }); d.text(fD(dHi), px1, py1 + 12, { size: 6, color: P.grey, align: "right" });
+      d.text(fF(fHi), x + 4, py0 + 4, { size: 6, color: P.grey }); d.text(fF(fLo), x + 4, py1, { size: 6, color: P.grey });
+    }
+    y = y0 + hh;
+  }
   /* (update 564) This season vs Last season: a bar for each season in each category (strokes gained a round), and the
      differences in a few plain lines on the right */
   function drawYoY(yo, x, ty, w, h) {
@@ -897,6 +945,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // how a grid is laid out: no name column when its rows have no names (Scoring); as wide as its columns need,
     // up to the page (Off-the-Tee stays narrow); bigger numbers where the cells have room
     let VS = null; // one text size for every grid on the page: Approach by distance's (set below)
+    let WIDE = false; // (update 571) a short page (DP World Tour data): every grid the page's width, rows taller, a field bar under each value
     const valueW = (b, z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k; return 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8; };
     const layout = (colHeads, rows) => {
       const z0 = VS ?? 14;
@@ -906,12 +955,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         ...rows.map((r) => (r.cells?.[c] ? valueW(r.cells[c], z0) + 14 : 0))));
       // (no name column: a margin inside the box's left and right edges, so values aren't against them)
       const pad = nameW ? 0 : 10;
-      const w = Math.min(W, nameW + 2 * pad + need.reduce((t, x) => t + x, 0)), cellW = (w - nameW - 2 * pad) / colHeads.length;
+      const w = WIDE ? W : Math.min(W, nameW + 2 * pad + need.reduce((t, x) => t + x, 0)), cellW = (w - nameW - 2 * pad) / colHeads.length;
       // the biggest size (9 to 14 pt) at which every value and its rank bubble fit side by side in their cell
       const fitsAt = (z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k;
         return rows.every((r) => (r.cells || []).every((b) => !b || 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8 <= cellW)); };
       let vs = VS ?? 14; while (vs > 8 && !fitsAt(vs)) vs -= 0.5; // (the page's size; smaller only if this grid can't fit it)
-      const rowH = Math.round(Math.max(9, vs) + 16), top = colHeads.every((h) => !h) ? 3 : 16;
+      const rowH = Math.round(Math.max(9, vs) + 16 + (WIDE ? 14 : 0)), top = colHeads.every((h) => !h) ? 3 : 16;
       return { nameW, pad, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
     };
     const gridBox = (colHeads, rows) => {
@@ -937,6 +986,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           d.text(fmtStat(b.def, b.value), cx + 4 + 2 * k, ry + 4 + vs * 0.85, { size: vs, bold: true, color: P.ink }); // (colour is for the ranks)
           pillAt(b, cx + cellW - 8, ry + 4 + vs * 0.8, 5.6 + 1.6 * k);
           if (b.fieldAvg != null) d.text(`Avg ${fmtStat(b.def, b.fieldAvg)}`, cx + 4 + 2 * k, ry + ROW_H - 4, { size: 5.6 + 1.6 * k, color: P.grey });
+          // (update 571) where they sit in the field: worst on the left, best on the right; the tick is the field's average
+          if (WIDE && b.def.higher != null && b.lo != null && b.hi != null && b.hi > b.lo) {
+            const x0 = cx + 4 + 2 * k, x1 = cx + cellW - 12, by = ry + ROW_H - 16, pos = (v) => { const t = (v - b.lo) / (b.hi - b.lo); return x0 + (x1 - x0) * (b.def.higher === false ? 1 - t : t); };
+            d.roundRect(x0, by - 1.5, x1 - x0, 3, 1.5, { fill: "#dcdce1" });
+            if (b.fieldAvg != null) d.line(pos(b.fieldAvg), by - 3.5, pos(b.fieldAvg), by + 3.5, { color: P.grey, width: 0.8 });
+            d.dot(pos(b.value), by, 3.2, rankInk(b.rank || 999));
+          }
         });
       });
       y += gh;
@@ -975,7 +1031,10 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const appr = queued.find(([t]) => t === "Approach by distance");
     VS = appr ? layout(appr[1], appr[2]).vs : null;
     const heightOf = ([title, heads, rows]) => (title === null ? 6 : 19) + layout(heads, rows).gh;
-    const total = queued.reduce((t, q) => t + heightOf(q), 0), room = H - 60 - y - total;
+    // (update 571) under half the page: the wide layout, and the charts below
+    WIDE = queued.reduce((t, q) => t + heightOf(q), 0) < (H - 60 - y) * 0.45;
+    const charts = WIDE ? a.extraCharts : null, chartRoom = charts && (charts.scoring || charts.drive) ? 250 : 0;
+    const total = queued.reduce((t, q) => t + heightOf(q), 0) + chartRoom, room = H - 60 - y - total;
     // (the first section sits close under the title: a fifth of the usual gap)
     const gaps = queued.filter((q) => q[0] !== null).length;
     const extra = 0.8 * (gaps ? Math.max(0, Math.min(40, room / Math.max(1, gaps - 0.8))) : 0); // (20% less than filling the page)
@@ -985,6 +1044,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       else { y += i === 0 ? extra * 0.2 : extra; head(q[0]); }
       gridBox(q[1], q[2]);
     });
+    if (chartRoom) drawBasicCharts(charts, Math.max(200, Math.min(300, H - 60 - y - 24)));
   }
   /* ---------- (update 210) page 5: by product ---------- */
   if (a.productTable) {
