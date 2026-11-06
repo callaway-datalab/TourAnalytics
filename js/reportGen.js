@@ -674,12 +674,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     let kx = x + 16 + textWidth(T0, 6.6, true) + 1.4 * (T0.length - 1) + 18;
     for (const [lab, col] of [[`${yo.lastY} (${yo.nPrev} rds)`, cPrev], [`${yo.thisY} (${yo.nNow} rds)`, cNow]]) { d.rect(kx, ty + 9, 8, 8, { fill: col }); d.text(lab, kx + 11, ty + 16, { size: 7, bold: true, color: "#d1d1d6" }); kx += textWidth(lab, 7, true) + 22; }
     // the chart
-    const cx = x + 40, cw = w * 0.55 - 50, top = ty + 32, ph = h - 54;
-    const vals = yo.rows.flatMap((r) => [r.now, r.prev]).filter((v) => v != null);
+    // (update 567) no y-axis numbers; "SG / rd" up the side; under the lowest bar, room for its number before the category names
+    const vals = yo.rows.flatMap((r) => [r.now, r.prev]).filter((v) => v != null), hasNeg = vals.some((v) => v < -0.005);
+    const cx = x + 34, cw = w * 0.55 - 44, top = ty + 32, catY = ty + h - 9, ph = catY - (hasNeg ? 24 : 12) - top;
     const hi = Math.max(0.25, ...vals), lo = Math.min(-0.25, ...vals), Y = (v) => top + ((hi - v) / (hi - lo)) * ph, zy = Y(0);
     d.line(cx, zy, cx + cw, zy, { color: "#8e8e93", width: 0.7, dash: [3, 2] });
-    d.text("SG / rd", cx - 4, top - 8, { size: 6, color: "#8e8e93", align: "right" }); // (update 565: above the axis, clear of its numbers)
-    for (const v of [hi, 0, lo]) d.text(fmtSG(v), cx - 4, Y(v) + 2, { size: 6, color: "#8e8e93", align: "right" });
+    d.text("SG / rd", x + 22, top + ph / 2, { size: 6.5, color: "#8e8e93", align: "center", rotate: 90 });
     const slot = cw / yo.rows.length, bw = Math.min(22, slot * 0.3);
     yo.rows.forEach((r, i) => {
       const mid = cx + slot * (i + 0.5);
@@ -687,9 +687,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         if (v == null) continue;
         const yv = Y(v), hh = Math.max(0.6, Math.abs(yv - zy));
         d.rect(mid + off, Math.min(yv, zy), bw, hh, { fill: col });
-        d.text(fmtSG(v), mid + off + bw / 2, v >= 0 ? yv - 3 : yv + 9.5, { size: 6, bold: true, color: col === cNow ? cNow : "#c7c7cc", align: "center" });
+        d.text(fmtSG(v), mid + off + bw / 2, v >= 0 ? yv - 3 : yv + 8, { size: 6, bold: true, color: col === cNow ? cNow : "#c7c7cc", align: "center" });
       }
-      d.text(r.name === "Total" ? "Total" : r.name.replace("Around-the-Green", "Around Green"), mid, top + ph + 15, { size: 7, bold: r.name === "Total", color: "#d1d1d6", align: "center" });
+      d.text(r.name === "Total" ? "Total" : r.name.replace("Around-the-Green", "Around Green"), mid, catY, { size: 7, bold: r.name === "Total", color: "#d1d1d6", align: "center" });
     });
     // the differences
     const ix = x + w * 0.57 + 6, iw = w * 0.43 - 22;
@@ -993,26 +993,25 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
     // colour; sized so two kinds fit a page, the columns spread over the page's width so nothing runs off it
     const CH = { plotH: 117, /* (update 563: half as tall again, 78 → 117) */ dates: true, gap: 8, pad: 12 };
-    // (update 560) as many kinds on a page as fit; a page with two or more: the room left over shared out between them
-    // (more space between them, none wasted at the bottom)
-    const hOf = (sec) => { const rows = Math.min(10, sec.rows.length), chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) : 0; return 6 + 10 + chH + 14 + rows * 14 + 20; };
-    const plan = []; { let yy = y, pg = 0, first = true;
-      // (update 563) two kinds a page at most (one when two don't fit)
-      a.productTable.forEach((sec, i) => { const h = hOf(sec) + (first ? 0 : 6); const onPg = plan.filter((q) => q.pg === pg).length; if (!first && (yy + h > H - 50 || onPg >= 2)) { pg++; yy = 46; } plan.push({ pg, h, top: yy }); yy += h; first = false; }); }
-    const gapAfter = plan.map(() => 0);
-    for (const pg of new Set(plan.map((q) => q.pg))) {
-      const idx = plan.map((q, i) => (q.pg === pg ? i : -1)).filter((i) => i >= 0);
-      if (idx.length < 2) continue;
-      const used = plan[idx.at(-1)].top + plan[idx.at(-1)].h, extra = Math.max(0, H - 50 - used - 4);
-      for (const i of idx.slice(0, -1)) gapAfter[i] = extra / (idx.length - 1);
-    }
+    // (update 567) two kinds a page at most (one when two don't fit at the smallest chart): the page split into equal halves,
+    // the dividing line in the middle, each kind's chart grown so its chart and table fill its half (one alone: the page)
+    const CHmin = { ...CH, plotH: 78 };
+    const hAt = (sec, ch) => { const rows = Math.min(10, sec.rows.length), chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, ch) : 0; return 10 + chH + 14 + rows * 14 + 8; };
+    const plan = []; { let yy = y, pg = 0;
+      a.productTable.forEach((sec, i) => { const h = hAt(sec, CHmin), onPg = plan.filter((q) => q.pg === pg).length; if (i && (onPg >= 2 || yy + h > H - 50)) { pg++; yy = 46; } plan.push({ pg }); yy += h + 20; }); }
+    let pageTop = y;
     a.productTable.forEach((sec, si0) => {
       const keepS = sec.statNames.map((_, i) => i).filter((i) => sec.rows.some((r) => r.stats[i]));
       const rows = sec.rows.slice(0, 10);
-      if (si0 && plan[si0].pg !== plan[si0 - 1].pg) newPage();
-      if (si0 && y > 90) { d.rect(M, y - 12, W, 1.2, { fill: P.goldLight }); y += 6; } // (update 521: a thin champagne bar between kinds, not at a page's top)
+      if (si0 && plan[si0].pg !== plan[si0 - 1].pg) { newPage(); pageTop = y; }
+      const onPage = plan.filter((q) => q.pg === plan[si0].pg).length, idxOn = plan.slice(0, si0).filter((q) => q.pg === plan[si0].pg).length;
+      // (update 567) always halves: a kind on its own (an odd one out) fills the top half, the line in the middle under it
+      const slot = (H - 50 - pageTop) / 2, slotTop = pageTop + idxOn * slot;
+      if (idxOn || onPage === 1) d.rect(M, pageTop + slot - 0.6, W, 1.2, { fill: P.goldLight }); // (the thin champagne line, in the middle)
+      y = slotTop + (idxOn ? 16 : 0);
+      const CHs = { ...CH, plotH: Math.max(60, CH.plotH + (slot - (idxOn ? 16 : 0) - 14 - hAt(sec, CH))) };
       y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 2;
-      if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CH });
+      if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CHs });
       // the table: a colour square for each model, then its numbers in columns spread evenly across the page
       const colorOf = new Map((sec.legend || []).map((L) => [L.name, L.color]));
       const sgN = sec.sgNames || ["SG / Rd"], nS = sgN.length; // (update 522: named for its part of the game)
@@ -1050,7 +1049,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         keepS.forEach((si, i) => { const x = r.stats[si]; cell(x ? fmtStat(x.def, x.v) : "\u2014", 1 + nS + i, rows.indexOf(r), false); });
         d.line(M, y + 4.5, M + W, y + 4.5, { color: P.hair, width: 0.4 });
       }
-      y += 20 + gapAfter[si0]; // (update 518, 521: room before the next kind; 560: and its share of the page's spare room)
+      y += 20; // (update 567: the next kind starts at its own half of the page)
     });
   }
   footer();
