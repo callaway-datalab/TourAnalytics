@@ -679,6 +679,10 @@ export async function drawHeat(ctx, course) {
     for (const la of [B.l0, B.l1]) line(P(B.a0 - e, la), P(B.a1 + e, la));
     // the approach's direction: an arrow coming in from short of the green
     const t0 = B.rx != null ? [B.rx, B.ry] : P(B.a0 - e * 1.6, 0), t1 = P(B.a0 - e * 0.25, 0); // (update 502: from the middle of the fairway, or the tee)
+    // (update 559) the two drive misses the line was set from: a big black X on each
+    for (const m of B.mk || []) { const r = Math.max(W, Hh) / 45, d = `M${m[0] - r} ${m[1] - r} L${m[0] + r} ${m[1] + r} M${m[0] - r} ${m[1] + r} L${m[0] + r} ${m[1] - r}`;
+      g.appendChild(sv("path", { d, stroke: "#fff", "stroke-width": 7, "stroke-linecap": "round", "vector-effect": "non-scaling-stroke", fill: "none" }));
+      g.appendChild(sv("path", { d, stroke: "#000", "stroke-width": 4, "stroke-linecap": "round", "vector-effect": "non-scaling-stroke", fill: "none" })); }
     g.appendChild(sv("path", { d: `M${t0[0]} ${t0[1]} L${t1[0]} ${t1[1]}`, stroke: "#ffd60a", "stroke-width": 2.5, "vector-effect": "non-scaling-stroke", fill: "none", "marker-end": "url(#sh-arrow)" }));
     const defs = sv("defs"); const m = sv("marker", { id: "sh-arrow", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" }); m.appendChild(sv("path", { d: "M0 0 L10 5 L0 10 z", fill: "#ffd60a" })); defs.appendChild(m); bdSvg.insertBefore(defs, g);
   }
