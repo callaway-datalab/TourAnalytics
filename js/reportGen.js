@@ -627,28 +627,40 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // (update 574) three levels: full, compact, tight (the text a line apart where it says "\n": what it gains or loses, then
   // the rank); a card is left off only when even the tight one won't fit
   // (update 576) the same room inside each card on every side (P): the tag pill (15 high) at the top, the lines under it
-  const TL = [{ P: 9, fs: 8, lh: 10, gap: 5 }, { P: 8, fs: 7.6, lh: 9.4, gap: 4 }, { P: 7, fs: 7.2, lh: 8.8, gap: 3.5 }] /* (update 577: a little smaller, for three rows) */.map((t) => ({ ...t, ty: t.P + 10, tx: t.P + 15 + 5 + t.fs * 0.75, pad: 2 * t.P + 15 + 5 - (t.lh - t.fs) + 1 }));
+  // (update 578) every card the same: one title size (the smallest any card needs to fit) and one height (the tallest
+  // card's); the sizes step down until three rows fit on page 1 (a card is left off only if even the smallest won't)
+  const TL = [{ P: 9, fs: 8, lh: 10, gap: 5, tz: 9.5 }, { P: 8, fs: 7.6, lh: 9.4, gap: 4, tz: 9 }, { P: 7, fs: 7.2, lh: 8.8, gap: 3.5, tz: 8.5 }, { P: 6, fs: 6.8, lh: 8.2, gap: 3, tz: 8 }, { P: 5, fs: 6.4, lh: 7.6, gap: 2.5, tz: 7.5 }]
+    .map((t) => ({ ...t, ty: t.P + 10, tx: t.P + 15 + 5 + t.fs * 0.75, pad: 2 * t.P + 15 + 5 - (t.lh - t.fs) + 1 }));
   let L = TL[0];
-  const linesOf = (it) => String(it.text || "").split("\n").flatMap((t) => wrap(t, colW - 30, L.fs));
-  // (update 577) the title beside the tag in full: smaller (9.5 down to 8) to fit, else on two lines (the second under the first)
-  const titleOf = (it) => { const tw = textWidth(String(it.tag || "").toUpperCase(), 7, true) + 1.1 * (String(it.tag || "").length - 1) + 16, room = colW - 4 - 2 * L.P - tw - 6;
-    for (let z = 9.5; z >= 8; z -= 0.5) if (textWidth(it.title, z, true) <= room) return { z, lines: [it.title], extra: 0 };
-    const ls = wrap(it.title, room, 8.5, true).slice(0, 2); return { z: 8.5, lines: ls, extra: ls.length > 1 ? 10 : 0 }; };
-  const cardsH = (list) => list.reduce((t, it) => t + L.pad + L.gap + titleOf(it).extra + linesOf(it).length * L.lh, 0) + 26;
+  // (update 578) no ", against a Tour Avg of +0.02" on these cards: what it gains or loses, then the rank
+  // (update 579) one line: "Gains 0.35 strokes a round · Ranked 2 of 186 · 183 shots."
+  const linesOf = (it) => wrap(String(it.text || "").replace(/, against a Tour Avg of [+\u2212-]?\d+(\.\d+)?/g, "").replace(/\.\s*\n\s*/g, " \u00b7 ").replace(/\n/g, " \u00b7 "), colW - 4 - 2 * L.P, L.fs);
+  const tagW = (it) => textWidth(String(it.tag || "").toUpperCase(), 7, true) + 1.1 * (String(it.tag || "").length - 1) + 16;
+  const titleRoom = (it) => colW - 4 - 2 * L.P - tagW(it) - 6;
+  let TZ = 9.5;
+  const titleOf = (it) => { if (textWidth(it.title, TZ, true) <= titleRoom(it)) return { z: TZ, lines: [it.title], extra: 0 };
+    const ls = wrap(it.title, titleRoom(it), TZ, true).slice(0, 2); return { z: TZ, lines: ls, extra: ls.length > 1 ? TZ + 1 : 0 }; };
+  let HC = 0;
+  const fitAll = () => {
+    const all = [...strengths, ...watch];
+    TZ = L.tz; for (const it of all) { let z = L.tz; while (z > 7 && textWidth(it.title, z, true) > titleRoom(it)) z -= 0.5; TZ = Math.min(TZ, z); }
+    HC = Math.max(0, ...all.map((it) => L.pad + titleOf(it).extra + linesOf(it).length * L.lh));
+  };
+  const cardsH = (list) => list.length * (HC + L.gap) + 26;
   const roomHL = H - 50 - (y + 12 + 40);
-  for (const t of TL) { L = t; if (Math.max(cardsH(strengths), cardsH(watch)) <= roomHL) break; }
-  while (Math.max(cardsH(strengths), cardsH(watch)) > roomHL && strengths.length + watch.length > 1) { if (cardsH(strengths) >= cardsH(watch)) strengths.pop(); else watch.pop(); }
+  for (const t of TL) { L = t; fitAll(); if (Math.max(cardsH(strengths), cardsH(watch)) <= roomHL) break; }
+  while (Math.max(cardsH(strengths), cardsH(watch)) > roomHL && strengths.length + watch.length > 1) { if (strengths.length >= watch.length) strengths.pop(); else watch.pop(); fitAll(); }
   section("Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
   const cards = (x, title, list, accent, tint, empty) => {
     let yy = y + 4;
     cap(title, x, yy + 6, accent); yy += 14;
     if (!list.length) { d.text(empty, x, yy + 10, { size: 9, color: P.grey }); return yy + 20; }
     for (const it of list) {
-      const lines = linesOf(it), T = titleOf(it), h = L.pad + T.extra + lines.length * L.lh;
+      const lines = linesOf(it), T = titleOf(it), h = HC; // (update 578: every card as tall as the tallest)
       d.roundRect(x, yy, colW, h, 8, { fill: tint });
       d.roundRect(x, yy, 4, h, 2, { fill: accent });
       const ty = L.ty, tw = badge(it.tag, x + 4 + L.P, yy + ty, accent);
-      T.lines.forEach((l, i) => d.text(l, x + 4 + L.P + tw + 6, yy + ty - 0.5 + i * 10, { size: T.z, bold: true, color: P.ink }));
+      T.lines.forEach((l, i) => d.text(l, x + 4 + L.P + tw + 6, yy + ty - 0.5 + i * (T.z + 1), { size: T.z, bold: true, color: P.ink }));
       lines.forEach((l, i) => d.text(l, x + 4 + L.P, yy + L.tx + T.extra + i * L.lh, { size: L.fs, color: "#3a3a3c" }));
       yy += h + L.gap;
     }
