@@ -179,7 +179,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   }
   // (update 274) by product, always: each kind of club (and the ball) the player has used more than one model of,
   // with strokes gained a round with each model (in the rounds it was used) and the stats recorded with it. A kind
-  // with only one model (one driver all year, one ball) is left out: there's nothing to compare it with.
+  // with only one model (one driver all year, one ball) is shown too (update 551).
   let productTable = null;
   if (byProduct) {
     const STATS = { OTT: [["drive", "Driving Distance"], ["ballSpeed", "Ball Speed"], ["fwy", "Fairway %"]], APP: [["hitGreen", "Hit Green %"], ["prox", "Proximity"]], PUTT: [["make", "Made Putt %"], ["goodLag", "Good Lag %"]] };
@@ -208,7 +208,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       const items = vals.map((v) => ({ key: v, name: `${gearInfo(v).brand} ${gearInfo(v).model}`.trim(), color: colorOf.get(v),
         rounds: mine.map((rd) => { let sg = 0, n = 0; for (const x of rd.shots) if (ofShot(x).includes(v)) { sg += x.sg; n += x.w || 1; } return n ? { event: rd.event, year: rd.year, date: rd.date, sg, shots: n } : null; }).filter(Boolean) }));
       return { cat: kind, name, statNames: stats.map(([, l]) => l), sgNames: sgCols.map(([l]) => l), rows, events: eventBarsOf(items), legend: items.map((it) => ({ name: it.name, color: it.color })) };
-    }).filter((sec) => sec.rows.length > 1);
+    }).filter((sec) => sec.rows.length); // (update 551: every kind used, one model too)
     if (!productTable.length) productTable = null;
   }
 
@@ -888,7 +888,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap("Equipment", M + 9, y, P.gold); y += 23;
     d.text("By Product", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
     // (update 517: wrapped, so it never runs off the page)
-    for (const l of wrap("Each kind of club (and ball) you've used more than one model of: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its colour in the key. * Fewer than 10 rounds: read with care.", W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
+    for (const l of wrap("Each kind of club (and ball) you've used, with every model of it: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its colour in the key. * Fewer than 10 rounds: read with care.", W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
     y += 6;
     const FEW = 10;
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
