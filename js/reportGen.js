@@ -554,8 +554,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // (update 573) page 1: Where the strokes come from first, then What stands out; Best and toughest opens page 2
   /* ---------- by category: gauges ---------- */
   section("By category", "Where the strokes come from", 40 + a.byCat.length * 32);
-  d.text("The black line is zero; the gold line is Tour Avg.", M, y + 1, { size: 8, color: P.grey });
-  y += 14;
+  y += 4; // (update 576: no "The black line is zero; the gold line is Tour Avg." and no Tour Avg line)
   // (update 556) the values and the Better / Worse badges in two columns, each lined up on its left, just past the bars
   // (update 570) the bars as long as they can be: the value column, then the badge column, its widest badge ("Better by
   // 0.00") ending at the page's right edge; the same size in every report
@@ -583,7 +582,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       d.rect(c.value >= 0 ? zx : zx - 2, y + 10, 2, 4.2, { fill: light });
     }
     d.line(zx, y + 4, zx, y + 27, { color: "#000000", width: 1.1 }); // zero
-    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 29, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 29, { color: P.gold, width: 2 }); } // Tour Avg
+    // (update 576: no Tour Avg line)
     // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
     const chLabel = t && t.change != null && Math.round(Math.abs(t.change) * 100) > 0 ? /* (update 557: Steady only at 0.00) */ (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
     d.text(fmtSG(c.value), vx, y + 19, { size: 18, bold: true, color: tone(c.value) });
@@ -596,11 +595,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   y += 18;
 
   /* ---------- highlights: strengths and things to watch ---------- */
+  // (update 576) the DP World Tour (event-level data): no What stands out (Best and toughest takes its place on page 1);
+  // otherwise distances only: each against the Tour Avg, with its rank
+  const isDP = a.unit === "event", colW = (W - 14) / 2;
+  if (!isDP) {
   // (at most two strengths from the same category, so they don't repeat each other)
   const strengths = [];
   for (const it of [...a.elite.map((e) => ({ ...e, tag: "Elite", title: e.title.replace(/^Best in the group: (.*)$/, "$1: best in the group") })),
-    ...a.rising.map((r) => ({ ...r, tag: r.title.startsWith("Turned") ? "Turnaround" : "Rising", title: r.title.replace(/^(Turned it around|On the rise): /, "") })),
-    ...(a.strong || []).map((g) => ({ ...g, tag: "Strong" }))]) { // (update 574: then the biggest gains on the Tour Avg)
+    ...(a.strong || []).map((g) => ({ ...g, tag: "Strong" }))]) { // (update 576: no trends) // (update 574: then the biggest gains on the Tour Avg)
     if (strengths.length >= 3) break;
     if (it.kind === "category") continue; // (update 575: a whole category is in Where the strokes come from, right above)
     if (strengths.filter((x) => x.cat === it.cat).length >= 2) continue;
@@ -609,14 +611,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
   // (update 575) Watch: distances and trends only (a whole category is in Where the strokes come from, right above), the
   // biggest first, at most two of a part of the game
-  const watchSrc = []; for (const f of (a.focusAll || a.focus)) { if (watchSrc.length >= 3) break; if (f.kind !== "skill" && f.kind !== "trend") continue; if (f.cat && watchSrc.filter((t) => t.cat === f.cat).length >= 2) continue; if (watchSrc.some((t) => t.title === f.title)) continue; watchSrc.push(f); }
+  const watchSrc = []; for (const f of (a.focusAll || a.focus)) { if (watchSrc.length >= 3) break; if (f.kind !== "skill") continue; /* (update 576: distances only) */ if (f.cat && watchSrc.filter((t) => t.cat === f.cat).length >= 2) continue; if (watchSrc.some((t) => t.title === f.title)) continue; watchSrc.push(f); }
   const watch = watchSrc.map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
-  const colW = (W - 14) / 2;
   // (update 573) it shares page 1 with Where the strokes come from: full-size cards when they fit; else compact ones; else the
   // last card of the longer column left off, until they fit
   // (update 574) three levels: full, compact, tight (the text a line apart where it says "\n": what it gains or loses, then
   // the rank); a card is left off only when even the tight one won't fit
-  const TL = [{ pad: 29, fs: 8.5, lh: 11, gap: 6, ty: 14, tx: 32 }, { pad: 24, fs: 8, lh: 10, gap: 5, ty: 13, tx: 28 }, { pad: 21, fs: 7.6, lh: 9.2, gap: 4, ty: 12, tx: 25.5 }];
+  // (update 576) the same room inside each card on every side (P): the tag pill (15 high) at the top, the lines under it
+  const TL = [{ P: 10, fs: 8.5, lh: 11, gap: 6 }, { P: 9, fs: 8, lh: 10, gap: 5 }, { P: 8, fs: 7.6, lh: 9.2, gap: 4 }].map((t) => ({ ...t, ty: t.P + 10, tx: t.P + 15 + 5 + t.fs * 0.75, pad: 2 * t.P + 15 + 5 - (t.lh - t.fs) + 1 }));
   let L = TL[0];
   const linesOf = (it) => String(it.text || "").split("\n").flatMap((t) => wrap(t, colW - 30, L.fs));
   const cardsH = (list) => list.reduce((t, it) => t + L.pad + L.gap + linesOf(it).length * L.lh, 0) + 26;
@@ -632,9 +634,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const lines = linesOf(it), h = L.pad + lines.length * L.lh;
       d.roundRect(x, yy, colW, h, 8, { fill: tint });
       d.roundRect(x, yy, 4, h, 2, { fill: accent });
-      const ty = L.ty, tw = badge(it.tag, x + 14, yy + ty, accent);
-      d.text(wrap(it.title, colW - 30 - tw - 8, 9.5, true)[0], x + 14 + tw + 6, yy + ty, { size: 9.5, bold: true, color: P.ink });
-      lines.forEach((l, i) => d.text(l, x + 14, yy + L.tx + i * L.lh, { size: L.fs, color: "#3a3a3c" }));
+      const ty = L.ty, tw = badge(it.tag, x + 4 + L.P, yy + ty, accent);
+      d.text(wrap(it.title, colW - 30 - tw - 8, 9.5, true)[0], x + 4 + L.P + tw + 6, yy + ty - 0.5, { size: 9.5, bold: true, color: P.ink });
+      lines.forEach((l, i) => d.text(l, x + 4 + L.P, yy + L.tx + i * L.lh, { size: L.fs, color: "#3a3a3c" }));
       yy += h + L.gap;
     }
     return yy;
@@ -643,34 +645,35 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const yl = yl0 + 2;
   const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against Tour Avg in this period.");
   y = Math.max(yl, yr) + 10;
-
   newPage();
+  } // (update 576: What stands out, not for the DP World Tour)
   /* ---------- best and toughest rounds ---------- */
   // (update 570) a third line each, for the best / hardest part; (update 571) the rows as tall as fits what's left of the
   // first page (34 down to 26), so the section stays on it
   const nEv = Math.max(1, a.peaks.length, a.valleys.length), roomEv = H - 50 - (y + 12 + 37) - 4;
-  const rowEv = Math.max(26, Math.min(34, (roomEv - 28) / nEv)), smallEv = rowEv < 30;
-  const rowsH = 28 + nEv * rowEv;
+  // (update 576) 12 inside the card on every side: its title, then each event; the card as tall as that
+  const PE = 12, rowEv = Math.max(26, Math.min(34, (roomEv - 6 - 2 * PE - 28 - 21.5) / Math.max(1, nEv - 1))), smallEv = rowEv < 30;
+  const cardEv = PE + 5 + 16 + 7 + (nEv - 1) * rowEv + (smallEv ? 19 : 21.5) + PE, rowsH = cardEv + 6;
   section("Events", "Best and toughest", rowsH); // (update 547: tournaments, not rounds)
   const roundsCol = (x, title, list, c, tint) => {
-    d.roundRect(x, y, colW, rowsH - 6, 10, { fill: tint });
-    cap(title, x + 12, y + 16, c);
+    d.roundRect(x, y, colW, cardEv, 10, { fill: tint });
+    cap(title, x + PE, y + PE + 5, c);
     list.forEach((q, i) => {
-      const yy = y + 31 + i * rowEv, part = c === P.up ? q.best : q.worst;
+      const yy = y + PE + 5 + 16 + 7 + i * rowEv, part = c === P.up ? q.best : q.worst;
       // (update 564) the name and the line under it stop short of the value on the right (cut with … when they'd run into it)
-      const room = colW - 24 - textWidth(fmtSG(q.value), 15, true) - 10;
+      const room = colW - 2 * PE - textWidth(fmtSG(q.value), 15, true) - 10;
       const fit = (t, size, bold = false) => { if (textWidth(t, size, bold) <= room) return t; let u = t; while (u.length > 3 && textWidth(`${u}\u2026`, size, bold) > room) u = u.slice(0, -1); return `${u.trimEnd()}\u2026`; };
-      d.text(fit(q.event || "Event", 9.5, true), x + 12, yy, { size: 9.5, bold: true, color: P.ink });
+      d.text(fit(q.event || "Event", 9.5, true), x + PE, yy, { size: 9.5, bold: true, color: P.ink });
       // (update 570) the date and rounds on the second line, the best / hardest part on a third of its own
-      d.text(fit(`${fmtDate(q.date)}${q.rounds ? `  \u00b7  ${q.rounds} rd${q.rounds === 1 ? "" : "s"}` : ""}`, 7.5), x + 12, yy + (smallEv ? 9 : 10.5), { size: smallEv ? 7 : 7.5, color: P.grey });
-      d.text(fit(`${c === P.up ? "Best part" : "Hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, 7.5), x + 12, yy + (smallEv ? 17 : 19.5), { size: smallEv ? 7 : 7.5, color: P.grey });
-      d.text(fmtSG(q.value), x + colW - 12, yy + 9, { size: 15, bold: true, color: c, align: "right" });
+      d.text(fit(`${fmtDate(q.date)}${q.rounds ? `  \u00b7  ${q.rounds} rd${q.rounds === 1 ? "" : "s"}` : ""}`, 7.5), x + PE, yy + (smallEv ? 9 : 10.5), { size: smallEv ? 7 : 7.5, color: P.grey });
+      d.text(fit(`${c === P.up ? "Best part" : "Hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, 7.5), x + PE, yy + (smallEv ? 17 : 19.5), { size: smallEv ? 7 : 7.5, color: P.grey });
+      d.text(fmtSG(q.value), x + colW - PE, yy + 9, { size: 15, bold: true, color: c, align: "right" });
     });
   };
   roundsCol(M, "Best events", a.peaks, P.up, P.upTint);
   roundsCol(M + colW + 14, "Toughest events", a.valleys, P.down, P.downTint);
   y += rowsH + 6;
-
+  if (isDP) newPage(); // (update 576: the DP World Tour's page 2 starts with Event by event)
 
   /* ---------- SG form: total and each category ---------- */
   const formChart = (title, vals, src = a.series) => {
@@ -678,7 +681,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const byRd = a.unit === "event" && a.form;
     const n = byRd ? a.form.n : Math.min(12, Math.floor(vals.length / 2));
     const first = byRd ? a.form.first : n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = byRd ? a.form.last : n >= 2 ? mean(vals.slice(-n)) : null; // the 12 before, the last 12
-    const top = y + 22, ht = 70, left = M + 22, wd = W - 22;
+    const top = y + 22, ht = isDP ? 175 : 70, left = M + 22, wd = W - 22; // (update 576: the DP World Tour's 2.5 times as tall)
     need(ht + 52);
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
     if (first != null) {
@@ -738,7 +741,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       });
     }
     if (ch.drive) {
-      const x = x2, w = w2, top = y0 + 8, h = hh - 34;
+      const x = x2, w = w2, top = y0 + 10, h = hh - 38; // (update 576: its top and bottom level with the Off-the-Tee cards)
       d.text("Every player compared: Driving Distance across, Hit Fairway % up", x, top + h + 34, { size: 7, color: P.grey }); // (update 574: under the chart)
       const all = [...ch.drive.pts, ch.drive.me], ds = all.map((q) => q.d), fs = all.map((q) => q.f);
       const dLo = Math.min(...ds), dHi = Math.max(...ds), fLo = Math.min(...fs), fHi = Math.max(...fs);
