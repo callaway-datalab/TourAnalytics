@@ -17,14 +17,16 @@ const newestShot = (list) => (list || []).filter((d) => isShotData(detectColumns
 
 /** Load it all. onStep(text): what's loading, for the loading screen. Never throws. */
 export async function warmUp(state, onStep = () => {}) {
+  const { bootLog } = await import("./perf.js"); // (update 535: each step kept, to see where a phone stops)
+  const track = (label, p) => { bootLog(`${label}…`); return Promise.resolve(p).then((v) => { bootLog(`${label} done${v?.players?.length != null ? ` (${v.players.length} players)` : ""}`); return v; }, (e) => { bootLog(`${label} failed: ${e?.message || e}`); throw e; }); };
   try {
     const store = await import("./store.js");
     const { getFieldDetail } = await import("./fieldStore.js");
     const jobs = [];
     let ds = null;
     if (state.isAdmin) {
-      jobs.push(store.adminAllClients());
-      jobs.push(import("./rounds.js").then((m) => m.liveAllRounds()));
+      jobs.push(track("names", store.adminAllClients()));
+      jobs.push(track("entered rounds", import("./rounds.js").then((m) => m.liveAllRounds())));
       ds = newestShot(await once((cb) => store.watchAdminDatasets(cb)));
     } else {
       const keys = state.isTeam ? Object.keys(state.teamAccess || {}) : [state.profile?.clientKey].filter(Boolean);
@@ -36,15 +38,17 @@ export async function warmUp(state, onStep = () => {}) {
     }
     if (ds) {
       const up = ds.uploadedAt?.toMillis?.() ?? 0;
-      jobs.push(store.getFieldStats(ds.id).catch(() => null));
+      bootLog(`file: ${ds.name || ds.id} · ${Number(ds.rowCount || 0).toLocaleString()} rows`);
+      jobs.push(track("summary", store.getFieldStats(ds.id)).catch(() => null));
       // (update 403) the admin with a big file: the detail loads when a page needs it, so the app always opens (and Upload
       // Data, where the rankings are rebuilt, is always reachable)
       const big = state.isAdmin && (await import("./fieldCache.js")).setBigData(ds.rowCount);
-      if (!big) jobs.push(getFieldDetail(ds.id, up, { onProgress: (i, n) => onStep(n > 1 ? `Loading Data… (${i} of ${n} seasons)` : "") }));
+      if (!big) jobs.push(track("detail", getFieldDetail(ds.id, up, { onProgress: (i, n) => { bootLog(`detail season ${i} of ${n}`); onStep(n > 1 ? `Loading Data… (${i} of ${n} seasons)` : ""); } })));
       // (update 403) no longer every player's full rows while the app opens: on a big file that crashed the tab (and
       // again on every reload). Pages load what they need when they're opened; a big file works as on a phone.
 
     }
     await Promise.allSettled(jobs);
+    bootLog("loading done");
   } catch (err) { console.warn("Preload", err); }
 }

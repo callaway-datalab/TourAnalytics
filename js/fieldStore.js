@@ -13,6 +13,7 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { app, db } from "./firebase-init.js";
 import { encodeFieldDetail, decodeFieldDetail, mergeYears, gzip, gunzip } from "./fieldDetail.js";
+import { bootLog } from "./perf.js"; // (update 535: start-up steps, for the Performance readout)
 
 const SDK = "https://www.gstatic.com/firebasejs/12.12.1/firebase-storage.js";
 const cfg = window.PORTAL_CONFIG || {};
@@ -116,13 +117,17 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null 
     if (uploadedAt && (d.sourceUploadedAt ?? 0) < uploadedAt) return { players: null, why: "stale" };
     // (update 296) one copy in memory, shared by every page that asks (Watchlist, Stats, Leaderboards, Cal, reports):
     // each used to unpack its own, and a phone ran out of memory and reloaded the page ("A problem repeatedly occurred")
-    const mk = `${datasetId}|${d.sourceUploadedAt}|${d.years.join(",")}`;
+    // (update 534) a phone or tablet: the newest two seasons only (every season of a big file is more than a phone holds;
+    // it reloaded on the loading screen, and no page would open)
+    const phone = (() => { try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch { return false; } })();
+    const years = phone ? [...d.years].sort((a, b) => String(b).localeCompare(String(a), undefined, { numeric: true })).slice(0, 2).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true })) : d.years;
+    const mk = `${datasetId}|${d.sourceUploadedAt}|${years.join(",")}`;
     if (shared.key !== mk || !shared.promise) {
       shared.key = mk; shared.result = null; // (the previous copy, if any, is let go)
       shared.promise = (async () => {
         const lists = [];
         let paused = null;
-        for (const [i, year] of d.years.entries()) {
+        for (const [i, year] of years.entries()) {
           const key = `${datasetId}|${year}|${d.sourceUploadedAt}`;
           let gz = await cacheGet(key);
           if (!gz) {
@@ -132,15 +137,18 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null 
             gz = new Uint8Array(await m.getBytes(m.ref(st, pathOf(datasetId, year))));
             await cachePut(key, gz, datasetId);
           }
-          lists.push(decodeFieldDetail(await gunzip(gz)));
-          onProgress?.(i + 1, d.years.length);
+          bootLog(`detail ${year}: ${(gz.length / 1048576).toFixed(1)} MB packed, unpacking`); // (update 535)
+          const raw = await gunzip(gz);
+          bootLog(`detail ${year}: ${(raw.length / 1048576).toFixed(1)} MB unpacked, reading`);
+          lists.push(decodeFieldDetail(raw));
+          onProgress?.(i + 1, years.length);
         }
         const out = { players: mergeYears(lists), why: null };
         shared.result = out; // (update 325: for the admin's Performance readout)
         return out;
       })();
       shared.promise.then((r) => { if (!r.players && shared.key === mk) { shared.key = null; shared.promise = null; } }, () => { if (shared.key === mk) { shared.key = null; shared.promise = null; } });
-    } else onProgress?.(d.years.length, d.years.length);
+    } else onProgress?.(years.length, years.length);
     return await shared.promise;
   } catch (err) {
     console.error("Couldn't load the field detail", err);

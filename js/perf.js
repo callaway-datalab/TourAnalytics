@@ -1,7 +1,21 @@
 // (update 325) The admin's Performance readout (hamburger → Performance): how long each page took to open, how much
 // data is being held in memory, and how often the page was reloaded unexpectedly (iPhone runs out of memory and
 // restarts the page: "A problem repeatedly occurred"). Kept on this device only.
-const LS_ALIVE = "ta.alive", LS_RELOADS = "ta.reloads";
+const LS_ALIVE = "ta.alive", LS_RELOADS = "ta.reloads", LS_BOOT = "ta.bootlog";
+/* (update 535) What each start-up did, kept on this device (the last 3 start-ups, 40 steps each): which step it reached,
+   how long each took, and any error, so a start-up that never finishes (a phone that reloads on "Loading Data…") shows
+   where it stopped in the Performance readout of the next one. */
+const t00 = (typeof performance !== "undefined" ? performance.now() : 0);
+let bootId = null;
+export function bootLog(step) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LS_BOOT) || "[]");
+    if (!bootId) { bootId = Date.now(); all.push({ id: bootId, at: Date.now(), steps: [] }); while (all.length > 3) all.shift(); }
+    const cur = all.find((b) => b.id === bootId) || all[all.length - 1];
+    if (cur.steps.length < 40) cur.steps.push([Math.round(performance.now() - t00), String(step).slice(0, 160)]);
+    localStorage.setItem(LS_BOOT, JSON.stringify(all));
+  } catch { /* (storage full or blocked: nothing kept) */ }
+}
 const timings = []; // [{ route, ms, at }]
 let boot = { ms: null };
 
@@ -10,6 +24,9 @@ const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } ca
 
 /** Call once at start: notices if the last visit ended without the page closing normally (a crash / forced reload). */
 export function watchReloads() {
+  bootLog(`start · ${location.hash || "#/"} · ${navigator.userAgent.replace(/.*\((.*?)\).*/, "$1").slice(0, 60)}`);
+  window.addEventListener("error", (e) => bootLog(`error: ${e.message || e.type} ${e.filename ? `(${String(e.filename).split("/").pop()}:${e.lineno})` : ""}`));
+  window.addEventListener("unhandledrejection", (e) => bootLog(`error (promise): ${e.reason?.message || e.reason}`));
   const prev = read(LS_ALIVE, null);
   if (prev && !prev.clean) {
     const list = read(LS_RELOADS, []);
@@ -62,7 +79,8 @@ async function update() {
     <p><b>On screen</b> ${n(s.charts)} charts · ${n(s.nodes)} page elements</p>
     <p><b>First load</b> ${boot.ms != null ? `${(boot.ms / 1000).toFixed(1)} s` : "—"} · <b>Page opens</b> ${avg != null ? `${avg} ms average` : "—"}</p>
     <ul class="perf-list">${recent.map((t) => `<li>${t.route.replace(/^#?\//, "") || "home"} · ${t.ms} ms</li>`).join("") || "<li>No page changes yet</li>"}</ul>
-    <p><b>Unexpected reloads</b> ${reloads.length}${reloads.length ? ` (last ${when(reloads.at(-1).at)}, on ${reloads.at(-1).last.replace(/^#\//, "") || "home"})` : ""}</p>`;
+    <p><b>Unexpected reloads</b> ${reloads.length}${reloads.length ? ` (last ${when(reloads.at(-1).at)}, on ${reloads.at(-1).last.replace(/^#\//, "") || "home"})` : ""}</p>
+    ${(() => { const bl = read(LS_BOOT, []); return bl.length ? `<p><b>Last start-ups</b> (newest first; time in ms from opening)</p>${[...bl].reverse().map((b) => `<details${b.id === bootId ? "" : " open"}><summary>${when(b.at)}${b.id === bootId ? " · this one" : ""} · ${b.steps.length} steps · last: ${(b.steps.at(-1)?.[1] || "").replace(/</g, "&lt;")}</summary><ul class="perf-list">${b.steps.map(([ms, t]) => `<li>${ms} · ${t.replace(/</g, "&lt;")}</li>`).join("")}</ul></details>`).join("")}` : ""; })()}`;
 }
 /** Show or hide the readout. */
 export function togglePerf() {
@@ -71,7 +89,7 @@ export function togglePerf() {
   panel.className = "perf-panel";
   panel.innerHTML = `<div class="perf-head"><strong>Performance</strong><span><button type="button" class="perf-clear">Reset</button><button type="button" class="perf-x" aria-label="Close">×</button></span></div><div class="perf-body"></div>`;
   panel.querySelector(".perf-x").addEventListener("click", togglePerf);
-  panel.querySelector(".perf-clear").addEventListener("click", () => { write(LS_RELOADS, []); timings.length = 0; update(); });
+  panel.querySelector(".perf-clear").addEventListener("click", () => { write(LS_RELOADS, []); write(LS_BOOT, []); timings.length = 0; update(); });
   document.body.appendChild(panel);
   update();
   timer = setInterval(update, 2000);
