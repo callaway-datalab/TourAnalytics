@@ -681,27 +681,42 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
   }
 
-  /* (update 571) the Basic Stats page's charts (a short page): Scoring Avg at each event against the field's average, and
+  /* (update 571, 572) the Basic Stats page's lower half (a short page): on the left, the Off-the-Tee stats as two cards stacked
+     (Driving Distance, Hit Fairway %), each with its rank, the field's average and where they sit in the field; on the right,
      Driving Distance against Hit Fairway % for everyone compared (this player in gold) */
-  function drawBasicCharts(ch, hh) {
+  function drawBasicCharts(ch, hh, { tee = null, pillAt = null } = {}) {
     y += 22;
-    const both = ch.scoring && ch.drive, gap = 18, cw = both ? (W - gap) * 0.58 : W, sw = both ? W - gap - cw : W;
+    const gap = 18, lw = tee ? (W - gap) * 0.42 : 0, x2 = tee ? M + lw + gap : M, w2 = tee ? W - lw - gap : W;
     const y0 = y;
-    if (ch.scoring) {
-      cap("Scoring Avg, event by event", M, y0, P.gold, "left", 7);
-      d.text(`Strokes a round better (green) or worse (red) than the field's average (${ch.scoring.fieldAvg.toFixed(2)})`, M, y0 + 11, { size: 7, color: P.grey });
-      const bars = ch.scoring.events.map((e) => { const v = ch.scoring.fieldAvg - e.v; return { label: e.event || e.date, date: e.date, v, color: v >= 0 ? P.up : P.down }; });
-      drawEventBars(d, M, y0 + 14, cw, bars, [], { ink: P.ink, grey: P.grey, hair: P.hair, plotH: hh - 70, dates: true, gap: 6, pad: 6 });
+    if (tee) {
+      cap("Off-the-Tee", M, y0, P.gold, "left", 7);
+      const n = tee.length, cg = 10, top = y0 + 14 - 6, ch0 = (hh - 14 - cg * (n - 1)) / n;
+      tee.forEach((b, i) => {
+        const cy = top + i * (ch0 + cg);
+        d.roundRect(M, cy, lw, ch0, 10, { fill: P.mist });
+        // (update 572) the contents (about 112 pt: name, value, field average, the field bar) in the card's middle
+        const off = Math.max(0, (ch0 - 112) / 2), ct = cy + off;
+        cap(b.def.label, M + 14, ct + 18, P.soft, "left", 6.6);
+        d.text(fmtStat(b.def, b.value), M + 14, ct + 48, { size: 24, bold: true, color: P.ink });
+        if (pillAt) pillAt(b, M + lw - 14, ct + 44, 7.2);
+        if (b.fieldAvg != null) d.text(`Field average ${fmtStat(b.def, b.fieldAvg)}`, M + 14, ct + 64, { size: 8, color: P.grey });
+        if (b.def.higher != null && b.lo != null && b.hi != null && b.hi > b.lo) {
+          const x0 = M + 14, x1 = M + lw - 14, by = ct + 90, pos = (v) => { const t = (v - b.lo) / (b.hi - b.lo); return x0 + (x1 - x0) * (b.def.higher === false ? 1 - t : t); };
+          d.roundRect(x0, by - 2, x1 - x0, 4, 2, { fill: "#dcdce1" });
+          if (b.fieldAvg != null) d.line(pos(b.fieldAvg), by - 5, pos(b.fieldAvg), by + 5, { color: P.grey, width: 0.9 });
+          d.dot(pos(b.value), by, 4.2, rankInk(b.rank || 999));
+          d.text("Worst in the field", x0, by + 13, { size: 6, color: P.faint }); d.text("Best", x1, by + 13, { size: 6, color: P.faint, align: "right" });
+        }
+      });
     }
     if (ch.drive) {
-      const x = ch.scoring ? M + cw + gap : M, w = sw, top = y0 + 26, h = hh - 58;
-      cap("Distance and accuracy", x, y0, P.gold, "left", 7);
-      d.text("Every player compared: Driving Distance across, Hit Fairway % up", x, y0 + 11, { size: 7, color: P.grey });
+      const x = x2, w = w2, top = y0 + 8, h = hh - 34;
+      d.text("Every player compared: Driving Distance across, Hit Fairway % up", x, y0, { size: 7, color: P.grey });
       const all = [...ch.drive.pts, ch.drive.me], ds = all.map((q) => q.d), fs = all.map((q) => q.f);
       const dLo = Math.min(...ds), dHi = Math.max(...ds), fLo = Math.min(...fs), fHi = Math.max(...fs);
-      const px0 = x + 26, px1 = x + w - 8, py0 = top, py1 = top + h;
+      const px0 = x + 30, px1 = x + w - 10, py0 = top + 8, py1 = top + h;
       const X = (v) => px0 + ((v - dLo) / ((dHi - dLo) || 1)) * (px1 - px0), Y = (v) => py1 - ((v - fLo) / ((fHi - fLo) || 1)) * (py1 - py0);
-      d.roundRect(x, py0 - 6, w, h + 26, 8, { fill: P.mist });
+      d.roundRect(x, top - 2, w, h + 24, 10, { fill: P.mist });
       const mD = mean(ds), mF = mean(fs);
       d.line(X(mD), py0, X(mD), py1, { color: "#c7c7cc", width: 0.6, dash: [3, 2] });
       d.line(px0, Y(mF), px1, Y(mF), { color: "#c7c7cc", width: 0.6, dash: [3, 2] });
@@ -1033,7 +1048,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const heightOf = ([title, heads, rows]) => (title === null ? 6 : 19) + layout(heads, rows).gh;
     // (update 571) under half the page: the wide layout, and the charts below
     WIDE = queued.reduce((t, q) => t + heightOf(q), 0) < (H - 60 - y) * 0.45;
-    const charts = WIDE ? a.extraCharts : null, chartRoom = charts && (charts.scoring || charts.drive) ? 250 : 0;
+    // (update 572) no Scoring Avg chart (the SG Form chart shows the same); the Off-the-Tee row (one row: not split Driver /
+    // Non-Driver) moves into the lower half as two stacked cards beside the scatter
+    const charts = WIDE ? a.extraCharts : null, chartRoom = charts?.drive ? 250 : 0;
+    let teeCards = null;
+    if (chartRoom) { const qi = queued.findIndex((q) => q[0] === "Off-the-Tee"); const tq = qi >= 0 ? queued[qi] : null;
+      if (tq && tq[2].length === 1 && tq[2][0].cells.filter(Boolean).length >= 1) { teeCards = tq[2][0].cells.filter(Boolean); queued.splice(qi, 1); } }
     const total = queued.reduce((t, q) => t + heightOf(q), 0) + chartRoom, room = H - 60 - y - total;
     // (the first section sits close under the title: a fifth of the usual gap)
     const gaps = queued.filter((q) => q[0] !== null).length;
@@ -1044,7 +1064,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       else { y += i === 0 ? extra * 0.2 : extra; head(q[0]); }
       gridBox(q[1], q[2]);
     });
-    if (chartRoom) drawBasicCharts(charts, Math.max(200, Math.min(300, H - 60 - y - 24)));
+    if (chartRoom) drawBasicCharts(charts, Math.max(200, Math.min(440, H - 60 - y - 24)), { tee: teeCards, pillAt }); // (update 572: down to the bottom of the page)
   }
   /* ---------- (update 210) page 5: by product ---------- */
   if (a.productTable) {
