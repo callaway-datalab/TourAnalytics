@@ -51,7 +51,20 @@ export async function heatImage(meta, hole) {
   const h = meta.holes?.[String(hole)];
   if (!h?.chunks) return null;
   const k = `${meta.id}|${hole}|${meta.imgAt?.toMillis?.() ?? ""}`;
-  if (!imgMemo.has(k)) imgMemo.set(k, readChunks(meta.id, `h${hole}`, h.chunks).then((b64) => URL.createObjectURL(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: h.type || "image/webp" }))));
+  if (!imgMemo.has(k)) imgMemo.set(k, readChunks(meta.id, `h${hole}`, h.chunks).then(async (b64) => {
+    let blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: h.type || "image/webp" });
+    // (update 532) a phone: a big hole image made smaller once (at most 1800 pixels across), so it isn't held in memory
+    // at full size; everything on the map is placed by the image's own size (meta), so nothing moves
+    if (LOW_MEM && h.w && h.h && Math.max(h.w, h.h) > 1800 && typeof createImageBitmap === "function") {
+      try {
+        const sc = 1800 / Math.max(h.w, h.h), bmp = await createImageBitmap(blob, { resizeWidth: Math.round(h.w * sc), resizeHeight: Math.round(h.h * sc), resizeQuality: "high" });
+        const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height; c.getContext("2d").drawImage(bmp, 0, 0); bmp.close?.();
+        const small = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.9)); c.width = 0; c.height = 0;
+        if (small) blob = small;
+      } catch { /* (the full image, then) */ }
+    }
+    return URL.createObjectURL(blob);
+  }));
   return imgMemo.get(k);
 }
 /* (update 463) the admin's pin edits: names and deleted pins, kept on the course (so they last through a new scoring
@@ -463,7 +476,9 @@ const rdbu = (t) => { const x = Math.max(0, Math.min(1, Number.isFinite(t) ? t :
 export const scoreT = (v, par) => (par >= 5 ? (v < -0.5 ? 0.5 * (v + 1) / 0.5 : 0.5 + 0.5 * (v + 0.5) / 1) : 0.5 + v);
 /** The zones over an image: mode "zones" (aim / avoid against zones as far out) or "score" (the scoring itself). */
 // (update 461) a canvas as big as it shows (zoomed in too, so it stays sharp), kept under what phones allow (~16 MP)
-const sizeOf = (canvas) => { const box = canvas.getBoundingClientRect(); let k = Math.min(2, window.devicePixelRatio || 1); const a = box.width * box.height * k * k; if (a > 14e6) k *= Math.sqrt(14e6 / a); return { cw: Math.max(1, Math.round(box.width * k)), ch: Math.max(1, Math.round(box.height * k)), k }; };
+// (update 532) a phone: each canvas at most 2.5 million pixels (about 10 MB); a computer 14 million. iPhones reload the
+// page when pictures take too much memory, and a zoomed-in map would otherwise ask for several times that
+const sizeOf = (canvas) => { const box = canvas.getBoundingClientRect(); let k = Math.min(2, window.devicePixelRatio || 1); const cap = LOW_MEM ? 2.5e6 : 14e6, a = box.width * box.height * k * k; if (a > cap) k *= Math.sqrt(cap / a); return { cw: Math.max(1, Math.round(box.width * k)), ch: Math.max(1, Math.round(box.height * k)), k }; };
 // (rot: turned upright for phones, tee at the bottom: the image's (x, y) shows at (y, W − x))
 export const toDisp = (x, y, W, rot) => (rot ? [y, W - x] : [x, y]);
 export const toImg = (dx, dy, W, rot) => (rot ? [W - dy, dx] : [dx, dy]);
