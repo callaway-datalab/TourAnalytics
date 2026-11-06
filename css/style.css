@@ -5899,3 +5899,26 @@ div.sh-ud3-green { cursor: default; }
 .hero-report-toast .gx-pop-x { position: absolute; top: 8px; right: 8px; }
 .hero-report-toast .report-gen-auto p { margin: 6px 0 0; }
 .hero-report-toast .report-gen-actions { margin-top: 8px; }
+/* (update 555) up & down by miss: three rows of Off the tee blocks (the side and % on one line, the count beside them,
+   or just under when there isn't room); the pop-up's table fits the screen (it had been pushing the grid off the edge) */
+.sh-ud3, .sh-ud3 > * { min-width: 0; }
+.sh-ud3-grid { width: 100%; }
+.sh-ud3 .sh-ud3-c { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: center; column-gap: 4px; row-gap: 0; padding: 4px 6px; line-height: 1.2; min-width: 0; overflow: hidden; }
+.sh-ud3 .sh-ud3-c small, .sh-ud3 .sh-ud3-c em { white-space: nowrap; }
+.sh-ud3 .sh-ud3-green { min-height: 0; }
+.sh-ud3 .sh-ud-det { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
+.sh-ud3 .sh-ud-det table { width: 100%; table-layout: fixed; }
+.sh-ud3 .sh-ud-det th, .sh-ud3 .sh-ud-det td { padding: 3px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0; }
+.sh-ud3 .sh-ud-det th:first-child, .sh-ud3 .sh-ud-det td:first-child { width: 24%; }
+@media (max-width: 640px) {
+  .sh-ud3 { grid-template-columns: minmax(0, 1fr); }
+  .sh-ud3 .sh-ud3-c { padding: 4px 2px; column-gap: 2px; }
+  .sh-ud3 .sh-ud3-grid { gap: 4px; }
+  .sh-ud3 .sh-ud3-c small { font-size: 0.6rem; }
+  .sh-ud3 .sh-ud3-c strong { font-size: 0.82rem; }
+  .sh-ud3 .sh-ud3-c em { font-size: 0.55rem; }
+  .sh-ud3 .sh-ud-det { padding: 8px; }
+  .sh-ud3 .sh-ud-det p { font-size: 0.78rem; }
+  .sh-ud3 .sh-ud-det th, .sh-ud3 .sh-ud-det td { font-size: 0.66rem; }
+  .sh-ud3 .sh-ud-det .sh-lie { font-size: 0.62rem; padding: 1px 5px; }
+}

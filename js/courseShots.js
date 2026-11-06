@@ -171,7 +171,7 @@ export function trailSG(t, par, E, into) {
  * 30 yards, after one from farther out) */
 /*
  * (update 502) A hole's up & down boards, per pin. The line of play: from the middle of the fairway (halfway between the
- * farthest-left and farthest-right shots played from the fairway, across the line from the tee to the green) to the pin,
+ * farthest-left and farthest-right shots played from the fairway (update 555: of the half closest to the pin), across the line from the tee to the green) to the pin,
  * or from the tee on a par 3. The board's middle square: 20 x 20 ft around the pin (10 ft each way along and across that
  * line; update 503: 40 x 40 ft, 20 ft each way), less where the green runs out sooner (its edges: the 1st and 99th percentiles of where shots were played on it).
  * shots: [{ x, y, L, d, st }] (every shot on the hole, rounded as the trails are); pins: Map(pin id → [x, y]).
@@ -181,7 +181,11 @@ export function holeBoards(shots, pins, par) {
   const tees = shots.filter((q) => q.st === 1), greens = shots.filter((q) => q.L === 4), T = avg(tees), G = avg(greens);
   if (!T || !G || greens.length < 20) return null;
   let ref = T;
-  const fw = par >= 4 ? shots.filter((q) => q.L === 1) : [];
+  // (update 555) only the half of the fairway shots closest to the pin (its yards to the pin; else to the green's middle):
+  // the fairway near the green sets the line, not drives' far-flung landing spots
+  const fwAll = par >= 4 ? shots.filter((q) => q.L === 1) : [];
+  const byYds = fwAll.every((q) => q.d != null && Number.isFinite(q.d)), dTo = (q) => (byYds ? q.d : Math.hypot(q.x - G[0], q.y - G[1]));
+  const fw = fwAll.length >= 4 ? [...fwAll].sort((p, q) => dTo(p) - dTo(q)).slice(0, Math.ceil(fwAll.length / 2)) : fwAll;
   if (fw.length >= 2) {
     const dx = G[0] - T[0], dy = G[1] - T[1], dl = Math.hypot(dx, dy) || 1, lat = (q) => (dx * (q.y - T[1]) - dy * (q.x - T[0])) / dl;
     let lo = fw[0], hi = fw[0]; for (const q of fw) { if (lat(q) < lat(lo)) lo = q; if (lat(q) > lat(hi)) hi = q; }
