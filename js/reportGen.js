@@ -302,7 +302,21 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const sds = others.map((p) => { const rs = p.rounds.map(one); return sd((byEvent ? evOf(rs) : rs).map((q) => q.byCat[k])); }).filter((v) => v != null && Number.isFinite(v));
     tourSd = sds.length ? mean(sds) : null;
   }
-  const numbers = { unit: byEvent ? "event" : "round", posRounds, n: ser.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside, tourSd };
+  // (update 564) this season against last season (the season before the newest one in the report, from all their rounds on
+  // the same tour, whether or not the report's dates cover it): strokes gained a round, in total and each category
+  const yoy = (() => {
+    const yr = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+    const ys = mine.map(yr).filter((v) => /^\d{4}$/.test(v)).sort();
+    if (!ys.length) return null;
+    const thisY = ys.at(-1), lastY = String(Number(thisY) - 1);
+    const all = me.rounds.filter((rd) => hasSG(rd) && onTour(rd)).map((rd) => ({ ...rd, shots: rd.shots.filter((x) => cats.includes(x.cat)) }));
+    const now = all.filter((rd) => yr(rd) === thisY), prev = all.filter((rd) => yr(rd) === lastY);
+    if (now.length < 5 || prev.length < 5) return null;
+    const rows = [{ k: null, name: "Total", now: perRound(now), prev: perRound(prev) }, ...cats.map((k) => ({ k, name: CAT_NAME[k], now: perRound(now, k), prev: perRound(prev, k) }))]
+      .map((r) => ({ ...r, ch: r.now != null && r.prev != null ? r.now - r.prev : null }));
+    return { thisY, lastY, nNow: now.length, nPrev: prev.length, rows };
+  })();
+  const numbers = { yoy, unit: byEvent ? "event" : "round", posRounds, n: ser.length, streak: best, steady: swings[0] || null, swingy: swings.length > 1 ? swings[swings.length - 1] : null, upside, tourSd };
 
   // Basic stats (page 4): every other stat in the data (Scoring Avg, GIR %, Putts / Round …), in the same period and
   // tour, ranked among the same players as strokes gained (the same Min. rounds list).
@@ -558,8 +572,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap(title, x + 12, y + 16, c);
     list.forEach((q, i) => {
       const yy = y + 32 + i * 28, part = c === P.up ? q.best : q.worst;
-      d.text(wrap(q.event || "Event", colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
-      d.text(`${fmtDate(q.date)}${q.rounds ? `  \u00b7  ${q.rounds} rd${q.rounds === 1 ? "" : "s"}` : ""}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
+      // (update 564) the name and the line under it stop short of the value on the right (cut with … when they'd run into it)
+      const room = colW - 24 - textWidth(fmtSG(q.value), 15, true) - 10;
+      const fit = (t, size, bold = false) => { if (textWidth(t, size, bold) <= room) return t; let u = t; while (u.length > 3 && textWidth(`${u}\u2026`, size, bold) > room) u = u.slice(0, -1); return `${u.trimEnd()}\u2026`; };
+      d.text(fit(q.event || "Event", 9.5, true), x + 12, yy, { size: 9.5, bold: true, color: P.ink });
+      const sub = (word) => `${fmtDate(q.date)}${q.rounds ? `  \u00b7  ${q.rounds} rd${q.rounds === 1 ? "" : "s"}` : ""}  \u00b7  ${word}${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`;
+      const long = sub(c === P.up ? "best part: " : "hardest part: ");
+      d.text(textWidth(long, 7.5) <= room ? long : fit(sub(""), 7.5), x + 12, yy + 11, { size: 7.5, color: P.grey });
       d.text(fmtSG(q.value), x + colW - 12, yy + 6, { size: 15, bold: true, color: c, align: "right" });
     });
   };
@@ -641,6 +660,58 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
   }
 
+  /* (update 564) This season vs Last season: a bar for each season in each category (strokes gained a round), and the
+     differences in a few plain lines on the right */
+  function drawYoY(yo, x, ty, w, h) {
+    d.roundRect(x, ty, 24, h, 10, { fill: P.night });
+    d.roundRect(x + w - 24, ty, 24, h, 10, { fill: P.night2 });
+    d.gradient(x + 12, ty, w - 24, h, P.night, P.night2, { dir: "h", steps: 40 });
+    cap("This season vs Last season", x + 16, ty + 18, P.goldLight, "left", 6.8);
+    const cNow = P.goldLight, cPrev = "#8e8e93";
+    // the key
+    let kx = x + w * 0.58 - 10;
+    for (const [lab, col] of [[`${yo.thisY} (${yo.nNow} rds)`, cNow], [`${yo.lastY} (${yo.nPrev} rds)`, cPrev]]) { const tw0 = textWidth(lab, 7, true); kx -= tw0 + 22; }
+    for (const [lab, col] of [[`${yo.lastY} (${yo.nPrev} rds)`, cPrev], [`${yo.thisY} (${yo.nNow} rds)`, cNow]]) { d.rect(kx, ty + 11, 8, 8, { fill: col }); d.text(lab, kx + 11, ty + 18, { size: 7, bold: true, color: "#d1d1d6" }); kx += textWidth(lab, 7, true) + 22; }
+    // the chart
+    const cx = x + 40, cw = w * 0.58 - 50, top = ty + 34, ph = h - 62;
+    const vals = yo.rows.flatMap((r) => [r.now, r.prev]).filter((v) => v != null);
+    const hi = Math.max(0.25, ...vals), lo = Math.min(-0.25, ...vals), Y = (v) => top + ((hi - v) / (hi - lo)) * ph, zy = Y(0);
+    d.line(cx, zy, cx + cw, zy, { color: "#8e8e93", width: 0.7, dash: [3, 2] });
+    d.text("SG / rd", x + 16, top + 4, { size: 6, color: "#8e8e93" });
+    for (const v of [hi, 0, lo]) d.text(fmtSG(v), cx - 4, Y(v) + 2, { size: 6, color: "#8e8e93", align: "right" });
+    const slot = cw / yo.rows.length, bw = Math.min(22, slot * 0.3);
+    yo.rows.forEach((r, i) => {
+      const mid = cx + slot * (i + 0.5);
+      for (const [v, col, off] of [[r.prev, cPrev, -bw - 1.5], [r.now, cNow, 1.5]]) {
+        if (v == null) continue;
+        const yv = Y(v), hh = Math.max(0.6, Math.abs(yv - zy));
+        d.rect(mid + off, Math.min(yv, zy), bw, hh, { fill: col });
+        d.text(fmtSG(v), mid + off + bw / 2, v >= 0 ? yv - 3 : yv + 8, { size: 6, bold: true, color: col === cNow ? cNow : "#c7c7cc", align: "center" });
+      }
+      d.text(r.name === "Total" ? "Total" : r.name.replace("Around-the-Green", "Around Green"), mid, top + ph + 14, { size: 7, bold: r.name === "Total", color: "#d1d1d6", align: "center" });
+    });
+    // the differences
+    const ix = x + w * 0.6 + 10, iw = w * 0.4 - 26;
+    cap("The differences", ix, ty + 34, P.goldLight, "left", 6.3);
+    const tot = yo.rows[0], parts = yo.rows.slice(1).filter((r) => r.ch != null).sort((p, q) => q.ch - p.ch);
+    const lines = [];
+    if (tot.ch != null) lines.push([tot.ch, Math.abs(tot.ch) < 0.005 ? `Overall: the same as ${yo.lastY}, ${fmtSG(tot.now)} a round.` : `Overall: ${Math.abs(tot.ch).toFixed(2)} a round ${tot.ch > 0 ? "better" : "worse"} than ${yo.lastY} (${fmtSG(tot.prev)} \u2192 ${fmtSG(tot.now)}).`]);
+    const best = parts[0], worst = parts.at(-1);
+    if (best && best.ch > 0.005) lines.push([best.ch, `Biggest gain: ${best.name}, up ${best.ch.toFixed(2)} a round${best.prev < 0 && best.now >= 0 ? ", from losing strokes to gaining them" : ""}.`]);
+    if (worst && worst !== best && worst.ch < -0.005) lines.push([worst.ch, `Biggest drop: ${worst.name}, down ${Math.abs(worst.ch).toFixed(2)} a round${worst.prev >= 0 && worst.now < 0 ? ", from gaining strokes to losing them" : ""}.`]);
+    const flips = parts.filter((r) => r !== best && r !== worst && Math.sign(r.now) !== Math.sign(r.prev) && Math.abs(r.ch) >= 0.05);
+    for (const r of flips.slice(0, 1)) lines.push([r.ch, `${r.name} has ${r.now >= 0 ? "turned into a strength" : "turned into a weakness"} (${fmtSG(r.prev)} \u2192 ${fmtSG(r.now)}).`]);
+    const steady = parts.filter((r) => Math.abs(r.ch) < 0.05);
+    if (steady.length && lines.length < 4) lines.push([0, `About the same: ${steady.map((r) => r.name).join(", ")}.`]);
+    let ly = ty + 50;
+    for (const [v, t] of lines.slice(0, 4)) {
+      const col = Math.abs(v) < 0.005 ? "#8e8e93" : v > 0 ? "#4cd17e" : "#ff6b5e";
+      d.roundRect(ix, ly - 7, 4, 18, 2, { fill: col });
+      const ls = wrap(t, iw - 12, 7.6).slice(0, 2);
+      ls.forEach((l, j) => d.text(l, ix + 10, ly + j * 9.5, { size: 7.6, color: "#e5e5ea" }));
+      ly += Math.max(1, ls.length) * 9.5 + 9;
+    }
+  }
   /* ---------- by the numbers: four premium tiles ---------- */
   {
     const nb = a.numbers, tiles = [];
@@ -657,21 +728,24 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         text: `Typical swing ${u} to ${u}.${tv != null ? ` Tour Avg: \u00b1${tv.toFixed(2)}, so ${Math.abs(v - tv) < 0.05 ? "about as steady as the others" : v < tv ? "steadier than the others" : "less steady than the others"}.` : ""}`, viz: "steadyVsTour", v: { mine: v, tour: tv } });
     } else if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing ${u} to ${u}.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
     if (tiles.length) {
-      const cols = 2, gap = 12, tw = (W - gap) / cols, th = 92, rows = Math.ceil(tiles.length / cols);
-      section("By the numbers", "At a glance", rows * (th + gap));
+      // (update 564) with last season to compare: the cards a little smaller and shorter, and a third row across the page,
+      // This season vs Last season
+      const yo = nb.yoy, cols = 2, gap = yo ? 10 : 12, tw = (W - gap) / cols, th = yo ? 74 : 92, rows = Math.ceil(Math.min(4, tiles.length) / cols), yoH = yo ? 150 : 0;
+      section("By the numbers", "At a glance", rows * (th + gap) + (yo ? yoH + gap : 0));
       tiles.slice(0, 4).forEach((t, i) => {
         const x = M + (i % cols) * (tw + gap), ty = y + Math.floor(i / cols) * (th + gap);
         // a dark tile with rounded corners and a soft left-to-right blend
         d.roundRect(x, ty, 24, th, 10, { fill: P.night });
         d.roundRect(x + tw - 24, ty, 24, th, 10, { fill: P.night2 });
         d.gradient(x + 12, ty, tw - 24, th, P.night, P.night2, { dir: "h", steps: 30 });
-        cap(t.label, x + 16, ty + 20, P.goldLight, "left", 6.8);
+        const sq = yo ? 1 : 0; // (update 564: the shorter cards)
+        cap(t.label, x + 16, ty + (sq ? 16 : 20), P.goldLight, "left", 6.8);
         // the big number, as large as fits
-        let size = 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
-        d.text(t.big, x + 16, ty + 50, { size, bold: true, color: "#ffffff" });
-        wrap(t.text, tw * 0.52, 7.8).slice(0, 3).forEach((l, j) => d.text(l, x + 16, ty + 64 + j * 9.5, { size: 7.8, color: "#a1a1a6" }));
+        let size = sq ? 20 : 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
+        d.text(t.big, x + 16, ty + (sq ? 40 : 50), { size, bold: true, color: "#ffffff" });
+        wrap(t.text, tw * 0.52, sq ? 7.4 : 7.8).slice(0, sq ? 2 : 3).forEach((l, j) => d.text(l, x + 16, ty + (sq ? 52 : 64) + j * (sq ? 9 : 9.5), { size: sq ? 7.4 : 7.8, color: "#a1a1a6" }));
         // a small picture on the right
-        const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + 30;
+        const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + (sq ? 20 : 30);
         if (t.viz === "bar") {
           d.roundRect(vx, vy + 12, vw, 7, 3.5, { fill: "#2c2c2e" });
           d.roundRect(vx, vy + 12, Math.max(7, vw * t.v), 7, 3.5, { fill: P.goldLight });
@@ -709,6 +783,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         }
       });
       y += rows * (th + gap) + 4;
+      if (yo) { drawYoY(yo, M, y - 4, W, yoH); y += yoH + gap; }
     }
   }
 
