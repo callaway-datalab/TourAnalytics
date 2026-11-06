@@ -5887,3 +5887,9 @@ div.sh-ud3-green { cursor: default; }
   .sh-ud3-c strong { font-size: 0.9rem; }
   .sh-ud3-c em { font-size: 0.6rem; white-space: nowrap; }
 }
+/* (update 544) phone: the year and month rows as wide as the order row, the search and the rest */
+@media (max-width: 520px) {
+  .wl-controls .wl-periods { width: 100%; flex-direction: column; gap: 0.4rem; }
+  .wl-periods > .wl-period { display: flex; width: 100%; box-sizing: border-box; }
+  .wl-periods > .wl-period .wl-per { flex: 1 1 0; }
+}
