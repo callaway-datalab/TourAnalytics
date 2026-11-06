@@ -120,6 +120,11 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null 
     // (update 534) a phone or tablet: the newest two seasons only (every season of a big file is more than a phone holds;
     // it reloaded on the loading screen, and no page would open)
     const phone = (() => { try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch { return false; } })();
+    // (update 537) a phone with a big file (over 1.5 million rows): no lie / distance detail at all. Even one season of it
+    // (46 MB unpacked for 2026) is more than a phone can turn into data, and it reloaded the Stats page; the field's
+    // numbers come from the rankings summary instead (by category)
+    const bigFile = (() => { try { return localStorage.getItem("ta.bigData") === "1"; } catch { return false; } })();
+    if (phone && bigFile) { bootLog("detail skipped on this phone (big file)"); return { players: null, why: "phone" }; }
     const years = phone ? [...d.years].sort((a, b) => String(b).localeCompare(String(a), undefined, { numeric: true })).slice(0, 2).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true })) : d.years;
     const mk = `${datasetId}|${d.sourceUploadedAt}|${years.join(",")}`;
     if (shared.key !== mk || !shared.promise) {

@@ -289,6 +289,7 @@ export async function render(main, { flash, routeId }) {
       : why === undefined || why === null ? "Loading lie and distance detail\u2026"
       : why === "paused" ? "Lie and distance ranks are paused: this month\u2019s budget was reached."
       : why === "none" || why === "stale" ? "Lie and distance ranks appear once the rankings are rebuilt (Upload Data \u2192 Rebuild rankings)."
+      : why === "phone" ? "On a phone, a data file this big ranks by category only; lie and distance ranks are on a computer." // (update 537)
       : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
     drawLite(ds, idx, fieldPlayers, note, why === "paused");
     if (why === undefined) loadDetailLite(ds, dk);

@@ -42,7 +42,9 @@ export async function warmUp(state, onStep = () => {}) {
       jobs.push(track("summary", store.getFieldStats(ds.id)).catch(() => null));
       // (update 403) the admin with a big file: the detail loads when a page needs it, so the app always opens (and Upload
       // Data, where the rankings are rebuilt, is always reachable)
-      const big = state.isAdmin && (await import("./fieldCache.js")).setBigData(ds.rowCount);
+      // (update 537) whether the file is big, noted for everyone (a phone then skips the lie / distance detail); the admin's
+      // app still skips loading it up front, as before
+      const isBig = (await import("./fieldCache.js")).setBigData(ds.rowCount), big = state.isAdmin && isBig;
       if (!big) jobs.push(track("detail", getFieldDetail(ds.id, up, { onProgress: (i, n) => { bootLog(`detail season ${i} of ${n}`); onStep(n > 1 ? `Loading Data… (${i} of ${n} seasons)` : ""); } })));
       // (update 403) no longer every player's full rows while the app opens: on a big file that crashed the tab (and
       // again on every reload). Pages load what they need when they're opened; a big file works as on a phone.

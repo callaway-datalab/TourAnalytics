@@ -10,7 +10,7 @@ import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
 import { LOW_MEM, freeCanvases, lieName, heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
-import { playerTrails, LIE_NAMES, eKey } from "../courseShots.js"; // (update 479; 503: eKey)
+import { playerTrails, LIE_NAMES, eKey, dOf } from "../courseShots.js"; // (update 479; 503: eKey)
 import { BUILD_VERSION } from "../courseRaw.js"; // (update 498)
 import { clientKey } from "../data.js"; // (update 500)
 
@@ -821,8 +821,8 @@ export async function drawHeat(ctx, course) {
   // from where it was played less those from where it finished (none once holed), less the shot itself
   const sgOf = (t, i) => {
     const E = data.insights?.sg?.E; if (!E) return null;
-    const qs = t.shots, q = qs[i], k0 = eKey(q[3], q[4]); if (k0 == null || E[k0] == null) return null;
-    if (i + 1 < qs.length) { const k1 = eKey(qs[i + 1][3], qs[i + 1][4]); return k1 == null || E[k1] == null ? null : E[k0] - E[k1] - 1; }
+    const qs = t.shots, q = qs[i], k0 = eKey(q[3], dOf(q)); /* (update 537: true_distance when kept) */ if (k0 == null || E[k0] == null) return null;
+    if (i + 1 < qs.length) { const k1 = eKey(qs[i + 1][3], dOf(qs[i + 1])); return k1 == null || E[k1] == null ? null : E[k0] - E[k1] - 1; }
     return t.s != null ? E[k0] - 1 : null;
   };
   function trailPop(t, e) {

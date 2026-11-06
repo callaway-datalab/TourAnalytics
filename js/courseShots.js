@@ -140,7 +140,7 @@ const ydB = (d) => (d < 30 ? "<30 yds" : d < 50 ? "30-50 yds" : d < 100 ? "50-10
 const ftB = (d) => (d < 5 ? "<5 ft" : d < 10 ? "5-10 ft" : d < 15 ? "10-15 ft" : d < 20 ? "15-20 ft" : d < 25 ? "20-25 ft" : ">25 ft");
 /** a shot's distance bucket ([stroke, x, y, lie, dist, toHoleOut]): for strokes gained (sg) or the attempt distribution */
 export function bucketOf(q, par, sg) {
-  const L = q[3], d = q[4];
+  const L = q[3], d = dOf(q); // (update 537: true_distance when the file has it)
   if (sg && q[6]) return String(q[6]); // (update 512) strokes gained by the file's skill column, when it has one
   if (q[0] === 1 && par >= 4) return sg ? "Tee shot" : null;
   if (d == null) return null;
@@ -148,6 +148,8 @@ export function bucketOf(q, par, sg) {
   return ydB(d);
 }
 /** the expected strokes key of a spot: its lie and distance, finer close in */
+/** (update 537) a shot's distance to the hole: the file's true_distance (kept 8th) when it has it, else its distance */
+export const dOf = (q) => (q[7] != null ? q[7] : q[4]);
 export function eKey(L, d) {
   if (d == null) return null;
   const b = L === 4 ? (d < 10 ? Math.floor(d) : d < 30 ? 10 + Math.floor((d - 10) / 5) : Math.min(30, 14 + Math.floor((d - 30) / 10)))
@@ -158,9 +160,9 @@ export function eKey(L, d) {
 export function trailSG(t, par, E, into) {
   const qs = t.shots;
   for (let i = 0; i < qs.length; i++) {
-    const k0 = eKey(qs[i][3], qs[i][4]); if (k0 == null || E[k0] == null) continue;
+    const k0 = eKey(qs[i][3], dOf(qs[i])); if (k0 == null || E[k0] == null) continue;
     let nx;
-    if (i + 1 < qs.length) { const k1 = eKey(qs[i + 1][3], qs[i + 1][4]); if (k1 == null || E[k1] == null) continue; nx = E[k1]; } else if (t.s != null) nx = 0; else continue;
+    if (i + 1 < qs.length) { const k1 = eKey(qs[i + 1][3], dOf(qs[i + 1])); if (k1 == null || E[k1] == null) continue; nx = E[k1]; } else if (t.s != null) nx = 0; else continue;
     const b = bucketOf(qs[i], par, true); if (!b) continue;
     into[b] = (into[b] || 0) + (E[k0] - nx - 1);
   }
@@ -240,7 +242,7 @@ export function courseInsights(C) {
   }
   // the expected strokes from each lie and distance (this course's own field)
   const Es = {};
-  for (const [, , qs] of all) for (const q of qs) { if (q[5] == null) continue; const k = eKey(q[3], q[4]); if (k == null) continue; const a = Es[k] || (Es[k] = [0, 0]); a[0] += q[5]; a[1]++; }
+  for (const [, , qs] of all) for (const q of qs) { if (q[5] == null) continue; const k = eKey(q[3], dOf(q)); if (k == null) continue; const a = Es[k] || (Es[k] = [0, 0]); a[0] += q[5]; a[1]++; }
   const E = {}; for (const k of Object.keys(Es)) E[k] = r4(Es[k][0] / Es[k][1]);
   // pixels a yard on each hole (shots' pixels from their pin against their yards), for the fairway widths
   const ppy = new Map();
