@@ -911,12 +911,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const FEW = 10;
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
     // colour; sized so two kinds fit a page, the columns spread over the page's width so nothing runs off it
-    const CH = { plotH: 78, dates: true, gap: 8, pad: 12 };
+    const CH = { plotH: 117, /* (update 563: half as tall again, 78 → 117) */ dates: true, gap: 8, pad: 12 };
     // (update 560) as many kinds on a page as fit; a page with two or more: the room left over shared out between them
     // (more space between them, none wasted at the bottom)
     const hOf = (sec) => { const rows = Math.min(10, sec.rows.length), chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) : 0; return 6 + 10 + chH + 14 + rows * 14 + 20; };
     const plan = []; { let yy = y, pg = 0, first = true;
-      a.productTable.forEach((sec, i) => { const h = hOf(sec) + (first ? 0 : 6); if (!first && yy + h > H - 50) { pg++; yy = 46; } plan.push({ pg, h, top: yy }); yy += h; first = false; }); }
+      // (update 563) two kinds a page at most (one when two don't fit)
+      a.productTable.forEach((sec, i) => { const h = hOf(sec) + (first ? 0 : 6); const onPg = plan.filter((q) => q.pg === pg).length; if (!first && (yy + h > H - 50 || onPg >= 2)) { pg++; yy = 46; } plan.push({ pg, h, top: yy }); yy += h; first = false; }); }
     const gapAfter = plan.map(() => 0);
     for (const pg of new Set(plan.map((q) => q.pg))) {
       const idx = plan.map((q, i) => (q.pg === pg ? i : -1)).filter((i) => i >= 0);
