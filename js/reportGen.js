@@ -48,7 +48,7 @@ export function aiDigest(a) {
     form: a.form ? pick(a.form, ["first", "last"]) : null, halves: a.halves ? pick(a.halves, ["n", "early", "late"]) : null,
     strengths: (a.elite || []).map((e) => e.title), rising: (a.rising || []).map((r) => r.title),
     costingStrokes: (a.focus || []).slice(0, 4).map((f) => ({ title: f.title, detail: f.detail })),
-    bestRounds: (a.peaks || []).slice(0, 3).map(rd), toughestRounds: (a.valleys || []).slice(0, 3).map(rd),
+    bestEvents: (a.peaks || []).slice(0, 3).map(rd), toughestEvents: (a.valleys || []).slice(0, 3).map(rd), // (update 547)
   };
 }
 export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null, tour = null } = {}) {
@@ -121,7 +121,10 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const a = mean(early.map((s) => s.byCat[k])), b = mean(late.map((s) => s.byCat[k]));
     return { cat: k, name: CAT_NAME[k], early: a, late: b, change: a != null && b != null ? b - a : null };
   });
-  const ranked = [...series].sort((a, b) => b.value - a.value);
+  // (update 547) the best and toughest EVENTS (strokes gained a round in each tournament), not single rounds
+  const evUnits = (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); }
+    return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", rounds: g.length, value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); })();
+  const ranked = [...evUnits].sort((a, b) => b.value - a.value);
   const peaks = ranked.slice(0, Math.min(3, ranked.length));
   const valleys = ranked.slice(-Math.min(3, ranked.length)).reverse();
   const bestCat = (s) => cats.map((k) => [k, s.byCat[k]]).sort((a, b) => b[1] - a[1])[0];
@@ -534,19 +537,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
 
   /* ---------- best and toughest rounds ---------- */
   const rowsH = 28 + Math.max(a.peaks.length, a.valleys.length) * 28;
-  section("Rounds", "Best and toughest", rowsH);
+  section("Events", "Best and toughest", rowsH); // (update 547: tournaments, not rounds)
   const roundsCol = (x, title, list, c, tint) => {
     d.roundRect(x, y, colW, rowsH - 6, 10, { fill: tint });
     cap(title, x + 12, y + 16, c);
     list.forEach((q, i) => {
       const yy = y + 32 + i * 28, part = c === P.up ? q.best : q.worst;
-      d.text(wrap(q.event || "Round", colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
-      d.text(`${q.roundNo ? `R${q.roundNo}  \u00b7  ` : ""}${fmtDate(q.date)}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
+      d.text(wrap(q.event || "Event", colW - 90, 9.5, true)[0], x + 12, yy, { size: 9.5, bold: true, color: P.ink });
+      d.text(`${fmtDate(q.date)}${q.rounds ? `  \u00b7  ${q.rounds} rd${q.rounds === 1 ? "" : "s"}` : ""}  \u00b7  ${c === P.up ? "best part" : "hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, x + 12, yy + 11, { size: 7.5, color: P.grey });
       d.text(fmtSG(q.value), x + colW - 12, yy + 6, { size: 15, bold: true, color: c, align: "right" });
     });
   };
-  roundsCol(M, "Best rounds", a.peaks, P.up, P.upTint);
-  roundsCol(M + colW + 14, "Toughest rounds", a.valleys, P.down, P.downTint);
+  roundsCol(M, "Best events", a.peaks, P.up, P.upTint);
+  roundsCol(M + colW + 14, "Toughest events", a.valleys, P.down, P.downTint);
   y += rowsH + 6;
 
 

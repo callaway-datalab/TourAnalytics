@@ -23,7 +23,7 @@ const evKey = (rd) => `${rd.event}|${yearOf(rd)}`;
 /** The strokes-gained rounds, oldest first (event-level rows and rounds with no shots left out). */
 // (update 195) worked out once per rounds list (everyone's rounds pooled is a lot to sort on every redraw)
 const sgMemo = new WeakMap(), sortedMemo = new WeakMap();
-export const sgRounds = (rounds) => { if (!rounds) return []; let r = sgMemo.get(rounds); if (!r) { r = statRounds(rounds, "sg").filter((rd) => rd.shots.length && !rd.eventLevel).sort(byDate); sgMemo.set(rounds, r); } return r; };
+export const sgRounds = (rounds) => { if (!rounds) return []; let r = sgMemo.get(rounds); if (!r) { r = statRounds(rounds, "sg").filter((rd) => rd.shots.length).sort(byDate); /* (update 547: tournament-only rows (DP World Tour) count too, one an event) */ sgMemo.set(rounds, r); } return r; };
 const sortedAll = (rounds) => { if (!rounds) return []; let r = sortedMemo.get(rounds); if (!r) { r = [...rounds].sort(byDate); sortedMemo.set(rounds, r); } return r; };
 
 /* ------------------------------------------------ what can be picked ------------------------------------------------ */
