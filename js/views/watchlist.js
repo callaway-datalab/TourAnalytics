@@ -443,7 +443,7 @@ export async function render(main, { previewClient }) {
       const cats = new Map(c.areas.list.filter((a) => !a.dist && !a.lie).map((a) => [a.cat, a]));
       // a distance or lie that's every shot of its part of the game (every tee shot is from the tee) only repeats it
       const ok = (a) => (a.wPrev >= 6 && a.wLast >= 6) && (!(a.dist || a.lie) || (cats.get(a.cat) && Math.abs(a.wPrev + a.wLast - cats.get(a.cat).wPrev - cats.get(a.cat).wLast) > 0.5));
-      const cand = c.areas.list.filter(ok);
+      const cand = c.areas.list.filter((a) => ok(a) && (!a.lie || a.cat === "ARG")); // (update 562: a lie only for Around-the-Green)
       const lo = cand.reduce((p, a) => (!p || a.ch < p.ch ? a : p), null), hi = cand.reduce((p, a) => (!p || a.ch > p.ch ? a : p), null);
       const fresh = !!(dOf(c.latest?.date) && newest && newest - dOf(c.latest.date) <= 10 * 864e5);
       if (lo && lo.ch <= -0.2) down.push({ c, a: lo, fresh });
@@ -515,21 +515,43 @@ export async function render(main, { previewClient }) {
     const perShot = (sg, w) => (w ? sg / w : null), f3 = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`);
     const sumA = (xs) => xs.reduce((t, v) => t + v, 0);
     const stats = { kind: "table", title: `${areaName(a)}: the last ${n} rounds against the ${n} before`, cols: [[""], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: [
-      { strong: true, cells: ["SG a round", { sg: a.prev }, { sg: a.last }, { sg: a.ch, arrow: true }] },
+      { strong: true, cells: ["SG a round", { sg: a.prev }, { sg: a.last }, { sg: a.ch, arrow: true }], pick: () => drawChart(a), picked: true },
       { cells: ["Shots a round", { text: (a.wPrev / n).toFixed(1) }, { text: (a.wLast / n).toFixed(1) }, { text: `${a.wLast >= a.wPrev ? "+" : "−"}${Math.abs((a.wLast - a.wPrev) / n).toFixed(1)}` }] },
-      { cells: ["SG a shot", { text: f3(perShot(sumA(a.sg.slice(0, n)), a.wPrev)) }, { text: f3(perShot(sumA(a.sg.slice(n)), a.wLast)) }, { text: "" }] },
+      (() => { const p1 = perShot(sumA(a.sg.slice(0, n)), a.wPrev), p2 = perShot(sumA(a.sg.slice(n)), a.wLast); return { cells: ["SG a shot", { text: f3(p1) }, { text: f3(p2) }, p1 != null && p2 != null ? { text: `${p2 >= p1 ? "\u25B2" : "\u25BC"} ${Math.abs(p2 - p1).toFixed(3)}`, tone: p2 > p1 ? "pos" : p2 < p1 ? "neg" : "" } : { text: "\u2014" }] }; })(), // (update 562: its change too)
     ] };
     // inside a part of the game: its distances (in order) and lies, the one(s) behind the swing in bold
     let inside = [];
     if (!a.dist && !a.lie) {
       const kids = c.areas.list.filter((k) => k.cat === a.cat && (k.dist || k.lie) && k.wPrev + k.wLast >= 6);
       const tb = (title, list) => (list.length ? { kind: "table", title, cols: [[title.includes("istance") ? "Distance" : "Lie"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
-        rows: list.map((k) => ({ strong: dn ? k.ch <= -0.1 : k.ch >= 0.1, cells: [k.dist || k.lie, { sg: k.prev }, { sg: k.last }, { sg: k.ch, arrow: true }] })) } : null);
-      inside = [tb("By distance (strokes gained a round)", kids.filter((k) => k.dist).sort((p, q) => distLead(p.dist) - distLead(q.dist))), tb("By lie (strokes gained a round)", kids.filter((k) => k.lie).sort((p, q) => String(p.lie).localeCompare(String(q.lie))))].filter(Boolean);
+        rows: list.map((k) => ({ strong: dn ? k.ch <= -0.1 : k.ch >= 0.1, cells: [k.dist || k.lie, { sg: k.prev }, { sg: k.last }, { sg: k.ch, arrow: true }], pick: () => drawChart(k) })) } : null); // (update 562: a tap charts that one)
+      inside = [tb("By distance (strokes gained a round)", kids.filter((k) => k.dist).sort((p, q) => distLead(p.dist) - distLead(q.dist))), tb("By lie (strokes gained a round)", kids.filter((k) => k.lie && a.cat === "ARG").sort((p, q) => String(p.lie).localeCompare(String(q.lie))))].filter(Boolean);
     }
-    const rs = c.areas.rounds, prevAvg = a.prev, lastAvg = a.last;
-    const bars = { kind: "bars", fmt: "sg", zero: true, items: rs.map((r, i) => ({ label: dateTxt(r.date), sub: [r.event, r.roundNo ? `R${r.roundNo}` : ""].filter(Boolean).join(" · "), v: a.sg[i], on: i >= n })),
-      ref: [{ v: prevAvg, label: `Previous ${n}`, from: 0, to: n }, { v: lastAvg, label: `Last ${n}`, from: n, to: 2 * n }] };
+    const rs = c.areas.rounds;
+    // (update 562) the chart: the swing's area to start, or whichever distance or lie is tapped in the tables
+    const chartT = el("p", { class: "wlh-sec" }), chartBox = el("div");
+    function drawChart(z) {
+      chartT.textContent = `${areaName(z)}: each round, the ${n} before against the last ${n} (tap a row above to chart it)`;
+      mount(chartBox, renderBlocks([{ kind: "bars", fmt: "sg", zero: true, items: rs.map((r, i) => ({ label: dateTxt(r.date), sub: [r.event, r.roundNo ? `R${r.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: z.sg[i], on: i >= n })),
+        ref: [{ v: z.prev, label: `Previous ${n}`, from: 0, to: n }, { v: z.last, label: `Last ${n}`, from: n, to: 2 * n }] }]));
+    }
+    drawChart(a);
+    // (update 562) just played: that event on its own, against the rest of the last 12 and the 12 before
+    const justPlayed = (() => {
+      if (!x.fresh || !rs.length) return null;
+      const lastR = rs.at(-1), yOf = (r) => String(r.date || "").slice(0, 4);
+      let k0 = rs.length - 1; while (k0 > 0 && rs[k0 - 1].event === lastR.event && yOf(rs[k0 - 1]) === yOf(lastR)) k0--;
+      const ev = a.sg.slice(k0), nE = ev.length; if (!nE || k0 < n) return null;
+      const evAvg = sumA(ev) / nE, rest = a.sg.slice(n, k0), restAvg = rest.length ? sumA(rest) / rest.length : null;
+      const better = evAvg - (restAvg ?? a.prev) > 0, evN = lastR.event || "The last event";
+      const line = dn ? (better ? `Trending down over the last ${n}, but ${evN} came back up: ${fmtSG(evAvg)} a round there.` : `${evN} kept it going: ${fmtSG(evAvg)} a round there.`)
+        : (better ? `${evN} kept it going: ${fmtSG(evAvg)} a round there.` : `Trending up over the last ${n}, but ${evN} slipped back: ${fmtSG(evAvg)} a round there.`);
+      return el("div", { class: `wlh-jp ${better ? "up" : "down"}` }, [el("p", { class: "wlh-sec" }, `Just played \u00b7 ${evN} \u00b7 ${nE} round${nE === 1 ? "" : "s"} \u00b7 ${dateTxt(lastR.date)}`), el("p", { class: "wlh-jp-l" }, line),
+        ...renderBlocks([{ kind: "table", cols: [[areaName(a)], ["SG a round", "num"]], rows: [
+          { strong: true, cells: [`${evN} (${nE} rd${nE === 1 ? "" : "s"})`, { sg: evAvg }] },
+          ...(restAvg != null ? [{ cells: [`The rest of the last ${n} (${rest.length} rds)`, { sg: restAvg }] }] : []),
+          { cells: [`The ${n} before`, { sg: a.prev }] }] }])]);
+    })();
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "✕");
     const cardB = el("button", { type: "button", class: "btn ghost" }, "Full card");
     const statsB = el("button", { type: "button", class: "btn" }, "Open stats");
@@ -537,9 +559,9 @@ export async function render(main, { previewClient }) {
       el("div", { class: "wlh-top" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${c.tour ? `${c.tour} · ` : ""}${c.rounds} rounds`), el("h2", {}, c.label)]), close]),
       el("div", { class: "wlh-body" }, [
         el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, `Trending ${dn ? "down" : "up"} in ${areaName(a)}`), el("span", {}, `${fmtSG(a.ch)} strokes a round: ${fmtSG(a.last)} over the last ${n} rounds against ${fmtSG(a.prev)} over the ${n} before.`), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
+        justPlayed,
         ...renderBlocks([stats, ...inside]),
-        el("p", { class: "wlh-sec" }, `${areaName(a)}: each round, the ${n} before against the last ${n}`),
-        ...renderBlocks([bars]),
+        chartT, chartBox,
         el("div", { class: "wlh-acts" }, [cardB, statsB]),
       ]),
     ]));

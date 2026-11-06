@@ -6079,3 +6079,22 @@ div.sh-ud3-green { cursor: default; }
 .lv-thru.lv-done { color: #8e8e93; }
 .wl-c-name .wl-c-nm { gap: 4px; }
 .wl-c-name .wl-row-star { font-size: 0.78rem; }
+/* (update 562) phones: a pop-up never runs off the top of the screen (it sits at the bottom, never taller than the space
+   under the status bar, its own contents scroll), so its × is always in reach */
+@media (max-width: 640px) {
+  .gx-pop-overlay { box-sizing: border-box; align-items: end; padding: calc(env(safe-area-inset-top, 0px) + 10px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); }
+  .gx-pop-overlay > .gx-pop { max-height: 100% !important; box-sizing: border-box; min-height: 0; }
+  .gx-pop-overlay > .gx-pop > :last-child { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+}
+/* (update 562) the Watchlist table on a phone: the names centred, no star (Remove from Watchlist is on the player's card) */
+@media (max-width: 520px) {
+  .wl-table .wl-c-name { align-items: center; text-align: center; }
+  .wl-table .wl-c-name .wl-c-nm { justify-content: center; }
+  .wl-table .wl-row-star { display: none; }
+  .wl-thead .wl-c-name.wl-sortb { text-align: center; }
+}
+/* (update 562) "Just played" in a trend's pop-up */
+.wlh-jp { --c: #d4b483; padding: 10px 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); background: color-mix(in srgb, var(--c) 7%, transparent); }
+.wlh-jp.up { --c: #4cd17e; } .wlh-jp.down { --c: #ff6b5e; }
+.wlh-jp .wlh-sec { color: var(--c); }
+.wlh-jp-l { margin: 4px 0 6px; font-size: 0.86rem; line-height: 1.4; }

@@ -250,7 +250,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
       const win = mine.slice(-2 * n), A = new Map();
       const get = (k, cat, dist, lie) => A.get(k) || A.set(k, { k, cat, dist, lie, sg: new Array(2 * n).fill(0), w: new Array(2 * n).fill(0) }).get(k);
       win.forEach((rd, i) => { for (const x of rd.shots || []) { if (!x.cat) continue; const w = x.w || 1, v = x.sg || 0;
-        for (const [k, d, l] of [[x.cat, null, null], x.dist ? [`${x.cat}|d|${x.dist}`, x.dist, null] : null, x.lie ? [`${x.cat}|l|${x.lie}`, null, x.lie] : null]) { if (!k) continue; const o = get(k, x.cat, d, l); o.sg[i] += v; o.w[i] += w; } } });
+        for (const [k, d, l] of [[x.cat, null, null], x.dist ? [`${x.cat}|d|${x.dist}`, x.dist, null] : null, x.lie ? [`${x.cat}|l|${x.lie}`, null, x.lie] : null].filter(Boolean)) { const o = get(k, x.cat, d, l); o.sg[i] += v; o.w[i] += w; } } }); // (update 562: a shot with no distance or lie (the DP World Tour's tournament rows) broke the page)
       const sum = (xs) => xs.reduce((t, x) => t + x, 0);
       card.areas = { n, rounds: win.map((rd) => ({ date: rd.date, event: rd.event, roundNo: rd.roundNo })),
         list: [...A.values()].map((o) => { const prev = sum(o.sg.slice(0, n)) / n, last = sum(o.sg.slice(n)) / n; return { ...o, prev, last, ch: last - prev, wPrev: sum(o.w.slice(0, n)), wLast: sum(o.w.slice(n)) }; }) };
