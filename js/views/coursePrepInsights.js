@@ -21,8 +21,8 @@ export async function drawInsights(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
   const body = el("div", { class: "ci2" }, el("p", { class: "muted ta-loading" }, "Loading the course insights…"));
-  let who = null;
-  const W = await pickWho(ctx, (p) => { who = p; draw(); });
+  let who = null, ready = false;
+  const W = await pickWho(ctx, (p) => { who = p; if (ready) draw(); }); // (update 536: a pick during set-up waits for it)
   who = W.who;
   const sub = el("p", { class: "muted small" });
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel ci2-head" }, [
@@ -51,6 +51,7 @@ export async function drawInsights(ctx, course) {
     drawHoles();
     mount(body, [scores(I), plan(H, openHole), holesSec, faced(S, all, name), ...vsTop(H, S, name, first, openHole)].filter(Boolean));
   }
+  ready = true;
   await draw();
 }
 

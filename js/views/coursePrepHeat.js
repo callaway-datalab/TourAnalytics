@@ -21,8 +21,10 @@ export async function drawHeat(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
   const body = el("div", {}, el("p", { class: "muted ta-loading" }, "Loading the zones…"));
-  let who = null, ix = null, mineHere = null;
-  const W = await pickWho(ctx, (p) => { who = p; loadWho(); });
+  let who = null, ix = null, mineHere = null, trails = null, ready = false; // (trails: the player picked: their rounds here, shot by shot)
+  // (update 536) a player picked while the page is still being set up waits for it: loading them straight away reached
+  // parts of the page not made yet ("Cannot access 'trails' before initialization") and the page failed
+  const W = await pickWho(ctx, (p) => { who = p; if (ready) loadWho(); });
   who = W.who;
   const whoLine = el("p", { class: "muted small sh-who" });
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel sh" }, [
@@ -62,7 +64,6 @@ export async function drawHeat(ctx, course) {
   const pastBtn = el("button", { type: "button", class: "sh-past", hidden: true }, "Show Past Shots");
   const hist = el("div", { class: "sh-hist" });
   const trKey = el("div", { class: "sh-legend sh-tr-key", hidden: true }); // (the past shots' colours)
-  let trails = null; // (the player picked: their rounds here, shot by shot)
   const dot = el("i", { class: "sh-dot", hidden: true, "aria-hidden": "true" });
   const zIn = el("button", { type: "button", class: "sh-zb", "aria-label": "Zoom in" }, "+"), zOut = el("button", { type: "button", class: "sh-zb", "aria-label": "Zoom out" }, "\u2212"), zFit = el("button", { type: "button", class: "sh-zb sh-zfit", "aria-label": "Whole hole", hidden: true }, "Fit");
   const stage = el("div", { class: "sh-stage" }, [zoomBox, dot, pastBtn, el("div", { class: "sh-zbar" }, [zIn, zOut, zFit])]);
@@ -859,6 +860,7 @@ export async function drawHeat(ctx, course) {
     } catch (err) { console.error(err); whoLine.textContent = "Couldn’t load their stats, so the zones show the field."; }
     paint();
   }
+  ready = true;
   showHole();
   if (who) loadWho();
 }
