@@ -259,7 +259,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const elite = [];
   for (const c of byCat) {
     if (c.value == null || c.value <= 0 || !isElite(c.rank, c.of)) continue;
-    elite.push({ cat: c.cat, score: 1 + (c.value - (c.fieldAvg ?? 0)), title: c.name,
+    elite.push({ kind: "category", cat: c.cat, score: 1 + (c.value - (c.fieldAvg ?? 0)), title: c.name,
       text: `Gains ${c.value.toFixed(2)} strokes a round${c.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(c.fieldAvg)}` : ""}.\nRanked ${c.rank} of ${c.of}.` }); // (update 574: as Costing strokes words it)
   }
   for (const g of groups) {
@@ -272,7 +272,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // three whenever there are three to find
   const strong = [];
   for (const c of byCat) { if (c.value == null || c.fieldAvg == null || c.value - c.fieldAvg < 0.05) continue;
-    strong.push({ cat: c.cat, score: c.value - c.fieldAvg, title: c.name, text: `Gains ${c.value.toFixed(2)} strokes a round, against a Tour Avg of ${fmtSG(c.fieldAvg)}.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); }
+    strong.push({ kind: "category", cat: c.cat, score: c.value - c.fieldAvg, title: c.name, text: `Gains ${c.value.toFixed(2)} strokes a round, against a Tour Avg of ${fmtSG(c.fieldAvg)}.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); }
   for (const g of groups) { if (g.repeat || g.shots < minShots || g.fieldAvg == null || g.perRound - g.fieldAvg < 0.05) continue;
     strong.push({ cat: g.cat, score: g.perRound - g.fieldAvg, title: g.title, text: `Gains ${g.perRound.toFixed(2)} strokes a round, against a Tour Avg of ${fmtSG(g.fieldAvg)}.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` }); }
   strong.sort((p, q) => q.score - p.score);
@@ -440,7 +440,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (e) basics.push(e);
   }
   return { catShift, shiftSpan, me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
-    byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), strong, rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
+    byCat, series, rankHist, slope, catTrend, numbers, elite: elite.filter((e) => e.kind !== "category").slice(0, 4), eliteAll: elite, strong, rising, focusAll: focus, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     extraCharts, formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
@@ -564,16 +564,16 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // (update 571) the bars start just past the longest name (or rank line) on the left, not a fixed 150 in
   const labW = Math.max(...a.byCat.map((c) => Math.max(textWidth(c.name, 11.5, true), c.rank ? textWidth(`Rank ${c.rank} of ${c.of}`, 8, true) : 0)));
   const lw = Math.min(150, labW + 16), gx = M + lw, gw = W - lw - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
+  const gaugeMax = Math.max(0.1, ...a.byCat.flatMap((c) => [c.value, c.fieldAvg]).filter((v) => v != null && Number.isFinite(v)).map(Math.abs)) * 1.12;
   for (const c of a.byCat) {
     need(32);
     const t = (a.catShift || []).find((q) => q.cat === c.cat);
     d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
     d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, bold: !!c.rank, color: c.rank ? rankInk(c.rank) : P.grey });
     d.roundRect(gx, y + 8, gw, 15, 7.5, { fill: P.track }); // (update 574: as tall as the Better / Worse pills)
-    // each side's scale: the group's best gain (right) and biggest loss (left)
-    const hi = c.best?.v ?? 0, lo = c.low?.v ?? 0;
-    const posMax = hi > 0 ? hi : Math.max(Math.abs(lo), 0.01), negMax = lo < 0 ? Math.abs(lo) : Math.max(hi, 0.01);
-    const off = (v) => (v >= 0 ? Math.min(1, v / posMax) : -Math.min(1, Math.abs(v) / negMax)) * half;
+    // (update 575) one scale for every row, so the bars compare: the biggest value or Tour Avg among the categories (a little
+    // short of the end); it was each category's own field, and a smaller bar could look bigger
+    const off = (v) => Math.max(-1, Math.min(1, v / gaugeMax)) * half;
     if (c.value != null) {
       const w = Math.max(10, Math.abs(off(c.value))), x0 = c.value >= 0 ? zx : zx - w, fill = c.value >= 0 ? P.up : P.down, light = c.value >= 0 ? "#4fb97a" : "#e8665e";
       // rounded at the far end, square where it meets the middle line
@@ -602,11 +602,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     ...a.rising.map((r) => ({ ...r, tag: r.title.startsWith("Turned") ? "Turnaround" : "Rising", title: r.title.replace(/^(Turned it around|On the rise): /, "") })),
     ...(a.strong || []).map((g) => ({ ...g, tag: "Strong" }))]) { // (update 574: then the biggest gains on the Tour Avg)
     if (strengths.length >= 3) break;
+    if (it.kind === "category") continue; // (update 575: a whole category is in Where the strokes come from, right above)
     if (strengths.filter((x) => x.cat === it.cat).length >= 2) continue;
     if (strengths.some((x) => x.title === it.title && x.tag !== "Rising" && x.tag !== "Turnaround")) continue;
     strengths.push(it);
   }
-  const watch = a.focus.slice(0, 3).map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
+  // (update 575) Watch: distances and trends only (a whole category is in Where the strokes come from, right above), the
+  // biggest first, at most two of a part of the game
+  const watchSrc = []; for (const f of (a.focusAll || a.focus)) { if (watchSrc.length >= 3) break; if (f.kind !== "skill" && f.kind !== "trend") continue; if (f.cat && watchSrc.filter((t) => t.cat === f.cat).length >= 2) continue; if (watchSrc.some((t) => t.title === f.title)) continue; watchSrc.push(f); }
+  const watch = watchSrc.map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
   const colW = (W - 14) / 2;
   // (update 573) it shares page 1 with Where the strokes come from: full-size cards when they fit; else compact ones; else the
   // last card of the longer column left off, until they fit
