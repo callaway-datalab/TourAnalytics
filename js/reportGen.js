@@ -604,44 +604,29 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const isDP = a.unit === "event", colW = (W - 14) / 2;
   if (!isDP) {
   // (at most two strengths from the same category, so they don't repeat each other)
-  const strengths = [];
-  for (const it of [...a.elite.map((e) => ({ ...e, tag: "Elite", title: e.title.replace(/^Best in the group: (.*)$/, "$1: best in the group") })),
-    ...(a.strong || []).map((g) => ({ ...g, tag: "Strong" }))]) { // (update 576: no trends) // (update 574: then the biggest gains on the Tour Avg)
-    if (strengths.length >= 3) break;
-    if (it.kind === "category") continue; // (update 575: a whole category is in Where the strokes come from, right above)
-    if (strengths.filter((x) => x.cat === it.cat).length >= 2) continue;
-    if (strengths.some((x) => x.title === it.title && x.tag !== "Rising" && x.tag !== "Turnaround")) continue;
-    strengths.push(it);
-  }
-  // (update 577) still fewer than three: the next best, even a third from the same part of the game; then any distance
-  // above the Tour Avg at all (enough shots), best first
-  const gapOf = (g) => (g.fieldAvg != null ? g.perRound - g.fieldAvg : null);
-  const distCard = (g, word) => ({ cat: g.cat, title: g.title, tag: word, text: `${g.perRound >= 0 ? `Gains ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round, against a Tour Avg of ${fmtSG(g.fieldAvg)}.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` });
-  const distPool = (a.groups || []).filter((g) => !g.repeat && g.shots >= (a.minShots || 5) && gapOf(g) != null);
-  for (const it of [...a.elite, ...(a.strong || [])].map((g) => ({ ...g, tag: a.elite.includes(g) ? "Elite" : "Strong" }))) { if (strengths.length >= 3) break; if (it.kind === "category" || strengths.some((x) => x.title === it.title)) continue; strengths.push(it); }
-  for (const g of distPool.filter((g) => gapOf(g) > 0).sort((p, q) => gapOf(q) - gapOf(p))) { if (strengths.length >= 3) break; if (strengths.some((x) => x.title === g.title)) continue; strengths.push(distCard(g, "Above avg")); }
-  // (update 575) Watch: distances and trends only (a whole category is in Where the strokes come from, right above), the
-  // biggest first, at most two of a part of the game
-  const watchSrc = []; for (const f of (a.focusAll || a.focus)) { if (watchSrc.length >= 3) break; if (f.kind !== "skill") continue; /* (update 576: distances only) */ if (f.cat && watchSrc.filter((t) => t.cat === f.cat).length >= 2) continue; if (watchSrc.some((t) => t.title === f.title)) continue; watchSrc.push(f); }
-  for (const f of (a.focusAll || a.focus)) { if (watchSrc.length >= 3) break; if (f.kind !== "skill" || watchSrc.some((t) => t.title === f.title)) continue; watchSrc.push(f); } // (update 577: a third from the same part of the game, if that's all there is)
-  const watchX = []; for (const g of distPool.filter((g) => gapOf(g) < 0).sort((p, q) => gapOf(p) - gapOf(q))) { if (watchSrc.length + watchX.length >= 3) break; if (watchSrc.some((t) => t.title === g.title) || watchX.some((t) => t.title === g.title)) continue; watchX.push(distCard(g, "Below avg")); }
-  const watch = [...watchSrc.map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost })), ...watchX];
-  // (update 573) it shares page 1 with Where the strokes come from: full-size cards when they fit; else compact ones; else the
-  // last card of the longer column left off, until they fit
-  // (update 574) three levels: full, compact, tight (the text a line apart where it says "\n": what it gains or loses, then
-  // the rank); a card is left off only when even the tight one won't fit
-  // (update 576) the same room inside each card on every side (P): the tag pill (15 high) at the top, the lines under it
-  // (update 578) every card the same: one title size (the smallest any card needs to fit) and one height (the tallest
-  // card's); the sizes step down until three rows fit on page 1 (a card is left off only if even the smallest won't)
-  const TL = [{ P: 9, fs: 8, lh: 10, gap: 5, tz: 9.5 }, { P: 8, fs: 7.6, lh: 9.4, gap: 4, tz: 9 }, { P: 7, fs: 7.2, lh: 8.8, gap: 3.5, tz: 8.5 }, { P: 6, fs: 6.8, lh: 8.2, gap: 3, tz: 8 }, { P: 5, fs: 6.4, lh: 7.6, gap: 2.5, tz: 7.5 }]
+  // (update 583) What stands out (PGA / Korn Ferry): each distance's average this period against the Tour Avg, with its rank
+  // (a lie only for Around-the-Green inside 30 yds): the 3 furthest above it and the 3 furthest below it (at most two of a
+  // part of the game, unless that's all there is)
+  const nearU = (g) => { const t = String(g.key || "").split("|")[0], nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number); return nums.length > 0 && !/^\s*>/.test(t) && Math.max(...nums) <= 30; };
+  // (inside 30 yds a lie that's every shot of its distance only repeats it: then the distance itself stands for it)
+  const lieSplit = (g) => (a.groups || []).some((h) => h.cat === g.cat && h.withLie && !h.repeat && String(h.key).startsWith(`${g.key}|`));
+  const okG = (g) => g.fieldAvg != null && Number.isFinite(g.perRound) && g.shots >= (a.minShots || 5) && (g.cat === "ARG" && nearU(g) ? (g.withLie ? !g.repeat : !lieSplit(g)) : !g.withLie && !g.repeat);
+  const pool = (a.groups || []).filter(okG).map((g) => ({ g, gap: g.perRound - g.fieldAvg }));
+  const shortT = (g) => { const [dist, lie] = String(g.key).split("|"); return lie ? `Around green ${dist} · ${lie}` : `${CAT_NAME[g.cat] || g.cat}, ${dist}`; };
+  const topR = (g) => g.rank && g.of >= 2 && g.rank <= Math.max(1, Math.floor(g.of * 0.1));
+  const pick3 = (list) => { const out = []; for (const x of list) { if (out.length >= 3) break; if (out.filter((o) => o.g.cat === x.g.cat).length >= 2) continue; out.push(x); } for (const x of list) { if (out.length >= 3) break; if (!out.includes(x)) out.push(x); } return out; };
+  const cardOf = (x, up) => ({ cat: x.g.cat, title: shortT(x.g), tag: up ? (topR(x.g) ? "Elite" : x.gap >= 0.05 ? "Strong" : "Above avg") : (x.gap <= -0.05 ? "Costing strokes" : "Below avg"),
+    text: `${x.g.perRound >= 0 ? `Gains ${x.g.perRound.toFixed(2)}` : `Loses ${Math.abs(x.g.perRound).toFixed(2)}`} strokes a round${x.g.rank ? ` · Ranked ${x.g.rank} of ${x.g.of}` : ""} · ${Math.round(x.g.shots)} shots.` });
+  const strengths = pick3(pool.filter((x) => x.gap > 0).sort((p, q) => q.gap - p.gap)).map((x) => cardOf(x, true));
+  const watch = pick3(pool.filter((x) => x.gap < 0).sort((p, q) => p.gap - q.gap)).map((x) => cardOf(x, false));
+  // (update 578, 583) every card the same: one title size and one height; the largest sizes at which the rows fit page 1
+  const TL = [{ P: 10, fs: 9.5, lh: 12, gap: 6, tz: 11 }, { P: 9.5, fs: 9, lh: 11, gap: 5.5, tz: 10.5 }, { P: 9, fs: 8.5, lh: 10.5, gap: 5, tz: 10 }, { P: 8, fs: 8, lh: 10, gap: 4.5, tz: 9.5 }, { P: 7, fs: 7.6, lh: 9.4, gap: 4, tz: 9 }, { P: 6, fs: 7.2, lh: 8.8, gap: 3.5, tz: 8.5 }, { P: 5, fs: 6.8, lh: 8.2, gap: 3, tz: 8 }]
     .map((t) => ({ ...t, ty: t.P + 10, tx: t.P + 15 + 5 + t.fs * 0.75, pad: 2 * t.P + 15 + 5 - (t.lh - t.fs) + 1 }));
   let L = TL[0];
-  // (update 578) no ", against a Tour Avg of +0.02" on these cards: what it gains or loses, then the rank
-  // (update 579) one line: "Gains 0.35 strokes a round · Ranked 2 of 186 · 183 shots."
-  const linesOf = (it) => wrap(String(it.text || "").replace(/, against a Tour Avg of [+\u2212-]?\d+(\.\d+)?/g, "").replace(/\.\s*\n\s*/g, " \u00b7 ").replace(/\n/g, " \u00b7 "), colW - 4 - 2 * L.P, L.fs);
+  const linesOf = (it) => wrap(String(it.text || ""), colW - 4 - 2 * L.P, L.fs);
   const tagW = (it) => textWidth(String(it.tag || "").toUpperCase(), 7, true) + 1.1 * (String(it.tag || "").length - 1) + 16;
   const titleRoom = (it) => colW - 4 - 2 * L.P - tagW(it) - 6;
-  let TZ = 9.5;
+  let TZ = 11;
   const titleOf = (it) => { if (textWidth(it.title, TZ, true) <= titleRoom(it)) return { z: TZ, lines: [it.title], extra: 0 };
     const ls = wrap(it.title, titleRoom(it), TZ, true).slice(0, 2); return { z: TZ, lines: ls, extra: ls.length > 1 ? TZ + 1 : 0 }; };
   let HC = 0;
@@ -652,8 +637,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   };
   const cardsH = (list) => list.length * (HC + L.gap) + 26;
   const roomHL = H - 50 - (y + 12 + 40);
-  for (const t of TL) { L = t; fitAll(); if (Math.max(cardsH(strengths), cardsH(watch)) <= roomHL) break; }
-  while (Math.max(cardsH(strengths), cardsH(watch)) > roomHL && strengths.length + watch.length > 1) { if (strengths.length >= watch.length) strengths.pop(); else watch.pop(); fitAll(); }
+  const pickTier = () => { for (const t of TL) { L = t; fitAll(); if (Math.max(cardsH(strengths), cardsH(watch)) <= roomHL) return true; } return false; };
+  while (!pickTier() && strengths.length + watch.length > 1) { if (strengths.length >= watch.length) strengths.pop(); else watch.pop(); }
   section("Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
   const cards = (x, title, list, accent, tint, empty) => {
     let yy = y + 4;
@@ -724,7 +709,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text("0", M, Y(0) + 3, { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
-    d.polyline(ma(vals, isDP ? 3 : 10).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
+    d.polyline(ma(vals, isDP ? 3 : 12).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
     const every = Math.max(1, Math.ceil(vals.length / 8));
     src.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
@@ -735,7 +720,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
     // (update 577) wrapped to the page's width (it ran off the right edge)
-    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 3 : 10} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 3 : 12} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
     y -= 10;
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
@@ -796,21 +781,25 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
   /* (update 564) This season vs Last season: a bar for each season in each category (strokes gained a round), and the
      differences in a few plain lines on the right */
-  function drawYoY(yo, x, ty, w, h) {
+  function drawYoY(yo, x, ty, w, h, bigH = false) {
     d.roundRect(x, ty, 24, h, 10, { fill: P.night });
     d.roundRect(x + w - 24, ty, 24, h, 10, { fill: P.night2 });
     d.gradient(x + 12, ty, w - 24, h, P.night, P.night2, { dir: "h", steps: 40 });
-    cap("This season vs Last season", x + 16, ty + 16, P.goldLight, "left", 6.6);
+    cap("This season vs Last season", x + 16, ty + 16 + (bigH ? 2 : 0), P.goldLight, "left", bigH ? 8.6 : 6.6);
     const cNow = P.goldLight, cPrev = "#8e8e93";
     // the key
     // (update 565) the key just after the title (never over it)
-    const T0 = "THIS SEASON VS LAST SEASON";
-    let kx = x + 16 + textWidth(T0, 6.6, true) + 1.4 * (T0.length - 1) + 18;
-    for (const [lab, col] of [[`${yo.lastY} (${yo.nPrev} rds)`, cPrev], [`${yo.thisY} (${yo.nNow} rds)`, cNow]]) { d.rect(kx, ty + 9, 8, 8, { fill: col }); d.text(lab, kx + 11, ty + 16, { size: 7, bold: true, color: "#d1d1d6" }); kx += textWidth(lab, 7, true) + 22; }
+    const T0 = "THIS SEASON VS LAST SEASON", tz0 = bigH ? 8.6 : 6.6;
+    let kx = x + 16 + textWidth(T0, tz0, true) + 1.4 * (T0.length - 1) + 18;
+    // (update 583) the key beside the title, or on a line of its own under it when it would run into The differences
+    const keyW = [`${yo.lastY} (${yo.nPrev} rds)`, `${yo.thisY} (${yo.nNow} rds)`].reduce((t, l) => t + textWidth(l, 7, true) + 22, 0);
+    const keyDown = kx + keyW > x + w * 0.57 - 4, kyo = keyDown ? 16 : 0;
+    if (keyDown) kx = x + 16;
+    for (const [lab, col] of [[`${yo.lastY} (${yo.nPrev} rds)`, cPrev], [`${yo.thisY} (${yo.nNow} rds)`, cNow]]) { d.rect(kx, ty + 9 + kyo, 8, 8, { fill: col }); d.text(lab, kx + 11, ty + 16 + kyo, { size: 7, bold: true, color: "#d1d1d6" }); kx += textWidth(lab, 7, true) + 22; }
     // the chart
     // (update 567) no y-axis numbers; "SG / rd" up the side; under the lowest bar, room for its number before the category names
     const vals = yo.rows.flatMap((r) => [r.now, r.prev]).filter((v) => v != null), hasNeg = vals.some((v) => v < -0.005);
-    const cx = x + 34, cw = w * 0.55 - 44, top = ty + 32, catY = ty + h - 9, ph = catY - (hasNeg ? 24 : 12) - top;
+    const cx = x + 34, cw = w * 0.55 - 44, top = ty + 32 + kyo, catY = ty + h - 9, ph = catY - (hasNeg ? 24 : 12) - top;
     const hi = Math.max(0.25, ...vals), lo = Math.min(-0.25, ...vals), Y = (v) => top + ((hi - v) / (hi - lo)) * ph, zy = Y(0);
     d.line(cx, zy, cx + cw, zy, { color: "#8e8e93", width: 0.7, dash: [3, 2] });
     d.text("SG / rd", x + 22, top + ph / 2, { size: 6.5, color: "#8e8e93", align: "center", rotate: 90 });
@@ -827,7 +816,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     });
     // the differences
     const ix = x + w * 0.57 + 6, iw = w * 0.43 - 22;
-    cap("The differences", ix, ty + 16, P.goldLight, "left", 6.3);
+    cap("The differences", ix, ty + 16 + (bigH ? 2 : 0), P.goldLight, "left", bigH ? 8.6 : 6.3);
     const tot = yo.rows[0], parts = yo.rows.slice(1).filter((r) => r.ch != null).sort((p, q) => q.ch - p.ch);
     const lines = [];
     if (tot.ch != null) lines.push([tot.ch, Math.abs(tot.ch) < 0.005 ? `Overall: the same as ${yo.lastY}, ${fmtSG(tot.now)} a round.` : `Overall: ${Math.abs(tot.ch).toFixed(2)} a round ${tot.ch > 0 ? "better" : "worse"} than ${yo.lastY} (${fmtSG(tot.prev)} \u2192 ${fmtSG(tot.now)}).`]);
@@ -884,7 +873,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         d.roundRect(x + tw - 24, ty0, 24, th, 10, { fill: P.night2 });
         d.gradient(x + 12, ty0, tw - 24, th, P.night, P.night2, { dir: "h", steps: 30 });
         const sq = yo ? 1 : 0; // (update 564: the shorter cards)
-        cap(t.label, x + 16, ty + (sq ? 13 : 20), P.goldLight, "left", 6.4);
+        const bigH = isDP && th > th0 * 1.2; // (update 583: the DP World Tour's stretched cards: bigger headings)
+        cap(t.label, x + 16, ty + (sq ? 13 : 20) - (bigH ? 4 : 0), P.goldLight, "left", bigH ? 8.6 : 6.4);
         // the big number, as large as fits
         let size = sq ? 16 : 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
         d.text(t.big, x + 16, ty + (sq ? 31 : 50), { size, bold: true, color: "#ffffff" });
@@ -928,7 +918,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         }
       });
       y += rows * (th + gap) + 4;
-      if (yo) { drawYoY(yo, M, y - 4, W, yoH); y += yoH + gap; }
+      if (yo) { drawYoY(yo, M, y - 4, W, yoH, isDP && th > th0 * 1.2); y += yoH + gap; }
     }
   }
 
