@@ -53,9 +53,12 @@ export async function render(main, { previewClient }) {
     // the field's per-round lie / distance detail (kept on the device per upload), so the filters can follow them
     (async () => {
       const { getFieldDetail } = await import("../fieldStore.js");
-      const { players } = await getFieldDetail(d.id, d.uploadedAt?.toMillis?.() ?? 0).catch(() => ({}));
+      const res = await getFieldDetail(d.id, d.uploadedAt?.toMillis?.() ?? 0).catch(() => ({}));
+      const players = res?.players;
       if (!players || shownVersion !== version || !dash) return;
-      const full = players.map((p) => ({ key: p.key, label: shown(p.key, p.name), rounds: p.rounds })).filter((p) => p.rounds.length);
+      // (update 543) a phone's partial detail: the seasons and tours it doesn't cover from the summary
+      const { withSummary } = await import("../fieldStore.js");
+      const full = withSummary(field, res).map((p) => ({ key: p.key, label: shown(p.key, p.name), rounds: p.rounds })).filter((p) => p.rounds.length);
       if (full.length >= 2) dash.update({ field: full });
     })();
   });

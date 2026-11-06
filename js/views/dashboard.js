@@ -131,8 +131,10 @@ export async function render(main, { previewClient, flash }) {
         const myVersion = version;
         (async () => {
           const { getFieldDetail } = await import("../fieldStore.js");
-          const { players } = await getFieldDetail(d.id, d.uploadedAt?.toMillis?.() ?? 0);
-          if (!players || shownVersion !== myVersion) return;
+          const res = await getFieldDetail(d.id, d.uploadedAt?.toMillis?.() ?? 0);
+          if (!res?.players || shownVersion !== myVersion) return;
+          const { withSummary } = await import("../fieldStore.js"); // (update 543: a phone's partial detail filled out from the summary)
+          const players = withSummary(field, res);
           const full = players.map((p) => (p.key === clientKey ? { key: p.key, label, rounds: me.rounds } : { key: p.key, label: shown(p.key, p.name), rounds: p.rounds })).filter((p) => p.rounds.length);
           if (!full.some((p) => p.key === clientKey)) full.push(me);
           if (full.length >= 2) dash.update({ field: full });

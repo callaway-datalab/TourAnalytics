@@ -166,6 +166,8 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null,
       want = years.map((y) => ({ tour: null, year: y, path: pathOf(datasetId, y), size: 0 }));
     }
     want.sort((a, b) => byYear(a.year, b.year) || String(a.tour).localeCompare(String(b.tour)));
+    const allFiles = d.tours && Object.keys(d.tours).length ? Object.values(d.tours).reduce((n, ys) => n + ys.length, 0) : d.years.length;
+    const partialLoad = want.length < allFiles;
     const tourOf = want.length && want.every((f) => f.tour != null && f.tour === want[0].tour) && Object.keys(d.tours || {}).length > 1 ? want[0].tour : null;
     const mk = `${datasetId}|${d.sourceUploadedAt}|${want.map((f) => f.path).join(",")}`;
     if (shared.key !== mk || !shared.promise) {
@@ -190,7 +192,9 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null,
           lists.push(decodeFieldDetail(raw));
           onProgress?.(i + 1, want.length);
         }
-        const out = { players: mergeYears(lists), why: null, tour: tourOf }; // (update 538: which tour; null: every tour)
+        const out = { players: mergeYears(lists), why: null, tour: tourOf, // (update 538: which tour; null: every tour)
+          // (update 543) a phone's partial load: only some tours or seasons (each player's rounds there are only those)
+          years: [...new Set(want.map((f) => String(f.year)))], partial: partialLoad };
         shared.result = out; // (update 325: for the admin's Performance readout)
         return out;
       })();
@@ -201,6 +205,24 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null,
     console.error("Couldn't load the field detail", err);
     return { players: null, why: err?.code === "storage/unauthorized" ? "paused" : "error" };
   }
+}
+
+/**
+ * (update 543) A phone's partial detail (some seasons of one tour) with the summary: each player's rounds in the tour and
+ * seasons the detail covers come from it (lie / distance), the rest from the summary (by category), so no season or tour
+ * goes missing. A complete detail is returned as it is. summary: [{ key, rounds, … }]; res: what getFieldDetail gave.
+ */
+export function withSummary(summary, res, label = (p) => p) {
+  const det = res?.players || [];
+  if (!res?.partial) return det;
+  const yrs = new Set((res.years || []).map(String)), t = res.tour ?? null;
+  const yearOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+  const covered = (rd) => yrs.has(yearOf(rd)) && (t == null || (rd.tour || "") === t);
+  const byKey = new Map(det.map((p) => [p.key, p]));
+  const out = (summary || []).map((p) => { const dp = byKey.get(p.key); byKey.delete(p.key); const rest = p.rounds.filter((rd) => !covered(rd));
+    return label({ ...p, rounds: dp ? [...rest, ...dp.rounds].sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)) : p.rounds }); });
+  for (const p of byKey.values()) out.push(label(p));
+  return out.filter((p) => p.rounds.length);
 }
 
 /* ---------------- this device's copies ---------------- */

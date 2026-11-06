@@ -59,7 +59,7 @@ export async function render(main, { previewClient }) {
   const idx = ds ? detectColumns(ds.columns || []) : {};
   const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null;
   let field = summaryPlayers(summary).filter((p) => p.rounds.length);
-  let detail = null;
+  let detail = null, detailMeta = null; // (update 543: what a phone's partial detail covers)
   // (update 178) anyone's name for the badge pop-ups: yours / your players', else the field's (the same names as
   // the Rankings), never a bare ID
   const fieldNames = new Map(field.filter((p) => p.name).map((p) => [p.key, plainName(p.name)]));
@@ -75,7 +75,7 @@ export async function render(main, { previewClient }) {
   async function tourRounds(key) {
     if (!ds) return null;
     if (ownCache.has(key)) return ownCache.get(key);
-    const d = detail?.find((p) => p.key === key);
+    const d = detailMeta?.partial ? null : detail?.find((p) => p.key === key); // (update 543: a partial detail has only some seasons: their own rows instead)
     if (d) { ownCache.set(key, d.rounds); return d.rounds; }
     let rows = [];
     try {
@@ -89,7 +89,7 @@ export async function render(main, { previewClient }) {
   // (update 312) the field's detail (loaded up front, while the app opens): waited for here, so each player's rounds
   // come from it rather than being fetched one by one
   if (ds) {
-    try { const res = await (await import("../fieldStore.js")).getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0); if (res?.players?.length) detail = res.players; } catch { /* the rows, one by one */ }
+    try { const res = await (await import("../fieldStore.js")).getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0); if (res?.players?.length) { detail = res.players; detailMeta = { partial: !!res.partial, years: new Set(res.years || []), tour: res.tour ?? null }; } } catch { /* the rows, one by one */ }
   }
 
   // ---- (update 169) Entered Rounds: the rounds entered in Enter New Round, yours included ----
@@ -179,7 +179,16 @@ export async function render(main, { previewClient }) {
     const ok = (p) => RECENT_PERIODS.some(([v]) => v === p) || (/^y:\d{4}$/.test(String(p)) && years.includes(String(p).slice(2)));
     let cur = ok(prefs.period) ? prefs.period : "season";
     if (cur === "season" && years.length) cur = `y:${years[0]}`;
-    const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailNow, own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered",
+    // (update 543) a phone's partial detail (some seasons of one tour): used for ranks only when it covers the period and
+    // the player's tour; otherwise ranked by category against the summary
+    const newestLoaded = detailMeta?.years?.size ? [...detailMeta.years].sort().pop() : null;
+    const detailFor = (k) => {
+      if (!detailMeta?.partial) return detailNow;
+      const yOk = /^y:\d{4}$/.test(String(cur)) ? detailMeta.years.has(String(cur).slice(2)) : newestLoaded === years[0];
+      const t = tourPick.get(k) ?? null, tOk = detailMeta.tour == null || t == null || t === detailMeta.tour;
+      return yOk && tOk ? detailNow : null;
+    };
+    const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailFor(k), own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered",
       lite: multi && !openCards.has(k) })); // (update 329: folded cards: just their ranks; the rest when opened)
     // (update 319) the order: yours (drag to change), A–Z, or by SG: Total rank (best first)
     let sortBy = "mine"; try { sortBy = localStorage.getItem("wl.sort") || "mine"; } catch { /* */ }

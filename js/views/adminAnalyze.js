@@ -261,12 +261,12 @@ export async function render(main, { flash, routeId }) {
     if (detailCache.has(dk)) {
       const det = detailCache.get(dk), dPlayers = det.players || det, dTour = det.tour ?? null;
       let base = dPlayers;
-      if (dTour != null) { // one tour's detail: every other tour's rounds from the summary
+      if (det.partial) { // (update 538, 543) some tours or seasons only: the rest of each player's rounds from the summary
         const summary0 = await getFieldStats(ds.id).catch(() => null);
         if (token !== loadToken) return;
-        const byKey = new Map(dPlayers.map((p) => [p.key, p]));
-        base = summaryPlayers(summary0).map((p) => { const dp = byKey.get(p.key); byKey.delete(p.key); const rest = p.rounds.filter((rd) => (rd.tour || "") !== dTour); return { ...p, summaryOnly: !dp && p.summaryOnly, rounds: dp ? [...rest, ...dp.rounds].sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)) : p.rounds }; });
-        for (const p of byKey.values()) base.push(p);
+        const { withSummary } = await import("../fieldStore.js");
+        const inDet = new Set(dPlayers.map((p) => p.key));
+        base = withSummary(summaryPlayers(summary0), { players: dPlayers, partial: true, years: det.years, tour: dTour }, (p) => ({ ...p, summaryOnly: !inDet.has(p.key) && p.summaryOnly }));
       }
       const list = base.filter((p) => p.rounds.length).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "") }));
       // (a player picked who isn't in the detail but whose rows were fetched: added, so they aren't fetched again)
@@ -318,9 +318,9 @@ export async function render(main, { flash, routeId }) {
   const detailCache = DETAIL, detailWhy = DETAIL_WHY;
   async function loadDetailLite(ds, dk, tour = null) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
-    const { players, why, tour: got, reason } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, tour != null ? { tour } : {});
+    const { players, why, tour: got, reason, partial, years } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, tour != null ? { tour } : {});
     detailWhy.set(dk, why === "phone" && reason ? `phone:${reason}` : why); // (update 541: why a phone has none)
-    if (players?.length) { keepFew(detailCache, 1); detailCache.set(dk, { players, tour: got ?? null }); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
+    if (players?.length) { keepFew(detailCache, 1); detailCache.set(dk, { players, tour: got ?? null, partial: !!partial || got != null, years: years || [] }); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
     if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
   }
 
