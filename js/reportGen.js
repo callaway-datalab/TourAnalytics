@@ -565,21 +565,25 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   y = Math.max(yl, yr) + 10;
 
   /* ---------- best and toughest rounds ---------- */
-  const rowsH = 28 + Math.max(a.peaks.length, a.valleys.length) * 28;
+  // (update 570) a third line each, for the best / hardest part; (update 571) the rows as tall as fits what's left of the
+  // first page (34 down to 26), so the section stays on it
+  const nEv = Math.max(1, a.peaks.length, a.valleys.length), roomEv = H - 50 - (y + 12 + 37) - 4;
+  const rowEv = Math.max(26, Math.min(34, (roomEv - 28) / nEv)), smallEv = rowEv < 30;
+  const rowsH = 28 + nEv * rowEv;
   section("Events", "Best and toughest", rowsH); // (update 547: tournaments, not rounds)
   const roundsCol = (x, title, list, c, tint) => {
     d.roundRect(x, y, colW, rowsH - 6, 10, { fill: tint });
     cap(title, x + 12, y + 16, c);
     list.forEach((q, i) => {
-      const yy = y + 32 + i * 28, part = c === P.up ? q.best : q.worst;
+      const yy = y + 31 + i * rowEv, part = c === P.up ? q.best : q.worst;
       // (update 564) the name and the line under it stop short of the value on the right (cut with … when they'd run into it)
       const room = colW - 24 - textWidth(fmtSG(q.value), 15, true) - 10;
       const fit = (t, size, bold = false) => { if (textWidth(t, size, bold) <= room) return t; let u = t; while (u.length > 3 && textWidth(`${u}\u2026`, size, bold) > room) u = u.slice(0, -1); return `${u.trimEnd()}\u2026`; };
       d.text(fit(q.event || "Event", 9.5, true), x + 12, yy, { size: 9.5, bold: true, color: P.ink });
-      const sub = (word) => `${fmtDate(q.date)}${q.rounds ? `  \u00b7  ${q.rounds} rd${q.rounds === 1 ? "" : "s"}` : ""}  \u00b7  ${word}${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`;
-      const long = sub(c === P.up ? "best part: " : "hardest part: ");
-      d.text(textWidth(long, 7.5) <= room ? long : fit(sub(""), 7.5), x + 12, yy + 11, { size: 7.5, color: P.grey });
-      d.text(fmtSG(q.value), x + colW - 12, yy + 6, { size: 15, bold: true, color: c, align: "right" });
+      // (update 570) the date and rounds on the second line, the best / hardest part on a third of its own
+      d.text(fit(`${fmtDate(q.date)}${q.rounds ? `  \u00b7  ${q.rounds} rd${q.rounds === 1 ? "" : "s"}` : ""}`, 7.5), x + 12, yy + (smallEv ? 9 : 10.5), { size: smallEv ? 7 : 7.5, color: P.grey });
+      d.text(fit(`${c === P.up ? "Best part" : "Hardest part"}: ${CAT_NAME[part[0]] || ""} ${fmtSG(part[1])}`, 7.5), x + 12, yy + (smallEv ? 17 : 19.5), { size: smallEv ? 7 : 7.5, color: P.grey });
+      d.text(fmtSG(q.value), x + colW - 12, yy + 9, { size: 15, bold: true, color: c, align: "right" });
     });
   };
   roundsCol(M, "Best events", a.peaks, P.up, P.upTint);
@@ -593,8 +597,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text("The black line is zero; the gold line is Tour Avg.", M, y + 1, { size: 8, color: P.grey });
   y += 14;
   // (update 556) the values and the Better / Worse badges in two columns, each lined up on its left, just past the bars
-  const valW = Math.max(40, ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true)));
-  const gx = M + 150, gw = W - 150 - (14 + valW + 12 + 118), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
+  // (update 570) the bars as long as they can be: the value column, then the badge column, its widest badge ("Better by
+  // 0.00") ending at the page's right edge; the same size in every report
+  const bW = (t) => { const T = t.toUpperCase(); return textWidth(T, 7, true) + 1.1 * (T.length - 1) + 16; };
+  const valW = Math.max(textWidth("\u22120.00", 18, true), ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true))), badgeW = bW("Better by 0.00");
+  const gx = M + 150, gw = W - 150 - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
   for (const c of a.byCat) {
     need(36);
     const t = (a.catShift || []).find((q) => q.cat === c.cat);
@@ -1009,7 +1016,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const slot = (H - 50 - pageTop) / 2, slotTop = pageTop + idxOn * slot;
       if (idxOn || onPage === 1) d.rect(M, pageTop + slot - 0.6, W, 1.2, { fill: P.goldLight }); // (the thin champagne line, in the middle)
       y = slotTop + (idxOn ? 16 : 0);
-      const CHs = { ...CH, plotH: Math.max(60, CH.plotH + (slot - (idxOn ? 16 : 0) - 14 - hAt(sec, CH))) };
+      const CHs = { ...CH, plotH: Math.max(60, CH.plotH + (slot * 0.9 - (idxOn ? 16 : 0) - 14 - hAt(sec, CH))) }; // (update 570: 90% of its half)
       y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 2;
       if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CHs });
       // the table: a colour square for each model, then its numbers in columns spread evenly across the page
