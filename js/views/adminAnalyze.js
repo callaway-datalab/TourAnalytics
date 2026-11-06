@@ -257,8 +257,8 @@ export async function render(main, { flash, routeId }) {
     // come from the rankings summary, by category
     const wantTour = dashState.tour?.[0] ?? activeTour() ?? null;
     // (update 566) and only the seasons on screen (the year filter; none picked: the newest two)
-    const wantYears = dashState.year?.length ? [...new Set(dashState.year.map(String))].sort() : null;
-    const dk = `detail|${ds.id}|${uploaded}|${wantTour ?? ""}|${wantYears ? wantYears.join(",") : "newest2"}`;
+    const wantYears = yearsWanted();
+    const dk = detailKeyOf(ds, wantTour);
     lastDetailKey = dk;
     // the whole field with lie / distance detail, once it's here (from Cloud Storage; see loadDetailLite)
     if (detailCache.has(dk)) {
@@ -317,6 +317,9 @@ export async function render(main, { flash, routeId }) {
     if (why === undefined) loadDetailLite(ds, dk, wantTour, wantYears);
   }
 
+  // (update 568) the key for the detail on screen: the file, its upload, the tour and the seasons (one place makes it)
+  function yearsWanted() { return dashState.year?.length ? [...new Set(dashState.year.map(String))].sort() : null; }
+  function detailKeyOf(ds, tour) { const ys = yearsWanted(); return `detail|${ds.id}|${ds.uploadedAt?.toMillis?.() ?? 0}|${tour ?? ""}|${ys ? ys.join(",") : "newest2"}`; }
   // Phones: the field's lie / distance detail, once per upload (kept on the device after the first time).
   const detailCache = DETAIL, detailWhy = DETAIL_WHY;
   async function loadDetailLite(ds, dk, tour = null, wantYears = null) {
@@ -351,7 +354,7 @@ export async function render(main, { flash, routeId }) {
     mount(body, box);
     dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts(), ...(opt.noRanks ? { rankings: false } : {}),
       // (update 538) another tour picked: its lie / distance detail loaded (once)
-      onTour: (t) => { const up = ds.uploadedAt?.toMillis?.() ?? 0; if (lastDetailKey !== `detail|${ds.id}|${up}|${t ?? ""}`) refresh(); } });
+      onTour: (t) => { if (lastDetailKey !== detailKeyOf(ds, t ?? dashState.tour?.[0] ?? activeTour() ?? null)) refresh(); } }); // (update 568: the same key as refreshLite makes; a different one redrew the page over and over)
     // (never published from here: this field is the summary itself)
     if (player && (!me || me.summaryOnly)) pickerRef?.select?.(player.key); // fetch the picked player's full rows
   }

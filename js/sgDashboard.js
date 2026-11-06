@@ -202,7 +202,7 @@ export function sgDashboard(container, opts) {
   let statKey = "sg", def = statDef("sg"), statList = ["sg"], catsAvail = CATEGORIES;
   // Some stats come one row per tournament (no round number, e.g. Birdies / Round over its rounds): then
   // what's counted is events, not rounds, and the page says so.
-  let unit = "round", eventView = false, lastTourSeen; // (update 538: the tour last shown)
+  let unit = "round", eventView = false, lastTourSeen, lastYearsSeen; // (update 568: lastYearsSeen) // (update 538: the tour last shown)
   let sgEligible = null, sgMinR = 1; // the players ranked for every stat (see draw)
   const rw = (n) => `${Number(n).toLocaleString()} ${unit}${n === 1 ? "" : "s"}`;
   const Unit = () => (unit === "event" ? "Events" : "Rounds");
@@ -331,6 +331,9 @@ export function sgDashboard(container, opts) {
       import("./fieldStore.js").then((m) => m.setActiveTour(t)).catch(() => {});
       if (opts.onTour) setTimeout(() => opts.onTour(t), 0); // (the page compares it with the tour it loaded)
     }
+    // (update 568) the seasons picked: the page told too (its lie / distance detail covers only the seasons on screen); it
+    // compares its key first, so nothing reloads unless they changed
+    { const yk = JSON.stringify([...(st.year || [])].map(String).sort()); if (yk !== lastYearsSeen) { const first = lastYearsSeen === undefined; lastYearsSeen = yk; if (!first && opts.onTour) setTimeout(() => opts.onTour(st.tour[0] ?? null), 0); } }
     soloTour = !!(me && st.tour.length && (/^practice$/i.test(String(st.tour[0]).trim())
       || ![...me.rounds, ...field.flatMap((p) => p.rounds)].some((rd) => !rd.entered && (rd.tour || "") === st.tour[0])));
     showRanks = ranksAllowed && !soloTour;
