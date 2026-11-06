@@ -707,6 +707,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.roundRect(M - 6, top - 6, W + 12, ht + 22, 8, { fill: P.mist });
     d.line(left, Y(0), M + W, Y(0), { color: "#000000", width: 0.6 });
     d.text("0", M, Y(0) + 3, { size: 6.5, color: P.faint });
+    // (update 584) the top and bottom of the scale too
+    d.text(fmtSG(hi), M, Y(hi) + 5, { size: 6.5, color: P.faint }); d.text(fmtSG(lo), M, Y(lo), { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
     d.polyline(ma(vals, isDP ? 3 : 12).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
@@ -848,8 +850,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (nb.n) tiles.push({ label: `${Uc} in the green`, big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of ${u}s.`, viz: "bar", v: pct });
     if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? u : `${u}s`}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
     if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`,
-      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-${u} stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`,
-      textShort: `${CAT_NAME[nb.upside.cat]} back to its best ${nb.upside.win}-${u} stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, /* (update 565: the shorter card) */ viz: "pair", v: nb.upside });
+      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`,
+      textShort: `${CAT_NAME[nb.upside.cat]} back to its best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, /* (update 565: the shorter card) */ viz: "pair", v: nb.upside });
     else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "At peak", text: "Playing at their best stretch in every category in this report.", viz: null });
     if (nb.steady && a.cats.length === 1) {
       const v = nb.steady.sd, tv = nb.tourSd;
@@ -878,9 +880,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         // the big number, as large as fits
         let size = sq ? 16 : 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
         d.text(t.big, x + 16, ty + (sq ? 31 : 50), { size, bold: true, color: "#ffffff" });
-        wrap(sq && t.textShort ? t.textShort : t.text, tw * 0.54, sq ? 6.8 : 7.8).slice(0, sq ? 2 : 3).forEach((l, j) => d.text(l, x + 16, ty + (sq ? 41 : 64) + j * (sq ? 8 : 9.5), { size: sq ? 6.8 : 7.8, color: "#a1a1a6" }));
+        String(sq && t.textShort ? t.textShort : t.text).split("\n").flatMap((p0) => wrap(p0, tw * 0.54, sq ? 6.8 : 7.8)).slice(0, sq ? 2 : 3) /* (update 584: a line break where it says so) */.forEach((l, j) => d.text(l, x + 16, ty + (sq ? 41 : 64) + j * (sq ? 8 : 9.5), { size: sq ? 6.8 : 7.8, color: "#a1a1a6" }));
         // a small picture on the right
-        const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + (sq ? 11 : 30);
+        const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + (sq ? 11 : 30) + (bigH ? 9 : 0); // (update 584: under the bigger heading)
         if (t.viz === "bar") {
           d.roundRect(vx, vy + 12, vw, 7, 3.5, { fill: "#2c2c2e" });
           d.roundRect(vx, vy + 12, Math.max(7, vw * t.v), 7, 3.5, { fill: P.goldLight });
