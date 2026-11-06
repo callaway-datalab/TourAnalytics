@@ -256,7 +256,9 @@ export async function render(main, { flash, routeId }) {
     // (update 538) the lie / distance detail of the tour on screen only (a file built by tour); the other tours' rounds
     // come from the rankings summary, by category
     const wantTour = dashState.tour?.[0] ?? activeTour() ?? null;
-    const dk = `detail|${ds.id}|${uploaded}|${wantTour ?? ""}`;
+    // (update 566) and only the seasons on screen (the year filter; none picked: the newest two)
+    const wantYears = dashState.year?.length ? [...new Set(dashState.year.map(String))].sort() : null;
+    const dk = `detail|${ds.id}|${uploaded}|${wantTour ?? ""}|${wantYears ? wantYears.join(",") : "newest2"}`;
     lastDetailKey = dk;
     // the whole field with lie / distance detail, once it's here (from Cloud Storage; see loadDetailLite)
     if (detailCache.has(dk)) {
@@ -312,17 +314,20 @@ export async function render(main, { flash, routeId }) {
       })()
       : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
     drawLite(ds, idx, fieldPlayers, note, why === "paused");
-    if (why === undefined) loadDetailLite(ds, dk, wantTour);
+    if (why === undefined) loadDetailLite(ds, dk, wantTour, wantYears);
   }
 
   // Phones: the field's lie / distance detail, once per upload (kept on the device after the first time).
   const detailCache = DETAIL, detailWhy = DETAIL_WHY;
-  async function loadDetailLite(ds, dk, tour = null) {
+  async function loadDetailLite(ds, dk, tour = null, wantYears = null) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
-    const { players, why, tour: got, reason, partial, years } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, tour != null ? { tour } : {});
+    const { players, why, tour: got, reason, partial, years } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, { ...(tour != null ? { tour } : {}), ...(wantYears ? { years: wantYears } : { newest: 2 }) });
     detailWhy.set(dk, why === "phone" && reason ? `phone:${reason}` : why); // (update 541: why a phone has none)
     if (players?.length) { keepFew(detailCache, 1); detailCache.set(dk, { players, tour: got ?? null, partial: !!partial || got != null, years: years || [] }); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
-    if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
+    // (update 566) in the start-up log: the detail in, and the page redrawn with it (with the memory used, where the browser says)
+    const mem = () => (performance?.memory ? ` \u00b7 ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : "");
+    import("../perf.js").then((m) => m.bootLog(`stats: detail in (${players?.length || 0} players), redrawing${mem()}`)).catch(() => {});
+    if (source === "tour" && fileId === ds.id) { await Promise.resolve(refresh()).catch(() => {}); import("../perf.js").then((m) => m.bootLog(`stats: redrawn with the detail${mem()}`)).catch(() => {}); } // (redrawn with the detail, or with the reason it isn't there)
   }
 
   function drawLite(ds, idx, players, note, paused = false, opt = {}) {

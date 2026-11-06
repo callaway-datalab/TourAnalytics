@@ -133,7 +133,7 @@ export function detailInfo() {
  * A phone loads only the newest seasons that fit in about 3.5 MB packed (about 30 MB unpacked): every season of a big file
  * was more than it could hold, and it reloaded the page. None fits: { players: null, why: "phone" }.
  */
-export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null, tour = undefined } = {}) {
+export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null, tour = undefined, years: wantYears = null, newest = 0 } = {}) { // (update 566) years: only those seasons; newest: else only the newest n
   try {
     const snap = await getDoc(doc(db, "fieldStats", datasetId));
     const d = snap.exists() ? snap.data().detail : null;
@@ -158,6 +158,10 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null,
         if (!keep.length) { const mb = (Math.min(...want.map((f) => f.size)) / 1048576).toFixed(1); bootLog(`detail skipped on this phone (${pick || "every tour"}: too big)`); return { players: null, why: "phone", reason: `tooBig|${pick || ""}|${mb}` }; }
         want = keep;
       }
+      // (update 566) the seasons asked for (the Stats page's years), or the newest few: a computer loading every season of a
+      // big file's detail ran past the browser's memory and the page reloaded
+      if (wantYears?.length) { const ys = new Set(wantYears.map(String)), f0 = want.filter((f) => ys.has(String(f.year))); if (f0.length) want = f0; }
+      else if (newest > 0) { const keepY = new Set([...new Set(want.map((f) => String(f.year)))].sort((a, b) => byYear(b, a)).slice(0, newest)); want = want.filter((f) => keepY.has(String(f.year))); }
       bootLog(`detail: ${pick ?? "every tour"} · ${want.map((f) => f.year).sort(byYear).join(", ")}`);
     } else {
       // (a file built before update 538: every tour in each season's file) a phone with a big file: none (update 537);
