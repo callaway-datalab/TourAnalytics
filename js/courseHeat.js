@@ -72,7 +72,9 @@ export async function heatImage(meta, hole) {
  * file): pinNames { "hole|pin": "name" }, pinsOff ["hole|pin"] */
 const pinKey = (hole, pid) => `${hole}|${pid}`;
 export const pinOff = (meta, hole, pid) => (meta?.pinsOff || []).includes(pinKey(hole, pid));
-export const pinLabel = (meta, hole, pid) => meta?.pinNames?.[pinKey(hole, pid)] || mergedOf(meta, hole).find((m) => m.id === pid)?.name || evPin(pid) || (/^\d+$/.test(pid) ? `Pin ${pid}` : String(pid).replace(/[-_]+/g, " "));
+// (update 561) a name typed from now on (pinNames2), else the name from where the pin sits (pinAuto, worked out by Rebuild
+// maps), else an older typed name, a combined pin's name or the pin's id
+export const pinLabel = (meta, hole, pid) => meta?.pinNames2?.[pinKey(hole, pid)] || meta?.pinAuto?.[pinKey(hole, pid)] || meta?.pinNames?.[pinKey(hole, pid)] || mergedOf(meta, hole).find((m) => m.id === pid)?.name || evPin(pid) || (/^\d+$/.test(pid) ? `Pin ${pid}` : String(pid).replace(/[-_]+/g, " "));
 // (update 485) a pin id another event used for a different spot: "3_e978" shows as "Pin 3 · course 978"
 const evPin = (pid) => { const m = /^(.+)_e([^_]+)$/.exec(String(pid)); return m ? `${/^\d+$/.test(m[1]) ? `Pin ${m[1]}` : m[1].replace(/[-_]+/g, " ")} · course ${m[2]}` : null; };
 /* (update 468) combined pins: pinMerges [{ hole, id, name, of: [pin ids] }]. The combined pin sits at the pins' average
@@ -131,10 +133,11 @@ export async function splitPins(meta, hole, id) {
   meta.pinMerges = pinMerges; listCache = null;
 }
 export async function renamePin(meta, hole, pid, name) {
-  const pinNames = { ...(meta.pinNames || {}) }, k = pinKey(hole, pid), t = String(name || "").trim().slice(0, 60);
-  if (t) pinNames[k] = t; else delete pinNames[k];
-  await updateDoc(doc(db, "courseHeat", meta.id), { pinNames }); // (the whole map replaced, so a cleared name goes)
-  meta.pinNames = pinNames; listCache = null;
+  // (update 561) typed names go in pinNames2 (ahead of the automatic ones); a cleared one falls back to the automatic name
+  const pinNames2 = { ...(meta.pinNames2 || {}) }, k = pinKey(hole, pid), t = String(name || "").trim().slice(0, 60);
+  if (t) pinNames2[k] = t; else delete pinNames2[k];
+  await updateDoc(doc(db, "courseHeat", meta.id), { pinNames2 }); // (the whole map replaced, so a cleared name goes)
+  meta.pinNames2 = pinNames2; listCache = null;
 }
 export async function setPinOff(meta, hole, pid, off) {
   const k = pinKey(hole, pid), cur = new Set(meta.pinsOff || []);

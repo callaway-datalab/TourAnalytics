@@ -262,7 +262,21 @@ export function holeBoards(shots, pins, par) {
     const da = Math.min(B.a1 - along, along - B.a0), dl = Math.min(B.l1 - lat, lat - B.l0);
     return da < dl ? (along > (B.a0 + B.a1) / 2 ? "Long" : "Short") : (lat > (B.l0 + B.l1) / 2 ? "Right" : "Left");
   };
-  return { ref, marks, ppy, boardOf, sideOf };
+  // (update 561) each pin's name from where it sits on the green: Front / Back of the green's middle along the line in (the
+  // grid's line: from its start to that pin), and Left / Center / Right across it (Center: the middle third of the green's width)
+  const pinNamesAll = () => {
+    const out = {}, used = new Map();
+    for (const [pid, P] of pins) {
+      const ux0 = P[0] - ref[0], uy0 = P[1] - ref[1], ul = Math.hypot(ux0, uy0) || 1, ux = ux0 / ul, uy = uy0 / ul;
+      const lats = greens.map((q) => ux * (q.y - G[1]) - uy * (q.x - G[0])).sort((a, b) => a - b);
+      const pc = (f) => lats[Math.min(lats.length - 1, Math.max(0, Math.round(f * (lats.length - 1))))], third = (pc(0.95) - pc(0.05)) / 6;
+      const vx = P[0] - G[0], vy = P[1] - G[1], al = vx * ux + vy * uy, la = ux * vy - uy * vx;
+      const base = `${al < 0 ? "Front" : "Back"} ${la > third ? "Right" : la < -third ? "Left" : "Center"}`, k = (used.get(base) || 0) + 1;
+      used.set(base, k); out[pid] = k > 1 ? `${base} ${k}` : base;
+    }
+    return out;
+  };
+  return { ref, marks, ppy, boardOf, sideOf, pinNamesAll };
 }
 export function approachMiss(qs) {
   for (let i = 1; i < qs.length; i++) {
@@ -378,7 +392,8 @@ export function courseInsights(C) {
     const fx = (o) => ({ ...o, sum: r4(o.sum) }), f2 = (o) => Object.fromEntries(Object.entries(o).map(([kk, a]) => [kk, [a[0], r4(a[1])]]));
     // (update 508) each pin's own: scoring (field, Top 10), fairway / green / going for it, fairway widths
     const pinStats = Object.fromEntries(Object.entries(X.ps).map(([pp, P]) => [pp, { field: fx(P.field), top: fx(P.top), fwy: f2(P.fwy), gir: f2(P.gir), go: f2(P.go), widths: widthsOf(P.land) }]));
-    out[h] = { par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]), ...(HB.marks ? { mk: HB.marks.map((m) => [r1(m[0]), r1(m[1])]) } : {}) }; } return o; })(), widths };
+    const pinAuto = (() => { try { return (hbOf(Number(h)) || hbOf(h))?.pinNamesAll?.() || {}; } catch { return {}; } })(); // (update 561)
+    out[h] = { pinAuto, par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]), ...(HB.marks ? { mk: HB.marks.map((m) => [r1(m[0]), r1(m[1])]) } : {}) }; } return o; })(), widths };
   }
   const r4o = (o) => Object.fromEntries(Object.entries(o).map(([kk, v]) => [kk, r4(v)]));
   return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top] };
@@ -515,7 +530,9 @@ export async function uploadShotCourses(list, onStatus = () => {}, { into = null
     const holesN = Object.keys(c.data.holes).map(Number), n = Math.max(0, ...holesN);
     const par = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.par || old?.par?.[i] || null), yards = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.yards || old?.yards?.[i] || null);
     const zones = Object.values(c.data.holes).reduce((t, h) => t + Object.values(h.pins).reduce((u, p) => u + p.rows.length, 0), 0);
-    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(bn ? { courseNum: bn } : {}), courseNums: nums, events: c.events || [], attempts: c.data.insights?.attempts || {}, /* (update 488: for the attempt distribution against every course) */ par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true }, { merge: true });
+    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(bn ? { courseNum: bn } : {}), courseNums: nums, events: c.events || [], attempts: c.data.insights?.attempts || {}, /* (update 488: for the attempt distribution against every course) */ par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true,
+      // (update 561) every pin's name from where it sits on the green (the course's own names, typed by hand, still come first)
+      pinAuto: Object.fromEntries(Object.entries(c.data.insights?.holes || {}).flatMap(([h, X]) => Object.entries(X.pinAuto || {}).map(([pid, nm]) => [`${h}|${pid}`, nm]))) }, { merge: true });
   }
   resetHeatList();
   // (update 485) what was left out: an event whose tees and pins don't line up with the rest

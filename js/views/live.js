@@ -398,6 +398,11 @@ export async function render(main) {
       }
       return th;
     });
+    // (update 561) while a round is being played: "thru N" for those on the course, "Finished" for those done with it,
+    // nothing for those who haven't started (no numbers for it yet)
+    const liveNow = rows.some((r) => r.thru != null);
+    const hasNums = (r) => cols.some((c) => (c.id ? r.x?.[c.id]?.v != null || (r.x?.[c.id]?.d != null && r.x[c.id].d !== "\u2013") : r[c.key]?.[k] != null));
+    const doneNow = (r) => liveNow && r.thru == null && (sel.view === "event" ? Number(r.rounds || 0) >= Number(lb?.round || 0) && Number(lb?.round || 0) > 0 : hasNums(r));
     const rowOf = (r, i) => {
       const cells = cols.map((c) => {
         let v, cls, title = null;
@@ -412,7 +417,7 @@ export async function render(main) {
       const fav = isFav(r.name);
       const star = el("button", { type: "button", class: `lv-star${fav ? " on" : ""}`, "aria-pressed": String(fav), "aria-label": `${fav ? "Remove" : "Add"} ${r.name} ${fav ? "from" : "to"} favorites`, title: fav ? "Favorite (tap to remove)" : "Add to favorites" }, fav ? "\u2605" : "\u2606");
       star.addEventListener("click", (e) => { e.stopPropagation(); toggleFav(r.name); drawBoard(); });
-      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [star, el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : null]), ...cells, sel.view === "event" && isOn("RDS") ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
+      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [star, el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : doneNow(r) ? el("small", { class: "lv-thru lv-done" }, "Finished") : null]), ...cells, sel.view === "event" && isOn("RDS") ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
       tr.addEventListener("click", () => pick({ player_id: r.player_id, name: r.name }));
       return tr;
     };

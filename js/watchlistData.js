@@ -242,6 +242,20 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
     let run = 0; for (let i = rs.length - 1; i >= 0 && sign !== 0 && Math.sign(rs[i]) === sign; i--) run++;
     card.pulse = { last5: mine.length >= 5 ? perRound(mine.slice(-5)) : null, run, sign, lastDate: lr.date };
   }
+  // (update 561) where it's changing: every part of the game, each distance and each lie in it, the last n rounds against
+  // the n before (n as the trends: up to 12): strokes gained a round, and each round's, for the Watchlist's briefing
+  {
+    const n = Math.min(12, Math.floor(mine.length / 2));
+    if (n >= 3) {
+      const win = mine.slice(-2 * n), A = new Map();
+      const get = (k, cat, dist, lie) => A.get(k) || A.set(k, { k, cat, dist, lie, sg: new Array(2 * n).fill(0), w: new Array(2 * n).fill(0) }).get(k);
+      win.forEach((rd, i) => { for (const x of rd.shots || []) { if (!x.cat) continue; const w = x.w || 1, v = x.sg || 0;
+        for (const [k, d, l] of [[x.cat, null, null], x.dist ? [`${x.cat}|d|${x.dist}`, x.dist, null] : null, x.lie ? [`${x.cat}|l|${x.lie}`, null, x.lie] : null]) { if (!k) continue; const o = get(k, x.cat, d, l); o.sg[i] += v; o.w[i] += w; } } });
+      const sum = (xs) => xs.reduce((t, x) => t + x, 0);
+      card.areas = { n, rounds: win.map((rd) => ({ date: rd.date, event: rd.event, roundNo: rd.roundNo })),
+        list: [...A.values()].map((o) => { const prev = sum(o.sg.slice(0, n)) / n, last = sum(o.sg.slice(n)) / n; return { ...o, prev, last, ch: last - prev, wPrev: sum(o.w.slice(0, n)), wLast: sum(o.w.slice(n)) }; }) };
+    }
+  }
   if (lite) return { ...card, lite: true };
 
   // ---- distances: strokes gained a shot by category and distance (enough attempts to mean something) ----

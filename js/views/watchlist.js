@@ -429,56 +429,47 @@ export async function render(main, { previewClient }) {
     box.addEventListener("contextmenu", (e) => { if (drag || hold) e.preventDefault(); });
     box.addEventListener("dragstart", (e) => e.preventDefault());
   }
-  /* (update 557) the briefing: who needs a sit-down (falling away), who has a report to make (just played), who's riding
-     high; each with the reason in plain words. A tap opens the player's card. */
+  /* (update 561) the briefing: the 5 biggest swings across the players, each one a part of the game, a distance or a lie
+     ("Down in Approach · 150-175 yds"), the last 12 rounds against the 12 before, in strokes a round. Each player's
+     biggest drop can be in Trending Down and their biggest rise in Trending Up. A tap: that one thing, in detail. */
+  const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
+  const areaName = (a) => `${CAT_NAME[a.cat] || a.cat}${a.dist ? ` · ${a.dist}` : a.lie ? ` · from the ${String(a.lie).toLowerCase()}` : ""}`;
   function briefing(cards, ctx) {
-    const live = cards.filter((c) => !c.empty && c.sg?.length);
+    const live = cards.filter((c) => !c.empty && c.areas?.list?.length);
     const dOf = (d) => { const t = Date.parse(String(d || "").slice(0, 10)); return Number.isFinite(t) ? t : null; };
-    const newest = Math.max(0, ...live.map((c) => dOf(c.latest?.date) || 0));
-    const f2 = (x) => Math.abs(x).toFixed(2);
-    const concern = [], report = [], hot = [];
-    // (update 558) one bin a player, in this order: falling away (and not bouncing back), riding high, else just played
+    const newest = Math.max(0, ...cards.map((c) => dOf(c.latest?.date) || 0));
+    const down = [], up = [];
     for (const c of live) {
-      const t = c.sg[0].trend, avg = c.sg[0].v, cats = c.sg.slice(1).filter((x) => x.trend), pl = c.pulse || {};
-      const worst = cats.length ? cats.reduce((a, b) => (b.trend.ch < a.trend.ch ? b : a)) : null, best = cats.length ? cats.reduce((a, b) => (b.trend.ch > a.trend.ch ? b : a)) : null;
-      const ld = dOf(c.latest?.date), fresh = !!(ld && newest && newest - ld <= 10 * 864e5);
-      const recentOk = pl.last5 != null && avg != null ? pl.last5 > avg : false; // (the last 5 better than their period average: bouncing back)
-      const slump = (pl.sign < 0 && pl.run >= 5) || (pl.last5 != null && pl.last5 <= -1.5);
-      const falling = t && t.ch <= -0.5 && !recentOk;
-      const hotNow = (pl.sign > 0 && pl.run >= 5) || (pl.last5 != null && pl.last5 >= 1.5);
-      const rising = t && t.ch >= 0.5;
-      if (falling || slump) {
-        const why = [];
-        if (falling) why.push(`SG: Total down ${f2(t.ch)} a round (last ${t.n} rounds vs the ${t.n} before)${worst && worst.trend.ch < -0.25 ? `, most of it ${worst.label} (down ${f2(worst.trend.ch)})` : ""}`);
-        if (pl.sign < 0 && pl.run >= 5) why.push(`${pl.run} rounds in a row losing strokes`);
-        else if (pl.last5 != null && pl.last5 <= -1.5) why.push(`last 5 rounds ${fmtSG(pl.last5)} a round`);
-        concern.push({ c, why, fresh, t, driver: worst && worst.trend.ch < -0.25 ? worst : null, score: Math.min(t?.ch ?? 0, pl.sign < 0 ? -pl.run / 5 : 0) });
-      } else if (rising || hotNow) {
-        const why = [];
-        if (hotNow) why.push(pl.sign > 0 && pl.run >= 5 ? `${pl.run} rounds in a row gaining strokes` : `last 5 rounds ${fmtSG(pl.last5)} a round`);
-        if (rising) why.push(`SG: Total up ${f2(t.ch)} a round (last ${t.n} rounds vs the ${t.n} before)${best && best.trend.ch > 0.25 ? `, led by ${best.label} (up ${f2(best.trend.ch)})` : ""}`);
-        else if (t && t.ch <= -0.5) why.push(`back on form after a dip (down ${f2(t.ch)} over the last ${t.n} vs the ${t.n} before)`);
-        hot.push({ c, why, fresh, t, driver: best && best.trend.ch > 0.25 ? best : null, score: -Math.max(t?.ch ?? 0, (pl.last5 ?? 0) - (avg ?? 0)) });
-      } // (update 560: no "Make a report for": "Just played" is a tag on the others)
+      const cats = new Map(c.areas.list.filter((a) => !a.dist && !a.lie).map((a) => [a.cat, a]));
+      // a distance or lie that's every shot of its part of the game (every tee shot is from the tee) only repeats it
+      const ok = (a) => (a.wPrev >= 6 && a.wLast >= 6) && (!(a.dist || a.lie) || (cats.get(a.cat) && Math.abs(a.wPrev + a.wLast - cats.get(a.cat).wPrev - cats.get(a.cat).wLast) > 0.5));
+      const cand = c.areas.list.filter(ok);
+      const lo = cand.reduce((p, a) => (!p || a.ch < p.ch ? a : p), null), hi = cand.reduce((p, a) => (!p || a.ch > p.ch ? a : p), null);
+      const fresh = !!(dOf(c.latest?.date) && newest && newest - dOf(c.latest.date) <= 10 * 864e5);
+      if (lo && lo.ch <= -0.2) down.push({ c, a: lo, fresh });
+      if (hi && hi.ch >= 0.2) up.push({ c, a: hi, fresh });
     }
+    down.sort((x, y) => x.a.ch - y.a.ch); up.sort((x, y) => y.a.ch - x.a.ch);
+    const topD = down.slice(0, 5), topU = up.slice(0, 5);
     const status = new Map();
-    for (const x of hot) status.set(x.c.key, "hot");
-    for (const x of concern) status.set(x.c.key, "concern");
-    const col = (kind, title, sub, list, act) => {
-      list.sort((a, b) => a.score - b.score);
-      return el("section", { class: `wlb-col wlb-${kind}` }, [
-        el("div", { class: "wlb-h" }, [el("span", { class: "wlb-dot", "aria-hidden": "true" }), el("h3", {}, title), el("span", { class: "wlb-n" }, String(list.length))]),
-        el("p", { class: "wlb-sub" }, sub),
-        list.length ? el("ul", {}, list.slice(0, 6).map((x) => {
-          const b = el("button", { type: "button", class: "wlb-item" }, [el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || ""), x.fresh ? el("em", { class: "wlb-fresh" }, "Just played") : null]), el("span", { class: "wlb-why" }, x.why.join(" \u00b7 ")), el("span", { class: "wlb-act" }, act)]);
-          b.addEventListener("click", () => openFocus(x, kind, ctx)); // (update 560: a focused look at the trend, not the whole card)
-          return el("li", {}, b);
-        })) : el("p", { class: "wlb-none" }, kind === "concern" ? "Nobody trending down." : "Nobody trending up."),
-      ]);
-    };
+    for (const x of topU) status.set(x.c.key, "hot");
+    for (const x of topD) status.set(x.c.key, "concern");
+    const col = (kind, title, sub, list) => el("section", { class: `wlb-col wlb-${kind}` }, [
+      el("div", { class: "wlb-h" }, [el("span", { class: "wlb-dot", "aria-hidden": "true" }), el("h3", {}, title), el("span", { class: "wlb-n" }, String(list.length))]),
+      el("p", { class: "wlb-sub" }, sub),
+      list.length ? el("ul", {}, list.map((x) => {
+        const n = x.c.areas.n, dn = kind === "concern";
+        const b = el("button", { type: "button", class: "wlb-item" }, [
+          el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || ""), x.fresh ? el("em", { class: "wlb-fresh" }, "Just played") : null]),
+          el("span", { class: "wlb-area" }, `${dn ? "Down" : "Up"} in ${areaName(x.a)}`),
+          el("span", { class: "wlb-why" }, `${fmtSG(x.a.ch)} a round: ${fmtSG(x.a.last)} over the last ${n} rounds, ${fmtSG(x.a.prev)} over the ${n} before`),
+          el("span", { class: "wlb-act" }, `${fmtSG(x.a.ch)}`)]);
+        b.addEventListener("click", () => openFocus(x, kind, ctx));
+        return el("li", {}, b);
+      })) : el("p", { class: "wlb-none" }, kind === "concern" ? "Nobody trending down." : "Nobody trending up.")]);
     const node = el("div", { class: "wl-brief" }, [
-      col("concern", "Trending Down", "Falling away and not bouncing back: SG: Total down half a stroke a round (last 12 vs the 12 before), or a slump.", concern, "Why \u203a"),
-      col("hot", "Trending Up", "Playing well now: SG: Total up half a stroke a round, or a hot run (5 rounds in a row gaining, or the last 5 at +1.5).", hot, "Why \u203a"),
+      col("concern", "Trending Down", "The 5 biggest drops across your players: a part of the game, a distance or a lie, the last 12 rounds against the 12 before.", topD),
+      col("hot", "Trending Up", "The 5 biggest rises across your players, the same way.", topU),
     ]);
     return { node, status };
   }
@@ -499,7 +490,8 @@ export async function render(main, { previewClient }) {
       const star = watchIsPreview() ? null : el("button", { type: "button", class: "wl-star on wl-row-star", "aria-label": `Remove ${c.label} from your Watchlist`, title: "Remove from Watchlist" }, "\u2605");
       star?.addEventListener("click", (e) => { e.stopPropagation(); saveWatch({ players: watchPrefs().players.filter((k) => k !== c.key) }); draw(); });
       star?.addEventListener("pointerdown", (e) => e.stopPropagation());
-      const nameCell = el("span", { class: "wl-c-name" }, [el("span", { class: "wl-c-nm" }, [star, el("strong", {}, c.label)]), el("small", {}, c.empty ? "No rounds" : `${c.tour ? `${c.tour} \u00b7 ` : ""}${c.rounds} rd${c.rounds === 1 ? "" : "s"}`)]);
+      // (update 561: the star beside the tour and rounds, so the name has the cell's full width)
+      const nameCell = el("span", { class: "wl-c-name" }, [el("strong", {}, c.label), el("span", { class: "wl-c-nm" }, [star, el("small", {}, c.empty ? "No rounds" : `${c.tour ? `${c.tour} \u00b7 ` : ""}${c.rounds} rd${c.rounds === 1 ? "" : "s"}`)])]);
       const cells = c.empty ? heads.map((_, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, "\u2014")) : c.sg.map((s, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, [
         el("strong", { class: `wl-c-v ${sgCls(s.v)}` }, fmtSG(s.v)),
         el("span", { class: "wl-c-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
@@ -514,28 +506,40 @@ export async function render(main, { previewClient }) {
   }
   // (update 556) the player's card, in a pop-up: who and where, SG: Total big with its rank and trend, the alerts, each part
   // of the game, then the distances, metrics and clubs; Open stats and Remove at the bottom
-  /* (update 560) a trend picked in the briefing: just that story. Why they're there, where the change came from (each part of
-     the game, last 12 against the 12 before, the one behind it first), and the rounds of the part that drove it. */
+  /* (update 561) one swing in detail: that part of the game, distance or lie only. Its numbers (last 12 against the 12
+     before), what's inside it (a part of the game: its distances and lies), and each round's strokes gained there. */
   async function openFocus(x, kind, ctx) {
     const { renderBlocks } = await import("../badgePopup.js");
-    const c = x.c, down = kind === "concern";
-    const rowsS = c.sg.filter((s) => s.trend).map((s) => ({ s, ch: s.trend.ch }));
-    const tot = rowsS.find((r) => r.s === c.sg[0]), parts = rowsS.filter((r) => r.s !== c.sg[0]).sort((a, b) => (down ? a.ch - b.ch : b.ch - a.ch));
-    const drv = x.driver || parts[0]?.s || c.sg[0];
-    const table = { kind: "table", title: "Where it changed (strokes gained a round)", cols: [["Part of the game"], [`Previous ${tot?.s.trend.n ?? 12}`, "num"], [`Last ${tot?.s.trend.n ?? 12}`, "num"], ["Change", "num"]],
-      rows: [...(tot ? [tot] : []), ...parts].map((r) => ({ strong: r.s === c.sg[0] || r.s === drv, cells: [r.s.label, { sg: r.s.trend.prev }, { sg: r.s.trend.last }, { sg: r.ch, arrow: true }] })) };
-    const info = drv.info?.();
-    const bars = info?.blocks?.find((b) => b.kind === "bars");
-    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const { distLead } = await import("../sg.js");
+    const c = x.c, a = x.a, n = c.areas.n, dn = kind === "concern";
+    const perShot = (sg, w) => (w ? sg / w : null), f3 = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`);
+    const sumA = (xs) => xs.reduce((t, v) => t + v, 0);
+    const stats = { kind: "table", title: `${areaName(a)}: the last ${n} rounds against the ${n} before`, cols: [[""], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: [
+      { strong: true, cells: ["SG a round", { sg: a.prev }, { sg: a.last }, { sg: a.ch, arrow: true }] },
+      { cells: ["Shots a round", { text: (a.wPrev / n).toFixed(1) }, { text: (a.wLast / n).toFixed(1) }, { text: `${a.wLast >= a.wPrev ? "+" : "−"}${Math.abs((a.wLast - a.wPrev) / n).toFixed(1)}` }] },
+      { cells: ["SG a shot", { text: f3(perShot(sumA(a.sg.slice(0, n)), a.wPrev)) }, { text: f3(perShot(sumA(a.sg.slice(n)), a.wLast)) }, { text: "" }] },
+    ] };
+    // inside a part of the game: its distances (in order) and lies, the one(s) behind the swing in bold
+    let inside = [];
+    if (!a.dist && !a.lie) {
+      const kids = c.areas.list.filter((k) => k.cat === a.cat && (k.dist || k.lie) && k.wPrev + k.wLast >= 6);
+      const tb = (title, list) => (list.length ? { kind: "table", title, cols: [[title.includes("istance") ? "Distance" : "Lie"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
+        rows: list.map((k) => ({ strong: dn ? k.ch <= -0.1 : k.ch >= 0.1, cells: [k.dist || k.lie, { sg: k.prev }, { sg: k.last }, { sg: k.ch, arrow: true }] })) } : null);
+      inside = [tb("By distance (strokes gained a round)", kids.filter((k) => k.dist).sort((p, q) => distLead(p.dist) - distLead(q.dist))), tb("By lie (strokes gained a round)", kids.filter((k) => k.lie).sort((p, q) => String(p.lie).localeCompare(String(q.lie))))].filter(Boolean);
+    }
+    const rs = c.areas.rounds, prevAvg = a.prev, lastAvg = a.last;
+    const bars = { kind: "bars", fmt: "sg", zero: true, items: rs.map((r, i) => ({ label: dateTxt(r.date), sub: [r.event, r.roundNo ? `R${r.roundNo}` : ""].filter(Boolean).join(" · "), v: a.sg[i], on: i >= n })),
+      ref: [{ v: prevAvg, label: `Previous ${n}`, from: 0, to: n }, { v: lastAvg, label: `Last ${n}`, from: n, to: 2 * n }] };
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "✕");
     const cardB = el("button", { type: "button", class: "btn ghost" }, "Full card");
     const statsB = el("button", { type: "button", class: "btn" }, "Open stats");
     const overlay = el("div", { class: "gx-pop-overlay wlh-ov", role: "dialog", "aria-modal": "true", "aria-label": c.label }, el("div", { class: "gx-pop wlh-pop" }, [
-      el("div", { class: "wlh-top" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, [c.tour || "", ` \u00b7 ${c.rounds} rounds`].join("")), el("h2", {}, c.label)]), close]),
+      el("div", { class: "wlh-top" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${c.tour ? `${c.tour} · ` : ""}${c.rounds} rounds`), el("h2", {}, c.label)]), close]),
       el("div", { class: "wlh-body" }, [
-        el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, down ? "Trending Down" : "Trending Up"), el("span", {}, x.why.join(" \u00b7 ")), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
-        ...renderBlocks([table]),
-        bars ? el("p", { class: "wlh-sec" }, `${drv.label}: each round, the ${tot?.s.trend.n ?? 12} before against the last ${tot?.s.trend.n ?? 12}`) : null,
-        ...(bars ? renderBlocks([bars]) : []),
+        el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, `Trending ${dn ? "down" : "up"} in ${areaName(a)}`), el("span", {}, `${fmtSG(a.ch)} strokes a round: ${fmtSG(a.last)} over the last ${n} rounds against ${fmtSG(a.prev)} over the ${n} before.`), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
+        ...renderBlocks([stats, ...inside]),
+        el("p", { class: "wlh-sec" }, `${areaName(a)}: each round, the ${n} before against the last ${n}`),
+        ...renderBlocks([bars]),
         el("div", { class: "wlh-acts" }, [cardB, statsB]),
       ]),
     ]));

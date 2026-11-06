@@ -6060,3 +6060,22 @@ div.sh-ud3-green { cursor: default; }
 .wl-sortar { font-size: 0.8em; }
 .wlh-sec { margin: 0; font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: #8e8e93; }
 .wlh-why .wlb-fresh { align-self: flex-start; margin: 4px 0 0; }
+/* (update 561) a briefing line names what's moving ("Down in Approach · 150-175 yds"); the phone's table: smaller, the names
+   with room */
+.wlb-item { grid-template-areas: "name act" "area area" "why why"; }
+.wlb-area { grid-area: area; font-size: 0.8rem; font-weight: 700; color: var(--c); }
+.wlb-act { font-variant-numeric: tabular-nums; font-size: 0.82rem; }
+@media (max-width: 520px) {
+  .wl-row { grid-template-columns: minmax(0, 1.55fr) repeat(5, minmax(0, 1fr)); padding: 6px 4px; gap: 1px; }
+  .wl-c-name strong { font-size: 0.66rem; }
+  .wl-c-name small { font-size: 0.56rem; }
+  .wl-row-star { font-size: 0.8rem; padding: 0; }
+  .wl-c-nm { gap: 3px; }
+  .wl-c-v { font-size: 0.68rem; }
+  .wl-c-f .wl-rank { font-size: 0.5rem; padding: 0 2px; }
+  .wl-c-f .wl-tr { font-size: 0.48rem; }
+  .wl-thead { font-size: 0.56rem; }
+}
+.lv-thru.lv-done { color: #8e8e93; }
+.wl-c-name .wl-c-nm { gap: 4px; }
+.wl-c-name .wl-row-star { font-size: 0.78rem; }
