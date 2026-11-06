@@ -559,14 +559,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // (update 570) the bars as long as they can be: the value column, then the badge column, its widest badge ("Better by
   // 0.00") ending at the page's right edge; the same size in every report
   const bW = (t) => { const T = t.toUpperCase(); return textWidth(T, 7, true) + 1.1 * (T.length - 1) + 16; };
-  const valW = Math.max(textWidth("\u22120.00", 18, true), ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true))), badgeW = bW("Better by 0.00");
+  const valW = Math.max(textWidth("\u22120.00", 18, true), ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true))), badgeW = bW("Trend: +0.00"); // (update 580: the trend pill)
   // (update 571) the bars start just past the longest name (or rank line) on the left, not a fixed 150 in
   const labW = Math.max(...a.byCat.map((c) => Math.max(textWidth(c.name, 11.5, true), c.rank ? textWidth(`Rank ${c.rank} of ${c.of}`, 8, true) : 0)));
   const lw = Math.min(150, labW + 16), gx = M + lw, gw = W - lw - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
   const gaugeMax = Math.max(0.1, ...a.byCat.flatMap((c) => [c.value, c.fieldAvg]).filter((v) => v != null && Number.isFinite(v)).map(Math.abs)) * 1.12;
   for (const c of a.byCat) {
     need(32);
-    const t = (a.catShift || []).find((q) => q.cat === c.cat);
+    const t = (a.catTrend || []).find((q) => q.cat === c.cat); // (update 580: the last 12 rounds against the 12 before)
     d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
     d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, bold: !!c.rank, color: c.rank ? rankInk(c.rank) : P.grey });
     d.roundRect(gx, y + 8, gw, 15, 7.5, { fill: P.track }); // (update 574: as tall as the Better / Worse pills)
@@ -584,14 +584,16 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.line(zx, y + 4, zx, y + 27, { color: "#000000", width: 1.1 }); // zero
     // (update 576: no Tour Avg line)
     // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
-    const chLabel = t && t.change != null && Math.round(Math.abs(t.change) * 100) > 0 ? /* (update 557: Steady only at 0.00) */ (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
+    // (update 580) "Trend: +0.10" (green), "Trend: -0.09" (red), "Trend: 0.00" (grey)
+    const r2 = t && t.change != null ? Math.round(t.change * 100) / 100 : null;
+    const chLabel = r2 != null && r2 !== 0 ? `Trend: ${r2 > 0 ? "+" : "-"}${Math.abs(r2).toFixed(2)}` : null;
     d.text(fmtSG(c.value), vx, y + 19, { size: 18, bold: true, color: tone(c.value) });
     if (chLabel) badge(chLabel, bx0, y + 18, t.change > 0 ? P.up : P.down);
-    else if (t && t.change != null) badge("Steady", bx0, y + 18, "#8e8e93");
+    else if (r2 != null) badge("Trend: 0.00", bx0, y + 18, "#8e8e93");
     y += 32; // (update 573: a little closer, so What stands out fits under it on page 1)
   }
   y += 6; // (update 574: a little room under Putting's rank)
-  d.text(a.shiftSpan ? `Better / Worse: how much the last ${a.shiftSpan.n} rounds (${a.shiftSpan.last}) have moved the average` : "Better / Worse: needs more than 12 rounds.", M, y + 4, { size: 7.5, color: P.faint });
+  d.text(a.halves ? `Trend: the last ${a.halves.n} ${a.halves.unit || "rounds"} (${a.halves.late}) against the ${a.halves.n} before them (${a.halves.early}), in strokes a round` : "Trend: needs more rounds to compare.", M, y + 4, { size: 7.5, color: P.faint }); // (update 580)
   y += 18;
 
   /* ---------- highlights: strengths and things to watch ---------- */
