@@ -441,7 +441,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   }
   return { catShift, shiftSpan, me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
     byCat, series, rankHist, slope, catTrend, numbers, elite: elite.filter((e) => e.kind !== "category").slice(0, 4), eliteAll: elite, strong, rising, focusAll: focus, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
-    extraCharts, formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
+    minShots, extraCharts, formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
 
@@ -609,19 +609,32 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (strengths.some((x) => x.title === it.title && x.tag !== "Rising" && x.tag !== "Turnaround")) continue;
     strengths.push(it);
   }
+  // (update 577) still fewer than three: the next best, even a third from the same part of the game; then any distance
+  // above the Tour Avg at all (enough shots), best first
+  const gapOf = (g) => (g.fieldAvg != null ? g.perRound - g.fieldAvg : null);
+  const distCard = (g, word) => ({ cat: g.cat, title: g.title, tag: word, text: `${g.perRound >= 0 ? `Gains ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round, against a Tour Avg of ${fmtSG(g.fieldAvg)}.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` });
+  const distPool = (a.groups || []).filter((g) => !g.repeat && g.shots >= (a.minShots || 5) && gapOf(g) != null);
+  for (const it of [...a.elite, ...(a.strong || [])].map((g) => ({ ...g, tag: a.elite.includes(g) ? "Elite" : "Strong" }))) { if (strengths.length >= 3) break; if (it.kind === "category" || strengths.some((x) => x.title === it.title)) continue; strengths.push(it); }
+  for (const g of distPool.filter((g) => gapOf(g) > 0).sort((p, q) => gapOf(q) - gapOf(p))) { if (strengths.length >= 3) break; if (strengths.some((x) => x.title === g.title)) continue; strengths.push(distCard(g, "Above avg")); }
   // (update 575) Watch: distances and trends only (a whole category is in Where the strokes come from, right above), the
   // biggest first, at most two of a part of the game
   const watchSrc = []; for (const f of (a.focusAll || a.focus)) { if (watchSrc.length >= 3) break; if (f.kind !== "skill") continue; /* (update 576: distances only) */ if (f.cat && watchSrc.filter((t) => t.cat === f.cat).length >= 2) continue; if (watchSrc.some((t) => t.title === f.title)) continue; watchSrc.push(f); }
-  const watch = watchSrc.map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
+  for (const f of (a.focusAll || a.focus)) { if (watchSrc.length >= 3) break; if (f.kind !== "skill" || watchSrc.some((t) => t.title === f.title)) continue; watchSrc.push(f); } // (update 577: a third from the same part of the game, if that's all there is)
+  const watchX = []; for (const g of distPool.filter((g) => gapOf(g) < 0).sort((p, q) => gapOf(p) - gapOf(q))) { if (watchSrc.length + watchX.length >= 3) break; if (watchSrc.some((t) => t.title === g.title) || watchX.some((t) => t.title === g.title)) continue; watchX.push(distCard(g, "Below avg")); }
+  const watch = [...watchSrc.map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost })), ...watchX];
   // (update 573) it shares page 1 with Where the strokes come from: full-size cards when they fit; else compact ones; else the
   // last card of the longer column left off, until they fit
   // (update 574) three levels: full, compact, tight (the text a line apart where it says "\n": what it gains or loses, then
   // the rank); a card is left off only when even the tight one won't fit
   // (update 576) the same room inside each card on every side (P): the tag pill (15 high) at the top, the lines under it
-  const TL = [{ P: 10, fs: 8.5, lh: 11, gap: 6 }, { P: 9, fs: 8, lh: 10, gap: 5 }, { P: 8, fs: 7.6, lh: 9.2, gap: 4 }].map((t) => ({ ...t, ty: t.P + 10, tx: t.P + 15 + 5 + t.fs * 0.75, pad: 2 * t.P + 15 + 5 - (t.lh - t.fs) + 1 }));
+  const TL = [{ P: 9, fs: 8, lh: 10, gap: 5 }, { P: 8, fs: 7.6, lh: 9.4, gap: 4 }, { P: 7, fs: 7.2, lh: 8.8, gap: 3.5 }] /* (update 577: a little smaller, for three rows) */.map((t) => ({ ...t, ty: t.P + 10, tx: t.P + 15 + 5 + t.fs * 0.75, pad: 2 * t.P + 15 + 5 - (t.lh - t.fs) + 1 }));
   let L = TL[0];
   const linesOf = (it) => String(it.text || "").split("\n").flatMap((t) => wrap(t, colW - 30, L.fs));
-  const cardsH = (list) => list.reduce((t, it) => t + L.pad + L.gap + linesOf(it).length * L.lh, 0) + 26;
+  // (update 577) the title beside the tag in full: smaller (9.5 down to 8) to fit, else on two lines (the second under the first)
+  const titleOf = (it) => { const tw = textWidth(String(it.tag || "").toUpperCase(), 7, true) + 1.1 * (String(it.tag || "").length - 1) + 16, room = colW - 4 - 2 * L.P - tw - 6;
+    for (let z = 9.5; z >= 8; z -= 0.5) if (textWidth(it.title, z, true) <= room) return { z, lines: [it.title], extra: 0 };
+    const ls = wrap(it.title, room, 8.5, true).slice(0, 2); return { z: 8.5, lines: ls, extra: ls.length > 1 ? 10 : 0 }; };
+  const cardsH = (list) => list.reduce((t, it) => t + L.pad + L.gap + titleOf(it).extra + linesOf(it).length * L.lh, 0) + 26;
   const roomHL = H - 50 - (y + 12 + 40);
   for (const t of TL) { L = t; if (Math.max(cardsH(strengths), cardsH(watch)) <= roomHL) break; }
   while (Math.max(cardsH(strengths), cardsH(watch)) > roomHL && strengths.length + watch.length > 1) { if (cardsH(strengths) >= cardsH(watch)) strengths.pop(); else watch.pop(); }
@@ -631,12 +644,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap(title, x, yy + 6, accent); yy += 14;
     if (!list.length) { d.text(empty, x, yy + 10, { size: 9, color: P.grey }); return yy + 20; }
     for (const it of list) {
-      const lines = linesOf(it), h = L.pad + lines.length * L.lh;
+      const lines = linesOf(it), T = titleOf(it), h = L.pad + T.extra + lines.length * L.lh;
       d.roundRect(x, yy, colW, h, 8, { fill: tint });
       d.roundRect(x, yy, 4, h, 2, { fill: accent });
       const ty = L.ty, tw = badge(it.tag, x + 4 + L.P, yy + ty, accent);
-      d.text(wrap(it.title, colW - 30 - tw - 8, 9.5, true)[0], x + 4 + L.P + tw + 6, yy + ty - 0.5, { size: 9.5, bold: true, color: P.ink });
-      lines.forEach((l, i) => d.text(l, x + 4 + L.P, yy + L.tx + i * L.lh, { size: L.fs, color: "#3a3a3c" }));
+      T.lines.forEach((l, i) => d.text(l, x + 4 + L.P + tw + 6, yy + ty - 0.5 + i * 10, { size: T.z, bold: true, color: P.ink }));
+      lines.forEach((l, i) => d.text(l, x + 4 + L.P, yy + L.tx + T.extra + i * L.lh, { size: L.fs, color: "#3a3a3c" }));
       yy += h + L.gap;
     }
     return yy;
@@ -705,9 +718,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const fs = a.formSeries || a.series, U = a.unit === "event" ? "event" : "round"; // (update 523: event by event for the DP World Tour)
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
-    d.text(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last 10 ${U}s: when it rises, the player is playing better.`, M, y + 6, { size: 8, color: P.grey });
+    // (update 577) wrapped to the page's width (it ran off the right edge)
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last 10 ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    y -= 10;
     y += 14;
-    formChart(a.cats.length === CATEGORIES.length ? "Total" : `Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
+    formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
   }
 
   /* (update 571, 572) the Basic Stats page's lower half (a short page): on the left, the Off-the-Tee stats as two cards stacked
