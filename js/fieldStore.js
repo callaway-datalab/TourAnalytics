@@ -44,7 +44,7 @@ const pathOfT = (datasetId, tour, year) => `fieldDetail/${datasetId}/${tourSlug(
 const LS_TOUR = "ta.tour";
 export function setActiveTour(t) { try { if (t == null) localStorage.removeItem(LS_TOUR); else localStorage.setItem(LS_TOUR, String(t)); } catch { /* */ } }
 export function activeTour() { try { return localStorage.getItem(LS_TOUR); } catch { return null; } }
-const PHONE_PACKED_MAX = 3.5 * 1048576; // (a phone: at most this much packed detail, about 30 MB once unpacked)
+const PHONE_PACKED_MAX = 5 * 1048576; // (a phone: at most this much packed detail, about 40 MB once unpacked; update 542: 5 MB, as 2025 alone (4.2 MB) loaded fine)
 
 /* ---------------- budget pause ---------------- */
 

@@ -306,7 +306,7 @@ export async function render(main, { flash, routeId }) {
       : why === "phone" || String(why).startsWith("phone:") ? (() => { // (update 537; 541: which reason)
         const r = String(why).slice(6);
         if (r === "notSplit") return "On a phone, lie and distance ranks need the rankings split by tour: redeploy the data-import function (update 538), then press Rebuild rankings on Upload Data. Until then this ranks by category.";
-        if (r.startsWith("tooBig")) { const [, t, mb] = r.split("|"); return `On a phone, lie and distance ranks need a season under 3.5 MB; ${t || "this tour"}\u2019s newest season is ${mb} MB, so this ranks by category. They\u2019re on a computer.`; }
+        if (r.startsWith("tooBig")) { const [, t, mb] = r.split("|"); return `On a phone, lie and distance ranks need a season under 5 MB; ${t || "this tour"}\u2019s newest season is ${mb} MB, so this ranks by category. They\u2019re on a computer.`; }
         return "On a phone, a data file this big ranks by category only; lie and distance ranks are on a computer.";
       })()
       : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
