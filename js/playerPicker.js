@@ -7,8 +7,13 @@ import { favoriteKeys } from "./watchlist.js";
 // (update 510) the last player chosen stays chosen on every page with a player search bar (and through a reload) until
 // Clear, the search box's x, or another player
 const LS = "ta.lastPlayer";
-let lastPick = (() => { try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } })(); // { key, label }
-const remember = (p) => { lastPick = p ? { key: p.key, label: p.label } : null; try { if (lastPick) localStorage.setItem(LS, JSON.stringify(lastPick)); else localStorage.removeItem(LS); } catch { /* private window */ } };
+// (update 533) TAKEN BACK: a player picked on one page was saved on the device and picked again on every page as it
+// opened, loading their whole stats file each time; on a phone that ran out of memory, the page reloaded, picked them
+// again and crashed again, page after page. The last pick is kept in this tab only again, and a page only takes it up
+// when it asks (restore), as before update 510. The saved copy left on the device is cleared.
+try { localStorage.removeItem(LS); } catch { /* */ }
+let lastPick = null; // { key, label }
+const remember = (p) => { lastPick = p ? { key: p.key, label: p.label } : null; };
 /** The player last chosen in a search bar, if any ({ key, label }). */
 export const lastPlayer = () => lastPick;
 
@@ -20,7 +25,7 @@ export function sameNamePlayers(players, text) {
   return hits.length > 1 ? hits : [];
 }
 
-export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
+export function playerPicker(labels, onPick, ids = new Map(), pinKey = null, { autoPick = true } = {}) { // (update 557) autoPick false: only a tap or Enter picks (not a typed name that happens to match)
   // pinKey (you) always sits at the top of the list, then your Watchlist's players (★, update 164), then everyone
   const fav = new Set(favoriteKeys());
   const players = [...labels.entries()].map(([key, label]) => ({ key, label, id: ids.get(key) || key.replace(/^c_/, ""), fav: fav.has(key) }))
@@ -72,7 +77,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
       ]);
     }
     const p = find(input.value);
-    if (p && p.key !== lastPick?.key && !dupes.length) choose(p);
+    if (autoPick && p && p.key !== lastPick?.key && !dupes.length) choose(p);
   };
   input.addEventListener("input", () => {
     if (!input.value && lastPick) { choose(null); drawList(); return; } // (update 510: the box's x, or emptied: no player)
@@ -108,7 +113,6 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null) {
   const select = (key) => { touched = true; const p = players.find((x) => x.key === key); if (p) choose(p); };
   /** Show a player as picked without acting on it (the page is already theirs). */
   const preset = (key) => { const p = players.find((x) => x.key === key); touched = true; if (p) { remember(p); input.value = p.label; } };
-  // (update 510) a page that doesn't pick anyone itself starts on the player last chosen
-  for (const ms of [0, 150, 600, 1500]) setTimeout(() => { if (!touched && node.isConnected && lastPick && players.some((p) => p.key === lastPick.key)) restore(); }, ms);
+  // (update 533: no automatic pick when a page opens)
   return { node, restore, select, preset };
 }

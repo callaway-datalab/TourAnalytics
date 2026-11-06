@@ -232,6 +232,16 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
 
   // (update 329) a folded card shows only the five ranks: the rest (distances, results, metrics, badges) is worked out
   // when it's opened
+  // (update 557) the pulse, for the Watchlist's briefing (cheap, so on folded cards too): the latest event, the last 5
+  // rounds and the run of rounds gaining or losing up to the latest
+  {
+    const lr = mine.at(-1), yOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+    const lastEv = lr.event ? mine.filter((rd) => rd.event === lr.event && yOf(rd) === yOf(lr)) : [lr];
+    card.latest = { date: lr.date, event: lr.event, sg: perRound(lastEv), rounds: lastEv.length };
+    const rs = mine.map((rd) => perRound([rd])), sign = Math.sign(rs.at(-1) || 0);
+    let run = 0; for (let i = rs.length - 1; i >= 0 && sign !== 0 && Math.sign(rs[i]) === sign; i--) run++;
+    card.pulse = { last5: mine.length >= 5 ? perRound(mine.slice(-5)) : null, run, sign, lastDate: lr.date };
+  }
   if (lite) return { ...card, lite: true };
 
   // ---- distances: strokes gained a shot by category and distance (enough attempts to mean something) ----

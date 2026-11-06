@@ -341,6 +341,8 @@ export async function drawHeat(ctx, course) {
   const RAD = [2, 3, 5, 8, 10, 15, 20, 25, 30, 40, 50]; // (update 503: up to 30 yds; 506: 50)
   st.spotR ||= 10; // (update 502: 10 yds to start)
   st.spotOff ||= new Set(); // (update 507: the lies left out of All)
+  st.udOff ||= new Set(); // (update 557: the same for an up & down miss square's pop-up)
+  const LIE_N = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
   const rawIndex = () => (rawP ||= Promise.all([import("../courseRaw.js"), import("../courseShots.js")]).then(([R, CS]) => R.loadRaw(meta).then((rows) => {
     const by = new Map(), num0 = (v) => (v == null || v === "" ? null : Number(v)), LI = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
     const trails = new Map();
@@ -689,7 +691,7 @@ export async function drawHeat(ctx, course) {
     if (!st.udSel || !size.w || !meta.rawChunks) return;
     const by = await rawIndex(); if (tok !== missTok || !by) return;
     const n = st.hole, ids = new Set(pinNow?.merged || [st.pin[n]]);
-    const pts = (by.get(n)?.trails || []).filter((T) => ids.has(T.p) && T.miss?.side === st.udSel).map((T) => ({ x: T.miss.x, y: T.miss.y, s: T.s }));
+    const pts = (by.get(n)?.trails || []).filter((T) => ids.has(T.p) && T.miss?.side === st.udSel && !st.udOff.has(LIE_N[T.miss.lie] || "other")).map((T) => ({ x: T.miss.x, y: T.miss.y, s: T.s }));
     const W = size.w, Hh = size.h;
     msSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
     const g = sv("g", rot ? { transform: `translate(0 ${W}) rotate(-90)` } : {}); msSvg.appendChild(g);
@@ -720,7 +722,11 @@ export async function drawHeat(ctx, course) {
       const row = (label, qs, cls = null) => el("tr", { class: [cls, qs.length < 5 ? "sh-few" : null].filter(Boolean).join(" ") || null, title: qs.length < 5 ? "Fewer than 5 attempts" : null }, [el("td", {}, label), el("td", { class: "num" }, String(qs.length)), el("td", { class: "num" }, avgS(qs)),
         ...keep.map(([h, f]) => el("td", { class: "num", style: `color:${scColor(SCV[h])}` }, `${pctOf(qs, f) ?? "\u2014"}%`)), el("td", { class: "num" }, ud(qs))]);
       mount(box, el("table", { class: "plain sh-pop-t sh-spot-t" }, [el("thead", {}, el("tr", {}, ["Lie", "Att", "Avg", ...keep.map(([h]) => h), "U&D"].map((h, j2) => el("th", { class: j2 ? "num" : null, ...(h in SCV ? { style: `color:${scColor(SCV[h])}` } : {}) }, h)))),
-        el("tbody", {}, [...rowsL.map(([l, qs]) => row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs)), lies.size > 1 ? row("All", items, "sh-pop-tot") : null])]));
+        // (update 557) a tap on a lie's row greys it out and leaves it out of All, the headline and the map (again: back in)
+        el("tbody", {}, [...rowsL.map(([l, qs]) => { const off = st.udOff.has(l), tr = row(el("span", { class: `sh-lie sh-lie-${["green", "fairway", "rough", "bunker"].includes(l) ? l : "other"}` }, nm(l)), qs, off ? "sh-off" : null);
+          tr.classList.add("sh-tap-row"); tr.title = off ? "Left out of All: tap to put it back" : "Tap to leave it out of All";
+          tr.addEventListener("click", (e) => { e.stopPropagation(); if (st.udOff.has(l)) st.udOff.delete(l); else st.udOff.add(l); drawUD(); drawMisses(); });
+          return tr; }), lies.size > 1 ? row(st.udOff.size ? "All (rest)" : "All", items.filter((q) => !st.udOff.has(q.lie)), "sh-pop-tot") : null])]));
     }).catch(() => mount(box, el("p", { class: "muted small" }, "Couldn\u2019t load the shots.")));
     return box;
   }
@@ -751,10 +757,10 @@ export async function drawHeat(ctx, course) {
     // the square picked: every lie it left, its attempts and how many got up and down
     const sel = st.udSel && U[st.udSel] ? st.udSel : null;
     const detail = sel ? (() => {
-      const o = U[sel], tot = Object.values(o).reduce((t, a) => [t[0] + a[0], t[1] + a[1]], [0, 0]);
+      const o = U[sel], tot = Object.entries(o).filter(([lie]) => !st.udOff.has(String(lie).toLowerCase())).map(([, a]) => a).reduce((t, a) => [t[0] + a[0], t[1] + a[1]], [0, 0]); // (update 557: without the lies left out)
       const x = el("button", { type: "button", class: "sh-pop-x", "aria-label": "Close" }, "\u2715"); x.addEventListener("click", () => { st.udSel = null; drawUD(); drawMisses(); });
       return el("div", { class: "sh-ud-det" }, [el("div", { class: "sh-pop-h" }, [el("strong", {}, `Missed ${sel.replace("-", " ").toLowerCase()}`), x]),
-        el("p", { class: "small" }, [el("strong", {}, `${Math.round((100 * tot[1]) / tot[0])}%`), ` got up and down: ${tot[1]} of ${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}`]),
+        el("p", { class: "small" }, tot[0] ? [el("strong", {}, `${Math.round((100 * tot[1]) / tot[0])}%`), ` got up and down: ${tot[1]} of ${tot[0]} ${tot[0] === 1 ? "miss" : "misses"}${st.udOff.size ? " (the lies left in)" : ""}`] : "Every lie is left out: tap one to put it back."),
         udTable(sel, ids)]); // (update 526: as the circle's popup: each lie in its colour, how the holes were scored, up & down)
     })() : null;
     udBox.hidden = false;

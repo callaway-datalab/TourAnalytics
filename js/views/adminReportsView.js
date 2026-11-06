@@ -73,7 +73,6 @@ export async function render(main, { flash }) {
   const meKey = myEntryKey(getState());
   const picker = playerPicker(new Map([[meKey, myName()], ...labels]), show, ids, meKey);
   mount(pickerBox, picker.node);
-  show(null);
-  picker.restore();
+  show(null); // (update 557: no player carried over from another page's search)
   return () => unsub();
 }

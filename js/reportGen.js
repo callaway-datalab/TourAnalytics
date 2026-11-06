@@ -597,13 +597,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.line(zx, y + 4, zx, y + 24, { color: "#000000", width: 1.1 }); // zero
     if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
     // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
-    const chLabel = t && t.change != null && Math.abs(t.change) >= STEADY ? (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
+    const chLabel = t && t.change != null && Math.round(Math.abs(t.change) * 100) > 0 ? /* (update 557: Steady only at 0.00) */ (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
     d.text(fmtSG(c.value), vx, y + 19, { size: 18, bold: true, color: tone(c.value) });
     if (chLabel) badge(chLabel, bx0, y + 18, t.change > 0 ? P.up : P.down);
     else if (t && t.change != null) badge("Steady", bx0, y + 18, "#8e8e93");
     y += 36;
   }
-  d.text(a.shiftSpan ? `Better / Worse: how much the last ${a.shiftSpan.n} rounds (${a.shiftSpan.last}) have moved the average: the whole period (${a.shiftSpan.all}) against it without them, in strokes a round.` : "Better / Worse: needs more than 12 rounds.", M, y + 4, { size: 7.5, color: P.faint });
+  d.text(a.shiftSpan ? `Better / Worse: how much the last ${a.shiftSpan.n} rounds (${a.shiftSpan.last}) have moved the average` : "Better / Worse: needs more than 12 rounds.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
   /* ---------- SG form: total and each category ---------- */

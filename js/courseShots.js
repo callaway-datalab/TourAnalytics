@@ -171,7 +171,8 @@ export function trailSG(t, par, E, into) {
  * 30 yards, after one from farther out) */
 /*
  * (update 502) A hole's up & down boards, per pin. The line of play: from the middle of the fairway (halfway between the
- * farthest-left and farthest-right shots played from the fairway (update 555: of the half closest to the pin), across the line from the tee to the green) to the pin,
+ * farthest-left and farthest-right shots played from the fairway (update 555: of the half closest to the pin; 557: of the
+ * approach shots, with the fairway shots around the green on its short side), across the line from the tee to the green) to the pin,
  * or from the tee on a par 3. The board's middle square: 20 x 20 ft around the pin (10 ft each way along and across that
  * line; update 503: 40 x 40 ft, 20 ft each way), less where the green runs out sooner (its edges: the 1st and 99th percentiles of where shots were played on it).
  * shots: [{ x, y, L, d, st }] (every shot on the hole, rounded as the trails are); pins: Map(pin id → [x, y]).
@@ -185,11 +186,17 @@ export function holeBoards(shots, pins, par) {
   // the fairway near the green sets the line, not drives' far-flung landing spots
   const fwAll = par >= 4 ? shots.filter((q) => q.L === 1) : [];
   const byYds = fwAll.every((q) => q.d != null && Number.isFinite(q.d)), dTo = (q) => (byYds ? q.d : Math.hypot(q.x - G[0], q.y - G[1]));
-  const fw = fwAll.length >= 4 ? [...fwAll].sort((p, q) => dTo(p) - dTo(q)).slice(0, Math.ceil(fwAll.length / 2)) : fwAll;
-  if (fw.length >= 2) {
-    const dx = G[0] - T[0], dy = G[1] - T[1], dl = Math.hypot(dx, dy) || 1, lat = (q) => (dx * (q.y - T[1]) - dy * (q.x - T[0])) / dl;
-    let lo = fw[0], hi = fw[0]; for (const q of fw) { if (lat(q) < lat(lo)) lo = q; if (lat(q) > lat(hi)) hi = q; }
-    ref = [(lo.x + hi.x) / 2, (lo.y + hi.y) / 2];
+  // (update 557) the approach shots from the fairway (more than 30 yds out, when the yards are known): the half nearest the pin
+  const appr = byYds ? fwAll.filter((q) => q.d > 30) : fwAll;
+  const fwA = appr.length >= 4 ? [...appr].sort((p, q) => dTo(p) - dTo(q)).slice(0, Math.ceil(appr.length / 2)) : appr;
+  const dx = G[0] - T[0], dy = G[1] - T[1], dl = Math.hypot(dx, dy) || 1, lat = (q) => (dx * (q.y - T[1]) - dy * (q.x - T[0])) / dl;
+  const midOf = (list) => { let lo = list[0], hi = list[0]; for (const q of list) { if (lat(q) < lat(lo)) lo = q; if (lat(q) > lat(hi)) hi = q; } return [(lo.x + hi.x) / 2, (lo.y + hi.y) / 2]; };
+  if (fwA.length >= 2) {
+    // (update 557) and the fairway shots around the green (30 yds or less) on its short side: short of the green's middle
+    // along the line those approach shots give
+    const r0 = midOf(fwA), ux = G[0] - r0[0], uy = G[1] - r0[1], ul = Math.hypot(ux, uy) || 1;
+    const argShort = byYds ? fwAll.filter((q) => q.d <= 30 && ((q.x - G[0]) * ux + (q.y - G[1]) * uy) / ul < 0) : [];
+    ref = midOf([...fwA, ...argShort]);
   }
   // pixels a yard (each shot's pixels from its pin against its yards), for the 10 ft
   const rs = []; for (const q of shots) { const P = pins.get(q.pid); if (P && q.L !== 4 && q.d != null && q.d > 15) rs.push(Math.hypot(q.x - P[0], q.y - P[1]) / q.d); }

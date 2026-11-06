@@ -74,6 +74,8 @@ export async function saveWatch(patch) {
   if (!o) return;
   const before = watchPrefs();
   let cur = { ...before, ...patch };
+  // (update 557) every player added is noted in the Performance readout's log, with the page it happened on
+  if (Array.isArray(patch.players)) { const added = patch.players.filter((k) => !(before.players || []).includes(k)); if (added.length) import("./perf.js").then((m) => m.bootLog(`watchlist add ${added.join(", ")} on ${location.hash.split("?")[0]}`)).catch(() => {}); }
   lists.set(o.id, cur);
   if (!o.own) return;
   // (update 556) the saved list read again first, and only this change put on it: a page left open for days (another

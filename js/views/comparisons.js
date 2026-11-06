@@ -811,7 +811,7 @@ export async function render(main) {
     const chips = list.map((p) => {
       const x = el("button", { type: "button", class: "cmp-key-x cmp-pl-x", "aria-label": `Take ${p.key === EVERY ? "everyone" : p.label} out` }, "\u2715");
       // (update 556) the last one out, with no Everyone to fall back on (a phone, a big file): start over, not stuck on them
-      x.addEventListener("click", () => { const left = list.filter((e) => e.key !== p.key); if (!left.length && !everyOk()) { clearAll(); return; } setChosen(left); });
+      x.addEventListener("click", () => { const left = list.filter((e) => e.key !== p.key); if (!left.length) { clearAll(); return; } setChosen(left); }); // (update 557: the last one out starts over, always)
       return el("span", { class: `cmp-pl${p.key === player?.key ? " main" : ""}${p.key === EVERY ? " every" : ""}` }, [el("span", {}, p.key === EVERY ? everyLabel() : p.label), x]);
     });
     if (!list.length) chips.push(el("span", { class: "cmp-pl every main" }, everyOk() ? everyLabel() : player.label));
