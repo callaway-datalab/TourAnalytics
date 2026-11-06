@@ -51,6 +51,9 @@ export function aiDigest(a) {
     bestEvents: (a.peaks || []).slice(0, 3).map(rd), toughestEvents: (a.valleys || []).slice(0, 3).map(rd), // (update 547)
   };
 }
+// (update 556) a trend, the last stretch first: "Last 12 rounds gained +0.54 a round. 12 rounds before that gained +0.17 a round."
+const gl = (v) => (v != null && v < 0 ? `lost ${Math.abs(v).toFixed(2)}` : `gained ${fmtSG(v)}`);
+const trendWords = (n, w, t) => `Last ${n} ${w} ${gl(t.late)} a round. ${n} ${w} before that ${gl(t.early)} a round.`;
 export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null, tour = null, years = null } = {}) {
   const cats = CATEGORIES.map(([k]) => k).filter((k) => catsIn.includes(k));
   // (update 550) years: seasons, as the Stats page counts them (the file's year, so December's events in next year's
@@ -129,6 +132,11 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const a = mean(early.map((s) => s.byCat[k])), b = mean(late.map((s) => s.byCat[k]));
     return { cat: k, name: CAT_NAME[k], early: a, late: b, change: a != null && b != null ? b - a : null };
   });
+  // (update 556) Better / Worse in "Where the strokes come from": how far the last 12 rounds have moved the average: the
+  // whole period against the whole period without them
+  const shiftN = 12, restS = series.slice(0, Math.max(0, series.length - shiftN));
+  const catShift = series.length > shiftN && restS.length >= 3 ? cats.map((k) => { const a1 = mean(series.map((q) => q.byCat[k])), b1 = mean(restS.map((q) => q.byCat[k])); return { cat: k, all: a1, rest: b1, change: a1 != null && b1 != null ? a1 - b1 : null }; }) : null;
+  const shiftSpan = catShift ? { n: shiftN, last: span(series.slice(-shiftN)), all: span(series) } : null;
   // (update 547) the best and toughest EVENTS (strokes gained a round in each tournament), not single rounds
   const evUnits = (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); }
     return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", rounds: g.length, value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); })();
@@ -233,7 +241,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round here${g.fieldAvg != null ? ` (Tour Avg ${fmtSG(g.fieldAvg)})` : ""}, over ${Math.round(g.shots)} shots.` });
   }
   for (const t of catTrend) if (t.change != null && t.change < -0.2) focus.push({ cat: t.cat, kind: "trend", lost: -t.change / 2, title: `Slipping: ${t.name}`,
-    detail: `Previous ${half} ${unitW}: ${fmtSG(t.early)} a round. Last ${half} ${unitW}: ${fmtSG(t.late)} a round. That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
+    detail: `${trendWords(half, unitW, t)} That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
   if (products) for (const p of products) if (p.shots >= 10 && p.perShot < -0.05) focus.push({ cat: null, kind: "product", lost: -p.total / Math.max(1, mine.length), title: `${p.club}`,
     detail: `Loses ${Math.abs(p.perShot).toFixed(3)} strokes a shot, over ${Math.round(p.shots)} shots (about ${Math.abs(p.total / Math.max(1, mine.length)).toFixed(2)} a round).` });
   // keep the biggest, at most two per category, preferring the specific over the general
@@ -262,7 +270,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   elite.sort((p, q) => q.score - p.score);
   const rising = catTrend.filter((t) => t.change != null && t.change >= 0.2).sort((p, q) => q.change - p.change).map((t) => ({
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
-    text: `Previous ${half} ${unitW}: ${fmtSG(t.early)} a round. Last ${half} ${unitW}: ${fmtSG(t.late)} a round. That's ${t.change.toFixed(2)} strokes a round better.` }));
+    text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
   const n10 = Math.min(12, Math.floor(units.length / 2)), fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat();
   const form = n10 >= 2 ? { n: n10, unit: "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB) } : null;
@@ -397,7 +405,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const e = entryFor(k);
     if (e) basics.push(e);
   }
-  return { me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
+  return { catShift, shiftSpan, me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
     byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
@@ -565,10 +573,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   section("By category", "Where the strokes come from", 40 + a.byCat.length * 36);
   d.text("The black line is zero; the gold line is Tour Avg.", M, y + 1, { size: 8, color: P.grey });
   y += 14;
-  const gx = M + 150, gw = W - 150 - 150, zx = gx + gw / 2, half = gw / 2;
+  // (update 556) the values and the Better / Worse badges in two columns, each lined up on its left, just past the bars
+  const valW = Math.max(40, ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true)));
+  const gx = M + 150, gw = W - 150 - (14 + valW + 12 + 118), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
   for (const c of a.byCat) {
     need(36);
-    const t = a.catTrend.find((q) => q.cat === c.cat);
+    const t = (a.catShift || []).find((q) => q.cat === c.cat);
     d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
     d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, bold: !!c.rank, color: c.rank ? rankInk(c.rank) : P.grey });
     d.roundRect(gx, y + 8, gw, 12, 6, { fill: P.track });
@@ -588,13 +598,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
     // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
     const chLabel = t && t.change != null && Math.abs(t.change) >= STEADY ? (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
-    const chW = chLabel ? textWidth(chLabel.toUpperCase(), 7, true) + 1.1 * (chLabel.length - 1) + 16 : 0;
-    d.text(fmtSG(c.value), chLabel ? M + W - chW - 12 : M + W - 66, y + 19, { size: 18, bold: true, color: tone(c.value), align: "right" });
-    if (chLabel) badge(chLabel, M + W - chW, y + 18, t.change > 0 ? P.up : P.down);
-    else if (t && t.change != null) badge("Steady", M + W - 58, y + 18, "#8e8e93");
+    d.text(fmtSG(c.value), vx, y + 19, { size: 18, bold: true, color: tone(c.value) });
+    if (chLabel) badge(chLabel, bx0, y + 18, t.change > 0 ? P.up : P.down);
+    else if (t && t.change != null) badge("Steady", bx0, y + 18, "#8e8e93");
     y += 36;
   }
-  d.text(a.halves ? `Better / Worse: the last ${a.halves.n} ${a.halves.unit || "rounds"} (${a.halves.late}) compared with the ${a.halves.n} before them (${a.halves.early}), in strokes a round.` : "Better / Worse: the last rounds compared with the ones before them, in strokes a round.", M, y + 4, { size: 7.5, color: P.faint });
+  d.text(a.shiftSpan ? `Better / Worse: how much the last ${a.shiftSpan.n} rounds (${a.shiftSpan.last}) have moved the average: the whole period (${a.shiftSpan.all}) against it without them, in strokes a round.` : "Better / Worse: needs more than 12 rounds.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
   /* ---------- SG form: total and each category ---------- */
@@ -608,7 +617,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
     if (first != null) {
       const ch = last - first;
-      d.text(`Previous ${n} rounds: ${fmtSG(first)}   \u00b7   Last ${n}: ${fmtSG(last)}   \u00b7   ${Math.abs(ch) < STEADY ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < STEADY ? P.grey : tone(ch), align: "right" });
+      d.text(`Last ${n} rounds: ${fmtSG(last)}   \u00b7   ${n} before that: ${fmtSG(first)}   \u00b7   ${Math.abs(ch) < STEADY ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < STEADY ? P.grey : tone(ch), align: "right" });
     }
     const lo = Math.min(-0.5, Math.min(...vals)), hi = Math.max(0.5, Math.max(...vals));
     const Y = (v) => top + ht - ((v - lo) / (hi - lo)) * ht;

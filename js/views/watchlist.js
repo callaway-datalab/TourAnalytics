@@ -121,10 +121,14 @@ export async function render(main, { previewClient }) {
     return enteredField;
   })());
   if (myKey && multi) labels.set(myKey, youLabel); // (update 177: one player's own page keeps their name)
-  await loadWatch();
+  await loadWatch(true);
   let prefs = watchPrefs();
-  const picker = multi ? playerPicker(labels, (p) => { if (!p) return; if (!prefs.players.includes(p.key)) { prefs = { ...prefs, players: [...prefs.players, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }) : null;
+  const picker = multi ? playerPicker(labels, (p) => { if (!p) return; const now = watchPrefs().players || []; if (!now.includes(p.key)) { prefs = { ...watchPrefs(), players: [...now, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }) : null;
   const pickerBox = el("div", { class: "wl-add" }, picker ? [picker.node] : []);
+  { const i = picker?.node.querySelector("input"); if (i) i.placeholder = "Add a player to the Watchlist\u2026"; } // (update 556)
+  // (update 556) the Tour filter at the top (in place of a tour switch on each card): null = every tour
+  let tourSel = null; try { tourSel = localStorage.getItem("wl.tour") || null; } catch { /* */ }
+  let filtersOpen = false;
   let menuOpen = false;
   // (update 180) metrics for everyone, or a player's own (watchlists.metricsFor[key]: theirs instead of everyone's)
   let menuFor = "all";
@@ -188,6 +192,7 @@ export async function render(main, { previewClient }) {
       const t = tourPick.get(k) ?? null, tOk = detailMeta.tour == null || t == null || t === detailMeta.tour;
       return yOk && tOk ? detailNow : null;
     };
+    if (multi) for (const k of keys) { if (tourSel) tourPick.set(k, tourSel); else tourPick.delete(k); } // (update 556: the Tour filter)
     const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailFor(k), own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered",
       lite: multi && !openCards.has(k) })); // (update 329: folded cards: just their ranks; the rest when opened)
     // (update 319) the order: yours (drag to change), A–Z, or by SG: Total rank (best first)
@@ -279,7 +284,19 @@ export async function render(main, { previewClient }) {
       b.addEventListener("click", () => { try { localStorage.setItem("wl.sort", v); } catch { /* */ } draw(); });
       return b;
     })) : null;
-    const controls = el("div", { class: "wl-controls" }, [sourceSeg, period, sortSeg, metricsBtn, meBtn, multi ? pickerBox : null]);
+    // (update 556) the Tour filter (each tour with how many of the players played it this period), the search, and the
+    // rest folded into Filters
+    const tourN = new Map(); for (const c of cards) for (const t of c.tours || []) tourN.set(t.tour, (tourN.get(t.tour) || 0) + 1);
+    if (multi && tourSel && !tourN.has(tourSel) && keys.length) { tourSel = null; try { localStorage.removeItem("wl.tour"); } catch { /* */ } return draw(); }
+    const tourPill = (t, label) => { const on = (tourSel || null) === t; const b = el("button", { type: "button", class: `wl-per wl-tourf${on ? " on" : ""}`, "aria-pressed": String(on) }, label);
+      b.addEventListener("click", () => { if (on) return; tourSel = t; try { t ? localStorage.setItem("wl.tour", t) : localStorage.removeItem("wl.tour"); } catch { /* */ } draw(); }); return b; };
+    const tourBar = multi && tourN.size ? el("div", { class: "wl-period wl-tourbar", role: "group", "aria-label": "Tour" }, [tourPill(null, `All (${cards.length})`), ...[...tourN].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).map(([t, n]) => tourPill(t, `${t} (${n})`))]) : null;
+    const filters = multi ? (() => {
+      const d = el("details", { class: "wl-filters", ...(filtersOpen || menuOpen ? { open: true } : {}) }, [el("summary", {}, "Filters"), el("div", { class: "wl-filters-in" }, [period, sortSeg, el("div", { class: "wl-filters-btns" }, [metricsBtn, meBtn])])]);
+      d.addEventListener("toggle", () => { filtersOpen = d.open; });
+      return d;
+    })() : null;
+    const controls = multi ? el("div", { class: "wl-controls wl-controls2" }, [tourBar, pickerBox, filters]) : el("div", { class: "wl-controls" }, [sourceSeg, period, sortSeg, metricsBtn, meBtn]);
     const where = source === "entered" ? "entered rounds" : "ranked on their tour";
     // (update 186) just how many players
     const sub = multi ? (keys.length ? `${keys.length} Player${keys.length === 1 ? "" : "s"}` : "Follow the players you care about")
@@ -288,11 +305,12 @@ export async function render(main, { previewClient }) {
     const subLine = multi && watchIsPreview() ? `${sub} · their Watchlist (changes in a preview aren't saved)` : sub;
 
     // ---- the cards ----
-    const body = multi && !keys.length ? emptyState() : el("div", { class: `wl-cards${multi ? "" : " solo"}` }, cards.map((c) => { const n = cardView(c); n.dataset.key = c.key; return n; }));
-    if (multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine") dragToReorder(body); // (update 249; 319: only in your own order)
+    const shown = multi && tourSel ? cards.filter((c) => (c.tours || []).some((t) => t.tour === tourSel)) : cards;
+    const body = multi && !keys.length ? emptyState() : multi ? tableView(shown, { field: fieldNow, owns, keys, cur, detailFor }) : el("div", { class: "wl-cards solo" }, cards.map((c) => { const n = cardView(c); n.dataset.key = c.key; return n; }));
+    if (multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine") dragToReorder(body, ".wl-row[data-key]"); // (update 249; 319: only in your own order; 556: the table's rows)
     // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
-    const dragHint = multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine" ? el("p", { class: "muted small center wl-drag-hint" }, "Hold a card and drag it to change the order.") : null; // (update 249)
+    const dragHint = multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine" ? el("p", { class: "muted small center wl-drag-hint" }, "Tap a player for their card. Hold a row and drag it to change the order.") : null; // (update 249)
     mount(root, [heroShell(controls, subLine), menu, body, dragHint,
       el("div", { class: "center wl-foot" }, infoTip(source === "entered"
         ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before; with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
@@ -330,9 +348,9 @@ export async function render(main, { previewClient }) {
 
   /* (update 249) hold a card, then drag it: the order is saved (this week's guys at the top). A hold (a third of a
      second without moving) starts it, so taps, clicks and scrolling work as before. */
-  function dragToReorder(box) {
+  function dragToReorder(box, sel = ".wl-card") {
     let hold = null, drag = null;
-    const cardsNow = () => [...box.querySelectorAll(":scope > .wl-card")];
+    const cardsNow = () => [...box.querySelectorAll(`:scope > ${sel}`)];
     const place = (e) => {
       const c = drag.card;
       c.style.transform = "none";
@@ -375,7 +393,7 @@ export async function render(main, { previewClient }) {
       setTimeout(() => window.removeEventListener("click", eat, { capture: true }), 60);
     };
     box.addEventListener("pointerdown", (e) => {
-      const card = e.target.closest(".wl-card");
+      const card = e.target.closest(sel);
       if (!card || card.parentElement !== box || e.button > 0 || drag) return;
       if (e.target.closest("input, select, textarea")) return;
       hold = { x: e.clientX, y: e.clientY, t: setTimeout(() => {
@@ -392,6 +410,58 @@ export async function render(main, { previewClient }) {
     });
     box.addEventListener("contextmenu", (e) => { if (drag || hold) e.preventDefault(); });
     box.addEventListener("dragstart", (e) => e.preventDefault());
+  }
+  /* (update 556) the players as a table: the name, then Total and each part of the game, each cell its value, rank and
+     trend (small); a tap opens the player's card */
+  function tableView(cards, ctx) {
+    const heads = (cards.find((c) => !c.empty)?.sg || [{ short: "Total" }, { short: "OTT" }, { short: "APP" }, { short: "ARG" }, { short: "PUTT" }]).map((s) => s.short);
+    const head = el("div", { class: "wl-row wl-thead", role: "row" }, [el("span", { class: "wl-c-name" }, "Player"), ...heads.map((h, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, h))]);
+    const rows = cards.map((c) => {
+      const nameCell = el("span", { class: "wl-c-name" }, [el("strong", {}, c.label), el("small", {}, c.empty ? "No rounds" : `${c.tour ? `${c.tour} \u00b7 ` : ""}${c.rounds} rd${c.rounds === 1 ? "" : "s"}`)]);
+      const cells = c.empty ? heads.map((_, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, "\u2014")) : c.sg.map((s, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, [
+        el("strong", { class: `wl-c-v ${sgCls(s.v)}` }, fmtSG(s.v)),
+        el("span", { class: "wl-c-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
+      ]));
+      const r = el("div", { class: "wl-row", role: "button", tabindex: "0", title: `${c.label}: open their card`, dataset: { key: c.key } }, [nameCell, ...cells]);
+      const go = () => openCard(c, ctx);
+      r.addEventListener("click", go);
+      r.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      return r;
+    });
+    return el("div", { class: "panel wl-table", role: "table" }, [head, ...rows]);
+  }
+  // (update 556) the player's card, in a pop-up: who and where, SG: Total big with its rank and trend, the alerts, each part
+  // of the game, then the distances, metrics and clubs; Open stats and Remove at the bottom
+  function openCard(c0, ctx) {
+    const i = ctx.keys.indexOf(c0.key);
+    const c = c0.lite ? playerCard(c0.key, { field: ctx.field, detail: ctx.detailFor(c0.key), own: ctx.owns[i], label: nameOf(c0.key), period: ctx.cur, metrics: metricsOf(c0.key), tour: tourPick.get(c0.key) ?? c0.tour ?? null, nameOf: anyName, noRanks: src() === "entered", lite: false }) : c0;
+    openCards.add(c.key);
+    const card = cardView(c);
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const t = c.sg?.[0];
+    const top = el("div", { class: "wlh-top" }, [
+      el("div", {}, [el("p", { class: "gx-eyebrow" }, [c.tour || "", c.rounds != null ? ` \u00b7 ${c.rounds} round${c.rounds === 1 ? "" : "s"}` : "", ` \u00b7 ${/^y:/.test(ctx.cur) ? periodLabel(ctx.cur) : periodLabel(ctx.cur)}`].join("").replace(/^ \u00b7 /, "")), el("h2", {}, c.label)]),
+      close]);
+    const big = t ? el("div", { class: "wlh-big" }, [el("strong", { class: `wlh-v ${sgCls(t.v)}` }, fmtSG(t.v)), el("span", { class: "wlh-u" }, "strokes gained a round"), el("span", { class: "wlh-f" }, [rankPill(t.rank, t.of), t.of ? el("span", { class: "muted small" }, ` of ${t.of}`) : null, trendEl(t.trend)])]) : null;
+    const latest = c.latest ? el("p", { class: "wlh-meta muted small" }, `Last event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}`) : null;
+    const badges = card.querySelector(".wl-badges"), sg = card.querySelector(".wl-sg"), more = card.querySelector(".wl-more");
+    sg?.firstElementChild?.remove(); // (Total is the big number)
+    if (more) { more.hidden = false; more.querySelector(".wl-meta")?.remove(); }
+    const openB = el("button", { type: "button", class: "btn" }, "Open stats");
+    const rmB = el("button", { type: "button", class: "btn ghost" }, "Remove from Watchlist");
+    const overlay = el("div", { class: "gx-pop-overlay wlh-ov", role: "dialog", "aria-modal": "true", "aria-label": c.label }, el("div", { class: "gx-pop wlh-pop" }, [
+      top, el("div", { class: "wlh-body" }, [big, latest, badges, sg, more, el("div", { class: "wlh-acts" }, [openB, watchIsPreview() ? null : rmB])]),
+    ]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".wl-pop")) shut(); };
+    close.addEventListener("click", shut);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    openB.addEventListener("click", () => { shut(); openPlayer(c.key); });
+    rmB.addEventListener("click", () => { shut(); saveWatch({ players: watchPrefs().players.filter((k) => k !== c.key) }); draw(); });
+    document.addEventListener("keydown", onKey);
+    document.body.classList.add("gx-noscroll");
+    document.body.appendChild(overlay);
+    close.focus({ preventScroll: true });
   }
   // the alerts first (biggest first), then the rest of the badges
   const sortBadges = (bs) => [...bs].sort((x, y) => (y.kind === "form") - (x.kind === "form") || (y.alert ? y.sev || 1 : 0) - (x.alert ? x.sev || 1 : 0)); // (update 372: current form first)

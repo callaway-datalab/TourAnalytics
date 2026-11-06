@@ -274,12 +274,13 @@ async function render() {
   }
 
   try {
+    try { (await import("./memory.js")).freeFor(routeId); } catch { /* */ } // (update 556: what the last pages kept and this one doesn't use)
     const mod = await loader();
     if (gen !== renderGen) return;
     import("./usage.js").then((u) => u.trackPage(routeId)).catch(() => {}); // (update 227: page views and time, for At a glance)
     import("./perf.js").then((p) => p.bootLog(`page ${routeId}: drawing`)).catch(() => {}); // (update 535)
     const cleanup = await mod.render(main, { params, previewClient, routeId, flash: (msg, type) => flash(main, msg, type) });
-    import("./perf.js").then((p) => p.bootLog(`page ${routeId}: drawn`)).catch(() => {});
+    import("./perf.js").then((p) => p.bootLog(`page ${routeId}: drawn${performance?.memory ? ` \u00b7 ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : ""}`)).catch(() => {}); // (update 556: memory, where the browser says)
     if (gen !== renderGen) { if (typeof cleanup === "function") cleanup(); return; }
     currentCleanup = cleanup;
     // (after the page has drawn: the next frame)

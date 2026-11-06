@@ -424,7 +424,7 @@ export async function render(main) {
       return el("span", { class: `cmp-pl${p.key === EVERY ? " every" : ""}` }, [el("span", {}, p.key === EVERY ? "Everyone" : p.label), x]);
     });
     let everyB = null;
-    if (everyStartOk() && !withEvery) {
+    if (everyStartOk() && !withEvery && !lite) { // (update 556: not shown greyed out where it can't be used)
       everyB = el("button", { type: "button", class: "btn ghost small cmp-pl-every", disabled: lite ? true : null, title: lite ? "Needs a computer: it\u2019s every player\u2019s rounds" : null }, "\uff0b Everyone");
       everyB.addEventListener("click", () => { startPicks = [...startPicks, { key: EVERY, label: "Everyone" }]; draw(); });
     }
@@ -810,7 +810,8 @@ export async function render(main) {
     const rest = new Map(players.filter(([k]) => !list.some((p) => p.key === k)));
     const chips = list.map((p) => {
       const x = el("button", { type: "button", class: "cmp-key-x cmp-pl-x", "aria-label": `Take ${p.key === EVERY ? "everyone" : p.label} out` }, "\u2715");
-      x.addEventListener("click", () => setChosen(list.filter((e) => e.key !== p.key)));
+      // (update 556) the last one out, with no Everyone to fall back on (a phone, a big file): start over, not stuck on them
+      x.addEventListener("click", () => { const left = list.filter((e) => e.key !== p.key); if (!left.length && !everyOk()) { clearAll(); return; } setChosen(left); });
       return el("span", { class: `cmp-pl${p.key === player?.key ? " main" : ""}${p.key === EVERY ? " every" : ""}` }, [el("span", {}, p.key === EVERY ? everyLabel() : p.label), x]);
     });
     if (!list.length) chips.push(el("span", { class: "cmp-pl every main" }, everyOk() ? everyLabel() : player.label));

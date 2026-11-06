@@ -12,7 +12,7 @@ export function bootLog(step) {
     const all = JSON.parse(localStorage.getItem(LS_BOOT) || "[]");
     if (!bootId) { bootId = Date.now(); all.push({ id: bootId, at: Date.now(), steps: [] }); while (all.length > 3) all.shift(); }
     const cur = all.find((b) => b.id === bootId) || all[all.length - 1];
-    if (cur.steps.length < 40) cur.steps.push([Math.round(performance.now() - t00), String(step).slice(0, 160)]);
+    if (cur.steps.length < 90) cur.steps.push([Math.round(performance.now() - t00), String(step).slice(0, 160)]);
     localStorage.setItem(LS_BOOT, JSON.stringify(all));
   } catch { /* (storage full or blocked: nothing kept) */ }
 }
@@ -51,6 +51,7 @@ export function markPage(route, ms) {
 export function markBoot(ms) { boot.ms = Math.round(ms); if (panel) update(); }
 
 let panel = null, timer = null;
+const openBoots = new Set(); // (update 556) the start-ups opened in the readout: kept open (or folded) through its refreshes
 async function snapshot() {
   const out = {};
   const mem = performance?.memory; // (Chrome on a computer only; iPhones don't say)
@@ -71,7 +72,8 @@ async function update() {
   const recent = timings.slice(-6).reverse();
   const avg = timings.length ? Math.round(timings.reduce((t, x) => t + x.ms, 0) / timings.length) : null;
   const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  panel.querySelector(".perf-body").innerHTML = `
+  const body = panel.querySelector(".perf-body"), keepY = body.scrollTop;
+  body.innerHTML = `
     <p><b>Memory used</b> ${s.heap}</p>
     <p><b>Field detail</b> ${n(s.detail?.players)} players · ${n(s.detail?.rounds)} rounds · ${n(s.detail?.shots)} shots${s.detail?.mb != null ? ` · packed in ${s.detail.mb} MB` : ""}</p>
     <p><b>Full rows</b> ${n(s.rows?.players)} players · ${n(s.rows?.rows)} rows${s.rows?.files ? "" : " (none: phones use the detail)"}</p>
@@ -80,7 +82,9 @@ async function update() {
     <p><b>First load</b> ${boot.ms != null ? `${(boot.ms / 1000).toFixed(1)} s` : "—"} · <b>Page opens</b> ${avg != null ? `${avg} ms average` : "—"}</p>
     <ul class="perf-list">${recent.map((t) => `<li>${t.route.replace(/^#?\//, "") || "home"} · ${t.ms} ms</li>`).join("") || "<li>No page changes yet</li>"}</ul>
     <p><b>Unexpected reloads</b> ${reloads.length}${reloads.length ? ` (last ${when(reloads.at(-1).at)}, on ${reloads.at(-1).last.replace(/^#\//, "") || "home"})` : ""}</p>
-    ${(() => { const bl = read(LS_BOOT, []); return bl.length ? `<p><b>Last start-ups</b> (newest first; time in ms from opening)</p>${[...bl].reverse().map((b) => `<details${b.id === bootId ? "" : " open"}><summary>${when(b.at)}${b.id === bootId ? " · this one" : ""} · ${b.steps.length} steps · last: ${(b.steps.at(-1)?.[1] || "").replace(/</g, "&lt;")}</summary><ul class="perf-list">${b.steps.map(([ms, t]) => `<li>${ms} · ${t.replace(/</g, "&lt;")}</li>`).join("")}</ul></details>`).join("")}` : ""; })()}`;
+    ${(() => { const bl = read(LS_BOOT, []); return bl.length ? `<p><b>Last start-ups</b> (newest first; time in ms from opening)</p>${[...bl].reverse().map((b) => `<details data-id="${b.id}"${openBoots.has(String(b.id)) ? " open" : ""}><summary>${when(b.at)}${b.id === bootId ? " · this one" : ""} · ${b.steps.length} steps · last: ${(b.steps.at(-1)?.[1] || "").replace(/</g, "&lt;")}</summary><ul class="perf-list">${b.steps.map(([ms, t]) => `<li>${ms} · ${t.replace(/</g, "&lt;")}</li>`).join("")}</ul></details>`).join("")}` : ""; })()}`;
+  body.scrollTop = keepY;
+  body.querySelectorAll("details[data-id]").forEach((d) => d.addEventListener("toggle", () => { if (d.open) openBoots.add(d.dataset.id); else openBoots.delete(d.dataset.id); }));
 }
 /** Show or hide the readout. */
 export function togglePerf() {

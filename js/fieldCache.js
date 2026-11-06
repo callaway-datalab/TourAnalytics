@@ -15,6 +15,7 @@ const memory = new Map(); // datasetId -> { version, players: Map<key, { label, 
 const keepOne = (id) => { for (const k of [...memory.keys()]) if (k !== id) memory.delete(k); };
 export const memoryInfo = () => [...memory.values()].reduce((o, m) => { o.files++; for (const p of m.players.values()) if (p) { o.players++; o.rows += p.rows?.length || 0; } return o; }, { files: 0, players: 0, rows: 0 });
 const inflight = new Map(); // datasetId|version -> Promise
+import("./memory.js").then((m) => m.onFree("stats", "every player's rows", () => { if (inflight.size) return false; memory.clear(); })).catch(() => {}); // (update 556: the device copy stays)
 
 function openDb() {
   return new Promise((resolve, reject) => {

@@ -115,6 +115,8 @@ export async function deleteFieldDetail(datasetId) {
  * uploadedAt: the data file's upload time (ms): detail built from an older upload isn't used.
  */
 const shared = { key: null, promise: null, result: null }; // (update 296)
+// (update 556) let go away from the pages that use it (not while it's loading)
+import("./memory.js").then((m) => m.onFree("stats", "lie / distance detail", () => { if (shared.promise && !shared.result) return false; shared.key = null; shared.promise = null; shared.result = null; })).catch(() => {});
 /** (update 325) what the shared detail holds: players, rounds and shots */
 export function detailInfo() {
   const ps = shared.result?.players;

@@ -48,9 +48,10 @@ export const favoriteKeys = () => watchPrefs().players || [];
 /** Is this someone else's Watchlist (the admin's preview)? Then changes aren't saved. */
 export const watchIsPreview = () => { const o = owner(); return !!o && !o.own; };
 
-export function loadWatch() {
+export function loadWatch(fresh = false) {
   const o = owner();
   if (!o) return Promise.resolve({ ...DEF });
+  if (fresh && !loading.has(o.id)) loaded.delete(o.id); // (update 556: the Watchlist page reads the saved list again each time it opens)
   if (!lists.has(o.id)) lists.set(o.id, o.own ? fromDevice(o.uid) : { ...DEF });
   if (!o.uid || loaded.has(o.id)) return Promise.resolve(lists.get(o.id));
   if (loading.has(o.id)) return loading.get(o.id);
@@ -71,9 +72,29 @@ export function loadWatch() {
 export async function saveWatch(patch) {
   const o = owner();
   if (!o) return;
-  const cur = { ...watchPrefs(), ...patch };
+  const before = watchPrefs();
+  let cur = { ...before, ...patch };
   lists.set(o.id, cur);
   if (!o.own) return;
+  // (update 556) the saved list read again first, and only this change put on it: a page left open for days (another
+  // device's copy) wrote its whole old list back, bringing back players taken off elsewhere since
+  try {
+    const snap = await getDoc(doc(db, "watchlists", o.uid));
+    if (snap.exists()) {
+      const d = snap.data(), fresh = Array.isArray(d.players) ? d.players : before.players || [];
+      let players = fresh;
+      if (Array.isArray(patch.players)) {
+        const was = before.players || [], removed = new Set(was.filter((k) => !patch.players.includes(k)));
+        const keep = new Set([...fresh.filter((k) => !removed.has(k)), ...patch.players.filter((k) => !was.includes(k))]);
+        const order = patch.players.filter((k) => keep.has(k));
+        players = [...order, ...[...keep].filter((k) => !order.includes(k))];
+      }
+      const saved = { players: fresh, ...(Array.isArray(d.metrics) ? { metrics: d.metrics } : {}), ...(d.metricsFor && typeof d.metricsFor === "object" ? { metricsFor: d.metricsFor } : {}), ...(d.period ? { period: d.period } : {}), ...(d.source ? { source: d.source } : {}), ...(d.rel != null ? { rel: d.rel } : {}) };
+      cur = fixPeriod({ ...DEF, ...before, ...saved, ...patch, players });
+      lists.set(o.id, cur);
+      loaded.add(o.id);
+    }
+  } catch { /* offline: this device's copy */ }
   try { localStorage.setItem(lsKey(o.uid), JSON.stringify(cur)); } catch { /* */ }
   try { await setDoc(doc(db, "watchlists", o.uid), { players: cur.players, metrics: cur.metrics, metricsFor: cur.metricsFor || {}, period: cur.period, source: cur.source || "tour", updatedAt: serverTimestamp() }); }
   catch (err) { console.warn("Watchlist kept on this device only (republish the Firestore rules to save it to your account).", err?.code || err); }

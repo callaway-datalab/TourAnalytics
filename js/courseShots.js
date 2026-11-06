@@ -475,6 +475,7 @@ export async function uploadShotCourses(list, onStatus = () => {}, { into = null
 }
 
 const trailMemo = new Map();
+import("./memory.js").then((m) => m.onFree("maps", "players' trails", () => { trailMemo.clear(); })).catch(() => {}); // (update 556)
 /** A player's trails at a course ([{ y, r, h, p, par, s, shots: [[stroke, x, y, lie, dist, toHoleOut]] }]), or null. */
 export async function playerTrails(meta, key) {
   const p = meta?.players?.[key];

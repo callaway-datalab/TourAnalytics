@@ -5922,3 +5922,60 @@ div.sh-ud3-green { cursor: default; }
   .sh-ud3 .sh-ud-det th, .sh-ud3 .sh-ud-det td { font-size: 0.66rem; }
   .sh-ud3 .sh-ud-det .sh-lie { font-size: 0.62rem; padding: 1px 5px; }
 }
+/* (update 556) Watchlist: the Tour filter, the search and a folded Filters menu on top; the players as a table (each cell
+   its value, rank and trend, small); a tap opens the player's card in a pop-up */
+.wl-controls2 { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+.wl-controls2 .wl-tourbar { flex-wrap: wrap; justify-content: flex-start; }
+.wl-controls2 .wl-add { width: 100%; }
+.wl-filters { border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 0 12px; }
+.wl-filters > summary { cursor: pointer; padding: 10px 0; font-weight: 600; color: #d4b483; list-style: none; display: flex; align-items: center; gap: 6px; }
+.wl-filters > summary::-webkit-details-marker { display: none; }
+.wl-filters > summary::before { content: "\25B8"; font-size: 0.8em; transition: transform 0.15s; }
+.wl-filters[open] > summary::before { transform: rotate(90deg); }
+.wl-filters-in { display: flex; flex-direction: column; gap: 10px; padding: 0 0 12px; }
+.wl-filters-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.wl-table { padding: 4px 0; overflow: hidden; }
+.wl-row { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(5, minmax(0, 1fr)); align-items: center; gap: 4px; padding: 7px 10px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.78rem; }
+.wl-row:not(.wl-thead) { cursor: pointer; }
+.wl-row:not(.wl-thead):hover { background: rgba(255,255,255,0.03); }
+.wl-thead { border-top: 0; font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; color: #8e8e93; font-weight: 600; padding-top: 4px; padding-bottom: 4px; }
+.wl-thead .wl-c { text-align: center; }
+.wl-c-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.wl-c-name strong { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-c-name small { font-size: 0.64rem; color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-c { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; text-align: center; }
+.wl-c.total { background: rgba(212,180,131,0.06); border-radius: 6px; padding: 2px 0; }
+.wl-c-v { font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+.wl-c-v.pos { color: #4cd17e; } .wl-c-v.neg { color: #ff6b5e; }
+.wl-c-f { display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.1; }
+.wl-c-f .wl-rank { font-size: 0.6rem; padding: 0 5px; min-width: 0; }
+.wl-c-f .wl-tr { font-size: 0.58rem; white-space: nowrap; }
+.wl-row.wl-dragging { position: relative; z-index: 5; background: #1c1c1e; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+@media (max-width: 520px) {
+  .wl-row { grid-template-columns: minmax(0, 1.25fr) repeat(5, minmax(0, 1fr)); gap: 2px; padding: 6px 6px; }
+  .wl-c-name strong { font-size: 0.72rem; }
+  .wl-c-v { font-size: 0.74rem; }
+  .wl-c-f .wl-rank { font-size: 0.54rem; padding: 0 3px; }
+  .wl-c-f .wl-tr { font-size: 0.52rem; }
+}
+.wlh-pop { width: min(44rem, calc(100vw - 16px)); max-height: calc(100dvh - 16px); box-sizing: border-box; overflow: hidden; }
+.wlh-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding-bottom: 6px; }
+.wlh-top h2 { margin: 2px 0 0; font-size: 1.4rem; }
+.wlh-body { overflow-y: auto; overscroll-behavior: contain; padding-bottom: 10px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.wlh-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.wlh-v { font-size: 2.6rem; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
+.wlh-v.pos { color: #4cd17e; } .wlh-v.neg { color: #ff6b5e; }
+.wlh-u { color: #a1a1a6; font-size: 0.85rem; }
+.wlh-f { display: flex; align-items: center; gap: 6px; width: 100%; }
+.wlh-meta { margin: -6px 0 0; }
+.wlh-body .wl-sg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.wlh-body .wl-more { display: flex; flex-direction: column; gap: 12px; }
+.wlh-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding-top: 4px; }
+@media (max-width: 520px) { .gx-pop-overlay.wlh-ov { padding: 8px; align-items: end; } .wlh-v { font-size: 2.1rem; } .wlh-body .wl-two { grid-template-columns: 1fr; } }
+/* (update 556) the Performance readout never taller than the screen: its title bar (and ×) always in view, the rest scrolls */
+.perf-panel { display: flex; flex-direction: column; max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1.5rem); box-sizing: border-box; overflow: hidden; }
+.perf-head { flex: 0 0 auto; }
+.perf-head .perf-x { font-size: 1.4rem; line-height: 1; padding: 0.1rem 0.5rem; }
+.perf-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.perf-body summary { cursor: pointer; }
+.wl-c-name strong { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

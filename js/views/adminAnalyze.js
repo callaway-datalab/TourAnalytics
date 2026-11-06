@@ -23,6 +23,7 @@ const ROWS = new Map(), PREPARED = new Map(), DETAIL = new Map(), DETAIL_WHY = n
 let lastDetailKey = null; // (update 538: the tour whose lie / distance detail Player Stats last asked for)
 // (update 325) fewer copies kept: one prepared field on a phone, two on a computer (was four), and old loading jobs go
 const keepFew = (m, n = (isLiteDevice() ? 1 : 2)) => { while (m.size > n) m.delete(m.keys().next().value); };
+import("../memory.js").then((m) => m.onFree("stats", "Stats data", () => { ROWS.clear(); PREPARED.clear(); DETAIL.clear(); DETAIL_WHY.clear(); STAGED.clear(); lastDetailKey = null; })).catch(() => {}); // (update 556)
 export const analyzeMemoryInfo = () => ({ rows: ROWS.size, prepared: PREPARED.size, detail: DETAIL.size, staged: STAGED.size });
 
 export async function render(main, { flash, routeId }) {

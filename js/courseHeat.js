@@ -40,6 +40,7 @@ export async function readChunks(id, prefix, n) {
   return snaps.map((s) => (s.exists() ? s.data().data : "")).join("");
 }
 const dataMemo = new Map(), imgMemo = new Map();
+import("./memory.js").then((m) => m.onFree("maps", "course maps", () => { dataMemo.clear(); imgMemo.clear(); lieMapMemo.clear(); })).catch(() => {}); // (update 556)
 /** The course's zones: { holes: { "1": { par, yards, pins: { id: { x, y, rows: [...] } } } } } */
 export async function heatData(meta) {
   const k = `${meta.id}|${meta.dataAt?.toMillis?.() ?? meta.dataAt ?? ""}`;

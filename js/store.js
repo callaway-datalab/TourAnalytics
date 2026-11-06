@@ -620,6 +620,7 @@ const memoRows = (k, fn) => {
   while (rowsMemo.size > 8) rowsMemo.delete(rowsMemo.keys().next().value);
   return p;
 };
+import("./memory.js").then((m) => m.onFree("stats", "players' rows", () => { rowsMemo.clear(); })).catch(() => {}); // (update 556)
 export const rowsMemoInfo = () => ({ players: rowsMemo.size, stats: statsMemo.size });
 export function getDatasetRowsListed(clientKey, datasetId) { return memoRows(`L|${clientKey}|${datasetId}`, () => fetchRowsListed(clientKey, datasetId)); }
 async function fetchRowsListed(clientKey, datasetId) {

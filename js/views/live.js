@@ -12,7 +12,6 @@ import { getState } from "../auth.js";
 import { CATEGORIES, statRounds, statAgg, statsIn, statDef, fmtStat } from "../sg.js";
 import { watchNewestDataset, fieldOf } from "../fieldSummary.js";
 import { watchLiveFile, liveFile } from "../liveData.js";
-import { favoriteKeys, loadWatch } from "../watchlist.js";
 
 const SPLITS = CATEGORIES.map(([k, l]) => [k, l]); // OTT, APP, ARG, PUTT
 const COLS = [["TOTAL", "Total"], ...SPLITS, ["T2G", "Tee-to-Green"]];
@@ -138,14 +137,10 @@ export async function render(main) {
   let ranksCache = {};
 
   // (update 292) favorites, matched by name (the live feed's players have the PGA Tour's ids, the Watchlist the portal's)
-  let favAdd = new Set(ls.get("favAdd", [])), favOff = new Set(ls.get("favOff", []));
-  const watchNames = () => { try { const keys = new Set(favoriteKeys()); return new Set(field.filter((p) => keys.has(p.key)).map((p) => norm(p.name))); } catch { return new Set(); } };
-  const isFav = (name) => { const n = norm(name); return !favOff.has(n) && (favAdd.has(n) || watchNames().has(n)); };
-  const toggleFav = (name) => {
-    const n = norm(name);
-    if (isFav(name)) { favAdd.delete(n); if (watchNames().has(n)) favOff.add(n); } else { favOff.delete(n); favAdd.add(n); }
-    ls.set("favAdd", [...favAdd]); ls.set("favOff", [...favOff]);
-  };
+  // (update 556) the Event Feed's favorites are a list of their own (starred here), apart from the Watchlist
+  let favAdd = new Set(ls.get("favAdd", []));
+  const isFav = (name) => favAdd.has(norm(name));
+  const toggleFav = (name) => { const n = norm(name); if (favAdd.has(n)) favAdd.delete(n); else favAdd.add(n); ls.set("favAdd", [...favAdd]); };
   const valKey = () => (sel.view === "event" ? "event" : "round");
   const saveVisible = () => ls.set(curVis || "cols4", visible); // (update 264: the API's stats and the uploaded ones are chosen separately)
   const allKeys = () => BASE_KEYS.concat(["RDS"], statsMeta.map((m) => `x:${m.id}`));
@@ -421,7 +416,7 @@ export async function render(main) {
       tr.addEventListener("click", () => pick({ player_id: r.player_id, name: r.name }));
       return tr;
     };
-    // (update 292) Favorites: the starred players' rows (and everyone on your Watchlist), copied into a table above
+    // (update 292) Favorites: the starred players' rows (update 556: not the Watchlist's), copied into a table above
     // the leaderboard, in the same order and with the same places and ranks
     const favs = rows.map((r, i) => [r, i]).filter(([r]) => isFav(r.name));
     mount(favWrap, favs.length ? [el("p", { class: "cmp-chip-gt lv-fav-h" }, `Favorites (${favs.length})`),
@@ -578,7 +573,6 @@ export async function render(main) {
   }
 
   drawHead(); drawTools(); drawPlayer();
-  loadWatch().then(() => { if (lb && root.isConnected) drawBoard(); }).catch(() => {}); // (update 292: Watchlist players are favorites)
   const stopApi = watchLiveFile("current.json", (m) => { if (!root.isConnected) { stopApi?.(); return; } useApi(m); }); // (update 264)
   const stop = watchNewestDataset(async (ds) => {
     if (!root.isConnected) { stop?.(); return; }
