@@ -231,14 +231,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (c.value == null) continue;
     const gap = c.fieldAvg != null ? c.value - c.fieldAvg : c.value;
     if (gap < -0.05) focus.push({ cat: c.cat, kind: "category", lost: -gap, title: `${c.name}`,
-      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes a round${c.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(c.fieldAvg)}` : ""}${c.rank ? `. Ranked ${c.rank} of ${c.of}.` : "."}` });
+      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes a round${c.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(c.fieldAvg)}` : ""}.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); // (update 574: the rank on its own line)
   }
   const minShots = Math.max(5, mine.length * 0.5);
   for (const g of groups) {
     if (g.shots < minShots || g.repeat) continue;
     const gap = g.fieldAvg != null ? g.perRound - g.fieldAvg : g.perRound;
     if (gap < -0.05) focus.push({ cat: g.cat, kind: "skill", label: g.label, lost: -gap, title: g.title,
-      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round here${g.fieldAvg != null ? ` (Tour Avg ${fmtSG(g.fieldAvg)})` : ""}, over ${Math.round(g.shots)} shots.` });
+      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round${g.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(g.fieldAvg)}` : ""}.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` });
   }
   for (const t of catTrend) if (t.change != null && t.change < -0.2) focus.push({ cat: t.cat, kind: "trend", lost: -t.change / 2, title: `Slipping: ${t.name}`,
     detail: `${trendWords(half, unitW, t)} That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
@@ -260,14 +260,22 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   for (const c of byCat) {
     if (c.value == null || c.value <= 0 || !isElite(c.rank, c.of)) continue;
     elite.push({ cat: c.cat, score: 1 + (c.value - (c.fieldAvg ?? 0)), title: c.name,
-      text: `Ranked ${c.rank} of ${c.of}. Gains ${c.value.toFixed(2)} strokes a round${c.fieldAvg != null ? `; Tour Avg ${fmtSG(c.fieldAvg)}` : ""}.` });
+      text: `Gains ${c.value.toFixed(2)} strokes a round${c.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(c.fieldAvg)}` : ""}.\nRanked ${c.rank} of ${c.of}.` }); // (update 574: as Costing strokes words it)
   }
   for (const g of groups) {
     if (g.repeat || g.shots < Math.max(10, minShots) || g.perRound <= 0 || !isElite(g.rank, g.of)) continue;
     elite.push({ cat: g.cat, score: g.perRound - (g.fieldAvg ?? 0), title: g.title,
-      text: `Ranked ${g.rank} of ${g.of}. Gains ${g.perRound.toFixed(2)} strokes a round${g.fieldAvg != null ? `; Tour Avg ${fmtSG(g.fieldAvg)}` : ""}. ${Math.round(g.shots)} shots.` });
+      text: `Gains ${g.perRound.toFixed(2)} strokes a round${g.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(g.fieldAvg)}` : ""}.\nRanked ${g.rank} of ${g.of} \u00b7 ${Math.round(g.shots)} shots.` });
   }
   elite.sort((p, q) => q.score - p.score);
+  // (update 574) the rest of the strengths: the biggest gains on the Tour Avg (a part of the game or a distance), so there are
+  // three whenever there are three to find
+  const strong = [];
+  for (const c of byCat) { if (c.value == null || c.fieldAvg == null || c.value - c.fieldAvg < 0.05) continue;
+    strong.push({ cat: c.cat, score: c.value - c.fieldAvg, title: c.name, text: `Gains ${c.value.toFixed(2)} strokes a round, against a Tour Avg of ${fmtSG(c.fieldAvg)}.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); }
+  for (const g of groups) { if (g.repeat || g.shots < minShots || g.fieldAvg == null || g.perRound - g.fieldAvg < 0.05) continue;
+    strong.push({ cat: g.cat, score: g.perRound - g.fieldAvg, title: g.title, text: `Gains ${g.perRound.toFixed(2)} strokes a round, against a Tour Avg of ${fmtSG(g.fieldAvg)}.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` }); }
+  strong.sort((p, q) => q.score - p.score);
   const rising = catTrend.filter((t) => t.change != null && t.change >= 0.2).sort((p, q) => q.change - p.change).map((t) => ({
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
     text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes a round better.` }));
@@ -432,7 +440,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (e) basics.push(e);
   }
   return { catShift, shiftSpan, me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
-    byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
+    byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), strong, rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     extraCharts, formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
@@ -561,7 +569,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const t = (a.catShift || []).find((q) => q.cat === c.cat);
     d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
     d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, bold: !!c.rank, color: c.rank ? rankInk(c.rank) : P.grey });
-    d.roundRect(gx, y + 8, gw, 12, 6, { fill: P.track });
+    d.roundRect(gx, y + 8, gw, 15, 7.5, { fill: P.track }); // (update 574: as tall as the Better / Worse pills)
     // each side's scale: the group's best gain (right) and biggest loss (left)
     const hi = c.best?.v ?? 0, lo = c.low?.v ?? 0;
     const posMax = hi > 0 ? hi : Math.max(Math.abs(lo), 0.01), negMax = lo < 0 ? Math.abs(lo) : Math.max(hi, 0.01);
@@ -569,13 +577,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (c.value != null) {
       const w = Math.max(10, Math.abs(off(c.value))), x0 = c.value >= 0 ? zx : zx - w, fill = c.value >= 0 ? P.up : P.down, light = c.value >= 0 ? "#4fb97a" : "#e8665e";
       // rounded at the far end, square where it meets the middle line
-      d.roundRect(x0, y + 8, w, 12, 6, { fill });
-      d.rect(c.value >= 0 ? zx : zx - Math.min(6, w), y + 8, Math.min(6, w), 12, { fill });
-      d.roundRect(c.value >= 0 ? zx : x0 + 3, y + 9.5, Math.max(3, w - 3), 3.5, 1.75, { fill: light });
-      d.rect(c.value >= 0 ? zx : zx - 2, y + 9.5, 2, 3.5, { fill: light });
+      d.roundRect(x0, y + 8, w, 15, 7.5, { fill });
+      d.rect(c.value >= 0 ? zx : zx - Math.min(7.5, w), y + 8, Math.min(7.5, w), 15, { fill });
+      d.roundRect(c.value >= 0 ? zx : x0 + 3.5, y + 10, Math.max(3, w - 3.5), 4.2, 2.1, { fill: light });
+      d.rect(c.value >= 0 ? zx : zx - 2, y + 10, 2, 4.2, { fill: light });
     }
-    d.line(zx, y + 4, zx, y + 24, { color: "#000000", width: 1.1 }); // zero
-    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
+    d.line(zx, y + 4, zx, y + 27, { color: "#000000", width: 1.1 }); // zero
+    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 29, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 29, { color: P.gold, width: 2 }); } // Tour Avg
     // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
     const chLabel = t && t.change != null && Math.round(Math.abs(t.change) * 100) > 0 ? /* (update 557: Steady only at 0.00) */ (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
     d.text(fmtSG(c.value), vx, y + 19, { size: 18, bold: true, color: tone(c.value) });
@@ -583,6 +591,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     else if (t && t.change != null) badge("Steady", bx0, y + 18, "#8e8e93");
     y += 32; // (update 573: a little closer, so What stands out fits under it on page 1)
   }
+  y += 6; // (update 574: a little room under Putting's rank)
   d.text(a.shiftSpan ? `Better / Worse: how much the last ${a.shiftSpan.n} rounds (${a.shiftSpan.last}) have moved the average` : "Better / Worse: needs more than 12 rounds.", M, y + 4, { size: 7.5, color: P.faint });
   y += 18;
 
@@ -590,19 +599,25 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // (at most two strengths from the same category, so they don't repeat each other)
   const strengths = [];
   for (const it of [...a.elite.map((e) => ({ ...e, tag: "Elite", title: e.title.replace(/^Best in the group: (.*)$/, "$1: best in the group") })),
-    ...a.rising.map((r) => ({ ...r, tag: r.title.startsWith("Turned") ? "Turnaround" : "Rising", title: r.title.replace(/^(Turned it around|On the rise): /, "") }))]) {
+    ...a.rising.map((r) => ({ ...r, tag: r.title.startsWith("Turned") ? "Turnaround" : "Rising", title: r.title.replace(/^(Turned it around|On the rise): /, "") })),
+    ...(a.strong || []).map((g) => ({ ...g, tag: "Strong" }))]) { // (update 574: then the biggest gains on the Tour Avg)
     if (strengths.length >= 3) break;
     if (strengths.filter((x) => x.cat === it.cat).length >= 2) continue;
+    if (strengths.some((x) => x.title === it.title && x.tag !== "Rising" && x.tag !== "Turnaround")) continue;
     strengths.push(it);
   }
   const watch = a.focus.slice(0, 3).map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
   const colW = (W - 14) / 2;
   // (update 573) it shares page 1 with Where the strokes come from: full-size cards when they fit; else compact ones; else the
   // last card of the longer column left off, until they fit
-  let cmp = false;
-  const cardsH = (list) => list.reduce((t, it) => t + (cmp ? 29 : 35) + wrap(it.text, colW - 30, cmp ? 8 : 8.5).length * (cmp ? 10 : 11), 0) + 26;
+  // (update 574) three levels: full, compact, tight (the text a line apart where it says "\n": what it gains or loses, then
+  // the rank); a card is left off only when even the tight one won't fit
+  const TL = [{ pad: 29, fs: 8.5, lh: 11, gap: 6, ty: 14, tx: 32 }, { pad: 24, fs: 8, lh: 10, gap: 5, ty: 13, tx: 28 }, { pad: 21, fs: 7.6, lh: 9.2, gap: 4, ty: 12, tx: 25.5 }];
+  let L = TL[0];
+  const linesOf = (it) => String(it.text || "").split("\n").flatMap((t) => wrap(t, colW - 30, L.fs));
+  const cardsH = (list) => list.reduce((t, it) => t + L.pad + L.gap + linesOf(it).length * L.lh, 0) + 26;
   const roomHL = H - 50 - (y + 12 + 40);
-  if (Math.max(cardsH(strengths), cardsH(watch)) > roomHL) cmp = true;
+  for (const t of TL) { L = t; if (Math.max(cardsH(strengths), cardsH(watch)) <= roomHL) break; }
   while (Math.max(cardsH(strengths), cardsH(watch)) > roomHL && strengths.length + watch.length > 1) { if (cardsH(strengths) >= cardsH(watch)) strengths.pop(); else watch.pop(); }
   section("Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
   const cards = (x, title, list, accent, tint, empty) => {
@@ -610,13 +625,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap(title, x, yy + 6, accent); yy += 14;
     if (!list.length) { d.text(empty, x, yy + 10, { size: 9, color: P.grey }); return yy + 20; }
     for (const it of list) {
-      const lines = wrap(it.text, colW - 30, cmp ? 8 : 8.5), h = (cmp ? 24 : 29) + lines.length * (cmp ? 10 : 11);
+      const lines = linesOf(it), h = L.pad + lines.length * L.lh;
       d.roundRect(x, yy, colW, h, 8, { fill: tint });
       d.roundRect(x, yy, 4, h, 2, { fill: accent });
-      const ty = cmp ? 13 : 14, tw = badge(it.tag, x + 14, yy + ty, accent);
+      const ty = L.ty, tw = badge(it.tag, x + 14, yy + ty, accent);
       d.text(wrap(it.title, colW - 30 - tw - 8, 9.5, true)[0], x + 14 + tw + 6, yy + ty, { size: 9.5, bold: true, color: P.ink });
-      lines.forEach((l, i) => d.text(l, x + 14, yy + (cmp ? 28 : 32) + i * (cmp ? 10 : 11), { size: cmp ? 8 : 8.5, color: "#3a3a3c" }));
-      yy += h + (cmp ? 5 : 6);
+      lines.forEach((l, i) => d.text(l, x + 14, yy + L.tx + i * L.lh, { size: L.fs, color: "#3a3a3c" }));
+      yy += h + L.gap;
     }
     return yy;
   };
@@ -720,7 +735,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     }
     if (ch.drive) {
       const x = x2, w = w2, top = y0 + 8, h = hh - 34;
-      d.text("Every player compared: Driving Distance across, Hit Fairway % up", x, y0, { size: 7, color: P.grey });
+      d.text("Every player compared: Driving Distance across, Hit Fairway % up", x, top + h + 34, { size: 7, color: P.grey }); // (update 574: under the chart)
       const all = [...ch.drive.pts, ch.drive.me], ds = all.map((q) => q.d), fs = all.map((q) => q.f);
       const dLo = Math.min(...ds), dHi = Math.max(...ds), fLo = Math.min(...fs), fHi = Math.max(...fs);
       const px0 = x + 30, px1 = x + w - 10, py0 = top + 8, py1 = top + h;
@@ -734,10 +749,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const me0 = ch.drive.me; d.dot(X(me0.d), Y(me0.f), 4.5, "#ffffff"); d.dot(X(me0.d), Y(me0.f), 3.6, P.gold);
       const fD = (v) => fmtStat(statDef("drive"), v), fF = (v) => fmtStat(statDef("fwy"), v);
       d.text(`${fD(me0.d)} \u00b7 ${fF(me0.f)}`, Math.min(px1 - 2, X(me0.d) + 6), Y(me0.f) - 5, { size: 6.5, bold: true, color: P.ink, align: X(me0.d) > px1 - 60 ? "right" : "left" });
-      d.text(fD(dLo), px0, py1 + 12, { size: 6, color: P.grey }); d.text(fD(dHi), px1, py1 + 12, { size: 6, color: P.grey, align: "right" });
-      d.text(fF(fHi), x + 4, py0 + 4, { size: 6, color: P.grey }); d.text(fF(fLo), x + 4, py1, { size: 6, color: P.grey });
+      // (update 574) the axes in whole numbers
+      const iD = (v) => fmtStat({ ...statDef("drive"), dp: 0 }, v), iF = (v) => `${Math.round(v)}%`;
+      d.text(iD(dLo), px0, py1 + 12, { size: 6, color: P.grey }); d.text(iD(dHi), px1, py1 + 12, { size: 6, color: P.grey, align: "right" });
+      d.text(iF(fHi), x + 4, py0 + 4, { size: 6, color: P.grey }); d.text(iF(fLo), x + 4, py1, { size: 6, color: P.grey });
     }
-    y = y0 + hh;
+    y = y0 + hh + 12; // (and the caption under the chart)
   }
   /* (update 564) This season vs Last season: a bar for each season in each category (strokes gained a round), and the
      differences in a few plain lines on the right */
