@@ -1159,7 +1159,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       y = slotTop + (idxOn ? 16 : 0);
       const CHs = { ...CH, plotH: Math.max(60, CH.plotH + (slot * 0.9 - (idxOn ? 16 : 0) - 14 - hAt(sec, CH))) }; // (update 570: 90% of its half)
       y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 2;
-      if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CHs });
+      if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CHs, yTitle: (sec.sgNames || ["SG / Rd"])[0] }); // (update 586: the y axis named)
       // the table: a colour square for each model, then its numbers in columns spread evenly across the page
       const colorOf = new Map((sec.legend || []).map((L) => [L.name, L.color]));
       const sgN = sec.sgNames || ["SG / Rd"], nS = sgN.length; // (update 522: named for its part of the game)

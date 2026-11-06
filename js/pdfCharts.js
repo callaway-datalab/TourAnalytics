@@ -31,7 +31,7 @@ export function eventBarsOf(items) {
 const md = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || "")); return m ? `${Number(m[2])}/${Number(m[3])}/${m[1].slice(2)}` : String(s || ""); };
 /* (update 516) dates: the x axis as dates (a few, level, spaced out) in place of every event's name; gap: the room
    between the bars and the axis labels */
-export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey = "#5f6368", hair = "#e3e3e8", plotH = 150, dates = false, gap = 8, pad = 0 } = {}) { // (update 517) pad: room under the lowest bar before the axis
+export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey = "#5f6368", hair = "#e3e3e8", plotH = 150, dates = false, gap = 8, pad = 0, yTitle = null } = {}) { // (update 586) yTitle: up the left side // (update 517) pad: room under the lowest bar before the axis
   const y0 = y;
   // the key
   let lx = x, ly = y + 8;
@@ -44,6 +44,8 @@ export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey 
   }
   y = ly + 14;
   if (!bars.length) return y - y0;
+  // (update 586) the y axis's title, turned to run up the left side, centred on the plot (the bars move over for it)
+  if (yTitle) { d.text(String(yTitle).toUpperCase(), x + 6, y + 10 + plotH / 2, { size: 6.5, bold: true, color: grey, align: "center", rotate: 90 }); x += 16; w -= 16; }
   const vals = bars.map((b) => b.v), hi = Math.max(0.25, ...vals), lo = Math.min(-0.25, ...vals);
   const top = y + 10, Y = (v) => top + ((hi - v) / (hi - lo)) * plotH, zy = Y(0);
   const slot = w / bars.length, bw = Math.max(1.5, Math.min(18, slot * 0.62)), showV = slot >= 9;
