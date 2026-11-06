@@ -6042,3 +6042,12 @@ div.sh-ud3-green { cursor: default; }
 @media (max-width: 640px) { .wl-bar-top { flex-wrap: nowrap; } .wl-title h1 { font-size: 1.15rem; } .wl-sel, .wl-fmenu > summary { font-size: 0.76rem; padding-top: 0.32rem; padding-bottom: 0.32rem; } .wl-brief { gap: 8px; } }
 .wl-bar-r { flex: 0 0 auto; }
 .wl-bar-r .wl-sel { width: auto; min-width: 5.8rem; max-width: 9.5rem; height: auto; line-height: 1.2; }
+/* (update 558) the star on each row (off the Watchlist), "Just played" on a briefing name, and why they're in a bin on their card */
+.wl-c-nm { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.wl-row-star { flex: 0 0 auto; border: 0; background: none; padding: 0 2px; font-size: 0.95rem; line-height: 1; color: #d4b483; cursor: pointer; }
+.wl-row-star:hover { color: #8e8e93; }
+.wlb-fresh { font-style: normal; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #d4b483; border: 1px solid rgba(212,180,131,0.45); border-radius: 999px; padding: 0 6px; margin-left: 2px; }
+.wlh-why { --c: #d4b483; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
+.wlh-why strong { color: var(--c); font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.wlh-why span { font-size: 0.85rem; color: #e5e5ea; line-height: 1.4; }
+.wlh-why.wlb-concern { --c: #ff6b5e; } .wlh-why.wlb-hot { --c: #4cd17e; } .wlh-why.wlb-report { --c: #d4b483; }

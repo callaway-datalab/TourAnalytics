@@ -171,8 +171,9 @@ export function trailSG(t, par, E, into) {
  * 30 yards, after one from farther out) */
 /*
  * (update 502) A hole's up & down boards, per pin. The line of play: from the middle of the fairway (halfway between the
- * farthest-left and farthest-right shots played from the fairway (update 555: of the half closest to the pin; 557: of the
- * approach shots, with the fairway shots around the green on its short side), across the line from the tee to the green) to the pin,
+ * farthest-left and farthest-right shots played from the fairway (update 555: of the half closest to the pin; 558: replaced
+ * by halfway between where the approaches were hit from: the farthest-right of those that missed left and the farthest-left
+ * of those that missed right), across the line from the tee to the green) to the pin,
  * or from the tee on a par 3. The board's middle square: 20 x 20 ft around the pin (10 ft each way along and across that
  * line; update 503: 40 x 40 ft, 20 ft each way), less where the green runs out sooner (its edges: the 1st and 99th percentiles of where shots were played on it).
  * shots: [{ x, y, L, d, st }] (every shot on the hole, rounded as the trails are); pins: Map(pin id → [x, y]).
@@ -191,12 +192,24 @@ export function holeBoards(shots, pins, par) {
   const fwA = appr.length >= 4 ? [...appr].sort((p, q) => dTo(p) - dTo(q)).slice(0, Math.ceil(appr.length / 2)) : appr;
   const dx = G[0] - T[0], dy = G[1] - T[1], dl = Math.hypot(dx, dy) || 1, lat = (q) => (dx * (q.y - T[1]) - dy * (q.x - T[0])) / dl;
   const midOf = (list) => { let lo = list[0], hi = list[0]; for (const q of list) { if (lat(q) < lat(lo)) lo = q; if (lat(q) > lat(hi)) hi = q; } return [(lo.x + hi.x) / 2, (lo.y + hi.y) / 2]; };
-  if (fwA.length >= 2) {
-    // (update 557) and the fairway shots around the green (30 yds or less) on its short side: short of the green's middle
-    // along the line those approach shots give
-    const r0 = midOf(fwA), ux = G[0] - r0[0], uy = G[1] - r0[1], ul = Math.hypot(ux, uy) || 1;
-    const argShort = byYds ? fwAll.filter((q) => q.d <= 30 && ((q.x - G[0]) * ux + (q.y - G[1]) * uy) / ul < 0) : [];
-    ref = midOf([...fwA, ...argShort]);
+  if (fwA.length >= 2) ref = midOf(fwA); // (a first line: the fairway's approach shots, as in update 555)
+  // (update 558) the line from where the approaches were hit: of the approaches that missed left, the one hit from farthest
+  // right; of those that missed right, the one hit from farthest left; halfway between them (par 4s and 5s; a par 3: the tee)
+  if (par >= 4 && shots.some((q) => q.tr != null)) {
+    const ux = G[0] - ref[0], uy = G[1] - ref[1], ul = Math.hypot(ux, uy) || 1;
+    const latG = (x, y) => (ux * (y - G[1]) - uy * (x - G[0])) / ul, alG = (x, y) => ((x - G[0]) * ux + (y - G[1]) * uy) / ul;
+    const byT = new Map(); for (const q of shots) if (q.tr != null) (byT.get(q.tr) || byT.set(q.tr, []).get(q.tr)).push(q);
+    let lBest = null, rBest = null;
+    for (const qs of byT.values()) {
+      const m = approachMiss(qs.sort((a, b) => a.st - b.st).map((q) => [q.st, q.x, q.y, q.L, q.d]));
+      if (!m || m.pq[3] === 4) continue;
+      const lm = latG(m.nq[1], m.nq[2]), am = alG(m.nq[1], m.nq[2]);
+      if (Math.abs(lm) < 0.3 * Math.abs(am)) continue; // (long or short, not to a side)
+      const ls = latG(m.pq[1], m.pq[2]);
+      if (lm < 0 && (!lBest || ls > lBest.ls)) lBest = { ls, p: [m.pq[1], m.pq[2]] };
+      if (lm > 0 && (!rBest || ls < rBest.ls)) rBest = { ls, p: [m.pq[1], m.pq[2]] };
+    }
+    if (lBest && rBest) ref = [(lBest.p[0] + rBest.p[0]) / 2, (lBest.p[1] + rBest.p[1]) / 2];
   }
   // pixels a yard (each shot's pixels from its pin against its yards), for the 10 ft
   const rs = []; for (const q of shots) { const P = pins.get(q.pid); if (P && q.L !== 4 && q.d != null && q.d > 15) rs.push(Math.hypot(q.x - P[0], q.y - P[1]) / q.d); }
@@ -274,7 +287,7 @@ export function courseInsights(C) {
   const hbMemo = new Map();
   const hbOf = (h) => {
     if (hbMemo.has(h)) return hbMemo.get(h);
-    const shots = []; for (const [, t, qs] of all) if (t.h === h) for (const q of qs) shots.push({ x: q[1], y: q[2], L: q[3], d: q[4], st: q[0], pid: t.p });
+    const shots = []; let ti = 0; for (const [, t, qs] of all) if (t.h === h) { ti++; for (const q of qs) shots.push({ x: q[1], y: q[2], L: q[3], d: q[4], st: q[0], pid: t.p, tr: ti }); } // (update 558: tr, each trail)
     const H = C.holes.get(h), pins = new Map(); for (const [pid, P] of H?.pins || []) if (P.pn) pins.set(pid, [P.px / P.pn, P.py / P.pn]);
     const hb = holeBoards(shots, pins, H?.par || 4); hbMemo.set(h, hb); return hb;
   };

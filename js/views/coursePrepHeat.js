@@ -368,7 +368,7 @@ export async function drawHeat(ctx, course) {
       for (const q of H.shots) if (q.px != null && q.py != null) { const a = acc.get(q.pid) || acc.set(q.pid, [0, 0, 0]).get(q.pid); a[0] += q.px; a[1] += q.py; a[2]++; }
       for (const [pid, a] of acc) pins.set(pid, [a[0] / a[2], a[1] / a[2]]);
       const par0 = num0(H.par) || 4;
-      const shots = H.trails.flatMap((T) => T.qs.map((q) => ({ x: r1(q.x), y: r1(q.y), L: q.L, d: r1(q.d), st: q.st, pid: T.p })));
+      const shots = H.trails.flatMap((T, ti) => T.qs.map((q) => ({ x: r1(q.x), y: r1(q.y), L: q.L, d: r1(q.d), st: q.st, pid: T.p, tr: ti }))); // (update 558: tr, each trail)
       const HB = CS.holeBoards(shots, pins, par0);
       for (const T of H.trails) {
         const arr = T.qs.map((q) => [q.st, r1(q.x), r1(q.y), q.L, r1(q.d), q.v]), m = HB ? CS.approachMiss(arr) : null, side = m ? HB.sideOf(T.p, m.nq) : null;

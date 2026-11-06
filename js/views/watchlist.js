@@ -434,26 +434,31 @@ export async function render(main, { previewClient }) {
     const newest = Math.max(0, ...live.map((c) => dOf(c.latest?.date) || 0));
     const f2 = (x) => Math.abs(x).toFixed(2);
     const concern = [], report = [], hot = [];
+    // (update 558) one bin a player, in this order: falling away (and not bouncing back), riding high, else just played
     for (const c of live) {
-      const t = c.sg[0].trend, cats = c.sg.slice(1).filter((x) => x.trend), pl = c.pulse || {};
+      const t = c.sg[0].trend, avg = c.sg[0].v, cats = c.sg.slice(1).filter((x) => x.trend), pl = c.pulse || {};
       const worst = cats.length ? cats.reduce((a, b) => (b.trend.ch < a.trend.ch ? b : a)) : null, best = cats.length ? cats.reduce((a, b) => (b.trend.ch > a.trend.ch ? b : a)) : null;
-      // falling away: SG: Total down half a stroke or more (last 12 against the 12 before), a part of the game down 0.75, or a slump
-      const why = [];
-      if (t && t.ch <= -0.5) why.push(`SG: Total down ${f2(t.ch)} a round (last ${t.n} vs ${t.n} before)`);
-      if (worst && worst.trend.ch <= -0.75) why.push(`${worst.label} down ${f2(worst.trend.ch)}`);
-      if (pl.sign < 0 && pl.run >= 5) why.push(`${pl.run} rounds in a row losing strokes`);
-      else if (pl.last5 != null && pl.last5 <= -1.5) why.push(`last 5 rounds ${fmtSG(pl.last5)} a round`);
-      if (why.length) concern.push({ c, why, score: Math.min(t?.ch ?? 0, (worst?.trend.ch ?? 0) / 1.5, pl.sign < 0 ? -pl.run / 10 : 0) });
-      // just played: an event in the last 10 days of the data
-      const ld = dOf(c.latest?.date);
-      if (ld && newest && newest - ld <= 10 * 864e5) report.push({ c, why: [`${c.latest.event || "Last round"}: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? ` a round over ${c.latest.rounds}` : ""} \u00b7 ${dateTxt(c.latest.date)}`], score: -ld });
-      // riding high: SG: Total up half a stroke, a part of the game up 0.75, or hot
-      const up = [];
-      if (t && t.ch >= 0.5) up.push(`SG: Total up ${f2(t.ch)} a round (last ${t.n} vs ${t.n} before)`);
-      if (best && best.trend.ch >= 0.75) up.push(`${best.label} up ${f2(best.trend.ch)}`);
-      if (pl.sign > 0 && pl.run >= 5) up.push(`${pl.run} rounds in a row gaining`);
-      else if (pl.last5 != null && pl.last5 >= 1.5) up.push(`last 5 rounds ${fmtSG(pl.last5)} a round`);
-      if (up.length) hot.push({ c, why: up, score: -Math.max(t?.ch ?? 0, (best?.trend.ch ?? 0) / 1.5) });
+      const ld = dOf(c.latest?.date), fresh = !!(ld && newest && newest - ld <= 10 * 864e5);
+      const recentOk = pl.last5 != null && avg != null ? pl.last5 > avg : false; // (the last 5 better than their period average: bouncing back)
+      const slump = (pl.sign < 0 && pl.run >= 5) || (pl.last5 != null && pl.last5 <= -1.5);
+      const falling = t && t.ch <= -0.5 && !recentOk;
+      const hotNow = (pl.sign > 0 && pl.run >= 5) || (pl.last5 != null && pl.last5 >= 1.5);
+      const rising = t && t.ch >= 0.5;
+      if (falling || slump) {
+        const why = [];
+        if (falling) why.push(`SG: Total down ${f2(t.ch)} a round (last ${t.n} rounds vs the ${t.n} before)${worst && worst.trend.ch < -0.25 ? `, most of it ${worst.label} (down ${f2(worst.trend.ch)})` : ""}`);
+        if (pl.sign < 0 && pl.run >= 5) why.push(`${pl.run} rounds in a row losing strokes`);
+        else if (pl.last5 != null && pl.last5 <= -1.5) why.push(`last 5 rounds ${fmtSG(pl.last5)} a round`);
+        concern.push({ c, why, fresh, score: Math.min(t?.ch ?? 0, pl.sign < 0 ? -pl.run / 5 : 0) });
+      } else if (rising || hotNow) {
+        const why = [];
+        if (hotNow) why.push(pl.sign > 0 && pl.run >= 5 ? `${pl.run} rounds in a row gaining strokes` : `last 5 rounds ${fmtSG(pl.last5)} a round`);
+        if (rising) why.push(`SG: Total up ${f2(t.ch)} a round (last ${t.n} rounds vs the ${t.n} before)${best && best.trend.ch > 0.25 ? `, led by ${best.label} (up ${f2(best.trend.ch)})` : ""}`);
+        else if (t && t.ch <= -0.5) why.push(`back on form after a dip (down ${f2(t.ch)} over the last ${t.n} vs the ${t.n} before)`);
+        hot.push({ c, why, fresh, score: -Math.max(t?.ch ?? 0, (pl.last5 ?? 0) - (avg ?? 0)) });
+      } else if (fresh) {
+        report.push({ c, why: [`${c.latest.event || "Last round"}: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? ` a round over ${c.latest.rounds}` : ""} \u00b7 ${dateTxt(c.latest.date)}`], score: -ld });
+      }
     }
     const status = new Map();
     for (const x of hot) status.set(x.c.key, "hot");
@@ -465,16 +470,16 @@ export async function render(main, { previewClient }) {
         el("div", { class: "wlb-h" }, [el("span", { class: "wlb-dot", "aria-hidden": "true" }), el("h3", {}, title), el("span", { class: "wlb-n" }, String(list.length))]),
         el("p", { class: "wlb-sub" }, sub),
         list.length ? el("ul", {}, list.slice(0, 6).map((x) => {
-          const b = el("button", { type: "button", class: "wlb-item" }, [el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || "")]), el("span", { class: "wlb-why" }, x.why.join(" \u00b7 ")), el("span", { class: "wlb-act" }, act)]);
-          b.addEventListener("click", () => openCard(x.c, ctx));
+          const b = el("button", { type: "button", class: "wlb-item" }, [el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || ""), x.fresh ? el("em", { class: "wlb-fresh" }, "Just played") : null]), el("span", { class: "wlb-why" }, x.why.join(" \u00b7 ")), el("span", { class: "wlb-act" }, act)]);
+          b.addEventListener("click", () => openCard(x.c, ctx, { kind, title, why: x.why })); // (update 558: the card says why they're here)
           return el("li", {}, b);
         })) : el("p", { class: "wlb-none" }, kind === "concern" ? "Nobody falling away." : kind === "report" ? "Nobody has played in the last 10 days." : "Nobody on a hot run."),
       ]);
     };
     const node = el("div", { class: "wl-brief" }, [
-      col("concern", "Sit down with", "Falling away: SG down over the last 12 rounds, a part of the game slipping, or a slump.", concern, "Talk \u203a"),
-      col("report", "Make a report for", "Played in the last 10 days of the data: worth a report while it\u2019s fresh.", report, "Report \u203a"),
-      col("hot", "Riding high", "SG up over the last 12 rounds, a part of the game climbing, or a hot run.", hot, "Card \u203a"),
+      col("concern", "Sit down with", "Falling away and not bouncing back: SG: Total down half a stroke a round (last 12 vs the 12 before), or a slump.", concern, "Talk \u203a"),
+      col("hot", "Riding high", "Playing well now: SG: Total up half a stroke a round, or a hot run (5 rounds in a row gaining, or the last 5 at +1.5).", hot, "Card \u203a"),
+      col("report", "Make a report for", "Played in the last 10 days, with no big swing either way: worth a report while it\u2019s fresh.", report, "Report \u203a"),
     ]);
     return { node, status };
   }
@@ -484,7 +489,11 @@ export async function render(main, { previewClient }) {
     const heads = (cards.find((c) => !c.empty)?.sg || [{ short: "Total" }, { short: "OTT" }, { short: "APP" }, { short: "ARG" }, { short: "PUTT" }]).map((s) => s.short);
     const head = el("div", { class: "wl-row wl-thead", role: "row" }, [el("span", { class: "wl-c-name" }, "Player"), ...heads.map((h, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, h))]);
     const rows = cards.map((c) => {
-      const nameCell = el("span", { class: "wl-c-name" }, [el("strong", {}, c.label), el("small", {}, c.empty ? "No rounds" : `${c.tour ? `${c.tour} \u00b7 ` : ""}${c.rounds} rd${c.rounds === 1 ? "" : "s"}`)]);
+      // (update 558) the star: take them off the Watchlist
+      const star = watchIsPreview() ? null : el("button", { type: "button", class: "wl-star on wl-row-star", "aria-label": `Remove ${c.label} from your Watchlist`, title: "Remove from Watchlist" }, "\u2605");
+      star?.addEventListener("click", (e) => { e.stopPropagation(); saveWatch({ players: watchPrefs().players.filter((k) => k !== c.key) }); draw(); });
+      star?.addEventListener("pointerdown", (e) => e.stopPropagation());
+      const nameCell = el("span", { class: "wl-c-name" }, [el("span", { class: "wl-c-nm" }, [star, el("strong", {}, c.label)]), el("small", {}, c.empty ? "No rounds" : `${c.tour ? `${c.tour} \u00b7 ` : ""}${c.rounds} rd${c.rounds === 1 ? "" : "s"}`)]);
       const cells = c.empty ? heads.map((_, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, "\u2014")) : c.sg.map((s, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, [
         el("strong", { class: `wl-c-v ${sgCls(s.v)}` }, fmtSG(s.v)),
         el("span", { class: "wl-c-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
@@ -499,7 +508,7 @@ export async function render(main, { previewClient }) {
   }
   // (update 556) the player's card, in a pop-up: who and where, SG: Total big with its rank and trend, the alerts, each part
   // of the game, then the distances, metrics and clubs; Open stats and Remove at the bottom
-  function openCard(c0, ctx) {
+  function openCard(c0, ctx, bin = null) {
     const i = ctx.keys.indexOf(c0.key);
     const c = c0.lite ? playerCard(c0.key, { field: ctx.field, detail: ctx.detailFor(c0.key), own: ctx.owns[i], label: nameOf(c0.key), period: ctx.cur, metrics: metricsOf(c0.key), tour: tourPick.get(c0.key) ?? c0.tour ?? null, nameOf: anyName, noRanks: src() === "entered", lite: false }) : c0;
     openCards.add(c.key);
@@ -517,7 +526,7 @@ export async function render(main, { previewClient }) {
     const openB = el("button", { type: "button", class: "btn" }, "Open stats \u00b7 make a report"); // (update 557: the PDF report is on the Stats page)
     const rmB = el("button", { type: "button", class: "btn ghost" }, "Remove from Watchlist");
     const overlay = el("div", { class: "gx-pop-overlay wlh-ov", role: "dialog", "aria-modal": "true", "aria-label": c.label }, el("div", { class: "gx-pop wlh-pop" }, [
-      top, el("div", { class: "wlh-body" }, [big, latest, badges, sg, more, el("div", { class: "wlh-acts" }, [openB, watchIsPreview() ? null : rmB])]),
+      top, el("div", { class: "wlh-body" }, [bin ? el("div", { class: `wlh-why wlb-${bin.kind}` }, [el("strong", {}, bin.title), el("span", {}, bin.why.join(" \u00b7 "))]) : null, big, latest, badges, sg, more, el("div", { class: "wlh-acts" }, [openB, watchIsPreview() ? null : rmB])]),
     ]));
     const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
     const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".wl-pop")) shut(); };
