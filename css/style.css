@@ -6051,3 +6051,12 @@ div.sh-ud3-green { cursor: default; }
 .wlh-why strong { color: var(--c); font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; }
 .wlh-why span { font-size: 0.85rem; color: #e5e5ea; line-height: 1.4; }
 .wlh-why.wlb-concern { --c: #ff6b5e; } .wlh-why.wlb-hot { --c: #4cd17e; } .wlh-why.wlb-report { --c: #d4b483; }
+/* (update 560) two briefing columns (Trending Down, Trending Up); the table's headings sort it; the focused trend pop-up */
+.wl-brief { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 760px) { .wl-brief { grid-template-columns: 1fr; } }
+.wl-thead .wl-sortb { border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 2px 0; }
+.wl-thead .wl-sortb:hover, .wl-thead .wl-sortb.on { color: #d4b483; }
+.wl-thead .wl-c-name.wl-sortb { text-align: left; }
+.wl-sortar { font-size: 0.8em; }
+.wlh-sec { margin: 0; font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: #8e8e93; }
+.wlh-why .wlb-fresh { align-self: flex-start; margin: 4px 0 0; }

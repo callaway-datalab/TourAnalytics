@@ -129,6 +129,9 @@ export async function render(main, { previewClient }) {
   // (update 556) the Tour filter at the top (in place of a tour switch on each card): null = every tour
   let tourSel = null; try { tourSel = localStorage.getItem("wl.tour") || null; } catch { /* */ }
   let filtersOpen = false;
+  // (update 560) the table's order: tap a column (again: the other way; a third time: your own order)
+  let colSort = { k: null, dir: -1 }; try { colSort = { ...colSort, ...(JSON.parse(localStorage.getItem("wl.colSort") || "null") || {}) }; } catch { /* */ }
+  const setSort = (k) => { colSort = colSort.k !== k ? { k, dir: k === "name" ? 1 : -1 } : colSort.dir === (k === "name" ? 1 : -1) ? { k, dir: -colSort.dir } : { k: null, dir: -1 }; try { localStorage.setItem("wl.colSort", JSON.stringify(colSort)); } catch { /* */ } draw(); };
   let menuOpen = false;
   // (update 180) metrics for everyone, or a player's own (watchlists.metricsFor[key]: theirs instead of everyone's)
   let menuFor = "all";
@@ -196,7 +199,7 @@ export async function render(main, { previewClient }) {
     const cards0 = keys.map((k, i) => playerCard(k, { field: fieldNow, detail: detailFor(k), own: owns[i], label: nameOf(k), period: cur, metrics: metricsOf(k), tour: tourPick.get(k) ?? null, nameOf: anyName, noRanks: source === "entered",
       lite: multi && !openCards.has(k) })); // (update 329: folded cards: just their ranks; the rest when opened)
     // (update 319) the order: yours (drag to change), A–Z, or by SG: Total rank (best first)
-    let sortBy = "mine"; try { sortBy = localStorage.getItem("wl.sort") || "mine"; } catch { /* */ }
+    const sortBy = "mine"; // (update 560: the table's column headings sort it now; the old order buttons are gone)
     const lastName = (c) => String(c.label || "").trim().split(/\s+/).slice(-1)[0] || "";
     const cards = !multi || sortBy === "mine" ? cards0 : [...cards0].sort((a, b) => sortBy === "az"
       ? lastName(a).localeCompare(lastName(b)) || String(a.label).localeCompare(String(b.label))
@@ -302,7 +305,7 @@ export async function render(main, { previewClient }) {
     })();
     const filters = multi ? (() => {
       const d = el("details", { class: "wl-fmenu", ...(filtersOpen ? { open: true } : {}) }, [el("summary", { title: "Order, metrics and more" }, ["Filters", prefs.metrics.length ? el("span", { class: "wl-count" }, String(prefs.metrics.length)) : null]),
-        el("div", { class: "wl-fmenu-pop" }, [el("p", { class: "wl-fmenu-t" }, "Order"), sortSeg, el("p", { class: "wl-fmenu-t" }, "Show"), el("div", { class: "wl-filters-btns" }, [metricsBtn, meBtn])])]);
+        el("div", { class: "wl-fmenu-pop" }, [el("p", { class: "wl-fmenu-t" }, "Show"), el("div", { class: "wl-filters-btns" }, [metricsBtn, meBtn])])]);
       d.addEventListener("toggle", () => { filtersOpen = d.open; });
       return d;
     })() : null;
@@ -322,10 +325,10 @@ export async function render(main, { previewClient }) {
     const ctx = { field: fieldNow, owns, keys, cur, detailFor };
     const brief = multi && shown.length ? briefing(shown, ctx) : null; // (update 557)
     const body = multi && !keys.length ? emptyState() : multi ? tableView(shown, ctx, brief?.status) : el("div", { class: "wl-cards solo" }, cards.map((c) => { const n = cardView(c); n.dataset.key = c.key; return n; }));
-    if (multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine") dragToReorder(body, ".wl-row[data-key]"); // (update 249; 319: only in your own order; 556: the table's rows)
+    if (multi && keys.length > 1 && !watchIsPreview() && colSort.k == null) dragToReorder(body, ".wl-row[data-key]"); // (update 249; 319: only in your own order; 556: the table's rows)
     // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
-    const dragHint = multi && keys.length > 1 && !watchIsPreview() && sortBy === "mine" ? el("p", { class: "muted small center wl-drag-hint" }, "Tap a player for their card. Hold a row and drag it to change the order.") : null; // (update 249)
+    const dragHint = multi && keys.length > 1 && !watchIsPreview() && colSort.k == null ? el("p", { class: "muted small center wl-drag-hint" }, "Tap a player for their card, a column heading to sort by it. Hold a row and drag it to change your order.") : null; // (update 249)
     mount(root, [multi ? el("header", { class: "wl-hero2" }, controls) : heroShell(controls, subLine), menu, brief?.node || null, body, dragHint,
       el("div", { class: "center wl-foot" }, infoTip(source === "entered"
         ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before; with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
@@ -449,20 +452,17 @@ export async function render(main, { previewClient }) {
         if (falling) why.push(`SG: Total down ${f2(t.ch)} a round (last ${t.n} rounds vs the ${t.n} before)${worst && worst.trend.ch < -0.25 ? `, most of it ${worst.label} (down ${f2(worst.trend.ch)})` : ""}`);
         if (pl.sign < 0 && pl.run >= 5) why.push(`${pl.run} rounds in a row losing strokes`);
         else if (pl.last5 != null && pl.last5 <= -1.5) why.push(`last 5 rounds ${fmtSG(pl.last5)} a round`);
-        concern.push({ c, why, fresh, score: Math.min(t?.ch ?? 0, pl.sign < 0 ? -pl.run / 5 : 0) });
+        concern.push({ c, why, fresh, t, driver: worst && worst.trend.ch < -0.25 ? worst : null, score: Math.min(t?.ch ?? 0, pl.sign < 0 ? -pl.run / 5 : 0) });
       } else if (rising || hotNow) {
         const why = [];
         if (hotNow) why.push(pl.sign > 0 && pl.run >= 5 ? `${pl.run} rounds in a row gaining strokes` : `last 5 rounds ${fmtSG(pl.last5)} a round`);
         if (rising) why.push(`SG: Total up ${f2(t.ch)} a round (last ${t.n} rounds vs the ${t.n} before)${best && best.trend.ch > 0.25 ? `, led by ${best.label} (up ${f2(best.trend.ch)})` : ""}`);
         else if (t && t.ch <= -0.5) why.push(`back on form after a dip (down ${f2(t.ch)} over the last ${t.n} vs the ${t.n} before)`);
-        hot.push({ c, why, fresh, score: -Math.max(t?.ch ?? 0, (pl.last5 ?? 0) - (avg ?? 0)) });
-      } else if (fresh) {
-        report.push({ c, why: [`${c.latest.event || "Last round"}: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? ` a round over ${c.latest.rounds}` : ""} \u00b7 ${dateTxt(c.latest.date)}`], score: -ld });
-      }
+        hot.push({ c, why, fresh, t, driver: best && best.trend.ch > 0.25 ? best : null, score: -Math.max(t?.ch ?? 0, (pl.last5 ?? 0) - (avg ?? 0)) });
+      } // (update 560: no "Make a report for": "Just played" is a tag on the others)
     }
     const status = new Map();
     for (const x of hot) status.set(x.c.key, "hot");
-    for (const x of report) status.set(x.c.key, "report");
     for (const x of concern) status.set(x.c.key, "concern");
     const col = (kind, title, sub, list, act) => {
       list.sort((a, b) => a.score - b.score);
@@ -471,15 +471,14 @@ export async function render(main, { previewClient }) {
         el("p", { class: "wlb-sub" }, sub),
         list.length ? el("ul", {}, list.slice(0, 6).map((x) => {
           const b = el("button", { type: "button", class: "wlb-item" }, [el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || ""), x.fresh ? el("em", { class: "wlb-fresh" }, "Just played") : null]), el("span", { class: "wlb-why" }, x.why.join(" \u00b7 ")), el("span", { class: "wlb-act" }, act)]);
-          b.addEventListener("click", () => openCard(x.c, ctx, { kind, title, why: x.why })); // (update 558: the card says why they're here)
+          b.addEventListener("click", () => openFocus(x, kind, ctx)); // (update 560: a focused look at the trend, not the whole card)
           return el("li", {}, b);
-        })) : el("p", { class: "wlb-none" }, kind === "concern" ? "Nobody falling away." : kind === "report" ? "Nobody has played in the last 10 days." : "Nobody on a hot run."),
+        })) : el("p", { class: "wlb-none" }, kind === "concern" ? "Nobody trending down." : "Nobody trending up."),
       ]);
     };
     const node = el("div", { class: "wl-brief" }, [
-      col("concern", "Sit down with", "Falling away and not bouncing back: SG: Total down half a stroke a round (last 12 vs the 12 before), or a slump.", concern, "Talk \u203a"),
-      col("hot", "Riding high", "Playing well now: SG: Total up half a stroke a round, or a hot run (5 rounds in a row gaining, or the last 5 at +1.5).", hot, "Card \u203a"),
-      col("report", "Make a report for", "Played in the last 10 days, with no big swing either way: worth a report while it\u2019s fresh.", report, "Report \u203a"),
+      col("concern", "Trending Down", "Falling away and not bouncing back: SG: Total down half a stroke a round (last 12 vs the 12 before), or a slump.", concern, "Why \u203a"),
+      col("hot", "Trending Up", "Playing well now: SG: Total up half a stroke a round, or a hot run (5 rounds in a row gaining, or the last 5 at +1.5).", hot, "Why \u203a"),
     ]);
     return { node, status };
   }
@@ -487,7 +486,14 @@ export async function render(main, { previewClient }) {
      trend (small); a tap opens the player's card */
   function tableView(cards, ctx, status = new Map()) {
     const heads = (cards.find((c) => !c.empty)?.sg || [{ short: "Total" }, { short: "OTT" }, { short: "APP" }, { short: "ARG" }, { short: "PUTT" }]).map((s) => s.short);
-    const head = el("div", { class: "wl-row wl-thead", role: "row" }, [el("span", { class: "wl-c-name" }, "Player"), ...heads.map((h, i) => el("span", { class: `wl-c${i === 0 ? " total" : ""}` }, h))]);
+    const hb = (k, label, cls) => { const on = colSort.k === k; const b = el("button", { type: "button", class: `${cls} wl-sortb${on ? " on" : ""}`, "aria-sort": on ? (colSort.dir > 0 ? "ascending" : "descending") : "none", title: `Sort by ${label}` }, [label, on ? el("span", { class: "wl-sortar", "aria-hidden": "true" }, colSort.dir > 0 ? " \u25b2" : " \u25bc") : null]); b.addEventListener("click", () => setSort(k)); return b; };
+    const head = el("div", { class: "wl-row wl-thead", role: "row" }, [hb("name", "Player", "wl-c-name"), ...heads.map((h, i) => hb(i, h, `wl-c${i === 0 ? " total" : ""}`))]);
+    if (colSort.k != null) {
+      const last = (c) => String(c.label || "").trim().split(/\s+/).slice(-1)[0] || "";
+      const v = (c) => (c.empty ? null : c.sg?.[colSort.k]?.v ?? null);
+      cards = [...cards].sort((a, b) => colSort.k === "name" ? colSort.dir * (last(a).localeCompare(last(b)) || String(a.label).localeCompare(String(b.label)))
+        : (v(a) == null) - (v(b) == null) || colSort.dir * ((v(a) ?? 0) - (v(b) ?? 0)));
+    }
     const rows = cards.map((c) => {
       // (update 558) the star: take them off the Watchlist
       const star = watchIsPreview() ? null : el("button", { type: "button", class: "wl-star on wl-row-star", "aria-label": `Remove ${c.label} from your Watchlist`, title: "Remove from Watchlist" }, "\u2605");
@@ -508,6 +514,42 @@ export async function render(main, { previewClient }) {
   }
   // (update 556) the player's card, in a pop-up: who and where, SG: Total big with its rank and trend, the alerts, each part
   // of the game, then the distances, metrics and clubs; Open stats and Remove at the bottom
+  /* (update 560) a trend picked in the briefing: just that story. Why they're there, where the change came from (each part of
+     the game, last 12 against the 12 before, the one behind it first), and the rounds of the part that drove it. */
+  async function openFocus(x, kind, ctx) {
+    const { renderBlocks } = await import("../badgePopup.js");
+    const c = x.c, down = kind === "concern";
+    const rowsS = c.sg.filter((s) => s.trend).map((s) => ({ s, ch: s.trend.ch }));
+    const tot = rowsS.find((r) => r.s === c.sg[0]), parts = rowsS.filter((r) => r.s !== c.sg[0]).sort((a, b) => (down ? a.ch - b.ch : b.ch - a.ch));
+    const drv = x.driver || parts[0]?.s || c.sg[0];
+    const table = { kind: "table", title: "Where it changed (strokes gained a round)", cols: [["Part of the game"], [`Previous ${tot?.s.trend.n ?? 12}`, "num"], [`Last ${tot?.s.trend.n ?? 12}`, "num"], ["Change", "num"]],
+      rows: [...(tot ? [tot] : []), ...parts].map((r) => ({ strong: r.s === c.sg[0] || r.s === drv, cells: [r.s.label, { sg: r.s.trend.prev }, { sg: r.s.trend.last }, { sg: r.ch, arrow: true }] })) };
+    const info = drv.info?.();
+    const bars = info?.blocks?.find((b) => b.kind === "bars");
+    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const cardB = el("button", { type: "button", class: "btn ghost" }, "Full card");
+    const statsB = el("button", { type: "button", class: "btn" }, "Open stats");
+    const overlay = el("div", { class: "gx-pop-overlay wlh-ov", role: "dialog", "aria-modal": "true", "aria-label": c.label }, el("div", { class: "gx-pop wlh-pop" }, [
+      el("div", { class: "wlh-top" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, [c.tour || "", ` \u00b7 ${c.rounds} rounds`].join("")), el("h2", {}, c.label)]), close]),
+      el("div", { class: "wlh-body" }, [
+        el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, down ? "Trending Down" : "Trending Up"), el("span", {}, x.why.join(" \u00b7 ")), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
+        ...renderBlocks([table]),
+        bars ? el("p", { class: "wlh-sec" }, `${drv.label}: each round, the ${tot?.s.trend.n ?? 12} before against the last ${tot?.s.trend.n ?? 12}`) : null,
+        ...(bars ? renderBlocks([bars]) : []),
+        el("div", { class: "wlh-acts" }, [cardB, statsB]),
+      ]),
+    ]));
+    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    close.addEventListener("click", shut);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
+    cardB.addEventListener("click", () => { shut(); openCard(c, ctx); });
+    statsB.addEventListener("click", () => { shut(); openPlayer(c.key); });
+    document.addEventListener("keydown", onKey);
+    document.body.classList.add("gx-noscroll");
+    document.body.appendChild(overlay);
+    close.focus({ preventScroll: true });
+  }
   function openCard(c0, ctx, bin = null) {
     const i = ctx.keys.indexOf(c0.key);
     const c = c0.lite ? playerCard(c0.key, { field: ctx.field, detail: ctx.detailFor(c0.key), own: ctx.owns[i], label: nameOf(c0.key), period: ctx.cur, metrics: metricsOf(c0.key), tour: tourPick.get(c0.key) ?? c0.tour ?? null, nameOf: anyName, noRanks: src() === "entered", lite: false }) : c0;

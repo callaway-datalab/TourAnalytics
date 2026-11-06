@@ -196,7 +196,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   let productTable = null;
   if (byProduct) {
     const STATS = { OTT: [["drive", "Driving Distance"], ["ballSpeed", "Ball Speed"], ["fwy", "Fairway %"]], APP: [["hitGreen", "Hit Green %"], ["prox", "Proximity"]], PUTT: [["make", "Made Putt %"], ["goodLag", "Good Lag %"]] };
-    const KINDS = [["Driver", "Drivers", STATS.OTT], ["Non-Driver", "Tee clubs", STATS.OTT], ["Fairway Wood", "Fairway Woods", STATS.APP], ["Hybrid", "Hybrids", STATS.APP], ["Iron", "Irons", STATS.APP],
+    const KINDS = [["Driver", "Drivers", STATS.OTT], ["Non-Driver", "Non-Driver Woods", STATS.OTT], ["Fairway Wood", "Fairway Woods", STATS.APP], ["Hybrid", "Hybrids", STATS.APP], ["Iron", "Irons", STATS.APP],
       ["Wedge", "Wedges", STATS.APP], ["Putter", "Putters", STATS.PUTT], ["Ball", "Balls", []]]; // (update 522: a ball: strokes gained in each part of the game instead)
     // (update 522) the strokes gained shown for each kind: its own part of the game (a ball: the total, then each part)
     const SGC = { Driver: [["SG OTT / Rd", "OTT"]], "Non-Driver": [["SG OTT / Rd", "OTT"]], "Fairway Wood": [["SG APP / Rd", "APP"]], Hybrid: [["SG APP / Rd", "APP"]], Iron: [["SG APP / Rd", "APP"]],
@@ -688,6 +688,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
             const yy = vy + 6 + j * 16, len = Math.max(3, (tw / 2) * Math.abs(v) / mx);
             d.text(lab, vx, yy + 6, { size: 7, bold: true, color: col });
             d.roundRect(v >= 0 ? mid : mid - len, yy, len, 7, 3.5, { fill: col });
+            d.rect(v >= 0 ? mid : mid - Math.min(4, len), yy, Math.min(4, len), 7, { fill: col }); // (update 560: square where it meets zero)
             d.text(fmtSG(v), vx + vw, yy + 6.5, { size: 7.5, bold: true, color: col, align: "right" });
           }
         } else if (t.viz === "steadyVsTour") {
@@ -911,11 +912,22 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
     // colour; sized so two kinds fit a page, the columns spread over the page's width so nothing runs off it
     const CH = { plotH: 78, dates: true, gap: 8, pad: 12 };
+    // (update 560) as many kinds on a page as fit; a page with two or more: the room left over shared out between them
+    // (more space between them, none wasted at the bottom)
+    const hOf = (sec) => { const rows = Math.min(10, sec.rows.length), chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) : 0; return 6 + 10 + chH + 14 + rows * 14 + 20; };
+    const plan = []; { let yy = y, pg = 0, first = true;
+      a.productTable.forEach((sec, i) => { const h = hOf(sec) + (first ? 0 : 6); if (!first && yy + h > H - 50) { pg++; yy = 46; } plan.push({ pg, h, top: yy }); yy += h; first = false; }); }
+    const gapAfter = plan.map(() => 0);
+    for (const pg of new Set(plan.map((q) => q.pg))) {
+      const idx = plan.map((q, i) => (q.pg === pg ? i : -1)).filter((i) => i >= 0);
+      if (idx.length < 2) continue;
+      const used = plan[idx.at(-1)].top + plan[idx.at(-1)].h, extra = Math.max(0, H - 50 - used - 4);
+      for (const i of idx.slice(0, -1)) gapAfter[i] = extra / (idx.length - 1);
+    }
     a.productTable.forEach((sec, si0) => {
       const keepS = sec.statNames.map((_, i) => i).filter((i) => sec.rows.some((r) => r.stats[i]));
       const rows = sec.rows.slice(0, 10);
-      const chH = sec.events?.length ? eventBarsHeight(W, sec.events, sec.legend, CH) : 0;
-      need(22 + chH + 22 + rows.length * 15 + 10 + (si0 ? 18 : 0));
+      if (si0 && plan[si0].pg !== plan[si0 - 1].pg) newPage();
       if (si0 && y > 90) { d.rect(M, y - 12, W, 1.2, { fill: P.goldLight }); y += 6; } // (update 521: a thin champagne bar between kinds, not at a page's top)
       y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 2;
       if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CH });
@@ -956,7 +968,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         keepS.forEach((si, i) => { const x = r.stats[si]; cell(x ? fmtStat(x.def, x.v) : "\u2014", 1 + nS + i, rows.indexOf(r), false); });
         d.line(M, y + 4.5, M + W, y + 4.5, { color: P.hair, width: 0.4 });
       }
-      y += 36; // (update 518, 521: more room before the next kind)
+      y += 20 + gapAfter[si0]; // (update 518, 521: room before the next kind; 560: and its share of the page's spare room)
     });
   }
   footer();

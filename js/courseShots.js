@@ -193,34 +193,52 @@ export function holeBoards(shots, pins, par) {
   const dx = G[0] - T[0], dy = G[1] - T[1], dl = Math.hypot(dx, dy) || 1, lat = (q) => (dx * (q.y - T[1]) - dy * (q.x - T[0])) / dl;
   const midOf = (list) => { let lo = list[0], hi = list[0]; for (const q of list) { if (lat(q) < lat(lo)) lo = q; if (lat(q) > lat(hi)) hi = q; } return [(lo.x + hi.x) / 2, (lo.y + hi.y) / 2]; };
   if (fwA.length >= 2) ref = midOf(fwA); // (a first line: the fairway's approach shots, as in update 555)
-  // (update 559) the line of play, in steps (par 4s and 5s; a par 3: the tee):
+  // (update 559, 560) the line of play, in steps (par 4s and 5s; a par 3: the tee):
   //   1. the drives that missed the fairway left or right (as Off the tee calls them: from where the drive finished,
   //      against the middle of where drives finish in the fairway);
   //   2. of all of those, the half closest to the pin;
   //   3. of the left misses left, the farthest right (nearest the fairway); of the right misses, the farthest left;
   //   4. halfway between those two: the line runs from there to the pin. (The two are kept to mark on the map.)
+  // (update 560) each miss's side from the fairway beside it (not from the tee: on a dogleg that put misses on the wrong side):
+  // the fairway drives nearest the miss give the fairway's line there; left or right of that line (on the map's pixels,
+  // y downward: across the line > 0 is right). One side with none left: the two fairway drives farthest apart instead.
   let marks = null;
-  if (par >= 4 && shots.some((q) => q.tr != null)) {
-    const fwD = shots.filter((q) => q.st === 2 && q.L === 1), fwm = avg(fwD);
-    const byT = new Map(); for (const q of shots) if (q.tr != null) (byT.get(q.tr) || byT.set(q.tr, []).get(q.tr)).push(q);
+  if (par >= 4) {
+    const fwD = shots.filter((q) => q.st === 2 && q.L === 1);
+    const axisAt = (x, y) => {
+      const nn = [...fwD].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)).slice(0, 15);
+      if (nn.length < 3) return null;
+      const cx = nn.reduce((t, q) => t + q.x, 0) / nn.length, cy = nn.reduce((t, q) => t + q.y, 0) / nn.length;
+      let sxx = 0, syy = 0, sxy = 0; for (const q of nn) { sxx += (q.x - cx) ** 2; syy += (q.y - cy) ** 2; sxy += (q.x - cx) * (q.y - cy); }
+      const th = 0.5 * Math.atan2(2 * sxy, sxx - syy); let ux = Math.cos(th), uy = Math.sin(th);
+      // along the fairway toward the green (and, where the drives sit in a round blob, the line from the tee to the green)
+      if (Math.abs(sxx - syy) < 1e-6 && Math.abs(sxy) < 1e-6) { const gl = Math.hypot(G[0] - T[0], G[1] - T[1]) || 1; ux = (G[0] - T[0]) / gl; uy = (G[1] - T[1]) / gl; }
+      if (ux * (G[0] - cx) + uy * (G[1] - cy) < 0) { ux = -ux; uy = -uy; }
+      return { cx, cy, ux, uy };
+    };
+    const latAt = (A, x, y) => A.ux * (y - A.cy) - A.uy * (x - A.cx);
     const miss = [];
-    if (fwm) for (const qs of byT.values()) {
-      const q1 = qs.find((q) => q.st === 1), q2 = qs.find((q) => q.st === 2);
-      if (!q1 || !q2 || q2.L === 1 || q2.L === 4) continue;
-      const lat = (fwm[0] - q1.x) * (q2.y - q1.y) - (fwm[1] - q1.y) * (q2.x - q1.x);
-      if (lat) miss.push({ q: q2, side: lat < 0 ? "L" : "R" });
+    for (const q of shots) {
+      if (q.st !== 2 || q.L === 1 || q.L === 4) continue;
+      const A = axisAt(q.x, q.y); if (!A) continue;
+      const la = latAt(A, q.x, q.y);
+      if (la) miss.push({ q, side: la < 0 ? "L" : "R", off: Math.abs(la) });
     }
-    const near = miss.every((m) => m.q.d != null && Number.isFinite(m.q.d)), dTo2 = (m) => (near ? m.q.d : Math.hypot(m.q.x - G[0], m.q.y - G[1]));
+    const byYds = miss.every((m) => m.q.d != null && Number.isFinite(m.q.d)), dTo2 = (m) => (byYds ? m.q.d : Math.hypot(m.q.x - G[0], m.q.y - G[1]));
     const half = [...miss].sort((a, b) => dTo2(a) - dTo2(b)).slice(0, Math.ceil(miss.length / 2));
     const L = half.filter((m) => m.side === "L"), R = half.filter((m) => m.side === "R");
+    let a = null, b = null;
     if (L.length && R.length) {
-      // across the line from the tee to the green: which way is right, from where the two sides' misses sit
-      const dx = G[0] - T[0], dy = G[1] - T[1], cr = (q) => dx * (q.y - T[1]) - dy * (q.x - T[0]);
-      const mean = (xs) => xs.reduce((t, m) => t + cr(m.q), 0) / xs.length, flip = mean(R) < mean(L) ? -1 : 1, right = (m) => flip * cr(m.q);
-      const lIn = L.reduce((a, b) => (right(b) > right(a) ? b : a)), rIn = R.reduce((a, b) => (right(b) < right(a) ? b : a));
-      marks = [[lIn.q.x, lIn.q.y], [rIn.q.x, rIn.q.y]];
-      ref = [(lIn.q.x + rIn.q.x) / 2, (lIn.q.y + rIn.q.y) / 2];
+      // the left miss nearest the fairway (the farthest right of them), and the right miss nearest it (the farthest left)
+      a = L.reduce((p, c) => (c.off < p.off ? c : p)).q; b = R.reduce((p, c) => (c.off < p.off ? c : p)).q;
+    } else if (fwD.length >= 2) {
+      // one side empty: the two fairway drives farthest apart across the fairway (of the half nearest the pin)
+      const fyd = fwD.every((q) => q.d != null && Number.isFinite(q.d)), fd = (q) => (fyd ? q.d : Math.hypot(q.x - G[0], q.y - G[1]));
+      const near = [...fwD].sort((p, c) => fd(p) - fd(c)).slice(0, Math.max(2, Math.ceil(fwD.length / 2)));
+      const mx = near.reduce((t, q) => t + q.x, 0) / near.length, my = near.reduce((t, q) => t + q.y, 0) / near.length, A = axisAt(mx, my);
+      if (A) { const lat = (q) => latAt(A, q.x, q.y); a = near.reduce((p, c) => (lat(c) < lat(p) ? c : p)); b = near.reduce((p, c) => (lat(c) > lat(p) ? c : p)); if (a === b) a = b = null; }
     }
+    if (a && b) { marks = [[a.x, a.y], [b.x, b.y]]; ref = [(a.x + b.x) / 2, (a.y + b.y) / 2]; }
   }
   // pixels a yard (each shot's pixels from its pin against its yards), for the 10 ft
   const rs = []; for (const q of shots) { const P = pins.get(q.pid); if (P && q.L !== 4 && q.d != null && q.d > 15) rs.push(Math.hypot(q.x - P[0], q.y - P[1]) / q.d); }
