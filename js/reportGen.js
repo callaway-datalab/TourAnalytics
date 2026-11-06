@@ -1009,7 +1009,9 @@ export async function loadFullField(datasetId, field, me, idx) {
 /* ============================== the panel ============================== */
 /** "Auto-generate report" for one player. canSave: the admin can also put it in the player's reports. */
 export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource0 = "tour", // eslint-disable-line no-unused-vars
-   minRounds = null, tour = null, fullField = null }) {
+   minRounds = null, tour = null, fullField = null, auto = null }) {
+  // (update 545) auto: { from, to (YYYY-MM-DD or null), cats, rangeLabel, onReady(href, name), onDone(msg) }: no options shown, the
+  // report made straight away from the Stats page's filters
   const wrapEl = el("div", { class: "report-gen" });
   const openBtn = el("button", { type: "button", class: "btn ghost report-gen-open" }, "\u2728 Generate PDF Report");
   const panel = el("div", { class: "report-gen-panel", hidden: true });
@@ -1104,7 +1106,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       // a preset's name ("This year" is shown as the year itself, e.g. 2026); your own dates are shown as dates
       // ("This year" and "All time" also say how current they are: "2026 - As of 10/9/2026")
       const asOf = ` - As of ${new Date().toLocaleDateString("en-US")}`;
-      const rangeLabel = preset === "year" ? `${new Date().getFullYear()}${asOf}` : preset === "all" ? `All time${asOf}` : preset?.startsWith?.("y:") ? `${preset.slice(2)} season` : preset ? presets.find(([v]) => v === preset)?.[1] : null;
+      const rangeLabel = auto?.rangeLabel ? auto.rangeLabel : preset === "year" ? `${new Date().getFullYear()}${asOf}` : preset === "all" ? `All time${asOf}` : preset?.startsWith?.("y:") ? `${preset.slice(2)} season` : preset ? presets.find(([v]) => v === preset)?.[1] : null;
       const bytes = buildReportPdf(a, { aiSummary, sourceLabel: "All rounds", logo: await loadLogo(), rangeLabel });
       const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
       window.__lastReportPdf = bytes; // (for tests)
@@ -1120,6 +1122,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
           flash(`Saved to ${playerLabel}'s Performance Reports.`, "ok");
         } catch { flash("Couldn't save the report.", "error"); save.disabled = false; }
       });
+      auto?.onReady?.(href, name, a);
       mount(result, [
         el("p", {}, [el("strong", {}, `Report ready: ${a.overall.rounds} rounds, ${a.focus.length} focus area${a.focus.length === 1 ? "" : "s"}.`)]),
         // Open PDF (in a new tab; save it from there) and, for the admin, Save to Reports, side by side
@@ -1129,6 +1132,7 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
     } catch (err) {
       console.error(err);
       status.textContent = "Couldn't make the report. Try again.";
+      auto?.onFail?.();
     } finally { go.disabled = false; }
   });
 
@@ -1138,6 +1142,15 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
     el("div", { class: "report-row" }, [el("label", { class: "report-min", title: "Tour Avg, ranks and Elite only count players with at least this many rounds in the dates picked. Empty: 33% of the most rounds played, rounded down to a 5." }, ["Min. rounds", minIn])]),
     el("div", { class: "report-gen-actions" }, [go]), status, result,
   ]);
+  if (auto) {
+    // (update 545) straight to it: the Stats page's dates and categories, no options
+    fromIn.value = auto.from || ""; toIn.value = auto.to || ""; preset = null;
+    if (auto.cats?.length) cats = auto.cats.filter((k) => CATEGORIES.some(([c]) => c === k));
+    if (!cats.length) cats = CATEGORIES.map(([k]) => k);
+    mount(wrapEl, el("div", { class: "report-gen-auto" }, [status, result]));
+    setTimeout(() => go.click(), 0);
+    return wrapEl;
+  }
   mount(wrapEl, [openBtn, panel]);
   return wrapEl;
 }

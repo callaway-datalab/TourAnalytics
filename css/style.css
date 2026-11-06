@@ -5893,3 +5893,9 @@ div.sh-ud3-green { cursor: default; }
   .wl-periods > .wl-period { display: flex; width: 100%; box-sizing: border-box; }
   .wl-periods > .wl-period .wl-per { flex: 1 1 0; }
 }
+/* (update 545) the Stats page's report: a small note at the bottom while it's made (Open PDF in it if a new tab was blocked) */
+.hero-report-toast { position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60; width: min(440px, calc(100vw - 24px)); box-sizing: border-box;
+  padding: 12px 40px 12px 14px; border-radius: 14px; background: rgba(20,20,22,0.97); border: 1px solid rgba(212,180,131,0.5); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.hero-report-toast .gx-pop-x { position: absolute; top: 8px; right: 8px; }
+.hero-report-toast .report-gen-auto p { margin: 6px 0 0; }
+.hero-report-toast .report-gen-actions { margin-top: 8px; }

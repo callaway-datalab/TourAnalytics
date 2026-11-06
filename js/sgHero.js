@@ -377,23 +377,32 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
 export function insightsButton(S, slicedField = []) {
   if (!S.me || !S.me.key) return null;
   const btn = el("button", { type: "button", class: "hero-insights" }, "\u2728 Generate PDF Report");
+  // (update 545) no pop-up and no questions: the report is made from the filters on this page (its years or span or dates,
+  // and its categories), then opened. A small note at the bottom says how it's going.
   btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const win = (() => { try { return window.open("", "_blank"); } catch { return null; } })(); // (opened now, while it's still a tap)
+    try { win?.document?.write?.("<p style='font:16px -apple-system,sans-serif;padding:24px'>Making the PDF report\u2026</p>"); } catch { /* */ }
+    btn.disabled = true;
+    const st = S.st, pad = (n) => String(n).padStart(2, "0"), day = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    let from = null, to = null, rangeLabel = null;
+    if (st.dateRange?.from || st.dateRange?.to) { from = st.dateRange.from || null; to = st.dateRange.to || null; rangeLabel = `${from || "Start"} to ${to || "today"}`; }
+    else if (Number(st.span) > 0) { const d = new Date(); d.setMonth(d.getMonth() - Number(st.span)); from = day(d); to = day(new Date()); rangeLabel = `Last ${st.span} month${Number(st.span) === 1 ? "" : "s"}`; }
+    else if (st.year?.length) { const ys = st.year.map(String).sort(); from = `${ys[0]}-01-01`; to = `${ys.at(-1)}-12-31`; rangeLabel = ys.length === 1 ? `${ys[0]} season` : `${ys[0]}\u2013${ys.at(-1)} seasons`; }
+    else rangeLabel = `All time - As of ${new Date().toLocaleDateString("en-US")}`;
+    const toast = el("div", { class: "hero-report-toast", role: "status" });
+    const x = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const done = () => { btn.disabled = false; };
+    x.addEventListener("click", () => { toast.remove(); done(); });
     const { reportBuilder } = await import("./reportGen.js");
-    const state = getState();
-    const flashMsg = (msg) => { const n = el("p", { class: "hero-pop-msg", role: "status" }, msg); body.prepend(n); setTimeout(() => n.remove(), 4000); };
-    const builder = reportBuilder({ playerKey: S.me.key, playerLabel: S.me.label, canSave: false, flash: flashMsg, // (update 164: no Save to Reports here)
+    const builder = reportBuilder({ playerKey: S.me.key, playerLabel: S.me.label, canSave: false, flash: () => {},
       source: S.opts.entered ? "entered" : "tour", minRounds: S.minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: S.tourCounts.length ? (S.st.tour[0] ?? null) : null,
-      fullField: S.fieldIsSummary() ? null : S.fieldAll }); // (the admin: everyone's rows, for ranks by distance)
-    const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
-    const body = el("div", { class: "hero-pop-body" }, builder.node || builder);
-    const overlay = el("div", { class: "gx-pop-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Generate PDF Report" }, el("div", { class: "gx-pop hero-pop" }, [
-      el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Performance report"), el("h2", {}, S.me.label)]), close]), body]));
-    const shut = () => { overlay.remove(); document.removeEventListener("keydown", onKey); document.body.classList.remove("gx-noscroll"); };
-    const onKey = (e) => { if (e.key === "Escape") shut(); };
-    close.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
-    document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll");
-    document.body.appendChild(overlay);
-    overlay.querySelector(".report-gen-open")?.click(); // straight to the options
+      fullField: S.fieldIsSummary() ? null : S.fieldAll, // (the admin: everyone's rows, for ranks by distance)
+      auto: { from, to, cats: st.cats || [], rangeLabel,
+        onReady: (href) => { done(); if (win && !win.closed) { try { win.location.href = href; setTimeout(() => toast.remove(), 2500); return; } catch { /* the link below */ } } },
+        onFail: () => { done(); try { win?.close(); } catch { /* */ } } } });
+    mount(toast, [el("strong", {}, `PDF report \u00b7 ${S.me.label}`), el("span", { class: "muted small" }, ` ${rangeLabel}`), x, builder]);
+    document.body.appendChild(toast);
   });
   return btn;
 }
