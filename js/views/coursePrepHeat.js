@@ -850,12 +850,16 @@ export async function drawHeat(ctx, course) {
     try {
       const d = await playerData(me.key);
       if (who !== me) return;
-      ix = d.rounds.length ? skillIndex(d.rounds) : null;
+      // (update 539) their level from the last 12 months only (none in that time: their latest 12 months of rounds)
+      const dayMs = (rd) => Date.parse(String(rd.date || "").slice(0, 10)) || 0, YEAR = 365.25 * 864e5;
+      const latest = Math.max(0, ...d.rounds.map(dayMs)), recentFrom = Date.now() - YEAR;
+      const lvlRounds = d.rounds.filter((rd) => dayMs(rd) >= (latest >= recentFrom ? recentFrom : latest - YEAR));
+      ix = lvlRounds.length ? skillIndex(lvlRounds) : null;
       mineHere = d.rounds.filter((rd) => sameCourse(rd.course, course.name));
       const sgR = mineHere.length ? mineHere.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + s.sg, 0), 0) / mineHere.length : null;
       const link = el("button", { type: "button", class: "link" }, "Course History ›"); link.addEventListener("click", () => ctx.go({ name: "prepHistory", course }));
       // (update 461) one flat list (a list inside it is what made this say it couldn't load their stats)
-      mount(whoLine, !d.rounds.length ? `No stats file for ${me.label} yet, so the zones show the field.` : [`Player view: the zones weighted by ${me.label}’s strokes gained from each distance and lie. `,
+      mount(whoLine, !d.rounds.length ? `No stats file for ${me.label} yet, so the zones show the field.` : [`Player view: the zones weighted by ${me.label}’s strokes gained from each distance and lie over ${latest >= recentFrom ? "the last 12 months" : "their latest 12 months of rounds"} (${lvlRounds.length} ${lvlRounds.length === 1 ? "round" : "rounds"}). `,
         ...(mineHere.length ? [`${mineHere.length} ${mineHere.length === 1 ? "round" : "rounds"} here (${sgR >= 0 ? "+" : "−"}${Math.abs(sgR).toFixed(2)} a round). `, link] : [`No rounds here in the stats yet.`])]);
     } catch (err) { console.error(err); whoLine.textContent = "Couldn’t load their stats, so the zones show the field."; }
     paint();
