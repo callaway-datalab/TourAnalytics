@@ -153,7 +153,7 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null,
         // the newest seasons first, while they fit
         const keep = [], newest = [...want].sort((a, b) => byYear(b.year, a.year));
         let tot = 0; for (const f of newest) { if (tot + f.size > PHONE_PACKED_MAX) break; keep.push(f); tot += f.size; }
-        if (!keep.length) { bootLog(`detail skipped on this phone (${pick || "every tour"}: too big)`); return { players: null, why: "phone" }; }
+        if (!keep.length) { const mb = (Math.min(...want.map((f) => f.size)) / 1048576).toFixed(1); bootLog(`detail skipped on this phone (${pick || "every tour"}: too big)`); return { players: null, why: "phone", reason: `tooBig|${pick || ""}|${mb}` }; }
         want = keep;
       }
       bootLog(`detail: ${pick ?? "every tour"} · ${want.map((f) => f.year).sort(byYear).join(", ")}`);
@@ -161,7 +161,7 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null,
       // (a file built before update 538: every tour in each season's file) a phone with a big file: none (update 537);
       // otherwise the newest two seasons (update 534)
       const bigFile = (() => { try { return localStorage.getItem("ta.bigData") === "1"; } catch { return false; } })();
-      if (phone && bigFile) { bootLog("detail skipped on this phone (big file, not split by tour yet)"); return { players: null, why: "phone" }; }
+      if (phone && bigFile) { bootLog("detail skipped on this phone (big file, not split by tour yet)"); return { players: null, why: "phone", reason: "notSplit" }; }
       const years = phone ? [...d.years].sort((a, b) => byYear(b, a)).slice(0, 2).sort(byYear) : d.years;
       want = years.map((y) => ({ tour: null, year: y, path: pathOf(datasetId, y), size: 0 }));
     }

@@ -303,7 +303,12 @@ export async function render(main, { flash, routeId }) {
       : why === undefined || why === null ? "Loading lie and distance detail\u2026"
       : why === "paused" ? "Lie and distance ranks are paused: this month\u2019s budget was reached."
       : why === "none" || why === "stale" ? "Lie and distance ranks appear once the rankings are rebuilt (Upload Data \u2192 Rebuild rankings)."
-      : why === "phone" ? "On a phone, a data file this big ranks by category only; lie and distance ranks are on a computer." // (update 537)
+      : why === "phone" || String(why).startsWith("phone:") ? (() => { // (update 537; 541: which reason)
+        const r = String(why).slice(6);
+        if (r === "notSplit") return "On a phone, lie and distance ranks need the rankings split by tour: redeploy the data-import function (update 538), then press Rebuild rankings on Upload Data. Until then this ranks by category.";
+        if (r.startsWith("tooBig")) { const [, t, mb] = r.split("|"); return `On a phone, lie and distance ranks need a season under 3.5 MB; ${t || "this tour"}\u2019s newest season is ${mb} MB, so this ranks by category. They\u2019re on a computer.`; }
+        return "On a phone, a data file this big ranks by category only; lie and distance ranks are on a computer.";
+      })()
       : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
     drawLite(ds, idx, fieldPlayers, note, why === "paused");
     if (why === undefined) loadDetailLite(ds, dk, wantTour);
@@ -313,8 +318,8 @@ export async function render(main, { flash, routeId }) {
   const detailCache = DETAIL, detailWhy = DETAIL_WHY;
   async function loadDetailLite(ds, dk, tour = null) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
-    const { players, why, tour: got } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, tour != null ? { tour } : {});
-    detailWhy.set(dk, why);
+    const { players, why, tour: got, reason } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, tour != null ? { tour } : {});
+    detailWhy.set(dk, why === "phone" && reason ? `phone:${reason}` : why); // (update 541: why a phone has none)
     if (players?.length) { keepFew(detailCache, 1); detailCache.set(dk, { players, tour: got ?? null }); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
     if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
   }
