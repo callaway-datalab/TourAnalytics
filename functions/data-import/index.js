@@ -537,13 +537,14 @@ function prepare(rows, idx) {
     rd.has = new Set(rd.obs.map((o) => o.k));
     if (rd.shots.length) rd.has.add("sg");
   }
-  const fracKeys = /* @__PURE__ */ new Set(), over = /* @__PURE__ */ new Set();
+  const fracKeys = /* @__PURE__ */ new Set(), over = /* @__PURE__ */ new Set(), fk = (rd, o) => `${o.k}${rd.tour || ""}`;
   for (const rd of list) for (const o of rd.obs) if (o.file && statDef(o.k).pct) {
-    fracKeys.add(o.k);
-    if (Math.abs(o.v) > 1.0001) over.add(o.k);
+    fracKeys.add(fk(rd, o));
+    if (Math.abs(o.v) > 1.0001) over.add(fk(rd, o));
   }
-  for (const k of fracKeys) if (!over.has(k)) {
-    for (const rd of list) for (const o of rd.obs) if (o.k === k) o.v *= 100;
+  if (fracKeys.size) for (const rd of list) for (const o of rd.obs) {
+    const k = fk(rd, o);
+    if (o.file && fracKeys.has(k) && !over.has(k)) o.v *= 100;
   }
   if (idx.date !== void 0) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
   return list;

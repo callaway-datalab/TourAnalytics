@@ -147,7 +147,8 @@ export async function render(main) {
     let oneMulti = false; // (update 223: shown with Everyone, or when a player has rounds on more than one tour)
     for (const p of ps) { const mine = new Set(); for (const rd of sgRounds(rawOfKey(p.key))) if (rd.tour) { counts.set(rd.tour, (counts.get(rd.tour) || 0) + 1); mine.add(rd.tour); } if (mine.size > 1) oneMulti = true; }
     const withEvery = ps.some((p) => p.key === EVERY) || productsOnly;
-    if ((!withEvery && !oneMulti) || (counts.size < 2 && !tourSel.size)) { if (tourSel.size) { tourSel = new Set(); allMemo = null; setTimeout(() => { if (data) opts = options(allRounds()); draw(); }, 0); } return null; }
+    void withEvery; void oneMulti; // (update 546: shown whenever the selections cover more than one tour, between players too)
+    if (counts.size < 2 && !tourSel.size) { if (tourSel.size) { tourSel = new Set(); allMemo = null; setTimeout(() => { if (data) opts = options(allRounds()); draw(); }, 0); } return null; }
     const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n.toLocaleString()} rds`) : null]); b.addEventListener("click", click); return b; };
     const redo = () => { allMemo = null; if (data) opts = options(allRounds()); draw(); };
     return el("div", { class: "panel cmp-tourbar" }, [el("span", { class: "cmp-chip-gt" }, "Tour"),

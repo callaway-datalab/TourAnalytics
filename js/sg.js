@@ -344,9 +344,11 @@ export function prepare(rows, idx) {
     if (rd.shots.length) rd.has.add("sg");
   }
   // A percentage written as a fraction (0.62) shows as 62%: per stat, when none of this player's values is above 1.
-  const fracKeys = new Set(), over = new Set();
-  for (const rd of list) for (const o of rd.obs) if (o.file && statDef(o.k).pct) { fracKeys.add(o.k); if (Math.abs(o.v) > 1.0001) over.add(o.k); }
-  for (const k of fracKeys) if (!over.has(k)) for (const rd of list) for (const o of rd.obs) if (o.k === k) o.v *= 100;
+  // (update 546) per stat and tour: one tour's file can write Hit Fairway % as 0.62 and another's as 62, and a player
+  // with both kept their fractions as they were (0.62%)
+  const fracKeys = new Set(), over = new Set(), fk = (rd, o) => `${o.k}\u0001${rd.tour || ""}`;
+  for (const rd of list) for (const o of rd.obs) if (o.file && statDef(o.k).pct) { fracKeys.add(fk(rd, o)); if (Math.abs(o.v) > 1.0001) over.add(fk(rd, o)); }
+  if (fracKeys.size) for (const rd of list) for (const o of rd.obs) { const k = fk(rd, o); if (o.file && fracKeys.has(k) && !over.has(k)) o.v *= 100; }
   if (idx.date !== undefined) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
   return list;
 }
