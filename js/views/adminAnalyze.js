@@ -262,19 +262,8 @@ export async function render(main, { flash, routeId }) {
     lastDetailKey = dk;
     // the whole field with lie / distance detail, once it's here (from Cloud Storage; see loadDetailLite)
     if (detailCache.has(dk)) {
-      const det = detailCache.get(dk), dPlayers = det.players || det, dTour = det.tour ?? null;
-      let base = dPlayers;
-      if (det.partial) { // (update 538, 543) some tours or seasons only: the rest of each player's rounds from the summary
-        const summary0 = await getFieldStats(ds.id).catch(() => null);
-        if (token !== loadToken) return;
-        const { withSummary } = await import("../fieldStore.js");
-        const inDet = new Set(dPlayers.map((p) => p.key));
-        base = withSummary(summaryPlayers(summary0), { players: dPlayers, partial: true, years: det.years, tour: dTour }, (p) => ({ ...p, summaryOnly: !inDet.has(p.key) && p.summaryOnly }));
-      }
-      const list = base.filter((p) => p.rounds.length).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "") }));
-      // (a player picked who isn't in the detail but whose rows were fetched: added, so they aren't fetched again)
-      const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
-      if (full && !list.some((p) => p.key === player.key)) list.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
+      const list = await detailList(ds, idx, detailCache.get(dk));
+      if (token !== loadToken) return;
       return drawLite(ds, idx, list, "");
     }
     status.textContent = "Loading players\u2026";
@@ -314,15 +303,51 @@ export async function render(main, { flash, routeId }) {
       })()
       : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
     drawLite(ds, idx, fieldPlayers, note, why === "paused");
-    if (why === undefined) loadDetailLite(ds, dk, wantTour, wantYears);
+    // (update 569) asked for once the dashboard has drawn and picked its tour and seasons (its first word on the tour asks
+    // for it; this is the fallback): no load of the last-used tour's detail before switching to this player's
+    if (why === undefined) setTimeout(() => { if (fileId !== ds.id || source !== "tour") return; const tt = dashState.tour?.[0] ?? activeTour() ?? null, k = detailKeyOf(ds, tt); if (!detailCache.has(k) && detailWhy.get(k) === undefined) applyDetail(ds, k, tt, yearsWanted()); }, 60);
   }
 
+  // (update 569) the field with a loaded detail: its players (lie / distance), the rest of their rounds (other tours or
+  // seasons) and everyone else from the summary, each with their name; the picked player's fetched rows added if missing
+  async function detailList(ds, idx, det) {
+    const dPlayers = det.players || det, dTour = det.tour ?? null;
+    let base = dPlayers;
+    if (det.partial) { // (update 538, 543) some tours or seasons only: the rest of each player's rounds from the summary
+      const summary0 = await getFieldStats(ds.id).catch(() => null);
+      const { withSummary } = await import("../fieldStore.js");
+      const inDet = new Set(dPlayers.map((p) => p.key));
+      base = withSummary(summaryPlayers(summary0), { players: dPlayers, partial: true, years: det.years, tour: dTour }, (p) => ({ ...p, summaryOnly: !inDet.has(p.key) && p.summaryOnly }));
+    }
+    const list = base.filter((p) => p.rounds.length).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "") }));
+    const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
+    if (full && !list.some((p) => p.key === player.key)) list.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
+    return list;
+  }
+  // (update 569) the detail put into the dashboard already on screen (no blank page, no redraw from scratch): it came in,
+  // or the tour or seasons changed. Loaded first if it isn't here yet.
+  async function applyDetail(ds, dk, tour, years) {
+    lastDetailKey = dk;
+    if (!detailCache.has(dk)) {
+      if (detailWhy.get(dk) !== undefined) return; // (already loading: that call puts it in)
+      await loadDetailLite(ds, dk, tour, years, true);
+      if (!detailCache.has(dk)) { if (lastDetailKey === dk && fileId === ds.id && source === "tour" && detailWhy.get(dk)) refresh(); return; } // (none to use: the page redrawn once, with the reason)
+    }
+    if (lastDetailKey !== dk || !dash || source !== "tour" || fileId !== ds.id) return;
+    const idx = detectColumns(ds.columns || []);
+    const list = await detailList(ds, idx, detailCache.get(dk));
+    if (lastDetailKey !== dk || !dash || fileId !== ds.id) return;
+    fieldPlayers = list; status.textContent = "";
+    const me = meFrom();
+    dash.update({ field: fieldPlayers, me: me && !me.summaryOnly ? me : null });
+    import("../perf.js").then((m) => m.bootLog(`stats: detail put in place${performance?.memory ? ` \u00b7 ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : ""}`)).catch(() => {});
+  }
   // (update 568) the key for the detail on screen: the file, its upload, the tour and the seasons (one place makes it)
   function yearsWanted() { return dashState.year?.length ? [...new Set(dashState.year.map(String))].sort() : null; }
   function detailKeyOf(ds, tour) { const ys = yearsWanted(); return `detail|${ds.id}|${ds.uploadedAt?.toMillis?.() ?? 0}|${tour ?? ""}|${ys ? ys.join(",") : "newest2"}`; }
   // Phones: the field's lie / distance detail, once per upload (kept on the device after the first time).
   const detailCache = DETAIL, detailWhy = DETAIL_WHY;
-  async function loadDetailLite(ds, dk, tour = null, wantYears = null) {
+  async function loadDetailLite(ds, dk, tour = null, wantYears = null, quiet = false) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
     const { players, why, tour: got, reason, partial, years } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, { ...(tour != null ? { tour } : {}), ...(wantYears ? { years: wantYears } : { newest: 2 }) });
     detailWhy.set(dk, why === "phone" && reason ? `phone:${reason}` : why); // (update 541: why a phone has none)
@@ -330,7 +355,9 @@ export async function render(main, { flash, routeId }) {
     // (update 566) in the start-up log: the detail in, and the page redrawn with it (with the memory used, where the browser says)
     const mem = () => (performance?.memory ? ` \u00b7 ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : "");
     import("../perf.js").then((m) => m.bootLog(`stats: detail in (${players?.length || 0} players), redrawing${mem()}`)).catch(() => {});
-    if (source === "tour" && fileId === ds.id) { await Promise.resolve(refresh()).catch(() => {}); import("../perf.js").then((m) => m.bootLog(`stats: redrawn with the detail${mem()}`)).catch(() => {}); } // (redrawn with the detail, or with the reason it isn't there)
+    if (quiet) return;
+    // (update 569) put in place on the dashboard on screen; only with nothing usable (a reason to show) is the page redrawn
+    if (source === "tour" && fileId === ds.id) { if (players?.length && dash) await applyDetail(ds, dk, tour, wantYears); else await Promise.resolve(refresh()).catch(() => {}); }
   }
 
   function drawLite(ds, idx, players, note, paused = false, opt = {}) {
@@ -354,7 +381,7 @@ export async function render(main, { flash, routeId }) {
     mount(body, box);
     dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts(), ...(opt.noRanks ? { rankings: false } : {}),
       // (update 538) another tour picked: its lie / distance detail loaded (once)
-      onTour: (t) => { if (lastDetailKey !== detailKeyOf(ds, t ?? dashState.tour?.[0] ?? activeTour() ?? null)) refresh(); } }); // (update 568: the same key as refreshLite makes; a different one redrew the page over and over)
+      onTour: (t) => { const tt = t ?? dashState.tour?.[0] ?? activeTour() ?? null, k = detailKeyOf(ds, tt); if (lastDetailKey !== k) applyDetail(ds, k, tt, yearsWanted()); } }); // (update 568: one key; 569: put in place, not a redraw)
     // (never published from here: this field is the summary itself)
     if (player && (!me || me.summaryOnly)) pickerRef?.select?.(player.key); // fetch the picked player's full rows
   }
