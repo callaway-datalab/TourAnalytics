@@ -37,6 +37,14 @@ function storage() {
   return storageP;
 }
 const pathOf = (datasetId, year) => `fieldDetail/${datasetId}/${year || "none"}.bin.gz`;
+/* (update 538) the detail split by tour: one file a tour and season (as the cloud's data-import writes it) */
+export const tourSlug = (t) => String(t || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "none";
+const pathOfT = (datasetId, tour, year) => `fieldDetail/${datasetId}/${tourSlug(tour)}~${year || "none"}.bin.gz`;
+/** (update 538) The tour on screen (the Stats page's tour buttons set it); the detail loads only that tour's files. */
+const LS_TOUR = "ta.tour";
+export function setActiveTour(t) { try { if (t == null) localStorage.removeItem(LS_TOUR); else localStorage.setItem(LS_TOUR, String(t)); } catch { /* */ } }
+export function activeTour() { try { return localStorage.getItem(LS_TOUR); } catch { return null; } }
+const PHONE_PACKED_MAX = 3.5 * 1048576; // (a phone: at most this much packed detail, about 30 MB once unpacked)
 
 /* ---------------- budget pause ---------------- */
 
@@ -65,20 +73,28 @@ export async function detailSource(datasetId) {
 export async function publishFieldDetail(datasetId, players, sourceUploadedAt) {
   if ((await billingState()).paused) return { skipped: "paused" };
   const { m, s } = await storage();
-  const files = encodeFieldDetail(players);
+  // (update 538) a file a tour and season, as the cloud writes them
+  const byTour = new Map();
+  for (const p of players) { const rs = new Map(); for (const rd of p.rounds) { const t = rd.tour || ""; (rs.get(t) || rs.set(t, []).get(t)).push(rd); } for (const [t, rounds] of rs) (byTour.get(t) || byTour.set(t, []).get(t)).push({ ...p, rounds }); }
   let bytes = 0;
-  for (const f of files) {
-    const gz = await gzip(f.bytes);
-    bytes += gz.length;
-    await m.uploadBytes(m.ref(s, pathOf(datasetId, f.year)), gz, { contentType: "application/octet-stream" });
+  const tours = {}, sizes = {}, paths = new Set(), allYears = new Set();
+  for (const [t, ps] of byTour) {
+    for (const f of encodeFieldDetail(ps)) {
+      const gz = await gzip(f.bytes);
+      bytes += gz.length;
+      const path = pathOfT(datasetId, t, f.year); paths.add(path);
+      await m.uploadBytes(m.ref(s, path), gz, { contentType: "application/octet-stream" });
+      (tours[t] ||= []).push(f.year); sizes[`${t}|${f.year ?? ""}`] = gz.length; allYears.add(f.year);
+    }
   }
-  const years = files.map((f) => f.year);
-  // (a year that's no longer in the file: its old detail goes)
+  for (const t of Object.keys(tours)) tours[t].sort();
+  const years = [...allYears].sort();
+  // (the files no longer wanted: before the split, or a season gone)
   try {
     const list = await m.listAll(m.ref(s, `fieldDetail/${datasetId}`));
-    for (const it of list.items) if (!years.some((y) => it.fullPath === pathOf(datasetId, y))) await m.deleteObject(it);
+    for (const it of list.items) if (!paths.has(it.fullPath)) await m.deleteObject(it);
   } catch (err) { console.warn("Couldn't tidy old detail files", err); }
-  await setDoc(doc(db, "fieldStats", datasetId), { detail: { years, sourceUploadedAt: sourceUploadedAt ?? null, bytes, format: FORMAT, builtAt: serverTimestamp() } }, { merge: true });
+  await setDoc(doc(db, "fieldStats", datasetId), { detail: { years, tours, sizes, sourceUploadedAt: sourceUploadedAt ?? null, bytes, format: FORMAT, builtAt: serverTimestamp() } }, { merge: true });
   return { years, bytes };
 }
 
@@ -108,7 +124,14 @@ export function detailInfo() {
   let bytes = 0; for (const t of tables) bytes += (t.I?.byteLength || 0) + (t.F?.byteLength || 0); // (update 327: the packed columns)
   return { players: ps.length, rounds, shots, mb: tables.size ? Math.round(bytes / 1048576) : null };
 }
-export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null } = {}) {
+/**
+ * (update 538) tour: which tour's detail. A file built by tour (detail.tours): that tour's files only. Not given: the tour
+ * on screen (setActiveTour) on a phone, every tour on a computer. "all": every tour. A file built before the split: every
+ * tour, one file a season (as before).
+ * A phone loads only the newest seasons that fit in about 3.5 MB packed (about 30 MB unpacked): every season of a big file
+ * was more than it could hold, and it reloaded the page. None fits: { players: null, why: "phone" }.
+ */
+export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null, tour = undefined } = {}) {
   try {
     const snap = await getDoc(doc(db, "fieldStats", datasetId));
     const d = snap.exists() ? snap.data().detail : null;
@@ -117,43 +140,62 @@ export async function getFieldDetail(datasetId, uploadedAt, { onProgress = null 
     if (uploadedAt && (d.sourceUploadedAt ?? 0) < uploadedAt) return { players: null, why: "stale" };
     // (update 296) one copy in memory, shared by every page that asks (Watchlist, Stats, Leaderboards, Cal, reports):
     // each used to unpack its own, and a phone ran out of memory and reloaded the page ("A problem repeatedly occurred")
-    // (update 534) a phone or tablet: the newest two seasons only (every season of a big file is more than a phone holds;
-    // it reloaded on the loading screen, and no page would open)
     const phone = (() => { try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch { return false; } })();
-    // (update 537) a phone with a big file (over 1.5 million rows): no lie / distance detail at all. Even one season of it
-    // (46 MB unpacked for 2026) is more than a phone can turn into data, and it reloaded the Stats page; the field's
-    // numbers come from the rankings summary instead (by category)
-    const bigFile = (() => { try { return localStorage.getItem("ta.bigData") === "1"; } catch { return false; } })();
-    if (phone && bigFile) { bootLog("detail skipped on this phone (big file)"); return { players: null, why: "phone" }; }
-    const years = phone ? [...d.years].sort((a, b) => String(b).localeCompare(String(a), undefined, { numeric: true })).slice(0, 2).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true })) : d.years;
-    const mk = `${datasetId}|${d.sourceUploadedAt}|${years.join(",")}`;
+    const byYear = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
+    let want; // [{ tour, year, path, size }]
+    if (d.tours && Object.keys(d.tours).length) {
+      const tourList = Object.keys(d.tours);
+      const sizeOfT = (t) => (d.tours[t] || []).reduce((n, y) => n + (d.sizes?.[`${t}|${y ?? ""}`] || 0), 0);
+      const biggest = [...tourList].sort((a, b) => sizeOfT(b) - sizeOfT(a))[0];
+      const pick = tour === "all" ? null : tour !== undefined && tour !== null && tourList.includes(String(tour)) ? String(tour) : phone ? (tourList.includes(activeTour()) ? activeTour() : biggest) : null;
+      want = (pick == null ? tourList : [pick]).flatMap((t) => (d.tours[t] || []).map((y) => ({ tour: t, year: y, path: pathOfT(datasetId, t, y), size: d.sizes?.[`${t}|${y ?? ""}`] || 0 })));
+      if (phone) {
+        // the newest seasons first, while they fit
+        const keep = [], newest = [...want].sort((a, b) => byYear(b.year, a.year));
+        let tot = 0; for (const f of newest) { if (tot + f.size > PHONE_PACKED_MAX) break; keep.push(f); tot += f.size; }
+        if (!keep.length) { bootLog(`detail skipped on this phone (${pick || "every tour"}: too big)`); return { players: null, why: "phone" }; }
+        want = keep;
+      }
+      bootLog(`detail: ${pick ?? "every tour"} · ${want.map((f) => f.year).sort(byYear).join(", ")}`);
+    } else {
+      // (a file built before update 538: every tour in each season's file) a phone with a big file: none (update 537);
+      // otherwise the newest two seasons (update 534)
+      const bigFile = (() => { try { return localStorage.getItem("ta.bigData") === "1"; } catch { return false; } })();
+      if (phone && bigFile) { bootLog("detail skipped on this phone (big file, not split by tour yet)"); return { players: null, why: "phone" }; }
+      const years = phone ? [...d.years].sort((a, b) => byYear(b, a)).slice(0, 2).sort(byYear) : d.years;
+      want = years.map((y) => ({ tour: null, year: y, path: pathOf(datasetId, y), size: 0 }));
+    }
+    want.sort((a, b) => byYear(a.year, b.year) || String(a.tour).localeCompare(String(b.tour)));
+    const tourOf = want.length && want.every((f) => f.tour != null && f.tour === want[0].tour) && Object.keys(d.tours || {}).length > 1 ? want[0].tour : null;
+    const mk = `${datasetId}|${d.sourceUploadedAt}|${want.map((f) => f.path).join(",")}`;
     if (shared.key !== mk || !shared.promise) {
       shared.key = mk; shared.result = null; // (the previous copy, if any, is let go)
       shared.promise = (async () => {
         const lists = [];
         let paused = null;
-        for (const [i, year] of years.entries()) {
-          const key = `${datasetId}|${year}|${d.sourceUploadedAt}`;
+        for (const [i, f] of want.entries()) {
+          const year = f.year;
+          const key = `${datasetId}|${f.tour == null ? year : `${tourSlug(f.tour)}~${year}`}|${d.sourceUploadedAt}`;
           let gz = await cacheGet(key);
           if (!gz) {
             paused ??= (await billingState()).paused;
             if (paused) return { players: null, why: "paused" };
             const { m, s: st } = await storage();
-            gz = new Uint8Array(await m.getBytes(m.ref(st, pathOf(datasetId, year))));
+            gz = new Uint8Array(await m.getBytes(m.ref(st, f.path)));
             await cachePut(key, gz, datasetId);
           }
-          bootLog(`detail ${year}: ${(gz.length / 1048576).toFixed(1)} MB packed, unpacking`); // (update 535)
+          bootLog(`detail ${f.tour ? `${f.tour} ` : ""}${year}: ${(gz.length / 1048576).toFixed(1)} MB packed, unpacking`); // (update 535)
           const raw = await gunzip(gz);
           bootLog(`detail ${year}: ${(raw.length / 1048576).toFixed(1)} MB unpacked, reading`);
           lists.push(decodeFieldDetail(raw));
-          onProgress?.(i + 1, years.length);
+          onProgress?.(i + 1, want.length);
         }
-        const out = { players: mergeYears(lists), why: null };
+        const out = { players: mergeYears(lists), why: null, tour: tourOf }; // (update 538: which tour; null: every tour)
         shared.result = out; // (update 325: for the admin's Performance readout)
         return out;
       })();
       shared.promise.then((r) => { if (!r.players && shared.key === mk) { shared.key = null; shared.promise = null; } }, () => { if (shared.key === mk) { shared.key = null; shared.promise = null; } });
-    } else onProgress?.(years.length, years.length);
+    } else onProgress?.(want.length, want.length);
     return await shared.promise;
   } catch (err) {
     console.error("Couldn't load the field detail", err);
@@ -200,7 +242,8 @@ export async function pruneDetailCopies() {
       for (const k of keys) {
         const [kid, year, src] = String(k).split("|");
         if (kid !== id) continue;
-        const current = d && d.format === FORMAT && String(d.sourceUploadedAt) === src && (d.years || []).map(String).includes(year);
+        const ok = d?.tours ? Object.entries(d.tours).flatMap(([t, ys]) => ys.map((y) => `${tourSlug(t)}~${y}`)) : (d?.years || []).map(String); // (update 538)
+        const current = d && d.format === FORMAT && String(d.sourceUploadedAt) === src && ok.includes(year);
         if (!current) gone.push(k);
       }
     }

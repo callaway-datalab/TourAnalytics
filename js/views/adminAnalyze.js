@@ -5,7 +5,7 @@
 import { el, mount, num, subNav, relocateSectionNav } from "../ui.js";
 import { adminAllClients, watchAdminDatasets, publishFieldStats, fieldStatsSource, getFieldStats } from "../store.js";
 import { loadDatasetPlayers, loadErrorText, reloadPlayerRows, isLiteDevice, setBigData } from "../fieldCache.js";
-import { publishFieldDetail, detailSource, getFieldDetail, billingState, resumeDownloads } from "../fieldStore.js";
+import { publishFieldDetail, detailSource, getFieldDetail, billingState, resumeDownloads, activeTour } from "../fieldStore.js";
 import { playerPicker } from "../playerPicker.js";
 import { detectColumns, isShotData, prepare, buildFieldSummary, summaryPlayers } from "../sg.js";
 import { sgDashboard } from "../sgDashboard.js";
@@ -20,6 +20,7 @@ export const ENTERED_NOTE = "Entered rounds: strokes gained is measured against 
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 // (update 227) kept while the app is open (not just while this page is), so coming back to Analyze is instant
 const ROWS = new Map(), PREPARED = new Map(), DETAIL = new Map(), DETAIL_WHY = new Map(), STAGED = new Map();
+let lastDetailKey = null; // (update 538: the tour whose lie / distance detail Player Stats last asked for)
 // (update 325) fewer copies kept: one prepared field on a phone, two on a computer (was four), and old loading jobs go
 const keepFew = (m, n = (isLiteDevice() ? 1 : 2)) => { while (m.size > n) m.delete(m.keys().next().value); };
 export const analyzeMemoryInfo = () => ({ rows: ROWS.size, prepared: PREPARED.size, detail: DETAIL.size, staged: STAGED.size });
@@ -251,10 +252,23 @@ export async function render(main, { flash, routeId }) {
   async function refreshLite(ds, token) {
     const idx = detectColumns(ds.columns || []);
     const uploaded = ds.uploadedAt?.toMillis?.() ?? 0;
-    const dk = `detail|${ds.id}|${uploaded}`;
+    // (update 538) the lie / distance detail of the tour on screen only (a file built by tour); the other tours' rounds
+    // come from the rankings summary, by category
+    const wantTour = dashState.tour?.[0] ?? activeTour() ?? null;
+    const dk = `detail|${ds.id}|${uploaded}|${wantTour ?? ""}`;
+    lastDetailKey = dk;
     // the whole field with lie / distance detail, once it's here (from Cloud Storage; see loadDetailLite)
     if (detailCache.has(dk)) {
-      const list = detailCache.get(dk).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "") }));
+      const det = detailCache.get(dk), dPlayers = det.players || det, dTour = det.tour ?? null;
+      let base = dPlayers;
+      if (dTour != null) { // one tour's detail: every other tour's rounds from the summary
+        const summary0 = await getFieldStats(ds.id).catch(() => null);
+        if (token !== loadToken) return;
+        const byKey = new Map(dPlayers.map((p) => [p.key, p]));
+        base = summaryPlayers(summary0).map((p) => { const dp = byKey.get(p.key); byKey.delete(p.key); const rest = p.rounds.filter((rd) => (rd.tour || "") !== dTour); return { ...p, summaryOnly: !dp && p.summaryOnly, rounds: dp ? [...rest, ...dp.rounds].sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)) : p.rounds }; });
+        for (const p of byKey.values()) base.push(p);
+      }
+      const list = base.filter((p) => p.rounds.length).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "") }));
       // (a player picked who isn't in the detail but whose rows were fetched: added, so they aren't fetched again)
       const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
       if (full && !list.some((p) => p.key === player.key)) list.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
@@ -292,16 +306,16 @@ export async function render(main, { flash, routeId }) {
       : why === "phone" ? "On a phone, a data file this big ranks by category only; lie and distance ranks are on a computer." // (update 537)
       : "Couldn\u2019t load the lie and distance detail, so rankings don\u2019t break down by lie or distance.";
     drawLite(ds, idx, fieldPlayers, note, why === "paused");
-    if (why === undefined) loadDetailLite(ds, dk);
+    if (why === undefined) loadDetailLite(ds, dk, wantTour);
   }
 
   // Phones: the field's lie / distance detail, once per upload (kept on the device after the first time).
   const detailCache = DETAIL, detailWhy = DETAIL_WHY;
-  async function loadDetailLite(ds, dk) {
+  async function loadDetailLite(ds, dk, tour = null) {
     detailWhy.set(dk, null); // (asked for: not asked again while it loads)
-    const { players, why } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0);
+    const { players, why, tour: got } = await getFieldDetail(ds.id, ds.uploadedAt?.toMillis?.() ?? 0, tour != null ? { tour } : {});
     detailWhy.set(dk, why);
-    if (players?.length) { keepFew(detailCache, 1); detailCache.set(dk, players); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
+    if (players?.length) { keepFew(detailCache, 1); detailCache.set(dk, { players, tour: got ?? null }); for (const k of [...preparedCache.keys()]) if (k.startsWith("lite|")) preparedCache.delete(k); }
     if (source === "tour" && fileId === ds.id) refresh(); // (redrawn with the detail, or with the reason it isn't there)
   }
 
@@ -324,7 +338,9 @@ export async function render(main, { flash, routeId }) {
     }
     const box = el("div");
     mount(body, box);
-    dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts(), ...(opt.noRanks ? { rankings: false } : {}) });
+    dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts(), ...(opt.noRanks ? { rankings: false } : {}),
+      // (update 538) another tour picked: its lie / distance detail loaded (once)
+      onTour: (t) => { const up = ds.uploadedAt?.toMillis?.() ?? 0; if (lastDetailKey !== `detail|${ds.id}|${up}|${t ?? ""}`) refresh(); } });
     // (never published from here: this field is the summary itself)
     if (player && (!me || me.summaryOnly)) pickerRef?.select?.(player.key); // fetch the picked player's full rows
   }

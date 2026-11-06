@@ -2,12 +2,11 @@
 
 // src.js
 import { createRequire } from "node:module";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 // ../../js/data.js
 var UserError = class extends Error {
 };
-var MAX_CHUNK_CHARS = 3e5;
 var DOC_CHUNK_CHARS = 6e5;
 var MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 var MAX_DOC_BYTES = 25 * 1024 * 1024;
@@ -194,35 +193,44 @@ function parseChunk(str) {
   }
   return rows;
 }
-function chunkRows(rows, maxChars = MAX_CHUNK_CHARS) {
-  const chunks = [];
-  const emit = (run2) => {
+var ZIP_MAX_BYTES = 9e5;
+var streamBytes = async (u8, stream) => new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(stream)).arrayBuffer());
+var gzipText = (str) => streamBytes(new TextEncoder().encode(str), new CompressionStream("gzip"));
+var gunzipText = async (u8) => new TextDecoder().decode(await streamBytes(u8, new DecompressionStream("gzip")));
+var bytesOf = (z) => z instanceof Uint8Array ? z : typeof z?.toUint8Array === "function" ? z.toUint8Array() : z?._byteString?.binaryString ? Uint8Array.from(z._byteString.binaryString, (c) => c.charCodeAt(0)) : new Uint8Array(z);
+async function readChunk(d) {
+  if (!d) return [];
+  if (d.z != null) return parseChunk(await gunzipText(bytesOf(d.z)));
+  return parseChunk(d.data);
+}
+async function chunkRowsZ(rows) {
+  const out = [];
+  const emit = async (run2) => {
     if (!run2.length) return;
-    const s = packRows(run2);
-    if (s.length <= maxChars || run2.length === 1) {
-      chunks.push(s);
+    const z = await gzipText(packRows(run2));
+    if (z.length <= ZIP_MAX_BYTES || run2.length === 1) {
+      out.push(z);
       return;
     }
     const h = Math.ceil(run2.length / 2);
-    emit(run2.slice(0, h));
-    emit(run2.slice(h));
+    await emit(run2.slice(0, h));
+    await emit(run2.slice(h));
   };
   let run = [], size = 0;
-  const budget = maxChars * 3;
+  const budget = 6e6;
   for (const row of rows) {
     const n = JSON.stringify(row).length;
-    if (n + 2 > 8e5) throw new UserError("One row in this file is too large to store.");
     if (run.length && size + n + 1 > budget) {
-      emit(run);
+      await emit(run);
       run = [];
       size = 0;
     }
     run.push(row);
     size += n + 1;
   }
-  emit(run);
-  if (!chunks.length) chunks.push(packRows([]));
-  return chunks;
+  await emit(run);
+  if (!out.length) out.push(await gzipText(packRows([])));
+  return out;
 }
 function splitString(str, size) {
   const out = [];
@@ -239,6 +247,8 @@ var ALIASES = {
   successes: ["successes", "success"],
   statValue: ["statvalue", "statval", "metricvalue"],
   tour: ["tour", "tourname", "league"],
+  birth: ["birthdate", "birthdata", "dob", "dateofbirth", "birthday", "born", "playerbirthdate"],
+  // (update 396: for the forecaster's age; blank is fine)
   category: ["category", "shotcategory", "sgcategory", "shottype"],
   sg: ["cdsg", "sg", "strokesgained", "sgshot", "sgvalue", "sgtotal"],
   // Aggregated files: strokes gained per attempt, times the number of attempts in that row.
@@ -304,6 +314,8 @@ var isShotData = (idx) => idx.statType !== void 0 && idx.statValue !== void 0 ||
 var SG_TYPES = ["strokesgained", "sg", "strokesgainedattempt", "strokesgainedperattempt", "sgperattempt"];
 var STAT_TYPES = {
   drive: ["drivingdistance", "drivedistance", "avgdrivingdistance", "driving", "drivingdistanceyds"],
+  ballSpeed: ["ballspeed", "ballspeedmph", "driverballspeed", "avgballspeed", "ballspeeddriver"],
+  // (update 402)
   fwy: ["hitfwy", "hitfairway", "fairwayshit", "fairwayhit", "fwy", "fwyhit", "drivingaccuracy", "fairways"],
   gir: ["gir", "greensinregulation", "hitgir", "girpct"],
   hitGreen: ["hitgreen", "greenshit", "hitgreenpct"],
@@ -349,6 +361,8 @@ var STAT_DEFS = {
   putts: { label: "Putts / Round", higher: false, dp: 2, help: "Putts per 18 holes. Lower is better." },
   fwy: { label: "Hit Fairway %", pct: true, higher: true, help: "Tee shots on par 4s and 5s that finished in the fairway." },
   drive: { label: "Driving Distance", unit: " yds", dp: 1, higher: true, help: "Average tee shot distance in yards." },
+  ballSpeed: { label: "Ball Speed", unit: " mph", dp: 1, higher: true, help: "Average ball speed on tee shots with the driver, in mph. Faster is better." },
+  // (update 402)
   hitGreen: { label: "Hit Green %", pct: true, higher: true, help: "Approach and around-the-green shots that finished on the green (or in the hole)." },
   pinHigh: { label: "Pin-High %", pct: true, higher: true, help: "Shots that finished pin high: within 10 ft short or long of the hole." },
   onLine: { label: "On-Line %", pct: true, higher: true, help: "Shots that finished on line: within 10 ft left or right of the hole." },
@@ -382,6 +396,7 @@ var looseStatKey = (q) => {
   const par = q.match(/par([345])s?(?!\d)/);
   if (par && /scor|avg|average|perf|strokes/.test(q) && !/gir|greens?inreg|birdie|bogey|eagle|par(or|orbetter)/.test(q)) return `par${par[1]}`;
   if ((/^gir/.test(q) || /gir(pct|percent|percentage)?$/.test(q) || /greens?inreg/.test(q)) && !/par3(?!\d)/.test(q)) return "gir";
+  if (/proxim|^prox|dist(ance)?to(the)?(pin|hole|cup)|(feet|ft)(from|to)(the)?(pin|hole|cup)/.test(q) && !/pct|percent|rank/.test(q)) return "prox";
   return null;
 };
 var statKeyOfRaw = (t) => {
@@ -416,6 +431,33 @@ var truthy = (v) => {
   if (["0", "false", "no", "n", "miss", "missed"].includes(s)) return false;
   return null;
 };
+function birthOf(v) {
+  if (v == null || isNull(v)) return null;
+  let s = String(v).trim();
+  if (/^\d{8}$/.test(s)) s = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}`;
+  if (/^\d+(\.\d+)?$/.test(s) && Number(s) > 2e4 && Number(s) < 6e4) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Number(s) * 864e5);
+    s = d.toISOString().slice(0, 10);
+  }
+  let y, mo, da;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    y = Number(s.slice(0, 4));
+    mo = Number(s.slice(5, 7));
+    da = Number(s.slice(8, 10));
+  } else {
+    const d = new Date(s.replace(/\bsept\b/i, "Sep"));
+    if (isNaN(d)) return null;
+    y = d.getFullYear();
+    mo = d.getMonth() + 1;
+    da = d.getDate();
+  }
+  if (!(mo >= 1 && mo <= 12 && da >= 1 && da <= 31)) return null;
+  return y >= 1930 && y <= (/* @__PURE__ */ new Date()).getUTCFullYear() - 12 ? `${y}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}` : null;
+}
+var birthOfRounds = (rounds) => {
+  for (const rd of rounds || []) if (rd.birth) return rd.birth;
+  return null;
+};
 function prepare(rows, idx) {
   const get = (r, f) => idx[f] === void 0 ? null : r[idx[f]];
   const shotCols = ["onGreen", "proximity", "upDown", "holeOut", "hitFwy", "missDir", "driveDist"].some((f) => idx[f] !== void 0);
@@ -430,6 +472,8 @@ function prepare(rows, idx) {
       const course = idx.course !== void 0 && !isNull(get(r, "course")) ? String(get(r, "course")).trim() : "";
       const noRound = idx.round !== void 0 && isNull(rnd);
       rounds.set(key, { key, date: String(date), event: String(event), roundNo: noRound || isNaN(Number(rnd)) ? "" : String(Number(rnd)), year: String(year ?? ""), tour, ...course ? { course } : {}, shots: [], ...noRound ? { eventLevel: true } : {} });
+      const bd = idx.birth !== void 0 ? birthOf(get(r, "birth")) : null;
+      if (bd) rounds.get(key).birth = bd;
     }
     return rounds.get(key);
   };
@@ -482,7 +526,7 @@ function prepare(rows, idx) {
     if (!cat || sg === null || w === null || w <= 0) continue;
     const lie = get(r, "lie"), dist = get(r, "distanceRange");
     const eq = hasEquip ? equip(r) : { club: null, clubCat: null, gear: null, ball: null };
-    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist), ...eq };
+    const shot = { cat, sg, w, r, lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist), ...eq, ...idx.hole !== void 0 ? { hole: num(get(r, "hole")) } : {} };
     const rd = roundOf(r);
     rd.shots.push(shot);
     if (shotCols) shotObs(rd, shot, r, idx);
@@ -539,6 +583,8 @@ function buildFieldSummary(players) {
     players: players.map((p) => ({
       key: p.key,
       name: p.name,
+      ...birthOfRounds(p.rounds) ? { b: birthOfRounds(p.rounds) } : {},
+      // (update 396)
       rounds: p.rounds.map((rd) => {
         const c = {};
         for (const s of rd.shots) {
@@ -562,66 +608,409 @@ function buildFieldSummary(players) {
 
 // ../../js/fieldDetail.js
 var MAGIC = "TAD1";
-function encodeFieldDetail(players) {
-  const years = /* @__PURE__ */ new Map();
-  for (const p of players) for (const rd of p.rounds) {
-    const y = String(rd.year ?? "");
-    if (!years.has(y)) years.set(y, /* @__PURE__ */ new Map());
-    const byP = years.get(y);
-    if (!byP.has(p.key)) byP.set(p.key, { key: p.key, name: p.name ?? p.label ?? null, rounds: [] });
-    byP.get(p.key).rounds.push(rd);
-  }
-  return [...years].map(([year, byP]) => ({ year, bytes: encodeYear([...byP.values()]) }));
-}
-function encodeYear(players) {
+function yearBuilder(year) {
   const dict = [null], at = /* @__PURE__ */ new Map([[null, 0]]);
   const id = (s) => {
     const k = s === void 0 || s === null ? null : String(s);
-    if (!at.has(k)) {
-      at.set(k, dict.length);
+    let i = at.get(k);
+    if (i === void 0) {
+      i = dict.length;
+      at.set(k, i);
       dict.push(k);
     }
-    return at.get(k);
+    return i;
   };
-  let nS = 0, nO = 0;
-  for (const p of players) for (const rd of p.rounds) {
-    nS += rd.shots.length;
-    nO += (rd.obs || []).length;
+  const grow = (a, need) => {
+    if (need <= a.length) return a;
+    const b = new a.constructor(Math.max(need, a.length * 2));
+    b.set(a);
+    return b;
+  };
+  let sI = new Uint32Array(7 * 4096), sF = new Float32Array(2 * 4096), oI = new Uint32Array(6 * 1024), oF = new Float32Array(2 * 1024), nS = 0, nO = 0;
+  const hp = [];
+  return {
+    add(p, rounds) {
+      const rs = [];
+      for (const rd of rounds) {
+        const ns = rd.shots.length, obs = rd.obs || [], no = obs.length;
+        sI = grow(sI, (nS + ns) * 7);
+        sF = grow(sF, (nS + ns) * 2);
+        oI = grow(oI, (nO + no) * 6);
+        oF = grow(oF, (nO + no) * 2);
+        for (const x of rd.shots) {
+          const b = nS * 7;
+          sI[b] = id(x.cat);
+          sI[b + 1] = id(x.lie);
+          sI[b + 2] = id(x.dist);
+          sI[b + 3] = id(x.club);
+          sI[b + 4] = id(x.clubCat);
+          sI[b + 5] = id(x.gear);
+          sI[b + 6] = id(x.ball);
+          sF[nS * 2] = x.sg;
+          sF[nS * 2 + 1] = x.w;
+          nS++;
+        }
+        for (const o of obs) {
+          const b = nO * 6;
+          oI[b] = id(o.k);
+          oI[b + 1] = id(o.cat);
+          oI[b + 2] = id(o.lie);
+          oI[b + 3] = id(o.dist);
+          oI[b + 4] = id(o.gear);
+          oI[b + 5] = id(o.ball);
+          oF[nO * 2] = o.v;
+          oF[nO * 2 + 1] = o.w;
+          nO++;
+        }
+        const plain = rd.key === `${rd.date}|${rd.event}|${rd.roundNo}`;
+        rs.push([plain ? null : rd.key, id(rd.date), id(rd.event), rd.roundNo, id(rd.tour), rd.eventLevel ? 1 : 0, ns, no, id(rd.course || null)]);
+      }
+      hp.push([p.key, p.name ?? p.label ?? null, rs]);
+    },
+    finish() {
+      const wide = dict.length > 65535, I = wide ? Uint32Array : Uint16Array;
+      const header = new TextEncoder().encode(JSON.stringify({ v: 2, year, wide, nS, nO, dict, players: hp }));
+      const parts = [I.from(sI.subarray(0, nS * 7)), sF.subarray(0, nS * 2), I.from(oI.subarray(0, nO * 6)), oF.subarray(0, nO * 2)];
+      const pad4 = (n) => n + 3 & ~3;
+      let size = pad4(8 + header.length);
+      for (const t of parts) size = pad4(size + t.byteLength);
+      const out = new Uint8Array(size);
+      out.set(new TextEncoder().encode(MAGIC), 0);
+      new DataView(out.buffer).setUint32(4, header.length, true);
+      out.set(header, 8);
+      let off = pad4(8 + header.length);
+      for (const t of parts) {
+        out.set(new Uint8Array(t.buffer, t.byteOffset, t.byteLength), off);
+        off = pad4(off + t.byteLength);
+      }
+      return out;
+    }
+  };
+}
+function detailBuilder() {
+  const years = /* @__PURE__ */ new Map();
+  return {
+    add(p) {
+      const by = /* @__PURE__ */ new Map();
+      for (const rd of p.rounds) {
+        const y = String(rd.year ?? "");
+        (by.get(y) || by.set(y, []).get(y)).push(rd);
+      }
+      for (const [y, rs] of by) (years.get(y) || years.set(y, yearBuilder(y)).get(y)).add(p, rs);
+    },
+    finish() {
+      return [...years].map(([year, b]) => ({ year, bytes: b.finish() }));
+    }
+  };
+}
+function mergeDetailYears(list) {
+  if (list.length === 1) return list[0];
+  let b = null;
+  for (const bytes of list) {
+    const ps = decodeFieldDetail(bytes);
+    for (const p of ps) {
+      b ||= yearBuilder(p.rounds[0]?.year ?? "");
+      b.add(p, p.rounds);
+    }
   }
-  const sI = new Uint32Array(nS * 5), sF = new Float32Array(nS * 2), oI = new Uint32Array(nO * 4), oF = new Float32Array(nO * 2);
-  let a = 0, b = 0;
-  const hp = players.map((p) => [p.key, p.name, p.rounds.map((rd) => {
-    for (const s of rd.shots) {
-      sI.set([id(s.cat), id(s.lie), id(s.dist), id(s.club), id(s.clubCat)], a * 5);
-      sF[a * 2] = s.sg;
-      sF[a * 2 + 1] = s.w;
-      a++;
+  return (b || yearBuilder("")).finish();
+}
+var r4 = (x) => Math.round(x * 1e4) / 1e4;
+var own = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
+var ShotV = class {
+  constructor(t, i) {
+    this.t = t;
+    this.i = i;
+  }
+  get cat() {
+    return this.t.d[this.t.I[this.i * this.t.N]];
+  }
+  set cat(v) {
+    own(this, "cat", v);
+  }
+  get lie() {
+    return this.t.d[this.t.I[this.i * this.t.N + 1]];
+  }
+  set lie(v) {
+    own(this, "lie", v);
+  }
+  get dist() {
+    return this.t.d[this.t.I[this.i * this.t.N + 2]];
+  }
+  set dist(v) {
+    own(this, "dist", v);
+  }
+  get club() {
+    return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 3]] : void 0;
+  }
+  set club(v) {
+    own(this, "club", v);
+  }
+  get clubCat() {
+    return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 4]] : void 0;
+  }
+  set clubCat(v) {
+    own(this, "clubCat", v);
+  }
+  get gear() {
+    const x = this.t.N === 7 ? this.t.I[this.i * 7 + 5] : 0;
+    return x ? this.t.d[x] : void 0;
+  }
+  set gear(v) {
+    own(this, "gear", v);
+  }
+  get ball() {
+    const x = this.t.N === 7 ? this.t.I[this.i * 7 + 6] : 0;
+    return x ? this.t.d[x] : void 0;
+  }
+  set ball(v) {
+    own(this, "ball", v);
+  }
+  get sg() {
+    return r4(this.t.F[this.i * 2]);
+  }
+  set sg(v) {
+    own(this, "sg", v);
+  }
+  get w() {
+    return r4(this.t.F[this.i * 2 + 1]);
+  }
+  set w(v) {
+    own(this, "w", v);
+  }
+  toJSON() {
+    return { cat: this.cat, sg: this.sg, w: this.w, lie: this.lie, dist: this.dist, club: this.club, clubCat: this.clubCat, gear: this.gear, ball: this.ball };
+  }
+};
+var ObsV = class {
+  constructor(t, i) {
+    this.t = t;
+    this.i = i;
+  }
+  get k() {
+    return this.t.d[this.t.I[this.i * this.t.N]];
+  }
+  set k(v) {
+    own(this, "k", v);
+  }
+  get cat() {
+    return this.t.d[this.t.I[this.i * this.t.N + 1]];
+  }
+  set cat(v) {
+    own(this, "cat", v);
+  }
+  get lie() {
+    return this.t.d[this.t.I[this.i * this.t.N + 2]];
+  }
+  set lie(v) {
+    own(this, "lie", v);
+  }
+  get dist() {
+    return this.t.d[this.t.I[this.i * this.t.N + 3]];
+  }
+  set dist(v) {
+    own(this, "dist", v);
+  }
+  get gear() {
+    const x = this.t.N === 6 ? this.t.I[this.i * 6 + 4] : 0;
+    return x ? this.t.d[x] : void 0;
+  }
+  set gear(v) {
+    own(this, "gear", v);
+  }
+  get ball() {
+    const x = this.t.N === 6 ? this.t.I[this.i * 6 + 5] : 0;
+    return x ? this.t.d[x] : void 0;
+  }
+  set ball(v) {
+    own(this, "ball", v);
+  }
+  get v() {
+    return r4(this.t.F[this.i * 2]);
+  }
+  set v(x) {
+    own(this, "v", x);
+  }
+  get w() {
+    return r4(this.t.F[this.i * 2 + 1]);
+  }
+  set w(x) {
+    own(this, "w", x);
+  }
+  toJSON() {
+    return { k: this.k, cat: this.cat, lie: this.lie, dist: this.dist, gear: this.gear, ball: this.ball, v: this.v, w: this.w };
+  }
+};
+var StatV = class extends ObsV {
+  get sg() {
+    return 0;
+  }
+  set sg(v) {
+    own(this, "sg", v);
+  }
+  get club() {
+    return null;
+  }
+  set club(v) {
+    own(this, "club", v);
+  }
+  get clubCat() {
+    return null;
+  }
+  set clubCat(v) {
+    own(this, "clubCat", v);
+  }
+  toJSON() {
+    return { cat: this.cat, lie: this.lie, dist: this.dist, v: this.v, w: this.w, sg: 0, club: null, clubCat: null, gear: this.gear, ball: this.ball };
+  }
+};
+var ColList = class _ColList {
+  constructor(t, View, start, n, idx = null) {
+    this.t = t;
+    this.View = View;
+    this.start = start;
+    this.n = n;
+    this.idx = idx;
+  }
+  get length() {
+    return this.n;
+  }
+  pos(j) {
+    return this.idx ? this.idx[j] : this.start + j;
+  }
+  at(j) {
+    if (j < 0) j += this.n;
+    return j >= 0 && j < this.n ? new this.View(this.t, this.pos(j)) : void 0;
+  }
+  [Symbol.iterator]() {
+    let j = 0;
+    const me = this;
+    return { next: () => j < me.n ? { value: new me.View(me.t, me.pos(j++)), done: false } : { value: void 0, done: true }, [Symbol.iterator]() {
+      return this;
+    } };
+  }
+  forEach(f) {
+    for (let j = 0; j < this.n; j++) f(new this.View(this.t, this.pos(j)), j, this);
+  }
+  map(f) {
+    const out = new Array(this.n);
+    for (let j = 0; j < this.n; j++) out[j] = f(new this.View(this.t, this.pos(j)), j, this);
+    return out;
+  }
+  flatMap(f) {
+    return this.map(f).flat();
+  }
+  filter(f) {
+    const keep = new Uint32Array(this.n);
+    let m = 0;
+    for (let j = 0; j < this.n; j++) {
+      const p = this.pos(j);
+      if (f(new this.View(this.t, p), j, this)) keep[m++] = p;
     }
-    for (const o of rd.obs || []) {
-      oI.set([id(o.k), id(o.cat), id(o.lie), id(o.dist)], b * 4);
-      oF[b * 2] = o.v;
-      oF[b * 2 + 1] = o.w;
-      b++;
+    return new _ColList(this.t, this.View, 0, m, keep.slice(0, m));
+  }
+  reduce(f, init) {
+    let j = 0, acc = init;
+    if (arguments.length < 2) {
+      if (!this.n) throw new TypeError("Reduce of empty list with no initial value");
+      acc = new this.View(this.t, this.pos(0));
+      j = 1;
     }
-    const plain = rd.key === `${rd.date}|${rd.event}|${rd.roundNo}`;
-    return [plain ? null : rd.key, id(rd.date), id(rd.event), rd.roundNo, id(rd.tour), rd.eventLevel ? 1 : 0, rd.shots.length, (rd.obs || []).length, id(rd.course || null)];
-  })]);
-  const wide = dict.length > 65535, I = wide ? Uint32Array : Uint16Array;
-  const header = new TextEncoder().encode(JSON.stringify({ v: 1, year: players[0]?.rounds[0]?.year ?? "", wide, nS, nO, dict, players: hp }));
-  const parts = [I.from(sI), sF, I.from(oI), oF];
+    for (; j < this.n; j++) acc = f(acc, new this.View(this.t, this.pos(j)), j, this);
+    return acc;
+  }
+  some(f) {
+    for (let j = 0; j < this.n; j++) if (f(new this.View(this.t, this.pos(j)), j, this)) return true;
+    return false;
+  }
+  every(f) {
+    for (let j = 0; j < this.n; j++) if (!f(new this.View(this.t, this.pos(j)), j, this)) return false;
+    return true;
+  }
+  find(f) {
+    for (let j = 0; j < this.n; j++) {
+      const v = new this.View(this.t, this.pos(j));
+      if (f(v, j, this)) return v;
+    }
+    return void 0;
+  }
+  findIndex(f) {
+    for (let j = 0; j < this.n; j++) if (f(new this.View(this.t, this.pos(j)), j, this)) return j;
+    return -1;
+  }
+  slice(a = 0, b = this.n) {
+    if (a < 0) a += this.n;
+    if (b < 0) b += this.n;
+    a = Math.max(0, Math.min(this.n, a));
+    b = Math.max(a, Math.min(this.n, b));
+    const idx = new Uint32Array(b - a);
+    for (let j = a; j < b; j++) idx[j - a] = this.pos(j);
+    return new _ColList(this.t, this.View, 0, b - a, idx);
+  }
+  concat(...more) {
+    return [...this, ...more.flatMap((x) => x && typeof x[Symbol.iterator] === "function" && typeof x !== "string" ? [...x] : [x])];
+  }
+  sort(f) {
+    return [...this].sort(f);
+  }
+  toArray() {
+    return [...this];
+  }
+  /** (stats only) this round's entries of one stat, as shots, without making an object for each */
+  asStat(key) {
+    if (this.View !== ObsV) return null;
+    const keep = new Uint32Array(this.n);
+    let m = 0;
+    const { d, I, N } = this.t;
+    for (let j = 0; j < this.n; j++) {
+      const p = this.pos(j);
+      if (d[I[p * N]] === key) keep[m++] = p;
+    }
+    return new _ColList(this.t, StatV, 0, m, keep.slice(0, m));
+  }
+  toJSON() {
+    return this.toArray();
+  }
+};
+function decodeFieldDetail(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (new TextDecoder().decode(u8.subarray(0, 4)) !== MAGIC) throw new Error("Not a field detail file");
+  const hl = new DataView(u8.buffer, u8.byteOffset).getUint32(4, true);
+  const h = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8 + hl)));
+  if (h.v !== 1 && h.v !== 2) throw new Error("Unknown field detail version");
+  const SN = h.v === 2 ? 7 : 5, ON = h.v === 2 ? 6 : 4;
   const pad4 = (n) => n + 3 & ~3;
-  let size = pad4(8 + header.length);
-  for (const t of parts) size = pad4(size + t.byteLength);
-  const out = new Uint8Array(size);
-  out.set(new TextEncoder().encode(MAGIC), 0);
-  new DataView(out.buffer).setUint32(4, header.length, true);
-  out.set(header, 8);
-  let off = pad4(8 + header.length);
-  for (const t of parts) {
-    out.set(new Uint8Array(t.buffer, t.byteOffset, t.byteLength), off);
-    off = pad4(off + t.byteLength);
-  }
-  return out;
+  const buf = u8.byteOffset % 4 === 0 ? u8.buffer : u8.slice().buffer, base = u8.byteOffset % 4 === 0 ? u8.byteOffset : 0;
+  const I = h.wide ? Uint32Array : Uint16Array, isz = h.wide ? 4 : 2;
+  let off = pad4(8 + hl);
+  const take = (T, n, sz) => {
+    const t = new T(buf, base + off, n).slice();
+    off = pad4(off + n * sz);
+    return t;
+  };
+  const sI = take(I, h.nS * SN, isz), sF = take(Float32Array, h.nS * 2, 4), oI = take(I, h.nO * ON, isz), oF = take(Float32Array, h.nO * 2, 4);
+  const d = h.dict;
+  let clubs = false;
+  for (let i = 0; i < h.nS && !clubs; i++) if (sI[i * SN + 3] || SN === 7 && (sI[i * SN + 5] || sI[i * SN + 6])) clubs = true;
+  const st = { d, I: sI, F: sF, N: SN, clubs }, ot = { d, I: oI, F: oF, N: ON };
+  const year = String(h.year ?? "");
+  let a = 0, b = 0;
+  return h.players.map(([key, name, rounds]) => ({
+    key,
+    name,
+    rounds: rounds.map(([rk, di, ei, roundNo, ti, ev, ns, no, ci]) => {
+      const shots = new ColList(st, ShotV, a, ns), obs = new ColList(ot, ObsV, b, no);
+      const has = /* @__PURE__ */ new Set();
+      for (let i = 0; i < no; i++) has.add(d[oI[(b + i) * ON]]);
+      if (ns) has.add("sg");
+      a += ns;
+      b += no;
+      const date = d[di] ?? "", event = d[ei] ?? "";
+      const rd = { key: rk ?? `${date}|${event}|${roundNo}`, date, event, roundNo, year, tour: d[ti] ?? "", ...ci && d[ci] ? { course: d[ci] } : {}, shots, obs, ...ev ? { eventLevel: true } : {} };
+      rd.has = has;
+      return rd;
+    })
+  }));
 }
 async function pipe(bytes, stream) {
   const out = new Response(new Blob([bytes]).stream().pipeThrough(stream));
@@ -638,7 +1027,7 @@ var db = new Firestore();
 var gcs = new Storage();
 var PREFIX = "incoming/";
 var REBUILD = "incoming/_rebuild/";
-var DETAIL_FORMAT = 1;
+var DETAIL_FORMAT = 2;
 var MAX_DIRECT_BYTES = 40 * 1024 * 1024;
 functions.cloudEvent("dataImport", async (event) => {
   const obj = event.data || {};
@@ -687,7 +1076,9 @@ functions.cloudEvent("dataImport", async (event) => {
       await publishFieldStats(datasetId, buildFieldSummary(players), Date.now());
       rankings = true;
       await set({ step: "Updating lie and distance detail" });
-      detail = await publishFieldDetail(bucket, datasetId, players, Date.now());
+      const db0 = tourDetail();
+      for (const p of players) db0.add(p);
+      detail = await publishFieldDetail(bucket, datasetId, db0.finish(), Date.now());
     }
     await set({
       status: "done",
@@ -711,45 +1102,116 @@ functions.cloudEvent("dataImport", async (event) => {
 });
 var heartbeat = (ref) => setInterval(() => ref.set({ updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {
 }), 6e4);
+var RUN_MS = Number(process.env.REBUILD_RUN_MS) || 33e4;
+var MERGE_MS = Number(process.env.REBUILD_MERGE_MS) || 2e5;
+var partPath = (datasetId, runId, part, what) => `rebuildParts/${datasetId}/${runId}/${part}.${what}.gz`;
 async function rebuild(bucket, file, meta) {
-  const datasetId = String(meta.datasetId || ""), status = db.doc(`imports/${meta.statusId || `rebuild_${datasetId}`}`);
+  const T0 = Date.now();
+  const datasetId = String(meta.datasetId || ""), statusId = meta.statusId || `rebuild_${datasetId}`, status = db.doc(`imports/${statusId}`);
   const set = (fields) => status.set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   const beat = heartbeat(status);
+  const start = Math.max(0, Number(meta.start) || 0), part = Math.max(0, Number(meta.part) || 0), runId = String(meta.runId || Date.now());
   try {
+    if (!part) {
+      const prior = await status.get();
+      if (!prior.exists) await set({ name: meta.name || null, status: "running", step: "Updating rankings", startedAt: FieldValue.serverTimestamp(), datasetId });
+    }
     const dsSnap = await db.doc(`datasets/${datasetId}`).get();
     if (!dsSnap.exists) throw new Error("That data file isn't there any more.");
     const ds = dsSnap.data(), idx = detectColumns(ds.columns || []);
     let rankings = false, detail = null;
     if (isShotData(idx)) {
-      await set({ step: "Updating rankings" });
+      await set({ status: "running", step: start ? `Updating rankings (${start} of ${(ds.clientKeys || []).length} players)` : "Updating rankings" });
       const labels = await playerLabels();
-      const keys = ds.clientKeys || [], names = ds.playerNames || {}, players = [];
-      let done = 0;
+      const all = ds.clientKeys || [], names = ds.playerNames || {};
+      const keys = all.slice(start), summary = [], det = tourDetail();
+      let taken = start, msRead = 0, msPrep = 0, nDone = 0;
       const next = async () => {
-        while (keys.length) {
+        while (keys.length && Date.now() - T0 < RUN_MS) {
           const key = keys.shift();
+          taken++;
           const m = await db.doc(`clientData/${key}/datasets/${datasetId}`).get();
           const n = m.exists ? m.data().chunkCount || 0 : 0;
           const refs = Array.from({ length: n }, (_, i) => db.doc(`clientData/${key}/datasets/${datasetId}/chunks/${i}`));
+          const t1 = Date.now();
           const snaps = refs.length ? await db.getAll(...refs) : [];
-          const rows = snaps.flatMap((sn) => sn.exists ? parseChunk(sn.data().data) : []);
+          const rows = (await Promise.all(snaps.map((sn) => sn.exists ? readChunk(sn.data()) : []))).flat();
+          const t2 = Date.now();
           const rounds = prepare(rows, idx);
+          msRead += t2 - t1;
+          msPrep += Date.now() - t2;
+          nDone++;
           for (const rd of rounds) for (const sh of rd.shots) delete sh.r;
-          if (rounds.length) players.push({ key, name: labels.get(key) || names[key] || key.replace(/^c_/, ""), rounds });
-          if (++done % 100 === 0) await set({ step: `Updating rankings (${done} of ${ds.clientKeys.length} players)` });
+          if (rounds.length) {
+            const pl = { key, name: labels.get(key) || names[key] || key.replace(/^c_/, ""), rounds };
+            summary.push(buildFieldSummary([pl]).players[0]);
+            det.add(pl);
+          }
+          if (taken % 100 === 0) await set({ step: `Updating rankings (${taken} of ${all.length} players)` });
         }
       };
-      await Promise.all(Array.from({ length: 16 }, next));
-      await publishFieldStats(datasetId, buildFieldSummary(players), Date.now());
+      await Promise.all(Array.from({ length: Number(process.env.REBUILD_PARALLEL) || 24 }, next));
+      console.log(`Rebuild ${datasetId}: ${nDone} players this run in ${Math.round((Date.now() - T0) / 1e3)}s; per player, reading ${Math.round(msRead / Math.max(1, nDone))} ms (waiting included), working out ${Math.round(msPrep / Math.max(1, nDone))} ms`);
+      const files = det.finish();
+      if (keys.length || part > 0 && Date.now() - T0 > MERGE_MS) {
+        await bucket.file(partPath(datasetId, runId, part, "summary.json")).save(gzipSync(JSON.stringify({ players: summary, files: files.map((f) => [f.tour, f.year]) })), { resumable: false });
+        for (const f of files) await bucket.file(partPath(datasetId, runId, part, `${tourSlug(f.tour)}~${f.year || "none"}.bin`)).save(gzipSync(f.bytes), { resumable: false });
+        await set({ step: `Updating rankings (${taken} of ${all.length} players, part ${part + 1} saved)` });
+        const mk = bucket.file(`${REBUILD}${datasetId}.p${part + 1}.json`);
+        await mk.save(JSON.stringify({ datasetId }), { resumable: false, contentType: "application/json", metadata: { metadata: { kind: "rebuild", datasetId, statusId, name: meta.name || "", start: String(taken), part: String(part + 1), runId } } });
+        console.log(`Rebuild ${datasetId}: part ${part} saved (${taken} of ${all.length}), handing on`);
+        return;
+      }
+      const tk = (t, y) => `${t || ""}${y ?? ""}`;
+      let players = summary, yearsMap = new Map(files.map((f) => [tk(f.tour, f.year), [f.bytes]]));
+      if (part > 0) {
+        await set({ step: "Joining the parts" });
+        players = [];
+        for (let i = 0; i < part; i++) {
+          const [buf] = await bucket.file(partPath(datasetId, runId, i, "summary.json")).download();
+          const pj = JSON.parse(gunzipSync(buf).toString("utf8"));
+          for (const p of pj.players) players.push(p);
+          for (const [t, y] of pj.files || []) {
+            const [b] = await bucket.file(partPath(datasetId, runId, i, `${tourSlug(t)}~${y || "none"}.bin`)).download();
+            const u = new Uint8Array(gunzipSync(b));
+            const k = tk(t, y);
+            (yearsMap.get(k) || yearsMap.set(k, []).get(k)).unshift(u);
+          }
+        }
+        for (const p of summary) players.push(p);
+      }
+      await publishFieldStats(datasetId, { players }, Date.now());
       rankings = true;
       await set({ step: "Updating lie and distance detail" });
-      detail = await publishFieldDetail(bucket, datasetId, players, Date.now());
+      const out = [...yearsMap].map(([k, list]) => {
+        const [tour, year] = k.split("");
+        return { tour, year: year === "" ? null : year, bytes: mergeDetailYears(list) };
+      });
+      yearsMap = null;
+      detail = await publishFieldDetail(bucket, datasetId, out, Date.now());
+      if (part > 0) {
+        try {
+          const [items] = await bucket.getFiles({ prefix: `rebuildParts/${datasetId}/` });
+          for (const it of items) await it.delete().catch(() => {
+          });
+        } catch (e) {
+          console.warn("Couldn't tidy the parts", e?.message);
+        }
+      }
     }
-    await set({ status: "done", step: null, datasetId, rankings, detail: detail?.skipped || (detail ? "saved" : null), finishedAt: FieldValue.serverTimestamp() });
+    await set({
+      status: "done",
+      step: null,
+      datasetId,
+      rankings,
+      detail: detail?.skipped || (detail ? "saved" : null),
+      finishedAt: FieldValue.serverTimestamp(),
+      ...meta.statusId && !String(meta.statusId).startsWith("rebuild_") ? {} : { people: (ds.clientKeys || []).length }
+    });
     console.log(`Rebuilt rankings for ${datasetId}`);
   } catch (err) {
     console.error("Rebuild failed", err);
-    await set({ status: "error", step: null, message: `The rows are live, but the rankings couldn't be rebuilt: ${String(err?.message || err)}. Opening Analyze on a computer rebuilds them.`, finishedAt: FieldValue.serverTimestamp() });
+    await set({ status: "error", step: null, message: `The rows are live, but the rankings couldn't be rebuilt: ${String(err?.message || err)}. Try "Rebuild rankings" on Upload Data.`, finishedAt: FieldValue.serverTimestamp() });
   } finally {
     clearInterval(beat);
     await file.delete().catch(() => {
@@ -801,14 +1263,15 @@ async function commitInChunks(ops) {
   if (count) await batch.commit();
 }
 async function deleteCollection(col) {
-  const snap = await col.get();
-  await commitInChunks(snap.docs.map((d) => (b) => b.delete(d.ref)));
+  const refs = await col.listDocuments();
+  await commitInChunks(refs.map((r) => (b) => b.delete(r)));
 }
 async function saveDataset(name, description, dataset) {
   const existing = await db.collection("datasets").where("name", "==", name).get();
   const datasetId = existing.empty ? db.collection("datasets").doc().id : existing.docs[0].id;
   const oldClientKeys = existing.empty ? [] : existing.docs[0].data().clientKeys || [];
-  const pieces = new Map([...dataset.byClient].map(([k, g]) => [k, chunkRows(g.rows)]));
+  const pieces = /* @__PURE__ */ new Map();
+  for (const [k, g] of dataset.byClient) pieces.set(k, await chunkRowsZ(g.rows));
   const storedBytes = [...pieces.values()].flat().reduce((n, d) => n + d.length, 0);
   const newClientKeys = [...dataset.byClient.keys()];
   for (const key of /* @__PURE__ */ new Set([...oldClientKeys, ...newClientKeys])) {
@@ -844,7 +1307,7 @@ async function saveDataset(name, description, dataset) {
       chunkCount: chunks.length,
       uploadedAt: FieldValue.serverTimestamp()
     }));
-    chunks.forEach((data, i) => ops.push(sized((b) => b.set(db.doc(`clientData/${clientKey2}/datasets/${datasetId}/chunks/${i}`), { data }), data.length * 2)));
+    chunks.forEach((z, i) => ops.push(sized((b) => b.set(db.doc(`clientData/${clientKey2}/datasets/${datasetId}/chunks/${i}`), { z: Buffer.from(z) }), z.length + 200)));
   }
   await commitInChunks(ops);
   return { datasetId };
@@ -852,10 +1315,12 @@ async function saveDataset(name, description, dataset) {
 async function publishFieldStats(datasetId, summary, sourceUploadedAt) {
   const ref = db.doc(`fieldStats/${datasetId}`);
   const old = await ref.get();
-  const pieces = splitString(JSON.stringify(summary), DOC_CHUNK_CHARS);
-  await commitInChunks(pieces.map((data, i) => sized((b) => b.set(ref.collection("chunks").doc(String(i)), { data }), data.length)));
-  for (let i = pieces.length; i < (old.exists ? old.data().chunkCount || 0 : 0); i++) await ref.collection("chunks").doc(String(i)).delete();
-  await ref.set({ chunkCount: pieces.length, sourceUploadedAt: sourceUploadedAt ?? null, publishedAt: FieldValue.serverTimestamp(), format: 3 });
+  const pieces = splitString(JSON.stringify(summary), DOC_CHUNK_CHARS), prefix = `${Date.now()}_`;
+  await commitInChunks(pieces.map((data, i) => sized((b) => b.set(ref.collection("chunks").doc(`${prefix}${i}`), { data }), data.length)));
+  await ref.set({ chunkCount: pieces.length, chunkPrefix: prefix, sourceUploadedAt: sourceUploadedAt ?? null, publishedAt: FieldValue.serverTimestamp(), format: 3 });
+  const op = old.exists ? old.data().chunkPrefix || "" : null;
+  if (op !== null) for (let i = 0; i < (old.data().chunkCount || 0); i++) await ref.collection("chunks").doc(`${op}${i}`).delete().catch(() => {
+  });
 }
 async function playerLabels() {
   const [users, invites, datasets] = await Promise.all([db.collection("users").get(), db.collection("invites").get(), db.collection("datasets").get()]);
@@ -881,24 +1346,49 @@ async function playerLabels() {
   }
   return labels;
 }
-var detailPath = (datasetId, year) => `fieldDetail/${datasetId}/${year || "none"}.bin.gz`;
-async function publishFieldDetail(bucket, datasetId, players, sourceUploadedAt) {
+var tourSlug = (t) => String(t || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "none";
+var detailPath = (datasetId, tour, year) => `fieldDetail/${datasetId}/${tourSlug(tour)}~${year || "none"}.bin.gz`;
+function tourDetail() {
+  const by = /* @__PURE__ */ new Map();
+  return {
+    add(pl) {
+      const rs = /* @__PURE__ */ new Map();
+      for (const rd of pl.rounds) {
+        const t = rd.tour || "";
+        (rs.get(t) || rs.set(t, []).get(t)).push(rd);
+      }
+      for (const [t, rounds] of rs) (by.get(t) || by.set(t, detailBuilder()).get(t)).add({ ...pl, rounds });
+    },
+    finish() {
+      const out = [];
+      for (const [t, b] of by) for (const f of b.finish()) out.push({ tour: t, year: f.year, bytes: f.bytes });
+      return out;
+    }
+  };
+}
+async function publishFieldDetail(bucket, datasetId, files, sourceUploadedAt) {
   const billing = await db.doc("config/billing").get();
   if (billing.exists && billing.data().paused === true) return { skipped: "paused" };
-  const files = encodeFieldDetail(players);
   let bytes = 0;
+  const tours = {}, sizes = {}, paths = /* @__PURE__ */ new Set();
   for (const f of files) {
     const gz = await gzip(f.bytes);
     bytes += gz.length;
-    await bucket.file(detailPath(datasetId, f.year)).save(Buffer.from(gz), { contentType: "application/octet-stream", resumable: false });
+    const path = detailPath(datasetId, f.tour, f.year);
+    paths.add(path);
+    await bucket.file(path).save(Buffer.from(gz), { contentType: "application/octet-stream", resumable: false });
+    const t = f.tour || "";
+    (tours[t] ||= []).push(f.year);
+    sizes[`${t}|${f.year ?? ""}`] = gz.length;
   }
-  const years = files.map((f) => f.year);
+  for (const t of Object.keys(tours)) tours[t].sort();
+  const years = [...new Set(files.map((f) => f.year))].sort();
   try {
     const [items] = await bucket.getFiles({ prefix: `fieldDetail/${datasetId}/` });
-    for (const it of items) if (!years.some((y) => it.name === detailPath(datasetId, y))) await it.delete();
+    for (const it of items) if (!paths.has(it.name)) await it.delete();
   } catch (err) {
     console.warn("Couldn't tidy old detail files", err?.message);
   }
-  await db.doc(`fieldStats/${datasetId}`).set({ detail: { years, sourceUploadedAt: sourceUploadedAt ?? null, bytes, format: DETAIL_FORMAT, builtAt: FieldValue.serverTimestamp() } }, { merge: true });
+  await db.doc(`fieldStats/${datasetId}`).set({ detail: { years, tours, sizes, sourceUploadedAt: sourceUploadedAt ?? null, bytes, format: DETAIL_FORMAT, builtAt: FieldValue.serverTimestamp() } }, { merge: true });
   return { years, bytes };
 }
