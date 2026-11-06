@@ -543,6 +543,49 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text(`Tour Avg and ranks: the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
   y += 58;
 
+  // (update 573) page 1: Where the strokes come from first, then What stands out; Best and toughest opens page 2
+  /* ---------- by category: gauges ---------- */
+  section("By category", "Where the strokes come from", 40 + a.byCat.length * 32);
+  d.text("The black line is zero; the gold line is Tour Avg.", M, y + 1, { size: 8, color: P.grey });
+  y += 14;
+  // (update 556) the values and the Better / Worse badges in two columns, each lined up on its left, just past the bars
+  // (update 570) the bars as long as they can be: the value column, then the badge column, its widest badge ("Better by
+  // 0.00") ending at the page's right edge; the same size in every report
+  const bW = (t) => { const T = t.toUpperCase(); return textWidth(T, 7, true) + 1.1 * (T.length - 1) + 16; };
+  const valW = Math.max(textWidth("\u22120.00", 18, true), ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true))), badgeW = bW("Better by 0.00");
+  // (update 571) the bars start just past the longest name (or rank line) on the left, not a fixed 150 in
+  const labW = Math.max(...a.byCat.map((c) => Math.max(textWidth(c.name, 11.5, true), c.rank ? textWidth(`Rank ${c.rank} of ${c.of}`, 8, true) : 0)));
+  const lw = Math.min(150, labW + 16), gx = M + lw, gw = W - lw - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
+  for (const c of a.byCat) {
+    need(32);
+    const t = (a.catShift || []).find((q) => q.cat === c.cat);
+    d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
+    d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, bold: !!c.rank, color: c.rank ? rankInk(c.rank) : P.grey });
+    d.roundRect(gx, y + 8, gw, 12, 6, { fill: P.track });
+    // each side's scale: the group's best gain (right) and biggest loss (left)
+    const hi = c.best?.v ?? 0, lo = c.low?.v ?? 0;
+    const posMax = hi > 0 ? hi : Math.max(Math.abs(lo), 0.01), negMax = lo < 0 ? Math.abs(lo) : Math.max(hi, 0.01);
+    const off = (v) => (v >= 0 ? Math.min(1, v / posMax) : -Math.min(1, Math.abs(v) / negMax)) * half;
+    if (c.value != null) {
+      const w = Math.max(10, Math.abs(off(c.value))), x0 = c.value >= 0 ? zx : zx - w, fill = c.value >= 0 ? P.up : P.down, light = c.value >= 0 ? "#4fb97a" : "#e8665e";
+      // rounded at the far end, square where it meets the middle line
+      d.roundRect(x0, y + 8, w, 12, 6, { fill });
+      d.rect(c.value >= 0 ? zx : zx - Math.min(6, w), y + 8, Math.min(6, w), 12, { fill });
+      d.roundRect(c.value >= 0 ? zx : x0 + 3, y + 9.5, Math.max(3, w - 3), 3.5, 1.75, { fill: light });
+      d.rect(c.value >= 0 ? zx : zx - 2, y + 9.5, 2, 3.5, { fill: light });
+    }
+    d.line(zx, y + 4, zx, y + 24, { color: "#000000", width: 1.1 }); // zero
+    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
+    // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
+    const chLabel = t && t.change != null && Math.round(Math.abs(t.change) * 100) > 0 ? /* (update 557: Steady only at 0.00) */ (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
+    d.text(fmtSG(c.value), vx, y + 19, { size: 18, bold: true, color: tone(c.value) });
+    if (chLabel) badge(chLabel, bx0, y + 18, t.change > 0 ? P.up : P.down);
+    else if (t && t.change != null) badge("Steady", bx0, y + 18, "#8e8e93");
+    y += 32; // (update 573: a little closer, so What stands out fits under it on page 1)
+  }
+  d.text(a.shiftSpan ? `Better / Worse: how much the last ${a.shiftSpan.n} rounds (${a.shiftSpan.last}) have moved the average` : "Better / Worse: needs more than 12 rounds.", M, y + 4, { size: 7.5, color: P.faint });
+  y += 18;
+
   /* ---------- highlights: strengths and things to watch ---------- */
   // (at most two strengths from the same category, so they don't repeat each other)
   const strengths = [];
@@ -554,20 +597,26 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   }
   const watch = a.focus.slice(0, 3).map((f) => ({ title: f.title.replace(/^Slipping: /, ""), text: f.detail, tag: f.kind === "trend" ? "Slipping" : "Costing strokes", lost: f.lost }));
   const colW = (W - 14) / 2;
-  const cardsH = (list) => list.reduce((t, it) => t + 35 + wrap(it.text, colW - 30, 8.5).length * 11, 0) + 26;
+  // (update 573) it shares page 1 with Where the strokes come from: full-size cards when they fit; else compact ones; else the
+  // last card of the longer column left off, until they fit
+  let cmp = false;
+  const cardsH = (list) => list.reduce((t, it) => t + (cmp ? 29 : 35) + wrap(it.text, colW - 30, cmp ? 8 : 8.5).length * (cmp ? 10 : 11), 0) + 26;
+  const roomHL = H - 50 - (y + 12 + 40);
+  if (Math.max(cardsH(strengths), cardsH(watch)) > roomHL) cmp = true;
+  while (Math.max(cardsH(strengths), cardsH(watch)) > roomHL && strengths.length + watch.length > 1) { if (cardsH(strengths) >= cardsH(watch)) strengths.pop(); else watch.pop(); }
   section("Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
   const cards = (x, title, list, accent, tint, empty) => {
     let yy = y + 4;
     cap(title, x, yy + 6, accent); yy += 14;
     if (!list.length) { d.text(empty, x, yy + 10, { size: 9, color: P.grey }); return yy + 20; }
     for (const it of list) {
-      const lines = wrap(it.text, colW - 30, 8.5), h = 29 + lines.length * 11;
+      const lines = wrap(it.text, colW - 30, cmp ? 8 : 8.5), h = (cmp ? 24 : 29) + lines.length * (cmp ? 10 : 11);
       d.roundRect(x, yy, colW, h, 8, { fill: tint });
       d.roundRect(x, yy, 4, h, 2, { fill: accent });
-      const tw = badge(it.tag, x + 14, yy + 14, accent);
-      d.text(wrap(it.title, colW - 30 - tw - 8, 9.5, true)[0], x + 14 + tw + 6, yy + 14, { size: 9.5, bold: true, color: P.ink });
-      lines.forEach((l, i) => d.text(l, x + 14, yy + 32 + i * 11, { size: 8.5, color: "#3a3a3c" }));
-      yy += h + 6;
+      const ty = cmp ? 13 : 14, tw = badge(it.tag, x + 14, yy + ty, accent);
+      d.text(wrap(it.title, colW - 30 - tw - 8, 9.5, true)[0], x + 14 + tw + 6, yy + ty, { size: 9.5, bold: true, color: P.ink });
+      lines.forEach((l, i) => d.text(l, x + 14, yy + (cmp ? 28 : 32) + i * (cmp ? 10 : 11), { size: cmp ? 8 : 8.5, color: "#3a3a3c" }));
+      yy += h + (cmp ? 5 : 6);
     }
     return yy;
   };
@@ -576,6 +625,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against Tour Avg in this period.");
   y = Math.max(yl, yr) + 10;
 
+  newPage();
   /* ---------- best and toughest rounds ---------- */
   // (update 570) a third line each, for the best / hardest part; (update 571) the rows as tall as fits what's left of the
   // first page (34 down to 26), so the section stays on it
@@ -602,49 +652,6 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   roundsCol(M + colW + 14, "Toughest events", a.valleys, P.down, P.downTint);
   y += rowsH + 6;
 
-
-  newPage();
-  /* ---------- by category: gauges ---------- */
-  section("By category", "Where the strokes come from", 40 + a.byCat.length * 36);
-  d.text("The black line is zero; the gold line is Tour Avg.", M, y + 1, { size: 8, color: P.grey });
-  y += 14;
-  // (update 556) the values and the Better / Worse badges in two columns, each lined up on its left, just past the bars
-  // (update 570) the bars as long as they can be: the value column, then the badge column, its widest badge ("Better by
-  // 0.00") ending at the page's right edge; the same size in every report
-  const bW = (t) => { const T = t.toUpperCase(); return textWidth(T, 7, true) + 1.1 * (T.length - 1) + 16; };
-  const valW = Math.max(textWidth("\u22120.00", 18, true), ...a.byCat.map((c) => textWidth(fmtSG(c.value), 18, true))), badgeW = bW("Better by 0.00");
-  // (update 571) the bars start just past the longest name (or rank line) on the left, not a fixed 150 in
-  const labW = Math.max(...a.byCat.map((c) => Math.max(textWidth(c.name, 11.5, true), c.rank ? textWidth(`Rank ${c.rank} of ${c.of}`, 8, true) : 0)));
-  const lw = Math.min(150, labW + 16), gx = M + lw, gw = W - lw - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
-  for (const c of a.byCat) {
-    need(36);
-    const t = (a.catShift || []).find((q) => q.cat === c.cat);
-    d.text(c.name, M, y + 15, { size: 11.5, bold: true, color: P.ink });
-    d.text(c.rank ? `Rank ${c.rank} of ${c.of}` : "", M, y + 27, { size: 8, bold: !!c.rank, color: c.rank ? rankInk(c.rank) : P.grey });
-    d.roundRect(gx, y + 8, gw, 12, 6, { fill: P.track });
-    // each side's scale: the group's best gain (right) and biggest loss (left)
-    const hi = c.best?.v ?? 0, lo = c.low?.v ?? 0;
-    const posMax = hi > 0 ? hi : Math.max(Math.abs(lo), 0.01), negMax = lo < 0 ? Math.abs(lo) : Math.max(hi, 0.01);
-    const off = (v) => (v >= 0 ? Math.min(1, v / posMax) : -Math.min(1, Math.abs(v) / negMax)) * half;
-    if (c.value != null) {
-      const w = Math.max(10, Math.abs(off(c.value))), x0 = c.value >= 0 ? zx : zx - w, fill = c.value >= 0 ? P.up : P.down, light = c.value >= 0 ? "#4fb97a" : "#e8665e";
-      // rounded at the far end, square where it meets the middle line
-      d.roundRect(x0, y + 8, w, 12, 6, { fill });
-      d.rect(c.value >= 0 ? zx : zx - Math.min(6, w), y + 8, Math.min(6, w), 12, { fill });
-      d.roundRect(c.value >= 0 ? zx : x0 + 3, y + 9.5, Math.max(3, w - 3), 3.5, 1.75, { fill: light });
-      d.rect(c.value >= 0 ? zx : zx - 2, y + 9.5, 2, 3.5, { fill: light });
-    }
-    d.line(zx, y + 4, zx, y + 24, { color: "#000000", width: 1.1 }); // zero
-    if (c.fieldAvg != null) { const fx = zx + off(c.fieldAvg); d.line(fx, y + 2, fx, y + 26, { color: "#ffffff", width: 3.6 }); d.line(fx, y + 2, fx, y + 26, { color: P.gold, width: 2 }); } // Tour Avg
-    // (update 182: "Better by" / "Worse by", right-aligned in the card, the value just left of it)
-    const chLabel = t && t.change != null && Math.round(Math.abs(t.change) * 100) > 0 ? /* (update 557: Steady only at 0.00) */ (t.change > 0 ? `Better by ${t.change.toFixed(2)}` : `Worse by ${Math.abs(t.change).toFixed(2)}`) : null;
-    d.text(fmtSG(c.value), vx, y + 19, { size: 18, bold: true, color: tone(c.value) });
-    if (chLabel) badge(chLabel, bx0, y + 18, t.change > 0 ? P.up : P.down);
-    else if (t && t.change != null) badge("Steady", bx0, y + 18, "#8e8e93");
-    y += 36;
-  }
-  d.text(a.shiftSpan ? `Better / Worse: how much the last ${a.shiftSpan.n} rounds (${a.shiftSpan.last}) have moved the average` : "Better / Worse: needs more than 12 rounds.", M, y + 4, { size: 7.5, color: P.faint });
-  y += 18;
 
   /* ---------- SG form: total and each category ---------- */
   const formChart = (title, vals, src = a.series) => {
@@ -685,7 +692,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
      (Driving Distance, Hit Fairway %), each with its rank, the field's average and where they sit in the field; on the right,
      Driving Distance against Hit Fairway % for everyone compared (this player in gold) */
   function drawBasicCharts(ch, hh, { tee = null, pillAt = null } = {}) {
-    y += 22;
+    y += 40; // (update 573: more room between the Scoring grids and Off-the-Tee)
     const gap = 18, lw = tee ? (W - gap) * 0.42 : 0, x2 = tee ? M + lw + gap : M, w2 = tee ? W - lw - gap : W;
     const y0 = y;
     if (tee) {
@@ -695,17 +702,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         const cy = top + i * (ch0 + cg);
         d.roundRect(M, cy, lw, ch0, 10, { fill: P.mist });
         // (update 572) the contents (about 112 pt: name, value, field average, the field bar) in the card's middle
-        const off = Math.max(0, (ch0 - 112) / 2), ct = cy + off;
-        cap(b.def.label, M + 14, ct + 18, P.soft, "left", 6.6);
-        d.text(fmtStat(b.def, b.value), M + 14, ct + 48, { size: 24, bold: true, color: P.ink });
-        if (pillAt) pillAt(b, M + lw - 14, ct + 44, 7.2);
-        if (b.fieldAvg != null) d.text(`Field average ${fmtStat(b.def, b.fieldAvg)}`, M + 14, ct + 64, { size: 8, color: P.grey });
+        // (update 573) a short card (the half-height Off-the-Tee): everything a little smaller and closer
+        const sm = ch0 < 112, L = sm ? { h: 84, cap: 13, val: 35, vz: 19, pill: 31, avg: 48, bar: 64 } : { h: 112, cap: 18, val: 48, vz: 24, pill: 44, avg: 64, bar: 90 };
+        const off = Math.max(0, (ch0 - L.h) / 2), ct = cy + off;
+        cap(b.def.label, M + 14, ct + L.cap, P.soft, "left", 6.6);
+        d.text(fmtStat(b.def, b.value), M + 14, ct + L.val, { size: L.vz, bold: true, color: P.ink });
+        if (pillAt) pillAt(b, M + lw - 14, ct + L.pill, sm ? 6.4 : 7.2);
+        if (b.fieldAvg != null) d.text(`Field average ${fmtStat(b.def, b.fieldAvg)}`, M + 14, ct + L.avg, { size: sm ? 7.4 : 8, color: P.grey });
         if (b.def.higher != null && b.lo != null && b.hi != null && b.hi > b.lo) {
-          const x0 = M + 14, x1 = M + lw - 14, by = ct + 90, pos = (v) => { const t = (v - b.lo) / (b.hi - b.lo); return x0 + (x1 - x0) * (b.def.higher === false ? 1 - t : t); };
+          const x0 = M + 14, x1 = M + lw - 14, by = ct + L.bar, pos = (v) => { const t = (v - b.lo) / (b.hi - b.lo); return x0 + (x1 - x0) * (b.def.higher === false ? 1 - t : t); };
           d.roundRect(x0, by - 2, x1 - x0, 4, 2, { fill: "#dcdce1" });
           if (b.fieldAvg != null) d.line(pos(b.fieldAvg), by - 5, pos(b.fieldAvg), by + 5, { color: P.grey, width: 0.9 });
           d.dot(pos(b.value), by, 4.2, rankInk(b.rank || 999));
-          d.text("Worst in the field", x0, by + 13, { size: 6, color: P.faint }); d.text("Best", x1, by + 13, { size: 6, color: P.faint, align: "right" });
+          d.text("Worst in the field", x0, by + (sm ? 11 : 13), { size: 6, color: P.faint }); d.text("Best", x1, by + (sm ? 11 : 13), { size: 6, color: P.faint, align: "right" });
         }
       });
     }
@@ -1050,7 +1059,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     WIDE = queued.reduce((t, q) => t + heightOf(q), 0) < (H - 60 - y) * 0.45;
     // (update 572) no Scoring Avg chart (the SG Form chart shows the same); the Off-the-Tee row (one row: not split Driver /
     // Non-Driver) moves into the lower half as two stacked cards beside the scatter
-    const charts = WIDE ? a.extraCharts : null, chartRoom = charts?.drive ? 250 : 0;
+    const charts = WIDE ? a.extraCharts : null, chartRoom = charts?.drive ? 230 : 0;
     let teeCards = null;
     if (chartRoom) { const qi = queued.findIndex((q) => q[0] === "Off-the-Tee"); const tq = qi >= 0 ? queued[qi] : null;
       if (tq && tq[2].length === 1 && tq[2][0].cells.filter(Boolean).length >= 1) { teeCards = tq[2][0].cells.filter(Boolean); queued.splice(qi, 1); } }
@@ -1064,7 +1073,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       else { y += i === 0 ? extra * 0.2 : extra; head(q[0]); }
       gridBox(q[1], q[2]);
     });
-    if (chartRoom) drawBasicCharts(charts, Math.max(200, Math.min(440, H - 60 - y - 24)), { tee: teeCards, pillAt }); // (update 572: down to the bottom of the page)
+    if (chartRoom) drawBasicCharts(charts, Math.max(170, Math.min(440, H - 60 - y - 40) * 0.5), { tee: teeCards, pillAt }); // (update 573: half as tall as the room left)
   }
   /* ---------- (update 210) page 5: by product ---------- */
   if (a.productTable) {
