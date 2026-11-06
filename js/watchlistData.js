@@ -83,7 +83,12 @@ function rankOf(values, key, higher = true) {
 }
 
 /** Last n rounds against the n before (n up to 10, at least 3). */
+// (update 581) the DP World Tour's cards: trends by event, the last 3 events against the 3 before (each event's rounds pooled)
+let byEv = false;
+const isDpwtT = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
+const groupEv = (rs) => { const m = new Map(); for (const rd of rs) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } return [...m.values()]; };
 function trendOf(ordered, value) {
+  if (byEv) { const g = groupEv(ordered), n = Math.min(3, Math.floor(g.length / 2)); if (n < 1) return null; const last = value(g.slice(-n).flat()), prev = value(g.slice(-2 * n, -n).flat()); return last == null || prev == null ? null : { n, last, prev, ch: last - prev, unit: "event" }; }
   const n = Math.min(12, Math.floor(ordered.length / 2));
   if (n < 3) return null;
   const last = value(ordered.slice(-n)), prev = value(ordered.slice(-2 * n, -n));
@@ -199,7 +204,8 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   last20.forEach((r, i) => { const t = r.tour || "", o = recentN.get(t) || { n: 0, at: -1 }; recentN.set(t, { n: o.n + 1, at: i }); });
   const recentTour = [...recentN].filter(([t]) => tourN.has(t)).sort((a, b) => b[1].n - a[1].n || b[1].at - a[1].at)[0]?.[0];
   const tour = wantTour != null && tourN.has(wantTour) ? wantTour : recentTour ?? tours[0]?.tour ?? mainTour(mineAll);
-  if (/^practice$/i.test(tour || "")) noRanks = true; // (update 226: Practice: no wins, top 10s or ranks; stat values, streaks and trends only)
+  if (/^practice$/i.test(tour || "")) noRanks = true;
+  byEv = isDpwtT(tour); // (update 581) // (update 226: Practice: no wins, top 10s or ranks; stat values, streaks and trends only)
   const f = { ...pf, tour: tour ? [tour] : [] };
   const mine = applyFilters(sgOnly(mineAll), f).sort(byDate);
   // the field on the same tour and period (this player with their full rounds)
@@ -245,15 +251,18 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   // (update 561) where it's changing: every part of the game, each distance and each lie in it, the last n rounds against
   // the n before (n as the trends: up to 12): strokes gained a round, and each round's, for the Watchlist's briefing
   {
-    const n = Math.min(12, Math.floor(mine.length / 2));
-    if (n >= 3) {
-      const win = mine.slice(-2 * n), A = new Map();
-      const get = (k, cat, dist, lie) => A.get(k) || A.set(k, { k, cat, dist, lie, sg: new Array(2 * n).fill(0), w: new Array(2 * n).fill(0) }).get(k);
-      win.forEach((rd, i) => { for (const x of rd.shots || []) { if (!x.cat) continue; const w = x.w || 1, v = x.sg || 0;
-        for (const [k, d, l] of [[x.cat, null, null], x.dist ? [`${x.cat}|d|${x.dist}`, x.dist, null] : null, x.lie ? [`${x.cat}|l|${x.lie}`, null, x.lie] : null].filter(Boolean)) { const o = get(k, x.cat, d, l); o.sg[i] += v; o.w[i] += w; } } }); // (update 562: a shot with no distance or lie (the DP World Tour's tournament rows) broke the page)
-      const sum = (xs) => xs.reduce((t, x) => t + x, 0);
-      card.areas = { n, rounds: win.map((rd) => ({ date: rd.date, event: rd.event, roundNo: rd.roundNo })),
-        list: [...A.values()].map((o) => { const prev = sum(o.sg.slice(0, n)) / n, last = sum(o.sg.slice(n)) / n; return { ...o, prev, last, ch: last - prev, wPrev: sum(o.w.slice(0, n)), wLast: sum(o.w.slice(n)) }; }) };
+    // (update 581) the DP World Tour: by event (3 against 3, each event's rounds pooled); others: by round (12 against 12)
+    const units = byEv ? groupEv(mine) : mine.map((rd) => [rd]);
+    const n = Math.min(byEv ? 3 : 12, Math.floor(units.length / 2));
+    if (n >= (byEv ? 1 : 3)) {
+      const win = units.slice(-2 * n), A = new Map(), rc = win.map((g) => g.length);
+      const get = (k, cat, dist, lie) => A.get(k) || A.set(k, { k, cat, dist, lie, tot: new Array(2 * n).fill(0), w: new Array(2 * n).fill(0) }).get(k);
+      win.forEach((g, i) => { for (const rd of g) for (const x of rd.shots || []) { if (!x.cat) continue; const w = x.w || 1, v = x.sg || 0;
+        for (const [k, d, l] of [[x.cat, null, null], x.dist ? [`${x.cat}|d|${x.dist}`, x.dist, null] : null, x.lie ? [`${x.cat}|l|${x.lie}`, null, x.lie] : null].filter(Boolean)) { const o = get(k, x.cat, d, l); o.tot[i] += v; o.w[i] += w; } } });
+      const sum = (xs) => xs.reduce((t, x) => t + x, 0), rP = sum(rc.slice(0, n)) || 1, rL = sum(rc.slice(n)) || 1;
+      card.areas = { n, unit: byEv ? "events" : "rounds", rounds: win.map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: byEv ? "" : g[0].roundNo })),
+        list: [...A.values()].map((o) => { const sP = sum(o.tot.slice(0, n)), sL = sum(o.tot.slice(n)), wP = sum(o.w.slice(0, n)), wL = sum(o.w.slice(n)), prev = sP / rP, last = sL / rL;
+          return { k: o.k, cat: o.cat, dist: o.dist, lie: o.lie, sg: o.tot.map((t, i) => t / (rc[i] || 1)), prev, last, ch: last - prev, wPrev: wP, wLast: wL, wPrevR: wP / rP, wLastR: wL / rL, ps1: wP ? sP / wP : null, ps2: wL ? sL / wL : null }; }) };
     }
   }
   if (lite) return { ...card, lite: true };

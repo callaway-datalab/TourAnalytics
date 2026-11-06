@@ -122,12 +122,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // (update 553, 554) every tour, the DP World Tour too: the last 12 rounds against the 12 before
   const isD = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
   const byEvent = isD(tour) || (mine.length > 0 && mine.every((rd) => isD(rd.tour)));
-  const unitW = "rounds";
-  const units = series.map((q) => [q]);
-  const half = Math.min(12, Math.floor(units.length / 2)); // (update 554: 12 against 12 on every tour)
+  // (update 581) the DP World Tour: trends by event, the last 3 events against the 3 before (each event's rounds pooled);
+  // every other tour: the last 12 rounds against the 12 before
+  const unitW = byEvent ? "events" : "rounds";
+  const units = byEvent ? (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); } return [...m.values()]; })() : series.map((q) => [q]);
+  const half = Math.min(byEvent ? 3 : 12, Math.floor(units.length / 2));
   const late = units.slice(units.length - half).flat(), early = units.slice(units.length - 2 * half, units.length - half).flat(); // the last 12 vs the 12 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
-  const halves = half >= 2 ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
+  const halves = half >= (byEvent ? 1 : 2) ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
   const catTrend = cats.map((k) => {
     const a = mean(early.map((s) => s.byCat[k])), b = mean(late.map((s) => s.byCat[k]));
     return { cat: k, name: CAT_NAME[k], early: a, late: b, change: a != null && b != null ? b - a : null };
@@ -280,8 +282,8 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
     text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
-  const n10 = Math.min(12, Math.floor(units.length / 2)), fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat();
-  const form = n10 >= 2 ? { n: n10, unit: "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB) } : null;
+  const n10 = half, fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat(); // (update 581: as the trends)
+  const form = n10 >= (byEvent ? 1 : 2) ? { n: n10, unit: byEvent ? "event" : "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB) } : null;
   // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
   // game (how much each swings round to round), and the biggest upside (matching the group's best where the
   // player is furthest behind).
@@ -713,7 +715,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
     if (first != null) {
       const ch = last - first;
-      d.text(`Last ${n} rounds: ${fmtSG(last)}   \u00b7   ${n} before that: ${fmtSG(first)}   \u00b7   ${Math.abs(ch) < STEADY ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < STEADY ? P.grey : tone(ch), align: "right" });
+      d.text(`Last ${n} ${byRd && a.form.unit === "event" ? "events" : "rounds"}: ${fmtSG(last)}   \u00b7   ${n} before that: ${fmtSG(first)}   \u00b7   ${Math.abs(ch) < STEADY ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < STEADY ? P.grey : tone(ch), align: "right" });
     }
     const lo = Math.min(-0.5, Math.min(...vals)), hi = Math.max(0.5, Math.max(...vals));
     const Y = (v) => top + ht - ((v - lo) / (hi - lo)) * ht;

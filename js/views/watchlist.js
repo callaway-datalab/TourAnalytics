@@ -331,8 +331,8 @@ export async function render(main, { previewClient }) {
     const dragHint = multi && keys.length > 1 && !watchIsPreview() && colSort.k == null ? el("p", { class: "muted small center wl-drag-hint" }, "Tap a player for their card, a column heading to sort by it. Hold a row and drag it to change your order.") : null; // (update 249)
     mount(root, [multi ? el("header", { class: "wl-hero2" }, controls) : heroShell(controls, subLine), menu, brief?.node || null, body, dragHint,
       el("div", { class: "center wl-foot" }, infoTip(source === "entered"
-        ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before; with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
-        : `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before; with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
+        ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 3 events against the 3 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
+        : `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 3 events against the 3 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });
@@ -462,7 +462,7 @@ export async function render(main, { previewClient }) {
         const b = el("button", { type: "button", class: "wlb-item" }, [
           el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || ""), x.fresh ? el("em", { class: "wlb-fresh" }, "Just played") : null]),
           el("span", { class: "wlb-area" }, `${dn ? "Down" : "Up"} in ${areaName(x.a)}`),
-          el("span", { class: "wlb-why" }, `${fmtSG(x.a.ch)} a round: ${fmtSG(x.a.last)} over the last ${n} rounds, ${fmtSG(x.a.prev)} over the ${n} before`),
+          el("span", { class: "wlb-why" }, `${fmtSG(x.a.ch)} a round: ${fmtSG(x.a.last)} over the last ${n} ${x.c.areas.unit || "rounds"}, ${fmtSG(x.a.prev)} over the ${n} before`),
           el("span", { class: "wlb-act" }, `${fmtSG(x.a.ch)}`)]);
         b.addEventListener("click", () => openFocus(x, kind, ctx));
         return el("li", {}, b);
@@ -514,10 +514,10 @@ export async function render(main, { previewClient }) {
     const c = x.c, a = x.a, n = c.areas.n, dn = kind === "concern";
     const perShot = (sg, w) => (w ? sg / w : null), f3 = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`);
     const sumA = (xs) => xs.reduce((t, v) => t + v, 0);
-    const stats = { kind: "table", title: `${areaName(a)}: the last ${n} rounds against the ${n} before`, cols: [[""], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: [
+    const stats = { kind: "table", title: `${areaName(a)}: the last ${n} ${c.areas.unit || "rounds"} against the ${n} before`, cols: [[""], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: [
       { strong: true, cells: ["SG a round", { sg: a.prev }, { sg: a.last }, { sg: a.ch, arrow: true }], pick: () => drawChart(a), picked: true },
-      { cells: ["Shots a round", { text: (a.wPrev / n).toFixed(1) }, { text: (a.wLast / n).toFixed(1) }, { text: `${a.wLast >= a.wPrev ? "+" : "−"}${Math.abs((a.wLast - a.wPrev) / n).toFixed(1)}` }] },
-      (() => { const p1 = perShot(sumA(a.sg.slice(0, n)), a.wPrev), p2 = perShot(sumA(a.sg.slice(n)), a.wLast); return { cells: ["SG a shot", { text: f3(p1) }, { text: f3(p2) }, p1 != null && p2 != null ? { text: `${p2 >= p1 ? "\u25B2" : "\u25BC"} ${Math.abs(p2 - p1).toFixed(3)}`, tone: p2 > p1 ? "pos" : p2 < p1 ? "neg" : "" } : { text: "\u2014" }] }; })(), // (update 562: its change too)
+      (() => { const w1 = a.wPrevR ?? a.wPrev / n, w2 = a.wLastR ?? a.wLast / n; return { cells: ["Shots a round", { text: w1.toFixed(1) }, { text: w2.toFixed(1) }, { text: `${w2 >= w1 ? "+" : "\u2212"}${Math.abs(w2 - w1).toFixed(1)}` }] }; })(), // (update 581: per round, events too)
+      (() => { const p1 = a.ps1 !== undefined ? a.ps1 : perShot(sumA(a.sg.slice(0, n)), a.wPrev), p2 = a.ps2 !== undefined ? a.ps2 : perShot(sumA(a.sg.slice(n)), a.wLast); return { cells: ["SG a shot", { text: f3(p1) }, { text: f3(p2) }, p1 != null && p2 != null ? { text: `${p2 >= p1 ? "\u25B2" : "\u25BC"} ${Math.abs(p2 - p1).toFixed(3)}`, tone: p2 > p1 ? "pos" : p2 < p1 ? "neg" : "" } : { text: "\u2014" }] }; })(), // (update 562: its change too)
     ] };
     // inside a part of the game: its distances (in order) and lies, the one(s) behind the swing in bold
     let inside = [];
@@ -531,7 +531,7 @@ export async function render(main, { previewClient }) {
     // (update 562) the chart: the swing's area to start, or whichever distance or lie is tapped in the tables
     const chartT = el("p", { class: "wlh-sec" }), chartBox = el("div");
     function drawChart(z) {
-      chartT.textContent = `${areaName(z)}: each round, the ${n} before against the last ${n} (tap a row above to chart it)`;
+      chartT.textContent = `${areaName(z)}: each ${c.areas.unit === "events" ? "event (a round there)" : "round"}, the ${n} before against the last ${n} (tap a row above to chart it)`;
       mount(chartBox, renderBlocks([{ kind: "bars", fmt: "sg", zero: true, items: rs.map((r, i) => ({ label: dateTxt(r.date), sub: [r.event, r.roundNo ? `R${r.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: z.sg[i], on: i >= n })),
         ref: [{ v: z.prev, label: `Previous ${n}`, from: 0, to: n }, { v: z.last, label: `Last ${n}`, from: n, to: 2 * n }] }]));
     }
@@ -558,7 +558,7 @@ export async function render(main, { previewClient }) {
     const overlay = el("div", { class: "gx-pop-overlay wlh-ov", role: "dialog", "aria-modal": "true", "aria-label": c.label }, el("div", { class: "gx-pop wlh-pop" }, [
       el("div", { class: "wlh-top" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${c.tour ? `${c.tour} · ` : ""}${c.rounds} rounds`), el("h2", {}, c.label)]), close]),
       el("div", { class: "wlh-body" }, [
-        el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, `Trending ${dn ? "down" : "up"} in ${areaName(a)}`), el("span", {}, `${fmtSG(a.ch)} strokes a round: ${fmtSG(a.last)} over the last ${n} rounds against ${fmtSG(a.prev)} over the ${n} before.`), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
+        el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, `Trending ${dn ? "down" : "up"} in ${areaName(a)}`), el("span", {}, `${fmtSG(a.ch)} strokes a round: ${fmtSG(a.last)} over the last ${n} ${c.areas.unit || "rounds"} against ${fmtSG(a.prev)} over the ${n} before.`), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
         justPlayed,
         ...renderBlocks([stats, ...inside]),
         chartT, chartBox,

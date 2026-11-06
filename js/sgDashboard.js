@@ -269,7 +269,7 @@ export function sgDashboard(container, opts) {
         cols = [["TOTAL", "Total", "SG: Total (these categories)"], ...CATEGORIES.filter(([k]) => st.cats.includes(k)).map(([k, l]) => [k, k, l])];
       }
     } else if (st.gear?.length) rs = applyFilters(rs, { gear: st.gear }); // (update 219: a product picked: only its shots, in the rounds it was used)
-    const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw(), only, cols });
+    const blocks = careerBlocks(rs, { key: meAll.key, source: opts.entered ? "entered" : "tour", ui: careerUi, redraw: () => draw(), only, cols, byEvent: eventView }); // (update 581: the DP World Tour: by event)
     return blocks.length ? el("div", { class: "cmp career" }, blocks) : null;
   }
   let heroHypo = null; // (update 445: Hypothetical rankings, shown in the hero card)

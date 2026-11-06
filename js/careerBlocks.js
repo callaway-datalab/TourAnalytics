@@ -20,12 +20,13 @@ export function compareLink(key, source, pick) {
   return `#/comparisons?${q}`;
 }
 
-export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, redraw = () => {}, only = null, cols = null } = {}) {
+export function careerBlocks(rounds, { key = null, source = "tour", ui = {}, redraw = () => {}, only = null, cols = null, byEvent = false } = {}) {
   const rs = sgRounds(rounds || []);
   if (rs.length < 6) return [];
   const go = (pick) => { location.hash = compareLink(key, source, pick); };
   // (update 205) only: "trajectory" (right under the hero card) or "conditions" (at the bottom)
-  return [only !== "conditions" ? trajectoryBlock(rs, cols) : null, only !== "trajectory" ? conditionsBlock(rs, go, ui, redraw) : null].filter(Boolean);
+  // (update 581) the DP World Tour: by event (the last 3 against the 3 before, and 12 against 12)
+  return [only !== "conditions" ? (byEvent ? trajectoryEvents(rs, cols) : trajectoryBlock(rs, cols)) : null, only !== "trajectory" ? conditionsBlock(rs, go, ui, redraw) : null].filter(Boolean);
 }
 
 // (update 218; 444: 12 and 48) just the last 12 against the 12 before, and the last 48 against the 48 before; tapping one opens its
@@ -47,10 +48,10 @@ function openTrajectory(rs, x, cols = DEFAULT_COLS) {
     ] }) }, "Getting better or worse?");
 }
 // (update 281) the summary in long-term (last 48 vs the 48 before) and short-term (last 12 vs the 12 before) words
-function termWords(tr) {
+function termWords(tr, longN = 48, shortN = 12) {
   // (update 282) "Up over the long-term; Down over the short-term"
   const word = (x) => (x.ch.TOTAL > 0.15 ? "Up" : x.ch.TOTAL < -0.15 ? "Down" : "Steady");
-  const lt = tr.find((x) => x.n === 48), st = tr.find((x) => x.n === 12);
+  const lt = tr.find((x) => x.n === longN), st = tr.find((x) => x.n === shortN);
   if (lt && st) return word(lt) === word(st) ? `${word(lt)} over both the long-term and the short-term.` : `${word(lt)} over the long-term; ${word(st)} over the short-term.`;
   const one = lt || st;
   return `${word(one)} over the ${one === lt ? "long" : "short"}-term.`;
@@ -75,6 +76,47 @@ function trajectoryBlock(rs, cols0) {
       })),
     ])),
   ]);
+}
+
+/* (update 581) the DP World Tour's: event by event. Each event's rounds pooled (strokes gained a round), the last 3 events
+   against the 3 before and the last 12 against the 12 before; tapping one: its events as bars, and each category */
+const eventsOf = (rs) => { const m = new Map(); for (const rd of rs) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); }
+  return [...m.values()].sort((a, b) => String(a.at(-1).date).localeCompare(String(b.at(-1).date))); };
+const avgRds = (xs, k) => (xs.length ? xs.reduce((t, rd) => t + sgOfRd(rd, k), 0) / xs.length : null);
+function trajectoryEvents(rs, cols0) {
+  const cols = cols0 || DEFAULT_COLS, evs = eventsOf(rs);
+  const tr = [3, 12].filter((n) => evs.length >= 2 * n).map((n) => {
+    const last = evs.slice(-n).flat(), prev = evs.slice(-2 * n, -n).flat();
+    return { n, evs: evs.slice(-2 * n), ch: Object.fromEntries(cols.map(([k]) => [k, avgRds(last, k) - avgRds(prev, k)])) };
+  });
+  if (!tr.length) return null;
+  const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "\u2014" : `${v > 0.004 ? "\u25B2" : v < -0.004 ? "\u25BC" : "\u25C6"}\u00a0${Math.abs(v).toFixed(2)}`);
+  return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [
+    secHead("Getting better or worse?", "Their latest events against the same number just before. Tap a row to see the events."),
+    el("p", { class: "cmp-traj-words" }, termWords(tr, 12, 3)),
+    el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
+      el("thead", {}, el("tr", {}, ["Events", ...cols.map(([, h]) => h)].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
+      el("tbody", {}, tr.map((x) => {
+        const row = el("tr", { class: "cmp-tap", tabindex: "0", title: `See the last ${x.n} events and the ${x.n} before`, "aria-haspopup": "dialog" }, [
+          el("td", {}, `Last ${x.n} vs ${x.n} before`),
+          ...cols.map(([k]) => cell(x.ch[k], k === "TOTAL"))]);
+        const go = () => openTrajectoryEvents(x, cols);
+        row.addEventListener("click", go); row.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+        return row;
+      })),
+    ])),
+  ]);
+}
+function openTrajectoryEvents(x, cols = DEFAULT_COLS) {
+  const n = x.n, prev = x.evs.slice(0, n), last = x.evs.slice(n), pR = prev.flat(), lR = last.flat();
+  openBadge({ text: `Last ${n} events vs the ${n} before`, info: () => ({
+    sub: `Strokes gained a round at each event: the ${n} before in grey, the last ${n} in colour, each stretch\u2019s average dashed.`,
+    blocks: [
+      { kind: "bars", fmt: "sg", items: x.evs.map((g, i) => ({ label: dShort(g.at(-1).date), sub: `${g[0].event || ""}${g.length > 1 ? ` \u00b7 ${g.length} rds` : ""}`, v: avgRds(g, "TOTAL"), on: i >= n })),
+        ref: [{ v: avgRds(pR, "TOTAL"), label: "Before", from: 0, to: n }, { v: avgRds(lR, "TOTAL"), label: "Latest", from: n, to: 2 * n }] },
+      { kind: "table", title: "By category (a round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
+        rows: cols.map(([k, , l]) => ({ strong: k === "TOTAL", cells: [l, { sg: avgRds(pR, k) }, { sg: avgRds(lR, k) }, { sg: avgRds(lR, k) - avgRds(pR, k), arrow: true }] })) },
+    ] }) }, "Getting better or worse?");
 }
 
 function conditionsBlock(rs, go, ui, redraw) {
