@@ -398,7 +398,7 @@ export function insightsButton(S, slicedField = []) {
     const builder = reportBuilder({ playerKey: S.me.key, playerLabel: S.me.label, canSave: false, flash: () => {},
       source: S.opts.entered ? "entered" : "tour", minRounds: S.minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: S.tourCounts.length ? (S.st.tour[0] ?? null) : null,
       fullField: S.fieldIsSummary() ? null : S.fieldAll, // (the admin: everyone's rows, for ranks by distance)
-      auto: { from, to, cats: st.cats || [], rangeLabel,
+      auto: { from, to, cats: st.cats || [], rangeLabel, years: !(st.dateRange?.from || st.dateRange?.to) && !(Number(st.span) > 0) && st.year?.length ? st.year.map(String) : null, // (update 550: seasons, as on this page)
         onReady: (href) => { done(); if (win && !win.closed) { try { win.location.href = href; setTimeout(() => toast.remove(), 2500); return; } catch { /* the link below */ } } },
         onFail: () => { done(); try { win?.close(); } catch { /* */ } } } });
     mount(toast, [el("strong", {}, `PDF report \u00b7 ${S.me.label}`), el("span", { class: "muted small" }, ` ${rangeLabel}`), x, builder]);

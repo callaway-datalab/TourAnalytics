@@ -51,9 +51,12 @@ export function aiDigest(a) {
     bestEvents: (a.peaks || []).slice(0, 3).map(rd), toughestEvents: (a.valleys || []).slice(0, 3).map(rd), // (update 547)
   };
 }
-export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null, tour = null } = {}) {
+export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null, tour = null, years = null } = {}) {
   const cats = CATEGORIES.map(([k]) => k).filter((k) => catsIn.includes(k));
-  const inRange = (rd) => { const t = day(rd.date); return t == null || ((from == null || t >= from) && (to == null || t <= to)); };
+  // (update 550) years: seasons, as the Stats page counts them (the file's year, so December's events in next year's
+  // season), in place of the dates
+  const ySet = years?.length ? new Set(years.map(String)) : null;
+  const inRange = ySet ? (rd) => ySet.has(String(rd.year || String(rd.date || "").slice(0, 4))) : (rd) => { const t = day(rd.date); return t == null || ((from == null || t >= from) && (to == null || t <= to)); };
   // Only rounds with strokes-gained data count (a file's other stats, such as Birdies / Round per tournament, make
   // rounds of their own that would otherwise count as rounds with no strokes gained), and only the Stats page's tour.
   const hasSG = (rd) => (rd.has ? rd.has.has("sg") : rd.shots.length > 0);
@@ -391,7 +394,8 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const e = entryFor(k);
     if (e) basics.push(e);
   }
-  return { me: { key: me.key, label: me.label }, cats, from, to, overall, byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
+  return { me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
+    byCat, series, rankHist, slope, catTrend, numbers, elite: elite.slice(0, 4), rising, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
@@ -1094,7 +1098,9 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       }
       status.textContent = "Working out the insights\u2026";
       const from = fromIn.value ? Date.parse(`${fromIn.value}T00:00:00`) : null, to = toIn.value ? Date.parse(`${toIn.value}T23:59:59`) : null;
-      const a = analyzePerformance(data.me, field, { from, to, cats, byProduct: true, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null, tour: source.value === startSource ? tour : null });
+      // (update 550) a season (the Stats page's years, or a season picked here): by the file's year, as the Stats page
+      const years = auto?.years?.length ? auto.years : preset?.startsWith?.("y:") && fromIn.value === `${preset.slice(2)}-01-01` && toIn.value === `${preset.slice(2)}-12-31` ? [preset.slice(2)] : null;
+      const a = analyzePerformance(data.me, field, { from, to, cats, byProduct: true, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null, tour: source.value === startSource ? tour : null, years });
       let aiSummary = null;
       const url = null; // (update 253: the report's own written summary; the AI service is for Compare's Ask AI only)
       if (url && a.overall.rounds) {
