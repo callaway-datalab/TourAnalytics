@@ -666,18 +666,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.roundRect(x, ty, 24, h, 10, { fill: P.night });
     d.roundRect(x + w - 24, ty, 24, h, 10, { fill: P.night2 });
     d.gradient(x + 12, ty, w - 24, h, P.night, P.night2, { dir: "h", steps: 40 });
-    cap("This season vs Last season", x + 16, ty + 18, P.goldLight, "left", 6.8);
+    cap("This season vs Last season", x + 16, ty + 16, P.goldLight, "left", 6.6);
     const cNow = P.goldLight, cPrev = "#8e8e93";
     // the key
-    let kx = x + w * 0.58 - 10;
-    for (const [lab, col] of [[`${yo.thisY} (${yo.nNow} rds)`, cNow], [`${yo.lastY} (${yo.nPrev} rds)`, cPrev]]) { const tw0 = textWidth(lab, 7, true); kx -= tw0 + 22; }
-    for (const [lab, col] of [[`${yo.lastY} (${yo.nPrev} rds)`, cPrev], [`${yo.thisY} (${yo.nNow} rds)`, cNow]]) { d.rect(kx, ty + 11, 8, 8, { fill: col }); d.text(lab, kx + 11, ty + 18, { size: 7, bold: true, color: "#d1d1d6" }); kx += textWidth(lab, 7, true) + 22; }
+    // (update 565) the key just after the title (never over it)
+    const T0 = "THIS SEASON VS LAST SEASON";
+    let kx = x + 16 + textWidth(T0, 6.6, true) + 1.4 * (T0.length - 1) + 18;
+    for (const [lab, col] of [[`${yo.lastY} (${yo.nPrev} rds)`, cPrev], [`${yo.thisY} (${yo.nNow} rds)`, cNow]]) { d.rect(kx, ty + 9, 8, 8, { fill: col }); d.text(lab, kx + 11, ty + 16, { size: 7, bold: true, color: "#d1d1d6" }); kx += textWidth(lab, 7, true) + 22; }
     // the chart
-    const cx = x + 40, cw = w * 0.58 - 50, top = ty + 34, ph = h - 62;
+    const cx = x + 40, cw = w * 0.55 - 50, top = ty + 32, ph = h - 54;
     const vals = yo.rows.flatMap((r) => [r.now, r.prev]).filter((v) => v != null);
     const hi = Math.max(0.25, ...vals), lo = Math.min(-0.25, ...vals), Y = (v) => top + ((hi - v) / (hi - lo)) * ph, zy = Y(0);
     d.line(cx, zy, cx + cw, zy, { color: "#8e8e93", width: 0.7, dash: [3, 2] });
-    d.text("SG / rd", x + 16, top + 4, { size: 6, color: "#8e8e93" });
+    d.text("SG / rd", cx - 4, top - 8, { size: 6, color: "#8e8e93", align: "right" }); // (update 565: above the axis, clear of its numbers)
     for (const v of [hi, 0, lo]) d.text(fmtSG(v), cx - 4, Y(v) + 2, { size: 6, color: "#8e8e93", align: "right" });
     const slot = cw / yo.rows.length, bw = Math.min(22, slot * 0.3);
     yo.rows.forEach((r, i) => {
@@ -686,13 +687,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         if (v == null) continue;
         const yv = Y(v), hh = Math.max(0.6, Math.abs(yv - zy));
         d.rect(mid + off, Math.min(yv, zy), bw, hh, { fill: col });
-        d.text(fmtSG(v), mid + off + bw / 2, v >= 0 ? yv - 3 : yv + 8, { size: 6, bold: true, color: col === cNow ? cNow : "#c7c7cc", align: "center" });
+        d.text(fmtSG(v), mid + off + bw / 2, v >= 0 ? yv - 3 : yv + 9.5, { size: 6, bold: true, color: col === cNow ? cNow : "#c7c7cc", align: "center" });
       }
-      d.text(r.name === "Total" ? "Total" : r.name.replace("Around-the-Green", "Around Green"), mid, top + ph + 14, { size: 7, bold: r.name === "Total", color: "#d1d1d6", align: "center" });
+      d.text(r.name === "Total" ? "Total" : r.name.replace("Around-the-Green", "Around Green"), mid, top + ph + 15, { size: 7, bold: r.name === "Total", color: "#d1d1d6", align: "center" });
     });
     // the differences
-    const ix = x + w * 0.6 + 10, iw = w * 0.4 - 26;
-    cap("The differences", ix, ty + 34, P.goldLight, "left", 6.3);
+    const ix = x + w * 0.57 + 6, iw = w * 0.43 - 22;
+    cap("The differences", ix, ty + 16, P.goldLight, "left", 6.3);
     const tot = yo.rows[0], parts = yo.rows.slice(1).filter((r) => r.ch != null).sort((p, q) => q.ch - p.ch);
     const lines = [];
     if (tot.ch != null) lines.push([tot.ch, Math.abs(tot.ch) < 0.005 ? `Overall: the same as ${yo.lastY}, ${fmtSG(tot.now)} a round.` : `Overall: ${Math.abs(tot.ch).toFixed(2)} a round ${tot.ch > 0 ? "better" : "worse"} than ${yo.lastY} (${fmtSG(tot.prev)} \u2192 ${fmtSG(tot.now)}).`]);
@@ -703,13 +704,17 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     for (const r of flips.slice(0, 1)) lines.push([r.ch, `${r.name} has ${r.now >= 0 ? "turned into a strength" : "turned into a weakness"} (${fmtSG(r.prev)} \u2192 ${fmtSG(r.now)}).`]);
     const steady = parts.filter((r) => Math.abs(r.ch) < 0.05);
     if (steady.length && lines.length < 4) lines.push([0, `About the same: ${steady.map((r) => r.name).join(", ")}.`]);
-    let ly = ty + 50;
+    // (update 565) each line beside a bar as tall as its text, the text centred on it; a line that won't fit is left off
+    let top0 = ty + 24;
+    const fs = 7.3, lh = 8.8;
     for (const [v, t] of lines.slice(0, 4)) {
+      const ls = wrap(t, iw - 12, fs).slice(0, 2), bh = ls.length * lh + 3;
+      if (top0 + bh > ty + h - 8) break;
       const col = Math.abs(v) < 0.005 ? "#8e8e93" : v > 0 ? "#4cd17e" : "#ff6b5e";
-      d.roundRect(ix, ly - 7, 4, 18, 2, { fill: col });
-      const ls = wrap(t, iw - 12, 7.6).slice(0, 2);
-      ls.forEach((l, j) => d.text(l, ix + 10, ly + j * 9.5, { size: 7.6, color: "#e5e5ea" }));
-      ly += Math.max(1, ls.length) * 9.5 + 9;
+      d.roundRect(ix, top0, 3.5, bh, 1.75, { fill: col });
+      const mid = top0 + bh / 2, first = mid - ((ls.length - 1) * lh) / 2 + fs * 0.35;
+      ls.forEach((l, j) => d.text(l, ix + 10, first + j * lh, { size: fs, color: "#e5e5ea" }));
+      top0 += bh + 5;
     }
   }
   /* ---------- by the numbers: four premium tiles ---------- */
@@ -720,7 +725,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (nb.n) tiles.push({ label: `${Uc} in the green`, big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of ${u}s.`, viz: "bar", v: pct });
     if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? u : `${u}s`}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
     if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`,
-      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-${u} stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, viz: "pair", v: nb.upside });
+      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-${u} stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`,
+      textShort: `${CAT_NAME[nb.upside.cat]} back to its best ${nb.upside.win}-${u} stretch (${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, /* (update 565: the shorter card) */ viz: "pair", v: nb.upside });
     else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "At peak", text: "Playing at their best stretch in every category in this report.", viz: null });
     if (nb.steady && a.cats.length === 1) {
       const v = nb.steady.sd, tv = nb.tourSd;
@@ -730,7 +736,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (tiles.length) {
       // (update 564) with last season to compare: the cards a little smaller and shorter, and a third row across the page,
       // This season vs Last season
-      const yo = nb.yoy, cols = 2, gap = yo ? 10 : 12, tw = (W - gap) / cols, th = yo ? 74 : 92, rows = Math.ceil(Math.min(4, tiles.length) / cols), yoH = yo ? 150 : 0;
+      const yo = nb.yoy, cols = 2, gap = yo ? 7 : 12, tw = (W - gap) / cols, th = yo ? 56 : 92, rows = Math.ceil(Math.min(4, tiles.length) / cols), yoH = yo ? 104 : 0; // (update 565: shorter, so it all fits on one page)
       section("By the numbers", "At a glance", rows * (th + gap) + (yo ? yoH + gap : 0));
       tiles.slice(0, 4).forEach((t, i) => {
         const x = M + (i % cols) * (tw + gap), ty = y + Math.floor(i / cols) * (th + gap);
@@ -739,13 +745,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         d.roundRect(x + tw - 24, ty, 24, th, 10, { fill: P.night2 });
         d.gradient(x + 12, ty, tw - 24, th, P.night, P.night2, { dir: "h", steps: 30 });
         const sq = yo ? 1 : 0; // (update 564: the shorter cards)
-        cap(t.label, x + 16, ty + (sq ? 16 : 20), P.goldLight, "left", 6.8);
+        cap(t.label, x + 16, ty + (sq ? 13 : 20), P.goldLight, "left", 6.4);
         // the big number, as large as fits
-        let size = sq ? 20 : 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
-        d.text(t.big, x + 16, ty + (sq ? 40 : 50), { size, bold: true, color: "#ffffff" });
-        wrap(t.text, tw * 0.52, sq ? 7.4 : 7.8).slice(0, sq ? 2 : 3).forEach((l, j) => d.text(l, x + 16, ty + (sq ? 52 : 64) + j * (sq ? 9 : 9.5), { size: sq ? 7.4 : 7.8, color: "#a1a1a6" }));
+        let size = sq ? 16 : 24; while (size > 12 && textWidth(t.big, size, true) > tw * 0.5) size -= 1;
+        d.text(t.big, x + 16, ty + (sq ? 31 : 50), { size, bold: true, color: "#ffffff" });
+        wrap(sq && t.textShort ? t.textShort : t.text, tw * 0.54, sq ? 6.8 : 7.8).slice(0, sq ? 2 : 3).forEach((l, j) => d.text(l, x + 16, ty + (sq ? 41 : 64) + j * (sq ? 8 : 9.5), { size: sq ? 6.8 : 7.8, color: "#a1a1a6" }));
         // a small picture on the right
-        const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + (sq ? 20 : 30);
+        const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + (sq ? 11 : 30);
         if (t.viz === "bar") {
           d.roundRect(vx, vy + 12, vw, 7, 3.5, { fill: "#2c2c2e" });
           d.roundRect(vx, vy + 12, Math.max(7, vw * t.v), 7, 3.5, { fill: P.goldLight });
