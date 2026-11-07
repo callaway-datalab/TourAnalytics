@@ -6271,3 +6271,56 @@ div.sh-ud3-green { cursor: default; }
 .ph-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ph-t b { font-size: 0.92rem; }
 .ph-t span { font-size: 0.8rem; color: #a1a1a6; }
+/* (update 609) Home: greeting, Ask Cal, the game as a radar, Explore, this week's tournament */
+.hm { max-width: 640px; margin: 0 auto; padding: 6px 0 28px; }
+.hm-top { padding: 0 4px 16px; }
+.hm-date { font-size: 0.82rem; color: #8e8e93; margin: 0; }
+.hm-h { font-size: 1.9rem; font-weight: 750; margin: 2px 0 0; letter-spacing: -0.02em; }
+.hm-cal { border-radius: 26px; padding: 22px 18px 18px; text-align: center; display: flex; flex-direction: column; align-items: center; background: radial-gradient(120% 120% at 50% 0%, rgba(212,180,131,0.24), rgba(255,255,255,0.02)); border: 1px solid rgba(212,180,131,0.35); }
+.hm-orb { width: 96px; height: 96px; margin: 2px auto 12px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; background: radial-gradient(circle at 35% 30%, #ffe7b8, #b8893e 70%); box-shadow: 0 0 0 12px rgba(212,180,131,0.10), 0 0 0 24px rgba(212,180,131,0.05), 0 0 50px rgba(212,180,131,0.6); display: grid; place-items: center; animation: hmGlow 2.6s ease-in-out infinite; -webkit-tap-highlight-color: transparent; }
+.hm-orb span { display: grid; place-items: center; } .hm-orb svg { width: 40px; height: 40px; }
+@keyframes hmGlow { 0%, 100% { box-shadow: 0 0 0 12px rgba(212,180,131,0.10), 0 0 0 24px rgba(212,180,131,0.05), 0 0 40px rgba(212,180,131,0.45); } 50% { box-shadow: 0 0 0 14px rgba(212,180,131,0.14), 0 0 0 28px rgba(212,180,131,0.06), 0 0 64px rgba(212,180,131,0.75); } }
+.hm-cal b { font-size: 1.35rem; color: #f5f5f7; }
+.hm-ex { margin-top: 4px; font-size: 0.88rem; color: #c7c7cc; font-style: italic; }
+.hm-tap { margin-top: 10px; font-size: 0.72rem; color: #d4b483; letter-spacing: 0.08em; font-weight: 700; }
+.hm-type { margin-top: 4px; border: 0; background: none; color: #a1a1a6; font: inherit; font-size: 0.8rem; text-decoration: underline; cursor: pointer; }
+.hm-card { margin: 16px 0 0; border-radius: 26px; padding: 18px 16px 14px; background: #0f0f12; border: 1px solid rgba(255,255,255,0.06); }
+.hm-gh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hm-t { font-size: 0.74rem; letter-spacing: 0.18em; color: #8e8e93; font-weight: 800; margin: 0; }
+.hm-big { font-size: 1.9rem; font-weight: 800; } .hm-big.pos, .hm-rn .pos { color: #4cd17e; } .hm-big.neg, .hm-rn .neg { color: #ff8a7a; }
+.hm-sub { font-size: 0.82rem; color: #a1a1a6; margin: 0 0 4px; text-align: right; }
+.hm-sub2 { font-size: 0.74rem; color: #8e8e93; }
+.hm-radar { display: block; width: 100%; max-width: 340px; height: auto; margin: 6px auto 0; }
+.hm-radar.sm { max-width: 200px; margin: 2px auto 0; }
+.hm-shape { animation: hmGrow 0.9s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes hmGrow { from { transform: scale(0.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.hm-key { display: flex; justify-content: center; gap: 18px; font-size: 0.78rem; color: #a1a1a6; margin-top: 2px; }
+.hm-key i { display: inline-block; vertical-align: middle; margin-right: 6px; }
+.hm-key .k-avg { width: 18px; border-top: 2px dashed #8e8e93; }
+.hm-key .k-out { width: 12px; height: 12px; border-radius: 3px; background: rgba(76,209,126,0.35); border: 2px solid #4cd17e; }
+.hm-rads { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 10px -4px 0; padding: 0 4px 4px; scrollbar-width: none; }
+.hm-rads::-webkit-scrollbar { display: none; }
+.hm-rad { flex: none; width: 210px; scroll-snap-align: start; border-radius: 18px; padding: 10px 8px 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); color: inherit; text-decoration: none; }
+.hm-rn { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 0 4px; }
+.hm-rn b { font-size: 0.86rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm-rn span { font-weight: 800; font-size: 0.95rem; flex: none; }
+.hm-none { color: #a1a1a6; font-size: 0.92rem; margin: 10px 0 6px; }
+.hm-lbl { font-size: 0.74rem; letter-spacing: 0.18em; color: #8e8e93; font-weight: 800; margin: 24px 4px 10px; }
+.hm-row { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-bottom: 2px; }
+.hm-row::-webkit-scrollbar { display: none; }
+.hm-fc { flex: none; width: 148px; height: 180px; border-radius: 22px; padding: 14px; display: flex; flex-direction: column; justify-content: flex-end; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,0.07); color: #f5f5f7; text-decoration: none; scroll-snap-align: start; }
+.hm-pic { position: absolute; left: 0; top: 0; width: 100%; height: 62%; } .hm-pic svg { width: 100%; height: 100%; }
+.hm-fc b { position: relative; font-size: 1rem; line-height: 1.15; }
+.hm-fc small { position: relative; color: #a1a1a6; font-size: 0.75rem; margin-top: 3px; }
+.hm-dots { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+.hm-dots i { width: 6px; height: 6px; border-radius: 3px; background: #3a3a3c; transition: width 0.2s ease, background 0.2s ease; }
+.hm-dots i.on { background: #d4b483; width: 16px; }
+.hm-live { margin: 20px 0 0; border-radius: 18px; padding: 14px 16px; background: #0f0f12; border: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 10px; font-size: 0.92rem; color: #f5f5f7; text-decoration: none; }
+.hm-live[hidden] { display: none; }
+.hm-dot { width: 10px; height: 10px; border-radius: 50%; background: #8e8e93; flex: none; }
+.hm-dot.on { background: #ff453a; animation: hmPulse 1.6s ease-in-out infinite; }
+@keyframes hmPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,69,58,0.5); } 50% { box-shadow: 0 0 0 7px rgba(255,69,58,0); } }
+.hm-live b { font-size: 0.74rem; letter-spacing: 0.1em; color: #a1a1a6; } .hm-live b.on { color: #ff453a; }
+.hm-live-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm-go { margin-left: auto; color: #8e8e93; font-size: 1.2rem; }
+@media (prefers-reduced-motion: reduce) { .hm-orb, .hm-shape, .hm-dot.on { animation: none; } }

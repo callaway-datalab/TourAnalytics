@@ -10,7 +10,8 @@ const ROUTES = [
   ["/login", "public", () => import("./views/login.js"), "login"],
   ["/signup", "public", () => import("./views/signup.js"), "signup"],
   ["/dashboard", "client", () => import("./views/dashboard.js"), "dashboard"],
-  ["/watchlist", "signed-in", () => import("./views/watchlist.js"), "watchlist"],
+  ["/home", "signed-in", () => import("./views/home.js"), "home"], // (update 609: everyone's first page)
+  ["/watchlist", "signed-in", () => import("./views/watchlist.js"), "watchlist"], // (update 609: off the menu for now; still opens by its link)
   // Analyze → Leaderboards and Player Stats (update 158; My Stats for a player is /dashboard)
   ["/leaderboards", "client", () => import("./views/leaderboards.js"), "leaderboards"],
   ["/player-stats", "client", () => import("./views/playerStats.js"), "player-stats"],
@@ -58,7 +59,7 @@ let lastTeamPlayer = null; // the player a team member last looked at
 // Pages that show one player's data and need to know which player.
 const PLAYER_PAGES = ["dashboard", "dataset", "documents", "course-reports"];
 // (update 164) everyone's home: the Watchlist (Home for a player)
-const homeFor = (state) => (!state.user ? "/login" : "/watchlist");
+const homeFor = (state) => (!state.user ? "/login" : "/home"); // (update 609: Home, not the Watchlist)
 
 function match(path) {
   for (const [pattern, guard, loader, routeId] of ROUTES) {

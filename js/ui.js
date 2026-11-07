@@ -116,7 +116,7 @@ const sectionsFor = (kind) => {
   const multi = admin || (kind === "team" && teamCount() > 1);
   const dataItems = [
     // (update 292) the Watchlist is the first page of Analyze (and what Analyze opens on)
-    [multi ? "Watchlist" : "Home", "#/watchlist", ["watchlist"]],
+    ["Home", "#/home", ["home"]], // (update 609: Home; the Watchlist is off the menu for now)
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     // (update 505) Watchlist, Stats, Compare, Leaderboards
     ["Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
@@ -323,7 +323,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   ];
 
   const rail = el("aside", { class: "rail" }, [
-    el("a", { class: "brand", href: "#/watchlist" }, [logoImg(), portalName]),
+    el("a", { class: "brand", href: "#/home" }, [logoImg(), portalName]),
     nav,
     el("div", { class: "rail-foot" }, footItems),
   ]);
