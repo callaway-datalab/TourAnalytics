@@ -142,6 +142,10 @@ export function strategyOf(recs, par, geo = {}) {
         const rr = ry * geo.ppy, inR = (x, y) => missPts.filter((p) => p.lie === c.lie && Math.hypot(p.x - x, p.y - y) <= rr);
         let x = c.x, y = c.y, mem = inR(x, y);
         for (let it = 0; it < 10 && mem.length; it++) { const nx = mean(mem.map((p) => p.x)), ny = mean(mem.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny; mem = inR(x, y); if (moved < geo.ppy) break; }
+        // (update 619) one side of the green only: misses whose direction shares a part with the spot's main one (a long
+        // spot keeps long, long-left and long-right; not a left miss the rough round the green joins it to)
+        if (mem.length) { const cnt = new Map(); for (const p of mem) for (const w of String(p.side).split("-")) cnt.set(w, (cnt.get(w) || 0) + 1);
+          const main = [...cnt].sort((a, b) => b[1] - a[1])[0][0]; mem = mem.filter((p) => String(p.side).split("-").includes(main)); }
         if (mem.length < minN) continue;
         const sig = `${c.lie}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
         if (!seen.has(sig)) { seen.add(sig); out.push({ ry, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
@@ -149,6 +153,14 @@ export function strategyOf(recs, par, geo = {}) {
       }
       return out;
     };
+    // (update 619) a fairway or rough miss beside a bunker (a quarter or more of the misses within 6 yds of it in a bunker)
+    // is a lucky lie, not a place: left out of every spot, so a spot of long rough isn't flattered by the strip of rough
+    // in front of a bunker that the rough round the green joins it to
+    { const R = 6 * geo.ppy, all = missPts.slice();
+      for (const p of all) { if (p.lie !== "rough" && p.lie !== "fairway") continue;
+        const nb = all.filter((q) => q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= R);
+        if ((nb.length >= 3 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.25) || all.some((q) => q.lie === "bunker" && Math.hypot(q.x - p.x, q.y - p.y) <= 4 * geo.ppy)) p.lucky = true; } // (or a bunker miss within 4 yds)
+      for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
     const cand = gen(MIN_N, [15, 20]);
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)

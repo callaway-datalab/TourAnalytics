@@ -383,7 +383,7 @@ export function courseInsights(C) {
       const fringe = !!(m && m.nq[3] === 1 && HB?.greenDist && HB.greenDist(m.nq[1], m.nq[2]) <= 1.5)
         // (update 616) and a thin strip of fairway or rough between the green and a bunker (the green's edge within 4 yds,
         // a bunker within 3): not a place to aim for
-        || !!(m && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.greenDist && HB?.bunkerDist && HB.greenDist(m.nq[1], m.nq[2]) <= 4 && HB.bunkerDist(m.nq[1], m.nq[2]) <= 3); // (update 602: within about a yard of the green's outline; the outline sits a little inside the true edge)
+        || !!(m && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.greenDist && HB?.bunkerDist && HB.greenDist(m.nq[1], m.nq[2]) <= 6 && HB.bunkerDist(m.nq[1], m.nq[2]) <= 4); // (update 619: 6 and 4 yds, from 4 and 3) // (update 602: within about a yard of the green's outline; the outline sits a little inside the true edge)
       (X.sp[t.p] || (X.sp[t.p] = [])).push({ s: t.s, qs, side: fringe ? null : side, mLie: m && !fringe ? LIES[m.nq[3]] : null, apIdx, ...(fringe ? { fringe: true } : {}) }); }
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
     // (update 508) and the same for its pin
