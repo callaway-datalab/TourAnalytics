@@ -12,7 +12,7 @@ export function heroBox(S, mine, slicedField, f) {
     const per = ordered.map((rd) => S.metric([rd]));
     // (update 168) the rank after each round: where they stood in the field on that date, this selection
     const hist = S.showRanks ? S.rankHistory(ordered, slicedField, r) : S.rollingOnly(ordered); // (update 183: no ranks: the rolling average alone)
-    const fu = formUnits(S, ordered), n = Math.min(S.eventView ? 3 : 12, Math.floor(fu.length / 2)); // (update 581: the DP World Tour: the last 3 events against the 3 before)
+    const fu = formUnits(S, ordered), n = Math.min(S.eventView ? 5 : 12, Math.floor(fu.length / 2)); // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
     let form = null;
     if (n >= (S.eventView ? 1 : 2)) {
       const last = S.metric(fu.slice(-n).flat()), prev = S.metric(fu.slice(-2 * n, -n).flat());
@@ -242,7 +242,7 @@ export const formUnits = (S, ordered) => {
 };
 export async function formPopup(S, ordered) {
   const { renderBlocks } = await import("./badgePopup.js");
-  const fu = formUnits(S, ordered), ev = S.eventView, n = Math.min(ev ? 3 : 12, Math.floor(fu.length / 2));
+  const fu = formUnits(S, ordered), ev = S.eventView, n = Math.min(ev ? 5 : 12, Math.floor(fu.length / 2));
   const lastU = fu.slice(-n), prevU = fu.slice(-2 * n, -n);
   const last = lastU.flat(), prev = prevU.flat(), sg = S.isSG();
   const goodTone = (v, ref) => (sg ? null : S.def.higher == null || v == null || ref == null ? "gold" : S.better(v, ref) ? "pos" : "neg");

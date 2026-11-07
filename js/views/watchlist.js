@@ -130,6 +130,12 @@ export async function render(main, { previewClient }) {
   let tourSel = null; try { tourSel = localStorage.getItem("wl.tour") || null; } catch { /* */ }
   let filtersOpen = false;
   // (update 560) the table's order: tap a column (again: the other way; a third time: your own order)
+  // (update 607) the Watchlist opens on the calm view (how each player is doing, in a sentence); "See all the numbers": the table
+  let calm = true; try { calm = localStorage.getItem("wl.view") !== "numbers"; } catch { /* */ }
+  // (update 608) a player's own Home (one player): the calm page too, its own setting
+  let pcalm = true; try { pcalm = localStorage.getItem("wl.pview") !== "numbers"; } catch { /* */ }
+  const setPCalm = (v) => { pcalm = v; try { localStorage.setItem("wl.pview", v ? "calm" : "numbers"); } catch { /* */ } };
+  const setCalm = (v) => { calm = v; try { localStorage.setItem("wl.view", v ? "calm" : "numbers"); } catch { /* */ } };
   const briefOpen = { concern: false, hot: false }; // (update 601) Trending Down / Up start folded; a tap on the header opens one
   let colSort = { k: null, dir: -1 }; try { colSort = { ...colSort, ...(JSON.parse(localStorage.getItem("wl.colSort") || "null") || {}) }; } catch { /* */ }
   const setSort = (k) => { colSort = colSort.k !== k ? { k, dir: k === "name" ? 1 : -1 } : colSort.dir === (k === "name" ? 1 : -1) ? { k, dir: -colSort.dir } : { k: null, dir: -1 }; try { localStorage.setItem("wl.colSort", JSON.stringify(colSort)); } catch { /* */ } draw(); };
@@ -324,16 +330,30 @@ export async function render(main, { previewClient }) {
     // ---- the cards ----
     const shown = multi && tourSel ? cards.filter((c) => (c.tours || []).some((t) => t.tour === tourSel)) : cards;
     const ctx = { field: fieldNow, owns, keys, cur, detailFor };
+    // (update 607) the calm view
+    if (multi && keys.length && calm) {
+      const add = el("details", { class: "wlc-add" }, [el("summary", {}, "+ Add or remove players"), el("div", { class: "wlc-add-b" }, [tourBar, pickerBox])]);
+      mount(root, [calmView(shown, ctx, () => { setCalm(false); draw(); }, add)]);
+      requestAnimationFrame(() => { root.style.minHeight = ""; });
+      return;
+    }
+    // (update 608) one player (a player's own Home, or a coach with one player): the calm page
+    if (!multi && pcalm && cards[0] && !cards[0].empty) {
+      mount(root, [playerHome(cards[0], () => { setPCalm(false); draw(); window.scrollTo(0, 0); })]);
+      requestAnimationFrame(() => { root.style.minHeight = ""; });
+      return;
+    }
     const brief = multi && shown.length ? briefing(shown, ctx) : null; // (update 557)
     const body = multi && !keys.length ? emptyState() : multi ? tableView(shown, ctx, brief?.status) : el("div", { class: "wl-cards solo" }, cards.map((c) => { const n = cardView(c); n.dataset.key = c.key; return n; }));
     if (multi && keys.length > 1 && !watchIsPreview() && colSort.k == null) dragToReorder(body, ".wl-row[data-key]"); // (update 249; 319: only in your own order; 556: the table's rows)
     // (update 169) redrawing (ticking a metric, the period) keeps your place on the page
     const y = y0, keepFocus = document.activeElement?.closest?.(".wl-menu-o")?.textContent || null, keepChip = document.activeElement?.closest?.(".wl-range")?.dataset.id || null;
     const dragHint = multi && keys.length > 1 && !watchIsPreview() && colSort.k == null ? el("p", { class: "muted small center wl-drag-hint" }, "Tap a player for their card, a column heading to sort by it. Hold a row and drag it to change your order.") : null; // (update 249)
-    mount(root, [multi ? el("header", { class: "wl-hero2" }, controls) : heroShell(controls, subLine), menu, brief?.node || null, body, dragHint,
+    const toCalm = (multi && keys.length) || (!multi && cards[0] && !cards[0].empty) ? (() => { const b = el("button", { type: "button", class: "link wlc-back" }, "\u2190 Simple view"); b.addEventListener("click", () => { if (multi) setCalm(true); else setPCalm(true); draw(); window.scrollTo(0, 0); }); return b; })() : null; // (update 607; 608: one player too)
+    mount(root, [toCalm, multi ? el("header", { class: "wl-hero2" }, controls) : heroShell(controls, subLine), menu, brief?.node || null, body, dragHint,
       el("div", { class: "center wl-foot" }, infoTip(source === "entered"
-        ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 3 events against the 3 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
-        : `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 3 events against the 3 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
+        ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 5 events against the 5 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
+        : `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 5 events against the 5 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });
@@ -433,6 +453,97 @@ export async function render(main, { previewClient }) {
   /* (update 561) the briefing: the 5 biggest swings across the players, each one a part of the game, a distance or a lie
      ("Down in Approach · 150-175 yds"), the last 12 rounds against the 12 before, in strokes a round. Each player's
      biggest drop can be in Trending Down and their biggest rise in Trending Up. A tap: that one thing, in detail. */
+  /* (update 607) the calm view: how many are playing well, steady or worth a look; a line on the latest week; then each
+     player in a sentence (their strokes gained a round, the last 12 rounds against the 12 before, or the DP World Tour's
+     5 events against 5, and where most of the change came from) with their latest event. A tap: their card. */
+  const CAT_WORD = { OTT: "off the tee", APP: "on approach", ARG: "around the green", PUTT: "putting" };
+  /* (update 608) a player's own Home: a greeting, how they're playing in a sentence (the last 12 rounds against the 12
+     before; the DP World Tour: 5 events against 5), their latest event, their two best distances and one to work on.
+     A coach with one player: the same, about the player. "See all your numbers": their full card. */
+  function playerHome(c, toNumbers) {
+    const you = !team.isTeam, first = String(c.label || "").split(" ")[0] || c.label;
+    const hr = new Date().getHours(), tod = hr < 12 ? "morning" : hr < 18 ? "afternoon" : "evening";
+    const cats = (c.areas?.list || []).filter((a) => !a.dist && !a.lie);
+    const ch = cats.length ? cats.reduce((t, a) => t + a.ch, 0) : c.sg?.[0]?.trend?.ch ?? null;
+    const n = c.areas?.n, unit = c.areas?.unit || "rounds";
+    const st = ch == null ? "steady" : ch >= 0.3 ? "well" : ch <= -0.3 ? "look" : "steady";
+    const lead = cats.filter((a) => (st === "well" ? a.ch > 0 : a.ch < 0)).sort((a, b) => Math.abs(b.ch) - Math.abs(a.ch))[0];
+    const PART = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" };
+    const who = you ? "You\u2019re" : `${first} is`, their = you ? "your" : "their";
+    const big = ch == null || !n ? `Not enough recent golf to say how ${you ? "you\u2019re" : `${first} is`} playing yet.`
+      : st === "steady" ? `${who} playing about the same as ${their} previous ${n} ${unit}.`
+      : `${who} ${st === "well" ? "up" : "down"} ${Math.abs(ch).toFixed(2)} strokes a round over ${their} last ${n} ${unit}.`;
+    const small = st !== "steady" && lead ? `Most of it is ${st === "well" ? "from" : "in"} ${their} ${PART[lead.cat] || "game"}.` : null;
+    const chip = { well: "Playing well", steady: "Steady", look: "Worth a look" }[st];
+    const L = c.latest;
+    const ev = L?.event ? el("div", { class: "ph-card" }, [el("p", { class: "ph-lbl" }, `${you ? "Your" : "Their"} latest event`),
+      el("div", { class: "ph-ev" }, [el("div", {}, [el("b", {}, L.event), el("small", {}, [L.pos ? `${L.tie ? "T" : ""}${ordinal(L.pos)} of ${L.of} in strokes gained` : null, L.rounds ? `${L.rounds} round${L.rounds === 1 ? "" : "s"}` : null].filter(Boolean).join(" \u00b7 "))]),
+        L.sg != null ? el("span", { class: `ph-v ${L.sg >= 0 ? "pos" : "neg"}` }, fmtSG(L.sg)) : null])]) : null;
+    const WORD = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
+    const nm = (d) => (d.cat === "APP" ? `Approach from ${d.dist}` : `${WORD[d.cat] || d.cat}, ${d.dist}`);
+    const why = (d) => (d.rank && d.of > 1 && d.rank <= Math.max(3, Math.ceil(d.of * 0.1)) ? "One of the best on tour from here"
+      : d.trend?.ch > 0.005 ? "Better than tour average and improving" : "Better than tour average");
+    const best = (c.dists?.best || []).slice(0, 2), work = (c.dists?.worst || [])[0];
+    const item = (d, kind, sub) => el("div", { class: `ph-row ${kind}` }, [el("span", { class: "ph-dot", "aria-hidden": "true" }, kind === "g" ? "\u25B2" : "\u25C6"), el("span", { class: "ph-t" }, [el("b", {}, nm(d)), el("span", {}, sub)])]);
+    const parts = best.length || work ? el("div", { class: "ph-card" }, [
+      best.length ? el("p", { class: "ph-lbl" }, "What\u2019s going well") : null, ...best.map((d) => item(d, "g", why(d))),
+      work ? el("p", { class: "ph-lbl ph-lbl2" }, "One thing to work on") : null, work ? item(work, "w", `${you ? "Your" : "The"} biggest chance to pick up strokes`) : null]) : null;
+    const more = el("button", { type: "button", class: "link wlc-more" }, `See all ${you ? "your" : `${first}\u2019s`} numbers \u2192`);
+    more.addEventListener("click", toNumbers);
+    const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    return el("div", { class: "wlc ph" }, [
+      el("p", { class: "wlc-date" }, today), el("h1", { class: "wlc-h" }, you ? `Good ${tod}, ${first}` : `How ${first} is doing`),
+      el("div", { class: `ph-hero ${st}` }, [el("span", { class: `wlc-chip ${st}` }, chip), el("p", { class: "ph-big" }, big), small ? el("p", { class: "ph-small" }, small) : null]),
+      ev, parts, more,
+    ]);
+  }
+  function calmView(cards, ctx, toNumbers, add) {
+    const dOf = (d) => { const t = Date.parse(String(d || "").slice(0, 10)); return Number.isFinite(t) ? t : null; };
+    const newest = Math.max(0, ...cards.map((c) => dOf(c.latest?.date) || 0));
+    const two = (v) => Math.abs(v).toFixed(2);
+    const rows = cards.filter((c) => !c.empty).map((c) => {
+      const cats = (c.areas?.list || []).filter((a) => !a.dist && !a.lie);
+      const ch = cats.length ? cats.reduce((t, a) => t + a.ch, 0) : c.sg?.[0]?.trend?.ch ?? null;
+      const n = c.areas?.n, unit = c.areas?.unit || "rounds";
+      const st = ch == null ? "steady" : ch >= 0.3 ? "well" : ch <= -0.3 ? "look" : "steady";
+      const lead = cats.filter((a) => (st === "well" ? a.ch > 0 : a.ch < 0)).sort((a, b) => Math.abs(b.ch) - Math.abs(a.ch))[0];
+      const say = ch == null || !n ? "Not enough recent golf to say yet."
+        : st === "steady" ? `About the same over the last ${n} ${unit} as the ${n} before.`
+        : `${st === "well" ? "Up" : "Down"} ${two(ch)} a round over the last ${n} ${unit}${lead ? `, mostly ${CAT_WORD[lead.cat] || lead.cat}` : ""}.`;
+      const L = c.latest, latest = L?.event ? `Latest: ${L.event}${L.pos ? ` \u00b7 ${L.tie ? "T" : ""}${ordinal(L.pos).replace(/^T?/, "")} of ${L.of} in strokes gained` : ""}${L.sg != null ? ` (${fmtSG(L.sg)} a round)` : ""}` : null;
+      const fresh = !!(dOf(L?.date) && newest && newest - dOf(L.date) <= 10 * 864e5);
+      return { c, st, ch, say, latest, lead, fresh };
+    });
+    const G = { well: rows.filter((r) => r.st === "well").sort((a, b) => b.ch - a.ch), steady: rows.filter((r) => r.st === "steady"), look: rows.filter((r) => r.st === "look").sort((a, b) => a.ch - b.ch) };
+    const first = (r) => String(r.c.label || "").split(" ")[0];
+    // this week: the best strokes-gained finish among those who just played, and the biggest worry
+    const wk = [];
+    const top = rows.filter((r) => r.fresh && r.c.latest?.pos).sort((a, b) => a.c.latest.pos - b.c.latest.pos)[0];
+    if (top) wk.push(`${first(top)} was ${top.c.latest.tie ? "T" : ""}${ordinal(top.c.latest.pos)} in strokes gained at the ${top.c.latest.event}.`);
+    const worry = G.look[0];
+    if (worry && worry.lead) wk.push(`${first(worry)}\u2019s ${({ OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" })[worry.lead.cat] || "game"} has cooled off lately.`);
+    const row = (r) => {
+      const ini = String(r.c.label || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+      const chip = { well: "Playing well", steady: "Steady", look: "Worth a look" }[r.st];
+      const b = el("button", { type: "button", class: "wlc-p" }, [el("span", { class: "wlc-av", "aria-hidden": "true" }, ini),
+        el("span", { class: "wlc-t" }, [el("span", { class: "wlc-n" }, [r.c.label, r.c.tour ? el("small", {}, r.c.tour) : null]), el("span", { class: "wlc-w" }, r.say), r.latest ? el("span", { class: "wlc-l" }, r.latest) : null]),
+        el("span", { class: `wlc-chip ${r.st}` }, chip)]);
+      b.addEventListener("click", () => openCard(r.c, ctx));
+      return b;
+    };
+    const grp = (k, t) => (G[k].length ? [el("p", { class: "wlc-lbl" }, t), ...G[k].map(row)] : []);
+    const more = el("button", { type: "button", class: "link wlc-more" }, "See all the numbers \u2192");
+    more.addEventListener("click", toNumbers);
+    const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    return el("div", { class: "wlc" }, [
+      el("p", { class: "wlc-date" }, today), el("h1", { class: "wlc-h" }, "Your players"),
+      el("div", { class: "wlc-sum" }, [["well", "playing well"], ["steady", "steady"], ["look", "worth a look"]].map(([k, l]) => el("div", { class: k }, [el("b", {}, String(G[k].length)), el("span", {}, l)]))),
+      wk.length ? el("div", { class: "wlc-note" }, [el("b", {}, "This week: "), wk.join(" ")]) : null,
+      ...grp("well", "Playing well"), ...grp("steady", "Steady"), ...grp("look", "Worth a look"),
+      more, add,
+      el("p", { class: "wlc-foot" }, "Playing well or worth a look: strokes gained a round up or down 0.30 or more over the last 12 rounds against the 12 before (the DP World Tour: 5 events against 5). Strokes gained at an event: against the players there who played as many rounds."),
+    ]);
+  }
   const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
   const areaName = (a) => `${CAT_NAME[a.cat] || a.cat}${a.dist ? ` · ${a.dist}` : a.lie ? ` · from the ${String(a.lie).toLowerCase()}` : ""}`;
   function briefing(cards, ctx) {

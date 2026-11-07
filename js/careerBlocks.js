@@ -85,7 +85,7 @@ const eventsOf = (rs) => { const m = new Map(); for (const rd of rs) { const k =
 const avgRds = (xs, k) => (xs.length ? xs.reduce((t, rd) => t + sgOfRd(rd, k), 0) / xs.length : null);
 function trajectoryEvents(rs, cols0) {
   const cols = cols0 || DEFAULT_COLS, evs = eventsOf(rs);
-  const tr = [3, 12].filter((n) => evs.length >= 2 * n).map((n) => {
+  const tr = [5, 20].filter((n) => evs.length >= 2 * n) /* (update 606: 5 vs 5 and 20 vs 20) */.map((n) => {
     const last = evs.slice(-n).flat(), prev = evs.slice(-2 * n, -n).flat();
     return { n, evs: evs.slice(-2 * n), ch: Object.fromEntries(cols.map(([k]) => [k, avgRds(last, k) - avgRds(prev, k)])) };
   });
@@ -93,7 +93,7 @@ function trajectoryEvents(rs, cols0) {
   const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "\u2014" : `${v > 0.004 ? "\u25B2" : v < -0.004 ? "\u25BC" : "\u25C6"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [
     secHead("Getting better or worse?", "Their latest events against the same number just before. Tap a row to see the events."),
-    el("p", { class: "cmp-traj-words" }, termWords(tr, 12, 3)),
+    el("p", { class: "cmp-traj-words" }, termWords(tr, 20, 5)),
     el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
       el("thead", {}, el("tr", {}, ["Events", ...cols.map(([, h]) => h)].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
       el("tbody", {}, tr.map((x) => {

@@ -126,7 +126,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // every other tour: the last 12 rounds against the 12 before
   const unitW = byEvent ? "events" : "rounds";
   const units = byEvent ? (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); } return [...m.values()]; })() : series.map((q) => [q]);
-  const half = Math.min(byEvent ? 3 : 12, Math.floor(units.length / 2));
+  const half = Math.min(byEvent ? 5 : 12, /* (update 606: the DP World Tour: 5 events) */ Math.floor(units.length / 2));
   const late = units.slice(units.length - half).flat(), early = units.slice(units.length - 2 * half, units.length - half).flat(); // the last 12 vs the 12 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= (byEvent ? 1 : 2) ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
@@ -714,7 +714,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(fmtSG(hi), M, Y(hi) + 5, { size: 6.5, color: P.faint }); d.text(fmtSG(lo), M, Y(lo), { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
-    d.polyline(ma(vals, isDP ? 3 : 12).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
+    d.polyline(ma(vals, isDP ? 5 : 12).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
     const every = Math.max(1, Math.ceil(vals.length / 8));
     src.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
@@ -725,7 +725,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
     // (update 577) wrapped to the page's width (it ran off the right edge)
-    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 3 : 12} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 12} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
     y -= 10;
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
