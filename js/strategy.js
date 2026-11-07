@@ -133,20 +133,23 @@ export function strategyOf(recs, par, geo = {}) {
   if (geo.ppy && missPts.length >= MIN_N) {
     // 10 yds, widened to 15 when that's too few; each circle then moved to the middle of its misses and counted again
     // (twice), so it holds the whole cluster rather than whichever part a single miss reaches
+    // (update 617) each spot is a cluster's centre found by moving a circle to the middle of its misses until it stops
+    // (the densest place), and judged on every miss of that lie inside it: whole bunkers and patches of rough, not the
+    // best- or worst-scoring slice of one (that made a left bunker look worse than a right one that really was worse)
     const gen = (minN, radii) => {
       const out = [], seen = new Set();
       for (const c of missPts) for (const ry of radii) {
         const rr = ry * geo.ppy, inR = (x, y) => missPts.filter((p) => p.lie === c.lie && Math.hypot(p.x - x, p.y - y) <= rr);
-        let mem = inR(c.x, c.y);
+        let x = c.x, y = c.y, mem = inR(x, y);
+        for (let it = 0; it < 10 && mem.length; it++) { const nx = mean(mem.map((p) => p.x)), ny = mean(mem.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny; mem = inR(x, y); if (moved < geo.ppy) break; }
         if (mem.length < minN) continue;
-        for (let it = 0; it < 2; it++) { const m2 = inR(mean(mem.map((p) => p.x)), mean(mem.map((p) => p.y))); if (m2.length >= minN) mem = m2; }
-        const sig = `${c.lie}|${mem.map((p) => done.indexOf(p.r)).sort((a, b) => a - b).join(",")}`;
+        const sig = `${c.lie}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
         if (!seen.has(sig)) { seen.add(sig); out.push({ ry, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
         break;
       }
       return out;
     };
-    const cand = gen(MIN_N, [10, 15]);
+    const cand = gen(MIN_N, [15, 20]);
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
     const sideOf = (mem) => {
@@ -165,7 +168,7 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
     // different place that's scored worse than the second best
     if (pick.length === 2) {
-      const w = nameAll(gen(5, [10, 15, 20])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
+      const w = nameAll(gen(5, [15, 20])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
       if (w) pick.push(w);
     }
     if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const h = hullOf(g.mem.map((p) => [p.x, p.y])); return h ? [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone, h] : [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone]; } }));

@@ -6415,3 +6415,13 @@ div.sh-ud3-green { cursor: default; }
 .ent-sw .ent-card { position: relative; z-index: 1; touch-action: pan-y; user-select: none; -webkit-user-select: none; background-color: #121215 !important; }
 .ent-trash { position: absolute; right: 0; top: 0; bottom: 0; width: 92px; z-index: 0; border: 0; border-radius: 18px; background: #d9706a; display: grid; place-items: center; cursor: pointer; padding: 0; }
 .ent-trash:disabled { opacity: 0.6; }
+/* (update 617) Strategy Maps: the player search on its own (no card, no "Player" label); the 2nd best target yellower */
+.sh.sh-bare { background: none !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; margin: 4px 0 12px !important; }
+.sh.sh-bare label { display: none; }
+.sh-calkey .k-ok { border-color: #ffd60a !important; background: rgba(255,214,10,0.16) !important; }
+.cal-read-circ.t-ok { border-color: #ffd60a; }
+/* (update 617) Course Prep: the search hides cards again (the card's display was overriding [hidden]) */
+.pr-course.prc[hidden] { display: none !important; }
+/* (update 617) Home: room between an Explore card's picture and its title */
+.hm-fc { height: 196px; }
+.hm-pic { height: 54%; }

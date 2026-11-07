@@ -31,7 +31,7 @@ export async function drawHeat(ctx, course) {
   const W = await pickWho(ctx, (p) => { who = p; if (ready) loadWho(); });
   who = W.who;
   const whoLine = el("p", { class: "muted small sh-who" });
-  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel sh" }, [
+  mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "sh sh-bare" /* (update 617: no card round it) */ }, [
     // (update 616) no title block: just the player search
     W.node, whoLine]), body]);
   let data, raw;
@@ -688,7 +688,7 @@ export async function drawHeat(ctx, course) {
     if (!st.calOn || !calRead || !size.w) return;
     const W = size.w, Hh = size.h;
     calSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
-    const TONE = { good: ["#a3e635", "rgba(163,230,53,0.10)"], ok: ["#d4af37", "rgba(212,175,55,0.10)"], bad: ["#ff453a", "rgba(255,69,58,0.10)"] };
+    const TONE = { good: ["#a3e635", "rgba(163,230,53,0.10)"], ok: ["#ffd60a", "rgba(255,214,10,0.10)"] /* (update 617: yellower) */, bad: ["#ff453a", "rgba(255,69,58,0.10)"] };
     let any = false;
     // (update 614) a smooth closed outline through points (Catmull-Rom as Bezier curves)
     const smooth = (P) => { const n = P.length, g = (i) => P[(i + n) % n]; let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
