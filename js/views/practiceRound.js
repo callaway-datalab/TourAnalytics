@@ -176,7 +176,7 @@ async function drawHome(ctx) {
   // (update 589) from Cal's Read: open that hole and pin on Strategy Maps
   { let o = null; try { o = JSON.parse(sessionStorage.getItem("cal.open") || "null"); sessionStorage.removeItem("cal.open"); } catch { /* */ }
     const c = o?.heat ? courses.find((x) => x.heat?.id === o.heat) : null;
-    if (c) return ctx.go({ name: "prepHeat", course: { ...c, startHole: o.hole, ...(o.pin ? { startPin: o.pin } : {}) } }); }
+    if (c) return ctx.go({ name: "prepHeat", course: { ...c, startHole: o.hole, calCircles: true, ...(o.pin ? { startPin: o.pin } : {}) } }); } // (592: Cal's spots circled)
   const pool = courses.flatMap((c) => c.par.map((p, i) => (Number(c.yards[i]) > 0 ? { par: p, yards: Number(c.yards[i]), course: c.name, n: i + 1, ...(c.heat?.id ? { heatId: c.heat.id } : {}) } : null)).filter(Boolean)); // (update 522: and its Strategy Maps)
 
   // simulate a random course

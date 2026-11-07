@@ -20,8 +20,19 @@ const lieIn = (l) => ({ fairway: "in the fairway", rough: "in the rough", bunker
 
 export function strategyOf(recs, par, geo = {}) {
   const done = (recs || []).filter((r) => r.s != null && r.qs?.length);
-  if (done.length < MIN_N) return null;
+  // (update 592) a pin with fewer than MIN_N still gets its approach read (said as a small sample); every finding that
+  // ranks one place against another still needs MIN_N each
+  if (done.length < 3) return null;
   const sc = (r) => par + r.s, base = mean(done.map(sc)), items = [];
+  // (update 592) a circle round where a group's shots finished (map pixels): their middle, and most of their spread
+  const PPY = geo.ppy || 3;
+  const circ = (rs, ptOf, tone) => {
+    const ps = rs.map(ptOf).filter((q) => q && q[1] != null && q[2] != null); if (ps.length < 3) return null;
+    const cx = mean(ps.map((q) => q[1])), cy = mean(ps.map((q) => q[2])), ds = ps.map((q) => Math.hypot(q[1] - cx, q[2] - cy)).sort((a, b) => a - b);
+    const r = Math.max(6 * PPY, Math.min(30 * PPY, ds[Math.floor(0.7 * (ds.length - 1))] || 0));
+    return [Math.round(cx), Math.round(cy), Math.round(r), tone];
+  };
+  const apPt = (r) => (r.apIdx != null ? r.qs[r.apIdx + 1] : null);
   const group = (list, keyOf) => { const m = new Map(); for (const r of list) { const k = keyOf(r); if (k == null) continue; (m.get(k) || m.set(k, []).get(k)).push(r); } return [...m].map(([k, rs]) => ({ k, rs, n: rs.length, avg: mean(rs.map(sc)) })).filter((g) => g.n >= MIN_N); };
   const at = (r, st) => r.qs.find((q) => q[0] === st);
 
@@ -52,12 +63,12 @@ export function strategyOf(recs, par, geo = {}) {
       let t = `Aim for ${tgt.k} off the tee: ${f2(tgt.avg)} (${nTxt(tgt.n)})`;
       t += others.length ? `, against ${others.map((z) => `${z.k} ${f2(z.avg)}`).join(", ")}.` : ".";
       if (bb) t += ` Best there: around ${bb.k} yds (${f2(bb.avg)}, ${nTxt(bb.n)}).`;
-      items.push({ k: "tee", t });
+      items.push({ k: "tee", t, at: [circ((bb || tgt).rs, (r) => r._d.q2, "good")].filter(Boolean) });
       for (const z of zones.filter((z) => !isFw(z) && z.avg <= tgt.avg - 0.05).slice(0, 1))
         items.push({ k: "surprise", t: `Surprise: drives finishing in ${z.k} (${f2(z.avg)}, ${nTxt(z.n)}) have scored better than ${tgt.k} (${f2(tgt.avg)}).` });
     }
     const worst = zones.at(-1), best = zones[0];
-    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", t: `Stay out of ${worst.k} off the tee: ${f2(worst.avg)} (${nTxt(worst.n)}), the worst place drives finished.` });
+    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", t: `Stay out of ${worst.k} off the tee: ${f2(worst.avg)} (${nTxt(worst.n)}), the worst place drives finished.`, at: [circ(worst.rs, (r) => r._d.q2, "bad")].filter(Boolean) });
   }
 
   // ---- the approach: every result (the green, and each miss's side and lie within 30 yds) against every other ----
@@ -78,16 +89,16 @@ export function strategyOf(recs, par, geo = {}) {
     let t = `Approach: if you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}), the best of the ${order.length} places a miss finished (${MIN_N}+ samples each).`;
     t += ` Second best: ${b2.lab} (${f2(b2.avg)}, ${nTxt(b2.n)}).`;
     if (order.length >= 3) t += ` Worst: ${w.lab} (${f2(w.avg)}, ${nTxt(w.n)}).`;
-    items.push({ k: "miss", t: t + gTxt });
+    items.push({ k: "miss", t: t + gTxt, at: [circ(b1.rs, apPt, "good"), circ(b2.rs, apPt, "ok"), order.length >= 3 ? circ(w.rs, apPt, "bad") : null].filter(Boolean) });
   } else {
     const g = done.filter((r) => apOut(r) === "green"), m = done.filter((r) => r.side);
     if (g.length || m.length) {
       const av = (rs) => f2(mean(rs.map(sc)));
       let t = `Approach: ${g.length ? `hitting the green averaged ${av(g)} (${nTxt(g.length)})` : "no greens hit yet"}${m.length ? `, missing it within 30 yds ${av(m)} (${nTxt(m.length)})` : ""}.`;
-      const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
+      const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, rs, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
       if (few.length >= 2) t += ` Too few misses to rank them firmly; so far the best is ${SIDE[few[0].sd] || few[0].sd} (${f2(few[0].avg)}, ${few[0].n} samples) and the worst ${SIDE[few.at(-1).sd] || few.at(-1).sd} (${f2(few.at(-1).avg)}, ${few.at(-1).n} samples).`;
-      items.push({ k: "miss", t });
-    }
+      items.push({ k: "miss", t, at: few.length >= 2 ? [circ(few[0].rs, apPt, "good"), circ(few.at(-1).rs, apPt, "bad")].filter(Boolean) : [] });
+    } else items.push({ k: "miss", t: `Approach: too few approach shots recorded to this pin to read yet (${nTxt(done.length)}).` });
   }
   // ---- surprises: a miss in the rough or a bunker that scored better than a fairway or green result ----
   const rough = outs.filter((g) => /\|(rough|bunker)$/.test(g.k)), clean = outs.filter((g) => g.k === "green" || /\|fairway$/.test(g.k));

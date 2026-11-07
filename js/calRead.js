@@ -14,20 +14,26 @@ const plain = (t) => samples(String(t).replace(/^(Approach|Surprise): (.)/, (_, 
 export function readFor(S, ids) {
   S = S || {};
   const r = (ids || []).map((id) => S[id]).filter(Boolean).sort((a, b) => b.n - a.n)[0];
-  if (r) return { r, all: false };
+  // (update 592) a pin too thin for its own tee read: the tee shot from every pin on the hole (it hardly depends on the pin)
+  if (r) {
+    const fromAll = r.items.some((it) => it.k === "tee") ? [] : (S["*"]?.items || []).filter((it) => it.k === "tee" || /^Surprise: drives/.test(it.t)).map((it) => ({ ...it, allPins: true }));
+    return { r: fromAll.length ? { ...r, items: [...fromAll, ...r.items] } : r, all: false };
+  }
   // (update 590) every pin together keeps only what doesn't depend on the pin: the tee shot and laying up
   const a = S["*"], items = (a?.items || []).filter((it) => it.k === "tee" || it.k === "layup" || /^Surprise: drives/.test(it.t));
   return items.length ? { r: { ...a, items }, all: true } : null;
 }
 
 /** Cal's card: { r: { base, n, items }, all }, with a line naming the hole and pin. */
-export function readCard(read, where = "", { compact = false } = {}) {
+export function readCard(read, where = "", { compact = false, foot = null } = {}) {
   const { r, all } = read;
   const sub = [where, all ? "every pin together" : null, `${r.n} samples`, `hole avg ${r.base.toFixed(2)}`].filter(Boolean).join(" · ");
   return el("div", { class: `cal-read${compact ? " compact" : ""}` }, [
     el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
       el("div", { class: "cal-read-t" }, [el("strong", {}, BRAND), el("span", {}, sub)]), el("span", { class: "cal-read-tag" }, TAG)]),
-    el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}` }, [el("span", { class: "cal-read-k" }, KIND[it.k] || ""), el("span", {}, plain(it.t))]))),
+    el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}` }, [el("span", { class: "cal-read-k" }, [KIND[it.k] || "", it.allPins ? el("small", {}, "every pin") : null]),
+      el("span", {}, [plain(it.t), it.at?.length ? el("i", { class: "cal-read-circ", title: "Circled on the map", "aria-label": "circled on the map" }) : null])]))),
+    foot,
   ]);
 }
 

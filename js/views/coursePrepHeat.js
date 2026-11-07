@@ -39,6 +39,7 @@ export async function drawHeat(ctx, course) {
   if (!holeNums.includes(st.hole) || st.course !== meta.id) { st.hole = holeNums[0]; st.course = meta.id; st.pin = {}; }
   if (course.startHole && holeNums.includes(course.startHole)) { st.hole = course.startHole; delete course.startHole; } // (update 491: from Course Insights)
   if (course.startPin) { st.pin[st.hole] = course.startPin; delete course.startPin; } // (update 589: from Cal's Read)
+  if (course.calCircles) { st.calOn = true; delete course.calCircles; } // (update 592: Cal's spots circled)
 
   // the page: holes, then pins and the switches, then the picture
   const holeBar = el("div", { class: "sh-holes", role: "tablist", "aria-label": "Hole" });
@@ -62,7 +63,8 @@ export async function drawHeat(ctx, course) {
   const bdSvg = sv("svg", { class: "sh-trails sh-board", preserveAspectRatio: "none", "aria-hidden": "true" }); // (update 497: the up & down board)
   const spSvg = sv("svg", { class: "sh-trails sh-spot", preserveAspectRatio: "none", "aria-hidden": "true" }); // (update 500: the circle tapped, its shots)
   const msSvg = sv("svg", { class: "sh-trails sh-spot", preserveAspectRatio: "none", "aria-hidden": "true" }); // (update 501: a miss square's shots)
-  const zoomBox = el("div", { class: "sh-zoom" }, [base, cv, trSvg, bdSvg, spSvg, msSvg]);
+  const calSvg = sv("svg", { class: "sh-trails sh-spot sh-cal", preserveAspectRatio: "none", "aria-hidden": "true" }); // (update 592: Cal's Read: its spots circled)
+  const zoomBox = el("div", { class: "sh-zoom" }, [base, cv, trSvg, bdSvg, spSvg, msSvg, calSvg]);
   const pastBtn = el("button", { type: "button", class: "sh-past", hidden: true }, "Show Past Shots");
   const hist = el("div", { class: "sh-hist" });
   const trKey = el("div", { class: "sh-legend sh-tr-key", hidden: true }); // (the past shots' colours)
@@ -144,7 +146,7 @@ export async function drawHeat(ctx, course) {
       prewarm();
     }, 250);
   };
-  const drawAll = () => { drawTrails(); drawBoard(); drawSpot(); drawMisses(); paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin: pinNow, rot }); placeDot(); };
+  const drawAll = () => { drawTrails(); drawBoard(); drawSpot(); drawMisses(); drawCal(); paintBase(base, img, { W: size.w, H: size.h, rot }); if (Z && size.w) paintHeat(cv, Z, ov, { W: size.w, H: size.h, pin: pinNow, rot }); placeDot(); };
   img.addEventListener("load", () => { rebuild(); drawAll(); });
   const seg = (box, list, key, onSet) => mount(box, list.map(([v, l, dis]) => { const b = el("button", { type: "button", class: `seg-btn${st[key] === v ? " on" : ""}`, "aria-pressed": String(st[key] === v), disabled: !!dis, title: dis || null }, l); b.addEventListener("click", () => { if (st[key] === v) return; st[key] = v; onSet(); }); return b; }));
   const go = (d) => { const i = holeNums.indexOf(st.hole) + d; if (i >= 0 && i < holeNums.length) { st.hole = holeNums[i]; showHole(); } };
@@ -246,7 +248,7 @@ export async function drawHeat(ctx, course) {
     const n = st.hole, H = data.holes?.[n] || { pins: {} }, pin = H.pins?.[st.pin[n]];
     pinNow = pin || null; drawHead();
     if (keep) setTimeout(() => openSpot(keep.x, keep.y), 0);
-    drawHist(); drawTrails(); drawTee(); drawUD(); drawBoard(); drawMisses(); drawStrat(); // (update 588: and the strategy) // (update 479; 491: up & down; 492: tee misses)
+    drawHist(); drawTrails(); drawTee(); drawUD(); drawBoard(); drawMisses(); drawStrat(); drawCal(); // (update 588: and the strategy; 592: its spots circled) // (update 479; 491: up & down; 492: tee misses)
     drawShotSeg();
     if (!pin || !size.w) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); Z = null; mount(keys, size.w ? null : el("p", { class: "muted small" }, "No image for this hole yet: upload the course’s images zip on Upload Data.")); drawLegend(); return; }
     const usePlayer = isP() && !!ix;
@@ -651,11 +653,35 @@ export async function drawHeat(ctx, course) {
   // combined pin: its pins added up; a course uploaded before update 492: the hole's)
   // (update 588) Strategy: what the shots say to aim for and to avoid on this hole, to this pin (a combined pin: its member
   // with the most rounds; too few rounds to the pin: every pin on the hole together, said so)
-  function drawStrat() { // (update 589: as Cal's Read)
+  let calRead = null;
+  function drawStrat() { // (update 589: as Cal's Read; 592: its spots circled on the map, on or off)
     const n = st.hole, read = readFor(data.insights?.holes?.[n]?.strategy, pinNow?.merged || [st.pin[n]]);
+    calRead = read;
     if (!read?.r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
     stratBox.hidden = false;
-    mount(stratBox, readCard(read, `Hole ${n}${read.all ? " \u00b7 too few samples to this pin for an approach read" : ` \u00b7 ${pinLabel(meta, n, st.pin[n])} pin`}`));
+    const has = read.r.items.some((it) => it.at?.length);
+    const tg = has ? el("button", { type: "button", class: `btn ghost small cal-read-open${st.calOn ? " on" : ""}`, "aria-pressed": String(!!st.calOn) }, st.calOn ? "Hide Cal\u2019s circles" : "Circle Cal\u2019s spots on the map") : null;
+    tg?.addEventListener("click", () => { st.calOn = !st.calOn; drawStrat(); drawCal(); });
+    mount(stratBox, readCard(read, `Hole ${n}${read.all ? " \u00b7 too few samples to this pin for an approach read" : ` \u00b7 ${pinLabel(meta, n, st.pin[n])} pin`}`, { foot: tg }));
+  }
+  // (update 592) Cal's spots: gold where to aim and the best miss, lighter the second best, red dashed where to stay out of
+  function drawCal() {
+    while (calSvg.firstChild) calSvg.removeChild(calSvg.firstChild);
+    calSvg.style.display = "none";
+    if (!st.calOn || !calRead || !size.w) return;
+    const W = size.w, Hh = size.h, fs = Math.max(W, Hh) / 48;
+    calSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
+    const TONE = { good: ["#ffd60a", "rgba(255,214,10,0.16)", null], ok: ["#d4b483", "rgba(212,180,131,0.12)", null], bad: ["#ff453a", "rgba(255,69,58,0.10)", "6 5"] };
+    const NAME = { tee: { good: "Aim", bad: "Avoid" }, miss: { good: "Best miss", ok: "2nd best", bad: "Worst miss" } };
+    let any = false;
+    for (const it of calRead.r.items) for (const [x, y, r, tone] of it.at || []) {
+      const [dx, dy] = toDisp(x, y, W, rot), [c, f, dash] = TONE[tone] || TONE.ok;
+      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: f, stroke: c, "stroke-width": 3, "stroke-dasharray": dash, "vector-effect": "non-scaling-stroke" }));
+      const lbl = NAME[it.k]?.[tone]; if (!lbl) continue;
+      const t = sv("text", { x: dx, y: dy - r - fs * 0.35, "text-anchor": "middle", "font-size": fs, "font-weight": 800, fill: c, stroke: "#000", "stroke-width": fs / 7, "paint-order": "stroke" }); t.textContent = lbl;
+      calSvg.appendChild(t); any = true;
+    }
+    if (any) calSvg.style.display = "";
   }
   function drawTee() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];

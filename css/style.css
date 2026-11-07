@@ -6144,3 +6144,8 @@ div.sh-ud3-green { cursor: default; }
 .ci2-sg-pins { display: flex; flex-direction: column; gap: 8px; }
 .ci2-sg-holes { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
 @media (max-width: 520px) { .ci2-sg-holes { grid-template-columns: 1fr; } }
+/* (update 592) Cal's Read: the open-the-map / circles button, a tip from every pin, a tip that's circled on the map */
+.cal-read .cal-read-open { margin-top: 10px; }
+.cal-read .cal-read-open.on { border-color: #ffd60a; color: #ffd60a; }
+.cal-read-k small { display: block; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.04em; color: #8e8e93; text-transform: none; }
+.cal-read-circ { display: inline-block; width: 0.7em; height: 0.7em; margin-left: 6px; border-radius: 50%; border: 2px solid #ffd60a; vertical-align: -0.05em; }
