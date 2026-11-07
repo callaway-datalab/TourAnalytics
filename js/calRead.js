@@ -24,17 +24,87 @@ export function readFor(S, ids) {
   return items.length ? { r: { ...a, items }, all: true } : null;
 }
 
-/** Cal's card: { r: { base, n, items }, all }, with a line naming the hole and pin. */
-export function readCard(read, where = "", { compact = false, foot = null } = {}) {
-  const { r, all } = read;
-  const sub = [where, all ? "every pin together" : null, `${r.n} samples`, `hole avg ${r.base.toFixed(2)}`].filter(Boolean).join(" · ");
-  return el("div", { class: `cal-read${compact ? " compact" : ""}` }, [
-    el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
-      el("div", { class: "cal-read-t" }, [el("strong", {}, BRAND), el("span", {}, sub)]), el("span", { class: "cal-read-tag" }, TAG)]),
-    el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}` }, [el("span", { class: "cal-read-k" }, [KIND[it.k] || "", it.allPins ? el("small", {}, "every pin") : null]),
+/** Cal's card: { r: { base, n, items }, all }. (update 594) the title names the pin where it's needed ("Cal's Read · Back
+ *  Right pin"); the line under it is just the samples; collapsible: a tap on the header folds it (remembered). */
+const LS_FOLD = "calRead.folded";
+export function readCard(read, where = "", { compact = false, foot = null, collapsible = false } = {}) {
+  const { r } = read;
+  const head = el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
+    el("div", { class: "cal-read-t" }, [el("strong", {}, where ? `${BRAND} \u00b7 ${where}` : BRAND), el("span", {}, `${r.n} samples`)]),
+    el("span", { class: "cal-read-tag" }, TAG), collapsible ? el("span", { class: "cal-read-chev", "aria-hidden": "true" }, "\u25BE") : null]);
+  const body = el("div", { class: "cal-read-b" }, [
+    el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}` }, [el("span", { class: "cal-read-k" }, [KIND[it.k] || "", it.allPins ? el("small", {}, "every pin") : it.mine ? el("small", {}, `for ${read.who}`) : null]),
       el("span", {}, [plain(it.t), it.at?.length ? el("i", { class: "cal-read-circ", title: "Circled on the map", "aria-label": "circled on the map" }) : null])]))),
-    foot,
-  ]);
+    foot]);
+  const card = el("div", { class: `cal-read${compact ? " compact" : ""}${collapsible ? " fold" : ""}` }, [head, body]);
+  if (collapsible) {
+    let folded = false; try { folded = localStorage.getItem(LS_FOLD) === "1"; } catch { /* */ }
+    const set = (f) => { card.classList.toggle("folded", f); head.setAttribute("aria-expanded", String(!f)); };
+    head.setAttribute("role", "button"); head.tabIndex = 0; set(folded);
+    const flip = () => { folded = !card.classList.contains("folded"); set(folded); try { localStorage.setItem(LS_FOLD, folded ? "1" : "0"); } catch { /* */ } };
+    head.addEventListener("click", flip);
+    head.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+  }
+  return card;
+}
+
+/* ---------------------------------------------------------------- (update 594) a player's own aim */
+// From their stats (the last 12 months): how far they drive (typical, and the most they can count on: their longer drives),
+// and the approach distance they gain the most from. Their aim off the tee: the best fairway spot within their reach,
+// leaving their best approach distance when one does; on a par 5, the lay-up distance in that range.
+const yRange = (b) => { const t = String(b || "").toLowerCase(), ns = (t.match(/\d+(\.\d+)?/g) || []).map(Number); if (/ft|feet/.test(t) || !ns.length) return null;
+  if (/^\s*[<]|under|inside|less/.test(t)) return { lo: 0, hi: ns[0] }; if (/^\s*[>]|over|\+/.test(t)) return { lo: ns[0], hi: ns[0] + 50 }; return { lo: ns[0], hi: ns[1] ?? ns[0] }; };
+export async function playerProfile(rounds, ix, label) {
+  if (!rounds?.length) return null;
+  const { statRounds } = await import("./sg.js");
+  const vals = statRounds(rounds, "drive").flatMap((rd) => rd.shots.map((o) => o.v)).filter((v) => v >= 150 && v <= 420).sort((a, b) => a - b);
+  const pct = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
+  const drive = vals.length >= 10 ? { typical: Math.round(pct(0.5)), reach: Math.round(pct(0.85)), n: vals.length }
+    : vals.length ? (() => { const a = vals.reduce((t, v) => t + v, 0) / vals.length; return { typical: Math.round(a), reach: Math.round(a + 12), n: vals.length }; })() : null;
+  let best = null;
+  for (const b of ix?.bands?.get("APP") || []) {
+    const a = ix.m.get(`APP|${b}|*`), rg = yRange(b); if (!a || a.w < 15 || !rg || rg.lo < 50 || rg.hi > 300) continue;
+    const sg = a.sg / a.w; if (!best || sg > best.sg) best = { ...rg, band: b, sg, n: Math.round(a.w) };
+  }
+  return drive || best ? { label, first: String(label || "").split(" ")[0] || label, drive, best } : null;
+}
+/** The same from a player's whole stats file: their last 12 months (none: their latest 12 months), as Strategy Maps does. */
+export async function playerProfileFrom(rounds, label) {
+  if (!rounds?.length) return null;
+  const { skillIndex } = await import("./courseHeat.js");
+  const dayMs = (rd) => Date.parse(String(rd.date || "").slice(0, 10)) || 0, YEAR = 365.25 * 864e5;
+  const latest = Math.max(0, ...rounds.map(dayMs)), from = Date.now() - YEAR;
+  const lvl = rounds.filter((rd) => dayMs(rd) >= (latest >= from ? from : latest - YEAR));
+  return lvl.length ? playerProfile(lvl, skillIndex(lvl), label) : null;
+}
+const inBest = (yds, b) => b && yds != null && yds >= b.lo - 5 && yds <= b.hi + 5;
+export function playerAim(read, P) {
+  if (!read?.r || !P) return read;
+  const r = read.r, items = [...r.items], f2 = (v) => v.toFixed(2), bTxt = (b) => `${b.lo}-${b.hi} yds, ${b.sg >= 0 ? "+" : "\u2212"}${Math.abs(b.sg).toFixed(2)} a shot`;
+  let changed = false;
+  // off the tee: the field's aim, swapped for theirs
+  if (r.teeOpts?.length && P.drive) {
+    const reach = P.drive.reach + 10, ok = r.teeOpts.filter((o) => o.len <= reach);
+    if (ok.length) {
+      const fit = ok.filter((o) => inBest(o.left, P.best)), pick = (fit.length ? fit : ok).sort((a, b) => a.avg - b.avg || b.n - a.n)[0];
+      let t = `Aim for ${pick.z} around ${pick.len} yds: ${f2(pick.avg)} (${pick.n} samples${pick.n < 15 ? ", a small sample" : ""}), within your reach (you drive it about ${P.drive.typical}, up to about ${P.drive.reach}).`;
+      if (pick.left != null) t += inBest(pick.left, P.best) ? ` It leaves about ${Math.round(pick.left)} yds in, your best approach range (${bTxt(P.best)}).`
+        : ` It leaves about ${Math.round(pick.left)} yds in${P.best ? `; your best approach range is ${bTxt(P.best)}, and no spot within your reach leaves that` : ""}.`;
+      const i = items.findIndex((it) => it.k === "tee" && /^Aim for/.test(it.t));
+      const mine = { k: "tee", t, at: pick.at ? [pick.at] : [], mine: true };
+      if (i >= 0) items[i] = mine; else items.unshift(mine);
+      changed = true;
+    } else {
+      items.unshift({ k: "tee", t: `Every fairway spot here with enough samples is beyond your reach (you drive it about ${P.drive.typical}, up to about ${P.drive.reach}): the field's aim doesn't fit your game.`, mine: true });
+      changed = true;
+    }
+  }
+  // a par 5's lay-up: the distance in their best approach range, when there are samples there
+  if (r.layOpts?.length && P.best) {
+    const fit = r.layOpts.filter((o) => inBest(o.left + 10, P.best)).sort((a, b) => a.avg - b.avg)[0];
+    if (fit) { items.push({ k: "layup", t: `Laying up, leave about ${fit.left}-${fit.left + 20} yds, your best approach range (${bTxt(P.best)}): ${f2(fit.avg)} here (${fit.n} samples${fit.n < 15 ? ", a small sample" : ""}).`, at: fit.at ? [fit.at] : [], mine: true }); changed = true; }
+  }
+  return changed ? { ...read, r: { ...r, items }, who: P.first } : read;
 }
 
 /* ---------------------------------------------------------------- in Cal's chat */

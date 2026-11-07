@@ -8,7 +8,9 @@ import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
 import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
-import { readFor, readCard } from "../calRead.js"; // (update 589)
+import { readFor, readCard, playerProfile, playerAim } from "../calRead.js"; // (update 589; 594: a player's own aim)
+// (update 594) the Off the tee misses and Up & down by miss boxes: hidden for now (true brings them back)
+const SHOW_MISS_MAPS = false;
 import { LOW_MEM, freeCanvases, lieName, heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 import { playerTrails, LIE_NAMES, eKey, dOf } from "../courseShots.js"; // (update 479; 503: eKey)
@@ -22,6 +24,7 @@ export async function drawHeat(ctx, course) {
   const back = el("button", { type: "button", class: "link" }, `← ${course.name}`);
   back.addEventListener("click", () => ctx.go({ name: "prepMenu", course }));
   const body = el("div", {}, el("p", { class: "muted ta-loading" }, "Loading the zones…"));
+  let prof = null; // (update 594) the player picked: their driving and best approach range, for Cal's Read
   let who = null, ix = null, mineHere = null, trails = null, ready = false; // (trails: the player picked: their rounds here, shot by shot)
   // (update 536) a player picked while the page is still being set up waits for it: loading them straight away reached
   // parts of the page not made yet ("Cannot access 'trails' before initialization") and the page failed
@@ -74,12 +77,14 @@ export async function drawHeat(ctx, course) {
   const stageWrap = el("div", { class: "sh-stage-wrap" }, [stage, pop]); // (update 501: the popup can sit above or below the map)
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
+  const calKey = el("div", { class: "sh-calkey", hidden: true }, [ // (update 594) what Cal's circles mean, above the map
+    el("span", {}, [el("i", { class: "k-good" }), "Aim \u00b7 best miss"]), el("span", {}, [el("i", { class: "k-ok" }), "2nd best miss"]), el("span", {}, [el("i", { class: "k-bad" }), "Avoid \u00b7 worst miss"])]);
   const stratBox = el("div", { class: "sh-strat", hidden: true }); // (update 588) the strategy insights for this hole and pin (589: Cal\u2019s Read)
   const teeBox = el("div", { class: "sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
   const udBox = el("div", { class: "sh-tee sh-ud3", hidden: true }); // (update 525: laid out as the Off the tee row, its blocks 3 x 3) // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
   prev.addEventListener("click", () => go(-1)); next.addEventListener("click", () => go(1));
-  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, el("div", { class: "sh-ctl" }, [pinBar]), head, hist, stratBox, shotRow, teeBox, udBox, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
+  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, el("div", { class: "sh-ctl" }, [pinBar]), head, hist, stratBox, shotRow, teeBox, udBox, calKey, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
 
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
@@ -654,36 +659,38 @@ export async function drawHeat(ctx, course) {
   // (update 588) Strategy: what the shots say to aim for and to avoid on this hole, to this pin (a combined pin: its member
   // with the most rounds; too few rounds to the pin: every pin on the hole together, said so)
   let calRead = null;
-  function drawStrat() { // (update 589: as Cal's Read; 592: its spots circled on the map, on or off)
-    const n = st.hole, read = readFor(data.insights?.holes?.[n]?.strategy, pinNow?.merged || [st.pin[n]]);
+  function drawStrat() { // (update 589: as Cal's Read; 592: its spots circled on the map; 594: folds, a player's own aim)
+    const n = st.hole;
+    let read = readFor(data.insights?.holes?.[n]?.strategy, pinNow?.merged || [st.pin[n]]);
+    if (read && prof && who) read = playerAim(read, prof);
     calRead = read;
     if (!read?.r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
     stratBox.hidden = false;
     const has = read.r.items.some((it) => it.at?.length);
     const tg = has ? el("button", { type: "button", class: `btn ghost small cal-read-open${st.calOn ? " on" : ""}`, "aria-pressed": String(!!st.calOn) }, st.calOn ? "Hide Cal\u2019s circles" : "Circle Cal\u2019s spots on the map") : null;
     tg?.addEventListener("click", () => { st.calOn = !st.calOn; drawStrat(); drawCal(); });
-    mount(stratBox, readCard(read, `Hole ${n}${read.all ? " \u00b7 too few samples to this pin for an approach read" : ` \u00b7 ${pinLabel(meta, n, st.pin[n])} pin`}`, { foot: tg }));
+    mount(stratBox, readCard(read, "", { foot: tg, collapsible: true }));
   }
-  // (update 592) Cal's spots: gold where to aim and the best miss, lighter the second best, red dashed where to stay out of
+  // (update 592) Cal's spots circled; (594) lime: where to aim and the best miss, gold: the second best, red: where to stay
+  // out of and the worst miss; what they mean in the key above the map (no names on the map)
   function drawCal() {
     while (calSvg.firstChild) calSvg.removeChild(calSvg.firstChild);
-    calSvg.style.display = "none";
+    calSvg.style.display = "none"; calKey.hidden = true;
     if (!st.calOn || !calRead || !size.w) return;
-    const W = size.w, Hh = size.h, fs = Math.max(W, Hh) / 48;
+    const W = size.w, Hh = size.h;
     calSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
-    const TONE = { good: ["#ffd60a", "rgba(255,214,10,0.16)", null], ok: ["#d4b483", "rgba(212,180,131,0.12)", null], bad: ["#ff453a", "rgba(255,69,58,0.10)", "6 5"] };
-    const NAME = { tee: { good: "Aim", bad: "Avoid" }, miss: { good: "Best miss", ok: "2nd best", bad: "Worst miss" } };
+    const TONE = { good: ["#a3e635", "rgba(163,230,53,0.16)"], ok: ["#d4af37", "rgba(212,175,55,0.14)"], bad: ["#ff453a", "rgba(255,69,58,0.12)"] };
     let any = false;
     for (const it of calRead.r.items) for (const [x, y, r, tone] of it.at || []) {
-      const [dx, dy] = toDisp(x, y, W, rot), [c, f, dash] = TONE[tone] || TONE.ok;
-      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: f, stroke: c, "stroke-width": 3, "stroke-dasharray": dash, "vector-effect": "non-scaling-stroke" }));
-      const lbl = NAME[it.k]?.[tone]; if (!lbl) continue;
-      const t = sv("text", { x: dx, y: dy - r - fs * 0.35, "text-anchor": "middle", "font-size": fs, "font-weight": 800, fill: c, stroke: "#000", "stroke-width": fs / 7, "paint-order": "stroke" }); t.textContent = lbl;
-      calSvg.appendChild(t); any = true;
+      const [dx, dy] = toDisp(x, y, W, rot), [c, f] = TONE[tone] || TONE.ok;
+      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: f, stroke: "#000", "stroke-opacity": 0.55, "stroke-width": 6, "vector-effect": "non-scaling-stroke" }));
+      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: "none", stroke: c, "stroke-width": 3, "vector-effect": "non-scaling-stroke" }));
+      any = true;
     }
-    if (any) calSvg.style.display = "";
+    if (any) { calSvg.style.display = ""; calKey.hidden = false; }
   }
   function drawTee() {
+    if (!SHOW_MISS_MAPS) { teeBox.hidden = true; mount(teeBox, null); return; } // (update 594)
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
     const k1 = kOf(n, par); /* (update 509) off the tee with Shot 1 only (up & down takes its place on later shots) */
     if (!X || (X.par || par) < 4 || (k1 && k1 !== 1)) { teeBox.hidden = true; mount(teeBox, null); return; }
@@ -772,6 +779,7 @@ export async function drawHeat(ctx, course) {
     return box;
   }
   function drawUD() {
+    if (!SHOW_MISS_MAPS) { udBox.hidden = true; mount(udBox, null); st.udSel = null; return; } // (update 594)
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
     const ids = pinNow?.merged || [pid], U = {};
     for (const id of ids) for (const [side, lies] of Object.entries(X?.udPins?.[id] || {})) for (const [lie, a] of Object.entries(lies)) { const o = (U[side] ||= {}), b = (o[lie] ||= [0, 0]); b[0] += a[0]; b[1] += a[1]; }
@@ -887,7 +895,7 @@ export async function drawHeat(ctx, course) {
     requestAnimationFrame(() => placePop(px, py));
   }
   async function loadWho() {
-    ix = null; mineHere = null; trails = null;
+    ix = null; mineHere = null; trails = null; prof = null;
     if (!who) { whoLine.textContent = ""; paint(); return; }
     const me = who; whoLine.textContent = `Loading ${who.label}’s stats…`; paint();
     // (update 479) their own shots here first (they don't need a stats file)
@@ -902,6 +910,7 @@ export async function drawHeat(ctx, course) {
       const latest = Math.max(0, ...d.rounds.map(dayMs)), recentFrom = Date.now() - YEAR;
       const lvlRounds = d.rounds.filter((rd) => dayMs(rd) >= (latest >= recentFrom ? recentFrom : latest - YEAR));
       ix = lvlRounds.length ? skillIndex(lvlRounds) : null;
+      prof = await playerProfile(lvlRounds, ix, me.label).catch(() => null); if (who !== me) return; // (update 594)
       mineHere = d.rounds.filter((rd) => sameCourse(rd.course, course.name));
       const sgR = mineHere.length ? mineHere.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + s.sg, 0), 0) / mineHere.length : null;
       const link = el("button", { type: "button", class: "link" }, "Course History ›"); link.addEventListener("click", () => ctx.go({ name: "prepHistory", course }));

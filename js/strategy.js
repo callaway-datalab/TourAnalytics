@@ -24,6 +24,10 @@ export function strategyOf(recs, par, geo = {}) {
   // ranks one place against another still needs MIN_N each
   if (done.length < 3) return null;
   const sc = (r) => par + r.s, base = mean(done.map(sc)), items = [];
+  // (update 594) for a player's own aim (worked out where they're viewed): each fairway spot by how far the drive went, and
+  // each lay-up distance, with its scoring, the yards it left and its circle (OPT_N+ samples each)
+  const OPT_N = 5, med = (xs) => { const v = xs.filter((x) => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
+  let teeOpts = null, layOpts = null;
   // (update 592) a circle round where a group's shots finished (map pixels): their middle, and most of their spread
   const PPY = geo.ppy || 3;
   const circ = (rs, ptOf, tone) => {
@@ -54,6 +58,10 @@ export function strategyOf(recs, par, geo = {}) {
       return null;
     };
     const zones = group(drives.map((d) => ({ ...d.r, _d: d })), (r) => zoneOf(r._d)).sort((a, b) => a.avg - b.avg);
+    { const m = new Map();
+      for (const d of drives) { const z = zoneOf(d); if (!z || !/fairway$/.test(z) || /bunkers$/.test(z)) continue; const L = Math.round(len(d) / 20) * 20, k = `${z}|${L}`; (m.get(k) || m.set(k, []).get(k)).push(d); }
+      teeOpts = [...m].filter(([, ds]) => ds.length >= OPT_N).map(([k, ds]) => { const [z, L] = k.split("|"); return { z, len: Number(L), n: ds.length, avg: Math.round(mean(ds.map((d) => sc(d.r))) * 1000) / 1000, left: med(ds.map((d) => d.q2[4])), at: circ(ds, (d) => d.q2, "good") }; });
+      if (!teeOpts.length) teeOpts = null; }
     const isFw = (z) => /fairway$/.test(z.k) && !/bunkers$/.test(z.k);
     const tgt = zones.filter(isFw)[0];
     if (tgt) {
@@ -113,6 +121,9 @@ export function strategyOf(recs, par, geo = {}) {
   const goSt = par >= 5 ? 2 : par === 4 ? 1 : null;
   if (goSt) {
     const plays = done.map((r) => { const q = at(r, goSt), nx = at(r, goSt + 1); if (!q || !nx || q[3] === 4) return null; const go = nx[3] === 4 || (nx[4] != null && nx[4] <= 30); return { r, q, nx, go }; }).filter(Boolean);
+    if (par >= 5) { const m = new Map(); for (const p of plays) { if (p.go || p.nx[4] == null || p.nx[4] < 40) continue; const k = Math.floor(p.nx[4] / 20) * 20; (m.get(k) || m.set(k, []).get(k)).push(p); }
+      layOpts = [...m].filter(([, ps]) => ps.length >= OPT_N).map(([k, ps]) => ({ left: k, n: ps.length, avg: Math.round(mean(ps.map((p) => sc(p.r))) * 1000) / 1000, at: circ(ps, (p) => p.nx, "good") }));
+      if (!layOpts.length) layOpts = null; }
     const goN = plays.filter((p) => p.go).length;
     if (goN >= MIN_N && plays.length - goN >= MIN_N) {
       const from = (p) => { const l = LIE[p.q[3]] || "other", d = p.q[4]; if (d == null) return null; const b = 25, lo = Math.floor(d / b) * b; return `${lo}|${lo + b}|${l}`; };
@@ -132,5 +143,5 @@ export function strategyOf(recs, par, geo = {}) {
       if (byLeft.length >= 2) items.push({ k: "layup", t: `Laying up, leave ${byLeft[0].k}-${Number(byLeft[0].k) + lb} yds: ${f2(byLeft[0].avg)} (${nTxt(byLeft[0].n)}), the best of the lay-up distances.` });
     }
   }
-  return items.length ? { base: Math.round(base * 100) / 100, n: done.length, items } : null;
+  return items.length ? { base: Math.round(base * 100) / 100, n: done.length, items, ...(teeOpts ? { teeOpts } : {}), ...(layOpts ? { layOpts } : {}) } : null;
 }
