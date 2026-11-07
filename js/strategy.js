@@ -17,7 +17,8 @@ const f2 = (v) => v.toFixed(2);
 // (update 597) "21 samples"; under SMALL_N "only 8 samples"; a tip says its value and count together: "(3.78, only 9 samples)"
 const nTxt = (n) => `${n < SMALL_N ? "only " : ""}${n} sample${n === 1 ? "" : "s"}`;
 const vn = (v, n) => `(${f2(v)}, ${nTxt(n)})`;
-const SIDE = { "Long-Left": "long left", Long: "long", "Long-Right": "long right", Left: "left", Right: "right", "Short-Left": "short left", Short: "short", "Short-Right": "short right" };
+// (update 604) the corner directions hyphenated ("short-left"), so they're not read as two
+const SIDE = { "Long-Left": "long-left", Long: "long", "Long-Right": "long-right", Left: "left", Right: "right", "Short-Left": "short-left", Short: "short", "Short-Right": "short-right" };
 // (update 595) going for the green or laying up, from the shot itself (par 5: the second shot; par 4: the tee shot): it
 // went for it when it finished on the green or within 30 yds, or travelled most of the way there (80%; a par 4's tee
 // shot 92%) wherever it ended up; it laid up when it went clearly shorter and finished in a normal lay-up spot (40-130
@@ -129,14 +130,12 @@ export function strategyOf(recs, par, geo = {}) {
       }
     } else items.push({ k: "miss", h: "Too few", t: `Too few approach shots recorded to this pin to read yet (${nTxt(done.length)}).` });
   }
-  // ---- surprises: a miss in the rough or a bunker that scored better than a fairway or green result ----
-  const rough = outs.filter((g) => /\|(rough|bunker)$/.test(g.k)), clean = outs.filter((g) => g.k === "green" || /\|fairway$/.test(g.k));
-  const sur = [];
-  for (const a of rough) for (const b of clean) if (a.avg <= b.avg - 0.1) sur.push({ a, b, gap: b.avg - a.avg });
-  sur.sort((x, y) => y.gap - x.gap);
-  const seen = new Set();
-  for (const { a, b } of sur) { if (seen.has(a.k) || items.filter((i) => i.k === "surprise").length >= 2) continue; seen.add(a.k);
-    items.push({ k: "surprise", h: "Surprise", t: `Missing ${lab(a.k)} ${vn(a.avg, a.n)} has scored better than finishing ${lab(b.k)} (${f2(b.avg)}).` }); }
+  // ---- surprises: a miss in the rough or a bunker that scored better than the best fairway miss ----
+  // (update 604) against the best fairway spot only (not whichever fairway spot makes the biggest gap), so it only shows
+  // when the rough or bunker beats every fairway option
+  const rough = outs.filter((g) => /\|(rough|bunker)$/.test(g.k)), bestFw = outs.filter((g) => /\|fairway$/.test(g.k)).sort((a, b) => a.avg - b.avg)[0];
+  if (bestFw) for (const a of rough.filter((g) => g.avg <= bestFw.avg - 0.1).sort((x, y) => x.avg - y.avg).slice(0, 2))
+    items.push({ k: "surprise", h: "Surprise", t: `Missing ${lab(a.k)} ${vn(a.avg, a.n)} has scored better than the best fairway miss, ${lab(bestFw.k)} (${f2(bestFw.avg)}).` });
 
   // ---- going for the green or laying up: par 5s (the second shot), drivable par 4s (the tee shot), by where it's played from ----
   const goSt = par >= 5 ? 2 : par === 4 ? 1 : null;

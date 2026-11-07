@@ -554,9 +554,14 @@ export async function drawHeat(ctx, course) {
     if (!spot?.R || !spot.pool || e.target.closest(".sh-zbar, .sh-pop")) return;
     const sr = stage.getBoundingClientRect(), [px, py] = screenOf(spot.x, spot.y), [ex, ey] = [e.clientX - sr.left, e.clientY - sr.top];
     const [bx, by] = screenOf(spot.x + spot.R, spot.y), rsc = Math.max(Math.hypot(bx - px, by - py), 12);
-    if (Math.hypot(ex - px, ey - py) > rsc + 8) return;
+    // (update 605) press anywhere near the circle (up to 48 px past its edge), not only on it, and drag: it keeps its
+    // distance from the finger, so the thumb doesn't hide it. It's a drag once the finger moves; a tap that doesn't move
+    // is still a tap (a new spot there).
+    const dd = Math.hypot(ex - px, ey - py), on = dd <= rsc + 8;
+    if (dd > rsc + 48) return;
     const [ix, iy] = imgAt(e.clientX, e.clientY);
-    cdrag = { dx: spot.x - ix, dy: spot.y - iy, moved: false }; e.preventDefault(); e.stopPropagation();
+    cdrag = { dx: spot.x - ix, dy: spot.y - iy, moved: false, sx: e.clientX, sy: e.clientY, on };
+    if (on) { e.preventDefault(); e.stopPropagation(); }
   }, true);
   pop.addEventListener("pointerdown", (e) => {
     if ((!spot?.R && !pop.classList.contains("sh-pop-trail")) || e.target.closest("button, a, input")) return; /* (update 510: a trail's popup too) */
@@ -565,6 +570,7 @@ export async function drawHeat(ctx, course) {
   let dragRaf = 0;
   window.addEventListener("pointermove", (e) => {
     if (cdrag) {
+      if (!cdrag.moved && Math.hypot(e.clientX - cdrag.sx, e.clientY - cdrag.sy) < 6) return; // (update 605: a drag once it moves)
       const [ix, iy] = imgAt(e.clientX, e.clientY); cdrag.moved = true; zm.moved = true;
       spot.x = ix + cdrag.dx; spot.y = iy + cdrag.dy; tapAt = { x: spot.x, y: spot.y };
       if (!dragRaf) dragRaf = requestAnimationFrame(() => { dragRaf = 0; if (spot?.pool) showSpot({ pool: spot.pool, ppy: spot.ppy }); });
@@ -573,8 +579,9 @@ export async function drawHeat(ctx, course) {
       pop.style.left = `${pdrag.l + dx}px`; pop.style.top = `${pdrag.t + dy}px`;
     }
   });
+  window.addEventListener("pointercancel", () => { cdrag = null; }); // (update 605)
   window.addEventListener("pointerup", () => {
-    if (cdrag) { cdrag = null; setTimeout(() => { zm.moved = false; }, 0); }
+    if (cdrag) { const mv = cdrag.moved; cdrag = null; if (mv) setTimeout(() => { zm.moved = false; }, 0); } // (update 605: not moved: the tap goes through)
     if (pdrag) { if (pdrag.moved && spot) { const [px, py] = screenOf(spot.x, spot.y); st.popOff = { dx: pop.offsetLeft - stage.offsetLeft - px, dy: pop.offsetTop - stage.offsetTop - py }; } pdrag = null; }
   });
   // fingers: pinch to zoom, drag when zoomed, swipe for the next / previous hole when not
@@ -588,7 +595,7 @@ export async function drawHeat(ctx, course) {
     zm.moved = false;
   }, { passive: true });
   stage.addEventListener("touchmove", (e) => {
-    if (cdrag) { e.preventDefault(); return; } // (update 502: dragging the circle, not the page)
+    if (cdrag) { e.preventDefault(); return; } // (update 502: dragging the circle, not the page; 605: from near it too)
     if (!tg) return;
     const t = e.touches;
     if (tg.pinch && t.length === 2) {
@@ -688,7 +695,7 @@ export async function drawHeat(ctx, course) {
       const [dx, dy] = toDisp(x, y, W, rot), [c, f] = TONE[tone] || TONE.ok;
       // (update 595) thinner and dashed, 10% see-through, a faint dark edge under it so it shows on any grass
       calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: f, stroke: "#000", "stroke-opacity": 0.35, "stroke-width": 3.5, "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
-      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: "none", stroke: c, "stroke-opacity": 0.9, "stroke-width": 1.75, "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
+      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: "none", stroke: c, "stroke-opacity": 1, "stroke-width": 1.75, /* (update 603: fully opaque) */ "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
       any = true;
     }
     if (any) {

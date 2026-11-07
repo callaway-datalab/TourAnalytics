@@ -12,7 +12,8 @@ const hOf = (it) => it.h || (it.k === "tee" ? (/^(Aim for|Off the tee, )/.test(i
 const kindOf = (it) => (it.k === "surprise" && /^Surprise: drives/.test(it.t) ? KIND.tee : KIND[it.k] || "");
 export const headOf = (it) => [kindOf(it), hOf(it)].filter(Boolean).join(" \u2022 ");
 // (update 591) the counts are samples (past shots from there), not rounds; a course built before 591 says "rounds": said here as samples
-export const samples = (t) => String(t).replace(/\b(\d+\+?) rounds?\b/g, (_, n) => `${n} sample${n === "1" ? "" : "s"}`);
+export const samples = (t) => String(t).replace(/\b(\d+\+?) rounds?\b/g, (_, n) => `${n} sample${n === "1" ? "" : "s"}`)
+  .replace(/\b(long|short|Long|Short) (left|right)\b/g, "$1-$2"); // (update 604) a course built before 604: "short left" said "short-left"
 // (update 597) a course built before 597 says more than the tip needs: trimmed to the value and the count, "(3.78, only 9
 // samples)" (the list of every other place, "the best of the 6 places...", "Hitting the green: ..." dropped)
 const tidy = (t) => samples(t)
