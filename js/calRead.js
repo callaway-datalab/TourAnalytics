@@ -6,7 +6,9 @@ import { el, icon } from "./ui.js";
 
 export const BRAND = "Cal’s Read", TAG = "AI CADDY";
 export const KIND = { tee: "Off the tee", miss: "Approach", surprise: "Surprise", layup: "Go or lay up" };
-const plain = (t) => String(t).replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase());
+// (update 591) the counts are samples (past shots from there), not rounds; a course built before 591 says "rounds": said here as samples
+export const samples = (t) => String(t).replace(/\b(\d+\+?) rounds?\b/g, (_, n) => `${n} sample${n === "1" ? "" : "s"}`);
+const plain = (t) => samples(String(t).replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase()));
 
 /** The read for a pin: its own (a combined pin: its member with the most rounds), else every pin on the hole together. */
 export function readFor(S, ids) {
@@ -21,7 +23,7 @@ export function readFor(S, ids) {
 /** Cal's card: { r: { base, n, items }, all }, with a line naming the hole and pin. */
 export function readCard(read, where = "", { compact = false } = {}) {
   const { r, all } = read;
-  const sub = [where, all ? "every pin together" : null, `${r.n} rounds`, `hole avg ${r.base.toFixed(2)}`].filter(Boolean).join(" · ");
+  const sub = [where, all ? "every pin together" : null, `${r.n} samples`, `hole avg ${r.base.toFixed(2)}`].filter(Boolean).join(" · ");
   return el("div", { class: `cal-read${compact ? " compact" : ""}` }, [
     el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
       el("div", { class: "cal-read-t" }, [el("strong", {}, BRAND), el("span", {}, sub)]), el("span", { class: "cal-read-tag" }, TAG)]),
@@ -79,7 +81,7 @@ export async function answerStrategy(question) {
   const raw = await heatData(meta), data = withMerges(meta, raw), X = data?.insights?.holes?.[h];
   if (!data?.holes?.[h] && !X) return { cant: true, text: `I don’t have a hole ${h} at **${meta.name}**.` };
   const S = X?.strategy;
-  if (!S || !Object.keys(S).length) return { cant: true, text: `My read for **${meta.name}** isn’t worked out yet${X && !X.strategy ? ": the course needs **Rebuild maps** on Upload Data" : `: there aren’t enough rounds on hole ${h} yet`}.` };
+  if (!S || !Object.keys(S).length) return { cant: true, text: `My read for **${meta.name}** isn’t worked out yet${X && !X.strategy ? ": the course needs **Rebuild maps** on Upload Data" : `: there aren’t enough samples on hole ${h} yet`}.` };
   const pins = pinsOn(meta, data, h).map((id) => ({ id, label: pinLabel(meta, h, id) }));
   const asked = /\b(front|back|left|right|middle|center|centre)\b/i.test(question) || /\bpin\b/i.test(question);
   const pin = pins.length === 1 ? pins[0] : pinIn(question, pins);
@@ -87,10 +89,10 @@ export async function answerStrategy(question) {
   if (!pin && pins.length > 1) askedPin = { course: meta.id, hole: h };
   if (!pin && pins.length > 1) return { text: `**Hole ${h} at ${meta.name}.** Which pin? ${asked ? "I couldn\u2019t match that one. " : ""}The pins here: **${pins.map((p) => p.label).join("**, **")}**. Ask like \u201chole ${h} at ${meta.name}, ${pins[0].label.toLowerCase()} pin\u201d.` };
   const read = pin ? readFor(S, ids) : readFor(S, []);
-  if (!read) return { cant: true, text: `I don’t have enough rounds on hole ${h} at **${meta.name}** for a read yet (it needs at least 8).` };
+  if (!read) return { cant: true, text: `I don’t have enough samples on hole ${h} at **${meta.name}** for a read yet (it needs at least 8).` };
   const par = X?.par ? ` (par ${X.par})` : "";
   let text = `**Hole ${h}${par} at ${meta.name}${pin ? `, ${pin.label} pin` : ""}.**`;
-  if (read.all) text += ` Too few rounds to ${pin ? "that pin" : "any one pin"} for an approach read (it needs 8), so this is the tee shot from every pin on the hole together.`;
+  if (read.all) text += ` Too few samples to ${pin ? "that pin" : "any one pin"} for an approach read (it needs 8), so this is the tee shot from every pin on the hole together.`;
   const where = `Hole ${h}${pin ? ` · ${pin.label}` : ""}`;
   return { text, read: { ...read, where }, go: { href: "#/course-prep", label: `Open hole ${h} on Strategy Maps →`, open: { heat: meta.id, hole: h, pin: pin?.id || null } } };
 }

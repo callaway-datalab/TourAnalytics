@@ -147,12 +147,12 @@ function strategy(I, holeNums, toMap, meta, data) {
     open.addEventListener("click", () => toMap(x.h));
     const cards = x.pins.length ? x.pins.map((p) => readCard(p.read, `Hole ${x.h} \u00b7 ${p.label} pin`, { compact: true }))
       : [readCard({ r: x.all, all: true }, `Hole ${x.h}`, { compact: true })];
-    const pinTxt = x.pins.length ? `${x.pins.length} ${x.pins.length === 1 ? "pin" : "pins"}: ${x.pins.map((p) => p.label).join(", ")}` : "every pin together (too few rounds to any one pin)";
+    const pinTxt = x.pins.length ? `${x.pins.length} ${x.pins.length === 1 ? "pin" : "pins"}: ${x.pins.map((p) => p.label).join(", ")}` : "every pin together (too few samples to any one pin)";
     return el("details", { class: "ci2-sg-hole" }, [
       el("summary", {}, [el("strong", {}, `Hole ${x.h}`), el("span", { class: "muted small" }, ` Par ${x.par ?? "\u2014"} \u00b7 ${pinTxt}`)]),
       el("div", { class: "ci2-sg-pins" }, cards), open]);
   })));
-  return sec("CAL\u2019S READ", kids, `Each pin's own read (a pin with too few rounds isn't shown; a hole with none: every pin together). A tip needs at least 8 rounds; under 15 it says so. Scores are the hole's average after each result. Ask Cal too: \u201chow should I play hole 2 here, back left pin?\u201d`, "ci2-calread");
+  return sec("CAL\u2019S READ", kids, `Each pin's own read (a pin with too few samples isn't shown; a hole with none: every pin together). A tip needs at least 8 samples (past shots from that spot); under 15 it says so. Scores are the hole's average after each result. Ask Cal too: \u201chow should I play hole 2 here, back left pin?\u201d`, "ci2-calread");
 }
 
 /* ---------------- every hole as a tile; one open with its numbers ---------------- */

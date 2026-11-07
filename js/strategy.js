@@ -14,7 +14,7 @@ export const MIN_N = 8, SMALL_N = 15;
 const LIE = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
 const mean = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : null);
 const f2 = (v) => v.toFixed(2);
-const nTxt = (n) => `${n} round${n === 1 ? "" : "s"}${n < SMALL_N ? ", a small sample" : ""}`;
+const nTxt = (n) => `${n} sample${n === 1 ? "" : "s"}${n < SMALL_N ? ", a small sample" : ""}`;
 const SIDE = { "Long-Left": "long left", Long: "long", "Long-Right": "long right", Left: "left", Right: "right", "Short-Left": "short left", Short: "short", "Short-Right": "short right" };
 const lieIn = (l) => ({ fairway: "in the fairway", rough: "in the rough", bunker: "in a bunker", green: "on the green", water: "in the water", tee: "on the tee box", other: "elsewhere" }[l] || "elsewhere");
 
@@ -75,7 +75,7 @@ export function strategyOf(recs, par, geo = {}) {
   const gTxt = green ? ` Hitting the green: ${f2(green.avg)} (${nTxt(green.n)}).` : "";
   if (order) {
     const [b1, b2] = order, w = order.at(-1);
-    let t = `Approach: if you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}), the best of the ${order.length} places a miss finished (${MIN_N}+ rounds each).`;
+    let t = `Approach: if you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}), the best of the ${order.length} places a miss finished (${MIN_N}+ samples each).`;
     t += ` Second best: ${b2.lab} (${f2(b2.avg)}, ${nTxt(b2.n)}).`;
     if (order.length >= 3) t += ` Worst: ${w.lab} (${f2(w.avg)}, ${nTxt(w.n)}).`;
     items.push({ k: "miss", t: t + gTxt });
@@ -85,7 +85,7 @@ export function strategyOf(recs, par, geo = {}) {
       const av = (rs) => f2(mean(rs.map(sc)));
       let t = `Approach: ${g.length ? `hitting the green averaged ${av(g)} (${nTxt(g.length)})` : "no greens hit yet"}${m.length ? `, missing it within 30 yds ${av(m)} (${nTxt(m.length)})` : ""}.`;
       const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
-      if (few.length >= 2) t += ` Too few misses to rank them firmly; so far the best is ${SIDE[few[0].sd] || few[0].sd} (${f2(few[0].avg)}, ${few[0].n} rounds) and the worst ${SIDE[few.at(-1).sd] || few.at(-1).sd} (${f2(few.at(-1).avg)}, ${few.at(-1).n} rounds).`;
+      if (few.length >= 2) t += ` Too few misses to rank them firmly; so far the best is ${SIDE[few[0].sd] || few[0].sd} (${f2(few[0].avg)}, ${few[0].n} samples) and the worst ${SIDE[few.at(-1).sd] || few.at(-1).sd} (${f2(few.at(-1).avg)}, ${few.at(-1).n} samples).`;
       items.push({ k: "miss", t });
     }
   }

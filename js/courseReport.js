@@ -7,6 +7,7 @@
  * Filtered by a player (their own shots here) or, with none or none of theirs here, the field. Opened in the report viewer
  * the Outlook report uses (outlook.html: Save PDF there), or a tab of its own.
  */
+import { readFor, samples } from "./calRead.js"; // (update 591)
 import { el, mount } from "./ui.js";
 import { heatData, heatImage, withMerges, zonesOf, keyZones, buildOverlay, learnOf, pinForShot, shotsFor, listHeatCourses, pinLabel, pinsOn } from "./courseHeat.js";
 import { playerTrails, skillsOf, ATT_B } from "./courseShots.js";
@@ -260,8 +261,7 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
       const tallMaps = maps.length && maps.every((m) => m.tall), pl = pinLabel(meta, x.h, pid);
       // (update 588) strategy: what the shots say to aim for and avoid (a combined pin: its member with the most rounds; too
       // few rounds to the pin: every pin on the hole together)
-      const SG = X.strategy || {}; let sg = ids.map((id) => SG[id]).filter(Boolean).sort((a, b) => b.n - a.n)[0], sgAll = false;
-      if (!sg && SG["*"]) { sg = SG["*"]; sgAll = true; }
+      const sgR = readFor(X.strategy, ids), sg = sgR?.r, sgAll = !!sgR?.all; // (update 591: every pin together: only the tee and laying up)
       const SGK = { tee: "Off the tee", miss: "Approach", surprise: "Surprise", layup: "Go or lay up" };
       const sgItems = (sg?.items || []).slice(0, 6);
       page(`Hole ${x.h} \u00b7 ${pl}`, `<div class="hh"><h2 class="h">HOLE ${x.h} \u00b7 ${esc(pl.toUpperCase())} <small>Par ${par}${x.yds ? ` \u00b7 ${x.yds} yds` : ""} \u00b7 ${ord(x.hcp)} hardest hole${pins.length > 1 ? ` \u00b7 ${ord(pins.indexOf(pid) + 1)} hardest of its ${pins.length} pins` : ""}</small></h2></div>
@@ -275,7 +275,7 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
             ${facts.length ? `<div class="sec"><h3>WHAT MATTERS <small>${PSs.length ? "this pin" : "the hole"}</small></h3><ul class="facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul></div>` : ""}
           </div>
         </div>
-        ${sgItems.length ? `<div class="strat"><h3><span class="cr-ava">\u{1F916}</span>CAL\u2019S READ <em class="cr-tag">AI CADDY</em> <small>${sgAll ? "every pin on this hole \u00b7 " : ""}${sg.n} rounds \u00b7 hole average ${sg.base.toFixed(2)}</small></h3><ul>${sgItems.map((it) => `<li class="sg-${it.k}"><b>${SGK[it.k] || ""}</b>${esc(it.t.replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase()))}</li>`).join("")}</ul></div>` : ""}`, "holep");
+        ${sgItems.length ? `<div class="strat"><h3><span class="cr-ava">\u{1F916}</span>CAL\u2019S READ <em class="cr-tag">AI CADDY</em> <small>${sgAll ? "too few samples to this pin for an approach read \u00b7 every pin together \u00b7 " : ""}${sg.n} samples \u00b7 hole average ${sg.base.toFixed(2)}</small></h3><ul>${sgItems.map((it) => `<li class="sg-${it.k}"><b>${SGK[it.k] || ""}</b>${esc(samples(it.t.replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase())))}</li>`).join("")}</ul></div>` : ""}`, "holep");
     }
   }
 
