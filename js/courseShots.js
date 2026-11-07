@@ -277,15 +277,17 @@ export function holeBoards(shots, pins, par) {
     }
     return out;
   };
-  // (update 601) how near a spot is to the green's edge, in yards: the nearest shot played from the green (a 2-yard grid of
-  // them, so it's quick); the fringe ("fairway" in the files) right by the green isn't a miss to aim for
-  const gGrid = new Map(), cell = 2 * ppy, gk = (x, y) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
-  for (const q of greens) { const k = gk(q.x, q.y); (gGrid.get(k) || gGrid.set(k, []).get(k)).push(q); }
-  const greenDist = (x, y) => {
-    const cx = Math.floor(x / cell), cy = Math.floor(y / cell); let best = Infinity;
-    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) for (const q of gGrid.get(`${cx + i},${cy + j}`) || []) { const d = Math.hypot(q.x - x, q.y - y); if (d < best) best = d; }
-    return best / ppy;
-  };
+  // (update 602) how far a spot is outside the green's edge, in yards (inside: below 0). The green's outline, all the way
+  // round: from its middle, in 48 directions, how far out shots have been played from the green (the 97th percentile
+  // in each, smoothed with its neighbours; a direction with few: the green's typical size); the fringe ("fairway" in
+  // the files) right by the green isn't a miss to aim for
+  const NB = 48, bins = Array.from({ length: NB }, () => []), ang = (dx, dy) => Math.floor((((Math.atan2(dy, dx) / (2 * Math.PI)) + 1) % 1) * NB) % NB;
+  for (const q of greens) { const dx = q.x - G[0], dy = q.y - G[1]; bins[ang(dx, dy)].push(Math.hypot(dx, dy)); }
+  const pc97 = (a) => { const v = [...a].sort((x, y) => x - y); return v[Math.min(v.length - 1, Math.floor(0.97 * v.length))]; };
+  const allR = greens.map((q) => Math.hypot(q.x - G[0], q.y - G[1])), typR = pc97(allR) * 0.8;
+  const raw = bins.map((b) => (b.length >= 6 ? pc97(b) : null));
+  const R = raw.map((_, i) => { let t = 0, w = 0; for (let k = -2; k <= 2; k++) { const v = raw[(i + k + NB) % NB]; if (v != null) { const wt = 3 - Math.abs(k); t += v * wt; w += wt; } } return w ? t / w : typR; });
+  const greenDist = (x, y) => { const dx = x - G[0], dy = y - G[1]; return (Math.hypot(dx, dy) - R[ang(dx, dy)]) / ppy; };
   return { ref, marks, ppy, boardOf, sideOf, pinNamesAll, greenDist };
 }
 export function approachMiss(qs) {
@@ -370,9 +372,9 @@ export function courseInsights(C) {
     // (update 588) every finished round to its pin, for the strategy insights: its shots, its approach (the last shot from
     // more than 30 yds before the green or within 30 yds) and that approach's miss, if any
     { let apIdx = null; for (let i = 0; i + 1 < qs.length; i++) if (qs[i][4] != null && qs[i][4] > 30 && qs[i][3] !== 4 && (qs[i + 1][3] === 4 || (qs[i + 1][4] != null && qs[i + 1][4] <= 30))) { apIdx = i; break; }
-      // (update 601) a miss to the fringe ("fairway" right by the green: its nearest shot from the green within 2 yds, so
+      // (update 601) a miss to the fringe ("fairway" right by the green: near the green's outline (update 602), so
       // within about a yard of the edge) isn't one to aim for: left out of the misses (and not counted as the green)
-      const fringe = !!(m && m.nq[3] === 1 && HB?.greenDist && HB.greenDist(m.nq[1], m.nq[2]) <= 2);
+      const fringe = !!(m && m.nq[3] === 1 && HB?.greenDist && HB.greenDist(m.nq[1], m.nq[2]) <= 1.5); // (update 602: within about a yard of the green's outline; the outline sits a little inside the true edge)
       (X.sp[t.p] || (X.sp[t.p] = [])).push({ s: t.s, qs, side: fringe ? null : side, mLie: m && !fringe ? LIES[m.nq[3]] : null, apIdx, ...(fringe ? { fringe: true } : {}) }); }
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
     // (update 508) and the same for its pin

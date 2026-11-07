@@ -4,7 +4,7 @@
 // name: Front / Back with Left / Center / Right, or a name the admin gave it), and links to that hole and pin on the map.
 import { el, icon } from "./ui.js";
 
-export const BRAND = "Cal’s Read", TAG = "AI CADDY";
+export const BRAND = "Cal’s Strategy", TAG = "AI CADDY"; // (update 602: was "Cal's Read")
 export const KIND = { tee: "Off the tee", miss: "Approach", surprise: "Approach", layup: "Second shot" };
 // (update 595) each tip's header: its part of the hole and what it is ("Off the tee \u2022 Aim"); a course built before 595
 // has no h on its tips: worked out from the words
@@ -47,7 +47,7 @@ export function readCard(read, where = "", { compact = false, foot = null, colla
   const { r } = read;
   let sw = null;
   if (reads) {
-    sw = el("button", { type: "button", class: `cal-read-sw${reads.on ? " on" : ""}`, "aria-pressed": String(!!reads.on), disabled: reads.can === false ? "" : null, title: reads.can === false ? "Nothing to circle for this shot" : "Show Cal\u2019s circles on the map" }, [el("i", { "aria-hidden": "true" }), "Strategy"]);
+    sw = el("button", { type: "button", class: `cal-read-sw${reads.on ? " on" : ""}`, "aria-pressed": String(!!reads.on), disabled: reads.can === false ? "" : null, title: reads.can === false ? "Nothing to circle for this shot" : "Show Cal\u2019s circles on the map" }, [el("i", { "aria-hidden": "true" }), "Targets"]);
     sw.addEventListener("click", (e) => { e.stopPropagation(); const on = !sw.classList.contains("on"); sw.classList.toggle("on", on); sw.setAttribute("aria-pressed", String(on)); reads.onToggle?.(on); });
     sw.addEventListener("keydown", (e) => e.stopPropagation());
   }

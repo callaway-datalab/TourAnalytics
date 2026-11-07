@@ -275,7 +275,7 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
             ${facts.length ? `<div class="sec"><h3>WHAT MATTERS <small>${PSs.length ? "this pin" : "the hole"}</small></h3><ul class="facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul></div>` : ""}
           </div>
         </div>
-        ${sgItems.length ? `<div class="strat"><h3><span class="cr-ava">\u{1F916}</span>CAL\u2019S READ <em class="cr-tag">AI CADDY</em> <small>${sgAll ? "too few samples to this pin for an approach read \u00b7 every pin together \u00b7 " : ""}${sg.n} samples \u00b7 hole average ${sg.base.toFixed(2)}</small></h3><ul>${sgItems.map((it) => `<li class="sg-${it.k}${/Surprise/.test(headOf(it)) ? " sg-surprise" : ""}"><b>${esc(headOf(it))}${it.allPins ? " (every pin)" : ""}</b>${esc(samples(it.t.replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase())))}</li>`).join("")}</ul></div>` : ""}`, "holep");
+        ${sgItems.length ? `<div class="strat"><h3><span class="cr-ava">\u{1F916}</span>CAL\u2019S STRATEGY <em class="cr-tag">AI CADDY</em> <small>${sgAll ? "too few samples to this pin for an approach read \u00b7 every pin together \u00b7 " : ""}${sg.n} samples \u00b7 hole average ${sg.base.toFixed(2)}</small></h3><ul>${sgItems.map((it) => `<li class="sg-${it.k}${/Surprise/.test(headOf(it)) ? " sg-surprise" : ""}"><b>${esc(headOf(it))}${it.allPins ? " (every pin)" : ""}</b>${esc(samples(it.t.replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase())))}</li>`).join("")}</ul></div>` : ""}`, "holep");
     }
   }
 

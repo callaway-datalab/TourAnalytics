@@ -154,7 +154,7 @@ function strategy(I, holeNums, toMap, meta, data, prof = null) {
       el("summary", {}, [el("strong", {}, `Hole ${x.h}`), el("span", { class: "muted small" }, ` Par ${x.par ?? "\u2014"} \u00b7 ${pinTxt}`)]),
       el("div", { class: "ci2-sg-pins" }, cards)]);
   })));
-  return sec("CAL\u2019S READ", kids, `Each pin's own read (a pin with too few samples isn't shown; a hole with none: every pin together). A tip needs at least 8 samples (past shots from that spot); under 15 it says so. Scores are the hole's average after each result. Ask Cal too: \u201chow should I play hole 2 here, back left pin?\u201d`, "ci2-calread");
+  return sec("CAL\u2019S STRATEGY", kids, `Each pin's own read (a pin with too few samples isn't shown; a hole with none: every pin together). A tip needs at least 8 samples (past shots from that spot); under 15 it says so. Scores are the hole's average after each result. Ask Cal too: \u201chow should I play hole 2 here, back left pin?\u201d`, "ci2-calread");
 }
 
 /* ---------------- every hole as a tile; one open with its numbers ---------------- */
