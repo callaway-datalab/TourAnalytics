@@ -8,6 +8,7 @@ import { el, mount, infoTip } from "../ui.js";
 import { sameCourse } from "../sg.js";
 import { effectiveTeam } from "../preview.js";
 const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
+import { readFor, readCard } from "../calRead.js"; // (update 589)
 import { LOW_MEM, freeCanvases, lieName, heatData, heatImage, pinsOn, pinLabel, renamePin, setPinOff, withMerges, mergePins, splitPins, zonesOf, keyZones, buildOverlay, paintHeat, paintBase, toDisp, toImg, zoneAt, zoneCat, learnOf, skillIndex, fmtPar, scoreT, pinForShot, shotsFor } from "../courseHeat.js";
 import { pickWho, playerData } from "./coursePrepExtras.js";
 import { playerTrails, LIE_NAMES, eKey, dOf } from "../courseShots.js"; // (update 479; 503: eKey)
@@ -37,6 +38,7 @@ export async function drawHeat(ctx, course) {
   if (!holeNums.length) { mount(body, el("p", { class: "empty" }, "No holes for this course yet.")); return; }
   if (!holeNums.includes(st.hole) || st.course !== meta.id) { st.hole = holeNums[0]; st.course = meta.id; st.pin = {}; }
   if (course.startHole && holeNums.includes(course.startHole)) { st.hole = course.startHole; delete course.startHole; } // (update 491: from Course Insights)
+  if (course.startPin) { st.pin[st.hole] = course.startPin; delete course.startPin; } // (update 589: from Cal's Read)
 
   // the page: holes, then pins and the switches, then the picture
   const holeBar = el("div", { class: "sh-holes", role: "tablist", "aria-label": "Hole" });
@@ -70,7 +72,7 @@ export async function drawHeat(ctx, course) {
   const stageWrap = el("div", { class: "sh-stage-wrap" }, [stage, pop]); // (update 501: the popup can sit above or below the map)
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
-  const stratBox = el("div", { class: "sh-strat", hidden: true }); // (update 588) the strategy insights for this hole and pin
+  const stratBox = el("div", { class: "sh-strat", hidden: true }); // (update 588) the strategy insights for this hole and pin (589: Cal\u2019s Read)
   const teeBox = el("div", { class: "sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
   const udBox = el("div", { class: "sh-tee sh-ud3", hidden: true }); // (update 525: laid out as the Off the tee row, its blocks 3 x 3) // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
@@ -649,17 +651,11 @@ export async function drawHeat(ctx, course) {
   // combined pin: its pins added up; a course uploaded before update 492: the hole's)
   // (update 588) Strategy: what the shots say to aim for and to avoid on this hole, to this pin (a combined pin: its member
   // with the most rounds; too few rounds to the pin: every pin on the hole together, said so)
-  function drawStrat() {
-    const n = st.hole, S = data.insights?.holes?.[n]?.strategy || {}, ids = pinNow?.merged || [st.pin[n]];
-    let r = ids.map((id) => S[id]).filter(Boolean).sort((a, b) => b.n - a.n)[0], all = false;
-    if (!r && S["*"]) { r = S["*"]; all = true; }
-    if (!r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
-    const KIND = { tee: ["Off the tee", "\u26F3"], miss: ["Approach", "\uD83C\uDFAF"], surprise: ["Surprise", "\uD83D\uDCA1"], layup: ["Go or lay up", "\u2194"] };
+  function drawStrat() { // (update 589: as Cal's Read)
+    const n = st.hole, read = readFor(data.insights?.holes?.[n]?.strategy, pinNow?.merged || [st.pin[n]]);
+    if (!read?.r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
     stratBox.hidden = false;
-    mount(stratBox, [
-      el("div", { class: "sh-strat-h" }, [el("strong", {}, "Strategy"), el("span", { class: "muted small" }, `${all ? "every pin on this hole \u00b7 " : ""}${r.n} rounds \u00b7 hole average ${r.base.toFixed(2)}`)]),
-      el("ul", {}, r.items.map((it) => el("li", { class: `sh-strat-${it.k}` }, [el("span", { class: "sh-strat-k" }, [el("span", { "aria-hidden": "true" }, `${KIND[it.k]?.[1] || ""} `), KIND[it.k]?.[0] || ""]), el("span", { class: "sh-strat-t" }, it.t)]))),
-    ]);
+    mount(stratBox, readCard(read, `Hole ${n}${read.all ? "" : ` \u00b7 ${pinLabel(meta, n, st.pin[n])}`}`));
   }
   function drawTee() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];

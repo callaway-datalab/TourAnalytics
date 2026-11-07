@@ -4,7 +4,8 @@
  * green and going for it matter most, the tee miss to avoid), every hole as a tile (tap for its numbers), the shots this
  * course asks for against an average course, and where the Top 10 finishers gain. Field, or the player picked.
  */
-import { el, mount, infoTip } from "../ui.js";
+import { el, mount, infoTip, icon } from "../ui.js";
+import { BRAND, TAG, readCard } from "../calRead.js"; // (update 589)
 import { heatData, listHeatCourses } from "../courseHeat.js";
 import { pickWho } from "./coursePrepExtras.js";
 import { playerTrails, trailSG, bucketOf, ATT_B, skillsOf } from "../courseShots.js";
@@ -128,23 +129,22 @@ function plan(H, openHole) {
     }))])), "Tap a hole for its numbers.");
 }
 
-/* ---------------- (update 588) strategy: what every player's shots say to aim for and avoid, hole by hole ---------------- */
-const SGK = { tee: "Off the tee", miss: "Approach", surprise: "Surprise", layup: "Go or lay up" };
+/* ---------------- (update 588) strategy: what every player's shots say to aim for and avoid, hole by hole (589: Cal's Read) ---------------- */
 function strategy(I, holeNums, toMap) {
   const rows = holeNums.map((h) => ({ h, par: I.holes[h]?.par, sg: I.holes[h]?.strategy?.["*"] })).filter((x) => x.sg?.items?.length);
   if (!rows.length) return null;
-  const item = (it) => el("li", { class: `ci2-sg-${it.k}` }, [el("span", { class: "ci2-sg-k" }, SGK[it.k] || ""), el("span", {}, it.t.replace(/^(Approach|Surprise): /, ""))]);
   const sur = rows.flatMap((x) => x.sg.items.filter((it) => it.k === "surprise").map((it) => ({ ...x, it })));
-  const kids = [];
-  if (sur.length) kids.push(el("div", { class: "ci2-sg-sur" }, [el("h3", {}, "Surprises"), el("ul", {}, sur.slice(0, 6).map((x) => el("li", {}, [el("b", {}, `Hole ${x.h}`), " ", x.it.t.replace(/^Surprise: /, "")])))]));
+  const kids = [el("div", { class: "cal-read-h ci2-sg-head" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
+    el("div", { class: "cal-read-t" }, [el("strong", {}, BRAND), el("span", {}, "Where to aim and where to miss, hole by hole, from every shot played here")]), el("span", { class: "cal-read-tag" }, TAG)])];
+  if (sur.length) kids.push(el("div", { class: "ci2-sg-sur" }, [el("h3", {}, "Surprises"), el("ul", {}, sur.slice(0, 6).map((x) => el("li", {}, [el("b", {}, `Hole ${x.h}:`), " ", x.it.t.replace(/^Surprise: (.)/, (_, c) => c.toUpperCase())])))]));
   kids.push(el("div", { class: "ci2-sg-holes" }, rows.map((x) => {
     const open = el("button", { type: "button", class: "btn ghost small" }, "Open the map");
     open.addEventListener("click", () => toMap(x.h));
     return el("details", { class: "ci2-sg-hole" }, [
-      el("summary", {}, [el("strong", {}, `Hole ${x.h}`), el("span", { class: "muted small" }, ` Par ${x.par ?? "\u2014"} \u00b7 ${x.sg.items.length} ${x.sg.items.length === 1 ? "insight" : "insights"} \u00b7 ${x.sg.n} rounds`)]),
-      el("ul", {}, x.sg.items.map(item)), open]);
+      el("summary", {}, [el("strong", {}, `Hole ${x.h}`), el("span", { class: "muted small" }, ` Par ${x.par ?? "\u2014"} \u00b7 ${x.sg.items.length} ${x.sg.items.length === 1 ? "tip" : "tips"} \u00b7 ${x.sg.n} rounds`)]),
+      readCard({ r: x.sg, all: false }, `Hole ${x.h} \u00b7 every pin`, { compact: true }), open]);
   })));
-  return sec("STRATEGY", kids, `From every player's shots here, every pin together (a hole's map shows them pin by pin). A finding needs at least 8 rounds; under 15 it says so. Scores are the hole's average after each result.`);
+  return sec("CAL\u2019S READ", kids, `Every pin together here; a hole's map has each pin's own read. A tip needs at least 8 rounds; under 15 it says so. Scores are the hole's average after each result. Ask Cal too: \u201chow should I play hole 2 here, back left pin?\u201d`, "ci2-calread");
 }
 
 /* ---------------- every hole as a tile; one open with its numbers ---------------- */

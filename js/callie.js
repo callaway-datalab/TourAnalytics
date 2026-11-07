@@ -11,6 +11,7 @@ import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
 import { readAsk, productGroups, matchEvents } from "./compareAsk.js";
+import { isStrategyQ, answerStrategy, readCard } from "./calRead.js"; // (update 589) Cal's Read: the hole strategy
 import { CATEGORIES, statRounds, statAgg, statDef, fmtStat, distLead } from "./sg.js";
 // (update 313) a player, or a caddie / coach with just one player: the greeting talks about "your data"
 const oneData = () => { const st = getState(); return !st.isAdmin && (!st.isTeam || Object.keys(st.teamAccess || {}).length === 1); };
@@ -669,6 +670,8 @@ async function ask(question) {
   const reply = (o) => { chat.push({ who: "callie", q: question, ...o }); busy = false; draw(); };
   try {
     const list = await playersYouCanSee();
+    // (update 589) "the hole strategy on hole 2 at Torrey Pines South into a back left pin": Cal's Read
+    if (isStrategyQ(question)) return reply(await answerStrategy(question));
     const local = readLocal(question, list);
     // (update 396) "how will they rank over the next 3 years", "forecast", "next season": the forecaster
     if (FORECAST_Q.test(question)) {
@@ -753,8 +756,8 @@ function examples(list, leader = null) {
   const n = list.length === 1 ? list[0][1] : leader || list[0]?.[1] || "Scottie Scheffler";
   const last = n.split(" ").pop();
   return list.length > 1
-    ? ["Who putts best on Tour?", `Where does ${last} gain and lose strokes this season?`, `What was ${last}’s best tournament this year?`, `How does ${last} do on approach shots by distance?`, `Compare ${last} 2026 vs 2025`]
-    : [`Where do I gain and lose strokes this season?`, "What was my best tournament this year?", "How is my putting over my last 10 rounds?", "Who putts best on Tour?"];
+    ? ["Who putts best on Tour?", `Where does ${last} gain and lose strokes this season?`, `What was ${last}’s best tournament this year?`, `How does ${last} do on approach shots by distance?`, `Compare ${last} 2026 vs 2025`, "How should I play hole 2 at Torrey Pines South, back left pin?"]
+    : [`Where do I gain and lose strokes this season?`, "What was my best tournament this year?", "How is my putting over my last 10 rounds?", "Who putts best on Tour?", "How should I play hole 2 at Torrey Pines South, back left pin?"];
 }
 function draw() {
   if (!panel) return;
@@ -797,9 +800,10 @@ function draw() {
       return el("p", { class: "cal-notit muted small" }, [m.cant ? "" : "Not what you asked? ", a, h ? " \u00b7 " : null, h]);
     })() : null;
     fwd?.querySelector("a").addEventListener("click", () => { try { sessionStorage.setItem("chat.prefill", `Question for an analyst (Cal couldn\u2019t answer it): ${askQ}`); } catch { /* */ } closeCallie(); });
+    if (go && m.go.open) go.addEventListener("click", (e) => { e.preventDefault(); try { sessionStorage.setItem("cal.open", JSON.stringify(m.go.open)); } catch { /* */ } closeCallie(); location.hash = `#/course-prep?cal=${Date.now()}`; }); // (update 589: that hole and pin on Strategy Maps)
     if (go && m.go.plan) go.addEventListener("click", () => { try { sessionStorage.setItem("callie.plan", JSON.stringify(m.go.plan)); } catch { /* */ } }); // (update 264: Compare opens with this plan, no second AI call)
     const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
-    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table ? " wide" : ""}` }, [...rich(m.text), choices, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd, notIt]));
+    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table || m.read ? " wide" : ""}` }, [...rich(m.text), choices, m.read ? readCard(m.read, m.read.where, { compact: true }) : null, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd, notIt]));
   }
   if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Cal is working it out" }, [el("i"), el("i"), el("i")]));
   mount(log, items);
