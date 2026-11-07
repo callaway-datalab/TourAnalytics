@@ -50,16 +50,18 @@ export function strategyOf(recs, par, geo = {}) {
   let teeOpts = null, layOpts = null;
   // (update 592) a circle round where a group's shots finished (map pixels): their middle, and most of their spread
   const PPY = geo.ppy || 3;
-  // (update 614) the outline round the shots themselves (their convex hull, padded 2.5 yds out from its middle), so a
-  // target follows where the shots finished (the rough by a green, say) rather than a circle over the green or a bunker
+  // (update 614) the outline round the shots themselves; (616) a rounded oval: turned the way the shots spread, reaching
+  // the farthest of them plus 2.5 yds, at least 5 yds across and never thinner than about half as wide as it is long
+  // (a hull of a few shots along a strip was a thin sliver); drawn as its outline's points
   const hullOf = (pts) => {
-    const P = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]); if (P.length < 3) return null;
-    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
-    for (const p of P) { while (lo.length >= 2 && cr(lo.at(-2), lo.at(-1), p) <= 0) lo.pop(); lo.push(p); }
-    for (const p of [...P].reverse()) { while (up.length >= 2 && cr(up.at(-2), up.at(-1), p) <= 0) up.pop(); up.push(p); }
-    const H = lo.slice(0, -1).concat(up.slice(0, -1)); if (H.length < 3) return null;
-    const mx = mean(H.map((p) => p[0])), my = mean(H.map((p) => p[1])), pad = 2.5 * PPY;
-    return H.map(([x, y]) => { const d = Math.hypot(x - mx, y - my) || 1; return [Math.round(x + ((x - mx) / d) * pad), Math.round(y + ((y - my) / d) * pad)]; });
+    if (!pts || pts.length < 3) return null;
+    const mx = mean(pts.map((p) => p[0])), my = mean(pts.map((p) => p[1]));
+    let sxx = 0, syy = 0, sxy = 0; for (const [x, y] of pts) { const dx = x - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(th), uy = Math.sin(th), vx = -uy, vy = ux, pad = 2.5 * PPY;
+    let a = Math.max(...pts.map(([x, y]) => Math.abs((x - mx) * ux + (y - my) * uy))) + pad;
+    let b = Math.max(...pts.map(([x, y]) => Math.abs((x - mx) * vx + (y - my) * vy))) + pad;
+    a = Math.max(a, 5 * PPY); b = Math.max(b, 0.55 * a, 5 * PPY);
+    return Array.from({ length: 20 }, (_, k) => { const t = (k / 20) * 2 * Math.PI, ca = Math.cos(t) * a, sb = Math.sin(t) * b; return [Math.round(mx + ca * ux + sb * vx), Math.round(my + ca * uy + sb * vy)]; });
   };
   const circ = (rs, ptOf, tone) => {
     const ps = rs.map(ptOf).filter((q) => q && q[1] != null && q[2] != null); if (ps.length < 3) return null;

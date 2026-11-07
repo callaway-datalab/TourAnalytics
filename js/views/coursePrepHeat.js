@@ -32,8 +32,7 @@ export async function drawHeat(ctx, course) {
   who = W.who;
   const whoLine = el("p", { class: "muted small sh-who" });
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel sh" }, [
-    el("p", { class: "pr-eyebrow" }, `${course.name}${course.mapEvents ? ` \u00b7 ${course.mapEvents}` : ""}`), el("div", { class: "sh-title" }, [el("h1", {}, "Strategy Maps"),
-      infoTip("Each zone is the centre of a cluster of shots the tour has played from on this hole and pin; the colour blends from one zone to the next, and stops where the lie changes on the image (a fairway zone colours only the fairway, a rough zone only the rough). The colours are the scoring, birdie (blue) to bogey (red), as in the course report. Pinch or scroll to zoom in, and drag to look around. With a player picked, Player weights every zone by their own strokes gained from that distance and lie, against the tour.")]),
+    // (update 616) no title block: just the player search
     W.node, whoLine]), body]);
   let data, raw;
   try { raw = await heatData(meta); data = withMerges(meta, raw); /* (update 468: with the admin's combined pins) */ } catch (err) { console.error(err); mount(body, el("p", { class: "empty" }, "Couldn’t load the zones. Try again.")); return; }

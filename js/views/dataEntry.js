@@ -40,6 +40,32 @@ export function myEntryKey(state = getState()) {
 }
 export const myName = (state = getState()) => state.profile?.name || state.user?.displayName || state.user?.email?.split("@")[0] || "Me";
 
+/* (update 616) swipe a card left to show what's behind it (the trash can); a tap while it's open closes it; one open at a time */
+let swOpen = null;
+function swipeToReveal(wrap, card, W = 92) {
+  let x0 = 0, y0 = 0, base = 0, dx = 0, on = false, moved = false, axis = null;
+  const set = (v, anim) => { card.style.transition = anim ? "transform 0.2s ease" : "none"; card.style.transform = v ? `translateX(${v}px)` : ""; wrap.classList.toggle("open", v < 0); };
+  const close = () => { set(0, true); if (swOpen === close) swOpen = null; };
+  card.setAttribute("draggable", "false"); card.addEventListener("dragstart", (e) => e.preventDefault());
+  card.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse" && e.button !== 0) return; on = true; moved = false; axis = null; x0 = e.clientX; y0 = e.clientY; base = wrap.classList.contains("open") ? -W : 0; dx = 0; });
+  card.addEventListener("pointermove", (e) => {
+    if (!on) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!axis && Math.abs(mx) + Math.abs(my) > 6) axis = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+    if (axis !== "x") return;
+    moved = true; dx = mx; set(Math.max(-W - 24, Math.min(0, base + dx)), false);
+    try { card.setPointerCapture(e.pointerId); } catch { /* */ }
+  });
+  const end = () => {
+    if (!on) return; on = false;
+    if (axis !== "x") return;
+    const v = base + dx;
+    if (v < -W / 2) { if (swOpen && swOpen !== close) swOpen(); set(-W, true); swOpen = close; } else close();
+  };
+  card.addEventListener("pointerup", end); card.addEventListener("pointercancel", end);
+  card.addEventListener("click", (e) => { if (moved || wrap.classList.contains("open")) { e.preventDefault(); e.stopPropagation(); if (!moved) close(); moved = false; } }, true);
+}
+
 /* ======================================== round list ======================================== */
 function renderList(main, viewing = null) {
   const state = getState();
@@ -61,7 +87,9 @@ function renderList(main, viewing = null) {
       const { score, thru, par } = roundTotals(r);
       // ✕ deletes the round, only for rounds you entered yourself.
       // (inside someone's portal you're acting as them: their rounds can be deleted there)
-      const del = r.ownerUid === state.user.uid || (viewing && state.isAdmin) ? el("button", { type: "button", class: "entry-del", "aria-label": `Delete round at ${r.course || "this course"} on ${r.date}`, title: "Delete round" }, "\u2715") : null;
+      // (update 616) not a ✕: swipe the card left (like an email) and a trash can shows behind it
+      const del = r.ownerUid === state.user.uid || (viewing && state.isAdmin) ? el("button", { type: "button", class: "ent-trash", "aria-label": `Delete round at ${r.course || "this course"} on ${r.date}`, title: "Delete round" }) : null;
+      if (del) del.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
       del?.addEventListener("click", async (e) => {
         e.preventDefault(); e.stopPropagation();
         if (!confirmAction(`Delete your round at ${r.course || "this course"} on ${r.date}, and every shot in it? This can't be undone.`)) return;
@@ -83,7 +111,10 @@ function renderList(main, viewing = null) {
           ? [el("strong", {}, toPar(score - par)), el("span", {}, `${score} total`)]
           : [el("strong", {}, thru ? toPar(score - parThru(r)) : "\u2014"), el("span", {}, thru ? "to par" : "")]),
       ]);
-      return el("div", { class: "entry-row" }, [card, del]);
+      if (!del) return el("div", { class: "entry-row" }, [card]);
+      const wrap = el("div", { class: "entry-row ent-sw" }, [del, card]);
+      swipeToReveal(wrap, card);
+      return wrap;
     };
     const live = rounds.filter((r) => r.status !== "complete"), done = rounds.filter((r) => r.status === "complete");
     mount(list, [

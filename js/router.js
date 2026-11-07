@@ -327,6 +327,8 @@ function el_previewBar() {
 }
 
 export function startRouter() {
+  // (update 616) an app added to the home screen before Home existed opens on #/watchlist: the first page is Home
+  if (/^#\/watchlist\/?$/.test(location.hash)) history.replaceState(null, "", "#/home");
   window.addEventListener("hashchange", render);
   let lastUid; // re-run the current route's guard when sign-in/out happens without a hash change
   subscribe((state) => {

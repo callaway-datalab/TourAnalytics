@@ -6410,3 +6410,8 @@ div.sh-ud3-green { cursor: default; }
 .prc-chip { font-size: 0.7rem; color: #c7c7cc; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.07); }
 .prc-body .pr-sess-tag { align-self: flex-start; margin-top: 2px; }
 .prc-go { flex: none; color: #8e8e93; font-size: 1.4rem; padding-left: 2px; }
+/* (update 616) Enter New Round: swipe a round left for its trash can (no ✕) */
+.ent-sw { position: relative; display: block !important; border-radius: 18px; overflow: hidden; }
+.ent-sw .ent-card { position: relative; z-index: 1; touch-action: pan-y; user-select: none; -webkit-user-select: none; background-color: #121215 !important; }
+.ent-trash { position: absolute; right: 0; top: 0; bottom: 0; width: 92px; z-index: 0; border: 0; border-radius: 18px; background: #d9706a; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.ent-trash:disabled { opacity: 0.6; }
