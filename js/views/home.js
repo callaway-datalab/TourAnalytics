@@ -8,31 +8,37 @@ import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, summaryPlayers, fmtSG } from "../sg.js";
 import { playerCard } from "../watchlistData.js";
-import { watchPrefs, loadWatch } from "../watchlist.js";
+import { watchPrefs, loadWatch, saveWatch } from "../watchlist.js";
 
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; try { un = watch(fin); } catch { fin(null); } });
 const AXES = [["OTT", "Driving"], ["APP", "Approach"], ["ARG", "Short game"], ["PUTT", "Putting"]];
 
-/** The radar: { OTT, APP, ARG, PUTT } strokes gained a round. Tour average is the dashed circle; outside is better. */
-function radar(v, { small = false } = {}) {
-  const W = small ? 200 : 340, H = small ? 170 : 290, cx = W / 2, cy = H / 2, R = small ? 58 : 100, r0 = R * 0.55;
-  const vals = AXES.map(([k]) => v[k] ?? 0), lim = Math.max(0.5, Math.ceil(Math.max(...vals.map(Math.abs)) / 0.25) * 0.25);
+/** The radar: v (the latest season) and c (career), each { OTT, APP, ARG, PUTT } strokes gained a round. Tour average
+ *  is the dashed circle; outside is better. (update 610) career in gold behind the season in green; each corner says both. */
+function radar(v, { small = false, c = null } = {}) {
+  const W = small ? 210 : 340, H = small ? 190 : 300, cx = W / 2, cy = H / 2 + (small ? 2 : 4), R = small ? 52 : 92, r0 = R * 0.55;
+  const vals = AXES.map(([k]) => v[k] ?? 0), cv = c ? AXES.map(([k]) => c[k] ?? 0) : null;
+  const lim = Math.max(0.5, Math.ceil(Math.max(...vals.map(Math.abs), ...(cv || []).map(Math.abs)) / 0.25) * 0.25);
   const rad = (x) => Math.max(4, r0 + (x / lim) * (R - r0));
   const ang = [-90, 0, 90, 180].map((a) => (a * Math.PI) / 180);
-  const pts = vals.map((x, i) => [cx + rad(x) * Math.cos(ang[i]), cy + rad(x) * Math.sin(ang[i])]);
-  const NS = "http://www.w3.org/2000/svg", s = (t, a = {}, kids = []) => { const e = document.createElementNS(NS, t); for (const [k, x] of Object.entries(a)) e.setAttribute(k, x); for (const c of kids) e.appendChild(c); return e; };
-  const col = (x) => (x >= 0 ? "#4cd17e" : "#ff8a7a"), fs = small ? 11 : 14, fv = small ? 10.5 : 13;
-  const lab = (i, [k, name]) => {
-    const x = vals[i], txt = (t, dy, fill, w) => { const e = s("text", { "font-size": dy ? fv : fs, fill, "font-weight": w }); e.textContent = t; return e; };
-    const pos = [[cx, small ? 14 : 22, "middle"], [W - 4, cy - 5, "end"], [cx, H - (small ? 18 : 24), "middle"], [4, cy - 5, "start"]][i];
-    const g = s("g", { "text-anchor": pos[2] }); const a = txt(name, 0, "#f5f5f7", 700), b = txt(fmtSG(x), 1, col(x), 700);
-    a.setAttribute("x", pos[0]); a.setAttribute("y", pos[1]); b.setAttribute("x", pos[0]); b.setAttribute("y", pos[1] + (small ? 13 : 17)); g.append(a, b); return g;
+  const ptsOf = (xs) => xs.map((x, i) => [cx + rad(x) * Math.cos(ang[i]), cy + rad(x) * Math.sin(ang[i])]);
+  const pts = ptsOf(vals), cpts = cv ? ptsOf(cv) : null, poly = (ps) => ps.map((p) => p.map((n) => n.toFixed(1)).join(",")).join(" ");
+  const NS = "http://www.w3.org/2000/svg", s = (t, a = {}, kids = []) => { const e = document.createElementNS(NS, t); for (const [k, x] of Object.entries(a)) e.setAttribute(k, x); for (const k2 of kids) e.appendChild(k2); return e; };
+  const col = (x) => (x >= 0 ? "#4cd17e" : "#ff8a7a"), fs = small ? 11 : 14, fv = small ? 10.5 : 13, fc = small ? 9.5 : 11.5;
+  const lab = (i, [, name]) => {
+    const txt = (t, size, fill, w, x, y) => { const e = s("text", { "font-size": size, fill, "font-weight": w, x, y }); e.textContent = t; return e; };
+    const pos = [[cx, small ? 12 : 18, "middle"], [W - 4, cy - (small ? 12 : 16), "end"], [cx, H - (small ? 26 : 34), "middle"], [4, cy - (small ? 12 : 16), "start"]][i];
+    const g = s("g", { "text-anchor": pos[2] }), lh = small ? 12 : 16;
+    g.append(txt(name, fs, "#f5f5f7", 700, pos[0], pos[1]), txt(fmtSG(vals[i]), fv, col(vals[i]), 700, pos[0], pos[1] + lh));
+    if (cv) g.append(txt(`career ${fmtSG(cv[i])}`, fc, "#d4b483", 600, pos[0], pos[1] + lh * 2 - (small ? 1 : 2)));
+    return g;
   };
-  return s("svg", { class: `hm-radar${small ? " sm" : ""}`, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": AXES.map(([k, n]) => `${n} ${fmtSG(v[k] ?? 0)}`).join(", ") }, [
+  return s("svg", { class: `hm-radar${small ? " sm" : ""}`, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": AXES.map(([k, n], i) => `${n} ${fmtSG(vals[i])}${cv ? `, career ${fmtSG(cv[i])}` : ""}`).join("; ") }, [
     s("g", { fill: "none", stroke: "#2a2a2e" }, [s("circle", { cx, cy, r: R }), s("line", { x1: cx, y1: cy - R, x2: cx, y2: cy + R }), s("line", { x1: cx - R, y1: cy, x2: cx + R, y2: cy })]),
     s("circle", { cx, cy, r: r0, fill: "rgba(255,255,255,.03)", stroke: "#8e8e93", "stroke-width": 1.5, "stroke-dasharray": "5 4" }),
+    cpts ? s("polygon", { points: poly(cpts), fill: "rgba(212,180,131,.10)", stroke: "#d4b483", "stroke-width": small ? 1.6 : 2, "stroke-linejoin": "round" }) : s("g"),
     s("g", { class: "hm-shape", style: `transform-origin:${cx}px ${cy}px` }, [
-      s("polygon", { points: pts.map((p) => p.map((n) => n.toFixed(1)).join(",")).join(" "), fill: "rgba(76,209,126,.22)", stroke: "#4cd17e", "stroke-width": small ? 2 : 2.5, "stroke-linejoin": "round" }),
+      s("polygon", { points: poly(pts), fill: "rgba(76,209,126,.20)", stroke: "#4cd17e", "stroke-width": small ? 2 : 2.5, "stroke-linejoin": "round" }),
       ...pts.map((p, i) => s("circle", { cx: p[0], cy: p[1], r: small ? 3.5 : 5, fill: col(vals[i]) }))]),
     s("g", { "font-family": "-apple-system,Inter,sans-serif" }, AXES.map((a, i) => lab(i, a))),
   ]);
@@ -123,34 +129,78 @@ export async function render(main, { previewClient } = {}) {
     const ds = (list || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];
     const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null;
     const field = summaryPlayers(summary).filter((p) => p.rounds.length);
-    let keys = single ? [single] : team.isTeam ? teamKeys : [];
-    if (admin) { await loadWatch(true).catch(() => {}); keys = watchPrefs().players || []; }
-    const period = (() => { try { return watchPrefs().period || "season"; } catch { return "season"; } })();
+    const many = admin || (team.isTeam && teamKeys.length > 1);
+    if (many) await loadWatch(true).catch(() => {});
     const nameOf = (k) => plainName(labels.get(k) || field.find((p) => p.key === k)?.name || k.replace(/^c_/, ""));
-    const cards = keys.map((k) => { try { return playerCard(k, { field, label: nameOf(k), period, lite: true }); } catch { return { key: k, label: nameOf(k), empty: true }; } });
-    const valsOf = (c) => Object.fromEntries((c.sg || []).map((x) => [x.k, x.v]));
-    const none = el("p", { class: "hm-none" }, single || keys.length === 1 ? "Your game will appear here once your first rounds are in." : "Your players’ games will appear here once their first rounds are in.");
-    if (cards.length === 1 || single) {
-      const c = cards[0];
-      if (!c || c.empty || !(c.sg || []).length) { mount(game, [el("p", { class: "hm-t" }, single && !team.isTeam ? "YOUR GAME" : `${(c?.label || "").toUpperCase()}`), none]); return; }
-      const v = valsOf(c), tot = v.TOTAL ?? 0;
-      mount(game, [
-        el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, team.isTeam || admin ? (c.label || "").toUpperCase() : "YOUR GAME"), el("span", { class: `hm-big ${tot >= 0 ? "pos" : "neg"}` }, fmtSG(tot))]),
-        el("p", { class: "hm-sub" }, `strokes a round ${tot >= 0 ? "better" : "worse"} than tour average`),
-        radar(v), el("div", { class: "hm-key" }, [el("span", {}, [el("i", { class: "k-avg" }), "Tour average"]), el("span", {}, [el("i", { class: "k-out" }), "Outside = better"])]),
-      ]);
-    } else if (cards.length > 1) {
-      const live2 = cards.filter((c) => !c.empty && (c.sg || []).length);
-      if (!live2.length) { mount(game, [el("p", { class: "hm-t" }, "YOUR PLAYERS"), none]); return; }
-      const statsFor = (k) => (admin ? `#/admin/player-stats?player=${encodeURIComponent(k)}` : statsHref);
-      mount(game, [
-        el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, "YOUR PLAYERS"), el("span", { class: "hm-sub2" }, "Swipe · outside the dashed line = better than tour average")]),
-        el("div", { class: "hm-rads" }, live2.map((c) => { const v = valsOf(c), tot = v.TOTAL ?? 0;
-          return el("a", { class: "hm-rad", href: statsFor(c.key) }, [el("span", { class: "hm-rn" }, [el("b", {}, c.label), el("span", { class: tot >= 0 ? "pos" : "neg" }, fmtSG(tot))]), radar(v, { small: true })]); })),
-      ]);
-    } else {
-      mount(game, [el("p", { class: "hm-t" }, "YOUR PLAYERS"), el("p", { class: "hm-none" }, admin ? "Pick the players you follow, and their games will show here." : "Your players’ games will appear here once their first rounds are in."),
-        admin ? el("a", { class: "link small", href: "#/watchlist" }, "Choose players →") : null]);
+    // (update 610) the players shown: the admin's chosen (the "+"), a coach's chosen among their players (none chosen: all)
+    const keysNow = () => {
+      if (single) return [single];
+      const fav = watchPrefs().players || [];
+      if (admin) return fav;
+      const mine = fav.filter((k) => teamKeys.includes(k));
+      return mine.length ? mine : teamKeys;
+    };
+    // (update 610) each player twice: their latest season (green) and their career (gold)
+    const memo = new Map();
+    const cardOf = (k) => {
+      if (!memo.has(k)) {
+        const one = (period) => { try { return playerCard(k, { field, label: nameOf(k), period, lite: true }); } catch { return { key: k, label: nameOf(k), empty: true }; } };
+        memo.set(k, { now: one("season"), all: one("all") });
+      }
+      return memo.get(k);
+    };
+    const valsOf = (c) => (c && !c.empty ? Object.fromEntries((c.sg || []).map((x) => [x.k, x.v])) : null);
+    const yearOf = (c) => { const ys = (field.find((p) => p.key === c.key)?.rounds || []).map((rd) => String(rd.year || String(rd.date || "").slice(0, 4))).filter(Boolean).sort(); return ys.at(-1) || "This season"; };
+    const key2 = (yr) => el("div", { class: "hm-key" }, [el("span", {}, [el("i", { class: "k-now" }), yr]), el("span", {}, [el("i", { class: "k-car" }), "Career"]), el("span", {}, [el("i", { class: "k-avg" }), "Tour average"])]);
+    // (update 610) the "+": add or remove players (the admin: anyone; a coach: their own players)
+    const plus = () => { const b = el("button", { type: "button", class: "hm-plus", "aria-label": "Add or remove players", title: "Add or remove players" }, "+"); b.addEventListener("click", pickPlayers); return b; };
+    function pickPlayers() {
+      const pool = admin ? labels : new Map(teamKeys.map((k) => [k, nameOf(k)]));
+      const chosen = new Set(keysNow());
+      const q = el("input", { type: "search", class: "hm-pk-q", placeholder: "Search players\u2026", autocomplete: "off", "aria-label": "Search players" });
+      const ul = el("div", { class: "hm-pk-list" });
+      const draw = () => {
+        const t = q.value.trim().toLowerCase();
+        const rows = [...pool].filter(([k, l]) => !t || String(l).toLowerCase().includes(t)).sort((a, b) => (chosen.has(b[0]) - chosen.has(a[0])) || String(a[1]).localeCompare(String(b[1]))).slice(0, 60);
+        mount(ul, rows.length ? rows.map(([k, l]) => { const on = chosen.has(k), b = el("button", { type: "button", class: `hm-pk-r${on ? " on" : ""}`, "aria-pressed": String(on) }, [el("span", {}, plainName(l)), el("i", { "aria-hidden": "true" }, on ? "\u2713" : "+")]);
+          b.addEventListener("click", () => { if (chosen.has(k)) chosen.delete(k); else chosen.add(k); draw(); }); return b; }) : el("p", { class: "muted small" }, "No players by that name."));
+      };
+      q.addEventListener("input", draw);
+      const done = el("button", { type: "button", class: "btn hm-pk-done" }, "Done"), back = el("div", { class: "hm-pk-back" });
+      const sheet = el("div", { class: "hm-pk-wrap" }, [back, el("section", { class: "hm-pk", role: "dialog", "aria-modal": "true", "aria-label": "Your players" }, [el("div", { class: "hm-pk-h" }, [el("strong", {}, "Your players"), done]), q, ul])]);
+      const close = async () => {
+        sheet.remove();
+        const before = watchPrefs().players || [], keep = before.filter((k) => !pool.has(k)); // (the admin's others, a coach's non-team picks: kept)
+        await saveWatch({ players: [...keep, ...[...chosen].filter((k) => pool.has(k))] }).catch(() => {});
+        drawGame();
+      };
+      done.addEventListener("click", close); back.addEventListener("click", close);
+      document.body.appendChild(sheet); draw(); setTimeout(() => q.focus(), 50);
     }
-  } catch (err) { console.error(err); mount(game, el("p", { class: "hm-none" }, "Couldn’t load your game just now. Try again in a moment.")); }
+    const none = (txt) => el("p", { class: "hm-none" }, txt);
+    function drawGame() {
+      const keys = keysNow();
+      if (!many) {
+        const c = cardOf(keys[0]), v = valsOf(c.now), cv = valsOf(c.all);
+        if (!v) { mount(game, [el("p", { class: "hm-t" }, team.isTeam ? (nameOf(keys[0]) || "").toUpperCase() : "YOUR GAME"), none("Your game will appear here once your first rounds are in.")]); return; }
+        const tot = v.TOTAL ?? 0;
+        mount(game, [
+          el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, team.isTeam || previewClient ? (c.now.label || "").toUpperCase() : "YOUR GAME"), el("span", { class: `hm-big ${tot >= 0 ? "pos" : "neg"}` }, fmtSG(tot))]),
+          el("p", { class: "hm-sub" }, `strokes a round ${tot >= 0 ? "better" : "worse"} than tour average in ${yearOf(c.now)}${cv?.TOTAL != null ? ` \u00b7 career ${fmtSG(cv.TOTAL)}` : ""}`),
+          radar(v, { c: cv }), key2(yearOf(c.now)),
+        ]);
+        return;
+      }
+      const cards = keys.map(cardOf).filter((c) => valsOf(c.now));
+      const statsFor = (k) => (admin ? `#/admin/player-stats?player=${encodeURIComponent(k)}` : statsHref);
+      const headRow = el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, "YOUR PLAYERS"), plus()]);
+      if (!cards.length) { mount(game, [headRow, none(keys.length ? "Your players\u2019 games will appear here once their first rounds are in." : "Tap + to pick the players you follow, and their games will show here.")]); return; }
+      mount(game, [headRow, el("p", { class: "hm-sub2" }, "Swipe \u00b7 outside the dashed line = better than tour average"),
+        el("div", { class: "hm-rads" }, cards.map((c) => { const v = valsOf(c.now), cv = valsOf(c.all), tot = v.TOTAL ?? 0;
+          return el("a", { class: "hm-rad", href: statsFor(c.now.key) }, [el("span", { class: "hm-rn" }, [el("b", {}, c.now.label), el("span", { class: tot >= 0 ? "pos" : "neg" }, fmtSG(tot))]), radar(v, { small: true, c: cv })]); })),
+        key2(yearOf(cards[0].now)), // (update 610: the key once, under the row)
+      ]);
+    }
+    drawGame();
+  } catch (err) { console.error(err); mount(game, el("p", { class: "hm-none" }, "Couldn\u2019t load your game just now. Try again in a moment.")); }
 }

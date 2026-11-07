@@ -110,13 +110,49 @@ export function strategyOf(recs, par, geo = {}) {
   const outs = group(done, apOut).sort((a, b) => a.avg - b.avg);
   const combos = outs.filter((g) => g.k !== "green"), green = outs.find((g) => g.k === "green");
   const bySide = group(done.filter((r) => r.side), (r) => r.side).sort((a, b) => a.avg - b.avg).map((g) => ({ ...g, lab: SIDE[g.k] || g.k }));
-  const order = combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : bySide.length >= 2 ? bySide : null;
+  // (update 610) the miss spots as circles, the way the map's circle reads them: around each miss, the misses of the same
+  // lie within 10 yds (15 when that's too few), centred on the middle of its misses, with MIN_N or more; then the best, second best and worst of those spots,
+  // each a different place (not mostly the same misses) and named by the direction most of its misses are in
+  const missPts = done.filter((r) => r.side && !r.fringe).map((r) => { const q = apPt(r); return q && q[1] != null && q[2] != null ? { r, x: q[1], y: q[2], lie: r.mLie || "other", side: r.side } : null; }).filter(Boolean);
+  let spotOrder = null;
+  if (geo.ppy && missPts.length >= MIN_N) {
+    const cand = [];
+    // 10 yds, widened to 15 when that's too few; each circle then moved to the middle of its misses and counted again
+    // (twice), so it holds the whole cluster rather than whichever part a single miss reaches
+    const seen = new Set();
+    for (const c of missPts) for (const ry of [10, 15]) {
+      const rr = ry * geo.ppy, inR = (x, y) => missPts.filter((p) => p.lie === c.lie && Math.hypot(p.x - x, p.y - y) <= rr);
+      let mem = inR(c.x, c.y);
+      if (mem.length < MIN_N) continue;
+      for (let it = 0; it < 2; it++) { const m2 = inR(mean(mem.map((p) => p.x)), mean(mem.map((p) => p.y))); if (m2.length >= MIN_N) mem = m2; }
+      const sig = `${c.lie}|${mem.map((p) => done.indexOf(p.r)).sort((a, b) => a - b).join(",")}`;
+      if (!seen.has(sig)) { seen.add(sig); cand.push({ ry, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
+      break;
+    }
+    // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
+    // spread over long-left, long and long-right)
+    const sideOf = (mem) => {
+      const m = new Map(); for (const p of mem) m.set(p.side, (m.get(p.side) || 0) + 1);
+      const [top, n] = [...m].sort((a, b) => b[1] - a[1])[0];
+      if (n >= mem.length / 2) return top;
+      const part = new Map(); for (const p of mem) for (const w of String(p.side).split("-")) part.set(w, (part.get(w) || 0) + 1);
+      const [pw, pn] = [...part].sort((a, b) => b[1] - a[1])[0];
+      return pn >= mem.length * 0.7 ? pw : top;
+    };
+    const named = cand.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${g.mem[0].lie}`, n: g.mem.length, cx: mean(g.mem.map((p) => p.x)), cy: mean(g.mem.map((p) => p.y)) }));
+    const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); return a.k !== b.k && b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n); };
+    const byAvg = [...named].sort((a, b) => a.avg - b.avg || b.n - a.n), pick = [];
+    for (const g of byAvg) if (pick.every((x) => apart(x, g))) pick.push(g);
+    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone] }));
+  }
+  const order = spotOrder || (combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : bySide.length >= 2 ? bySide : null);
     if (order) {
     // (update 595) each its own line, with its own circle: the best miss, the second best, the worst
     const [b1, b2] = order, w = order.at(-1);
-    items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: [circ(b1.rs, apPt, "good")].filter(Boolean) });
-    items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: [circ(b2.rs, apPt, "ok")].filter(Boolean) });
-    if (order.length >= 3) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${w.lab} ${vn(w.avg, w.n)}.`, at: [circ(w.rs, apPt, "bad")].filter(Boolean) });
+    const atOf = (g, tone) => (g.at ? [g.at(tone)] : [circ(g.rs, apPt, tone)].filter(Boolean)); // (update 610: a spot's own circle)
+    items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: atOf(b1, "good") });
+    items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "ok") });
+    if (order.length >= 3) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${w.lab} ${vn(w.avg, w.n)}.`, at: atOf(w, "bad") });
   } else {
     const g = done.filter((r) => apOut(r) === "green"), m = done.filter((r) => r.side);
     if (g.length || m.length) {
@@ -133,7 +169,9 @@ export function strategyOf(recs, par, geo = {}) {
   // ---- surprises: a miss in the rough or a bunker that scored better than the best fairway miss ----
   // (update 604) against the best fairway spot only (not whichever fairway spot makes the biggest gap), so it only shows
   // when the rough or bunker beats every fairway option
-  const rough = outs.filter((g) => /\|(rough|bunker)$/.test(g.k)), bestFw = outs.filter((g) => /\|fairway$/.test(g.k)).sort((a, b) => a.avg - b.avg)[0];
+  // (update 610) from the same spots as the misses when there are spots (so the numbers match)
+  const src = spotOrder || outs;
+  const rough = src.filter((g) => /\|(rough|bunker)$/.test(g.k)), bestFw = src.filter((g) => /\|fairway$/.test(g.k)).sort((a, b) => a.avg - b.avg)[0];
   if (bestFw) for (const a of rough.filter((g) => g.avg <= bestFw.avg - 0.1).sort((x, y) => x.avg - y.avg).slice(0, 2))
     items.push({ k: "surprise", h: "Surprise", t: `Missing ${lab(a.k)} ${vn(a.avg, a.n)} has scored better than the best fairway miss, ${lab(bestFw.k)} (${f2(bestFw.avg)}).` });
 

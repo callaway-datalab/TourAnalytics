@@ -116,7 +116,7 @@ const sectionsFor = (kind) => {
   const multi = admin || (kind === "team" && teamCount() > 1);
   const dataItems = [
     // (update 292) the Watchlist is the first page of Analyze (and what Analyze opens on)
-    ["Home", "#/home", ["home"]], // (update 609: Home; the Watchlist is off the menu for now)
+    // (update 609) the Watchlist is off the menu for now; (610) Home is its own header link, left of Analyze
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     // (update 505) Watchlist, Stats, Compare, Leaderboards
     ["Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
@@ -298,7 +298,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const kind = admin ? "admin" : team ? "team" : "client";
   // top bar: (Player Access,) Analyze, Play — each opens on its first page
   const secs = sectionsFor(kind), onSec = secs.find((sec) => sec.items.some((it) => itemOn(it, currentRoute)));
-  const items = [...(admin ? NAV.admin : []), ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
+  const items = [...(admin ? NAV.admin : []), ["#/home", "home", "Home", ["home"]] /* (update 610) */, ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 

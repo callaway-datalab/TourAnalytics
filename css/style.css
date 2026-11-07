@@ -6324,3 +6324,23 @@ div.sh-ud3-green { cursor: default; }
 .hm-live-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hm-go { margin-left: auto; color: #8e8e93; font-size: 1.2rem; }
 @media (prefers-reduced-motion: reduce) { .hm-orb, .hm-shape, .hm-dot.on { animation: none; } }
+/* (update 610) Home: the season (green) and career (gold) key; the "+" to add or remove players, and its sheet */
+.hm-key { flex-wrap: wrap; gap: 6px 16px; }
+.hm-key .k-now { width: 16px; height: 0; border-top: 2.5px solid #4cd17e; }
+.hm-key .k-car { width: 16px; height: 0; border-top: 2px solid #d4b483; }
+.hm-rad .hm-key { font-size: 0.68rem; gap: 4px 10px; }
+.hm-gh { align-items: center; }
+.hm-plus { width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(212,180,131,0.55); background: rgba(212,180,131,0.12); color: #d4b483; font-size: 1.3rem; line-height: 1; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.hm-plus:hover { background: rgba(212,180,131,0.22); }
+.hm-pk-wrap { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; justify-content: flex-end; }
+.hm-pk-back { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+.hm-pk { position: relative; margin: 0 auto; width: min(100%, 560px); max-height: 82dvh; display: flex; flex-direction: column; gap: 10px; background: #141418; border: 1px solid rgba(255,255,255,0.1); border-radius: 22px 22px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+@media (min-width: 700px) { .hm-pk-wrap { justify-content: center; } .hm-pk { border-radius: 22px; } }
+.hm-pk-h { display: flex; justify-content: space-between; align-items: center; }
+.hm-pk-h strong { font-size: 1.05rem; }
+.hm-pk-q { width: 100%; margin: 0 !important; }
+.hm-pk-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 120px; }
+.hm-pk-r { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03); color: inherit; font: inherit; cursor: pointer; }
+.hm-pk-r i { font-style: normal; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.08); color: #c7c7cc; font-weight: 700; }
+.hm-pk-r.on { border-color: rgba(76,209,126,0.4); background: rgba(76,209,126,0.08); }
+.hm-pk-r.on i { background: #4cd17e; color: #0b0b0d; }
