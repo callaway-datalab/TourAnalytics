@@ -818,6 +818,31 @@ export async function openCallie() {
     const go = () => { const t = input.value.trim(); if (!t || busy) return; input.value = ""; ask(t); };
     send.addEventListener("click", go);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
+    // (update 593) ask with your voice: the browser's own speech to text (the same red microphone as Enter New Round);
+    // what's heard fills the box as you speak, and when you stop it's asked. Tap again to stop early. No microphone
+    // support (Firefox, some in-app browsers): no button.
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let rec = null;
+    const PH = "Ask Cal\u2026";
+    const mic = SR ? el("button", { type: "button", class: "cal-mic", "aria-label": "Ask with your voice", title: "Ask with your voice" }) : null;
+    if (mic) mic.innerHTML = '<svg viewBox="0 0 40 40" width="22" height="22"><circle cx="20" cy="20" r="20" fill="#e5252a"/><rect x="15.5" y="7.5" width="9" height="16" rx="4.5" fill="#fff"/><path d="M12 19.5a8 8 0 0 0 16 0" fill="none" stroke="#fff" stroke-width="2"/><line x1="20" y1="27.5" x2="20" y2="31.5" stroke="#fff" stroke-width="2"/><line x1="15.5" y1="32" x2="24.5" y2="32" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
+    mic?.addEventListener("click", () => {
+      if (rec) { try { rec.stop(); } catch { /* already stopped */ } return; }
+      if (busy) return;
+      const r = new SR(); rec = r;
+      r.lang = navigator.language || "en-US"; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+      const before = input.value.trim();
+      let heard = "", err = null;
+      r.onresult = (e) => { heard = [...e.results].map((x) => x[0].transcript).join(" ").replace(/\s+/g, " ").trim(); input.value = [before, heard].filter(Boolean).join(" "); };
+      r.onerror = (e) => { err = e.error; };
+      r.onend = () => {
+        rec = null; mic.classList.remove("on"); mic.setAttribute("aria-pressed", "false"); input.placeholder = PH;
+        if (err === "not-allowed" || err === "service-not-allowed") { input.placeholder = "Microphone blocked: allow it for this site in the browser\u2019s settings, or type"; return; }
+        if (heard) go(); else if (err && err !== "aborted") input.placeholder = "I didn\u2019t catch that. Tap the microphone and try again, or type";
+      };
+      try { r.start(); mic.classList.add("on"); mic.setAttribute("aria-pressed", "true"); input.placeholder = "Listening\u2026 tap the microphone again to stop"; }
+      catch { rec = null; }
+    });
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close Cal" }, "✕");
     close.addEventListener("click", closeCallie);
     const histBtn = el("button", { type: "button", class: "link small cal-hist-btn" }, "History");
@@ -829,7 +854,7 @@ export async function openCallie() {
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [
         el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your AI data caddy")]), histBtn, fresh, close]),
         el("div", { class: "cal-log", "aria-live": "polite" }),
-        el("div", { class: "cal-foot" }, [input, send]),
+        el("div", { class: "cal-foot" }, [input, mic, send]),
       ]),
     ]);
     panel.querySelector(".cal-back").addEventListener("click", closeCallie);
@@ -844,6 +869,7 @@ export async function openCallie() {
 }
 export function closeCallie() {
   if (!panel) return;
+  try { panel.querySelector(".cal-mic.on")?.click(); } catch { /* */ } // (update 593: closing stops listening)
   panel.hidden = true;
   document.documentElement.classList.remove("cal-open");
   document.querySelector(".callie-link")?.focus();

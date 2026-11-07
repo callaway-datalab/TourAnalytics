@@ -39,7 +39,17 @@ export function readCard(read, where = "", { compact = false, foot = null } = {}
 
 /* ---------------------------------------------------------------- in Cal's chat */
 export const STRAT_Q = /\b(strateg\w*|game ?plan|how (do|should|would) (i|you|we|he|she|they) play|how to play|where (do|should) (i|we) aim|cal'?s read|aim(ing)? (on|at|for)|play(ing)? hole)\b/i;
-export const isStrategyQ = (q) => STRAT_Q.test(q) && /\bhole\b|\b\d{1,2}(st|nd|rd|th)\b/i.test(q);
+// (update 593) a question asked by voice: "whole two", "hole to", "the second", "number eleven" read as digits
+const NUM = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen"];
+const ORD = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth"];
+const SFX = (n) => (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th");
+export function spoken(q) {
+  let t = String(q).replace(/\bwhole\b/gi, "hole").replace(/\bhole (to|too)\b/gi, "hole 2").replace(/\bhole (for|fore)\b/gi, "hole 4").replace(/\bhole won\b/gi, "hole 1").replace(/\bhole ate\b/gi, "hole 8");
+  t = t.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen)\b/gi, (w) => String(NUM.indexOf(w.toLowerCase())));
+  t = t.replace(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth)\b/gi, (w) => { const n = ORD.indexOf(w.toLowerCase()); return `${n}${SFX(n)}`; });
+  return t.replace(/\bnumber (\d{1,2})\b/gi, "hole $1");
+}
+export const isStrategyQ = (q0) => { const q = spoken(q0); return STRAT_Q.test(q) && /\bhole\b|\b\d{1,2}(st|nd|rd|th)\b/i.test(q); };
 let lastCourse = null, askedPin = null; // (update 590) askedPin: { course, hole } when Cal asked "which pin?"
 /** "back left" (or "the back left pin") straight after Cal asked which pin */
 export const isPinReply = (q) => !!askedPin && /^\s*(the\s+)?((front|back|middle|center|centre|left|right)[\s,-]*){1,3}(pin)?\s*[.!?]*\s*$/i.test(q);
@@ -72,7 +82,8 @@ function pinIn(q, pins) {
 }
 
 /** Cal's answer: { text, read?, go? } */
-export async function answerStrategy(question) {
+export async function answerStrategy(question0) {
+  const question = spoken(question0);
   const { listHeatCourses, heatData, withMerges, pinsOn, pinLabel } = await import("./courseHeat.js");
   const list = (await listHeatCourses()).filter((c) => c.name);
   const found = courseIn(question, list);
