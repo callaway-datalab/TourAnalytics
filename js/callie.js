@@ -11,13 +11,14 @@ import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
 import { readAsk, productGroups, matchEvents } from "./compareAsk.js";
-import { isStrategyQ, isPinReply, answerStrategy, readCard } from "./calRead.js"; // (update 589) Cal's Read: the hole strategy
+import { isStrategyQ, isPinReply, answerStrategy, readCard, spoken, STRAT_Q } from "./calRead.js"; // (update 589) Cal's Read: the hole strategy
 import { CATEGORIES, statRounds, statAgg, statDef, fmtStat, distLead } from "./sg.js";
 // (update 313) a player, or a caddie / coach with just one player: the greeting talks about "your data"
 const oneData = () => { const st = getState(); return !st.isAdmin && (!st.isTeam || Object.keys(st.teamAccess || {}).length === 1); };
 
 const MAX_PLAYERS = 3;
 const chat = []; // [{ who: "me" | "callie", text, table?, note?, err? }] (kept while the portal is open)
+let editing = -1; // (update 599) the index in chat of the question being edited (-1: none)
 let pending = null; // (update 261) Callie asked which range: { plan, ps, missing, options }
 let lastPlayers = [], busy = false, panel = null, playersP = null, exList = [];
 const roundsCache = new Map(); // player key → their rounds (full detail)
@@ -710,6 +711,11 @@ async function ask(question) {
       if (a) return reply({ ...a, go: { href, label: "Open in Compare for more details \u2192", plan: cp } });
       return reply({ text: cp?.everyone ? "That one pools everyone in the data, so it\u2019s best seen in **Compare**." : "That\u2019s a comparison I\u2019ll leave to **Compare**.", go: { href, label: "Open it in Compare \u2192", plan: cp } });
     }
+    // (update 598) a hole strategy question Cal's own check missed (misheard by voice, worded another way): Cal's Read
+    if (plan.intent === "unsupported" && (STRAT_Q.test(spoken(question)) || /\b(strateg\w*|pin)\b/i.test(question)) && /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen)\b/i.test(question)) {
+      const sa = await answerStrategy(question).catch(() => null);
+      if (sa && !(sa.cant && /^Which course\?/.test(sa.text))) return reply(sa);
+    }
     if (plan.intent === "unsupported") return reply({ cant: true, text: plan.unsupported ? `I can\u2019t work that out from the data: ${plan.unsupported}` : "I can\u2019t work that out from the data. Ask about strokes gained or a stat for a player, a tournament or a period, or who leads the tour in something." });
     if (plan.intent !== "field") {
       if (!ps.length && PRONOUN.test(question) && lastPlayers.length) ps = lastPlayers;
@@ -784,7 +790,29 @@ function draw() {
     items.push(el("div", { class: "cal-ex" }, exList.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small" }, t); b.addEventListener("click", () => { if (!busy) ask(t); }); return b; })));
   }
   for (const m of chat) {
-    if (m.who === "me") { items.push(el("div", { class: "cal-msg me" }, el("p", {}, m.text))); continue; }
+    // (update 599) your questions can be edited: Edit turns it into a box; Ask again drops it and everything after it, and
+    // asks the edited question in its place
+    if (m.who === "me") {
+      const i = chat.indexOf(m);
+      if (i === editing) {
+        const ta = el("textarea", { class: "cal-edit-in", rows: 2, "aria-label": "Edit your question" });
+        ta.value = m.text;
+        const save = el("button", { type: "button", class: "btn small cal-edit-go" }, "Ask again"), cancel = el("button", { type: "button", class: "link small" }, "Cancel");
+        const go = () => { const t = ta.value.trim(); if (!t || busy) return; editing = -1; chat.splice(i); pending = null; ask(t); };
+        save.addEventListener("click", go);
+        cancel.addEventListener("click", () => { editing = -1; draw(); });
+        ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } else if (e.key === "Escape") { e.stopPropagation(); editing = -1; draw(); } });
+        items.push(el("div", { class: "cal-msg me cal-editing" }, [ta, el("div", { class: "cal-edit-row" }, [cancel, save])]));
+        const fit = () => { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight + 2, 240)}px`; }; // (grows to fit the question)
+        ta.addEventListener("input", fit);
+        requestAnimationFrame(() => { fit(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+        continue;
+      }
+      const ed = busy ? null : el("button", { type: "button", class: "cal-edit", "aria-label": "Edit this question", title: "Edit this question" }, "Edit");
+      ed?.addEventListener("click", () => { editing = i; draw(); });
+      items.push(el("div", { class: "cal-me-wrap" }, [el("div", { class: "cal-msg me" }, el("p", {}, m.text)), ed]));
+      continue;
+    }
     const go = m.go ? el("a", { class: "link small cal-go", href: m.go.href }, m.go.label) : null;
     // (update 304) a question Cal couldn't answer: hand it to a person (Chat, with Callaway Analyst, the message written)
     const st0 = getState(), staffer = st0.isAdmin || st0.profile?.kind === "analyst";
@@ -807,9 +835,10 @@ function draw() {
   }
   if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Cal is working it out" }, [el("i"), el("i"), el("i")]));
   mount(log, items);
-  log.scrollTop = log.scrollHeight;
+  if (editing >= 0) log.querySelector(".cal-editing")?.scrollIntoView({ block: "nearest" }); // (update 599: the one being edited stays in view)
+  else log.scrollTop = log.scrollHeight;
   input.disabled = busy; send.disabled = busy;
-  if (!busy) input.focus();
+  if (!busy && editing < 0) input.focus();
 }
 export async function openCallie() {
   if (!panel) {
@@ -848,7 +877,7 @@ export async function openCallie() {
     const histBtn = el("button", { type: "button", class: "link small cal-hist-btn" }, "History");
     histBtn.addEventListener("click", () => { showHist = !showHist; histBtn.textContent = showHist ? "Back" : "History"; draw(); });
     const fresh = el("button", { type: "button", class: "link small" }, "New chat");
-    fresh.addEventListener("click", () => { showHist = false; histBtn.textContent = "History"; chat.length = 0; lastPlayers = []; pending = null; busy = false; draw(); });
+    fresh.addEventListener("click", () => { showHist = false; histBtn.textContent = "History"; chat.length = 0; lastPlayers = []; pending = null; busy = false; editing = -1; draw(); });
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [

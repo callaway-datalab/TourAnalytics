@@ -14,7 +14,9 @@ export const MIN_N = 8, SMALL_N = 15;
 const LIE = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
 const mean = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : null);
 const f2 = (v) => v.toFixed(2);
-const nTxt = (n) => `${n} sample${n === 1 ? "" : "s"}${n < SMALL_N ? ", a small sample" : ""}`;
+// (update 597) "21 samples"; under SMALL_N "only 8 samples"; a tip says its value and count together: "(3.78, only 9 samples)"
+const nTxt = (n) => `${n < SMALL_N ? "only " : ""}${n} sample${n === 1 ? "" : "s"}`;
+const vn = (v, n) => `(${f2(v)}, ${nTxt(n)})`;
 const SIDE = { "Long-Left": "long left", Long: "long", "Long-Right": "long right", Left: "left", Right: "right", "Short-Left": "short left", Short: "short", "Short-Right": "short right" };
 // (update 595) going for the green or laying up, from the shot itself (par 5: the second shot; par 4: the tee shot): it
 // went for it when it finished on the green or within 30 yds, or travelled most of the way there (80%; a par 4's tee
@@ -87,12 +89,12 @@ export function strategyOf(recs, par, geo = {}) {
       const bb = bands.length >= 2 && bands[0].avg < tgt.avg ? bands[0] : null;
       // (update 595) just the value of what's recommended (the spot was still picked against every other place)
       const g0 = bb || tgt;
-      items.push({ k: "tee", h: "Aim", t: `Aim for ${tgt.k}${bb ? ` around ${bb.k} yds` : ""}: ${f2(g0.avg)} (${nTxt(g0.n)}).`, at: [circ(g0.rs, (r) => r._d.q2, "good")].filter(Boolean) });
+      items.push({ k: "tee", h: "Aim", t: `Aim for ${tgt.k}${bb ? ` around ${bb.k} yds` : ""} off the tee ${vn(g0.avg, g0.n)}.`, at: [circ(g0.rs, (r) => r._d.q2, "good")].filter(Boolean) });
       for (const z of zones.filter((z) => !isFw(z) && z.avg <= tgt.avg - 0.05).slice(0, 1))
-        items.push({ k: "tee", h: "Surprise", t: `Drives finishing in ${z.k} have scored better than the aim: ${f2(z.avg)} (${nTxt(z.n)}).` });
+        items.push({ k: "tee", h: "Surprise", t: `Drives finishing in ${z.k} have scored better than the aim ${vn(z.avg, z.n)}.` });
     }
     const worst = zones.at(-1), best = zones[0];
-    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", h: "Avoid", t: `Stay out of ${worst.k}: ${f2(worst.avg)} (${nTxt(worst.n)}).`, at: [circ(worst.rs, (r) => r._d.q2, "bad")].filter(Boolean) });
+    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", h: "Avoid", t: `Stay out of ${worst.k} off the tee ${vn(worst.avg, worst.n)}.`, at: [circ(worst.rs, (r) => r._d.q2, "bad")].filter(Boolean) });
   }
 
   // ---- the approach: every result (the green, and each miss's side and lie within 30 yds) against every other ----
@@ -111,18 +113,18 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 595) each its own line, with its own circle: the best miss, the second best, the worst
     const [b1, b2] = order, w = order.at(-1);
     items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: [circ(b1.rs, apPt, "good")].filter(Boolean) });
-    items.push({ k: "miss", h: "2nd best miss", t: `${cap1(b2.lab)}: ${f2(b2.avg)} (${nTxt(b2.n)}).`, at: [circ(b2.rs, apPt, "ok")].filter(Boolean) });
-    if (order.length >= 3) items.push({ k: "miss", h: "Worst miss", t: `Don\u2019t miss ${w.lab}: ${f2(w.avg)} (${nTxt(w.n)}).`, at: [circ(w.rs, apPt, "bad")].filter(Boolean) });
+    items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: [circ(b2.rs, apPt, "ok")].filter(Boolean) });
+    if (order.length >= 3) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${w.lab} ${vn(w.avg, w.n)}.`, at: [circ(w.rs, apPt, "bad")].filter(Boolean) });
   } else {
     const g = done.filter((r) => apOut(r) === "green"), m = done.filter((r) => r.side);
     if (g.length || m.length) {
       const av = (rs) => f2(mean(rs.map(sc)));
-      items.push({ k: "miss", h: "Green vs miss", t: `${g.length ? `Hitting the green: ${av(g)} (${nTxt(g.length)})` : "No greens hit yet"}${m.length ? `; missing it within 30 yds: ${av(m)} (${nTxt(m.length)})` : ""}.` });
+      items.push({ k: "miss", h: "Green vs miss", t: `${g.length ? `Hitting the green ${vn(mean(g.map(sc)), g.length)}` : "No greens hit yet"}${m.length ? `; missing it within 30 yds ${vn(mean(m.map(sc)), m.length)}` : ""}.` });
       const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, rs, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
       if (few.length >= 2) {
         const b = few[0], w = few.at(-1), nm = (x) => SIDE[x.sd] || x.sd;
-        items.push({ k: "miss", h: "Best miss so far", t: `Too few misses to rank firmly; so far, miss ${nm(b)}: ${f2(b.avg)} (${nTxt(b.n)}).`, at: [circ(b.rs, apPt, "good")].filter(Boolean) });
-        items.push({ k: "miss", h: "Worst miss so far", t: `${cap1(nm(w))}: ${f2(w.avg)} (${nTxt(w.n)}).`, at: [circ(w.rs, apPt, "bad")].filter(Boolean) });
+        items.push({ k: "miss", h: "Best miss so far", t: `Too few misses to rank firmly; so far, miss ${nm(b)} ${vn(b.avg, b.n)}.`, at: [circ(b.rs, apPt, "good")].filter(Boolean) });
+        items.push({ k: "miss", h: "Worst miss so far", t: `Worst so far: ${nm(w)} ${vn(w.avg, w.n)}.`, at: [circ(w.rs, apPt, "bad")].filter(Boolean) });
       }
     } else items.push({ k: "miss", h: "Too few", t: `Too few approach shots recorded to this pin to read yet (${nTxt(done.length)}).` });
   }
@@ -133,7 +135,7 @@ export function strategyOf(recs, par, geo = {}) {
   sur.sort((x, y) => y.gap - x.gap);
   const seen = new Set();
   for (const { a, b } of sur) { if (seen.has(a.k) || items.filter((i) => i.k === "surprise").length >= 2) continue; seen.add(a.k);
-    items.push({ k: "surprise", h: "Surprise", t: `Missing ${lab(a.k)} has scored better than finishing ${lab(b.k)}: ${f2(a.avg)} (${nTxt(a.n)}) against ${f2(b.avg)}.` }); }
+    items.push({ k: "surprise", h: "Surprise", t: `Missing ${lab(a.k)} ${vn(a.avg, a.n)} has scored better than finishing ${lab(b.k)} (${f2(b.avg)}).` }); }
 
   // ---- going for the green or laying up: par 5s (the second shot), drivable par 4s (the tee shot), by where it's played from ----
   const goSt = par >= 5 ? 2 : par === 4 ? 1 : null;
@@ -152,13 +154,13 @@ export function strategyOf(recs, par, geo = {}) {
         if (g.length < MIN_N || l.length < MIN_N) continue;
         const ga = mean(g.map((p) => sc(p.r))), la = mean(l.map((p) => sc(p.r)));
         const [lo, hi, lie] = k.split("|"), where = goSt === 1 ? "Off the tee" : `From ${lo}-${hi} yds ${lieIn(lie)}`, go = ga < la;
-        lines.push({ gap: Math.abs(ga - la), go, t: `${where}, ${go ? "go for the green" : "lay up"}: ${f2(go ? ga : la)} (${nTxt(go ? g.length : l.length)}).` });
+        lines.push({ gap: Math.abs(ga - la), go, t: `${where}, ${go ? "go for the green" : "lay up"} ${vn(go ? ga : la, go ? g.length : l.length)}.` });
       }
       lines.sort((a, b) => b.gap - a.gap).slice(0, 2).forEach((x) => items.push({ k: goSt === 1 ? "tee" : "layup", h: x.go ? "Go for it" : "Lay up", t: x.t }));
       // the best place to lay up to: the yards left after the lay-up
       const lay = plays.filter((p) => !p.go && p.nx[4] != null), lb = 20;
       const byLeft = group(lay.map((p) => ({ ...p.r, _l: p.nx[4] })), (r) => `${Math.floor(r._l / lb) * lb}`).sort((a, b) => a.avg - b.avg);
-      if (byLeft.length >= 2) items.push({ k: "layup", h: "Lay-up distance", t: `Laying up, leave ${byLeft[0].k}-${Number(byLeft[0].k) + lb} yds: ${f2(byLeft[0].avg)} (${nTxt(byLeft[0].n)}).`, at: [circ(byLeft[0].rs, (r) => r.qs.find((q) => q[0] === goSt + 1), "good")].filter(Boolean) });
+      if (byLeft.length >= 2) items.push({ k: "layup", h: "Lay-up distance", t: `Laying up, leave ${byLeft[0].k}-${Number(byLeft[0].k) + lb} yds ${vn(byLeft[0].avg, byLeft[0].n)}.`, at: [circ(byLeft[0].rs, (r) => r.qs.find((q) => q[0] === goSt + 1), "good")].filter(Boolean) });
     }
   }
   return items.length ? { base: Math.round(base * 100) / 100, n: done.length, items, ...(teeOpts ? { teeOpts } : {}), ...(layOpts ? { layOpts } : {}) } : null;

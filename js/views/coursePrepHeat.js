@@ -663,6 +663,11 @@ export async function drawHeat(ctx, course) {
     const n = st.hole;
     let read = readFor(data.insights?.holes?.[n]?.strategy, pinNow?.merged || [st.pin[n]]);
     if (read && prof && who) read = playerAim(read, prof);
+    // (update 597) only the tips for the shot picked: Shot 1 on a par 4 or 5, the tee (aim, avoid); the approach shot (a
+    // par 3's Shot 1, a par 4's Shot 2, a par 5's Shot 2 and 3), the misses; a par 5's Shot 2, going for it or laying up too
+    const k = kOf(n, par), teeTip = (it) => it.k === "tee" || (it.k === "surprise" && /^Surprise: drives/.test(it.t));
+    const keep = (it) => (!k ? true : k === 1 && par >= 4 ? teeTip(it) : it.k === "layup" ? par >= 5 && k === 2 : !teeTip(it));
+    if (read?.r?.items) { const items = read.r.items.filter(keep); read = { ...read, r: { ...read.r, items: items.length ? items : [{ k: "", h: "", t: `No tips for Shot ${k} on this pin yet.` }] } }; }
     calRead = read;
     if (!read?.r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
     stratBox.hidden = false;

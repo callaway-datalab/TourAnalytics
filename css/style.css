@@ -6181,3 +6181,23 @@ div.sh-ud3-green { cursor: default; }
 .cal-read.compact li { grid-template-columns: 7.4rem minmax(0, 1fr); }
 @media (max-width: 520px) { .cal-read li, .cal-read.compact li { grid-template-columns: 1fr; } }
 .sh-calkey i { border-width: 2px; border-style: dashed; }
+/* (update 596) Trending Up / Down: a player, their total, then their 3 distances (each a tap for its detail) */
+.wlb-item.wlb-multi { grid-template-areas: "name act" "area area" "dists dists"; cursor: default; }
+.wlb-item.wlb-multi:hover { background: rgba(255,255,255,0.04); }
+.wlb-multi .wlb-area { font-size: 0.74rem; font-weight: 600; color: #c7c7cc; }
+.wlb-multi .wlb-act { font-size: 0.95rem; }
+.wlb-dists { grid-area: dists; display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.wlb-dist { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; text-align: left; padding: 5px 8px; border: 0; border-radius: 8px; background: rgba(255,255,255,0.04); color: inherit; font: inherit; font-size: 0.78rem; cursor: pointer; }
+.wlb-dist:hover { background: rgba(255,255,255,0.09); }
+.wlb-dist span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wlb-dist b { flex: none; color: var(--c); font-variant-numeric: tabular-nums; }
+/* (update 599) Cal: edit a question you've asked */
+.cal-me-wrap { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; max-width: 100%; }
+.cal-me-wrap .cal-msg.me { align-self: auto; }
+.cal-edit { border: 0; background: none; padding: 2px 4px; font: inherit; font-size: 0.72rem; font-weight: 600; color: #a1a1a6; cursor: pointer; }
+.cal-edit:hover { color: #d4b483; }
+.cal-msg.cal-editing { width: min(100%, 34rem); display: flex; flex-direction: column; gap: 6px; }
+.cal-msg.me.cal-editing { align-self: flex-end; background: #2c2c2e; color: #f5f5f7; border: 1px solid rgba(212,180,131,0.45); }
+.cal-edit-in { width: 100%; margin: 0 !important; resize: none; min-height: 4.6rem; background: #1c1c1e !important; color: #f5f5f7 !important; border: 1px solid rgba(255,255,255,0.14) !important; border-radius: 10px; padding: 8px 10px; font: inherit; }
+.cal-edit-row { display: flex; justify-content: flex-end; align-items: center; gap: 14px; }
+.cal-editing .link { color: #a1a1a6; }

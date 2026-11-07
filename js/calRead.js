@@ -13,7 +13,16 @@ const kindOf = (it) => (it.k === "surprise" && /^Surprise: drives/.test(it.t) ? 
 export const headOf = (it) => [kindOf(it), hOf(it)].filter(Boolean).join(" \u2022 ");
 // (update 591) the counts are samples (past shots from there), not rounds; a course built before 591 says "rounds": said here as samples
 export const samples = (t) => String(t).replace(/\b(\d+\+?) rounds?\b/g, (_, n) => `${n} sample${n === "1" ? "" : "s"}`);
-const plain = (t) => samples(String(t).replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase()));
+// (update 597) a course built before 597 says more than the tip needs: trimmed to the value and the count, "(3.78, only 9
+// samples)" (the list of every other place, "the best of the 6 places...", "Hitting the green: ..." dropped)
+const tidy = (t) => samples(t)
+  .replace(/, against .*?\.(?=\s|$)/, ".")
+  .replace(/, the best of the \d+ places a miss finished \([^)]*\)/, "").replace(/, the best of the misses/, "").replace(/, the worst place drives finished/, "")
+  .replace(/ Hitting the green: [\d.]+ \([^)]*\)\./, "")
+  .replace(/(\d+) samples?, a small sample/g, "only $1 samples")
+  .replace(/^(Aim for|Stay out of|Drives finishing in)(.*?): ([\d.]+) \(([^)]*)\)/, "$1$2 ($3, $4)");
+const plain = (t) => tidy(String(t).replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase()));
+const nOnly = (n) => `${n < 15 ? "only " : ""}${n} samples`;
 
 /** The read for a pin: its own (a combined pin: its member with the most rounds), else every pin on the hole together. */
 export function readFor(S, ids) {
@@ -92,7 +101,7 @@ export function playerAim(read, P) {
     const reach = P.drive.reach + 10, ok = r.teeOpts.filter((o) => o.len <= reach);
     if (ok.length) {
       const fit = ok.filter((o) => inBest(o.left, P.best)), pick = (fit.length ? fit : ok).sort((a, b) => a.avg - b.avg || b.n - a.n)[0];
-      let t = `Aim for ${pick.z} around ${pick.len} yds: ${f2(pick.avg)} (${pick.n} samples${pick.n < 15 ? ", a small sample" : ""}). Within your reach (about ${P.drive.typical}, up to ${P.drive.reach})`;
+      let t = `Aim for ${pick.z} around ${pick.len} yds off the tee (${f2(pick.avg)}, ${nOnly(pick.n)}). Within your reach (about ${P.drive.typical}, up to ${P.drive.reach})`;
       if (pick.left != null) t += inBest(pick.left, P.best) ? `; leaves about ${Math.round(pick.left)} yds, your best approach range (${bTxt(P.best)}).`
         : `; leaves about ${Math.round(pick.left)} yds${P.best ? ` (your best range, ${bTxt(P.best)}, isn\u2019t left by any spot in reach)` : ""}.`;
       const i = items.findIndex((it) => it.k === "tee" && (it.h === "Aim" || /^Aim for/.test(it.t)));
@@ -107,7 +116,7 @@ export function playerAim(read, P) {
   // a par 5's lay-up: the distance in their best approach range, when there are samples there
   if (r.layOpts?.length && P.best) {
     const fit = r.layOpts.filter((o) => inBest(o.left + 10, P.best)).sort((a, b) => a.avg - b.avg)[0];
-    if (fit) { items.push({ k: "layup", h: "Lay-up distance", t: `Laying up, leave about ${fit.left}-${fit.left + 20} yds: ${f2(fit.avg)} (${fit.n} samples${fit.n < 15 ? ", a small sample" : ""}), your best approach range (${bTxt(P.best)}).`, at: fit.at ? [fit.at] : [], mine: true }); changed = true; }
+    if (fit) { items.push({ k: "layup", h: "Lay-up distance", t: `Laying up, leave about ${fit.left}-${fit.left + 20} yds (${f2(fit.avg)}, ${nOnly(fit.n)}), your best approach range (${bTxt(P.best)}).`, at: fit.at ? [fit.at] : [], mine: true }); changed = true; }
   }
   return changed ? { ...read, r: { ...r, items }, who: P.first } : read;
 }
@@ -119,7 +128,9 @@ const NUM = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eig
 const ORD = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth"];
 const SFX = (n) => (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th");
 export function spoken(q) {
-  let t = String(q).replace(/\bwhole\b/gi, "hole").replace(/\bhole (to|too)\b/gi, "hole 2").replace(/\bhole (for|fore)\b/gi, "hole 4").replace(/\bhole won\b/gi, "hole 1").replace(/\bhole ate\b/gi, "hole 8");
+  // (update 598) what speech to text hears for "hole" before a number: "hold two", "hall 7", "whole 3", "hole's 4"
+  const NW = "(?:\\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|to|too|for|fore|won|ate)\\b";
+  let t = String(q).replace(new RegExp(`\\b(?:hold|holds|hall|haul|hol|hole's|holes|whole|hoe)\\s+(?=${NW})`, "gi"), "hole ").replace(/\bwhole\b/gi, "hole").replace(/\bhole (to|too)\b/gi, "hole 2").replace(/\bhole (for|fore)\b/gi, "hole 4").replace(/\bhole won\b/gi, "hole 1").replace(/\bhole ate\b/gi, "hole 8");
   t = t.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen)\b/gi, (w) => String(NUM.indexOf(w.toLowerCase())));
   t = t.replace(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth)\b/gi, (w) => { const n = ORD.indexOf(w.toLowerCase()); return `${n}${SFX(n)}`; });
   return t.replace(/\bnumber (\d{1,2})\b/gi, "hole $1");
