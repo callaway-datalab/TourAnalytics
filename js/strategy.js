@@ -163,8 +163,16 @@ export function strategyOf(recs, par, geo = {}) {
     const nameAll = (cs) => cs.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${g.mem[0].lie}`, n: g.mem.length, cx: mean(g.mem.map((p) => p.x)), cy: mean(g.mem.map((p) => p.y)) }));
     const named = nameAll(cand);
     const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); return a.k !== b.k && b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n); };
+    // (update 618) a place to aim has to be safe to aim at: not a sliver of rough or fairway beside a bunker that only
+    // scored well by luck. Within 6 yds of a spot's middle, if a quarter or more of all the misses (any lie) are in a
+    // bunker, it can't be the best or second best miss (it can still be the worst)
+    const risky = (g) => {
+      if (g.mem[0].lie === "bunker") return false;
+      const R = 6 * geo.ppy, nb = missPts.filter((p) => Math.hypot(p.x - g.cx, p.y - g.cy) <= R);
+      return nb.length >= 4 && nb.filter((p) => p.lie === "bunker").length / nb.length >= 0.25;
+    };
     const byAvg = [...named].sort((a, b) => a.avg - b.avg || b.n - a.n), pick = [];
-    for (const g of byAvg) if (pick.every((x) => apart(x, g))) pick.push(g);
+    for (const g of byAvg) { if (pick.length < 2 && risky(g)) continue; if (pick.every((x) => apart(x, g))) pick.push(g); }
     // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
     // different place that's scored worse than the second best
     if (pick.length === 2) {
