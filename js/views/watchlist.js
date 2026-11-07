@@ -443,13 +443,16 @@ export async function render(main, { previewClient }) {
       const cats = new Map(c.areas.list.filter((a) => !a.dist && !a.lie).map((a) => [a.cat, a]));
       // a distance or lie that's every shot of its part of the game (every tee shot is from the tee) only repeats it
       const ok = (a) => (a.wPrev >= 6 && a.wLast >= 6) && (!(a.dist || a.lie) || (cats.get(a.cat) && Math.abs(a.wPrev + a.wLast - cats.get(a.cat).wPrev - cats.get(a.cat).wLast) > 0.5));
-      const cand = c.areas.list.filter((a) => ok(a) && (!a.lie || a.cat === "ARG")); // (update 562: a lie only for Around-the-Green)
-      const lo = cand.reduce((p, a) => (!p || a.ch < p.ch ? a : p), null), hi = cand.reduce((p, a) => (!p || a.ch > p.ch ? a : p), null);
+      // (update 596) each player's 3 distances losing the most (Trending Down) and gaining the most (Trending Up), with
+      // their total; the 5 players with the biggest totals in each
+      const dists = c.areas.list.filter((a) => ok(a) && a.dist);
+      const worst = dists.filter((a) => a.ch < 0).sort((a, b) => a.ch - b.ch).slice(0, 3), best = dists.filter((a) => a.ch > 0).sort((a, b) => b.ch - a.ch).slice(0, 3);
+      const sum = (xs) => xs.reduce((t, a) => t + a.ch, 0);
       const fresh = !!(dOf(c.latest?.date) && newest && newest - dOf(c.latest.date) <= 10 * 864e5);
-      if (lo && lo.ch <= -0.2) down.push({ c, a: lo, fresh });
-      if (hi && hi.ch >= 0.2) up.push({ c, a: hi, fresh });
+      if (worst.length && sum(worst) <= -0.2) down.push({ c, list: worst, tot: sum(worst), a: worst[0], fresh });
+      if (best.length && sum(best) >= 0.2) up.push({ c, list: best, tot: sum(best), a: best[0], fresh });
     }
-    down.sort((x, y) => x.a.ch - y.a.ch); up.sort((x, y) => y.a.ch - x.a.ch);
+    down.sort((x, y) => x.tot - y.tot); up.sort((x, y) => y.tot - x.tot);
     const topD = down.slice(0, 5), topU = up.slice(0, 5);
     const status = new Map();
     for (const x of topU) status.set(x.c.key, "hot");
@@ -458,18 +461,21 @@ export async function render(main, { previewClient }) {
       el("div", { class: "wlb-h" }, [el("span", { class: "wlb-dot", "aria-hidden": "true" }), el("h3", {}, title), el("span", { class: "wlb-n" }, String(list.length))]),
       el("p", { class: "wlb-sub" }, sub),
       list.length ? el("ul", {}, list.map((x) => {
-        const n = x.c.areas.n, dn = kind === "concern";
-        const b = el("button", { type: "button", class: "wlb-item" }, [
+        const dn = kind === "concern", unit = x.c.areas.unit === "events" ? "an event" : "a round";
+        // (update 596) the player and their total, then each of their 3 distances (a tap: that one, in detail)
+        return el("li", { class: "wlb-item wlb-multi" }, [
           el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || ""), x.fresh ? el("em", { class: "wlb-fresh" }, "Just played") : null]),
-          el("span", { class: "wlb-area" }, `${dn ? "Down" : "Up"} in ${areaName(x.a)}`),
-          el("span", { class: "wlb-why" }, `${fmtSG(x.a.ch)} a round: ${fmtSG(x.a.last)} over the last ${n} ${x.c.areas.unit || "rounds"}, ${fmtSG(x.a.prev)} over the ${n} before`),
-          el("span", { class: "wlb-act" }, `${fmtSG(x.a.ch)}`)]);
-        b.addEventListener("click", () => openFocus(x, kind, ctx));
-        return el("li", {}, b);
+          el("span", { class: "wlb-act", title: `${dn ? "Losing" : "Gaining"} ${fmtSG(x.tot)} strokes ${unit} across these ${x.list.length}` }, fmtSG(x.tot)),
+          el("span", { class: "wlb-area" }, `${dn ? "Losing" : "Gaining"} ${fmtSG(Math.abs(x.tot)).replace(/^\+/, "")} ${unit} in ${x.list.length === 1 ? "1 distance" : `${x.list.length} distances`}`),
+          el("div", { class: "wlb-dists" }, x.list.map((a) => {
+            const b = el("button", { type: "button", class: "wlb-dist", title: `${fmtSG(a.last)} over the last ${x.c.areas.n} ${x.c.areas.unit || "rounds"}, ${fmtSG(a.prev)} over the ${x.c.areas.n} before` }, [el("span", {}, areaName(a)), el("b", {}, fmtSG(a.ch))]);
+            b.addEventListener("click", () => openFocus({ ...x, a }, kind, ctx));
+            return b;
+          }))]);
       })) : el("p", { class: "wlb-none" }, kind === "concern" ? "Nobody trending down." : "Nobody trending up.")]);
     const node = el("div", { class: "wl-brief" }, [
-      col("concern", "Trending Down", "The 5 biggest drops across your players: a part of the game, a distance or a lie, the last 12 rounds against the 12 before.", topD),
-      col("hot", "Trending Up", "The 5 biggest rises across your players, the same way.", topU),
+      col("concern", "Trending Down", "The 5 players losing the most: each one\u2019s 3 worst distances and their total, the last 12 rounds against the 12 before. Tap a distance for the detail.", topD),
+      col("hot", "Trending Up", "The 5 players gaining the most: each one\u2019s 3 best distances and their total, the same way.", topU),
     ]);
     return { node, status };
   }

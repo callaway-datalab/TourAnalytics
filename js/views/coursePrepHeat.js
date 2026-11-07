@@ -77,8 +77,7 @@ export async function drawHeat(ctx, course) {
   const stageWrap = el("div", { class: "sh-stage-wrap" }, [stage, pop]); // (update 501: the popup can sit above or below the map)
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
-  const calKey = el("div", { class: "sh-calkey", hidden: true }, [ // (update 594) what Cal's circles mean, above the map
-    el("span", {}, [el("i", { class: "k-good" }), "Aim \u00b7 best miss"]), el("span", {}, [el("i", { class: "k-ok" }), "2nd best miss"]), el("span", {}, [el("i", { class: "k-bad" }), "Avoid \u00b7 worst miss"])]);
+  const calKey = el("div", { class: "sh-calkey", hidden: true }); // (update 594) what Cal's circles mean, above the map (600: only those drawn for the shot picked)
   const stratBox = el("div", { class: "sh-strat", hidden: true }); // (update 588) the strategy insights for this hole and pin (589: Cal\u2019s Read)
   const teeBox = el("div", { class: "sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
   const udBox = el("div", { class: "sh-tee sh-ud3", hidden: true }); // (update 525: laid out as the Off the tee row, its blocks 3 x 3) // (update 491) up & down by where the approach missed, this pin
@@ -672,9 +671,8 @@ export async function drawHeat(ctx, course) {
     if (!read?.r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
     stratBox.hidden = false;
     const has = read.r.items.some((it) => it.at?.length);
-    const tg = has ? el("button", { type: "button", class: `btn ghost small cal-read-open${st.calOn ? " on" : ""}`, "aria-pressed": String(!!st.calOn) }, st.calOn ? "Hide Cal\u2019s circles" : "Circle Cal\u2019s spots on the map") : null;
-    tg?.addEventListener("click", () => { st.calOn = !st.calOn; drawStrat(); drawCal(); });
-    mount(stratBox, readCard(read, "", { foot: tg, collapsible: true, folded: !calOpen, onFold: (f) => { calOpen = !f; } }));
+    // (update 600) the Reads switch in the header (no button under the tips): Cal's circles on the map, on or off
+    mount(stratBox, readCard(read, "", { collapsible: true, folded: !calOpen, onFold: (f) => { calOpen = !f; }, reads: { on: !!st.calOn && has, can: has, onToggle: (on) => { st.calOn = on; drawCal(); } } }));
   }
   // (update 592) Cal's spots circled; (594) lime: where to aim and the best miss, gold: the second best, red: where to stay
   // out of and the worst miss; what they mean in the key above the map (no names on the map)
@@ -693,7 +691,15 @@ export async function drawHeat(ctx, course) {
       calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: "none", stroke: c, "stroke-opacity": 0.9, "stroke-width": 1.75, "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
       any = true;
     }
-    if (any) { calSvg.style.display = ""; calKey.hidden = false; }
+    if (any) {
+      // (update 600) the key: just the circles on the map for this shot (Shot 1: Aim, Avoid; the approach: Best miss, 2nd
+      // best miss, Worst miss; a par 5's Shot 2: the lay-up spot too)
+      const NAME = { tee: { good: "Aim", bad: "Avoid" }, miss: { good: "Best miss", ok: "2nd best miss", bad: "Worst miss" }, layup: { good: "Lay-up spot" } };
+      const seen = new Map();
+      for (const it of calRead.r.items) for (const a of it.at || []) { const nm = NAME[it.k]?.[a[3]] || (it.h && it.h !== "Surprise" ? it.h : null); if (nm && !seen.has(nm)) seen.set(nm, a[3] || "ok"); }
+      mount(calKey, [...seen].map(([nm, tone]) => el("span", {}, [el("i", { class: `k-${tone}` }), nm])));
+      calSvg.style.display = ""; calKey.hidden = !seen.size;
+    }
   }
   function drawTee() {
     if (!SHOW_MISS_MAPS) { teeBox.hidden = true; mount(teeBox, null); return; } // (update 594)

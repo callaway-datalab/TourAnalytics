@@ -41,11 +41,19 @@ export function readFor(S, ids) {
 /** Cal's card: { r: { base, n, items }, all }. (update 594) the title names the pin where it's needed ("Cal's Read · Back
  *  Right pin"); the line under it is just the samples; collapsible: a tap on the header folds it (remembered). */
 // (update 595) collapsible starts folded when asked (folded: true), and onFold(folded) is told each tap
-export function readCard(read, where = "", { compact = false, foot = null, collapsible = false, folded = false, onFold = null } = {}) {
+// (update 600) under the title "AI Caddy" (not the samples); reads: { on, onToggle, can } puts a Strategy switch where the tag
+// was (Cal's circles on the map, on or off; it works while the card is folded)
+export function readCard(read, where = "", { compact = false, foot = null, collapsible = false, folded = false, onFold = null, reads = null } = {}) {
   const { r } = read;
+  let sw = null;
+  if (reads) {
+    sw = el("button", { type: "button", class: `cal-read-sw${reads.on ? " on" : ""}`, "aria-pressed": String(!!reads.on), disabled: reads.can === false ? "" : null, title: reads.can === false ? "Nothing to circle for this shot" : "Show Cal\u2019s circles on the map" }, [el("i", { "aria-hidden": "true" }), "Strategy"]);
+    sw.addEventListener("click", (e) => { e.stopPropagation(); const on = !sw.classList.contains("on"); sw.classList.toggle("on", on); sw.setAttribute("aria-pressed", String(on)); reads.onToggle?.(on); });
+    sw.addEventListener("keydown", (e) => e.stopPropagation());
+  }
   const head = el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
-    el("div", { class: "cal-read-t" }, [el("strong", {}, where ? `${BRAND} \u00b7 ${where}` : BRAND), el("span", {}, `${r.n} samples`)]),
-    el("span", { class: "cal-read-tag" }, TAG), collapsible ? el("span", { class: "cal-read-chev", "aria-hidden": "true" }, "\u25BE") : null]);
+    el("div", { class: "cal-read-t" }, [el("strong", {}, where ? `${BRAND} \u00b7 ${where}` : BRAND), el("span", {}, "AI Caddy")]),
+    sw, collapsible ? el("span", { class: "cal-read-chev", "aria-hidden": "true" }, "\u25BE") : null]);
   const body = el("div", { class: "cal-read-b" }, [
     el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}${hOf(it) === "Surprise" ? " cal-read-sur" : ""}` }, [el("span", { class: "cal-read-k" }, [headOf(it), it.allPins ? el("small", {}, "every pin") : it.mine ? el("small", {}, `for ${read.who}`) : null]),
       // (update 595) a ring in the colour of each circle it has on the map
@@ -151,7 +159,15 @@ function courseIn(q, list) {
   }).filter((x) => x.hit > 0).sort((a, b) => b.hit - a.hit || b.frac - a.frac);
   if (!scored.length) return { none: true };
   const top = scored.filter((x) => x.hit === scored[0].hit && x.frac === scored[0].frac);
-  return top.length === 1 ? { c: top[0].c } : { many: top.map((x) => x.c) };
+  if (top.length === 1) return { c: top[0].c, same: [top[0].c] };
+  // (update 600) two uploads under the very same name (another year, another course number): one course to the question,
+  // the biggest and newest first (the rest tried in turn when the first has no read for the hole)
+  if (new Set(top.map((x) => norm(x.c.name))).size === 1) {
+    const ms = (c) => c.dataAt?.toMillis?.() ?? (Date.parse(c.dataAt) || 0);
+    const same = top.map((x) => x.c).sort((a, b) => (b.dataBytes || 0) - (a.dataBytes || 0) || ms(b) - ms(a));
+    return { c: same[0], same };
+  }
+  return { many: top.map((x) => x.c) };
 }
 const holeIn = (q) => { const m = /\bhole\s*(?:no\.?|number|#)?\s*(\d{1,2})\b/i.exec(q) || /\b(\d{1,2})(?:st|nd|rd|th)\s+hole\b/i.exec(q) || /\bthe\s+(\d{1,2})(?:st|nd|rd|th)\b/i.exec(q); return m ? Number(m[1]) : null; };
 function pinIn(q, pins) {
@@ -174,14 +190,20 @@ export async function answerStrategy(question0) {
   const list = (await listHeatCourses()).filter((c) => c.name);
   const found = courseIn(question, list);
   let meta = found.c || null;
-  if (!meta && found.many) return { text: `Which course: **${found.many.slice(0, 4).map((c) => c.name).join("**, **")}**? Ask again with its full name.` };
+  if (!meta && found.many) return { text: `Which course: **${[...new Set(found.many.map((c) => c.name))].slice(0, 4).join("**, **")}**? Ask again with its name, like \u201cTorrey Pines South\u201d.` };
   if (!meta && lastCourse) meta = list.find((c) => c.id === lastCourse) || null;
   if (!meta) return { cant: true, text: "Which course? Put its name in the question, like “the hole strategy on hole 2 at Torrey Pines South into a back left pin”." };
   lastCourse = meta.id;
   const h = holeIn(question) || (askedPin && askedPin.course === meta.id ? askedPin.hole : null);
   askedPin = null;
   if (!h) return { text: `Which hole at **${meta.name}**? Ask like “hole 2 at ${meta.name}, back left pin”.` };
-  const raw = await heatData(meta), data = withMerges(meta, raw), X = data?.insights?.holes?.[h];
+  // (update 600) same-named uploads: the first with a read for this hole
+  let raw = await heatData(meta), data = withMerges(meta, raw), X = data?.insights?.holes?.[h];
+  for (const alt of (found.same || []).slice(1)) {
+    if (X?.strategy && Object.keys(X.strategy).length) break;
+    const r2 = await heatData(alt).catch(() => null), d2 = r2 ? withMerges(alt, r2) : null, X2 = d2?.insights?.holes?.[h];
+    if (X2?.strategy && Object.keys(X2.strategy).length) { meta = alt; raw = r2; data = d2; X = X2; lastCourse = alt.id; }
+  }
   if (!data?.holes?.[h] && !X) return { cant: true, text: `I don’t have a hole ${h} at **${meta.name}**.` };
   const S = X?.strategy;
   if (!S || !Object.keys(S).length) return { cant: true, text: `My read for **${meta.name}** isn’t worked out yet${X && !X.strategy ? ": the course needs **Rebuild maps** on Upload Data" : `: there aren’t enough samples on hole ${h} yet`}.` };

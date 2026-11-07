@@ -672,7 +672,7 @@ async function ask(question) {
   try {
     const list = await playersYouCanSee();
     // (update 589) "the hole strategy on hole 2 at Torrey Pines South into a back left pin": Cal's Read
-    if (isStrategyQ(question) || isPinReply(question)) return reply(await answerStrategy(question));
+    if (isStrategyQ(question) || isPinReply(question)) return reply({ ...(await answerStrategy(question)), strat: true }); // (update 600: strat: no Compare link)
     const local = readLocal(question, list);
     // (update 396) "how will they rank over the next 3 years", "forecast", "next season": the forecaster
     if (FORECAST_Q.test(question)) {
@@ -714,7 +714,7 @@ async function ask(question) {
     // (update 598) a hole strategy question Cal's own check missed (misheard by voice, worded another way): Cal's Read
     if (plan.intent === "unsupported" && (STRAT_Q.test(spoken(question)) || /\b(strateg\w*|pin)\b/i.test(question)) && /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen)\b/i.test(question)) {
       const sa = await answerStrategy(question).catch(() => null);
-      if (sa && !(sa.cant && /^Which course\?/.test(sa.text))) return reply(sa);
+      if (sa && !(sa.cant && /^Which course\?/.test(sa.text))) return reply({ ...sa, strat: true });
     }
     if (plan.intent === "unsupported") return reply({ cant: true, text: plan.unsupported ? `I can\u2019t work that out from the data: ${plan.unsupported}` : "I can\u2019t work that out from the data. Ask about strokes gained or a stat for a player, a tournament or a period, or who leads the tour in something." });
     if (plan.intent !== "field") {
@@ -821,7 +821,7 @@ function draw() {
       el("p", { class: "muted small cal-fwd-note" }, "Opens Chat with a draft to Callaway Analyst. Nothing is sent until you press Send there.")]) : null;
     // (update 388) every answer: if it isn't what was asked, try Compare (and, for players and coaches, a human analyst)
     const cmpHref = askQ ? `#/comparisons?ask=${encodeURIComponent(askQ)}` : null;
-    const notIt = !m.go && !m.choices?.length && askQ && !m.err ? (() => {
+    const notIt = !m.go && !m.choices?.length && askQ && !m.err && !m.strat ? (() => {
       const a = el("a", { class: "link small cal-go", href: cmpHref }, m.cant ? "Try it in Compare \u2192" : "Open in Compare \u2192");
       const h = !staffer && analystAllowed() && !fwd ? el("a", { class: "link small cal-go", href: "#/questions" }, "Ask a human analyst") : null;
       h?.addEventListener("click", () => { try { sessionStorage.setItem("chat.prefill", `Question for an analyst: ${askQ}`); } catch { /* */ } closeCallie(); });
