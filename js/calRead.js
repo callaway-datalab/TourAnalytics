@@ -26,8 +26,15 @@ const plain = (t) => tidy(String(t).replace(/^(Approach|Surprise): (.)/, (_, k, 
 const nOnly = (n) => `${n < 15 ? "only " : ""}${n} samples`;
 
 /** The read for a pin: its own (a combined pin: its member with the most rounds), else every pin on the hole together. */
-export function readFor(S, ids) {
-  S = S || {};
+// (update 615) a read built before 615 with a best and a 2nd best miss but no worst: the 2nd best is the worst (red)
+const twoSpots = (r) => {
+  if (!r?.items) return r;
+  const has = (h) => r.items.some((it) => it.k === "miss" && it.h === h);
+  if (!has("2nd best miss") || has("Worst miss")) return r;
+  return { ...r, items: r.items.map((it) => (it.k === "miss" && it.h === "2nd best miss" ? { ...it, h: "Worst miss", t: String(it.t).replace(/^Second best:/, "Worst:"), at: (it.at || []).map((a) => { const b = [...a]; b[3] = "bad"; return b; }) } : it)) };
+};
+export function readFor(S0, ids) {
+  const S = Object.fromEntries(Object.entries(S0 || {}).map(([k, r]) => [k, twoSpots(r)]));
   const r = (ids || []).map((id) => S[id]).filter(Boolean).sort((a, b) => b.n - a.n)[0];
   // (update 592) a pin too thin for its own tee read: the tee shot from every pin on the hole (it hardly depends on the pin)
   if (r) {

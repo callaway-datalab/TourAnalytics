@@ -178,7 +178,9 @@ export function strategyOf(recs, par, geo = {}) {
         items.push({ k: "miss", h: "Green vs miss", t: `Hitting the green ${vn(a, gg.length)}; missing it within 30 yds ${vn(b, mm.length)}: a miss ${b >= a ? "costs" : "saves"} about ${Math.abs(b - a).toFixed(2)} a hole.` }); } }
     const atOf = (g, tone) => (g.at ? [g.at(tone)] : [circ(g.rs, apPt, tone)].filter(Boolean)); // (update 610: a spot's own circle)
     items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: atOf(b1, "good") });
-    items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "ok") });
+    // (update 615) only two spots: the other is the worst (red), not a second best
+    if (order.length === 2) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "bad") });
+    else items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "ok") });
     if (order.length >= 3) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${w.lab} ${vn(w.avg, w.n)}.`, at: atOf(w, "bad") });
   } else {
     const g = done.filter((r) => apOut(r) === "green"), m = done.filter((r) => r.side);

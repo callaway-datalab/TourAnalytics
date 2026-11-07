@@ -216,11 +216,22 @@ async function drawHome(ctx) {
   const noHit = el("p", { class: "muted small", hidden: true }, "No course by that name.");
   const cards = courses.length ? el("div", { class: "pr-course-grid" }, courses.map((c) => {
     const par = c.par.reduce((a, b) => a + (b || 0), 0), yds = c.yards.reduce((a, b) => a + (Number(b) || 0), 0);
-    const b = el("button", { type: "button", class: "pr-course", "data-name": `${c.name} ${c.location || ""} ${c.mapEvents || ""}`.toLowerCase() }, [
-      el("strong", {}, c.name),
-      c.mapEvents ? el("span", { class: "muted small pr-course-ev" }, c.mapEvents) : null,
-      el("span", { class: "muted small" }, [c.location, c.par.length ? `${c.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}` : null].filter(Boolean).join(" · ")),
-      el("span", { class: "pr-sess-tag" }, c.rounds.length ? `${c.rounds.length} round${c.rounds.length === 1 ? "" : "s"} played` : c.from),
+    // (update 615) a card: a small hole drawing (its shape from the course's name), the name, the tournament in gold,
+    // chips for holes, par and yards, and a tag
+    let hsh = 0; for (const ch of c.name) hsh = (hsh * 31 + ch.charCodeAt(0)) >>> 0;
+    const bend = ((hsh % 7) - 3) * 6, tilt = ((hsh >> 3) % 5) - 2;
+    const art = el("span", { class: "prc-art", "aria-hidden": "true" });
+    art.innerHTML = `<svg viewBox="0 0 64 80"><path d="M${26 + tilt * 2} 80 C${24 + bend} 56 ${34 - bend} 36 ${32 + tilt} 20 L${42 + tilt} 18 C${46 - bend} 36 ${38 + bend} 58 ${40 + tilt * 2} 80 Z" fill="#3f7a35"/><ellipse cx="${37 + tilt}" cy="16" rx="11" ry="8" fill="#5fae4d"/><path d="M${38 + tilt} 16 V4" stroke="#f5f5f7" stroke-width="1.6"/><path d="M${38.5 + tilt} 4.5 l7 2.5 -7 2.5z" fill="#d4b483"/>${hsh % 3 ? `<ellipse cx="${24 + (hsh % 5)}" cy="${30 + (hsh % 9)}" rx="4" ry="3" fill="#efe6cf"/>` : ""}</svg>`;
+    const chip = (t) => (t ? el("span", { class: "prc-chip" }, t) : null);
+    const b = el("button", { type: "button", class: "pr-course prc", "data-name": `${c.name} ${c.location || ""} ${c.mapEvents || ""}`.toLowerCase() }, [
+      art,
+      el("span", { class: "prc-body" }, [
+        el("strong", {}, c.name),
+        c.mapEvents ? el("span", { class: "muted small pr-course-ev" }, c.mapEvents) : null,
+        el("span", { class: "prc-chips" }, [chip(c.location), c.par.length ? chip(`${c.par.length} holes`) : null, c.par.length ? chip(`Par ${par}`) : null, yds ? chip(`${yds.toLocaleString()} yds`) : null]),
+        el("span", { class: "pr-sess-tag" }, c.rounds.length ? `${c.rounds.length} round${c.rounds.length === 1 ? "" : "s"} played` : c.from),
+      ]),
+      el("span", { class: "prc-go", "aria-hidden": "true" }, "\u203A"),
     ]);
     b.addEventListener("click", () => ctx.go({ name: "prepMenu", course: c }));
     b.__course = c;
@@ -266,14 +277,14 @@ async function drawHome(ctx) {
       if (!evs.size) continue;
       const list = [...evs].sort((a, b2) => b2[1].size - a[1].size || a[0].localeCompare(b2[0])).map(([e, ys]) => `${e}${yrs(ys)}`);
       b.querySelector(".pr-course-ev")?.remove();
-      b.insertBefore(el("span", { class: "muted small pr-course-ev" }, list.join(" \u00b7 ")), b.children[1] || null);
+      { const host = b.querySelector(".prc-body") || b; host.insertBefore(el("span", { class: "muted small pr-course-ev" }, list.join(" \u00b7 ")), host.children[1] || null); } // (update 615: inside the card's text)
       b.dataset.name += ` ${[...evs.keys()].join(" ").toLowerCase()}`; // (the search finds a course by its tournament too)
     }
   }).catch(() => {});
   // (update 160) a real course, then a random one (update 162: a course's reports are inside it, under Course Maps)
   mount(ctx.body, [
     ...resumeRows(ctx), // (update 601) no intro panel; the list is just "Courses"
-    el("section", { class: "panel" }, [el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "Courses")]), add]), cards, noHit]),
+    el("section", { class: "panel prc-panel" }, [el("div", { class: "pr-sub prc-head" }, [el("div", {}, [el("p", { class: "prc-k" }, "COURSE PREP"), el("h2", {}, ["Courses", el("span", { class: "prc-n" }, String(courses.length))]), el("p", { class: "muted small" }, "Maps, Cal\u2019s strategy and your history for every course")]), add]), cards, noHit]),
     historyPanel(ctx), // (update 525: no "Simulate a random course" here)
   ]);
 }

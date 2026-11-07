@@ -21,7 +21,7 @@ import { fmtSG, sgColor, CATEGORIES } from "../sg.js";
 // Short lie names for the narrow shot bands (the full words are in the band's label).
 const SHORT_LIE = { "Tee box": "Tee", Fairway: "Fwy", Rough: "Rgh", Bunker: "Bkr", Recovery: "Rec", Green: "Grn", Penalty: "Pen" };
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const toPar = (n) => (n === 0 ? "E" : n > 0 ? `+${n}` : String(n));
+const toPar = (n) => (n === 0 ? "E" : n > 0 ? `+${n}` : `\u2212${-n}`); // (update 615: a true minus)
 
 export async function render(main, { params, routeId, flash, previewClient }) {
   // Inside someone's portal (a preview), Data Entry is theirs: their rounds, and new rounds are theirs.
@@ -46,9 +46,13 @@ function renderList(main, viewing = null) {
   const myKey = viewing ? viewing.key : myEntryKey(state);
   const list = el("div", { class: "entry-list" });
   mount(main, [
-    el("div", { class: "entry-top" }, [
-      el("a", { class: "btn entry-big", href: "#/entry/new" }, "\uFF0B Start a new round"),
-    ]),
+    // (update 615) a hero tile to start a round: a flag on a green, a line on what it does, a big gold +
+    (() => { const a = el("a", { class: "ent-hero", href: "#/entry/new" }, [
+      el("span", { class: "ent-art", "aria-hidden": "true" }),
+      el("span", { class: "ent-txt" }, [el("span", { class: "ent-k" }, "ENTER NEW ROUND"), el("b", {}, "Start a new round"), el("span", {}, "Score it shot by shot: tap or speak. Every round sharpens your numbers.")]),
+      el("span", { class: "ent-plus", "aria-hidden": "true" }, "+")]);
+      a.querySelector(".ent-art").innerHTML = '<svg viewBox="0 0 120 120"><ellipse cx="60" cy="96" rx="46" ry="13" fill="#3e8e3a"/><ellipse cx="60" cy="94" rx="40" ry="10" fill="#5fae4d"/><path d="M60 92 V22" stroke="#f5f5f7" stroke-width="3" stroke-linecap="round"/><path d="M61 23 l30 11 -30 11 z" fill="#d4b483"/><circle cx="60" cy="93" r="3.5" fill="#0b0b0d"/></svg>';
+      return a; })(),
     list,
   ]);
   const draw = (rounds) => {
@@ -64,21 +68,27 @@ function renderList(main, viewing = null) {
         del.disabled = true;
         try { await deleteRound(r.playerKey, r.id); } catch { del.disabled = false; alert("Couldn't delete that round. Try again."); }
       });
-      const card = el("a", { class: "entry-card", href: `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}` }, [
+      // (update 615) a card: a bar in the score's colour, the course, chips (date, type, place), a progress bar while it's
+      // being played, and the score to par in a big badge
+      const done0 = r.status === "complete", rel = done0 ? score - par : thru ? score - parThru(r) : null, nH = r.holes?.length || 18;
+      const tone = rel == null ? "even" : rel < 0 ? "under" : rel > 0 ? "over" : "even";
+      const chip = (t) => (t ? el("span", { class: "ent-chip" }, t) : null);
+      const card = el("a", { class: `entry-card ent-card ${tone}`, href: `#/entry/${encodeURIComponent(r.playerKey)}/${r.id}` }, [
         el("div", { class: "entry-card-main" }, [
           el("strong", {}, r.course || "Round"),
-          el("span", { class: "muted" }, [r.date, r.tour || r.type ? ` \u00b7 ${r.tour || (r.type === "tournament" ? "Tournament" : "Practice")}` : "", r.location ? ` \u00b7 ${r.location}` : ""].join("")),
+          el("span", { class: "ent-chips" }, [chip(r.date), chip(r.tour || (r.type ? (r.type === "tournament" ? "Tournament" : "Practice") : "")), chip(r.location)]),
+          done0 ? null : el("span", { class: "ent-prog", title: `${thru} of ${nH} holes` }, [el("i", { style: `width:${Math.round((100 * thru) / nH)}%` }), el("em", {}, thru ? `Thru ${thru} of ${nH}` : "Not started")]),
         ]),
-        el("div", { class: "entry-card-score" }, r.status === "complete"
-          ? [el("strong", {}, String(score)), el("span", { class: "muted" }, toPar(score - par))]
-          : [el("strong", {}, thru ? toPar(score - parThru(r)) : "\u2014"), el("span", { class: "muted" }, thru ? `thru ${thru}` : "not started")]),
+        el("div", { class: "entry-card-score ent-badge" }, done0
+          ? [el("strong", {}, toPar(score - par)), el("span", {}, `${score} total`)]
+          : [el("strong", {}, thru ? toPar(score - parThru(r)) : "\u2014"), el("span", {}, thru ? "to par" : "")]),
       ]);
       return el("div", { class: "entry-row" }, [card, del]);
     };
     const live = rounds.filter((r) => r.status !== "complete"), done = rounds.filter((r) => r.status === "complete");
     mount(list, [
-      live.length ? el("h2", {}, "In progress") : null, ...live.map(row),
-      done.length ? el("h2", {}, "Completed") : null, ...done.map(row),
+      live.length ? el("h2", { class: "ent-h" }, [el("i", { class: "ent-live", "aria-hidden": "true" }), "In progress"]) : null, ...live.map(row),
+      done.length ? el("h2", { class: "ent-h" }, "Completed") : null, ...done.map(row),
     ]);
   };
   return watchPlayerRounds(myKey, draw); // your own rounds (or, inside someone's portal, theirs)
