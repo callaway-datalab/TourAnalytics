@@ -170,7 +170,7 @@ async function myCourses(ctx) {
 
 let coursesCache = null;
 async function drawHome(ctx) {
-  mount(ctx.body, [hero(), el("p", { class: "muted pr-loading ta-loading" }, "Loading your courses…")]);
+  mount(ctx.body, [el("p", { class: "muted pr-loading ta-loading" }, "Loading your courses…")]); // (update 601: no intro panel)
   const courses = coursesCache || (coursesCache = await myCourses(ctx));
   if (ctx.view.name !== "home") return;
   // (update 589) from Cal's Read: open that hole and pin on Strategy Maps
@@ -272,8 +272,8 @@ async function drawHome(ctx) {
   }).catch(() => {});
   // (update 160) a real course, then a random one (update 162: a course's reports are inside it, under Course Maps)
   mount(ctx.body, [
-    hero(), ...resumeRows(ctx),
-    el("section", { class: "panel" }, [el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "Prepare for a real course"), el("p", { class: "muted small" }, "Pick a course for its maps, your history there, or to simulate a round.")]), add]), cards, noHit]),
+    ...resumeRows(ctx), // (update 601) no intro panel; the list is just "Courses"
+    el("section", { class: "panel" }, [el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "Courses")]), add]), cards, noHit]),
     historyPanel(ctx), // (update 525: no "Simulate a random course" here)
   ]);
 }

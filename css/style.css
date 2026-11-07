@@ -6209,3 +6209,10 @@ div.sh-ud3-green { cursor: default; }
 .cal-read-sw[disabled] { opacity: 0.4; cursor: default; }
 .cal-read-sw + .cal-read-chev { margin-left: 2px; }
 .cal-read-t span { letter-spacing: 0.02em; }
+/* (update 601) Watchlist: Trending Down / Up start folded (tap the header); the Strategy switch glows when on */
+.wlb-h.wlb-fold { width: 100%; border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.wlb-chev { color: #a1a1a6; font-size: 0.85rem; margin-left: 6px; transition: transform 0.15s ease; }
+.wlb-col.folded .wlb-chev { transform: rotate(-90deg); }
+.wlb-col.folded .wlb-sub, .wlb-col.folded > ul, .wlb-col.folded .wlb-none { display: none; }
+.wlb-col.folded .wlb-h { margin-bottom: 0; }
+.cal-read-sw.on { box-shadow: 0 0 10px 1px rgba(212,180,131,0.55), 0 0 2px rgba(212,180,131,0.9); }

@@ -130,6 +130,7 @@ export async function render(main, { previewClient }) {
   let tourSel = null; try { tourSel = localStorage.getItem("wl.tour") || null; } catch { /* */ }
   let filtersOpen = false;
   // (update 560) the table's order: tap a column (again: the other way; a third time: your own order)
+  const briefOpen = { concern: false, hot: false }; // (update 601) Trending Down / Up start folded; a tap on the header opens one
   let colSort = { k: null, dir: -1 }; try { colSort = { ...colSort, ...(JSON.parse(localStorage.getItem("wl.colSort") || "null") || {}) }; } catch { /* */ }
   const setSort = (k) => { colSort = colSort.k !== k ? { k, dir: k === "name" ? 1 : -1 } : colSort.dir === (k === "name" ? 1 : -1) ? { k, dir: -colSort.dir } : { k: null, dir: -1 }; try { localStorage.setItem("wl.colSort", JSON.stringify(colSort)); } catch { /* */ } draw(); };
   let menuOpen = false;
@@ -457,8 +458,9 @@ export async function render(main, { previewClient }) {
     const status = new Map();
     for (const x of topU) status.set(x.c.key, "hot");
     for (const x of topD) status.set(x.c.key, "concern");
-    const col = (kind, title, sub, list) => el("section", { class: `wlb-col wlb-${kind}` }, [
-      el("div", { class: "wlb-h" }, [el("span", { class: "wlb-dot", "aria-hidden": "true" }), el("h3", {}, title), el("span", { class: "wlb-n" }, String(list.length))]),
+    const col = (kind, title, sub, list) => { const hd = el("button", { type: "button", class: "wlb-h wlb-fold", "aria-expanded": String(briefOpen[kind]) }, [el("span", { class: "wlb-dot", "aria-hidden": "true" }), el("h3", {}, title), el("span", { class: "wlb-n" }, String(list.length)), el("span", { class: "wlb-chev", "aria-hidden": "true" }, "\u25BE")]);
+      const sec = el("section", { class: `wlb-col wlb-${kind}${briefOpen[kind] ? "" : " folded"}` }, [
+      hd,
       el("p", { class: "wlb-sub" }, sub),
       list.length ? el("ul", {}, list.map((x) => {
         const dn = kind === "concern", unit = x.c.areas.unit === "events" ? "an event" : "a round";
@@ -473,6 +475,8 @@ export async function render(main, { previewClient }) {
             return b;
           }))]);
       })) : el("p", { class: "wlb-none" }, kind === "concern" ? "Nobody trending down." : "Nobody trending up.")]);
+      hd.addEventListener("click", () => { briefOpen[kind] = !briefOpen[kind]; sec.classList.toggle("folded", !briefOpen[kind]); hd.setAttribute("aria-expanded", String(briefOpen[kind])); });
+      return sec; };
     const node = el("div", { class: "wl-brief" }, [
       col("concern", "Trending Down", "The 5 players losing the most: each one\u2019s 3 worst distances and their total, the last 12 rounds against the 12 before. Tap a distance for the detail.", topD),
       col("hot", "Trending Up", "The 5 players gaining the most: each one\u2019s 3 best distances and their total, the same way.", topU),

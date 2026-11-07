@@ -100,6 +100,7 @@ export function strategyOf(recs, par, geo = {}) {
   // ---- the approach: every result (the green, and each miss's side and lie within 30 yds) against every other ----
   // (update 590) always said: the miss order by side and lie (8+ rounds each), else by side, else the green against a miss
   const apOut = (r) => {
+    if (r.fringe) return null; // (update 601) the fringe right by the green: neither a miss nor the green
     if (r.side) return `${r.side}|${r.mLie || "other"}`;
     const q = r.apIdx != null ? r.qs[r.apIdx + 1] : null;
     return q && q[3] === 4 ? "green" : null;
