@@ -419,7 +419,7 @@ export function sgDashboard(container, opts) {
         if (!me && st.statWanted === "stretch") return [stretchBoard(slicedField)]; // (update 332: the Leaderboards' Best Stretches)
         if (!me && st.statWanted === "form1") return [formBoard(slicedField)]; // (update 333: #1 Form)
         // (update 470) a player's strokes gained: Focus (the short story) or Full stats (everything), switched at the top
-        if (focusOn) return sgFocus.focusView(S, focusMine, focusField, f);
+        if (focusOn) return sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour }))); // (update 611: every year, for the radar)
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         // (update 205) "Getting better or worse?" right under the hero card

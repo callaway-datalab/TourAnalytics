@@ -6344,3 +6344,14 @@ div.sh-ud3-green { cursor: default; }
 .hm-pk-r i { font-style: normal; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.08); color: #c7c7cc; font-weight: 700; }
 .hm-pk-r.on { border-color: rgba(76,209,126,0.4); background: rgba(76,209,126,0.08); }
 .hm-pk-r.on i { background: #4cd17e; color: #0b0b0d; }
+/* (update 611) Home: the Cal card taller at the top (the orb's glow inside it), less space under the greeting; a smaller "+";
+   Cal: the box glows red while it's listening */
+.hm-top { padding-bottom: 6px; }
+.hm-cal { padding-top: 36px; }
+.hm-orb { margin-bottom: 18px; }
+.hm-ex + .hm-ex { margin-top: 2px; }
+.hm-plus { width: 24px; height: 24px; font-size: 1rem; }
+.cal-foot.rec .cal-in { border-color: rgba(229,37,42,0.7) !important; box-shadow: 0 0 0 3px rgba(229,37,42,0.18); }
+.hm .hm-h { margin: 2px 0 0 !important; }
+.hm .hm-top { margin: 0 !important; padding-bottom: 12px; }
+.hm .hm-cal { margin-top: 6px !important; }

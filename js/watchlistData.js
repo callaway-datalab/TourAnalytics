@@ -48,6 +48,8 @@ export function periodFilter(period, rounds) {
   if (period === "l3") return { months: 3 }; // (update 172)
   if (period === "l6" || period === "l12") return { months: 6 }; // (update 167: Last 6 months; an old "l12" pick lands here)
   if (period === "all") return {};
+  // (update 611) every year but one ("ex:2026": the years before the latest, for the radar's second line)
+  if (/^ex:\d{4}$/.test(String(period))) { const ys = [...new Set(rounds.map((r) => String(r.year || String(r.date || "").slice(0, 4))).filter(Boolean))].filter((y) => y !== String(period).slice(3)); return { year: ys.length ? ys : ["none"] }; }
   const years = [...new Set(rounds.map((r) => r.year).filter(Boolean))].sort();
   return years.length ? { year: [years.at(-1)] } : {};
 }

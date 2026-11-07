@@ -844,33 +844,50 @@ export async function openCallie() {
   if (!panel) {
     const input = el("textarea", { class: "cal-in", rows: 2, placeholder: "Ask Cal…", "aria-label": "Your question" });
     const send = el("button", { type: "button", class: "btn cal-send", "aria-label": "Send" }, "Ask");
-    const go = () => { const t = input.value.trim(); if (!t || busy) return; input.value = ""; ask(t); };
-    send.addEventListener("click", go);
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
-    // (update 593) ask with your voice: the browser's own speech to text (the same red microphone as Enter New Round);
-    // what's heard fills the box as you speak, and when you stop it's asked. Tap again to stop early. No microphone
-    // support (Firefox, some in-app browsers): no button.
+    // (update 593) ask with your voice: the browser's own speech to text (the same red microphone as Enter New Round).
+    // (update 611) it keeps listening (through pauses: a session the browser ends is started again) until you tap Ask,
+    // and what it hears shows in the box as you say it; a tap on the microphone stops without asking (to edit first).
+    // No microphone support (Firefox, some in-app browsers): no button.
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let rec = null;
     const PH = "Ask Cal\u2026";
+    let rec = null, listening = false, committed = "";
     const mic = SR ? el("button", { type: "button", class: "cal-mic", "aria-label": "Ask with your voice", title: "Ask with your voice" }) : null;
     if (mic) mic.innerHTML = '<svg viewBox="0 0 40 40" width="22" height="22"><circle cx="20" cy="20" r="20" fill="#e5252a"/><rect x="15.5" y="7.5" width="9" height="16" rx="4.5" fill="#fff"/><path d="M12 19.5a8 8 0 0 0 16 0" fill="none" stroke="#fff" stroke-width="2"/><line x1="20" y1="27.5" x2="20" y2="31.5" stroke="#fff" stroke-width="2"/><line x1="15.5" y1="32" x2="24.5" y2="32" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
-    mic?.addEventListener("click", () => {
-      if (rec) { try { rec.stop(); } catch { /* already stopped */ } return; }
-      if (busy) return;
+    const stopListening = () => {
+      listening = false; const r = rec; rec = null; try { r?.stop(); } catch { /* already stopped */ }
+      mic?.classList.remove("on"); mic?.setAttribute("aria-pressed", "false"); panel?.querySelector(".cal-foot")?.classList.remove("rec");
+      if (input.placeholder.startsWith("Listening")) input.placeholder = PH;
+    };
+    const startSession = () => {
       const r = new SR(); rec = r;
-      r.lang = navigator.language || "en-US"; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
-      const before = input.value.trim();
-      let heard = "", err = null;
-      r.onresult = (e) => { heard = [...e.results].map((x) => x[0].transcript).join(" ").replace(/\s+/g, " ").trim(); input.value = [before, heard].filter(Boolean).join(" "); };
-      r.onerror = (e) => { err = e.error; };
-      r.onend = () => {
-        rec = null; mic.classList.remove("on"); mic.setAttribute("aria-pressed", "false"); input.placeholder = PH;
-        if (err === "not-allowed" || err === "service-not-allowed") { input.placeholder = "Microphone blocked: allow it for this site in the browser\u2019s settings, or type"; return; }
-        if (heard) go(); else if (err && err !== "aborted") input.placeholder = "I didn\u2019t catch that. Tap the microphone and try again, or type";
+      r.lang = navigator.language || "en-US"; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+      const base = committed;
+      r.onresult = (e) => {
+        if (!listening || rec !== r) return;
+        let fin = "", tmp = "";
+        for (const x of e.results) { if (x.isFinal) fin += `${x[0].transcript} `; else tmp += `${x[0].transcript} `; }
+        committed = [base, fin.trim()].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+        input.value = [committed, tmp.trim()].filter(Boolean).join(" ");
+        input.scrollTop = input.scrollHeight;
       };
-      try { r.start(); mic.classList.add("on"); mic.setAttribute("aria-pressed", "true"); input.placeholder = "Listening\u2026 tap the microphone again to stop"; }
-      catch { rec = null; }
+      r.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopListening(); input.placeholder = "Microphone blocked: allow it for this site in the browser\u2019s settings, or type"; } };
+      r.onend = () => {
+        if (rec !== r) return;
+        rec = null;
+        if (listening) { committed = input.value.trim(); setTimeout(() => { if (listening && !rec) { try { startSession(); } catch { stopListening(); } } }, 150); } // (a pause ended it: keep listening)
+      };
+      r.start();
+    };
+    const go = () => { if (listening) stopListening(); const t = input.value.trim(); if (!t || busy) return; input.value = ""; committed = ""; ask(t); };
+    send.addEventListener("click", go);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
+    mic?.addEventListener("click", () => {
+      if (listening) { stopListening(); input.focus(); return; }
+      if (busy) return;
+      committed = input.value.trim(); listening = true;
+      try { startSession(); } catch { listening = false; return; }
+      mic.classList.add("on"); mic.setAttribute("aria-pressed", "true"); panel?.querySelector(".cal-foot")?.classList.add("rec");
+      input.placeholder = "Listening\u2026 tap Ask when you\u2019re done";
     });
     const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close Cal" }, "✕");
     close.addEventListener("click", closeCallie);

@@ -3,6 +3,7 @@
 // worth (a round, and on the season rank), a drill for each; whether the practice they've added is working (strokes
 // gained there since they added it); and what to keep doing. Full stats is one tap away (the switch above it).
 // Takes S first, like the other Stats page sections (see sgDashboard.js).
+import { radar, radarKey, catVals, yearSplit } from "./radarChart.js"; // (update 611)
 import { el, mount, infoTip, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
 
 const CAT = Object.fromEntries(CATEGORIES);
@@ -49,7 +50,7 @@ function goalStat(rounds, cat, dist, { pctMin = 20, min = 8 } = {}) {
   return null;
 }
 
-export function focusView(S, mine, slicedField, f = {}) {
+export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   const me = S.me, st = S.st;
   // (update 471) the parts of the game picked (none, or all four, is everything: SG: Total)
   const CATS = ["OTT", "APP", "ARG", "PUTT"];
@@ -316,7 +317,15 @@ export function focusView(S, mine, slicedField, f = {}) {
     gains.length ? el("ul", { class: "fx-list" }, gains.map((b) => el("li", {}, [el("strong", {}, nameOf(b)), " \u00b7 ", el("span", { class: "pos" }, `${f2(b.perRd)} a round`), el("span", { class: "muted" }, ` (${b.att.toFixed(1)} shots a round)`)])))
       : el("p", { class: "muted small" }, `Nothing in ${on ? picked.toLowerCase() : "the game"} is gaining strokes against the tour over the last ${N} rounds.`)]);
 
-  return [head, stand, loseBox, working.childNodes.length ? working : null, keep].filter(Boolean);
+  // (update 611) the game as a radar: their latest year (green) against the years before (gold), and tour average
+  const radarBox = (() => {
+    const sp = yearSplit(everyYear || []); if (!sp) return null;
+    const v = catVals(sp.now), c = sp.before.length ? catVals(sp.before) : null; if (!v) return null;
+    return el("section", { class: "panel fx fx-radar" }, [el("p", { class: "fx-eyebrow" }, "Your game \u00b7 against tour average"),
+      radar(v, { c, cLabel: sp.beforeLabel }), radarKey(el, sp.nowLabel, c ? sp.beforeLabel : null),
+      el("p", { class: "muted small fx-when" }, "Outside the dashed circle: better than tour average. Every round on this tour, whatever the time frame above.")]);
+  })();
+  return [head, stand, radarBox, loseBox, working.childNodes.length ? working : null, keep].filter(Boolean);
 }
 
 /** The Focus / Full stats switch. */

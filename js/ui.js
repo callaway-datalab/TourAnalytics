@@ -125,6 +125,7 @@ const sectionsFor = (kind) => {
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     ["Compare", "#/comparisons", ["comparisons"]], // (update 205: Deep Dives; 209: Compare)
     ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
+    ["Event Feed", "#/live", ["live"]], // (update 611: in Analyze, after Leaderboards; no longer in the top bar)
     // (update 209) no Product Usage tab: product usage is in Compare (staff can compare products across everyone)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
@@ -309,7 +310,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
         const link = el("a", { href, "aria-current": isCurrent ? "page" : null }, [icon(ic), text(" " + label)]);
         return link;
       }),
-    liveLink(currentRoute), // (update 188) Live Feed, right of Play: greyed out with no live event
+    // (update 611) the Event Feed is in Analyze now (after Leaderboards), not in the top bar
   ]);
 
   const askBadge = showBadge ? el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount)) : null;
