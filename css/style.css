@@ -6108,3 +6108,27 @@ div.sh-ud3-green { cursor: default; }
     max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 22px) !important; }
   .gx-pop-overlay > .gx-pop.wlh-pop > .wlh-body, .gx-pop-overlay > .gx-pop > .wl-pop-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 }
+/* (update 588) Course Prep: the Strategy card (what the shots say to aim for and avoid on this hole) */
+.sh-strat { margin: 8px 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(212,180,131,0.3); background: linear-gradient(135deg, rgba(212,180,131,0.08), rgba(255,255,255,0.02)); }
+.sh-strat[hidden] { display: none; }
+.sh-strat-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.sh-strat-h strong { color: #d4b483; font-size: 0.9rem; letter-spacing: 0.02em; }
+.sh-strat ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sh-strat li { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 8px; font-size: 0.82rem; line-height: 1.4; }
+.sh-strat-k { color: #a1a1a6; font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 2px; }
+.sh-strat-surprise .sh-strat-k { color: #ffd60a; }
+@media (max-width: 520px) { .sh-strat li { grid-template-columns: 1fr; gap: 1px; } }
+/* (update 588) Course Insights: the Strategy section (surprises, then each hole's findings) */
+.ci2-sg-sur { padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,214,10,0.28); background: rgba(255,214,10,0.05); margin-bottom: 10px; }
+.ci2-sg-sur h3 { margin: 0 0 6px; font-size: var(--fs-sm); color: #ffd60a; }
+.ci2-sg-sur ul, .ci2-sg-hole ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.84rem; line-height: 1.4; }
+.ci2-sg-sur b { color: #d4b483; }
+.ci2-sg-holes { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; align-items: start; }
+.ci2-sg-hole { border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 8px 12px; }
+.ci2-sg-hole summary { cursor: pointer; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.ci2-sg-hole[open] summary { margin-bottom: 8px; }
+.ci2-sg-hole ul li { display: grid; grid-template-columns: 6.8rem minmax(0, 1fr); gap: 8px; }
+.ci2-sg-k { color: #a1a1a6; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 2px; }
+.ci2-sg-surprise .ci2-sg-k { color: #ffd60a; }
+.ci2-sg-hole .btn { margin-top: 8px; }
+@media (max-width: 520px) { .ci2-sg-holes { grid-template-columns: 1fr; } .ci2-sg-hole ul li { grid-template-columns: 1fr; gap: 1px; } }

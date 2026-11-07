@@ -49,7 +49,8 @@ export async function drawInsights(ctx, course) {
     const holesSec = el("section", { class: "panel ci2-sec" });
     const drawHoles = () => mount(holesSec, holesBlock(H, S, name, (h) => { st.hole = st.hole === h ? null : h; drawHoles(); }, (h) => ctx.go({ name: "prepHeat", course: { ...course, startHole: h } })));
     drawHoles();
-    mount(body, [scores(I), plan(H, openHole), holesSec, faced(S, all, name), ...vsTop(H, S, name, first, openHole)].filter(Boolean));
+    const toMap = (h) => ctx.go({ name: "prepHeat", course: { ...course, startHole: h } });
+    mount(body, [scores(I), plan(H, openHole), strategy(I, holeNums, toMap), holesSec, faced(S, all, name), ...vsTop(H, S, name, first, openHole)].filter(Boolean));
   }
   ready = true;
   await draw();
@@ -125,6 +126,25 @@ function plan(H, openHole) {
       b.addEventListener("click", () => openHole(x.h));
       return b;
     }))])), "Tap a hole for its numbers.");
+}
+
+/* ---------------- (update 588) strategy: what every player's shots say to aim for and avoid, hole by hole ---------------- */
+const SGK = { tee: "Off the tee", miss: "Approach", surprise: "Surprise", layup: "Go or lay up" };
+function strategy(I, holeNums, toMap) {
+  const rows = holeNums.map((h) => ({ h, par: I.holes[h]?.par, sg: I.holes[h]?.strategy?.["*"] })).filter((x) => x.sg?.items?.length);
+  if (!rows.length) return null;
+  const item = (it) => el("li", { class: `ci2-sg-${it.k}` }, [el("span", { class: "ci2-sg-k" }, SGK[it.k] || ""), el("span", {}, it.t.replace(/^(Approach|Surprise): /, ""))]);
+  const sur = rows.flatMap((x) => x.sg.items.filter((it) => it.k === "surprise").map((it) => ({ ...x, it })));
+  const kids = [];
+  if (sur.length) kids.push(el("div", { class: "ci2-sg-sur" }, [el("h3", {}, "Surprises"), el("ul", {}, sur.slice(0, 6).map((x) => el("li", {}, [el("b", {}, `Hole ${x.h}`), " ", x.it.t.replace(/^Surprise: /, "")])))]));
+  kids.push(el("div", { class: "ci2-sg-holes" }, rows.map((x) => {
+    const open = el("button", { type: "button", class: "btn ghost small" }, "Open the map");
+    open.addEventListener("click", () => toMap(x.h));
+    return el("details", { class: "ci2-sg-hole" }, [
+      el("summary", {}, [el("strong", {}, `Hole ${x.h}`), el("span", { class: "muted small" }, ` Par ${x.par ?? "\u2014"} \u00b7 ${x.sg.items.length} ${x.sg.items.length === 1 ? "insight" : "insights"} \u00b7 ${x.sg.n} rounds`)]),
+      el("ul", {}, x.sg.items.map(item)), open]);
+  })));
+  return sec("STRATEGY", kids, `From every player's shots here, every pin together (a hole's map shows them pin by pin). A finding needs at least 8 rounds; under 15 it says so. Scores are the hole's average after each result.`);
 }
 
 /* ---------------- every hole as a tile; one open with its numbers ---------------- */

@@ -16,6 +16,7 @@ import { db } from "./firebase-init.js";
 import { listHeatCourses, writeChunks, readChunks, heatId, resetHeatList, lieName } from "./courseHeat.js";
 import { sameCourse } from "./sg.js";
 import { clientKey } from "./data.js";
+import { strategyOf } from "./strategy.js"; // (update 588)
 
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLS = { year: ["year", "season"], courseNum: ["coursenum", "coursenumber", "courseid"], course: ["course", "coursename"], player: ["player", "playername", "name"], playerID: ["playerid", "player_id", "pid"],
@@ -335,7 +336,7 @@ export function courseInsights(C) {
     const hb = holeBoards(shots, pins, H?.par || 4); hbMemo.set(h, hb); return hb;
   };
   const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
-  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, ps: {}, land: [] };
+  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, ps: {}, land: [], sp: {} };
   for (const [key, t, qs] of all) {
     const X = holes[t.h]; if (!X) continue;
     const par = X.par, isTop = top.has(`${key}|${t.y}`), rk = `${key}|${t.y}|${t.r}`;
@@ -357,6 +358,10 @@ export function courseInsights(C) {
       a2[0]++; if (made) a2[1]++;
     }
     if (t.s == null) continue;
+    // (update 588) every finished round to its pin, for the strategy insights: its shots, its approach (the last shot from
+    // more than 30 yds before the green or within 30 yds) and that approach's miss, if any
+    { let apIdx = null; for (let i = 0; i + 1 < qs.length; i++) if (qs[i][4] != null && qs[i][4] > 30 && qs[i][3] !== 4 && (qs[i + 1][3] === 4 || (qs[i + 1][4] != null && qs[i + 1][4] <= 30))) { apIdx = i; break; }
+      (X.sp[t.p] || (X.sp[t.p] = [])).push({ s: t.s, qs, side, mLie: m ? LIES[m.nq[3]] : null, apIdx }); }
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
     // (update 508) and the same for its pin
     const PS = X.ps[t.p] || (X.ps[t.p] = { field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, land: [] });
@@ -393,7 +398,12 @@ export function courseInsights(C) {
     // (update 508) each pin's own: scoring (field, Top 10), fairway / green / going for it, fairway widths
     const pinStats = Object.fromEntries(Object.entries(X.ps).map(([pp, P]) => [pp, { field: fx(P.field), top: fx(P.top), fwy: f2(P.fwy), gir: f2(P.gir), go: f2(P.go), widths: widthsOf(P.land) }]));
     const pinAuto = (() => { try { return (hbOf(Number(h)) || hbOf(h))?.pinNamesAll?.() || {}; } catch { return {}; } })(); // (update 561)
-    out[h] = { pinAuto, par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]), ...(HB.marks ? { mk: HB.marks.map((m) => [r1(m[0]), r1(m[1])]) } : {}) }; } return o; })(), widths };
+    // (update 588) the strategy insights: each pin, and every pin together ("*")
+    const strategy = (() => { const geo = { ppy: ppy.get(Number(h)) ?? ppy.get(h), fw: mid(fAcc, Number(h)) || mid(fAcc, h) }, o = {};
+      try { for (const [pp, recs] of Object.entries(X.sp || {})) { const r = strategyOf(recs, X.par, geo); if (r) o[pp] = r; }
+        const all = strategyOf(Object.values(X.sp || {}).flat(), X.par, geo); if (all) o["*"] = all; } catch (err) { console.warn("Strategy insights", err); }
+      return o; })();
+    out[h] = { strategy, pinAuto, par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]), ...(HB.marks ? { mk: HB.marks.map((m) => [r1(m[0]), r1(m[1])]) } : {}) }; } return o; })(), widths };
   }
   const r4o = (o) => Object.fromEntries(Object.entries(o).map(([kk, v]) => [kk, r4(v)]));
   return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top] };

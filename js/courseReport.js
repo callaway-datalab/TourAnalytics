@@ -258,8 +258,14 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
       if (pv.widths.length) facts.push(`<b>Fairway width</b> about ${Math.min(...pv.widths.map((w) => w[1]))}\u2013${Math.max(...pv.widths.map((w) => w[1]))} yds where drives land`);
       const myPin = mine ? fromTrails(mine.filter((t) => Number(t.h) === x.h && ids.includes(String(t.p)))) : null;
       const tallMaps = maps.length && maps.every((m) => m.tall), pl = pinLabel(meta, x.h, pid);
+      // (update 588) strategy: what the shots say to aim for and avoid (a combined pin: its member with the most rounds; too
+      // few rounds to the pin: every pin on the hole together)
+      const SG = X.strategy || {}; let sg = ids.map((id) => SG[id]).filter(Boolean).sort((a, b) => b.n - a.n)[0], sgAll = false;
+      if (!sg && SG["*"]) { sg = SG["*"]; sgAll = true; }
+      const SGK = { tee: "Off the tee", miss: "Approach", surprise: "Surprise", layup: "Go or lay up" };
+      const sgItems = (sg?.items || []).slice(0, 6);
       page(`Hole ${x.h} \u00b7 ${pl}`, `<div class="hh"><h2 class="h">HOLE ${x.h} \u00b7 ${esc(pl.toUpperCase())} <small>Par ${par}${x.yds ? ` \u00b7 ${x.yds} yds` : ""} \u00b7 ${ord(x.hcp)} hardest hole${pins.length > 1 ? ` \u00b7 ${ord(pins.indexOf(pid) + 1)} hardest of its ${pins.length} pins` : ""}</small></h2></div>
-        <div class="hole ${tallMaps ? "tall" : ""}">
+        <div class="hole ${tallMaps ? "tall" : ""}${sgItems.length ? " st" : ""}">
           <div class="maps n${maps.length || 1}">${maps.length ? maps.map((m) => `<figure><figcaption>${m.cap}</figcaption><img src="${m.url}" alt=""></figure>`).join("") : `<p class="muted">No hole image for this hole yet.</p>`}
             ${maps.length ? `<div class="lg"><span>Birdie</span><i></i><span>Bogey</span><small>The hole score from each spot</small></div>` : ""}</div>
           <div class="side">
@@ -268,7 +274,8 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
             ${Object.keys(U).length ? `<div class="sec"><h3>UP &amp; DOWN BY MISS <small>this pin, within 30 yds</small></h3><div class="ud">${cell("Long-Left")}${cell("Long")}${cell("Long-Right")}${cell("Left")}<div class="u gr"><i></i></div>${cell("Right")}${cell("Short-Left")}${cell("Short")}${cell("Short-Right")}</div></div>` : ""}
             ${facts.length ? `<div class="sec"><h3>WHAT MATTERS <small>${PSs.length ? "this pin" : "the hole"}</small></h3><ul class="facts">${facts.map((f) => `<li>${f}</li>`).join("")}</ul></div>` : ""}
           </div>
-        </div>`, "holep");
+        </div>
+        ${sgItems.length ? `<div class="strat"><h3>STRATEGY <small>${sgAll ? "every pin on this hole \u00b7 " : ""}${sg.n} rounds \u00b7 hole average ${sg.base.toFixed(2)}</small></h3><ul>${sgItems.map((it) => `<li class="sg-${it.k}"><b>${SGK[it.k] || ""}</b>${esc(it.t.replace(/^(Approach|Surprise): /, ""))}</li>`).join("")}</ul></div>` : ""}`, "holep");
     }
   }
 
@@ -318,5 +325,9 @@ table.ov td{font-size:12px;padding:5.5px 6px}td.hi{background:#4db94b;color:#fff
 .holep .side{display:flex;flex-direction:column;justify-content:space-between;gap:14px;height:100%;min-height:0}.holep .side .sec h3{margin:0 0 7px}.holep .side .ud{gap:6px}.holep .side .u{padding:7px 4px}.holep .side .u b{font-size:16px}.holep .side .tee>div{padding-top:8px;padding-bottom:8px}.holep .side .facts li{margin:0 0 5px;font-size:12px}.mix{display:grid;grid-template-columns:52px 1fr 38px;gap:6px;align-items:center;margin:3px 0}.mix span{font-weight:700;font-size:11px;line-height:1.05}.mix span small{display:block;font-weight:400;font-size:8.5px}.mix i{display:flex;height:15px;border-radius:4px;overflow:hidden;background:#f1f3f5}.mix i b{display:flex;align-items:center;justify-content:center;font-size:8.5px;color:#111}.mix em{font-style:normal;font-weight:800;text-align:right}
 table.pins td{padding:3px 4px;font-size:11px}.tee{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.tee div{border:1px solid #e3e6ea;border-radius:6px;padding:4px 6px;text-align:center}.tee span{display:block;font-size:9px;color:#6b7480}.tee b{font-size:14px}.tee .worse{background:#fff1ef;border-color:#e8685a}.tee .worse b{color:#c8372d}
 .ud{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.u{border:1px solid #e3e6ea;border-radius:6px;padding:3px 4px;text-align:center;line-height:1.1}.u span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.03em;color:#6b7480}.u b{font-size:14px}.u small{display:block;font-size:8px}.u.good b{color:#1e8a4c}.u.mid b{color:#c27c00}.u.bad b{color:#c8372d}.u.gr{display:flex;align-items:center;justify-content:center;border:0}.u em{display:block;font-style:normal;font-size:8.5px;line-height:1.25;color:#4a535e;white-space:nowrap}.u em small{display:inline;font-size:7.5px}.u em small{font-size:7.5px}.u em.few,.u.few b{font-style:italic;opacity:.8}.u.gr i{width:34px;height:24px;border-radius:50%;background:radial-gradient(circle at 45% 40%,#7fcf6a,#3e8e3a);display:block}
+/* (update 588) the strategy band under a hole's maps */
+.hole.st{height:calc(100% - 80px - 1.3in)}.hole.st .maps img{max-height:4.45in}.hole.st:not(.tall) .maps.n2 img{max-height:2.15in}.holep .hole.st .side{gap:6px}
+.strat{margin-top:8px;border:1px solid #e8dcc6;background:#fbf8f2;border-radius:8px;padding:6px 10px;height:calc(1.3in - 8px);overflow:hidden}.strat h3{margin:0 0 4px;color:#a07c3b}
+.strat ul{list-style:none;margin:0;padding:0;columns:2;column-gap:18px}.strat li{break-inside:avoid;font-size:10px;line-height:1.3;margin:0 0 3px}.strat li b{font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:#6b7480;margin-right:5px}.strat li.sg-surprise b{color:#a07c3b}
 ul.facts{margin:2px 0;padding-left:15px}ul.facts li{font-size:11px;margin:2px 0}
 .bar{position:sticky;top:0;background:#1b1f24;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:12px;z-index:2}.bar button{font:inherit;padding:5px 12px;border-radius:6px;border:0;background:#fff;color:#1b1f24;font-weight:600;cursor:pointer}@media print{.bar{display:none}}`;

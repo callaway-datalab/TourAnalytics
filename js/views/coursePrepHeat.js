@@ -70,11 +70,12 @@ export async function drawHeat(ctx, course) {
   const stageWrap = el("div", { class: "sh-stage-wrap" }, [stage, pop]); // (update 501: the popup can sit above or below the map)
   const legend = el("div", { class: "sh-legend" });
   const keys = el("div", { class: "sh-keys" });
+  const stratBox = el("div", { class: "sh-strat", hidden: true }); // (update 588) the strategy insights for this hole and pin
   const teeBox = el("div", { class: "sh-tee", hidden: true }); // (update 492) the left and right tee misses, this pin
   const udBox = el("div", { class: "sh-tee sh-ud3", hidden: true }); // (update 525: laid out as the Off the tee row, its blocks 3 x 3) // (update 491) up & down by where the approach missed, this pin
   const prev = el("button", { type: "button", class: "btn ghost small" }, "← Prev"), next = el("button", { type: "button", class: "btn ghost small" }, "Next →");
   prev.addEventListener("click", () => go(-1)); next.addEventListener("click", () => go(1));
-  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, el("div", { class: "sh-ctl" }, [pinBar]), head, hist, shotRow, teeBox, udBox, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
+  mount(body, el("section", { class: "panel sh-panel" }, [holeBar, el("div", { class: "sh-ctl" }, [pinBar]), head, hist, stratBox, shotRow, teeBox, udBox, stageWrap, legend, trKey, keys, el("div", { class: "sh-nav" }, [prev, next])]));
 
   let Z = null, par = 4, size = { w: 0, h: 0 }, pinNow = null, imgFor = null, rot = false;
   // a wide hole on a phone: turned upright, tee at the bottom (as the Course Maps are)
@@ -243,7 +244,7 @@ export async function drawHeat(ctx, course) {
     const n = st.hole, H = data.holes?.[n] || { pins: {} }, pin = H.pins?.[st.pin[n]];
     pinNow = pin || null; drawHead();
     if (keep) setTimeout(() => openSpot(keep.x, keep.y), 0);
-    drawHist(); drawTrails(); drawTee(); drawUD(); drawBoard(); drawMisses(); // (update 479; 491: up & down; 492: tee misses)
+    drawHist(); drawTrails(); drawTee(); drawUD(); drawBoard(); drawMisses(); drawStrat(); // (update 588: and the strategy) // (update 479; 491: up & down; 492: tee misses)
     drawShotSeg();
     if (!pin || !size.w) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); Z = null; mount(keys, size.w ? null : el("p", { class: "muted small" }, "No image for this hole yet: upload the course’s images zip on Upload Data.")); drawLegend(); return; }
     const usePlayer = isP() && !!ix;
@@ -646,6 +647,20 @@ export async function drawHeat(ctx, course) {
   // added up): a grid around the green, each side's share got up and down, then by the lie it left
   // (update 492) off the tee: the scoring after a left miss, the fairway and a right miss (drive_direction), this pin (a
   // combined pin: its pins added up; a course uploaded before update 492: the hole's)
+  // (update 588) Strategy: what the shots say to aim for and to avoid on this hole, to this pin (a combined pin: its member
+  // with the most rounds; too few rounds to the pin: every pin on the hole together, said so)
+  function drawStrat() {
+    const n = st.hole, S = data.insights?.holes?.[n]?.strategy || {}, ids = pinNow?.merged || [st.pin[n]];
+    let r = ids.map((id) => S[id]).filter(Boolean).sort((a, b) => b.n - a.n)[0], all = false;
+    if (!r && S["*"]) { r = S["*"]; all = true; }
+    if (!r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
+    const KIND = { tee: ["Off the tee", "\u26F3"], miss: ["Approach", "\uD83C\uDFAF"], surprise: ["Surprise", "\uD83D\uDCA1"], layup: ["Go or lay up", "\u2194"] };
+    stratBox.hidden = false;
+    mount(stratBox, [
+      el("div", { class: "sh-strat-h" }, [el("strong", {}, "Strategy"), el("span", { class: "muted small" }, `${all ? "every pin on this hole \u00b7 " : ""}${r.n} rounds \u00b7 hole average ${r.base.toFixed(2)}`)]),
+      el("ul", {}, r.items.map((it) => el("li", { class: `sh-strat-${it.k}` }, [el("span", { class: "sh-strat-k" }, [el("span", { "aria-hidden": "true" }, `${KIND[it.k]?.[1] || ""} `), KIND[it.k]?.[0] || ""]), el("span", { class: "sh-strat-t" }, it.t)]))),
+    ]);
+  }
   function drawTee() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];
     const k1 = kOf(n, par); /* (update 509) off the tee with Shot 1 only (up & down takes its place on later shots) */
