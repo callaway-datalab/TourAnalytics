@@ -9,7 +9,7 @@ import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, summaryPlayers, fmtSG } from "../sg.js";
 import { playerCard } from "../watchlistData.js";
 import { watchPrefs, loadWatch, saveWatch } from "../watchlist.js";
-import { radar, radarKey, yearsLabel } from "../radarChart.js"; // (update 611)
+import { radar, radarKey, yearsLabel, trendArrow } from "../radarChart.js"; // (update 611; 613: the arrow)
 
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; try { un = watch(fin); } catch { fin(null); } });
 export async function render(main, { previewClient } = {}) {
@@ -118,7 +118,7 @@ export async function render(main, { previewClient } = {}) {
         const one = (period) => { try { return playerCard(k, { field, label: nameOf(k), period, lite: true }); } catch { return { key: k, label: nameOf(k), empty: true }; } };
         const ys = [...new Set((field.find((p) => p.key === k)?.rounds || []).map(yrOf).filter(Boolean))].sort(), last = ys.at(-1) || "";
         const before = ys.slice(0, -1);
-        memo.set(k, { now: one("season"), all: before.length ? one(`ex:${last}`) : null, nowLabel: last || "This season", beforeLabel: yearsLabel(before) });
+        memo.set(k, { now: one("season"), all: before.length ? one(`y:${before.at(-1)}`) : null, nowLabel: last || "This season", beforeLabel: before.at(-1) || "" }); // (update 612: last year only)
       }
       return memo.get(k);
     };
@@ -156,8 +156,8 @@ export async function render(main, { previewClient } = {}) {
         if (!v) { mount(game, [el("p", { class: "hm-t" }, team.isTeam ? (nameOf(keys[0]) || "").toUpperCase() : "YOUR GAME"), none("Your game will appear here once your first rounds are in.")]); return; }
         const tot = v.TOTAL ?? 0;
         mount(game, [
-          el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, team.isTeam || previewClient ? (c.now.label || "").toUpperCase() : "YOUR GAME"), el("span", { class: `hm-big ${tot >= 0 ? "pos" : "neg"}` }, fmtSG(tot))]),
-          el("p", { class: "hm-sub" }, `strokes a round ${tot >= 0 ? "better" : "worse"} than tour average in ${c.nowLabel}${cv?.TOTAL != null ? ` \u00b7 ${c.beforeLabel} ${fmtSG(cv.TOTAL)}` : ""}`),
+          el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, team.isTeam || previewClient ? (c.now.label || "").toUpperCase() : "YOUR GAME"), el("span", { class: "hm-tots" }, [el("span", { class: `hm-big ${tot >= 0 ? "pos" : "neg"}` }, [trendArrow(el, tot, cv?.TOTAL), fmtSG(tot)]), cv?.TOTAL != null ? el("span", { class: "hm-big2", title: c.beforeLabel }, fmtSG(cv.TOTAL)) : null])]), // (update 612: last year's total in gold under it)
+          el("p", { class: "hm-sub" }, `strokes a round ${tot >= 0 ? "better" : "worse"} than tour average in ${c.nowLabel}`),
           radar(v, { c: cv, cLabel: c.beforeLabel }), radarKey(el, c.nowLabel, cv ? c.beforeLabel : null),
         ]);
         return;
@@ -168,8 +168,8 @@ export async function render(main, { previewClient } = {}) {
       if (!cards.length) { mount(game, [headRow, none(keys.length ? "Your players\u2019 games will appear here once their first rounds are in." : "Tap + to pick the players you follow, and their games will show here.")]); return; }
       mount(game, [headRow, el("p", { class: "hm-sub2" }, "Swipe \u00b7 outside the dashed line = better than tour average"),
         el("div", { class: "hm-rads" }, cards.map((c) => { const v = valsOf(c.now), cv = valsOf(c.all), tot = v.TOTAL ?? 0;
-          return el("a", { class: "hm-rad", href: statsFor(c.now.key) }, [el("span", { class: "hm-rn" }, [el("b", {}, c.now.label), el("span", { class: tot >= 0 ? "pos" : "neg" }, fmtSG(tot))]), radar(v, { small: true, c: cv, cLabel: c.beforeLabel })]); })),
-        radarKey(el, "Latest year", "Years before"), // (update 610: the key once, under the row; 611: each radar's corners name its years)
+          return el("a", { class: "hm-rad", href: statsFor(c.now.key) }, [el("span", { class: "hm-rn" }, [el("b", {}, c.now.label), el("span", { class: "hm-tots" }, [el("span", { class: tot >= 0 ? "pos" : "neg" }, [trendArrow(el, tot, cv?.TOTAL), fmtSG(tot)]), cv?.TOTAL != null ? el("span", { class: "hm-big2 sm" }, fmtSG(cv.TOTAL)) : null])]), radar(v, { small: true, c: cv, cLabel: c.beforeLabel })]); })),
+        radarKey(el, "Latest year", "Year before"), // (update 610: the key once, under the row; 611: each radar's corners name its years)
       ]);
     }
     drawGame();

@@ -1,5 +1,6 @@
 // (update 611) The radar: the four parts of the game against tour average (the dashed circle; outside is better), the
-// latest year in green and the years before it in gold. Used on Home and on Stats › Focus.
+// latest year in green and the year before it in gold (update 612: just last year). Used on Home and on Stats › Focus.
+// (update 612) the corners: just the values (the years are in the key)
 import { fmtSG } from "./sg.js";
 
 const AXES = [["OTT", "Driving"], ["APP", "Approach"], ["ARG", "Short game"], ["PUTT", "Putting"]];
@@ -20,8 +21,11 @@ export function radar(v, { small = false, c = null, cLabel = "before" } = {}) {
     const txt = (t, size, fill, w, x, y) => { const e = s("text", { "font-size": size, fill, "font-weight": w, x, y }); e.textContent = t; return e; };
     const pos = [[cx, small ? 12 : 18, "middle"], [W - 4, cy - (small ? 12 : 16), "end"], [cx, H - (small ? 26 : 34), "middle"], [4, cy - (small ? 12 : 16), "start"]][i];
     const g = s("g", { "text-anchor": pos[2] }), lh = small ? 12 : 16;
-    g.append(txt(name, fs, "#f5f5f7", 700, pos[0], pos[1]), txt(fmtSG(vals[i]), fv, col(vals[i]), 700, pos[0], pos[1] + lh));
-    if (cv) g.append(txt(`${cLabel} ${fmtSG(cv[i])}`, fc, "#d4b483", 600, pos[0], pos[1] + lh * 2 - (small ? 1 : 2)));
+    // (update 613) this year's value with a green ▲ (better than last year) or a red ▼ (worse)
+    const vt = txt(fmtSG(vals[i]), fv, col(vals[i]), 700, pos[0], pos[1] + lh);
+    if (cv && Math.abs(vals[i] - cv[i]) >= 0.005) { const up = vals[i] > cv[i], a = s("tspan", { fill: up ? "#4cd17e" : "#ff453a", "font-size": fv * 0.8 }); a.textContent = up ? " \u25B2" : " \u25BC"; vt.appendChild(a); }
+    g.append(txt(name, fs, "#f5f5f7", 700, pos[0], pos[1]), vt);
+    if (cv) g.append(txt(fmtSG(cv[i]), fc, "#d4b483", 600, pos[0], pos[1] + lh * 2 - (small ? 1 : 2)));
     return g;
   };
   return s("svg", { class: `hm-radar${small ? " sm" : ""}`, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": AXES.map(([k, n], i) => `${n} ${fmtSG(vals[i])}${cv ? `, ${cLabel} ${fmtSG(cv[i])}` : ""}`).join("; ") }, [
@@ -49,11 +53,17 @@ const yr = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
 export function yearSplit(rounds) {
   const ys = [...new Set((rounds || []).map(yr).filter(Boolean))].sort();
   if (!ys.length) return null;
-  const last = ys.at(-1), before = ys.slice(0, -1);
-  return { now: rounds.filter((rd) => yr(rd) === last), before: rounds.filter((rd) => yr(rd) !== last), nowLabel: last, beforeLabel: yearsLabel(before) };
+  const last = ys.at(-1), prev = ys.length > 1 ? ys.at(-2) : null; // (update 612: the year before the latest, not all of them)
+  return { now: rounds.filter((rd) => yr(rd) === last), before: prev ? rounds.filter((rd) => yr(rd) === prev) : [], nowLabel: last, beforeLabel: prev || "" };
 }
 export const yearsLabel = (ys) => (!ys.length ? "" : ys.length === 1 || ys[0] === ys.at(-1) ? ys[0] : `${ys[0]}-${String(ys.at(-1)).slice(2)}`);
 /** The key: the latest year, the years before, tour average. */
+/** (update 613) a green ▲ or red ▼: this year against last year (nothing when there's no last year, or no change) */
+export function trendArrow(el, now, before) {
+  if (before == null || now == null || Math.abs(now - before) < 0.005) return null;
+  const up = now > before;
+  return el("span", { class: `hm-arr ${up ? "up" : "down"}`, title: up ? "Better than last year" : "Worse than last year", "aria-label": up ? "better than last year" : "worse than last year" }, up ? "\u25B2" : "\u25BC");
+}
 export function radarKey(el, nowLabel, beforeLabel) {
   return el("div", { class: "hm-key" }, [el("span", {}, [el("i", { class: "k-now" }), nowLabel]), beforeLabel ? el("span", {}, [el("i", { class: "k-car" }), beforeLabel]) : null, el("span", {}, [el("i", { class: "k-avg" }), "Tour average"])]);
 }

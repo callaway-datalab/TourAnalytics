@@ -6355,3 +6355,14 @@ div.sh-ud3-green { cursor: default; }
 .hm .hm-h { margin: 2px 0 0 !important; }
 .hm .hm-top { margin: 0 !important; padding-bottom: 12px; }
 .hm .hm-cal { margin-top: 6px !important; }
+/* (update 612) the totals: this year (green, big) and last year (gold, small) under it */
+.hm-tots { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; }
+.hm-big2 { color: #d4b483; font-weight: 700; font-size: 0.95rem; margin-top: 2px; }
+.hm-big2.sm { font-size: 0.72rem; margin-top: 1px; }
+.hm-rn .hm-tots span:first-child { font-weight: 800; font-size: 0.95rem; }
+.fx-radar .hm-gh .fx-eyebrow { margin: 0; }
+/* (update 613) the green ▲ / red ▼ beside this year's total: better or worse than last year */
+.hm-arr { font-size: 0.5em; vertical-align: 0.35em; margin-right: 4px; }
+.hm-arr.up { color: #4cd17e; } .hm-arr.down { color: #ff453a; }
+.hm-rn .hm-arr { font-size: 0.6em; vertical-align: 0.2em; }
+.hm-rn .hm-tots .hm-arr { font-size: 0.6rem; vertical-align: 0.2em; font-weight: 700; }

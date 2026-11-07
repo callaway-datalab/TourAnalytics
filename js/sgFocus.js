@@ -3,7 +3,7 @@
 // worth (a round, and on the season rank), a drill for each; whether the practice they've added is working (strokes
 // gained there since they added it); and what to keep doing. Full stats is one tap away (the switch above it).
 // Takes S first, like the other Stats page sections (see sgDashboard.js).
-import { radar, radarKey, catVals, yearSplit } from "./radarChart.js"; // (update 611)
+import { radar, radarKey, catVals, yearSplit, trendArrow } from "./radarChart.js"; // (update 611; 613: the arrow)
 import { el, mount, infoTip, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
 
 const CAT = Object.fromEntries(CATEGORIES);
@@ -321,7 +321,8 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   const radarBox = (() => {
     const sp = yearSplit(everyYear || []); if (!sp) return null;
     const v = catVals(sp.now), c = sp.before.length ? catVals(sp.before) : null; if (!v) return null;
-    return el("section", { class: "panel fx fx-radar" }, [el("p", { class: "fx-eyebrow" }, "Your game \u00b7 against tour average"),
+    const tots = el("span", { class: "hm-tots" }, [el("span", { class: `hm-big ${v.TOTAL >= 0 ? "pos" : "neg"}` }, [trendArrow(el, v.TOTAL, c?.TOTAL), f2(v.TOTAL)]), c ? el("span", { class: "hm-big2" }, f2(c.TOTAL)) : null]); // (update 612)
+    return el("section", { class: "panel fx fx-radar" }, [el("div", { class: "hm-gh" }, [el("p", { class: "fx-eyebrow" }, "Your game \u00b7 against tour average"), tots]),
       radar(v, { c, cLabel: sp.beforeLabel }), radarKey(el, sp.nowLabel, c ? sp.beforeLabel : null),
       el("p", { class: "muted small fx-when" }, "Outside the dashed circle: better than tour average. Every round on this tour, whatever the time frame above.")]);
   })();
