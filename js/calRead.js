@@ -13,13 +13,15 @@ export function readFor(S, ids) {
   S = S || {};
   const r = (ids || []).map((id) => S[id]).filter(Boolean).sort((a, b) => b.n - a.n)[0];
   if (r) return { r, all: false };
-  return S["*"] ? { r: S["*"], all: true } : null;
+  // (update 590) every pin together keeps only what doesn't depend on the pin: the tee shot and laying up
+  const a = S["*"], items = (a?.items || []).filter((it) => it.k === "tee" || it.k === "layup" || /^Surprise: drives/.test(it.t));
+  return items.length ? { r: { ...a, items }, all: true } : null;
 }
 
 /** Cal's card: { r: { base, n, items }, all }, with a line naming the hole and pin. */
 export function readCard(read, where = "", { compact = false } = {}) {
   const { r, all } = read;
-  const sub = [where, all ? "every pin on this hole" : null, `${r.n} rounds`, `hole avg ${r.base.toFixed(2)}`].filter(Boolean).join(" · ");
+  const sub = [where, all ? "every pin together" : null, `${r.n} rounds`, `hole avg ${r.base.toFixed(2)}`].filter(Boolean).join(" · ");
   return el("div", { class: `cal-read${compact ? " compact" : ""}` }, [
     el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
       el("div", { class: "cal-read-t" }, [el("strong", {}, BRAND), el("span", {}, sub)]), el("span", { class: "cal-read-tag" }, TAG)]),
@@ -30,7 +32,9 @@ export function readCard(read, where = "", { compact = false } = {}) {
 /* ---------------------------------------------------------------- in Cal's chat */
 export const STRAT_Q = /\b(strateg\w*|game ?plan|how (do|should|would) (i|you|we|he|she|they) play|how to play|where (do|should) (i|we) aim|cal'?s read|aim(ing)? (on|at|for)|play(ing)? hole)\b/i;
 export const isStrategyQ = (q) => STRAT_Q.test(q) && /\bhole\b|\b\d{1,2}(st|nd|rd|th)\b/i.test(q);
-let lastCourse = null;
+let lastCourse = null, askedPin = null; // (update 590) askedPin: { course, hole } when Cal asked "which pin?"
+/** "back left" (or "the back left pin") straight after Cal asked which pin */
+export const isPinReply = (q) => !!askedPin && /^\s*(the\s+)?((front|back|middle|center|centre|left|right)[\s,-]*){1,3}(pin)?\s*[.!?]*\s*$/i.test(q);
 const norm = (s) => String(s || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 const STOP = new Set(["golf", "club", "course", "country", "the", "gc", "cc", "links", "resort", "and", "at", "of", "tpc"]);
 
@@ -69,7 +73,8 @@ export async function answerStrategy(question) {
   if (!meta && lastCourse) meta = list.find((c) => c.id === lastCourse) || null;
   if (!meta) return { cant: true, text: "Which course? Put its name in the question, like “the hole strategy on hole 2 at Torrey Pines South into a back left pin”." };
   lastCourse = meta.id;
-  const h = holeIn(question);
+  const h = holeIn(question) || (askedPin && askedPin.course === meta.id ? askedPin.hole : null);
+  askedPin = null;
   if (!h) return { text: `Which hole at **${meta.name}**? Ask like “hole 2 at ${meta.name}, back left pin”.` };
   const raw = await heatData(meta), data = withMerges(meta, raw), X = data?.insights?.holes?.[h];
   if (!data?.holes?.[h] && !X) return { cant: true, text: `I don’t have a hole ${h} at **${meta.name}**.` };
@@ -79,13 +84,13 @@ export async function answerStrategy(question) {
   const asked = /\b(front|back|left|right|middle|center|centre)\b/i.test(question) || /\bpin\b/i.test(question);
   const pin = pins.length === 1 ? pins[0] : pinIn(question, pins);
   const ids = pin ? data.holes?.[h]?.pins?.[pin.id]?.merged || [pin.id] : [];
-  const read = pin ? readFor(S, ids) : (S["*"] ? { r: S["*"], all: true } : null);
+  if (!pin && pins.length > 1) askedPin = { course: meta.id, hole: h };
+  if (!pin && pins.length > 1) return { text: `**Hole ${h} at ${meta.name}.** Which pin? ${asked ? "I couldn\u2019t match that one. " : ""}The pins here: **${pins.map((p) => p.label).join("**, **")}**. Ask like \u201chole ${h} at ${meta.name}, ${pins[0].label.toLowerCase()} pin\u201d.` };
+  const read = pin ? readFor(S, ids) : readFor(S, []);
   if (!read) return { cant: true, text: `I don’t have enough rounds on hole ${h} at **${meta.name}** for a read yet (it needs at least 8).` };
   const par = X?.par ? ` (par ${X.par})` : "";
   let text = `**Hole ${h}${par} at ${meta.name}${pin ? `, ${pin.label} pin` : ""}.**`;
-  if (pin && read.all) text += ` Too few rounds to that pin on its own, so this is every pin on the hole together.`;
-  if (!pin && asked && pins.length > 1) text += ` I couldn’t match that pin. The pins here: **${pins.map((p) => p.label).join("**, **")}**. This is every pin together.`;
-  else if (!pin && pins.length > 1) text += ` Every pin together. Name one for its own read: **${pins.map((p) => p.label).join("**, **")}**.`;
+  if (read.all) text += ` Too few rounds to ${pin ? "that pin" : "any one pin"} for an approach read (it needs 8), so this is the tee shot from every pin on the hole together.`;
   const where = `Hole ${h}${pin ? ` · ${pin.label}` : ""}`;
   return { text, read: { ...read, where }, go: { href: "#/course-prep", label: `Open hole ${h} on Strategy Maps →`, open: { heat: meta.id, hole: h, pin: pin?.id || null } } };
 }

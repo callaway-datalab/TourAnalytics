@@ -11,7 +11,7 @@ import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
 import { readAsk, productGroups, matchEvents } from "./compareAsk.js";
-import { isStrategyQ, answerStrategy, readCard } from "./calRead.js"; // (update 589) Cal's Read: the hole strategy
+import { isStrategyQ, isPinReply, answerStrategy, readCard } from "./calRead.js"; // (update 589) Cal's Read: the hole strategy
 import { CATEGORIES, statRounds, statAgg, statDef, fmtStat, distLead } from "./sg.js";
 // (update 313) a player, or a caddie / coach with just one player: the greeting talks about "your data"
 const oneData = () => { const st = getState(); return !st.isAdmin && (!st.isTeam || Object.keys(st.teamAccess || {}).length === 1); };
@@ -671,7 +671,7 @@ async function ask(question) {
   try {
     const list = await playersYouCanSee();
     // (update 589) "the hole strategy on hole 2 at Torrey Pines South into a back left pin": Cal's Read
-    if (isStrategyQ(question)) return reply(await answerStrategy(question));
+    if (isStrategyQ(question) || isPinReply(question)) return reply(await answerStrategy(question));
     const local = readLocal(question, list);
     // (update 396) "how will they rank over the next 3 years", "forecast", "next season": the forecaster
     if (FORECAST_Q.test(question)) {

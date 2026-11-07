@@ -655,7 +655,7 @@ export async function drawHeat(ctx, course) {
     const n = st.hole, read = readFor(data.insights?.holes?.[n]?.strategy, pinNow?.merged || [st.pin[n]]);
     if (!read?.r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
     stratBox.hidden = false;
-    mount(stratBox, readCard(read, `Hole ${n}${read.all ? "" : ` \u00b7 ${pinLabel(meta, n, st.pin[n])}`}`));
+    mount(stratBox, readCard(read, `Hole ${n}${read.all ? " \u00b7 too few rounds to this pin for an approach read" : ` \u00b7 ${pinLabel(meta, n, st.pin[n])} pin`}`));
   }
   function drawTee() {
     const n = st.hole, X = data.insights?.holes?.[n], pid = st.pin[n];

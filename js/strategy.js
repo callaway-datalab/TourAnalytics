@@ -25,31 +25,43 @@ export function strategyOf(recs, par, geo = {}) {
   const group = (list, keyOf) => { const m = new Map(); for (const r of list) { const k = keyOf(r); if (k == null) continue; (m.get(k) || m.set(k, []).get(k)).push(r); } return [...m].map(([k, rs]) => ({ k, rs, n: rs.length, avg: mean(rs.map(sc)) })).filter((g) => g.n >= MIN_N); };
   const at = (r, st) => r.qs.find((q) => q[0] === st);
 
-  // ---- the tee shot (par 4s and 5s): where the drive finished: its lie, its side and how far it went ----
+  // ---- the tee shot (par 4s and 5s): where the drive finished (its lie and side), every place against every other ----
+  // (update 590) the target is the fairway third that scored best, said against every other place drives finished (8+
+  // rounds each); a rough or bunker that beat it is a surprise, never a target; the distance only when one length band
+  // in that third beat the others
   if (par >= 4 && geo.fw && geo.ppy) {
     const drives = done.map((r) => { const q1 = at(r, 1), q2 = at(r, 2); return q1 && q2 && q2[3] !== 4 ? { r, q1, q2 } : null; }).filter(Boolean);
-    // across the fairway: left, centre and right thirds of where fairway drives finish (across the line from each tee shot
-    // to the fairway's middle: on the map's pixels, y downward, across > 0 is right)
     const lat = (d) => { const ux = geo.fw[0] - d.q1[1], uy = geo.fw[1] - d.q1[2], ul = Math.hypot(ux, uy) || 1; return (ux * (d.q2[2] - d.q1[2]) - uy * (d.q2[1] - d.q1[1])) / ul; };
     const fwL = drives.filter((d) => d.q2[3] === 1).map(lat).sort((a, b) => a - b);
-    const t1 = fwL.length >= 6 ? fwL[Math.floor(fwL.length / 3)] : null, t2 = fwL.length >= 6 ? fwL[Math.floor((2 * fwL.length) / 3)] : null;
+    const thirds = fwL.length >= 3 * MIN_N, t1 = thirds ? fwL[Math.floor(fwL.length / 3)] : null, t2 = thirds ? fwL[Math.floor((2 * fwL.length) / 3)] : null;
     const len = (d) => Math.hypot(d.q2[1] - d.q1[1], d.q2[2] - d.q1[2]) / geo.ppy;
     const zoneOf = (d) => {
       const lie = LIE[d.q2[3]] || "other", la = lat(d);
       if (lie === "fairway") return t1 == null ? "the fairway" : la < t1 ? "the left side of the fairway" : la > t2 ? "the right side of the fairway" : "the middle of the fairway";
       if (lie === "rough") return la < 0 ? "the left rough" : "the right rough";
-      if (lie === "bunker") return la < 0 ? "a left fairway bunker" : "a right fairway bunker";
+      if (lie === "bunker") return la < 0 ? "the left fairway bunkers" : "the right fairway bunkers";
       return null;
     };
-    const byZone = group(drives.map((d) => ({ ...d.r, _d: d })), (r) => zoneOf(r._d));
-    const band = 20, byZB = group(drives.map((d) => ({ ...d.r, _d: d })), (r) => { const z = zoneOf(r._d); return z ? `${z}|${Math.round(len(r._d) / band) * band}` : null; });
-    const best = [...byZB].sort((a, b) => a.avg - b.avg)[0], bestZ = [...byZone].sort((a, b) => a.avg - b.avg)[0], worstZ = [...byZone].sort((a, b) => b.avg - a.avg)[0];
-    if (best && best.avg < base - 0.02) { const [z, yd] = best.k.split("|"); items.push({ k: "tee", t: `Aim for ${z} around ${yd} yds off the tee: those holes averaged ${f2(best.avg)} (${nTxt(best.n)}), against ${f2(base)} for the hole.` }); }
-    else if (bestZ && bestZ.avg < base - 0.02) items.push({ k: "tee", t: `Off the tee, ${bestZ.k} has scored best: ${f2(bestZ.avg)} (${nTxt(bestZ.n)}), against ${f2(base)} for the hole.` });
-    if (worstZ && worstZ !== bestZ && worstZ.avg > base + 0.05) items.push({ k: "tee", t: `Stay out of ${worstZ.k} off the tee: ${f2(worstZ.avg)} (${nTxt(worstZ.n)}).` });
+    const zones = group(drives.map((d) => ({ ...d.r, _d: d })), (r) => zoneOf(r._d)).sort((a, b) => a.avg - b.avg);
+    const isFw = (z) => /fairway$/.test(z.k) && !/bunkers$/.test(z.k);
+    const tgt = zones.filter(isFw)[0];
+    if (tgt) {
+      const others = zones.filter((z) => z !== tgt), band = 20;
+      const bands = group(tgt.rs, (r) => `${Math.round(len(r._d) / band) * band}`).sort((a, b) => a.avg - b.avg);
+      const bb = bands.length >= 2 && bands[0].avg < tgt.avg ? bands[0] : null;
+      let t = `Aim for ${tgt.k} off the tee: ${f2(tgt.avg)} (${nTxt(tgt.n)})`;
+      t += others.length ? `, against ${others.map((z) => `${z.k} ${f2(z.avg)}`).join(", ")}.` : ".";
+      if (bb) t += ` Best there: around ${bb.k} yds (${f2(bb.avg)}, ${nTxt(bb.n)}).`;
+      items.push({ k: "tee", t });
+      for (const z of zones.filter((z) => !isFw(z) && z.avg <= tgt.avg - 0.05).slice(0, 1))
+        items.push({ k: "surprise", t: `Surprise: drives finishing in ${z.k} (${f2(z.avg)}, ${nTxt(z.n)}) have scored better than ${tgt.k} (${f2(tgt.avg)}).` });
+    }
+    const worst = zones.at(-1), best = zones[0];
+    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", t: `Stay out of ${worst.k} off the tee: ${f2(worst.avg)} (${nTxt(worst.n)}), the worst place drives finished.` });
   }
 
-  // ---- the approach: where it finished (the green, or the side and lie of a miss within 30 yds), best first ----
+  // ---- the approach: every result (the green, and each miss's side and lie within 30 yds) against every other ----
+  // (update 590) always said: the miss order by side and lie (8+ rounds each), else by side, else the green against a miss
   const apOut = (r) => {
     if (r.side) return `${r.side}|${r.mLie || "other"}`;
     const q = r.apIdx != null ? r.qs[r.apIdx + 1] : null;
@@ -57,17 +69,27 @@ export function strategyOf(recs, par, geo = {}) {
   };
   const lab = (k) => { if (k === "green") return "on the green"; const [sd, l] = k.split("|"); return `${SIDE[sd] || sd.toLowerCase()} ${lieIn(l)}`; };
   const outs = group(done, apOut).sort((a, b) => a.avg - b.avg);
-  const bySide = group(done.filter((r) => r.side), (r) => r.side).sort((a, b) => a.avg - b.avg);
-  if (bySide.length >= 2) {
-    const [b1, b2] = bySide, w = bySide.at(-1);
-    let t = `Approach: if you miss the green, miss ${SIDE[b1.k] || b1.k}: ${f2(b1.avg)} (${nTxt(b1.n)}), the best of the misses.`;
-    const sub = outs.filter((g) => g.k !== "green" && g.k.split("|")[0] !== b1.k)[0];
-    if (sub) t += ` Second best: ${lab(sub.k)} (${f2(sub.avg)}, ${nTxt(sub.n)}).`;
-    else if (b2) t += ` Second best: ${SIDE[b2.k] || b2.k} (${f2(b2.avg)}, ${nTxt(b2.n)}).`;
-    if (w && w !== b1 && w !== b2) t += ` Worst: ${SIDE[w.k] || w.k} (${f2(w.avg)}, ${nTxt(w.n)}).`;
-    items.push({ k: "miss", t });
+  const combos = outs.filter((g) => g.k !== "green"), green = outs.find((g) => g.k === "green");
+  const bySide = group(done.filter((r) => r.side), (r) => r.side).sort((a, b) => a.avg - b.avg).map((g) => ({ ...g, lab: SIDE[g.k] || g.k }));
+  const order = combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : bySide.length >= 2 ? bySide : null;
+  const gTxt = green ? ` Hitting the green: ${f2(green.avg)} (${nTxt(green.n)}).` : "";
+  if (order) {
+    const [b1, b2] = order, w = order.at(-1);
+    let t = `Approach: if you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}), the best of the ${order.length} places a miss finished (${MIN_N}+ rounds each).`;
+    t += ` Second best: ${b2.lab} (${f2(b2.avg)}, ${nTxt(b2.n)}).`;
+    if (order.length >= 3) t += ` Worst: ${w.lab} (${f2(w.avg)}, ${nTxt(w.n)}).`;
+    items.push({ k: "miss", t: t + gTxt });
+  } else {
+    const g = done.filter((r) => apOut(r) === "green"), m = done.filter((r) => r.side);
+    if (g.length || m.length) {
+      const av = (rs) => f2(mean(rs.map(sc)));
+      let t = `Approach: ${g.length ? `hitting the green averaged ${av(g)} (${nTxt(g.length)})` : "no greens hit yet"}${m.length ? `, missing it within 30 yds ${av(m)} (${nTxt(m.length)})` : ""}.`;
+      const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
+      if (few.length >= 2) t += ` Too few misses to rank them firmly; so far the best is ${SIDE[few[0].sd] || few[0].sd} (${f2(few[0].avg)}, ${few[0].n} rounds) and the worst ${SIDE[few.at(-1).sd] || few.at(-1).sd} (${f2(few.at(-1).avg)}, ${few.at(-1).n} rounds).`;
+      items.push({ k: "miss", t });
+    }
   }
-  // ---- surprises: a bunker or rough result that scored better than a fairway or green one ----
+  // ---- surprises: a miss in the rough or a bunker that scored better than a fairway or green result ----
   const rough = outs.filter((g) => /\|(rough|bunker)$/.test(g.k)), clean = outs.filter((g) => g.k === "green" || /\|fairway$/.test(g.k));
   const sur = [];
   for (const a of rough) for (const b of clean) if (a.avg <= b.avg - 0.1) sur.push({ a, b, gap: b.avg - a.avg });
