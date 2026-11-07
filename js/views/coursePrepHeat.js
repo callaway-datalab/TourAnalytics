@@ -691,11 +691,18 @@ export async function drawHeat(ctx, course) {
     calSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
     const TONE = { good: ["#a3e635", "rgba(163,230,53,0.10)"], ok: ["#d4af37", "rgba(212,175,55,0.10)"], bad: ["#ff453a", "rgba(255,69,58,0.10)"] };
     let any = false;
-    for (const it of calRead.r.items) for (const [x, y, r, tone] of it.at || []) {
+    // (update 614) a smooth closed outline through points (Catmull-Rom as Bezier curves)
+    const smooth = (P) => { const n = P.length, g = (i) => P[(i + n) % n]; let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
+      for (let i = 0; i < n; i++) { const p0 = g(i - 1), p1 = g(i), p2 = g(i + 1), p3 = g(i + 2);
+        d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`; }
+      return `${d} Z`; };
+    for (const it of calRead.r.items) for (const [x, y, r, tone, hull] of it.at || []) {
       const [dx, dy] = toDisp(x, y, W, rot), [c, f] = TONE[tone] || TONE.ok;
       // (update 595) thinner and dashed, 10% see-through, a faint dark edge under it so it shows on any grass
-      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: f, stroke: "#000", "stroke-opacity": 0.35, "stroke-width": 3.5, "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
-      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: "none", stroke: c, "stroke-opacity": 1, "stroke-width": 1.75, /* (update 603: fully opaque) */ "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
+      // (update 614) the outline round where those shots finished when the build has it (a course built before 614: the circle)
+      const shape = (attrs) => (hull?.length >= 3 ? sv("path", { d: smooth(hull.map(([hx, hy]) => toDisp(hx, hy, W, rot))), ...attrs }) : sv("circle", { cx: dx, cy: dy, r, ...attrs }));
+      calSvg.appendChild(shape({ fill: f, stroke: "#000", "stroke-opacity": 0.35, "stroke-width": 3.5, "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
+      calSvg.appendChild(shape({ fill: "none", stroke: c, "stroke-opacity": 1, "stroke-width": 1.75, /* (update 603: fully opaque) */ "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
       any = true;
     }
     if (any) {

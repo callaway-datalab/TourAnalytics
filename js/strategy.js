@@ -50,11 +50,24 @@ export function strategyOf(recs, par, geo = {}) {
   let teeOpts = null, layOpts = null;
   // (update 592) a circle round where a group's shots finished (map pixels): their middle, and most of their spread
   const PPY = geo.ppy || 3;
+  // (update 614) the outline round the shots themselves (their convex hull, padded 2.5 yds out from its middle), so a
+  // target follows where the shots finished (the rough by a green, say) rather than a circle over the green or a bunker
+  const hullOf = (pts) => {
+    const P = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]); if (P.length < 3) return null;
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
+    for (const p of P) { while (lo.length >= 2 && cr(lo.at(-2), lo.at(-1), p) <= 0) lo.pop(); lo.push(p); }
+    for (const p of [...P].reverse()) { while (up.length >= 2 && cr(up.at(-2), up.at(-1), p) <= 0) up.pop(); up.push(p); }
+    const H = lo.slice(0, -1).concat(up.slice(0, -1)); if (H.length < 3) return null;
+    const mx = mean(H.map((p) => p[0])), my = mean(H.map((p) => p[1])), pad = 2.5 * PPY;
+    return H.map(([x, y]) => { const d = Math.hypot(x - mx, y - my) || 1; return [Math.round(x + ((x - mx) / d) * pad), Math.round(y + ((y - my) / d) * pad)]; });
+  };
   const circ = (rs, ptOf, tone) => {
     const ps = rs.map(ptOf).filter((q) => q && q[1] != null && q[2] != null); if (ps.length < 3) return null;
     const cx = mean(ps.map((q) => q[1])), cy = mean(ps.map((q) => q[2])), ds = ps.map((q) => Math.hypot(q[1] - cx, q[2] - cy)).sort((a, b) => a - b);
     const r = Math.max(6 * PPY, Math.min(30 * PPY, ds[Math.floor(0.7 * (ds.length - 1))] || 0));
-    return [Math.round(cx), Math.round(cy), Math.round(r), tone];
+    const inner = ps.filter((q) => Math.hypot(q[1] - cx, q[2] - cy) <= r).map((q) => [q[1], q[2]]); // (most of them: the outliers left out)
+    const h = hullOf(inner);
+    return h ? [Math.round(cx), Math.round(cy), Math.round(r), tone, h] : [Math.round(cx), Math.round(cy), Math.round(r), tone];
   };
   const apPt = (r) => (r.apIdx != null ? r.qs[r.apIdx + 1] : null);
   const group = (list, keyOf) => { const m = new Map(); for (const r of list) { const k = keyOf(r); if (k == null) continue; (m.get(k) || m.set(k, []).get(k)).push(r); } return [...m].map(([k, rs]) => ({ k, rs, n: rs.length, avg: mean(rs.map(sc)) })).filter((g) => g.n >= MIN_N); };
@@ -116,19 +129,22 @@ export function strategyOf(recs, par, geo = {}) {
   const missPts = done.filter((r) => r.side && !r.fringe).map((r) => { const q = apPt(r); return q && q[1] != null && q[2] != null ? { r, x: q[1], y: q[2], lie: r.mLie || "other", side: r.side } : null; }).filter(Boolean);
   let spotOrder = null;
   if (geo.ppy && missPts.length >= MIN_N) {
-    const cand = [];
     // 10 yds, widened to 15 when that's too few; each circle then moved to the middle of its misses and counted again
     // (twice), so it holds the whole cluster rather than whichever part a single miss reaches
-    const seen = new Set();
-    for (const c of missPts) for (const ry of [10, 15]) {
-      const rr = ry * geo.ppy, inR = (x, y) => missPts.filter((p) => p.lie === c.lie && Math.hypot(p.x - x, p.y - y) <= rr);
-      let mem = inR(c.x, c.y);
-      if (mem.length < MIN_N) continue;
-      for (let it = 0; it < 2; it++) { const m2 = inR(mean(mem.map((p) => p.x)), mean(mem.map((p) => p.y))); if (m2.length >= MIN_N) mem = m2; }
-      const sig = `${c.lie}|${mem.map((p) => done.indexOf(p.r)).sort((a, b) => a - b).join(",")}`;
-      if (!seen.has(sig)) { seen.add(sig); cand.push({ ry, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
-      break;
-    }
+    const gen = (minN, radii) => {
+      const out = [], seen = new Set();
+      for (const c of missPts) for (const ry of radii) {
+        const rr = ry * geo.ppy, inR = (x, y) => missPts.filter((p) => p.lie === c.lie && Math.hypot(p.x - x, p.y - y) <= rr);
+        let mem = inR(c.x, c.y);
+        if (mem.length < minN) continue;
+        for (let it = 0; it < 2; it++) { const m2 = inR(mean(mem.map((p) => p.x)), mean(mem.map((p) => p.y))); if (m2.length >= minN) mem = m2; }
+        const sig = `${c.lie}|${mem.map((p) => done.indexOf(p.r)).sort((a, b) => a - b).join(",")}`;
+        if (!seen.has(sig)) { seen.add(sig); out.push({ ry, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
+        break;
+      }
+      return out;
+    };
+    const cand = gen(MIN_N, [10, 15]);
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
     const sideOf = (mem) => {
@@ -139,16 +155,27 @@ export function strategyOf(recs, par, geo = {}) {
       const [pw, pn] = [...part].sort((a, b) => b[1] - a[1])[0];
       return pn >= mem.length * 0.7 ? pw : top;
     };
-    const named = cand.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${g.mem[0].lie}`, n: g.mem.length, cx: mean(g.mem.map((p) => p.x)), cy: mean(g.mem.map((p) => p.y)) }));
+    const nameAll = (cs) => cs.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${g.mem[0].lie}`, n: g.mem.length, cx: mean(g.mem.map((p) => p.x)), cy: mean(g.mem.map((p) => p.y)) }));
+    const named = nameAll(cand);
     const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); return a.k !== b.k && b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n); };
     const byAvg = [...named].sort((a, b) => a.avg - b.avg || b.n - a.n), pick = [];
     for (const g of byAvg) if (pick.every((x) => apart(x, g))) pick.push(g);
-    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone] }));
+    // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
+    // different place that's scored worse than the second best
+    if (pick.length === 2) {
+      const w = nameAll(gen(5, [10, 15, 20])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
+      if (w) pick.push(w);
+    }
+    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const h = hullOf(g.mem.map((p) => [p.x, p.y])); return h ? [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone, h] : [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone]; } }));
   }
   const order = spotOrder || (combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : bySide.length >= 2 ? bySide : null);
     if (order) {
     // (update 595) each its own line, with its own circle: the best miss, the second best, the worst
     const [b1, b2] = order, w = order.at(-1);
+    // (update 614) the green against a miss, as a whole, first
+    { const gg = done.filter((r) => apOut(r) === "green"), mm = done.filter((r) => r.side && !r.fringe);
+      if (gg.length && mm.length) { const a = mean(gg.map(sc)), b = mean(mm.map(sc));
+        items.push({ k: "miss", h: "Green vs miss", t: `Hitting the green ${vn(a, gg.length)}; missing it within 30 yds ${vn(b, mm.length)}: a miss ${b >= a ? "costs" : "saves"} about ${Math.abs(b - a).toFixed(2)} a hole.` }); } }
     const atOf = (g, tone) => (g.at ? [g.at(tone)] : [circ(g.rs, apPt, tone)].filter(Boolean)); // (update 610: a spot's own circle)
     items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: atOf(b1, "good") });
     items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "ok") });
