@@ -849,9 +849,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const u = nb.unit === "event" ? "event" : "round", Uc = u === "event" ? "Events" : "Rounds"; // (update 523)
     if (nb.n) tiles.push({ label: `${Uc} in the green`, big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of ${u}s.`, viz: "bar", v: pct });
     if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? u : `${u}s`}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
-    if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: "Biggest upside", big: `+${nb.upside.gain.toFixed(2)}`,
-      text: `A round more if ${CAT_NAME[nb.upside.cat]} got back to its best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`,
-      textShort: `${CAT_NAME[nb.upside.cat]} back to its best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, /* (update 565: the shorter card) */ viz: "pair", v: nb.upside });
+    if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: `Biggest upside \u00b7 ${CAT_NAME[nb.upside.cat]}`, big: `+${nb.upside.gain.toFixed(2)}`, // (update 587: the category in the heading, as Steadiest)
+      text: `By getting back to your best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`,
+      textShort: `By getting back to your best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, /* (update 565: the shorter card) */ viz: "pair", v: nb.upside });
     else if (a.byCat.length) tiles.push({ label: "Biggest upside", big: "At peak", text: "Playing at their best stretch in every category in this report.", viz: null });
     if (nb.steady && a.cats.length === 1) {
       const v = nb.steady.sd, tv = nb.tourSd;
