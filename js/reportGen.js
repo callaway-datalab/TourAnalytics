@@ -519,12 +519,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // form sparkline (right side)
   if (a.rankHist?.length >= 2) {
     // (update 227) Weekly Rank History: 1st at the top, a gold line, the latest rank marked
-    const h = a.rankHist, x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
+    // (update 595) the last 6 months only (back from their latest tournament; at least the last two points)
+    const lastMs = Date.parse(String(a.rankHist.at(-1).date).slice(0, 10)), from6 = Number.isFinite(lastMs) ? lastMs - 182.6 * 864e5 : null;
+    const h6 = from6 == null ? a.rankHist : a.rankHist.filter((q) => (Date.parse(String(q.date).slice(0, 10)) || 0) >= from6);
+    const h = h6.length >= 2 ? h6 : a.rankHist.slice(-2), x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74;
     const worst = Math.max(...h.map((q) => q.rank)), best = Math.min(...h.map((q) => q.rank));
     const lo = Math.max(1, best - Math.ceil((worst - best) * 0.1) - 1), hi = worst + Math.ceil((worst - best) * 0.1) + 1;
     const Y = (rk) => top + ((rk - lo) / (hi - lo || 1)) * ht;
     d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
-    cap("Weekly Rank History", x0, top - 6, "#8e8e93", "left", 6.5);
+    cap("Weekly Rank History \u00b7 Past 6 Months", x0, top - 6, "#8e8e93", "left", 6.5);
     const pts = h.map((q, i) => [x0 + (i / (h.length - 1)) * (w - 12), Y(q.rank)]);
     d.polyline(pts, { color: P.goldLight, width: 1.8 });
     d.dot(...pts[pts.length - 1], 3, P.goldLight);

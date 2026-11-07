@@ -658,7 +658,7 @@ export async function drawHeat(ctx, course) {
   // combined pin: its pins added up; a course uploaded before update 492: the hole's)
   // (update 588) Strategy: what the shots say to aim for and to avoid on this hole, to this pin (a combined pin: its member
   // with the most rounds; too few rounds to the pin: every pin on the hole together, said so)
-  let calRead = null;
+  let calRead = null, calOpen = false; // (update 595) Cal's Read starts folded each time Strategy Maps opens
   function drawStrat() { // (update 589: as Cal's Read; 592: its spots circled on the map; 594: folds, a player's own aim)
     const n = st.hole;
     let read = readFor(data.insights?.holes?.[n]?.strategy, pinNow?.merged || [st.pin[n]]);
@@ -669,7 +669,7 @@ export async function drawHeat(ctx, course) {
     const has = read.r.items.some((it) => it.at?.length);
     const tg = has ? el("button", { type: "button", class: `btn ghost small cal-read-open${st.calOn ? " on" : ""}`, "aria-pressed": String(!!st.calOn) }, st.calOn ? "Hide Cal\u2019s circles" : "Circle Cal\u2019s spots on the map") : null;
     tg?.addEventListener("click", () => { st.calOn = !st.calOn; drawStrat(); drawCal(); });
-    mount(stratBox, readCard(read, "", { foot: tg, collapsible: true }));
+    mount(stratBox, readCard(read, "", { foot: tg, collapsible: true, folded: !calOpen, onFold: (f) => { calOpen = !f; } }));
   }
   // (update 592) Cal's spots circled; (594) lime: where to aim and the best miss, gold: the second best, red: where to stay
   // out of and the worst miss; what they mean in the key above the map (no names on the map)
@@ -679,12 +679,13 @@ export async function drawHeat(ctx, course) {
     if (!st.calOn || !calRead || !size.w) return;
     const W = size.w, Hh = size.h;
     calSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
-    const TONE = { good: ["#a3e635", "rgba(163,230,53,0.16)"], ok: ["#d4af37", "rgba(212,175,55,0.14)"], bad: ["#ff453a", "rgba(255,69,58,0.12)"] };
+    const TONE = { good: ["#a3e635", "rgba(163,230,53,0.10)"], ok: ["#d4af37", "rgba(212,175,55,0.10)"], bad: ["#ff453a", "rgba(255,69,58,0.10)"] };
     let any = false;
     for (const it of calRead.r.items) for (const [x, y, r, tone] of it.at || []) {
       const [dx, dy] = toDisp(x, y, W, rot), [c, f] = TONE[tone] || TONE.ok;
-      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: f, stroke: "#000", "stroke-opacity": 0.55, "stroke-width": 6, "vector-effect": "non-scaling-stroke" }));
-      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: "none", stroke: c, "stroke-width": 3, "vector-effect": "non-scaling-stroke" }));
+      // (update 595) thinner and dashed, 10% see-through, a faint dark edge under it so it shows on any grass
+      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: f, stroke: "#000", "stroke-opacity": 0.35, "stroke-width": 3.5, "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
+      calSvg.appendChild(sv("circle", { cx: dx, cy: dy, r, fill: "none", stroke: c, "stroke-opacity": 0.9, "stroke-width": 1.75, "stroke-dasharray": "8 6", "vector-effect": "non-scaling-stroke" }));
       any = true;
     }
     if (any) { calSvg.style.display = ""; calKey.hidden = false; }

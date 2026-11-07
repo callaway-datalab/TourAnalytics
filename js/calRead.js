@@ -5,7 +5,12 @@
 import { el, icon } from "./ui.js";
 
 export const BRAND = "Cal’s Read", TAG = "AI CADDY";
-export const KIND = { tee: "Off the tee", miss: "Approach", surprise: "Surprise", layup: "Go or lay up" };
+export const KIND = { tee: "Off the tee", miss: "Approach", surprise: "Approach", layup: "Second shot" };
+// (update 595) each tip's header: its part of the hole and what it is ("Off the tee \u2022 Aim"); a course built before 595
+// has no h on its tips: worked out from the words
+const hOf = (it) => it.h || (it.k === "tee" ? (/^(Aim for|Off the tee, )/.test(it.t) ? "Aim" : /^Stay out/.test(it.t) ? "Avoid" : "") : it.k === "surprise" ? "Surprise" : it.k === "layup" ? (/^Laying up, leave/.test(it.t) ? "Lay-up distance" : "Go or lay up") : "");
+const kindOf = (it) => (it.k === "surprise" && /^Surprise: drives/.test(it.t) ? KIND.tee : KIND[it.k] || "");
+export const headOf = (it) => [kindOf(it), hOf(it)].filter(Boolean).join(" \u2022 ");
 // (update 591) the counts are samples (past shots from there), not rounds; a course built before 591 says "rounds": said here as samples
 export const samples = (t) => String(t).replace(/\b(\d+\+?) rounds?\b/g, (_, n) => `${n} sample${n === "1" ? "" : "s"}`);
 const plain = (t) => samples(String(t).replace(/^(Approach|Surprise): (.)/, (_, k, c) => c.toUpperCase()));
@@ -26,22 +31,22 @@ export function readFor(S, ids) {
 
 /** Cal's card: { r: { base, n, items }, all }. (update 594) the title names the pin where it's needed ("Cal's Read · Back
  *  Right pin"); the line under it is just the samples; collapsible: a tap on the header folds it (remembered). */
-const LS_FOLD = "calRead.folded";
-export function readCard(read, where = "", { compact = false, foot = null, collapsible = false } = {}) {
+// (update 595) collapsible starts folded when asked (folded: true), and onFold(folded) is told each tap
+export function readCard(read, where = "", { compact = false, foot = null, collapsible = false, folded = false, onFold = null } = {}) {
   const { r } = read;
   const head = el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
     el("div", { class: "cal-read-t" }, [el("strong", {}, where ? `${BRAND} \u00b7 ${where}` : BRAND), el("span", {}, `${r.n} samples`)]),
     el("span", { class: "cal-read-tag" }, TAG), collapsible ? el("span", { class: "cal-read-chev", "aria-hidden": "true" }, "\u25BE") : null]);
   const body = el("div", { class: "cal-read-b" }, [
-    el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}` }, [el("span", { class: "cal-read-k" }, [KIND[it.k] || "", it.allPins ? el("small", {}, "every pin") : it.mine ? el("small", {}, `for ${read.who}`) : null]),
-      el("span", {}, [plain(it.t), it.at?.length ? el("i", { class: "cal-read-circ", title: "Circled on the map", "aria-label": "circled on the map" }) : null])]))),
+    el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}${hOf(it) === "Surprise" ? " cal-read-sur" : ""}` }, [el("span", { class: "cal-read-k" }, [headOf(it), it.allPins ? el("small", {}, "every pin") : it.mine ? el("small", {}, `for ${read.who}`) : null]),
+      // (update 595) a ring in the colour of each circle it has on the map
+      el("span", {}, [plain(it.t), ...(it.at || []).map((a) => el("i", { class: `cal-read-circ t-${a[3] || "ok"}`, title: "Circled on the map", "aria-label": "circled on the map" }))])]))),
     foot]);
   const card = el("div", { class: `cal-read${compact ? " compact" : ""}${collapsible ? " fold" : ""}` }, [head, body]);
   if (collapsible) {
-    let folded = false; try { folded = localStorage.getItem(LS_FOLD) === "1"; } catch { /* */ }
     const set = (f) => { card.classList.toggle("folded", f); head.setAttribute("aria-expanded", String(!f)); };
-    head.setAttribute("role", "button"); head.tabIndex = 0; set(folded);
-    const flip = () => { folded = !card.classList.contains("folded"); set(folded); try { localStorage.setItem(LS_FOLD, folded ? "1" : "0"); } catch { /* */ } };
+    head.setAttribute("role", "button"); head.tabIndex = 0; set(!!folded);
+    const flip = () => { const f = !card.classList.contains("folded"); set(f); onFold?.(f); };
     head.addEventListener("click", flip);
     head.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
   }
@@ -87,22 +92,22 @@ export function playerAim(read, P) {
     const reach = P.drive.reach + 10, ok = r.teeOpts.filter((o) => o.len <= reach);
     if (ok.length) {
       const fit = ok.filter((o) => inBest(o.left, P.best)), pick = (fit.length ? fit : ok).sort((a, b) => a.avg - b.avg || b.n - a.n)[0];
-      let t = `Aim for ${pick.z} around ${pick.len} yds: ${f2(pick.avg)} (${pick.n} samples${pick.n < 15 ? ", a small sample" : ""}), within your reach (you drive it about ${P.drive.typical}, up to about ${P.drive.reach}).`;
-      if (pick.left != null) t += inBest(pick.left, P.best) ? ` It leaves about ${Math.round(pick.left)} yds in, your best approach range (${bTxt(P.best)}).`
-        : ` It leaves about ${Math.round(pick.left)} yds in${P.best ? `; your best approach range is ${bTxt(P.best)}, and no spot within your reach leaves that` : ""}.`;
-      const i = items.findIndex((it) => it.k === "tee" && /^Aim for/.test(it.t));
-      const mine = { k: "tee", t, at: pick.at ? [pick.at] : [], mine: true };
+      let t = `Aim for ${pick.z} around ${pick.len} yds: ${f2(pick.avg)} (${pick.n} samples${pick.n < 15 ? ", a small sample" : ""}). Within your reach (about ${P.drive.typical}, up to ${P.drive.reach})`;
+      if (pick.left != null) t += inBest(pick.left, P.best) ? `; leaves about ${Math.round(pick.left)} yds, your best approach range (${bTxt(P.best)}).`
+        : `; leaves about ${Math.round(pick.left)} yds${P.best ? ` (your best range, ${bTxt(P.best)}, isn\u2019t left by any spot in reach)` : ""}.`;
+      const i = items.findIndex((it) => it.k === "tee" && (it.h === "Aim" || /^Aim for/.test(it.t)));
+      const mine = { k: "tee", h: "Aim", t, at: pick.at ? [pick.at] : [], mine: true };
       if (i >= 0) items[i] = mine; else items.unshift(mine);
       changed = true;
     } else {
-      items.unshift({ k: "tee", t: `Every fairway spot here with enough samples is beyond your reach (you drive it about ${P.drive.typical}, up to about ${P.drive.reach}): the field's aim doesn't fit your game.`, mine: true });
+      items.unshift({ k: "tee", h: "Aim", t: `Every fairway spot here with enough samples is beyond your reach (you drive it about ${P.drive.typical}, up to about ${P.drive.reach}): the field's aim doesn't fit your game.`, mine: true });
       changed = true;
     }
   }
   // a par 5's lay-up: the distance in their best approach range, when there are samples there
   if (r.layOpts?.length && P.best) {
     const fit = r.layOpts.filter((o) => inBest(o.left + 10, P.best)).sort((a, b) => a.avg - b.avg)[0];
-    if (fit) { items.push({ k: "layup", t: `Laying up, leave about ${fit.left}-${fit.left + 20} yds, your best approach range (${bTxt(P.best)}): ${f2(fit.avg)} here (${fit.n} samples${fit.n < 15 ? ", a small sample" : ""}).`, at: fit.at ? [fit.at] : [], mine: true }); changed = true; }
+    if (fit) { items.push({ k: "layup", h: "Lay-up distance", t: `Laying up, leave about ${fit.left}-${fit.left + 20} yds: ${f2(fit.avg)} (${fit.n} samples${fit.n < 15 ? ", a small sample" : ""}), your best approach range (${bTxt(P.best)}).`, at: fit.at ? [fit.at] : [], mine: true }); changed = true; }
   }
   return changed ? { ...read, r: { ...r, items }, who: P.first } : read;
 }

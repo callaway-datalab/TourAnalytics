@@ -6171,3 +6171,13 @@ div.sh-ud3-green { cursor: default; }
 .sh-calkey .k-ok { border-color: #d4af37; background: rgba(212,175,55,0.16); }
 .sh-calkey .k-bad { border-color: #ff453a; background: rgba(255,69,58,0.14); }
 .cal-read-circ { border-color: #a3e635; }
+/* (update 595) Cal's Read: each ring in its circle's colour; a header with its kind ("Off the tee • Aim"); the key dashed like the map */
+.cal-read-circ.t-good { border-color: #a3e635; }
+.cal-read-circ.t-ok { border-color: #d4af37; }
+.cal-read-circ.t-bad { border-color: #ff453a; }
+.cal-read-circ + .cal-read-circ { margin-left: 4px; }
+.cal-read-sur .cal-read-k { color: #ffd60a; }
+.cal-read li { grid-template-columns: 8.4rem minmax(0, 1fr); }
+.cal-read.compact li { grid-template-columns: 7.4rem minmax(0, 1fr); }
+@media (max-width: 520px) { .cal-read li, .cal-read.compact li { grid-template-columns: 1fr; } }
+.sh-calkey i { border-width: 2px; border-style: dashed; }

@@ -16,7 +16,7 @@ import { db } from "./firebase-init.js";
 import { listHeatCourses, writeChunks, readChunks, heatId, resetHeatList, lieName } from "./courseHeat.js";
 import { sameCourse } from "./sg.js";
 import { clientKey } from "./data.js";
-import { strategyOf } from "./strategy.js"; // (update 588)
+import { strategyOf, goOf } from "./strategy.js"; // (update 588; 595: going for it or laying up, one rule)
 
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLS = { year: ["year", "season"], courseNum: ["coursenum", "coursenumber", "courseid"], course: ["course", "coursename"], player: ["player", "playername", "name"], playerID: ["playerid", "player_id", "pid"],
@@ -370,7 +370,7 @@ export function courseInsights(C) {
     if (par >= 4 && q2) { add2(X.fwy, q2[3] === 1 ? "hit" : "miss", s); add2(PS.fwy, q2[3] === 1 ? "hit" : "miss", s); }
     const gir = qs.some((q) => q[0] != null && q[0] <= par - 1 && q[3] === 4) || s <= -2 ? "hit" : "miss"; add2(X.gir, gir, s); add2(PS.gir, gir, s);
     const qg = par >= 5 ? at(3) : par === 4 ? q2 : null;
-    if (qg) { const d = qg[3] === 4 ? 0 : qg[4], gk = d != null && d <= 30 ? "go" : d != null && d <= 100 ? "lay" : null; if (gk) { add2(X.go, gk, s); add2(PS.go, gk, s); } }
+    if (qg) { const gk = goOf(at(par >= 5 ? 2 : 1), qg, par, ppy.get(t.h)); if (gk) { add2(X.go, gk, s); add2(PS.go, gk, s); } } // (update 595: the same rule as Cal's Read)
     const q1 = at(1), fw = mid(fAcc, t.h);
     let dd = null; // (update 494: from where the drive finished)
     if (q1 && q2 && q2[3] !== 4) { if (q2[3] === 1) dd = "C"; else if (fw) { const lat = (fw[0] - q1[1]) * (q2[2] - q1[2]) - (fw[1] - q1[2]) * (q2[1] - q1[1]); dd = lat < 0 ? "L" : lat > 0 ? "R" : null; } }
