@@ -11,7 +11,7 @@ import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
 import { readAsk, productGroups, matchEvents } from "./compareAsk.js";
-import { isStrategyQ, isPinReply, answerStrategy, readCard, spoken, STRAT_Q } from "./calRead.js"; // (update 589) Cal's Read: the hole strategy
+import { isStrategyQ, isPinReply, isStratReply, clearStratAsk, resetStrategy, answerStrategy, readCard, spoken, STRAT_Q } from "./calRead.js"; // (update 589) Cal's Read: the hole strategy
 import { CATEGORIES, statRounds, statAgg, statDef, fmtStat, distLead } from "./sg.js";
 // (update 313) a player, or a caddie / coach with just one player: the greeting talks about "your data"
 const oneData = () => { const st = getState(); return !st.isAdmin && (!st.isTeam || Object.keys(st.teamAccess || {}).length === 1); };
@@ -672,7 +672,9 @@ async function ask(question) {
   try {
     const list = await playersYouCanSee();
     // (update 589) "the hole strategy on hole 2 at Torrey Pines South into a back left pin": Cal's Read
-    if (isStrategyQ(question) || isPinReply(question)) return reply({ ...(await answerStrategy(question)), strat: true }); // (update 600: strat: no Compare link)
+    // (update 630) "Hole 1" straight after Cal asked which hole: the same question, carried on
+    if (isStrategyQ(question) || isPinReply(question) || isStratReply(question)) return reply({ ...(await answerStrategy(question)), strat: true }); // (update 600: strat: no Compare link)
+    clearStratAsk();
     const local = readLocal(question, list);
     // (update 396) "how will they rank over the next 3 years", "forecast", "next season": the forecaster
     if (FORECAST_Q.test(question)) {
@@ -894,7 +896,7 @@ export async function openCallie() {
     const histBtn = el("button", { type: "button", class: "link small cal-hist-btn" }, "History");
     histBtn.addEventListener("click", () => { showHist = !showHist; histBtn.textContent = showHist ? "Back" : "History"; draw(); });
     const fresh = el("button", { type: "button", class: "link small" }, "New chat");
-    fresh.addEventListener("click", () => { showHist = false; histBtn.textContent = "History"; chat.length = 0; lastPlayers = []; pending = null; busy = false; editing = -1; draw(); });
+    fresh.addEventListener("click", () => { showHist = false; histBtn.textContent = "History"; chat.length = 0; lastPlayers = []; pending = null; resetStrategy(); busy = false; editing = -1; draw(); });
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [

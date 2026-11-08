@@ -149,15 +149,27 @@ const SFX = (n) => (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ?
 export function spoken(q) {
   // (update 598) what speech to text hears for "hole" before a number: "hold two", "hall 7", "whole 3", "hole's 4"
   const NW = "(?:\\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|to|too|for|fore|won|ate)\\b";
+  // (update 630) "oh one" / "hole oh one" (a hole said as 01): "hole 1"
+  const DW = "(?:\\d{1,2}|one|two|three|four|five|six|seven|eight|nine)\\b";
+  q = String(q).replace(new RegExp(`\\bhole\\s+(?:oh|o|zero)\\s+(?=${DW})`, "gi"), "hole ").replace(new RegExp(`(^|[^\\w'’])(?:oh|o)\\s+(?=${DW})`, "gi"), "$1hole ");
   let t = String(q).replace(new RegExp(`\\b(?:hold|holds|hall|haul|hol|hole's|holes|whole|hoe)\\s+(?=${NW})`, "gi"), "hole ").replace(/\bwhole\b/gi, "hole").replace(/\bhole (to|too)\b/gi, "hole 2").replace(/\bhole (for|fore)\b/gi, "hole 4").replace(/\bhole won\b/gi, "hole 1").replace(/\bhole ate\b/gi, "hole 8");
   t = t.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen)\b/gi, (w) => String(NUM.indexOf(w.toLowerCase())));
   t = t.replace(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth)\b/gi, (w) => { const n = ORD.indexOf(w.toLowerCase()); return `${n}${SFX(n)}`; });
   return t.replace(/\bnumber (\d{1,2})\b/gi, "hole $1");
 }
 export const isStrategyQ = (q0) => { const q = spoken(q0); return STRAT_Q.test(q) && /\bhole\b|\b\d{1,2}(st|nd|rd|th)\b/i.test(q); };
-let lastCourse = null, askedPin = null; // (update 590) askedPin: { course, hole } when Cal asked "which pin?"
+let lastCourse = null, askedPin = null, askedFor = null; // (update 630) askedFor: { q, kind } when Cal asked which course or hole // (update 590) askedPin: { course, hole } when Cal asked "which pin?"
 /** "back left" (or "the back left pin") straight after Cal asked which pin */
 export const isPinReply = (q) => !!askedPin && /^\s*(the\s+)?((front|back|middle|center|centre|left|right)[\s,-]*){1,3}(pin)?\s*[.!?]*\s*$/i.test(q);
+// (update 630) a short answer to Cal's "which hole?" / "which course?": read together with the question it answers
+export function isStratReply(q0) {
+  if (!askedFor) return false;
+  const q = spoken(q0), words = q.trim().split(/\s+/).length;
+  if (askedFor.kind === "hole") return words <= 8 && (/^\s*(it'?s\s+|on\s+|the\s+|for\s+)?(hole\s*)?(number\s*|#)?\d{1,2}(st|nd|rd|th)?(\s+hole)?\b/i.test(q) || !!holeIn(q));
+  return words <= 8 && !/\?\s*$/.test(q);
+}
+export const clearStratAsk = () => { askedFor = null; };
+export const resetStrategy = () => { askedFor = null; askedPin = null; lastCourse = null; };
 const norm = (s) => String(s || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 const STOP = new Set(["golf", "club", "course", "country", "the", "gc", "cc", "links", "resort", "and", "at", "of", "tpc"]);
 
@@ -196,18 +208,19 @@ function pinIn(q, pins) {
 
 /** Cal's answer: { text, read?, go? } */
 export async function answerStrategy(question0) {
-  const question = spoken(question0);
+  const prev = askedFor && isStratReply(question0) ? askedFor.q : null; askedFor = null;
+  const question = spoken(prev ? `${prev}, ${question0}` : question0);
   const { listHeatCourses, heatData, withMerges, pinsOn, pinLabel } = await import("./courseHeat.js");
   const list = (await listHeatCourses()).filter((c) => c.name);
   const found = courseIn(question, list);
   let meta = found.c || null;
-  if (!meta && found.many) return { text: `Which course: **${[...new Set(found.many.map((c) => c.name))].slice(0, 4).join("**, **")}**? Ask again with its name, like \u201cTorrey Pines South\u201d.` };
+  if (!meta && found.many) { askedFor = { q: question, kind: "course" }; return { text: `Which course: **${[...new Set(found.many.map((c) => c.name))].slice(0, 4).join("**, **")}**? Ask again with its name, like \u201cTorrey Pines South\u201d.` }; }
   if (!meta && lastCourse) meta = list.find((c) => c.id === lastCourse) || null;
-  if (!meta) return { cant: true, text: "Which course? Put its name in the question, like “the hole strategy on hole 2 at Torrey Pines South into a back left pin”." };
+  if (!meta) { askedFor = { q: question, kind: "course" }; return { cant: true, text: "Which course? Put its name in the question, like “the hole strategy on hole 2 at Torrey Pines South into a back left pin”." }; }
   lastCourse = meta.id;
   const h = holeIn(question) || (askedPin && askedPin.course === meta.id ? askedPin.hole : null);
   askedPin = null;
-  if (!h) return { text: `Which hole at **${meta.name}**? Ask like “hole 2 at ${meta.name}, back left pin”.` };
+  if (!h) { askedFor = { q: question, kind: "hole" }; return { text: `Which hole at **${meta.name}**? Ask like “hole 2 at ${meta.name}, back left pin”.` }; }
   // (update 600) same-named uploads: the first with a read for this hole
   let raw = await heatData(meta), data = withMerges(meta, raw), X = data?.insights?.holes?.[h];
   for (const alt of (found.same || []).slice(1)) {
