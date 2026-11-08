@@ -70,10 +70,10 @@ export function icon(name) {
   svg.setAttribute("viewBox", "0 0 20 20");
   svg.setAttribute("aria-hidden", "true");
   // (update 278) Callie is drawn from her picture (icons/callie.png: the robot in white), in the text colour
-  if (name === "robot") {
+  if (name === "robot" || name === "calface") { // (update 624: calface: Cal without his speech bubble, for the header's coin)
     const ns = "http://www.w3.org/2000/svg", id = `callie-m${++robotN}`;
     const mask = document.createElementNS(ns, "mask"); mask.setAttribute("id", id);
-    const img = document.createElementNS(ns, "image"); img.setAttribute("href", "icons/cal.png?v=1"); /* (update 620: Cal, the caddie in a speech bubble) */ img.setAttribute("width", "20"); img.setAttribute("height", "20");
+    const img = document.createElementNS(ns, "image"); img.setAttribute("href", name === "calface" ? "icons/cal-face.png?v=1" : "icons/cal.png?v=1"); /* (update 620: Cal, the caddie in a speech bubble) */ img.setAttribute("width", "20"); img.setAttribute("height", "20");
     mask.appendChild(img);
     const rect = document.createElementNS(ns, "rect"); rect.setAttribute("width", "20"); rect.setAttribute("height", "20"); rect.setAttribute("fill", "currentColor"); rect.setAttribute("mask", `url(#${id})`);
     svg.append(mask, rect); svg.classList.add("ico-callie");
@@ -285,7 +285,7 @@ function checkCal() {
 }
 function callieButton() {
   checkCal();
-  const b = el("button", { type: "button", class: "hdr-icon callie-link", hidden: !calAllowed(), "aria-label": "Ask Cal", title: "Ask Cal: any question about a player\u2019s data" }, [icon("robot"), el("span", { class: "callie-name" }, "Cal")]);
+  const b = el("button", { type: "button", class: "hdr-icon callie-link", hidden: !calAllowed(), "aria-label": "Ask Cal", title: "Ask Cal: any question about a player\u2019s data" }, [icon("calface"), el("span", { class: "callie-name" }, "Cal")]);
   b.addEventListener("click", () => import("./callie.js").then((m) => m.openCallie()).catch((err) => console.error(err)));
   return b;
 }

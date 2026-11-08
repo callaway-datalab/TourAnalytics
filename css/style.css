@@ -6433,3 +6433,13 @@ div.sh-ud3-green { cursor: default; }
 .hm-orb .hm-cal-face { width: 66px !important; height: 66px !important; }
 .hm-orb-mic { position: absolute; right: -2px; bottom: 2px; width: 30px; height: 30px; border-radius: 50%; background: #e5252a; display: grid; place-items: center; box-shadow: 0 0 0 3px #1a1714; }
 .hm-orb-mic svg { width: 17px; height: 17px; }
+/* (update 622) the header's Cal button: Cal in dark ink on a gold coin (as in the Cal's Strategy avatar) */
+.rail-foot .hdr-icon.callie-link svg, .rail-foot .hdr-icon.callie-link svg.ico-callie { width: 30px !important; height: 30px !important; padding: 3px; border-radius: 50%; box-sizing: border-box;
+  color: #1a1408 !important; background: radial-gradient(circle at 35% 30%, #f0d9b0, #a07c3b 75%); box-shadow: 0 0 0 1px rgba(212,180,131,0.35); }
+.rail-foot .hdr-icon.callie-link:hover svg, .cal-open .rail-foot .hdr-icon.callie-link svg { box-shadow: 0 0 0 2px rgba(212,180,131,0.55), 0 0 12px rgba(212,180,131,0.45); }
+/* (update 623) no gold ring round the coin: the black of the header is its edge */
+.rail-foot .hdr-icon.callie-link svg, .rail-foot .hdr-icon.callie-link svg.ico-callie,
+.rail-foot .hdr-icon.callie-link:hover svg, .cal-open .rail-foot .hdr-icon.callie-link svg { box-shadow: none !important; }
+.rail-foot .hdr-icon.callie-link, .rail-foot .hdr-icon.callie-link:hover, .cal-open .rail-foot .hdr-icon.callie-link { border: 0 !important; background: transparent !important; box-shadow: none !important; outline: 0; }
+/* (update 624) the header's coin: Cal without his speech bubble filling a gold coin; the header's black is its edge */
+.rail-foot .hdr-icon.callie-link svg, .rail-foot .hdr-icon.callie-link svg.ico-callie { padding: 0 !important; width: 32px !important; height: 32px !important; background: radial-gradient(circle at 38% 32%, #ecd3a6, #c7a36c 70%, #a8844f) !important; }
