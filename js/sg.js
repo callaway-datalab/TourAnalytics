@@ -408,8 +408,10 @@ export function statAgg(rounds, narrowed = false) {
   for (const rd of rounds) {
     let obs = rd.shots;
     if (!obs.length) continue;
-    if (narrowed) obs = obs.filter((o) => o.cat != null);
-    else { const whole = obs.filter((o) => o.cat == null); if (whole.length) obs = whole; }
+    // (update 641) a value split only by distance (GIR % by Driver / Non-Driver: no category) counts as narrowed, not as
+    // the whole round (it was dropped from the split, so the report's GIR % by club stayed empty); as the Stats page reads it
+    if (narrowed) obs = obs.filter((o) => o.cat != null || (o.dist != null && o.dist !== ""));
+    else { const whole = obs.filter((o) => o.cat == null && (o.dist == null || o.dist === "")); if (whole.length) obs = whole; }
     if (!obs.length) continue;
     n++;
     for (const o of obs) { s += o.v * o.w; w += o.w; }
