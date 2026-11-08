@@ -53,14 +53,17 @@ export function strategyOf(recs, par, geo = {}) {
   // (update 614) the outline round the shots themselves; (616) a rounded oval: turned the way the shots spread, reaching
   // the farthest of them plus 2.5 yds, at least 5 yds across and never thinner than about half as wide as it is long
   // (a hull of a few shots along a strip was a thin sliver); drawn as its outline's points
-  const hullOf = (pts) => {
-    if (!pts || pts.length < 3) return null;
+  // (update 631) round most of the shots (the nearest 85% to their middle), 1.5 yds beyond them, and no wider than it
+  // needs to be (at least 0.4 as wide as long): a wide oval spilled into the fairway or rough beside a patch
+  const hullOf = (pts0) => {
+    if (!pts0 || pts0.length < 3) return null;
+    let pts = pts0; { const cx = mean(pts.map((p) => p[0])), cy = mean(pts.map((p) => p[1])); if (pts.length >= 6) pts = [...pts].sort((p, q) => Math.hypot(p[0] - cx, p[1] - cy) - Math.hypot(q[0] - cx, q[1] - cy)).slice(0, Math.ceil(pts.length * 0.85)); }
     const mx = mean(pts.map((p) => p[0])), my = mean(pts.map((p) => p[1]));
     let sxx = 0, syy = 0, sxy = 0; for (const [x, y] of pts) { const dx = x - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
-    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(th), uy = Math.sin(th), vx = -uy, vy = ux, pad = 2.5 * PPY;
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(th), uy = Math.sin(th), vx = -uy, vy = ux, pad = 1.5 * PPY;
     let a = Math.max(...pts.map(([x, y]) => Math.abs((x - mx) * ux + (y - my) * uy))) + pad;
     let b = Math.max(...pts.map(([x, y]) => Math.abs((x - mx) * vx + (y - my) * vy))) + pad;
-    a = Math.max(a, 5 * PPY); b = Math.max(b, 0.55 * a, 5 * PPY);
+    a = Math.max(a, 5 * PPY); b = Math.max(b, 0.4 * a, 4 * PPY);
     return Array.from({ length: 20 }, (_, k) => { const t = (k / 20) * 2 * Math.PI, ca = Math.cos(t) * a, sb = Math.sin(t) * b; return [Math.round(mx + ca * ux + sb * vx), Math.round(my + ca * uy + sb * vy)]; });
   };
   const circ = (rs, ptOf, tone) => {
@@ -146,6 +149,13 @@ export function strategyOf(recs, par, geo = {}) {
         // spot keeps long, long-left and long-right; not a left miss the rough round the green joins it to)
         if (mem.length) { const cnt = new Map(); for (const p of mem) for (const w of String(p.side).split("-")) cnt.set(w, (cnt.get(w) || 0) + 1);
           const main = [...cnt].sort((a, b) => b[1] - a[1])[0][0]; mem = mem.filter((p) => String(p.side).split("-").includes(main)); }
+        // (update 631) one patch: misses linked to each other within 5 yds, the biggest such group (two bunkers, or a
+        // bunker and the one beside it, inside a 20 yd circle are two places, not one)
+        if (mem.length) { const L = 5 * geo.ppy, left = new Set(mem), parts = [];
+          while (left.size) { const s0 = left.values().next().value, part = [s0]; left.delete(s0);
+            for (let i = 0; i < part.length; i++) for (const q of [...left]) if (Math.hypot(q.x - part[i].x, q.y - part[i].y) <= L) { part.push(q); left.delete(q); }
+            parts.push(part); }
+          mem = parts.sort((a, b) => b.length - a.length)[0]; x = mean(mem.map((p) => p.x)); y = mean(mem.map((p) => p.y)); }
         if (mem.length < minN) continue;
         // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
         // green) is a spot of its own rather than swallowed by a bigger one nearby
