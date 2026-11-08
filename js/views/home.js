@@ -166,17 +166,22 @@ export async function render(main, { previewClient } = {}) {
       }
       const cards = keys.map(cardOf).filter((c) => valsOf(c.now));
       const statsFor = (k) => (admin ? `#/admin/player-stats?player=${encodeURIComponent(k)}` : statsHref);
-      const headRow = el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, "YOUR PLAYERS"), plus()]);
+      // (update 642) left and right arrows in the heading, away from the cards (no tapping a player by mistake)
+      const prev = el("button", { type: "button", class: "hm-nav", "aria-label": "Previous players" }, "\u2039"),
+        next = el("button", { type: "button", class: "hm-nav", "aria-label": "More players" }, "\u203A");
+      const nav = el("span", { class: "hm-navs" }, [prev, next]);
+      const headRow = el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, "YOUR PLAYERS"), el("span", { class: "hm-gh-r" }, [nav, plus()])]);
       if (!cards.length) { mount(game, [headRow, none(keys.length ? "Your players\u2019 games will appear here once their first rounds are in." : "Tap + to pick the players you follow, and their games will show here.")]); return; }
       mount(game, [headRow, el("p", { class: "hm-sub2" }, "Swipe \u00b7 outside the dashed line = better than tour average"),
-        // (update 636) a right arrow over the row while there's more to swipe to (a tap moves one card)
+        // (update 636; 642: the arrows in the heading) a tap moves one card
         (() => { const row = el("div", { class: "hm-rads" }, cards.map((c) => { const v = valsOf(c.now), cv = valsOf(c.all), tot = v.TOTAL ?? 0;
           return el("a", { class: "hm-rad", href: statsFor(c.now.key) }, [el("span", { class: "hm-rn" }, [el("b", {}, c.now.label), el("span", { class: "hm-tots" }, [el("span", { class: tot >= 0 ? "pos" : "neg" }, [trendArrow(el, tot, cv?.TOTAL), fmtSG(tot)]), cv?.TOTAL != null ? el("span", { class: "hm-big2 sm" }, fmtSG(cv.TOTAL)) : null])]), radar(v, { small: true, c: cv, cLabel: c.beforeLabel })]); }));
-          const arrow = el("button", { type: "button", class: "hm-more", "aria-label": "More players" }, "\u203A");
-          const upd = () => { arrow.hidden = row.scrollLeft + row.clientWidth >= row.scrollWidth - 8; };
+          const step = () => (row.firstElementChild?.offsetWidth || 280) + 10;
+          const upd = () => { prev.disabled = row.scrollLeft <= 8; next.disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 8; nav.hidden = prev.disabled && next.disabled; };
           row.addEventListener("scroll", upd, { passive: true }); requestAnimationFrame(upd); window.addEventListener("resize", upd);
-          arrow.addEventListener("click", () => row.scrollBy({ left: (row.firstElementChild?.offsetWidth || 280) + 10, behavior: "smooth" }));
-          return el("div", { class: "hm-rads-w" }, [row, arrow]); })(),
+          prev.addEventListener("click", () => row.scrollBy({ left: -step(), behavior: "smooth" }));
+          next.addEventListener("click", () => row.scrollBy({ left: step(), behavior: "smooth" }));
+          return row; })(),
         radarKey(el, "Latest year", "Year before"), // (update 610: the key once, under the row; 611: each radar's corners name its years)
       ]);
     }

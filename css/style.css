@@ -6539,3 +6539,11 @@ div.sh-ud3-green { cursor: default; }
 .hm .hm-cal .hm-orb-mic svg { width: 21px; height: 21px; }
 @media (min-width: 900px) { .hm > .hm-cal { width: auto !important; height: auto !important; } .hm .hm-cal .hm-orb { width: 168px !important; height: 168px !important; } .hm .hm-orb .hm-cal-face { width: 117px !important; height: 117px !important; } }
 @media (prefers-reduced-motion: reduce) { .hm .hm-cal .hm-orb { animation: none; } }
+/* (update 642) Your players: ‹ › in the heading beside +, outside the cards; dimmed at either end */
+.hm-gh-r { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+.hm-navs { display: inline-flex; gap: 6px; }
+.hm-navs[hidden] { display: none; }
+.hm-nav { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(212,180,131,0.45); background: rgba(255,255,255,0.03); color: #d4b483; font-size: 1.3rem; line-height: 1; padding: 0 0 3px; display: grid; place-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.hm-nav:disabled { opacity: 0.3; cursor: default; }
+.hm-nav:not(:disabled):active { transform: scale(0.92); }
+.hm-gh { align-items: center; }
