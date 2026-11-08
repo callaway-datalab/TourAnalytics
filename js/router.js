@@ -10,7 +10,10 @@ const ROUTES = [
   ["/login", "public", () => import("./views/login.js"), "login"],
   ["/signup", "public", () => import("./views/signup.js"), "signup"],
   ["/dashboard", "client", () => import("./views/dashboard.js"), "dashboard"],
-  ["/home", "signed-in", () => import("./views/home.js"), "home"], // (update 609: everyone's first page)
+  ["/home", "signed-in", () => import("./views/home.js"), "home"],
+  // (update 645) a link straight to Cal (for an iPhone shortcut): Home, with Cal's chat open
+  ["/cal", "signed-in", () => import("./views/home.js").then((m) => ({ render: async (main, ctx) => { const c = await m.render(main, ctx);
+    try { history.replaceState(null, "", "#/home"); } catch { /* */ } import("./callie.js").then((x) => x.openCallie()).catch(() => {}); return c; } })), "home"], // (update 609: everyone's first page)
   ["/watchlist", "signed-in", () => import("./views/watchlist.js"), "watchlist"], // (update 609: off the menu for now; still opens by its link)
   // Analyze → Leaderboards and Player Stats (update 158; My Stats for a player is /dashboard)
   ["/leaderboards", "client", () => import("./views/leaderboards.js"), "leaderboards"],

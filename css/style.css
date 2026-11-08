@@ -6554,3 +6554,6 @@ div.sh-ud3-green { cursor: default; }
 .cal-hold.live { border-color: rgba(229,37,42,0.7); box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 0 3px rgba(229,37,42,0.18); }
 .cal-hold-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #e5252a; animation: calHoldDot 1s ease-in-out infinite; }
 @keyframes calHoldDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+/* (update 645) a hold isn't taken over by scrolling or the long-press menu (iPhone cancelled the touch mid-hold) */
+.cal-holdable { touch-action: none !important; }
+.cal-hold { cursor: pointer; }

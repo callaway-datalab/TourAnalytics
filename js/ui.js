@@ -294,47 +294,45 @@ function callieButton() {
 /* (update 644) hold the header's Cal: the microphone starts at once (no need to open Cal), and what you say is asked when
    you let go: a question opens Cal with its answer; a shot ("I just hit a 5 iron to the green, 25 ft left") goes into
    your round in progress. A tap still just opens Cal. */
-function holdToTalk(b, onHold) {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;
+export function holdToTalk(b, onHold = () => {}) {
+  // (update 645) the shared listener (keeps going through pauses); a long press no longer ends it early: iPhone cancels
+  // the touch (pointercancel) during a hold, which ended the listening while still held. Now only letting go ends it.
+  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return;
   b.classList.add("cal-holdable");
   b.addEventListener("contextmenu", (e) => e.preventDefault());
-  let timer = null, rec = null, on = false, said = "", tmp = "", pill = null, ended = null;
+  let timer = null, L = null, holding = false, pill = null;
   const show = (msg, live = true) => {
     if (!pill) { pill = el("div", { class: "cal-hold", role: "status", "aria-live": "polite" }); document.body.appendChild(pill); }
     pill.classList.toggle("live", live);
     mount(pill, [live ? el("span", { class: "cal-hold-dot", "aria-hidden": "true" }) : null, el("span", {}, msg)]);
   };
-  const hide = (ms = 0) => setTimeout(() => { pill?.remove(); pill = null; }, ms);
-  const start = () => {
-    timer = null; on = true; said = ""; tmp = ""; onHold();
-    window.addEventListener("pointerup", () => { if (on) release(); }, { once: true }); // (let go off the button)
+  const hide = (ms = 0) => { const p = pill; setTimeout(() => { p?.remove(); if (pill === p) pill = null; }, ms); };
+  const start = async () => {
+    timer = null; holding = true; onHold();
     try { navigator.vibrate?.(15); } catch { /* */ }
     show("Listening\u2026 let go to ask");
-    try {
-      const r = new SR(); rec = r;
-      r.lang = navigator.language || "en-US"; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
-      ended = new Promise((res) => { r.onend = res; });
-      r.onresult = (e) => { let f = "", t = ""; for (const x of e.results) { if (x.isFinal) f += `${x[0].transcript} `; else t += `${x[0].transcript} `; } said = f.trim(); tmp = t.trim();
-        const all = [said, tmp].filter(Boolean).join(" "); if (on) show(all || "Listening\u2026 let go to ask"); };
-      r.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { on = false; show("Microphone blocked: allow it for this site", false); hide(2500); } };
-      r.start();
-    } catch (err) { console.error(err); on = false; hide(); import("./callie.js").then((m) => m.openCallie()); }
+    pill.onclick = () => release(); // (a tap on it sends too, if letting go was missed)
+    setTimeout(() => { if (holding) release(); }, 45000); // (never left listening)
+    const { listener } = await import("./listen.js");
+    if (!holding) return;
+    L = listener({ onText: (t) => { if (holding) show(t || "Listening\u2026 let go to ask"); }, onBlocked: () => { holding = false; show("Microphone blocked: allow it for this site", false); hide(2500); } });
+    try { L.start(); } catch (err) { console.error(err); holding = false; hide(); import("./callie.js").then((m) => m.openCallie()); }
   };
   const release = async () => {
     if (timer) { clearTimeout(timer); timer = null; return; }
-    if (!on) return;
-    on = false;
-    const r = rec; rec = null;
-    try { r?.stop(); } catch { /* */ }
-    await Promise.race([ended, new Promise((res) => setTimeout(res, 1200))]);
-    const text = [said, tmp].filter(Boolean).join(" ").trim();
+    if (!holding) return;
+    holding = false;
+    const l = L; L = null;
+    const text = l ? await l.stop() : "";
     if (!text) { show("I didn\u2019t catch that. Hold and try again.", false); hide(2000); return; }
     show(`\u201c${text}\u201d`, false); hide(1500);
     import("./callie.js").then((m) => m.askHeld(text)).catch((err) => console.error(err));
   };
-  b.addEventListener("pointerdown", (e) => { if (e.button > 0) return; clearTimeout(timer); timer = setTimeout(start, 380); });
-  for (const ev of ["pointerup", "pointercancel"]) b.addEventListener(ev, release);
+  const down = (e) => { if (e.button > 0 || holding) return; clearTimeout(timer); timer = setTimeout(start, 380);
+    const up = () => { window.removeEventListener("pointerup", up); window.removeEventListener("touchend", up); release(); };
+    window.addEventListener("pointerup", up); window.addEventListener("touchend", up); };
+  b.addEventListener("pointerdown", down);
+  // a finger that slides off before the hold starts: no hold (a tap or a scroll)
   b.addEventListener("pointerleave", () => { if (timer) { clearTimeout(timer); timer = null; } });
 }
 

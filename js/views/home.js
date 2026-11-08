@@ -2,7 +2,7 @@
 // game as a radar (the four parts of the game against tour average: outside the dashed circle better, inside worse;
 // a coach with several players, or the admin: a row of small radars to swipe, one a player), Explore (picture cards
 // to the main pages) and this week's tournament (live, else the next one and when it starts).
-import { el, mount, calAllowed } from "../ui.js";
+import { el, mount, calAllowed, holdToTalk } from "../ui.js";
 import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
@@ -37,7 +37,10 @@ export async function render(main, { previewClient } = {}) {
     talk.appendChild(el("span", { class: "hm-orb-mic", "aria-hidden": "true" }));
     talk.lastChild.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
     const open = async (listen) => { const m = await import("../callie.js"); await m.openCallie(); if (listen) setTimeout(() => document.querySelector(".cal-mic:not(.on)")?.click(), 150); };
-    talk.addEventListener("click", (e) => { e.stopPropagation(); open(true); });
+    // (update 645) hold it to talk (asked when you let go, as with the header's Cal); a tap opens Cal listening
+    let held = false;
+    talk.addEventListener("click", (e) => { e.stopPropagation(); if (held) { held = false; return; } open(true); });
+    holdToTalk(talk, () => { held = true; });
     calCard = el("section", { class: "hm-cal" }, [talk, el("b", {}, "Ask Cal, the AI Caddy"), // (update 611: the name; a strategy and a stat example)
       el("span", { class: "hm-ex" }, "“How should I play the 2nd at Torrey Pines?”"), el("span", { class: "hm-ex" }, single && !team.isTeam ? "“How is my putting over my last 10 rounds?”" : "“Who putts best on Tour this season?”"),
     ]);
