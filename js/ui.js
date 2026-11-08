@@ -1,3 +1,4 @@
+import { listener, canListen } from "./listen.js"; // (update 646: started straight from the touch)
 import { getPreviewTeam, effectiveTeam } from "./preview.js";
 import { portalName } from "./firebase-init.js";
 import { subscribe, signOut } from "./auth.js";
@@ -295,45 +296,55 @@ function callieButton() {
    you let go: a question opens Cal with its answer; a shot ("I just hit a 5 iron to the green, 25 ft left") goes into
    your round in progress. A tap still just opens Cal. */
 export function holdToTalk(b, onHold = () => {}) {
-  // (update 645) the shared listener (keeps going through pauses); a long press no longer ends it early: iPhone cancels
-  // the touch (pointercancel) during a hold, which ended the listening while still held. Now only letting go ends it.
-  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return;
+  // (update 645) only letting go ends it (iPhone cancelled the touch mid-hold).
+  // (update 646) the microphone starts the moment your finger goes down (iPhone only hears a session started straight from
+  // a touch: one started a moment later, once it was clearly a hold, heard nothing, so letting go always said "I didn't
+  // catch that"). A tap, let go before it's a hold, drops it unheard and does what a tap does. On iPhone a pause ends the
+  // listening (it can't be restarted unheard), so what you said is sent then, without waiting for you to let go.
+  if (!canListen()) return;
   b.classList.add("cal-holdable");
   b.addEventListener("contextmenu", (e) => e.preventDefault());
-  let timer = null, L = null, holding = false, pill = null;
+  let timer = null, L = null, holding = false, armed = false, pill = null, sent = false;
   const show = (msg, live = true) => {
-    if (!pill) { pill = el("div", { class: "cal-hold", role: "status", "aria-live": "polite" }); document.body.appendChild(pill); }
+    if (!pill) { pill = el("div", { class: "cal-hold", role: "status", "aria-live": "polite" }); pill.onclick = () => release(); document.body.appendChild(pill); }
     pill.classList.toggle("live", live);
     mount(pill, [live ? el("span", { class: "cal-hold-dot", "aria-hidden": "true" }) : null, el("span", {}, msg)]);
   };
   const hide = (ms = 0) => { const p = pill; setTimeout(() => { p?.remove(); if (pill === p) pill = null; }, ms); };
-  const start = async () => {
-    timer = null; holding = true; onHold();
-    try { navigator.vibrate?.(15); } catch { /* */ }
-    show("Listening\u2026 let go to ask");
-    pill.onclick = () => release(); // (a tap on it sends too, if letting go was missed)
-    setTimeout(() => { if (holding) release(); }, 45000); // (never left listening)
-    const { listener } = await import("./listen.js");
-    if (!holding) return;
-    L = listener({ onText: (t) => { if (holding) show(t || "Listening\u2026 let go to ask"); }, onBlocked: () => { holding = false; show("Microphone blocked: allow it for this site", false); hide(2500); } });
-    try { L.start(); } catch (err) { console.error(err); holding = false; hide(); import("./callie.js").then((m) => m.openCallie()); }
-  };
-  const release = async () => {
-    if (timer) { clearTimeout(timer); timer = null; return; }
-    if (!holding) return;
-    holding = false;
-    const l = L; L = null;
-    const text = l ? await l.stop() : "";
+  const send = (text) => {
+    if (sent) return; sent = true;
     if (!text) { show("I didn\u2019t catch that. Hold and try again.", false); hide(2000); return; }
     show(`\u201c${text}\u201d`, false); hide(1500);
     import("./callie.js").then((m) => m.askHeld(text)).catch((err) => console.error(err));
   };
-  const down = (e) => { if (e.button > 0 || holding) return; clearTimeout(timer); timer = setTimeout(start, 380);
+  const release = async () => {
+    if (timer) { clearTimeout(timer); timer = null; armed = false; const l = L; L = null; l?.cancel(); return; } // a tap
+    if (!holding) return;
+    holding = false;
+    const l = L; L = null;
+    send(l ? await l.stop() : "");
+  };
+  const down = (e) => {
+    if (e.button > 0 || holding || armed) return;
+    armed = true; sent = false;
+    L = listener({
+      onText: (t) => { if (holding) show(t || "Listening\u2026 let go to ask"); },
+      onBlocked: () => { holding = false; armed = false; show("Microphone blocked: allow it for this site in Settings", false); hide(2500); },
+      onPause: (t) => { if (holding) { holding = false; L = null; send(t); } },
+    });
+    try { L.start(); } catch (err) { console.error(err); L = null; }
+    timer = setTimeout(() => {
+      timer = null; armed = false;
+      if (!L) { import("./callie.js").then((m) => m.openCallie()); return; }
+      holding = true; onHold();
+      try { navigator.vibrate?.(15); } catch { /* */ }
+      show("Listening\u2026 let go to ask");
+      setTimeout(() => { if (holding) release(); }, 45000); // (never left listening)
+    }, 380);
     const up = () => { window.removeEventListener("pointerup", up); window.removeEventListener("touchend", up); release(); };
-    window.addEventListener("pointerup", up); window.addEventListener("touchend", up); };
+    window.addEventListener("pointerup", up); window.addEventListener("touchend", up);
+  };
   b.addEventListener("pointerdown", down);
-  // a finger that slides off before the hold starts: no hold (a tap or a scroll)
-  b.addEventListener("pointerleave", () => { if (timer) { clearTimeout(timer); timer = null; } });
 }
 
 export function renderShell(root, { previewClient, currentRoute }) {

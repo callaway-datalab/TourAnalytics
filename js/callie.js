@@ -877,6 +877,10 @@ export async function openCallie() {
       L = listener({
         onText: (t) => { if (!listening) return; input.value = t; input.scrollTop = input.scrollHeight; },
         onBlocked: () => { stopListening(); input.placeholder = "Microphone blocked: allow it for this site in the browser\u2019s settings"; },
+        // (update 646) iPhone: a pause ends the listening (a restart wouldn't hear): what you said stays, ready to send
+        onPause: (t) => { if (!listening) return; listening = false; L = null; if (t) { input.value = t; committed = t; }
+          mic?.classList.remove("on"); mic?.setAttribute("aria-pressed", "false"); panel?.querySelector(".cal-foot")?.classList.remove("rec");
+          input.placeholder = PH; if (t) input.setAttribute("data-hint", "Tap Ask to send, or the mic to say more"); },
       });
       L.start(committed);
     };
