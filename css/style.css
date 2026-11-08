@@ -6465,3 +6465,6 @@ div.sh-ud3-green { cursor: default; }
   .hm-dots { display: none; }
 }
 @media (min-width: 900px) { .hm-fc { flex: 1 1 0; width: auto; min-width: 180px; } }
+/* (update 627) Cal's chat: the same Cal as Home's orb (Cal in his speech bubble, dark ink, on a gold coin) */
+.cal-head .cal-ava { width: 2.7rem !important; height: 2.7rem !important; border-radius: 50%; border: 0 !important; color: #1a1408 !important; background: radial-gradient(circle at 35% 30%, #ffe7b8, #b8893e 75%) !important; box-shadow: 0 0 14px rgba(212,180,131,0.35); display: grid; place-items: center; }
+.cal-head .cal-ava svg, .cal-head .cal-ava svg.ico-callie { width: 32px !important; height: 32px !important; }

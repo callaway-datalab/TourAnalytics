@@ -1034,12 +1034,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         ...rows.map((r) => (r.cells?.[c] ? valueW(r.cells[c], z0) + 14 : 0))));
       // (no name column: a margin inside the box's left and right edges, so values aren't against them)
       const pad = nameW ? 0 : 10;
-      const w = WIDE ? W : Math.min(W, nameW + 2 * pad + need.reduce((t, x) => t + x, 0)), cellW = (w - nameW - 2 * pad) / colHeads.length;
+      const w = W, cellW = (w - nameW - 2 * pad) / colHeads.length; // (update 627: every tour the page's width, as the DP World Tour's)
       // the biggest size (9 to 14 pt) at which every value and its rank bubble fit side by side in their cell
       const fitsAt = (z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k;
         return rows.every((r) => (r.cells || []).every((b) => !b || 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8 <= cellW)); };
       let vs = VS ?? 14; while (vs > 8 && !fitsAt(vs)) vs -= 0.5; // (the page's size; smaller only if this grid can't fit it)
-      const rowH = Math.round(Math.max(9, vs) + 16 + (WIDE ? 14 : 0)), top = colHeads.every((h) => !h) ? 3 : 16;
+      const rowH = Math.round(Math.max(9, vs) + 16 + 14), top = colHeads.every((h) => !h) ? 3 : 16; // (update 627: room for the field bar, every tour)
       return { nameW, pad, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
     };
     const gridBox = (colHeads, rows) => {
@@ -1066,7 +1066,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           pillAt(b, cx + cellW - 8, ry + 4 + vs * 0.8, 5.6 + 1.6 * k);
           if (b.fieldAvg != null) d.text(`Avg ${fmtStat(b.def, b.fieldAvg)}`, cx + 4 + 2 * k, ry + ROW_H - 4, { size: 5.6 + 1.6 * k, color: P.grey });
           // (update 571) where they sit in the field: worst on the left, best on the right; the tick is the field's average
-          if (WIDE && b.def.higher != null && b.lo != null && b.hi != null && b.hi > b.lo) {
+          if (b.def.higher != null && b.lo != null && b.hi != null && b.hi > b.lo) { // (update 627: every tour, not only a short page)
             const x0 = cx + 4 + 2 * k, x1 = cx + cellW - 12, by = ry + ROW_H - 16, pos = (v) => { const t = (v - b.lo) / (b.hi - b.lo); return x0 + (x1 - x0) * (b.def.higher === false ? 1 - t : t); };
             d.roundRect(x0, by - 1.5, x1 - x0, 3, 1.5, { fill: "#dcdce1" });
             if (b.fieldAvg != null) d.line(pos(b.fieldAvg), by - 3.5, pos(b.fieldAvg), by + 3.5, { color: P.grey, width: 0.8 });
@@ -1097,6 +1097,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       if (a.teeAllRow) rows.push({ name: a.teeSplit ? "All" : "", cells: a.teeGrid.map((g) => g.all) });
       section("Off-the-Tee", a.teeGrid.map((g) => (g.key === "gir" ? "GIR % (Par 4/5)" : g.def.label)), rows);
     }
+    // (update 627) the PGA and Korn Ferry: an Off-the-Tee section always (a line saying so when the file has no driving
+    // distance or fairway stats)
+    else if (a.unit !== "event") section("Off-the-Tee", ["Driving Distance", "Hit Fairway %"], [{ name: "", note: "No driving distance or fairway stats in this data file." }]);
     // Approach by distance (GIR % isn't shown)
     section("Approach by distance", a.bands || [], (a.grid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || (g.def.higher === false ? "lower is better" : ""), cells: g.cells, note: noteFor(g) })));
     // Short game: Up & Down by distance and lie

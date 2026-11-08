@@ -209,6 +209,12 @@ const looseStatKey = (q) => {
   const par = q.match(/par([345])s?(?!\d)/);
   if (par && /scor|avg|average|perf|strokes/.test(q) && !/gir|greens?inreg|birdie|bogey|eagle|par(or|orbetter)/.test(q)) return `par${par[1]}`;
   if ((/^gir/.test(q) || /gir(pct|percent|percentage)?$/.test(q) || /greens?inreg/.test(q)) && !/par3(?!\d)/.test(q)) return "gir";
+  // (update 627) driving distance and fairways by more names: "Driving Distance (Driver)", "Avg Drive", "Fairways Hit %",
+  // "Driving Accuracy %", "Fairway %" (not a rank)
+  if (!/rank|pos(ition)?$/.test(q)) {
+    if (/drivingdist|drivedist|distanceofdrive|^avgdrive|^drivedistance|^drivingdistance/.test(q)) return "drive";
+    if (/drivingacc|fairways?hit|hitfairways?|fairways?(pct|percent|percentage)|fwy(hit|pct|percent)/.test(q)) return "fwy";
+  }
   // (update 478) proximity by any name: "Proximity to Hole (ft)", "Avg Proximity", "Distance to Pin", "Feet from Pin"…
   if (/proxim|^prox|dist(ance)?to(the)?(pin|hole|cup)|(feet|ft)(from|to)(the)?(pin|hole|cup)/.test(q) && !/pct|percent|rank/.test(q)) return "prox";
   return null;

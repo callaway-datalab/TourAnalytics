@@ -76,6 +76,14 @@ const midOf = (label) => {
   if (/\+|>|over/i.test(t) && nums.length === 1) return nums[0] + 5;
   return nums.length > 1 ? (nums[0] + nums[1]) / 2 : nums[0];
 };
+/** (update 627) a range's span: "<30 yds" 0-30, ">25 ft" 25-60, "10-20 yds" 10-20 (null when it's one number) */
+const spanOf = (label) => {
+  const t = String(label || ""), nums = (t.match(/\d+(\.\d+)?/g) || []).map(Number);
+  if (!nums.length) return null;
+  if (/^\s*(<|under)/i.test(t)) return { lo: 0, hi: nums[0] };
+  if (/\+|>|over/i.test(t) && nums.length === 1) return { lo: nums[0], hi: nums[0] * 2.4 };
+  return nums.length > 1 ? { lo: nums[0], hi: nums[1] } : null;
+};
 /**
  * Your strokes gained per shot on the course, by practice bucket: { bucketId: { sgPer, n } }.
  * rounds: prepared rounds (the Tour Events file and your entered rounds).
@@ -95,9 +103,17 @@ export function courseByBucket(cat, rounds) {
       else add("driver", s.sg, w); // (a tee shot with nothing said about the club: most are drivers)
       continue;
     }
+    // (update 627) a wide range ("<30 yds", ">25 ft") counts towards every practice range it covers, by how much of it
+    // each covers (a narrow one still lands in the one it's in)
+    const rg = spanOf(s.dist), B = BUCKETS[cat];
+    if (rg) {
+      const lo = Math.max(rg.lo, B[0].lo), hi = Math.min(rg.hi, B.at(-1).hi), span = hi - lo;
+      const parts = span > 0 ? B.map((x) => [x, Math.max(0, Math.min(hi, x.hi) - Math.max(lo, x.lo)) / span]).filter(([, f]) => f > 0) : [];
+      if (parts.length > 1) { for (const [x, f] of parts) add(x.id, s.sg * f, w * f); continue; }
+    }
     const m = midOf(s.dist);
     if (m == null) continue;
-    const b = BUCKETS[cat].find((x) => m >= x.lo && m < x.hi) || (m >= BUCKETS[cat].at(-1).hi ? BUCKETS[cat].at(-1) : null);
+    const b = B.find((x) => m >= x.lo && m < x.hi) || (m >= B.at(-1).hi ? B.at(-1) : null);
     if (b) add(b.id, s.sg, w);
   }
   for (const k of Object.keys(out)) out[k].sgPer = out[k].n ? out[k].sg / out[k].n : null;
