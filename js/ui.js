@@ -286,8 +286,56 @@ function checkCal() {
 function callieButton() {
   checkCal();
   const b = el("button", { type: "button", class: "hdr-icon callie-link", hidden: !calAllowed(), "aria-label": "Ask Cal", title: "Ask Cal: any question about a player\u2019s data" }, [icon("calface"), el("span", { class: "callie-name" }, "Cal")]);
-  b.addEventListener("click", () => import("./callie.js").then((m) => m.openCallie()).catch((err) => console.error(err)));
+  let held = false;
+  b.addEventListener("click", (e) => { if (held) { held = false; e.preventDefault(); return; } import("./callie.js").then((m) => m.openCallie()).catch((err) => console.error(err)); });
+  holdToTalk(b, () => { held = true; });
   return b;
+}
+/* (update 644) hold the header's Cal: the microphone starts at once (no need to open Cal), and what you say is asked when
+   you let go: a question opens Cal with its answer; a shot ("I just hit a 5 iron to the green, 25 ft left") goes into
+   your round in progress. A tap still just opens Cal. */
+function holdToTalk(b, onHold) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  b.classList.add("cal-holdable");
+  b.addEventListener("contextmenu", (e) => e.preventDefault());
+  let timer = null, rec = null, on = false, said = "", tmp = "", pill = null, ended = null;
+  const show = (msg, live = true) => {
+    if (!pill) { pill = el("div", { class: "cal-hold", role: "status", "aria-live": "polite" }); document.body.appendChild(pill); }
+    pill.classList.toggle("live", live);
+    mount(pill, [live ? el("span", { class: "cal-hold-dot", "aria-hidden": "true" }) : null, el("span", {}, msg)]);
+  };
+  const hide = (ms = 0) => setTimeout(() => { pill?.remove(); pill = null; }, ms);
+  const start = () => {
+    timer = null; on = true; said = ""; tmp = ""; onHold();
+    window.addEventListener("pointerup", () => { if (on) release(); }, { once: true }); // (let go off the button)
+    try { navigator.vibrate?.(15); } catch { /* */ }
+    show("Listening\u2026 let go to ask");
+    try {
+      const r = new SR(); rec = r;
+      r.lang = navigator.language || "en-US"; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+      ended = new Promise((res) => { r.onend = res; });
+      r.onresult = (e) => { let f = "", t = ""; for (const x of e.results) { if (x.isFinal) f += `${x[0].transcript} `; else t += `${x[0].transcript} `; } said = f.trim(); tmp = t.trim();
+        const all = [said, tmp].filter(Boolean).join(" "); if (on) show(all || "Listening\u2026 let go to ask"); };
+      r.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { on = false; show("Microphone blocked: allow it for this site", false); hide(2500); } };
+      r.start();
+    } catch (err) { console.error(err); on = false; hide(); import("./callie.js").then((m) => m.openCallie()); }
+  };
+  const release = async () => {
+    if (timer) { clearTimeout(timer); timer = null; return; }
+    if (!on) return;
+    on = false;
+    const r = rec; rec = null;
+    try { r?.stop(); } catch { /* */ }
+    await Promise.race([ended, new Promise((res) => setTimeout(res, 1200))]);
+    const text = [said, tmp].filter(Boolean).join(" ").trim();
+    if (!text) { show("I didn\u2019t catch that. Hold and try again.", false); hide(2000); return; }
+    show(`\u201c${text}\u201d`, false); hide(1500);
+    import("./callie.js").then((m) => m.askHeld(text)).catch((err) => console.error(err));
+  };
+  b.addEventListener("pointerdown", (e) => { if (e.button > 0) return; clearTimeout(timer); timer = setTimeout(start, 380); });
+  for (const ev of ["pointerup", "pointercancel"]) b.addEventListener(ev, release);
+  b.addEventListener("pointerleave", () => { if (timer) { clearTimeout(timer); timer = null; } });
 }
 
 export function renderShell(root, { previewClient, currentRoute }) {
@@ -443,4 +491,14 @@ document.addEventListener("click", () => requestAnimationFrame(keepPanelsOnScree
 export function infoTip(content, label = "What this means") {
   const paras = (Array.isArray(content) && content.every((x) => typeof x === "string") ? content : [content]).filter((x) => x != null && x !== "");
   return el("details", { class: "bs-help info-tip" }, [el("summary", { "aria-label": label, title: label }, "ⓘ"), ...paras.map((x) => el("p", { class: "muted small" }, x))]);
+}
+
+/** (update 643) every page someone can open from the menus, for Cal to take them there: [{ label, href, section }] */
+export function siteLinks() {
+  const kind = shellKind(), admin = kind === "admin", out = [];
+  if (admin) out.push({ label: "User Access", href: "#/admin/clients", section: "" }, { label: "Upload Data", href: "#/admin/datasets", section: "User Access" });
+  out.push({ label: "Home", href: "#/home", section: "" });
+  for (const sec of sectionsFor(kind)) for (const it of sec.items) if (!it[3]?.off) out.push({ label: it[0], href: it[1], section: sec.label });
+  out.push({ label: "WITB", href: "#/witb", section: "" }, { label: "Chat", href: admin ? "#/admin/questions" : "#/questions", section: "" }, { label: "Profile", href: "#/account", section: "" });
+  return out;
 }

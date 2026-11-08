@@ -6,7 +6,7 @@
 //   intent "player":  one to three players' numbers, by season, event, round, part of the game, distance, lie or club
 //   intent "field":   who leads (or trails) a tour in strokes gained or a stat, over a period, with enough rounds
 //   intent "compare": set up in Compare (the plan goes with it, so there's no second AI call)
-import { el, mount, icon, analystAllowed } from "./ui.js";
+import { el, mount, icon, analystAllowed, siteLinks } from "./ui.js";
 import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
@@ -673,6 +673,12 @@ async function ask(question) {
     const list = await playersYouCanSee();
     // (update 589) "the hole strategy on hole 2 at Torrey Pines South into a back left pin": Cal's Read
     // (update 630) "Hole 1" straight after Cal asked which hole: the same question, carried on
+    // (update 644) "I just hit a 5 iron to the green, 25 ft left": the next shot in your round in progress
+    { const shot = await shotFromTalk(question).catch(() => null);
+      if (shot) { const { href, ...msg } = shot; reply({ ...msg, strat: true }); if (href) setTimeout(() => goShot(href), 700); return; } }
+    // (update 643) "start a new round", "take me to practice": the page, opened for them
+    { const nav = isStrategyQ(question) || isPinReply(question) || isStratReply(question) ? null : navAnswer(question);
+      if (nav) { const { auto, ...msg } = nav; reply({ ...msg, strat: true }); if (auto && msg.go) setTimeout(() => { closeCallie(); location.hash = msg.go.href; }, 700); return; } }
     if (isStrategyQ(question) || isPinReply(question) || isStratReply(question)) return reply({ ...(await answerStrategy(question)), strat: true }); // (update 600: strat: no Compare link)
     clearStratAsk();
     const local = readLocal(question, list);
@@ -831,6 +837,7 @@ function draw() {
     })() : null;
     fwd?.querySelector("a").addEventListener("click", () => { try { sessionStorage.setItem("chat.prefill", `Question for an analyst (Cal couldn\u2019t answer it): ${askQ}`); } catch { /* */ } closeCallie(); });
     if (go && m.go.open) go.addEventListener("click", (e) => { e.preventDefault(); try { sessionStorage.setItem("cal.open", JSON.stringify(m.go.open)); } catch { /* */ } closeCallie(); location.hash = `#/course-prep?cal=${Date.now()}`; }); // (update 589: that hole and pin on Strategy Maps)
+    if (go && m.go.nav) go.addEventListener("click", () => closeCallie()); // (update 643)
     if (go && m.go.plan) go.addEventListener("click", () => { try { sessionStorage.setItem("callie.plan", JSON.stringify(m.go.plan)); } catch { /* */ } }); // (update 264: Compare opens with this plan, no second AI call)
     const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
     items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table || m.read ? " wide" : ""}` }, [...rich(m.text), choices, m.read ? readCard(m.read, m.read.where, { compact: true }) : null, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd, notIt]));
@@ -914,6 +921,68 @@ export async function openCallie() {
   const seen = await playersYouCanSee();
   exList = examples(seen, seen.length > 1 ? await tourLeader() : null);
   draw();
+}
+/* (update 644) a shot said to Cal ("I just hit a 5 iron to the green with 25 ft left"): added to your round in progress,
+   as the next shot on the hole you're on. The round page does the adding (the same as its own Voice input). */
+const SHOT_TALK = /\b(i|just|then)\s+(just\s+)?(hit|holed|made|missed|chipped|pitched|putted|drove|teed off|laid up|punched|bladed|topped|sank|duffed|lagged|tapped in)\b|^\s*(hit|holed|made|missed|chipped|putted|sank|drove)\b|\b(\d{1,2}|a|my)\s?-?(iron|wood|hybrid|wedge|i)\b.{0,40}\b(to|into|on|in|onto|over|short of)\s+(the\s+)?(green|fairway|rough|bunker|sand|trap|water|trees|fringe|hole)\b|\bdriver\b.{0,30}\b(fairway|rough|bunker|trees|water)\b/i;
+export async function shotFromTalk(text) {
+  if (!SHOT_TALK.test(text) || /\?\s*$/.test(text) || /^\s*(how|what|who|which|when|where|why|is|are|does|do|did|can|should)\b/i.test(text)) return null;
+  const { parseShots, golfFix } = await import("./voiceShots.js");
+  const r = parseShots(golfFix(text), { bag: [] });
+  if (!r.shots.length || !r.shots.some((x) => x.endLie)) return null;
+  const { getState } = await import("./auth.js"), st = getState();
+  const { myEntryKey } = await import("./views/dataEntry.js"), { watchMyRounds } = await import("./rounds.js");
+  const list = await new Promise((res) => { let un = null, done = false; const end = (l) => { if (done) return; done = true; try { un?.(); } catch { /* */ } res(l); };
+    un = watchMyRounds(st, myEntryKey(st), (l) => { if (l.length) end(l); }); setTimeout(() => end([]), 4000); });
+  const cur = list.find((rd) => rd.status !== "complete" && (!rd.ownerUid || rd.ownerUid === st.user?.uid));
+  if (!cur) return { text: "You don\u2019t have a round in progress to add that to. Start one on **Enter New Round**.", go: { href: "#/entry/new", label: "Start a round \u2192", nav: true } };
+  if (cur.mode === "quick") return { text: `Your round${cur.course ? ` at **${cur.course}**` : ""} is a scores-only round, so there are no shots to add to.` };
+  const href = `#/entry/${encodeURIComponent(cur.playerKey || myEntryKey(st))}/${cur.id}`;
+  try { sessionStorage.setItem("cal.shot", JSON.stringify({ text, round: cur.id, at: Date.now() })); } catch { /* */ }
+  return { text: `Adding that to your round${cur.course ? ` at **${cur.course}**` : ""}.`, go: { href, label: "Open the round \u2192", nav: true }, href };
+}
+/** (update 644) hold the header's Cal: what was said, asked (or a shot, added) without opening Cal first */
+export async function askHeld(text) {
+  const t = String(text || "").trim(); if (!t) return;
+  const shot = await shotFromTalk(t).catch((err) => { console.error(err); return null; });
+  if (shot?.href) { goShot(shot.href); return; }
+  await openCallie();
+  if (shot) { chat.push({ who: "me", text: t }, { who: "callie", ...shot, strat: true }); draw(); return; }
+  ask(t);
+}
+function goShot(href) {
+  closeCallie();
+  if (location.hash === href) window.dispatchEvent(new Event("cal-shot")); else location.hash = href;
+}
+
+/* (update 643) Cal as a guide round the site: "start a new round", "take me to practice", "where are my goals?" */
+const PAGES = [
+  ["Enter New Round", /\b(enter|start|add|log|record|input|put in|submit|new|track|play)\b.{0,25}\b(round|scores?|scorecard)\b|\bscorecard\b|\bnew round\b/i],
+  ["Course Prep", /\bcourse prep\b|\bstrategy maps?\b|\bcourse (maps?|reports?)\b|\byardage book\b|\bprep(are)? for (a |the )?(course|tournament|event)\b/i],
+  ["Practice", /\bpractic(e|ing)\b|\bdrills?\b|\brange session\b/i],
+  ["Goals", /\bgoals?\b/i],
+  ["Stats", /\bstats? (page|tab)\b|\bdashboard\b|\bplayer stats\b|^\s*(my |the )?stats\s*[.!?]*\s*$/i],
+  ["Compare", /\bcompare (page|tab|tool)\b|\bcomparisons?\b|^\s*(open|go to|take me to|show me)\s+(the\s+)?compare\b/i],
+  ["Leaderboards", /\bleaderboards?\b|\brankings? (page|tab)\b/i],
+  ["Event Feed", /\bevent feed\b|\blive (feed|scores?|scoring|leaderboard)\b/i],
+  ["Home", /\bhome( ?page| screen)?\b/i],
+  ["WITB", /\bwitb\b|\bwhat'?s in (the|my|his|her|their) bag\b|\b(my|the) bag\b|\bequipment\b/i],
+  ["Chat", /\b(chat|messages?|inbox)\b|\b(talk|write|message) (to )?(an )?analysts?\b/i],
+  ["Profile", /\b(my )?(profile|account|settings)\b/i],
+  ["User Access", /\buser access\b|\b(add|invite|manage) (a |new )?(users?|clients?)\b/i],
+  ["Upload Data", /\bupload( data)?\b|\bimport data\b|\brebuild (maps|rankings)\b/i],
+];
+const NAV_GO = /\b(take me|bring me|go(ing)? (to|back)|navigate|open|show me|get me to|jump to|switch to|let me|i want to|i'?d like to|i need to|start|enter|add|log|record)\b/i;
+const NAV_ASK = /^\s*(where|how|what|which|can|is|are|do)\b/i;
+function navAnswer(q) {
+  const t = String(q || "").trim(), words = t.split(/\s+/).length;
+  const hit = PAGES.find(([, re]) => re.test(t));
+  if (!hit || !(NAV_GO.test(t) || NAV_ASK.test(t) || words <= 4)) return null;
+  const page = siteLinks().find((p) => p.label === hit[0]);
+  if (!page) return { text: `**${hit[0]}** isn\u2019t open to you in this portal.` };
+  const where = page.section ? ` (under **${page.section}**)` : "";
+  const ask = NAV_ASK.test(t) && !/\b(take me|bring me|go to|open)\b/i.test(t);
+  return { text: ask ? `That\u2019s **${page.label}**${where}.` : `Taking you to **${page.label}**${where}.`, go: { href: page.href, label: `Open ${page.label} \u2192`, nav: true }, auto: !ask };
 }
 export function closeCallie() {
   if (!panel) return;

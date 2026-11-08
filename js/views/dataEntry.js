@@ -675,6 +675,7 @@ function renderRound(main, params, flash, previewClient) {
   let strokes = [];           // the hole on screen, being edited
   let saveTimer = null;
   let firstLoad = true;
+  const calTok = {}; window.__calShotPage = calTok; // (update 644: only the round page on screen takes a shot from Cal)
   const status = el("span", { class: "save-status", role: "status" });
 
   // Whoever entered a round can change or delete it. The admin can too, but only from inside that
@@ -682,11 +683,11 @@ function renderRound(main, params, flash, previewClient) {
   const canEdit = () => round && (round.ownerUid === state.user.uid || (state.isAdmin && previewClient?.key === playerKey));
   // Your clubs (WITB), for the optional Club on each shot.
   let bag = [];
-  getBag(state.user.uid).then((clubs) => {
+  const bagReady = getBag(state.user.uid).catch(() => []).then((clubs = []) => {
     bag = clubs.map((c) => ({ id: c.id || null, label: clubLabel(c), model: clubMake(c), note: c.note || "", shaft: shaftText(c), cat: c.cat, type: c.type, yards: Number(c.yards) || null })).filter((c) => c.label).sort((a, b) => clubRank(a.label) - clubRank(b.label));
     if (round && round.holes && strokes.length && holeBox?.isConnected) { chain(); drawHole(); } // (the bag arrived: suggest clubs)
     if (round && holeIdx >= 0 && bag.length) drawHole();
-  });
+  }).catch(() => {});
   // (update 167) the shot's club in the bag: by its id, else by club and brand / model (older shots)
   const bagIndex = (st) => { const byId = st.clubId ? bag.findIndex((c) => c.id === st.clubId) : -1; return byId >= 0 ? byId : bag.findIndex((c) => c.label === st.club && (c.model || "") === (st.clubMake || "")); };
   // two clubs alike but for a note or shaft: the note (or shaft) tells them apart in the Club list
@@ -709,6 +710,7 @@ function renderRound(main, params, flash, previewClient) {
       holeIdx = r.status === "complete" ? -1 : Math.max(0, next);
       loadHole();
       draw();
+      takeCalShot(); // (update 644)
     } else {
       // A save coming back from the database. The database doesn't keep field order, so compare the
       // contents, not the text. Our own save (or anything while you're typing in this hole) only
@@ -1126,7 +1128,20 @@ function renderRound(main, params, flash, previewClient) {
     if (voiceOpen) drawHole();
   }
   function stopListening() { try { listening?.stop(); } catch { /* already stopped */ } listening = null; }
-  function applyVoice(r) {
+  // (update 644) a shot said to Cal ("I just hit a 5 iron to the green, 25 ft left"): the next shot on the hole you're on
+  async function takeCalShot() {
+    let p = null; try { p = JSON.parse(sessionStorage.getItem("cal.shot") || "null"); } catch { /* */ }
+    if (window.__calShotPage !== calTok || !p || p.round !== roundId || Date.now() - p.at > 120000 || !round || holeIdx < 0 || !canEdit()) return;
+    try { sessionStorage.removeItem("cal.shot"); } catch { /* */ }
+    await bagReady;
+    if (!main.isConnected || holeIdx < 0) return;
+    const r = parseShots(golfFix(p.text), { bag });
+    if (!r.shots.length) { flash("Cal couldn\u2019t make a shot out of that. Add it here instead.", "error"); return; }
+    applyVoice(r, `from what you told Cal (hole ${hole().n})`);
+  }
+  const onCalShot = () => { if (window.__calShotPage !== calTok) { window.removeEventListener("cal-shot", onCalShot); return; } takeCalShot(); };
+  window.addEventListener("cal-shot", onCalShot);
+  function applyVoice(r, from = "from what you said") {
     if (!r.shots.length) return;
     const h = hole();
     const start = voiceStart(); // shots before this are done and stay as they are
@@ -1146,7 +1161,7 @@ function renderRound(main, params, flash, previewClient) {
     if (strokes[strokes.length - 1]?.endLie !== "Holed" && strokes.every((s) => s.open === false)) strokes.push({ ...blankStroke(), open: true });
     stopListening(); voiceOpen = false; voiceText = "";
     changed(true);
-    flash(`Filled in shot${said.length === 1 ? ` ${start + 1}` : `s ${start + 1}\u2013${start + said.length}`} from what you said.`, "ok");
+    flash(`Filled in shot${said.length === 1 ? ` ${start + 1}` : `s ${start + 1}\u2013${start + said.length}`} ${from}.`, "ok");
   }
 
   // Club for a shot: your WITB clubs, or a nudge to fill out WITB.

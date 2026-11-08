@@ -6547,3 +6547,10 @@ div.sh-ud3-green { cursor: default; }
 .hm-nav:disabled { opacity: 0.3; cursor: default; }
 .hm-nav:not(:disabled):active { transform: scale(0.92); }
 .hm-gh { align-items: center; }
+/* (update 644) hold the header's Cal to talk: no long-press menu or text selection; a pill under the header while listening */
+.cal-holdable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.cal-hold { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 70px); transform: translateX(-50%); z-index: 9999; max-width: min(92vw, 520px); display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-radius: 999px; background: rgba(20,18,14,0.96); border: 1px solid rgba(212,180,131,0.55); color: #f5f5f7; font-size: 0.92rem; box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 24px rgba(212,180,131,0.25); }
+.cal-hold.live { border-color: rgba(229,37,42,0.7); box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 0 3px rgba(229,37,42,0.18); }
+.cal-hold-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #e5252a; animation: calHoldDot 1s ease-in-out infinite; }
+@keyframes calHoldDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
