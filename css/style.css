@@ -6468,3 +6468,25 @@ div.sh-ud3-green { cursor: default; }
 /* (update 627) Cal's chat: the same Cal as Home's orb (Cal in his speech bubble, dark ink, on a gold coin) */
 .cal-head .cal-ava { width: 2.7rem !important; height: 2.7rem !important; border-radius: 50%; border: 0 !important; color: #1a1408 !important; background: radial-gradient(circle at 35% 30%, #ffe7b8, #b8893e 75%) !important; box-shadow: 0 0 14px rgba(212,180,131,0.35); display: grid; place-items: center; }
 .cal-head .cal-ava svg, .cal-head .cal-ava svg.ico-callie { width: 32px !important; height: 32px !important; }
+/* (update 635) Home: the Ask Cal card about 40% smaller (a smaller orb, tighter spacing, smaller words); the room it frees
+   goes to the player radar charts */
+.hm .hm-cal { padding: 18px 14px 12px !important; border-radius: 22px; }
+.hm-orb { width: 60px !important; height: 60px !important; margin: 0 auto 10px !important; box-shadow: 0 0 0 7px rgba(212,180,131,0.10), 0 0 0 14px rgba(212,180,131,0.05), 0 0 30px rgba(212,180,131,0.55); animation-name: hmGlowSm; }
+@keyframes hmGlowSm { 0%, 100% { box-shadow: 0 0 0 7px rgba(212,180,131,0.10), 0 0 0 14px rgba(212,180,131,0.05), 0 0 24px rgba(212,180,131,0.45); } 50% { box-shadow: 0 0 0 8px rgba(212,180,131,0.14), 0 0 0 16px rgba(212,180,131,0.06), 0 0 38px rgba(212,180,131,0.7); } }
+.hm-orb .hm-cal-face { width: 42px !important; height: 42px !important; }
+.hm-orb-mic { width: 20px; height: 20px; right: -3px; bottom: 0; box-shadow: 0 0 0 2px #1a1714; }
+.hm-orb-mic svg { width: 12px; height: 12px; }
+.hm-cal b { font-size: 1.05rem !important; }
+.hm-ex { font-size: 0.78rem; margin-top: 2px; }
+.hm-tap { margin-top: 6px; font-size: 0.66rem; }
+.hm-type { margin-top: 2px; font-size: 0.74rem; }
+.hm-rads .hm-rad { width: 290px !important; }
+.hm-radar.sm { max-width: 280px !important; }
+.hm-rad .hm-key { font-size: 0.74rem; }
+@media (min-width: 900px) {
+  .hm { grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) !important; }
+  .hm-orb { width: 72px !important; height: 72px !important; } .hm-orb .hm-cal-face { width: 50px !important; height: 50px !important; }
+  .hm-cal b { font-size: 1.15rem !important; }
+  .hm-rads .hm-rad { width: 340px !important; }
+  .hm-radar.sm { max-width: 330px !important; }
+}

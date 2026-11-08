@@ -294,7 +294,12 @@ export function holeBoards(shots, pins, par) {
   const bunkerDist = (x, y) => { const cx = Math.floor(x / bCell), cy = Math.floor(y / bCell); let best = Infinity;
     for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) for (const q of bGrid.get(`${cx + i},${cy + j}`) || []) { const d = Math.hypot(q.x - x, q.y - y); if (d < best) best = d; }
     return best / ppy; };
-  return { ref, marks, ppy, boardOf, sideOf, pinNamesAll, greenDist, bunkerDist };
+  // (update 635) a bunker behind this spot: a bunker shot within r yds that's farther from the green (by a yard or more),
+  // so the spot sits between the bunker and the green (a strip in front of a bunker, not rough beside or behind one)
+  const bunkerBehind = (x, y, r) => { const g = greenDist(x, y), cx = Math.floor(x / bCell), cy = Math.floor(y / bCell), n = Math.ceil(r * ppy / bCell);
+    for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) for (const q of bGrid.get(`${cx + i},${cy + j}`) || []) if (Math.hypot(q.x - x, q.y - y) <= r * ppy && greenDist(q.x, q.y) >= g + 1) return true;
+    return false; };
+  return { ref, marks, ppy, boardOf, sideOf, pinNamesAll, greenDist, bunkerDist, bunkerBehind };
 }
 export function approachMiss(qs) {
   for (let i = 1; i < qs.length; i++) {
@@ -383,8 +388,9 @@ export function courseInsights(C) {
       const fringe = !!(m && m.nq[3] === 1 && HB?.greenDist && HB.greenDist(m.nq[1], m.nq[2]) <= 1.5)
         // (update 616) and a thin strip of fairway or rough between the green and a bunker (the green's edge within 4 yds,
         // a bunker within 3): not a place to aim for
-        || !!(m && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.greenDist && HB?.bunkerDist && HB.greenDist(m.nq[1], m.nq[2]) <= 6 && HB.bunkerDist(m.nq[1], m.nq[2]) <= 4); // (update 619: 6 and 4 yds, from 4 and 3) // (update 602: within about a yard of the green's outline; the outline sits a little inside the true edge)
-      (X.sp[t.p] || (X.sp[t.p] = [])).push({ s: t.s, qs, side: fringe ? null : side, mLie: m && !fringe ? LIES[m.nq[3]] : null, apIdx, ...(fringe ? { fringe: true } : {}) }); }
+        || !!(m && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.greenDist && HB?.bunkerDist && HB.greenDist(m.nq[1], m.nq[2]) <= 6 && HB.bunkerDist(m.nq[1], m.nq[2]) <= 4 && (!HB.bunkerBehind || HB.bunkerBehind(m.nq[1], m.nq[2], 4))); // (update 635: only when the bunker is behind it: in front of a bunker, not beside one) // (update 619: 6 and 4 yds, from 4 and 3) // (update 602: within about a yard of the green's outline; the outline sits a little inside the true edge)
+      (X.sp[t.p] || (X.sp[t.p] = [])).push({ s: t.s, qs, side: fringe ? null : side, mLie: m && !fringe ? LIES[m.nq[3]] : null, apIdx, ...(fringe ? { fringe: true } : {}),
+        ...(m && !fringe && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.bunkerBehind?.(m.nq[1], m.nq[2], 5) ? { bb: 1 } : {}) }); } // (update 635: bb, a bunker behind it within 5 yds)
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
     // (update 508) and the same for its pin
     const PS = X.ps[t.p] || (X.ps[t.p] = { field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, land: [] });

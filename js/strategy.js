@@ -167,10 +167,14 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 619) a fairway or rough miss beside a bunker (a quarter or more of the misses within 6 yds of it in a bunker)
     // is a lucky lie, not a place: left out of every spot, so a spot of long rough isn't flattered by the strip of rough
     // in front of a bunker that the rough round the green joins it to
-    { const R = 6 * geo.ppy, all = missPts.slice();
-      for (const p of all) { if (p.lie !== "rough" && p.lie !== "fairway") continue;
+    // (update 634) narrower: a quarter of misses within 6 yds, or any bunker miss within 4 yds, took out whole patches of
+    // rough that border a bunker (rough left of a green, 35 misses scoring 4.20, never became a spot). Now: two in five of
+    // 4+ misses within 5 yds in a bunker, or a bunker miss within 2 yds (the strip right at a bunker's edge)
+    { const R = 5 * geo.ppy, all = missPts.slice();
+      // (update 635) and only a miss between a bunker and the green (a bunker behind it): rough beside a bunker is a fine miss
+      for (const p of all) { if ((p.lie !== "rough" && p.lie !== "fairway") || !p.r.bb) continue;
         const nb = all.filter((q) => q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= R);
-        if ((nb.length >= 3 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.25) || all.some((q) => q.lie === "bunker" && Math.hypot(q.x - p.x, q.y - p.y) <= 4 * geo.ppy)) p.lucky = true; } // (or a bunker miss within 4 yds)
+        if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || all.some((q) => q.lie === "bunker" && Math.hypot(q.x - p.x, q.y - p.y) <= 2 * geo.ppy)) p.lucky = true; } // (or a bunker miss within 2 yds)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
     const cand = gen(MIN_N, [8, 12, 15, 20]);
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
@@ -191,8 +195,10 @@ export function strategyOf(recs, par, geo = {}) {
     // bunker, it can't be the best or second best miss (it can still be the worst)
     const risky = (g) => {
       if (g.mem[0].lie === "bunker") return false;
-      const R = 6 * geo.ppy, nb = missPts.filter((p) => Math.hypot(p.x - g.cx, p.y - g.cy) <= R);
-      return nb.length >= 4 && nb.filter((p) => p.lie === "bunker").length / nb.length >= 0.25;
+      if (g.mem.filter((p) => p.r.bb).length < g.mem.length / 2) return false; // (update 635) beside a bunker is fine; in front of one isn't
+      // (update 634) a third or more within 5 yds (was a quarter within 6)
+      const R = 5 * geo.ppy, nb = missPts.filter((p) => Math.hypot(p.x - g.cx, p.y - g.cy) <= R);
+      return nb.length >= 4 && nb.filter((p) => p.lie === "bunker").length / nb.length >= 0.34;
     };
     // (update 625) ranked on an average pulled toward the average of every miss when there are few (8 misses' worth), so a
     // spot of 9 doesn't beat one of 26 by luck; the tip still says the spot's own average
@@ -219,7 +225,8 @@ export function strategyOf(recs, par, geo = {}) {
     items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: atOf(b1, "good") });
     // (update 615) only two spots: the other is the worst (red), not a second best
     if (order.length === 2) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "bad") });
-    else items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "ok") });
+    // (update 634) ranked on an average weighed for its sample size: a second best with a lower average says why it's second
+    else items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}${b2.avg < b1.avg ? `: a lower average, but on too few samples to rank above the best miss` : ""}.`, at: atOf(b2, "ok") });
     if (order.length >= 3) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${w.lab} ${vn(w.avg, w.n)}.`, at: atOf(w, "bad") });
   } else {
     const g = done.filter((r) => apOut(r) === "green"), m = done.filter((r) => r.side);
