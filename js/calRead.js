@@ -91,12 +91,12 @@ export async function playerProfile(rounds, ix, label) {
   const pct = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
   const drive = vals.length >= 10 ? { typical: Math.round(pct(0.5)), reach: Math.round(pct(0.85)), n: vals.length }
     : vals.length ? (() => { const a = vals.reduce((t, v) => t + v, 0) / vals.length; return { typical: Math.round(a), reach: Math.round(a + 12), n: vals.length }; })() : null;
-  let best = null;
+  let best = null; const app = [];
   for (const b of ix?.bands?.get("APP") || []) {
     const a = ix.m.get(`APP|${b}|*`), rg = yRange(b); if (!a || a.w < 15 || !rg || rg.lo < 50 || rg.hi > 300) continue;
-    const sg = a.sg / a.w; if (!best || sg > best.sg) best = { ...rg, band: b, sg, n: Math.round(a.w) };
+    const sg = a.sg / a.w, o = { ...rg, band: b, sg, n: Math.round(a.w) }; app.push(o); if (!best || sg > best.sg) best = o;
   }
-  return drive || best ? { label, first: String(label || "").split(" ")[0] || label, drive, best } : null;
+  return drive || best ? { label, first: String(label || "").split(" ")[0] || label, drive, best, app } : null;
 }
 /** The same from a player's whole stats file: their last 12 months (none: their latest 12 months), as Strategy Maps does. */
 export async function playerProfileFrom(rounds, label) {
@@ -107,19 +107,23 @@ export async function playerProfileFrom(rounds, label) {
   const lvl = rounds.filter((rd) => dayMs(rd) >= (latest >= from ? from : latest - YEAR));
   return lvl.length ? playerProfile(lvl, skillIndex(lvl), label) : null;
 }
-const inBest = (yds, b) => b && yds != null && yds >= b.lo - 5 && yds <= b.hi + 5;
+// (update 628) how they play from the distance a spot leaves (their own approach band).
+// (update 629) the aim is the spot with the lowest scoring average in their reach; their approach play there is only a
+// highlight when it's good, never what picks the spot.
+const appAt = (yds, P) => yds == null ? null : (P.app || []).find((b) => yds >= b.lo && yds < b.hi + (b.hi === b.lo ? 1 : 0)) || null;
+const goodAt = (yds, P) => { const b = appAt(yds, P); return b && b.sg > 0 ? b : null; };
+const gainTxt = (b, P) => `${b === P.best ? "your best approach range: " : "a good distance for you: "}you gain ${b.sg.toFixed(2)} a shot from ${b.lo}-${b.hi} yds (${b.n} shots)`;
 export function playerAim(read, P) {
   if (!read?.r || !P) return read;
-  const r = read.r, items = [...r.items], f2 = (v) => v.toFixed(2), bTxt = (b) => `${b.lo}-${b.hi} yds, ${b.sg >= 0 ? "+" : "\u2212"}${Math.abs(b.sg).toFixed(2)} a shot`;
+  const r = read.r, items = [...r.items], f2 = (v) => v.toFixed(2);
   let changed = false;
-  // off the tee: the field's aim, swapped for theirs
+  // off the tee: the field's aim, swapped for the lowest-scoring spot within their reach
   if (r.teeOpts?.length && P.drive) {
     const reach = P.drive.reach + 10, ok = r.teeOpts.filter((o) => o.len <= reach);
     if (ok.length) {
-      const fit = ok.filter((o) => inBest(o.left, P.best)), pick = (fit.length ? fit : ok).sort((a, b) => a.avg - b.avg || b.n - a.n)[0];
+      const pick = [...ok].sort((a, b) => a.avg - b.avg || b.n - a.n)[0];
       let t = `Aim for ${pick.z} around ${pick.len} yds off the tee (${f2(pick.avg)}, ${nOnly(pick.n)}). Within your reach (about ${P.drive.typical}, up to ${P.drive.reach})`;
-      if (pick.left != null) t += inBest(pick.left, P.best) ? `; leaves about ${Math.round(pick.left)} yds, your best approach range (${bTxt(P.best)}).`
-        : `; leaves about ${Math.round(pick.left)} yds${P.best ? ` (your best range, ${bTxt(P.best)}, isn\u2019t left by any spot in reach)` : ""}.`;
+      if (pick.left != null) { const b = goodAt(pick.left, P); t += `; leaves about ${Math.round(pick.left)} yds${b ? `, ${gainTxt(b, P)}` : ""}.`; } else t += ".";
       const i = items.findIndex((it) => it.k === "tee" && (it.h === "Aim" || /^Aim for/.test(it.t)));
       const mine = { k: "tee", h: "Aim", t, at: pick.at ? [pick.at] : [], mine: true };
       if (i >= 0) items[i] = mine; else items.unshift(mine);
@@ -129,11 +133,10 @@ export function playerAim(read, P) {
       changed = true;
     }
   }
-  // a par 5's lay-up: the distance in their best approach range, when there are samples there
-  if (r.layOpts?.length && P.best) {
-    const fit = r.layOpts.filter((o) => inBest(o.left + 10, P.best)).sort((a, b) => a.avg - b.avg)[0];
-    if (fit) { items.push({ k: "layup", h: "Lay-up distance", t: `Laying up, leave about ${fit.left}-${fit.left + 20} yds (${f2(fit.avg)}, ${nOnly(fit.n)}), your best approach range (${bTxt(P.best)}).`, at: fit.at ? [fit.at] : [], mine: true }); changed = true; }
-  }
+  // a par 5's lay-up: the field's (lowest-scoring) lay-up distance stays; a note for them when it's a good distance for them
+  const lay = r.layOpts?.length ? [...r.layOpts].sort((a, b) => a.avg - b.avg || b.n - a.n)[0] : null, lb = lay && goodAt(lay.left + 10, P);
+  const li = lb ? items.findIndex((it) => it.k === "layup") : -1;
+  if (li >= 0) { items[li] = { ...items[li], t: `${items[li].t} For ${P.first}, ${gainTxt(lb, P)}.` }; changed = true; }
   return changed ? { ...read, r: { ...r, items }, who: P.first } : read;
 }
 
