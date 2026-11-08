@@ -147,9 +147,10 @@ export function strategyOf(recs, par, geo = {}) {
         if (mem.length) { const cnt = new Map(); for (const p of mem) for (const w of String(p.side).split("-")) cnt.set(w, (cnt.get(w) || 0) + 1);
           const main = [...cnt].sort((a, b) => b[1] - a[1])[0][0]; mem = mem.filter((p) => String(p.side).split("-").includes(main)); }
         if (mem.length < minN) continue;
-        const sig = `${c.lie}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
+        // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
+        // green) is a spot of its own rather than swallowed by a bigger one nearby
+        const sig = `${c.lie}|${ry}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
         if (!seen.has(sig)) { seen.add(sig); out.push({ ry, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
-        break;
       }
       return out;
     };
@@ -161,7 +162,7 @@ export function strategyOf(recs, par, geo = {}) {
         const nb = all.filter((q) => q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= R);
         if ((nb.length >= 3 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.25) || all.some((q) => q.lie === "bunker" && Math.hypot(q.x - p.x, q.y - p.y) <= 4 * geo.ppy)) p.lucky = true; } // (or a bunker miss within 4 yds)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
-    const cand = gen(MIN_N, [15, 20]);
+    const cand = gen(MIN_N, [8, 12, 15, 20]);
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
     const sideOf = (mem) => {
@@ -183,7 +184,10 @@ export function strategyOf(recs, par, geo = {}) {
       const R = 6 * geo.ppy, nb = missPts.filter((p) => Math.hypot(p.x - g.cx, p.y - g.cy) <= R);
       return nb.length >= 4 && nb.filter((p) => p.lie === "bunker").length / nb.length >= 0.25;
     };
-    const byAvg = [...named].sort((a, b) => a.avg - b.avg || b.n - a.n), pick = [];
+    // (update 625) ranked on an average pulled toward the average of every miss when there are few (8 misses' worth), so a
+    // spot of 9 doesn't beat one of 26 by luck; the tip still says the spot's own average
+    const allAvg = mean(missPts.map((p) => sc(p.r))), adj = (g) => (g.n * g.avg + MIN_N * allAvg) / (g.n + MIN_N);
+    const byAvg = [...named].sort((a, b) => adj(a) - adj(b) || b.n - a.n), pick = [];
     for (const g of byAvg) { if (pick.length < 2 && risky(g)) continue; if (pick.every((x) => apart(x, g))) pick.push(g); }
     // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
     // different place that's scored worse than the second best
