@@ -1093,8 +1093,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // Off-the-Tee: a column per stat (Driving Distance, Hit Fairway %), a row for Driver and Non-Driver when the
     // data splits them (otherwise one row)
     if (a.teeGrid?.length) {
-      // (update 631) split by club: the Driver and Non-Driver rows only (no "All" row), and only the stats split that way
-      const cols = a.teeSplit ? a.teeGrid.filter((g) => g.cells.some(Boolean)) : a.teeGrid;
+      // (update 631) split by club: the Driver and Non-Driver rows only (no "All" row); (632) every column kept (GIR %
+      // shows a dash until the data has it by club)
+      const cols = a.teeGrid;
       const rows = a.teeSplit ? ["Driver", "Non-Driver"].map((kind, r) => ({ name: kind, cells: cols.map((g) => g.cells[r] || null) }))
         : [{ name: "", cells: cols.map((g) => g.all) }];
       if (cols.length) section("Off-the-Tee", cols.map((g) => (g.key === "gir" ? "GIR % (Par 4/5)" : g.def.label)), rows);
