@@ -36,13 +36,15 @@ export async function render(main, { previewClient } = {}) {
     talk.firstChild.innerHTML = '<svg class="hm-cal-face" viewBox="0 0 20 20"><mask id="hm-cal-m"><image href="icons/cal.png?v=1" width="20" height="20"/></mask><rect width="20" height="20" fill="#1a1408" mask="url(#hm-cal-m)"/></svg>';
     talk.appendChild(el("span", { class: "hm-orb-mic", "aria-hidden": "true" }));
     talk.lastChild.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
-    const typeB = el("button", { type: "button", class: "hm-type" }, "or type a question");
     const open = async (listen) => { const m = await import("../callie.js"); await m.openCallie(); if (listen) setTimeout(() => document.querySelector(".cal-mic:not(.on)")?.click(), 150); };
-    talk.addEventListener("click", () => open(true));
-    typeB.addEventListener("click", () => open(false));
+    talk.addEventListener("click", (e) => { e.stopPropagation(); open(true); });
     calCard = el("section", { class: "hm-cal" }, [talk, el("b", {}, "Ask Cal, the AI Caddy"), // (update 611: the name; a strategy and a stat example)
       el("span", { class: "hm-ex" }, "“How should I play the 2nd at Torrey Pines?”"), el("span", { class: "hm-ex" }, single && !team.isTeam ? "“How is my putting over my last 10 rounds?”" : "“Who putts best on Tour this season?”"),
-      el("span", { class: "hm-tap" }, "TAP TO TALK"), typeB]);
+    ]);
+    // (update 636) a round card, no "tap to talk" lines: the orb listens, anywhere else on the card opens Cal to type
+    calCard.setAttribute("role", "button"); calCard.tabIndex = 0; calCard.setAttribute("aria-label", "Ask Cal: type a question");
+    calCard.addEventListener("click", () => open(false));
+    calCard.addEventListener("keydown", (e) => { if (e.target === calCard && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(false); } });
   }
 
   // ---- your game (filled in once the data is in) ----
@@ -170,8 +172,14 @@ export async function render(main, { previewClient } = {}) {
       const headRow = el("div", { class: "hm-gh" }, [el("span", { class: "hm-t" }, "YOUR PLAYERS"), plus()]);
       if (!cards.length) { mount(game, [headRow, none(keys.length ? "Your players\u2019 games will appear here once their first rounds are in." : "Tap + to pick the players you follow, and their games will show here.")]); return; }
       mount(game, [headRow, el("p", { class: "hm-sub2" }, "Swipe \u00b7 outside the dashed line = better than tour average"),
-        el("div", { class: "hm-rads" }, cards.map((c) => { const v = valsOf(c.now), cv = valsOf(c.all), tot = v.TOTAL ?? 0;
-          return el("a", { class: "hm-rad", href: statsFor(c.now.key) }, [el("span", { class: "hm-rn" }, [el("b", {}, c.now.label), el("span", { class: "hm-tots" }, [el("span", { class: tot >= 0 ? "pos" : "neg" }, [trendArrow(el, tot, cv?.TOTAL), fmtSG(tot)]), cv?.TOTAL != null ? el("span", { class: "hm-big2 sm" }, fmtSG(cv.TOTAL)) : null])]), radar(v, { small: true, c: cv, cLabel: c.beforeLabel })]); })),
+        // (update 636) a right arrow over the row while there's more to swipe to (a tap moves one card)
+        (() => { const row = el("div", { class: "hm-rads" }, cards.map((c) => { const v = valsOf(c.now), cv = valsOf(c.all), tot = v.TOTAL ?? 0;
+          return el("a", { class: "hm-rad", href: statsFor(c.now.key) }, [el("span", { class: "hm-rn" }, [el("b", {}, c.now.label), el("span", { class: "hm-tots" }, [el("span", { class: tot >= 0 ? "pos" : "neg" }, [trendArrow(el, tot, cv?.TOTAL), fmtSG(tot)]), cv?.TOTAL != null ? el("span", { class: "hm-big2 sm" }, fmtSG(cv.TOTAL)) : null])]), radar(v, { small: true, c: cv, cLabel: c.beforeLabel })]); }));
+          const arrow = el("button", { type: "button", class: "hm-more", "aria-label": "More players" }, "\u203A");
+          const upd = () => { arrow.hidden = row.scrollLeft + row.clientWidth >= row.scrollWidth - 8; };
+          row.addEventListener("scroll", upd, { passive: true }); requestAnimationFrame(upd); window.addEventListener("resize", upd);
+          arrow.addEventListener("click", () => row.scrollBy({ left: (row.firstElementChild?.offsetWidth || 280) + 10, behavior: "smooth" }));
+          return el("div", { class: "hm-rads-w" }, [row, arrow]); })(),
         radarKey(el, "Latest year", "Year before"), // (update 610: the key once, under the row; 611: each radar's corners name its years)
       ]);
     }
