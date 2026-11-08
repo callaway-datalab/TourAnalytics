@@ -41,10 +41,7 @@ export async function render(main, { previewClient } = {}) {
     calCard = el("section", { class: "hm-cal" }, [talk, el("b", {}, "Ask Cal, the AI Caddy"), // (update 611: the name; a strategy and a stat example)
       el("span", { class: "hm-ex" }, "“How should I play the 2nd at Torrey Pines?”"), el("span", { class: "hm-ex" }, single && !team.isTeam ? "“How is my putting over my last 10 rounds?”" : "“Who putts best on Tour this season?”"),
     ]);
-    // (update 636) a round card, no "tap to talk" lines: the orb listens, anywhere else on the card opens Cal to type
-    calCard.setAttribute("role", "button"); calCard.tabIndex = 0; calCard.setAttribute("aria-label", "Ask Cal: type a question");
-    calCard.addEventListener("click", () => open(false));
-    calCard.addEventListener("keydown", (e) => { if (e.target === calCard && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(false); } });
+    // (update 640) no card: Cal's orb is the button (tap to talk)
   }
 
   // ---- your game (filled in once the data is in) ----

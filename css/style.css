@@ -6501,3 +6501,41 @@ div.sh-ud3-green { cursor: default; }
 .hm-rads-w { position: relative; }
 .hm-more { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(212,180,131,0.45); background: rgba(15,15,18,0.88); color: #d4b483; font-size: 1.5rem; line-height: 1; padding: 0 0 3px 2px; display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 2; }
 .hm-more[hidden] { display: none; }
+/* (update 637) the Ask Cal circle as a button: raised, a gold rim, a soft gold glow that breathes, pressed when tapped */
+.hm .hm-cal { border: 1.5px solid rgba(212,180,131,0.7) !important;
+  background: radial-gradient(circle at 50% 22%, rgba(236,211,166,0.30), rgba(120,92,48,0.22) 55%, rgba(26,22,16,0.95) 100%) !important;
+  box-shadow: inset 0 2px 0 rgba(255,236,200,0.18), inset 0 -10px 24px rgba(0,0,0,0.45), 0 10px 26px rgba(0,0,0,0.55), 0 0 28px rgba(212,180,131,0.35), 0 0 60px rgba(212,180,131,0.18);
+  animation: hmBtnGlow 3s ease-in-out infinite; transition: transform 0.12s ease; -webkit-tap-highlight-color: transparent; }
+@keyframes hmBtnGlow {
+  0%, 100% { box-shadow: inset 0 2px 0 rgba(255,236,200,0.18), inset 0 -10px 24px rgba(0,0,0,0.45), 0 10px 26px rgba(0,0,0,0.55), 0 0 24px rgba(212,180,131,0.30), 0 0 52px rgba(212,180,131,0.14); }
+  50% { box-shadow: inset 0 2px 0 rgba(255,236,200,0.22), inset 0 -10px 24px rgba(0,0,0,0.45), 0 10px 26px rgba(0,0,0,0.55), 0 0 36px rgba(212,180,131,0.50), 0 0 80px rgba(212,180,131,0.24); } }
+.hm .hm-cal:hover { border-color: rgba(236,211,166,0.9) !important; }
+.hm .hm-cal:active { transform: scale(0.97); }
+.hm .hm-cal:focus-visible { outline: 2px solid #ecd3a6; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) { .hm .hm-cal { animation: none; } }
+/* (update 638) the example questions a touch smaller, each on one line; Cal fills more of the orb */
+.hm .hm-cal { padding: 0 12px !important; }
+.hm .hm-cal .hm-ex { font-size: 0.68rem; white-space: nowrap; letter-spacing: -0.01em; }
+.hm .hm-orb .hm-cal-face { width: 54px !important; height: 54px !important; }
+@media (min-width: 900px) { .hm .hm-cal .hm-ex { font-size: 0.76rem; } .hm .hm-orb .hm-cal-face { width: 64px !important; height: 64px !important; } }
+/* (update 639) Cal back to his size in the orb (about 70% of it); the orb itself bigger, filling more of the round card */
+.hm .hm-cal .hm-orb { width: 96px !important; height: 96px !important; margin: 0 auto 12px !important; }
+.hm .hm-orb .hm-cal-face { width: 67px !important; height: 67px !important; }
+.hm .hm-cal .hm-orb-mic { width: 28px; height: 28px; right: -2px; bottom: 2px; box-shadow: 0 0 0 3px #1a1714; }
+.hm .hm-cal .hm-orb-mic svg { width: 16px; height: 16px; }
+@media (min-width: 900px) { .hm .hm-cal .hm-orb { width: 112px !important; height: 112px !important; } .hm .hm-orb .hm-cal-face { width: 78px !important; height: 78px !important; } }
+/* (update 640) no card round Ask Cal: Cal's orb, half as big again, is the button (raised, a gold glow, pressed when tapped) */
+.hm .hm-cal { width: auto !important; height: auto !important; aspect-ratio: auto; border: 0 !important; border-radius: 0 !important; background: none !important; box-shadow: none !important; animation: none !important; padding: 4px 0 0 !important; cursor: default; transform: none !important; }
+.hm .hm-cal .hm-orb { width: 144px !important; height: 144px !important; margin: 18px auto 22px !important; transition: transform 0.12s ease;
+  box-shadow: inset 0 3px 0 rgba(255,240,210,0.5), inset 0 -10px 22px rgba(90,62,20,0.45), 0 10px 26px rgba(0,0,0,0.55), 0 0 0 10px rgba(212,180,131,0.10), 0 0 0 20px rgba(212,180,131,0.05), 0 0 50px rgba(212,180,131,0.55);
+  animation: hmOrbBtn 2.8s ease-in-out infinite; }
+@keyframes hmOrbBtn {
+  0%, 100% { box-shadow: inset 0 3px 0 rgba(255,240,210,0.5), inset 0 -10px 22px rgba(90,62,20,0.45), 0 10px 26px rgba(0,0,0,0.55), 0 0 0 10px rgba(212,180,131,0.10), 0 0 0 20px rgba(212,180,131,0.05), 0 0 40px rgba(212,180,131,0.45); }
+  50% { box-shadow: inset 0 3px 0 rgba(255,240,210,0.5), inset 0 -10px 22px rgba(90,62,20,0.45), 0 10px 26px rgba(0,0,0,0.55), 0 0 0 13px rgba(212,180,131,0.14), 0 0 0 26px rgba(212,180,131,0.06), 0 0 70px rgba(212,180,131,0.75); } }
+.hm .hm-cal .hm-orb:active { transform: scale(0.95); }
+.hm .hm-cal .hm-orb:focus-visible { outline: 2px solid #ecd3a6; outline-offset: 6px; }
+.hm .hm-orb .hm-cal-face { width: 100px !important; height: 100px !important; }
+.hm .hm-cal .hm-orb-mic { width: 38px; height: 38px; right: 0; bottom: 4px; box-shadow: 0 0 0 3px #1a1714; }
+.hm .hm-cal .hm-orb-mic svg { width: 21px; height: 21px; }
+@media (min-width: 900px) { .hm > .hm-cal { width: auto !important; height: auto !important; } .hm .hm-cal .hm-orb { width: 168px !important; height: 168px !important; } .hm .hm-orb .hm-cal-face { width: 117px !important; height: 117px !important; } }
+@media (prefers-reduced-motion: reduce) { .hm .hm-cal .hm-orb { animation: none; } }
