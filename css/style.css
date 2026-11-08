@@ -6425,3 +6425,11 @@ div.sh-ud3-green { cursor: default; }
 /* (update 617) Home: room between an Explore card's picture and its title */
 .hm-fc { height: 196px; }
 .hm-pic { height: 54%; }
+/* (update 620) Cal, the caddie in a speech bubble: a little larger in the round gold avatars */
+.cal-read-ava svg { width: 24px !important; height: 24px !important; }
+.cal-read.compact .cal-read-ava svg { width: 20px !important; height: 20px !important; }
+/* (update 621) Home: Cal in the gold orb, a red microphone badge on its edge */
+.hm-orb { position: relative; }
+.hm-orb .hm-cal-face { width: 66px !important; height: 66px !important; }
+.hm-orb-mic { position: absolute; right: -2px; bottom: 2px; width: 30px; height: 30px; border-radius: 50%; background: #e5252a; display: grid; place-items: center; box-shadow: 0 0 0 3px #1a1714; }
+.hm-orb-mic svg { width: 17px; height: 17px; }
