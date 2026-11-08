@@ -244,7 +244,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
           return tPeak ? [pkTh, restTh] : [restTh, pkTh]; })(),
         el("th", { class: "num", title: `${TN.Kept} less ${TN.Cut.toLowerCase()}: green where the ${TN.kept} were better` }, "Diff"),
         el("th", { class: "num", title: "Where the kept rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, tPeak ? "Peak Rank" : `${S.NM().Kept} Rank`)]
-        : [el("th", {}, ""), el("th", { class: "num" }, S.me?.label || "Player"),
+        : [el("th", {}, ""), el("th", { class: "num", title: S.me?.label || "" }, String(S.me?.label || "").trim().split(/\s+/)[0] || "Player"), // (update 633) just their first name
         el("th", { class: "num", title: `Last ${tn || 12} rounds against the ${tn || 12} before` }, "Trend"),
         el("th", { class: "num" }, "Rank")])),
       el("tbody", {}, tr),

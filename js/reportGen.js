@@ -402,7 +402,9 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const teeSplit = teeKinds.has("Driver") && teeKinds.has("Non-Driver");
   // (GIR % goes here too; a stat the data doesn't split by club shows on an "All" row, with everyone's overall value)
   const teeGrid = ["drive", "ballSpeed", "fwy", "gir"].filter((k) => present.includes(k)).map((k) => {
-    const split = teeSplit ? ["Driver", "Non-Driver"].map((kind) => entryFor(k, (o) => o.cat === "OTT" && kindOf(o.dist) === kind, `${statDef(k).label} \u00b7 ${kind}`)) : [];
+    // (update 633) GIR % by club: its rows aren't marked as tee shots in the data (the Stats page reads them by their
+    // Driver / Non-Driver distance alone), so for GIR the club is enough
+    const split = teeSplit ? ["Driver", "Non-Driver"].map((kind) => entryFor(k, (o) => (k === "gir" || o.cat === "OTT") && kindOf(o.dist) === kind, `${statDef(k).label} \u00b7 ${kind}`)) : [];
     // the "All" value: its tee shots (par 4s and 5s) when the data has them, so GIR % here is the par 4 / 5 GIR %
     // (a par 3's green in regulation comes from an approach, which belongs in Approach)
     const tee = entryFor(k, (o) => o.cat === "OTT");
