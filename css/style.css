@@ -6443,3 +6443,25 @@ div.sh-ud3-green { cursor: default; }
 .rail-foot .hdr-icon.callie-link, .rail-foot .hdr-icon.callie-link:hover, .cal-open .rail-foot .hdr-icon.callie-link { border: 0 !important; background: transparent !important; box-shadow: none !important; outline: 0; }
 /* (update 624) the header's coin: Cal without his speech bubble filling a gold coin; the header's black is its edge */
 .rail-foot .hdr-icon.callie-link svg, .rail-foot .hdr-icon.callie-link svg.ico-callie { padding: 0 !important; width: 32px !important; height: 32px !important; background: radial-gradient(circle at 38% 32%, #ecd3a6, #c7a36c 70%, #a8844f) !important; }
+/* (update 626) the header's icons: one size of box each (Cal included), one gap between them; Cal's coin 20% smaller */
+.rail-foot { gap: 0.5rem !important; }
+.rail-foot > * { margin: 0 !important; }
+.rail-foot .hdr-icon, .rail-foot .hdr-icon.callie-link, .rail-foot .account-btn.hdr-icon { width: 2.4rem !important; min-width: 2.4rem; height: 2.4rem !important; padding: 0 !important; flex: none; }
+.rail-foot .hdr-icon.callie-link svg, .rail-foot .hdr-icon.callie-link svg.ico-callie { width: 26px !important; height: 26px !important; }
+/* (update 626) Home on a desktop: wider, Ask Cal and Your game side by side, Explore and the live strip full width below */
+@media (min-width: 900px) {
+  .hm { max-width: 1180px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); column-gap: 20px; align-items: start; padding-top: 12px; }
+  .hm > * { grid-column: 1 / -1; }
+  .hm > .hm-cal { grid-column: 1; margin-top: 6px !important; min-height: 100%; justify-content: center; }
+  .hm > .hm-game { grid-column: 2; margin-top: 6px !important; }
+  .hm .hm-h { font-size: 2.3rem; }
+  .hm-orb { width: 120px; height: 120px; } .hm-orb .hm-cal-face { width: 84px !important; height: 84px !important; }
+  .hm-cal b { font-size: 1.6rem; }
+  .hm-radar { max-width: 420px; }
+  .hm-rads .hm-rad { width: 240px; }
+  .hm-row { gap: 16px; }
+  .hm-fc { width: 210px; height: 230px; }
+  .hm-fc b { font-size: 1.15rem; }
+  .hm-dots { display: none; }
+}
+@media (min-width: 900px) { .hm-fc { flex: 1 1 0; width: auto; min-width: 180px; } }
