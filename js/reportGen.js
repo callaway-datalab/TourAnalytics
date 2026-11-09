@@ -16,7 +16,8 @@ import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
 import { eventBarsOf, drawEventBars, eventBarsHeight } from "./pdfCharts.js";
-const PROD_COLORS = ["#d4b483", "#2f9bff", "#30d158", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff", "#ffd60a", "#ac8e68", "#5e5ce6"]; // (as the Stats page)
+// (update 666) no champagne / gold in the bars: that colour is the rolling-average line's
+const PROD_COLORS = ["#2f9bff", "#30d158", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff", "#ff375f", "#5e5ce6", "#00c7be", "#a2845e"];
 
 const CAT_NAME = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
 const STEADY = 0.05; // a change smaller than ±0.05 strokes a round counts as steady
@@ -1256,7 +1257,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const FEW = 10;
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
     // colour; sized so two kinds fit a page, the columns spread over the page's width so nothing runs off it
-    const CH = { plotH: 117, /* (update 563: half as tall again, 78 → 117) */ dates: true, gap: 8, pad: 12 };
+    const CH = { plotH: 117, /* (update 563: half as tall again, 78 → 117) */ dates: true, gap: 8, pad: 12,
+      roll: a.unit === "event" ? { by: "event", n: 5 } : { by: "round", n: 20 } }; // (update 666: the rolling-average line, as long as the Trend)
     // (update 567) two kinds a page at most (one when two don't fit at the smallest chart): the page split into equal halves,
     // the dividing line in the middle, each kind's chart grown so its chart and table fill its half (one alone: the page)
     const CHmin = { ...CH, plotH: 78 };
