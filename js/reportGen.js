@@ -711,7 +711,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
     if (first != null) {
       const ch = last - first;
-      d.text(`Last ${n} ${byRd && a.form.unit === "event" ? "events" : "rounds"}: ${fmtSG(last)}   \u00b7   ${n} before that: ${fmtSG(first)}   \u00b7   ${Math.abs(ch) < STEADY ? "about the same" : `${ch > 0 ? "better" : "worse"} lately by ${Math.abs(ch).toFixed(2)}`}`, M + W, y + 10, { size: 8, bold: true, color: Math.abs(ch) < STEADY ? P.grey : tone(ch), align: "right" });
+      // (update 675) each part in its own colour: each average by its sign (green gaining, red losing), the change by its direction
+      { const U = byRd && a.form.unit === "event" ? "events" : "rounds", sep = "   \u00b7   ";
+        const parts = [[`Last ${n} ${U}: ${fmtSG(last)}`, tone(last)], [sep, P.grey], [`${n} before that: ${fmtSG(first)}`, tone(first)], [sep, P.grey],
+          [`${ch >= 0 ? "Up" : "Down"} ${Math.abs(ch).toFixed(2)}`, Math.abs(ch) < STEADY ? P.grey : tone(ch)]];
+        let xr = M + W;
+        for (const [t, c] of [...parts].reverse()) { d.text(t, xr, y + 10, { size: 8, bold: true, color: c, align: "right" }); xr -= textWidth(t, 8, true); } }
     }
     const lo = Math.min(-0.5, Math.min(...vals)), hi = Math.max(0.5, Math.max(...vals));
     const Y = (v) => top + ht - ((v - lo) / (hi - lo)) * ht;
