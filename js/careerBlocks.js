@@ -48,12 +48,13 @@ function openTrajectory(rs, x, cols = DEFAULT_COLS) {
     ] }) }, "Getting better or worse?");
 }
 // (update 281) the summary in long-term (last 48 vs the 48 before) and short-term (last 12 vs the 12 before) words
-function termWords(tr, longN = 48, shortN = 12) {
+function termWords(tr, longN = 50, shortN = 20) { // (update 667: 20 and 50, as the rows (update 663 left these at 48 and 12: no row matched and it failed on "ch"))
   // (update 282) "Up over the long-term; Down over the short-term"
   const word = (x) => (x.ch.TOTAL > 0.15 ? "Up" : x.ch.TOTAL < -0.15 ? "Down" : "Steady");
   const lt = tr.find((x) => x.n === longN), st = tr.find((x) => x.n === shortN);
   if (lt && st) return word(lt) === word(st) ? `${word(lt)} over both the long-term and the short-term.` : `${word(lt)} over the long-term; ${word(st)} over the short-term.`;
-  const one = lt || st;
+  const one = lt || st || tr[0];
+  if (!one) return "";
   return `${word(one)} over the ${one === lt ? "long" : "short"}-term.`;
 }
 function trajectoryBlock(rs, cols0) {

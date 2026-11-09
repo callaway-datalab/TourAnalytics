@@ -85,7 +85,7 @@ export function heroBox(S, mine, slicedField, f) {
           const labels = hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); });
           // (update 174) Rank | Stat: the rolling rank, or the rolling average (everything up to that date, this selection)
           const mode = () => (!S.showRanks || S.st.heroChartMode === "stat" ? "stat" : "rank");
-          const title = () => (mode() === "stat" ? "Season Average" : "Weekly Rank History"); // (update 665: was Weekly Rolling Average)
+          const title = () => (mode() === "stat" ? "Season Average" : "Season Rank"); // (update 665: was Weekly Rolling Average; 667: was Weekly Rank History)
           const makeChart = () => S.chartBox((c) => (mode() === "stat" ? S.heroChart(c, labels, hist.map((x) => x.avg)) : S.rankChart(c, labels, hist)));
           const titleEl = el("span", { class: "hero-chart-title" }, title());
           const seg = el("div", { class: "hero-chart-mode", role: "group", "aria-label": "Chart shows" }, [["rank", "Rank"], ["stat", "Stat"]].map(([v, l]) => {
@@ -379,7 +379,7 @@ export function tournamentsPopup(S, ordered, slicedField = [], eyebrow = null) {
 // Event Avg and Rank)
 export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
   const rolling = view === "rolling";
-  const hist = rolling ? (S.showRanks ? S.rankHistory(ordered, slicedField, now, { all: true }) : S.rollingOnly(ordered)) : [];
+  const hist = rolling ? (S.showRanks ? S.rankHistory(ordered, slicedField, now, { all: true }) : S.rollingOnly(ordered, { all: true })) : [];
   const at = new Map(hist.map((x) => [String(x.date || ""), x]));
   const fin = new Map();
   if (!rolling && S.showRanks) for (const e of S.eventsOf(S.rankedField(slicedField))) {
@@ -392,7 +392,7 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
   for (const rd of ordered) { const k = `${rd.event}|${S.yearOf(rd)}`; (groups.get(k) || groups.set(k, { event: rd.event, rs: [] }).get(k)).rs.push(rd); }
   const rows = [...groups].map(([k, g]) => { const end = g.rs.reduce((m, rd) => (String(rd.date) > String(m) ? rd.date : m), g.rs[0].date); return { k, ...g, end, v: S.metric(g.rs), fin: fin.get(k), roll: at.get(String(end || "")) }; })
     .sort((a, b) => String(b.end).localeCompare(String(a.end)));
-  const rankTd = (x, won = false) => (x ? el("td", { class: `num ht-win ${won && x.rank === 1 ? "ht-won" : ""}` }, [String(x.rank), el("span", { class: "ht-of" }, ` of ${x.of}`)]) : el("td", { class: "num ht-win" }, "\u2014"));
+  const rankTd = (x, won = false) => (x?.rank ? el("td", { class: `num ht-win ${won && x.rank === 1 ? "ht-won" : ""}` }, [String(x.rank), el("span", { class: "ht-of" }, ` of ${x.of}`)]) : el("td", { class: "num ht-win" }, "\u2014"));
   const valTd = (v) => el("td", { class: `num ${S.isSG() ? S.signCls(v) : ""}` }, S.fmtV(v));
   const table = el("table", { class: "plain rankings hero-tourn hero-events" }, [
     el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), S.unit === "event" ? null : el("th", { class: "num" }, "Rds"),
@@ -447,11 +447,14 @@ export function insightsButton(S, slicedField = []) {
 // (update 168) Rank history: after each of the player's rounds, their rank among the same players with what each
 // had played by that date (Min. rounds scaled to the most played by then). The last point is the rank shown.
 // (update 183) no ranks (entered rounds): their rolling average at the end of each tournament
-export function rollingOnly(S, ordered) {
+export function rollingOnly(S, ordered, { all = false } = {}) {
   const dk = (d) => String(d || ""), ends = new Map();
   for (const rd of ordered) { const k = `${rd.event}|${S.yearOf(rd)}`; if (dk(rd.date) > (ends.get(k) || "")) ends.set(k, dk(rd.date)); }
-  return [...new Set(ends.values())].sort().map((d) => ({ date: d, avg: S.metric(ordered.filter((rd) => dk(rd.date) <= d)) })).filter((x) => x.avg != null); // (update 664: the average so far, ending at their current one)
+  return [...new Set(ends.values())].sort().map((d) => { const so = ordered.filter((rd) => dk(rd.date) <= d); return { date: d, avg: all || fullBy(S, so) ? S.metric(so) : null }; }).filter((x) => x.avg != null); // (update 667: the graph from the first full window; the pop-up's table (all) every event) // (update 664: the average so far, ending at their current one)
 }
+// (update 667) the graph starts once there's a full Trend's worth: 20 rounds (the DP World Tour: 5 events)
+const evKeyOf = (rd) => `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`;
+const fullBy = (S, rs) => (S.eventView ? new Set(rs.map(evKeyOf)).size >= 5 : rs.length >= 20);
 export function rankHistory(S, ordered, slicedField, now, { all = false } = {}) {
   const dk = (d) => String(d || "");
   const ranked = S.rankedField(slicedField);
@@ -470,8 +473,12 @@ export function rankHistory(S, ordered, slicedField, now, { all = false } = {}) 
   const sgFast = S.isSG();
   const cum = sgFast ? sorted.map((p) => { let t = 0; return p.rs.map((rd) => { for (const x of rd.shots) t += x.sg; return t; }); }) : null;
   const out = [];
+  const meI = sorted.findIndex((p) => p.key === S.me.key);
   for (const d of dates) {
     const counts = sorted.map((p) => upTo(p.rs, d));
+    // (update 667) not yet a full window: off the graph; in the pop-up's table (all), its average but no rank yet
+    const early = meI >= 0 && !fullBy(S, sorted[meI].rs.slice(0, counts[meI]));
+    if (early && !all) continue;
     const most = Math.max(1, ...counts);
     const need = Math.max(1, Math.round((minNow * most) / mostNow));
     const vals = [];
@@ -483,9 +490,9 @@ export function rankHistory(S, ordered, slicedField, now, { all = false } = {}) 
     });
     vals.sort(S.byBest);
     const i = vals.findIndex((x) => x.key === S.me.key);
-    if (i >= 0) out.push({ date: d, rank: i + 1, of: vals.length, avg: vals[i].v }); // (avg: their rolling average, update 174)
+    if (i >= 0) out.push(early ? { date: d, rank: null, of: null, avg: vals[i].v, early: true } : { date: d, rank: i + 1, of: vals.length, avg: vals[i].v }); // (avg: their rolling average, update 174)
   }
-  if (out.length && now?.rank) Object.assign(out[out.length - 1], { rank: now.rank, of: now.of }); // (the same as the pill)
+  if (out.length && now?.rank && !out.at(-1).early) Object.assign(out[out.length - 1], { rank: now.rank, of: now.of }); // (the same as the pill)
   return out;
 }
 // the rank line: 1st at the top, a gold line, the latest point marked
