@@ -74,7 +74,7 @@ export function icon(name) {
   if (name === "robot" || name === "calface") { // (update 624: calface: Cal without his speech bubble, for the header's coin)
     const ns = "http://www.w3.org/2000/svg", id = `callie-m${++robotN}`;
     const mask = document.createElementNS(ns, "mask"); mask.setAttribute("id", id);
-    const img = document.createElementNS(ns, "image"); img.setAttribute("href", name === "calface" ? "icons/cal-face.png?v=2" : "icons/cal.png?v=2"); /* (update 620: Cal, the caddie in a speech bubble) */ img.setAttribute("width", "20"); img.setAttribute("height", "20");
+    const img = document.createElementNS(ns, "image"); img.setAttribute("href", name === "calface" ? "icons/cal-face.png?v=4" : "icons/cal.png?v=3"); /* (update 620: Cal, the caddie in a speech bubble) */ img.setAttribute("width", "20"); img.setAttribute("height", "20");
     mask.appendChild(img);
     const rect = document.createElementNS(ns, "rect"); rect.setAttribute("width", "20"); rect.setAttribute("height", "20"); rect.setAttribute("fill", "currentColor"); rect.setAttribute("mask", `url(#${id})`);
     svg.append(mask, rect); svg.classList.add("ico-callie");
