@@ -130,6 +130,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const late = units.slice(units.length - half).flat(), early = units.slice(units.length - 2 * half, units.length - half).flat(); // the last 12 vs the 12 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= (byEvent ? 1 : 2) ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
+  const netTrend = (() => { const a = mean(early.map((q) => q.value)), b = mean(late.map((q) => q.value)); return a != null && b != null ? b - a : null; })(); // (update 650)
   const catTrend = cats.map((k) => {
     const a = mean(early.map((s) => s.byCat[k])), b = mean(late.map((s) => s.byCat[k]));
     return { cat: k, name: CAT_NAME[k], early: a, late: b, change: a != null && b != null ? b - a : null };
@@ -175,7 +176,8 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       const vals = othersSk.map((m) => m.get(key)).filter((x) => x && x.shots >= 3).map((x) => x.perRound);
       const all = [...vals, g.perRound].sort((p, q) => q - p);
       groups.push({ repeat, cat: k, key, word: "", label: key.includes("|") ? key.split("|").join(", from the ") : key, title: skillLabel(k, key), withLie: key.includes("|"),
-        perRound: g.perRound, shots: g.shots, fieldAvg: mean(vals), rank: vals.length ? all.indexOf(g.perRound) + 1 : null, of: vals.length ? all.length : null });
+        perRound: g.perRound, shots: g.shots, fieldAvg: mean(vals), rank: vals.length ? all.indexOf(g.perRound) + 1 : null, of: vals.length ? all.length : null,
+        top10: vals.length >= 5 ? [...vals].sort((p, q) => q - p)[Math.floor(0.1 * (vals.length - 1))] : null }); // (update 650: the Tour's best 10% mark)
     }
   }
 
@@ -444,7 +446,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (e) basics.push(e);
   }
   return { catShift, shiftSpan, me: { key: me.key, label: me.label }, cats, from: ySet && series.length ? day(series[0].date) : from, to: ySet && series.length ? day(series.at(-1).date) : to, overall, // (update 550: seasons: their first and last rounds)
-    byCat, series, rankHist, slope, catTrend, numbers, elite: elite.filter((e) => e.kind !== "category").slice(0, 4), eliteAll: elite, strong, rising, focusAll: focus, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
+    byCat, series, rankHist, slope, catTrend, netTrend, numbers, elite: elite.filter((e) => e.kind !== "category").slice(0, 4), eliteAll: elite, strong, rising, focusAll: focus, form, halves, peaks: peaks.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })),
     minShots, extraCharts, formSeries: ser, unit: byEvent ? "event" : "round", valleys: valleys.map((s) => ({ ...s, best: bestCat(s), worst: worstCat(s) })), groups, products, productTable, focus: top, players: everyone.length, detail, minRounds: minR, compared: others.length, tour, basics, grid, bands: BANDS.map(([l]) => l), udGrid, puttGrid, teeGrid, teeSplit, teeAllRow, parScoring: parScoring.some(Boolean) ? parScoring : null,
     shotlink: [...new Set(mine.concat(myAll).map((rd) => String(rd.tour || "")))].some((t) => /^(pga|korn)/i.test(t)) };
 }
@@ -944,36 +946,137 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const upTo = (k) => { const t = String(k || "").split("|")[0], nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number); if (!nums.length) return null; return /^\s*>/.test(t) ? Infinity : Math.max(...nums); };
   const argNear = (g) => g.cat === "ARG" && upTo(g.key) != null && upTo(g.key) <= 30;
   const byDist = a.groups.filter((g) => (argNear(g) ? g.withLie : !g.withLie));
+  // (update 650) "Skill by Skill": four headline tiles (net a round, biggest weapon, biggest leak, quickest win); every
+  // skill as a bar from a centre line (gains right, losses left) grouped by area of the game with each area's total,
+  // a dashed mark at the Tour's best 10% and a rank pill; then up to four plain-English insights written from the
+  // numbers. Sized to fit one page whatever the number of skills.
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
-    section("Detail", "Strokes Gained by Skill", 52); // (update 520)
-    d.text("Strokes gained a round. Gains on the left (best first), losses on the right (worst first).", M, y + 1, { size: 9.6, color: P.grey }); // (update 648: every size 20% larger)
-    y += 24;
-    // (rounded to 2 decimals; only ±0.01 or more; at most 25 each side)
-    const r2 = (v) => Math.round(v * 100) / 100;
-    const gains = byDist.filter((g) => r2(g.perRound) >= 0.01).sort((p, q) => q.perRound - p.perRound).slice(0, 25);
-    const losses = byDist.filter((g) => r2(g.perRound) <= -0.01).sort((p, q) => p.perRound - q.perRound).slice(0, 25);
-    const rounds = Math.max(1, a.overall.rounds);
-    const rowH = 26;
-    const heads = () => { cap("Gaining", M, y, P.up); cap("Losing", M + colW + 14, y, P.down); y += 10; };
-    heads();
-    const row = (g, x, yy) => {
-      // (update 648) a long name ("Around-the-Green, 0-10 yds, from Fairway") a little smaller to fit, not cut short
-      let ts = 10.8; while (ts > 8.6 && wrap(g.title, colW - 64, ts, true).length > 1) ts -= 0.4;
-      d.text(wrap(g.title, colW - 64, ts, true)[0], x, yy, { size: ts, bold: true, color: P.ink });
-      const per = g.shots / rounds;
-      d.text(`${per >= 10 ? Math.round(per) : per.toFixed(1)} shots/round${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmt2(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 11.4, { size: 8.4, color: P.grey });
-      d.text(fmt2(g.perRound), x + colW, yy + 6, { size: 14.4, bold: true, color: tone(g.perRound), align: "right" });
-      d.line(x, yy + 17, x + colW, yy + 17, { color: P.hair, width: 0.4 });
+    section("Detail", "Skill by Skill", 52);
+    d.text("Strokes gained a round in each skill, against the Tour.", M, y + 1, { size: 9.6, color: P.grey });
+    y += 14;
+    const sg = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+    const rows = byDist.filter((g) => g.perRound != null && Number.isFinite(g.perRound));
+    const nameOf = (g) => { const [dist, lie] = String(g.key).split("|"); return { dist, lie: lie ? String(lie).toLowerCase() : "" }; };
+    const LIE_ORDER = ["fairway", "rough", "bunker", "sand", "recovery"];
+    const order = (p, q) => (upTo(p.key) ?? 999) - (upTo(q.key) ?? 999) || LIE_ORDER.indexOf(nameOf(p).lie) - LIE_ORDER.indexOf(nameOf(q).lie);
+    const areas = CATEGORIES.map(([c, nm]) => ({ cat: c, name: nm, list: rows.filter((g) => g.cat === c).sort(order) })).filter((x) => x.list.length)
+      .map((x) => ({ ...x, total: a.byCat?.find((b) => b.cat === x.cat)?.value ?? x.list.reduce((t, g) => t + g.perRound, 0), rank: a.byCat?.find((b) => b.cat === x.cat) }));
+    const label = (g) => { const { dist, lie } = nameOf(g); return lie ? `${dist}, ${lie}` : dist; };
+    const full = (g) => `${CAT_NAME[g.cat]} ${label(g)}`;
+    const best = [...rows].sort((p, q) => q.perRound - p.perRound)[0], worst = [...rows].sort((p, q) => p.perRound - q.perRound)[0];
+    const gapOf = (g) => (g.fieldAvg != null ? g.fieldAvg - g.perRound : -g.perRound);
+    const win = [...rows].filter((g) => gapOf(g) > 0.005).sort((p, q) => gapOf(q) - gapOf(p))[0] || null;
+
+    // ---- the four tiles ----
+    const tw = (W - 3 * 8) / 4, th = 74, ty = y;
+    const tile = (i, kicker, value, vcol, line, dark = false) => {
+      const x = M + i * (tw + 8);
+      d.roundRect(x, ty, tw, th, 9, { fill: dark ? "#141414" : P.mist });
+      cap(kicker, x + 10, ty + 15, dark ? P.goldLight : P.soft, "left", 6.4);
+      d.text(value, x + 10, ty + 40, { size: 21, bold: true, color: vcol });
+      const ls = wrap(line, tw - 20, 7.6, false).slice(0, 2);
+      ls.forEach((t, k) => d.text(t, x + 10, ty + 54 + k * 9.2, { size: 7.6, color: dark ? "#c7c7cc" : P.grey }));
     };
-    for (let i = 0; i < Math.max(gains.length, losses.length); i++) {
-      if (y + rowH > H - 50) { newPage(); heads(); }
-      y += rowH - 9;
-      if (gains[i]) row(gains[i], M, y);
-      if (losses[i]) row(losses[i], M + colW + 14, y);
-      y += 9;
+    const net = a.overall?.value;
+    tile(0, "Net a round", net != null ? sg(net) : "—", net == null ? "#ffffff" : net >= 0 ? "#34c759" : "#ff6b5e",
+      [a.overall?.rank ? `Rank ${a.overall.rank} of ${a.overall.of}` : "", a.netTrend != null && Math.abs(a.netTrend) >= 0.01 ? `${a.netTrend >= 0 ? "up" : "down"} ${Math.abs(a.netTrend).toFixed(2)} on the ${a.halves?.n || ""} ${a.halves?.unit || "rounds"} before`.replace(/\s+/g, " ") : ""].filter(Boolean).join(" · "), true);
+    if (best && best.perRound > 0) tile(1, "Biggest weapon", sg(best.perRound), P.up, `${full(best)}${best.rank ? ` · rank ${best.rank}` : ""}`);
+    else tile(1, "Biggest weapon", "—", P.soft, "No skill gaining yet");
+    if (worst && worst.perRound < 0) tile(2, "Biggest leak", sg(worst.perRound), P.down, `${full(worst)}${worst.rank ? ` · rank ${worst.rank}` : ""}`);
+    else tile(2, "Biggest leak", "—", P.soft, "Nothing losing strokes");
+    if (win) tile(3, "Quickest win", `+${gapOf(win).toFixed(2)}`, P.ink, `a round if ${full(win)} were just Tour average`);
+    else tile(3, "Quickest win", "—", P.soft, "At or above Tour average everywhere");
+    y = ty + th + 6;
+
+    // ---- the insights (written now, drawn at the bottom; their height is known before the bars are sized) ----
+    const ins = [];
+    const byArea = [...areas].sort((p, q) => q.total - p.total);
+    const top = byArea[0], low = byArea.at(-1);
+    if (top && top.total > 0.02) {
+      const inside = top.list.filter((g) => g.perRound > 0).sort((p, q) => q.perRound - p.perRound);
+      ins.push([`${top.name} is the engine.`, `Gains ${sg(top.total)} a round there${top.rank?.rank ? `, rank ${top.rank.rank} of ${top.rank.of}` : ""}${inside[0] ? `; the most from ${label(inside[0])} (${sg(inside[0].perRound)})` : ""}.`]);
     }
+    if (low && low !== top && low.total < -0.02) {
+      const w2 = [...low.list].sort((p, q) => p.perRound - q.perRound)[0];
+      let why = "";
+      if (low.cat === "APP" && w2) { // the proximity behind it, from the Basic Stats grid, when the bands line up
+        const mid = (() => { const ns = (String(w2.key).match(/\d+/g) || []).map(Number); return ns.length ? (ns[0] + (ns[1] ?? ns[0] * 1.2)) / 2 : null; })();
+        const prox = (a.grid || []).find((r) => r.key === "prox"), bi = mid == null ? -1 : (a.bands || []).findIndex((b) => { const ns = (b.match(/\d+/g) || []).map(Number); return /^>/.test(b) ? mid >= ns[0] : mid >= ns[0] && mid < ns[1]; });
+        const c = prox?.cells?.[bi];
+        if (c?.value != null && c.fieldAvg != null && c.value > c.fieldAvg) why = `: ${Math.round(c.value)} ft from the hole from ${a.bands[bi]}, ${Math.round(c.value - c.fieldAvg)} ft more than Tour`;
+      }
+      ins.push([`${low.name} costs strokes.`, `Loses ${sg(low.total).replace("−", "")} a round${low.rank?.rank ? `, rank ${low.rank.rank} of ${low.rank.of}` : ""}${w2 ? `; the most from ${label(w2)} (${sg(w2.perRound)})` : ""}${why}.`]);
+    }
+    { // off the tee: distance against accuracy (Basic Stats), when both are there
+      const tg = (k) => (a.teeGrid || []).find((g) => g.key === k), cell = (g) => (g ? (a.teeSplit ? g.cells?.[0] : null) || g.all : null);
+      const dv = cell(tg("drive")), fw = cell(tg("fwy"));
+      if (dv?.rank && fw?.rank && dv.of) {
+        const third = (r, n) => (r <= n / 3 ? "top" : r > (2 * n) / 3 ? "bottom" : "mid");
+        const dt = third(dv.rank, dv.of), ft = third(fw.rank, fw.of), ott = areas.find((x) => x.cat === "OTT");
+        const lead = dt === "top" && ft === "bottom" ? "Length over accuracy." : dt === "top" && ft === "top" ? "Long and straight." : dt === "bottom" && ft === "top" ? "Accuracy over length." : dt === "bottom" && ft === "bottom" ? "Short and offline." : null;
+        if (lead) ins.push([lead, `Rank ${dv.rank} in driving distance (${fmtStat(dv.def, dv.value)}), rank ${fw.rank} in fairways (${fmtStat(fw.def, fw.value)})${ott ? `; ${sg(ott.total)} a round off the tee` : ""}.`]);
+      }
+    }
+    if (win) ins.push(["Practice focus:", `${full(win)}. Getting to Tour average there is worth ${"+" + gapOf(win).toFixed(2)} a round${rows.filter((g) => gapOf(g) > 0.005).length > 1 ? ", more than any other single skill" : ""}.`]);
+    { const t = [...(a.catTrend || [])].filter((x) => x.change != null && Math.abs(x.change) >= 0.15).sort((p, q) => Math.abs(q.change) - Math.abs(p.change))[0];
+      if (t && ins.length < 4) ins.push([`${t.name} is ${t.change > 0 ? "trending up" : "slipping"}.`, `${sg(t.change)} a round over the last ${a.halves?.n || 12} ${a.halves?.unit || "rounds"} against the ${a.halves?.n || 12} before.`]); }
+    const insShow = ins.slice(0, 4), iw = (W - 8) / 2, insLines = insShow.map(([h, t]) => wrap(`${h} ${t}`, iw - 22, 9, false).length);
+    const insRowH = (k) => Math.max(insLines[2 * k] || 0, insLines[2 * k + 1] || 0) * 11.6 + 15;
+    const insH = insShow.length ? insRowH(0) + (insShow.length > 2 ? insRowH(1) + 6 : 0) + 10 : 0;
+
+    // ---- the bars, sized to the room left ----
+    const keyH = 16, avail = H - 50 - y - insH - keyH;
+    const units = rows.length + areas.length * 1.7;
+    const rh = Math.max(7.5, Math.min(30, avail / units)), fz = Math.max(6.4, Math.min(11, rh * 0.46));
+    const labW = W * 0.24, valW = 40, pillW = 50, bx0 = M + labW, bw = W - labW - valW - pillW - 10, mid = bx0 + bw / 2;
+    const span = Math.max(0.1, ...rows.map((g) => Math.abs(g.perRound)), ...rows.map((g) => Math.abs(g.top10 ?? 0))) * 1.05;
+    const X = (v) => mid + (v / span) * (bw / 2);
+    for (const ar of areas) {
+      y += rh * 1.05;
+      d.text(ar.name, M, y, { size: fz + 2.2, bold: true, color: P.ink });
+      d.text(`${plural(ar.list.length, "skill")}`, M + textWidth(ar.name, fz + 2.2, true) + 6, y, { size: fz - 0.6, color: P.soft });
+      d.text(sg(ar.total), M + W, y, { size: fz + 2.2, bold: true, color: tone(ar.total), align: "right" });
+      d.line(M, y + 3.2, M + W, y + 3.2, { color: P.ink, width: 0.9 });
+      y += rh * 0.65;
+      for (const g of ar.list) {
+        const cy = y + rh / 2, { dist, lie } = nameOf(g);
+        d.text(dist, M, cy + fz * 0.35, { size: fz, color: "#3a3a3c" });
+        if (lie) d.text(lie, M + textWidth(dist, fz, false) + 4, cy + fz * 0.35, { size: fz - 1.4, color: P.soft });
+        d.line(mid, y + 1.5, mid, y + rh - 1.5, { color: "#c7c7cc", width: 0.5 });
+        const bh = Math.max(4, rh * 0.48), x1 = X(g.perRound);
+        if (Math.abs(x1 - mid) >= 0.6) d.roundRect(Math.min(mid, x1), cy - bh / 2, Math.abs(x1 - mid), bh, Math.min(2, bh / 3), { fill: g.perRound >= 0 ? P.up : P.down });
+        if (g.top10 != null) { const xt = X(g.top10); d.line(xt, y + 1, xt, y + rh - 1, { color: "#8e8e93", width: 0.9, dash: [1.6, 1.2] }); }
+        d.text(sg(g.perRound), bx0 + bw + 6 + valW, cy + fz * 0.38, { size: fz + 0.8, bold: true, color: tone(g.perRound), align: "right" });
+        if (g.rank) { const T = `${g.rank} / ${g.of}`, ps = Math.max(5.2, fz - 1.8), pw = textWidth(T, ps, true) + ps * 1.8, ph = ps * 1.85, [fill, inkC] = rankColors(g.rank);
+          d.roundRect(M + W - pw, cy - ph / 2, pw, ph, ph / 2, { fill }); d.text(T, M + W - pw / 2, cy + ps * 0.36, { size: ps, bold: true, color: inkC, align: "center" }); }
+        y += rh;
+      }
+    }
+    // the key
+    y += 11;
+    { let kx = M; const k = (draw, t) => { draw(kx); d.text(t, kx + 14, y, { size: 7, color: P.grey }); kx += 14 + textWidth(t, 7, false) + 14; };
+      k((x) => d.roundRect(x, y - 5.5, 10, 6, 1.5, { fill: P.up }), "gaining");
+      k((x) => d.roundRect(x, y - 5.5, 10, 6, 1.5, { fill: P.down }), "losing");
+      k((x) => d.line(x + 5, y - 7, x + 5, y + 1, { color: "#8e8e93", width: 0.9, dash: [1.6, 1.2] }), "the Tour's best 10%");
+      d.text("bar length = strokes a round", kx, y, { size: 7, color: P.grey }); }
     y += 10;
+    // the insights, two a row
+    for (let r = 0; r * 2 < insShow.length; r++) {
+      const hh = insRowH(r);
+      for (let c = 0; c < 2; c++) {
+        const it = insShow[r * 2 + c]; if (!it) continue;
+        const x = M + c * (iw + 8);
+        d.roundRect(x, y, iw, hh, 6, { fill: P.note }); d.rect(x, y, 2.6, hh, { fill: P.goldLight });
+        const lines = wrap(`${it[0]} ${it[1]}`, iw - 22, 9, false);
+        lines.forEach((ln, k) => {
+          const yy = y + 13 + k * 11.6;
+          if (k === 0 && ln.startsWith(it[0])) { d.text(it[0], x + 12, yy, { size: 9, bold: true, color: "#7a5c2e" }); d.text(ln.slice(it[0].length), x + 12 + textWidth(it[0], 9, true), yy, { size: 9, color: P.ink }); }
+          else d.text(ln, x + 12, yy, { size: 9, color: P.ink });
+        });
+      }
+      y += hh + 6;
+    }
   }
   /* ---------- by product ---------- */
   if (a.products && !a.productTable && false) { // (update 274: off; see the by-product page)
