@@ -14,6 +14,8 @@ import * as sgCharts from "./sgCharts.js";
 import * as sgFocus from "./sgFocus.js"; // (update 470) the Focus view
 /** (update 523) the DP World Tour (its file: one value an event, repeated on each round) */
 export const isDpwt = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
+// (update 679) "All": every tour together (PGA TOUR, Korn Ferry, DP World Tour); any DP World Tour in it: event level for everything
+export const ALL_TOURS = "__all";
 
 export function sgDashboard(container, opts) {
   // (sgDashboard split) S: what the section modules read and write of this page's state and helpers, live
@@ -255,7 +257,7 @@ export function sgDashboard(container, opts) {
   const careerUi = {};
   function careerBox(only = "conditions", f = null) {
     if (!meAll || opts.practice || opts.emptyNote || !isSG()) return null;
-    const tours = !opts.entered && st.tour?.length ? new Set(st.tour) : null;
+    const tours = !opts.entered && st.tour?.length && st.tour[0] !== ALL_TOURS ? new Set(st.tour) : null;
     let rs = statRounds(meAll.rounds, "sg").filter((rd) => !tours || tours.has(rd.tour || ""));
     let cols = null;
     if (only === "trajectory" && f) {
@@ -296,7 +298,7 @@ export function sgDashboard(container, opts) {
     const base = me ? me.rounds : field.flatMap((p) => p.rounds);
     unit = base.length && base.every((rd) => rd.eventLevel) ? "event" : "round";
     // (update 523) the DP World Tour's file has one value an event (repeated on each of its rounds): no round-by-round views
-    eventView = unit === "round" && (isDpwt(st.tour?.[0]) || (base.length > 0 && base.every((rd) => isDpwt(rd.tour))));
+    eventView = unit === "round" && (isDpwt(st.tour?.[0]) || (base.length > 0 && base.every((rd) => isDpwt(rd.tour))) || (st.tour?.[0] === ALL_TOURS && base.some((rd) => isDpwt(rd.tour))));
     if ((unit === "event" || eventView) && st.trendBy === "round") st.trendBy = "event";
     // the categories this stat has (strokes gained: all four; Make %: Putting only; Scoring Avg: none)
     const catSeen = new Set(); for (const rd of base) for (const x of rd.shots) if (x.cat) catSeen.add(x.cat);
@@ -318,7 +320,7 @@ export function sgDashboard(container, opts) {
     tourCounts = [...tourCount].sort((a, b) => (inYrs.get(b[0]) || 0) - (inYrs.get(a[0]) || 0) || b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); // for the tour buttons
     if (tourList.length > 1 || (tourList.length === 1 && tourList[0] !== "")) {
       const who = me?.key ?? "__field";
-      if (st.tourFor !== who || !tourList.includes(st.tour?.[0])) {
+      if (st.tourFor !== who || (!tourList.includes(st.tour?.[0]) && !(st.tour?.[0] === ALL_TOURS && tourList.length > 1))) {
         st.tourFor = who;
         const byRounds = [...tourCount].sort((a, b) => b[1] - a[1]).map(([t]) => t);
         const pga = !me && tourList.find((t) => /^pga(\s*tour)?$/i.test(String(t).trim()));
@@ -328,20 +330,20 @@ export function sgDashboard(container, opts) {
     // (update 538) the tour on screen: remembered (the lie / distance detail loads only that tour's files), and the page
     // that drew this told when it changes, to load the new tour's
     if (st.tour[0] != null && st.tour[0] !== lastTourSeen) {
-      const t = st.tour[0]; lastTourSeen = t;
+      const t0 = st.tour[0]; lastTourSeen = t0; const t = t0 === ALL_TOURS ? null : t0; // (All: every tour's detail)
       import("./fieldStore.js").then((m) => m.setActiveTour(t)).catch(() => {});
       if (opts.onTour) setTimeout(() => opts.onTour(t), 0); // (the page compares it with the tour it loaded)
     }
     // (update 568) the seasons picked: the page told too (its lie / distance detail covers only the seasons on screen); it
     // compares its key first, so nothing reloads unless they changed
-    { const yk = JSON.stringify([...(st.year || [])].map(String).sort()); if (yk !== lastYearsSeen) { const first = lastYearsSeen === undefined; lastYearsSeen = yk; if (!first && opts.onTour) setTimeout(() => opts.onTour(st.tour[0] ?? null), 0); } }
-    soloTour = !!(me && st.tour.length && (/^practice$/i.test(String(st.tour[0]).trim())
+    { const yk = JSON.stringify([...(st.year || [])].map(String).sort()); if (yk !== lastYearsSeen) { const first = lastYearsSeen === undefined; lastYearsSeen = yk; if (!first && opts.onTour) setTimeout(() => opts.onTour(st.tour[0] === ALL_TOURS ? null : st.tour[0] ?? null), 0); } }
+    soloTour = !!(me && st.tour.length && st.tour[0] !== ALL_TOURS && (/^practice$/i.test(String(st.tour[0]).trim())
       || ![...me.rounds, ...field.flatMap((p) => p.rounds)].some((rd) => !rd.entered && (rd.tour || "") === st.tour[0])));
     showRanks = ranksAllowed && !soloTour;
     if (soloTour) field = field.filter((p) => p.key === me.key);
     // Linked filters (update 166): each dropdown lists only what the other picks leave (the tour's courses,
     // a tournament's course, the last month's tournaments). A pick that's no longer there goes.
-    const roundPicks = () => ({ months: Number(st.span), from: st.dateRange?.from, to: st.dateRange?.to, year: st.year, tour: st.tour, event: opts.practice ? [] : st.event, course: st.course, roundNo: st.roundNo, ptype: st.ptype });
+    const roundPicks = () => ({ months: Number(st.span), from: st.dateRange?.from, to: st.dateRange?.to, year: st.year, tour: st.tour[0] === ALL_TOURS ? [] : st.tour, event: opts.practice ? [] : st.event, course: st.course, roundNo: st.roundNo, ptype: st.ptype });
     const leaving = (k) => base.filter(roundFilter({ ...roundPicks(), [k]: [] }));
     if (opts.practice) st.event = [];
     else st.event = st.event.filter((e) => eventOptions(leaving("event")).some((o) => o.value === e));
@@ -358,7 +360,7 @@ export function sgDashboard(container, opts) {
     st.lie = st.lie.filter((l) => opt.lie.includes(l));
     st.club = st.club.filter((c) => opt.club.includes(c));
     st.gear = st.gear.filter((c) => opt.gear.includes(c));
-    const f = { months: Number(st.span), from: st.dateRange?.from, to: st.dateRange?.to, year: st.year, tour: st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, gear: st.gear, ptype: st.ptype };
+    const f = { months: Number(st.span), from: st.dateRange?.from, to: st.dateRange?.to, year: st.year, tour: st.tour[0] === ALL_TOURS ? [] : st.tour, event: st.event, course: st.course, roundNo: st.roundNo, cats: st.cats, lie: st.lie, dist: st.dist, club: st.club, gear: st.gear, ptype: st.ptype };
     // Rankings from the shared summary can't follow lie / distance / club.
     const rankF = fieldIsSummary() ? { ...f, lie: [], dist: [], club: [], gear: [] } : f; // (update 219: nor product)
     lastRankF = rankF;
@@ -549,7 +551,7 @@ export function sgDashboard(container, opts) {
     const bottom = cats || stat ? el("div", { class: "pill-row stats-pills stats-row2" }, [stat, cats ? catPills() : null, catDrop]) : null; // (update 229: Relative / Raw moved to the stats table)
     return el("div", { class: "stats-rows" }, [top, bottom]);
   };
-  const tourName = (t) => t || "No tour";
+  const tourName = (t) => (t === ALL_TOURS ? "All" : t || "No tour");
   function tourPills(...a) { return sgFilters.tourPills(S, ...a); }
   function statSelect(...a) { return sgFilters.statSelect(S, ...a); }
   function tourButtons(...a) { return sgFilters.tourButtons(S, ...a); }

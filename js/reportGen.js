@@ -122,7 +122,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   }
   // (update 553, 554) every tour, the DP World Tour too: the last 12 rounds against the 12 before
   const isD = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
-  const byEvent = isD(tour) || (mine.length > 0 && mine.every((rd) => isD(rd.tour)));
+  const byEvent = isD(tour) || (mine.length > 0 && (tour == null ? mine.some((rd) => isD(rd.tour)) : mine.every((rd) => isD(rd.tour)))); // (update 679: every tour together with any DP World Tour: by event)
   // (update 581) the DP World Tour: trends by event, the last 3 events against the 3 before (each event's rounds pooled);
   // every other tour: the last 12 rounds against the 12 before
   const unitW = byEvent ? "events" : "rounds";

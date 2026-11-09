@@ -381,7 +381,7 @@ export async function render(main, { flash, routeId }) {
     mount(body, box);
     dash = sgDashboard(box, { me: me && !me.summaryOnly ? me : null, field: fieldPlayers, idx, mode: "admin", state: dashState, viewHost, updatedAt: ds.uploadedAt?.toMillis?.() ?? null, ...dashOpts(), ...(opt.noRanks ? { rankings: false } : {}),
       // (update 538) another tour picked: its lie / distance detail loaded (once)
-      onTour: (t) => { const tt = t ?? dashState.tour?.[0] ?? activeTour() ?? null, k = detailKeyOf(ds, tt); if (lastDetailKey !== k) applyDetail(ds, k, tt, yearsWanted()); } }); // (update 568: one key; 569: put in place, not a redraw)
+      onTour: (t) => { const tt0 = t ?? dashState.tour?.[0] ?? activeTour() ?? null, tt = tt0 === "__all" ? null : tt0, /* (update 679: All) */ k = detailKeyOf(ds, tt); if (lastDetailKey !== k) applyDetail(ds, k, tt, yearsWanted()); } }); // (update 568: one key; 569: put in place, not a redraw)
     // (never published from here: this field is the summary itself)
     if (player && (!me || me.summaryOnly)) pickerRef?.select?.(player.key); // fetch the picked player's full rows
   }

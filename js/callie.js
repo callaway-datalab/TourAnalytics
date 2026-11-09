@@ -767,11 +767,10 @@ function tourLeader() {
   return leaderP;
 }
 function examples(list, leader = null) {
+  // (update 679) just three: a hole strategy, the Tour's best putter, a season comparison
   const n = list.length === 1 ? list[0][1] : leader || list[0]?.[1] || "Scottie Scheffler";
-  const last = n.split(" ").pop();
-  return list.length > 1
-    ? ["Who putts best on Tour?", `Where does ${last} gain and lose strokes this season?`, `What was ${last}’s best tournament this year?`, `How does ${last} do on approach shots by distance?`, `Compare ${last} 2026 vs 2025`, "How should I play hole 2 at Torrey Pines South, back left pin?"]
-    : [`Where do I gain and lose strokes this season?`, "What was my best tournament this year?", "How is my putting over my last 10 rounds?", "Who putts best on Tour?", "How should I play hole 2 at Torrey Pines South, back left pin?"];
+  const last = list.length > 1 ? "Scheffler" : n.split(" ").pop(); void last;
+  return ["How should I play hole 2 at Torrey Pines South, into a back left pin?", "Who's the best putter on Tour?", list.length > 1 ? "Compare Scheffler 2026 vs 2025" : "Compare my 2026 vs 2025"];
 }
 function draw() {
   if (!panel) return;

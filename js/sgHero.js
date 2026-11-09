@@ -455,7 +455,7 @@ export function insightsButton(S, slicedField = []) {
     x.addEventListener("click", () => { toast.remove(); done(); });
     const { reportBuilder } = await import("./reportGen.js");
     const builder = reportBuilder({ playerKey: S.me.key, playerLabel: S.me.label, canSave: false, flash: () => {},
-      source: S.opts.entered ? "entered" : "tour", minRounds: S.minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: S.tourCounts.length ? (S.st.tour[0] ?? null) : null,
+      source: S.opts.entered ? "entered" : "tour", minRounds: S.minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: S.tourCounts.length && S.st.tour[0] !== "__all" ? (S.st.tour[0] ?? null) : null, // (update 679: All: every tour)
       fullField: S.fieldIsSummary() ? null : S.fieldAll, // (the admin: everyone's rows, for ranks by distance)
       auto: { from, to, cats: st.cats || [], rangeLabel, years: !(st.dateRange?.from || st.dateRange?.to) && !(Number(st.span) > 0) && st.year?.length ? st.year.map(String) : null, // (update 550: seasons, as on this page)
         onReady: (href) => { done(); if (win && !win.closed) { try { win.location.href = href; setTimeout(() => toast.remove(), 2500); return; } catch { /* the link below */ } } },

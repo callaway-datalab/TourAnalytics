@@ -92,7 +92,7 @@ export function followClubs(S) {
 // The Tournament filter's list: the tournaments on the tour and in the years picked, newest first.
 // (entered rounds: each tournament entered, and "Practice Rounds" for the rest)
 export function eventOptions(S, rounds) {
-  const tours = S.st.tour.length ? new Set(S.st.tour.map(String)) : null, years = S.st.year.length ? new Set(S.st.year.map(String)) : null;
+  const tours = S.st.tour.length && S.st.tour[0] !== "__all" ? new Set(S.st.tour.map(String)) : null, years = S.st.year.length ? new Set(S.st.year.map(String)) : null;
   const last = new Map();
   for (const rd of rounds) {
     if (tours && rd.tour !== undefined && !tours.has(rd.tour || "")) continue;
@@ -176,7 +176,7 @@ export function filtersPanel(S, opt) {
 // Tour: one at a time (never mixed). Pills here and the tour buttons on the hero card.
 export function tourPills(S) {
   if (!S.tourCounts.length) return null;
-  return el("nav", { class: "subnav sg-tours", role: "radiogroup", "aria-label": "Tour" }, S.tourCounts.map(([t]) => {
+  return el("nav", { class: "subnav sg-tours", role: "radiogroup", "aria-label": "Tour" }, withAll(S).map(([t]) => {
     const on = S.st.tour[0] === t;
     const a = el("a", { href: "#", role: "radio", "aria-checked": on ? "true" : "false", "aria-current": on ? "page" : null }, S.tourName(t));
     a.addEventListener("click", (e) => { e.preventDefault(); if (!on) { S.st.tour = [t]; S.draw(); } });
@@ -195,9 +195,11 @@ export function statSelect(S) {
   sel.addEventListener("change", () => { S.st.statWanted = sel.value; S.st.openFilter = null; sel.blur(); S.draw(); });
   return el("label", { class: "stat-pick" }, [sel]); // (no "Stat Type" heading, update 166)
 }
+// (update 679) "All" after the tours when there are two or more real ones (not Practice): every tour together
+const withAll = (S) => { const real = S.tourCounts.filter(([t]) => t && !/^practice$/i.test(String(t).trim())); return real.length > 1 && !S.opts?.entered ? [...S.tourCounts, ["__all", 0]] : S.tourCounts; };
 export function tourButtons(S) {
   if (!S.tourCounts.length || (S.tourCounts.length === 1 && S.tourCounts[0][0] === "")) return null;
-  return el("div", { class: "tour-chips", role: "radiogroup", "aria-label": "Tour" }, S.tourCounts.map(([t, n]) => {
+  return el("div", { class: "tour-chips", role: "radiogroup", "aria-label": "Tour" }, withAll(S).map(([t, n]) => {
     const on = S.st.tour[0] === t;
     const b = el("button", { type: "button", role: "radio", "aria-checked": on ? "true" : "false", class: `tour-chip${on ? " on" : ""}` },
       S.tourName(t));
