@@ -11,6 +11,7 @@ const ROUTES = [
   ["/signup", "public", () => import("./views/signup.js"), "signup"],
   ["/dashboard", "client", () => import("./views/dashboard.js"), "dashboard"],
   ["/home", "signed-in", () => import("./views/home.js"), "home"],
+  ["/bulk-reports", "signed-in", () => import("./views/bulkReports.js"), "bulk-reports"], // (update 668: the admin and analysts)
   // (update 645) a link straight to Cal (for an iPhone shortcut): Home, with Cal's chat open
   ["/cal", "signed-in", () => import("./views/home.js").then((m) => ({ render: async (main, ctx) => { const c = await m.render(main, ctx);
     try { history.replaceState(null, "", "#/home"); } catch { /* */ } import("./callie.js").then((x) => x.openCallie()).catch(() => {}); return c; } })), "home"], // (update 609: everyone's first page)

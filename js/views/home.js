@@ -58,6 +58,7 @@ export async function render(main, { previewClient } = {}) {
       lost: '<g transform="translate(20 14) scale(.95)"><rect x="0" y="40" width="18" height="50" rx="4" fill="#4cd17e"/><rect x="28" y="20" width="18" height="70" rx="4" fill="#4cd17e"/><rect x="56" y="60" width="18" height="30" rx="4" fill="#ff8a7a"/><rect x="84" y="30" width="18" height="60" rx="4" fill="#4cd17e"/></g>',
       prac: '<g transform="translate(74 58) scale(.9)"><circle r="42" fill="none" stroke="#d4b483" stroke-width="3" opacity=".4"/><circle r="26" fill="none" stroke="#d4b483" stroke-width="3" opacity=".7"/><circle r="11" fill="#d4b483"/></g>',
       cmp: '<g transform="translate(26 18)"><rect x="0" y="30" width="34" height="60" rx="6" fill="#3d9cff"/><rect x="58" y="10" width="34" height="80" rx="6" fill="#d4b483"/><path d="M40 52 h14" stroke="#f5f5f7" stroke-width="3" stroke-linecap="round"/></g>',
+      rep: '<g transform="translate(38 14)"><rect x="18" y="0" width="54" height="72" rx="6" fill="#2c2c2e" stroke="#d4b483" stroke-width="2"/><rect x="9" y="9" width="54" height="72" rx="6" fill="#3a3a3c" stroke="#d4b483" stroke-width="2"/><rect x="0" y="18" width="54" height="72" rx="6" fill="#f5f5f7"/><rect x="9" y="30" width="36" height="5" rx="2" fill="#b08d57"/><rect x="9" y="42" width="28" height="4" rx="2" fill="#8e8e93"/><rect x="9" y="64" width="8" height="16" fill="#30d158"/><rect x="21" y="56" width="8" height="24" fill="#30d158"/><rect x="33" y="70" width="8" height="10" fill="#ff453a"/></g>',
       live: '<g transform="translate(74 56)"><circle r="40" fill="none" stroke="#ff453a" stroke-width="2" opacity=".25"/><circle r="26" fill="none" stroke="#ff453a" stroke-width="2.5" opacity=".5"/><circle r="11" fill="#ff453a"/></g>',
     }[kind];
     const d = document.createElement("span"); d.className = "hm-pic"; d.innerHTML = `<svg viewBox="0 0 148 112" preserveAspectRatio="xMidYMid meet">${P}</svg>`; return d;
@@ -69,9 +70,12 @@ export async function render(main, { previewClient } = {}) {
     card("#/practice", "prac", "Practise smarter", "Practice", "linear-gradient(160deg,#2a2414,#120f08)"),
     card("#/comparisons", "cmp", "Compare anything", "Compare", "linear-gradient(160deg,#16202e,#0a0e14)"),
     card("#/live", "live", "Follow live", "Event Feed", "linear-gradient(160deg,#2a1414,#120808)"),
-  ]);
-  const dots = el("div", { class: "hm-dots", "aria-hidden": "true" }, [0, 1, 2, 3, 4].map((i) => el("i", { class: i ? "" : "on" })));
-  row.addEventListener("scroll", () => { const w = row.scrollWidth - row.clientWidth, i = w > 0 ? Math.round((row.scrollLeft / w) * 4) : 0; [...dots.children].forEach((d, j) => d.classList.toggle("on", j === i)); }, { passive: true });
+    // (update 668) the admin and analysts: every picked player's PDF report at once
+    state.isAdmin || state.profile?.kind === "analyst" ? card("#/bulk-reports", "rep", "Reports for many players", "Generate Bulk Reports", "linear-gradient(160deg,#2a2418,#100d08)") : null,
+  ].filter(Boolean));
+  const nCards = row.children.length;
+  const dots = el("div", { class: "hm-dots", "aria-hidden": "true" }, Array.from({ length: nCards }, (_, i) => el("i", { class: i ? "" : "on" })));
+  row.addEventListener("scroll", () => { const w = row.scrollWidth - row.clientWidth, i = w > 0 ? Math.round((row.scrollLeft / w) * (nCards - 1)) : 0; [...dots.children].forEach((d, j) => d.classList.toggle("on", j === i)); }, { passive: true });
 
   // ---- this week's tournament ----
   const live = el("a", { class: "hm-live", href: "#/live", hidden: true });

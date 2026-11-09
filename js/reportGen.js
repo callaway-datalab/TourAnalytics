@@ -1393,6 +1393,45 @@ export async function loadFullField(datasetId, field, me, idx) {
   return full.length > 1 ? full : null;
 }
 
+/* ============================== (update 668) bulk reports ============================== */
+/** A player's tours and seasons, and what the Stats page would start them on: the latest season, and in it the tour with
+ *  the most rounds. → { tours: [{ tour, rounds }], year, tour } */
+export function reportDefaults(rounds) {
+  const yr = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+  const years = [...new Set(rounds.map(yr).filter((y) => /^\d{4}$/.test(y)))].sort();
+  const year = years.at(-1) || null;
+  const all = new Map(), inYr = new Map();
+  for (const rd of rounds) { const t = rd.tour || ""; all.set(t, (all.get(t) || 0) + 1); if (yr(rd) === year) inYr.set(t, (inYr.get(t) || 0) + 1); }
+  const tours = [...all].sort((a, b) => (inYr.get(b[0]) || 0) - (inYr.get(a[0]) || 0) || b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).map(([tour, n]) => ({ tour, rounds: n, inYear: inYr.get(tour) || 0 }));
+  // (as the Stats page: the tour they've played the most rounds on)
+  return { tours, year, tour: [...all].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null };
+}
+/** One player's report, the way the Stats page's Generate PDF Report makes it (their season, every category, by
+ *  product): → { bytes, name, rounds }. cache: shared between players (the everyone-file and the logo, loaded once). */
+export async function makePlayerReport({ key, label, tour = null, year = null, cache = {}, onStep = () => {} }) {
+  onStep("Loading the rounds\u2026");
+  const data = await loadSource("tour", key, label, { detail: true });
+  if (!data || !data.me.rounds.length) return null;
+  let field = data.field;
+  if (data.datasetId && getState().isAdmin && data.field.some((p) => p.summaryOnly) && !(await import("./fieldCache.js")).isLiteDevice()) {
+    onStep("Loading every player\u2019s rounds\u2026");
+    cache.full ||= new Map();
+    if (!cache.full.has(data.datasetId)) cache.full.set(data.datasetId, (await loadFullField(data.datasetId, data.field, data.me, data.idx).catch(() => null)) || null);
+    const full = cache.full.get(data.datasetId);
+    if (full) field = full.some((p) => p.key === key) ? full.map((p) => (p.key === key ? data.me : p)) : [data.me, ...full];
+  }
+  onStep("Working out the insights\u2026");
+  const from = year ? Date.parse(`${year}-01-01T00:00:00`) : null, to = year ? Date.parse(`${year}-12-31T23:59:59`) : null;
+  const a = analyzePerformance(data.me, field, { from, to, cats: CATEGORIES.map(([k]) => k), byProduct: true, idx: data.idx, minRounds: null, tour, years: year ? [String(year)] : null });
+  if (!a.overall.rounds) return { empty: true };
+  onStep("Making the PDF\u2026");
+  cache.logo ??= await loadLogo();
+  const bytes = buildReportPdf(a, { aiSummary: null, sourceLabel: "All rounds", logo: cache.logo, rangeLabel: year ? `${year} season` : `All time - As of ${new Date().toLocaleDateString("en-US")}` });
+  logReportRun({ uid: getState().user?.uid, playerKey: key, source: "tour" }).catch(() => {});
+  const name = `${String(label).replace(/[^\w -]/g, "")} ${tour ? `${String(tour).replace(/[^\w -]/g, "")} ` : ""}${year || ""} performance report.pdf`.replace(/\s+/g, " ");
+  return { bytes, name, rounds: a.overall.rounds };
+}
+
 /* ============================== the panel ============================== */
 /** "Auto-generate report" for one player. canSave: the admin can also put it in the player's reports. */
 export function reportBuilder({ playerKey, playerLabel, canSave = false, flash = () => {}, source: startSource0 = "tour", // eslint-disable-line no-unused-vars

@@ -6566,3 +6566,19 @@ div.sh-ud3-green { cursor: default; }
   -webkit-mask: url("../icons/cal-walk.png?v=1") center / contain no-repeat; mask: url("../icons/cal-walk.png?v=1") center / contain no-repeat; margin: -6px 2px -6px 0; }
 /* (update 662) Cal in full the way the coins draw him: champagne filled, dark lines (the picture itself, no mask) */
 .cal-head .cal-ava.cal-ava-walk { -webkit-mask: none !important; mask: none !important; background: url("../icons/cal-walk.png?v=2") center / contain no-repeat !important; }
+/* (update 668) Generate Bulk Reports */
+.bulk { display: grid; gap: 14px; max-width: 900px; }
+.bulk-step h2 { margin: 0 0 10px; font-size: 1.1rem; }
+.bulk-tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 10px; }
+.bulk-q { flex: 1 1 220px; min-width: 0; }
+.bulk-list { max-height: 52vh; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; padding: 2px; }
+.bulk-row { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.03); cursor: pointer; }
+.bulk-row.on { border-color: rgba(212,180,131,0.55); background: rgba(212,180,131,0.10); }
+.bulk-row input { accent-color: #d4b483; width: 16px; height: 16px; }
+.bulk-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.bulk-t { width: 100%; } .bulk-t td { vertical-align: middle; padding: 8px 6px; } .bulk-name { font-weight: 600; }
+.bulk-tours { display: flex; flex-wrap: wrap; gap: 6px; }
+.bulk-prog { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 6px; }
+.bulk-p { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.bulk-ps { margin-left: auto; font-size: 0.85rem; color: #a1a1a6; }
+.bulk-p.done .bulk-ps { color: #4cd17e; } .bulk-p.fail .bulk-ps { color: #ff8a7a; } .bulk-p.busy .bulk-ps { color: #d4b483; }
