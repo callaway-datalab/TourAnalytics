@@ -55,7 +55,7 @@ export function strategyOf(recs, par, geo = {}) {
   // (a hull of a few shots along a strip was a thin sliver); drawn as its outline's points
   // (update 631) round most of the shots (the nearest 85% to their middle), 1.5 yds beyond them, and no wider than it
   // needs to be (at least 0.4 as wide as long): a wide oval spilled into the fairway or rough beside a patch
-  const hullOf = (pts0) => {
+  const hullOf = (pts0, lim = null) => {
     if (!pts0 || pts0.length < 3) return null;
     let pts = pts0; { const cx = mean(pts.map((p) => p[0])), cy = mean(pts.map((p) => p[1])); if (pts.length >= 6) pts = [...pts].sort((p, q) => Math.hypot(p[0] - cx, p[1] - cy) - Math.hypot(q[0] - cx, q[1] - cy)).slice(0, Math.ceil(pts.length * 0.85)); }
     const mx = mean(pts.map((p) => p[0])), my = mean(pts.map((p) => p[1]));
@@ -64,14 +64,17 @@ export function strategyOf(recs, par, geo = {}) {
     let a = Math.max(...pts.map(([x, y]) => Math.abs((x - mx) * ux + (y - my) * uy))) + pad;
     let b = Math.max(...pts.map(([x, y]) => Math.abs((x - mx) * vx + (y - my) * vy))) + pad;
     a = Math.max(a, 5 * PPY); b = Math.max(b, 0.4 * a, 4 * PPY);
+    // (update 655) a tee target (aim, avoid): its radius, either way, between 8 and 15 yds
+    if (lim) { const lo = lim[0] * PPY, hi = lim[1] * PPY; a = Math.min(hi, Math.max(lo, a)); b = Math.min(hi, Math.max(lo, b)); }
     return Array.from({ length: 20 }, (_, k) => { const t = (k / 20) * 2 * Math.PI, ca = Math.cos(t) * a, sb = Math.sin(t) * b; return [Math.round(mx + ca * ux + sb * vx), Math.round(my + ca * uy + sb * vy)]; });
   };
-  const circ = (rs, ptOf, tone) => {
+  const TEE_LIM = [8, 15]; // (update 655: tee targets; 656: the approach miss spots too)
+  const circ = (rs, ptOf, tone, lim = null) => {
     const ps = rs.map(ptOf).filter((q) => q && q[1] != null && q[2] != null); if (ps.length < 3) return null;
     const cx = mean(ps.map((q) => q[1])), cy = mean(ps.map((q) => q[2])), ds = ps.map((q) => Math.hypot(q[1] - cx, q[2] - cy)).sort((a, b) => a - b);
-    const r = Math.max(6 * PPY, Math.min(30 * PPY, ds[Math.floor(0.7 * (ds.length - 1))] || 0));
+    const r = Math.max((lim ? lim[0] : 6) * PPY, Math.min((lim ? lim[1] : 30) * PPY, ds[Math.floor(0.7 * (ds.length - 1))] || 0));
     const inner = ps.filter((q) => Math.hypot(q[1] - cx, q[2] - cy) <= r).map((q) => [q[1], q[2]]); // (most of them: the outliers left out)
-    const h = hullOf(inner);
+    const h = hullOf(inner, lim);
     return h ? [Math.round(cx), Math.round(cy), Math.round(r), tone, h] : [Math.round(cx), Math.round(cy), Math.round(r), tone];
   };
   const apPt = (r) => (r.apIdx != null ? r.qs[r.apIdx + 1] : null);
@@ -98,7 +101,7 @@ export function strategyOf(recs, par, geo = {}) {
     const zones = group(drives.map((d) => ({ ...d.r, _d: d })), (r) => zoneOf(r._d)).sort((a, b) => a.avg - b.avg);
     { const m = new Map();
       for (const d of drives) { const z = zoneOf(d); if (!z || !/fairway$/.test(z) || /bunkers$/.test(z)) continue; const L = Math.round(len(d) / 20) * 20, k = `${z}|${L}`; (m.get(k) || m.set(k, []).get(k)).push(d); }
-      teeOpts = [...m].filter(([, ds]) => ds.length >= OPT_N).map(([k, ds]) => { const [z, L] = k.split("|"); return { z, len: Number(L), n: ds.length, avg: Math.round(mean(ds.map((d) => sc(d.r))) * 1000) / 1000, left: med(ds.map((d) => d.q2[4])), at: circ(ds, (d) => d.q2, "good") }; });
+      teeOpts = [...m].filter(([, ds]) => ds.length >= OPT_N).map(([k, ds]) => { const [z, L] = k.split("|"); return { z, len: Number(L), n: ds.length, avg: Math.round(mean(ds.map((d) => sc(d.r))) * 1000) / 1000, left: med(ds.map((d) => d.q2[4])), at: circ(ds, (d) => d.q2, "good", TEE_LIM) }; });
       if (!teeOpts.length) teeOpts = null; }
     const isFw = (z) => /fairway$/.test(z.k) && !/bunkers$/.test(z.k);
     const tgt = zones.filter(isFw)[0];
@@ -108,12 +111,12 @@ export function strategyOf(recs, par, geo = {}) {
       const bb = bands.length >= 2 && bands[0].avg < tgt.avg ? bands[0] : null;
       // (update 595) just the value of what's recommended (the spot was still picked against every other place)
       const g0 = bb || tgt;
-      items.push({ k: "tee", h: "Aim", t: `Aim for ${tgt.k}${bb ? ` around ${bb.k} yds` : ""} off the tee ${vn(g0.avg, g0.n)}.`, at: [circ(g0.rs, (r) => r._d.q2, "good")].filter(Boolean) });
+      items.push({ k: "tee", h: "Aim", t: `Aim for ${tgt.k}${bb ? ` around ${bb.k} yds` : ""} off the tee ${vn(g0.avg, g0.n)}.`, at: [circ(g0.rs, (r) => r._d.q2, "good", TEE_LIM)].filter(Boolean) });
       for (const z of zones.filter((z) => !isFw(z) && z.avg <= tgt.avg - 0.05).slice(0, 1))
         items.push({ k: "tee", h: "Surprise", t: `Drives finishing in ${z.k} have scored better than the aim ${vn(z.avg, z.n)}.` });
     }
     const worst = zones.at(-1), best = zones[0];
-    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", h: "Avoid", t: `Stay out of ${worst.k} off the tee ${vn(worst.avg, worst.n)}.`, at: [circ(worst.rs, (r) => r._d.q2, "bad")].filter(Boolean) });
+    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", h: "Avoid", t: `Stay out of ${worst.k} off the tee ${vn(worst.avg, worst.n)}.`, at: [circ(worst.rs, (r) => r._d.q2, "bad", TEE_LIM)].filter(Boolean) });
   }
 
   // ---- the approach: every result (the green, and each miss's side and lie within 30 yds) against every other ----
@@ -139,6 +142,7 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 617) each spot is a cluster's centre found by moving a circle to the middle of its misses until it stops
     // (the densest place), and judged on every miss of that lie inside it: whole bunkers and patches of rough, not the
     // best- or worst-scoring slice of one (that made a left bunker look worse than a right one that really was worse)
+    let allMiss = missPts.slice();
     const gen = (minN, radii) => {
       const out = [], seen = new Set();
       for (const c of missPts) for (const ry of radii) {
@@ -156,11 +160,17 @@ export function strategyOf(recs, par, geo = {}) {
             for (let i = 0; i < part.length; i++) for (const q of [...left]) if (Math.hypot(q.x - part[i].x, q.y - part[i].y) <= L) { part.push(q); left.delete(q); }
             parts.push(part); }
           mem = parts.sort((a, b) => b.length - a.length)[0]; x = mean(mem.map((p) => p.x)); y = mean(mem.map((p) => p.y)); }
+        // (update 657) the spot IS the circle drawn: its middle where the search settled, its radius the circle's (8 to
+        // 15 yds), and every miss inside it counted, whatever its side (the search above only finds where to put it)
+        mem = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
+        // (update 658) only the lie in its name: the circle's most common lie (a couple of rough misses in a bunker spot
+        // don't count toward "in a bunker")
+        if (mem.length) { const lc = new Map(); for (const p of mem) lc.set(p.lie, (lc.get(p.lie) || 0) + 1); const top = [...lc].sort((a, b) => b[1] - a[1])[0][0]; mem = mem.filter((p) => p.lie === top); }
         if (mem.length < minN) continue;
         // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
         // green) is a spot of its own rather than swallowed by a bigger one nearby
         const sig = `${c.lie}|${ry}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
-        if (!seen.has(sig)) { seen.add(sig); out.push({ ry, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
+        if (!seen.has(sig)) { seen.add(sig); out.push({ ry, x, y, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
       }
       return out;
     };
@@ -175,8 +185,9 @@ export function strategyOf(recs, par, geo = {}) {
       for (const p of all) { if ((p.lie !== "rough" && p.lie !== "fairway") || !p.r.bb) continue;
         const nb = all.filter((q) => q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= R);
         if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || all.some((q) => q.lie === "bunker" && Math.hypot(q.x - p.x, q.y - p.y) <= 2 * geo.ppy)) p.lucky = true; } // (or a bunker miss within 2 yds)
+      allMiss = missPts.slice(); // (update 657: counted in any circle they're inside, just not used to place one)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
-    const cand = gen(MIN_N, [8, 12, 15, 20]);
+    const cand = gen(MIN_N, [8, 10, 12, 15]); // (update 657: 8 to 15 yds, the sizes a spot can be drawn)
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
     const sideOf = (mem) => {
@@ -187,14 +198,16 @@ export function strategyOf(recs, par, geo = {}) {
       const [pw, pn] = [...part].sort((a, b) => b[1] - a[1])[0];
       return pn >= mem.length * 0.7 ? pw : top;
     };
-    const nameAll = (cs) => cs.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${g.mem[0].lie}`, n: g.mem.length, cx: mean(g.mem.map((p) => p.x)), cy: mean(g.mem.map((p) => p.y)) }));
+    // (update 657) named by the lie most of its misses are in; centred where the circle is drawn
+    const lieMost = (mem) => { const m = new Map(); for (const p of mem) m.set(p.lie, (m.get(p.lie) || 0) + 1); return [...m].sort((a, b) => b[1] - a[1])[0][0]; };
+    const nameAll = (cs) => cs.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${lieMost(g.mem)}`, n: g.mem.length, cx: g.x, cy: g.y }));
     const named = nameAll(cand);
     const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); return a.k !== b.k && b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n); };
     // (update 618) a place to aim has to be safe to aim at: not a sliver of rough or fairway beside a bunker that only
     // scored well by luck. Within 6 yds of a spot's middle, if a quarter or more of all the misses (any lie) are in a
     // bunker, it can't be the best or second best miss (it can still be the worst)
     const risky = (g) => {
-      if (g.mem[0].lie === "bunker") return false;
+      if (lieMost(g.mem) === "bunker") return false;
       if (g.mem.filter((p) => p.r.bb).length < g.mem.length / 2) return false; // (update 635) beside a bunker is fine; in front of one isn't
       // (update 634) a third or more within 5 yds (was a quarter within 6)
       const R = 5 * geo.ppy, nb = missPts.filter((p) => Math.hypot(p.x - g.cx, p.y - g.cy) <= R);
@@ -208,10 +221,10 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
     // different place that's scored worse than the second best
     if (pick.length === 2) {
-      const w = nameAll(gen(5, [15, 20])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
+      const w = nameAll(gen(5, [12, 15])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
       if (w) pick.push(w);
     }
-    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const h = hullOf(g.mem.map((p) => [p.x, p.y])); return h ? [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone, h] : [Math.round(g.cx), Math.round(g.cy), Math.round(g.ry * geo.ppy), tone]; } }));
+    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R), tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
   }
   const order = spotOrder || (combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : bySide.length >= 2 ? bySide : null);
     if (order) {
@@ -221,7 +234,7 @@ export function strategyOf(recs, par, geo = {}) {
     { const gg = done.filter((r) => apOut(r) === "green"), mm = done.filter((r) => r.side && !r.fringe);
       if (gg.length && mm.length) { const a = mean(gg.map(sc)), b = mean(mm.map(sc));
         items.push({ k: "miss", h: "Green vs miss", t: `Hitting the green ${vn(a, gg.length)}; missing it within 30 yds ${vn(b, mm.length)}: a miss ${b >= a ? "costs" : "saves"} about ${Math.abs(b - a).toFixed(2)} a hole.` }); } }
-    const atOf = (g, tone) => (g.at ? [g.at(tone)] : [circ(g.rs, apPt, tone)].filter(Boolean)); // (update 610: a spot's own circle)
+    const atOf = (g, tone) => (g.at ? [g.at(tone)] : [circ(g.rs, apPt, tone, TEE_LIM)].filter(Boolean)); // (update 610: a spot's own circle)
     items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: atOf(b1, "good") });
     // (update 615) only two spots: the other is the worst (red), not a second best
     if (order.length === 2) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "bad") });
@@ -236,8 +249,8 @@ export function strategyOf(recs, par, geo = {}) {
       const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, rs, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
       if (few.length >= 2) {
         const b = few[0], w = few.at(-1), nm = (x) => SIDE[x.sd] || x.sd;
-        items.push({ k: "miss", h: "Best miss so far", t: `Too few misses to rank firmly; so far, miss ${nm(b)} ${vn(b.avg, b.n)}.`, at: [circ(b.rs, apPt, "good")].filter(Boolean) });
-        items.push({ k: "miss", h: "Worst miss so far", t: `Worst so far: ${nm(w)} ${vn(w.avg, w.n)}.`, at: [circ(w.rs, apPt, "bad")].filter(Boolean) });
+        items.push({ k: "miss", h: "Best miss so far", t: `Too few misses to rank firmly; so far, miss ${nm(b)} ${vn(b.avg, b.n)}.`, at: [circ(b.rs, apPt, "good", TEE_LIM)].filter(Boolean) });
+        items.push({ k: "miss", h: "Worst miss so far", t: `Worst so far: ${nm(w)} ${vn(w.avg, w.n)}.`, at: [circ(w.rs, apPt, "bad", TEE_LIM)].filter(Boolean) });
       }
     } else items.push({ k: "miss", h: "Too few", t: `Too few approach shots recorded to this pin to read yet (${nTxt(done.length)}).` });
   }

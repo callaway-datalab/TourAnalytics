@@ -33,7 +33,7 @@ export async function render(main, { previewClient } = {}) {
   if (calAllowed()) {
     const talk = el("button", { type: "button", class: "hm-orb", "aria-label": "Ask Cal: tap to talk" }, el("span", { "aria-hidden": "true" }));
     // (update 621) Cal himself in the orb (the caddie in a speech bubble, in dark ink), with a small microphone badge: tap to talk
-    talk.firstChild.innerHTML = '<svg class="hm-cal-face" viewBox="0 0 20 20"><mask id="hm-cal-m"><image href="icons/cal.png?v=3" width="20" height="20"/></mask><rect width="20" height="20" fill="#1a1408" mask="url(#hm-cal-m)"/></svg>';
+    talk.firstChild.innerHTML = '<svg class="hm-cal-face" viewBox="0 0 20 20"><mask id="hm-cal-m"><image href="icons/cal.png?v=4" width="20" height="20"/></mask><rect width="20" height="20" fill="#1a1408" mask="url(#hm-cal-m)"/></svg>';
     talk.appendChild(el("span", { class: "hm-orb-mic", "aria-hidden": "true" }));
     talk.lastChild.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
     const open = async (listen) => { const m = await import("../callie.js"); await m.openCallie(); if (listen && !(await import("../listen.js")).isIOS()) setTimeout(() => document.querySelector(".cal-mic:not(.on)")?.click(), 150); };
