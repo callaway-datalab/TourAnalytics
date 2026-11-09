@@ -714,7 +714,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       // (update 675) each part in its own colour: each average by its sign (green gaining, red losing), the change by its direction
       { const U = byRd && a.form.unit === "event" ? "events" : "rounds", sep = "   \u00b7   ";
         const parts = [[`Last ${n} ${U}: ${fmtSG(last)}`, tone(last)], [sep, P.grey], [`${n} before that: ${fmtSG(first)}`, tone(first)], [sep, P.grey],
-          [`${ch >= 0 ? "Up" : "Down"} ${Math.abs(ch).toFixed(2)}`, Math.abs(ch) < STEADY ? P.grey : tone(ch)]];
+          [`${ch >= 0 ? "Up" : "Down"} ${Math.abs(ch).toFixed(2)}`, Math.round(ch * 100) === 0 ? P.grey : tone(ch)]]; // (update 676: green or red for any change; grey only at 0.00)
         let xr = M + W;
         for (const [t, c] of [...parts].reverse()) { d.text(t, xr, y + 10, { size: 8, bold: true, color: c, align: "right" }); xr -= textWidth(t, 8, true); } }
     }
