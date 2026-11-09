@@ -1414,7 +1414,8 @@ export function reportDefaults(rounds) {
 }
 /** One player's report, the way the Stats page's Generate PDF Report makes it (their season, every category, by
  *  product): → { bytes, name, rounds }. cache: shared between players (the everyone-file and the logo, loaded once). */
-export async function makePlayerReport({ key, label, tour = null, year = null, cache = {}, onStep = () => {} }) {
+export async function makePlayerReport({ key, label, tour: tour0 = null, year = null, cache = {}, onStep = () => {} }) {
+  const tour = tour0 === "__all" ? null : tour0; // (update 680: All tours: every tour together, by event when any DP World Tour)
   onStep("Loading the rounds\u2026");
   const data = await loadSource("tour", key, label, { detail: true });
   if (!data || !data.me.rounds.length) return null;
@@ -1434,7 +1435,7 @@ export async function makePlayerReport({ key, label, tour = null, year = null, c
   cache.logo ??= await loadLogo();
   const bytes = buildReportPdf(a, { aiSummary: null, sourceLabel: "All rounds", logo: cache.logo, rangeLabel: year ? `${year} season` : `All time - As of ${new Date().toLocaleDateString("en-US")}` });
   logReportRun({ uid: getState().user?.uid, playerKey: key, source: "tour" }).catch(() => {});
-  const name = `${String(label).replace(/[^\w -]/g, "")} ${tour ? `${String(tour).replace(/[^\w -]/g, "")} ` : ""}${year || ""} performance report.pdf`.replace(/\s+/g, " ");
+  const name = `${String(label).replace(/[^\w -]/g, "")} ${tour ? `${String(tour).replace(/[^\w -]/g, "")} ` : tour0 === "__all" ? "All tours " : ""}${year || ""} performance report.pdf`.replace(/\s+/g, " ");
   return { bytes, name, rounds: a.overall.rounds };
 }
 

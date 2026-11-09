@@ -13,7 +13,9 @@ async function playersYouCanSee() {
   if (team.isTeam) return [...teamLabels(team.teamAccess)].map(([k, l]) => [k, plainName(l)]);
   return [];
 }
-const tourName = (t) => (t ? String(t) : "No tour");
+const ALL = "__all"; // (update 680: every tour together, as the Stats page's All)
+const tourName = (t) => (t === ALL ? "All tours" : t ? String(t) : "No tour");
+const realTours = (p) => (p.tours || []).filter((t) => t.tour && !/^practice$/i.test(String(t.tour).trim()));
 
 export async function render(main) {
   const st = getState();
@@ -56,16 +58,19 @@ export async function render(main) {
     const picked = pool.filter(([k]) => chosen.has(k));
     const box = el("div", { class: "bulk-plan" }), status = el("p", { class: "muted small", role: "status" }, `Looking up ${picked.length} player${picked.length === 1 ? "" : "s"}…`);
     const back = el("button", { type: "button", class: "btn ghost" }, "‹ Back"), go = el("button", { type: "button", class: "btn", disabled: true }, "Confirm and generate reports");
+    // (update 680) every player at once: All tours (where they have more than one), or back to each one's own default
+    const allBtn = el("button", { type: "button", class: "link small" }, "Use All tours for everyone"), defBtn = el("button", { type: "button", class: "link small" }, "Back to each player’s default");
     back.addEventListener("click", step1);
     mount(wrap, el("section", { class: "panel bulk-step" }, [el("h2", {}, "2 · Check each player's tour"),
-      el("p", { class: "muted small" }, "Each player starts on what their Stats page would show: their latest season, on the tour they've played the most. Tap another tour to change it."), status, box, el("div", { class: "bulk-actions" }, [back, go])]));
+      el("p", { class: "muted small" }, "Each player starts on what their Stats page would show: their latest season, on the tour they've played the most. Tap another tour to change it, or All tours for every tour together (by event whenever there's DP World Tour golf in it)."),
+      el("div", { class: "bulk-tools" }, [allBtn, defBtn]), status, box, el("div", { class: "bulk-actions" }, [back, go])]));
     const { loadSource, reportDefaults } = await import("../reportGen.js");
     plan = picked.map(([key, label]) => ({ key, label, state: "loading" }));
     const draw = () => {
       mount(box, el("table", { class: "plain bulk-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Player"), el("th", {}, "Season"), el("th", {}, "Tour")])),
         el("tbody", {}, plan.map((p) => el("tr", {}, [el("td", { class: "bulk-name" }, p.label), el("td", {}, p.year || "—"),
           el("td", {}, p.state === "loading" ? el("span", { class: "muted small" }, "Looking up…") : p.state === "none" ? el("span", { class: "muted small" }, "No rounds: skipped")
-            : el("div", { class: "bulk-tours" }, p.tours.map((t) => { const on = p.tour === t.tour, b = el("button", { type: "button", class: `chip${on ? " on" : ""}`, "aria-pressed": String(on) }, `${tourName(t.tour)} · ${t.inYear || t.rounds} rds`);
+            : el("div", { class: "bulk-tours" }, [...p.tours, ...(realTours(p).length > 1 ? [{ tour: ALL }] : [])].map((t) => { const on = p.tour === t.tour, b = el("button", { type: "button", class: `chip${on ? " on" : ""}`, "aria-pressed": String(on) }, t.tour === ALL ? "All tours" : `${tourName(t.tour)} · ${t.inYear || t.rounds} rds`);
               b.addEventListener("click", () => { p.tour = t.tour; draw(); }); return b; }))),
         ])))]));
       const ready = plan.filter((p) => p.state === "ready").length, waiting = plan.filter((p) => p.state === "loading").length;
@@ -73,11 +78,13 @@ export async function render(main) {
       status.textContent = waiting ? `Looking up ${waiting} more…` : `${ready} report${ready === 1 ? "" : "s"} to make${plan.length > ready ? ` (${plan.length - ready} skipped: no rounds)` : ""}.`;
     };
     draw();
+    allBtn.addEventListener("click", () => { for (const p of plan) if (p.state === "ready" && realTours(p).length > 1) p.tour = ALL; draw(); });
+    defBtn.addEventListener("click", () => { for (const p of plan) if (p.state === "ready") p.tour = p.defTour; draw(); });
     // a few at a time
     let i = 0;
     const worker = async () => { while (i < plan.length && alive) { const p = plan[i++];
       try { const d = await loadSource("tour", p.key, p.label, { detail: false }); const rs = d?.me?.rounds || [];
-        if (!rs.length) p.state = "none"; else { const def = reportDefaults(rs); Object.assign(p, def, { state: "ready" }); }
+        if (!rs.length) p.state = "none"; else { const def = reportDefaults(rs); Object.assign(p, def, { defTour: def.tour, state: "ready" }); }
       } catch (err) { console.error(err); p.state = "none"; }
       draw(); } };
     await Promise.all([worker(), worker(), worker()]);
