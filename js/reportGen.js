@@ -947,29 +947,31 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
     section("Detail", "Strokes Gained by Skill", 52); // (update 520)
-    d.text("Strokes gained a round. Gains on the left (best first), losses on the right (worst first).", M, y + 1, { size: 8, color: P.grey });
-    y += 22;
+    d.text("Strokes gained a round. Gains on the left (best first), losses on the right (worst first).", M, y + 1, { size: 9.6, color: P.grey }); // (update 648: every size 20% larger)
+    y += 24;
     // (rounded to 2 decimals; only ±0.01 or more; at most 25 each side)
     const r2 = (v) => Math.round(v * 100) / 100;
     const gains = byDist.filter((g) => r2(g.perRound) >= 0.01).sort((p, q) => q.perRound - p.perRound).slice(0, 25);
     const losses = byDist.filter((g) => r2(g.perRound) <= -0.01).sort((p, q) => p.perRound - q.perRound).slice(0, 25);
     const rounds = Math.max(1, a.overall.rounds);
-    const rowH = 22;
+    const rowH = 26;
     const heads = () => { cap("Gaining", M, y, P.up); cap("Losing", M + colW + 14, y, P.down); y += 10; };
     heads();
     const row = (g, x, yy) => {
-      d.text(wrap(g.title, colW - 56, 9, true)[0], x, yy, { size: 9, bold: true, color: P.ink });
+      // (update 648) a long name ("Around-the-Green, 0-10 yds, from Fairway") a little smaller to fit, not cut short
+      let ts = 10.8; while (ts > 8.6 && wrap(g.title, colW - 64, ts, true).length > 1) ts -= 0.4;
+      d.text(wrap(g.title, colW - 64, ts, true)[0], x, yy, { size: ts, bold: true, color: P.ink });
       const per = g.shots / rounds;
-      d.text(`${per >= 10 ? Math.round(per) : per.toFixed(1)} shots/round${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmt2(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 9.5, { size: 7, color: P.grey });
-      d.text(fmt2(g.perRound), x + colW, yy + 5, { size: 12, bold: true, color: tone(g.perRound), align: "right" });
-      d.line(x, yy + 14, x + colW, yy + 14, { color: P.hair, width: 0.4 });
+      d.text(`${per >= 10 ? Math.round(per) : per.toFixed(1)} shots/round${g.fieldAvg != null ? `  \u00b7  Tour Avg ${fmt2(g.fieldAvg)}` : ""}${g.rank ? `  \u00b7  rank ${g.rank} of ${g.of}` : ""}`, x, yy + 11.4, { size: 8.4, color: P.grey });
+      d.text(fmt2(g.perRound), x + colW, yy + 6, { size: 14.4, bold: true, color: tone(g.perRound), align: "right" });
+      d.line(x, yy + 17, x + colW, yy + 17, { color: P.hair, width: 0.4 });
     };
     for (let i = 0; i < Math.max(gains.length, losses.length); i++) {
       if (y + rowH > H - 50) { newPage(); heads(); }
-      y += rowH - 8;
+      y += rowH - 9;
       if (gains[i]) row(gains[i], M, y);
       if (losses[i]) row(losses[i], M + colW + 14, y);
-      y += 8;
+      y += 9;
     }
     y += 10;
   }
