@@ -85,7 +85,7 @@ export function heroBox(S, mine, slicedField, f) {
           const labels = hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); });
           // (update 174) Rank | Stat: the rolling rank, or the rolling average (everything up to that date, this selection)
           const mode = () => (!S.showRanks || S.st.heroChartMode === "stat" ? "stat" : "rank");
-          const title = () => `${mode() === "stat" ? "Weekly Rolling Average" : "Weekly Rank History"} \u00b7 ${S.eventView ? "last 5 events" : "last 20 rounds"}`; // (update 663)
+          const title = () => (mode() === "stat" ? "Weekly Rolling Average" : "Weekly Rank History");
           const makeChart = () => S.chartBox((c) => (mode() === "stat" ? S.heroChart(c, labels, hist.map((x) => x.avg)) : S.rankChart(c, labels, hist)));
           const titleEl = el("span", { class: "hero-chart-title" }, title());
           const seg = el("div", { class: "hero-chart-mode", role: "group", "aria-label": "Chart shows" }, [["rank", "Rank"], ["stat", "Stat"]].map(([v, l]) => {
@@ -450,15 +450,7 @@ export function insightsButton(S, slicedField = []) {
 export function rollingOnly(S, ordered) {
   const dk = (d) => String(d || ""), ends = new Map();
   for (const rd of ordered) { const k = `${rd.event}|${S.yearOf(rd)}`; if (dk(rd.date) > (ends.get(k) || "")) ends.set(k, dk(rd.date)); }
-  // (update 663) the rolling average as long as the Trend: the last 20 rounds (the DP World Tour: the last 5 events) at each date
-  return [...new Set(ends.values())].sort().map((d) => { const n = ordered.filter((rd) => dk(rd.date) <= d).length; return { date: d, avg: n ? S.metric(ordered.slice(trailStart(ordered, n, S.eventView), n)) : null }; }).filter((x) => x.avg != null);
-}
-// (update 663) where the trailing window starts for a player's first n rounds: 20 rounds back, or 5 events back
-function trailStart(rs, n, byEv) {
-  if (!byEv) return Math.max(0, n - 20);
-  let k = 0, last = null, i = n - 1;
-  for (; i >= 0; i--) { const rd = rs[i], key = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; if (key !== last) { k++; last = key; if (k > 5) break; } }
-  return i + 1;
+  return [...new Set(ends.values())].sort().map((d) => ({ date: d, avg: S.metric(ordered.filter((rd) => dk(rd.date) <= d)) })).filter((x) => x.avg != null); // (update 664: the average so far, ending at their current one)
 }
 export function rankHistory(S, ordered, slicedField, now, { all = false } = {}) {
   const dk = (d) => String(d || "");
@@ -486,16 +478,14 @@ export function rankHistory(S, ordered, slicedField, now, { all = false } = {}) 
     sorted.forEach((p, i) => {
       const n = counts[i];
       if (!n || (n < need && p.key !== S.me.key)) return;
-      // (update 663) a rolling average as long as the Trend: the last 20 rounds (the DP World Tour: the last 5 events)
-      const st = trailStart(p.rs, n, S.eventView);
-      const v = sgFast ? (cum[i][n - 1] - (st ? cum[i][st - 1] : 0)) / (n - st) : S.metric(p.rs.slice(st, n));
+      const v = sgFast ? cum[i][n - 1] / n : S.metric(p.rs.slice(0, n)); // (update 664: back to everything so far this period)
       if (v != null) vals.push({ key: p.key, v });
     });
     vals.sort(S.byBest);
     const i = vals.findIndex((x) => x.key === S.me.key);
     if (i >= 0) out.push({ date: d, rank: i + 1, of: vals.length, avg: vals[i].v }); // (avg: their rolling average, update 174)
   }
-  // (update 663: no longer pinned to the pill's rank: the last point is the rolling window's rank, as every other point)
+  if (out.length && now?.rank) Object.assign(out[out.length - 1], { rank: now.rank, of: now.of }); // (the same as the pill)
   return out;
 }
 // the rank line: 1st at the top, a gold line, the latest point marked
