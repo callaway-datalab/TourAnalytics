@@ -71,7 +71,7 @@ export async function render(main, { previewClient } = {}) {
     card("#/comparisons", "cmp", "Compare anything", "Compare", "linear-gradient(160deg,#16202e,#0a0e14)"),
     card("#/live", "live", "Follow live", "Event Feed", "linear-gradient(160deg,#2a1414,#120808)"),
     // (update 668) the admin and analysts: every picked player's PDF report at once
-    state.isAdmin || state.profile?.kind === "analyst" ? card("#/bulk-reports", "rep", "Reports for many players", "Generate Bulk Reports", "linear-gradient(160deg,#2a2418,#100d08)") : null,
+    state.isAdmin || state.profile?.kind === "analyst" ? card("#/bulk-reports", "rep", "Generate Bulk Reports", "Stats", "linear-gradient(160deg,#2a2418,#100d08)") : null,
   ].filter(Boolean));
   const nCards = row.children.length;
   const dots = el("div", { class: "hm-dots", "aria-hidden": "true" }, Array.from({ length: nCards }, (_, i) => el("i", { class: i ? "" : "on" })));

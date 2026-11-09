@@ -6582,3 +6582,11 @@ div.sh-ud3-green { cursor: default; }
 .bulk-p { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
 .bulk-ps { margin-left: auto; font-size: 0.85rem; color: #a1a1a6; }
 .bulk-p.done .bulk-ps { color: #4cd17e; } .bulk-p.fail .bulk-ps { color: #ff8a7a; } .bulk-p.busy .bulk-ps { color: #d4b483; }
+/* (update 671) Bulk Reports centred on the page; Home's Explore cards share the row on a desktop (all of them fit) */
+.bulk { margin: 0 auto; width: 100%; }
+.page-head + .bulk { margin-top: 4px; }
+@media (min-width: 900px) {
+  .hm-row { overflow-x: visible; }
+  .hm-row .hm-fc { flex: 1 1 0; width: auto !important; min-width: 0; max-width: 210px; height: 220px; }
+  .hm-row .hm-fc b { font-size: 1.05rem; }
+}
