@@ -739,7 +739,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
     // (update 577) wrapped to the page's width (it ran off the right edge)
-    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 12} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 20} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
     y -= 10;
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
