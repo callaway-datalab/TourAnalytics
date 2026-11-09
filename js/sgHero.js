@@ -85,11 +85,11 @@ export function heroBox(S, mine, slicedField, f) {
           const labels = hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); });
           // (update 174) Rank | Stat: the rolling rank, or the rolling average (everything up to that date, this selection)
           const mode = () => (!S.showRanks || S.st.heroChartMode === "stat" ? "stat" : "rank");
-          const title = () => (mode() === "stat" ? "Weekly Rolling Average" : "Weekly Rank History");
+          const title = () => (mode() === "stat" ? "Season Average" : "Weekly Rank History"); // (update 665: was Weekly Rolling Average)
           const makeChart = () => S.chartBox((c) => (mode() === "stat" ? S.heroChart(c, labels, hist.map((x) => x.avg)) : S.rankChart(c, labels, hist)));
           const titleEl = el("span", { class: "hero-chart-title" }, title());
           const seg = el("div", { class: "hero-chart-mode", role: "group", "aria-label": "Chart shows" }, [["rank", "Rank"], ["stat", "Stat"]].map(([v, l]) => {
-            const b = el("button", { type: "button", class: `hcm-btn${mode() === v ? " on" : ""}`, "aria-pressed": String(mode() === v), title: v === "rank" ? "Plot the rolling rank" : "Plot the rolling average" }, l);
+            const b = el("button", { type: "button", class: `hcm-btn${mode() === v ? " on" : ""}`, "aria-pressed": String(mode() === v), title: v === "rank" ? "Plot the season rank" : "Plot the season average" }, l);
             b.addEventListener("click", () => {
               if (mode() === v) return;
               S.st.heroChartMode = v;
@@ -396,7 +396,7 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
   const valTd = (v) => el("td", { class: `num ${S.isSG() ? S.signCls(v) : ""}` }, S.fmtV(v));
   const table = el("table", { class: "plain rankings hero-tourn hero-events" }, [
     el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), S.unit === "event" ? null : el("th", { class: "num" }, "Rds"),
-      ...(rolling ? [el("th", { class: "num" }, "Rolling Avg"), S.showRanks ? el("th", { class: "num" }, "Rolling Rank") : null] : [el("th", { class: "num" }, "Event Avg"), S.showRanks ? el("th", { class: "num" }, "Event Rank") : null])])),
+      ...(rolling ? [el("th", { class: "num" }, "Season Avg"), S.showRanks ? el("th", { class: "num" }, "Season Rank") : null] : [el("th", { class: "num" }, "Event Avg"), S.showRanks ? el("th", { class: "num" }, "Event Rank") : null])])),
     el("tbody", {}, rows.flatMap((x) => { const tr = el("tr", {}, [el("td", { class: "ht-date" }, S.dateTxt(x.end)), el("td", { class: "ht-name" }, x.event || "\u2014"),
       S.unit === "event" ? null : el("td", { class: "num" }, String(x.rs.length)),
       ...(rolling ? [valTd(x.roll?.avg ?? null), S.showRanks ? rankTd(x.roll) : null] : [valTd(x.v), S.showRanks ? rankTd(x.fin, true) : null])]);
@@ -405,8 +405,8 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
   ]);
   S.popup(rolling ? `${S.isSG() ? "SG" : S.def.label} history` : "Events", S.me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${S.rw(ordered.length)} \u00b7 newest first`, [
     el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-    el("p", { class: "muted small" }, !S.showRanks ? (rolling ? "Rolling Avg: everything up to the end of that tournament in this selection." : `Event Avg: ${S.isSG() ? "strokes gained a round" : S.def.label} at that tournament.`) : rolling
-      ? "Rolling Avg and Rolling Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds)."
+    el("p", { class: "muted small" }, !S.showRanks ? (rolling ? "Season Avg: everything up to the end of that tournament in this selection." : `Event Avg: ${S.isSG() ? "strokes gained a round" : S.def.label} at that tournament.`) : rolling
+      ? "Season Avg and Season Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds)."
       : `Event Avg: ${S.isSG() ? "strokes gained a round" : S.def.label} at that tournament. Event Rank: where that placed among the players who played every round there (\u2014 when they didn\u2019t).`),
   ], "Tournaments");
   table.closest(".gx-pop")?.classList.add("hero-events-pop"); // (wider: seven columns)
@@ -515,7 +515,7 @@ export function heroChart(S, canvas, labels, vals) {
     data: { labels, datasets: [{ data: vals, borderColor: "#d4b483", backgroundColor: grad, fill: S.isSG() ? "origin" : "start", borderWidth: 2.4, tension: 0.25,
       pointRadius: vals.map((_, i) => (i === vals.length - 1 ? 3.5 : 0)), pointBackgroundColor: "#f3dfbd", pointHoverRadius: 4 }] },
     options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${S.fmtV(c.parsed.y)} (rolling average)` } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${S.fmtV(c.parsed.y)} (season average)` } } },
       scales: {
         // a minimal x-axis: a few dates, small and grey, no grid
         x: { display: true, grid: { display: false }, border: { display: false }, ticks: { color: "#6e6e73", font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 5, padding: 2 } },
