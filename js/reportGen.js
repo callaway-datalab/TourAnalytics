@@ -101,12 +101,8 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const mostNow = Math.max(1, ...sorted.map((p) => p.rs.length));
     const upTo = (rs, d) => { let lo = 0, hi = rs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (dk(rs[m].date) <= d) lo = m + 1; else hi = m; } return lo; };
     const out = [];
-    // (update 667) from the first full Trend's worth of theirs: 20 rounds (the DP World Tour: 5 events)
-    const isD0 = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim()), evMode = isD0(tour) || (mine.length > 0 && mine.every((rd) => isD0(rd.tour)));
-    const full = (rs) => (evMode ? new Set(rs.map((rd) => `${rd.event || rd.date}|${String(rd.year || dk(rd.date).slice(0, 4))}`)).size >= 5 : rs.length >= 20);
     for (const d of dates) {
       const counts = sorted.map((p) => upTo(p.rs, d)), most = Math.max(1, ...counts), need = Math.max(1, Math.round((minR * most) / mostNow));
-      if (!full(sorted[0].rs.slice(0, counts[0]))) continue;
       const vals = [];
       sorted.forEach((p, i) => { const n = counts[i]; if (!n || (n < need && p.key !== me.key)) return; vals.push({ key: p.key, v: cum[i][n - 1] / n }); });
       vals.sort((a, b) => b.v - a.v);
@@ -536,7 +532,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const lo = Math.max(1, best - Math.ceil((worst - best) * 0.1) - 1), hi = worst + Math.ceil((worst - best) * 0.1) + 1;
     const Y = (rk) => top + ((rk - lo) / (hi - lo || 1)) * ht;
     d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
-    cap("Season Rank \u00b7 Past 6 Months", x0, top - 6, "#8e8e93", "left", 6.5); // (update 667: was Weekly Rank History) // (update 663: rolling, as the Trend)
+    cap("Season Rank Trend - Past 6 Months", x0, top - 6, "#8e8e93", "left", 6.5); // (update 669) // (update 663: rolling, as the Trend)
     const pts = h.map((q, i) => [x0 + (i / (h.length - 1)) * (w - 12), Y(q.rank)]);
     d.polyline(pts, { color: P.goldLight, width: 1.8 });
     d.dot(...pts[pts.length - 1], 3, P.goldLight);

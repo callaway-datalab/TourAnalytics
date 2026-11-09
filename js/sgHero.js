@@ -11,7 +11,10 @@ export function heroBox(S, mine, slicedField, f) {
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const per = ordered.map((rd) => S.metric([rd]));
     // (update 168) the rank after each round: where they stood in the field on that date, this selection
-    const hist = S.showRanks ? S.rankHistory(ordered, slicedField, r) : S.rollingOnly(ordered); // (update 183: no ranks: the rolling average alone)
+    const hist0 = S.showRanks ? S.rankHistory(ordered, slicedField, r) : S.rollingOnly(ordered); // (update 183: no ranks: the rolling average alone)
+    // (update 669) the graph: the last 6 months of it (the season's rank / average as it was each week, ending at today's)
+    const hist = (() => { const lastMs = Date.parse(String(hist0.at(-1)?.date || "").slice(0, 10)); if (!Number.isFinite(lastMs)) return hist0;
+      const h = hist0.filter((q) => (Date.parse(String(q.date).slice(0, 10)) || 0) >= lastMs - 182.6 * 864e5); return h.length >= 2 ? h : hist0.slice(-2); })();
     const fu = formUnits(S, ordered), n = Math.min(S.eventView ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds) */ // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
     let form = null;
     if (n >= (S.eventView ? 1 : 2)) {
@@ -85,7 +88,7 @@ export function heroBox(S, mine, slicedField, f) {
           const labels = hist.map((x) => { const d = new Date(x.date); return isNaN(d) ? x.date : shortDate(d); });
           // (update 174) Rank | Stat: the rolling rank, or the rolling average (everything up to that date, this selection)
           const mode = () => (!S.showRanks || S.st.heroChartMode === "stat" ? "stat" : "rank");
-          const title = () => (mode() === "stat" ? "Season Average" : "Season Rank"); // (update 665: was Weekly Rolling Average; 667: was Weekly Rank History)
+          const title = () => (mode() === "stat" ? "Season Avg Trend - Past 6 Months" : "Season Rank Trend - Past 6 Months"); // (update 669)
           const makeChart = () => S.chartBox((c) => (mode() === "stat" ? S.heroChart(c, labels, hist.map((x) => x.avg)) : S.rankChart(c, labels, hist)));
           const titleEl = el("span", { class: "hero-chart-title" }, title());
           const seg = el("div", { class: "hero-chart-mode", role: "group", "aria-label": "Chart shows" }, [["rank", "Rank"], ["stat", "Stat"]].map(([v, l]) => {
@@ -450,7 +453,7 @@ export function insightsButton(S, slicedField = []) {
 export function rollingOnly(S, ordered, { all = false } = {}) {
   const dk = (d) => String(d || ""), ends = new Map();
   for (const rd of ordered) { const k = `${rd.event}|${S.yearOf(rd)}`; if (dk(rd.date) > (ends.get(k) || "")) ends.set(k, dk(rd.date)); }
-  return [...new Set(ends.values())].sort().map((d) => { const so = ordered.filter((rd) => dk(rd.date) <= d); return { date: d, avg: all || fullBy(S, so) ? S.metric(so) : null }; }).filter((x) => x.avg != null); // (update 667: the graph from the first full window; the pop-up's table (all) every event) // (update 664: the average so far, ending at their current one)
+  return [...new Set(ends.values())].sort().map((d) => { const so = ordered.filter((rd) => dk(rd.date) <= d); return { date: d, avg: S.metric(so) }; }).filter((x) => x.avg != null); // (update 669: from the first event) // (update 664: the average so far, ending at their current one)
 }
 // (update 667) the graph starts once there's a full Trend's worth: 20 rounds (the DP World Tour: 5 events)
 const evKeyOf = (rd) => `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`;
@@ -476,9 +479,7 @@ export function rankHistory(S, ordered, slicedField, now, { all = false } = {}) 
   const meI = sorted.findIndex((p) => p.key === S.me.key);
   for (const d of dates) {
     const counts = sorted.map((p) => upTo(p.rs, d));
-    // (update 667) not yet a full window: off the graph; in the pop-up's table (all), its average but no rank yet
-    const early = meI >= 0 && !fullBy(S, sorted[meI].rs.slice(0, counts[meI]));
-    if (early && !all) continue;
+    const early = false; // (update 669: from the first event again; update 667's full-window start undone)
     const most = Math.max(1, ...counts);
     const need = Math.max(1, Math.round((minNow * most) / mostNow));
     const vals = [];
