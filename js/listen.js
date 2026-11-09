@@ -10,15 +10,27 @@ export const canListen = () => !!SR;
 export const isIOS = () => typeof navigator !== "undefined" && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 const join = (...a) => a.map((x) => String(x || "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 
-let R = null, running = false, owner = null, skip = 0, count = 0;
+let R = null, running = false, owner = null, skip = 0, count = 0, lastEvt = 0;
+// (update 651) what happened on the last try, to say why nothing was heard: { asked, started, audio, sound, speech, error, ended }
+const diag = { asked: 0, started: 0, audio: 0, sound: 0, speech: 0, error: "", ended: 0 };
+const mark = (k, v = 1) => { diag[k] = v; lastEvt = Date.now(); };
+export function whyNothing() {
+  if (typeof navigator !== "undefined" && navigator.standalone && isIOS() && !diag.started) return "the iPhone home-screen app may not allow speech; try Cal in Safari";
+  if (diag.error) return { "not-allowed": "microphone blocked for this site", "service-not-allowed": "speech recognition isn\u2019t allowed here (Settings \u203a Safari, or Siri & Dictation off?)", "no-speech": "no speech heard", "audio-capture": "no microphone found or it\u2019s busy", network: "speech service couldn\u2019t be reached", aborted: "it was interrupted" }[diag.error] || `error: ${diag.error}`;
+  if (!diag.started) return "the microphone never started";
+  if (!diag.audio) return "the microphone started but got no audio";
+  if (!diag.speech && !diag.sound) return "no sound reached it";
+  return "it heard sound but no words";
+}
 function rec() {
   if (R) return R;
   R = new SR();
   R.lang = navigator.language || "en-US"; R.continuous = true; R.interimResults = true; R.maxAlternatives = 1;
-  R.onstart = () => { running = true; };
-  R.onresult = (e) => { count = e.results.length; owner?._result(e); };
-  R.onerror = (e) => owner?._error(e);
-  R.onend = () => { running = false; count = 0; skip = 0; const o = owner; o?._end(); };
+  R.onstart = () => { running = true; mark("started"); };
+  R.onaudiostart = () => mark("audio"); R.onsoundstart = () => mark("sound"); R.onspeechstart = () => mark("speech");
+  R.onresult = (e) => { count = e.results.length; lastEvt = Date.now(); owner?._result(e); };
+  R.onerror = (e) => { mark("error", e.error || "unknown"); owner?._error(e); };
+  R.onend = () => { mark("ended"); running = false; count = 0; skip = 0; const o = owner; o?._end(); };
   return R;
 }
 
@@ -64,8 +76,11 @@ export function listener({ onText = () => {}, onBlocked = () => {}, onPause = ()
   const begin = () => {
     fin = ""; tmp = ""; began = Date.now(); heard = false;
     ended = new Promise((res) => { endRes = res; });
-    const r = rec();
-    if (running) { skip = count; return; } // (the last session still winding down: carry on in it, from here)
+    let r = rec();
+    // (the last session still winding down: carry on in it, from here; one gone quiet for 3 s is dropped for a new one)
+    if (running && Date.now() - lastEvt < 3000) { skip = count; return; }
+    if (running) { try { R.abort(); } catch { /* */ } R = null; running = false; r = rec(); }
+    Object.assign(diag, { asked: 1, started: 0, audio: 0, sound: 0, speech: 0, error: "", ended: 0 }); lastEvt = Date.now();
     skip = 0; running = true; // (counted as running from the call: a tap's stop must reach it even before it has begun)
     try { r.start(); } catch (err) { running = false; throw err; }
   };

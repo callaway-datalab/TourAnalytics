@@ -6557,3 +6557,7 @@ div.sh-ud3-green { cursor: default; }
 /* (update 645) a hold isn't taken over by scrolling or the long-press menu (iPhone cancelled the touch mid-hold) */
 .cal-holdable { touch-action: none !important; }
 .cal-hold { cursor: pointer; }
+/* (update 651) the hero pop-ups' tables sort by any column */
+.hero-tourn th.sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.hero-tourn th.sort-th::after { content: attr(data-arrow); font-size: 0.75em; color: #d4b483; }
+.hero-tourn th.sort-th:hover { color: #f5f5f7; }

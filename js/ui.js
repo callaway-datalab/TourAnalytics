@@ -1,4 +1,4 @@
-import { listener, canListen } from "./listen.js"; // (update 646: started straight from the touch)
+import { listener, canListen, whyNothing } from "./listen.js"; // (update 646: started straight from the touch)
 import { getPreviewTeam, effectiveTeam } from "./preview.js";
 import { portalName } from "./firebase-init.js";
 import { subscribe, signOut } from "./auth.js";
@@ -313,7 +313,7 @@ export function holdToTalk(b, onHold = () => {}) {
   const hide = (ms = 0) => { const p = pill; setTimeout(() => { p?.remove(); if (pill === p) pill = null; }, ms); };
   const send = (text) => {
     if (sent) return; sent = true;
-    if (!text) { show("I didn\u2019t catch that. Hold and try again.", false); hide(2000); return; }
+    if (!text) { show(`I didn\u2019t catch that (${whyNothing()}).`, false); hide(5000); return; } // (update 651: why)
     show(`\u201c${text}\u201d`, false); hide(1500);
     import("./callie.js").then((m) => m.askHeld(text)).catch((err) => console.error(err));
   };

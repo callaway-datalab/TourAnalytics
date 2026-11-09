@@ -219,8 +219,38 @@ export function popup(S, eyebrow, title, sub, content, label = title) {
   close.addEventListener("click", shut); overlay.addEventListener("click", (e) => { if (e.target === overlay) shut(); });
   document.addEventListener("keydown", onKey); document.body.classList.add("gx-noscroll");
   document.body.appendChild(overlay);
+  overlay.querySelectorAll("table.hero-tourn").forEach(sortableTable); // (update 651)
   close.focus();
   return shut;
+}
+/* (update 651) the pop-ups' tables (rounds, events, tournaments) sort by any column: tap a heading (again to reverse).
+   They open in their own order (by date); a row that opens to a detail row moves with it. */
+function sortableTable(table) {
+  const ths = [...table.querySelectorAll("thead th")], tb = table.tBodies[0];
+  if (!tb || ths.length < 2) return;
+  const groups = []; for (const tr of [...tb.rows]) { if (tr.classList.contains("bs-st-det") && groups.length) groups.at(-1).push(tr); else groups.push([tr]); }
+  groups.forEach((g, i) => { g.i = i; });
+  const keyOf = (txt) => {
+    const t = String(txt || "").replace(/[\u25B8\u25BE]/g, "").trim();
+    if (!t || t === "\u2014") return null;
+    const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(t); if (dm) return new Date(Number(dm[3].length === 2 ? `20${dm[3]}` : dm[3]), dm[1] - 1, dm[2]).getTime();
+    const n = t.replace(/\u2212/g, "-").replace(/^T(?=\d)/, "").replace(/[,%+]|\s*(yds?|ft|mph|pct)$/gi, "");
+    return /^-?\d+(\.\d+)?$/.test(n) ? Number(n) : t.toLowerCase();
+  };
+  let col = -1, dir = 1;
+  ths.forEach((th, c) => {
+    th.classList.add("sort-th"); th.setAttribute("role", "button"); th.tabIndex = 0; th.title = "Sort by this column";
+    const go = () => {
+      dir = col === c ? -dir : (th.classList.contains("num") ? -1 : 1); col = c;
+      ths.forEach((h) => { h.removeAttribute("aria-sort"); h.dataset.arrow = ""; });
+      th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending"); th.dataset.arrow = dir > 0 ? " \u25B2" : " \u25BC";
+      const k = (g) => keyOf(g[0].cells[c]?.textContent);
+      const sorted = [...groups].sort((p, q) => { const a = k(p), b = k(q); if (a == null && b == null) return p.i - q.i; if (a == null) return 1; if (b == null) return -1;
+        return (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b))) * dir || p.i - q.i; });
+      tb.replaceChildren(...sorted.flat());
+    };
+    th.addEventListener("click", go); th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
 }
 // Steadiness: how much the rounds swing (standard deviation), the last n against the n before
 export function steadinessLine(S, ordered, n) {

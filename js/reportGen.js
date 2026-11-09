@@ -969,7 +969,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const win = [...rows].filter((g) => gapOf(g) > 0.005).sort((p, q) => gapOf(q) - gapOf(p))[0] || null;
 
     // ---- the four tiles ----
-    const tw = (W - 3 * 8) / 4, th = 74, ty = y;
+    const tw = (W - 2 * 8) / 3, th = 74, ty = y; // (update 651: three tiles, no Quickest win)
     const tile = (i, kicker, value, vcol, line, dark = false) => {
       const x = M + i * (tw + 8);
       d.roundRect(x, ty, tw, th, 9, { fill: dark ? "#141414" : P.mist });
@@ -985,8 +985,6 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     else tile(1, "Biggest weapon", "—", P.soft, "No skill gaining yet");
     if (worst && worst.perRound < 0) tile(2, "Biggest leak", sg(worst.perRound), P.down, `${full(worst)}${worst.rank ? ` · rank ${worst.rank}` : ""}`);
     else tile(2, "Biggest leak", "—", P.soft, "Nothing losing strokes");
-    if (win) tile(3, "Quickest win", `+${gapOf(win).toFixed(2)}`, P.ink, `a round if ${full(win)} were just Tour average`);
-    else tile(3, "Quickest win", "—", P.soft, "At or above Tour average everywhere");
     y = ty + th + 6;
 
     // ---- the insights (written now, drawn at the bottom; their height is known before the bars are sized) ----
@@ -1045,7 +1043,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         if (lie) d.text(lie, M + textWidth(dist, fz, false) + 4, cy + fz * 0.35, { size: fz - 1.4, color: P.soft });
         d.line(mid, y + 1.5, mid, y + rh - 1.5, { color: "#c7c7cc", width: 0.5 });
         const bh = Math.max(4, rh * 0.48), x1 = X(g.perRound);
-        if (Math.abs(x1 - mid) >= 0.6) d.roundRect(Math.min(mid, x1), cy - bh / 2, Math.abs(x1 - mid), bh, Math.min(2, bh / 3), { fill: g.perRound >= 0 ? P.up : P.down });
+        // (update 651) square at zero, rounded only at the far end
+        if (Math.abs(x1 - mid) >= 0.6) { const len = Math.abs(x1 - mid), rr = Math.min(2, bh / 3, len / 2), fill = g.perRound >= 0 ? P.up : P.down;
+          d.roundRect(Math.min(mid, x1), cy - bh / 2, len, bh, rr, { fill }); d.rect(g.perRound >= 0 ? mid : x1 + len - Math.min(len, rr + 0.5), cy - bh / 2, Math.min(len, rr + 0.5), bh, { fill }); }
         if (g.top10 != null) { const xt = X(g.top10); d.line(xt, y + 1, xt, y + rh - 1, { color: "#8e8e93", width: 0.9, dash: [1.6, 1.2] }); }
         d.text(sg(g.perRound), bx0 + bw + 6 + valW, cy + fz * 0.38, { size: fz + 0.8, bold: true, color: tone(g.perRound), align: "right" });
         if (g.rank) { const T = `${g.rank} / ${g.of}`, ps = Math.max(5.2, fz - 1.8), pw = textWidth(T, ps, true) + ps * 1.8, ph = ps * 1.85, [fill, inkC] = rankColors(g.rank);
@@ -1109,7 +1109,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y -= 12;
     d.rect(M, y - 7, 3, 9, { fill: P.gold });
     cap("Detail", M + 9, y, P.gold); y += 23;
-    d.text("Basic Stats", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
+    d.text("Additional Stats", M, y, { size: 17, bold: true, color: P.ink }); y += 14; // (update 651: was Basic Stats)
     d.text(`Ranks are out of the ${a.players ?? 1} ${a.players === 1 ? "player" : "players"} compared (at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} of strokes gained${a.tour ? `, ${a.tour}` : ""}); someone with no value for a stat counts below everyone who has one.`, M, y + 4, { size: 7.5, color: P.grey });
     y += 6;
     const better = (b, x, ref) => (b.def.higher == null || ref == null || Math.abs(x - ref) < 1e-9 ? null : b.def.higher ? x > ref : x < ref);
