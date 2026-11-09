@@ -95,7 +95,7 @@ export function statSummary(S, mine, slicedField) {
       if (ds.length > 1) lines.push(`Best from ${ds[0].label} (${S.fmtV(ds[0].value)}, ${Math.round(ds[0].w)} attempts); lowest from ${ds[ds.length - 1].label} (${S.fmtV(ds[ds.length - 1].value)}, ${Math.round(ds[ds.length - 1].w)} attempts).`);
     }
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const n = Math.min(12, Math.floor(ordered.length / 2));
+    const n = Math.min(20, Math.floor(ordered.length / 2)); // (update 663: 20 against 20)
     if (n >= 2) {
       const last = S.metric(ordered.slice(-n)), prev = S.metric(ordered.slice(-2 * n, -n));
       if (last != null && prev != null) {

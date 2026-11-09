@@ -58,7 +58,7 @@ function termWords(tr, longN = 48, shortN = 12) {
 }
 function trajectoryBlock(rs, cols0) {
   const cols = cols0 || DEFAULT_COLS;
-  const tr = trajectory(rs).filter((x) => x.n === 12 || x.n === 48).map((x) => ({ ...x, ch: { ...x.ch, ...changeOf(rs, x.n, cols) } }));
+  const tr = trajectory(rs).filter((x) => x.n === 20 || x.n === 50).map((x) => ({ ...x, ch: { ...x.ch, ...changeOf(rs, x.n, cols) } }));
   if (!tr.length) return null;
   const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [

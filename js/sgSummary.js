@@ -74,9 +74,9 @@ export function summaryBox(S, mine, slicedField) {
       const ds = [...m].map(([d, t]) => ({ d, v: t / mine.length })).sort((a, b) => b.v - a.v);
       if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${fmtSG(ds[0].v)} a round); lowest from ${ds[ds.length - 1].d} (${fmtSG(ds[ds.length - 1].v)}).`);
     }
-    // form: the last 12 rounds against the 12 before them
+    // form: the last 20 rounds against the 20 before them
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const n = Math.min(12, Math.floor(ordered.length / 2));
+    const n = Math.min(20, Math.floor(ordered.length / 2)); // (update 663: 20 against 20)
     if (n >= 2) {
       const last = S.perRoundOf(ordered.slice(-n)), prev = S.perRoundOf(ordered.slice(-2 * n, -n)), ch = last - prev;
       lines.push(Math.abs(ch) < 0.05 ? `Form is steady: ${fmtSG(last)} a round over the last ${n} rounds, about the same as the ${n} before.`
@@ -211,15 +211,15 @@ export function tourBlocks(S, slicedField) {
   {
     const form = P.map((p) => {
       const rs = series(p).filter((rd) => S.metric([rd]) != null);
-      if (rs.length < 20) return null;
-      const last = S.metric(rs.slice(-12)), before = S.metric(rs.slice(-24, -12));
+      if (rs.length < 40) return null; // (update 663: the last 20 against the 20 before)
+      const last = S.metric(rs.slice(-20)), before = S.metric(rs.slice(-40, -20));
       return last == null || before == null ? null : { p, last, before, ch: last - before };
     }).filter(Boolean);
     if (form.length >= 4) {
       const up = (x) => (S.def.higher === false ? -x.ch : x.ch); // how much better (or just higher, when neither is better)
       const hot = form.filter((x) => up(x) > 0).sort((a, b) => up(b) - up(a)).slice(0, 5), cold = form.filter((x) => up(x) < 0).sort((a, b) => up(a) - up(b)).slice(0, 5);
       const cls = (ch) => { const g = good(ch); return g == null ? "" : g ? "pos" : "neg"; };
-      const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${S.fmtV(x.last)} last 12, ${S.fmtV(x.before)} previous 12`)]), el("strong", { class: `ti-v ${cls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${S.fmtDelta(x.ch)}`)]))) : el("p", { class: "muted small" }, "No one."));
+      const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${S.fmtV(x.last)} last 20, ${S.fmtV(x.before)} previous 20`)]), el("strong", { class: `ti-v ${cls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${S.fmtDelta(x.ch)}`)]))) : el("p", { class: "muted small" }, "No one."));
       blocks.push(S.panelBox("Hot & Cold", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, S.def.higher == null ? "Going up" : "Heating up"), list(hot)]), el("div", {}, [el("p", { class: "ti-col-title" }, S.def.higher == null ? "Going down" : "Cooling off"), list(cold)])])]));
     }
   }

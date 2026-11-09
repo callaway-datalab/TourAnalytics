@@ -91,6 +91,9 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const rankHist = (() => {
     const pool = [{ key: me.key, rs: mine }, ...played.map((p) => ({ key: p.key, rs: p.rounds }))];
     if (pool.length < 2) return [];
+    const isD0 = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim()), evMode = isD0(tour) || (mine.length > 0 && mine.every((rd) => isD0(rd.tour)));
+    const trailStart = (rs, n) => { if (!evMode) return Math.max(0, n - 20); let k = 0, last = null, i = n - 1;
+      for (; i >= 0; i--) { const rd = rs[i], key = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; if (key !== last) { k++; last = key; if (k > 5) break; } } return i + 1; };
     const dk = (d) => String(d || "");
     const ends = new Map(); for (const rd of mine) { const k = `${rd.event}|${String(rd.year || dk(rd.date).slice(0, 4))}`; if (dk(rd.date) > (ends.get(k) || "")) ends.set(k, dk(rd.date)); }
     let dates = [...new Set(ends.values())].sort();
@@ -103,13 +106,13 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     for (const d of dates) {
       const counts = sorted.map((p) => upTo(p.rs, d)), most = Math.max(1, ...counts), need = Math.max(1, Math.round((minR * most) / mostNow));
       const vals = [];
-      sorted.forEach((p, i) => { const n = counts[i]; if (!n || (n < need && p.key !== me.key)) return; vals.push({ key: p.key, v: cum[i][n - 1] / n }); });
+      // (update 663) a rolling average as long as the Trend: the last 20 rounds (the DP World Tour: the last 5 events)
+      sorted.forEach((p, i) => { const n = counts[i]; if (!n || (n < need && p.key !== me.key)) return; const st = trailStart(p.rs, n); vals.push({ key: p.key, v: (cum[i][n - 1] - (st ? cum[i][st - 1] : 0)) / (n - st) }); });
       vals.sort((a, b) => b.v - a.v);
       const i = vals.findIndex((x) => x.key === me.key);
       if (i >= 0 && vals.length > 1) out.push({ date: d, rank: i + 1, of: vals.length });
     }
-    if (out.length && overall.rank) Object.assign(out[out.length - 1], { rank: overall.rank, of: overall.of });
-    return out;
+    return out; // (update 663: the last point is the rolling window's rank too, not the whole period's)
   })();
   // each round, trend line, early vs late by category
   const series = mine.map((rd) => ({ date: rd.date, event: rd.event, roundNo: rd.roundNo, value: rd.shots.reduce((t, s) => t + s.sg, 0),
@@ -126,7 +129,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // every other tour: the last 12 rounds against the 12 before
   const unitW = byEvent ? "events" : "rounds";
   const units = byEvent ? (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); } return [...m.values()]; })() : series.map((q) => [q]);
-  const half = Math.min(byEvent ? 5 : 12, /* (update 606: the DP World Tour: 5 events) */ Math.floor(units.length / 2));
+  const half = Math.min(byEvent ? 5 : 20, /* (update 663: 20 rounds) */ /* (update 606: the DP World Tour: 5 events) */ Math.floor(units.length / 2));
   const late = units.slice(units.length - half).flat(), early = units.slice(units.length - 2 * half, units.length - half).flat(); // the last 12 vs the 12 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= (byEvent ? 1 : 2) ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
@@ -137,7 +140,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   });
   // (update 556) Better / Worse in "Where the strokes come from": how far the last 12 rounds have moved the average: the
   // whole period against the whole period without them
-  const shiftN = 12, restS = series.slice(0, Math.max(0, series.length - shiftN));
+  const shiftN = 20 /* (update 663) */, restS = series.slice(0, Math.max(0, series.length - shiftN));
   const catShift = series.length > shiftN && restS.length >= 3 ? cats.map((k) => { const a1 = mean(series.map((q) => q.byCat[k])), b1 = mean(restS.map((q) => q.byCat[k])); return { cat: k, all: a1, rest: b1, change: a1 != null && b1 != null ? a1 - b1 : null }; }) : null;
   const shiftSpan = catShift ? { n: shiftN, last: span(series.slice(-shiftN)), all: span(series) } : null;
   // (update 547) the best and toughest EVENTS (strokes gained a round in each tournament), not single rounds
@@ -349,7 +352,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     // (nobody else has it, e.g. a player's own report has no one else's distances: no rank)
     const rank = def.higher == null || !vals.length ? null : 1 + vals.filter((v) => better(v, value)).length;
     // the last 10 rounds (or events) against the 10 before, pooled
-    const n = Math.min(12, Math.floor(mineK.length / 2));
+    const n = Math.min(20, Math.floor(mineK.length / 2)); // (update 663)
     const last = n >= 2 ? statAgg(mineK.slice(-n), !!keep).value : null, prev = n >= 2 ? statAgg(mineK.slice(-2 * n, -n), !!keep).value : null;
     // its value in each category it has (Hit Green %: Approach and Around-the-Green)
     const byCat = keep ? [] : CATEGORIES.map(([c, name]) => { const rs = mineK.map((rd) => ({ ...rd, shots: rd.shots.filter((o) => o.cat === c) })); const v = statAgg(rs, true).value; return v == null ? null : { cat: c, name, value: v }; }).filter(Boolean);
@@ -531,7 +534,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const lo = Math.max(1, best - Math.ceil((worst - best) * 0.1) - 1), hi = worst + Math.ceil((worst - best) * 0.1) + 1;
     const Y = (rk) => top + ((rk - lo) / (hi - lo || 1)) * ht;
     d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
-    cap("Weekly Rank History \u00b7 Past 6 Months", x0, top - 6, "#8e8e93", "left", 6.5);
+    cap(`Weekly Rank \u00b7 Rolling ${a.unit === "event" ? "5 Events" : "20 Rounds"}`, x0, top - 6, "#8e8e93", "left", 6.5); // (update 663: rolling, as the Trend)
     const pts = h.map((q, i) => [x0 + (i / (h.length - 1)) * (w - 12), Y(q.rank)]);
     d.polyline(pts, { color: P.goldLight, width: 1.8 });
     d.dot(...pts[pts.length - 1], 3, P.goldLight);
@@ -700,7 +703,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const formChart = (title, vals, src = a.series) => {
     // (update 553) the DP World Tour's chart is event by event, but its form is the last 12 rounds against the 12 before
     const byRd = a.unit === "event" && a.form;
-    const n = byRd ? a.form.n : Math.min(12, Math.floor(vals.length / 2));
+    const n = byRd ? a.form.n : Math.min(20, Math.floor(vals.length / 2)); // (update 663)
     const first = byRd ? a.form.first : n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = byRd ? a.form.last : n >= 2 ? mean(vals.slice(-n)) : null; // the 12 before, the last 12
     const top = y + 22, ht = isDP ? 175 : 70, left = M + 22, wd = W - 22; // (update 576: the DP World Tour's 2.5 times as tall)
     need(ht + 52);
@@ -718,7 +721,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(fmtSG(hi), M, Y(hi) + 5, { size: 6.5, color: P.faint }); d.text(fmtSG(lo), M, Y(lo), { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
-    d.polyline(ma(vals, isDP ? 5 : 12).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
+    d.polyline(ma(vals, isDP ? 5 : 20 /* (update 663) */).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
     const every = Math.max(1, Math.ceil(vals.length / 8));
     src.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
@@ -1018,7 +1021,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     }
     if (win) ins.push(["Practice focus:", `${full(win)}. Getting to Tour average there is worth ${"+" + gapOf(win).toFixed(2)} a round${rows.filter((g) => gapOf(g) > 0.005).length > 1 ? ", more than any other single skill" : ""}.`]);
     { const t = [...(a.catTrend || [])].filter((x) => x.change != null && Math.abs(x.change) >= 0.15).sort((p, q) => Math.abs(q.change) - Math.abs(p.change))[0];
-      if (t && ins.length < 4) ins.push([`${t.name} is ${t.change > 0 ? "trending up" : "slipping"}.`, `${sg(t.change)} a round over the last ${a.halves?.n || 12} ${a.halves?.unit || "rounds"} against the ${a.halves?.n || 12} before.`]); }
+      if (t && ins.length < 4) ins.push([`${t.name} is ${t.change > 0 ? "trending up" : "slipping"}.`, `${sg(t.change)} a round over the last ${a.halves?.n || 20} ${a.halves?.unit || "rounds"} against the ${a.halves?.n || 20} before.`]); }
     const insShow = ins.slice(0, 4), iw = (W - 8) / 2, insLines = insShow.map(([h, t]) => wrap(`${h} ${t}`, iw - 22, 9, false).length);
     const insRowH = (k) => Math.max(insLines[2 * k] || 0, insLines[2 * k + 1] || 0) * 11.6 + 15;
     const insH = insShow.length ? insRowH(0) + (insShow.length > 2 ? insRowH(1) + 6 : 0) + 10 : 0;

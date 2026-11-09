@@ -318,7 +318,7 @@ export function holdToTalk(b, onHold = () => {}) {
     import("./callie.js").then((m) => m.askHeld(text)).catch((err) => console.error(err));
   };
   const release = async () => {
-    if (timer) { clearTimeout(timer); timer = null; armed = false; const l = L; L = null; l?.cancel(); return; } // a tap
+    if (timer) { clearTimeout(timer); timer = null; armed = false; return; } // a tap (the microphone never started)
     if (!holding) return;
     holding = false;
     const l = L; L = null;
@@ -327,14 +327,15 @@ export function holdToTalk(b, onHold = () => {}) {
   const down = (e) => {
     if (e.button > 0 || holding || armed) return;
     armed = true; sent = false;
-    L = listener({
-      onText: (t) => { if (holding) show(t || "Listening\u2026 let go to ask"); },
-      onBlocked: () => { holding = false; armed = false; show("Microphone blocked: allow it for this site in Settings", false); hide(2500); },
-      onPause: (t) => { if (holding) { holding = false; L = null; send(t); } },
-    });
-    try { L.start(); } catch (err) { console.error(err); L = null; }
+    // (update 663) the microphone only once it's a hold (a tap never turns it on: a tap just opens Cal)
     timer = setTimeout(() => {
       timer = null; armed = false;
+      L = listener({
+        onText: (t) => { if (holding) show(t || "Listening\u2026 let go to ask"); },
+        onBlocked: () => { holding = false; show("Microphone blocked: allow it for this site in Settings", false); hide(2500); },
+        onPause: (t) => { if (holding) { holding = false; L = null; send(t); } },
+      });
+      try { L.start(); } catch (err) { console.error(err); L = null; }
       if (!L) { import("./callie.js").then((m) => m.openCallie()); return; }
       holding = true; onHold();
       try { navigator.vibrate?.(15); } catch { /* */ }

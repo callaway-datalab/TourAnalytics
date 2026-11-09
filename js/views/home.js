@@ -31,7 +31,7 @@ export async function render(main, { previewClient } = {}) {
   // ---- Ask Cal ----
   let calCard = null;
   if (calAllowed()) {
-    const talk = el("button", { type: "button", class: "hm-orb", "aria-label": "Ask Cal: tap to talk" }, el("span", { "aria-hidden": "true" }));
+    const talk = el("button", { type: "button", class: "hm-orb", "aria-label": "Ask Cal: tap to open, hold to talk" }, el("span", { "aria-hidden": "true" }));
     // (update 621) Cal himself in the orb (the caddie in a speech bubble, in dark ink), with a small microphone badge: tap to talk
     talk.firstChild.innerHTML = '<svg class="hm-cal-face" viewBox="0 0 20 20"><mask id="hm-cal-m"><image href="icons/cal.png?v=4" width="20" height="20"/></mask><rect width="20" height="20" fill="#1a1408" mask="url(#hm-cal-m)"/></svg>';
     talk.appendChild(el("span", { class: "hm-orb-mic", "aria-hidden": "true" }));
@@ -39,7 +39,7 @@ export async function render(main, { previewClient } = {}) {
     const open = async (listen) => { const m = await import("../callie.js"); await m.openCallie(); if (listen && !(await import("../listen.js")).isIOS()) setTimeout(() => document.querySelector(".cal-mic:not(.on)")?.click(), 150); };
     // (update 645) hold it to talk (asked when you let go, as with the header's Cal); a tap opens Cal listening
     let held = false;
-    talk.addEventListener("click", (e) => { e.stopPropagation(); if (held) { held = false; return; } open(true); });
+    talk.addEventListener("click", (e) => { e.stopPropagation(); if (held) { held = false; return; } open(false); }); // (update 663: a tap just opens Cal; hold to talk)
     holdToTalk(talk, () => { held = true; });
     calCard = el("section", { class: "hm-cal" }, [talk, el("b", {}, "Ask Cal, the AI Caddy"), // (update 611: the name; a strategy and a stat example)
       el("span", { class: "hm-ex" }, "“How should I play the 2nd at Torrey Pines?”"), el("span", { class: "hm-ex" }, single && !team.isTeam ? "“How is my putting over my last 10 rounds?”" : "“Who putts best on Tour this season?”"),

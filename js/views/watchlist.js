@@ -352,8 +352,8 @@ export async function render(main, { previewClient }) {
     const toCalm = (multi && keys.length) || (!multi && cards[0] && !cards[0].empty) ? (() => { const b = el("button", { type: "button", class: "link wlc-back" }, "\u2190 Simple view"); b.addEventListener("click", () => { if (multi) setCalm(true); else setPCalm(true); draw(); window.scrollTo(0, 0); }); return b; })() : null; // (update 607; 608: one player too)
     mount(root, [toCalm, multi ? el("header", { class: "wl-hero2" }, controls) : heroShell(controls, subLine), menu, brief?.node || null, body, dragHint,
       el("div", { class: "center wl-foot" }, infoTip(source === "entered"
-        ? `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 5 events against the 5 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
-        : `Strokes Gained values represent per round averages. Trends: the last 12 rounds against the 12 before (the DP World Tour: the last 5 events against the 5 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
+        ? `Strokes Gained values represent per round averages. Trends: the last 20 rounds against the 20 before (the DP World Tour: the last 5 events against the 5 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""}`
+        : `Strokes Gained values represent per round averages. Trends: the last 20 rounds against the 20 before (the DP World Tour: the last 5 events against the 5 before); with fewer than 24 rounds, the latest half against the half before (at least 3 each, so 6 rounds or more).${rel ? " Relative to Avg: each value less the average of everyone else on that tour in this period." : ""} Ranks: among players with ${cards[0]?.minR || "enough"} or more rounds on the tour shown, in this period. A player on more than one tour has a switch on their card${detail ? "" : ". Distance ranks appear once the field's lie and distance detail has been published"}.`))]);
     window.scrollTo(0, y);
     if (keepFocus) [...root.querySelectorAll(".wl-menu-o")].find((o) => o.textContent === keepFocus)?.querySelector("input")?.focus({ preventScroll: true });
     if (keepChip) [...root.querySelectorAll(".wl-range")].find((o) => o.dataset.id === keepChip)?.focus({ preventScroll: true });
@@ -451,10 +451,10 @@ export async function render(main, { previewClient }) {
     box.addEventListener("dragstart", (e) => e.preventDefault());
   }
   /* (update 561) the briefing: the 5 biggest swings across the players, each one a part of the game, a distance or a lie
-     ("Down in Approach · 150-175 yds"), the last 12 rounds against the 12 before, in strokes a round. Each player's
+     ("Down in Approach · 150-175 yds"), the last 20 rounds against the 20 before, in strokes a round. Each player's
      biggest drop can be in Trending Down and their biggest rise in Trending Up. A tap: that one thing, in detail. */
   /* (update 607) the calm view: how many are playing well, steady or worth a look; a line on the latest week; then each
-     player in a sentence (their strokes gained a round, the last 12 rounds against the 12 before, or the DP World Tour's
+     player in a sentence (their strokes gained a round, the last 20 rounds against the 20 before, or the DP World Tour's
      5 events against 5, and where most of the change came from) with their latest event. A tap: their card. */
   const CAT_WORD = { OTT: "off the tee", APP: "on approach", ARG: "around the green", PUTT: "putting" };
   /* (update 608) a player's own Home: a greeting, how they're playing in a sentence (the last 12 rounds against the 12
@@ -541,7 +541,7 @@ export async function render(main, { previewClient }) {
       wk.length ? el("div", { class: "wlc-note" }, [el("b", {}, "This week: "), wk.join(" ")]) : null,
       ...grp("well", "Playing well"), ...grp("steady", "Steady"), ...grp("look", "Worth a look"),
       more, add,
-      el("p", { class: "wlc-foot" }, "Playing well or worth a look: strokes gained a round up or down 0.30 or more over the last 12 rounds against the 12 before (the DP World Tour: 5 events against 5). Strokes gained at an event: against the players there who played as many rounds."),
+      el("p", { class: "wlc-foot" }, "Playing well or worth a look: strokes gained a round up or down 0.30 or more over the last 20 rounds against the 20 before (the DP World Tour: 5 events against 5). Strokes gained at an event: against the players there who played as many rounds."),
     ]);
   }
   const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
@@ -589,7 +589,7 @@ export async function render(main, { previewClient }) {
       hd.addEventListener("click", () => { briefOpen[kind] = !briefOpen[kind]; sec.classList.toggle("folded", !briefOpen[kind]); hd.setAttribute("aria-expanded", String(briefOpen[kind])); });
       return sec; };
     const node = el("div", { class: "wl-brief" }, [
-      col("concern", "Trending Down", "The 5 players losing the most: each one\u2019s 3 worst distances and their total, the last 12 rounds against the 12 before. Tap a distance for the detail.", topD),
+      col("concern", "Trending Down", "The 5 players losing the most: each one\u2019s 3 worst distances and their total, the last 20 rounds against the 20 before. Tap a distance for the detail.", topD),
       col("hot", "Trending Up", "The 5 players gaining the most: each one\u2019s 3 best distances and their total, the same way.", topU),
     ]);
     return { node, status };
