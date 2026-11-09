@@ -6561,3 +6561,6 @@ div.sh-ud3-green { cursor: default; }
 .hero-tourn th.sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
 .hero-tourn th.sort-th::after { content: attr(data-arrow); font-size: 0.75em; color: #d4b483; }
 .hero-tourn th.sort-th:hover { color: #f5f5f7; }
+/* (update 661) Cal's chat: Cal in full (walking with his bag) in gold, no coin */
+.cal-head .cal-ava.cal-ava-walk { width: 2.6rem !important; height: 4rem !important; border-radius: 0 !important; background: #d4b483 !important; box-shadow: none !important; border: 0 !important;
+  -webkit-mask: url("../icons/cal-walk.png?v=1") center / contain no-repeat; mask: url("../icons/cal-walk.png?v=1") center / contain no-repeat; margin: -6px 2px -6px 0; }

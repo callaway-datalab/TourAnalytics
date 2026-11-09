@@ -904,7 +904,7 @@ export async function openCallie() {
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [
-        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava" }, icon("robot")), el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your AI data caddy")]), histBtn, fresh, close]),
+        el("header", { class: "cal-head" }, [el("span", { class: "cal-ava cal-ava-walk", "aria-hidden": "true" }) /* (update 661: Cal in full, walking with his bag) */, el("div", {}, [el("strong", {}, "Cal"), el("span", { class: "muted small" }, "Your AI data caddy")]), histBtn, fresh, close]),
         el("div", { class: "cal-log", "aria-live": "polite" }),
         el("div", { class: "cal-foot" }, [input, mic, send]),
       ]),
