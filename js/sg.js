@@ -851,10 +851,30 @@ export function sameCourse(a, b) {
    flat: how big an overall change has to be to count as a direction; shift: how far the recent change has to differ
    from the overall one to count as speeding up or easing. Strokes gained: 0.15 and 0.20 a round.
    → [word, tone] with tone "up" | "" | "down" */
+// (update 671) each word's colour: yellow in the middle (Steady), to green the better it's going, to red the worse
+export const FORM_COLORS = { Surging: "#30d158", Climbing: "#6fd04a", "Heating Up": "#a8d23c", "Levelling Off": "#d6cf2e", Steady: "#f5c400",
+  "Pulling Up": "#f5a524", "Cooling Down": "#f08a24", Sliding: "#e8602a", "Sliding Fast": "#d0342c" };
+const fw = (w, tone) => [w, tone, FORM_COLORS[w]];
 export function formWord(recent, overall = null, { flat = 0.15, shift = 0.2 } = {}) {
   if (recent == null || !Number.isFinite(recent)) return null;
   const L = overall == null || !Number.isFinite(overall) ? recent : overall;
-  if (L > flat) return recent >= L + shift ? ["Surging", "up"] : recent <= L - shift || recent < 0 ? ["Levelling Off", ""] : ["Climbing", "up"];
-  if (L < -flat) return recent <= L - shift ? ["Sliding Fast", "down"] : recent >= L + shift || recent > 0 ? ["Pulling Up", ""] : ["Sliding", "down"];
-  return recent > flat ? ["Heating Up", "up"] : recent < -flat ? ["Cooling Down", "down"] : ["Steady", ""];
+  if (L > flat) return recent >= L + shift ? fw("Surging", "up") : recent <= L - shift || recent < 0 ? fw("Levelling Off", "") : fw("Climbing", "up");
+  if (L < -flat) return recent <= L - shift ? fw("Sliding Fast", "down") : recent >= L + shift || recent > 0 ? fw("Pulling Up", "") : fw("Sliding", "down");
+  return recent > flat ? fw("Heating Up", "up") : recent < -flat ? fw("Cooling Down", "down") : fw("Steady", "");
+}
+/** (update 671) what a form word means, in a sentence: n the recent stretch, nL the longer one (null: not enough yet), u "rounds" | "events" */
+export function formMeaning(word, { n, nL = null, u = "rounds" } = {}) {
+  const L = nL ? `the last ${nL} ${u} against the ${nL} before` : null, R = `the last ${n} ${u} against the ${n} before`;
+  const t = {
+    Surging: `Getting better, and quickly: up over ${L || R}, and ${L ? `the last ${n} have improved even faster than that` : "by a lot"}.`,
+    Climbing: `Getting better at a steady pace: up over ${L || R}${L ? `, and the last ${n} are keeping that pace` : ""}.`,
+    "Levelling Off": `Still better than before over ${L || R}, but the gains are slowing: the last ${n} have improved less than that, or slipped back.`,
+    "Heating Up": `Level over the longer run, but the last ${n} ${u} are clearly better than the ${n} before: an upswing starting.`,
+    Steady: `About the same: no clear change over ${R}${L ? " or over the longer run" : ""}.`,
+    "Cooling Down": `Level over the longer run, but the last ${n} ${u} are clearly worse than the ${n} before: a dip starting.`,
+    "Pulling Up": `Still down over ${L || R}, but the drop is easing: the last ${n} are better than that trend, or already improving.`,
+    Sliding: `Getting worse at a steady pace: down over ${L || R}${L ? `, and the last ${n} are keeping that pace` : ""}.`,
+    "Sliding Fast": `Getting worse, and quickly: down over ${L || R}, and ${L ? `the last ${n} have dropped even faster` : "by a lot"}.`,
+  }[word] || "";
+  return nL ? t : `${t} (Not enough ${u} yet for the longer comparison, so this is ${R} alone.)`;
 }

@@ -755,8 +755,8 @@ export async function render(main, { previewClient }) {
     const meta = el("p", { class: "wl-meta" }, [c.tours?.length ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
     // (update 173) a badge opens what's behind it: a chart, a table, or both
     const badges = el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => {
-      if (!b.info) return el("span", { class: `wl-badge ${b.tone || ""}` }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
-      const btn = el("button", { type: "button", class: `wl-badge ${b.tone || ""}`, "aria-haspopup": "dialog", title: "See the details" }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
+      if (!b.info) return el("span", { class: `wl-badge ${b.tone || ""}`, ...(b.color ? { style: `background:${b.color};color:#0b0b0d;border-color:transparent` } : {}) }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
+      const btn = el("button", { type: "button", class: `wl-badge ${b.tone || ""}`, "aria-haspopup": "dialog", title: "See the details", ...(b.color ? { style: `background:${b.color};color:#0b0b0d;border-color:transparent` } : {}) }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
       btn.addEventListener("click", async () => (await import("../badgePopup.js")).openBadge(b, c.label));
       return btn;
     })); // (update 223: always there, so the cards line up)

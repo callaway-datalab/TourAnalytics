@@ -6590,3 +6590,7 @@ div.sh-ud3-green { cursor: default; }
   .hm-row .hm-fc { flex: 1 1 0; width: auto !important; min-width: 0; max-width: 210px; height: 220px; }
   .hm-row .hm-fc b { font-size: 1.05rem; }
 }
+/* (update 671) the Form pop-up: what its word means, on top */
+.form-meaning { border-left: 4px solid #f5c400; background: rgba(255,255,255,0.04); border-radius: 0 12px 12px 0; padding: 10px 14px; margin: 0 0 14px; }
+.form-meaning p { margin: 0 0 4px; line-height: 1.45; } .form-meaning p:last-child { margin: 0; }
+.form-word { display: inline-block; color: #0b0b0d; border-radius: 999px; padding: 1px 10px; font-size: 0.85em; letter-spacing: 0.02em; margin-right: 2px; }

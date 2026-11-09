@@ -523,7 +523,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (a.overall.rank) { const [f, t] = rankColors(a.overall.rank); bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, f, t) + 6; }
   bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
   if (a.form) { const w = formWord(a.form.last - a.form.first, a.form.long); void STEADY; // (update 670: the form word)
-    if (w) bx += badge(`Form: ${w[0]}`, bx, 220, w[1] === "up" ? P.up : w[1] === "down" ? P.down : "#8a6d3b") + 6; }
+    if (w) bx += badge(`Form: ${w[0]}`, bx, 220, w[2], "#0b0b0d") + 6; } // (update 671: the word's own colour, yellow to green or red)
   // form sparkline (right side)
   if (a.rankHist?.length >= 2) {
     // (update 227) Weekly Rank History: 1st at the top, a gold line, the latest rank marked

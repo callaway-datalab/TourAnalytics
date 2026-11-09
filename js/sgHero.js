@@ -1,7 +1,7 @@
 // (sgDashboard split) The hero card: the player's headline numbers, the weekly rank chart and its popups (Form, tournaments, rank).
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { CATEGORIES, applyFilters, el, fmtSG, fmtStat, getState, infoTip, mount, shortDate } from "./sgShared.js";
-import { formWord } from "./sg.js"; // (update 670)
+import { formWord, formMeaning } from "./sg.js"; // (update 670; 671: the meaning)
 
 export function heroBox(S, mine, slicedField, f) {
   const foot = el("p", { class: "hero-foot" }, S.updatedTxt());
@@ -31,7 +31,8 @@ export function heroBox(S, mine, slicedField, f) {
           const sgn = S.def.higher === false ? -1 : 1, nL = Math.min(S.eventView ? 20 : 50, Math.floor(fu.length / 2));
           const lL = nL > n ? S.metric(fu.slice(-nL).flat()) : null, pL = nL > n ? S.metric(fu.slice(-2 * nL, -nL).flat()) : null;
           const sb = S.steadyBand(prev), w = formWord(sgn * ch, lL != null && pL != null ? sgn * (lL - pL) : null, { flat: 3 * sb, shift: 4 * sb });
-          form = w ? [`${w[0]} \u00b7 ${sgn * ch >= 0 ? "\u25B2" : "\u25BC"} ${amt}`, w[1]] : null;
+          form = w ? [`${w[0]} \u00b7 ${sgn * ch >= 0 ? "\u25B2" : "\u25BC"} ${amt}`, w[1], { word: w[0], color: w[2], n, nL: lL != null && pL != null ? nL : null, u: S.eventView ? "events" : `${S.unit}s`,
+            recent: sgn * ch, overall: lL != null && pL != null ? sgn * (lL - pL) : null, fmt: (v) => (sg ? Math.abs(v).toFixed(2) : fmtStat({ ...S.def, unit: S.def.pct ? "" : S.def.unit }, Math.abs(v)).replace("%", S.def.pct ? " pct" : "")) }] : null;
         }
       }
     }
@@ -78,7 +79,8 @@ export function heroBox(S, mine, slicedField, f) {
             // (update 175) Events: each tournament, their average there and where it placed
             S.unit === "event" ? null : (() => { const n = new Set(ordered.map((rd) => `${rd.event}|${S.yearOf(rd)}`)).size;
               return S.chipBtn("hero-chip", `${n} Event${n === 1 ? "" : "s"}`, "Show every tournament", () => S.eventsPopup(ordered, slicedField, r, "event")); })(),
-            form ? S.chipBtn(`hero-chip ${form[1]}`, `Form: ${form[0]}`, "Show the form", () => S.formPopup(ordered)) : null,
+            form ? (() => { const b = S.chipBtn(`hero-chip ${form[1]}`, `Form: ${form[0]}`, "Show the form", () => S.formPopup(ordered, form[2])); // (update 671: its colour, and its meaning in the pop-up)
+              if (form[2]?.color) { b.style.background = form[2].color; b.style.color = "#0b0b0d"; } return b; })() : null,
           ]),
           (() => {
             if (!S.showRanks || !S.rankedField(slicedField).some((p) => p.key !== S.me.key)) return null;
@@ -282,7 +284,7 @@ export const formUnits = (S, ordered) => {
   const m = new Map(); for (const rd of ordered) { const k = `${rd.event || rd.date}|${S.yearOf(rd)}`; (m.get(k) || m.set(k, []).get(k)).push(rd); }
   return [...m.values()];
 };
-export async function formPopup(S, ordered) {
+export async function formPopup(S, ordered, info = null) {
   const { renderBlocks } = await import("./badgePopup.js");
   const fu = formUnits(S, ordered), ev = S.eventView, n = Math.min(ev ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds) */
   const lastU = fu.slice(-n), prevU = fu.slice(-2 * n, -n);
@@ -316,7 +318,14 @@ export async function formPopup(S, ordered) {
     { kind: "table", title: S.catsAvail.length > 1 ? `By category (a ${S.unit})` : "The averages", note: S.catsAvail.length > 1 ? "Tap a category or a distance to chart it above." : null, cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows },
   ];
   return S.popup("Form", S.me.label, ev ? `${sg ? "Strokes gained" : S.def.label} a round at each event: the last ${n} events (highlighted) against the ${n} before, and where the change came from.` : `${sg ? "Strokes gained" : S.def.label} in each ${S.unit}: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
-    el("div", { class: "wl-pop-body" }, [holder, ...renderBlocks(blocks)]), "Form"); // (update 581: a bar an event for the DP World Tour)
+    el("div", { class: "wl-pop-body" }, [
+      // (update 671) what the form word means, on top
+      info?.word ? el("div", { class: "form-meaning", style: `border-left-color:${info.color}` }, [
+        el("p", {}, [el("strong", { class: "form-word", style: `background:${info.color}` }, info.word), " ", formMeaning(info.word, info)]),
+        el("p", { class: "muted small" }, [`Last ${info.n} against the ${info.n} before: ${info.recent >= 0 ? "\u25B2" : "\u25BC"} ${info.fmt(info.recent)}`,
+          info.overall != null ? ` \u00b7 last ${info.nL} against the ${info.nL} before: ${info.overall >= 0 ? "\u25B2" : "\u25BC"} ${info.fmt(info.overall)}` : "", " (\u25B2 better, \u25BC worse)"]),
+      ]) : null,
+      holder, ...renderBlocks(blocks)]), "Form"); // (update 581: a bar an event for the DP World Tour)
 }
 // Each tournament in the selection: who played the most rounds there, best first (the "winner" leads)
 export function eventsOf(S, players) {
