@@ -6564,3 +6564,5 @@ div.sh-ud3-green { cursor: default; }
 /* (update 661) Cal's chat: Cal in full (walking with his bag) in gold, no coin */
 .cal-head .cal-ava.cal-ava-walk { width: 2.6rem !important; height: 4rem !important; border-radius: 0 !important; background: #d4b483 !important; box-shadow: none !important; border: 0 !important;
   -webkit-mask: url("../icons/cal-walk.png?v=1") center / contain no-repeat; mask: url("../icons/cal-walk.png?v=1") center / contain no-repeat; margin: -6px 2px -6px 0; }
+/* (update 662) Cal in full the way the coins draw him: champagne filled, dark lines (the picture itself, no mask) */
+.cal-head .cal-ava.cal-ava-walk { -webkit-mask: none !important; mask: none !important; background: url("../icons/cal-walk.png?v=2") center / contain no-repeat !important; }
