@@ -236,14 +236,14 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (c.value == null) continue;
     const gap = c.fieldAvg != null ? c.value - c.fieldAvg : c.value;
     if (gap < -0.05) focus.push({ cat: c.cat, kind: "category", lost: -gap, title: `${c.name}`,
-      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes a round${c.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(c.fieldAvg)}` : ""}.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); // (update 574: the rank on its own line)
+      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes a round.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); // (update 574: the rank on its own line)
   }
   const minShots = Math.max(5, mine.length * 0.5);
   for (const g of groups) {
     if (g.shots < minShots || g.repeat) continue;
     const gap = g.fieldAvg != null ? g.perRound - g.fieldAvg : g.perRound;
     if (gap < -0.05) focus.push({ cat: g.cat, kind: "skill", label: g.label, lost: -gap, title: g.title,
-      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round${g.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(g.fieldAvg)}` : ""}.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` });
+      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` });
   }
   for (const t of catTrend) if (t.change != null && t.change < -0.2) focus.push({ cat: t.cat, kind: "trend", lost: -t.change / 2, title: `Slipping: ${t.name}`,
     detail: `${trendWords(half, unitW, t)} That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
@@ -265,21 +265,21 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   for (const c of byCat) {
     if (c.value == null || c.value <= 0 || !isElite(c.rank, c.of)) continue;
     elite.push({ kind: "category", cat: c.cat, score: 1 + (c.value - (c.fieldAvg ?? 0)), title: c.name,
-      text: `Gains ${c.value.toFixed(2)} strokes a round${c.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(c.fieldAvg)}` : ""}.\nRanked ${c.rank} of ${c.of}.` }); // (update 574: as Costing strokes words it)
+      text: `Gains ${c.value.toFixed(2)} strokes a round.\nRanked ${c.rank} of ${c.of}.` }); // (update 574: as Costing strokes words it)
   }
   for (const g of groups) {
     if (g.repeat || g.shots < Math.max(10, minShots) || g.perRound <= 0 || !isElite(g.rank, g.of)) continue;
     elite.push({ cat: g.cat, score: g.perRound - (g.fieldAvg ?? 0), title: g.title,
-      text: `Gains ${g.perRound.toFixed(2)} strokes a round${g.fieldAvg != null ? `, against a Tour Avg of ${fmtSG(g.fieldAvg)}` : ""}.\nRanked ${g.rank} of ${g.of} \u00b7 ${Math.round(g.shots)} shots.` });
+      text: `Gains ${g.perRound.toFixed(2)} strokes a round.\nRanked ${g.rank} of ${g.of} \u00b7 ${Math.round(g.shots)} shots.` });
   }
   elite.sort((p, q) => q.score - p.score);
   // (update 574) the rest of the strengths: the biggest gains on the Tour Avg (a part of the game or a distance), so there are
   // three whenever there are three to find
   const strong = [];
   for (const c of byCat) { if (c.value == null || c.fieldAvg == null || c.value - c.fieldAvg < 0.05) continue;
-    strong.push({ kind: "category", cat: c.cat, score: c.value - c.fieldAvg, title: c.name, text: `Gains ${c.value.toFixed(2)} strokes a round, against a Tour Avg of ${fmtSG(c.fieldAvg)}.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); }
+    strong.push({ kind: "category", cat: c.cat, score: c.value - c.fieldAvg, title: c.name, text: `Gains ${c.value.toFixed(2)} strokes a round.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); }
   for (const g of groups) { if (g.repeat || g.shots < minShots || g.fieldAvg == null || g.perRound - g.fieldAvg < 0.05) continue;
-    strong.push({ cat: g.cat, score: g.perRound - g.fieldAvg, title: g.title, text: `Gains ${g.perRound.toFixed(2)} strokes a round, against a Tour Avg of ${fmtSG(g.fieldAvg)}.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` }); }
+    strong.push({ cat: g.cat, score: g.perRound - g.fieldAvg, title: g.title, text: `Gains ${g.perRound.toFixed(2)} strokes a round.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` }); }
   strong.sort((p, q) => q.score - p.score);
   const rising = catTrend.filter((t) => t.change != null && t.change >= 0.2).sort((p, q) => q.change - p.change).map((t) => ({
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
@@ -516,7 +516,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   cap("Strokes gained per round", M, 122, "#8e8e93");
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 172, { size: 62, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
-  wrap(a.overall.rounds ? (versus != null ? `${Math.abs(versus).toFixed(2)} strokes a round ${versus >= 0 ? "better" : "worse"} than Tour Avg (${fmtSG(a.overall.fieldAvg)}).` : "") : "No rounds in this period.", W * 0.56, 9.5)
+  void versus; // (update 678: no Tour Avg anywhere in the report: the player's own numbers only)
+  wrap(a.overall.rounds ? `Strokes gained a round over ${plural(a.overall.rounds, "round")}.` : "No rounds in this period.", W * 0.56, 9.5)
     .slice(0, 2).forEach((l, i) => d.text(l, M, 190 + i * 12, { size: 9.5, color: "#c7c7cc" }));
   // badges
   let bx = M;
@@ -561,7 +562,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text("How to read this:", M + 12, y + 9, { size: 8.5, bold: true, color: P.gold });
   d.text("Strokes gained compares every shot with what a typical tour player would do from the same spot.", M + 92, y + 9, { size: 8.5, color: P.ink });
   d.text("Plus (green) = better than that; minus (red) = worse. +1.00 means one stroke a round better.", M + 92, y + 21, { size: 8.5, color: P.ink });
-  d.text(`Tour Avg and ranks: the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
+  d.text(`Ranks: against the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
   y += 58;
 
   // (update 573) page 1: Where the strokes come from first, then What stands out; Best and toughest opens page 2
@@ -626,7 +627,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const shortT = (g) => { const [dist, lie] = String(g.key).split("|"); return lie ? `Around green ${dist} · ${lie}` : `${CAT_NAME[g.cat] || g.cat}, ${dist}`; };
   const topR = (g) => g.rank && g.of >= 2 && g.rank <= Math.max(1, Math.floor(g.of * 0.1));
   const pick3 = (list) => { const out = []; for (const x of list) { if (out.length >= 3) break; if (out.filter((o) => o.g.cat === x.g.cat).length >= 2) continue; out.push(x); } for (const x of list) { if (out.length >= 3) break; if (!out.includes(x)) out.push(x); } return out; };
-  const cardOf = (x, up) => ({ cat: x.g.cat, title: shortT(x.g), tag: up ? (topR(x.g) ? "Elite" : x.gap >= 0.05 ? "Strong" : "Above avg") : (x.gap <= -0.05 ? "Costing strokes" : "Below avg"),
+  const cardOf = (x, up) => ({ cat: x.g.cat, title: shortT(x.g), tag: up ? (topR(x.g) ? "Elite" : x.gap >= 0.05 ? "Strong" : "Solid") : (x.gap <= -0.05 ? "Costing strokes" : "Room to grow"), /* (update 678: no "avg") */
     text: `${x.g.perRound >= 0 ? `Gains ${x.g.perRound.toFixed(2)}` : `Loses ${Math.abs(x.g.perRound).toFixed(2)}`} strokes a round${x.g.rank ? ` · Ranked ${x.g.rank} of ${x.g.of}` : ""} · ${Math.round(x.g.shots)} shots.` });
   const strengths = pick3(pool.filter((x) => x.gap > 0).sort((p, q) => q.gap - p.gap)).map((x) => cardOf(x, true));
   const watch = pick3(pool.filter((x) => x.gap < 0).sort((p, q) => p.gap - q.gap)).map((x) => cardOf(x, false));
@@ -666,9 +667,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     }
     return yy;
   };
-  const yl0 = cards(M, "Strengths", strengths, P.up, P.upTint, "No clear standouts against Tour Avg in this period.");
+  const yl0 = cards(M, "Strengths", strengths, P.up, P.upTint, "No clear standouts in this period.");
   const yl = yl0 + 2;
-  const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes against Tour Avg in this period.");
+  const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes in this period.");
   y = Math.max(yl, yr) + 10;
   newPage();
   } // (update 576: What stands out, not for the DP World Tour)
@@ -872,7 +873,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (nb.steady && a.cats.length === 1) {
       const v = nb.steady.sd, tv = nb.tourSd;
       tiles.push({ label: `${CAT_NAME[nb.steady.cat]} steadiness`, big: `\u00b1${v.toFixed(2)}`,
-        text: `Typical swing ${u} to ${u}.${tv != null ? ` Tour Avg: \u00b1${tv.toFixed(2)}, so ${Math.abs(v - tv) < 0.05 ? "about as steady as the others" : v < tv ? "steadier than the others" : "less steady than the others"}.` : ""}`, viz: "steadyVsTour", v: { mine: v, tour: tv } });
+        text: `Typical swing ${u} to ${u}.`, viz: "steadyVsTour", v: { mine: v, tour: null } }); void tv; // (update 678: no Tour Avg)
     } else if (nb.steady) tiles.push({ label: `Steadiest \u00b7 ${CAT_NAME[nb.steady.cat]}`, big: `\u00b1${nb.steady.sd.toFixed(2)}`, text: `Typical swing ${u} to ${u}.${nb.swingy ? ` ${CAT_NAME[nb.swingy.cat]} swings the most (\u00b1${nb.swingy.sd.toFixed(2)}).` : ""}`, viz: "swing", v: nb });
     if (tiles.length) {
       // (update 564) with last season to compare: the cards a little smaller and shorter, and a third row across the page,
@@ -1025,7 +1026,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         if (lead) ins.push([lead, `Rank ${dv.rank} in driving distance (${fmtStat(dv.def, dv.value)}), rank ${fw.rank} in fairways (${fmtStat(fw.def, fw.value)})${ott ? `; ${sg(ott.total)} a round off the tee` : ""}.`]);
       }
     }
-    if (win) ins.push(["Practice focus:", `${full(win)}. Getting to Tour average there is worth ${"+" + gapOf(win).toFixed(2)} a round${rows.filter((g) => gapOf(g) > 0.005).length > 1 ? ", more than any other single skill" : ""}.`]);
+    // (update 678) practice focus: the skill losing the most strokes (no Tour average)
+    if (worst && worst.perRound < 0) ins.push(["Practice focus:", `${full(worst)}. It loses the most strokes of any skill: ${sg(worst.perRound)} a round.`]);
     { const t = [...(a.catTrend || [])].filter((x) => x.change != null && Math.abs(x.change) >= 0.15).sort((p, q) => Math.abs(q.change) - Math.abs(p.change))[0];
       if (t && ins.length < 4) ins.push([`${t.name} is ${t.change > 0 ? "trending up" : "slipping"}.`, `${sg(t.change)} a round over the last ${a.halves?.n || 20} ${a.halves?.unit || "rounds"} against the ${a.halves?.n || 20} before.`]); }
     const insShow = ins.slice(0, 4), iw = (W - 8) / 2, insLines = insShow.map(([h, t]) => wrap(`${h} ${t}`, iw - 22, 9, false).length);
@@ -1180,7 +1182,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           if (!b) { d.text("\u2014", cx + cellW / 2 - 3, ry + ROW_H / 2 + 3, { size: 8.5, color: P.faint, align: "center" }); return; }
           d.text(fmtStat(b.def, b.value), cx + 4 + 2 * k, ry + 4 + vs * 0.85, { size: vs, bold: true, color: P.ink }); // (colour is for the ranks)
           pillAt(b, cx + cellW - 8, ry + 4 + vs * 0.8, 5.6 + 1.6 * k);
-          if (b.fieldAvg != null) d.text(`Avg ${fmtStat(b.def, b.fieldAvg)}`, cx + 4 + 2 * k, ry + ROW_H - 4, { size: 5.6 + 1.6 * k, color: P.grey });
+          // (update 678: no "Avg" under the value: the player's own numbers only)
           // (update 571) where they sit in the field: worst on the left, best on the right; the tick is the field's average
           if (b.def.higher != null && b.lo != null && b.hi != null && b.hi > b.lo) { // (update 627: every tour, not only a short page)
             const x0 = cx + 4 + 2 * k, x1 = cx + cellW - 12, by = ry + ROW_H - 16, pos = (v) => { const t = (v - b.lo) / (b.hi - b.lo); return x0 + (x1 - x0) * (b.def.higher === false ? 1 - t : t); };
