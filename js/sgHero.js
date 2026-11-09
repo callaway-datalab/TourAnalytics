@@ -16,9 +16,9 @@ export function heroBox(S, mine, slicedField, f) {
     // (update 669) the graph: the last 6 months of it (the season's rank / average as it was each week, ending at today's)
     const hist = (() => { const lastMs = Date.parse(String(hist0.at(-1)?.date || "").slice(0, 10)); if (!Number.isFinite(lastMs)) return hist0;
       const h = hist0.filter((q) => (Date.parse(String(q.date).slice(0, 10)) || 0) >= lastMs - 182.6 * 864e5); return h.length >= 2 ? h : hist0.slice(-2); })();
-    const fu = formUnits(S, ordered), n = Math.min(S.eventView ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds) */ // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
+    const fu = formUnits(S, ordered), n = Math.min(S.eventMode ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds; 677: eventMode) */ // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
     let form = null;
-    if (n >= (S.eventView ? 1 : 2)) {
+    if (n >= (S.eventMode ? 1 : 2)) {
       const last = S.metric(fu.slice(-n).flat()), prev = S.metric(fu.slice(-2 * n, -n).flat());
       if (last != null && prev != null) {
         const ch = last - prev, steady = Math.abs(ch) < S.steadyBand(prev);
@@ -28,10 +28,10 @@ export function heroBox(S, mine, slicedField, f) {
         else {
           // (update 670) the word from the recent change and the overall direction (the last 50 rounds against the 50 before;
           // the DP World Tour: 20 events against 20), each turned so a plus is better
-          const sgn = S.def.higher === false ? -1 : 1, nL = Math.min(S.eventView ? 20 : 50, Math.floor(fu.length / 2));
+          const sgn = S.def.higher === false ? -1 : 1, nL = Math.min(S.eventMode ? 20 : 50, Math.floor(fu.length / 2));
           const lL = nL > n ? S.metric(fu.slice(-nL).flat()) : null, pL = nL > n ? S.metric(fu.slice(-2 * nL, -nL).flat()) : null;
           const sb = S.steadyBand(prev), w = formWord(sgn * ch, lL != null && pL != null ? sgn * (lL - pL) : null, { flat: 3 * sb, shift: 4 * sb });
-          form = w ? [`${w[0]} \u00b7 ${sgn * ch >= 0 ? "\u25B2" : "\u25BC"} ${amt}`, w[1], { word: w[0], color: w[2], n, nL: lL != null && pL != null ? nL : null, u: S.eventView ? "events" : `${S.unit}s`,
+          form = w ? [`${w[0]} \u00b7 ${sgn * ch >= 0 ? "\u25B2" : "\u25BC"} ${amt}`, w[1], { word: w[0], color: w[2], n, nL: lL != null && pL != null ? nL : null, u: S.eventMode ? "events" : `${S.unit}s`,
             recent: sgn * ch, overall: lL != null && pL != null ? sgn * (lL - pL) : null, fmt: (v) => (sg ? Math.abs(v).toFixed(2) : fmtStat({ ...S.def, unit: S.def.pct ? "" : S.def.unit }, Math.abs(v)).replace("%", S.def.pct ? " pct" : "")) }] : null;
         }
       }
@@ -280,13 +280,13 @@ export function steadinessLine(S, ordered, n) {
 // (update 553) what Form compares: each round, every tour (the DP World Tour too)
 // (update 581) the DP World Tour: each event's rounds together (the trends are event by event)
 export const formUnits = (S, ordered) => {
-  if (!S.eventView) return ordered.map((rd) => [rd]);
+  if (!S.eventMode) return ordered.map((rd) => [rd]); // (update 677: event-level files grouped by event too: one unit a real event)
   const m = new Map(); for (const rd of ordered) { const k = `${rd.event || rd.date}|${S.yearOf(rd)}`; (m.get(k) || m.set(k, []).get(k)).push(rd); }
   return [...m.values()];
 };
 export async function formPopup(S, ordered, info = null) {
   const { renderBlocks } = await import("./badgePopup.js");
-  const fu = formUnits(S, ordered), ev = S.eventView, n = Math.min(ev ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds) */
+  const fu = formUnits(S, ordered), ev = S.eventMode, n = Math.min(ev ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds) */
   const lastU = fu.slice(-n), prevU = fu.slice(-2 * n, -n);
   const last = lastU.flat(), prev = prevU.flat(), sg = S.isSG();
   const goodTone = (v, ref) => (sg ? null : S.def.higher == null || v == null || ref == null ? "gold" : S.better(v, ref) ? "pos" : "neg");

@@ -80,7 +80,7 @@ export function summaryBox(S, mine, slicedField) {
     // (update 673) worked out exactly as the hero card's Form pill (the DP World Tour: by event, 5 against 5 and 20 against
     // 20; others: 20 rounds against 20 and 50 against 50), so the two always say the same
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const fu = formUnits(S, ordered), ev = S.eventView, U = ev ? "events" : "rounds";
+    const fu = formUnits(S, ordered), ev = S.eventMode, U = ev ? "events" : "rounds";
     const n = Math.min(ev ? 5 : 20, Math.floor(fu.length / 2)); // (update 663: 20 against 20)
     if (n >= (ev ? 1 : 2)) {
       const val = (us) => S.perRoundOf(us.flat());

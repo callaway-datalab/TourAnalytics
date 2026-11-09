@@ -94,8 +94,11 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
   const rankOfRow = (k, v, higher) => { if (v == null || higher == null) return null; const vs = fieldMaps.map((m) => gv(m, k)).filter((x) => x != null && Number.isFinite(x)); if (!vs.length) return null; const better = vs.filter((x) => (higher ? x > v + 1e-12 : x < v - 1e-12)).length; return { rank: better + 1, of: vs.length + 1 }; };
   // trend: the last 12 rounds against the 12 before (fewer: half and half, at least 3 each)
   const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  const tn = Math.min(20, Math.floor(ordered.length / 2)); // (update 663: 20 against 20)
-  const lastV = tn >= 3 ? S.rowVals(ordered.slice(-tn), cat) : null, prevV = tn >= 3 ? S.rowVals(ordered.slice(-2 * tn, -tn), cat) : null;
+  // (update 677) the DP World Tour: by event, the last 5 against the 5 before (each event's rows pooled)
+  const tU = S.eventMode ? (() => { const m = new Map(); for (const rd of ordered) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } return [...m.values()]; })() : ordered.map((rd) => [rd]);
+  const tn = Math.min(S.eventMode ? 5 : 20, Math.floor(tU.length / 2)), tMin = S.eventMode ? 1 : 3; // (update 663: 20 against 20)
+  const tLast = tn >= tMin ? tU.slice(-tn).flat() : [], tPrev = tn >= tMin ? tU.slice(-2 * tn, -tn).flat() : [];
+  const lastV = tn >= tMin ? S.rowVals(tLast, cat) : null, prevV = tn >= tMin ? S.rowVals(tPrev, cat) : null;
   // best round: the best single-round value (each round on its own)
   const perRd = ordered.map((rd) => ({ rd, m: S.rowVals([rd], cat) }));
   const bestOf = (row) => {
@@ -131,7 +134,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
   // (update 332) an opened part of the game's distance rows: the same columns, worked out for that part of the game
   const mapsMemo = new Map();
   const M = (c) => {
-    if (!mapsMemo.has(c)) mapsMemo.set(c, { me: S.rowVals(mine, c), field: ranked.map((p) => S.rowVals(p.rounds, c)), last: tn >= 3 ? S.rowVals(ordered.slice(-tn), c) : null, prev: tn >= 3 ? S.rowVals(ordered.slice(-2 * tn, -tn), c) : null,
+    if (!mapsMemo.has(c)) mapsMemo.set(c, { me: S.rowVals(mine, c), field: ranked.map((p) => S.rowVals(p.rounds, c)), last: tn >= tMin ? S.rowVals(tLast, c) : null, prev: tn >= tMin ? S.rowVals(tPrev, c) : null,
       peak: stretchOn ? S.rowVals(peak.rounds, c) : null, rest: stretchOn ? S.rowVals(rest, c) : null, career: S.me?.rounds?.length ? S.rowVals(S.me.rounds, c) : null });
     return mapsMemo.get(c);
   };
@@ -245,7 +248,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
         el("th", { class: "num", title: `${TN.Kept} less ${TN.Cut.toLowerCase()}: green where the ${TN.kept} were better` }, "Diff"),
         el("th", { class: "num", title: "Where the kept rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, tPeak ? "Peak Rank" : `${S.NM().Kept} Rank`)]
         : [el("th", {}, ""), el("th", { class: "num", title: S.me?.label || "" }, String(S.me?.label || "").trim().split(/\s+/)[0] || "Player"), // (update 633) just their first name
-        el("th", { class: "num", title: `Last ${tn || 20} rounds against the ${tn || 20} before` }, "Trend"),
+        el("th", { class: "num", title: S.eventMode ? `Last ${tn || 5} events against the ${tn || 5} before` : `Last ${tn || 20} rounds against the ${tn || 20} before` }, "Trend"),
         el("th", { class: "num" }, "Rank")])),
       el("tbody", {}, tr),
     ])),
