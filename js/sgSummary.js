@@ -1,6 +1,7 @@
 // (sgDashboard split) The summary: the category cards, the summary box, the stretch / form boards and the tour blocks.
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { CATEGORIES, SUMMARY, applyFilters, el, fmtSG, infoTip, rank, sgColor, sgPerRound } from "./sgShared.js";
+import { formWord } from "./sg.js"; // (update 670)
 
 // Rank of one player among the field for a metric computed on their (already sliced) rounds.
 export function rankOf(S, slicedField, key, metric) {
@@ -79,8 +80,11 @@ export function summaryBox(S, mine, slicedField) {
     const n = Math.min(20, Math.floor(ordered.length / 2)); // (update 663: 20 against 20)
     if (n >= 2) {
       const last = S.perRoundOf(ordered.slice(-n)), prev = S.perRoundOf(ordered.slice(-2 * n, -n)), ch = last - prev;
-      lines.push(Math.abs(ch) < 0.05 ? `Form is steady: ${fmtSG(last)} a round over the last ${n} rounds, about the same as the ${n} before.`
-        : `Form is ${ch > 0 ? "improving" : "cooling down"}: ${fmtSG(last)} a round over the last ${n} rounds, against ${fmtSG(prev)} in the ${n} before (${ch > 0 ? "better" : "worse"} by ${Math.abs(ch).toFixed(2)}).`);
+      // (update 670) the form word: this change and the overall direction (the last 50 against the 50 before)
+      const nL = Math.min(50, Math.floor(ordered.length / 2)), L = nL > n ? S.perRoundOf(ordered.slice(-nL)) - S.perRoundOf(ordered.slice(-2 * nL, -nL)) : null;
+      const w = formWord(ch, L)?.[0] || "Steady";
+      lines.push(Math.abs(ch) < 0.05 ? `Form: ${w}. ${fmtSG(last)} a round over the last ${n} rounds, about the same as the ${n} before.`
+        : `Form: ${w}. ${fmtSG(last)} a round over the last ${n} rounds, against ${fmtSG(prev)} in the ${n} before (${ch > 0 ? "better" : "worse"} by ${Math.abs(ch).toFixed(2)})${L != null ? `; ${L >= 0 ? "up" : "down"} ${Math.abs(L).toFixed(2)} over the last ${nL} against the ${nL} before` : ""}.`);
       const sl = S.steadinessLine(ordered, n); if (sl) lines.push(sl);
     }
   } else {

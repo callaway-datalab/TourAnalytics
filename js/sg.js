@@ -844,3 +844,17 @@ export function sameCourse(a, b) {
   if (!x || !y) return false;
   return x === y || (Math.min(x.length, y.length) >= 5 && (x.includes(y) || y.includes(x)));
 }
+
+/* (update 670) The form word, from two changes, each oriented so a plus is better:
+     recent  the last 20 rounds against the 20 before (the DP World Tour: 5 events against 5)
+     overall the last 50 against the 50 before (20 events against 20); null when there aren't enough: the recent one stands in
+   flat: how big an overall change has to be to count as a direction; shift: how far the recent change has to differ
+   from the overall one to count as speeding up or easing. Strokes gained: 0.15 and 0.20 a round.
+   → [word, tone] with tone "up" | "" | "down" */
+export function formWord(recent, overall = null, { flat = 0.15, shift = 0.2 } = {}) {
+  if (recent == null || !Number.isFinite(recent)) return null;
+  const L = overall == null || !Number.isFinite(overall) ? recent : overall;
+  if (L > flat) return recent >= L + shift ? ["Surging", "up"] : recent <= L - shift || recent < 0 ? ["Levelling Off", ""] : ["Climbing", "up"];
+  if (L < -flat) return recent <= L - shift ? ["Sliding Fast", "down"] : recent >= L + shift || recent > 0 ? ["Pulling Up", ""] : ["Sliding", "down"];
+  return recent > flat ? ["Heating Up", "up"] : recent < -flat ? ["Cooling Down", "down"] : ["Steady", ""];
+}

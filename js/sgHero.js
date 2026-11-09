@@ -1,6 +1,7 @@
 // (sgDashboard split) The hero card: the player's headline numbers, the weekly rank chart and its popups (Form, tournaments, rank).
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { CATEGORIES, applyFilters, el, fmtSG, fmtStat, getState, infoTip, mount, shortDate } from "./sgShared.js";
+import { formWord } from "./sg.js"; // (update 670)
 
 export function heroBox(S, mine, slicedField, f) {
   const foot = el("p", { class: "hero-foot" }, S.updatedTxt());
@@ -22,8 +23,16 @@ export function heroBox(S, mine, slicedField, f) {
       if (last != null && prev != null) {
         const ch = last - prev, steady = Math.abs(ch) < S.steadyBand(prev);
         const amt = sg ? Math.abs(ch).toFixed(2) : fmtStat({ ...S.def, unit: S.def.pct ? "" : S.def.unit }, Math.abs(ch)).replace("%", S.def.pct ? " pct" : "");
-        form = steady ? ["Steady", ""] : sg ? (ch > 0 ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"]) // (update 182: Better / Worse, not Up / Down)
-          : S.def.higher == null ? [`${ch > 0 ? "Higher" : "Lower"} by ${amt}`, ""] : (S.def.higher ? ch > 0 : ch < 0) ? [`Better by ${amt}`, "up"] : [`Worse by ${amt}`, "down"];
+        void steady;
+        if (S.def.higher == null) form = [`${ch > 0 ? "Higher" : "Lower"} by ${amt}`, ""];
+        else {
+          // (update 670) the word from the recent change and the overall direction (the last 50 rounds against the 50 before;
+          // the DP World Tour: 20 events against 20), each turned so a plus is better
+          const sgn = S.def.higher === false ? -1 : 1, nL = Math.min(S.eventView ? 20 : 50, Math.floor(fu.length / 2));
+          const lL = nL > n ? S.metric(fu.slice(-nL).flat()) : null, pL = nL > n ? S.metric(fu.slice(-2 * nL, -nL).flat()) : null;
+          const sb = S.steadyBand(prev), w = formWord(sgn * ch, lL != null && pL != null ? sgn * (lL - pL) : null, { flat: 3 * sb, shift: 4 * sb });
+          form = w ? [`${w[0]} \u00b7 ${sgn * ch >= 0 ? "\u25B2" : "\u25BC"} ${amt}`, w[1]] : null;
+        }
       }
     }
     // a tile per category this stat has (with its rank among the same players, every category counted)

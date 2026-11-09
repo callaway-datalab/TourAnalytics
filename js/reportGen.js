@@ -11,7 +11,7 @@
 import { el, mount } from "./ui.js";
 import { getState } from "./auth.js";
 import { watchClientDatasets, getDatasetRows, getFieldStats, uploadDocument, logReportRun } from "./store.js";
-import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn, gearInfo } from "./sg.js";
+import { detectColumns, isShotData, prepare, summaryPlayers, sliceTotals, sgBy, CATEGORIES, shortDate, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn, gearInfo, formWord } from "./sg.js";
 import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
@@ -286,7 +286,9 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
   const n10 = half, fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat(); // (update 581: as the trends)
-  const form = n10 >= (byEvent ? 1 : 2) ? { n: n10, unit: byEvent ? "event" : "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB) } : null;
+  // (update 670) and the overall direction for the form word: the last 50 rounds against the 50 before (20 events against 20)
+  const nL = Math.min(byEvent ? 20 : 50, Math.floor(units.length / 2)), longCh = nL > n10 ? mean(units.slice(-nL).flat().map((q) => q.value)) - mean(units.slice(-2 * nL, -nL).flat().map((q) => q.value)) : null;
+  const form = n10 >= (byEvent ? 1 : 2) ? { n: n10, unit: byEvent ? "event" : "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB), long: Number.isFinite(longCh) ? longCh : null } : null;
   // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
   // game (how much each swings round to round), and the biggest upside (matching the group's best where the
   // player is furthest behind).
@@ -520,7 +522,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   let bx = M;
   if (a.overall.rank) { const [f, t] = rankColors(a.overall.rank); bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, f, t) + 6; }
   bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
-  if (a.form) { const ch = a.form.last - a.form.first; bx += badge(Math.abs(ch) < STEADY ? "Form: steady" : ch > 0 ? "Form: improving" : "Form: cooling down", bx, 220, Math.abs(ch) < STEADY ? "#3a3a3c" : ch > 0 ? P.up : P.down) + 6; }
+  if (a.form) { const w = formWord(a.form.last - a.form.first, a.form.long); void STEADY; // (update 670: the form word)
+    if (w) bx += badge(`Form: ${w[0]}`, bx, 220, w[1] === "up" ? P.up : w[1] === "down" ? P.down : "#8a6d3b") + 6; }
   // form sparkline (right side)
   if (a.rankHist?.length >= 2) {
     // (update 227) Weekly Rank History: 1st at the top, a gold line, the latest rank marked

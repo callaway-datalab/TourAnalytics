@@ -3,7 +3,7 @@
 //   · their 3 best and 3 worst distances (strokes gained a shot, ranked when the field's lie / distance detail is here)
 //   · any other metrics picked, with ranks and trends
 //   · badges and alerts: big moves, hot streaks and slumps, form landmarks, best rounds, wins and milestones
-import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds, gearList, gearLabel, gearInfo } from "./sg.js";
+import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds, gearList, gearLabel, gearInfo, formWord } from "./sg.js";
 
 export const SG_KEYS = [["TOTAL", "SG: Total", "Total"], ["OTT", "Off-the-Tee", "OTT"], ["APP", "Approach", "APP"], ["ARG", "Around-the-Green", "ARG"], ["PUTT", "Putting", "PUTT"]];
 const CAT_SHORT = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" }; // (update 406: the site's names)
@@ -450,7 +450,12 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   if (mine.length >= 3) {
     const fn = Math.min(byEv ? 5 : 20, mine.length), fAvg = perRound(mine.slice(-fn));
 const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the change on the rounds before, not the sign of the average
-    if (fAvg != null) add({ kind: "form", icon: fch < -0.005 ? "\uD83D\uDCC9" : "\uD83D\uDCC8", tone: fch > 0.005 ? "up" : fch < -0.005 ? "down" : "", text: `Form: ${fmtSG(fAvg)}/rd, last ${fn}${byEv ? " events" : ""}${total.trend && Math.abs(total.trend.ch) >= 0.005 ? ` \u2022 ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
+    // (update 670) the form word: the recent change and the overall direction (the last 50 rounds against the 50 before;
+    // the DP World Tour: 20 events against 20)
+    const longCh = (() => { const u = byEv ? groupEv(mine) : mine.map((rd) => [rd]), nL = Math.min(byEv ? 20 : 50, Math.floor(u.length / 2)); if (nL <= (byEv ? 5 : 20)) return null;
+      const a = perRound(u.slice(-nL).flat()), b = perRound(u.slice(-2 * nL, -nL).flat()); return a != null && b != null ? a - b : null; })();
+    const fw = total.trend ? formWord(total.trend.ch, longCh) : null;
+    if (fAvg != null) add({ kind: "form", icon: fch < -0.005 ? "\uD83D\uDCC9" : "\uD83D\uDCC8", tone: fw ? fw[1] : fch > 0.005 ? "up" : fch < -0.005 ? "down" : "", text: `Form${fw ? `: ${fw[0]}` : ""} \u2022 ${fmtSG(fAvg)}/rd, last ${fn}${byEv ? " events" : ""}${total.trend && Math.abs(total.trend.ch) >= 0.005 ? ` \u2022 ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
       const fi = formInfo(mineO, (rs) => perRound(rs, "TOTAL"), { label: "SG: Total", fmtFn: fmtSG, rows: SG_KEYS.map(([kk, ll]) => catRow(kk, ll)) });
       fi.sub = `Current form: ${fmtSG(fAvg)} a round over the last ${fn} ${W.many}. ${fi.sub}`; // (update 373: no rank level)
       return fi;
