@@ -28,7 +28,7 @@ const ROUTES = [
   ["/live", "signed-in", () => import("./views/live.js"), "live"], // (update 259: the latest tournaments, round by round)
   ["/comparisons", "signed-in", () => import("./views/comparisons.js"), "comparisons"], // (update 188)
   ["/product-usage", "signed-in", () => Promise.resolve({ render: () => { location.hash = "#/comparisons"; } }), "product-usage"], // (update 209: product usage is in Compare)
-  ["/practice", "signed-in", () => import("./views/practice.js"), "practice"],
+  ["/practice", "signed-in", () => import("./views/practiceSimple.js"), "practice"], // (update 690: the simple practice tracker in place of the shot-by-shot one)
   // (the old Practice Recommendations / Practice Tracking links open Practice)
   ["/practice/recommendations", "signed-in", () => import("./views/practice.js"), "practice"],
   ["/practice/tracking", "signed-in", () => import("./views/practice.js"), "practice"],
