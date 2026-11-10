@@ -1150,7 +1150,9 @@ function renderRound(main, params, flash, previewClient) {
      A distance (or lie) said before any club finishes the last shot told; each club said starts the next shot, from where
      the one before finished. Nothing told before it is changed, and there's always an empty shot ready for the next. */
   function continueShots(r, from) {
-    const has = (x) => !!(x && ((x.club && !x.clubAuto) || x.endLie)); // (update 687: a club the page only suggested isn't a shot told)
+    // (update 688) a shot counts as told once it has a result (where it finished): a club on its own (suggested, or picked
+    // ahead) is a shot still to be told, filled by the next thing said
+    const has = (x) => !!(x && x.endLie);
     let k = -1; strokes.forEach((x, i) => { if (has(x)) k = i; });
     const said = [...r.shots];
     // what was said before any club: how the last shot finished
