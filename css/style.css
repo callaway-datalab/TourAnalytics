@@ -6632,3 +6632,19 @@ div.sh-ud3-green { cursor: default; }
 .ps-lrows { display: grid; } .ps-lrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #2a2a2e; } .ps-lrow:first-child { border-top: 0; } .ps-lrow small { color: #8e8e93; }
 .ps-seg { display: inline-flex; border: 1px solid #3a3a3c; border-radius: 999px; overflow: hidden; margin-bottom: 8px; } .ps-seg button { border: 0; background: none; color: #d1d1d6; padding: 7px 12px; font: inherit; font-size: 0.85rem; cursor: pointer; } .ps-seg button.on { background: #d4b483; color: #111; font-weight: 700; }
 .ps-clock { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+/* (update 691) practice sessions */
+.ps-find { padding: 0; background: none; border: 0; } /* the admin's player search: no grey box */
+.ps-big { width: 100%; padding: 12px; font-size: 1rem; }
+.ps-scard { display: grid; gap: 4px; width: 100%; text-align: left; background: #1c1c1f; border: 1px solid #2a2a2e; border-radius: 16px; padding: 12px 14px; color: inherit; font: inherit; cursor: pointer; }
+.ps-scard:hover { border-color: rgba(212,180,131,0.5); }
+.ps-create { display: grid; gap: 2px; margin-top: 4px; }
+.ps-crow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 6px; border-radius: 10px; }
+.ps-crow.on { background: rgba(212,180,131,0.08); }
+.ps-crow label { display: flex; align-items: center; gap: 10px; cursor: pointer; } .ps-crow input[type=checkbox], .ps-sess-t input[type=checkbox] { width: 18px; height: 18px; accent-color: #d4b483; }
+.ps-ctl, .ps-defs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .ps-defs { margin: 10px 0 4px; }
+.ps-ctl-in { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: #c7c7cc; } .ps-num { padding: 6px 8px !important; text-align: center; }
+.ps-seg.sm button { padding: 5px 10px; font-size: 0.78rem; } .ps-seg.sm { margin: 0; }
+.ps-sticky { position: sticky; bottom: -24px; background: #151517; padding: 10px 0 4px; }
+.ps-runbox { display: flex; align-items: baseline; justify-content: space-between; background: #1c1c1f; border: 1px solid #2a2a2e; border-radius: 16px; padding: 12px 16px; }
+.ps-sess-t { width: 100%; border-collapse: collapse; font-size: 0.9rem; } .ps-sess-t th, .ps-sess-t td { padding: 10px 6px; border-top: 1px solid #2a2a2e; text-align: left; } .ps-sess-t th { color: #8e8e93; font-size: 0.7rem; letter-spacing: 0.08em; border-top: 0; } .ps-sess-t .n { text-align: right; }
+.ps-sess-t tr.ps-done td { color: #7ee2a2; } .ps-sess-t tr.ps-now td { background: rgba(212,180,131,0.08); }
