@@ -673,11 +673,17 @@ async function ask(question) {
     const list = await playersYouCanSee();
     // (update 589) "the hole strategy on hole 2 at Torrey Pines South into a back left pin": Cal's Read
     // (update 630) "Hole 1" straight after Cal asked which hole: the same question, carried on
+    // (update 685) "take me to my current round", "what hole am I on": the round in progress
+    { const ra = await roundAnswer(question).catch(() => null);
+      if (ra) { const { auto, href, ...msg } = ra; reply({ ...msg, strat: true }); if (auto && href) setTimeout(() => goShot(href), 700); return; } }
     // (update 644) "I just hit a 5 iron to the green, 25 ft left": the next shot in your round in progress
     { const shot = await shotFromTalk(question).catch(() => null);
       if (shot) { const { href, ...msg } = shot; reply({ ...msg, strat: true }); if (href) setTimeout(() => goShot(href), 700); return; } }
     // (update 643) "start a new round", "take me to practice": the page, opened for them
     { const nav = isStrategyQ(question) || isPinReply(question) || isStratReply(question) ? null : navAnswer(question);
+      // (update 685) Enter New Round, not asked for a new one: the round in progress, when there is one
+      if (nav?.go?.href === "#/entry" && !/\b(new|start|begin|another)\b/i.test(question)) { const r = await currentRound().catch(() => null);
+        if (r) { nav.go = { href: r.href, label: "Open the round \u2192", nav: true }; nav.text = nav.auto ? `Opening your round${r.cur.course ? ` at **${r.cur.course}**` : ""}.` : `Your round in progress${r.cur.course ? ` at **${r.cur.course}**` : ""} is on **Enter New Round** (under **Play**).`; } }
       if (nav) { const { auto, ...msg } = nav; reply({ ...msg, strat: true }); if (auto && msg.go) setTimeout(() => { closeCallie(); location.hash = msg.go.href; }, 700); return; } }
     if (isStrategyQ(question) || isPinReply(question) || isStratReply(question)) return reply({ ...(await answerStrategy(question)), strat: true }); // (update 600: strat: no Compare link)
     clearStratAsk();
@@ -937,13 +943,36 @@ export async function shotFromTalk(text) {
   try { sessionStorage.setItem("cal.shot", JSON.stringify({ text, round: cur.id, at: Date.now() })); } catch { /* */ }
   return { text: `Adding that to your round${cur.course ? ` at **${cur.course}**` : ""}.`, go: { href, label: "Open the round \u2192", nav: true }, href };
 }
+/* (update 685) the round in progress: "take me to my current round", "look up my round", "what hole am I on" */
+const CUR_ROUND = /\b(current|my|today'?s|ongoing|live|open)\s+(round|scorecard|card)\b|\bround\s+(i'?m|i am)\s+(currently\s+)?(playing|on|in)\b|\b(what|which)\s+hole\s+(am\s+i|i'?m)\s+(currently\s+)?on\b|\bwhere\s+am\s+i\b.{0,20}\bround\b/i;
+async function currentRound() {
+  const { getState } = await import("./auth.js"), st = getState();
+  const { myEntryKey } = await import("./views/dataEntry.js"), { watchMyRounds } = await import("./rounds.js");
+  const list = await new Promise((res) => { let un = null, done = false; const end = (l) => { if (done) return; done = true; try { un?.(); } catch { /* */ } res(l); };
+    un = watchMyRounds(st, myEntryKey(st), (l) => { if (l.length) end(l); }); setTimeout(() => end([]), 4000); });
+  const cur = list.find((rd) => rd.status !== "complete" && (!rd.ownerUid || rd.ownerUid === st.user?.uid));
+  return cur ? { cur, href: `#/entry/${encodeURIComponent(cur.playerKey || myEntryKey(st))}/${cur.id}` } : null;
+}
+async function roundAnswer(q) {
+  if (!CUR_ROUND.test(q)) return null;
+  const r = await currentRound().catch(() => null);
+  if (!r) return { text: "You don\u2019t have a round in progress. Start one on **Enter New Round**.", go: { href: "#/entry/new", label: "Start a round \u2192", nav: true } };
+  let hole = null;
+  try { const { roundHoleScore } = await import("./roundCalc.js"); const h = (r.cur.holes || []).find((hh) => !roundHoleScore(r.cur, hh).done); hole = h?.n ?? null; } catch { /* */ }
+  const where = `${r.cur.course ? ` at **${r.cur.course}**` : ""}${hole ? `, on hole **${hole}**` : ""}`;
+  const ask = /^\s*(what|which|where)\b/i.test(q);
+  return { text: ask ? `You\u2019re playing your round${where}.` : `Opening your round${where}.`, go: { href: r.href, label: "Open the round \u2192", nav: true }, auto: !ask, href: r.href };
+}
+
 /** (update 644) hold the header's Cal: what was said, asked (or a shot, added) without opening Cal first */
 export async function askHeld(text) {
   const t = String(text || "").trim(); if (!t) return;
-  const shot = await shotFromTalk(t).catch((err) => { console.error(err); return null; });
+  const ra = await roundAnswer(t).catch(() => null); // (update 685)
+  if (ra?.auto && ra.href) { goShot(ra.href); return; }
+  const shot = ra ? null : await shotFromTalk(t).catch((err) => { console.error(err); return null; });
   if (shot?.href) { goShot(shot.href); return; }
   await openCallie();
-  if (shot) { chat.push({ who: "me", text: t }, { who: "callie", ...shot, strat: true }); draw(); return; }
+  if (ra || shot) { const { auto, href, ...m } = ra || shot; void auto; void href; chat.push({ who: "me", text: t }, { who: "callie", ...m, strat: true }); draw(); return; }
   ask(t);
 }
 function goShot(href) {

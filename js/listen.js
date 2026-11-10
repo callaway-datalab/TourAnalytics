@@ -10,7 +10,7 @@ export const canListen = () => !!SR;
 export const isIOS = () => typeof navigator !== "undefined" && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 const join = (...a) => a.map((x) => String(x || "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 
-let R = null, running = false, owner = null, skip = 0, count = 0, lastEvt = 0;
+let R = null, running = false, stopping = false, owner = null, skip = 0, count = 0, lastEvt = 0;
 // (update 651) what happened on the last try, to say why nothing was heard: { asked, started, audio, sound, speech, error, ended }
 const diag = { asked: 0, started: 0, audio: 0, sound: 0, speech: 0, error: "", ended: 0 };
 const mark = (k, v = 1) => { diag[k] = v; lastEvt = Date.now(); };
@@ -24,14 +24,17 @@ export function whyNothing() {
 }
 function rec() {
   if (R) return R;
-  R = new SR();
-  R.lang = navigator.language || "en-US"; R.continuous = true; R.interimResults = true; R.maxAlternatives = 1;
-  R.onstart = () => { running = true; mark("started"); };
-  R.onaudiostart = () => mark("audio"); R.onsoundstart = () => mark("sound"); R.onspeechstart = () => mark("speech");
-  R.onresult = (e) => { count = e.results.length; lastEvt = Date.now(); owner?._result(e); };
-  R.onerror = (e) => { mark("error", e.error || "unknown"); owner?._error(e); };
-  R.onend = () => { mark("ended"); running = false; count = 0; skip = 0; const o = owner; o?._end(); };
-  return R;
+  // (update 684) each recogniser answers only while it's the current one: an old one being dropped (aborted) used to
+  // reach the new session, cancel it ("it was interrupted") and end it before it heard anything
+  const me = new SR(); R = me;
+  me.lang = navigator.language || "en-US"; me.continuous = true; me.interimResults = true; me.maxAlternatives = 1;
+  const cur = () => R === me;
+  me.onstart = () => { if (!cur()) return; running = true; mark("started"); };
+  me.onaudiostart = () => { if (cur()) mark("audio"); }; me.onsoundstart = () => { if (cur()) mark("sound"); }; me.onspeechstart = () => { if (cur()) mark("speech"); };
+  me.onresult = (e) => { if (!cur()) return; count = e.results.length; lastEvt = Date.now(); owner?._result(e); };
+  me.onerror = (e) => { if (!cur()) return; mark("error", e.error || "unknown"); owner?._error(e); };
+  me.onend = () => { if (!cur()) return; mark("ended"); running = false; stopping = false; count = 0; skip = 0; const o = owner; o?._end(); };
+  return me;
 }
 
 /**
@@ -67,19 +70,19 @@ export function listener({ onText = () => {}, onBlocked = () => {}, onPause = ()
     },
     async stop() {
       const was = active; active = false;
-      if (owner === self && running) { try { R.stop(); } catch { /* */ } await Promise.race([ended, new Promise((res) => setTimeout(res, 1500))]); }
+      if (owner === self && running) { stopping = true; try { R.stop(); } catch { /* */ } await Promise.race([ended, new Promise((res) => setTimeout(res, 1500))]); }
       if (owner === self) owner = null;
       return was || done || fin || tmp ? text() : "";
     },
-    cancel() { active = false; if (owner === self) { owner = null; try { if (running) R.stop(); } catch { /* */ } } },
+    cancel() { active = false; if (owner === self) { owner = null; try { if (running) { stopping = true; R.stop(); } } catch { /* */ } } },
   };
   const begin = () => {
     fin = ""; tmp = ""; began = Date.now(); heard = false;
     ended = new Promise((res) => { endRes = res; });
     let r = rec();
     // (the last session still winding down: carry on in it, from here; one gone quiet for 3 s is dropped for a new one)
-    if (running && Date.now() - lastEvt < 3000) { skip = count; return; }
-    if (running) { try { R.abort(); } catch { /* */ } R = null; running = false; r = rec(); }
+    if (running && Date.now() - lastEvt < 3000 && !stopping) { skip = count; return; }
+    if (running || stopping) { const old = R; R = null; running = false; stopping = false; try { old?.abort(); } catch { /* */ } r = rec(); } // (update 684: dropped quietly)
     Object.assign(diag, { asked: 1, started: 0, audio: 0, sound: 0, speech: 0, error: "", ended: 0 }); lastEvt = Date.now();
     skip = 0; running = true; // (counted as running from the call: a tap's stop must reach it even before it has begun)
     try { r.start(); } catch (err) { running = false; throw err; }
