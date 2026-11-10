@@ -58,6 +58,15 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
   async function load() {
     const [p, l] = await Promise.all([listPlan(subject.owner), listLog(subject.owner)]);
     sessions = p.filter((x) => x.type === "session"); drills = p.filter((x) => x.type !== "session"); log = l;
+    // (update 692) a drill added from Stats is a practice of its own (Not yet started): made once, the drill marked with it
+    if (subject.mine || canCoach()) {
+      for (const d of drills.filter((x) => !x.sessionId)) {
+        const sid = newPlanId(), by = d.sentBy?.name ? { uid: d.sentBy.uid || null, name: d.sentBy.name } : { self: true, name: "you" };
+        const sess = { id: sid, type: "session", title: d.title || "Practice", createdAt: d.addedAt || new Date().toISOString(), playerKey: d.playerKey || subject.key || "", fromStats: true, createdBy: by,
+          items: [{ key: `d:${d.id}`, cat: d.cat || "OTHER", label: d.title || "Drill", mode: "sets", shots: Number(d.reps) || 10, sets: 3, setsDone: 0, secs: 0, done: false }], run: null };
+        try { await savePlanItem(subject.owner, sess); await savePlanItem(subject.owner, { ...d, sessionId: sid }); sessions.push(sess); d.sessionId = sid; } catch (err) { console.error(err); }
+      }
+    }
   }
   const save = (s) => savePlanItem(subject.owner, s);
   const creator = () => subject.mine || canCoach();
@@ -105,7 +114,6 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       return el("div", { class: `ps-crow${it ? " on" : ""}` }, [el("label", {}, [box, el("span", {}, label)]), ctl]);
     };
     const drawList = () => mount(list, [
-      ...(drills.length ? [el("p", { class: "ps-t" }, "FROM STATS"), ...drills.map((d) => rowFor(`d:${d.id}`, d.cat || "OTHER", d.title || "Drill"))] : []),
       ...RANGES.flatMap(([cat, name, bands]) => [el("p", { class: "ps-t" }, name.toUpperCase()), ...bands.map((b) => rowFor(`${cat}|${b}`, cat, `${name} · ${b}`))]),
     ]);
     // the starting amounts for every range ticked after this (each row can be changed on its own)
@@ -121,7 +129,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     ok.addEventListener("click", async () => {
       if (!picked.size) { flash("Tick at least one distance range.", "error"); return; }
       const s = { id: newPlanId(), type: "session", title: name.value.trim(), createdAt: new Date().toISOString(), playerKey: subject.key || "",
-        ...(subject.mine ? {} : { createdBy: { uid: state.user?.uid || null, name: state.profile?.name || (state.isAdmin ? "Callaway" : "Coach") } }),
+        createdBy: subject.mine ? { self: true, name: "you" } : { uid: state.user?.uid || null, name: state.profile?.name || (state.isAdmin ? "Callaway" : "Coach") },
         items: [...picked.values()].map((x) => ({ ...x, setsDone: 0, secs: 0, done: false })), run: null };
       ok.disabled = true;
       try { await save(s); sheet.close(); flash("Session created.", "ok"); await load(); openId = s.id; draw(); }
@@ -172,7 +180,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     const del = (mine || canCoach()) ? el("button", { type: "button", class: "link danger" }, "Delete this session") : null;
     del?.addEventListener("click", async () => { if (!confirm("Delete this practice session?")) return; await deletePlanItem(subject.owner, s.id); openId = null; await load(); draw(); });
     return [back,
-      el("header", { class: "ps-head" }, [el("h1", {}, sessTitle(s)), el("p", { class: "muted" }, [`Created ${dateTxt(s.createdAt)}`, s.createdBy?.name ? ` by ${s.createdBy.name}` : ""])]),
+      el("header", { class: "ps-head" }, [el("h1", {}, sessTitle(s)), el("p", { class: "muted" }, [`Created ${dateTxt(s.createdAt)} `, byPill(s)])]),
       el("div", { class: "ps-runbox" }, [el("span", { class: "muted small" }, running ? "Practising" : "Time so far"), clock]),
       el("div", { class: "ps-tw" }, el("table", { class: "ps-sess-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", {}, "Range"), el("th", {}, "Plan"), el("th", { class: "n" }, "Progress")])), el("tbody", {}, rows)])),
       mine && !running && stateOf(s) !== "done" ? el("p", { class: "muted small" }, "Tick what you’re working on now, then start.") : null,
@@ -180,11 +188,17 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
   }
 
   /* ---------------- the list ---------------- */
+  // (update 692) who put it on the list: you (or the player), or a coach by name; and whether it came from Stats
+  function byPill(s) {
+    const c = s.createdBy, you = !c || !!c.self;
+    const who = you ? (subject.mine ? "Added by you" : `Added by ${subject.label}`) : `Added by ${c.name || "a coach"}`;
+    return el("span", { class: `ps-pill ps-by${you ? "" : " coach"}` }, `${who}${s.fromStats ? " \u00b7 from Stats" : ""}`);
+  }
   function card(s) {
     const st = stateOf(s), n = s.items.length, d = s.items.filter(itemDone).length;
     const b = el("button", { type: "button", class: `ps-scard ${st}` }, [
-      el("span", { class: "ps-row" }, [el("strong", {}, sessTitle(s)), el("span", { class: `ps-pill ${st}` }, st === "done" ? "Completed" : st === "prog" ? (s.run ? "Practising now" : `In progress · ${d}/${n}`) : "Not started")]),
-      el("span", { class: "ps-goaltxt" }, `${n} range${n === 1 ? "" : "s"} · ${fmtMin((s.secs || 0) / 60 + runSecs(s) / 60)} so far · created ${dateTxt(s.createdAt)}${s.createdBy?.name ? ` by ${s.createdBy.name}` : ""}`),
+      el("span", { class: "ps-row" }, [el("strong", {}, sessTitle(s)), el("span", { class: "ps-pills" }, [byPill(s), el("span", { class: `ps-pill ${st}` }, st === "done" ? "Completed" : st === "prog" ? (s.run ? "Practising now" : `In progress · ${d}/${n}`) : "Not started")])]),
+      el("span", { class: "ps-goaltxt" }, `${n} range${n === 1 ? "" : "s"} · ${fmtMin((s.secs || 0) / 60 + runSecs(s) / 60)} so far · created ${dateTxt(s.createdAt)}`),
       el("span", { class: "ps-bar" }, el("i", { style: `width:${n ? (100 * d) / n : 0}%;${st === "done" ? "background:#30d158" : ""}` })),
     ]);
     b.addEventListener("click", () => { openId = s.id; draw(); window.scrollTo(0, 0); });
@@ -205,9 +219,12 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     if (s0) { mount(wrap, sessionView(s0)); return; }
     clearInterval(tick);
     const wk = summary(log, sessions);
+    // (update 692) each area, and in it each distance: sets done and time (a stretch's time shared across what was worked on)
     const byArea = new Map();
-    for (const e of log.filter((x) => Date.parse(x.at) >= since(30))) { const its = e.items || [], m = Number(e.minutes) || 0; if (!its.length) continue; for (const x of its) { const a = AREA[x.cat] || "Other"; byArea.set(a, (byArea.get(a) || 0) + m / its.length); } }
-    const maxA = Math.max(1, ...byArea.values()), order = [...byArea].sort((a, b) => b[1] - a[1]);
+    for (const e of log.filter((x) => Date.parse(x.at) >= since(30))) { const its = e.items || [], m = Number(e.minutes) || 0; if (!its.length) continue;
+      for (const x of its) { const a = AREA[x.cat] || "Other", A = byArea.get(a) || byArea.set(a, { m: 0, items: new Map() }).get(a), nm = String(x.title || "").split(" \u00b7 ").pop() || "Practice";
+        const I = A.items.get(nm) || A.items.set(nm, { m: 0, sets: 0 }).get(nm); A.m += m / its.length; I.m += m / its.length; I.sets += Number(x.sets) || 0; } }
+    const maxA = Math.max(1, ...[...byArea.values()].map((v) => v.m)), order = [...byArea].sort((a, b) => b[1].m - a[1].m);
     const group = (st) => sessions.filter((s) => stateOf(s) === st).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const sec = (title, list, empty) => [el("p", { class: "ps-t" }, `${title} · ${list.length}`), ...(list.length ? list.map(card) : [el("p", { class: "muted small" }, empty)])];
     const back = !subject.mine && (coachPlayers?.length || coachPlayers === null) ? (() => { const b = el("button", { type: "button", class: "link" }, "‹ My practice"); b.addEventListener("click", () => open(self)); return b; })() : null;
@@ -225,7 +242,8 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       ...sec("NOT YET STARTED", group("todo"), "Nothing waiting."),
       ...sec("COMPLETED", group("done"), "None finished yet."),
       order.length ? el("p", { class: "ps-t" }, "WHERE THE TIME WENT · LAST 30 DAYS") : null,
-      ...order.map(([a, m]) => el("div", { class: "ps-hb" }, [el("span", {}, a), el("i", { style: `width:${Math.max(4, (m / maxA) * 100)}%` }), el("em", {}, fmtMin(m))])),
+      ...order.map(([a, v]) => el("details", { class: "ps-hd" }, [el("summary", { class: "ps-hb" }, [el("span", {}, [el("span", { class: "ps-caret", "aria-hidden": "true" }, "\u25B8 "), a]), el("i", { style: `width:${Math.max(4, (v.m / maxA) * 100)}%` }), el("em", {}, fmtMin(v.m))]),
+        el("table", { class: "ps-hd-t" }, el("tbody", {}, [...v.items].sort((p, q) => q[1].m - p[1].m || q[1].sets - p[1].sets).map(([nm, I]) => el("tr", {}, [el("td", {}, nm), el("td", { class: "n" }, `${I.sets} set${I.sets === 1 ? "" : "s"}`), el("td", { class: "n" }, fmtMin(I.m))]))))])),
     ]);
   }
   await load();

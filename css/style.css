@@ -6648,3 +6648,9 @@ div.sh-ud3-green { cursor: default; }
 .ps-runbox { display: flex; align-items: baseline; justify-content: space-between; background: #1c1c1f; border: 1px solid #2a2a2e; border-radius: 16px; padding: 12px 16px; }
 .ps-sess-t { width: 100%; border-collapse: collapse; font-size: 0.9rem; } .ps-sess-t th, .ps-sess-t td { padding: 10px 6px; border-top: 1px solid #2a2a2e; text-align: left; } .ps-sess-t th { color: #8e8e93; font-size: 0.7rem; letter-spacing: 0.08em; border-top: 0; } .ps-sess-t .n { text-align: right; }
 .ps-sess-t tr.ps-done td { color: #7ee2a2; } .ps-sess-t tr.ps-now td { background: rgba(212,180,131,0.08); }
+/* (update 692) who added a practice; where the time went opens to each distance */
+.ps-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.ps-pill.ps-by { background: rgba(255,255,255,0.08); color: #c7c7cc; font-weight: 700; } .ps-pill.ps-by.coach { background: rgba(212,180,131,0.18); color: #e8cf9f; }
+.ps-hd > summary { list-style: none; cursor: pointer; } .ps-hd > summary::-webkit-details-marker { display: none; }
+.ps-hd[open] .ps-caret { display: inline-block; transform: rotate(90deg); }
+.ps-hd-t { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 4px 0 8px; } .ps-hd-t td { padding: 5px 4px 5px 18px; color: #c7c7cc; border-top: 1px solid #222; } .ps-hd-t .n { text-align: right; padding-left: 4px; }
