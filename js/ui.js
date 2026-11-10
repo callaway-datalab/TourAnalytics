@@ -318,7 +318,8 @@ export function holdToTalk(b, onHold = () => {}) {
     import("./callie.js").then((m) => m.askHeld(text)).catch((err) => console.error(err));
   };
   const release = async () => {
-    if (timer) { clearTimeout(timer); timer = null; armed = false; return; } // a tap (the microphone never started)
+    // a tap: the microphone (started silently at the touch) dropped at once, nothing listened to, Cal just opens
+    if (timer) { clearTimeout(timer); timer = null; armed = false; const l = L; L = null; l?.cancel(); return; }
     if (!holding) return;
     holding = false;
     const l = L; L = null;
@@ -327,15 +328,17 @@ export function holdToTalk(b, onHold = () => {}) {
   const down = (e) => {
     if (e.button > 0 || holding || armed) return;
     armed = true; sent = false;
-    // (update 663) the microphone only once it's a hold (a tap never turns it on: a tap just opens Cal)
+    // (update 687) the microphone starts silently the moment the finger goes down: iPhone only lets it start from the touch
+    // itself (started a moment later, once it was clearly a hold, it was cancelled at once: "it was interrupted"). Nothing
+    // shows and nothing is used until it's a hold; a tap drops it straight away.
+    L = listener({
+      onText: (t) => { if (holding) show(t || "Listening\u2026 let go to ask"); },
+      onBlocked: () => { holding = false; armed = false; show("Microphone blocked: allow it for this site in Settings", false); hide(2500); },
+      onPause: (t) => { if (holding) { holding = false; L = null; send(t); } },
+    });
+    try { L.start(); } catch (err) { console.error(err); L = null; }
     timer = setTimeout(() => {
       timer = null; armed = false;
-      L = listener({
-        onText: (t) => { if (holding) show(t || "Listening\u2026 let go to ask"); },
-        onBlocked: () => { holding = false; show("Microphone blocked: allow it for this site in Settings", false); hide(2500); },
-        onPause: (t) => { if (holding) { holding = false; L = null; send(t); } },
-      });
-      try { L.start(); } catch (err) { console.error(err); L = null; }
       if (!L) { import("./callie.js").then((m) => m.openCallie()); return; }
       holding = true; onHold();
       try { navigator.vibrate?.(15); } catch { /* */ }
