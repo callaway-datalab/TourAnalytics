@@ -1150,7 +1150,7 @@ function renderRound(main, params, flash, previewClient) {
      A distance (or lie) said before any club finishes the last shot told; each club said starts the next shot, from where
      the one before finished. Nothing told before it is changed, and there's always an empty shot ready for the next. */
   function continueShots(r, from) {
-    const has = (x) => !!(x && (x.club || x.endLie));
+    const has = (x) => !!(x && ((x.club && !x.clubAuto) || x.endLie)); // (update 687: a club the page only suggested isn't a shot told)
     let k = -1; strokes.forEach((x, i) => { if (has(x)) k = i; });
     const said = [...r.shots];
     // what was said before any club: how the last shot finished
@@ -1162,7 +1162,7 @@ function renderRound(main, params, flash, previewClient) {
       if (p0.endLie && (!last.endLie || last.endLie === p0.endLie || p0.endLie === "Green")) last.endLie = p0.endLie;
     }
     const h = hole(), news = said.map((p1) => ({ ...blankStroke(), open: true, endLie: p1.endLie || "", endDist: p1.endDist ?? "",
-      ...(p1.club ? { club: p1.club, clubMake: p1.clubMake, clubCat: p1.clubCat, ...(p1.clubId ? { clubId: p1.clubId } : {}) } : {}) }));
+      ...(p1.club ? { club: p1.club, clubMake: p1.clubMake, clubCat: p1.clubCat, clubPicked: true, clubAuto: false, ...(p1.clubId ? { clubId: p1.clubId } : {}) } : {}) }));
     // "…hit 7 iron from 160": how far the shot before left
     said.forEach((p1, i) => { const prev = i ? news[i - 1] : strokes[k]; if (p1.startDist != null && prev && (prev.endDist === "" || prev.endDist == null)) prev.endDist = p1.startDist; });
     strokes = [...strokes.slice(0, k + 1), ...news];
