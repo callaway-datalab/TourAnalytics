@@ -162,11 +162,19 @@ export function strategyOf(recs, par, geo = {}) {
           mem = parts.sort((a, b) => b.length - a.length)[0]; x = mean(mem.map((p) => p.x)); y = mean(mem.map((p) => p.y)); }
         // (update 657) the spot IS the circle drawn: its middle where the search settled, its radius the circle's (8 to
         // 15 yds), and every miss inside it counted, whatever its side (the search above only finds where to put it)
-        mem = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
-        // (update 658) only the lie in its name: the circle's most common lie (a couple of rough misses in a bunker spot
-        // don't count toward "in a bunker")
-        if (mem.length) { const lc = new Map(); for (const p of mem) lc.set(p.lie, (lc.get(p.lie) || 0) + 1); const top = [...lc].sort((a, b) => b[1] - a[1])[0][0]; mem = mem.filter((p) => p.lie === top); }
-        if (mem.length < minN) continue;
+        // (update 658) only the lie in its name (a couple of rough misses in a bunker spot don't count toward "in a bunker")
+        // (update 683) the circle sits on the misses it names: moved to the middle of that lie's misses inside it until it
+        // settles (it had stopped where the search did, half over the rough beside the bunker it named), and kept only
+        // when most of what's inside it (60% or more) is that lie, so a "bunker" circle is mostly bunker
+        let inside = [];
+        for (let it = 0; it < 6; it++) {
+          inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
+          const m = inside.filter((p) => p.lie === c.lie); if (!m.length) break;
+          const nx = mean(m.map((p) => p.x)), ny = mean(m.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny;
+          if (moved < geo.ppy * 0.5) { inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); break; }
+        }
+        mem = inside.filter((p) => p.lie === c.lie);
+        if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
         // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
         // green) is a spot of its own rather than swallowed by a bigger one nearby
         const sig = `${c.lie}|${ry}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
