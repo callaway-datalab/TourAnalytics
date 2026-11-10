@@ -1137,7 +1137,44 @@ function renderRound(main, params, flash, previewClient) {
     if (!main.isConnected || holeIdx < 0) return;
     const r = parseShots(golfFix(p.text), { bag });
     if (!r.shots.length) { flash("Cal couldn\u2019t make a shot out of that. Add it here instead.", "error"); return; }
-    applyVoice(r, `from what you told Cal (hole ${hole().n})`);
+    // (update 686) the hole you're on: this one, or the next unfinished one once this one's holed out
+    if (holeHoled()) { const nx = round.holes.findIndex((h, i) => i > holeIdx && !roundHoleScore(round, h).done); if (nx >= 0) await go(nx); }
+    continueShots(r, `from what you told Cal (hole ${hole().n})`);
+  }
+  const holeHoled = () => strokes.some((x) => x.endLie === "Holed");
+  /* (update 686) told shot by shot, the way you'd talk through a hole:
+       "I hit driver to the fairway"                         → shot 1: Driver, tee (the hole's yards) → Fairway
+       "I have 150 yards left, I hit 7 iron to the green"    → shot 1 left 150; shot 2: 7 iron, Fairway 150 → Green
+       "I have 20 feet left, I missed the putt by 2 feet"    → shot 2 left 20 ft; shot 3: Putter, Green 20 ft → Green 2 ft
+       "I made the putt"                                     → shot 4: Putter, Green 2 ft → Holed
+     A distance (or lie) said before any club finishes the last shot told; each club said starts the next shot, from where
+     the one before finished. Nothing told before it is changed, and there's always an empty shot ready for the next. */
+  function continueShots(r, from) {
+    const has = (x) => !!(x && (x.club || x.endLie));
+    let k = -1; strokes.forEach((x, i) => { if (has(x)) k = i; });
+    const said = [...r.shots];
+    // what was said before any club: how the last shot finished
+    while (said.length && !said[0].club && !said[0].saidClub && said[0].endLie !== "Holed") {
+      const p0 = said.shift();
+      if (k < 0) continue; // (nothing to finish yet)
+      const last = strokes[k];
+      if (p0.endDist != null) last.endDist = p0.endDist;
+      if (p0.endLie && (!last.endLie || last.endLie === p0.endLie || p0.endLie === "Green")) last.endLie = p0.endLie;
+    }
+    const h = hole(), news = said.map((p1) => ({ ...blankStroke(), open: true, endLie: p1.endLie || "", endDist: p1.endDist ?? "",
+      ...(p1.club ? { club: p1.club, clubMake: p1.clubMake, clubCat: p1.clubCat, ...(p1.clubId ? { clubId: p1.clubId } : {}) } : {}) }));
+    // "…hit 7 iron from 160": how far the shot before left
+    said.forEach((p1, i) => { const prev = i ? news[i - 1] : strokes[k]; if (p1.startDist != null && prev && (prev.endDist === "" || prev.endDist == null)) prev.endDist = p1.startDist; });
+    strokes = [...strokes.slice(0, k + 1), ...news];
+    if (!strokes.length) strokes = [{ ...blankStroke(), open: true }];
+    strokes[0].startLie = strokes[0].startLie || "Tee box"; if (strokes[0].startDist === "" || strokes[0].startDist == null) strokes[0].startDist = h.yards ?? "";
+    if (strokes.at(-1)?.endLie !== "Holed") strokes.push({ ...blankStroke(), open: true }); // (ready for the next shot)
+    chain();
+    strokes.forEach((x) => { x.open = !isComplete(x); });
+    if (strokes.at(-1) && !has(strokes.at(-1))) strokes.at(-1).open = true;
+    changed(true);
+    const n = news.length, first = k + 2;
+    flash(n ? `Added shot${n === 1 ? ` ${first}` : `s ${first}\u2013${first + n - 1}`} ${from}.` : `Updated shot ${k + 1} ${from}.`, "ok");
   }
   const onCalShot = () => { if (window.__calShotPage !== calTok) { window.removeEventListener("cal-shot", onCalShot); return; } takeCalShot(); };
   window.addEventListener("cal-shot", onCalShot);
