@@ -71,8 +71,7 @@ export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey 
   });
   d.line(x, zy, x + w, zy, { color: grey, width: 0.7, dash: [3, 2] });
   // (update 695) seasons: a dashed line where each season starts, its year at the top
-  if (seasons) bars.forEach((b, i) => { if (i && b.yr && b.yr !== bars[i - 1].yr) { const lx = x + slot * i; d.line(lx, top - 6, lx, top + plotH + 2, { color: ink, width: 1, dash: [4, 2.5] }); d.text(b.yr, lx + 4, top + 2, { size: 7.5, bold: true, color: grey }); }
-    if (!i && b.yr) d.text(b.yr, x + 4, top + 2, { size: 7.5, bold: true, color: grey }); });
+  if (seasons) bars.forEach((b, i) => { if (i && b.yr && b.yr !== bars[i - 1].yr) { const lx = x + slot * i; d.line(lx, top - 6, lx, top + plotH + 2, { color: ink, width: 1, dash: [4, 2.5] }); } }); // (update 696: no year labels)
   if (rl && bars.length > 1) d.polyline(rl.map((v, i) => [x + slot * (i + 0.5), Y(v ?? 0)]), { color: ROLL_COLOR, width: 1.8 }); // (update 666)
   const ax = top + plotH + 2 + pad;
   d.line(x, ax, x + w, ax, { color: hair, width: 0.4 });

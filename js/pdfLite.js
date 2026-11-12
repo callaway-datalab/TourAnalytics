@@ -74,6 +74,22 @@ export class PdfDoc {
   }
   /** Text with its baseline at y. align: left | right | center (x is the anchor); spacing: extra points between letters. */
   text(str, x, y, { size = 10, bold = false, color = "#111111", align = "left", spacing = 0, rotate = 0 } = {}) {
+    // (update 696) "→" drawn as a real little arrow (the standard fonts have none), in the room "->" would take
+    if (!rotate && String(str).includes("\u2192")) {
+      const parts = String(str).split("\u2192"), tw = (t) => { const b0 = toWinAnsi(t); return b0.reduce((q, c) => q + charW(c, bold), 0) * size / 1000 + spacing * b0.length; };
+      const aw = tw("->"), total = parts.reduce((q, t) => q + tw(t), 0) + aw * (parts.length - 1) - spacing;
+      let cx = align === "right" ? x - total : align === "center" ? x - total / 2 : x;
+      parts.forEach((t, i) => {
+        if (t) { this.text(t, cx, y, { size, bold, color, spacing }); cx += tw(t); }
+        if (i < parts.length - 1) {
+          const ay = y - size * 0.32, x0 = cx + aw * 0.12, x1 = cx + aw * 0.86, hw = size * 0.2, lw = size * (bold ? 0.085 : 0.065);
+          this.line(x0, ay, x1 - lw, ay, { color, width: lw });
+          this.polyline([[x1 - hw, ay - hw], [x1, ay], [x1 - hw, ay + hw]], { color, width: lw });
+          cx += aw;
+        }
+      });
+      return total;
+    }
     const bytes = toWinAnsi(str);
     const w = bytes.reduce((t, c) => t + charW(c, bold), 0) * size / 1000 + spacing * Math.max(0, bytes.length - 1);
     const esc = bytes.map((c) => (c === 40 || c === 41 || c === 92 ? `\\${String.fromCharCode(c)}` : c < 128 ? String.fromCharCode(c) : `\\${c.toString(8).padStart(3, "0")}`)).join("");

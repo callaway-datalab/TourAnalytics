@@ -526,7 +526,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     CMP.forEach((s0, i) => { const x = M + i * colW0, o = s0.a.overall;
       d.rect(x, 131, 8, 8, { fill: ycolD(i) }); d.text(String(s0.label), x + 12, 138.5, { size: 9, bold: true, color: ycolD(i) });
       d.text(o.rounds ? fmtSG(o.value) : "\u2014", x - 2, 176, { size: big, bold: true, color: o.value == null ? "#8e8e93" : o.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1 });
-      d.text(o.rounds ? plural(o.rounds, a.unit === "event" ? "round" : "round") : "No rounds", x, 191, { size: 8, color: "#a1a1a6" });
+      const nEv = new Set((s0.a.series || []).map((q) => `${q.event || q.date}|${q.year || ""}`)).size; // (update 696: and how many events)
+      d.text(o.rounds ? `${plural(o.rounds, "round")} \u00b7 ${plural(nEv, "event")}` : "No rounds", x, 191, { size: 8, color: "#a1a1a6" });
       if (i) { const ax = x - 18, ay = 158; d.line(ax - 6, ay, ax + 5, ay, { color: "#5f6368", width: 1.6 }); d.polyline([[ax + 1, ay - 4], [ax + 6, ay], [ax + 1, ay + 4]], { color: "#5f6368", width: 1.6 }); } });
   } else
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 172, { size: 62, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
@@ -787,7 +788,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const top = y + 22, ht = isDP ? 175 : 70, left = M + 22, wd = W - 22; // (update 576: the DP World Tour's 2.5 times as tall)
     need(ht + 52);
     d.text(title, M, y + 10, { size: 11, bold: true, color: P.ink });
-    if (first != null) {
+    if (first != null && !CMP) { // (update 696: not on the comparison report)
       const ch = last - first;
       // (update 675) each part in its own colour: each average by its sign (green gaining, red losing), the change by its direction
       { const U = byRd && a.form.unit === "event" ? "events" : "rounds", sep = "   \u00b7   ";
@@ -814,7 +815,6 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       segs.forEach(([i0, i1], j) => {
         const xL = left + i0 * bw, xR = left + i1 * bw, yi = CMP.findIndex((q) => String(q.label) === yrOf(src[i0]));
         if (j) d.line(xL, top - 5, xL, top + ht + 3, { color: P.ink, width: 1, dash: [4, 2.5] });
-        d.text(yrOf(src[i0]), xL + 4, top + 3, { size: 7.5, bold: true, color: yi >= 0 ? ycol(yi) : P.grey });
         // (update 695) by round, as the cover (an event of 4 rounds counts twice one of 2)
         const wts = src.slice(i0, i1).map((q) => q.rounds || 1), av = wts.length ? vals.slice(i0, i1).reduce((t, v, k) => t + v * wts[k], 0) / wts.reduce((t, v) => t + v, 0) : null;
         if (av != null && xR - xL > 30) { d.line(xL + 2, Y(av), xR - 2, Y(av), { color: yi >= 0 ? ycol(yi) : P.ink, width: 1, dash: [1.5, 1.5] });
@@ -959,9 +959,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const pc = (q) => (q.nb.n ? Math.round((q.nb.posRounds / q.nb.n) * 100) : 0);
     if (cmpNb) {
       // (update 694) Compare: each season's own line, a bar each
-      tiles.push({ label: `${Uc} in the green`, big: `${pc(cmpNb[0])}% \u2192 ${pc(cmpNb.at(-1))}%`, text: cmpNb.map((q) => `${q.label}: ${q.nb.posRounds} of ${q.nb.n} ${u}s (${pc(q)}%)`).join("\n"), viz: "yBars", v: cmpNb.map((q, i) => ({ label: q.label, t: q.nb.n ? q.nb.posRounds / q.nb.n : 0, txt: `${pc(q)}%`, i })) });
+      tiles.push({ label: `${Uc} in the green`, big: `${pc(cmpNb[0])}% \u2192 ${pc(cmpNb.at(-1))}%`, text: cmpNb.map((q) => `${q.label}: ${q.nb.posRounds} of ${q.nb.n} ${u}s`).join("\n"), viz: "yBars", v: cmpNb.map((q, i) => ({ label: q.label, t: q.nb.n ? q.nb.posRounds / q.nb.n : 0, txt: `${pc(q)}%`, i })) });
       const sl = (q) => q.nb.streak.len, mxS = Math.max(1, ...cmpNb.map(sl));
-      tiles.push({ label: "Best run", big: `${sl(cmpNb[0])} \u2192 ${sl(cmpNb.at(-1))} ${u}s`, text: cmpNb.map((q) => `${q.label}: ${sl(q) ? `${plural(sl(q), u)}, ${shortDate(new Date(day(q.nb.streak.from)))} \u2013 ${shortDate(new Date(day(q.nb.streak.to)))}` : "none"}`).join("\n"), viz: "yBars", v: cmpNb.map((q, i) => ({ label: q.label, t: sl(q) / mxS, txt: String(sl(q)), i })) });
+      tiles.push({ label: "Best run", big: `${sl(cmpNb[0])} \u2192 ${sl(cmpNb.at(-1))} ${u}s`, text: cmpNb.map((q) => `${q.label}: ${sl(q) ? `${shortDate(new Date(day(q.nb.streak.from)))} \u2013 ${shortDate(new Date(day(q.nb.streak.to)))}` : "none"}`).join("\n"), viz: "yBars", v: cmpNb.map((q, i) => ({ label: q.label, t: sl(q) / mxS, txt: String(sl(q)), i })) });
     } else
     if (nb.n) tiles.push({ label: `${Uc} in the green`, big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of ${u}s.`, viz: "bar", v: pct });
     if (!cmpNb && nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? u : `${u}s`}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
@@ -981,7 +981,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       // (update 582) the DP World Tour's page 2 (Event by event, then this): the cards and This season vs Last season stretched
       // to fill the rest of the page, each card's contents in its middle
       let th = th0, yoH = yoH0;
-      if (isDP) { const base = rows * (th0 + gap) + (yo ? yoH0 + gap : 0), avail = H - 50 - (y + 12 + 40) - 6, f = Math.min(2.2, avail / base); if (f > 1) { th = th0 * f; yoH = yoH0 * f; } }
+      if (isDP && !CMP) { const base = rows * (th0 + gap) + (yo ? yoH0 + gap : 0), avail = H - 50 - (y + 12 + 40) - 6, f = Math.min(2.2, avail / base); if (f > 1) { th = th0 * f; yoH = yoH0 * f; } }
       const cOff = (th - th0) / 2;
       section("By the numbers", "At a glance", rows * (th + gap) + (yo ? yoH + gap : 0));
       tiles.slice(0, 4).forEach((t, i) => {
@@ -1268,7 +1268,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         if (r0.sec !== sec) { sec = r0.sec; stripe = 0; y += 4; d.rect(M, y + 2, 3, 8, { fill: P.gold }); cap(sec, M + 9, y + 9.5, P.gold, "left", 6.6 * K); y += 17; }
         if (stripe++ % 2) d.rect(M, y, W, RH, { fill: P.mist });
         const cells = per.map((m) => m.get(r0.id)?.b || null), def = (cells.find(Boolean) || r0.b).def;
-        d.text(r0.label, M + 8, y + RH / 2 + 3, { size: 8 * K, color: P.ink });
+        d.text(r0.label, M + 8, y + RH / 2 + 3, { size: 8 * K, bold: true, color: P.ink });
         // the best season: the highest (or lowest, for lower-is-better), only when it's clearly ahead of every other
         const vals = cells.map((b) => b?.value ?? null), have = vals.filter((v) => v != null);
         let bestI = -1;
@@ -1279,10 +1279,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           if (i === bestI) d.roundRect(colX(i) + 4, y + 1.5, CW - 8, RH - 3, 4, { fill: P.upTint });
           let xv = xr;
           if (b.rank) { const T = `${b.rank}/${b.of}`, pw = textWidth(T, 5.4 * K, true) + 8 * K, [f, t] = rankColors(b.rank); d.roundRect(xr - pw, y + RH / 2 - 4.5 * K, pw, 9 * K, 4.5 * K, { fill: f }); d.text(T, xr - pw / 2, y + RH / 2 + 2 * K, { size: 5.4 * K, bold: true, color: t, align: "center" }); xv = xr - pw - 6; }
-          d.text(fmtStat(b.def, b.value), xv, y + RH / 2 + 3, { size: 8.5 * K, bold: true, color: i === bestI ? P.up : P.ink, align: "right" });
+          d.text(fmtStat(b.def, b.value), xv, y + RH / 2 + 3, { size: 8.5 * K, color: i === bestI ? P.up : P.ink, align: "right" });
         });
         const v0 = vals[0], v1 = vals.at(-1);
-        if (v0 != null && v1 != null) { const df = v1 - v0, ft = fmtStat(def, Math.abs(df)), same = Math.abs(df) < 1e-9 || !/[1-9]/.test(ft), g = same ? null : better(def, v1, v0), txt = same ? "Same" : `${df > 0 ? "+" : "\u2212"}${ft}`;
+        if (v0 != null && v1 != null) { const df = v1 - v0, same = Math.abs(df) < 1e-9; // (update 696: "Same" only when exactly the same; a tiny difference gets more decimals)
+          let ft = fmtStat(def, Math.abs(df)); for (let dp = (def.pct ? 1 : def.dp ?? 1) + 1; !same && !/[1-9]/.test(ft) && dp <= 4; dp++) ft = fmtStat({ ...def, pct: false, dp, unit: def.pct ? "%" : def.unit }, Math.abs(df));
+          const g = same ? null : better(def, v1, v0), txt = same ? "Same" : `${df > 0 ? "+" : "\u2212"}${ft}`;
           d.text(txt, M + W - 8, y + RH / 2 + 3, { size: 8 * K, bold: true, color: g == null ? P.grey : g ? P.up : P.down, align: "right" }); }
         else d.text("\u2014", M + W - 8, y + RH / 2 + 3, { size: 8 * K, color: P.faint, align: "right" });
         y += RH;
@@ -1446,7 +1448,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap("Equipment", M + 9, y, P.gold); y += 23;
     d.text("By Product", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
     // (update 517: wrapped, so it never runs off the page)
-    for (const l of wrap("Each kind of club (and ball) you've used, with every model of it: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its colour in the key. * Fewer than 10 rounds: read with care.", W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each kind of club (and ball) you've used, with every model of it: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its colour in the key. * Fewer than 10 rounds: read with care.${CMP ? " The vertical dashed line separates the seasons." : ""}`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
     y += 6;
     const FEW = 10;
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its
