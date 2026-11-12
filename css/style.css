@@ -6654,3 +6654,5 @@ div.sh-ud3-green { cursor: default; }
 .ps-hd > summary { list-style: none; cursor: pointer; } .ps-hd > summary::-webkit-details-marker { display: none; }
 .ps-hd[open] .ps-caret { display: inline-block; transform: rotate(90deg); }
 .ps-hd-t { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 4px 0 8px; } .ps-hd-t td { padding: 5px 4px 5px 18px; color: #c7c7cc; border-top: 1px solid #222; } .ps-hd-t .n { text-align: right; padding-left: 4px; }
+/* (update 693) the club picker on a distance row */
+.ps-club { padding: 6px 8px !important; font-size: 0.82rem; max-width: 190px; }

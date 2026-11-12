@@ -21,12 +21,13 @@ async function listLog(owner) {
   try { const { getDocs, collection, db } = await fsP(); const s = await getDocs(collection(db, "practice", owner, "log")); return s.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.at).localeCompare(String(a.at))); }
   catch (err) { console.error(err); return []; }
 }
+async function deleteLog(owner, id) { const { deleteDoc, doc, db } = await fsP(); return deleteDoc(doc(db, "practice", owner, "log", id)); }
 async function saveLog(owner, entry) { const { setDoc, doc, db } = await fsP(); const { id, ...rest } = entry; return setDoc(doc(db, "practice", owner, "log", id), JSON.parse(JSON.stringify(rest))); }
 
 // the distance ranges used across the site (Additional Stats): each part of the game
 const RANGES = [
   ["OTT", "Off the tee", ["Driver", "Non-Driver"]],
-  ["APP", "Approach", ["50-100 yds", "100-140 yds", "140-180 yds", "180-220 yds", ">220 yds"]],
+  ["APP", "Approach", ["50-75 yds", "75-100 yds", "100-120 yds", "120-140 yds", "140-160 yds", "160-180 yds", "180-200 yds", "200-220 yds", ">220 yds"]], // (update 693: 20-yard buckets, as in the data)
   ["ARG", "Short game", ["<30 yds", "30-50 yds", "Bunker"]],
   ["PUTT", "Putting", ["<5 ft", "5-10 ft", "10-15 ft", "15-20 ft", "20-25 ft", ">25 ft"]],
 ];
@@ -40,7 +41,7 @@ const dateTxt = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) 
 const itemDone = (it) => !!it.done || (it.mode !== "time" && (it.setsDone || 0) >= (it.sets || 1)) || (it.mode === "time" && (it.secs || 0) >= (it.minutes || 0) * 60 && (it.minutes || 0) > 0);
 const itemStarted = (it) => (it.setsDone || 0) > 0 || (it.secs || 0) > 0 || !!it.done;
 const stateOf = (s) => (s.items?.length && s.items.every(itemDone) ? "done" : s.run || s.items?.some(itemStarted) ? "prog" : "todo");
-const itemPlan = (it) => (it.mode === "time" ? `${fmtMin(it.minutes)}` : `${it.shots} shots × ${it.sets} set${it.sets === 1 ? "" : "s"}`);
+const itemPlan = (it) => `${it.mode === "time" ? fmtMin(it.minutes) : `${it.shots} shots × ${it.sets} set${it.sets === 1 ? "" : "s"}`}${it.club && !it.byClub ? ` · ${it.club}` : ""}`; // (update 693: with its club)
 const itemProgress = (it) => (it.mode === "time" ? `${fmtMin((it.secs || 0) / 60)} of ${fmtMin(it.minutes)}` : `${Math.min(it.setsDone || 0, it.sets)}/${it.sets} sets`);
 const sessTitle = (s) => s.title || [...new Set((s.items || []).map((x) => AREA[x.cat] || "Practice"))].join(" + ") || "Practice";
 const runSecs = (s) => (s.run?.at ? (Date.now() - Date.parse(s.run.at)) / 1000 : 0);
@@ -97,37 +98,46 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
   }
 
   /* ---------------- create a session ---------------- */
+  // (update 693) by distance range (each with an optional club from your bag) or by club (from WITB); each pick starts
+  // at 10 shots x 3 sets and can be changed on its row (no defaults row on top)
+  const CLUB_AREA = { Driver: "OTT", "Fairway Wood": "APP", Hybrid: "APP", Iron: "APP", Wedge: "ARG", Putter: "PUTT" };
+  let bagP = null;
+  const myBag = () => (bagP ||= (subject.mine && state.user?.uid ? import("../bag.js").then((b) => b.getBag(state.user.uid).then((cs) => cs.map((c) => ({ id: c.id || `${c.cat}|${c.type}`, label: b.clubLabel(c), cat: c.cat, make: b.clubMake(c) })).filter((c) => c.label).sort((x, y) => b.clubRank(x.label) - b.clubRank(y.label)))).catch(() => []) : Promise.resolve([])));
   function createSheet() {
-    const picked = new Map(); // key → { key, cat, label, mode, shots, sets, minutes }
-    let defShots = 10, defSets = 3, defMode = "sets", defMin = 15;
+    const picked = new Map(); // key → { key, cat, label, mode, shots, sets, minutes, club? }
+    let by = "range", bag = [];
     const list = el("div", { class: "ps-create" });
     const num = (v, on, w = 56) => { const i = el("input", { type: "number", min: 1, inputmode: "numeric", class: "ps-num", style: `width:${w}px`, value: v }); i.addEventListener("input", () => on(Math.max(1, Number(i.value) || 1))); return i; };
-    const rowFor = (key, cat, label) => {
-      const on = picked.get(key);
-      const box = el("input", { type: "checkbox", checked: !!on });
-      box.addEventListener("change", () => { if (box.checked) picked.set(key, { key, cat, label, mode: defMode, shots: defShots, sets: defSets, minutes: defMin }); else picked.delete(key); drawList(); });
+    const clubPick = (it) => {
+      if (!bag.length) return null;
+      const sel = el("select", { class: "ps-club", "aria-label": "Club" }, [el("option", { value: "" }, "Club (optional)"), ...bag.map((c) => el("option", { value: c.label, selected: it.club === c.label }, c.make ? `${c.label} · ${c.make}` : c.label))]);
+      sel.addEventListener("change", () => { it.club = sel.value || undefined; });
+      return sel;
+    };
+    const rowFor = (key, cat, label, extra = {}) => {
+      const box = el("input", { type: "checkbox", checked: picked.has(key) });
+      box.addEventListener("change", () => { if (box.checked) picked.set(key, { key, cat, label, mode: "sets", shots: 10, sets: 3, minutes: 15, ...extra }); else picked.delete(key); drawList(); });
       const it = picked.get(key);
       const ctl = it ? el("span", { class: "ps-ctl" }, [
         el("span", { class: "ps-seg sm" }, [["sets", "Shots × sets"], ["time", "Time"]].map(([m, l]) => { const b = el("button", { type: "button", class: it.mode === m ? "on" : "" }, l); b.addEventListener("click", () => { it.mode = m; drawList(); }); return b; })),
         it.mode === "time" ? el("span", { class: "ps-ctl-in" }, [num(it.minutes, (v) => { it.minutes = v; }), " min"]) : el("span", { class: "ps-ctl-in" }, [num(it.shots, (v) => { it.shots = v; }), " shots × ", num(it.sets, (v) => { it.sets = v; }, 48), " sets"]),
+        by === "range" ? clubPick(it) : null,
       ]) : null;
       return el("div", { class: `ps-crow${it ? " on" : ""}` }, [el("label", {}, [box, el("span", {}, label)]), ctl]);
     };
-    const drawList = () => mount(list, [
-      ...RANGES.flatMap(([cat, name, bands]) => [el("p", { class: "ps-t" }, name.toUpperCase()), ...bands.map((b) => rowFor(`${cat}|${b}`, cat, `${name} · ${b}`))]),
-    ]);
-    // the starting amounts for every range ticked after this (each row can be changed on its own)
-    const defs = el("div", { class: "ps-defs" });
-    const drawDefs = () => mount(defs, [el("span", { class: "muted small" }, "Each range ticked starts at"),
-      el("span", { class: "ps-seg sm" }, [["sets", "Shots × sets"], ["time", "Time"]].map(([m, l]) => { const b = el("button", { type: "button", class: defMode === m ? "on" : "" }, l); b.addEventListener("click", () => { defMode = m; drawDefs(); }); return b; })),
-      defMode === "time" ? el("span", { class: "ps-ctl-in" }, [num(defMin, (v) => { defMin = v; }), " min"]) : el("span", { class: "ps-ctl-in" }, [num(defShots, (v) => { defShots = v; }), " shots × ", num(defSets, (v) => { defSets = v; }, 48), " sets"])]);
-    drawDefs(); drawList();
+    const toggle = el("div", { class: "ps-seg" }, [["range", "Distance range"], ["club", "Club"]].map(([k, l]) => { const b = el("button", { type: "button", class: by === k ? "on" : "" }, l); b.addEventListener("click", () => { if (by === k) return; by = k; picked.clear(); [...toggle.children].forEach((x) => x.classList.toggle("on", x === b)); drawList(); }); return b; }));
+    const drawList = () => mount(list, by === "range"
+      ? RANGES.flatMap(([cat, name, bands]) => [el("p", { class: "ps-t" }, name.toUpperCase()), ...bands.map((b) => rowFor(`${cat}|${b}`, cat, `${name} · ${b}`))])
+      : bag.length ? [el("p", { class: "ps-t" }, "YOUR CLUBS (WITB)"), ...bag.map((c) => rowFor(`club|${c.label}`, CLUB_AREA[c.cat] || "OTHER", c.make ? `${c.label} · ${c.make}` : c.label, { club: c.label, byClub: true }))]
+      : [el("p", { class: "muted small" }, subject.mine ? "No clubs in your WITB yet. Add them under WITB (the bag icon at the top), or pick distance ranges instead." : "Clubs come from the player’s own WITB: pick distance ranges for them instead.")]);
+    drawList();
+    myBag().then((b) => { bag = b; drawList(); });
     const name = el("input", { type: "text", class: "ps-in", placeholder: "Name (optional), e.g. Tuesday short game" });
     const ok = el("button", { type: "button", class: "btn" }, "Create session"), cancel = el("button", { type: "button", class: "btn ghost" }, "Cancel");
-    const sheet = modal(subject.mine ? "Create Practice Session" : `Create a session for ${subject.label}`, [name, defs, list, el("div", { class: "ps-btns ps-sticky" }, [ok, cancel])]);
+    const sheet = modal(subject.mine ? "Create Practice Session" : `Create a session for ${subject.label}`, [name, toggle, list, el("div", { class: "ps-btns ps-sticky" }, [ok, cancel])]);
     cancel.addEventListener("click", sheet.close);
     ok.addEventListener("click", async () => {
-      if (!picked.size) { flash("Tick at least one distance range.", "error"); return; }
+      if (!picked.size) { flash(by === "club" ? "Tick at least one club." : "Tick at least one distance range.", "error"); return; }
       const s = { id: newPlanId(), type: "session", title: name.value.trim(), createdAt: new Date().toISOString(), playerKey: subject.key || "",
         createdBy: subject.mine ? { self: true, name: "you" } : { uid: state.user?.uid || null, name: state.profile?.name || (state.isAdmin ? "Callaway" : "Coach") },
         items: [...picked.values()].map((x) => ({ ...x, setsDone: 0, secs: 0, done: false })), run: null };
@@ -147,7 +157,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     // time since Start goes to each range being worked on, shared out
     const bank = () => { const secs = runSecs(s), xs = s.items.filter((x) => s.run.keys.includes(x.key)); if (secs > 0 && xs.length) for (const x of xs) x.secs = (x.secs || 0) + secs / xs.length; s.secs = (s.secs || 0) + secs; s.run.at = new Date().toISOString(); return secs; };
     const logIt = (secs, setsBy) => saveLog(subject.owner, { id: newPlanId(), at: new Date().toISOString(), minutes: Math.round(secs / 60), session: s.id,
-      items: s.items.filter((x) => s.run?.keys?.includes(x.key) || setsBy?.has(x.key)).map((x) => ({ key: x.key, title: x.label, cat: x.cat, sets: setsBy?.get(x.key) || 0 })) });
+      items: s.items.filter((x) => s.run?.keys?.includes(x.key) || setsBy?.has(x.key)).map((x) => ({ key: x.key, title: x.label, cat: x.cat, sets: setsBy?.get(x.key) || 0, ...(x.club ? { club: x.club, byClub: !!x.byClub } : {}) })) });
     const rows = s.items.map((x) => {
       const d = itemDone(x), box = el("input", { type: "checkbox", checked: chosen.has(x.key) && !d, disabled: d || running || !mine });
       box.addEventListener("change", () => { if (box.checked) chosen.add(x.key); else chosen.delete(x.key); });
@@ -178,7 +188,10 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       acts.append(all, pause);
     }
     const del = (mine || canCoach()) ? el("button", { type: "button", class: "link danger" }, "Delete this session") : null;
-    del?.addEventListener("click", async () => { if (!confirm("Delete this practice session?")) return; await deletePlanItem(subject.owner, s.id); openId = null; await load(); draw(); });
+    del?.addEventListener("click", async () => { if (!confirm("Delete this practice session? Its time and sets come out of your totals too.")) return;
+      // (update 693) its logged practice goes too (Where the time went, the week's totals, the coach view)
+      for (const e of log.filter((x) => x.session === s.id)) { try { await deleteLog(subject.owner, e.id); } catch (err) { console.error(err); } }
+      await deletePlanItem(subject.owner, s.id); openId = null; await load(); draw(); });
     return [back,
       el("header", { class: "ps-head" }, [el("h1", {}, sessTitle(s)), el("p", { class: "muted" }, [`Created ${dateTxt(s.createdAt)} `, byPill(s)])]),
       el("div", { class: "ps-runbox" }, [el("span", { class: "muted small" }, running ? "Practising" : "Time so far"), clock]),
@@ -222,7 +235,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     // (update 692) each area, and in it each distance: sets done and time (a stretch's time shared across what was worked on)
     const byArea = new Map();
     for (const e of log.filter((x) => Date.parse(x.at) >= since(30))) { const its = e.items || [], m = Number(e.minutes) || 0; if (!its.length) continue;
-      for (const x of its) { const a = AREA[x.cat] || "Other", A = byArea.get(a) || byArea.set(a, { m: 0, items: new Map() }).get(a), nm = String(x.title || "").split(" \u00b7 ").pop() || "Practice";
+      for (const x of its) { const a = AREA[x.cat] || "Other", A = byArea.get(a) || byArea.set(a, { m: 0, items: new Map() }).get(a), nm = x.byClub ? x.club : `${String(x.title || "").split(" \u00b7 ").pop() || "Practice"}${x.club ? ` (${x.club})` : ""}`; // (update 693: club practice by its club)
         const I = A.items.get(nm) || A.items.set(nm, { m: 0, sets: 0 }).get(nm); A.m += m / its.length; I.m += m / its.length; I.sets += Number(x.sets) || 0; } }
     const maxA = Math.max(1, ...[...byArea.values()].map((v) => v.m)), order = [...byArea].sort((a, b) => b[1].m - a[1].m);
     const group = (st) => sessions.filter((s) => stateOf(s) === st).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
