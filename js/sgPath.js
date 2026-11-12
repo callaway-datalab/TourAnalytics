@@ -1,6 +1,6 @@
 // (sgDashboard split) The Path table: the last N rounds against a level's rounds (or the rest, or the best stretch), with what-ifs.
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
-import { CATEGORIES, LEVELS, MIX_CAUSE, PLAN_ADDED, PLAN_SEEN, bucketsOf, distLead, drillFor, drillLine, el, fmtStat, getState, goalStatsFor, groupSplit, infoTip, isMine, kv, mixLead, mount, planEditor, practiceOpen, sgn2, statDef } from "./sgShared.js";
+import { CATEGORIES, LEVELS, MIX_CAUSE, PLAN_ADDED, PLAN_SEEN, syncPlan, bucketsOf, distLead, drillFor, drillLine, el, fmtStat, getState, goalStatsFor, groupSplit, infoTip, isMine, kv, mixLead, mount, planEditor, practiceOpen, sgn2, statDef } from "./sgShared.js";
 
 /* (update 338) Path back to Elite: the player's last N rounds (10 to start; changeable) against their elite rounds. The gap
  * in strokes, where it comes from (biggest first) with a target in plain stats for each, what hurts in their other rounds
@@ -167,17 +167,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
     mount(status, [`Added ${n} ${n === 1 ? "drill" : "drills"} to ${whose} practice plan${g ? ` and ${g} ${g === 1 ? "goal" : "goals"} to ${S.me?.label ? `${S.me.label}\u2019s` : "the"} Goals` : ""}. `,
       el("a", { href: mineNow ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(S.me?.key || "")}`, class: "link" }, "Open Practice \u2192")]); }
   // (update 387) which drills are really in the plan (one taken out in Practice can be added again): read now and then
-  if (canAdd && S.me?.key && !PLAN_SEEN.busy && (PLAN_SEEN.key !== S.me.key || Date.now() - PLAN_SEEN.at > 15000)) {
-    PLAN_SEEN.busy = true;
-    import("./practice/plan.js").then((m) => m.planFor(getState(), S.me.key)).then((items) => {
-      const before = [...PLAN_ADDED].filter((x) => x.startsWith(`${S.me.key}|`)).sort().join(",");
-      for (const x of [...PLAN_ADDED]) if (x.startsWith(`${S.me.key}|`)) PLAN_ADDED.delete(x);
-      for (const p of items) PLAN_ADDED.add(`${S.me.key}|${p.kind}|${p.dist || ""}|${p.lie || ""}`);
-      const after = [...PLAN_ADDED].filter((x) => x.startsWith(`${S.me.key}|`)).sort().join(",");
-      PLAN_SEEN.key = S.me.key; PLAN_SEEN.at = Date.now(); PLAN_SEEN.busy = false;
-      if (before !== after) S.draw();
-    }).catch(() => { PLAN_SEEN.busy = false; PLAN_SEEN.key = S.me.key; PLAN_SEEN.at = Date.now(); });
-  }
+  if (canAdd && S.me?.key) syncPlan(S.me.key, () => S.draw()); // (update 699: shared, and re-read after Practice deletes one)
   const add = (list, btns) => planEditor(list, whose, (edited) => send(edited, btns));
   const send = async (list, btns) => {
     btns.forEach((b) => { b.disabled = true; });

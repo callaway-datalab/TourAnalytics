@@ -13,7 +13,8 @@ import { el, mount } from "../ui.js";
 import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
-import { listPlan, savePlanItem, deletePlanItem, newPlanId, planOwner } from "../practice/plan.js";
+import { listPlan, savePlanItem, deletePlanItem, newPlanId, planOwner, goalText, goalSource, removeFromPlan } from "../practice/plan.js";
+import { playerPicker } from "../playerPicker.js";
 
 const fsP = () => Promise.all([import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js"), import("../firebase-init.js")]).then(([f, i]) => ({ ...f, db: i.db }));
 async function listLog(owner) {
@@ -45,6 +46,21 @@ const itemPlan = (it) => `${it.mode === "time" ? fmtMin(it.minutes) : `${it.shot
 const itemProgress = (it) => (it.mode === "time" ? `${fmtMin((it.secs || 0) / 60)} of ${fmtMin(it.minutes)}` : `${Math.min(it.setsDone || 0, it.sets)}/${it.sets} sets`);
 const sessTitle = (s) => s.title || [...new Set((s.items || []).map((x) => AREA[x.cat] || "Practice"))].join(" + ") || "Practice";
 const runSecs = (s) => (s.run?.at ? (Date.now() - Date.parse(s.run.at)) / 1000 : 0);
+// (update 699) each range's target for a set ("Hit 7 of 10 fairways", "Average inside 8 ft"): from Stats, the drill's own
+// goal (and where it came from: the average proximity to beat …); made here, picked when the session is made
+const TARGET_KIND = (cat, label, club) => {
+  const c = String(club || ""), l = String(label || "");
+  if (cat === "OTT" || /^driver$/i.test(c)) return "fairway";
+  if (cat === "PUTT" || /putter/i.test(c)) return /(>|\+)\s*25|>25/.test(l) ? "lag" : "make";
+  if (cat === "ARG" || /wedge/i.test(c)) return "prox";
+  return "green";
+};
+const TARGET_DEF = (kind, label) => { if (kind === "fairway") return 7; if (kind === "green") return 6; if (kind === "lag") return 7;
+  if (kind === "prox") return /bunker/i.test(label) ? 10 : /30-50/.test(label) ? 12 : 8;
+  const ft = Number((String(label).match(/\d+/g) || [])[0] || 5); return /</.test(label) ? 9 : ft < 10 ? 5 : ft < 15 ? 3 : ft < 20 ? 2 : 1; };
+const targetText = (t) => (t ? goalText({ kind: t.kind, goal: t.goal, reps: t.reps, unit: t.unit, higher: t.higher, cat: t.cat }) : "");
+const itemTarget = (it, drills = []) => { if (it.target) return it.target; const d = String(it.key || "").startsWith("d:") ? drills.find((x) => `d:${x.id}` === it.key) : null;
+  return d && d.goal != null ? { kind: d.kind, goal: d.goal, reps: d.reps, unit: d.unit, higher: !!d.higher, cat: d.cat, src: goalSource(d) || "" } : null; };
 
 export async function render(main, { flash = () => {}, previewClient = null } = {}) {
   const state = getState(), team = effectiveTeam(state);
@@ -64,7 +80,8 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       for (const d of drills.filter((x) => !x.sessionId)) {
         const sid = newPlanId(), by = d.sentBy?.name ? { uid: d.sentBy.uid || null, name: d.sentBy.name } : { self: true, name: "you" };
         const sess = { id: sid, type: "session", title: d.title || "Practice", createdAt: d.addedAt || new Date().toISOString(), playerKey: d.playerKey || subject.key || "", fromStats: true, createdBy: by,
-          items: [{ key: `d:${d.id}`, cat: d.cat || "OTHER", label: d.title || "Drill", mode: "sets", shots: Number(d.reps) || 10, sets: 3, setsDone: 0, secs: 0, done: false }], run: null };
+          items: [{ key: `d:${d.id}`, cat: d.cat || "OTHER", label: d.title || "Drill", mode: "sets", shots: Number(d.reps) || 10, sets: Number(d.setsAim) || 3, setsDone: 0, secs: 0, done: false,
+            ...(d.goal != null ? { target: { kind: d.kind, goal: d.goal, reps: Number(d.reps) || 10, unit: d.unit || null, higher: !!d.higher, cat: d.cat, src: goalSource(d) || "" } } : {}) }], run: null };
         try { await savePlanItem(subject.owner, sess); await savePlanItem(subject.owner, { ...d, sessionId: sid }); sessions.push(sess); d.sessionId = sid; } catch (err) { console.error(err); }
       }
     }
@@ -79,10 +96,10 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     if (coachPlayers === null) { // the admin: find any player (no box round it)
       const { adminAllClients } = await import("../store.js");
       const all = [...(await adminAllClients().catch(() => ({ labels: new Map() }))).labels].map(([k, l]) => [k, plainName(l)]).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
-      const q = el("input", { type: "search", class: "ps-q", placeholder: "Find a player to see their practice…", "aria-label": "Find a player" }), list = el("div", { class: "ps-picks" });
-      const draw = () => { const t = q.value.trim().toLowerCase(); mount(list, t ? all.filter(([, l]) => String(l).toLowerCase().includes(t)).slice(0, 12).map(([k, l]) => { const b = el("button", { type: "button", class: "chip" }, l); b.addEventListener("click", () => open({ owner: k, key: k, label: l, mine: false })); return b; }) : null); };
-      q.addEventListener("input", draw);
-      return el("section", { class: "ps-find" }, [el("p", { class: "ps-t" }, "PLAYERS’ PRACTICE"), q, list]);
+      // (update 699) the site's own player search (a drop-down as you type, as on every other page)
+      const pp = playerPicker(new Map(all), (p) => { if (p) open({ owner: p.key, key: p.key, label: p.label, mine: false }); else if (!subject.mine) open(self); }, new Map(), null, { autoPick: false });
+      if (!subject.mine && subject.key) pp.preset?.(subject.key);
+      return el("section", { class: "ps-find" }, [el("p", { class: "ps-t" }, "PLAYERS’ PRACTICE"), el("div", { class: "analyze-picker" }, pp.node)]);
     }
     if (!coachPlayers.length) return null;
     const tb = el("tbody", {}, coachPlayers.map(([k, l]) => el("tr", { "data-k": k }, [el("td", {}, l), el("td", { colspan: 4, class: "muted small" }, "Loading…")])));
@@ -116,14 +133,25 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     };
     const rowFor = (key, cat, label, extra = {}) => {
       const box = el("input", { type: "checkbox", checked: picked.has(key) });
-      box.addEventListener("change", () => { if (box.checked) picked.set(key, { key, cat, label, mode: "sets", shots: 10, sets: 3, minutes: 15, ...extra }); else picked.delete(key); drawList(); });
+      box.addEventListener("change", () => { if (box.checked) { const kind = TARGET_KIND(cat, label, extra.club); picked.set(key, { key, cat, label, mode: "sets", shots: 10, sets: 3, minutes: 15, ...extra, target: { kind, goal: TARGET_DEF(kind, label), reps: 10, cat, unit: kind === "prox" ? "ft" : null } }); } else picked.delete(key); drawList(); });
       const it = picked.get(key);
       const ctl = it ? el("span", { class: "ps-ctl" }, [
         el("span", { class: "ps-seg sm" }, [["sets", "Shots × sets"], ["time", "Time"]].map(([m, l]) => { const b = el("button", { type: "button", class: it.mode === m ? "on" : "" }, l); b.addEventListener("click", () => { it.mode = m; drawList(); }); return b; })),
-        it.mode === "time" ? el("span", { class: "ps-ctl-in" }, [num(it.minutes, (v) => { it.minutes = v; }), " min"]) : el("span", { class: "ps-ctl-in" }, [num(it.shots, (v) => { it.shots = v; }), " shots × ", num(it.sets, (v) => { it.sets = v; }, 48), " sets"]),
+        it.mode === "time" ? el("span", { class: "ps-ctl-in" }, [num(it.minutes, (v) => { it.minutes = v; }), " min"]) : el("span", { class: "ps-ctl-in" }, [num(it.shots, (v) => { it.shots = v; if (it.target) { it.target.reps = v; if (it.target.kind !== "prox") it.target.goal = Math.min(it.target.goal, v); } }), " shots × ", num(it.sets, (v) => { it.sets = v; }, 48), " sets"]),
+        targetCtl(it),
         by === "range" ? clubPick(it) : null,
       ]) : null;
       return el("div", { class: `ps-crow${it ? " on" : ""}` }, [el("label", {}, [box, el("span", {}, label)]), ctl]);
+    };
+    // (update 699) the target for a set: "Hit [7] of 10 fairways", "Average inside [8] ft" (empty: no target)
+    const targetCtl = (it) => {
+      const t = it.target; if (!t) return null;
+      const reps = it.mode === "time" ? 10 : it.shots;
+      const inp = el("input", { type: "number", min: t.kind === "prox" ? 0.5 : 0, step: t.kind === "prox" ? 0.5 : 1, inputmode: "decimal", class: "ps-num", style: "width:52px", value: t.goal ?? "", "aria-label": "Target" });
+      inp.addEventListener("input", () => { const v = Number(inp.value); t.goal = inp.value.trim() === "" || !Number.isFinite(v) ? null : t.kind === "prox" ? v : Math.max(0, Math.min(reps, Math.round(v))); });
+      const words = { fairway: ["Target: hit", `of ${reps} fairways`], green: ["Target: hit", `of ${reps} greens`], make: ["Target: hole", `of ${reps}`], lag: ["Target: leave", `of ${reps} inside 3 ft`], prox: ["Target: average inside", "ft"] }[t.kind] || ["Target:", ""];
+      t.reps = reps;
+      return el("span", { class: "ps-ctl-in ps-target" }, [`${words[0]} `, inp, ` ${words[1]}`]);
     };
     const toggle = el("div", { class: "ps-seg" }, [["range", "Distance range"], ["club", "Club"]].map(([k, l]) => { const b = el("button", { type: "button", class: by === k ? "on" : "" }, l); b.addEventListener("click", () => { if (by === k) return; by = k; picked.clear(); [...toggle.children].forEach((x) => x.classList.toggle("on", x === b)); drawList(); }); return b; }));
     const drawList = () => mount(list, by === "range"
@@ -140,7 +168,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       if (!picked.size) { flash(by === "club" ? "Tick at least one club." : "Tick at least one distance range.", "error"); return; }
       const s = { id: newPlanId(), type: "session", title: name.value.trim(), createdAt: new Date().toISOString(), playerKey: subject.key || "",
         createdBy: subject.mine ? { self: true, name: "you" } : { uid: state.user?.uid || null, name: state.profile?.name || (state.isAdmin ? "Callaway" : "Coach") },
-        items: [...picked.values()].map((x) => ({ ...x, setsDone: 0, secs: 0, done: false })), run: null };
+        items: [...picked.values()].map((x) => { const y = { ...x, setsDone: 0, secs: 0, done: false }; if (!y.target || y.target.goal == null) delete y.target; return y; }), run: null };
       ok.disabled = true;
       try { await save(s); sheet.close(); flash("Session created.", "ok"); await load(); openId = s.id; draw(); }
       catch (err) { console.error(err); ok.disabled = false; flash(err?.code === "permission-denied" ? "Not allowed: ask the admin to tick COACHING for you on User Access." : "Couldn’t create the session.", "error"); }
@@ -161,7 +189,10 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     const rows = s.items.map((x) => {
       const d = itemDone(x), box = el("input", { type: "checkbox", checked: chosen.has(x.key) && !d, disabled: d || running || !mine });
       box.addEventListener("change", () => { if (box.checked) chosen.add(x.key); else chosen.delete(x.key); });
-      return el("tr", { class: d ? "ps-done" : running && s.run.keys.includes(x.key) ? "ps-now" : "" }, [el("td", {}, mine ? box : null), el("td", {}, x.label), el("td", {}, itemPlan(x)), el("td", { class: "n" }, d ? "✓ Done" : itemProgress(x))]);
+      const tg = itemTarget(x, drills);
+      return el("tr", { class: d ? "ps-done" : running && s.run.keys.includes(x.key) ? "ps-now" : "" }, [el("td", {}, mine ? box : null), el("td", {}, x.label), el("td", {}, itemPlan(x)),
+        el("td", { class: "ps-tgt" }, tg ? [el("strong", {}, `${targetText(tg)} a set`), tg.src ? el("span", { class: "muted small ps-tgt-src" }, ` (${tg.src})`) : null] : el("span", { class: "muted small" }, "—")),
+        el("td", { class: "n" }, d ? "✓ Done" : itemProgress(x))]);
     });
     const clock = el("b", { class: "ps-clock" }, fmtClock((s.secs || 0) + runSecs(s)));
     clearInterval(tick); if (running) tick = setInterval(() => { if (!clock.isConnected) { clearInterval(tick); return; } clock.textContent = fmtClock((s.secs || 0) + runSecs(s)); }, 1000);
@@ -187,15 +218,19 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       pause.addEventListener("click", async () => { const secs = bank(); s.run = null; await logIt(secs, new Map()); await save(s); await load(); draw(); });
       acts.append(all, pause);
     }
+    if (stateOf(s) === "done" && creator()) { const ag = el("button", { type: "button", class: "btn ps-big" }, "↻ Practice Again"); ag.addEventListener("click", () => practiceAgain(s, ag)); acts.appendChild(ag); }
     const del = (mine || canCoach()) ? el("button", { type: "button", class: "link danger" }, "Delete this session") : null;
     del?.addEventListener("click", async () => { if (!confirm("Delete this practice session? Its time and sets come out of your totals too.")) return;
       // (update 693) its logged practice goes too (Where the time went, the week's totals, the coach view)
       for (const e of log.filter((x) => x.session === s.id)) { try { await deleteLog(subject.owner, e.id); } catch (err) { console.error(err); } }
+      // (update 699) a session from Stats takes its drill (and the goal it made) out of the plan, so Stats offers "Add to Practice" again
+      for (const dr of drills.filter((x) => x.sessionId === s.id)) { try { await removeFromPlan(state, { drill: dr, playerKey: dr.playerKey || null }); } catch (err) { console.error(err); try { await deletePlanItem(subject.owner, dr.id); } catch { /* */ } } }
+      window.__taPlanChanged = Date.now();
       await deletePlanItem(subject.owner, s.id); openId = null; await load(); draw(); });
     return [back,
       el("header", { class: "ps-head" }, [el("h1", {}, sessTitle(s)), el("p", { class: "muted" }, [`Created ${dateTxt(s.createdAt)} `, byPill(s)])]),
       el("div", { class: "ps-runbox" }, [el("span", { class: "muted small" }, running ? "Practising" : "Time so far"), clock]),
-      el("div", { class: "ps-tw" }, el("table", { class: "ps-sess-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", {}, "Range"), el("th", {}, "Plan"), el("th", { class: "n" }, "Progress")])), el("tbody", {}, rows)])),
+      el("div", { class: "ps-tw" }, el("table", { class: "ps-sess-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", {}, "Range"), el("th", {}, "Plan"), el("th", {}, "Target"), el("th", { class: "n" }, "Progress")])), el("tbody", {}, rows)])),
       mine && !running && stateOf(s) !== "done" ? el("p", { class: "muted small" }, "Tick what you’re working on now, then start.") : null,
       acts, del];
   }
@@ -212,10 +247,24 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     const b = el("button", { type: "button", class: `ps-scard ${st}` }, [
       el("span", { class: "ps-row" }, [el("strong", {}, sessTitle(s)), el("span", { class: "ps-pills" }, [byPill(s), el("span", { class: `ps-pill ${st}` }, st === "done" ? "Completed" : st === "prog" ? (s.run ? "Practising now" : `In progress · ${d}/${n}`) : "Not started")])]),
       el("span", { class: "ps-goaltxt" }, `${n} range${n === 1 ? "" : "s"} · ${fmtMin((s.secs || 0) / 60 + runSecs(s) / 60)} so far · created ${dateTxt(s.createdAt)}`),
+      (() => { const ts = s.items.map((x) => itemTarget(x, drills)).filter(Boolean); return ts.length ? el("span", { class: "ps-goaltxt ps-card-tgt" }, `Target: ${n === 1 ? targetText(ts[0]) : `${ts.length} target${ts.length === 1 ? "" : "s"} set`} a set${n === 1 && ts[0].src ? ` (${ts[0].src})` : ""}`) : null; })(),
       el("span", { class: "ps-bar" }, el("i", { style: `width:${n ? (100 * d) / n : 0}%;${st === "done" ? "background:#30d158" : ""}` })),
     ]);
     b.addEventListener("click", () => { openId = s.id; draw(); window.scrollTo(0, 0); });
-    return b;
+    // (update 699) a finished session: Practice Again (a fresh copy, Not yet started)
+    if (st !== "done" || !creator()) return b;
+    const again = el("button", { type: "button", class: "btn ghost ps-again" }, "↻ Practice Again");
+    again.addEventListener("click", () => practiceAgain(s, again));
+    return el("div", { class: "ps-scard-row" }, [b, again]);
+  }
+  async function practiceAgain(s, btn) {
+    if (btn) btn.disabled = true;
+    const c = { ...s, id: newPlanId(), createdAt: new Date().toISOString(), run: null, secs: 0, againOf: s.id,
+      createdBy: subject.mine ? { self: true, name: "you" } : { uid: state.user?.uid || null, name: state.profile?.name || (state.isAdmin ? "Callaway" : "Coach") },
+      items: s.items.map((x) => ({ ...x, target: itemTarget(x, drills) || undefined, setsDone: 0, secs: 0, done: false })) };
+    if (!c.items.some((x) => x.target)) c.items.forEach((x) => delete x.target);
+    try { await save(c); flash("A fresh copy is in Not yet started.", "ok"); await load(); openId = c.id; draw(); window.scrollTo(0, 0); }
+    catch (err) { console.error(err); if (btn) btn.disabled = false; flash("Couldn’t copy the session.", "error"); }
   }
   function modal(title, kids) {
     const back = el("div", { class: "ps-modal-back" }), box = el("section", { class: "ps-modal", role: "dialog", "aria-modal": "true", "aria-label": title }, [el("h2", {}, title), ...kids.filter(Boolean)]);

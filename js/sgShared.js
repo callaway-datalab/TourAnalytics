@@ -21,6 +21,21 @@ import { drillFor, drillLine, practiceOpen, goalStatsFor, isMine } from "./pract
 const LEVELS = { 1: "Best on Tour", 10: "Contender", 25: "Tour Championship level", 50: "Signature event level" };
 const PLAN_ADDED = new Set(); // drills in the player's practice plan (update 387: read from the plan itself)
 const PLAN_SEEN = { key: null, at: 0, busy: false };
+// (update 699) which drills are really in a player's plan, read now and then (and straight away after Practice deletes
+// a session: window.__taPlanChanged), for every "Add to practice" button on the Stats page
+function syncPlan(key, redraw) {
+  if (!key || PLAN_SEEN.busy) return;
+  if (PLAN_SEEN.key === key && Date.now() - PLAN_SEEN.at <= 15000 && PLAN_SEEN.at >= (window.__taPlanChanged || 0)) return;
+  PLAN_SEEN.busy = true;
+  import("./practice/plan.js").then((m) => m.planFor(getState(), key)).then((items) => {
+    const before = [...PLAN_ADDED].filter((x) => x.startsWith(`${key}|`)).sort().join(",");
+    for (const x of [...PLAN_ADDED]) if (x.startsWith(`${key}|`)) PLAN_ADDED.delete(x);
+    for (const p of items) PLAN_ADDED.add(`${key}|${p.kind}|${p.dist || ""}|${p.lie || ""}`);
+    const after = [...PLAN_ADDED].filter((x) => x.startsWith(`${key}|`)).sort().join(",");
+    PLAN_SEEN.key = key; PLAN_SEEN.at = Date.now(); PLAN_SEEN.busy = false;
+    if (before !== after) redraw?.();
+  }).catch(() => { PLAN_SEEN.busy = false; PLAN_SEEN.key = key; PLAN_SEEN.at = Date.now(); });
+}
 /* (update 345) Per shot or how often? A difference in strokes gained a round for a part of the game and distance splits
  * exactly in two (update 348: weighed by their usual per-shot level, U, over the whole time frame, so a strength or a weakness
  * is the same whichever rounds are compared):
@@ -188,4 +203,4 @@ function planEditor(list, whose, onOk, intro = null) {
   if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
 }
 
-export { careerBlocks, statBlocksCmp, getState, drillFor, drillLine, practiceOpen, goalStatsFor, isMine, favoriteKeys, el, mount, loadScript, infoTip, CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate, missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList, distLead, localDay, LEVELS, PLAN_ADDED, PLAN_SEEN, bucketsOf, groupSplit, kv, sgn2, splitOf, sumSplit, mixWords, mixLead, MIX_CAUSE, CHART_JS, SPANS, SUMMARY, BREAKDOWNS, LEAVE_SCALE, nf1, catName, peakNote, planEditor };
+export { careerBlocks, statBlocksCmp, getState, drillFor, drillLine, practiceOpen, goalStatsFor, isMine, favoriteKeys, el, mount, loadScript, infoTip, CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate, missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList, distLead, localDay, LEVELS, PLAN_ADDED, PLAN_SEEN, syncPlan, bucketsOf, groupSplit, kv, sgn2, splitOf, sumSplit, mixWords, mixLead, MIX_CAUSE, CHART_JS, SPANS, SUMMARY, BREAKDOWNS, LEAVE_SCALE, nf1, catName, peakNote, planEditor };

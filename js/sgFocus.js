@@ -4,7 +4,7 @@
 // gained there since they added it); and what to keep doing. Full stats is one tap away (the switch above it).
 // Takes S first, like the other Stats page sections (see sgDashboard.js).
 import { radar, radarKey, catVals, yearSplit, trendArrow } from "./radarChart.js"; // (update 611; 613: the arrow)
-import { el, mount, infoTip, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
+import { el, mount, infoTip, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, syncPlan, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
 
 const CAT = Object.fromEntries(CATEGORIES);
 const f2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
@@ -179,6 +179,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     return { gs: null, from: "best 10 rounds", note: whereTxt ? `no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}${whereTxt}` + sgGoal : (have.size ? `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}; it has ${[...have].slice(0, 5).join(", ")}` : `the data has no ${want} stat for ${CAT[cat]}${dist ? ` from ${dist}` : ""}, only strokes gained`) + sgGoal };
   };
   const sig = (d) => `${me.key}|${d.kind}|${d.dist || ""}|${d.lie || ""}`;
+  if (canAdd && me?.key) syncPlan(me.key, () => S.draw()); // (update 699: what's really in the plan, so a deleted session offers Add again)
   const itemFor = (b) => {
     // (update 472) the drill's goal: the stat that fits it, in their own level rounds for that part of the game
     const { gs, from, stretch, note } = goalFor(b.cat, b.dist);
@@ -188,7 +189,12 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     if (note) drill.noStat = note; // (update 477)
     if (gs?.field) drill.fieldGoal = true; // (update 489)
     // the goal in real rounds: strokes gained there back to the tour average (0), over the next N rounds
-    const goal = { stat: "skill", cat: b.cat, dist: b.dist, target: 0, measure: "round", when: "nextN", n: N };
+    // (update 699) in the drill's own stat when it has one (Hit Fairway %, Proximity …), at the drill's own number; else
+    // strokes gained back to the tour average
+    const t = gs && !gs.thin && gs.def ? gs : null, sc = t ? (t.def.pct ? 10 : 10 ** Math.min(2, t.def.dp ?? 1)) : 1;
+    const goal = t ? { stat: "obs", statKey: t.k, cat: t.exact !== false ? b.cat : null, dist: t.exact !== false ? b.dist || null : null, label: t.def.label, unit: t.def.pct ? "%" : t.def.unit || "", higher: t.def.higher !== false, dp: t.def.dp ?? 1,
+      target: Math.round(t.ve * sc) / sc, measure: "round", when: "nextN", n: N }
+      : { stat: "skill", cat: b.cat, dist: b.dist, target: 0, measure: "round", when: "nextN", n: N };
     return { drill, goal, stretch };
   };
   const send = async (list, btns) => {
