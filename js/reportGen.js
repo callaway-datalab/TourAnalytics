@@ -817,7 +817,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         if (j) d.line(xL, top - 5, xL, top + ht + 3, { color: P.ink, width: 1, dash: [4, 2.5] });
         // (update 695) by round, as the cover (an event of 4 rounds counts twice one of 2)
         const wts = src.slice(i0, i1).map((q) => q.rounds || 1), av = wts.length ? vals.slice(i0, i1).reduce((t, v, k) => t + v * wts[k], 0) / wts.reduce((t, v) => t + v, 0) : null;
-        if (av != null && xR - xL > 30) { d.line(xL + 2, Y(av), xR - 2, Y(av), { color: yi >= 0 ? ycol(yi) : P.ink, width: 1, dash: [1.5, 1.5] });
+        if (false && av != null && xR - xL > 30) { // (update 697: no season average lines) d.line(xL + 2, Y(av), xR - 2, Y(av), { color: yi >= 0 ? ycol(yi) : P.ink, width: 1, dash: [1.5, 1.5] });
           d.text(`Avg ${fmtSG(av)}`, xR - (j < segs.length - 1 ? 8 : 4), Y(av) - 3, { size: 6.5, bold: true, color: tone(av), align: "right" }); }
       });
     }
@@ -830,7 +830,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
     // (update 577) wrapped to the page's width (it ran off the right edge)
-    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 20} ${U}s: when it rises, the player is playing better.${CMP ? " The dashed lines divide the seasons; the dotted line across each is that season's average." : ""}`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 20} ${U}s: when it rises, the player is playing better.${CMP ? " The vertical dashed line separates the seasons." : ""}`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
     y -= 10;
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
@@ -1070,7 +1070,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
     section("Detail", "Skill by Skill", 52);
-    d.text("Strokes gained a round in each skill, against the Tour.", M, y + 1, { size: 9.6, color: P.grey });
+    d.text(CMP ? `Strokes gained a round in each skill, a bar for each season (${CMP.map((q) => q.label).join(", ")}). Diff: ${A1.label} against ${A0.label}.` : "Strokes gained a round in each skill, against the Tour.", M, y + 1, { size: 9.6, color: P.grey });
     y += 14;
     const sg = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
     const rows = byDist.filter((g) => g.perRound != null && Number.isFinite(g.perRound));
@@ -1086,7 +1086,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const win = [...rows].filter((g) => gapOf(g) > 0.005).sort((p, q) => gapOf(q) - gapOf(p))[0] || null;
 
     // ---- the four tiles ----
-    const tw = (W - 2 * 8) / 3, th = 74, ty = y; // (update 651: three tiles, no Quickest win)
+    const tw = (W - 2 * 8) / 3, th = CMP ? -6 : 74, ty = y; // (update 651: three tiles, no Quickest win) (update 697: none on the comparison report)
     const tile = (i, kicker, value, vcol, line, dark = false) => {
       const x = M + i * (tw + 8);
       d.roundRect(x, ty, tw, th, 9, { fill: dark ? "#141414" : P.mist });
@@ -1096,12 +1096,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       ls.forEach((t, k) => d.text(t, x + 10, ty + 54 + k * 9.2, { size: 7.6, color: dark ? "#c7c7cc" : P.grey }));
     };
     const net = a.overall?.value;
+    if (!CMP) {
     tile(0, "Net a round", net != null ? sg(net) : "—", net == null ? "#ffffff" : net >= 0 ? "#34c759" : "#ff6b5e",
       [a.overall?.rank ? `Rank ${a.overall.rank} of ${a.overall.of}` : "", a.netTrend != null && Math.abs(a.netTrend) >= 0.01 ? `${a.netTrend >= 0 ? "up" : "down"} ${Math.abs(a.netTrend).toFixed(2)} on the ${a.halves?.n || ""} ${a.halves?.unit || "rounds"} before`.replace(/\s+/g, " ") : ""].filter(Boolean).join(" · "), true);
     if (best && best.perRound > 0) tile(1, "Biggest weapon", sg(best.perRound), P.up, `${full(best)}${best.rank ? ` · rank ${best.rank}` : ""}`);
     else tile(1, "Biggest weapon", "—", P.soft, "No skill gaining yet");
     if (worst && worst.perRound < 0) tile(2, "Biggest leak", sg(worst.perRound), P.down, `${full(worst)}${worst.rank ? ` · rank ${worst.rank}` : ""}`);
     else tile(2, "Biggest leak", "—", P.soft, "Nothing losing strokes");
+    }
     y = ty + th + 6;
 
     // ---- the insights (written now, drawn at the bottom; their height is known before the bars are sized) ----
@@ -1145,14 +1147,18 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const keyH = 16, avail = H - 50 - y - insH - keyH;
     const units = rows.length + areas.length * 1.7;
     const rh = Math.max(7.5, Math.min(30, avail / units)), fz = Math.max(6.4, Math.min(11, rh * 0.46));
-    const labW = W * 0.24, valW = 40, pillW = 50, bx0 = M + labW, bw = W - labW - valW - pillW - 10, mid = bx0 + bw / 2;
-    const span = Math.max(0.1, ...rows.map((g) => Math.abs(g.perRound)), ...rows.map((g) => Math.abs(g.top10 ?? 0))) * 1.05;
+    const labW = W * 0.24, valW = CMP ? 34 * nY : 40, pillW = 50, bx0 = M + labW, bw = W - labW - valW - pillW - 10, mid = bx0 + bw / 2;
+    // (update 697) Compare: each season's value for a skill (the same distance and lie in that season's groups)
+    const gOf = (i, g) => (CMP[i].a.groups || []).find((h) => h.cat === g.cat && h.key === g.key && !!h.withLie === !!g.withLie && h.perRound != null && Number.isFinite(h.perRound)) || null;
+    const catTot = (i, c) => CMP[i].a.byCat?.find((b) => b.cat === c)?.value ?? null;
+    const span = Math.max(0.1, ...rows.map((g) => Math.abs(g.perRound)), ...(CMP ? rows.flatMap((g) => CMP.map((_, i) => Math.abs(gOf(i, g)?.perRound ?? 0))) : rows.map((g) => Math.abs(g.top10 ?? 0)))) * 1.05;
     const X = (v) => mid + (v / span) * (bw / 2);
     for (const ar of areas) {
       y += rh * 1.05;
       d.text(ar.name, M, y, { size: fz + 2.2, bold: true, color: P.ink });
       d.text(`${plural(ar.list.length, "skill")}`, M + textWidth(ar.name, fz + 2.2, true) + 6, y, { size: fz - 0.6, color: P.soft });
-      d.text(sg(ar.total), M + W, y, { size: fz + 2.2, bold: true, color: tone(ar.total), align: "right" });
+      if (CMP) { let xr = M + W; for (let i = nY - 1; i >= 0; i--) { const v = catTot(i, ar.cat), t = v == null ? "\u2014" : sg(v); d.text(t, xr, y, { size: fz + 1.4, bold: true, color: tone(v), align: "right" }); xr -= textWidth(t, fz + 1.4, true) + 4; d.text(String(CMP[i].label), xr, y, { size: fz - 0.6, bold: true, color: ycol(i), align: "right" }); xr -= textWidth(String(CMP[i].label), fz - 0.6, true) + 12; } }
+      else d.text(sg(ar.total), M + W, y, { size: fz + 2.2, bold: true, color: tone(ar.total), align: "right" });
       d.line(M, y + 3.2, M + W, y + 3.2, { color: P.ink, width: 0.9 });
       y += rh * 0.65;
       for (const g of ar.list) {
@@ -1160,6 +1166,17 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         d.text(dist, M, cy + fz * 0.35, { size: fz, color: "#3a3a3c" });
         if (lie) d.text(lie, M + textWidth(dist, fz, false) + 4, cy + fz * 0.35, { size: fz - 1.4, color: P.soft });
         d.line(mid, y + 1.5, mid, y + rh - 1.5, { color: "#c7c7cc", width: 0.5 });
+        if (CMP) {
+          // (update 697) a thin bar for each season, in its colour; each season's value; Diff (the last against the first)
+          const vs = CMP.map((_, i) => gOf(i, g)?.perRound ?? null), bt = Math.max(4, rh * 0.62), bh1 = (bt - (nY - 1)) / nY;
+          vs.forEach((v, i) => { if (v == null) return; const x1 = X(v), len = Math.abs(x1 - mid); if (len < 0.4) return; d.rect(Math.min(mid, x1), cy - bt / 2 + i * (bh1 + 1), len, bh1, { fill: ycol(i) }); });
+          const vz = Math.max(5.6, fz - 0.6), slotW = valW / nY;
+          vs.forEach((v, i) => d.text(v == null ? "\u2014" : sg(v), bx0 + bw + 6 + slotW * (i + 1), cy + vz * 0.38, { size: vz, bold: true, color: v == null ? P.faint : tone(v), align: "right" }));
+          const v0 = vs[0], v1 = vs.at(-1);
+          if (v0 != null && v1 != null) { const r2 = Math.round((v1 - v0) * 100) / 100, T = r2 ? `${r2 > 0 ? "+" : "\u2212"}${Math.abs(r2).toFixed(2)}` : "0.00", ps = Math.max(5.2, fz - 1.6), pw = textWidth(T, ps, true) + ps * 1.8, ph = ps * 1.85;
+            d.roundRect(M + W - pw, cy - ph / 2, pw, ph, ph / 2, { fill: r2 > 0 ? P.up : r2 < 0 ? P.down : "#8e8e93" }); d.text(T, M + W - pw / 2, cy + ps * 0.36, { size: ps, bold: true, color: "#ffffff", align: "center" }); }
+          y += rh; continue;
+        }
         const bh = Math.max(4, rh * 0.48), x1 = X(g.perRound);
         // (update 651) square at zero, rounded only at the far end
         if (Math.abs(x1 - mid) >= 0.6) { const len = Math.abs(x1 - mid), rr = Math.min(2, bh / 3, len / 2), fill = g.perRound >= 0 ? P.up : P.down;
@@ -1174,9 +1191,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // the key
     y += 11;
     { let kx = M; const k = (draw, t) => { draw(kx); d.text(t, kx + 14, y, { size: 7, color: P.grey }); kx += 14 + textWidth(t, 7, false) + 14; };
+      if (CMP) { CMP.forEach((q, i) => k((x) => d.roundRect(x, y - 5.5, 10, 6, 1.5, { fill: ycol(i) }), String(q.label))); k((x) => d.roundRect(x, y - 6, 12, 7, 3.5, { fill: P.up }), `Diff: ${A1.label} against ${A0.label}`); }
+      else {
       k((x) => d.roundRect(x, y - 5.5, 10, 6, 1.5, { fill: P.up }), "gaining");
       k((x) => d.roundRect(x, y - 5.5, 10, 6, 1.5, { fill: P.down }), "losing");
-      k((x) => d.line(x + 5, y - 7, x + 5, y + 1, { color: "#8e8e93", width: 0.9, dash: [1.6, 1.2] }), "the Tour's best 10%");
+      k((x) => d.line(x + 5, y - 7, x + 5, y + 1, { color: "#8e8e93", width: 0.9, dash: [1.6, 1.2] }), "the Tour's best 10%"); }
       d.text("bar length = strokes a round", kx, y, { size: 7, color: P.grey }); }
     y += 10;
     // the insights, two a row
@@ -1251,7 +1270,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       for (const l of wrap(`Each season side by side: the value and its rank that season (out of the players compared that season). The better season for each stat is highlighted in green. Diff: ${A1.label} against ${A0.label} (green = better).`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
       y += 4;
       const nSec = new Set(order.map((r) => r.sec)).size, LW = Math.min(W * 0.34, 190), DW = 64, CW = (W - LW - DW) / nY;
-      const RH = Math.max(15, Math.min(26, (H - 56 - y - 26 - nSec * 21) / order.length)), K = Math.min(1.3, Math.max(1, RH / 17)); // (update 695: bigger type when there's room) // (taller rows when the page has room)
+      // (update 697) sized so the whole table fits on one page when it can (smaller type for a long one)
+      const RH = Math.max(11, Math.min(22, (H - 54 - y - 26 - nSec * 20) / order.length)), K = Math.min(1.15, Math.max(0.82, RH / 17)); // (update 695: bigger type when there's room) // (taller rows when the page has room)
       const colX = (i) => M + LW + i * CW;
       const headRow = () => {
         d.roundRect(M, y, W, 20, 5, { fill: P.night });
@@ -1264,8 +1284,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const better = (def, x, ref) => (def.higher == null || Math.abs(x - ref) < 1e-9 ? null : def.higher ? x > ref : x < ref);
       let sec = null, stripe = 0;
       for (const r0 of order) {
-        if (y + RH + (r0.sec !== sec ? 21 : 0) > H - 50) { newPage(); headRow(); sec = null; }
-        if (r0.sec !== sec) { sec = r0.sec; stripe = 0; y += 4; d.rect(M, y + 2, 3, 8, { fill: P.gold }); cap(sec, M + 9, y + 9.5, P.gold, "left", 6.6 * K); y += 17; }
+        if (y + RH + (r0.sec !== sec ? 19 : 0) > H - 50) { newPage(); headRow(); sec = null; }
+        if (r0.sec !== sec) { sec = r0.sec; stripe = 0; y += 3; d.rect(M, y + 2, 3, 8, { fill: P.gold }); cap(sec, M + 9, y + 9.5, P.gold, "left", 6.6 * K); y += 16; }
         if (stripe++ % 2) d.rect(M, y, W, RH, { fill: P.mist });
         const cells = per.map((m) => m.get(r0.id)?.b || null), def = (cells.find(Boolean) || r0.b).def;
         d.text(r0.label, M + 8, y + RH / 2 + 3, { size: 8 * K, bold: true, color: P.ink });
