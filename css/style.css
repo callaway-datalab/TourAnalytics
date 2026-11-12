@@ -6696,3 +6696,7 @@ div.sh-ud3-green { cursor: default; }
 .lm-sess { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #2a2a2e; flex-wrap: wrap; }
 .lm-sess:first-of-type { border-top: 0; }
 .lm-empty { padding: 18px 2px; }
+/* (update 702) the Practice Sessions / Launch Monitor toggle only as wide as its two buttons; Add a session with no card behind it */
+.ps-seg.ps-tabs { display: inline-flex; width: auto; max-width: max-content; justify-self: start; align-self: flex-start; }
+.ps-seg.ps-tabs > button { flex: 0 0 auto; }
+.ps-card.lm-import { background: none; border: 0; box-shadow: none; padding: 0; }
