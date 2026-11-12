@@ -6700,3 +6700,11 @@ div.sh-ud3-green { cursor: default; }
 .ps-seg.ps-tabs { display: inline-flex; width: auto; max-width: max-content; justify-self: start; align-self: flex-start; }
 .ps-seg.ps-tabs > button { flex: 0 0 auto; }
 .ps-card.lm-import { background: none; border: 0; box-shadow: none; padding: 0; }
+/* (update 703) each chart's club chips; a club's models */
+.lm-cbar { margin: 8px 0 2px; }
+.lm-cchip.lm-split { font-size: 0.75rem; padding: 4px 9px; opacity: .85; }
+.lm-cchip.lm-model { font-size: 0.78rem; border-style: dashed; }
+.lm-mrow td:first-child { padding-left: 26px; font-weight: 600; }
+.lm-shot td.lm-in2 { padding-left: 40px; }
+.ps-tw table.lm-t th:first-child, .ps-tw table.lm-t td:first-child { text-align: left !important; }
+.ps-tw table.lm-t .n { text-align: right !important; }

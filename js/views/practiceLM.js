@@ -25,7 +25,9 @@ const s = (tag, attrs = {}, kids = []) => { const n = document.createElementNS(S
 export async function renderLM(box, { owner, canWrite = false, flash = () => {}, who = "" } = {}) {
   let sessions = [], loading = true;
   const narrow = () => (box.clientWidth || window.innerWidth) < 640; // (a phone: the charts narrower and taller, so they're readable)
-  const f = { sess: new Set(), clubs: new Set(), min: "", max: "", view: "carry", metric: "carry", open: new Set() };
+  const f = { sess: new Set(), clubs: new Set(), min: "", max: "", view: "carry", metric: "carry", open: new Set(),
+    // (update 703) each chart's own clubs: which are shown (none picked: all) and which are split into their models
+    cf: { disp: { sel: new Set(), split: new Set() }, traj: { sel: new Set(), split: new Set() }, table: { sel: new Set(), split: new Set() }, time: { sel: new Set(), split: new Set() } } };
   async function load() { loading = true; draw(); try { sessions = await listLM(owner); } catch (err) { console.error(err); sessions = []; } loading = false; draw(); }
 
   /* ---------- import ---------- */
@@ -68,11 +70,37 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
 
   /* ---------- the shots, filtered ---------- */
   const allShots = () => withGroups(sessions.flatMap((x) => x.shots.map((sh) => ({ ...sh, sid: x.id, src: x.src, sdate: x.date })))); // (update 701: g, the club and its model)
-  const clubsAll = () => byClub(allShots()).map((c) => c.club);
-  const colorOf = (club) => { const i = clubsAll().indexOf(club); return PAL[(i < 0 ? 0 : i) % PAL.length]; };
+  const clubsAll = () => byClub(allShots().map((x) => ({ ...x, g: x.c }))).map((c) => c.club);
+  const modelsOf = (club, shots = allShots()) => [...new Set(shots.filter((x) => x.c === club && x.g !== x.c).map((x) => x.g))].sort();
+  const shade = (hex, t) => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => Math.round(t >= 0 ? v + (255 - v) * t : v * (1 + t))); return `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`; };
+  const colorOf = (label) => {
+    const cs = clubsAll(), i = cs.indexOf(label); if (i >= 0) return PAL[i % PAL.length];
+    const club = cs.find((c) => String(label).startsWith(`${c} · `)); if (!club) return "#8e8e93";
+    const base = PAL[cs.indexOf(club) % PAL.length], j = modelsOf(club).indexOf(label), steps = [0.35, -0.35, 0.6, -0.55, 0.15, -0.15];
+    return shade(base, steps[j % steps.length] ?? 0);
+  };
+  // (update 703) a chart's shots and their rows: each club as one, or split into its models where that chart says so
+  const chartShots = (K, shots) => { const c = f.cf[K]; return shots.filter((x) => !c.sel.size || c.sel.has(x.c) || c.sel.has(x.g)).map((x) => ({ ...x, g: c.split.has(x.c) ? x.g : x.c })); };
+  const chartGroups = (K, shots) => byClub(chartShots(K, shots)).map((c) => ({ ...c, color: colorOf(c.club) }));
+  function clubBar(K, shots) {
+    const c = f.cf[K], clubs = byClub(shots.map((x) => ({ ...x, g: x.c }))).map((q) => q.club);
+    const chip = (on, kids, click, cls = "") => { const b = el("button", { type: "button", class: `chip lm-cchip${on ? " on" : ""} ${cls}`, "aria-pressed": String(on) }, kids); b.addEventListener("click", click); return b; };
+    const tog = (k) => { if (c.sel.has(k)) c.sel.delete(k); else c.sel.add(k); draw(); };
+    const out = [chip(!c.sel.size, "All", () => { c.sel.clear(); draw(); })];
+    for (const club of clubs) {
+      const ms = modelsOf(club, shots);
+      out.push(chip(c.sel.has(club), [el("i", { class: "lm-dot", style: `background:${colorOf(club)}` }), ` ${club}`], () => tog(club)));
+      if (ms.length > 1) {
+        const open = c.split.has(club);
+        out.push(chip(open, `${open ? "▾" : "▸"} ${ms.length} models`, () => { if (open) { c.split.delete(club); for (const m of ms) c.sel.delete(m); } else c.split.add(club); draw(); }, "lm-split"));
+        if (open) for (const m of ms) out.push(chip(c.sel.has(m), [el("i", { class: "lm-dot", style: `background:${colorOf(m)}` }), ` ${m.slice(club.length + 3)}`], () => tog(m), "lm-model"));
+      }
+    }
+    return el("div", { class: "lm-frow lm-cbar" }, out);
+  }
   const shown = () => {
     const lo = f.min === "" ? -Infinity : Number(f.min), hi = f.max === "" ? Infinity : Number(f.max);
-    return allShots().filter((x) => !x.x && (!f.sess.size || f.sess.has(x.sid)) && (!f.clubs.size || f.clubs.has(x.g)) && (x.carry == null ? lo === -Infinity && hi === Infinity : x.carry >= lo && x.carry <= hi));
+    return allShots().filter((x) => !x.x && (!f.sess.size || f.sess.has(x.sid)) && (x.carry == null ? lo === -Infinity && hi === Infinity : x.carry >= lo && x.carry <= hi));
   };
 
   /* ---------- filters ---------- */
@@ -85,15 +113,14 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
     return el("section", { class: "lm-filters" }, [
       el("div", { class: "lm-frow" }, [el("span", { class: "lm-flab" }, "Sessions"), chip(!f.sess.size, "All", () => { f.sess.clear(); draw(); }),
         ...sessions.map((x) => chip(f.sess.has(x.id), ` ${dTxt(x.date)} · ${x.shots.length}`, () => toggle(f.sess, x.id), el("i", { class: `lm-dot ${x.src}` }), `${SRC[x.src]} · ${VIA[x.via] || ""}`))]),
-      el("div", { class: "lm-frow" }, [el("span", { class: "lm-flab" }, "Clubs"), chip(!f.clubs.size, "All", () => { f.clubs.clear(); draw(); }),
-        ...clubsAll().map((c) => chip(f.clubs.has(c), ` ${c}`, () => toggle(f.clubs, c), el("i", { class: "lm-dot", style: `background:${colorOf(c)}` })))]),
       el("div", { class: "lm-frow" }, [el("span", { class: "lm-flab" }, "Carry"), lo, el("span", { class: "muted small" }, "to"), hi, el("span", { class: "muted small" }, "yds"),
         (f.min || f.max) ? chip(false, "Clear", () => { f.min = ""; f.max = ""; draw(); }) : null]),
     ]);
   }
 
   /* ---------- dispersion: from above ---------- */
-  function dispersion(shots, clubs) {
+  function dispersion(all) {
+    const shots = chartShots("disp", all), clubs = chartGroups("disp", all);
     const tot = f.view === "total", X = (sh) => (tot ? sh.total : sh.carry), Y = (sh) => (tot ? sh.totalSide ?? sh.side : sh.side);
     const pts = shots.filter((sh) => X(sh) != null && Y(sh) != null);
     const W = narrow() ? 560 : 1000, H = narrow() ? 380 : 340, pl = 36, pr = 14, pt = 12, pb = 26;
@@ -116,12 +143,13 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
       for (const p of cs) g.append(s("circle", { cx: sx(X(p)), cy: sy(Y(p)), r: 6, fill: c.color, stroke: "#0b0b0d", "stroke-width": 1.5 }, s("title", {}, `${p.g} · ${fmtLM("carry", p.carry)} carry · ${fmtLM("total", p.total)} total · ${fmtLM("side", Y(p))} · ${dTxt(p.sdate)}`)));
     }
     const seg = el("div", { class: "ps-seg sm lm-view" }, [["total", "Total"], ["carry", "Carry"]].map(([k, l]) => { const b = el("button", { type: "button", class: f.view === k ? "on" : "" }, l); b.addEventListener("click", () => { f.view = k; draw(); }); return b; }));
-    return el("section", { class: "ps-card lm-card" }, [el("div", { class: "lm-head" }, [el("p", { class: "ps-t" }, "DISPERSION · FROM ABOVE"), seg]), svg,
+    return el("section", { class: "ps-card lm-card" }, [el("div", { class: "lm-head" }, [el("p", { class: "ps-t" }, "DISPERSION · FROM ABOVE"), seg]), clubBar("disp", all), svg,
       el("p", { class: "muted small" }, "Distance downrange across, left and right up and down. The ring round each club holds most of its shots (2 standard deviations).")]);
   }
 
   /* ---------- trajectories: from the side ---------- */
-  function trajectory(shots, clubs) {
+  function trajectory(all) {
+    const shots = chartShots("traj", all), clubs = chartGroups("traj", all);
     const flight = (sh) => {
       if (sh.traj?.length >= 6) { const out = []; for (let i = 0; i < sh.traj.length; i += 3) out.push([sh.traj[i], sh.traj[i + 1]]); return out; }
       if (sh.carry == null || sh.height == null) return null;
@@ -141,41 +169,51 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
     for (let v = 10; v <= maxY; v += 10) { svg.append(s("line", { x1: pl, y1: sy(v), x2: W - pr, y2: sy(v), stroke: "#202024" })); svg.append(s("text", { x: pl - 6, y: sy(v) + 4, fill: "#6e6e73", "font-size": 11, "text-anchor": "end" }, String(v))); }
     svg.append(s("line", { x1: pl, y1: sy(0), x2: W - pr, y2: sy(0), stroke: "#3a3a3e", "stroke-width": 1.2 }));
     for (const x of lines) svg.append(s("polyline", { points: x.pts.map(([a, b]) => `${sx(a).toFixed(1)},${sy(b).toFixed(1)}`).join(" "), fill: "none", stroke: clubs.find((c) => c.club === x.sh.g)?.color || "#888", "stroke-width": 1.6, "stroke-opacity": 0.75 }, s("title", {}, `${x.sh.g} · peak ${fmtLM("height", x.sh.height)} yds · carry ${fmtLM("carry", x.sh.carry)}`)));
-    return el("section", { class: "ps-card lm-card" }, [el("p", { class: "ps-t" }, "TRAJECTORY · FROM THE SIDE"), svg,
+    return el("section", { class: "ps-card lm-card" }, [el("p", { class: "ps-t" }, "TRAJECTORY · FROM THE SIDE"), clubBar("traj", all), svg,
       el("p", { class: "muted small" }, `Height (yds) up, distance across. ${lines.some((x) => !x.sh.traj) ? "Shots with no measured flight (Excel and CSV files) are drawn through their peak height and carry." : ""}`)]);
   }
 
   /* ---------- each club's averages, opening to every shot ---------- */
   const COLS = ["carry", "total", "side", "height", "ballSpeed", "clubSpeed", "smash", "launch", "spin", "spinAxis", "attack", "path", "face", "faceToPath", "dynLoft", "landAngle"];
-  function table(clubs) {
+  function table(all) {
+    const fs = all.filter((x) => !f.cf.table.sel.size || f.cf.table.sel.has(x.c) || f.cf.table.sel.has(x.g));
+    const clubs = byClub(fs.map((x) => ({ ...x, g: x.c }))).map((c) => ({ ...c, color: colorOf(c.club) }));
     const cols = COLS.filter((k) => clubs.some((c) => c.avg[k] != null));
     const head = el("tr", {}, [el("th", {}, "Club"), el("th", { class: "n" }, "Shots"), ...cols.map((k) => el("th", { class: "n", title: `${LM[k].label}${LM[k].unit ? ` (${LM[k].unit})` : ""}` }, [LM[k].short, LM[k].unit ? el("span", { class: "lm-unit" }, ` ${LM[k].unit}`) : null]))]);
     const body = [];
-    for (const c of clubs) {
-      const open = f.open.has(c.club);
-      const tr = el("tr", { class: "lm-crow", tabindex: 0, "aria-expanded": String(open) }, [el("td", {}, [el("span", { class: "ps-caret" }, open ? "▾ " : "▸ "), el("i", { class: "lm-dot", style: `background:${c.color}` }), ` ${c.club}`]), el("td", { class: "n" }, String(c.n)),
+    // (update 703) a club's row opens to its models (when it has more than one), each opening to its shots; else to its shots
+    const shotRows = (ss, indent) => [...ss].sort((a, b) => String(a.t).localeCompare(String(b.t))).map((sh) => el("tr", { class: "lm-shot" }, [el("td", { class: indent ? "lm-in2" : "" }, [srcPill(sh.src), ` ${sh.t ? new Date(sh.t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : dTxt(sh.sdate)}`]), el("td", {}, ""), ...cols.map((k) => el("td", { class: "n" }, fmtLM(k, sh[k])))]));
+    const row = (c, key, label, cls, kids) => {
+      const open = f.open.has(key);
+      const tr = el("tr", { class: cls, tabindex: 0, "aria-expanded": String(open) }, [el("td", {}, [el("span", { class: "ps-caret" }, open ? "▾ " : "▸ "), el("i", { class: "lm-dot", style: `background:${c.color}` }), ` ${label}`]), el("td", { class: "n" }, String(c.n)),
         ...cols.map((k) => el("td", { class: "n" }, [fmtLM(k, c.avg[k]), (k === "carry" || k === "side") && c.sd[k] != null ? el("span", { class: "lm-sd" }, ` ±${c.sd[k].toFixed(1)}`) : null]))]);
-      const flip = () => { if (open) f.open.delete(c.club); else f.open.add(c.club); draw(); };
+      const flip = () => { if (open) f.open.delete(key); else f.open.add(key); draw(); };
       tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
-      body.push(tr);
-      if (open) for (const sh of [...c.shots].sort((a, b) => String(a.t).localeCompare(String(b.t)))) body.push(el("tr", { class: "lm-shot" }, [el("td", {}, [srcPill(sh.src), ` ${sh.t ? new Date(sh.t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : dTxt(sh.sdate)}`]), el("td", {}, ""), ...cols.map((k) => el("td", { class: "n" }, fmtLM(k, sh[k])))]));
+      return [tr, ...(open ? kids() : [])];
+    };
+    for (const c of clubs) {
+      const ms = modelsOf(c.club, fs);
+      body.push(...row(c, `c:${c.club}`, ms.length > 1 ? `${c.club} · ${ms.length} models` : c.club, "lm-crow", () => (ms.length > 1
+        ? byClub(fs.filter((x) => x.c === c.club)).map((m) => ({ ...m, color: colorOf(m.club) })).flatMap((m) => row(m, `m:${m.club}`, m.club.slice(c.club.length + 3) || m.club, "lm-crow lm-mrow", () => shotRows(m.shots, true)))
+        : shotRows(c.shots, false))));
     }
-    return el("section", { class: "ps-card lm-card" }, [el("p", { class: "ps-t" }, "BY CLUB · AVERAGES (TAP A CLUB FOR EVERY SHOT)"), el("div", { class: "ps-tw lm-tw" }, el("table", { class: "lm-t" }, [el("thead", {}, head), el("tbody", {}, body)])),
+    return el("section", { class: "ps-card lm-card" }, [el("p", { class: "ps-t" }, "BY CLUB · AVERAGES (TAP A CLUB FOR ITS MODELS AND EVERY SHOT)"), clubBar("table", all), el("div", { class: "ps-tw lm-tw" }, el("table", { class: "lm-t" }, [el("thead", {}, head), el("tbody", {}, body)])),
       el("p", { class: "muted small" }, "Side: yards left (L) or right (R) of the target line. ± is the typical spread from shot to shot.")]);
   }
 
   /* ---------- over time: a number, club by club, session by session ---------- */
-  function overTime(shots, clubs) {
+  function overTime(all) {
+    const shots = chartShots("time", all), clubs = chartGroups("time", all);
     const sel = el("select", { class: "ps-club", "aria-label": "Number to plot" }, LM_METRICS.filter(([k]) => shots.some((sh) => sh[k] != null)).map(([k, label]) => el("option", { value: k, selected: k === f.metric }, label)));
     sel.addEventListener("change", () => { f.metric = sel.value; draw(); });
     const k = f.metric, days = [...new Set(shots.filter((sh) => sh[k] != null).map((sh) => String(sh.t || sh.sdate).slice(0, 10)))].sort();
     const series = clubs.map((c) => ({ c, pts: days.map((dd) => { const v = c.shots.filter((sh) => sh[k] != null && String(sh.t || sh.sdate).slice(0, 10) === dd).map((sh) => sh[k]); return v.length ? [dd, mean(v), v.length] : null; }).filter(Boolean) })).filter((x) => x.pts.length);
-    const all = series.flatMap((x) => x.pts.map((q) => q[1]));
+    const vAll = series.flatMap((x) => x.pts.map((q) => q[1]));
     const W = narrow() ? 560 : 1000, H = narrow() ? 320 : 260, pl = 54, pr = 16, pt = 14, pb = 30;
     let body;
-    if (days.length < 2 || !all.length) body = el("p", { class: "muted small" }, days.length < 2 ? "Over time needs shots from at least two days." : "No values for that number.");
+    if (days.length < 2 || !vAll.length) body = el("p", { class: "muted small" }, days.length < 2 ? "Over time needs shots from at least two days." : "No values for that number.");
     else {
-      const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.05 || 1, y0 = lo - pad, y1 = hi + pad;
+      const lo = Math.min(...vAll), hi = Math.max(...vAll), pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.05 || 1, y0 = lo - pad, y1 = hi + pad;
       const sx = (i) => pl + 24 + (days.length === 1 ? 0.5 : i / (days.length - 1)) * (W - pl - pr - 48), sy = (v) => pt + (1 - (v - y0) / (y1 - y0)) * (H - pt - pb);
       const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "lm-svg", role: "img", "aria-label": `${LM[k].label} over time` });
       svg.append(s("rect", { x: pl, y: pt, width: W - pl - pr, height: H - pt - pb, fill: "#17171a" }));
@@ -191,7 +229,7 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
       const ch = series.filter((x) => x.pts.length > 1).map((x) => { const d0 = x.pts[0][1], d1 = x.pts.at(-1)[1]; return el("span", { class: "lm-chg" }, [el("i", { class: "lm-dot", style: `background:${x.c.color}` }), ` ${x.c.club}: ${fmtLM(k, d0)} → ${fmtLM(k, d1)}${LM[k].unit ? ` ${LM[k].unit}` : ""}`]); });
       body = [svg, ch.length ? el("div", { class: "lm-chgs" }, ch) : null];
     }
-    return el("section", { class: "ps-card lm-card" }, [el("div", { class: "lm-head" }, [el("p", { class: "ps-t" }, "OVER TIME · EACH DAY’S AVERAGE"), sel]), ...[].concat(body)]);
+    return el("section", { class: "ps-card lm-card" }, [el("div", { class: "lm-head" }, [el("p", { class: "ps-t" }, "OVER TIME · EACH DAY’S AVERAGE"), sel]), clubBar("time", all), ...[].concat(body)]);
   }
 
   /* ---------- the sessions ---------- */
@@ -211,13 +249,13 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
   function draw() {
     if (loading) { mount(box, [importer(), el("p", { class: "muted" }, "Loading launch monitor sessions…")]); return; }
     if (!sessions.length) { mount(box, [importer(), el("p", { class: "muted lm-empty" }, canWrite ? `No launch monitor sessions${who ? ` for ${who}` : ""} yet. Paste a TrackMan report link or upload a file above.` : `No launch monitor sessions${who ? ` for ${who}` : ""} yet.`)]); return; }
-    const sh = shown(), clubs = byClub(sh).map((c) => ({ ...c, color: colorOf(c.club) }));
+    const sh = shown(), clubs = byClub(sh.map((x) => ({ ...x, g: x.c })));
     const tiles = el("div", { class: "ps-tiles" }, [
       el("div", { class: "ps-tile" }, [el("b", {}, String(sh.length)), el("span", {}, "shots shown")]),
       el("div", { class: "ps-tile" }, [el("b", {}, String(clubs.length)), el("span", {}, `club${clubs.length === 1 ? "" : "s"}`)]),
       el("div", { class: "ps-tile" }, [el("b", {}, String(new Set(sh.map((x) => x.sid)).size)), el("span", {}, "sessions")]),
     ]);
-    mount(box, [importer(), filters(), tiles, ...(sh.length ? [dispersion(sh, clubs), trajectory(sh, clubs), table(clubs), overTime(sh, clubs)] : [el("p", { class: "muted" }, "No shots match these filters.")]), sessionList()]);
+    mount(box, [importer(), filters(), tiles, ...(sh.length ? [dispersion(sh), trajectory(sh), table(sh), overTime(sh)] : [el("p", { class: "muted" }, "No shots match these filters.")]), sessionList()]);
   }
   await load();
 }
