@@ -71,7 +71,8 @@ export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey 
   });
   d.line(x, zy, x + w, zy, { color: grey, width: 0.7, dash: [3, 2] });
   // (update 695) seasons: a dashed line where each season starts, its year at the top
-  if (seasons) bars.forEach((b, i) => { if (i && b.yr && b.yr !== bars[i - 1].yr) { const lx = x + slot * i; d.line(lx, top - 6, lx, top + plotH + 2, { color: ink, width: 1, dash: [4, 2.5] }); } }); // (update 696: no year labels)
+  const sk = typeof seasons === "function" ? seasons : (b) => b.yr || null; // (update 698: or each bar's time frame)
+  if (seasons) bars.forEach((b, i) => { const k1 = i ? sk(b) : null, k0 = i ? sk(bars[i - 1]) : null; if (i && k1 != null && k1 !== -1 && k0 != null && k0 !== -1 && k1 !== k0) { const lx = x + slot * i; d.line(lx, top - 6, lx, top + plotH + 2, { color: ink, width: 1, dash: [4, 2.5] }); } }); // (update 696: no year labels)
   if (rl && bars.length > 1) d.polyline(rl.map((v, i) => [x + slot * (i + 0.5), Y(v ?? 0)]), { color: ROLL_COLOR, width: 1.8 }); // (update 666)
   const ax = top + plotH + 2 + pad;
   d.line(x, ax, x + w, ax, { color: hair, width: 0.4 });

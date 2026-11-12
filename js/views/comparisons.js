@@ -2498,6 +2498,26 @@ export async function render(main) {
     return { story, hi: byRank(hi).slice(0, 6), lo: byRank(lo).slice(0, 6) };
   }
   async function makeReport(live0, say) {
+    // (update 698) one player's time frames (seasons, the last rounds against the ones before, dates): the season
+    // comparison report (the Stats page's Compare), each time frame side by side
+    const solo = inPlay();
+    if (timeMode() && live0.length >= 2 && solo.length === 1 && solo[0].key !== EVERY) {
+      const pre0 = (() => { const m = /^(.+? \u00b7 )/.exec(live0[0].name); return m && live0.every((it) => it.name.startsWith(m[1])) ? m[1] : ""; })();
+      const ms = (d, end) => { const t = Date.parse(`${String(d || "").slice(0, 10)}T${end ? "23:59:59" : "00:00:00"}`); return Number.isFinite(t) ? t : null; };
+      const frames = live0.map((it) => { const ds = (it.rs || []).map((rd) => String(rd.date || "").slice(0, 10)).filter(Boolean).sort();
+        return { label: it.name.slice(pre0.length), keys: new Set((it.rs || []).map((rd) => rd.key)), from: ms(ds[0]), to: ms(ds.at(-1), true), years: it.f?.years?.length === 1 && Object.keys(it.f).length === 1 ? it.f.years.map(String) : null }; })
+        .filter((f) => f.from != null && f.to != null);
+      if (frames.length >= 2) {
+        const { makeFrameCompareReport } = await import("../reportGen.js");
+        const r = await makeFrameCompareReport({ key: solo[0].key, label: solo[0].label, frames, onStep: say });
+        if (!r || r.empty) throw new Error("no rounds");
+        const blob = new Blob([r.bytes], { type: "application/pdf" }), href = URL.createObjectURL(blob);
+        const a = el("a", { href, download: r.name }); document.body.append(a); a.click(); a.remove();
+        window.open(href, "_blank");
+        window.__lastComparePdf = r.bytes;
+        return;
+      }
+    }
     say("Working out the highlights\u2026");
     // (names that all start the same, "Everyone · …", lose the shared start; it goes in the subtitle)
     const pre = (() => { const m = /^(.+? \u00b7 )/.exec(live0[0].name); return m && live0.every((it) => it.name.startsWith(m[1])) ? m[1] : ""; })();
