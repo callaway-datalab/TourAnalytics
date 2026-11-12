@@ -4,7 +4,8 @@
  *
  *   practice/{owner}/lm/{id}  a session: { src: "trackman" | "gcquad", via: "link" | "excel" | "csv", name, date (YYYY-MM-DD),
  *                             key (to spot the same session twice), link?, player?, addedAt, addedBy, shots: [shot] }
- *   shot: { t (YYYY-MM-DDTHH:MM:SS), c (club, the bag's name: Driver, 3w, 6i, 50°…), b (ball)?, x (excluded: "Use in stat" No)?,
+ *   shot: { t (YYYY-MM-DDTHH:MM:SS), c (club, the bag's name: Driver, 3w, 6i, 50°…), m (model: TrackMan's tags, the Excel's Tags,
+ *           GCQuad's Club ID; update 701)?, b (ball)?, x (excluded: "Use in stat" No)?,
  *           carry, total, side (carry side, + right), totalSide, height, ballSpeed, clubSpeed, smash, launch, launchDir,
  *           spin, spinAxis, attack, path, face, faceToPath, dynLoft, landAngle, hang,
  *           traj (TrackMan link only: the flight, flat [down, up, side, …] in yards; Firestore can't keep lists in lists) }
@@ -52,7 +53,8 @@ export function fromTrackmanJson(j, link = "") {
         const L = pts.at(-1); if ((pts.length - 1) % step) out.push(r(L.X * YD), r(L.Y * YD), r(L.Z * YD));
         return out;
       })() : null;
-      shots.push(clean({ t: isNaN(t) ? null : isoLocal(t), c: clubName(st.Club || g.Club), b: st.Ball || g.Ball || null,
+      const tags = [...(st.Tags || []), ...(g.Tags || [])].map((x) => String(x || "").trim()).filter(Boolean);
+      shots.push(clean({ t: isNaN(t) ? null : isoLocal(t), c: clubName(st.Club || g.Club), m: [...new Set(tags)].join(", ") || null, b: st.Ball || g.Ball || null,
         carry: m.Carry * YD, total: m.Total * YD, side: m.CarrySide * YD, totalSide: m.TotalSide * YD, height: m.MaxHeight * YD, landAngle: m.LandingAngle, hang: m.HangTime,
         ballSpeed: m.BallSpeed * MPH, clubSpeed: m.ClubSpeed * MPH, smash: m.SmashFactor, launch: m.LaunchAngle, launchDir: m.LaunchDirection, spin: m.SpinRate, spinAxis: m.SpinAxis,
         attack: m.AttackAngle, path: m.ClubPath, face: m.FaceAngle, faceToPath: m.FaceToPath, dynLoft: m.DynamicLoft, traj }));
@@ -127,7 +129,7 @@ export function fromTrackmanSheets(sheets, fileName = "") {
       const groups = []; let g = ""; const top = rep.rows[hi - 1] || [];
       for (let i = 0; i < rep.rows[hi].length; i++) { if (top[i] != null && String(top[i]).trim()) g = low(top[i]); groups[i] = g; }
       const col = (grp, re) => rep.rows[hi].findIndex((c, i) => re.test(low(c)) && (grp == null || grp.test(groups[i] || "")));
-      const C = { date: col(null, /^date$/), club: col(null, /^club$/), ball: col(/stroke/, /^ball$/), player: col(null, /^player$/), use: col(null, /^use in stat/),
+      const C = { date: col(null, /^date$/), club: col(null, /^club$/), tags: col(null, /^tags?$/), ball: col(/stroke/, /^ball$/), player: col(null, /^player$/), use: col(null, /^use in stat/),
         clubSpeed: col(null, /^club speed/), attack: col(null, /^attack angle/), path: col(null, /^club ?path/), dynLoft: col(null, /^dyn\.? ?loft/), face: col(null, /^face angle/),
         ballSpeed: col(/ball launch/, /^ball speed/), smash: col(null, /^smash/), launch: col(null, /^launch angle/), launchDir: col(null, /^launch direction/), spin: col(null, /^spin ?rate$/), spinAxis: col(null, /^spin axis/),
         height: col(/max height/, /^height/), carry: col(/carry/, /^length/), side: col(/carry/, /^side/), landAngle: col(/carry/, /^vert\.? angle/), hang: col(/carry/, /^flight time/),
@@ -139,7 +141,7 @@ export function fromTrackmanSheets(sheets, fileName = "") {
         if (!club || !d || num(row[C.carry]) == null && num(row[C.ballSpeed]) == null) continue;
         player ||= String(row[C.player] ?? "").trim();
         const v = (k, f = 1) => (C[k] >= 0 ? (num(row[C[k]]) ?? null) : null) == null ? null : num(row[C[k]]) * f;
-        shots.push(clean({ t: isoLocal(d), c: clubName(club), b: C.ball >= 0 ? row[C.ball] || null : null, x: C.use >= 0 && low(row[C.use]) === "no" ? 1 : null,
+        shots.push(clean({ t: isoLocal(d), c: clubName(club), m: C.tags >= 0 && row[C.tags] != null ? String(row[C.tags]).trim() || null : null, b: C.ball >= 0 ? row[C.ball] || null : null, x: C.use >= 0 && low(row[C.use]) === "no" ? 1 : null,
           carry: v("carry", ds(C.carry)), total: v("total", ds(C.total)), side: v("side", ds(C.side)), totalSide: v("totalSide", ds(C.totalSide)), height: v("height", ds(C.height)), landAngle: v("landAngle"), hang: v("hang"),
           ballSpeed: v("ballSpeed", sp(C.ballSpeed)), clubSpeed: v("clubSpeed", sp(C.clubSpeed)), smash: v("smash"), launch: v("launch"), launchDir: v("launchDir"), spin: v("spin"), spinAxis: v("spinAxis"),
           attack: v("attack"), path: v("path"), face: v("face"), dynLoft: v("dynLoft") }));
@@ -199,7 +201,7 @@ export function fromCsv(text, fileName = "") {
   const gc = h.some((c) => /^shot id$/.test(c)) && h.some((c) => /^club type$/.test(c)); // GCQuad (FSX) export
   const find = (re, not) => h.findIndex((c) => re.test(c) && !(not && not.test(c)));
   const C = Object.fromEntries(CSV_COLS.map(([k, re, not]) => [k, find(re, not)]));
-  const club = find(/^club( type| name)?$/), sel = find(/^selected$/), dateC = find(/^date/), timeC = find(/^time$/), ball = find(/^(range ball|ball( type)?)$/), player = rows.slice(0, hi).find((r0) => /player'?s name/i.test(r0[0] || ""))?.[1] || "";
+  const club = find(/^club( type| name)?$/), model = find(/^(club id|club model|model|tags?)$/), sel = find(/^selected$/), dateC = find(/^date/), timeC = find(/^time$/), ball = find(/^(range ball|ball( type)?)$/), player = rows.slice(0, hi).find((r0) => /player'?s name/i.test(r0[0] || ""))?.[1] || "";
   const shots = [];
   for (const row of rows.slice(hi + 1)) {
     if (!row[club] || (num(row[C.carry]) == null && num(row[C.ballSpeed]) == null)) continue;
@@ -208,7 +210,7 @@ export function fromCsv(text, fileName = "") {
       const t = new Date(`${ds} ${ts}`.trim()); return isNaN(t) ? null : t; })();
     const v = (k) => (C[k] >= 0 ? num(row[C[k]]) : null);
     const side = v("side");
-    shots.push(clean({ t: d ? isoLocal(d) : null, c: clubName(row[club]), b: ball >= 0 && low(row[ball]) === "yes" ? "Range" : null,
+    shots.push(clean({ t: d ? isoLocal(d) : null, c: clubName(row[club]), m: model >= 0 && String(row[model] ?? "").trim() ? String(row[model]).trim() : null, b: ball >= 0 && low(row[ball]) === "yes" ? "Range" : null,
       carry: v("carry"), total: v("total"), side, totalSide: v("totalSide") ?? (gc ? side : null), height: v("height"), landAngle: v("landAngle"), hang: v("hang"),
       ballSpeed: v("ballSpeed"), clubSpeed: v("clubSpeed"), smash: v("smash"), launch: v("launch"), launchDir: v("launchDir"), spin: v("spin") ?? (v("backSpin") != null ? Math.hypot(v("backSpin"), v("sideSpin") || 0) : null), spinAxis: v("spinAxis"),
       attack: v("attack"), path: v("path"), face: v("face"), faceToPath: v("faceToPath"), dynLoft: v("dynLoft") }));
@@ -237,14 +239,22 @@ function session({ src, via, name = "", link = "", player = "", key = "", shots 
 }
 
 /* ---------------- numbers for the page ---------------- */
+/** (update 701) each shot's row: its club, and its model too when that club was hit with more than one model. */
+export function withGroups(shots) {
+  const models = new Map();
+  for (const s of shots) (models.get(s.c) || models.set(s.c, new Set()).get(s.c)).add(s.m || "");
+  return shots.map((s) => ({ ...s, g: models.get(s.c).size > 1 ? (s.m ? `${s.c} · ${s.m}` : `${s.c} · no model`) : s.c }));
+}
 export const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 export const sd = (a) => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((t, v) => t + (v - m) ** 2, 0) / (a.length - 1)); };
 const vals = (shots, k) => shots.map((s) => s[k]).filter((v) => v != null && Number.isFinite(v));
 /** Each club's averages (and the spread of carry and side), in bag order. */
 export function byClub(shots) {
-  const m = new Map();
-  for (const s of shots) (m.get(s.c) || m.set(s.c, []).get(s.c)).push(s);
-  return sortClubs([...m.keys()]).map((c) => { const ss = m.get(c); return { club: c, shots: ss, n: ss.length, avg: Object.fromEntries(LM_METRICS.map(([k]) => [k, mean(vals(ss, k))])), sd: { carry: sd(vals(ss, "carry")), side: sd(vals(ss, "side")), total: sd(vals(ss, "total")), totalSide: sd(vals(ss, "totalSide")) } }; });
+  // (update 701) a club with more than one model (TrackMan tags, GCQuad Club ID) is a row for each: "Driver · Paradym TD 8.5"
+  const m = new Map(), clubOf = new Map();
+  for (const s of shots) { const g = s.g || s.c; (m.get(g) || m.set(g, []).get(g)).push(s); clubOf.set(g, s.c); }
+  const order = sortClubs([...new Set(clubOf.values())]);
+  return [...m.keys()].sort((a, b) => order.indexOf(clubOf.get(a)) - order.indexOf(clubOf.get(b)) || String(a).localeCompare(String(b))).map((c) => { const ss = m.get(c); return { club: c, shots: ss, n: ss.length, avg: Object.fromEntries(LM_METRICS.map(([k]) => [k, mean(vals(ss, k))])), sd: { carry: sd(vals(ss, "carry")), side: sd(vals(ss, "side")), total: sd(vals(ss, "total")), totalSide: sd(vals(ss, "totalSide")) } }; });
 }
 /** A club's spread on the dispersion map: the middle, the two axes' half lengths (k standard deviations) and the angle. */
 export function ellipse(pts, k = 2) {

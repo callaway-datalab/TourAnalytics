@@ -5,7 +5,7 @@
 //   each club's averages, opening to every shot; and any number over time, club by club.
 import { el, mount } from "../ui.js";
 import { getState } from "../auth.js";
-import { LM_METRICS, LM, fmtLM, fromFile, fromTrackmanJson, trackmanId, byClub, ellipse, mean } from "../practice/lmData.js";
+import { LM_METRICS, LM, fmtLM, fromFile, fromTrackmanJson, trackmanId, byClub, ellipse, mean, withGroups } from "../practice/lmData.js";
 
 const fsP = () => Promise.all([import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js"), import("../firebase-init.js")]).then(([f, i]) => ({ ...f, db: i.db }));
 async function listLM(owner) { const { getDocs, collection, db } = await fsP(); const s = await getDocs(collection(db, "practice", owner, "lm")); return s.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.date).localeCompare(String(a.date))); }
@@ -67,12 +67,12 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
   }
 
   /* ---------- the shots, filtered ---------- */
-  const allShots = () => sessions.flatMap((x) => x.shots.map((sh) => ({ ...sh, sid: x.id, src: x.src, sdate: x.date })));
+  const allShots = () => withGroups(sessions.flatMap((x) => x.shots.map((sh) => ({ ...sh, sid: x.id, src: x.src, sdate: x.date })))); // (update 701: g, the club and its model)
   const clubsAll = () => byClub(allShots()).map((c) => c.club);
   const colorOf = (club) => { const i = clubsAll().indexOf(club); return PAL[(i < 0 ? 0 : i) % PAL.length]; };
   const shown = () => {
     const lo = f.min === "" ? -Infinity : Number(f.min), hi = f.max === "" ? Infinity : Number(f.max);
-    return allShots().filter((x) => !x.x && (!f.sess.size || f.sess.has(x.sid)) && (!f.clubs.size || f.clubs.has(x.c)) && (x.carry == null ? lo === -Infinity && hi === Infinity : x.carry >= lo && x.carry <= hi));
+    return allShots().filter((x) => !x.x && (!f.sess.size || f.sess.has(x.sid)) && (!f.clubs.size || f.clubs.has(x.g)) && (x.carry == null ? lo === -Infinity && hi === Infinity : x.carry >= lo && x.carry <= hi));
   };
 
   /* ---------- filters ---------- */
@@ -110,10 +110,10 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
     for (let d = 50; d < maxX; d += 50) g.append(s("text", { x: sx(d), y: sy(0) + 14, fill: "#8e8e93", "font-size": 12, "text-anchor": "middle" }, String(d)));
     for (let v = -maxY + (maxY % 10); v <= maxY; v += 10) if (v) svg.append(s("text", { x: pl - 6, y: sy(v) + 4, fill: "#6e6e73", "font-size": 11, "text-anchor": "end" }, `${Math.abs(v)}${v < 0 ? "L" : "R"}`));
     for (const c of clubs) {
-      const cs = pts.filter((p) => p.c === c.club), e = ellipse(cs.map((p) => [X(p), Y(p)]));
+      const cs = pts.filter((p) => p.g === c.club), e = ellipse(cs.map((p) => [X(p), Y(p)]));
       if (e) { const pts2 = []; for (let i = 0; i <= 48; i++) { const t = (i / 48) * 2 * Math.PI, ux = e.rx * Math.cos(t), uy = e.ry * Math.sin(t); pts2.push(`${sx(e.cx + ux * Math.cos(e.ang) - uy * Math.sin(e.ang)).toFixed(1)},${sy(e.cy + ux * Math.sin(e.ang) + uy * Math.cos(e.ang)).toFixed(1)}`); }
         g.append(s("polygon", { points: pts2.join(" "), fill: c.color, "fill-opacity": 0.08, stroke: c.color, "stroke-width": 2 })); }
-      for (const p of cs) g.append(s("circle", { cx: sx(X(p)), cy: sy(Y(p)), r: 6, fill: c.color, stroke: "#0b0b0d", "stroke-width": 1.5 }, s("title", {}, `${p.c} · ${fmtLM("carry", p.carry)} carry · ${fmtLM("total", p.total)} total · ${fmtLM("side", Y(p))} · ${dTxt(p.sdate)}`)));
+      for (const p of cs) g.append(s("circle", { cx: sx(X(p)), cy: sy(Y(p)), r: 6, fill: c.color, stroke: "#0b0b0d", "stroke-width": 1.5 }, s("title", {}, `${p.g} · ${fmtLM("carry", p.carry)} carry · ${fmtLM("total", p.total)} total · ${fmtLM("side", Y(p))} · ${dTxt(p.sdate)}`)));
     }
     const seg = el("div", { class: "ps-seg sm lm-view" }, [["total", "Total"], ["carry", "Carry"]].map(([k, l]) => { const b = el("button", { type: "button", class: f.view === k ? "on" : "" }, l); b.addEventListener("click", () => { f.view = k; draw(); }); return b; }));
     return el("section", { class: "ps-card lm-card" }, [el("div", { class: "lm-head" }, [el("p", { class: "ps-t" }, "DISPERSION · FROM ABOVE"), seg]), svg,
@@ -140,7 +140,7 @@ export async function renderLM(box, { owner, canWrite = false, flash = () => {},
     for (let d = 50; d <= maxX; d += 50) { svg.append(s("line", { x1: sx(d), y1: pt, x2: sx(d), y2: H - pb, stroke: "#26262a" })); svg.append(s("text", { x: sx(d), y: H - 8, fill: "#8e8e93", "font-size": 12, "text-anchor": "middle" }, String(d))); }
     for (let v = 10; v <= maxY; v += 10) { svg.append(s("line", { x1: pl, y1: sy(v), x2: W - pr, y2: sy(v), stroke: "#202024" })); svg.append(s("text", { x: pl - 6, y: sy(v) + 4, fill: "#6e6e73", "font-size": 11, "text-anchor": "end" }, String(v))); }
     svg.append(s("line", { x1: pl, y1: sy(0), x2: W - pr, y2: sy(0), stroke: "#3a3a3e", "stroke-width": 1.2 }));
-    for (const x of lines) svg.append(s("polyline", { points: x.pts.map(([a, b]) => `${sx(a).toFixed(1)},${sy(b).toFixed(1)}`).join(" "), fill: "none", stroke: clubs.find((c) => c.club === x.sh.c)?.color || "#888", "stroke-width": 1.6, "stroke-opacity": 0.75 }, s("title", {}, `${x.sh.c} · peak ${fmtLM("height", x.sh.height)} yds · carry ${fmtLM("carry", x.sh.carry)}`)));
+    for (const x of lines) svg.append(s("polyline", { points: x.pts.map(([a, b]) => `${sx(a).toFixed(1)},${sy(b).toFixed(1)}`).join(" "), fill: "none", stroke: clubs.find((c) => c.club === x.sh.g)?.color || "#888", "stroke-width": 1.6, "stroke-opacity": 0.75 }, s("title", {}, `${x.sh.g} · peak ${fmtLM("height", x.sh.height)} yds · carry ${fmtLM("carry", x.sh.carry)}`)));
     return el("section", { class: "ps-card lm-card" }, [el("p", { class: "ps-t" }, "TRAJECTORY · FROM THE SIDE"), svg,
       el("p", { class: "muted small" }, `Height (yds) up, distance across. ${lines.some((x) => !x.sh.traj) ? "Shots with no measured flight (Excel and CSV files) are drawn through their peak height and carry." : ""}`)]);
   }
