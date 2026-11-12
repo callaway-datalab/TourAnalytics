@@ -113,7 +113,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     return out;
   })();
   // each round, trend line, early vs late by category
-  const series = mine.map((rd) => ({ date: rd.date, event: rd.event, roundNo: rd.roundNo, value: rd.shots.reduce((t, s) => t + s.sg, 0),
+  const series = mine.map((rd) => ({ date: rd.date, event: rd.event, roundNo: rd.roundNo, year: String(rd.year || String(rd.date || "").slice(0, 4)), value: rd.shots.reduce((t, s) => t + s.sg, 0),
     byCat: Object.fromEntries(cats.map((k) => [k, rd.shots.filter((s) => s.cat === k).reduce((t, s) => t + s.sg, 0)])) }));
   let slope = null;
   if (series.length >= 3) {
@@ -285,16 +285,16 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
     text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
-  const n10 = half, fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat(); // (update 581: as the trends)
+  const n10 = Math.min(byEvent ? 3 : 12, Math.floor(units.length / 2)), fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat(); // (update 694: Form, 12 rounds (3 events))
   // (update 670) and the overall direction for the form word: the last 50 rounds against the 50 before (20 events against 20)
-  const nL = Math.min(byEvent ? 20 : 50, Math.floor(units.length / 2)), longCh = nL > n10 ? mean(units.slice(-nL).flat().map((q) => q.value)) - mean(units.slice(-2 * nL, -nL).flat().map((q) => q.value)) : null;
+  const nL = Math.min(byEvent ? 12 : 48, Math.floor(units.length / 2)), longCh = nL > n10 ? mean(units.slice(-nL).flat().map((q) => q.value)) - mean(units.slice(-2 * nL, -nL).flat().map((q) => q.value)) : null;
   const form = n10 >= (byEvent ? 1 : 2) ? { n: n10, unit: byEvent ? "event" : "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB), long: Number.isFinite(longCh) ? longCh : null } : null;
   // By the numbers: rounds gaining strokes, the longest run of them, the steadiest and swingiest parts of the
   // game (how much each swings round to round), and the biggest upside (matching the group's best where the
   // player is furthest behind).
   // (update 523) DP World Tour data (one value an event, repeated on each of its rounds): these by event, not round
   const evOf = (list) => { const m = new Map(); for (const q of list) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); }
-    return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); };
+    return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", year: g[0].year, value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); };
   const ser = byEvent ? evOf(series) : series;
   const posRounds = ser.filter((q) => q.value > 0).length;
   let run = 0, best = { len: 0, from: null, to: null }, start = null;
@@ -303,7 +303,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const swings = cats.map((k) => ({ cat: k, sd: sd(ser.map((q) => q.byCat[k])) })).filter((x) => x.sd != null).sort((p, q) => p.sd - q.sd);
   // Biggest upside: the player's own best stretch (their best average over a run of rounds) in each category,
   // against their average now; the category where getting back to that is worth the most.
-  const win = Math.min(12, Math.max(3, Math.floor(ser.length / 3)));
+  const win = byEvent ? 3 : 12; // (update 694: the same stretch as Form: the best 12 rounds in a row (the DP World Tour: 3 events))
   const upside = ser.length >= win ? byCat.filter((c) => c.value != null).map((c) => {
     let bestAvg = -Infinity, at = 0;
     for (let i = 0; i + win <= ser.length; i++) { const v = mean(ser.slice(i, i + win).map((q) => q.byCat[c.cat] ?? 0)); if (v > bestAvg) { bestAvg = v; at = i; } }
@@ -471,8 +471,14 @@ const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : ran
 // can't fall behind the way a typed-in number did (it said 156 while the site moved on, so the report never ran).
 // Loaded without a version, it's the page's own copy and there's nothing to check.
 export const REPORT_BUILD = (() => { try { return new URL(import.meta.url).searchParams.get("v"); } catch { return null; } })();
-export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null } = {}) {
+export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = null, rangeLabel = null, compare = null } = {}) {
   const d = new PdfDoc();
+  // (update 694) Compare: compare = [{ label: "2025", a }] oldest first, each season's own analysis (a: every season together,
+  // for the charts and the pages that aren't split by season)
+  const CMP = compare?.length > 1 ? compare : null, nY = CMP ? CMP.length : 0;
+  const YCOL = ["#b08d57", "#8e8e93", "#2f9bff", "#bf5af2", "#ff9f0a"], ycol = (i) => YCOL[(nY - 1 - i) % YCOL.length]; // (the newest season gold, the one before grey)
+  const YCOL_D = ["#d4b483", "#a1a1a6", "#64b5ff", "#d08cf5", "#ffb340"], ycolD = (i) => YCOL_D[(nY - 1 - i) % YCOL_D.length]; // (on the dark cover)
+  const A0 = CMP?.[0], A1 = CMP?.at(-1);
   const M = 44, W = d.W - 2 * M, H = d.H;
   const range = `${a.from != null ? fmtDate(a.from) : "All rounds"}${a.to != null ? ` \u2013 ${fmtDate(a.to)}` : a.from != null ? " \u2013 today" : ""}`;
   const catsTxt = a.cats.length === CATEGORIES.length ? "All categories" : a.cats.map((k) => CAT_NAME[k]).join(" \u00b7 ");
@@ -506,7 +512,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const heroH = 236;
   d.gradient(0, 0, d.W, heroH, P.night, P.night2, { dir: "v", steps: 60 });
   d.gradient(0, heroH - 3, d.W, 3, P.gold, P.goldLight, { dir: "h", steps: 40 });
-  cap("Performance Report", M, 40, P.goldLight, "left", 7.5);
+  cap(CMP ? "Season Comparison Report" : "Performance Report", M, 40, P.goldLight, "left", 7.5);
   if (logo) { const lh = Math.min(26, (logo.h / logo.w) * 150), lw = (logo.w / logo.h) * lh; d.image(logo.dataUrl, M + W - lw, 24, lw, lh, logo.pw, logo.ph); }
   d.text(wrap(a.me.label, W * 0.6, 30, true)[0], M, 78, { size: 30, bold: true, color: "#ffffff" });
   // the period: the preset you picked ("Last 30 days", "All time" …) or your dates (2/14/26 – 4/20/26)
@@ -514,19 +520,43 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const period = rangeLabel || (a.from != null || a.to != null ? `${a.from != null ? short(a.from) : "start"} \u2013 ${a.to != null ? short(a.to) : "today"}` : "All time");
   d.text(period, M, 96, { size: 8.5, color: "#8e8e93" });
   cap("Strokes gained per round", M, 122, "#8e8e93");
+  if (CMP) {
+    // (update 694) one big number a season, side by side, each in its season's colour; the change on the right
+    const colW0 = (W * 0.6) / nY, big = nY === 2 ? 44 : nY === 3 ? 34 : 26;
+    CMP.forEach((s0, i) => { const x = M + i * colW0, o = s0.a.overall;
+      d.rect(x, 131, 8, 8, { fill: ycolD(i) }); d.text(String(s0.label), x + 12, 138.5, { size: 9, bold: true, color: ycolD(i) });
+      d.text(o.rounds ? fmtSG(o.value) : "\u2014", x - 2, 176, { size: big, bold: true, color: o.value == null ? "#8e8e93" : o.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1 });
+      d.text(o.rounds ? plural(o.rounds, a.unit === "event" ? "round" : "round") : "No rounds", x, 191, { size: 8, color: "#a1a1a6" });
+      if (i) { const ax = x - 16, ay = 158; d.line(ax - 6, ay, ax + 5, ay, { color: "#5f6368", width: 1.6 }); d.polyline([[ax + 1, ay - 4], [ax + 6, ay], [ax + 1, ay + 4]], { color: "#5f6368", width: 1.6 }); } });
+  } else
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 172, { size: 62, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
   void versus; // (update 678: no Tour Avg anywhere in the report: the player's own numbers only)
-  wrap(a.overall.rounds ? `Strokes gained a round over ${plural(a.overall.rounds, "round")}.` : "No rounds in this period.", W * 0.56, 9.5)
+  if (!CMP) wrap(a.overall.rounds ? `Strokes gained a round over ${plural(a.overall.rounds, "round")}.` : "No rounds in this period.", W * 0.56, 9.5)
     .slice(0, 2).forEach((l, i) => d.text(l, M, 190 + i * 12, { size: 9.5, color: "#c7c7cc" }));
   // badges
   let bx = M;
-  if (a.overall.rank) { const [f, t] = rankColors(a.overall.rank); bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, f, t) + 6; }
-  bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
+  if (CMP) { for (const [i, s0] of CMP.entries()) if (s0.a.overall.rank) { const [f, t] = rankColors(s0.a.overall.rank); bx += badge(`${s0.label} Rank ${s0.a.overall.rank} of ${s0.a.overall.of}`, bx, 220, f, t) + 6; } void ycol; }
+  else if (a.overall.rank) { const [f, t] = rankColors(a.overall.rank); bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, f, t) + 6; }
+  if (!CMP) bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
   if (a.form) { const w = formWord(a.form.last - a.form.first, a.form.long); void STEADY; // (update 670: the form word)
     if (w) bx += badge(`Form: ${w[0]}`, bx, 220, w[2], "#0b0b0d") + 6; } // (update 671: the word's own colour, yellow to green or red)
   // form sparkline (right side)
-  if (a.rankHist?.length >= 2) {
+  if (CMP) {
+    // (update 694) Compare: no rank trend; the change from the first season to the last, big, green better / red worse
+    const x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74, v0 = A0.a.overall.value, v1 = A1.a.overall.value, ch = v0 != null && v1 != null ? v1 - v0 : null;
+    const r2 = ch == null ? null : Math.round(ch * 100) / 100, col = r2 == null || r2 === 0 ? "#c7c7cc" : r2 > 0 ? "#7ee2a2" : "#ff8a80";
+    d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
+    cap(`Change \u00b7 ${A0.label} to ${A1.label}`, x0, top - 6, "#8e8e93", "left", 6.5);
+    d.text(r2 == null ? "\u2014" : `${r2 > 0 ? "+" : r2 < 0 ? "\u2212" : ""}${Math.abs(r2).toFixed(2)}`, x0, top + 34, { size: 36, bold: true, color: col, spacing: -1 });
+    d.text(r2 == null ? "Not enough rounds to compare." : r2 === 0 ? "Strokes a round: the same." : `Strokes a round ${r2 > 0 ? "better" : "worse"} than ${A0.label}.`, x0, top + 50, { size: 8, color: "#c7c7cc" });
+    // each step between seasons (three or more), then the rank's change
+    const lines = [];
+    if (nY > 2) lines.push(CMP.slice(1).map((s1, i) => { const p0 = CMP[i].a.overall.value, p1 = s1.a.overall.value; return p0 != null && p1 != null ? `${CMP[i].label}\u2192${s1.label} ${fmtSG(p1 - p0)}` : null; }).filter(Boolean).join("   "));
+    const k0 = A0.a.overall.rank, k1 = A1.a.overall.rank;
+    if (k0 && k1) lines.push(`Rank ${k0} \u2192 ${k1}${k1 < k0 ? ` (up ${k0 - k1})` : k1 > k0 ? ` (down ${k1 - k0})` : " (the same)"}`);
+    lines.slice(0, 2).forEach((l, i) => d.text(l, x0, top + 68 + i * 11, { size: 7.5, bold: true, color: i === lines.length - 1 && k0 && k1 ? (k1 < k0 ? "#7ee2a2" : k1 > k0 ? "#ff8a80" : "#c7c7cc") : "#c7c7cc" }));
+  } else if (a.rankHist?.length >= 2) {
     // (update 227) Weekly Rank History: 1st at the top, a gold line, the latest rank marked
     // (update 595) the last 6 months only (back from their latest tournament; at least the last two points)
     const lastMs = Date.parse(String(a.rankHist.at(-1).date).slice(0, 10)), from6 = Number.isFinite(lastMs) ? lastMs - 182.6 * 864e5 : null;
@@ -562,13 +592,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text("How to read this:", M + 12, y + 9, { size: 8.5, bold: true, color: P.gold });
   d.text("Strokes gained compares every shot with what a typical tour player would do from the same spot.", M + 92, y + 9, { size: 8.5, color: P.ink });
   d.text("Plus (green) = better than that; minus (red) = worse. +1.00 means one stroke a round better.", M + 92, y + 21, { size: 8.5, color: P.ink });
-  d.text(`Ranks: against the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
+  d.text(CMP ? `Ranks: within each season${a.tour ? ` (${a.tour} only)` : ""}. Diff: ${A1.label} against ${A0.label}.`
+    : `Ranks: against the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
   y += 58;
 
   // (update 573) page 1: Where the strokes come from first, then What stands out; Best and toughest opens page 2
   /* ---------- by category: gauges ---------- */
-  section("By category", "Where the strokes come from", 40 + a.byCat.length * 32);
-  y += 4; // (update 576: no "The black line is zero; the gold line is Tour Avg." and no Tour Avg line)
+  const cmpRowH = CMP ? Math.max(34, nY * 9 + 17) : 32;
+  section("By category", "Where the strokes come from", 40 + a.byCat.length * cmpRowH);
+  y += 4;
+  if (CMP) { // (update 694) the key: each season's colour
+    let kx = M; for (const [i, s0] of CMP.entries()) { d.rect(kx, y - 3, 8, 8, { fill: ycol(i) }); const t = `${s0.label} (${plural(s0.a.overall.rounds, "rd")})`; d.text(t, kx + 11, y + 4, { size: 7.5, bold: true, color: P.grey }); kx += textWidth(t, 7.5, true) + 24; }
+    y += 8;
+  } // (update 576: no "The black line is zero; the gold line is Tour Avg." and no Tour Avg line)
   // (update 556) the values and the Better / Worse badges in two columns, each lined up on its left, just past the bars
   // (update 570) the bars as long as they can be: the value column, then the badge column, its widest badge ("Better by
   // 0.00") ending at the page's right edge; the same size in every report
@@ -578,6 +614,34 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const labW = Math.max(...a.byCat.map((c) => Math.max(textWidth(c.name, 11.5, true), c.rank ? textWidth(`Rank ${c.rank} of ${c.of}`, 8, true) : 0)));
   const lw = Math.min(150, labW + 16), gx = M + lw, gw = W - lw - (14 + valW + 12 + badgeW), zx = gx + gw / 2, half = gw / 2, vx = gx + gw + 14, bx0 = vx + valW + 12;
   const gaugeMax = Math.max(0.1, ...a.byCat.flatMap((c) => [c.value, c.fieldAvg]).filter((v) => v != null && Number.isFinite(v)).map(Math.abs)) * 1.12;
+  if (CMP) {
+    // (update 694) a bar for each season in each category (its colour), each season's value beside it, and Diff: the last
+    // season against the first (green better, red worse)
+    const catOf = (s0, k) => s0.a.byCat.find((q) => q.cat === k) || null;
+    const vW = Math.max(...CMP.map((s0) => textWidth(`${s0.label}  \u22120.00`, 8.5, true))), pW = bW("Diff: +0.00");
+    const lW = Math.min(150, Math.max(...a.byCat.map((c) => Math.max(textWidth(c.name, 11.5, true), textWidth("Rank 000 \u2192 000", 8, true)))) + 16);
+    const gx2 = M + lW, gw2 = W - lW - (14 + vW + 12 + pW), zx2 = gx2 + gw2 / 2, half2 = gw2 / 2, vx2 = gx2 + gw2 + 14, px2 = vx2 + vW + 12;
+    const mx = Math.max(0.1, ...CMP.flatMap((s0) => s0.a.byCat.map((q) => q.value)).filter((v) => v != null && Number.isFinite(v)).map(Math.abs)) * 1.12;
+    const BH = 7, BG = 2, trackH = nY * BH + (nY - 1) * BG;
+    for (const c of a.byCat) {
+      need(cmpRowH);
+      const per = CMP.map((s0) => catOf(s0, c.cat)), top = y + (cmpRowH - trackH) / 2 - 1;
+      d.text(c.name, M, top + trackH / 2 - 1, { size: 11.5, bold: true, color: P.ink });
+      const k0 = per[0]?.rank, k1 = per.at(-1)?.rank;
+      if (k0 || k1) d.text(`Rank ${k0 || "\u2014"} \u2192 ${k1 || "\u2014"}`, M, top + trackH / 2 + 11, { size: 8, bold: true, color: k1 ? rankInk(k1) : P.grey });
+      d.roundRect(gx2, top - 2, gw2, trackH + 4, 5, { fill: P.track });
+      per.forEach((q, i) => {
+        const by = top + i * (BH + BG), v = q?.value;
+        if (v != null) { const w = Math.max(3, Math.abs(Math.max(-1, Math.min(1, v / mx)) * half2)); d.roundRect(v >= 0 ? zx2 : zx2 - w, by, w, BH, 2.5, { fill: ycol(i) }); d.rect(v >= 0 ? zx2 : zx2 - Math.min(3, w), by, Math.min(3, w), BH, { fill: ycol(i) }); }
+        d.text(String(CMP[i].label), vx2, by + BH - 0.5, { size: 7.5, bold: true, color: ycol(i) });
+        d.text(fmtSG(v), vx2 + vW, by + BH - 0.5, { size: 8.5, bold: true, color: tone(v), align: "right" });
+      });
+      d.line(zx2, top - 4, zx2, top + trackH + 4, { color: "#000000", width: 1.1 });
+      const v0 = per[0]?.value, v1 = per.at(-1)?.value, r2 = v0 != null && v1 != null ? Math.round((v1 - v0) * 100) / 100 : null;
+      if (r2 != null) badge(r2 ? `Diff: ${r2 > 0 ? "+" : "-"}${Math.abs(r2).toFixed(2)}` : "Diff: 0.00", px2, top + trackH / 2 + 3.5, r2 > 0 ? P.up : r2 < 0 ? P.down : "#8e8e93");
+      y += cmpRowH;
+    }
+  } else
   for (const c of a.byCat) {
     need(32);
     const t = (a.catTrend || []).find((q) => q.cat === c.cat); // (update 580: the last 12 rounds against the 12 before)
@@ -607,7 +671,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y += 32; // (update 573: a little closer, so What stands out fits under it on page 1)
   }
   y += 6; // (update 574: a little room under Putting's rank)
-  d.text(a.halves ? `Trend: the last ${a.halves.n} ${a.halves.unit || "rounds"} (${a.halves.late}) against the ${a.halves.n} before them (${a.halves.early}), in strokes a round` : "Trend: needs more rounds to compare.", M, y + 4, { size: 7.5, color: P.faint }); // (update 580)
+  if (CMP) d.text(`Diff: ${A1.label} against ${A0.label}, in strokes gained a round (green = better in ${A1.label}, red = worse). Ranks: ${A0.label} \u2192 ${A1.label}.`, M, y + 4, { size: 7.5, color: P.faint });
+  else d.text(a.halves ? `Trend: the last ${a.halves.n} ${a.halves.unit || "rounds"} (${a.halves.late}) against the ${a.halves.n} before them (${a.halves.early}), in strokes a round` : "Trend: needs more rounds to compare.", M, y + 4, { size: 7.5, color: P.faint }); // (update 580)
   y += 18;
 
   /* ---------- highlights: strengths and things to watch ---------- */
@@ -621,16 +686,28 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // part of the game, unless that's all there is)
   const nearU = (g) => { const t = String(g.key || "").split("|")[0], nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number); return nums.length > 0 && !/^\s*>/.test(t) && Math.max(...nums) <= 30; };
   // (inside 30 yds a lie that's every shot of its distance only repeats it: then the distance itself stands for it)
-  const lieSplit = (g) => (a.groups || []).some((h) => h.cat === g.cat && h.withLie && !h.repeat && String(h.key).startsWith(`${g.key}|`));
-  const okG = (g) => g.fieldAvg != null && Number.isFinite(g.perRound) && g.shots >= (a.minShots || 5) && (g.cat === "ARG" && nearU(g) ? (g.withLie ? !g.repeat : !lieSplit(g)) : !g.withLie && !g.repeat);
+  const lieSplitIn = (aa, g) => (aa.groups || []).some((h) => h.cat === g.cat && h.withLie && !h.repeat && String(h.key).startsWith(`${g.key}|`));
+  const okIn = (aa) => (g) => g.fieldAvg != null && Number.isFinite(g.perRound) && g.shots >= (aa.minShots || 5) && (g.cat === "ARG" && nearU(g) ? (g.withLie ? !g.repeat : !lieSplitIn(aa, g)) : !g.withLie && !g.repeat);
+  const okG = okIn(a);
   const pool = (a.groups || []).filter(okG).map((g) => ({ g, gap: g.perRound - g.fieldAvg }));
   const shortT = (g) => { const [dist, lie] = String(g.key).split("|"); return lie ? `Around green ${dist} · ${lie}` : `${CAT_NAME[g.cat] || g.cat}, ${dist}`; };
   const topR = (g) => g.rank && g.of >= 2 && g.rank <= Math.max(1, Math.floor(g.of * 0.1));
   const pick3 = (list) => { const out = []; for (const x of list) { if (out.length >= 3) break; if (out.filter((o) => o.g.cat === x.g.cat).length >= 2) continue; out.push(x); } for (const x of list) { if (out.length >= 3) break; if (!out.includes(x)) out.push(x); } return out; };
   const cardOf = (x, up) => ({ cat: x.g.cat, title: shortT(x.g), tag: up ? (topR(x.g) ? "Elite" : x.gap >= 0.05 ? "Strong" : "Solid") : (x.gap <= -0.05 ? "Costing strokes" : "Room to grow"), /* (update 678: no "avg") */
     text: `${x.g.perRound >= 0 ? `Gains ${x.g.perRound.toFixed(2)}` : `Loses ${Math.abs(x.g.perRound).toFixed(2)}`} strokes a round${x.g.rank ? ` · Ranked ${x.g.rank} of ${x.g.of}` : ""} · ${Math.round(x.g.shots)} shots.` });
-  const strengths = pick3(pool.filter((x) => x.gap > 0).sort((p, q) => q.gap - p.gap)).map((x) => cardOf(x, true));
-  const watch = pick3(pool.filter((x) => x.gap < 0).sort((p, q) => p.gap - q.gap)).map((x) => cardOf(x, false));
+  let strengths = pick3(pool.filter((x) => x.gap > 0).sort((p, q) => q.gap - p.gap)).map((x) => cardOf(x, true));
+  let watch = pick3(pool.filter((x) => x.gap < 0).sort((p, q) => p.gap - q.gap)).map((x) => cardOf(x, false));
+  let hlHeads = ["Strengths", "Watch"], hlEmpty = ["No clear standouts in this period.", "Nothing is costing strokes in this period."];
+  if (CMP) {
+    // (update 694) Compare: the distances that changed the most from the first season to the last (in both, with enough shots)
+    const first = new Map((A0.a.groups || []).filter(okIn(A0.a)).map((g) => [`${g.cat}|${g.key}`, g])), diffs = [];
+    for (const g of (A1.a.groups || []).filter(okIn(A1.a))) { const g0 = first.get(`${g.cat}|${g.key}`); if (g0) diffs.push({ g, g0, gap: g.perRound - g0.perRound }); }
+    const cmpCard = (x, up) => ({ cat: x.g.cat, title: shortT(x.g), tag: up ? (x.gap >= 0.15 ? "Big jump" : "Better") : (x.gap <= -0.15 ? "Big drop" : "Slipped"),
+      text: `${A0.label} ${fmtSG(x.g0.perRound)} \u2192 ${A1.label} ${fmtSG(x.g.perRound)} strokes a round (${up ? "up" : "down"} ${Math.abs(x.gap).toFixed(2)})${x.g0.rank && x.g.rank ? ` \u00b7 Rank ${x.g0.rank} \u2192 ${x.g.rank}` : ""}.` });
+    strengths = pick3(diffs.filter((x) => x.gap >= 0.01).sort((p, q) => q.gap - p.gap)).map((x) => cmpCard(x, true));
+    watch = pick3(diffs.filter((x) => x.gap <= -0.01).sort((p, q) => p.gap - q.gap)).map((x) => cmpCard(x, false));
+    hlHeads = [`Better in ${A1.label}`, `Worse in ${A1.label}`]; hlEmpty = [`Nothing clearly better than ${A0.label}.`, `Nothing clearly worse than ${A0.label}.`];
+  }
   // (update 578, 583) every card the same: one title size and one height; the largest sizes at which the rows fit page 1
   const TL = [{ P: 10, fs: 9.5, lh: 12, gap: 6, tz: 11 }, { P: 9.5, fs: 9, lh: 11, gap: 5.5, tz: 10.5 }, { P: 9, fs: 8.5, lh: 10.5, gap: 5, tz: 10 }, { P: 8, fs: 8, lh: 10, gap: 4.5, tz: 9.5 }, { P: 7, fs: 7.6, lh: 9.4, gap: 4, tz: 9 }, { P: 6, fs: 7.2, lh: 8.8, gap: 3.5, tz: 8.5 }, { P: 5, fs: 6.8, lh: 8.2, gap: 3, tz: 8 }]
     .map((t) => ({ ...t, ty: t.P + 10, tx: t.P + 15 + 5 + t.fs * 0.75, pad: 2 * t.P + 15 + 5 - (t.lh - t.fs) + 1 }));
@@ -651,7 +728,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const roomHL = H - 50 - (y + 12 + 40);
   const pickTier = () => { for (const t of TL) { L = t; fitAll(); if (Math.max(cardsH(strengths), cardsH(watch)) <= roomHL) return true; } return false; };
   while (!pickTier() && strengths.length + watch.length > 1) { if (strengths.length >= watch.length) strengths.pop(); else watch.pop(); }
-  section("Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
+  section(CMP ? `${A0.label} to ${A1.label}` : "Highlights", "What stands out", Math.max(cardsH(strengths), cardsH(watch)));
   const cards = (x, title, list, accent, tint, empty) => {
     let yy = y + 4;
     cap(title, x, yy + 6, accent); yy += 14;
@@ -667,9 +744,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     }
     return yy;
   };
-  const yl0 = cards(M, "Strengths", strengths, P.up, P.upTint, "No clear standouts in this period.");
+  const yl0 = cards(M, hlHeads[0], strengths, P.up, P.upTint, hlEmpty[0]);
   const yl = yl0 + 2;
-  const yr = cards(M + colW + 14, "Watch", watch, P.down, P.downTint, "Nothing is costing strokes in this period.");
+  const yr = cards(M + colW + 14, hlHeads[1], watch, P.down, P.downTint, hlEmpty[1]);
   y = Math.max(yl, yr) + 10;
   newPage();
   } // (update 576: What stands out, not for the DP World Tour)
@@ -705,7 +782,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const formChart = (title, vals, src = a.series) => {
     // (update 553) the DP World Tour's chart is event by event, but its form is the last 12 rounds against the 12 before
     const byRd = a.unit === "event" && a.form;
-    const n = byRd ? a.form.n : Math.min(20, Math.floor(vals.length / 2)); // (update 663)
+    const n = byRd ? a.form.n : Math.min(12, Math.floor(vals.length / 2)); // (update 694: as Form, 12 rounds)
     const first = byRd ? a.form.first : n >= 2 ? mean(vals.slice(-2 * n, -n)) : null, last = byRd ? a.form.last : n >= 2 ? mean(vals.slice(-n)) : null; // the 12 before, the last 12
     const top = y + 22, ht = isDP ? 175 : 70, left = M + 22, wd = W - 22; // (update 576: the DP World Tour's 2.5 times as tall)
     need(ht + 52);
@@ -730,6 +807,19 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
     d.polyline(ma(vals, isDP ? 5 : 20 /* (update 663) */).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
+    if (CMP) {
+      // (update 694) a dashed line where each season starts, the season's name at its top, and its average as a dotted line across it
+      const yrOf = (q) => String(q?.year || String(q?.date || "").slice(0, 4)), segs = [];
+      let s0 = 0; for (let i = 1; i <= src.length; i++) if (i === src.length || yrOf(src[i]) !== yrOf(src[i - 1])) { segs.push([s0, i]); s0 = i; }
+      segs.forEach(([i0, i1], j) => {
+        const xL = left + i0 * bw, xR = left + i1 * bw, yi = CMP.findIndex((q) => String(q.label) === yrOf(src[i0]));
+        if (j) d.line(xL, top - 5, xL, top + ht + 3, { color: P.ink, width: 1, dash: [4, 2.5] });
+        d.text(yrOf(src[i0]), xL + 4, top + 3, { size: 7.5, bold: true, color: yi >= 0 ? ycol(yi) : P.grey });
+        const av = mean(vals.slice(i0, i1));
+        if (av != null && xR - xL > 30) { d.line(xL + 2, Y(av), xR - 2, Y(av), { color: yi >= 0 ? ycol(yi) : P.ink, width: 1, dash: [1.5, 1.5] });
+          d.text(`Avg ${fmtSG(av)}`, xR - 4, Y(av) - 3, { size: 6.5, bold: true, color: tone(av), align: "right" }); }
+      });
+    }
     const every = Math.max(1, Math.ceil(vals.length / 8));
     src.forEach((q, i) => { if (i % every === 0) { const t = day(q.date); d.text(t == null ? "" : shortDate(new Date(t)), left + i * bw + bw / 2, top + ht + 11, { size: 6.5, color: P.faint, align: "center" }); } });
     y = top + ht + 26;
@@ -739,7 +829,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
     // (update 577) wrapped to the page's width (it ran off the right edge)
-    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 20} ${U}s: when it rises, the player is playing better.`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 20} ${U}s: when it rises, the player is playing better.${CMP ? " The dashed lines divide the seasons; the dotted line across each is that season's average." : ""}`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
     y -= 10;
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
@@ -864,8 +954,16 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const nb = a.numbers, tiles = [];
     const pct = nb.n ? nb.posRounds / nb.n : 0;
     const u = nb.unit === "event" ? "event" : "round", Uc = u === "event" ? "Events" : "Rounds"; // (update 523)
+    const cmpNb = CMP ? CMP.map((s0) => ({ label: String(s0.label), nb: s0.a.numbers })) : null;
+    const pc = (q) => (q.nb.n ? Math.round((q.nb.posRounds / q.nb.n) * 100) : 0);
+    if (cmpNb) {
+      // (update 694) Compare: each season's own line, a bar each
+      tiles.push({ label: `${Uc} in the green`, big: `${pc(cmpNb[0])}% \u2192 ${pc(cmpNb.at(-1))}%`, text: cmpNb.map((q) => `${q.label}: ${q.nb.posRounds} of ${q.nb.n} ${u}s (${pc(q)}%)`).join("\n"), viz: "yBars", v: cmpNb.map((q, i) => ({ label: q.label, t: q.nb.n ? q.nb.posRounds / q.nb.n : 0, txt: `${pc(q)}%`, i })) });
+      const sl = (q) => q.nb.streak.len, mxS = Math.max(1, ...cmpNb.map(sl));
+      tiles.push({ label: "Best run", big: `${sl(cmpNb[0])} \u2192 ${sl(cmpNb.at(-1))} ${u}s`, text: cmpNb.map((q) => `${q.label}: ${sl(q) ? `${plural(sl(q), u)}, ${shortDate(new Date(day(q.nb.streak.from)))} \u2013 ${shortDate(new Date(day(q.nb.streak.to)))}` : "none"}`).join("\n"), viz: "yBars", v: cmpNb.map((q, i) => ({ label: q.label, t: sl(q) / mxS, txt: String(sl(q)), i })) });
+    } else
     if (nb.n) tiles.push({ label: `${Uc} in the green`, big: `${nb.posRounds} of ${nb.n}`, text: `Gained strokes overall in ${Math.round(pct * 100)}% of ${u}s.`, viz: "bar", v: pct });
-    if (nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? u : `${u}s`}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
+    if (!cmpNb && nb.streak.len) tiles.push({ label: "Best run", big: `${nb.streak.len} ${nb.streak.len === 1 ? u : `${u}s`}`, text: `In a row gaining strokes, ${shortDate(new Date(day(nb.streak.from)))} \u2013 ${shortDate(new Date(day(nb.streak.to)))}.`, viz: "dots", v: nb.streak.len });
     if (nb.upside && nb.upside.gain > 0.01) tiles.push({ label: `Biggest upside \u00b7 ${CAT_NAME[nb.upside.cat]}`, big: `+${nb.upside.gain.toFixed(2)}`, // (update 587: the category in the heading, as Steadiest)
       text: `By getting back to your best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`,
       textShort: `By getting back to your best ${nb.upside.win}-${u} stretch\n(${fmtSG(nb.upside.bestV)}, ${shortDate(new Date(day(nb.upside.from)))} \u2013 ${shortDate(new Date(day(nb.upside.to)))}).`, /* (update 565: the shorter card) */ viz: "pair", v: nb.upside });
@@ -878,7 +976,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     if (tiles.length) {
       // (update 564) with last season to compare: the cards a little smaller and shorter, and a third row across the page,
       // This season vs Last season
-      const yo = nb.yoy, cols = 2, gap = yo ? 7 : 12, tw = (W - gap) / cols, th0 = yo ? 56 : 92, rows = Math.ceil(Math.min(4, tiles.length) / cols), yoH0 = yo ? 104 : 0; // (update 565: shorter, so it all fits on one page)
+      const yo = CMP ? null : nb.yoy, cols = 2, gap = yo ? 7 : 12, tw = (W - gap) / cols, th0 = yo ? 56 : 92, rows = Math.ceil(Math.min(4, tiles.length) / cols), yoH0 = yo ? 104 : 0; // (update 565: shorter, so it all fits on one page)
       // (update 582) the DP World Tour's page 2 (Event by event, then this): the cards and This season vs Last season stretched
       // to fill the rest of the page, each card's contents in its middle
       let th = th0, yoH = yoH0;
@@ -900,7 +998,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         String(sq && t.textShort ? t.textShort : t.text).split("\n").flatMap((p0) => wrap(p0, tw * 0.54, sq ? 6.8 : 7.8)).slice(0, sq ? 2 : 3) /* (update 584: a line break where it says so) */.forEach((l, j) => d.text(l, x + 16, ty + (sq ? 41 : 64) + j * (sq ? 8 : 9.5), { size: sq ? 6.8 : 7.8, color: "#a1a1a6" }));
         // a small picture on the right
         const vx = x + tw * 0.6, vw = tw * 0.4 - 18, vy = ty + (sq ? 11 : 30) + (bigH ? 9 : 0); // (update 584: under the bigger heading)
-        if (t.viz === "bar") {
+        if (t.viz === "yBars") {
+          // (update 694) a bar a season, in its colour
+          const rh = Math.min(16, 44 / t.v.length);
+          t.v.forEach((q, j) => { const yy = vy + 4 + j * rh, bx = vx + 26, bw2 = vw - 26 - 26;
+            d.text(q.label, vx, yy + 6, { size: 7, bold: true, color: ycolD(q.i) });
+            d.roundRect(bx, yy, bw2, 7, 3.5, { fill: "#2c2c2e" });
+            if (q.t > 0) d.roundRect(bx, yy, Math.max(7, bw2 * Math.min(1, q.t)), 7, 3.5, { fill: ycolD(q.i) });
+            d.text(q.txt, vx + vw, yy + 6.5, { size: 7.5, bold: true, color: ycolD(q.i), align: "right" }); });
+        } else if (t.viz === "bar") {
           d.roundRect(vx, vy + 12, vw, 7, 3.5, { fill: "#2c2c2e" });
           d.roundRect(vx, vy + 12, Math.max(7, vw * t.v), 7, 3.5, { fill: P.goldLight });
           d.text(`${Math.round(t.v * 100)}%`, vx + vw, vy + 36, { size: 15, bold: true, color: P.goldLight, align: "right" });
@@ -1114,6 +1220,74 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   // the side, column headings across; each cell the value, its rank among the same players as the
   // strokes-gained ranks, and Tour Avg): Scoring, Off-the-Tee (Driver / Non-Driver), Approach by distance,
   // Short game (Up & Down by distance and lie) and Putting (Made Putt % by distance).
+  if (CMP) {
+    // (update 694) Compare: one table, a row a stat and a column a season (its value and its rank that season), the
+    // better season's value highlighted, and the difference (the last season against the first)
+    const SHORT2 = { scoring: "Scoring Avg", eagles: "Eagles/Round", birdiesRd: "Birdies/Round", parsRd: "Pars/Round", bogeysRd: "Bogeys/Round", dblBogeysRd: "Dbl Bogeys/Round", birdie: "Birdie %", parOrBetter: "Par or Better %", bogey: "Bogey Avoidance", owgr: "OWGR" };
+    const SECS = ["Scoring", "Off-the-Tee", "Approach by distance", "Short game \u00b7 Up & Down %", "Putting - Make %", "Other"];
+    const statRows = (aa) => {
+      const out = [], add = (sec, label, b) => { if (b && b.value != null && Number.isFinite(b.value)) out.push({ sec, id: `${sec}|${label}`, label, b }); };
+      for (const k of Object.keys(SHORT2)) for (const b of (aa.basics || []).filter((x) => x.key === k)) add("Scoring", SHORT2[k], b);
+      (aa.parScoring || []).forEach((b, i) => add("Scoring", `Par ${i + 3} Scoring Avg`, b));
+      for (const g of aa.teeGrid || []) { const nm = g.key === "gir" ? "GIR % (Par 4/5)" : g.def.label;
+        if (aa.teeSplit && g.cells.some(Boolean)) ["Driver", "Non-Driver"].forEach((kind, r) => add("Off-the-Tee", `${nm} \u00b7 ${kind}`, g.cells[r])); else add("Off-the-Tee", nm, g.all); }
+      for (const g of aa.grid || []) { if (g.missing) continue; if (g.overall) add("Approach by distance", g.def.label, g.overall); else g.cells.forEach((b, i) => add("Approach by distance", `${g.def.label} \u00b7 ${(aa.bands || [])[i] || ""}`, b)); }
+      if (aa.udGrid) aa.udGrid.bands.forEach((band, r) => aa.udGrid.lies.forEach((lie, c) => add("Short game \u00b7 Up & Down %", `${band} \u00b7 ${lie}`, aa.udGrid.cells[r]?.[c])));
+      if (aa.puttGrid) aa.puttGrid.labels.forEach((lab, c) => add("Putting - Make %", `Make % \u00b7 ${lab}`, aa.puttGrid.cells[c]));
+      const shown = new Set([...Object.keys(SHORT2), "drive", "ballSpeed", "fwy", "gir", "hitGreen", "prox", "pinHigh", "onLine", "goodLag"]);
+      for (const b of (aa.basics || []).filter((x) => !shown.has(x.key) && !(aa.udGrid && x.key === "ud") && !(aa.puttGrid && x.key === "make"))) add("Other", b.def.label, b);
+      return out;
+    };
+    const per = CMP.map((s0) => new Map(statRows(s0.a).map((r) => [r.id, r])));
+    const order = []; { const seen = new Set(); for (const m of per) for (const [id, r] of m) if (!seen.has(id)) { seen.add(id); order.push(r); } }
+    order.sort((p, q) => SECS.indexOf(p.sec) - SECS.indexOf(q.sec));
+    if (order.length) {
+      newPage();
+      y -= 12;
+      d.rect(M, y - 7, 3, 9, { fill: P.gold });
+      cap("Detail", M + 9, y, P.gold); y += 23;
+      d.text("Additional Stats", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
+      for (const l of wrap(`Each season side by side: the value and its rank that season (out of the players compared that season). The better season for each stat is highlighted in green. Diff: ${A1.label} against ${A0.label} (green = better).`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
+      y += 4;
+      const nSec = new Set(order.map((r) => r.sec)).size, LW = Math.min(W * 0.34, 190), DW = 64, CW = (W - LW - DW) / nY;
+      const RH = Math.max(15, Math.min(20, (H - 56 - y - 22 - nSec * 19) / order.length)); // (taller rows when the page has room)
+      const colX = (i) => M + LW + i * CW;
+      const headRow = () => {
+        d.roundRect(M, y, W, 18, 5, { fill: P.night });
+        cap("Stat", M + 8, y + 12, "#a1a1a6", "left", 6.5);
+        CMP.forEach((s0, i) => cap(`${s0.label} \u00b7 ${plural(s0.a.overall.rounds, "rd")}`, colX(i) + CW - 8, y + 12, ycolD(i), "right", 6.5));
+        cap("Diff", M + W - 8, y + 12, "#a1a1a6", "right", 6.5);
+        y += 22;
+      };
+      headRow();
+      const better = (def, x, ref) => (def.higher == null || Math.abs(x - ref) < 1e-9 ? null : def.higher ? x > ref : x < ref);
+      let sec = null, stripe = 0;
+      for (const r0 of order) {
+        if (y + RH + (r0.sec !== sec ? 18 : 0) > H - 50) { newPage(); headRow(); sec = null; }
+        if (r0.sec !== sec) { sec = r0.sec; stripe = 0; y += 4; d.rect(M, y + 2, 3, 8, { fill: P.gold }); cap(sec, M + 9, y + 9.5, P.gold, "left", 6.6); y += 15; }
+        if (stripe++ % 2) d.rect(M, y, W, RH, { fill: P.mist });
+        const cells = per.map((m) => m.get(r0.id)?.b || null), def = (cells.find(Boolean) || r0.b).def;
+        d.text(r0.label, M + 8, y + RH / 2 + 3, { size: 8, color: P.ink });
+        // the best season: the highest (or lowest, for lower-is-better), only when it's clearly ahead of every other
+        const vals = cells.map((b) => b?.value ?? null), have = vals.filter((v) => v != null);
+        let bestI = -1;
+        if (def.higher != null && have.length >= 2) { const tgt = def.higher === false ? Math.min(...have) : Math.max(...have); if (have.filter((v) => Math.abs(v - tgt) < 1e-9).length === 1) bestI = vals.findIndex((v) => v != null && Math.abs(v - tgt) < 1e-9); }
+        cells.forEach((b, i) => {
+          const xr = colX(i) + CW - 8;
+          if (!b) { d.text("\u2014", xr, y + RH / 2 + 3, { size: 8, color: P.faint, align: "right" }); return; }
+          if (i === bestI) d.roundRect(colX(i) + 4, y + 1.5, CW - 8, RH - 3, 4, { fill: P.upTint });
+          let xv = xr;
+          if (b.rank) { const T = `${b.rank}/${b.of}`, pw = textWidth(T, 5.4, true) + 8, [f, t] = rankColors(b.rank); d.roundRect(xr - pw, y + RH / 2 - 4.5, pw, 9, 4.5, { fill: f }); d.text(T, xr - pw / 2, y + RH / 2 + 2, { size: 5.4, bold: true, color: t, align: "center" }); xv = xr - pw - 6; }
+          d.text(fmtStat(b.def, b.value), xv, y + RH / 2 + 3, { size: 8.5, bold: true, color: i === bestI ? P.up : P.ink, align: "right" });
+        });
+        const v0 = vals[0], v1 = vals.at(-1);
+        if (v0 != null && v1 != null) { const df = v1 - v0, ft = fmtStat(def, Math.abs(df)), same = Math.abs(df) < 1e-9 || !/[1-9]/.test(ft), g = same ? null : better(def, v1, v0), txt = same ? "Same" : `${df > 0 ? "+" : "\u2212"}${ft}`;
+          d.text(txt, M + W - 8, y + RH / 2 + 3, { size: 8, bold: true, color: g == null ? P.grey : g ? P.up : P.down, align: "right" }); }
+        else d.text("\u2014", M + W - 8, y + RH / 2 + 3, { size: 8, color: P.faint, align: "right" });
+        y += RH;
+      }
+    }
+  } else
   if (a.basics?.length || a.grid?.length || a.udGrid || a.puttGrid || a.teeGrid?.length) {
     newPage();
     // (the same heading as the other pages' sections)
@@ -1189,6 +1363,15 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
             d.roundRect(x0, by - 1.5, x1 - x0, 3, 1.5, { fill: "#dcdce1" });
             if (b.fieldAvg != null) d.line(pos(b.fieldAvg), by - 3.5, pos(b.fieldAvg), by + 3.5, { color: P.grey, width: 0.8 });
             d.dot(pos(b.value), by, 3.2, rankInk(b.rank || 999));
+            // (update 694) small labels: the field's lowest and highest at the ends (worst left, best right), its average under the tick
+            { const ls = 4.6 + 0.8 * k, ly = by + 8.5, fv = (v) => fmtStat(b.def, v);
+              const left = b.def.higher === false ? b.hi : b.lo, right = b.def.higher === false ? b.lo : b.hi;
+              const at = b.fieldAvg != null ? `Avg ${fv(b.fieldAvg)}` : "", ax = b.fieldAvg != null ? pos(b.fieldAvg) : 0, aw = textWidth(at, ls, false);
+              const fits = (l, r) => !at || (ax - aw / 2 > x0 + textWidth(l, ls, false) + 3 && ax + aw / 2 < x1 - textWidth(r, ls, false) - 3);
+              let lt = `${b.def.higher === false ? "Max" : "Min"} ${fv(left)}`, rt = `${b.def.higher === false ? "Min" : "Max"} ${fv(right)}`;
+              if (!fits(lt, rt)) { lt = fv(left); rt = fv(right); } // (narrow cells: just the numbers, so the average fits too)
+              d.text(lt, x0, ly, { size: ls, color: P.faint }); d.text(rt, x1, ly, { size: ls, color: P.faint, align: "right" });
+              if (at && fits(lt, rt)) d.text(at, ax, ly, { size: ls, color: P.grey, align: "center" }); }
           }
         });
       });
@@ -1527,6 +1710,14 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       // (update 550) a season (the Stats page's years, or a season picked here): by the file's year, as the Stats page
       const years = auto?.years?.length ? auto.years : preset?.startsWith?.("y:") && fromIn.value === `${preset.slice(2)}-01-01` && toIn.value === `${preset.slice(2)}-12-31` ? [preset.slice(2)] : null;
       const a = analyzePerformance(data.me, field, { from, to, cats, byProduct: true, idx: data.idx, minRounds: minIn.value ? Number(minIn.value) : null, tour: source.value === startSource ? tour : null, years });
+      // (update 694) Compare: each season on its own too (its own ranks, Min. rounds worked out for that season)
+      let compare = null;
+      if (auto?.compare && years?.length > 1 && a.overall.rounds) {
+        status.textContent = "Comparing the seasons\u2026";
+        compare = years.map(String).sort().map((yr) => ({ label: yr, a: analyzePerformance(data.me, field, { from: Date.parse(`${yr}-01-01T00:00:00`), to: Date.parse(`${yr}-12-31T23:59:59`), cats, byProduct: false, idx: data.idx, minRounds: null, tour: source.value === startSource ? tour : null, years: [yr] }) }))
+          .filter((q) => q.a.overall.rounds);
+        if (compare.length < 2) compare = null;
+      }
       let aiSummary = null;
       const url = null; // (update 253: the report's own written summary; the AI service is for Compare's Ask AI only)
       if (url && a.overall.rounds) {
@@ -1542,8 +1733,8 @@ export function reportBuilder({ playerKey, playerLabel, canSave = false, flash =
       // ("This year" and "All time" also say how current they are: "2026 - As of 10/9/2026")
       const asOf = ` - As of ${new Date().toLocaleDateString("en-US")}`;
       const rangeLabel = auto?.rangeLabel ? auto.rangeLabel : preset === "year" ? `${new Date().getFullYear()}${asOf}` : preset === "all" ? `All time${asOf}` : preset?.startsWith?.("y:") ? `${preset.slice(2)} season` : preset ? presets.find(([v]) => v === preset)?.[1] : null;
-      const bytes = buildReportPdf(a, { aiSummary, sourceLabel: "All rounds", logo: await loadLogo(), rangeLabel });
-      const name = `${playerLabel.replace(/[^\w -]/g, "")} performance report ${new Date().toISOString().slice(0, 10)}.pdf`;
+      const bytes = buildReportPdf(a, { aiSummary, sourceLabel: "All rounds", logo: await loadLogo(), rangeLabel: compare ? `${compare.map((q) => q.label).join(" vs ")} seasons` : rangeLabel, compare });
+      const name = `${playerLabel.replace(/[^\w -]/g, "")} ${compare ? `season comparison ${compare.map((q) => q.label).join("-")}` : `performance report ${new Date().toISOString().slice(0, 10)}`}.pdf`;
       window.__lastReportPdf = bytes; // (for tests)
       logReportRun({ uid: getState().user?.uid, playerKey, source: source.value }).catch(() => {}); // (update 169: At a glance → Reports generated)
       const blob = new Blob([bytes], { type: "application/pdf" });

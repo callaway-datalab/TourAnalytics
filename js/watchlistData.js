@@ -448,14 +448,16 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   if ((sign < 0 && run >= 5) || (avg5 != null && avg5 <= -1.5)) add({ kind: "cold", icon: "🧊", tone: "down", text: run >= 5 && sign < 0 ? `Slump · ${run} ${W.ab} losing` : `Slump · ${fmtSG(avg5)}/rd, last 5${byEv ? " events" : ""}`, alert: true, sev: 3 }, streakInfo(run >= 5 && sign < 0));
   // (update 372) current form, on every card: their last 10 rounds' strokes gained a round, and the rank it plays at
   if (mine.length >= 3) {
-    const fn = Math.min(byEv ? 5 : 20, mine.length), fAvg = perRound(mine.slice(-fn));
-const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the change on the rounds before, not the sign of the average
+    // (update 694) Form: the last 12 rounds (the DP World Tour: the last 3 events, each event's rounds pooled) against the 12 before
+    const fu = byEv ? groupEv(mine) : mine.map((rd) => [rd]), fn = Math.min(byEv ? 3 : 12, fu.length), fAvg = perRound(fu.slice(-fn).flat());
+    const fPrev = fu.length >= 2 * fn ? perRound(fu.slice(-2 * fn, -fn).flat()) : null, fRecent = fAvg != null && fPrev != null ? fAvg - fPrev : null;
+const fch = fRecent ?? total.trend?.ch ?? 0; // (update 375) coloured and pointed by the change on the rounds before, not the sign of the average
     // (update 670) the form word: the recent change and the overall direction (the last 50 rounds against the 50 before;
     // the DP World Tour: 20 events against 20)
-    const longCh = (() => { const u = byEv ? groupEv(mine) : mine.map((rd) => [rd]), nL = Math.min(byEv ? 20 : 50, Math.floor(u.length / 2)); if (nL <= (byEv ? 5 : 20)) return null;
+    const longCh = (() => { const u = byEv ? groupEv(mine) : mine.map((rd) => [rd]), nL = Math.min(byEv ? 12 : 48, Math.floor(u.length / 2)); if (nL <= fn) return null;
       const a = perRound(u.slice(-nL).flat()), b = perRound(u.slice(-2 * nL, -nL).flat()); return a != null && b != null ? a - b : null; })();
-    const fw = total.trend ? formWord(total.trend.ch, longCh) : null;
-    if (fAvg != null) add({ kind: "form", icon: fch < -0.005 ? "\uD83D\uDCC9" : "\uD83D\uDCC8", tone: fw ? fw[1] : fch > 0.005 ? "up" : fch < -0.005 ? "down" : "", ...(fw ? { color: fw[2] } : {}), /* (update 671: its colour) */ text: `Form${fw ? `: ${fw[0]}` : ""} \u2022 ${fmtSG(fAvg)}/rd, last ${fn}${byEv ? " events" : ""}${total.trend && Math.abs(total.trend.ch) >= 0.005 ? ` \u2022 ${total.trend.ch > 0 ? "up" : "down"} ${Math.abs(total.trend.ch).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
+    const fw = fRecent != null ? formWord(fRecent, longCh) : null;
+    if (fAvg != null) add({ kind: "form", icon: fch < -0.005 ? "\uD83D\uDCC9" : "\uD83D\uDCC8", tone: fw ? fw[1] : fch > 0.005 ? "up" : fch < -0.005 ? "down" : "", ...(fw ? { color: fw[2] } : {}), /* (update 671: its colour) */ text: `Form${fw ? `: ${fw[0]}` : ""} \u2022 ${fmtSG(fAvg)}/rd, last ${fn}${byEv ? " events" : ""}${fRecent != null && Math.abs(fRecent) >= 0.005 ? ` \u2022 ${fRecent > 0 ? "up" : "down"} ${Math.abs(fRecent).toFixed(2)}/rd` : ""}` }, () => { // (update 373: with the change against the rounds before)
       const fi = formInfo(mineO, (rs) => perRound(rs, "TOTAL"), { label: "SG: Total", fmtFn: fmtSG, rows: SG_KEYS.map(([kk, ll]) => catRow(kk, ll)) });
       fi.sub = `Current form: ${fmtSG(fAvg)} a round over the last ${fn} ${W.many}. ${fi.sub}`; // (update 373: no rank level)
       return fi;
@@ -549,8 +551,8 @@ const fch = total.trend?.ch ?? 0; // (update 375) coloured and pointed by the ch
 export function formInfo(ordered, val, { label, fmtFn, chFn = (d) => Math.abs(d).toFixed(2), higher = true, signed = true, rows = null, what = "round" }) {
   const fmt = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : fmtFn(v));
   const roundSub = (rd) => [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 ");
-  const n = Math.min(20, Math.floor(ordered.length / 2)); // (update 663: 20 against 20)
-  if (n < 2) return { sub: `${label} in each ${what}. Not enough ${what}s yet to compare the last 20 with the 20 before.`, blocks: [{ kind: "bars", fmtFn, zero: signed, items: ordered.map((rd) => ({ label: dateShort(rd.date), sub: roundSub(rd), v: val([rd]), on: true, tone: signed ? null : "gold" })) }] };
+  const n = Math.min(12, Math.floor(ordered.length / 2)); // (update 694: Form, 12 against 12)
+  if (n < 2) return { sub: `${label} in each ${what}. Not enough ${what}s yet to compare the last 12 with the 12 before.`, blocks: [{ kind: "bars", fmtFn, zero: signed, items: ordered.map((rd) => ({ label: dateShort(rd.date), sub: roundSub(rd), v: val([rd]), on: true, tone: signed ? null : "gold" })) }] };
   const prevR = ordered.slice(-2 * n, -n), lastR = ordered.slice(-n), pv = val(prevR), lv = val(lastR);
   const better = (a, b) => (higher == null || a == null || b == null ? null : higher ? a > b : a < b);
   const toneOf = (v) => (signed ? null : better(v, pv) == null ? "gold" : better(v, pv) || Math.abs(v - pv) < 1e-9 ? "pos" : "neg");

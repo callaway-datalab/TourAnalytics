@@ -81,12 +81,12 @@ export function summaryBox(S, mine, slicedField) {
     // 20; others: 20 rounds against 20 and 50 against 50), so the two always say the same
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const fu = formUnits(S, ordered), ev = S.eventMode, U = ev ? "events" : "rounds";
-    const n = Math.min(ev ? 5 : 20, Math.floor(fu.length / 2)); // (update 663: 20 against 20)
+    const n = Math.min(ev ? 3 : 12, Math.floor(fu.length / 2)); // (update 694: Form, 12 against 12 (3 events against 3))
     if (n >= (ev ? 1 : 2)) {
       const val = (us) => S.perRoundOf(us.flat());
       const last = val(fu.slice(-n)), prev = val(fu.slice(-2 * n, -n)), ch = last - prev;
       // (update 670) the form word: this change and the overall direction (the last 50 against the 50 before)
-      const nL = Math.min(ev ? 20 : 50, Math.floor(fu.length / 2)), L = nL > n ? val(fu.slice(-nL)) - val(fu.slice(-2 * nL, -nL)) : null;
+      const nL = Math.min(ev ? 12 : 48, Math.floor(fu.length / 2)), L = nL > n ? val(fu.slice(-nL)) - val(fu.slice(-2 * nL, -nL)) : null;
       const w = formWord(ch, L)?.[0] || "Steady";
       lines.push(Math.abs(ch) < 0.05 ? `Form: ${w}. ${fmtSG(last)} a round over the last ${n} ${U}, about the same as the ${n} before.`
         : `Form: ${w}. ${fmtSG(last)} a round over the last ${n} ${U}, against ${fmtSG(prev)} in the ${n} before (${ch > 0 ? "better" : "worse"} by ${Math.abs(ch).toFixed(2)})${L != null ? `; ${L >= 0 ? "up" : "down"} ${Math.abs(L).toFixed(2)} over the last ${nL} against the ${nL} before` : ""}.`);

@@ -16,7 +16,7 @@ export function heroBox(S, mine, slicedField, f) {
     // (update 669) the graph: the last 6 months of it (the season's rank / average as it was each week, ending at today's)
     const hist = (() => { const lastMs = Date.parse(String(hist0.at(-1)?.date || "").slice(0, 10)); if (!Number.isFinite(lastMs)) return hist0;
       const h = hist0.filter((q) => (Date.parse(String(q.date).slice(0, 10)) || 0) >= lastMs - 182.6 * 864e5); return h.length >= 2 ? h : hist0.slice(-2); })();
-    const fu = formUnits(S, ordered), n = Math.min(S.eventMode ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds; 677: eventMode) */ // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
+    const fu = formUnits(S, ordered), n = Math.min(S.eventMode ? 3 : 12, Math.floor(fu.length / 2)); /* (update 694: Form, 12 rounds (the DP World Tour: 3 events); 677: eventMode) */ // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
     let form = null;
     if (n >= (S.eventMode ? 1 : 2)) {
       const last = S.metric(fu.slice(-n).flat()), prev = S.metric(fu.slice(-2 * n, -n).flat());
@@ -28,7 +28,7 @@ export function heroBox(S, mine, slicedField, f) {
         else {
           // (update 670) the word from the recent change and the overall direction (the last 50 rounds against the 50 before;
           // the DP World Tour: 20 events against 20), each turned so a plus is better
-          const sgn = S.def.higher === false ? -1 : 1, nL = Math.min(S.eventMode ? 20 : 50, Math.floor(fu.length / 2));
+          const sgn = S.def.higher === false ? -1 : 1, nL = Math.min(S.eventMode ? 12 : 48, Math.floor(fu.length / 2)); // (update 694: the overall direction, 48 rounds (12 events), as Getting better or worse)
           const lL = nL > n ? S.metric(fu.slice(-nL).flat()) : null, pL = nL > n ? S.metric(fu.slice(-2 * nL, -nL).flat()) : null;
           const sb = S.steadyBand(prev), w = formWord(sgn * ch, lL != null && pL != null ? sgn * (lL - pL) : null, { flat: 3 * sb, shift: 4 * sb });
           form = w ? [`${w[0]} \u00b7 ${sgn * ch >= 0 ? "\u25B2" : "\u25BC"} ${amt}`, w[1], { word: w[0], color: w[2], n, nL: lL != null && pL != null ? nL : null, u: S.eventMode ? "events" : `${S.unit}s`,
@@ -289,7 +289,7 @@ export const formUnits = (S, ordered) => {
 };
 export async function formPopup(S, ordered, info = null) {
   const { renderBlocks } = await import("./badgePopup.js");
-  const fu = formUnits(S, ordered), ev = S.eventMode, n = Math.min(ev ? 5 : 20, Math.floor(fu.length / 2)); /* (update 663: 20 rounds) */
+  const fu = formUnits(S, ordered), ev = S.eventMode, n = Math.min(ev ? 3 : 12, Math.floor(fu.length / 2)); /* (update 694: 12 rounds, 3 events) */
   const lastU = fu.slice(-n), prevU = fu.slice(-2 * n, -n);
   const last = lastU.flat(), prev = prevU.flat(), sg = S.isSG();
   const goodTone = (v, ref) => (sg ? null : S.def.higher == null || v == null || ref == null ? "gold" : S.better(v, ref) ? "pos" : "neg");
@@ -441,7 +441,24 @@ export function insightsButton(S, slicedField = []) {
   const btn = el("button", { type: "button", class: "hero-insights" }, "\u2728 Generate PDF Report");
   // (update 545) no pop-up and no questions: the report is made from the filters on this page (its years or span or dates,
   // and its categories), then opened. A small note at the bottom says how it's going.
-  btn.addEventListener("click", async () => {
+  // (update 694) more than one season picked (and no dates or span): first ask Compare (the seasons side by side) or
+  // Combine (one long period, as before)
+  btn.addEventListener("click", () => {
+    if (btn.disabled) return;
+    const st = S.st, multi = !(st.dateRange?.from || st.dateRange?.to) && !(Number(st.span) > 0) && (st.year?.length || 0) > 1;
+    if (!multi) { run(false); return; }
+    document.querySelector(".hero-report-ask")?.remove();
+    const ys = st.year.map(String).sort(), x = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
+    const cmp = el("button", { type: "button", class: "btn" }, "Compare"), cmb = el("button", { type: "button", class: "btn ghost" }, "Combine");
+    const ask = el("div", { class: "hero-report-toast hero-report-ask", role: "dialog", "aria-label": "Compare or Combine" }, [x, el("strong", {}, "Compare or Combine?"),
+      el("p", { class: "muted small" }, `Compare: ${ys.join(" vs ")} side by side, season against season. Combine: one report for all ${ys.length} seasons together.`),
+      el("div", { class: "report-gen-actions" }, [cmp, cmb])]);
+    x.addEventListener("click", () => ask.remove());
+    cmp.addEventListener("click", () => { ask.remove(); run(true); }); // (straight from the tap: the new tab may open)
+    cmb.addEventListener("click", () => { ask.remove(); run(false); });
+    document.body.appendChild(ask);
+  });
+  const run = async (compare) => {
     if (btn.disabled) return;
     const win = (() => { try { return window.open("", "_blank"); } catch { return null; } })(); // (opened now, while it's still a tap)
     try { win?.document?.write?.("<p style='font:16px -apple-system,sans-serif;padding:24px'>Making the PDF report\u2026</p>"); } catch { /* */ }
@@ -460,12 +477,12 @@ export function insightsButton(S, slicedField = []) {
     const builder = reportBuilder({ playerKey: S.me.key, playerLabel: S.me.label, canSave: false, flash: () => {},
       source: S.opts.entered ? "entered" : "tour", minRounds: S.minRoundsFor(slicedField.filter((p) => p.rounds.length)), tour: S.tourCounts.length && S.st.tour[0] !== "__all" ? (S.st.tour[0] ?? null) : null, // (update 679: All: every tour)
       fullField: S.fieldIsSummary() ? null : S.fieldAll, // (the admin: everyone's rows, for ranks by distance)
-      auto: { from, to, cats: st.cats || [], rangeLabel, years: !(st.dateRange?.from || st.dateRange?.to) && !(Number(st.span) > 0) && st.year?.length ? st.year.map(String) : null, // (update 550: seasons, as on this page)
+      auto: { compare, from, to, cats: st.cats || [], rangeLabel, years: !(st.dateRange?.from || st.dateRange?.to) && !(Number(st.span) > 0) && st.year?.length ? st.year.map(String) : null, // (update 550: seasons, as on this page)
         onReady: (href) => { done(); if (win && !win.closed) { try { win.location.href = href; setTimeout(() => toast.remove(), 2500); return; } catch { /* the link below */ } } },
         onFail: () => { done(); try { win?.close(); } catch { /* */ } } } });
-    mount(toast, [el("strong", {}, `PDF report \u00b7 ${S.me.label}`), el("span", { class: "muted small" }, ` ${rangeLabel}`), x, builder]);
+    mount(toast, [el("strong", {}, `${compare ? "Season comparison" : "PDF report"} \u00b7 ${S.me.label}`), el("span", { class: "muted small" }, ` ${compare ? st.year.map(String).sort().join(" vs ") : rangeLabel}`), x, builder]);
     document.body.appendChild(toast);
-  });
+  };
   return btn;
 }
 // (update 168) Rank history: after each of the player's rounds, their rank among the same players with what each

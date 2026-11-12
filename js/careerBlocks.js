@@ -48,7 +48,7 @@ function openTrajectory(rs, x, cols = DEFAULT_COLS) {
     ] }) }, "Getting better or worse?");
 }
 // (update 281) the summary in long-term (last 48 vs the 48 before) and short-term (last 12 vs the 12 before) words
-function termWords(tr, longN = 50, shortN = 20) { // (update 667: 20 and 50, as the rows (update 663 left these at 48 and 12: no row matched and it failed on "ch"))
+function termWords(tr, longN = 48, shortN = 12) { // (update 694: back to 12 and 48) // (update 667: 20 and 50, as the rows (update 663 left these at 48 and 12: no row matched and it failed on "ch"))
   // (update 282) "Up over the long-term; Down over the short-term"
   const word = (x) => (x.ch.TOTAL > 0.15 ? "Up" : x.ch.TOTAL < -0.15 ? "Down" : "Steady");
   const lt = tr.find((x) => x.n === longN), st = tr.find((x) => x.n === shortN);
@@ -59,7 +59,7 @@ function termWords(tr, longN = 50, shortN = 20) { // (update 667: 20 and 50, as 
 }
 function trajectoryBlock(rs, cols0) {
   const cols = cols0 || DEFAULT_COLS;
-  const tr = trajectory(rs).filter((x) => x.n === 20 || x.n === 50).map((x) => ({ ...x, ch: { ...x.ch, ...changeOf(rs, x.n, cols) } }));
+  const tr = trajectory(rs).filter((x) => x.n === 12 || x.n === 48).map((x) => ({ ...x, ch: { ...x.ch, ...changeOf(rs, x.n, cols) } }));
   if (!tr.length) return null;
   const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "—" : `${v > 0.004 ? "▲" : v < -0.004 ? "▼" : "◆"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [
@@ -86,7 +86,7 @@ const eventsOf = (rs) => { const m = new Map(); for (const rd of rs) { const k =
 const avgRds = (xs, k) => (xs.length ? xs.reduce((t, rd) => t + sgOfRd(rd, k), 0) / xs.length : null);
 function trajectoryEvents(rs, cols0) {
   const cols = cols0 || DEFAULT_COLS, evs = eventsOf(rs);
-  const tr = [5, 20].filter((n) => evs.length >= 2 * n) /* (update 606: 5 vs 5 and 20 vs 20) */.map((n) => {
+  const tr = [3, 12].filter((n) => evs.length >= 2 * n) /* (update 694: 3 vs 3 and 12 vs 12 events) */.map((n) => {
     const last = evs.slice(-n).flat(), prev = evs.slice(-2 * n, -n).flat();
     return { n, evs: evs.slice(-2 * n), ch: Object.fromEntries(cols.map(([k]) => [k, avgRds(last, k) - avgRds(prev, k)])) };
   });
@@ -94,7 +94,7 @@ function trajectoryEvents(rs, cols0) {
   const cell = (v, strong = false) => el("td", { class: `num ${tone(v)} cmp-delta${strong ? " strong" : ""}` }, v == null ? "\u2014" : `${v > 0.004 ? "\u25B2" : v < -0.004 ? "\u25BC" : "\u25C6"}\u00a0${Math.abs(v).toFixed(2)}`);
   return el("section", { class: "panel cmp-sec cmp-traj career-sec" }, [
     secHead("Getting better or worse?", "Their latest events against the same number just before. Tap a row to see the events."),
-    el("p", { class: "cmp-traj-words" }, termWords(tr, 20, 5)),
+    el("p", { class: "cmp-traj-words" }, termWords(tr, 12, 3)),
     el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table cmp-traj-t" }, [
       el("thead", {}, el("tr", {}, ["Events", ...cols.map(([, h]) => h)].map((h, i) => el("th", { class: i ? "num" : "" }, h)))),
       el("tbody", {}, tr.map((x) => {
