@@ -70,7 +70,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
   const self = { owner: planOwner(state), key: state.profile?.clientKey || null, label: state.profile?.name || "Me", mine: true };
   let subject = previewClient?.key && !previewClient.self ? { owner: previewClient.key, key: previewClient.key, label: previewClient.label || "Player", mine: false } : self;
   const coachPlayers = !previewClient && (state.isTeam || state.isAdmin) ? (state.isAdmin && !team.preview ? null : [...teamLabels(team.teamAccess || {})].map(([k, l]) => [k, plainName(l)])) : [];
-  let sessions = [], drills = [], log = [], alive = true, openId = null, tick = null;
+  let sessions = [], drills = [], log = [], alive = true, openId = null, tick = null, tab = /[?&]tab=lm\b/.test(location.hash) ? "lm" : "sessions"; // (update 700: Launch Monitor)
   window.addEventListener("hashchange", () => { alive = false; clearInterval(tick); }, { once: true });
   async function load() {
     const [p, l] = await Promise.all([listPlan(subject.owner), listLog(subject.owner)]);
@@ -278,8 +278,17 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
   let coachEl = null;
   function draw() {
     const s0 = openId && sessions.find((s) => s.id === openId);
-    if (s0) { mount(wrap, sessionView(s0)); return; }
+    if (s0 && tab === "sessions") { mount(wrap, sessionView(s0)); return; }
     clearInterval(tick);
+    // (update 700) two tabs: the practice sessions, and Launch Monitor (TrackMan / GCQuad)
+    const tabs = el("div", { class: "ps-seg ps-tabs", role: "tablist" }, [["sessions", "Practice Sessions"], ["lm", "Launch Monitor"]].map(([k, l]) => { const b = el("button", { type: "button", role: "tab", "aria-selected": String(tab === k), class: tab === k ? "on" : "" }, l); b.addEventListener("click", () => { if (tab === k) return; tab = k; draw(); }); return b; }));
+    if (tab === "lm") {
+      const back = !subject.mine && (coachPlayers?.length || coachPlayers === null) ? (() => { const b = el("button", { type: "button", class: "link" }, "‹ My practice"); b.addEventListener("click", () => open(self)); return b; })() : null;
+      const lmBox = el("div", { class: "lm" });
+      mount(wrap, [subject.mine ? coachEl : null, back, el("header", { class: "ps-head" }, [el("h1", {}, subject.mine ? "My Practice" : `${subject.label}’s Practice`), el("p", { class: "muted" }, "Launch monitor sessions: TrackMan and GCQuad.")]), tabs, lmBox]);
+      import("./practiceLM.js").then((m) => m.renderLM(lmBox, { owner: subject.owner, canWrite: creator(), flash, who: subject.mine ? "" : subject.label })).catch((err) => { console.error(err); mount(lmBox, el("p", { class: "muted" }, "Couldn’t open Launch Monitor.")); });
+      return;
+    }
     const wk = summary(log, sessions);
     // (update 692) each area, and in it each distance: sets done and time (a stretch's time shared across what was worked on)
     const byArea = new Map();
@@ -294,6 +303,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     mount(wrap, [
       subject.mine ? coachEl : null, back,
       el("header", { class: "ps-head" }, [el("h1", {}, subject.mine ? "My Practice" : `${subject.label}’s Practice`), el("p", { class: "muted" }, "Honour system: tick off what you’ve done.")]),
+      tabs,
       el("div", { class: "ps-tiles" }, [
         el("div", { class: "ps-tile" }, [el("b", {}, String(wk.days)), el("span", {}, `day${wk.days === 1 ? "" : "s"} practised this week`)]),
         el("div", { class: "ps-tile" }, [el("b", {}, fmtMin(wk.minutes)), el("span", {}, "practised this week")]),

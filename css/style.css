@@ -6668,3 +6668,31 @@ div.sh-ud3-green { cursor: default; }
 .ps-tgt-src { display: block; }
 .ps-card-tgt { color: var(--accent, #d4b483); }
 .ps-find .analyze-picker { max-width: 420px; }
+/* (update 700) Practice › Launch Monitor */
+.ps-tabs { margin: 4px 0 14px; display: inline-flex; }
+.lm { display: grid; gap: 12px; }
+.lm-import-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.lm-link { flex: 1 1 260px; min-width: 0; }
+.lm-filters { display: grid; gap: 8px; background: #1c1c1f; border: 1px solid #2a2a2e; border-radius: 16px; padding: 12px 14px; }
+.lm-frow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lm-flab { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #8e8e93; font-weight: 800; min-width: 74px; }
+.lm-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; }
+.lm-dot.trackman { background: #f5a623; } .lm-dot.gcquad { background: #32a0ff; }
+.lm-src { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .5px; border-radius: 999px; padding: 2px 8px; vertical-align: middle; }
+.lm-src.trackman { background: rgba(245,166,35,.16); color: #f5b84a; border: 1px solid rgba(245,166,35,.45); }
+.lm-src.gcquad { background: rgba(50,160,255,.14); color: #6cbcff; border: 1px solid rgba(50,160,255,.45); }
+.lm-card { overflow: hidden; }
+.lm-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lm-svg { width: 100%; height: auto; display: block; border-radius: 10px; margin-top: 8px; }
+.lm-tw { overflow-x: auto; }
+.lm-t { border-collapse: collapse; width: 100%; font-size: 13px; white-space: nowrap; }
+.lm-t th, .lm-t td { padding: 7px 8px; border-top: 1px solid #2a2a2e; text-align: left; }
+.lm-t th { color: #8e8e93; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; border-top: 0; }
+.lm-t .n { text-align: right; font-variant-numeric: tabular-nums; }
+.lm-crow { cursor: pointer; font-weight: 700; } .lm-crow:hover { background: #222226; }
+.lm-shot td { font-size: 12px; color: #c7c7cc; background: #161619; }
+.lm-sd, .lm-unit { color: #8e8e93; font-weight: 500; font-size: 11px; }
+.lm-chgs { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12.5px; color: #c7c7cc; }
+.lm-sess { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #2a2a2e; flex-wrap: wrap; }
+.lm-sess:first-of-type { border-top: 0; }
+.lm-empty { padding: 18px 2px; }
