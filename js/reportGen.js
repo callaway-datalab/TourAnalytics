@@ -294,7 +294,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // player is furthest behind).
   // (update 523) DP World Tour data (one value an event, repeated on each of its rounds): these by event, not round
   const evOf = (list) => { const m = new Map(); for (const q of list) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); }
-    return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", year: g[0].year, value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); };
+    return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", year: g[0].year, rounds: g.length, value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); };
   const ser = byEvent ? evOf(series) : series;
   const posRounds = ser.filter((q) => q.value > 0).length;
   let run = 0, best = { len: 0, from: null, to: null }, start = null;
@@ -522,12 +522,12 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   cap("Strokes gained per round", M, 122, "#8e8e93");
   if (CMP) {
     // (update 694) one big number a season, side by side, each in its season's colour; the change on the right
-    const colW0 = (W * 0.6) / nY, big = nY === 2 ? 44 : nY === 3 ? 34 : 26;
+    const colW0 = Math.min(175, W / (nY + 1)), big = nY === 2 ? 44 : nY === 3 ? 34 : 26; // (update 695: the change is a column of its own, the same size)
     CMP.forEach((s0, i) => { const x = M + i * colW0, o = s0.a.overall;
       d.rect(x, 131, 8, 8, { fill: ycolD(i) }); d.text(String(s0.label), x + 12, 138.5, { size: 9, bold: true, color: ycolD(i) });
       d.text(o.rounds ? fmtSG(o.value) : "\u2014", x - 2, 176, { size: big, bold: true, color: o.value == null ? "#8e8e93" : o.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1 });
       d.text(o.rounds ? plural(o.rounds, a.unit === "event" ? "round" : "round") : "No rounds", x, 191, { size: 8, color: "#a1a1a6" });
-      if (i) { const ax = x - 16, ay = 158; d.line(ax - 6, ay, ax + 5, ay, { color: "#5f6368", width: 1.6 }); d.polyline([[ax + 1, ay - 4], [ax + 6, ay], [ax + 1, ay + 4]], { color: "#5f6368", width: 1.6 }); } });
+      if (i) { const ax = x - 18, ay = 158; d.line(ax - 6, ay, ax + 5, ay, { color: "#5f6368", width: 1.6 }); d.polyline([[ax + 1, ay - 4], [ax + 6, ay], [ax + 1, ay + 4]], { color: "#5f6368", width: 1.6 }); } });
   } else
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 172, { size: 62, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
@@ -539,23 +539,21 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (CMP) { for (const [i, s0] of CMP.entries()) if (s0.a.overall.rank) { const [f, t] = rankColors(s0.a.overall.rank); bx += badge(`${s0.label} Rank ${s0.a.overall.rank} of ${s0.a.overall.of}`, bx, 220, f, t) + 6; } void ycol; }
   else if (a.overall.rank) { const [f, t] = rankColors(a.overall.rank); bx += badge(`Rank ${a.overall.rank} of ${a.overall.of}`, bx, 220, f, t) + 6; }
   if (!CMP) bx += badge(plural(a.overall.rounds, "round"), bx, 220, "#3a3a3c") + 6;
-  if (a.form) { const w = formWord(a.form.last - a.form.first, a.form.long); void STEADY; // (update 670: the form word)
+  if (!CMP && a.form) { const w = formWord(a.form.last - a.form.first, a.form.long); // (update 695: not on the comparison report) void STEADY; // (update 670: the form word)
     if (w) bx += badge(`Form: ${w[0]}`, bx, 220, w[2], "#0b0b0d") + 6; } // (update 671: the word's own colour, yellow to green or red)
   // form sparkline (right side)
   if (CMP) {
-    // (update 694) Compare: no rank trend; the change from the first season to the last, big, green better / red worse
-    const x0 = M + W * 0.62, w = W * 0.38, top = 104, ht = 74, v0 = A0.a.overall.value, v1 = A1.a.overall.value, ch = v0 != null && v1 != null ? v1 - v0 : null;
+    // (update 694) Compare: no rank trend; (update 695) the change from the first season to the last as a third column, level
+    // with the seasons' numbers and as big: green better, red worse; then the rank's change
+    const colW0 = Math.min(175, W / (nY + 1)), big = nY === 2 ? 44 : nY === 3 ? 34 : 26, x0 = M + nY * colW0 + 14;
+    const v0 = A0.a.overall.value, v1 = A1.a.overall.value, ch = v0 != null && v1 != null ? v1 - v0 : null;
     const r2 = ch == null ? null : Math.round(ch * 100) / 100, col = r2 == null || r2 === 0 ? "#c7c7cc" : r2 > 0 ? "#7ee2a2" : "#ff8a80";
-    d.roundRect(x0 - 12, top - 22, w + 12, ht + 52, 12, { fill: "#141815" });
-    cap(`Change \u00b7 ${A0.label} to ${A1.label}`, x0, top - 6, "#8e8e93", "left", 6.5);
-    d.text(r2 == null ? "\u2014" : `${r2 > 0 ? "+" : r2 < 0 ? "\u2212" : ""}${Math.abs(r2).toFixed(2)}`, x0, top + 34, { size: 36, bold: true, color: col, spacing: -1 });
-    d.text(r2 == null ? "Not enough rounds to compare." : r2 === 0 ? "Strokes a round: the same." : `Strokes a round ${r2 > 0 ? "better" : "worse"} than ${A0.label}.`, x0, top + 50, { size: 8, color: "#c7c7cc" });
-    // each step between seasons (three or more), then the rank's change
-    const lines = [];
-    if (nY > 2) lines.push(CMP.slice(1).map((s1, i) => { const p0 = CMP[i].a.overall.value, p1 = s1.a.overall.value; return p0 != null && p1 != null ? `${CMP[i].label}\u2192${s1.label} ${fmtSG(p1 - p0)}` : null; }).filter(Boolean).join("   "));
+    d.line(x0 - 16, 130, x0 - 16, 200, { color: "#3a3a3c", width: 0.8 });
+    cap(`Change \u00b7 ${A0.label} to ${A1.label}`, x0, 138.5, "#c7c7cc", "left", 7);
+    d.text(r2 == null ? "\u2014" : `${r2 > 0 ? "+" : r2 < 0 ? "\u2212" : ""}${Math.abs(r2).toFixed(2)}`, x0 - 2, 176, { size: big, bold: true, color: col, spacing: -1 });
+    d.text(r2 == null ? "Not enough rounds to compare." : r2 === 0 ? "The same a round." : `A round ${r2 > 0 ? "better" : "worse"} than ${A0.label}.`, x0, 191, { size: 8, color: "#a1a1a6" });
     const k0 = A0.a.overall.rank, k1 = A1.a.overall.rank;
-    if (k0 && k1) lines.push(`Rank ${k0} \u2192 ${k1}${k1 < k0 ? ` (up ${k0 - k1})` : k1 > k0 ? ` (down ${k1 - k0})` : " (the same)"}`);
-    lines.slice(0, 2).forEach((l, i) => d.text(l, x0, top + 68 + i * 11, { size: 7.5, bold: true, color: i === lines.length - 1 && k0 && k1 ? (k1 < k0 ? "#7ee2a2" : k1 > k0 ? "#ff8a80" : "#c7c7cc") : "#c7c7cc" }));
+    if (k0 && k1) d.text(`Rank ${k0} \u2192 ${k1}${k1 < k0 ? ` (up ${k0 - k1})` : k1 > k0 ? ` (down ${k1 - k0})` : " (the same)"}`, x0, 203, { size: 7.5, bold: true, color: k1 < k0 ? "#7ee2a2" : k1 > k0 ? "#ff8a80" : "#c7c7cc" });
   } else if (a.rankHist?.length >= 2) {
     // (update 227) Weekly Rank History: 1st at the top, a gold line, the latest rank marked
     // (update 595) the last 6 months only (back from their latest tournament; at least the last two points)
@@ -628,7 +626,9 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const per = CMP.map((s0) => catOf(s0, c.cat)), top = y + (cmpRowH - trackH) / 2 - 1;
       d.text(c.name, M, top + trackH / 2 - 1, { size: 11.5, bold: true, color: P.ink });
       const k0 = per[0]?.rank, k1 = per.at(-1)?.rank;
-      if (k0 || k1) d.text(`Rank ${k0 || "\u2014"} \u2192 ${k1 || "\u2014"}`, M, top + trackH / 2 + 11, { size: 8, bold: true, color: k1 ? rankInk(k1) : P.grey });
+      if (k0 || k1) { // (update 695: each season's rank in its own rank colour)
+        const ry = top + trackH / 2 + 11; let rx = M;
+        for (const [t, c] of [["Rank ", P.grey], [String(k0 || "\u2014"), k0 ? rankInk(k0) : P.grey], [" \u2192 ", P.grey], [String(k1 || "\u2014"), k1 ? rankInk(k1) : P.grey]]) { d.text(t, rx, ry, { size: 8, bold: true, color: c }); rx += textWidth(t, 8, true); } }
       d.roundRect(gx2, top - 2, gw2, trackH + 4, 5, { fill: P.track });
       per.forEach((q, i) => {
         const by = top + i * (BH + BG), v = q?.value;
@@ -815,9 +815,10 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         const xL = left + i0 * bw, xR = left + i1 * bw, yi = CMP.findIndex((q) => String(q.label) === yrOf(src[i0]));
         if (j) d.line(xL, top - 5, xL, top + ht + 3, { color: P.ink, width: 1, dash: [4, 2.5] });
         d.text(yrOf(src[i0]), xL + 4, top + 3, { size: 7.5, bold: true, color: yi >= 0 ? ycol(yi) : P.grey });
-        const av = mean(vals.slice(i0, i1));
+        // (update 695) by round, as the cover (an event of 4 rounds counts twice one of 2)
+        const wts = src.slice(i0, i1).map((q) => q.rounds || 1), av = wts.length ? vals.slice(i0, i1).reduce((t, v, k) => t + v * wts[k], 0) / wts.reduce((t, v) => t + v, 0) : null;
         if (av != null && xR - xL > 30) { d.line(xL + 2, Y(av), xR - 2, Y(av), { color: yi >= 0 ? ycol(yi) : P.ink, width: 1, dash: [1.5, 1.5] });
-          d.text(`Avg ${fmtSG(av)}`, xR - 4, Y(av) - 3, { size: 6.5, bold: true, color: tone(av), align: "right" }); }
+          d.text(`Avg ${fmtSG(av)}`, xR - (j < segs.length - 1 ? 8 : 4), Y(av) - 3, { size: 6.5, bold: true, color: tone(av), align: "right" }); }
       });
     }
     const every = Math.max(1, Math.ceil(vals.length / 8));
@@ -1250,40 +1251,40 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       for (const l of wrap(`Each season side by side: the value and its rank that season (out of the players compared that season). The better season for each stat is highlighted in green. Diff: ${A1.label} against ${A0.label} (green = better).`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
       y += 4;
       const nSec = new Set(order.map((r) => r.sec)).size, LW = Math.min(W * 0.34, 190), DW = 64, CW = (W - LW - DW) / nY;
-      const RH = Math.max(15, Math.min(20, (H - 56 - y - 22 - nSec * 19) / order.length)); // (taller rows when the page has room)
+      const RH = Math.max(15, Math.min(26, (H - 56 - y - 26 - nSec * 21) / order.length)), K = Math.min(1.3, Math.max(1, RH / 17)); // (update 695: bigger type when there's room) // (taller rows when the page has room)
       const colX = (i) => M + LW + i * CW;
       const headRow = () => {
-        d.roundRect(M, y, W, 18, 5, { fill: P.night });
-        cap("Stat", M + 8, y + 12, "#a1a1a6", "left", 6.5);
-        CMP.forEach((s0, i) => cap(`${s0.label} \u00b7 ${plural(s0.a.overall.rounds, "rd")}`, colX(i) + CW - 8, y + 12, ycolD(i), "right", 6.5));
-        cap("Diff", M + W - 8, y + 12, "#a1a1a6", "right", 6.5);
-        y += 22;
+        d.roundRect(M, y, W, 20, 5, { fill: P.night });
+        cap("Stat", M + 8, y + 13.5, "#a1a1a6", "left", 7 * K);
+        CMP.forEach((s0, i) => cap(`${s0.label} \u00b7 ${plural(s0.a.overall.rounds, "rd")}`, colX(i) + CW - 8, y + 13.5, ycolD(i), "right", 7 * K));
+        cap("Diff", M + W - 8, y + 13.5, "#a1a1a6", "right", 7 * K);
+        y += 24;
       };
       headRow();
       const better = (def, x, ref) => (def.higher == null || Math.abs(x - ref) < 1e-9 ? null : def.higher ? x > ref : x < ref);
       let sec = null, stripe = 0;
       for (const r0 of order) {
-        if (y + RH + (r0.sec !== sec ? 18 : 0) > H - 50) { newPage(); headRow(); sec = null; }
-        if (r0.sec !== sec) { sec = r0.sec; stripe = 0; y += 4; d.rect(M, y + 2, 3, 8, { fill: P.gold }); cap(sec, M + 9, y + 9.5, P.gold, "left", 6.6); y += 15; }
+        if (y + RH + (r0.sec !== sec ? 21 : 0) > H - 50) { newPage(); headRow(); sec = null; }
+        if (r0.sec !== sec) { sec = r0.sec; stripe = 0; y += 4; d.rect(M, y + 2, 3, 8, { fill: P.gold }); cap(sec, M + 9, y + 9.5, P.gold, "left", 6.6 * K); y += 17; }
         if (stripe++ % 2) d.rect(M, y, W, RH, { fill: P.mist });
         const cells = per.map((m) => m.get(r0.id)?.b || null), def = (cells.find(Boolean) || r0.b).def;
-        d.text(r0.label, M + 8, y + RH / 2 + 3, { size: 8, color: P.ink });
+        d.text(r0.label, M + 8, y + RH / 2 + 3, { size: 8 * K, color: P.ink });
         // the best season: the highest (or lowest, for lower-is-better), only when it's clearly ahead of every other
         const vals = cells.map((b) => b?.value ?? null), have = vals.filter((v) => v != null);
         let bestI = -1;
         if (def.higher != null && have.length >= 2) { const tgt = def.higher === false ? Math.min(...have) : Math.max(...have); if (have.filter((v) => Math.abs(v - tgt) < 1e-9).length === 1) bestI = vals.findIndex((v) => v != null && Math.abs(v - tgt) < 1e-9); }
         cells.forEach((b, i) => {
           const xr = colX(i) + CW - 8;
-          if (!b) { d.text("\u2014", xr, y + RH / 2 + 3, { size: 8, color: P.faint, align: "right" }); return; }
+          if (!b) { d.text("\u2014", xr, y + RH / 2 + 3, { size: 8 * K, color: P.faint, align: "right" }); return; }
           if (i === bestI) d.roundRect(colX(i) + 4, y + 1.5, CW - 8, RH - 3, 4, { fill: P.upTint });
           let xv = xr;
-          if (b.rank) { const T = `${b.rank}/${b.of}`, pw = textWidth(T, 5.4, true) + 8, [f, t] = rankColors(b.rank); d.roundRect(xr - pw, y + RH / 2 - 4.5, pw, 9, 4.5, { fill: f }); d.text(T, xr - pw / 2, y + RH / 2 + 2, { size: 5.4, bold: true, color: t, align: "center" }); xv = xr - pw - 6; }
-          d.text(fmtStat(b.def, b.value), xv, y + RH / 2 + 3, { size: 8.5, bold: true, color: i === bestI ? P.up : P.ink, align: "right" });
+          if (b.rank) { const T = `${b.rank}/${b.of}`, pw = textWidth(T, 5.4 * K, true) + 8 * K, [f, t] = rankColors(b.rank); d.roundRect(xr - pw, y + RH / 2 - 4.5 * K, pw, 9 * K, 4.5 * K, { fill: f }); d.text(T, xr - pw / 2, y + RH / 2 + 2 * K, { size: 5.4 * K, bold: true, color: t, align: "center" }); xv = xr - pw - 6; }
+          d.text(fmtStat(b.def, b.value), xv, y + RH / 2 + 3, { size: 8.5 * K, bold: true, color: i === bestI ? P.up : P.ink, align: "right" });
         });
         const v0 = vals[0], v1 = vals.at(-1);
         if (v0 != null && v1 != null) { const df = v1 - v0, ft = fmtStat(def, Math.abs(df)), same = Math.abs(df) < 1e-9 || !/[1-9]/.test(ft), g = same ? null : better(def, v1, v0), txt = same ? "Same" : `${df > 0 ? "+" : "\u2212"}${ft}`;
-          d.text(txt, M + W - 8, y + RH / 2 + 3, { size: 8, bold: true, color: g == null ? P.grey : g ? P.up : P.down, align: "right" }); }
-        else d.text("\u2014", M + W - 8, y + RH / 2 + 3, { size: 8, color: P.faint, align: "right" });
+          d.text(txt, M + W - 8, y + RH / 2 + 3, { size: 8 * K, bold: true, color: g == null ? P.grey : g ? P.up : P.down, align: "right" }); }
+        else d.text("\u2014", M + W - 8, y + RH / 2 + 3, { size: 8 * K, color: P.faint, align: "right" });
         y += RH;
       }
     }
@@ -1469,8 +1470,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       if (idxOn || onPage === 1) d.rect(M, pageTop + slot - 0.6, W, 1.2, { fill: P.goldLight }); // (the thin champagne line, in the middle)
       y = slotTop + (idxOn ? 16 : 0);
       const CHs = { ...CH, plotH: Math.max(60, CH.plotH + (slot * 0.9 - (idxOn ? 16 : 0) - 14 - hAt(sec, CH))) }; // (update 570: 90% of its half)
-      y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 2;
-      if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CHs, yTitle: (sec.sgNames || ["SG / Rd"])[0] }); // (update 586: the y axis named)
+      y += 8; cap(sec.name, M, y, P.gold, "left", 8); y += 9; // (update 695: more room above the key)
+      if (sec.events?.length) y += drawEventBars(d, M, y, W, sec.events, sec.legend, { ink: P.ink, grey: P.grey, hair: P.hair, ...CHs, yTitle: (sec.sgNames || ["SG / Rd"])[0], seasons: !!CMP }); // (update 586: the y axis named)
       // the table: a colour square for each model, then its numbers in columns spread evenly across the page
       const colorOf = new Map((sec.legend || []).map((L) => [L.name, L.color]));
       const sgN = sec.sgNames || ["SG / Rd"], nS = sgN.length; // (update 522: named for its part of the game)

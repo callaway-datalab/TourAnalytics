@@ -20,7 +20,7 @@ export function eventBarsOf(items) {
   const color = new Map(items.map((it) => [it.key, it.color]));
   return [...evs.values()].filter((e) => e.n).sort((a, b) => a.date.localeCompare(b.date)).map((e) => {
     const top = [...e.by].sort((a, b) => b[1] - a[1])[0]?.[0];
-    return { label: `${e.event}${e.yr ? ` '${e.yr.slice(-2)}` : ""}`, date: e.date, v: e.sg / e.n, color: color.get(top) || "#8e8e93", key: top,
+    return { label: `${e.event}${e.yr ? ` '${e.yr.slice(-2)}` : ""}`, yr: e.yr, date: e.date, v: e.sg / e.n, color: color.get(top) || "#8e8e93", key: top,
       sg: e.sg, n: e.n, rs: e.rs.sort((a, b) => a.d.localeCompare(b.d)).map((r) => r.sg) }; // (update 666: each round's, for the rolling line)
   });
 }
@@ -40,7 +40,7 @@ export function rollingOf(bars, roll) {
   if (roll.by === "event") return bars.map((_, i) => { const w = bars.slice(Math.max(0, i - roll.n + 1), i + 1), n = w.reduce((t, b) => t + (b.n || 1), 0); return n ? w.reduce((t, b) => t + (b.sg ?? b.v), 0) / n : null; });
   const all = []; return bars.map((b) => { all.push(...(b.rs || [b.v])); const w = all.slice(-roll.n); return w.reduce((t, v) => t + v, 0) / w.length; });
 }
-export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey = "#5f6368", hair = "#e3e3e8", plotH = 150, dates = false, gap = 8, pad = 0, yTitle = null, roll = null } = {}) { // (update 586) yTitle: up the left side // (update 517) pad: room under the lowest bar before the axis
+export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey = "#5f6368", hair = "#e3e3e8", plotH = 150, dates = false, gap = 8, pad = 0, yTitle = null, roll = null, seasons = false } = {}) { // (update 586) yTitle: up the left side // (update 517) pad: room under the lowest bar before the axis
   const y0 = y;
   // the key
   let lx = x, ly = y + 8;
@@ -70,6 +70,9 @@ export function drawEventBars(d, x, y, w, bars, legend, { ink = "#1d1d1f", grey 
     if (showV) d.text(f2(b.v), cx, b.v >= 0 ? yv - 2.5 : yv + 7, { size: slot >= 16 ? 6.5 : 5.2, bold: true, color: ink, align: "center" });
   });
   d.line(x, zy, x + w, zy, { color: grey, width: 0.7, dash: [3, 2] });
+  // (update 695) seasons: a dashed line where each season starts, its year at the top
+  if (seasons) bars.forEach((b, i) => { if (i && b.yr && b.yr !== bars[i - 1].yr) { const lx = x + slot * i; d.line(lx, top - 6, lx, top + plotH + 2, { color: ink, width: 1, dash: [4, 2.5] }); d.text(b.yr, lx + 4, top + 2, { size: 7.5, bold: true, color: grey }); }
+    if (!i && b.yr) d.text(b.yr, x + 4, top + 2, { size: 7.5, bold: true, color: grey }); });
   if (rl && bars.length > 1) d.polyline(rl.map((v, i) => [x + slot * (i + 0.5), Y(v ?? 0)]), { color: ROLL_COLOR, width: 1.8 }); // (update 666)
   const ax = top + plotH + 2 + pad;
   d.line(x, ax, x + w, ax, { color: hair, width: 0.4 });
