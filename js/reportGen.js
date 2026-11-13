@@ -347,7 +347,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const def = statDef(k);
     const only = (rounds) => (keep ? rounds.map((rd) => ({ ...rd, shots: rd.shots.filter(keep) })) : rounds).filter((rd) => rd.shots.length);
     const mineK = only(statRounds(myAll, k));
-    const value = statAgg(mineK, !!keep).value;
+    const agg = statAgg(mineK, !!keep), value = agg.value;
     if (value == null) return null;
     const vals = othersAll.map((p) => statAgg(only(statRounds(p.rounds, k)), !!keep).value).filter((v) => v != null && Number.isFinite(v));
     const better = (x, y) => (def.higher === false ? x < y : x > y);
@@ -361,7 +361,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     const byCat = keep ? [] : CATEGORIES.map(([c, name]) => { const rs = mineK.map((rd) => ({ ...rd, shots: rd.shots.filter((o) => o.cat === c) })); const v = statAgg(rs, true).value; return v == null ? null : { cat: c, name, value: v }; }).filter(Boolean);
     // (out of every player compared, the same number for every stat: someone with no value for it, say no
     // eagles, or never in that spot, counts below everyone who has one)
-    return { key: k, def: label ? { ...def, label } : def, value, rounds: mineK.length, events: mineK.length > 0 && mineK.every((rd) => rd.eventLevel), rank, of: rank ? everyone.length : null,
+    return { key: k, def: label ? { ...def, label } : def, value, att: agg.w || null /* (update 704: the attempts behind it) */, rounds: mineK.length, events: mineK.length > 0 && mineK.every((rd) => rd.eventLevel), rank, of: rank ? everyone.length : null,
       fieldAvg: mean(vals), lo: Math.min(...all), hi: Math.max(...all), trend: last != null && prev != null ? { n, last, prev } : null, byCat: byCat.length > 1 ? byCat : [] };
   };
   // A distance label ("100-120 yds", "250+ yds", "<10 ft", "20-30 ft") -> { mid, lo } in yards and feet.
@@ -402,6 +402,11 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   })();
   const UD_BANDS = [["<30 yds", 0, 30], ["30-50 yds", 30, 50]], UD_LIES = ["Fairway", "Rough", "Bunker"];
   let udGrid = null, puttGrid = null;
+  // (update 704) the short game by Proximity (from each lie, inside 30 yds and 30-50 yds); Up & Down % only when there's no proximity there
+  if (present.includes("prox")) {
+    const cells = UD_BANDS.map(([band, lo, hi]) => UD_LIES.map((lie) => entryFor("prox", (o) => { const d = distOf(o.dist); return !!d && o.cat !== "PUTT" && o.cat !== "OTT" && d.yds >= lo && d.yds < hi && lieOf(o.lie) === lie; }, `Proximity \u00b7 ${band} \u00b7 ${lie}`)));
+    if (cells.flat().some(Boolean)) udGrid = { bands: UD_BANDS.map(([b]) => b), lies: UD_LIES, cells, stat: "prox", title: "Short game \u00b7 Proximity" };
+  }
   // Off-the-Tee: Driving Distance and Hit Fairway %, Driver and Non-Driver (the data's tee-shot "distance")
   // ("Tee Shot (Driver)", "Driver" -> Driver; "Tee Shot (Non-Driver)", "Non-Driver" -> Non-Driver). Both in the data:
   // two columns; otherwise one, with no heading.
@@ -439,9 +444,10 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     }
     if (gridKeys.has(k)) continue;
     if (k === "ud") {
+      if (udGrid) continue; // (update 704: the short game is shown by Proximity)
       // Up & Down %: inside 30 yds and 30-50 yds, from the fairway, the rough and a bunker (a grid on the page)
       const cells = UD_BANDS.map(([band, lo, hi]) => UD_LIES.map((lie) => entryFor(k, (o) => { const d = distOf(o.dist); return !!d && d.yds >= lo && d.yds < hi && lieOf(o.lie) === lie; }, `Up & Down % \u00b7 ${band} \u00b7 ${lie}`)));
-      if (cells.flat().some(Boolean)) { udGrid = { bands: UD_BANDS.map(([b]) => b), lies: UD_LIES, cells }; continue; }
+      if (cells.flat().some(Boolean)) { udGrid = { bands: UD_BANDS.map(([b]) => b), lies: UD_LIES, cells, stat: "ud", title: "Short game \u00b7 Up & Down %" }; continue; }
     }
     if (k === "goodLag") {
       // Good Lag %: only putts from over 25 feet
@@ -1254,7 +1260,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // (update 694) Compare: one table, a row a stat and a column a season (its value and its rank that season), the
     // better season's value highlighted, and the difference (the last season against the first)
     const SHORT2 = { scoring: "Scoring Avg", eagles: "Eagles/Round", birdiesRd: "Birdies/Round", parsRd: "Pars/Round", bogeysRd: "Bogeys/Round", dblBogeysRd: "Dbl Bogeys/Round", birdie: "Birdie %", parOrBetter: "Par or Better %", bogey: "Bogey Avoidance", owgr: "OWGR" };
-    const SECS = ["Scoring", "Off-the-Tee", "Approach by distance", "Short game \u00b7 Up & Down %", "Putting - Make %", "Other"];
+    const SECS = ["Scoring", "Off-the-Tee", "Approach by distance", "Short game \u00b7 Proximity", "Short game \u00b7 Up & Down %", "Putting - Make %", "Other"];
     const statRows = (aa) => {
       const out = [], add = (sec, label, b) => { if (b && b.value != null && Number.isFinite(b.value)) out.push({ sec, id: `${sec}|${label}`, label, b }); };
       for (const k of Object.keys(SHORT2)) for (const b of (aa.basics || []).filter((x) => x.key === k)) add("Scoring", SHORT2[k], b);
@@ -1262,7 +1268,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       for (const g of aa.teeGrid || []) { const nm = g.key === "gir" ? "GIR % (Par 4/5)" : g.def.label;
         if (aa.teeSplit && g.cells.some(Boolean)) ["Driver", "Non-Driver"].forEach((kind, r) => add("Off-the-Tee", `${nm} \u00b7 ${kind}`, g.cells[r])); else add("Off-the-Tee", nm, g.all); }
       for (const g of aa.grid || []) { if (g.missing) continue; if (g.overall) add("Approach by distance", g.def.label, g.overall); else g.cells.forEach((b, i) => add("Approach by distance", `${g.def.label} \u00b7 ${(aa.bands || [])[i] || ""}`, b)); }
-      if (aa.udGrid) aa.udGrid.bands.forEach((band, r) => aa.udGrid.lies.forEach((lie, c) => add("Short game \u00b7 Up & Down %", `${band} \u00b7 ${lie}`, aa.udGrid.cells[r]?.[c])));
+      if (aa.udGrid) aa.udGrid.bands.forEach((band, r) => aa.udGrid.lies.forEach((lie, c) => add(aa.udGrid.title || "Short game \u00b7 Up & Down %", `${band} \u00b7 ${lie}`, aa.udGrid.cells[r]?.[c])));
       if (aa.puttGrid) aa.puttGrid.labels.forEach((lab, c) => add("Putting - Make %", `Make % \u00b7 ${lab}`, aa.puttGrid.cells[c]));
       const shown = new Set([...Object.keys(SHORT2), "drive", "ballSpeed", "fwy", "gir", "hitGreen", "prox", "pinHigh", "onLine", "goodLag"]);
       for (const b of (aa.basics || []).filter((x) => !shown.has(x.key) && !(aa.udGrid && x.key === "ud") && !(aa.puttGrid && x.key === "make"))) add("Other", b.def.label, b);
@@ -1351,7 +1357,11 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // up to the page (Off-the-Tee stays narrow); bigger numbers where the cells have room
     let VS = null; // one text size for every grid on the page: Approach by distance's (set below)
     let WIDE = false; // (update 571) a short page (DP World Tour data): every grid the page's width, rows taller, a field bar under each value
-    const valueW = (b, z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k; return 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8; };
+    // (update 704) after each value, what it's from: successes / attempts for a percentage, else the attempts
+    const cntOf = (b) => { const n = Math.round(b.att || 0); if (!n) return ""; return b.def.pct ? `${Math.round((b.value / 100) * n)}/${n}` : `${n}`; };
+    const cntZ = (z) => Math.max(5.4, z * 0.5);
+    const cntW = (b, z) => { const t = cntOf(b); return t ? textWidth(t, cntZ(z), false) + 3 : 0; };
+    const valueW = (b, z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k; return 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + cntW(b, z) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8; };
     const layout = (colHeads, rows) => {
       const z0 = VS ?? 14;
       const nameW = rows.some((r) => r.name) ? Math.max(NAME_W, ...rows.map((r) => (r.name ? textWidth(r.name, z0 * 0.88, true) + 16 : 0))) : 0;
@@ -1363,7 +1373,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       const w = W, cellW = (w - nameW - 2 * pad) / colHeads.length; // (update 627: every tour the page's width, as the DP World Tour's)
       // the biggest size (9 to 14 pt) at which every value and its rank bubble fit side by side in their cell
       const fitsAt = (z) => { const k = (z - 9) / 5, ps = 5.6 + 1.6 * k;
-        return rows.every((r) => (r.cells || []).every((b) => !b || 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8 <= cellW)); };
+        return rows.every((r) => (r.cells || []).every((b) => !b || 4 + 2 * k + textWidth(fmtStat(b.def, b.value), z, true) + cntW(b, z) + 6 + (b.rank ? textWidth(`${b.rank} / ${b.of}`, ps, true) + ps * 1.8 : 0) + 8 <= cellW)); };
       let vs = VS ?? 14; while (vs > 8 && !fitsAt(vs)) vs -= 0.5; // (the page's size; smaller only if this grid can't fit it)
       const rowH = Math.round(Math.max(9, vs) + 16 + 14), top = colHeads.every((h) => !h) ? 3 : 16; // (update 627: room for the field bar, every tour)
       return { nameW, pad, w, cellW, vs, rowH, top, gh: top + rows.length * rowH + 3 };
@@ -1389,6 +1399,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
           const cx = x + NAME_W + cellW * c;
           if (!b) { d.text("\u2014", cx + cellW / 2 - 3, ry + ROW_H / 2 + 3, { size: 8.5, color: P.faint, align: "center" }); return; }
           d.text(fmtStat(b.def, b.value), cx + 4 + 2 * k, ry + 4 + vs * 0.85, { size: vs, bold: true, color: P.ink }); // (colour is for the ranks)
+          { const ct = cntOf(b); if (ct) d.text(ct, cx + 4 + 2 * k + textWidth(fmtStat(b.def, b.value), vs, true) + 3, ry + 4 + vs * 0.85, { size: cntZ(vs), color: P.soft }); } // (update 704)
           pillAt(b, cx + cellW - 8, ry + 4 + vs * 0.8, 5.6 + 1.6 * k);
           // (update 678: no "Avg" under the value: the player's own numbers only)
           // (update 571) where they sit in the field: worst on the left, best on the right; the tick is the field's average
@@ -1441,7 +1452,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     // Approach by distance (GIR % isn't shown)
     section("Approach by distance", a.bands || [], (a.grid || []).map((g) => ({ name: g.def.label, sub: SUB[g.key] || (g.def.higher === false ? "lower is better" : ""), cells: g.cells, note: noteFor(g) })));
     // Short game: Up & Down by distance and lie
-    if (a.udGrid) section("Short game \u00b7 Up & Down %", a.udGrid.lies, a.udGrid.bands.map((band, r) => ({ name: band, cells: a.udGrid.cells[r] })));
+    if (a.udGrid) section(a.udGrid.title || "Short game \u00b7 Up & Down %", a.udGrid.lies, a.udGrid.bands.map((band, r) => ({ name: band, cells: a.udGrid.cells[r] })));
     // Putting: Made Putt % at each distance
     if (a.puttGrid) section("Putting - Make %", a.puttGrid.labels, [{ name: "", cells: a.puttGrid.cells }]);
     // anything else (Scrambling, Putts / Round …): one row, a column per stat

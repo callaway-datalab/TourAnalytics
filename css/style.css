@@ -6708,3 +6708,6 @@ div.sh-ud3-green { cursor: default; }
 .lm-shot td.lm-in2 { padding-left: 40px; }
 .ps-tw table.lm-t th:first-child, .ps-tw table.lm-t td:first-child { text-align: left !important; }
 .ps-tw table.lm-t .n { text-align: right !important; }
+/* (update 704) no sideways scroll on the page itself (something a pixel or two too wide made a tiny scroll bar on desktop);
+   wide tables and charts keep their own scroll areas. clip, not hidden, so sticky headers still work. */
+html, body { overflow-x: clip; max-width: 100%; }
