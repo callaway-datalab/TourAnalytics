@@ -107,7 +107,7 @@ export function barFill(S, c, single) {
   for (const [t, col] of single ? S.rampStops(near, far, minAbs, maxAbs) : [[0, near], [1, far]]) g.addColorStop(t, col);
   return g;
 }
-export function barChart(S, canvas, labels, values0, { title: title0, compare: compareIn, compareLabel = "All players", average: averageIn, single, tooltip, shortLabels = null, as = "bar", colors = null } = {}) {
+export function barChart(S, canvas, labels, values0, { title: title0, compare: compareIn, compareLabel = "All players", average: averageIn, single, tooltip, shortLabels = null, as = "bar", colors = null, allTicks = false } = {}) { // (update 711) allTicks: a label under every bar
   if ((Array.isArray(compareIn) && compareIn.some((x) => x != null)) || averageIn !== undefined) S.cmpSeen = true;
   const compare0 = S.hideCompsNow ? null : compareIn, average = S.hideCompsNow ? undefined : averageIn; // (update 308: Hide Comps)
   // (update 228) Relative to Avg: each bar less the compared players' value at it (the dots become the zero line)
@@ -159,7 +159,7 @@ export function barChart(S, canvas, labels, values0, { title: title0, compare: c
     if (!few && shortLabels?.[i]) return shortLabels[i];
     return few ? wrapL(l) : l.length > 16 ? `${l.slice(0, 15)}\u2026` : l;
   };
-  o.scales.x = { ...(o.scales.x || {}), ticks: { ...((o.scales.x || {}).ticks || {}), callback: (v, i) => shortOf(i), autoSkip: !few, autoSkipPadding: 8, maxRotation: few ? 0 : 50, minRotation: 0, font: { size: fsz } } };
+  o.scales.x = { ...(o.scales.x || {}), ticks: { ...((o.scales.x || {}).ticks || {}), callback: (v, i) => shortOf(i), autoSkip: !few && !allTicks, autoSkipPadding: 8, maxRotation: few ? 0 : allTicks ? 90 : 50, minRotation: 0, font: { size: allTicks && !few && perBar < 14 ? Math.max(7, fsz - 2) : fsz } } };
   o.plugins.tooltip.callbacks = { ...(o.plugins.tooltip.callbacks || {}), title: (items) => String(labels[items[0].dataIndex] ?? "") };
   if (title) o.scales.y.title = { display: true, text: title, color: "#8e8e93" };
   return new Chart(canvas, { data: { labels, datasets }, options: o });

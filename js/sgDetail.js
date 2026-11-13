@@ -317,7 +317,8 @@ export function productTrend(S, mine, cat, toggles) {
   rs.forEach((rd, i) => {
     const k = keyOf(rd, i), d = localDay(rd.date);
     const g = groups.get(k) || groups.set(k, { label: TB === "round" ? `${isNaN(d) ? rd.date : shortDate(d)}${rd.roundNo ? ` R${rd.roundNo}` : ""}` : TB === "month" && k !== "Unknown" ? new Date(`${k}-15T12:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : TB === "event" ? (rd.event ? `${rd.event} ${isNaN(d) ? rd.year || "" : d.getFullYear()}`.trim() : rd.date || k) : k,
-      short: TB === "event" ? shortEvent(rd.event || (isNaN(d) ? rd.date : shortDate(d))) : null /* (update 710: the event's name under its bar, shortened) */, sg: 0, rounds: 0, event: rd.event, prods: new Map() }).get(k);
+      short: TB === "event" ? shortEvent(rd.event || (isNaN(d) ? rd.date : shortDate(d))) : null /* (update 710: the event's name under its bar, shortened) */, sg: 0, rounds: 0, event: rd.event, prods: new Map(), last: null }).get(k);
+    if (!isNaN(d) && (!g.last || d > g.last)) g.last = d; if (!isNaN(d) && (!g.first || d < g.first)) g.first = d; // (update 711: the event's dates, for the tooltip)
     g.rounds++; for (const s of rd.shots) { g.sg += s.sg; const p = prodOf(s, kind); if (p) g.prods.set(p, (g.prods.get(p) || 0) + (s.w || 1)); }
   });
   const list = [...groups.values()].map((g) => ({ ...g, value: g.sg / g.rounds, top: [...g.prods].sort((a, b) => b[1] - a[1])[0]?.[0] || null }));
@@ -344,9 +345,11 @@ export function productTrend(S, mine, cat, toggles) {
   })() : null;
   return S.panelBox("SG Trends by Product", [pills, legend, S.chartBox((c, as) => S.barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
     title: `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
-    shortLabels: list.map((g) => g.short),
+    shortLabels: list.map((g) => g.short), allTicks: TB === "event", // (update 711: every event named)
     tooltip: (i) => { const g = list[i], all = [...g.prods].sort((a, b) => b[1] - a[1]);
-      return [TB === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`)].filter(Boolean); },
+      const dt = (x) => x.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const when = g.first && g.last ? (g.first.toDateString() === g.last.toDateString() ? dt(g.first) : `${dt(g.first).replace(/, \d{4}$/, g.first.getFullYear() === g.last.getFullYear() ? "" : `, ${g.first.getFullYear()}`)} \u2013 ${dt(g.last)}`) : null;
+      return [when, TB === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`)].filter(Boolean); },
   }), "wide", "trend-prod"), table, toCmp], "full");
 }
 /*
