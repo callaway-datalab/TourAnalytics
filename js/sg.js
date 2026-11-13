@@ -364,7 +364,7 @@ export function prepare(rows, idx) {
  * event (its other rounds), else at the nearest event before it in the same season, else (the first event of a season)
  * the next event that season that has one. Shots and their stats (Driving Distance with that driver …) both.
  */
-function fillModels(list) {
+export function fillModels(list) {
   const yearOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
   const events = [], byKey = new Map();
   for (const rd of list) {
@@ -373,7 +373,9 @@ function fillModels(list) {
     e.rounds.push(rd); if (t && (!e.t || t < e.t)) e.t = t;
   }
   events.sort((a, b) => a.t - b.t);
-  if (!events.some((e) => e.rounds.some((rd) => rd.shots.some((s) => !s.gear && s.clubCat) || (rd.obs || []).some((o) => o.gk)))) return;
+  // a stat's kind of club: kept when it was read (gk), else from its part of the game (tee shots: Driver / Non-Driver; putts)
+  const kindOf = (o) => o.gk || (o.cat === "OTT" ? (/non[\s-]*driver/i.test(String(o.dist || "")) ? "Non-Driver" : /driver/i.test(String(o.dist || "")) ? "Driver" : null) : o.cat === "PUTT" ? "Putter" : null);
+  if (!events.some((e) => e.rounds.some((rd) => rd.shots.some((s) => !s.gear && s.clubCat) || (rd.obs || []).some((o) => !o.gear && kindOf(o))))) return;
   for (const e of events) {
     const m = new Map();
     for (const rd of e.rounds) for (const s of rd.shots) if (s.gear && s.clubCat) { const c = m.get(s.clubCat) || m.set(s.clubCat, new Map()).get(s.clubCat); c.set(s.gear, (c.get(s.gear) || 0) + (s.w || 1)); }
@@ -390,7 +392,7 @@ function fillModels(list) {
     };
     for (const rd of e.rounds) {
       for (const s of rd.shots) if (!s.gear && s.clubCat) { const g = pick(s.clubCat); if (g) s.gear = g; }
-      for (const o of rd.obs || []) if (!o.gear && o.gk) { const g = pick(o.gk); if (g) o.gear = g; delete o.gk; }
+      for (const o of rd.obs || []) if (!o.gear) { const k = kindOf(o); if (k) { const g = pick(k); if (g) o.gear = g; } if (o.gk) delete o.gk; }
     }
   });
 }

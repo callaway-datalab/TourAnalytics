@@ -16,6 +16,8 @@
  * Index 0 in the dictionary is "no value" (null).
  */
 
+import { fillModels } from "./sg.js";
+
 const MAGIC = "TAD1";
 
 /** Each year's rounds, packed: [{ year, bytes }] (bytes uncompressed; see gzip()). */
@@ -137,7 +139,7 @@ class ShotV {
   get dist() { return this.t.d[this.t.I[this.i * this.t.N + 2]]; } set dist(v) { own(this, "dist", v); }
   get club() { return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 3]] : undefined; } set club(v) { own(this, "club", v); }
   get clubCat() { return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 4]] : undefined; } set clubCat(v) { own(this, "clubCat", v); }
-  get gear() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 5] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { own(this, "gear", v); }
+  get gear() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 5] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { const x = this.t.at?.get(v); if (x != null && this.t.N === 7) this.t.I[this.i * 7 + 5] = x; else own(this, "gear", v); } // (update 709: a filled-in model kept in the columns)
   get ball() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 6] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { own(this, "ball", v); }
   get sg() { return r4(this.t.F[this.i * 2]); } set sg(v) { own(this, "sg", v); }
   get w() { return r4(this.t.F[this.i * 2 + 1]); } set w(v) { own(this, "w", v); }
@@ -149,7 +151,7 @@ class ObsV {
   get cat() { return this.t.d[this.t.I[this.i * this.t.N + 1]]; } set cat(v) { own(this, "cat", v); }
   get lie() { return this.t.d[this.t.I[this.i * this.t.N + 2]]; } set lie(v) { own(this, "lie", v); }
   get dist() { return this.t.d[this.t.I[this.i * this.t.N + 3]]; } set dist(v) { own(this, "dist", v); }
-  get gear() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 4] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { own(this, "gear", v); }
+  get gear() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 4] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { const x = this.t.at?.get(v); if (x != null && this.t.N === 6) this.t.I[this.i * 6 + 4] = x; else own(this, "gear", v); }
   get ball() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 5] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { own(this, "ball", v); }
   get v() { return r4(this.t.F[this.i * 2]); } set v(x) { own(this, "v", x); }
   get w() { return r4(this.t.F[this.i * 2 + 1]); } set w(x) { own(this, "w", x); }
@@ -221,10 +223,11 @@ export function decodeFieldDetail(bytes) {
   const d = h.dict;
   let clubs = false;
   for (let i = 0; i < h.nS && !clubs; i++) if (sI[i * SN + 3] || (SN === 7 && (sI[i * SN + 5] || sI[i * SN + 6]))) clubs = true;
-  const st = { d, I: sI, F: sF, N: SN, clubs }, ot = { d, I: oI, F: oF, N: ON };
+  const at = new Map(d.map((x, i) => [x, i])); // (update 709: a value's place in the dictionary, to write a filled-in model)
+  const st = { d, I: sI, F: sF, N: SN, clubs, at }, ot = { d, I: oI, F: oF, N: ON, at };
   const year = String(h.year ?? "");
   let a = 0, b = 0;
-  return h.players.map(([key, name, rounds]) => ({
+  const out = h.players.map(([key, name, rounds]) => ({
     key, name,
     rounds: rounds.map(([rk, di, ei, roundNo, ti, ev, ns, no, ci]) => {
       const shots = new ColList(st, ShotV, a, ns), obs = new ColList(ot, ObsV, b, no);
@@ -238,6 +241,9 @@ export function decodeFieldDetail(bytes) {
       return rd;
     }),
   }));
+  // (update 709) a club model left empty: filled from the same event or the nearest one that season (as prepare() does)
+  if (SN === 7 && clubs) for (const p of out) { try { fillModels(p.rounds); } catch (err) { console.error(err); } }
+  return out;
 }
 
 /** Several years' players into one list (a player's rounds oldest first, as prepare() gives them). */
