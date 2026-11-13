@@ -72,22 +72,32 @@ export function strategyOf(recs, par, geo = {}) {
   // (update 714) every circle a size the map's circle tool can be set to (its radius in yards), so it can be checked there
   const R_SET = [5, 8, 10, 15, 20, 25, 30, 40, 50];
   const ring = (cx, cy, R, tone) => [Math.round(cx), Math.round(cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(cx + R * Math.cos(k * Math.PI / 12)), Math.round(cy + R * Math.sin(k * Math.PI / 12))])];
-  // (update 714) circles over shots that finished somewhere (pts: [{ x, y, lie, r }]): around each shot of a lie that fits,
-  // at each size, both where it is and moved onto the middle of that lie's shots inside it; each judged on that lie's shots
+  // (update 716) fast enough for a whole course's shots: the shots filed in a grid (only those near a circle are looked
+  // at), and the circles started from one shot in each little square (bigger squares for bigger circles), not every shot
+  const gridIdx = (pts) => { const cell = 5 * PPY, m = new Map(); for (const p of pts) { const k = `${Math.floor(p.x / cell)}|${Math.floor(p.y / cell)}`; (m.get(k) || m.set(k, []).get(k)).push(p); }
+    return { near(x, y, r, keep = null) { const out = [], c0 = Math.floor((x - r) / cell), c1 = Math.floor((x + r) / cell), d0 = Math.floor((y - r) / cell), d1 = Math.floor((y + r) / cell);
+      for (let i = c0; i <= c1; i++) for (let j = d0; j <= d1; j++) { const a = m.get(`${i}|${j}`); if (a) for (const p of a) if ((!keep || keep(p)) && Math.hypot(p.x - x, p.y - y) <= r) out.push(p); }
+      return out; } }; };
+  const startsOf = (pts, ry, fits = () => true) => { const g = Math.max(3, ry / 3) * PPY, seen = new Set(), out = [];
+    for (const c of pts) { if (!fits(c.lie)) continue; const k = `${c.lie}|${Math.round(c.x / g)}|${Math.round(c.y / g)}`; if (!seen.has(k)) { seen.add(k); out.push(c); } } return out; };
+  // (update 716) where to put circles is searched on an even sample (600 at most); what's inside each is then counted exactly
+  const CAP = 600, thin = (pts) => { if (pts.length <= CAP) return pts; const k = pts.length / CAP, out = []; for (let i = 0; i < CAP; i++) out.push(pts[Math.floor(i * k)]); return out; };
+  const meanXY = (ps) => { let sx = 0, sy = 0; for (const p of ps) { sx += p.x; sy += p.y; } return [sx / ps.length, sy / ps.length]; };
+  // (update 714) circles over shots that finished somewhere (pts: [{ x, y, lie, r }]): around a shot of a lie that fits, at
+  // each size, both where it is and moved onto the middle of that lie's shots inside it; each judged on that lie's shots
   // inside it (what the circle tool's row for that lie shows), kept with minN or more and when 60%+ of what's inside is that lie
   const spotsOf = (pts, fits, radii, minN) => {
-    const out = [], seen = new Set();
-    for (const c of pts) { if (!fits(c.lie)) continue;
-      for (const ry of radii) { const rr = ry * PPY;
-        for (const shift of [false, true]) {
-          let x = c.x, y = c.y, inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
-          if (shift) for (let it = 0; it < 6; it++) { const m = inside.filter((p) => p.lie === c.lie); if (!m.length) break; const nx = mean(m.map((p) => p.x)), ny = mean(m.map((p) => p.y)), mv = Math.hypot(nx - x, ny - y); x = nx; y = ny; inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); if (mv < PPY * 0.5) break; }
-          x = Math.round(x); y = Math.round(y); inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); // (the centre as drawn, so what's counted is what's inside the circle on the map)
-          const mem = inside.filter((p) => p.lie === c.lie);
-          if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
-          const sig = `${c.lie}|${ry}|${Math.round(x / (2 * PPY))}|${Math.round(y / (2 * PPY))}`; if (seen.has(sig)) continue; seen.add(sig);
-          out.push({ ry, x, y, lie: c.lie, mem, n: mem.length, avg: mean(mem.map((p) => sc(p.r))) });
-        } } }
+    const out = [], seen = new Set(), S = thin(pts), G = gridIdx(S), GF = S === pts ? G : gridIdx(pts);
+    for (const ry of radii) { const rr = ry * PPY;
+      for (const c of startsOf(S, ry, fits)) for (const shift of [false, true]) {
+        let x = c.x, y = c.y;
+        if (shift) for (let it = 0; it < 5; it++) { const m = G.near(x, y, rr, (p) => p.lie === c.lie); if (!m.length) break; const [nx, ny] = meanXY(m), mv = Math.hypot(nx - x, ny - y); x = nx; y = ny; if (mv < PPY * 0.5) break; }
+        x = Math.round(x); y = Math.round(y); // (the centre as drawn, so what's counted is what's inside the circle on the map)
+        const sig = `${c.lie}|${ry}|${Math.round(x / (2 * PPY))}|${Math.round(y / (2 * PPY))}`; if (seen.has(sig)) continue; seen.add(sig);
+        const inside = GF.near(x, y, rr), mem = inside.filter((p) => p.lie === c.lie);
+        if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
+        out.push({ ry, x, y, lie: c.lie, mem, n: mem.length, avg: mean(mem.map((p) => sc(p.r))) });
+      } }
     return out;
   };
   const circ = (rs, ptOf, tone, lim = null) => {
@@ -185,9 +195,9 @@ export function strategyOf(recs, par, geo = {}) {
     // best- or worst-scoring slice of one (that made a left bunker look worse than a right one that really was worse)
     let allMiss = missPts.slice();
     const gen = (minN, radii) => {
-      const out = [], seen = new Set();
-      for (const c of missPts) for (const ry of radii) {
-        const rr = ry * geo.ppy, inR = (x, y) => missPts.filter((p) => p.lie === c.lie && Math.hypot(p.x - x, p.y - y) <= rr);
+      const mS = thin(missPts), aS = thin(allMiss), out = [], seen = new Set(), GM = gridIdx(mS), GAs = gridIdx(aS), GA = gridIdx(allMiss); // (update 716: a grid, the search on a sample, the counts exact)
+      for (const ry of radii) for (const c of startsOf(mS, ry)) {
+        const rr = ry * geo.ppy, inR = (x, y) => GM.near(x, y, rr, (p) => p.lie === c.lie);
         for (const shift of [true, false]) { // (update 714: also the circle right where this miss is, not only settled on its cluster)
         let x = c.x, y = c.y, mem = inR(x, y);
         if (shift) for (let it = 0; it < 10 && mem.length; it++) { const nx = mean(mem.map((p) => p.x)), ny = mean(mem.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny; mem = inR(x, y); if (moved < geo.ppy) break; }
@@ -197,9 +207,12 @@ export function strategyOf(recs, par, geo = {}) {
           const main = [...cnt].sort((a, b) => b[1] - a[1])[0][0]; mem = mem.filter((p) => String(p.side).split("-").includes(main)); }
         // (update 631) one patch: misses linked to each other within 5 yds, the biggest such group (two bunkers, or a
         // bunker and the one beside it, inside a 20 yd circle are two places, not one)
-        if (mem.length) { const L = 5 * geo.ppy, left = new Set(mem), parts = [];
-          while (left.size) { const s0 = left.values().next().value, part = [s0]; left.delete(s0);
-            for (let i = 0; i < part.length; i++) for (const q of [...left]) if (Math.hypot(q.x - part[i].x, q.y - part[i].y) <= L) { part.push(q); left.delete(q); }
+        if (mem.length) { const L = 5 * geo.ppy, cells = new Map(), parts = []; // (update 716: patches from 5-yd squares that touch, not miss against miss)
+          for (const p of mem) { const k = `${Math.floor(p.x / L)}|${Math.floor(p.y / L)}`; (cells.get(k) || cells.set(k, []).get(k)).push(p); }
+          const left = new Set(cells.keys());
+          while (left.size) { const k0 = left.values().next().value, q = [k0], part = []; left.delete(k0);
+            for (let i = 0; i < q.length; i++) { const [cx, cy] = q[i].split("|").map(Number); part.push(...cells.get(q[i]));
+              for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const k = `${cx + dx}|${cy + dy}`; if (left.has(k)) { left.delete(k); q.push(k); } } }
             parts.push(part); }
           mem = parts.sort((a, b) => b.length - a.length)[0]; x = mean(mem.map((p) => p.x)); y = mean(mem.map((p) => p.y)); }
         // (update 657) the spot IS the circle drawn: its middle where the search settled, its radius the circle's (8 to
@@ -208,15 +221,15 @@ export function strategyOf(recs, par, geo = {}) {
         // (update 683) the circle sits on the misses it names: moved to the middle of that lie's misses inside it until it
         // settles (it had stopped where the search did, half over the rough beside the bunker it named), and kept only
         // when most of what's inside it (60% or more) is that lie, so a "bunker" circle is mostly bunker
-        let inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
-        if (!shift) { x = c.x; y = c.y; inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); }
+        let inside = GAs.near(x, y, rr);
+        if (!shift) { x = c.x; y = c.y; inside = GAs.near(x, y, rr); }
         else for (let it = 0; it < 6; it++) {
-          inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
+          inside = GAs.near(x, y, rr);
           const m = inside.filter((p) => p.lie === c.lie); if (!m.length) break;
           const nx = mean(m.map((p) => p.x)), ny = mean(m.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny;
-          if (moved < geo.ppy * 0.5) { inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); break; }
+          if (moved < geo.ppy * 0.5) { inside = GAs.near(x, y, rr); break; }
         }
-        x = Math.round(x); y = Math.round(y); inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); // (update 715: counted from the centre as drawn)
+        x = Math.round(x); y = Math.round(y); inside = GA.near(x, y, rr); // (update 715: counted from the centre as drawn)
         mem = inside.filter((p) => p.lie === c.lie);
         if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
         // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
@@ -233,11 +246,11 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 634) narrower: a quarter of misses within 6 yds, or any bunker miss within 4 yds, took out whole patches of
     // rough that border a bunker (rough left of a green, 35 misses scoring 4.20, never became a spot). Now: two in five of
     // 4+ misses within 5 yds in a bunker, or a bunker miss within 2 yds (the strip right at a bunker's edge)
-    { const R = 5 * geo.ppy, all = missPts.slice();
+    { const R = 5 * geo.ppy, all = missPts.slice(), GL = gridIdx(all); // (update 716: neighbours from the grid)
       // (update 635) and only a miss between a bunker and the green (a bunker behind it): rough beside a bunker is a fine miss
       for (const p of all) { if ((p.lie !== "rough" && p.lie !== "fairway") || !p.r.bb) continue;
-        const nb = all.filter((q) => q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= R);
-        if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || all.some((q) => q.lie === "bunker" && Math.hypot(q.x - p.x, q.y - p.y) <= 2 * geo.ppy)) p.lucky = true; } // (or a bunker miss within 2 yds)
+        const nb = GL.near(p.x, p.y, R, (q) => q !== p);
+        if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || GL.near(p.x, p.y, 2 * geo.ppy, (q) => q.lie === "bunker").length > 0) p.lucky = true; } // (or a bunker miss within 2 yds)
       allMiss = missPts.slice(); // (update 657: counted in any circle they're inside, just not used to place one)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
     const cand = gen(MIN_N, [5, 8, 10, 15, 20]); // (update 714: the circle tool's sizes, 5 to 20 yds)
