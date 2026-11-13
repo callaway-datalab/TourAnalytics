@@ -326,7 +326,7 @@ export function prepare(rows, idx) {
         const rd = roundOf(r);
         const eq = hasEquip ? equip(r) : null;
         (rd.obs ||= []).push({ k: statKey, cat: catMemo(get(r, "category")), lie: isNull(lie) ? null : String(lie), dist: isNull(dist) ? null : String(dist),
-          v, w: aw !== null && aw > 0 ? aw : 1, file: true, ...(eq?.gear ? { gear: eq.gear } : {}), ...(eq?.ball ? { ball: eq.ball } : {}) });
+          v, w: aw !== null && aw > 0 ? aw : 1, file: true, ...(eq?.gear ? { gear: eq.gear } : eq?.clubCat ? { gk: eq.clubCat } : {}), ...(eq?.ball ? { ball: eq.ball } : {}) });
         continue;
       }
     }
@@ -356,13 +356,49 @@ export function prepare(rows, idx) {
   for (const rd of list) for (const o of rd.obs) if (o.file && statDef(o.k).pct) { fracKeys.add(fk(rd, o)); if (Math.abs(o.v) > 1.0001) over.add(fk(rd, o)); }
   if (fracKeys.size) for (const rd of list) for (const o of rd.obs) { const k = fk(rd, o); if (o.file && fracKeys.has(k) && !over.has(k)) o.v *= 100; }
   if (idx.date !== undefined) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
+  if (hasEquip) fillModels(list);
   return list;
+}
+/**
+ * (update 708) A club model left empty in the data ("None"): the model of that kind of club (Driver, Iron …) at the same
+ * event (its other rounds), else at the nearest event before it in the same season, else (the first event of a season)
+ * the next event that season that has one. Shots and their stats (Driving Distance with that driver …) both.
+ */
+function fillModels(list) {
+  const yearOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+  const events = [], byKey = new Map();
+  for (const rd of list) {
+    const k = `${rd.event}|${yearOf(rd)}`, t = Date.parse(rd.date) || 0;
+    let e = byKey.get(k); if (!e) { e = { year: yearOf(rd), rounds: [], t }; byKey.set(k, e); events.push(e); }
+    e.rounds.push(rd); if (t && (!e.t || t < e.t)) e.t = t;
+  }
+  events.sort((a, b) => a.t - b.t);
+  if (!events.some((e) => e.rounds.some((rd) => rd.shots.some((s) => !s.gear && s.clubCat) || (rd.obs || []).some((o) => o.gk)))) return;
+  for (const e of events) {
+    const m = new Map();
+    for (const rd of e.rounds) for (const s of rd.shots) if (s.gear && s.clubCat) { const c = m.get(s.clubCat) || m.set(s.clubCat, new Map()).get(s.clubCat); c.set(s.gear, (c.get(s.gear) || 0) + (s.w || 1)); }
+    e.models = new Map([...m].map(([k, c]) => [k, [...c].sort((a, b) => b[1] - a[1])[0][0]]));
+  }
+  events.forEach((e, i) => {
+    const memo = new Map();
+    const pick = (cat) => {
+      if (memo.has(cat)) return memo.get(cat);
+      let g = e.models.get(cat) || null;
+      for (let j = i - 1; !g && j >= 0; j--) if (events[j].year === e.year) g = events[j].models.get(cat) || null;
+      for (let j = i + 1; !g && j < events.length; j++) if (events[j].year === e.year) g = events[j].models.get(cat) || null;
+      memo.set(cat, g); return g;
+    };
+    for (const rd of e.rounds) {
+      for (const s of rd.shots) if (!s.gear && s.clubCat) { const g = pick(s.clubCat); if (g) s.gear = g; }
+      for (const o of rd.obs || []) if (!o.gear && o.gk) { const g = pick(o.gk); if (g) o.gear = g; delete o.gk; }
+    }
+  });
 }
 
 /** Shot-by-shot files: the per-shot columns (hit green, proximity, up & down, holed, fairway, drive) as stats. */
 function shotObs(rd, s, r, idx) {
   const col = (f) => (idx[f] === undefined ? null : r[idx[f]]);
-  const add = (k, v) => { if (v !== null && v !== undefined && Number.isFinite(v)) (rd.obs ||= []).push({ k, cat: s.cat, lie: s.lie, dist: s.dist, v, w: s.w, ...(s.gear ? { gear: s.gear } : {}), ...(s.ball ? { ball: s.ball } : {}) }); };
+  const add = (k, v) => { if (v !== null && v !== undefined && Number.isFinite(v)) (rd.obs ||= []).push({ k, cat: s.cat, lie: s.lie, dist: s.dist, v, w: s.w, ...(s.gear ? { gear: s.gear } : s.clubCat ? { gk: s.clubCat } : {}), ...(s.ball ? { ball: s.ball } : {}) }); };
   const holed = truthy(col("holeOut")) === true;
   if (s.cat === "APP" || s.cat === "ARG") {
     const g = truthy(col("onGreen")); if (g !== null) add("hitGreen", g || holed ? 100 : 0);
