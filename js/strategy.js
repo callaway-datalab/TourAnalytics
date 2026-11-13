@@ -70,7 +70,7 @@ export function strategyOf(recs, par, geo = {}) {
   };
   const TEE_LIM = [8, 15]; // (update 655: tee targets; 656: the approach miss spots too)
   // (update 714) every circle a size the map's circle tool can be set to (its radius in yards), so it can be checked there
-  const R_SET = [8, 10, 15, 20]; // (update 717: target circles only 8, 10, 15 or 20 yds across the middle to the edge)
+  const R_SET = [8, 10]; // (update 717: 8, 10, 15 or 20 yds; 720: only 8 or 10 yds, the middle to the edge)
   const ring = (cx, cy, R, tone) => [Math.round(cx), Math.round(cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(cx + R * Math.cos(k * Math.PI / 12)), Math.round(cy + R * Math.sin(k * Math.PI / 12))])];
   // (update 716) fast enough for a whole course's shots: the shots filed in a grid (only those near a circle are looked
   // at), and the circles started from one shot in each little square (bigger squares for bigger circles), not every shot
@@ -300,7 +300,7 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
     // different place that's scored worse than the second best
     if (pick.length === 2) {
-      const w = nameAll(gen(5, [10, 15, 20])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
+      const w = nameAll(gen(5, R_SET)).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
       if (w) pick.push(w);
     }
     if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
