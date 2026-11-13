@@ -279,6 +279,13 @@ export function centerRankings(S) {
     S.rankScroll.scrollTop = row.offsetTop - S.rankScroll.clientHeight / 2 + row.offsetHeight / 2;
   });
 }
+// (update 710) an event's name short enough for under a bar: sponsors' "presented by …" off, the long words shortened, then cut
+const shortEvent = (name) => {
+  let t = String(name || "").replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/i, "").replace(/^the\s+/i, "")
+    .replace(/\bChampionships?\b/gi, "Champ.").replace(/\bInvitational\b/gi, "Inv.").replace(/\bTournament\b/gi, "Tourn.").replace(/\bInternational\b/gi, "Intl.")
+    .replace(/\bClassic\b/gi, "Classic").replace(/\bOpen\b/g, "Open").replace(/\s+/g, " ").trim();
+  return t.length > 18 ? `${t.slice(0, 17).trimEnd()}\u2026` : t;
+};
 export function productTrend(S, mine, cat, toggles) {
   // (update 709) always event by event (no Round / Event / Month / Year pills here)
   const TB = "event"; void toggles;
@@ -310,7 +317,7 @@ export function productTrend(S, mine, cat, toggles) {
   rs.forEach((rd, i) => {
     const k = keyOf(rd, i), d = localDay(rd.date);
     const g = groups.get(k) || groups.set(k, { label: TB === "round" ? `${isNaN(d) ? rd.date : shortDate(d)}${rd.roundNo ? ` R${rd.roundNo}` : ""}` : TB === "month" && k !== "Unknown" ? new Date(`${k}-15T12:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : TB === "event" ? (rd.event ? `${rd.event} ${isNaN(d) ? rd.year || "" : d.getFullYear()}`.trim() : rd.date || k) : k,
-      short: TB === "event" && !isNaN(d) ? shortDate(d) : null, sg: 0, rounds: 0, event: rd.event, prods: new Map() }).get(k);
+      short: TB === "event" ? shortEvent(rd.event || (isNaN(d) ? rd.date : shortDate(d))) : null /* (update 710: the event's name under its bar, shortened) */, sg: 0, rounds: 0, event: rd.event, prods: new Map() }).get(k);
     g.rounds++; for (const s of rd.shots) { g.sg += s.sg; const p = prodOf(s, kind); if (p) g.prods.set(p, (g.prods.get(p) || 0) + (s.w || 1)); }
   });
   const list = [...groups.values()].map((g) => ({ ...g, value: g.sg / g.rounds, top: [...g.prods].sort((a, b) => b[1] - a[1])[0]?.[0] || null }));
