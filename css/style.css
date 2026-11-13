@@ -6711,3 +6711,11 @@ div.sh-ud3-green { cursor: default; }
 /* (update 704) no sideways scroll on the page itself (something a pixel or two too wide made a tiny scroll bar on desktop);
    wide tables and charts keep their own scroll areas. clip, not hidden, so sticky headers still work. */
 html, body { overflow-x: clip; max-width: 100%; }
+/* (update 712) SG Trends by Product: Edit */
+.prod-edit { margin-left: 6px; }
+.prod-edited-note { margin-left: 4px; }
+.prod-edit-dlg { width: min(30rem, calc(100vw - 2rem)); }
+.prod-edit-dlg select { width: 100%; margin: 8px 0; }
+.prod-edit-body { display: grid; gap: 6px; margin: 6px 0; }
+.prod-edit-opt { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; }
+.prod-edit-opt input[type=text] { flex: 1; min-width: 0; }

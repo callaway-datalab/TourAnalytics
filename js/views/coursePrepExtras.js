@@ -195,7 +195,7 @@ export async function playerData(key) {
   const ds = (list || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];
   if (!ds) { const out = { rounds: await entered, field: [], ds: null }; roundsCache.set(key, out); return out; }
   const [rows, summary, ent] = await Promise.all([store.getDatasetRows(key, ds.id, ds.chunkCount), store.getFieldStats(ds.id).catch(() => null), entered]);
-  const out = { rounds: [...prepare(rows, detectColumns(ds.columns || [])).filter((rd) => rd.shots.length), ...ent], field: summaryPlayers(summary).filter((p) => p.rounds.length), ds };
+  const out = { rounds: [...prepare(rows, detectColumns(ds.columns || []), key).filter((rd) => rd.shots.length), ...ent], field: summaryPlayers(summary).filter((p) => p.rounds.length), ds };
   roundsCache.set(key, out);
   return out;
 }

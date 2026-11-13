@@ -56,7 +56,7 @@ export async function render(main, { flash }) {
             // (the Storage rules from before update 403: built here as before, if this computer can)
             try {
               const { labels } = await adminAllClients();
-              const players = [...dataset.byClient].map(([key, g]) => ({ key, name: labels.get(key) || g.name || g.label, rounds: prepare(g.rows, idx) }));
+              const players = [...dataset.byClient].map(([key, g]) => ({ key, name: labels.get(key) || g.name || g.label, rounds: prepare(g.rows, idx) } /* (no product edits in the stored file: they're applied when it's read) */));
               await publishFieldStats(result.datasetId, buildFieldSummary(players), Date.now());
               const { publishFieldDetail } = await import("../fieldStore.js");
               await publishFieldDetail(result.datasetId, players, Date.now());

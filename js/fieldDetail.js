@@ -16,7 +16,7 @@
  * Index 0 in the dictionary is "no value" (null).
  */
 
-import { fillModels } from "./sg.js";
+import { fillModels, applyProductEdits } from "./sg.js";
 
 const MAGIC = "TAD1";
 
@@ -131,6 +131,9 @@ export function mergeDetailYears(list) {
  * slice of them. It works like the array it replaces (length, for…of, filter, map, reduce, some …); a shot is read
  * from the columns only while it's being looked at, so almost nothing per shot is kept in memory. */
 const r4 = (x) => Math.round(x * 10000) / 10000; // (float32 back to the number as written: 0.484, not 0.48399999737739563)
+// (update 712) a value's place in the dictionary, added at the end when it's new (a product typed in Edit); the shots and
+// stats share one dictionary, so either can add to it
+const dictAt = (t, v) => { if (!t.at || v == null) return null; let x = t.at.get(v); if (x == null) { const lim = t.I instanceof Uint16Array ? 65535 : 4294967295; if (t.d.length >= lim) return null; x = t.d.length; t.d.push(v); t.at.set(v, x); } return x; };
 const own = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
 class ShotV {
   constructor(t, i) { this.t = t; this.i = i; }
@@ -139,8 +142,8 @@ class ShotV {
   get dist() { return this.t.d[this.t.I[this.i * this.t.N + 2]]; } set dist(v) { own(this, "dist", v); }
   get club() { return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 3]] : undefined; } set club(v) { own(this, "club", v); }
   get clubCat() { return this.t.clubs ? this.t.d[this.t.I[this.i * this.t.N + 4]] : undefined; } set clubCat(v) { own(this, "clubCat", v); }
-  get gear() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 5] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { const x = this.t.at?.get(v); if (x != null && this.t.N === 7) this.t.I[this.i * 7 + 5] = x; else own(this, "gear", v); } // (update 709: a filled-in model kept in the columns)
-  get ball() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 6] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { own(this, "ball", v); }
+  get gear() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 5] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { const x = dictAt(this.t, v); if (x != null && this.t.N === 7) this.t.I[this.i * 7 + 5] = x; else own(this, "gear", v); } // (update 709: a filled-in model kept in the columns)
+  get ball() { const x = this.t.N === 7 ? this.t.I[this.i * 7 + 6] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { const x = dictAt(this.t, v); if (x != null && this.t.N === 7) this.t.I[this.i * 7 + 6] = x; else own(this, "ball", v); }
   get sg() { return r4(this.t.F[this.i * 2]); } set sg(v) { own(this, "sg", v); }
   get w() { return r4(this.t.F[this.i * 2 + 1]); } set w(v) { own(this, "w", v); }
   toJSON() { return { cat: this.cat, sg: this.sg, w: this.w, lie: this.lie, dist: this.dist, club: this.club, clubCat: this.clubCat, gear: this.gear, ball: this.ball }; }
@@ -151,8 +154,8 @@ class ObsV {
   get cat() { return this.t.d[this.t.I[this.i * this.t.N + 1]]; } set cat(v) { own(this, "cat", v); }
   get lie() { return this.t.d[this.t.I[this.i * this.t.N + 2]]; } set lie(v) { own(this, "lie", v); }
   get dist() { return this.t.d[this.t.I[this.i * this.t.N + 3]]; } set dist(v) { own(this, "dist", v); }
-  get gear() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 4] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { const x = this.t.at?.get(v); if (x != null && this.t.N === 6) this.t.I[this.i * 6 + 4] = x; else own(this, "gear", v); }
-  get ball() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 5] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { own(this, "ball", v); }
+  get gear() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 4] : 0; return x ? this.t.d[x] : undefined; } set gear(v) { const x = dictAt(this.t, v); if (x != null && this.t.N === 6) this.t.I[this.i * 6 + 4] = x; else own(this, "gear", v); }
+  get ball() { const x = this.t.N === 6 ? this.t.I[this.i * 6 + 5] : 0; return x ? this.t.d[x] : undefined; } set ball(v) { const x = dictAt(this.t, v); if (x != null && this.t.N === 6) this.t.I[this.i * 6 + 5] = x; else own(this, "ball", v); }
   get v() { return r4(this.t.F[this.i * 2]); } set v(x) { own(this, "v", x); }
   get w() { return r4(this.t.F[this.i * 2 + 1]); } set w(x) { own(this, "w", x); }
   toJSON() { return { k: this.k, cat: this.cat, lie: this.lie, dist: this.dist, gear: this.gear, ball: this.ball, v: this.v, w: this.w }; }
@@ -242,7 +245,7 @@ export function decodeFieldDetail(bytes) {
     }),
   }));
   // (update 709) a club model left empty: filled from the same event or the nearest one that season (as prepare() does)
-  if (SN === 7 && clubs) for (const p of out) { try { fillModels(p.rounds); } catch (err) { console.error(err); } }
+  if (SN === 7 && clubs) for (const p of out) { try { fillModels(p.rounds); applyProductEdits(p.key, p.rounds); } catch (err) { console.error(err); } }
   return out;
 }
 

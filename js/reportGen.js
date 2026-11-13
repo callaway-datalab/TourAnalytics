@@ -1602,7 +1602,7 @@ export async function loadSource(source, playerKey, label, { detail = true } = {
   if (!shot) { if (!entered.length) return null; const me0 = { key: playerKey, label, rounds: entered }; return { me: me0, field: [me0], idx: ENTERED_IDX }; }
   const idx = detectColumns(shot.columns || []);
   const [rows, summary] = await Promise.all([getDatasetRows(playerKey, shot.id, shot.chunkCount), getFieldStats(shot.id).catch(() => null)]);
-  const me = { key: playerKey, label, rounds: [...prepare(rows, idx), ...entered].sort((a, b) => String(a.date).localeCompare(String(b.date))) };
+  const me = { key: playerKey, label, rounds: [...prepare(rows, idx, playerKey), ...entered].sort((a, b) => String(a.date).localeCompare(String(b.date))) };
   let field = summaryPlayers(summary);
   if (detail && field.length) {
     const { getFieldDetail } = await import("./fieldStore.js");
@@ -1622,7 +1622,7 @@ export async function loadFullField(datasetId, field, me, idx) {
   const full = field.map((p) => {
     if (p.key === me.key) return me;
     const got = players.get(p.key);
-    return got ? { key: p.key, label: p.label || p.key, rounds: prepare(got.rows, idx) } : null; // that player's file isn't there
+    return got ? { key: p.key, label: p.label || p.key, rounds: prepare(got.rows, idx, p.key) } : null; // that player's file isn't there
   }).filter(Boolean);
   return full.length > 1 ? full : null;
 }

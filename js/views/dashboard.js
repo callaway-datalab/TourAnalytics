@@ -115,7 +115,7 @@ export async function render(main, { previewClient, flash }) {
       const shown = (key, name) => tl.get(key) ?? plainName(name || key.replace(/^c_/, ""));
       const field = summaryPlayers(summary).map((p) => ({ ...p, label: shown(p.key, p.name) }));
       const label = field.find((p) => p.key === clientKey)?.label || shown(clientKey, d.playerName || previewClient?.label || d.clientLabel);
-      const me = { key: clientKey, label, rounds: [...prepare(rows, idx), ...enteredRs].sort((a, b) => String(a.date).localeCompare(String(b.date))) }; // (update 223: and the entered rounds)
+      const me = { key: clientKey, label, rounds: [...prepare(rows, idx, clientKey), ...enteredRs].sort((a, b) => String(a.date).localeCompare(String(b.date))) }; // (update 223: and the entered rounds)
       const inner = el("div");
       mount(box, inner);
       const dash = sgDashboard(inner, { me, field: field.length ? field : [{ ...me, summaryOnly: true }], idx, mode: "player", teamRole, state: dashState, updatedAt: d.uploadedAt?.toMillis?.() ?? null, viewHost, lead: sourcePills, leadHome: sourceHome });
@@ -149,7 +149,7 @@ export async function render(main, { previewClient, flash }) {
           const full = field.map((p) => {
             if (p.key === clientKey) return { key: p.key, label: p.label, rounds: me.rounds };
             const got = players.get(p.key);
-            return got ? { key: p.key, label: p.label, rounds: prepare(got.rows, idx) } : null; // that player's file isn't there: leave them out
+            return got ? { key: p.key, label: p.label, rounds: prepare(got.rows, idx, p.key) } : null; // that player's file isn't there: leave them out
           }).filter((p) => p && p.rounds.length);
           if (shownVersion !== myVersion || full.length < 2) return;
           dash.update({ field: full });

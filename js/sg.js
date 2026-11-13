@@ -275,7 +275,7 @@ export function birthOf(v) {
 /** (update 396) A player's birth date from their rounds (the first one given), or null. */
 export const birthOfRounds = (rounds) => { for (const rd of rounds || []) if (rd.birth) return rd.birth; return null; };
 
-export function prepare(rows, idx) {
+export function prepare(rows, idx, key = null) { // (update 712) key: the player, for their product edits
   const get = (r, f) => (idx[f] === undefined ? null : r[idx[f]]);
   const shotCols = ["onGreen", "proximity", "upDown", "holeOut", "hitFwy", "missDir", "driveDist"].some((f) => idx[f] !== undefined);
   const rounds = new Map();
@@ -357,7 +357,36 @@ export function prepare(rows, idx) {
   if (fracKeys.size) for (const rd of list) for (const o of rd.obs) { const k = fk(rd, o); if (o.file && fracKeys.has(k) && !over.has(k)) o.v *= 100; }
   if (idx.date !== undefined) list.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
   if (hasEquip) fillModels(list);
+  if (key) applyProductEdits(key, list);
   return list;
+}
+/* (update 712) Product edits (Stats › SG Trends by Product › Edit): a player's product at a tournament put right by hand,
+   kept in productEdits/{playerKey} { edits: [{ id, event, year, pk (Driver, Non-Driver, Irons, Wedges, Putters, Balls),
+   kinds (its kinds of club), from (the product there before, or null: none recorded), to, label, at, by }] } and applied
+   wherever that player's rounds are read (prepare(), the field detail), so they hold through new data. */
+const PEDITS = new Map();
+export function setProductEdits(map) { PEDITS.clear(); for (const [k, v] of map) if (v?.length) PEDITS.set(k, v); }
+export const productEditsOf = (key) => PEDITS.get(key) || [];
+export function applyProductEdits(key, rounds) {
+  const eds = PEDITS.get(key); if (!eds?.length || !rounds?.length) return;
+  const yOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
+  const byEv = new Map(); for (const e of eds) { const k = `${e.event}|${e.year}`; (byEv.get(k) || byEv.set(k, []).get(k)).push(e); }
+  const rs = new Map(); for (const rd of rounds) { const k = `${rd.event}|${yOf(rd)}`; if (byEv.has(k)) (rs.get(k) || rs.set(k, []).get(k)).push(rd); }
+  for (const [k, list] of rs) for (const e of byEv.get(k)) {
+    const ball = e.pk === "Balls", kinds = e.kinds || [];
+    const val = (x) => (ball ? (x.ball ? `Ball|${x.ball}` : null) : x.gear || null);
+    const put = (x) => { if (ball) x.ball = String(e.to).replace(/^Ball\|/, ""); else x.gear = e.to; };
+    const kindOf = (x, isObs) => { const v = val(x); return v ? gearInfo(v).kind : isObs ? null : x.clubCat || null; };
+    // the product named before, if it's still there; else (the data changed since) that kind of club at this event
+    const hit = e.from != null && list.some((rd) => rd.shots.some((x) => val(x) === e.from));
+    const fromKind = e.from ? gearInfo(e.from).kind : null;
+    const match = (x, isObs) => {
+      if (e.from == null) return !val(x) && !isObs && (ball || kinds.includes(x.clubCat));
+      if (hit) return val(x) === e.from;
+      const kd = kindOf(x, isObs); return ball ? !!val(x) : kd != null && kd === fromKind;
+    };
+    for (const rd of list) { for (const x of rd.shots) if (match(x, false)) put(x); for (const o of rd.obs || []) if (val(o) != null && match(o, true)) put(o); }
+  }
 }
 /**
  * (update 708) A club model left empty in the data ("None"): the model of that kind of club (Driver, Iron …) at the same

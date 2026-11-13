@@ -251,7 +251,7 @@ export async function render(main) {
     const pooled = [];
     let n = 0;
     for (const [k, rows] of rowsBy) {
-      const rs = k === player?.key ? data.rounds : rows.length ? prepare(rows, dsInfo.idx) : [];
+      const rs = k === player?.key ? data.rounds : rows.length ? prepare(rows, dsInfo.idx, k) : [];
       if (!rs.length) continue;
       n++;
       for (const rd of rs) { if (k !== player?.key) for (const sh of rd.shots) delete sh.r; pooled.push({ ...rd, key: `${k}|${rd.key}`, pk: k }); }

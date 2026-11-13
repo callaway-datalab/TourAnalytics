@@ -160,7 +160,7 @@ export async function render(main, { flash, routeId }) {
       keepFew(preparedCache);
       preparedCache.set(pk, (ds.clientKeys || []).map((key) => {
         const c = rowsCache.get(`${ds.id}|${key}`) || { label: key, rows: [] };
-        return { key, label: c.label, rounds: prepare(c.rows, idx) };
+        return { key, label: c.label, rounds: prepare(c.rows, idx, key) };
       }).filter((p) => p.rounds.length));
     }
     fieldPlayers = preparedCache.get(pk).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.label || p.key.replace(/^c_/, "") }));
@@ -203,7 +203,7 @@ export async function render(main, { flash, routeId }) {
       // read a player's rows into rounds once they're here; a stage is ready once all its players are
       const loaded = new Set();
       let next = 0;
-      const prepOne = (k) => { if (job.prepared.has(k)) return; const c = rowsCache.get(`${ds.id}|${k}`); if (!c) return; const rounds = prepare(c.rows, idx); if (rounds.length) job.prepared.set(k, { key: k, label: c.label, rounds }); };
+      const prepOne = (k) => { if (job.prepared.has(k)) return; const c = rowsCache.get(`${ds.id}|${k}`); if (!c) return; const rounds = prepare(c.rows, idx, k); if (rounds.length) job.prepared.set(k, { key: k, label: c.label, rounds }); };
       const advance = () => {
         let moved = false;
         while (next < stages.length && stages[next].keys.every((k) => loaded.has(k))) {
@@ -276,7 +276,7 @@ export async function render(main, { flash, routeId }) {
       // not a field that grows by one with every player opened (1 of 1, then 2 of 2 …)
       if (!sp.length) {
         const full0 = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
-        const own = full0 ? [{ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full0.rows, idx) }] : [];
+        const own = full0 ? [{ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full0.rows, idx, player.key) }] : [];
         drawLite(ds, idx, own, "The rankings can\u2019t be read right now: they\u2019re not built yet, or a rebuild is writing them. Here are the player\u2019s own numbers; ranks appear once the rebuild on Upload Data shows Live (then reload).", false, { noRanks: true });
         return;
       }
@@ -286,9 +286,9 @@ export async function render(main, { flash, routeId }) {
     const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
     fieldPlayers = preparedCache.get(pk).map((p) => {
       const label = displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "");
-      return full && p.key === player.key ? { key: p.key, label, rounds: prepare(full.rows, idx) } : { ...p, label };
+      return full && p.key === player.key ? { key: p.key, label, rounds: prepare(full.rows, idx, p.key) } : { ...p, label };
     });
-    if (full && !fieldPlayers.some((p) => p.key === player.key)) fieldPlayers.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
+    if (full && !fieldPlayers.some((p) => p.key === player.key)) fieldPlayers.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx, player.key) });
     const ranked = fieldPlayers.some((p) => p.summaryOnly);
     const why = detailWhy.get(dk);
     const note = !ranked ? "The rankings for this file haven\u2019t been built yet: use Rebuild rankings on Upload Data (it runs in the cloud). Here you can still pick a player to see their own numbers."
@@ -321,7 +321,7 @@ export async function render(main, { flash, routeId }) {
     }
     const list = base.filter((p) => p.rounds.length).map((p) => ({ ...p, label: displayLabels.get(p.key) || p.name || p.key.replace(/^c_/, "") }));
     const full = player ? rowsCache.get(`${ds.id}|${player.key}`) : null;
-    if (full && !list.some((p) => p.key === player.key)) list.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx) });
+    if (full && !list.some((p) => p.key === player.key)) list.push({ key: player.key, label: displayLabels.get(player.key) || player.label, rounds: prepare(full.rows, idx, player.key) });
     return list;
   }
   // (update 569) the detail put into the dashboard already on screen (no blank page, no redraw from scratch): it came in,
@@ -545,7 +545,7 @@ export async function render(main, { flash, routeId }) {
           status.textContent = `Loading ${p.label}\u2026`;
           reloadPlayerRows(cur.id, p.key).then((rows) => {
             if (player?.key !== p.key) return;
-            const rounds = prepare(rows, detectColumns(cur.columns || []));
+            const rounds = prepare(rows, detectColumns(cur.columns || []), p.key);
             if (!rounds.length) {
               status.textContent = rows.length ? `${p.label} has ${rows.length.toLocaleString()} rows in ${cur.name || "this file"}, but none could be read as rounds (each needs a date, a tournament, a stat and a value).`
                 : `${p.label} is listed in ${cur.name || "this file"}, but no rows were stored for them. Re-upload the file to fix it.`;

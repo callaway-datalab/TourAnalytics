@@ -281,6 +281,8 @@ async function render() {
   try {
     try { (await import("./memory.js")).freeFor(routeId); } catch { /* */ } // (update 556: what the last pages kept and this one doesn't use)
     const mod = await loader();
+    // (update 712) the product edits, before any page reads a player's data (at most 4 s; without them the page still opens)
+    if (guard !== "public") { try { const pe = await import("./productEdits.js"); await Promise.race([pe.editsReady(), new Promise((r) => setTimeout(r, 4000))]); } catch { /* */ } }
     if (gen !== renderGen) return;
     import("./usage.js").then((u) => u.trackPage(routeId)).catch(() => {}); // (update 227: page views and time, for At a glance)
     import("./perf.js").then((p) => p.bootLog(`page ${routeId}: drawing`)).catch(() => {}); // (update 535)

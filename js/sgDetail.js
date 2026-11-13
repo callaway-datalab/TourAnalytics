@@ -279,6 +279,62 @@ export function centerRankings(S) {
     S.rankScroll.scrollTop = row.offsetTop - S.rankScroll.clientHeight / 2 + row.offsetHeight / 2;
   });
 }
+// (update 712) who may change a player's products: the admin, and their team (coaches, analysts)
+const canEditProducts = (S) => { const st = getState(); return !!S.me?.key && (!!st.isAdmin || !!st.isTeam); };
+// (update 712) Edit: pick a tournament, then the product it should be (one used at the other tournaments, or a new name)
+function productEditDialog(S, { kind, list, order, nameOf, edits }) {
+  const dlg = el("dialog", { class: "dp-dialog prod-edit-dlg" }); document.body.appendChild(dlg);
+  const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+  const evs = [...list].reverse();
+  const evSel = el("select", { class: "prod-edit-ev", "aria-label": "Tournament" }, [el("option", { value: "" }, "Pick a tournament\u2026"),
+    ...evs.map((g, i) => { const top = g.top ? nameOf(g.top) : "no product"; const ed = edits.some((e) => e.event === g.event && String(e.year) === String(g.year)); return el("option", { value: String(i) }, `${g.label} \u2014 ${top}${ed ? " *" : ""}`); })]);
+  const body = el("div", { class: "prod-edit-body" }), status = el("p", { class: "muted small", role: "status" });
+  const save = el("button", { type: "button", class: "btn", disabled: true }, "Save"), cancel = el("button", { type: "button", class: "btn ghost" }, "Cancel");
+  cancel.addEventListener("click", close); dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+  let pick = null; // { g, from, to }
+  const drawBody = () => {
+    const g = evs[Number(evSel.value)]; save.disabled = true; pick = null;
+    if (!g) { body.replaceChildren(); return; }
+    const here = [...g.prods].sort((a, b) => b[1] - a[1]).map(([p]) => p);
+    const fromSel = here.length > 1 ? el("select", { "aria-label": "Product to replace" }, here.map((p) => el("option", { value: p }, `${nameOf(p)} (${Math.round(g.prods.get(p))} shots)`))) : null;
+    const fromOf = () => (fromSel ? fromSel.value : here[0] ?? null);
+    const nm = `pe${Math.random().toString(36).slice(2, 6)}`;
+    const opts = order.filter((p) => p !== fromOf());
+    const radios = opts.map((p) => { const r = el("input", { type: "radio", name: nm, value: p }); r.addEventListener("change", () => { pick = { g, to: p }; save.disabled = false; }); return el("label", { class: "prod-edit-opt" }, [r, ` ${nameOf(p)}`]); });
+    const newR = el("input", { type: "radio", name: nm, value: "__new" }), newIn = el("input", { type: "text", class: "ps-in", placeholder: "New name: brand and model, e.g. Callaway Paradym Ai Smoke", "aria-label": "New product name" });
+    const onNew = () => { newR.checked = true; const t = newIn.value.trim(); pick = t ? { g, to: "__new", name: t } : null; save.disabled = !pick; };
+    newR.addEventListener("change", onNew); newIn.addEventListener("input", onNew); newIn.addEventListener("focus", () => { newR.checked = true; onNew(); });
+    const mine = edits.filter((e) => e.event === g.event && String(e.year) === String(g.year));
+    const undo = mine.length ? (() => { const b = el("button", { type: "button", class: "link danger small" }, `Undo the change${mine.length > 1 ? "s" : ""} here (back to the data)`);
+      b.addEventListener("click", async () => { b.disabled = true; status.textContent = "Saving\u2026"; try { const pe = await import("./productEdits.js"); for (const e of mine) await pe.removeProductEdit(S.me.key, e.id); status.textContent = "Done. Reloading\u2026"; location.reload(); } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that. Only the admin and the player\u2019s team can change products."; b.disabled = false; } }); return b; })() : null;
+    body.replaceChildren(
+      el("p", { class: "small" }, [el("strong", {}, "Now: "), here.length ? here.map((p) => nameOf(p)).join(", ") : "no product recorded"]),
+      fromSel ? el("label", { class: "small" }, ["Replace ", fromSel]) : null,
+      el("p", { class: "ps-t" }, "CHANGE IT TO"),
+      ...(radios.length ? radios : [el("p", { class: "muted small" }, "No other products of this kind at the other tournaments.")]),
+      el("label", { class: "prod-edit-opt" }, [newR, " ", newIn]), undo);
+    fromSel?.addEventListener("change", drawBody);
+    body.dataset.from = ""; body._fromOf = fromOf;
+  };
+  evSel.addEventListener("change", drawBody);
+  save.addEventListener("click", async () => {
+    if (!pick) return;
+    const g = pick.g, from = body._fromOf?.() ?? null, kinds = S.PROD_KINDS?.[kind] || [];
+    const prior = edits.find((e) => e.event === g.event && String(e.year) === String(g.year) && e.to === from); // (changing a change: keep what the data had)
+    const fromKind = from ? gearInfo(from).kind : kinds[0] || "Other";
+    const to = pick.to === "__new" ? (kind === "Balls" ? `Ball|${pick.name}` : `${fromKind}|${pick.name}`) : pick.to;
+    save.disabled = true; status.textContent = "Saving\u2026";
+    try {
+      const pe = await import("./productEdits.js");
+      await pe.saveProductEdit(S.me.key, { ...(prior ? { id: prior.id } : {}), event: g.event, year: g.year, pk: kind, kinds, from: prior ? prior.from ?? null : from, to, label: g.label });
+      status.textContent = "Saved. Reloading so every page uses it\u2026"; location.reload();
+    } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that. Only the admin and the player\u2019s team can change products."; save.disabled = false; }
+  });
+  dlg.append(el("h3", {}, `Edit ${kind === "Balls" ? "balls" : `${kind.toLowerCase()} products`}`),
+    el("p", { class: "muted small" }, "Pick a tournament, then what was really used there. The change is kept and used on every page and report, and stays through new data uploads. Changed products get a * in the key."),
+    evSel, body, status, el("div", { class: "thread-actions" }, [save, cancel]));
+  if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+}
 // (update 710) an event's name short enough for under a bar: sponsors' "presented by …" off, the long words shortened, then cut
 const shortEvent = (name) => {
   let t = String(name || "").replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/i, "").replace(/^the\s+/i, "")
@@ -317,7 +373,7 @@ export function productTrend(S, mine, cat, toggles) {
   rs.forEach((rd, i) => {
     const k = keyOf(rd, i), d = localDay(rd.date);
     const g = groups.get(k) || groups.set(k, { label: TB === "round" ? `${isNaN(d) ? rd.date : shortDate(d)}${rd.roundNo ? ` R${rd.roundNo}` : ""}` : TB === "month" && k !== "Unknown" ? new Date(`${k}-15T12:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : TB === "event" ? (rd.event ? `${rd.event} ${isNaN(d) ? rd.year || "" : d.getFullYear()}`.trim() : rd.date || k) : k,
-      short: TB === "event" ? shortEvent(rd.event || (isNaN(d) ? rd.date : shortDate(d))) : null /* (update 710: the event's name under its bar, shortened) */, sg: 0, rounds: 0, event: rd.event, prods: new Map(), last: null }).get(k);
+      short: TB === "event" ? shortEvent(rd.event || (isNaN(d) ? rd.date : shortDate(d))) : null /* (update 710: the event's name under its bar, shortened) */, sg: 0, rounds: 0, event: rd.event, year: String(rd.year || String(rd.date || "").slice(0, 4)), prods: new Map(), last: null }).get(k);
     if (!isNaN(d) && (!g.last || d > g.last)) g.last = d; if (!isNaN(d) && (!g.first || d < g.first)) g.first = d; // (update 711: the event's dates, for the tooltip)
     g.rounds++; for (const s of rd.shots) { g.sg += s.sg; const p = prodOf(s, kind); if (p) g.prods.set(p, (g.prods.get(p) || 0) + (s.w || 1)); }
   });
@@ -330,7 +386,12 @@ export function productTrend(S, mine, cat, toggles) {
   const colorOf = (p) => S.PROD_COLORS[order.indexOf(p) % S.PROD_COLORS.length] || "#8e8e93";
   const nameOf = (p) => { const gi = gearInfo(p); return `${gi.brand} ${gi.model}`.trim() || p; };
   // (update 514) the key above the chart: each product's colour and name; its numbers in the table under the chart
-  const legend = el("div", { class: "prod-legend" }, order.map((p) => el("span", { class: "prod-key" }, [el("i", { style: `background:${colorOf(p)}` }), nameOf(p)])));
+  // (update 712) products changed by hand (Edit) at some tournaments: marked * in the key and the tooltip
+  const edits = S.me?.key ? (S.productEditsOf?.(S.me.key) || []).filter((e) => e.pk === kind) : [];
+  const editedTo = new Set(edits.map((e) => e.to)), editOf = (g) => edits.filter((e) => e.event === g.event && String(e.year) === String(g.year));
+  const legend = el("div", { class: "prod-legend" }, [...order.map((p) => el("span", { class: "prod-key" }, [el("i", { style: `background:${colorOf(p)}` }), `${nameOf(p)}${editedTo.has(p) ? " *" : ""}`])),
+    edits.length ? el("span", { class: "muted small prod-edited-note" }, "* changed by hand at some tournaments") : null,
+    canEditProducts(S) ? (() => { const b = el("button", { type: "button", class: "prod-cmp prod-edit" }, "\u270E Edit"); b.addEventListener("click", () => productEditDialog(S, { kind, list, order, nameOf, edits })); return b; })() : null]);
   const table = prodTable(mine, kind, order, colorOf, nameOf);
   // (update 455) Open in Compare: these products, over the dates in the chart (and the part of the game picked)
   const toCmp = S.me && order.length ? (() => {
@@ -349,7 +410,9 @@ export function productTrend(S, mine, cat, toggles) {
     tooltip: (i) => { const g = list[i], all = [...g.prods].sort((a, b) => b[1] - a[1]);
       const dt = (x) => x.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       const when = g.first && g.last ? (g.first.toDateString() === g.last.toDateString() ? dt(g.first) : `${dt(g.first).replace(/, \d{4}$/, g.first.getFullYear() === g.last.getFullYear() ? "" : `, ${g.first.getFullYear()}`)} \u2013 ${dt(g.last)}`) : null;
-      return [when, TB === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`)].filter(Boolean); },
+      const ed = editOf(g);
+      return [when, TB === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${editedTo.has(p) && ed.some((e) => e.to === p) ? " *" : ""}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`),
+        ...ed.map((e) => `* changed by hand${e.from ? ` (was ${nameOf(e.from)})` : " (none was recorded)"}`)].filter(Boolean); },
   }), "wide", "trend-prod"), table, toCmp], "full");
 }
 /*

@@ -2,6 +2,7 @@
  * The Stats page (sgDashboard). Split by section (see sgShared.js and the sg*.js modules next to it); this file keeps the
  * page's state, draw() and the small helpers every section shares.
  */
+import { productEditsOf } from "./sg.js";
 import { careerBlocks, statBlocksCmp, getState, drillFor, drillLine, practiceOpen, goalStatsFor, isMine, favoriteKeys, el, mount, loadScript, infoTip, CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate, missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList, distLead, localDay, LEVELS, PLAN_ADDED, PLAN_SEEN, bucketsOf, groupSplit, kv, sgn2, splitOf, sumSplit, mixWords, mixLead, MIX_CAUSE, CHART_JS, SPANS, SUMMARY, BREAKDOWNS, LEAVE_SCALE, nf1, catName, peakNote, planEditor } from "./sgShared.js";
 import * as sgFilters from "./sgFilters.js";
 import * as sgHero from "./sgHero.js";
@@ -113,6 +114,7 @@ export function sgDashboard(container, opts) {
     get PROD_COLORS() { return PROD_COLORS; },
     get PROD_FOR() { return PROD_FOR; },
     get PROD_KINDS() { return PROD_KINDS; },
+    get productEditsOf() { return productEditsOf; }, // (update 712)
     get productTrend() { return productTrend; },
     get profileLine() { return profileLine; },
     get profileLine0() { return profileLine0; },

@@ -82,7 +82,7 @@ export async function render(main, { previewClient }) {
       if (admin) rows = await store.getDatasetRowsListed(key, ds.id);
       else { const meta = await store.getDatasetMeta(key, ds.id); rows = await store.getDatasetRows(key, ds.id, meta.chunkCount); }
     } catch { rows = []; }
-    const r = rows.length ? prepare(rows, idx) : null;
+    const r = rows.length ? prepare(rows, idx, key) : null;
     ownCache.set(key, r);
     return r;
   }
