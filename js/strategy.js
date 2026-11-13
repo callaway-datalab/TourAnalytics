@@ -279,7 +279,9 @@ export function strategyOf(recs, par, geo = {}) {
     const lieMost = (mem) => { const m = new Map(); for (const p of mem) m.set(p.lie, (m.get(p.lie) || 0) + 1); return [...m].sort((a, b) => b[1] - a[1])[0][0]; };
     const nameAll = (cs) => cs.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${lieMost(g.mem)}`, n: g.mem.length, cx: g.x, cy: g.y }));
     const named = nameAll(cand);
-    const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); return a.k !== b.k && b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n); };
+    // (update 719) and the circles themselves apart on the map: overlapping by 2 yds at most (just touching is fine)
+    const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); const d = Math.hypot(a.cx - b.cx, a.cy - b.cy), over = (a.ry + b.ry) * geo.ppy - d;
+      return a.k !== b.k && b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n) && over <= 2 * geo.ppy; };
     // (update 618) a place to aim has to be safe to aim at: not a sliver of rough or fairway beside a bunker that only
     // scored well by luck. Within 6 yds of a spot's middle, if a quarter or more of all the misses (any lie) are in a
     // bunker, it can't be the best or second best miss (it can still be the worst)
