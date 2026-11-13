@@ -196,7 +196,26 @@ export function strategyOf(recs, par, geo = {}) {
   // (update 610) the miss spots as circles, the way the map's circle reads them: around each miss, the misses of the same
   // lie within 10 yds (15 when that's too few), centred on the middle of its misses, with MIN_N or more; then the best, second best and worst of those spots,
   // each a different place (not mostly the same misses) and named by the direction most of its misses are in
-  const missPts = done.filter((r) => r.side && !r.fringe).map((r) => { const q = apPt(r); return q && q[1] != null && q[2] != null ? { r, x: q[1], y: q[2], lie: r.mLie || "other", side: r.side } : null; }).filter(Boolean);
+  // (update 722) the misses are the circle tool's shots: where the approach shot (a par 3's 1st, a par 4's 2nd, a par 5's
+  // 3rd) finished, in every round, its own lie, within 30 yds and off the green; so a spot's numbers are what the circle tool
+  // shows inside it. Its side: the data's (that round's approach miss) when it's this shot, else from where it was hit,
+  // where it finished and the pin (left and right matched to the data's)
+  const K = Math.max(1, par - 2);
+  const sideGeo = (() => {
+    const P = geo.pin; if (!P) return () => null;
+    const parts = (r, q) => { const o = r.qs.find((x) => x[0] === K); if (!o || o[1] == null) return null; const vx = P[0] - o[1], vy = P[1] - o[2], vl = Math.hypot(vx, vy) || 1, wx = q[1] - P[0], wy = q[2] - P[1];
+      return { along: (wx * vx + wy * vy) / vl, cross: (vx * wy - vy * wx) / vl }; };
+    // which way "right" is on this map: from the rounds the data names a side for
+    let agree = 0, against = 0;
+    for (const r of done) { const q = r.apIdx != null ? r.qs[r.apIdx + 1] : null; if (!q || !r.side || r.qs[r.apIdx][0] !== K || !/(Left|Right)/.test(r.side)) continue; const g = parts(r, q); if (!g) continue; if ((g.cross > 0) === /Right/.test(r.side)) agree++; else against++; }
+    const flip = against > agree ? -1 : 1;
+    return (r, q) => { const g = parts(r, q); if (!g) return null; const a = (Math.atan2(flip * g.cross, g.along) * 180) / Math.PI, A = Math.abs(a), lr = a > 0 ? "Right" : "Left";
+      return A < 22.5 ? "Long" : A < 67.5 ? `Long-${lr}` : A < 112.5 ? lr : A < 157.5 ? `Short-${lr}` : "Short"; };
+  })();
+  const shotPts = done.map((r) => { const q = r.qs.find((x) => x[0] === K + 1); if (!q || q[1] == null || q[2] == null) return null;
+    const own = r.apIdx != null && r.qs[r.apIdx + 1] === q && r.side ? r.side : null;
+    return { r, x: q[1], y: q[2], lie: LIE[q[3]] || "other", d: q[4], side: own || sideGeo(r, q) }; }).filter(Boolean);
+  const missPts = shotPts.filter((p) => p.lie !== "green" && p.lie !== "water" && p.d != null && p.d <= 30 && p.side);
   let spotOrder = null;
   if (geo.ppy && missPts.length >= MIN_N) {
     // 10 yds, widened to 15 when that's too few; each circle then moved to the middle of its misses and counted again
@@ -204,7 +223,7 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 617) each spot is a cluster's centre found by moving a circle to the middle of its misses until it stops
     // (the densest place), and judged on every miss of that lie inside it: whole bunkers and patches of rough, not the
     // best- or worst-scoring slice of one (that made a left bunker look worse than a right one that really was worse)
-    let allMiss = missPts.slice();
+    let allMiss = shotPts.slice(); // (update 722: every shot the circle tool shows, whatever its lie)
     const gen = (minN, radii) => {
       const mS = thin(missPts), aS = thin(allMiss), out = [], seen = new Set(), GM = gridIdx(mS), GAs = gridIdx(aS), GA = gridIdx(allMiss); // (update 716: a grid, the search on a sample, the counts exact)
       for (const ry of radii) for (const c of startsOf(mS, ry)) {
@@ -262,7 +281,7 @@ export function strategyOf(recs, par, geo = {}) {
       for (const p of all) { if ((p.lie !== "rough" && p.lie !== "fairway") || !p.r.bb) continue;
         const nb = GL.near(p.x, p.y, R, (q) => q !== p);
         if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || GL.near(p.x, p.y, 2 * geo.ppy, (q) => q.lie === "bunker").length > 0) p.lucky = true; } // (or a bunker miss within 2 yds)
-      allMiss = missPts.slice(); // (update 657: counted in any circle they're inside, just not used to place one)
+      allMiss = shotPts.slice(); // (update 657: counted in any circle they're inside, just not used to place one; 722: every shot the circle tool shows)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
     const cand = (() => { const c10 = gen(MIN_T, R_SET); return c10.length >= 3 ? c10 : gen(MIN_N, R_SET); })(); // (update 717: 8, 10, 15 or 20 yds; 718: 10 shots or more when there are enough such spots)
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
@@ -305,7 +324,10 @@ export function strategyOf(recs, par, geo = {}) {
     }
     if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
   }
-  const order = spotOrder || (combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : bySide.length >= 2 ? bySide : null);
+  // (update 723) best, 2nd best and worst always in order of the averages shown: best lowest, each strictly better than the
+  // next (one that would show the same average as the one before it is left out)
+  const ordered = (list) => { if (!list) return null; const out = []; for (const g of [...list].sort((a, b) => a.avg - b.avg)) if (!out.length || f2(g.avg) !== f2(out.at(-1).avg)) out.push(g); return out.length >= 2 ? out : null; };
+  const order = ordered(spotOrder) || ordered(combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : null) || ordered(bySide.length >= 2 ? bySide : null);
     if (order) {
     // (update 595) each its own line, with its own circle: the best miss, the second best, the worst
     const [b1, b2] = order, w = order.at(-1);

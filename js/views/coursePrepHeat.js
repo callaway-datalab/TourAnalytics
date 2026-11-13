@@ -675,6 +675,49 @@ export async function drawHeat(ctx, course) {
     if (read?.r?.items) { const items = read.r.items.filter(keep); read = { ...read, r: { ...read.r, items: items.length ? items : [{ k: "", h: "", t: `No tips for Shot ${k} on this pin yet.` }] } }; }
     calRead = read;
     if (!read?.r?.items?.length) { stratBox.hidden = true; mount(stratBox, null); return; }
+    // (update 721) each tip's circle counted again the way the circle tool counts it (this pin, combined pins together, the
+    // shot's own results, the tool's yards), so the numbers in the tip are what the tool shows for that circle
+    if (read.r.items.some((it) => it.at?.length && !it.recounted)) { const tok = (drawStrat.tok = (drawStrat.tok || 0) + 1);
+      recountRead(read, n, k).then((r2) => { if (!r2 || tok !== drawStrat.tok) return; calRead = r2; mountStrat(r2); drawCal(); }).catch((err) => console.warn("recount", err)); }
+    mountStrat(read);
+  }
+  async function recountRead(read, n, k) {
+    const by = await rawIndex(); if (!by) return null;
+    const list = by.get(n)?.shots || [], ids = new Set(pinNow?.merged || [st.pin[n]]), ppyT = ppyOf(n, list);
+    const lieOfTip = (it) => { const t = String(it.t); if (it.k === "tee" && /^Aim/.test(t)) return "fairway"; return /bunker/i.test(t) ? "bunker" : /rough/i.test(t) ? "rough" : /fairway/i.test(t) ? "fairway" : /green/i.test(t) ? "green" : null; };
+    const nTxt = (m) => `${m < 15 ? "only " : ""}${m} sample${m === 1 ? "" : "s"}`;
+    const items = read.r.items.map((it) => {
+      const a = it.at?.[0], L = a ? lieOfTip(it) : null; if (!a || !L) return it;
+      const kk = it.k === "tee" ? 1 : k && k > 1 ? k : Math.max(1, par - 2); // (the shot whose results the tip is about)
+      const pool = list.filter((q) => ids.has(q.pid) && q.v != null && q.st === kk + 1);
+      const ry = [8, 10].sort((p, q) => Math.abs(p * ppyT - a[2]) - Math.abs(q * ppyT - a[2]))[0], R = ry * ppyT;
+      const mem = pool.filter((q) => q.lie === L && q.s != null && Math.hypot(q.x - a[0], q.y - a[1]) <= R);
+      if (!mem.length) return { ...it, at: [[a[0], a[1], R, a[3]]], recounted: true };
+      const v = (par + mem.reduce((t, q) => t + q.s, 0) / mem.length).toFixed(2);
+      const t = String(it.t).replace(/\((\d+\.\d+), (only )?(\d+) samples?\)/, `(${v}, ${nTxt(mem.length)})`).replace(/: (\d+\.\d+) \((only )?(\d+) samples?\)/, `: ${v} (${nTxt(mem.length)})`);
+      return { ...it, t, at: [[a[0], a[1], R, a[3]], ...(it.at.slice(1))], recounted: true };
+    });
+    // (update 723) best, 2nd best and worst kept in order of their numbers after the recount: best lowest, each strictly
+    // better than the next (one showing the same average as the one before it is left out); renamed and recoloured to fit
+    const ROLE = /^(Best miss|2nd best miss|Worst miss)$/, misses = items.filter((it) => it.k === "miss" && ROLE.test(it.h) && it.at?.length);
+    if (misses.length >= 2) {
+      const val = (it) => { const m = /(?:\(|: )(\d+\.\d{2})[ ,]/.exec(String(it.t)); return m ? Number(m[1]) : null; };
+      const place = (it) => (/^If you miss the green, miss (.+?): \d/.exec(it.t) || /^Second best: (.+?) \(/.exec(it.t) || /^Worst: (.+?) \(/.exec(it.t) || [])[1];
+      const cnt = (it) => (/\(?(?:\d+\.\d{2})(?:,| \() ?((?:only )?\d+ samples?)\)/.exec(it.t) || [])[1];
+      const ok = misses.filter((it) => val(it) != null && place(it) && cnt(it)).sort((a, b) => val(a) - val(b)), keep = [];
+      for (const it of ok) if (!keep.length || val(it).toFixed(2) !== val(keep.at(-1)).toFixed(2)) keep.push(it);
+      if (keep.length === misses.length || keep.length >= 2) {
+        const v2 = (it) => val(it).toFixed(2), last = keep.length - 1;
+        const re = keep.map((it, i) => { const tone = i === 0 ? "good" : i === last ? "bad" : "ok", h = i === 0 ? "Best miss" : i === last ? "Worst miss" : "2nd best miss";
+          const t = i === 0 ? `If you miss the green, miss ${place(it)}: ${v2(it)} (${cnt(it)}).` : i === last ? `Worst: ${place(it)} (${v2(it)}, ${cnt(it)}).` : `Second best: ${place(it)} (${v2(it)}, ${cnt(it)}).`;
+          return { ...it, h, t, at: it.at.map((c) => { const c2 = [...c]; c2[3] = tone; return c2; }) }; });
+        const first = items.indexOf(misses[0]), rest = items.filter((it) => !misses.includes(it));
+        items.splice(0, items.length, ...rest.slice(0, first), ...re.slice(0, 3).filter((x, i, arr) => arr.length <= 3 || i < 2 || i === arr.length - 1), ...rest.slice(first));
+      }
+    }
+    return { ...read, r: { ...read.r, items } };
+  }
+  function mountStrat(read) {
     stratBox.hidden = false;
     const has = read.r.items.some((it) => it.at?.length);
     // (update 600) the Reads switch in the header (no button under the tips): Cal's circles on the map, on or off
