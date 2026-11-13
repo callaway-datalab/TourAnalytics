@@ -69,6 +69,26 @@ export function strategyOf(recs, par, geo = {}) {
     return Array.from({ length: 20 }, (_, k) => { const t = (k / 20) * 2 * Math.PI, ca = Math.cos(t) * a, sb = Math.sin(t) * b; return [Math.round(mx + ca * ux + sb * vx), Math.round(my + ca * uy + sb * vy)]; });
   };
   const TEE_LIM = [8, 15]; // (update 655: tee targets; 656: the approach miss spots too)
+  // (update 714) every circle a size the map's circle tool can be set to (its radius in yards), so it can be checked there
+  const R_SET = [5, 8, 10, 15, 20, 25, 30, 40, 50];
+  const ring = (cx, cy, R, tone) => [Math.round(cx), Math.round(cy), Math.round(R), tone, Array.from({ length: 24 }, (_, k) => [Math.round(cx + R * Math.cos(k * Math.PI / 12)), Math.round(cy + R * Math.sin(k * Math.PI / 12))])];
+  // (update 714) circles over shots that finished somewhere (pts: [{ x, y, lie, r }]): around each shot of a lie that fits,
+  // at each size, both where it is and moved onto the middle of that lie's shots inside it; each judged on that lie's shots
+  // inside it (what the circle tool's row for that lie shows), kept with minN or more and when 60%+ of what's inside is that lie
+  const spotsOf = (pts, fits, radii, minN) => {
+    const out = [], seen = new Set();
+    for (const c of pts) { if (!fits(c.lie)) continue;
+      for (const ry of radii) { const rr = ry * PPY;
+        for (const shift of [false, true]) {
+          let x = c.x, y = c.y, inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
+          if (shift) for (let it = 0; it < 6; it++) { const m = inside.filter((p) => p.lie === c.lie); if (!m.length) break; const nx = mean(m.map((p) => p.x)), ny = mean(m.map((p) => p.y)), mv = Math.hypot(nx - x, ny - y); x = nx; y = ny; inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); if (mv < PPY * 0.5) break; }
+          const mem = inside.filter((p) => p.lie === c.lie);
+          if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
+          const sig = `${c.lie}|${ry}|${Math.round(x / (2 * PPY))}|${Math.round(y / (2 * PPY))}`; if (seen.has(sig)) continue; seen.add(sig);
+          out.push({ ry, x, y, lie: c.lie, mem, n: mem.length, avg: mean(mem.map((p) => sc(p.r))) });
+        } } }
+    return out;
+  };
   const circ = (rs, ptOf, tone, lim = null) => {
     const ps = rs.map(ptOf).filter((q) => q && q[1] != null && q[2] != null); if (ps.length < 3) return null;
     const cx = mean(ps.map((q) => q[1])), cy = mean(ps.map((q) => q[2])), ds = ps.map((q) => Math.hypot(q[1] - cx, q[2] - cy)).sort((a, b) => a - b);
@@ -104,19 +124,29 @@ export function strategyOf(recs, par, geo = {}) {
       teeOpts = [...m].filter(([, ds]) => ds.length >= OPT_N).map(([k, ds]) => { const [z, L] = k.split("|"); return { z, len: Number(L), n: ds.length, avg: Math.round(mean(ds.map((d) => sc(d.r))) * 1000) / 1000, left: med(ds.map((d) => d.q2[4])), at: circ(ds, (d) => d.q2, "good", TEE_LIM) }; });
       if (!teeOpts.length) teeOpts = null; }
     const isFw = (z) => /fairway$/.test(z.k) && !/bunkers$/.test(z.k);
+    // (update 714) the aim and the place to avoid are circles (sizes the circle tool has) where drives finished, each said
+    // with the drives inside it of the lie it names, so the tip's numbers are the circle tool's for that circle. Named by
+    // where the circle sits: the fairway third (or rough / bunkers, left or right) and how far from the tee
+    const dpts = drives.filter((d) => d.q2[1] != null && d.q2[2] != null).map((d) => ({ x: d.q2[1], y: d.q2[2], lie: LIE[d.q2[3]] || "other", r: d.r, d }));
+    const tee0 = dpts.length ? [mean(dpts.map((p) => p.d.q1[1])), mean(dpts.map((p) => p.d.q1[2]))] : null;
+    const latAt = (x, y) => { const ux = geo.fw[0] - tee0[0], uy = geo.fw[1] - tee0[1], ul = Math.hypot(ux, uy) || 1; return (ux * (y - tee0[1]) - uy * (x - tee0[0])) / ul; };
+    const nameAt = (g) => { const la = latAt(g.x, g.y);
+      if (g.lie === "fairway") return t1 == null ? "the fairway" : la < t1 ? "the left side of the fairway" : la > t2 ? "the right side of the fairway" : "the middle of the fairway";
+      if (g.lie === "rough") return la < 0 ? "the left rough" : "the right rough";
+      if (g.lie === "bunker") return la < 0 ? "the left fairway bunkers" : "the right fairway bunkers";
+      return null; };
+    const ydsAt = (g) => Math.round(Math.hypot(g.x - tee0[0], g.y - tee0[1]) / geo.ppy / 5) * 5;
+    const allA = dpts.length ? mean(dpts.map((p) => sc(p.r))) : base, adjT = (g) => (g.n * g.avg + MIN_N * allA) / (g.n + MIN_N);
+    const aimC = tee0 ? spotsOf(dpts, (l) => l === "fairway", [8, 10, 15, 20, 25, 30], MIN_N).sort((a, b) => adjT(a) - adjT(b) || b.n - a.n)[0] : null;
     const tgt = zones.filter(isFw)[0];
-    if (tgt) {
-      const others = zones.filter((z) => z !== tgt), band = 20;
-      const bands = group(tgt.rs, (r) => `${Math.round(len(r._d) / band) * band}`).sort((a, b) => a.avg - b.avg);
-      const bb = bands.length >= 2 && bands[0].avg < tgt.avg ? bands[0] : null;
-      // (update 595) just the value of what's recommended (the spot was still picked against every other place)
-      const g0 = bb || tgt;
-      items.push({ k: "tee", h: "Aim", t: `Aim for ${tgt.k}${bb ? ` around ${bb.k} yds` : ""} off the tee ${vn(g0.avg, g0.n)}.`, at: [circ(g0.rs, (r) => r._d.q2, "good", TEE_LIM)].filter(Boolean) });
-      for (const z of zones.filter((z) => !isFw(z) && z.avg <= tgt.avg - 0.05).slice(0, 1))
+    if (aimC) {
+      items.push({ k: "tee", h: "Aim", t: `Aim for ${nameAt(aimC)} around ${ydsAt(aimC)} yds off the tee ${vn(aimC.avg, aimC.n)}.`, at: [ring(aimC.x, aimC.y, aimC.ry * PPY, "good")] });
+      for (const z of zones.filter((z) => !isFw(z) && z.avg <= aimC.avg - 0.05).slice(0, 1))
         items.push({ k: "tee", h: "Surprise", t: `Drives finishing in ${z.k} have scored better than the aim ${vn(z.avg, z.n)}.` });
-    }
-    const worst = zones.at(-1), best = zones[0];
-    if (worst && worst !== tgt && zones.length >= 2 && worst.avg >= best.avg + 0.1) items.push({ k: "tee", h: "Avoid", t: `Stay out of ${worst.k} off the tee ${vn(worst.avg, worst.n)}.`, at: [circ(worst.rs, (r) => r._d.q2, "bad", TEE_LIM)].filter(Boolean) });
+      const badC = spotsOf(dpts, (l) => l === "rough" || l === "bunker", [10, 15, 20, 25, 30, 40, 50], MIN_N).filter((g) => g.avg >= aimC.avg + 0.1 && nameAt(g))
+        .sort((a, b) => adjT(b) - adjT(a) || b.n - a.n)[0];
+      if (badC) items.push({ k: "tee", h: "Avoid", t: `Stay out of ${nameAt(badC)} around ${ydsAt(badC)} yds off the tee ${vn(badC.avg, badC.n)}.`, at: [ring(badC.x, badC.y, badC.ry * PPY, "bad")] });
+    } else if (tgt) items.push({ k: "tee", h: "Aim", t: `Aim for ${tgt.k} off the tee ${vn(tgt.avg, tgt.n)}.` }); // (no circle with enough drives: the fairway third, as a whole)
   }
 
   // ---- the approach: every result (the green, and each miss's side and lie within 30 yds) against every other ----
@@ -147,8 +177,9 @@ export function strategyOf(recs, par, geo = {}) {
       const out = [], seen = new Set();
       for (const c of missPts) for (const ry of radii) {
         const rr = ry * geo.ppy, inR = (x, y) => missPts.filter((p) => p.lie === c.lie && Math.hypot(p.x - x, p.y - y) <= rr);
+        for (const shift of [true, false]) { // (update 714: also the circle right where this miss is, not only settled on its cluster)
         let x = c.x, y = c.y, mem = inR(x, y);
-        for (let it = 0; it < 10 && mem.length; it++) { const nx = mean(mem.map((p) => p.x)), ny = mean(mem.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny; mem = inR(x, y); if (moved < geo.ppy) break; }
+        if (shift) for (let it = 0; it < 10 && mem.length; it++) { const nx = mean(mem.map((p) => p.x)), ny = mean(mem.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny; mem = inR(x, y); if (moved < geo.ppy) break; }
         // (update 619) one side of the green only: misses whose direction shares a part with the spot's main one (a long
         // spot keeps long, long-left and long-right; not a left miss the rough round the green joins it to)
         if (mem.length) { const cnt = new Map(); for (const p of mem) for (const w of String(p.side).split("-")) cnt.set(w, (cnt.get(w) || 0) + 1);
@@ -166,8 +197,9 @@ export function strategyOf(recs, par, geo = {}) {
         // (update 683) the circle sits on the misses it names: moved to the middle of that lie's misses inside it until it
         // settles (it had stopped where the search did, half over the rough beside the bunker it named), and kept only
         // when most of what's inside it (60% or more) is that lie, so a "bunker" circle is mostly bunker
-        let inside = [];
-        for (let it = 0; it < 6; it++) {
+        let inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
+        if (!shift) { x = c.x; y = c.y; inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); }
+        else for (let it = 0; it < 6; it++) {
           inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
           const m = inside.filter((p) => p.lie === c.lie); if (!m.length) break;
           const nx = mean(m.map((p) => p.x)), ny = mean(m.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny;
@@ -179,6 +211,7 @@ export function strategyOf(recs, par, geo = {}) {
         // green) is a spot of its own rather than swallowed by a bigger one nearby
         const sig = `${c.lie}|${ry}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
         if (!seen.has(sig)) { seen.add(sig); out.push({ ry, x, y, mem, avg: mean(mem.map((p) => sc(p.r))) }); }
+        }
       }
       return out;
     };
@@ -195,7 +228,7 @@ export function strategyOf(recs, par, geo = {}) {
         if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || all.some((q) => q.lie === "bunker" && Math.hypot(q.x - p.x, q.y - p.y) <= 2 * geo.ppy)) p.lucky = true; } // (or a bunker miss within 2 yds)
       allMiss = missPts.slice(); // (update 657: counted in any circle they're inside, just not used to place one)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
-    const cand = gen(MIN_N, [8, 10, 12, 15]); // (update 657: 8 to 15 yds, the sizes a spot can be drawn)
+    const cand = gen(MIN_N, [5, 8, 10, 15, 20]); // (update 714: the circle tool's sizes, 5 to 20 yds)
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
     const sideOf = (mem) => {
@@ -229,7 +262,7 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
     // different place that's scored worse than the second best
     if (pick.length === 2) {
-      const w = nameAll(gen(5, [12, 15])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
+      const w = nameAll(gen(5, [10, 15, 20])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
       if (w) pick.push(w);
     }
     if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R), tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
