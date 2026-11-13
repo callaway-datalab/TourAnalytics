@@ -70,7 +70,7 @@ export function strategyOf(recs, par, geo = {}) {
   };
   const TEE_LIM = [8, 15]; // (update 655: tee targets; 656: the approach miss spots too)
   // (update 714) every circle a size the map's circle tool can be set to (its radius in yards), so it can be checked there
-  const R_SET = [5, 8, 10, 15, 20, 25, 30, 40, 50];
+  const R_SET = [8, 10, 15, 20]; // (update 717: target circles only 8, 10, 15 or 20 yds across the middle to the edge)
   const ring = (cx, cy, R, tone) => [Math.round(cx), Math.round(cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(cx + R * Math.cos(k * Math.PI / 12)), Math.round(cy + R * Math.sin(k * Math.PI / 12))])];
   // (update 716) fast enough for a whole course's shots: the shots filed in a grid (only those near a circle are looked
   // at), and the circles started from one shot in each little square (bigger squares for bigger circles), not every shot
@@ -104,9 +104,9 @@ export function strategyOf(recs, par, geo = {}) {
     const ps = rs.map(ptOf).filter((q) => q && q[1] != null && q[2] != null); if (ps.length < 3) return null;
     const cx = mean(ps.map((q) => q[1])), cy = mean(ps.map((q) => q[2])), ds = ps.map((q) => Math.hypot(q[1] - cx, q[2] - cy)).sort((a, b) => a - b);
     const r = Math.max((lim ? lim[0] : 6) * PPY, Math.min((lim ? lim[1] : 30) * PPY, ds[Math.floor(0.7 * (ds.length - 1))] || 0));
-    const inner = ps.filter((q) => Math.hypot(q[1] - cx, q[2] - cy) <= r).map((q) => [q[1], q[2]]); // (most of them: the outliers left out)
-    const h = hullOf(inner, lim);
-    return h ? [Math.round(cx), Math.round(cy), Math.round(r), tone, h] : [Math.round(cx), Math.round(cy), Math.round(r), tone];
+    // (update 717) a circle of an allowed size (8, 10, 15 or 20 yds): the smallest that holds most of them, else 20
+    const ry = R_SET.find((v) => v * PPY >= r) ?? R_SET.at(-1);
+    return ring(cx, cy, ry * PPY, tone);
   };
   const apPt = (r) => (r.apIdx != null ? r.qs[r.apIdx + 1] : null);
   const group = (list, keyOf) => { const m = new Map(); for (const r of list) { const k = keyOf(r); if (k == null) continue; (m.get(k) || m.set(k, []).get(k)).push(r); } return [...m].map(([k, rs]) => ({ k, rs, n: rs.length, avg: mean(rs.map(sc)) })).filter((g) => g.n >= MIN_N); };
@@ -152,8 +152,8 @@ export function strategyOf(recs, par, geo = {}) {
     // drives went on this hole (a player's own, where they're viewed: their 10th to 90th, from teeOpts)
     const dLen = dpts.map((p) => Math.hypot(p.x - p.d.q1[1], p.y - p.d.q1[2]) / geo.ppy).sort((a, b) => a - b), pq = (f) => dLen[Math.min(dLen.length - 1, Math.floor(f * dLen.length))];
     const lo25 = dLen.length ? pq(0.25) : 0, hi75 = dLen.length ? pq(0.75) : Infinity, inBand = (g, lo, hi) => { const L = Math.hypot(g.x - tee0[0], g.y - tee0[1]) / geo.ppy; return L >= lo && L <= hi; };
-    const aimAll = tee0 ? spotsOf(dpts, (l) => l === "fairway", [8, 10, 15, 20, 25, 30], MIN_N).sort((a, b) => adjT(a) - adjT(b) || b.n - a.n) : [];
-    const badAll = tee0 ? spotsOf(dpts, (l) => l === "rough" || l === "bunker", [10, 15, 20, 25, 30, 40, 50], MIN_N).filter((g) => nameAt(g)).sort((a, b) => adjT(b) - adjT(a) || b.n - a.n) : [];
+    const aimAll = tee0 ? spotsOf(dpts, (l) => l === "fairway", R_SET, MIN_N).sort((a, b) => adjT(a) - adjT(b) || b.n - a.n) : [];
+    const badAll = tee0 ? spotsOf(dpts, (l) => l === "rough" || l === "bunker", R_SET, MIN_N).filter((g) => nameAt(g)).sort((a, b) => adjT(b) - adjT(a) || b.n - a.n) : [];
     // (update 715) every circle kept for a player's own aim and avoid (worked out where they're viewed), with how far it is
     if (tee0 && (aimAll.length || badAll.length)) {
       const opt = (g, kind) => ({ kind, z: nameAt(g), len: ydsAt(g), n: g.n, avg: Math.round(g.avg * 1000) / 1000, adj: Math.round(adjT(g) * 1000) / 1000, left: med(g.mem.map((p) => p.d.q2[4])), at: ring(g.x, g.y, g.ry * PPY, kind === "aim" ? "good" : "bad") });
@@ -253,7 +253,7 @@ export function strategyOf(recs, par, geo = {}) {
         if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || GL.near(p.x, p.y, 2 * geo.ppy, (q) => q.lie === "bunker").length > 0) p.lucky = true; } // (or a bunker miss within 2 yds)
       allMiss = missPts.slice(); // (update 657: counted in any circle they're inside, just not used to place one)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
-    const cand = gen(MIN_N, [5, 8, 10, 15, 20]); // (update 714: the circle tool's sizes, 5 to 20 yds)
+    const cand = gen(MIN_N, R_SET); // (update 717: 8, 10, 15 or 20 yds)
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
     const sideOf = (mem) => {
