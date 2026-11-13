@@ -59,7 +59,7 @@ export function readCard(read, where = "", { compact = false, foot = null, colla
     sw.addEventListener("click", (e) => { e.stopPropagation(); const on = !sw.classList.contains("on"); sw.classList.toggle("on", on); sw.setAttribute("aria-pressed", String(on)); reads.onToggle?.(on); });
     sw.addEventListener("keydown", (e) => e.stopPropagation());
   }
-  const head = el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
+  const head = el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("calface")) /* (update 659: Cal's head) */,
     el("div", { class: "cal-read-t" }, [el("strong", {}, where ? `${BRAND} \u00b7 ${where}` : BRAND), el("span", {}, "AI Caddy")]),
     sw, collapsible ? el("span", { class: "cal-read-chev", "aria-hidden": "true" }, "\u25BE") : null]);
   const body = el("div", { class: "cal-read-b" }, [
@@ -89,8 +89,9 @@ export async function playerProfile(rounds, ix, label) {
   const { statRounds } = await import("./sg.js");
   const vals = statRounds(rounds, "drive").flatMap((rd) => rd.shots.map((o) => o.v)).filter((v) => v >= 150 && v <= 420).sort((a, b) => a - b);
   const pct = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
-  const drive = vals.length >= 10 ? { typical: Math.round(pct(0.5)), reach: Math.round(pct(0.85)), n: vals.length }
-    : vals.length ? (() => { const a = vals.reduce((t, v) => t + v, 0) / vals.length; return { typical: Math.round(a), reach: Math.round(a + 12), n: vals.length }; })() : null;
+  // (update 715) and the 10th to 90th percentile: the range their aim and avoid off the tee are picked in
+  const drive = vals.length >= 10 ? { typical: Math.round(pct(0.5)), reach: Math.round(pct(0.85)), p10: Math.round(pct(0.1)), p90: Math.round(pct(0.9)), n: vals.length }
+    : vals.length ? (() => { const a = vals.reduce((t, v) => t + v, 0) / vals.length; return { typical: Math.round(a), reach: Math.round(a + 12), p10: Math.round(a - 15), p90: Math.round(a + 12), n: vals.length }; })() : null;
   let best = null; const app = [];
   for (const b of ix?.bands?.get("APP") || []) {
     const a = ix.m.get(`APP|${b}|*`), rg = yRange(b); if (!a || a.w < 15 || !rg || rg.lo < 50 || rg.hi > 300) continue;
@@ -118,7 +119,23 @@ export function playerAim(read, P) {
   const r = read.r, items = [...r.items], f2 = (v) => v.toFixed(2);
   let changed = false;
   // off the tee: the field's aim, swapped for the lowest-scoring spot within their reach
-  if (r.teeOpts?.length && P.drive) {
+  // (update 715) maps built since 715: circles (aim and avoid) picked within their 10th to 90th percentile driving distance
+  const lo = P.drive?.p10 ?? 0, hi = P.drive?.p90 ?? (P.drive ? P.drive.reach + 10 : 0), circ = r.teeOpts?.some((o) => o.kind);
+  if (circ && P.drive) {
+    const inR = (o) => o.len >= lo && o.len <= hi, by = (o) => o.adj ?? o.avg;
+    const aim = r.teeOpts.filter((o) => o.kind === "aim" && inR(o)).sort((a, b) => by(a) - by(b) || b.n - a.n)[0];
+    const bad = aim ? r.teeOpts.filter((o) => o.kind === "avoid" && inR(o) && o.avg >= aim.avg + 0.1).sort((a, b) => by(b) - by(a) || b.n - a.n)[0] : null;
+    const range = `your driving distance, ${lo}-${hi} yds`;
+    const ai = items.findIndex((it) => it.k === "tee" && (it.h === "Aim" || /^Aim for/.test(it.t)));
+    if (aim) { let t = `Aim for ${aim.z} around ${aim.len} yds off the tee (${f2(aim.avg)}, ${nOnly(aim.n)}). Within ${range}`;
+      if (aim.left != null) { const b = goodAt(aim.left, P); t += `; leaves about ${Math.round(aim.left)} yds${b ? `, ${gainTxt(b, P)}` : ""}.`; } else t += ".";
+      const mine = { k: "tee", h: "Aim", t, at: aim.at ? [aim.at] : [], mine: true }; if (ai >= 0) items[ai] = mine; else items.unshift(mine); }
+    else { const mine = { k: "tee", h: "Aim", t: `No fairway spot here with enough samples is within ${range}.`, mine: true }; if (ai >= 0) items[ai] = mine; else items.unshift(mine); }
+    const vi = items.findIndex((it) => it.k === "tee" && (it.h === "Avoid" || /^Stay out/.test(it.t)));
+    if (bad) { const mine = { k: "tee", h: "Avoid", t: `Stay out of ${bad.z} around ${bad.len} yds off the tee (${f2(bad.avg)}, ${nOnly(bad.n)}).`, at: bad.at ? [bad.at] : [], mine: true }; if (vi >= 0) items[vi] = mine; else items.splice(Math.max(0, ai) + 1, 0, mine); }
+    else if (vi >= 0) items.splice(vi, 1);
+    changed = true;
+  } else if (r.teeOpts?.length && P.drive) {
     const reach = P.drive.reach + 10, ok = r.teeOpts.filter((o) => o.len <= reach);
     if (ok.length) {
       const pick = [...ok].sort((a, b) => a.avg - b.avg || b.n - a.n)[0];

@@ -71,7 +71,7 @@ export function strategyOf(recs, par, geo = {}) {
   const TEE_LIM = [8, 15]; // (update 655: tee targets; 656: the approach miss spots too)
   // (update 714) every circle a size the map's circle tool can be set to (its radius in yards), so it can be checked there
   const R_SET = [5, 8, 10, 15, 20, 25, 30, 40, 50];
-  const ring = (cx, cy, R, tone) => [Math.round(cx), Math.round(cy), Math.round(R), tone, Array.from({ length: 24 }, (_, k) => [Math.round(cx + R * Math.cos(k * Math.PI / 12)), Math.round(cy + R * Math.sin(k * Math.PI / 12))])];
+  const ring = (cx, cy, R, tone) => [Math.round(cx), Math.round(cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(cx + R * Math.cos(k * Math.PI / 12)), Math.round(cy + R * Math.sin(k * Math.PI / 12))])];
   // (update 714) circles over shots that finished somewhere (pts: [{ x, y, lie, r }]): around each shot of a lie that fits,
   // at each size, both where it is and moved onto the middle of that lie's shots inside it; each judged on that lie's shots
   // inside it (what the circle tool's row for that lie shows), kept with minN or more and when 60%+ of what's inside is that lie
@@ -82,6 +82,7 @@ export function strategyOf(recs, par, geo = {}) {
         for (const shift of [false, true]) {
           let x = c.x, y = c.y, inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr);
           if (shift) for (let it = 0; it < 6; it++) { const m = inside.filter((p) => p.lie === c.lie); if (!m.length) break; const nx = mean(m.map((p) => p.x)), ny = mean(m.map((p) => p.y)), mv = Math.hypot(nx - x, ny - y); x = nx; y = ny; inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); if (mv < PPY * 0.5) break; }
+          x = Math.round(x); y = Math.round(y); inside = pts.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); // (the centre as drawn, so what's counted is what's inside the circle on the map)
           const mem = inside.filter((p) => p.lie === c.lie);
           if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
           const sig = `${c.lie}|${ry}|${Math.round(x / (2 * PPY))}|${Math.round(y / (2 * PPY))}`; if (seen.has(sig)) continue; seen.add(sig);
@@ -137,14 +138,24 @@ export function strategyOf(recs, par, geo = {}) {
       return null; };
     const ydsAt = (g) => Math.round(Math.hypot(g.x - tee0[0], g.y - tee0[1]) / geo.ppy / 5) * 5;
     const allA = dpts.length ? mean(dpts.map((p) => sc(p.r))) : base, adjT = (g) => (g.n * g.avg + MIN_N * allA) / (g.n + MIN_N);
-    const aimC = tee0 ? spotsOf(dpts, (l) => l === "fairway", [8, 10, 15, 20, 25, 30], MIN_N).sort((a, b) => adjT(a) - adjT(b) || b.n - a.n)[0] : null;
+    // (update 715) never at the far end: the field's aim and avoid sit between the 25th and 75th percentile of how far
+    // drives went on this hole (a player's own, where they're viewed: their 10th to 90th, from teeOpts)
+    const dLen = dpts.map((p) => Math.hypot(p.x - p.d.q1[1], p.y - p.d.q1[2]) / geo.ppy).sort((a, b) => a - b), pq = (f) => dLen[Math.min(dLen.length - 1, Math.floor(f * dLen.length))];
+    const lo25 = dLen.length ? pq(0.25) : 0, hi75 = dLen.length ? pq(0.75) : Infinity, inBand = (g, lo, hi) => { const L = Math.hypot(g.x - tee0[0], g.y - tee0[1]) / geo.ppy; return L >= lo && L <= hi; };
+    const aimAll = tee0 ? spotsOf(dpts, (l) => l === "fairway", [8, 10, 15, 20, 25, 30], MIN_N).sort((a, b) => adjT(a) - adjT(b) || b.n - a.n) : [];
+    const badAll = tee0 ? spotsOf(dpts, (l) => l === "rough" || l === "bunker", [10, 15, 20, 25, 30, 40, 50], MIN_N).filter((g) => nameAt(g)).sort((a, b) => adjT(b) - adjT(a) || b.n - a.n) : [];
+    // (update 715) every circle kept for a player's own aim and avoid (worked out where they're viewed), with how far it is
+    if (tee0 && (aimAll.length || badAll.length)) {
+      const opt = (g, kind) => ({ kind, z: nameAt(g), len: ydsAt(g), n: g.n, avg: Math.round(g.avg * 1000) / 1000, adj: Math.round(adjT(g) * 1000) / 1000, left: med(g.mem.map((p) => p.d.q2[4])), at: ring(g.x, g.y, g.ry * PPY, kind === "aim" ? "good" : "bad") });
+      teeOpts = [...aimAll.slice(0, 60).map((g) => opt(g, "aim")), ...badAll.slice(0, 40).map((g) => opt(g, "avoid"))];
+    }
+    const aimC = aimAll.find((g) => inBand(g, lo25, hi75)) || null;
     const tgt = zones.filter(isFw)[0];
     if (aimC) {
       items.push({ k: "tee", h: "Aim", t: `Aim for ${nameAt(aimC)} around ${ydsAt(aimC)} yds off the tee ${vn(aimC.avg, aimC.n)}.`, at: [ring(aimC.x, aimC.y, aimC.ry * PPY, "good")] });
       for (const z of zones.filter((z) => !isFw(z) && z.avg <= aimC.avg - 0.05).slice(0, 1))
         items.push({ k: "tee", h: "Surprise", t: `Drives finishing in ${z.k} have scored better than the aim ${vn(z.avg, z.n)}.` });
-      const badC = spotsOf(dpts, (l) => l === "rough" || l === "bunker", [10, 15, 20, 25, 30, 40, 50], MIN_N).filter((g) => g.avg >= aimC.avg + 0.1 && nameAt(g))
-        .sort((a, b) => adjT(b) - adjT(a) || b.n - a.n)[0];
+      const badC = badAll.find((g) => g.avg >= aimC.avg + 0.1 && inBand(g, lo25, hi75));
       if (badC) items.push({ k: "tee", h: "Avoid", t: `Stay out of ${nameAt(badC)} around ${ydsAt(badC)} yds off the tee ${vn(badC.avg, badC.n)}.`, at: [ring(badC.x, badC.y, badC.ry * PPY, "bad")] });
     } else if (tgt) items.push({ k: "tee", h: "Aim", t: `Aim for ${tgt.k} off the tee ${vn(tgt.avg, tgt.n)}.` }); // (no circle with enough drives: the fairway third, as a whole)
   }
@@ -205,6 +216,7 @@ export function strategyOf(recs, par, geo = {}) {
           const nx = mean(m.map((p) => p.x)), ny = mean(m.map((p) => p.y)), moved = Math.hypot(nx - x, ny - y); x = nx; y = ny;
           if (moved < geo.ppy * 0.5) { inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); break; }
         }
+        x = Math.round(x); y = Math.round(y); inside = allMiss.filter((p) => Math.hypot(p.x - x, p.y - y) <= rr); // (update 715: counted from the centre as drawn)
         mem = inside.filter((p) => p.lie === c.lie);
         if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
         // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
@@ -265,7 +277,7 @@ export function strategyOf(recs, par, geo = {}) {
       const w = nameAll(gen(5, [10, 15, 20])).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
       if (w) pick.push(w);
     }
-    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R), tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
+    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
   }
   const order = spotOrder || (combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : bySide.length >= 2 ? bySide : null);
     if (order) {
