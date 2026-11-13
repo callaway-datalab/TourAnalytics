@@ -281,59 +281,50 @@ export function centerRankings(S) {
 }
 // (update 712) who may change a player's products: the admin, and their team (coaches, analysts)
 const canEditProducts = (S) => { const st = getState(); return !!S.me?.key && (!!st.isAdmin || !!st.isTeam); };
-// (update 712) Edit: pick a tournament, then the product it should be (one used at the other tournaments, or a new name)
-function productEditDialog(S, { kind, list, order, nameOf, edits }) {
-  const dlg = el("dialog", { class: "dp-dialog prod-edit-dlg" }); document.body.appendChild(dlg);
-  const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
-  const evs = [...list].reverse();
-  const evSel = el("select", { class: "prod-edit-ev", "aria-label": "Tournament" }, [el("option", { value: "" }, "Pick a tournament\u2026"),
-    ...evs.map((g, i) => { const top = g.top ? nameOf(g.top) : "no product"; const ed = edits.some((e) => e.event === g.event && String(e.year) === String(g.year)); return el("option", { value: String(i) }, `${g.label} \u2014 ${top}${ed ? " *" : ""}`); })]);
-  const body = el("div", { class: "prod-edit-body" }), status = el("p", { class: "muted small", role: "status" });
+// (update 713) Edit: the chart's bars can be tapped; a tapped tournament opens a small panel under the chart with every
+// product in the key (and a box for a new name). EDIT is kept across redraws.
+const EDIT = { on: false, ev: null };
+async function saveProductChange(S, { kind, g, from, to, edits, status }) {
+  const kinds = S.PROD_KINDS?.[kind] || [];
+  const prior = edits.find((e) => e.event === g.event && String(e.year) === String(g.year) && e.to === from); // (changing a change: keep what the data had)
+  status.textContent = "Saving\u2026";
+  try {
+    const pe = await import("./productEdits.js");
+    await pe.saveProductEdit(S.me.key, { ...(prior ? { id: prior.id } : {}), event: g.event, year: g.year, pk: kind, kinds, from: prior ? prior.from ?? null : from, to, label: g.label });
+    status.textContent = "Saved. Reloading so every page uses it\u2026"; location.reload();
+  } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that. Only the admin and the player\u2019s team can change products (and the productEdits rule must be published)."; }
+}
+export function productEditPanel(S, { kind, g, order, nameOf, colorOf, edits }) {
+  const here = [...g.prods].sort((a, b) => b[1] - a[1]).map(([p]) => p);
+  let from = here[0] ?? null, to = null;
+  const status = el("p", { class: "muted small", role: "status" });
   const save = el("button", { type: "button", class: "btn", disabled: true }, "Save"), cancel = el("button", { type: "button", class: "btn ghost" }, "Cancel");
-  cancel.addEventListener("click", close); dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
-  let pick = null; // { g, from, to }
-  const drawBody = () => {
-    const g = evs[Number(evSel.value)]; save.disabled = true; pick = null;
-    if (!g) { body.replaceChildren(); return; }
-    const here = [...g.prods].sort((a, b) => b[1] - a[1]).map(([p]) => p);
-    const fromSel = here.length > 1 ? el("select", { "aria-label": "Product to replace" }, here.map((p) => el("option", { value: p }, `${nameOf(p)} (${Math.round(g.prods.get(p))} shots)`))) : null;
-    const fromOf = () => (fromSel ? fromSel.value : here[0] ?? null);
-    const nm = `pe${Math.random().toString(36).slice(2, 6)}`;
-    const opts = order.filter((p) => p !== fromOf());
-    const radios = opts.map((p) => { const r = el("input", { type: "radio", name: nm, value: p }); r.addEventListener("change", () => { pick = { g, to: p }; save.disabled = false; }); return el("label", { class: "prod-edit-opt" }, [r, ` ${nameOf(p)}`]); });
-    const newR = el("input", { type: "radio", name: nm, value: "__new" }), newIn = el("input", { type: "text", class: "ps-in", placeholder: "New name: brand and model, e.g. Callaway Paradym Ai Smoke", "aria-label": "New product name" });
-    const onNew = () => { newR.checked = true; const t = newIn.value.trim(); pick = t ? { g, to: "__new", name: t } : null; save.disabled = !pick; };
-    newR.addEventListener("change", onNew); newIn.addEventListener("input", onNew); newIn.addEventListener("focus", () => { newR.checked = true; onNew(); });
-    const mine = edits.filter((e) => e.event === g.event && String(e.year) === String(g.year));
-    const undo = mine.length ? (() => { const b = el("button", { type: "button", class: "link danger small" }, `Undo the change${mine.length > 1 ? "s" : ""} here (back to the data)`);
-      b.addEventListener("click", async () => { b.disabled = true; status.textContent = "Saving\u2026"; try { const pe = await import("./productEdits.js"); for (const e of mine) await pe.removeProductEdit(S.me.key, e.id); status.textContent = "Done. Reloading\u2026"; location.reload(); } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that. Only the admin and the player\u2019s team can change products."; b.disabled = false; } }); return b; })() : null;
-    body.replaceChildren(
-      el("p", { class: "small" }, [el("strong", {}, "Now: "), here.length ? here.map((p) => nameOf(p)).join(", ") : "no product recorded"]),
-      fromSel ? el("label", { class: "small" }, ["Replace ", fromSel]) : null,
-      el("p", { class: "ps-t" }, "CHANGE IT TO"),
-      ...(radios.length ? radios : [el("p", { class: "muted small" }, "No other products of this kind at the other tournaments.")]),
-      el("label", { class: "prod-edit-opt" }, [newR, " ", newIn]), undo);
-    fromSel?.addEventListener("change", drawBody);
-    body.dataset.from = ""; body._fromOf = fromOf;
+  const fromRow = el("div", { class: "pe-chips" }), toRow = el("div", { class: "pe-chips" });
+  const newIn = el("input", { type: "text", class: "pe-new", placeholder: "Or type a new name (brand and model)", "aria-label": "New product name" });
+  const chip = (p, on, click) => { const b = el("button", { type: "button", class: `chip pe-chip${on ? " on" : ""}`, "aria-pressed": String(on) }, [el("i", { class: "pe-dot", style: `background:${colorOf(p)}` }), nameOf(p)]); b.addEventListener("click", click); return b; };
+  const draw = () => {
+    fromRow.replaceChildren(...here.map((p) => chip(p, p === from, () => { from = p; if (to === from) to = null; draw(); })));
+    toRow.replaceChildren(...order.filter((p) => p !== from).map((p) => chip(p, p === to, () => { to = to === p ? null : p; newIn.value = ""; draw(); })));
+    save.disabled = !to && !newIn.value.trim();
   };
-  evSel.addEventListener("change", drawBody);
-  save.addEventListener("click", async () => {
-    if (!pick) return;
-    const g = pick.g, from = body._fromOf?.() ?? null, kinds = S.PROD_KINDS?.[kind] || [];
-    const prior = edits.find((e) => e.event === g.event && String(e.year) === String(g.year) && e.to === from); // (changing a change: keep what the data had)
-    const fromKind = from ? gearInfo(from).kind : kinds[0] || "Other";
-    const to = pick.to === "__new" ? (kind === "Balls" ? `Ball|${pick.name}` : `${fromKind}|${pick.name}`) : pick.to;
-    save.disabled = true; status.textContent = "Saving\u2026";
-    try {
-      const pe = await import("./productEdits.js");
-      await pe.saveProductEdit(S.me.key, { ...(prior ? { id: prior.id } : {}), event: g.event, year: g.year, pk: kind, kinds, from: prior ? prior.from ?? null : from, to, label: g.label });
-      status.textContent = "Saved. Reloading so every page uses it\u2026"; location.reload();
-    } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that. Only the admin and the player\u2019s team can change products."; save.disabled = false; }
+  newIn.addEventListener("input", () => { if (newIn.value.trim()) to = null; draw(); });
+  cancel.addEventListener("click", () => { EDIT.ev = null; S.draw(); });
+  save.addEventListener("click", () => {
+    const name = newIn.value.trim(), kinds = S.PROD_KINDS?.[kind] || [], fk = from ? gearInfo(from).kind : kinds[0] || "Other";
+    const val = to || (name ? (kind === "Balls" ? `Ball|${name}` : `${fk}|${name}`) : null); if (!val) return;
+    save.disabled = true; saveProductChange(S, { kind, g, from, to: val, edits, status });
   });
-  dlg.append(el("h3", {}, `Edit ${kind === "Balls" ? "balls" : `${kind.toLowerCase()} products`}`),
-    el("p", { class: "muted small" }, "Pick a tournament, then what was really used there. The change is kept and used on every page and report, and stays through new data uploads. Changed products get a * in the key."),
-    evSel, body, status, el("div", { class: "thread-actions" }, [save, cancel]));
-  if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+  const mine = edits.filter((e) => e.event === g.event && String(e.year) === String(g.year));
+  const undo = mine.length ? el("button", { type: "button", class: "link danger small" }, "Undo the change here (back to the data)") : null;
+  undo?.addEventListener("click", async () => { undo.disabled = true; status.textContent = "Saving\u2026"; try { const pe = await import("./productEdits.js"); for (const e of mine) await pe.removeProductEdit(S.me.key, e.id); status.textContent = "Done. Reloading\u2026"; location.reload(); } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that."; undo.disabled = false; } });
+  draw();
+  const parts = [el("div", { class: "pe-head" }, [el("strong", {}, g.label), mine.length ? el("span", { class: "muted small" }, " \u00b7 changed by hand") : null]),
+    el("p", { class: "pe-lab" }, here.length > 1 ? "Replace" : "Now"),
+    here.length > 1 ? null : el("p", { class: "pe-now" }, here.length ? nameOf(here[0]) : "No product recorded"),
+    here.length > 1 ? fromRow : null,
+    el("p", { class: "pe-lab" }, "Change it to"), toRow, newIn,
+    el("div", { class: "pe-btns" }, [save, cancel, undo]), status];
+  return el("div", { class: "pe-panel" }, parts.filter(Boolean));
 }
 // (update 710) an event's name short enough for under a bar: sponsors' "presented by …" off, the long words shortened, then cut
 const shortEvent = (name) => {
@@ -391,7 +382,10 @@ export function productTrend(S, mine, cat, toggles) {
   const editedTo = new Set(edits.map((e) => e.to)), editOf = (g) => edits.filter((e) => e.event === g.event && String(e.year) === String(g.year));
   const legend = el("div", { class: "prod-legend" }, [...order.map((p) => el("span", { class: "prod-key" }, [el("i", { style: `background:${colorOf(p)}` }), `${nameOf(p)}${editedTo.has(p) ? " *" : ""}`])),
     edits.length ? el("span", { class: "muted small prod-edited-note" }, "* changed by hand at some tournaments") : null,
-    canEditProducts(S) ? (() => { const b = el("button", { type: "button", class: "prod-cmp prod-edit" }, "\u270E Edit"); b.addEventListener("click", () => productEditDialog(S, { kind, list, order, nameOf, edits })); return b; })() : null]);
+    canEditProducts(S) ? (() => { const b = el("button", { type: "button", class: `prod-cmp prod-edit${EDIT.on ? " on" : ""}` }, EDIT.on ? "Done" : "\u270E Edit"); b.addEventListener("click", () => { EDIT.on = !EDIT.on; EDIT.ev = null; S.draw(); }); return b; })() : null]);
+  const editOn = EDIT.on && canEditProducts(S);
+  const evKey = (g) => `${g.event}|${g.year}`, openG = editOn && EDIT.ev ? list.find((g) => evKey(g) === EDIT.ev) : null;
+  const editBox = editOn ? (openG ? productEditPanel(S, { kind, g: openG, order, nameOf, colorOf, edits }) : el("p", { class: "pe-hint" }, "Editing: tap a tournament\u2019s bar to change its product.")) : null;
   const table = prodTable(mine, kind, order, colorOf, nameOf);
   // (update 455) Open in Compare: these products, over the dates in the chart (and the part of the game picked)
   const toCmp = S.me && order.length ? (() => {
@@ -407,13 +401,14 @@ export function productTrend(S, mine, cat, toggles) {
   return S.panelBox("SG Trends by Product", [pills, legend, S.chartBox((c, as) => S.barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
     title: `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
     shortLabels: list.map((g) => g.short), allTicks: TB === "event", // (update 711: every event named)
+    onBarClick: editOn ? (i) => { EDIT.ev = evKey(list[i]); S.draw(); } : null,
     tooltip: (i) => { const g = list[i], all = [...g.prods].sort((a, b) => b[1] - a[1]);
       const dt = (x) => x.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       const when = g.first && g.last ? (g.first.toDateString() === g.last.toDateString() ? dt(g.first) : `${dt(g.first).replace(/, \d{4}$/, g.first.getFullYear() === g.last.getFullYear() ? "" : `, ${g.first.getFullYear()}`)} \u2013 ${dt(g.last)}`) : null;
       const ed = editOf(g);
       return [when, TB === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${editedTo.has(p) && ed.some((e) => e.to === p) ? " *" : ""}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`),
         ...ed.map((e) => `* changed by hand${e.from ? ` (was ${nameOf(e.from)})` : " (none was recorded)"}`)].filter(Boolean); },
-  }), "wide", "trend-prod"), table, toCmp], "full");
+  }), "wide", "trend-prod"), editBox, table, toCmp], "full");
 }
 /*
  * (update 514) Each product's numbers, under the chart: its rounds (the rounds it was used in) and, by kind:

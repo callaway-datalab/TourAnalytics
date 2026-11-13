@@ -6719,3 +6719,15 @@ html, body { overflow-x: clip; max-width: 100%; }
 .prod-edit-body { display: grid; gap: 6px; margin: 6px 0; }
 .prod-edit-opt { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; }
 .prod-edit-opt input[type=text] { flex: 1; min-width: 0; }
+/* (update 713) SG Trends by Product: edit a tournament's product (tap a bar) */
+.prod-edit.on { background: #d4b483; color: #111; border-color: #d4b483; }
+.pe-hint { margin: 8px 0 4px; font-size: 0.85rem; color: #d4b483; }
+.pe-panel { margin: 10px 0 6px; padding: 12px 14px; border: 1px solid rgba(212,180,131,0.45); border-radius: 12px; background: #17171a; display: grid; gap: 8px; }
+.pe-head { font-size: 0.95rem; }
+.pe-lab { margin: 4px 0 0; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: #8e8e93; font-weight: 800; }
+.pe-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pe-chip { display: inline-flex; align-items: center; gap: 6px; }
+.pe-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.pe-new { width: 100%; max-width: 26rem; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1px solid #3a3a3c; background: #111114; color: inherit; font: inherit; }
+.pe-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pe-now { margin: 0; font-size: 0.92rem; }
