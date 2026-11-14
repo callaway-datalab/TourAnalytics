@@ -705,8 +705,10 @@ export async function drawHeat(ctx, course) {
       const place = (it) => (/^If you miss the green, miss (.+?): \d/.exec(it.t) || /^Second best: (.+?) \(/.exec(it.t) || /^Worst: (.+?) \(/.exec(it.t) || [])[1];
       const cnt = (it) => (/\(?(?:\d+\.\d{2})(?:,| \() ?((?:only )?\d+ samples?)\)/.exec(it.t) || [])[1];
       const ok = misses.filter((it) => val(it) != null && place(it) && cnt(it)).sort((a, b) => val(a) - val(b)), keep = [];
-      for (const it of ok) if (!keep.length || val(it).toFixed(2) !== val(keep.at(-1)).toFixed(2)) keep.push(it);
-      if (keep.length === misses.length || keep.length >= 2) {
+      // (update 725) and apart: each circle overlapping every one kept before it by 2 yds at most
+      const clash = (it) => keep.some((o) => { const a = it.at[0], b = o.at[0]; return a[2] + b[2] - Math.hypot(a[0] - b[0], a[1] - b[1]) > 2 * ppyT; });
+      for (const it of ok) if ((!keep.length || val(it).toFixed(2) !== val(keep.at(-1)).toFixed(2)) && !clash(it)) keep.push(it);
+      if (keep.length >= 1) { // (update 725: even one left: the others overlapped it)
         const v2 = (it) => val(it).toFixed(2), last = keep.length - 1;
         const re = keep.map((it, i) => { const tone = i === 0 ? "good" : i === last ? "bad" : "ok", h = i === 0 ? "Best miss" : i === last ? "Worst miss" : "2nd best miss";
           const t = i === 0 ? `If you miss the green, miss ${place(it)}: ${v2(it)} (${cnt(it)}).` : i === last ? `Worst: ${place(it)} (${v2(it)}, ${cnt(it)}).` : `Second best: ${place(it)} (${v2(it)}, ${cnt(it)}).`;

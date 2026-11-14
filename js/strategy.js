@@ -333,7 +333,13 @@ export function strategyOf(recs, par, geo = {}) {
   // (update 723) best, 2nd best and worst always in order of the averages shown: best lowest, each strictly better than the
   // next (one that would show the same average as the one before it is left out)
   const ordered = (list) => { if (!list) return null; const out = []; for (const g of [...list].sort((a, b) => a.avg - b.avg)) if (!out.length || f2(g.avg) !== f2(out.at(-1).avg)) out.push(g); return out.length >= 2 ? out : null; };
-  const order = ordered(spotOrder) || ordered(combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : null) || ordered(bySide.length >= 2 ? bySide : null);
+  // (update 725) and every way of finding them (spots, or misses grouped by side and lie): best first, each circle kept only
+  // when it overlaps every circle already kept by 2 yds at most
+  const circOf = (g) => (g.at ? g.at("ok") : circ(g.rs, apPt, "ok", TEE_LIM));
+  const separate = (list) => { if (!list) return null; const out = [], cs = [];
+    for (const g of list) { const c = circOf(g); if (c && cs.some((d) => (c[2] + d[2]) - Math.hypot(c[0] - d[0], c[1] - d[1]) > 2 * PPY)) continue; out.push(g); if (c) cs.push(c); }
+    return out.length >= 2 ? out : null; };
+  const order = separate(ordered(spotOrder)) || separate(ordered(combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : null)) || separate(ordered(bySide.length >= 2 ? bySide : null));
     if (order) {
     // (update 595) each its own line, with its own circle: the best miss, the second best, the worst
     const [b1, b2] = order, w = order.at(-1);
@@ -356,8 +362,11 @@ export function strategyOf(recs, par, geo = {}) {
       const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, rs, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
       if (few.length >= 2) {
         const b = few[0], w = few.at(-1), nm = (x) => SIDE[x.sd] || x.sd;
-        items.push({ k: "miss", h: "Best miss so far", t: `Too few misses to rank firmly; so far, miss ${nm(b)} ${vn(b.avg, b.n)}.`, at: [circ(b.rs, apPt, "good", TEE_LIM)].filter(Boolean) });
-        items.push({ k: "miss", h: "Worst miss so far", t: `Worst so far: ${nm(w)} ${vn(w.avg, w.n)}.`, at: [circ(w.rs, apPt, "bad", TEE_LIM)].filter(Boolean) });
+        const cb = circ(b.rs, apPt, "good", TEE_LIM), cw = circ(w.rs, apPt, "bad", TEE_LIM);
+        items.push({ k: "miss", h: "Best miss so far", t: `Too few misses to rank firmly; so far, miss ${nm(b)} ${vn(b.avg, b.n)}.`, at: [cb].filter(Boolean) });
+        // (update 725) only when its circle is apart from the best's (2 yds of overlap at most)
+        if (!(cb && cw && cb[2] + cw[2] - Math.hypot(cb[0] - cw[0], cb[1] - cw[1]) > 2 * PPY) && w.avg > b.avg)
+          items.push({ k: "miss", h: "Worst miss so far", t: `Worst so far: ${nm(w)} ${vn(w.avg, w.n)}.`, at: [cw].filter(Boolean) });
       }
     } else items.push({ k: "miss", h: "Too few", t: `Too few approach shots recorded to this pin to read yet (${nTxt(done.length)}).` });
   }
