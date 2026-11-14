@@ -2243,7 +2243,7 @@ export async function render(main) {
     if (!blocks.length) return null;
     return el("section", { class: "panel cmp-sec" }, [
       el("div", { class: "cmp-sec-head cmp-tl-head" }, [el("div", {}, [el("h2", {}, tlBy === "rounds" ? "Round by round" : "Tournament by tournament"),
-        infoTip(`SG: Total ${tlBy === "rounds" ? "in every round" : "a round at every tournament"}, in order. The ones being compared are in their colour; each dashed line is that group\u2019s average.`)]),
+        infoTip(`SG: Total ${tlBy === "rounds" ? "in every round" : "a round at every tournament"}, in order. The ones being compared are in their color; each dashed line is that group\u2019s average.`)]),
         el("div", { class: "cmp-seg small" }, [["rounds", "Rounds"], ["events", "Tournaments"]].map(([v, l]) => { const b = el("button", { type: "button", class: `cmp-seg-b${tlBy === v ? " on" : ""}` }, l); b.addEventListener("click", () => { tlBy = v; draw(); }); return b; }))]),
       el("div", { class: "cmp-legend" }, items.filter((it) => it.s.n).map((it) => el("span", { class: "cmp-legend-i" }, [el("i", { style: `background:${it.color}` }), it.name]))),
       ...renderBlocks(blocks),

@@ -421,7 +421,7 @@ function drawPrepSetup(ctx, course) {
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
     el("p", { class: "pr-eyebrow" }, `Simulate Round${course.tees ? ` · ${course.tees} tees` : ""}`), el("h1", {}, course.name), course.mapEvents ? el("p", { class: "muted small" }, course.mapEvents) : null,
     el("h2", {}, "What to play"), filters, table,
-    el("p", { class: "muted small" }, avgs.length ? `“Your avg” is your score to par on each hole from ${course.rounds.length} round${course.rounds.length === 1 ? "" : "s"} you've tracked here. “Tour baseline” is the Tour's scoring average from that yardage.` : "“Tour baseline” is the Tour's scoring average from that yardage. Track a round here and your own average on each hole shows up, with the option to practise your toughest holes."),
+    el("p", { class: "muted small" }, avgs.length ? `“Your avg” is your score to par on each hole from ${course.rounds.length} round${course.rounds.length === 1 ? "" : "s"} you've tracked here. “Tour baseline” is the Tour's scoring average from that yardage.` : "“Tour baseline” is the Tour's scoring average from that yardage. Track a round here and your own average on each hole shows up, with the option to practice your toughest holes."),
     go,
   ])]);
 }
@@ -669,7 +669,7 @@ function simVisual(ctx, s, hole, shot) {
       ? holeSvg(v, { aim: shot.target, showHeat: sgOn, carry: shot.target.y, onTap: tapTee, sgStart, onAim: (x, y) => aimAt(y, x), preview: lastPreview.get(shot), pinLine: true })
       : greenSvg(v, { aim: shot.target, showHeat: sgOn, onTap: tapGreen, sgStart, aimLine: true, onAim: (x, y) => aimAt(x, y), preview: lastPreview.get(shot), pinLine: true }));
     const side = v.kind === "tee" ? shot.target.x : 0;
-    label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Gold: to your target; grey: on to the pin. Tap the picture where your shot finished; hold the target's circle and drag to move it.`;
+    label.textContent = `Target: ${tdist()} yds${v.kind === "tee" && Math.abs(side) >= 1 ? `, ${Math.round(Math.abs(side))} ${side < 0 ? "left" : "right"} of the middle` : ""}. Gold: to your target; gray: on to the pin. Tap the picture where your shot finished; hold the target's circle and drag to move it.`;
   };
   // a club: its carry becomes the target's distance (same direction)
   ctx.prefillClub?.(shot); // (update 318: from its distance and your stock yardages)

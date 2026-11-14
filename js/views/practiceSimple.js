@@ -104,7 +104,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     if (!coachPlayers.length) return null;
     const tb = el("tbody", {}, coachPlayers.map(([k, l]) => el("tr", { "data-k": k }, [el("td", {}, l), el("td", { colspan: 4, class: "muted small" }, "Loading…")])));
     const box = el("section", { class: "ps-card" }, [el("p", { class: "ps-t" }, "YOUR PLAYERS · LAST 7 DAYS"),
-      el("div", { class: "ps-tw" }, el("table", { class: "ps-coach" }, [el("thead", {}, el("tr", {}, ["Player", "Last practised", "Days", "Time", "Sessions done"].map((h, i) => el("th", { class: i > 1 ? "n" : "" }, h)))), tb]))]);
+      el("div", { class: "ps-tw" }, el("table", { class: "ps-coach" }, [el("thead", {}, el("tr", {}, ["Player", "Last practiced", "Days", "Time", "Sessions done"].map((h, i) => el("th", { class: i > 1 ? "n" : "" }, h)))), tb]))]);
     (async () => { for (const [k, l] of coachPlayers) { if (!alive) return;
       const [p, g] = await Promise.all([listPlan(k).catch(() => []), listLog(k).catch(() => [])]), s = summary(g, p.filter((x) => x.type === "session"));
       const age = s.last ? (Date.now() - Date.parse(s.last)) / dayMs : 99, dot = age <= 3 ? "#30d158" : age <= 7 ? "#f5c400" : "#d0342c";
@@ -229,7 +229,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       await deletePlanItem(subject.owner, s.id); openId = null; await load(); draw(); });
     return [back,
       el("header", { class: "ps-head" }, [el("h1", {}, sessTitle(s)), el("p", { class: "muted" }, [`Created ${dateTxt(s.createdAt)} `, byPill(s)])]),
-      el("div", { class: "ps-runbox" }, [el("span", { class: "muted small" }, running ? "Practising" : "Time so far"), clock]),
+      el("div", { class: "ps-runbox" }, [el("span", { class: "muted small" }, running ? "Practicing" : "Time so far"), clock]),
       el("div", { class: "ps-tw" }, el("table", { class: "ps-sess-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", {}, "Range"), el("th", {}, "Plan"), el("th", {}, "Target"), el("th", { class: "n" }, "Progress")])), el("tbody", {}, rows)])),
       mine && !running && stateOf(s) !== "done" ? el("p", { class: "muted small" }, "Tick what you’re working on now, then start.") : null,
       acts, del];
@@ -245,7 +245,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
   function card(s) {
     const st = stateOf(s), n = s.items.length, d = s.items.filter(itemDone).length;
     const b = el("button", { type: "button", class: `ps-scard ${st}` }, [
-      el("span", { class: "ps-row" }, [el("strong", {}, sessTitle(s)), el("span", { class: "ps-pills" }, [byPill(s), el("span", { class: `ps-pill ${st}` }, st === "done" ? "Completed" : st === "prog" ? (s.run ? "Practising now" : `In progress · ${d}/${n}`) : "Not started")])]),
+      el("span", { class: "ps-row" }, [el("strong", {}, sessTitle(s)), el("span", { class: "ps-pills" }, [byPill(s), el("span", { class: `ps-pill ${st}` }, st === "done" ? "Completed" : st === "prog" ? (s.run ? "Practicing now" : `In progress · ${d}/${n}`) : "Not started")])]),
       el("span", { class: "ps-goaltxt" }, `${n} range${n === 1 ? "" : "s"} · ${fmtMin((s.secs || 0) / 60 + runSecs(s) / 60)} so far · created ${dateTxt(s.createdAt)}`),
       (() => { const ts = s.items.map((x) => itemTarget(x, drills)).filter(Boolean); return ts.length ? el("span", { class: "ps-goaltxt ps-card-tgt" }, `Target: ${n === 1 ? targetText(ts[0]) : `${ts.length} target${ts.length === 1 ? "" : "s"} set`} a set${n === 1 && ts[0].src ? ` (${ts[0].src})` : ""}`) : null; })(),
       el("span", { class: "ps-bar" }, el("i", { style: `width:${n ? (100 * d) / n : 0}%;${st === "done" ? "background:#30d158" : ""}` })),
@@ -302,11 +302,11 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     const create = creator() ? (() => { const b = el("button", { type: "button", class: "btn ps-big" }, subject.mine ? "＋ Create Practice Session" : `＋ Create a session for ${subject.label}`); b.addEventListener("click", createSheet); return b; })() : null;
     mount(wrap, [
       subject.mine ? coachEl : null, back,
-      el("header", { class: "ps-head" }, [el("h1", {}, subject.mine ? "My Practice" : `${subject.label}’s Practice`), el("p", { class: "muted" }, "Honour system: tick off what you’ve done.")]),
+      el("header", { class: "ps-head" }, [el("h1", {}, subject.mine ? "My Practice" : `${subject.label}’s Practice`), el("p", { class: "muted" }, "Honor system: check off what you’ve done.")]),
       tabs,
       el("div", { class: "ps-tiles" }, [
-        el("div", { class: "ps-tile" }, [el("b", {}, String(wk.days)), el("span", {}, `day${wk.days === 1 ? "" : "s"} practised this week`)]),
-        el("div", { class: "ps-tile" }, [el("b", {}, fmtMin(wk.minutes)), el("span", {}, "practised this week")]),
+        el("div", { class: "ps-tile" }, [el("b", {}, String(wk.days)), el("span", {}, `day${wk.days === 1 ? "" : "s"} practiced this week`)]),
+        el("div", { class: "ps-tile" }, [el("b", {}, fmtMin(wk.minutes)), el("span", {}, "practiced this week")]),
         el("div", { class: "ps-tile" }, [el("b", {}, `${wk.done} of ${wk.total}`), el("span", {}, "sessions completed")]),
       ]),
       create,

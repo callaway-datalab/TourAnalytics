@@ -255,7 +255,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
     // (update 240) what the colours mean
     // (update 363) with kept / cut rounds picked, what the columns mean sits behind a small ⓘ
     (() => { const txt = (stretchOn ? `${TN.Cut}: ${S.me?.label || "the player"}\u2019s ${TN.cut} in the selected time frame. ${TN.Kept}: the average of their best ${peakN} ${peakN === 1 ? "round" : "rounds"} . Diff: ${TN.kept} less ${TN.cut}, green where the ${TN.kept} were better.${S.showRanks ? ` ${TN.Kept} Rank: where the ${TN.kept}\u2019 value would rank if it were their average for the selected time frame.` : ""}`
-      : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${S.me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no colour when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`); return el("details", { class: "bs-help sg-full-note-i" }, [el("summary", { "aria-label": "What the columns mean" }, "\u24d8"), el("p", { class: "muted small" }, txt)]); })(), // (update 366: always behind the ⓘ)
+      : `Strokes gained: green above zero (the tour baseline), red below. Other stats: green when better than ${S.me?.label || "the player"}\u2019s career average (every round of theirs), red when worse; no color when neither is better (attempts, pars). Rank: where they sit among the players in this selection. Trend: the last ${tn || 10} rounds against the ${tn || 10} before. Tap an Elite Round Share above to see how they played at their best.`); return el("details", { class: "bs-help sg-full-note-i" }, [el("summary", { "aria-label": "What the columns mean" }, "\u24d8"), el("p", { class: "muted small" }, txt)]); })(), // (update 366: always behind the ⓘ)
   ];
   // (update 393) Hypothetical rankings: the last N rounds' strokes gained in each part of the game, each one nudged up or
   // down with − / +, and where that would rank over the time frame picked (against everyone else's averages there)
@@ -494,7 +494,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         let P; try { P = hypoPlan(u); } catch (err) { console.error(err); P = { err: "Couldn’t work that out just now." }; }
-        if (P.err || !P.items.length) { S.st.hypoPlanMsg = { key: S.me?.key, row: u.label, at: Date.now(), text: `${P.err || (P.notes.join(" ").replace(/^[^:]*:\s*/, "")) || "nothing to practise for this change."}` }; S.draw(); return; }
+        if (P.err || !P.items.length) { S.st.hypoPlanMsg = { key: S.me?.key, row: u.label, at: Date.now(), text: `${P.err || (P.notes.join(" ").replace(/^[^:]*:\s*/, "")) || "nothing to practice for this change."}` }; S.draw(); return; }
         const whoseP = isMine(S.me?.key) || !S.me?.label ? "your" : `${S.me.label}’s`;
         const intro = el("div", { class: "hy-plan-why" }, [
           el("p", { class: `hy-src ${P.src}` }, P.src === "tour" ? `From the tour: ${whoseP === "your" ? "your" : "their"} own rounds don\u2019t match this what-if closely enough, so these come from the ${P.K} rounds by other players this season that average out to it.` : `From ${whoseP === "your" ? "your" : "their"} own rounds: ${P.K} of ${P.n} this season average out to this what-if.`),

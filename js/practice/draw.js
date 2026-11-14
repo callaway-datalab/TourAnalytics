@@ -189,7 +189,7 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
     seen.push(x);
     svg.appendChild(svgEl("text", { x, y: H + 9, class: "pr-yd pr-axis", "text-anchor": "middle", fill: col }, String(Math.round(Math.abs(x)))));
   }
-  svg.appendChild(svgEl("text", { x: X0 + 1.5, y: H + 13.6, class: "pr-yd pr-axis sm" }, "yds from centre"));
+  svg.appendChild(svgEl("text", { x: X0 + 1.5, y: H + 13.6, class: "pr-yd pr-axis sm" }, "yds from center"));
   svg.appendChild(svgEl("path", { d: `M0 ${H - 0.5} l-2.4 -3.6 l4.8 0 z`, fill: "#d4b483" }));
   if (onTap) {
     svg.classList.add("tappable");

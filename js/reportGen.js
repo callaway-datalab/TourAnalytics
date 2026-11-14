@@ -1490,7 +1490,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap("Equipment", M + 9, y, P.gold); y += 23;
     d.text("By Product", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
     // (update 517: wrapped, so it never runs off the page)
-    for (const l of wrap(`Each kind of club (and ball) you've used, with every model of it: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its colour in the key. * Fewer than 10 rounds: read with care.${CMP ? ` The vertical dashed line separates the ${FR}s.` : ""}`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each kind of club (and ball) you've used, with every model of it: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its color in the key. * Fewer than 10 rounds: read with care.${CMP ? ` The vertical dashed line separates the ${FR}s.` : ""}`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
     y += 6;
     const FEW = 10;
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its

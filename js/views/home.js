@@ -4,7 +4,7 @@
 // follow-up when it needs one (which player, over what stretch, which course …), then opens the page already set up for
 // it, with a one-time pop-up on how Cal answers it (askExplain.js). Players see "my"; coaches and analysts their players;
 // the admin any player, and the tour.
-import { el, mount, calAllowed, holdToTalk } from "../ui.js";
+import { el, mount, calAllowed, holdToTalk, icon } from "../ui.js";
 import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
@@ -111,7 +111,7 @@ export async function render(main, { previewClient } = {}) {
     trend: (q) => ({ id: "trend", q, steps: ["Each bar is a tournament: strokes gained a round there.", "Form compares the last 12 rounds with the 12 before them (the DP World Tour: 3 events against 3).", "Getting better or worse compares 12 against 12 and 48 against 48 for the longer view."] }),
     rank: (q) => ({ id: "rank", q, steps: ["Every player compared with enough rounds in this selection is ranked on strokes gained a round.", "Change the part of the game at the top to rank on driving, approach, short game or putting.", "Min. rounds sets how many rounds a player needs to be ranked."] }),
     elite: (q) => ({ id: "elite", q, steps: ["Elite stretches: the player’s best runs of rounds, and what made them good.", "Path back to Elite: what’s different now, part by part, and the drills to close the gap."] }),
-    product: (q, kind) => ({ id: `prod-${kind}`, q, steps: [`Each bar is a tournament, coloured by the ${KIND_WORD[kind] || "product"} used most there.`, "The table under it: strokes gained a round with each model, over the rounds it was used, and the stats recorded with it.", "Wrong model at a tournament? Tap Edit and then that bar to put it right; it’s kept through new data."] }),
+    product: (q, kind) => ({ id: `prod-${kind}`, q, steps: [`Each bar is a tournament, colored by the ${KIND_WORD[kind] || "product"} used most there.`, "The table under it: strokes gained a round with each model, over the rounds it was used, and the stats recorded with it.", "Wrong model at a tournament? Tap Edit and then that bar to put it right; it’s kept through new data."] }),
     cmpYears: (q) => ({ id: "cmp-years", q, steps: ["Each season is its own selection: strokes gained a round in each part of the game, side by side.", "Side by side lists every stat for both; the better one is highlighted.", "For a PDF of this: open Stats with both seasons picked, tap Generate PDF Report, then Compare."] }),
     cmpWin: (q) => ({ id: "cmp-win", q, steps: ["The last 12 rounds against the 12 before them, part by part of the game.", "Where a part of the game has moved, the stats under it show why (Hit Green %, Proximity, Made Putt %…)."] }),
     cmpPlayer: (q) => ({ id: "cmp-player", q, steps: ["Pick the other player (or several) at the top.", "Each is shown side by side: strokes gained a round in each part of the game, then every stat.", "Generate PDF Report makes a write-up of the comparison."] }),
@@ -163,7 +163,7 @@ export async function render(main, { previewClient } = {}) {
   const hr = new Date().getHours(), tod = hr < 12 ? "morning" : hr < 18 ? "afternoon" : "evening", first = String(myName || "").split(" ")[0];
   const askBox = calAllowed() ? (() => {
     const inp = el("input", { type: "text", class: "ah-ask-in", placeholder: "Ask Cal anything about your game…", "aria-label": "Ask Cal" });
-    const mic = el("button", { type: "button", class: "ah-mic", "aria-label": "Ask Cal: tap to open, hold to talk" }, "🎙");
+    const mic = el("button", { type: "button", class: "ah-mic", "aria-label": "Ask Cal: tap to open, hold to talk", title: "Ask Cal (hold to talk)" }, icon("calface")); /* (update 730: Cal's logo) */
     const send = async () => { const t = inp.value.trim(); const m = await import("../callie.js"); if (t) { inp.value = ""; m.askHeld(t); } else m.openCallie(); };
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
     let held = false; mic.addEventListener("click", (e) => { e.stopPropagation(); if (held) { held = false; return; } send(); }); holdToTalk(mic, () => { held = true; });
@@ -215,19 +215,37 @@ export async function render(main, { previewClient } = {}) {
   //   player), title, detail, to ("Stats · Tournaments"), run () }
   const sg2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
   const KIND = { Result: ["#0a84ff", "🏆"], Milestone: ["#d4b483", "⭐"], Trend: ["#30d158", "📈"], Slide: ["#ff453a", "📉"], Rank: ["#bf5af2", "🥇"], Equipment: ["#ff9f0a", "🏌️"], "Next event": ["#64d2ff", "⛳"], Practice: ["#ffd60a", "🎯"], Tour: ["#8e8e93", "📊"], Focus: ["#ff6482", "🧩"] };
+  // (update 730) a section for each kind of highlight, each with the ones that matter most first
+  const SECTIONS = [
+    ["next", "Next event", ["Next event"]],
+    ["res", "Results & milestones", ["Result", "Milestone"]],
+    ["form", "Form & trends", ["Trend", "Slide"]],
+    ["rank", "Rankings", ["Rank"]],
+    ["gear", "Equipment", ["Equipment"]],
+    ["focus", "Where to improve", ["Focus"]],
+    ["prac", "Practice", ["Practice"]],
+    ["tour", "Around the tour", ["Tour"]],
+  ];
+  if (ROLE !== "caddy") SECTIONS.push(SECTIONS.shift()); // (a caddy: the course first; everyone else: it last)
+  const hlCard = (h) => { const [col, ic] = KIND[h.kind] || KIND.Tour, [pg, ...rest] = h.to.split(" · ");
+    const b = el("button", { type: "button", class: "hl-card", style: `--hl:${col}` }, [
+      el("span", { class: "hl-top" }, [el("span", { class: "hl-kind" }, [el("span", { "aria-hidden": "true" }, ic), ` ${h.kind}`]), staff && h.k ? el("span", { class: "hl-who" }, nameOf(h.k)) : null]),
+      el("strong", { class: "hl-title" }, h.title), h.detail ? el("span", { class: "hl-detail" }, h.detail) : null,
+      el("span", { class: "hl-to" }, ["Dig deeper → ", el("b", {}, pg), rest.length ? ` · ${rest.join(" · ")}` : ""])]);
+    b.addEventListener("click", () => h.run()); return b; };
   function drawFeed(items) {
-    // (update 727) the 12 that matter most, with some variety: 4 at most about one player (when there are several), 3 of a kind
-    const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).sort((a, b) => b.score - a.score), byK = new Map(), byKind = new Map(), list0 = [];
-    for (const h of sorted) { if (list0.length >= 12) break; const pk = h.k || "", nk = (byK.get(pk) || 0), nd = (byKind.get(h.kind) || 0);
-      if ((!who && keys.length > 1 && h.k && nk >= 4) || nd >= 3) continue; list0.push(h); byK.set(pk, nk + 1); byKind.set(h.kind, nd + 1); }
-    for (const h of sorted) { if (list0.length >= 12) break; if (!list0.includes(h)) list0.push(h); } // (room left: the rest in order)
-    if (!list0.length) { mount(feed, el("p", { class: "muted small" }, staff && !keys.length ? "Add players to your Watchlist and their highlights will show here every day." : "Highlights will show here once rounds are in.")); return; }
-    mount(feed, list0.map((h) => { const [col, icon] = KIND[h.kind] || KIND.Tour, [pg, ...rest] = h.to.split(" · ");
-      const b = el("button", { type: "button", class: "hl-card", style: `--hl:${col}` }, [
-        el("span", { class: "hl-top" }, [el("span", { class: "hl-kind" }, [el("span", { "aria-hidden": "true" }, icon), ` ${h.kind}`]), staff && h.k ? el("span", { class: "hl-who" }, nameOf(h.k)) : null]),
-        el("strong", { class: "hl-title" }, h.title), h.detail ? el("span", { class: "hl-detail" }, h.detail) : null,
-        el("span", { class: "hl-to" }, ["Dig deeper → ", el("b", {}, pg), rest.length ? ` · ${rest.join(" · ")}` : ""])]);
-      b.addEventListener("click", () => h.run()); return b; }));
+    const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).sort((a, b) => b.score - a.score);
+    const many = !who && keys.length > 1, secs = [];
+    for (const [id, title, kinds] of SECTIONS) {
+      const mine = sorted.filter((h) => kinds.includes(h.kind)); if (!mine.length) continue;
+      // up to 6 a section; with several players, 2 each first (then the rest in order)
+      const pick = [], byK = new Map();
+      for (const h of mine) { if (pick.length >= 6) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
+      for (const h of mine) { if (pick.length >= 6) break; if (!pick.includes(h)) pick.push(h); }
+      secs.push(el("section", { class: `hl-sec hl-sec-${id}${pick.length >= 3 ? " wide" : ""}` }, [el("h2", { class: "hl-sh" }, [title, el("span", { class: "hl-n" }, String(mine.length))]), el("div", { class: "hl-grid" }, pick.map(hlCard))]));
+    }
+    if (!secs.length) { mount(feed, el("p", { class: "muted small" }, staff && !keys.length ? "Add players to your favorites (+ above) and their highlights will show here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} yet. Try another tour, or All.` : "Highlights will show here once rounds are in.")); return; }
+    mount(feed, secs);
   }
   const cats = ["OTT", "APP", "ARG", "PUTT"], CATN = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
   const tot = (rd) => rd.shots.reduce((t, s) => t + s.sg, 0), inCat = (rd, c) => rd.shots.filter((s) => s.cat === c).reduce((t, s) => t + s.sg, 0);
@@ -282,7 +300,7 @@ export async function render(main, { previewClient } = {}) {
   }
   function highlightsAll() {
     const out = [];
-    for (const k of who ? [who] : keys) out.push(...highlightsFor(k));
+    for (const k of shownKeys()) out.push(...highlightsFor(k));
     // this week's tournament, with its strategy maps (caddies first)
     if (next?.heat) out.push({ id: "next", k: null, kind: "Next event", score: ROLE === "caddy" ? 9 : 5.5, title: `${next.live ? "On now" : "Coming up"}: ${next.name}`, detail: "Cal’s targets for every hole: where to aim off the tee and where to miss the green", to: "Course Prep · Strategy Maps", run: () => toHole(next.heat, 1, EX.course(`How should I play ${next.name}?`)) });
     // the tour (analysts and the admin): the biggest movers over the last 12 rounds
@@ -346,26 +364,29 @@ export async function render(main, { previewClient } = {}) {
     mount(tourRow, showTours ? [el("span", { class: "hl-pl" }, "Tour"), ...tours.map((t) => pill(tourPick === t, tourName(t), () => setTour(t))), pill(tourPick === ALL, "All", () => setTour(ALL))] : []);
     tourRow.hidden = !showTours;
     if (!staff) { whoRow.hidden = true; return; }
-    const fav = favs.filter((k) => keys.includes(k));
-    const add = el("button", { type: "button", class: "hl-pill hl-add", "aria-label": "Add a favourite player" }, "+");
+    const fav = favs.filter((k) => keys.includes(k) && playsTour(k)); // (update 730: only the players on the tour picked)
+    if (who && !playsTour(who)) who = null;
+    const add = el("button", { type: "button", class: "hl-pill hl-add", "aria-label": "Add a favorite player" }, "+");
     add.addEventListener("click", addFav);
-    mount(whoRow, [el("span", { class: "hl-pl" }, "Players"), pill(!who, staff && team.isTeam ? "All my players" : "All favourites", () => setWho(null)), ...fav.map((k) => pill(who === k, nameOf(k), () => setWho(who === k ? null : k))), add]);
+    mount(whoRow, [el("span", { class: "hl-pl" }, "Players"), pill(!who, staff && team.isTeam ? "All my players" : "All favorites", () => setWho(null)), ...fav.map((k) => pill(who === k, nameOf(k), () => setWho(who === k ? null : k))), add]);
     whoRow.hidden = false;
   }
+  const playsTour = (k) => !tourPick || tourPick === ALL || !field.length || (field.find((p) => p.key === k)?.rounds || []).some((rd) => tourOf(rd) === tourPick);
+  const shownKeys = () => (who ? [who] : keys.filter(playsTour));
   const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); };
   const setWho = (k) => { who = k; if (k) { focus = k; drawTabs(); } refresh(); };
   async function addFav() {
-    const ks = await playersList(); const opts = ks.filter((k) => !favs.includes(k)).map((k) => ({ value: k, label: nameOf(k) })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
-    if (!opts.length) { alert("Every player you can see is already a favourite."); return; }
-    const k = await sheet({ q: "Add a favourite", title: "Which player?", options: opts, search: true }); if (!k) return;
-    try { const wl = await import("../watchlist.js"); await wl.saveWatch({ players: [...(wl.watchPrefs().players || []), k] }); } catch (e) { console.error(e); alert("Couldn’t save that favourite just now."); return; }
+    const ks = await playersList(); const opts = ks.filter((k) => !favs.includes(k) && playsTour(k)).map((k) => ({ value: k, label: nameOf(k) })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    if (!opts.length) { alert(tourPick && tourPick !== ALL ? `Every ${tourName(tourPick)} player you can see is already a favorite.` : "Every player you can see is already a favorite."); return; }
+    const k = await sheet({ q: "Add a favorite", title: tourPick && tourPick !== ALL ? `Which ${tourName(tourPick)} player?` : "Which player?", options: opts, search: true }); if (!k) return;
+    try { const wl = await import("../watchlist.js"); await wl.saveWatch({ players: [...(wl.watchPrefs().players || []), k] }); } catch (e) { console.error(e); alert("Couldn’t save that favorite just now."); return; }
     favs = [...favs, k]; if (!keys.includes(k)) keys = [...keys, k]; who = k; refresh();
   }
-  const collect = () => { const shown = who ? [who] : keys.slice(0, selfKey ? 1 : 4);
+  const collect = () => { const shown = shownKeys().slice(0, selfKey ? 1 : 6);
     return [...highlightsAll(), ...shown.flatMap((k) => (gearData.has(k) ? gearHighlights(k) : [])), ...practice]; };
   async function refresh() {
     const my = ++gen; drawPills(); drawFeed(collect());
-    for (const k of who ? [who] : keys.slice(0, selfKey ? 1 : 4)) { if (gearData.has(k)) continue; await loadGear(k); if (my !== gen) return; drawFeed(collect()); }
+    for (const k of shownKeys().slice(0, selfKey ? 1 : 6)) { if (gearData.has(k)) continue; await loadGear(k); if (my !== gen) return; drawFeed(collect()); }
   }
   // (the data, once everything above is defined)
   // (the data, once everything above is defined)

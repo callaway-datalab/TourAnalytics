@@ -40,7 +40,7 @@ function openTrajectory(rs, x, cols = DEFAULT_COLS) {
   const n = x.n, show = rs.slice(-2 * n), prev = show.slice(0, n), last = show.slice(n);
   const avg = (xs, k) => xs.reduce((t, rd) => t + sgOfRd(rd, k), 0) / xs.length;
   openBadge({ text: `Last ${n} rounds vs the ${n} before`, info: () => ({
-    sub: `Strokes gained in each round: the ${n} before in grey, the last ${n} in colour, each stretch\u2019s average dashed.`,
+    sub: `Strokes gained in each round: the ${n} before in gray, the last ${n} in color, each stretch\u2019s average dashed.`,
     blocks: [
       { kind: "bars", fmt: "sg", items: show.map((rd, i) => ({ label: dShort(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: sgOfRd(rd), on: i >= n })), ref: [{ v: avg(prev, "TOTAL"), label: `Before`, from: 0, to: n }, { v: avg(last, "TOTAL"), label: `Last ${n}`, from: n, to: 2 * n }] },
       { kind: "table", title: "By category (a round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
@@ -111,7 +111,7 @@ function trajectoryEvents(rs, cols0) {
 function openTrajectoryEvents(x, cols = DEFAULT_COLS) {
   const n = x.n, prev = x.evs.slice(0, n), last = x.evs.slice(n), pR = prev.flat(), lR = last.flat();
   openBadge({ text: `Last ${n} events vs the ${n} before`, info: () => ({
-    sub: `Strokes gained a round at each event: the ${n} before in grey, the last ${n} in colour, each stretch\u2019s average dashed.`,
+    sub: `Strokes gained a round at each event: the ${n} before in gray, the last ${n} in color, each stretch\u2019s average dashed.`,
     blocks: [
       { kind: "bars", fmt: "sg", items: x.evs.map((g, i) => ({ label: dShort(g.at(-1).date), sub: `${g[0].event || ""}${g.length > 1 ? ` \u00b7 ${g.length} rds` : ""}`, v: avgRds(g, "TOTAL"), on: i >= n })),
         ref: [{ v: avgRds(pR, "TOTAL"), label: "Before", from: 0, to: n }, { v: avgRds(lR, "TOTAL"), label: "Latest", from: n, to: 2 * n }] },

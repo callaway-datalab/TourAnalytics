@@ -497,7 +497,7 @@ export async function drawHeat(ctx, course) {
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { class: z.key?.kind === "target" ? "pos" : z.key?.kind === "avoid" ? "neg" : "" }, ttl), x]),
       // (update 499) the shots' own average (one shot: its own strokes, a whole number), not the map's blended shade
       z.toGo ? el("p", {}, [`Strokes to hole out: `, el("strong", {}, fmtToGo(actualOf(z), z.n)), ...(usePlayer && z.rawP != null ? [` · ${who.label.split(" ")[0]} `, el("strong", {}, z.rawP.toFixed(2))] : [])]) : null,
-      z.toGo && Math.abs(actualOf(z) - z.raw) >= 0.05 ? el("p", { class: "muted small" }, `The map\u2019s colour here is ${z.raw.toFixed(2)}: blended with the shots around it, as ${z.n ? `only ${z.n} ${z.n === 1 ? "shot was" : "shots were"}` : "few shots were"} hit from this spot.`) : null,
+      z.toGo && Math.abs(actualOf(z) - z.raw) >= 0.05 ? el("p", { class: "muted small" }, `The map\u2019s color here is ${z.raw.toFixed(2)}: blended with the shots around it, as ${z.n ? `only ${z.n} ${z.n === 1 ? "shot was" : "shots were"}` : "few shots were"} hit from this spot.`) : null,
       z.toGo ? null : el("p", {}, [`Scoring from here: `, el("strong", {}, `${(par + z.field).toFixed(2)}`), ` (${fmtPar(z.field)} to par)`]),
       usePlayer && z.player != null && !z.toGo ? el("p", {}, [`${who.label}: `, el("strong", {}, `${(par + z.player).toFixed(2)}`), ` (${fmtPar(z.player)}), from their strokes gained from here`]) : null,
       // (update 464) in plain words: harder or easier than the usual from that far out, and its share of that part of the

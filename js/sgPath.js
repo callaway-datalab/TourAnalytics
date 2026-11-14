@@ -285,7 +285,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
     const detail = (g) => {
       const sp = g.sp;
       if (g.g <= 0.005) return [el("p", { class: "muted small" }, `Their last ${N} rounds are as good as their ${NN.kept} here, or better.`), whatIfBox(g)];
-      if (sp.ab < 0.5) return [whatIfBox(g), el("p", { class: "muted small" }, `They\u2019ve faced this less than once every two rounds over the last ${N} (${sp.ab.toFixed(1)} a round), so it isn\u2019t worth practising for now.`)];
+      if (sp.ab < 0.5) return [whatIfBox(g), el("p", { class: "muted small" }, `They\u2019ve faced this less than once every two rounds over the last ${N} (${sp.ab.toFixed(1)} a round), so it isn\u2019t worth practicing for now.`)];
       const p = itemOf(g);
       // (update 455) the takeaway gives way to the what-if: a change typed in, or Reach target (the difference)
       return [whatIfBox(g), ...(p.targetLines ? [kv("Target", p.targetLines.map((x, k) => el("div", { class: k ? "bs-tl" : "bs-th" }, x)), "bs-target")] : []), ...p.drills.map(drillRow)];

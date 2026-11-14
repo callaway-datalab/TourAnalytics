@@ -344,12 +344,12 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
           const c = course[b.id], pr = pastAll.byBucket.find((x) => x.id === b.id);
           const v = el("span", { class: "pr-cnt" }, String(counts[b.id] || 0));
           const set = (d) => { if (off.has(b.id)) off.delete(b.id); counts[b.id] = Math.max(0, (counts[b.id] || 0) + d); mode = "custom"; total = buckets.reduce((t, x) => t + (counts[x.id] || 0), 0); totalVal.textContent = String(total); drawRows(); drawModes(); };
-          const cb = el("input", { type: "checkbox", class: "pr-bon", checked: !off.has(b.id), "aria-label": `Practise ${b.label}` });
+          const cb = el("input", { type: "checkbox", class: "pr-bon", checked: !off.has(b.id), "aria-label": `Practice ${b.label}` });
           cb.addEventListener("change", () => toggleRow(b, cb.checked));
           return el("div", { class: `pr-brow${off.has(b.id) ? " off" : ""}` }, [
             el("label", { class: "pr-bl" }, [el("span", { class: "pr-bl-t" }, [cb, b.label]), el("i", { class: "pr-bbar", style: `--w:${((counts[b.id] || 0) / max) * 100}%` })]),
             el("span", { class: `pr-bv ${sgCls(c?.sgPer)}`, title: c?.n ? `${Math.round(c.n)} shots on course` : "No shots on course yet" }, c?.n ? SG(c.sgPer) : "—"),
-            el("span", { class: `pr-bv ${sgCls(pr?.sgPer)}`, title: pr?.n ? `${pr.n} practice shots` : "Not practised yet" }, pr?.n ? SG(pr.sgPer) : "—"),
+            el("span", { class: `pr-bv ${sgCls(pr?.sgPer)}`, title: pr?.n ? `${pr.n} practice shots` : "Not practiced yet" }, pr?.n ? SG(pr.sgPer) : "—"),
             el("span", { class: "pr-stepper sm" }, [stepBtn("−", () => set(-1), `Fewer at ${b.label}`), v, stepBtn("+", () => set(1), `More at ${b.label}`)]),
           ]);
         }),
@@ -444,7 +444,7 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
       if (!spots) return;
       const list = el("ul", { class: "pr-spot-list" }, spots.map((sp) => {
         if (editing === sp.id) return el("li", {}, form(sp));
-        const cb = el("input", { type: "checkbox", checked: picked.has(sp.id), "aria-label": `Practise ${sp.name || `${sp.dist} ft`}` });
+        const cb = el("input", { type: "checkbox", checked: picked.has(sp.id), "aria-label": `Practice ${sp.name || `${sp.dist} ft`}` });
         cb.addEventListener("change", () => { if (cb.checked) picked.add(sp.id); else picked.delete(sp.id); drawGo(); });
         const ed = el("button", { type: "button", class: "link" }, "Edit");
         ed.addEventListener("click", () => drawList(sp.id));
@@ -460,13 +460,13 @@ export async function render(main, { flash, coursePrep = false, previewClient = 
       add.addEventListener("click", () => mount(adder, form()));
       const adder = el("div", {}, editing ? null : add);
       mount(box, [
-        el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "My putting spots"), el("p", { class: "muted small" }, "Real putts you can get to: how long, and which way they fall and how much. Then practise them, as many times each as you like.")])]),
+        el("div", { class: "pr-sub" }, [el("div", {}, [el("h2", {}, "My putting spots"), el("p", { class: "muted small" }, "Real putts you can get to: how long, and which way they fall and how much. Then practice them, as many times each as you like.")])]),
         spots.length ? list : el("p", { class: "muted" }, "No spots yet."), adder, goRow,
       ]);
       drawGo();
     }
     const perVal = el("strong", { class: "pr-cnt" });
-    const goBtn = el("button", { type: "button", class: "btn pr-go" }, "Practise my spots \u25B6");
+    const goBtn = el("button", { type: "button", class: "btn pr-go" }, "Practice my spots \u25B6");
     const goRow = el("div", { class: "pr-spot-go" }, [el("span", { class: "rd-label" }, "Putts at each"), el("span", { class: "pr-stepper sm" }, [stepBtn("\u2212", () => { perSpot = Math.max(1, perSpot - 1); drawGo(); }, "Fewer"), perVal, stepBtn("+", () => { perSpot = Math.min(20, perSpot + 1); drawGo(); }, "More")]), goBtn]);
     const drawGo = () => { perVal.textContent = String(perSpot); goRow.hidden = !spots?.length; goBtn.disabled = !picked.size; };
     goBtn.addEventListener("click", () => {
@@ -667,5 +667,5 @@ const HOW = {
   OTT: ["Pick how many drives, with which clubs, and the mix of fairway widths and trouble.", "Each tee shot gets its own hole. The aim map shows where the fewest strokes are, for your pattern.", "Tap where it finished, type the distance and how far off line, say it, or load a launch monitor file.", "See your fairways, misses, penalties and strokes gained against the Tour baselines."],
   APP: ["Pick how many shots and how they're split across distances. Your on-course strokes gained shows for each.", "Mix in rough and bunker lies, and middle, corner and tucked pins.", "Tap where the ball finished on the green, type it, say it (“14 feet short”), or load a launch monitor file.", "See proximity, greens hit, strokes gained by distance and your pattern round the pin."],
   ARG: ["Pick how many shots, the distances and the mix of lies (fringe, rough, bunker).", "Pins range from lots of green to short-sided.", "Tap where it stopped, type it or say it.", "See proximity, up-and-down chances and strokes gained by distance."],
-  PUTT: ["Pick how many putts, the distances, and the mix of breaks and slopes. Set the green speed.", "Set each putt's break and slope to match the one in front of you, or practise your own spots with your aim.", "Tap where it stopped (or Made), type the leave or say it (“2 feet long”).", "See make %, speed, the putts you leave and the “pro side” on breaking putts."],
+  PUTT: ["Pick how many putts, the distances, and the mix of breaks and slopes. Set the green speed.", "Set each putt's break and slope to match the one in front of you, or practice your own spots with your aim.", "Tap where it stopped (or Made), type the leave or say it (“2 feet long”).", "See make %, speed, the putts you leave and the “pro side” on breaking putts."],
 };

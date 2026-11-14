@@ -316,7 +316,7 @@ export function buildComparePdf(r) {
   for (const ch of r.eventCharts || []) {
     const h = eventBarsHeight(W, ch.bars, ch.legend, { gap: 18 });
     section("By event", ch.title, h + 10);
-    d.text(ch.note || "Strokes gained a round in each tournament, the bar coloured by the product used most in it.", M, y + 1, { size: 8, color: P.grey });
+    d.text(ch.note || "Strokes gained a round in each tournament, the bar colored by the product used most in it.", M, y + 1, { size: 8, color: P.grey });
     y += 10; need(h);
     y += drawEventBars(d, M, y, W, ch.bars, ch.legend, { ink: P.ink, grey: P.grey, hair: P.hair, gap: 18 }); /* (update 516: more room between the bars and the names) */
   }
