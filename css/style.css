@@ -6731,3 +6731,68 @@ html, body { overflow-x: clip; max-width: 100%; }
 .pe-new { width: 100%; max-width: 26rem; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1px solid #3a3a3c; background: #111114; color: inherit; font: inherit; }
 .pe-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .pe-now { margin: 0; font-size: 0.92rem; }
+/* (update 726) Home: questions */
+.ah { max-width: 760px; margin: 0 auto; padding: 8px 2px 40px; }
+.ah-hi { margin: 6px 0 2px; color: #a1a1a6; font-size: 0.9rem; }
+.ah-big { margin: 0 0 14px; font-size: clamp(1.6rem, 5vw, 2.2rem); line-height: 1.15; font-weight: 800; }
+.ah-big em { font-style: normal; color: #d4b483; }
+.ah-ask { display: flex; align-items: center; gap: 10px; background: #16161a; border: 1px solid #2c2c31; border-radius: 16px; padding: 8px 8px 8px 14px; }
+.ah-spark { color: #d4b483; }
+.ah-ask-in { flex: 1; min-width: 0; background: none; border: 0; color: inherit; font: inherit; font-size: 1rem; outline: none; padding: 6px 0; }
+.ah-mic { width: 38px; height: 38px; border-radius: 50%; border: 0; background: #d4b483; color: #111; font-size: 1.05rem; cursor: pointer; flex: 0 0 38px; }
+.ah-lbl { font-size: 0.7rem; letter-spacing: 0.16em; color: #8e8e93; font-weight: 800; margin: 22px 0 8px; }
+.ah-sug, .ah-list { display: grid; gap: 9px; }
+.ah-tabs { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; margin-bottom: 12px; }
+.ah-tab { flex: 0 0 auto; border: 1px solid #2f2f34; border-radius: 999px; padding: 7px 13px; background: none; color: #c7c7cc; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.ah-tab.on { background: #d4b483; color: #111; border-color: #d4b483; font-weight: 800; }
+.ah-q { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; background: #141417; border: 1px solid #232328; border-radius: 16px; padding: 13px 14px; color: inherit; font: inherit; cursor: pointer; }
+.ah-q:hover { border-color: rgba(212,180,131,0.5); }
+.ah-q.hot { border-color: rgba(212,180,131,0.55); background: linear-gradient(135deg, #1c1913, #141417); }
+.ah-e { flex: 0 0 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 1.05rem; background: #1f1f24; }
+.ah-tx { font-size: 1rem; font-weight: 650; line-height: 1.3; }
+.ah-to { display: block; font-size: 0.74rem; color: #8e8e93; font-weight: 500; margin-top: 4px; }
+.ah-to b { color: #d4b483; font-weight: 700; }
+.ah-to em { font-style: normal; color: #c7c7cc; }
+.ah-sheet-wrap { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; justify-content: center; }
+.ah-back { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
+.ah-sheet { position: relative; width: min(560px, 100%); max-height: 85vh; overflow: auto; background: #18181c; border-radius: 24px 24px 0 0; border-top: 1px solid #2c2c31; padding: 18px 18px calc(22px + env(safe-area-inset-bottom)); }
+@media (min-width: 700px) { .ah-sheet-wrap { align-items: center; } .ah-sheet { border-radius: 24px; } }
+.ah-grab { width: 40px; height: 5px; border-radius: 3px; background: #3a3a3c; margin: -4px auto 12px; }
+.ah-sq { font-size: 0.78rem; color: #8e8e93; margin: 0 0 4px; }
+.ah-sh { font-size: 1.3rem; font-weight: 800; margin: 0 0 4px; }
+.ah-sub { font-size: 0.85rem; color: #a1a1a6; margin: 0 0 12px; }
+.ah-search { width: 100%; box-sizing: border-box; margin: 6px 0 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid #2f2f34; background: #111114; color: inherit; font: inherit; }
+.ah-opts { display: grid; gap: 7px; }
+.ah-opt { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid #2f2f34; border-radius: 14px; padding: 12px 14px; background: none; color: inherit; font: inherit; font-size: 0.95rem; cursor: pointer; }
+.ah-opt small { color: #8e8e93; }
+.ah-opt.on { border-color: #d4b483; background: rgba(212,180,131,0.1); }
+.ah-r { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #48484d; flex: 0 0 18px; box-sizing: border-box; }
+.ah-opt.on .ah-r { border: 6px solid #d4b483; }
+.ah-go { width: 100%; margin-top: 12px; padding: 13px; font-size: 1rem; }
+/* (update 726) how Cal answers this */
+.ax-wrap { position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; padding: 16px; }
+.ax-back { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+.ax-pop { position: relative; width: min(460px, 100%); background: #1b1b20; border: 1px solid rgba(212,180,131,0.55); border-radius: 20px; padding: 18px; box-shadow: 0 30px 60px rgba(0,0,0,0.6); }
+.ax-k { font-size: 0.68rem; letter-spacing: 0.16em; color: #d4b483; font-weight: 800; margin: 0 0 4px; }
+.ax-q { margin: 0 0 6px; font-size: 1.12rem; }
+.ax-step { display: flex; gap: 11px; margin: 11px 0; }
+.ax-n { flex: 0 0 24px; height: 24px; border-radius: 50%; background: #2a2a2f; color: #d4b483; font-weight: 800; font-size: 0.75rem; display: grid; place-items: center; }
+.ax-step p { margin: 0; font-size: 0.88rem; line-height: 1.4; color: #d1d1d6; }
+.ax-btns { display: flex; gap: 8px; margin-top: 14px; }
+.ax-btns .btn { flex: 1; }
+/* (update 727) Home: today's highlights */
+.hl-feed { display: grid; gap: 10px; }
+@media (min-width: 760px) { .hl-feed { grid-template-columns: 1fr 1fr; } }
+.hl-card { display: grid; gap: 5px; text-align: left; width: 100%; background: #141417; border: 1px solid #232328; border-left: 4px solid var(--hl, #d4b483); border-radius: 16px; padding: 13px 14px; color: inherit; font: inherit; cursor: pointer; }
+.hl-card:hover { border-color: rgba(212,180,131,0.5); border-left-color: var(--hl, #d4b483); }
+.hl-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hl-kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 800; color: var(--hl, #d4b483); }
+.hl-who { font-size: 0.72rem; font-weight: 700; color: #c7c7cc; background: #222227; border-radius: 999px; padding: 2px 9px; }
+.hl-title { font-size: 1.02rem; line-height: 1.3; }
+.hl-detail { font-size: 0.84rem; color: #a1a1a6; line-height: 1.35; }
+.hl-to { font-size: 0.74rem; color: #8e8e93; margin-top: 2px; }
+.hl-to b { color: #d4b483; }
+.hl-more { margin-top: 22px; }
+.hl-more > summary { cursor: pointer; font-size: 0.7rem; letter-spacing: 0.16em; color: #8e8e93; font-weight: 800; text-transform: uppercase; margin-bottom: 10px; list-style: none; }
+.hl-more > summary::before { content: "\25B8  "; }
+.hl-more[open] > summary::before { content: "\25BE  "; }
