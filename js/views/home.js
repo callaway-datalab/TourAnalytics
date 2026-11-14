@@ -10,6 +10,7 @@ import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, summaryPlayers, gearInfo } from "../sg.js";
 import { queueExplain } from "../askExplain.js";
+import { sgRounds, roundsFor, perRound } from "../compareData.js"; // (update 728: the rounds and numbers exactly as Compare counts them)
 
 const HINTS = new Map(); // (each player's product question, worked out once a visit to the site)
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; try { un = watch(fin); } catch { fin(null); } });
@@ -43,7 +44,7 @@ export async function render(main, { previewClient } = {}) {
   // ---- where a question goes ----
   const statsHref = (k) => (isMe(k) || (!admin && !team.isTeam) ? "#/dashboard" : admin ? `#/admin/player-stats?player=${encodeURIComponent(k)}` : `#/view-as/${encodeURIComponent(k)}?label=${encodeURIComponent(nameOf(k))}&to=/dashboard`);
   const pageHref = (k, page) => (isMe(k) || !team.isTeam ? `#${page}` : `#/view-as/${encodeURIComponent(k)}?label=${encodeURIComponent(nameOf(k))}&to=${page}`);
-  const toStats = (k, st, scroll, ex) => { try { sessionStorage.setItem("ta.statsPreset", JSON.stringify({ at: Date.now(), st, scroll })); } catch { /* */ } if (ex) queueExplain(ex); location.hash = statsHref(k); };
+  const toStats = (k, st, scroll, ex) => { st = { tour: ["__all"], ...st }; /* (update 728: every tour, as the highlights count them) */ try { sessionStorage.setItem("ta.statsPreset", JSON.stringify({ at: Date.now(), st, scroll })); } catch { /* */ } if (ex) queueExplain(ex); location.hash = statsHref(k); };
   const toHole = (heat, hole, ex) => { try { sessionStorage.setItem("cal.open", JSON.stringify({ heat, hole, pin: null })); } catch { /* */ } if (ex) queueExplain(ex); location.hash = `#/course-prep?cal=${Date.now()}`; };
   const go = (href, ex) => { if (ex) queueExplain(ex); location.hash = href; };
 
@@ -230,7 +231,7 @@ export async function render(main, { previewClient } = {}) {
     for (const c of ["TOTAL", ...cats]) { const v = ok.map((p) => [p.k, avgOf(p.rs, c === "TOTAL" ? tot : (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1]); by[c] = new Map(v.map(([k], i) => [k, i + 1])); by[`${c}#`] = v.length; }
     rankMemo = { year, by }; return rankMemo; };
   function highlightsFor(k) {
-    const out = [], rs = roundsOf(k); if (!rs.length) return out;
+    const raw = field.find((p) => p.key === k)?.rounds || [], out = [], rs = sgRounds(raw); if (!rs.length) return out; // (update 728: Compare's rounds and order)
     const ys = yearsOf(k), last = ys.at(-1), season = rs.filter((r) => yrOf(r) === last), evs = eventsOf(season), sAvg = avgOf(season, tot);
     const ago = (d) => (Date.now() - (Date.parse(String(d).slice(0, 10)) || 0)) / 864e5, recent = (d) => ago(d) <= 21;
     // the last tournament: against the season
@@ -248,10 +249,11 @@ export async function render(main, { previewClient } = {}) {
     let streak = 0; for (let i = rs.length - 1; i >= 0 && tot(rs[i]) > 0; i--) streak++;
     if (streak >= 5) out.push({ id: `st-${k}`, k, kind: "Milestone", score: 6 + streak * 0.2, title: `${streak} rounds in a row gaining strokes`, detail: `${isMe(k) ? "You’ve" : `${firstOf(k)} has`} beaten the tour average every round since ${rs[rs.length - streak].event}`, to: "Stats · Elite stretches", run: () => toStats(k, { view2: "full", year: [], span: 0 }, "Elite Stretches", EX.elite(`When ${isMe(k) ? "do I" : `does ${firstOf(k)}`} play best?`)) });
     // form: the last 12 rounds against the 12 before, and each part of the game
-    if (rs.length >= 24) { const a = rs.slice(-12), b = rs.slice(-24, -12), d = avgOf(a, tot) - avgOf(b, tot);
-      if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last 12 rounds ${sg2(avgOf(a, tot))} against ${sg2(avgOf(b, tot))} in the 12 before`, to: "Compare · Last 12 vs 12 before", run: () => go(`#/comparisons?player=${encodeURIComponent(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
-      const ch = cats.map((c) => [c, avgOf(a, (r) => inCat(r, c)) - avgOf(b, (r) => inCat(r, c))]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
-      for (const [c, dc] of ch.slice(0, 2)) if (Math.abs(dc) >= 0.2) out.push({ id: `cm-${k}-${c}`, k, kind: dc > 0 ? "Trend" : "Slide", score: 4.5 + Math.abs(dc) * 2, title: `${CATN[c]} ${dc > 0 ? "up" : "down"} ${Math.abs(dc).toFixed(2)} a round lately`, detail: `${His(k)} last 12 rounds against the 12 before`, to: `Stats · Focus · ${CATN[c]}`, run: () => toStats(k, { view2: "focus", focusCats: [c], focusPick: c, year: [], span: 0 }, "Where you stand", EX.cat(`${CATN[c]}: what changed?`, c)) }); }
+    if (rs.length >= 24) { const a = roundsFor(raw, { last: 12 }), b = roundsFor(raw, { prev: 12 }), d = perRound(a) - perRound(b); // (update 728: as Compare's Last 12 rounds and The 12 rounds before that)
+      if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last 12 rounds ${sg2(perRound(a))} against ${sg2(perRound(b))} in the 12 before`, to: "Compare · Last 12 vs 12 before", run: () => go(`#/comparisons?player=${encodeURIComponent(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
+      const ch = cats.map((c) => [c, perRound(a, c) - perRound(b, c)]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
+      // (update 728) opens Compare (its Verdict shows each part of the game's difference, the same numbers)
+      for (const [c, dc] of ch.slice(0, 2)) if (Math.abs(dc) >= 0.2) out.push({ id: `cm-${k}-${c}`, k, kind: dc > 0 ? "Trend" : "Slide", score: 4.5 + Math.abs(dc) * 2, title: `${CATN[c]} ${dc > 0 ? "up" : "down"} ${Math.abs(dc).toFixed(2)} a round lately`, detail: `${His(k)} last 12 rounds (${sg2(perRound(a, c))}) against the 12 before (${sg2(perRound(b, c))})`, to: "Compare · Last 12 vs 12 before", run: () => go(`#/comparisons?player=${encodeURIComponent(k)}&pick=win:12`, EX.cmpWin(`${CATN[c]}: what changed?`)) }); }
     // the part of the game costing the most this season
     const weak = cats.map((c) => [c, avgOf(season, (r) => inCat(r, c))]).filter(([, v]) => v != null).sort((x, y) => x[1] - y[1])[0];
     if (weak && weak[1] <= -0.1 && season.length >= 6) out.push({ id: `wk-${k}`, k, kind: "Focus", score: 4 + Math.abs(weak[1]) * 2, title: `${CATN[weak[0]]} is costing ${he(k)} ${Math.abs(weak[1]).toFixed(2)} a round`, detail: `${His(k)} weakest part of the game in ${last}: where, and the drills for it`, to: `Stats · Focus · ${CATN[weak[0]]}`, run: () => toStats(k, { view2: "focus", focusCats: [weak[0]], focusPick: weak[0], year: [last], span: 0 }, "Where you stand", EX.cat(`Where is ${CATN[weak[0]].toLowerCase()} costing strokes?`, weak[0])) });
