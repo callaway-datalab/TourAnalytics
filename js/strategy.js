@@ -300,7 +300,7 @@ export function strategyOf(recs, par, geo = {}) {
     const named = nameAll(cand);
     // (update 719) and the circles themselves apart on the map: overlapping by 2 yds at most (just touching is fine)
     const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); const d = Math.hypot(a.cx - b.cx, a.cy - b.cy), over = (a.ry + b.ry) * geo.ppy - d;
-      return a.k !== b.k && b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n) && over <= 2 * geo.ppy; };
+      return b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n) && over <= 2 * geo.ppy; }; // (update 724: two places can share a name, "long in the rough", when they're apart)
     // (update 618) a place to aim has to be safe to aim at: not a sliver of rough or fairway beside a bunker that only
     // scored well by luck. Within 6 yds of a spot's middle, if a quarter or more of all the misses (any lie) are in a
     // bunker, it can't be the best or second best miss (it can still be the worst)
@@ -315,14 +315,20 @@ export function strategyOf(recs, par, geo = {}) {
     // spot of 9 doesn't beat one of 26 by luck; the tip still says the spot's own average
     const allAvg = mean(missPts.map((p) => sc(p.r))), adj = (g) => (g.n * (g.hi ?? g.avg) + MIN_N * allAvg) / (g.n + MIN_N); // (update 718: on its worst nudge)
     const byAvg = [...named].sort((a, b) => adj(a) - adj(b) || b.n - a.n), pick = [];
-    for (const g of byAvg) { if (pick.length < 2 && risky(g)) continue; if (pick.every((x) => apart(x, g))) pick.push(g); }
-    // (update 614) only two spots with MIN_N: the worst miss from a smaller one (5+ misses, up to 20 yds across), a
-    // different place that's scored worse than the second best
+    // (update 724) the best and 2nd best (safe to aim at, apart); then the worst: the worst-scoring spot of every spot with
+    // MIN_N or more (its average pulled toward every miss's by its size, so 16 misses at 4.81 beats 8 at 4.75), apart from both
+    for (const g of byAvg) { if (pick.length >= 2) break; if (risky(g)) continue; if (pick.every((x) => apart(x, g))) pick.push(g); }
     if (pick.length === 2) {
-      const w = nameAll(gen(5, R_SET)).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => b.avg - a.avg)[0];
+      const adjW = (g) => (g.n * g.avg + MIN_N * allAvg) / (g.n + MIN_N);
+      const pool = [...named, ...(cand.some((g) => g.mem.length < MIN_T) ? [] : nameAll(gen(MIN_N, R_SET)))];
+      let w = pool.filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => adjW(b) - adjW(a) || b.n - a.n)[0];
+      // (update 614) none with MIN_N: a smaller one (5+ misses)
+      if (!w) w = nameAll(gen(5, R_SET)).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => adjW(b) - adjW(a) || b.n - a.n)[0];
       if (w) pick.push(w);
     }
-    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: lab(g.k), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
+    // (update 724) two spots with the same name: each said with how far it is from the pin
+    const labOf = (g) => { const same = pick.filter((x) => x !== g && lab(x.k) === lab(g.k)).length; if (!same) return lab(g.k); const ds = g.mem.map((p) => p.d).filter((v) => v != null); return ds.length ? `${lab(g.k)}, about ${Math.round(mean(ds))} yds from the pin` : lab(g.k); };
+    if (pick.length >= 2) spotOrder = pick.map((g) => ({ ...g, lab: labOf(g), at: (tone) => { const R = g.ry * geo.ppy; return [Math.round(g.cx), Math.round(g.cy), Math.round(R * 10) / 10, tone, Array.from({ length: 24 }, (_, k) => [Math.round(g.cx + R * Math.cos(k * Math.PI / 12)), Math.round(g.cy + R * Math.sin(k * Math.PI / 12))])]; } })); // (update 657: the circle itself (as points, so the map scales and turns it like any outline), no oval: what's drawn is what's counted)
   }
   // (update 723) best, 2nd best and worst always in order of the averages shown: best lowest, each strictly better than the
   // next (one that would show the same average as the one before it is left out)
