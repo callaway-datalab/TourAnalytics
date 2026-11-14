@@ -192,6 +192,13 @@ export function sgDashboard(container, opts) {
   // no comparison dots and no rankings
   let soloTour = false;
   const st = opts.state || {};
+  // (update 726) a question from Home: the filters it needs (season, Focus on a part of the game, a product kind …) and the
+  // section to scroll to; kept 20 s, as the page may be drawn more than once while its data loads
+  try { const pre = JSON.parse(sessionStorage.getItem("ta.statsPreset") || "null");
+    if (pre && Date.now() - (pre.at || 0) < 20000 && !opts.entered && !opts.emptyNote) { Object.assign(st, pre.st || {}); if (pre.st?.year) st.yearStarted = true;
+      if (pre.scroll && !pre.scrolled) { pre.scrolled = true; sessionStorage.setItem("ta.statsPreset", JSON.stringify(pre));
+        let tries = 0; const t = setInterval(() => { tries++; const hs = [...container.querySelectorAll("h3, .fx-eyebrow")].filter((h) => h.textContent.trim().toLowerCase().startsWith(String(pre.scroll).toLowerCase()));
+          if (hs.length) { clearInterval(t); hs[0].scrollIntoView({ behavior: "smooth", block: "start" }); } else if (tries > 40) clearInterval(t); }, 250); } } } catch { /* */ }
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   if (!SPANS.some(([v]) => v === String(st.span ?? 0))) st.span = 0; // (an old "last N rounds" pick)

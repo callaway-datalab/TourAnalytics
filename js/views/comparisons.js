@@ -296,6 +296,9 @@ export async function render(main) {
   function applyPick(p) {
     const m = /^win:(\d+)$/.exec(p);
     if (m) { const n = Number(m[1]); mode = "windows"; sels = [{ id: `windows:prev:${n}`, name: `The ${n} rounds before that`, f: { prev: n }, mode: "windows", values: [`prev:${n}`], color: COLORS[0] }, { id: `windows:last:${n}`, name: `Last ${n} rounds`, f: { last: n }, mode: "windows", values: [`last:${n}`], color: COLORS[1] }]; touched = true; return; }
+    // (update 726) a question from Home: seasons side by side ("years:2025,2026")
+    const ys = /^years:(.+)$/.exec(p);
+    if (ys) { const vals = ys[1].split(",").filter((y) => opts.years.some((o) => String(o.value) === y)); if (vals.length >= 2) { mode = "years"; touched = true; sels = vals.map((y, i) => ({ id: `years:${y}`, name: y, f: { years: [y] }, mode: "years", values: [y], color: COLORS[i % COLORS.length] })); } return; }
     const c = /^cond:(\w+):(.*)$/.exec(p);
     if (!c) return;
     const [, d, v] = c;
