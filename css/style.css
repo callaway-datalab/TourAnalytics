@@ -6796,3 +6796,11 @@ html, body { overflow-x: clip; max-width: 100%; }
 .hl-more > summary { cursor: pointer; font-size: 0.7rem; letter-spacing: 0.16em; color: #8e8e93; font-weight: 800; text-transform: uppercase; margin-bottom: 10px; list-style: none; }
 .hl-more > summary::before { content: "\25B8  "; }
 .hl-more[open] > summary::before { content: "\25BE  "; }
+/* (update 729) Home: the tour and player pills at the top */
+.hl-pills { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; margin: 14px 0 0; align-items: center; }
+.hl-pills[hidden] { display: none; }
+.hl-pills + .hl-pills { margin-top: 8px; }
+.hl-pl { flex: 0 0 auto; font-size: 0.66rem; letter-spacing: 0.14em; color: #8e8e93; font-weight: 800; text-transform: uppercase; margin-right: 2px; min-width: 52px; }
+.hl-pill { flex: 0 0 auto; border: 1px solid #2f2f34; border-radius: 999px; padding: 6px 12px; background: none; color: #c7c7cc; font: inherit; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
+.hl-pill.on { background: #d4b483; color: #111; border-color: #d4b483; font-weight: 800; }
+.hl-pill.hl-add { width: 32px; height: 32px; padding: 0; font-size: 1.1rem; line-height: 1; border-style: dashed; }

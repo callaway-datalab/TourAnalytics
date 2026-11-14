@@ -122,7 +122,7 @@ export async function render(main) {
   const multi = () => inPlay().length > 1;
   const rawOfKey = (k) => (k === player?.key ? data.rounds : others.get(`${k}|${source}`) || []);
   // (update 222) the Tour filter: only the rounds on the tours picked (none picked = every tour), everywhere on the page
-  let tourSel = new Set();
+  let tourSel = new Set(q.get("tour") ? [q.get("tour")] : []); // (update 729: a link can pick the tour, as Home does)
   const tourCache = new Map();
   // (update 244) Leave out: tournaments (a year's playing of one), date ranges and round numbers, taken out of every
   // player's rounds everywhere on the page (every selection, leaderboard, table and report)
