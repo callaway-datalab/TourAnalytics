@@ -134,3 +134,16 @@ html[data-theme="light"] body:has(.td) { background: #f6f1e7; }
 .ah.td .td-tape td { text-align: right; background: none; }
 /* (update 736) the light theme: Cal's button as the one in the top bar (the gold coin, Cal in black) */
 html[data-theme="light"] .ah.td .td-ask .ah-mic { background: radial-gradient(circle at 38% 32%, #ecd3a6, #c7a36c 70%, #a8844f); color: #111; }
+/* (update 737) the main story's bars (tournament by tournament), and bad ranks in red */
+.td-bars { display: block; margin-top: 10px; overflow: visible; }
+.td-bars .td-bar.up { fill: var(--td-up); opacity: 0.55; }
+.td-bars .td-bar.down { fill: var(--td-down); opacity: 0.55; }
+.td-bars .td-bar.hot { opacity: 1; }
+.td-bars .td-bar.gold { fill: var(--td-gold); }
+.td-bars .td-bar.gray { fill: var(--td-mute); opacity: 0.6; }
+.td-bars .td-zero { stroke: var(--td-rule2); }
+.td-bars .td-tx { font: 10px var(--td-sans); fill: var(--td-mute); }
+.td-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font: 600 0.72rem var(--td-sans); color: var(--td-soft); }
+.td-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.td-legend .gold::before { background: var(--td-gold); } .td-legend .gray::before { background: var(--td-mute); }
+.td-box td.r.down { color: var(--td-down); }
