@@ -748,7 +748,7 @@ export async function drawHeat(ctx, course) {
     if (!st.calOn || !calRead || !size.w) return;
     const W = size.w, Hh = size.h;
     calSvg.setAttribute("viewBox", rot ? `0 0 ${Hh} ${W}` : `0 0 ${W} ${Hh}`);
-    const TONE = { good: ["#a3e635", "rgba(163,230,53,0.10)"], ok: ["#ffd60a", "rgba(255,214,10,0.10)"] /* (update 617: yellower) */, bad: ["#ff453a", "rgba(255,69,58,0.10)"] };
+    const TONE = { good: ["#a3e635", "rgba(163,230,53,0.10)"], ok: ["#ffd60a", "rgba(255,214,10,0.10)"] /* (update 617: yellower) */, bad: ["#ff453a", "rgba(255,69,58,0.10)"], layup: ["#bf5af2", "rgba(191,90,242,0.12)"] /* (update 744: the lay-up spot in purple) */ };
     let any = false;
     // (update 614) a smooth closed outline through points (Catmull-Rom as Bezier curves)
     const smooth = (P) => { const n = P.length, g = (i) => P[(i + n) % n]; let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
@@ -756,7 +756,7 @@ export async function drawHeat(ctx, course) {
         d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`; }
       return `${d} Z`; };
     for (const it of calRead.r.items) for (const [x, y, r, tone, hull] of it.at || []) {
-      const [dx, dy] = toDisp(x, y, W, rot), [c, f] = TONE[tone] || TONE.ok;
+      const [dx, dy] = toDisp(x, y, W, rot), [c, f] = TONE[it.k === "layup" ? "layup" : tone] || TONE.ok;
       // (update 595) thinner and dashed, 10% see-through, a faint dark edge under it so it shows on any grass
       // (update 614) the outline round where those shots finished when the build has it (a course built before 614: the circle)
       const shape = (attrs) => (hull?.length >= 3 ? sv("path", { d: smooth(hull.map(([hx, hy]) => toDisp(hx, hy, W, rot))), ...attrs }) : sv("circle", { cx: dx, cy: dy, r, ...attrs }));
@@ -769,7 +769,7 @@ export async function drawHeat(ctx, course) {
       // best miss, Worst miss; a par 5's Shot 2: the lay-up spot too)
       const NAME = { tee: { good: "Aim", bad: "Avoid" }, miss: { good: "Best miss", ok: "2nd best miss", bad: "Worst miss" }, layup: { good: "Lay-up spot" } };
       const seen = new Map();
-      for (const it of calRead.r.items) for (const a of it.at || []) { const nm = NAME[it.k]?.[a[3]] || (it.h && it.h !== "Surprise" ? it.h : null); if (nm && !seen.has(nm)) seen.set(nm, a[3] || "ok"); }
+      for (const it of calRead.r.items) for (const a of it.at || []) { const nm = NAME[it.k]?.[a[3]] || (it.h && it.h !== "Surprise" ? it.h : null); if (nm && !seen.has(nm)) seen.set(nm, it.k === "layup" ? "layup" : a[3] || "ok"); }
       mount(calKey, [...seen].map(([nm, tone]) => el("span", {}, [el("i", { class: `k-${tone}` }), nm])));
       calSvg.style.display = ""; calKey.hidden = !seen.size;
     }

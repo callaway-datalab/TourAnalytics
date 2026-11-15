@@ -6815,3 +6815,12 @@ html, body { overflow-x: clip; max-width: 100%; }
   font: 700 1.25rem/1 var(--font-body); color: var(--ink); }
 .sh-r::after { content: "\203A"; right: 0; margin-left: -28px; justify-content: flex-end; padding-right: 2px; background: linear-gradient(to right, transparent, var(--sh-bg) 60%); }
 .sh-l::before { content: "\2039"; left: 0; margin-right: -28px; justify-content: flex-start; padding-left: 2px; background: linear-gradient(to left, transparent, var(--sh-bg) 60%); }
+.sh-calkey .k-layup { border-color: #bf5af2; background: rgba(191,90,242,0.16); } /* (update 744) */
+
+/* (update 744) Cal's logo a little bigger everywhere: the top bar's coin, Cal's Way card, the chat's header */
+.rail-foot .hdr-icon.callie-link svg, .rail-foot .hdr-icon.callie-link svg.ico-callie { width: 30px !important; height: 30px !important; }
+.cal-read-ava { width: 38px !important; height: 38px !important; }
+.cal-read-ava svg { width: 28px !important; height: 28px !important; }
+.cal-read.compact .cal-read-ava { width: 31px !important; height: 31px !important; } .cal-read.compact .cal-read-ava svg { width: 23px !important; height: 23px !important; }
+.cal-head .cal-ava:not(.cal-ava-walk) { width: 3rem !important; height: 3rem !important; }
+.cal-head .cal-ava svg, .cal-head .cal-ava svg.ico-callie { width: 37px !important; height: 37px !important; }

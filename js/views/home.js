@@ -332,8 +332,9 @@ export async function render(main, { previewClient } = {}) {
       el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, [row(x.neu, x.A, true), row(x.old, x.B, false)])]),
       el("p", { class: "td-note" }, `${x.where[0].toUpperCase()}${x.where.slice(1)}, as the product table on Stats counts it.`), more(h)]), h); };
   const rankBox = (items) => { const rows = [];
-    for (const h of items) for (const f of h.x?.hits || []) { const bad = f.n && f.r > f.n / 2;
-      const tr = el("tr", {}, [el("td", { class: `r${bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${rkName(f.c)[0].toUpperCase()}${rkName(f.c).slice(1)}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v))]);
+    for (const h of items) for (const f of h.x?.hits || []) { const bad = f.n && f.r > f.n / 2, top = f.r <= 20; /* (update 744: the top 20 in green) */
+      const lbl = f.c === "TOTAL" ? "Total" : `${rkName(f.c)[0].toUpperCase()}${rkName(f.c).slice(1)}`; /* (update 744: "Total", not "Strokes gained") */
+      const tr = el("tr", {}, [el("td", { class: `r${top ? " up" : bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${lbl}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v))]);
       tr.dataset.r = String(bad ? 1000 + f.r : f.r);
       rows.push(tap(tr, { run: () => toBoard({ year: [h.x.yr], cats: f.c === "TOTAL" ? [] : [f.c] }, "Rankings", EX.lead(`Who leads in ${rkName(f.c)}?`)) })); } /* (update 737: the leaderboard for that part of the game) */
     rows.sort((a, b) => Number(a.dataset.r) - Number(b.dataset.r));
@@ -401,7 +402,7 @@ export async function render(main, { previewClient } = {}) {
   // a stat over a set of rounds (the whole-round number when there is one, else every part of the game's)
   const obsAvg = (rs, key) => { let v = 0, w = 0, v2 = 0, w2 = 0; for (const r of rs) for (const o of r.obs || []) if (o.k === key) { const ww = o.w || 1; if (o.cat == null) { v += o.v * ww; w += ww; } else { v2 += o.v * ww; w2 += ww; } } return w ? v / w : w2 ? v2 / w2 : null; };
   const fmtStat = (def, v) => (def.pct ? `${(v <= 1.5 ? v * 100 : v).toFixed(1)}%` : `${v.toFixed(def.dp ?? 1)}${def.unit || ""}`);
-  const STAT_KEYS = ["drive", "fwy", "gir", "prox", "ud", "scramble", "putts", "birdie", "make", "threePutt", "bogey", "hitGreen"].filter((k) => STAT_DEFS[k] && STAT_DEFS[k].higher != null);
+  const STAT_KEYS = ["drive", "fwy", "gir", "ud", "scramble", "putts", "birdie", "threePutt", "bogey"] /* (update 744: none that needs a distance to mean anything: proximity, made putts, hit green, pin high, on line) */.filter((k) => STAT_DEFS[k] && STAT_DEFS[k].higher != null);
   const CAT_WHO = { OTT: "driver of the ball", APP: "iron player", ARG: "short-game player", PUTT: "putter" };
   // (update 740) evergreen stories about a player, rotated day to day: their weapon, how steady they are against the tour,
   // what drives their good weeks, how far they are from the leader, where they rank in a stat, and the year on year gain
@@ -595,14 +596,66 @@ export async function render(main, { previewClient } = {}) {
       const ss = [...secs].filter(([, v]) => v[1] >= 8).map(([nm2, v]) => ({ nm: nm2, v: v[0] / v[1], n: v[1] })).sort((a, b) => a.v - b.v);
       if (ss.length >= 3) side.push({ h: Number(h), par, best: ss[0], worst: ss.at(-1), spread: ss.at(-1).v - ss[0].v }); }
     fw.sort((a, b) => b.pen - a.pen); side.sort((a, b) => b.spread - a.spread);
-    upHoles = { id: c.id, holes, fw, side }; drawFeed(collect()); }
+    upHoles = { id: c.id, holes, fw, side }; drawFeed(collect());
+    loadUpRaw(c).catch((e) => console.warn("course shots", e)); }
+  // (update 744) the course's own shots (every player, hole, pin and round on record there): how often the field birdies
+  // and bogeys each hole (the attack / defend index), what the top 10 finishers did best, which approach distances come up
+  // more than in a usual week, and each pin's costliest miss (where, from which lie, after which shot). Not on phones.
+  let upRaw = null;
+  async function loadUpRaw(c) {
+    if (!c.rawChunks) return; const CH = await import("../courseHeat.js"); if (CH.LOW_MEM) return;
+    const { loadRaw } = await import("../courseRaw.js"); const rows = await loadRaw(c); if (!rows?.length) return; upRawFrom(c, rows, CH); }
+  function upRawFrom(c, rows, CH) {
+    const num = (v) => (v == null || v === "" ? null : Number(v));
+    const trails = new Map(), teeXY = new Map(), pinXY = new Map(), greens = [];
+    for (const r of rows) { const h = num(r[6]), st = num(r[10]), x = num(r[13]), y = num(r[14]); if (!h || st == null) continue;
+      const pid = String(r[8] ?? "1").trim() || "1", who = r[4] != null && r[4] !== "" ? r[4] : r[3], lie = CH.lieName(r[9]) || "other";
+      const q = { h, st, par: num(r[7]), pid, who, yr: String(r[0] ?? ""), rd: String(r[5] ?? ""), lie, x, y, v: num(r[15]), d: num(r[18]) };
+      if (lie === "green" && q.v != null) greens.push(q.v);
+      const tk = `${h}|${who}|${q.yr}|${q.rd}`; let T = trails.get(tk); if (!T) { T = { h, pid, who, yr: q.yr, rd: q.rd, par: q.par, qs: [], s: null }; trails.set(tk, T); } T.qs.push(q);
+      if (num(r[12]) === 1) { const sf = num(r[11]); T.s = sf != null ? Math.round(sf) : q.par ? st - q.par : null; }
+      if (st === 1 && x != null) { const a = teeXY.get(h) || teeXY.set(h, [0, 0, 0]).get(h); a[0] += x; a[1] += y; a[2]++; }
+      const px = num(r[16]), py = num(r[17]); if (px != null && py != null) { const a = pinXY.get(`${h}|${pid}`) || pinXY.set(`${h}|${pid}`, [0, 0, 0]).get(`${h}|${pid}`); a[0] += px; a[1] += py; a[2]++; } }
+    greens.sort((a, b) => a - b); const toGo = greens.length ? greens[Math.floor(greens.length / 2)] < 2.6 : true;
+    const T = [...trails.values()].filter((t) => t.s != null); for (const t of T) t.qs.sort((a, b) => a.st - b.st);
+    // each hole: birdie (or better) and bogey (or worse) rates; the attack / defend index (birdies per bogey)
+    const byH = new Map(); for (const t of T) { const o = byH.get(t.h) || byH.set(t.h, { h: t.h, par: t.par, n: 0, bird: 0, bog: 0, sum: 0 }).get(t.h); o.n++; o.sum += t.s; if (t.s <= -1) o.bird++; if (t.s >= 1) o.bog++; }
+    const holesR = [...byH.values()].filter((o) => o.n >= 40).map((o) => ({ ...o, b: o.bird / o.n, g: o.bog / o.n, avg: o.sum / o.n, idx: (o.bird / o.n) / Math.max(0.01, o.bog / o.n) }));
+    // the top 10 each year (of those who played every round), against the rest: by hole and by part of the game
+    const tot = new Map(); for (const t of T) { const k = `${t.who}|${t.yr}`, o = tot.get(k) || tot.set(k, { who: t.who, yr: t.yr, s: 0, rds: new Set(), holes: 0 }).get(k); o.s += t.s; o.rds.add(t.rd); o.holes++; }
+    const top = new Set(); const byYr = new Map(); for (const o of tot.values()) (byYr.get(o.yr) || byYr.set(o.yr, []).get(o.yr)).push(o);
+    for (const list of byYr.values()) { const mx = Math.max(...list.map((o) => o.rds.size)); list.filter((o) => o.rds.size === mx && o.holes >= mx * 18 * 0.9).sort((a, b) => a.s - b.s).slice(0, 10).forEach((o) => top.add(`${o.who}|${o.yr}`)); }
+    const isTop = (t) => top.has(`${t.who}|${t.yr}`);
+    const hEdge = new Map(); for (const t of T) { const o = hEdge.get(t.h) || hEdge.set(t.h, [0, 0, 0, 0]).get(t.h); if (isTop(t)) { o[0] += t.s; o[1]++; } else { o[2] += t.s; o[3]++; } }
+    const edges = [...hEdge].filter(([, o]) => o[1] >= 10 && o[3] >= 30).map(([h, o]) => ({ h, d: o[0] / o[1] - o[2] / o[3] })).sort((a, b) => a.d - b.d);
+    const togo = (q) => (q.v == null ? null : toGo ? q.v : q.v - (q.st - 1));
+    const catOfQ = (q) => (q.lie === "green" ? "PUTT" : q.st === 1 && (q.par || 4) >= 4 ? "OTT" : q.d != null && q.d <= 30 ? "ARG" : "APP");
+    const cs = { top: { OTT: 0, APP: 0, ARG: 0, PUTT: 0, rds: new Set() }, rest: { OTT: 0, APP: 0, ARG: 0, PUTT: 0, rds: new Set() } };
+    for (const t of T) { const G = isTop(t) ? cs.top : cs.rest; G.rds.add(`${t.who}|${t.yr}|${t.rd}`);
+      for (let i = 0; i < t.qs.length; i++) { const q = t.qs[i], a = togo(q); if (a == null) continue; const nx = t.qs[i + 1], b = nx ? togo(nx) : 0; if (b == null) continue; G[catOfQ(q)] += a - b - 1; } }
+    const catEdge = cats.map((c0) => [c0, cs.top[c0] / Math.max(1, cs.top.rds.size) - cs.rest[c0] / Math.max(1, cs.rest.rds.size)]).sort((a, b) => b[1] - a[1]);
+    // approach distances here (25-yd bands, 50-250 yds)
+    const band = (d) => (d == null || d < 50 || d >= 250 ? null : Math.floor(d / 25) * 25), mixH = new Map(); let nA = 0;
+    for (const t of T) for (const q of t.qs) if (catOfQ(q) === "APP") { const b = band(q.d); if (b == null) continue; mixH.set(b, (mixH.get(b) || 0) + 1); nA++; }
+    // each pin's costliest miss: where the approach (shot 1 on a par 3, 2 on a par 4, 3 on a par 5) finished off the green
+    // within 30 yds, by side of the pin (the line from the tee) and lie, and the hole's average score from there
+    const SEC8 = ["long", "long-right", "right", "short-right", "short", "short-left", "left", "long-left"], grp = new Map();
+    for (const t of T) { const k0 = Math.max(1, (t.par || 4) - 2), nx = t.qs.find((q) => q.st === k0 + 1); if (!nx || nx.lie === "green" || nx.d == null || nx.d > 30 || nx.x == null) continue;
+      const tee = teeXY.get(t.h), pin = pinXY.get(`${t.h}|${t.pid}`); if (!tee || !pin) continue;
+      const tx = tee[0] / tee[2], ty = tee[1] / tee[2], px = pin[0] / pin[2], py = pin[1] / pin[2], lx = px - tx, ly = py - ty, ll = Math.hypot(lx, ly); if (!ll) continue;
+      const dx = nx.x - px, dy = nx.y - py, ang = Math.atan2((lx * dy - ly * dx) / ll, (dx * lx + dy * ly) / ll) * 180 / Math.PI, sec = SEC8[((Math.round(ang / 45) % 8) + 8) % 8];
+      const kk = `${t.h}|${t.pid}|${sec}|${nx.lie}`, g = grp.get(kk) || grp.set(kk, { h: t.h, pid: t.pid, par: t.par, k: k0, sec, lie: nx.lie, n: 0, s: 0 }).get(kk); g.n++; g.s += t.s; }
+    const byPin = new Map(); for (const g of grp.values()) if (g.n >= 8) (byPin.get(`${g.h}|${g.pid}`) || byPin.set(`${g.h}|${g.pid}`, []).get(`${g.h}|${g.pid}`)).push({ ...g, avg: g.s / g.n });
+    const misses = [...byPin.values()].filter((l) => l.length >= 2).map((l) => { l.sort((a, b) => a.avg - b.avg); return { best: l[0], worst: l.at(-1), spread: l.at(-1).avg - l[0].avg }; }).sort((a, b) => b.spread - a.spread);
+    upRaw = { id: c.id, holesR, edges, catEdge, mixH, nA, misses, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
+  }
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
     const c = heat?.find((h) => (h.events || []).some((e) => U.re.test(e.name)) && !U.not.test(h.name)) || heat?.find((h) => U.course.test(h.name) && !U.not.test(h.name));
     out.push({ id: "up-strat", k: null, kind: "Course", score: ROLE === "caddy" ? 8.8 : 5.2, title: `How to play ${c?.name || U.name}`, detail: c ? `Cal’s targets for every hole: where to aim off the tee and where to miss the green, from every shot the field has hit there` : `Strategy maps and course insights for ${U.name}`,
       to: c ? "Course Prep · Strategy Maps" : "Course Prep", run: () => (c ? toHole(c.id, 1, EX.course(`How should I play ${U.name}?`)) : go("#/course-prep", EX.course(`How should I play ${U.name}?`))) });
     // (update 737) the course's key holes, from the strategy maps' scoring (every shot the field has hit there)
-    if (c && upHoles?.id === c.id && upHoles.holes.length >= 9) { const H = upHoles.holes, pm = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`, hn = (x) => `No. ${x.h} (par ${x.par}${x.yds ? `, ${x.yds} yds` : ""})`;
+    if (c && upHoles?.id === c.id && upHoles.holes.length >= 9 && upRaw?.id !== c.id) { /* (update 744: the shots' own read replaces this when it's loaded) */ const H = upHoles.holes, pm = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`, hn = (x) => `No. ${x.h} (par ${x.par}${x.yds ? `, ${x.yds} yds` : ""})`;
       const hard = [...H].sort((a, b) => b.toPar - a.toPar), easy = [...H].sort((a, b) => a.toPar - b.toPar);
       out.push({ id: "up-hard", k: null, kind: "Course", score: 4.9, title: `The hardest hole at ${c.name}: ${hn(hard[0])}, ${pm(hard[0].toPar)} against par`, detail: `Then No. ${hard[1].h} (${pm(hard[1].toPar)}) and No. ${hard[2].h} (${pm(hard[2].toPar)}) · against par, from every shot the field has hit there`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, hard[0].h, EX.hole(`How should I play hole ${hard[0].h}?`)) });
@@ -617,8 +670,24 @@ export async function render(main, { previewClient } = {}) {
       if (F.length) out.push({ id: "up-fw", k: null, kind: "Course", score: 4.75, title: `Find the fairway on No. ${F[0].h}: missing it costs ${pm2(F[0].pen)} strokes`, detail: `${F.length > 1 ? `Then No. ${F[1].h} (${pm2(F[1].pen)})${F[2] ? ` and No. ${F[2].h} (${pm2(F[2].pen)})` : ""} · ` : ""}rough and bunkers against the fairway from the same distance, 100+ yds out, the field's scoring`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, F[0].h, EX.hole(`Where should I aim off the tee on hole ${F[0].h}?`)) });
       const Sd = upHoles.side.filter((x) => x.spread >= 0.15);
-      if (Sd.length) { const x = Sd[0]; out.push({ id: "up-side", k: null, kind: "Course", score: 4.72, title: `The costliest miss: ${x.worst.nm} of No. ${x.h}`, detail: `Miss ${x.best.nm} instead (${x.best.v.toFixed(2)} to finish against ${x.worst.v.toFixed(2)}): ${x.spread.toFixed(2)} strokes better${Sd[1] ? ` · also No. ${Sd[1].h}: ${Sd[1].best.nm}, never ${Sd[1].worst.nm} (${Sd[1].spread.toFixed(2)})` : ""} · within 30 yds of the pin`,
+      if (Sd.length && upRaw?.id !== c.id) { const x = Sd[0]; out.push({ id: "up-side", k: null, kind: "Course", score: 4.72, title: `The costliest miss: ${x.worst.nm} of No. ${x.h}`, detail: `Miss ${x.best.nm} instead (${x.best.v.toFixed(2)} to finish against ${x.worst.v.toFixed(2)}): ${x.spread.toFixed(2)} strokes better${Sd[1] ? ` · also No. ${Sd[1].h}: ${Sd[1].best.nm}, never ${Sd[1].worst.nm} (${Sd[1].spread.toFixed(2)})` : ""} · within 30 yds of the pin`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, x.h, EX.hole(`Where should I miss on hole ${x.h}?`)) }); } }
+    if (c && upRaw?.id === c.id) { const R0 = upRaw, pc = (v) => `${Math.round(v * 100)}%`, pm3 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+      const H = [...R0.holesR].sort((a, b) => b.idx - a.idx), atk = H[0], dfd = H.at(-1);
+      if (H.length >= 9) { out.push({ id: "up-attack", k: null, kind: "Course", score: 4.95, title: `Attack No. ${atk.h} (par ${atk.par}): ${pc(atk.b)} birdies against ${pc(atk.g)} bogeys`, detail: `The most birdies for every bogey on the course (${atk.idx.toFixed(1)} to 1)${H[1] ? `; then No. ${H[1].h} (${H[1].idx.toFixed(1)})` : ""} · ${atk.n} holes played there`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, atk.h, EX.hole(`How should I play hole ${atk.h}?`)) });
+        out.push({ id: "up-defend", k: null, kind: "Course", score: 4.92, title: `Defend No. ${dfd.h} (par ${dfd.par}): ${pc(dfd.g)} bogeys against ${pc(dfd.b)} birdies`, detail: `The fewest birdies for every bogey (${dfd.idx.toFixed(2)} to 1)${H.at(-2) ? `; then No. ${H.at(-2).h} (${H.at(-2).idx.toFixed(2)})` : ""} · par is a good score here`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, dfd.h, EX.hole(`How should I play hole ${dfd.h}?`)) }); }
+      if (R0.edges.length >= 3) { const e = R0.edges[0], ce = R0.catEdge[0];
+        out.push({ id: "up-top10", k: null, kind: "Course", score: 4.85, title: `Where the top 10 win it: No. ${e.h}, ${pm3(e.d)} a round against the field`, detail: `The top 10 finishers' biggest edge on a hole${R0.edges[1] ? ` (then No. ${R0.edges[1].h}, ${pm3(R0.edges[1].d)})` : ""} · by part of the game, ${CATN[ce[0]].toLowerCase()}: ${pm3(ce[1])} strokes a round better than the rest`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, e.h, EX.hole(`How should I play hole ${e.h}?`)) }); }
+      // approach distances: here against the shown players' own season (their usual week)
+      if (R0.nA >= 200) { const usual = new Map(); let nU = 0; for (const k of shownKeys()) for (const r of (gearData.get(k) || []).filter((r0) => yrOf(r0) === seasonYr())) for (const s0 of r.shots) if (s0.cat === "APP" && s0.dist) { const m = /(\d+)\s*-\s*(\d+)/.exec(s0.dist); if (!m) continue; const lo = Number(m[1]); if (lo < 50 || lo >= 250) continue; const b = Math.floor(lo / 25) * 25; usual.set(b, (usual.get(b) || 0) + 1); nU++; }
+        if (nU >= 200) { const r1 = [...R0.mixH].map(([b, n]) => ({ b, here: n / R0.nA, usual: (usual.get(b) || 0) / nU })).filter((x) => x.here >= 0.08 && x.usual > 0).map((x) => ({ ...x, ratio: x.here / x.usual })).sort((a, b) => b.ratio - a.ratio)[0];
+          if (r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.b}-${r1.b + 25} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.here)} of approach shots at ${c.name}, against ${pc(r1.usual)} in a usual week (your players' rounds this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
+      // each pin's costliest miss, described in full
+      const M = R0.misses.filter((x) => x.spread >= 0.15);
+      if (M.length) { const x = M[0], w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "on the fairway / fringe" : `in the ${l}`);
+        out.push({ id: "up-side", k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : ""}: miss ${w.sec} ${lieW(w.lie)} and it plays ${pm3(w.avg)} to par`, detail: `When ${shotN} misses the green within 30 yds. Miss ${b.sec} ${lieW(b.lie)} instead: ${pm3(b.avg)} to par, ${x.spread.toFixed(2)} strokes better (${w.n} and ${b.n} players)${M[1] ? ` · also No. ${M[1].worst.h}: never ${M[1].worst.sec} ${lieW(M[1].worst.lie)} (${pm3(M[1].worst.avg)})` : ""}`,
+          to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, w.h, EX.hole(`Where should I miss on hole ${w.h}?`)) }); }
+    }
     // course form: the best there over the years (on the tour picked)
     const hist = field.map((p) => { const rs = sgRounds(rawOf(p)).filter(isU); return rs.length ? { k: p.key, rs, v: perRound(rs), yrs: new Set(rs.map(yrOf)).size } : null; }).filter(Boolean);
     const horses = hist.filter((x) => x.rs.length >= 8).sort((a, b) => b.v - a.v).slice(0, 3);
@@ -762,7 +831,7 @@ export async function render(main, { previewClient } = {}) {
   }
   // (the data, once everything above is defined)
   // (the data, once everything above is defined)
-  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setHeat: (h) => { heat = h; }, upFromData, setOwn: (k, rs) => { ownP = { key: k, name: "Charlie Test", rounds: rs, own: true }; labels.set(k, "Charlie Test"); gearData.set(k, rs); gearP.set(k, Promise.resolve()); keys = [k, ...keys]; }, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who: [...picked][0] || null, picked: [...picked] }) }); // (tests only)
+  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setHeat: (h) => { heat = h; }, upFromData, upRawFrom: async (c, rows) => upRawFrom(c, rows, await import("../courseHeat.js")), setOwn: (k, rs) => { ownP = { key: k, name: "Charlie Test", rounds: rs, own: true }; labels.set(k, "Charlie Test"); gearData.set(k, rs); gearP.set(k, Promise.resolve()); keys = [k, ...keys]; }, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who: [...picked][0] || null, picked: [...picked] }) }); // (tests only)
   try {
     if (selfKey) keys = [selfKey];
     else {
