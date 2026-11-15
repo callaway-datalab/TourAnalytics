@@ -4,7 +4,7 @@
 // name: Front / Back with Left / Center / Right, or a name the admin gave it), and links to that hole and pin on the map.
 import { el, icon } from "./ui.js";
 
-export const BRAND = "Cal’s Strategy", TAG = "AI CADDIE"; // (update 602: was "Cal's Read")
+export const BRAND = "Cal’s Way", TAG = "AI CADDIE"; // (update 741: was "Cal’s Strategy"; 602: was "Cal's Read")
 export const KIND = { tee: "Off the tee", miss: "Approach", surprise: "Approach", layup: "Second shot" };
 // (update 595) each tip's header: its part of the hole and what it is ("Off the tee \u2022 Aim"); a course built before 595
 // has no h on its tips: worked out from the words

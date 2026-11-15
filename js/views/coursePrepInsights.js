@@ -143,7 +143,7 @@ function strategy(I, holeNums, toMap, meta, data, prof = null) {
     return { h, par: I.holes[h]?.par, pins, all: S["*"] };
   }).filter((x) => x.pins.length || x.all?.items?.length);
   if (!rows.length) return null;
-  const kids = [el("div", { class: "cal-read-h ci2-sg-head" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("robot")),
+  const kids = [el("div", { class: "cal-read-h ci2-sg-head" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("calface")),
     el("div", { class: "cal-read-t" }, [el("strong", {}, BRAND), el("span", {}, "Where to aim and where to miss, hole by hole and pin by pin, from every shot played here")]), el("span", { class: "cal-read-tag" }, TAG)])];
   kids.push(el("div", { class: "ci2-sg-holes" }, rows.map((x) => {
     const openBtn = (pin) => { const b = el("button", { type: "button", class: "btn ghost small cal-read-open" }, pin ? "Open the map: this pin, Cal\u2019s spots circled" : "Open the map"); b.addEventListener("click", () => toMap(x.h, pin)); return b; };
@@ -154,7 +154,7 @@ function strategy(I, holeNums, toMap, meta, data, prof = null) {
       el("summary", {}, [el("strong", {}, `Hole ${x.h}`), el("span", { class: "muted small" }, ` Par ${x.par ?? "\u2014"} \u00b7 ${pinTxt}`)]),
       el("div", { class: "ci2-sg-pins" }, cards)]);
   })));
-  return sec("CAL\u2019S STRATEGY", kids, `Each pin's own read (a pin with too few samples isn't shown; a hole with none: every pin together). A tip needs at least 8 samples (past shots from that spot); under 15 it says so. Scores are the hole's average after each result. Ask Cal too: \u201chow should I play hole 2 here, back left pin?\u201d`, "ci2-calread");
+  return sec("CAL\u2019S WAY", kids, `Each pin's own read (a pin with too few samples isn't shown; a hole with none: every pin together). A tip needs at least 8 samples (past shots from that spot); under 15 it says so. Scores are the hole's average after each result. Ask Cal too: \u201chow should I play hole 2 here, back left pin?\u201d`, "ci2-calread");
 }
 
 /* ---------------- every hole as a tile; one open with its numbers ---------------- */
