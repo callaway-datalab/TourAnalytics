@@ -130,7 +130,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // every other tour: the last 12 rounds against the 12 before
   const unitW = byEvent ? "events" : "rounds";
   const units = byEvent ? (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); } return [...m.values()]; })() : series.map((q) => [q]);
-  const half = Math.min(byEvent ? 5 : 20, /* (update 663: 20 rounds) */ /* (update 606: the DP World Tour: 5 events) */ Math.floor(units.length / 2));
+  const half = Math.min(byEvent ? 3 : 12, /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */ Math.floor(units.length / 2));
   const late = units.slice(units.length - half).flat(), early = units.slice(units.length - 2 * half, units.length - half).flat(); // the last 12 vs the 12 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= (byEvent ? 1 : 2) ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
@@ -141,7 +141,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   });
   // (update 556) Better / Worse in "Where the strokes come from": how far the last 12 rounds have moved the average: the
   // whole period against the whole period without them
-  const shiftN = 20 /* (update 663) */, restS = series.slice(0, Math.max(0, series.length - shiftN));
+  const shiftN = 12 /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */, restS = series.slice(0, Math.max(0, series.length - shiftN));
   const catShift = series.length > shiftN && restS.length >= 3 ? cats.map((k) => { const a1 = mean(series.map((q) => q.byCat[k])), b1 = mean(restS.map((q) => q.byCat[k])); return { cat: k, all: a1, rest: b1, change: a1 != null && b1 != null ? a1 - b1 : null }; }) : null;
   const shiftSpan = catShift ? { n: shiftN, last: span(series.slice(-shiftN)), all: span(series) } : null;
   // (update 547) the best and toughest EVENTS (strokes gained a round in each tournament), not single rounds
@@ -355,7 +355,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     // (nobody else has it, e.g. a player's own report has no one else's distances: no rank)
     const rank = def.higher == null || !vals.length ? null : 1 + vals.filter((v) => better(v, value)).length;
     // the last 10 rounds (or events) against the 10 before, pooled
-    const n = Math.min(20, Math.floor(mineK.length / 2)); // (update 663)
+    const n = Math.min(12, Math.floor(mineK.length / 2)); /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */
     const last = n >= 2 ? statAgg(mineK.slice(-n), !!keep).value : null, prev = n >= 2 ? statAgg(mineK.slice(-2 * n, -n), !!keep).value : null;
     // its value in each category it has (Hit Green %: Approach and Around-the-Green)
     const byCat = keep ? [] : CATEGORIES.map(([c, name]) => { const rs = mineK.map((rd) => ({ ...rd, shots: rd.shots.filter((o) => o.cat === c) })); const v = statAgg(rs, true).value; return v == null ? null : { cat: c, name, value: v }; }).filter(Boolean);
@@ -821,7 +821,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(fmtSG(hi), M, Y(hi) + 5, { size: 6.5, color: P.faint }); d.text(fmtSG(lo), M, Y(lo), { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
-    d.polyline(ma(vals, isDP ? 5 : 20 /* (update 663) */).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
+    d.polyline(ma(vals, isDP ? 3 : 12 /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
     if (CMP) {
       // (update 694) a dashed line where each season starts, the season's name at its top, and its average as a dotted line across it

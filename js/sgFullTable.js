@@ -96,7 +96,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
   const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   // (update 677) the DP World Tour: by event, the last 5 against the 5 before (each event's rows pooled)
   const tU = S.eventMode ? (() => { const m = new Map(); for (const rd of ordered) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } return [...m.values()]; })() : ordered.map((rd) => [rd]);
-  const tn = Math.min(S.eventMode ? 5 : 20, Math.floor(tU.length / 2)), tMin = S.eventMode ? 1 : 3; // (update 663: 20 against 20)
+  const tn = Math.min(S.eventMode ? 3 : 12, Math.floor(tU.length / 2)), tMin = S.eventMode ? 1 : 3; /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */
   const tLast = tn >= tMin ? tU.slice(-tn).flat() : [], tPrev = tn >= tMin ? tU.slice(-2 * tn, -tn).flat() : [];
   const lastV = tn >= tMin ? S.rowVals(tLast, cat) : null, prevV = tn >= tMin ? S.rowVals(tPrev, cat) : null;
   // best round: the best single-round value (each round on its own)

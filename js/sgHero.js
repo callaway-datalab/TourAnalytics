@@ -495,7 +495,7 @@ export function rollingOnly(S, ordered, { all = false } = {}) {
 }
 // (update 667) the graph starts once there's a full Trend's worth: 20 rounds (the DP World Tour: 5 events)
 const evKeyOf = (rd) => `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`;
-const fullBy = (S, rs) => (S.eventView ? new Set(rs.map(evKeyOf)).size >= 5 : rs.length >= 20);
+const fullBy = (S, rs) => (S.eventView ? new Set(rs.map(evKeyOf)).size >= 3 : rs.length >= 12); /* (update 734: a Form's worth: 12 rounds, 3 events) */
 export function rankHistory(S, ordered, slicedField, now, { all = false } = {}) {
   const dk = (d) => String(d || "");
   const ranked = S.rankedField(slicedField);
@@ -540,7 +540,7 @@ export function rankChart(S, canvas, labels, hist) {
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "rgba(212,180,131,0.35)"); grad.addColorStop(1, "rgba(212,180,131,0)");
   const ranks = hist.map((x) => x.rank), worst = Math.max(...ranks);
-  return new Chart((canvas.classList.add("cjs"), canvas), {
+  return new Chart((window.taThemeCharts?.(), canvas.classList.add("cjs"), canvas), {
     type: "line",
     data: { labels, datasets: [{ data: ranks, borderColor: "#d4b483", backgroundColor: grad, fill: "end", borderWidth: 2.4, stepped: false, tension: 0.25,
       pointRadius: ranks.map((_, i) => (i === ranks.length - 1 ? 3.5 : 0)), pointBackgroundColor: "#f3dfbd", pointHoverRadius: 4 }] },
@@ -556,7 +556,7 @@ export function heroChart(S, canvas, labels, vals) {
   const ctx = canvas.getContext("2d"), h = canvas.parentNode?.clientHeight || 180;
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "rgba(212,180,131,0.45)"); grad.addColorStop(1, "rgba(212,180,131,0)");
-  return new Chart((canvas.classList.add("cjs"), canvas), {
+  return new Chart((window.taThemeCharts?.(), canvas.classList.add("cjs"), canvas), {
     type: "line",
     data: { labels, datasets: [{ data: vals, borderColor: "#d4b483", backgroundColor: grad, fill: S.isSG() ? "origin" : "start", borderWidth: 2.4, tension: 0.25,
       pointRadius: vals.map((_, i) => (i === vals.length - 1 ? 3.5 : 0)), pointBackgroundColor: "#f3dfbd", pointHoverRadius: 4 }] },

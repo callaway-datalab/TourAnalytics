@@ -216,19 +216,20 @@ export function tourBlocks(S, slicedField) {
   }
 
   // 2. hot and cold: the last 12 rounds against the 12 before them
-  const series = (p) => [...p.rounds].filter((rd) => !sg || !rd.eventLevel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const series = (p) => [...p.rounds].filter((rd) => !sg || !rd.eventLevel || S.eventMode).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   {
     const form = P.map((p) => {
-      const rs = series(p).filter((rd) => S.metric([rd]) != null);
-      if (rs.length < 40) return null; // (update 663: the last 20 against the 20 before)
-      const last = S.metric(rs.slice(-20)), before = S.metric(rs.slice(-40, -20));
+      // (update 734) Form's stretches: the last 12 rounds against the 12 before (the DP World Tour: 3 events against 3)
+      const rs = series(p).filter((rd) => S.metric([rd]) != null), fu = formUnits(S, rs), hn = S.eventMode ? 3 : 12;
+      if (fu.length < 2 * hn) return null;
+      const last = S.metric(fu.slice(-hn).flat()), before = S.metric(fu.slice(-2 * hn, -hn).flat());
       return last == null || before == null ? null : { p, last, before, ch: last - before };
     }).filter(Boolean);
     if (form.length >= 4) {
       const up = (x) => (S.def.higher === false ? -x.ch : x.ch); // how much better (or just higher, when neither is better)
       const hot = form.filter((x) => up(x) > 0).sort((a, b) => up(b) - up(a)).slice(0, 5), cold = form.filter((x) => up(x) < 0).sort((a, b) => up(a) - up(b)).slice(0, 5);
       const cls = (ch) => { const g = good(ch); return g == null ? "" : g ? "pos" : "neg"; };
-      const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${S.fmtV(x.last)} last 20, ${S.fmtV(x.before)} previous 20`)]), el("strong", { class: `ti-v ${cls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${S.fmtDelta(x.ch)}`)]))) : el("p", { class: "muted small" }, "No one."));
+      const list = (xs) => (xs.length ? el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, `${S.fmtV(x.last)} last ${S.eventMode ? "3 events" : 12}, ${S.fmtV(x.before)} previous ${S.eventMode ? "3" : 12}`)]), el("strong", { class: `ti-v ${cls(x.ch)}` }, `${x.ch >= 0 ? "\u25B2" : "\u25BC"} ${S.fmtDelta(x.ch)}`)]))) : el("p", { class: "muted small" }, "No one."));
       blocks.push(S.panelBox("Hot & Cold", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, S.def.higher == null ? "Going up" : "Heating up"), list(hot)]), el("div", {}, [el("p", { class: "ti-col-title" }, S.def.higher == null ? "Going down" : "Cooling off"), list(cold)])])]));
     }
   }

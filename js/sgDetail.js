@@ -95,9 +95,11 @@ export function statSummary(S, mine, slicedField) {
       if (ds.length > 1) lines.push(`Best from ${ds[0].label} (${S.fmtV(ds[0].value)}, ${Math.round(ds[0].w)} attempts); lowest from ${ds[ds.length - 1].label} (${S.fmtV(ds[ds.length - 1].value)}, ${Math.round(ds[ds.length - 1].w)} attempts).`);
     }
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const n = Math.min(20, Math.floor(ordered.length / 2)); // (update 663: 20 against 20)
-    if (n >= 2) {
-      const last = S.metric(ordered.slice(-n)), prev = S.metric(ordered.slice(-2 * n, -n));
+    /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */
+    const uOf = S.eventMode ? (() => { const m = new Map(); for (const rd of ordered) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } return [...m.values()]; })() : ordered.map((rd) => [rd]);
+    const n = Math.min(S.eventMode ? 3 : 12, Math.floor(uOf.length / 2));
+    if (n >= (S.eventMode ? 1 : 2)) {
+      const last = S.metric(uOf.slice(-n).flat()), prev = S.metric(uOf.slice(-2 * n, -n).flat());
       if (last != null && prev != null) {
         const steady = Math.abs(last - prev) < S.steadyBand(prev), b = better(last, prev);
         lines.push(steady ? `Steady: ${S.fmtV(last)} over the last ${S.rw(n)}, about the same as the ${n} before.`

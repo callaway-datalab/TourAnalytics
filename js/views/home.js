@@ -34,7 +34,7 @@ export async function render(main, { previewClient } = {}) {
   if (team.isTeam) labels = teamLabels(team.teamAccess);
   const myName = plainName(previewClient?.label || state.profile?.name || state.user?.displayName || "");
   if (selfKey) labels = new Map([[selfKey, myName || "You"]]);
-  const nameOf = (k) => plainName(labels.get(k) || String(k || "").replace(/^c_/, ""));
+  const nameOf = (k) => plainName(labels.get(k) || (typeof field !== "undefined" && field.find?.((p) => p.key === k)?.name) || String(k || "").replace(/^c_/, "")); /* (update 734: the field's full name when there's no label) */
   const firstOf = (k) => String(nameOf(k)).split(" ")[0] || "them";
   let focus = selfKey || (teamKeys.length === 1 ? teamKeys[0] : null);
   const isMe = (k) => !!selfKey && k === selfKey;
@@ -186,7 +186,7 @@ export async function render(main, { previewClient } = {}) {
   // for each kind of highlight, filled in with the numbers. Colors: css/daily.css (dark, or light with the site's theme).
   const asked = el("details", { class: "hl-more td-asked" }, [el("summary", {}, "Ask Cal a question"), tabBar, list]);
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  const edition = el("span", {}, ""), nextLine = el("span", {}, ""), roleLbl = el("span", { class: "td-top-r" }, "");
+  const edition = el("span", {}, ""), nextLine = el("a", { class: "td-live", href: "#/live", title: "Open the Event Feed" }, ""), /* (update 734: this week’s event: a link to the Event Feed) */ roleLbl = el("span", { class: "td-top-r" }, "");
   mount(root, [
     el("div", { class: "td-top" }, [el("span", {}, `Good ${tod}${first ? `, ${first}` : ""}`), roleLbl]),
     el("header", { class: "td-mast" }, el("h1", {}, ["Tour Analytics ", el("i", {}, "Daily")])),
@@ -237,10 +237,10 @@ export async function render(main, { previewClient } = {}) {
   function dress(h) {
     const k = h.k, x = h.x || {}, S = k ? sur(k) : "", me = k && isMe(k), t = h.id.split("-")[0];
     const o = { kick: h.kind, hl: h.title, deck: h.detail || "", num: null, nc: "", cap: "" };
-    if (t === "ev") { o.kick = x.best ? "Milestone" : x.worst ? "Rough week" : "Result"; o.hl = me ? h.title : x.best ? `${S} posts the best week of ${x.yr} at ${x.ev}` : x.worst ? `A tough week for ${S} at ${x.ev}` : x.d > 0 ? `${S} beats the ${x.yr} average at ${x.ev}` : `${S} slips below the ${x.yr} average at ${x.ev}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total a round, over ${x.n} rounds there`; }
-    else if (t === "br") { o.hl = me ? h.title : `${S} fires the best round of ${x.yr}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total, at ${x.ev}`; }
+    if (t === "ev") { o.kick = x.best ? "Milestone" : x.worst ? "Rough week" : "Result"; o.hl = me ? h.title : x.best ? `${poss(S)} best week of ${x.yr}, at ${x.ev}` : x.worst ? `A tough week for ${S} at ${x.ev}` : x.d > 0 ? `${S} beats the ${x.yr} average at ${x.ev}` : `${S} slips below the ${x.yr} average at ${x.ev}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total a round, over ${x.n} rounds there`; }
+    else if (t === "br") { const on = tourPick && tourPick !== ALL ? `the ${tourName(tourPick)}` : "tour"; o.kick = x.tourBest ? "Best on tour" : "Personal best"; o.hl = x.tourBest ? `${me ? "You" : S} fired the best round on ${on} in ${x.yr}` : me ? h.title : `${poss(S)} best round of ${x.yr}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total, at ${x.ev}${x.tourBest ? "" : ` (${me ? "your" : poss(S)} best this season; not the tour’s best)`}`; }
     else if (t === "st") { o.hl = me ? h.title : `${S} stretches the streak to ${x.n} rounds in the black`; o.num = String(x.n); o.nc = "up"; o.cap = "rounds in a row with strokes gained total above zero"; }
-    else if (t === "fm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${S} is heating up` : `${S} is cooling off`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained total a round: ${sg2(x.a)} in the last 12, ${sg2(x.b)} in the 12 before`; }
+    else if (t === "fm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${S} is heating up` : `${S} is cooling off`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained total a round: ${sg2(x.a)} in the last ${x.FL}, ${sg2(x.b)} in the ${x.n} before`; }
     else if (t === "cm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${poss(S)} ${CATW[x.c]} is on the rise` : `${poss(S)} ${CATW[x.c]} slips`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained a round ${CAT_IN[x.c]}: ${sg2(x.a)} lately, from ${sg2(x.b)}`; }
     else if (t === "wk") { o.kick = CATN[x.c]; o.hl = me ? h.title : `${CATN[x.c]} is costing ${S} ${Math.abs(x.v).toFixed(2)} a round`; o.num = sg2(x.v); o.nc = "down"; o.cap = `strokes gained a round ${CAT_IN[x.c]} in ${x.yr}`; }
     else if (t === "rk") { const f = x.hits?.[0]; if (f) { o.hl = me ? h.title : `${S} ${ordN(f.r)} on tour in ${rkName(f.c)}`; o.num = ordN(f.r).replace("No. ", ""); o.cap = `of ${f.n} players in ${x.yr}`; } }
@@ -311,7 +311,7 @@ export async function render(main, { previewClient } = {}) {
     }
     const halves = secs.filter((x) => !x.classList.contains("full")); if (halves.length % 2) halves.at(-1).classList.add("full");
     mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief))]), el("div", { class: "td-grid" }, secs)]);
-    const go2 = (id) => document.getElementById(`td-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const go2 = (id) => { const n = document.getElementById(`td-${id}`); if (!n) return; const bar = document.querySelector(".rail")?.getBoundingClientRect().bottom || 0; /* (the top bar stays put over the page) */ window.scrollTo({ top: n.getBoundingClientRect().top + window.scrollY - Math.max(0, bar) - 12, behavior: "smooth" }); }; /* (update 734: to the header, clear of the top bar) */
     mount(secNav, [["front", "Front page"], ...secs.map((x) => [x.id.slice(3), SEC[x.id.slice(3)][0]])].map(([id, t2], i) => { const a2 = el("a", { href: "#", class: i ? "" : "on" }, t2); a2.addEventListener("click", (e) => { e.preventDefault(); go2(id); }); return a2; }));
   }
   const cats = ["OTT", "APP", "ARG", "PUTT"], CATN = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
@@ -327,6 +327,15 @@ export async function render(main, { previewClient } = {}) {
     const ok = ps.filter((p) => p.rs.length >= minR), by = {};
     for (const c of ["TOTAL", ...cats]) { const v = ok.map((p) => [p.k, avgOf(p.rs, c === "TOTAL" ? tot : (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1]); by[c] = new Map(v.map(([k], i) => [k, i + 1])); by[`${c}#`] = v.length; }
     rankMemo = { year, tour: tourPick, by }; return rankMemo; };
+  // (update 734) the best round on the tour picked in a season (every player's), to say when a player's best is everyone's
+  const tbMemo = new Map();
+  const tourBestOf = (yr) => { const kk = `${yr}|${tourPick}`; if (!tbMemo.has(kk)) { let m = -Infinity; for (const p of field) for (const r of rawOf(p)) if (yrOf(r) === yr && !r.eventLevel) { const v = tot(r); if (v > m) m = v; } tbMemo.set(kk, m); } return tbMemo.get(kk); };
+  // (update 734) Form, as everywhere on the site: the last 12 rounds against the 12 before; the DP World Tour (or every tour
+  // together with some of it): the last 3 events against the 3 before, each event's rounds pooled. Needs both stretches whole.
+  const isDP = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
+  const formSplit = (rs) => { const ev = tourPick && tourPick !== ALL ? isDP(tourPick) : rs.some((r) => isDP(r.tour));
+    const u = ev ? eventsOf(rs).map((e) => e.rs) : rs.map((r) => [r]), n = ev ? 3 : 12; if (u.length < 2 * n) return null;
+    return { n, lbl: ev ? `${n} events` : `${n} rounds`, last: u.slice(-n).flat(), prev: u.slice(-2 * n, -n).flat() }; };
   function highlightsFor(k) {
     const raw = rawOf(field.find((p) => p.key === k)), out = [], rs = sgRounds(raw); if (!rs.length) return out; // (update 728: Compare's rounds and order)
     const ys = yearsOf(k), last = ys.at(-1), season = rs.filter((r) => yrOf(r) === last), evs = eventsOf(season), sAvg = avgOf(season, tot);
@@ -341,16 +350,16 @@ export async function render(main, { previewClient } = {}) {
         to: "Stats · Tournaments", run: () => toStats(k, { view2: "full", year: [last], span: 0 }, "Tournaments", null) });
       // the best round of the season, just played
       const bestR = [...season].sort((a, b) => tot(b) - tot(a))[0];
-      if (bestR && le.rs.includes(bestR) && season.length >= 8) out.push({ id: `br-${k}`, k, x: { v: tot(bestR), ev: le.event, yr: last }, kind: "Milestone", score: 8.5, title: `${His(k)} best round of ${last}: ${sg2(tot(bestR))}`, detail: `Round ${bestR.roundNo || ""} at ${le.event}`.replace("Round  ", "A round "), to: "Stats · SG Trends", run: () => toStats(k, { view2: "full", year: [last], span: 0, trendBy: "round" }, "SG Trends", null) }); }
+      if (bestR && le.rs.includes(bestR) && season.length >= 8) out.push({ id: `br-${k}`, k, x: { v: tot(bestR), ev: le.event, yr: last, tourBest: tot(bestR) >= tourBestOf(last) - 1e-9 }, kind: "Milestone", score: 8.5, title: `${His(k)} best round of ${last}: ${sg2(tot(bestR))}`, detail: `Round ${bestR.roundNo || ""} at ${le.event}`.replace("Round  ", "A round "), to: "Stats · SG Trends", run: () => toStats(k, { view2: "full", year: [last], span: 0, trendBy: "round" }, "SG Trends", null) }); }
     // gaining strokes round after round
     let streak = 0; for (let i = rs.length - 1; i >= 0 && tot(rs[i]) > 0; i--) streak++;
     if (streak >= 5) out.push({ id: `st-${k}`, k, x: { n: streak, ev: rs[rs.length - streak].event }, kind: "Milestone", score: 6 + streak * 0.2, title: `${streak} rounds in a row gaining strokes`, detail: `${isMe(k) ? "You’ve" : `${firstOf(k)} has`} beaten the tour average every round since ${rs[rs.length - streak].event}`, to: "Stats · Elite stretches", run: () => toStats(k, { view2: "full", year: [], span: 0 }, "Elite Stretches", EX.elite(`When ${isMe(k) ? "do I" : `does ${firstOf(k)}`} play best?`)) });
     // form: the last 12 rounds against the 12 before, and each part of the game
-    if (rs.length >= 24) { const a = roundsFor(raw, { last: 12 }), b = roundsFor(raw, { prev: 12 }), d = perRound(a) - perRound(b); // (update 728: as Compare's Last 12 rounds and The 12 rounds before that)
-      if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b) }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last 12 rounds ${sg2(perRound(a))} against ${sg2(perRound(b))} in the 12 before`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
+    const fs = formSplit(rs); if (fs) { const a = fs.last, b = fs.prev, d = perRound(a) - perRound(b), FL = fs.lbl; /* (update 734: Form, as everywhere: 12 rounds; the DP World Tour 3 events) */ // (update 728: as Compare's Last 12 rounds and The 12 rounds before that)
+      if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b), FL, n: fs.n }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last ${FL} ${sg2(perRound(a))} against ${sg2(perRound(b))} in the ${fs.n} before`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
       const ch = cats.map((c) => [c, perRound(a, c) - perRound(b, c)]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
       // (update 728) opens Compare (its Verdict shows each part of the game's difference, the same numbers)
-      for (const [c, dc] of ch.slice(0, 2)) if (Math.abs(dc) >= 0.2) out.push({ id: `cm-${k}-${c}`, k, x: { c, d: dc, a: perRound(a, c), b: perRound(b, c) }, kind: dc > 0 ? "Trend" : "Slide", score: 4.5 + Math.abs(dc) * 2, title: `${CATN[c]} ${dc > 0 ? "up" : "down"} ${Math.abs(dc).toFixed(2)} a round lately`, detail: `${His(k)} last 12 rounds (${sg2(perRound(a, c))}) against the 12 before (${sg2(perRound(b, c))})`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin(`${CATN[c]}: what changed?`)) }); }
+      for (const [c, dc] of ch.slice(0, 2)) if (Math.abs(dc) >= 0.2) out.push({ id: `cm-${k}-${c}`, k, x: { c, d: dc, a: perRound(a, c), b: perRound(b, c), FL, n: fs.n }, kind: dc > 0 ? "Trend" : "Slide", score: 4.5 + Math.abs(dc) * 2, title: `${CATN[c]} ${dc > 0 ? "up" : "down"} ${Math.abs(dc).toFixed(2)} a round lately`, detail: `${His(k)} last ${FL} (${sg2(perRound(a, c))}) against the ${fs.n} before (${sg2(perRound(b, c))})`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin(`${CATN[c]}: what changed?`)) }); }
     // the part of the game costing the most this season
     const weak = cats.map((c) => [c, avgOf(season, (r) => inCat(r, c))]).filter(([, v]) => v != null).sort((x, y) => x[1] - y[1])[0];
     if (weak && weak[1] <= -0.1 && season.length >= 6) out.push({ id: `wk-${k}`, k, x: { c: weak[0], v: weak[1], yr: last }, kind: "Focus", score: 4 + Math.abs(weak[1]) * 2, title: `${CATN[weak[0]]} is costing ${he(k)} ${Math.abs(weak[1]).toFixed(2)} a round`, detail: `${His(k)} weakest part of the game in ${last}: where, and the drills for it`, to: `Stats · Focus · ${CATN[weak[0]]}`, run: () => toStats(k, { view2: "focus", focusCats: [weak[0]], focusPick: weak[0], year: [last], span: 0 }, "Where you stand", EX.cat(`Where is ${CATN[weak[0]].toLowerCase()} costing strokes?`, weak[0])) });
@@ -372,9 +381,17 @@ export async function render(main, { previewClient } = {}) {
     if (next?.heat) out.push({ id: "next", k: null, kind: "Next event", score: ROLE === "caddy" ? 9 : 5.5, title: `${next.live ? "On now" : "Coming up"}: ${next.name}`, detail: "Cal’s targets for every hole: where to aim off the tee and where to miss the green", to: "Course Prep · Strategy Maps", run: () => toHole(next.heat, 1, EX.course(`How should I play ${next.name}?`)) });
     // the tour (analysts and the admin): the biggest movers over the last 12 rounds
     if (!who && (ROLE === "analyst" || ROLE === "admin")) {
-      const mv = field.filter((p) => rawOf(p).length >= 24).map((p) => { const rs = [...rawOf(p)].sort((a, b) => String(a.date).localeCompare(String(b.date))); return [p.key, avgOf(rs.slice(-12), tot) - avgOf(rs.slice(-24, -12), tot)]; }).sort((a, b) => b[1] - a[1]);
-      if (mv.length >= 10) { const top = mv.slice(0, 3); out.push({ id: "movers", k: null, x: { top }, kind: "Tour", score: 5, title: `Biggest risers: ${top.map(([k2, d]) => `${firstOf(k2)} ${sg2(d)}`).join(", ")}`, detail: `Strokes gained a round, the last 12 rounds against the 12 before${tourPick && tourPick !== ALL ? ` (${tourName(tourPick)})` : ""}`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) });
-        const bot = mv.slice(-3).reverse(); out.push({ id: "fallers", k: null, x: { top: bot }, kind: "Tour", score: 4, title: `Biggest drops: ${bot.map(([k2, d]) => `${firstOf(k2)} ${sg2(d)}`).join(", ")}`, detail: `Strokes gained a round, the last 12 rounds against the 12 before${tourPick && tourPick !== ALL ? ` (${tourName(tourPick)})` : ""}`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) }); }
+      // (update 734) as Stats' Hot & Cold: Form (the last 12 rounds against the 12 before; the DP World Tour 3 events
+      // against 3) over this season's rounds on the tour picked; full names
+      const yr0 = field.reduce((m, p) => { for (const r of rawOf(p)) { const y = yrOf(r); if (y > m) m = y; } return m; }, "");
+      let FL0 = "12 rounds";
+      const mv = field.map((p) => { const rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === yr0), fs = formSplit(rs); if (!fs) return null; FL0 = fs.lbl;
+        const l = perRound(fs.last), b0 = perRound(fs.prev); return l == null || b0 == null ? null : [p.key, l - b0, l, b0]; }).filter(Boolean).sort((a, b) => b[1] - a[1]);
+      const where = `${yr0}${tourPick && tourPick !== ALL ? `, ${tourName(tourPick)}` : ""}`;
+      const lst = (xs) => xs.map(([k2, d]) => `${nameOf(k2)} ${sg2(d)}`).join(", ");
+      if (mv.length >= 4) { const top = mv.filter((m) => m[1] > 0).slice(0, 3), bot = mv.filter((m) => m[1] < 0).slice(-3).reverse();
+        if (top.length) out.push({ id: "movers", k: null, x: { top }, kind: "Tour", score: 5, title: `Heating up: ${lst(top)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) });
+        if (bot.length) out.push({ id: "fallers", k: null, x: { top: bot }, kind: "Tour", score: 4, title: `Cooling off: ${lst(bot)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) }); }
     }
     if (ROLE === "caddy") for (const h of out) if (h.kind === "Rank" || h.kind === "Tour") h.score -= 2; // (a caddy: the course and the form first)
     return out;
@@ -437,13 +454,21 @@ export async function render(main, { previewClient } = {}) {
     if (who && !playsTour(who)) who = null;
     const add = el("button", { type: "button", class: "hl-pill hl-add", "aria-label": "Add a favorite player" }, "+");
     add.addEventListener("click", addFav);
-    mount(whoRow, [el("span", { class: "hl-pl" }, "Players"), pill(!who, staff && team.isTeam ? "All my players" : "All favorites", () => setWho(null)), ...fav.map((k) => pill(who === k, nameOf(k), () => setWho(who === k ? null : k))), add]);
+    mount(whoRow, [el("span", { class: "hl-pl" }, "Players"), pill(!who, staff && team.isTeam ? "All my players" : "All favorites", () => setWho(null)), ...fav.map((k) => { const b = pill(who === k, nameOf(k), () => setWho(who === k ? null : k));
+      // (update 734) the picked favorite has an × to take them off the list
+      if (who === k) { const x = el("span", { class: "hl-x", role: "button", tabindex: "0", "aria-label": `Remove ${nameOf(k)} from favorites`, title: "Remove from favorites" }, "×");
+        const rm = (e) => { e.stopPropagation(); removeFav(k); }; x.addEventListener("click", rm); x.addEventListener("keydown", (e) => { if (e.key === "Enter") rm(e); }); b.append(x); }
+      return b; }), add]);
     whoRow.hidden = false;
   }
   const playsTour = (k) => !tourPick || tourPick === ALL || !field.length || (field.find((p) => p.key === k)?.rounds || []).some((rd) => tourOf(rd) === tourPick);
   const shownKeys = () => (who ? [who] : keys.filter(playsTour));
-  const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); };
+  const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); }; // (tbMemo is keyed by tour)
   const setWho = (k) => { who = k; if (k) { focus = k; drawTabs(); } refresh(); };
+  async function removeFav(k) {
+    try { const wl = await import("../watchlist.js"); await wl.saveWatch({ players: (wl.watchPrefs().players || []).filter((x) => x !== k) }); } catch (e) { console.error(e); alert("Couldn’t update your favorites just now."); return; }
+    favs = favs.filter((x) => x !== k); if (admin) keys = keys.filter((x) => x !== k); who = null; refresh();
+  }
   async function addFav() {
     const ks = await playersList(); const opts = ks.filter((k) => !favs.includes(k) && playsTour(k)).map((k) => ({ value: k, label: nameOf(k) })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
     if (!opts.length) { alert(tourPick && tourPick !== ALL ? `Every ${tourName(tourPick)} player you can see is already a favorite.` : "Every player you can see is already a favorite."); return; }
