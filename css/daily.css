@@ -4,7 +4,7 @@
   --td-gold: #d4b483; --td-up: #3ccf6e; --td-down: #ff5a4e; --td-card: #131315; --td-on: #0c0c0e;
   --td-head: var(--font-display, Inter, system-ui, sans-serif); --td-serif: var(--font-body, Inter, system-ui, sans-serif); --td-sans: var(--font-body, Inter, system-ui, sans-serif); /* (update 732: the site's own font) */
   max-width: 1320px; margin: 0 auto; padding: 4px 4px 48px; color: var(--td-ink); font-family: var(--td-serif); }
-html[data-theme="light"] .td { --td-paper: #f6f1e7; --td-ink: #191714; --td-soft: #4a4640; --td-mute: #7a746a; --td-rule: #d8cfbe; --td-rule2: #b9ae99;
+html[data-theme="light"] .td { --td-paper: #f6f1e7; --td-ink: #191714; --td-soft: #2b2925; --td-mute: #4d4943; --td-rule: #d8cfbe; --td-rule2: #b9ae99;
   --td-gold: #8a6526; --td-up: #1d7f43; --td-down: #b8322a; --td-card: #efe8da; --td-on: #f6f1e7; }
 html[data-theme="light"] body:has(.td) { background: #f6f1e7; }
 .td .up { color: var(--td-up); } .td .down { color: var(--td-down); }
