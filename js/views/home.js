@@ -237,20 +237,26 @@ export async function render(main, { previewClient } = {}) {
   function dress(h) {
     const k = h.k, x = h.x || {}, S = k ? sur(k) : "", me = k && isMe(k), t = h.id.split("-")[0];
     const o = { kick: h.kind, hl: h.title, deck: h.detail || "", num: null, nc: "", cap: "" };
-    if (t === "ev") { o.kick = x.best ? "Milestone" : x.worst ? "Rough week" : "Result"; o.hl = me ? h.title : x.best ? `${S} posts the best week of ${x.yr} at ${x.ev}` : x.worst ? `A tough week for ${S} at ${x.ev}` : x.d > 0 ? `${S} beats the ${x.yr} average at ${x.ev}` : `${S} slips below the ${x.yr} average at ${x.ev}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `a round over ${x.n} rounds there`; }
-    else if (t === "br") { o.hl = me ? h.title : `${S} fires the best round of ${x.yr}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained, at ${x.ev}`; }
-    else if (t === "st") { o.hl = me ? h.title : `${S} stretches the streak to ${x.n} rounds in the black`; o.num = String(x.n); o.nc = "up"; o.cap = "rounds in a row gaining strokes"; }
-    else if (t === "fm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${S} is heating up` : `${S} is cooling off`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `a round: ${sg2(x.a)} in the last 12, ${sg2(x.b)} in the 12 before`; }
-    else if (t === "cm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${poss(S)} ${CATW[x.c]} is on the rise` : `${poss(S)} ${CATW[x.c]} slips`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `a round ${CAT_IN[x.c]}: ${sg2(x.a)} lately, from ${sg2(x.b)}`; }
-    else if (t === "wk") { o.kick = CATN[x.c]; o.hl = me ? h.title : `${CATN[x.c]} is costing ${S} ${Math.abs(x.v).toFixed(2)} a round`; o.num = sg2(x.v); o.nc = "down"; o.cap = `a round ${CAT_IN[x.c]} in ${x.yr}`; }
+    if (t === "ev") { o.kick = x.best ? "Milestone" : x.worst ? "Rough week" : "Result"; o.hl = me ? h.title : x.best ? `${S} posts the best week of ${x.yr} at ${x.ev}` : x.worst ? `A tough week for ${S} at ${x.ev}` : x.d > 0 ? `${S} beats the ${x.yr} average at ${x.ev}` : `${S} slips below the ${x.yr} average at ${x.ev}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total a round, over ${x.n} rounds there`; }
+    else if (t === "br") { o.hl = me ? h.title : `${S} fires the best round of ${x.yr}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total, at ${x.ev}`; }
+    else if (t === "st") { o.hl = me ? h.title : `${S} stretches the streak to ${x.n} rounds in the black`; o.num = String(x.n); o.nc = "up"; o.cap = "rounds in a row with strokes gained total above zero"; }
+    else if (t === "fm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${S} is heating up` : `${S} is cooling off`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained total a round: ${sg2(x.a)} in the last 12, ${sg2(x.b)} in the 12 before`; }
+    else if (t === "cm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${poss(S)} ${CATW[x.c]} is on the rise` : `${poss(S)} ${CATW[x.c]} slips`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained a round ${CAT_IN[x.c]}: ${sg2(x.a)} lately, from ${sg2(x.b)}`; }
+    else if (t === "wk") { o.kick = CATN[x.c]; o.hl = me ? h.title : `${CATN[x.c]} is costing ${S} ${Math.abs(x.v).toFixed(2)} a round`; o.num = sg2(x.v); o.nc = "down"; o.cap = `strokes gained a round ${CAT_IN[x.c]} in ${x.yr}`; }
     else if (t === "rk") { const f = x.hits?.[0]; if (f) { o.hl = me ? h.title : `${S} ${ordN(f.r)} on tour in ${rkName(f.c)}`; o.num = ordN(f.r).replace("No. ", ""); o.cap = `of ${f.n} players in ${x.yr}`; } }
-    else if (t === "eq") { o.kick = `New ${KIND_WORD[x.pill] || "club"}`; o.hl = `The ${x.neu} is ${x.dd >= 0 ? "beating" : "trailing"} the ${x.old}, so far`; o.num = sg2(x.dd); o.nc = cls(x.dd); o.cap = `a round ${COL_IN[x.c]}`; }
+    else if (t === "eq") { o.kick = `New ${KIND_WORD[x.pill] || "club"}`; o.hl = `The ${x.neu} is ${x.dd >= 0 ? "beating" : "trailing"} the ${x.old}, so far`; o.num = sg2(x.dd); o.nc = cls(x.dd); o.cap = `strokes gained a round ${COL_IN[x.c]}, against the ${x.old}`; }
     else if (t === "next") { o.kick = next?.live ? "On now" : "Coming up"; o.hl = `Where to aim at ${next?.name || "the next event"}`; }
     return o;
   }
   // a player's season so far, for the lead story
-  const ctxOf = (k) => { const p = field.find((q) => q.key === k), rs = sgRounds(rawOf(p)); if (!rs.length) return null; const yr = yrOf(rs.at(-1)), se = rs.filter((r) => yrOf(r) === yr);
-    return { yr, n: se.length, ev: new Set(se.map((r) => r.event)).size, avg: avgOf(se, tot), spark: rs.slice(-24).map(tot) }; };
+  // (update 732) each story is about one thing: the part of the game it's about (null: strokes gained total)
+  const catOf = (h) => { const t = h.id.split("-")[0], x = h.x || {};
+    if (t === "eq" || t === "cm" || t === "wk") return x.c || null;
+    if (t === "rk") { const c = x.hits?.[0]?.c; return c && c !== "TOTAL" ? c : null; }
+    return null; };
+  const catLbl = (c) => (c ? `strokes gained ${CAT_IN[c]}` : "strokes gained total");
+  const ctxOf = (k, c) => { const p = field.find((q) => q.key === k), rs = sgRounds(rawOf(p)); if (!rs.length) return null; const yr = yrOf(rs.at(-1)), se = rs.filter((r) => yrOf(r) === yr), f = c ? (r) => inCat(r, c) : tot;
+    return { yr, n: se.length, ev: new Set(se.map((r) => r.event)).size, avg: avgOf(se, f), spark: rs.slice(-24).map(f) }; };
   const spark = (vals) => { if (vals.length < 8) return null; const W = 300, H = 80, lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), y = (v) => 6 + (H - 12) * (1 - (v - lo) / (hi - lo || 1)), dx = W / (vals.length - 1);
     // a rolling average of 4 rounds, so the line reads as form, not noise
     const sm = vals.map((_, i) => avgOf(vals.slice(Math.max(0, i - 3), i + 1), (v) => v)), pts = sm.map((v, i) => `${(i * dx).toFixed(1)},${y(v).toFixed(1)}`), cut = Math.max(0, sm.length - 12);
@@ -265,11 +271,13 @@ export async function render(main, { previewClient } = {}) {
   const whoTag = (h) => (staff && h.k ? el("div", { class: "td-who" }, nameOf(h.k)) : null);
   const kicker = (h, d, withWho) => el("div", { class: `td-kick${d.nc === "down" && /Slipping|Rough/.test(d.kick) ? " down" : ""}` }, `${d.kick}${withWho && staff && h.k ? ` · ${nameOf(h.k)}` : ""}`);
   function leadStory(h) {
-    const d = dress(h), c = h.k ? ctxOf(h.k) : null;
+    const cat = catOf(h), d = dress(h), c = h.k ? ctxOf(h.k, cat) : null, lbl = catLbl(cat);
     const body = [el("p", {}, d.deck)];
-    if (c) body.push(el("p", {}, `${isMe(h.k) ? "You’ve" : `${nameOf(h.k)} has`} played ${c.n} round${c.n === 1 ? "" : "s"} in ${c.yr}${tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : ""} (${c.ev} tournament${c.ev === 1 ? "" : "s"}), averaging ${sg2(c.avg)} strokes gained a round.`));
-    const fig = el("div", { class: "td-fig" }, [el("div", { class: "td-kick mute" }, d.num ? "The number" : "Strokes gained a round"), d.num ? el("div", { class: `td-n ${d.nc}` }, d.num) : c ? el("div", { class: `td-n ${cls(c.avg)}` }, sg2(c.avg)) : null,
-      el("div", { class: "td-cap" }, d.num ? d.cap : `in ${c?.yr || ""}`), c ? spark(c.spark) : null]);
+    // (update 732) the season line and the chart: the same part of the game as the story, and it says which
+    if (c) body.push(el("p", {}, `${cat ? `${CATN[cat]}: ` : ""}${isMe(h.k) ? "you’re" : `${nameOf(h.k)} is`} averaging ${sg2(c.avg)} ${lbl} a round in ${c.yr}${tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : ""}, over ${c.n} round${c.n === 1 ? "" : "s"} (${c.ev} tournament${c.ev === 1 ? "" : "s"}).`.replace(/^./, (m) => m.toUpperCase())));
+    const sp = c ? spark(c.spark) : null;
+    const fig = el("div", { class: "td-fig" }, [el("div", { class: "td-kick mute" }, d.num ? "The number" : `${lbl[0].toUpperCase()}${lbl.slice(1)} a round`), d.num ? el("div", { class: `td-n ${d.nc}` }, d.num) : c ? el("div", { class: `td-n ${cls(c.avg)}` }, sg2(c.avg)) : null,
+      el("div", { class: "td-cap" }, d.num ? d.cap : `in ${c?.yr || ""}`), sp ? el("div", { class: "td-cap td-spl" }, `${lbl[0].toUpperCase()}${lbl.slice(1)}, round by round (4-round average)`) : null, sp]);
     return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), el("div", { class: "td-by" }, `By Cal · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`),
       el("div", { class: "td-leadgrid" }, [el("div", { class: "td-body" }, [...body, more(h)]), fig])]), h);
   }
@@ -291,7 +299,7 @@ export async function render(main, { previewClient } = {}) {
     const lead = sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
     for (const h of sorted.slice(1)) { if (fp.length >= 4) break; if (!used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
     for (const h of sorted.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
-    const rest = sorted.filter((h) => !fp.includes(h)), many = !who && keys.length > 1, secs = [];
+    const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = !who && keys.length > 1, secs = [];
     for (const id of ORDER) {
       const mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
       const pick = [], byK = new Map(); // up to 6 (2 a player first, when there are several)
