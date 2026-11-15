@@ -11,8 +11,8 @@ import {
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, ANALYST_ROLE } from "../data.js";
 
-const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
-const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddy"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
+const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddie"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
+const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddie"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
 
 export async function render(main, { flash }) {
   let clientsCache = { labels: new Map() };

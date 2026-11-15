@@ -162,7 +162,7 @@ export async function render(main, { previewClient } = {}) {
   // ---- the page ----
   const hr = new Date().getHours(), tod = hr < 12 ? "morning" : hr < 18 ? "afternoon" : "evening", first = String(myName || "").split(" ")[0];
   const askBox = calAllowed() ? (() => {
-    const inp = el("input", { type: "text", class: "ah-ask-in", placeholder: "Ask Cal anything…", "aria-label": "Ask Cal" });
+    const inp = el("input", { type: "text", class: "ah-ask-in", placeholder: "Ask Cal, the AI Caddie…", "aria-label": "Ask Cal" });
     const mic = el("button", { type: "button", class: "ah-mic", "aria-label": "Ask Cal: tap to open, hold to talk", title: "Ask Cal (hold to talk)" }, icon("calface")); /* (update 730: Cal's logo) */
     const send = async () => { const t = inp.value.trim(); const m = await import("../callie.js"); if (t) { inp.value = ""; m.askHeld(t); } else m.openCallie(); };
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
@@ -244,7 +244,7 @@ export async function render(main, { previewClient } = {}) {
     else if (t === "cm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${poss(S)} ${CATW[x.c]} is on the rise` : `${poss(S)} ${CATW[x.c]} slips`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained a round ${CAT_IN[x.c]}: ${sg2(x.a)} lately, from ${sg2(x.b)}`; }
     else if (t === "wk") { o.kick = CATN[x.c]; o.hl = me ? h.title : `${CATN[x.c]} is costing ${S} ${Math.abs(x.v).toFixed(2)} a round`; o.num = sg2(x.v); o.nc = "down"; o.cap = `strokes gained a round ${CAT_IN[x.c]} in ${x.yr}`; }
     else if (t === "rk") { const f = x.hits?.[0]; if (f) { o.hl = me ? h.title : `${S} ${ordN(f.r)} on tour in ${rkName(f.c)}`; o.num = ordN(f.r).replace("No. ", ""); o.cap = `of ${f.n} players in ${x.yr}`; } }
-    else if (t === "eq") { o.kick = `New ${KIND_WORD[x.pill] || "club"}`; o.hl = `The ${x.neu} is ${x.dd >= 0 ? "beating" : "trailing"} the ${x.old}, so far`; o.num = sg2(x.dd); o.nc = cls(x.dd); o.cap = `strokes gained a round ${COL_IN[x.c]}, against the ${x.old}`; }
+    else if (t === "eq") { o.kick = `New ${KIND_WORD[x.pill] || "club"}`; o.hl = `The ${x.neu} is ${x.dd >= 0 ? "beating" : "trailing"} the ${x.old} so far ${me ? "for you" : `for ${S}`}`; /* (update 735: whose) */ o.num = sg2(x.dd); o.nc = cls(x.dd); o.cap = `strokes gained a round ${COL_IN[x.c]}, against the ${x.old}`; }
     else if (t === "next") { o.kick = next?.live ? "On now" : "Coming up"; o.hl = `Where to aim at ${next?.name || "the next event"}`; }
     return o;
   }
@@ -309,7 +309,10 @@ export async function render(main, { previewClient } = {}) {
       const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "tour" ? el("div", { class: "td-wire" }, pick.map(wire)) : el("div", { class: "td-cols" }, pick.map(column));
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}` }, [el("div", { class: "td-sh" }, [el("h2", {}, title), sub ? el("span", {}, sub) : null]), content]));
     }
-    const halves = secs.filter((x) => !x.classList.contains("full")); if (halves.length % 2) halves.at(-1).classList.add("full");
+    // (update 735) two half-width sections side by side: left and right worked out in order (a full-width one starts a new
+    // row); a half left alone on its row takes the full width
+    for (let i = 0, col = 0; i < secs.length; i++) { const x = secs[i]; if (x.classList.contains("full")) { col = 0; continue; }
+      if (col === 0) { const nx = secs[i + 1]; if (!nx || nx.classList.contains("full")) { x.classList.add("full"); continue; } x.classList.add("l"); col = 1; } else { x.classList.add("r"); col = 0; } }
     mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief))]), el("div", { class: "td-grid" }, secs)]);
     const go2 = (id) => { const n = document.getElementById(`td-${id}`); if (!n) return; const bar = document.querySelector(".rail")?.getBoundingClientRect().bottom || 0; /* (the top bar stays put over the page) */ window.scrollTo({ top: n.getBoundingClientRect().top + window.scrollY - Math.max(0, bar) - 12, behavior: "smooth" }); }; /* (update 734: to the header, clear of the top bar) */
     mount(secNav, [["front", "Front page"], ...secs.map((x) => [x.id.slice(3), SEC[x.id.slice(3)][0]])].map(([id, t2], i) => { const a2 = el("a", { href: "#", class: i ? "" : "on" }, t2); a2.addEventListener("click", (e) => { e.preventDefault(); go2(id); }); return a2; }));
@@ -448,7 +451,7 @@ export async function render(main, { previewClient } = {}) {
     const showTours = tours.length > 1;
     mount(tourRow, showTours ? [el("span", { class: "hl-pl" }, "Tour"), ...tours.map((t) => pill(tourPick === t, tourName(t), () => setTour(t))), pill(tourPick === ALL, "All", () => setTour(ALL))] : []);
     tourRow.hidden = !showTours;
-    edition.textContent = tourPick ? `${tourName(tourPick)} Edition` : ""; nextLine.textContent = next ? `${next.name} · ${next.live ? "on now" : "coming up"}` : "";
+    edition.textContent = tourPick ? `${tourName(tourPick)} Edition` : ""; nextLine.textContent = next ? `${next.name} · ${next.live ? "on now" : "coming up"}` : ""; nextLine.classList.toggle("on", !!next?.live); /* (update 735: glows while it's live) */
     if (!staff) { whoRow.hidden = true; return; }
     const fav = favs.filter((k) => keys.includes(k) && playsTour(k)); // (update 730: only the players on the tour picked)
     if (who && !playsTour(who)) who = null;

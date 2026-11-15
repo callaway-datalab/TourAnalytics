@@ -43,7 +43,7 @@ export const DEFAULT_ROLES = ['coach', 'caddy', 'trainer', 'physio', 'manager', 
 export function normRole(r) {
   return String(r ?? '').trim().replace(/\s+/g, ' ').replace(/[\/.]/g, '').replace(/^_+|_+$/g, '').slice(0, 30).toLowerCase();
 }
-export const roleLabel = (r) => (r === ANALYST_ROLE ? 'Callaway Analyst' : r ? r.charAt(0).toUpperCase() + r.slice(1) : '');
+export const roleLabel = (r) => (r === ANALYST_ROLE ? 'Callaway Analyst' : r === 'caddy' ? 'Caddie' /* (update 735: the stored role stays "caddy"; shown as Caddie) */ : r ? r.charAt(0).toUpperCase() + r.slice(1) : '');
 /* Internal Callaway analysts: team-member accounts marked kind "analyst", with role "analyst" for each
    player they can see. They're managed on Player Access, never by the roster, and always see every
    report sent to their players. */

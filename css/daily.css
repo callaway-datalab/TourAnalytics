@@ -63,14 +63,14 @@ html[data-theme="light"] body:has(.td) { background: #f6f1e7; }
 .td-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0; }
 .td-sec { margin: 0; padding: 0 0 22px; min-width: 0; }
 .td-sec.full { grid-column: 1 / -1; }
-.td-grid > .td-sec:not(.full):nth-child(odd) { padding-right: 26px; }
-.td-sec:not(.full) + .td-sec:not(.full) { border-left: 1px solid var(--td-rule); padding-left: 26px; }
+.td-sec.l { padding-right: 26px; }
+.td-sec.r { border-left: 1px solid var(--td-rule); padding-left: 26px; }
 .td-sh { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin: 32px 0 0; padding-bottom: 8px; border-bottom: 2px solid var(--td-ink); }
 .td-sh h2 { font-weight: 800; font-size: 1.85rem; margin: 0; }
 .td-sh span { font: 700 0.68rem var(--td-sans); color: var(--td-mute); letter-spacing: 0.14em; text-transform: uppercase; }
 .td-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.td-col { padding: 16px 22px 18px 0; border-bottom: 1px solid var(--td-rule); }
-.td-col + .td-col { border-left: 1px solid var(--td-rule); padding-left: 22px; }
+.td-cols { column-gap: 32px; } /* (update 735: every story at the same indent) */
+.td-col { padding: 16px 0 18px; border-bottom: 1px solid var(--td-rule); }
 .td-col h3 { font-weight: 800; font-size: 1.38rem; line-height: 1.13; margin: 6px 0 8px; }
 .td-col p { margin: 0 0 6px; color: var(--td-soft); font-size: 0.96rem; }
 .td-col p.td-small { font-size: 0.86rem; color: var(--td-mute); }
@@ -100,8 +100,8 @@ html[data-theme="light"] body:has(.td) { background: #f6f1e7; }
   .td-front, .td-leadgrid, .td-grid { grid-template-columns: 1fr; }
   .td-lead { padding: 18px 0; border-right: 0; border-bottom: 1px solid var(--td-rule); }
   .td-side { padding: 16px 0; }
-  .td-grid > .td-sec:not(.full):nth-child(odd), .td-sec:not(.full) + .td-sec:not(.full) { padding: 0 0 18px; border-left: 0; }
-  .td-col { padding: 14px 0; border-right: 0; }
+  .td-sec.l, .td-sec.r { padding: 0 0 18px; border-left: 0; }
+  .td-col { padding: 14px 0; }
   .td-wire { columns: 1; }
   .td-nav { gap: 10px; }
   .td-grp { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
@@ -114,8 +114,21 @@ html[data-theme="light"] body:has(.td) { background: #f6f1e7; }
 /* (update 734) the picked favorite's × (take them off the list); (735) this week's event: a link to the Event Feed */
 .ah.td .hl-pill .hl-x { margin-left: 7px; font-weight: 800; opacity: 0.7; padding: 0 2px; }
 .ah.td .hl-pill .hl-x:hover { opacity: 1; }
-.td-date a.td-live { color: inherit; text-decoration: none; border-bottom: 1px solid var(--td-rule2); }
-.td-date a.td-live:hover { color: var(--td-gold); border-color: var(--td-gold); }
+.td-date a.td-live { color: inherit; text-decoration: none; }
+.td-date a.td-live:hover { color: var(--td-gold); }
+/* (update 735) live: a red dot that pulses and text that glows */
+.td-date a.td-live.on { color: var(--td-ink); animation: td-glow 2.4s ease-in-out infinite; }
+.td-date a.td-live.on::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff3b30; margin-right: 8px; vertical-align: 1px; animation: td-pulse 1.6s ease-out infinite; }
+@keyframes td-pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); } 70% { box-shadow: 0 0 0 8px rgba(255, 59, 48, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); } }
+@keyframes td-glow { 0%, 100% { text-shadow: 0 0 0 rgba(255, 59, 48, 0); } 50% { text-shadow: 0 0 10px rgba(255, 59, 48, 0.55); } }
+@media (prefers-reduced-motion: reduce) { .td-date a.td-live.on, .td-date a.td-live.on::before { animation: none; } }
 .td-date a.td-live:empty { display: none; }
 .td-sec, .td-front { scroll-margin-top: 90px; }
 @media (max-width: 860px) { .td-date { flex-wrap: wrap; } .td-date a.td-live { display: block; width: 100%; } .td-date a.td-live:empty { display: none; } }
+/* (update 735) Cal's logo centered in its circle */
+.ah.td .td-ask .ah-mic { display: grid; place-items: center; padding: 0; line-height: 0; }
+.ah.td .td-ask .ah-mic svg { width: 24px !important; height: 24px !important; margin: 0 !important; display: block; }
+/* (update 735) the equipment table: its own look (not the site's general table styles) */
+.ah.td .td-tape thead th { background: none; text-align: right; }
+.ah.td .td-tape th:first-child, .ah.td .td-tape td:first-child { text-align: left; }
+.ah.td .td-tape td { text-align: right; background: none; }

@@ -6804,3 +6804,14 @@ html, body { overflow-x: clip; max-width: 100%; }
 .hl-more > summary { cursor: pointer; font-size: 0.7rem; letter-spacing: 0.16em; color: #8e8e93; font-weight: 800; text-transform: uppercase; margin-bottom: 10px; list-style: none; }
 .hl-more > summary::before { content: "\25B8  "; }
 .hl-more[open] > summary::before { content: "\25BE  "; }
+
+/* (update 735) a bar that scrolls sideways: a ‹ / › at the edge while there's more that way (js/ui.js sets sh-l / sh-r).
+   The arrow sits on a fade into the color behind the bar (--sh-bg). */
+:root { --sh-bg: var(--bg); }
+.panel, .card { --sh-bg: var(--surface-solid); }
+.rail { --sh-bg: #000; }
+.td { --sh-bg: var(--td-paper); }
+.sh-r::after, .sh-l::before { position: sticky; z-index: 3; flex: 0 0 28px; width: 28px; align-self: stretch; display: flex; align-items: center; pointer-events: none;
+  font: 700 1.25rem/1 var(--font-body); color: var(--ink); }
+.sh-r::after { content: "\203A"; right: 0; margin-left: -28px; justify-content: flex-end; padding-right: 2px; background: linear-gradient(to right, transparent, var(--sh-bg) 60%); }
+.sh-l::before { content: "\2039"; left: 0; margin-right: -28px; justify-content: flex-start; padding-left: 2px; background: linear-gradient(to left, transparent, var(--sh-bg) 60%); }

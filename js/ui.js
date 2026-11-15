@@ -523,3 +523,24 @@ export function siteLinks() {
   out.push({ label: "WITB", href: "#/witb", section: "" }, { label: "Chat", href: admin ? "#/admin/questions" : "#/questions", section: "" }, { label: "Profile", href: "#/account", section: "" });
   return out;
 }
+
+/* (update 735) Bars that scroll sideways (tabs, pills, section links): a ‹ or › at the edge while there's more that way.
+   Classes sh-l / sh-r on the bar (css: the arrow and a fade, drawn by the bar itself, nothing added inside it). */
+const SH_SEL = ".subnav, .section-nav, .gx-ov-range, .pr-pills, .pr-strip, .wl-alert-row, .cmp-chips.cmp-win-row, .cmp-dist-tabs, .sh-holes, .hm-rads, .hm-row, .ah-tabs, .td-secs, .td-grp";
+const shSeen = new WeakSet();
+function shUpdate(n) {
+  const max = n.scrollWidth - n.clientWidth;
+  n.classList.toggle("sh-l", max > 2 && n.scrollLeft > 2);
+  n.classList.toggle("sh-r", max > 2 && n.scrollLeft < max - 2);
+}
+function shScan() {
+  for (const n of document.querySelectorAll(SH_SEL)) {
+    if (!shSeen.has(n)) { shSeen.add(n); n.addEventListener("scroll", () => shUpdate(n), { passive: true }); }
+    shUpdate(n);
+  }
+}
+if (typeof window !== "undefined" && typeof MutationObserver !== "undefined") {
+  let t = null; const later = () => { clearTimeout(t); t = setTimeout(shScan, 150); };
+  const start = () => { new MutationObserver(later).observe(document.body, { childList: true, subtree: true }); window.addEventListener("resize", later); later(); };
+  if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
+}

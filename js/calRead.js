@@ -4,7 +4,7 @@
 // name: Front / Back with Left / Center / Right, or a name the admin gave it), and links to that hole and pin on the map.
 import { el, icon } from "./ui.js";
 
-export const BRAND = "Cal’s Strategy", TAG = "AI CADDY"; // (update 602: was "Cal's Read")
+export const BRAND = "Cal’s Strategy", TAG = "AI CADDIE"; // (update 602: was "Cal's Read")
 export const KIND = { tee: "Off the tee", miss: "Approach", surprise: "Approach", layup: "Second shot" };
 // (update 595) each tip's header: its part of the hole and what it is ("Off the tee \u2022 Aim"); a course built before 595
 // has no h on its tips: worked out from the words
@@ -49,7 +49,7 @@ export function readFor(S0, ids) {
 /** Cal's card: { r: { base, n, items }, all }. (update 594) the title names the pin where it's needed ("Cal's Read · Back
  *  Right pin"); the line under it is just the samples; collapsible: a tap on the header folds it (remembered). */
 // (update 595) collapsible starts folded when asked (folded: true), and onFold(folded) is told each tap
-// (update 600) under the title "AI Caddy" (not the samples); reads: { on, onToggle, can } puts a Strategy switch where the tag
+// (update 600) under the title "AI Caddie" (not the samples); reads: { on, onToggle, can } puts a Strategy switch where the tag
 // was (Cal's circles on the map, on or off; it works while the card is folded)
 export function readCard(read, where = "", { compact = false, foot = null, collapsible = false, folded = false, onFold = null, reads = null } = {}) {
   const { r } = read;
@@ -60,7 +60,7 @@ export function readCard(read, where = "", { compact = false, foot = null, colla
     sw.addEventListener("keydown", (e) => e.stopPropagation());
   }
   const head = el("div", { class: "cal-read-h" }, [el("span", { class: "cal-read-ava", "aria-hidden": "true" }, icon("calface")) /* (update 659: Cal's head) */,
-    el("div", { class: "cal-read-t" }, [el("strong", {}, where ? `${BRAND} \u00b7 ${where}` : BRAND), el("span", {}, "AI Caddy")]),
+    el("div", { class: "cal-read-t" }, [el("strong", {}, where ? `${BRAND} \u00b7 ${where}` : BRAND), el("span", {}, "AI Caddie")]),
     sw, collapsible ? el("span", { class: "cal-read-chev", "aria-hidden": "true" }, "\u25BE") : null]);
   const body = el("div", { class: "cal-read-b" }, [
     el("ul", {}, r.items.map((it) => el("li", { class: `cal-read-${it.k}${hOf(it) === "Surprise" ? " cal-read-sur" : ""}` }, [el("span", { class: "cal-read-k" }, [headOf(it), it.allPins ? el("small", {}, "every pin") : it.mine ? el("small", {}, `for ${read.who}`) : null]),
