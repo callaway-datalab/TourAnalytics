@@ -64,6 +64,9 @@ export async function render(main, { previewClient } = {}) {
   const tourOf = (rd) => rd.tour || "", onTour = (rd) => !tourPick || tourPick === ALL || tourOf(rd) === tourPick;
   const tourName = (t) => (t === ALL ? "All tours" : t || "No tour");
   const tmemo = new Map();
+  // (update 738) Home is about this season: the latest season on the tour picked (course history the only exception)
+  let syMemo = null;
+  const seasonYr = () => { const kk = `${tourPick}|${field.length}`; if (syMemo?.k === kk) return syMemo.y; let m = ""; for (const p of field) for (const r of rawOf(p)) { const y = yrOf(r); if (y > m) m = y; } syMemo = { k: kk, y: m }; return m; };
   const rawOf = (p) => { if (!p) return []; const kk = `${p.key}|${tourPick}`; let r = tmemo.get(kk); if (!r || r.src !== p.rounds) { r = { src: p.rounds, v: p.rounds.filter(onTour) }; tmemo.set(kk, r); } return r.v; };
   const roundsOf = (k) => rawOf(field.find((p) => p.key === k)).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const yearsOf = (k) => [...new Set(roundsOf(k).map(yrOf).filter((y) => /^\d{4}$/.test(y)))].sort();
@@ -245,7 +248,7 @@ export async function render(main, { previewClient } = {}) {
     else if (t === "st") { o.hl = me ? h.title : `${S} stretches the streak to ${x.n} rounds in the black`; o.num = String(x.n); o.nc = "up"; o.cap = "rounds in a row with strokes gained total above zero"; }
     else if (t === "fm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${S} is heating up` : `${S} is cooling off`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained total a round: ${sg2(x.a)} in the last ${x.FL}, ${sg2(x.b)} in the ${x.n} before`; }
     else if (t === "cm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${poss(S)} ${CATW[x.c]} is on the rise` : `${poss(S)} ${CATW[x.c]} slips`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained a round ${CAT_IN[x.c]}: ${sg2(x.a)} lately, from ${sg2(x.b)}`; }
-    else if (t === "wk") { o.kick = CATN[x.c]; o.hl = me ? h.title : `${CATN[x.c]} is costing ${S} ${Math.abs(x.v).toFixed(2)} a round`; o.num = sg2(x.v); o.nc = "down"; o.cap = `strokes gained a round ${CAT_IN[x.c]} in ${x.yr}`; }
+    else if (t === "wk") { o.kick = CATN[x.c]; o.hl = `${CATN[x.c]} is costing ${me ? "you" : S}`; /* (update 738: the number below, not in the headline) */ o.num = sg2(x.v); o.nc = "down"; o.cap = `strokes a round ${CAT_IN[x.c]} in ${x.yr}`; }
     else if (t === "rkb") { const f = x.hits?.[0]; o.kick = "Room to climb"; o.nc = "down"; if (f) { o.hl = `${S} ${ordN(f.r)} of ${f.n} in ${rkName(f.c)}`; o.num = ordN(f.r).replace("No. ", ""); o.cap = `of ${f.n} players in ${x.yr}`; } }
     else if (t === "rk") { const f = x.hits?.[0]; if (f) { o.hl = me ? h.title : `${S} ${ordN(f.r)} on tour in ${rkName(f.c)}`; o.num = ordN(f.r).replace("No. ", ""); o.cap = `of ${f.n} players in ${x.yr}`; } }
     else if (t === "eq") { o.kick = `New ${KIND_WORD[x.pill] || "club"}`; o.hl = `The ${x.neu} is ${x.dd >= 0 ? "beating" : "trailing"} the ${x.old} so far ${me ? "for you" : `for ${S}`}`; /* (update 735: whose) */ o.num = sg2(x.dd); o.nc = cls(x.dd); o.cap = `strokes gained a round ${COL_IN[x.c]}, against the ${x.old}`; }
@@ -259,7 +262,7 @@ export async function render(main, { previewClient } = {}) {
     if (t === "rk" || t === "rkb") { const c = x.hits?.[0]?.c; return c && c !== "TOTAL" ? c : null; }
     return null; };
   const catLbl = (c) => (c ? `strokes gained ${CAT_IN[c]}` : "strokes gained total");
-  const ctxOf = (k, c) => { const p = field.find((q) => q.key === k), rs = sgRounds(rawOf(p)); if (!rs.length) return null; const yr = yrOf(rs.at(-1)), se = rs.filter((r) => yrOf(r) === yr), f = c ? (r) => inCat(r, c) : tot;
+  const ctxOf = (k, c) => { const p = field.find((q) => q.key === k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null; const yr = seasonYr(), se = rs, f = c ? (r) => inCat(r, c) : tot;
     return { yr, n: se.length, ev: new Set(se.map((r) => r.event)).size, avg: avgOf(se, f), spark: rs.slice(-24).map(f) }; };
   const spark = (vals) => { if (vals.length < 8) return null; const W = 300, H = 80, lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), y = (v) => 6 + (H - 12) * (1 - (v - lo) / (hi - lo || 1)), dx = W / (vals.length - 1);
     // a rolling average of 4 rounds, so the line reads as form, not noise
@@ -274,28 +277,30 @@ export async function render(main, { previewClient } = {}) {
   // an equipment story's bars colored by the model used (the new one gold)
   const ns0 = "http://www.w3.org/2000/svg", mk0 = (tag, at, txt) => { const n = document.createElementNS(ns0, tag); for (const [a2, b2] of Object.entries(at)) n.setAttribute(a2, b2); if (txt != null) n.textContent = txt; return n; };
   function barSvg(items, { note } = {}) { if (items.length < 3) return null;
-    const W = 320, H = 130, top = 8, bot = 22, vs = items.map((x) => x.v), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, bw = W / items.length;
+    const W = 320, H = 176, top = 8, bot = 70, /* (update 738: room for a label under every bar) */ vs = items.map((x) => x.v), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, LP = 46, bw = (W - LP) / items.length; /* (update 738: room on the left for the first labels) */
     const svg = mk0("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", class: "td-bars", role: "img", "aria-label": note || "Bar chart" });
     items.forEach((x, i) => { const h = Math.max(1.5, Math.abs(x.v) * sc), yy = x.v >= 0 ? y0 - h : y0;
-      const r = mk0("rect", { x: (i * bw + bw * 0.14).toFixed(1), y: yy.toFixed(1), width: (bw * 0.72).toFixed(1), height: h.toFixed(1), rx: 2, class: `td-bar ${x.cls || (x.v >= 0 ? "up" : "down")}${x.hot ? " hot" : ""}` });
+      const r = mk0("rect", { x: (LP + i * bw + bw * 0.14).toFixed(1), y: yy.toFixed(1), width: (bw * 0.72).toFixed(1), height: h.toFixed(1), rx: 2, class: `td-bar ${x.cls || (x.v >= 0 ? "up" : "down")}${x.hot ? " hot" : ""}` });
       r.append(mk0("title", {}, `${x.label}: ${sg2(x.v)}`)); svg.append(r); });
-    svg.append(mk0("line", { x1: 0, x2: W, y1: y0.toFixed(1), y2: y0.toFixed(1), class: "td-zero" }));
-    svg.append(mk0("text", { x: 0, y: H - 6, class: "td-tx" }, items[0].short), mk0("text", { x: W, y: H - 6, "text-anchor": "end", class: "td-tx" }, items.at(-1).short));
+    svg.append(mk0("line", { x1: LP, x2: W, y1: y0.toFixed(1), y2: y0.toFixed(1), class: "td-zero" }));
+    // (update 738) each bar's tournament under it, angled (the latest in full color)
+    const base = H - bot + 10;
+    items.forEach((x, i) => { const cx = LP + i * bw + bw / 2; svg.append(mk0("text", { x: cx.toFixed(1), y: base, transform: `rotate(-45 ${cx.toFixed(1)} ${base})`, "text-anchor": "end", class: `td-tx${x.hot ? " hot" : ""}` }, x.short)); });
     return svg; }
-  const shortEv = (e) => String(e || "").replace(/^the\s+/i, "").replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/i, "").replace(/\bChampionship\b/i, "Champ.").slice(0, 22);
+  const shortEv = (e) => { const t = String(e || "").replace(/^the\s+/i, "").replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/i, "").replace(/\bChampionship\b/i, "Champ.").replace(/\bInvitational\b/i, "Inv.").replace(/\bTournament\b/i, "Tourn.").replace(/\bInternational\b/i, "Intl.").trim(); return t.length > 15 ? `${t.slice(0, 14).trimEnd()}…` : t; };
   function storyBars(h, cat) {
     const t = h.id.split("-")[0];
     if (t === "eq" && h.k && gearData.has(h.k)) { // the player's own rounds, by tournament: that kind of club's shots, by model
       const x = h.x, val = (s0) => (x.pill === "Balls" ? (s0.ball ? `Ball|${s0.ball}` : null) : s0.gear || null);
       const nmOf = (g) => { const gi = gearInfo(g); return `${gi.brand} ${gi.model}`.trim() || g; };
-      const rs = (gearData.get(h.k) || []).filter(onTour); const evs = eventsOf(rs).slice(-14);
+      const rs = (gearData.get(h.k) || []).filter((r) => onTour(r) && yrOf(r) === seasonYr()); const evs = eventsOf(rs).slice(-14);
       const items = evs.map((e) => { const m = new Map(); let sgs = 0, n = 0; for (const r of e.rs) { let any = false; for (const s0 of r.shots) { const g = val(s0); if (!g) continue; const nm2 = nmOf(g); if (nm2 !== x.neu && nm2 !== x.old && x.pill !== "Balls") { /* another model */ } m.set(nm2, (m.get(nm2) || 0) + (s0.w || 1)); any = true; if (!x.c || s0.cat === x.c) sgs += s0.sg; } if (any) n++; }
         const topM = [...m].sort((a2, b2) => b2[1] - a2[1])[0]?.[0]; return n ? { v: sgs / n, label: `${e.event} ${e.year} · ${topM || ""}`, short: shortEv(e.event), cls: topM === x.neu ? "gold" : "gray" } : null; }).filter(Boolean);
       const svg = barSvg(items, { note: "By tournament" }); if (!svg) return null;
       return [el("div", { class: "td-kick mute" }, `Strokes gained a round ${COL_IN[x.c]}, tournament by tournament`), svg, el("div", { class: "td-legend" }, [el("span", { class: "gold" }, x.neu), el("span", { class: "gray" }, x.old)])];
     }
     if (!h.k) return null;
-    const p = field.find((q) => q.key === h.k), rs = sgRounds(rawOf(p)); if (!rs.length) return null;
+    const p = field.find((q) => q.key === h.k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null;
     const f = cat ? (r) => inCat(r, cat) : tot, evs = eventsOf(rs).slice(-14), lastEv = evs.at(-1);
     const items = evs.map((e) => ({ v: avgOf(e.rs, f), label: `${e.event} ${e.year}`, short: shortEv(e.event), hot: e === lastEv }));
     const svg = barSvg(items, { note: "By tournament" }); if (!svg) return null;
@@ -324,7 +329,7 @@ export async function render(main, { previewClient } = {}) {
       el("p", { class: "td-note" }, `${x.where[0].toUpperCase()}${x.where.slice(1)}, as the product table on Stats counts it.`), more(h)]), h); };
   const rankBox = (items) => { const rows = [];
     for (const h of items) for (const f of h.x?.hits || []) { const bad = f.n && f.r > f.n / 2;
-      const tr = el("tr", {}, [el("td", { class: `r${bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${rkName(f.c)[0].toUpperCase()}${rkName(f.c).slice(1)}${f.n ? ` (of ${f.n})` : ""}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v))]);
+      const tr = el("tr", {}, [el("td", { class: `r${bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${rkName(f.c)[0].toUpperCase()}${rkName(f.c).slice(1)}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v))]);
       tr.dataset.r = String(bad ? 1000 + f.r : f.r);
       rows.push(tap(tr, { run: () => toBoard({ year: [h.x.yr], cats: f.c === "TOTAL" ? [] : [f.c] }, "Rankings", EX.lead(`Who leads in ${rkName(f.c)}?`)) })); } /* (update 737: the leaderboard for that part of the game) */
     rows.sort((a, b) => Number(a.dataset.r) - Number(b.dataset.r));
@@ -341,10 +346,10 @@ export async function render(main, { previewClient } = {}) {
     for (const id of ORDER) {
       const mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
       const pick = [], byK = new Map(); // up to 6 (2 a player first, when there are several)
-      const cap = id === "tour" ? 9 : 6; /* (update 736: more briefs) */
+      const cap = id === "tour" || id === "course" ? 9 : 6; /* (update 736: more briefs) */
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
-      const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}` : id === "next" ? next?.name || "" : sub0;
+      const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
       const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "tour" ? el("div", { class: "td-wire" }, pick.map(wire)) : el("div", { class: "td-cols" }, pick.map(column));
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}` }, [el("div", { class: "td-sh" }, [el("h2", {}, title), sub ? el("span", {}, sub) : null]), content]));
     }
@@ -379,8 +384,8 @@ export async function render(main, { previewClient } = {}) {
     const u = ev ? eventsOf(rs).map((e) => e.rs) : rs.map((r) => [r]), n = ev ? 3 : 12; if (u.length < 2 * n) return null;
     return { n, lbl: ev ? `${n} events` : `${n} rounds`, last: u.slice(-n).flat(), prev: u.slice(-2 * n, -n).flat() }; };
   function highlightsFor(k) {
-    const raw = rawOf(field.find((p) => p.key === k)), out = [], rs = sgRounds(raw); if (!rs.length) return out; // (update 728: Compare's rounds and order)
-    const ys = yearsOf(k), last = ys.at(-1), season = rs.filter((r) => yrOf(r) === last), evs = eventsOf(season), sAvg = avgOf(season, tot);
+    const raw = rawOf(field.find((p) => p.key === k)), out = [], SY = seasonYr(), rs = sgRounds(raw).filter((r) => yrOf(r) === SY); if (!rs.length) return out; /* (update 738: this season only) */ // (update 728: Compare's rounds and order)
+    const last = SY, season = rs, evs = eventsOf(season), sAvg = avgOf(season, tot);
     const ago = (d) => (Date.now() - (Date.parse(String(d).slice(0, 10)) || 0)) / 864e5, recent = (d) => ago(d) <= 21;
     // the last tournament: against the season
     const le = evs.at(-1);
@@ -496,10 +501,31 @@ export async function render(main, { previewClient } = {}) {
   let upHoles = null; // (update 737) { id, holes: [{ h, par, yds, toPar }] }: the next course's holes, from its scoring
   async function loadUpCourse() { const U = UPCOMING; await heatP;
     const c = heat?.find((h) => (h.events || []).some((e) => U.re.test(e.name)) && !U.not.test(h.name)) || heat?.find((h) => U.course.test(h.name) && !U.not.test(h.name)); if (!c) return;
-    const { heatData } = await import("../courseHeat.js"); const d = await heatData(c).catch(() => null); if (!d?.holes) return;
+    const { heatData } = await import("../courseHeat.js"); const d = await heatData(c).catch(() => null); if (!d?.holes) return; upFromData(c, d); }
+  function upFromData(c, d) {
     const holes = Object.entries(d.holes).map(([h, Hh]) => { const tees = Object.values(Hh.pins || {}).flatMap((P) => (P.rows || []).filter((q) => /tee/i.test(q.lie || ""))); let sw = 0, sv = 0; for (const q of tees) { const w = q.n || 1; sw += w; sv += q.v * w; }
       const par = Hh.par || c.par?.[Number(h) - 1]; return sw && par ? { h: Number(h), par, yds: Hh.yards || c.yards?.[Number(h) - 1] || null, toPar: sv / sw - par } : null; }).filter(Boolean).sort((a, b) => a.h - b.h);
-    upHoles = { id: c.id, holes }; drawFeed(collect()); }
+    // (update 738) where the strategy matters most, from the field's scoring at every spot:
+    //   fairway: rough and bunkers against the fairway at the same distance (25-yd bands, 100+ yds out), strokes
+    //   around the green (within 30 yds, off it): each side of the pin by the line of play, the worst against the best
+    const LI = (l) => { l = String(l || "").toLowerCase(); return /green/.test(l) ? "green" : /fairway/.test(l) ? "fw" : /rough|bunker|sand/.test(l) ? "miss" : /tee/.test(l) ? "tee" : null; };
+    const SEC8 = ["long", "long-right", "right", "short-right", "short", "short-left", "left", "long-left"];
+    const fw = [], side = [];
+    for (const [h, Hh] of Object.entries(d.holes)) { const par = Hh.par || c.par?.[Number(h) - 1]; if (!par) continue;
+      const bands = new Map(), secs = new Map();
+      for (const P of Object.values(Hh.pins || {})) { const rows = P.rows || [];
+        if (par >= 4) for (const q of rows) { const L = LI(q.lie); if ((L !== "fw" && L !== "miss") || q.dist == null || q.dist < 100) continue; const b = Math.floor(q.dist / 25), w = q.n || 1, B = bands.get(b) || bands.set(b, { fw: [0, 0], miss: [0, 0] }).get(b); B[L][0] += q.v * w; B[L][1] += w; }
+        const tees = rows.filter((q) => LI(q.lie) === "tee"); if (P.x == null || !tees.length) continue;
+        const tx = tees.reduce((t, q) => t + q.x, 0) / tees.length, ty = tees.reduce((t, q) => t + q.y, 0) / tees.length, lx = P.x - tx, ly = P.y - ty, ll = Math.hypot(lx, ly); if (!ll) continue;
+        for (const q of rows) { const L = LI(q.lie); if (L === "green" || L === "tee" || L == null || q.dist == null || q.dist > 30) continue;
+          const dx = q.x - P.x, dy = q.y - P.y, along = (dx * lx + dy * ly) / ll, across = (lx * dy - ly * dx) / ll, ang = Math.atan2(across, along) * 180 / Math.PI;
+          const sname = SEC8[((Math.round(ang / 45) % 8) + 8) % 8], w = q.n || 1, S0 = secs.get(sname) || secs.set(sname, [0, 0]).get(sname); S0[0] += q.v * w; S0[1] += w; } }
+      let num = 0, den = 0; for (const B of bands.values()) if (B.fw[1] >= 5 && B.miss[1] >= 5) { num += (B.miss[0] / B.miss[1] - B.fw[0] / B.fw[1]) * B.miss[1]; den += B.miss[1]; }
+      if (den >= 20) fw.push({ h: Number(h), par, pen: num / den, n: den });
+      const ss = [...secs].filter(([, v]) => v[1] >= 8).map(([nm2, v]) => ({ nm: nm2, v: v[0] / v[1], n: v[1] })).sort((a, b) => a.v - b.v);
+      if (ss.length >= 3) side.push({ h: Number(h), par, best: ss[0], worst: ss.at(-1), spread: ss.at(-1).v - ss[0].v }); }
+    fw.sort((a, b) => b.pen - a.pen); side.sort((a, b) => b.spread - a.spread);
+    upHoles = { id: c.id, holes, fw, side }; drawFeed(collect()); }
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
     const c = heat?.find((h) => (h.events || []).some((e) => U.re.test(e.name)) && !U.not.test(h.name)) || heat?.find((h) => U.course.test(h.name) && !U.not.test(h.name));
@@ -508,7 +534,7 @@ export async function render(main, { previewClient } = {}) {
     // (update 737) the course's key holes, from the strategy maps' scoring (every shot the field has hit there)
     if (c && upHoles?.id === c.id && upHoles.holes.length >= 9) { const H = upHoles.holes, pm = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`, hn = (x) => `No. ${x.h} (par ${x.par}${x.yds ? `, ${x.yds} yds` : ""})`;
       const hard = [...H].sort((a, b) => b.toPar - a.toPar), easy = [...H].sort((a, b) => a.toPar - b.toPar);
-      out.push({ id: "up-hard", k: null, kind: "Course", score: 4.9, title: `The hardest hole at ${c.name}: ${hn(hard[0])}, ${pm(hard[0].toPar)} a round`, detail: `Then No. ${hard[1].h} (${pm(hard[1].toPar)}) and No. ${hard[2].h} (${pm(hard[2].toPar)}) · against par, from every shot the field has hit there`,
+      out.push({ id: "up-hard", k: null, kind: "Course", score: 4.9, title: `The hardest hole at ${c.name}: ${hn(hard[0])}, ${pm(hard[0].toPar)} against par`, detail: `Then No. ${hard[1].h} (${pm(hard[1].toPar)}) and No. ${hard[2].h} (${pm(hard[2].toPar)}) · against par, from every shot the field has hit there`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, hard[0].h, EX.hole(`How should I play hole ${hard[0].h}?`)) });
       out.push({ id: "up-easy", k: null, kind: "Course", score: 4.8, title: `Birdie chances: ${hn(easy[0])}, ${pm(easy[0].toPar)}`, detail: `Then No. ${easy[1].h} (${pm(easy[1].toPar)}) and No. ${easy[2].h} (${pm(easy[2].toPar)}) · against par, the field's scoring`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, easy[0].h, EX.hole(`How should I play hole ${easy[0].h}?`)) });
@@ -516,6 +542,13 @@ export async function render(main, { previewClient } = {}) {
       if (byPar.length >= 2) { const bestP = [...byPar].sort((a, b) => a[1] - b[1])[0];
         out.push({ id: "up-pars", k: null, kind: "Course", score: 4.7, title: `Par ${bestP[0]}s are the scoring holes: ${pm(bestP[1])} a hole`, detail: `${byPar.map(([pp, v, n]) => `Par ${pp}s ${pm(v)} (${n})`).join(" · ")} · the course plays ${pm(sum)} against par for the field`,
           to: "Course Prep · Course Insights", run: () => toHole(c.id, 1, EX.course(`How does ${c.name} play?`)) }); } }
+    if (c && upHoles?.id === c.id) { const pm2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+      const F = upHoles.fw.filter((x) => x.pen >= 0.1);
+      if (F.length) out.push({ id: "up-fw", k: null, kind: "Course", score: 4.75, title: `Find the fairway on No. ${F[0].h}: missing it costs ${pm2(F[0].pen)} strokes`, detail: `${F.length > 1 ? `Then No. ${F[1].h} (${pm2(F[1].pen)})${F[2] ? ` and No. ${F[2].h} (${pm2(F[2].pen)})` : ""} · ` : ""}rough and bunkers against the fairway from the same distance, 100+ yds out, the field's scoring`,
+        to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, F[0].h, EX.hole(`Where should I aim off the tee on hole ${F[0].h}?`)) });
+      const Sd = upHoles.side.filter((x) => x.spread >= 0.15);
+      if (Sd.length) { const x = Sd[0]; out.push({ id: "up-side", k: null, kind: "Course", score: 4.72, title: `The costliest miss: ${x.worst.nm} of No. ${x.h}`, detail: `Miss ${x.best.nm} instead (${x.best.v.toFixed(2)} to finish against ${x.worst.v.toFixed(2)}): ${x.spread.toFixed(2)} strokes better${Sd[1] ? ` · also No. ${Sd[1].h}: ${Sd[1].best.nm}, never ${Sd[1].worst.nm} (${Sd[1].spread.toFixed(2)})` : ""} · within 30 yds of the pin`,
+        to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, x.h, EX.hole(`Where should I miss on hole ${x.h}?`)) }); } }
     // course form: the best there over the years (on the tour picked)
     const hist = field.map((p) => { const rs = sgRounds(rawOf(p)).filter(isU); return rs.length ? { k: p.key, rs, v: perRound(rs), yrs: new Set(rs.map(yrOf)).size } : null; }).filter(Boolean);
     const horses = hist.filter((x) => x.rs.length >= 8).sort((a, b) => b.v - a.v).slice(0, 3);
@@ -540,7 +573,7 @@ export async function render(main, { previewClient } = {}) {
   const PROD_COL = { Driver: "OTT", "Non-Driver": "OTT", Irons: "APP", Wedges: "ARG", Putters: "PUTT", Balls: null };
   const COL_IN = { OTT: "off the tee", APP: "on approach", ARG: "around the green", PUTT: "putting", null: "in total" };
   function gearHighlights(k) {
-    const rs = (gearData.get(k) || []).filter(onTour).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))); if (!rs.length) return [];
+    const rs = (gearData.get(k) || []).filter((r) => onTour(r) && yrOf(r) === seasonYr()).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))); if (!rs.length) return [];
     const evs = eventsOf(rs).slice(-16), out = [], plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
     for (const pill of ["Driver", "Putters", "Irons", "Wedges", "Non-Driver", "Balls"]) {
       const val = (s) => (pill === "Balls" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear && KIND_PILL[gearInfo(s.gear).kind] === pill ? s.gear : null);
@@ -553,10 +586,10 @@ export async function render(main, { previewClient } = {}) {
       const row = (g) => { const rds = rs.filter((rd) => rd.shots.some((s) => val(s) === g)); if (!rds.length) return null;
         return { v: rds.reduce((t, rd) => t + rd.shots.reduce((u, s) => u + (val(s) === g && (!c || s.cat === c) ? s.sg : 0), 0), 0) / rds.length, n: rds.length, ev: new Set(rds.map((r) => `${r.event}|${yrOf(r)}`)).size }; };
       const A = row(neu), B = row(old); if (!A || !B) continue;
-      const dd = A.v - B.v, where = tourPick && tourPick !== ALL ? `every ${tourName(tourPick)} round` : "every round on every tour";
+      const dd = A.v - B.v, where = tourPick && tourPick !== ALL ? `every ${tourName(tourPick)} round in ${seasonYr()}` : `every round in ${seasonYr()}`;
       out.push({ id: `eq-${k}-${pill}`, k, x: { pill, neu: nm(neu), old: nm(old), A, B, c, dd, where }, kind: "Equipment", score: 7 + Math.abs(dd) * 2, title: `New ${KIND_WORD[pill] || "club"}: ${nm(neu)}, ${sg2(dd)} a round ${COL_IN[c]}`,
         detail: `${sg2(A.v)} a round over ${plural(A.n, "round")} (${plural(A.ev, "tournament")}) with it, against ${sg2(B.v)} over ${plural(B.n, "round")} (${plural(B.ev, "tournament")}) with the ${nm(old)} · ${where}, as the product table on Stats counts it`,
-        to: "Stats · SG Trends by Product", run: () => toStats(k, { view2: "full", productKind: pill, year: [], span: 0, cats: [] }, "SG Trends by Product", EX.product(`How is the new ${KIND_WORD[pill] || "club"} working?`, pill)) });
+        to: "Stats · SG Trends by Product", run: () => toStats(k, { view2: "full", productKind: pill, year: [seasonYr()], span: 0, cats: [] }, "SG Trends by Product", EX.product(`How is the new ${KIND_WORD[pill] || "club"} working?`, pill)) });
     }
     return out;
   }
@@ -617,7 +650,7 @@ export async function render(main, { previewClient } = {}) {
   }
   // (the data, once everything above is defined)
   // (the data, once everything above is defined)
-  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who }) }); // (tests only)
+  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setHeat: (h) => { heat = h; }, upFromData, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who }) }); // (tests only)
   try {
     if (selfKey) keys = [selfKey];
     else {

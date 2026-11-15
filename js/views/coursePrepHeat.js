@@ -290,6 +290,11 @@ export async function drawHeat(ctx, course) {
     if (!Z || !size.w || zm.moved) { zm.moved = false; return; }
     const r = cv.getBoundingClientRect(), DW = rot ? size.h : size.w, DH = rot ? size.w : size.h;
     const [x, y] = toImg(((e.clientX - r.left) / r.width) * DW, ((e.clientY - r.top) / r.height) * DH, size.w, rot);
+    // (update 738) a tap inside one of Cal's circles opens that circle exactly (its centre and size; a miss circle with the
+    // green left out), so the numbers are the ones in Cal's text
+    if (meta.rawChunks && st.calOn && calRead?.r?.items) {
+      const hit = calRead.r.items.flatMap((it) => (it.at || []).map((c) => ({ it, c }))).filter(({ c }) => c[4] && Math.hypot(x - c[0], y - c[1]) <= c[2]).sort((p, q) => Math.hypot(x - p.c[0], y - p.c[1]) - Math.hypot(x - q.c[0], y - q.c[1]))[0];
+      if (hit) { st.spotR = hit.c[4]; st.spotOff = new Set(hit.c[5] ? ["green"] : []); openSpot(hit.c[0], hit.c[1]); return; } }
     if (meta.rawChunks) { openSpot(x, y); return; } // (update 500)
     const z = zoneAt(Z.zones, x, y, ov);
     if (!z) { pop.hidden = true; hideDot(); return; } // (no colour there: nothing to show)
@@ -687,15 +692,25 @@ export async function drawHeat(ctx, course) {
     const lieOfTip = (it) => { const t = String(it.t); if (it.k === "tee" && /^Aim/.test(t)) return "fairway"; return /bunker/i.test(t) ? "bunker" : /rough/i.test(t) ? "rough" : /fairway/i.test(t) ? "fairway" : /green/i.test(t) ? "green" : null; };
     const nTxt = (m) => `${m < 15 ? "only " : ""}${m} sample${m === 1 ? "" : "s"}`;
     const items = read.r.items.map((it) => {
-      const a = it.at?.[0], L = a ? lieOfTip(it) : null; if (!a || !L) return it;
+      // (update 738) a miss with no lie named ("miss long"): every shot in its circle that missed the green
+      const a = it.at?.[0], L = a ? lieOfTip(it) || (it.k === "miss" ? "miss" : null) : null; if (!a || !L) return it;
       const kk = it.k === "tee" ? 1 : k && k > 1 ? k : Math.max(1, par - 2); // (the shot whose results the tip is about)
       const pool = list.filter((q) => ids.has(q.pid) && q.v != null && q.st === kk + 1);
       const ry = [8, 10].sort((p, q) => Math.abs(p * ppyT - a[2]) - Math.abs(q * ppyT - a[2]))[0], R = ry * ppyT;
-      const mem = pool.filter((q) => q.lie === L && q.s != null && Math.hypot(q.x - a[0], q.y - a[1]) <= R);
-      if (!mem.length) return { ...it, at: [[a[0], a[1], R, a[3]]], recounted: true };
+      const fits = (q) => q.s != null && (L === "miss" ? q.lie !== "green" : q.lie === L);
+      const inAt = (cx, cy) => pool.filter((q) => fits(q) && Math.hypot(q.x - cx, q.y - cy) <= R);
+      // (update 738) a thin miss circle (under 10 shots): moved up to 3 yds when that takes in shots sitting just outside it
+      let cx = a[0], cy = a[1], mem = inAt(cx, cy);
+      if (it.k === "miss" && mem.length < 10) { let best = { n: mem.length, d: 0, x: cx, y: cy };
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const d = Math.hypot(dx, dy); if (!d || d > 3) continue; const x2 = a[0] + dx * ppyT, y2 = a[1] + dy * ppyT, n2 = inAt(x2, y2).length;
+          if (n2 > best.n || (n2 === best.n && n2 > mem.length && d < best.d)) best = { n: n2, d, x: x2, y: y2 }; }
+        if (best.n > mem.length) { cx = best.x; cy = best.y; mem = inAt(cx, cy); } }
+      if (!mem.length) return { ...it, at: [[cx, cy, R, a[3], ry, it.k === "miss"]], recounted: true };
       const v = (par + mem.reduce((t, q) => t + q.s, 0) / mem.length).toFixed(2);
       const t = String(it.t).replace(/\((\d+\.\d+), (only )?(\d+) samples?\)/, `(${v}, ${nTxt(mem.length)})`).replace(/: (\d+\.\d+) \((only )?(\d+) samples?\)/, `: ${v} (${nTxt(mem.length)})`);
-      return { ...it, t, at: [[a[0], a[1], R, a[3]], ...(it.at.slice(1))], recounted: true };
+      // (update 738) enough shots after the recount (10+): no longer "too few to rank" / "so far"
+      const firm = mem.length >= 10, t2 = firm ? t.replace(/^Too few misses to rank firmly; so far, /, "If you miss the green, ").replace(/^Worst so far: /, "Worst: ") : t, h2 = firm ? String(it.h).replace(/ so far$/, "") : it.h;
+      return { ...it, h: h2, t: t2, at: [[cx, cy, R, a[3], ry, it.k === "miss"], ...(it.at.slice(1))], recounted: true }; // (ry: its size in yds; a miss circle: the green left out)
     });
     // (update 723) best, 2nd best and worst kept in order of their numbers after the recount: best lowest, each strictly
     // better than the next (one showing the same average as the one before it is left out); renamed and recoloured to fit

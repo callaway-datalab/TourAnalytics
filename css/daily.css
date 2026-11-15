@@ -147,3 +147,4 @@ html[data-theme="light"] .ah.td .td-ask .ah-mic { background: radial-gradient(ci
 .td-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .td-legend .gold::before { background: var(--td-gold); } .td-legend .gray::before { background: var(--td-mute); }
 .td-box td.r.down { color: var(--td-down); }
+.td-bars .td-tx { font-size: 9px; } .td-bars .td-tx.hot { fill: var(--td-ink); font-weight: 700; }
