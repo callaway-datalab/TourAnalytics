@@ -164,7 +164,7 @@ export function barChart(S, canvas, labels, values0, { title: title0, compare: c
   if (title) o.scales.y.title = { display: true, text: title, color: "#8e8e93" };
   // (update 713) a bar that can be tapped (SG Trends by Product's Edit)
   if (onBarClick) { o.onClick = (e, els) => { if (els?.length) onBarClick(els[0].index); }; o.onHover = (e, els) => { const t = e?.native?.target; if (t) t.style.cursor = els?.length ? "pointer" : "default"; }; }
-  return new Chart(canvas, { data: { labels, datasets }, options: o });
+  return new Chart((canvas.classList.add("cjs"), canvas), { data: { labels, datasets }, options: o });
 }
 export function scatterChart(S, canvas, pts, lim) {
   const m = (a) => a.reduce((x, y) => x + y, 0) / a.length;
@@ -182,7 +182,7 @@ export function scatterChart(S, canvas, pts, lim) {
   const o = S.baseOptions();
   o.scales.x = { ...o.scales.x, min: -lim, max: lim, title: { display: true, text: "\u2190 Left   \u00b7   Right \u2192", color: "#8e8e93" }, grid: { color: (c) => (c.tick?.value === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.06)") } };
   o.scales.y = { ...o.scales.y, min: -lim, max: lim, title: { display: true, text: "\u2190 Short   \u00b7   Long \u2192", color: "#8e8e93" } };
-  return new Chart(canvas, { type: "scatter", data: { datasets: [{ data: pts, pointRadius: 3, backgroundColor: "rgba(200,169,126,0.55)", borderColor: "rgba(200,169,126,0.95)" }] }, options: o, plugins: [ellipse] });
+  return new Chart((canvas.classList.add("cjs"), canvas), { type: "scatter", data: { datasets: [{ data: pts, pointRadius: 3, backgroundColor: "rgba(200,169,126,0.55)", borderColor: "rgba(200,169,126,0.95)" }] }, options: o, plugins: [ellipse] });
 }
 export function missBar(S, parts) {
   const color = (l) => (l === "Fairway" ? "#30d158" : /^l/i.test(l) ? "#0a84ff" : /^r/i.test(l) ? "#bf5af2" : "#48484a");

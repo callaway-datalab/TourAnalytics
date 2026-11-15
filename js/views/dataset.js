@@ -269,7 +269,7 @@ export async function render(main, { params, previewClient, flash, embedded = fa
           scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0 } },
             y: { beginAtZero: type === "bar", grid: { color: grid }, ticks: { callback: (v) => compact.format(v) } } } } };
     }
-    chart = new Chart(canvas, config);
+    chart = new Chart((canvas.classList.add("cjs"), canvas), config);
   }
 
   setupTable();

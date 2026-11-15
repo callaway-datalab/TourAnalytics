@@ -195,6 +195,13 @@ export function setUnreadCount(n) {
   document.title = n > 0 ? `(${n}) ${base}` : base;
 }
 
+/** (update 731) "Light mode" / "Dark mode": every page, kept on this device (js/theme.js). */
+function themeItem() {
+  const cur = () => (window.taTheme?.get?.() === "light" ? "light" : "dark");
+  const b = el("button", { class: "menu-item menu-theme", type: "button", role: "menuitem" }, cur() === "light" ? "Dark mode" : "Light mode");
+  b.addEventListener("click", () => { const t = cur() === "light" ? "dark" : "light"; window.taTheme?.set?.(t); b.textContent = t === "light" ? "Dark mode" : "Light mode"; });
+  return b;
+}
 /* Account button: a drop-down with your email, Questions (with the unread count) and Reset Password. */
 function accountMenu(state) {
   const email = state.user?.email || "";
@@ -214,6 +221,7 @@ function accountMenu(state) {
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     el("button", { class: "menu-item menu-issue", type: "button", role: "menuitem", onClick: () => { setOpen(false); reportIssueDialog(); } }, "Report an issue"),
     state.isAdmin ? el("button", { class: "menu-item menu-perf", type: "button", role: "menuitem", onClick: () => { setOpen(false); import("./perf.js").then((m) => m.togglePerf()); } }, "Performance") : null, // (update 325)
+    themeItem(), // (update 731)
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
   ]);
   const wrap = el("div", { class: "account" }, [btn, menu]);

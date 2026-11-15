@@ -889,7 +889,15 @@ export function buildFieldSummary(players) {
 }
 
 /** Turn a published summary back into the { key, name, rounds } shape the dashboard uses. */
+// (update 731) built once per summary and shared (a new list each call, the same players): each page building its own
+// copy of every player (2,000+) ran phones out of memory (Home reloading itself)
+const spMemo = new WeakMap();
 export function summaryPlayers(summary) {
+  if (!summary || typeof summary !== "object") return [];
+  let m = spMemo.get(summary); if (!m) { m = summaryPlayers0(summary); spMemo.set(summary, m); }
+  return m.slice();
+}
+function summaryPlayers0(summary) {
   return (summary?.players || []).map((p) => ({
     key: p.key, name: p.name, summaryOnly: true, birth: p.b || null, // (update 396)
     rounds: p.rounds.map((rd, i) => ({

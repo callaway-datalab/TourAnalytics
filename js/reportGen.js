@@ -1586,7 +1586,7 @@ const once = (watchFn, ...args) => new Promise((res) => { let un = null; un = wa
 // detail: the field's per-round lie / distance detail (Cloud Storage) in place of the round totals, so ranks go
 // down to each distance and lie. Off when the caller has the field already, or doesn't need ranks that deep.
 const enteredFor = async (playerKey) => { try { return ((await once(watchPlayerRounds, playerKey)) || []).map(roundToPrepared); } catch { return []; } };
-export async function loadSource(source, playerKey, label, { detail = true } = {}) {
+export async function loadSource(source, playerKey, label, { detail = true, field: withField = true } = {}) { /* (update 731) field: false: the player's own rounds only (no field summary) */
   if (source === "entered") {
     const state = getState();
     const rounds = await once(watchPlayerRounds, playerKey);
@@ -1601,7 +1601,7 @@ export async function loadSource(source, playerKey, label, { detail = true } = {
   const shot = (datasets || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];
   if (!shot) { if (!entered.length) return null; const me0 = { key: playerKey, label, rounds: entered }; return { me: me0, field: [me0], idx: ENTERED_IDX }; }
   const idx = detectColumns(shot.columns || []);
-  const [rows, summary] = await Promise.all([getDatasetRows(playerKey, shot.id, shot.chunkCount), getFieldStats(shot.id).catch(() => null)]);
+  const [rows, summary] = await Promise.all([getDatasetRows(playerKey, shot.id, shot.chunkCount), withField ? getFieldStats(shot.id).catch(() => null) : null]);
   const me = { key: playerKey, label, rounds: [...prepare(rows, idx, playerKey), ...entered].sort((a, b) => String(a.date).localeCompare(String(b.date))) };
   let field = summaryPlayers(summary);
   if (detail && field.length) {

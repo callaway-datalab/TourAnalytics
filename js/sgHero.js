@@ -540,7 +540,7 @@ export function rankChart(S, canvas, labels, hist) {
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "rgba(212,180,131,0.35)"); grad.addColorStop(1, "rgba(212,180,131,0)");
   const ranks = hist.map((x) => x.rank), worst = Math.max(...ranks);
-  return new Chart(canvas, {
+  return new Chart((canvas.classList.add("cjs"), canvas), {
     type: "line",
     data: { labels, datasets: [{ data: ranks, borderColor: "#d4b483", backgroundColor: grad, fill: "end", borderWidth: 2.4, stepped: false, tension: 0.25,
       pointRadius: ranks.map((_, i) => (i === ranks.length - 1 ? 3.5 : 0)), pointBackgroundColor: "#f3dfbd", pointHoverRadius: 4 }] },
@@ -556,7 +556,7 @@ export function heroChart(S, canvas, labels, vals) {
   const ctx = canvas.getContext("2d"), h = canvas.parentNode?.clientHeight || 180;
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "rgba(212,180,131,0.45)"); grad.addColorStop(1, "rgba(212,180,131,0)");
-  return new Chart(canvas, {
+  return new Chart((canvas.classList.add("cjs"), canvas), {
     type: "line",
     data: { labels, datasets: [{ data: vals, borderColor: "#d4b483", backgroundColor: grad, fill: S.isSG() ? "origin" : "start", borderWidth: 2.4, tension: 0.25,
       pointRadius: vals.map((_, i) => (i === vals.length - 1 ? 3.5 : 0)), pointBackgroundColor: "#f3dfbd", pointHoverRadius: 4 }] },
