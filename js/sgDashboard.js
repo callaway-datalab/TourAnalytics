@@ -778,7 +778,11 @@ export function sgDashboard(container, opts) {
   // between the shortest and longest bar gets most of the dark-to-bright range, so differences still show.
   const GRAD = { up: ["#0c4a24", "#3ef07e"], down: ["#5c0f0b", "#ff5c4f"], blue: ["#0a2f66", "#4db2ff"] }; // [at zero, at the biggest bar]
   const LINE_COLOR = { blue: "#2f9bff", up: "#30d158" };
-  const rampOf = (single, v) => (single === "up" ? GRAD.up : single ? GRAD.blue : v >= 0 ? GRAD.up : GRAD.down);
+  // (update 739) the light theme: light at zero, darker toward the biggest bar (each bar's end on the same scale, so the
+  // biggest gain / loss is the darkest)
+  const GRAD_L = { up: ["#d9f2e1", "#0d6b2f"], down: ["#f8dcd8", "#9c140a"], blue: ["#d6e8fb", "#0b4f9e"] };
+  const lightOn = () => document.documentElement.getAttribute("data-theme") === "light";
+  const rampOf = (single, v) => { const G = lightOn() ? GRAD_L : GRAD; return single === "up" ? G.up : single ? G.blue : v >= 0 ? G.up : G.down; };
   const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const mix = (a, b, t) => { const p = hex(a), q = hex(b); return `rgb(${p.map((x, i) => Math.round(x + (q[i] - x) * t)).join(",")})`; };
   function rampStops(...a) { return sgCharts.rampStops(S, ...a); }

@@ -203,7 +203,8 @@ export function heroBox(S, mine, slicedField, f) {
   const posMax = Math.max(...shown.filter((x) => x.v >= 0).map((x) => x.v), 0.01), negMax = Math.max(...shown.filter((x) => x.v < 0).map((x) => -x.v), 0.01);
   // another stat: one blue bar, its length from the lowest value to the highest (so the differences show)
   const lo = Math.min(...shown.map((x) => x.v)), hi = Math.max(...shown.map((x) => x.v));
-  const blueBar = (v) => { const fr = hi - lo > 1e-9 ? 0.12 + (0.88 * (v - lo)) / (hi - lo) : 1; return `width:${fr * 100}%;background:linear-gradient(90deg, #0a2f66, #4db2ff);background-size:${100 / fr}% 100%;background-repeat:no-repeat`; };
+  // (update 739) the blue bar's colors: the theme's blue ramp (the light theme: light to dark)
+  const blueBar = (v) => { const fr = hi - lo > 1e-9 ? 0.12 + (0.88 * (v - lo)) / (hi - lo) : 1; return `width:${fr * 100}%;background:linear-gradient(90deg, ${S.rampOf("blue")[0]}, ${S.rampOf("blue")[1]});background-size:${100 / fr}% 100%;background-repeat:no-repeat`; };
   return el("section", { class: "panel hero" }, [
     el("div", { class: "hb-head" }, [el("div", {}, [el("span", { class: "hero-kicker" }, S.describe()), el("h2", { class: "hero-name" }, "Leaderboard"),
       el("p", { class: "hero-help" }, [el("strong", {}, S.def.label), `: ${S.def.help}`])]), minBox]),
