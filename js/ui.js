@@ -219,6 +219,7 @@ function accountMenu(state) {
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
+    state.isAdmin || state.profile?.kind === "analyst" ? el("a", { class: "menu-item menu-bulk", href: "#/bulk-reports", role: "menuitem" }, "Bulk Reports") : null, // (update 740)
     el("button", { class: "menu-item menu-issue", type: "button", role: "menuitem", onClick: () => { setOpen(false); reportIssueDialog(); } }, "Report an issue"),
     state.isAdmin ? el("button", { class: "menu-item menu-perf", type: "button", role: "menuitem", onClick: () => { setOpen(false); import("./perf.js").then((m) => m.togglePerf()); } }, "Performance") : null, // (update 325)
     themeItem(), // (update 731)

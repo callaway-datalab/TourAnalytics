@@ -148,3 +148,9 @@ html[data-theme="light"] .ah.td .td-ask .ah-mic { background: radial-gradient(ci
 .td-legend .gold::before { background: var(--td-gold); } .td-legend .gray::before { background: var(--td-mute); }
 .td-box td.r.down { color: var(--td-down); }
 .td-bars .td-tx { font-size: 9px; } .td-bars .td-tx.hot { fill: var(--td-ink); font-weight: 700; }
+/* (update 740) the + list: favorites ticked */
+.ah-opt.ah-check { display: flex; justify-content: space-between; align-items: center; }
+.ah-opt.ah-check .ah-tick { font-style: normal; font-weight: 800; color: #d4b483; width: 1.2em; text-align: right; }
+.ah-opt.ah-check.on { border-color: #d4b483; }
+html[data-theme="light"] .ah-opt.ah-check .ah-tick { color: #7a5a25; }
+html[data-theme="light"] .ah-opt.ah-check.on { border-color: #7a5a25; }
