@@ -603,7 +603,10 @@ export async function render(main, { previewClient } = {}) {
   // more than in a usual week, and each pin's costliest miss (where, from which lie, after which shot). Not on phones.
   let upRaw = null;
   async function loadUpRaw(c) {
-    if (!c.rawChunks) return; const CH = await import("../courseHeat.js"); if (CH.LOW_MEM) return;
+    if (!c.rawChunks) return; const CH = await import("../courseHeat.js");
+    // (update 746) a phone: the shots load once Course Strategy is (nearly) on screen, as Strategy Maps loads them there
+    if (CH.LOW_MEM) await new Promise((ok) => { const near = () => { const n = document.getElementById("td-course"); return n && n.getBoundingClientRect().top < innerHeight + 600; };
+      if (near()) return ok(); const f = () => { if (near()) { removeEventListener("scroll", f); ok(); } }; addEventListener("scroll", f, { passive: true }); });
     const { loadRaw } = await import("../courseRaw.js"); const rows = await loadRaw(c); if (!rows?.length) return; upRawFrom(c, rows, CH); }
   function upRawFrom(c, rows, CH) {
     const num = (v) => (v == null || v === "" ? null : Number(v));
@@ -655,7 +658,7 @@ export async function render(main, { previewClient } = {}) {
     out.push({ id: "up-strat", k: null, kind: "Course", score: ROLE === "caddy" ? 8.8 : 5.2, title: `How to play ${c?.name || U.name}`, detail: c ? `Cal’s targets for every hole: where to aim off the tee and where to miss the green, from every shot the field has hit there` : `Strategy maps and course insights for ${U.name}`,
       to: c ? "Course Prep · Strategy Maps" : "Course Prep", run: () => (c ? toHole(c.id, 1, EX.course(`How should I play ${U.name}?`)) : go("#/course-prep", EX.course(`How should I play ${U.name}?`))) });
     // (update 737) the course's key holes, from the strategy maps' scoring (every shot the field has hit there)
-    if (c && upHoles?.id === c.id && upHoles.holes.length >= 9 && upRaw?.id !== c.id) { /* (update 744: the shots' own read replaces this when it's loaded) */ const H = upHoles.holes, pm = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`, hn = (x) => `No. ${x.h} (par ${x.par}${x.yds ? `, ${x.yds} yds` : ""})`;
+    if (c && upHoles?.id === c.id && upHoles.holes.length >= 9 && !c.rawChunks) { /* (update 746: a course with its shots on record: their read only, on a phone too) */ /* (update 744: the shots' own read replaces this when it's loaded) */ const H = upHoles.holes, pm = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`, hn = (x) => `No. ${x.h} (par ${x.par}${x.yds ? `, ${x.yds} yds` : ""})`;
       const hard = [...H].sort((a, b) => b.toPar - a.toPar), easy = [...H].sort((a, b) => a.toPar - b.toPar);
       out.push({ id: "up-hard", k: null, kind: "Course", score: 4.9, title: `The hardest hole at ${c.name}: ${hn(hard[0])}, ${pm(hard[0].toPar)} against par`, detail: `Then No. ${hard[1].h} (${pm(hard[1].toPar)}) and No. ${hard[2].h} (${pm(hard[2].toPar)}) · against par, from every shot the field has hit there`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, hard[0].h, EX.hole(`How should I play hole ${hard[0].h}?`)) });
@@ -670,7 +673,7 @@ export async function render(main, { previewClient } = {}) {
       if (F.length) out.push({ id: "up-fw", k: null, kind: "Course", score: 4.75, title: `Find the fairway on No. ${F[0].h}: missing it costs ${pm2(F[0].pen)} strokes`, detail: `${F.length > 1 ? `Then No. ${F[1].h} (${pm2(F[1].pen)})${F[2] ? ` and No. ${F[2].h} (${pm2(F[2].pen)})` : ""} · ` : ""}rough and bunkers against the fairway from the same distance, 100+ yds out, the field's scoring`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, F[0].h, EX.hole(`Where should I aim off the tee on hole ${F[0].h}?`)) });
       const Sd = upHoles.side.filter((x) => x.spread >= 0.15);
-      if (Sd.length && upRaw?.id !== c.id) { const x = Sd[0]; out.push({ id: "up-side", k: null, kind: "Course", score: 4.72, title: `The costliest miss: ${x.worst.nm} of No. ${x.h}`, detail: `Miss ${x.best.nm} instead (${x.best.v.toFixed(2)} to finish against ${x.worst.v.toFixed(2)}): ${x.spread.toFixed(2)} strokes better${Sd[1] ? ` · also No. ${Sd[1].h}: ${Sd[1].best.nm}, never ${Sd[1].worst.nm} (${Sd[1].spread.toFixed(2)})` : ""} · within 30 yds of the pin`,
+      if (Sd.length && !c.rawChunks) { const x = Sd[0]; out.push({ id: "up-side", k: null, kind: "Course", score: 4.72, title: `The costliest miss: ${x.worst.nm} of No. ${x.h}`, detail: `Miss ${x.best.nm} instead (${x.best.v.toFixed(2)} to finish against ${x.worst.v.toFixed(2)}): ${x.spread.toFixed(2)} strokes better${Sd[1] ? ` · also No. ${Sd[1].h}: ${Sd[1].best.nm}, never ${Sd[1].worst.nm} (${Sd[1].spread.toFixed(2)})` : ""} · within 30 yds of the pin`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, x.h, EX.hole(`Where should I miss on hole ${x.h}?`)) }); } }
     if (c && upRaw?.id === c.id) { const R0 = upRaw, pc = (v) => `${Math.round(v * 100)}%`, pm3 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
       const H = [...R0.holesR].sort((a, b) => b.idx - a.idx), atk = H[0], dfd = H.at(-1);
