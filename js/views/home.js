@@ -246,7 +246,7 @@ export async function render(main, { previewClient } = {}) {
   // headline, number and the kicker over it, for each kind of highlight (a player's own Home: the card's own wording)
   function dress(h) {
     const k = h.k, x = h.x || {}, S = k ? sur(k) : "", me = k && isMe(k), t = h.id.split("-")[0];
-    const o = { kick: h.kick || h.kind, hl: h.title, deck: h.detail || "", num: null, nc: "", cap: "" };
+    const o = { kick: h.kick ?? (h.kind === "Course" ? "" : h.kind), hl: h.title, /* (update 745: no "Course" over the course cards) */ deck: h.detail || "", num: null, nc: "", cap: "" };
     if (t === "ev") { o.kick = x.best ? "Milestone" : x.worst ? "Rough week" : "Result"; o.hl = me ? h.title : x.best ? `${poss(S)} best week of ${x.yr}, at ${x.ev}` : x.worst ? `A tough week for ${S} at ${x.ev}` : x.d > 0 ? `${S} beats the ${x.yr} average at ${x.ev}` : `${S} slips below the ${x.yr} average at ${x.ev}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total a round, over ${x.n} rounds there`; }
     else if (t === "br") { const on = tourPick && tourPick !== ALL ? `the ${tourName(tourPick)}` : "tour"; o.kick = x.tourBest ? "Best on tour" : "Personal best"; o.hl = x.tourBest ? `${me ? "You" : S} fired the best round on ${on} in ${x.yr}` : me ? h.title : `${poss(S)} best round of ${x.yr}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total, at ${x.ev}${x.tourBest ? "" : ` (${me ? "your" : poss(S)} best this season; not the tour’s best)`}`; }
     else if (t === "st") { o.hl = me ? h.title : `${S} stretches the streak to ${x.n} rounds in the black`; o.num = String(x.n); o.nc = "up"; o.cap = "rounds in a row with strokes gained total above zero"; }
@@ -314,7 +314,7 @@ export async function render(main, { previewClient } = {}) {
   const tap = (node, h) => { node.setAttribute("role", "link"); node.tabIndex = 0; node.addEventListener("click", (e) => { if (!e.target.closest("button, a, summary")) h.run(); }); node.addEventListener("keydown", (e) => { if (e.key === "Enter") h.run(); }); return node; };
   const more = (h) => { const [pg, ...rest] = h.to.split(" · "); return el("span", { class: "td-more" }, `${pg}${rest.length ? ` · ${rest.join(" · ")}` : ""} →`); };
   const whoTag = (h) => (staff && h.k ? el("div", { class: "td-who" }, nameOf(h.k)) : null);
-  const kicker = (h, d, withWho) => el("div", { class: `td-kick${d.nc === "down" && /Slipping|Rough/.test(d.kick) ? " down" : ""}` }, `${d.kick}${withWho && staff && h.k ? ` · ${nameOf(h.k)}` : ""}`);
+  const kicker = (h, d, withWho) => (!d.kick && !(withWho && staff && h.k) ? null : el("div", { class: `td-kick${d.nc === "down" && /Slipping|Rough/.test(d.kick) ? " down" : ""}` }, `${d.kick}${withWho && staff && h.k ? ` · ${nameOf(h.k)}` : ""}`.replace(/^ · /, "")));
   function leadStory(h) {
     const cat = catOf(h), d = dress(h), c = h.k ? ctxOf(h.k, cat) : null, lbl = catLbl(cat);
     const body = [el("p", {}, d.deck)];
@@ -635,19 +635,19 @@ export async function render(main, { previewClient } = {}) {
       for (let i = 0; i < t.qs.length; i++) { const q = t.qs[i], a = togo(q); if (a == null) continue; const nx = t.qs[i + 1], b = nx ? togo(nx) : 0; if (b == null) continue; G[catOfQ(q)] += a - b - 1; } }
     const catEdge = cats.map((c0) => [c0, cs.top[c0] / Math.max(1, cs.top.rds.size) - cs.rest[c0] / Math.max(1, cs.rest.rds.size)]).sort((a, b) => b[1] - a[1]);
     // approach distances here (25-yd bands, 50-250 yds)
-    const band = (d) => (d == null || d < 50 || d >= 250 ? null : Math.floor(d / 25) * 25), mixH = new Map(); let nA = 0;
-    for (const t of T) for (const q of t.qs) if (catOfQ(q) === "APP") { const b = band(q.d); if (b == null) continue; mixH.set(b, (mixH.get(b) || 0) + 1); nA++; }
+    const appD = []; for (const t of T) for (const q of t.qs) if (catOfQ(q) === "APP" && q.d != null && q.d > 30) appD.push(q.d); // (update 745: every approach's distance, put in the players' own ranges below)
     // each pin's costliest miss: where the approach (shot 1 on a par 3, 2 on a par 4, 3 on a par 5) finished off the green
     // within 30 yds, by side of the pin (the line from the tee) and lie, and the hole's average score from there
     const SEC8 = ["long", "long-right", "right", "short-right", "short", "short-left", "left", "long-left"], grp = new Map();
     for (const t of T) { const k0 = Math.max(1, (t.par || 4) - 2), nx = t.qs.find((q) => q.st === k0 + 1); if (!nx || nx.lie === "green" || nx.d == null || nx.d > 30 || nx.x == null) continue;
-      const tee = teeXY.get(t.h), pin = pinXY.get(`${t.h}|${t.pid}`); if (!tee || !pin) continue;
-      const tx = tee[0] / tee[2], ty = tee[1] / tee[2], px = pin[0] / pin[2], py = pin[1] / pin[2], lx = px - tx, ly = py - ty, ll = Math.hypot(lx, ly); if (!ll) continue;
+      // (update 745) its side: from where that approach was hit to the pin (as Cal's Way measures it), not from the tee
+      const ap = t.qs.find((q) => q.st === k0), pin = pinXY.get(`${t.h}|${t.pid}`); if (!ap || ap.x == null || !pin) continue;
+      const tx = ap.x, ty = ap.y, px = pin[0] / pin[2], py = pin[1] / pin[2], lx = px - tx, ly = py - ty, ll = Math.hypot(lx, ly); if (!ll) continue;
       const dx = nx.x - px, dy = nx.y - py, ang = Math.atan2((lx * dy - ly * dx) / ll, (dx * lx + dy * ly) / ll) * 180 / Math.PI, sec = SEC8[((Math.round(ang / 45) % 8) + 8) % 8];
       const kk = `${t.h}|${t.pid}|${sec}|${nx.lie}`, g = grp.get(kk) || grp.set(kk, { h: t.h, pid: t.pid, par: t.par, k: k0, sec, lie: nx.lie, n: 0, s: 0 }).get(kk); g.n++; g.s += t.s; }
     const byPin = new Map(); for (const g of grp.values()) if (g.n >= 8) (byPin.get(`${g.h}|${g.pid}`) || byPin.set(`${g.h}|${g.pid}`, []).get(`${g.h}|${g.pid}`)).push({ ...g, avg: g.s / g.n });
     const misses = [...byPin.values()].filter((l) => l.length >= 2).map((l) => { l.sort((a, b) => a.avg - b.avg); return { best: l[0], worst: l.at(-1), spread: l.at(-1).avg - l[0].avg }; }).sort((a, b) => b.spread - a.spread);
-    upRaw = { id: c.id, holesR, edges, catEdge, mixH, nA, misses, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
+    upRaw = { id: c.id, holesR, edges, catEdge, appD, misses, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
   }
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
@@ -678,14 +678,20 @@ export async function render(main, { previewClient } = {}) {
         out.push({ id: "up-defend", k: null, kind: "Course", score: 4.92, title: `Defend No. ${dfd.h} (par ${dfd.par}): ${pc(dfd.g)} bogeys against ${pc(dfd.b)} birdies`, detail: `The fewest birdies for every bogey (${dfd.idx.toFixed(2)} to 1)${H.at(-2) ? `; then No. ${H.at(-2).h} (${H.at(-2).idx.toFixed(2)})` : ""} · par is a good score here`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, dfd.h, EX.hole(`How should I play hole ${dfd.h}?`)) }); }
       if (R0.edges.length >= 3) { const e = R0.edges[0], ce = R0.catEdge[0];
         out.push({ id: "up-top10", k: null, kind: "Course", score: 4.85, title: `Where the top 10 win it: No. ${e.h}, ${pm3(e.d)} a round against the field`, detail: `The top 10 finishers' biggest edge on a hole${R0.edges[1] ? ` (then No. ${R0.edges[1].h}, ${pm3(R0.edges[1].d)})` : ""} · by part of the game, ${CATN[ce[0]].toLowerCase()}: ${pm3(ce[1])} strokes a round better than the rest`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, e.h, EX.hole(`How should I play hole ${e.h}?`)) }); }
-      // approach distances: here against the shown players' own season (their usual week)
-      if (R0.nA >= 200) { const usual = new Map(); let nU = 0; for (const k of shownKeys()) for (const r of (gearData.get(k) || []).filter((r0) => yrOf(r0) === seasonYr())) for (const s0 of r.shots) if (s0.cat === "APP" && s0.dist) { const m = /(\d+)\s*-\s*(\d+)/.exec(s0.dist); if (!m) continue; const lo = Number(m[1]); if (lo < 50 || lo >= 250) continue; const b = Math.floor(lo / 25) * 25; usual.set(b, (usual.get(b) || 0) + 1); nU++; }
-        if (nU >= 200) { const r1 = [...R0.mixH].map(([b, n]) => ({ b, here: n / R0.nA, usual: (usual.get(b) || 0) / nU })).filter((x) => x.here >= 0.08 && x.usual > 0).map((x) => ({ ...x, ratio: x.here / x.usual })).sort((a, b) => b.ratio - a.ratio)[0];
-          if (r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.b}-${r1.b + 25} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.here)} of approach shots at ${c.name}, against ${pc(r1.usual)} in a usual week (your players' rounds this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
+      // approach distances: here against the shown players' own season (their usual week), in the same ranges their data
+      // uses (update 745: the course's shots put in those ranges, so the two are counted alike)
+      if (R0.appD.length >= 200) { const rngOf = (t0) => { const t = String(t0); let m = /(\d+)\s*-\s*(\d+)/.exec(t); if (m) return [Number(m[1]), Number(m[2])]; m = /^<\s*(\d+)/.exec(t); if (m) return [0, Number(m[1])]; m = /(\d+)\s*\+/.exec(t); if (m) return [Number(m[1]), 9999]; return null; };
+        const usual = new Map(); let nU = 0;
+        for (const k of shownKeys()) for (const r of (gearData.get(k) || []).filter((r0) => yrOf(r0) === seasonYr())) for (const s0 of r.shots) if (s0.cat === "APP" && s0.dist) { const g = rngOf(s0.dist); if (!g) continue; const o = usual.get(s0.dist) || usual.set(s0.dist, { lab: s0.dist, lo: g[0], hi: g[1], n: 0, here: 0 }).get(s0.dist); o.n++; nU++; }
+        if (nU >= 200) { const B = [...usual.values()].sort((a, b) => a.lo - b.lo); let nH = 0; for (const d of R0.appD) { const o = B.find((x) => d >= x.lo && d < x.hi); if (o) { o.here++; nH++; } }
+          const r1 = B.filter((x) => nH && x.here / nH >= 0.08 && x.n / nU >= 0.03).map((x) => ({ ...x, h: x.here / nH, u: x.n / nU, ratio: (x.here / nH) / (x.n / nU) })).sort((a, b) => b.ratio - a.ratio)[0];
+          if (r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.lab.replace(/\s*yds?$/i, "")} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.h)} of approach shots at ${c.name} (${nH} shots on record), against ${pc(r1.u)} in a usual week (your players' ${nU} approaches this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
       // each pin's costliest miss, described in full
       const M = R0.misses.filter((x) => x.spread >= 0.15);
-      if (M.length) { const x = M[0], w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "on the fairway / fringe" : `in the ${l}`);
-        out.push({ id: "up-side", k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : ""}: miss ${w.sec} ${lieW(w.lie)} and it plays ${pm3(w.avg)} to par`, detail: `When ${shotN} misses the green within 30 yds. Miss ${b.sec} ${lieW(b.lie)} instead: ${pm3(b.avg)} to par, ${x.spread.toFixed(2)} strokes better (${w.n} and ${b.n} players)${M[1] ? ` · also No. ${M[1].worst.h}: never ${M[1].worst.sec} ${lieW(M[1].worst.lie)} (${pm3(M[1].worst.avg)})` : ""}`,
+      if (M.length) { const x = M[0], w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "in the fairway" : `in the ${l}`);
+        const shotW = w.k === 1 ? "off the tee" : "on the approach", pinT = pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : "";
+        out.push({ id: "up-side", k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pinT}: avoid the ${w.sec} miss ${lieW(w.lie)} ${shotW}`,
+          detail: `${pm3(w.avg)} to par from there (${w.n} players); ${x.spread.toFixed(2)} worse than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} players) · shot ${w.k} missing the green within 30 yds${M[1] ? ` · also No. ${M[1].worst.h}: avoid ${M[1].worst.sec} ${lieW(M[1].worst.lie)} (${pm3(M[1].worst.avg)})` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, w.h, EX.hole(`Where should I miss on hole ${w.h}?`)) }); }
     }
     // course form: the best there over the years (on the tour picked)

@@ -189,7 +189,7 @@ export function strategyOf(recs, par, geo = {}) {
     const q = r.apIdx != null ? r.qs[r.apIdx + 1] : null;
     return q && q[3] === 4 ? "green" : null;
   };
-  const lab = (k) => { if (k === "green") return "on the green"; const [sd, l] = k.split("|"); return `${SIDE[sd] || sd.toLowerCase()} ${lieIn(l)}`; };
+  const lab = (k) => { if (k === "green") return "on the green"; const [sd, l] = k.split("|"); return !sd || sd === "null" ? lieIn(l) : `${SIDE[sd] || sd.toLowerCase()} ${lieIn(l)}`; }; // (update 745: no side: just the lie)
   const outs = group(done, apOut).sort((a, b) => a.avg - b.avg);
   const combos = outs.filter((g) => g.k !== "green"), green = outs.find((g) => g.k === "green");
   const bySide = group(done.filter((r) => r.side), (r) => r.side).sort((a, b) => a.avg - b.avg).map((g) => ({ ...g, lab: SIDE[g.k] || g.k }));
@@ -286,7 +286,9 @@ export function strategyOf(recs, par, geo = {}) {
     const cand = (() => { const c10 = gen(MIN_T, R_SET); return c10.length >= 3 ? c10 : gen(MIN_N, R_SET); })(); // (update 717: 8, 10, 15 or 20 yds; 718: 10 shots or more when there are enough such spots)
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
-    const sideOf = (mem) => {
+    const sideOf = (mem0) => {
+      // (update 745) only the misses with a side (a fringe miss, or one with no shot to measure from, has none): never "null"
+      const mem = mem0.filter((p) => p.side); if (!mem.length) return "";
       const m = new Map(); for (const p of mem) m.set(p.side, (m.get(p.side) || 0) + 1);
       const [top, n] = [...m].sort((a, b) => b[1] - a[1])[0];
       if (n >= mem.length / 2) return top;
@@ -359,7 +361,7 @@ export function strategyOf(recs, par, geo = {}) {
     if (g.length || m.length) {
       const av = (rs) => f2(mean(rs.map(sc)));
       items.push({ k: "miss", h: "Green vs miss", t: `${g.length ? `Hitting the green ${vn(mean(g.map(sc)), g.length)}` : "No greens hit yet"}${m.length ? `; missing it within 30 yds ${vn(mean(m.map(sc)), m.length)}` : ""}.` });
-      const few = [...new Map(m.map((r) => [r.side, 0]))].map(([sd]) => { const rs = m.filter((r) => r.side === sd); return { sd, rs, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
+      const few = [...new Map(m.filter((r) => r.side).map((r) => [r.side, 0]))].map(([sd]) => /* (update 745: sides only) */ { const rs = m.filter((r) => r.side === sd); return { sd, rs, n: rs.length, avg: mean(rs.map(sc)) }; }).filter((x) => x.n >= 3).sort((a, b) => a.avg - b.avg);
       if (few.length >= 2) {
         const b = few[0], w = few.at(-1), nm = (x) => SIDE[x.sd] || x.sd;
         const cb = circ(b.rs, apPt, "good", TEE_LIM), cw = circ(w.rs, apPt, "bad", TEE_LIM);
