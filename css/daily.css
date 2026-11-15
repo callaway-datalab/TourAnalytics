@@ -10,8 +10,8 @@ html[data-theme="light"] body:has(.td) { background: #f6f1e7; }
 .td .up { color: var(--td-up); } .td .down { color: var(--td-down); }
 .td h1, .td h2, .td h3 { font-family: var(--td-head); color: var(--td-ink); letter-spacing: -0.025em; }
 .td-top { display: flex; justify-content: space-between; gap: 12px; font: 600 0.74rem var(--td-sans); color: var(--td-mute); letter-spacing: 0.04em; }
-.td-mast { text-align: center; padding: 4px 0 12px; }
-.td-mast h1 { font-weight: 800; font-size: clamp(2.3rem, 7vw, 4.9rem); line-height: 1; margin: 8px 0 4px; }
+.td-mast { text-align: center; padding: 0 0 12px; }
+.td-mast h1 { font-weight: 800; font-size: clamp(2.3rem, 7vw, 4.9rem); line-height: 1; margin: 0 0 4px; }
 .td-mast h1 i { font-weight: 800; font-style: normal; color: var(--td-gold); }
 .td-date { display: flex; justify-content: space-between; gap: 12px; border-top: 3px double var(--td-rule2); border-bottom: 1px solid var(--td-rule2); padding: 7px 2px;
   font: 700 0.72rem var(--td-sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--td-soft); }
@@ -132,3 +132,5 @@ html[data-theme="light"] body:has(.td) { background: #f6f1e7; }
 .ah.td .td-tape thead th { background: none; text-align: right; }
 .ah.td .td-tape th:first-child, .ah.td .td-tape td:first-child { text-align: left; }
 .ah.td .td-tape td { text-align: right; background: none; }
+/* (update 736) the light theme: Cal's button as the one in the top bar (the gold coin, Cal in black) */
+html[data-theme="light"] .ah.td .td-ask .ah-mic { background: radial-gradient(circle at 38% 32%, #ecd3a6, #c7a36c 70%, #a8844f); color: #111; }
