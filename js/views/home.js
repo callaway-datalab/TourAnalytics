@@ -37,12 +37,15 @@ export async function render(main, { previewClient } = {}) {
   const nameOf = (k) => plainName(labels.get(k) || (typeof field !== "undefined" && field.find?.((p) => p.key === k)?.name) || String(k || "").replace(/^c_/, "")); /* (update 734: the field's full name when there's no label) */
   const firstOf = (k) => String(nameOf(k)).split(" ")[0] || "them";
   let focus = selfKey || (teamKeys.length === 1 ? teamKeys[0] : null);
-  const isMe = (k) => !!selfKey && k === selfKey;
+  // (update 742) staff's own game: the rounds they enter for themselves (Enter New Round, with their WITB) under their own key
+  // (the admin: "a_<uid>", as Enter New Round saves them); "Me" at the top, written as "you"
+  const ownKey = !selfKey && state.user?.uid ? (state.isAdmin && !state.profile?.clientKey ? `a_${state.user.uid}` : state.profile?.clientKey || null) : null;
+  const isMe = (k) => (!!selfKey && k === selfKey) || (!!ownKey && k === ownKey);
   const poss = (n) => `${n}’${/s$/i.test(n) ? "" : "s"}`; // (update 727: "Blades’", "Sam’s")
   const W = (k) => (isMe(k) ? { I: "I", my: "my", me: "me", am: "am I", do: "do I", have: "have I", s: "" } : { I: firstOf(k), my: poss(firstOf(k)), me: firstOf(k), am: `is ${firstOf(k)}`, do: `does ${firstOf(k)}`, have: `has ${firstOf(k)}`, s: "s" });
 
   // ---- where a question goes ----
-  const statsHref = (k) => (isMe(k) || (!admin && !team.isTeam) ? "#/dashboard" : admin ? `#/admin/player-stats?player=${encodeURIComponent(k)}` : `#/view-as/${encodeURIComponent(k)}?label=${encodeURIComponent(nameOf(k))}&to=/dashboard`);
+  const statsHref = (k) => (ownKey && k === ownKey ? `#/view-as/${encodeURIComponent(k)}?label=${encodeURIComponent(myName || "Me")}&to=/dashboard` /* (update 742: your own rounds) */ : isMe(k) || (!admin && !team.isTeam) ? "#/dashboard" : admin ? `#/admin/player-stats?player=${encodeURIComponent(k)}` : `#/view-as/${encodeURIComponent(k)}?label=${encodeURIComponent(nameOf(k))}&to=/dashboard`);
   const pageHref = (k, page) => (isMe(k) || !team.isTeam ? `#${page}` : `#/view-as/${encodeURIComponent(k)}?label=${encodeURIComponent(nameOf(k))}&to=${page}`);
   // (update 729) Stats opens on the tour picked here (tourFor: Stats keeps a tour only when it was set for that player)
   const toStats = (k, st, scroll, ex) => { st = { tour: [tourPick || ALL], tourFor: k, ...st }; try { sessionStorage.setItem("ta.statsPreset", JSON.stringify({ at: Date.now(), st, scroll })); } catch { /* */ } if (ex) queueExplain(ex); location.hash = statsHref(k); };
@@ -54,7 +57,8 @@ export async function render(main, { previewClient } = {}) {
   const cmpBase = (k) => `#/comparisons?player=${encodeURIComponent(k)}${tourPick && tourPick !== ALL ? `&tour=${encodeURIComponent(tourPick)}` : ""}`; // (update 729: Compare on the same tour)
 
   // ---- the data (filled in as it arrives) ----
-  let field = [], years = [], heat = null, next = null;
+  let field = [], years = [], heat = null, next = null, ownP = null; // (update 742) ownP: { key, rounds, own }: the signed-in person's own entered rounds
+  const playerOf = (k) => (ownP && k === ownP.key ? ownP : field.find((p) => p.key === k));
   const heatP = import("../courseHeat.js").then((m) => m.listHeatCourses()).then((l) => (heat = (l || []).filter((c) => c.par?.length))).catch(() => (heat = []));
   const yrOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
   // (update 729) the tour picked at the top: everything (highlights, ranks, the pages they open) on that tour's rounds only;
@@ -67,8 +71,8 @@ export async function render(main, { previewClient } = {}) {
   // (update 738) Home is about this season: the latest season on the tour picked (course history the only exception)
   let syMemo = null;
   const seasonYr = () => { const kk = `${tourPick}|${field.length}`; if (syMemo?.k === kk) return syMemo.y; let m = ""; for (const p of field) for (const r of rawOf(p)) { const y = yrOf(r); if (y > m) m = y; } syMemo = { k: kk, y: m }; return m; };
-  const rawOf = (p) => { if (!p) return []; const kk = `${p.key}|${tourPick}`; let r = tmemo.get(kk); if (!r || r.src !== p.rounds) { r = { src: p.rounds, v: p.rounds.filter(onTour) }; tmemo.set(kk, r); } return r.v; };
-  const roundsOf = (k) => rawOf(field.find((p) => p.key === k)).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const rawOf = (p) => { if (!p) return []; if (p.own) return p.rounds; /* (update 742: their own rounds: every one) */ const kk = `${p.key}|${tourPick}`; let r = tmemo.get(kk); if (!r || r.src !== p.rounds) { r = { src: p.rounds, v: p.rounds.filter(onTour) }; tmemo.set(kk, r); } return r.v; };
+  const roundsOf = (k) => rawOf(playerOf(k)).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const yearsOf = (k) => [...new Set(roundsOf(k).map(yrOf).filter((y) => /^\d{4}$/.test(y)))].sort();
 
   // ---- the follow-up sheet: one question, a few answers ----
@@ -262,7 +266,7 @@ export async function render(main, { previewClient } = {}) {
     if (t === "rk" || t === "rkb") { const c = x.hits?.[0]?.c; return c && c !== "TOTAL" ? c : null; }
     return null; };
   const catLbl = (c) => (c ? `strokes gained ${CAT_IN[c]}` : "strokes gained total");
-  const ctxOf = (k, c) => { const p = field.find((q) => q.key === k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null; const yr = seasonYr(), se = rs, f = c ? (r) => inCat(r, c) : tot;
+  const ctxOf = (k, c) => { const p = playerOf(k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null; const yr = seasonYr(), se = rs, f = c ? (r) => inCat(r, c) : tot;
     return { yr, n: se.length, ev: new Set(se.map((r) => r.event)).size, avg: avgOf(se, f), spark: rs.slice(-24).map(f) }; };
   const spark = (vals) => { if (vals.length < 8) return null; const W = 300, H = 80, lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), y = (v) => 6 + (H - 12) * (1 - (v - lo) / (hi - lo || 1)), dx = W / (vals.length - 1);
     // a rolling average of 4 rounds, so the line reads as form, not noise
@@ -293,14 +297,14 @@ export async function render(main, { previewClient } = {}) {
     if (t === "eq" && h.k && gearData.has(h.k)) { // the player's own rounds, by tournament: that kind of club's shots, by model
       const x = h.x, val = (s0) => (x.pill === "Balls" ? (s0.ball ? `Ball|${s0.ball}` : null) : s0.gear || null);
       const nmOf = (g) => { const gi = gearInfo(g); return `${gi.brand} ${gi.model}`.trim() || g; };
-      const rs = (gearData.get(h.k) || []).filter((r) => onTour(r) && yrOf(r) === seasonYr()); const evs = eventsOf(rs).slice(-14);
+      const rs = (gearData.get(h.k) || []).filter((r) => (ownP?.key === h.k || onTour(r)) && yrOf(r) === seasonYr()); const evs = eventsOf(rs).slice(-14);
       const items = evs.map((e) => { const m = new Map(); let sgs = 0, n = 0; for (const r of e.rs) { let any = false; for (const s0 of r.shots) { const g = val(s0); if (!g) continue; const nm2 = nmOf(g); if (nm2 !== x.neu && nm2 !== x.old && x.pill !== "Balls") { /* another model */ } m.set(nm2, (m.get(nm2) || 0) + (s0.w || 1)); any = true; if (!x.c || s0.cat === x.c) sgs += s0.sg; } if (any) n++; }
         const topM = [...m].sort((a2, b2) => b2[1] - a2[1])[0]?.[0]; return n ? { v: sgs / n, label: `${e.event} ${e.year} · ${topM || ""}`, short: shortEv(e.event), cls: topM === x.neu ? "gold" : "gray" } : null; }).filter(Boolean);
       const svg = barSvg(items, { note: "By tournament" }); if (!svg) return null;
       return [el("div", { class: "td-kick mute" }, `Strokes gained a round ${COL_IN[x.c]}, tournament by tournament`), svg, el("div", { class: "td-legend" }, [el("span", { class: "gold" }, x.neu), el("span", { class: "gray" }, x.old)])];
     }
     if (!h.k) return null;
-    const p = field.find((q) => q.key === h.k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null;
+    const p = playerOf(h.k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null;
     const f = cat ? (r) => inCat(r, cat) : tot, evs = eventsOf(rs).slice(-14), lastEv = evs.at(-1);
     const items = evs.map((e) => ({ v: avgOf(e.rs, f), label: `${e.event} ${e.year}`, short: shortEv(e.event), hot: e === lastEv }));
     const svg = barSvg(items, { note: "By tournament" }); if (!svg) return null;
@@ -434,13 +438,13 @@ export async function render(main, { previewClient } = {}) {
         add("stat", def.label, `${S}: ${ordN(i + 1)} on tour in ${def.label.replace(/ %$/, "").toLowerCase()}`, `${fmtStat(def, vs[i][1])}${i ? `; the leader, ${nameOf(vs[0][0])}: ${fmtStat(def, vs[0][1])}` : `; next: ${nameOf(vs[1][0])}, ${fmtStat(def, vs[1][1])}`} (${SY}${on}, of ${vs.length} players)`,
           () => toBoard({ year: [SY] }, null, EX.lead(`Who leads in ${def.label}?`)), "Leaderboards", i < 10 ? 4.3 : 3.7); break; } }
     // year on year: the part of the game that's come on most since last season
-    const prev = sgRounds(rawOf(field.find((p) => p.key === k))).filter((r) => yrOf(r) === String(Number(SY) - 1));
+    const prev = sgRounds(rawOf(playerOf(k))).filter((r) => yrOf(r) === String(Number(SY) - 1));
     if (prev.length >= 20 && rs.length >= 15) { const g = cats.map((c) => [c, avgC(c) - avgOf(prev, (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1])[0];
       if (g[1] >= 0.15) add("yoy", "Year on year", `${P} ${CATW[g[0]]} is up ${g[1].toFixed(2)} a round on ${Number(SY) - 1}`, `Strokes gained ${CAT_IN[g[0]]}: ${sg2(avgC(g[0]))} a round in ${SY}, against ${sg2(avgOf(prev, (r) => inCat(r, g[0])))} last season`, () => go(`${cmpBase(k)}&pick=years:${Number(SY) - 1},${SY}`, EX.cmpYears("How does this season compare to last?")), "Compare · Seasons", 4.1); }
     return out;
   }
   function highlightsFor(k) {
-    const raw = rawOf(field.find((p) => p.key === k)), out = [], SY = seasonYr(), rs = sgRounds(raw).filter((r) => yrOf(r) === SY); if (!rs.length) return out; /* (update 738: this season only) */ // (update 728: Compare's rounds and order)
+    const raw = rawOf(playerOf(k)), out = [], SY = seasonYr(), rs = sgRounds(raw).filter((r) => yrOf(r) === SY); if (!rs.length) return out; /* (update 738: this season only) */ // (update 728: Compare's rounds and order)
     const last = SY, season = rs, evs = eventsOf(season), sAvg = avgOf(season, tot);
     const ago = (d) => (Date.now() - (Date.parse(String(d).slice(0, 10)) || 0)) / 864e5, recent = (d) => ago(d) <= 21;
     // the last tournament: against the season
@@ -638,7 +642,7 @@ export async function render(main, { previewClient } = {}) {
   const PROD_COL = { Driver: "OTT", "Non-Driver": "OTT", Irons: "APP", Wedges: "ARG", Putters: "PUTT", Balls: null };
   const COL_IN = { OTT: "off the tee", APP: "on approach", ARG: "around the green", PUTT: "putting", null: "in total" };
   function gearHighlights(k) {
-    const rs = (gearData.get(k) || []).filter((r) => onTour(r) && yrOf(r) === seasonYr()).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))); if (!rs.length) return [];
+    const rs = (gearData.get(k) || []).filter((r) => (ownP?.key === k || onTour(r)) && yrOf(r) === seasonYr()) /* (update 742: their own rounds: every one) */.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))); if (!rs.length) return [];
     const evs = eventsOf(rs).slice(-16), out = [], plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
     for (const pill of ["Driver", "Putters", "Irons", "Wedges", "Non-Driver", "Balls"]) {
       const val = (s) => (pill === "Balls" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear && KIND_PILL[gearInfo(s.gear).kind] === pill ? s.gear : null);
@@ -683,7 +687,7 @@ export async function render(main, { previewClient } = {}) {
     if (!staff) { whoRow.hidden = true; return; }
     const fav = favs.filter((k) => keys.includes(k) && playsTour(k)); // (update 730: only the players on the tour picked)
     for (const k of [...picked]) if (!playsTour(k)) picked.delete(k);
-    const meKey = state.profile?.clientKey || null; // (update 740) the signed-in person's own player profile, when they have one
+    const meKey = ownP ? ownP.key : null; // (update 742) the signed-in person's own game (their entered rounds), when they have any
     const add = el("button", { type: "button", class: "hl-pill hl-add", "aria-label": "Add a favorite player" }, "+");
     add.addEventListener("click", addFav);
     const favPill = (k, label) => { const on = picked.has(k), b = pill(on, label, () => setWho(k));
@@ -695,7 +699,7 @@ export async function render(main, { previewClient } = {}) {
       meKey && playsTour(meKey) ? favPill(meKey, "Me") : null, ...fav.filter((k) => k !== meKey).map((k) => favPill(k, nameOf(k))), add]);
     whoRow.hidden = false;
   }
-  const playsTour = (k) => !tourPick || tourPick === ALL || !field.length || (field.find((p) => p.key === k)?.rounds || []).some((rd) => tourOf(rd) === tourPick);
+  const playsTour = (k) => !tourPick || tourPick === ALL || !field.length || (ownP && k === ownP.key) || (playerOf(k)?.rounds || []).some((rd) => tourOf(rd) === tourPick);
   const shownKeys = () => (picked.size ? [...picked] : keys.filter(playsTour));
   const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); }; // (tbMemo is keyed by tour)
   // (update 740) a tap picks a player, or unpicks one already picked; All: none picked (everyone)
@@ -735,7 +739,7 @@ export async function render(main, { previewClient } = {}) {
   }
   // (the data, once everything above is defined)
   // (the data, once everything above is defined)
-  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setHeat: (h) => { heat = h; }, upFromData, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who: [...picked][0] || null, picked: [...picked] }) }); // (tests only)
+  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setHeat: (h) => { heat = h; }, upFromData, setOwn: (k, rs) => { ownP = { key: k, name: "Charlie Test", rounds: rs, own: true }; labels.set(k, "Charlie Test"); gearData.set(k, rs); gearP.set(k, Promise.resolve()); keys = [k, ...keys]; }, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who: [...picked][0] || null, picked: [...picked] }) }); // (tests only)
   try {
     if (selfKey) keys = [selfKey];
     else {
@@ -752,9 +756,11 @@ export async function render(main, { previewClient } = {}) {
     field = summaryPlayers(summary).filter((p) => p.rounds.length);
     for (const p of field) if (!labels.has(p.key) && p.name) labels.set(p.key, p.name);
     drawTabs();
+    if (ownKey) { try { const { loadSource } = await import("../reportGen.js"); const d = await loadSource("entered", ownKey, myName || "Me").catch(() => null), rs = (d?.me?.rounds || []).filter((r) => r.shots?.length);
+      if (rs.length) { ownP = { key: ownKey, name: myName || "Me", rounds: rs, own: true }; labels.set(ownKey, myName || "Me"); gearData.set(ownKey, rs); gearP.set(ownKey, Promise.resolve()); if (!keys.includes(ownKey)) keys = [ownKey, ...keys]; } } catch (e) { console.warn("own rounds", e); } }
     await nextP; await heatP; /* (update 736: the courses, for Course Insights & Strategy) */
     refresh();
     loadUpCourse().catch(() => {}); /* (update 737) */
-    if (selfKey) { practice = await practiceHighlights(selfKey).catch(() => []); if (practice.length) drawFeed(collect()); }
+    if (selfKey || ownP) { practice = await practiceHighlights(selfKey || ownP.key).catch(() => []); if (practice.length) drawFeed(collect()); }
   } catch (err) { console.error(err); mount(feed, el("p", { class: "muted small" }, "Couldn’t put the highlights together just now.")); }
 }
