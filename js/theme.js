@@ -5,7 +5,7 @@
   function get() { try { return localStorage.getItem(KEY) === "light" ? "light" : "dark"; } catch (e) { return "dark"; } }
   function apply(t) {
     document.documentElement.setAttribute("data-theme", t);
-    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", t === "light" ? "#f6f2ea" : "#08080a");
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", t === "light" ? "#f4f5f7" : "#08080a");
   }
   apply(get());
   window.taTheme = {
@@ -28,7 +28,7 @@
     var p = parse(c); if (!p) return c;
     var r = p[0] / 255, g = p[1] / 255, b = p[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, s = mx === mn ? 0 : (l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
     if (s >= 0.15) return role === "back" ? c : c; // a real color: kept
-    if (role === "back") return l < 0.5 ? "rgba(255,253,248," + Math.max(0.94, p[3]) + ")" : c;
+    if (role === "back") return l < 0.5 ? "rgba(250,250,251," + Math.max(0.94, p[3]) + ")" : c;
     if (p[3] < 0.999 || role === "line") return l > 0.5 ? "rgba(0,0,0," + Math.min(0.5, p[3] * 0.9) + ")" : c;
     if (l > 0.3) { var v = Math.round(255 * Math.max(0.07, (1 - l) * 0.5)); return "rgb(" + v + "," + Math.round(v * 0.97) + "," + Math.round(v * 0.92) + ")"; }
     return c;
@@ -73,9 +73,9 @@
       if (role === "text" && l > 0.5) { var d = rgb(t[0], Math.min(1, s * 1.05), 0.3 + (l - 0.5) * 0.2); return out(d[0], d[1], d[2], a); }
       if (role === "back" && l < 0.22) { var e = rgb(t[0], Math.min(s, 0.4), 1 - l * 0.6); return out(e[0], e[1], e[2], a); }
       return c; }
-    if (a < 0.999) return l > 0.5 ? out(0, 0, 0, Math.min(0.85, a * (role === "text" ? 1.2 : 0.9))) : (role === "back" ? out(255, 253, 248, Math.max(0.9, a)) : c);
+    if (a < 0.999) return l > 0.5 ? out(0, 0, 0, Math.min(0.85, a * (role === "text" ? 1.2 : 0.9))) : (role === "back" ? out(250, 250, 251, Math.max(0.9, a)) : c);
     if (role === "text" || role === "line") { if (l > 0.3) { var v = 255 * Math.max(0.07, (1 - l) * 0.5); return out(v, v * 0.97, v * 0.92, a); } return c; }
-    var nl = 1 - l; if (nl > 0.86) nl = 0.955 - (1 - nl) * 0.35; var w = rgb(40 / 360, nl > 0.8 ? 0.28 : 0.04, nl); return out(w[0], w[1], w[2], a); // back / shape: flipped
+    var nl = 1 - l; if (nl > 0.86) nl = 0.955 - (1 - nl) * 0.35; var w = rgb(220 / 360, nl > 0.8 ? 0.06 : 0.03, nl); return out(w[0], w[1], w[2], a); // back / shape: flipped
   }
   var STY = [["color", "text"], ["backgroundColor", "back"], ["borderColor", "line"], ["borderTopColor", "line"], ["borderBottomColor", "line"], ["fill", "shape"], ["stroke", "line"]];
   function isText(n) { var t = n.tagName && n.tagName.toLowerCase(); return t === "text" || t === "tspan"; }

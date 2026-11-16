@@ -6854,3 +6854,33 @@ html, body { overflow-x: clip; max-width: 100%; }
 .mc .mc-val-s { font-size: 9px; }
 .hm-key .k-a { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; background: #4da3ff; }
 .hm-key .k-b { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; background: #f0b440; }
+
+/* (update 756) Stats › Tournament Results */
+.tr-pick-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.tr-sel { font: inherit; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line-2, rgba(255,255,255,0.14)); background: var(--surface-solid); color: var(--ink); min-width: 120px; }
+.tr-sel:last-child { flex: 1 1 260px; }
+.tr-head h2 { margin: 0 0 4px; font-size: 1.5rem; } .tr-head { margin-bottom: 12px; }
+.tr-hero-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tr-hero { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: rgba(255,255,255,0.03); display: grid; gap: 2px; }
+.tr-hero.big { border-color: rgba(212,180,131,0.55); background: rgba(212,180,131,0.08); }
+.tr-hero-l { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.tr-hero strong { font-size: 1.9rem; font-weight: 800; line-height: 1.1; } .tr-hero.big strong { font-size: 2.3rem; }
+.tr-hero-s { font-size: 0.78rem; color: var(--muted); }
+.tr-sc-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.tr-sc-scroll { overflow-x: auto; }
+.tr-sc-t { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.86rem; text-align: center; }
+.tr-sc-t th, .tr-sc-t td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.tr-sc-t th:first-child { text-align: left; color: var(--muted); font-weight: 700; }
+.tr-sc-hr th { background: rgba(255,255,255,0.05); font-weight: 800; }
+.tr-sc-c { cursor: pointer; } .tr-sc-c.on { background: rgba(212,180,131,0.18); }
+.tr-sc-s { display: inline-grid; place-items: center; min-width: 26px; height: 26px; font-weight: 800; }
+.tr-sc-s.eagle { border-radius: 50%; background: #2f6bff; color: #fff; } .tr-sc-s.birdie { border-radius: 50%; border: 2px solid #64b5ff; }
+.tr-sc-s.bogey { border: 2px solid #ffa94d; border-radius: 4px; } .tr-sc-s.dbl { border-radius: 4px; background: #ff453a; color: #fff; }
+.tr-sg { font-size: 0.75rem; } .tr-sg.pos { color: #30d158; } .tr-sg.neg { color: #ff6b5e; } .tr-tot { font-weight: 800; }
+.tr-hole { margin-top: 14px; } .tr-hole h3 { margin: 0 0 8px; } .tr-hsg.pos { color: #30d158; } .tr-hsg.neg { color: #ff6b5e; }
+.tr-shots { width: 100%; border-collapse: collapse; font-size: 0.88rem; } .tr-shots th, .tr-shots td { padding: 6px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+.tr-shots .num { text-align: right; } .tr-shots .pos { color: #30d158; } .tr-shots .neg { color: #ff6b5e; }
+.tr-show { margin-top: 10px; }
+.tr-pic-in { position: relative; max-width: 520px; max-height: 75vh; margin: 12px auto 0; }
+.tr-pic-in img, .tr-pic-in .tr-trail { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tr-pic-in img { object-fit: contain; border-radius: 10px; }

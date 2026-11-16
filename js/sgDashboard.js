@@ -13,6 +13,7 @@ import * as sgStretch from "./sgStretch.js";
 import * as sgPath from "./sgPath.js";
 import * as sgCharts from "./sgCharts.js";
 import * as sgFocus from "./sgFocus.js"; // (update 470) the Focus view
+import * as sgResults from "./sgResults.js"; // (update 756)
 /** (update 523) the DP World Tour (its file: one value an event, repeated on each round) */
 export const isDpwt = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim());
 // (update 679) "All": every tour together (PGA TOUR, Korn Ferry, DP World Tour); any DP World Tour in it: event level for everything
@@ -393,6 +394,7 @@ export function sgDashboard(container, opts) {
     // (update 471) Focus: every shot of the rounds in the time frame (its own pills pick the parts of the game), against
     // the field over the same rounds
     const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "focus"); // (update 505: Full stats unless Focus is picked)
+    const resultsOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "results"); // (update 756: Tournament Results)
     const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
     const focusMine = focusOn ? nz(applyFilters(me.rounds, noShotF)) : null;
     const focusField = focusOn ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...rankF, cats: [], lie: [], dist: [], club: [], gear: [] })) })) : null;
@@ -421,9 +423,9 @@ export function sgDashboard(container, opts) {
       opts.slot || null, // the page's player search, then the Filters panel
       // (update 471) a player's strokes gained: Focus / Full stats first; Focus has its own part-of-the-game pills
       // in place of the filters
-      focusOn ? sgFocus.focusSwitch(S) : me && isSG() && !opts.emptyNote ? sgFocus.focusSwitch(S) : null,
-      focusOn ? null : filtersPanel(opt),
-      focusOn ? null : rangeChip(), // (update 322)
+      focusOn || resultsOn ? sgFocus.focusSwitch(S) : me && isSG() && !opts.emptyNote ? sgFocus.focusSwitch(S) : null,
+      focusOn || resultsOn ? null : filtersPanel(opt),
+      focusOn || resultsOn ? null : rangeChip(), // (update 322)
       el("div", { class: "sg-panel" }, (() => {
         // nothing to show (no player picked, or no rounds yet): the same Filters panel, and why it's empty
         if (opts.emptyNote) return [el("section", { class: "panel sg-empty-note" }, el("p", { class: "empty center" }, opts.emptyNote))];
@@ -431,6 +433,8 @@ export function sgDashboard(container, opts) {
         if (!me && st.statWanted === "stretch") return [stretchBoard(slicedField)]; // (update 332: the Leaderboards' Best Stretches)
         if (!me && st.statWanted === "form1") return [formBoard(slicedField)]; // (update 333: #1 Form)
         // (update 470) a player's strokes gained: Focus (the short story) or Full stats (everything), switched at the top
+        // (update 756) Tournament Results: every tournament on this tour (any year), each against that week's field
+        if (resultsOn) return sgResults.resultsView(S, nz(applyFilters(me.rounds, { tour: f.tour })), field.map((p) => ({ key: p.key, rounds: applyFilters(p.rounds, { tour: f.tour }) })));
         if (focusOn) return sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour }))); // (update 611: every year, for the radar)
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
