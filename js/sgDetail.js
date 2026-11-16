@@ -477,7 +477,9 @@ export function sgByClubBox(S, mine, cat) {
   ]);
 }
 export function panelBox(S, title, content, size = "") {
-  return el("section", { class: `panel sg-box ${size}` }, [el("h3", {}, title), ...[].concat(content)]);
+  // (update 764) an info button that leads the content goes up beside the title (no line of its own)
+  const list = [].concat(content).flat(Infinity).filter((x) => x != null && x !== false), tip = list[0]?.classList?.contains?.("info-tip") ? list.shift() : null;
+  return el("section", { class: `panel sg-box ${size}` }, [el("h3", { class: tip ? "sv-h" : null }, [title, tip]), ...list]);
 }
 
 /* (update 761) Best & worst tournaments: each tournament in the selection, strokes gained a round in total and in each part of
