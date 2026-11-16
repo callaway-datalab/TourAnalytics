@@ -6850,7 +6850,7 @@ html, body { overflow-x: clip; max-width: 100%; }
 /* (update 751) before / after easy to tell apart: before blue and dashed, now gold and solid (the bars too) */
 .mc .mc-area.a { fill: rgba(77,163,255,0.16); stroke: #4da3ff; stroke-width: 2; stroke-dasharray: 5 3; }
 .mc .mc-area.b { fill: rgba(240,180,64,0.22); stroke: #f0b440; stroke-width: 2.5; }
-.mc .mc-bar.a { fill: #4da3ff; opacity: 0.75; } .mc .mc-bar.b { fill: #f0b440; } .mc .mc-bar.b.down { fill: #ff7a45; }
+.mc .mc-bar.a { fill: #4da3ff; opacity: 0.75; } .mc .mc-bar.b { fill: #f0b440; } .mc .mc-bar.b.down { fill: #ff453a; }
 .mc .mc-val-s { font-size: 9px; }
 .hm-key .k-a { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; background: #4da3ff; }
 .hm-key .k-b { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; background: #f0b440; }
@@ -6884,3 +6884,19 @@ html, body { overflow-x: clip; max-width: 100%; }
 .tr-pic-in { position: relative; max-width: 520px; max-height: 75vh; margin: 12px auto 0; }
 .tr-pic-in img, .tr-pic-in .tr-trail { position: absolute; inset: 0; width: 100%; height: 100%; }
 .tr-pic-in img { object-fit: contain; border-radius: 10px; }
+/* (update 757) Tournament Results: the year and the tournament on one line, small; round tabs that don't wrap; a card's pop-up */
+.tr-pick { padding-top: 14px !important; padding-bottom: 14px !important; }
+.tr-pick-row { flex-wrap: nowrap; align-items: center; }
+.tr-pick .tr-sel { width: auto !important; flex: 0 0 auto; min-width: 0; max-width: 110px; padding: 6px 10px; font-size: 0.9rem; }
+.tr-pick .tr-sel:last-child { flex: 0 1 auto; max-width: 360px; }
+.tr-rounds { flex-wrap: nowrap; }
+.tr-rounds .seg-btn { white-space: nowrap; flex: 0 0 auto; padding-left: 12px; padding-right: 12px; }
+.tr-hero { cursor: pointer; transition: border-color 0.15s, transform 0.15s; } .tr-hero:hover { border-color: rgba(212,180,131,0.7); transform: translateY(-1px); }
+.tr-popwrap { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; }
+.tr-pop-back { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+.tr-pop { position: relative; width: min(760px, calc(100vw - 24px)); max-height: calc(100vh - 40px); overflow: auto; background: var(--surface-solid); color: var(--ink); border: 1px solid var(--line-2, rgba(255,255,255,0.14)); border-radius: 16px; padding: 20px 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+.tr-pop h3 { margin: 4px 36px 10px 0; font-size: 1.3rem; }
+.tr-pop-x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line-2, rgba(255,255,255,0.14)); background: none; color: var(--ink); font-size: 1.1rem; cursor: pointer; }
+.tr-pop-calls p { margin: 0 0 6px; } .tr-pop .pos { color: #30d158; } .tr-pop .neg { color: #ff6b5e; }
+.tr-pop-scroll { max-height: 55vh; overflow: auto; margin-top: 8px; }
+@media (max-width: 600px) { .tr-popwrap { place-items: end center; } .tr-pop { width: 100vw; max-height: 88vh; border-radius: 16px 16px 0 0; } .tr-pick .tr-sel:last-child { max-width: 220px; } }

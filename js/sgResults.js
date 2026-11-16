@@ -32,18 +32,40 @@ export function resultsView(S, rounds, field) {
   // ---- the picker: the year, then the tournament ----
   const ySel = el("select", { class: "tr-sel", "aria-label": "Year" }, years.map((y) => el("option", { value: y, selected: y === ev.year ? "" : null }, y)));
   const eSel = el("select", { class: "tr-sel", "aria-label": "Tournament" }, evs.filter((e) => e.year === ev.year).map((e) => el("option", { value: e.key, selected: e.key === ev.key ? "" : null }, e.event)));
+  ySel.value = ev.year; eSel.value = ev.key; // (update 757: the one showing is the one picked)
   ySel.addEventListener("change", () => { const e = evs.find((x) => x.year === ySel.value); if (e) { st.resKey = e.key; st.resRound = null; S.draw(); } });
   eSel.addEventListener("change", () => { st.resKey = eSel.value; st.resRound = null; S.draw(); });
   const picker = el("section", { class: "panel tr-pick" }, [el("p", { class: "fx-eyebrow" }, "Tournament results"), el("div", { class: "tr-pick-row" }, [ySel, eSel])]);
 
+  // (update 757) a card's pop-up: that part of the game (the total: every part) by distance range that week, a shot and a
+  // round, against their own season from that range; the biggest gain and loss called out
+  const seasonRs = rs0.filter((r) => yrOf(r) === ev.year && !(r.event === ev.event));
+  const byDist = (rs, c) => { const m = new Map(); for (const r of rs) for (const s of r.shots || []) if ((!c || s.cat === c) && s.dist) { const k = `${s.cat}|${s.dist}`, o = m.get(k) || m.set(k, { cat: s.cat, d: s.dist, sg: 0, n: 0 }).get(k); o.sg += s.sg || 0; o.n += s.w || 1; } return m; };
+  const lo = (d) => { const m = /(\d+)/.exec(String(d)); return m ? Number(m[1]) * (/^</.test(d) ? 0.5 : 1) : 999; };
+  function openDist(c) {
+    document.querySelector(".tr-popwrap")?.remove();
+    const W = byDist(evRs, c), Sx = byDist(seasonRs, c), nW = evRs.length, nS = Math.max(1, seasonRs.length);
+    const rows = [...W.values()].sort((a, b) => CATS.findIndex(([k]) => k === a.cat) - CATS.findIndex(([k]) => k === b.cat) || lo(a.d) - lo(b.d)).map((o) => { const s0 = Sx.get(`${o.cat}|${o.d}`); return { ...o, rd: o.sg / nW, per: o.sg / o.n, sPer: s0 && s0.n >= 5 ? s0.sg / s0.n : null, sRd: s0 ? s0.sg / nS : null }; });
+    const best = [...rows].sort((a, b) => b.rd - a.rd)[0], worst = [...rows].sort((a, b) => a.rd - b.rd)[0], nm = (c0) => CATS.find(([k]) => k === c0)?.[1] || c0;
+    const close = () => wrap.remove(), xb = el("button", { type: "button", class: "tr-pop-x", "aria-label": "Close" }, "×"); xb.addEventListener("click", close);
+    const back = el("div", { class: "tr-pop-back" }); back.addEventListener("click", close);
+    const body = !rows.length ? el("p", { class: "muted" }, "No distances recorded on these shots.") : [
+      el("div", { class: "tr-pop-calls" }, [best && best.rd > 0 ? el("p", {}, [el("strong", { class: "pos" }, `Best: ${nm(best.cat)} from ${best.d}`), ` · ${fmtSG(best.rd)} a round (${fmtSG(best.per)} a shot, ${Math.round(best.n)} shots)${best.sPer != null ? `, against ${fmtSG(best.sPer)} a shot the rest of ${ev.year}` : ""}`]) : null,
+        worst && worst.rd < 0 ? el("p", {}, [el("strong", { class: "neg" }, `Costliest: ${nm(worst.cat)} from ${worst.d}`), ` · ${fmtSG(worst.rd)} a round (${fmtSG(worst.per)} a shot, ${Math.round(worst.n)} shots)${worst.sPer != null ? `, against ${fmtSG(worst.sPer)} a shot the rest of ${ev.year}` : ""}`]) : null]),
+      el("div", { class: "tr-pop-scroll" }, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, [c ? "Distance" : "Part · distance", "Shots", "SG a shot", "SG a round", `Rest of ${ev.year}`, "Better or worse"].map((x, i) => el("th", { class: i ? "num" : null }, x)))),
+        el("tbody", {}, rows.map((o) => { const dlt = o.sPer != null ? o.per - o.sPer : null; return el("tr", {}, [el("td", {}, c ? o.d : `${nm(o.cat)} · ${o.d}`), el("td", { class: "num" }, String(Math.round(o.n))), el("td", { class: `num ${cls(o.per)}` }, fmtSG(o.per)), el("td", { class: `num ${cls(o.rd)}` }, fmtSG(o.rd)), el("td", { class: "num muted" }, o.sPer != null ? fmtSG(o.sPer) : "—"), el("td", { class: `num ${cls(dlt)}` }, dlt != null ? `${dlt > 0 ? "▲" : "▼"} ${Math.abs(dlt).toFixed(2)}` : "")]); }))]))];
+    const box = el("section", { class: "tr-pop", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, `${c ? nm(c) : "Every part of the game"} by distance`), body]);
+    const wrap = el("div", { class: "tr-popwrap" }, [back, box]); document.body.appendChild(wrap); xb.focus();
+  }
+  const tapC = (n, c) => { const go = () => openDist(c); n.addEventListener("click", go); n.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return n; };
   // ---- the hero cards: the week, against that week's field ----
   const wk = (field || []).map((p) => ({ k: p.key, rs: (p.key === me?.key ? evRs : (p.rounds || []).filter((r) => r.event === ev.event && yrOf(r) === ev.year)) })).filter((p) => p.rs.length);
   const rankOf = (f) => { const vs = wk.map((p) => [p.k, avg(p.rs, f)]).filter((x) => x[1] != null).sort((a, b) => b[1] - a[1]); const i = vs.findIndex((x) => x[0] === me?.key); return i < 0 ? null : { r: i + 1, n: vs.length }; };
-  const card = (label, v, rk, big = false) => el("div", { class: `tr-hero${big ? " big" : ""}` }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, [`a round`, rk ? ` · ${ord(rk.r)} of ${rk.n} in the field` : ""])]);
+  const card = (label, v, rk, big = false, c = null) => tapC(el("div", { class: `tr-hero${big ? " big" : ""}`, role: "button", tabindex: "0", title: "Tap for each distance" }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, [`a round`, rk ? ` · ${ord(rk.r)} of ${rk.n} in the field` : ""])]), c);
   const best = [...evRs].sort((a, b) => tot(b) - tot(a))[0];
   const heroes = el("section", { class: "panel tr-heroes" }, [
     el("div", { class: "tr-head" }, [el("h2", {}, ev.event), el("span", { class: "muted" }, `${ev.year} · ${evRs.length} round${evRs.length === 1 ? "" : "s"}${best ? ` · best round ${fmtSG(tot(best))} (R${best.roundNo || "?"})` : ""}`)]),
-    el("div", { class: "tr-hero-row" }, [card("Strokes gained", avg(evRs, tot), rankOf(tot), true), ...CATS.map(([c, l]) => card(l, avg(evRs, (r) => inCat(r, c)), rankOf((r) => inCat(r, c))))]),
+    el("div", { class: "tr-hero-row" }, [card("Total", avg(evRs, tot), rankOf(tot), true, null), ...CATS.map(([c, l]) => card(l, avg(evRs, (r) => inCat(r, c)), rankOf((r) => inCat(r, c)), false, c))]),
   ]);
 
   // ---- the scorecard: a round at a time ----
@@ -58,10 +80,15 @@ export function resultsView(S, rounds, field) {
   const shotsByHole = new Map(); for (const s of rd.shots || []) if (s.hole != null) (shotsByHole.get(s.hole) || shotsByHole.set(s.hole, []).get(s.hole)).push(s);
   (async () => {
     let meta = null, trails = null;
+    // (update 757) the rounds here can come without each shot's hole: then the player's own rows (they have it)
+    if (!shotsByHole.size && me) { try { const { loadSource } = await import("./reportGen.js"); const d = await loadSource("tour", me.key, me.label || "", { detail: false, field: false });
+      const own = (d?.me?.rounds || []).find((r) => r.event === ev.event && yrOf(r) === ev.year && String(r.roundNo) === String(rd.roundNo));
+      for (const s of own?.shots || []) if (s.hole != null) (shotsByHole.get(s.hole) || shotsByHole.set(s.hole, []).get(s.hole)).push(s); } catch (e) { console.warn("own rows", e); } }
     try {
       const CH = await import("./courseHeat.js"), list = await CH.listHeatCourses().catch(() => []);
       meta = (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event) && (!e.years?.length || e.years.map(String).includes(ev.year))))
-        || (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event))) || null;
+        || (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event)))
+        || (rd.course ? (list || []).find((c) => norm(c.name) === norm(rd.course) || norm(c.name).includes(norm(rd.course)) || norm(rd.course).includes(norm(c.name))) : null) || null; // (update 757: or by the course's name)
       if (meta && me) { const CS = await import("./courseShots.js"); const tr = await CS.playerTrails(meta, me.key).catch(() => null); trails = (tr?.trails || []).filter((t) => String(t.y) === ev.year && String(t.r) === String(rd.roundNo)); }
     } catch (e) { console.warn("scorecard", e); }
     const tOf = (h) => trails?.find((t) => Number(t.h) === h) || null;

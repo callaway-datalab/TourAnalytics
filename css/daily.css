@@ -181,7 +181,7 @@ html[data-theme="light"] .ah-opt.ah-check.on { border-color: #7a5a25; }
 /* (update 751) radar and bars: before blue (dashed), now gold; in the light theme darker of each */
 .td .mc .mc-area.a { fill: #4da3ff; fill-opacity: 0.14; stroke: #4da3ff; stroke-width: 2; stroke-dasharray: 5 3; }
 .td .mc .mc-area.b { fill: #f0b440; fill-opacity: 0.22; stroke: #f0b440; stroke-width: 2.5; }
-.td .mc .mc-bar.a { fill: #4da3ff; } .td .mc .mc-bar.b.up { fill: #f0b440; } .td .mc .mc-bar.b.down { fill: #ff7a45; }
+.td .mc .mc-bar.a { fill: #4da3ff; } .td .mc .mc-bar.b.up { fill: #f0b440; } .td .mc .mc-bar.b.down { fill: #ff453a; }
 .td .td-legend .gray::before { background: #4da3ff; } .td .td-legend .gold::before { background: #f0b440; }
 html[data-theme="light"] .td .mc .mc-area.a { fill: #1f5fbf; stroke: #1f5fbf; }
 html[data-theme="light"] .td .mc .mc-area.b { fill: #b8790a; stroke: #b8790a; }
@@ -238,3 +238,14 @@ html[data-theme="light"] .td .mc-pair .mc-bar.up { fill: #1d8f43; } html[data-th
 /* (update 755) the names always shown */
 .td-fx-hide { display: none !important; } .td-fx-name { display: inline !important; }
 .td-fx .td-fx-name::after { content: "  ·  tap for more"; color: var(--td-mute); font-weight: 600; letter-spacing: 0; text-transform: none; }
+/* (update 757) before / after bars: green above zero, red below, winning over the radar's blue / gold in both themes */
+.td .mc.mc-pair .mc-bar.up, html[data-theme="light"] .td .mc.mc-pair .mc-bar.up { fill: #30d158; }
+.td .mc.mc-pair .mc-bar.down, html[data-theme="light"] .td .mc.mc-pair .mc-bar.down { fill: #ff453a; }
+html[data-theme="light"] .td .mc.mc-pair .mc-bar.up { fill: #1d8f43; } html[data-theme="light"] .td .mc.mc-pair .mc-bar.down { fill: #c22a1f; }
+.mc.mc-pair .mc-bar.up { fill: #30d158; } .mc.mc-pair .mc-bar.down { fill: #ff453a; }
+/* (update 757) two columns of half-width sections, each stacked (no holes beside a short section) */
+.td-two { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; column-gap: 0; align-items: start; }
+.td-stackc { min-width: 0; } .td-stackc:first-child { padding-right: 26px; } .td-stackc + .td-stackc { border-left: 1px solid var(--td-rule); padding-left: 26px; }
+.td-stackc > .td-sec { padding: 0 0 22px !important; border-left: 0 !important; }
+@media (max-width: 860px) { .td-two { grid-template-columns: 1fr; } .td-stackc:first-child, .td-stackc + .td-stackc { padding: 0; border-left: 0; } }
+.td .td-legend .m-new::before { background: var(--td-gold); } .td .td-legend .m-old::before { background: var(--td-mute); } /* (update 757) */
