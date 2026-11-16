@@ -108,7 +108,7 @@ function eventsOf(players) {
     (e.by.get(p.key) || e.by.set(p.key, []).get(p.key)).push(rd);
   }
   return [...ev.values()].map((e) => {
-    const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = [...e.by.values()].map(cntR).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; // (update 773)
+    const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), most = ((cs) => { const f = cs.filter(Number.isFinite).sort((a, b) => b - a); return f.length ? f[Math.min(f.length - 1, Math.max(3, Math.ceil(f.length * 0.1)) - 1)] : 0; })([...e.by.values()].map(cntR)); // (update 773)
     const ranked = [...e.by].filter(([, rs]) => cntR(rs) >= most).map(([key, rs]) => ({ key, v: perRound(rs) })).sort((a, b) => b.v - a.v);
     return { ...e, ranked };
   }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
@@ -308,7 +308,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   card.dists.worst = dl.filter((x) => x.tot < 0).sort((a, b) => a.tot - b.tot);
 
   // ---- results: wins and top 10s (best strokes gained a round at a tournament, among those who played every round) ----
-  const events = eventsOf(ranked.map((p) => ({ key: p.key, rounds: p.rounds })));
+  const events = eventsOf(fieldF.filter((p) => p.rounds.length).map((p) => ({ key: p.key, rounds: p.rounds }))); // (update 775: everyone at the tournament)
   const finishes = events.map((e) => ({ e, i: e.ranked.findIndex((x) => x.key === key) })).filter((x) => x.i >= 0);
   const wins = finishes.filter((x) => x.i === 0), top10 = finishes.filter((x) => x.i < 10);
 

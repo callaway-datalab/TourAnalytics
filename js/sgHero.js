@@ -133,7 +133,7 @@ export function heroBox(S, mine, slicedField, f) {
           let weekRk = null;
           const weekRank = (k) => {
             if (!S.showRanks) return null;
-            if (!weekRk) { weekRk = new Map(); for (const e of S.eventsOf(S.rankedField(slicedField))) { const mineE = [...e.by].find(([p]) => p.key === S.me.key); if (!mineE) continue; const i = e.ranked.findIndex((x) => x.p.key === S.me.key); weekRk.set(`${e.event}|${S.yearOf(mineE[1][0])}`, i < 0 ? null : { rank: i + 1, of: e.ranked.length }); } }
+            if (!weekRk) { weekRk = new Map(); for (const e of S.eventsOf(slicedField.filter((p) => p.rounds.length)) /* (update 775: every player at the tournament, not just those with the season's min. rounds) */) { const mineE = [...e.by].find(([p]) => p.key === S.me.key); if (!mineE) continue; const i = e.ranked.findIndex((x) => x.p.key === S.me.key); weekRk.set(`${e.event}|${S.yearOf(mineE[1][0])}`, i < 0 ? null : { rank: i + 1, of: e.ranked.length }); } }
             return weekRk.get(k) || null;
           };
           const scrub = el("div", { class: "hc-scrub", hidden: true }, [el("i", { class: "hc-line" }), el("i", { class: "hc-dot" }), el("div", { class: "hc-tip" })]);
@@ -345,14 +345,14 @@ export function eventsOf(S, players) {
     // (update 773) "played every round": distinct rounds (not rows), and a whole-event row (DP World Tour data) counts as
     // the whole event. Counting rows dropped a player whose week was one row, and Hatton was named best over Rahm.
     const cnt = (rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size);
-    const fin = [...e.by.values()].map(cnt).filter(Number.isFinite), most = fin.length ? Math.max(...fin) : 0;
+    const most = ((cs) => { const f = cs.filter(Number.isFinite).sort((a, b) => b - a); return f.length ? f[Math.min(f.length - 1, Math.max(3, Math.ceil(f.length * 0.1)) - 1)] : 0; })([...e.by.values()].map(cnt)); // (update 774: what 10%+ of the field played, so one odd player with an extra round can't raise it)
     const ranked = [...e.by].filter(([, rs]) => cnt(rs) >= most).map(([p, rs]) => ({ p, v: S.metric(rs), rs })).filter((x) => x.v != null).sort(S.byBest);
     return { ...e, players: e.by.size, ranked, best: ranked[0] || null, top10: ranked.slice(0, 10) };
   }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
 }
 // the player's finish at each tournament (among those who played every round), newest first
 export function myFinishes(S, slicedField) {
-  return S.eventsOf(S.rankedField(slicedField)).map((e) => { const i = e.ranked.findIndex((x) => x.p.key === S.me.key); return i < 0 ? null : { e, rank: i + 1, of: e.ranked.length, v: e.ranked[i].v }; })
+  return S.eventsOf(slicedField.filter((p) => p.rounds.length)) /* (update 775: every player at the tournament, not just those with the season's min. rounds) */.map((e) => { const i = e.ranked.findIndex((x) => x.p.key === S.me.key); return i < 0 ? null : { e, rank: i + 1, of: e.ranked.length, v: e.ranked[i].v }; })
     .filter(Boolean).reverse();
 }
 export async function finishesPopup(S, list, what, all = []) {
@@ -410,7 +410,7 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
   const hist = rolling ? (S.showRanks ? S.rankHistory(ordered, slicedField, now, { all: true }) : S.rollingOnly(ordered, { all: true })) : [];
   const at = new Map(hist.map((x) => [String(x.date || ""), x]));
   const fin = new Map();
-  if (!rolling && S.showRanks) for (const e of S.eventsOf(S.rankedField(slicedField))) {
+  if (!rolling && S.showRanks) for (const e of S.eventsOf(slicedField.filter((p) => p.rounds.length)) /* (update 775: every player at the tournament, not just those with the season's min. rounds) */) {
     const mineE = [...e.by].find(([p]) => p.key === S.me.key);
     if (!mineE) continue;
     const i = e.ranked.findIndex((x) => x.p.key === S.me.key);

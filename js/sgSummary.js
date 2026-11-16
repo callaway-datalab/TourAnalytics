@@ -249,7 +249,7 @@ export function tourBlocks(S, slicedField) {
 
   // 4. tournaments: when, how many played, and the best in the field (among those who played every round)
   {
-    const all = S.eventsOf(P);
+    const all = S.eventsOf(slicedField.filter((p) => p.rounds.length)); // (update 775: everyone who played it, whatever their season)
     const wins = new Map(), tops = new Map();
     for (const e of all) { // (oldest first, so a second win shows "(2)")
       if (e.best) { const n = (wins.get(e.best.p)?.n || 0) + 1; wins.set(e.best.p, { p: e.best.p, n }); e.winNo = n; }
