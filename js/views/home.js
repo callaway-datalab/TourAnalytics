@@ -417,7 +417,7 @@ export async function render(main, { previewClient } = {}) {
       strip = el("div", { class: "td-dots-w" }, [svg, el("div", { class: "td-strip-ax" }, [el("span", {}, "worst"), el("span", {}, "best")])]); } }
     const who = el("div", { class: "td-fx-who" }, [el("span", { class: "td-fx-hide" }, "Who is it? Tap to reveal"), el("span", { class: "td-fx-name" }, h.k ? nameOf(h.k) : "")]);
     const card = el("article", { class: "td-fx", role: "button", tabindex: "0" }, [el("div", { class: `td-kick${/Room/.test(h.kick || "") ? " down" : ""}` }, h.kick || "Did you know"), el("div", { class: "td-fx-big" }, [el("strong", {}, f.big), el("span", {}, f.small)]), el("p", { class: "td-fx-lbl" }, f.lbl), strip, who]);
-    const act = () => { if (!card.classList.contains("shown")) card.classList.add("shown"); else openPop(h); };
+    const act = () => openPop(h); // (update 755: the name shown; a tap opens the story)
     card.addEventListener("click", act); card.addEventListener("keydown", (e) => { if (e.key === "Enter") act(); }); return card; };
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
   // (update 740) a different paper every day: each story's place moves a little with the date (the evergreen ones, about a
