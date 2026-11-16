@@ -347,3 +347,8 @@ main:has(.ah.td) { padding-top: 0 !important; }
 .td-lead .td-fig:not(:has(> :nth-child(2))) .td-tile { padding: 10px 14px; }
 /* (update 790) the front page's shuffle: the same pill as Did You Know's, bottom left */
 .td-reroll.td-shuf { position: absolute; left: 0; bottom: 6px; width: auto; height: auto; margin: 0; padding: 4px 12px; border-radius: 999px; font: 700 0.72rem var(--td-sans); letter-spacing: 0.06em; display: inline-block; }
+/* (update 791) the front page's shuffle at the top right of the lead story; a result's bars across the full width */
+.td-front { padding-bottom: 0 !important; }
+.td-lead { position: relative; }
+.td-lead > .td-reroll.td-shuf { top: 0; right: 0; left: auto; bottom: auto; z-index: 2; }
+.td-lead-wide { margin-top: 14px; } .td-lead-wide .td-bars { max-height: 260px; }

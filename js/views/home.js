@@ -298,8 +298,9 @@ export async function render(main, { previewClient } = {}) {
   // (update 737) the main story's chart: bars, tournament by tournament (the last 14), in the story's part of the game;
   // an equipment story's bars colored by the model used (the new one gold)
   const ns0 = "http://www.w3.org/2000/svg", mk0 = (tag, at, txt) => { const n = document.createElementNS(ns0, tag); for (const [a2, b2] of Object.entries(at)) n.setAttribute(a2, b2); if (txt != null) n.textContent = txt; return n; };
+  let barWide = false;
   function barSvg(items, { note } = {}) { if (items.length < 3) return null;
-    const W = 320, H = 176, top = 8, bot = 70, /* (update 738: room for a label under every bar) */ vs = items.map((x) => x.v), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, LP = 46, bw = (W - LP) / items.length; /* (update 738: room on the left for the first labels) */
+    const W = barWide ? 760 : 320, H = 176, top = 8, bot = 70, /* (update 791: wide, in the lead story's full width) */ /* (update 738: room for a label under every bar) */ vs = items.map((x) => x.v), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, LP = 46, bw = (W - LP) / items.length; /* (update 738: room on the left for the first labels) */
     const svg = mk0("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", class: "td-bars", role: "img", "aria-label": note || "Bar chart" });
     items.forEach((x, i) => { const h = Math.max(1.5, Math.abs(x.v) * sc), yy = x.v >= 0 ? y0 - h : y0;
       const r = bar0(mk0, { x: (LP + i * bw + bw * 0.14).toFixed(1), y: yy.toFixed(1), width: (bw * 0.72).toFixed(1), height: h.toFixed(1), rx: 2, class: `td-bar ${x.cls || (x.v >= 0 ? "up" : "down")}${x.hot ? " hot" : ""}` }, x.v >= 0);
@@ -449,16 +450,18 @@ export async function render(main, { previewClient } = {}) {
       const pts = F.ok.map((p1) => { const rs1 = p1.rs.filter((r) => !r.eventLevel); const sd = sdOf(rs1.map(fC)); return sd == null ? null : { x: avgOf(p1.rs, fC), y: sd, label: nameOf(p1.k), hot: p1.k === h.k }; }).filter(Boolean);
       const sv = pts.some((q) => q.hot) ? scatterSvg(pts, { xLab: `Strokes gained ${cat ? CAT_IN[cat] : "total"}`, yLab: "Swing", fmtX: sg2 }) : null;
       return sv ? el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `Ability vs consistency · ${cat ? CATN[cat] : "SG: Total"} · ${seasonYr()}`), sv]) : null; };
+    const wideT = /^(br|ev|st)-/.test(h.id) && viz.length > 0; barWide = wideT; // (update 791: a result's bars across the whole story, under the words and the numbers)
     const own = (isEq ? (() => { const b = storyBars(h, cat); return b ? el("div", { class: "td-chart" }, b) : null; })() : /^(ev|br|st|rk|rkb)-/.test(h.id) ? null : chartFor(h)) || (/^(fm|eq)-/.test(h.id) ? null : fillFor()); /* (update 787/788: no chart of its own: one picked for the story fills the space) */
     // (update 761) the story's chart under the words (no empty column beside a tall figure); the form story's table beside
     // (update 762) form: the before / after table only (the radar repeats the Form section below); a club change: its
     // bars by model up beside the words, under the three numbers
-    const isFm = h.id.startsWith("fm-") && h.x?.ra;
+    const isFm = h.id.startsWith("fm-") && h.x?.ra; let wideEl = null;
     if (isFm) viz.push(formTable(h.x));
-    else if (own && (!viz.length || isEq)) viz.push(own); else if (own) body.push(own);
+    else if (own && (!viz.length || isEq)) viz.push(own); else if (own && wideT) wideEl = own; else if (own) body.push(own);
+    barWide = false;
     const fig = viz.length ? el("div", { class: "td-fig" }, viz) : null;
     return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), el("div", { class: "td-by" }, `By Cal · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`),
-      el("div", { class: `td-leadgrid${fig ? "" : " solo"}` }, [el("div", { class: "td-body" }, [...body.slice(0, 2), more(h), ...body.slice(2)]), fig])]), h);
+      el("div", { class: `td-leadgrid${fig ? "" : " solo"}` }, [el("div", { class: "td-body" }, [...body.slice(0, 2), more(h), ...body.slice(2)]), fig]), wideEl ? el("div", { class: "td-lead-wide" }, wideEl) : null]), h);
   }
   // (update 750) a chart for each kind of story: form as a radar (the 12 before against the last 12) or a pair of bars; a
   // tournament's bars; every part of the game; ability against consistency; a proximity illustration; the hole itself
@@ -536,7 +539,7 @@ export async function render(main, { previewClient } = {}) {
   const jit = (id, amp) => (hash(`${id}|${DAY}`) - 0.5) * 2 * amp;
   let lastItems = null, reroll = false, shownLead = null; // (update 784: the front page's refresh button)
   function drawFeed(items) { lastItems = items;
-    const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.score + jit(x.id, x.ever ? 1.6 : 0.6) })).sort((a, b) => b.score - a.score);
+    const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.kind === "Fact" ? x.score : x.score + jit(x.id, x.ever ? 1.6 : 0.6) })) /* (update 791: facts keep their shuffled order) */.sort((a, b) => b.score - a.score);
     if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (+ above) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
     // (update 779) the lead changes every 12 hours (local time): one of the top 6 stories, a different one each half day
@@ -592,7 +595,8 @@ export async function render(main, { previewClient } = {}) {
     shownLead = lead?.id || null;
     const reB = el("button", { type: "button", class: "td-shuf td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻ Shuffle") /* (update 790: as Did You Know's) */;
     reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
-    mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief)), reB]), el("div", { class: "td-grid" }, laid)]);
+    const leadEl = leadStory(lead); leadEl.prepend(reB); /* (update 791: the shuffle at the top) */
+    mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadEl, el("aside", { class: "td-side" }, fp.slice(1).map(brief))]), el("div", { class: "td-grid" }, laid)]);
     // (update 789) Player Spotlight and Where to Improve about the same length: stories added to the shorter one (as many as
     // it has) until it reaches the other
     requestAnimationFrame(() => { const a = pairRest.get("spot"), b = pairRest.get("focus"); if (!a || !b) return;
@@ -686,7 +690,7 @@ export async function render(main, { previewClient } = {}) {
   // part-of-the-game stats that don't need a distance; their best week in each part of the game; a single round among the
   // best on tour this season. Picked by the half day, so the section changes twice a day
   const SLOT = Math.floor(Date.now() / 432e5);
-  let factMemo = null, factShuf = 0; // (update 789: the shuffle button)
+  let factMemo = null, factShuf = 0; const factSeen = new Set(); // (update 789: the shuffle button; 791: facts not yet shown first)
   function factsAll() {
     const keysF = shownKeys(), mk = `${SLOT}|${factShuf}|${tourPick}|${keysF.join(",")}|${field.length}`; if (factMemo?.k === mk) return factMemo.v;
     const F = seasonField(), SY = F.SY, on = tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : "", cand = [];
@@ -737,9 +741,9 @@ export async function render(main, { previewClient } = {}) {
             detail: `${fmtV(list[i][1])} (${Math.round(list[i][2])} ${isSG ? "shots" : "attempts"})${i ? `; the leader, ${nameOf(list[0][0])}: ${fmtV(list[0][1])}` : `; next best, ${nameOf(list[1][0])}: ${fmtV(list[1][1])}`}`,
             run: () => toStats(k, { view2: "focus", focusCats: isSG ? [parts[1]] : [], focusPick: isSG ? parts[1] : null, year: [SYd], span: 0 }, "Where you stand", null), to: "Stats · Focus" }); } } }
     // a different set each half day: shuffled by the slot, at most 2 a player when there are several
-    cand.sort((a, b) => hash(`${a.id}|${SLOT}|${factShuf}`) - hash(`${b.id}|${SLOT}|${factShuf}`));
+    cand.sort((a, b) => (factShuf ? (factSeen.has(a.id) ? 1 : 0) - (factSeen.has(b.id) ? 1 : 0) : 0) || hash(`${a.id}|${SLOT}|${factShuf}`) - hash(`${b.id}|${SLOT}|${factShuf}`));
     const out = [], per = new Map(); for (const x of cand) { if (out.length >= 8) break; const n = per.get(x.k) || 0; if (keysF.length > 1 && n >= 2) continue; per.set(x.k, n + 1); out.push({ ...x, kind: "Fact", score: 3.2 - out.length * 0.01 }); }
-    factMemo = { k: mk, v: out }; return out;
+    out.forEach((x) => factSeen.add(x.id)); if (factSeen.size >= cand.length) factSeen.clear(); factMemo = { k: mk, v: out }; return out;
   }
   function highlightsFor(k) {
     const raw = rawOf(playerOf(k)), out = [], SY = seasonYr(), rs = sgRounds(raw).filter((r) => yrOf(r) === SY); if (!rs.length) return out; /* (update 738: this season only) */ // (update 728: Compare's rounds and order)
