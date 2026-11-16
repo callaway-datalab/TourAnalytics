@@ -473,7 +473,7 @@ export async function render(main, { previewClient } = {}) {
   function chartFor(h) { try {
     const t = h.id.split("-")[0], x = h.x || {};
     if (t === "fm" && x.ra && x.rb) return el("div", { class: "td-chart" }, [radarSvg(cats.map((c0) => CSHORT[c0]), [{ vals: x.rb, cls: "a", label: `The ${x.n} before` }, { vals: x.ra, cls: "b", label: `The last ${x.FL}` }]), el("div", { class: "td-legend" }, [el("span", { class: "gold" }, `Last ${x.FL}`), el("span", { class: "gray" }, `${x.FL} before`)])]);
-    if (t === "cm" && x.a != null) return el("div", { class: "td-chart" }, pairBars(x.a, x.b, { la: `Last ${x.n}`, lb: `${x.n} before`, cls: ["b", "a"] }));
+    if (t === "cm" && x.a != null) return el("div", { class: "td-chart" }, pairBars(x.b, x.a, { la: `${x.n} before`, lb: `Last ${x.n}` }) /* (update 793: a chart runs in time order, before then now) */);
     // (update 758) the best round: every round this season (that one bright); a week or a streak: every tournament
     if (t === "br" && h.k) { const rs = sgRounds(rawOf(playerOf(h.k))).filter((r) => yrOf(r) === seasonYr() && !r.eventLevel), mx = Math.max(...rs.map(tot)); if (rs.length < 4) return null;
       const svg = barSvg(rs.map((r) => ({ v: tot(r), label: `${r.event} R${r.roundNo || ""}`, short: "", hot: tot(r) === mx })), { note: "Every round" });
