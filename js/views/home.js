@@ -355,9 +355,20 @@ export async function render(main, { previewClient } = {}) {
     const body = [el("p", {}, d.deck)];
     // (update 732) the season line and the chart: the same part of the game as the story, and it says which
     if (c) body.push(el("p", {}, `${cat ? `${CATN[cat]}: ` : ""}${isMe(h.k) ? "you’re" : `${nameOf(h.k)} is`} averaging ${sg2(c.avg)} ${lbl} a round in ${c.yr}${tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : ""}, over ${c.n} round${c.n === 1 ? "" : "s"} (${c.ev} tournament${c.ev === 1 ? "" : "s"}).`.replace(/^./, (m) => m.toUpperCase())));
-    // (update 751) a chart only for a story about one part of the game or a club (not strokes gained total)
-    const isEq = h.id.startsWith("eq-"), bars = cat || isEq ? storyBars(h, cat) : null;
-    const fig = bars ? el("div", { class: "td-fig" }, bars) : null;
+    // (update 754) the picture: three numbers (the season, the tour rank, the latest tournament), every round this season as a
+    // strip of squares (green gaining, red losing, brighter the bigger), and the story's own chart (a radar, a scatter, the
+    // hole…); a club: its bars by model
+    const isEq = h.id.startsWith("eq-"), viz = [];
+    if (h.k) { const p0 = playerOf(h.k), SY = seasonYr(), rs = sgRounds(rawOf(p0)).filter((r) => yrOf(r) === SY), f = cat ? (r) => inCat(r, cat) : tot;
+      if (rs.length) { const R = ranksFor(SY).by, rk = R[cat || "TOTAL"]?.get(h.k), n = R[`${cat || "TOTAL"}#`], le = eventsOf(rs).at(-1), lv = le ? avgOf(le.rs, f) : null, av = avgOf(rs, f);
+        const tile = (big, small, c0 = "") => el("div", { class: "td-tile" }, [el("strong", { class: c0 }, big), el("span", {}, small)]);
+        viz.push(el("div", { class: "td-tiles" }, [tile(sg2(av), `${cat ? CATN[cat] : "Strokes gained"} a round, ${SY}`, cls(av)), rk ? tile(ordN(rk).replace("No. ", "#"), `on tour, of ${n}`) : tile(String(rs.length), `rounds in ${SY}`), le ? tile(sg2(lv), shortEv(le.event), cls(lv)) : null]));
+        const last = rs.filter((r) => !r.eventLevel).slice(-30), mx = Math.max(1, ...last.map((r) => Math.abs(f(r))));
+        if (last.length >= 6) viz.push(el("div", { class: "td-strip-w" }, [el("div", { class: "td-kick mute" }, `Round by round · ${cat ? CATN[cat] : "strokes gained"}`), el("div", { class: "td-strip" }, last.map((r) => { const v = f(r); return el("i", { class: v >= 0 ? "up" : "down", style: `opacity:${(0.25 + 0.75 * Math.min(1, Math.abs(v) / mx)).toFixed(2)}`, title: `${r.event}${r.roundNo ? ` R${r.roundNo}` : ""}: ${sg2(v)}` }); })),
+          el("div", { class: "td-strip-ax" }, [el("span", {}, shortEv(last[0].event)), el("span", {}, shortEv(last.at(-1).event))])])); } }
+    const own = isEq ? (() => { const b = storyBars(h, cat); return b ? el("div", { class: "td-chart" }, b) : null; })() : /^(ev|br|st)-/.test(h.id) ? null : chartFor(h);
+    if (own) viz.push(own);
+    const fig = viz.length ? el("div", { class: "td-fig" }, viz) : null;
     return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), el("div", { class: "td-by" }, `By Cal · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`),
       el("div", { class: `td-leadgrid${fig ? "" : " solo"}` }, [el("div", { class: "td-body" }, [...body, more(h)]), fig])]), h);
   }
@@ -395,6 +406,19 @@ export async function render(main, { previewClient } = {}) {
       rows.push(tap(tr, { id: `rkrow-${f.c}-${h.k}`, k: h.k, kind: "Rank", kick: "Rankings", title: `${staff ? `${nameOf(h.k)}: ` : ""}${ordN(f.r)} of ${f.n} in ${f.c === "TOTAL" ? "strokes gained" : rkName(f.c)}`, detail: f.v == null ? "" : `${sg2(f.v)} a round in ${h.x.yr}`, board: { c: f.c }, to: "Leaderboards · Rankings", run: () => toBoard({ year: [h.x.yr], cats: f.c === "TOTAL" ? [] : [f.c] }, "Rankings", EX.lead(`Who leads in ${rkName(f.c)}?`)) })); } /* (update 751: a pop-up with that leaderboard) */
     rows.sort((a, b) => Number(a.dataset.r) - Number(b.dataset.r));
     return el("table", { class: "td-box" }, el("tbody", {}, rows.slice(0, 14))); };
+  // (update 754) "Did you know?" as cards: the number big, what it's for in a line, where they sit in the field (a dot for each
+  // player, theirs in gold), and the name hidden until tapped (a second tap: the whole story and the leaderboard)
+  const factCard = (h) => { const f = h.fx; if (!f) return wire(h);
+    let strip = null;
+    if (h.board) { const rows = boardRows(h.board); if (rows.length >= 10) { const vs = rows.map((r) => r[1]), lo = Math.min(...vs), hi = Math.max(...vs), W = 300;
+      const svg = mk0("svg", { viewBox: `0 0 ${W} 22`, width: "100%", class: "td-dots", "aria-hidden": "true" }); svg.append(mk0("line", { x1: 4, x2: W - 4, y1: 11, y2: 11, class: "td-zero" }));
+      const xOf = (v) => 4 + ((v - lo) / (hi - lo || 1)) * (W - 8), better = rows[0][1] >= rows.at(-1)[1]; // (best on the right)
+      for (const [k2, v] of rows) svg.append(mk0("circle", { cx: (better ? xOf(v) : W - xOf(v)).toFixed(1), cy: 11, r: k2 === h.k ? 6 : 2.2, class: k2 === h.k ? "td-dot" : "td-dotf" }));
+      strip = el("div", { class: "td-dots-w" }, [svg, el("div", { class: "td-strip-ax" }, [el("span", {}, "worst"), el("span", {}, "best")])]); } }
+    const who = el("div", { class: "td-fx-who" }, [el("span", { class: "td-fx-hide" }, "Who is it? Tap to reveal"), el("span", { class: "td-fx-name" }, h.k ? nameOf(h.k) : "")]);
+    const card = el("article", { class: "td-fx", role: "button", tabindex: "0" }, [el("div", { class: `td-kick${/Room/.test(h.kick || "") ? " down" : ""}` }, h.kick || "Did you know"), el("div", { class: "td-fx-big" }, [el("strong", {}, f.big), el("span", {}, f.small)]), el("p", { class: "td-fx-lbl" }, f.lbl), strip, who]);
+    const act = () => { if (!card.classList.contains("shown")) card.classList.add("shown"); else openPop(h); };
+    card.addEventListener("click", act); card.addEventListener("keydown", (e) => { if (e.key === "Enter") act(); }); return card; };
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
   // (update 740) a different paper every day: each story's place moves a little with the date (the evergreen ones, about a
   // player's strengths, steadiness, gaps and stats, the most), so the front page and the sections change day to day
@@ -416,7 +440,7 @@ export async function render(main, { previewClient } = {}) {
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
-      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "tour" || id === "fact" ? el("div", { class: "td-wire" }, pick.map(wire)) : el("div", { class: "td-cols" }, pick.map(column));
+      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? el("div", { class: "td-wire" }, pick.map(wire)) : el("div", { class: "td-cols" }, pick.map(column));
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}` }, [el("div", { class: "td-sh" }, [el("h2", {}, title), sub ? el("span", {}, sub) : null]), content]));
     }
     // (update 735) two half-width sections side by side: left and right worked out in order (a full-width one starts a new
@@ -526,16 +550,16 @@ export async function render(main, { previewClient } = {}) {
       for (const k of keysF) { const me = isMe(k), N = me ? "You" : nameOf(k), P = me ? "your" : poss(nameOf(k));
         for (const w of wins) for (const m of mets) { const vs = ranksOf(w, m); if (vs.length < 20) continue; const i = vs.findIndex((x) => x[0] === k); if (i < 0) continue;
           const top = i < 10, bot = i >= vs.length - 10; if (!top && !bot) continue;
-          cand.push({ board: { c: m.id, win: w[0] }, id: `fx-${w[0]}-${m.id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${vs.length} in ${m.lbl} ${w[1]}`, detail: `${m.fmt(vs[i][1])}${i ? `; the leader, ${nameOf(vs[0][0])}: ${m.fmt(vs[0][1])}` : `; next best, ${nameOf(vs[1][0])}: ${m.fmt(vs[1][1])}`}`,
+          cand.push({ fx: { big: `#${i + 1}`, small: `of ${vs.length}`, lbl: `${m.lbl} ${w[1]}` }, board: { c: m.id, win: w[0] }, id: `fx-${w[0]}-${m.id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${vs.length} in ${m.lbl} ${w[1]}`, detail: `${m.fmt(vs[i][1])}${i ? `; the leader, ${nameOf(vs[0][0])}: ${m.fmt(vs[0][1])}` : `; next best, ${nameOf(vs[1][0])}: ${m.fmt(vs[1][1])}`}`,
             run: () => toBoard({ year: [SY], cats: cats.includes(m.id) ? [m.id] : [] }, "Rankings", EX.lead(`Who leads in ${m.lbl}?`)), to: "Leaderboards" }); }
         // their best week this season in each part of the game
         const pl = F.all.find((p) => p.k === k); if (!pl) continue; const evs = eventsOf(pl.rs).filter((e) => e.rs.length >= 2);
         if (evs.length >= 4) for (const c of cats) { const b = evs.map((e) => [e, avgOf(e.rs, (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1])[0];
-          if (b && b[1] > 0.5) cand.push({ id: `fx-wk-${c}-${k}`, k, kick: "Best week", title: `${me ? "Your" : poss(nameOf(k))} best ${CATW[c]} week of ${SY}: ${sg2(b[1])} a round at ${b[0].event}`, detail: `Strokes gained ${CAT_IN[c]}, over ${b[0].rs.length} rounds there`, run: () => toStats(k, { view2: "full", year: [SY], span: 0 }, "Tournaments", null), to: "Stats · Tournaments" }); }
+          if (b && b[1] > 0.5) cand.push({ fx: { big: sg2(b[1]), small: "a round", lbl: `best ${CATW[c]} week of ${SY}, at ${b[0].event}` }, id: `fx-wk-${c}-${k}`, k, kick: "Best week", title: `${me ? "Your" : poss(nameOf(k))} best ${CATW[c]} week of ${SY}: ${sg2(b[1])} a round at ${b[0].event}`, detail: `Strokes gained ${CAT_IN[c]}, over ${b[0].rs.length} rounds there`, run: () => toStats(k, { view2: "full", year: [SY], span: 0 }, "Tournaments", null), to: "Stats · Tournaments" }); }
         // a single round among the season's best on tour (any part of the game)
         for (const c of ["TOTAL", ...cats]) { const f = c === "TOTAL" ? tot : (r) => inCat(r, c), mine = pl.rs.filter((r) => !r.eventLevel).map((r) => [r, f(r)]).sort((a, b) => b[1] - a[1])[0]; if (!mine) continue;
           let better = 0; for (const p of F.all) for (const r of p.rs) if (!r.eventLevel && f(r) > mine[1]) { better++; if (better > 10) break; }
-          if (better < 5) cand.push({ id: `fx-rd-${c}-${k}`, k, kick: "Round to remember", title: `${me ? "Your" : poss(nameOf(k))} ${sg2(mine[1])} ${c === "TOTAL" ? "round" : `${CATW[c]} round`} at ${mine[0].event} is ${better ? `in the top ${better + 1}` : "the best"} on tour this season`, detail: `Strokes gained ${c === "TOTAL" ? "total" : CAT_IN[c]}${mine[0].roundNo ? `, round ${mine[0].roundNo}` : ""} (${SY}${on})`, run: () => toStats(k, { view2: "full", year: [SY], span: 0, trendBy: "round" }, "SG Trends", null), to: "Stats · SG Trends" }); } }
+          if (better < 5) cand.push({ fx: { big: sg2(mine[1]), small: better ? `top ${better + 1} on tour` : "best on tour", lbl: `${c === "TOTAL" ? "strokes gained" : CATW[c]} in one round, at ${mine[0].event}` }, id: `fx-rd-${c}-${k}`, k, kick: "Round to remember", title: `${me ? "Your" : poss(nameOf(k))} ${sg2(mine[1])} ${c === "TOTAL" ? "round" : `${CATW[c]} round`} at ${mine[0].event} is ${better ? `in the top ${better + 1}` : "the best"} on tour this season`, detail: `Strokes gained ${c === "TOTAL" ? "total" : CAT_IN[c]}${mine[0].roundNo ? `, round ${mine[0].roundNo}` : ""} (${SY}${on})`, run: () => toStats(k, { view2: "full", year: [SY], span: 0, trendBy: "round" }, "SG Trends", null), to: "Stats · SG Trends" }); } }
     }
     // (update 749) at a distance, from the detail: strokes gained a shot (a part of the game from a distance range) and each
     // stat recorded with a distance (proximity, up & down, made putts, hit green …), this season and over the last 12 rounds;
@@ -559,7 +583,7 @@ export async function render(main, { previewClient } = {}) {
         const fmtV = (v) => (isSG ? `${sg2(v)} a shot` : fmtStat(def, v));
         for (const k of keysF) { const i = list.findIndex((x) => x[0] === k); if (i < 0 || !okSet.has(k)) continue; const top = i < 10, bot = i >= list.length - 10; if (!top && !bot) continue;
           const me = isMe(k), N = me ? "You" : nameOf(k);
-          cand.push({ board: { rows: list.map(([kk, v, n]) => [kk, v, `${fmtV(v)} (${Math.round(n)})`]), title: `${lbl} ${w[1]}` }, id: `fx-${id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${list.length} in ${lbl} ${w[1]}`,
+          cand.push({ fx: { big: `#${i + 1}`, small: `of ${list.length}`, lbl: `${lbl} ${w[1]}` }, board: { rows: list.map(([kk, v, n]) => [kk, v, `${fmtV(v)} (${Math.round(n)})`]), title: `${lbl} ${w[1]}` }, id: `fx-${id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${list.length} in ${lbl} ${w[1]}`,
             detail: `${fmtV(list[i][1])} (${Math.round(list[i][2])} ${isSG ? "shots" : "attempts"})${i ? `; the leader, ${nameOf(list[0][0])}: ${fmtV(list[0][1])}` : `; next best, ${nameOf(list[1][0])}: ${fmtV(list[1][1])}`}`,
             run: () => toStats(k, { view2: "focus", focusCats: isSG ? [parts[1]] : [], focusPick: isSG ? parts[1] : null, year: [SYd], span: 0 }, "Where you stand", null), to: "Stats · Focus" }); } } }
     // a different set each half day: shuffled by the slot, at most 2 a player when there are several

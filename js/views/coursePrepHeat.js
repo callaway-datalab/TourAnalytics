@@ -302,8 +302,13 @@ export async function drawHeat(ctx, course) {
     // (update 738) a tap inside one of Cal's circles opens that circle exactly (its centre and size; a miss circle with the
     // green left out), so the numbers are the ones in Cal's text
     if (meta.rawChunks && st.calOn && calRead?.r?.items) {
-      const hit = calRead.r.items.flatMap((it) => (it.at || []).map((c) => ({ it, c }))).filter(({ c }) => c[4] && Math.hypot(x - c[0], y - c[1]) <= c[2]).sort((p, q) => Math.hypot(x - p.c[0], y - p.c[1]) - Math.hypot(x - q.c[0], y - q.c[1]))[0];
-      if (hit) { st.spotR = hit.c[4]; st.spotOff = new Set(hit.c[5] ? ["green"] : []); openSpot(hit.c[0], hit.c[1]); return; } }
+      const hit = calRead.r.items.flatMap((it) => (it.at || []).map((c) => ({ it, c }))).filter(({ c }) => Math.hypot(x - c[0], y - c[1]) <= c[2]).sort((p, q) => Math.hypot(x - p.c[0], y - p.c[1]) - Math.hypot(x - q.c[0], y - q.c[1]))[0];
+      // (update 754) its size in yds: kept on a recounted circle; else from its radius on the map (one the circle tool has).
+      // (A circle that wasn't recounted keeps its outline's points there, which were shown as its size.)
+      if (hit) { const miss = hit.it.k === "miss";
+        if (typeof hit.c[4] === "number") { st.spotR = hit.c[4]; st.spotOff = new Set(miss ? ["green"] : []); openSpot(hit.c[0], hit.c[1]); return; }
+        rawIndex().then((by) => { const list = by?.get(st.hole)?.shots || [], ppy = ppyOf(st.hole, list) || 3, yd = hit.c[2] / ppy; st.spotR = RAD.reduce((a, b) => (Math.abs(b - yd) < Math.abs(a - yd) ? b : a), RAD[0]); st.spotOff = new Set(miss ? ["green"] : []); openSpot(hit.c[0], hit.c[1]); });
+        return; } }
     if (meta.rawChunks) { openSpot(x, y); return; } // (update 500)
     const z = zoneAt(Z.zones, x, y, ov);
     if (!z) { pop.hidden = true; hideDot(); return; } // (no colour there: nothing to show)

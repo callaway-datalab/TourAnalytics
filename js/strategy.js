@@ -419,7 +419,9 @@ export function strategyOf(recs, par, geo = {}) {
         const [lo, hi, lie] = k.split("|"), where = goSt === 1 ? "Off the tee" : `From ${lo}-${hi} yds ${lieIn(lie)}`, go = ga < la;
         lines.push({ gap: Math.abs(ga - la), go, t: `${where}, ${go ? "go for the green" : "lay up"} ${vn(go ? ga : la, go ? g.length : l.length)}.` });
       }
-      lines.sort((a, b) => b.gap - a.gap).slice(0, 2).forEach((x) => items.push({ k: goSt === 1 ? "tee" : "layup", h: x.go ? "Go for it" : "Lay up", t: x.t }));
+      // (update 754) the lines by where it's played from (a distance and a lie) are left out: one lie with enough rounds made a
+      // rule of it ("from 250-275 yds in a bunker, go for it"); the choice as a whole (above) and the lay-up distance stay
+      if (par < 5) lines.sort((a, b) => b.gap - a.gap).slice(0, 2).forEach((x) => items.push({ k: goSt === 1 ? "tee" : "layup", h: x.go ? "Go for it" : "Lay up", t: x.t }));
       // the best place to lay up to: the yards left after the lay-up
       const lay = plays.filter((p) => !p.go && p.nx[4] != null), lb = 20;
       const byLeft = group(lay.map((p) => ({ ...p.r, _l: p.nx[4] })), (r) => `${Math.floor(r._l / lb) * lb}`).sort((a, b) => a.avg - b.avg);

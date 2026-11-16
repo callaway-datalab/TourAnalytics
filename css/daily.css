@@ -206,3 +206,28 @@ html[data-theme="light"] .td-pop-back { background: rgba(30,25,15,0.35); }
 .td-pop-go { margin-top: 16px; background: none; border: 1px solid var(--td-rule2); border-radius: 999px; padding: 7px 14px; color: var(--td-gold); font: 700 0.8rem var(--td-sans); cursor: pointer; }
 @media (max-width: 860px) { .td.td-popwrap { place-items: end center; } .td-pop { width: 100vw; max-height: 88vh; border-radius: 16px 16px 0 0; padding: 18px 16px; } }
 .td-pop .td-chart .mc-radar, .td-pop .td-chart .mc-scatter { max-width: 380px; display: block; } .td-pop .td-chart { max-width: 420px; }
+/* (update 754) the main story's picture: three numbers, the round strip */
+.td-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.td-tile { border: 1px solid var(--td-rule); border-radius: 10px; padding: 10px 12px; background: var(--td-card); }
+.td-tile strong { display: block; font: 800 1.7rem/1.05 var(--td-head); }
+.td-tile span { display: block; font: 600 0.7rem var(--td-sans); color: var(--td-mute); margin-top: 4px; letter-spacing: 0.02em; }
+.td-strip-w { margin: 4px 0 14px; }
+.td-strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; margin-top: 6px; }
+.td-strip i { display: block; height: 26px; border-radius: 3px; }
+.td-strip i.up { background: var(--td-up); } .td-strip i.down { background: var(--td-down); }
+.td-strip-ax { display: flex; justify-content: space-between; font: 500 0.66rem var(--td-sans); color: var(--td-mute); margin-top: 4px; }
+/* (update 754) "Did you know?" cards */
+.td-fxs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
+.td-fx { border: 1px solid var(--td-rule2); border-radius: 12px; padding: 14px 14px 12px; background: var(--td-card); cursor: pointer; display: grid; gap: 6px; align-content: start; transition: transform 0.15s, border-color 0.15s; }
+.td-fx:hover { transform: translateY(-2px); border-color: var(--td-gold); }
+.td-fx-big { display: flex; align-items: baseline; gap: 8px; }
+.td-fx-big strong { font: 800 2.4rem/1 var(--td-head); color: var(--td-gold); }
+.td-fx-big span { font: 600 0.8rem var(--td-sans); color: var(--td-mute); }
+.td-fx-lbl { margin: 0; font-size: 0.95rem; line-height: 1.3; color: var(--td-ink); }
+.td-dots { display: block; margin-top: 4px; }
+.td-dots .td-zero { stroke: var(--td-rule2); } .td-dots .td-dotf { fill: var(--td-mute); opacity: 0.45; } .td-dots .td-dot { fill: var(--td-gold); stroke: var(--td-paper); stroke-width: 1.5; }
+.td-fx-who { margin-top: 4px; font: 800 0.8rem var(--td-sans); letter-spacing: 0.08em; text-transform: uppercase; }
+.td-fx-hide { color: var(--td-gold); } .td-fx-name { display: none; color: var(--td-ink); }
+.td-fx.shown .td-fx-hide { display: none; } .td-fx.shown .td-fx-name { display: inline; }
+.td-fx.shown .td-fx-name::after { content: "  ·  tap for more"; color: var(--td-mute); font-weight: 600; letter-spacing: 0; text-transform: none; }
+@media (max-width: 860px) { .td-tile strong { font-size: 1.35rem; } }
