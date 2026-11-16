@@ -302,3 +302,7 @@ html[data-theme="light"] .td-legend .m-a::before { background: #0b5fc4; } html[d
 .td-lead .td-fig:not(:has(> :nth-child(2))) .td-tile strong { font-size: 2.3rem; min-width: 5.2ch; }
 .td-lead .td-fig:not(:has(> :nth-child(2))) .td-tile span { font-size: 0.82rem; margin: 0; }
 @media (max-width: 860px) { .td-lead .td-fig:not(:has(> :nth-child(2))) .td-tile strong { font-size: 1.7rem; } }
+/* (update 771) Around the Tour: Last Event, Last 3 Months and Year-to-date side by side (stacked on a phone) */
+.td-tgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 28px; }
+.td-tgroup .td-wire { columns: 1; margin-top: 6px; }
+.td-tg-h { margin: 12px 0 2px; padding-bottom: 6px; border-bottom: 1px solid var(--td-rule2); color: var(--sec, var(--td-gold)) !important; }

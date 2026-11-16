@@ -479,6 +479,9 @@ export async function render(main, { previewClient } = {}) {
     const card = el("article", { class: "td-fx", role: "button", tabindex: "0" }, [el("div", { class: `td-kick${/Room/.test(h.kick || "") ? " down" : ""}` }, h.kick || "Did you know"), el("h3", { class: "td-fx-nm" }, h.k ? nameOf(h.k) : ""), el("div", { class: "td-fx-big" }, [el("strong", {}, f.big), el("span", {}, f.small)]), el("p", { class: "td-fx-lbl" }, f.lbl)]); void strip; /* (update 760: no best-to-worst dot strip) */
     const act = () => openPop(h); // (update 755: the name shown; a tap opens the story)
     card.addEventListener("click", act); card.addEventListener("keydown", (e) => { if (e.key === "Enter") act(); }); return card; };
+  // (update 771) Around the Tour in three parts: the last event, the last 3 months and the year to date, up to 4 each
+  const tourGroups = (list) => el("div", { class: "td-tgroups" }, [["last", "Last Event"], ["3m", "Last 3 Months"], ["ytd", "Year-to-date"]].map(([g, t]) => { const xs = list.filter((h) => (h.grp || "ytd") === g).slice(0, 4);
+    return xs.length ? el("div", { class: "td-tgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-wire" }, xs.map(wire))]) : null; }));
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
   // (update 740) a different paper every day: each story's place moves a little with the date (the evergreen ones, about a
   // player's strengths, steadiness, gaps and stats, the most), so the front page and the sections change day to day
@@ -500,7 +503,7 @@ export async function render(main, { previewClient } = {}) {
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
-      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? el("div", { class: "td-wire" }, pick.map(wire)) : el("div", { class: "td-cols" }, pick.map(column));
+      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine) : el("div", { class: "td-cols" }, pick.map(column));
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), sub ? el("span", {}, sub) : null]), content]));
     }
     // (update 735) two half-width sections side by side: left and right worked out in order (a full-width one starts a new
@@ -740,7 +743,8 @@ export async function render(main, { previewClient } = {}) {
     const sp = field.map((p) => ({ k: p.key, rs: sgRounds(rawOf(p)).filter((r) => yrOf(r) === yr0) })).filter((p) => p.rs.length);
     const rl = (rs) => rs.filter((r) => !r.eventLevel); // single rounds only (not a whole event in one row)
     const most = Math.max(0, ...sp.map((p) => p.rs.length)), minR = Math.max(1, Math.floor((most * 0.33) / 5) * 5), ok = sp.filter((p) => p.rs.length >= minR);
-    const add = (id, score, title, detail) => out.push({ id: `tb-${id}`, k: null, kind: "Tour", score, title, detail, to: "Leaderboards", run: toLead(title) });
+    // (update 771) each in a sub-section: the last event, the last 3 months, or the year to date
+    const add = (id, score, title, detail, grp) => out.push({ id: `tb-${id}`, k: null, kind: "Tour", score, title, detail, to: "Leaderboards", run: toLead(title), grp: grp || (/^(week|ev-)/.test(id) ? "last" : "ytd") });
     // the round of the year
     let best = null; for (const p of sp) for (const r of rl(p.rs)) { const v = tot(r); if (!best || v > best.v) best = { k: p.k, v, r }; }
     if (best) add("roy", 3.9, `Round of the year: ${nameOf(best.k)}, ${sg2(best.v)}`, `${best.r.event}${best.r.roundNo ? `, round ${best.r.roundNo}` : ""} · the best single round in ${W0}`);
@@ -775,11 +779,26 @@ export async function render(main, { previewClient } = {}) {
     // (update 740) rotating: a stat's leader (a different stat each day), the tightest race and the runaway leader
     if (ok.length >= 10) { const keyD = STAT_KEYS[Math.floor(hash(`stat|${DAY}`) * STAT_KEYS.length)], def = keyD && STAT_DEFS[keyD];
       if (def) { const vs = ok.map((p) => [p.k, obsAvg(p.rs, keyD)]).filter((x) => x[1] != null).sort((a, b) => (def.higher ? b[1] - a[1] : a[1] - b[1]));
-        if (vs.length >= 10) out.push({ board: { key: keyD }, id: `tb-stat-${keyD}`, k: null, kind: "Tour", ever: true, score: 3.75, title: `${def.label} leader: ${nameOf(vs[0][0])}, ${fmtStat(def, vs[0][1])}`, detail: `Then ${vs.slice(1, 3).map(([k2, v]) => `${nameOf(k2)} ${fmtStat(def, v)}`).join(", ")} (${W0}, ${minR}+ rounds)`, to: "Leaderboards", run: () => toBoard({ year: [yr0] }, null, EX.lead(`Who leads in ${def.label}?`)) }); }
+        if (vs.length >= 10) out.push({ board: { key: keyD }, id: `tb-stat-${keyD}`, k: null, kind: "Tour", grp: "ytd", ever: true, score: 3.75, title: `${def.label} leader: ${nameOf(vs[0][0])}, ${fmtStat(def, vs[0][1])}`, detail: `Then ${vs.slice(1, 3).map(([k2, v]) => `${nameOf(k2)} ${fmtStat(def, v)}`).join(", ")} (${W0}, ${minR}+ rounds)`, to: "Leaderboards", run: () => toBoard({ year: [yr0] }, null, EX.lead(`Who leads in ${def.label}?`)) }); }
       const races = ["TOTAL", ...cats].map((c) => { const vs = ok.map((p) => [p.k, avgOf(p.rs, c === "TOTAL" ? tot : (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1]); return { c, a: vs[0], b: vs[1], gap: vs[0][1] - vs[1][1] }; }).sort((a, b) => a.gap - b.gap);
       const nmC = (c) => (c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase()), tight = races[0], run = races.at(-1);
-      out.push({ board: { c: tight.c }, id: `tb-tight-${tight.c}`, k: null, kind: "Tour", ever: true, score: 3.55, title: `Tightest race: ${nmC(tight.c)}`, detail: `${nameOf(tight.a[0])} ${sg2(tight.a[1])} a round leads ${nameOf(tight.b[0])} ${sg2(tight.b[1])} by ${tight.gap.toFixed(2)} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: tight.c === "TOTAL" ? [] : [tight.c] }, "Rankings", null) });
-      out.push({ board: { c: run.c }, id: `tb-run-${run.c}`, k: null, kind: "Tour", ever: true, score: 3.5, title: `Runaway leader: ${nameOf(run.a[0])} in ${nmC(run.c)}`, detail: `${sg2(run.a[1])} a round, ${run.gap.toFixed(2)} clear of ${nameOf(run.b[0])} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: run.c === "TOTAL" ? [] : [run.c] }, "Rankings", null) }); }
+      out.push({ board: { c: tight.c }, id: `tb-tight-${tight.c}`, k: null, kind: "Tour", grp: "ytd", ever: true, score: 3.55, title: `Tightest race: ${nmC(tight.c)}`, detail: `${nameOf(tight.a[0])} ${sg2(tight.a[1])} a round leads ${nameOf(tight.b[0])} ${sg2(tight.b[1])} by ${tight.gap.toFixed(2)} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: tight.c === "TOTAL" ? [] : [tight.c] }, "Rankings", null) });
+      out.push({ board: { c: run.c }, id: `tb-run-${run.c}`, k: null, kind: "Tour", grp: "ytd", ever: true, score: 3.5, title: `Runaway leader: ${nameOf(run.a[0])} in ${nmC(run.c)}`, detail: `${sg2(run.a[1])} a round, ${run.gap.toFixed(2)} clear of ${nameOf(run.b[0])} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: run.c === "TOTAL" ? [] : [run.c] }, "Rankings", null) }); }
+    // (update 771) the last 3 months (to the latest round on record): who's in form, the risers and fallers against their
+    // year before then, the best in each part of the game, and the round of that stretch
+    { const latest = sp.reduce((m, p) => p.rs.reduce((m2, r) => (String(r.date) > m2 ? String(r.date) : m2), m), ""), t1 = Date.parse(latest.slice(0, 10));
+      if (Number.isFinite(t1)) { const cut = new Date(t1 - 92 * 864e5).toISOString().slice(0, 10), yrAgo = new Date(t1 - 365 * 864e5).toISOString().slice(0, 10);
+        const all3 = field.map((p) => { const rs = sgRounds(rawOf(p)); return { k: p.key, rs: rs.filter((r) => String(r.date) >= cut), pre: rs.filter((r) => String(r.date) < cut && String(r.date) >= yrAgo) }; }).filter((p) => p.rs.length);
+        const most3 = Math.max(0, ...all3.map((p) => p.rs.length)), min3 = Math.max(4, Math.floor(most3 * 0.33)), ok3 = all3.filter((p) => p.rs.length >= min3), W3 = `the last 3 months${on}, ${min3}+ rounds`;
+        if (ok3.length >= 10) { const hot = ok3.map((p) => [p.k, perRound(p.rs), p.rs.length]).sort((a, b) => b[1] - a[1]);
+          add("3m-hot", 3.85, `In form: ${nameOf(hot[0][0])}, ${sg2(hot[0][1])} a round`, `The best strokes gained a round over ${W3} · then ${hot.slice(1, 3).map(([k2, v]) => `${nameOf(k2)} ${sg2(v)}`).join(", ")}`, "3m");
+          const lead3 = cats.map((c) => { const v = ok3.map((p) => [p.k, avgOf(p.rs, (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1])[0]; return `${CATN[c]}: ${nameOf(v[0])} ${sg2(v[1])}`; });
+          add("3m-kings", 3.7, `The last 3 months: the best in each part of the game`, `${lead3.join(" · ")} (strokes gained a round, ${W3})`, "3m");
+          const ch = ok3.filter((p) => p.pre.length >= min3).map((p) => [p.k, perRound(p.rs) - perRound(p.pre), perRound(p.rs), perRound(p.pre)]).sort((a, b) => b[1] - a[1]);
+          if (ch.length >= 10 && ch[0][1] > 0.4) add("3m-rise", 3.8, `Biggest riser: ${nameOf(ch[0][0])}, up ${ch[0][1].toFixed(2)} a round`, `${sg2(ch[0][2])} a round over the last 3 months, against ${sg2(ch[0][3])} in the 9 months before`, "3m");
+          if (ch.length >= 10 && ch.at(-1)[1] < -0.4) { const f0 = ch.at(-1); add("3m-fall", 3.6, `Biggest drop: ${nameOf(f0[0])}, down ${Math.abs(f0[1]).toFixed(2)} a round`, `${sg2(f0[2])} a round over the last 3 months, against ${sg2(f0[3])} in the 9 months before`, "3m"); } }
+        let b3 = null; for (const p of all3) for (const r of rl(p.rs)) { const v = tot(r); if (!b3 || v > b3.v) b3 = { k: p.k, v, r }; }
+        if (b3) add("3m-roy", 3.55, `Round of the last 3 months: ${nameOf(b3.k)}, ${sg2(b3.v)}`, `${b3.r.event}${b3.r.roundNo ? `, round ${b3.r.roundNo}` : ""} · strokes gained total`, "3m"); } }
     // the ironman
     const iron = [...sp].sort((a, b) => b.rs.length - a.rs.length)[0];
     if (iron && sp.length >= 10) add("iron", 3.0, `Ironman: ${nameOf(iron.k)}, ${iron.rs.length} rounds`, `The most rounds played in ${W0} (${new Set(iron.rs.map((r) => r.event)).size} tournaments)`);
