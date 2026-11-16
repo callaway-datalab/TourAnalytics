@@ -6989,3 +6989,4 @@ button.tr-best:hover { border-color: rgba(48, 209, 88, 0.6); }
 .rail-foot .hdr-icon, .rail-foot .hdr-icon.callie-link, .rail-foot .account-btn.hdr-icon { margin-left: 0 !important; margin-right: 0 !important; }
 @media (max-width: 520px) { .rail-foot .hdr-icon.callie-link { margin-right: 0 !important; } }
 .rail .rail-foot { column-gap: 0.5rem !important; }
+.bw-t tr.bw-one td { opacity: 0.6; } /* (update 777) a one-round week: listed, not counted in the best / worst 3 */

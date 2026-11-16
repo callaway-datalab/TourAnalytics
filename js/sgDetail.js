@@ -488,22 +488,24 @@ export function panelBox(S, title, content, size = "") {
 export function bestWorstBox(S, mine) {
   const ev = new Map(); for (const rd of mine || []) { if (!rd.event) continue; const k = `${rd.event}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (ev.get(k) || ev.set(k, { key: k, name: rd.event, rs: [] }).get(k)).rs.push(rd); }
   const CATS = [["OTT", "Off-the-Tee"], ["APP", "Approach"], ["ARG", "Around"], ["PUTT", "Putting"]];
-  const rows = [...ev.values()].filter((e) => e.rs.length >= 2).map((e) => ({ ...e, tot: S.perRoundOf(e.rs), c: Object.fromEntries(CATS.map(([c]) => [c, S.perRoundOf(e.rs, c)])) })).sort((a, b) => b.tot - a.tot);
-  if (rows.length < 6) return null;
-  const top = rows.slice(0, 3), bot = rows.slice(-3), mean = (xs, f) => xs.reduce((t, x) => t + f(x), 0) / xs.length;
+  // (update 777) every tournament listed (a one-round week too, marked); the best 3 and worst 3 only from weeks of 2+ rounds
+  const full = (e) => e.rs.length >= 2 || e.rs.some((r) => r.eventLevel);
+  const rows = [...ev.values()].map((e) => ({ ...e, tot: S.perRoundOf(e.rs), c: Object.fromEntries(CATS.map(([c]) => [c, S.perRoundOf(e.rs, c)])) })).sort((a, b) => b.tot - a.tot);
+  const counted = rows.filter(full); if (counted.length < 6) return null;
+  const top = counted.slice(0, 3), bot = counted.slice(-3), mean = (xs, f) => xs.reduce((t, x) => t + f(x), 0) / xs.length;
   const diff = CATS.map(([c, l]) => ({ c, l, a: mean(top, (x) => x.c[c]), b: mean(bot, (x) => x.c[c]) })).map((x) => ({ ...x, d: x.a - x.b })).sort((a, b) => b.d - a.d);
   const cls = (v) => (v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
   const cell = (v, strong) => el("td", { class: `num ${cls(v)}${strong ? " strong" : ""}` }, fmtSG(v));
   // (update 765) a tournament opens in Tournament Results
   const open = (r) => { S.st.view2 = "results"; S.st.resKey = r.key; S.st.resRound = null; S.st.resHole = null; S.draw(); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const body = rows.map((r, i) => el("tr", { class: `bw-row${i < 3 ? " bw-top" : i >= rows.length - 3 ? " bw-bot" : ""}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "num muted" }, String(r.rs.length)), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
+  const body = rows.map((r, i) => el("tr", { class: `bw-row${top.includes(r) ? " bw-top" : bot.includes(r) ? " bw-bot" : ""}${full(r) ? "" : " bw-one"}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "num muted", title: full(r) ? null : "One round on record: not counted in the best or worst 3" }, full(r) ? String(r.rs.length) : `${r.rs.length}*`), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
   const lead = diff[0];
   const foot = [
     el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, a round"), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
     el("tr", { class: "bw-sum" }, [el("td", {}, "Worst 3, a round"), el("td", {}), cell(mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).b))]),
     el("tr", { class: "bw-sum bw-diff" }, [el("td", {}, "Difference"), el("td", {}), cell(mean(top, (x) => x.tot) - mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => { const x = diff.find((y) => y.c === c); return el("td", { class: `num ${x === lead ? "bw-lead" : ""}` }, fmtSG(x.d)); })])];
   return S.panelBox("Best & worst tournaments", [
-    infoTip("Each tournament in the selection (2+ rounds): strokes gained a round, best to worst. The best 3 (green) and worst 3 (red) are averaged at the bottom: the part of the game with the biggest difference is what drives the good weeks. Change the season or tour in Filters to see it for another stretch."),
+    infoTip("Each tournament in the selection: strokes gained a round, best to worst. A week with only one round on record (marked *) is listed but not counted in the best or worst 3. The best 3 (green) and worst 3 (red) are averaged at the bottom: the part of the game with the biggest difference is what drives the good weeks. Change the season or tour in Filters to see it for another stretch."),
     el("p", { class: "small" }, [el("strong", {}, `${lead.l === "Around" ? "Around-the-Green" : lead.l} drives the good weeks`), `: ${fmtSG(lead.a)} a round in the best 3, ${fmtSG(lead.b)} in the worst 3 (${fmtSG(lead.d)}).`]),
     el("div", { class: "table-scroll" }, el("table", { class: "plain bw-t" }, [el("thead", {}, el("tr", {}, ["Tournament", "Rds", "Total", ...CATS.map(([, l]) => l)].map((x, i) => el("th", { class: i ? "num" : null }, x)))), el("tbody", {}, body), el("tfoot", {}, foot)]))], "full");
 }
