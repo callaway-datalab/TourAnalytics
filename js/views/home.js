@@ -460,7 +460,7 @@ export async function render(main, { previewClient } = {}) {
     else if (own && (!viz.length || isEq)) viz.push(own); else if (own && wideT) wideEl = own; else if (own) body.push(own);
     barWide = false;
     const fig = viz.length ? el("div", { class: "td-fig" }, viz) : null;
-    return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), el("div", { class: "td-by" }, `By Cal · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`),
+    return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), /* (update 792: no "By Cal" line) */
       el("div", { class: `td-leadgrid${fig ? "" : " solo"}` }, [el("div", { class: "td-body" }, [...body.slice(0, 2), more(h), ...body.slice(2)]), fig]), wideEl ? el("div", { class: "td-lead-wide" }, wideEl) : null]), h);
   }
   // (update 750) a chart for each kind of story: form as a radar (the 12 before against the last 12) or a pair of bars; a

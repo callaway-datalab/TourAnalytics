@@ -352,3 +352,8 @@ main:has(.ah.td) { padding-top: 0 !important; }
 .td-lead { position: relative; }
 .td-lead > .td-reroll.td-shuf { top: 0; right: 0; left: auto; bottom: auto; z-index: 2; }
 .td-lead-wide { margin-top: 14px; } .td-lead-wide .td-bars { max-height: 260px; }
+/* (update 792) the lead story's charts as wide as their space (Home's charts are otherwise capped at 360px) */
+.td .td-lead-wide .td-chart, .td .td-lead .td-body .td-chart { max-width: none; }
+.td-lead-wide .td-bars { width: 100%; max-height: none; height: auto; }
+/* (update 792) the shuffle off the corner a little */
+.td-lead > .td-reroll.td-shuf { top: 12px; right: 14px; }
