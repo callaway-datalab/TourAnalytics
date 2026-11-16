@@ -6948,3 +6948,5 @@ button.tr-best:hover { border-color: rgba(48, 209, 88, 0.6); }
 .tr-shots tr.target td { background: rgba(212,180,131,0.32); font-weight: 800; }
 /* (update 763) the info button: a lowercase "i" in a small ring */
 .info-i { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1.4px solid currentColor; font: 700 11px/1 Georgia, "Times New Roman", serif; font-style: italic; text-transform: none; letter-spacing: 0; vertical-align: middle; }
+/* (update 765) Best & worst tournaments: each row opens the tournament */
+.bw-t tr.bw-row { cursor: pointer; } .bw-t tr.bw-row:hover td { background: rgba(255,255,255,0.05); }

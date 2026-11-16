@@ -131,10 +131,13 @@ export function resultsView(S, rounds, field) {
         const list = m === "mine" ? myShots : W.shots, f = m === "field";
         mount(head, f ? `Every player's every shot that week, best first; ${me?.label || "their"} shots are highlighted.` : `Every shot ${me?.label || "they"} hit that week, best first; the last column is its rank among every shot in the field.`);
         let target = null;
-        const rows = list.map((x, i) => { const q = x.q, mine = x.pk === pk, tr = el("tr", { class: [f && mine ? "mine" : null, q === focus ? "target" : null].filter(Boolean).join(" ") || null }, [
-          el("td", { class: "num" }, String(i + 1)), f ? el("td", {}, x.T.name) : null, el("td", {}, `R${x.T.rd}`), el("td", {}, String(x.T.h)), el("td", {}, CATL[q.cat] || ""), el("td", {}, cap(q.lie)), el("td", {}, dTxt(q)),
+        // (update 765) where each shot started and finished (lie and distance; the last one holed); one of theirs opens its hole
+        const endOf = (x) => { const nx = x.T.qs[x.T.qs.indexOf(x.q) + 1]; return nx ? [cap(nx.lie), dTxt(nx)] : x.T.s != null ? ["Holed", "In"] : ["—", "—"]; };
+        const rows = list.map((x, i) => { const q = x.q, mine = x.pk === pk, [eL, eD] = endOf(x), tr = el("tr", { class: [f && mine ? "mine" : null, q === focus ? "target" : null, mine ? "tr-tap" : null].filter(Boolean).join(" ") || null, title: mine ? `Open hole ${x.T.h}, round ${x.T.rd}` : null }, [
+          el("td", { class: "num" }, String(i + 1)), f ? el("td", {}, x.T.name) : null, el("td", {}, `R${x.T.rd}`), el("td", {}, String(x.T.h)), el("td", {}, CATL[q.cat] || ""), el("td", {}, cap(q.lie)), el("td", {}, dTxt(q)), el("td", {}, eL), el("td", {}, eD),
           el("td", { class: `num ${cls(x.sg)}` }, fmtSG(x.sg)), el("td", { class: "num muted" }, f ? (mine ? `${ord(q.myRank)} of ${myN} of theirs` : "") : `${ord(q.rank)} of ${W.nShots.toLocaleString()}`)]); if (q === focus) target = tr; return tr; });
-        mount(holder, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["Rank", f ? "Player" : null, "Round", "Hole", "Category", "Lie", "Distance", "SG", f ? "Their rank" : "In the field"].filter(Boolean).map((x0, i) => el("th", { class: i === 0 || /SG|rank|field/i.test(x0) ? "num" : null }, x0)))), el("tbody", {}, rows)]));
+        mount(holder, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["Rank", f ? "Player" : null, "Round", "Hole", "Category", "Start lie", "Start distance", "End lie", "End distance", "SG", f ? "Their rank" : "In the field"].filter(Boolean).map((x0, i) => el("th", { class: i === 0 || /SG|rank|field/i.test(x0) ? "num" : null }, x0)))), el("tbody", {}, rows)]));
+        rows.forEach((tr, i) => { const x = list[i]; if (x.pk !== pk) return; tr.addEventListener("click", () => { close(); st.resRound = x.T.rd; st.resHole = x.T.h; S.draw(); setTimeout(() => document.querySelector(".tr-hole")?.scrollIntoView({ behavior: "smooth", block: "start" }), 600); }); });
         requestAnimationFrame(() => { if (target) holder.scrollTop = Math.max(0, target.offsetTop - holder.clientHeight / 2); });
       };
       const box = el("section", { class: "tr-pop tr-pop-wide", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, "Shot by shot, ranked"), tg, head, holder]);

@@ -486,7 +486,7 @@ export function panelBox(S, title, content, size = "") {
    the game, best to worst; the best 3 and worst 3 averaged, and the part of the game that differs most between them (what
    drives the good weeks). Home's "What wins" story is this table with the season picked. */
 export function bestWorstBox(S, mine) {
-  const ev = new Map(); for (const rd of mine || []) { if (!rd.event) continue; const k = `${rd.event}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (ev.get(k) || ev.set(k, { name: rd.event, rs: [] }).get(k)).rs.push(rd); }
+  const ev = new Map(); for (const rd of mine || []) { if (!rd.event) continue; const k = `${rd.event}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (ev.get(k) || ev.set(k, { key: k, name: rd.event, rs: [] }).get(k)).rs.push(rd); }
   const CATS = [["OTT", "Off-the-Tee"], ["APP", "Approach"], ["ARG", "Around"], ["PUTT", "Putting"]];
   const rows = [...ev.values()].filter((e) => e.rs.length >= 2).map((e) => ({ ...e, tot: S.perRoundOf(e.rs), c: Object.fromEntries(CATS.map(([c]) => [c, S.perRoundOf(e.rs, c)])) })).sort((a, b) => b.tot - a.tot);
   if (rows.length < 6) return null;
@@ -494,7 +494,9 @@ export function bestWorstBox(S, mine) {
   const diff = CATS.map(([c, l]) => ({ c, l, a: mean(top, (x) => x.c[c]), b: mean(bot, (x) => x.c[c]) })).map((x) => ({ ...x, d: x.a - x.b })).sort((a, b) => b.d - a.d);
   const cls = (v) => (v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
   const cell = (v, strong) => el("td", { class: `num ${cls(v)}${strong ? " strong" : ""}` }, fmtSG(v));
-  const body = rows.map((r, i) => el("tr", { class: i < 3 ? "bw-top" : i >= rows.length - 3 ? "bw-bot" : null }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "num muted" }, String(r.rs.length)), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
+  // (update 765) a tournament opens in Tournament Results
+  const open = (r) => { S.st.view2 = "results"; S.st.resKey = r.key; S.st.resRound = null; S.st.resHole = null; S.draw(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const body = rows.map((r, i) => el("tr", { class: `bw-row${i < 3 ? " bw-top" : i >= rows.length - 3 ? " bw-bot" : ""}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "num muted" }, String(r.rs.length)), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
   const lead = diff[0];
   const foot = [
     el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, a round"), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
