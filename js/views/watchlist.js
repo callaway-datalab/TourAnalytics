@@ -461,7 +461,7 @@ export async function render(main, { previewClient }) {
      before; the DP World Tour: 5 events against 5), their latest event, their two best distances and one to work on.
      A coach with one player: the same, about the player. "See all your numbers": their full card. */
   function playerHome(c, toNumbers) {
-    const you = !team.isTeam, first = String(c.label || "").split(" ")[0] || c.label;
+    const you = !team.isTeam, first = String(c.label || "").split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1) || c.label;
     const hr = new Date().getHours(), tod = hr < 12 ? "morning" : hr < 18 ? "afternoon" : "evening";
     const cats = (c.areas?.list || []).filter((a) => !a.dist && !a.lie);
     const ch = cats.length ? cats.reduce((t, a) => t + a.ch, 0) : c.sg?.[0]?.trend?.ch ?? null;
@@ -515,7 +515,7 @@ export async function render(main, { previewClient }) {
       return { c, st, ch, say, latest, lead, fresh };
     });
     const G = { well: rows.filter((r) => r.st === "well").sort((a, b) => b.ch - a.ch), steady: rows.filter((r) => r.st === "steady"), look: rows.filter((r) => r.st === "look").sort((a, b) => a.ch - b.ch) };
-    const first = (r) => String(r.c.label || "").split(" ")[0];
+    const first = (r) => String(r.c.label || "").split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1);
     // this week: the best strokes-gained finish among those who just played, and the biggest worry
     const wk = [];
     const top = rows.filter((r) => r.fresh && r.c.latest?.pos).sort((a, b) => a.c.latest.pos - b.c.latest.pos)[0];

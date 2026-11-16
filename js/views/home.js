@@ -39,7 +39,8 @@ export async function render(main, { previewClient } = {}) {
   const myName = plainName(previewClient?.label || state.profile?.name || state.user?.displayName || "");
   if (selfKey) labels = new Map([[selfKey, myName || "You"]]);
   const nameOf = (k) => plainName(labels.get(k) || (typeof field !== "undefined" && field.find?.((p) => p.key === k)?.name) || String(k || "").replace(/^c_/, "")); /* (update 734: the field's full name when there's no label) */
-  const firstOf = (k) => String(nameOf(k)).split(" ")[0] || "them";
+  // (update 796) a player named by one name is always the last name ("Burns", not "Sam"): kept as firstOf for the callers
+  const firstOf = (k) => { const w = String(nameOf(k)).split(/\s+/).filter((x) => x && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(x)); return w.at(-1) || nameOf(k) || "them"; };
   let focus = selfKey || (teamKeys.length === 1 ? teamKeys[0] : null);
   // (update 742) staff's own game: the rounds they enter for themselves (Enter New Round, with their WITB) under their own key
   // (the admin: "a_<uid>", as Enter New Round saves them); "Me" at the top, written as "you"
@@ -267,7 +268,7 @@ export async function render(main, { previewClient } = {}) {
     const o = { kick: h.kick ?? (h.kind === "Course" ? "" : h.kind), hl: h.title, /* (update 745: no "Course" over the course cards) */ deck: h.detail || "", num: null, nc: "", cap: "" };
     if (t === "ev") { o.kick = x.best ? "Milestone" : x.worst ? "Rough week" : "Result"; o.hl = me ? h.title : x.best ? `${poss(S)} best week of ${x.yr}, at ${x.ev}` : x.worst ? `A tough week for ${S} at ${x.ev}` : x.d > 0 ? `${S} beats the ${x.yr} average at ${x.ev}` : `${S} slips below the ${x.yr} average at ${x.ev}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total a round, over ${x.n} rounds there`; }
     else if (t === "br") { const on = tourPick && tourPick !== ALL ? `the ${tourName(tourPick)}` : "tour"; o.kick = x.tourBest ? "Best on tour" : "Personal best"; o.hl = x.tourBest ? `${me ? "You" : S} fired the best round on ${on} in ${x.yr}` : me ? h.title : `${poss(S)} best round of ${x.yr}`; o.num = sg2(x.v); o.nc = cls(x.v); o.cap = `strokes gained total, at ${x.ev}${x.tourBest ? "" : ` (${me ? "your" : poss(S)} best this season; not the tour’s best)`}`; }
-    else if (t === "st") { o.hl = me ? h.title : `${S} stretches the streak to ${x.n} rounds in the black`; o.num = String(x.n); o.nc = "up"; o.cap = "rounds in a row with strokes gained total above zero"; }
+    else if (t === "st") { o.hl = me ? h.title : `${S} stretches the streak to ${x.n} ${x.unit || "round"}s in the black`; o.num = String(x.n); o.nc = "up"; o.cap = `${x.unit || "round"}s in a row with strokes gained total above zero`; }
     else if (t === "fm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${S} is heating up` : `${S} is cooling off`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained total a round (${sg2(x.a)} in the last ${x.FL}, ${sg2(x.b)} in the ${x.n} before): the change`; }
     else if (t === "cm") { o.kick = x.d > 0 ? "Trending up" : "Slipping"; o.hl = me ? h.title : x.d > 0 ? `${poss(S)} ${CATW[x.c]} is on the rise` : `${poss(S)} ${CATW[x.c]} slips`; o.num = sg2(x.d); o.nc = cls(x.d); o.cap = `strokes gained a round ${CAT_IN[x.c]}: ${sg2(x.a)} lately, from ${sg2(x.b)}`; }
     else if (t === "wk") { o.kick = CATN[x.c]; o.hl = `${CATN[x.c]} is costing ${me ? "you" : S}`; /* (update 738: the number below, not in the headline) */ o.num = sg2(x.v); o.nc = "down"; o.cap = `strokes a round ${CAT_IN[x.c]} in ${x.yr}`; }
@@ -437,7 +438,7 @@ export async function render(main, { previewClient } = {}) {
           : t0 === "eq" && x.A ? [tile(sg2(x.B.v), `the ${x.old} (${x.B.n} rds)`, cls(x.B.v)), tile(sg2(x.A.v), `the ${x.neu} (${x.A.n} rds)`, cls(x.A.v)), tile(sg2(x.dd), "the difference", cls(x.dd))]
           : t0 === "ev" && x.v != null ? [tile(sg2(x.v), `a round at ${fullEv(x.ev)}`, cls(x.v)), tile(sg2(av), `${SY} average`, cls(av)), tile(sg2(x.d), "against the average", cls(x.d))]
           : t0 === "br" && x.v != null ? [tile(sg2(x.v), `the round, at ${fullEv(x.ev)}`, cls(x.v)), tile(sg2(av), `a round in ${SY}`, cls(av)), rk ? tile(ordN(rk).replace("No. ", "#"), `on tour, of ${n}`) : null]
-          : t0 === "st" && x.n ? [tile(String(x.n), "rounds in a row gaining", "up"), tile(sg2(avgOf(rs.slice(-x.n), tot)), "a round in the streak", "up"), tile(sg2(av), `a round in ${SY}`, cls(av))]
+          : t0 === "st" && x.n ? [tile(String(x.n), `${x.unit || "round"}s in a row gaining`, "up"), tile(sg2(x.avg ?? avgOf(rs.slice(-x.n), tot)), "a round in the streak", "up"), tile(sg2(av), `a round in ${SY}`, cls(av))]
           : t0 === "wk" && x.v != null ? [tile(sg2(x.v), `${CATN[x.c]} a round`, cls(x.v)), rk ? tile(ordN(rk).replace("No. ", "#"), `in ${CATN[x.c].toLowerCase()}, of ${n}`) : null, tile(sg2(avgOf(rs, tot)), `SG: Total a round`, cls(avgOf(rs, tot)))]
           : null;
         // (update 789) a fourth number: how steady they are in it (their round-to-round swing and its rank)
@@ -780,8 +781,11 @@ export async function render(main, { previewClient } = {}) {
       const bestR = [...season].sort((a, b) => tot(b) - tot(a))[0];
       if (bestR && le.rs.includes(bestR) && season.length >= 8) out.push({ id: `br-${k}`, k, x: { v: tot(bestR), ev: le.event, yr: last, tourBest: tot(bestR) >= tourBestOf(last) - 1e-9 }, kind: "Milestone", score: 8.5, title: `${His(k)} best round of ${last}: ${sg2(tot(bestR))}`, detail: `Round ${bestR.roundNo || ""} at ${le.event}`.replace("Round  ", "A round "), to: "Stats · SG Trends", run: () => toStats(k, { view2: "full", year: [last], span: 0, trendBy: "round" }, "SG Trends", null) }); }
     // gaining strokes round after round
-    let streak = 0; for (let i = rs.length - 1; i >= 0 && tot(rs[i]) > 0; i--) streak++;
-    if (streak >= 5) out.push({ id: `st-${k}`, k, x: { n: streak, ev: rs[rs.length - streak].event }, kind: "Milestone", score: 6 + streak * 0.2, title: `${streak} rounds in a row gaining strokes`, detail: `${isMe(k) ? "You’ve" : `${firstOf(k)} has`} beaten the tour average every round since ${rs[rs.length - streak].event}`, to: "Stats · Elite stretches", run: () => toStats(k, { view2: "full", year: [], span: 0 }, "Elite Stretches", EX.elite(`When ${isMe(k) ? "do I" : `does ${firstOf(k)}`} play best?`)) });
+    // (update 796) the DP World Tour's numbers are whole events (not single rounds): its streak counted in events
+    const stEv = tourPick && tourPick !== ALL ? isDP(tourPick) : rs.some((r) => isDP(r.tour)), stU = stEv ? eventsOf(rs).map((e) => e.rs) : rs.map((r) => [r]), stW = stEv ? "event" : "round";
+    let streak = 0; for (let i = stU.length - 1; i >= 0 && avgOf(stU[i], tot) > 0; i--) streak++;
+    const stRs = stU.slice(-streak).flat(), stFrom = stRs[0]?.event;
+    if (streak >= (stEv ? 3 : 5)) out.push({ id: `st-${k}`, k, x: { n: streak, unit: stW, ev: stFrom, avg: avgOf(stRs, tot) }, kind: "Milestone", score: 6 + streak * (stEv ? 0.6 : 0.2), title: `${streak} ${stW}s in a row gaining strokes`, detail: `${isMe(k) ? "You’ve" : `${firstOf(k)} has`} beaten the tour average ${stEv ? "at every event" : "every round"} since ${stFrom}`, to: "Stats · Elite stretches", run: () => toStats(k, { view2: "full", year: [], span: 0 }, "Elite Stretches", EX.elite(`When ${isMe(k) ? "do I" : `does ${firstOf(k)}`} play best?`)) });
     // form: the last 12 rounds against the 12 before, and each part of the game
     const fs = formSplit(rs); if (fs) { const a = fs.last, b = fs.prev, d = perRound(a) - perRound(b), FL = fs.lbl; /* (update 734: Form, as everywhere: 12 rounds; the DP World Tour 3 events) */ // (update 728: as Compare's Last 12 rounds and The 12 rounds before that)
       if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b), FL, n: fs.n, lastR: a, prevR: b, ra: cats.map((c0) => perRound(a, c0)), rb: cats.map((c0) => perRound(b, c0)) }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last ${FL} ${sg2(perRound(a))} against ${sg2(perRound(b))} in the ${fs.n} before`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
@@ -853,8 +857,9 @@ export async function render(main, { previewClient } = {}) {
     if (ok.length >= 10) { const lead = cats.map((c) => { const v = ok.map((p) => [p.k, avgOf(p.rs, (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1])[0]; return `${CATN[c]}: ${nameOf(v[0])} ${sg2(v[1])}`; });
       add("kings", 3.8, `Best in each part of the game`, `${lead.join(" · ")} (strokes gained a round, ${W0}, ${minR}+ rounds)`); }
     // the longest run of rounds gaining strokes, still going
-    const st = sp.map((p) => { const rs = rl(p.rs); let n = 0; for (let i = rs.length - 1; i >= 0 && tot(rs[i]) > 0; i--) n++; return [p.k, n]; }).sort((a, b) => b[1] - a[1])[0];
-    if (st && st[1] >= 4) add("streak", 3.7, `Hottest streak: ${nameOf(st[0])}, ${st[1]} rounds in a row gaining strokes`, `Strokes gained total above zero every round, still going (${W0})`);
+    const dpT = tourPick && tourPick !== ALL ? isDP(tourPick) : false, stUnit = dpT ? "event" : "round"; // (update 796: the DP World Tour in events)
+    const st = sp.map((p) => { const us = dpT ? eventsOf(p.rs).map((e) => e.rs) : rl(p.rs).map((r) => [r]); let n = 0; for (let i = us.length - 1; i >= 0 && avgOf(us[i], tot) > 0; i--) n++; return [p.k, n]; }).sort((a, b) => b[1] - a[1])[0];
+    if (st && st[1] >= (dpT ? 3 : 4)) add("streak", 3.7, `Hottest streak: ${nameOf(st[0])}, ${st[1]} ${stUnit}s in a row gaining strokes`, `Strokes gained total above zero ${dpT ? "at every event" : "every round"}, still going (${W0})`);
     // the steadiest, and the wildest (how much a player's rounds swing)
     const sd = (xs) => { const m = xs.reduce((a, b) => a + b, 0) / xs.length; return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length); };
     const sw = ok.map((p) => [p.k, sd(rl(p.rs).map(tot)), rl(p.rs).length]).filter((x) => x[2] >= minR).sort((a, b) => a[1] - b[1]);

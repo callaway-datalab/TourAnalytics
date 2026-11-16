@@ -114,7 +114,7 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
   const [{ subject, holeFacts }, all] = await Promise.all([import("./views/coursePrepInsights.js"), listHeatCourses().catch(() => [])]);
   let mine = null;
   if (who) { const tr = await playerTrails(meta, who.key).catch(() => null); mine = tr?.trails?.length ? tr.trails : null; }
-  const S = subject(I, mine, mine ? who.key : null), name = mine ? who.label : "Field", first = mine ? who.label.split(" ")[0] : "the field";
+  const S = subject(I, mine, mine ? who.key : null), name = mine ? who.label : "Field", first = mine ? who.label.split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1) : "the field";
   const holeNums = Object.keys(I.holes).map(Number).sort((a, b) => a - b);
   const yardsOf = (h) => data.holes?.[h]?.yards || meta.yards?.[h - 1] || null;
   const HF = holeFacts(I, holeNums, yardsOf, S);
@@ -189,7 +189,7 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
         const finish = (e) => {
           const played = field.map((p) => ({ p, rs: p.rounds.filter((rd) => rd.event === e.event && String(rd.year) === String(e.year)) })).filter((x) => x.rs.length);
           if (!played.length) return "\u2014";
-          const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = played.map((x) => cntR(x.rs)).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; // (update 773)
+          const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), most = ((cs) => { const f = cs.filter(Number.isFinite).sort((a, b) => b - a); return f.length ? f[Math.min(f.length - 1, Math.max(3, Math.ceil(f.length * 0.1)) - 1)] : 0; })(played.map((x) => cntR(x.rs))); // (update 773)
           const list = played.filter((x) => cntR(x.rs) >= most).map((x) => ({ key: x.p.key, v: per(x.rs) })).sort((a, b) => b.v - a.v);
           const i = list.findIndex((x) => x.key === who.key);
           return i < 0 ? (e.rs.length < most ? "MC" : "\u2014") : `${i + 1} of ${list.length}`;

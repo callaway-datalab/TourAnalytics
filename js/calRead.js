@@ -97,7 +97,7 @@ export async function playerProfile(rounds, ix, label) {
     const a = ix.m.get(`APP|${b}|*`), rg = yRange(b); if (!a || a.w < 15 || !rg || rg.lo < 50 || rg.hi > 300) continue;
     const sg = a.sg / a.w, o = { ...rg, band: b, sg, n: Math.round(a.w) }; app.push(o); if (!best || sg > best.sg) best = o;
   }
-  return drive || best ? { label, first: String(label || "").split(" ")[0] || label, drive, best, app } : null;
+  return drive || best ? { label, first: String(label || "").split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1) || label, drive, best, app } : null;
 }
 /** The same from a player's whole stats file: their last 12 months (none: their latest 12 months), as Strategy Maps does. */
 export async function playerProfileFrom(rounds, label) {

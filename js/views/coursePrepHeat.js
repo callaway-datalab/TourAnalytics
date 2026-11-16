@@ -492,7 +492,7 @@ export async function drawHeat(ctx, course) {
         el("p", { class: "muted small" }, `As the hole plays if you're here in ${k}; going for it = the next shot finished within 30 yds.`)]);
     })();
     mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, toPin(ppy), xb]), basedOn, goBox,
-      mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
+      mine.length ? el("p", { class: "small" }, [`${who.label.split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1)}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
       // (update 504) by lie: shots, the average hole score, how the hole was scored (eagle+ to double+; a column that's 0%
       // in every row left out) and up & down
       (() => {
@@ -532,7 +532,7 @@ export async function drawHeat(ctx, course) {
     const rows = [...z.rows].sort((a, b) => (b.n || 0) - (a.n || 0));
     mount(pop, [el("div", { class: "sh-pop-h" }, [el("strong", { class: z.key?.kind === "target" ? "pos" : z.key?.kind === "avoid" ? "neg" : "" }, ttl), x]),
       // (update 499) the shots' own average (one shot: its own strokes, a whole number), not the map's blended shade
-      z.toGo ? el("p", {}, [`Strokes to hole out: `, el("strong", {}, fmtToGo(actualOf(z), z.n)), ...(usePlayer && z.rawP != null ? [` · ${who.label.split(" ")[0]} `, el("strong", {}, z.rawP.toFixed(2))] : [])]) : null,
+      z.toGo ? el("p", {}, [`Strokes to hole out: `, el("strong", {}, fmtToGo(actualOf(z), z.n)), ...(usePlayer && z.rawP != null ? [` · ${who.label.split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1)} `, el("strong", {}, z.rawP.toFixed(2))] : [])]) : null,
       z.toGo && Math.abs(actualOf(z) - z.raw) >= 0.05 ? el("p", { class: "muted small" }, `The map\u2019s color here is ${z.raw.toFixed(2)}: blended with the shots around it, as ${z.n ? `only ${z.n} ${z.n === 1 ? "shot was" : "shots were"}` : "few shots were"} hit from this spot.`) : null,
       z.toGo ? null : el("p", {}, [`Scoring from here: `, el("strong", {}, `${(par + z.field).toFixed(2)}`), ` (${fmtPar(z.field)} to par)`]),
       usePlayer && z.player != null && !z.toGo ? el("p", {}, [`${who.label}: `, el("strong", {}, `${(par + z.player).toFixed(2)}`), ` (${fmtPar(z.player)}), from their strokes gained from here`]) : null,
@@ -541,7 +541,7 @@ export async function drawHeat(ctx, course) {
       el("p", { class: "muted small" }, [z.L === "tee" ? "The tee" : `${Math.abs(z.diff) < 0.005 ? "Plays about average" : `Plays ${Math.abs(z.diff).toFixed(2)} ${Math.abs(z.diff) >= 0.995 && Math.abs(z.diff) < 1.005 ? "stroke" : "strokes"} ${z.diff > 0 ? "harder" : "easier"} than average`} from this distance${z.dp ? ` (${Math.round(z.dp)} yds)` : ""}`,
         Z.hasN && z.n ? (kOf(st.hole, par) ? ` · ${z.n.toLocaleString()} of ${Z.total.toLocaleString()} ${["", "tee shots", "second shots", "third shots"][kOf(st.hole, par)]} finished here (${Math.round((100 * z.n) / (Z.total || 1)) < 1 ? "under 1" : Math.round((100 * z.n) / (Z.total || 1))}%)`
           : ` · ${z.n.toLocaleString()} ${z.n === 1 ? "shot" : "shots"}${catShare != null ? ` (${catShare < 1 ? "under 1" : catShare}% of the ${CAT_NAME[cat]} attempts on this hole)` : ""}`) : ""]),
-      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Lie"), el("th", {}, "Distance"), Z.hasN ? el("th", { class: "num" }, "Shots") : null, el("th", { class: "num" }, z.toGo ? "To hole out" : "Tour"), usePlayer ? el("th", { class: "num" }, who.label.split(" ")[0]) : null])),
+      el("table", { class: "plain sh-pop-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Lie"), el("th", {}, "Distance"), Z.hasN ? el("th", { class: "num" }, "Shots") : null, el("th", { class: "num" }, z.toGo ? "To hole out" : "Tour"), usePlayer ? el("th", { class: "num" }, who.label.split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1)) : null])),
         el("tbody", {}, rows.map((q) => el("tr", {}, [el("td", {}, q.lie || "—"), el("td", {}, q.d || "—"), Z.hasN ? el("td", { class: "num" }, q.n ? q.n.toLocaleString() : "—") : null, el("td", { class: "num" }, z.toGo ? fmtToGo(q.raw ?? q.v, q.n) : fmtPar(q.f)),
           usePlayer ? el("td", { class: "num", title: q.sk ? `${q.sk.sg >= 0 ? "Gains" : "Loses"} ${Math.abs(q.sk.sg).toFixed(3)} a shot${q.sk.band ? ` at ${q.sk.band}` : ""}${q.sk.lie ? ` from the ${q.sk.lie}` : ""} (${Math.round(q.sk.shots)} shots)` : null }, z.toGo ? (q.v - (q.sk?.sg || 0)).toFixed(2) : fmtPar(q.p)) : null])))]),
     ]);
@@ -680,7 +680,7 @@ export async function drawHeat(ctx, course) {
     const pins = Object.keys(H.pins || {}).length;
     const lines = [histLine(pins > 1 ? "This pin" : "Field", P?.hist)]; // (update 494: no All pins line)
     const mine = isP() && who ? myTrails() : [];
-    if (mine.length) { const h = {}; for (const t of mine) if (t.s != null) { const k = String(Math.max(-2, Math.min(2, t.s))); h[k] = (h[k] || 0) + 1; } lines.push(histLine(who.label.split(" ")[0] || who.label, h)); }
+    if (mine.length) { const h = {}; for (const t of mine) if (t.s != null) { const k = String(Math.max(-2, Math.min(2, t.s))); h[k] = (h[k] || 0) + 1; } lines.push(histLine(who.label.split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1) || who.label, h)); }
     // (update 480) Player view with no past shots: say why (not in this course's shot data, or not on this hole)
     if (isP() && who && !mine.length && data.shots) {
       const nP = Object.keys(meta.players || {}).length, inData = !!meta.players?.[who.key];

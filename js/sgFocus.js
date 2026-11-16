@@ -91,7 +91,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   const others = S.rankedField(slicedField).filter((p) => p.key !== me.key).map((p) => tot(p.rounds)).filter(Number.isFinite);
   const rankOf = (v) => 1 + others.filter((x) => x > v + 1e-12).length, of = others.length + 1;
   const ranked = others.length > 0;
-  const whose = isMine(me.key) ? "your" : `${me.label}’s`, you = isMine(me.key) ? "you" : (me.label || "they").split(" ")[0];
+  const whose = isMine(me.key) ? "your" : `${me.label}’s`, you = isMine(me.key) ? "you" : (me.label || "they").split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1);
 
   // 1. where they stand
   const trend = recentV - seasonV;

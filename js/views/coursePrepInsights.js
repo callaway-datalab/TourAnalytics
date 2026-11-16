@@ -42,7 +42,7 @@ export async function drawInsights(ctx, course) {
   async function draw() {
     let mine = null;
     if (who) { const tr = await playerTrails(meta, who.key).catch(() => null); mine = tr?.trails?.length ? tr.trails : null; }
-    const name = who && mine ? who.label : "Field", first = who && mine ? who.label.split(" ")[0] : "the field";
+    const name = who && mine ? who.label : "Field", first = who && mine ? who.label.split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1) : "the field";
     mount(sub, who && !mine ? `No shots for ${who.label} at this course: showing the field.` : `${who && mine ? who.label : "The field"} against the Top 10 finishers${I.events.length ? ` · ${I.events.map((e) => e.y).join(", ")}` : ""}`);
     const S = subject(I, mine, who && mine ? who.key : null);
     const H = holeFacts(I, holeNums, yardsOf, S);
@@ -188,7 +188,7 @@ function holeDetail(x, S, name, toMap) {
   map.addEventListener("click", () => toMap(x.h));
   return el("div", { class: "ci2-detail" }, [
     el("div", { class: "ci2-detail-h" }, [el("h3", {}, `Hole ${x.h} · Par ${x.par}${x.yds ? ` · ${x.yds} yds` : ""}`), el("span", { class: "muted small" }, `${ord(x.hcp)} hardest`)]),
-    el("div", { class: "ci2-mixes" }, [S.field ? mixRow("Field", x.field, x.par) : mixRow(name.split(" ")[0], x.me, x.par), !S.field ? mixRow("Field", x.field, x.par) : null, mixRow("Top 10", x.top, x.par),
+    el("div", { class: "ci2-mixes" }, [S.field ? mixRow("Field", x.field, x.par) : mixRow(name.split(" ").filter((w) => w && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1), x.me, x.par), !S.field ? mixRow("Field", x.field, x.par) : null, mixRow("Top 10", x.top, x.par),
       el("div", { class: "sh-hl-key" }, Object.values(SC).map(([l, c]) => el("span", {}, [el("i", { style: `background:${c}` }), l])))]),
     facts.length ? el("ul", { class: "ci2-facts" }, facts.map(([k, v]) => el("li", {}, [el("strong", {}, k), ` ${v}`]))) : null,
     el("div", { class: "ci2-detail-f" }, map)]);
