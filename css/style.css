@@ -6931,3 +6931,9 @@ html, body { overflow-x: clip; max-width: 100%; }
 .bw-t tr.bw-top td:first-child { box-shadow: inset 3px 0 0 #30d158; } .bw-t tr.bw-bot td:first-child { box-shadow: inset 3px 0 0 #ff453a; }
 .bw-t tfoot td { border-top: 1px solid rgba(255,255,255,0.12); font-weight: 600; } .bw-t .bw-lead { background: rgba(212,180,131,0.22); font-weight: 800; color: #d4b483; }
 .bw-t td.pos { color: #30d158; } .bw-t td.neg { color: #ff6b5e; }
+/* (update 762) Ability vs Consistency: the info button by the heading, room under the tabs, smaller type */
+.sv-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sv-h .info-tip { display: inline-block; margin: 0; } .sv-h .info-tip summary { margin: 0; }
+.sv-h .info-tip[open] { flex-basis: 100%; } .sv-h .info-tip p { font: 400 0.85rem/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
+.sv-box .sv-tabs { margin: 6px 0 0; } .sv-box .sv-line { margin: 14px 0 4px; }
+.sv-wrap .mc .mc-ax, .sv-wrap .mc .mc-tick { font-size: 8px; } .sv-wrap .mc .mc-q { font-size: 7.5px; } .sv-wrap .mc .mc-name { font-size: 8.5px; }

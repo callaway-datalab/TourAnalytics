@@ -8,10 +8,10 @@ const mk = (tag, at = {}, txt = null) => { const n = document.createElementNS(NS
 const svgOf = (w, h, cls, label) => mk("svg", { viewBox: `0 0 ${w} ${h}`, width: "100%", class: `mc ${cls}`, role: "img", "aria-label": label });
 
 /** pts: [{ x, y, label, hot }]; higher x better; lower y steadier. Quadrant words, the median lines, the hot ones named. */
-export function scatterSvg(pts, { xLab = "Average", yLab = "Round-to-round swing", fmtX = (v) => v.toFixed(2), fmtY = (v) => `±${v.toFixed(2)}`, higherBetter = true } = {}) {
+export function scatterSvg(pts, { xLab = "Average", yLab = "Round-to-round swing", fmtX = (v) => v.toFixed(2), fmtY = (v) => `±${v.toFixed(2)}`, higherBetter = true, range = null } = {}) {
   const P = pts.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)); if (P.length < 5) return null;
   const W = 340, H = 240, L = 52, R = 10, T = 12, B = 34;
-  const xs = P.map((p) => p.x), ys = P.map((p) => p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const xs = P.map((p) => p.x), ys = P.map((p) => p.y), x0 = range ? range.x0 : Math.min(...xs), x1 = range ? range.x1 : Math.max(...xs), y0 = range ? range.y0 : Math.min(...ys), y1 = range ? range.y1 : Math.max(...ys); // (update 762: range: fixed axes, the same whichever tab)
   const px = (v) => L + ((v - x0) / (x1 - x0 || 1)) * (W - L - R), py = (v) => H - B - ((v - y0) / (y1 - y0 || 1)) * (H - T - B); // (update 760: steadier truly lower on the page; it was upside down)
   const med = (a) => { const s = [...a].sort((p, q) => p - q); return s[Math.floor(s.length / 2)]; }, mx = med(xs), my = med(ys);
   const svg = svgOf(W, H, "mc-scatter", `${xLab} against ${yLab}`);

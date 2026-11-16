@@ -441,7 +441,7 @@ export function sgDashboard(container, opts) {
         // (update 205) "Getting better or worse?" right under the hero card
         // (update 370) the stats table right under the hero card, above "Getting better or worse?"
         // (update 379) the Summary right under the hero card, above the stats table
-        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, blocks[0] || null, careerBox("trajectory", f), ...blocks.slice(1), me ? sgSummary.steadyBox(S, slicedField) : null, ...(!me ? tourBlocks(slicedField) : [])]; // (update 760: Ability vs Consistency for the player too)
+        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, blocks[0] || null, careerBox("trajectory", f), ...blocks.slice(1), me ? sgSummary.steadyBox(S, slicedField) : null, ...(!me ? tourBlocks(slicedField) : []), me && !st.cats.length ? sgDetail.bestWorstBox(S, mine) : null]; // (update 762: Best & worst tournaments at the bottom) // (update 760: Ability vs Consistency for the player too)
       })()),
       // (update 219) "Where they play their best" is on the Compare page now
     ]);

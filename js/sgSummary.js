@@ -282,18 +282,26 @@ export function tourBlocks(S, slicedField) {
 export function steadyBox(S, slicedField) {
   if (!S.me || !S.isSG()) return null;
   const P = S.rankedField(slicedField).filter((p) => p.rounds.length), st = S.st;
-  const cats = [["TOTAL", "Total"], ...CATEGORIES.filter(([k]) => S.catsAvail.some(([c]) => c === k))];
-  if (!cats.some(([k]) => k === st.steadyCat)) st.steadyCat = "TOTAL";
-  const k = st.steadyCat, cat = k === "TOTAL" ? null : k;
-  const pts = P.map((p) => { const rs = p.rounds.filter((rd) => !rd.eventLevel); if (rs.length < 8) return null;
+  // (update 762) only the parts of the game picked at the top (Total too when none is)
+  const avail = CATEGORIES.filter(([k]) => S.catsAvail.some(([c]) => c === k)), picked = (st.cats || []).filter((c) => avail.some(([k]) => k === c));
+  const cats = picked.length ? avail.filter(([k]) => picked.includes(k)) : [["TOTAL", "Total"], ...avail];
+  if (!cats.some(([k]) => k === st.steadyCat)) st.steadyCat = cats[0][0];
+  const k = st.steadyCat;
+  const ptsOf = (c0) => { const cat = c0 === "TOTAL" ? null : c0; return P.map((p) => { const rs = p.rounds.filter((rd) => !rd.eventLevel); if (rs.length < 8) return null;
     const vals = rs.map((rd) => S.perRoundOf([rd], cat)).filter((v) => v != null && Number.isFinite(v)); if (vals.length < 8) return null;
-    return { p, x: vals.reduce((t, v) => t + v, 0) / vals.length, y: S.sdOf(vals) }; }).filter((o) => o && o.y != null);
-  const box = (body) => S.panelBox("Ability vs Consistency", [infoTip("Each dot is a player with 8 or more rounds: their strokes gained a round across, and how much their rounds swing from one to the next up (lower is steadier). The dashed lines are the middle of the field: bottom-right is good and steady."), tabs, ...body], "full");
-  const tabs = el("div", { class: "tr-rounds", role: "group", "aria-label": "Part of the game" }, cats.map(([c, l]) => { const on = c === k, b = el("button", { type: "button", class: `tr-rd${on ? " on" : ""}`, "aria-pressed": String(on) }, l); b.addEventListener("click", () => { if (!on) { st.steadyCat = c; S.draw(); } }); return b; }));
+    return { p, x: vals.reduce((t, v) => t + v, 0) / vals.length, y: S.sdOf(vals) }; }).filter((o) => o && o.y != null); };
+  const all = new Map(cats.map(([c0]) => [c0, ptsOf(c0)])), pts = all.get(k);
+  // (update 762) the axes fixed over every tab shown: only the dots move
+  const every = [...all.values()].flat(), pad = (lo, hi) => { const d = (hi - lo) * 0.04 || 0.05; return [lo - d, hi + d]; };
+  const [x0, x1] = every.length ? pad(Math.min(...every.map((o) => o.x)), Math.max(...every.map((o) => o.x))) : [0, 1], [y0, y1] = every.length ? pad(Math.min(...every.map((o) => o.y)), Math.max(...every.map((o) => o.y))) : [0, 1];
+  const tip = infoTip("Each dot is a player with 8 or more rounds: their strokes gained a round across, and how much their rounds swing from one to the next up (lower is steadier). The dashed lines are the middle of the field: bottom-right is good and steady. The axes stay the same on every tab, so only the dots move.");
+  const tabs = el("div", { class: "tr-rounds sv-tabs", role: "group", "aria-label": "Part of the game" }, cats.map(([c, l]) => { const on = c === k, b = el("button", { type: "button", class: `tr-rd${on ? " on" : ""}`, "aria-pressed": String(on) }, l); b.addEventListener("click", () => { if (!on) { st.steadyCat = c; S.draw(); } }); return b; }));
+  const box = (body) => el("section", { class: "panel sg-box full sv-box" }, [el("h3", { class: "sv-h" }, ["Ability vs Consistency", tip]), cats.length > 1 ? tabs : null, ...body]);
   const mine = pts.find((o) => o.p.key === S.me.key);
-  if (pts.length < 5 || !mine) return box([el("p", { class: "muted small" }, `${S.me.label || "This player"} needs 8 or more rounds in this time frame to be placed.`)]);
+  if (pts.length < 5 || !mine) return box([el("p", { class: "muted small sv-line" }, `${S.me.label || "This player"} needs 8 or more rounds in this time frame to be placed.`)]);
   const bySd = [...pts].sort((a, b) => a.y - b.y), i = bySd.indexOf(mine), typ = bySd[Math.floor(bySd.length / 2)].y;
   const ord = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
-  const sv = scatterSvg(pts.map((o) => ({ x: o.x, y: o.y, label: o.p.label, hot: o === mine })), { xLab: `Strokes gained a round${cat ? ` · ${cats.find(([c]) => c === k)[1]}` : ""}`, yLab: "Round-to-round swing", fmtX: fmtSG, fmtY: (v) => `±${v.toFixed(2)}` });
-  return box([el("p", { class: "small" }, [el("strong", {}, `${ord(i + 1)} steadiest of ${pts.length}`), ` · a swing of ±${mine.y.toFixed(2)} a round against the field's typical ±${typ.toFixed(2)}, averaging ${fmtSG(mine.x)}`]), sv ? el("div", { class: "mc-wrap" }, sv) : null]);
+  const nmK = cats.find(([c]) => c === k)[1];
+  const sv = scatterSvg(pts.map((o) => ({ x: o.x, y: o.y, label: o.p.label, hot: o === mine })), { xLab: `Strokes gained a round${k === "TOTAL" ? "" : ` · ${nmK}`}`, yLab: "Round-to-round swing", fmtX: fmtSG, fmtY: (v) => `±${v.toFixed(2)}`, range: { x0, x1, y0, y1 } });
+  return box([el("p", { class: "small sv-line" }, [el("strong", {}, `${ord(i + 1)} steadiest of ${pts.length}`), ` · a swing of ±${mine.y.toFixed(2)} a round against the field's typical ±${typ.toFixed(2)}, averaging ${fmtSG(mine.x)}`]), sv ? el("div", { class: "mc-wrap sv-wrap" }, sv) : null]);
 }

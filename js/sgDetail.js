@@ -38,7 +38,6 @@ export function detailBlocks(S, mine, slicedField) {
       return a;
     })),
   ]);
-  if (!cat) { const bw = bestWorstBox(S, mine); if (bw) blocks.push(bw); } // (update 761)
   if (prodOn) { blocks.push(S.productTrend(mine, cat, toggles)); return blocks; }
   const t = trend(mine, cat || null, S.st.trendBy);
   // Each round / event / month / year: the best result there (Top 1), the average of the best few (Top 10 …)

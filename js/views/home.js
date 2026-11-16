@@ -380,7 +380,7 @@ export async function render(main, { previewClient } = {}) {
     const close = () => wrap.remove(), xb = el("button", { type: "button", class: "td-pop-x", "aria-label": "Close" }, "×"); xb.addEventListener("click", close);
     const how = howOf(h), go0 = how.run || h.run, d0 = d;
     const howBox = how.steps?.length ? el("div", { class: "td-how" }, [el("p", { class: "td-kick mute" }, "How to find this yourself"), el("ol", {}, how.steps.map((x0) => el("li", {}, x0)))]) : null;
-    const goB = go0 ? el("button", { type: "button", class: "td-pop-go" }, `Open ${String(h.to || "the page").split(" · ")[0]} with these filters →`) : null;
+    const goB = go0 ? el("button", { type: "button", class: "td-pop-go" }, `Open ${/^Open ([A-Z][\w ]*?)(?: with| \(|\.|,|$)/.exec(how.steps?.[0] || "")?.[1] || String(h.to || "the page").split(" · ")[0]} with these filters →` /* (update 762: the page the steps name) */) : null;
     goB?.addEventListener("click", () => { close(); go0(); if (how.steps?.length) queueExplain({ id: `how-${h.id.split("-")[0]}`, q: d0.hl, steps: how.steps }); }); // (update 761: the steps again on the page)
     const back = el("div", { class: "td-pop-back" }); back.addEventListener("click", close);
     const box = el("section", { class: "td-pop", role: "dialog", "aria-modal": "true", "aria-label": d.hl }, [xb, d.kick || (staff && h.k) ? el("div", { class: "td-kick" }, `${d.kick || ""}${staff && h.k ? `${d.kick ? " · " : ""}${nameOf(h.k)}` : ""}`) : null, el("h2", {}, d.hl),
@@ -415,12 +415,15 @@ export async function render(main, { previewClient } = {}) {
           : null;
         viz.push(el("div", { class: "td-tiles" }, own3 || [tile(sg2(av), `${cat ? CATN[cat] : "Strokes gained"} a round, ${SY}`, cls(av)), rk ? tile(ordN(rk).replace("No. ", "#"), `on tour, of ${n}`) : tile(String(rs.length), `rounds in ${SY}`), le ? tile(sg2(lv), fullEv(le.event), cls(lv)) : null]));
         const last = rs.filter((r) => !r.eventLevel).slice(-30), mx = Math.max(1, ...last.map((r) => Math.abs(f(r))));
-        if (last.length >= 6) viz.push(el("div", { class: "td-strip-w" }, [el("div", { class: "td-kick mute" }, `Round by round · ${cat ? CATN[cat] : "strokes gained"}`), el("div", { class: "td-strip" }, last.map((r) => { const v = f(r); return el("i", { class: v >= 0 ? "up" : "down", style: `opacity:${(0.25 + 0.75 * Math.min(1, Math.abs(v) / mx)).toFixed(2)}`, title: `${r.event}${r.roundNo ? ` R${r.roundNo}` : ""}: ${sg2(v)}` }); })),
+        if (last.length >= 6 && !isEq) viz.push( /* (update 762: a club change: its bars by model instead) */el("div", { class: "td-strip-w" }, [el("div", { class: "td-kick mute" }, `Round by round · ${cat ? CATN[cat] : "strokes gained"}`), el("div", { class: "td-strip" }, last.map((r) => { const v = f(r); return el("i", { class: v >= 0 ? "up" : "down", style: `opacity:${(0.25 + 0.75 * Math.min(1, Math.abs(v) / mx)).toFixed(2)}`, title: `${r.event}${r.roundNo ? ` R${r.roundNo}` : ""}: ${sg2(v)}` }); })),
           el("div", { class: "td-strip-ax" }, [el("span", {}, shortEv(last[0].event)), el("span", {}, shortEv(last.at(-1).event))])])); } }
     const own = isEq ? (() => { const b = storyBars(h, cat); return b ? el("div", { class: "td-chart" }, b) : null; })() : /^(ev|br|st)-/.test(h.id) ? null : chartFor(h);
     // (update 761) the story's chart under the words (no empty column beside a tall figure); the form story's table beside
-    if (own && !viz.length) viz.push(own); else if (own) body.push(own);
-    if (h.id.startsWith("fm-") && h.x?.ra) viz.push(formTable(h.x));
+    // (update 762) form: the before / after table only (the radar repeats the Form section below); a club change: its
+    // bars by model up beside the words, under the three numbers
+    const isFm = h.id.startsWith("fm-") && h.x?.ra;
+    if (isFm) viz.push(formTable(h.x));
+    else if (own && (!viz.length || isEq)) viz.push(own); else if (own) body.push(own);
     const fig = viz.length ? el("div", { class: "td-fig" }, viz) : null;
     return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), el("div", { class: "td-by" }, `By Cal · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`),
       el("div", { class: `td-leadgrid${fig ? "" : " solo"}` }, [el("div", { class: "td-body" }, [...body.slice(0, 2), more(h), ...body.slice(2)]), fig])]), h);
