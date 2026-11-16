@@ -2109,6 +2109,12 @@ html[data-theme="light"] .mc.mc-group .mc-bar.b, html[data-theme="light"] .mc.mc
 html[data-theme="light"] .mc .mc-ax-v { fill: #111212; }
 html[data-theme="light"] .bs-wi-x { border: 1px solid rgba(0, 0, 0, 0.162); background: transparent; color: #2c2d2f; }
 html[data-theme="light"] .bs-wi-x:hover { color: #a20900; border-color: #a20900; }
+html[data-theme="light"] .bw-t tr.bw-top td:first-child { box-shadow: inset 3px 0 0 #197c31; }
+html[data-theme="light"] .bw-t tr.bw-bot td:first-child { box-shadow: inset 3px 0 0 #a20900; }
+html[data-theme="light"] .bw-t tfoot td { border-top: 1px solid rgba(0, 0, 0, 0.108); }
+html[data-theme="light"] .bw-t .bw-lead { background: rgba(128, 94, 42, 0.22); color: #805e2a; }
+html[data-theme="light"] .bw-t td.pos { color: #197c31; }
+html[data-theme="light"] .bw-t td.neg { color: #ab0e00; }
 html[data-theme="light"] .brand-logo { filter: brightness(0); } /* (update 736) the Callaway logo (white): black on paper */
 html[data-theme="light"] .rail-foot .hdr-icon.callie-link svg, html[data-theme="light"] .rail-foot .hdr-icon.callie-link svg.ico-callie { color: #111 !important; background: radial-gradient(circle at 38% 32%, #ecd3a6, #c7a36c 70%, #a8844f) !important; }
 html[data-theme="light"] [style*="color:#fff"], html[data-theme="light"] [style*="color: #fff"], html[data-theme="light"] [style*="color:white"], html[data-theme="light"] [style*="color: white"], html[data-theme="light"] [style*="color:#f5f5f7"], html[data-theme="light"] [style*="color: #f5f5f7"], html[data-theme="light"] [style*="color:#8e8e93"], html[data-theme="light"] [style*="color: #8e8e93"], html[data-theme="light"] [style*="color:#a1a1a6"], html[data-theme="light"] [style*="color: #a1a1a6"], html[data-theme="light"] [style*="color:#c7c7cc"], html[data-theme="light"] [style*="color: #c7c7cc"], html[data-theme="light"] [style*="color:rgba(255,255,255"], html[data-theme="light"] [style*="color: rgba(255, 255, 255"] { color: #1a1916 !important; }

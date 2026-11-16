@@ -286,3 +286,8 @@ html[data-theme="light"] .td-sec { background: #ffffff; box-shadow: 0 1px 2px rg
 .td-legend .m-a::before { background: #0a84ff; } .td-legend .m-b::before { background: #ff9f0a; }
 html[data-theme="light"] .td-bars .td-bar.m-a { fill: #0b5fc4; } html[data-theme="light"] .td-bars .td-bar.m-b { fill: #c46a00; }
 html[data-theme="light"] .td-legend .m-a::before { background: #0b5fc4; } html[data-theme="light"] .td-legend .m-b::before { background: #c46a00; }
+/* (update 761) a highlight's pop-up: how to find it yourself */
+.td-how { margin: 16px 0 6px; padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--td-rule2); background: color-mix(in srgb, var(--td-gold) 6%, transparent); }
+.td-how ol { margin: 6px 0 0; padding-left: 20px; } .td-how li { margin: 4px 0; font: 500 0.92rem/1.4 var(--td-sans); color: var(--td-ink); }
+/* (update 761) the lead story: its chart under the words */
+.td-body .td-chart { margin-top: 14px; }

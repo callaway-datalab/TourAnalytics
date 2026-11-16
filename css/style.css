@@ -6926,3 +6926,8 @@ html, body { overflow-x: clip; max-width: 100%; }
 .bs-wi-list li { list-style: none; margin-left: -18px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .bs-wi-x { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: #a1a1a6; font-size: 15px; line-height: 1; cursor: pointer; }
 .bs-wi-x:hover { color: #ff453a; border-color: #ff453a; }
+/* (update 761) Stats: Best & worst tournaments */
+.bw-t { width: 100%; } .bw-t td, .bw-t th { padding: 6px 8px; white-space: nowrap; }
+.bw-t tr.bw-top td:first-child { box-shadow: inset 3px 0 0 #30d158; } .bw-t tr.bw-bot td:first-child { box-shadow: inset 3px 0 0 #ff453a; }
+.bw-t tfoot td { border-top: 1px solid rgba(255,255,255,0.12); font-weight: 600; } .bw-t .bw-lead { background: rgba(212,180,131,0.22); font-weight: 800; color: #d4b483; }
+.bw-t td.pos { color: #30d158; } .bw-t td.neg { color: #ff6b5e; }

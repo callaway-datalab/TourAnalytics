@@ -31,26 +31,29 @@ async function courseWeek(meta, ev) {
   const p = (async () => {
     const [CR, CH, D] = await Promise.all([import("./courseRaw.js"), import("./courseHeat.js"), import("./data.js")]);
     const rows = await CR.loadRaw(meta); if (!rows?.length) return null;
-    const evN = norm(ev.event), num = (v) => (v == null || v === "" ? null : Number(v));
+    const num = (v) => (v == null || v === "" ? null : Number(v)), EX = await import("./courseExp.js");
     const hasEv = rows.some((r) => String(r[0]) === ev.year && r[19]);
-    const mine = rows.filter((r) => String(r[0]) === ev.year && (!hasEv || evMatch(r[19], ev.event))); void evN; if (!mine.length) return null;
-    const trails = new Map(), greens = [];
-    for (const r of mine) { const h = num(r[6]), st = num(r[10]); if (!h || st == null) continue;
+    const inWeek = (r) => String(r[0]) === ev.year && (!hasEv || evMatch(r[19], ev.event));
+    // (update 761) every finished hole on record at the course (every year), for the expected strokes from each spot
+    const all = new Map(), trails = new Map();
+    for (const r of rows) { const h = num(r[6]), st = num(r[10]); if (!h || st == null) continue;
       const idv = r[4] != null && r[4] !== "" ? String(num(r[4]) ?? r[4]) : r[3] != null ? String(r[3]) : null; if (!idv) continue;
-      const pk = D.clientKey(idv), lie = CH.lieName(r[9]) || "other", q = { st, lie, d: num(r[21]) ?? num(r[18]), v: num(r[15]), x: num(r[13]), y: num(r[14]) };
-      if (lie === "green" && q.v != null) greens.push(q.v);
-      const tk = `${pk}|${r[5]}|${h}`; let T = trails.get(tk); if (!T) { T = { meta, pk, name: r[3] != null ? String(r[3]) : idv, rd: String(num(r[5]) ?? r[5] ?? ""), h, par: num(r[7]), pid: String(r[8] ?? "1"), px: num(r[16]), py: num(r[17]), qs: [], s: null }; trails.set(tk, T); }
+      const wk = inWeek(r), pk = D.clientKey(idv), lie = CH.lieName(r[9]) || "other", q = { st, lie, d: num(r[21]) ?? num(r[18]), x: num(r[13]), y: num(r[14]) };
+      const ak = `${r[0]}|${pk}|${r[5]}|${h}`; let T = all.get(ak);
+      if (!T) { T = { meta, pk, name: r[3] != null ? String(r[3]) : idv, rd: String(num(r[5]) ?? r[5] ?? ""), h, par: num(r[7]), pid: String(r[8] ?? "1"), px: num(r[16]), py: num(r[17]), qs: [], s: null }; all.set(ak, T); if (wk) trails.set(`${pk}|${r[5]}|${h}`, T); }
       T.qs.push(q); if (num(r[12]) === 1) { const sf = num(r[11]); T.s = sf != null ? Math.round(sf) : T.par ? st - T.par : null; }
       if (T.px == null && num(r[16]) != null) { T.px = num(r[16]); T.py = num(r[17]); } }
-    greens.sort((a, b) => a - b); const toGo = greens.length ? greens[Math.floor(greens.length / 2)] < 2.6 : true;
-    const togo = (q) => (q.v == null ? null : toGo ? q.v : q.v - (q.st - 1));
+    if (!trails.size) return null;
+    for (const T of all.values()) T.qs.sort((a, b) => a.st - b.st);
+    const E = EX.expectModel(all.values());
     const band = (cat, q) => { const d = q.d; if (d == null) return null; if (cat === "PUTT") { const ft = d; return ft < 5 ? "0-5 ft" : ft < 10 ? "5-10 ft" : ft < 20 ? "10-20 ft" : ft < 30 ? "20-30 ft" : "30+ ft"; }
       if (cat === "ARG") return d < 10 ? "0-10 yds" : d < 20 ? "10-20 yds" : "20-30 yds"; if (cat === "APP") { if (d >= 250) return "250+ yds"; const lo = Math.floor(d / 25) * 25; return `${lo}-${lo + 25} yds`; } return null; };
     const players = new Map(), shots = [];
-    for (const T of trails.values()) { T.qs.sort((a, b) => a.st - b.st);
+    for (const T of trails.values()) {
       const P = players.get(T.pk) || players.set(T.pk, { pk: T.pk, name: T.name, rds: new Set(), tot: 0, cat: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, band: new Map() }).get(T.pk); P.rds.add(T.rd);
-      T.qs.forEach((q, i) => { const a = togo(q); if (a == null) return; const nx = T.qs[i + 1], b = nx ? togo(nx) : T.s != null ? 0 : null; if (b == null) return;
-        const sg = a - b - 1, cat = q.lie === "green" ? "PUTT" : q.st === 1 && (T.par || 4) >= 4 ? "OTT" : q.d != null && q.d <= 30 ? "ARG" : "APP"; q.sg = sg; q.cat = cat;
+      const sgs = EX.shotSG(T, E);
+      T.qs.forEach((q, i) => { const sg = sgs[i]; if (sg == null) return;
+        const cat = q.lie === "green" ? "PUTT" : q.st === 1 && (T.par || 4) >= 4 ? "OTT" : q.d != null && q.d <= 30 ? "ARG" : "APP"; q.sg = sg; q.cat = cat;
         P.tot += sg; P.cat[cat] += sg; const bd = band(cat, q); if (bd) { const k = `${cat}|${bd}`, o = P.band.get(k) || P.band.set(k, [0, 0]).get(k); o[0] += sg; o[1]++; q.band = bd; }
         shots.push({ pk: T.pk, sg, T, q }); }); }
     shots.sort((a, b) => b.sg - a.sg); shots.forEach((s, i) => { s.q.rank = i + 1; });
