@@ -14,7 +14,7 @@ import { sgRounds, roundsFor, perRound } from "../compareData.js";
 import { goOf } from "../strategy.js"; // (update 747)
 import { clientKey } from "../data.js";
 import { expectModel, shotSG } from "../courseExp.js"; // (update 761: expected strokes from the course's own holes) // (update 760: a course's player ids to the players' keys)
-import { scatterSvg, radarSvg, pairBars, proxScatter, bar0 } from "../miniCharts.js"; // (update 750) // (update 728: the rounds and numbers exactly as Compare counts them)
+import { scatterSvg, radarSvg, pairBars, proxScatter, bar0, groupBars } from "../miniCharts.js"; // (update 750) // (update 728: the rounds and numbers exactly as Compare counts them)
 
 const HINTS = new Map(); // (each player's product question, worked out once a visit to the site)
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; try { un = watch(fin); } catch { fin(null); } });
@@ -487,6 +487,8 @@ export async function render(main, { previewClient } = {}) {
   const catBars = (all, hot) => barSvg(all.map(([c0, v]) => ({ v, label: CATN[c0], short: CSHORT[c0], hot: c0 === hot })), { note: "By part of the game" });
   function chartFor(h) { try {
     const t = h.id.split("-")[0], x = h.x || {};
+    // (update 797) a skill at the course: the player against the top 10 in each part of the game (strokes gained a round)
+    if (x.skill) { const g = groupBars(cats.map((c0) => ({ label: CSHORT[c0], a: x.skill.theirs[c0], b: x.skill.top[c0] })), { la: x.skill.who, lb: "Top 10" }); return g ? el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, "Strokes gained a round, by part of the game"), g, el("div", { class: "td-legend" }, [el("span", { class: "gray" }, x.skill.who), el("span", { class: "gold" }, "Top 10")])]) : null; }
     if (t === "fm" && x.ra && x.rb) return el("div", { class: "td-chart" }, [radarSvg(cats.map((c0) => CSHORT[c0]), [{ vals: x.rb, cls: "a", label: `The ${x.n} before` }, { vals: x.ra, cls: "b", label: `The last ${x.FL}` }]), el("div", { class: "td-legend" }, [el("span", { class: "gold" }, `Last ${x.FL}`), el("span", { class: "gray" }, `${x.FL} before`)])]);
     if (t === "cm" && x.a != null) return el("div", { class: "td-chart" }, pairBars(x.b, x.a, { la: `${x.n} before`, lb: `Last ${x.n}` }) /* (update 793: a chart runs in time order, before then now) */);
     // (update 758) the best round: every round this season (that one bright); a week or a streak: every tournament
@@ -543,7 +545,8 @@ export async function render(main, { previewClient } = {}) {
   // (update 780) Course Strategy in three parts: the players' history here, the skills that matter here, and how to play
   // the holes (up to 3 each)
   const cgOf = (h) => (/^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(skill|top10|mix)/.test(h.id) ? "skill" : "hole");
-  const courseGroups = (list) => el("div", { class: "td-cgroups" }, [["player", "Player History"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3);
+  let courseShuf = 0; // (update 797: Course Strategy's shuffle)
+  const courseGroups = (list) => el("div", { class: "td-cgroups" }, [["player", "Player History"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const all0 = list.filter((h) => cgOf(h) === g), xs = (courseShuf ? [...all0].sort((a, b) => hash(`${a.id}|${courseShuf}`) - hash(`${b.id}|${courseShuf}`)) : all0).slice(0, 3);
     return xs.length ? el("div", { class: "td-cgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-cols" }, xs.map(column))]) : null; }));
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
   // (update 740) a different paper every day: each story's place moves a little with the date (the evergreen ones, about a
@@ -586,7 +589,7 @@ export async function render(main, { previewClient } = {}) {
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
       const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine) : id === "course" ? courseGroups(mine) : el("div", { class: "td-cols" }, pick.map(column));
-      const shuf = id === "fact" ? (() => { const b = el("button", { type: "button", class: "td-shuf", title: "New facts", "aria-label": "Shuffle the facts" }, "↻ Shuffle"); b.addEventListener("click", () => { factShuf++; factMemo = null; drawFeed(collect()); requestAnimationFrame(() => document.getElementById("td-fact")?.scrollIntoView({ block: "nearest" })); }); return b; })() : null; /* (update 789) */
+      const shuf = id === "course" ? (() => { const b = el("button", { type: "button", class: "td-shuf", title: "Other course notes", "aria-label": "Shuffle the course notes" }, "↻ Shuffle"); b.addEventListener("click", () => { courseShuf++; drawFeed(collect()); requestAnimationFrame(() => document.getElementById("td-course")?.scrollIntoView({ block: "nearest" })); }); return b; })() : id === "fact" ? (() => { const b = el("button", { type: "button", class: "td-shuf", title: "New facts", "aria-label": "Shuffle the facts" }, "↻ Shuffle"); b.addEventListener("click", () => { factShuf++; factMemo = null; drawFeed(collect()); requestAnimationFrame(() => document.getElementById("td-fact")?.scrollIntoView({ block: "nearest" })); }); return b; })() : null; /* (update 789) */
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), shuf, sub ? el("span", {}, sub) : null]), content]));
       if (PAIR.includes(id)) pairRest.set(id, { box: content, more: mine.filter((h) => !pick.includes(h)) }); /* (update 789: to even the pair up) */
     }
@@ -786,6 +789,22 @@ export async function render(main, { previewClient } = {}) {
     let streak = 0; for (let i = stU.length - 1; i >= 0 && avgOf(stU[i], tot) > 0; i--) streak++;
     const stRs = stU.slice(-streak).flat(), stFrom = stRs[0]?.event;
     if (streak >= (stEv ? 3 : 5)) out.push({ id: `st-${k}`, k, x: { n: streak, unit: stW, ev: stFrom, avg: avgOf(stRs, tot) }, kind: "Milestone", score: 6 + streak * (stEv ? 0.6 : 0.2), title: `${streak} ${stW}s in a row gaining strokes`, detail: `${isMe(k) ? "You’ve" : `${firstOf(k)} has`} beaten the tour average ${stEv ? "at every event" : "every round"} since ${stFrom}`, to: "Stats · Elite stretches", run: () => toStats(k, { view2: "full", year: [], span: 0 }, "Elite Stretches", EX.elite(`When ${isMe(k) ? "do I" : `does ${firstOf(k)}`} play best?`)) });
+    // (update 797) milestones beyond the last event: the season's best week (a few weeks back), a streak closing in on the
+    // season's best run, and a season rank closing in on the top 1, 10 or 25
+    { const bestE = [...evs].sort((a, b) => b.avg - a.avg)[0], days = bestE ? Math.round(ago(bestE.end)) : 999;
+      if (bestE && bestE !== le && days <= 70 && evs.length >= 5) { const wk = Math.max(1, Math.round(days / 7));
+        out.push({ id: `mb-${k}`, k, x: { ev: bestE.event, v: bestE.avg }, kind: "Milestone", score: 5.4, title: `${wk === 1 ? "Last week" : `${wk} weeks ago`}: ${isMe(k) ? "your" : poss(firstOf(k))} best week of ${last}, at ${bestE.event}`,
+          detail: `${sg2(bestE.avg)} strokes gained total a round there · ${(bestE.avg - sAvg).toFixed(2)} better than ${his(k)} ${last} average (${sg2(sAvg)}) · still the best of ${evs.length} tournaments this season`, to: "Stats · Best & worst tournaments", run: () => toStats(k, { view2: "full", year: [last], span: 0, cats: [] }, "Best & worst tournaments", null) }); }
+      // the season's runs in the black (rounds; the DP World Tour: events): the current one closing in on the best
+      const runs = []; let cur0 = 0; for (const u of stU) { if (avgOf(u, tot) > 0) cur0++; else { if (cur0) runs.push(cur0); cur0 = 0; } }
+      const bestRun = Math.max(0, ...runs);
+      if (cur0 >= 2 && bestRun > cur0 && bestRun - cur0 <= 2) out.push({ id: `ap-run-${k}`, k, x: { n: cur0, m: bestRun }, kind: "Milestone", score: 5.2, title: `${isMe(k) ? "You're" : `${firstOf(k)} is`} ${bestRun - cur0} ${stW}${bestRun - cur0 === 1 ? "" : "s"} from matching ${his(k)} best run of ${last}`,
+        detail: `${cur0} ${stW}s in a row gaining strokes now · the season's best: ${bestRun} in a row`, to: "Stats · SG Trends", run: () => toStats(k, { view2: "full", year: [last], span: 0, cats: [], trendBy: stEv ? "event" : "round" }, "SG Trends", null) });
+      // a season rank closing in on the lead, the top 10 or the top 25 (strokes gained total)
+      try { const F = seasonField(), vs = F.ok.map((p) => [p.k, avgOf(p.rs, tot)]).sort((a, b) => b[1] - a[1]), i = vs.findIndex((x0) => x0[0] === k);
+        if (i > 0 && vs.length >= 30) for (const T of [1, 10, 25]) { if (i + 1 <= T) continue; const gap = vs[T - 1][1] - vs[i][1]; if (gap <= 0.12 && i + 1 - T <= 6) {
+          out.push({ id: `ap-rank-${k}`, k, x: { r: i + 1, T, gap }, kind: "Milestone", score: 5.3, title: `${isMe(k) ? "You're" : `${firstOf(k)} is`} ${gap.toFixed(2)} a round from ${T === 1 ? "the lead on tour" : `the tour's top ${T}`}`,
+            detail: `${ordN(i + 1).replace("No. ", "")} in strokes gained total in ${last} (${sg2(vs[i][1])} a round) · ${T === 1 ? `the leader, ${nameOf(vs[0][0])}` : `${ordN(T).replace("No. ", "")}, ${nameOf(vs[T - 1][0])}`}: ${sg2(vs[T - 1][1])} · of ${vs.length} players`, board: { c: "TOTAL", focus: k }, to: "Leaderboards · Rankings", run: () => toBoard({ year: [last], cats: [] }, "Rankings", null) }); break; } } } catch { /* */ } }
     // form: the last 12 rounds against the 12 before, and each part of the game
     const fs = formSplit(rs); if (fs) { const a = fs.last, b = fs.prev, d = perRound(a) - perRound(b), FL = fs.lbl; /* (update 734: Form, as everywhere: 12 rounds; the DP World Tour 3 events) */ // (update 728: as Compare's Last 12 rounds and The 12 rounds before that)
       if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b), FL, n: fs.n, lastR: a, prevR: b, ra: cats.map((c0) => perRound(a, c0)), rb: cats.map((c0) => perRound(b, c0)) }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last ${FL} ${sg2(perRound(a))} against ${sg2(perRound(b))} in the ${fs.n} before`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
@@ -1098,7 +1117,7 @@ export async function render(main, { previewClient } = {}) {
       const seasonRs = (playerOf(k) ? sgRounds(rawOf(playerOf(k))) : []).filter((r) => yrOf(r) === seasonYr()), theirs = mine || (seasonRs.length >= 8 ? Object.fromEntries(cats.map((c0) => [c0, avgOf(seasonRs, (r) => inCat(r, c0))])) : null);
       // (update 780) short: the skill that wins here, the player's number in it against the top 10's, and the biggest gap
       if (theirs && cat0.length) { const key = cat0[0][0], gap = R0.catTop[key] - theirs[key], gaps = cats.map((c0) => [c0, R0.catTop[c0] - theirs[c0]]).sort((a, b) => b[1] - a[1]), src = mine ? "here" : `in ${seasonYr()} (no shots of ${Pw} here on record)`;
-        out.push({ id: `up-skill-${k}`, k, kind: "Course", score: 5.3, title: `What wins at ${U.name}: ${CATN[key].toLowerCase()}`,
+        out.push({ id: `up-skill-${k}`, k, kind: "Course", x: { skill: { theirs, top: R0.catTop, who: me ? "You" : S } }, /* (update 797: drawn as bars) */ score: 5.3, title: `What wins at ${U.name}: ${CATN[key].toLowerCase()}`,
           detail: `Strokes gained a round (higher is better): the top 10 gain ${sg2(cat0[0][1])} ${CAT_IN[key]} over the rest. ${me ? "You" : S}: ${sg2(theirs[key])} ${src}, against the top 10's ${sg2(R0.catTop[key])}${gap > 0.05 ? ` (${gap.toFixed(2)} short)` : ""}.${gaps[0][0] !== key && gaps[0][1] > 0.2 ? ` Biggest gap: ${CATN[gaps[0][0]].toLowerCase()} (${gaps[0][1].toFixed(2)}).` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) }); }
       // their own holes: best and worst against the field, and a par 5 played against the grain
