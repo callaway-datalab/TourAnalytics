@@ -6847,3 +6847,10 @@ html, body { overflow-x: clip; max-width: 100%; }
 .mc .mc-val { font: 700 11px var(--font-body); fill: #f5f5f7; }
 .mc .mc-tour { stroke: #8e8e93; stroke-dasharray: 4 3; } .mc .mc-mine { stroke: #d4b483; stroke-width: 1.5; } .mc .mc-mine-t { fill: #d4b483; }
 .mc .mc-pin { fill: #f5f5f7; } .mc .mc-flag { stroke: #f5f5f7; stroke-width: 1.5; }
+/* (update 751) before / after easy to tell apart: before blue and dashed, now gold and solid (the bars too) */
+.mc .mc-area.a { fill: rgba(77,163,255,0.16); stroke: #4da3ff; stroke-width: 2; stroke-dasharray: 5 3; }
+.mc .mc-area.b { fill: rgba(240,180,64,0.22); stroke: #f0b440; stroke-width: 2.5; }
+.mc .mc-bar.a { fill: #4da3ff; opacity: 0.75; } .mc .mc-bar.b { fill: #f0b440; } .mc .mc-bar.b.down { fill: #ff7a45; }
+.mc .mc-val-s { font-size: 9px; }
+.hm-key .k-a { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; background: #4da3ff; }
+.hm-key .k-b { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; background: #f0b440; }

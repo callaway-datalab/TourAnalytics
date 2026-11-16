@@ -63,3 +63,19 @@ export function proxScatter(tourFt, mineFt, { seed = 1, who = "This player", aLa
   svg.append(mk("text", { x: 6, y: H - 20, class: "mc-ax" }, `— ${aLab} ~${Math.round(tourFt)} ft`), mk("text", { x: 6, y: H - 7, class: "mc-ax mc-mine-t" }, `— ${who} ~${Math.round(mineFt)} ft`), mk("text", { x: W - 6, y: H - 7, "text-anchor": "end", class: "mc-ax" }, "illustration"));
   return svg;
 }
+
+/** (update 751) Pairs of bars, one pair a group (e.g. a distance range): a (before) and b (now), signed values. */
+export function groupBars(groups, { la = "Before", lb = "Now", fmt = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) } = {}) {
+  const G = groups.filter((g) => g.a != null || g.b != null); if (!G.length) return null;
+  const W = Math.max(260, G.length * 62 + 30), H = 200, top = 18, bot = 46, L = 14;
+  const vs = G.flatMap((g) => [g.a ?? 0, g.b ?? 0]), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, gw = (W - L * 2) / G.length, bw = Math.min(22, gw * 0.34);
+  const svg = svgOf(W, H, "mc-group", `${la} against ${lb}`);
+  G.forEach((g, i) => { const gx = L + i * gw + gw / 2;
+    [[g.a, "a", -1], [g.b, "b", 1]].forEach(([v, c, side]) => { if (v == null) return; const h = Math.max(1.5, Math.abs(v) * sc), x = gx + (side < 0 ? -bw - 1 : 1), y = v >= 0 ? y0 - h : y0;
+      const r = mk("rect", { x: x.toFixed(1), y: y.toFixed(1), width: bw.toFixed(1), height: h.toFixed(1), rx: 2, class: `mc-bar ${c} ${v >= 0 ? "up" : "down"}` }); r.append(mk("title", {}, `${g.label} · ${c === "a" ? la : lb}: ${fmt(v)}`)); svg.append(r);
+      if (c === "b") svg.append(mk("text", { x: (x + bw / 2).toFixed(1), y: (v >= 0 ? y - 3 : y + h + 10).toFixed(1), "text-anchor": "middle", class: "mc-val mc-val-s" }, fmt(v))); });
+    svg.append(mk("text", { x: gx.toFixed(1), y: H - bot + 16, "text-anchor": "middle", class: "mc-ax" }, g.label)); });
+  svg.append(mk("line", { x1: L, x2: W - L, y1: y0.toFixed(1), y2: y0.toFixed(1), class: "mc-mid" }));
+  svg.append(mk("rect", { x: L, y: H - 18, width: 9, height: 9, class: "mc-bar a up" }), mk("text", { x: L + 13, y: H - 10, class: "mc-ax" }, la), mk("rect", { x: L + 90, y: H - 18, width: 9, height: 9, class: "mc-bar b up" }), mk("text", { x: L + 103, y: H - 10, class: "mc-ax" }, lb));
+  return svg;
+}

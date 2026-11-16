@@ -313,7 +313,40 @@ export async function render(main, { previewClient } = {}) {
     const lbl = catLbl(cat);
     return [el("div", { class: "td-kick mute" }, `${lbl[0].toUpperCase()}${lbl.slice(1)} a round, tournament by tournament`), svg];
   }
-  const tap = (node, h) => { node.setAttribute("role", "link"); node.tabIndex = 0; node.addEventListener("click", (e) => { if (!e.target.closest("button, a, summary")) h.run(); }); node.addEventListener("keydown", (e) => { if (e.key === "Enter") h.run(); }); return node; };
+  // (update 751) a tap opens the story in a pop-up, here on Home: its headline and detail, its chart, and what's behind it
+  // (a ranking: the whole leaderboard; form: every part of the game, before and after; a hole: its picture). The page it
+  // came from is still a tap away at the bottom
+  const tap = (node, h) => { node.setAttribute("role", "button"); node.tabIndex = 0; node.addEventListener("click", (e) => { if (!e.target.closest("button, a, summary")) openPop(h); }); node.addEventListener("keydown", (e) => { if (e.key === "Enter") openPop(h); }); return node; };
+  const boardRows = (b) => { if (b.rows) return b.rows; const F = seasonField(); const win = (rs) => (b.win === "l12" ? rs.filter((r) => !r.eventLevel).slice(-12) : rs);
+    if (b.c) { const f = b.c === "TOTAL" ? tot : (r) => inCat(r, b.c); return F.ok.map((p) => { const v = avgOf(win(p.rs), f); return v == null ? null : [p.k, v, `${sg2(v)} a round`]; }).filter(Boolean).sort((a, c2) => c2[1] - a[1]); }
+    if (b.key && STAT_DEFS[b.key]) { const def = STAT_DEFS[b.key]; return F.ok.map((p) => { const v = obsAvg(win(p.rs), b.key); return v == null ? null : [p.k, v, fmtStat(def, v)]; }).filter(Boolean).sort((a, c2) => (def.higher ? c2[1] - a[1] : a[1] - c2[1])); }
+    return []; };
+  const boardTitle = (b) => b.title || (b.c ? `${b.c === "TOTAL" ? "Strokes gained" : `Strokes gained ${CAT_IN[b.c]}`} a round${b.win === "l12" ? ", the last 12 rounds" : `, ${seasonYr()}`}` : b.key ? `${STAT_DEFS[b.key]?.label || b.key}, ${seasonYr()}` : "");
+  function boardTable(b) { const rows = boardRows(b); if (!rows.length) return null; const shown = new Set(shownKeys());
+    return el("div", { class: "td-pop-board" }, [el("p", { class: "td-kick mute" }, `${boardTitle(b)}${tourPick && tourPick !== ALL ? ` · ${tourName(tourPick)}` : ""} · ${rows.length} players`),
+      el("div", { class: "td-pop-scroll" }, el("table", { class: "td-box" }, el("tbody", {}, rows.map(([k2, , txt], i) => el("tr", { class: shown.has(k2) ? "me" : null }, [el("td", { class: `r${i < 20 ? " up" : i >= rows.length - 10 ? " down" : ""}` }, String(i + 1)), el("td", {}, nameOf(k2)), el("td", { class: "v" }, txt)])))))]); }
+  function formTable(x) { return el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["", `The ${x.n} before`, `Last ${x.FL}`, "Change"].map((t2) => el("th", {}, t2)))),
+    el("tbody", {}, cats.map((c0, i) => { const a = x.rb[i], b = x.ra[i]; return el("tr", {}, [el("td", {}, CATN[c0]), el("td", {}, sg2(a)), el("td", {}, sg2(b)), el("td", { class: cls(b - a) }, sg2(b - a))]); }))]); }
+  function openPop(h) {
+    document.querySelector(".td-popwrap")?.remove();
+    const d = dress(h), x = h.x || {}, t = h.id.split("-")[0], parts = [];
+    if (h.hole && h.cid) { const meta = heat?.find((m) => m.id === h.cid); if (meta) { const img = el("img", { class: "td-pop-hole", alt: `Hole ${h.hole}` }); import("../courseHeat.js").then((m) => m.heatImage(meta, h.hole)).then((u) => { if (u) img.src = u; else img.remove(); }).catch(() => img.remove()); parts.push(img); } }
+    else { const ch = chartFor(h) || (h.k && (h.id.startsWith("eq-") || catOf(h)) ? (() => { const b = storyBars(h, catOf(h)); return b ? el("div", { class: "td-chart" }, b) : null; })() : null); if (ch) parts.push(ch); }
+    if (t === "fm" && x.ra) parts.push(formTable(x));
+    if (h.id.startsWith("eq-") && x.A) parts.push(el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, [[x.neu, x.A], [x.old, x.B]].map(([nm2, r]) => el("tr", {}, [el("td", {}, nm2), el("td", { class: cls(r.v) }, sg2(r.v)), el("td", {}, String(r.n)), el("td", {}, String(r.ev))])))]));
+    // the leaderboard behind a ranking
+    const bd = h.board || x.board || (t === "rk" || t === "rkb" ? { c: x.hits?.[0]?.c } : h.id.startsWith("sp-weapon") ? { c: x.c } : null);
+    if (bd) { const tb = boardTable(bd); if (tb) parts.push(tb); }
+    if (h.id === "tb-kings") for (const c0 of cats) { const tb = boardTable({ c: c0 }); if (tb) parts.push(tb); }
+    if (t === "rk" && x.hits?.length > 1) for (const f of x.hits.slice(1, 3)) { const tb = boardTable({ c: f.c }); if (tb) parts.push(tb); }
+    const close = () => wrap.remove(), xb = el("button", { type: "button", class: "td-pop-x", "aria-label": "Close" }, "×"); xb.addEventListener("click", close);
+    const goB = h.run ? el("button", { type: "button", class: "td-pop-go" }, `Open ${String(h.to || "the page").split(" · ")[0]} →`) : null; goB?.addEventListener("click", () => { close(); h.run(); });
+    const back = el("div", { class: "td-pop-back" }); back.addEventListener("click", close);
+    const box = el("section", { class: "td-pop", role: "dialog", "aria-modal": "true", "aria-label": d.hl }, [xb, d.kick || (staff && h.k) ? el("div", { class: "td-kick" }, `${d.kick || ""}${staff && h.k ? `${d.kick ? " · " : ""}${nameOf(h.k)}` : ""}`) : null, el("h2", {}, d.hl),
+      d.num ? el("div", { class: `td-big ${d.nc}` }, [d.num, el("span", { class: "td-cap" }, ` ${d.cap}`)]) : null, d.deck ? el("p", { class: "td-pop-deck" }, d.deck) : null, ...parts, goB]);
+    const wrap = el("div", { class: "ah td td-popwrap" }, [back, box]); document.body.appendChild(wrap);
+    const esc = (e) => { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } }; addEventListener("keydown", esc); xb.focus();
+  }
   const more = (h) => { const [pg, ...rest] = h.to.split(" · "); return el("span", { class: "td-more" }, `${pg}${rest.length ? ` · ${rest.join(" · ")}` : ""} →`); };
   const whoTag = (h) => (staff && h.k ? el("div", { class: "td-who" }, nameOf(h.k)) : null);
   const kicker = (h, d, withWho) => (!d.kick && !(withWho && staff && h.k) ? null : el("div", { class: `td-kick${d.nc === "down" && /Slipping|Rough/.test(d.kick) ? " down" : ""}` }, `${d.kick}${withWho && staff && h.k ? ` · ${nameOf(h.k)}` : ""}`.replace(/^ · /, "")));
@@ -322,10 +355,11 @@ export async function render(main, { previewClient } = {}) {
     const body = [el("p", {}, d.deck)];
     // (update 732) the season line and the chart: the same part of the game as the story, and it says which
     if (c) body.push(el("p", {}, `${cat ? `${CATN[cat]}: ` : ""}${isMe(h.k) ? "you’re" : `${nameOf(h.k)} is`} averaging ${sg2(c.avg)} ${lbl} a round in ${c.yr}${tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : ""}, over ${c.n} round${c.n === 1 ? "" : "s"} (${c.ev} tournament${c.ev === 1 ? "" : "s"}).`.replace(/^./, (m) => m.toUpperCase())));
-    const bars = storyBars(h, cat), sp = !bars && c ? spark(c.spark) : null; /* (update 737: bar charts, not "the number") */
-    const fig = el("div", { class: "td-fig" }, bars || [el("div", { class: "td-kick mute" }, `${lbl[0].toUpperCase()}${lbl.slice(1)}, round by round (4-round average)`), sp]);
+    // (update 751) a chart only for a story about one part of the game or a club (not strokes gained total)
+    const isEq = h.id.startsWith("eq-"), bars = cat || isEq ? storyBars(h, cat) : null;
+    const fig = bars ? el("div", { class: "td-fig" }, bars) : null;
     return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), el("div", { class: "td-by" }, `By Cal · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`),
-      el("div", { class: "td-leadgrid" }, [el("div", { class: "td-body" }, [...body, more(h)]), fig])]), h);
+      el("div", { class: `td-leadgrid${fig ? "" : " solo"}` }, [el("div", { class: "td-body" }, [...body, more(h)]), fig])]), h);
   }
   // (update 750) a chart for each kind of story: form as a radar (the 12 before against the last 12) or a pair of bars; a
   // tournament's bars; every part of the game; ability against consistency; a proximity illustration; the hole itself
@@ -356,9 +390,9 @@ export async function render(main, { previewClient } = {}) {
   const rankBox = (items) => { const rows = [];
     for (const h of items) for (const f of h.x?.hits || []) { const bad = f.n && f.r > f.n / 2, top = f.r <= 20; /* (update 744: the top 20 in green) */
       const lbl = f.c === "TOTAL" ? "Total" : `${rkName(f.c)[0].toUpperCase()}${rkName(f.c).slice(1)}`; /* (update 744: "Total", not "Strokes gained") */
-      const tr = el("tr", {}, [el("td", { class: `r${top ? " up" : bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${lbl}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v)), el("td", { class: "pc" }, f.n ? el("span", { class: "td-pct", title: `Ahead of ${Math.round(100 * (f.n - f.r) / f.n)}% of the field` }, el("i", { style: `width:${Math.round(100 * (1 - (f.r - 1) / Math.max(1, f.n - 1)))}%` })) : null)]); /* (update 750: how far up the field) */
+      const tr = el("tr", {}, [el("td", { class: `r${top ? " up" : bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${lbl}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v))]); /* (update 751: no bar) */
       tr.dataset.r = String(bad ? 1000 + f.r : f.r);
-      rows.push(tap(tr, { run: () => toBoard({ year: [h.x.yr], cats: f.c === "TOTAL" ? [] : [f.c] }, "Rankings", EX.lead(`Who leads in ${rkName(f.c)}?`)) })); } /* (update 737: the leaderboard for that part of the game) */
+      rows.push(tap(tr, { id: `rkrow-${f.c}-${h.k}`, k: h.k, kind: "Rank", kick: "Rankings", title: `${staff ? `${nameOf(h.k)}: ` : ""}${ordN(f.r)} of ${f.n} in ${f.c === "TOTAL" ? "strokes gained" : rkName(f.c)}`, detail: f.v == null ? "" : `${sg2(f.v)} a round in ${h.x.yr}`, board: { c: f.c }, to: "Leaderboards · Rankings", run: () => toBoard({ year: [h.x.yr], cats: f.c === "TOTAL" ? [] : [f.c] }, "Rankings", EX.lead(`Who leads in ${rkName(f.c)}?`)) })); } /* (update 751: a pop-up with that leaderboard) */
     rows.sort((a, b) => Number(a.dataset.r) - Number(b.dataset.r));
     return el("table", { class: "td-box" }, el("tbody", {}, rows.slice(0, 14))); };
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
@@ -452,14 +486,15 @@ export async function render(main, { previewClient } = {}) {
     // the gap to the leader, in a part of the game that changes with the day
     if (ok && F.ok.length >= 10) { const c = ["TOTAL", ...cats][Math.floor(hash(`${k}|${DAY}`) * 5)], nm = c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase();
       const vs = F.ok.map((p) => [p.k, avgOf(p.rs, c === "TOTAL" ? tot : (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1]), i = vs.findIndex((x) => x[0] === k);
-      if (i === 0) add("gap", "Leader", `${S} lead${me ? "" : "s"} the tour in ${nm}`, `${sg2(vs[0][1])} a round, ${(vs[0][1] - vs[1][1]).toFixed(2)} clear of ${nameOf(vs[1][0])} (${SY}${on})`, toB(c), "Leaderboards · Rankings", 4.6);
-      else if (i > 0) add("gap", "The chase", `${S} ${me ? "are" : "is"} ${(vs[0][1] - vs[i][1]).toFixed(2)} behind the lead in ${nm}`, `${ordN(i + 1)} at ${sg2(vs[i][1])} a round; ${nameOf(vs[0][0])} leads at ${sg2(vs[0][1])} (${SY}${on})`, toB(c), "Leaderboards · Rankings", 3.9); }
+      const xg = { c, board: { c } };
+      if (i === 0) add("gap", "Leader", `${S} lead${me ? "" : "s"} the tour in ${nm}`, `${sg2(vs[0][1])} a round, ${(vs[0][1] - vs[1][1]).toFixed(2)} clear of ${nameOf(vs[1][0])} (${SY}${on})`, toB(c), "Leaderboards · Rankings", 4.6, xg);
+      else if (i > 0) add("gap", "The chase", `${S} ${me ? "are" : "is"} ${(vs[0][1] - vs[i][1]).toFixed(2)} behind the lead in ${nm}`, `${ordN(i + 1)} at ${sg2(vs[i][1])} a round; ${nameOf(vs[0][0])} leads at ${sg2(vs[0][1])} (${SY}${on})`, toB(c), "Leaderboards · Rankings", 3.9, xg); }
     // a stat, a different one each day
     if (ok && STAT_KEYS.length) { const order = [...STAT_KEYS].sort((a, b) => hash(`${a}|${k}|${DAY}`) - hash(`${b}|${k}|${DAY}`));
       for (const key of order) { const def = STAT_DEFS[key], vs = F.ok.map((p) => [p.k, obsAvg(p.rs, key)]).filter((x) => x[1] != null); if (vs.length < 10) continue;
         vs.sort((a, b) => (def.higher ? b[1] - a[1] : a[1] - b[1])); const i = vs.findIndex((x) => x[0] === k); if (i < 0) continue;
         add("stat", def.label, `${S}: ${ordN(i + 1)} on tour in ${def.label.replace(/ %$/, "").toLowerCase()}`, `${fmtStat(def, vs[i][1])}${i ? `; the leader, ${nameOf(vs[0][0])}: ${fmtStat(def, vs[0][1])}` : `; next: ${nameOf(vs[1][0])}, ${fmtStat(def, vs[1][1])}`} (${SY}${on}, of ${vs.length} players)`,
-          () => toBoard({ year: [SY] }, null, EX.lead(`Who leads in ${def.label}?`)), "Leaderboards", i < 10 ? 4.3 : 3.7); break; } }
+          () => toBoard({ year: [SY] }, null, EX.lead(`Who leads in ${def.label}?`)), "Leaderboards", i < 10 ? 4.3 : 3.7, { board: { key } }); break; } }
     // year on year: the part of the game that's come on most since last season
     const prev = sgRounds(rawOf(playerOf(k))).filter((r) => yrOf(r) === String(Number(SY) - 1));
     if (prev.length >= 20 && rs.length >= 15) { const g = cats.map((c) => [c, avgC(c) - avgOf(prev, (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1])[0];
@@ -491,7 +526,7 @@ export async function render(main, { previewClient } = {}) {
       for (const k of keysF) { const me = isMe(k), N = me ? "You" : nameOf(k), P = me ? "your" : poss(nameOf(k));
         for (const w of wins) for (const m of mets) { const vs = ranksOf(w, m); if (vs.length < 20) continue; const i = vs.findIndex((x) => x[0] === k); if (i < 0) continue;
           const top = i < 10, bot = i >= vs.length - 10; if (!top && !bot) continue;
-          cand.push({ id: `fx-${w[0]}-${m.id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${vs.length} in ${m.lbl} ${w[1]}`, detail: `${m.fmt(vs[i][1])}${i ? `; the leader, ${nameOf(vs[0][0])}: ${m.fmt(vs[0][1])}` : `; next best, ${nameOf(vs[1][0])}: ${m.fmt(vs[1][1])}`}`,
+          cand.push({ board: { c: m.id, win: w[0] }, id: `fx-${w[0]}-${m.id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${vs.length} in ${m.lbl} ${w[1]}`, detail: `${m.fmt(vs[i][1])}${i ? `; the leader, ${nameOf(vs[0][0])}: ${m.fmt(vs[0][1])}` : `; next best, ${nameOf(vs[1][0])}: ${m.fmt(vs[1][1])}`}`,
             run: () => toBoard({ year: [SY], cats: cats.includes(m.id) ? [m.id] : [] }, "Rankings", EX.lead(`Who leads in ${m.lbl}?`)), to: "Leaderboards" }); }
         // their best week this season in each part of the game
         const pl = F.all.find((p) => p.k === k); if (!pl) continue; const evs = eventsOf(pl.rs).filter((e) => e.rs.length >= 2);
@@ -524,7 +559,7 @@ export async function render(main, { previewClient } = {}) {
         const fmtV = (v) => (isSG ? `${sg2(v)} a shot` : fmtStat(def, v));
         for (const k of keysF) { const i = list.findIndex((x) => x[0] === k); if (i < 0 || !okSet.has(k)) continue; const top = i < 10, bot = i >= list.length - 10; if (!top && !bot) continue;
           const me = isMe(k), N = me ? "You" : nameOf(k);
-          cand.push({ id: `fx-${id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${list.length} in ${lbl} ${w[1]}`,
+          cand.push({ board: { rows: list.map(([kk, v, n]) => [kk, v, `${fmtV(v)} (${Math.round(n)})`]), title: `${lbl} ${w[1]}` }, id: `fx-${id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${list.length} in ${lbl} ${w[1]}`,
             detail: `${fmtV(list[i][1])} (${Math.round(list[i][2])} ${isSG ? "shots" : "attempts"})${i ? `; the leader, ${nameOf(list[0][0])}: ${fmtV(list[0][1])}` : `; next best, ${nameOf(list[1][0])}: ${fmtV(list[1][1])}`}`,
             run: () => toStats(k, { view2: "focus", focusCats: isSG ? [parts[1]] : [], focusPick: isSG ? parts[1] : null, year: [SYd], span: 0 }, "Where you stand", null), to: "Stats · Focus" }); } } }
     // a different set each half day: shuffled by the slot, at most 2 a player when there are several
@@ -594,8 +629,9 @@ export async function render(main, { previewClient } = {}) {
       const where = `${yr0}${tourPick && tourPick !== ALL ? `, ${tourName(tourPick)}` : ""}`;
       const lst = (xs) => xs.map(([k2, d]) => `${nameOf(k2)} ${sg2(d)}`).join(", ");
       if (mv.length >= 4) { const top = mv.filter((m) => m[1] > 0).slice(0, 3), bot = mv.filter((m) => m[1] < 0).slice(-3).reverse();
-        if (top.length) out.push({ id: "movers", k: null, x: { top }, kind: "Tour", score: 5, title: `Heating up: ${lst(top)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) });
-        if (bot.length) out.push({ id: "fallers", k: null, x: { top: bot }, kind: "Tour", score: 4, title: `Cooling off: ${lst(bot)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) }); }
+        const mvRows = mv.map(([k2, d, l, b0]) => [k2, d, `${sg2(d)} (${sg2(l)} last, ${sg2(b0)} before)`]);
+        if (top.length) out.push({ board: { rows: mvRows, title: `Change in strokes gained a round, the last ${FL0} against the ${FL0.split(" ")[0]} before` }, id: "movers", k: null, x: { top }, kind: "Tour", score: 5, title: `Heating up: ${lst(top)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) });
+        if (bot.length) out.push({ board: { rows: [...mvRows].reverse(), title: "The biggest drops first" }, id: "fallers", k: null, x: { top: bot }, kind: "Tour", score: 4, title: `Cooling off: ${lst(bot)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) }); }
     }
     out.push(...factsAll()); // (update 748)
     if (!picked.size) out.push(...tourBits(), ...courseBits());
@@ -646,11 +682,11 @@ export async function render(main, { previewClient } = {}) {
     // (update 740) rotating: a stat's leader (a different stat each day), the tightest race and the runaway leader
     if (ok.length >= 10) { const keyD = STAT_KEYS[Math.floor(hash(`stat|${DAY}`) * STAT_KEYS.length)], def = keyD && STAT_DEFS[keyD];
       if (def) { const vs = ok.map((p) => [p.k, obsAvg(p.rs, keyD)]).filter((x) => x[1] != null).sort((a, b) => (def.higher ? b[1] - a[1] : a[1] - b[1]));
-        if (vs.length >= 10) out.push({ id: `tb-stat-${keyD}`, k: null, kind: "Tour", ever: true, score: 3.75, title: `${def.label} leader: ${nameOf(vs[0][0])}, ${fmtStat(def, vs[0][1])}`, detail: `Then ${vs.slice(1, 3).map(([k2, v]) => `${nameOf(k2)} ${fmtStat(def, v)}`).join(", ")} (${W0}, ${minR}+ rounds)`, to: "Leaderboards", run: () => toBoard({ year: [yr0] }, null, EX.lead(`Who leads in ${def.label}?`)) }); }
+        if (vs.length >= 10) out.push({ board: { key: keyD }, id: `tb-stat-${keyD}`, k: null, kind: "Tour", ever: true, score: 3.75, title: `${def.label} leader: ${nameOf(vs[0][0])}, ${fmtStat(def, vs[0][1])}`, detail: `Then ${vs.slice(1, 3).map(([k2, v]) => `${nameOf(k2)} ${fmtStat(def, v)}`).join(", ")} (${W0}, ${minR}+ rounds)`, to: "Leaderboards", run: () => toBoard({ year: [yr0] }, null, EX.lead(`Who leads in ${def.label}?`)) }); }
       const races = ["TOTAL", ...cats].map((c) => { const vs = ok.map((p) => [p.k, avgOf(p.rs, c === "TOTAL" ? tot : (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1]); return { c, a: vs[0], b: vs[1], gap: vs[0][1] - vs[1][1] }; }).sort((a, b) => a.gap - b.gap);
       const nmC = (c) => (c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase()), tight = races[0], run = races.at(-1);
-      out.push({ id: `tb-tight-${tight.c}`, k: null, kind: "Tour", ever: true, score: 3.55, title: `Tightest race: ${nmC(tight.c)}`, detail: `${nameOf(tight.a[0])} ${sg2(tight.a[1])} a round leads ${nameOf(tight.b[0])} ${sg2(tight.b[1])} by ${tight.gap.toFixed(2)} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: tight.c === "TOTAL" ? [] : [tight.c] }, "Rankings", null) });
-      out.push({ id: `tb-run-${run.c}`, k: null, kind: "Tour", ever: true, score: 3.5, title: `Runaway leader: ${nameOf(run.a[0])} in ${nmC(run.c)}`, detail: `${sg2(run.a[1])} a round, ${run.gap.toFixed(2)} clear of ${nameOf(run.b[0])} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: run.c === "TOTAL" ? [] : [run.c] }, "Rankings", null) }); }
+      out.push({ board: { c: tight.c }, id: `tb-tight-${tight.c}`, k: null, kind: "Tour", ever: true, score: 3.55, title: `Tightest race: ${nmC(tight.c)}`, detail: `${nameOf(tight.a[0])} ${sg2(tight.a[1])} a round leads ${nameOf(tight.b[0])} ${sg2(tight.b[1])} by ${tight.gap.toFixed(2)} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: tight.c === "TOTAL" ? [] : [tight.c] }, "Rankings", null) });
+      out.push({ board: { c: run.c }, id: `tb-run-${run.c}`, k: null, kind: "Tour", ever: true, score: 3.5, title: `Runaway leader: ${nameOf(run.a[0])} in ${nmC(run.c)}`, detail: `${sg2(run.a[1])} a round, ${run.gap.toFixed(2)} clear of ${nameOf(run.b[0])} (${W0})`, to: "Leaderboards · Rankings", run: () => toBoard({ year: [yr0], cats: run.c === "TOTAL" ? [] : [run.c] }, "Rankings", null) }); }
     // the ironman
     const iron = [...sp].sort((a, b) => b.rs.length - a.rs.length)[0];
     if (iron && sp.length >= 10) add("iron", 3.0, `Ironman: ${nameOf(iron.k)}, ${iron.rs.length} rounds`, `The most rounds played in ${W0} (${new Set(iron.rs.map((r) => r.event)).size} tournaments)`);

@@ -3,6 +3,7 @@
 // worth (a round, and on the season rank), a drill for each; whether the practice they've added is working (strokes
 // gained there since they added it); and what to keep doing. Full stats is one tap away (the switch above it).
 // Takes S first, like the other Stats page sections (see sgDashboard.js).
+import { radarSvg, groupBars } from "./miniCharts.js"; // (update 751)
 import { radar, radarKey, catVals, yearSplit, trendArrow } from "./radarChart.js"; // (update 611; 613: the arrow)
 import { el, mount, infoTip, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, syncPlan, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
 
@@ -324,7 +325,26 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
       : el("p", { class: "muted small" }, `Nothing in ${on ? picked.toLowerCase() : "the game"} is gaining strokes against the tour over the last ${N} rounds.`)]);
 
   // (update 611) the game as a radar: their latest year (green) against the years before (gold), and tour average
-  const radarBox = (() => {
+  // (update 751) one part of the game picked: its distance ranges instead (approach and putting: a radar of every range;
+  // off the tee and around the green: bars), the latest year against the year before, strokes gained a round
+  const distBox = (() => {
+    if (!on || on.size !== 1) return null; const c0 = [...on][0], sp = yearSplit(everyYear || []); if (!sp) return null;
+    const byD = (rs) => { const m = new Map(); for (const rd of rs) for (const x of rd.shots || []) if (x.cat === c0 && x.dist) m.set(x.dist, (m.get(x.dist) || 0) + (x.sg || 0)); for (const [k, v] of m) m.set(k, v / Math.max(1, rs.length)); return m; };
+    const A = byD(sp.before), B = byD(sp.now), lo = (d) => { const m = /(\d+)/.exec(String(d)); return m ? Number(m[1]) * (/^</.test(d) ? 0.5 : 1) : 999; };
+    const ds = [...new Set([...A.keys(), ...B.keys()])].sort((a, b) => lo(a) - lo(b)); if (ds.length < 2) return null;
+    const short = (d) => String(d).replace(/\s*yds?$/i, "").replace(/\s*ft$/i, " ft");
+    const nm = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" }[c0] || c0;
+    let chart;
+    if ((c0 === "APP" || c0 === "PUTT") && ds.length >= 3) { const mx = Math.max(0.05, ...ds.map((d) => Math.max(Math.abs(A.get(d) ?? 0), Math.abs(B.get(d) ?? 0)))) * 1.15;
+      chart = radarSvg(ds.map((d) => `${short(d)} ${f2(B.get(d) ?? 0)}`), [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
+    else chart = groupBars(ds.map((d) => ({ label: short(d), a: sp.before.length ? A.get(d) ?? null : null, b: B.get(d) ?? null })), { la: sp.beforeLabel || "Before", lb: sp.nowLabel });
+    if (!chart) return null;
+    return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round`)),
+      el("div", { class: "mc-wrap" }, chart),
+      el("div", { class: "hm-key" }, [sp.before.length ? el("span", {}, [el("i", { class: "k-a" }), sp.beforeLabel]) : null, el("span", {}, [el("i", { class: "k-b" }), sp.nowLabel])]),
+      el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}Every round on this tour, whatever the time frame above.`)]);
+  })();
+  const radarBox = distBox || (() => {
     const sp = yearSplit(everyYear || []); if (!sp) return null;
     const v = catVals(sp.now), c = sp.before.length ? catVals(sp.before) : null; if (!v) return null;
     const tots = el("span", { class: "hm-tots" }, [el("span", { class: `hm-big ${v.TOTAL >= 0 ? "pos" : "neg"}` }, [trendArrow(el, v.TOTAL, c?.TOTAL), f2(v.TOTAL)]), c ? el("span", { class: "hm-big2" }, f2(c.TOTAL)) : null]); // (update 612)
