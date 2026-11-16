@@ -116,12 +116,37 @@ export function resultsView(S, rounds, field) {
     const perRd = (p, f) => f(p) / Math.max(1, p.rds.size);
     const rk = (f) => (P ? rankIn(field0.map((p) => [p.pk, perRd(p, f)]), pk) : null);
     const best = P ? W.shots.find((s) => s.pk === pk) : null;
+    // (update 763) each of the player's shots ranked among their own (1 to however many they hit), and in the field
+    const myShots = P ? W.shots.filter((x) => x.pk === pk) : [], myN = myShots.length; myShots.forEach((x, i) => { x.q.myRank = i + 1; });
+    const CATL = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" }, dTxt = (q) => (q.d != null ? `${Math.round(q.d)} ${q.lie === "green" ? "ft" : "yds"}` : "—");
+    // a pop-up of shots, best first: the player's own, or every shot in the field (theirs marked); opens at the one tapped
+    function openShots(mode, focus) {
+      document.querySelector(".tr-popwrap")?.remove();
+      const close = () => wrap.remove(), xb = el("button", { type: "button", class: "tr-pop-x", "aria-label": "Close" }, "×"); xb.addEventListener("click", close);
+      const back = el("div", { class: "tr-pop-back" }); back.addEventListener("click", close);
+      const holder = el("div", { class: "tr-pop-scroll tr-shots-scroll" }), head = el("p", { class: "muted small" });
+      const tg = el("div", { class: "tr-rounds", role: "group", "aria-label": "Which shots" });
+      const draw = (m) => {
+        mount(tg, [["mine", `${me?.label || "Their"} shots (${myN})`], ["field", `Every shot in the field (${W.nShots.toLocaleString()})`]].map(([v, l]) => { const b = el("button", { type: "button", class: `tr-rd${v === m ? " on" : ""}`, "aria-pressed": String(v === m) }, l); b.addEventListener("click", () => { if (v !== m) draw(v); }); return b; }));
+        const list = m === "mine" ? myShots : W.shots, f = m === "field";
+        mount(head, f ? `Every player's every shot that week, best first; ${me?.label || "their"} shots are highlighted.` : `Every shot ${me?.label || "they"} hit that week, best first; the last column is its rank among every shot in the field.`);
+        let target = null;
+        const rows = list.map((x, i) => { const q = x.q, mine = x.pk === pk, tr = el("tr", { class: [f && mine ? "mine" : null, q === focus ? "target" : null].filter(Boolean).join(" ") || null }, [
+          el("td", { class: "num" }, String(i + 1)), f ? el("td", {}, x.T.name) : null, el("td", {}, `R${x.T.rd}`), el("td", {}, String(x.T.h)), el("td", {}, CATL[q.cat] || ""), el("td", {}, cap(q.lie)), el("td", {}, dTxt(q)),
+          el("td", { class: `num ${cls(x.sg)}` }, fmtSG(x.sg)), el("td", { class: "num muted" }, f ? (mine ? `${ord(q.myRank)} of ${myN} of theirs` : "") : `${ord(q.rank)} of ${W.nShots.toLocaleString()}`)]); if (q === focus) target = tr; return tr; });
+        mount(holder, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["Rank", f ? "Player" : null, "Round", "Hole", "Category", "Lie", "Distance", "SG", f ? "Their rank" : "In the field"].filter(Boolean).map((x0, i) => el("th", { class: i === 0 || /SG|rank|field/i.test(x0) ? "num" : null }, x0)))), el("tbody", {}, rows)]));
+        requestAnimationFrame(() => { if (target) holder.scrollTop = Math.max(0, target.offsetTop - holder.clientHeight / 2); });
+      };
+      const box = el("section", { class: "tr-pop tr-pop-wide", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, "Shot by shot, ranked"), tg, head, holder]);
+      const wrap = el("div", { class: "tr-popwrap" }, [back, box]); document.body.appendChild(wrap); draw(mode); xb.focus();
+    }
     const card = (label, v, r, big, c) => { const n = el("div", { class: `tr-hero${big ? " big" : ""}`, role: "button", tabindex: "0", title: "Tap for each distance" }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, ["a round", r ? [" · ", el("b", { class: r.r <= 10 ? "pos" : "" }, `${ord(r.r)} of ${r.n}`), " in the field"] : ""])]);
       const go = () => openDist(c); n.addEventListener("click", go); n.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return n; };
     const nR = P ? P.rds.size : evRs.length;
     const vTot = P ? perRd(P, (p) => p.tot) : avg(evRs, tot);
     const cards = [card("Total", vTot, rk((p) => p.tot), true, null), ...CATS.map(([c, l]) => card(l, P ? perRd(P, (p) => p.cat[c]) : avg(evRs, (r) => inCat(r, c)), rk((p) => p.cat[c]), false, c))];
-    const bestLine = best ? el("p", { class: "tr-best" }, [el("strong", {}, best.q.rank === 1 ? "The best shot of the tournament: " : `Best shot: ${ord(best.q.rank)} of ${W.nShots.toLocaleString()} shots this week · `), `${fmtSG(best.sg)} on hole ${best.T.h}, round ${best.T.rd}, ${best.q.d != null ? `${Math.round(best.q.d)} ${best.q.lie === "green" ? "ft" : "yds"} ` : ""}from the ${best.q.lie}`]) : null;
+    const bestLine = best ? (() => { const b = el("button", { type: "button", class: "tr-best", title: "See every shot in the field" }, [el("strong", {}, best.q.rank === 1 ? "The best shot of the tournament: " : `Best shot: `), `${fmtSG(best.sg)} on hole ${best.T.h}, round ${best.T.rd}, ${dTxt(best.q)} from the ${best.q.lie}`, el("span", { class: "muted" }, ` · ${ord(best.q.rank)} of ${W.nShots.toLocaleString()} shots in the field · tap for every shot`)]);
+      b.addEventListener("click", () => openShots("field", best.q)); return b; })() : null;
     mount(heroBox, [el("div", { class: "tr-head" }, [el("h2", {}, ev.event), el("span", { class: "muted" }, `${ev.year} · ${nR} round${nR === 1 ? "" : "s"}${W ? ` · ${field0.length} players on record` : ""}`)]), el("div", { class: "tr-hero-row" }, cards), bestLine,
       P ? null : el("p", { class: "muted small" }, "These numbers are from the stats file: the ranks, the scorecard and the shots need the tournament's shots in Strategy Maps.")].filter(Boolean));
 
@@ -163,10 +188,11 @@ export function resultsView(S, rounds, field) {
     // a hole: its shots (each ranked among every shot that week) beside the hole itself with the trail, into the cup
     const drawHole = () => {
       const h = st.resHole, t = h ? tOf(h) : null; if (!t) { mount(holeBox, null); return; }
-      const rows = t.qs.map((q, i) => el("tr", {}, [el("td", {}, String(i + 1)), el("td", {}, cap(q.lie)), el("td", {}, q.d != null ? `${Math.round(q.d)} ${q.lie === "green" ? "ft" : "yds"}` : "—"), el("td", { class: `num ${cls(q.sg)}` }, q.sg != null ? fmtSG(q.sg) : ""), el("td", { class: `num ${q.rank && q.rank <= 10 ? "pos" : "muted"}` }, q.rank ? `${ord(q.rank)} of ${W.nShots.toLocaleString()}` : "")]));
+      const rows = t.qs.map((q, i) => el("tr", {}, [el("td", {}, String(i + 1)), el("td", {}, cap(q.lie)), el("td", {}, q.d != null ? `${Math.round(q.d)} ${q.lie === "green" ? "ft" : "yds"}` : "—"), el("td", { class: `num ${cls(q.sg)}` }, q.sg != null ? fmtSG(q.sg) : ""), el("td", { class: `num ${q.myRank && q.myRank <= 10 ? "pos" : "muted"}` }, q.myRank ? `${ord(q.myRank)} of ${myN}` : "")]));
+      rows.forEach((tr, i) => { const q = t.qs[i]; if (!q.myRank) return; tr.classList.add("tr-tap"); tr.setAttribute("role", "button"); tr.tabIndex = 0; const go = () => openShots("mine", q); tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); });
       const pic = el("div", { class: "tr-pic" }, el("p", { class: "muted small" }, "Loading the hole…"));
       mount(holeBox, [el("h3", {}, [`Hole ${h}`, parOf(h) ? ` · par ${parOf(h)}` : "", scoreOf(h) != null ? ` · ${scoreOf(h)}` : "", sgOf(h) != null ? el("span", { class: `tr-hsg ${cls(sgOf(h))}` }, ` · SG ${fmtSG(sgOf(h))}`) : null]),
-        el("div", { class: "tr-hole-grid" }, [pic, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["#", "Lie", "Distance", "SG", "Rank that week"].map((x, i) => el("th", { class: i >= 3 ? "num" : null }, x)))), el("tbody", {}, rows)])])]);
+        el("div", { class: "tr-hole-grid" }, [pic, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["#", "Lie", "Distance", "SG", "Rank of their shots"].map((x, i) => el("th", { class: i >= 3 ? "num" : null }, x)))), el("tbody", {}, rows)])])]);
       (async () => { try { const CH = await import("./courseHeat.js"), url = await CH.heatImage(t.meta, h); if (!url) throw new Error("no picture");
         const img = new Image(); img.src = url; await img.decode();
         const Wd = img.naturalWidth, Hd = img.naturalHeight, NS = "http://www.w3.org/2000/svg", sv = (tag, a = {}) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) n.setAttribute(k, v); return n; };

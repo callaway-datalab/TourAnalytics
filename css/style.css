@@ -6937,3 +6937,14 @@ html, body { overflow-x: clip; max-width: 100%; }
 .sv-h .info-tip[open] { flex-basis: 100%; } .sv-h .info-tip p { font: 400 0.85rem/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
 .sv-box .sv-tabs { margin: 6px 0 0; } .sv-box .sv-line { margin: 14px 0 4px; }
 .sv-wrap .mc .mc-ax, .sv-wrap .mc .mc-tick { font-size: 8px; } .sv-wrap .mc .mc-q { font-size: 7.5px; } .sv-wrap .mc .mc-name { font-size: 8.5px; }
+/* (update 763) Tournament Results: shots ranked, a pop-up to scroll through them */
+button.tr-best { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.tr-best:hover { border-color: rgba(48, 209, 88, 0.6); }
+.tr-shots tr.tr-tap { cursor: pointer; } .tr-shots tr.tr-tap:hover td { background: rgba(255,255,255,0.05); }
+.tr-pop.tr-pop-wide { width: min(980px, 96vw); max-width: 96vw; }
+.tr-shots-scroll { max-height: 60vh; overflow: auto; margin-top: 10px; }
+.tr-shots-scroll thead th { position: sticky; top: 0; background: #1c1c1e; z-index: 1; }
+.tr-shots tr.mine td { background: rgba(212,180,131,0.12); }
+.tr-shots tr.target td { background: rgba(212,180,131,0.32); font-weight: 800; }
+/* (update 763) the info button: a lowercase "i" in a small ring */
+.info-i { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1.4px solid currentColor; font: 700 11px/1 Georgia, "Times New Roman", serif; font-style: italic; text-transform: none; letter-spacing: 0; vertical-align: middle; }

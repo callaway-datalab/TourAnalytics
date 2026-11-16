@@ -512,7 +512,7 @@ document.addEventListener("click", () => requestAnimationFrame(keepPanelsOnScree
 /** (update 366) An explainer behind a small ⓘ: tap it to read the note (one paragraph, or a list of them). */
 export function infoTip(content, label = "What this means") {
   const paras = (Array.isArray(content) && content.every((x) => typeof x === "string") ? content : [content]).filter((x) => x != null && x !== "");
-  return el("details", { class: "bs-help info-tip" }, [el("summary", { "aria-label": label, title: label }, "ⓘ"), ...paras.map((x) => el("p", { class: "muted small" }, x))]);
+  return el("details", { class: "bs-help info-tip" }, [el("summary", { "aria-label": label, title: label }, el("span", { class: "info-i" }, "i")), ...paras.map((x) => el("p", { class: "muted small" }, x))]);
 }
 
 /** (update 643) every page someone can open from the menus, for Cal to take them there: [{ label, href, section }] */
