@@ -331,3 +331,6 @@ main:has(.ah.td) { padding-top: 0 !important; }
 .td-reroll { position: absolute; left: 0; bottom: 6px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--td-rule2); background: transparent; color: var(--td-mute); font: 700 16px/1 var(--td-sans); cursor: pointer; display: grid; place-items: center; padding: 0; }
 .td-reroll:hover { color: var(--td-gold); border-color: var(--td-gold); }
 .td-front { padding-bottom: 44px !important; } /* (update 784: room for the refresh button) */
+/* (update 786) a story's detail in bullet points */
+.td-bul { margin: 6px 0 0; padding-left: 18px; } .td-bul li { margin: 3px 0; line-height: 1.4; } .td-bul li::marker { color: var(--sec, var(--td-gold)); }
+.td-lead .td-bul { font-size: 1.05rem; color: var(--td-soft); }

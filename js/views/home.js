@@ -398,7 +398,7 @@ export async function render(main, { previewClient } = {}) {
     goB?.addEventListener("click", () => { close(); go0(); if (how.steps?.length) queueExplain({ id: `how-${h.id.split("-")[0]}`, q: d0.hl, steps: how.steps }); }); // (update 761: the steps again on the page)
     const back = el("div", { class: "td-pop-back" }); back.addEventListener("click", close);
     const box = el("section", { class: "td-pop", role: "dialog", "aria-modal": "true", "aria-label": d.hl }, [xb, d.kick || (staff && h.k) ? el("div", { class: "td-kick" }, `${d.kick || ""}${staff && h.k ? `${d.kick ? " · " : ""}${nameOf(h.k)}` : ""}`) : null, el("h2", {}, d.hl),
-      d.num ? el("div", { class: `td-big ${d.nc}` }, [d.num, el("span", { class: "td-cap" }, ` ${d.cap}`)]) : null, d.deck ? el("p", { class: "td-pop-deck" }, d.deck) : null, ...parts, howBox, goB]);
+      d.num ? el("div", { class: `td-big ${d.nc}` }, [d.num, el("span", { class: "td-cap" }, ` ${d.cap}`)]) : null, d.deck ? deckEl(d.deck, "td-pop-deck") : null, ...parts, howBox, goB]);
     const wrap = el("div", { class: "ah td td-popwrap" }, [back, box]); document.body.appendChild(wrap);
     const esc = (e) => { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } }; addEventListener("keydown", esc); xb.focus();
     // (update 758) a leaderboard opens at the player
@@ -409,7 +409,7 @@ export async function render(main, { previewClient } = {}) {
   const kicker = (h, d, withWho) => (!d.kick && !(withWho && staff && h.k) ? null : el("div", { class: `td-kick${d.nc === "down" && /Slipping|Rough/.test(d.kick) ? " down" : ""}` }, `${d.kick}${withWho && staff && h.k ? ` · ${nameOf(h.k)}` : ""}`.replace(/^ · /, "")));
   function leadStory(h) {
     const cat = catOf(h), d = dress(h), c = h.k ? ctxOf(h.k, cat) : null, lbl = catLbl(cat);
-    const body = [d.deck ? el("p", {}, d.deck) : null];
+    const body = [d.deck ? deckEl(d.deck) : null];
     // (update 732) the season line and the chart: the same part of the game as the story, and it says which
     if (c) body.push(el("p", {}, `${cat ? `${CATN[cat]}: ` : ""}${isMe(h.k) ? "you’re" : `${nameOf(h.k)} is`} averaging ${sg2(c.avg)} ${lbl} a round in ${c.yr}${tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : ""}, over ${c.n} round${c.n === 1 ? "" : "s"} (${c.ev} tournament${c.ev === 1 ? "" : "s"}).`.replace(/^./, (m) => m.toUpperCase())));
     // (update 754) the picture: three numbers (the season, the tour rank, the latest tournament), every round this season as a
@@ -467,7 +467,10 @@ export async function render(main, { previewClient } = {}) {
     if (t === "pr") return el("div", { class: "td-chart" }, proxScatter(8, 11, { seed: hash(`${h.id}|${DAY}`), who: "now", aLab: "target" }));
   } catch (e) { console.warn("chart", e); } return null; }
   const brief = (h) => { const d = dress(h); return tap(el("article", { class: "td-brief" }, [kicker(h, d, false), el("h3", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck), whoTag(h)]), h); };
-  const column = (h) => { const d = dress(h); return tap(el("article", { class: "td-col" }, [kicker(h, d, false), el("h3", {}, d.hl), h.hole ? chartFor(h) : null, d.num ? el("div", { class: `td-big ${d.nc}` }, d.num) : null, el("p", {}, d.num ? d.cap : d.deck), d.num && d.deck && !/^(fm|cm)-/.test(h.id) ? el("p", { class: "td-small" }, d.deck) : null, h.hole ? null : chartFor(h), whoTag(h), more(h)]), h); };
+  // (update 786) a story's detail as bullet points where it has several parts (" · "), not one long paragraph
+  const deckEl = (text, cls0) => { const parts = String(text || "").split(" · ").map((x0) => x0.trim()).filter(Boolean); if (!parts.length) return null;
+    return parts.length > 1 ? el("ul", { class: `td-bul${cls0 ? ` ${cls0}` : ""}` }, parts.map((x0) => el("li", {}, x0.replace(/^./, (m) => m.toUpperCase())))) : el("p", { class: cls0 || null }, parts[0]); };
+  const column = (h) => { const d = dress(h); return tap(el("article", { class: "td-col" }, [kicker(h, d, false), el("h3", {}, d.hl), h.hole ? chartFor(h) : null, d.num ? el("div", { class: `td-big ${d.nc}` }, d.num) : null, d.num ? el("p", {}, d.cap) : deckEl(d.deck), d.num && d.deck && !/^(fm|cm)-/.test(h.id) ? deckEl(d.deck, "td-small") : null, h.hole ? null : chartFor(h), whoTag(h), more(h)]), h); };
   const gearStory = (h) => { const d = dress(h), x = h.x, row = (nm, r, isNew) => el("tr", { class: isNew ? "new" : "" }, [el("td", {}, [nm, isNew ? el("span", { class: "td-note" }, " · new") : null]), el("td", { class: cls(r.v) }, sg2(r.v)), el("td", {}, String(r.n)), el("td", {}, String(r.ev))]);
     return tap(el("article", { class: "td-gear" }, [el("div", { class: "td-kick" }, `${staff ? `${nameOf(h.k)} · ` : ""}${KIND_WORD[x.pill] || "club"}`), el("h3", {}, d.hl),
       el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, [row(x.neu, x.A, true), row(x.old, x.B, false)])]),
@@ -1012,7 +1015,7 @@ export async function render(main, { previewClient } = {}) {
     // it compares with their other events), the skills that win here against theirs, and their own holes
     const ordS = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
     const byYrU = new Map(); for (const h0 of hist) for (const r of h0.rs) { const y = yrOf(r), m = byYrU.get(y) || byYrU.set(y, new Map()).get(y); (m.get(h0.k) || m.set(h0.k, []).get(h0.k)).push(r); }
-    const yrBoards = [...byYrU].map(([y, m]) => [y, [...m].filter(([, rs]) => rs.length >= 4).map(([kk, rs]) => [kk, perRound(rs)]).sort((a, b) => b[1] - a[1])]).filter(([, l]) => l.length >= 20);
+    const yrBoards = [...byYrU].map(([y, m]) => [y, [...m].filter(([, rs]) => rs.length >= 3).map(([kk, rs]) => [kk, perRound(rs)]).sort((a, b) => b[1] - a[1])]).filter(([, l]) => l.length >= 8); // (update 786: a smaller field on record still gives a winner's number)
     const winV = yrBoards.length ? yrBoards.reduce((t, [, l]) => t + l[0][1], 0) / yrBoards.length : null, t10V = yrBoards.length ? yrBoards.reduce((t, [, l]) => t + l[Math.min(9, l.length - 1)][1], 0) / yrBoards.length : null;
     const paceOf = (v) => (yrBoards.length ? Math.round(yrBoards.reduce((t, [, l]) => t + l.filter((x) => x[1] > v).length + 1, 0) / yrBoards.length) : null);
     for (const k of shownKeys().slice(0, 4)) { const x = hist.find((h0) => h0.k === k); if (!x) continue;
@@ -1027,7 +1030,7 @@ export async function render(main, { previewClient } = {}) {
       const pace = paceOf(x.v), diff = usual != null ? x.v - usual : null;
       const verdict = diff == null ? "" : diff >= 0.4 ? `${me ? "You play" : `${S} plays`} this course well: ${sg2(diff)} strokes gained a round more than ${Pw} usual week (${sg2(usual)})` : diff <= -0.4 ? `${me ? "You play" : `${S} plays`} worse here than usual: ${sg2(diff)} a round against ${Pw} usual ${sg2(usual)}` : `About ${Pw} usual level (${sg2(usual)} a round elsewhere)`;
       out.push({ id: `up-me-${k}`, k, kind: "Course", score: 5.35 + Math.abs(diff || 0) * 0.1, x: { v: x.v }, title: `${me ? "Your" : poss(nameOf(k))} record at ${U.name}: ${sg2(x.v)} strokes gained a round${pace ? `, a ${ordS(pace)}-place pace` : ""}`,
-        detail: [verdict, nEv > 3 ? `${ordS(evRank)} best of ${nEv} events on ${Pw} schedule` : "", winV != null ? `winning here has taken about ${sg2(winV)} a round, a top 10 ${sg2(t10V)}${x.v >= t10V ? `: ${he} have played at top-10 level here` : `: ${sg2(t10V - x.v).replace("+", "")} a round short of a top 10`}` : "", hereRank ? `${ordS(hereRank[0])} of ${hereRank[1]} players with 4+ rounds here` : "", `${x.rs.length} rounds over ${x.yrs} year${x.yrs === 1 ? "" : "s"}${bestY && byYr.size > 1 ? `, best in ${bestY[0]} (${sg2(bestY[1])})` : ""}`].filter(Boolean).join(" · "),
+        detail: [verdict, nEv > 3 ? `${ordS(evRank)} best of ${nEv} events on ${Pw} schedule` : "", winV != null ? `The average winner here: ${sg2(winV)} strokes gained a round (a top 10: ${sg2(t10V)})${x.v >= t10V ? `; ${he} have played at top-10 level here` : `; ${he} are ${(t10V - x.v).toFixed(2)} a round short of a top 10`}` : "", hereRank ? `${ordS(hereRank[0])} of ${hereRank[1]} players with 4+ rounds here` : "", `${x.rs.length} rounds here over ${x.yrs} year${x.yrs === 1 ? "" : "s"}${bestY && byYr.size > 1 ? `; ${me ? "your" : "their"} best year at ${U.name}: ${bestY[0]} (${sg2(bestY[1])} a round)` : ""}`].filter(Boolean).join(" · "),
         to: "Stats · Tournaments", run: () => toStats(k, { view2: "full", year: [], span: 0, event: evNames }, "Tournaments", null) });
       if (!(c && upRaw?.id === c.id)) continue;
       const R0 = upRaw, P = R0.ply.get(k) || R0.plyName.get(nmKey(nameOf(k))), cat0 = [...R0.catEdge].sort((a, b) => b[1] - a[1]);
