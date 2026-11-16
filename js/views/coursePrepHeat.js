@@ -715,7 +715,8 @@ export async function drawHeat(ctx, course) {
   async function recountRead(read, n, k) {
     const by = await rawIndex(); if (!by) return null;
     const list = by.get(n)?.shots || [], ids = new Set(pinNow?.merged || [st.pin[n]]), ppyT = ppyOf(n, list);
-    const lieOfTip = (it) => { const t = String(it.t); if (it.k === "tee" && /^Aim/.test(t)) return "fairway"; return /bunker/i.test(t) ? "bunker" : /rough/i.test(t) ? "rough" : /fairway/i.test(t) ? "fairway" : /green/i.test(t) ? "green" : null; };
+    // (update 752) a miss is never on the green ("If you miss the green" isn't its lie): its lie from the rest of the text
+    const lieOfTip = (it) => { const t = String(it.t).replace(/miss(?:ing)? (?:it|the green)/gi, ""); if (it.k === "miss" && !/bunker|rough|fairway/i.test(t)) return "miss"; if (it.k === "tee" && /^Aim/.test(t)) return "fairway"; return /bunker/i.test(t) ? "bunker" : /rough/i.test(t) ? "rough" : /fairway/i.test(t) ? "fairway" : /green/i.test(t) ? "green" : null; };
     const nTxt = (m) => `${m < 15 ? "only " : ""}${m} sample${m === 1 ? "" : "s"}`;
     const items = read.r.items.map((it) => {
       // (update 738) a miss with no lie named ("miss long"): every shot in its circle that missed the green

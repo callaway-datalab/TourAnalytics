@@ -235,7 +235,9 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 617) each spot is a cluster's centre found by moving a circle to the middle of its misses until it stops
     // (the densest place), and judged on every miss of that lie inside it: whole bunkers and patches of rough, not the
     // best- or worst-scoring slice of one (that made a left bunker look worse than a right one that really was worse)
-    let allMiss = shotPts.slice(); // (update 722: every shot the circle tool shows, whatever its lie)
+    // (update 752) every shot off the green the circle tool shows (with every shot pooled, the putts on the green beside a miss
+    // spot would swamp it: a miss is judged on the misses)
+    let allMiss = shotPts.filter((p) => p.lie !== "green"); // (update 722: every shot the circle tool shows, whatever its lie)
     const gen = (minN, radii) => {
       const mS = thin(missPts), aS = thin(allMiss), out = [], seen = new Set(), GM = gridIdx(mS), GAs = gridIdx(aS), GA = gridIdx(allMiss); // (update 716: a grid, the search on a sample, the counts exact)
       for (const ry of radii) for (const c of startsOf(mS, ry)) {
@@ -293,7 +295,7 @@ export function strategyOf(recs, par, geo = {}) {
       for (const p of all) { if ((p.lie !== "rough" && p.lie !== "fairway") || !p.r.bb) continue;
         const nb = GL.near(p.x, p.y, R, (q) => q !== p);
         if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || GL.near(p.x, p.y, 2 * geo.ppy, (q) => q.lie === "bunker").length > 0) p.lucky = true; } // (or a bunker miss within 2 yds)
-      allMiss = shotPts.slice(); // (update 657: counted in any circle they're inside, just not used to place one; 722: every shot the circle tool shows)
+      allMiss = shotPts.filter((p) => p.lie !== "green"); // (update 752: off the green) (update 657: counted in any circle they're inside, just not used to place one; 722: every shot the circle tool shows)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
     const cand = (() => { const c10 = gen(MIN_T, R_SET); return c10.length >= 3 ? c10 : gen(MIN_N, R_SET); })(); // (update 717: 8, 10, 15 or 20 yds; 718: 10 shots or more when there are enough such spots)
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
