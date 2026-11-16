@@ -610,7 +610,12 @@ export async function render(main, { previewClient } = {}) {
     const reB = el("button", { type: "button", class: "td-shuf td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻ Shuffle") /* (update 790: as Did You Know's) */;
     reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
     const leadEl = leadStory(lead); leadEl.prepend(reB); /* (update 791: the shuffle at the top) */
-    mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadEl, el("aside", { class: "td-side" }, fp.slice(1).map(brief))]), el("div", { class: "td-grid" }, laid)]);
+    const sideEl = el("aside", { class: "td-side" }, fp.slice(1).map(brief));
+    // (update 795) a lead taller than the stories beside it: more of the day's stories down the side (up to 3 more) until
+    // they come out about even
+    requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (innerWidth <= 860) return; const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
+      for (let n = 0; n < 3 && more2.length; n++) { if (leadEl.offsetHeight - used() < 170) break; sideEl.appendChild(brief(more2.shift())); } });
+    mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadEl, sideEl]), el("div", { class: "td-grid" }, laid)]);
     // (update 789) Player Spotlight and Where to Improve about the same length: stories added to the shorter one (as many as
     // it has) until it reaches the other
     requestAnimationFrame(() => { const a = pairRest.get("spot"), b = pairRest.get("focus"); if (!a || !b) return;
