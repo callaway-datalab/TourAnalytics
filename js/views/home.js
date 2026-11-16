@@ -11,7 +11,8 @@ import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, summaryPlayers, gearInfo, STAT_DEFS } from "../sg.js";
 import { queueExplain } from "../askExplain.js";
 import { sgRounds, roundsFor, perRound } from "../compareData.js";
-import { goOf } from "../strategy.js"; // (update 747) // (update 728: the rounds and numbers exactly as Compare counts them)
+import { goOf } from "../strategy.js"; // (update 747)
+import { scatterSvg, radarSvg, pairBars, proxScatter } from "../miniCharts.js"; // (update 750) // (update 728: the rounds and numbers exactly as Compare counts them)
 
 const HINTS = new Map(); // (each player's product question, worked out once a visit to the site)
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; try { un = watch(fin); } catch { fin(null); } });
@@ -199,11 +200,11 @@ export async function render(main, { previewClient } = {}) {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const edition = el("span", {}, ""), nextLine = el("a", { class: "td-live", href: "#/live", title: "Open the Event Feed" }, ""), /* (update 734: this week’s event: a link to the Event Feed) */ roleLbl = el("span", { class: "td-top-r" }, "");
   mount(root, [
-    el("header", { class: "td-mast" }, el("h1", {}, ["The ", el("i", {}, "Daily"), " Tour"])), /* (update 748: was "Tour Analytics Daily") */
+    el("header", { class: "td-mast" }, el("h1", {}, ["The Tour ", el("i", {}, "Report")])), /* (update 750: was "The Daily Tour") */
     el("div", { class: "td-date" }, [el("span", {}, today), edition, nextLine]),
     el("div", { class: "td-nav" }, [tourRow, whoRow, askBox]),
     secNav, feed, asked,
-    el("div", { class: "td-foot" }, "The Daily Tour · compiled by Cal from every shot on record · tap any story to dig deeper"),
+    el("div", { class: "td-foot" }, "The Tour Report · compiled by Cal from every shot on record · tap any story to dig deeper"),
   ]);
   drawTabs();
 
@@ -326,16 +327,36 @@ export async function render(main, { previewClient } = {}) {
     return tap(el("article", { class: "td-lead" }, [kicker(h, d, true), el("h2", {}, d.hl), el("div", { class: "td-by" }, `By Cal · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`),
       el("div", { class: "td-leadgrid" }, [el("div", { class: "td-body" }, [...body, more(h)]), fig])]), h);
   }
+  // (update 750) a chart for each kind of story: form as a radar (the 12 before against the last 12) or a pair of bars; a
+  // tournament's bars; every part of the game; ability against consistency; a proximity illustration; the hole itself
+  const CSHORT = { OTT: "Tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" };
+  const TOUR_FT = (c, d) => { const m = /(\d+)\s*-\s*(\d+)/.exec(String(d)) || /(\d+)/.exec(String(d)); if (!m) return null; const mid = m[2] ? (Number(m[1]) + Number(m[2])) / 2 : Number(m[1]); return c === "APP" ? mid * 0.17 : c === "ARG" ? mid * 0.55 : null; };
+  const holeImg = (h) => { const meta = heat?.find((x) => x.id === h.cid); if (!meta || !h.hole) return null; const img = el("img", { class: "td-hole", alt: `Hole ${h.hole}`, loading: "lazy" });
+    import("../courseHeat.js").then((m) => m.heatImage(meta, h.hole)).then((u) => { if (u) img.src = u; else img.remove(); }).catch(() => img.remove()); return el("div", { class: "td-holewrap" }, img); };
+  const catBars = (all, hot) => barSvg(all.map(([c0, v]) => ({ v, label: CATN[c0], short: CSHORT[c0], hot: c0 === hot })), { note: "By part of the game" });
+  function chartFor(h) { try {
+    const t = h.id.split("-")[0], x = h.x || {};
+    if (t === "fm" && x.ra && x.rb) return el("div", { class: "td-chart" }, [radarSvg(cats.map((c0) => CSHORT[c0]), [{ vals: x.rb, cls: "a", label: `The ${x.n} before` }, { vals: x.ra, cls: "b", label: `The last ${x.FL}` }]), el("div", { class: "td-legend" }, [el("span", { class: "gray" }, `The ${x.n} before`), el("span", { class: "gold" }, `The last ${x.FL}`)])]);
+    if (t === "cm" && x.a != null) return el("div", { class: "td-chart" }, pairBars(x.b, x.a, { la: `The ${x.n} before`, lb: `Last ${x.FL || x.n}` }));
+    if ((t === "ev" || t === "br" || t === "st") && h.k) { const b = storyBars(h, null); return b ? el("div", { class: "td-chart" }, b.slice(1)) : null; }
+    if (t === "wk" && x.all) return el("div", { class: "td-chart" }, catBars(x.all, x.c));
+    if (h.id.startsWith("sp-weapon") && x.all) return el("div", { class: "td-chart" }, catBars(x.all, x.c));
+    if (h.id.startsWith("sp-steady") && x.pts) return el("div", { class: "td-chart" }, scatterSvg(x.pts, { xLab: `Strokes gained ${CAT_IN[x.c]}`, yLab: "Swing", fmtX: sg2 }));
+    if (t === "dz" && x.c && TOUR_FT(x.c, x.d)) { const tf = TOUR_FT(x.c, x.d), mf = tf * Math.max(0.6, Math.min(1.6, 1 - x.per * 2.5)); return el("div", { class: "td-chart" }, proxScatter(tf, mf, { seed: hash(h.id), who: h.k ? sur(h.k) : "Player" })); }
+    if (h.hole && h.cid) return holeImg(h);
+    // (update 750) practice: an illustration of what the work is for, a typical short-game spread against the target's
+    if (t === "pr") return el("div", { class: "td-chart" }, proxScatter(8, 11, { seed: hash(`${h.id}|${DAY}`), who: "now", aLab: "target" }));
+  } catch (e) { console.warn("chart", e); } return null; }
   const brief = (h) => { const d = dress(h); return tap(el("article", { class: "td-brief" }, [kicker(h, d, false), el("h3", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck), whoTag(h)]), h); };
-  const column = (h) => { const d = dress(h); return tap(el("article", { class: "td-col" }, [kicker(h, d, false), el("h3", {}, d.hl), d.num ? el("div", { class: `td-big ${d.nc}` }, d.num) : null, el("p", {}, d.num ? d.cap : d.deck), d.num && d.deck && !/^(fm|cm)-/.test(h.id) ? el("p", { class: "td-small" }, d.deck) : null, whoTag(h), more(h)]), h); };
+  const column = (h) => { const d = dress(h); return tap(el("article", { class: "td-col" }, [kicker(h, d, false), el("h3", {}, d.hl), h.hole ? chartFor(h) : null, d.num ? el("div", { class: `td-big ${d.nc}` }, d.num) : null, el("p", {}, d.num ? d.cap : d.deck), d.num && d.deck && !/^(fm|cm)-/.test(h.id) ? el("p", { class: "td-small" }, d.deck) : null, h.hole ? null : chartFor(h), whoTag(h), more(h)]), h); };
   const gearStory = (h) => { const d = dress(h), x = h.x, row = (nm, r, isNew) => el("tr", { class: isNew ? "new" : "" }, [el("td", {}, [nm, isNew ? el("span", { class: "td-note" }, " · new") : null]), el("td", { class: cls(r.v) }, sg2(r.v)), el("td", {}, String(r.n)), el("td", {}, String(r.ev))]);
     return tap(el("article", { class: "td-gear" }, [el("div", { class: "td-kick" }, `${staff ? `${nameOf(h.k)} · ` : ""}${KIND_WORD[x.pill] || "club"}`), el("h3", {}, d.hl),
       el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, [row(x.neu, x.A, true), row(x.old, x.B, false)])]),
-      el("p", { class: "td-note" }, `${x.where[0].toUpperCase()}${x.where.slice(1)}, as the product table on Stats counts it.`), more(h)]), h); };
+      el("p", { class: "td-note" }, `${x.where[0].toUpperCase()}${x.where.slice(1)}, as the product table on Stats counts it.`), (() => { const b = storyBars(h, x.c); return b ? el("div", { class: "td-chart" }, b.slice(1)) : null; })(), more(h)]), h); }; /* (update 750: its bars) */
   const rankBox = (items) => { const rows = [];
     for (const h of items) for (const f of h.x?.hits || []) { const bad = f.n && f.r > f.n / 2, top = f.r <= 20; /* (update 744: the top 20 in green) */
       const lbl = f.c === "TOTAL" ? "Total" : `${rkName(f.c)[0].toUpperCase()}${rkName(f.c).slice(1)}`; /* (update 744: "Total", not "Strokes gained") */
-      const tr = el("tr", {}, [el("td", { class: `r${top ? " up" : bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${lbl}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v))]);
+      const tr = el("tr", {}, [el("td", { class: `r${top ? " up" : bad ? " down" : ""}` }, String(f.r)), el("td", {}, `${staff ? `${nameOf(h.k)} · ` : ""}${lbl}`), el("td", { class: "v" }, f.v == null ? "" : sg2(f.v)), el("td", { class: "pc" }, f.n ? el("span", { class: "td-pct", title: `Ahead of ${Math.round(100 * (f.n - f.r) / f.n)}% of the field` }, el("i", { style: `width:${Math.round(100 * (1 - (f.r - 1) / Math.max(1, f.n - 1)))}%` })) : null)]); /* (update 750: how far up the field) */
       tr.dataset.r = String(bad ? 1000 + f.r : f.r);
       rows.push(tap(tr, { run: () => toBoard({ year: [h.x.yr], cats: f.c === "TOTAL" ? [] : [f.c] }, "Rankings", EX.lead(`Who leads in ${rkName(f.c)}?`)) })); } /* (update 737: the leaderboard for that part of the game) */
     rows.sort((a, b) => Number(a.dataset.r) - Number(b.dataset.r));
@@ -410,19 +431,19 @@ export async function render(main, { previewClient } = {}) {
   function spotlightFor(k, rs, SY) {
     const out = [], F = seasonField(); if (!F.ok.length || !rs.length) return out;
     const me = isMe(k), S = me ? "You" : sur(k), P = me ? "Your" : poss(sur(k)), on = tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : "";
-    const add = (id, kick, title, detail, run, to, score = 4.2) => out.push({ id: `sp-${id}-${k}`, k, kind: "Spotlight", kick, ever: true, score, title, detail, to, run });
+    const add = (id, kick, title, detail, run, to, score = 4.2, x = null) => out.push({ id: `sp-${id}-${k}`, k, kind: "Spotlight", kick, ever: true, score, title, detail, to, run, x });
     const R = ranksFor(SY).by, ok = F.ok.some((p) => p.k === k);
     const avgC = (c) => avgOf(rs, c === "TOTAL" ? tot : (r) => inCat(r, c));
     const toB = (c) => () => toBoard({ year: [SY], cats: c === "TOTAL" ? [] : [c] }, "Rankings", EX.lead(`Who leads in ${c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase()}?`));
     // the weapon
     const best = cats.map((c) => [c, avgC(c)]).sort((a, b) => b[1] - a[1])[0];
     if (best && best[1] > 0.1) { const r = R[best[0]]?.get(k), n = R[`${best[0]}#`];
-      add("weapon", "Strength", `${CATN[best[0]]} is ${me ? "your" : P} weapon`, `${sg2(best[1])} strokes gained a round ${CAT_IN[best[0]]}${r ? `, ${ordN(r)} of ${n} on tour` : ""} in ${SY}${on}`, toB(best[0]), "Leaderboards · Rankings", 4.4); }
+      add("weapon", "Strength", `${CATN[best[0]]} is ${me ? "your" : P} weapon`, `${sg2(best[1])} strokes gained a round ${CAT_IN[best[0]]}${r ? `, ${ordN(r)} of ${n} on tour` : ""} in ${SY}${on}`, toB(best[0]), "Leaderboards · Rankings", 4.4, { c: best[0], all: cats.map((c0) => [c0, avgC(c0)]) }); }
     // steadiness against the tour, the part of the game where they rank best for it
     if (ok && F.ok.length >= 10) { let pick = null;
       for (const c of cats) { const sds = F.ok.map((p) => [p.k, sdOf(p.rs.filter((r) => !r.eventLevel).map((r) => inCat(r, c)))]).filter((x) => x[1] != null).sort((a, b) => a[1] - b[1]);
-        const i = sds.findIndex((x) => x[0] === k); if (i < 0) continue; if (!pick || i < pick.i) pick = { c, i, sd: sds[i][1], typ: sds[Math.floor(sds.length / 2)][1], n: sds.length }; }
-      if (pick && pick.i < pick.n / 3) add("steady", "Steady", `${S} ${me ? "are" : "is"} the ${pick.i === 0 ? "" : `${ordN(pick.i + 1)} `}steadiest ${CAT_WHO[pick.c]} on tour`, `A round-to-round swing of ±${pick.sd.toFixed(2)} strokes ${CAT_IN[pick.c]}, against the tour's typical ±${pick.typ.toFixed(2)} (${SY}${on})`, toB(pick.c), "Leaderboards · Rankings"); }
+        const i = sds.findIndex((x) => x[0] === k); if (i < 0) continue; if (!pick || i < pick.i) pick = { c, i, sd: sds[i][1], typ: sds[Math.floor(sds.length / 2)][1], n: sds.length, pts: sds.map(([kk, sd]) => ({ x: avgOf(F.ok.find((p) => p.k === kk).rs, (r) => inCat(r, c)), y: sd, label: nameOf(kk), hot: kk === k })) }; }
+      if (pick && pick.i < pick.n / 3) add("steady", "Steady", `${S} ${me ? "are" : "is"} the ${pick.i === 0 ? "" : `${ordN(pick.i + 1)} `}steadiest ${CAT_WHO[pick.c]} on tour`, `A round-to-round swing of ±${pick.sd.toFixed(2)} strokes ${CAT_IN[pick.c]}, against the tour's typical ±${pick.typ.toFixed(2)} (${SY}${on})`, toB(pick.c), "Leaderboards · Rankings", 4.2, { c: pick.c, pts: pick.pts }); }
     // what drives the good weeks
     const evs = eventsOf(rs).filter((e) => e.rs.length >= 2);
     if (evs.length >= 6) { const byT = [...evs].sort((a, b) => b.avg - a.avg), top = byT.slice(0, 3), bot = byT.slice(-3);
@@ -531,13 +552,13 @@ export async function render(main, { previewClient } = {}) {
     if (streak >= 5) out.push({ id: `st-${k}`, k, x: { n: streak, ev: rs[rs.length - streak].event }, kind: "Milestone", score: 6 + streak * 0.2, title: `${streak} rounds in a row gaining strokes`, detail: `${isMe(k) ? "You’ve" : `${firstOf(k)} has`} beaten the tour average every round since ${rs[rs.length - streak].event}`, to: "Stats · Elite stretches", run: () => toStats(k, { view2: "full", year: [], span: 0 }, "Elite Stretches", EX.elite(`When ${isMe(k) ? "do I" : `does ${firstOf(k)}`} play best?`)) });
     // form: the last 12 rounds against the 12 before, and each part of the game
     const fs = formSplit(rs); if (fs) { const a = fs.last, b = fs.prev, d = perRound(a) - perRound(b), FL = fs.lbl; /* (update 734: Form, as everywhere: 12 rounds; the DP World Tour 3 events) */ // (update 728: as Compare's Last 12 rounds and The 12 rounds before that)
-      if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b), FL, n: fs.n }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last ${FL} ${sg2(perRound(a))} against ${sg2(perRound(b))} in the ${fs.n} before`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
+      if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b), FL, n: fs.n, ra: cats.map((c0) => perRound(a, c0)), rb: cats.map((c0) => perRound(b, c0)) }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} a round`, detail: `Last ${FL} ${sg2(perRound(a))} against ${sg2(perRound(b))} in the ${fs.n} before`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
       const ch = cats.map((c) => [c, perRound(a, c) - perRound(b, c)]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
       // (update 728) opens Compare (its Verdict shows each part of the game's difference, the same numbers)
       for (const [c, dc] of ch.slice(0, 2)) if (Math.abs(dc) >= 0.2) out.push({ id: `cm-${k}-${c}`, k, x: { c, d: dc, a: perRound(a, c), b: perRound(b, c), FL, n: fs.n }, kind: dc > 0 ? "Trend" : "Slide", score: 4.5 + Math.abs(dc) * 2, title: `${CATN[c]} ${dc > 0 ? "up" : "down"} ${Math.abs(dc).toFixed(2)} a round lately`, detail: `${His(k)} last ${FL} (${sg2(perRound(a, c))}) against the ${fs.n} before (${sg2(perRound(b, c))})`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin(`${CATN[c]}: what changed?`)) }); }
     // the part of the game costing the most this season
     const weak = cats.map((c) => [c, avgOf(season, (r) => inCat(r, c))]).filter(([, v]) => v != null).sort((x, y) => x[1] - y[1])[0];
-    if (weak && weak[1] <= -0.1 && season.length >= 6) out.push({ id: `wk-${k}`, k, x: { c: weak[0], v: weak[1], yr: last }, kind: "Focus", score: 4 + Math.abs(weak[1]) * 2, title: `${CATN[weak[0]]} is costing ${he(k)} ${Math.abs(weak[1]).toFixed(2)} a round`, detail: `${His(k)} weakest part of the game in ${last}: where, and the drills for it`, to: `Stats · Focus · ${CATN[weak[0]]}`, run: () => toStats(k, { view2: "focus", focusCats: [weak[0]], focusPick: weak[0], year: [last], span: 0 }, "Where you stand", EX.cat(`Where is ${CATN[weak[0]].toLowerCase()} costing strokes?`, weak[0])) });
+    if (weak && weak[1] <= -0.1 && season.length >= 6) out.push({ id: `wk-${k}`, k, x: { c: weak[0], v: weak[1], yr: last, all: cats.map((c0) => [c0, avgOf(season, (r) => inCat(r, c0))]) }, kind: "Focus", score: 4 + Math.abs(weak[1]) * 2, title: `${CATN[weak[0]]} is costing ${he(k)} ${Math.abs(weak[1]).toFixed(2)} a round`, detail: `${His(k)} weakest part of the game in ${last}: where, and the drills for it`, to: `Stats · Focus · ${CATN[weak[0]]}`, run: () => toStats(k, { view2: "focus", focusCats: [weak[0]], focusPick: weak[0], year: [last], span: 0 }, "Where you stand", EX.cat(`Where is ${CATN[weak[0]].toLowerCase()} costing strokes?`, weak[0])) });
     // (update 737) tour ranks this season. A player's own Home: every rank, good or bad. Everyone else: the good ones (top 10;
     // top 25 in strokes gained overall) and the bad ones (the bottom 10; bottom 25 overall)
     if (last) { const R = ranksFor(last).by, nm = (x) => (x === "TOTAL" ? "strokes gained" : CATN[x].toLowerCase());
@@ -734,9 +755,9 @@ export async function render(main, { previewClient } = {}) {
     // (update 737) the course's key holes, from the strategy maps' scoring (every shot the field has hit there)
     if (c && upHoles?.id === c.id && upHoles.holes.length >= 9 && !c.rawChunks) { /* (update 746: a course with its shots on record: their read only, on a phone too) */ /* (update 744: the shots' own read replaces this when it's loaded) */ const H = upHoles.holes, pm = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`, hn = (x) => `No. ${x.h} (par ${x.par}${x.yds ? `, ${x.yds} yds` : ""})`;
       const hard = [...H].sort((a, b) => b.toPar - a.toPar), easy = [...H].sort((a, b) => a.toPar - b.toPar);
-      out.push({ id: "up-hard", k: null, kind: "Course", score: 4.9, title: `The hardest hole at ${c.name}: ${hn(hard[0])}, ${pm(hard[0].toPar)} against par`, detail: `Then No. ${hard[1].h} (${pm(hard[1].toPar)}) and No. ${hard[2].h} (${pm(hard[2].toPar)}) · against par, from every shot the field has hit there`,
+      out.push({ id: "up-hard", hole: hard[0].h, cid: c.id, k: null, kind: "Course", score: 4.9, title: `The hardest hole at ${c.name}: ${hn(hard[0])}, ${pm(hard[0].toPar)} against par`, detail: `Then No. ${hard[1].h} (${pm(hard[1].toPar)}) and No. ${hard[2].h} (${pm(hard[2].toPar)}) · against par, from every shot the field has hit there`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, hard[0].h, EX.hole(`How should I play hole ${hard[0].h}?`)) });
-      out.push({ id: "up-easy", k: null, kind: "Course", score: 4.8, title: `Birdie chances: ${hn(easy[0])}, ${pm(easy[0].toPar)}`, detail: `Then No. ${easy[1].h} (${pm(easy[1].toPar)}) and No. ${easy[2].h} (${pm(easy[2].toPar)}) · against par, the field's scoring`,
+      out.push({ id: "up-easy", hole: easy[0].h, cid: c.id, k: null, kind: "Course", score: 4.8, title: `Birdie chances: ${hn(easy[0])}, ${pm(easy[0].toPar)}`, detail: `Then No. ${easy[1].h} (${pm(easy[1].toPar)}) and No. ${easy[2].h} (${pm(easy[2].toPar)}) · against par, the field's scoring`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, easy[0].h, EX.hole(`How should I play hole ${easy[0].h}?`)) });
       const byPar = [3, 4, 5].map((pp) => { const xs = H.filter((x) => x.par === pp); return xs.length ? [pp, xs.reduce((t, x) => t + x.toPar, 0) / xs.length, xs.length] : null; }).filter(Boolean), sum = H.reduce((t, x) => t + x.toPar, 0);
       if (byPar.length >= 2) { const bestP = [...byPar].sort((a, b) => a[1] - b[1])[0];
@@ -744,17 +765,17 @@ export async function render(main, { previewClient } = {}) {
           to: "Course Prep · Course Insights", run: () => toHole(c.id, 1, EX.course(`How does ${c.name} play?`)) }); } }
     if (c && upHoles?.id === c.id) { const pm2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
       const F = upHoles.fw.filter((x) => x.pen >= 0.1);
-      if (F.length) out.push({ id: "up-fw", k: null, kind: "Course", score: 4.75, title: `Find the fairway on No. ${F[0].h}: missing it costs ${pm2(F[0].pen)} strokes`, detail: `${F.length > 1 ? `Then No. ${F[1].h} (${pm2(F[1].pen)})${F[2] ? ` and No. ${F[2].h} (${pm2(F[2].pen)})` : ""} · ` : ""}rough and bunkers against the fairway from the same distance, 100+ yds out, the field's scoring`,
+      if (F.length) out.push({ id: "up-fw", hole: F[0].h, cid: c.id, k: null, kind: "Course", score: 4.75, title: `Find the fairway on No. ${F[0].h}: missing it costs ${pm2(F[0].pen)} strokes`, detail: `${F.length > 1 ? `Then No. ${F[1].h} (${pm2(F[1].pen)})${F[2] ? ` and No. ${F[2].h} (${pm2(F[2].pen)})` : ""} · ` : ""}rough and bunkers against the fairway from the same distance, 100+ yds out, the field's scoring`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, F[0].h, EX.hole(`Where should I aim off the tee on hole ${F[0].h}?`)) });
       const Sd = upHoles.side.filter((x) => x.spread >= 0.15);
-      if (Sd.length && !c.rawChunks) { const x = Sd[0]; out.push({ id: "up-side", k: null, kind: "Course", score: 4.72, title: `The costliest miss: ${x.worst.nm} of No. ${x.h}`, detail: `Miss ${x.best.nm} instead (${x.best.v.toFixed(2)} to finish against ${x.worst.v.toFixed(2)}): ${x.spread.toFixed(2)} strokes better${Sd[1] ? ` · also No. ${Sd[1].h}: ${Sd[1].best.nm}, never ${Sd[1].worst.nm} (${Sd[1].spread.toFixed(2)})` : ""} · within 30 yds of the pin`,
+      if (Sd.length && !c.rawChunks) { const x = Sd[0]; out.push({ id: "up-side", hole: x.h, cid: c.id, k: null, kind: "Course", score: 4.72, title: `The costliest miss: ${x.worst.nm} of No. ${x.h}`, detail: `Miss ${x.best.nm} instead (${x.best.v.toFixed(2)} to finish against ${x.worst.v.toFixed(2)}): ${x.spread.toFixed(2)} strokes better${Sd[1] ? ` · also No. ${Sd[1].h}: ${Sd[1].best.nm}, never ${Sd[1].worst.nm} (${Sd[1].spread.toFixed(2)})` : ""} · within 30 yds of the pin`,
         to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, x.h, EX.hole(`Where should I miss on hole ${x.h}?`)) }); } }
     if (c && upRaw?.id === c.id) { const R0 = upRaw, pc = (v) => `${Math.round(v * 100)}%`, pm3 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
       const H = [...R0.holesR].sort((a, b) => b.idx - a.idx), atk = H[0], dfd = H.at(-1);
-      if (H.length >= 9) { out.push({ id: "up-attack", k: null, kind: "Course", score: 4.95, title: `Attack No. ${atk.h} (par ${atk.par}): ${pc(atk.b)} birdies against ${pc(atk.g)} bogeys`, detail: `The most birdies for every bogey on the course (${atk.idx.toFixed(1)} to 1)${H[1] ? `; then No. ${H[1].h} (${H[1].idx.toFixed(1)})` : ""} · ${atk.n} holes played there`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, atk.h, EX.hole(`How should I play hole ${atk.h}?`)) });
-        out.push({ id: "up-defend", k: null, kind: "Course", score: 4.92, title: `Defend No. ${dfd.h} (par ${dfd.par}): ${pc(dfd.g)} bogeys against ${pc(dfd.b)} birdies`, detail: `The fewest birdies for every bogey (${dfd.idx.toFixed(2)} to 1)${H.at(-2) ? `; then No. ${H.at(-2).h} (${H.at(-2).idx.toFixed(2)})` : ""} · par is a good score here`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, dfd.h, EX.hole(`How should I play hole ${dfd.h}?`)) }); }
+      if (H.length >= 9) { out.push({ id: "up-attack", hole: atk.h, cid: c.id, k: null, kind: "Course", score: 4.95, title: `Attack No. ${atk.h} (par ${atk.par}): ${pc(atk.b)} birdies against ${pc(atk.g)} bogeys`, detail: `The most birdies for every bogey on the course (${atk.idx.toFixed(1)} to 1)${H[1] ? `; then No. ${H[1].h} (${H[1].idx.toFixed(1)})` : ""} · ${atk.n} holes played there`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, atk.h, EX.hole(`How should I play hole ${atk.h}?`)) });
+        out.push({ id: "up-defend", hole: dfd.h, cid: c.id, k: null, kind: "Course", score: 4.92, title: `Defend No. ${dfd.h} (par ${dfd.par}): ${pc(dfd.g)} bogeys against ${pc(dfd.b)} birdies`, detail: `The fewest birdies for every bogey (${dfd.idx.toFixed(2)} to 1)${H.at(-2) ? `; then No. ${H.at(-2).h} (${H.at(-2).idx.toFixed(2)})` : ""} · par is a good score here`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, dfd.h, EX.hole(`How should I play hole ${dfd.h}?`)) }); }
       if (R0.edges.length >= 3) { const e = R0.edges[0], ce = R0.catEdge[0];
-        out.push({ id: "up-top10", k: null, kind: "Course", score: 4.85, title: `Where the top 10 win it: No. ${e.h}, ${pm3(e.d)} a round against the field`, detail: `The top 10 finishers' biggest edge on a hole${R0.edges[1] ? ` (then No. ${R0.edges[1].h}, ${pm3(R0.edges[1].d)})` : ""} · by part of the game, ${CATN[ce[0]].toLowerCase()}: ${pm3(ce[1])} strokes a round better than the rest`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, e.h, EX.hole(`How should I play hole ${e.h}?`)) }); }
+        out.push({ id: "up-top10", hole: e.h, cid: c.id, k: null, kind: "Course", score: 4.85, title: `Where the top 10 win it: No. ${e.h}, ${pm3(e.d)} a round against the field`, detail: `The top 10 finishers' biggest edge on a hole${R0.edges[1] ? ` (then No. ${R0.edges[1].h}, ${pm3(R0.edges[1].d)})` : ""} · by part of the game, ${CATN[ce[0]].toLowerCase()}: ${pm3(ce[1])} strokes a round better than the rest`, to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, e.h, EX.hole(`How should I play hole ${e.h}?`)) }); }
       // approach distances: here against the shown players' own season (their usual week), in the same ranges their data
       // uses (update 745: the course's shots put in those ranges, so the two are counted alike)
       if (R0.appD.length >= 200) { const rngOf = (t0) => { const t = String(t0); let m = /(\d+)\s*-\s*(\d+)/.exec(t); if (m) return [Number(m[1]), Number(m[2])]; m = /^<\s*(\d+)/.exec(t); if (m) return [0, Number(m[1])]; m = /(\d+)\s*\+/.exec(t); if (m) return [Number(m[1]), 9999]; return null; };
@@ -765,13 +786,13 @@ export async function render(main, { previewClient } = {}) {
           if (r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.lab.replace(/\s*yds?$/i, "")} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.h)} of approach shots at ${c.name} (${nH} shots on record), against ${pc(r1.u)} in a usual week (your players' ${nU} approaches this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
       // (update 747) the par 5 where going for it (or laying up) matters most
       if (R0.goLay?.length) { const g = R0.goLay[0], go = g.d > 0;
-        out.push({ id: "up-golay", k: null, kind: "Course", score: 4.88, title: `No. ${g.h}: ${go ? "go for it in two" : "lay up"}, ${Math.abs(g.d).toFixed(2)} a hole better`, detail: `Went for the green with the second shot: ${pm3(g.ga)} to par (${g.go.length} players) · laid up: ${pm3(g.la)} (${g.lay.length}) · from within 300 yds${R0.goLay[1] ? ` · also No. ${R0.goLay[1].h}: ${R0.goLay[1].d > 0 ? "go for it" : "lay up"} (${Math.abs(R0.goLay[1].d).toFixed(2)})` : ""}`,
+        out.push({ id: "up-golay", hole: g.h, cid: c.id, k: null, kind: "Course", score: 4.88, title: `No. ${g.h}: ${go ? "go for it in two" : "lay up"}, ${Math.abs(g.d).toFixed(2)} a hole better`, detail: `Went for the green with the second shot: ${pm3(g.ga)} to par (${g.go.length} players) · laid up: ${pm3(g.la)} (${g.lay.length}) · from within 300 yds${R0.goLay[1] ? ` · also No. ${R0.goLay[1].h}: ${R0.goLay[1].d > 0 ? "go for it" : "lay up"} (${Math.abs(R0.goLay[1].d).toFixed(2)})` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, g.h, EX.hole(`Should I go for hole ${g.h} in two?`)) }); }
       // each pin's costliest miss, described in full
       const M = R0.misses.filter((x) => x.spread >= 0.15);
       if (M.length) { const x = M[0], w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "in the fairway" : `in the ${l}`);
         const shotW = w.k === 1 ? "off the tee" : "on the approach", pinT = pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : "";
-        out.push({ id: "up-side", k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pinT}: avoid the ${w.sec} miss ${lieW(w.lie)} ${shotW}`,
+        out.push({ id: "up-side", hole: w.h, cid: c.id, k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pinT}: avoid the ${w.sec} miss ${lieW(w.lie)} ${shotW}`,
           detail: `${pm3(w.avg)} to par from there (${w.n} shots, as if you're there in ${w.k}); ${x.spread.toFixed(2)} worse than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} shots) · every shot played from within 30 yds of the green${M[1] ? ` · also No. ${M[1].worst.h}: avoid ${M[1].worst.sec} ${lieW(M[1].worst.lie)} (${pm3(M[1].worst.avg)})` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, w.h, EX.hole(`Where should I miss on hole ${w.h}?`)) }); }
     }
@@ -833,8 +854,8 @@ export async function render(main, { previewClient } = {}) {
     const toF = (c) => () => toStats(k, { view2: "focus", focusCats: [c], focusPick: c, year: [SY], span: 0 }, "Where you stand", EX.cat(`Where is ${CATN[c].toLowerCase()} costing strokes?`, c));
     const cand = [];
     if (G.length >= 3) { const b = G[0], w = G.at(-1);
-      if (b.rd > 0.05) cand.push({ id: `dz-best-${k}`, kick: "Sweet spot", title: `${P} sweet spot: ${rng(b)}`, detail: `${sg2(b.per)} a shot over ${Math.round(b.n)} shots, ${sg2(b.rd)} strokes a round from there in ${SY}`, run: toF(b.c), to: `Stats · Focus · ${CATN[b.c]}` });
-      if (w.rd < -0.05) cand.push({ id: `dz-leak-${k}`, kick: "The leak", title: `${P} biggest leak: ${rng(w)}`, detail: `${sg2(w.per)} a shot over ${Math.round(w.n)} shots, ${sg2(w.rd)} strokes a round from there in ${SY}`, run: toF(w.c), to: `Stats · Focus · ${CATN[w.c]}` }); }
+      if (b.rd > 0.05) cand.push({ x: { c: b.c, d: b.d, per: b.per }, id: `dz-best-${k}`, kick: "Sweet spot", title: `${P} sweet spot: ${rng(b)}`, detail: `${sg2(b.per)} a shot over ${Math.round(b.n)} shots, ${sg2(b.rd)} strokes a round from there in ${SY}`, run: toF(b.c), to: `Stats · Focus · ${CATN[b.c]}` });
+      if (w.rd < -0.05) cand.push({ x: { c: w.c, d: w.d, per: w.per }, id: `dz-leak-${k}`, kick: "The leak", title: `${P} biggest leak: ${rng(w)}`, detail: `${sg2(w.per)} a shot over ${Math.round(w.n)} shots, ${sg2(w.rd)} strokes a round from there in ${SY}`, run: toF(w.c), to: `Stats · Focus · ${CATN[w.c]}` }); }
     for (const c of ["APP", "ARG"]) { const fw = lieG.get(`${c}|the fairway`), bad = ["the rough", "a bunker"].map((L) => lieG.get(`${c}|${L}`)).filter((g) => g && g.n >= 20).sort((a, b) => a.sg / a.n - b.sg / b.n)[0];
       if (fw && fw.n >= 20 && bad) { const gap = fw.sg / fw.n - bad.sg / bad.n; if (gap > 0.04) cand.push({ id: `lie-${c}-${k}`, kick: "By lie", title: `From ${bad.L}, ${S} ${me ? "give" : "gives"} back ${gap.toFixed(2)} a shot ${c === "APP" ? "on approach" : "around the green"}`, detail: `${sg2(bad.sg / bad.n)} a shot from ${bad.L} (${Math.round(bad.n)} shots) against ${sg2(fw.sg / fw.n)} from the fairway (${Math.round(fw.n)}) in ${SY}`, run: toF(c), to: `Stats · Focus · ${CATN[c]}` }); } }
     cand.sort((a, b) => hash(`${a.id}|${DAY}`) - hash(`${b.id}|${DAY}`));

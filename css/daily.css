@@ -158,3 +158,23 @@ html[data-theme="light"] .ah-opt.ah-check.on { border-color: #7a5a25; }
 /* (update 744) the Ask bar's Cal: a little bigger */
 .ah.td .td-ask .ah-mic { width: 40px; height: 40px; flex-basis: 40px; }
 .ah.td .td-ask .ah-mic svg { width: 29px !important; height: 29px !important; }
+/* (update 750) charts in the stories: the paper's colors */
+.td .td-chart { margin: 10px 0 4px; max-width: 360px; }
+.td .td-col .td-chart { max-width: 320px; }
+.td .mc .mc-frame { fill: none; stroke: var(--td-rule); }
+.td .mc .mc-mid, .td .mc .mc-ring { stroke: var(--td-rule2); }
+.td .mc .mc-dot { fill: var(--td-mute); } .td .mc .mc-dot.hot { fill: var(--td-gold); stroke: var(--td-paper); }
+.td .mc .mc-name, .td .mc .mc-mine-t { fill: var(--td-gold); }
+.td .mc .mc-q, .td .mc .mc-ax, .td .mc .mc-tick { fill: var(--td-mute); font-family: var(--td-sans); }
+.td .mc .mc-q-best { fill: var(--td-up); }
+.td .mc .mc-area.a { fill: var(--td-mute); fill-opacity: 0.18; stroke: var(--td-mute); }
+.td .mc .mc-area.b { fill: var(--td-gold); fill-opacity: 0.25; stroke: var(--td-gold); }
+.td .mc .mc-bar.a { fill: var(--td-mute); } .td .mc .mc-bar.b.up { fill: var(--td-up); } .td .mc .mc-bar.b.down { fill: var(--td-down); }
+.td .mc .mc-val { fill: var(--td-ink); font-family: var(--td-sans); }
+.td .mc .mc-tour { stroke: var(--td-mute); } .td .mc .mc-mine { stroke: var(--td-gold); }
+.td .mc .mc-pin, .td .mc .mc-flag { fill: var(--td-ink); stroke: var(--td-ink); }
+.td .td-holewrap { margin: 8px 0; max-width: 320px; border-radius: 6px; border: 1px solid var(--td-rule); background: var(--td-card); text-align: center; overflow: hidden; }
+.td .td-hole { max-width: 100%; max-height: 260px; display: inline-block; vertical-align: top; } /* (the whole hole, as tall as it is) */
+.td .td-box td.pc { width: 90px; padding-left: 12px; }
+.td .td-pct { display: block; height: 6px; border-radius: 3px; background: var(--td-rule); overflow: hidden; }
+.td .td-pct i { display: block; height: 100%; background: var(--td-gold); }

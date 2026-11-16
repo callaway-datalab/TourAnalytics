@@ -1,6 +1,7 @@
 // (sgDashboard split) The summary: the category cards, the summary box, the stretch / form boards and the tour blocks.
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { CATEGORIES, SUMMARY, applyFilters, el, fmtSG, infoTip, rank, sgColor, sgPerRound } from "./sgShared.js";
+import { scatterSvg } from "./miniCharts.js"; // (update 750)
 import { formWord } from "./sg.js"; // (update 670)
 import { formUnits } from "./sgHero.js"; // (update 673: the same stretches as the Form pill)
 
@@ -242,6 +243,10 @@ export function tourBlocks(S, slicedField) {
       // (update 163) the steadiest in green, the streakiest in red
       const list = (xs, tone) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, sg ? `${fmtSG(x.avg)} a round` : `${S.fmtV(x.avg)} average`)]), el("strong", { class: `ti-v ${tone}` }, `\u00b1${S.fmtDelta(x.s)}`)])));
       blocks.push(S.panelBox("Steadiest & Streakiest", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Steadiest"), list(most, "pos")]), el("div", {}, [el("p", { class: "ti-col-title" }, "Streakiest"), list(least, "neg")])])]));
+      // (update 750) ability against consistency: every player, their average (across) against how much their rounds swing (up)
+      { const higher = typeof S.higherBetter === "function" ? S.higherBetter() !== false : true;
+        const sv = scatterSvg(steady.map((x) => ({ x: x.avg, y: x.s, label: x.p.label, hot: !!S.me && x.p.key === S.me.key })), { xLab: sg ? "Strokes gained a round" : S.def?.label || "Average", yLab: "Round-to-round swing", fmtX: (v) => (sg ? fmtSG(v) : S.fmtV(v)), fmtY: (v) => `±${sg ? v.toFixed(2) : S.fmtV(v)}`, higherBetter: higher });
+        if (sv) blocks.push(S.panelBox("Ability vs Consistency", [infoTip("Each dot is a player with 8 or more rounds: their average across, how much their rounds swing from one to the next up (lower is steadier). The lines are the middle of the field: bottom-right is good and steady. Tap or hover a dot for the player."), el("div", { class: "mc-wrap" }, sv)], "full")); }
     }
   }
 
