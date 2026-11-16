@@ -545,7 +545,7 @@ export async function render(main, { previewClient } = {}) {
     return xs.length ? el("div", { class: "td-tgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-wire" }, xs.map(wire))]) : null; }));
   // (update 780) Course Strategy in three parts: the players' history here, the skills that matter here, and how to play
   // the holes (up to 3 each)
-  const cgOf = (h) => (/^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(skill|top10|mix)/.test(h.id) ? "skill" : "hole");
+  const cgOf = (h) => (/^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(skill|mix|att)/.test(h.id) ? "skill" : "hole"); // (update 804: a hole (where the top 10 win it) is hole strategy)
   let courseShuf = 0; const secShuf = {}, secSeen = {}; // (update 797/801: the sections' shuffles)
   const courseGroups = (list, shown = []) => el("div", { class: "td-cgroups" }, [["player", "Player History"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3); shown.push(...xs); void courseShuf;
     return xs.length ? el("div", { class: "td-cgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-cols" }, xs.map(column))]) : null; }));
@@ -1065,7 +1065,7 @@ export async function render(main, { previewClient } = {}) {
     const perB = (G) => Object.fromEntries(Object.entries(G.band).filter(([kk]) => (G.bandN[kk] || 0) >= 10).map(([kk, v]) => [kk, v / G.bandN[kk]])); // (update 803: strokes gained a shot)
     const perS = (G) => Object.fromEntries(cats.map((c0) => [c0, G[c0] / Math.max(1, G.n[c0] || 0)]));
     const plyName = new Map(); for (const P0 of ply.values()) if (P0.nm) plyName.set(nmKey(P0.nm), P0); // (update 780: a player found by name when the ids don't match)
-    upRaw = { id: c.id, plyName, holesR, edges, catEdge, catTop: per(cs.top), catRest: per(cs.rest), bandTop: perB(cs.top), bandRest: perB(cs.rest), shotTop: perS(cs.top), shotRest: perS(cs.rest), yrs: [...new Set(T.map((t) => t.yr))].sort(), ply, fAvg, appD, misses, goLay, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
+    upRaw = { id: c.id, plyName, holesR, edges, catEdge, catTop: per(cs.top), catRest: per(cs.rest), bandTop: perB(cs.top), bandRest: perB(cs.rest), att: (() => { const rds = new Set(), m = {}; for (const t of T) { rds.add(`${t.who}|${t.yr}|${t.rd}`); for (const q of t.qs) { const bk = bandOf(q, t.par); if (bk && !bk.startsWith("OTT")) m[bk] = (m[bk] || 0) + 1; } } for (const b in m) m[b] /= Math.max(1, rds.size); return m; })(), /* (update 804: attempts a round in each range) */ shotTop: perS(cs.top), shotRest: perS(cs.rest), yrs: [...new Set(T.map((t) => t.yr))].sort(), ply, fAvg, appD, misses, goLay, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
   }
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
@@ -1104,6 +1104,13 @@ export async function render(main, { previewClient } = {}) {
         if (nU >= 200) { const B = [...usual.values()].sort((a, b) => a.lo - b.lo); let nH = 0; for (const d of R0.appD) { const o = B.find((x) => d >= x.lo && d < x.hi); if (o) { o.here++; nH++; } }
           const r1 = B.filter((x) => nH && x.here / nH >= 0.08 && x.n / nU >= 0.03).map((x) => ({ ...x, h: x.here / nH, u: x.n / nU, ratio: (x.here / nH) / (x.n / nU) })).sort((a, b) => b.ratio - a.ratio)[0];
           if (r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.lab.replace(/\s*yds?$/i, "")} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.h)} of approach shots at ${c.name} (${nH} shots on record), against ${pc(r1.u)} in a usual week (your players' ${nU} approaches this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
+      // (update 804) attempt mix: the range that comes up most more often here than on tour (shots a round, the field here
+      // against the season's field on the tour picked, both put in the course's ranges)
+      { const src = detail?.by ? [...detail.by.values()] : [...gearData.values()], SYm = seasonYr(); const tourAtt = {}; let nR = 0;
+        for (const rs0 of src) for (const r of rs0 || []) { if (yrOf(r) !== SYm || r.eventLevel || !onTour(r)) continue; nR++; for (const s0 of r.shots || []) if (s0.dist && ["APP", "ARG", "PUTT"].includes(s0.cat)) { const mid = midOf(s0.dist); const b = mid != null ? bandLbl(s0.cat, mid) : null; if (b) tourAtt[b] = (tourAtt[b] || 0) + (s0.w || 1); } }
+        if (nR >= 100) { for (const b in tourAtt) tourAtt[b] /= nR; const diffs = Object.entries(R0.att || {}).filter(([b]) => tourAtt[b] != null && b.startsWith("APP")).map(([b, v]) => ({ b, here: v, tour: tourAtt[b], d: v - tourAtt[b] })).sort((a, b) => b.d - a.d);
+          const up = diffs[0], dn = diffs.at(-1), rl2 = (b) => b.split("|")[1];
+          if (up && up.d >= 0.3) out.push({ id: "up-att", k: null, kind: "Course", score: 4.86, title: `Expect more ${rl2(up.b)} approaches at ${U.name}`, detail: `The field hits ${up.here.toFixed(1)} a round from ${rl2(up.b)} here, against ${up.tour.toFixed(1)} on tour this season: ${up.d.toFixed(1)} more attempts a round${dn && dn.d <= -0.3 ? ` · fewer from ${rl2(dn.b)}: ${dn.here.toFixed(1)} a round here, against ${dn.tour.toFixed(1)} on tour` : ""} · practice that range this week`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
       // (update 747) the par 5 where going for it (or laying up) matters most
       if (R0.goLay?.length) { const g = R0.goLay[0], go = g.d > 0;
         out.push({ id: "up-golay", hole: g.h, cid: c.id, k: null, kind: "Course", score: 4.88, title: `No. ${g.h}: ${go ? "go for it in two" : "lay up"}, ${Math.abs(g.d).toFixed(2)} strokes a hole lower`, detail: `Average score to par (lower is better). Went for the green with the second shot: ${pm3(g.ga)} (${g.go.length} players) · laid up: ${pm3(g.la)} (${g.lay.length}) · from within 300 yds${R0.goLay[1] ? ` · also No. ${R0.goLay[1].h}: ${R0.goLay[1].d > 0 ? "go for it" : "lay up"} (${Math.abs(R0.goLay[1].d).toFixed(2)})` : ""}`,
