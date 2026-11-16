@@ -6990,3 +6990,5 @@ button.tr-best:hover { border-color: rgba(48, 209, 88, 0.6); }
 @media (max-width: 520px) { .rail-foot .hdr-icon.callie-link { margin-right: 0 !important; } }
 .rail .rail-foot { column-gap: 0.5rem !important; }
 .bw-t tr.bw-one td { opacity: 0.6; } /* (update 777) a one-round week: listed, not counted in the best / worst 3 */
+/* (update 778) the radar's values: a little smaller, each year's in its own color (this year gold, last year blue) */
+.mc .mc-ax-v { font-size: 8.5px; font-weight: 700; } .mc .mc-ax-v.v-b { fill: #f0b440; } .mc .mc-ax-v.v-a { fill: #4da3ff; }

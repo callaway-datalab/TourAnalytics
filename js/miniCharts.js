@@ -32,13 +32,14 @@ export function scatterSvg(pts, { xLab = "Average", yLab = "Round-to-round swing
 
 /** axes: ["Off-the-Tee", …]; series: [{ vals: [..], cls: "a" | "b", label }]; values (strokes gained) on a −1 to +1 scale, 0 the inner ring. */
 export function radarSvg(axes, series, { lo = -1, hi = 1 } = {}) {
-  const W = 220, H = 200, cx = W / 2, cy = 100, R = 72, n = axes.length; if (n < 3) return null;
+  const W = 220, H = 214, cx = W / 2, cy = 102, R = 72, n = axes.length; if (n < 3) return null;
   const ang = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n, rad = (v) => R * Math.max(0.04, Math.min(1, (v - lo) / (hi - lo)));
   const svg = svgOf(W, H, "mc-radar", "Before against after, by part of the game");
   for (const f of [0.25, 0.5, 0.75, 1]) svg.append(mk("polygon", { points: axes.map((_, i) => `${(cx + R * f * Math.cos(ang(i))).toFixed(1)},${(cy + R * f * Math.sin(ang(i))).toFixed(1)}`).join(" "), class: f === 0.5 ? "mc-ring mc-zero" : "mc-ring" }));
   axes.forEach((a, i) => { svg.append(mk("line", { x1: cx, y1: cy, x2: (cx + R * Math.cos(ang(i))).toFixed(1), y2: (cy + R * Math.sin(ang(i))).toFixed(1), class: "mc-ring" }));
     const tx = cx + (R + 12) * Math.cos(ang(i)), ty = cy + (R + 12) * Math.sin(ang(i)) + 3; svg.append(mk("text", { x: tx.toFixed(1), y: ty.toFixed(1), "text-anchor": Math.abs(Math.cos(ang(i))) < 0.3 ? "middle" : Math.cos(ang(i)) > 0 ? "start" : "end", class: "mc-ax" }, String(a).split("\n")[0]));
-    const l2 = String(a).split("\n")[1]; if (l2) svg.append(mk("text", { x: tx.toFixed(1), y: (ty + 10).toFixed(1), "text-anchor": Math.abs(Math.cos(ang(i))) < 0.3 ? "middle" : Math.cos(ang(i)) > 0 ? "start" : "end", class: "mc-ax mc-ax-v" }, l2)); }); // (update 760: the value on a line of its own)
+    // (update 778) each value on a line of its own under the label: the series' values in their colors (b, then a)
+    String(a).split("\n").slice(1).forEach((l2, j) => { if (l2) svg.append(mk("text", { x: tx.toFixed(1), y: (ty + 9 + j * 8.5).toFixed(1), "text-anchor": Math.abs(Math.cos(ang(i))) < 0.3 ? "middle" : Math.cos(ang(i)) > 0 ? "start" : "end", class: `mc-ax mc-ax-v ${j ? "v-a" : "v-b"}` }, l2)); }); });
   for (const s of series) { const p = mk("polygon", { points: s.vals.map((v, i) => `${(cx + rad(v) * Math.cos(ang(i))).toFixed(1)},${(cy + rad(v) * Math.sin(ang(i))).toFixed(1)}`).join(" "), class: `mc-area ${s.cls}` }); p.append(mk("title", {}, s.label || "")); svg.append(p); }
   return svg;
 }

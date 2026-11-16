@@ -336,7 +336,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     const nm = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" }[c0] || c0;
     let chart;
     if ((c0 === "APP" || c0 === "PUTT") && ds.length >= 3) { const mx = Math.max(0.05, ...ds.map((d) => Math.max(Math.abs(A.get(d) ?? 0), Math.abs(B.get(d) ?? 0)))) * 1.15;
-      chart = radarSvg(ds.map((d) => `${short(d)}\n${f2(B.get(d) ?? 0)}`), [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
+      chart = radarSvg(ds.map((d) => `${short(d)}\n${sp.nowLabel} ${f2(B.get(d) ?? 0)}${sp.before.length && A.size ? `\n${sp.beforeLabel} ${f2(A.get(d) ?? 0)}` : ""}`), /* (update 778: both years) */ [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
     else chart = groupBars(ds.map((d) => ({ label: short(d), a: sp.before.length ? A.get(d) ?? null : null, b: B.get(d) ?? null })), { la: sp.beforeLabel || "Before", lb: sp.nowLabel });
     if (!chart) return null;
     return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round`)),
