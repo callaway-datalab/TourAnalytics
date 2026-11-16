@@ -45,10 +45,10 @@ export function radarSvg(axes, series, { lo = -1, hi = 1 } = {}) {
 }
 
 /** Two bars (before, after) with their values; signed (strokes gained) when either is below zero. */
-export function pairBars(a, b, { la = "Before", lb = "Now", fmt = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) } = {}) {
+export function pairBars(a, b, { la = "Before", lb = "Now", fmt = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2), cls = ["a", "b"] } = {}) { // (update 780: cls: each bar's look, so "now" can come first)
   const W = 220, H = 128, top = 16, bot = 36, vs = [a, b], lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc;
   const svg = svgOf(W, H, "mc-pair", `${la} ${fmt(a)}, ${lb} ${fmt(b)}`);
-  [[a, la, "a"], [b, lb, "b"]].forEach(([v, l, c], i) => { const x = 40 + i * 90, h = Math.max(1.5, Math.abs(v) * sc), y = v >= 0 ? y0 - h : y0;
+  [[a, la, cls[0]], [b, lb, cls[1]]].forEach(([v, l, c], i) => { const x = 40 + i * 90, h = Math.max(1.5, Math.abs(v) * sc), y = v >= 0 ? y0 - h : y0;
     svg.append(bar0(mk, { x, y: y.toFixed(1), width: 50, height: h.toFixed(1), rx: 3, class: `mc-bar ${c} ${v >= 0 ? "up" : "down"}` }, v >= 0), mk("text", { x: x + 25, y: (v >= 0 ? y - 4 : y + h + 11).toFixed(1), "text-anchor": "middle", class: "mc-val" }, fmt(v)), mk("text", { x: x + 25, y: H - 5, "text-anchor": "middle", class: "mc-ax" }, l)); });
   svg.append(mk("line", { x1: 20, x2: W - 20, y1: y0.toFixed(1), y2: y0.toFixed(1), class: "mc-mid" }));
   return svg;

@@ -191,9 +191,21 @@ export async function render(main, { previewClient } = {}) {
   const card = (id, k) => { const D = Q[id]; const qtext = D.t(k);
     const b = el("button", { type: "button", class: "ah-q" }, [el("span", { class: "ah-e", "aria-hidden": "true" }, D.icon), el("span", { class: "ah-tx" }, [qtext, el("span", { class: "ah-to" }, ["→ ", el("b", {}, D.to.split(" · ")[0]), D.to.includes(" · ") ? ` · ${D.to.split(" · ").slice(1).join(" · ")}` : ""])])]);
     b.addEventListener("click", () => D.run(qtext, k)); return b; };
+  // (update 780) each question's player: the one player picked; else one of the favorites at random; else one of the top 20
+  // in strokes gained this season at random (kept per question until the choices change)
+  const askMemo = new Map();
+  const whoFor = (id) => {
+    try { if (selfKey) return selfKey; if (picked.size === 1) return [...picked][0];
+      let pool = keys.filter(playsTour);
+      if (!pool.length) { const F = seasonField(), avg = (rs) => rs.reduce((t, r) => t + r.shots.reduce((u, x) => u + x.sg, 0), 0) / rs.length; pool = F.ok.map((p) => [p.k, avg(p.rs)]).sort((a, b) => b[1] - a[1]).slice(0, 20).map((x) => x[0]); }
+      if (!pool.length) return focus;
+      const sig = pool.join(","), m = askMemo.get(id); if (m && m.sig === sig) return m.k;
+      const k = pool[Math.floor(Math.random() * pool.length)]; askMemo.set(id, { sig, k }); return k;
+    } catch { return focus; } // (the field not loaded yet)
+  };
   const drawTabs = () => {
     mount(tabBar, TABS.map(([nm], i) => { const b = el("button", { type: "button", role: "tab", class: `ah-tab${i === tab ? " on" : ""}`, "aria-selected": String(i === tab) }, nm); b.addEventListener("click", () => { tab = i; drawTabs(); }); return b; }));
-    mount(list, TABS[tab][1].map((id) => card(id, focus)));
+    mount(list, TABS[tab][1].map((id) => card(id, whoFor(id))));
   };
   // (update 731) Home as a newspaper, "Tour Analytics Daily": a masthead, the filters as its section bar, a front page
   // (the day's biggest story and the next three), then a section for each kind of highlight. Headlines are fixed wording
@@ -206,7 +218,7 @@ export async function render(main, { previewClient } = {}) {
     el("div", { class: "td-date" }, [el("span", {}, today), edition, nextLine]),
     el("div", { class: "td-nav" }, [tourRow, whoRow, askBox]),
     secNav, feed, asked,
-    el("div", { class: "td-foot" }, "The Daily Tour Report · compiled by Cal from every shot on record · tap any story to dig deeper"),
+    el("div", { class: "td-foot" }, "The Daily Tour Report · tap any story to dig deeper"),
   ]);
   drawTabs();
 
@@ -240,7 +252,9 @@ export async function render(main, { previewClient } = {}) {
   const SEC = { res: ["Results & Milestones", "The week’s best and worst"], form: ["Form", "The last 12 rounds against the 12 before"], gear: ["Equipment", "New in the bag"],
     rank: ["Rankings", ""], fact: ["Did You Know?", ""], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", `Up next: ${UPCOMING.name}`] };
   const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot", Fact: "fact" };
-  const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "form", "res", "spot", "focus", "gear", "rank", "prac", "tour"] : ["fact", "form", "spot", "gear", "rank", "res", "focus", "next", "course", "prac", "tour"];
+  // (update 780) Player Spotlight beside Where to Improve, then Equipment, Rankings and Results & Milestones as a row of three
+  const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "form", "spot", "focus", "gear", "rank", "res", "prac", "tour"] : ["fact", "form", "spot", "focus", "gear", "rank", "res", "next", "course", "prac", "tour"];
+  const PAIR = ["spot", "focus"], TRIO = ["gear", "rank", "res"];
   const FULL = new Set(["form", "tour", "course", "fact"]);
   const CATW = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" };
   const ordN = (r) => (r === 1 ? "No. 1" : `${r}${["th", "st", "nd", "rd"][((r % 100) - 20) % 10] || ["th", "st", "nd", "rd"][r % 100] || "th"}`);
@@ -329,8 +343,8 @@ export async function render(main, { previewClient } = {}) {
   function boardTable(b) { const rows = boardRows(b); if (!rows.length) return null; const shown = new Set(shownKeys());
     return el("div", { class: "td-pop-board" }, [el("p", { class: "td-kick mute" }, `${boardTitle(b)}${tourPick && tourPick !== ALL ? ` · ${tourName(tourPick)}` : ""} · ${rows.length} players`),
       el("div", { class: "td-pop-scroll" }, el("table", { class: "td-box" }, el("tbody", {}, rows.map(([k2, , txt], i) => el("tr", { class: [shown.has(k2) ? "me" : null, k2 === b.focus ? "target" : null].filter(Boolean).join(" ") || null }, [el("td", { class: `r${i < 20 ? " up" : i >= rows.length - 10 ? " down" : ""}` }, String(i + 1)), el("td", {}, nameOf(k2)), el("td", { class: "v" }, txt)])))))]); }
-  function formTable(x) { return el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["", `The ${x.n} before`, `Last ${x.FL}`, "Change"].map((t2) => el("th", {}, t2)))),
-    el("tbody", {}, cats.map((c0, i) => { const a = x.rb[i], b = x.ra[i]; return el("tr", {}, [el("td", {}, CATN[c0]), el("td", {}, sg2(a)), el("td", {}, sg2(b)), el("td", { class: cls(b - a) }, sg2(b - a))]); }))]); }
+  function formTable(x) { return el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["", `Last ${x.n}`, `${x.n} before`, "Change"].map((t2) => el("th", {}, t2)))), /* (update 780: the last stretch first, always) */
+    el("tbody", {}, cats.map((c0, i) => { const a = x.rb[i], b = x.ra[i]; return el("tr", {}, [el("td", {}, CATN[c0]), el("td", {}, sg2(b)), el("td", {}, sg2(a)), el("td", { class: cls(b - a) }, sg2(b - a))]); }))]); }
   // (update 761) How to find it yourself: every highlight with the page, the filters and where to look, so it can be found
   // again (and others like it). The pop-up shows the steps, and its button opens that page with those filters already set,
   // the steps shown again there. { steps: [text], run?: a run that sets the filters }
@@ -406,7 +420,7 @@ export async function render(main, { previewClient } = {}) {
       if (rs.length) { const R = ranksFor(SY).by, rk = R[cat || "TOTAL"]?.get(h.k), n = R[`${cat || "TOTAL"}#`], le = eventsOf(rs).at(-1), lv = le ? avgOf(le.rs, f) : null, av = avgOf(rs, f);
         const tile = (big, small, c0 = "") => el("div", { class: "td-tile" }, [el("strong", { class: c0 }, big), el("span", {}, small)]);
         // (update 761) the three numbers are the story's own (before, after, the change …); the season's only when the story has none
-        const x = h.x || {}, t0 = h.id.split("-")[0], nmC = cat ? CATN[cat] : "SG: Total", own3 = t0 === "fm" || t0 === "cm" ? [tile(sg2(x.b), `${nmC}, the ${x.FL || "12 rounds"} before`, cls(x.b)), tile(sg2(x.a), `${nmC}, the last ${x.FL || 12}`, cls(x.a)), tile(sg2(x.d), "the change", cls(x.d))]
+        const x = h.x || {}, t0 = h.id.split("-")[0], nmC = cat ? CATN[cat] : "SG: Total", own3 = t0 === "fm" || t0 === "cm" ? [tile(sg2(x.a), `${nmC}, last ${x.n || 12}${/event/.test(x.FL || "") ? " events" : ""}`, cls(x.a)), tile(sg2(x.b), `${nmC}, ${x.n || 12}${/event/.test(x.FL || "") ? " events" : ""} before`, cls(x.b)), tile(sg2(x.d), "the change", cls(x.d))]
           : t0 === "eq" && x.A ? [tile(sg2(x.B.v), `the ${x.old} (${x.B.n} rds)`, cls(x.B.v)), tile(sg2(x.A.v), `the ${x.neu} (${x.A.n} rds)`, cls(x.A.v)), tile(sg2(x.dd), "the difference", cls(x.dd))]
           : t0 === "ev" && x.v != null ? [tile(sg2(x.v), `a round at ${fullEv(x.ev)}`, cls(x.v)), tile(sg2(av), `${SY} average`, cls(av)), tile(sg2(x.d), "against the average", cls(x.d))]
           : t0 === "br" && x.v != null ? [tile(sg2(x.v), `the round, at ${fullEv(x.ev)}`, cls(x.v)), tile(sg2(av), `a round in ${SY}`, cls(av)), rk ? tile(ordN(rk).replace("No. ", "#"), `on tour, of ${n}`) : null]
@@ -437,8 +451,8 @@ export async function render(main, { previewClient } = {}) {
   const catBars = (all, hot) => barSvg(all.map(([c0, v]) => ({ v, label: CATN[c0], short: CSHORT[c0], hot: c0 === hot })), { note: "By part of the game" });
   function chartFor(h) { try {
     const t = h.id.split("-")[0], x = h.x || {};
-    if (t === "fm" && x.ra && x.rb) return el("div", { class: "td-chart" }, [radarSvg(cats.map((c0) => CSHORT[c0]), [{ vals: x.rb, cls: "a", label: `The ${x.n} before` }, { vals: x.ra, cls: "b", label: `The last ${x.FL}` }]), el("div", { class: "td-legend" }, [el("span", { class: "gray" }, `The ${x.n} before`), el("span", { class: "gold" }, `The last ${x.FL}`)])]);
-    if (t === "cm" && x.a != null) return el("div", { class: "td-chart" }, pairBars(x.b, x.a, { la: `The ${x.n} before`, lb: `Last ${x.FL || x.n}` }));
+    if (t === "fm" && x.ra && x.rb) return el("div", { class: "td-chart" }, [radarSvg(cats.map((c0) => CSHORT[c0]), [{ vals: x.rb, cls: "a", label: `The ${x.n} before` }, { vals: x.ra, cls: "b", label: `The last ${x.FL}` }]), el("div", { class: "td-legend" }, [el("span", { class: "gold" }, `Last ${x.FL}`), el("span", { class: "gray" }, `${x.FL} before`)])]);
+    if (t === "cm" && x.a != null) return el("div", { class: "td-chart" }, pairBars(x.a, x.b, { la: `Last ${x.n}`, lb: `${x.n} before`, cls: ["b", "a"] }));
     // (update 758) the best round: every round this season (that one bright); a week or a streak: every tournament
     if (t === "br" && h.k) { const rs = sgRounds(rawOf(playerOf(h.k))).filter((r) => yrOf(r) === seasonYr() && !r.eventLevel), mx = Math.max(...rs.map(tot)); if (rs.length < 4) return null;
       const svg = barSvg(rs.map((r) => ({ v: tot(r), label: `${r.event} R${r.roundNo || ""}`, short: "", hot: tot(r) === mx })), { note: "Every round" });
@@ -482,10 +496,16 @@ export async function render(main, { previewClient } = {}) {
   // (update 771) Around the Tour in three parts: the last event, the last 3 months and the year to date, up to 4 each
   const tourGroups = (list) => el("div", { class: "td-tgroups" }, [["last", "Last Event"], ["3m", "Last 3 Months"], ["ytd", "Year-to-date"]].map(([g, t]) => { const xs = list.filter((h) => (h.grp || "ytd") === g).slice(0, 4);
     return xs.length ? el("div", { class: "td-tgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-wire" }, xs.map(wire))]) : null; }));
+  // (update 780) Course Strategy in three parts: the players' history here, the skills that matter here, and how to play
+  // the holes (up to 3 each)
+  const cgOf = (h) => (/^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(skill|top10|mix)/.test(h.id) ? "skill" : "hole");
+  const courseGroups = (list) => el("div", { class: "td-cgroups" }, [["player", "Player History"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3);
+    return xs.length ? el("div", { class: "td-cgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-cols" }, xs.map(column))]) : null; }));
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
   // (update 740) a different paper every day: each story's place moves a little with the date (the evergreen ones, about a
   // player's strengths, steadiness, gaps and stats, the most), so the front page and the sections change day to day
   const DAY = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 864e5);
+  const nmKey = (n) => String(n || "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" "); // (update 780)
   const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
   const jit = (id, amp) => (hash(`${id}|${DAY}`) - 0.5) * 2 * amp;
   function drawFeed(items) {
@@ -501,25 +521,30 @@ export async function render(main, { previewClient } = {}) {
     for (const id of ORDER) {
       const mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
       const pick = [], byK = new Map(); // up to 6 (2 a player first, when there are several)
-      const cap = id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : 6; /* (update 736: more briefs) */
+      const nIn = (i2) => rest.filter((h) => SEC_OF[h.kind] === i2).length, eqSF = nIn("spot") && nIn("focus") ? Math.min(6, Math.max(2, Math.min(nIn("spot"), nIn("focus")))) : 6; /* (update 780: the pair about the same length) */
+      const cap = id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : PAIR.includes(id) ? eqSF : 6; /* (update 736: more briefs) */
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
-      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine) : el("div", { class: "td-cols" }, pick.map(column));
+      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine) : id === "course" ? courseGroups(mine) : el("div", { class: "td-cols" }, pick.map(column));
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), sub ? el("span", {}, sub) : null]), content]));
     }
-    // (update 735) two half-width sections side by side: left and right worked out in order (a full-width one starts a new
-    // row); a half left alone on its row takes the full width
-    for (let i = 0, col = 0; i < secs.length; i++) { const x = secs[i]; if (x.classList.contains("full")) { col = 0; continue; }
-      if (col === 0) { const nx = secs[i + 1]; if (!nx || nx.classList.contains("full")) { x.classList.add("full"); continue; } x.classList.add("l"); col = 1; } else { x.classList.add("r"); col = 0; } }
-    // (update 757) no gaps: a run of half-width sections goes into two columns, each section to the shorter one (its
-    // height judged by its stories and rows), so a short one doesn't leave a hole beside a long one
+    // (update 780) laid out in order: full-width sections on their own; Player Spotlight and Where to Improve side by side;
+    // Equipment, Rankings and Results & Milestones in a row of three (two side by side, or one full, when some are missing);
+    // any other half-width section in two balanced columns (update 757)
+    const byId = new Map(secs.map((x) => [x.id.slice(3), x])), done = new Set(), laid = []; let run = [];
     const est = (x) => 1.2 + x.querySelectorAll("article").length * 2 + x.querySelectorAll("tr").length * 0.45 + x.querySelectorAll(".td-wire-i, .td-fx").length * 0.9 + x.querySelectorAll("svg.mc, .td-chart, .td-holewrap").length * 1.6;
-    const laid = []; let run = [];
     const flush = () => { if (!run.length) return; if (run.length === 1) { run[0].classList.add("full"); laid.push(run[0]); run = []; return; }
-      const cols = [[], []], h = [0, 0]; for (const x of run) { x.classList.remove("l", "r", "full"); const i = h[0] <= h[1] ? 0 : 1; cols[i].push(x); h[i] += est(x); }
+      const cols = [[], []], h = [0, 0]; for (const x of run) { const i2 = h[0] <= h[1] ? 0 : 1; cols[i2].push(x); h[i2] += est(x); }
       laid.push(el("div", { class: "td-two" }, [el("div", { class: "td-stackc" }, cols[0]), el("div", { class: "td-stackc" }, cols[1])])); run = []; };
-    for (const x of secs) { if (x.classList.contains("full") && !x.classList.contains("l") && !x.classList.contains("r") && FULL.has(x.id.slice(3))) { flush(); laid.push(x); } else run.push(x); }
+    const group = (ids) => { const xs = ids.map((i2) => byId.get(i2)).filter(Boolean); xs.forEach((x) => done.add(x)); if (!xs.length) return;
+      if (xs.length === 1) { xs[0].classList.add("full"); laid.push(xs[0]); return; }
+      laid.push(el("div", { class: xs.length === 3 ? "td-three" : "td-two td-pair" }, xs.map((x) => el("div", { class: "td-stackc" }, [x])))); };
+    for (const id of ORDER) { const x = byId.get(id); if (!x || done.has(x)) continue;
+      if (PAIR.includes(id)) { flush(); group(PAIR); continue; }
+      if (TRIO.includes(id)) { flush(); group(TRIO); continue; }
+      if (FULL.has(id)) { flush(); x.classList.add("full"); laid.push(x); done.add(x); continue; }
+      run.push(x); done.add(x); }
     flush();
     mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief))]), el("div", { class: "td-grid" }, laid)]);
     const go2 = (id) => { const n = document.getElementById(`td-${id}`); if (!n) return; const bar = document.querySelector(".rail")?.getBoundingClientRect().bottom || 0; /* (the top bar stays put over the page) */ window.scrollTo({ top: n.getBoundingClientRect().top + window.scrollY - Math.max(0, bar) - 12, behavior: "smooth" }); }; /* (update 734: to the header, clear of the top bar) */
@@ -854,7 +879,7 @@ export async function render(main, { previewClient } = {}) {
       const pid = String(r[8] ?? "1").trim() || "1", who = r[4] != null && r[4] !== "" ? r[4] : r[3], lie = CH.lieName(r[9]) || "other";
       const q = { h, st, par: num(r[7]), pid, who, yr: String(r[0] ?? ""), rd: String(r[5] ?? ""), lie, x, y, v: num(r[15]), d: num(r[18]) };
       if (lie === "green" && q.v != null) greens.push(q.v);
-      const tk = `${h}|${who}|${q.yr}|${q.rd}`; let T = trails.get(tk); if (!T) { T = { h, pid, who, yr: q.yr, rd: q.rd, par: q.par, qs: [], s: null }; trails.set(tk, T); } T.qs.push(q);
+      const tk = `${h}|${who}|${q.yr}|${q.rd}`; let T = trails.get(tk); if (!T) { T = { h, pid, who, nm: r[3] != null ? String(r[3]) : "", yr: q.yr, rd: q.rd, par: q.par, qs: [], s: null }; trails.set(tk, T); } T.qs.push(q);
       if (num(r[12]) === 1) { const sf = num(r[11]); T.s = sf != null ? Math.round(sf) : q.par ? st - q.par : null; }
       if (st === 1 && x != null) { const a = teeXY.get(h) || teeXY.set(h, [0, 0, 0]).get(h); a[0] += x; a[1] += y; a[2]++; }
       const px = num(r[16]), py = num(r[17]); if (px != null && py != null) { const a = pinXY.get(`${h}|${pid}`) || pinXY.set(`${h}|${pid}`, [0, 0, 0]).get(`${h}|${pid}`); a[0] += px; a[1] += py; a[2]++; } }
@@ -900,7 +925,7 @@ export async function render(main, { previewClient } = {}) {
     const goShare = new Map([...goH.values()].map((o) => [o.h, o.go.length / Math.max(1, o.go.length + o.lay.length)]));
     const fAvg = new Map(); for (const t of T) { const o = fAvg.get(t.h) || fAvg.set(t.h, [0, 0]).get(t.h); o[0] += t.s; o[1]++; }
     const ply = new Map(), keyOf = (w) => clientKey(String(Number(w) || w));
-    for (const t of T) { const pk = keyOf(t.who), P = ply.get(pk) || ply.set(pk, { cat: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, rds: new Set(), holes: new Map(), notes: [] }).get(pk);
+    for (const t of T) { const pk = keyOf(t.who), P = ply.get(pk) || ply.set(pk, { nm: t.nm, cat: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, rds: new Set(), holes: new Map(), notes: [] }).get(pk);
       P.rds.add(`${t.yr}|${t.rd}`); const hh = P.holes.get(t.h) || P.holes.set(t.h, [0, 0, t.par]).get(t.h); hh[0] += t.s; hh[1]++;
       const sg1 = sgOfT(t); for (let i = 0; i < t.qs.length; i++) if (sg1[i] != null) P.cat[catOfQ(t.qs[i])] += sg1[i];
       if ((t.par || 4) >= 5 && t.s <= -1) { const q2 = t.qs.find((q) => q.st === 2), q3 = t.qs.find((q) => q.st === 3), gs = goShare.get(t.h);
@@ -908,7 +933,8 @@ export async function render(main, { previewClient } = {}) {
           if (g && g !== "go" && gs >= 0.6) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "lay", share: gs, d: q2.d });
           else if (g === "go" && gs <= 0.4) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "go", share: gs, d: q2.d }); } } }
     const per = (G) => Object.fromEntries(cats.map((c0) => [c0, G[c0] / Math.max(1, G.rds.size)]));
-    upRaw = { id: c.id, holesR, edges, catEdge, catTop: per(cs.top), catRest: per(cs.rest), ply, fAvg, appD, misses, goLay, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
+    const plyName = new Map(); for (const P0 of ply.values()) if (P0.nm) plyName.set(nmKey(P0.nm), P0); // (update 780: a player found by name when the ids don't match)
+    upRaw = { id: c.id, plyName, holesR, edges, catEdge, catTop: per(cs.top), catRest: per(cs.rest), ply, fAvg, appD, misses, goLay, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
   }
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
@@ -953,10 +979,10 @@ export async function render(main, { previewClient } = {}) {
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, g.h, EX.hole(`Should I go for hole ${g.h} in two?`)) }); }
       // each pin's costliest miss, described in full
       const M = R0.misses.filter((x) => x.spread >= 0.15);
-      if (M.length) { const x = M[0], w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "in the fairway" : `in the ${l}`);
+      if (M.length) { const x = M[0], M2 = M.find((m) => m.worst.h !== x.worst.h) /* (update 780: the "also" from another hole, not the same miss again) */, w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "in the fairway" : `in the ${l}`);
         const shotW = w.k === 1 ? "off the tee" : "on the approach", pinT = pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : "";
         out.push({ id: "up-side", hole: w.h, cid: c.id, k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pinT}: avoid the ${w.sec} miss ${lieW(w.lie)} ${shotW}`,
-          detail: `${pm3(w.avg)} to par from there (${w.n} shots, as if you're there in ${w.k}); ${x.spread.toFixed(2)} worse than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} shots) · every shot played from within 30 yds of the green${M[1] ? ` · also No. ${M[1].worst.h}: avoid ${M[1].worst.sec} ${lieW(M[1].worst.lie)} (${pm3(M[1].worst.avg)})` : ""}`,
+          detail: `${pm3(w.avg)} to par from there (${w.n} shots, as if you're there in ${w.k}); ${x.spread.toFixed(2)} worse than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} shots) · every shot played from within 30 yds of the green${M2 ? ` · also No. ${M2.worst.h}: avoid ${M2.worst.sec} ${lieW(M2.worst.lie)} (${pm3(M2.worst.avg)})` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, w.h, EX.hole(`Where should I miss on hole ${w.h}?`)) }); }
     }
     // course form: the best there over the years (on the tour picked)
@@ -986,14 +1012,15 @@ export async function render(main, { previewClient } = {}) {
         detail: [verdict, nEv > 3 ? `${ordS(evRank)} best of ${nEv} events on ${Pw} schedule` : "", winV != null ? `winning here has taken about ${sg2(winV)} a round, a top 10 ${sg2(t10V)}${x.v >= t10V ? `: ${he} have played at top-10 level here` : `: ${sg2(t10V - x.v).replace("+", "")} a round short of a top 10`}` : "", hereRank ? `${ordS(hereRank[0])} of ${hereRank[1]} players with 4+ rounds here` : "", `${x.rs.length} rounds over ${x.yrs} year${x.yrs === 1 ? "" : "s"}${bestY && byYr.size > 1 ? `, best in ${bestY[0]} (${sg2(bestY[1])})` : ""}`].filter(Boolean).join(" · "),
         to: "Stats · Tournaments", run: () => toStats(k, { view2: "full", year: [], span: 0, event: evNames }, "Tournaments", null) });
       if (!(c && upRaw?.id === c.id)) continue;
-      const R0 = upRaw, P = R0.ply.get(k), cat0 = [...R0.catEdge].sort((a, b) => b[1] - a[1]);
+      const R0 = upRaw, P = R0.ply.get(k) || R0.plyName.get(nmKey(nameOf(k))), cat0 = [...R0.catEdge].sort((a, b) => b[1] - a[1]);
       // the skills that win here: the top 10's edge over the rest, by part of the game, against theirs (here when they have
       // 2+ rounds of shots on record, else their season)
       const mine = P && P.rds.size >= 2 ? Object.fromEntries(cats.map((c0) => [c0, P.cat[c0] / P.rds.size])) : null;
       const seasonRs = (playerOf(k) ? sgRounds(rawOf(playerOf(k))) : []).filter((r) => yrOf(r) === seasonYr()), theirs = mine || (seasonRs.length >= 8 ? Object.fromEntries(cats.map((c0) => [c0, avgOf(seasonRs, (r) => inCat(r, c0))])) : null);
-      if (theirs && cat0.length) { const key = cat0[0][0], gap = R0.catTop[key] - theirs[key], gaps = cats.map((c0) => [c0, R0.catTop[c0] - theirs[c0]]).sort((a, b) => b[1] - a[1]);
-        out.push({ id: `up-skill-${k}`, k, kind: "Course", score: 5.3, title: `What wins at ${U.name}: ${CATN[key].toLowerCase()}. ${me ? "You're" : `${S} is`} ${gap > 0.05 ? `${sg2(gap).replace("+", "")} a round behind the top 10 there` : "at top-10 level there"}`,
-          detail: `The top 10 gain ${sg2(cat0[0][1])} a round over the rest of the field ${CAT_IN[key]}${cat0[1] ? `, then ${sg2(cat0[1][1])} ${CAT_IN[cat0[1][0]]}` : ""} · ${mine ? `${Pw} shots here` : `${Pw} ${seasonYr()} season (no shots of ${Pw} here on record)`}: ${cats.map((c0) => `${CATN[c0]} ${sg2(theirs[c0])} (top 10 ${sg2(R0.catTop[c0])})`).join(", ")} · the biggest gap to close: ${CATN[gaps[0][0]].toLowerCase()} (${sg2(gaps[0][1]).replace("+", "")})`,
+      // (update 780) short: the skill that wins here, the player's number in it against the top 10's, and the biggest gap
+      if (theirs && cat0.length) { const key = cat0[0][0], gap = R0.catTop[key] - theirs[key], gaps = cats.map((c0) => [c0, R0.catTop[c0] - theirs[c0]]).sort((a, b) => b[1] - a[1]), src = mine ? "here" : `in ${seasonYr()} (no shots of ${Pw} here on record)`;
+        out.push({ id: `up-skill-${k}`, k, kind: "Course", score: 5.3, title: `What wins at ${U.name}: ${CATN[key].toLowerCase()}`,
+          detail: `The top 10 gain ${sg2(cat0[0][1])} a round ${CAT_IN[key]} over the rest. ${me ? "You" : S}: ${sg2(theirs[key])} ${src}, against the top 10's ${sg2(R0.catTop[key])}${gap > 0.05 ? ` (${gap.toFixed(2)} short)` : ""}.${gaps[0][0] !== key && gaps[0][1] > 0.2 ? ` Biggest gap: ${CATN[gaps[0][0]].toLowerCase()} (${gaps[0][1].toFixed(2)}).` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) }); }
       // their own holes: best and worst against the field, and a par 5 played against the grain
       if (P) { const hs = [...P.holes].filter(([, o]) => o[1] >= 2).map(([h, o]) => { const f = R0.fAvg.get(h); return f && f[1] >= 20 ? { h, par: o[2], n: o[1], d: o[0] / o[1] - f[0] / f[1] } : null; }).filter(Boolean).sort((a, b) => a.d - b.d);
@@ -1107,7 +1134,7 @@ export async function render(main, { previewClient } = {}) {
   const shownKeys = () => (picked.size ? [...picked] : keys.filter(playsTour));
   const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); loadDetail().catch(() => {}); }; // (tbMemo is keyed by tour)
   // (update 740) a tap picks a player, or unpicks one already picked; All: none picked (everyone)
-  const setWho = (k) => { if (k == null) picked.clear(); else if (picked.has(k)) picked.delete(k); else { picked.add(k); if (!keys.includes(k)) keys = [...keys, k]; focus = k; drawTabs(); } refresh(); };
+  const setWho = (k) => { if (k == null) picked.clear(); else if (picked.has(k)) picked.delete(k); else { picked.add(k); if (!keys.includes(k)) keys = [...keys, k]; focus = k; } drawTabs(); refresh(); }; // (update 780: the questions follow every change of who's picked)
   async function removeFav(k) {
     try { const wl = await import("../watchlist.js"); await wl.saveWatch({ players: (wl.watchPrefs().players || []).filter((x) => x !== k) }); } catch (e) { console.error(e); alert("Couldn’t update your favorites just now."); return; }
     favs = favs.filter((x) => x !== k); if (admin) keys = keys.filter((x) => x !== k); picked.delete(k); refresh();

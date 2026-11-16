@@ -317,3 +317,12 @@ html[data-theme="light"] .td-legend .m-a::before { background: #0b5fc4; } html[d
 main:has(.ah.td) { padding-top: 0 !important; }
 .ah.td { margin-top: 0 !important; padding-top: 16px !important; }
 .td-mast { padding: 0 0 12px !important; } .td-mast h1 { margin: 0 0 4px !important; }
+/* (update 780) Equipment, Rankings and Results & Milestones: a row of three (stacked on a phone); Course Strategy's parts */
+.td-three { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 16px; align-items: stretch; }
+.td-three > .td-stackc, .td-pair > .td-stackc { padding: 0 !important; border-left: 0 !important; display: flex; flex-direction: column; }
+.td-three > .td-stackc > .td-sec, .td-pair > .td-stackc > .td-sec { flex: 1; }
+.td-pair { column-gap: 16px; align-items: stretch; }
+.td-three .td-cols { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1000px) { .td-three { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) { .td-pair { grid-template-columns: minmax(0, 1fr); } }
+.td-cgroup + .td-cgroup { margin-top: 6px; }
