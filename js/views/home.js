@@ -488,7 +488,8 @@ export async function render(main, { previewClient } = {}) {
   function chartFor(h) { try {
     const t = h.id.split("-")[0], x = h.x || {};
     // (update 797) a skill at the course: the player against the top 10 in each part of the game (strokes gained a round)
-    if (x.skill) { const g = groupBars(cats.map((c0) => ({ label: CSHORT[c0], a: x.skill.theirs[c0], b: x.skill.top[c0] })), { la: x.skill.who, lb: "Top 10" }); return g ? el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, "Strokes gained a round, by part of the game"), g, el("div", { class: "td-legend" }, [el("span", { class: "gray" }, x.skill.who), el("span", { class: "gold" }, "Top 10")])]) : null; }
+    if (x.skill?.bands?.length) { const sk = x.skill, g = groupBars(sk.bands.map((b0) => ({ label: b0.split("|")[1].replace(/ tee shots$/, ""), a: sk.a[b0] ?? 0, b: sk.top[b0] ?? 0 })), { la: sk.who, lb: "Top 10" }); /* (update 799: that part of the game by distance) */
+      return g ? el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `${CATN[sk.cat]} by distance · strokes gained a round ${sk.where}`), g, el("div", { class: "td-legend" }, [el("span", { class: "gray" }, sk.who), el("span", { class: "gold" }, "Top 10")])]) : null; }
     if (t === "fm" && x.ra && x.rb) return el("div", { class: "td-chart" }, [radarSvg(cats.map((c0) => CSHORT[c0]), [{ vals: x.rb, cls: "a", label: `The ${x.n} before` }, { vals: x.ra, cls: "b", label: `The last ${x.FL}` }]), el("div", { class: "td-legend" }, [el("span", { class: "gold" }, `Last ${x.FL}`), el("span", { class: "gray" }, `${x.FL} before`)])]);
     if (t === "cm" && x.a != null) return el("div", { class: "td-chart" }, pairBars(x.b, x.a, { la: `${x.n} before`, lb: `Last ${x.n}` }) /* (update 793: a chart runs in time order, before then now) */);
     // (update 758) the best round: every round this season (that one bright); a week or a streak: every tournament
@@ -995,9 +996,13 @@ export async function render(main, { previewClient } = {}) {
     const edges = [...hEdge].filter(([, o]) => o[1] >= 10 && o[3] >= 30).map(([h, o]) => ({ h, d: o[0] / o[1] - o[2] / o[3] })).sort((a, b) => a.d - b.d);
     const E = expectModel(T), sgMemo = new Map(), sgOfT = (t) => sgMemo.get(t) || sgMemo.set(t, shotSG(t, E)).get(t); void toGo; // (update 761: not the file's scoring_avg, which can be the player's own strokes left)
     const catOfQ = (q) => (q.lie === "green" ? "PUTT" : q.st === 1 && (q.par || 4) >= 4 ? "OTT" : q.d != null && q.d <= 30 ? "ARG" : "APP");
-    const cs = { top: { OTT: 0, APP: 0, ARG: 0, PUTT: 0, rds: new Set() }, rest: { OTT: 0, APP: 0, ARG: 0, PUTT: 0, rds: new Set() } };
+    // (update 799) a shot's distance range in its part of the game (the course's yards; feet on the green)
+    const bandOf = (q, par) => { const c0 = catOfQ(q), d = q.d; if (c0 === "OTT") return `OTT|Par ${par || 4} tee shots`; if (d == null) return null;
+      if (c0 === "APP") return `APP|${d < 75 ? "30-75" : d < 125 ? "75-125" : d < 175 ? "125-175" : d < 225 ? "175-225" : "225+"} yds`;
+      if (c0 === "ARG") return `ARG|${d < 10 ? "0-10" : d < 20 ? "10-20" : "20-30"} yds`; return `PUTT|${d < 5 ? "0-5" : d < 10 ? "5-10" : d < 20 ? "10-20" : d < 40 ? "20-40" : "40+"} ft`; };
+    const cs = { top: { OTT: 0, APP: 0, ARG: 0, PUTT: 0, band: {}, rds: new Set() }, rest: { OTT: 0, APP: 0, ARG: 0, PUTT: 0, band: {}, rds: new Set() } };
     for (const t of T) { const G = isTop(t) ? cs.top : cs.rest; G.rds.add(`${t.who}|${t.yr}|${t.rd}`);
-      const sg0 = sgOfT(t); for (let i = 0; i < t.qs.length; i++) if (sg0[i] != null) G[catOfQ(t.qs[i])] += sg0[i]; }
+      const sg0 = sgOfT(t); for (let i = 0; i < t.qs.length; i++) if (sg0[i] != null) { G[catOfQ(t.qs[i])] += sg0[i]; const bk = bandOf(t.qs[i], t.par); if (bk) G.band[bk] = (G.band[bk] || 0) + sg0[i]; } }
     const catEdge = cats.map((c0) => [c0, cs.top[c0] / Math.max(1, cs.top.rds.size) - cs.rest[c0] / Math.max(1, cs.rest.rds.size)]).sort((a, b) => b[1] - a[1]);
     // approach distances here (25-yd bands, 50-250 yds)
     const appD = []; for (const t of T) for (const q of t.qs) if (catOfQ(q) === "APP" && q.d != null && q.d > 30) appD.push(q.d); // (update 745: every approach's distance, put in the players' own ranges below)
@@ -1025,14 +1030,15 @@ export async function render(main, { previewClient } = {}) {
     const ply = new Map(), keyOf = (w) => clientKey(String(Number(w) || w));
     for (const t of T) { const pk = keyOf(t.who), P = ply.get(pk) || ply.set(pk, { nm: t.nm, cat: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, rds: new Set(), holes: new Map(), notes: [] }).get(pk);
       P.rds.add(`${t.yr}|${t.rd}`); const hh = P.holes.get(t.h) || P.holes.set(t.h, [0, 0, t.par]).get(t.h); hh[0] += t.s; hh[1]++;
-      const sg1 = sgOfT(t); for (let i = 0; i < t.qs.length; i++) if (sg1[i] != null) P.cat[catOfQ(t.qs[i])] += sg1[i];
+      const sg1 = sgOfT(t); for (let i = 0; i < t.qs.length; i++) if (sg1[i] != null) { P.cat[catOfQ(t.qs[i])] += sg1[i]; const bk = bandOf(t.qs[i], t.par); if (bk) (P.band ||= {})[bk] = (P.band[bk] || 0) + sg1[i]; }
       if ((t.par || 4) >= 5 && t.s <= -1) { const q2 = t.qs.find((q) => q.st === 2), q3 = t.qs.find((q) => q.st === 3), gs = goShare.get(t.h);
         if (q2 && q3 && q2.d != null && q2.d <= 300 && gs != null) { const g = goOf(arr7(q2), arr7(q3), t.par, null);
           if (g && g !== "go" && gs >= 0.6) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "lay", share: gs, d: q2.d });
           else if (g === "go" && gs <= 0.4) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "go", share: gs, d: q2.d }); } } }
     const per = (G) => Object.fromEntries(cats.map((c0) => [c0, G[c0] / Math.max(1, G.rds.size)]));
+    const perB = (G) => Object.fromEntries(Object.entries(G.band).map(([kk, v]) => [kk, v / Math.max(1, G.rds.size)]));
     const plyName = new Map(); for (const P0 of ply.values()) if (P0.nm) plyName.set(nmKey(P0.nm), P0); // (update 780: a player found by name when the ids don't match)
-    upRaw = { id: c.id, plyName, holesR, edges, catEdge, catTop: per(cs.top), catRest: per(cs.rest), ply, fAvg, appD, misses, goLay, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
+    upRaw = { id: c.id, plyName, holesR, edges, catEdge, catTop: per(cs.top), catRest: per(cs.rest), bandTop: perB(cs.top), bandRest: perB(cs.rest), yrs: [...new Set(T.map((t) => t.yr))].sort(), ply, fAvg, appD, misses, goLay, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
   }
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
@@ -1117,8 +1123,11 @@ export async function render(main, { previewClient } = {}) {
       const seasonRs = (playerOf(k) ? sgRounds(rawOf(playerOf(k))) : []).filter((r) => yrOf(r) === seasonYr()), theirs = mine || (seasonRs.length >= 8 ? Object.fromEntries(cats.map((c0) => [c0, avgOf(seasonRs, (r) => inCat(r, c0))])) : null);
       // (update 780) short: the skill that wins here, the player's number in it against the top 10's, and the biggest gap
       if (theirs && cat0.length) { const key = cat0[0][0], gap = R0.catTop[key] - theirs[key], gaps = cats.map((c0) => [c0, R0.catTop[c0] - theirs[c0]]).sort((a, b) => b[1] - a[1]), src = mine ? "here" : `in ${seasonYr()} (no shots of ${Pw} here on record)`;
-        out.push({ id: `up-skill-${k}`, k, kind: "Course", x: { skill: { theirs, top: R0.catTop, who: me ? "You" : S } }, /* (update 797: drawn as bars) */ score: 5.3, title: `What wins at ${U.name}: ${CATN[key].toLowerCase()}`,
-          detail: `Strokes gained a round (higher is better): the top 10 gain ${sg2(cat0[0][1])} ${CAT_IN[key]} over the rest. ${me ? "You" : S}: ${sg2(theirs[key])} ${src}, against the top 10's ${sg2(R0.catTop[key])}${gap > 0.05 ? ` (${gap.toFixed(2)} short)` : ""}.${gaps[0][0] !== key && gaps[0][1] > 0.2 ? ` Biggest gap: ${CATN[gaps[0][0]].toLowerCase()} (${gaps[0][1].toFixed(2)}).` : ""}`,
+        // (update 799) that part of the game by distance: the player's shots here (else the rest of the field) against the top 10's
+        const yrsT = R0.yrs.length ? (R0.yrs.length === 1 ? R0.yrs[0] : `${R0.yrs[0]}-${R0.yrs.at(-1).slice(2)}`) : "", bKeys = Object.keys(R0.bandTop).filter((b0) => b0.startsWith(`${key}|`)).sort((a, b) => (parseFloat(a.split("|")[1]) || 0) - (parseFloat(b.split("|")[1]) || 0));
+        const mineB = mine && P?.band ? Object.fromEntries(bKeys.map((b0) => [b0, (P.band[b0] || 0) / P.rds.size])) : null;
+        out.push({ id: `up-skill-${k}`, k, kind: "Course", x: { skill: { cat: key, bands: bKeys, a: mineB || R0.bandRest, top: R0.bandTop, who: mineB ? (me ? "You" : S) : "Rest of the field", where: `at ${U.name}, ${yrsT}` } }, score: 5.3, title: `What wins at ${U.name}: ${CATN[key]}`,
+          detail: `The top 10 gain ${sg2(cat0[0][1])} strokes a round ${CAT_IN[key]} over the rest of the field (every round at ${U.name} on record, ${yrsT}) · ${me ? "You" : S}: ${sg2(theirs[key])} a round ${mine ? `here (${P.rds.size} rounds)` : `on the ${seasonYr()} season (no shots of ${Pw} at ${U.name} on record)`}, against the top 10's ${sg2(R0.catTop[key])}${gap > 0.05 ? `: ${gap.toFixed(2)} short` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) }); }
       // their own holes: best and worst against the field, and a par 5 played against the grain
       if (P) { const hs = [...P.holes].filter(([, o]) => o[1] >= 8).map( /* (update 781: 8+ plays of a hole, not 2) */([h, o]) => { const f = R0.fAvg.get(h); return f && f[1] >= 20 ? { h, par: o[2], n: o[1], d: o[0] / o[1] - f[0] / f[1] } : null; }).filter(Boolean).sort((a, b) => a.d - b.d);
