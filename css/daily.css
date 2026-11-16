@@ -313,3 +313,7 @@ html[data-theme="light"] .td-legend .m-a::before { background: #0b5fc4; } html[d
 .td-lead .td-fig:not(:has(> :nth-child(2))) .td-tile { padding: 8px 14px; gap: 12px; }
 .td-lead .td-fig:not(:has(> :nth-child(2))) .td-tile strong { font-size: 1.85rem; }
 .td-lead .td-fig:not(:has(> :nth-child(2))) .td-tile span { font-size: 0.76rem; }
+/* (update 779) the masthead: the same space above it as below it (16px), whatever the screen */
+main:has(.ah.td) { padding-top: 0 !important; }
+.ah.td { margin-top: 0 !important; padding-top: 16px !important; }
+.td-mast { padding: 0 0 12px !important; } .td-mast h1 { margin: 0 0 4px !important; }

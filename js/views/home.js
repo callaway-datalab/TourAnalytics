@@ -492,7 +492,9 @@ export async function render(main, { previewClient } = {}) {
     const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.score + jit(x.id, x.ever ? 1.6 : 0.6) })).sort((a, b) => b.score - a.score);
     if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (+ above) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
-    const news = sorted.filter((h) => h.kind !== "Fact"), lead = news[0] || sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
+    // (update 779) the lead changes every 12 hours (local time): one of the top 6 stories, a different one each half day
+    const HALF = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 432e5), news0 = sorted.filter((h) => h.kind !== "Fact"), cands = news0.slice(0, 6), pickI = cands.length ? Math.floor(hash(`lead|${HALF}|${tourPick}`) * cands.length) : 0;
+    const news = cands.length ? [cands[pickI], ...news0.filter((h) => h !== cands[pickI])] : news0, lead = news[0] || sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
     const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [];
