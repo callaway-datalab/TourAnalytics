@@ -435,13 +435,13 @@ export function sgDashboard(container, opts) {
         // (update 470) a player's strokes gained: Focus (the short story) or Full stats (everything), switched at the top
         // (update 756) Tournament Results: every tournament on this tour (any year), each against that week's field
         if (resultsOn) return sgResults.resultsView(S, nz(applyFilters(me.rounds, { tour: f.tour })), field.map((p) => ({ key: p.key, rounds: applyFilters(p.rounds, { tour: f.tour }) })));
-        if (focusOn) return sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour }))); // (update 611: every year, for the radar)
+        if (focusOn) return [...[].concat(sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour })))), sgSummary.steadyBox(S, slicedField)]; // (update 760: Ability vs Consistency, the player picked) // (update 611: every year, for the radar)
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         // (update 205) "Getting better or worse?" right under the hero card
         // (update 370) the stats table right under the hero card, above "Getting better or worse?"
         // (update 379) the Summary right under the hero card, above the stats table
-        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, blocks[0] || null, careerBox("trajectory", f), ...blocks.slice(1), ...(!me ? tourBlocks(slicedField) : [])];
+        return [heroBox(mine, slicedField, f), me ? summaryBox(mine, slicedField) : null, blocks[0] || null, careerBox("trajectory", f), ...blocks.slice(1), me ? sgSummary.steadyBox(S, slicedField) : null, ...(!me ? tourBlocks(slicedField) : [])]; // (update 760: Ability vs Consistency for the player too)
       })()),
       // (update 219) "Where they play their best" is on the Compare page now
     ]);

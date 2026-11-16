@@ -32,7 +32,7 @@ export function el(tag, attrs = {}, children = []) {
     else if (k in node && k !== "list") node[k] = v; // property assignment (value, checked, htmlFor, ...) — never innerHTML
     else node.setAttribute(k, v);
   }
-  for (const child of [].concat(children)) {
+  for (const child of [].concat(children).flat(Infinity)) { // (update 760: nested lists flattened)
     if (child == null || child === false) continue;
     node.appendChild(typeof child === "string" || typeof child === "number" ? document.createTextNode(child) : child);
   }
@@ -42,7 +42,7 @@ export const text = (s) => document.createTextNode(s ?? "");
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 export function mount(node, children) {
   clear(node);
-  for (const c of [].concat(children)) {
+  for (const c of [].concat(children).flat(Infinity)) {
     if (c == null || c === false) continue;
     node.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(c) : c);
   }

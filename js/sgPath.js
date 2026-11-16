@@ -235,60 +235,44 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
     };
     // (update 455) What-if: a change a round at any distance (typed, or Reach target: the difference to the other column),
     // all of them added up into the last N rounds' total, and where that total would rank on the season
-    const WI = S.st.pathWI && S.st.pathWI.cat === (cat || "") ? S.st.pathWI.d : {};
-    const setWI = (k, v) => { const d = { ...WI }; if (v == null || Math.abs(v) < 0.0005) delete d[k]; else d[k] = Math.round(v * 1000) / 1000; S.st.pathWI = { cat: cat || "", d }; S.draw(); };
+    // (update 760) no typed what-if any more: each distance in the practice plan counts as reaching its target (the gap
+    // closed), all of them added up at the top, each with an × to take it out of the plan
+    const gOf = (k) => { const [c, d] = k.split("|"); return { k, c, d, ...rowOf((x) => x.startsWith(`${k}|`)) }; };
+    const drillsOf = (g) => { try { return itemOf(g).drills || []; } catch { return []; } };
+    const WI = {}, WI_DR = {};
+    if (canAdd) for (const k of keys) { const g = gOf(k); if (!(g.g > 0.005) || g.sp.ab < 0.5) continue; const dr = drillsOf(g).filter((x) => PLAN_ADDED.has(sig(x))); if (dr.length) { WI[k] = Math.round(g.g * 1000) / 1000; WI_DR[k] = dr; } }
+    const unplan = async (ks, btn) => { if (btn) btn.disabled = true;
+      try { const { removeFromPlan } = await import("./practice/plan.js"); for (const k of ks) for (const x of WI_DR[k] || []) { await removeFromPlan(getState(), { drill: x.drill, playerKey: S.me?.key }); PLAN_ADDED.delete(sig(x)); }
+        PLAN_SEEN.at = 0; S.draw(); } catch (err) { console.error(err); if (btn) btn.disabled = false; mount(status, "Couldn\u2019t take that out just now. Try again."); } };
     const fmtCh = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
-    const wiChip = (k) => (WI[k] ? el("span", { class: `bs-wi-chip ${WI[k] > 0 ? "pos" : "neg"}`, title: "What-if change" }, fmtCh(WI[k])) : null);
-    const whatIfBox = (g) => {
-      const cur = WI[g.k] || 0;
-      const inp = el("input", { type: "text", inputmode: "decimal", class: "hy-in bs-wi-in", value: cur ? fmtCh(cur).replace("\u2212", "-") : "", placeholder: "+0.25", "aria-label": `What-if change a round for ${catName(g.c)} ${g.d || ""}` });
-      const parse = () => { const t = String(inp.value).trim().replace(/[\u2212\u2013]/g, "-").replace(/^\+/, ""); if (t === "") return 0; const v = Number(t.startsWith(".") || t.startsWith("-.") ? t.replace(".", "0.") : t); return Number.isFinite(v) ? v : null; };
-      let done = false; // (once: Enter redraws the page, and the box going away fires change again)
-      const commit = () => { if (done) return; const v = parse(); if (v == null) { inp.value = cur ? fmtCh(cur) : ""; return; } if (Math.abs(v - cur) > 1e-9) { done = true; setTimeout(() => setWI(g.k, v), 0); } };
-      for (const ev of ["click", "pointerdown"]) inp.addEventListener(ev, (e) => e.stopPropagation());
-      inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); commit(); } });
-      inp.addEventListener("change", commit);
-      const gap = Math.round(g.g * 100) / 100;
-      const reachB = gap > 0 ? (() => { const b = el("button", { type: "button", class: "bs-wi-btn" }, `Reach target (${fmtCh(gap)})`); b.addEventListener("click", (e) => { e.stopPropagation(); setWI(g.k, gap); }); return b; })() : null;
-      const clr = cur ? (() => { const b = el("button", { type: "button", class: "link small" }, "Clear"); b.addEventListener("click", (e) => { e.stopPropagation(); setWI(g.k, null); }); return b; })() : null;
-      return kv("What-if", el("div", { class: "bs-wi" }, [
-        el("label", { class: "bs-wi-row" }, [el("span", {}, "Change a round"), inp]), reachB, clr]), "bs-whatif"); // (update 467: no explanation line)
-    };
+    const wiChip = (k) => (WI[k] ? el("span", { class: `bs-wi-chip ${WI[k] > 0 ? "pos" : "neg"}`, title: "In the practice plan: the gap closed" }, fmtCh(WI[k])) : null);
     const hypoLine = () => {
       const ks = Object.keys(WI); if (!ks.length) return null;
       const sum = ks.reduce((t, k) => t + WI[k], 0), base = rAvg ?? 0, tot = base + sum;
       const list = S.st.pathWIOpen !== false; // (update 467: open to start)
-      const head = rk ? ["Hypothetical season rank: ", el("strong", {}, `${S.ordinal(rk.rankOf(tot))} of ${rk.of}`)]
+      const head = rk ? ["With the practice plan, season rank: ", el("strong", {}, `${S.ordinal(rk.rankOf(tot))} of ${rk.of}`)]
         : ["Hypothetical: ", el("strong", {}, fmtCh(tot))];
       const b = el("button", { type: "button", class: "bs-wi-rank", "aria-expanded": String(!!list), title: "Show every change" }, [el("span", { class: "cmp-caret" }, list ? "\u25BE " : "\u25B8 "), ...head]);
       b.addEventListener("click", () => { S.st.pathWIOpen = !list; S.draw(); });
-      // (update 467) every distance made better: its drill and goal, all at once (the same as each one's own button)
-      const allPlan = canAdd ? (() => {
-        const items = ks.filter((k) => WI[k] > 0).flatMap((k) => { const [c, d] = k.split("|"); const g = { k, c, d, ...rowOf((x) => x.startsWith(`${k}|`)) }; try { return itemOf(g).drills; } catch { return []; } });
-        const left = items.filter((x) => !PLAN_ADDED.has(sig(x)));
-        if (!items.length) return null;
-        const btn = el("button", { type: "button", class: "bs-wi-btn bs-wi-all", disabled: !left.length }, left.length ? `\uFF0B Add all to practice (${left.length})` : "\u2713 All in the practice plan");
-        btn.addEventListener("click", () => { if (left.length) add(left, [btn]); });
-        return btn;
-      })() : null;
-      const reset = el("button", { type: "button", class: "link small" }, "Reset"); reset.addEventListener("click", () => { S.st.pathWI = null; S.draw(); });
+      const reset = el("button", { type: "button", class: "link small" }, "Remove all from practice plan"); reset.addEventListener("click", () => unplan(ks, reset));
       const nm = (k) => { const [c, d] = k.split("|"); return `${catName(c)} \u00b7 ${d || "Other shots"}`; };
       return el("div", { class: "bs-wi-head" }, [
         el("div", { class: "bs-wi-top" }, [b, reset]),
         rk ? el("p", { class: "bs-wi-now muted" }, `The last ${N} rounds now: ${S.ordinal(rk.rankOf(base))}`) : null,
         list ? el("ul", { class: "bs-wi-list" }, [
-          ...ks.sort((a, b2) => WI[b2] - WI[a]).map((k) => el("li", {}, [nm(k), ": ", el("strong", { class: WI[k] >= 0 ? "pos" : "neg" }, `${fmtCh(WI[k])} a round`)])),
+          ...ks.sort((a, b2) => WI[b2] - WI[a]).map((k) => { const x = el("button", { type: "button", class: "bs-wi-x", title: "Remove from practice plan", "aria-label": `Remove ${nm(k)} from the practice plan` }, "\u00d7"); x.addEventListener("click", () => unplan([k], x));
+            return el("li", {}, [x, nm(k), ": ", el("strong", { class: WI[k] >= 0 ? "pos" : "neg" }, `${fmtCh(WI[k])} a round`)]); }),
           el("li", { class: "bs-wi-tot" }, [`${cat ? catName(cat) : "SG: Total"}: ${fmtCh(base)} \u2192 `, el("strong", { class: tot >= 0 ? "pos" : "neg" }, fmtCh(tot)), ` (${fmtCh(sum)} in all)`])]) : null,
-        allPlan ? el("div", { class: "bs-wi-foot" }, allPlan) : null]);
+      ]);
     };
     const badge = (k) => (topIdx.has(k) ? el("span", { class: "bs-top-b", title: `Number ${topIdx.get(k)} of the biggest gaps` }, `#${topIdx.get(k)}`) : null);
     const detail = (g) => {
       const sp = g.sp;
-      if (g.g <= 0.005) return [el("p", { class: "muted small" }, `Their last ${N} rounds are as good as their ${NN.kept} here, or better.`), whatIfBox(g)];
-      if (sp.ab < 0.5) return [whatIfBox(g), el("p", { class: "muted small" }, `They\u2019ve faced this less than once every two rounds over the last ${N} (${sp.ab.toFixed(1)} a round), so it isn\u2019t worth practicing for now.`)];
+      if (g.g <= 0.005) return [el("p", { class: "muted small" }, `Their last ${N} rounds are as good as their ${NN.kept} here, or better.`)];
+      if (sp.ab < 0.5) return [el("p", { class: "muted small" }, `They\u2019ve faced this less than once every two rounds over the last ${N} (${sp.ab.toFixed(1)} a round), so it isn\u2019t worth practicing for now.`)];
       const p = itemOf(g);
       // (update 455) the takeaway gives way to the what-if: a change typed in, or Reach target (the difference)
-      return [whatIfBox(g), ...(p.targetLines ? [kv("Target", p.targetLines.map((x, k) => el("div", { class: k ? "bs-tl" : "bs-th" }, x)), "bs-target")] : []), ...p.drills.map(drillRow)];
+      return [...(p.targetLines ? [kv("Target", p.targetLines.map((x, k) => el("div", { class: k ? "bs-tl" : "bs-th" }, x)), "bs-target")] : []), ...p.drills.map(drillRow)];
     };
     const wiSum = (pre = "") => Object.entries(WI).reduce((t, [k, v]) => t + (!pre || k.startsWith(pre) ? v : 0), 0);
     const body = [el("tr", { class: "bs-path-total" }, [el("td", {}, cat ? `${catName(cat)}` : "SG: Total"), ...cells({ r: rAvg ?? 0, e: eAvg ?? 0, g: (eAvg ?? 0) - (rAvg ?? 0) }, Math.max(0.5, Math.abs((eAvg ?? 0) - (rAvg ?? 0))), true, wiSum())])];

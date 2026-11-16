@@ -8,6 +8,7 @@
 import { el } from "./ui.js";
 import { fmtSG } from "./sg.js";
 import { ordinal } from "./watchlistData.js";
+import { bar0 } from "./miniCharts.js"; // (update 760: bars square at zero)
 
 const NS = "http://www.w3.org/2000/svg";
 const mk = (t, a = {}, text = null) => { const n = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) n.setAttribute(k, String(v)); if (text != null) n.textContent = text; return n; };
@@ -117,7 +118,7 @@ function chart(b) {
     const bw = Math.max(2, Math.min(26, slot * 0.7));
     items.forEach((x, i) => {
       const y0 = Y(baseV), y1 = Y(x.v);
-      const r = mk("rect", { x: X(i) - bw / 2, y: Math.min(y0, y1), width: bw, height: Math.max(1, Math.abs(y1 - y0)), rx: Math.min(3, bw / 3), fill: x.on ? (x.color || (x.tone ? C[x.tone] || C.gold : x.v >= 0 ? C.pos : C.neg)) : C.off }); // (update 215: or its own colour)
+      const r = bar0(mk, { x: X(i) - bw / 2, y: Math.min(y0, y1), width: bw, height: Math.max(1, Math.abs(y1 - y0)), rx: Math.min(3, bw / 3), fill: x.on ? (x.color || (x.tone ? C[x.tone] || C.gold : x.v >= 0 ? C.pos : C.neg)) : C.off }, y1 <= y0); // (update 215: or its own colour)
       r.append(mk("title", {}, `${x.label}${x.sub ? ` · ${x.sub}` : ""}: ${fmt(x.v)}`));
       svg.append(r);
     });

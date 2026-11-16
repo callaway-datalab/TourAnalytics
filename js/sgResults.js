@@ -20,7 +20,9 @@ const cls = (v) => (v == null ? "" : v > 0.005 ? "pos" : v < -0.005 ? "neg" : ""
 const ord = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
 const LIES = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
 const cap = (t) => String(t || "").replace(/^./, (c) => c.toUpperCase());
-const LINK = "ta.trCourse";
+// (update 760) a tournament's name as two files may spell it ("TOUR Championship" / "The Tour Championship presented by …")
+const evMatch = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || (Math.min(x.length, y.length) >= 6 && (x.includes(y) || y.includes(x)))); };
+const nameKey = (s) => String(s || "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" ");
 
 // ---- the week from the course's shots: every player, every shot ----
 const weekMemo = new Map();
@@ -31,13 +33,13 @@ async function courseWeek(meta, ev) {
     const rows = await CR.loadRaw(meta); if (!rows?.length) return null;
     const evN = norm(ev.event), num = (v) => (v == null || v === "" ? null : Number(v));
     const hasEv = rows.some((r) => String(r[0]) === ev.year && r[19]);
-    const mine = rows.filter((r) => String(r[0]) === ev.year && (!hasEv || norm(r[19]) === evN)); if (!mine.length) return null;
+    const mine = rows.filter((r) => String(r[0]) === ev.year && (!hasEv || evMatch(r[19], ev.event))); void evN; if (!mine.length) return null;
     const trails = new Map(), greens = [];
     for (const r of mine) { const h = num(r[6]), st = num(r[10]); if (!h || st == null) continue;
       const idv = r[4] != null && r[4] !== "" ? String(num(r[4]) ?? r[4]) : r[3] != null ? String(r[3]) : null; if (!idv) continue;
       const pk = D.clientKey(idv), lie = CH.lieName(r[9]) || "other", q = { st, lie, d: num(r[21]) ?? num(r[18]), v: num(r[15]), x: num(r[13]), y: num(r[14]) };
       if (lie === "green" && q.v != null) greens.push(q.v);
-      const tk = `${pk}|${r[5]}|${h}`; let T = trails.get(tk); if (!T) { T = { pk, name: r[3] != null ? String(r[3]) : idv, rd: String(num(r[5]) ?? r[5] ?? ""), h, par: num(r[7]), pid: String(r[8] ?? "1"), px: num(r[16]), py: num(r[17]), qs: [], s: null }; trails.set(tk, T); }
+      const tk = `${pk}|${r[5]}|${h}`; let T = trails.get(tk); if (!T) { T = { meta, pk, name: r[3] != null ? String(r[3]) : idv, rd: String(num(r[5]) ?? r[5] ?? ""), h, par: num(r[7]), pid: String(r[8] ?? "1"), px: num(r[16]), py: num(r[17]), qs: [], s: null }; trails.set(tk, T); }
       T.qs.push(q); if (num(r[12]) === 1) { const sf = num(r[11]); T.s = sf != null ? Math.round(sf) : T.par ? st - T.par : null; }
       if (T.px == null && num(r[16]) != null) { T.px = num(r[16]); T.py = num(r[17]); } }
     greens.sort((a, b) => a - b); const toGo = greens.length ? greens[Math.floor(greens.length / 2)] < 2.6 : true;
@@ -55,6 +57,17 @@ async function courseWeek(meta, ev) {
     return { trails, players, shots, nShots: shots.length };
   })();
   weekMemo.set(mk, p); p.catch(() => weekMemo.delete(mk)); return p;
+}
+// (update 760) the week over every course it was played on (a rota like The American Express): merged, every shot ranked again
+async function weekOf(metas, ev) {
+  const ws = (await Promise.all(metas.map((m) => courseWeek(m, ev).catch((e) => { console.warn(e); return null; })))).filter(Boolean); if (!ws.length) return null;
+  if (ws.length === 1) return ws[0];
+  const trails = new Map(), players = new Map(), shots = [];
+  ws.forEach((w, i) => { for (const [k, t] of w.trails) trails.set(`${i}|${k}`, t); shots.push(...w.shots);
+    for (const p of w.players.values()) { const o = players.get(p.pk); if (!o) { players.set(p.pk, { ...p, rds: new Set(p.rds), cat: { ...p.cat }, band: new Map([...p.band].map(([k, v]) => [k, [...v]])) }); continue; }
+      p.rds.forEach((r) => o.rds.add(r)); o.tot += p.tot; for (const c in p.cat) o.cat[c] += p.cat[c]; for (const [k, v] of p.band) { const b = o.band.get(k) || o.band.set(k, [0, 0]).get(k); b[0] += v[0]; b[1] += v[1]; } } });
+  shots.sort((a, b) => b.sg - a.sg); shots.forEach((x, i) => { x.q.rank = i + 1; });
+  return { trails, players, shots, nShots: shots.length };
 }
 const rankIn = (vals, key, higher = true) => { const s = [...vals].sort((a, b) => (higher ? b[1] - a[1] : a[1] - b[1])); const i = s.findIndex((x) => x[0] === key); return i < 0 ? null : { r: i + 1, n: s.length, lead: s[0] }; };
 
@@ -81,24 +94,25 @@ export function resultsView(S, rounds, field) {
   const scBox = el("section", { class: "panel tr-sc" }, el("p", { class: "muted small" }, "Loading the scorecard…"));
 
   (async () => {
-    // the course: linked by hand, else by the tournament, else by the course's name
-    const links = (() => { try { return JSON.parse(localStorage.getItem(LINK) || "{}"); } catch { return {}; } })(), evKey = norm(ev.event);
-    let list = [], meta = null, W = null;
+    // (update 760) the course(s) from the tournament itself: those whose shots carry its name that year (no picking by hand)
+    let list = [], metas = [], W = null;
     try { const CH = await import("./courseHeat.js"); list = (await CH.listHeatCourses().catch(() => [])) || [];
-      const course = evRs.find((r) => r.course)?.course;
-      meta = (links[evKey] && list.find((c) => c.id === links[evKey])) || list.find((c) => (c.events || []).some((e) => norm(e.name) === evKey && (!e.years?.length || e.years.map(String).includes(ev.year))))
-        || list.find((c) => (c.events || []).some((e) => norm(e.name) === evKey)) || (course ? list.find((c) => norm(c.name) === norm(course) || norm(c.name).includes(norm(course)) || norm(course).includes(norm(c.name))) : null) || null;
-      if (meta?.rawChunks) W = await courseWeek(meta, ev).catch((e) => { console.warn(e); return null; });
+      const hasYr = (e) => !e.years?.length || e.years.map(String).includes(ev.year), withRaw = list.filter((c) => c.rawChunks);
+      metas = withRaw.filter((c) => (c.events || []).some((e) => evMatch(e.name, ev.event) && hasYr(e)));
+      if (!metas.length) metas = withRaw.filter((c) => (c.events || []).some((e) => evMatch(e.name, ev.event)));
+      if (!metas.length) { const course = evRs.find((r) => r.course)?.course; if (course) metas = withRaw.filter((c) => !(c.events || []).length && (norm(c.name) === norm(course) || norm(c.name).includes(norm(course)) || norm(course).includes(norm(c.name)))); }
+      if (metas.length) W = await weekOf(metas, ev);
     } catch (e) { console.warn("results", e); }
-    const linkSel = () => { const sel = el("select", { class: "tr-sel tr-link" }, [el("option", { value: "" }, "Link a Strategy Maps course…"), ...[...list].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((c) => el("option", { value: c.id }, c.name))]);
-      if (meta) sel.value = meta.id; sel.addEventListener("change", () => { const l2 = { ...links }; if (sel.value) l2[evKey] = sel.value; else delete l2[evKey]; try { localStorage.setItem(LINK, JSON.stringify(l2)); } catch { /* */ } S.draw(); }); return sel; };
-    const P = W && me ? W.players.get(me.key) : null;
+    const cName = metas.map((m) => m.name).join(" & ");
+    // the player: by their key, else by their name
+    const pk = !W || !me ? null : W.players.has(me.key) ? me.key : [...W.players.values()].find((p) => nameKey(p.name) === nameKey(me.label))?.pk || null;
+    const P = pk ? W.players.get(pk) : null;
 
     // ---- the hero cards: against the week's field ----
     const field0 = W ? [...W.players.values()] : [];
     const perRd = (p, f) => f(p) / Math.max(1, p.rds.size);
-    const rk = (f) => (P ? rankIn(field0.map((p) => [p.pk, perRd(p, f)]), me.key) : null);
-    const best = P ? W.shots.find((s) => s.pk === me.key) : null;
+    const rk = (f) => (P ? rankIn(field0.map((p) => [p.pk, perRd(p, f)]), pk) : null);
+    const best = P ? W.shots.find((s) => s.pk === pk) : null;
     const card = (label, v, r, big, c) => { const n = el("div", { class: `tr-hero${big ? " big" : ""}`, role: "button", tabindex: "0", title: "Tap for each distance" }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, ["a round", r ? [" · ", el("b", { class: r.r <= 10 ? "pos" : "" }, `${ord(r.r)} of ${r.n}`), " in the field"] : ""])]);
       const go = () => openDist(c); n.addEventListener("click", go); n.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return n; };
     const nR = P ? P.rds.size : evRs.length;
@@ -106,14 +120,14 @@ export function resultsView(S, rounds, field) {
     const cards = [card("Total", vTot, rk((p) => p.tot), true, null), ...CATS.map(([c, l]) => card(l, P ? perRd(P, (p) => p.cat[c]) : avg(evRs, (r) => inCat(r, c)), rk((p) => p.cat[c]), false, c))];
     const bestLine = best ? el("p", { class: "tr-best" }, [el("strong", {}, best.q.rank === 1 ? "The best shot of the tournament: " : `Best shot: ${ord(best.q.rank)} of ${W.nShots.toLocaleString()} shots this week · `), `${fmtSG(best.sg)} on hole ${best.T.h}, round ${best.T.rd}, ${best.q.d != null ? `${Math.round(best.q.d)} ${best.q.lie === "green" ? "ft" : "yds"} ` : ""}from the ${best.q.lie}`]) : null;
     mount(heroBox, [el("div", { class: "tr-head" }, [el("h2", {}, ev.event), el("span", { class: "muted" }, `${ev.year} · ${nR} round${nR === 1 ? "" : "s"}${W ? ` · ${field0.length} players on record` : ""}`)]), el("div", { class: "tr-hero-row" }, cards), bestLine,
-      W ? null : el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, meta ? `${meta.name} has no shots for ${ev.year} in Strategy Maps: the numbers above are from the stats file. ` : "Not linked to a Strategy Maps course: the numbers above are from the stats file. Course: "), list.length ? linkSel() : null])].filter(Boolean));
+      P ? null : el("p", { class: "muted small" }, "These numbers are from the stats file: the ranks, the scorecard and the shots need the tournament's shots in Strategy Maps.")].filter(Boolean));
 
     // a card: each distance range, a shot, with the rank in the field
     function openDist(c) {
       document.querySelector(".tr-popwrap")?.remove();
       let rows = [];
       if (P) { const keys = [...P.band.keys()].filter((k) => !c || k.startsWith(`${c}|`));
-        rows = keys.map((k) => { const [cat, bd] = k.split("|"), [sg, n] = P.band.get(k), r = rankIn(field0.filter((p) => (p.band.get(k)?.[1] || 0) >= 2).map((p) => [p.pk, p.band.get(k)[0] / p.band.get(k)[1]]), me.key); return { cat, bd, per: sg / n, n, rd: sg / Math.max(1, P.rds.size), r }; })
+        rows = keys.map((k) => { const [cat, bd] = k.split("|"), [sg, n] = P.band.get(k), r = rankIn(field0.filter((p) => (p.band.get(k)?.[1] || 0) >= 2).map((p) => [p.pk, p.band.get(k)[0] / p.band.get(k)[1]]), pk); return { cat, bd, per: sg / n, n, rd: sg / Math.max(1, P.rds.size), r }; })
           .sort((a, b) => CATS.findIndex(([x]) => x === a.cat) - CATS.findIndex(([x]) => x === b.cat) || (parseFloat(a.bd) || 0) - (parseFloat(b.bd) || 0)); }
       const close = () => wrap.remove(), xb = el("button", { type: "button", class: "tr-pop-x", "aria-label": "Close" }, "×"); xb.addEventListener("click", close);
       const back = el("div", { class: "tr-pop-back" }); back.addEventListener("click", close);
@@ -127,11 +141,11 @@ export function resultsView(S, rounds, field) {
     }
 
     // ---- the scorecard: a round at a time ----
-    if (!W || !P) { mount(scBox, [el("p", { class: "fx-eyebrow" }, "Scorecard"), el("p", { class: "muted small" }, !meta ? `The scorecard, the shots and the hole pictures come from Strategy Maps: link ${ev.event}'s course.` : !W ? `${meta.name} has no shots for ${ev.year} in Strategy Maps (it may need its data uploaded with the tournament column, then Rebuild maps).` : `${meta.name} has no shots of ${me?.label || "this player"}'s for ${ev.year}.`), list.length ? el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, "Course: "), linkSel()]) : null]); return; }
-    const myT = [...W.trails.values()].filter((t) => t.pk === me.key), rIds = [...new Set(myT.map((t) => t.rd))].sort((a, b) => Number(a) - Number(b));
+    if (!W || !P) { mount(scBox, [el("p", { class: "fx-eyebrow" }, "Scorecard"), el("p", { class: "muted small" }, !metas.length ? `No course in Strategy Maps has ${ev.event} ${ev.year} in its tournament column yet. Upload that course's shot file (with the tournament column) in Strategy Maps and it will show here.` : !W ? `${cName} has no shots for ${ev.event} ${ev.year} in Strategy Maps.` : `${cName} has ${ev.event} ${ev.year}, but no shots of ${me?.label || "this player"}'s in it.`)]); return; }
+    const myT = [...W.trails.values()].filter((t) => t.pk === pk), rIds = [...new Set(myT.map((t) => t.rd))].sort((a, b) => Number(a) - Number(b));
     if (!rIds.includes(st.resRound)) st.resRound = rIds[0];
     const tOf = (h) => myT.find((t) => t.rd === st.resRound && t.h === h), holes = [...new Set(myT.filter((t) => t.rd === st.resRound).map((t) => t.h))].sort((a, b) => a - b);
-    const parOf = (h) => tOf(h)?.par ?? meta.par?.[h - 1] ?? null, scoreOf = (h) => { const t = tOf(h); return t?.s != null && parOf(h) != null ? parOf(h) + t.s : null; }, sgOf = (h) => { const t = tOf(h); return t ? t.qs.reduce((a, q) => a + (q.sg || 0), 0) : null; };
+    const parOf = (h) => tOf(h)?.par ?? tOf(h)?.meta?.par?.[h - 1] ?? null, scoreOf = (h) => { const t = tOf(h); return t?.s != null && parOf(h) != null ? parOf(h) + t.s : null; }, sgOf = (h) => { const t = tOf(h); return t ? t.qs.reduce((a, q) => a + (q.sg || 0), 0) : null; };
     if (!holes.includes(st.resHole)) st.resHole = holes[0] ?? null;
     const tabs = el("div", { class: "tr-rounds", role: "group", "aria-label": "Round" }, rIds.map((id) => { const on = id === st.resRound, b = el("button", { type: "button", class: `tr-rd${on ? " on" : ""}`, "aria-pressed": String(on) }, `R${id}`); b.addEventListener("click", () => { if (!on) { st.resRound = id; st.resHole = null; S.draw(); } }); return b; }));
     const cardBox = el("div", { class: "tr-card" }), holeBox = el("div", { class: "tr-hole" });
@@ -142,7 +156,7 @@ export function resultsView(S, rounds, field) {
         el("tr", {}, [el("th", {}, "Par"), ...hs.map((h) => el("td", { class: "muted" }, parOf(h) ?? "")), el("td", { class: "muted" }, sum(parOf) ?? "")]),
         el("tr", {}, [el("th", {}, "Score"), ...hs.map(cell), el("td", { class: "tr-tot" }, sum(scoreOf) ?? "")]),
         el("tr", {}, [el("th", {}, "SG"), ...hs.map((h) => { const v = sgOf(h); return el("td", { class: `tr-sg ${cls(v)}` }, v == null ? "" : fmtSG(v)); }), el("td", { class: `tr-sg ${cls(sum(sgOf))}` }, sum(sgOf) == null ? "" : fmtSG(sum(sgOf)))])]; };
-    const drawCard = () => mount(cardBox, [el("div", { class: "tr-sc-scroll" }, el("table", { class: "tr-sc-t" }, el("tbody", {}, [...half(holes.filter((h) => h <= 9), "Out"), ...half(holes.filter((h) => h > 9), "In")]))), el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, "Tap a hole for its shots and the hole. Course: "), linkSel()])]);
+    const drawCard = () => mount(cardBox, [el("div", { class: "tr-sc-scroll" }, el("table", { class: "tr-sc-t" }, el("tbody", {}, [...half(holes.filter((h) => h <= 9), "Out"), ...half(holes.filter((h) => h > 9), "In")]))), el("p", { class: "muted small" }, `Tap a hole for its shots and the hole · ${[...new Set(myT.filter((t) => t.rd === st.resRound).map((t) => t.meta.name))].join(" & ")}`)]);
     // a hole: its shots (each ranked among every shot that week) beside the hole itself with the trail, into the cup
     const drawHole = () => {
       const h = st.resHole, t = h ? tOf(h) : null; if (!t) { mount(holeBox, null); return; }
@@ -150,7 +164,7 @@ export function resultsView(S, rounds, field) {
       const pic = el("div", { class: "tr-pic" }, el("p", { class: "muted small" }, "Loading the hole…"));
       mount(holeBox, [el("h3", {}, [`Hole ${h}`, parOf(h) ? ` · par ${parOf(h)}` : "", scoreOf(h) != null ? ` · ${scoreOf(h)}` : "", sgOf(h) != null ? el("span", { class: `tr-hsg ${cls(sgOf(h))}` }, ` · SG ${fmtSG(sgOf(h))}`) : null]),
         el("div", { class: "tr-hole-grid" }, [pic, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["#", "Lie", "Distance", "SG", "Rank that week"].map((x, i) => el("th", { class: i >= 3 ? "num" : null }, x)))), el("tbody", {}, rows)])])]);
-      (async () => { try { const CH = await import("./courseHeat.js"), url = await CH.heatImage(meta, h); if (!url) throw new Error("no picture");
+      (async () => { try { const CH = await import("./courseHeat.js"), url = await CH.heatImage(t.meta, h); if (!url) throw new Error("no picture");
         const img = new Image(); img.src = url; await img.decode();
         const Wd = img.naturalWidth, Hd = img.naturalHeight, NS = "http://www.w3.org/2000/svg", sv = (tag, a = {}) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) n.setAttribute(k, v); return n; };
         const svg = sv("svg", { viewBox: `0 0 ${Wd} ${Hd}`, class: "tr-trail" }), pts = t.qs.filter((q) => q.x != null && q.y != null).map((q) => [q.x, q.y]), r0 = Math.max(Wd, Hd) / 110;
@@ -163,6 +177,6 @@ export function resultsView(S, rounds, field) {
     };
     mount(scBox, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, "Scorecard"), tabs]), cardBox, holeBox]);
     drawCard(); drawHole();
-  })();
+  })().catch((e) => { console.warn("results", e); mount(scBox, el("p", { class: "muted small" }, `This tournament couldn’t be drawn (${e?.message || e}).`)); }); // (update 760: never a blank page)
   return [picker, heroBox, scBox];
 }

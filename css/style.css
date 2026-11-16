@@ -6914,3 +6914,15 @@ html, body { overflow-x: clip; max-width: 100%; }
 .tr-best { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(48, 209, 88, 0.1); border: 1px solid rgba(48, 209, 88, 0.3); font-size: 0.92rem; }
 .tr-best strong { color: #30d158; }
 .tr-hero-s b.pos, .tr-shots td.pos { color: #30d158; }
+/* (update 760) every bar square on its zero end, rounded only at its value's end */
+.hb-bar, .hb-bar span, .gx-pop-bar, .gx-pop-bar span, .ci-bar-track i, .ci2-fr-bar i, .ci2-vr-bar i, .pr-sgbar-track i, .ps-bar, .ps-bar i { border-radius: 0 999px 999px 0; }
+.ci-bar-track i { border-radius: 0 3px 3px 0; } .pr-sgbar-track i { border-radius: 0 6px 6px 0; }
+/* (update 760) Focus by distance: a size that suits a desktop; the year bars in the key's colors (blue the year before, gold this year) */
+.fx-dist .mc-wrap { max-width: 440px; }
+.fx-dist .mc-radar { max-width: 400px; margin: 0 auto; }
+.mc.mc-group .mc-bar.a { fill: #4da3ff; opacity: 0.85; } .mc.mc-group .mc-bar.b, .mc.mc-group .mc-bar.b.up, .mc.mc-group .mc-bar.b.down { fill: #f0b440; opacity: 1; }
+.mc .mc-ax-v { font-weight: 700; fill: #f5f5f7; }
+/* (update 760) the practice plan's total: an × by each distance to take it out */
+.bs-wi-list li { list-style: none; margin-left: -18px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bs-wi-x { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: #a1a1a6; font-size: 15px; line-height: 1; cursor: pointer; }
+.bs-wi-x:hover { color: #ff453a; border-color: #ff453a; }

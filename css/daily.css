@@ -281,3 +281,8 @@ html[data-theme="light"] .td-sec { background: #ffffff; box-shadow: 0 1px 2px rg
 .td-secs a[data-sec] { color: var(--sec); display: inline-flex; align-items: center; gap: 7px; }
 .td-secs a[data-sec]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--sec); }
 .td-secs a[data-sec]:hover { color: var(--sec); text-decoration: underline; text-underline-offset: 4px; }
+/* (update 760) a club change's bars: each model its own clear color (the new one blue, the old one orange, any other grey) */
+.td-bars .td-bar.m-a { fill: #0a84ff; opacity: 1; } .td-bars .td-bar.m-b { fill: #ff9f0a; opacity: 0.9; } .td-bars .td-bar.m-o { fill: var(--td-mute); opacity: 0.5; }
+.td-legend .m-a::before { background: #0a84ff; } .td-legend .m-b::before { background: #ff9f0a; }
+html[data-theme="light"] .td-bars .td-bar.m-a { fill: #0b5fc4; } html[data-theme="light"] .td-bars .td-bar.m-b { fill: #c46a00; }
+html[data-theme="light"] .td-legend .m-a::before { background: #0b5fc4; } html[data-theme="light"] .td-legend .m-b::before { background: #c46a00; }

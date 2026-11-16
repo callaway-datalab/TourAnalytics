@@ -1,6 +1,7 @@
 // (sgDashboard split) Best stretches and Elite Round Share: the ladder, the stretch popup and the profile line.
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { CATEGORIES, LEVELS, MIX_CAUSE, bucketsOf, distLead, el, gearInfo, gearList, groupSplit, kv, mixLead, mixWords, sgn2, splitOf } from "./sgShared.js";
+import { bar0 } from "./miniCharts.js"; // (update 760: bars square at zero)
 
 // (update 308) who the gold dots on the charts are, matching the comparison picked above the stats table:
 //   Personal Peak: the player's own best run of rounds (the same rounds as the table's "Vs best N rds");
@@ -531,8 +532,8 @@ export function stretchPopup(S, row, cat, when, place, withN) {
   const table = el("div", { class: "bs-st-tw" }, el("table", { class: "bs-st-table" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Event"), el("th", { class: "num" }, "SG")])), el("tbody", {}, bodyRows)])); // (update 377: just the stretch's rounds; 380: each opens)
   const bars = seq.map((x, i) => {
     const h = Math.max(1, Math.abs(x.t) * sc), on = inSt(i);
-    const r = mk("rect", { x: i * bw + bw * 0.12, width: Math.max(0.8, bw * 0.76), y: x.t >= 0 ? y0 - h : y0, height: h, rx: Math.min(2, bw * 0.2),
-      fill: x.t >= 0 ? (on ? "#30d158" : "rgba(48,209,88,0.28)") : (on ? "#ff453a" : "rgba(255,69,58,0.28)"), class: `bs-st-bar${on ? " in" : ""}` });
+    const r = bar0(mk, { x: i * bw + bw * 0.12, width: Math.max(0.8, bw * 0.76), y: x.t >= 0 ? y0 - h : y0, height: h, rx: Math.min(2, bw * 0.2),
+      fill: x.t >= 0 ? (on ? "#30d158" : "rgba(48,209,88,0.28)") : (on ? "#ff453a" : "rgba(255,69,58,0.28)"), class: `bs-st-bar${on ? " in" : ""}` }, x.t >= 0);
     // a wider invisible target so thin bars are easy to tap
     const hit = mk("rect", { x: i * bw, width: bw, y: 0, height: H, fill: "transparent", style: "cursor:pointer" });
     hit.addEventListener("click", () => {

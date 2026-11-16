@@ -10,6 +10,7 @@
  * Hover a selection (its card or its key) to pick it out in every chart.
  */
 import { el, mount, icon, infoTip } from "../ui.js";
+import { bar0 } from "../miniCharts.js"; // (update 760: bars square at zero)
 import { getState } from "../auth.js";
 // (update 522) Future Outlook: only for the admin, analysts and employees (Callaway Access)
 const canOutlook = () => { const st = getState(); return !!st?.isAdmin || ["analyst", "employee"].includes(st?.profile?.kind); };
@@ -2710,7 +2711,7 @@ export async function render(main) {
       g.values.forEach((v, j) => {
         if (v == null) return;
         const it = items[j], y0 = Y(0), y1 = Y(v);
-        const r = mk("rect", { x: x0 + j * bw + 1, y: Math.min(y0, y1), width: Math.max(2, bw - 2), height: Math.max(1, Math.abs(y1 - y0)), rx: 3, fill: it.color, "data-s": it.i });
+        const r = bar0(mk, { x: x0 + j * bw + 1, y: Math.min(y0, y1), width: Math.max(2, bw - 2), height: Math.max(1, Math.abs(y1 - y0)), rx: 3, fill: it.color, "data-s": it.i }, y1 <= y0);
         r.append(mk("title", {}, `${it.name} \u00b7 ${g.label}: ${fmtSG(v)}`));
         svg.append(r);
       });

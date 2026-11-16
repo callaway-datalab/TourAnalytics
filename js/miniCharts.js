@@ -10,9 +10,9 @@ const svgOf = (w, h, cls, label) => mk("svg", { viewBox: `0 0 ${w} ${h}`, width:
 /** pts: [{ x, y, label, hot }]; higher x better; lower y steadier. Quadrant words, the median lines, the hot ones named. */
 export function scatterSvg(pts, { xLab = "Average", yLab = "Round-to-round swing", fmtX = (v) => v.toFixed(2), fmtY = (v) => `±${v.toFixed(2)}`, higherBetter = true } = {}) {
   const P = pts.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)); if (P.length < 5) return null;
-  const W = 340, H = 240, L = 40, R = 10, T = 12, B = 34;
+  const W = 340, H = 240, L = 52, R = 10, T = 12, B = 34;
   const xs = P.map((p) => p.x), ys = P.map((p) => p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const px = (v) => L + ((v - x0) / (x1 - x0 || 1)) * (W - L - R), py = (v) => T + ((v - y0) / (y1 - y0 || 1)) * (H - T - B); // (steadier lower on the page)
+  const px = (v) => L + ((v - x0) / (x1 - x0 || 1)) * (W - L - R), py = (v) => H - B - ((v - y0) / (y1 - y0 || 1)) * (H - T - B); // (update 760: steadier truly lower on the page; it was upside down)
   const med = (a) => { const s = [...a].sort((p, q) => p - q); return s[Math.floor(s.length / 2)]; }, mx = med(xs), my = med(ys);
   const svg = svgOf(W, H, "mc-scatter", `${xLab} against ${yLab}`);
   svg.append(mk("rect", { x: L, y: T, width: W - L - R, height: H - T - B, class: "mc-frame" }));
@@ -24,7 +24,8 @@ export function scatterSvg(pts, { xLab = "Average", yLab = "Round-to-round swing
     const c = mk("circle", { cx: px(p.x).toFixed(1), cy: py(p.y).toFixed(1), r: p.hot ? 5 : 2.6, class: p.hot ? "mc-dot hot" : "mc-dot" }); c.append(mk("title", {}, `${p.label}: ${fmtX(p.x)}, ${fmtY(p.y)}`)); svg.append(c);
     if (p.hot) svg.append(mk("text", { x: (px(p.x) + (px(p.x) > W - 90 ? -8 : 8)).toFixed(1), y: (py(p.y) + 4).toFixed(1), "text-anchor": px(p.x) > W - 90 ? "end" : "start", class: "mc-name" }, p.label));
   }
-  svg.append(mk("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", class: "mc-ax" }, `${xLab} →`), mk("text", { x: 11, y: (T + H - B) / 2, transform: `rotate(-90 11 ${(T + H - B) / 2})`, "text-anchor": "middle", class: "mc-ax" }, `${yLab} (lower: steadier)`));
+  svg.append(mk("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", class: "mc-ax" }, `${xLab} →`), mk("text", { x: 10, y: (T + H - B) / 2, transform: `rotate(-90 10 ${(T + H - B) / 2})`, "text-anchor": "middle", class: "mc-ax" }, `${yLab} (lower: steadier)`));
+  svg.append(mk("text", { x: L - 4, y: T + 8, "text-anchor": "end", class: "mc-tick" }, fmtY(y1)), mk("text", { x: L - 4, y: H - B, "text-anchor": "end", class: "mc-tick" }, fmtY(y0))); // (update 760: the y axis's top and bottom)
   svg.append(mk("text", { x: L, y: H - B + 12, class: "mc-tick" }, fmtX(x0)), mk("text", { x: W - R, y: H - B + 12, "text-anchor": "end", class: "mc-tick" }, fmtX(x1)));
   return svg;
 }
@@ -36,7 +37,8 @@ export function radarSvg(axes, series, { lo = -1, hi = 1 } = {}) {
   const svg = svgOf(W, H, "mc-radar", "Before against after, by part of the game");
   for (const f of [0.25, 0.5, 0.75, 1]) svg.append(mk("polygon", { points: axes.map((_, i) => `${(cx + R * f * Math.cos(ang(i))).toFixed(1)},${(cy + R * f * Math.sin(ang(i))).toFixed(1)}`).join(" "), class: f === 0.5 ? "mc-ring mc-zero" : "mc-ring" }));
   axes.forEach((a, i) => { svg.append(mk("line", { x1: cx, y1: cy, x2: (cx + R * Math.cos(ang(i))).toFixed(1), y2: (cy + R * Math.sin(ang(i))).toFixed(1), class: "mc-ring" }));
-    const tx = cx + (R + 12) * Math.cos(ang(i)), ty = cy + (R + 12) * Math.sin(ang(i)) + 3; svg.append(mk("text", { x: tx.toFixed(1), y: ty.toFixed(1), "text-anchor": Math.abs(Math.cos(ang(i))) < 0.3 ? "middle" : Math.cos(ang(i)) > 0 ? "start" : "end", class: "mc-ax" }, a)); });
+    const tx = cx + (R + 12) * Math.cos(ang(i)), ty = cy + (R + 12) * Math.sin(ang(i)) + 3; svg.append(mk("text", { x: tx.toFixed(1), y: ty.toFixed(1), "text-anchor": Math.abs(Math.cos(ang(i))) < 0.3 ? "middle" : Math.cos(ang(i)) > 0 ? "start" : "end", class: "mc-ax" }, String(a).split("\n")[0]));
+    const l2 = String(a).split("\n")[1]; if (l2) svg.append(mk("text", { x: tx.toFixed(1), y: (ty + 10).toFixed(1), "text-anchor": Math.abs(Math.cos(ang(i))) < 0.3 ? "middle" : Math.cos(ang(i)) > 0 ? "start" : "end", class: "mc-ax mc-ax-v" }, l2)); }); // (update 760: the value on a line of its own)
   for (const s of series) { const p = mk("polygon", { points: s.vals.map((v, i) => `${(cx + rad(v) * Math.cos(ang(i))).toFixed(1)},${(cy + rad(v) * Math.sin(ang(i))).toFixed(1)}`).join(" "), class: `mc-area ${s.cls}` }); p.append(mk("title", {}, s.label || "")); svg.append(p); }
   return svg;
 }
@@ -46,7 +48,7 @@ export function pairBars(a, b, { la = "Before", lb = "Now", fmt = (v) => (v >= 0
   const W = 220, H = 128, top = 16, bot = 36, vs = [a, b], lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc;
   const svg = svgOf(W, H, "mc-pair", `${la} ${fmt(a)}, ${lb} ${fmt(b)}`);
   [[a, la, "a"], [b, lb, "b"]].forEach(([v, l, c], i) => { const x = 40 + i * 90, h = Math.max(1.5, Math.abs(v) * sc), y = v >= 0 ? y0 - h : y0;
-    svg.append(mk("rect", { x, y: y.toFixed(1), width: 50, height: h.toFixed(1), rx: 3, class: `mc-bar ${c} ${v >= 0 ? "up" : "down"}` }), mk("text", { x: x + 25, y: (v >= 0 ? y - 4 : y + h + 11).toFixed(1), "text-anchor": "middle", class: "mc-val" }, fmt(v)), mk("text", { x: x + 25, y: H - 5, "text-anchor": "middle", class: "mc-ax" }, l)); });
+    svg.append(bar0(mk, { x, y: y.toFixed(1), width: 50, height: h.toFixed(1), rx: 3, class: `mc-bar ${c} ${v >= 0 ? "up" : "down"}` }, v >= 0), mk("text", { x: x + 25, y: (v >= 0 ? y - 4 : y + h + 11).toFixed(1), "text-anchor": "middle", class: "mc-val" }, fmt(v)), mk("text", { x: x + 25, y: H - 5, "text-anchor": "middle", class: "mc-ax" }, l)); });
   svg.append(mk("line", { x1: 20, x2: W - 20, y1: y0.toFixed(1), y2: y0.toFixed(1), class: "mc-mid" }));
   return svg;
 }
@@ -67,15 +69,28 @@ export function proxScatter(tourFt, mineFt, { seed = 1, who = "This player", aLa
 /** (update 751) Pairs of bars, one pair a group (e.g. a distance range): a (before) and b (now), signed values. */
 export function groupBars(groups, { la = "Before", lb = "Now", fmt = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) } = {}) {
   const G = groups.filter((g) => g.a != null || g.b != null); if (!G.length) return null;
-  const W = Math.max(260, G.length * 62 + 30), H = 200, top = 18, bot = 46, L = 14;
+  const W = Math.max(300, G.length * 70 + 30), H = 196, top = 18, bot = 38, L = 14;
   const vs = G.flatMap((g) => [g.a ?? 0, g.b ?? 0]), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, gw = (W - L * 2) / G.length, bw = Math.min(22, gw * 0.34);
   const svg = svgOf(W, H, "mc-group", `${la} against ${lb}`);
   G.forEach((g, i) => { const gx = L + i * gw + gw / 2;
     [[g.a, "a", -1], [g.b, "b", 1]].forEach(([v, c, side]) => { if (v == null) return; const h = Math.max(1.5, Math.abs(v) * sc), x = gx + (side < 0 ? -bw - 1 : 1), y = v >= 0 ? y0 - h : y0;
-      const r = mk("rect", { x: x.toFixed(1), y: y.toFixed(1), width: bw.toFixed(1), height: h.toFixed(1), rx: 2, class: `mc-bar ${c} ${v >= 0 ? "up" : "down"}` }); r.append(mk("title", {}, `${g.label} · ${c === "a" ? la : lb}: ${fmt(v)}`)); svg.append(r);
-      if (c === "b") svg.append(mk("text", { x: (x + bw / 2).toFixed(1), y: (v >= 0 ? y - 3 : y + h + 10).toFixed(1), "text-anchor": "middle", class: "mc-val mc-val-s" }, fmt(v))); });
-    svg.append(mk("text", { x: gx.toFixed(1), y: H - bot + 16, "text-anchor": "middle", class: "mc-ax" }, g.label)); });
+      const r = bar0(mk, { x: x.toFixed(1), y: y.toFixed(1), width: bw.toFixed(1), height: h.toFixed(1), rx: 2, class: `mc-bar ${c} ${v >= 0 ? "up" : "down"}` }, v >= 0); r.append(mk("title", {}, `${g.label} · ${c === "a" ? la : lb}: ${fmt(v)}`)); svg.append(r);
+      svg.append(mk("text", { x: (x + bw / 2).toFixed(1), y: (v >= 0 ? y - 3 : y + h + 10).toFixed(1), "text-anchor": "middle", class: "mc-val mc-val-s" }, fmt(v))); });
+    svg.append(mk("text", { x: gx.toFixed(1), y: H - 6, "text-anchor": "middle", class: "mc-ax" }, g.label)); }); // (update 760: under the values, never over them)
   svg.append(mk("line", { x1: L, x2: W - L, y1: y0.toFixed(1), y2: y0.toFixed(1), class: "mc-mid" }));
-  svg.append(mk("rect", { x: L, y: H - 18, width: 9, height: 9, class: "mc-bar a up" }), mk("text", { x: L + 13, y: H - 10, class: "mc-ax" }, la), mk("rect", { x: L + 90, y: H - 18, width: 9, height: 9, class: "mc-bar b up" }), mk("text", { x: L + 103, y: H - 10, class: "mc-ax" }, lb));
   return svg;
+}
+
+/** (update 760) a bar square on the zero line, rounded only at its far end: a <path> in place of a <rect> (the same other
+ * attributes). up: the bar rises from zero (else it hangs below it); side: true for a bar going right from zero. */
+export function bar0(mkFn, attrs, up = true, side = false) {
+  const { x, y, width, height, rx = 0, ry, ...rest } = attrs; void ry;
+  const X = +x, Y = +y, w = +width, h = +height, r = Math.max(0, Math.min(+rx || 0, w / 2, h / 2)), f = (n) => +n.toFixed(2);
+  let d;
+  if (!r) d = `M${f(X)},${f(Y)}h${f(w)}v${f(h)}h${f(-w)}Z`;
+  else if (side) d = up ? `M${f(X)},${f(Y)}H${f(X + w - r)}Q${f(X + w)},${f(Y)} ${f(X + w)},${f(Y + r)}V${f(Y + h - r)}Q${f(X + w)},${f(Y + h)} ${f(X + w - r)},${f(Y + h)}H${f(X)}Z`
+    : `M${f(X + w)},${f(Y)}H${f(X + r)}Q${f(X)},${f(Y)} ${f(X)},${f(Y + r)}V${f(Y + h - r)}Q${f(X)},${f(Y + h)} ${f(X + r)},${f(Y + h)}H${f(X + w)}Z`;
+  else d = up ? `M${f(X)},${f(Y + h)}V${f(Y + r)}Q${f(X)},${f(Y)} ${f(X + r)},${f(Y)}H${f(X + w - r)}Q${f(X + w)},${f(Y)} ${f(X + w)},${f(Y + r)}V${f(Y + h)}Z`
+    : `M${f(X)},${f(Y)}H${f(X + w)}V${f(Y + h - r)}Q${f(X + w)},${f(Y + h)} ${f(X + w - r)},${f(Y + h)}H${f(X + r)}Q${f(X)},${f(Y + h)} ${f(X)},${f(Y + h - r)}Z`;
+  return mkFn("path", { d, ...rest });
 }

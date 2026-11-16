@@ -336,13 +336,13 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     const nm = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" }[c0] || c0;
     let chart;
     if ((c0 === "APP" || c0 === "PUTT") && ds.length >= 3) { const mx = Math.max(0.05, ...ds.map((d) => Math.max(Math.abs(A.get(d) ?? 0), Math.abs(B.get(d) ?? 0)))) * 1.15;
-      chart = radarSvg(ds.map((d) => `${short(d)} ${f2(B.get(d) ?? 0)}`), [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
+      chart = radarSvg(ds.map((d) => `${short(d)}\n${f2(B.get(d) ?? 0)}`), [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
     else chart = groupBars(ds.map((d) => ({ label: short(d), a: sp.before.length ? A.get(d) ?? null : null, b: B.get(d) ?? null })), { la: sp.beforeLabel || "Before", lb: sp.nowLabel });
     if (!chart) return null;
     return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round`)),
       el("div", { class: "mc-wrap" }, chart),
-      el("div", { class: "hm-key" }, [sp.before.length ? el("span", {}, [el("i", { class: "k-a" }), sp.beforeLabel]) : null, el("span", {}, [el("i", { class: "k-b" }), sp.nowLabel])]),
-      el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}Every round on this tour, whatever the time frame above.`)]);
+      el("div", { class: "hm-key" }, [sp.before.length && A.size ? el("span", {}, [el("i", { class: "k-a" }), sp.beforeLabel]) : null, /* (update 760: only when it has bars) */ el("span", {}, [el("i", { class: "k-b" }), sp.nowLabel])]),
+      el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}${sp.before.length && !A.size ? `${sp.beforeLabel}'s rounds have no ${nm.toLowerCase()} distances in the data, so only ${sp.nowLabel} is drawn. ` : ""}Every round on this tour, whatever the time frame above.`)]);
   })();
   const radarBox = distBox || (() => {
     const sp = yearSplit(everyYear || []); if (!sp) return null;
