@@ -6824,3 +6824,6 @@ html, body { overflow-x: clip; max-width: 100%; }
 .cal-read.compact .cal-read-ava { width: 31px !important; height: 31px !important; } .cal-read.compact .cal-read-ava svg { width: 23px !important; height: 23px !important; }
 .cal-head .cal-ava:not(.cal-ava-walk) { width: 3rem !important; height: 3rem !important; }
 .cal-head .cal-ava svg, .cal-head .cal-ava svg.ico-callie { width: 37px !important; height: 37px !important; }
+/* (update 747) the circle tool on a par 5: going for it against laying up from there */
+.sh-go { margin: 6px 0 8px; padding: 8px 10px; border-radius: 10px; background: rgba(212,180,131,0.10); border: 1px solid rgba(212,180,131,0.35); }
+.sh-go p { margin: 0 0 3px; } .sh-go-h strong { color: #d4b483; } .sh-go-on { font-weight: 700; }

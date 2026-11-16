@@ -44,6 +44,10 @@ export function strategyOf(recs, par, geo = {}) {
   // ranks one place against another still needs MIN_N each
   if (done.length < 3) return null;
   const sc = (r) => par + r.s, base = mean(done.map(sc)), items = [];
+  // (update 747) a spot is judged on every shot played from it, whatever its stroke number: the strokes to hole out from
+  // there plus the shots it takes to get there in regulation (pv: a point's own value; a round's score when it has none)
+  const pv = (p) => (p.v != null ? p.v : sc(p.r));
+  const regV = (r, st, k) => par + r.s - st + k + 1; // (here on stroke st; as if here after k shots)
   // (update 594) for a player's own aim (worked out where they're viewed): each fairway spot by how far the drive went, and
   // each lay-up distance, with its scoring, the yards it left and its circle (OPT_N+ samples each)
   const OPT_N = 5, med = (xs) => { const v = xs.filter((x) => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
@@ -88,7 +92,7 @@ export function strategyOf(recs, par, geo = {}) {
   // little changes its average a lot) is then ranked on how it could be, not its lucky placement
   const steady = (G, x, y, rr, lie, avg, minN) => { let hi = avg, lo = avg; const d = 3 * PPY;
     for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4, m = G.near(x + d * Math.cos(a), y + d * Math.sin(a), rr, (p) => p.lie === lie);
-      if (m.length < Math.max(3, minN / 2)) continue; const v = mean(m.map((p) => sc(p.r))); if (v > hi) hi = v; if (v < lo) lo = v; }
+      if (m.length < Math.max(3, minN / 2)) continue; const v = mean(m.map(pv)); if (v > hi) hi = v; if (v < lo) lo = v; }
     return { hi, lo }; };
   const MIN_T = 10; // (update 718: a target holds 10 shots or more whenever there's a circle that can)
   // (update 714) circles over shots that finished somewhere (pts: [{ x, y, lie, r }]): around a shot of a lie that fits, at
@@ -104,7 +108,7 @@ export function strategyOf(recs, par, geo = {}) {
         const sig = `${c.lie}|${ry}|${Math.round(x / (2 * PPY))}|${Math.round(y / (2 * PPY))}`; if (seen.has(sig)) continue; seen.add(sig);
         const inside = GF.near(x, y, rr), mem = inside.filter((p) => p.lie === c.lie);
         if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
-        const avg = mean(mem.map((p) => sc(p.r)));
+        const avg = mean(mem.map(pv));
         out.push({ ry, x, y, lie: c.lie, mem, n: mem.length, avg, ...steady(GF, x, y, rr, c.lie, avg, minN) });
       } }
     return out;
@@ -147,7 +151,14 @@ export function strategyOf(recs, par, geo = {}) {
     // (update 714) the aim and the place to avoid are circles (sizes the circle tool has) where drives finished, each said
     // with the drives inside it of the lie it names, so the tip's numbers are the circle tool's for that circle. Named by
     // where the circle sits: the fairway third (or rough / bunkers, left or right) and how far from the tee
-    const dpts = drives.filter((d) => d.q2[1] != null && d.q2[2] != null).map((d) => ({ x: d.q2[1], y: d.q2[2], lie: LIE[d.q2[3]] || "other", r: d.r, d }));
+    // (update 747) every shot played from where drives finish (the middle 90% of drive lengths, 5 yds either way), whatever
+    // its stroke number, as if there after the tee shot: so a spot is judged on everything played from it
+    const dLens = drives.filter((d) => d.q2[1] != null).map((d) => Math.hypot(d.q2[1] - d.q1[1], d.q2[2] - d.q1[2])).sort((a, b) => a - b);
+    const dLo = dLens.length ? dLens[Math.floor(dLens.length * 0.05)] - 5 * geo.ppy : 0, dHi = dLens.length ? dLens[Math.floor(dLens.length * 0.95)] + 5 * geo.ppy : Infinity;
+    const dpts = [];
+    for (const r of done) { const q1 = at(r, 1); if (!q1 || q1[1] == null) continue;
+      for (const q of r.qs) { if (q[0] < 2 || q[1] == null || q[2] == null || q[3] === 4 || q[3] === 0) continue; const L = Math.hypot(q[1] - q1[1], q[2] - q1[2]); if (L < dLo || L > dHi) continue;
+        dpts.push({ x: q[1], y: q[2], lie: LIE[q[3]] || "other", r, d: { r, q1, q2: q }, v: regV(r, q[0], 1) }); } }
     const tee0 = dpts.length ? [mean(dpts.map((p) => p.d.q1[1])), mean(dpts.map((p) => p.d.q1[2]))] : null;
     const latAt = (x, y) => { const ux = geo.fw[0] - tee0[0], uy = geo.fw[1] - tee0[1], ul = Math.hypot(ux, uy) || 1; return (ux * (y - tee0[1]) - uy * (x - tee0[0])) / ul; };
     const nameAt = (g) => { const la = latAt(g.x, g.y);
@@ -156,7 +167,7 @@ export function strategyOf(recs, par, geo = {}) {
       if (g.lie === "bunker") return la < 0 ? "the left fairway bunkers" : "the right fairway bunkers";
       return null; };
     const ydsAt = (g) => Math.round(Math.hypot(g.x - tee0[0], g.y - tee0[1]) / geo.ppy / 5) * 5;
-    const allA = dpts.length ? mean(dpts.map((p) => sc(p.r))) : base, adjT = (g, v = g.avg) => (g.n * v + MIN_N * allA) / (g.n + MIN_N);
+    const allA = dpts.length ? mean(dpts.map(pv)) : base, adjT = (g, v = g.avg) => (g.n * v + MIN_N * allA) / (g.n + MIN_N);
     // (update 715) never at the far end: the field's aim and avoid sit between the 25th and 75th percentile of how far
     // drives went on this hole (a player's own, where they're viewed: their 10th to 90th, from teeOpts)
     const dLen = dpts.map((p) => Math.hypot(p.x - p.d.q1[1], p.y - p.d.q1[2]) / geo.ppy).sort((a, b) => a - b), pq = (f) => dLen[Math.min(dLen.length - 1, Math.floor(f * dLen.length))];
@@ -200,10 +211,10 @@ export function strategyOf(recs, par, geo = {}) {
   // 3rd) finished, in every round, its own lie, within 30 yds and off the green; so a spot's numbers are what the circle tool
   // shows inside it. Its side: the data's (that round's approach miss) when it's this shot, else from where it was hit,
   // where it finished and the pin (left and right matched to the data's)
-  const K = Math.max(1, par - 2);
+  const K = Math.max(1, Math.min(2, par - 2)); // (update 747: a par 5's is Shot 2, as the map's tabs)
   const sideGeo = (() => {
     const P = geo.pin; if (!P) return () => null;
-    const parts = (r, q) => { const o = r.qs.find((x) => x[0] === K); if (!o || o[1] == null) return null; const vx = P[0] - o[1], vy = P[1] - o[2], vl = Math.hypot(vx, vy) || 1, wx = q[1] - P[0], wy = q[2] - P[1];
+    const parts = (r, q) => { const i = r.qs.indexOf(q), o = i > 0 ? r.qs[i - 1] : r.qs.find((x) => x[0] === K); if (!o || o[1] == null) return null; /* (update 747: from the shot that got it there) */ const vx = P[0] - o[1], vy = P[1] - o[2], vl = Math.hypot(vx, vy) || 1, wx = q[1] - P[0], wy = q[2] - P[1];
       return { along: (wx * vx + wy * vy) / vl, cross: (vx * wy - vy * wx) / vl }; };
     // which way "right" is on this map: from the rounds the data names a side for
     let agree = 0, against = 0;
@@ -212,9 +223,10 @@ export function strategyOf(recs, par, geo = {}) {
     return (r, q) => { const g = parts(r, q); if (!g) return null; const a = (Math.atan2(flip * g.cross, g.along) * 180) / Math.PI, A = Math.abs(a), lr = a > 0 ? "Right" : "Left";
       return A < 22.5 ? "Long" : A < 67.5 ? `Long-${lr}` : A < 112.5 ? lr : A < 157.5 ? `Short-${lr}` : "Short"; };
   })();
-  const shotPts = done.map((r) => { const q = r.qs.find((x) => x[0] === K + 1); if (!q || q[1] == null || q[2] == null) return null;
+  // (update 747) every shot played from within 30 yds (any stroke), as if there after K shots
+  const shotPts = done.flatMap((r) => r.qs.filter((q) => q[0] >= 2 && q[1] != null && q[2] != null && q[4] != null && (q[3] === 4 || q[4] <= 30)).map((q) => {
     const own = r.apIdx != null && r.qs[r.apIdx + 1] === q && r.side ? r.side : null;
-    return { r, x: q[1], y: q[2], lie: LIE[q[3]] || "other", d: q[4], side: own || sideGeo(r, q) }; }).filter(Boolean);
+    return { r, x: q[1], y: q[2], lie: LIE[q[3]] || "other", d: q[4], side: own || sideGeo(r, q), v: regV(r, q[0], K) }; }));
   const missPts = shotPts.filter((p) => p.lie !== "green" && p.lie !== "water" && p.d != null && p.d <= 30 && p.side);
   let spotOrder = null;
   if (geo.ppy && missPts.length >= MIN_N) {
@@ -265,7 +277,7 @@ export function strategyOf(recs, par, geo = {}) {
         // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
         // green) is a spot of its own rather than swallowed by a bigger one nearby
         const sig = `${c.lie}|${ry}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
-        if (!seen.has(sig)) { seen.add(sig); const avg = mean(mem.map((p) => sc(p.r))); out.push({ ry, x, y, mem, avg, ...steady(GA, x, y, rr, c.lie, avg, minN) }); }
+        if (!seen.has(sig)) { seen.add(sig); const avg = mean(mem.map(pv)); out.push({ ry, x, y, mem, avg, ...steady(GA, x, y, rr, c.lie, avg, minN) }); }
         }
       }
       return out;
@@ -315,7 +327,7 @@ export function strategyOf(recs, par, geo = {}) {
     };
     // (update 625) ranked on an average pulled toward the average of every miss when there are few (8 misses' worth), so a
     // spot of 9 doesn't beat one of 26 by luck; the tip still says the spot's own average
-    const allAvg = mean(missPts.map((p) => sc(p.r))), adj = (g) => (g.n * (g.hi ?? g.avg) + MIN_N * allAvg) / (g.n + MIN_N); // (update 718: on its worst nudge)
+    const allAvg = mean(missPts.map(pv)), adj = (g) => (g.n * (g.hi ?? g.avg) + MIN_N * allAvg) / (g.n + MIN_N); // (update 718: on its worst nudge)
     const byAvg = [...named].sort((a, b) => adj(a) - adj(b) || b.n - a.n), pick = [];
     // (update 724) the best and 2nd best (safe to aim at, apart); then the worst: the worst-scoring spot of every spot with
     // MIN_N or more (its average pulled toward every miss's by its size, so 16 misses at 4.81 beats 8 at 4.75), apart from both
@@ -390,6 +402,9 @@ export function strategyOf(recs, par, geo = {}) {
       if (!layOpts.length) layOpts = null; }
     const goN = plays.filter((p) => p.go).length;
     if (goN >= MIN_N && plays.length - goN >= MIN_N) {
+      // (update 747) the cost of the choice, as a whole: going for it against laying up (a par 5's second shot)
+      if (par >= 5) { const g0 = plays.filter((p) => p.go), l0 = plays.filter((p) => !p.go), ga0 = mean(g0.map((p) => sc(p.r))), la0 = mean(l0.map((p) => sc(p.r)));
+        items.push({ k: "layup", h: "Go vs lay up", t: `Going for it in two ${vn(ga0, g0.length)}; laying up ${vn(la0, l0.length)}: ${ga0 <= la0 ? "going for it" : "laying up"} saves about ${Math.abs(ga0 - la0).toFixed(2)} a hole.` }); }
       const from = (p) => { const l = LIE[p.q[3]] || "other", d = p.q[4]; if (d == null) return null; const b = 25, lo = Math.floor(d / b) * b; return `${lo}|${lo + b}|${l}`; };
       const lines = [];
       const byFrom = new Map(); for (const p of plays) { const k = goSt === 1 ? "tee|tee|tee" : from(p); if (!k) continue; (byFrom.get(k) || byFrom.set(k, []).get(k)).push(p); }

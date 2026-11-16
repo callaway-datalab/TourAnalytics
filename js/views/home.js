@@ -10,7 +10,8 @@ import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, summaryPlayers, gearInfo, STAT_DEFS } from "../sg.js";
 import { queueExplain } from "../askExplain.js";
-import { sgRounds, roundsFor, perRound } from "../compareData.js"; // (update 728: the rounds and numbers exactly as Compare counts them)
+import { sgRounds, roundsFor, perRound } from "../compareData.js";
+import { goOf } from "../strategy.js"; // (update 747) // (update 728: the rounds and numbers exactly as Compare counts them)
 
 const HINTS = new Map(); // (each player's product question, worked out once a visit to the site)
 const once = (watch) => new Promise((res) => { let un = null, done = false; const fin = (v) => { if (done) return; done = true; res(v); setTimeout(() => un?.(), 0); }; try { un = watch(fin); } catch { fin(null); } });
@@ -642,15 +643,21 @@ export async function render(main, { previewClient } = {}) {
     // each pin's costliest miss: where the approach (shot 1 on a par 3, 2 on a par 4, 3 on a par 5) finished off the green
     // within 30 yds, by side of the pin (the line from the tee) and lie, and the hole's average score from there
     const SEC8 = ["long", "long-right", "right", "short-right", "short", "short-left", "left", "long-left"], grp = new Map();
-    for (const t of T) { const k0 = Math.max(1, (t.par || 4) - 2), nx = t.qs.find((q) => q.st === k0 + 1); if (!nx || nx.lie === "green" || nx.d == null || nx.d > 30 || nx.x == null) continue;
-      // (update 745) its side: from where that approach was hit to the pin (as Cal's Way measures it), not from the tee
-      const ap = t.qs.find((q) => q.st === k0), pin = pinXY.get(`${t.h}|${t.pid}`); if (!ap || ap.x == null || !pin) continue;
-      const tx = ap.x, ty = ap.y, px = pin[0] / pin[2], py = pin[1] / pin[2], lx = px - tx, ly = py - ty, ll = Math.hypot(lx, ly); if (!ll) continue;
-      const dx = nx.x - px, dy = nx.y - py, ang = Math.atan2((lx * dy - ly * dx) / ll, (dx * lx + dy * ly) / ll) * 180 / Math.PI, sec = SEC8[((Math.round(ang / 45) % 8) + 8) % 8];
-      const kk = `${t.h}|${t.pid}|${sec}|${nx.lie}`, g = grp.get(kk) || grp.set(kk, { h: t.h, pid: t.pid, par: t.par, k: k0, sec, lie: nx.lie, n: 0, s: 0 }).get(kk); g.n++; g.s += t.s; }
+    // (update 747) as Cal's Way now reads it: every shot played from within 30 yds off the green (any stroke), as the hole
+    // plays if you're there after the approach (a par 3's shot 1, a par 4's 2, a par 5's 2), its side from the shot before it
+    for (const t of T) { const k0 = Math.max(1, Math.min(2, (t.par || 4) - 2)), pin = pinXY.get(`${t.h}|${t.pid}`); if (!pin) continue; const px = pin[0] / pin[2], py = pin[1] / pin[2];
+      t.qs.forEach((nx, i) => { if (i === 0 || nx.st < 2 || nx.lie === "green" || nx.d == null || nx.d > 30 || nx.x == null) return; const ap = t.qs[i - 1]; if (ap.x == null) return;
+        const lx = px - ap.x, ly = py - ap.y, ll = Math.hypot(lx, ly); if (!ll) return;
+        const dx = nx.x - px, dy = nx.y - py, ang = Math.atan2((lx * dy - ly * dx) / ll, (dx * lx + dy * ly) / ll) * 180 / Math.PI, sec = SEC8[((Math.round(ang / 45) % 8) + 8) % 8];
+        const kk = `${t.h}|${t.pid}|${sec}|${nx.lie}`, g = grp.get(kk) || grp.set(kk, { h: t.h, pid: t.pid, par: t.par, k: k0, sec, lie: nx.lie, n: 0, s: 0 }).get(kk); g.n++; g.s += t.s - nx.st + k0 + 1; }); }
     const byPin = new Map(); for (const g of grp.values()) if (g.n >= 8) (byPin.get(`${g.h}|${g.pid}`) || byPin.set(`${g.h}|${g.pid}`, []).get(`${g.h}|${g.pid}`)).push({ ...g, avg: g.s / g.n });
     const misses = [...byPin.values()].filter((l) => l.length >= 2).map((l) => { l.sort((a, b) => a.avg - b.avg); return { best: l[0], worst: l.at(-1), spread: l.at(-1).avg - l[0].avg }; }).sort((a, b) => b.spread - a.spread);
-    upRaw = { id: c.id, holesR, edges, catEdge, appD, misses, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
+    // (update 747) par 5s: going for it in two against laying up (the second shot, from within 300 yds), by hole
+    const LI7 = ["tee", "fairway", "rough", "bunker", "green", "water", "other"], arr7 = (q) => [q.st, q.x, q.y, Math.max(0, LI7.indexOf(q.lie)), q.d];
+    const goH = new Map(); for (const t of T) { if ((t.par || 4) < 5) continue; const q2 = t.qs.find((q) => q.st === 2), q3 = t.qs.find((q) => q.st === 3); if (!q2 || !q3 || q2.d == null || q2.d > 300) continue;
+      const g = goOf(arr7(q2), arr7(q3), t.par, null); if (!g) continue; const o = goH.get(t.h) || goH.set(t.h, { h: t.h, par: t.par, go: [], lay: [] }).get(t.h); o[g === "go" ? "go" : "lay"].push(t.s); }
+    const goLay = [...goH.values()].filter((o) => o.go.length >= 10 && o.lay.length >= 10).map((o) => { const ga = o.go.reduce((a, b) => a + b, 0) / o.go.length, la = o.lay.reduce((a, b) => a + b, 0) / o.lay.length; return { ...o, ga, la, d: la - ga }; }).sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+    upRaw = { id: c.id, holesR, edges, catEdge, appD, misses, goLay, pinName: (h, pid) => CH.pinLabel(c, h, pid) }; drawFeed(collect());
   }
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
@@ -689,12 +696,16 @@ export async function render(main, { previewClient } = {}) {
         if (nU >= 200) { const B = [...usual.values()].sort((a, b) => a.lo - b.lo); let nH = 0; for (const d of R0.appD) { const o = B.find((x) => d >= x.lo && d < x.hi); if (o) { o.here++; nH++; } }
           const r1 = B.filter((x) => nH && x.here / nH >= 0.08 && x.n / nU >= 0.03).map((x) => ({ ...x, h: x.here / nH, u: x.n / nU, ratio: (x.here / nH) / (x.n / nU) })).sort((a, b) => b.ratio - a.ratio)[0];
           if (r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.lab.replace(/\s*yds?$/i, "")} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.h)} of approach shots at ${c.name} (${nH} shots on record), against ${pc(r1.u)} in a usual week (your players' ${nU} approaches this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
+      // (update 747) the par 5 where going for it (or laying up) matters most
+      if (R0.goLay?.length) { const g = R0.goLay[0], go = g.d > 0;
+        out.push({ id: "up-golay", k: null, kind: "Course", score: 4.88, title: `No. ${g.h}: ${go ? "go for it in two" : "lay up"}, ${Math.abs(g.d).toFixed(2)} a hole better`, detail: `Went for the green with the second shot: ${pm3(g.ga)} to par (${g.go.length} players) · laid up: ${pm3(g.la)} (${g.lay.length}) · from within 300 yds${R0.goLay[1] ? ` · also No. ${R0.goLay[1].h}: ${R0.goLay[1].d > 0 ? "go for it" : "lay up"} (${Math.abs(R0.goLay[1].d).toFixed(2)})` : ""}`,
+          to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, g.h, EX.hole(`Should I go for hole ${g.h} in two?`)) }); }
       // each pin's costliest miss, described in full
       const M = R0.misses.filter((x) => x.spread >= 0.15);
       if (M.length) { const x = M[0], w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "in the fairway" : `in the ${l}`);
         const shotW = w.k === 1 ? "off the tee" : "on the approach", pinT = pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : "";
         out.push({ id: "up-side", k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pinT}: avoid the ${w.sec} miss ${lieW(w.lie)} ${shotW}`,
-          detail: `${pm3(w.avg)} to par from there (${w.n} players); ${x.spread.toFixed(2)} worse than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} players) · shot ${w.k} missing the green within 30 yds${M[1] ? ` · also No. ${M[1].worst.h}: avoid ${M[1].worst.sec} ${lieW(M[1].worst.lie)} (${pm3(M[1].worst.avg)})` : ""}`,
+          detail: `${pm3(w.avg)} to par from there (${w.n} shots, as if you're there in ${w.k}); ${x.spread.toFixed(2)} worse than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} shots) · every shot played from within 30 yds of the green${M[1] ? ` · also No. ${M[1].worst.h}: avoid ${M[1].worst.sec} ${lieW(M[1].worst.lie)} (${pm3(M[1].worst.avg)})` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, w.h, EX.hole(`Where should I miss on hole ${w.h}?`)) }); }
     }
     // course form: the best there over the years (on the tour picked)

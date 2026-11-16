@@ -415,7 +415,7 @@ export function pinForShot(pin, k) {
   return m.get(k);
 }
 /** (update 482) The shots a hole's filter offers: shot 1 on a par 3, 1 and 2 on a par 4, 1 to 3 on a par 5. */
-export const shotsFor = (par) => Array.from({ length: Math.max(1, Math.min(3, (par || 4) - 2)) }, (_, i) => i + 1);
+export const shotsFor = (par) => Array.from({ length: Math.max(1, Math.min(2, (par || 4) - 2)) }, (_, i) => i + 1); // (update 747: a par 5 too: Shot 1 and Shot 2)
 export function zonesOf(pin0, par, ix = null, { toGo = false, yards = null, dense = false, played = null } = {}) {
   const pin = dense ? smoothPin(pin0) : pin0;
   const toPar = (v) => (v >= 1.5 ? v - par : v);

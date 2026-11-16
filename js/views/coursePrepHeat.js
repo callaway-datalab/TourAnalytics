@@ -16,6 +16,7 @@ import { pickWho, playerData } from "./coursePrepExtras.js";
 import { playerTrails, LIE_NAMES, eKey, dOf } from "../courseShots.js"; // (update 479; 503: eKey)
 import { BUILD_VERSION } from "../courseRaw.js"; // (update 498)
 import { clientKey } from "../data.js"; // (update 500)
+import { goOf } from "../strategy.js"; // (update 747: going for it or laying up, from a tapped spot)
 
 const st = { hole: 1, pin: {}, view: "field", mode: "score", shot: "1" }; // (kept while the app is open)
 
@@ -103,8 +104,16 @@ export async function drawHeat(ctx, course) {
   const kOf = (n, parN) => { const H = data.holes?.[n]; if (!Object.values(H?.pins || {}).some((p) => p.byShot)) return 0; const k = Number(st.shot) || 1; return shotsFor(parN).includes(k) ? k : 1; };
   const vkOf = () => (isP() && ix ? `p:${who?.key}` : "f");
   const memoKey = (n, pid, parN, im = 1) => `${n}|${pid}|${vkOf()}|s${kOf(n, parN)}|${im}`;
+  // (update 747) a Shot tab's map: every shot played from that shot's area (where shot k usually finishes: the middle 90% of
+  // their distances to the pin, 5 yds either way), whatever its stroke number, scored as if you got there in k shots
+  const areaMemo = new WeakMap();
+  const areaPin = (pin, k) => { const P = pinForShot(pin, k); if (!k || !pin?.rows?.length || !P?.rows?.length) return P;
+    const m = areaMemo.get(pin) || areaMemo.set(pin, new Map()).get(pin); if (m.has(k)) return m.get(k);
+    const yd = (r) => (r.dist == null ? null : /^green$/i.test(r.lie) ? r.dist / 3 : r.dist), ds = []; for (const r of P.rows) { const d = yd(r); if (d != null) for (let i = 0; i < Math.min(r.n || 1, 50); i++) ds.push(d); }
+    if (ds.length < 20) { m.set(k, P); return P; } ds.sort((a, b) => a - b); const lo = ds[Math.floor(ds.length * 0.05)] - 5, hi = ds[Math.floor(ds.length * 0.95)] + 5;
+    const out = { ...P, rows: pin.rows.filter((r) => !/^tee$/i.test(r.lie) && yd(r) != null && yd(r) >= lo && yd(r) <= hi) }; m.set(k, out); return out; };
   const zonesFor = (n, pid, parN) => {
-    const H = data.holes?.[n] || { pins: {} }, k = kOf(n, parN), p = pinForShot(H.pins[pid], k);
+    const H = data.holes?.[n] || { pins: {} }, k = kOf(n, parN), p = areaPin(H.pins[pid], k);
     return zonesOf(p, parN, ix, { toGo: !!data.toGo, yards: H.yards || meta.yards?.[n - 1] || course.yards?.[n - 1] || null, dense: !!data.shots || (p.rows?.length || 0) > 600, played: k || null });
   };
   const rebuild = () => {
@@ -372,7 +381,7 @@ export async function drawHeat(ctx, course) {
       T.qs.push(q);
       if (num0(r[12]) === 1) { const sf = num0(r[11]), par0 = num0(r[7]); T.s = sf != null ? Math.round(sf) : q.st != null && par0 ? q.st - par0 : null; }
     }
-    for (const T of trails.values()) { T.qs.sort((a, b) => (a.st ?? 0) - (b.st ?? 0)); for (const q of T.qs) q.s = T.s; }
+    for (const T of trails.values()) { T.qs.sort((a, b) => (a.st ?? 0) - (b.st ?? 0)); T.qs.forEach((q, i) => { q.s = T.s; q.nx = T.qs[i + 1] || null; }); } // (update 747: nx, the next shot)
     // (update 502) each hole's boards and every trail's approach miss, the same as the build works them out (courseShots.js
     // holeBoards): from the shots as the build keeps them (to a tenth of a pixel and of a yard)
     const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
@@ -396,7 +405,8 @@ export async function drawHeat(ctx, course) {
   const spotShots = async () => {
     const by = await rawIndex(); if (!by) return null;
     const n = st.hole, list = by.get(n)?.shots || [], ids = new Set(pinNow?.merged || [st.pin[n]]), k = kOf(n, par);
-    const pool = list.filter((q) => ids.has(q.pid) && q.v != null && (!k || q.st === k + 1));
+    // (update 747) every shot played from there, whatever its stroke number, scored as if you got there in k shots
+    const pool = !k ? list.filter((q) => ids.has(q.pid) && q.v != null) : list.filter((q) => ids.has(q.pid) && q.v != null && q.st >= 2).map((q) => ({ ...q, s: q.s == null ? null : q.s - q.st + k + 1, o: q }));
     return { pool, ppy: ppyOf(n, list) };
   };
   function drawSpot() {
@@ -459,8 +469,24 @@ export async function drawHeat(ctx, course) {
     const mine = who ? inside.filter((q) => q.key === who.key) : [];
     const ud = (qs) => `${Math.round((100 * qs.filter((q) => q.v <= 2).length) / qs.length)}%`; // (update 502: holed in two from there)
     // (update 501) a small popup: the circle's size, the player's own shots, and the shots by lie
-    const basedOn = el("p", { class: "muted sh-spot-note" }, k ? `Based on shot ${k} results` : "Based on every shot played from here"); // (update 505)
-    mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, toPin(ppy), xb]), basedOn,
+    const basedOn = el("p", { class: "muted sh-spot-note" }, k ? `Every shot played from here, as if you got here in ${k} ${k === 1 ? "shot" : "shots"}` : "Based on every shot played from here"); // (update 505; 747: every shot, as in regulation)
+    // (update 747) a par 5: from this spot, going for the green against laying up (the shot played from here: went for it
+    // when it finished within 30 yds; laid up when clearly shorter, in a normal lay-up spot), each as the hole would play
+    // if you're here in k shots, and which saves strokes
+    const goBox = (() => {
+      if (par < 5 || !k) return null; const ds0 = inside.map(ydOf).filter((v) => v != null), dMid = ds0.length ? ds0.reduce((t, v) => t + v, 0) / ds0.length : null;
+      if (dMid == null || dMid <= 30 || dMid > 300) return null;
+      const arr = (q) => [q.st, q.x, q.y, q.L, q.d];
+      const go = [], lay = [];
+      for (const p0 of inside) { const q = p0.o || p0; if (q.s == null || !q.nx) continue; const g = goOf(arr(q), arr(q.nx), par, ppy); if (!g) continue; (g === "go" ? go : lay).push(par + q.s - q.st + k + 1); }
+      if (go.length < 5 || lay.length < 5) return el("p", { class: "muted small sh-go" }, `Go for it or lay up from here: too few of either on record (${go.length} went for it, ${lay.length} laid up).`);
+      const ga = go.reduce((t, v) => t + v, 0) / go.length, la = lay.reduce((t, v) => t + v, 0) / lay.length, best = ga <= la ? "go" : "lay";
+      return el("div", { class: "sh-go" }, [
+        el("p", { class: "sh-go-h" }, [el("strong", {}, best === "go" ? "Go for it" : "Lay up"), ` from here: saves ${Math.abs(ga - la).toFixed(2)} a hole`]),
+        el("p", { class: "small" }, [el("span", { class: best === "go" ? "sh-go-on" : "" }, `Went for it: ${ga.toFixed(2)} (${go.length})`), " · ", el("span", { class: best === "lay" ? "sh-go-on" : "" }, `Laid up: ${la.toFixed(2)} (${lay.length})`)]),
+        el("p", { class: "muted small" }, `As the hole plays if you're here in ${k}; going for it = the next shot finished within 30 yds.`)]);
+    })();
+    mount(pop, [el("div", { class: "sh-pop-h sh-rad-h" }, [radRow, toPin(ppy), xb]), basedOn, goBox,
       mine.length ? el("p", { class: "small" }, [`${who.label.split(" ")[0]}: `, el("strong", {}, fmt(avg(mine), mine.length)), ` to hole out (${mine.length} ${mine.length === 1 ? "shot" : "shots"})`]) : null,
       // (update 504) by lie: shots, the average hole score, how the hole was scored (eagle+ to double+; a column that's 0%
       // in every row left out) and up & down
@@ -694,8 +720,8 @@ export async function drawHeat(ctx, course) {
     const items = read.r.items.map((it) => {
       // (update 738) a miss with no lie named ("miss long"): every shot in its circle that missed the green
       const a = it.at?.[0], L = a ? lieOfTip(it) || (it.k === "miss" ? "miss" : null) : null; if (!a || !L) return it;
-      const kk = it.k === "tee" ? 1 : k && k > 1 ? k : Math.max(1, par - 2); // (the shot whose results the tip is about)
-      const pool = list.filter((q) => ids.has(q.pid) && q.v != null && q.st === kk + 1);
+      const kk = it.k === "tee" ? 1 : k && k > 1 ? k : Math.max(1, Math.min(2, par - 2)); // (the shot whose results the tip is about; update 747: a par 5's approach is Shot 2)
+      const pool = list.filter((q) => ids.has(q.pid) && q.v != null && q.st >= 2).map((q) => ({ ...q, s: q.s == null ? null : q.s - q.st + kk + 1 })); // (update 747: every shot from there, as in regulation)
       const ry = [8, 10].sort((p, q) => Math.abs(p * ppyT - a[2]) - Math.abs(q * ppyT - a[2]))[0], R = ry * ppyT;
       const fits = (q) => q.s != null && (L === "miss" ? q.lie !== "green" : q.lie === L);
       const inAt = (cx, cy) => pool.filter((q) => fits(q) && Math.hypot(q.x - cx, q.y - cy) <= R);
