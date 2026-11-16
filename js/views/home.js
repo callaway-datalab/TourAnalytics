@@ -202,11 +202,11 @@ export async function render(main, { previewClient } = {}) {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const edition = el("span", {}, ""), nextLine = el("a", { class: "td-live", href: "#/live", title: "Open the Event Feed" }, ""), /* (update 734: this week’s event: a link to the Event Feed) */ roleLbl = el("span", { class: "td-top-r" }, "");
   mount(root, [
-    el("header", { class: "td-mast" }, el("h1", {}, ["The Tour ", el("i", {}, "Report")])), /* (update 750: was "The Daily Tour") */
+    el("header", { class: "td-mast" }, el("h1", {}, ["Daily Tour ", el("i", {}, "Report")]) /* (update 776) */), /* (update 750: was "The Daily Tour") */
     el("div", { class: "td-date" }, [el("span", {}, today), edition, nextLine]),
     el("div", { class: "td-nav" }, [tourRow, whoRow, askBox]),
     secNav, feed, asked,
-    el("div", { class: "td-foot" }, "The Tour Report · compiled by Cal from every shot on record · tap any story to dig deeper"),
+    el("div", { class: "td-foot" }, "The Daily Tour Report · compiled by Cal from every shot on record · tap any story to dig deeper"),
   ]);
   drawTabs();
 
