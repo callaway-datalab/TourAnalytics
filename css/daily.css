@@ -337,3 +337,7 @@ main:has(.ah.td) { padding-top: 0 !important; }
 /* (update 788) the leaderboard around a player, filling the lead story's space */
 .td-mini-board .td-box { margin-top: 4px; } .td-mini-board .td-box td { padding: 5px 0; } .td-mini-board .td-box td.r { font-size: 1rem; width: 40px; }
 .td-mini-board tr.target td { background: color-mix(in srgb, var(--td-gold) 20%, transparent); font-weight: 800; color: var(--td-ink); }
+/* (update 789) a section's subheader always on its own line under the title; Did You Know's shuffle button */
+.td-sh > span { flex-basis: 100%; margin-top: 2px; }
+.td-shuf { margin-left: auto; align-self: center; border: 1px solid var(--td-rule2); background: transparent; color: var(--td-mute); border-radius: 999px; padding: 4px 12px; font: 700 0.72rem var(--td-sans); letter-spacing: 0.06em; cursor: pointer; }
+.td-shuf:hover { color: var(--sec, var(--td-gold)); border-color: var(--sec, var(--td-gold)); }

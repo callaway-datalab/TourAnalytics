@@ -254,8 +254,8 @@ export async function render(main, { previewClient } = {}) {
   const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot", Fact: "fact" };
   // (update 780) Player Spotlight beside Where to Improve, then Equipment, Rankings and Results & Milestones as a row of three
   const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "form", "spot", "focus", "gear", "rank", "res", "prac", "tour"] : ["fact", "form", "spot", "focus", "gear", "rank", "res", "next", "course", "prac", "tour"];
-  const PAIR = ["spot", "focus"], TRIO = ["gear", "rank", "res"];
-  const FULL = new Set(["form", "tour", "course", "fact"]);
+  const PAIR = ["spot", "focus"], TRIO = ["gear", "rank"]; // (update 789: Equipment beside Rankings; Results & Milestones full width below)
+  const FULL = new Set(["form", "tour", "course", "fact", "res"]);
   const CATW = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" };
   const ordN = (r) => (r === 1 ? "No. 1" : `${r}${["th", "st", "nd", "rd"][((r % 100) - 20) % 10] || ["th", "st", "nd", "rd"][r % 100] || "th"}`);
   const rkName = (c) => (c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase());
@@ -427,7 +427,10 @@ export async function render(main, { previewClient } = {}) {
           : t0 === "st" && x.n ? [tile(String(x.n), "rounds in a row gaining", "up"), tile(sg2(avgOf(rs.slice(-x.n), tot)), "a round in the streak", "up"), tile(sg2(av), `a round in ${SY}`, cls(av))]
           : t0 === "wk" && x.v != null ? [tile(sg2(x.v), `${CATN[x.c]} a round`, cls(x.v)), rk ? tile(ordN(rk).replace("No. ", "#"), `in ${CATN[x.c].toLowerCase()}, of ${n}`) : null, tile(sg2(avgOf(rs, tot)), `SG: Total a round`, cls(avgOf(rs, tot)))]
           : null;
-        viz.push(el("div", { class: "td-tiles" }, own3 || [tile(sg2(av), `${cat ? CATN[cat] : "Strokes gained"} a round, ${SY}`, cls(av)), rk ? tile(ordN(rk).replace("No. ", "#"), `on tour, of ${n}`) : tile(String(rs.length), `rounds in ${SY}`), le ? tile(sg2(lv), `${cat ? CATN[cat] : "SG: Total"} a round in ${isMe(h.k) ? "your" : "their"} last event, ${fullEv(le.event)}${(() => { const at = field.map((p1) => { const r1 = sgRounds(rawOf(p1)).filter((r) => r.event === le.event && yrOf(r) === SY); return r1.length >= 2 || (r1.length && p1.key === h.k) ? [p1.key, avgOf(r1, f)] : null; }).filter(Boolean).sort((a, b) => b[1] - a[1]), i1 = at.findIndex((x1) => x1[0] === h.k); return i1 >= 0 && at.length >= 5 ? ` · ${ordN(i1 + 1).replace("No. ", "")} of ${at.length} there` : ""; })()}`, cls(lv)) /* (update 787: and where it ranked there) */ : null] /* (update 785: why it's there) */));
+        // (update 789) a fourth number: how steady they are in it (their round-to-round swing and its rank)
+        const st4 = (() => { try { const F = seasonField(); if (F.ok.length < 10) return null; const sds = F.ok.map((p1) => [p1.k, sdOf(p1.rs.filter((r) => !r.eventLevel).map(f))]).filter((x1) => x1[1] != null).sort((a, b) => a[1] - b[1]), i1 = sds.findIndex((x1) => x1[0] === h.k);
+          return i1 < 0 ? null : tile(`±${sds[i1][1].toFixed(2)}`, `round-to-round swing ${cat ? CAT_IN[cat] : "in strokes gained"}, ${ordN(i1 + 1).replace("No. ", "")} steadiest of ${sds.length}`); } catch { return null; } })();
+        viz.push(el("div", { class: "td-tiles" }, own3 || [tile(sg2(av), `${cat ? CATN[cat] : "Strokes gained"} a round, ${SY}`, cls(av)), rk ? tile(ordN(rk).replace("No. ", "#"), `on tour, of ${n}`) : tile(String(rs.length), `rounds in ${SY}`), le ? tile(sg2(lv), `${cat ? CATN[cat] : "SG: Total"} a round in ${isMe(h.k) ? "your" : "their"} last event, ${fullEv(le.event)}${(() => { const at = field.map((p1) => { const r1 = sgRounds(rawOf(p1)).filter((r) => r.event === le.event && yrOf(r) === SY); return r1.length >= 2 || (r1.length && p1.key === h.k) ? [p1.key, avgOf(r1, f)] : null; }).filter(Boolean).sort((a, b) => b[1] - a[1]), i1 = at.findIndex((x1) => x1[0] === h.k); return i1 >= 0 && at.length >= 5 ? ` · ${ordN(i1 + 1).replace("No. ", "")} of ${at.length} there` : ""; })()}`, cls(lv)) /* (update 787: and where it ranked there) */ : null, st4] /* (update 785: why it's there) */));
         const last = rs.filter((r) => !r.eventLevel).slice(-30), mx = Math.max(1, ...last.map((r) => Math.abs(f(r))));
         if (false && last.length >= 6 && !isEq) viz.push( /* (update 770: no round-by-round strip) */ /* (update 762: a club change: its bars by model instead) */el("div", { class: "td-strip-w" }, [el("div", { class: "td-kick mute" }, `Round by round · ${cat ? CATN[cat] : "strokes gained"}`), el("div", { class: "td-strip" }, last.map((r) => { const v = f(r); return el("i", { class: v >= 0 ? "up" : "down", style: `opacity:${(0.25 + 0.75 * Math.min(1, Math.abs(v) / mx)).toFixed(2)}`, title: `${r.event}${r.roundNo ? ` R${r.roundNo}` : ""}: ${sg2(v)}` }); })),
           el("div", { class: "td-strip-ax" }, [el("span", {}, shortEv(last[0].event)), el("span", {}, shortEv(last.at(-1).event))])])); } }
@@ -555,7 +558,7 @@ export async function render(main, { previewClient } = {}) {
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h) && !used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
     if (lead?.id && LEADS.has(lead.kind)) try { localStorage.setItem(FPK, JSON.stringify({ lead: lead.id, side: fp.slice(1).map((h) => h.id) })); for (let i = localStorage.length - 1; i >= 0; i--) { const kk = localStorage.key(i); if (kk?.startsWith("ta.front|") && !kk.startsWith(`ta.front|${HALF}|`)) localStorage.removeItem(kk); } } catch { /* */ }
-    const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [];
+    const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [], pairRest = new Map();
     for (const id of ORDER) {
       const mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
       const pick = [], byK = new Map(); // up to 6 (2 a player first, when there are several)
@@ -565,7 +568,9 @@ export async function render(main, { previewClient } = {}) {
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
       const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine) : id === "course" ? courseGroups(mine) : el("div", { class: "td-cols" }, pick.map(column));
-      secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), sub ? el("span", {}, sub) : null]), content]));
+      const shuf = id === "fact" ? (() => { const b = el("button", { type: "button", class: "td-shuf", title: "New facts", "aria-label": "Shuffle the facts" }, "↻ Shuffle"); b.addEventListener("click", () => { factShuf++; factMemo = null; drawFeed(collect()); requestAnimationFrame(() => document.getElementById("td-fact")?.scrollIntoView({ block: "nearest" })); }); return b; })() : null; /* (update 789) */
+      secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), shuf, sub ? el("span", {}, sub) : null]), content]));
+      if (PAIR.includes(id)) pairRest.set(id, { box: content, more: mine.filter((h) => !pick.includes(h)) }); /* (update 789: to even the pair up) */
     }
     // (update 780) laid out in order: full-width sections on their own; Player Spotlight and Where to Improve side by side;
     // Equipment, Rankings and Results & Milestones in a row of three (two side by side, or one full, when some are missing);
@@ -588,6 +593,11 @@ export async function render(main, { previewClient } = {}) {
     const reB = el("button", { type: "button", class: "td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻");
     reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
     mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief)), reB]), el("div", { class: "td-grid" }, laid)]);
+    // (update 789) Player Spotlight and Where to Improve about the same length: stories added to the shorter one (as many as
+    // it has) until it reaches the other
+    requestAnimationFrame(() => { const a = pairRest.get("spot"), b = pairRest.get("focus"); if (!a || !b) return;
+      for (let n = 0; n < 8; n++) { const ha = a.box.offsetHeight || 0, hb = b.box.offsetHeight || 0, /* (the stories' own height: the cards are stretched to match) */ sh = ha < hb ? a : b, gap = Math.abs(ha - hb);
+        if (gap < 140 || !sh.more.length) break; sh.box.appendChild(column(sh.more.shift())); } });
     const go2 = (id) => { const n = document.getElementById(`td-${id}`); if (!n) return; const bar = document.querySelector(".rail")?.getBoundingClientRect().bottom || 0; /* (the top bar stays put over the page) */ window.scrollTo({ top: n.getBoundingClientRect().top + window.scrollY - Math.max(0, bar) - 12, behavior: "smooth" }); }; /* (update 734: to the header, clear of the top bar) */
     mount(secNav, [...secs.map((x) => [x.id.slice(3), SEC[x.id.slice(3)][0]])].map(([id, t2], i) => { const a2 = el("a", { href: "#", "data-sec": id }, t2); void i; a2.addEventListener("click", (e) => { e.preventDefault(); go2(id); }); return a2; }));
   }
@@ -676,9 +686,9 @@ export async function render(main, { previewClient } = {}) {
   // part-of-the-game stats that don't need a distance; their best week in each part of the game; a single round among the
   // best on tour this season. Picked by the half day, so the section changes twice a day
   const SLOT = Math.floor(Date.now() / 432e5);
-  let factMemo = null;
+  let factMemo = null, factShuf = 0; // (update 789: the shuffle button)
   function factsAll() {
-    const keysF = shownKeys(), mk = `${SLOT}|${tourPick}|${keysF.join(",")}|${field.length}`; if (factMemo?.k === mk) return factMemo.v;
+    const keysF = shownKeys(), mk = `${SLOT}|${factShuf}|${tourPick}|${keysF.join(",")}|${field.length}`; if (factMemo?.k === mk) return factMemo.v;
     const F = seasonField(), SY = F.SY, on = tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : "", cand = [];
     if (F.ok.length >= 10) {
       const last12 = (rs) => rs.filter((r) => !r.eventLevel).slice(-12);
@@ -727,7 +737,7 @@ export async function render(main, { previewClient } = {}) {
             detail: `${fmtV(list[i][1])} (${Math.round(list[i][2])} ${isSG ? "shots" : "attempts"})${i ? `; the leader, ${nameOf(list[0][0])}: ${fmtV(list[0][1])}` : `; next best, ${nameOf(list[1][0])}: ${fmtV(list[1][1])}`}`,
             run: () => toStats(k, { view2: "focus", focusCats: isSG ? [parts[1]] : [], focusPick: isSG ? parts[1] : null, year: [SYd], span: 0 }, "Where you stand", null), to: "Stats · Focus" }); } } }
     // a different set each half day: shuffled by the slot, at most 2 a player when there are several
-    cand.sort((a, b) => hash(`${a.id}|${SLOT}`) - hash(`${b.id}|${SLOT}`));
+    cand.sort((a, b) => hash(`${a.id}|${SLOT}|${factShuf}`) - hash(`${b.id}|${SLOT}|${factShuf}`));
     const out = [], per = new Map(); for (const x of cand) { if (out.length >= 8) break; const n = per.get(x.k) || 0; if (keysF.length > 1 && n >= 2) continue; per.set(x.k, n + 1); out.push({ ...x, kind: "Fact", score: 3.2 - out.length * 0.01 }); }
     factMemo = { k: mk, v: out }; return out;
   }
