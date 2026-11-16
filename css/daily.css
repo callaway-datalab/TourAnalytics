@@ -249,3 +249,28 @@ html[data-theme="light"] .td .mc.mc-pair .mc-bar.up { fill: #1d8f43; } html[data
 .td-stackc > .td-sec { padding: 0 0 22px !important; border-left: 0 !important; }
 @media (max-width: 860px) { .td-two { grid-template-columns: 1fr; } .td-stackc:first-child, .td-stackc + .td-stackc { padding: 0; border-left: 0; } }
 .td .td-legend .m-new::before { background: var(--td-gold); } .td .td-legend .m-old::before { background: var(--td-mute); } /* (update 757) */
+/* (update 758) less space above the masthead */
+.ah.td { margin-top: -12px; }
+/* (update 758) each section a card of its own color: a bar along the top, its rule and dot in that color */
+.td-sec[data-sec="fact"] { --sec: #d4b483; } .td-sec[data-sec="form"] { --sec: #30d158; } .td-sec[data-sec="spot"] { --sec: #bf5af2; }
+.td-sec[data-sec="gear"] { --sec: #ff9f0a; } .td-sec[data-sec="rank"] { --sec: #0a84ff; } .td-sec[data-sec="res"] { --sec: #ffd60a; }
+.td-sec[data-sec="focus"] { --sec: #ff453a; } .td-sec[data-sec="course"] { --sec: #64d2ff; } .td-sec[data-sec="next"] { --sec: #5ac8fa; }
+.td-sec[data-sec="prac"] { --sec: #ffcc00; } .td-sec[data-sec="tour"] { --sec: #8e8e93; }
+html[data-theme="light"] .td-sec[data-sec="fact"] { --sec: #8a6526; } html[data-theme="light"] .td-sec[data-sec="form"] { --sec: #1d8f43; } html[data-theme="light"] .td-sec[data-sec="spot"] { --sec: #8a2fc4; }
+html[data-theme="light"] .td-sec[data-sec="gear"] { --sec: #c46a00; } html[data-theme="light"] .td-sec[data-sec="rank"] { --sec: #0b5fc4; } html[data-theme="light"] .td-sec[data-sec="res"] { --sec: #a67c00; }
+html[data-theme="light"] .td-sec[data-sec="focus"] { --sec: #c22a1f; } html[data-theme="light"] .td-sec[data-sec="course"] { --sec: #0e7c99; } html[data-theme="light"] .td-sec[data-sec="tour"] { --sec: #5b5e66; }
+.td-sec { background: var(--td-card); border-radius: 14px; border-top: 4px solid var(--sec, var(--td-rule2)); padding: 2px 20px 18px !important; margin: 0 0 20px !important; }
+.td-sec .td-sh { border-bottom: 2px solid var(--sec, var(--td-ink)); margin-top: 14px; }
+.td-sec .td-sh h2::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--sec); margin-right: 10px; vertical-align: 3px; }
+.td-sec .td-kick:not(.down):not(.mute) { color: var(--sec, var(--td-gold)); }
+.td-grid { row-gap: 0; }
+.td-stackc:first-child { padding-right: 10px; } .td-stackc + .td-stackc { border-left: 0; padding-left: 10px; }
+html[data-theme="light"] .td-sec { background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.td-sec .td-fx, .td-sec .td-tile { background: var(--td-paper); }
+/* (update 758) a "Did you know" card: the name its heading */
+.td-fx-nm { margin: 2px 0 0; font: 800 1.3rem/1.15 var(--td-head); color: var(--td-ink); }
+.td-fx .td-fx-lbl { font-size: 0.9rem; color: var(--td-soft); }
+.td-fx-who { display: none !important; }
+/* (update 758) a leaderboard opens at the player: their row */
+.td-pop .td-box tr.target td { background: color-mix(in srgb, var(--td-gold) 22%, transparent); color: var(--td-ink); font-weight: 800; }
+@media (max-width: 860px) { .td-sec { padding: 2px 14px 14px !important; } .td-stackc:first-child, .td-stackc + .td-stackc { padding: 0; } }

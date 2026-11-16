@@ -6900,3 +6900,9 @@ html, body { overflow-x: clip; max-width: 100%; }
 .tr-pop-calls p { margin: 0 0 6px; } .tr-pop .pos { color: #30d158; } .tr-pop .neg { color: #ff6b5e; }
 .tr-pop-scroll { max-height: 55vh; overflow: auto; margin-top: 8px; }
 @media (max-width: 600px) { .tr-popwrap { place-items: end center; } .tr-pop { width: 100vw; max-height: 88vh; border-radius: 16px 16px 0 0; } .tr-pick .tr-sel:last-child { max-width: 220px; } }
+/* (update 758) the round pills; linking a course */
+.tr-rounds { display: flex; gap: 6px; flex-wrap: wrap; }
+.tr-rd { border: 1px solid var(--line-2, rgba(255,255,255,0.14)); background: none; color: var(--ink); border-radius: 999px; padding: 5px 14px; font: 700 0.85rem var(--font-body); cursor: pointer; white-space: nowrap; }
+.tr-rd.on { background: #d4b483; border-color: #d4b483; color: #111; }
+.tr-link-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.tr-link { max-width: 320px; padding: 5px 10px; font-size: 0.85rem; }

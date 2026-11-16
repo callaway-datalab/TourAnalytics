@@ -54,7 +54,7 @@ export function resultsView(S, rounds, field) {
         worst && worst.rd < 0 ? el("p", {}, [el("strong", { class: "neg" }, `Costliest: ${nm(worst.cat)} from ${worst.d}`), ` · ${fmtSG(worst.rd)} a round (${fmtSG(worst.per)} a shot, ${Math.round(worst.n)} shots)${worst.sPer != null ? `, against ${fmtSG(worst.sPer)} a shot the rest of ${ev.year}` : ""}`]) : null]),
       el("div", { class: "tr-pop-scroll" }, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, [c ? "Distance" : "Part · distance", "Shots", "SG a shot", "SG a round", `Rest of ${ev.year}`, "Better or worse"].map((x, i) => el("th", { class: i ? "num" : null }, x)))),
         el("tbody", {}, rows.map((o) => { const dlt = o.sPer != null ? o.per - o.sPer : null; return el("tr", {}, [el("td", {}, c ? o.d : `${nm(o.cat)} · ${o.d}`), el("td", { class: "num" }, String(Math.round(o.n))), el("td", { class: `num ${cls(o.per)}` }, fmtSG(o.per)), el("td", { class: `num ${cls(o.rd)}` }, fmtSG(o.rd)), el("td", { class: "num muted" }, o.sPer != null ? fmtSG(o.sPer) : "—"), el("td", { class: `num ${cls(dlt)}` }, dlt != null ? `${dlt > 0 ? "▲" : "▼"} ${Math.abs(dlt).toFixed(2)}` : "")]); }))]))];
-    const box = el("section", { class: "tr-pop", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, `${c ? nm(c) : "Every part of the game"} by distance`), body]);
+    const box = el("section", { class: "tr-pop", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, `${c ? nm(c) : "Every part of the game"} by distance`), ...(Array.isArray(body) ? body : [body])].filter(Boolean)); /* (update 758: flat, so it opens) */
     const wrap = el("div", { class: "tr-popwrap" }, [back, box]); document.body.appendChild(wrap); xb.focus();
   }
   const tapC = (n, c) => { const go = () => openDist(c); n.addEventListener("click", go); n.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return n; };
@@ -72,7 +72,7 @@ export function resultsView(S, rounds, field) {
   const rIds = evRs.map((r, i) => String(r.roundNo || i + 1));
   if (!rIds.includes(st.resRound)) st.resRound = rIds[0];
   const rd = evRs[rIds.indexOf(st.resRound)];
-  const tabs = el("div", { class: "seg seg-sm tr-rounds", role: "group", "aria-label": "Round" }, rIds.map((id) => { const on = id === st.resRound, b = el("button", { type: "button", class: `seg-btn${on ? " on" : ""}`, "aria-pressed": String(on) }, `Round ${id}`); b.addEventListener("click", () => { if (!on) { st.resRound = id; st.resHole = null; S.draw(); } }); return b; }));
+  const tabs = el("div", { class: "tr-rounds", role: "group", "aria-label": "Round" }, rIds.map((id) => { const on = id === st.resRound, b = el("button", { type: "button", class: `tr-rd${on ? " on" : ""}`, "aria-pressed": String(on) }, `R${id}`); b.addEventListener("click", () => { if (!on) { st.resRound = id; st.resHole = null; S.draw(); } }); return b; }));
   const cardBox = el("div", { class: "tr-card" }, el("p", { class: "muted small" }, "Loading the scorecard…")), holeBox = el("div", { class: "tr-hole" });
   const sc = el("section", { class: "panel tr-sc" }, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, "Scorecard"), tabs]), cardBox, holeBox]);
 
@@ -84,16 +84,23 @@ export function resultsView(S, rounds, field) {
     if (!shotsByHole.size && me) { try { const { loadSource } = await import("./reportGen.js"); const d = await loadSource("tour", me.key, me.label || "", { detail: false, field: false });
       const own = (d?.me?.rounds || []).find((r) => r.event === ev.event && yrOf(r) === ev.year && String(r.roundNo) === String(rd.roundNo));
       for (const s of own?.shots || []) if (s.hole != null) (shotsByHole.get(s.hole) || shotsByHole.set(s.hole, []).get(s.hole)).push(s); } catch (e) { console.warn("own rows", e); } }
+    let list = [];
+    const LINK = "ta.trCourse", links = (() => { try { return JSON.parse(localStorage.getItem(LINK) || "{}"); } catch { return {}; } })(), evKey = norm(ev.event);
     try {
-      const CH = await import("./courseHeat.js"), list = await CH.listHeatCourses().catch(() => []);
-      meta = (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event) && (!e.years?.length || e.years.map(String).includes(ev.year))))
+      const CH = await import("./courseHeat.js"); list = (await CH.listHeatCourses().catch(() => [])) || [];
+      meta = (links[evKey] && list.find((c) => c.id === links[evKey])) || (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event) && (!e.years?.length || e.years.map(String).includes(ev.year))))
         || (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event)))
         || (rd.course ? (list || []).find((c) => norm(c.name) === norm(rd.course) || norm(c.name).includes(norm(rd.course)) || norm(rd.course).includes(norm(c.name))) : null) || null; // (update 757: or by the course's name)
       if (meta && me) { const CS = await import("./courseShots.js"); const tr = await CS.playerTrails(meta, me.key).catch(() => null); trails = (tr?.trails || []).filter((t) => String(t.y) === ev.year && String(t.r) === String(rd.roundNo)); }
     } catch (e) { console.warn("scorecard", e); }
     const tOf = (h) => trails?.find((t) => Number(t.h) === h) || null;
     const holes = [...new Set([...shotsByHole.keys(), ...(trails || []).map((t) => Number(t.h))])].filter((h) => h >= 1 && h <= 18).sort((a, b) => a - b);
-    if (!holes.length) { mount(cardBox, el("p", { class: "muted small" }, "No hole-by-hole shots for this round in the data.")); return; }
+    // (update 758) a tournament's course, picked by hand when it isn't found (kept on this device)
+    const linkSel = () => { const sel = el("select", { class: "tr-sel tr-link" }, [el("option", { value: "" }, "Link a Strategy Maps course…"), ...[...list].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((c) => el("option", { value: c.id }, c.name))]);
+      if (meta) sel.value = meta.id; sel.addEventListener("change", () => { const l2 = { ...links }; if (sel.value) l2[evKey] = sel.value; else delete l2[evKey]; try { localStorage.setItem(LINK, JSON.stringify(l2)); } catch { /* */ } S.draw(); }); return sel; };
+    if (!holes.length) {
+      const why = !meta ? `${ev.event} isn't linked to a course in Strategy Maps, and this round's shots in the stats data have no hole numbers.` : !trails?.length ? `${meta.name} is in Strategy Maps, but it has no shots of ${me?.label || "this player"}'s for ${ev.year} round ${rd.roundNo} (the course data may be from other years), and the stats data has no hole numbers.` : "No hole-by-hole shots for this round.";
+      mount(cardBox, [el("p", { class: "muted small" }, why), list.length ? el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, "Course: "), linkSel()]) : null]); return; }
     const parOf = (h) => tOf(h)?.par ?? meta?.par?.[h - 1] ?? null, scoreOf = (h) => { const t = tOf(h); if (t?.s != null && parOf(h) != null) return parOf(h) + t.s; const ss = shotsByHole.get(h); return ss?.length && ss.every((s) => (s.w || 1) === 1) ? ss.length : null; };
     const sgOf = (h) => { const ss = shotsByHole.get(h); return ss ? ss.reduce((t, s) => t + (s.sg || 0), 0) : null; };
     const half = (hs, lab) => { if (!hs.length) return null; const sum = (f) => { const v = hs.map(f); return v.every((x) => x != null) ? v.reduce((a, b) => a + b, 0) : null; };
@@ -104,7 +111,7 @@ export function resultsView(S, rounds, field) {
         el("tr", {}, [el("th", {}, "Score"), ...hs.map(cell), el("td", { class: "tr-tot" }, sum(scoreOf) ?? "")]),
         el("tr", {}, [el("th", {}, "SG"), ...hs.map((h) => { const v = sgOf(h); return el("td", { class: `tr-sg ${cls(v)}` }, v == null ? "" : fmtSG(v)); }), el("td", { class: `tr-sg ${cls(sum(sgOf))}` }, sum(sgOf) == null ? "" : fmtSG(sum(sgOf)))])]; };
     const drawCard = () => mount(cardBox, [el("div", { class: "tr-sc-scroll" }, el("table", { class: "tr-sc-t" }, el("tbody", {}, [...(half(holes.filter((h) => h <= 9), "Out") || []), ...(half(holes.filter((h) => h > 9), "In") || [])]))),
-      el("p", { class: "muted small" }, [meta ? "" : "Par and the hole pictures come from Strategy Maps; this course doesn't have them yet. ", "Tap a hole for its shots."])]);
+      el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, [meta ? "" : "Par and the hole pictures come from Strategy Maps: link this tournament's course. ", "Tap a hole for its shots. Course: "]), list.length ? linkSel() : null])]);
     // a hole: its shots, then its picture with the trail
     const drawHole = () => {
       const h = st.resHole; if (!h) { mount(holeBox, null); return; }
