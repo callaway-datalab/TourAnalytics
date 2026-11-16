@@ -1197,7 +1197,7 @@ export async function render(main, { previewClient } = {}) {
     for (const pill of ["Driver", "Putters", "Irons", "Wedges", "Non-Driver", "Balls"]) {
       const val = (s) => (pill === "Balls" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear && KIND_PILL[gearInfo(s.gear).kind] === pill ? s.gear : null);
       const top = evs.map((e) => { const m = new Map(); for (const r of e.rs) for (const s of r.shots) { const v = val(s); if (v) m.set(v, (m.get(v) || 0) + (s.w || 1)); } return [...m].sort((x, y) => y[1] - x[1])[0]?.[0] || null; });
-      const i = top.length - 1; if (!top[i]) continue;
+      let i = top.length - 1; while (i >= 0 && !top[i]) i--; if (i < 0) continue; // (update 807: the latest event with that kind of club on record, not just the very last event)
       let j = i; while (j > 0 && (top[j - 1] === top[i] || !top[j - 1])) j--; // the first tournament with the new one
       if (j === 0 || i - j > 8 || !top[j - 1]) continue; // (update 805: a switch in the last 9 events)
       const neu = top[i], old = top[j - 1], c = PROD_COL[pill], nm = (g) => { const gi = gearInfo(g); return `${gi.brand} ${gi.model}`.trim() || g; };
@@ -1210,7 +1210,7 @@ export async function render(main, { previewClient } = {}) {
       // and a difference clear of the round-to-round noise (Welch's t of 1.65+, about 90% sure which is better)
       const sdv = (a) => { if (a.length < 2) return 0; const m = a.reduce((t, v) => t + v, 0) / a.length; return Math.sqrt(a.reduce((t, v) => t + (v - m) ** 2, 0) / (a.length - 1)); };
       const first = A.ev === 1, tStat = Math.abs(A.v - B.v) / Math.max(1e-6, Math.sqrt(sdv(A.vals) ** 2 / A.n + sdv(B.vals) ** 2 / B.n));
-      const sure = first || (A.n >= 8 && B.n >= 8 && tStat >= 1.65); if (A.n < 2) continue; // (update 805: every recent switch shows; one not yet clear is said to be too early to call)
+      const sure = first || (A.n >= 8 && B.n >= 8 && tStat >= 1.65); // (update 807: a one-round first event shows too) // (update 805: every recent switch shows; one not yet clear is said to be too early to call)
       const dd = A.v - B.v, where = tourPick && tourPick !== ALL ? `every ${tourName(tourPick)} round in ${seasonYr()}` : `every round in ${seasonYr()}`;
       out.push({ id: `eq-${k}-${pill}`, k, x: { pill, neu: nm(neu), old: nm(old), A, B, c, dd, where, first, sure }, kind: "Equipment", score: (first ? 6 : sure ? 7 : 5) + Math.abs(dd) * 2, title: `New ${KIND_WORD[pill] || "club"}: ${nm(neu)}, ${sg2(dd)} a round ${COL_IN[c]}`,
         detail: `${first ? "Only one event so far, so it’s early: " : ""}${sg2(A.v)} a round over ${plural(A.n, "round")} (${plural(A.ev, "tournament")}) with it, against ${sg2(B.v)} over ${plural(B.n, "round")} (${plural(B.ev, "tournament")}) with the ${nm(old)} · ${where}, as the product table on Stats counts it`,
