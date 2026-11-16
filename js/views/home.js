@@ -58,7 +58,7 @@ export async function render(main, { previewClient } = {}) {
   const cmpBase = (k) => `#/comparisons?player=${encodeURIComponent(k)}${tourPick && tourPick !== ALL ? `&tour=${encodeURIComponent(tourPick)}` : ""}`; // (update 729: Compare on the same tour)
 
   // ---- the data (filled in as it arrives) ----
-  let field = [], years = [], heat = null, next = null, ownP = null; // (update 742) ownP: { key, rounds, own }: the signed-in person's own entered rounds
+  let field = [], years = [], heat = null, next = null, ownP = null, dsRef = null, detail = null; // (update 749) detail: { tour, by: Map(key → rounds with each shot's distance and lie) } // (update 742) ownP: { key, rounds, own }: the signed-in person's own entered rounds
   const playerOf = (k) => (ownP && k === ownP.key ? ownP : field.find((p) => p.key === k));
   const heatP = import("../courseHeat.js").then((m) => m.listHeatCourses()).then((l) => (heat = (l || []).filter((c) => c.par?.length))).catch(() => (heat = []));
   const yrOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
@@ -445,6 +445,12 @@ export async function render(main, { previewClient } = {}) {
       if (g[1] >= 0.15) add("yoy", "Year on year", `${P} ${CATW[g[0]]} is up ${g[1].toFixed(2)} a round on ${Number(SY) - 1}`, `Strokes gained ${CAT_IN[g[0]]}: ${sg2(avgC(g[0]))} a round in ${SY}, against ${sg2(avgOf(prev, (r) => inCat(r, g[0])))} last season`, () => go(`${cmpBase(k)}&pick=years:${Number(SY) - 1},${SY}`, EX.cmpYears("How does this season compare to last?")), "Compare · Seasons", 4.1); }
     return out;
   }
+  // (update 749) the field's shot-by-shot detail (each shot's distance and lie), this season on the tour picked, for facts at
+  // a distance; one shared copy (the Stats page uses the same), loaded after the page is up
+  async function loadDetail() { if (!dsRef || !tourPick) return; const SY = seasonYr(), tp = tourPick === ALL ? "all" : tourPick;
+    if (detail?.tour === tp) return; const { getFieldDetail } = await import("../fieldStore.js");
+    const det = await getFieldDetail(dsRef.id, dsRef.uploadedAt?.toMillis?.() ?? 0, { tour: tp, years: [SY] }).catch(() => null); if (!det?.players?.length) return;
+    detail = { tour: tp, by: new Map(det.players.map((p) => [p.key, p.rounds])) }; factMemo = null; drawFeed(collect()); }
   // (update 748) "Did you know?": random facts about the players shown, a new set every 12 hours. Where they rank (top 10
   // or bottom 10 of the players with enough rounds) this season and over their last 12 rounds, in strokes gained and the
   // part-of-the-game stats that don't need a distance; their best week in each part of the game; a single round among the
@@ -457,8 +463,8 @@ export async function render(main, { previewClient } = {}) {
     if (F.ok.length >= 10) {
       const last12 = (rs) => rs.filter((r) => !r.eventLevel).slice(-12);
       const wins = [["season", `in ${SY}${on}`, (p) => p.rs, F.ok], ["l12", `over the last 12 rounds${on}`, (p) => last12(p.rs), F.ok.filter((p) => last12(p.rs).length >= 12)]];
-      const mets = [...["TOTAL", ...cats].map((c) => ({ id: c, lbl: c === "TOTAL" ? "strokes gained" : `strokes gained ${CAT_IN[c]}`, higher: true, val: (rs) => avgOf(rs, c === "TOTAL" ? tot : (r) => inCat(r, c)), fmt: (v) => `${sg2(v)} a round` })),
-        ...STAT_KEYS.map((key) => ({ id: key, lbl: STAT_DEFS[key].label.replace(/ %$/, " %").toLowerCase(), higher: STAT_DEFS[key].higher, val: (rs) => obsAvg(rs, key), fmt: (v) => fmtStat(STAT_DEFS[key], v) }))];
+      // (update 749) strokes gained by part of the game as it was; every other stat only at a distance (below, from the detail)
+      const mets = ["TOTAL", ...cats].map((c) => ({ id: c, lbl: c === "TOTAL" ? "strokes gained" : `strokes gained ${CAT_IN[c]}`, higher: true, val: (rs) => avgOf(rs, c === "TOTAL" ? tot : (r) => inCat(r, c)), fmt: (v) => `${sg2(v)} a round` }));
       const rankMemo2 = new Map();
       const ranksOf = (w, m) => { const kk = `${w[0]}|${m.id}`; if (rankMemo2.has(kk)) return rankMemo2.get(kk); const vs = w[3].map((p) => [p.k, m.val(w[2](p))]).filter((x) => x[1] != null).sort((a, b) => (m.higher ? b[1] - a[1] : a[1] - b[1])); rankMemo2.set(kk, vs); return vs; };
       for (const k of keysF) { const me = isMe(k), N = me ? "You" : nameOf(k), P = me ? "your" : poss(nameOf(k));
@@ -475,6 +481,31 @@ export async function render(main, { previewClient } = {}) {
           let better = 0; for (const p of F.all) for (const r of p.rs) if (!r.eventLevel && f(r) > mine[1]) { better++; if (better > 10) break; }
           if (better < 5) cand.push({ id: `fx-rd-${c}-${k}`, k, kick: "Round to remember", title: `${me ? "Your" : poss(nameOf(k))} ${sg2(mine[1])} ${c === "TOTAL" ? "round" : `${CATW[c]} round`} at ${mine[0].event} is ${better ? `in the top ${better + 1}` : "the best"} on tour this season`, detail: `Strokes gained ${c === "TOTAL" ? "total" : CAT_IN[c]}${mine[0].roundNo ? `, round ${mine[0].roundNo}` : ""} (${SY}${on})`, run: () => toStats(k, { view2: "full", year: [SY], span: 0, trendBy: "round" }, "SG Trends", null), to: "Stats · SG Trends" }); } }
     }
+    // (update 749) at a distance, from the detail: strokes gained a shot (a part of the game from a distance range) and each
+    // stat recorded with a distance (proximity, up & down, made putts, hit green …), this season and over the last 12 rounds;
+    // ranked among the players with enough rounds who've had enough of those shots (15 this season, 6 over 12 rounds)
+    if (detail && F.ok.length >= 10) {
+      const SYd = SY, okSet = new Set(F.ok.map((p) => p.k)), roundsOf2 = (k) => (detail.by.get(k) || []).filter((r) => yrOf(r) === SYd && (detail.tour === "all" || (r.tour || "") === detail.tour) && !r.eventLevel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const aggOf = (rs) => { const m = new Map(); const put = (kk, v, w) => { const a = m.get(kk) || m.set(kk, [0, 0]).get(kk); a[0] += v * w; a[1] += w; };
+        for (const r of rs) { for (const sh of r.shots || []) if (sh.dist && sh.cat && sh.cat !== "OTT") put(`sg|${sh.cat}|${sh.dist}`, sh.sg, sh.w || 1); for (const o of r.obs || []) if (o.dist && STAT_DEFS[o.k] && STAT_DEFS[o.k].higher != null) put(`o|${o.k}|${o.cat || ""}|${o.dist}`, o.v, o.w || 1); } return m; };
+      const W2 = [["season", `in ${SYd}${on}`, (rs) => rs, 15], ["l12", `over the last 12 rounds${on}`, (rs) => rs.slice(-12), 6]];
+      // the metrics the players shown have enough of (a few dozen, picked by the half day), then the field on just those
+      const mine = new Map(); for (const k of keysF) { const rs = roundsOf2(k); for (const w of W2) mine.set(`${w[0]}|${k}`, aggOf(w[2](rs))); }
+      const metsD = new Set(); for (const [wk, m] of mine) { const w = W2.find((x) => wk.startsWith(`${x[0]}|`)); for (const [kk, a] of m) if (a[1] >= w[3]) metsD.add(`${w[0]}#${kk}`); }
+      const chosen = [...metsD].sort((a, b) => hash(`${a}|${SLOT}`) - hash(`${b}|${SLOT}`)).slice(0, 40), want = new Set(chosen);
+      const fieldV = new Map(); // `${win}#${kk}` → [[key, v, w]]
+      for (const p of F.ok) { const rs = roundsOf2(p.k); if (!rs.length) continue; for (const w of W2) { const ag = aggOf(w[2](rs)); for (const [kk, a] of ag) { const id = `${w[0]}#${kk}`; if (!want.has(id) || a[1] < w[3]) continue; (fieldV.get(id) || fieldV.set(id, []).get(id)).push([p.k, a[0] / a[1], a[1]]); } } }
+      const WHAT = { APP: "on approach", ARG: "around the green", PUTT: "putting" };
+      for (const id of chosen) { const [wn, kk] = id.split("#"), w = W2.find((x) => x[0] === wn), parts = kk.split("|"), list = fieldV.get(id) || []; if (list.length < 20) continue;
+        const isSG = parts[0] === "sg", def = isSG ? null : STAT_DEFS[parts[1]], dist = isSG ? parts[2] : parts[3], higher = isSG ? true : def.higher;
+        list.sort((a, b) => (higher ? b[1] - a[1] : a[1] - b[1]));
+        const lbl = isSG ? `strokes gained ${WHAT[parts[1]] || CAT_IN[parts[1]]} from ${dist}` : `${def.label.replace(/ %$/, " %").toLowerCase()}${parts[2] ? ` ${CAT_IN[parts[2]] || ""}` : ""} from ${dist}`.replace(/\s+/g, " ");
+        const fmtV = (v) => (isSG ? `${sg2(v)} a shot` : fmtStat(def, v));
+        for (const k of keysF) { const i = list.findIndex((x) => x[0] === k); if (i < 0 || !okSet.has(k)) continue; const top = i < 10, bot = i >= list.length - 10; if (!top && !bot) continue;
+          const me = isMe(k), N = me ? "You" : nameOf(k);
+          cand.push({ id: `fx-${id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${list.length} in ${lbl} ${w[1]}`,
+            detail: `${fmtV(list[i][1])} (${Math.round(list[i][2])} ${isSG ? "shots" : "attempts"})${i ? `; the leader, ${nameOf(list[0][0])}: ${fmtV(list[0][1])}` : `; next best, ${nameOf(list[1][0])}: ${fmtV(list[1][1])}`}`,
+            run: () => toStats(k, { view2: "focus", focusCats: isSG ? [parts[1]] : [], focusPick: isSG ? parts[1] : null, year: [SYd], span: 0 }, "Where you stand", null), to: "Stats · Focus" }); } } }
     // a different set each half day: shuffled by the slot, at most 2 a player when there are several
     cand.sort((a, b) => hash(`${a.id}|${SLOT}`) - hash(`${b.id}|${SLOT}`));
     const out = [], per = new Map(); for (const x of cand) { if (out.length >= 8) break; const n = per.get(x.k) || 0; if (keysF.length > 1 && n >= 2) continue; per.set(x.k, n + 1); out.push({ ...x, kind: "Fact", score: 3.2 - out.length * 0.01 }); }
@@ -849,7 +880,7 @@ export async function render(main, { previewClient } = {}) {
   }
   const playsTour = (k) => !tourPick || tourPick === ALL || !field.length || (ownP && k === ownP.key) || (playerOf(k)?.rounds || []).some((rd) => tourOf(rd) === tourPick);
   const shownKeys = () => (picked.size ? [...picked] : keys.filter(playsTour));
-  const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); }; // (tbMemo is keyed by tour)
+  const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); loadDetail().catch(() => {}); }; // (tbMemo is keyed by tour)
   // (update 740) a tap picks a player, or unpicks one already picked; All: none picked (everyone)
   const setWho = (k) => { if (k == null) picked.clear(); else if (picked.has(k)) picked.delete(k); else { picked.add(k); if (!keys.includes(k)) keys = [...keys, k]; focus = k; drawTabs(); } refresh(); };
   async function removeFav(k) {
@@ -887,7 +918,7 @@ export async function render(main, { previewClient } = {}) {
   }
   // (the data, once everything above is defined)
   // (the data, once everything above is defined)
-  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setHeat: (h) => { heat = h; }, upFromData, upRawFrom: async (c, rows) => upRawFrom(c, rows, await import("../courseHeat.js")), setOwn: (k, rs) => { ownP = { key: k, name: "Charlie Test", rounds: rs, own: true }; labels.set(k, "Charlie Test"); gearData.set(k, rs); gearP.set(k, Promise.resolve()); keys = [k, ...keys]; }, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who: [...picked][0] || null, picked: [...picked] }) }); // (tests only)
+  if (window.__homeTest) Object.assign(window.__homeTest, { setField: (f) => { field = f; tmemo.clear(); rankMemo = null; }, setKeys: (k) => { keys = k; }, setFavs: (f) => { favs = f; }, setGear: (k, rs) => { gearData.set(k, rs); gearP.set(k, Promise.resolve()); }, setHeat: (h) => { heat = h; }, upFromData, setDetail: (tour, by) => { detail = { tour, by }; factMemo = null; }, upRawFrom: async (c, rows) => upRawFrom(c, rows, await import("../courseHeat.js")), setOwn: (k, rs) => { ownP = { key: k, name: "Charlie Test", rounds: rs, own: true }; labels.set(k, "Charlie Test"); gearData.set(k, rs); gearP.set(k, Promise.resolve()); keys = [k, ...keys]; }, setTour, setWho, draw: () => { drawPills(); drawFeed(collect()); }, state: () => ({ tourPick, who: [...picked][0] || null, picked: [...picked] }) }); // (tests only)
   try {
     if (selfKey) keys = [selfKey];
     else {
@@ -900,7 +931,7 @@ export async function render(main, { previewClient } = {}) {
     const via = keys[0] || teamKeys[0];
     const dsList = admin ? await once((cb) => store.watchAdminDatasets(cb)) : via ? await once((cb) => store.watchClientDatasets(via, cb)) : [];
     const ds = (dsList || []).filter((d) => isShotData(detectColumns(d.columns || []))).sort((a, b) => (b.uploadedAt?.toMillis?.() ?? 0) - (a.uploadedAt?.toMillis?.() ?? 0))[0];
-    const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null;
+    const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null; dsRef = ds; // (update 749)
     field = summaryPlayers(summary).filter((p) => p.rounds.length);
     for (const p of field) if (!labels.has(p.key) && p.name) labels.set(p.key, p.name);
     drawTabs();
@@ -909,6 +940,7 @@ export async function render(main, { previewClient } = {}) {
     await nextP; await heatP; /* (update 736: the courses, for Course Insights & Strategy) */
     refresh();
     loadUpCourse().catch(() => {}); /* (update 737) */
+    loadDetail().catch((e) => console.warn("detail", e)); /* (update 749) */
     if (selfKey || ownP) { practice = await practiceHighlights(selfKey || ownP.key).catch(() => []); if (practice.length) drawFeed(collect()); }
   } catch (err) { console.error(err); mount(feed, el("p", { class: "muted small" }, "Couldn’t put the highlights together just now.")); }
 }
