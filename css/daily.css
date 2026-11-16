@@ -357,3 +357,8 @@ main:has(.ah.td) { padding-top: 0 !important; }
 .td-lead-wide .td-bars { width: 100%; max-height: none; height: auto; }
 /* (update 792) the shuffle off the corner a little */
 .td-lead > .td-reroll.td-shuf { top: 12px; right: 14px; }
+/* (update 794) form round by round: each stretch's average as a dashed gold line with its label */
+.td-formr .td-grid { stroke: var(--td-rule); stroke-width: 0.6; }
+.td-formr .td-avgl { stroke: var(--td-gold); stroke-width: 1.3; stroke-dasharray: 5 4; }
+.td-formr .td-avgt { font: 700 10px var(--td-sans); fill: var(--td-gold); }
+.td-formr .td-tx { font-size: 9px; }
