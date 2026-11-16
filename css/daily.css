@@ -334,3 +334,6 @@ main:has(.ah.td) { padding-top: 0 !important; }
 /* (update 786) a story's detail in bullet points */
 .td-bul { margin: 6px 0 0; padding-left: 18px; } .td-bul li { margin: 3px 0; line-height: 1.4; } .td-bul li::marker { color: var(--sec, var(--td-gold)); }
 .td-lead .td-bul { font-size: 1.05rem; color: var(--td-soft); }
+/* (update 788) the leaderboard around a player, filling the lead story's space */
+.td-mini-board .td-box { margin-top: 4px; } .td-mini-board .td-box td { padding: 5px 0; } .td-mini-board .td-box td.r { font-size: 1rem; width: 40px; }
+.td-mini-board tr.target td { background: color-mix(in srgb, var(--td-gold) 20%, transparent); font-weight: 800; color: var(--td-ink); }

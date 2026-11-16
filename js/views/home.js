@@ -431,11 +431,22 @@ export async function render(main, { previewClient } = {}) {
         const last = rs.filter((r) => !r.eventLevel).slice(-30), mx = Math.max(1, ...last.map((r) => Math.abs(f(r))));
         if (false && last.length >= 6 && !isEq) viz.push( /* (update 770: no round-by-round strip) */ /* (update 762: a club change: its bars by model instead) */el("div", { class: "td-strip-w" }, [el("div", { class: "td-kick mute" }, `Round by round · ${cat ? CATN[cat] : "strokes gained"}`), el("div", { class: "td-strip" }, last.map((r) => { const v = f(r); return el("i", { class: v >= 0 ? "up" : "down", style: `opacity:${(0.25 + 0.75 * Math.min(1, Math.abs(v) / mx)).toFixed(2)}`, title: `${r.event}${r.roundNo ? ` R${r.roundNo}` : ""}: ${sg2(v)}` }); })),
           el("div", { class: "td-strip-ax" }, [el("span", {}, shortEv(last[0].event)), el("span", {}, shortEv(last.at(-1).event))])])); } }
+    // (update 788) what fills the space, by the kind of story: a rank, the leaderboard around the player (the top 10, or the
+    // 4 either side); a best round, every round of the season; a result or a streak, the season tournament by tournament;
+    // anything else, ability against consistency
+    const miniBoard = (b) => { const rows = boardRows(b); const i = rows.findIndex((r) => r[0] === h.k); if (i < 0 || rows.length < 5) return null;
+      const lo = i < 10 ? 0 : Math.max(0, i - 4), hi = i < 10 ? Math.min(rows.length, 10) : Math.min(rows.length, i + 5);
+      return el("div", { class: "td-chart td-mini-board" }, [el("div", { class: "td-kick mute" }, `${boardTitle(b)} · ${rows.length} players`), el("table", { class: "td-box" }, el("tbody", {}, rows.slice(lo, hi).map(([k2, , txt], j) => el("tr", { class: k2 === h.k ? "target" : null }, [el("td", { class: "r" }, String(lo + j + 1)), el("td", {}, nameOf(k2)), el("td", { class: "v" }, txt)]))))]); };
+    const fillFor = () => { const t0 = h.id.split("-")[0], x0 = h.x || {};
+      if (t0 === "br") return chartFor(h);
+      if (t0 === "ev" || t0 === "st") { const b = storyBars(h, cat); return b ? el("div", { class: "td-chart" }, b) : null; }
+      const bd = h.board || x0.board || (t0 === "rk" || t0 === "rkb" ? { c: x0.hits?.[0]?.c } : /^sp-(weapon|gap)/.test(h.id) ? { c: x0.c } : null);
+      return (bd && bd.c !== undefined || bd?.key || bd?.rows ? miniBoard(bd) : null) || steadyFor(); };
     const steadyFor = () => { if (!h.k) return null; const F = seasonField(); if (F.ok.length < 10) return null; const fC = cat ? (r) => inCat(r, cat) : tot;
       const pts = F.ok.map((p1) => { const rs1 = p1.rs.filter((r) => !r.eventLevel); const sd = sdOf(rs1.map(fC)); return sd == null ? null : { x: avgOf(p1.rs, fC), y: sd, label: nameOf(p1.k), hot: p1.k === h.k }; }).filter(Boolean);
       const sv = pts.some((q) => q.hot) ? scatterSvg(pts, { xLab: `Strokes gained ${cat ? CAT_IN[cat] : "total"}`, yLab: "Swing", fmtX: sg2 }) : null;
       return sv ? el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `Ability vs consistency · ${cat ? CATN[cat] : "SG: Total"} · ${seasonYr()}`), sv]) : null; };
-    const own = (isEq ? (() => { const b = storyBars(h, cat); return b ? el("div", { class: "td-chart" }, b) : null; })() : /^(ev|br|st)-/.test(h.id) ? null : chartFor(h)) || (/^(fm|eq)-/.test(h.id) ? null : steadyFor()); /* (update 787: no chart of its own: ability vs consistency fills the space) */
+    const own = (isEq ? (() => { const b = storyBars(h, cat); return b ? el("div", { class: "td-chart" }, b) : null; })() : /^(ev|br|st|rk|rkb)-/.test(h.id) ? null : chartFor(h)) || (/^(fm|eq)-/.test(h.id) ? null : fillFor()); /* (update 787/788: no chart of its own: one picked for the story fills the space) */
     // (update 761) the story's chart under the words (no empty column beside a tall figure); the form story's table beside
     // (update 762) form: the before / after table only (the radar repeats the Form section below); a club change: its
     // bars by model up beside the words, under the three numbers
