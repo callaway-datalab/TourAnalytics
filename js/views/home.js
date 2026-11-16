@@ -438,7 +438,7 @@ export async function render(main, { previewClient } = {}) {
     // 4 either side); a best round, every round of the season; a result or a streak, the season tournament by tournament;
     // anything else, ability against consistency
     const miniBoard = (b) => { const rows = boardRows(b); const i = rows.findIndex((r) => r[0] === h.k); if (i < 0 || rows.length < 5) return null;
-      const lo = i < 10 ? 0 : Math.max(0, i - 4), hi = i < 10 ? Math.min(rows.length, 10) : Math.min(rows.length, i + 5);
+      const lo = i < 5 ? 0 : Math.max(0, i - 2), hi = i < 5 ? Math.min(rows.length, 5) : Math.min(rows.length, i + 3); // (update 790: 5 rows, compact)
       return el("div", { class: "td-chart td-mini-board" }, [el("div", { class: "td-kick mute" }, `${boardTitle(b)} · ${rows.length} players`), el("table", { class: "td-box" }, el("tbody", {}, rows.slice(lo, hi).map(([k2, , txt], j) => el("tr", { class: k2 === h.k ? "target" : null }, [el("td", { class: "r" }, String(lo + j + 1)), el("td", {}, nameOf(k2)), el("td", { class: "v" }, txt)]))))]); };
     const fillFor = () => { const t0 = h.id.split("-")[0], x0 = h.x || {};
       if (t0 === "br") return chartFor(h);
@@ -590,7 +590,7 @@ export async function render(main, { previewClient } = {}) {
       run.push(x); done.add(x); }
     flush();
     shownLead = lead?.id || null;
-    const reB = el("button", { type: "button", class: "td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻");
+    const reB = el("button", { type: "button", class: "td-shuf td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻ Shuffle") /* (update 790: as Did You Know's) */;
     reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
     mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief)), reB]), el("div", { class: "td-grid" }, laid)]);
     // (update 789) Player Spotlight and Where to Improve about the same length: stories added to the shorter one (as many as
