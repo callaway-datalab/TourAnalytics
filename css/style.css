@@ -6985,3 +6985,7 @@ button.tr-best:hover { border-color: rgba(48, 209, 88, 0.6); }
 .fx-pair > .panel { margin: 0 !important; min-width: 0; }
 .fx-pair .sv-box .mc-wrap { max-width: 520px; }
 @media (max-width: 900px) { .fx-pair { grid-template-columns: minmax(0, 1fr); } }
+/* (update 772) the top bar's icons evenly spaced: no pull-in on Cal's (it crowded the WITB bag), one gap between each */
+.rail-foot .hdr-icon, .rail-foot .hdr-icon.callie-link, .rail-foot .account-btn.hdr-icon { margin-left: 0 !important; margin-right: 0 !important; }
+@media (max-width: 520px) { .rail-foot .hdr-icon.callie-link { margin-right: 0 !important; } }
+.rail .rail-foot { column-gap: 0.5rem !important; }
