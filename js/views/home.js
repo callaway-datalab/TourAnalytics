@@ -217,7 +217,7 @@ export async function render(main, { previewClient } = {}) {
   mount(root, [
     el("header", { class: "td-mast" }, el("h1", {}, ["Daily Tour ", el("i", {}, "Report")]) /* (update 776) */), /* (update 750: was "The Daily Tour") */
     el("div", { class: "td-date" }, [el("span", {}, today), edition, nextLine]),
-    el("div", { class: "td-nav" }, [tourRow, whoRow, askBox]),
+    el("div", { class: "td-nav" }, [tourRow, whoRow] /* (update 798: no Ask Cal bar on Home) */),
     secNav, feed, asked,
     el("div", { class: "td-foot" }, "The Daily Tour Report · tap any story to dig deeper"),
   ]);
