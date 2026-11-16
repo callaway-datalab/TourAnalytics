@@ -1,14 +1,16 @@
-// (update 756) Stats › Tournament Results: a recap of each tournament the player played. Pick the year and the
-// tournament: hero cards (strokes gained a round, and in each part of the game, with the rank in that week's field; the
-// rounds; the best round), then a scorecard for each round (every hole's score against par and its strokes gained). A
-// hole opens to its shots (the lie, the distance, the club, the strokes gained of each) and, where the course has
-// Strategy Maps, the hole itself with the player's trail drawn on it.
-//   Scores and par come from the course's own shot data (Strategy Maps); without it the scorecard shows strokes counted
-//   from the shots and their strokes gained.
+// (update 756) Stats › Tournament Results: a recap of each tournament the player played.
+// (update 759) Built from the course's own shot data (Strategy Maps, with its tournament column): every player's every
+// shot that week, so everything is ranked against the field: strokes gained a round in total and in each part of the
+// game, each distance range (a shot), and every single shot ("the best shot of the tournament"). Each shot's strokes
+// gained: the strokes to hole out from where it was played less those from where it finished, less one. A round's
+// scorecard from it (par, score, strokes gained a hole), a hole's shots (each with its rank in the field), and the hole
+// itself with the trail, into the cup. A tournament whose course isn't in Strategy Maps: the stats file's numbers, and
+// a picker to link the course.
 import { el, mount } from "./ui.js";
 import { fmtSG } from "./sg.js";
 
 const CATS = [["OTT", "Off-the-Tee"], ["APP", "Approach"], ["ARG", "Around-the-Green"], ["PUTT", "Putting"]];
+const CATN = Object.fromEntries(CATS);
 const yrOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
 const norm = (s) => String(s || "").toLowerCase().replace(/^the\s+/, "").replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/, "").replace(/[^a-z0-9]/g, "");
 const tot = (rd) => (rd.shots || []).reduce((t, s) => t + (s.sg || 0), 0);
@@ -16,9 +18,47 @@ const inCat = (rd, c) => (rd.shots || []).reduce((t, s) => t + (s.cat === c ? s.
 const avg = (rs, f) => (rs.length ? rs.reduce((t, r) => t + f(r), 0) / rs.length : null);
 const cls = (v) => (v == null ? "" : v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
 const ord = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
-const LIES = ["Tee", "Fairway", "Rough", "Bunker", "Green", "Water", "Other"];
+const LIES = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
+const cap = (t) => String(t || "").replace(/^./, (c) => c.toUpperCase());
+const LINK = "ta.trCourse";
 
-/** rounds: the player's rounds on the tour picked (every year); field: every player's rounds there (for each week's ranks). */
+// ---- the week from the course's shots: every player, every shot ----
+const weekMemo = new Map();
+async function courseWeek(meta, ev) {
+  const mk = `${meta.id}|${ev.year}|${norm(ev.event)}`; if (weekMemo.has(mk)) return weekMemo.get(mk);
+  const p = (async () => {
+    const [CR, CH, D] = await Promise.all([import("./courseRaw.js"), import("./courseHeat.js"), import("./data.js")]);
+    const rows = await CR.loadRaw(meta); if (!rows?.length) return null;
+    const evN = norm(ev.event), num = (v) => (v == null || v === "" ? null : Number(v));
+    const hasEv = rows.some((r) => String(r[0]) === ev.year && r[19]);
+    const mine = rows.filter((r) => String(r[0]) === ev.year && (!hasEv || norm(r[19]) === evN)); if (!mine.length) return null;
+    const trails = new Map(), greens = [];
+    for (const r of mine) { const h = num(r[6]), st = num(r[10]); if (!h || st == null) continue;
+      const idv = r[4] != null && r[4] !== "" ? String(num(r[4]) ?? r[4]) : r[3] != null ? String(r[3]) : null; if (!idv) continue;
+      const pk = D.clientKey(idv), lie = CH.lieName(r[9]) || "other", q = { st, lie, d: num(r[21]) ?? num(r[18]), v: num(r[15]), x: num(r[13]), y: num(r[14]) };
+      if (lie === "green" && q.v != null) greens.push(q.v);
+      const tk = `${pk}|${r[5]}|${h}`; let T = trails.get(tk); if (!T) { T = { pk, name: r[3] != null ? String(r[3]) : idv, rd: String(num(r[5]) ?? r[5] ?? ""), h, par: num(r[7]), pid: String(r[8] ?? "1"), px: num(r[16]), py: num(r[17]), qs: [], s: null }; trails.set(tk, T); }
+      T.qs.push(q); if (num(r[12]) === 1) { const sf = num(r[11]); T.s = sf != null ? Math.round(sf) : T.par ? st - T.par : null; }
+      if (T.px == null && num(r[16]) != null) { T.px = num(r[16]); T.py = num(r[17]); } }
+    greens.sort((a, b) => a - b); const toGo = greens.length ? greens[Math.floor(greens.length / 2)] < 2.6 : true;
+    const togo = (q) => (q.v == null ? null : toGo ? q.v : q.v - (q.st - 1));
+    const band = (cat, q) => { const d = q.d; if (d == null) return null; if (cat === "PUTT") { const ft = d; return ft < 5 ? "0-5 ft" : ft < 10 ? "5-10 ft" : ft < 20 ? "10-20 ft" : ft < 30 ? "20-30 ft" : "30+ ft"; }
+      if (cat === "ARG") return d < 10 ? "0-10 yds" : d < 20 ? "10-20 yds" : "20-30 yds"; if (cat === "APP") { if (d >= 250) return "250+ yds"; const lo = Math.floor(d / 25) * 25; return `${lo}-${lo + 25} yds`; } return null; };
+    const players = new Map(), shots = [];
+    for (const T of trails.values()) { T.qs.sort((a, b) => a.st - b.st);
+      const P = players.get(T.pk) || players.set(T.pk, { pk: T.pk, name: T.name, rds: new Set(), tot: 0, cat: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, band: new Map() }).get(T.pk); P.rds.add(T.rd);
+      T.qs.forEach((q, i) => { const a = togo(q); if (a == null) return; const nx = T.qs[i + 1], b = nx ? togo(nx) : T.s != null ? 0 : null; if (b == null) return;
+        const sg = a - b - 1, cat = q.lie === "green" ? "PUTT" : q.st === 1 && (T.par || 4) >= 4 ? "OTT" : q.d != null && q.d <= 30 ? "ARG" : "APP"; q.sg = sg; q.cat = cat;
+        P.tot += sg; P.cat[cat] += sg; const bd = band(cat, q); if (bd) { const k = `${cat}|${bd}`, o = P.band.get(k) || P.band.set(k, [0, 0]).get(k); o[0] += sg; o[1]++; q.band = bd; }
+        shots.push({ pk: T.pk, sg, T, q }); }); }
+    shots.sort((a, b) => b.sg - a.sg); shots.forEach((s, i) => { s.q.rank = i + 1; });
+    return { trails, players, shots, nShots: shots.length };
+  })();
+  weekMemo.set(mk, p); p.catch(() => weekMemo.delete(mk)); return p;
+}
+const rankIn = (vals, key, higher = true) => { const s = [...vals].sort((a, b) => (higher ? b[1] - a[1] : a[1] - b[1])); const i = s.findIndex((x) => x[0] === key); return i < 0 ? null : { r: i + 1, n: s.length, lead: s[0] }; };
+
+/** rounds: the player's rounds on the tour picked (every year); field: every player's rounds there (the stats-file fallback). */
 export function resultsView(S, rounds, field) {
   const st = S.st, me = S.me, rs0 = (rounds || []).filter((r) => r.event);
   const evMap = new Map();
@@ -29,111 +69,100 @@ export function resultsView(S, rounds, field) {
   const ev = evMap.get(st.resKey), years = [...new Set(evs.map((e) => e.year))].sort().reverse();
   const evRs = [...ev.rs].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.roundNo).localeCompare(String(b.roundNo)));
 
-  // ---- the picker: the year, then the tournament ----
-  const ySel = el("select", { class: "tr-sel", "aria-label": "Year" }, years.map((y) => el("option", { value: y, selected: y === ev.year ? "" : null }, y)));
-  const eSel = el("select", { class: "tr-sel", "aria-label": "Tournament" }, evs.filter((e) => e.year === ev.year).map((e) => el("option", { value: e.key, selected: e.key === ev.key ? "" : null }, e.event)));
-  ySel.value = ev.year; eSel.value = ev.key; // (update 757: the one showing is the one picked)
-  ySel.addEventListener("change", () => { const e = evs.find((x) => x.year === ySel.value); if (e) { st.resKey = e.key; st.resRound = null; S.draw(); } });
-  eSel.addEventListener("change", () => { st.resKey = eSel.value; st.resRound = null; S.draw(); });
+  // ---- the picker ----
+  const ySel = el("select", { class: "tr-sel", "aria-label": "Year" }, years.map((y) => el("option", { value: y }, y)));
+  const eSel = el("select", { class: "tr-sel", "aria-label": "Tournament" }, evs.filter((e) => e.year === ev.year).map((e) => el("option", { value: e.key }, e.event)));
+  ySel.value = ev.year; eSel.value = ev.key;
+  ySel.addEventListener("change", () => { const e = evs.find((x) => x.year === ySel.value); if (e) { st.resKey = e.key; st.resRound = null; st.resHole = null; S.draw(); } });
+  eSel.addEventListener("change", () => { st.resKey = eSel.value; st.resRound = null; st.resHole = null; S.draw(); });
   const picker = el("section", { class: "panel tr-pick" }, [el("p", { class: "fx-eyebrow" }, "Tournament results"), el("div", { class: "tr-pick-row" }, [ySel, eSel])]);
 
-  // (update 757) a card's pop-up: that part of the game (the total: every part) by distance range that week, a shot and a
-  // round, against their own season from that range; the biggest gain and loss called out
-  const seasonRs = rs0.filter((r) => yrOf(r) === ev.year && !(r.event === ev.event));
-  const byDist = (rs, c) => { const m = new Map(); for (const r of rs) for (const s of r.shots || []) if ((!c || s.cat === c) && s.dist) { const k = `${s.cat}|${s.dist}`, o = m.get(k) || m.set(k, { cat: s.cat, d: s.dist, sg: 0, n: 0 }).get(k); o.sg += s.sg || 0; o.n += s.w || 1; } return m; };
-  const lo = (d) => { const m = /(\d+)/.exec(String(d)); return m ? Number(m[1]) * (/^</.test(d) ? 0.5 : 1) : 999; };
-  function openDist(c) {
-    document.querySelector(".tr-popwrap")?.remove();
-    const W = byDist(evRs, c), Sx = byDist(seasonRs, c), nW = evRs.length, nS = Math.max(1, seasonRs.length);
-    const rows = [...W.values()].sort((a, b) => CATS.findIndex(([k]) => k === a.cat) - CATS.findIndex(([k]) => k === b.cat) || lo(a.d) - lo(b.d)).map((o) => { const s0 = Sx.get(`${o.cat}|${o.d}`); return { ...o, rd: o.sg / nW, per: o.sg / o.n, sPer: s0 && s0.n >= 5 ? s0.sg / s0.n : null, sRd: s0 ? s0.sg / nS : null }; });
-    const best = [...rows].sort((a, b) => b.rd - a.rd)[0], worst = [...rows].sort((a, b) => a.rd - b.rd)[0], nm = (c0) => CATS.find(([k]) => k === c0)?.[1] || c0;
-    const close = () => wrap.remove(), xb = el("button", { type: "button", class: "tr-pop-x", "aria-label": "Close" }, "×"); xb.addEventListener("click", close);
-    const back = el("div", { class: "tr-pop-back" }); back.addEventListener("click", close);
-    const body = !rows.length ? el("p", { class: "muted" }, "No distances recorded on these shots.") : [
-      el("div", { class: "tr-pop-calls" }, [best && best.rd > 0 ? el("p", {}, [el("strong", { class: "pos" }, `Best: ${nm(best.cat)} from ${best.d}`), ` · ${fmtSG(best.rd)} a round (${fmtSG(best.per)} a shot, ${Math.round(best.n)} shots)${best.sPer != null ? `, against ${fmtSG(best.sPer)} a shot the rest of ${ev.year}` : ""}`]) : null,
-        worst && worst.rd < 0 ? el("p", {}, [el("strong", { class: "neg" }, `Costliest: ${nm(worst.cat)} from ${worst.d}`), ` · ${fmtSG(worst.rd)} a round (${fmtSG(worst.per)} a shot, ${Math.round(worst.n)} shots)${worst.sPer != null ? `, against ${fmtSG(worst.sPer)} a shot the rest of ${ev.year}` : ""}`]) : null]),
-      el("div", { class: "tr-pop-scroll" }, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, [c ? "Distance" : "Part · distance", "Shots", "SG a shot", "SG a round", `Rest of ${ev.year}`, "Better or worse"].map((x, i) => el("th", { class: i ? "num" : null }, x)))),
-        el("tbody", {}, rows.map((o) => { const dlt = o.sPer != null ? o.per - o.sPer : null; return el("tr", {}, [el("td", {}, c ? o.d : `${nm(o.cat)} · ${o.d}`), el("td", { class: "num" }, String(Math.round(o.n))), el("td", { class: `num ${cls(o.per)}` }, fmtSG(o.per)), el("td", { class: `num ${cls(o.rd)}` }, fmtSG(o.rd)), el("td", { class: "num muted" }, o.sPer != null ? fmtSG(o.sPer) : "—"), el("td", { class: `num ${cls(dlt)}` }, dlt != null ? `${dlt > 0 ? "▲" : "▼"} ${Math.abs(dlt).toFixed(2)}` : "")]); }))]))];
-    const box = el("section", { class: "tr-pop", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, `${c ? nm(c) : "Every part of the game"} by distance`), ...(Array.isArray(body) ? body : [body])].filter(Boolean)); /* (update 758: flat, so it opens) */
-    const wrap = el("div", { class: "tr-popwrap" }, [back, box]); document.body.appendChild(wrap); xb.focus();
-  }
-  const tapC = (n, c) => { const go = () => openDist(c); n.addEventListener("click", go); n.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return n; };
-  // ---- the hero cards: the week, against that week's field ----
-  const wk = (field || []).map((p) => ({ k: p.key, rs: (p.key === me?.key ? evRs : (p.rounds || []).filter((r) => r.event === ev.event && yrOf(r) === ev.year)) })).filter((p) => p.rs.length);
-  const rankOf = (f) => { const vs = wk.map((p) => [p.k, avg(p.rs, f)]).filter((x) => x[1] != null).sort((a, b) => b[1] - a[1]); const i = vs.findIndex((x) => x[0] === me?.key); return i < 0 ? null : { r: i + 1, n: vs.length }; };
-  const card = (label, v, rk, big = false, c = null) => tapC(el("div", { class: `tr-hero${big ? " big" : ""}`, role: "button", tabindex: "0", title: "Tap for each distance" }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, [`a round`, rk ? ` · ${ord(rk.r)} of ${rk.n} in the field` : ""])]), c);
-  const best = [...evRs].sort((a, b) => tot(b) - tot(a))[0];
-  const heroes = el("section", { class: "panel tr-heroes" }, [
-    el("div", { class: "tr-head" }, [el("h2", {}, ev.event), el("span", { class: "muted" }, `${ev.year} · ${evRs.length} round${evRs.length === 1 ? "" : "s"}${best ? ` · best round ${fmtSG(tot(best))} (R${best.roundNo || "?"})` : ""}`)]),
-    el("div", { class: "tr-hero-row" }, [card("Total", avg(evRs, tot), rankOf(tot), true, null), ...CATS.map(([c, l]) => card(l, avg(evRs, (r) => inCat(r, c)), rankOf((r) => inCat(r, c)), false, c))]),
-  ]);
+  const heroBox = el("section", { class: "panel tr-heroes" }, el("p", { class: "muted small" }, "Loading the week…"));
+  const scBox = el("section", { class: "panel tr-sc" }, el("p", { class: "muted small" }, "Loading the scorecard…"));
 
-  // ---- the scorecard: a round at a time ----
-  const rIds = evRs.map((r, i) => String(r.roundNo || i + 1));
-  if (!rIds.includes(st.resRound)) st.resRound = rIds[0];
-  const rd = evRs[rIds.indexOf(st.resRound)];
-  const tabs = el("div", { class: "tr-rounds", role: "group", "aria-label": "Round" }, rIds.map((id) => { const on = id === st.resRound, b = el("button", { type: "button", class: `tr-rd${on ? " on" : ""}`, "aria-pressed": String(on) }, `R${id}`); b.addEventListener("click", () => { if (!on) { st.resRound = id; st.resHole = null; S.draw(); } }); return b; }));
-  const cardBox = el("div", { class: "tr-card" }, el("p", { class: "muted small" }, "Loading the scorecard…")), holeBox = el("div", { class: "tr-hole" });
-  const sc = el("section", { class: "panel tr-sc" }, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, "Scorecard"), tabs]), cardBox, holeBox]);
-
-  // the course's own shots (par, score, each shot's spot) when it has Strategy Maps; else the stats file's shots alone
-  const shotsByHole = new Map(); for (const s of rd.shots || []) if (s.hole != null) (shotsByHole.get(s.hole) || shotsByHole.set(s.hole, []).get(s.hole)).push(s);
   (async () => {
-    let meta = null, trails = null;
-    // (update 757) the rounds here can come without each shot's hole: then the player's own rows (they have it)
-    if (!shotsByHole.size && me) { try { const { loadSource } = await import("./reportGen.js"); const d = await loadSource("tour", me.key, me.label || "", { detail: false, field: false });
-      const own = (d?.me?.rounds || []).find((r) => r.event === ev.event && yrOf(r) === ev.year && String(r.roundNo) === String(rd.roundNo));
-      for (const s of own?.shots || []) if (s.hole != null) (shotsByHole.get(s.hole) || shotsByHole.set(s.hole, []).get(s.hole)).push(s); } catch (e) { console.warn("own rows", e); } }
-    let list = [];
-    const LINK = "ta.trCourse", links = (() => { try { return JSON.parse(localStorage.getItem(LINK) || "{}"); } catch { return {}; } })(), evKey = norm(ev.event);
-    try {
-      const CH = await import("./courseHeat.js"); list = (await CH.listHeatCourses().catch(() => [])) || [];
-      meta = (links[evKey] && list.find((c) => c.id === links[evKey])) || (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event) && (!e.years?.length || e.years.map(String).includes(ev.year))))
-        || (list || []).find((c) => (c.events || []).some((e) => norm(e.name) === norm(ev.event)))
-        || (rd.course ? (list || []).find((c) => norm(c.name) === norm(rd.course) || norm(c.name).includes(norm(rd.course)) || norm(rd.course).includes(norm(c.name))) : null) || null; // (update 757: or by the course's name)
-      if (meta && me) { const CS = await import("./courseShots.js"); const tr = await CS.playerTrails(meta, me.key).catch(() => null); trails = (tr?.trails || []).filter((t) => String(t.y) === ev.year && String(t.r) === String(rd.roundNo)); }
-    } catch (e) { console.warn("scorecard", e); }
-    const tOf = (h) => trails?.find((t) => Number(t.h) === h) || null;
-    const holes = [...new Set([...shotsByHole.keys(), ...(trails || []).map((t) => Number(t.h))])].filter((h) => h >= 1 && h <= 18).sort((a, b) => a - b);
-    // (update 758) a tournament's course, picked by hand when it isn't found (kept on this device)
+    // the course: linked by hand, else by the tournament, else by the course's name
+    const links = (() => { try { return JSON.parse(localStorage.getItem(LINK) || "{}"); } catch { return {}; } })(), evKey = norm(ev.event);
+    let list = [], meta = null, W = null;
+    try { const CH = await import("./courseHeat.js"); list = (await CH.listHeatCourses().catch(() => [])) || [];
+      const course = evRs.find((r) => r.course)?.course;
+      meta = (links[evKey] && list.find((c) => c.id === links[evKey])) || list.find((c) => (c.events || []).some((e) => norm(e.name) === evKey && (!e.years?.length || e.years.map(String).includes(ev.year))))
+        || list.find((c) => (c.events || []).some((e) => norm(e.name) === evKey)) || (course ? list.find((c) => norm(c.name) === norm(course) || norm(c.name).includes(norm(course)) || norm(course).includes(norm(c.name))) : null) || null;
+      if (meta?.rawChunks) W = await courseWeek(meta, ev).catch((e) => { console.warn(e); return null; });
+    } catch (e) { console.warn("results", e); }
     const linkSel = () => { const sel = el("select", { class: "tr-sel tr-link" }, [el("option", { value: "" }, "Link a Strategy Maps course…"), ...[...list].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((c) => el("option", { value: c.id }, c.name))]);
       if (meta) sel.value = meta.id; sel.addEventListener("change", () => { const l2 = { ...links }; if (sel.value) l2[evKey] = sel.value; else delete l2[evKey]; try { localStorage.setItem(LINK, JSON.stringify(l2)); } catch { /* */ } S.draw(); }); return sel; };
-    if (!holes.length) {
-      const why = !meta ? `${ev.event} isn't linked to a course in Strategy Maps, and this round's shots in the stats data have no hole numbers.` : !trails?.length ? `${meta.name} is in Strategy Maps, but it has no shots of ${me?.label || "this player"}'s for ${ev.year} round ${rd.roundNo} (the course data may be from other years), and the stats data has no hole numbers.` : "No hole-by-hole shots for this round.";
-      mount(cardBox, [el("p", { class: "muted small" }, why), list.length ? el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, "Course: "), linkSel()]) : null]); return; }
-    const parOf = (h) => tOf(h)?.par ?? meta?.par?.[h - 1] ?? null, scoreOf = (h) => { const t = tOf(h); if (t?.s != null && parOf(h) != null) return parOf(h) + t.s; const ss = shotsByHole.get(h); return ss?.length && ss.every((s) => (s.w || 1) === 1) ? ss.length : null; };
-    const sgOf = (h) => { const ss = shotsByHole.get(h); return ss ? ss.reduce((t, s) => t + (s.sg || 0), 0) : null; };
-    const half = (hs, lab) => { if (!hs.length) return null; const sum = (f) => { const v = hs.map(f); return v.every((x) => x != null) ? v.reduce((a, b) => a + b, 0) : null; };
+    const P = W && me ? W.players.get(me.key) : null;
+
+    // ---- the hero cards: against the week's field ----
+    const field0 = W ? [...W.players.values()] : [];
+    const perRd = (p, f) => f(p) / Math.max(1, p.rds.size);
+    const rk = (f) => (P ? rankIn(field0.map((p) => [p.pk, perRd(p, f)]), me.key) : null);
+    const best = P ? W.shots.find((s) => s.pk === me.key) : null;
+    const card = (label, v, r, big, c) => { const n = el("div", { class: `tr-hero${big ? " big" : ""}`, role: "button", tabindex: "0", title: "Tap for each distance" }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, ["a round", r ? [" · ", el("b", { class: r.r <= 10 ? "pos" : "" }, `${ord(r.r)} of ${r.n}`), " in the field"] : ""])]);
+      const go = () => openDist(c); n.addEventListener("click", go); n.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return n; };
+    const nR = P ? P.rds.size : evRs.length;
+    const vTot = P ? perRd(P, (p) => p.tot) : avg(evRs, tot);
+    const cards = [card("Total", vTot, rk((p) => p.tot), true, null), ...CATS.map(([c, l]) => card(l, P ? perRd(P, (p) => p.cat[c]) : avg(evRs, (r) => inCat(r, c)), rk((p) => p.cat[c]), false, c))];
+    const bestLine = best ? el("p", { class: "tr-best" }, [el("strong", {}, best.q.rank === 1 ? "The best shot of the tournament: " : `Best shot: ${ord(best.q.rank)} of ${W.nShots.toLocaleString()} shots this week · `), `${fmtSG(best.sg)} on hole ${best.T.h}, round ${best.T.rd}, ${best.q.d != null ? `${Math.round(best.q.d)} ${best.q.lie === "green" ? "ft" : "yds"} ` : ""}from the ${best.q.lie}`]) : null;
+    mount(heroBox, [el("div", { class: "tr-head" }, [el("h2", {}, ev.event), el("span", { class: "muted" }, `${ev.year} · ${nR} round${nR === 1 ? "" : "s"}${W ? ` · ${field0.length} players on record` : ""}`)]), el("div", { class: "tr-hero-row" }, cards), bestLine,
+      W ? null : el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, meta ? `${meta.name} has no shots for ${ev.year} in Strategy Maps: the numbers above are from the stats file. ` : "Not linked to a Strategy Maps course: the numbers above are from the stats file. Course: "), list.length ? linkSel() : null])].filter(Boolean));
+
+    // a card: each distance range, a shot, with the rank in the field
+    function openDist(c) {
+      document.querySelector(".tr-popwrap")?.remove();
+      let rows = [];
+      if (P) { const keys = [...P.band.keys()].filter((k) => !c || k.startsWith(`${c}|`));
+        rows = keys.map((k) => { const [cat, bd] = k.split("|"), [sg, n] = P.band.get(k), r = rankIn(field0.filter((p) => (p.band.get(k)?.[1] || 0) >= 2).map((p) => [p.pk, p.band.get(k)[0] / p.band.get(k)[1]]), me.key); return { cat, bd, per: sg / n, n, rd: sg / Math.max(1, P.rds.size), r }; })
+          .sort((a, b) => CATS.findIndex(([x]) => x === a.cat) - CATS.findIndex(([x]) => x === b.cat) || (parseFloat(a.bd) || 0) - (parseFloat(b.bd) || 0)); }
+      const close = () => wrap.remove(), xb = el("button", { type: "button", class: "tr-pop-x", "aria-label": "Close" }, "×"); xb.addEventListener("click", close);
+      const back = el("div", { class: "tr-pop-back" }); back.addEventListener("click", close);
+      const top3 = [...rows].filter((o) => o.r).sort((a, b) => a.r.r / a.r.n - b.r.r / b.r.n)[0];
+      const body = !rows.length ? [el("p", { class: "muted" }, P ? "No distances on these shots." : "Distance ranks need the course's shots (Strategy Maps).")] : [
+        top3 ? el("p", { class: "tr-pop-calls" }, [el("strong", { class: "pos" }, `Best: ${CATN[top3.cat]} ${top3.bd}`), ` · ${ord(top3.r.r)} of ${top3.r.n} in the field (${fmtSG(top3.per)} a shot)`]) : null,
+        el("div", { class: "tr-pop-scroll" }, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, [c ? "Distance" : "Part · distance", "Shots", "SG a shot", "SG a round", "Rank in the field"].map((x, i) => el("th", { class: i ? "num" : null }, x)))),
+          el("tbody", {}, rows.map((o) => el("tr", {}, [el("td", {}, c ? o.bd : `${CATN[o.cat]} · ${o.bd}`), el("td", { class: "num" }, String(o.n)), el("td", { class: `num ${cls(o.per)}` }, fmtSG(o.per)), el("td", { class: `num ${cls(o.rd)}` }, fmtSG(o.rd)), el("td", { class: `num ${o.r && o.r.r <= 10 ? "pos" : ""}` }, o.r ? `${ord(o.r.r)} of ${o.r.n}` : "—")])))]))];
+      const box = el("section", { class: "tr-pop", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, `${c ? CATN[c] : "Every part of the game"} by distance`), ...body].filter(Boolean));
+      const wrap = el("div", { class: "tr-popwrap" }, [back, box]); document.body.appendChild(wrap); xb.focus();
+    }
+
+    // ---- the scorecard: a round at a time ----
+    if (!W || !P) { mount(scBox, [el("p", { class: "fx-eyebrow" }, "Scorecard"), el("p", { class: "muted small" }, !meta ? `The scorecard, the shots and the hole pictures come from Strategy Maps: link ${ev.event}'s course.` : !W ? `${meta.name} has no shots for ${ev.year} in Strategy Maps (it may need its data uploaded with the tournament column, then Rebuild maps).` : `${meta.name} has no shots of ${me?.label || "this player"}'s for ${ev.year}.`), list.length ? el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, "Course: "), linkSel()]) : null]); return; }
+    const myT = [...W.trails.values()].filter((t) => t.pk === me.key), rIds = [...new Set(myT.map((t) => t.rd))].sort((a, b) => Number(a) - Number(b));
+    if (!rIds.includes(st.resRound)) st.resRound = rIds[0];
+    const tOf = (h) => myT.find((t) => t.rd === st.resRound && t.h === h), holes = [...new Set(myT.filter((t) => t.rd === st.resRound).map((t) => t.h))].sort((a, b) => a - b);
+    const parOf = (h) => tOf(h)?.par ?? meta.par?.[h - 1] ?? null, scoreOf = (h) => { const t = tOf(h); return t?.s != null && parOf(h) != null ? parOf(h) + t.s : null; }, sgOf = (h) => { const t = tOf(h); return t ? t.qs.reduce((a, q) => a + (q.sg || 0), 0) : null; };
+    if (!holes.includes(st.resHole)) st.resHole = holes[0] ?? null;
+    const tabs = el("div", { class: "tr-rounds", role: "group", "aria-label": "Round" }, rIds.map((id) => { const on = id === st.resRound, b = el("button", { type: "button", class: `tr-rd${on ? " on" : ""}`, "aria-pressed": String(on) }, `R${id}`); b.addEventListener("click", () => { if (!on) { st.resRound = id; st.resHole = null; S.draw(); } }); return b; }));
+    const cardBox = el("div", { class: "tr-card" }), holeBox = el("div", { class: "tr-hole" });
+    const half = (hs, lab) => { if (!hs.length) return []; const sum = (f) => { const v = hs.map(f); return v.every((x) => x != null) ? v.reduce((a, b) => a + b, 0) : null; };
       const cell = (h) => { const p = parOf(h), s = scoreOf(h), d = p != null && s != null ? s - p : null; const b = el("td", { class: `tr-sc-c${st.resHole === h ? " on" : ""}`, role: "button", tabindex: "0", title: `Hole ${h}` }, el("span", { class: `tr-sc-s ${d == null ? "" : d <= -2 ? "eagle" : d === -1 ? "birdie" : d === 0 ? "par" : d === 1 ? "bogey" : "dbl"}` }, s == null ? "·" : String(s)));
-        const go = () => { st.resHole = st.resHole === h ? null : h; drawCard(); drawHole(); }; b.addEventListener("click", go); b.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return b; };
+        const go = () => { st.resHole = h; drawCard(); drawHole(); }; b.addEventListener("click", go); b.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return b; };
       return [el("tr", { class: "tr-sc-hr" }, [el("th", {}, "Hole"), ...hs.map((h) => el("th", {}, String(h))), el("th", {}, lab)]),
         el("tr", {}, [el("th", {}, "Par"), ...hs.map((h) => el("td", { class: "muted" }, parOf(h) ?? "")), el("td", { class: "muted" }, sum(parOf) ?? "")]),
         el("tr", {}, [el("th", {}, "Score"), ...hs.map(cell), el("td", { class: "tr-tot" }, sum(scoreOf) ?? "")]),
         el("tr", {}, [el("th", {}, "SG"), ...hs.map((h) => { const v = sgOf(h); return el("td", { class: `tr-sg ${cls(v)}` }, v == null ? "" : fmtSG(v)); }), el("td", { class: `tr-sg ${cls(sum(sgOf))}` }, sum(sgOf) == null ? "" : fmtSG(sum(sgOf)))])]; };
-    const drawCard = () => mount(cardBox, [el("div", { class: "tr-sc-scroll" }, el("table", { class: "tr-sc-t" }, el("tbody", {}, [...(half(holes.filter((h) => h <= 9), "Out") || []), ...(half(holes.filter((h) => h > 9), "In") || [])]))),
-      el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, [meta ? "" : "Par and the hole pictures come from Strategy Maps: link this tournament's course. ", "Tap a hole for its shots. Course: "]), list.length ? linkSel() : null])]);
-    // a hole: its shots, then its picture with the trail
+    const drawCard = () => mount(cardBox, [el("div", { class: "tr-sc-scroll" }, el("table", { class: "tr-sc-t" }, el("tbody", {}, [...half(holes.filter((h) => h <= 9), "Out"), ...half(holes.filter((h) => h > 9), "In")]))), el("div", { class: "tr-link-row" }, [el("span", { class: "muted small" }, "Tap a hole for its shots and the hole. Course: "), linkSel()])]);
+    // a hole: its shots (each ranked among every shot that week) beside the hole itself with the trail, into the cup
     const drawHole = () => {
-      const h = st.resHole; if (!h) { mount(holeBox, null); return; }
-      const ss = shotsByHole.get(h) || [], t = tOf(h), tq = t?.shots || [];
-      const rows = (ss.length ? ss : tq).map((s, i) => { const q = tq[i]; const lie = s.lie || (q ? LIES[q[3]] : ""), dist = s.dist || (q && q[4] != null ? `${Math.round(q[4])} ${q[3] === 4 ? "ft" : "yds"}` : "");
-        return el("tr", {}, [el("td", {}, String(i + 1)), el("td", {}, lie || "—"), el("td", {}, dist || "—"), el("td", {}, s.club || "—"), el("td", { class: `num ${cls(s.sg)}` }, s.sg != null ? fmtSG(s.sg) : "")]); });
-      const show = meta && t?.shots?.length ? el("button", { type: "button", class: "btn ghost tr-show" }, "Show it on the course") : null;
-      const pic = el("div", { class: "tr-pic" });
-      show?.addEventListener("click", async () => { show.disabled = true; show.textContent = "Loading the hole…";
-        try { const CH = await import("./courseHeat.js"), url = await CH.heatImage(meta, h); if (!url) throw new Error("no picture");
-          const img = new Image(); img.src = url; await img.decode();
-          const W = img.naturalWidth, H = img.naturalHeight, NS = "http://www.w3.org/2000/svg", sv = (tag, a = {}) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) n.setAttribute(k, v); return n; };
-          const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "tr-trail" }), pts = tq.filter((q) => q[1] != null && q[2] != null), r0 = Math.max(W, H) / 120;
-          svg.append(sv("polyline", { points: pts.map((q) => `${q[1]},${q[2]}`).join(" "), fill: "none", stroke: "#fff", "stroke-width": r0 * 0.45, "stroke-linejoin": "round", opacity: 0.9 }));
-          pts.forEach((q, i) => { svg.append(sv("circle", { cx: q[1], cy: q[2], r: r0, fill: i === 0 ? "#30d158" : "#d4b483", stroke: "#111", "stroke-width": r0 * 0.2 })); const tx = sv("text", { x: q[1], y: q[2] + r0 * 0.4, "text-anchor": "middle", "font-size": r0 * 1.15, "font-weight": 800, fill: "#111" }); tx.textContent = String(i + 1); svg.append(tx); });
-          mount(pic, el("div", { class: "tr-pic-in", style: `aspect-ratio:${W}/${H}` }, [img, svg])); show.remove();
-        } catch (e) { console.warn(e); show.textContent = "The hole's picture isn't available"; } });
+      const h = st.resHole, t = h ? tOf(h) : null; if (!t) { mount(holeBox, null); return; }
+      const rows = t.qs.map((q, i) => el("tr", {}, [el("td", {}, String(i + 1)), el("td", {}, cap(q.lie)), el("td", {}, q.d != null ? `${Math.round(q.d)} ${q.lie === "green" ? "ft" : "yds"}` : "—"), el("td", { class: `num ${cls(q.sg)}` }, q.sg != null ? fmtSG(q.sg) : ""), el("td", { class: `num ${q.rank && q.rank <= 10 ? "pos" : "muted"}` }, q.rank ? `${ord(q.rank)} of ${W.nShots.toLocaleString()}` : "")]));
+      const pic = el("div", { class: "tr-pic" }, el("p", { class: "muted small" }, "Loading the hole…"));
       mount(holeBox, [el("h3", {}, [`Hole ${h}`, parOf(h) ? ` · par ${parOf(h)}` : "", scoreOf(h) != null ? ` · ${scoreOf(h)}` : "", sgOf(h) != null ? el("span", { class: `tr-hsg ${cls(sgOf(h))}` }, ` · SG ${fmtSG(sgOf(h))}`) : null]),
-        rows.length ? el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["#", "Lie", "Distance", "Club", "SG"].map((x, i) => el("th", { class: i === 4 ? "num" : null }, x)))), el("tbody", {}, rows)]) : el("p", { class: "muted small" }, "No shots recorded on this hole."),
-        show, pic]);
+        el("div", { class: "tr-hole-grid" }, [pic, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["#", "Lie", "Distance", "SG", "Rank that week"].map((x, i) => el("th", { class: i >= 3 ? "num" : null }, x)))), el("tbody", {}, rows)])])]);
+      (async () => { try { const CH = await import("./courseHeat.js"), url = await CH.heatImage(meta, h); if (!url) throw new Error("no picture");
+        const img = new Image(); img.src = url; await img.decode();
+        const Wd = img.naturalWidth, Hd = img.naturalHeight, NS = "http://www.w3.org/2000/svg", sv = (tag, a = {}) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) n.setAttribute(k, v); return n; };
+        const svg = sv("svg", { viewBox: `0 0 ${Wd} ${Hd}`, class: "tr-trail" }), pts = t.qs.filter((q) => q.x != null && q.y != null).map((q) => [q.x, q.y]), r0 = Math.max(Wd, Hd) / 110;
+        if (t.s != null && t.px != null) pts.push([t.px, t.py]); // (the last putt: into the cup)
+        svg.append(sv("polyline", { points: pts.map((q) => q.join(",")).join(" "), fill: "none", stroke: "#fff", "stroke-width": r0 * 0.45, "stroke-linejoin": "round", opacity: 0.95 }));
+        t.qs.filter((q) => q.x != null).forEach((q, i) => { svg.append(sv("circle", { cx: q.x, cy: q.y, r: r0, fill: i === 0 ? "#30d158" : "#d4b483", stroke: "#111", "stroke-width": r0 * 0.2 })); const tx = sv("text", { x: q.x, y: q.y + r0 * 0.4, "text-anchor": "middle", "font-size": r0 * 1.15, "font-weight": 800, fill: "#111" }); tx.textContent = String(i + 1); svg.append(tx); });
+        if (t.s != null && t.px != null) { svg.append(sv("circle", { cx: t.px, cy: t.py, r: r0 * 0.55, fill: "#111", stroke: "#fff", "stroke-width": r0 * 0.25 })); svg.append(sv("line", { x1: t.px, y1: t.py, x2: t.px, y2: t.py - r0 * 3, stroke: "#fff", "stroke-width": r0 * 0.25 })); svg.append(sv("polygon", { points: `${t.px},${t.py - r0 * 3} ${t.px + r0 * 1.6},${t.py - r0 * 2.5} ${t.px},${t.py - r0 * 2}`, fill: "#ff453a" })); }
+        mount(pic, el("div", { class: "tr-pic-in", style: `aspect-ratio:${Wd}/${Hd}` }, [img, svg]));
+      } catch (e) { console.warn(e); mount(pic, el("p", { class: "muted small" }, "The hole's picture isn't available.")); } })();
     };
+    mount(scBox, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, "Scorecard"), tabs]), cardBox, holeBox]);
     drawCard(); drawHole();
   })();
-  return [picker, heroes, sc];
+  return [picker, heroBox, scBox];
 }

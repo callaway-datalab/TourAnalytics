@@ -252,13 +252,13 @@ html[data-theme="light"] .td .mc.mc-pair .mc-bar.up { fill: #1d8f43; } html[data
 /* (update 758) less space above the masthead */
 .ah.td { margin-top: -12px; }
 /* (update 758) each section a card of its own color: a bar along the top, its rule and dot in that color */
-.td-sec[data-sec="fact"] { --sec: #d4b483; } .td-sec[data-sec="form"] { --sec: #30d158; } .td-sec[data-sec="spot"] { --sec: #bf5af2; }
-.td-sec[data-sec="gear"] { --sec: #ff9f0a; } .td-sec[data-sec="rank"] { --sec: #0a84ff; } .td-sec[data-sec="res"] { --sec: #ffd60a; }
-.td-sec[data-sec="focus"] { --sec: #ff453a; } .td-sec[data-sec="course"] { --sec: #64d2ff; } .td-sec[data-sec="next"] { --sec: #5ac8fa; }
-.td-sec[data-sec="prac"] { --sec: #ffcc00; } .td-sec[data-sec="tour"] { --sec: #8e8e93; }
-html[data-theme="light"] .td-sec[data-sec="fact"] { --sec: #8a6526; } html[data-theme="light"] .td-sec[data-sec="form"] { --sec: #1d8f43; } html[data-theme="light"] .td-sec[data-sec="spot"] { --sec: #8a2fc4; }
-html[data-theme="light"] .td-sec[data-sec="gear"] { --sec: #c46a00; } html[data-theme="light"] .td-sec[data-sec="rank"] { --sec: #0b5fc4; } html[data-theme="light"] .td-sec[data-sec="res"] { --sec: #a67c00; }
-html[data-theme="light"] .td-sec[data-sec="focus"] { --sec: #c22a1f; } html[data-theme="light"] .td-sec[data-sec="course"] { --sec: #0e7c99; } html[data-theme="light"] .td-sec[data-sec="tour"] { --sec: #5b5e66; }
+[data-sec="fact"] { --sec: #d4b483; } [data-sec="form"] { --sec: #30d158; } [data-sec="spot"] { --sec: #bf5af2; }
+[data-sec="gear"] { --sec: #ff9f0a; } [data-sec="rank"] { --sec: #0a84ff; } [data-sec="res"] { --sec: #ffd60a; }
+[data-sec="focus"] { --sec: #ff453a; } [data-sec="course"] { --sec: #64d2ff; } [data-sec="next"] { --sec: #5ac8fa; }
+[data-sec="prac"] { --sec: #ffcc00; } [data-sec="tour"] { --sec: #8e8e93; }
+html[data-theme="light"] [data-sec="fact"] { --sec: #8a6526; } html[data-theme="light"] [data-sec="form"] { --sec: #1d8f43; } html[data-theme="light"] [data-sec="spot"] { --sec: #8a2fc4; }
+html[data-theme="light"] [data-sec="gear"] { --sec: #c46a00; } html[data-theme="light"] [data-sec="rank"] { --sec: #0b5fc4; } html[data-theme="light"] [data-sec="res"] { --sec: #a67c00; }
+html[data-theme="light"] [data-sec="focus"] { --sec: #c22a1f; } html[data-theme="light"] [data-sec="course"] { --sec: #0e7c99; } html[data-theme="light"] [data-sec="tour"] { --sec: #5b5e66; }
 .td-sec { background: var(--td-card); border-radius: 14px; border-top: 4px solid var(--sec, var(--td-rule2)); padding: 2px 20px 18px !important; margin: 0 0 20px !important; }
 .td-sec .td-sh { border-bottom: 2px solid var(--sec, var(--td-ink)); margin-top: 14px; }
 .td-sec .td-sh h2::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--sec); margin-right: 10px; vertical-align: 3px; }
@@ -274,3 +274,10 @@ html[data-theme="light"] .td-sec { background: #ffffff; box-shadow: 0 1px 2px rg
 /* (update 758) a leaderboard opens at the player: their row */
 .td-pop .td-box tr.target td { background: color-mix(in srgb, var(--td-gold) 22%, transparent); color: var(--td-ink); font-weight: 800; }
 @media (max-width: 860px) { .td-sec { padding: 2px 14px 14px !important; } .td-stackc:first-child, .td-stackc + .td-stackc { padding: 0; } }
+/* (update 759) the cards' side padding back (the stacked columns' rule had taken it away, so content touched the edges) */
+.td-grid .td-sec, .td-stackc > .td-sec { padding: 2px 20px 18px !important; }
+@media (max-width: 860px) { .td-grid .td-sec, .td-stackc > .td-sec { padding: 2px 14px 14px !important; } }
+/* (update 759) each section's link in the header in its section's color */
+.td-secs a[data-sec] { color: var(--sec); display: inline-flex; align-items: center; gap: 7px; }
+.td-secs a[data-sec]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--sec); }
+.td-secs a[data-sec]:hover { color: var(--sec); text-decoration: underline; text-underline-offset: 4px; }
