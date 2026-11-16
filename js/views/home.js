@@ -769,6 +769,19 @@ export async function render(main, { previewClient } = {}) {
     const out = [], per = new Map(); for (const x of cand) { if (out.length >= 8) break; const n = per.get(x.k) || 0; if (keysF.length > 1 && n >= 2) continue; per.set(x.k, n + 1); out.push({ ...x, kind: "Fact", score: 3.2 - out.length * 0.01 }); }
     out.forEach((x) => factSeen.add(x.id)); if (factSeen.size >= cand.length) factSeen.clear(); factMemo = { k: mk, v: out }; return out;
   }
+  // (update 800) Where to Improve's detail: inside the part of the game, the distance ranges losing the most (a round), any
+  // range holding up despite it, and a practice fix for the worst, from the player's own shots this season (their clubs'
+  // rounds, else the field's shot detail; until either is in, nothing)
+  function leakDetail(k, c, SY) {
+    const rs = (gearData.get(k) || detail?.by.get(k) || []).filter((r) => yrOf(r) === String(SY) && (ownP?.key === k || onTour(r)) && !r.eventLevel); if (rs.length < 6) return "";
+    const g = new Map(); for (const r of rs) for (const s0 of r.shots || []) if (s0.cat === c && s0.dist) { const o = g.get(s0.dist) || g.set(s0.dist, [0, 0]).get(s0.dist); o[0] += s0.sg; o[1] += s0.w || 1; }
+    const xs = [...g].filter(([, o]) => o[1] >= 8).map(([d, o]) => ({ d, rd: o[0] / rs.length, sh: o[0] / o[1], n: o[1] })).sort((a, b) => a.rd - b.rd); if (!xs.length) return "";
+    const bad = xs.filter((x) => x.rd <= -0.05).slice(0, 2), good = [...xs].reverse().find((x) => x.rd >= 0.05);
+    const what = { APP: "approach shots", ARG: "chips and pitches", PUTT: "putts", OTT: "tee shots" }[c] || "shots";
+    const fix = bad[0] ? { APP: `${bad[0].d} approaches at a pin, measuring how far each finishes from the hole`, ARG: `chips and pitches from ${bad[0].d} to a hole, counting the up-and-downs`, PUTT: `putts from ${bad[0].d}, counting the makes`, OTT: `drives at a fairway-width target, counting the hits` }[c] : "";
+    return [bad[0] ? `Biggest leak: ${what} from ${bad[0].d}, ${sg2(bad[0].rd)} a round (${sg2(bad[0].sh)} a shot, ${Math.round(bad[0].n)} shots)` : "", bad[1] ? `Also ${bad[1].d}: ${sg2(bad[1].rd)} a round` : "",
+      good ? `Holding up: ${good.d}, ${sg2(good.rd)} a round` : "", fix ? `The fix: ${fix} (Stats › Focus has the drill and a target)` : ""].filter(Boolean).join(" · ");
+  }
   function highlightsFor(k) {
     const raw = rawOf(playerOf(k)), out = [], SY = seasonYr(), rs = sgRounds(raw).filter((r) => yrOf(r) === SY); if (!rs.length) return out; /* (update 738: this season only) */ // (update 728: Compare's rounds and order)
     const last = SY, season = rs, evs = eventsOf(season), sAvg = avgOf(season, tot);
@@ -814,7 +827,7 @@ export async function render(main, { previewClient } = {}) {
       for (const [c, dc] of ch.slice(0, 2)) if (Math.abs(dc) >= 0.2) out.push({ id: `cm-${k}-${c}`, k, x: { c, d: dc, a: perRound(a, c), b: perRound(b, c), FL, n: fs.n, lastR: a, prevR: b }, kind: dc > 0 ? "Trend" : "Slide", score: 4.5 + Math.abs(dc) * 2, title: `${CATN[c]} ${dc > 0 ? "up" : "down"} ${Math.abs(dc).toFixed(2)} a round lately`, detail: `${His(k)} last ${FL} (${sg2(perRound(a, c))}) against the ${fs.n} before (${sg2(perRound(b, c))})`, to: "Compare · Last 12 vs 12 before", run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin(`${CATN[c]}: what changed?`)) }); }
     // the part of the game costing the most this season
     const weak = cats.map((c) => [c, avgOf(season, (r) => inCat(r, c))]).filter(([, v]) => v != null).sort((x, y) => x[1] - y[1])[0];
-    if (weak && weak[1] <= -0.1 && season.length >= 6) out.push({ id: `wk-${k}`, k, x: { c: weak[0], v: weak[1], yr: last, all: cats.map((c0) => [c0, avgOf(season, (r) => inCat(r, c0))]) }, kind: "Focus", score: 4 + Math.abs(weak[1]) * 2, title: `${CATN[weak[0]]} is costing ${he(k)} ${Math.abs(weak[1]).toFixed(2)} a round`, detail: "" /* (update 770: no line under it) */, to: `Stats · Focus · ${CATN[weak[0]]}`, run: () => toStats(k, { view2: "focus", focusCats: [weak[0]], focusPick: weak[0], year: [last], span: 0 }, "Where you stand", EX.cat(`Where is ${CATN[weak[0]].toLowerCase()} costing strokes?`, weak[0])) });
+    if (weak && weak[1] <= -0.1 && season.length >= 6) out.push({ id: `wk-${k}`, k, x: { c: weak[0], v: weak[1], yr: last, all: cats.map((c0) => [c0, avgOf(season, (r) => inCat(r, c0))]) }, kind: "Focus", score: 4 + Math.abs(weak[1]) * 2, title: `${CATN[weak[0]]} is costing ${he(k)} ${Math.abs(weak[1]).toFixed(2)} a round`, detail: leakDetail(k, weak[0], last) /* (update 800: where in it, and the fix) */, to: `Stats · Focus · ${CATN[weak[0]]}`, run: () => toStats(k, { view2: "focus", focusCats: [weak[0]], focusPick: weak[0], year: [last], span: 0 }, "Where you stand", EX.cat(`Where is ${CATN[weak[0]].toLowerCase()} costing strokes?`, weak[0])) });
     // (update 737) tour ranks this season. A player's own Home: every rank, good or bad. Everyone else: the good ones (top 10;
     // top 25 in strokes gained overall) and the bad ones (the bottom 10; bottom 25 overall)
     if (last) { const R = ranksFor(last).by, nm = (x) => (x === "TOTAL" ? "strokes gained" : CATN[x].toLowerCase());
