@@ -319,8 +319,7 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
       el("h2", {}, who.label),
       el("div", { class: "pr-tiles" }, [
         tile("Rounds here", String(here.length), "", `${events.size} tournament${events.size === 1 ? "" : "s"}`),
-        tile("SG / round here", SG(mine), sgCls(mine), `${SG(all)} elsewhere`),
-        tile("Elsewhere", SG(all), sgCls(all), `${elsewhere.length} round${elsewhere.length === 1 ? "" : "s"} at other courses`),
+        tile("SG / round here", SG(mine), sgCls(mine), `${SG(all)} elsewhere (${elsewhere.length} round${elsewhere.length === 1 ? "" : "s"})`), // (update 768: no Elsewhere card: its number is here)
         tile("Here vs elsewhere", SG(mine - all), sgCls(mine - all), "strokes a round"),
         // (update 525) one card: the best round here, and under it the toughest
         (() => { const yr = (rd) => `(${[rd.year || String(rd.date || "").slice(0, 4), rd.roundNo ? `R${rd.roundNo}` : null].filter(Boolean).join(" \u00b7 ")})`;
