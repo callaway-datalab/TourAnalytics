@@ -326,3 +326,8 @@ main:has(.ah.td) { padding-top: 0 !important; }
 @media (max-width: 1000px) { .td-three { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) { .td-pair { grid-template-columns: minmax(0, 1fr); } }
 .td-cgroup + .td-cgroup { margin-top: 6px; }
+/* (update 784) the front page's refresh button: bottom left, small */
+.td-front { position: relative; }
+.td-reroll { position: absolute; left: 0; bottom: 6px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--td-rule2); background: transparent; color: var(--td-mute); font: 700 16px/1 var(--td-sans); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.td-reroll:hover { color: var(--td-gold); border-color: var(--td-gold); }
+.td-front { padding-bottom: 44px !important; } /* (update 784: room for the refresh button) */

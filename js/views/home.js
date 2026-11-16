@@ -508,15 +508,30 @@ export async function render(main, { previewClient } = {}) {
   const nmKey = (n) => String(n || "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" "); // (update 780)
   const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
   const jit = (id, amp) => (hash(`${id}|${DAY}`) - 0.5) * 2 * amp;
-  function drawFeed(items) {
+  let lastItems = null, reroll = false, shownLead = null; // (update 784: the front page's refresh button)
+  function drawFeed(items) { lastItems = items;
     const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.score + jit(x.id, x.ever ? 1.6 : 0.6) })).sort((a, b) => b.score - a.score);
     if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (+ above) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
     // (update 779) the lead changes every 12 hours (local time): one of the top 6 stories, a different one each half day
     const HALF = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 432e5), news0 = sorted.filter((h) => h.kind !== "Fact"), LEADS = new Set(["Result", "Milestone", "Trend", "Slide", "Equipment", "Rank"]) /* (update 781: only real news can lead: no course notes, facts or briefs) */, cands = news0.filter((h) => LEADS.has(h.kind) && h.k).slice(0, 6), pickI = cands.length ? Math.floor(hash(`lead|${HALF}|${tourPick}`) * cands.length) : 0;
-    const news = cands.length ? [cands[pickI], ...news0.filter((h) => h !== cands[pickI])] : news0, lead = news[0] || sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
-    for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
+    // (update 783) the front page is drawn again as each piece of data arrives (the season, each player's clubs and shots,
+    // the course): once a lead and the three beside it are shown they stay for the half day (kept on this device), so the
+    // page doesn't switch stories a few seconds after it opens
+    const FPK = `ta.front|${HALF}|${tourPick}|${[...picked].sort().join(",")}`;
+    let kept = null; try { kept = JSON.parse(localStorage.getItem(FPK) || "null"); } catch { /* */ }
+    const byIdN = new Map(news0.map((h) => [h.id, h]));
+    let news = cands.length ? [cands[pickI], ...news0.filter((h) => h !== cands[pickI])] : news0;
+    // (update 784) the refresh button: a different lead (at random among the top player news) and three others beside it
+    if (reroll) { reroll = false; kept = null; const pool = cands.filter((h) => h.id !== shownLead), nl = pool.length ? pool[Math.floor(Math.random() * pool.length)] : cands[0];
+      const others = news0.filter((h) => h !== nl).slice(0, 14).map((h) => [Math.random(), h]).sort((a, b) => a[0] - b[0]).map((x) => x[1]); if (nl) news = [nl, ...others, ...news0.filter((h) => h !== nl && !others.includes(h))]; }
+    const keptLead = kept?.lead && byIdN.get(kept.lead);
+    if (keptLead) news = [keptLead, ...news0.filter((h) => h !== keptLead)];
+    const lead = news[0] || sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
+    if (keptLead) for (const id of kept.side || []) { const h = byIdN.get(id); if (h && !fp.includes(h) && fp.length < 4) { fp.push(h); used.add(SEC_OF[h.kind]); } }
+    for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h) && !used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
+    if (lead?.id && LEADS.has(lead.kind)) try { localStorage.setItem(FPK, JSON.stringify({ lead: lead.id, side: fp.slice(1).map((h) => h.id) })); for (let i = localStorage.length - 1; i >= 0; i--) { const kk = localStorage.key(i); if (kk?.startsWith("ta.front|") && !kk.startsWith(`ta.front|${HALF}|`)) localStorage.removeItem(kk); } } catch { /* */ }
     const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [];
     for (const id of ORDER) {
       const mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
@@ -546,7 +561,10 @@ export async function render(main, { previewClient } = {}) {
       if (FULL.has(id)) { flush(); x.classList.add("full"); laid.push(x); done.add(x); continue; }
       run.push(x); done.add(x); }
     flush();
-    mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief))]), el("div", { class: "td-grid" }, laid)]);
+    shownLead = lead?.id || null;
+    const reB = el("button", { type: "button", class: "td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻");
+    reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
+    mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadStory(lead), el("aside", { class: "td-side" }, fp.slice(1).map(brief)), reB]), el("div", { class: "td-grid" }, laid)]);
     const go2 = (id) => { const n = document.getElementById(`td-${id}`); if (!n) return; const bar = document.querySelector(".rail")?.getBoundingClientRect().bottom || 0; /* (the top bar stays put over the page) */ window.scrollTo({ top: n.getBoundingClientRect().top + window.scrollY - Math.max(0, bar) - 12, behavior: "smooth" }); }; /* (update 734: to the header, clear of the top bar) */
     mount(secNav, [...secs.map((x) => [x.id.slice(3), SEC[x.id.slice(3)][0]])].map(([id, t2], i) => { const a2 = el("a", { href: "#", "data-sec": id }, t2); void i; a2.addEventListener("click", (e) => { e.preventDefault(); go2(id); }); return a2; }));
   }
