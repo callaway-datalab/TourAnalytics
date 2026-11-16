@@ -435,7 +435,10 @@ export function sgDashboard(container, opts) {
         // (update 470) a player's strokes gained: Focus (the short story) or Full stats (everything), switched at the top
         // (update 756) Tournament Results: every tournament on this tour (any year), each against that week's field
         if (resultsOn) return sgResults.resultsView(S, nz(applyFilters(me.rounds, { tour: f.tour })), field.map((p) => ({ key: p.key, rounds: applyFilters(p.rounds, { tour: f.tour }) })));
-        if (focusOn) return [...[].concat(sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour })))), sgSummary.steadyBox(S, slicedField)]; // (update 760: Ability vs Consistency, the player picked) // (update 611: every year, for the radar)
+        if (focusOn) { const fv = [].concat(sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour })))), sb = sgSummary.steadyBox(S, slicedField);
+          // (update 767) Ability vs Consistency up beside the radar (one above the other on a phone)
+          const ri = fv.findIndex((n) => n?.classList?.contains("fx-radar")); if (sb && ri >= 0) fv.splice(ri, 1, el("div", { class: "fx-pair" }, [fv[ri], sb])); else if (sb) fv.push(sb);
+          return fv; } // (update 760: Ability vs Consistency, the player picked) // (update 611: every year, for the radar)
         // The rankings are always the first thing (Stat Averages and the charts follow).
         const blocks = me ? detailBlocks(mine, slicedField) : [];
         // (update 205) "Getting better or worse?" right under the hero card

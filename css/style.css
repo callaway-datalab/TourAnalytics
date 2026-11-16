@@ -6980,3 +6980,8 @@ button.tr-best:hover { border-color: rgba(48, 209, 88, 0.6); }
   .tr-pop .tr-rounds { flex-wrap: wrap; } .tr-pop .tr-shots { font-size: 0.72rem; } .tr-pop .tr-shots th, .tr-pop .tr-shots td { padding: 4px 6px; }
   .tr-pop-calls { font-size: 0.82rem; }
 }
+/* (update 767) Focus: the radar and Ability vs Consistency side by side (stacked on a phone) */
+.fx-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
+.fx-pair > .panel { margin: 0 !important; min-width: 0; }
+.fx-pair .sv-box .mc-wrap { max-width: 520px; }
+@media (max-width: 900px) { .fx-pair { grid-template-columns: minmax(0, 1fr); } }

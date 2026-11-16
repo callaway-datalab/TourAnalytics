@@ -343,7 +343,7 @@ export async function render(main, { flash, routeId }) {
     import("../perf.js").then((m) => m.bootLog(`stats: detail put in place${performance?.memory ? ` \u00b7 ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : ""}`)).catch(() => {});
   }
   // (update 568) the key for the detail on screen: the file, its upload, the tour and the seasons (one place makes it)
-  function yearsWanted() { return dashState.year?.length ? [...new Set(dashState.year.map(String))].sort() : null; }
+  function yearsWanted() { if (!dashState.year?.length) return null; const ys = new Set(dashState.year.map(String)), top = [...ys].sort().at(-1); if (/^\d{4}$/.test(top)) ys.add(String(Number(top) - 1)); return [...ys].sort(); } // (update 767: and the season before the latest picked, for Focus's year-on-year by distance)
   function detailKeyOf(ds, tour) { const ys = yearsWanted(); return `detail|${ds.id}|${ds.uploadedAt?.toMillis?.() ?? 0}|${tour ?? ""}|${ys ? ys.join(",") : "newest2"}`; }
   // Phones: the field's lie / distance detail, once per upload (kept on the device after the first time).
   const detailCache = DETAIL, detailWhy = DETAIL_WHY;
