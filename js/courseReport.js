@@ -189,8 +189,8 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
         const finish = (e) => {
           const played = field.map((p) => ({ p, rs: p.rounds.filter((rd) => rd.event === e.event && String(rd.year) === String(e.year)) })).filter((x) => x.rs.length);
           if (!played.length) return "\u2014";
-          const most = Math.max(...played.map((x) => x.rs.length));
-          const list = played.filter((x) => x.rs.length >= most).map((x) => ({ key: x.p.key, v: per(x.rs) })).sort((a, b) => b.v - a.v);
+          const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = played.map((x) => cntR(x.rs)).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; // (update 773)
+          const list = played.filter((x) => cntR(x.rs) >= most).map((x) => ({ key: x.p.key, v: per(x.rs) })).sort((a, b) => b.v - a.v);
           const i = list.findIndex((x) => x.key === who.key);
           return i < 0 ? (e.rs.length < most ? "MC" : "\u2014") : `${i + 1} of ${list.length}`;
         };

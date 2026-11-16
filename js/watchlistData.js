@@ -108,8 +108,8 @@ function eventsOf(players) {
     (e.by.get(p.key) || e.by.set(p.key, []).get(p.key)).push(rd);
   }
   return [...ev.values()].map((e) => {
-    const most = Math.max(...[...e.by.values()].map((rs) => rs.length));
-    const ranked = [...e.by].filter(([, rs]) => rs.length >= most).map(([key, rs]) => ({ key, v: perRound(rs) })).sort((a, b) => b.v - a.v);
+    const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = [...e.by.values()].map(cntR).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; // (update 773)
+    const ranked = [...e.by].filter(([, rs]) => cntR(rs) >= most).map(([key, rs]) => ({ key, v: perRound(rs) })).sort((a, b) => b.v - a.v);
     return { ...e, ranked };
   }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
 }

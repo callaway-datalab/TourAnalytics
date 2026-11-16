@@ -342,8 +342,11 @@ export function eventsOf(S, players) {
     (e.by.get(p) || e.by.set(p, []).get(p)).push(rd);
   }
   return [...ev.values()].map((e) => {
-    const most = Math.max(...[...e.by.values()].map((rs) => rs.length));
-    const ranked = [...e.by].filter(([, rs]) => rs.length >= most).map(([p, rs]) => ({ p, v: S.metric(rs), rs })).filter((x) => x.v != null).sort(S.byBest);
+    // (update 773) "played every round": distinct rounds (not rows), and a whole-event row (DP World Tour data) counts as
+    // the whole event. Counting rows dropped a player whose week was one row, and Hatton was named best over Rahm.
+    const cnt = (rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size);
+    const fin = [...e.by.values()].map(cnt).filter(Number.isFinite), most = fin.length ? Math.max(...fin) : 0;
+    const ranked = [...e.by].filter(([, rs]) => cnt(rs) >= most).map(([p, rs]) => ({ p, v: S.metric(rs), rs })).filter((x) => x.v != null).sort(S.byBest);
     return { ...e, players: e.by.size, ranked, best: ranked[0] || null, top10: ranked.slice(0, 10) };
   }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
 }

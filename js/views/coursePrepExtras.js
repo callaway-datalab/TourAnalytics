@@ -282,8 +282,8 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
   const finish = (e) => {
     const played = field.map((p) => ({ p, rs: p.rounds.filter((rd) => rd.event === e.event && String(rd.year) === String(e.year)) })).filter((x) => x.rs.length);
     if (!played.length) return null;
-    const most = Math.max(...played.map((x) => x.rs.length));
-    const list = played.filter((x) => x.rs.length >= most).map((x) => ({ key: x.p.key, v: perRound(x.rs) })).sort((a, b) => b.v - a.v);
+    const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = played.map((x) => cntR(x.rs)).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; // (update 773: rounds, not rows)
+    const list = played.filter((x) => cntR(x.rs) >= most).map((x) => ({ key: x.p.key, v: perRound(x.rs) })).sort((a, b) => b.v - a.v);
     const i = list.findIndex((x) => x.key === who.key);
     return i < 0 ? (e.rs.length < most ? "MC" : null) : `${i + 1} of ${list.length}`;
   };
@@ -291,7 +291,7 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
   // from the shared summary; their distances from the field's round detail, once it's loaded
   const evHere = new Map();
   for (const p of field) for (const rd of p.rounds) if (rd.event && sameCourse(rd.course, course.name)) { const k = `${rd.event}|${rd.year}`; const e = evHere.get(k) || evHere.set(k, new Map()).get(k); (e.get(p.key) || e.set(p.key, []).get(p.key)).push(rd); }
-  const winners = [...evHere].map(([k, byP]) => { const most = Math.max(...[...byP.values()].map((rs) => rs.length)); let best = null; for (const [pk, rs] of byP) { if (rs.length < most) continue; const v = perRound(rs); if (v != null && (!best || v > best.v)) best = { key: pk, v, k }; } return best; }).filter(Boolean);
+  const winners = [...evHere].map(([k, byP]) => { const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = [...byP.values()].map(cntR).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; let best = null; for (const [pk, rs] of byP) { if (cntR(rs) < most) continue; const v = perRound(rs); if (v != null && (!best || v > best.v)) best = { key: pk, v, k }; } return best; }).filter(Boolean);
   const detailBy = new Map((detail || []).map((p) => [p.key, p]));
   const winAvg = (cat = null, dist = null) => {
     const vs = winners.map((w) => {
