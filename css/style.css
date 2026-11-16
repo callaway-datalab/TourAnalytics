@@ -2671,7 +2671,7 @@ body:has(#app > .boot-msg)::after { background: radial-gradient(1200px 600px at 
 .pr-resume { border-color: rgba(200,169,126,0.45) !important; }
 .pr-row { display: flex; gap: 0.9rem; align-items: center; }
 .pr-empty ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.45rem; color: var(--ink); }
-.pr-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.6rem; }
+.pr-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.6rem; }
 .pr-tile { background: rgba(255,255,255,0.04); border: 1px solid var(--line); border-radius: 14px; padding: 0.7rem 0.8rem; display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .pr-tile-k { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .pr-tile strong { font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }
