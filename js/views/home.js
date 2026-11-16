@@ -513,7 +513,7 @@ export async function render(main, { previewClient } = {}) {
     if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (+ above) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
     // (update 779) the lead changes every 12 hours (local time): one of the top 6 stories, a different one each half day
-    const HALF = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 432e5), news0 = sorted.filter((h) => h.kind !== "Fact"), cands = news0.slice(0, 6), pickI = cands.length ? Math.floor(hash(`lead|${HALF}|${tourPick}`) * cands.length) : 0;
+    const HALF = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 432e5), news0 = sorted.filter((h) => h.kind !== "Fact"), LEADS = new Set(["Result", "Milestone", "Trend", "Slide", "Equipment", "Rank"]) /* (update 781: only real news can lead: no course notes, facts or briefs) */, cands = news0.filter((h) => LEADS.has(h.kind) && h.k).slice(0, 6), pickI = cands.length ? Math.floor(hash(`lead|${HALF}|${tourPick}`) * cands.length) : 0;
     const news = cands.length ? [cands[pickI], ...news0.filter((h) => h !== cands[pickI])] : news0, lead = news[0] || sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
@@ -1023,13 +1023,13 @@ export async function render(main, { previewClient } = {}) {
           detail: `The top 10 gain ${sg2(cat0[0][1])} a round ${CAT_IN[key]} over the rest. ${me ? "You" : S}: ${sg2(theirs[key])} ${src}, against the top 10's ${sg2(R0.catTop[key])}${gap > 0.05 ? ` (${gap.toFixed(2)} short)` : ""}.${gaps[0][0] !== key && gaps[0][1] > 0.2 ? ` Biggest gap: ${CATN[gaps[0][0]].toLowerCase()} (${gaps[0][1].toFixed(2)}).` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) }); }
       // their own holes: best and worst against the field, and a par 5 played against the grain
-      if (P) { const hs = [...P.holes].filter(([, o]) => o[1] >= 2).map(([h, o]) => { const f = R0.fAvg.get(h); return f && f[1] >= 20 ? { h, par: o[2], n: o[1], d: o[0] / o[1] - f[0] / f[1] } : null; }).filter(Boolean).sort((a, b) => a.d - b.d);
+      if (P) { const hs = [...P.holes].filter(([, o]) => o[1] >= 8).map( /* (update 781: 8+ plays of a hole, not 2) */([h, o]) => { const f = R0.fAvg.get(h); return f && f[1] >= 20 ? { h, par: o[2], n: o[1], d: o[0] / o[1] - f[0] / f[1] } : null; }).filter(Boolean).sort((a, b) => a.d - b.d);
         const note = P.notes.sort((a, b) => a.s - b.s)[0];
         if (hs.length >= 6 || note) { const b = hs[0], w = hs.at(-1), sc = (s0) => (s0 <= -2 ? "an eagle" : "a birdie");
           const nl = note ? `In ${note.yr} (round ${note.rd}) on No. ${note.h}, ${he} made ${sc(note.s)} by ${note.kind === "lay" ? `laying up from ${Math.round(note.d)} yds when ${Math.round(note.share * 100)}% of the field went for it` : `going for it from ${Math.round(note.d)} yds when only ${Math.round(note.share * 100)}% of the field did`}` : "";
-          out.push({ id: `up-holes-${k}`, k, kind: "Course", hole: note ? note.h : b?.h, cid: c.id, score: note ? 5.32 : 5.25,
-            title: note ? `Against the grain: ${me ? "your" : poss(S)} ${note.kind === "lay" ? "lay-up" : "go"} on No. ${note.h} paid off` : `${me ? "Your" : poss(nameOf(k))} best hole here: No. ${b.h}, ${sg2(-b.d)} a play against the field`,
-            detail: [nl, b && hs.length >= 6 ? `best hole No. ${b.h} (par ${b.par}): ${sg2(-b.d)} a play against the field (${b.n} plays)` : "", w && hs.length >= 6 && w.d > 0.15 ? `the one that hurts: No. ${w.h} (par ${w.par}), ${sg2(-w.d)} against the field` : ""].filter(Boolean).join(" · "),
+          out.push({ id: `up-holes-${k}`, k, kind: "Course", hole: note ? note.h : b?.h, cid: c.id, score: note ? 5.0 : 4.6,
+            title: note ? `${U.name}: ${me ? "your" : poss(S)} ${note.kind === "lay" ? "lay-up" : "go"} against the grain on No. ${note.h} paid off` : `${U.name}: ${me ? "you score" : `${S} scores`} best on No. ${b.h} and worst on No. ${w.h}`,
+            detail: [nl, b && hs.length >= 6 ? `At ${c.name}, No. ${b.h} (par ${b.par}) is ${me ? "your" : poss(S)} best hole: ${(-b.d).toFixed(2)} strokes a play better than the field (${b.n} plays). ${w && w.d > 0.15 ? `No. ${w.h} (par ${w.par}) costs ${w.d.toFixed(2)} a play against the field: the one to plan for.` : ""}` : ""].filter(Boolean).join(" · ").trim(),
             to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, note ? note.h : b.h, EX.hole(`How should I play hole ${note ? note.h : b.h}?`)) }); } }
     }
     return out;
