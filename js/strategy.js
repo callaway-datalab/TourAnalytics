@@ -297,7 +297,9 @@ export function strategyOf(recs, par, geo = {}) {
         if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || GL.near(p.x, p.y, 2 * geo.ppy, (q) => q.lie === "bunker").length > 0) p.lucky = true; } // (or a bunker miss within 2 yds)
       allMiss = shotPts.filter((p) => p.lie !== "green"); // (update 752: off the green) (update 657: counted in any circle they're inside, just not used to place one; 722: every shot the circle tool shows)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
-    const cand = (() => { const c10 = gen(MIN_T, R_SET); return c10.length >= 3 ? c10 : gen(MIN_N, R_SET); })(); // (update 717: 8, 10, 15 or 20 yds; 718: 10 shots or more when there are enough such spots)
+    // (update 753) and when that's too few places, smaller ones (5+ shots) before falling back to misses grouped by side: the
+    // circles then are what Cal's text recounts, so the worst miss isn't lost when its numbers are checked
+    const cand = (() => { const c10 = gen(MIN_T, R_SET); if (c10.length >= 3) return c10; const c8 = gen(MIN_N, R_SET); return c8.length >= 2 ? c8 : [...c8, ...gen(5, R_SET)]; })(); // (update 717: 8, 10, 15 or 20 yds; 718: 10 shots or more when there are enough such spots)
     // its direction: the one most of its misses are in; when none has half, the part nearly all share ("Long" for misses
     // spread over long-left, long and long-right)
     const sideOf = (mem0) => {

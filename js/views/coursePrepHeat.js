@@ -113,7 +113,7 @@ export async function drawHeat(ctx, course) {
     if (ds.length < 20) { m.set(k, P); return P; } ds.sort((a, b) => a - b); const lo = ds[Math.floor(ds.length * 0.05)] - 5, hi = ds[Math.floor(ds.length * 0.95)] + 5;
     const out = { ...P, rows: pin.rows.filter((r) => !/^tee$/i.test(r.lie) && yd(r) != null && yd(r) >= lo && yd(r) <= hi) }; m.set(k, out); return out; };
   const zonesFor = (n, pid, parN) => {
-    const H = data.holes?.[n] || { pins: {} }, k = kOf(n, parN), p = areaPin(H.pins[pid], k);
+    const H = data.holes?.[n] || { pins: {} }, k = kOf(n, parN), p = pinForShot(H.pins[pid], k); // (update 753: where shot k finished, again: the area band took in the drive zone on a par 5's Shot 2)
     return zonesOf(p, parN, ix, { toGo: !!data.toGo, yards: H.yards || meta.yards?.[n - 1] || course.yards?.[n - 1] || null, dense: !!data.shots || (p.rows?.length || 0) > 600, played: k || null });
   };
   const rebuild = () => {
