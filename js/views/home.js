@@ -199,11 +199,11 @@ export async function render(main, { previewClient } = {}) {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const edition = el("span", {}, ""), nextLine = el("a", { class: "td-live", href: "#/live", title: "Open the Event Feed" }, ""), /* (update 734: this week’s event: a link to the Event Feed) */ roleLbl = el("span", { class: "td-top-r" }, "");
   mount(root, [
-    el("header", { class: "td-mast" }, el("h1", {}, ["Tour Analytics ", el("i", {}, "Daily")])),
+    el("header", { class: "td-mast" }, el("h1", {}, ["The ", el("i", {}, "Daily"), " Tour"])), /* (update 748: was "Tour Analytics Daily") */
     el("div", { class: "td-date" }, [el("span", {}, today), edition, nextLine]),
     el("div", { class: "td-nav" }, [tourRow, whoRow, askBox]),
     secNav, feed, asked,
-    el("div", { class: "td-foot" }, "Tour Analytics Daily · compiled by Cal from every shot on record · tap any story to dig deeper"),
+    el("div", { class: "td-foot" }, "The Daily Tour · compiled by Cal from every shot on record · tap any story to dig deeper"),
   ]);
   drawTabs();
 
@@ -235,10 +235,10 @@ export async function render(main, { previewClient } = {}) {
   const UPCOMING = { name: "The American Express", re: /american express|amex\b/i, course: /pete dye stadium|pga west|la quinta/i, not: /sawgrass|tpc/i }; /* (update 737: the Pete Dye Stadium Course at PGA West) */ /* (update 736) */
   // ---- (update 731) the newspaper ----
   const SEC = { res: ["Results & Milestones", "The week’s best and worst"], form: ["Form", "The last 12 rounds against the 12 before"], gear: ["Equipment", "New in the bag"],
-    rank: ["Rankings", ""], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", `Up next: ${UPCOMING.name}`] };
-  const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot" };
-  const ORDER = ROLE === "caddy" ? ["next", "course", "form", "res", "spot", "focus", "gear", "rank", "prac", "tour"] : ["form", "spot", "gear", "rank", "res", "focus", "next", "course", "prac", "tour"];
-  const FULL = new Set(["form", "tour", "course"]);
+    rank: ["Rankings", ""], fact: ["Did You Know?", "New every 12 hours"], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", `Up next: ${UPCOMING.name}`] };
+  const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot", Fact: "fact" };
+  const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "form", "res", "spot", "focus", "gear", "rank", "prac", "tour"] : ["fact", "form", "spot", "gear", "rank", "res", "focus", "next", "course", "prac", "tour"];
+  const FULL = new Set(["form", "tour", "course", "fact"]);
   const CATW = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" };
   const ordN = (r) => (r === 1 ? "No. 1" : `${r}${["th", "st", "nd", "rd"][((r % 100) - 20) % 10] || ["th", "st", "nd", "rd"][r % 100] || "th"}`);
   const rkName = (c) => (c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase());
@@ -350,18 +350,18 @@ export async function render(main, { previewClient } = {}) {
     const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.score + jit(x.id, x.ever ? 1.6 : 0.6) })).sort((a, b) => b.score - a.score);
     if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (+ above) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
-    const lead = sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
-    for (const h of sorted.slice(1)) { if (fp.length >= 4) break; if (!used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
-    for (const h of sorted.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
+    const news = sorted.filter((h) => h.kind !== "Fact"), lead = news[0] || sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
+    for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
+    for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
     const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [];
     for (const id of ORDER) {
       const mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
       const pick = [], byK = new Map(); // up to 6 (2 a player first, when there are several)
-      const cap = id === "tour" || id === "course" ? 9 : 6; /* (update 736: more briefs) */
+      const cap = id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : 6; /* (update 736: more briefs) */
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
-      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "tour" ? el("div", { class: "td-wire" }, pick.map(wire)) : el("div", { class: "td-cols" }, pick.map(column));
+      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "tour" || id === "fact" ? el("div", { class: "td-wire" }, pick.map(wire)) : el("div", { class: "td-cols" }, pick.map(column));
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}` }, [el("div", { class: "td-sh" }, [el("h2", {}, title), sub ? el("span", {}, sub) : null]), content]));
     }
     // (update 735) two half-width sections side by side: left and right worked out in order (a full-width one starts a new
@@ -445,6 +445,41 @@ export async function render(main, { previewClient } = {}) {
       if (g[1] >= 0.15) add("yoy", "Year on year", `${P} ${CATW[g[0]]} is up ${g[1].toFixed(2)} a round on ${Number(SY) - 1}`, `Strokes gained ${CAT_IN[g[0]]}: ${sg2(avgC(g[0]))} a round in ${SY}, against ${sg2(avgOf(prev, (r) => inCat(r, g[0])))} last season`, () => go(`${cmpBase(k)}&pick=years:${Number(SY) - 1},${SY}`, EX.cmpYears("How does this season compare to last?")), "Compare · Seasons", 4.1); }
     return out;
   }
+  // (update 748) "Did you know?": random facts about the players shown, a new set every 12 hours. Where they rank (top 10
+  // or bottom 10 of the players with enough rounds) this season and over their last 12 rounds, in strokes gained and the
+  // part-of-the-game stats that don't need a distance; their best week in each part of the game; a single round among the
+  // best on tour this season. Picked by the half day, so the section changes twice a day
+  const SLOT = Math.floor(Date.now() / 432e5);
+  let factMemo = null;
+  function factsAll() {
+    const keysF = shownKeys(), mk = `${SLOT}|${tourPick}|${keysF.join(",")}|${field.length}`; if (factMemo?.k === mk) return factMemo.v;
+    const F = seasonField(), SY = F.SY, on = tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : "", cand = [];
+    if (F.ok.length >= 10) {
+      const last12 = (rs) => rs.filter((r) => !r.eventLevel).slice(-12);
+      const wins = [["season", `in ${SY}${on}`, (p) => p.rs, F.ok], ["l12", `over the last 12 rounds${on}`, (p) => last12(p.rs), F.ok.filter((p) => last12(p.rs).length >= 12)]];
+      const mets = [...["TOTAL", ...cats].map((c) => ({ id: c, lbl: c === "TOTAL" ? "strokes gained" : `strokes gained ${CAT_IN[c]}`, higher: true, val: (rs) => avgOf(rs, c === "TOTAL" ? tot : (r) => inCat(r, c)), fmt: (v) => `${sg2(v)} a round` })),
+        ...STAT_KEYS.map((key) => ({ id: key, lbl: STAT_DEFS[key].label.replace(/ %$/, " %").toLowerCase(), higher: STAT_DEFS[key].higher, val: (rs) => obsAvg(rs, key), fmt: (v) => fmtStat(STAT_DEFS[key], v) }))];
+      const rankMemo2 = new Map();
+      const ranksOf = (w, m) => { const kk = `${w[0]}|${m.id}`; if (rankMemo2.has(kk)) return rankMemo2.get(kk); const vs = w[3].map((p) => [p.k, m.val(w[2](p))]).filter((x) => x[1] != null).sort((a, b) => (m.higher ? b[1] - a[1] : a[1] - b[1])); rankMemo2.set(kk, vs); return vs; };
+      for (const k of keysF) { const me = isMe(k), N = me ? "You" : nameOf(k), P = me ? "your" : poss(nameOf(k));
+        for (const w of wins) for (const m of mets) { const vs = ranksOf(w, m); if (vs.length < 20) continue; const i = vs.findIndex((x) => x[0] === k); if (i < 0) continue;
+          const top = i < 10, bot = i >= vs.length - 10; if (!top && !bot) continue;
+          cand.push({ id: `fx-${w[0]}-${m.id}-${k}`, k, kick: top ? "Top 10" : "Room to grow", title: `${N} ${me ? "rank" : "ranks"} ${ordN(i + 1)} of ${vs.length} in ${m.lbl} ${w[1]}`, detail: `${m.fmt(vs[i][1])}${i ? `; the leader, ${nameOf(vs[0][0])}: ${m.fmt(vs[0][1])}` : `; next best, ${nameOf(vs[1][0])}: ${m.fmt(vs[1][1])}`}`,
+            run: () => toBoard({ year: [SY], cats: cats.includes(m.id) ? [m.id] : [] }, "Rankings", EX.lead(`Who leads in ${m.lbl}?`)), to: "Leaderboards" }); }
+        // their best week this season in each part of the game
+        const pl = F.all.find((p) => p.k === k); if (!pl) continue; const evs = eventsOf(pl.rs).filter((e) => e.rs.length >= 2);
+        if (evs.length >= 4) for (const c of cats) { const b = evs.map((e) => [e, avgOf(e.rs, (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1])[0];
+          if (b && b[1] > 0.5) cand.push({ id: `fx-wk-${c}-${k}`, k, kick: "Best week", title: `${me ? "Your" : poss(nameOf(k))} best ${CATW[c]} week of ${SY}: ${sg2(b[1])} a round at ${b[0].event}`, detail: `Strokes gained ${CAT_IN[c]}, over ${b[0].rs.length} rounds there`, run: () => toStats(k, { view2: "full", year: [SY], span: 0 }, "Tournaments", null), to: "Stats · Tournaments" }); }
+        // a single round among the season's best on tour (any part of the game)
+        for (const c of ["TOTAL", ...cats]) { const f = c === "TOTAL" ? tot : (r) => inCat(r, c), mine = pl.rs.filter((r) => !r.eventLevel).map((r) => [r, f(r)]).sort((a, b) => b[1] - a[1])[0]; if (!mine) continue;
+          let better = 0; for (const p of F.all) for (const r of p.rs) if (!r.eventLevel && f(r) > mine[1]) { better++; if (better > 10) break; }
+          if (better < 5) cand.push({ id: `fx-rd-${c}-${k}`, k, kick: "Round to remember", title: `${me ? "Your" : poss(nameOf(k))} ${sg2(mine[1])} ${c === "TOTAL" ? "round" : `${CATW[c]} round`} at ${mine[0].event} is ${better ? `in the top ${better + 1}` : "the best"} on tour this season`, detail: `Strokes gained ${c === "TOTAL" ? "total" : CAT_IN[c]}${mine[0].roundNo ? `, round ${mine[0].roundNo}` : ""} (${SY}${on})`, run: () => toStats(k, { view2: "full", year: [SY], span: 0, trendBy: "round" }, "SG Trends", null), to: "Stats · SG Trends" }); } }
+    }
+    // a different set each half day: shuffled by the slot, at most 2 a player when there are several
+    cand.sort((a, b) => hash(`${a.id}|${SLOT}`) - hash(`${b.id}|${SLOT}`));
+    const out = [], per = new Map(); for (const x of cand) { if (out.length >= 8) break; const n = per.get(x.k) || 0; if (keysF.length > 1 && n >= 2) continue; per.set(x.k, n + 1); out.push({ ...x, kind: "Fact", score: 3.2 - out.length * 0.01 }); }
+    factMemo = { k: mk, v: out }; return out;
+  }
   function highlightsFor(k) {
     const raw = rawOf(playerOf(k)), out = [], SY = seasonYr(), rs = sgRounds(raw).filter((r) => yrOf(r) === SY); if (!rs.length) return out; /* (update 738: this season only) */ // (update 728: Compare's rounds and order)
     const last = SY, season = rs, evs = eventsOf(season), sAvg = avgOf(season, tot);
@@ -510,6 +545,7 @@ export async function render(main, { previewClient } = {}) {
         if (top.length) out.push({ id: "movers", k: null, x: { top }, kind: "Tour", score: 5, title: `Heating up: ${lst(top)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) });
         if (bot.length) out.push({ id: "fallers", k: null, x: { top: bot }, kind: "Tour", score: 4, title: `Cooling off: ${lst(bot)}`, detail: `Strokes gained total a round, the last ${FL0} against the ${FL0.split(" ")[0]} before (${where}), as Hot & Cold on Stats`, to: "Leaderboards", run: () => go(admin ? "#/admin/analyze" : "#/leaderboards", EX.lead("Who’s playing best?")) }); }
     }
+    out.push(...factsAll()); // (update 748)
     if (!picked.size) out.push(...tourBits(), ...courseBits());
     else out.push(...courseBits());
     if (ROLE === "caddy") for (const h of out) if (h.kind === "Rank" || h.kind === "Tour") h.score -= 2; // (a caddy: the course and the form first)
