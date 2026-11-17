@@ -6,7 +6,7 @@ export function makeCharts({ el, sg2, avgOf, inCat, tot, eventsOf, CATN, bar0 })
   // (update 794) form, round by round: the stretch before in grey, the last stretch green / red, each with its average as a
   // dashed line and label (as Stats' SG chart), across the lead story's full width
   function formRounds(x, cat) { let pr = x.prevR || [], la = x.lastR || []; if (pr.length + la.length < 6 && !/event/.test(x.FL || "")) return null;
-    const f0 = x.d ? (r) => r.shots.reduce((t0, s0) => t0 + (s0.cat === x.c && s0.dist === x.d ? s0.sg : 0), 0) : cat ? (r) => inCat(r, cat) : tot;
+    const dist = typeof x.d === "string" ? x.d : null; /* (update 822) */ const f0 = dist ? (r) => r.shots.reduce((t0, s0) => t0 + (s0.cat === x.c && s0.dist === dist ? s0.sg : 0), 0) : cat ? (r) => inCat(r, cat) : tot;
     // (update 805) the DP World Tour (its numbers by event): a bar an event, 3 against 3
     const evM = /event/.test(x.FL || ""); if (evM) { const byE = (rs0) => eventsOf(rs0).map((e) => ({ event: e.event, date: e.end, shots: [], _rs: e.rs })); pr = byE(pr); la = byE(la); }
     const f = evM ? (e) => avgOf(e._rs, f0) : f0, all = [...pr.map((r) => [r, 0]), ...la.map((r) => [r, 1])], vs = all.map(([r]) => f(r));
@@ -17,7 +17,7 @@ export function makeCharts({ el, sg2, avgOf, inCat, tot, eventsOf, CATN, bar0 })
     const avgLine = (from, to, v, lbl) => { const x1 = L + from * bw, x2 = L + to * bw; svg.append(mk0("line", { x1: x1.toFixed(1), x2: x2.toFixed(1), y1: y(v).toFixed(1), y2: y(v).toFixed(1), class: "td-avgl" })); svg.append(mk0("text", { x: (x2 - 4).toFixed(1), y: (y(v) - 5).toFixed(1), "text-anchor": "end", class: "td-avgt" }, `${lbl} ${sg2(v)}`)); };
     if (pr.length) avgLine(0, pr.length, avgOf(pr, f), `${x.n} before`); if (la.length) avgLine(pr.length, all.length, avgOf(la, f), `Last ${x.n}`);
     const d0 = (r) => String(r.date || "").slice(5, 10).replace("-", "/");
-    return el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `${evM ? "Event by event" : "Round by round"} · ${x.d ? `${CATN[x.c]} from ${x.d}` : cat ? CATN[cat] : "SG: Total"}${evM ? " (a round)" : ""}`), svg, el("div", { class: "td-strip-ax" }, [el("span", {}, d0(all[0][0])), el("span", {}, d0(all.at(-1)[0]))])]); }
+    return el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `${evM ? "Event by event" : "Round by round"} · ${dist ? `${CATN[x.c]} from ${dist}` : cat ? CATN[cat] : "SG: Total"}${evM ? " (a round)" : ""}`), svg, el("div", { class: "td-strip-ax" }, [el("span", {}, d0(all[0][0])), el("span", {}, d0(all.at(-1)[0]))])]); }
   function barSvg(items, { note } = {}) { if (items.length < 3) return null;
     const W = barWide ? 760 : 320, H = 176, top = 8, bot = 70, /* (update 791: wide, in the lead story's full width) */ /* (update 738: room for a label under every bar) */ vs = items.map((x) => x.v), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, LP = 46, bw = (W - LP) / items.length; /* (update 738: room on the left for the first labels) */
     const svg = mk0("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", class: "td-bars", role: "img", "aria-label": note || "Bar chart" });

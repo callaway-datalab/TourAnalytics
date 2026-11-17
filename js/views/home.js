@@ -6,7 +6,7 @@
 // the admin any player, and the tour.
 import { el, mount, calAllowed, holdToTalk, icon } from "../ui.js";
 import { getState } from "../auth.js";
-import { setCurrent } from "../current.js"; // (update 817: a story's player becomes the header's player)
+import { setCurrent, currentPlayer, onCurrent } from "../current.js"; // (update 817: a story's player becomes the header's player)
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, summaryPlayers, gearInfo, STAT_DEFS } from "../sg.js";
@@ -306,7 +306,7 @@ export async function render(main, { previewClient } = {}) {
   // (update 794) form, round by round: the stretch before in grey, the last stretch green / red, each with its average as a
   // dashed line and label (as Stats' SG chart), across the lead story's full width
   function formRounds(x, cat) { let pr = x.prevR || [], la = x.lastR || []; if (pr.length + la.length < 6 && !/event/.test(x.FL || "")) return null;
-    const f0 = x.d ? (r) => r.shots.reduce((t0, s0) => t0 + (s0.cat === x.c && s0.dist === x.d ? s0.sg : 0), 0) : cat ? (r) => inCat(r, cat) : tot;
+    const dist = typeof x.d === "string" ? x.d : null; /* (update 822: x.d is a range's distance in a range story, the change in a part-of-the-game one) */ const f0 = dist ? (r) => r.shots.reduce((t0, s0) => t0 + (s0.cat === x.c && s0.dist === dist ? s0.sg : 0), 0) : cat ? (r) => inCat(r, cat) : tot;
     // (update 805) the DP World Tour (its numbers by event): a bar an event, 3 against 3
     const evM = /event/.test(x.FL || ""); if (evM) { const byE = (rs0) => eventsOf(rs0).map((e) => ({ event: e.event, date: e.end, shots: [], _rs: e.rs })); pr = byE(pr); la = byE(la); }
     const f = evM ? (e) => avgOf(e._rs, f0) : f0, all = [...pr.map((r) => [r, 0]), ...la.map((r) => [r, 1])], vs = all.map(([r]) => f(r));
@@ -317,7 +317,7 @@ export async function render(main, { previewClient } = {}) {
     const avgLine = (from, to, v, lbl) => { const x1 = L + from * bw, x2 = L + to * bw; svg.append(mk0("line", { x1: x1.toFixed(1), x2: x2.toFixed(1), y1: y(v).toFixed(1), y2: y(v).toFixed(1), class: "td-avgl" })); svg.append(mk0("text", { x: (x2 - 4).toFixed(1), y: (y(v) - 5).toFixed(1), "text-anchor": "end", class: "td-avgt" }, `${lbl} ${sg2(v)}`)); };
     if (pr.length) avgLine(0, pr.length, avgOf(pr, f), `${x.n} before`); if (la.length) avgLine(pr.length, all.length, avgOf(la, f), `Last ${x.n}`);
     const d0 = (r) => String(r.date || "").slice(5, 10).replace("-", "/");
-    return el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `${evM ? "Event by event" : "Round by round"} · ${x.d ? `${CATN[x.c]} from ${x.d}` : cat ? CATN[cat] : "SG: Total"}${evM ? " (a round)" : ""}`), svg, el("div", { class: "td-strip-ax" }, [el("span", {}, d0(all[0][0])), el("span", {}, d0(all.at(-1)[0]))])]); }
+    return el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `${evM ? "Event by event" : "Round by round"} · ${dist ? `${CATN[x.c]} from ${dist}` : cat ? CATN[cat] : "SG: Total"}${evM ? " (a round)" : ""}`), svg, el("div", { class: "td-strip-ax" }, [el("span", {}, d0(all[0][0])), el("span", {}, d0(all.at(-1)[0]))])]); }
   function barSvg(items, { note } = {}) { if (items.length < 3) return null;
     const W = barWide ? 760 : 320, H = 176, top = 8, bot = 70, /* (update 791: wide, in the lead story's full width) */ /* (update 738: room for a label under every bar) */ vs = items.map((x) => x.v), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), sc = (H - top - bot) / (hi - lo || 1), y0 = top + hi * sc, LP = 46, bw = (W - LP) / items.length; /* (update 738: room on the left for the first labels) */
     const svg = mk0("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", class: "td-bars", role: "img", "aria-label": note || "Bar chart" });
@@ -566,7 +566,7 @@ export async function render(main, { previewClient } = {}) {
   let lastItems = null, reroll = false, shownLead = null; // (update 784: the front page's refresh button)
   function drawFeed(items) { lastItems = items;
     const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.kind === "Fact" ? x.score : x.score + jit(x.id, x.ever ? 1.6 : 0.6) })) /* (update 791: facts keep their shuffled order) */.sort((a, b) => b.score - a.score);
-    if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (+ above) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
+    if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (the + beside a player's name on Stats › Overview) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
     // (update 779) the lead changes every 12 hours (local time): one of the top 6 stories, a different one each half day
     const HALF = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 432e5), news0 = sorted.filter((h) => h.kind !== "Fact"), LEADS = new Set(["Result", "Milestone", "Trend", "Slide", "Equipment", "Rank"]) /* (update 781: only real news can lead: no course notes, facts or briefs) */, cands = news0.filter((h) => LEADS.has(h.kind) && h.k).slice(0, 6), pickI = cands.length ? Math.floor(hash(`lead|${HALF}|${tourPick}`) * cands.length) : 0;
@@ -1302,23 +1302,15 @@ export async function render(main, { previewClient } = {}) {
     mount(tourRow, showTours ? [el("span", { class: "hl-pl" }, "Tour"), ...tours.map((t) => pill(tourPick === t, tourName(t), () => setTour(t))), pill(tourPick === ALL, "All", () => setTour(ALL))] : []);
     tourRow.hidden = !showTours;
     edition.textContent = tourPick ? `${tourName(tourPick)} Edition` : ""; nextLine.textContent = next ? `${next.name} · ${next.live ? "on now" : "coming up"}` : ""; nextLine.classList.toggle("on", !!next?.live); /* (update 735: glows while it's live) */
-    if (!staff) { whoRow.hidden = true; return; }
-    const fav = favs.filter((k) => keys.includes(k) && playsTour(k)); // (update 730: only the players on the tour picked)
-    for (const k of [...picked]) if (!playsTour(k)) picked.delete(k);
-    const meKey = ownP ? ownP.key : null; // (update 742) the signed-in person's own game (their entered rounds), when they have any
-    const add = el("button", { type: "button", class: "hl-pill hl-add", "aria-label": "Add a favorite player" }, "+");
-    add.addEventListener("click", addFav);
-    const favPill = (k, label) => { const on = picked.has(k), b = pill(on, label, () => setWho(k));
-      // (update 734) a picked favorite has an × to take them off the list
-      if (on && k !== meKey) { const x = el("span", { class: "hl-x", role: "button", tabindex: "0", "aria-label": `Remove ${nameOf(k)} from favorites`, title: "Remove from favorites" }, "×");
-        const rm = (e) => { e.stopPropagation(); removeFav(k); }; x.addEventListener("click", rm); x.addEventListener("keydown", (e) => { if (e.key === "Enter") rm(e); }); b.append(x); }
-      return b; };
-    mount(whoRow, [el("span", { class: "hl-pl" }, "Players"), pill(!picked.size, staff && team.isTeam ? "All my players" : "All favorites", () => setWho(null)),
-      meKey && playsTour(meKey) ? favPill(meKey, "Me") : null, ...fav.filter((k) => k !== meKey).map((k) => favPill(k, nameOf(k))), add]);
-    whoRow.hidden = false;
+    // (update 822) no players row: Home is every favorite, or just the player picked in the header (on their own tour)
+    whoRow.hidden = true; mount(whoRow, []);
+    if (picked.size === 1) { const k = [...picked][0]; if (field.length && !playsTour(k)) { const c2 = new Map(); for (const rd of playerOf(k)?.rounds || []) c2.set(tourOf(rd), (c2.get(tourOf(rd)) || 0) + 1); const t = [...c2].sort((a, b) => b[1] - a[1])[0]?.[0]; if (t != null && t !== tourPick) { tourPick = t; tmemo.clear(); rankMemo = null; mount(tourRow, showTours ? [el("span", { class: "hl-pl" }, "Tour"), ...tours.map((t2) => pill(tourPick === t2, tourName(t2), () => setTour(t2))), pill(tourPick === ALL, "All", () => setTour(ALL))] : []); edition.textContent = tourPick ? `${tourName(tourPick)} Edition` : ""; } } }
   }
   const playsTour = (k) => !tourPick || tourPick === ALL || !field.length || (ownP && k === ownP.key) || (playerOf(k)?.rounds || []).some((rd) => tourOf(rd) === tourPick);
   const shownKeys = () => (picked.size ? [...picked] : keys.filter(playsTour));
+  // (update 822) the header's player is Home's player: picked there, Home is about them alone; cleared, every favorite again
+  const syncPicked = () => { picked.clear(); const c = staff && !selfKey ? currentPlayer() : null; if (!c?.key) return;
+    picked.add(c.key); if (!keys.includes(c.key)) keys = [...keys, c.key]; if (!labels.has(c.key) && c.label) labels.set(c.key, c.label); focus = c.key; };
   const setTour = (t) => { if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); loadDetail().catch(() => {}); }; // (tbMemo is keyed by tour)
   // (update 740) a tap picks a player, or unpicks one already picked; All: none picked (everyone)
   const setWho = (k) => { if (k == null) picked.clear(); else if (picked.has(k)) picked.delete(k); else { picked.add(k); if (!keys.includes(k)) keys = [...keys, k]; focus = k; } drawTabs(); refresh(); }; // (update 780: the questions follow every change of who's picked)
@@ -1373,7 +1365,8 @@ export async function render(main, { previewClient } = {}) {
     const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null; dsRef = ds; // (update 749)
     field = summaryPlayers(summary).filter((p) => p.rounds.length);
     for (const p of field) if (!labels.has(p.key) && p.name) labels.set(p.key, p.name);
-    drawTabs();
+    syncPicked(); drawTabs();
+    { const off = onCurrent(() => { if (!main.isConnected) { off(); return; } syncPicked(); drawTabs(); refresh(); }); }
     if (ownKey) { try { const { loadSource } = await import("../reportGen.js"); const d = await loadSource("entered", ownKey, myName || "Me").catch(() => null), rs = (d?.me?.rounds || []).filter((r) => r.shots?.length);
       if (rs.length) { ownP = { key: ownKey, name: myName || "Me", rounds: rs, own: true }; labels.set(ownKey, myName || "Me"); gearData.set(ownKey, rs); gearP.set(ownKey, Promise.resolve()); if (!keys.includes(ownKey)) keys = [ownKey, ...keys]; } } catch (e) { console.warn("own rounds", e); } }
     await nextP; await heatP; /* (update 736: the courses, for Course Insights & Strategy) */
