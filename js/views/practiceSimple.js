@@ -48,14 +48,14 @@ const sessTitle = (s) => s.title || [...new Set((s.items || []).map((x) => AREA[
 const runSecs = (s) => (s.run?.at ? (Date.now() - Date.parse(s.run.at)) / 1000 : 0);
 // (update 699) each range's target for a set ("Hit 7 of 10 fairways", "Average inside 8 ft"): from Stats, the drill's own
 // goal (and where it came from: the average proximity to beat …); made here, picked when the session is made
-const TARGET_KIND = (cat, label, club) => {
+export const TARGET_KIND = (cat, label, club) => { // (update 815: Practice Week uses it too)
   const c = String(club || ""), l = String(label || "");
   if (cat === "OTT" || /^driver$/i.test(c)) return "fairway";
   if (cat === "PUTT" || /putter/i.test(c)) return /(>|\+)\s*25|>25/.test(l) ? "lag" : "make";
   if (cat === "ARG" || /wedge/i.test(c)) return "prox";
   return "green";
 };
-const TARGET_DEF = (kind, label) => { if (kind === "fairway") return 7; if (kind === "green") return 6; if (kind === "lag") return 7;
+export const TARGET_DEF = (kind, label) => { if (kind === "fairway") return 7; if (kind === "green") return 6; if (kind === "lag") return 7;
   if (kind === "prox") return /bunker/i.test(label) ? 10 : /30-50/.test(label) ? 12 : 8;
   const ft = Number((String(label).match(/\d+/g) || [])[0] || 5); return /</.test(label) ? 9 : ft < 10 ? 5 : ft < 15 ? 3 : ft < 20 ? 2 : 1; };
 const targetText = (t) => (t ? goalText({ kind: t.kind, goal: t.goal, reps: t.reps, unit: t.unit, higher: t.higher, cat: t.cat }) : "");
@@ -302,7 +302,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
     const create = creator() ? (() => { const b = el("button", { type: "button", class: "btn ps-big" }, subject.mine ? "＋ Create Practice Session" : `＋ Create a session for ${subject.label}`); b.addEventListener("click", createSheet); return b; })() : null;
     mount(wrap, [
       subject.mine ? coachEl : null, back,
-      el("header", { class: "ps-head" }, [el("h1", {}, subject.mine ? "My Practice" : `${subject.label}’s Practice`), el("p", { class: "muted" }, "Honor system: check off what you’ve done.")]),
+      el("header", { class: "ps-head" }, [el("h1", {}, subject.mine ? "My Practice" : `${subject.label}’s Practice`), el("p", { class: "muted" }, ["Honor system: check off what you’ve done. ", el("a", { class: "ps-week-link", href: `#/practice-week${subject.key ? `?player=${encodeURIComponent(subject.key)}` : ""}` }, "Plan the week from the data →")])]), // (update 815)
       tabs,
       el("div", { class: "ps-tiles" }, [
         el("div", { class: "ps-tile" }, [el("b", {}, String(wk.days)), el("span", {}, `day${wk.days === 1 ? "" : "s"} practiced this week`)]),

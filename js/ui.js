@@ -124,6 +124,8 @@ const sectionsFor = (kind) => {
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
+    ["Player Dossier", "#/dossier", ["dossier"]], // (update 815)
+    ["Course Fit", "#/course-fit", ["course-fit"]], // (update 815)
     ["Compare", "#/comparisons", ["comparisons"]], // (update 205: Deep Dives; 209: Compare)
     ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
     ["Event Feed", "#/live", ["live"]], // (update 611: in Analyze, after Leaderboards; no longer in the top bar)
@@ -133,7 +135,8 @@ const sectionsFor = (kind) => {
   const planItems = [
     ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (update 292: first, and what Play opens on)
     ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], {}], // (update 522: open to everyone)
-    ["Practice", "#/practice", ["practice"], {}], // (update 372: open to everyone; Course Prep is still the admin's)
+    ["Practice", "#/practice", ["practice"], {}],
+    ["Practice Week", "#/practice-week", ["practice-week"], {}], // (update 815) // (update 372: open to everyone; Course Prep is still the admin's)
     ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
   ];
   return [
