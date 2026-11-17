@@ -571,3 +571,5 @@ li.is-cur, .lv-row.is-cur, .lb-row.is-cur, .ti-row.is-cur, .is-cur-cell { backgr
 .cf-open > td { padding: 4px 12px 14px 36px !important; background: color-mix(in srgb, var(--ip-gold) 5%, transparent); }
 .cf-det p { margin: 6px 0; font-size: 0.86rem; line-height: 1.45; } .cf-parts { max-width: 640px; margin: 6px 0; }
 @media (max-width: 640px) { .cf-bart { display: none; } .cf-open > td { padding-left: 12px !important; } }
+.cf-tag { margin-left: 8px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--ip-rule); font-size: 0.68rem; color: var(--ip-mute); white-space: nowrap; } .cf-small { color: var(--ip-gold); font-size: 0.8rem !important; }
+.cf-arrow { color: var(--ip-mute); font-size: 0.7rem; }
