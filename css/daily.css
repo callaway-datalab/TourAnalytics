@@ -770,3 +770,35 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
 .tr-lb-t tr.tr-lb-me td { background: color-mix(in srgb, var(--gold, #d4b483) 16%, transparent); font-weight: 700; }
 .tr-lb-rk { color: var(--muted, #8a867e); font-weight: 400; font-size: 0.8em; }
 .tr-lb-more { margin-top: 8px; }
+
+/* (update 837) Home: Ranks and Best Week tables (a part of the game opens its distance ranges), the front page's form table
+   (each part of the game opens its pop-up), and the pop-ups' distance tables across the whole width */
+.td-frontbox:empty { display: none; }
+.td-tw { overflow-x: auto; }
+.td .td-rk { margin-top: 4px; }
+.td .td-rk th { text-align: right; font: 700 0.62rem var(--td-sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--td-mute); padding: 6px 0 6px 12px; border-bottom: 1px solid var(--td-rule2); white-space: nowrap; }
+.td .td-rk th:first-child { text-align: left; padding-left: 0; }
+.td .td-rk td { padding: 8px 0 8px 12px; white-space: nowrap; }
+.td .td-rk td:first-child { padding-left: 0; white-space: normal; }
+.td .td-rk td.r { font-family: var(--td-sans); font-size: 0.88rem; font-weight: 700; width: auto; text-align: right; color: var(--td-ink); }
+.td .td-rk td.v { text-align: right; }
+.td .td-rk td.v.up { color: var(--td-up); } .td .td-rk td.v.down { color: var(--td-down); }
+.td .td-rk tr.td-rk-tot td { font-weight: 800; }
+.td .td-rk tr.td-rk-cat { cursor: pointer; } .td .td-rk tr.td-rk-cat td:first-child { font-weight: 700; }
+.td .td-rk tr.td-rk-cat:hover td, .td .td-rk tr.td-rk-sub:hover td { background: color-mix(in srgb, var(--td-gold) 7%, transparent); }
+.td .td-rk tr.td-rk-sub { cursor: pointer; } .td .td-rk tr.td-rk-sub td { font-size: 0.82rem; color: var(--td-soft); } .td .td-rk tr.td-rk-sub td:first-child { padding-left: 22px; }
+.td-rk-chev { display: inline-block; width: 1.1em; color: var(--td-gold); transition: transform 0.15s; }
+tr.open .td-rk-chev { transform: rotate(90deg); }
+.td .td-bw td:nth-child(2) { white-space: normal; text-align: right; }
+.td-ftab tr.td-clk { cursor: pointer; } .td-ftab tr.td-clk:hover td { background: color-mix(in srgb, var(--td-gold) 8%, transparent); }
+.td-ftab-go { color: var(--td-gold); font-weight: 800; }
+.td-rng .td-big { margin-top: 4px; }
+.ip-pop .ip-tw0, .ip-pop .ip-tw0 > table.ip-fr { width: 100% !important; }
+.ip-pop .ip-fr .ip-frbar { width: 38%; }
+@media (max-width: 640px) {
+  .ip-pop .ip-tw0 > table.ip-fr { display: table; }
+  .ip-pop .ip-fr .ip-frbar { width: 26%; min-width: 70px; }
+  .td .td-rk th, .td .td-rk td { padding-left: 8px; font-size: 0.78rem; }
+}
+.td-ftab td:first-child, .td-ftab th:first-child { text-align: left !important; }
+.td .td-rk th, .td .td-rk td { text-align: right !important; } .td .td-rk th:first-child, .td .td-rk td:first-child, .td .td-bw th:nth-child(2), .td .td-bw td:nth-child(2) { text-align: left !important; }

@@ -218,19 +218,19 @@ export async function render(main, { previewClient } = {}) {
   const edition = el("span", {}, ""), nextLine = el("a", { class: "td-live", href: "#/live", title: "Open the Event Feed" }, ""), /* (update 734: this week’s event: a link to the Event Feed) */ roleLbl = el("span", { class: "td-top-r" }, "");
   // (update 836) Stats' Overview at the top of Home: one player (you, or the one picked in the header) in full; several
   // (favorites, or a coach's players) as a row each, closed, with the name: a tap opens that player's Overview
-  const ovTop = el("section", { class: "td-ov" });
+  const ovTop = el("section", { class: "td-ov" }), frontBox = el("div", { class: "td-frontbox" }); // (update 837: the front page above it)
   async function drawOvTop() {
     const ks = selfKey ? [selfKey] : picked.size ? [...picked] : (favs.length ? favs : keys).filter((k, i, a) => a.indexOf(k) === i);
     const sig = ks.join(","); if (ovTop.dataset.sig === sig) return; ovTop.dataset.sig = sig;
     if (!ks.length) { mount(ovTop, []); return; }
     const D = await import("./dossier.js");
-    if (ks.length === 1) { const box = el("div"); mount(ovTop, box); D.overview(box, ks[0], nameOf(ks[0])); return; }
+    if (ks.length === 1) { const box = el("div"); mount(ovTop, box); D.overview(box, ks[0], nameOf(ks[0]), { home: true }); return; }
     mount(ovTop, [el("div", { class: "td-ov-head" }, [el("h2", {}, favs.length ? "Your favorites" : "Your players"), el("span", {}, "Tap a player for their overview")]),
       ...ks.map((k) => { const body = el("div", { class: "td-ov-body" }), det = el("details", { class: "td-ov-p" }, [el("summary", {}, [el("strong", {}, nameOf(k)), el("span", { class: "td-ov-chev", "aria-hidden": "true" }, "›")]), body]);
-        det.addEventListener("toggle", () => { if (det.open && !body.firstChild) D.overview(body, k, nameOf(k)); }); return det; })]);
+        det.addEventListener("toggle", () => { if (det.open && !body.firstChild) D.overview(body, k, nameOf(k), { home: true }); }); return det; })]);
   }
   mount(root, [
-    ovTop,
+    frontBox, ovTop,
     el("header", { class: "td-mast" }, el("h1", {}, ["Daily Tour ", el("i", {}, "Report")]) /* (update 776) */), /* (update 750: was "The Daily Tour") */
     el("div", { class: "td-date" }, [el("span", {}, today), edition, nextLine]),
     el("div", { class: "td-nav" }, [tourRow, whoRow] /* (update 798: no Ask Cal bar on Home) */),
@@ -380,8 +380,10 @@ export async function render(main, { previewClient } = {}) {
   function boardTable(b) { const rows = boardRows(b); if (!rows.length) return null; const shown = new Set(shownKeys());
     return el("div", { class: "td-pop-board" }, [el("p", { class: "td-kick mute" }, `${boardTitle(b)}${tourPick && tourPick !== ALL ? ` · ${tourName(tourPick)}` : ""} · ${rows.length} players`),
       el("div", { class: "td-pop-scroll" }, el("table", { class: "td-box" }, el("tbody", {}, rows.map(([k2, , txt], i) => el("tr", { class: [shown.has(k2) ? "me" : null, k2 === b.focus ? "target" : null].filter(Boolean).join(" ") || null }, [el("td", { class: `r${i < 20 ? " up" : i >= rows.length - 10 ? " down" : ""}` }, String(i + 1)), el("td", {}, nameOf(k2)), el("td", { class: "v" }, txt)])))))]); }
-  function formTable(x) { return el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["", `Last ${x.n}`, `${x.n} before`, "Change"].map((t2) => el("th", {}, t2)))), /* (update 780: the last stretch first, always) */
-    el("tbody", {}, cats.map((c0, i) => { const a = x.rb[i], b = x.ra[i]; return el("tr", {}, [el("td", {}, CATN[c0]), el("td", {}, sg2(b)), el("td", {}, sg2(a)), el("td", { class: cls(b - a) }, sg2(b - a))]); }))]); }
+  function formTable(x, h = null) { return el("table", { class: "td-tape td-ftab" }, [el("thead", {}, el("tr", {}, ["", `Last ${x.n}`, `${x.n} before`, "Change"].map((t2) => el("th", {}, t2)))), /* (update 780: the last stretch first, always) */
+    el("tbody", {}, cats.map((c0, i) => { const a = x.rb[i], b = x.ra[i], tr = el("tr", {}, [el("td", {}, h ? [CATN[c0], el("span", { class: "td-ftab-go", "aria-hidden": "true" }, " ›")] : CATN[c0]), el("td", {}, sg2(b)), el("td", {}, sg2(a)), el("td", { class: cls(b - a) }, sg2(b - a))]);
+      if (h?.x?.lastR) { tr.classList.add("td-clk"); tr.setAttribute("role", "button"); tr.tabIndex = 0; tr.title = `${CATN[c0]}: round by round and each distance`; const go3 = (e) => { e.stopPropagation(); catPop(h, c0).catch((er) => console.warn(er)); }; tr.addEventListener("click", go3); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go3(e); }); } /* (update 837: a part of the game opens its pop-up) */
+      return tr; }))]); }
   // (update 761) How to find it yourself: every highlight with the page, the filters and where to look, so it can be found
   // again (and others like it). The pop-up shows the steps, and its button opens that page with those filters already set,
   // the steps shown again there. { steps: [text], run?: a run that sets the filters }
@@ -492,7 +494,7 @@ export async function render(main, { previewClient } = {}) {
     // (update 762) form: the before / after table only (the radar repeats the Form section below); a club change: its
     // bars by model up beside the words, under the three numbers
     const isFm = h.id.startsWith("fm-") && h.x?.ra; let wideEl = null;
-    if (isFm) viz.push(formTable(h.x));
+    if (isFm) viz.push(formTable(h.x, h));
     if (isForm && own) wideEl = own;
     else if (isFm) { /* (the table only) */ }
     else if (own && (!viz.length || isEq)) viz.push(own); else if (own && wideT) wideEl = own; else if (own) body.push(own);
@@ -532,7 +534,7 @@ export async function render(main, { previewClient } = {}) {
   const brief = (h) => { const d = dress(h); return tap(el("article", { class: "td-brief" }, [kicker(h, d, false), el("h3", {}, d.hl), briefBody(h, d), whoTag(h)]), h); };
   // (update 787) a side story's numbers as bullet points: form as the last stretch, the one before, then the change
   function briefBody(h, d) { const x = h.x || {}, t = h.id.split("-")[0];
-    if ((t === "fm" || t === "cm") && x.a != null) { const nm = t === "cm" ? CATN[x.c] : "SG: Total"; return el("ul", { class: "td-bul" }, [el("li", {}, `${nm}, last ${x.n}${/event/.test(x.FL || "") ? " events" : ""}: ${sg2(x.a)} a round`), el("li", {}, `${x.n}${/event/.test(x.FL || "") ? " events" : ""} before: ${sg2(x.b)}`), el("li", {}, ["Change: ", el("b", { class: cls(x.d) }, sg2(x.d))])]); }
+    if ((t === "fm" || t === "cm") && x.a != null) { const nm = t === "cm" ? CATN[x.c] : "SG: Total"; return el("ul", { class: "td-bul" }, [el("li", {}, `${nm}, last ${x.n}${/event/.test(x.FL || "") ? " events" : ""}: ${sg2(x.a)} per round`), el("li", {}, `${x.n}${/event/.test(x.FL || "") ? " events" : ""} before: ${sg2(x.b)}`), el("li", {}, ["Change: ", el("b", { class: cls(x.d) }, sg2(x.d))])]); }
     if (t === "ev" && x.v != null) return el("ul", { class: "td-bul" }, [el("li", {}, `${sg2(x.v)} strokes gained total per round`), el("li", {}, `${Math.abs(x.d).toFixed(2)} ${x.d >= 0 ? "better" : "worse"} than ${isMe(h.k) ? "your" : "their"} ${x.yr} average`)]);
     return d.num ? el("p", {}, `${d.num} ${d.cap}`) : deckEl(d.deck); }
   // (update 786) a story's detail as bullet points where it has several parts (" · "), not one long paragraph
@@ -582,9 +584,121 @@ export async function render(main, { previewClient } = {}) {
   const jit = (id, amp) => (hash(`${id}|${DAY}`) - 0.5) * 2 * amp;
   let lastItems = null, reroll = false, shownLead = null;
   let fieldsPI = null; import("../playerInsights.js").then((m) => m.ensureFields().then((f) => { if (!f) return; fieldsPI = m; if (lastItems && main.isConnected) drawFeed(lastItems); })).catch(() => {}); // (update 824) // (update 784: the front page's refresh button)
+
+  // ---- (update 837) the front page and the sections built from each player's distances ----
+  // the front page: the biggest mover among the players shown leads (their form, last 12 rounds against the 12 before, either
+  // way); beside it the next 4 biggest movers, or (fewer than 4 more, or one player) how to play the next course, their tour
+  // rank in strokes gained total, what wins for them and their best distance's tour rank
+  const formAll = new Map(); // k → that player's form story, any size of change
+  const dkey = (d) => { const t = String(d); if (/bunker|sand/i.test(t)) return 1e6; const m = /([<>])?\s*(\d+(?:\.\d+)?)/.exec(t); if (!m) return 5e5; return m[1] === "<" ? -1 : m[1] === ">" ? Number(m[2]) + 0.5 : Number(m[2]); };
+  const rdKey = (r) => `${String(r.date || "").slice(0, 10)}|${r.event}|${r.roundNo ?? ""}`;
+  const detRounds = (k) => { const own = gearData.get(k), rs = own && own.length ? own : detail?.by.get(k) || []; return rs.filter((r) => onTour(r) && !r.eventLevel); };
+  const pn = (v) => (v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
+  const rngName = (c, d) => (c === "OTT" ? `Off-the-Tee: ${d}` : `${CATN[c]} from ${d}`);
+  // the field's season by distance (the shot detail): strokes gained per round in each part of the game from each range,
+  // ranked among the players with enough rounds who've hit 15+ of those shots
+  let dbMemo = null;
+  const distBoard = () => { if (!detail) return null; const F = seasonField(), kk = `${F.SY}|${tourPick}|${detail.tour}|${F.ok.length}`; if (dbMemo?.kk === kk) return dbMemo;
+    const by = new Map();
+    for (const p of F.ok) { const rs = (detail.by.get(p.k) || []).filter((r) => yrOf(r) === F.SY && (detail.tour === "all" || (r.tour || "") === detail.tour) && !r.eventLevel); if (rs.length < 4) continue;
+      const m = new Map(); for (const r of rs) for (const s of r.shots || []) if (s.dist && s.cat) { const q = `${s.cat}|${s.dist}`, a = m.get(q) || m.set(q, [0, 0]).get(q); a[0] += s.sg || 0; a[1] += s.w || 1; }
+      for (const [q, [sg, n]] of m) if (n >= 15) (by.get(q) || by.set(q, []).get(q)).push([p.k, sg / rs.length, n]); }
+    for (const l of by.values()) l.sort((a, b) => b[1] - a[1]);
+    dbMemo = { kk, by }; return dbMemo; };
+  const distRank = (k, q) => { const l = distBoard()?.by.get(q); if (!l || l.length < 20) return null; const i = l.findIndex((x) => x[0] === k); return i < 0 ? null : { r: i + 1, n: l.length, v: l[i][1], shots: l[i][2], list: l }; };
+  const distsOf = (k, c = null) => { const B = distBoard(); if (!B) return []; return [...B.by.keys()].filter((q) => !c || q.startsWith(`${c}|`)).map((q) => ({ q, c: q.split("|")[0], d: q.split("|").slice(1).join("|"), ...(distRank(k, q) || {}) })).filter((o) => o.r).sort((a, b) => dkey(a.d) - dkey(b.d)); };
+  // a player's own ranges this season (before the field's detail is in): strokes gained per round, 15+ shots
+  const ownRanges = (k, c = null) => { const rs = detRounds(k).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return [];
+    const m = new Map(); for (const r of rs) for (const s of r.shots || []) if (s.dist && s.cat && (!c || s.cat === c)) { const q = `${s.cat}|${s.dist}`, a = m.get(q) || m.set(q, [0, 0]).get(q); a[0] += s.sg || 0; a[1] += s.w || 1; }
+    return [...m].filter(([, a]) => a[1] >= 15).map(([q, a]) => ({ q, c: q.split("|")[0], d: q.split("|").slice(1).join("|"), v: a[0] / rs.length, shots: a[1] })).sort((a, b) => dkey(a.d) - dkey(b.d)); };
+  const distStory = (k, o, kick) => ({ id: `ds-${o.q}-${k}`, k, kind: "Rank", kick, title: `${isMe(k) ? "You rank" : `${nameOf(k)} ranks`} ${o.r === 1 ? "1st" : ordN(o.r)} of ${o.n} on tour in ${rngName(o.c, o.d)}`,
+    detail: `${sg2(o.v)} strokes gained per round (${Math.round(o.shots)} shots) in ${seasonYr()} · ${o.r > 1 ? `the leader, ${nameOf(o.list[0][0])}: ${sg2(o.list[0][1])}` : `next best, ${nameOf(o.list[1][0])}: ${sg2(o.list[1][1])}`}`,
+    board: { rows: o.list.map(([kk, v, n]) => [kk, v, `${sg2(v)} (${Math.round(n)} shots)`]), title: `Strokes gained per round, ${rngName(o.c, o.d)}, ${seasonYr()}` }, to: "Stats · Full stats", run: () => toStats(k, { view2: "full", year: [seasonYr()], span: 0 }, null, null) });
+  function fixedSides(k, news0) {
+    const SY = seasonYr(), R = ranksFor(SY).by, r = R.TOTAL?.get(k), n = R["TOTAL#"], season = sgRounds(rawOf(playerOf(k))).filter((x) => yrOf(x) === SY);
+    const strat = news0.find((h) => h.id === "up-strat");
+    const rk = r ? { id: `fs-rk-${k}`, k, kind: "Rank", kick: "Tour rank", title: `${isMe(k) ? "You rank" : `${nameOf(k)} ranks`} ${r === 1 ? "1st" : ordN(r)} on tour in SG: Total`, detail: `${sg2(avgOf(season, tot))} strokes gained total per round in ${SY} · of ${n} players with enough rounds`, board: { c: "TOTAL" }, to: "Leaderboards · Rankings", run: () => toBoard({ year: [SY], cats: [] }, "Rankings", null) } : null;
+    const wins = news0.find((h) => h.k === k && /^sp-drives/.test(h.id));
+    const best = distsOf(k).sort((a, b) => a.r / a.n - b.r / b.n)[0];
+    return [strat, rk, wins, best ? distStory(k, best, "Best distance") : null].filter(Boolean);
+  }
+  // a part of the game's distances, the last stretch against the one before (as Stats' Overview Form pop-up)
+  function rangeTable(c, L, P, la, lb) {
+    const by = (rs) => { const m = new Map(); for (const r of rs) for (const sh of r.shots || []) { if (sh.cat !== c || !sh.dist) continue; const o = m.get(sh.dist) || m.set(sh.dist, { sg: 0, n: 0 }).get(sh.dist); o.sg += sh.sg || 0; o.n += sh.w || 1; } return m; };
+    const A = by(L), B = by(P), nA = Math.max(1, L.length), nB = Math.max(1, P.length);
+    const rows = [...new Set([...A.keys(), ...B.keys()])].sort((a, b) => dkey(a) - dkey(b)).map((d) => { const a = A.get(d), b = B.get(d); return { d, a: a ? a.sg / nA : 0, b: b ? b.sg / nB : 0, na: a?.n || 0, nb: b?.n || 0 }; }).filter((x) => x.na + x.nb >= 5);
+    if (!rows.length) return el("p", { class: "muted small" }, "No distances on record for these rounds, so no breakdown by range.");
+    const mx = Math.max(0.01, ...rows.map((x) => Math.abs(x.a - x.b)));
+    return el("div", {}, [el("p", { class: "cf-sub" }, `Each distance, the ${la.toLowerCase()} against the ${lb} (strokes gained per round)`),
+      el("div", { class: "ip-tw ip-tw0 ip-full" }, el("table", { class: "ip-t cf-parts ip-fr" }, [el("thead", {}, el("tr", {}, ["Range", la, lb, "Change", ""].map((t2, i) => el("th", { class: i && i < 4 ? "num" : null }, t2)))),
+        el("tbody", {}, rows.map((x) => { const d = x.a - x.b; return el("tr", {}, [el("td", {}, x.d), el("td", { class: `num ${pn(x.a)}` }, sg2(x.a)), el("td", { class: `num ${pn(x.b)}` }, sg2(x.b)), el("td", { class: `num strong ${pn(d)}` }, sg2(d)),
+          el("td", { class: "ip-frbar" }, el("span", { class: "cf-mid" }, el("i", { class: d >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(d) / mx) * 50)}%` })))]); }))]))]);
+  }
+  async function catPop(h, c) {
+    const x = h.x, k = h.k, { popup } = await import("./insightPages.js");
+    const a = avgOf(x.lastR, (r) => inCat(r, c)), b = avgOf(x.prevR, (r) => inCat(r, c)), dd = a - b;
+    const wL = new Set(x.lastR.map(rdKey)), wP = new Set(x.prevR.map(rdKey)), dr = detRounds(k), L = dr.filter((r) => wL.has(rdKey(r))), P = dr.filter((r) => wP.has(rdKey(r)));
+    const chart = formRounds(x, c), la = `Last ${x.FL}`, lb = `${x.FL} before`;
+    popup(`${CATN[c]}: the last ${x.FL} against the ${x.FL} before`, [chart ? el("div", { class: "td ip-chartbox" }, chart) : null,
+      el("p", {}, [`${la}: `, el("b", { class: pn(a) }, `${sg2(a)} per round`), `; ${lb}: `, el("b", { class: pn(b) }, `${sg2(b)} per round`), "; the change ", el("b", { class: pn(dd) }, sg2(dd)), "."]),
+      rangeTable(c, L, P, la, lb), el("p", { class: "ip-samp" }, `Strokes gained ${CATN[c].toLowerCase()} per round, ${nameOf(k)}${tourPick && tourPick !== ALL ? `, ${tourName(tourPick)}` : ""}`)], `Form · ${nameOf(k)}`);
+  }
+  // Player Spotlight / Where to Improve: the 3 distances they rank best / worst in on tour (their own best / worst by strokes
+  // gained per round until the field's detail is in)
+  const rngCard = (k, o, good) => { const h = o.r ? distStory(k, o, good ? "Strength" : "Room to improve") : { id: `ds-${o.q}-${k}`, k, kind: "Spotlight", kick: CATN[o.c], title: rngName(o.c, o.d), detail: `${sg2(o.v)} strokes gained per round (${Math.round(o.shots)} shots) in ${seasonYr()}`, to: "Stats · Full stats", run: () => toStats(k, { view2: "full", year: [seasonYr()], span: 0 }, null, null) };
+    return tap(el("article", { class: "td-col td-rng" }, [el("div", { class: `td-kick${good ? "" : " down"}` }, CATN[o.c]), el("h3", {}, o.c === "OTT" ? `Off the tee: ${o.d}` : `${CATN[o.c]} from ${o.d}`),
+      o.r ? el("div", { class: `td-big ${good ? "up" : "down"}` }, `#${o.r}`) : el("div", { class: `td-big ${cls(o.v)}` }, sg2(o.v)),
+      el("p", {}, o.r ? `of ${o.n} on tour · ${sg2(o.v)} per round (${Math.round(o.shots)} shots)` : `strokes gained per round (${Math.round(o.shots)} shots)`), more(h)]), h); };
+  const chev = () => el("span", { class: "td-rk-chev", "aria-hidden": "true" }, "▸");
+  const expander = (tr, subs) => { if (!subs.length) return; tr.classList.add("td-rk-cat"); tr.setAttribute("role", "button"); tr.tabIndex = 0; subs.forEach((s) => { s.hidden = true; });
+    const tog = () => { const open = subs[0].hidden; subs.forEach((s) => { s.hidden = !open; }); tr.classList.toggle("open", open); };
+    tr.addEventListener("click", tog); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") tog(); }); };
+  // Ranks: strokes gained total and each part of the game, each opening to its distance ranges
+  function rankTable(k) {
+    const SY = seasonYr(), R = ranksFor(SY).by, rs = sgRounds(rawOf(playerOf(k))).filter((r) => yrOf(r) === SY); if (!rs.length) return null;
+    const row = (lbl, v, r, n, cl = "") => el("tr", { class: cl }, [el("td", {}, lbl), el("td", { class: `v ${cls(v ?? 0)}` }, v == null ? "—" : sg2(v)), el("td", { class: "r" }, r ? `${r} of ${n}` : "—")]);
+    const tb = el("tbody", {}, [row("SG: Total", avgOf(rs, tot), R.TOTAL?.get(k), R["TOTAL#"], "td-rk-tot")]);
+    for (const c of cats) { const ds = distsOf(k, c), tr = row([ds.length ? chev() : null, CATN[c]], avgOf(rs, (r) => inCat(r, c)), R[c]?.get(k), R[`${c}#`]);
+      const subs = ds.map((o) => { const t = row(o.d, o.v, o.r, o.n, "td-rk-sub"); t.addEventListener("click", () => openPop(distStory(k, o, "Tour rank"))); return t; });
+      tb.append(tr, ...subs); expander(tr, subs); }
+    return el("div", {}, [el("div", { class: "td-tw" }, el("table", { class: "td-box td-rk" }, [el("thead", {}, el("tr", {}, ["Category / distance range", "SG per round", "Tour rank"].map((t2) => el("th", {}, t2)))), tb])),
+      el("p", { class: "td-note" }, distBoard() ? "Tap a part of the game for its distance ranges, and a range for its leaderboard. Ranked among the players with enough rounds (a range: 15+ shots)." : "The distance ranges open once the field’s shot detail has loaded.")]);
+  }
+  // Best Week: overall, each part of the game and (opened) each of its distance ranges: the week, strokes gained per round
+  // there and its rank in that week's field, against their usual (the season, and its tour rank)
+  function bestTable(k) {
+    const SY = seasonYr(), dr = detRounds(k).filter((r) => yrOf(r) === SY), sum = sgRounds(rawOf(playerOf(k))).filter((r) => yrOf(r) === SY), base = dr.length ? dr : sum;
+    const evs = eventsOf(base).filter((e) => e.rs.length >= 2); if (evs.length < 3) return null;
+    const R = ranksFor(SY).by;
+    const atEv = (ev, f, useDet) => { const src = useDet ? (detail ? [...detail.by] : []) : field.map((p) => [p.key, sgRounds(rawOf(p))]), out = [];
+      for (const [kk, rs] of src) { const w = rs.filter((r) => r.event === ev.event && yrOf(r) === ev.year && !r.eventLevel && (!useDet || detail.tour === "all" || (r.tour || "") === detail.tour)); if (w.length >= 2) out.push([kk, avgOf(w, f)]); }
+      return out.sort((a, b) => b[1] - a[1]); };
+    const line = (lbl, f, useDet, usual, cl = "") => { const b = evs.map((e) => [e, avgOf(e.rs, f)]).filter((x) => x[1] != null).sort((a, c) => c[1] - a[1])[0]; if (!b) return null;
+      const at = atEv(b[0], f, useDet), i = at.findIndex((x) => x[0] === k);
+      return el("tr", { class: cl }, [el("td", {}, lbl), el("td", {}, fullEv(b[0].event)), el("td", { class: `v ${cls(b[1])}` }, sg2(b[1])), el("td", { class: "r" }, i >= 0 && at.length >= 5 ? `${i + 1} of ${at.length}` : "—"),
+        el("td", { class: `v ${cls(usual.v ?? 0)}` }, usual.v == null ? "—" : sg2(usual.v)), el("td", { class: "r" }, usual.r ? `${usual.r} of ${usual.n}` : "—")]); };
+    const tb = el("tbody", {}, [line("SG: Total", tot, false, { v: avgOf(sum, tot), r: R.TOTAL?.get(k), n: R["TOTAL#"] }, "td-rk-tot")].filter(Boolean));
+    for (const c of cats) { const f = (r) => inCat(r, c), tr = line(CATN[c], f, false, { v: avgOf(sum, f), r: R[c]?.get(k), n: R[`${c}#`] }); if (!tr) continue;
+      const subs = dr.length ? ownRanges(k, c).map((o) => { const fr = (r) => (r.shots || []).reduce((t, s0) => t + (s0.cat === c && s0.dist === o.d ? s0.sg || 0 : 0), 0), dRk = distRank(k, o.q);
+        return line(o.d, fr, true, { v: o.v, r: dRk?.r, n: dRk?.n }, "td-rk-sub"); }).filter(Boolean) : [];
+      if (subs.length) tr.firstChild.prepend(chev()); tb.append(tr, ...subs); expander(tr, subs); }
+    return el("div", {}, [el("div", { class: "td-tw" }, el("table", { class: "td-box td-rk td-bw" }, [el("thead", {}, el("tr", {}, ["Category / distance range", "Best week", "Per round", "Rank that week", "Usual per round", "Usual rank"].map((t2) => el("th", {}, t2)))), tb])),
+      el("p", { class: "td-note" }, `${isMe(k) ? "Your" : poss(nameOf(k))} best tournament of ${SY} in each (2+ rounds there), strokes gained per round; its rank among that week's field, and ${isMe(k) ? "your" : "their"} season average and tour rank beside it. Tap a part of the game for its distance ranges.`)]);
+  }
+  function newSec(id, k) {
+    if (!k) return null; const SY = seasonYr(), P = isMe(k) ? "Your" : poss(nameOf(k)); let content = null, sub = "";
+    if (id === "spot" || id === "focus") { const good = id === "spot", ranked = distsOf(k);
+      const pick = ranked.length ? [...ranked].sort((a, b) => (good ? a.r / a.n - b.r / b.n : b.r / b.n - a.r / a.n)).slice(0, 3) : [...ownRanges(k)].sort((a, b) => (good ? b.v - a.v : a.v - b.v)).slice(0, 3);
+      if (!pick.length) return null; content = el("div", { class: "td-cols" }, pick.map((o) => rngCard(k, o, good)));
+      sub = ranked.length ? `${P} 3 ${good ? "best" : "weakest"} distances on tour in ${SY}, by tour rank` : `${P} 3 ${good ? "best" : "weakest"} distances in ${SY}, strokes gained per round`; }
+    else if (id === "rank") { content = rankTable(k); sub = `${SY}${tourPick && tourPick !== ALL ? ` · ${tourName(tourPick)}` : ""}`; }
+    else if (id === "bestwk") { content = bestTable(k); sub = `${SY} · each part of the game and distance`; }
+    if (!content) return null;
+    return el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, SEC[id][0]), sub ? el("span", {}, sub) : null]), content]);
+  }
   function drawFeed(items) { lastItems = items;
     const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.kind === "Fact" ? x.score : x.score + jit(x.id, x.ever ? 1.6 : 0.6) })) /* (update 791: facts keep their shuffled order) */.sort((a, b) => b.score - a.score);
-    if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (the + beside a player's name on Stats › Overview) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
+    if (!sorted.length) { mount(secNav, []); mount(frontBox, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (the + beside a player's name on Stats › Overview) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
     // (update 779) the lead changes every 12 hours (local time): one of the top 6 stories, a different one each half day
     const HALF = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 432e5), news0 = sorted.filter((h) => h.kind !== "Fact"), LEADS = new Set(["Result", "Milestone", "Trend", "Slide", "Equipment", "Rank"]) /* (update 781: only real news can lead: no course notes, facts or briefs) */, cands = news0.filter((h) => LEADS.has(h.kind) && h.k).slice(0, 6), pickI = cands.length ? Math.floor(hash(`lead|${HALF}|${tourPick}`) * cands.length) : 0;
@@ -616,8 +730,13 @@ export async function render(main, { previewClient } = {}) {
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
     for (let i = fp.length - 1; i >= 0; i--) if (fp[i] == null) fp.splice(i, 1); // (update 831: one player's side column holds only its own stories)
     if (lead?.id && LEADS.has(lead.kind)) try { localStorage.setItem(FPK, JSON.stringify({ lead: lead.id, side: fp.slice(1).map((h) => h.id) })); for (let i = localStorage.length - 1; i >= 0; i--) { const kk = localStorage.key(i); if (kk?.startsWith("ta.front|") && !kk.startsWith(`ta.front|${HALF}|`)) localStorage.removeItem(kk); } } catch { /* */ }
+    // (update 837) the biggest mover leads; the next 4 beside it, or (fewer, or one player) the fixed four about them
+    const movers = shownKeys().map((k) => formAll.get(k)).filter(Boolean).sort((a, b) => Math.abs(b.x.d) - Math.abs(a.x.d));
+    const moverMode = movers.length > 0, leadM = moverMode ? movers[0] : lead, sideM = !moverMode ? fp.slice(1) : movers.length >= 5 && !selfKey && !solo() ? movers.slice(1, 5) : fixedSides(movers[0].k, news0);
+    const subjK = movers[0]?.k || selfKey || shownKeys()[0] || null;
     const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [], pairRest = new Map();
     for (const id of orderNow()) {
+      if (["spot", "focus", "rank", "bestwk"].includes(id)) { const s0 = newSec(id, subjK); if (s0) secs.push(s0); continue; } // (update 837)
       let mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
       // (update 801) every section's shuffle: the stories not shown last time first, the ones shown after them (turned
       // round by the number of presses), so each press changes the section
@@ -660,11 +779,11 @@ export async function render(main, { previewClient } = {}) {
     shownLead = lead?.id || null;
     const reB = el("button", { type: "button", class: "td-shuf td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻ Shuffle") /* (update 790: as Did You Know's) */;
     reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
-    const leadEl = leadStory(lead); leadEl.prepend(reB); /* (update 791: the shuffle at the top) */
-    const sideEl = el("aside", { class: "td-side" }, fp.slice(1).map(brief));
+    const leadEl = leadStory(leadM); if (!moverMode) leadEl.prepend(reB); /* (update 791: the shuffle at the top; 837: not with the biggest mover) */
+    const sideEl = el("aside", { class: "td-side" }, sideM.map(brief));
     // (update 795) a lead taller than the stories beside it: more of the day's stories down the side (up to 3 more) until
     // they come out about even
-    requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (innerWidth <= 860) return; const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
+    requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (innerWidth <= 860 || moverMode) return; const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
       for (let n = 0; n < 3 && more2.length; n++) { if (leadEl.offsetHeight - used() < 170) break; sideEl.appendChild(brief(more2.shift())); } });
     // (update 817) Today: a card for every favorite (you, for a player), with the two or three biggest stories about them
     // today (tap one for the story); a favorite with nothing new today still gets a card, saying so
@@ -678,7 +797,8 @@ export async function render(main, { previewClient } = {}) {
           hs.length ? el("ul", { class: "td-bul" }, hs.map((h) => { const li = el("li", { role: "button", tabindex: "0" }, dress(h).hl); li.addEventListener("click", () => openPop(h)); li.addEventListener("keydown", (e) => { if (e.key === "Enter") openPop(h); }); return li; }))
             : el("p", { class: "td-today-none" }, playsTour(k) ? "Nothing new today." : `No rounds on the ${tourPick && tourPick !== ALL ? tourName(tourPick) : "tour picked"} this season.`)]); });
       return el("section", { class: "td-today", id: "td-today" }, [el("div", { class: "td-sh" }, [el("h2", {}, "Today"), el("span", {}, ks.length === 1 ? "What matters most right now" : "The biggest stories for each of your favorites")]), el("div", { class: "td-today-g" }, cards)]); })();
-    mount(feed, [el("section", { class: "td-front", id: "td-front" }, [leadEl, sideEl]), todayEl, el("div", { class: "td-grid" }, laid)]);
+    mount(frontBox, el("section", { class: "td-front", id: "td-front" }, [leadEl, sideEl])); // (update 837: at the very top)
+    mount(feed, [todayEl, el("div", { class: "td-grid" }, laid)]);
     // (update 789) Player Spotlight and Where to Improve about the same length: stories added to the shorter one (as many as
     // it has) until it reaches the other
     requestAnimationFrame(() => { const a = pairRest.get("spot"), b = pairRest.get("focus"); if (!a || !b) return;
@@ -896,7 +1016,7 @@ export async function render(main, { previewClient } = {}) {
             detail: `${ordN(i + 1).replace("No. ", "")} in strokes gained total in ${last} (${sg2(vs[i][1])} per round) · ${T === 1 ? `the leader, ${nameOf(vs[0][0])}` : `${ordN(T).replace("No. ", "")}, ${nameOf(vs[T - 1][0])}`}: ${sg2(vs[T - 1][1])} · of ${vs.length} players`, board: { c: "TOTAL", focus: k }, to: "Leaderboards · Rankings", run: () => toBoard({ year: [last], cats: [] }, "Rankings", null) }); break; } } } catch { /* */ } }
     // form: the last 12 rounds against the 12 before, and each part of the game
     const fs = formSplit(rs); if (fs) { const a = fs.last, b = fs.prev, d = perRound(a) - perRound(b), FL = fs.lbl; /* (update 734: Form, as everywhere: 12 rounds; the DP World Tour 3 events) */ // (update 728: as Compare's Last 12 rounds and The 12 rounds before that)
-      if (Math.abs(d) >= 0.3) out.push({ id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b), FL, n: fs.n, lastR: a, prevR: b, ra: cats.map((c0) => perRound(a, c0)), rb: cats.map((c0) => perRound(b, c0)) }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} per round`, detail: `Last ${FL} ${sg2(perRound(a))} against ${sg2(perRound(b))} in the ${fs.n} before`, to: `Compare · Last ${FL} vs ${FL.split(" ")[0]} before`, /* (update 805: 3 events on the DP World Tour) */ run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) });
+      { const fmS = { id: `fm-${k}`, k, x: { d, a: perRound(a), b: perRound(b), FL, n: fs.n, lastR: a, prevR: b, ra: cats.map((c0) => perRound(a, c0)), rb: cats.map((c0) => perRound(b, c0)) }, kind: d > 0 ? "Trend" : "Slide", score: 5 + Math.abs(d) * 2, title: `${His(k)} form is ${d > 0 ? "heating up" : "cooling off"}: ${sg2(d)} per round`, detail: `Last ${FL} ${sg2(perRound(a))} against ${sg2(perRound(b))} in the ${fs.n} before`, to: `Compare · Last ${FL} vs ${FL.split(" ")[0]} before`, /* (update 805: 3 events on the DP World Tour) */ run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin("What changed over the last 12 rounds?")) }; formAll.set(k, fmS); if (Math.abs(d) >= 0.3) out.push(fmS); } // (update 837: every player's form, for the biggest movers)
       const ch = cats.map((c) => [c, perRound(a, c) - perRound(b, c)]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
       // (update 728) opens Compare (its Verdict shows each part of the game's difference, the same numbers)
       for (const [c, dc] of ch.slice(0, 2)) if (Math.abs(dc) >= 0.2) out.push({ id: `cm-${k}-${c}`, k, x: { c, d: dc, a: perRound(a, c), b: perRound(b, c), FL, n: fs.n, lastR: a, prevR: b }, kind: dc > 0 ? "Trend" : "Slide", score: 4.5 + Math.abs(dc) * 2, title: `${CATN[c]} ${dc > 0 ? "up" : "down"} ${Math.abs(dc).toFixed(2)} per round lately`, detail: `${His(k)} last ${FL} (${sg2(perRound(a, c))}) against the ${fs.n} before (${sg2(perRound(b, c))})`, to: `Compare · Last ${FL} vs ${FL.split(" ")[0]} before`, /* (update 805: 3 events on the DP World Tour) */ run: () => go(`${cmpBase(k)}&pick=win:12`, EX.cmpWin(`${CATN[c]}: what changed?`)) }); }
@@ -1167,7 +1287,7 @@ export async function render(main, { previewClient } = {}) {
         for (const k of shownKeys()) for (const r of (gearData.get(k) || []).filter((r0) => yrOf(r0) === seasonYr())) for (const s0 of r.shots) if (s0.cat === "APP" && s0.dist) { const g = rngOf(s0.dist); if (!g) continue; const o = usual.get(s0.dist) || usual.set(s0.dist, { lab: s0.dist, lo: g[0], hi: g[1], n: 0, here: 0 }).get(s0.dist); o.n++; nU++; }
         if (nU >= 200) { const B = [...usual.values()].sort((a, b) => a.lo - b.lo); let nH = 0; for (const d of R0.appD) { const o = B.find((x) => d >= x.lo && d < x.hi); if (o) { o.here++; nH++; } }
           const r1 = B.filter((x) => nH && x.here / nH >= 0.08 && x.n / nU >= 0.03).map((x) => ({ ...x, h: x.here / nH, u: x.n / nU, ratio: (x.here / nH) / (x.n / nU) })).sort((a, b) => b.ratio - a.ratio)[0];
-          if (r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.lab.replace(/\s*yds?$/i, "")} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.h)} of approach shots at ${c.name} (${nH} shots on record), against ${pc(r1.u)} in a usual week (your players' ${nU} approaches this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
+          if (false && r1 && r1.ratio >= 1.2) out.push({ id: "up-mix", /* (update 837: attempts per round only, as "Expect more approaches from …") */ k: null, kind: "Course", score: 4.8, title: `Approaches from ${r1.lab.replace(/\s*yds?$/i, "")} yds come up ${r1.ratio.toFixed(1)}× as often here`, detail: `${pc(r1.h)} of approach shots at ${c.name} (${nH} shots on record), against ${pc(r1.u)} in a usual week (your players' ${nU} approaches this season) · practice that range`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
       // (update 804) attempt mix: the range that comes up most more often here than on tour (shots per round, the field here
       // against the season's field on the tour picked, both put in the course's ranges)
       { const src = detail?.by ? [...detail.by.values()] : [...gearData.values()], SYm = seasonYr(); const tourAtt = {}; let nR = 0; /* (update 809: the data's own ranges) */

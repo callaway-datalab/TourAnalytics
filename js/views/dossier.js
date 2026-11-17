@@ -27,7 +27,7 @@ async function favButton(key, name) {
 }
 
 const ordS = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
-export async function overview(box, key, name) {
+export async function overview(box, key, name, opts = {}) { // (update 837) opts.home: Home's copy (no Where the strokes go: Home splits it into Player Spotlight and Where to Improve)
   mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted ip-wait" }, `Putting ${name}’s overview together…`)));
   const wrap = box.firstChild, st = window.__authState || {};
   const [{ field }, rounds, fav] = await Promise.all([PI.loadField(st).catch(() => ({ field: [] })), PI.loadShots(key, name), favButton(key, name)]);
@@ -166,7 +166,7 @@ export async function overview(box, key, name) {
       samp(`Every ${tour || ""} round in ${year}: strokes gained per round ${c ? `in ${PI.CATN[c].toLowerCase()} on the shots hit with each model` : "on every shot, with each ball"}, over the rounds it was used. Rank: every model, by strokes gained per round; * in italics: under 4 rounds, a small sample. The chart: the model used most at each event`)], `In the bag · ${name}`);
   }
   const fitBox = card("Next event fit", "#64d2ff", el("p", { class: "muted" }, "Loading the course…"), "ip-fit");
-  mount(wrap, [head(`${tour || ""} ${year}`.trim()), tiles, el("div", { class: "ip-grid ip-grid-2" }, [formCard, goesCard]), el("div", { class: "ip-bag" }, bagCard), fitBox,
+  mount(wrap, [head(`${tour || ""} ${year}`.trim()), tiles, opts.home ? formCard : el("div", { class: "ip-grid ip-grid-2" }, [formCard, goesCard]), el("div", { class: "ip-bag" }, bagCard), fitBox,
     el("p", { class: "ip-foot" }, `Strokes gained against the tour baseline. Ranks among players with 8+ rounds on the ${tour || "tour"} in ${year}.${tours.length > 1 ? ` ${self ? "You also have" : `${name} also has`} rounds on the ${tours.filter((t) => t !== tour).join(", ")}: this is their main tour.` : ""}`)]);
   if (focus) requestAnimationFrame(() => { const t = fR ? wrap.querySelector(".ip-focus") : PI.CATS.includes(focus) ? wrap.querySelectorAll(".ip-tile")[1 + PI.CATS.indexOf(focus)] : null; if (t) { t.classList.add("ip-focus"); t.scrollIntoView({ block: "center", behavior: "smooth" }); } });
   // (update 823) the next event: the schedule's next on their tour, or the one picked with Change (kept for the player; shared
