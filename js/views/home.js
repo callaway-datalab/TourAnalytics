@@ -241,7 +241,7 @@ export async function render(main, { previewClient } = {}) {
   const ROLE = roleOf();
   roleLbl.textContent = selfKey ? "Your edition" : `${{ admin: "Admin", analyst: "Analyst", caddy: "Caddie", coach: "Coach" }[ROLE] || "Coach"}’s edition`;
   // (update 731) a phone: equipment stories for 2 players at most (each loads that player's own rounds)
-  let GEARN = 10; /* (update 802: every favorite on a computer, not the first 6) */ import("../fieldCache.js").then((m) => { if (m.isLiteDevice?.()) GEARN = 2; }).catch(() => {});
+  let GEARN = 14; /* (update 802: every favorite on a computer, not the first 6; 808: all 12 favorites and you) */ import("../fieldCache.js").then((m) => { if (m.isLiteDevice?.()) GEARN = 2; }).catch(() => {});
   let keys = [];
 
   // ---- the highlights ----
