@@ -320,7 +320,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
 
   // 5. what to keep
   // (update 475) always there, named for the pills picked; a line when nothing there is gaining
-  const keep = el("section", { class: "panel fx" }, [el("p", { class: "fx-eyebrow" }, `Keep doing \u00b7 ${picked}`),
+  const keep = el("section", { class: "panel fx" }, [el("p", { class: "fx-eyebrow" }, `Keep doing \u00b7 ${picked} \u00b7 the last ${N} rounds`), /* (update 810: which rounds) */
     gains.length ? el("ul", { class: "fx-list" }, gains.map((b) => el("li", {}, [el("strong", {}, nameOf(b)), " \u00b7 ", el("span", { class: "pos" }, `${f2(b.perRd)} a round`), el("span", { class: "muted" }, ` (${b.att.toFixed(1)} shots a round)`)])))
       : el("p", { class: "muted small" }, `Nothing in ${on ? picked.toLowerCase() : "the game"} is gaining strokes against the tour over the last ${N} rounds.`)]);
 
@@ -339,10 +339,10 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
       chart = radarSvg(ds.map((d) => `${short(d)}\n${sp.nowLabel} ${f2(B.get(d) ?? 0)}${sp.before.length && A.size ? `\n${sp.beforeLabel} ${f2(A.get(d) ?? 0)}` : ""}`), /* (update 778: both years) */ [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
     else chart = groupBars(ds.map((d) => ({ label: short(d), a: sp.before.length ? A.get(d) ?? null : null, b: B.get(d) ?? null })), { la: sp.beforeLabel || "Before", lb: sp.nowLabel });
     if (!chart) return null;
-    return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round`)),
+    return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round · each whole season`)), /* (update 810: which rounds) */
       el("div", { class: "mc-wrap" }, chart),
       el("div", { class: "hm-key" }, [sp.before.length && A.size ? el("span", {}, [el("i", { class: "k-a" }), sp.beforeLabel]) : null, /* (update 760: only when it has bars) */ el("span", {}, [el("i", { class: "k-b" }), sp.nowLabel])]),
-      el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}${sp.before.length && !A.size ? `${sp.beforeLabel}'s rounds have no ${nm.toLowerCase()} distances in the data, so only ${sp.nowLabel} is drawn. ` : ""}Every round on this tour, whatever the time frame above.`)]);
+      el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}${sp.before.length && !A.size ? `${sp.beforeLabel}'s rounds have no ${nm.toLowerCase()} distances in the data, so only ${sp.nowLabel} is drawn. ` : ""}Every round of each season on this tour, so it can differ from Keep doing and the cards above (the last ${N} rounds only).`)]);
   })();
   const radarBox = distBox || (() => {
     const sp = yearSplit(everyYear || []); if (!sp) return null;
