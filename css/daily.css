@@ -708,3 +708,11 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
   .botbar .on-pop { opacity: 1 !important; color: var(--gold) !important; }
 }
 @keyframes botpopUp { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* (update 835) the phone's pop-up menu: a list, one option above another, over the button tapped */
+@media (max-width: 640px) {
+  .botpop { flex-direction: column; gap: 2px; left: 8px; right: auto; width: max-content; min-width: 190px; max-width: calc(100vw - 16px); max-height: 60vh; overflow-y: auto; overflow-x: hidden;
+    padding: 6px; border: 1px solid var(--rule); border-radius: 14px; bottom: calc(66px + env(safe-area-inset-bottom)); box-shadow: 0 12px 32px rgba(0,0,0,0.45); }
+  .botpop a { border: 0; border-radius: 10px; padding: 12px 14px; font-size: 0.95rem; text-align: left; }
+  .botpop a + a { border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent); border-radius: 0; }
+  .botpop a[aria-current="page"] { border-radius: 10px; }
+}

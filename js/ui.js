@@ -201,7 +201,9 @@ function openBotPop(sec, btn) {
   botPop = el("nav", { class: "botpop", "aria-label": sec.label, "data-sec": sec.id }, sec.items.filter((it) => !it[3]?.off).map((it) => { const [label, href, routes, opt = {}] = it;
     const a = el("a", { href, "aria-current": routes.includes(window.__routeId) && (!opt.view || opt.view === statsViewNow()) ? "page" : null }, label); a.addEventListener("click", () => setTimeout(closeBotPop, 0)); return viewLink(a, opt.view); }));
   document.body.append(botPop); btn.classList.add("on-pop");
-  requestAnimationFrame(() => botPop?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: "center", block: "nearest" }));
+  // (update 835) a list stacked above the button tapped, kept on screen
+  { const r = btn.getBoundingClientRect(), w = botPop.offsetWidth, left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)); botPop.style.left = `${left}px`; }
+
 }
 addEventListener("hashchange", () => closeBotPop());
 addEventListener("click", (e) => { if (botPop && !e.target.closest(".botpop, .botbar")) closeBotPop(); }, true);
