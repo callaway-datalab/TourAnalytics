@@ -8,6 +8,8 @@ export async function fill(box, kind, me, { st }) {
   const pv = window.__previewClient || null, name = me.label || me.key.replace(/^c_/, "");
   if (kind === "overview") { const m = await import("./views/dossier.js"); return m.overview(box, me.key, name); }
   if (kind === "fit") { const m = await import("./views/courseFit.js"); return m.fitTab(box, me.key, name); }
+  // (update 827) Compare, on the Stats page (it opens on the header's player, as on its own page)
+  if (kind === "compare") { const inner = el("div", { class: "st-cmp" }); mount(box, inner); try { await (await import("./views/comparisons.js")).render(inner, { previewClient: pv, flash, routeId: "comparisons" }); } catch (e) { console.error(e); mount(inner, el("p", { class: "muted center" }, "Couldn’t open Compare just now.")); } return; }
   // Practice & Goals: three parts, one at a time (the plan for the week first)
   const PARTS = [["week", "Recommended Practice"], ["practice", "Custom Practice"], ["goals", "Goals"]];
   const body = el("div", { class: "st-pg-body" });

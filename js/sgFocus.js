@@ -366,7 +366,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
 /** The Focus / Full stats switch. */
 export function focusSwitch(S) {
   // (update 817) Overview first (and what Stats opens on), then Full stats, Focus, Tournament Results, Course Fit, Practice & Goals
-  const VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"], ["fit", "Course Fit"], ["practice", "Practice & Goals"]];
+  const VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Compare"], ["practice", "Practice & Goals"]]; // (update 827: Compare)
   const st = S.st, now = VIEWS.some(([v]) => v === st.view2) ? st.view2 : "overview";
   const seg = el("div", { class: "seg seg-sm fx-switch", role: "group", "aria-label": "Stats view" }, VIEWS.map(([v, l]) => {
     const cur = now === v;

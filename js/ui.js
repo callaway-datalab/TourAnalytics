@@ -129,9 +129,9 @@ const sectionsFor = (kind) => {
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     // (update 817) the Player Dossier (Overview), Course Fit and Practice & Goals are tabs on Stats now
-    ["Compare", "#/comparisons", ["comparisons"]], // (update 205: Deep Dives; 209: Compare)
+    // (update 827) Compare is a tab on Stats (its own address still works, for the links that open it set up)
     // (update 818) Leaderboards and the Event Feed are their own header, Follow
-    ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], {}], // (update 817: from Play) // (update 611: in Analyze, after Leaderboards; no longer in the top bar)
+    // (update 827) Course Prep is back under Play
     // (update 209) no Product Usage tab: product usage is in Compare (staff can compare products across everyone)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
@@ -143,10 +143,11 @@ const sectionsFor = (kind) => {
   ];
   const planItems = [
     ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]],
+    ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], {}], // (update 827)
   ];
   return [
-    { id: "data", label: "Analyze", icon: "data", items: dataItems },
-    { id: "follow", label: "Follow", icon: "live", items: followItems },
+    { id: "data", label: "Stats", icon: "data", items: dataItems }, // (update 827: was Analyze)
+    { id: "follow", label: "Leaderboards", icon: "live", items: followItems }, // (update 827: was Follow)
     { id: "plan", label: "Play", icon: "doc", items: planItems },
   ];
 };
@@ -421,7 +422,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
 
   // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
   setPages(() => [["Home", "#/home", "", "today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
-    ["Overview", "stats:overview", "Stats", "player dossier profile report"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
+    ["Overview", "stats:overview", "Stats", "player dossier profile report"], ["Compare", "stats:compare", "Stats", "versus side by side products compare"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
     ["Custom Practice", "stats:practice:practice", "Stats · Practice & Goals", "practice drills sessions range"], ["Recommended Practice", "stats:practice:week", "Stats · Practice & Goals", "practice week plan drills next event"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
     ["What's in the Bag", "#/witb", "", "witb clubs equipment gear"], ["Chat", admin ? "#/admin/questions" : "#/questions", "", "questions messages"], ["Profile", "#/account", "Account", "settings password"]]
     .map(([label, href, group, words]) => ({ label, href, group, words })));
