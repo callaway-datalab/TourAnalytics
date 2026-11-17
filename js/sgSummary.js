@@ -4,6 +4,7 @@ import { CATEGORIES, SUMMARY, applyFilters, el, fmtSG, infoTip, rank, sgColor, s
 import { scatterSvg } from "./miniCharts.js"; // (update 750)
 import { formWord } from "./sg.js"; // (update 670)
 import { formUnits } from "./sgHero.js"; // (update 673: the same stretches as the Form pill)
+import { formN } from "./defs.js"; // (update 814: the shared form window)
 
 // Rank of one player among the field for a metric computed on their (already sliced) rounds.
 export function rankOf(S, slicedField, key, metric) {
@@ -82,7 +83,7 @@ export function summaryBox(S, mine, slicedField) {
     // 20; others: 20 rounds against 20 and 50 against 50), so the two always say the same
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const fu = formUnits(S, ordered), ev = S.eventMode, U = ev ? "events" : "rounds";
-    const n = Math.min(ev ? 3 : 12, Math.floor(fu.length / 2)); // (update 694: Form, 12 against 12 (3 events against 3))
+    const n = Math.min(formN(ev), Math.floor(fu.length / 2)); // (update 694: Form, 12 against 12 (3 events against 3))
     if (n >= (ev ? 1 : 2)) {
       const val = (us) => S.perRoundOf(us.flat());
       const last = val(fu.slice(-n)), prev = val(fu.slice(-2 * n, -n)), ch = last - prev;
@@ -221,7 +222,7 @@ export function tourBlocks(S, slicedField) {
   {
     const form = P.map((p) => {
       // (update 734) Form's stretches: the last 12 rounds against the 12 before (the DP World Tour: 3 events against 3)
-      const rs = series(p).filter((rd) => S.metric([rd]) != null), fu = formUnits(S, rs), hn = S.eventMode ? 3 : 12;
+      const rs = series(p).filter((rd) => S.metric([rd]) != null), fu = formUnits(S, rs), hn = formN(S.eventMode);
       if (fu.length < 2 * hn) return null;
       const last = S.metric(fu.slice(-hn).flat()), before = S.metric(fu.slice(-2 * hn, -hn).flat());
       return last == null || before == null ? null : { p, last, before, ch: last - before };

@@ -60,11 +60,24 @@ export async function saveRaw(c, onStatus = () => {}) {
 }
 
 /** A map's raw shots back (rows in RAW_COLS order). */
+// (update 814) a course's shots kept on the device (IndexedDB) for each upload of them: read from Firestore once, then
+// straight from the device (Home's Next Event, Tournament Results and Strategy Maps all ask for them); 3 courses kept
+const IDB = "ta-courseRaw", idbP = () => new Promise((ok, no) => { try { const r = indexedDB.open(IDB, 1); r.onupgradeneeded = () => r.result.createObjectStore("raw"); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); } catch (e) { no(e); } });
+const idbDo = async (mode, fn) => { const dbi = await idbP(); return new Promise((ok, no) => { const tx = dbi.transaction("raw", mode), st = tx.objectStore("raw"), q = fn(st); tx.oncomplete = () => ok(q?.result); tx.onerror = () => no(tx.error); }); };
+const stamp = (meta) => `${meta.id}|${meta.rawAt?.toMillis?.() ?? meta.dataAt?.toMillis?.() ?? meta.rawAt ?? meta.dataAt ?? ""}|${meta.rawChunks || 0}`;
+const rawMemo = new Map();
 export async function loadRaw(meta) {
-  const snaps = await Promise.all(Array.from({ length: meta.rawChunks || 0 }, (_, i) => getDoc(doc(db, "courseHeat", meta.id, "chunks", `raw_${i}`))));
-  const out = [];
-  for (const s of snaps) { if (!s.exists()) continue; for (const r of await readChunk(s.data())) out.push(r); }
-  return out;
+  const sk = stamp(meta); if (rawMemo.has(sk)) return rawMemo.get(sk);
+  const p = (async () => {
+    try { const hit = await idbDo("readonly", (st) => st.get(sk)); if (hit?.rows?.length) return hit.rows; } catch { /* (no IndexedDB here) */ }
+    const snaps = await Promise.all(Array.from({ length: meta.rawChunks || 0 }, (_, i) => getDoc(doc(db, "courseHeat", meta.id, "chunks", `raw_${i}`))));
+    const out = [];
+    for (const s of snaps) { if (!s.exists()) continue; for (const r of await readChunk(s.data())) out.push(r); }
+    try { await idbDo("readwrite", (st) => st.put({ rows: out, at: Date.now() }, sk));
+      const keys = await idbDo("readonly", (st) => st.getAllKeys()); const mine = (keys || []).filter((k) => String(k).startsWith(`${meta.id}|`) && k !== sk); for (const k of mine) await idbDo("readwrite", (st) => st.delete(k));
+      const all = (await idbDo("readonly", (st) => st.getAllKeys())) || []; if (all.length > 3) for (const k of all.slice(0, all.length - 3)) if (k !== sk) await idbDo("readwrite", (st) => st.delete(k)); } catch { /* */ }
+    return out; })();
+  rawMemo.set(sk, p); p.catch(() => rawMemo.delete(sk)); if (rawMemo.size > 1) rawMemo.delete(rawMemo.keys().next().value); return p;
 }
 
 /** Does a map need building (raw shots newer than its maps, or maps from an older version of the analysis)? */

@@ -4,6 +4,7 @@
 //   · any other metrics picked, with ranks and trends
 //   · badges and alerts: big moves, hot streaks and slumps, form landmarks, best rounds, wins and milestones
 import { distLead, CATEGORIES, applyFilters, statRounds, statAgg, statDef, statsIn, fmtStat, fmtSG, defaultMinRounds, gearList, gearLabel, gearInfo, formWord } from "./sg.js";
+import { formN } from "./defs.js"; // (update 814: the shared form window)
 
 export const SG_KEYS = [["TOTAL", "SG: Total", "Total"], ["OTT", "Off-the-Tee", "OTT"], ["APP", "Approach", "APP"], ["ARG", "Around-the-Green", "ARG"], ["PUTT", "Putting", "PUTT"]];
 const CAT_SHORT = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" }; // (update 406: the site's names)
@@ -264,7 +265,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   {
     // (update 581) the DP World Tour: by event (3 against 3, each event's rounds pooled); others: by round (12 against 12)
     const units = byEv ? groupEv(mine) : mine.map((rd) => [rd]);
-    const n = Math.min(byEv ? 3 : 12, /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */ Math.floor(units.length / 2));
+    const n = Math.min(formN(byEv), /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */ Math.floor(units.length / 2));
     if (n >= (byEv ? 1 : 3)) {
       const win = units.slice(-2 * n), A = new Map(), rc = win.map((g) => g.length);
       const get = (k, cat, dist, lie) => A.get(k) || A.set(k, { k, cat, dist, lie, tot: new Array(2 * n).fill(0), w: new Array(2 * n).fill(0) }).get(k);
@@ -449,7 +450,7 @@ export function playerCard(key, { field, detail = null, own = null, label = "", 
   // (update 372) current form, on every card: their last 10 rounds' strokes gained a round, and the rank it plays at
   if (mine.length >= 3) {
     // (update 694) Form: the last 12 rounds (the DP World Tour: the last 3 events, each event's rounds pooled) against the 12 before
-    const fu = byEv ? groupEv(mine) : mine.map((rd) => [rd]), fn = Math.min(byEv ? 3 : 12, fu.length), fAvg = perRound(fu.slice(-fn).flat());
+    const fu = byEv ? groupEv(mine) : mine.map((rd) => [rd]), fn = Math.min(formN(byEv), fu.length), fAvg = perRound(fu.slice(-fn).flat());
     const fPrev = fu.length >= 2 * fn ? perRound(fu.slice(-2 * fn, -fn).flat()) : null, fRecent = fAvg != null && fPrev != null ? fAvg - fPrev : null;
 const fch = fRecent ?? total.trend?.ch ?? 0; // (update 375) coloured and pointed by the change on the rounds before, not the sign of the average
     // (update 670) the form word: the recent change and the overall direction (the last 50 rounds against the 50 before;
@@ -467,7 +468,7 @@ const fch = fRecent ?? total.trend?.ch ?? 0; // (update 375) coloured and pointe
   // (update 373) no "Up / Down x a round, last 10" badge: the form badge (always there) covers it
   // (update 168: no badge for a category moving up or down: its tile shows that)
   // form landmarks: the rolling 10-round average at its best (or worst) of the period
-  const RW = byEv ? 3 : 12; /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */ // (the rolling average's window)
+  const RW = formN(byEv); /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */ // (the rolling average's window)
   const rolls = mine.length >= 2 * RW ? mine.map((_, i) => (i >= RW - 1 ? perRound(mine.slice(i - RW + 1, i + 1)) : null)).filter((x) => x != null) : [];
   if (rolls.length >= 5) {
     const now = rolls.at(-1);

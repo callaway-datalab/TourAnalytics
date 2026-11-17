@@ -1,6 +1,7 @@
 // (sgDashboard split) The category detail: stat blocks, trends, rankings, SG Trends by Product, SG by Club.
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { LEAVE_SCALE, catName, el, fmtSG, gearInfo, gearList, getState, groupObs, infoTip, leaveHistogram, leavePoints, localDay, missSplit, nf1, shortDate, sliceTotals, statAgg, trend } from "./sgShared.js";
+import { formN } from "./defs.js"; // (update 814: the shared form window)
 
 /* ------------------------------ category detail ------------------------------ */
 export function detailBlocks(S, mine, slicedField) {
@@ -97,7 +98,7 @@ export function statSummary(S, mine, slicedField) {
     const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */
     const uOf = S.eventMode ? (() => { const m = new Map(); for (const rd of ordered) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } return [...m.values()]; })() : ordered.map((rd) => [rd]);
-    const n = Math.min(S.eventMode ? 3 : 12, Math.floor(uOf.length / 2));
+    const n = Math.min(formN(S.eventMode), Math.floor(uOf.length / 2));
     if (n >= (S.eventMode ? 1 : 2)) {
       const last = S.metric(uOf.slice(-n).flat()), prev = S.metric(uOf.slice(-2 * n, -n).flat());
       if (last != null && prev != null) {

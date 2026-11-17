@@ -362,3 +362,20 @@ main:has(.ah.td) { padding-top: 0 !important; }
 .td-formr .td-avgl { stroke: var(--td-gold); stroke-width: 1.3; stroke-dasharray: 5 4; }
 .td-formr .td-avgt { font: 700 10px var(--td-sans); fill: var(--td-gold); }
 .td-formr .td-tx { font-size: 9px; }
+/* (update 813) Today: a card a player, their top stories as bullets; Show more under a section */
+.td-today { margin: 18px 0 6px; }
+.td-today-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.td-today-c { background: var(--td-card); border: 1px solid var(--td-rule); border-radius: 12px; padding: 12px 14px; }
+html[data-theme="light"] .td-today-c { background: #fff; }
+.td-today-c h3 { margin: 0 0 4px; font: 800 1.05rem var(--td-head); }
+.td-today-c li { cursor: pointer; font-size: 0.92rem; } .td-today-c li:hover { color: var(--td-gold); }
+.td-more-row { display: flex; justify-content: center; margin: 10px 0 2px; }
+.td-gearcols { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)) !important; }
+/* (update 814) the saved edition on screen while the live one is worked out */
+.td-feed.td-cached { position: relative; } .td-feed.td-cached::before { content: "Updating…"; position: absolute; right: 0; top: -26px; font: 700 0.68rem var(--td-sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--td-mute); }
+/* (update 814) New since the last visit; what a story rests on; its one-tap action */
+.td-new { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--td-gold); color: #111; font: 800 0.6rem var(--td-sans); letter-spacing: 0.08em; vertical-align: 1px; }
+.td-samp { margin: 6px 0 0; font: 500 0.74rem var(--td-sans); color: var(--td-mute); }
+.td-act-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 4px; }
+.td-act { border: 1px solid var(--td-gold); background: transparent; color: var(--td-gold); border-radius: 999px; padding: 7px 14px; font: 700 0.82rem var(--td-sans); cursor: pointer; }
+.td-act:hover { background: color-mix(in srgb, var(--td-gold) 14%, transparent); } .td-act:disabled { opacity: 0.6; }

@@ -6,6 +6,7 @@
 import { radarSvg, groupBars } from "./miniCharts.js"; // (update 751)
 import { radar, radarKey, catVals, yearSplit, trendArrow } from "./radarChart.js"; // (update 611; 613: the arrow)
 import { el, mount, infoTip, CATEGORIES, distLead, drillFor, drillLine, practiceOpen, isMine, getState, planEditor, PLAN_ADDED, syncPlan, goalStatsFor, statDef, LEVELS } from "./sgShared.js";
+import { formN } from "./defs.js"; // (update 814: the shared form window)
 
 const CAT = Object.fromEntries(CATEGORIES);
 const f2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
@@ -330,7 +331,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   const distBox = (() => {
     // (update 811) a toggle: this season against last, or the last 12 rounds against the 12 before (the DP World Tour: 3
     // events against 3)
-    const mode = S.st.radarMode === "form" ? "form" : "season", evM = !!S.eventMode, nU = evM ? 3 : 12;
+    const mode = S.st.radarMode === "form" ? "form" : "season", evM = !!S.eventMode, nU = formN(evM);
     const formSp = () => { const rs = [...(everyYear || [])].filter((rd) => evM || !rd.eventLevel).sort(byDate); let units;
       if (evM) { const m = new Map(); for (const rd of rs) { const k = `${rd.event}|${String(rd.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } units = [...m.values()]; } else units = rs.map((rd) => [rd]);
       if (units.length < nU + 1) return null; return { now: units.slice(-nU).flat(), before: units.slice(-2 * nU, -nU).flat(), nowLabel: evM ? "Last 3 events" : "Last 12", beforeLabel: evM ? "3 events before" : "12 before" }; };

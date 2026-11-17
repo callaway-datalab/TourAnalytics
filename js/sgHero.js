@@ -2,6 +2,7 @@
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { CATEGORIES, applyFilters, el, fmtSG, fmtStat, getState, infoTip, mount, shortDate } from "./sgShared.js";
 import { formWord, formMeaning } from "./sg.js"; // (update 670; 671: the meaning)
+import { formN } from "./defs.js"; // (update 814: the shared form window)
 
 export function heroBox(S, mine, slicedField, f) {
   const foot = el("p", { class: "hero-foot" }, S.updatedTxt());
@@ -16,7 +17,7 @@ export function heroBox(S, mine, slicedField, f) {
     // (update 669) the graph: the last 6 months of it (the season's rank / average as it was each week, ending at today's)
     const hist = (() => { const lastMs = Date.parse(String(hist0.at(-1)?.date || "").slice(0, 10)); if (!Number.isFinite(lastMs)) return hist0;
       const h = hist0.filter((q) => (Date.parse(String(q.date).slice(0, 10)) || 0) >= lastMs - 182.6 * 864e5); return h.length >= 2 ? h : hist0.slice(-2); })();
-    const fu = formUnits(S, ordered), n = Math.min(S.eventMode ? 3 : 12, Math.floor(fu.length / 2)); /* (update 694: Form, 12 rounds (the DP World Tour: 3 events); 677: eventMode) */ // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
+    const fu = formUnits(S, ordered), n = Math.min(formN(S.eventMode), Math.floor(fu.length / 2)); /* (update 694: Form, 12 rounds (the DP World Tour: 3 events); 677: eventMode) */ // (update 581: the DP World Tour: the last 3 events against the 3 before; 606: 5 against 5)
     let form = null;
     if (n >= (S.eventMode ? 1 : 2)) {
       const last = S.metric(fu.slice(-n).flat()), prev = S.metric(fu.slice(-2 * n, -n).flat());
@@ -290,7 +291,7 @@ export const formUnits = (S, ordered) => {
 };
 export async function formPopup(S, ordered, info = null) {
   const { renderBlocks } = await import("./badgePopup.js");
-  const fu = formUnits(S, ordered), ev = S.eventMode, n = Math.min(ev ? 3 : 12, Math.floor(fu.length / 2)); /* (update 694: 12 rounds, 3 events) */
+  const fu = formUnits(S, ordered), ev = S.eventMode, n = Math.min(formN(ev), Math.floor(fu.length / 2)); /* (update 694: 12 rounds, 3 events) */
   const lastU = fu.slice(-n), prevU = fu.slice(-2 * n, -n);
   const last = lastU.flat(), prev = prevU.flat(), sg = S.isSG();
   const goodTone = (v, ref) => (sg ? null : S.def.higher == null || v == null || ref == null ? "gold" : S.better(v, ref) ? "pos" : "neg");

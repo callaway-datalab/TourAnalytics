@@ -1,6 +1,7 @@
 // (sgDashboard split) The full stats table (and, inside it, Hypothetical rankings / improvements).
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
 import { CATEGORIES, LEVELS, PLAN_ADDED, applyFilters, distLead, drillFor, el, fmtSG, fmtStat, getState, infoTip, isMine, mount, planEditor, practiceOpen, sgn2, statBlocksCmp, statDef } from "./sgShared.js";
+import { formN } from "./defs.js"; // (update 814: the shared form window)
 
 // each row's value for a set of rounds: Map key → value
 export function rowVals(S, rounds, cat) {
@@ -96,7 +97,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
   const ordered = [...mine].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   // (update 677) the DP World Tour: by event, the last 5 against the 5 before (each event's rows pooled)
   const tU = S.eventMode ? (() => { const m = new Map(); for (const rd of ordered) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } return [...m.values()]; })() : ordered.map((rd) => [rd]);
-  const tn = Math.min(S.eventMode ? 3 : 12, Math.floor(tU.length / 2)), tMin = S.eventMode ? 1 : 3; /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */
+  const tn = Math.min(formN(S.eventMode), Math.floor(tU.length / 2)), tMin = S.eventMode ? 1 : 3; /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */
   const tLast = tn >= tMin ? tU.slice(-tn).flat() : [], tPrev = tn >= tMin ? tU.slice(-2 * tn, -tn).flat() : [];
   const lastV = tn >= tMin ? S.rowVals(tLast, cat) : null, prevV = tn >= tMin ? S.rowVals(tPrev, cat) : null;
   // best round: the best single-round value (each round on its own)

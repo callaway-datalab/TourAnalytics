@@ -1,0 +1,10 @@
+const { chromium } = require("playwright");
+(async () => { const b = await chromium.launch(), ctx = await b.newContext({ viewport: { width: 1440, height: 1000 } }), p = await ctx.newPage(), errs = [];
+  p.on("pageerror", (e) => errs.push(e.message));
+  await p.goto("http://localhost:8765/__home.html"); await p.waitForTimeout(7000);
+  const saved = await p.evaluate(() => { const x = localStorage.getItem("ta.homeEdition"); return x ? JSON.parse(x).html.length : 0; });
+  await p.goto("http://localhost:8765/__home.html"); await p.waitForTimeout(400);
+  const early = await p.evaluate(() => ({ cached: document.querySelector(".td-feed")?.classList.contains("td-cached"), lead: document.querySelector(".td-lead h2")?.textContent }));
+  await p.waitForTimeout(6000);
+  const late = await p.evaluate(() => ({ cached: document.querySelector(".td-feed")?.classList.contains("td-cached"), lead: document.querySelector(".td-lead h2")?.textContent, buttons: document.querySelectorAll(".td-more-b").length }));
+  console.log(JSON.stringify({ saved, early, late, errs: errs.slice(0, 5) })); await b.close(); })();

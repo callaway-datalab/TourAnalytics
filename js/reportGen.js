@@ -16,6 +16,7 @@ import { watchPlayerRounds, getAllRounds } from "./rounds.js";
 import { roundToPrepared, enteredPlayers, ENTERED_IDX } from "./roundCalc.js";
 import { PdfDoc, wrap, textWidth } from "./pdfLite.js";
 import { eventBarsOf, drawEventBars, eventBarsHeight } from "./pdfCharts.js";
+import { formN } from "./defs.js"; // (update 814: the shared form window)
 // (update 666) no champagne / gold in the bars: that colour is the rolling-average line's
 const PROD_COLORS = ["#2f9bff", "#30d158", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff", "#ff375f", "#5e5ce6", "#00c7be", "#a2845e"];
 
@@ -130,7 +131,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   // every other tour: the last 12 rounds against the 12 before
   const unitW = byEvent ? "events" : "rounds";
   const units = byEvent ? (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); } return [...m.values()]; })() : series.map((q) => [q]);
-  const half = Math.min(byEvent ? 3 : 12, /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */ Math.floor(units.length / 2));
+  const half = Math.min(formN(byEvent), /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */ Math.floor(units.length / 2));
   const late = units.slice(units.length - half).flat(), early = units.slice(units.length - 2 * half, units.length - half).flat(); // the last 12 vs the 12 before them
   const span = (list) => (list.length ? `${fmtDate(list[0].date)} \u2013 ${fmtDate(list[list.length - 1].date)}` : "");
   const halves = half >= (byEvent ? 1 : 2) ? { n: half, unit: unitW, early: span(early), late: span(late) } : null;
@@ -288,7 +289,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
     text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes a round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
-  const n10 = Math.min(byEvent ? 3 : 12, Math.floor(units.length / 2)), fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat(); // (update 694: Form, 12 rounds (3 events))
+  const n10 = Math.min(formN(byEvent), Math.floor(units.length / 2)), fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat(); // (update 694: Form, 12 rounds (3 events))
   // (update 670) and the overall direction for the form word: the last 50 rounds against the 50 before (20 events against 20)
   const nL = Math.min(byEvent ? 12 : 48, Math.floor(units.length / 2)), longCh = nL > n10 ? mean(units.slice(-nL).flat().map((q) => q.value)) - mean(units.slice(-2 * nL, -nL).flat().map((q) => q.value)) : null;
   const form = n10 >= (byEvent ? 1 : 2) ? { n: n10, unit: byEvent ? "event" : "round", first: mean(fA.map((q) => q.value)), last: mean(fB.map((q) => q.value)), firstSpan: span(fA), lastSpan: span(fB), long: Number.isFinite(longCh) ? longCh : null } : null;
@@ -306,7 +307,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const swings = cats.map((k) => ({ cat: k, sd: sd(ser.map((q) => q.byCat[k])) })).filter((x) => x.sd != null).sort((p, q) => p.sd - q.sd);
   // Biggest upside: the player's own best stretch (their best average over a run of rounds) in each category,
   // against their average now; the category where getting back to that is worth the most.
-  const win = byEvent ? 3 : 12; // (update 694: the same stretch as Form: the best 12 rounds in a row (the DP World Tour: 3 events))
+  const win = formN(byEvent); // (update 694: the same stretch as Form: the best 12 rounds in a row (the DP World Tour: 3 events))
   const upside = ser.length >= win ? byCat.filter((c) => c.value != null).map((c) => {
     let bestAvg = -Infinity, at = 0;
     for (let i = 0; i + win <= ser.length; i++) { const v = mean(ser.slice(i, i + win).map((q) => q.byCat[c.cat] ?? 0)); if (v > bestAvg) { bestAvg = v; at = i; } }
@@ -821,7 +822,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.text(fmtSG(hi), M, Y(hi) + 5, { size: 6.5, color: P.faint }); d.text(fmtSG(lo), M, Y(lo), { size: 6.5, color: P.faint });
     const bw = wd / vals.length;
     vals.forEach((v, i) => { const x = left + i * bw + bw * 0.18, w = Math.max(1, bw * 0.64), y0 = Y(Math.max(0, v)), y1 = Y(Math.min(0, v)); d.rect(x, y0, w, Math.max(0.6, y1 - y0), { fill: v >= 0 ? "#8fd4a8" : "#f2a39d" }); });
-    d.polyline(ma(vals, isDP ? 3 : 12 /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
+    d.polyline(ma(vals, formN(isDP) /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */).map((v, i) => /* (update 582: the DP World Tour: the last 3 events) */ [left + i * bw + bw / 2, Y(v)]), { color: P.gold, width: 1.8 });
     // (no best / worst dots: bars and the rolling average only)
     if (CMP) {
       // (update 694) a dashed line where each season starts, the season's name at its top, and its average as a dotted line across it

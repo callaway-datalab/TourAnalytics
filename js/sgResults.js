@@ -37,7 +37,7 @@ async function courseWeek(meta, ev) {
     // (update 761) every finished hole on record at the course (every year), for the expected strokes from each spot
     const all = new Map(), trails = new Map();
     for (const r of rows) { const h = num(r[6]), st = num(r[10]); if (!h || st == null) continue;
-      const idv = r[4] != null && r[4] !== "" ? String(num(r[4]) ?? r[4]) : r[3] != null ? String(r[3]) : null; if (!idv) continue;
+      const idv = r[4] != null && r[4] !== "" ? (Number.isFinite(num(r[4])) ? String(num(r[4])) : String(r[4])) : r[3] != null ? String(r[3]) : null; /* (update 814: an id that isn't a number kept as it is, not "NaN" for everyone) */ if (!idv) continue;
       const wk = inWeek(r), pk = D.clientKey(idv), lie = CH.lieName(r[9]) || "other", q = { st, lie, d: num(r[21]) ?? num(r[18]), x: num(r[13]), y: num(r[14]) };
       const ak = `${r[0]}|${pk}|${r[5]}|${h}`; let T = all.get(ak);
       if (!T) { T = { meta, pk, name: r[3] != null ? String(r[3]) : idv, rd: String(num(r[5]) ?? r[5] ?? ""), h, par: num(r[7]), pid: String(r[8] ?? "1"), px: num(r[16]), py: num(r[17]), qs: [], s: null }; all.set(ak, T); if (wk) trails.set(`${pk}|${r[5]}|${h}`, T); }
@@ -150,7 +150,7 @@ export function resultsView(S, rounds, field) {
     const cards = [card("Total", vTot, rk((p) => p.tot), true, null), ...CATS.map(([c, l]) => card(l, P ? perRd(P, (p) => p.cat[c]) : avg(evRs, (r) => inCat(r, c)), rk((p) => p.cat[c]), false, c))];
     const bestLine = best ? (() => { const b = el("button", { type: "button", class: "tr-best", title: "See every shot in the field" }, [el("strong", {}, best.q.rank === 1 ? "The best shot of the tournament: " : `Best shot: `), `${fmtSG(best.sg)} on hole ${best.T.h}, round ${best.T.rd}, ${dTxt(best.q)} from the ${best.q.lie}`, el("span", { class: "muted" }, ` · ${ord(best.q.rank)} of ${W.nShots.toLocaleString()} shots in the field · tap for every shot`)]);
       b.addEventListener("click", () => openShots("field", best.q)); return b; })() : null;
-    mount(heroBox, [el("div", { class: "tr-head" }, [el("h2", {}, ev.event), el("span", { class: "muted" }, `${ev.year} · ${nR} round${nR === 1 ? "" : "s"}${W ? ` · ${field0.length} players on record` : ""}`)]), el("div", { class: "tr-hero-row" }, cards), bestLine,
+    mount(heroBox, [el("div", { class: "tr-head" }, [el("h2", {}, ev.event), el("span", { class: "muted" }, `${ev.year} · ${nR} round${nR === 1 ? "" : "s"}${W ? ` · ${field0.length} player${field0.length === 1 ? "" : "s"} on record` : ""}`)]), el("div", { class: "tr-hero-row" }, cards), bestLine,
       P ? null : el("p", { class: "muted small" }, "These numbers are from the stats file: the ranks, the scorecard and the shots need the tournament's shots in Strategy Maps.")].filter(Boolean));
 
     // a card: each distance range, a shot, with the rank in the field

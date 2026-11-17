@@ -1,0 +1,10 @@
+<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<script type="importmap">{"imports": {"http://localhost:8765/js/firebase-init.js": "http://localhost:8765/__mock/firebaseInit.js", "http://localhost:8765/js/ui.js": "http://localhost:8765/__mock/ui.js", "http://localhost:8765/js/auth.js": "http://localhost:8765/__mock/auth.js", "http://localhost:8765/js/preview.js": "http://localhost:8765/__mock/preview.js", "http://localhost:8765/js/store.js": "http://localhost:8765/__mock/store.js", "http://localhost:8765/js/watchlist.js": "http://localhost:8765/__mock/watchlist.js", "http://localhost:8765/js/reportGen.js": "http://localhost:8765/__mock/reportGen.js", "http://localhost:8765/js/courseHeat.js": "http://localhost:8765/__mock/courseHeat.js", "http://localhost:8765/js/courseRaw.js": "http://localhost:8765/__mock/courseRaw.js", "http://localhost:8765/js/liveData.js": "http://localhost:8765/__mock/liveData.js", "http://localhost:8765/js/fieldStore.js": "http://localhost:8765/__mock/fieldStore.js", "http://localhost:8765/js/fieldCache.js": "http://localhost:8765/__mock/fieldCache.js", "http://localhost:8765/js/callie.js": "http://localhost:8765/__mock/callie.js", "http://localhost:8765/js/practice/plan.js": "http://localhost:8765/__mock/plan.js"}, "scopes": {"http://localhost:8765/js/views/": {"http://localhost:8765/js/sg.js": "http://localhost:8765/__mock/sgShim.js"}}}</script>
+<link rel="stylesheet" href="css/style.css"><link rel="stylesheet" href="css/light.css"><link rel="stylesheet" href="css/daily.css"></head>
+<body><main id="app"></main>
+<script type="module">
+window.__homeTest = {}; if (/light/.test(location.search)) document.documentElement.setAttribute("data-theme", "light");
+const { render } = await import("./js/views/home.js");
+await render(document.getElementById("app"), {});
+window.__ready = true;
+</script></body></html>

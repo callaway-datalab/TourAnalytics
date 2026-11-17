@@ -1,0 +1,5 @@
+export function el(tag, attrs = {}, children = []) { const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) { if (v == null || v === false) continue; if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2).toLowerCase(), v); else if (k === "class") node.className = v; else if (k === "dataset") Object.assign(node.dataset, v); else if (k in node && k !== "list") node[k] = v; else node.setAttribute(k, v); }
+  for (const c of [].concat(children).flat(Infinity)) { if (c == null || c === false) continue; node.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(c) : c); } return node; }
+export function mount(node, children) { while (node.firstChild) node.removeChild(node.firstChild); for (const c of [].concat(children).flat(Infinity)) { if (c == null || c === false) continue; node.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(c) : c); } }
+export const calAllowed = () => false; export const holdToTalk = () => {}; export const icon = () => document.createElement("span"); export const infoTip = () => document.createElement("span");
