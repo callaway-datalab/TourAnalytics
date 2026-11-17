@@ -260,6 +260,38 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
     return el("tr", { class: "club-edit" }, el("td", { colspan: "6" }, el("div", { class: "club-add club-edit-form" }, [ecat, etype, eb, em, ey, es, ef, ew, en, el("div", { class: "edit-actions" }, [saveB, cancelB])])));
   }
 
+  /* ---------- (update 842) Edit: fix a product's spelling (the stats data's: every event; the list's: that club) and add notes ---------- */
+  const editBtn = el("button", { type: "button", class: "btn ghost small witb-edit", hidden: readOnly && !state.isAdmin && !state.isTeam }, "Edit");
+  editBtn.addEventListener("click", async () => {
+    const { popup } = await import("./insightPages.js"), pe = peMod || await import("../productEdits.js"), notesNow = dataKey ? pe.notesOf(dataKey) : {};
+    const nm0 = (g) => String(g || "").split("|").slice(1).join("|"), kindOf = (g) => String(g || "").split("|")[0];
+    const items = []; const seen = new Set();
+    for (const t of tourT?.career || []) { if (!t.gear || seen.has(t.gear)) continue; seen.add(t.gear); items.push({ gear: t.gear, label: t.kind || t.label, name: nm0(t.gear), note: notesNow[t.gear] || "" }); }
+    for (const b of tourT?.balls || []) if (b.gear && !seen.has(b.gear)) { seen.add(b.gear); items.push({ gear: b.gear, label: "Ball", name: b.model, note: notesNow[b.gear] || "" }); }
+    if (!readOnly) for (const c of library) { if (tourMatch(c).length) continue; items.push({ club: c, label: clubLabel(c), name: clubMake(c), note: c.note && c.note !== "From the stats data" ? c.note : "" }); }
+    if (!items.length) { flash("Nothing to edit yet.", "info"); return; }
+    const rowsE = items.map((it) => { const nIn = el("input", { type: "text", class: "witb-e-name", value: it.name, "aria-label": `${it.label}: brand and model` }), tIn = el("input", { type: "text", class: "witb-e-note", value: it.note, placeholder: "Note (optional)", "aria-label": `${it.label}: note` });
+      it.nIn = nIn; it.tIn = tIn; return el("tr", {}, [el("td", {}, el("strong", {}, it.label)), el("td", {}, nIn), el("td", {}, tIn)]); });
+    const msg = el("p", { class: "muted small", role: "status" }), saveB = el("button", { type: "button", class: "btn" }, "Save");
+    const close = popup(`Edit ${dataName === "You" ? "your" : `${dataName}\u2019s`} equipment`, [el("p", { class: "muted small" }, "Fix a name's spelling (the stats data's names change at every event, and Callaway is told so it can be fixed in the data) or add a note to any club or ball."),
+      el("div", { class: "ip-tw" }, el("table", { class: "ip-t witb-e-t" }, [el("thead", {}, el("tr", {}, ["Club", "Brand and model", "Note"].map((h) => el("th", {}, h)))), el("tbody", {}, rowsE)])), el("div", { class: "pe-btns" }, [saveB]), msg], "What's in the Bag");
+    saveB.addEventListener("click", async () => {
+      const renames = [], noteChanges = {}; let libCh = false;
+      for (const it of items) { const nn = it.nIn.value.trim().replace(/\s+/g, " "), nt = it.tIn.value.trim();
+        if (it.gear) { if (nn && nn !== it.name) { renames.push({ from: it.gear, to: `${kindOf(it.gear)}|${nn}`, kind: kindOf(it.gear) });
+            for (const c of library) if (nrm(clubMake(c)) === nrm(it.name)) { const sp = nn.indexOf(" "); c.brand = sp > 0 ? nn.slice(0, sp) : nn; c.model = sp > 0 ? nn.slice(sp + 1) : ""; libCh = true; } } // (the list's clubs of that model follow)
+          if (nt !== it.note) noteChanges[it.gear] = nt; }
+        else if (it.club) { if (nn && nn !== it.name) { const sp = nn.indexOf(" "); it.club.brand = sp > 0 ? nn.slice(0, sp) : nn; it.club.model = sp > 0 ? nn.slice(sp + 1) : ""; libCh = true; } if (nt !== it.note) { it.club.note = nt; libCh = true; } } }
+      if (!renames.length && !Object.keys(noteChanges).length && !libCh) { close(); return; }
+      saveB.disabled = true; msg.textContent = "Saving\u2026";
+      try { if (libCh && !readOnly) { library = [...library]; await save(); }
+        if (renames.length || Object.keys(noteChanges).length) await pe.saveWitbEdits(dataKey, { renames, noteChanges }, dataName === "You" ? state.profile?.name || "" : dataName);
+        if (renames.length) { msg.textContent = "Saved. Reloading so every page uses the new names\u2026"; location.reload(); return; }
+        close(); draw(); flash("Saved.", "info"); }
+      catch (err) { console.error(err); saveB.disabled = false; msg.textContent = "Couldn't save the stats data's names or notes: only the admin and the player's team can change them."; }
+    });
+  });
+
   /* ---------- the list and the bag ---------- */
   const listBox = el("div");
   const bagBox = el("div");
@@ -281,6 +313,32 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
   const sameKind = (c) => (c.cat === "Driver" || c.cat === "Putter" ? c.cat : clubLabel(c)); // "the same club": any driver; otherwise the same club (7i, 56° wedge)
   const fmtAtt = (v) => (v == null ? "\u2014" : (Math.round(v * 10) / 10).toFixed(1));
   const sgCell = (v) => el("td", { class: "num c-sg", style: v == null ? "" : `color:${sgColor(v)}` }, v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(3)}`);
+  // (update 842) one table: every club in the list and every club in the stats data, each with its tour numbers (seasons,
+  // rounds and strokes gained per round, from the shot data) and its own (rounds entered and strokes gained per attempt).
+  // A club from the stats data that isn't in the list shows too (tap it to put it in the bag, or + to add it to the list).
+  const nrm = (x) => String(x || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const tourMatch = (c) => (tourT?.career || []).filter((t) => t.cat === c.cat && t.type === c.type && nrm(`${t.brand} ${t.model}`) === nrm(clubMake(c)));
+  const tAgg = (list) => { if (!list.length) return null; const n = list.reduce((a, t) => a + (t.rounds || 0), 0), yrs = [...new Set(list.flatMap((t) => [...(t.yrs || [])]))].sort();
+    return { rounds: Math.max(...list.map((t) => t.rounds || 0)), sg: n ? list.reduce((a, t) => a + (t.sg || 0) * (t.rounds || 0), 0) / n : null, seasons: yrs.length > 1 ? `${yrs[0]}-${String(yrs.at(-1)).slice(2)}` : yrs[0] || list[0].seasons || "", gear: list[0].gear || null, inBag: list.some((t) => t.inBag) }; };
+  const tourCells = (a) => [el("td", { class: "num c-seas" }, a?.seasons || "\u2014"), el("td", { class: "num c-trd" }, a ? String(a.rounds) : "\u2014"),
+    el("td", { class: "num c-tsg strong", style: a?.sg == null ? "" : `color:${sgColor(a.sg)}` }, a?.sg == null ? "\u2014" : `${a.sg >= 0 ? "+" : ""}${a.sg.toFixed(2)}`)];
+  const dataNote = (gear) => { const t = gear ? notesOfData()[gear] : null; return t ? el("span", { class: "club-note witb-dnote" }, t) : null; };
+  const notesOfData = () => (peMod && dataKey ? peMod.notesOf(dataKey) : {});
+  let peMod = null; import("../productEdits.js").then((m) => { peMod = m; if (loaded) draw(); }).catch(() => {});
+  const materialize = (t) => { if (readOnly || !t.cat || !t.type) return null; const have = library.find((y) => y.cat === t.cat && y.type === t.type && nrm(clubMake(y)) === nrm(`${t.brand} ${t.model}`)); if (have) return have;
+    const x = { id: newClubId(), cat: t.cat, type: t.type, brand: t.brand, model: t.model, note: "From the stats data" }; library = [...library, x]; return x; };
+  const virtRow = (t, inSet = false) => {
+    const parts = t.members || [t], canAdd = !readOnly && parts.every((m) => m.cat && m.type), addAll = () => parts.map(materialize).filter(Boolean); // (a set: each of its clubs)
+    const add = canAdd ? el("button", { type: "button", class: "link club-edit-btn", title: "Add it to the list", "aria-label": `Add ${t.label} to the list` }, "+ Add") : null;
+    add?.addEventListener("click", (e) => { e.stopPropagation(); if (addAll().length) { draw(); save(); } });
+    const tr = el("tr", { class: `club-row witb-virt${inSet ? " in-set" : ""}`, ...(!canAdd ? {} : { tabindex: "0", role: "button", title: "From the stats data. Tap to put it in the bag." }) }, [
+      el("td", { class: "c-club" }, [el("strong", {}, t.label), t.inBag ? el("span", { class: "tag type-player bag-tag witb-ontour" }, "On tour now") : null, el("span", { class: "mobile-make" }, `${t.brand} ${t.model}`.trim()), dataNote(t.gear)]),
+      el("td", { class: "c-make" }, `${t.brand} ${t.model}`.trim() || "\u2014"), ...tourCells(tAgg([t])), el("td", { class: "num c-rounds" }, "\u2014"), el("td", { class: "num c-sg" }, "\u2014"), el("td", { class: "actions" }, add)]);
+    if (canAdd) { const go = () => { const xs = addAll(); if (xs.length === 1) toggle(xs[0]); else if (xs.length) { inBag = [...new Set([...inBag, ...xs.map((x) => x.id)])].slice(0, MAX_CLUBS); draw(); save(); } }; tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); }
+    return tr; };
+  const virtSets = (list) => { const by = new Map(); for (const t of list) { const k = nrm(`${t.brand} ${t.model}`); (by.get(k) || by.set(k, []).get(k)).push(t); }
+    const out = []; for (const xs of by.values()) { if (xs.length < 2) { out.push(...xs); continue; } const a = tAgg(xs); out.push({ ...xs[0], label: `${xs[0].label}\u2013${xs.at(-1).label} set`, rounds: a.rounds, sg: a.sg, yrs: new Set(xs.flatMap((x) => [...(x.yrs || [])])), inBag: a.inBag, cat: null, members: xs }); }
+    return out; };
   function clubRow(c, use, star, inSet = false) {
     const on = inBag.includes(c.id);
     if (editing === c.id) return editRow(c);
@@ -300,9 +358,9 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
       el("td", { class: "c-club" }, [el("strong", {}, clubLabel(c)), on ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null,
         make ? el("span", { class: "mobile-make" }, [make, starEl ? " " : null, starEl ? starEl.cloneNode(true) : null]) : null, // brand / model under the name on phones
         c.note ? el("span", { class: "club-note" }, c.note) : null]),
-      el("td", { class: "c-make" }, make ? [make, starEl ? " " : null, starEl] : el("span", { class: "muted" }, "\u2014")),
+      el("td", { class: "c-make" }, make ? [make, starEl ? " " : null, starEl, dataNote(tAgg(tourMatch(c))?.gear)] : el("span", { class: "muted" }, "\u2014")),
+      ...tourCells(tAgg(tourMatch(c))), /* (update 842) */
       el("td", { class: "num c-rounds" }, String(use.used)),
-      el("td", { class: "num c-att" }, fmtAtt(use.perRound)),
       sgCell(use.avg),
       el("td", { class: "actions" }, [edit, del]),
     ]);
@@ -324,11 +382,15 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
       if (!rated.some((c) => c !== best && Math.round(use.get(c.id).avg * 1000) === Math.round(use.get(best.id).avg * 1000))) starred.add(best.id);
     }
     const rows = [];
+    // (update 842) the stats data's clubs not in the list (by club and model)
+    const virt = (tourT?.career || []).filter((t) => !library.some((c) => c.cat === t.cat && c.type === t.type && nrm(clubMake(c)) === nrm(`${t.brand} ${t.model}`)));
     for (const cat of CLUB_CATS) {
       const list = sorted(library.filter((c) => c.cat === cat));
-      if (!list.length) continue;
-      rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "6", scope: "colgroup" }, [GROUP_NAMES[cat] || cat, el("span", { class: "club-group-n" }, ` ${list.length}`)])));
-      if (cat !== "Iron") { for (const c of list) rows.push(clubRow(c, use.get(c.id), starred.has(c.id))); continue; }
+      const vl = virt.filter((t) => t.cat === cat), vRows = (cat === "Iron" ? virtSets(vl) : vl).sort((a, b) => (b.sg ?? -99) - (a.sg ?? -99)); // (update 842)
+      if (!list.length && !vRows.length) continue;
+      rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "8", scope: "colgroup" }, [GROUP_NAMES[cat] || cat, el("span", { class: "club-group-n" }, ` ${list.length + vRows.length}`)])));
+      const vPush = () => { for (const t of vRows) rows.push(virtRow(t)); };
+      if (cat !== "Iron") { for (const c of list) rows.push(clubRow(c, use.get(c.id), starred.has(c.id))); vPush(); continue; }
       // irons: a set is two or more irons of the same brand and model
       const bySet = new Map();
       for (const c of list) { const k = clubMake(c).toLowerCase(); if (!bySet.has(k)) bySet.set(k, []); bySet.get(k).push(c); }
@@ -344,9 +406,9 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
           title: open ? "Close the set" : "Show the clubs in this set" }, [
           el("td", { class: "c-club" }, [el("span", { class: "set-caret", "aria-hidden": "true" }, open ? "\u25BE" : "\u25B8"), el("strong", {}, `${range} set`),
             el("span", { class: "mobile-make" }, clubMake(set[0])), el("span", { class: "club-note" }, `${set.length} clubs${nBag ? ` \u00b7 ${nBag} in bag` : ""}`)]),
-          el("td", { class: "c-make" }, clubMake(set[0])),
+          el("td", { class: "c-make" }, [clubMake(set[0]), dataNote(tAgg(set.flatMap(tourMatch))?.gear)]),
+          ...tourCells(tAgg(set.flatMap(tourMatch))), /* (update 842) */
           el("td", { class: "num c-rounds" }, String(u.used)),
-          el("td", { class: "num c-att" }, fmtAtt(u.perRound)),
           sgCell(u.avg),
           el("td", { class: "actions" }, readOnly ? null : (() => {
             // the whole set at once (update 141)
@@ -366,10 +428,19 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
         rows.push(tr);
         if (open) for (const x of set) rows.push(clubRow(x, use.get(x.id), starred.has(x.id), true));
       }
+      vPush();
     }
-    mount(listBox, library.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain club-table" }, [
-      el("thead", {}, el("tr", {}, [["Club", ""], ["Brand / model", "c-make"], ["Rounds", "num c-rounds"], ["Attempts / Round", "num c-att"], ["SG / Attempt", "num c-sg"], ["", ""]].map(([h, cls]) =>
-        el("th", { class: cls }, h === "Attempts / Round" ? [el("span", { class: "long" }, h), el("span", { class: "short" }, "Att / Rd")] : h === "SG / Attempt" ? [el("span", { class: "long" }, h), el("span", { class: "short" }, "SG / Att")] : h)))),
+    // (update 842) the stats data's other clubs (kinds the list has no place for: Non-Drivers …) and the balls
+    { const KIND_T = { Driver: "Drivers", "Non-Driver": "Non-Drivers", "Fairway Wood": "Fairway woods", Hybrid: "Hybrids", Iron: "Irons", Wedge: "Wedges", Putter: "Putters" }, other = new Map();
+      for (const t of virt.filter((t0) => !CLUB_CATS.includes(t0.cat))) { const g = KIND_T[t.kind] || "Other clubs"; (other.get(g) || other.set(g, []).get(g)).push(t); }
+      for (const [g, xs] of other) { rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "8", scope: "colgroup" }, [g, el("span", { class: "club-group-n" }, ` ${xs.length}`)]))); for (const t of xs.sort((a, b) => (b.sg ?? -99) - (a.sg ?? -99))) rows.push(virtRow(t)); }
+      const balls = tourT?.balls || [];
+      if (balls.length) { rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "8", scope: "colgroup" }, ["Balls", el("span", { class: "club-group-n" }, ` ${balls.length}`)])));
+        for (const b of balls) rows.push(el("tr", { class: "club-row witb-virt" }, [el("td", { class: "c-club" }, [el("strong", {}, "Ball"), b.inBag ? el("span", { class: "tag type-player bag-tag witb-ontour" }, "On tour now") : null, el("span", { class: "mobile-make" }, b.model)]),
+          el("td", { class: "c-make" }, [b.model, dataNote(b.gear)]), el("td", { class: "num c-seas" }, b.seasons || "\u2014"), el("td", { class: "num c-trd" }, String(b.rounds)), el("td", { class: "num c-tsg" }, "\u2014"), el("td", { class: "num c-rounds" }, "\u2014"), el("td", { class: "num c-sg" }, "\u2014"), el("td", { class: "actions" }, null)])); } }
+    mount(listBox, library.length || tourT?.career?.length || tourT?.balls?.length ? el("div", { class: "table-scroll" }, el("table", { class: "plain club-table witb-merged" }, [
+      el("thead", {}, el("tr", {}, [["Club", ""], ["Brand / model", "c-make"], ["Seasons", "num c-seas", "On tour"], ["Tour rds", "num c-trd", "Rounds on tour (stats data)"], ["Tour SG / rd", "num c-tsg", "Strokes gained per round on tour, in its part of the game (stats data)"], ["Own rds", "num c-rounds", "Rounds entered in Data Entry"], ["Own SG / att", "num c-sg", "Strokes gained per attempt in the rounds entered"], ["", ""]].map(([h, cls, t]) =>
+        el("th", { class: cls, title: t || null }, h)))), /* (update 842: the stats data's numbers beside your own) */
       el("tbody", {}, rows),
     ])) : el("p", { class: "empty" }, "No clubs yet. Add the clubs you play above."));
     const bag = sorted(inBag.map((id) => library.find((c) => c.id === id)).filter(Boolean));
@@ -399,16 +470,16 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
     const skipped = T.career.filter((c) => !c.cat || !c.type).length;
     flash(`${add.length} clubs added to the list from the stats data, ${bagNow.length} of them in the bag${skipped ? ` (${skipped} couldn\u2019t be matched to a club)` : ""}.`, "info");
     return true; };
-  const tourBox = tourCard(dataKey, dataName, (T) => { tourT = T; if (T && !readOnly) { const b = el("button", { type: "button", class: "btn ghost witb-fill" }, "Add the career to the list (and today\u2019s clubs to the bag)"); b.addEventListener("click", () => fillFrom(T, false)); tourBox.append(b); }
+  const tourBox = tourCard(dataKey, dataName, (T) => { tourT = T; draw(); /* (update 842: into the one table) */ if (T && !readOnly) { const b = el("button", { type: "button", class: "btn ghost witb-fill" }, "Add the career to the list (and today\u2019s clubs to the bag)"); b.addEventListener("click", () => fillFrom(T, false)); tourBox.append(b); }
     if (T && !filled && loaded && !library.length) { filled = true; fillFrom(T, true); } });
 
   mount(main, [
     readOnly ? el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), picker, el("p", { class: "muted" }, `Every club ${viewing} has played, and what\u2019s in their bag. Only ${viewing} and their caddie can change it.`)])
       : caddieFor ? el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), picker, el("p", { class: "muted" }, [`Every club ${viewing} has played. As their caddie you can change it: tap a club to put it in the bag or take it out. `, status])])
       : el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), picker, el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
-    tourBox,
+    /* (update 842: the stats data's clubs are in All clubs now) */
     readOnly ? null : el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm, setToggle]),
-    el("section", { class: `panel bag-panel${readOnly ? " witb-readonly" : ""}` }, [el("h3", {}, readOnly ? "All their clubs" : "All your clubs"), listBox]),
+    el("section", { class: `panel bag-panel${readOnly ? " witb-readonly" : ""}` }, [el("div", { class: "witb-allhead" }, [el("h3", {}, "All clubs"), editBtn]), el("p", { class: "muted small" }, "Every club on record: the list, and every club and ball in the stats data (marked On tour now when it's in their latest events). Tour numbers come from the stats data; own numbers from the rounds entered."), listBox]),
     el("section", { class: "panel bag-panel your-bag" }, [bagTitle, bagBox]),
   ]);
   draw();

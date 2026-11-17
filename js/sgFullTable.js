@@ -1,5 +1,6 @@
 // (sgDashboard split) The full stats table (and, inside it, Hypothetical rankings / improvements).
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
+import { lastName } from "./current.js"; // (update 842)
 import { CATEGORIES, LEVELS, PLAN_ADDED, applyFilters, distLead, drillFor, el, fmtSG, fmtStat, getState, infoTip, isMine, mount, planEditor, practiceOpen, sgn2, statBlocksCmp, statDef } from "./sgShared.js";
 import { formN } from "./defs.js"; // (update 814: the shared form window)
 
@@ -248,7 +249,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
           return tPeak ? [pkTh, restTh] : [restTh, pkTh]; })(),
         el("th", { class: "num", title: `${TN.Kept} less ${TN.Cut.toLowerCase()}: green where the ${TN.kept} were better` }, "Diff"),
         el("th", { class: "num", title: "Where the kept rounds\u2019 value would rank if it were the player\u2019s average for the selected time frame" }, tPeak ? "Peak Rank" : `${S.NM().Kept} Rank`)]
-        : [el("th", {}, ""), el("th", { class: "num", title: S.me?.label || "" }, String(S.me?.label || "").trim().split(/\s+/)[0] || "Player"), // (update 633) just their first name
+        : [el("th", {}, ""), el("th", { class: "num", title: S.me?.label || "" }, lastName(String(S.me?.label || "").trim()) || "Player"), // (update 633) just one name; (update 842) their last name, not their first
         el("th", { class: "num", title: S.eventMode ? `Last ${tn || 5} events against the ${tn || 5} before` : `Last ${tn || 20} rounds against the ${tn || 20} before` }, "Trend"),
         el("th", { class: "num" }, "Rank")])),
       el("tbody", {}, tr),

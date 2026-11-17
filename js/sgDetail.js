@@ -321,12 +321,23 @@ export function productEditPanel(S, { kind, g, order, nameOf, colorOf, edits }) 
   const undo = mine.length ? el("button", { type: "button", class: "link danger small" }, "Undo the change here (back to the data)") : null;
   undo?.addEventListener("click", async () => { undo.disabled = true; status.textContent = "Saving\u2026"; try { const pe = await import("./productEdits.js"); for (const e of mine) await pe.removeProductEdit(S.me.key, e.id, S.me.label || S.me.name || ""); status.textContent = "Done. Reloading\u2026"; location.reload(); } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that."; undo.disabled = false; } });
   draw();
+  // (update 842) or fix a product's spelling everywhere (every event on record), not just at this tournament
+  const allP = [...new Set([...order, ...here])].filter(Boolean);
+  const rnSel = el("select", { class: "pe-new", "aria-label": "Product to rename" }, allP.map((p) => el("option", { value: p }, nameOf(p))));
+  const rnIn = el("input", { type: "text", class: "pe-new", placeholder: "Its name, spelled right (brand and model)", "aria-label": "Its name, spelled right" });
+  const rnBtn = el("button", { type: "button", class: "btn ghost", disabled: true }, "Rename everywhere");
+  const rnFill = () => { rnIn.value = nameOf(rnSel.value); rnBtn.disabled = true; }; rnSel.addEventListener("change", rnFill); rnFill();
+  rnIn.addEventListener("input", () => { rnBtn.disabled = !rnIn.value.trim() || rnIn.value.trim() === nameOf(rnSel.value); });
+  rnBtn.addEventListener("click", async () => { const from = rnSel.value, nm = rnIn.value.trim(); if (!from || !nm) return; rnBtn.disabled = true; status.textContent = "Saving\u2026";
+    try { const pe = await import("./productEdits.js"), kd = from.split("|")[0]; await pe.saveWitbEdits(S.me.key, { renames: [{ from, to: `${kd}|${nm}`, kind: kind === "Balls" ? "Ball" : kd }] }, S.me.label || S.me.name || ""); status.textContent = "Saved. Reloading so every page uses it\u2026"; location.reload(); }
+    catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that. Only the admin and the player\u2019s team can change products."; rnBtn.disabled = false; } });
+  const rename = allP.length ? el("details", { class: "pe-rename" }, [el("summary", {}, "Fix a product\u2019s spelling everywhere"), el("div", { class: "pe-rn" }, [rnSel, rnIn, rnBtn])]) : null;
   const parts = [el("div", { class: "pe-head" }, [el("strong", {}, g.label), mine.length ? el("span", { class: "muted small" }, " \u00b7 changed by hand") : null]),
     el("p", { class: "pe-lab" }, here.length > 1 ? "Replace" : "Now"),
     here.length > 1 ? null : el("p", { class: "pe-now" }, here.length ? nameOf(here[0]) : "No product recorded"),
     here.length > 1 ? fromRow : null,
     el("p", { class: "pe-lab" }, "Change it to"), toRow, newIn,
-    el("div", { class: "pe-btns" }, [save, cancel, undo]), status];
+    el("div", { class: "pe-btns" }, [save, cancel, undo]), rename, status];
   return el("div", { class: "pe-panel" }, parts.filter(Boolean));
 }
 // (update 710) an event's name short enough for under a bar: sponsors' "presented by …" off, the long words shortened, then cut

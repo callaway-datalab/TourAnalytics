@@ -370,7 +370,7 @@ export const productEditsOf = (key) => PEDITS.get(key) || [];
 export function applyProductEdits(key, rounds) {
   const eds = PEDITS.get(key); if (!eds?.length || !rounds?.length) return;
   const yOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
-  const byEv = new Map(); for (const e of eds) { const k = `${e.event}|${e.year}`; (byEv.get(k) || byEv.set(k, []).get(k)).push(e); }
+  const byEv = new Map(); for (const e of eds) { if (e.type === "rename") continue; const k = `${e.event}|${e.year}`; (byEv.get(k) || byEv.set(k, []).get(k)).push(e); }
   const rs = new Map(); for (const rd of rounds) { const k = `${rd.event}|${yOf(rd)}`; if (byEv.has(k)) (rs.get(k) || rs.set(k, []).get(k)).push(rd); }
   for (const [k, list] of rs) for (const e of byEv.get(k)) {
     const ball = e.pk === "Balls", kinds = e.kinds || [];
@@ -387,6 +387,11 @@ export function applyProductEdits(key, rounds) {
     };
     for (const rd of list) { for (const x of rd.shots) if (match(x, false)) put(x); for (const o of rd.obs || []) if (val(o) != null && match(o, true)) put(o); }
   }
+  // (update 842) a spelling fix: one product renamed at every event ({ type: "rename", from, to }: "Driver|Callaway …" or
+  // "Ball|…"), after the tournament changes above, in the order saved
+  for (const e of eds) { if (e.type !== "rename" || !e.from || !e.to) continue; const ball = /^Ball\|/.test(e.from);
+    for (const rd of rounds) for (const x of [...(rd.shots || []), ...(rd.obs || [])]) {
+      if (ball) { if (x.ball && `Ball|${x.ball}` === e.from) x.ball = String(e.to).replace(/^Ball\|/, ""); } else if (x.gear === e.from) x.gear = e.to; } }
 }
 /**
  * (update 708) A club model left empty in the data ("None"): the model of that kind of club (Driver, Iron …) at the same

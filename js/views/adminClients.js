@@ -45,7 +45,7 @@ export async function render(main, { flash }) {
   /* ============================ At a glance ============================ */
   const statsBox = el("dl", { class: "facts glance" }, el("p", { class: "muted ta-loading" }, "Loading\u2026"));
   // Weekly Sign-ins / Weekly Users open a list (who, and when) under the boxes; tap again to close it.
-  let weekly = [], openList = null;
+  let weekly = [], openList = null, signSince = null, resetInfo = null; // (update 842: since the usage reset)
   const weekBox = el("div", { class: "week-list", hidden: true });
   // (update 255) AI use (config/aiSpend: everything; aiCalls: each answer, who and what it cost) and reports by player
   let ai = null, runs = null, whoP = null;
@@ -179,7 +179,8 @@ export async function render(main, { flash }) {
     }
   };
   const loadStats = () => Promise.all([adminStats(), ai ? Promise.resolve(ai) : aiUsage().catch(() => null)]).then(([stats, aiNow]) => {
-    weekly = stats.weekly || [];
+    weekly = stats.weekly || []; resetInfo = stats.reset || null;
+    if (String(signSince ? [...signSince] : "") !== String(stats.signSince ? [...stats.signSince] : "")) { signSince = stats.signSince || null; try { renderInvites(); } catch { /* (drawn when the users come in) */ } }
     if (aiNow) ai = aiNow;
     runs = null; // (re-read when the list is opened again: new reports since)
     const aiQ = ai ? ai.calls.filter((c) => c.kind === "ask" || c.kind === "callie").length : null; // (update 258: and Callie's) // (counted from update 255: earlier calls have no name or kind)
@@ -191,7 +192,7 @@ export async function render(main, { flash }) {
       ["Reports generated", stats.reports ?? 0, "Performance reports made, everyone combined (counted from update 169). Tap to see them by player.", "reports"],
       // (update 255) Ask AI: questions asked and what the AI has cost, everyone combined; tap for each person
       ["AI Questions", aiQ ?? "\u2014", "Questions answered by the AI (Cal, and Compare's plans), everyone combined (counted from update 255). Tap to see who asked.", "aiq"],
-      ["AI Cost", ai?.spend ? money(Number(ai.spend.usd || 0)) : "$0.00", `Everything the AI has cost so far${ai?.spend ? `, of the ${money(Number(ai.spend.cap || 1))} cap` : ""}. Tap to see it by person.`, "aic"],
+      ["AI Cost", ai?.spend ? money(Number(ai.spend.usd || 0)) : "$0.00", resetInfo && ai?.spend ? `What the AI has cost since the reset. The cap counts every dollar from the start: ${money(Number(ai.spend.usdTotal || 0))} of ${money(Number(ai.spend.cap || 1))}. Tap to see it by person.` : `Everything the AI has cost so far${ai?.spend ? `, of the ${money(Number(ai.spend.cap || 1))} cap` : ""}. Tap to see it by person.`, "aic"],
     ].map(([label, value, title, list]) => {
       const shown = typeof value === "number" ? num(value) : String(value);
       if (!list) return el("div", { title: title || "" }, [el("dt", {}, label), el("dd", {}, shown)]);
@@ -254,6 +255,11 @@ export async function render(main, { flash }) {
     const since = back == null ? null : dayOf(new Date(Date.now() - back * 864e5));
     let docs = [];
     try { docs = usageCache.get(usageSpan) || await loadUsage(since); usageCache.set(usageSpan, docs); } catch (err) { mount(usageBox, el("p", { class: "muted small" }, `Couldn\u2019t load usage (${err?.code || "error"}). Republish firestore.rules from this update.`)); return; }
+    // (update 842) since the usage reset: nothing before its day, and that day's records less what they held at the reset
+    { const { metricsReset } = await import("../store.js"), R = await metricsReset();
+      if (R) docs = docs.filter((d) => d.day >= R.day).map((d) => { if (d.day !== R.day) return d; const b = R.baseline[`${d.uid}_${d.day}`]; if (!b) return d;
+        const sub = (a = {}, c = {}) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k, Math.max(0, (v || 0) - (c[k] || 0))]).filter(([, v]) => v > 0));
+        return { ...d, seconds: Math.max(0, (d.seconds || 0) - (b.seconds || 0)), pages: sub(d.pages, b.pages), pageSec: sub(d.pageSec, b.pageSec), paths: sub(d.paths, b.paths) }; }).filter((d) => d.seconds > 0 || Object.keys(d.pages || {}).length); }
     const { nameOf } = await who();
     const people = new Map(), pages = new Map(), paths = new Map(), hows = new Map(); // (update 816: how people move)
     let total = 0, views = 0;
@@ -758,7 +764,7 @@ export async function render(main, { flash }) {
         el("td", {}, teamOf),
         el("td", {}, status),
         el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, caToggle(inv, user)), el("td", { class: "cal-cell" }, pcToggle(inv, user)), el("td", { class: "cal-cell" }, coachToggle(inv, user)),
-        el("td", { class: "num" }, user ? num(user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")),
+        el("td", { class: "num" }, user ? num(signSince ? signSince.get(user.uid) || 0 : user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")), /* (update 842: since the reset) */
         el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
         el("td", { class: "actions" }, codeActions(inv, user, grants)),
       ]);
@@ -800,11 +806,23 @@ export async function render(main, { flash }) {
     mount(knownIds, [...labels.values()].map((label) => el("option", { value: label })));
   }
 
+  // (update 842) Reset usage metrics: every usage figure here (sign-ins, reports, AI questions and cost, time on the site,
+  // pages, how people move, each person's sign-ins) counts from now; nothing is deleted, and the AI cap still counts it all
+  const resetNote = el("span", { class: "muted small glance-reset-note" }, "");
+  const resetBtn = el("button", { type: "button", class: "btn ghost small" }, "Reset usage metrics");
+  import("../store.js").then((m) => m.metricsReset()).then((R) => { if (R) resetNote.textContent = `Counting from ${formatWhen(R.at)}`; }).catch(() => {});
+  resetBtn.addEventListener("click", async () => {
+    if (!confirmAction("Reset every usage metric on this page (sign-ins, reports generated, AI questions and cost, time on the site, pages and each person's sign-ins) to zero, counting from now? Nothing is deleted. The AI spending cap still counts every dollar.")) return;
+    resetBtn.disabled = true; resetBtn.textContent = "Resetting…";
+    try { const m = await import("../store.js"), R = await m.resetMetrics(); resetNote.textContent = R ? `Counting from ${formatWhen(R.at)}` : "Reset"; usageCache.clear(); ai = null; runs = null; await loadStats(); await loadUsageBox(); }
+    catch (err) { console.error(err); resetNote.textContent = "Couldn't reset (check the config rule in firestore.rules)."; }
+    finally { resetBtn.disabled = false; resetBtn.textContent = "Reset usage metrics"; }
+  });
   /* ============================== Page ============================== */
   main.classList.add("ua-page"); // (update 290: smaller tables here)
   mount(main, [
     subNav([["#/admin/clients", "Users"], ["#/admin/datasets", "Upload Data"]], "#/admin/clients"), // (Upload Data lives here)
-    el("section", { class: "glance-section" }, [el("h2", {}, "At a glance"), statsBox, weekBox, usageBox, storageBox]),
+    el("section", { class: "glance-section" }, [el("div", { class: "glance-head" }, [el("h2", {}, "At a glance"), resetBtn, resetNote]), statsBox, weekBox, usageBox, storageBox]),
     el("section", {}, [
       el("h2", {}, "Access codes"),
       el("div", { class: "code-tools" }, [

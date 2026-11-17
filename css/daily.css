@@ -802,3 +802,23 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
 }
 .td-ftab td:first-child, .td-ftab th:first-child { text-align: left !important; }
 .td .td-rk th, .td .td-rk td { text-align: right !important; } .td .td-rk th:first-child, .td .td-rk td:first-child, .td .td-bw th:nth-child(2), .td .td-bw td:nth-child(2) { text-align: left !important; }
+/* (update 842) SG Trends by Product: fix a product's spelling everywhere */
+.pe-rename summary { cursor: pointer; font-size: 0.85rem; color: var(--gold, #d4b483); }
+.pe-rn { display: grid; gap: 6px; margin-top: 8px; max-width: 26rem; }
+/* (update 842) What's in the Bag: one table (tour numbers beside your own), the stats data's clubs not in the list, Edit */
+.witb-allhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.witb-allhead h3 { margin: 0; }
+.witb-merged tr.witb-virt td { color: color-mix(in srgb, currentColor 78%, transparent); }
+.witb-merged tr.witb-virt td .c-club strong, .witb-merged tr.witb-virt strong { font-weight: 600; }
+.witb-ontour { background: color-mix(in srgb, #30d158 18%, transparent) !important; color: #30d158 !important; }
+.witb-dnote { display: block; font-style: italic; }
+.witb-e-t input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--ip-rule, #3a3a3c); background: transparent; color: inherit; font: inherit; }
+.witb-e-t td { vertical-align: middle; } .witb-e-t td:first-child { white-space: nowrap; }
+@media (max-width: 640px) { .witb-merged .c-seas, .witb-merged .c-rounds { display: none; } }
+/* (update 842) User Access: Reset usage metrics beside At a glance */
+.glance-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; } .glance-head h2 { margin-right: auto; }
+/* (update 842) Ranks and Best Week: one part of the game open, the rest greyed out */
+.td .td-rk tbody tr { transition: opacity 0.15s; }
+.td .td-rk tbody.td-rk-focus tr:not(.td-rk-on) { opacity: 0.32; }
+.td .td-rk tbody.td-rk-focus tr:not(.td-rk-on):hover { opacity: 0.6; }
+.td .td-bw tr.td-rk-sub { cursor: pointer; }
