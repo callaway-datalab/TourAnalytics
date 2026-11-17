@@ -822,3 +822,9 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
 .td .td-rk tbody.td-rk-focus tr:not(.td-rk-on) { opacity: 0.32; }
 .td .td-rk tbody.td-rk-focus tr:not(.td-rk-on):hover { opacity: 0.6; }
 .td .td-bw tr.td-rk-sub { cursor: pointer; }
+/* (update 843) the top bar: ☰ as close to Cal as Cal is to the player chip (its icon to the left of a narrower button), and on
+   phones "Tour Analytics" a touch smaller so it all fits */
+.rail .rail-foot .account { width: auto !important; min-width: 0 !important; }
+.rail .rail-foot .account-btn.hdr-icon { width: 1.75rem !important; min-width: 0 !important; justify-content: flex-start !important; padding: 0 !important; }
+@media (max-width: 640px) { .rail > .brand { font-size: 0.72rem !important; letter-spacing: 0.16em !important; gap: 0.45rem !important; } }
+@media (max-width: 380px) { .rail > .brand { font-size: 0.66rem !important; letter-spacing: 0.12em !important; } }
