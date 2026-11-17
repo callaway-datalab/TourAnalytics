@@ -640,7 +640,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const BH = 7, BG = 2, trackH = nY * BH + (nY - 1) * BG;
     for (const c of a.byCat) {
       need(cmpRowH);
-      const per = CMP.map((s0) => catOf(s0, c.cat)), top = y + (cmpRowH - trackH) / 2 - 1;
+      const per = CMP.map((s0) => catOf(s0, c.cat)), top = Math.round(y + (cmpRowH - trackH) / 2 - 1); // (update 840: on whole points, so every bar is drawn the same thickness)
       d.text(c.name, M, top + trackH / 2 - 1, { size: 11.5, bold: true, color: P.ink });
       const k0 = per[0]?.rank, k1 = per.at(-1)?.rank;
       if (k0 || k1) { // (update 695: each season's rank in its own rank colour)
@@ -649,7 +649,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       d.roundRect(gx2, top - 2, gw2, trackH + 4, 5, { fill: P.track });
       per.forEach((q, i) => {
         const by = top + i * (BH + BG), v = q?.value;
-        if (v != null) { const w = Math.max(3, Math.abs(Math.max(-1, Math.min(1, v / mx)) * half2)); d.roundRect(v >= 0 ? zx2 : zx2 - w, by, w, BH, 2.5, { fill: ycol(i) }); d.rect(v >= 0 ? zx2 : zx2 - Math.min(3, w), by, Math.min(3, w), BH, { fill: ycol(i) }); }
+        if (v != null) { const w = Math.max(3, Math.abs(Math.max(-1, Math.min(1, v / mx)) * half2)); d.bar(v >= 0 ? zx2 : zx2 - w, by, w, BH, 2.5, v >= 0 ? "right" : "left", { fill: ycol(i) }); } // (update 840: one shape)
         d.text(String(CMP[i].label), vx2, by + BH - 0.5, { size: 7.5, bold: true, color: ycol(i) });
         d.text(fmtSG(v), vx2 + vW, by + BH - 0.5, { size: 8.5, bold: true, color: tone(v), align: "right" });
       });
@@ -1197,7 +1197,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         const bh = Math.max(4, rh * 0.48), x1 = X(g.perRound);
         // (update 651) square at zero, rounded only at the far end
         if (Math.abs(x1 - mid) >= 0.6) { const len = Math.abs(x1 - mid), rr = Math.min(2, bh / 3, len / 2), fill = g.perRound >= 0 ? P.up : P.down;
-          d.roundRect(Math.min(mid, x1), cy - bh / 2, len, bh, rr, { fill }); d.rect(g.perRound >= 0 ? mid : x1 + len - Math.min(len, rr + 0.5), cy - bh / 2, Math.min(len, rr + 0.5), bh, { fill }); }
+          d.bar(Math.min(mid, x1), cy - bh / 2, len, bh, rr, g.perRound >= 0 ? "right" : "left", { fill }); } // (update 840: one shape)
         if (g.top10 != null) { const xt = X(g.top10); d.line(xt, y + 1, xt, y + rh - 1, { color: "#8e8e93", width: 0.9, dash: [1.6, 1.2] }); }
         d.text(sg(g.perRound), bx0 + bw + 6 + valW, cy + fz * 0.38, { size: fz + 0.8, bold: true, color: tone(g.perRound), align: "right" });
         if (g.rank) { const T = `${g.rank} / ${g.of}`, ps = Math.max(5.2, fz - 1.8), pw = textWidth(T, ps, true) + ps * 1.8, ph = ps * 1.85, [fill, inkC] = rankColors(g.rank);

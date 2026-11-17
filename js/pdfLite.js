@@ -106,6 +106,7 @@ export class PdfDoc {
   }
   /** A rectangle with rounded corners (radius r). */
   roundRect(x, y, w, h, r, { fill = null, stroke = null, lineWidth = 1 } = {}) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2)); // (update 840: never more rounding than the shape has room for)
     const k = 0.5523 * r, Y = (v) => num(this.H - v);
     if (fill) this.ops.push(`${rgb(fill).map(num).join(" ")} rg`);
     if (stroke) this.ops.push(`${rgb(stroke).map(num).join(" ")} RG ${num(lineWidth)} w [] 0 d`);
@@ -113,6 +114,21 @@ export class PdfDoc {
       `${num(x + w)} ${Y(y + h - r)} l`, `${num(x + w)} ${Y(y + h - r + k)} ${num(x + w - r + k)} ${Y(y + h)} ${num(x + w - r)} ${Y(y + h)} c`,
       `${num(x + r)} ${Y(y + h)} l`, `${num(x + r - k)} ${Y(y + h)} ${num(x)} ${Y(y + h - r + k)} ${num(x)} ${Y(y + h - r)} c`,
       `${num(x)} ${Y(y + r)} l`, `${num(x)} ${Y(y + r - k)} ${num(x + r - k)} ${Y(y)} ${num(x + r)} ${Y(y)} c`, `h ${fill && stroke ? "B" : fill ? "f" : "S"}`].join(" "));
+    return this;
+  }
+  /** (update 840) A bar: square at one end (the zero line) and rounded at the other ("right" or "left"), drawn as one shape,
+   *  so a short bar never shows a square piece and a round piece on top of each other */
+  bar(x, y, w, h, r, end = "right", { fill = "#000000" } = {}) {
+    if (!(w > 0) || !(h > 0)) return this;
+    r = Math.max(0, Math.min(r, h / 2, w));
+    if (r < 0.3) return this.rect(x, y, w, h, { fill });
+    const k = 0.5523 * r, Y = (v) => num(this.H - v);
+    this.ops.push(`${rgb(fill).map(num).join(" ")} rg`);
+    this.ops.push((end === "left"
+      ? [`${num(x + w)} ${Y(y)} m`, `${num(x + r)} ${Y(y)} l`, `${num(x + r - k)} ${Y(y)} ${num(x)} ${Y(y + r - k)} ${num(x)} ${Y(y + r)} c`, `${num(x)} ${Y(y + h - r)} l`,
+        `${num(x)} ${Y(y + h - r + k)} ${num(x + r - k)} ${Y(y + h)} ${num(x + r)} ${Y(y + h)} c`, `${num(x + w)} ${Y(y + h)} l`, "h f"]
+      : [`${num(x)} ${Y(y)} m`, `${num(x + w - r)} ${Y(y)} l`, `${num(x + w - r + k)} ${Y(y)} ${num(x + w)} ${Y(y + r - k)} ${num(x + w)} ${Y(y + r)} c`, `${num(x + w)} ${Y(y + h - r)} l`,
+        `${num(x + w)} ${Y(y + h - r + k)} ${num(x + w - r + k)} ${Y(y + h)} ${num(x + w - r)} ${Y(y + h)} c`, `${num(x)} ${Y(y + h)} l`, "h f"]).join(" "));
     return this;
   }
   /** A smooth colour blend across a rectangle (drawn as fine bands): dir "h" (left → right) or "v" (top → bottom). */
