@@ -328,7 +328,14 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   // (update 751) one part of the game picked: its distance ranges instead (approach and putting: a radar of every range;
   // off the tee and around the green: bars), the latest year against the year before, strokes gained a round
   const distBox = (() => {
-    if (!on || on.size !== 1) return null; const c0 = [...on][0], sp = yearSplit(everyYear || []); if (!sp) return null;
+    // (update 811) a toggle: this season against last, or the last 12 rounds against the 12 before (the DP World Tour: 3
+    // events against 3)
+    const mode = S.st.radarMode === "form" ? "form" : "season", evM = !!S.eventMode, nU = evM ? 3 : 12;
+    const formSp = () => { const rs = [...(everyYear || [])].filter((rd) => evM || !rd.eventLevel).sort(byDate); let units;
+      if (evM) { const m = new Map(); for (const rd of rs) { const k = `${rd.event}|${String(rd.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(rd); } units = [...m.values()]; } else units = rs.map((rd) => [rd]);
+      if (units.length < nU + 1) return null; return { now: units.slice(-nU).flat(), before: units.slice(-2 * nU, -nU).flat(), nowLabel: evM ? "Last 3 events" : "Last 12", beforeLabel: evM ? "3 events before" : "12 before" }; };
+    if (!on || on.size !== 1) return null; const c0 = [...on][0], sp = mode === "form" ? formSp() : yearSplit(everyYear || []); if (!sp) return null;
+    const modeT = el("div", { class: "tr-rounds fx-rmode", role: "group", "aria-label": "Compare" }, [["season", "This season vs last"], ["form", evM ? "Last 3 events vs 3 before" : "Last 12 vs 12 before"]].map(([v, l]) => { const b = el("button", { type: "button", class: `tr-rd${v === mode ? " on" : ""}`, "aria-pressed": String(v === mode) }, l); b.addEventListener("click", () => { if (v !== mode) { S.st.radarMode = v; S.draw(); } }); return b; }));
     const byD = (rs) => { const m = new Map(); for (const rd of rs) for (const x of rd.shots || []) if (x.cat === c0 && x.dist) m.set(x.dist, (m.get(x.dist) || 0) + (x.sg || 0)); for (const [k, v] of m) m.set(k, v / Math.max(1, rs.length)); return m; };
     const A = byD(sp.before), B = byD(sp.now), lo = (d) => { const m = /(\d+)/.exec(String(d)); return m ? Number(m[1]) * (/^</.test(d) ? 0.5 : 1) : 999; };
     const ds = [...new Set([...A.keys(), ...B.keys()])].sort((a, b) => lo(a) - lo(b)); if (ds.length < 2) return null;
@@ -339,10 +346,10 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
       chart = radarSvg(ds.map((d) => `${short(d)}\n${sp.nowLabel} ${f2(B.get(d) ?? 0)}${sp.before.length && A.size ? `\n${sp.beforeLabel} ${f2(A.get(d) ?? 0)}` : ""}`), /* (update 778: both years) */ [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
     else chart = groupBars(ds.map((d) => ({ label: short(d), a: sp.before.length ? A.get(d) ?? null : null, b: B.get(d) ?? null })), { la: sp.beforeLabel || "Before", lb: sp.nowLabel });
     if (!chart) return null;
-    return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round · each whole season`)), /* (update 810: which rounds) */
+    return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, [el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round · ${mode === "form" ? (evM ? "the last 3 events against the 3 before" : "the last 12 rounds against the 12 before") : "each whole season"}`), modeT]), /* (update 810/811: which rounds, and the toggle) */
       el("div", { class: "mc-wrap" }, chart),
       el("div", { class: "hm-key" }, [sp.before.length && A.size ? el("span", {}, [el("i", { class: "k-a" }), sp.beforeLabel]) : null, /* (update 760: only when it has bars) */ el("span", {}, [el("i", { class: "k-b" }), sp.nowLabel])]),
-      el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}${sp.before.length && !A.size ? `${sp.beforeLabel}'s rounds have no ${nm.toLowerCase()} distances in the data, so only ${sp.nowLabel} is drawn. ` : ""}Every round of each season on this tour, so it can differ from Keep doing and the cards above (the last ${N} rounds only).`)]);
+      el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}${sp.before.length && !A.size ? `${sp.beforeLabel}'s rounds have no ${nm.toLowerCase()} distances in the data, so only ${sp.nowLabel} is drawn. ` : ""}${mode === "form" ? `The last ${evM ? "3 events" : "12 rounds"} against the ${evM ? "3 events" : "12"} before, on this tour.` : `Every round of each season on this tour, so it can differ from Keep doing and the cards above (the last ${N} rounds only).`}`)]);
   })();
   const radarBox = distBox || (() => {
     const sp = yearSplit(everyYear || []); if (!sp) return null;
