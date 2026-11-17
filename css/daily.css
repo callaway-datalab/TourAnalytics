@@ -669,3 +669,5 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
 /* (update 826) the club pop-up: room under the bars for the angled names before the key */
 .ip-gearchart svg.td-bars { overflow: visible; margin-bottom: 36px; } .ip-gearchart .td-legend { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .ip-pop tr.ip-now td { background: color-mix(in srgb, var(--ip-gold) 10%, transparent); } .ip-pop .ip-new { margin-left: 8px; }
+/* (update 828) WITB: the bag from the stats data */
+.witb-tour .witb-fill { margin-top: 10px; } .witb-tour-t td:first-child { white-space: nowrap; }

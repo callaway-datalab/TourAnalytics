@@ -7,11 +7,11 @@ import { db } from "./firebase-init.js";
 export const MAX_CLUBS = 14;
 const deg = (list) => list.map((n) => `${n}\u00b0`);
 export const CLUB_TYPES = {
-  Driver: deg([7, 8, 8.5, 9, 9.5, 10, 10.5, 11, 12]),
+  Driver: [...deg([7, 8, 8.5, 9, 9.5, 10, 10.5, 11, 12]), "Driver"], // (update 828: "Driver": loft not recorded, as from the stats data)
   "Fairway Wood": ["2w", "3w", "4w", "5w", "7w", "9w", "11w"],
   Hybrid: ["2H", "3H", "4H", "5H", "6H", "7H"],
   Iron: ["1i", "2i", "3i", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "AW"],
-  Wedge: deg([44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64]),
+  Wedge: [...deg([44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64]), "Wedge"],
   Putter: ["Putter"],
 };
 export const CLUB_CATS = Object.keys(CLUB_TYPES);
@@ -19,8 +19,8 @@ export const CLUB_CATS = Object.keys(CLUB_TYPES);
 /** How a club is named on a shot and in the Club filter, e.g. "Driver 9°", "3w", "7i", "56° wedge", "Putter". */
 export function clubLabel(c) {
   if (!c?.type) return "";
-  if (c.cat === "Driver") return `Driver ${c.type}`;
-  if (c.cat === "Wedge") return `${c.type} wedge`;
+  if (c.cat === "Driver") return c.type === "Driver" ? "Driver" : `Driver ${c.type}`;
+  if (c.cat === "Wedge") return c.type === "Wedge" ? "Wedge" : `${c.type} wedge`;
   return c.type;
 }
 
