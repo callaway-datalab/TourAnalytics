@@ -474,7 +474,7 @@ const P = {
 };
 // Rank colours (the front page's rank badge, the categories' ranks and the Basic Stats page):
 // top 10 bright green, 11-50 green, 51-100 yellow, 101-150 orange, past 150 red. [fill, text on it]
-const rankColors = (rank) => (rank <= 10 ? ["#34c759", "#0a2a12"] : rank <= 50 ? ["#1e8e4a", "#ffffff"] : rank <= 100 ? ["#f5c400", "#2a2200"] : rank <= 150 ? ["#f08a24", "#ffffff"] : ["#d0342c", "#ffffff"]);
+const rankColors = (rank) => (rank <= 10 ? ["#30d158", "#0a2a12"] : rank <= 50 ? ["#1e8e4a", "#ffffff"] : rank <= 100 ? ["#f5c400", "#2a2200"] : rank <= 150 ? ["#f08a24", "#ffffff"] : ["#d0342c", "#ffffff"]);
 // the same colour for text on white (bright green and yellow darkened so they read)
 const rankInk = (rank) => (rank <= 10 ? "#1f9d47" : rank <= 50 ? "#1e8e4a" : rank <= 100 ? "#b38a00" : rank <= 150 ? "#d9741a" : "#d0342c");
 // This file's build (update 161): taken from its own URL when it's loaded with ?v= (as the Stats page does), so it
@@ -959,7 +959,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     for (const [v, t] of lines.slice(0, 4)) {
       const ls = wrap(t, iw - 12, fs).slice(0, 2), bh = ls.length * lh + 3;
       if (top0 + bh > ty + h - 8) break;
-      const col = Math.abs(v) < 0.005 ? "#8e8e93" : v > 0 ? "#4cd17e" : "#ff6b5e";
+      const col = Math.abs(v) < 0.005 ? "#8e8e93" : v > 0 ? "#30d158" : "#ff453a";
       d.roundRect(ix, top0, 3.5, bh, 1.75, { fill: col });
       const mid = top0 + bh / 2, first = mid - ((ls.length - 1) * lh) / 2 + fs * 0.35;
       ls.forEach((l, j) => d.text(l, ix + 10, first + j * lh, { size: fs, color: "#e5e5ea" }));
@@ -1114,7 +1114,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     };
     const net = a.overall?.value;
     if (!CMP) {
-    tile(0, "Net a round", net != null ? sg(net) : "—", net == null ? "#ffffff" : net >= 0 ? "#34c759" : "#ff6b5e",
+    tile(0, "Net a round", net != null ? sg(net) : "—", net == null ? "#ffffff" : net >= 0 ? "#30d158" : "#ff453a",
       [a.overall?.rank ? `Rank ${a.overall.rank} of ${a.overall.of}` : "", a.netTrend != null && Math.abs(a.netTrend) >= 0.01 ? `${a.netTrend >= 0 ? "up" : "down"} ${Math.abs(a.netTrend).toFixed(2)} on the ${a.halves?.n || ""} ${a.halves?.unit || "rounds"} before`.replace(/\s+/g, " ") : ""].filter(Boolean).join(" · "), true);
     if (best && best.perRound > 0) tile(1, "Biggest weapon", sg(best.perRound), P.up, `${full(best)}${best.rank ? ` · rank ${best.rank}` : ""}`);
     else tile(1, "Biggest weapon", "—", P.soft, "No skill gaining yet");

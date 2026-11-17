@@ -6,7 +6,7 @@
 import { el, mount } from "../ui.js";
 import * as PI from "../playerInsights.js";
 import { clearDiff } from "../defs.js";
-import { whoCanBePicked, pickedFromHash, setPickedInHash, playerBar, card, samp, sg3, cls } from "./insightPages.js";
+import { whoCanBePicked, startKey, pickedFromHash, setPickedInHash, playerBar, card, samp, sg3, cls } from "./insightPages.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"], AREA = { OTT: "Off the tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" };
 const noun = (c) => (c === "PUTT" ? "putts" : c === "ARG" ? "chips and pitches" : "approaches");
@@ -15,7 +15,8 @@ const what = (c) => (c === "PUTT" ? "Putts" : c === "ARG" ? "Chips and pitches" 
 export async function render(main, { previewClient = null } = {}) {
   const wrap = el("div", { class: "ip" }, el("p", { class: "muted" }, "Loading…")); mount(main, wrap);
   const who = await whoCanBePicked(previewClient);
-  let key = who.self || pickedFromHash() || who.favs[0] || null, size = 4, alive = true;
+  let key = startKey(who), size = 4, alive = true;
+  if (key && !who.self) setPickedInHash(key, who); // (update 816: the address and the current player say who)
   window.addEventListener("hashchange", () => { alive = false; }, { once: true });
   const fieldP = PI.loadField(who.state).catch(() => ({ field: [] })), heatP = import("../courseHeat.js").then((m) => m.listHeatCourses()).catch(() => []);
   const [PS, PL] = await Promise.all([import("./practiceSimple.js"), import("../practice/plan.js")]);
@@ -65,6 +66,6 @@ export async function render(main, { previewClient = null } = {}) {
         : el("p", { class: "muted" }, "Nothing to judge yet: this needs a range practised in a session made 2+ weeks ago, with 10+ tournament shots from it before and after."),
         samp("Tournament shots from each range before the first session that practised it, and since; strokes gained a shot (the shots in brackets). \"Clearly\" means the change is bigger than the shot-to-shot noise (a t-test at about 90%); anything else is too close to call, and other things change too (courses, fields, the clubs).")]); })();
   }
-  function pick(k) { key = k; setPickedInHash(k); draw(); }
+  function pick(k) { key = k; setPickedInHash(k, who); draw(); }
   draw();
 }

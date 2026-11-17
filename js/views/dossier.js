@@ -6,12 +6,13 @@ import { el, mount } from "../ui.js";
 import * as PI from "../playerInsights.js";
 import { makeCharts } from "../homeCharts.js";
 import { bar0 } from "../miniCharts.js";
-import { whoCanBePicked, pickedFromHash, setPickedInHash, playerBar, card, samp, sg2, sg3, cls, ord } from "./insightPages.js";
+import { whoCanBePicked, startKey, pickedFromHash, setPickedInHash, playerBar, card, samp, sg2, sg3, cls, ord } from "./insightPages.js";
 
 export async function render(main, { previewClient = null } = {}) {
   const wrap = el("div", { class: "ip" }, el("p", { class: "muted" }, "Loading…")); mount(main, wrap);
   const who = await whoCanBePicked(previewClient);
-  let key = who.self || pickedFromHash() || who.favs[0] || null, tour = null, year = null, alive = true;
+  let key = startKey(who), tour = null, year = null, alive = true;
+  if (key && !who.self) setPickedInHash(key, who); // (update 816: the address and the current player say who)
   window.addEventListener("hashchange", () => { alive = false; }, { once: true });
   const fieldP = PI.loadField(who.state).catch(() => ({ field: [] })), heatP = import("../courseHeat.js").then((m) => m.listHeatCourses()).catch(() => []);
   const CH = makeCharts({ el, sg2, avgOf: (rs, f) => (rs.length ? rs.reduce((t, r) => t + f(r), 0) / rs.length : null), inCat: (r, c) => r.shots.reduce((t, s) => t + (s.cat === c ? s.sg : 0), 0), tot: (r) => r.shots.reduce((t, s) => t + s.sg, 0), eventsOf: (rs) => PI.eventsOf(rs), CATN: PI.CATN, bar0 });
@@ -40,9 +41,11 @@ export async function render(main, { previewClient = null } = {}) {
       el("ul", { class: "ip-bul" }, PI.CATS.map((c) => [c, F.cat[c].a - F.cat[c].b, F.cat[c]]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3).map(([c, d, o]) => el("li", {}, [`${PI.CATN[c]}: `, el("b", { class: cls(d) }, sg2(d)), ` (${sg2(o.a)} lately, ${sg2(o.b)} before)`]))),
       samp(`The last ${F.lbl} against the ${F.lbl} before, strokes gained a round`)] : [el("p", { class: "muted" }, "Not enough rounds yet for form.")]);
     // where the strokes go
-    const rows = [...P.leaks.slice(0, 3), ...P.strengths.slice(0, 2)], mx = Math.max(0.01, ...rows.map((o) => Math.abs(o.rd)));
+    // (update 816) ?focus=APP|140-160 yds (from a Home story): that range is in the list, lit, and scrolled to
+    const focus = new URLSearchParams(location.hash.split("?")[1] || "").get("focus"), fR = focus && focus.includes("|") ? P.ranges.find((o) => `${o.c}|${o.d}` === focus) : null;
+    const rows0 = [...P.leaks.slice(0, 3), ...P.strengths.slice(0, 2)], rows = fR && !rows0.includes(fR) ? [...rows0, fR] : rows0, mx = Math.max(0.01, ...rows.map((o) => Math.abs(o.rd)));
     const goesCard = card("Where the strokes go", "#ff453a", [el("h3", { class: "ip-h3" }, "By distance, a round"),
-      rows.length ? el("div", { class: "ip-bars" }, rows.map((o) => el("div", { class: "ip-barrow" }, [el("span", {}, `${o.c === "PUTT" ? "Putts" : o.c === "ARG" ? "Chips" : "Approach"} ${o.d}`), el("span", { class: "ip-bartrack" }, el("i", { class: o.rd >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(o.rd) / mx) * 100)}%` })), el("b", { class: cls(o.rd) }, sg2(o.rd)), el("span", { class: "ip-barn" }, `${sg3(o.shot)} a shot · ${Math.round(o.n)} shots`)]))) : el("p", { class: "muted" }, "Not enough shots by distance yet."),
+      rows.length ? el("div", { class: "ip-bars" }, rows.map((o) => el("div", { class: `ip-barrow${o === fR ? " ip-focus" : ""}` }, [el("span", {}, `${o.c === "PUTT" ? "Putts" : o.c === "ARG" ? "Chips" : "Approach"} ${o.d}`), el("span", { class: "ip-bartrack" }, el("i", { class: o.rd >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(o.rd) / mx) * 100)}%` })), el("b", { class: cls(o.rd) }, sg2(o.rd)), el("span", { class: "ip-barn" }, `${sg3(o.shot)} a shot · ${Math.round(o.n)} shots`)]))) : el("p", { class: "muted" }, "Not enough shots by distance yet."),
       P.leaks[0] ? drillBtn(P.leaks[0], name) : null, el("a", { class: "ip-link", href: `#/practice-week?player=${encodeURIComponent(key)}` }, "Plan the practice week →"),
       samp(`${P.year || year} season, ${P.n} rounds · a range needs 25+ shots`)]);
     // the bag
@@ -52,6 +55,7 @@ export async function render(main, { previewClient = null } = {}) {
     const fitBox = card("Next event fit", "#64d2ff", el("p", { class: "muted" }, "Loading the course…"), "ip-fit");
     mount(wrap, [head(name, tours, years), playerBar(who, key, pick), tiles, el("div", { class: "ip-grid" }, [formCard, goesCard, bagCard]), fitBox,
       el("p", { class: "ip-foot" }, `Strokes gained against the tour baseline. Ranks among players with ${8}+ rounds on the ${tour || "tour"} in ${year}.`)]);
+    if (focus) requestAnimationFrame(() => { const t = fR ? wrap.querySelector(".ip-focus") : PI.CATS.includes(focus) ? wrap.querySelectorAll(".ip-tile")[1 + PI.CATS.indexOf(focus)] : null; if (t) { t.classList.add("ip-focus"); t.scrollIntoView({ block: "center", behavior: "smooth" }); } });
     // the next event: their fit there
     (async () => { const list = await heatP, meta = PI.nextCourse(list); if (!alive) return;
       if (!meta) { mount(fitBox, [el("p", { class: "ip-kick" }, "Next event fit"), el("p", { class: "muted" }, "The next event's course isn't in Strategy Maps yet.")]); return; }
@@ -70,7 +74,7 @@ export async function render(main, { previewClient = null } = {}) {
     const ys = years.length > 1 ? (() => { const s = el("select", { class: "ip-sel", "aria-label": "Season" }, years.map((y) => el("option", { value: y }, y))); s.value = year; s.addEventListener("change", () => { year = s.value; draw(); }); return s; })() : null;
     const pr = el("button", { type: "button", class: "ip-btn" }, "Print / PDF"); pr.addEventListener("click", () => window.print());
     return el("header", { class: "ip-head" }, [el("div", {}, [el("p", { class: "ip-kick" }, `Player dossier${tour ? ` · ${tour}` : ""}${year ? ` · ${year}` : ""}`), el("h1", { class: "ip-h" }, name)]),
-      el("div", { class: "ip-ctl" }, [pills, ys, key ? el("a", { class: "ip-btn ghost", href: `#/comparisons?player=${encodeURIComponent(key)}` }, "Compare") : null, pr])]);
+      el("div", { class: "ip-ctl" }, [pills, ys, key ? el("a", { class: "ip-btn ghost", href: `#/comparisons?player=${encodeURIComponent(key)}` }, "Compare") : null, key ? el("a", { class: "ip-btn ghost", href: `#/practice-week?player=${encodeURIComponent(key)}` }, "Practice week") : null, pr])]); // (update 816: the same actions as everywhere)
   }
   function drillBtn(o, name) {
     const msg = el("span", { class: "muted small" }), b = el("button", { type: "button", class: "ip-act" }, `＋ Add a drill: ${o.c === "PUTT" ? "putts" : o.c === "ARG" ? "chips" : "approaches"} from ${o.d}`);
@@ -78,6 +82,6 @@ export async function render(main, { previewClient = null } = {}) {
       catch (e) { console.warn(e); b.disabled = false; mount(msg, "Couldn't add it (practice may not be open for this player)."); } });
     return el("div", { class: "ip-actrow" }, [b, msg]);
   }
-  function pick(k) { key = k; setPickedInHash(k); draw(); }
+  function pick(k) { key = k; setPickedInHash(k, who); draw(); }
   draw();
 }

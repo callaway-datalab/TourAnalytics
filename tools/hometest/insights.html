@@ -6,7 +6,7 @@
 const q = new URLSearchParams(location.search), pg = q.get("p") || "dossier";
 if (q.has("light")) document.documentElement.dataset.theme = "light";
 const { key } = await import("./__mock/fixture.js");
-if (q.get("who")) history.replaceState(null, "", `#/${pg}?player=${encodeURIComponent(key(q.get("who")))}`);
+if (q.get("who")) history.replaceState(null, "", `#/${pg}?player=${encodeURIComponent(key(q.get("who")))}${q.get("focus") ? `&focus=${encodeURIComponent(q.get("focus"))}` : ""}`);
 const mod = await import(`./js/views/${{ dossier: "dossier", fit: "courseFit", week: "practiceWeek" }[pg]}.js`);
 window.addEventListener("error", (e) => { (window.__errs ||= []).push(String(e.message)); });
 window.addEventListener("unhandledrejection", (e) => { (window.__errs ||= []).push(String(e.reason?.stack || e.reason)); });

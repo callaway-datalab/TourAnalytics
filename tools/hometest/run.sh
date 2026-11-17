@@ -3,8 +3,8 @@
 # screenshots desktop and phone into the folder given ($1), then cleans up.
 set -e
 ROOT=/home/user/ta; OUT=${1:-/tmp/hometest}; mkdir -p "$OUT"
-rm -rf /home/user/ta/website/__mock; cp -r "$ROOT/tools/hometest/mock" /home/user/ta/website/__mock; cp "$ROOT/tools/hometest/page.html" /home/user/ta/website/__home.html; cp "$ROOT/tools/hometest/results.html" /home/user/ta/website/__results.html; cp "$ROOT/tools/hometest/insights.html" /home/user/ta/website/__insights.html
+rm -rf /home/user/ta/website/__mock; cp -r "$ROOT/tools/hometest/mock" /home/user/ta/website/__mock; cp "$ROOT/tools/hometest/page.html" /home/user/ta/website/__home.html; cp "$ROOT/tools/hometest/results.html" /home/user/ta/website/__results.html; cp "$ROOT/tools/hometest/insights.html" /home/user/ta/website/__insights.html; cp "$ROOT/tools/hometest/shell.html" /home/user/ta/website/__shell.html
 (cd "$ROOT/website" && python3 -m http.server 8765 >/dev/null 2>&1 &) ; sleep 1
 node "$ROOT/tools/hometest/${SHOT:-shot.js}" "$OUT" || true
 pkill -f "http.server 8765" || true
-rm -rf /home/user/ta/website/__mock; rm -f /home/user/ta/website/__home.html /home/user/ta/website/__results.html /home/user/ta/website/__insights.html
+rm -rf /home/user/ta/website/__mock; rm -f /home/user/ta/website/__home.html /home/user/ta/website/__results.html /home/user/ta/website/__insights.html /home/user/ta/website/__shell.html

@@ -2,6 +2,8 @@ import { listener, canListen, whyNothing } from "./listen.js"; // (update 646: s
 import { getPreviewTeam, effectiveTeam } from "./preview.js";
 import { portalName } from "./firebase-init.js";
 import { subscribe, signOut } from "./auth.js";
+import { openPalette, setPages } from "./palette.js"; // (update 816: search everything)
+import { currentPlayer, setCurrent, onCurrent, lastName } from "./current.js"; // (update 816: the current player)
 
 /** Builds a DOM element without ever touching innerHTML, so nothing here can be an XSS vector.
  *  el('div', {class: 'x', onClick: fn}, ['text', childEl]) */
@@ -52,6 +54,8 @@ let robotN = 0;
 export function icon(name) {
   const paths = {
     home: "M3 9.5 10 3l7 6.5V17H12v-4H8v4H3z",
+    search: "M8.5 2a6.5 6.5 0 0 1 5.2 10.4l4.2 4.2-1.4 1.4-4.2-4.2A6.5 6.5 0 1 1 8.5 2zm0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z",
+    plus: "M9 3h2v6h6v2h-6v6H9v-6H3V9h6z",
     star: "M10 2.2l2.4 5 5.4.6-4 3.7 1.1 5.4L10 14.2l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z",
     data: "M3 16V4h2v10h12v2zM7 12V8h2v4zm4 0V5h2v7zm4 0V9h2v3z",
     doc: "M5 2h7l4 4v12H5zm6 1.5V7h3.5zM7 10h7v1.5H7zm0 3h7v1.5H7z",
@@ -363,6 +367,20 @@ export function holdToTalk(b, onHold = () => {}) {
   b.addEventListener("pointerdown", down);
 }
 
+// (update 816) Search's extra words for each page, so "sg" or "drills" finds the right one
+const WORDS = { Stats: "strokes gained sg radar season form", "Player Dossier": "player profile report overview pdf", "Course Fit": "suits who next event projection",
+  Compare: "versus side by side products", Leaderboards: "rank ranking field", "Event Feed": "live tournament scores", "Enter New Round": "add round entry scorecard",
+  "Course Prep": "maps strategy holes course report", Practice: "drills sessions range", "Practice Week": "plan drills schedule", Goals: "targets" };
+/** (update 816) the current player in the header: tap for their Dossier, × to let go of them */
+const playerOnly = () => { const st = window.__authState; return !!(st?.profile?.clientKey && !st.isAdmin && !st.isTeam); }; // a player is always themself
+function paintChip(n, c) {
+  n.hidden = !c || playerOnly(); if (n.hidden) { n.replaceChildren(); n.removeAttribute("title"); return; } n.title = `${c.label}: picked on every page`;
+  const a = el("a", { class: "cur-go", href: `#/dossier?player=${encodeURIComponent(c.key)}` }, [el("i", { "aria-hidden": "true" }), lastName(c.label)]);
+  const x = el("button", { type: "button", class: "cur-x", "aria-label": `Stop following ${c.label}` }, "×"); x.addEventListener("click", () => setCurrent(null));
+  n.replaceChildren(a, x);
+}
+function curChip() { const n = el("span", { class: "cur-chip" }); paintChip(n, currentPlayer()); return n; }
+onCurrent((c) => { for (const n of document.querySelectorAll(".cur-chip")) paintChip(n, c); });
 export function renderShell(root, { previewClient, currentRoute }) {
   const state = window.__authState;
   const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
@@ -396,11 +414,28 @@ export function renderShell(root, { previewClient, currentRoute }) {
     accountMenu(state),
   ];
 
+  // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
+  setPages(() => [["Home", "#/home", "", "today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
+    ["What's in the Bag", "#/witb", "", "witb clubs equipment gear"], ["Chat", admin ? "#/admin/questions" : "#/questions", "", "questions messages"], ["Profile", "#/account", "Account", "settings password"]]
+    .map(([label, href, group, words]) => ({ label, href, group, words })));
+  const searchBtn = el("button", { type: "button", class: "hdr-icon search-btn", "aria-label": "Search (Ctrl+K)", title: "Search players, pages, courses (Ctrl+K)" }, [icon("search")]);
+  searchBtn.addEventListener("click", () => openPalette());
+  footItems.unshift(curChip(), searchBtn);
+  const plan = secs.find((x) => x.id === "plan"), data = secs.find((x) => x.id === "data");
+  const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
+    el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("home"), el("span", {}, "Home")]),
+    data ? el("a", { href: data.items[0][1], "aria-current": data === onSec ? "page" : null }, [icon("data"), el("span", {}, data.label)]) : null,
+    (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })(),
+    plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/practice", "aria-current": plan === onSec ? "page" : null }, [icon("doc"), el("span", {}, plan.label)]) : null,
+    el("a", { href: "#/entry", class: "botbar-plus", "aria-label": "Enter a new round" }, [icon("plus"), el("span", {}, "Round")]),
+  ]);
   const rail = el("aside", { class: "rail" }, [
     el("a", { class: "brand", href: "#/home" }, [logoImg(), portalName]),
     nav,
     el("div", { class: "rail-foot" }, footItems),
   ]);
+  // (the bottom bar lives on the page itself: inside the header it would scroll away with it)
+  document.querySelector("body > .botbar")?.remove(); document.body.append(bot);
   // (update 281) Going to another page keeps the header that's already there (no flicker): when it would come out the
   // same, only which link is lit changes, and just the page below is replaced.
   const old = root.querySelector(":scope > .shell > .rail");
@@ -421,6 +456,7 @@ const headerKey = (node) => {
   c.querySelectorAll("[data-live-link]").forEach((x) => { ["href", "title", "aria-disabled", "class"].forEach((k) => x.removeAttribute(k)); });
   c.querySelectorAll(".brand-logo").forEach((x) => x.removeAttribute("hidden"));
   c.querySelectorAll(".callie-link").forEach((x) => x.removeAttribute("hidden"));
+  c.querySelectorAll(".cur-chip").forEach((x) => { x.replaceChildren(); x.removeAttribute("hidden"); x.removeAttribute("title"); });
   return c.outerHTML.replace(/callie-m\d+/g, "");
 };
 function keepHeader(oldNode, newNode) {

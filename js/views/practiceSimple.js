@@ -97,7 +97,7 @@ export async function render(main, { flash = () => {}, previewClient = null } = 
       const { adminAllClients } = await import("../store.js");
       const all = [...(await adminAllClients().catch(() => ({ labels: new Map() }))).labels].map(([k, l]) => [k, plainName(l)]).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       // (update 699) the site's own player search (a drop-down as you type, as on every other page)
-      const pp = playerPicker(new Map(all), (p) => { if (p) open({ owner: p.key, key: p.key, label: p.label, mine: false }); else if (!subject.mine) open(self); }, new Map(), null, { autoPick: false });
+      const pp = playerPicker(new Map(all), (p) => { if (p) open({ owner: p.key, key: p.key, label: p.label, mine: false }); else if (!subject.mine) open(self); }, new Map(), null, { autoPick: false, follow: subject.mine }); // (update 816: follow: the current player)
       if (!subject.mine && subject.key) pp.preset?.(subject.key);
       return el("section", { class: "ps-find" }, [el("p", { class: "ps-t" }, "PLAYERS’ PRACTICE"), el("div", { class: "analyze-picker" }, pp.node)]);
     }

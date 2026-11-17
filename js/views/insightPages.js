@@ -5,6 +5,7 @@ import { el } from "../ui.js";
 import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
+import { currentPlayer, setCurrent } from "../current.js";
 
 export const sg2 = (v) => (v == null || !Number.isFinite(v) ? "—" : Math.abs(v) < 0.005 ? "0.00" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`);
 export const sg3 = (v) => (v == null || !Number.isFinite(v) ? "—" : Math.abs(v) < 0.0005 ? "0.000" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`);
@@ -24,7 +25,9 @@ export async function whoCanBePicked(previewClient) {
   return { state, self: null, labels, favs };
 }
 export const pickedFromHash = () => { const m = /[?&]player=([^&]+)/.exec(location.hash); return m ? decodeURIComponent(m[1]) : null; };
-export const setPickedInHash = (k) => { const base = location.hash.split("?")[0], q = new URLSearchParams(location.hash.split("?")[1] || ""); if (k) q.set("player", k); else q.delete("player"); history.replaceState(null, "", `${base}${q.toString() ? `?${q}` : ""}`); };
+/** (update 816) who a page opens on: yourself, the link's ?player=, the current player (picked on any page), a favorite */
+export const startKey = (who) => { const c = currentPlayer(); return who.self || pickedFromHash() || (c && (who.labels.has(c.key) || who.state.isAdmin) ? c.key : null) || who.favs[0] || null; };
+export const setPickedInHash = (k, who = null) => { if (k && !who?.self) setCurrent({ key: k, label: who?.labels.get(k) || currentPlayer()?.label }); const base = location.hash.split("?")[0], q = new URLSearchParams(location.hash.split("?")[1] || ""); if (k) q.set("player", k); else q.delete("player"); history.replaceState(null, "", `${base}${q.toString() ? `?${q}` : ""}`); };
 
 /** the pills of the favorites, and a search over everyone (a <select> with type-ahead) */
 export function playerBar(who, current, onPick) {

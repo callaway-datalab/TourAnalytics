@@ -412,6 +412,12 @@ export async function render(main, { previewClient } = {}) {
       try { const P0 = await import("../practice/plan.js"), n = await P0.addToPlan(getState(), { items: [{ drill: P0.drillFor(x.c, x.d || null) }], playerKey: h.k, playerLabel: nameOf(h.k) }); mount(msg, n ? ["Added. ", el("a", { href: isMe(h.k) ? "#/practice?tool=PLAN" : `#/practice?tool=PLAN&player=${encodeURIComponent(h.k)}`, class: "link" }, "Open the practice plan →")] : "It's already in the plan."); }
       catch (e) { console.warn(e); b.disabled = false; mount(msg, "Couldn't add it just now (practice may not be open for this player)."); } });
     return el("div", { class: "td-act-row" }, [b, msg]); }
+  // (update 816) where a story goes next: the player's Dossier opened at that range, their practice week, Course Fit
+  function exitsFor(h) { const x = h.x || {}, t = h.id.split("-")[0], L = [], enc = (k) => encodeURIComponent(k), last = (k) => nameOf(k).split(" ").filter((w) => !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1);
+    if (h.k) { const f = x.c && x.d ? `&focus=${enc(`${x.c}|${x.d}`)}` : x.c ? `&focus=${enc(x.c)}` : ""; L.push([`${isMe(h.k) ? "My" : `${last(h.k)}’s`} Dossier${x.d ? `: ${x.d}` : ""}`, `#/dossier?player=${enc(h.k)}${f}`]);
+      if (["wk", "dz", "fd"].includes(t) && x.c) L.push([`Plan ${isMe(h.k) ? "my" : `${last(h.k)}’s`} practice week`, `#/practice-week?player=${enc(h.k)}`]); }
+    if (h.cid || /^up-|^cs-|^crs-/.test(h.id)) L.push(["Who suits this course", `#/course-fit${h.cid ? `?course=${enc(h.cid)}` : ""}`]);
+    return L.length ? el("div", { class: "td-exits" }, L.map(([l, href]) => el("a", { href, class: "td-exit", onClick: () => document.querySelector(".td-popwrap")?.remove() }, `${l} →`))) : null; }
   function openPop(h) {
     document.querySelector(".td-popwrap")?.remove();
     const d = dress(h), x = h.x || {}, t = h.id.split("-")[0], parts = [];
@@ -431,7 +437,7 @@ export async function render(main, { previewClient } = {}) {
     goB?.addEventListener("click", () => { close(); go0(); if (how.steps?.length) queueExplain({ id: `how-${h.id.split("-")[0]}`, q: d0.hl, steps: how.steps }); }); // (update 761: the steps again on the page)
     const back = el("div", { class: "td-pop-back" }); back.addEventListener("click", close);
     const box = el("section", { class: "td-pop", role: "dialog", "aria-modal": "true", "aria-label": d.hl }, [xb, d.kick || (staff && h.k) ? el("div", { class: "td-kick" }, `${d.kick || ""}${staff && h.k ? `${d.kick ? " · " : ""}${nameOf(h.k)}` : ""}`) : null, el("h2", {}, d.hl),
-      d.num ? el("div", { class: `td-big ${d.nc}` }, [d.num, el("span", { class: "td-cap" }, ` ${d.cap}`)]) : null, d.deck ? deckEl(d.deck, "td-pop-deck") : null, ...parts, sampOf(h) ? el("p", { class: "td-samp" }, `Based on ${sampOf(h)}`) : null, actionFor(h), howBox, goB]);
+      d.num ? el("div", { class: `td-big ${d.nc}` }, [d.num, el("span", { class: "td-cap" }, ` ${d.cap}`)]) : null, d.deck ? deckEl(d.deck, "td-pop-deck") : null, ...parts, sampOf(h) ? el("p", { class: "td-samp" }, `Based on ${sampOf(h)}`) : null, actionFor(h), exitsFor(h), howBox, goB]);
     const wrap = el("div", { class: "ah td td-popwrap" }, [back, box]); document.body.appendChild(wrap);
     const esc = (e) => { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } }; addEventListener("keydown", esc); xb.focus();
     // (update 758) a leaderboard opens at the player

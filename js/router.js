@@ -93,12 +93,26 @@ let renderGen = 0;
 let renderedFor; // (update 291)
 let warmFor = null, warmP = null; // (update 312)
 let lastRaw = null;
+// (update 816) Back (or Forward) returns to where you were on that page: each history entry gets an id the first time
+// it's drawn and its scroll is kept against it; arriving at an entry that already has one is a Back/Forward
+const scrollMem = (() => { try { return JSON.parse(sessionStorage.getItem("ta.scroll") || "{}"); } catch { return {}; } })();
+let scrollId = null, scrollT = 0;
+addEventListener("scroll", () => { if (!scrollId) return; clearTimeout(scrollT); scrollT = setTimeout(() => { scrollMem[scrollId] = Math.round(scrollY); const ks = Object.keys(scrollMem); if (ks.length > 60) delete scrollMem[ks[0]]; try { sessionStorage.setItem("ta.scroll", JSON.stringify(scrollMem)); } catch { /* */ } }, 120); }, { passive: true });
+function backTo() {
+  clearTimeout(scrollT); if (scrollId) scrollMem[scrollId] = Math.round(scrollY); // (the page being left, as it stands)
+  const st = history.state, seen = st && st.taId;
+  scrollId = seen ? st.taId : `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  if (!seen) { try { history.replaceState({ ...(st || {}), taId: scrollId }, ""); } catch { /* */ } return null; }
+  return scrollMem[scrollId] || null;
+}
+function restoreScroll(y) { if (!y) return; const t0 = Date.now(); const tryIt = () => { if (document.documentElement.scrollHeight - innerHeight >= y - 4) { scrollTo(0, y); return; } if (Date.now() - t0 < 4000) setTimeout(tryIt, 120); else scrollTo(0, y); }; requestAnimationFrame(tryIt); }
 async function render() {
   const gen = ++renderGen;
   const t0 = performance.now(); // (update 325: how long the page took, for the Performance readout)
   const raw = location.hash.slice(1) || "/login";
   // (update 476) a new page starts at the top (the same page drawn again keeps its place)
-  if (raw !== lastRaw) { lastRaw = raw; try { history.scrollRestoration = "manual"; } catch { /* */ } window.scrollTo(0, 0); }
+  let backY = null;
+  if (raw !== lastRaw) { lastRaw = raw; try { history.scrollRestoration = "manual"; } catch { /* */ } const sid = scrollId; backY = backTo(); if (sid !== scrollId) window.scrollTo(0, 0); }
 
   const state = await whenReady();
   if (gen !== renderGen) return;
@@ -295,6 +309,7 @@ async function render() {
     import("./perf.js").then((p) => p.bootLog(`page ${routeId}: drawn${performance?.memory ? ` \u00b7 ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : ""}`)).catch(() => {}); // (update 556: memory, where the browser says)
     if (gen !== renderGen) { if (typeof cleanup === "function") cleanup(); return; }
     currentCleanup = cleanup;
+    restoreScroll(backY); // (update 816: Back keeps your place)
     // (after the page has drawn: the next frame)
     requestAnimationFrame(() => import("./perf.js").then((p) => p.markPage(`#${raw.split("?")[0]}`, performance.now() - t0)).catch(() => {}));
   } catch (err) {

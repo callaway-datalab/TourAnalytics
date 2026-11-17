@@ -3,6 +3,7 @@
 // asks which one. Remembers the last player chosen across those pages.
 import { el, mount } from "./ui.js";
 import { favoriteKeys } from "./watchlist.js";
+import { setCurrent, autoPlayer } from "./current.js"; // (update 816: one player carried across pages)
 
 // (update 510) the last player chosen stays chosen on every page with a player search bar (and through a reload) until
 // Clear, the search box's x, or another player
@@ -25,7 +26,7 @@ export function sameNamePlayers(players, text) {
   return hits.length > 1 ? hits : [];
 }
 
-export function playerPicker(labels, onPick, ids = new Map(), pinKey = null, { autoPick = true } = {}) { // (update 557) autoPick false: only a tap or Enter picks (not a typed name that happens to match)
+export function playerPicker(labels, onPick, ids = new Map(), pinKey = null, { autoPick = true, follow = false } = {}) { // (update 557) autoPick false: only a tap or Enter picks (not a typed name that happens to match)
   // pinKey (you) always sits at the top of the list, then your Watchlist's players (★, update 164), then everyone
   const fav = new Set(favoriteKeys());
   const players = [...labels.entries()].map(([key, label]) => ({ key, label, id: ids.get(key) || key.replace(/^c_/, ""), fav: fav.has(key) }))
@@ -44,7 +45,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null, { a
   };
   const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
   let touched = false;
-  const choose = (p) => { touched = true; remember(p); input.value = p ? p.label : ""; which.hidden = true; delete which.dataset.for; close(); onPick(p); };
+  const choose = (p) => { touched = true; remember(p); if (!p || p.key !== pinKey) setCurrent(p && p.key !== pinKey ? p : null); input.value = p ? p.label : ""; which.hidden = true; delete which.dataset.for; close(); onPick(p); };
 
   const drawList = () => {
     const t = input.value.trim().toLowerCase();
@@ -112,7 +113,9 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null, { a
   /** Pick a player by key (e.g. from the leaderboard). */
   const select = (key) => { touched = true; const p = players.find((x) => x.key === key); if (p) choose(p); };
   /** Show a player as picked without acting on it (the page is already theirs). */
-  const preset = (key) => { const p = players.find((x) => x.key === key); touched = true; if (p) { remember(p); input.value = p.label; } };
-  // (update 533: no automatic pick when a page opens)
+  const preset = (key) => { const p = players.find((x) => x.key === key); touched = true; if (p) { remember(p); if (p.key !== pinKey) setCurrent(p); input.value = p.label; } };
+  // (update 533: no automatic pick when a page opens) (update 816: a page that asks (follow) opens on the current player,
+  //  the one picked on any page, unless opening them by itself crashed the site last time)
+  if (follow) setTimeout(() => { if (touched) return; const c = autoPlayer(); const p = c && players.find((x) => x.key === c.key && x.key !== pinKey); if (p) choose(p); }, 0);
   return { node, restore, select, preset };
 }

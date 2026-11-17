@@ -7,7 +7,11 @@ import { auth, db } from "./firebase-init.js";
 
 const IDLE_MS = 2 * 60 * 1000, TICK_MS = 15 * 1000, FLUSH_MS = 60 * 1000;
 let page = null, lastInput = Date.now(), lastTick = Date.now(), started = false;
-let pend = { seconds: 0, pages: {}, pageSec: {} };
+let pend = { seconds: 0, pages: {}, pageSec: {}, paths: {} };
+// (update 816) how people move: "from__to__via" counts (via: menu, submenu, bar = the phone's bottom bar, search, chip = the
+// current player's chip, link = anything on a page, back = Back/Forward or a typed address)
+let via = null, viaAt = 0;
+addEventListener("click", (e) => { const a = e.target?.closest?.("a, button"); if (!a) return; via = a.closest(".pal") ? "search" : a.closest(".botbar") ? "bar" : a.closest(".cur-chip") ? "chip" : a.closest(".subhead, .section-nav") ? "submenu" : a.closest(".rail") ? "menu" : "link"; viaAt = Date.now(); }, { capture: true, passive: true });
 const dayOf = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const safe = (k) => String(k || "other").replace(/[^a-z0-9_-]/gi, "_").slice(0, 60);
 
@@ -24,12 +28,14 @@ async function flush() {
   const uid = auth.currentUser?.uid;
   const secs = Math.round(pend.seconds);
   const pages = pend.pages, pageSec = pend.pageSec;
-  if (!uid || (!secs && !Object.keys(pages).length)) return;
-  pend = { seconds: pend.seconds - secs, pages: {}, pageSec: {} };
+  if (!uid || (!secs && !Object.keys(pages).length && !Object.keys(pend.paths).length)) return;
+  const paths = pend.paths;
+  pend = { seconds: pend.seconds - secs, pages: {}, pageSec: {}, paths: {} };
   const day = dayOf();
   const data = { uid, day, at: serverTimestamp(), seconds: increment(secs) };
   if (Object.keys(pages).length) data.pages = Object.fromEntries(Object.entries(pages).map(([k, n]) => [k, increment(n)]));
   const ps = Object.entries(pageSec).map(([k, v]) => [k, Math.round(v)]).filter(([, v]) => v > 0);
+  if (Object.keys(paths).length) data.paths = Object.fromEntries(Object.entries(paths).map(([k, n]) => [k, increment(n)]));
   if (ps.length) data.pageSec = Object.fromEntries(ps.map(([k, v]) => [k, increment(v)]));
   try { await setDoc(doc(db, "usage", `${uid}_${day}`), data, { merge: true }); }
   catch (err) { console.warn("Usage not saved (republish firestore.rules)", err?.code || err); }
@@ -49,7 +55,8 @@ export function trackPage(routeId) {
   if (!auth.currentUser) return;
   start();
   tick();
-  page = safe(routeId);
+  const from = page; page = safe(routeId);
+  if (from && from !== page) { const how = via && Date.now() - viaAt < 3000 ? via : "back", k = `${from}__${page}__${how}`.slice(0, 120); pend.paths[k] = (pend.paths[k] || 0) + 1; } via = null;
   pend.pages[page] = (pend.pages[page] || 0) + 1;
   lastInput = Date.now();
 }

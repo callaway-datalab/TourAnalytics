@@ -16,14 +16,14 @@ export function radar(v, { small = false, c = null, cLabel = "before" } = {}) {
   const ptsOf = (xs) => xs.map((x, i) => [cx + rad(x) * Math.cos(ang[i]), cy + rad(x) * Math.sin(ang[i])]);
   const pts = ptsOf(vals), cpts = cv ? ptsOf(cv) : null, poly = (ps) => ps.map((p) => p.map((n) => n.toFixed(1)).join(",")).join(" ");
   const NS = "http://www.w3.org/2000/svg", s = (t, a = {}, kids = []) => { const e = document.createElementNS(NS, t); for (const [k, x] of Object.entries(a)) e.setAttribute(k, x); for (const k2 of kids) e.appendChild(k2); return e; };
-  const col = (x) => (x >= 0 ? "#4cd17e" : "#ff8a7a"), fs = small ? 11 : 14, fv = small ? 10.5 : 13, fc = small ? 9.5 : 11.5;
+  const col = (x) => (x >= 0 ? "#30d158" : "#ff8a7a"), fs = small ? 11 : 14, fv = small ? 10.5 : 13, fc = small ? 9.5 : 11.5;
   const lab = (i, [, name]) => {
     const txt = (t, size, fill, w, x, y) => { const e = s("text", { "font-size": size, fill, "font-weight": w, x, y }); e.textContent = t; return e; };
     const pos = [[cx, small ? 12 : 18, "middle"], [W - 4, cy - (small ? 12 : 16), "end"], [cx, H - (small ? 26 : 34), "middle"], [4, cy - (small ? 12 : 16), "start"]][i];
     const g = s("g", { "text-anchor": pos[2] }), lh = small ? 12 : 16;
     // (update 613) this year's value with a green ▲ (better than last year) or a red ▼ (worse)
     const vt = txt(fmtSG(vals[i]), fv, col(vals[i]), 700, pos[0], pos[1] + lh);
-    if (cv && Math.abs(vals[i] - cv[i]) >= 0.005) { const up = vals[i] > cv[i], a = s("tspan", { fill: up ? "#4cd17e" : "#ff453a", "font-size": fv * 0.8 }); a.textContent = up ? " \u25B2" : " \u25BC"; vt.appendChild(a); }
+    if (cv && Math.abs(vals[i] - cv[i]) >= 0.005) { const up = vals[i] > cv[i], a = s("tspan", { fill: up ? "#30d158" : "#ff453a", "font-size": fv * 0.8 }); a.textContent = up ? " \u25B2" : " \u25BC"; vt.appendChild(a); }
     g.append(txt(name, fs, "#f5f5f7", 700, pos[0], pos[1]), vt);
     if (cv) g.append(txt(fmtSG(cv[i]), fc, "#d4b483", 600, pos[0], pos[1] + lh * 2 - (small ? 1 : 2)));
     return g;
@@ -33,7 +33,7 @@ export function radar(v, { small = false, c = null, cLabel = "before" } = {}) {
     s("circle", { cx, cy, r: r0, fill: "rgba(255,255,255,.03)", stroke: "#8e8e93", "stroke-width": 1.5, "stroke-dasharray": "5 4" }),
     cpts ? s("polygon", { points: poly(cpts), fill: "rgba(212,180,131,.10)", stroke: "#d4b483", "stroke-width": small ? 1.6 : 2, "stroke-linejoin": "round" }) : s("g"),
     s("g", { class: "hm-shape", style: `transform-origin:${cx}px ${cy}px` }, [
-      s("polygon", { points: poly(pts), fill: "rgba(76,209,126,.20)", stroke: "#4cd17e", "stroke-width": small ? 2 : 2.5, "stroke-linejoin": "round" }),
+      s("polygon", { points: poly(pts), fill: "rgba(76,209,126,.20)", stroke: "#30d158", "stroke-width": small ? 2 : 2.5, "stroke-linejoin": "round" }),
       ...pts.map((p, i) => s("circle", { cx: p[0], cy: p[1], r: small ? 3.5 : 5, fill: col(vals[i]) }))]),
     s("g", { "font-family": "-apple-system,Inter,sans-serif" }, AXES.map((a, i) => lab(i, a))),
   ]);

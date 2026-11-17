@@ -204,7 +204,7 @@ export function holeSvg(shot, { aim = null, showHeat = true, result = null, onTa
  */
 function previewDot(svg, toScreen, r, at = null) {
   const g = svgEl("g", { class: "pr-preview", "pointer-events": "none", visibility: "hidden" });
-  const halo = svgEl("circle", { r: r * 1.9, fill: "rgba(255,59,48,0.25)" }), dot = svgEl("circle", { r, fill: "#ff3b30", stroke: "#fff", "stroke-width": r * 0.35 });
+  const halo = svgEl("circle", { r: r * 1.9, fill: "rgba(255,59,48,0.25)" }), dot = svgEl("circle", { r, fill: "#ff453a", stroke: "#fff", "stroke-width": r * 0.35 });
   g.append(halo, dot);
   svg.appendChild(g);
   svg.__preview = (pt) => {

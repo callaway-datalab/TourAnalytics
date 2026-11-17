@@ -41,7 +41,7 @@ export function teamPlayerSearch(previewClient) {
     if (!p) { location.hash = "#/player-stats"; return; }
     if (p.key === previewClient?.key) return;
     location.hash = `#/view-as/${encodeURIComponent(p.key)}?label=${encodeURIComponent(p.label)}&to=/dashboard`;
-  }, new Map(), selfKey);
+  }, new Map(), selfKey, { follow: !previewClient }); // (update 816: opens on the current player)
   if (previewClient) picker.preset(previewClient.key);
   return el("div", { class: "analyze-picker team-player-search" }, picker.node);
 }

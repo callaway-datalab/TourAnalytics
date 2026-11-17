@@ -68,6 +68,7 @@ export async function render(main) {
   if (self) player = { key: self[0], label: self[1] };
   else if (wanted && players.some(([k]) => k === wanted)) player = { key: wanted, label: players.find(([k]) => k === wanted)[1] };
   else if (players.length === 1) player = { key: players[0][0], label: players[0][1] };
+  else { const c = (await import("../current.js")).autoPlayer(); if (c && players.some(([k]) => k === c.key)) player = { key: c.key, label: players.find(([k]) => k === c.key)[1] }; } // (update 816: the current player)
 
   let pickParam = q.get("pick");
   let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";

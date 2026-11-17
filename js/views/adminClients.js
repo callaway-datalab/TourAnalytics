@@ -255,12 +255,13 @@ export async function render(main, { flash }) {
     let docs = [];
     try { docs = usageCache.get(usageSpan) || await loadUsage(since); usageCache.set(usageSpan, docs); } catch (err) { mount(usageBox, el("p", { class: "muted small" }, `Couldn\u2019t load usage (${err?.code || "error"}). Republish firestore.rules from this update.`)); return; }
     const { nameOf } = await who();
-    const people = new Map(), pages = new Map();
+    const people = new Map(), pages = new Map(), paths = new Map(), hows = new Map(); // (update 816: how people move)
     let total = 0, views = 0;
     for (const d of docs) {
       const p = people.get(d.uid) || people.set(d.uid, { uid: d.uid, name: nameOf(d.uid), days: 0, sec: 0, views: 0, pages: new Map(), last: "" }).get(d.uid);
       p.days++; p.sec += d.seconds || 0; total += d.seconds || 0; if (d.day > p.last) p.last = d.day;
       for (const [k, n] of Object.entries(d.pages || {})) { p.views += n; views += n; p.pages.set(k, (p.pages.get(k) || 0) + n); const g = pages.get(k) || pages.set(k, { views: 0, sec: 0, who: new Set() }).get(k); g.views += n; g.who.add(d.uid); }
+      for (const [k, n] of Object.entries(d.paths || {})) { const [a, b, h] = k.split("__"), pk = `${a}__${b}`, g = paths.get(pk) || paths.set(pk, { a, b, n: 0, how: new Map() }).get(pk); g.n += n; g.how.set(h, (g.how.get(h) || 0) + n); hows.set(h, (hows.get(h) || 0) + n); }
       for (const [k, v] of Object.entries(d.pageSec || {})) { const g = pages.get(k) || pages.set(k, { views: 0, sec: 0, who: new Set() }).get(k); g.sec += v; g.who.add(d.uid); }
     }
     const ppl = [...people.values()];
@@ -288,8 +289,17 @@ export async function render(main, { flash }) {
           { key: "top", label: "Most used", get: (p) => { const t = [...p.pages].sort((a, b) => b[1] - a[1])[0]; return t ? pageName(t[0]) : "\u2014"; } },
           { key: "last", label: "Last", date: 1, get: (p) => p.last }], ppl, loadUsageBox, { key: "sec", dir: -1 }, { cls: "usage-people" })]),
       ]) : null,
+      // (update 816) how people get from page to page, and by what: the menu, the phone bar, Search, a link on a page, Back
+      paths.size ? el("div", { class: "usage-cols" }, [
+        el("div", {}, [el("h4", {}, "Most common moves"), sortTable("paths", [
+          { key: "from", label: "From", get: (r) => pageName(r.a) }, { key: "to", label: "To", get: (r) => pageName(r.b) }, { key: "n", label: "Times", num: 1, get: (r) => r.n },
+          { key: "how", label: "Mostly by", get: (r) => { const t = [...r.how].sort((x, y) => y[1] - x[1])[0]; return t ? HOW[t[0]] || t[0] : "\u2014"; } }], [...paths.values()], loadUsageBox, { key: "n", dir: -1 })]),
+        el("div", {}, [el("h4", {}, "How people move"), el("table", { class: "usage-how" }, el("tbody", {}, [...hows].sort((a, b) => b[1] - a[1]).map(([h, n]) => el("tr", {}, [el("td", {}, HOW[h] || h), el("td", { class: "num" }, n.toLocaleString()), el("td", { class: "num muted" }, `${Math.round((n / [...hows.values()].reduce((t, v) => t + v, 0)) * 100)}%`)])))),
+          el("p", { class: "muted small" }, "Back means Back/Forward or a typed address. Lots of Back after a page can mean it was a dead end.")]),
+      ]) : null,
     ]);
   };
+  const HOW = { menu: "Top menu", submenu: "Page row under the menu", bar: "Phone bottom bar", search: "Search", chip: "Player chip", link: "A link on the page", back: "Back / typed" };
   loadUsageBox();
   const statsInterval = setInterval(loadStats, 60000);
 

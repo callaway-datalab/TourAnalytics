@@ -524,7 +524,7 @@ export async function render(main, { flash, routeId }) {
   const meKey = myEntryKey(getState());
   displayLabels = new Map([[meKey, myName()], ...labels]); // you, by your Profile name, at the top
   fieldPlayers = fieldPlayers.map((p) => ({ ...p, label: labels.get(p.key) || p.label }));
-  const picker = pickerRef = playerPicker(displayLabels, (p) => {
+  const picker = pickerRef = playerPicker(displayLabels, (p) => { // (update 816: opens on the current player: see the end)
     player = p;
     watchEntered(p?.key || null); // (update 223)
     if (source === "entered") watchMine();
@@ -572,7 +572,7 @@ export async function render(main, { flash, routeId }) {
       if (dash) dash.update({ me: meFrom() });
       else refresh(); // simple comparison: redraw with the highlight (rows are cached)
     }
-  }, ids, meKey);
+  }, ids, meKey, { follow: true }); // (update 816: the current player)
   mount(pickerBox, picker.node);
   if (dash) dash.update({ field: fieldPlayers, me: meFrom() });
   // Player Stats starts blank: just the search (or on the player tapped on the Leaderboards)
