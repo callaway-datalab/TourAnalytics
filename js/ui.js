@@ -231,6 +231,7 @@ function accountMenu(state) {
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
+    state.isAdmin && !window.__previewClient && !getPreviewTeam() ? el("a", { class: "menu-item", href: "#/admin/clients", role: "menuitem" }, "User Access") : null, // (update 832: from the top bar)
     state.isAdmin || state.profile?.kind === "analyst" ? el("a", { class: "menu-item menu-bulk", href: "#/bulk-reports", role: "menuitem" }, "Bulk Reports") : null, // (update 740)
     // (update 829) Chat & support: report an issue, ask a question, request a feature (the unread count beside it)
     el("a", { class: "menu-item menu-chat", href: state.isAdmin ? "#/admin/questions" : "#/questions", role: "menuitem" }, [state.isAdmin || state.profile?.kind === "analyst" ? "Chat" : "Chat & support", el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount))]),
@@ -399,7 +400,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const kind = admin ? "admin" : team ? "team" : "client";
   // top bar: (Player Access,) Analyze, Play — each opens on its first page
   const secs = sectionsFor(kind), onSec = secs.find((sec) => sec.items.some((it) => itemOn(it, currentRoute)));
-  const items = [...(admin ? NAV.admin : []), ["#/home", "home", "Home", ["home"]] /* (update 610) */, ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
+  const items = [/* (update 832: User Access is in the ☰ menu) */ ["#/home", "home", "Home", ["home"]] /* (update 610) */, ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 
