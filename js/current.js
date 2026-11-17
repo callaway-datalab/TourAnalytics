@@ -37,6 +37,8 @@ export function statsHref() {
   return "#/dashboard";
 }
 export function openStatsTab(view2, sub = null) {
+  // (update 833) Stats already showing: switch the view in place; else open Stats on it (?view= in the address)
+  if (document.querySelector(".st-host")) { const h0 = location.hash.split("?"), q = new URLSearchParams(h0[1] || ""); q.set("view", view2); history.replaceState(history.state, "", `${h0[0]}?${q}`); window.dispatchEvent(new CustomEvent("ta-stats-view", { detail: { view: view2, sub } })); import("./ui.js").then((m) => m.syncStatsNav()).catch(() => {}); return; }
   try { sessionStorage.setItem("ta.statsPreset", JSON.stringify({ at: Date.now(), st: { view2, ...(sub ? { pgSub: sub } : {}) } })); } catch { /* */ }
-  const h = statsHref(); if (location.hash === h) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = h;
+  const h = `${statsHref()}?view=${view2}`; if (location.hash === h) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = h;
 }

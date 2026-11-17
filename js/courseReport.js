@@ -183,7 +183,7 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
         // each tournament, then the shots they gain and lose most here
         const catMax = Math.max(0.05, ...CATS.flatMap(([k]) => [Math.abs(per(here, k) || 0), Math.abs(per(elsewhere, k) || 0)]));
         const hbar = (v, c) => `<div class="hb"><i class="${c}" style="${v < 0 ? "right:50%" : "left:50%"};width:${(Math.min(1, Math.abs(v || 0) / catMax) * 50).toFixed(1)}%"></i></div>`;
-        // (update 511) each tournament's finish: among the players with the most rounds in it, by strokes gained a round (as the
+        // (update 511) each tournament's finish: among the players with the most rounds in it, by strokes gained per round (as the
         // website's Course History); fewer rounds than them: MC
         const field = d?.field || [];
         const finish = (e) => {
@@ -198,17 +198,17 @@ export async function buildCourseReport(course, who, onStatus = () => {}) {
         const tbl = (head, rows, empty) => `<table><thead><tr>${head.map((h, i2) => `<th${i2 ? ' class="n"' : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("") || `<tr><td colspan="${head.length}" class="muted">${empty}</td></tr>`}</tbody></table>`;
         const dRow2 = (x) => `<tr><td>${CN[x.cat] || x.cat} \u00b7 ${esc(x.dist)}</td><td class="n ${cls(x.a)}">${sgn(x.a)}</td><td class="n ${cls(x.b)}">${sgn(x.b)}</td><td class="n ${cls(x.d)}"><b>${sgn(x.d)}</b></td></tr>`;
         page("Course history", `<div class="hist"><h2 class="h">COURSE HISTORY <small>${esc(who.label)} at ${esc(course.name)} against elsewhere (their rounds at other courses), from the stats</small></h2>
-          <div class="scores s6"><div class="sc"><span>Rounds here</span><b>${here.length}</b><small>${evs.size} ${evs.size === 1 ? "tournament" : "tournaments"}</small></div><div class="sc"><span>SG a round here</span><b class="${cls(ph)}">${sgn(ph)}</b><small>strokes gained</small></div><div class="sc"><span>Elsewhere</span><b class="${cls(pe)}">${sgn(pe)}</b><small>${elsewhere.length} rounds</small></div><div class="sc"><span>Here vs else</span><b class="${cls(ph - pe)}">${sgn(ph - pe)}</b><small>a round</small></div>
+          <div class="scores s6"><div class="sc"><span>Rounds here</span><b>${here.length}</b><small>${evs.size} ${evs.size === 1 ? "tournament" : "tournaments"}</small></div><div class="sc"><span>SG per round here</span><b class="${cls(ph)}">${sgn(ph)}</b><small>strokes gained</small></div><div class="sc"><span>Elsewhere</span><b class="${cls(pe)}">${sgn(pe)}</b><small>${elsewhere.length} rounds</small></div><div class="sc"><span>Here vs else</span><b class="${cls(ph - pe)}">${sgn(ph - pe)}</b><small>per round</small></div>
             <div class="sc"><span>Best round here</span><b class="${cls(per([best]))}">${sgn(per([best]))}</b><small>${rdName(best)}</small></div><div class="sc"><span>Toughest here</span><b class="${cls(per([worst]))}">${sgn(per([worst]))}</b><small>${rdName(worst)}</small></div></div>
           <div class="hrow r1">
-            <div><h3>HERE AGAINST ELSEWHERE <small>strokes gained a round</small></h3>
+            <div><h3>HERE AGAINST ELSEWHERE <small>strokes gained per round</small></h3>
               <div class="hcat"><div class="hk"><div>Category</div><div><span class="hlg"><i class="here"></i>Here</span> <span class="hlg"><i class="else"></i>Elsewhere</span></div><div class="n">Here / else</div><div class="n">Diff</div></div>
               ${CATS.map(([k, l]) => { const h0 = per(here, k), a0 = per(elsewhere, k); return `<div class="hc${k ? "" : " tot"}"><span class="l">${l}</span><div class="bars">${hbar(h0, "here")}${hbar(a0, "else")}</div><span class="v"><b class="${cls(h0)}">${sgn(h0)}</b><em class="${cls(a0)}">${sgn(a0)}</em></span><span class="n ${cls(h0 - a0)}"><b>${sgn(h0 - a0)}</b></span></div>`; }).join("")}</div></div>
             <div><h3>TOURNAMENTS HERE</h3>${tbl(["Tournament", "Rounds", "SG / round", "Finish"], [...evs.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).slice(0, 8).map((e) => `<tr><td>${esc(e.event)} ${esc(e.year || "")}</td><td class="n">${e.rs.length}</td><td class="n ${cls(per(e.rs))}"><b>${sgn(per(e.rs))}</b></td><td class="n"><b>${esc(finish(e))}</b></td></tr>`), "None")}</div>
           </div>
           <div class="hrow r2">
-            <div><h3>BETTER HERE <small>shots where they gain most, a round</small></h3>${tbl(["Shot", "Here", "Elsewhere", "Diff"], gains.map(dRow2), "None")}</div>
-            <div><h3>WORSE HERE <small>shots where they lose most, a round</small></h3>${tbl(["Shot", "Here", "Elsewhere", "Diff"], losses.map(dRow2), "None")}</div>
+            <div><h3>BETTER HERE <small>shots where they gain most, per round</small></h3>${tbl(["Shot", "Here", "Elsewhere", "Diff"], gains.map(dRow2), "None")}</div>
+            <div><h3>WORSE HERE <small>shots where they lose most, per round</small></h3>${tbl(["Shot", "Here", "Elsewhere", "Diff"], losses.map(dRow2), "None")}</div>
           </div></div>`, "hpage");
       }
     } catch (err) { console.warn("course history", err); }

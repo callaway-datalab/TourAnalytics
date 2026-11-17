@@ -4,7 +4,7 @@ import { wrap, textWidth } from "./pdfLite.js";
 const f2 = (v) => `${v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`;
 
 /**
- * Each tournament (event and year) from rounds tagged with a product: strokes gained a round in it, and the product used
+ * Each tournament (event and year) from rounds tagged with a product: strokes gained per round in it, and the product used
  * most in it (by shots). items: [{ key, name, color, rounds: [{ event, year, date, sg, shots }] }] (sg: that round's
  * strokes gained with these products; shots: how many). Returns [{ label, date, v, color, key }] oldest first.
  */
@@ -33,7 +33,7 @@ const md = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || "")); 
 /* (update 516) dates: the x axis as dates (a few, level, spaced out) in place of every event's name; gap: the room
    between the bars and the axis labels */
 // (update 666) roll: { by: "round", n: 20 } or { by: "event", n: 5 }: a solid champagne line, the rolling average of strokes
-// gained a round at each bar (the last n rounds, or the last n events' rounds pooled; fewer at the start)
+// gained per round at each bar (the last n rounds, or the last n events' rounds pooled; fewer at the start)
 export const ROLL_COLOR = "#b08d57";
 export function rollingOf(bars, roll) {
   if (!roll) return null;

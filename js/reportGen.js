@@ -21,7 +21,7 @@ import { formN } from "./defs.js"; // (update 814: the shared form window)
 const PROD_COLORS = ["#2f9bff", "#30d158", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff", "#ff375f", "#5e5ce6", "#00c7be", "#a2845e"];
 
 const CAT_NAME = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
-const STEADY = 0.05; // a change smaller than ±0.05 strokes a round counts as steady
+const STEADY = 0.05; // a change smaller than ±0.05 strokes per round counts as steady
 // always 2 decimals (the Detail list)
 const fmt2 = (v) => (v == null || !Number.isFinite(v) ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`);
 // (tiny numbers get a third decimal, so nothing shows as "−0.00")
@@ -53,9 +53,9 @@ export function aiDigest(a) {
     bestEvents: (a.peaks || []).slice(0, 3).map(rd), toughestEvents: (a.valleys || []).slice(0, 3).map(rd), // (update 547)
   };
 }
-// (update 556) a trend, the last stretch first: "Last 12 rounds gained +0.54 a round. 12 rounds before that gained +0.17 a round."
+// (update 556) a trend, the last stretch first: "Last 12 rounds gained +0.54 per round. 12 rounds before that gained +0.17 per round."
 const gl = (v) => (v != null && v < 0 ? `lost ${Math.abs(v).toFixed(2)}` : `gained ${fmtSG(v)}`);
-const trendWords = (n, w, t) => `Last ${n} ${w} ${gl(t.late)} a round. ${n} ${w} before that ${gl(t.early)} a round.`;
+const trendWords = (n, w, t) => `Last ${n} ${w} ${gl(t.late)} per round. ${n} ${w} before that ${gl(t.early)} per round.`;
 export function analyzePerformance(me, field, { from = null, to = null, cats: catsIn = CATEGORIES.map(([k]) => k), byProduct = false, idx = {}, minRounds = null, tour = null, years = null, mineKeys = null } = {}) {
   const cats = CATEGORIES.map(([k]) => k).filter((k) => catsIn.includes(k));
   // (update 550) years: seasons, as the Stats page counts them (the file's year, so December's events in next year's
@@ -145,7 +145,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   const shiftN = 12 /* (update 734: Form everywhere: 12 rounds; the DP World Tour 3 events) */, restS = series.slice(0, Math.max(0, series.length - shiftN));
   const catShift = series.length > shiftN && restS.length >= 3 ? cats.map((k) => { const a1 = mean(series.map((q) => q.byCat[k])), b1 = mean(restS.map((q) => q.byCat[k])); return { cat: k, all: a1, rest: b1, change: a1 != null && b1 != null ? a1 - b1 : null }; }) : null;
   const shiftSpan = catShift ? { n: shiftN, last: span(series.slice(-shiftN)), all: span(series) } : null;
-  // (update 547) the best and toughest EVENTS (strokes gained a round in each tournament), not single rounds
+  // (update 547) the best and toughest EVENTS (strokes gained per round in each tournament), not single rounds
   const evUnits = (() => { const m = new Map(); for (const q of series) { const k = `${q.event || q.date}|${String(q.date || "").slice(0, 4)}`; (m.get(k) || m.set(k, []).get(k)).push(q); }
     return [...m.values()].map((g) => ({ date: g.at(-1).date, event: g[0].event, roundNo: "", rounds: g.length, value: mean(g.map((q) => q.value)), byCat: Object.fromEntries(cats.map((k) => [k, mean(g.map((q) => q.byCat[k] ?? 0))])) })); })();
   const ranked = [...evUnits].sort((a, b) => b.value - a.value);
@@ -200,7 +200,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       .sort((a, b) => b.shots - a.shots);
   }
   // (update 274) by product, always: each kind of club (and the ball) the player has used more than one model of,
-  // with strokes gained a round with each model (in the rounds it was used) and the stats recorded with it. A kind
+  // with strokes gained per round with each model (in the rounds it was used) and the stats recorded with it. A kind
   // with only one model (one driver all year, one ball) is shown too (update 551).
   let productTable = null;
   if (byProduct) {
@@ -223,8 +223,8 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
       const rows = [...m.values()].filter((g) => g.info.kind === kind).map((g) => { const n = Math.max(1, g.rounds.size), sgs = sgCols.map(([, c]) => (c ? (g.byCat[c] || 0) : g.sg) / n);
         return { label: `${g.info.brand} ${g.info.model}`.trim(), kind, rounds: g.rounds.size, shots: g.shots, perRound: sgs[0], sgs,
           stats: stats.map(([k]) => (g.obs[k]?.w ? { v: g.obs[k].s / g.obs[k].w, def: statDef(k) } : null)) }; })
-        .sort((a, b) => b.perRound - a.perRound || b.rounds - a.rounds); // (update 521: best strokes gained a round first; 522: in its own part of the game)
-      // (update 515) every event, coloured by the model used most in it: strokes gained a round with this kind's shots
+        .sort((a, b) => b.perRound - a.perRound || b.rounds - a.rounds); // (update 521: best strokes gained per round first; 522: in its own part of the game)
+      // (update 515) every event, coloured by the model used most in it: strokes gained per round with this kind's shots
       const vals = [...m.values()].filter((g) => g.info.kind === kind).sort((a, b) => b.rounds.size - a.rounds.size || b.sg - a.sg).map((g) => g.value);
       const colorOf = new Map(vals.map((v, i) => [v, PROD_COLORS[i % PROD_COLORS.length]]));
       const items = vals.map((v) => ({ key: v, name: `${gearInfo(v).brand} ${gearInfo(v).model}`.trim(), color: colorOf.get(v),
@@ -240,19 +240,19 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     if (c.value == null) continue;
     const gap = c.fieldAvg != null ? c.value - c.fieldAvg : c.value;
     if (gap < -0.05) focus.push({ cat: c.cat, kind: "category", lost: -gap, title: `${c.name}`,
-      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes a round.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); // (update 574: the rank on its own line)
+      detail: `${c.value >= 0 ? `Gains ${c.value.toFixed(2)}` : `Loses ${Math.abs(c.value).toFixed(2)}`} strokes per round.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); // (update 574: the rank on its own line)
   }
   const minShots = Math.max(5, mine.length * 0.5);
   for (const g of groups) {
     if (g.shots < minShots || g.repeat) continue;
     const gap = g.fieldAvg != null ? g.perRound - g.fieldAvg : g.perRound;
     if (gap < -0.05) focus.push({ cat: g.cat, kind: "skill", label: g.label, lost: -gap, title: g.title,
-      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes a round.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` });
+      detail: `${g.perRound >= 0 ? `Gains only ${g.perRound.toFixed(2)}` : `Loses ${Math.abs(g.perRound).toFixed(2)}`} strokes per round.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` });
   }
   for (const t of catTrend) if (t.change != null && t.change < -0.2) focus.push({ cat: t.cat, kind: "trend", lost: -t.change / 2, title: `Slipping: ${t.name}`,
-    detail: `${trendWords(half, unitW, t)} That's ${Math.abs(t.change).toFixed(2)} strokes a round worse.` });
+    detail: `${trendWords(half, unitW, t)} That's ${Math.abs(t.change).toFixed(2)} strokes per round worse.` });
   if (products) for (const p of products) if (p.shots >= 10 && p.perShot < -0.05) focus.push({ cat: null, kind: "product", lost: -p.total / Math.max(1, mine.length), title: `${p.club}`,
-    detail: `Loses ${Math.abs(p.perShot).toFixed(3)} strokes a shot, over ${Math.round(p.shots)} shots (about ${Math.abs(p.total / Math.max(1, mine.length)).toFixed(2)} a round).` });
+    detail: `Loses ${Math.abs(p.perShot).toFixed(3)} strokes a shot, over ${Math.round(p.shots)} shots (about ${Math.abs(p.total / Math.max(1, mine.length)).toFixed(2)} per round).` });
   // keep the biggest, at most two per category, preferring the specific over the general
   focus.sort((a, b) => b.lost - a.lost || (a.kind === "category") - (b.kind === "category"));
   const top = [];
@@ -269,25 +269,25 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
   for (const c of byCat) {
     if (c.value == null || c.value <= 0 || !isElite(c.rank, c.of)) continue;
     elite.push({ kind: "category", cat: c.cat, score: 1 + (c.value - (c.fieldAvg ?? 0)), title: c.name,
-      text: `Gains ${c.value.toFixed(2)} strokes a round.\nRanked ${c.rank} of ${c.of}.` }); // (update 574: as Costing strokes words it)
+      text: `Gains ${c.value.toFixed(2)} strokes per round.\nRanked ${c.rank} of ${c.of}.` }); // (update 574: as Costing strokes words it)
   }
   for (const g of groups) {
     if (g.repeat || g.shots < Math.max(10, minShots) || g.perRound <= 0 || !isElite(g.rank, g.of)) continue;
     elite.push({ cat: g.cat, score: g.perRound - (g.fieldAvg ?? 0), title: g.title,
-      text: `Gains ${g.perRound.toFixed(2)} strokes a round.\nRanked ${g.rank} of ${g.of} \u00b7 ${Math.round(g.shots)} shots.` });
+      text: `Gains ${g.perRound.toFixed(2)} strokes per round.\nRanked ${g.rank} of ${g.of} \u00b7 ${Math.round(g.shots)} shots.` });
   }
   elite.sort((p, q) => q.score - p.score);
   // (update 574) the rest of the strengths: the biggest gains on the Tour Avg (a part of the game or a distance), so there are
   // three whenever there are three to find
   const strong = [];
   for (const c of byCat) { if (c.value == null || c.fieldAvg == null || c.value - c.fieldAvg < 0.05) continue;
-    strong.push({ kind: "category", cat: c.cat, score: c.value - c.fieldAvg, title: c.name, text: `Gains ${c.value.toFixed(2)} strokes a round.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); }
+    strong.push({ kind: "category", cat: c.cat, score: c.value - c.fieldAvg, title: c.name, text: `Gains ${c.value.toFixed(2)} strokes per round.${c.rank ? `\nRanked ${c.rank} of ${c.of}.` : ""}` }); }
   for (const g of groups) { if (g.repeat || g.shots < minShots || g.fieldAvg == null || g.perRound - g.fieldAvg < 0.05) continue;
-    strong.push({ cat: g.cat, score: g.perRound - g.fieldAvg, title: g.title, text: `Gains ${g.perRound.toFixed(2)} strokes a round.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` }); }
+    strong.push({ cat: g.cat, score: g.perRound - g.fieldAvg, title: g.title, text: `Gains ${g.perRound.toFixed(2)} strokes per round.\n${g.rank ? `Ranked ${g.rank} of ${g.of} \u00b7 ` : ""}${Math.round(g.shots)} shots.` }); }
   strong.sort((p, q) => q.score - p.score);
   const rising = catTrend.filter((t) => t.change != null && t.change >= 0.2).sort((p, q) => q.change - p.change).map((t) => ({
     cat: t.cat, title: t.early < 0 && t.late >= 0 ? `Turned it around: ${t.name}` : `On the rise: ${t.name}`,
-    text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes a round better.` }));
+    text: `${trendWords(half, unitW, t)} That's ${t.change.toFixed(2)} strokes per round better.` }));
   // recent form, in plain terms: the last 10 rounds against the first 10 (or halves when there are fewer)
   const n10 = Math.min(formN(byEvent), Math.floor(units.length / 2)), fA = units.slice(-2 * n10, -n10).flat(), fB = units.slice(-n10).flat(); // (update 694: Form, 12 rounds (3 events))
   // (update 670) and the overall direction for the form word: the last 50 rounds against the 50 before (20 events against 20)
@@ -322,7 +322,7 @@ export function analyzePerformance(me, field, { from = null, to = null, cats: ca
     tourSd = sds.length ? mean(sds) : null;
   }
   // (update 564) this season against last season (the season before the newest one in the report, from all their rounds on
-  // the same tour, whether or not the report's dates cover it): strokes gained a round, in total and each category
+  // the same tour, whether or not the report's dates cover it): strokes gained per round, in total and each category
   const yoy = (() => {
     const yr = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
     const ys = mine.map(yr).filter((v) => /^\d{4}$/.test(v)).sort();
@@ -550,7 +550,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.text(a.overall.rounds ? fmtSG(a.overall.value) : "\u2014", M - 3, 172, { size: 62, bold: true, color: a.overall.value >= 0 ? "#7ee2a2" : "#ff8a80", spacing: -1.5 });
   const versus = a.overall.fieldAvg != null && a.overall.value != null ? a.overall.value - a.overall.fieldAvg : null;
   void versus; // (update 678: no Tour Avg anywhere in the report: the player's own numbers only)
-  if (!CMP) wrap(a.overall.rounds ? `Strokes gained a round over ${plural(a.overall.rounds, "round")}.` : "No rounds in this period.", W * 0.56, 9.5)
+  if (!CMP) wrap(a.overall.rounds ? `Strokes gained per round over ${plural(a.overall.rounds, "round")}.` : "No rounds in this period.", W * 0.56, 9.5)
     .slice(0, 2).forEach((l, i) => d.text(l, M, 190 + i * 12, { size: 9.5, color: "#c7c7cc" }));
   // badges
   let bx = M;
@@ -568,7 +568,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     d.line(x0 - 16, 130, x0 - 16, 200, { color: "#3a3a3c", width: 0.8 });
     { const t = `Change \u00b7 ${A0.label} to ${A1.label}`; cap(textWidth(t.toUpperCase(), 7, true) + 1.4 * t.length < M + W - x0 ? t : "Change", x0, 138.5, "#c7c7cc", "left", 7); }
     d.text(r2 == null ? "\u2014" : `${r2 > 0 ? "+" : r2 < 0 ? "\u2212" : ""}${Math.abs(r2).toFixed(2)}`, x0 - 2, 176, { size: big, bold: true, color: col, spacing: -1 });
-    d.text(r2 == null ? "Not enough rounds to compare." : r2 === 0 ? "The same a round." : `A round ${r2 > 0 ? "better" : "worse"} than ${A0.label}.`, x0, 191, { size: 8, color: "#a1a1a6" });
+    d.text(r2 == null ? "Not enough rounds to compare." : r2 === 0 ? "The same per round." : `A round ${r2 > 0 ? "better" : "worse"} than ${A0.label}.`, x0, 191, { size: 8, color: "#a1a1a6" });
     const k0 = A0.a.overall.rank, k1 = A1.a.overall.rank;
     if (k0 && k1) d.text(`Rank ${k0} \u2192 ${k1}${k1 < k0 ? ` (up ${k0 - k1})` : k1 > k0 ? ` (down ${k1 - k0})` : " (the same)"}`, x0, 203, { size: 7.5, bold: true, color: k1 < k0 ? "#7ee2a2" : k1 > k0 ? "#ff8a80" : "#c7c7cc" });
   } else if (a.rankHist?.length >= 2) {
@@ -606,7 +606,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   d.roundRect(M, y - 4, W, 46, 8, { fill: P.note });
   d.text("How to read this:", M + 12, y + 9, { size: 8.5, bold: true, color: P.gold });
   d.text("Strokes gained compares every shot with what a typical tour player would do from the same spot.", M + 92, y + 9, { size: 8.5, color: P.ink });
-  d.text("Plus (green) = better than that; minus (red) = worse. +1.00 means one stroke a round better.", M + 92, y + 21, { size: 8.5, color: P.ink });
+  d.text("Plus (green) = better than that; minus (red) = worse. +1.00 means one stroke per round better.", M + 92, y + 21, { size: 8.5, color: P.ink });
   d.text(CMP ? `Ranks: within each ${FR}${a.tour ? ` (${a.tour} only)` : ""}. Diff: ${A1.label} against ${A0.label}.`
     : `Ranks: against the ${a.compared ?? 0} other ${a.compared === 1 ? "player" : "players"} with at least ${a.minRounds ?? 1} ${a.minRounds === 1 ? "round" : "rounds"} in this period${a.tour ? ` (${a.tour || "No tour"} only)` : ""}.`, M + 92, y + 33, { size: 8.5, color: P.ink });
   y += 58;
@@ -688,8 +688,8 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     y += 32; // (update 573: a little closer, so What stands out fits under it on page 1)
   }
   y += 6; // (update 574: a little room under Putting's rank)
-  if (CMP) d.text(`Diff: ${A1.label} against ${A0.label}, in strokes gained a round (green = better in ${A1.label}, red = worse). Ranks: ${A0.label} \u2192 ${A1.label}.`, M, y + 4, { size: 7.5, color: P.faint });
-  else d.text(a.halves ? `Trend: the last ${a.halves.n} ${a.halves.unit || "rounds"} (${a.halves.late}) against the ${a.halves.n} before them (${a.halves.early}), in strokes a round` : "Trend: needs more rounds to compare.", M, y + 4, { size: 7.5, color: P.faint }); // (update 580)
+  if (CMP) d.text(`Diff: ${A1.label} against ${A0.label}, in strokes gained per round (green = better in ${A1.label}, red = worse). Ranks: ${A0.label} \u2192 ${A1.label}.`, M, y + 4, { size: 7.5, color: P.faint });
+  else d.text(a.halves ? `Trend: the last ${a.halves.n} ${a.halves.unit || "rounds"} (${a.halves.late}) against the ${a.halves.n} before them (${a.halves.early}), in strokes per round` : "Trend: needs more rounds to compare.", M, y + 4, { size: 7.5, color: P.faint }); // (update 580)
   y += 18;
 
   /* ---------- highlights: strengths and things to watch ---------- */
@@ -711,7 +711,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const topR = (g) => g.rank && g.of >= 2 && g.rank <= Math.max(1, Math.floor(g.of * 0.1));
   const pick3 = (list) => { const out = []; for (const x of list) { if (out.length >= 3) break; if (out.filter((o) => o.g.cat === x.g.cat).length >= 2) continue; out.push(x); } for (const x of list) { if (out.length >= 3) break; if (!out.includes(x)) out.push(x); } return out; };
   const cardOf = (x, up) => ({ cat: x.g.cat, title: shortT(x.g), tag: up ? (topR(x.g) ? "Elite" : x.gap >= 0.05 ? "Strong" : "Solid") : (x.gap <= -0.05 ? "Costing strokes" : "Room to grow"), /* (update 678: no "avg") */
-    text: `${x.g.perRound >= 0 ? `Gains ${x.g.perRound.toFixed(2)}` : `Loses ${Math.abs(x.g.perRound).toFixed(2)}`} strokes a round${x.g.rank ? ` · Ranked ${x.g.rank} of ${x.g.of}` : ""} · ${Math.round(x.g.shots)} shots.` });
+    text: `${x.g.perRound >= 0 ? `Gains ${x.g.perRound.toFixed(2)}` : `Loses ${Math.abs(x.g.perRound).toFixed(2)}`} strokes per round${x.g.rank ? ` · Ranked ${x.g.rank} of ${x.g.of}` : ""} · ${Math.round(x.g.shots)} shots.` });
   let strengths = pick3(pool.filter((x) => x.gap > 0).sort((p, q) => q.gap - p.gap)).map((x) => cardOf(x, true));
   let watch = pick3(pool.filter((x) => x.gap < 0).sort((p, q) => p.gap - q.gap)).map((x) => cardOf(x, false));
   let hlHeads = ["Strengths", "Watch"], hlEmpty = ["No clear standouts in this period.", "Nothing is costing strokes in this period."];
@@ -720,7 +720,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const first = new Map((A0.a.groups || []).filter(okIn(A0.a)).map((g) => [`${g.cat}|${g.key}`, g])), diffs = [];
     for (const g of (A1.a.groups || []).filter(okIn(A1.a))) { const g0 = first.get(`${g.cat}|${g.key}`); if (g0) diffs.push({ g, g0, gap: dShown(g.perRound, g0.perRound) }); }
     const cmpCard = (x, up) => ({ cat: x.g.cat, title: shortT(x.g), tag: up ? (x.gap >= 0.15 ? "Big jump" : "Better") : (x.gap <= -0.15 ? "Big drop" : "Slipped"),
-      text: `${A0.label} ${fmtSG(x.g0.perRound)} \u2192 ${A1.label} ${fmtSG(x.g.perRound)} strokes a round (${up ? "up" : "down"} ${Math.abs(x.gap).toFixed(2)})${x.g0.rank && x.g.rank ? ` \u00b7 Rank ${x.g0.rank} \u2192 ${x.g.rank}` : ""}.` });
+      text: `${A0.label} ${fmtSG(x.g0.perRound)} \u2192 ${A1.label} ${fmtSG(x.g.perRound)} strokes per round (${up ? "up" : "down"} ${Math.abs(x.gap).toFixed(2)})${x.g0.rank && x.g.rank ? ` \u00b7 Rank ${x.g0.rank} \u2192 ${x.g.rank}` : ""}.` });
     strengths = pick3(diffs.filter((x) => x.gap >= 0.01).sort((p, q) => q.gap - p.gap)).map((x) => cmpCard(x, true));
     watch = pick3(diffs.filter((x) => x.gap <= -0.01).sort((p, q) => p.gap - q.gap)).map((x) => cmpCard(x, false));
     hlHeads = [`Better in ${A1.label}`, `Worse in ${A1.label}`]; hlEmpty = [`Nothing clearly better than ${A0.label}.`, `Nothing clearly worse than ${A0.label}.`];
@@ -846,7 +846,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   if (fs.length >= 2) {
     section("SG Form", U === "event" ? "Event by event" : "Round by round", 150);
     // (update 577) wrapped to the page's width (it ran off the right edge)
-    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained a round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 20} ${U}s: when it rises, the player is playing better.${CMP ? ` The vertical dashed line separates the ${FR}s.` : ""}`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each bar is one ${U}${U === "event" ? " (strokes gained per round there)" : ""} (green = gained strokes, red = lost). The gold line is the rolling average of the last ${isDP ? 5 : 20} ${U}s: when it rises, the player is playing better.${CMP ? ` The vertical dashed line separates the ${FR}s.` : ""}`, W, 8)) { d.text(l, M, y + 6, { size: 8, color: P.grey }); y += 10; }
     y -= 10;
     y += 14;
     formChart(a.cats.length === CATEGORIES.length ? "SG: Total" : `SG: Total \u00b7 ${a.cats.map((k) => CAT_NAME[k]).join(", ")}`, fs.map((q) => q.value), fs); // (no best / worst dots)
@@ -905,7 +905,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     }
     y = y0 + hh + 12; // (and the caption under the chart)
   }
-  /* (update 564) This season vs Last season: a bar for each season in each category (strokes gained a round), and the
+  /* (update 564) This season vs Last season: a bar for each season in each category (strokes gained per round), and the
      differences in a few plain lines on the right */
   function drawYoY(yo, x, ty, w, h, bigH = false) {
     d.roundRect(x, ty, 24, h, 10, { fill: P.night });
@@ -945,10 +945,10 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap("The differences", ix, ty + 16 + (bigH ? 2 : 0), P.goldLight, "left", bigH ? 8.6 : 6.3);
     const tot = yo.rows[0], parts = yo.rows.slice(1).filter((r) => r.ch != null).sort((p, q) => q.ch - p.ch);
     const lines = [];
-    if (tot.ch != null) lines.push([tot.ch, Math.abs(tot.ch) < 0.005 ? `Overall: the same as ${yo.lastY}, ${fmtSG(tot.now)} a round.` : `Overall: ${Math.abs(tot.ch).toFixed(2)} a round ${tot.ch > 0 ? "better" : "worse"} than ${yo.lastY} (${fmtSG(tot.prev)} \u2192 ${fmtSG(tot.now)}).`]);
+    if (tot.ch != null) lines.push([tot.ch, Math.abs(tot.ch) < 0.005 ? `Overall: the same as ${yo.lastY}, ${fmtSG(tot.now)} per round.` : `Overall: ${Math.abs(tot.ch).toFixed(2)} per round ${tot.ch > 0 ? "better" : "worse"} than ${yo.lastY} (${fmtSG(tot.prev)} \u2192 ${fmtSG(tot.now)}).`]);
     const best = parts[0], worst = parts.at(-1);
-    if (best && best.ch > 0.005) lines.push([best.ch, `Biggest gain: ${best.name}, up ${best.ch.toFixed(2)} a round${best.prev < 0 && best.now >= 0 ? ", from losing strokes to gaining them" : ""}.`]);
-    if (worst && worst !== best && worst.ch < -0.005) lines.push([worst.ch, `Biggest drop: ${worst.name}, down ${Math.abs(worst.ch).toFixed(2)} a round${worst.prev >= 0 && worst.now < 0 ? ", from gaining strokes to losing them" : ""}.`]);
+    if (best && best.ch > 0.005) lines.push([best.ch, `Biggest gain: ${best.name}, up ${best.ch.toFixed(2)} per round${best.prev < 0 && best.now >= 0 ? ", from losing strokes to gaining them" : ""}.`]);
+    if (worst && worst !== best && worst.ch < -0.005) lines.push([worst.ch, `Biggest drop: ${worst.name}, down ${Math.abs(worst.ch).toFixed(2)} per round${worst.prev >= 0 && worst.now < 0 ? ", from gaining strokes to losing them" : ""}.`]);
     const flips = parts.filter((r) => r !== best && r !== worst && Math.sign(r.now) !== Math.sign(r.prev) && Math.abs(r.ch) >= 0.05);
     for (const r of flips.slice(0, 1)) lines.push([r.ch, `${r.name} has ${r.now >= 0 ? "turned into a strength" : "turned into a weakness"} (${fmtSG(r.prev)} \u2192 ${fmtSG(r.now)}).`]);
     const steady = parts.filter((r) => Math.abs(r.ch) < 0.05);
@@ -1080,14 +1080,14 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
   const upTo = (k) => { const t = String(k || "").split("|")[0], nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number); if (!nums.length) return null; return /^\s*>/.test(t) ? Infinity : Math.max(...nums); };
   const argNear = (g) => g.cat === "ARG" && upTo(g.key) != null && upTo(g.key) <= 30;
   const byDist = a.groups.filter((g) => (argNear(g) ? g.withLie : !g.withLie));
-  // (update 650) "Skill by Skill": four headline tiles (net a round, biggest weapon, biggest leak, quickest win); every
+  // (update 650) "Skill by Skill": four headline tiles (net per round, biggest weapon, biggest leak, quickest win); every
   // skill as a bar from a centre line (gains right, losses left) grouped by area of the game with each area's total,
   // a dashed mark at the Tour's best 10% and a rank pill; then up to four plain-English insights written from the
   // numbers. Sized to fit one page whatever the number of skills.
   if (byDist.length) {
     newPage(); // Detail starts at the top of the last page
     section("Detail", "Skill by Skill", 52);
-    d.text(CMP ? `Strokes gained a round in each skill, a bar for each ${FR} (${CMP.map((q) => q.label).join(", ")}). Diff: ${A1.label} against ${A0.label}.` : "Strokes gained a round in each skill, against the Tour.", M, y + 1, { size: 9.6, color: P.grey });
+    d.text(CMP ? `Strokes gained per round in each skill, a bar for each ${FR} (${CMP.map((q) => q.label).join(", ")}). Diff: ${A1.label} against ${A0.label}.` : "Strokes gained per round in each skill, against the Tour.", M, y + 1, { size: 9.6, color: P.grey });
     y += 14;
     const sg = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
     const rows = byDist.filter((g) => g.perRound != null && Number.isFinite(g.perRound));
@@ -1114,7 +1114,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     };
     const net = a.overall?.value;
     if (!CMP) {
-    tile(0, "Net a round", net != null ? sg(net) : "—", net == null ? "#ffffff" : net >= 0 ? "#30d158" : "#ff453a",
+    tile(0, "Net per round", net != null ? sg(net) : "—", net == null ? "#ffffff" : net >= 0 ? "#30d158" : "#ff453a",
       [a.overall?.rank ? `Rank ${a.overall.rank} of ${a.overall.of}` : "", a.netTrend != null && Math.abs(a.netTrend) >= 0.01 ? `${a.netTrend >= 0 ? "up" : "down"} ${Math.abs(a.netTrend).toFixed(2)} on the ${a.halves?.n || ""} ${a.halves?.unit || "rounds"} before`.replace(/\s+/g, " ") : ""].filter(Boolean).join(" · "), true);
     if (best && best.perRound > 0) tile(1, "Biggest weapon", sg(best.perRound), P.up, `${full(best)}${best.rank ? ` · rank ${best.rank}` : ""}`);
     else tile(1, "Biggest weapon", "—", P.soft, "No skill gaining yet");
@@ -1129,7 +1129,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     const top = byArea[0], low = byArea.at(-1);
     if (top && top.total > 0.02) {
       const inside = top.list.filter((g) => g.perRound > 0).sort((p, q) => q.perRound - p.perRound);
-      ins.push([`${top.name} is the engine.`, `Gains ${sg(top.total)} a round there${top.rank?.rank ? `, rank ${top.rank.rank} of ${top.rank.of}` : ""}${inside[0] ? `; the most from ${label(inside[0])} (${sg(inside[0].perRound)})` : ""}.`]);
+      ins.push([`${top.name} is the engine.`, `Gains ${sg(top.total)} per round there${top.rank?.rank ? `, rank ${top.rank.rank} of ${top.rank.of}` : ""}${inside[0] ? `; the most from ${label(inside[0])} (${sg(inside[0].perRound)})` : ""}.`]);
     }
     if (low && low !== top && low.total < -0.02) {
       const w2 = [...low.list].sort((p, q) => p.perRound - q.perRound)[0];
@@ -1140,7 +1140,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         const c = prox?.cells?.[bi];
         if (c?.value != null && c.fieldAvg != null && c.value > c.fieldAvg) why = `: ${Math.round(c.value)} ft from the hole from ${a.bands[bi]}, ${Math.round(c.value - c.fieldAvg)} ft more than Tour`;
       }
-      ins.push([`${low.name} costs strokes.`, `Loses ${sg(low.total).replace("−", "")} a round${low.rank?.rank ? `, rank ${low.rank.rank} of ${low.rank.of}` : ""}${w2 ? `; the most from ${label(w2)} (${sg(w2.perRound)})` : ""}${why}.`]);
+      ins.push([`${low.name} costs strokes.`, `Loses ${sg(low.total).replace("−", "")} per round${low.rank?.rank ? `, rank ${low.rank.rank} of ${low.rank.of}` : ""}${w2 ? `; the most from ${label(w2)} (${sg(w2.perRound)})` : ""}${why}.`]);
     }
     { // off the tee: distance against accuracy (Basic Stats), when both are there
       const tg = (k) => (a.teeGrid || []).find((g) => g.key === k), cell = (g) => (g ? (a.teeSplit ? g.cells?.[0] : null) || g.all : null);
@@ -1149,13 +1149,13 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
         const third = (r, n) => (r <= n / 3 ? "top" : r > (2 * n) / 3 ? "bottom" : "mid");
         const dt = third(dv.rank, dv.of), ft = third(fw.rank, fw.of), ott = areas.find((x) => x.cat === "OTT");
         const lead = dt === "top" && ft === "bottom" ? "Length over accuracy." : dt === "top" && ft === "top" ? "Long and straight." : dt === "bottom" && ft === "top" ? "Accuracy over length." : dt === "bottom" && ft === "bottom" ? "Short and offline." : null;
-        if (lead) ins.push([lead, `Rank ${dv.rank} in driving distance (${fmtStat(dv.def, dv.value)}), rank ${fw.rank} in fairways (${fmtStat(fw.def, fw.value)})${ott ? `; ${sg(ott.total)} a round off the tee` : ""}.`]);
+        if (lead) ins.push([lead, `Rank ${dv.rank} in driving distance (${fmtStat(dv.def, dv.value)}), rank ${fw.rank} in fairways (${fmtStat(fw.def, fw.value)})${ott ? `; ${sg(ott.total)} per round off the tee` : ""}.`]);
       }
     }
     // (update 678) practice focus: the skill losing the most strokes (no Tour average)
-    if (worst && worst.perRound < 0) ins.push(["Practice focus:", `${full(worst)}. It loses the most strokes of any skill: ${sg(worst.perRound)} a round.`]);
+    if (worst && worst.perRound < 0) ins.push(["Practice focus:", `${full(worst)}. It loses the most strokes of any skill: ${sg(worst.perRound)} per round.`]);
     { const t = [...(a.catTrend || [])].filter((x) => x.change != null && Math.abs(x.change) >= 0.15).sort((p, q) => Math.abs(q.change) - Math.abs(p.change))[0];
-      if (t && ins.length < 4) ins.push([`${t.name} is ${t.change > 0 ? "trending up" : "slipping"}.`, `${sg(t.change)} a round over the last ${a.halves?.n || 20} ${a.halves?.unit || "rounds"} against the ${a.halves?.n || 20} before.`]); }
+      if (t && ins.length < 4) ins.push([`${t.name} is ${t.change > 0 ? "trending up" : "slipping"}.`, `${sg(t.change)} per round over the last ${a.halves?.n || 20} ${a.halves?.unit || "rounds"} against the ${a.halves?.n || 20} before.`]); }
     const insShow = CMP ? [] : ins.slice(0, 4) /* (update 698: none on the comparison report) */, iw = (W - 8) / 2, insLines = insShow.map(([h, t]) => wrap(`${h} ${t}`, iw - 22, 9, false).length);
     const insRowH = (k) => Math.max(insLines[2 * k] || 0, insLines[2 * k + 1] || 0) * 11.6 + 15;
     const insH = insShow.length ? insRowH(0) + (insShow.length > 2 ? insRowH(1) + 6 : 0) + 10 : 0;
@@ -1213,7 +1213,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
       k((x) => d.roundRect(x, y - 5.5, 10, 6, 1.5, { fill: P.up }), "gaining");
       k((x) => d.roundRect(x, y - 5.5, 10, 6, 1.5, { fill: P.down }), "losing");
       k((x) => d.line(x + 5, y - 7, x + 5, y + 1, { color: "#8e8e93", width: 0.9, dash: [1.6, 1.2] }), "the Tour's best 10%"); }
-      d.text("bar length = strokes a round", kx, y, { size: 7, color: P.grey }); }
+      d.text("bar length = strokes per round", kx, y, { size: 7, color: P.grey }); }
     y += 10;
     // the insights, two a row
     for (let r = 0; r * 2 < insShow.length; r++) {
@@ -1491,7 +1491,7 @@ export function buildReportPdf(a, { aiSummary = null, sourceLabel = "", logo = n
     cap("Equipment", M + 9, y, P.gold); y += 23;
     d.text("By Product", M, y, { size: 17, bold: true, color: P.ink }); y += 14;
     // (update 517: wrapped, so it never runs off the page)
-    for (const l of wrap(`Each kind of club (and ball) you've used, with every model of it: strokes gained a round in the rounds each was used, and the stats recorded with it. Each model is shown by its color in the key. * Fewer than 10 rounds: read with care.${CMP ? ` The vertical dashed line separates the ${FR}s.` : ""}`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
+    for (const l of wrap(`Each kind of club (and ball) you've used, with every model of it: strokes gained per round in the rounds each was used, and the stats recorded with it. Each model is shown by its color in the key. * Fewer than 10 rounds: read with care.${CMP ? ` The vertical dashed line separates the ${FR}s.` : ""}`, W, 7.5)) { d.text(l, M, y + 4, { size: 7.5, color: P.grey }); y += 10; }
     y += 6;
     const FEW = 10;
     // (update 517) each kind: its name, the event chart (the key names the models), then the table, each model shown by its

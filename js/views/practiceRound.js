@@ -49,7 +49,7 @@ export async function render(ctx) {
 const CAT_NAMES = { OTT: "Tee shots", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
 const ALL_DISTS = [...YD_BUCKETS, ...FT_BUCKETS].map((b) => b[0]);
 const newFilt = (n = 0) => ({ cats: [...CAT_ORDER], dists: [...ALL_DISTS], lies: [...FILTER_LIES], pars: [3, 4, 5], holes: Array.from({ length: n }, (_, i) => i + 1) });
-/** The filters a round keeps (null: everything). */
+/** The filters per round keeps (null: everything). */
 const playFilt = (f) => (f.cats.length === 4 && f.dists.length === ALL_DISTS.length && f.lies.length === FILTER_LIES.length ? null : { cats: [...f.cats], dists: [...f.dists], lies: [...f.lies] });
 function dropdown(title, groups, f, key, onChange, extra = null) {
   const all = groups.flatMap(([, opts]) => opts.map((o) => o[0]));
@@ -421,12 +421,12 @@ function drawPrepSetup(ctx, course) {
   mount(ctx.body, [el("p", { class: "crumb" }, back), el("section", { class: "panel pr-plan" }, [
     el("p", { class: "pr-eyebrow" }, `Simulate Round${course.tees ? ` · ${course.tees} tees` : ""}`), el("h1", {}, course.name), course.mapEvents ? el("p", { class: "muted small" }, course.mapEvents) : null,
     el("h2", {}, "What to play"), filters, table,
-    el("p", { class: "muted small" }, avgs.length ? `“Your avg” is your score to par on each hole from ${course.rounds.length} round${course.rounds.length === 1 ? "" : "s"} you've tracked here. “Tour baseline” is the Tour's scoring average from that yardage.` : "“Tour baseline” is the Tour's scoring average from that yardage. Track a round here and your own average on each hole shows up, with the option to practice your toughest holes."),
+    el("p", { class: "muted small" }, avgs.length ? `“Your avg” is your score to par on each hole from ${course.rounds.length} round${course.rounds.length === 1 ? "" : "s"} you've tracked here. “Tour baseline” is the Tour's scoring average from that yardage.` : "“Tour baseline” is the Tour's scoring average from that yardage. Track per round here and your own average on each hole shows up, with the option to practice your toughest holes."),
     go,
   ])]);
 }
 
-/* ============================================== playing a round ============================================== */
+/* ============================================== playing per round ============================================== */
 /** The hole as a line from the tee to the pin, with each shot's ball on it. */
 function holeStrip(hole, shot) {
   const NS = "http://www.w3.org/2000/svg";

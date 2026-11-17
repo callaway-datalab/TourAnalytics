@@ -68,7 +68,7 @@ export function heroBox(S, mine, slicedField, f) {
         el("div", { class: "hero-id" }, [
           el("span", { class: "hero-kicker" }, `${S.describe()}`),
           el("h2", { class: "hero-name" }, S.me.label),
-          el("div", { class: "hero-big" }, [el("strong", { class: S.showCls(total, heroRef, fieldAvg) }, S.showV(total, heroRef)), el("span", {}, S.relOn() && heroRef != null ? `${sg ? "strokes gained a round" : S.def.label} vs the field (${S.fmtV(heroRef)})` : sg ? "strokes gained a round" : S.def.label)]),
+          el("div", { class: "hero-big" }, [el("strong", { class: S.showCls(total, heroRef, fieldAvg) }, S.showV(total, heroRef)), el("span", {}, S.relOn() && heroRef != null ? `${sg ? "strokes gained per round" : S.def.label} vs the field (${S.fmtV(heroRef)})` : sg ? "strokes gained per round" : S.def.label)]),
           sg ? null : el("p", { class: "hero-help" }, S.def.help),
           S.tourButtons(), // (update 376: the tour, right under the big number, above the pills)
           // (update 159: each pill opens a table: the rankings, every round, the form, the wins and top 10s)
@@ -88,7 +88,7 @@ export function heroBox(S, mine, slicedField, f) {
           ]),
           (() => {
             if (!S.showRanks || !S.rankedField(slicedField).some((p) => p.key !== S.me.key)) return null;
-            const res = S.myFinishes(slicedField), wins = res.filter((x) => x.rank === 1), tops = res.filter((x) => x.rank <= 10);
+            const res = S.myFinishes(slicedField), wins = res.filter((x) => x.rank === 1), tops = res.filter((x) => x.rank != null && x.rank <= 10); // (update 834: a missed cut has no place)
             return el("div", { class: "hero-chips hero-chips2" }, [
               S.chipBtn("hero-chip", `${wins.length} ${wins.length === 1 ? "Win" : "Wins"}`, "Show the wins", () => S.finishesPopup(wins, "Wins", res)),
               S.chipBtn("hero-chip", `${tops.length} Top 10${tops.length === 1 ? "" : "s"}`, "Show the top 10s", () => S.finishesPopup(tops, "Top 10s", res)),
@@ -322,7 +322,7 @@ export async function formPopup(S, ordered, info = null) {
   const blocks = [
     { kind: "table", title: S.catsAvail.length > 1 ? `By category (a ${S.unit})` : "The averages", note: S.catsAvail.length > 1 ? "Tap a category or a distance to chart it above." : null, cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows },
   ];
-  return S.popup("Form", S.me.label, ev ? `${sg ? "Strokes gained" : S.def.label} a round at each event: the last ${n} events (highlighted) against the ${n} before, and where the change came from.` : `${sg ? "Strokes gained" : S.def.label} in each ${S.unit}: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
+  return S.popup("Form", S.me.label, ev ? `${sg ? "Strokes gained" : S.def.label} per round at each event: the last ${n} events (highlighted) against the ${n} before, and where the change came from.` : `${sg ? "Strokes gained" : S.def.label} in each ${S.unit}: the last ${n} (highlighted) against the ${n} before, and where the change came from.`,
     el("div", { class: "wl-pop-body" }, [
       // (update 671) what the form word means, on top
       info?.word ? el("div", { class: "form-meaning", style: `border-left-color:${info.color}` }, [
@@ -338,7 +338,7 @@ export function eventsOf(S, players) {
   for (const p of players) for (const rd of p.rounds) {
     if (!rd.event) continue;
     const k = `${rd.event}|${S.yearOf(rd)}`;
-    const e = ev.get(k) || ev.set(k, { event: rd.event, end: rd.date, by: new Map() }).get(k);
+    const e = ev.get(k) || ev.set(k, { event: rd.event, year: S.yearOf(rd), end: rd.date, by: new Map() }).get(k);
     if (String(rd.date) > String(e.end)) e.end = rd.date;
     (e.by.get(p) || e.by.set(p, []).get(p)).push(rd);
   }
@@ -352,22 +352,37 @@ export function eventsOf(S, players) {
   }).sort((a, b) => String(a.end).localeCompare(String(b.end)));
 }
 // the player's finish at each tournament (among those who played every round), newest first
+// (update 834) the official finish where the PGA Tour's results have it (a week they finished); else, as before, their place
+// by strokes gained among those who played every round
+let offM = null;
 export function myFinishes(S, slicedField) {
-  return S.eventsOf(slicedField.filter((p) => p.rounds.length)) /* (update 775: every player at the tournament, not just those with the season's min. rounds) */.map((e) => { const i = e.ranked.findIndex((x) => x.p.key === S.me.key); return i < 0 ? null : { e, rank: i + 1, of: e.ranked.length, v: e.ranked[i].v }; })
-    .filter(Boolean).reverse();
+  if (!offM) { offM = import("./official.js").then((m) => { offM = m; m.whenOfficial(() => S.draw?.()); return m; }).catch(() => null); }
+  const O = offM && typeof offM.then !== "function" ? offM : null, who = S.me?.label;
+  // (update 834) each tournament they played: the official finish (Won, T5, Missed cut …) where the PGA Tour's results have
+  // it, and their rank that week by strokes gained per round among everyone there (whatever rounds they played). Wins and
+  // top 10s count the official finish; without one, the place by strokes gained among those who played every round, as before.
+  return S.eventsOf(slicedField.filter((p) => p.rounds.length)) /* (update 775: every player at the tournament) */.map((e) => {
+    const mine = [...e.by].find(([p]) => p.key === S.me.key)?.[1]; if (!mine) return null;
+    const allV = [...e.by].map(([p, rs]) => ({ p, v: S.metric(rs) })).filter((x) => x.v != null).sort(S.byBest), si = allV.findIndex((x) => x.p.key === S.me.key);
+    const i = e.ranked.findIndex((x) => x.p.key === S.me.key), of = O && who ? O.officialFinish(e.event, e.year, who, mine[0]?.tour) : null;
+    const v = i >= 0 ? e.ranked[i].v : S.metric(mine);
+    if (of) return { e, rank: of.num, of: of.of || e.ranked.length, official: of.text, sgRank: si >= 0 ? si + 1 : null, sgOf: allV.length, v };
+    return i < 0 ? { e, rank: null, of: e.ranked.length, official: null, sgRank: si >= 0 ? si + 1 : null, sgOf: allV.length, v, short: true } : { e, rank: i + 1, of: e.ranked.length, sgRank: si >= 0 ? si + 1 : null, sgOf: allV.length, v };
+  }).filter(Boolean).reverse();
 }
 export async function finishesPopup(S, list, what, all = []) {
   // (update 181) every tournament they finished as a bar, the wins (or top 10s) highlighted, then the list
   const { renderBlocks } = await import("./badgePopup.js");
-  const hit = (x) => (what === "Wins" ? x.rank === 1 : x.rank <= 10);
-  const chart = all.length ? renderBlocks([{ kind: "bars", fmtFn: S.fmtV, zero: S.isSG(), items: [...all].reverse().map((x) => ({ label: S.dateTxt(x.e.end), sub: `${x.e.event} \u00b7 ${S.ordinal(x.rank)} of ${x.of}`, v: x.v, on: hit(x), tone: S.isSG() ? null : "gold" })) }]) : [];
+  const hit = (x) => x.rank != null && (what === "Wins" ? x.rank === 1 : x.rank <= 10);
+  const finTxt = (x) => x.official || (x.rank ? S.ordinal(x.rank) : x.short ? "Missed cut" : "\u2014");
+  const chart = all.length ? renderBlocks([{ kind: "bars", fmtFn: S.fmtV, zero: S.isSG(), items: [...all].reverse().map((x) => ({ label: S.dateTxt(x.e.end), sub: `${x.e.event} \u00b7 ${finTxt(x)}${x.sgRank ? ` \u00b7 SG rank ${x.sgRank} of ${x.sgOf}` : ""}`, v: x.v, on: hit(x), tone: S.isSG() ? null : "gold" })) }]) : [];
   const table = list.length ? el("div", { class: "table-scroll hero-tourn-scroll" }, el("table", { class: "plain rankings hero-tourn" }, [
-    el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, S.isSG() ? "SG / Round" : S.def.label), el("th", { class: "num" }, "Finish")])),
+    el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, S.isSG() ? "SG / Round" : S.def.label), el("th", { class: "num" }, "Finish"), el("th", { class: "num", title: "Their rank that week by strokes gained per round, among everyone there (whatever rounds they played)" }, "SG rank")])),
     el("tbody", {}, list.map((x) => el("tr", {}, [el("td", { class: "ht-date" }, S.dateTxt(x.e.end)), el("td", { class: "ht-name" }, x.e.event),
-      el("td", { class: `num ${S.isSG() ? S.signCls(x.v) : ""}` }, S.fmtV(x.v)), el("td", { class: `num ht-win ${x.rank === 1 ? "ht-won" : ""}` }, [String(x.rank), el("span", { class: "ht-of" }, ` of ${x.of}`)])]))),
+      el("td", { class: `num ${S.isSG() ? S.signCls(x.v) : ""}` }, S.fmtV(x.v)), el("td", { class: `num ht-win ${x.rank === 1 ? "ht-won" : ""}` }, [finTxt(x), x.official || !x.rank ? null : el("span", { class: "ht-of" }, ` of ${x.of}`)]), el("td", { class: "num" }, x.sgRank ? [String(x.sgRank), el("span", { class: "ht-of" }, ` of ${x.sgOf}`)] : "\u2014")]))),
   ])) : el("p", { class: "empty center" }, `No ${what.toLowerCase()} in this selection.`);
-  S.popup(what, S.me.label, `${list.length} ${list.length === 1 ? "tournament" : "tournaments"} \u00b7 ${S.isSG() ? "strokes gained a round" : S.def.label}, newest first`, [...chart, table,
-    infoTip(`${what === "Wins" ? "Best in the field" : "Top 10 in the field"} in ${S.isSG() ? "strokes gained a round" : S.def.label}, among the players who played every round there.`)], what);
+  S.popup(what, S.me.label, `${list.length} ${list.length === 1 ? "tournament" : "tournaments"} \u00b7 ${S.isSG() ? "strokes gained per round" : S.def.label}, newest first`, [...chart, table,
+    infoTip(`${what === "Wins" ? "Best in the field" : "Top 10 in the field"} in ${S.isSG() ? "strokes gained per round" : S.def.label}, by the official finish where the PGA Tour's results have it, else among the players who played every round there. SG rank: their rank that week by ${S.isSG() ? "strokes gained per round" : S.def.label}, among everyone there, whatever rounds they played.`)], what);
 }
 export function rankPopup(S) {
   S.rankShut?.();
@@ -429,14 +444,14 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
     el("tbody", {}, rows.flatMap((x) => { const tr = el("tr", {}, [el("td", { class: "ht-date" }, S.dateTxt(x.end)), el("td", { class: "ht-name" }, x.event || "\u2014"),
       S.unit === "event" ? null : el("td", { class: "num" }, String(x.rs.length)),
       ...(rolling ? [valTd(x.roll?.avg ?? null), S.showRanks ? rankTd(x.roll) : null] : [valTd(x.v), S.showRanks ? rankTd(x.fin, true) : null])]);
-      // (update 445) an event opens to its parts of the game (a round), each to its distances
+      // (update 445) an event opens to its parts of the game (per round), each to its distances
       return S.isSG() && x.rs.some((rd) => (rd.shots || []).some((y) => y.cat)) ? S.openRow(tr, 3 + (S.unit === "event" ? 0 : 1) + (S.showRanks ? 1 : 0), () => S.sgBreakdown(x.rs)) : [tr]; })),
   ]);
   S.popup(rolling ? `${S.isSG() ? "SG" : S.def.label} history` : "Events", S.me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${S.rw(ordered.length)} \u00b7 newest first`, [
     el("div", { class: "table-scroll hero-tourn-scroll" }, table),
-    el("p", { class: "muted small" }, !S.showRanks ? (rolling ? "Season Avg: everything up to the end of that tournament in this selection." : `Event Avg: ${S.isSG() ? "strokes gained a round" : S.def.label} at that tournament.`) : rolling
+    el("p", { class: "muted small" }, !S.showRanks ? (rolling ? "Season Avg: everything up to the end of that tournament in this selection." : `Event Avg: ${S.isSG() ? "strokes gained per round" : S.def.label} at that tournament.`) : rolling
       ? "Season Avg and Season Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds)."
-      : `Event Avg: ${S.isSG() ? "strokes gained a round" : S.def.label} at that tournament. Event Rank: where that placed among the players who played every round there (\u2014 when they didn\u2019t).`),
+      : `Event Avg: ${S.isSG() ? "strokes gained per round" : S.def.label} at that tournament. Event Rank: where that placed among the players who played every round there (\u2014 when they didn\u2019t).`),
   ], "Tournaments");
   table.closest(".gx-pop")?.classList.add("hero-events-pop"); // (wider: seven columns)
 }

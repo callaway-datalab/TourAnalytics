@@ -129,7 +129,7 @@ function mergeSource(M, C) {
  *          green in regulation and going for it are worth, fairway widths where tee shots land, the left and right tee
  *          misses (drive_direction) and up & down by where the approach missed the green (app_side_loc) and the lie
  *   attempts: shots by distance (not tee shots on par 4s and 5s), for the distribution against every course's
- *   sg: strokes gained by distance (against this course's own field) of the field and of the Top 10, a round, and the
+ *   sg: strokes gained by distance (against this course's own field) of the field and of the Top 10, per round, and the
  *       expected strokes from each lie and distance, so a player's can be worked out the same way
  */
 const r4 = (x) => Math.round(x * 1e4) / 1e4, r1 = (x) => Math.round(x * 10) / 10;
@@ -430,7 +430,8 @@ export function courseInsights(C) {
     // (update 588) the strategy insights: each pin, and every pin together ("*")
     // (update 716) worked out later, a hole at a time with the page let breathe in between (uploadShotCourses), not here in one go
     const strategy = {}, stratLater = () => { const geo = { ppy: ppy.get(Number(h)) ?? ppy.get(h), fw: mid(fAcc, Number(h)) || mid(fAcc, h) }, o = {};
-      try { for (const [pp, recs] of Object.entries(X.sp || {})) { const r = strategyOf(recs, X.par, geo); if (r) o[pp] = r; }
+      const HP = C.holes.get(Number(h))?.pins || C.holes.get(h)?.pins; // (update 722: each pin's spot, for a miss's side)
+      try { for (const [pp, recs] of Object.entries(X.sp || {})) { const P = HP?.get(pp) || HP?.get(Number(pp)); const r = strategyOf(recs, X.par, { ...geo, pin: P?.pn ? [P.px / P.pn, P.py / P.pn] : null }); if (r) o[pp] = r; }
         const all = strategyOf(Object.values(X.sp || {}).flat(), X.par, geo); if (all) o["*"] = all; } catch (err) { console.warn("Strategy insights", err); }
       return o; };
     out[h] = { strategy, _strat: stratLater, pinAuto, par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]), ...(HB.marks ? { mk: HB.marks.map((m) => [r1(m[0]), r1(m[1])]) } : {}) }; } return o; })(), widths };

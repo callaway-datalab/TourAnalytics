@@ -241,7 +241,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       el("div", { class: "gx-section-head" }, [el("h2", {}, "Active Goals"), el("span", {}, "Targets for a round, a week or a date")]),
       activeChs.length ? el("div", { class: "gx-chs" }, activeChs.map(chCard))
         : el("p", { class: "gx-empty" }, chs.length ? "No active goals. Finished ones are under Achieved and Missed above." : "No goals yet. Try \u201cHit 70% fairways in my next round\u201d."),
-      el("p", { class: "gx-foot" }, "Strokes gained a round. Rings fill from where each goal started to the goal."),
+      el("p", { class: "gx-foot" }, "Strokes gained per round. Rings fill from where each goal started to the goal."),
     ]));
   }
 
@@ -353,7 +353,7 @@ export function goalsPanel(container, { playerKey, label, flash = () => {}, own 
       el("optgroup", { label: basicRounds.length ? "Round stats" : "Round stats (from entered rounds)" }, CH_STATS.filter((x) => x.kind === "basic").map((x) => el("option", { value: x.key, selected: ch.stat === x.key }, x.label))),
     ]);
     const target = el("input", { type: "text", inputmode: "decimal", class: "gx-field gx-num", value: String(ch.target), "aria-label": "Target" });
-    const measure = el("div", { class: "gx-seg", role: "radiogroup", "aria-label": "Per round or in total" }, [["round", "a round"], ["total", "in total"]].map(([v, l]) => {
+    const measure = el("div", { class: "gx-seg", role: "radiogroup", "aria-label": "Per round or in total" }, [["round", "per round"], ["total", "in total"]].map(([v, l]) => {
       const b = el("button", { type: "button", role: "radio", class: ch.measure === v ? "on" : "", "aria-checked": ch.measure === v ? "true" : "false" }, l);
       b.addEventListener("click", () => { ch.measure = v; challengeEditor(); }); return b;
     }));

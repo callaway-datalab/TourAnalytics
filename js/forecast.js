@@ -133,7 +133,7 @@ function learn(D, { tour = null } = {}) {
     for (let i = 0; i < N; i++) { if (YS[i] > cut || YS[i] < cut - 1 || D.TO[i] !== TT) continue; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { S0[c] += str[D.E[i] * NC + c]; w0[c]++; } }
     for (let c = 0; c < NC; c++) S0[c] = w0[c] ? S0[c] / w0[c] : 0;
     for (let i = 0; i < N; i++) for (let c = 0; c < NC; c++) adj[i * NC + c] -= S0[c];
-    // how much field strength moves a round: the middle 80% of events on the tour picked
+    // how much field strength moves per round: the middle 80% of events on the tour picked
     const sTot = []; const seen = new Set();
     for (let i = 0; i < N; i++) { if (YS[i] > cut || YS[i] < cut - 1 || D.TO[i] !== TT || seen.has(D.E[i])) continue; seen.add(D.E[i]); let s = 0; for (let c = 0; c < NC; c++) s += str[D.E[i] * NC + c] - S0[c]; sTot.push(s); }
     sTot.sort((a, b) => a - b);
@@ -151,7 +151,7 @@ function learn(D, { tour = null } = {}) {
       s.n++; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { s.t[c] += A[i * NC + c]; s.m[c]++; }
     }
     const out = new Map();
-    // (update 428) averaged over every round, as the site's tables do (a round with no shot of a kind gained 0 there)
+    // (update 428) averaged over every round, as the site's tables do (per round with no shot of a kind gained 0 there)
     for (const [key, s] of sums) out.set(key, { n: s.n, cats: s.t.map((v) => v / s.n) });
     return out;
   };
@@ -251,7 +251,7 @@ function learn(D, { tour = null } = {}) {
     // (a little shrinkage toward 1, each part counted as itself)
     for (let i = 0; i < NC; i++) { const lam = 1e-6 + 0.02 * XtX[i][i]; XtX[i][i] += lam; Xty[i] += lam; }
     const bw = solve4(XtX, Xty).map((v) => Math.max(0.3, Math.min(1.6, Number.isFinite(v) ? v : 1)));
-    // how noisy a round is per part (for the uncertainty of a talent estimate)
+    // how noisy per round is per part (for the uncertainty of a talent estimate)
     const sig2 = [0, 0, 0, 0].map((_, c) => { let e = 0, w = 0; for (let i = 0; i < N; i++) { if (YS[i] > cut || !(D.M[i] & (1 << c))) continue; const s = S.get(D.P[i] * NY + YS[i]); if (!s || s.n < 10) continue; e += (A[i * NC + c] - s.cats[c]) ** 2; w++; } return w ? e / w : 1; });
     return { F, cut, best, b: bw, sig2, curves, aw: ag.aw, useAge, age: { players: ag.players, pts: ag.pairs }, estAt, sumsFor };
   };
@@ -584,7 +584,7 @@ export function forecastStory(model, fcs) {
     const y1 = f.years[0], y3 = f.years.at(-1), bits = [];
     const trend = y3.total - y1.total;
     const ageBit = Math.abs(y3.ageAdd) >= 0.05 ? ` (age ${y3.ageAdd > 0 ? "adds" : "takes off"} about ${Math.abs(y3.ageAdd).toFixed(2)} by then)` : "";
-    bits.push(`${f.name}${f.age != null ? ` (${Math.floor(f.age)})` : ""}: ${f2(y1.total)} a round in ${y1.year} (likely ${f2(y1.lo)} to ${f2(y1.hi)}), ${f2(y3.total)} by ${y3.year}${Math.abs(trend) >= 0.05 ? `, ${trend > 0 ? "rising" : "declining"}${ageBit}` : ageBit}. About ${ordinal(y1.rank)} on tour next season.`);
+    bits.push(`${f.name}${f.age != null ? ` (${Math.floor(f.age)})` : ""}: ${f2(y1.total)} per round in ${y1.year} (likely ${f2(y1.lo)} to ${f2(y1.hi)}), ${f2(y3.total)} by ${y3.year}${Math.abs(trend) >= 0.05 ? `, ${trend > 0 ? "rising" : "declining"}${ageBit}` : ageBit}. About ${ordinal(y1.rank)} on tour next season.`);
     const fl = f.flags;
     if (fl.puttLed) bits.push(`Most of their last season came from putting, and a season of putting tells the least about the next (about ${Math.round(carry.PUTT * 100)}% of it carries over in this data), so the forecast leans on it least.`);
     else if (fl.puttAboveUsual != null && Math.abs(fl.puttAboveUsual) > fl.swing / 2) bits.push(`Their putting was ${fl.puttAboveUsual > 0 ? "well above" : "well below"} their usual (${f2(fl.puttAboveUsual)}): ${fl.puttAboveUsual > 0 ? "expect some of it to come back" : "likely to bounce back some"}.`);

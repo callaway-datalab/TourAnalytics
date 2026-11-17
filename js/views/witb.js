@@ -1,7 +1,7 @@
 // WITB: every club you've ever played, and your bag.
 //   Add a club at the top. Tap a club in the list to put it in (or take it out of) your bag: clubs in the
 //   bag are highlighted and listed under "Your bag" at the bottom (up to 14). Each club shows how many
-//   entered rounds it was used in, its attempts a round and its strokes gained per attempt.
+//   entered rounds it was used in, its attempts per round and its strokes gained per attempt.
 // Your bag becomes the Club choice on each shot in Data Entry.
 import { el, mount, confirmAction } from "../ui.js";
 import { getState } from "../auth.js";
@@ -25,7 +25,7 @@ function tourCard(key, name, onData) {
     const fmt = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
     // (update 830) the whole career, grouped as My Bag is (Drivers, Fairway woods … Putters, then the balls); the ones in the bag now lit
     // (update 831) the data's own kinds: Drivers apart from Non-Drivers (woods and irons off the tee), Irons apart from Wedges;
-    // each group best first by strokes gained a round, the values coloured
+    // each group best first by strokes gained per round, the values coloured
     const GROUPS = [["Driver", "Drivers"], ["Non-Driver", "Non-Drivers"], ["Fairway Wood", "Fairway woods"], ["Hybrid", "Hybrids"], ["Iron", "Irons"], ["Wedge", "Wedges"], ["Putter", "Putters"], [null, "Other clubs"]];
     const KNOWN = new Set(GROUPS.map(([g]) => g).filter(Boolean)), groupOf = (c) => (c.kind && KNOWN.has(c.kind) ? c.kind : c.cat && KNOWN.has(c.cat) ? c.cat : null);
     const bySg = (a, b) => (b.sg ?? -99) - (a.sg ?? -99);
@@ -41,7 +41,7 @@ function tourCard(key, name, onData) {
     if (T.balls.length) { rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "5", scope: "colgroup" }, ["Balls", el("span", { class: "club-group-n" }, ` ${T.balls.length}`)])));
       for (const b of T.balls) rows.push(el("tr", { class: `club-row${b.inBag ? " in-bag" : ""}` }, [el("td", { class: "c-club" }, [el("strong", {}, "Ball"), b.inBag ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null]), el("td", {}, b.model), el("td", { class: "num" }, b.seasons), el("td", { class: "num" }, String(b.rounds)), el("td", { class: "num" }, "")])); }
     mount(box, [el("h3", {}, "On tour, from the stats data"), el("p", { class: "muted small" }, `Every club and ball ${name} has used on record. In bag: what they hit at ${T.events.join(", ")} (each club's model from the latest event it was used at).`),
-      el("div", { class: "table-scroll" }, el("table", { class: "plain club-table witb-tour-t" }, [el("thead", {}, el("tr", {}, ["Club", "Brand / model", "Seasons", "Rounds", "SG a round"].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))), el("tbody", {}, rows)]))]);
+      el("div", { class: "table-scroll" }, el("table", { class: "plain club-table witb-tour-t" }, [el("thead", {}, el("tr", {}, ["Club", "Brand / model", "Seasons", "Rounds", "SG per round"].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))), el("tbody", {}, rows)]))]);
     onData?.(T);
   }).catch((e) => { console.warn(e); box.hidden = true; onData?.(null); });
   return box;

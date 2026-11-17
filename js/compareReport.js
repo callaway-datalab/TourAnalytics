@@ -51,7 +51,7 @@ export function buildComparePdf(r) {
     "very likely real", "probably real", "too few rounds", "most consistent", "most up and down", "a hint, not a verdict", "Most of that is"];
   const emphRe = (() => {
     const names = [...new Set(sels.map((q) => q.name).filter((n) => n && n.length > 1))].sort((a, b) => b.length - a.length).map(esc);
-    const parts = [...names, "[+\u2212-]\\d+\\.\\d+(?: strokes? a round)?", "\\d+\\.\\d+ strokes? a round", "\\d+(?:\\.\\d+)? (?:better|worse) than", ...KEY.map(esc)];
+    const parts = [...names, "[+\u2212-]\\d+\\.\\d+(?: strokes? per round)?", "\\d+\\.\\d+ strokes? per round", "\\d+(?:\\.\\d+)? (?:better|worse) than", ...KEY.map(esc)];
     return new RegExp(`\\*\\*(.+?)\\*\\*|(${parts.join("|")})`, "g");
   })();
   // a text as words, each bold or not
@@ -102,9 +102,9 @@ export function buildComparePdf(r) {
     const gap = (top.sg.TOTAL ?? 0) - (second.sg.TOTAL ?? 0);
     d.text(f2(gap), M - 3, hy + 52, { size: 50, bold: true, color: gap >= 0 ? P.upLight : P.downLight, spacing: -1.5 });
     const gw = textWidth(f2(gap), 50, true) - 1.5 * 4;
-    wrap(`strokes a round ahead of ${second.name}${ranked.length > 2 ? `, the next best of ${ranked.length}` : ""}`, leftW - gw - 14, 9).slice(0, 3).forEach((l, i) => d.text(l, M + gw + 8, hy + 30 + i * 11.5, { size: 9, color: "#c7c7cc" }));
+    wrap(`strokes per round ahead of ${second.name}${ranked.length > 2 ? `, the next best of ${ranked.length}` : ""}`, leftW - gw - 14, 9).slice(0, 3).forEach((l, i) => d.text(l, M + gw + 8, hy + 30 + i * 11.5, { size: 9, color: "#c7c7cc" }));
   } else if (top) {
-    cap("Strokes gained a round", M, hy, "#8e8e93");
+    cap("Strokes gained per round", M, hy, "#8e8e93");
     d.text(f2(top.sg.TOTAL), M - 3, hy + 52, { size: 54, bold: true, color: (top.sg.TOTAL ?? 0) >= 0 ? P.upLight : P.downLight, spacing: -1.5 });
   }
   // badges
@@ -118,7 +118,7 @@ export function buildComparePdf(r) {
     const x0 = M + W * 0.6, w = W * 0.4, list = ranked.slice(0, 6), rowH = 20, top0 = 70;
     const ht = 30 + list.length * rowH + 8;
     d.roundRect(x0 - 12, top0 - 18, w + 12, ht, 12, { fill: P.panel });
-    cap("Leaderboard  ·  SG a round", x0, top0 - 2, "#8e8e93", "left", 6.5);
+    cap("Leaderboard  ·  SG per round", x0, top0 - 2, "#8e8e93", "left", 6.5);
     const max = Math.max(0.1, ...list.map((s) => Math.abs(s.sg.TOTAL ?? 0)));
     const anyNeg = list.some((s) => (s.sg.TOTAL ?? 0) < 0), anyPos = list.some((s) => (s.sg.TOTAL ?? 0) > 0);
     const nameW = 88, valW = 34, bw = w - nameW - valW - 12;
@@ -153,7 +153,7 @@ export function buildComparePdf(r) {
         nm.forEach((l, k) => d.text(l, x + 12, yy + (sels.length > 1 ? 40 : 24) + k * 12, { size: 10, bold: true, color: P.ink }));
         const by = yy + (sels.length > 1 ? 40 : 24) + nm.length * 12 + 26;
         d.text(f2(s.sg.TOTAL), x + 10, by, { size: 28, bold: true, color: tone(s.sg.TOTAL), spacing: -0.8 });
-        d.text("SG a round", x + 12, by + 12, { size: 7.5, color: P.grey });
+        d.text("SG per round", x + 12, by + 12, { size: 7.5, color: P.grey });
         d.text(`${s.n} rd${s.n === 1 ? "" : "s"}${s.events ? ` · ${s.events} event${s.events === 1 ? "" : "s"}` : ""}${s.few ? " *" : ""}`, x + cw - 12, by + 12, { size: 7.5, bold: true, color: s.few ? P.warn : P.grey, align: "right" });
         // best / worst / gaining
         const sy = by + 30, third = (cw - 24) / 3;
@@ -223,7 +223,7 @@ export function buildComparePdf(r) {
   if (cats.length && sels.length) {
     const rowH = 11, blockH = 18 + sels.length * rowH + 8;
     section("By category", "Where the strokes come from", Math.min(cats.length * blockH, 2 * blockH) + 20);
-    d.text("Strokes gained a round in each part of the game. The black line is zero (the tour baseline).", M, y + 1, { size: 8, color: P.grey });
+    d.text("Strokes gained per round in each part of the game. The black line is zero (the tour baseline).", M, y + 1, { size: 8, color: P.grey });
     y += 14;
     const max = Math.max(0.2, ...sels.flatMap((s) => cats.map(([c]) => Math.abs(s.sg[c] ?? 0))));
     const nameW = 130, valW = 46, bw = W - nameW - valW, zx = M + nameW + bw / 2;
@@ -316,7 +316,7 @@ export function buildComparePdf(r) {
   for (const ch of r.eventCharts || []) {
     const h = eventBarsHeight(W, ch.bars, ch.legend, { gap: 18 });
     section("By event", ch.title, h + 10);
-    d.text(ch.note || "Strokes gained a round in each tournament, the bar colored by the product used most in it.", M, y + 1, { size: 8, color: P.grey });
+    d.text(ch.note || "Strokes gained per round in each tournament, the bar colored by the product used most in it.", M, y + 1, { size: 8, color: P.grey });
     y += 10; need(h);
     y += drawEventBars(d, M, y, W, ch.bars, ch.legend, { ink: P.ink, grey: P.grey, hair: P.hair, gap: 18 }); /* (update 516: more room between the bars and the names) */
   }

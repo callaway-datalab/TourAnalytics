@@ -36,7 +36,7 @@ function syncPlan(key, redraw) {
     if (before !== after) redraw?.();
   }).catch(() => { PLAN_SEEN.busy = false; PLAN_SEEN.key = key; PLAN_SEEN.at = Date.now(); });
 }
-/* (update 345) Per shot or how often? A difference in strokes gained a round for a part of the game and distance splits
+/* (update 345) Per shot or how often? A difference in strokes gained per round for a part of the game and distance splits
  * exactly in two (update 348: weighed by their usual per-shot level, U, over the whole time frame, so a strength or a weakness
  * is the same whichever rounds are compared):
  *    A attempts x (A per shot - U) - B attempts x (B per shot - U)   [playing it better]

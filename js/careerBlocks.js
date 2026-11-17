@@ -43,7 +43,7 @@ function openTrajectory(rs, x, cols = DEFAULT_COLS) {
     sub: `Strokes gained in each round: the ${n} before in gray, the last ${n} in color, each stretch\u2019s average dashed.`,
     blocks: [
       { kind: "bars", fmt: "sg", items: show.map((rd, i) => ({ label: dShort(rd.date), sub: [rd.event, rd.roundNo ? `R${rd.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: sgOfRd(rd), on: i >= n })), ref: [{ v: avg(prev, "TOTAL"), label: `Before`, from: 0, to: n }, { v: avg(last, "TOTAL"), label: `Last ${n}`, from: n, to: 2 * n }] },
-      { kind: "table", title: "By category (a round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
+      { kind: "table", title: "By category (per round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
         rows: cols.map(([k, , l]) => ({ strong: k === "TOTAL", cells: [l, { sg: avg(prev, k) }, { sg: avg(last, k) }, { sg: avg(last, k) - avg(prev, k), arrow: true }] })) },
     ] }) }, "Getting better or worse?");
 }
@@ -79,7 +79,7 @@ function trajectoryBlock(rs, cols0) {
   ]);
 }
 
-/* (update 581) the DP World Tour's: event by event. Each event's rounds pooled (strokes gained a round), the last 3 events
+/* (update 581) the DP World Tour's: event by event. Each event's rounds pooled (strokes gained per round), the last 3 events
    against the 3 before and the last 12 against the 12 before; tapping one: its events as bars, and each category */
 const eventsOf = (rs) => { const m = new Map(); for (const rd of rs) { const k = `${rd.event || rd.date}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (m.get(k) || m.set(k, []).get(k)).push(rd); }
   return [...m.values()].sort((a, b) => String(a.at(-1).date).localeCompare(String(b.at(-1).date))); };
@@ -111,11 +111,11 @@ function trajectoryEvents(rs, cols0) {
 function openTrajectoryEvents(x, cols = DEFAULT_COLS) {
   const n = x.n, prev = x.evs.slice(0, n), last = x.evs.slice(n), pR = prev.flat(), lR = last.flat();
   openBadge({ text: `Last ${n} events vs the ${n} before`, info: () => ({
-    sub: `Strokes gained a round at each event: the ${n} before in gray, the last ${n} in color, each stretch\u2019s average dashed.`,
+    sub: `Strokes gained per round at each event: the ${n} before in gray, the last ${n} in color, each stretch\u2019s average dashed.`,
     blocks: [
       { kind: "bars", fmt: "sg", items: x.evs.map((g, i) => ({ label: dShort(g.at(-1).date), sub: `${g[0].event || ""}${g.length > 1 ? ` \u00b7 ${g.length} rds` : ""}`, v: avgRds(g, "TOTAL"), on: i >= n })),
         ref: [{ v: avgRds(pR, "TOTAL"), label: "Before", from: 0, to: n }, { v: avgRds(lR, "TOTAL"), label: "Latest", from: n, to: 2 * n }] },
-      { kind: "table", title: "By category (a round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
+      { kind: "table", title: "By category (per round)", cols: [["Category"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
         rows: cols.map(([k, , l]) => ({ strong: k === "TOTAL", cells: [l, { sg: avgRds(pR, k) }, { sg: avgRds(lR, k) }, { sg: avgRds(lR, k) - avgRds(pR, k), arrow: true }] })) },
     ] }) }, "Getting better or worse?");
 }
@@ -144,7 +144,7 @@ function conditionsBlock(rs, go, ui, redraw) {
     return row;
   });
   return el("section", { class: "panel cmp-sec career-sec" }, [
-    secHead("Where they play their best", "Every round grouped by one condition, best first: SG: Total a round, and how far above or below their overall average. Tap one to compare it."),
+    secHead("Where they play their best", "Every round grouped by one condition, best first: SG: Total per round, and how far above or below their overall average. Tap one to compare it."),
     tabs,
     rows.length === 1 ? el("p", { class: "muted" }, "Every round falls in the same group here, so there’s nothing to compare yet.") : rows.length ? el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows])
       : el("p", { class: "muted" }, "Not enough rounds in any group yet (3 or more)."),

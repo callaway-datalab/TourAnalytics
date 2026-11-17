@@ -5,7 +5,7 @@ import { fmtSG } from "./sg.js";
 
 const AXES = [["OTT", "Driving"], ["APP", "Approach"], ["ARG", "Short game"], ["PUTT", "Putting"]];
 
-/** The radar: v (the latest season) and c (career), each { OTT, APP, ARG, PUTT } strokes gained a round. Tour average
+/** The radar: v (the latest season) and c (career), each { OTT, APP, ARG, PUTT } strokes gained per round. Tour average
  *  is the dashed circle; outside is better. (update 610) career in gold behind the season in green; each corner says both. */
 export function radar(v, { small = false, c = null, cLabel = "before" } = {}) {
   const W = small ? 210 : 340, H = small ? 190 : 300, cx = W / 2, cy = H / 2 + (small ? 2 : 4), R = small ? 52 : 92, r0 = R * 0.55;
@@ -40,7 +40,7 @@ export function radar(v, { small = false, c = null, cLabel = "before" } = {}) {
 }
 
 
-/** Strokes gained a round in each part of the game (and the total) over these rounds. */
+/** Strokes gained per round in each part of the game (and the total) over these rounds. */
 export function catVals(rounds) {
   const n = rounds?.length || 0; if (!n) return null;
   const o = { OTT: 0, APP: 0, ARG: 0, PUTT: 0, TOTAL: 0 };

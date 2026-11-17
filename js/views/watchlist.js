@@ -2,7 +2,7 @@
  * Watchlist (update 164): the players you follow, at a glance. Everyone with more than one player has it (the admin,
  * analysts, coaches with several players); a player (or one player's coach) gets the same page as "Home", for just
  * that player, without the adding and removing.
- *   Each player: strokes gained a round (Total, OTT, APP, ARG, PUTT) with ranks and how it's trending (last 10 rounds
+ *   Each player: strokes gained per round (Total, OTT, APP, ARG, PUTT) with ranks and how it's trending (last 10 rounds
  *   against the 10 before), their 3 best and 3 worst distances, any extra metrics you pick, and badges for big moves,
  *   hot streaks and slumps, form landmarks, best rounds, wins and milestones (on each card; update 167 took the alerts
  *   row off the top).
@@ -176,6 +176,7 @@ export async function render(main, { previewClient }) {
   }
 
 
+  import("../official.js").then((m) => m.whenOfficial(() => { if (main.isConnected) draw(); })).catch(() => {}); // (update 834: official finishes, once they're in)
   async function draw() {
     // (update 187) where you are, before anything moves (the player search is moved into the new controls,
     // which used to shorten the page and scroll you up a little on every redraw)
@@ -451,10 +452,10 @@ export async function render(main, { previewClient }) {
     box.addEventListener("dragstart", (e) => e.preventDefault());
   }
   /* (update 561) the briefing: the 5 biggest swings across the players, each one a part of the game, a distance or a lie
-     ("Down in Approach · 150-175 yds"), the last 12 rounds against the 12 before, in strokes a round. Each player's
+     ("Down in Approach · 150-175 yds"), the last 12 rounds against the 12 before, in strokes per round. Each player's
      biggest drop can be in Trending Down and their biggest rise in Trending Up. A tap: that one thing, in detail. */
   /* (update 607) the calm view: how many are playing well, steady or worth a look; a line on the latest week; then each
-     player in a sentence (their strokes gained a round, the last 12 rounds against the 12 before, or the DP World Tour's
+     player in a sentence (their strokes gained per round, the last 12 rounds against the 12 before, or the DP World Tour's
      5 events against 5, and where most of the change came from) with their latest event. A tap: their card. */
   const CAT_WORD = { OTT: "off the tee", APP: "on approach", ARG: "around the green", PUTT: "putting" };
   /* (update 608) a player's own Home: a greeting, how they're playing in a sentence (the last 12 rounds against the 12
@@ -472,12 +473,12 @@ export async function render(main, { previewClient }) {
     const who = you ? "You\u2019re" : `${first} is`, their = you ? "your" : "their";
     const big = ch == null || !n ? `Not enough recent golf to say how ${you ? "you\u2019re" : `${first} is`} playing yet.`
       : st === "steady" ? `${who} playing about the same as ${their} previous ${n} ${unit}.`
-      : `${who} ${st === "well" ? "up" : "down"} ${Math.abs(ch).toFixed(2)} strokes a round over ${their} last ${n} ${unit}.`;
+      : `${who} ${st === "well" ? "up" : "down"} ${Math.abs(ch).toFixed(2)} strokes per round over ${their} last ${n} ${unit}.`;
     const small = st !== "steady" && lead ? `Most of it is ${st === "well" ? "from" : "in"} ${their} ${PART[lead.cat] || "game"}.` : null;
     const chip = { well: "Playing well", steady: "Steady", look: "Worth a look" }[st];
     const L = c.latest;
     const ev = L?.event ? el("div", { class: "ph-card" }, [el("p", { class: "ph-lbl" }, `${you ? "Your" : "Their"} latest event`),
-      el("div", { class: "ph-ev" }, [el("div", {}, [el("b", {}, L.event), el("small", {}, [L.pos ? `${L.tie ? "T" : ""}${ordinal(L.pos)} of ${L.of} in strokes gained` : null, L.rounds ? `${L.rounds} round${L.rounds === 1 ? "" : "s"}` : null].filter(Boolean).join(" \u00b7 "))]),
+      el("div", { class: "ph-ev" }, [el("div", {}, [el("b", {}, L.event), el("small", {}, [L.official ? `Finished ${L.official}${L.pos ? " · " : ""}` : null, L.pos ? `${L.tie ? "T" : ""}${ordinal(L.pos)} of ${L.of} in strokes gained` : null, L.rounds ? `${L.rounds} round${L.rounds === 1 ? "" : "s"}` : null].filter(Boolean).join(" \u00b7 "))]),
         L.sg != null ? el("span", { class: `ph-v ${L.sg >= 0 ? "pos" : "neg"}` }, fmtSG(L.sg)) : null])]) : null;
     const WORD = { OTT: "Off the tee", APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
     const nm = (d) => (d.cat === "APP" ? `Approach from ${d.dist}` : `${WORD[d.cat] || d.cat}, ${d.dist}`);
@@ -509,8 +510,8 @@ export async function render(main, { previewClient }) {
       const lead = cats.filter((a) => (st === "well" ? a.ch > 0 : a.ch < 0)).sort((a, b) => Math.abs(b.ch) - Math.abs(a.ch))[0];
       const say = ch == null || !n ? "Not enough recent golf to say yet."
         : st === "steady" ? `About the same over the last ${n} ${unit} as the ${n} before.`
-        : `${st === "well" ? "Up" : "Down"} ${two(ch)} a round over the last ${n} ${unit}${lead ? `, mostly ${CAT_WORD[lead.cat] || lead.cat}` : ""}.`;
-      const L = c.latest, latest = L?.event ? `Latest: ${L.event}${L.pos ? ` \u00b7 ${L.tie ? "T" : ""}${ordinal(L.pos).replace(/^T?/, "")} of ${L.of} in strokes gained` : ""}${L.sg != null ? ` (${fmtSG(L.sg)} a round)` : ""}` : null;
+        : `${st === "well" ? "Up" : "Down"} ${two(ch)} per round over the last ${n} ${unit}${lead ? `, mostly ${CAT_WORD[lead.cat] || lead.cat}` : ""}.`;
+      const L = c.latest, latest = L?.event ? `Latest: ${L.event}${L.official ? ` \u00b7 finished ${L.official}` : ""}${L.pos ? ` \u00b7 ${L.tie ? "T" : ""}${ordinal(L.pos).replace(/^T?/, "")} of ${L.of} in strokes gained` : ""}${L.sg != null ? ` (${fmtSG(L.sg)} per round)` : ""}` : null;
       const fresh = !!(dOf(L?.date) && newest && newest - dOf(L.date) <= 10 * 864e5);
       return { c, st, ch, say, latest, lead, fresh };
     });
@@ -541,7 +542,7 @@ export async function render(main, { previewClient }) {
       wk.length ? el("div", { class: "wlc-note" }, [el("b", {}, "This week: "), wk.join(" ")]) : null,
       ...grp("well", "Playing well"), ...grp("steady", "Steady"), ...grp("look", "Worth a look"),
       more, add,
-      el("p", { class: "wlc-foot" }, "Playing well or worth a look: strokes gained a round up or down 0.30 or more over the last 12 rounds against the 12 before (the DP World Tour: 5 events against 5). Strokes gained at an event: against the players there who played as many rounds."),
+      el("p", { class: "wlc-foot" }, "Playing well or worth a look: strokes gained per round up or down 0.30 or more over the last 12 rounds against the 12 before (the DP World Tour: 5 events against 5). Strokes gained at an event: against the players there who played as many rounds."),
     ]);
   }
   const CAT_NAME = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
@@ -574,7 +575,7 @@ export async function render(main, { previewClient }) {
       hd,
       el("p", { class: "wlb-sub" }, sub),
       list.length ? el("ul", {}, list.map((x) => {
-        const dn = kind === "concern", unit = x.c.areas.unit === "events" ? "an event" : "a round";
+        const dn = kind === "concern", unit = x.c.areas.unit === "events" ? "an event" : "per round";
         // (update 596) the player and their total, then each of their 3 distances (a tap: that one, in detail)
         return el("li", { class: "wlb-item wlb-multi" }, [
           el("span", { class: "wlb-name" }, [x.c.label, el("small", {}, x.c.tour || ""), x.fresh ? el("em", { class: "wlb-fresh" }, "Just played") : null]),
@@ -636,8 +637,8 @@ export async function render(main, { previewClient }) {
     const perShot = (sg, w) => (w ? sg / w : null), f3 = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(3)}`);
     const sumA = (xs) => xs.reduce((t, v) => t + v, 0);
     const stats = { kind: "table", title: `${areaName(a)}: the last ${n} ${c.areas.unit || "rounds"} against the ${n} before`, cols: [[""], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]], rows: [
-      { strong: true, cells: ["SG a round", { sg: a.prev }, { sg: a.last }, { sg: a.ch, arrow: true }], pick: () => drawChart(a), picked: true },
-      (() => { const w1 = a.wPrevR ?? a.wPrev / n, w2 = a.wLastR ?? a.wLast / n; return { cells: ["Shots a round", { text: w1.toFixed(1) }, { text: w2.toFixed(1) }, { text: `${w2 >= w1 ? "+" : "\u2212"}${Math.abs(w2 - w1).toFixed(1)}` }] }; })(), // (update 581: per round, events too)
+      { strong: true, cells: ["SG per round", { sg: a.prev }, { sg: a.last }, { sg: a.ch, arrow: true }], pick: () => drawChart(a), picked: true },
+      (() => { const w1 = a.wPrevR ?? a.wPrev / n, w2 = a.wLastR ?? a.wLast / n; return { cells: ["Shots per round", { text: w1.toFixed(1) }, { text: w2.toFixed(1) }, { text: `${w2 >= w1 ? "+" : "\u2212"}${Math.abs(w2 - w1).toFixed(1)}` }] }; })(), // (update 581: per round, events too)
       (() => { const p1 = a.ps1 !== undefined ? a.ps1 : perShot(sumA(a.sg.slice(0, n)), a.wPrev), p2 = a.ps2 !== undefined ? a.ps2 : perShot(sumA(a.sg.slice(n)), a.wLast); return { cells: ["SG a shot", { text: f3(p1) }, { text: f3(p2) }, p1 != null && p2 != null ? { text: `${p2 >= p1 ? "\u25B2" : "\u25BC"} ${Math.abs(p2 - p1).toFixed(3)}`, tone: p2 > p1 ? "pos" : p2 < p1 ? "neg" : "" } : { text: "\u2014" }] }; })(), // (update 562: its change too)
     ] };
     // inside a part of the game: its distances (in order) and lies, the one(s) behind the swing in bold
@@ -646,13 +647,13 @@ export async function render(main, { previewClient }) {
       const kids = c.areas.list.filter((k) => k.cat === a.cat && (k.dist || k.lie) && k.wPrev + k.wLast >= 6);
       const tb = (title, list) => (list.length ? { kind: "table", title, cols: [[title.includes("istance") ? "Distance" : "Lie"], [`Previous ${n}`, "num"], [`Last ${n}`, "num"], ["Change", "num"]],
         rows: list.map((k) => ({ strong: dn ? k.ch <= -0.1 : k.ch >= 0.1, cells: [k.dist || k.lie, { sg: k.prev }, { sg: k.last }, { sg: k.ch, arrow: true }], pick: () => drawChart(k) })) } : null); // (update 562: a tap charts that one)
-      inside = [tb("By distance (strokes gained a round)", kids.filter((k) => k.dist).sort((p, q) => distLead(p.dist) - distLead(q.dist))), tb("By lie (strokes gained a round)", kids.filter((k) => k.lie && a.cat === "ARG").sort((p, q) => String(p.lie).localeCompare(String(q.lie))))].filter(Boolean);
+      inside = [tb("By distance (strokes gained per round)", kids.filter((k) => k.dist).sort((p, q) => distLead(p.dist) - distLead(q.dist))), tb("By lie (strokes gained per round)", kids.filter((k) => k.lie && a.cat === "ARG").sort((p, q) => String(p.lie).localeCompare(String(q.lie))))].filter(Boolean);
     }
     const rs = c.areas.rounds;
     // (update 562) the chart: the swing's area to start, or whichever distance or lie is tapped in the tables
     const chartT = el("p", { class: "wlh-sec" }), chartBox = el("div");
     function drawChart(z) {
-      chartT.textContent = `${areaName(z)}: each ${c.areas.unit === "events" ? "event (a round there)" : "round"}, the ${n} before against the last ${n} (tap a row above to chart it)`;
+      chartT.textContent = `${areaName(z)}: each ${c.areas.unit === "events" ? "event (per round there)" : "round"}, the ${n} before against the last ${n} (tap a row above to chart it)`;
       mount(chartBox, renderBlocks([{ kind: "bars", fmt: "sg", zero: true, items: rs.map((r, i) => ({ label: dateTxt(r.date), sub: [r.event, r.roundNo ? `R${r.roundNo}` : ""].filter(Boolean).join(" \u00b7 "), v: z.sg[i], on: i >= n })),
         ref: [{ v: z.prev, label: `Previous ${n}`, from: 0, to: n }, { v: z.last, label: `Last ${n}`, from: n, to: 2 * n }] }]));
     }
@@ -666,10 +667,10 @@ export async function render(main, { previewClient }) {
       const ev = a.sg.slice(k0), nE = ev.length; if (!nE || k0 < n) return null;
       const evAvg = sumA(ev) / nE, rest = a.sg.slice(n, k0), restAvg = rest.length ? sumA(rest) / rest.length : null;
       const better = evAvg - (restAvg ?? a.prev) > 0, evN = lastR.event || "The last event";
-      const line = dn ? (better ? `Trending down over the last ${n}, but ${evN} came back up: ${fmtSG(evAvg)} a round there.` : `${evN} kept it going: ${fmtSG(evAvg)} a round there.`)
-        : (better ? `${evN} kept it going: ${fmtSG(evAvg)} a round there.` : `Trending up over the last ${n}, but ${evN} slipped back: ${fmtSG(evAvg)} a round there.`);
+      const line = dn ? (better ? `Trending down over the last ${n}, but ${evN} came back up: ${fmtSG(evAvg)} per round there.` : `${evN} kept it going: ${fmtSG(evAvg)} per round there.`)
+        : (better ? `${evN} kept it going: ${fmtSG(evAvg)} per round there.` : `Trending up over the last ${n}, but ${evN} slipped back: ${fmtSG(evAvg)} per round there.`);
       return el("div", { class: `wlh-jp ${better ? "up" : "down"}` }, [el("p", { class: "wlh-sec" }, byEvU ? `Just played \u00b7 ${evN} \u00b7 ${dateTxt(lastR.date)}` : `Just played \u00b7 ${evN} \u00b7 ${nE} round${nE === 1 ? "" : "s"} \u00b7 ${dateTxt(lastR.date)}`), el("p", { class: "wlh-jp-l" }, line),
-        ...renderBlocks([{ kind: "table", cols: [[areaName(a)], ["SG a round", "num"]], rows: [
+        ...renderBlocks([{ kind: "table", cols: [[areaName(a)], ["SG per round", "num"]], rows: [
           { strong: true, cells: [byEvU ? evN : `${evN} (${nE} rd${nE === 1 ? "" : "s"})`, { sg: evAvg }] },
           ...(restAvg != null ? [{ cells: [`The rest of the last ${n} (${rest.length} ${byEvU ? (rest.length === 1 ? "event" : "events") : "rds"})`, { sg: restAvg }] }] : []),
           { cells: [`The ${n} before`, { sg: a.prev }] }] }])]);
@@ -680,7 +681,7 @@ export async function render(main, { previewClient }) {
     const overlay = el("div", { class: "gx-pop-overlay wlh-ov", role: "dialog", "aria-modal": "true", "aria-label": c.label }, el("div", { class: "gx-pop wlh-pop" }, [
       el("div", { class: "wlh-top" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, `${c.tour ? `${c.tour} · ` : ""}${c.rounds} rounds`), el("h2", {}, c.label)]), close]),
       el("div", { class: "wlh-body" }, [
-        el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, `Trending ${dn ? "down" : "up"} in ${areaName(a)}`), el("span", {}, `${fmtSG(a.ch)} strokes a round: ${fmtSG(a.last)} over the last ${n} ${c.areas.unit || "rounds"} against ${fmtSG(a.prev)} over the ${n} before.`), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
+        el("div", { class: `wlh-why wlb-${kind}` }, [el("strong", {}, `Trending ${dn ? "down" : "up"} in ${areaName(a)}`), el("span", {}, `${fmtSG(a.ch)} strokes per round: ${fmtSG(a.last)} over the last ${n} ${c.areas.unit || "rounds"} against ${fmtSG(a.prev)} over the ${n} before.`), x.fresh ? el("em", { class: "wlb-fresh" }, `Just played: ${c.latest.event || ""} ${fmtSG(c.latest.sg)}`) : null]),
         justPlayed,
         ...renderBlocks([stats, ...inside]),
         chartT, chartBox,
@@ -708,8 +709,8 @@ export async function render(main, { previewClient }) {
     const top = el("div", { class: "wlh-top" }, [
       el("div", {}, [el("p", { class: "gx-eyebrow" }, [c.tour || "", c.rounds != null ? ` \u00b7 ${c.rounds} round${c.rounds === 1 ? "" : "s"}` : "", ` \u00b7 ${/^y:/.test(ctx.cur) ? periodLabel(ctx.cur) : periodLabel(ctx.cur)}`].join("").replace(/^ \u00b7 /, "")), el("h2", {}, c.label)]),
       close]);
-    const big = t ? el("div", { class: "wlh-big" }, [el("strong", { class: `wlh-v ${sgCls(t.v)}` }, fmtSG(t.v)), el("span", { class: "wlh-u" }, "strokes gained a round"), el("span", { class: "wlh-f" }, [rankPill(t.rank, t.of), t.of ? el("span", { class: "muted small" }, ` of ${t.of}`) : null, trendEl(t.trend)])]) : null;
-    const latest = c.latest ? el("p", { class: "wlh-meta muted small" }, `Last event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}`) : null;
+    const big = t ? el("div", { class: "wlh-big" }, [el("strong", { class: `wlh-v ${sgCls(t.v)}` }, fmtSG(t.v)), el("span", { class: "wlh-u" }, "strokes gained per round"), el("span", { class: "wlh-f" }, [rankPill(t.rank, t.of), t.of ? el("span", { class: "muted small" }, ` of ${t.of}`) : null, trendEl(t.trend)])]) : null;
+    const latest = c.latest ? el("p", { class: "wlh-meta muted small" }, `Last event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " per round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}`) : null;
     const badges = card.querySelector(".wl-badges"), sg = card.querySelector(".wl-sg"), more = card.querySelector(".wl-more");
     sg?.firstElementChild?.remove(); // (Total is the big number)
     if (more) { more.hidden = false; more.querySelector(".wl-meta")?.remove(); }
@@ -752,7 +753,7 @@ export async function render(main, { previewClient }) {
       el("div", { class: "wl-id" }, [name, tourSeg]),
       el("div", { class: "wl-head-r" }, [moreBtn, star]),
     ]) : tourSeg ? el("div", { class: "wl-card-head" }, [el("div", { class: "wl-id" }, [tourSeg])]) : null;
-    const meta = el("p", { class: "wl-meta" }, [c.tours?.length ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " a round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
+    const meta = el("p", { class: "wl-meta" }, [c.tours?.length ? "" : c.tour || "", `${c.rounds} round${c.rounds === 1 ? "" : "s"}`, c.latest ? `Last Event: ${fmtSG(c.latest.sg)}${c.latest.rounds > 1 ? " per round" : ""}${c.latest.event ? ` at ${c.latest.event}` : ""}, ${dateTxt(c.latest.date)}` : ""].filter(Boolean).join(" · "));
     // (update 173) a badge opens what's behind it: a chart, a table, or both
     const badges = el("div", { class: "wl-badges" }, sortBadges(c.badges).map((b) => {
       if (!b.info) return el("span", { class: `wl-badge ${b.tone || ""}`, ...(b.color ? { style: `background:${b.color};color:#0b0b0d;border-color:transparent` } : {}) }, [el("span", { "aria-hidden": "true" }, b.icon), b.text]);
@@ -771,7 +772,7 @@ export async function render(main, { previewClient }) {
     };
     const sg = el("div", { class: "wl-sg" }, c.sg.map((s, i) => tappable(el("div", { class: `wl-tile${i === 0 ? " total" : ""}` }, [
       el("span", { class: "wl-tile-k" }, s.short),
-      rel && s.v != null && s.avgO != null ? el("strong", { class: `wl-tile-v ${sgCls(s.v - s.avgO)}`, title: `${fmtSG(s.v)} a round; the rest average ${fmtSG(s.avgO)}` }, fmtSG(s.v - s.avgO)) : el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
+      rel && s.v != null && s.avgO != null ? el("strong", { class: `wl-tile-v ${sgCls(s.v - s.avgO)}`, title: `${fmtSG(s.v)} per round; the rest average ${fmtSG(s.avgO)}` }, fmtSG(s.v - s.avgO)) : el("strong", { class: `wl-tile-v ${sgCls(s.v)}` }, fmtSG(s.v)),
       el("div", { class: "wl-tile-f" }, [rankPill(s.rank, s.of), trendEl(s.trend)]),
     ]), s.label, s.info)));
     // (update 223) 3 of each to start (by total strokes gained there); "+ N more" opens the rest. A trend under each rank.
@@ -795,7 +796,7 @@ export async function render(main, { previewClient }) {
       t.cols.length ? el("div", { class: "wl-clubs-tw" }, el("table", { class: "wl-clubs-t" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, ""), ...t.cols.map((x) => el("th", {}, [x.label, x.rounds < 10 ? el("span", { class: "wl-few", title: `Only ${x.rounds} rounds` }, " *") : null]))])),
         el("tbody", {}, [
-          el("tr", {}, [el("td", {}, "SG a round"), ...t.cols.map((x) => el("td", { class: `num ${sgCls(x.v)}` }, fmtSG(x.v)))]),
+          el("tr", {}, [el("td", {}, "SG per round"), ...t.cols.map((x) => el("td", { class: `num ${sgCls(x.v)}` }, fmtSG(x.v)))]),
           el("tr", { class: "muted" }, [el("td", {}, "Rounds"), ...t.cols.map((x) => el("td", { class: "num" }, String(x.rounds)))]),
         ]),
       ])) : el("p", { class: "muted small" }, "Not used in this period."),

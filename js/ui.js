@@ -126,8 +126,9 @@ const sectionsFor = (kind) => {
     // (update 609) the Watchlist is off the menu for now; (610) Home is its own header link, left of Analyze
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     // (update 505) Watchlist, Stats, Compare, Leaderboards
-    ["Stats", admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard",
-      admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
+    // (update 833) Stats' views are its row of pages (the tabs that were on the page): each opens Stats on that view
+    ...STATS_VIEWS.map(([v, label]) => [label, `${admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard"}?view=${v}`,
+      admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"], { view: v }]),
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     // (update 817) the Player Dossier (Overview), Course Fit and Practice & Goals are tabs on Stats now
@@ -156,9 +157,13 @@ const sectionsFor = (kind) => {
 // (Player Access also holds Upload Data for the admin)
 const NAV = { admin: [["#/admin/clients", "people", "User Access", ["admin-clients", "admin-datasets"]]] };
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
+// (update 833) Stats' views, its row of pages; the one showing is ?view= in the address (Overview when there's none)
+export const STATS_VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Compare"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]];
+export const statsViewNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "overview";
 const itemOn = (item, routeId) => {
   const [, , routes, opt = {}] = item;
   if (!routes.includes(routeId)) return false;
+  if (opt.view) return opt.view === statsViewNow();
   return !opt.q || (routeId !== "admin-reports-view" ? opt.q === "performance" : catNow() === opt.q);
 };
 
@@ -175,6 +180,32 @@ export function relocateSectionNav(main, host) {
   return () => top?.classList.remove("tight-top");
 }
 
+/** (update 833) A Stats view link: on Stats already, it switches the view in place (no reload); elsewhere it opens Stats on it */
+function viewLink(a, view) {
+  if (!view) return a;
+  a.dataset.view = view;
+  a.addEventListener("click", (e) => {
+    if (!document.querySelector(".st-host")) return; // (Stats isn't showing: a normal link)
+    e.preventDefault(); history.replaceState(history.state, "", a.getAttribute("href"));
+    window.dispatchEvent(new CustomEvent("ta-stats-view", { detail: { view } })); syncStatsNav(); closeBotPop();
+  });
+  return a;
+}
+/** light the Stats view that's showing, in the row under the header and the phone's pop-up menu */
+export function syncStatsNav() { const v = statsViewNow(); document.querySelectorAll("a[data-view]").forEach((a) => { if (a.dataset.view === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); }); }
+/** (update 833) on a phone, Stats, Leaderboards and Play open their pages in a row above the bottom bar */
+let botPop = null;
+export function closeBotPop() { botPop?.remove(); botPop = null; document.querySelectorAll(".botbar .on-pop").forEach((x) => x.classList.remove("on-pop")); }
+function openBotPop(sec, btn) {
+  const same = botPop && botPop.dataset.sec === sec.id; closeBotPop(); if (same) return;
+  botPop = el("nav", { class: "botpop", "aria-label": sec.label, "data-sec": sec.id }, sec.items.filter((it) => !it[3]?.off).map((it) => { const [label, href, routes, opt = {}] = it;
+    const a = el("a", { href, "aria-current": routes.includes(window.__routeId) && (!opt.view || opt.view === statsViewNow()) ? "page" : null }, label); a.addEventListener("click", () => setTimeout(closeBotPop, 0)); return viewLink(a, opt.view); }));
+  document.body.append(botPop); btn.classList.add("on-pop");
+  requestAnimationFrame(() => botPop?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: "center", block: "nearest" }));
+}
+addEventListener("hashchange", () => closeBotPop());
+addEventListener("click", (e) => { if (botPop && !e.target.closest(".botpop, .botbar")) closeBotPop(); }, true);
+
 /** The row of pages under the current header (Stats / Performance Reports / …), or null. */
 export function sectionNav(currentRoute) {
   const kind = shellKind();
@@ -185,7 +216,7 @@ export function sectionNav(currentRoute) {
     const on = itemOn(it, currentRoute);
     // (update 205) greyed out until it has data; (update 207) a link with no address, so it's styled exactly like its neighbours
     if (opt.off) return el("a", { class: "nav-off", role: "link", "aria-disabled": "true", title: opt.offTitle || "Available once there\u2019s product data" }, label);
-    return el("a", { href, "aria-current": on ? "page" : null, class: opt.soon ? "soon" : null }, [label, opt.soon ? el("span", { class: "soon-tag" }, "Soon") : null]);
+    return viewLink(el("a", { href, "aria-current": on ? "page" : null, class: opt.soon ? "soon" : null }, [label, opt.soon ? el("span", { class: "soon-tag" }, "Soon") : null]), opt.view);
   }));
 }
 function shellKind() {
@@ -392,6 +423,7 @@ function paintChip(n, c) {
 function curChip() { const n = el("span", { class: "cur-chip" }); paintChip(n, currentPlayer()); return n; }
 onCurrent((c) => { for (const n of document.querySelectorAll(".cur-chip")) paintChip(n, c); });
 export function renderShell(root, { previewClient, currentRoute }) {
+  window.__routeId = currentRoute; // (update 833: the phone's pop-up menu lights the page showing)
   const state = window.__authState;
   const previewingTeam = state.isAdmin && !!getPreviewTeam(); // admin looking at a coach/caddy/analyst's portal
   const admin = state.isAdmin && !previewClient && !previewingTeam;
@@ -441,9 +473,9 @@ export function renderShell(root, { previewClient, currentRoute }) {
   // (update 829) Home, Stats, Play, Leaderboards, Search
   const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
     el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("home"), el("span", {}, "Home")]),
-    data ? el("a", { href: data.items[0][1], "aria-current": data === onSec ? "page" : null }, [icon("data"), el("span", {}, data.label)]) : null,
-    plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/entry", "aria-current": plan === onSec ? "page" : null }, [icon(plan.icon || "flag"), el("span", {}, plan.label)]) : null,
-    fol ? el("a", { href: fol.items[0][1], "aria-current": fol === onSec ? "page" : null }, [icon(fol.icon || "rank"), el("span", {}, fol.label)]) : null,
+    ...[[data, "data"], [plan, plan?.icon || "flag"], [fol, fol?.icon || "rank"]].map(([sec, ic]) => { if (!sec) return null;
+      const b = el("a", { href: sec.items[0][1], "aria-current": sec === onSec ? "page" : null, role: "button", "aria-haspopup": "true" }, [icon(ic), el("span", {}, sec.label)]);
+      b.addEventListener("click", (e) => { e.preventDefault(); openBotPop(sec, b); }); return b; }),
     srch,
   ]);
   const rail = el("aside", { class: "rail" }, [

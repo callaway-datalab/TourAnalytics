@@ -49,7 +49,7 @@ export async function tourBag(key, name) {
   const bm = new Map(); for (const r of recentRs) for (const s of r.shots || []) if (s.ball) bm.set(s.ball, (bm.get(s.ball) || 0) + 1);
   const ball = [...bm].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
   // (update 830) the whole career: every club and model they've hit, on every tour and season on record, each with its
-  // seasons, rounds and strokes gained a round; the ones in the bag now (above) marked, and every ball
+  // seasons, rounds and strokes gained per round; the ones in the bag now (above) marked, and every ball
   const nowKey = new Set(clubs.map((c) => `${c.label}|${c.brand} ${c.model}`.trim()));
   const car = new Map();
   for (const r of rounds) { const seen = new Map(); for (const s of r.shots || []) { const lbl = s.club || null; if (!lbl) continue; const gi = s.gear ? gearInfo(s.gear) : {}, kind = s.gear ? String(s.gear).split("|")[0] : null, k = `${lbl}|${`${gi.brand || ""} ${gi.model || ""}`.trim()}`;

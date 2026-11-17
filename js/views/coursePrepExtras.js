@@ -282,16 +282,16 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
   const finish = (e) => {
     const played = field.map((p) => ({ p, rs: p.rounds.filter((rd) => rd.event === e.event && String(rd.year) === String(e.year)) })).filter((x) => x.rs.length);
     if (!played.length) return null;
-    const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = played.map((x) => cntR(x.rs)).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; // (update 773: rounds, not rows)
+    const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), most = ((cs) => { const f = cs.filter(Number.isFinite).sort((a, b) => b - a); return f.length ? f[Math.min(f.length - 1, Math.max(3, Math.ceil(f.length * 0.1)) - 1)] : 0; })(played.map((x) => cntR(x.rs))); // (update 773: rounds, not rows)
     const list = played.filter((x) => cntR(x.rs) >= most).map((x) => ({ key: x.p.key, v: perRound(x.rs) })).sort((a, b) => b.v - a.v);
     const i = list.findIndex((x) => x.key === who.key);
     return i < 0 ? (e.rs.length < most ? "MC" : null) : `${i + 1} of ${list.length}`;
   };
-  // (update 461) the winner of each tournament here (the best strokes gained a round among those who played every round),
+  // (update 461) the winner of each tournament here (the best strokes gained per round among those who played every round),
   // from the shared summary; their distances from the field's round detail, once it's loaded
   const evHere = new Map();
   for (const p of field) for (const rd of p.rounds) if (rd.event && sameCourse(rd.course, course.name)) { const k = `${rd.event}|${rd.year}`; const e = evHere.get(k) || evHere.set(k, new Map()).get(k); (e.get(p.key) || e.set(p.key, []).get(p.key)).push(rd); }
-  const winners = [...evHere].map(([k, byP]) => { const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), fin0 = [...byP.values()].map(cntR).filter(Number.isFinite), most = fin0.length ? Math.max(...fin0) : 0; let best = null; for (const [pk, rs] of byP) { if (cntR(rs) < most) continue; const v = perRound(rs); if (v != null && (!best || v > best.v)) best = { key: pk, v, k }; } return best; }).filter(Boolean);
+  const winners = [...evHere].map(([k, byP]) => { const cntR = ((rs) => (rs.some((r) => r.eventLevel) ? Infinity : new Set(rs.map((r) => r.roundNo || r.date)).size)), most = ((cs) => { const f = cs.filter(Number.isFinite).sort((a, b) => b - a); return f.length ? f[Math.min(f.length - 1, Math.max(3, Math.ceil(f.length * 0.1)) - 1)] : 0; })([...byP.values()].map(cntR)); let best = null; for (const [pk, rs] of byP) { if (cntR(rs) < most) continue; const v = perRound(rs); if (v != null && (!best || v > best.v)) best = { key: pk, v, k }; } return best; }).filter(Boolean);
   const detailBy = new Map((detail || []).map((p) => [p.key, p]));
   const winAvg = (cat = null, dist = null) => {
     const vs = winners.map((w) => {
@@ -320,7 +320,7 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
       el("div", { class: "pr-tiles" }, [
         tile("Rounds here", String(here.length), "", `${events.size} tournament${events.size === 1 ? "" : "s"}`),
         tile("SG / round here", SG(mine), sgCls(mine), `${SG(all)} elsewhere (${elsewhere.length} round${elsewhere.length === 1 ? "" : "s"})`), // (update 768: no Elsewhere card: its number is here)
-        tile("Here vs elsewhere", SG(mine - all), sgCls(mine - all), "strokes a round"),
+        tile("Here vs elsewhere", SG(mine - all), sgCls(mine - all), "strokes per round"),
         // (update 525) one card: the best round here, and under it the toughest
         (() => { const yr = (rd) => `(${[rd.year || String(rd.date || "").slice(0, 4), rd.roundNo ? `R${rd.roundNo}` : null].filter(Boolean).join(" \u00b7 ")})`;
           const b0 = best[0], w0 = best.at(-1), bv = perRound([b0]), wv = perRound([w0]);
@@ -331,7 +331,7 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
         sc != null ? tile("Scoring avg here", sc.toFixed(2), scAll != null ? (sc < scAll ? "pos" : sc > scAll ? "neg" : "") : "", scAll != null ? `${scAll.toFixed(2)} elsewhere` : "") : null,
       ].filter(Boolean)),
     ]),
-    el("section", { class: "panel" }, [el("h2", {}, "By category"), el("p", { class: "muted small" }, "Tap a category for its distances. Avg Winner: strokes gained a round by the winner of each tournament here, averaged. Diff from Winner: here less the winner\u2019s."), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
+    el("section", { class: "panel" }, [el("h2", {}, "By category"), el("p", { class: "muted small" }, "Tap a category for its distances. Avg Winner: strokes gained per round by the winner of each tournament here, averaged. Diff from Winner: here less the winner\u2019s."), el("div", { class: "table-scroll" }, el("table", { class: "plain ch-t" }, [
       el("thead", {}, el("tr", {}, [el("th", {}, "Category"), el("th", { class: "num" }, "Here"), el("th", { class: "num" }, "Elsewhere"), el("th", { class: "num" }, "Diff"), el("th", { class: "num" }, "Avg Winner"), el("th", { class: "num" }, "Diff from Winner")])), // (update 506)
       el("tbody", {}, [[null, "Total"], ...CATEGORIES].flatMap(([k, l]) => {
         const h = perRound(here, k), a = perRound(elsewhere, k), w = winAvg(k);
@@ -353,8 +353,8 @@ function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() 
       el("tbody", {}, [...events.values()].sort((a, b) => String(b.end).localeCompare(String(a.end))).map((e) => { const v = perRound(e.rs); return el("tr", {}, [el("td", {}, dateTxt(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.rs.length)), el("td", { class: `num ${sgCls(v)}` }, fmtSG(v)), el("td", { class: "num" }, finish(e) || "—")]); })),
     ])),
     ]),
-    // (update 511) the shots they're better and worse at here, against elsewhere (a round)
-    el("section", { class: "panel" }, [el("h2", {}, "Here against elsewhere, by shot"), el("p", { class: "muted small" }, "Strokes gained a round from each kind of shot (4 or more here), here against their rounds at other courses."),
+    // (update 511) the shots they're better and worse at here, against elsewhere (per round)
+    el("section", { class: "panel" }, [el("h2", {}, "Here against elsewhere, by shot"), el("p", { class: "muted small" }, "Strokes gained per round from each kind of shot (4 or more here), here against their rounds at other courses."),
       el("div", { class: "ch-two" }, [shotTable("Better here", gains), shotTable("Worse here", losses)])]),
   ]);
 }

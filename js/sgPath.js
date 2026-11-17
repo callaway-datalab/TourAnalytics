@@ -22,7 +22,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
   const eAvg = tot(elite), rAvg = tot(recent), bar = lv?.bar ?? null;
   const gap = bar != null ? bar - rAvg : eAvg - rAvg;
   const there = bar != null && rAvg >= bar - 1e-9; // (matching it is enough to rank there)
-  // where the strokes go: per part of the game and distance, a round
+  // where the strokes go: per part of the game and distance, per round
   const bE = bucketsOf(elite, inCat), bR = bucketsOf(recent, inCat), bU = bucketsOf(season, inCat);
   const keys = new Set([...bE.keys(), ...bR.keys()].map((k) => k.split("|").slice(0, 2).join("|")));
   // (update 345) each piece split into playing it better (per shot) and facing it more or less often (lies included)
@@ -109,13 +109,13 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
     const roundLines = [`${LN}: ${f2(g.r)}`, `${LvCap}: ${f2(g.e)}`, `Average: ${f2(uRound)}`,
       `Difference: ${sgn2(g.g)}${Math.abs(sp.mix) >= 0.01 ? ` (${sgn2(sp.skill)} from hitting it better, ${sgn2(sp.mix)} from ${fewer ? "fewer" : "more"} attempts)` : " (all from hitting it better)"}`];
     const shotLines = [`${LN}: ${sgn2(sp.pb)}`, `${LvCap}: ${sgn2(sp.pe)}`, `Average: ${sgn2(sp.pu)}`];
-    const oftenLines = [`${LN}: ${sp.ab.toFixed(1)} attempts a round`, `${LvCap}: ${sp.ae.toFixed(1)} attempts`, `Average: ${uAtt.toFixed(1)} attempts`];
+    const oftenLines = [`${LN}: ${sp.ab.toFixed(1)} attempts per round`, `${LvCap}: ${sp.ae.toFixed(1)} attempts`, `Average: ${uAtt.toFixed(1)} attempts`];
     // (update 358) what it means, in plain words
     const amt = (v) => Math.abs(v).toFixed(2), verb = (v) => (Math.abs(v) < 0.005 ? "break even" : v > 0 ? `gain ${amt(v)}` : `lose ${amt(v)}`);
     let take;
-    if (kind === "mix") take = `They\u2019re not hitting these worse in the last ${N} rounds; they\u2019re facing ${fewer ? "fewer" : "more"} of them (${sp.ab.toFixed(1)} a round, against ${sp.ae.toFixed(1)} in their ${NN.kept}). ${MIX_CAUSE[g.c] || ""}`;
+    if (kind === "mix") take = `They\u2019re not hitting these worse in the last ${N} rounds; they\u2019re facing ${fewer ? "fewer" : "more"} of them (${sp.ab.toFixed(1)} per round, against ${sp.ae.toFixed(1)} in their ${NN.kept}). ${MIX_CAUSE[g.c] || ""}`;
     else {
-      take = `Over the last ${N} rounds they ${Math.abs(sp.pb) < 0.005 ? "break even here" : `${verb(sp.pb)} strokes a shot here`}; in their ${NN.kept} they ${verb(sp.pe)}. Getting back to that is worth about ${amt(g.g)} a round${Math.abs(sp.mix) >= 0.01 ? ` (${amt(sp.skill)} from playing these shots better, ${sp.mix > 0 ? "plus" : "less"} ${amt(sp.mix)} because their ${NN.kept} had ${sp.ae < sp.ab ? "fewer" : "more"} of them)` : ""}.`; // (update 386: the same number as the table's Diff)
+      take = `Over the last ${N} rounds they ${Math.abs(sp.pb) < 0.005 ? "break even here" : `${verb(sp.pb)} strokes a shot here`}; in their ${NN.kept} they ${verb(sp.pe)}. Getting back to that is worth about ${amt(g.g)} per round${Math.abs(sp.mix) >= 0.01 ? ` (${amt(sp.skill)} from playing these shots better, ${sp.mix > 0 ? "plus" : "less"} ${amt(sp.mix)} because their ${NN.kept} had ${sp.ae < sp.ab ? "fewer" : "more"} of them)` : ""}.`; // (update 386: the same number as the table's Diff)
       const weak = sp.pu <= -0.015; // (a weak spot: they usually lose at least 0.015 a shot here)
       if (sp.pb < sp.pu - 0.01) take += weak ? ` It\u2019s usually a weak spot (${sgn2(sp.pu)} a shot), and it\u2019s been worse lately.` : ` It\u2019s a recent slump: on average they ${verb(sp.pu)} a shot here.`;
       else if (weak) take += ` It\u2019s a long-standing weak spot (${sgn2(sp.pu)} a shot on average), not just a recent one.`;
@@ -135,12 +135,12 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
       const amtTxt = def.pct ? `${diff.toFixed(1)} ${Math.round(diff * 10) === 10 ? "point" : "points"}` : fmtStat({ ...def, pct: false }, diff);
       const head = `${up ? "Raise" : "Bring down"} ${def.label} by ${amtTxt}`;
       const lines = [head, `From ${fmtStat(def, tgt.vr)} over the last ${N} rounds to ${fmtStat(def, tgt.ve)} (their ${NN.kept})`];
-      if (def.pct) { const extra = (diff / 100) * (tgt.w / recent.length); if (extra > 0.001) lines.push(extra >= 1 ? `That\u2019s about ${Math.round(extra)} more a round` : `That\u2019s 1 more every ${Math.max(1, Math.round(1 / extra))} ${Math.round(1 / extra) === 1 ? "round" : "rounds"}`); }
+      if (def.pct) { const extra = (diff / 100) * (tgt.w / recent.length); if (extra > 0.001) lines.push(extra >= 1 ? `That\u2019s about ${Math.round(extra)} more per round` : `That\u2019s 1 more every ${Math.max(1, Math.round(1 / extra))} ${Math.round(1 / extra) === 1 ? "round" : "rounds"}`); }
       return lines;
     })();
     const thinLately = false; // (update 369: shots they rarely face are already left out of the list)
     const goal2 = tgt ? statGoal(g.c, d, tgt) : es ? statGoal(g.c, d, { ...es, exact: es.exact }) : goal;
-    return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}`, better: `${sgn2(g.g)} a round better in their ${NN.kept}`, roundLines, shotLines, oftenLines, strategy, take, targetLines: kind === "mix" ? null : targetLines,
+    return { head: `${catName(g.c)}${g.d ? ` \u00b7 ${g.d}` : ""}`, better: `${sgn2(g.g)} per round better in their ${NN.kept}`, roundLines, shotLines, oftenLines, strategy, take, targetLines: kind === "mix" ? null : targetLines,
       drills: kind === "mix" || thinLately ? [] : [{ drill: (() => { const dr = drillFor(g.c, d, es); if (dr) dr.from = NN.kept; return dr; })(), goal: goal2 }].filter((x) => x.drill) };
   };
   const prios = gaps.map(itemOf);
@@ -212,7 +212,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
     sel.addEventListener("change", () => { S.st.pathT = Number(sel.value); S.draw(); });
     return el("label", { class: "bs-lv-row" }, [el("span", { class: "muted small" }, `Now ${S.ordinal(lv.rank)} on the season${lv.formRank ? `, a #${lv.formRank} level over the last ${N}` : ""}. Aim for:`), sel]);
   })() : null;
-  // (update 370) the path as a table: the last N rounds against the level's rounds, a round, for SG: Total, each part
+  // (update 370) the path as a table: the last N rounds against the level's rounds, per round, for SG: Total, each part
   // of the game (tap to open its distances) and each distance (tap to see the takeaway, target and practice)
   function pathTable() {
     const lvHead = best ? "The best" : rest ? "The rest" : lv ? `\u201c${LEVELS[lv.T]}\u201d` : "Best rounds";
@@ -233,7 +233,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
       tr.addEventListener("click", onTap); tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onTap(); } });
       return tr;
     };
-    // (update 455) What-if: a change a round at any distance (typed, or Reach target: the difference to the other column),
+    // (update 455) What-if: a change per round at any distance (typed, or Reach target: the difference to the other column),
     // all of them added up into the last N rounds' total, and where that total would rank on the season
     // (update 760) no typed what-if any more: each distance in the practice plan counts as reaching its target (the gap
     // closed), all of them added up at the top, each with an × to take it out of the plan
@@ -261,7 +261,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
         rk ? el("p", { class: "bs-wi-now muted" }, `The last ${N} rounds now: ${S.ordinal(rk.rankOf(base))}`) : null,
         list ? el("ul", { class: "bs-wi-list" }, [
           ...ks.sort((a, b2) => WI[b2] - WI[a]).map((k) => { const x = el("button", { type: "button", class: "bs-wi-x", title: "Remove from practice plan", "aria-label": `Remove ${nm(k)} from the practice plan` }, "\u00d7"); x.addEventListener("click", () => unplan([k], x));
-            return el("li", {}, [x, nm(k), ": ", el("strong", { class: WI[k] >= 0 ? "pos" : "neg" }, `${fmtCh(WI[k])} a round`)]); }),
+            return el("li", {}, [x, nm(k), ": ", el("strong", { class: WI[k] >= 0 ? "pos" : "neg" }, `${fmtCh(WI[k])} per round`)]); }),
           el("li", { class: "bs-wi-tot" }, [`${cat ? catName(cat) : "SG: Total"}: ${fmtCh(base)} \u2192 `, el("strong", { class: tot >= 0 ? "pos" : "neg" }, fmtCh(tot)), ` (${fmtCh(sum)} in all)`])]) : null,
       ]);
     };
@@ -269,7 +269,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
     const detail = (g) => {
       const sp = g.sp;
       if (g.g <= 0.005) return [el("p", { class: "muted small" }, `Their last ${N} rounds are as good as their ${NN.kept} here, or better.`)];
-      if (sp.ab < 0.5) return [el("p", { class: "muted small" }, `They\u2019ve faced this less than once every two rounds over the last ${N} (${sp.ab.toFixed(1)} a round), so it isn\u2019t worth practicing for now.`)];
+      if (sp.ab < 0.5) return [el("p", { class: "muted small" }, `They\u2019ve faced this less than once every two rounds over the last ${N} (${sp.ab.toFixed(1)} per round), so it isn\u2019t worth practicing for now.`)];
       const p = itemOf(g);
       // (update 455) the takeaway gives way to the what-if: a change typed in, or Reach target (the difference)
       return [...(p.targetLines ? [kv("Target", p.targetLines.map((x, k) => el("div", { class: k ? "bs-tl" : "bs-th" }, x)), "bs-target")] : []), ...p.drills.map(drillRow)];
@@ -294,7 +294,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
     }
     return el("div", { class: "bs-path-tw" }, [
       hypoLine(),
-      infoTip(`${lv ? `${lvHead} rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Each row is strokes gained a round: the last ${N} rounds, the level\u2019s rounds, and the difference: the last ${N} less the level\u2019s rounds (red: behind the level there, so there\u2019s something to gain; green: already ahead). #1 to #${gaps.length || 5} mark the biggest gaps. Tap a part of the game for its distances, and a distance for the takeaway, target and practice.`),
+      infoTip(`${lv ? `${lvHead} rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Each row is strokes gained per round: the last ${N} rounds, the level\u2019s rounds, and the difference: the last ${N} less the level\u2019s rounds (red: behind the level there, so there\u2019s something to gain; green: already ahead). #1 to #${gaps.length || 5} mark the biggest gaps. Tap a part of the game for its distances, and a distance for the takeaway, target and practice.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num bs-lastn" }, ["Last ", nIn]), el("th", { class: "num", title: best ? `Their best stretch: ${elite.length} rounds in a row` : rest ? `Their other ${season.length - N} rounds` : `${lvHead} rounds` }, lvShort), el("th", { class: "num" }, "Diff")])),
         el("tbody", {}, body)])),

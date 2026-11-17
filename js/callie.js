@@ -67,7 +67,7 @@ function readLocal(question, list) {
   for (const [re, k] of [[/\bputt(s|ing|er)?\b|\bon the greens?\b/, "sg_putt"], [/\bapproach|iron play|irons?\b/, "sg_app"], [/\baround[- ]the[- ]green|short game|chipping|pitching|bunker/, "sg_arg"],
     [/\btee[- ]to[- ]green|ball[- ]?strik/, "sg_t2g"], [/\boff[- ]the[- ]tee|\bdriving\b(?! distance)|\bdriver\b|tee shots?/, "sg_ott"]]) if (has(re)) { metric = k; break; }
   for (const [re, k] of [[/ball ?speed|swing speed|\bspeed\b/, "ballSpeed"], [/driving distance|longest|how far|distance off the tee/, "drive"], [/fairways?( hit)?|driving accuracy|most accurate/, "fwy"], [/greens in regulation|\bgir\b/, "gir"],
-    [/proximity|closest to the (hole|pin)/, "prox"], [/scrambl/, "scramble"], [/up[- ]and[- ]down/, "ud"], [/3[- ]putt|three[- ]putt/, "threePutt"], [/putts per round|putts a round|fewest putts/, "putts"],
+    [/proximity|closest to the (hole|pin)/, "prox"], [/scrambl/, "scramble"], [/up[- ]and[- ]down/, "ud"], [/3[- ]putt|three[- ]putt/, "threePutt"], [/putts per round|putts per round|fewest putts/, "putts"],
     [/birdies?/, "birdiesRd"], [/bogeys? (avoid|free)|bogey avoidance/, "bogey"], [/double bogey/, "dblBogeysRd"], [/\bbogeys?\b/, "bogeysRd"], [/eagles?/, "eagles"], [/scoring average|scoring avg|lowest scor/, "scoring"]])
     if (has(re)) { metric = k; break; }
   if (!metric && has(/\b(overall|best player|total|strokes gained)\b/)) metric = "sg_total";
@@ -317,7 +317,7 @@ async function answerField(plan) {
   if (!all.length) return { text: `No one has ${minR}+ rounds ${label}${tour ? ` on ${tour}` : ""}, so there’s no fair ranking. Try a longer period.` };
   const n = Math.min(plan.limit || 10, 25), top = all.slice(0, n), lead = top[0];
   const word = plan.order === "worst" ? (m.higher === false ? "the highest" : "the lowest") : m.higher === false ? "the lowest" : m.higher == null ? "the most" : "the best";
-  const lines = [`**${lead.name}** has ${word} ${m.label} ${tour ? `on ${tour} ` : ""}${label}: **${fmtM(m, lead.v)}**${m.sg ? " a round" : ""} over ${plural(lead.n, "round")}.`];
+  const lines = [`**${lead.name}** has ${word} ${m.label} ${tour ? `on ${tour} ` : ""}${label}: **${fmtM(m, lead.v)}**${m.sg ? " per round" : ""} over ${plural(lead.n, "round")}.`];
   if (top.length > 1) lines.push(`Then ${top.slice(1, 4).map((r) => `${r.name} ${fmtM(m, r.v)}`).join(", ")}.`);
   // where the players they named stand
   const named = plan.players.map((nm) => { const k = sq(nm); return f.rows.find((r) => sq(r.name) === k || sq(r.name).endsWith(k)); }).filter(Boolean);
@@ -328,11 +328,11 @@ async function answerField(plan) {
   return {
     text: lines.join("\n\n"),
     table: { head: ["#", "Player", m.label, "Rounds"], num: [0, 2, 3], rows: top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), String(r.n)]), mark: new Set(named.map((r) => top.findIndex((x) => x.key === r.key)).filter((i) => i >= 0)) },
-    note: `Players with ${minR}+ rounds ${label}${tour ? ` on ${tour}` : ""} (${all.length} qualify). ${m.sg ? "Strokes gained a round." : m.def?.help || ""}`,
+    note: `Players with ${minR}+ rounds ${label}${tour ? ` on ${tour}` : ""} (${all.length} qualify). ${m.sg ? "Strokes gained per round." : m.def?.help || ""}`,
   };
 }
 
-/** (update 260) A ranking narrowed to a distance / lie: strokes gained a round from those shots, and a shot. */
+/** (update 260) A ranking narrowed to a distance / lie: strokes gained per round from those shots, and a shot. */
 function answerFieldNarrowed(plan, m, f) {
   const { all, minR, tour, label, nar } = f;
   if (!all.length) return { text: `No one has ${minR}+ rounds ${label}${tour ? ` on ${tour}` : ""}, so there\u2019s no fair ranking. Try a longer period.` };
@@ -342,16 +342,16 @@ function answerFieldNarrowed(plan, m, f) {
   const shotWord = nar.part === "PUTT" ? "putt" : "shot";
   const best = plan.order === "worst" ? "the least" : "the most";
   const lines = [m.sg
-    ? `**${lead.name}** gains ${best} on ${what.toLowerCase().replace(/^putting/, "putts")} ${tour ? `on ${tour} ` : ""}${label}: **${fmtM(m, lead.v)}** a round (${f3(lead.per)} a ${shotWord} over ${lead.w} ${shotWord}s, ${plural(lead.n, "round")}).`
+    ? `**${lead.name}** gains ${best} on ${what.toLowerCase().replace(/^putting/, "putts")} ${tour ? `on ${tour} ` : ""}${label}: **${fmtM(m, lead.v)}** per round (${f3(lead.per)} a ${shotWord} over ${lead.w} ${shotWord}s, ${plural(lead.n, "round")}).`
     : `**${lead.name}** has ${plan.order === "worst" ? "the lowest" : "the best"} ${what} ${tour ? `on ${tour} ` : ""}${label}: **${fmtM(m, lead.v)}** (${Math.round(lead.w)} attempts).`];
   if (top.length > 1) lines.push(`Then ${top.slice(1, 4).map((r) => `${r.name} ${fmtM(m, r.v)}`).join(", ")}.`);
   const named = plan.players.map((nm) => { const k = sq(nm); return f.rows.find((r) => sq(r.name) === k || sq(r.name).endsWith(k)); }).filter(Boolean);
   for (const r of named) { const at = all.findIndex((x) => x.key === r.key), place = plan.order === "worst" ? all.length - at : at + 1; lines.push(at >= 0 ? `${r.name}: ${fmtM(m, r.v)}, ranks ${ordinal(place)} of ${all.length}.` : `${r.name}: ${fmtM(m, r.v)} over ${plural(r.n, "round")}, under the ${minR}-round minimum, so not ranked.`); }
   return {
     text: lines.join("\n\n"),
-    table: m.sg ? { head: ["#", "Player", `SG a round, ${nar.short}`, `SG a ${shotWord}`, `${shotWord[0].toUpperCase()}${shotWord.slice(1)}s`, "Rounds"], num: [0, 2, 3, 4, 5], rows: top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), f3(r.per), String(r.w), String(r.n)]), mark: new Set(named.map((r) => top.findIndex((x) => x.key === r.key)).filter((i) => i >= 0)) }
+    table: m.sg ? { head: ["#", "Player", `SG per round, ${nar.short}`, `SG a ${shotWord}`, `${shotWord[0].toUpperCase()}${shotWord.slice(1)}s`, "Rounds"], num: [0, 2, 3, 4, 5], rows: top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), f3(r.per), String(r.w), String(r.n)]), mark: new Set(named.map((r) => top.findIndex((x) => x.key === r.key)).filter((i) => i >= 0)) }
       : { head: ["#", "Player", `${m.label}, ${nar.short}`, "Attempts", "Rounds"], num: [0, 2, 3, 4], rows: top.map((r, i) => [String(i + 1), r.name, fmtM(m, r.v), String(Math.round(r.w || 0)), String(r.n)]) },
-    note: `${nar.partName} shots ${nar.label}, ${label}${tour ? ` on ${tour}` : ""}: players with ${minR}+ rounds (${all.length} qualify). SG a round: those shots\u2019 strokes gained, spread over every round played.`,
+    note: `${nar.partName} shots ${nar.label}, ${label}${tour ? ` on ${tour}` : ""}: players with ${minR}+ rounds (${all.length} qualify). SG per round: those shots\u2019 strokes gained, spread over every round played.`,
   };
 }
 
@@ -398,7 +398,7 @@ async function onePlayer(plan, p, rounds, bd) {
   if (bd === "category") {
     const cats = CATEGORIES.map(([c, l]) => ({ l, v: per.rounds.reduce((t, rd) => t + sgOf(rd, c), 0) / per.rounds.length, car: sgRds(rounds).reduce((t, rd) => t + sgOf(rd, c), 0) / sgRds(rounds).length }));
     const s = [...cats].sort((a, b) => b.v - a.v), tot = cats.reduce((t, c) => t + c.v, 0);
-    return { text: `${cap(per.label)}, ${name} gains the most on **${s[0].l}** (**${fmtM(m, s[0].v)}** a round) and ${s.at(-1).v < 0 ? "loses the most" : "gains the least"} on **${s.at(-1).l}** (${fmtM(m, s.at(-1).v)}). Total ${fmtM(m, tot)} a round over ${plural(per.rounds.length, "round")}.${few(per.rounds.length)}`,
+    return { text: `${cap(per.label)}, ${name} gains the most on **${s[0].l}** (**${fmtM(m, s[0].v)}** per round) and ${s.at(-1).v < 0 ? "loses the most" : "gains the least"} on **${s.at(-1).l}** (${fmtM(m, s.at(-1).v)}). Total ${fmtM(m, tot)} per round over ${plural(per.rounds.length, "round")}.${few(per.rounds.length)}`,
       table: { head: ["Part of the game", per.label.replace(/^over the |^in /, ""), "All their data"], num: [1, 2], rows: s.map((c) => [c.l, fmtM(m, c.v), fmtM(m, c.car)]) } };
   }
   if (bd === "season") {
@@ -417,7 +417,7 @@ async function onePlayer(plan, p, rounds, bd) {
     const top = rows.slice(0, Math.min(plan.limit || 8, 25));
     if (!top.length) return { text: `${name} has no ${m.label} ${per.label}.` };
     const r0 = top[0].rs[0], what = bd === "event" ? `${r0.event} (${yr(r0)})` : `${r0.event} R${r0.roundNo || "?"}, ${dateTxt(dk(r0))}`;
-    return { text: `${name}’s ${plan.order === "worst" ? "worst" : "best"} ${bd} for ${m.label}${narTxt} ${per.label} was **${what}**: **${fmtM(m, top[0].v)}**${m.sg ? " a round" : ""}${bd === "event" ? ` over ${plural(top[0].n, "round")}` : ""}.`,
+    return { text: `${name}’s ${plan.order === "worst" ? "worst" : "best"} ${bd} for ${m.label}${narTxt} ${per.label} was **${what}**: **${fmtM(m, top[0].v)}**${m.sg ? " per round" : ""}${bd === "event" ? ` over ${plural(top[0].n, "round")}` : ""}.`,
       table: bd === "event" ? { head: ["Tournament", "Dates", m.label + (m.sg ? " / rd" : ""), "Rounds"], num: [2, 3], rows: top.map((r) => [`${r.rs[0].event} ${yr(r.rs[0])}`, `${dateTxt(dk(r.rs[0]))}`, fmtM(m, r.v), String(r.n)]) }
         : { head: ["Date", "Tournament", "Round", m.label], num: [2, 3], rows: top.map((r) => [dateTxt(dk(r.rs[0])), r.rs[0].event, String(r.rs[0].roundNo || "–"), fmtM(m, r.v)]) } };
   }
@@ -446,12 +446,12 @@ async function onePlayer(plan, p, rounds, bd) {
       return { text: s.length > 1 ? `${cap(per.label)}, ${name}\u2019s best ${kl} was the **${s[0].k}**: **${f3(s[0].per)}** a shot over ${s[0].w} shots. The weakest was the **${s.at(-1).k}** (${f3(s.at(-1).per)} a shot over ${s.at(-1).w}).`
         : s.length === 1 ? `${cap(per.label)}, ${name} used ${rows.length > 1 ? "mostly " : ""}the **${s[0].k}** ${kl}: **${f3(s[0].per)}** a shot over ${s[0].w} shots.${rows.length > 1 ? " The others have too few shots to compare." : " There\u2019s no other model to compare it with."}`
           : `${cap(per.label)}, here\u2019s ${name}\u2019s ${kl} by model. None has many shots yet, so treat it as a hint.`,
-        table: { head: [kindOnly, "SG a shot", "Shots", "SG a round"], num: [1, 2, 3], rows: rows.map((r) => [r.k, f3(r.per), String(r.w), fmtM({ sg: true }, r.perRd)]) },
-        note: `Shots hit with a ${kl} ${per.label} (${plural(per.rounds.length, "round")}), by the model in the file. SG a round: what those shots add up to, spread over every round.` };
+        table: { head: [kindOnly, "SG a shot", "Shots", "SG per round"], num: [1, 2, 3], rows: rows.map((r) => [r.k, f3(r.per), String(r.w), fmtM({ sg: true }, r.perRd)]) },
+        note: `Shots hit with a ${kl} ${per.label} (${plural(per.rounds.length, "round")}), by the model in the file. SG per round: what those shots add up to, spread over every round.` };
     }
     return { text: s.length === 1 ? `${cap(per.label)}, ${name}\u2019s ${partName.toLowerCase()} ${bd === "distance" ? "from" : "with"} **${s[0].k}**: **${f3(s[0].per)}** a shot over ${s[0].w} shots.` : s.length ? `${cap(per.label)}, ${name}’s ${partName.toLowerCase()} is best ${bd === "distance" ? "from" : "with"} **${s[0].k}** (**${f3(s[0].per)}** a shot) and ${s.at(-1).per < 0 ? "loses the most" : "weakest"} ${bd === "distance" ? "from" : "with"} **${s.at(-1).k}** (${f3(s.at(-1).per)} a shot).` : `${cap(per.label)}, here’s ${name}’s ${partName.toLowerCase()} by ${bd}. None has many shots yet, so treat it as a hint.`,
-      table: { head: [head, "SG a shot", "Shots", "SG a round"], num: [1, 2, 3], rows: rows.map((r) => [r.k, f3(r.per), String(r.w), fmtM({ sg: true }, r.perRd)]) },
-      note: `${partName} shots ${per.label} (${plural(per.rounds.length, "round")}). SG a round: what those shots add up to, spread over every round.` };
+      table: { head: [head, "SG a shot", "Shots", "SG per round"], num: [1, 2, 3], rows: rows.map((r) => [r.k, f3(r.per), String(r.w), fmtM({ sg: true }, r.perRd)]) },
+      note: `${partName} shots ${per.label} (${plural(per.rounds.length, "round")}). SG per round: what those shots add up to, spread over every round.` };
   }
   // one number: the period, their whole data, and where they rank in the field over the same period (on one tour, the
   // one asked about or the one they played most, so their number is the same one the ranking uses)
@@ -463,7 +463,7 @@ async function onePlayer(plan, p, rounds, bd) {
   const x = valueOf(per.rounds, m, nar), car = valueOf(sgRds(onTour(rounds)), m, nar);
   const what = nar && m.sg ? `${nar.partName}${narTxt}` : `${m.label}${narTxt}`;
   const perShot = nar && m.sg && x.per != null ? ` (${x.per >= 0 ? "+" : "\u2212"}${Math.abs(x.per).toFixed(3)} a ${nar.part === "PUTT" ? "putt" : "shot"} over ${x.w})` : "";
-  const lines = [`${cap(per.label)}${mainTour && tourCount.size > 1 ? ` on ${mainTour}` : ""}, ${name}\u2019s ${what} is **${fmtM(m, x.v)}**${m.sg ? " a round" : ""}${perShot} over ${plural(x.n, "round")}${x.w && !m.sg && (m.def?.pct || m.key === "prox") ? ` (${Math.round(x.w)} attempts)` : ""}. Across all their data: ${fmtM(m, car.v)}.${few(x.n)}`];
+  const lines = [`${cap(per.label)}${mainTour && tourCount.size > 1 ? ` on ${mainTour}` : ""}, ${name}\u2019s ${what} is **${fmtM(m, x.v)}**${m.sg ? " per round" : ""}${perShot} over ${plural(x.n, "round")}${x.w && !m.sg && (m.def?.pct || m.key === "prox") ? ` (${Math.round(x.w)} attempts)` : ""}. Across all their data: ${fmtM(m, car.v)}.${few(x.n)}`];
   let table = null;
   try {
     const f = await fieldTable({ ...plan, tour: mainTour, order: "best", players: [] }, m);
@@ -555,13 +555,13 @@ async function answerCompare(cp, question, list) {
   const f2 = (v) => fmtM({ sg: true }, v);
   const mid = (t) => String(t).replace(/^(The|Every|All) /, (w) => w.toLowerCase()).replace(/^(Last|Best|Worst|Most) /, (w) => `the ${w.toLowerCase()}`); // ("against +0.80 for the 12 rounds before")
   const lines = [];
-  if (rows.length === 1) lines.push(`${partsTxt}**${rows[0].label}**: **${f2(rows[0].s.sg.TOTAL)}** strokes gained a round over ${plural(rows[0].s.n, "round")}. There\u2019s nothing to compare it with${skipped.length ? ` (${skipped.join(", ")})` : ""}.`);
+  if (rows.length === 1) lines.push(`${partsTxt}**${rows[0].label}**: **${f2(rows[0].s.sg.TOTAL)}** strokes gained per round over ${plural(rows[0].s.n, "round")}. There\u2019s nothing to compare it with${skipped.length ? ` (${skipped.join(", ")})` : ""}.`);
   else {
     const o = [...rows].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL), a = o[0], b = o[1], d = a.s.sg.TOTAL - b.s.sg.TOTAL;
-    lines.push(`${partsTxt}**${a.label}** comes out ahead: **${f2(a.s.sg.TOTAL)}** a round over ${plural(a.s.n, "round")}, against ${f2(b.s.sg.TOTAL)} for ${mid(b.label)} (${plural(b.s.n, "round")}), **${Math.abs(d).toFixed(2)}** a round apart.${o.length > 2 ? ` Then ${o.slice(2).map((x) => `${x.label} ${f2(x.s.sg.TOTAL)}`).join(", ")}.` : ""}`);
+    lines.push(`${partsTxt}**${a.label}** comes out ahead: **${f2(a.s.sg.TOTAL)}** per round over ${plural(a.s.n, "round")}, against ${f2(b.s.sg.TOTAL)} for ${mid(b.label)} (${plural(b.s.n, "round")}), **${Math.abs(d).toFixed(2)}** per round apart.${o.length > 2 ? ` Then ${o.slice(2).map((x) => `${x.label} ${f2(x.s.sg.TOTAL)}`).join(", ")}.` : ""}`);
     const used = new Set(rows.flatMap((r) => [...r.used]));
     const catsShown = SGCOLS.slice(1).filter(([k]) => (!cats || cats.has(k)) && used.has(k));
-    if (catsShown.length > 1) { const ds = catsShown.map(([k]) => ({ l: CATEGORIES.find(([c]) => c === k)?.[1] || k, d: (a.s.sg[k] ?? 0) - (b.s.sg[k] ?? 0) })).sort((x, y) => Math.abs(y.d) - Math.abs(x.d)); lines.push(`The biggest difference is **${ds[0].l}** (${f2(ds[0].d)} a round${ds[0].d >= 0 ? ` for ${a.label}` : ` against ${a.label}`}).`); }
+    if (catsShown.length > 1) { const ds = catsShown.map(([k]) => ({ l: CATEGORIES.find(([c]) => c === k)?.[1] || k, d: (a.s.sg[k] ?? 0) - (b.s.sg[k] ?? 0) })).sort((x, y) => Math.abs(y.d) - Math.abs(x.d)); lines.push(`The biggest difference is **${ds[0].l}** (${f2(ds[0].d)} per round${ds[0].d >= 0 ? ` for ${a.label}` : ` against ${a.label}`}).`); }
     // a run of rounds in a row: when it was
     for (const r of rows.filter((x) => x.stretch && x.s.from)) lines.push(`${r.label}: ${dateTxt(dk({ date: r.s.from }))} to ${dateTxt(dk({ date: r.s.to }))}.`);
     if (a.s.n < 10 || b.s.n < 10) lines.push("Few rounds on one side, so treat it as a hint.");
@@ -641,8 +641,8 @@ async function answerForecast(ps, question, local) {
   const yrs = ok[0].years.map((y) => y.year);
   const lead = order.length > 1 ? `Over ${yrs[0]}\u2013${yrs.at(-1)}, best first: ${order.map((f, i) => `**${i + 1}. ${f.name}**`).join(", ")}.` : `${order[0].name}\u2019s next three seasons:`;
   const e1 = model.err[0];
-  const note = [`Strokes gained a round on ${model.target || "the tour"}, forecast from this site\u2019s data: every round credited for its field, then each player's talent as baseball's projection systems and Data Golf work it out (a weighted average of their rounds, regressed toward the average once by as much as the data says)${model.ageOk ? ", plus the typical change for their age" : ""}.`,
-    e1 ? `On past seasons, one season ahead, it was off by about ${e1.mae.toFixed(2)} a round on average for players with 20+ rounds${e1.bt ? ` (their latest season alone: ${e1.bt.last.toFixed(2)})` : ""}.` : "", !model.ageOk ? "No birth dates in the data yet, so age isn\u2019t in it." : "",
+  const note = [`Strokes gained per round on ${model.target || "the tour"}, forecast from this site\u2019s data: every round credited for its field, then each player's talent as baseball's projection systems and Data Golf work it out (a weighted average of their rounds, regressed toward the average once by as much as the data says)${model.ageOk ? ", plus the typical change for their age" : ""}.`,
+    e1 ? `On past seasons, one season ahead, it was off by about ${e1.mae.toFixed(2)} per round on average for players with 20+ rounds${e1.bt ? ` (their latest season alone: ${e1.bt.last.toFixed(2)})` : ""}.` : "", !model.ageOk ? "No birth dates in the data yet, so age isn\u2019t in it." : "",
     missing.length ? `Not enough rounds to forecast ${missing.join(", ")}.` : ""].filter(Boolean).join(" ");
   const plan = { outlook: true, players: ok.map((f) => f.name.toLowerCase()), everyone: false, parts: [], exclude: { events: [], rounds: [] }, each: false, unsupported: null, groups: [{ label: String(model.lastYear), rounds: { years: [String(model.lastYear)] } }] };
   return {

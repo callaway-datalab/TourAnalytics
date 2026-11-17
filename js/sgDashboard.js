@@ -210,6 +210,11 @@ export function sgDashboard(container, opts) {
       if (pre.scroll && !pre.scrolled) { pre.scrolled = true; sessionStorage.setItem("ta.statsPreset", JSON.stringify(pre));
         let tries = 0; const t = setInterval(() => { tries++; const hs = [...container.querySelectorAll("h3, .fx-eyebrow")].filter((h) => h.textContent.trim().toLowerCase().startsWith(String(pre.scroll).toLowerCase()));
           if (hs.length) { clearInterval(t); hs[0].scrollIntoView({ behavior: "smooth", block: "start" }); } else if (tries > 40) clearInterval(t); }, 250); } } } catch { /* */ }
+  // (update 833) the view: ?view= in the address (Stats' row of pages), else what a preset asked for; switched in place
+  { const qv = new URLSearchParams(location.hash.split("?")[1] || "").get("view"); if (qv) st.view2 = qv; else if (st.view2 && !opts.entered && !opts.emptyNote) { try { const h = location.hash.split("?"), q = new URLSearchParams(h[1] || ""); q.set("view", st.view2); history.replaceState(history.state, "", `${h[0]}?${q}`); } catch { /* */ } }
+    container.classList.add("st-host"); import("./ui.js").then((m) => m.syncStatsNav()).catch(() => {});
+    const onView = (e) => { if (!container.isConnected) { removeEventListener("ta-stats-view", onView); return; } st.view2 = e.detail.view; if (e.detail.sub) st.pgSub = e.detail.sub; draw(); window.scrollTo({ top: 0 }); };
+    addEventListener("ta-stats-view", onView); }
   // Year, tournament, round, lie and distance each hold a list (pick several); empty means all.
   const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   if (!SPANS.some(([v]) => v === String(st.span ?? 0))) st.span = 0; // (an old "last N rounds" pick)
@@ -521,7 +526,7 @@ export function sgDashboard(container, opts) {
   const sdOf = (a) => { if (a.length < 2) return null; const m = a.reduce((t, x) => t + x, 0) / a.length; return Math.sqrt(a.reduce((t, x) => t + (x - m) ** 2, 0) / (a.length - 1)); };
   const roundVals = (rs) => rs.map((rd) => metric([rd])).filter((v) => v != null && Number.isFinite(v));
   function steadinessLine(...a) { return sgHero.steadinessLine(S, ...a); }
-  // (update 445) a set of rounds by part of the game, a round each, each part opening to its distances (strokes gained)
+  // (update 445) a set of rounds by part of the game, per round each, each part opening to its distances (strokes gained)
   const distsIn = (rs, c) => { const m = new Map(); for (const rd of rs) for (const x of rd.shots || []) if (x.cat === c && x.dist) m.set(x.dist, 1); return [...m.keys()].sort((a, b) => distLead(a) - distLead(b) || a.localeCompare(b)); };
   const perRd = (rs, c = null, d = null) => (rs.length ? rs.reduce((t, rd) => t + (rd.shots || []).reduce((u, x) => u + ((!c || x.cat === c) && (!d || x.dist === d) ? x.sg || 0 : 0), 0), 0) / rs.length : null);
   const sgBreakdown = (rs) => el("div", { class: "bs-rd" }, CATEGORIES.filter(([c]) => rs.some((rd) => (rd.shots || []).some((x) => x.cat === c))).flatMap(([c, l]) => {
@@ -546,7 +551,7 @@ export function sgDashboard(container, opts) {
     el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), unit === "event" ? null : el("th", { class: "num" }, "Rd"), el("th", { class: "num" }, isSG() ? "SG" : def.label), rank ? el("th", { class: "num" }, "Rank") : null])),
     el("tbody", {}, rs.flatMap((rd) => { const v = metric([rd]); const tr = el("tr", {}, [el("td", { class: "ht-date" }, dateTxt(rd.date)), el("td", { class: "ht-name" }, rd.event || "\u2014"),
       unit === "event" ? null : el("td", { class: "num" }, rd.roundNo || "\u2014"), el("td", { class: `num ${isSG() ? signCls(v) : ""}` }, fmtV(v)), rank ? rank(rd) : null]);
-      // (update 445) a round opens to its parts of the game, each to its distances
+      // (update 445) per round opens to its parts of the game, each to its distances
       return isSG() && (rd.shots || []).some((x) => x.cat) ? openRow(tr, rank ? 5 : 4, () => sgBreakdown([rd])) : [tr]; })),
   ]);
   function formPopup(...a) { return sgHero.formPopup(S, ...a); }
@@ -618,7 +623,7 @@ export function sgDashboard(container, opts) {
   const ordinal = (n) => { const t = ["th", "st", "nd", "rd"], v = n % 100; return n + (t[(v - 20) % 10] || t[v] || t[0]); };
   const isZero = (v) => v != null && Math.round(v * 100) === 0; // shows as +0.00
   const signCls = (v) => (isZero(v) ? "zero" : v >= 0 ? "pos" : "neg");
-  const proMemo = new WeakMap(); // (update 328) rounds list → category → strokes gained a round
+  const proMemo = new WeakMap(); // (update 328) rounds list → category → strokes gained per round
   const perRoundOf = (rounds, cat = null) => {
     if (!rounds.length) return null;
     let m = proMemo.get(rounds); if (!m) { m = new Map(); proMemo.set(rounds, m); }
@@ -628,7 +633,7 @@ export function sgDashboard(container, opts) {
     const v = t / rounds.length; m.set(k, v);
     return v;
   };
-  // The number a player is ranked on: strokes gained a round, or the stat's attempt-weighted average.
+  // The number a player is ranked on: strokes gained per round, or the stat's attempt-weighted average.
   const narrowedNow = () => !!(st.cats.length || st.lie.length || st.dist.length);
   const metric = (rounds, cat = null) => {
     if (isSG()) return perRoundOf(rounds, cat);
@@ -654,7 +659,7 @@ export function sgDashboard(container, opts) {
   function relSeg(...a) { return sgSummary.relSeg(S, ...a); }
   // green / red for strokes gained; another stat is coloured against the field average when better / worse is known
   const toneCls = (v, ref) => (isSG() ? signCls(v) : v == null || ref == null || def.higher == null || Math.abs(v - ref) < 1e-9 ? "" : (def.higher ? v > ref : v < ref) ? "pos" : "neg");
-  const sgWord = (v) => `${v >= 0 ? "gains" : "loses"} ${Math.abs(v).toFixed(2)} strokes a round`;
+  const sgWord = (v) => `${v >= 0 ? "gains" : "loses"} ${Math.abs(v).toFixed(2)} strokes per round`;
   // Who is ranked: players with at least Min. rounds in the selection (the player on screen always counts),
   // so the hero card, its tiles, the summary and the Rankings table all give the same rank.
   const rankedField = (slicedField) => {
@@ -711,7 +716,7 @@ export function sgDashboard(container, opts) {
   function centerRankings(...a) { return sgDetail.centerRankings(S, ...a); }
 
   /* ------------------------------ building blocks ------------------------------ */
-  // (update 210) SG by Club: strokes gained a round with each club model (brand + model), best first.
+  // (update 210) SG by Club: strokes gained per round with each club model (brand + model), best first.
   // A model with only a few rounds is marked, so 3 rounds isn't read like 60.
   const FEW = 10;
   /* (update 299) SG Trends with Show Product: one kind of product (pills; one always picked), each bar coloured by the

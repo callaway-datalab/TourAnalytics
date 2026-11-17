@@ -1033,7 +1033,7 @@ export async function drawHeat(ctx, course) {
       const link = el("button", { type: "button", class: "link" }, "Course History ›"); link.addEventListener("click", () => ctx.go({ name: "prepHistory", course }));
       // (update 461) one flat list (a list inside it is what made this say it couldn't load their stats)
       mount(whoLine, !d.rounds.length ? `No stats file for ${me.label} yet, so the zones show the field.` : [`Player view: the zones weighted by ${me.label}’s strokes gained from each distance and lie over ${latest >= recentFrom ? "the last 12 months" : "their latest 12 months of rounds"} (${lvlRounds.length} ${lvlRounds.length === 1 ? "round" : "rounds"}). `,
-        ...(mineHere.length ? [`${mineHere.length} ${mineHere.length === 1 ? "round" : "rounds"} here (${sgR >= 0 ? "+" : "−"}${Math.abs(sgR).toFixed(2)} a round). `, link] : [`No rounds here in the stats yet.`])]);
+        ...(mineHere.length ? [`${mineHere.length} ${mineHere.length === 1 ? "round" : "rounds"} here (${sgR >= 0 ? "+" : "−"}${Math.abs(sgR).toFixed(2)} per round). `, link] : [`No rounds here in the stats yet.`])]);
     } catch (err) { console.error(err); whoLine.textContent = "Couldn’t load their stats, so the zones show the field."; }
     paint();
   }

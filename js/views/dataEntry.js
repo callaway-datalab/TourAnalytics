@@ -665,7 +665,7 @@ async function renderNew(main, flash, viewing = null) {
 }
 const blankHoles = (n) => Array.from({ length: n }, (_, i) => ({ n: i + 1, par: 4, yards: null, hcp: null })); // (par 4 unless changed)
 
-/* ===================================== entering a round ===================================== */
+/* ===================================== entering per round ===================================== */
 function renderRound(main, params, flash, previewClient) {
   const state = getState();
   const playerKey = decodeURIComponent(params.player);
@@ -678,7 +678,7 @@ function renderRound(main, params, flash, previewClient) {
   const calTok = {}; window.__calShotPage = calTok; // (update 644: only the round page on screen takes a shot from Cal)
   const status = el("span", { class: "save-status", role: "status" });
 
-  // Whoever entered a round can change or delete it. The admin can too, but only from inside that
+  // Whoever entered per round can change or delete it. The admin can too, but only from inside that
   // player's portal (a preview), never from the admin's own pages.
   const canEdit = () => round && (round.ownerUid === state.user.uid || (state.isAdmin && previewClient?.key === playerKey));
   // Your clubs (WITB), for the optional Club on each shot.

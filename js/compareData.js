@@ -95,7 +95,7 @@ export function roundsFor(rounds, f = {}) {
     && (!f.from || dk(rd.date) >= f.from) && (!f.to || dk(rd.date) <= f.to));
   return rs;
 }
-/** (update 254) The N rounds in a row (oldest first) with the highest (best) or lowest (worst) strokes gained a round.
+/** (update 254) The N rounds in a row (oldest first) with the highest (best) or lowest (worst) strokes gained per round.
  * s: { n, worst?, cat? } (cat: a part of the game, e.g. "PUTT"; default the total). Fewer than N rounds: all of them. */
 export function stretchOf(rs, s) {
   const n = Math.max(1, Math.round(Number(s?.n) || 0));
@@ -149,7 +149,7 @@ export function summarize(rs) {
   };
 }
 
-/** How sure a gap between two selections is (SG: Total a round): Welch's t, in words. */
+/** How sure a gap between two selections is (SG: Total per round): Welch's t, in words. */
 export function confidence(a, b) {
   if (!a || !b || a.length < 3 || b.length < 3) return { word: "too few rounds", z: 0 };
   const se = Math.sqrt((sd(a) ** 2) / a.length + (sd(b) ** 2) / b.length);
@@ -167,7 +167,7 @@ export function sureWords(a, b) {
   if (na < 3 || nb < 3) return `There are too few rounds (${na} and ${nb}) to say whether that\u2019s real yet.`;
   return "";
 }
-/** Strokes gained by distance (per category), a round or a shot: { cat: [{ dist, values: [per selection], w: [...] }] } */
+/** Strokes gained by distance (per category), per round or a shot: { cat: [{ dist, values: [per selection], w: [...] }] } */
 export function distanceProfile(sets, per = "round") {
   const out = {};
   for (const [cat] of CATEGORIES) {
@@ -290,7 +290,7 @@ export function trajectoryWords(tr) {
   if (!tr.length) return "Not enough rounds yet to compare (at least 24).";
   const dir = (x) => (x.ch.TOTAL > 0.15 ? "up" : x.ch.TOTAL < -0.15 ? "down" : "flat");
   const w = { up: "better", down: "worse", flat: "about the same" };
-  if (tr.length === 1) return `Over the last ${tr[0].n} rounds against the ${tr[0].n} before: ${w[dir(tr[0])]} (${fmt(tr[0].ch.TOTAL)} a round).`;
+  if (tr.length === 1) return `Over the last ${tr[0].n} rounds against the ${tr[0].n} before: ${w[dir(tr[0])]} (${fmt(tr[0].ch.TOTAL)} per round).`;
   const groups = { up: [], down: [], flat: [] };
   for (const x of tr) groups[dir(x)].push(x.n);
   const list = (ns) => (ns.length === 1 ? `${ns[0]}` : `${ns.slice(0, -1).join(", ")} and ${ns.at(-1)}`);
@@ -298,7 +298,7 @@ export function trajectoryWords(tr) {
   if (only.length === 1) {
     const d = only[0][0];
     return d === "flat" ? `About the same on every time scale (last ${list(groups.flat)} rounds).`
-      : `Getting ${w[d]} on every time scale: ${fmt(tr[0].ch.TOTAL)} a round over the last ${tr[0].n}, ${fmt(tr.at(-1).ch.TOTAL)} over the last ${tr.at(-1).n}.`;
+      : `Getting ${w[d]} on every time scale: ${fmt(tr[0].ch.TOTAL)} per round over the last ${tr[0].n}, ${fmt(tr.at(-1).ch.TOTAL)} over the last ${tr.at(-1).n}.`;
   }
   // mixed: say which way each time scale went
   const t = only.map(([d, ns]) => `${w[d]} over the last ${list(ns)} rounds`).join("; ");
@@ -342,17 +342,17 @@ export function insights(sels) {
   const byTot = [...ok].sort((a, b) => b.s.sg.TOTAL - a.s.sg.TOTAL);
   const best = byTot[0], worst = byTot.at(-1);
   const c = confidence(best.s.rounds, worst.s.rounds);
-  out.push({ tone: "gold", text: `${best.name} is the best of these: ${fmt(best.s.sg.TOTAL)} a round, ${Math.abs(best.s.sg.TOTAL - worst.s.sg.TOTAL).toFixed(2)} better than ${worst.name}. ${sureWords(best.s.rounds, worst.s.rounds)}` }); void c;
+  out.push({ tone: "gold", text: `${best.name} is the best of these: ${fmt(best.s.sg.TOTAL)} per round, ${Math.abs(best.s.sg.TOTAL - worst.s.sg.TOTAL).toFixed(2)} better than ${worst.name}. ${sureWords(best.s.rounds, worst.s.rounds)}` }); void c;
   // (update 194) with three or more: every one in order, and the gap to the one above
   if (byTot.length >= 3) out.push({ tone: "", text: `In order: ${byTot.map((x, i) => `${i + 1}. ${x.name} ${fmt(x.s.sg.TOTAL)}${i ? ` (${(byTot[i - 1].s.sg.TOTAL - x.s.sg.TOTAL).toFixed(2)} behind)` : ""}`).join("; ")}.` });
   // where the gap comes from (best vs worst)
   const usedCats = CATEGORIES.filter(([k]) => ok.some((x) => Math.abs(x.s.sg[k] || 0) >= 0.005));
   const parts = usedCats.map(([k, l]) => ({ l, d: best.s.sg[k] - worst.s.sg[k] })).filter((x) => x.d > 0).sort((a, b) => b.d - a.d); // (update 239: only the parts that helped)
-  if (usedCats.length > 1 && parts[0] && Math.abs(parts[0].d) >= 0.1) out.push({ tone: "", text: `Most of that is ${parts[0].l} (${fmt(parts[0].d)} a round)${parts[1] && Math.abs(parts[1].d) >= 0.1 ? `, then ${parts[1].l} (${fmt(parts[1].d)})` : ""}.` });
+  if (usedCats.length > 1 && parts[0] && Math.abs(parts[0].d) >= 0.1) out.push({ tone: "", text: `Most of that is ${parts[0].l} (${fmt(parts[0].d)} per round)${parts[1] && Math.abs(parts[1].d) >= 0.1 ? `, then ${parts[1].l} (${fmt(parts[1].d)})` : ""}.` });
   // each category's leader
   for (const [k, l] of usedCats.length > 1 ? usedCats : []) {
     const lead = [...ok].sort((a, b) => b.s.sg[k] - a.s.sg[k]);
-    if (lead.length > 2 && lead[0] !== best && lead[0].s.sg[k] - lead[1].s.sg[k] >= 0.2) out.push({ tone: "", text: `${l} was best in ${lead[0].name} (${fmt(lead[0].s.sg[k])} a round, ${(lead[0].s.sg[k] - lead[1].s.sg[k]).toFixed(2)} clear of the next).` });
+    if (lead.length > 2 && lead[0] !== best && lead[0].s.sg[k] - lead[1].s.sg[k] >= 0.2) out.push({ tone: "", text: `${l} was best in ${lead[0].name} (${fmt(lead[0].s.sg[k])} per round, ${(lead[0].s.sg[k] - lead[1].s.sg[k]).toFixed(2)} clear of the next).` });
   }
   // steadiness
   const st = ok.filter((x) => x.s.sd != null).sort((a, b) => a.s.sd - b.s.sd);

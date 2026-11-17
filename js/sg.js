@@ -924,7 +924,7 @@ export function sameCourse(a, b) {
      recent  the last 20 rounds against the 20 before (the DP World Tour: 5 events against 5)
      overall the last 50 against the 50 before (20 events against 20); null when there aren't enough: the recent one stands in
    flat: how big an overall change has to be to count as a direction; shift: how far the recent change has to differ
-   from the overall one to count as speeding up or easing. Strokes gained: 0.15 and 0.20 a round.
+   from the overall one to count as speeding up or easing. Strokes gained: 0.15 and 0.20 per round.
    → [word, tone] with tone "up" | "" | "down" */
 // (update 671) each word's colour: yellow in the middle (Steady), to green the better it's going, to red the worse
 export const FORM_COLORS = { Surging: "#30d158", Climbing: "#6fd04a", "Heating Up": "#a8d23c", "Levelling Off": "#d6cf2e", Steady: "#f5c400",

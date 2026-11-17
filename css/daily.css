@@ -696,3 +696,15 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
 /* the ☰ button's unread count, and Chat in its menu */
 .account-btn { position: relative; } .account-btn .menu-dot { position: absolute; top: -2px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; font-size: 0.62rem; line-height: 16px; }
 .menu-item.menu-chat { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+/* (update 833) phones: Stats, Play and Leaderboards open their pages in a row just above the bottom bar */
+.botpop { display: none; }
+@media (max-width: 640px) {
+  .botpop { display: flex; position: fixed; left: 0; right: 0; bottom: calc(60px + env(safe-area-inset-bottom)); z-index: 899; gap: 6px; padding: 8px 10px; overflow-x: auto; scrollbar-width: none;
+    background: rgba(20,20,22,0.97); backdrop-filter: blur(10px); border-top: 1px solid rgba(255,255,255,0.12); animation: botpopUp 0.16s ease-out; }
+  .botpop::-webkit-scrollbar { display: none; }
+  html[data-theme="light"] .botpop { background: rgba(255,255,255,0.98); border-top-color: #dcdee2; }
+  .botpop a { flex: none; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink); text-decoration: none; font: 600 0.82rem var(--font-body, Inter, system-ui, sans-serif); white-space: nowrap; }
+  .botpop a[aria-current="page"] { background: var(--gold); border-color: var(--gold); color: #111; }
+  .botbar .on-pop { opacity: 1 !important; color: var(--gold) !important; }
+}
+@keyframes botpopUp { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }

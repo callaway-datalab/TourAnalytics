@@ -5,8 +5,8 @@
 //   loadShots(key, name)           one player's rounds with every shot (distance, lie, club)
 //   profile(rounds, { year, tour, field })
 //       { rs, n, ev, tot, cat, ranks, form, ranges, leaks, strengths, gear, tours }
-//   courseProfile(meta, rows)      the course's top 10 against the rest, by the data's ranges (a shot), attempts a round
-//   fitFor(prof, course, name)     a player's projected strokes gained a round there, and their gap to the top 10
+//   courseProfile(meta, rows)      the course's top 10 against the rest, by the data's ranges (a shot), attempts per round
+//   fitFor(prof, course, name)     a player's projected strokes gained per round there, and their gap to the top 10
 import * as DEF from "./defs.js";
 import { expectModel, shotSG } from "./courseExp.js";
 
@@ -52,12 +52,12 @@ export function profile(rounds, { year, tour = null, field = [], key = null } = 
     for (const c of ["TOTAL", ...CATS]) { const f = c === "TOTAL" ? tot : (r) => inCat(r, c), vs = F.map((p) => [p.k, avg(p.rs, f)]).sort((a, b) => b[1] - a[1]), i = vs.findIndex((x) => x[0] === key); ranks[c] = i < 0 ? null : { r: i + 1, n: vs.length }; } }
   const fs = DEF.formSplit(all.filter((r) => !r.eventLevel || DEF.isDP(r.tour)), tour, eventsOf);
   const form = fs ? { ...fs, a: avg(fs.last, tot), b: avg(fs.prev, tot), cat: Object.fromEntries(CATS.map((c) => [c, { a: avg(fs.last, (r) => inCat(r, c)), b: avg(fs.prev, (r) => inCat(r, c)) }])) } : null;
-  // every distance range in the data's own labels: strokes gained a round and a shot, with its shots
+  // every distance range in the data's own labels: strokes gained per round and a shot, with its shots
   const g = new Map(); for (const r of rs) for (const s of r.shots || []) { if (!s.dist) continue; const k = `${s.cat}|${s.dist}`, o = g.get(k) || g.set(k, { c: s.cat, d: s.dist, sg: 0, n: 0 }).get(k); o.sg += s.sg || 0; o.n += s.w || 1; }
   const ranges = [...g.values()].map((o) => ({ ...o, rd: rs.length ? o.sg / rs.length : 0, shot: o.n ? o.sg / o.n : 0 }));
   const solid = ranges.filter((o) => o.n >= DEF.MIN.rangeShotsSeason && o.c !== "OTT");
   const leaks = [...solid].sort((a, b) => a.rd - b.rd).filter((o) => o.rd < 0), strengths = [...solid].sort((a, b) => b.rd - a.rd).filter((o) => o.rd > 0);
-  // the bag: each kind of club's model used most at the latest event, its strokes gained in its part of the game a round
+  // the bag: each kind of club's model used most at the latest event, its strokes gained in its part of the game per round
   // (the rounds it was used in), and whether it came in during the last 9 events
   // (update 817) Non-Driver tee shots (a fairway wood or iron off the tee) and the ball too: the ball is judged on every shot
   const KIND_CAT = { Driver: "OTT", "Non-Driver": "OTT", "Fairway Wood": "OTT", Hybrid: "APP", Iron: "APP", Wedge: "ARG", Putter: "PUTT", Ball: null };
@@ -66,7 +66,7 @@ export function profile(rounds, { year, tour = null, field = [], key = null } = 
   const gear = []; for (const kind of Object.keys(KIND_CAT)) { const top = evs.map((e) => { const m = new Map(); for (const r of e.rs) for (const s of r.shots || []) { const v = valOf(s, kind); if (v) m.set(v, (m.get(v) || 0) + 1); } return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] || null; });
     let i = top.length - 1; while (i >= 0 && !top[i]) i--; if (i < 0) continue; const cur = top[i]; let j = i; while (j > 0 && (top[j - 1] === cur || !top[j - 1])) j--;
     const uses = (s) => valOf(s, kind) === cur, rds = rs.filter((r) => (r.shots || []).some(uses)), c = KIND_CAT[kind];
-    // (update 825) every model of that kind on record (all their rounds on this tour), each by strokes gained a round in its
+    // (update 825) every model of that kind on record (all their rounds on this tour), each by strokes gained per round in its
     // part with it (8+ rounds to be ranked): how many they've tried, and where the one in the bag now ranks among them
     const tried = new Map(); for (const r of rs) { /* (update 826: the season on the page, as everything else here) */ const per = new Map(); for (const sh of r.shots || []) { const v = valOf(sh, kind); if (v) per.set(v, (per.get(v) || 0) + (!c || sh.cat === c ? sh.sg || 0 : 0)); } for (const [v, x] of per) { const o = tried.get(v) || tried.set(v, { sg: 0, n: 0 }).get(v); o.sg += x; o.n++; } }
     const rankable = [...tried].filter(([, o]) => o.n >= 4).map(([v, o]) => [v, o.sg / o.n]).sort((a, b) => b[1] - a[1]), rk = rankable.findIndex(([v]) => v === cur);
@@ -107,12 +107,12 @@ export function courseProfile(meta, rows, labels, clientKey) {
   return { meta, ranges: ranges.sort((a, b) => (b.edge || 0) - (a.edge || 0)), shotTop: catShot("top"), shotRest: catShot("rest"), per, byName, nRds: rdAll.size, yrs, ott: { top: cat.top.OTT ? cat.top.OTT[0] / Math.max(1, rdT.top.size) : null } };
 }
 
-/** a player's fit at the course: projected strokes gained a round against the field there (their season a shot in each of
+/** a player's fit at the course: projected strokes gained per round against the field there (their season a shot in each of
  *  the course's ranges × how often that range comes up there, plus their driving), the key ranges against the top 10, and
  *  their own rounds there */
 export function fitFor(prof, course, key, name) {
   const mine = new Map(prof.ranges.map((o) => [`${o.c}|${o.d}`, o]));
-  // (each part of the game keeps the player's own shots a round; only the mix of distances is the course's: their season,
+  // (each part of the game keeps the player's own shots per round; only the mix of distances is the course's: their season,
   //  reweighted to how often each range comes up here, so a course whose data counts shots differently can't inflate it)
   let proj = 0, covered = 0, wSum = 0;
   for (const c of ["APP", "ARG", "PUTT"]) { const cr = course.ranges.filter((x) => x.c === c), mineC = prof.ranges.filter((o) => o.c === c), perRd = mineC.reduce((t, o) => t + o.n, 0) / Math.max(1, prof.n);
@@ -168,7 +168,7 @@ export function eventRoom(field, tour) {
 }
 
 
-/** (update 820) a player's weeks at one tournament, every year in the stats file: { yr, course, rounds, sg (a round), cat {c: a round},
+/** (update 820) a player's weeks at one tournament, every year in the stats file: { yr, course, rounds, sg (per round), cat {c: per round},
  *  pos (their place in that week's field by strokes gained, ties shared), of (the field in the file), cut (2 rounds or fewer while others played 4) } */
 export function eventHistory(field, key, name, tour) {
   const weeks = new Map(); // year → [{ key, rs }]
@@ -182,7 +182,9 @@ export function eventHistory(field, key, name, tour) {
     const pos = me.n === most ? 1 + all.filter((x) => x.n === most && x.sum > me.sum + 1e-9).length : null;
     const tied = me.n === most && all.filter((x) => x.n === most && Math.abs(x.sum - me.sum) < 1e-9).length > 1;
     out.push({ yr, course: mine.find((r) => r.course)?.course || null, rounds: mine.length, sg: me.sum / mine.length, cat: Object.fromEntries(CATS.map((c) => [c, mine.reduce((t, r) => t + inCat(r, c), 0) / mine.length])),
-      pos, tied, of: all.length, cut: me.n < most && most >= 3, eventLevel: mine.some((r) => r.eventLevel) }); }
+      pos, tied, of: all.length, cut: me.n < most && most >= 3, eventLevel: mine.some((r) => r.eventLevel),
+      // (update 834) everyone that week by strokes gained per round, for a player with fewer rounds (no official place)
+      sgPos: 1 + all.filter((x) => x.sum / x.n > me.sum / me.n + 1e-9).length, sgTied: all.filter((x) => Math.abs(x.sum / x.n - me.sum / me.n) < 1e-9).length > 1 }); }
   return out.sort((a, b) => b.yr.localeCompare(a.yr));
 }
 
@@ -257,3 +259,5 @@ export function fieldListedSync(eventName, code) { const F = got("fields.json");
 export function bioSync(playerName) { const B = got("bios.json"); if (!B?.players) return null; const k = nameKey(playerName); return Object.values(B.players).find((b) => nameKey(b.name) === k) || null; }
 /** the position for show: "T5", "1" → "Won", "CUT"/"MC" → "Missed cut", "WD" … */
 export function posText(pos) { const p = String(pos || "").toUpperCase().trim(); if (!p) return null; if (p === "1") return "Won"; if (/^(CUT|MC)$/.test(p)) return "Missed cut"; if (/^W\/?D$/.test(p)) return "Withdrew"; if (/^DQ$/.test(p)) return "DQ"; return p; }
+/** (update 834) is this the signed-in person themself (a player's own pages, or "Me" picked)? Then pages say "you" and "your" */
+export function isSelfKey(key) { const st = (typeof window !== "undefined" && window.__authState) || {}; if (!key) return false; const own = st.profile?.clientKey, me = st.isAdmin && !own ? `a_${st.user?.uid}` : own; return key === me; }

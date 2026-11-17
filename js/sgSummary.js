@@ -76,7 +76,7 @@ export function summaryBox(S, mine, slicedField) {
       const k = cats[0][0], m = new Map();
       for (const rd of mine) for (const x of rd.shots) if (x.cat === k && x.dist) m.set(x.dist, (m.get(x.dist) || 0) + x.sg);
       const ds = [...m].map(([d, t]) => ({ d, v: t / mine.length })).sort((a, b) => b.v - a.v);
-      if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${fmtSG(ds[0].v)} a round); lowest from ${ds[ds.length - 1].d} (${fmtSG(ds[ds.length - 1].v)}).`);
+      if (ds.length > 1) lines.push(`Best from ${ds[0].d} (${fmtSG(ds[0].v)} per round); lowest from ${ds[ds.length - 1].d} (${fmtSG(ds[ds.length - 1].v)}).`);
     }
     // form: the last 20 rounds against the 20 before them
     // (update 673) worked out exactly as the hero card's Form pill (the DP World Tour: by event, 5 against 5 and 20 against
@@ -90,8 +90,8 @@ export function summaryBox(S, mine, slicedField) {
       // (update 670) the form word: this change and the overall direction (the last 50 against the 50 before)
       const nL = Math.min(ev ? 12 : 48, Math.floor(fu.length / 2)), L = nL > n ? val(fu.slice(-nL)) - val(fu.slice(-2 * nL, -nL)) : null;
       const w = formWord(ch, L)?.[0] || "Steady";
-      lines.push(Math.abs(ch) < 0.05 ? `Form: ${w}. ${fmtSG(last)} a round over the last ${n} ${U}, about the same as the ${n} before.`
-        : `Form: ${w}. ${fmtSG(last)} a round over the last ${n} ${U}, against ${fmtSG(prev)} in the ${n} before (${ch > 0 ? "better" : "worse"} by ${Math.abs(ch).toFixed(2)})${L != null ? `; ${L >= 0 ? "up" : "down"} ${Math.abs(L).toFixed(2)} over the last ${nL} against the ${nL} before` : ""}.`);
+      lines.push(Math.abs(ch) < 0.05 ? `Form: ${w}. ${fmtSG(last)} per round over the last ${n} ${U}, about the same as the ${n} before.`
+        : `Form: ${w}. ${fmtSG(last)} per round over the last ${n} ${U}, against ${fmtSG(prev)} in the ${n} before (${ch > 0 ? "better" : "worse"} by ${Math.abs(ch).toFixed(2)})${L != null ? `; ${L >= 0 ? "up" : "down"} ${Math.abs(L).toFixed(2)} over the last ${nL} against the ${nL} before` : ""}.`);
       const sl = S.steadinessLine(ordered, Math.min(20, Math.floor(ordered.length / 2))); if (sl) lines.push(sl); // (steadiness: round to round, 20 against 20)
     }
   } else {
@@ -101,11 +101,11 @@ export function summaryBox(S, mine, slicedField) {
     const avg = r.vals.reduce((t, x) => t + x.v, 0) / r.of;
     const lead = slicedField.find((p) => p.key === r.leader?.key);
     const last = r.vals[r.vals.length - 1], lastP = slicedField.find((p) => p.key === last?.key);
-    lines.push(`${r.of} players (${what}). Leader: ${lead?.label || "\u2014"} (${fmtSG(r.leader.v)} a round)${r.of > 1 && lastP ? `; last: ${lastP.label} (${fmtSG(last.v)})` : ""}. Group average: ${fmtSG(avg)}.`);
+    lines.push(`${r.of} players (${what}). Leader: ${lead?.label || "\u2014"} (${fmtSG(r.leader.v)} per round)${r.of > 1 && lastP ? `; last: ${lastP.label} (${fmtSG(last.v)})` : ""}. Group average: ${fmtSG(avg)}.`);
     if (cats.length > 1) {
       const nameOf = (key) => slicedField.find((p) => p.key === key)?.label || "\u2014";
       const spread = cats.map(([k, l]) => { const v = S.rankAmong(slicedField, null, k).vals; return v.length > 1 ? { l, hi: v[0], lo: v[v.length - 1] } : null; }).filter(Boolean).sort((a, b) => (b.hi.v - b.lo.v) - (a.hi.v - a.lo.v));
-      if (spread.length) lines.push(`Biggest gap between players: ${spread[0].l}, from ${nameOf(spread[0].hi.key)} (${fmtSG(spread[0].hi.v)}) to ${nameOf(spread[0].lo.key)} (${fmtSG(spread[0].lo.v)}) a round. Pick a player for their own summary.`);
+      if (spread.length) lines.push(`Biggest gap between players: ${spread[0].l}, from ${nameOf(spread[0].hi.key)} (${fmtSG(spread[0].hi.v)}) to ${nameOf(spread[0].lo.key)} (${fmtSG(spread[0].lo.v)}) per round. Pick a player for their own summary.`);
     }
   }
   if (!lines.length) return null;
@@ -242,7 +242,7 @@ export function tourBlocks(S, slicedField) {
     if (steady.length >= 4) {
       const most = [...steady].sort((a, b) => a.s - b.s).slice(0, 5), least = [...steady].sort((a, b) => b.s - a.s).slice(0, 5);
       // (update 163) the steadiest in green, the streakiest in red
-      const list = (xs, tone) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, sg ? `${fmtSG(x.avg)} a round` : `${S.fmtV(x.avg)} average`)]), el("strong", { class: `ti-v ${tone}` }, `\u00b1${S.fmtDelta(x.s)}`)])));
+      const list = (xs, tone) => el("ol", { class: "ti-list" }, xs.map((x) => el("li", {}, [el("span", { class: "ti-who" }, [nameBtn(x.p), el("span", { class: "ti-sub muted" }, sg ? `${fmtSG(x.avg)} per round` : `${S.fmtV(x.avg)} average`)]), el("strong", { class: `ti-v ${tone}` }, `\u00b1${S.fmtDelta(x.s)}`)])));
       blocks.push(S.panelBox("Steadiest & Streakiest", [el("div", { class: "ti-two" }, [el("div", {}, [el("p", { class: "ti-col-title" }, "Steadiest"), list(most, "pos")]), el("div", {}, [el("p", { class: "ti-col-title" }, "Streakiest"), list(least, "neg")])])]));
       // (update 760) Ability vs Consistency: on Stats and Focus for the player picked (steadyBox), not here
     }
@@ -278,7 +278,7 @@ export function tourBlocks(S, slicedField) {
   return blocks.length ? [el("div", { class: "sg-grid ti-grid" }, blocks)] : [];
 }
 
-/** (update 760) a player's Ability vs Consistency: every player's strokes gained a round (across) against how much their rounds
+/** (update 760) a player's Ability vs Consistency: every player's strokes gained per round (across) against how much their rounds
  * swing (up), for the total or one part of the game (tabs), the player picked highlighted, with their rank for steadiness. */
 export function steadyBox(S, slicedField) {
   if (!S.me || !S.isSG()) return null;
@@ -293,7 +293,7 @@ export function steadyBox(S, slicedField) {
     return { p, x: vals.reduce((t, v) => t + v, 0) / vals.length, y: S.sdOf(vals) }; }).filter((o) => o && o.y != null); };
   const pts = ptsOf(k);
   const yrs = [...new Set(P.flatMap((p) => p.rounds.map((rd) => String(rd.year || String(rd.date || "").slice(0, 4)))))].filter(Boolean).sort(), yrT = !yrs.length ? "" : yrs.length === 1 ? yrs[0] : `${yrs[0]}–${yrs.at(-1).slice(2)}`;
-  const tip = infoTip("Each dot is a player with 8 or more rounds: their strokes gained a round across, and how much their rounds swing from one to the next up (lower is steadier). The dashed lines are the middle of the field: bottom-right is Good and Steady.");
+  const tip = infoTip("Each dot is a player with 8 or more rounds: their strokes gained per round across, and how much their rounds swing from one to the next up (lower is steadier). The dashed lines are the middle of the field: bottom-right is Good and Steady.");
   const nmK0 = cats.find(([c]) => c === k)[1];
   const box = (body) => el("section", { class: "panel sg-box full sv-box" }, [el("h3", { class: "sv-h" }, [`Ability vs Consistency · ${k === "TOTAL" ? "SG: Total" : nmK0}${yrT ? ` · ${yrT} only` : ""}`, tip]), ...body]);
   const mine = pts.find((o) => o.p.key === S.me.key);
@@ -301,6 +301,6 @@ export function steadyBox(S, slicedField) {
   const bySd = [...pts].sort((a, b) => a.y - b.y), i = bySd.indexOf(mine), typ = bySd[Math.floor(bySd.length / 2)].y;
   const ord = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
   const nmK = cats.find(([c]) => c === k)[1];
-  const sv = scatterSvg(pts.map((o) => ({ x: o.x, y: o.y, label: o.p.label, hot: o === mine })), { xLab: `Strokes gained a round${k === "TOTAL" ? "" : ` · ${nmK}`}`, yLab: "Round-to-round swing", fmtX: fmtSG, fmtY: (v) => `±${v.toFixed(2)}` });
-  return box([el("p", { class: "small sv-line" }, [el("strong", {}, `${ord(i + 1)} steadiest of ${pts.length}`), ` · a swing of ±${mine.y.toFixed(2)} a round against the field's typical ±${typ.toFixed(2)}, averaging ${fmtSG(mine.x)}`]), sv ? el("div", { class: "mc-wrap sv-wrap" }, sv) : null]);
+  const sv = scatterSvg(pts.map((o) => ({ x: o.x, y: o.y, label: o.p.label, hot: o === mine })), { xLab: `Strokes gained per round${k === "TOTAL" ? "" : ` · ${nmK}`}`, yLab: "Round-to-round swing", fmtX: fmtSG, fmtY: (v) => `±${v.toFixed(2)}` });
+  return box([el("p", { class: "small sv-line" }, [el("strong", {}, `${ord(i + 1)} steadiest of ${pts.length}`), ` · a swing of ±${mine.y.toFixed(2)} per round against the field's typical ±${typ.toFixed(2)}, averaging ${fmtSG(mine.x)}`]), sv ? el("div", { class: "mc-wrap sv-wrap" }, sv) : null]);
 }

@@ -9,7 +9,7 @@ export function rowVals(S, rounds, cat) {
   if (memo) return memo;
   const m = new Map(), n = rounds.length;
   if (n && !cat) {
-    // (update 229) no category: SG: Total and each category a round, and the scoring averages
+    // (update 229) no category: SG: Total and each category per round, and the scoring averages
     const by = { TOTAL: 0 }; for (const [k] of CATEGORIES) by[k] = 0;
     const any = new Set();
     for (const rd of rounds) for (const x of rd.shots) { by.TOTAL += x.sg; if (by[x.cat] != null) { by[x.cat] += x.sg; any.add(x.cat); } }
@@ -43,7 +43,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
   const sec = cat ? statBlocksCmp([mine]).find((b) => b.cat === cat) : null;
   // (update 265) the rows always add up: a player with no shots from a distance (or in a category) gained 0 there, and
   // "Other distances" holds the rest (bands with under 3 attempts, and shots with no distance), so the distance rows
-  // sum to SG a round, for the player, the one they're compared with, and the difference between them
+  // sum to SG per round, for the player, the one they're compared with, and the difference between them
   const OTHER = "d:__other";
   const gv = (m, k) => {
     if (!m) return undefined;
@@ -66,7 +66,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
   const sgF = (v) => fmtSG(v), sg3 = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`);
   const R = [];
   if (!cat) {
-    R.push({ grp: "Strokes gained a round" });
+    R.push({ grp: "Strokes gained per round" });
     R.push({ key: "c:TOTAL", label: "SG: Total", fmt: sgF, higher: true, tone: true });
     // (update 332) tap a part of the game to open its distances under it (and again to fold them)
     const distsFor = (k) => { const w = new Map(); for (const rd of mine) for (const x of rd.shots) if (x.cat === k && x.dist) w.set(x.dist, (w.get(x.dist) || 0) + (x.w || 1)); return [...w].filter(([, n]) => n >= 3).map(([d]) => d).sort((a, b) => lead(a) - lead(b) || String(a).localeCompare(String(b))); };
@@ -79,12 +79,12 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
     if (sk.length) { R.push({ grp: "Scoring" }); for (const k of sk) { const def0 = statDef(k); R.push({ key: `s:${k}|`, label: def0.label, fmt: (v) => fmtStat(def0, v), def: def0, higher: def0.higher == null ? null : def0.higher !== false, sub: k !== "scoring" }); } }
   } else {
   R.push({ grp: "Strokes gained" });
-  R.push({ key: "sg", label: "SG a round", fmt: sgF, higher: true, tone: true });
-  if (meV.has("sga")) { R.push({ key: "sga", label: "SG an attempt", fmt: sg3, higher: true, tone: true, sub: true }); R.push({ key: "att", label: "Attempts a round", fmt: (v) => (v == null ? "—" : v.toFixed(1)), higher: null, sub: true }); }
+  R.push({ key: "sg", label: "SG per round", fmt: sgF, higher: true, tone: true });
+  if (meV.has("sga")) { R.push({ key: "sga", label: "SG an attempt", fmt: sg3, higher: true, tone: true, sub: true }); R.push({ key: "att", label: "Attempts per round", fmt: (v) => (v == null ? "—" : v.toFixed(1)), higher: null, sub: true }); }
   if (dists.length > 1) {
-    R.push({ grp: "Strokes gained a round, by distance" });
+    R.push({ grp: "Strokes gained per round, by distance" });
     for (const d of dists) R.push({ key: `d:${d}`, label: d, fmt: sgF, higher: true, tone: true, sub: true });
-    R.push({ key: OTHER, label: "Other distances", fmt: sgF, higher: true, tone: true, sub: true, other: true, tip: "Bands with fewer than 3 attempts, and shots with no distance, so the rows above add up to SG a round" });
+    R.push({ key: OTHER, label: "Other distances", fmt: sgF, higher: true, tone: true, sub: true, other: true, tip: "Bands with fewer than 3 attempts, and shots with no distance, so the rows above add up to SG per round" });
   }
   if (sec) { R.push({ grp: `${sec.label} stats` }); for (const x of sec.rows) R.push({ key: `s:${x.key}|${x.dist || ""}`, label: x.dist || x.label, fmt: (v) => fmtStat(x.def, v), def: x.def, higher: x.def.higher == null ? null : x.def.higher !== false, sub: !!x.dist }); }
   }
@@ -108,7 +108,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
     for (const { rd, m } of perRd) { const v = m.get(row.key); if (v == null || !Number.isFinite(v)) continue; if (row.key.startsWith("s:") && !(rd.obs || []).some((o) => o.v != null)) continue; if (!best || (row.higher ? v > best.v : v < best.v)) best = { v, rd }; }
     return best;
   };
-  // (update 240) against a rank (picked above the table): the player ranked #N overall (SG: Total a round in this
+  // (update 240) against a rank (picked above the table): the player ranked #N overall (SG: Total per round in this
   // selection, not counting the player on screen), every row from that one player: #1 is the same golfer all the way down
   // (update 381) the table's own Personal Peak: their best N rounds against the rest (st.tablePeak), apart from the level cards
   // (update 442) no Personal Peak or Show Attempts buttons on this table any more
@@ -226,7 +226,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
       const place = best1 && n === best1.n ? 1 + all.filter((r) => r.n > best1.n).length : null, withN = all.filter((r) => r.n > 0).length;
       const link = el("button", { type: "button", class: "link bs-stretch-link", title: "Every round, with this stretch picked out" }, when);
       link.addEventListener("click", () => S.stretchPopup({ p: { key: S.me.key, rounds: mine }, n, from, to, bar: bar ?? 0 }, cat, when, place, withN));
-      return el("p", { class: "muted small sg-peak-line" }, [`Their best ${n}-round stretch: `, link, `, ${sgn2(avgT)} a round${enough ? `, enough on its own for ${LEVELS[1]}` : ""}.`]);
+      return el("p", { class: "muted small sg-peak-line" }, [`Their best ${n}-round stretch: `, link, `, ${sgn2(avgT)} per round${enough ? `, enough on its own for ${LEVELS[1]}` : ""}.`]);
     })() : null;
     return el("div", { class: "sg-peak-wrap" }, [
       el("div", { class: "sg-peak-ctl" }, [attTog, tog, tPeak ? el("span", { class: "muted small sg-peak-l" }, ["(best ", inp, " round stretch)"]) : null, tip]), // (update 382; 387: the number only once it's on)
@@ -280,7 +280,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
     const others = field0.map((p) => S.rowVals(p.rounds, cat));
     if (!others.length && !noRk) return null;
     const parts = cat ? dists.map((d) => ({ key: `d:${d}`, label: d })) : CATEGORIES.map(([k, l]) => ({ key: `c:${k}`, label: l }));
-    const totKey = cat ? "sg" : "c:TOTAL", totLabel = cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} (a round)` : "SG: Total";
+    const totKey = cat ? "sg" : "c:TOTAL", totLabel = cat ? `${CATEGORIES.find(([k]) => k === cat)?.[1] || cat} (per round)` : "SG: Total";
     const adj = S.st.hypoAdj && S.st.hypoAdj.cat === (cat || "") ? S.st.hypoAdj.d : {};
     // (update 394) a part of the game opens to its distances: each can be nudged too, and they add up into it
     const kidMemo = new Map();
@@ -374,7 +374,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
     const nameOfKey = (k) => { if (!k.includes(">")) return parts.find((p) => p.key === k)?.label || k; const [pk, dk] = k.split(">"); return `${parts.find((p) => p.key === pk)?.label || pk} \u00b7 ${dk.slice(2)}`; };
     const adjList = Object.entries(adj).filter(([, v]) => Math.abs(v) > 1e-9).map(([k, v]) => `${nameOfKey(k)} ${fmtD(v)}`);
     const adjSum = Object.values(adj).reduce((t, v) => t + v, 0);
-    const sumLine = anyAdj ? el("p", { class: "hy-sum" }, [`Changes: `, el("strong", { class: adjSum >= 0 ? "pos" : "neg" }, `${fmtD(adjSum)} a round`), ` in all`, el("span", { class: "muted" }, ` (${adjList.join(", ")})`)]) : null;
+    const sumLine = anyAdj ? el("p", { class: "hy-sum" }, [`Changes: `, el("strong", { class: adjSum >= 0 ? "pos" : "neg" }, `${fmtD(adjSum)} per round`), ` in all`, el("span", { class: "muted" }, ` (${adjList.join(", ")})`)]) : null;
     // (update 447) Create practice plan: the plainest way to the what-if numbers. Their own rounds closest to the
     // what-if breakdown (every part of the game, and any distance changed) show what the plain stats were when they
     // played like that; each part made better gets the one stat that moved most in those rounds (the fewest stats to
@@ -388,7 +388,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
       const dims = [{ c: u.c, d: u.d, t: u.t, up: true }];
       // (update 448) the rounds that, together, average out to the what-if: picked one at a time, each the round that
       // brings the group's average closest to it (with a nudge toward rounds that are close on their own). The group
-      // has to land within 0.10 a round of every part of the game (0.05 for a distance); their own rounds first, and if
+      // has to land within 0.10 per round of every part of the game (0.05 for a distance); their own rounds first, and if
       // theirs can't get there, every other player's rounds this season (the tour). Neither: no plan.
       const vecOf = (rd) => dims.map(({ c, d }) => { let s0 = 0; for (const x of rd.shots || []) if (x.cat === c && (!d || x.dist === d)) s0 += x.sg || 0; return s0; });
       const V0 = rs.map(vecOf);
@@ -433,11 +433,11 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
         return { rounds: sel.map((i) => pool[i]), ok: avg.every(fits), avg };
       };
       let src = "you", got = pick(rs, Math.max(5, Math.min(15, Math.round(rs.length / 4))));
-      if (!got.ok && noRk) return { err: `None of ${isMine(S.me?.key) ? "your" : "their"} own rounds this season, taken together, match this what-if closely enough (at least as good as it, and no more than ${u.d ? "0.05" : "0.10"} a round better). Try a smaller change.` };
+      if (!got.ok && noRk) return { err: `None of ${isMine(S.me?.key) ? "your" : "their"} own rounds this season, taken together, match this what-if closely enough (at least as good as it, and no more than ${u.d ? "0.05" : "0.10"} per round better). Try a smaller change.` };
       if (!got.ok) {
         const tour = field0.flatMap((p) => p.rounds || []).filter((rd) => (rd.shots || []).length);
         const tg = tour.length >= 50 ? pick(tour, 25) : null;
-        if (!tg || !tg.ok) return { err: "No rounds this season, theirs or anyone else\u2019s on tour, match this what-if: at least as good as it in every part made better (and no more than 0.10 a round better), and within 0.10 a round everywhere else. Try smaller changes." };
+        if (!tg || !tg.ok) return { err: "No rounds this season, theirs or anyone else\u2019s on tour, match this what-if: at least as good as it in every part made better (and no more than 0.10 per round better), and within 0.10 per round everywhere else. Try smaller changes." };
         src = "tour"; got = tg;
       }
       const near = got.rounds, K = near.length;
@@ -526,7 +526,7 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
     return el("div", { class: "bs-path bs-hypo" }, [
       el("div", { class: "bs-path-head" }, [el("p", { class: "bs-sub" }, tgl), reset]),
       el("div", { class: "bs-path-gap" }, [
-        infoTip(noRk ? `Start from ${isMine(S.me?.key) ? "your" : "their"} season average (${N} rounds): strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}), or tap the number to type one; a distance\u2019s change adds into its part of the game, and everything adds into the total. \uFF0B Practice, under any row made better, builds a drill and a goal from ${isMine(S.me?.key) ? "your" : "their"} own rounds that average out to it.` : `Start from their season average (${N} rounds): strokes gained a round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} a round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
+        infoTip(noRk ? `Start from ${isMine(S.me?.key) ? "your" : "their"} season average (${N} rounds): strokes gained per round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} per round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}), or tap the number to type one; a distance\u2019s change adds into its part of the game, and everything adds into the total. \uFF0B Practice, under any row made better, builds a drill and a goal from ${isMine(S.me?.key) ? "your" : "their"} own rounds that average out to it.` : `Start from their season average (${N} rounds): strokes gained per round in each ${cat ? "distance" : "part of the game"}${cat ? "" : " (tap one to open its distances)"}. Tap \u2212 or + to make one worse or better (${step.toFixed(2)} per round each tap${cat ? "" : `, ${kidStep.toFixed(2)} for a distance`}); a distance\u2019s change adds into its part of the game, and everything adds into the total. The rank is where that number would sit among every other player\u2019s average over the selected time frame (the same players as the rankings), and the arrow how far it moved from where the last ${N} rounds rank now.`)]),
       sumLine,
       planLine ? el("div", { class: "hy-plan-row" }, [planLine]) : null,
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t hy-t" }, [

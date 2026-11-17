@@ -71,27 +71,27 @@ export const CH_STATS = [
   { key: "gir", label: "Greens in regulation", short: "greens in regulation", kind: "basic", unit: "%", higher: true, get: (c) => (c.holes ? (c.gir / c.holes) * 100 : null) },
   { key: "ud", label: "Up & down", short: "up & down", kind: "basic", unit: "%", higher: true, get: (c) => (c.udN ? (c.ud / c.udN) * 100 : null) },
   { key: "threePutt", label: "3-putt avoidance", short: "3-putt avoidance", kind: "basic", unit: "%", higher: true, get: (c) => (c.puttHoles ? (1 - c.threePutts / c.puttHoles) * 100 : null) },
-  { key: "putts", label: "Putts per round", short: "putts a round", kind: "basic", unit: "", higher: false, get: (c) => (c.puttHoles ? (c.putts / c.puttHoles) * 18 : null) },
+  { key: "putts", label: "Putts per round", short: "putts per round", kind: "basic", unit: "", higher: false, get: (c) => (c.puttHoles ? (c.putts / c.puttHoles) * 18 : null) },
   { key: "score", label: "Score (per 18 holes)", short: "score", kind: "basic", unit: "", higher: false, get: (c) => (c.holes ? (c.score / c.holes) * 18 : null) },
-  { key: "birdies", label: "Birdies per round", short: "birdies a round", kind: "basic", unit: "", higher: true, get: (c, n) => per(c, n, c.birdies / n) },
+  { key: "birdies", label: "Birdies per round", short: "birdies per round", kind: "basic", unit: "", higher: true, get: (c, n) => per(c, n, c.birdies / n) },
 ];
 /**
  * (update 342) A challenge's stat. Besides the fixed list, goals made from the practice plan track:
  *   stat "obs":   a plain stat at a part of the game and distance (statKey "make", cat "PUTT", dist "15-20 ft"), from the
  *                 rounds' stats; label, unit, higher, dp come with the goal
  *   stat "skill": strokes gained for a part of the game and distance (cat, dist)
- *   stat "lie":   attempts a round from a lie (cat "APP", lie "Rough"): fewer is better
+ *   stat "lie":   attempts per round from a lie (cat "APP", lie "Rough"): fewer is better
  */
 export function chStatOf(ch) {
   const catName = (k) => CAT[k] || k;
   if (ch?.stat === "obs") return { key: "obs", label: ch.label, short: ch.label, kind: "obs", unit: ch.unit ?? "", higher: ch.higher !== false, dp: ch.dp ?? 1 };
   if (ch?.stat === "skill") return { key: "skill", label: `${catName(ch.cat)}${ch.dist ? ` \u00b7 ${ch.dist}` : ""} strokes gained`, short: `${catName(ch.cat)}${ch.dist ? ` (${ch.dist})` : ""}`, kind: "sg", cat: ch.cat, dist: ch.dist || null, higher: true };
-  if (ch?.stat === "lie") return { key: "lie", label: `${ch.cat === "ARG" ? "Short-game shots" : "Approaches"} from the ${String(ch.lie).toLowerCase()}`, short: `${ch.cat === "ARG" ? "short-game shots" : "approaches"} from the ${String(ch.lie).toLowerCase()} a round`, kind: "lie", unit: "", higher: false, dp: 1 };
+  if (ch?.stat === "lie") return { key: "lie", label: `${ch.cat === "ARG" ? "Short-game shots" : "Approaches"} from the ${String(ch.lie).toLowerCase()}`, short: `${ch.cat === "ARG" ? "short-game shots" : "approaches"} from the ${String(ch.lie).toLowerCase()} per round`, kind: "lie", unit: "", higher: false, dp: 1 };
   return CH_STATS.find((x) => x.key === ch?.stat) || CH_STATS[0];
 }
 /** Does a shot count for a challenge's strokes gained (its category, and its distance for a skill goal)? */
 const sgIn = (st, x) => (!st.cat || x.cat === st.cat) && (!st.dist || x.dist === st.dist);
-/** A plan goal's value in some rounds (obs: weighted average; lie: attempts a round). */
+/** A plan goal's value in some rounds (obs: weighted average; lie: attempts per round). */
 function planValue(ch, rs) {
   if (ch.stat === "lie") { if (!rs.length) return null; let n = 0; for (const r of rs) for (const x of r.shots || []) if (x.cat === ch.cat && x.lie === ch.lie) n += x.w || 1; return n / rs.length; }
   let t = 0, w = 0;
@@ -115,11 +115,11 @@ export function challengeText(ch) {
   const st = chStatOf(ch);
   const when = ch.when === "nextN" ? `in my next ${ch.n} rounds` : ch.when === "next" ? "in my next round" : ch.when === "week" ? "this week" : ch.when === "month" ? "this month" : `by ${new Date(`${ch.date}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
   const t = Number(ch.target);
-  if (st.kind === "sg") return `Gain ${t >= 0 ? "+" : "\u2212"}${Math.abs(t).toFixed(2)} ${st.short === "SG" ? "strokes" : `${st.short} strokes`}${ch.measure === "total" ? " in total" : " a round"} ${when}`;
+  if (st.kind === "sg") return `Gain ${t >= 0 ? "+" : "\u2212"}${Math.abs(t).toFixed(2)} ${st.short === "SG" ? "strokes" : `${st.short} strokes`}${ch.measure === "total" ? " in total" : " per round"} ${when}`;
   const v = st.unit === "%" ? `${t}%` : `${t}${st.unit || ""}`;
   const recTag = ch.recFrom === "tour" ? " (target from the tour)" : ch.recFrom === "you" ? " (target from my own rounds)" : ""; // (update 448)
   if (st.kind === "obs") return `${st.label}${ch.dist ? ` from ${ch.dist}` : ""}: ${v} or ${st.higher ? "better" : "lower"} ${when}${recTag}`;
-  if (st.kind === "lie") return `${st.label}: ${v} a round or fewer ${when}`;
+  if (st.kind === "lie") return `${st.label}: ${v} per round or fewer ${when}`;
   return st.higher ? `Hit ${v} ${st.short} or better ${when}` : `Average ${v} ${st.short} or fewer ${when}`;
 }
 /**

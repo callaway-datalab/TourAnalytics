@@ -3,7 +3,7 @@
 //
 //   Form           the last 12 rounds against the 12 before; on the DP World Tour (its numbers are whole events) the last
 //                  3 events against the 3 before. A streak on the DP World Tour is counted in events.
-//   Units          strokes gained a round (higher is better), strokes gained a shot (higher is better), score to par
+//   Units          strokes gained per round (higher is better), strokes gained a shot (higher is better), score to par
 //                  (lower is better). Every number names its unit.
 //   Ranges         the distance ranges are the data's own ("140-160 yds", "<30 yds", ">25 ft"), never made up; a course's
 //                  shots go in the range that holds their distance.
@@ -21,7 +21,7 @@ export function formWindow(rounds, tourPick = null) {
   const n = formN(ev), unit = ev ? "event" : "round";
   return { ev, n, unit, label: `${n} ${unit}s`, lastLabel: `Last ${n}${ev ? " events" : ""}`, beforeLabel: `${n}${ev ? " events" : ""} before` };
 }
-/** the rounds in units (a round each; on the DP World Tour an event each), oldest first */
+/** the rounds in units (per round each; on the DP World Tour an event each), oldest first */
 export function formUnits(rounds, ev, eventsOf) { return ev ? eventsOf(rounds).map((e) => e.rs) : rounds.map((r) => [r]); }
 /** the last n units against the n before: { n, lbl, last, prev } (rounds), or null when there aren't 2n */
 export function formSplit(rounds, tourPick, eventsOf) {
@@ -30,7 +30,7 @@ export function formSplit(rounds, tourPick, eventsOf) {
 }
 
 export const UNIT = {
-  sgRound: "strokes gained a round", sgShot: "strokes gained a shot", toPar: "score to par (lower is better)",
+  sgRound: "strokes gained per round", sgShot: "strokes gained a shot", toPar: "score to par (lower is better)",
 };
 export const sg2 = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`);
 export const sg3 = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`);

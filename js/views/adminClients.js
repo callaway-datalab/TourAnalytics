@@ -240,7 +240,7 @@ export async function render(main, { flash }) {
   /* (update 227) Usage: time in the portal and the pages people open, for everyone (and each person) */
   const PAGE_NAMES = { dashboard: "My Stats", watchlist: "Watchlist", leaderboards: "Leaderboards", "player-stats": "Player Stats", comparisons: "Compare", goals: "Goals",
     practice: "Practice", "course-prep": "Course Prep", questions: "Questions", "question-new": "New question", thread: "Question", account: "Account", witb: "WITB",
-    entry: "Enter Rounds", "entry-new": "New round", "entry-round": "Entering a round", team: "Team home", "admin-clients": "Player Access", "admin-datasets": "Data",
+    entry: "Enter Rounds", "entry-new": "New round", "entry-round": "Entering per round", team: "Team home", "admin-clients": "Player Access", "admin-datasets": "Data",
     "admin-analyze": "Analyze: Leaderboards", "admin-player-stats": "Analyze: Player Stats", "admin-goals": "Goals (admin)", "admin-documents": "Documents",
     "admin-reports-view": "Reports", "admin-questions": "Questions (admin)", "admin-thread": "Question (admin)", dataset: "Data file", live: "Event Feed" };
   const pageName = (k) => PAGE_NAMES[k] || String(k).replace(/^admin-/, "Admin: ").replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase());

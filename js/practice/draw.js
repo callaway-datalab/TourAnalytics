@@ -352,7 +352,7 @@ export function greenSvg(shot, { aim = null, showHeat = true, result = null, onT
     const ring = svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 1.6, fill: "none", stroke: "#d4b483", "stroke-width": 0.5 });
     const dot = svgEl("circle", { cx: aim.x, cy: Y(aim.y), r: 0.45, fill: "#d4b483" });
     if (ln) g0.appendChild(ln);
-    // (update 160) a round: a grey line from the target to the pin, and each line's length halfway along it (labels upright on screen)
+    // (update 160) per round: a grey line from the target to the pin, and each line's length halfway along it (labels upright on screen)
     const pinLn = pinLine ? svgEl("line", { stroke: "#c7c7cc", "stroke-width": 0.4, "stroke-dasharray": "1.2 0.8", opacity: 0.9 }) : null;
     const labels = pinLine ? svgEl("g", { class: "pr-pinline", "pointer-events": "none" }) : null;
     const drawPin = (gx, gy) => { // (the green's own yards)

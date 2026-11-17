@@ -402,7 +402,7 @@ export async function render(main, { flash, routeId }) {
     stopMine = watchPlayerRounds(player.key, (rounds) => {
       mount(roundsTableBox, null && myRoundsTable(rounds, { flash, canDelete: (r) => r.ownerUid === uid,
         title: player.key === mineKey ? "Your rounds" : `${player.label}'s rounds` }) || el("p", { class: "muted center small" }, `${player.label} has no entered rounds yet.`));
-      if (!firstMine && source === "entered") refreshEntered(); // a round was added or deleted: redo the stats
+      if (!firstMine && source === "entered") refreshEntered(); // per round was added or deleted: redo the stats
       firstMine = false;
     });
   }

@@ -2,7 +2,7 @@
 //   { ownerUid, ownerName, playerKey, playerLabel, date, course, location,
 //     holes: [{ n, par, yards, hcp }], shots: { h1: [{ startLie, startDist, endLie, endDist }], ... },
 //     status: "in-progress" | "complete", createdAt, updatedAt }
-// Whoever enters a round owns it. The player, their team and the admin can read it.
+// Whoever enters per round owns it. The player, their team and the admin can read it.
 import {
   collection, collectionGroup, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs,
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";

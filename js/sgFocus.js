@@ -1,6 +1,6 @@
 // (update 470) Focus: the Stats page as one short story for the player picked. Where they stand; the three places
 // they lose the most strokes lately (against the tour average, which strokes gained already is), what fixing each is
-// worth (a round, and on the season rank), a drill for each; whether the practice they've added is working (strokes
+// worth (per round, and on the season rank), a drill for each; whether the practice they've added is working (strokes
 // gained there since they added it); and what to keep doing. Full stats is one tap away (the switch above it).
 // Takes S first, like the other Stats page sections (see sgDashboard.js).
 import { radarSvg, groupBars } from "./miniCharts.js"; // (update 751)
@@ -13,7 +13,7 @@ const f2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
 const ord = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 const byDate = (a, b) => String(a.date || "").localeCompare(String(b.date || ""));
 
-/** Strokes gained a round, and attempts a round, for every part of the game and distance in these rounds. */
+/** Strokes gained per round, and attempts per round, for every part of the game and distance in these rounds. */
 function buckets(rounds, on = null) {
   const m = new Map(), n = rounds.length || 1;
   for (const rd of rounds) for (const x of rd.shots || []) {
@@ -99,8 +99,8 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   const stand = el("section", { class: "panel fx fx-stand" }, [
     el("p", { class: "fx-eyebrow" }, `Where you stand \u00b7 ${picked}`), // (update 474: what the pills picked)
     el("div", { class: "fx-stats" }, [
-      el("div", { class: "fx-stat" }, [el("span", { class: "fx-k" }, "Season"), el("strong", { class: seasonV >= 0 ? "pos" : "neg" }, f2(seasonV)), el("span", { class: "fx-s" }, ranked ? `${ord(rankOf(seasonV))} of ${of}` : "a round")]),
-      el("div", { class: "fx-stat" }, [el("span", { class: "fx-k" }, `Last ${N}`), el("strong", { class: recentV >= 0 ? "pos" : "neg" }, f2(recentV)), el("span", { class: "fx-s" }, ranked ? `a ${ord(rankOf(recentV))} level` : "a round")]),
+      el("div", { class: "fx-stat" }, [el("span", { class: "fx-k" }, "Season"), el("strong", { class: seasonV >= 0 ? "pos" : "neg" }, f2(seasonV)), el("span", { class: "fx-s" }, ranked ? `${ord(rankOf(seasonV))} of ${of}` : "per round")]),
+      el("div", { class: "fx-stat" }, [el("span", { class: "fx-k" }, `Last ${N}`), el("strong", { class: recentV >= 0 ? "pos" : "neg" }, f2(recentV)), el("span", { class: "fx-s" }, ranked ? `a ${ord(rankOf(recentV))} level` : "per round")]),
       el("div", { class: "fx-stat" }, [el("span", { class: "fx-k" }, "Trend"), el("strong", { class: trend >= 0 ? "pos" : "neg" }, `${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend).toFixed(2)}`), el("span", { class: "fx-s" }, Math.abs(trend) < 0.1 ? "steady" : trend > 0 ? "getting better" : "slipping")]),
     ]),
     whenLine,
@@ -127,7 +127,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     return sets;
   };
   // (update 476) their best stretch at that distance: the longest run of rounds in a row (5 or more) in which their
-  // strokes gained a round there beat the bar: the best season average there of any other player ("Best on Tour" for that
+  // strokes gained per round there beat the bar: the best season average there of any other player ("Best on Tour" for that
   // shot), when the field's rounds have distances; else the tour average
   const stretchMemo = new Map();
   const distStretch = (cat, dist) => {
@@ -145,7 +145,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     const ds = distStretch(cat, dist);
     if (ds) { const gs = goalStat(ds.rds, cat, dist); if (gs) return { gs, from: `${ds.n} best-stretch rounds`, stretch: { cat, dist, ...ds, gs } }; }
     for (const set of setsFor(cat)) { const gs = goalStat(set.rounds, cat, dist); if (gs) return { gs, from: set.from, stretch: set.stretch || null }; }
-    // (update 477) too few attempts in any of those (a shot faced less than once a round): their whole time frame, with 3
+    // (update 477) too few attempts in any of those (a shot faced less than once per round): their whole time frame, with 3
     // attempts enough; and if even that's short, say how many there are (not that there's no stat)
     const season = goalStat(all, cat, dist, { pctMin: 5, min: 3 });
     if (season) return { gs: season, from: "season rounds" };
@@ -227,8 +227,8 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   // (update 516) shorter: against the best season average of any other player ("Best on Tour"), or, when none of the
   // stretches got there, against a Top 10 season ("Contender")
   const stretchText = (best) => { const w = you === "you" ? "your" : "their";
-    return best ? `Best stretch: the longest run of rounds in a row in which ${w} strokes gained a round beat the best season average of any other player. The drill\u2019s goal is ${w} stat from those rounds.`
-      : `Best stretch: the longest run of rounds in a row in which ${w} strokes gained a round would be in the Top 10 if maintained for a full season. The drill\u2019s goal is ${w} stat from those rounds.`; };
+    return best ? `Best stretch: the longest run of rounds in a row in which ${w} strokes gained per round beat the best season average of any other player. The drill\u2019s goal is ${w} stat from those rounds.`
+      : `Best stretch: the longest run of rounds in a row in which ${w} strokes gained per round would be in the Top 10 if maintained for a full season. The drill\u2019s goal is ${w} stat from those rounds.`; };
   const stretchInfo = (st0) => infoTip(stretchText(!!st0?.best));
   const stretchPop = (st0) => {
     const cat = st0.cat, dist = st0.dist || null, rds = st0.rds;
@@ -246,7 +246,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     svg.appendChild(mk("line", { x1: 0, x2: W, y1: y0, y2: y0, stroke: "rgba(255,255,255,0.25)", "stroke-width": 1 }));
     units.forEach((u, i) => { const v = vals[i], on = onU[i], h = Math.max(1, Math.abs(v) * sc);
       svg.appendChild(mk("rect", { x: i * bw + bw * 0.15, width: Math.max(1, bw * 0.7), y: v >= 0 ? y0 - h : y0, height: h, fill: on ? (v >= 0 ? "#30d158" : "#ff453a") : (v >= 0 ? "rgba(48,209,88,0.25)" : "rgba(255,69,58,0.25)") })); });
-    // the tournaments in the stretch: their rounds and strokes gained a round
+    // the tournaments in the stretch: their rounds and strokes gained per round
     const evs = new Map();
     for (const rd of rds) { const k = `${rd.event || "Round"}|${String(rd.date || "").slice(0, 4)}`; (evs.get(k) || evs.set(k, { event: rd.event || "Round", year: String(rd.date || "").slice(0, 4), rs: [] }).get(k)).rs.push(rd); }
     const avg = rds.reduce((t, rd) => t + sgOf(rd), 0) / rds.length;
@@ -268,7 +268,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     const ov = el("div", { class: "gx-pop-overlay fx-st-ov", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop fx-st-pop" }, [
       el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, [`Best stretch \u00b7 ${what} `, stretchInfo(st0)]), el("h2", {}, `${S.eventView ? `${nOn} event${nOn === 1 ? "" : "s"}` : `${rds.length} rounds`} in a row \u00b7 ${day(rds[0].date)} \u2013 ${day(rds.at(-1).date)}`)]), close]),
       svg,
-      el("p", { class: "fx-st-avg" }, ["Over the stretch: ", el("strong", { class: avg >= 0 ? "pos" : "neg" }, `${f2(avg)} a round`), el("span", { class: "muted" }, ` (${f2(vals.reduce((t, v) => t + v, 0) / (n || 1))} over all ${n} ${word}s)`)]),
+      el("p", { class: "fx-st-avg" }, ["Over the stretch: ", el("strong", { class: avg >= 0 ? "pos" : "neg" }, `${f2(avg)} per round`), el("span", { class: "muted" }, ` (${f2(vals.reduce((t, v) => t + v, 0) / (n || 1))} over all ${n} ${word}s)`)]),
       el("div", { class: "table-scroll" }, el("table", { class: "plain fx-st-t" }, [
         // (update 477) short headings (the long name is above), and each tournament's shots and the drill's stat:
         // successes of attempts for a percentage (fairways hit, putts made…), the average for a number (proximity)
@@ -285,9 +285,9 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   const loseCards = losses.map((b, i) => {
     const fix = -b.perRd, item = itemFor(b);
     return el("div", { class: "fx-card" }, [
-      el("div", { class: "fx-card-h" }, [el("span", { class: "fx-n" }, String(i + 1)), el("strong", {}, nameOf(b)), el("span", { class: "neg fx-v" }, `${f2(b.perRd)} a round`)]),
-      el("p", { class: "fx-why" }, `${b.att.toFixed(1)} shots a round, losing ${Math.abs(b.perShot).toFixed(3)} a shot against the tour average.`),
-      el("p", { class: "fx-worth" }, ["Getting it to the tour average is worth ", el("strong", { class: "pos" }, `${f2(fix)} a round`), ranked ? (rankOf(recentV + fix) < rankOf(recentV) ? ` — a ${ord(rankOf(recentV))} → ${ord(rankOf(recentV + fix))} level.` : " (not enough on its own to move the rank).") : "."]),
+      el("div", { class: "fx-card-h" }, [el("span", { class: "fx-n" }, String(i + 1)), el("strong", {}, nameOf(b)), el("span", { class: "neg fx-v" }, `${f2(b.perRd)} per round`)]),
+      el("p", { class: "fx-why" }, `${b.att.toFixed(1)} shots per round, losing ${Math.abs(b.perShot).toFixed(3)} a shot against the tour average.`),
+      el("p", { class: "fx-worth" }, ["Getting it to the tour average is worth ", el("strong", { class: "pos" }, `${f2(fix)} per round`), ranked ? (rankOf(recentV + fix) < rankOf(recentV) ? ` — a ${ord(rankOf(recentV))} → ${ord(rankOf(recentV + fix))} level.` : " (not enough on its own to move the rank).") : "."]),
       item ? el("div", { class: "fx-drill" }, [el("span", { class: "fx-k" }, "Practice"), lineWithStretch(item), addBtn([item], "＋ Add to practice")]) : null,
     ]);
   });
@@ -296,11 +296,11 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
     el("p", { class: "fx-eyebrow" }, [`Where ${you} lose${you === "you" ? "" : "s"} strokes \u00b7 ${picked} \u00b7 last ${N} rounds`, stretched.length ? " " : null, stretched.length ? infoTip(stretchText(stretched.some((it) => it.stretch.best))) : null]), // (update 516: the best-stretch note, once)
     losses.length ? el("div", { class: "fx-cards" }, loseCards) : el("p", { class: "muted" }, `No part of the game is costing much over the last ${N} rounds. Keep doing what ${you === "you" ? "you’re" : "they’re"} doing.`),
     losses.length > 1 ? el("div", { class: "fx-total" }, [
-      el("span", {}, ["All of them together: ", el("strong", { class: "pos" }, `${f2(allFix)} a round`), ranked ? ` — a ${ord(rankOf(recentV))} → ${ord(rankOf(recentV + allFix))} level` : ""]),
+      el("span", {}, ["All of them together: ", el("strong", { class: "pos" }, `${f2(allFix)} per round`), ranked ? ` — a ${ord(rankOf(recentV))} → ${ord(rankOf(recentV + allFix))} level` : ""]),
       addBtn(losses.map(itemFor), `＋ Add all ${losses.length} to practice`)]) : null,
   ]);
 
-  // 4. is the practice working? Each drill in their plan: strokes gained there a round since it was added, against before
+  // 4. is the practice working? Each drill in their plan: strokes gained there per round since it was added, against before
   const working = el("section", { class: "panel fx" }, [el("p", { class: "fx-eyebrow" }, "Is the practice working?"), el("p", { class: "muted small" }, "Checking the practice plan…")]);
   if (canAdd || isMine(me.key)) {
     import("./practice/plan.js").then((m) => m.planFor(getState(), me.key)).then((items) => {
@@ -322,12 +322,12 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
   // 5. what to keep
   // (update 475) always there, named for the pills picked; a line when nothing there is gaining
   const keep = el("section", { class: "panel fx" }, [el("p", { class: "fx-eyebrow" }, `Keep doing \u00b7 ${picked} \u00b7 the last ${N} rounds`), /* (update 810: which rounds) */
-    gains.length ? el("ul", { class: "fx-list" }, gains.map((b) => el("li", {}, [el("strong", {}, nameOf(b)), " \u00b7 ", el("span", { class: "pos" }, `${f2(b.perRd)} a round`), el("span", { class: "muted" }, ` (${b.att.toFixed(1)} shots a round)`)])))
+    gains.length ? el("ul", { class: "fx-list" }, gains.map((b) => el("li", {}, [el("strong", {}, nameOf(b)), " \u00b7 ", el("span", { class: "pos" }, `${f2(b.perRd)} per round`), el("span", { class: "muted" }, ` (${b.att.toFixed(1)} shots per round)`)])))
       : el("p", { class: "muted small" }, `Nothing in ${on ? picked.toLowerCase() : "the game"} is gaining strokes against the tour over the last ${N} rounds.`)]);
 
   // (update 611) the game as a radar: their latest year (green) against the years before (gold), and tour average
   // (update 751) one part of the game picked: its distance ranges instead (approach and putting: a radar of every range;
-  // off the tee and around the green: bars), the latest year against the year before, strokes gained a round
+  // off the tee and around the green: bars), the latest year against the year before, strokes gained per round
   const distBox = (() => {
     // (update 811) a toggle: this season against last, or the last 12 rounds against the 12 before (the DP World Tour: 3
     // events against 3)
@@ -347,7 +347,7 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
       chart = radarSvg(ds.map((d) => `${short(d)}\n${sp.nowLabel} ${f2(B.get(d) ?? 0)}${sp.before.length && A.size ? `\n${sp.beforeLabel} ${f2(A.get(d) ?? 0)}` : ""}`), /* (update 778: both years) */ [...(sp.before.length ? [{ vals: ds.map((d) => A.get(d) ?? 0), cls: "a", label: sp.beforeLabel }] : []), { vals: ds.map((d) => B.get(d) ?? 0), cls: "b", label: sp.nowLabel }], { lo: -mx, hi: mx }); }
     else chart = groupBars(ds.map((d) => ({ label: short(d), a: sp.before.length ? A.get(d) ?? null : null, b: B.get(d) ?? null })), { la: sp.beforeLabel || "Before", lb: sp.nowLabel });
     if (!chart) return null;
-    return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, [el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained a round · ${mode === "form" ? (evM ? "the last 3 events against the 3 before" : "the last 12 rounds against the 12 before") : "each whole season"}`), modeT]), /* (update 810/811: which rounds, and the toggle) */
+    return el("section", { class: "panel fx fx-radar fx-dist" }, [el("div", { class: "hm-gh" }, [el("p", { class: "fx-eyebrow" }, `${nm} by distance · strokes gained per round · ${mode === "form" ? (evM ? "the last 3 events against the 3 before" : "the last 12 rounds against the 12 before") : "each whole season"}`), modeT]), /* (update 810/811: which rounds, and the toggle) */
       el("div", { class: "mc-wrap" }, chart),
       el("div", { class: "hm-key" }, [sp.before.length && A.size ? el("span", {}, [el("i", { class: "k-a" }), sp.beforeLabel]) : null, /* (update 760: only when it has bars) */ el("span", {}, [el("i", { class: "k-b" }), sp.nowLabel])]),
       el("p", { class: "muted small fx-when" }, `${c0 === "APP" || c0 === "PUTT" ? "The middle ring is zero (tour average); outside it gains strokes. " : ""}${sp.before.length && !A.size ? `${sp.beforeLabel}'s rounds have no ${nm.toLowerCase()} distances in the data, so only ${sp.nowLabel} is drawn. ` : ""}${mode === "form" ? `The last ${evM ? "3 events" : "12 rounds"} against the ${evM ? "3 events" : "12"} before, on this tour.` : `Every round of each season on this tour, so it can differ from Keep doing and the cards above (the last ${N} rounds only).`}`)]);
@@ -365,6 +365,8 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
 
 /** The Focus / Full stats switch. */
 export function focusSwitch(S) {
+  return null; // (update 833: the views are Stats' own row of pages under the header now)
+  // eslint-disable-next-line no-unreachable
   // (update 817) Overview first (and what Stats opens on), then Full stats, Focus, Tournament Results, Course Fit, Practice & Goals
   const VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Compare"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 829: WITB) // (update 827: Compare)
   const st = S.st, now = VIEWS.some(([v]) => v === st.view2) ? st.view2 : "overview";

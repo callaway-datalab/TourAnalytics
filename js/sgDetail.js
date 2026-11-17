@@ -13,7 +13,7 @@ export function detailBlocks(S, mine, slicedField) {
     // (update 229) the stats table with no category: SG: Total and each category, and the scoring averages
     blocks.unshift(S.panelBox(S.describe(), S.fullStatTable(mine, "", slicedField)), el("section", { class: "panel sg-box" }, S.fullStatTable(mine, "", slicedField, "elite")));
   } else {
-    // (update 227) one full table, as on Compare (one column: this player): strokes gained a round in this part of the
+    // (update 227) one full table, as on Compare (one column: this player): strokes gained per round in this part of the
     // game and at each distance, then every stat recorded for it (all distances, then each distance)
     blocks.push(S.panelBox(S.describe(), S.fullStatTable(mine, cat, slicedField)), el("section", { class: "panel sg-box" }, S.fullStatTable(mine, cat, slicedField, "elite")));
 
@@ -211,7 +211,7 @@ export function minRoundsBox(S, players, onMin = null) {
 }
 export function rankingsBlock(S, slicedField, onMin = null) {
   const sg = S.isSG();
-  // strokes gained: SG / Round and attempts a round; another stat: its value and, when it has categories, the attempts
+  // strokes gained: SG / Round and attempts per round; another stat: its value and, when it has categories, the attempts
   const showAtt = sg || S.catsAvail.length > 0;
   const ranked = S.rankedField(slicedField).map((p) => {
     if (sg) { const t = sliceTotals(p.rounds); return { key: p.key, label: p.label, value: t.sgPerRound ?? -Infinity, rounds: t.rounds, att: t.attemptsPerRound }; }
@@ -375,7 +375,7 @@ export function productTrend(S, mine, cat, toggles) {
   // (update 820) more than one season picked: each tournament's year under its bar too ("Masters '25")
   if (new Set(list.map((g) => g.year)).size > 1) for (const g of list) if (g.short && g.year) g.short = `${g.short} '${String(g.year).slice(2)}`;
   const used = new Map(); for (const g of list) for (const [p, n] of g.prods) used.set(p, (used.get(p) || 0) + n);
-  // (update 302) each product's average: strokes gained a round with it (these shots), over the rounds it was used in
+  // (update 302) each product's average: strokes gained per round with it (these shots), over the rounds it was used in
   const avgOf = new Map();
   for (const rd of rs) { const per = new Map(); for (const s of rd.shots) { const p = prodOf(s, kind); if (p) per.set(p, (per.get(p) || 0) + s.sg); } for (const [p, v] of per) { const a = avgOf.get(p) || { sg: 0, n: 0 }; a.sg += v; a.n++; avgOf.set(p, a); } }
   const order = [...used].sort((a, b) => b[1] - a[1]).map(([p]) => p);
@@ -418,9 +418,9 @@ export function productTrend(S, mine, cat, toggles) {
 /*
  * (update 514) Each product's numbers, under the chart: its rounds (the rounds it was used in) and, by kind:
  *   Driver / Non-Driver: SG off the tee, distance, accuracy (fairways hit)   Irons: SG approach, hit green %, proximity
- *   Wedges: SG around the green, proximity, up & down %   Putters: SG putting, putts a round, 3-putts a round
+ *   Wedges: SG around the green, proximity, up & down %   Putters: SG putting, putts per round, 3-putts per round
  *   Balls: SG off the tee, approach, around the green and putting
- * Strokes gained: a round with it (its shots). The rest: the shot file's own columns on its shots (fairway, drive
+ * Strokes gained: per round with it (its shots). The rest: the shot file's own columns on its shots (fairway, drive
  * distance, on green, proximity, up & down), and for putters, its putts (3-putts: holes with 3 or more of them).
  */
 function prodTable(mine, kind, order, colorOf, nameOf) {
@@ -485,7 +485,7 @@ export function panelBox(S, title, content, size = "") {
   return el("section", { class: `panel sg-box ${size}` }, [el("h3", { class: tip ? "sv-h" : null }, [title, tip]), ...list]);
 }
 
-/* (update 761) Best & worst tournaments: each tournament in the selection, strokes gained a round in total and in each part of
+/* (update 761) Best & worst tournaments: each tournament in the selection, strokes gained per round in total and in each part of
    the game, best to worst; the best 3 and worst 3 averaged, and the part of the game that differs most between them (what
    drives the good weeks). Home's "What wins" story is this table with the season picked. */
 // (update 824) the official results (the live feed saves them): loaded once, then the table is drawn again with them
@@ -497,7 +497,7 @@ function officialBest(S, r) {
   const yrs = [...r.yrs];
   if (!PIres) { const k = `${code}|${yrs.join(",")}`; if (!PIwant.has(k)) { PIwant.add(k); import("./playerInsights.js").then((m) => m.ensureResults(code, yrs).then(() => { PIres = m; S.draw(); })).catch(() => {}); } return null; }
   if (yrs.some((y) => !PIwant.has(`${code}|${y}`))) { yrs.forEach((y) => PIwant.add(`${code}|${y}`)); PIres.ensureResults(code, yrs).then(() => S.draw()).catch(() => {}); }
-  const fins = yrs.map((y) => PIres.officialSync(r.name, y, who, code)).filter((o) => o?.pos);
+  const fins = yrs.map((y) => PIres.officialSync(r.name, y, who, code)).filter((o) => o?.pos && /\d/.test(o.pos) && !/^(CUT|MC|W)/i.test(o.pos)); // (update 834: weeks they finished)
   if (!fins.length) return null;
   const num = (p) => { const m = /\d+/.exec(String(p)); return m ? Number(m[0]) : 999; };
   const best = fins.sort((a, b) => num(a.pos) - num(b.pos))[0];
@@ -532,11 +532,11 @@ export function bestWorstBox(S, mine) {
   const body = shown.map((r) => el("tr", { class: `bw-row${top.includes(r) ? " bw-top" : bot.includes(r) ? " bw-bot" : ""}${full(r) ? "" : " bw-one"}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${r.rank}. ${r.name}`), el("td", { class: "bw-course" }, r.course || "—"), el("td", { class: "muted" }, [...r.yrs].sort().map((y) => `'${y.slice(2)}`).join(", ")), el("td", { class: "num bw-fin" }, r.fin || "—"), el("td", { class: "num muted", title: full(r) ? null : "One round on record: not counted in the best or worst 3" }, full(r) ? String(r.rs.length) : `${r.rs.length}*`), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
   const lead = diff[0];
   const foot = [
-    el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, a round"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
-    el("tr", { class: "bw-sum" }, [el("td", {}, "Worst 3, a round"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).b))]),
+    el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, per round"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
+    el("tr", { class: "bw-sum" }, [el("td", {}, "Worst 3, per round"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).b))]),
     el("tr", { class: "bw-sum bw-diff" }, [el("td", {}, "Difference"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot) - mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => { const x = diff.find((y) => y.c === c); return el("td", { class: `num ${x === lead ? "bw-lead" : ""}` }, fmtSG(x.d)); })])];
   return S.panelBox("Best & worst tournaments", [
-    infoTip("Each tournament in the selection: strokes gained a round, best to worst. A week with only one round on record (marked *) is listed but not counted in the best or worst 3. The best 3 (green) and worst 3 (red) are averaged at the bottom: the part of the game with the biggest difference is what drives the good weeks. Change the season or tour in Filters to see it for another stretch."),
+    infoTip("Each tournament in the selection: strokes gained per round, best to worst. A week with only one round on record (marked *) is listed but not counted in the best or worst 3. The best 3 (green) and worst 3 (red) are averaged at the bottom: the part of the game with the biggest difference is what drives the good weeks. Change the season or tour in Filters to see it for another stretch."),
     el("p", { class: "small" }, [el("strong", {}, `${lead.l === "Around" ? "Around-the-Green" : lead.l} drives the good weeks`), `: ${fmtSG(lead.a)} a round in the best 3, ${fmtSG(lead.b)} in the worst 3 (${fmtSG(lead.d)}).`]),
     el("div", { class: "table-scroll" }, el("table", { class: "plain bw-t" }, [el("thead", {}, el("tr", {}, [["name", "Tournament"], ["course", "Course"], ["years", "Years"], ["fin", "Best finish"], ["rds", "Rds"], ["tot", "Total"], ...CATS].map(([k, x], i) => { const on = bs.k === k, th = el("th", { class: `${i > 2 ? "num " : ""}bw-sort${on ? " on" : ""}`, role: "button", tabindex: "0", "aria-sort": on ? (bs.dir > 0 ? "ascending" : "descending") : "none", title: `Sort by ${x}` }, [x, on ? el("span", { class: "bw-arr" }, bs.dir > 0 ? " ▲" : " ▼") : null]);
       const go = () => { S.st.bwSort = { k, dir: on ? -bs.dir : DEF_DIR[k] || -1 }; S.draw(); }; th.addEventListener("click", go); th.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return th; }))), el("tbody", {}, body), el("tfoot", {}, foot)]))], "full");

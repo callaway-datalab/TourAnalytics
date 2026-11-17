@@ -1,6 +1,6 @@
 // (update 756) Stats › Tournament Results: a recap of each tournament the player played.
 // (update 759) Built from the course's own shot data (Strategy Maps, with its tournament column): every player's every
-// shot that week, so everything is ranked against the field: strokes gained a round in total and in each part of the
+// shot that week, so everything is ranked against the field: strokes gained per round in total and in each part of the
 // game, each distance range (a shot), and every single shot ("the best shot of the tournament"). Each shot's strokes
 // gained: the strokes to hole out from where it was played less those from where it finished, less one. A round's
 // scorecard from it (par, score, strokes gained a hole), a hole's shots (each with its rank in the field), and the hole
@@ -143,7 +143,7 @@ export function resultsView(S, rounds, field) {
       const box = el("section", { class: "tr-pop tr-pop-wide", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, "Shot by shot, ranked"), tg, head, holder]);
       const wrap = el("div", { class: "tr-popwrap" }, [back, box]); document.body.appendChild(wrap); draw(mode); xb.focus();
     }
-    const card = (label, v, r, big, c) => { const n = el("div", { class: `tr-hero${big ? " big" : ""}`, role: "button", tabindex: "0", title: "Tap for each distance" }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, ["a round", r ? [" · ", el("b", { class: r.r <= 10 ? "pos" : "" }, `${ord(r.r)} of ${r.n}`), " in the field"] : ""])]);
+    const card = (label, v, r, big, c) => { const n = el("div", { class: `tr-hero${big ? " big" : ""}`, role: "button", tabindex: "0", title: "Tap for each distance" }, [el("span", { class: "tr-hero-l" }, label), el("strong", { class: cls(v) }, v == null ? "—" : fmtSG(v)), el("span", { class: "tr-hero-s" }, ["per round", r ? [" · ", el("b", { class: r.r <= 10 ? "pos" : "" }, `${ord(r.r)} of ${r.n}`), " in the field"] : ""])]);
       const go = () => openDist(c); n.addEventListener("click", go); n.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return n; };
     const nR = P ? P.rds.size : evRs.length;
     const vTot = P ? perRd(P, (p) => p.tot) : avg(evRs, tot);
@@ -165,13 +165,13 @@ export function resultsView(S, rounds, field) {
       const top3 = [...rows].filter((o) => o.r).sort((a, b) => a.r.r / a.r.n - b.r.r / b.r.n)[0];
       const body = !rows.length ? [el("p", { class: "muted" }, P ? "No distances on these shots." : "Distance ranks need the course's shots (Strategy Maps).")] : [
         top3 ? el("p", { class: "tr-pop-calls" }, [el("strong", { class: "pos" }, `Best: ${CATN[top3.cat]} ${top3.bd}`), ` · ${ord(top3.r.r)} of ${top3.r.n} in the field (${fmtSG(top3.per)} a shot)`]) : null,
-        el("div", { class: "tr-pop-scroll" }, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, [c ? "Distance" : "Part · distance", "Shots", "SG a shot", "SG a round", "Rank in the field"].map((x, i) => el("th", { class: i ? "num" : null }, x)))),
+        el("div", { class: "tr-pop-scroll" }, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, [c ? "Distance" : "Part · distance", "Shots", "SG a shot", "SG per round", "Rank in the field"].map((x, i) => el("th", { class: i ? "num" : null }, x)))),
           el("tbody", {}, rows.map((o) => el("tr", {}, [el("td", {}, c ? o.bd : `${CATN[o.cat]} · ${o.bd}`), el("td", { class: "num" }, String(o.n)), el("td", { class: `num ${cls(o.per)}` }, fmtSG(o.per)), el("td", { class: `num ${cls(o.rd)}` }, fmtSG(o.rd)), el("td", { class: `num ${o.r && o.r.r <= 10 ? "pos" : ""}` }, o.r ? `${ord(o.r.r)} of ${o.r.n}` : "—")])))]))];
       const box = el("section", { class: "tr-pop", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, `${c ? CATN[c] : "Every part of the game"} by distance`), ...body].filter(Boolean));
       const wrap = el("div", { class: "tr-popwrap" }, [back, box]); document.body.appendChild(wrap); xb.focus();
     }
 
-    // ---- the scorecard: a round at a time ----
+    // ---- the scorecard: per round at a time ----
     if (!W || !P) { mount(scBox, [el("p", { class: "fx-eyebrow" }, "Scorecard"), el("p", { class: "muted small" }, !metas.length ? `No course in Strategy Maps has ${ev.event} ${ev.year} in its tournament column yet. Upload that course's shot file (with the tournament column) in Strategy Maps and it will show here.` : !W ? `${cName} has no shots for ${ev.event} ${ev.year} in Strategy Maps.` : `${cName} has ${ev.event} ${ev.year}, but no shots of ${me?.label || "this player"}'s in it.`)]); return; }
     const myT = [...W.trails.values()].filter((t) => t.pk === pk), rIds = [...new Set(myT.map((t) => t.rd))].sort((a, b) => Number(a) - Number(b));
     if (!rIds.includes(st.resRound)) st.resRound = rIds[0];

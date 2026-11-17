@@ -153,12 +153,12 @@ export function whatWorked(S, stretch, season0, cat) {
   for (const g of gains) {
     // (update 358) the plain-English takeaway first, then the numbers behind it
     const mostlyMix = g.mix > 0 && g.mix >= 0.7 * g.total, mostlySkill = g.skill >= 0.7 * g.total;
-    const take = `${g.name} was ${sgn2(g.total)} a round better in the ${S.NM().kept}: ${mostlySkill ? "nearly all of it from hitting the same shots better." : mostlyMix ? `mostly from facing different shots (${mixLead(g)}), not from hitting them better. ${MIX_CAUSE[g.k || cat] || ""}` : `partly from hitting the shots better, partly from facing different ones (${mixLead(g)}).`}`;
-    const rowsOut = [kv("Takeaway", take, "bs-take"), kv("Hitting it better", `${sgn2(g.skill)} a round`)];
-    if (Math.abs(g.mix) >= 0.02) rowsOut.push(kv("Facing different shots", `${sgn2(g.mix)} a round (${mixWords(g, sgn2)})`));
+    const take = `${g.name} was ${sgn2(g.total)} per round better in the ${S.NM().kept}: ${mostlySkill ? "nearly all of it from hitting the same shots better." : mostlyMix ? `mostly from facing different shots (${mixLead(g)}), not from hitting them better. ${MIX_CAUSE[g.k || cat] || ""}` : `partly from hitting the shots better, partly from facing different ones (${mixLead(g)}).`}`;
+    const rowsOut = [kv("Takeaway", take, "bs-take"), kv("Hitting it better", `${sgn2(g.skill)} per round`)];
+    if (Math.abs(g.mix) >= 0.02) rowsOut.push(kv("Facing different shots", `${sgn2(g.mix)} per round (${mixWords(g, sgn2)})`));
     if (!cat && g.k) { // the distance they played best (per shot) in these rounds
       const ds = dists(g.k).map((d) => ({ d, s: sp(`${g.k}|${d}|`) })).filter((x) => x.s.skill > 0.005).sort((a, b) => b.s.skill - a.s.skill);
-      if (ds[0]) { const x = ds[0].s; rowsOut.push(kv("Biggest change", `${ds[0].d}: ${sgn2(x.total)} a round better in the ${S.NM().kept} (${sgn2(x.skill)} from hitting it better: ${sgn2(x.pe)} a shot against ${sgn2(x.pb)}${Math.abs(x.mix) >= 0.01 ? `; ${sgn2(x.mix)} from facing ${x.ae < x.ab ? "fewer" : "more"} of them` : ""})`)); }
+      if (ds[0]) { const x = ds[0].s; rowsOut.push(kv("Biggest change", `${ds[0].d}: ${sgn2(x.total)} per round better in the ${S.NM().kept} (${sgn2(x.skill)} from hitting it better: ${sgn2(x.pe)} a shot against ${sgn2(x.pb)}${Math.abs(x.mix) >= 0.01 ? `; ${sgn2(x.mix)} from facing ${x.ae < x.ab ? "fewer" : "more"} of them` : ""})`)); }
     }
     out.push([el("div", { class: "bs-item-head" }, [el("strong", {}, g.name), el("span", { class: "muted" }, ` ${sgn2(g.a)} a round in the ${S.NM().kept} \u00b7 ${sgn2(g.b)} in the ${restName}`)]), ...rowsOut]);
   }
@@ -223,13 +223,13 @@ export function stretchesBlock(S, mine, cat) {
     const on = !!(sel && k && sel === k && S.st.ladderT === r.target);
     // (update 353) the level's name, the share of rounds at it, and (the other way round) how many of the worst rounds to cut
     const of = r.share?.of || 0;
-    // (update 361) the next steps live in the cards: cut the worst N rounds, or gain this much a round across every round
+    // (update 361) the next steps live in the cards: cut the worst N rounds, or gain this much per round across every round
     const P = rows.prof, bar = P?.field?.[r.target - 1], gain = bar != null && P ? Math.max(0.01, bar - P.avg + 0.005) : null;
     const body = [el("span", { class: "bs-pct" }, `${Math.round((r.share?.pct || 0) * 100)}%`),
       ...(r.already ? [el("span", { class: "bs-when muted" }, `all ${of} rounds`), el("span", { class: "bs-when bs-there" }, `Already there (${S.ordinal(r.rank)})`)]
         : [el("span", { class: "bs-when muted" }, k ? `best ${k} of ${of}` : `best round ranks ${S.ordinal(r.bestRound ?? r.share?.bestRound ?? 0)}`),
           k ? el("span", { class: "bs-when" }, `Cut the worst ${of - k}, or`) : null,
-          gain != null ? el("span", { class: "bs-when" }, `Gain ${sgn2(gain)} a round`) : null])];
+          gain != null ? el("span", { class: "bs-when" }, `Gain ${sgn2(gain)} per round`) : null])];
     const b = el(k ? "button" : "div", { type: k ? "button" : null, class: `bs-row${on ? " on" : ""}${k ? "" : " flat"}`, role: "listitem", "aria-pressed": k ? String(on) : null }, [el("span", { class: "bs-rank" }, [el("span", { class: "bs-lvl" }, LEVELS[r.target]), el("span", { class: "bs-lvl-n" }, ` #${r.target}`)]), ...body]);
     if (k) b.addEventListener("click", () => S.selectStretch(k, r.target));
     return b;
@@ -258,7 +258,7 @@ export function stretchesBlock(S, mine, cat) {
         link.addEventListener("click", () => { S.st[`${key}EvOpen`] = !open; S.draw(); });
         const byEvent = () => el("ul", { class: "bs-evs" }, [...byEv.values()].map((g) => ({ ...g, avg: g.rs.reduce((t, rd) => t + sgR(rd), 0) / g.rs.length })).sort((a, b) => dir * (a.avg - b.avg)).map((g) => {
           const nums = g.rs.map((rd) => rd.roundNo).filter((x) => x != null && x !== "").sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0)).map((x) => `R${x}`);
-          return el("li", {}, [el("span", { class: "bs-ev-name" }, g.event), el("span", { class: "muted" }, ` \u00b7 ${S.shortDay(g.first)} \u00b7 ${g.rs.length} of ${allAt(g)} ${allAt(g) === 1 ? "round" : "rounds"}${nums.length ? ` (${nums.join(", ")})` : ""} \u00b7 `), el("span", { class: g.avg >= 0 ? "pos" : "neg" }, `${sgn2(g.avg)} a round`)]);
+          return el("li", {}, [el("span", { class: "bs-ev-name" }, g.event), el("span", { class: "muted" }, ` \u00b7 ${S.shortDay(g.first)} \u00b7 ${g.rs.length} of ${allAt(g)} ${allAt(g) === 1 ? "round" : "rounds"}${nums.length ? ` (${nums.join(", ")})` : ""} \u00b7 `), el("span", { class: g.avg >= 0 ? "pos" : "neg" }, `${sgn2(g.avg)} per round`)]);
         }));
         // (update 363) always round by round; tap a round for its strokes gained by part of the game, and each part
         // of the game for its distances
@@ -351,7 +351,7 @@ export function stretchesBlock(S, mine, cat) {
   return el("div", { class: "bs" }, [
     el("div", { class: "bs-title" }, [el("span", { class: "ms-label" }, `${what ? `${what.trim()} ` : ""}Elite Round Share`), help]),
 
-    rows?.prof ? el("p", { class: "bs-now" }, [`Currently `, el("strong", {}, S.ordinal(rows.prof.seasonRank)), ` of ${rows.prof.N} (${sgn2(rows.prof.avg)} a round)`]) : null,
+    rows?.prof ? el("p", { class: "bs-now" }, [`Currently `, el("strong", {}, S.ordinal(rows.prof.seasonRank)), ` of ${rows.prof.N} (${sgn2(rows.prof.avg)} per round)`]) : null,
     ladder, S.profileLine(mine, cat, rows, allRounds?.tog), allRounds?.list, detail,
   ]);
 }
@@ -373,8 +373,8 @@ export function shotMix(S, elite, season, cat) {
     .map(({ k, s: x }) => { const [c, d] = k.split("|"); const fewer = x.ae < x.ab, helped = x.mix > 0;
       const choice = c === "OTT" || c === "APP";
       const kindTxt = x.pu < 0 ? "a shot they usually lose strokes on" : "a shot they usually gain strokes on";
-      return [el("div", { class: "bs-item-head" }, [el("strong", {}, `${catName(c)} \u00b7 ${d}`), el("span", { class: helped ? "pos" : "neg" }, ` ${helped ? "helped" : "hurt"} ${sgn2(x.mix)} a round`)]),
-        kv("Takeaway", `The ${S.NM().kept} had ${fewer ? "fewer" : "more"} of these (${x.ae.toFixed(1)} a round, against ${x.ab.toFixed(1)}), and it\u2019s ${kindTxt} (${sgn2(x.pu)} a shot). ${choice ? MIX_CAUSE[c] : "That comes from the shot before, not a choice."}`)];
+      return [el("div", { class: "bs-item-head" }, [el("strong", {}, `${catName(c)} \u00b7 ${d}`), el("span", { class: helped ? "pos" : "neg" }, ` ${helped ? "helped" : "hurt"} ${sgn2(x.mix)} per round`)]),
+        kv("Takeaway", `The ${S.NM().kept} had ${fewer ? "fewer" : "more"} of these (${x.ae.toFixed(1)} per round, against ${x.ab.toFixed(1)}), and it\u2019s ${kindTxt} (${sgn2(x.pu)} a shot). ${choice ? MIX_CAUSE[c] : "That comes from the shot before, not a choice."}`)];
     });
   return { items, total };
 }
@@ -421,7 +421,7 @@ export function whatHurts(S, elite, season, cat) {
       const sm = (rs) => { let t = 0, w = 0; for (const rd of rs) for (const ob of rd.obs || []) if (!ob.cat && root.stat.test(ob.k)) { t += ob.v * ob.w; w += ob.w; } return w ? t / w : null; };
       const so = sm(others), se = sm(elite);
       const statBit = so != null && se != null && se > so ? ` ${c === "APP" ? "Fairways hit" : "Greens hit"}: ${so.toFixed(0)}% in ${N.cut}, ${se.toFixed(0)}% in ${N.kept}.` : "";
-      const head = `${c === "APP" ? "Approaches" : "Short-game shots"} from the ${lieName}: ${o.toFixed(1)} attempts a round in ${N.cut}, ${e.toFixed(1)} in ${N.kept}.`;
+      const head = `${c === "APP" ? "Approaches" : "Short-game shots"} from the ${lieName}: ${o.toFixed(1)} attempts per round in ${N.cut}, ${e.toFixed(1)} in ${N.kept}.`;
       const t = worse
         ? `${head} They also lost ground from there (${f2(po.v)} an attempt against the tour baseline), so it\u2019s both: ${root.what} and the shots from the ${lieName}.${statBit}`
         : `${head} From there they held their own (${f2(po.v)} an attempt against the tour baseline), so the problem is ${root.what}, not the ${lieName} shots.${statBit}`;
@@ -444,12 +444,12 @@ export function nextSteps(S, rows) {
   const need = (T) => { const bar = P.field[T - 1]; return bar == null ? null : Math.max(0.01, bar - P.avg + 0.005); };
   return el("div", { class: "bs-next" }, [
     el("p", { class: "bs-sub" }, "Next steps"),
-    el("p", { class: "muted small bs-next-now" }, `Now ${S.ordinal(R)} of ${P.N} (${sgn2(P.avg)} a round).`),
+    el("p", { class: "muted small bs-next-now" }, `Now ${S.ordinal(R)} of ${P.N} (${sgn2(P.avg)} per round).`),
     el("ol", { class: "bs-next-list" }, ahead.map((r) => {
       const cut = r.share.of - r.share.k, on = S.st.vsRank === "peak" && S.st.ladderT === r.target && Number(S.st.peakN) === r.share.k, g = need(r.target);
       const b = el("button", { type: "button", class: `bs-next-btn${on ? " on" : ""}`, "aria-pressed": String(on) }, [
         el("strong", {}, `${LEVELS[r.target]} (#${r.target})`), `: cut the worst ${cut} ${cut === 1 ? "round" : "rounds"}`,
-        g != null ? el("span", { class: "muted" }, `, or ${sgn2(g)} a round across every round`) : null]);
+        g != null ? el("span", { class: "muted" }, `, or ${sgn2(g)} per round across every round`) : null]);
       b.addEventListener("click", () => S.selectStretch(r.share.k, r.target));
       return el("li", {}, b);
     })),
@@ -476,7 +476,7 @@ export function stretchPopup(S, row, cat, when, place, withN) {
   svg.appendChild(mk("line", { x1: 0, x2: W, y1: yb, y2: yb, stroke: "#d4b483", "stroke-width": 1, "stroke-dasharray": "4 3", opacity: 0.8 }));
   const lbl = mk("text", { x: W - 2, y: yb - 3, "text-anchor": "end", fill: "#d4b483", "font-size": 9 }); lbl.textContent = LEVELS[1]; svg.appendChild(lbl);
   // (update 352) every round in a table below, oldest first; the stretch's rows highlighted; a bar's row is picked out
-  // (update 380) a round opens to its strokes gained by part of the game, and each part of the game to its distances
+  // (update 380) per round opens to its strokes gained by part of the game, and each part of the game to its distances
   const rdBreak = (rd) => {
     const by = new Map();
     for (const x of rd.shots || []) { if (!x.cat) continue; const c = by.get(x.cat) || by.set(x.cat, { sg: 0, n: 0, d: new Map() }).get(x.cat); c.sg += x.sg; c.n += x.w || 1; if (x.dist) { const dd = c.d.get(x.dist) || c.d.set(x.dist, { sg: 0, n: 0 }).get(x.dist); dd.sg += x.sg; dd.n += x.w || 1; } }
@@ -545,7 +545,7 @@ export function stretchPopup(S, row, cat, when, place, withN) {
     return r;
   });
   const close = el("button", { type: "button", class: "gx-pop-x", "aria-label": "Close" }, "\u2715");
-  // (update 467) the products used during the stretch, by kind: strokes gained a round with each (its shots, over the
+  // (update 467) the products used during the stretch, by kind: strokes gained per round with each (its shots, over the
   // rounds it was used in), how many shots and how many rounds
   const prodBlock = (() => {
     const by = new Map();
@@ -570,14 +570,14 @@ export function stretchPopup(S, row, cat, when, place, withN) {
         el("tbody", {}, kinds.flatMap((k) => [el("tr", { class: "bs-st-kind" }, el("td", { colspan: 4 }, kindName(k))),
           ...groups.get(k).sort((a, b) => b.w - a.w).map((t) => { const v = t.rounds ? t.sg / t.rounds : 0; return el("tr", {}, [el("td", {}, t.name), el("td", { class: `num ${v >= 0 ? "pos" : "neg"}` }, sgn2(v)), el("td", { class: "num" }, String(Math.round(t.w))), el("td", { class: "num" }, String(t.rounds))]); })])),
       ])),
-      el("p", { class: "muted small" }, "SG / rd: strokes gained a round on the shots hit with it, over the rounds it was used in."),
+      el("p", { class: "muted small" }, "SG / rd: strokes gained per round on the shots hit with it, over the rounds it was used in."),
     ]);
   })();
   const show = el("button", { type: "button", class: "btn ghost small" }, "Show just these rounds");
   const what = cat ? `SG: ${CATEGORIES.find(([k]) => k === cat)?.[1] || cat}` : "SG: Total";
   const overlay = el("div", { class: "gx-pop-overlay bs-st-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Best stretch" }, el("div", { class: "gx-pop bs-st-pop" }, [
     el("div", { class: "gx-pop-head" }, [el("div", {}, [el("p", { class: "gx-eyebrow" }, "Best stretch"), el("h2", {}, `${row.n} ${row.n === 1 ? "round" : "rounds in a row"} \u00b7 ${when}`),
-      el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} a round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best season average of any other player).${place ? ` The ${place === 1 ? "longest" : `${S.ordinal(place)}-longest`} elite stretch of ${withN}.` : ""}`)]), close]),
+      el("p", { class: "gx-sub" }, `${what}: ${sgn2(avg)} per round over the stretch; the ${LEVELS[1]} level is ${sgn2(row.bar || 0)} (the best season average of any other player).${place ? ` The ${place === 1 ? "longest" : `${S.ordinal(place)}-longest`} elite stretch of ${withN}.` : ""}`)]), close]),
     svg,
     summary,
     prodBlock,
