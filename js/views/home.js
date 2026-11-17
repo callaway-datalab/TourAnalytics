@@ -563,7 +563,8 @@ export async function render(main, { previewClient } = {}) {
   const nmKey = (n) => String(n || "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" "); // (update 780)
   const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
   const jit = (id, amp) => (hash(`${id}|${DAY}`) - 0.5) * 2 * amp;
-  let lastItems = null, reroll = false, shownLead = null; // (update 784: the front page's refresh button)
+  let lastItems = null, reroll = false, shownLead = null;
+  let fieldsPI = null; import("../playerInsights.js").then((m) => m.ensureFields().then((f) => { if (!f) return; fieldsPI = m; if (lastItems && main.isConnected) drawFeed(lastItems); })).catch(() => {}); // (update 824) // (update 784: the front page's refresh button)
   function drawFeed(items) { lastItems = items;
     const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.kind === "Fact" ? x.score : x.score + jit(x.id, x.ever ? 1.6 : 0.6) })) /* (update 791: facts keep their shuffled order) */.sort((a, b) => b.score - a.score);
     if (!sorted.length) { mount(secNav, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (the + beside a player's name on Stats › Overview) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
@@ -641,7 +642,10 @@ export async function render(main, { previewClient } = {}) {
     const todayEl = (() => { const ks = selfKey ? [selfKey] : picked.size ? [...picked] : favs.filter((k, i, a) => a.indexOf(k) === i); if (!ks.length) return null; const per = ks.length === 1 ? 5 : 3;
       const cards = ks.map((k) => { const hs = sorted.filter((h) => h.k === k && h.kind !== "Fact").slice(0, per);
         const open = el("button", { type: "button", class: "td-today-go" }, "Overview →"); open.addEventListener("click", () => toStats(k, { view2: "overview", year: [], span: 0 }, null, null));
-        return el("article", { class: "td-today-c" }, [el("div", { class: "td-today-h" }, [el("h3", {}, isMe(k) ? "You" : nameOf(k)), open]),
+        // (update 824) the next event they're entered in (the live feed's fields), when there is one
+        const ent = fieldsPI ? ["R", "H"].flatMap((c) => fieldsPI.fieldEventsSync(nameOf(k), c) || []).sort((a, b) => String(a.start).localeCompare(String(b.start)))[0] : null;
+        const entEl = ent ? el("p", { class: "td-today-ent" }, `Entered: ${ent.name}${ent.start ? ` · ${new Date(`${ent.start}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}`) : null;
+        return el("article", { class: "td-today-c" }, [el("div", { class: "td-today-h" }, [el("h3", {}, isMe(k) ? "You" : nameOf(k)), open]), entEl,
           hs.length ? el("ul", { class: "td-bul" }, hs.map((h) => { const li = el("li", { role: "button", tabindex: "0" }, dress(h).hl); li.addEventListener("click", () => openPop(h)); li.addEventListener("keydown", (e) => { if (e.key === "Enter") openPop(h); }); return li; }))
             : el("p", { class: "td-today-none" }, playsTour(k) ? "Nothing new today." : `No rounds on the ${tourPick && tourPick !== ALL ? tourName(tourPick) : "tour picked"} this season.`)]); });
       return el("section", { class: "td-today", id: "td-today" }, [el("div", { class: "td-sh" }, [el("h2", {}, "Today"), el("span", {}, ks.length === 1 ? "What matters most right now" : "The biggest stories for each of your favorites")]), el("div", { class: "td-today-g" }, cards)]); })();

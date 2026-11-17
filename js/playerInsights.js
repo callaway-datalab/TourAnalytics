@@ -182,3 +182,72 @@ export function eventHistory(field, key, name, tour) {
   return out.sort((a, b) => b.yr.localeCompare(a.yr));
 }
 
+
+// (update 823) The next event: the schedule (the live feed saves it: PGA Tour R and Korn Ferry H, this year and next; the
+// DP World Tour has none yet), the next one not finished on the player's tour unless another was picked (kept for the player
+// on this device, shared by Overview's Next Event Fit and Recommended Practice). A schedule name matched to the stats file's.
+const normEv = (n) => String(n || "").toLowerCase().replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/, "").replace(/^the\s+/, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+export function matchEventName(name, names) {
+  const a = normEv(name); if (!a) return null; if (/masters/.test(a)) return names.find((n) => /masters/i.test(n)) || null;
+  const exact = names.find((n) => normEv(n) === a); if (exact) return exact;
+  const toks = (s) => new Set(s.split(" ").filter((w) => w.length > 2)), A = toks(a);
+  let best = null, bs = 0; for (const n of names) { const B = toks(normEv(n)); const inter = [...A].filter((w) => B.has(w)).length, j = inter / Math.max(1, new Set([...A, ...B]).size); if (j > bs) { bs = j; best = n; } }
+  return bs >= 0.5 ? best : null;
+}
+const tourCode = (tour) => (/korn|kft|^h$/i.test(String(tour || "")) ? "H" : /dp|euro|dpwt/i.test(String(tour || "")) ? null : "R");
+let schedP = null;
+export function loadSchedule() { return (schedP ||= import("./liveData.js").then((m) => m.liveFile("schedule.json")).catch(() => null)); }
+/** { list: upcoming events on the player's tour [{ name, start, end, course }], fromSchedule } */
+export async function upcomingFor(tour) {
+  const code = tourCode(tour), S = code ? await loadSchedule() : null, today = new Date().toISOString().slice(0, 10);
+  const list = (S?.tours?.[code] || []).filter((e) => !e.end || e.end >= today);
+  return { list, fromSchedule: !!list.length };
+}
+export const nextKey = (key) => `ta.nextEvent|${key}`;
+export function pickedNext(key) { try { return localStorage.getItem(nextKey(key)); } catch { return null; } }
+export function setPickedNext(key, name) { try { if (name) localStorage.setItem(nextKey(key), name); else localStorage.removeItem(nextKey(key)); } catch { /* */ } }
+/** the event a player is preparing for: { name, start, course, upcoming[] } (the picked one, else the next on the schedule) */
+export async function nextEventFor(key, tour, fallbackNames = [], playerName = null) {
+  const { list } = await upcomingFor(tour), picked = pickedNext(key);
+  const fromList = (n) => list.find((e) => e.name === n);
+  if (picked) return { name: picked, start: fromList(picked)?.start || null, course: fromList(picked)?.course || null, upcoming: list };
+  // (update 824) the next event they're entered in, when the fields know
+  if (playerName && tourCode(tour)) { await ensureFields(); const mine = fieldEventsSync(playerName, tourCode(tour)) || []; const e = mine[0]; if (e) return { name: e.name, start: e.start, course: e.course, upcoming: list, entered: true }; }
+  if (list[0]) return { name: list[0].name, start: list[0].start, course: list[0].course, upcoming: list };
+  const n = fallbackNames.find((x) => NEXT.re.test(x)) || fallbackNames[0] || null; // (no schedule: the old default)
+  return { name: n, start: null, course: null, upcoming: list };
+}
+/** a Strategy Maps course for an event (by the event's name, or its course's), with shots on record */
+export function heatCourseFor(list, ev) {
+  const raw = (list || []).filter((c) => c.rawChunks); if (!ev?.name) return null;
+  const n = normEv(ev.name);
+  return raw.find((c) => (c.events || []).some((e) => normEv(e.name) === n || (/masters/.test(n) && /masters/i.test(e.name)))) || (ev.course ? raw.find((c) => normEv(c.name).includes(normEv(ev.course).split(" ").slice(0, 2).join(" "))) : null) || null;
+}
+
+// (update 824) What the live feed also saves from the PGA Tour API: official results (results/{R|H}-{year}.json), who's
+// entered in the coming events (fields.json) and player bios (bios.json). Players are matched by name (the API's ids
+// aren't the portal's keys). Read once a visit; the sync getters answer null until a file is in.
+const liveJson = new Map();
+const live = (rel) => liveJson.get(rel) || liveJson.set(rel, import("./liveData.js").then((m) => m.liveFile(rel)).catch(() => null)).get(rel);
+const done = new Map(); const got = (rel) => done.get(rel);
+const loadInto = (rel) => live(rel).then((v) => { done.set(rel, v || null); return v; });
+export const tourCodeOf = (tour) => tourCode(tour);
+export function ensureResults(code, years) { return Promise.all([...new Set(years)].map((y) => loadInto(`results/${code}-${y}.json`))); }
+export const ensureFields = () => loadInto("fields.json");
+export const ensureBios = () => loadInto("bios.json");
+/** official { pos, total, name } for a player at an event in a year, or null (not loaded, not in the file, not found) */
+export function officialSync(eventName, year, playerName, code) {
+  const R = got(`results/${code}-${year}.json`); if (!R?.events) return null;
+  const evs = Object.values(R.events), nm = matchEventName(eventName, evs.map((e) => e.name)); if (!nm) return null;
+  const e = evs.find((x) => x.name === nm), k = nameKey(playerName), row = e?.rows?.find((r) => nameKey(r.name) === k);
+  return row ? { pos: row.pos, total: row.total, event: e.name, of: e.rows.length } : { pos: null, event: e.name, missing: true };
+}
+/** the coming events a player is entered in: [{ name, start, end, course }] (sorted), or null when the fields aren't in */
+export function fieldEventsSync(playerName, code) {
+  const F = got("fields.json"); if (!F?.tours) return null; const k = nameKey(playerName);
+  return Object.values(F.tours[code] || {}).filter((e) => (e.players || []).some((p) => nameKey(p.name) === k)).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+}
+export function fieldListedSync(eventName, code) { const F = got("fields.json"); if (!F?.tours) return null; const evs = Object.values(F.tours[code] || {}); const nm = matchEventName(eventName, evs.map((e) => e.name)); return nm ? evs.find((e) => e.name === nm) : null; }
+export function bioSync(playerName) { const B = got("bios.json"); if (!B?.players) return null; const k = nameKey(playerName); return Object.values(B.players).find((b) => nameKey(b.name) === k) || null; }
+/** the position for show: "T5", "1" → "Won", "CUT"/"MC" → "Missed cut", "WD" … */
+export function posText(pos) { const p = String(pos || "").toUpperCase().trim(); if (!p) return null; if (p === "1") return "Won"; if (/^(CUT|MC)$/.test(p)) return "Missed cut"; if (/^W\/?D$/.test(p)) return "Withdrew"; if (/^DQ$/.test(p)) return "DQ"; return p; }

@@ -28,6 +28,9 @@ export async function fitTab(box, key, name) {
   const year = [...new Set(base.filter((r) => !tour || r.tour === tour).map(PI.yrOf))].sort().at(-1);
   const P = PI.profile(base, { year, tour, field, key }), season = PI.CATS.reduce((t, c) => t + (P.cat[c] || 0), 0);
   const { evs: D, mid } = eventRoom(field, tour);
+  // (update 824) the official results (each year in the stats file) and who's entered in the coming events, when the live feed has them
+  const code = PI.tourCodeOf(tour); await Promise.all([PI.ensureFields().catch(() => null), code ? PI.ensureResults(code, [...new Set(D.flatMap((d) => d.yrs))]).catch(() => null) : null]);
+  const enteredIn = code ? (PI.fieldEventsSync(name, code) || []) : [], entered = (n) => enteredIn.find((e) => PI.matchEventName(e.name, [n]));
   if (!D.length) { mount(wrap, el("p", { class: "muted" }, `Not enough of the ${tour || "tour"}'s tournaments in the stats file to rank yet.`)); return; }
   // their own record at each tournament (every year, their own file or the stats file)
   const mine = (fp?.rounds || base).filter((r) => !tour || r.tour === tour);
@@ -43,21 +46,23 @@ export async function fitTab(box, key, name) {
     return `Most room to gain here: ${part(most.c)} (${xx(most.room)} usual). Least: ${part(least.c)} (${xx(least.room)}). ${edgeTxt}`; };
   const max = Math.max(0.01, ...rows.map((r) => Math.abs(r.eff)));
   // (update 820) opened: why, the parts, and their own weeks there (every year in the stats file), side by side
-  const fin = (h) => (h.cut ? "Missed cut" : h.pos == null ? "—" : `${h.tied ? "T" : ""}${h.pos}`);
+  // the official finish when the results are in; else their place by strokes gained among the file's players (marked ≈)
+  const fin = (h, evName) => { const o = code ? PI.officialSync(evName, h.yr, name, code) : null; if (o?.pos) { h.official = true; return PI.posText(o.pos); }
+    return h.cut ? "Missed cut" : h.pos == null ? "—" : `≈${h.tied ? "T" : ""}${h.pos}`; };
   const detail = (r) => { const H = PI.eventHistory(field, key, r.name, tour);
     const hist = H.length ? el("table", { class: "ip-t cf-hist" }, [el("thead", {}, el("tr", {}, ["Year", "Course", "Finish", H.some((h) => h.eventLevel) ? "Events" : "Rounds", "SG a round", ...PI.CATS.map((c) => ({ OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT" })[c])].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))),
-      el("tbody", {}, H.map((h) => el("tr", {}, [el("td", {}, h.yr), el("td", {}, h.course || "—"), el("td", { class: "num strong" }, fin(h)), el("td", { class: "num" }, String(h.rounds)), el("td", { class: `num strong ${cls(h.sg)}` }, sg2(h.sg)), ...PI.CATS.map((c) => el("td", { class: `num ${cls(h.cat[c])}` }, sg2(h.cat[c])))])))])
+      el("tbody", {}, H.map((h) => el("tr", {}, [el("td", {}, h.yr), el("td", {}, h.course || "—"), el("td", { class: "num strong" }, fin(h, r.name)), el("td", { class: "num" }, String(h.rounds)), el("td", { class: `num strong ${cls(h.sg)}` }, sg2(h.sg)), ...PI.CATS.map((c) => el("td", { class: `num ${cls(h.cat[c])}` }, sg2(h.cat[c])))])))])
       : el("p", { class: "muted" }, `${last} hasn't played it on record.`);
     return el("div", { class: "cf-det" }, [el("p", { class: "cf-why" }, why(r)), r.small ? el("p", { class: "cf-small" }, `Small field (about ${Math.round(r.perYr)} players a year in the file, against about ${Math.round(mid)} usually; likely no cut): a rough guide.`) : null,
       el("div", { class: "cf-cols" }, [
         el("div", {}, [el("p", { class: "cf-sub" }, "What the tournament asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part of the game", "Room to gain", `${last} normally`, "Edge here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
           el("tbody", {}, r.parts.map((x) => el("tr", {}, [el("td", {}, PI.CATN[x.c]), el("td", { class: "num strong" }, [xx(x.room), el("span", { class: "cf-arrow" }, x.room > 1.03 ? " ▲" : x.room < 0.97 ? " ▼" : "")]), el("td", { class: `num ${cls(x.me)}` }, `${sg2(x.me)} a round`), el("td", { class: `num strong ${cls(x.edge)}` }, sg2(x.edge))])))])]),
         el("div", {}, [el("p", { class: "cf-sub" }, `${last} at ${theE(r.name)}`), hist])]),
-      el("p", { class: "muted small" }, `Room to gain: how far the field spread out in each part here (${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}) against a normal ${tour || "tour"} week, 1.00× being usual. Edge here: ${last}’s normal week in that part × (room − 1). Projected there: ${sg2(r.fit)} strokes gained a round.${H.length ? " Finish: their place among the players in the stats file that week by strokes gained (it can differ from the official finish); the parts are strokes gained a round." : ""}`)]); };
+      el("p", { class: "muted small" }, `Room to gain: how far the field spread out in each part here (${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}) against a normal ${tour || "tour"} week, 1.00× being usual. Edge here: ${last}’s normal week in that part × (room − 1). Projected there: ${sg2(r.fit)} strokes gained a round.${H.length ? " Finish: the official finish where the results are in; ≈ is their place among the stats file\'s players that week by strokes gained instead. The parts are strokes gained a round." : ""}`)]); };
   const table = el("div", { class: "ip-tw" }, el("table", { class: "ip-t cf-t" }, [
     el("thead", {}, el("tr", {}, ["#", "Tournament", "Fit vs a normal week", "", "Rounds there"].map((h, i) => el("th", { class: i === 2 || i === 4 ? "num" : null }, h)))),
     el("tbody", {}, rows.flatMap((r, i) => { const open = el("tr", { class: "cf-open", hidden: true }, el("td", { colspan: "5" }, null));
-      const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name, r.small ? el("span", { class: "cf-tag", title: "Small field: a rough guide" }, "small field") : null]),
+      const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name, r.small ? el("span", { class: "cf-tag", title: "Small field: a rough guide" }, "small field") : null, (() => { const e = entered(r.name); return e ? el("span", { class: "cf-tag cf-in", title: `${name} is in the field${e.start ? ` (${e.start})` : ""}` }, "✓ entered") : null; })()]),
         el("td", { class: `num strong ${cls(r.eff)}` }, sg2(r.eff)),
         el("td", { class: "cf-bart" }, el("span", { class: "cf-mid" }, el("i", { class: r.eff >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(r.eff) / max) * 50)}%` }))),
         el("td", { class: "num muted" }, r.here ? String(r.here) : "—")]);

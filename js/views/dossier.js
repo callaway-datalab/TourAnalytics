@@ -26,12 +26,17 @@ async function favButton(key, name) {
   paint(); return b;
 }
 
+const ordS = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
 export async function overview(box, key, name) {
   mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted ip-wait" }, `Putting ${name}’s overview together…`)));
   const wrap = box.firstChild, st = window.__authState || {};
   const [{ field }, rounds, fav] = await Promise.all([PI.loadField(st).catch(() => ({ field: [] })), PI.loadShots(key, name), favButton(key, name)]);
   const fp = field.find((p) => p.key === key), base = rounds.length ? rounds : fp?.rounds || [];
-  const head = (sub) => el("header", { class: "ip-head ip-head-slim" }, [el("div", {}, [el("p", { class: "ip-kick" }, `Overview${sub ? ` · ${sub}` : ""}`), el("h2", { class: "ip-h" }, [name, fav])])]);
+  // (update 824) the facts from their PGA Tour bio: age, turned pro, seasons on their tour, career money
+  await PI.ensureBios().catch(() => null); const bio = PI.bioSync(name);
+  const tourNm = (t) => (t === "H" ? "Korn Ferry Tour" : !t || t === "R" ? "PGA TOUR" : t);
+  const bioLine = bio ? [bio.age ? `Age ${Math.round(bio.age)}` : null, bio.pro ? `Turned pro ${Math.round(bio.pro)}` : null, bio.since ? `${ordS(new Date().getFullYear() - Math.round(bio.since) + 1)} season on the ${tourNm(bio.tour)}` : null, bio.money ? `$${bio.money >= 1e6 ? `${(bio.money / 1e6).toFixed(1)}M` : Math.round(bio.money).toLocaleString()} career earnings` : null].filter(Boolean).join(" · ") : "";
+  const head = (sub) => el("header", { class: "ip-head ip-head-slim" }, [el("div", {}, [el("p", { class: "ip-kick" }, `Overview${sub ? ` · ${sub}` : ""}`), el("h2", { class: "ip-h" }, [name, fav]), bioLine ? el("p", { class: "ip-bio" }, bioLine) : null])]);
   if (!base.length) { mount(wrap, [head(), el("p", { class: "muted" }, `No rounds on record for ${name}.`)]); return; }
   const tours = [...new Set(base.map((r) => r.tour).filter(Boolean))];
   const tour = [...tours].sort((a, b) => base.filter((r) => r.tour === b).length - base.filter((r) => r.tour === a).length)[0] || null;
@@ -55,10 +60,10 @@ export async function overview(box, key, name) {
   // where the strokes go (a Home story can ask for one range: it's added if need be, lit and scrolled to)
   let focus = null; try { focus = sessionStorage.getItem("ta.ovFocus"); sessionStorage.removeItem("ta.ovFocus"); } catch { /* */ }
   const fR = focus && focus.includes("|") ? P.ranges.find((o) => `${o.c}|${o.d}` === focus) : null;
-  const rows0 = [...P.leaks.slice(0, 3), ...P.strengths.slice(0, 2)], rows = fR && !rows0.includes(fR) ? [...rows0, fR] : rows0, mx = Math.max(0.01, ...rows.map((o) => Math.abs(o.rd)));
+  const rows0 = [...P.leaks.slice(0, 3), ...P.strengths.slice(0, 3)] /* (update 823: the bottom 3 and the top 3) */, rows = fR && !rows0.includes(fR) ? [...rows0, fR] : rows0, mx = Math.max(0.01, ...rows.map((o) => Math.abs(o.rd)));
   const goesCard = card("Where the strokes go", "#ff453a", [el("h3", { class: "ip-h3" }, "By distance, strokes gained a round"),
     rows.length ? el("div", { class: "ip-bars" }, rows.map((o) => clickable(el("div", { class: `ip-barrow ip-click${o === fR ? " ip-focus" : ""}` }, [el("span", {}, `${o.c === "PUTT" ? "Putts" : o.c === "ARG" ? "Chips" : "Approach"} ${o.d}`), el("span", { class: "ip-bartrack" }, el("i", { class: o.rd >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(o.rd) / mx) * 100)}%` })), el("b", { class: cls(o.rd) }, sg2(o.rd)), el("span", { class: "ip-barn" }, `${sg3(o.shot)} a shot · ${Math.round(o.n)} shots`)]), () => rangePop(o)))) : el("p", { class: "muted" }, "Not enough shots by distance yet."),
-    P.ranges.length > rows.length ? (() => { const b = el("button", { type: "button", class: "ip-link" }, `Show more (all ${P.ranges.filter((o) => o.n >= 10).length} ranges)`); b.addEventListener("click", allRanges); return b; })() : null,
+    P.ranges.length > rows.length ? (() => { const b = el("button", { type: "button", class: "ip-link" }, `Show all (${P.ranges.filter((o) => o.n >= 10).length} ranges)`); b.addEventListener("click", allRanges); return b; })() : null,
     samp(`${year} season, ${P.n} rounds · a range needs 25+ shots`)]);
   // the bag (clubs, the Non-Driver off the tee, and the ball)
   const bagCard = card("In the bag", "#ff9f0a", P.gear.length ? [el("table", { class: "ip-t" }, [el("thead", {}, el("tr", {}, ["Club", "Model", "SG a round", "Rounds"].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))),
@@ -81,8 +86,10 @@ export async function overview(box, key, name) {
       samp(`${name}, ${tour || ""} ${year}: every shot from ${o.d}, strokes gained against the tour baseline`)], `Where the strokes go · ${name}`);
   }
   function allRanges() {
-    const all = P.ranges.filter((o) => o.n >= 10).sort((a, b) => PI.CATS.indexOf(a.c) - PI.CATS.indexOf(b.c) || a.rd - b.rd), mx2 = Math.max(0.01, ...all.map((o) => Math.abs(o.rd)));
-    const close = popup("Every distance range", [el("p", { class: "muted small" }, "Strokes gained a round from each range (10+ shots). Tap one for more."), ...PI.CATS.filter((c) => all.some((o) => o.c === c)).flatMap((c) => [el("p", { class: "cf-sub" }, PI.CATN[c]),
+    // (update 823) by part of the game, then distance, nearest first ("<5 ft", "5-10 ft" … ">25 ft"; "Bunker" last)
+    const dk = (d) => { const t = String(d); if (/bunker|sand/i.test(t)) return 1e6; const m = /([<>])?\s*(\d+(?:\.\d+)?)/.exec(t); if (!m) return 5e5; return m[1] === "<" ? -1 : m[1] === ">" ? Number(m[2]) + 0.5 : Number(m[2]); };
+    const all = P.ranges.filter((o) => o.n >= 10).sort((a, b) => PI.CATS.indexOf(a.c) - PI.CATS.indexOf(b.c) || dk(a.d) - dk(b.d)), mx2 = Math.max(0.01, ...all.map((o) => Math.abs(o.rd)));
+    const close = popup("Every distance range", [el("p", { class: "muted small" }, "Strokes gained a round from each range (10+ shots), by part of the game and distance. Tap one for more."), ...PI.CATS.filter((c) => all.some((o) => o.c === c)).flatMap((c) => [el("p", { class: "cf-sub" }, PI.CATN[c]),
       el("div", { class: "ip-bars" }, all.filter((o) => o.c === c).map((o) => clickable(el("div", { class: "ip-barrow ip-click" }, [el("span", {}, o.d), el("span", { class: "ip-bartrack" }, el("i", { class: o.rd >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(o.rd) / mx2) * 100)}%` })), el("b", { class: cls(o.rd) }, sg2(o.rd)), el("span", { class: "ip-barn" }, `${sg3(o.shot)} a shot · ${Math.round(o.n)} shots${o.n < 25 ? " · few shots" : ""}`)]), () => { close(); rangePop(o); })))])], `${name} · ${year}`);
   }
   function gearPop(g) {
@@ -97,27 +104,57 @@ export async function overview(box, key, name) {
       el("p", {}, [`Strokes gained ${c ? PI.CATN[c].toLowerCase() : "in total"} a round with it: `, el("b", { class: cls(g.rd) }, sg2(g.rd)), ` over ${g.n} rounds in ${year}.`, g.isNew && g.was ? ` New in the bag lately (was ${g.was}).` : ""]),
       byModel.size > 1 ? el("p", { class: "cf-sub" }, "Each model this season") : null,
       byModel.size > 1 ? el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Model", "Events", "Rounds", "SG a round"].map((h, i) => el("th", { class: i ? "num" : null }, h)))), el("tbody", {}, [...byModel].map(([mdl, m]) => el("tr", {}, [el("td", {}, mdl), el("td", { class: "num" }, String(m.ev)), el("td", { class: "num" }, String(m.n)), el("td", { class: `num strong ${cls(m.sg / m.n)}` }, sg2(m.sg / m.n))])))]) : null,
-      el("p", { class: "cf-sub" }, "Event by event"),
-      el("div", { class: "ip-tw ip-tw0" }, el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Event", "Model", "Rounds", "SG a round"].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))), el("tbody", {}, [...evs].reverse().map((x) => el("tr", {}, [el("td", {}, `${PI.evName(x.e.event)} ${x.e.year}`), el("td", {}, x.model), el("td", { class: "num" }, String(x.n)), el("td", { class: `num ${cls(x.sg)}` }, sg2(x.sg))])))])),
+      el("p", { class: "cf-sub" }, "Event by event, strokes gained a round"),
+      // (update 823) a bar an event, each model its own colour, with the key under it
+      (() => { const MC = ["m-a", "m-b", "m-c", "m-d", "m-e", "m-f"], models = [g.model, ...[...byModel.keys()].filter((m) => m !== g.model)], mc = (m) => MC[models.indexOf(m)] || "m-o";
+        const svg = CH.barSvg(evs.map((x) => ({ v: x.sg, label: `${PI.evName(x.e.event)} ${x.e.year} · ${x.model} · ${x.n} rounds`, short: PI.evName(x.e.event).replace(/^the\s+/i, "").split(" ").slice(0, 2).join(" "), cls: mc(x.model) })), { note: "By event" });
+        return el("div", { class: "td ip-chartbox" }, svg ? [svg, el("div", { class: "td-legend" }, models.map((m) => el("span", { class: mc(m) }, m)))] : el("p", { class: "muted" }, "Too few events to chart."));
+      })(),
       samp(`The model used most at each event; strokes gained a round ${c ? `in ${PI.CATN[c].toLowerCase()} on the shots hit with it` : "on every shot, with that ball"}`)], `In the bag · ${name}`);
   }
   const fitBox = card("Next event fit", "#64d2ff", el("p", { class: "muted" }, "Loading the course…"), "ip-fit");
   mount(wrap, [head(`${tour || ""} ${year}`.trim()), tiles, el("div", { class: "ip-grid ip-grid-2" }, [formCard, goesCard]), el("div", { class: "ip-bag" }, bagCard), fitBox,
     el("p", { class: "ip-foot" }, `Strokes gained against the tour baseline. Ranks among players with 8+ rounds on the ${tour || "tour"} in ${year}.${tours.length > 1 ? ` ${name} also has rounds on the ${tours.filter((t) => t !== tour).join(", ")}: this is their main tour.` : ""}`)]);
   if (focus) requestAnimationFrame(() => { const t = fR ? wrap.querySelector(".ip-focus") : PI.CATS.includes(focus) ? wrap.querySelectorAll(".ip-tile")[1 + PI.CATS.indexOf(focus)] : null; if (t) { t.classList.add("ip-focus"); t.scrollIntoView({ block: "center", behavior: "smooth" }); } });
-  // the next event: their fit there
-  const list = await import("../courseHeat.js").then((m) => m.listHeatCourses()).catch(() => []), meta = PI.nextCourse(list);
-  if (!meta) { mount(fitBox, [el("p", { class: "ip-kick" }, "Next event fit"), el("p", { class: "muted" }, "The next event's course isn't in Strategy Maps yet.")]); return; }
-  const C = await PI.loadCourse(meta, [P.rs]).catch(() => null);
-  if (!C) { mount(fitBox, [el("p", { class: "ip-kick" }, "Next event fit"), el("p", { class: "muted" }, `${meta.name}'s shots couldn't be read.`)]); return; }
-  const fit = PI.fitFor(P, C, key, name), yrsT = C.yrs.length > 1 ? `${C.yrs[0]}-${C.yrs.at(-1).slice(2)}` : C.yrs[0] || "";
-  const goFit = el("button", { type: "button", class: "ip-link" }, `Every course and tournament for ${nameS} →`); goFit.addEventListener("click", () => openStatsTab("fit"));
-  mount(fitBox, [el("p", { class: "ip-kick" }, `Next event fit · ${PI.NEXT.name}`),
-    el("h3", { class: "ip-h3" }, `Projected ${sg2(fit.proj)} strokes gained a round at ${meta.name} (${sg2(fit.vsSeason)} against the season)`),
-    el("ul", { class: "ip-bul" }, [...fit.key3.map((x) => el("li", {}, [`${PI.CATN[x.c]} from ${x.l} (${Math.round(x.share * 100)}% of what wins here; ${x.att.toFixed(1)} ${x.c === "PUTT" ? "putts" : x.c === "ARG" ? "chips and pitches" : "approaches"} a round from there): ${nameS} `, el("b", { class: cls(x.me) }, x.me == null ? "not enough shots" : `${sg3(x.me)} a shot`), `, the top 10 there ${sg3(x.top)} (strokes gained a shot)`])),
-      el("li", {}, fit.hereRds ? `${fit.hereRds} rounds here on record` : `No rounds here on record: the projection is from the ${year} season`)]),
-    goFit,
-    samp(`Course: every round on record (${yrsT}, ${C.nRds} rounds) · projected: the ${year} season with the course's mix of distances (covering ${Math.round(fit.coverage * 100)}% of its shots by distance), plus driving`)]);
+  // (update 823) the next event: the schedule's next on their tour, or the one picked with Change (kept for the player; shared
+  // with Recommended Practice). Its fit vs a normal week (room to gain, from the stats file: every tournament on record) and,
+  // when its course is in Strategy Maps with its shots, the ranges that decide that course
+  const heatL = await import("../courseHeat.js").then((m) => m.listHeatCourses()).catch(() => []);
+  const ER = PI.eventRoom(field, tour), names = ER.evs.map((e) => e.name).sort((a, b) => a.localeCompare(b));
+  const drawFit = async () => {
+    const ev = await PI.nextEventFor(key, tour, names, name), stName = ev.name ? PI.matchEventName(ev.name, names) : null, E = stName ? ER.evs.find((e) => e.name === stName) : null;
+    const when = ev.start ? new Date(`${ev.start}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
+    const change = el("button", { type: "button", class: "ip-btn ghost ip-chg" }, "Change"); change.addEventListener("click", () => pickEvent(ev));
+    const head = el("div", { class: "ip-fit-head" }, [el("p", { class: "ip-kick" }, `${PI.pickedNext(key) ? "Preparing for" : ev.entered ? "Next event (entered)" : "Next event"}${ev.name ? ` · ${ev.name}` : ""}${when ? ` · ${when}` : ""}${ev.course ? ` · ${ev.course}` : ""}`), change]);
+    if (!ev.name) { mount(fitBox, [head, el("p", { class: "muted" }, "No schedule for this tour yet: pick a tournament with Change.")]); return; }
+    const parts = E ? PI.CATS.map((c) => ({ c, room: E.room[c], me: P.cat[c] || 0, edge: (P.cat[c] || 0) * (E.room[c] - 1) })) : null, eff = parts ? parts.reduce((t, x) => t + x.edge, 0) : null;
+    const roomBox = parts ? [el("h3", { class: "ip-h3" }, [`Fit vs a normal week: `, el("b", { class: cls(eff) }, `${sg2(eff)} strokes a round`)]),
+      el("ul", { class: "ip-bul" }, [...parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge)).map((x) => el("li", {}, [`${PI.CATN[x.c]}: ${x.room.toFixed(2)}× the usual room to gain; ${nameS} ${sg2(x.me)} a round normally → `, el("b", { class: cls(x.edge) }, sg2(x.edge))])))]
+      : [el("p", { class: "muted" }, `No ${ev.name} on record in the stats file yet, so no fit from it.`)];
+    mount(fitBox, [head, ...roomBox, el("div", { class: "ip-fit-course" }, el("p", { class: "muted small" }, "Looking for the course in Strategy Maps…"))]);
+    const meta = PI.heatCourseFor(heatL, ev), box2 = fitBox.querySelector(".ip-fit-course");
+    const C = meta ? await PI.loadCourse(meta, [P.rs]).catch(() => null) : null;
+    const goFit = el("button", { type: "button", class: "ip-link" }, `Every tournament for ${nameS} →`); goFit.addEventListener("click", () => openStatsTab("fit"));
+    if (!C) { mount(box2, [goFit, samp(`${E ? `Room to gain: how far the field spread out in each part at ${/^the\s/i.test(ev.name) ? ev.name : `the ${ev.name}`} (${E.n} player-weeks) against a normal week. ` : ""}${meta ? `${meta.name}'s shots couldn't be read.` : "Its course isn't in Strategy Maps with shots, so there's no distance detail."}`)]); return; }
+    const fit = PI.fitFor(P, C, key, name), yrsT = C.yrs.length > 1 ? `${C.yrs[0]}-${C.yrs.at(-1).slice(2)}` : C.yrs[0] || "";
+    mount(box2, [el("p", { class: "cf-sub" }, `At ${meta.name}, by distance`),
+      el("ul", { class: "ip-bul" }, [...fit.key3.map((x) => el("li", {}, [`${PI.CATN[x.c]} from ${x.l} (${Math.round(x.share * 100)}% of what wins here; ${x.att.toFixed(1)} ${x.c === "PUTT" ? "putts" : x.c === "ARG" ? "chips and pitches" : "approaches"} a round from there): ${nameS} `, el("b", { class: cls(x.me) }, x.me == null ? "not enough shots" : `${sg3(x.me)} a shot`), `, the top 10 there ${sg3(x.top)} (strokes gained a shot)`])),
+        el("li", {}, fit.hereRds ? `${fit.hereRds} rounds there on record` : "No rounds there on record")]), goFit,
+      samp(`Room to gain: the field's spread in each part there against a normal week (stats file). Distances: every round on record at ${meta.name} (${yrsT}, ${C.nRds} rounds), the top 10 against the rest`)]);
+  };
+  // Change: the schedule's coming events first, then any tournament on record
+  const pickEvent = (ev) => {
+    const row = (n, sub, pickName) => { const b = el("button", { type: "button", class: `ip-evrow${n === ev.name ? " on" : ""}` }, [el("b", {}, n), sub ? el("span", {}, sub) : null]); b.addEventListener("click", () => { PI.setPickedNext(key, pickName); close(); drawFit(); }); return b; };
+    const fmt = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "");
+    const code = PI.tourCodeOf(tour), entered = (PI.fieldEventsSync(name, code) || []).map((e) => e.name);
+    const isIn = (n) => entered.some((x) => x === n || PI.matchEventName(x, [n]));
+    const close = popup("Preparing for", [
+      ev.upcoming.length ? el("p", { class: "cf-sub" }, "Coming up on the schedule") : null,
+      ev.upcoming.length ? el("div", { class: "ip-evlist" }, [row(`Next: ${ev.upcoming[0].name}`, fmt(ev.upcoming[0].start), null), ...ev.upcoming.slice(0, 14).map((e) => row(e.name, `${fmt(e.start)}${e.course ? ` · ${e.course}` : ""}${isIn(e.name) ? ` · ✓ ${nameS} entered` : ""}`, e.name))]) : null,
+      el("p", { class: "cf-sub" }, "Any tournament on record"),
+      el("div", { class: "ip-evlist" }, names.map((n) => row(n, null, n)))], `Next event fit · ${name}`);
+  };
+  drawFit();
 }
 
 /** (update 820) a row that opens something: a tap, or Enter */

@@ -293,7 +293,7 @@ export function steadyBox(S, slicedField) {
     return { p, x: vals.reduce((t, v) => t + v, 0) / vals.length, y: S.sdOf(vals) }; }).filter((o) => o && o.y != null); };
   const pts = ptsOf(k);
   const yrs = [...new Set(P.flatMap((p) => p.rounds.map((rd) => String(rd.year || String(rd.date || "").slice(0, 4)))))].filter(Boolean).sort(), yrT = !yrs.length ? "" : yrs.length === 1 ? yrs[0] : `${yrs[0]}–${yrs.at(-1).slice(2)}`;
-  const tip = infoTip("Each dot is a player with 8 or more rounds: their strokes gained a round across, and how much their rounds swing from one to the next up (lower is steadier). The dashed lines are the middle of the field: bottom-right is good and steady.");
+  const tip = infoTip("Each dot is a player with 8 or more rounds: their strokes gained a round across, and how much their rounds swing from one to the next up (lower is steadier). The dashed lines are the middle of the field: bottom-right is Good and Steady.");
   const nmK0 = cats.find(([c]) => c === k)[1];
   const box = (body) => el("section", { class: "panel sg-box full sv-box" }, [el("h3", { class: "sv-h" }, [`Ability vs Consistency · ${k === "TOTAL" ? "SG: Total" : nmK0}${yrT ? ` · ${yrT} only` : ""}`, tip]), ...body]);
   const mine = pts.find((o) => o.p.key === S.me.key);

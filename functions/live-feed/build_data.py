@@ -98,6 +98,15 @@ def sync_event(tour, ev, today):
     if not needs_refresh(existing, ev, today, stats_sig(tour)):
         return existing
     print(f"Fetching {tour} {ev['year']} {ev['t_num']} {ev['name']} ...", flush=True)
+    # (update 300) a tournament in progress: the rounds before its latest one are over, so their API responses are
+    # reused from the last run (kept in _cache/) and only the latest round (and any new one) is downloaded again
+    cache_f = OUT / "_cache" / f"{tour}-{ev['year']}-{ev['t_num']}.json"
+    latest = (existing or {}).get("latest_round") or 0
+    live_now = is_recent(ev, today)
+    pga.FINAL_ROUNDS = set(range(1, int(latest))) if latest and live_now else set()
+    pga.RAW_CACHE = (read(cache_f) or {}) if live_now else {}
+    pga.RAW_STATS.update(hits=0, new=0)
+    pga.RECORDING[0] = live_now
     try:
         recent = is_recent(ev, today)
         bundle = pga.build_event_bundle(ev["t_num"], ev["year"], t_code=tour, prefer="live" if recent else "synd",
@@ -107,6 +116,19 @@ def sync_event(tour, ev, today):
         bundle = {"fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "t_num": ev["t_num"],
                   "year": ev["year"], "source": None, "latest_round": None, "rounds": {}, "event": None,
                   "stats": [], "stats_sig": stats_sig(tour), "partial": True, "error": f"{type(e).__name__}: {e}"}
+    pga.RECORDING[0] = False
+    if live_now:
+        if pga.FINAL_ROUNDS:
+            print(f"  finished rounds {sorted(pga.FINAL_ROUNDS)}: {pga.RAW_STATS['hits']} responses reused")
+        # keep the responses of every round before the latest one now in (those rounds are over)
+        done = set(range(1, int(bundle.get("latest_round") or 0)))
+        keep = {k: v for k, v in pga.RAW_CACHE.items() if pga._round_of(dict(x.split("=", 1) for x in k.split("?", 1)[1].split("&") if "=" in x)) in done}
+        if keep and keep != (read(cache_f) or {}):
+            write(cache_f, keep)
+        for old_f in (OUT / "_cache").glob(f"{tour}-*.json"):          # other tournaments' copies aren't needed
+            if old_f != cache_f:
+                old_f.unlink()
+    pga.FINAL_ROUNDS, pga.RAW_CACHE = set(), {}
     if bundle.get("rounds") and CHECKS_MODE != "off":
         checks.annotate_thru(bundle)
         res = checks.validate(bundle, stats_for(tour))
@@ -219,6 +241,111 @@ def prune_legacy():
             p.unlink()
 
 
+# (update 824) official results (results/{tour}-{year}.json), who's entered in the coming events (fields.json) and player bios
+# (bios.json), for the portal. Kept between runs: a finished event's results are fetched once; a run fetches at most a set
+# number of new things (the first runs fill in the past seasons over a few runs), and anything that fails is tried next run.
+BUDGET = {"left": int(os.getenv("EXTRAS_BUDGET", "120"))}
+
+
+def _spend():
+    if BUDGET["left"] <= 0:
+        return False
+    BUDGET["left"] -= 1
+    return True
+
+
+def api_extras(today, sched_rows):
+    """sched_rows: {tour: [schedule rows, this year and next]}"""
+    seen_pids = {}
+    for tour in TOURS:
+        for year in (today.year - 1, today.year):
+            path = OUT / "results" / f"{tour}-{year}.json"
+            have = read(path) or {"tour": tour, "year": year, "events": {}}
+            evs = have.setdefault("events", {})
+            rows = [r for r in sched_rows.get(tour, []) if r.get("year") == year]
+            if not rows and year < today.year:
+                try:
+                    rows = pga.schedule_rows(year, tour)
+                except Exception as e:
+                    print(f"  {tour} {year} schedule: {type(e).__name__}: {e}", file=sys.stderr)
+            changed = False
+            for ev in rows:
+                tid, st = ev.get("t_id"), ev.get("start")
+                if not tid or not st or st > str(today):
+                    continue
+                old = evs.get(tid)
+                if old and old.get("final"):
+                    continue
+                if not _spend():
+                    break
+                try:
+                    lb = pga.get_leaderboard(tid)
+                except Exception as e:
+                    print(f"  results {tid}: {type(e).__name__}: {e}", file=sys.stderr)
+                    continue
+                if not lb:
+                    continue
+                end = ev.get("end") or st
+                evs[tid] = {"name": ev["name"], "t_num": ev.get("t_num"), "start": st, "end": end, "course": ev.get("course"),
+                            "final": end < str(today - timedelta(days=2)), "rows": lb}
+                changed = True
+            for e in evs.values():
+                for r in e.get("rows", []):
+                    if r.get("pid"):
+                        seen_pids[r["pid"]] = r.get("name")
+            if changed:
+                write(path, have)
+        # who's entered: the events starting within three weeks (or under way)
+    fields = read(OUT / "fields.json") or {"tours": {}}
+    ft, fchanged = fields.setdefault("tours", {}), False
+    soon, began = str(today + timedelta(days=21)), str(today - timedelta(days=4))
+    for tour in TOURS:
+        cur = ft.setdefault(tour, {})
+        for ev in sched_rows.get(tour, []):
+            st, tid = ev.get("start"), ev.get("t_id") or f"{tour}{ev.get('year')}{ev.get('t_num')}"
+            if not st or st > soon or (ev.get("end") or st) < began or not ev.get("t_num"):
+                continue
+            if not _spend():
+                break
+            try:
+                players = pga.get_field(ev["year"], ev["t_num"], tour)
+            except Exception as e:
+                print(f"  field {tid}: {type(e).__name__}: {e}", file=sys.stderr)
+                continue
+            if players and (cur.get(tid) or {}).get("players") != players:
+                cur[tid] = {"name": ev["name"], "year": ev["year"], "t_num": ev["t_num"], "start": st, "end": ev.get("end"), "course": ev.get("course"), "players": players}
+                fchanged = True
+            for p in players:
+                if p.get("pid"):
+                    seen_pids[p["pid"]] = p.get("name")
+        for k in [k for k, v in cur.items() if (v.get("end") or v.get("start") or "") < began]:   # finished events drop off
+            del cur[k]
+            fchanged = True
+    if fchanged:
+        fields["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        write(OUT / "fields.json", fields)
+    # bios: everyone in the fields and results, fetched once and refreshed every 30 days
+    bios = read(OUT / "bios.json") or {"players": {}}
+    bp, bchanged, stale = bios.setdefault("players", {}), False, str(today - timedelta(days=30))
+    # (the players in the coming fields first, then everyone else)
+    order = sorted(seen_pids, key=lambda pid: 0 if any(any(p.get("pid") == pid for p in v.get("players", [])) for t in ft.values() for v in t.values()) else 1)
+    for pid in order:
+        if (bp.get(pid) or {}).get("at", "") >= stale:
+            continue
+        if not _spend():
+            break
+        try:
+            b = pga.get_bio(pid)
+        except Exception as e:
+            print(f"  bio {pid}: {type(e).__name__}: {e}", file=sys.stderr)
+            continue
+        bp[pid] = {**(b or {"name": seen_pids[pid]}), "at": str(today)}
+        bchanged = True
+    if bchanged:
+        write(OUT / "bios.json", bios)
+    print(f"  extras: {int(os.getenv('EXTRAS_BUDGET', '120')) - BUDGET['left']} API calls")
+
+
 def main():
     today = pga.today()
     write(OUT / "players.json", pga.load_players())
@@ -248,6 +375,26 @@ def main():
     if len(failed) == len(TOURS):
         raise RuntimeError("could not determine the current event for any tour")
     prune_legacy()
+    # (update 823) the schedule (this year and next, each tour), for the portal's next event; written only when it changes
+    try:
+        sched = {}
+        for tour in TOURS:
+            rows = []
+            for y in (today.year, today.year + 1):
+                try:
+                    rows += pga.schedule_rows(y, tour)
+                except Exception as e:      # next year's schedule may not be out yet
+                    print(f"  {tour} {y} schedule: {type(e).__name__}: {e}", file=sys.stderr)
+            sched[tour] = sorted(rows, key=lambda r: r.get("start") or "9999")
+        if any(sched.values()) and (read(OUT / "schedule.json") or {}).get("tours") != sched:
+            write(OUT / "schedule.json", {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tours": sched})
+    except Exception as e:
+        print(f"schedule not written: {type(e).__name__}: {e}", file=sys.stderr)
+        sched = {}
+    try:
+        api_extras(today, sched)
+    except Exception as e:                         # results, fields and bios must never stop the live feed
+        print(f"results / fields / bios not written: {type(e).__name__}: {e}", file=sys.stderr)
     prev = read(OUT / "current.json") or {}
     if prev.get("tours") != entries:                # rewriting an identical file would make every run commit and deploy
         write(OUT / "current.json", {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tours": entries})

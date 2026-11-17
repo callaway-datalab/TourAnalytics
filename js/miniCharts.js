@@ -18,8 +18,8 @@ export function scatterSvg(pts, { xLab = "Average", yLab = "Round-to-round swing
   svg.append(mk("rect", { x: L, y: T, width: W - L - R, height: H - T - B, class: "mc-frame" }));
   svg.append(mk("line", { x1: px(mx), x2: px(mx), y1: T, y2: H - B, class: "mc-mid" }), mk("line", { x1: L, x2: W - R, y1: py(my), y2: py(my), class: "mc-mid" }));
   const good = higherBetter ? W - R - 4 : L + 4, bad = higherBetter ? L + 4 : W - R - 4, anc = (x) => (x > W / 2 ? "end" : "start");
-  svg.append(mk("text", { x: good, y: T + 11, "text-anchor": anc(good), class: "mc-q" }, "good, streaky"), mk("text", { x: good, y: H - B - 5, "text-anchor": anc(good), class: "mc-q mc-q-best" }, "good and steady"),
-    mk("text", { x: bad, y: T + 11, "text-anchor": anc(bad), class: "mc-q" }, "struggling, streaky"), mk("text", { x: bad, y: H - B - 5, "text-anchor": anc(bad), class: "mc-q" }, "steady, below par"));
+  svg.append(mk("text", { x: good, y: T + 11, "text-anchor": anc(good), class: "mc-q" }, "Good but Streaky"), mk("text", { x: good, y: H - B - 5, "text-anchor": anc(good), class: "mc-q mc-q-best" }, "Good and Steady"),
+    mk("text", { x: bad, y: T + 11, "text-anchor": anc(bad), class: "mc-q" }, "Struggling and Streaky"), mk("text", { x: bad, y: H - B - 5, "text-anchor": anc(bad), class: "mc-q" }, "Struggling but Steady"));
   for (const p of [...P].sort((a, b) => (a.hot ? 1 : 0) - (b.hot ? 1 : 0))) {
     const c = mk("circle", { cx: px(p.x).toFixed(1), cy: py(p.y).toFixed(1), r: p.hot ? 5 : 2.6, class: p.hot ? "mc-dot hot" : "mc-dot" }); c.append(mk("title", {}, `${p.label}: ${fmtX(p.x)}, ${fmtY(p.y)}`)); svg.append(c);
     if (p.hot) svg.append(mk("text", { x: (px(p.x) + (px(p.x) > W - 90 ? -8 : 8)).toFixed(1), y: (py(p.y) + 4).toFixed(1), "text-anchor": px(p.x) > W - 90 ? "end" : "start", class: "mc-name" }, p.label));

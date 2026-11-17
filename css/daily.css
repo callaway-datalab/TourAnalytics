@@ -617,3 +617,13 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
 .td-sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: 0; }
 .td-sw.m-a { background: #0a84ff; } .td-sw.m-b { background: #ff9f0a; } .td-sw.m-c { background: #bf5af2; } .td-sw.m-d { background: #64d2ff; } .td-sw.m-e { background: #ff375f; } .td-sw.m-f { background: #ffd60a; } .td-sw.m-o { background: var(--td-mute); }
 .td-gear .td-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+/* (update 823) Next event fit: Change */
+.ip-fit-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.ip-btn.ip-chg { padding: 4px 12px; min-height: 30px; font-size: 0.76rem; }
+.ip-fit-course { margin-top: 6px; }
+.ip-evlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; margin-bottom: 10px; }
+.ip-evrow { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--ip-rule); background: transparent; color: var(--ip-ink); cursor: pointer; font: 500 0.84rem var(--font-body, Inter, system-ui, sans-serif); }
+.ip-evrow span { font-size: 0.72rem; color: var(--ip-mute); } .ip-evrow:hover, .ip-evrow.on { border-color: var(--ip-gold); }
+.ip-bio { margin: 4px 0 0; font-size: 0.82rem; color: var(--ip-mute); }
+.cf-tag.cf-in { color: var(--ip-up); border-color: color-mix(in srgb, var(--ip-up) 50%, transparent); }
+.td-today-ent { margin: 2px 0 6px; font: 600 0.78rem var(--td-sans); color: var(--td-up); }

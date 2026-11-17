@@ -37,10 +37,10 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
     const year = [...new Set(rounds.filter((r) => !tour || r.tour === tour).map(PI.yrOf))].sort().at(-1), P = PI.profile(rounds, { year, tour, field, key });
     // (update 820) the event they're preparing for: the next one, or the one picked (kept per player on this device)
     const { evs: EV } = PI.eventRoom(field, tour), names = EV.map((e) => e.name).sort((a, b) => a.localeCompare(b));
-    const NK = `ta.nextEvent|${key}`; let evPick = null; try { evPick = localStorage.getItem(NK); } catch { /* */ }
-    if (!names.includes(evPick)) evPick = names.find((n) => PI.NEXT.re.test(n)) || names[0] || null;
-    const E = EV.find((e) => e.name === evPick) || null, room = (c) => (E ? E.room[c] : 1);
-    const heat = await heatP, meta = (heat || []).filter((c) => c.rawChunks).find((c) => (c.events || []).some((e) => PI.evName(e.name).toLowerCase() === String(evPick || "").toLowerCase())) || null;
+    // (update 823) the schedule's next event on their tour, or the one picked here or with Overview's Change (shared)
+    const nx = await PI.nextEventFor(key, tour, names, name), evPick = nx.name, stName = evPick ? PI.matchEventName(evPick, names) : null;
+    const E0 = EV.find((e) => e.name === stName) || null, E = E0 ? { ...E0, name: evPick } : null, room = (c) => (E ? E.room[c] : 1);
+    const heat = await heatP, meta = PI.heatCourseFor(heat, nx);
     const C = meta ? await PI.loadCourse(meta, [P.rs]).catch(() => null) : null; if (!alive) return;
     const fit = C ? PI.fitFor(P, C, key, name) : null, courseR = fit?.key3.find((x) => x.c !== "OTT" && x.top != null && (x.me == null || x.me < x.top));
     // current form: each range over the last 12 rounds (the DP World Tour: 3 events), strokes gained a round
@@ -54,7 +54,11 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
     const plan = cand.filter((o) => o.stake > 0).sort((a, b) => b.stake - a.stake).slice(0, size - 1);
     const keep = formR.filter((o) => o.rd > 0 && !seen.has(`${o.c}|${o.d}`)).sort((a, b) => b.rd * room(b.c) - a.rd * room(a.c))[0];
     if (keep && plan.length < size) plan.push({ c: keep.c, d: keep.d, stake: 0, why: `Keep it sharp: +${keep.rd.toFixed(2)} strokes gained a round over the last ${fl} (${Math.round(keep.n)} shots)${E && room(keep.c) > 1.03 ? `, and ${PI.CATN[keep.c].toLowerCase()} has ${room(keep.c).toFixed(2)}× the usual room to gain at ${theE(E.name)}` : ""}`, tone: "pos" });
-    const evSel = names.length ? (() => { const sel = el("select", { class: "ip-sel", "aria-label": "Preparing for" }, names.map((n) => el("option", { value: n }, n))); sel.value = evPick; sel.addEventListener("change", () => { try { localStorage.setItem(NK, sel.value); } catch { /* */ } draw(); }); return el("label", { class: "rp-ev" }, [el("span", {}, "Preparing for"), sel]); })() : null;
+    // the choices: what's coming up on the schedule, then any tournament on record
+    const up = nx.upcoming.map((e) => e.name), opts = [...new Set([...up, ...names])], fmt = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "");
+    const evSel = opts.length ? (() => { const og = (lbl, xs, f) => (xs.length ? el("optgroup", { label: lbl }, xs.map((n) => el("option", { value: n }, f(n)))) : null);
+      const sel = el("select", { class: "ip-sel", "aria-label": "Preparing for" }, [el("option", { value: "" }, up[0] ? `Next on the schedule (${up[0]})` : "The next event"), og("Coming up", up, (n) => { const e = nx.upcoming.find((x) => x.name === n); return `${n}${e?.start ? ` · ${fmt(e.start)}` : ""}`; }), og("Any tournament on record", names.filter((n) => !up.includes(n)), (n) => n)]);
+      sel.value = PI.pickedNext(key) || ""; sel.addEventListener("change", () => { PI.setPickedNext(key, sel.value || null); draw(); }); return el("label", { class: "rp-ev" }, [el("span", {}, "Preparing for"), sel]); })() : null;
     const week = plan.slice(0, size).map((p, i) => { const label = `${AREA[p.c]} · ${p.d}`, kind = PS.TARGET_KIND(p.c, label), goal = PS.TARGET_DEF(kind, label);
       return { ...p, n: i + 1, label, item: { key: `${p.c}|${p.d}`, cat: p.c, label, mode: "sets", shots: 10, sets: 3, minutes: 15, setsDone: 0, secs: 0, done: false, target: { kind, goal, reps: 10, cat: p.c, unit: kind === "prox" ? "ft" : null } },
         target: PL.goalText({ kind, goal, reps: 10, unit: kind === "prox" ? "ft" : null, cat: p.c }) }; });
@@ -68,7 +72,7 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
       catch (e) { console.warn(e); send.disabled = false; mount(msg, e?.code === "permission-denied" ? "Not allowed: ask the admin to tick COACHING for you on User Access." : "Couldn't send it just now."); } });
     const sessions = el("div", { class: "ip-week" }, week.map((w) => el("section", { class: "ip-sess", style: `--ipc:${toneC[w.tone]}` }, [el("p", { class: "ip-day" }, w.n === 1 ? "1 · Most important" : String(w.n)), el("h3", { class: "ip-h3" }, `${what(w.c)} from ${w.d}`), el("p", {}, `3 sets of 10. ${w.target}.`), el("p", { class: "ip-why" }, w.why)])));
     const working = card("Is the practice working?", "#d4b483", el("p", { class: "muted" }, "Checking the practice plan…"));
-    mount(wrap, [el("header", { class: "ip-head" }, [el("div", {}, [el("p", { class: "ip-kick", style: "color:#ffcc00" }, `Recommended practice · current form · ${tour || ""} ${year}`), el("h2", { class: "ip-h" }, `${last}’s recommended practice`), el("p", { class: "muted" }, `${week.length} sessions, most at stake first${E ? `, for ${theE(E.name)}` : ""}`)]), el("div", { class: "ip-ctl" }, [evSel, sizeT, send])]), msg,
+    mount(wrap, [el("header", { class: "ip-head" }, [el("div", {}, [el("p", { class: "ip-kick", style: "color:#ffcc00" }, `Recommended practice · current form · ${tour || ""} ${year}`), el("h2", { class: "ip-h" }, `${last}’s recommended practice`), el("p", { class: "muted" }, `${week.length} sessions, most at stake first${evPick ? `, for ${theE(evPick)}` : ""}${evPick && !E ? " (not in the stats file yet: by current form alone)" : ""}`)]), el("div", { class: "ip-ctl" }, [evSel, sizeT, send])]), msg,
       week.length ? sessions : el("p", { class: "muted" }, "Not enough recent shots by distance to recommend practice yet."), working,
       card("How it's built", "#8e8e93", el("ol", { class: "ip-bul" }, [el("li", {}, `Current form: each distance range over the last ${fl}, strokes gained a round (10+ shots in it)`), el("li", {}, "Weighted by the room to gain in its part of the game at the event picked above (Course Fit): more room, more at stake"), el("li", {}, "A course with its shots in Strategy Maps adds the range that decides it, when they're short of the top 10's level there"), el("li", {}, "Most at stake first; then one strength to keep sharp. Each target is the practice page's own: change any of it there after sending")]))]);
     // is the practice working: ranges practised in sessions made 2+ weeks ago, tournament shots before and after

@@ -488,6 +488,21 @@ export function panelBox(S, title, content, size = "") {
 /* (update 761) Best & worst tournaments: each tournament in the selection, strokes gained a round in total and in each part of
    the game, best to worst; the best 3 and worst 3 averaged, and the part of the game that differs most between them (what
    drives the good weeks). Home's "What wins" story is this table with the season picked. */
+// (update 824) the official results (the live feed saves them): loaded once, then the table is drawn again with them
+let PIres = null, PIwant = new Set();
+function officialBest(S, r) {
+  const who = S.me?.label; if (!who) return null;
+  const code = { PGA: "R", "PGA TOUR": "R", R: "R", KFT: "H", "Korn Ferry": "H", H: "H" }[String(r.rs[0]?.tour || "PGA")] || (/korn|kft/i.test(String(r.rs[0]?.tour)) ? "H" : /dp|euro/i.test(String(r.rs[0]?.tour)) ? null : "R");
+  if (!code) return null;
+  const yrs = [...r.yrs];
+  if (!PIres) { const k = `${code}|${yrs.join(",")}`; if (!PIwant.has(k)) { PIwant.add(k); import("./playerInsights.js").then((m) => m.ensureResults(code, yrs).then(() => { PIres = m; S.draw(); })).catch(() => {}); } return null; }
+  if (yrs.some((y) => !PIwant.has(`${code}|${y}`))) { yrs.forEach((y) => PIwant.add(`${code}|${y}`)); PIres.ensureResults(code, yrs).then(() => S.draw()).catch(() => {}); }
+  const fins = yrs.map((y) => PIres.officialSync(r.name, y, who, code)).filter((o) => o?.pos);
+  if (!fins.length) return null;
+  const num = (p) => { const m = /\d+/.exec(String(p)); return m ? Number(m[0]) : 999; };
+  const best = fins.sort((a, b) => num(a.pos) - num(b.pos))[0];
+  return PIres.posText(best.pos);
+}
 export function bestWorstBox(S, mine) {
   // (update 820) one row a tournament at a course, every season picked together (the PGA Championship moves: a row for
   // each course it was played on); the Course column says where, the Years column when
@@ -507,14 +522,14 @@ export function bestWorstBox(S, mine) {
   const cell = (v, strong) => el("td", { class: `num ${cls(v)}${strong ? " strong" : ""}` }, fmtSG(v));
   // (update 765) a tournament opens in Tournament Results
   const open = (r) => { S.st.view2 = "results"; S.st.resKey = r.last || r.key; S.st.resRound = null; S.st.resHole = null; S.draw(); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const body = rows.map((r, i) => el("tr", { class: `bw-row${top.includes(r) ? " bw-top" : bot.includes(r) ? " bw-bot" : ""}${full(r) ? "" : " bw-one"}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "bw-course" }, r.course || "—"), el("td", { class: "muted" }, [...r.yrs].sort().map((y) => `'${y.slice(2)}`).join(", ")), el("td", { class: "num muted", title: full(r) ? null : "One round on record: not counted in the best or worst 3" }, full(r) ? String(r.rs.length) : `${r.rs.length}*`), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
+  const body = rows.map((r, i) => el("tr", { class: `bw-row${top.includes(r) ? " bw-top" : bot.includes(r) ? " bw-bot" : ""}${full(r) ? "" : " bw-one"}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "bw-course" }, r.course || "—"), el("td", { class: "muted" }, [...r.yrs].sort().map((y) => `'${y.slice(2)}`).join(", ")), el("td", { class: "num bw-fin" }, officialBest(S, r) || "—"), el("td", { class: "num muted", title: full(r) ? null : "One round on record: not counted in the best or worst 3" }, full(r) ? String(r.rs.length) : `${r.rs.length}*`), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
   const lead = diff[0];
   const foot = [
-    el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, a round"), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
-    el("tr", { class: "bw-sum" }, [el("td", {}, "Worst 3, a round"), el("td", {}), el("td", {}), el("td", {}), cell(mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).b))]),
-    el("tr", { class: "bw-sum bw-diff" }, [el("td", {}, "Difference"), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot) - mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => { const x = diff.find((y) => y.c === c); return el("td", { class: `num ${x === lead ? "bw-lead" : ""}` }, fmtSG(x.d)); })])];
+    el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, a round"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
+    el("tr", { class: "bw-sum" }, [el("td", {}, "Worst 3, a round"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).b))]),
+    el("tr", { class: "bw-sum bw-diff" }, [el("td", {}, "Difference"), el("td", {}), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot) - mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => { const x = diff.find((y) => y.c === c); return el("td", { class: `num ${x === lead ? "bw-lead" : ""}` }, fmtSG(x.d)); })])];
   return S.panelBox("Best & worst tournaments", [
     infoTip("Each tournament in the selection: strokes gained a round, best to worst. A week with only one round on record (marked *) is listed but not counted in the best or worst 3. The best 3 (green) and worst 3 (red) are averaged at the bottom: the part of the game with the biggest difference is what drives the good weeks. Change the season or tour in Filters to see it for another stretch."),
     el("p", { class: "small" }, [el("strong", {}, `${lead.l === "Around" ? "Around-the-Green" : lead.l} drives the good weeks`), `: ${fmtSG(lead.a)} a round in the best 3, ${fmtSG(lead.b)} in the worst 3 (${fmtSG(lead.d)}).`]),
-    el("div", { class: "table-scroll" }, el("table", { class: "plain bw-t" }, [el("thead", {}, el("tr", {}, ["Tournament", "Course", "Years", "Rds", "Total", ...CATS.map(([, l]) => l)].map((x, i) => el("th", { class: i > 2 ? "num" : null }, x)))), el("tbody", {}, body), el("tfoot", {}, foot)]))], "full");
+    el("div", { class: "table-scroll" }, el("table", { class: "plain bw-t" }, [el("thead", {}, el("tr", {}, ["Tournament", "Course", "Years", "Best finish", "Rds", "Total", ...CATS.map(([, l]) => l)].map((x, i) => el("th", { class: i > 2 ? "num" : null }, x)))), el("tbody", {}, body), el("tfoot", {}, foot)]))], "full");
 }

@@ -59,7 +59,45 @@ def _fixture_file(folder, path, params):
     return Path(folder) / f"{stem}_{hashlib.sha1(key.encode()).hexdigest()[:16]}.json"
 
 
+# (update 300) Rounds that are over don't change: build_data marks them in FINAL_ROUNDS and passes RAW_CACHE (their
+# responses kept from earlier runs), so a refresh only downloads the round in progress (and anything new).
+FINAL_ROUNDS: set = set()
+RAW_CACHE: dict = {}
+RAW_STATS = {"hits": 0, "new": 0}
+RECORDING = [False]                    # (on while build_data fetches a tournament in progress)
+
+
+def _round_of(params):
+    v = params.get("R_ID", params.get("R_NUM"))
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _get(path: str, **params):
+    rnd = _round_of(params)
+    if rnd is None or not RECORDING[0]:
+        return _get_net(path, **params)
+    key = path + "?" + "&".join(f"{k}={params[k]}" for k in sorted(params))
+    if rnd in FINAL_ROUNDS and key in RAW_CACHE:
+        RAW_STATS["hits"] += 1
+        hit = RAW_CACHE[key]
+        if isinstance(hit, dict) and "__error__" in hit:   # (this endpoint had nothing for that round: still nothing)
+            raise LookupError(hit["__error__"])
+        return hit
+    try:
+        out = _get_net(path, **params)
+    except Exception as e:
+        if not _is_transient(e):       # a real "no data" answer (not a timeout or rate limit) is remembered too
+            RAW_CACHE[key] = {"__error__": f"{type(e).__name__}: {e}"[:300]}
+        raise
+    RAW_CACHE[key] = out               # (kept afterwards only if this round turns out to be finished)
+    RAW_STATS["new"] += 1
+    return out
+
+
+def _get_net(path: str, **params):
     """PGA_RECORD_DIR=dir saves every API response as a file; PGA_REPLAY_DIR=dir serves them back with no network or token.
     Record during a live round (one folder per snapshot), then replay each folder through build_data.py to test the pipeline."""
     replay = os.getenv("PGA_REPLAY_DIR")
@@ -1099,6 +1137,106 @@ def list_tournaments(year: int = None, t_code: str = "R") -> dict:
     rows.sort(key=lambda r: r["start"] or r["end"] or "9999", reverse=True)   # newest first (no dates = treated as newest, so it is visible)
     cur = find_tournament("current", year, t_code)
     return {"current": cur.get("t_num"), "items": rows}
+
+
+# (update 823) the whole schedule, for the portal's "next event" (Overview's Next Event Fit, Recommended Practice): every
+# event of the year with its dates and host course. The course is the one marked host_course "1" in its courses (else the
+# first), as the schedule lists it. The Masters is called "The Masters" whatever the schedule says.
+_COURSE_NAME_KEYS = ["course_name", "name", "Course_Name", "courseName", "course"]
+
+
+def schedule_rows(year: int = None, t_code: str = "R") -> list:
+    year = year or today().year
+    out = []
+    for t in get_schedule(year, t_code):
+        if not isinstance(t, dict):
+            continue
+        courses = t.get("courses") or []
+        if isinstance(courses, dict):
+            courses = next((v for v in courses.values() if isinstance(v, list)), [courses])
+        if not courses:
+            continue  # (as the schedule's own use: events without courses aren't real events)
+        host = next((c for c in courses if str(c.get("host_course", "")) == "1"), courses[0]) if isinstance(courses[0], dict) else {}
+        name = str(_first(t, _NAME_KEYS) or "").strip()
+        if "masters" in name.lower():
+            name = "The Masters"
+        st, en = _to_date(_first(t, _START_KEYS)), _to_date(_first(t, _END_KEYS))
+        out.append({"t_num": _tnum(t), "t_id": str(t.get("T_ID") or "") or None, "name": name, "year": year, "start": str(st) if st else None, "end": str(en) if en else None,
+                    "course": (_first(host, _COURSE_NAME_KEYS) or None) if host else None,
+                    "course_num": str(host.get("number")) if host and host.get("number") not in (None, "") else None})
+    return [r for r in out if r["name"]]
+
+
+# (update 824) Official results, who's in the field, and player bios, for the portal (Course Fit's finishes, the next event a
+# player is entered in, the Overview's facts line). Each is read leniently: an answer in an unexpected shape gives nothing.
+def _as_list(v):
+    if isinstance(v, list):
+        return v
+    if isinstance(v, dict):
+        inner = next((x for x in v.values() if isinstance(x, list)), None)
+        return inner if inner is not None else [v]
+    return []
+
+
+def get_leaderboard(t_id: str) -> list:
+    """[{pid, name, pos, total}] for a tournament (T_ID like R2026006); [] before it's played."""
+    data = _get("/SyndLeaderboard/1.0.0/", format="json", T_ID=t_id)
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    rows = _as_list((data or {}).get("leaderboard"))
+    out = []
+    for r in rows:
+        if not isinstance(r, dict) or r.get("maxrnd") in (None, ""):
+            continue  # (as the portal's own scrape: rows without rounds played aren't results)
+        tot = r.get("total")
+        tot = 0 if str(tot).strip().upper() == "E" else _num(tot)
+        pid = r.get("p_id") or r.get("pid")
+        out.append({"pid": str(pid) if pid not in (None, "") else None, "name": str(r.get("name") or "").strip(),
+                    "pos": str(r.get("position") or "").strip(), "total": tot})
+    return out
+
+
+def get_field(year: int, t_num: str, t_code: str = "R") -> list:
+    """[{pid, name}] of the players entered in a tournament."""
+    data = _get("/SyndTournamentField/1.0.0/", YEAR=year, format="json", T_CODE=t_code, T_NUM=t_num)
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    tour = (data or {}).get("Tournament") or {}
+    out = []
+    for p in _as_list(tour.get("Players")):
+        if not isinstance(p, dict):
+            continue
+        nm = f"{p.get('PlayerFirstName') or ''} {p.get('PlayerLastName') or ''}".strip()
+        pid = p.get("TournamentPlayerId") or p.get("PlayerId")
+        if nm:
+            out.append({"pid": str(pid) if pid not in (None, "") else None, "name": nm})
+    return out
+
+
+def get_bio(pid) -> dict:
+    """{name, birth, age, pro, tour, money, since} for a player id; {} when there's no bio."""
+    data = _get("/SyndPlayerBio/1.0.0/", format="json", P_ID=int(pid))
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    plr = (data or {}).get("plr")
+    plr = plr[0] if isinstance(plr, list) and plr else plr
+    if not isinstance(plr, dict):
+        return {}
+    nm = plr.get("name") or {}
+    first = nm.get("first") if isinstance(nm, dict) else plr.get("name.first")
+    last = nm.get("last") if isinstance(nm, dict) else plr.get("name.last")
+    money = None
+    try:
+        money = float(str(plr.get("combTourMoney") or "").replace("$", "").replace(",", "")) or None
+    except ValueError:
+        money = None
+    since = None
+    for j in _as_list(plr.get("joinedTours")):
+        if isinstance(j, dict) and j.get("tour") == plr.get("primaryTour"):
+            since = _num(j.get("seasonId"))
+            break
+    return {"name": f"{first or ''} {last or ''}".strip(), "birth": plr.get("birthDate") or None, "age": _num(plr.get("age")),
+            "pro": _num(plr.get("trndProYear")), "tour": plr.get("primaryTour") or None, "money": money, "since": since}
 
 
 if __name__ == "__main__":
