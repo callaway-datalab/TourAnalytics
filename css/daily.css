@@ -604,3 +604,16 @@ li.is-cur, .lv-row.is-cur, .lb-row.is-cur, .ti-row.is-cur, .is-cur-cell { backgr
 /* (update 820) Home: "Show more" under Form, Player Spotlight, Where to Improve and Results & Milestones */
 .td-more-btn { border: 1px solid var(--td-rule2); background: transparent; color: var(--td-ink); border-radius: 999px; padding: 6px 16px; font: 600 0.8rem var(--td-sans); cursor: pointer; }
 .td-more-btn:hover { border-color: var(--td-gold); color: var(--td-gold); }
+/* (update 821) Equipment: full width, two a row; every model its own colour */
+.td-gear2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; }
+.td-gear2 > .td-gear { margin: 0; }
+@media (max-width: 860px) { .td-gear2 { grid-template-columns: 1fr; } }
+.td-bars .td-bar.m-c { fill: #bf5af2; opacity: 0.95; } .td-bars .td-bar.m-d { fill: #64d2ff; opacity: 0.95; } .td-bars .td-bar.m-e { fill: #ff375f; opacity: 0.9; } .td-bars .td-bar.m-f { fill: #ffd60a; opacity: 0.9; }
+.td-legend .m-c::before { background: #bf5af2; } .td-legend .m-d::before { background: #64d2ff; } .td-legend .m-e::before { background: #ff375f; } .td-legend .m-f::before { background: #ffd60a; } .td-legend .m-o::before { background: var(--td-mute); }
+html[data-theme="light"] .td-bars .td-bar.m-c, html[data-theme="light"] .td-legend .m-c::before { fill: #8e3fc0; background: #8e3fc0; }
+html[data-theme="light"] .td-bars .td-bar.m-d, html[data-theme="light"] .td-legend .m-d::before { fill: #1a7fa8; background: #1a7fa8; }
+html[data-theme="light"] .td-bars .td-bar.m-e, html[data-theme="light"] .td-legend .m-e::before { fill: #c2183f; background: #c2183f; }
+html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-legend .m-f::before { fill: #a07c00; background: #a07c00; }
+.td-sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: 0; }
+.td-sw.m-a { background: #0a84ff; } .td-sw.m-b { background: #ff9f0a; } .td-sw.m-c { background: #bf5af2; } .td-sw.m-d { background: #64d2ff; } .td-sw.m-e { background: #ff375f; } .td-sw.m-f { background: #ffd60a; } .td-sw.m-o { background: var(--td-mute); }
+.td-gear .td-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }

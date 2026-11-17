@@ -256,9 +256,9 @@ export async function render(main, { previewClient } = {}) {
     rank: ["Rankings", ""], fact: ["Did You Know?", ""], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", `Up next: ${UPCOMING.name}`] };
   const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot", Fact: "fact" };
   // (update 780) Player Spotlight beside Where to Improve, then Equipment, Rankings and Results & Milestones as a row of three
-  const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "form", "spot", "focus", "gear", "rank", "res", "prac", "tour"] : ["fact", "form", "spot", "focus", "gear", "rank", "res", "next", "course", "prac", "tour"];
-  const PAIR = ["spot", "focus"], TRIO = ["gear", "rank"]; // (update 789: Equipment beside Rankings; Results & Milestones full width below)
-  const FULL = new Set(["form", "tour", "course", "fact", "res"]);
+  const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "form", "spot", "focus", "gear", "res", "prac", "tour"] : ["fact", "form", "spot", "focus", "gear", "res", "next", "course", "prac", "tour"];
+  const PAIR = ["spot", "focus"], TRIO = []; // (update 821: no Rankings; Equipment full width, two a row) // (update 789: Equipment beside Rankings; Results & Milestones full width below)
+  const FULL = new Set(["form", "tour", "course", "fact", "res", "gear"]);
   const CATW = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" };
   const ordN = (r) => (r === 1 ? "No. 1" : `${r}${["th", "st", "nd", "rd"][((r % 100) - 20) % 10] || ["th", "st", "nd", "rd"][r % 100] || "th"}`);
   const rkName = (c) => (c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase());
@@ -339,9 +339,9 @@ export async function render(main, { previewClient } = {}) {
       const nmOf = (g) => { const gi = gearInfo(g); return `${gi.brand} ${gi.model}`.trim() || g; };
       const rs = (gearData.get(h.k) || []).filter((r) => (ownP?.key === h.k || onTour(r)) && yrOf(r) === seasonYr()); const evs = eventsOf(rs).slice(-14);
       const items = evs.map((e) => { const m = new Map(); let sgs = 0, n = 0; for (const r of e.rs) { let any = false; for (const s0 of r.shots) { const g = val(s0); if (!g) continue; const nm2 = nmOf(g); if (nm2 !== x.neu && nm2 !== x.old && x.pill !== "Balls") { /* another model */ } m.set(nm2, (m.get(nm2) || 0) + (s0.w || 1)); any = true; if (!x.c || s0.cat === x.c) sgs += s0.sg; } if (any) n++; } /* (that kind of club's shots only, as the product table) */
-        const topM = [...m].sort((a2, b2) => b2[1] - a2[1])[0]?.[0]; return n ? { v: sgs / n, label: `${e.event} ${e.year} · ${topM || ""}`, short: shortEv(e.event), cls: topM === x.neu ? "m-a" : topM === x.old ? "m-b" : "m-o" } : null; }).filter(Boolean);
+        const topM = [...m].sort((a2, b2) => b2[1] - a2[1])[0]?.[0]; return n ? { v: sgs / n, label: `${e.event} ${e.year} · ${topM || ""}`, short: shortEv(e.event), cls: (x.all || []).find((m) => m.nm === topM)?.cls || (topM === x.neu ? "m-a" : topM === x.old ? "m-b" : "m-o") } : null; }).filter(Boolean);
       const svg = barSvg(items, { note: "By tournament" }); if (!svg) return null;
-      return [el("div", { class: "td-kick mute" }, `Strokes gained a round ${COL_IN[x.c]}, tournament by tournament`), svg, el("div", { class: "td-legend" }, [el("span", { class: "m-a" }, x.neu), el("span", { class: "m-b" }, x.old)]) /* (update 757: the bars' own colors) */];
+      return [el("div", { class: "td-kick mute" }, `Strokes gained a round ${COL_IN[x.c]}, tournament by tournament`), svg, el("div", { class: "td-legend" }, (x.all || [{ nm: x.neu, cls: "m-a" }, { nm: x.old, cls: "m-b" }]).map((m) => el("span", { class: m.cls }, m.nm))) /* (update 757: the bars' own colors) (update 821: every model) */];
     }
     if (!h.k) return null;
     const p = playerOf(h.k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null;
@@ -405,7 +405,7 @@ export async function render(main, { previewClient } = {}) {
     if (h.hole && h.cid) { const meta = heat?.find((m) => m.id === h.cid); if (meta) { const img = el("img", { class: "td-pop-hole", alt: `Hole ${h.hole}` }); import("../courseHeat.js").then((m) => m.heatImage(meta, h.hole)).then((u) => { if (u) img.src = u; else img.remove(); }).catch(() => img.remove()); parts.push(img); } }
     else { const ch = chartFor(h) || (h.k && (h.id.startsWith("eq-") || catOf(h)) ? (() => { const b = storyBars(h, catOf(h)); return b ? el("div", { class: "td-chart" }, b) : null; })() : null); if (ch) parts.push(ch); }
     if (t === "fm" && x.ra) parts.push(formTable(x));
-    if (h.id.startsWith("eq-") && x.A) parts.push(el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, [[x.neu, x.A], [x.old, x.B]].map(([nm2, r]) => el("tr", {}, [el("td", {}, nm2), el("td", { class: cls(r.v) }, sg2(r.v)), el("td", {}, String(r.n)), el("td", {}, String(r.ev))])))]));
+    if (h.id.startsWith("eq-") && x.A) parts.push(el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, (x.all ? x.all.map((m) => [m.nm, m.r, m.cls]) : [[x.neu, x.A], [x.old, x.B]]).map(([nm2, r, mc]) => el("tr", {}, [el("td", {}, [mc ? el("i", { class: `td-sw ${mc}` }) : null, nm2]), el("td", { class: cls(r.v) }, sg2(r.v)), el("td", {}, String(r.n)), el("td", {}, String(r.ev))])))]));
     // the leaderboard behind a ranking
     const bd = h.board || x.board || (t === "rk" || t === "rkb" ? { c: x.hits?.[0]?.c } : h.id.startsWith("sp-weapon") ? { c: x.c } : null);
     if (bd) { const tb = boardTable({ ...bd, focus: h.k }); if (tb) parts.push(tb); }
@@ -522,10 +522,10 @@ export async function render(main, { previewClient } = {}) {
   const deckEl = (text, cls0) => { const parts = String(text || "").split(" · ").map((x0) => x0.trim()).filter(Boolean); if (!parts.length) return null;
     return parts.length > 1 ? el("ul", { class: `td-bul${cls0 ? ` ${cls0}` : ""}` }, parts.map((x0) => el("li", {}, x0.replace(/^./, (m) => m.toUpperCase())))) : el("p", { class: cls0 || null }, parts[0]); };
   const column = (h) => { const d = dress(h); return tap(el("article", { class: "td-col" }, [kicker(h, d, false), el("h3", {}, d.hl), h.hole ? chartFor(h) : null, d.num ? el("div", { class: `td-big ${d.nc}` }, d.num) : null, d.num ? el("p", {}, d.cap) : deckEl(d.deck), d.num && d.deck && !/^(fm|cm)-/.test(h.id) ? deckEl(d.deck, "td-small") : null, h.hole ? null : chartFor(h), whoTag(h), more(h)]), h); };
-  const gearStory = (h) => { const d = dress(h), x = h.x, row = (nm, r, isNew) => el("tr", { class: isNew ? "new" : "" }, [el("td", {}, [nm, isNew ? el("span", { class: "td-note" }, " · new") : null]), el("td", { class: cls(r.v) }, sg2(r.v)), el("td", {}, String(r.n)), el("td", {}, String(r.ev))]);
+  const gearStory = (h) => { const d = dress(h), x = h.x, row = (nm, r, isNew, mc) => el("tr", { class: isNew ? "new" : "" }, [el("td", {}, [mc ? el("i", { class: `td-sw ${mc}` }) : null, nm, isNew ? el("span", { class: "td-note" }, " · new") : null]), el("td", { class: cls(r.v) }, sg2(r.v)), el("td", {}, String(r.n)), el("td", {}, String(r.ev))]);
     return tap(el("article", { class: "td-gear" }, [el("div", { class: "td-kick" }, `${staff ? `${nameOf(h.k)} · ` : ""}${KIND_WORD[x.pill] || "club"}`), el("h3", {}, d.hl),
-      el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, [row(x.neu, x.A, true), row(x.old, x.B, false)])]),
-      el("p", { class: "td-note" }, `${x.where[0].toUpperCase()}${x.where.slice(1)}, as the product table on Stats counts it.`), (() => { const b = storyBars(h, x.c); return b ? el("div", { class: "td-chart" }, b.slice(1)) : null; })(), more(h)]), h); }; /* (update 750: its bars) */
+      el("table", { class: "td-tape" }, [el("thead", {}, el("tr", {}, ["Model", `SG ${COL_IN[x.c]}`, "Rounds", "Events"].map((t2) => el("th", {}, t2)))), el("tbody", {}, x.all ? x.all.map((m) => row(m.nm, m.r, m.isNew, m.cls)) : [row(x.neu, x.A, true), row(x.old, x.B, false)])]),
+      el("p", { class: "td-note" }, `${x.where[0].toUpperCase()}${x.where.slice(1)}, as the product table on Stats counts it.`), (() => { const b = storyBars(h, x.c); return b ? el("div", { class: "td-chart" }, b.slice(1)) : null; })(), more(h)]), h); }; /* (update 821: the legend comes with the bars: b.slice(1) is the chart and its legend) */ /* (update 750: its bars) */
   const rankBox = (items) => { const rows = [];
     for (const h of items) for (const f of h.x?.hits || []) { const bad = f.n && f.r > f.n / 2, top = f.r <= 20; /* (update 744: the top 20 in green) */
       const lbl = f.c === "TOTAL" ? "Total" : `${rkName(f.c)[0].toUpperCase()}${rkName(f.c).slice(1)}`; /* (update 744: "Total", not "Strokes gained") */
@@ -553,7 +553,7 @@ export async function render(main, { previewClient } = {}) {
   // (update 780) Course Strategy in three parts: the players' history here, the skills that matter here, and how to play
   // the holes (up to 3 each)
   const cgOf = (h) => (/^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(skill|mix)|^up-att$/.test(h.id) ? "skill" : "hole"); // (update 804: a hole (where the top 10 win it) is hole strategy)
-  let courseShuf = 0; const secShuf = {}, secSeen = {}, secMore = {}; const MORE3 = ["form", "spot", "focus", "res"]; // (update 820: 3 at a time, "Show more" for 3 more) // (update 797/801: the sections' shuffles)
+  let courseShuf = 0; const secShuf = {}, secSeen = {}, secMore = {}; const MORE3 = ["form", "spot", "focus", "res", "gear"]; const STEP = (id) => (id === "gear" ? 4 : 3); // (update 821: Equipment 4 at a time) // (update 820: 3 at a time, "Show more" for 3 more) // (update 797/801: the sections' shuffles)
   const courseGroups = (list, shown = []) => el("div", { class: "td-cgroups" }, [["player", "Player History"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3); shown.push(...xs); void courseShuf;
     return xs.length ? el("div", { class: "td-cgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-cols" }, xs.map(column))]) : null; }));
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
@@ -596,16 +596,16 @@ export async function render(main, { previewClient } = {}) {
         mine = [...fresh, ...old.slice(r0), ...old.slice(0, r0)]; }
       const pick = [], byK = new Map(), grpShown = []; // up to 6 (2 a player first, when there are several)
       const nIn = (i2) => rest.filter((h) => SEC_OF[h.kind] === i2).length, eqSF = nIn("spot") && nIn("focus") ? Math.min(6, Math.max(2, Math.min(nIn("spot"), nIn("focus")))) : 6; /* (update 780: the pair about the same length) */
-      const cap = MORE3.includes(id) ? 3 + 3 * (secMore[id] || 0) : id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : PAIR.includes(id) ? eqSF : 6; /* (update 736: more briefs) */
+      const cap = MORE3.includes(id) ? STEP(id) * (1 + (secMore[id] || 0)) : id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : PAIR.includes(id) ? eqSF : 6; /* (update 736: more briefs) */
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
-      const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine, grpShown) : id === "course" ? courseGroups(mine, grpShown) : el("div", { class: "td-cols" }, pick.map(column));
+      const content = id === "gear" ? el("div", { class: "td-gear2" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine, grpShown) : id === "course" ? courseGroups(mine, grpShown) : el("div", { class: "td-cols" }, pick.map(column));
       const shuf = (() => { const b = el("button", { type: "button", class: "td-shuf", title: "Show other stories", "aria-label": `Shuffle ${title}` }, "↻ Shuffle"); /* (update 801: every section) */
         b.addEventListener("click", () => { if (id === "fact") { factShuf++; factMemo = null; } else secShuf[id] = (secShuf[id] || 0) + 1; drawFeed(collect()); requestAnimationFrame(() => document.getElementById(`td-${id}`)?.scrollIntoView({ block: "nearest" })); }); return b; })();
       // (update 820) 3 stories to start (Form, Player Spotlight, Where to Improve, Results & Milestones): "Show more" adds 3 more each press
       const moreB = MORE3.includes(id) && mine.length > pick.length ? (() => { const left = mine.filter((h) => !pick.includes(h)), b = el("button", { type: "button", class: "td-more-btn" }, `Show more (${left.length})`);
-        b.addEventListener("click", () => { secMore[id] = (secMore[id] || 0) + 1; for (const h of left.splice(0, 3)) { content.appendChild(column(h)); pick.push(h); } secSeen[id] = new Set(pick.map((h) => h.id)); if (left.length) b.textContent = `Show more (${left.length})`; else b.remove(); }); return el("div", { class: "td-more-row" }, b); })() : null;
+        b.addEventListener("click", () => { secMore[id] = (secMore[id] || 0) + 1; for (const h of left.splice(0, STEP(id))) { content.appendChild(id === "gear" ? gearStory(h) : column(h)); pick.push(h); } secSeen[id] = new Set(pick.map((h) => h.id)); if (left.length) b.textContent = `Show more (${left.length})`; else b.remove(); }); return el("div", { class: "td-more-row" }, b); })() : null;
       secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), shuf, sub ? el("span", {}, sub) : null]), content, moreB]));
       if (PAIR.includes(id) && !MORE3.includes(id)) pairRest.set(id, { box: content, more: mine.filter((h) => !pick.includes(h)) }); /* (update 789: to even the pair up) */
       secSeen[id] = new Set((grpShown.length ? grpShown : pick).map((h) => h.id));
@@ -1233,13 +1233,17 @@ export async function render(main, { previewClient } = {}) {
         const vals = rds.map((rd) => rd.shots.reduce((u, s) => u + (val(s) === g && (!c || s.cat === c) ? s.sg : 0), 0));
         return { v: vals.reduce((t, v) => t + v, 0) / rds.length, vals, n: rds.length, ev: new Set(rds.map((r) => `${r.event}|${yrOf(r)}`)).size }; };
       const A = row(neu), B = row(old); if (!A || !B) continue;
+      // (update 821) every model of that kind this season, each with its own colour: the new one, the one before, then the rest by rounds
+      const MC = ["m-a", "m-b", "m-c", "m-d", "m-e", "m-f"], allG = [...new Set(rs.flatMap((rd) => rd.shots.map(val).filter(Boolean)))];
+      const all = [neu, old, ...allG.filter((g) => g !== neu && g !== old).map((g) => [g, row(g)]).filter(([, r]) => r).sort((a, b) => b[1].n - a[1].n).map(([g]) => g)]
+        .map((g, i) => ({ nm: nm(g), r: g === neu ? A : g === old ? B : row(g), cls: MC[i] || "m-o", isNew: g === neu })).filter((m) => m.r);
       // (update 760) only a comparison that holds up: its first event in the bag (said as such), or 8+ rounds with each
       // and a difference clear of the round-to-round noise (Welch's t of 1.65+, about 90% sure which is better)
       const sdv = (a) => { if (a.length < 2) return 0; const m = a.reduce((t, v) => t + v, 0) / a.length; return Math.sqrt(a.reduce((t, v) => t + (v - m) ** 2, 0) / (a.length - 1)); };
       const first = A.ev === 1, tStat = Math.abs(A.v - B.v) / Math.max(1e-6, Math.sqrt(sdv(A.vals) ** 2 / A.n + sdv(B.vals) ** 2 / B.n));
       const sure = first || (A.n >= 8 && B.n >= 8 && tStat >= 1.65); // (update 807: a one-round first event shows too) // (update 805: every recent switch shows; one not yet clear is said to be too early to call)
       const dd = A.v - B.v, where = tourPick && tourPick !== ALL ? `every ${tourName(tourPick)} round in ${seasonYr()}` : `every round in ${seasonYr()}`;
-      out.push({ id: `eq-${k}-${pill}`, k, x: { pill, neu: nm(neu), old: nm(old), A, B, c, dd, where, first, sure }, kind: "Equipment", score: (first ? 6 : sure ? 7 : 5) + Math.abs(dd) * 2, title: `New ${KIND_WORD[pill] || "club"}: ${nm(neu)}, ${sg2(dd)} a round ${COL_IN[c]}`,
+      out.push({ id: `eq-${k}-${pill}`, k, x: { pill, neu: nm(neu), old: nm(old), A, B, c, dd, where, first, sure, all }, kind: "Equipment", score: (first ? 6 : sure ? 7 : 5) + Math.abs(dd) * 2, title: `New ${KIND_WORD[pill] || "club"}: ${nm(neu)}, ${sg2(dd)} a round ${COL_IN[c]}`,
         detail: `${first ? "Only one event so far, so it’s early: " : ""}${sg2(A.v)} a round over ${plural(A.n, "round")} (${plural(A.ev, "tournament")}) with it, against ${sg2(B.v)} over ${plural(B.n, "round")} (${plural(B.ev, "tournament")}) with the ${nm(old)} · ${where}, as the product table on Stats counts it`,
         to: "Stats · SG Trends by Product", run: () => toStats(k, { view2: "full", productKind: pill, year: [seasonYr()], span: 0, cats: [] }, "SG Trends by Product", EX.product(`How is the new ${KIND_WORD[pill] || "club"} working?`, pill)) });
     }
