@@ -216,7 +216,21 @@ export async function render(main, { previewClient } = {}) {
   const asked = el("details", { class: "hl-more td-asked" }, [el("summary", {}, "Ask Cal a question"), tabBar, list]);
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const edition = el("span", {}, ""), nextLine = el("a", { class: "td-live", href: "#/live", title: "Open the Event Feed" }, ""), /* (update 734: this week’s event: a link to the Event Feed) */ roleLbl = el("span", { class: "td-top-r" }, "");
+  // (update 836) Stats' Overview at the top of Home: one player (you, or the one picked in the header) in full; several
+  // (favorites, or a coach's players) as a row each, closed, with the name: a tap opens that player's Overview
+  const ovTop = el("section", { class: "td-ov" });
+  async function drawOvTop() {
+    const ks = selfKey ? [selfKey] : picked.size ? [...picked] : (favs.length ? favs : keys).filter((k, i, a) => a.indexOf(k) === i);
+    const sig = ks.join(","); if (ovTop.dataset.sig === sig) return; ovTop.dataset.sig = sig;
+    if (!ks.length) { mount(ovTop, []); return; }
+    const D = await import("./dossier.js");
+    if (ks.length === 1) { const box = el("div"); mount(ovTop, box); D.overview(box, ks[0], nameOf(ks[0])); return; }
+    mount(ovTop, [el("div", { class: "td-ov-head" }, [el("h2", {}, favs.length ? "Your favorites" : "Your players"), el("span", {}, "Tap a player for their overview")]),
+      ...ks.map((k) => { const body = el("div", { class: "td-ov-body" }), det = el("details", { class: "td-ov-p" }, [el("summary", {}, [el("strong", {}, nameOf(k)), el("span", { class: "td-ov-chev", "aria-hidden": "true" }, "›")]), body]);
+        det.addEventListener("toggle", () => { if (det.open && !body.firstChild) D.overview(body, k, nameOf(k)); }); return det; })]);
+  }
   mount(root, [
+    ovTop,
     el("header", { class: "td-mast" }, el("h1", {}, ["Daily Tour ", el("i", {}, "Report")]) /* (update 776) */), /* (update 750: was "The Daily Tour") */
     el("div", { class: "td-date" }, [el("span", {}, today), edition, nextLine]),
     el("div", { class: "td-nav" }, [tourRow, whoRow] /* (update 798: no Ask Cal bar on Home) */),
@@ -1402,8 +1416,8 @@ export async function render(main, { previewClient } = {}) {
     const summary = ds ? await store.getFieldStats(ds.id).catch(() => null) : null; dsRef = ds; // (update 749)
     field = summaryPlayers(summary).filter((p) => p.rounds.length);
     for (const p of field) if (!labels.has(p.key) && p.name) labels.set(p.key, p.name);
-    syncPicked(); drawTabs();
-    { const off = onCurrent(() => { if (!main.isConnected) { off(); return; } syncPicked(); drawTabs(); refresh(); }); }
+    syncPicked(); drawTabs(); drawOvTop().catch((e) => console.warn(e));
+    { const off = onCurrent(() => { if (!main.isConnected) { off(); return; } syncPicked(); drawTabs(); refresh(); drawOvTop().catch(() => {}); }); }
     if (ownKey) { try { const { loadSource } = await import("../reportGen.js"); const d = await loadSource("entered", ownKey, myName || "Me").catch(() => null), rs = (d?.me?.rounds || []).filter((r) => r.shots?.length);
       if (rs.length) { ownP = { key: ownKey, name: myName || "Me", rounds: rs, own: true }; labels.set(ownKey, myName || "Me"); gearData.set(ownKey, rs); gearP.set(ownKey, Promise.resolve()); if (!keys.includes(ownKey)) keys = [ownKey, ...keys]; } } catch (e) { console.warn("own rounds", e); } }
     await nextP; await heatP; /* (update 736: the courses, for Course Insights & Strategy) */

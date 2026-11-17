@@ -586,7 +586,7 @@ li.is-cur, .lv-row.is-cur, .lb-row.is-cur, .ti-row.is-cur, .is-cur-cell { backgr
 /* (update 820) Overview pop-ups */
 .ip-popwrap { position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: center; align-items: flex-start; padding: 6vh 16px 16px; max-width: none; }
 .ip-pop-back { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
-.ip-pop { position: relative; width: min(820px, 100%); max-height: 86vh; overflow-y: auto; background: var(--ip-card); border: 1px solid var(--ip-rule); border-radius: 16px; padding: 16px 18px; box-shadow: 0 24px 60px rgba(0,0,0,0.5); }
+.ip-pop { position: relative; margin: 0; width: min(820px, 100%); max-height: 86vh; overflow-y: auto; background: var(--ip-card); border: 1px solid var(--ip-rule); border-radius: 16px; padding: 16px 18px; box-shadow: 0 24px 60px rgba(0,0,0,0.5); }
 .ip-pop-h { margin: 0 32px 10px 0; font-size: 1.15rem; color: var(--ip-ink); }
 .ip-pop-x { position: absolute; top: 8px; right: 10px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: transparent; color: var(--ip-mute); font-size: 1.4rem; cursor: pointer; }
 .ip-pop-x:hover { color: var(--ip-ink); }
@@ -716,3 +716,57 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
   .botpop a + a { border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent); border-radius: 0; }
   .botpop a[aria-current="page"] { border-radius: 10px; }
 }
+.ip-few, .ip-few td { font-style: italic; } .ip-few td { opacity: 0.85; }
+/* (update 836) Overview: Form's toggle and radar; Where the strokes go with two bars (season, last 12) */
+.ip-ftog { margin: 0 0 8px; }
+.ip-radarbox { display: flex; flex-direction: column; align-items: center; margin: 6px 0; padding: 0; background: transparent; }
+.ip-radarbox svg { width: 100%; max-width: 300px; height: auto; }
+.ip-radar-lbl { cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+.ip-radar-lbl:hover { fill: var(--gold); }
+.ip-bkey { display: flex; gap: 14px; font-size: 0.72rem; color: var(--ip-mute); margin-bottom: 2px; }
+.ip-bkey span::before { content: ""; display: inline-block; width: 14px; height: 6px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; background: var(--ip-mute); }
+.ip-bkey .ip-k-s::before { background: var(--ip-ink); } .ip-bkey .ip-k-l::before { background: color-mix(in srgb, var(--ip-ink) 40%, transparent); }
+.ip-barrow2 { grid-template-columns: 11em 1fr 4em; }
+.ip-b2 { display: flex; flex-direction: column; gap: 3px; }
+.ip-bt-l { height: 5px; } .ip-bt-l i { opacity: 0.45; }
+.ip-v2 { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; font-variant-numeric: tabular-nums; } .ip-v2 .ip-vl { font-size: 0.75rem; opacity: 0.75; font-weight: 600; }
+@media (max-width: 640px) { .ip-barrow2 { grid-template-columns: 7.5em 1fr 3.6em; } }
+/* (update 836) Home: the Overview on top (one player in full; several as rows that open) */
+.td-ov { margin: 0 0 18px; }
+.td-ov-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--td-rule2); padding-bottom: 6px; margin-bottom: 4px; }
+.td-ov-head h2 { margin: 0; font-size: 1.3rem; } .td-ov-head span { font: 600 0.72rem var(--td-sans); color: var(--td-mute); letter-spacing: 0.06em; text-transform: uppercase; }
+.td-ov-p { border-bottom: 1px solid var(--td-rule); }
+.td-ov-p > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 12px 4px; font-size: 1.02rem; }
+.td-ov-p > summary::-webkit-details-marker { display: none; }
+.td-ov-p > summary:hover strong { color: var(--td-gold); }
+.td-ov-chev { color: var(--td-mute); font-size: 1.2rem; transition: transform 0.15s; } .td-ov-p[open] .td-ov-chev { transform: rotate(90deg); color: var(--td-gold); }
+.td-ov-body { padding: 4px 0 14px; }
+.td .td-ov .ip { color: var(--ip-ink); }
+/* (update 836) phones: the pages of Stats, Play and Leaderboards are in the bottom bar's pop-up, so no row of them at the top */
+@media (max-width: 640px) { .rail .section-nav, .rail .subhead, nav.section-nav { display: none !important; } }
+
+/* (update 836) phones: a pop-up's × is always in reach. The full-screen pop-ups started their × at the very top, under the
+   clock (on the Home Screen app that strip can't be tapped), and it scrolled away with the contents. Now the × is pinned
+   just under the clock, every pop-up stays inside the screen's width, and none runs under the clock. */
+@media (max-width: 640px) {
+  .ip-popwrap { padding: 0; }
+  .ip-pop { margin: 0 !important; box-sizing: border-box; height: 100%; max-width: 100vw; overflow-x: hidden; overscroll-behavior: contain;
+    padding: calc(var(--sat, 0px) + var(--sat-gap, 0px) + 54px) 14px calc(env(safe-area-inset-bottom, 0px) + 80px); }
+  .ip-pop-x { position: fixed; top: calc(var(--sat, 0px) + var(--sat-gap, 0px) + 8px); right: 10px; z-index: 9100; width: 42px; height: 42px;
+    background: color-mix(in srgb, var(--ip-card, #16171a) 85%, #888); color: var(--ip-ink, #fff); box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+  .ip-pop svg, .ip-pop img, .ip-pop canvas, .td-pop svg, .td-pop img { max-width: 100%; }
+  .td-pop, .gx-pop, .tr-pop, .ps-modal { box-sizing: border-box; max-width: 100vw; overflow-x: hidden; }
+  .td-pop, .tr-pop, .ps-modal { max-height: calc(100dvh - var(--sat, 0px) - var(--sat-gap, 0px) - 16px) !important; overscroll-behavior: contain; }
+  .td-pop-x, .tr-pop-x { position: sticky; float: right; top: 0; z-index: 2; }
+  .gx-pop-overlay { padding-top: calc(var(--sat, 0px) + var(--sat-gap, 0px) + 10px); }
+  .ps-modal { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
+}
+/* (update 836) Tournament Results: the leaderboard */
+.tr-lb-wrap { overflow-x: auto; }
+.tr-lb-t { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.tr-lb-t th, .tr-lb-t td { padding: 6px 8px; border-bottom: 1px solid var(--rule, rgba(255,255,255,0.08)); text-align: left !important; white-space: nowrap; }
+.tr-lb-t th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #8a867e); }
+.tr-lb-t .num { text-align: right !important; } .tr-lb-t td.pos { color: #30d158; } .tr-lb-t td.neg { color: #ff453a; }
+.tr-lb-t tr.tr-lb-me td { background: color-mix(in srgb, var(--gold, #d4b483) 16%, transparent); font-weight: 700; }
+.tr-lb-rk { color: var(--muted, #8a867e); font-weight: 400; font-size: 0.8em; }
+.tr-lb-more { margin-top: 8px; }

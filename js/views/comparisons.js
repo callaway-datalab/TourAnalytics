@@ -9,6 +9,7 @@
  * a row there opens this page on that comparison (?pick=win:10 / cond:course:Riviera). Include: which shots count.
  * Hover a selection (its card or its key) to pick it out in every chart.
  */
+import { isSelfKey as isSelfKeyC } from "../playerInsights.js"; // (update 836)
 import { el, mount, icon, infoTip } from "../ui.js";
 import { bar0 } from "../miniCharts.js"; // (update 760: bars square at zero)
 import { getState } from "../auth.js";
@@ -70,6 +71,8 @@ export async function render(main) {
   else if (players.length === 1) player = { key: players[0][0], label: players[0][1] };
   else { const c = (await import("../current.js")).autoPlayer(); if (c && players.some(([k]) => k === c.key)) player = { key: c.key, label: players.find(([k]) => k === c.key)[1] }; } // (update 816: the current player)
 
+  // (update 836) your own rounds (signed in as the player, or "Me" picked): the page says "you"
+  const YOU = () => !!self || (!!player && !chosen.slice(1).length && isSelfKeyC(player.key));
   let pickParam = q.get("pick");
   let source = "tour", mode = "years", data = null, opts = null, sels = [], loadingFor = null, chipFilter = "", distCat = "APP", distPer = "round", dim = "round";
   // (update 189) picks wait here until "Add to comparison": several together become one group (their rounds pooled)
@@ -1067,7 +1070,7 @@ export async function render(main) {
   function guideSummary() {
     const who = g.who === "everyone" ? "Everyone in the data" : g.who === "several" ? inPlay().map((p) => p.label).join(", ") : player.label;
     const what = g.what === "outlook" ? "future outlook, the next three seasons" : g.what === "time" ? { seasons: "this season vs last season", form: "recent form against the rounds before", formev: "the latest events against the ones before", career: "this season vs their whole career", own: "dates of your own" }[g.when]
-      : g.what === "gear" ? "products" : g.what === "place" ? "where and when they play best" : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
+      : g.what === "gear" ? "products" : g.what === "place" ? (YOU() ? "where and when you play best" : "where and when they play best") : g.what === "versus" ? `against each other${g.h2h ? ", head to head" : ""}, ${SEASONS.find(([x]) => x === g.stretch)?.[1].toLowerCase()}` : "";
     return `${who} · ${what || sels.map((x) => x.name).join(" vs ") || "your picks"}`; // (update 248: from Ask AI there's no question answered: the picks)
   }
   function guideBox() {
@@ -1123,9 +1126,9 @@ export async function render(main) {
     } else if (step === "what") {
       q = "What do you want to compare?";
       body = [
-        opt("time", "How they’re playing over time", "This season against last, or recent form"),
+        opt("time", YOU() ? "How you’re playing over time" : "How they’re playing over time", "This season against last, or recent form"),
         products(allRounds()).length ? opt("gear", "One club or ball against another", "Drivers, irons, putters, golf balls…") : null,
-        opt("place", "Where and when they play best", "Courses, tournaments, rounds or months"),
+        opt("place", YOU() ? "Where and when you play best" : "Where and when they play best", "Courses, tournaments, rounds or months"),
         source === "tour" && canOutlook() ? opt("outlook", "Future Outlook", "Where they\u2019re headed over the next three seasons, and a report") : null, // (update 403)
         inPlay().length > 1 ? opt("versus", "The players against each other", "Over the same stretch of rounds") : null,
       ];
@@ -1134,7 +1137,7 @@ export async function render(main) {
       const n = opts.total >= 40 ? 10 : 5;
       body = [
         opts.years.length >= 2 ? opt("seasons", "This season vs last season", `${opts.years[0].value} against ${opts.years[1].value}`) : null,
-        opts.total >= 2 * n ? opt("form", `Their last ${n} rounds vs the ${n} before`, "Are they playing better or worse lately?") : null,
+        opts.total >= 2 * n ? opt("form", YOU() ? `Your last ${n} rounds vs the ${n} before` : `Their last ${n} rounds vs the ${n} before`, YOU() ? "Are you playing better or worse lately?" : "Are they playing better or worse lately?") : null,
         opts.events >= 6 ? opt("formev", `Their last ${opts.events >= 10 ? 5 : 3} events vs the ${opts.events >= 10 ? 5 : 3} before`, "The same, tournament by tournament") : null, // (update 217)
         opts.years.length ? opt("career", "This season vs their whole career", "How this year compares with their usual") : null,
         opt("own", "I’ll choose the dates myself", "Opens the date picker"),
@@ -1168,7 +1171,7 @@ export async function render(main) {
         opts.months.length > 1 ? opt("months", "Time of year", "Every month, best first") : null,
       ];
     } else if (step === "h2h") {
-      q = "Which of their rounds?";
+      q = YOU() ? "Which of your rounds?" : "Which of their rounds?";
       body = [opt(true, "Only when they went head to head", "Just the rounds they all played: same tournament, same round"), opt(false, "All of their rounds", "Each player\u2019s own rounds, whether or not the others played them")];
     } else if (step === "stretch") {
       q = g.h2h ? "Over which stretch of those rounds?" : "Over which rounds?";
@@ -2008,7 +2011,7 @@ export async function render(main) {
       return [row, whyBox(x, all), det];
     });
     return el("section", { class: "panel cmp-sec career-sec" }, [
-      el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, `Where they play best: by ${dimL.toLowerCase()}`), infoTip(`Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total per round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit and why, or tick numbers to compare them side by side.`)]),
+      el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, `Where ${YOU() ? "you" : "they"} play best: by ${dimL.toLowerCase()}`), infoTip(`Every ${dimL.toLowerCase()} across all their rounds, best first: SG: Total per round, and how far above or below their overall average (${fmtSG(avgAll)}). ${placeDim === "rounds" ? "" : "Fewer than 3 rounds sit at the bottom. "}Tap one to see each visit and why, or tick numbers to compare them side by side.`)]),
       tabs,
       placeBar(groups, dimL, list.map((x) => x.k)),
       el("div", { class: "cmp-conds" }, [el("div", { class: "cmp-cond cmp-cond-h" }, [el("span", {}, "#"), el("span", {}, ""), el("span", { class: "cmp-cond-bar-h" }, [el("span", {}, "worse"), el("span", {}, "their average"), el("span", {}, "better")]), el("span", {}, "SG"), el("span", {}, "vs avg")]), ...rows]),

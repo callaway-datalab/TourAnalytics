@@ -58,7 +58,7 @@ export async function openPalette(q0 = "", { pick = false } = {}) {
       n.querySelector(".pal-main").addEventListener("click", () => { setCurrent({ key: r.key, label: r.label }); close(); try { import("./perf.js").catch(() => {}); } catch { /* */ } }); return n; }
     if (r.kind === "player") {
       const enc = encodeURIComponent(r.key), q = (h) => `${h}?player=${enc}`;
-      const quick = [["Full stats", "stats:full"], ["Course Fit", "stats:fit"], ["Practice", "stats:practice:week"], ["Compare", q("#/comparisons")], ["Bag", q("#/witb")]];
+      const quick = [["Full stats", "stats:full"], ["Course Fit", "stats:fit"], ["Practice", "stats:practice:week"], ["Comparisons", q("#/comparisons")], ["Bag", q("#/witb")]];
       const n = el("div", base, [el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.self ? "You · Overview" : `${r.fav ? "★ " : ""}Overview`)]),
         el("span", { class: "pal-quick" }, quick.map(([l, h]) => { const a = el("button", { type: "button", class: "pal-q" }, l); a.addEventListener("click", (e) => { e.stopPropagation(); go(h, r); }); return a; }))]);
       n.querySelector(".pal-main").addEventListener("click", () => go("stats:overview", r)); return n; }

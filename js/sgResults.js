@@ -95,6 +95,41 @@ export function resultsView(S, rounds, field) {
 
   const heroBox = el("section", { class: "panel tr-heroes" }, el("p", { class: "muted small" }, "Loading the week…"));
   const scBox = el("section", { class: "panel tr-sc" }, el("p", { class: "muted small" }, "Loading the scorecard…"));
+  const lbBox = el("section", { class: "panel tr-lb" }, el("p", { class: "muted small" }, "Loading the leaderboard…"));
+
+  // (update 836) the leaderboard: the PGA Tour's official one (position, to par), each player's strokes gained per round
+  // that week beside it where the stats file has them; without an official one (DP World Tour, or not saved yet), the
+  // stats file's field ranked by strokes gained per round
+  (async () => {
+    const sgOf = new Map(); // nameKey → { label, sg, n }
+    for (const p of field || []) { const rs = (p.rounds || []).filter((r) => r.event === ev.event && yrOf(r) === ev.year); if (!rs.length) continue;
+      const t = rs.reduce((a, r) => a + (r.shots || []).reduce((b, s) => b + (s.sg || 0), 0), 0); sgOf.set(nameKey(p.label || ""), { key: p.key, label: p.label || "", sg: t / rs.length, n: rs.length }); }
+    const sgRank = new Map([...sgOf.values()].sort((a, b) => b.sg - a.sg).map((o, i) => [o, i + 1]));
+    const isMe = (nm, key) => !!me && ((key && key === me.key) || nameKey(nm) === nameKey(me.label));
+    let B = null;
+    try { const PI = await import("./playerInsights.js"), code = PI.tourCodeOf(evRs[0]?.tour); if (code) { await PI.ensureResults(code, [ev.year]); B = PI.officialBoard(ev.event, ev.year, code); } } catch (e) { console.warn("leaderboard", e); }
+    const par = (t) => (t == null || !Number.isFinite(Number(t)) ? "—" : Number(t) === 0 ? "E" : Number(t) > 0 ? `+${Number(t)}` : String(Number(t)).replace("-", "\u2212"));
+    const pos = (p) => { const u = String(p || "").toUpperCase(); return /^(CUT|MC)$/.test(u) ? "MC" : u || "—"; };
+    const sgCell = (o) => (o ? el("td", { class: `num ${o.sg >= 0 ? "pos" : "neg"}` }, [fmtSG(o.sg), el("span", { class: "tr-lb-rk" }, ` (${sgRank.get(o)})`)]) : el("td", { class: "num muted" }, "—"));
+    let rows, head, note;
+    if (B) {
+      head = ["Pos", "Player", "To par", "SG per round (rank)"];
+      rows = B.rows.map((r) => { const o = sgOf.get(nameKey(r.name)); return { me: isMe(r.name, o?.key), tds: [el("td", {}, pos(r.pos)), el("td", {}, r.name), el("td", { class: "num" }, par(r.total)), sgCell(o)] }; });
+      note = `Official PGA Tour leaderboard${B.final ? "" : " (not final)"}. Strokes gained per round from the stats file, ranked among the ${sgOf.size} players it has that week.`;
+    } else if (sgOf.size) {
+      head = ["SG rank", "Player", "SG per round", "Rounds"];
+      rows = [...sgOf.values()].sort((a, b) => b.sg - a.sg).map((o, i) => ({ me: isMe(o.label, o.key), tds: [el("td", {}, String(i + 1)), el("td", {}, o.label), el("td", { class: `num ${o.sg >= 0 ? "pos" : "neg"}` }, fmtSG(o.sg)), el("td", { class: "num" }, String(o.n))] }));
+      note = "The official leaderboard isn't in for this event (the DP World Tour, or one the live feed hasn't saved), so this is the stats file's field ranked by strokes gained per round.";
+    } else { mount(lbBox, [el("p", { class: "fx-eyebrow" }, "Leaderboard"), el("p", { class: "muted small" }, "No leaderboard for this event yet.")]); return; }
+    let all = false; const TOP = 10;
+    const draw = () => {
+      const meI = rows.findIndex((r) => r.me), shown = all ? rows : rows.filter((r, i) => i < TOP || i === meI);
+      const tb = el("tbody", {}, shown.map((r) => el("tr", { class: r.me ? "tr-lb-me" : "" }, r.tds.map((td) => td.cloneNode(true)))));
+      const more = rows.length > TOP ? (() => { const b = el("button", { type: "button", class: "link tr-lb-more" }, all ? "Show top 10" : `Show all ${rows.length}`); b.addEventListener("click", () => { all = !all; draw(); }); return b; })() : null;
+      mount(lbBox, [el("p", { class: "fx-eyebrow" }, `Leaderboard · ${ev.event} ${ev.year}`), el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t" }, [el("thead", {}, el("tr", {}, head.map((h, i) => el("th", { class: i >= 2 ? "num" : "" }, h)))), tb])), more, el("p", { class: "muted small" }, note)]);
+    };
+    draw();
+  })();
 
   (async () => {
     // (update 760) the course(s) from the tournament itself: those whose shots carry its name that year (no picking by hand)
@@ -210,5 +245,5 @@ export function resultsView(S, rounds, field) {
     mount(scBox, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, "Scorecard"), tabs]), cardBox, holeBox]);
     drawCard(); drawHole();
   })().catch((e) => { console.warn("results", e); mount(scBox, el("p", { class: "muted small" }, `This tournament couldn’t be drawn (${e?.message || e}).`)); }); // (update 760: never a blank page)
-  return [picker, heroBox, scBox];
+  return [picker, heroBox, lbBox, scBox];
 }
