@@ -31,7 +31,7 @@ function tourCard(key, name, onData) {
   }).catch(() => { box.hidden = true; onData?.(null); });
   return box;
 }
-export async function render(main, { flash, previewClient }) {
+export async function render(main, { flash, previewClient, playerKey: givenKey = null, playerLabel = null, embedded = false }) {
   const state = getState();
   // Whose bag: your own, or (the admin in someone's portal) that player's or team member's. Theirs is shown
   // as it is: only they can change it.
@@ -39,7 +39,8 @@ export async function render(main, { flash, previewClient }) {
   const team = effectiveTeam(state);
   // (update 183) anyone with players (a coach, a caddie, an analyst, the admin) can look at each player's bag;
   // only the player and their caddie can change it
-  const pickedKey = new URLSearchParams(location.hash.split("?")[1] || "").get("player");
+  if (givenKey && givenKey === myEntryKey(state)) givenKey = null; // (update 829: "Me": your own bag)
+  const pickedKey = givenKey || new URLSearchParams(location.hash.split("?")[1] || "").get("player"); // (update 829: Stats' tab hands its player over)
   const previewing = state.isAdmin && (team.preview || (previewClient && !previewClient.self && !previewClient.role));
   let players = [];
   if (!previewing) {
@@ -50,9 +51,10 @@ export async function render(main, { flash, previewClient }) {
   const viewAsKey = !state.isAdmin && previewClient?.role && team.teamAccess?.[previewClient.key] ? previewClient.key : null; // (a coach in a player's view)
   // (update 185) always opens on My bag; another player's only when picked in the search
   void viewAsKey;
+  if (givenKey && playerLabel && !players.some(([k]) => k === givenKey) && state.isAdmin) players.push([givenKey, playerLabel]);
   const playerKey = pickedKey && players.some(([k]) => k === pickedKey) ? pickedKey : null;
   // (update 184) whose bag: type a player's name (or My bag for your own)
-  const picker = players.length ? (() => {
+  const picker = players.length && !embedded ? (() => { // (update 829: on Stats the header's player decides)
     const go = (key) => { const h = key ? `#/witb?player=${encodeURIComponent(key)}` : "#/witb"; if (location.hash !== h) location.hash = h; };
     // (update 185) "My bag" is the first entry in the list; no separate button or label
     const ME = "__mybag";

@@ -8,6 +8,8 @@ export async function fill(box, kind, me, { st }) {
   const pv = window.__previewClient || null, name = me.label || me.key.replace(/^c_/, "");
   if (kind === "overview") { const m = await import("./views/dossier.js"); return m.overview(box, me.key, name); }
   if (kind === "fit") { const m = await import("./views/courseFit.js"); return m.fitTab(box, me.key, name); }
+  // (update 829) What's in the Bag, for the player Stats has
+  if (kind === "bag") { const inner = el("div", { class: "st-bag" }); mount(box, inner); try { await (await import("./views/witb.js")).render(inner, { flash, previewClient: pv, playerKey: me.key, playerLabel: name, embedded: true }); } catch (e) { console.error(e); mount(inner, el("p", { class: "muted center" }, "Couldn’t open What’s in the Bag just now.")); } return; }
   // (update 827) Compare, on the Stats page (it opens on the header's player, as on its own page)
   if (kind === "compare") { const inner = el("div", { class: "st-cmp" }); mount(box, inner); try { await (await import("./views/comparisons.js")).render(inner, { previewClient: pv, flash, routeId: "comparisons" }); } catch (e) { console.error(e); mount(inner, el("p", { class: "muted center" }, "Couldn’t open Compare just now.")); } return; }
   // Practice & Goals: three parts, one at a time (the plan for the week first)

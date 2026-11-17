@@ -671,3 +671,28 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
 .ip-pop tr.ip-now td { background: color-mix(in srgb, var(--ip-gold) 10%, transparent); } .ip-pop .ip-new { margin-left: 8px; }
 /* (update 828) WITB: the bag from the stats data */
 .witb-tour .witb-fill { margin-top: 10px; } .witb-tour-t td:first-child { white-space: nowrap; }
+
+/* (update 829) Chat & support */
+.sp { max-width: 980px; margin: 0 auto; }
+.sp-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 8px 0 14px; }
+.sp-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 16px; border-radius: 14px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+.sp-card strong { font-size: 1rem; } .sp-card:hover, .sp-card.on { border-color: var(--gold); }
+.sp-ico { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.05rem; margin-bottom: 4px; }
+.sp-issue .sp-ico { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.sp-question .sp-ico { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+.sp-feature .sp-ico { background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--gold); }
+.sp-compose textarea, .sp-reply { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--rule); background: transparent; color: var(--ink); padding: 10px 12px; font: inherit; resize: vertical; }
+.sp-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.sp-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; }
+.sp-m { max-width: 80%; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.sp-m.mine { align-self: flex-end; background: color-mix(in srgb, var(--gold) 14%, transparent); }
+.sp-m p { margin: 4px 0 0; white-space: pre-wrap; line-height: 1.45; }
+.sp-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 0.82rem; }
+.sp-tag { padding: 1px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; border: 1px solid currentColor; }
+.sp-tag.sp-issue { color: var(--bad); } .sp-tag.sp-question { color: var(--info); } .sp-tag.sp-feature { color: var(--gold); }
+.sp-replyrow { display: flex; gap: 8px; align-items: flex-end; } .sp-replyrow .sp-reply { flex: 1; }
+.sp-empty { padding: 10px 0; }
+@media (max-width: 640px) { .sp-cards { grid-template-columns: 1fr; } .sp-card { flex-direction: row; align-items: center; gap: 12px; padding: 12px; } .sp-card .sp-ico { margin: 0; } .sp-card .muted { display: none; } .sp-m { max-width: 92%; } }
+/* the ☰ button's unread count, and Chat in its menu */
+.account-btn { position: relative; } .account-btn .menu-dot { position: absolute; top: -2px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; font-size: 0.62rem; line-height: 16px; }
+.menu-item.menu-chat { display: flex; justify-content: space-between; align-items: center; gap: 8px; }

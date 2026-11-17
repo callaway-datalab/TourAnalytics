@@ -118,7 +118,7 @@ export function playerPicker(labels, onPick, ids = new Map(), pinKey = null, { a
   // (it shows only while no player is picked, or when the header's player isn't one this page has); a new pick in the
   // header switches the page to them
   if (follow && !standalone) {
-    const inList = (c) => !!c && players.some((x) => x.key === c.key && x.key !== pinKey);
+    const inList = (c) => !!c && players.some((x) => x.key === c.key); // (update 829: "Me" in the header picks a page's own "Me" too)
     const sync = () => { node.hidden = inList(currentPlayer()); };
     setTimeout(() => { sync(); if (touched) return; const c = autoPlayer(); if (inList(c)) choose(players.find((x) => x.key === c.key)); }, 0);
     const off = onCurrent((c) => { if (!node.isConnected) { off(); return; } sync(); if (inList(c) && c.key !== lastPick?.key) choose(players.find((x) => x.key === c.key)); });

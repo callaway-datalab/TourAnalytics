@@ -17,6 +17,8 @@ async function index() {
   ]);
   const statsHref = st.isAdmin && !window.__previewClient ? "#/admin/player-stats" : who?.self ? "#/dashboard" : "#/player-stats";
   const players = who ? [...who.labels].map(([key, label]) => ({ kind: "player", key, label, fav: who.favs.includes(key), self: who.self === key, statsHref })) : [];
+  // (update 829) "Me": your own entered rounds (Data Entry), for the admin and Callaway's people (a player is always themself)
+  if (!who?.self) { try { const meKey = st.isAdmin && !st.profile?.clientKey ? `a_${st.user?.uid}` : st.profile?.clientKey; /* (as Data Entry's myEntryKey) */ if (meKey && !players.some((p) => p.key === meKey)) players.unshift({ kind: "player", key: meKey, label: "Me", me: true, fav: false, self: false, statsHref }); } catch { /* */ } }
   const crs = (courses || []).map((c) => ({ kind: "course", id: c.id, label: c.name, raw: !!c.rawChunks, sub: (c.events || []).map((e) => e.name).join(", ") }));
   idx = { players, courses: crs }; idxAt = Date.now(); return idx;
 }
@@ -41,7 +43,7 @@ export async function openPalette(q0 = "", { pick = false } = {}) {
   const draw = async () => {
     const I = await index(); if (!box) return;
     const q = input.value.trim().toLowerCase(), cur = currentPlayer();
-    const P = I.players.map((p) => ({ ...p, s: q ? score(p.label, q) : (p.key === cur?.key ? 3 : p.self ? 2.5 : p.fav ? 2 : 0) })).filter((p) => p.s > 0).sort((a, b) => b.s - a.s || String(a.label).localeCompare(String(b.label))).slice(0, pick ? (q ? 20 : 14) : 6);
+    const P = I.players.map((p) => ({ ...p, s: q ? score(p.label, q) : (p.key === cur?.key ? 3 : p.me ? 2.8 : p.self ? 2.5 : p.fav ? 2 : 0) })).filter((p) => p.s > 0).sort((a, b) => b.s - a.s || String(a.label).localeCompare(String(b.label))).slice(0, pick ? (q ? 20 : 14) : 6);
     const G = pick ? [] : pages.map((p) => ({ kind: "page", ...p, s: score(`${p.label} ${p.group || ""} ${p.words || ""}`, q) })).filter((p) => p.s > 0).sort((a, b) => b.s - a.s).slice(0, q ? 6 : 8);
     const C = q && !pick ? I.courses.map((c) => ({ ...c, s: Math.max(score(c.label, q), score(c.sub, q) * 0.9) })).filter((c) => c.s > 0).sort((a, b) => b.s - a.s).slice(0, 4) : [];
     // the best match leads, whatever its kind
@@ -52,7 +54,7 @@ export async function openPalette(q0 = "", { pick = false } = {}) {
   };
   const row = (r, i) => {
     const on = i === at, base = { class: `pal-row${on ? " on" : ""}`, role: "option", "aria-selected": String(on), id: `pal-${i}` };
-    if (r.kind === "player" && pick) { const n = el("div", base, el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.key === currentPlayer()?.key ? "Picked now" : r.self ? "You" : r.fav ? "★ Favorite" : "")]));
+    if (r.kind === "player" && pick) { const n = el("div", base, el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.key === currentPlayer()?.key ? "Picked now" : r.me ? "Your own entered rounds" : r.self ? "You" : r.fav ? "★ Favorite" : "")]));
       n.querySelector(".pal-main").addEventListener("click", () => { setCurrent({ key: r.key, label: r.label }); close(); try { import("./perf.js").catch(() => {}); } catch { /* */ } }); return n; }
     if (r.kind === "player") {
       const enc = encodeURIComponent(r.key), q = (h) => `${h}?player=${enc}`;

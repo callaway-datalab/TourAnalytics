@@ -217,7 +217,7 @@ function themeItem() {
 /* Account button: a drop-down with your email, Questions (with the unread count) and Reset Password. */
 function accountMenu(state) {
   const email = state.user?.email || "";
-  const btn = el("button", { class: "account-btn hdr-icon", type: "button", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "Account", title: "Account" }, [icon("menu")]);
+  const btn = el("button", { class: "account-btn hdr-icon", type: "button", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "Menu", title: "Menu" }, [icon("menu"), el("span", { class: "badge menu-dot", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount))]);
   const note = el("p", { class: "menu-note", role: "status", hidden: true });
   const reset = el("button", { class: "menu-item", type: "button", role: "menuitem" }, "Reset Password");
   reset.addEventListener("click", async () => {
@@ -232,7 +232,8 @@ function accountMenu(state) {
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     state.isAdmin || state.profile?.kind === "analyst" ? el("a", { class: "menu-item menu-bulk", href: "#/bulk-reports", role: "menuitem" }, "Bulk Reports") : null, // (update 740)
-    el("button", { class: "menu-item menu-issue", type: "button", role: "menuitem", onClick: () => { setOpen(false); reportIssueDialog(); } }, "Report an issue"),
+    // (update 829) Chat & support: report an issue, ask a question, request a feature (the unread count beside it)
+    el("a", { class: "menu-item menu-chat", href: state.isAdmin ? "#/admin/questions" : "#/questions", role: "menuitem" }, [state.isAdmin || state.profile?.kind === "analyst" ? "Chat" : "Chat & support", el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount))]),
     state.isAdmin ? el("button", { class: "menu-item menu-perf", type: "button", role: "menuitem", onClick: () => { setOpen(false); import("./perf.js").then((m) => m.togglePerf()); } }, "Performance") : null, // (update 325)
     themeItem(), // (update 731)
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
@@ -426,18 +427,23 @@ export function renderShell(root, { previewClient, currentRoute }) {
   setPages(() => [["Home", "#/home", "", "today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
     ["Overview", "stats:overview", "Stats", "player dossier profile report"], ["Compare", "stats:compare", "Stats", "versus side by side products compare"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
     ["Custom Practice", "stats:practice:practice", "Stats · Practice & Goals", "practice drills sessions range"], ["Recommended Practice", "stats:practice:week", "Stats · Practice & Goals", "practice week plan drills next event"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
-    ["What's in the Bag", "#/witb", "", "witb clubs equipment gear"], ["Chat", admin ? "#/admin/questions" : "#/questions", "", "questions messages"], ["Profile", "#/account", "Account", "settings password"]]
+    ["What's in the Bag", "stats:bag", "Stats", "witb clubs equipment gear bag"], ["Chat & support", state.isAdmin ? "#/admin/questions" : "#/questions", "", "report an issue question feature request help chat"], ["Profile", "#/account", "Account", "settings password"]]
     .map(([label, href, group, words]) => ({ label, href, group, words })));
   const searchBtn = el("button", { type: "button", class: "hdr-icon search-btn", "aria-label": "Search (Ctrl+K)", title: "Search players, pages, courses (Ctrl+K)" }, [icon("search")]);
   searchBtn.addEventListener("click", () => openPalette());
-  footItems.unshift(curChip(), searchBtn);
+  // (update 829) the top bar: the player picker, Cal and the ☰ menu (Chat & support and What's in the Bag moved: the menu, a Stats tab)
+  footItems.splice(0, footItems.length, curChip(), callieButton(), accountMenu(state));
+  void searchBtn;
   const plan = secs.find((x) => x.id === "plan"), data = secs.find((x) => x.id === "data");
+  const fol = secs.find((x) => x.id === "follow");
+  const srch = (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })();
+  // (update 829) Home, Stats, Play, Leaderboards, Search
   const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
     el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("home"), el("span", {}, "Home")]),
     data ? el("a", { href: data.items[0][1], "aria-current": data === onSec ? "page" : null }, [icon("data"), el("span", {}, data.label)]) : null,
-    (() => { const f = secs.find((x) => x.id === "follow"); return f ? el("a", { href: f.items[0][1], "aria-current": f === onSec ? "page" : null }, [icon(f.icon || "rank"), el("span", {}, f.label)]) : null; })(),
-    (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })(),
-    plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/practice", "aria-current": plan === onSec ? "page" : null }, [icon(plan.icon || "ball"), el("span", {}, plan.label)]) : null,
+    plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/entry", "aria-current": plan === onSec ? "page" : null }, [icon(plan.icon || "ball"), el("span", {}, plan.label)]) : null,
+    fol ? el("a", { href: fol.items[0][1], "aria-current": fol === onSec ? "page" : null }, [icon(fol.icon || "rank"), el("span", {}, fol.label)]) : null,
+    srch,
   ]);
   const rail = el("aside", { class: "rail" }, [
     el("a", { class: "brand", href: "#/home" }, [logoImg(), portalName]),

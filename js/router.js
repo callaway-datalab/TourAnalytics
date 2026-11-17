@@ -40,7 +40,8 @@ const ROUTES = [
   ["/questions/new", "client", () => import("./views/chat.js"), "question-new"],
   ["/questions/:id", "client", () => import("./views/chat.js"), "thread"],
   ["/account", "signed-in", () => import("./views/account.js"), "account"],
-  ["/witb", "signed-in", () => import("./views/witb.js"), "witb"],
+  ["/witb-page", "signed-in", () => import("./views/witb.js"), "witb"],
+  ["/witb", "signed-in", () => import("./current.js").then((m) => ({ render: () => { const k = /[?&]player=([^&]+)/.exec(location.hash); if (k) m.setCurrent({ key: decodeURIComponent(k[1]) }); m.openStatsTab("bag"); } })), "witb"], // (update 829: a tab on Stats)
   ["/entry", "signed-in", () => import("./views/dataEntry.js"), "entry"],
   ["/entry/new", "signed-in", () => import("./views/dataEntry.js"), "entry-new"],
   ["/entry/:player/:round", "signed-in", () => import("./views/dataEntry.js"), "entry-round"],
@@ -112,7 +113,7 @@ async function render() {
   const raw = location.hash.slice(1) || "/login";
   // (update 476) a new page starts at the top (the same page drawn again keeps its place)
   let backY = null;
-  if (raw !== lastRaw) { lastRaw = raw; try { history.scrollRestoration = "manual"; } catch { /* */ } const sid = scrollId; backY = backTo(); if (sid !== scrollId) window.scrollTo(0, 0); }
+  if (raw !== lastRaw) { try { if (lastRaw && !/^\/(questions|admin\/questions)/.test(lastRaw)) sessionStorage.setItem("ta.prevPage", `#${lastRaw}`.slice(0, 120)); } catch { /* */ } lastRaw = raw; try { history.scrollRestoration = "manual"; } catch { /* */ } const sid = scrollId; backY = backTo(); if (sid !== scrollId) window.scrollTo(0, 0); }
 
   const state = await whenReady();
   if (gen !== renderGen) return;
