@@ -573,3 +573,34 @@ li.is-cur, .lv-row.is-cur, .lb-row.is-cur, .ti-row.is-cur, .is-cur-cell { backgr
 @media (max-width: 640px) { .cf-bart { display: none; } .cf-open > td { padding-left: 12px !important; } }
 .cf-tag { margin-left: 8px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--ip-rule); font-size: 0.68rem; color: var(--ip-mute); white-space: nowrap; } .cf-small { color: var(--ip-gold); font-size: 0.8rem !important; }
 .cf-arrow { color: var(--ip-mute); font-size: 0.7rem; }
+/* (update 820) Course Fit opened: side by side, no wrapping; bars square at zero */
+.cf-cols { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; margin: 6px 0; }
+.cf-cols > div { min-width: 0; max-width: 100%; overflow-x: auto; }
+.cf-sub { margin: 4px 0 4px !important; font-size: 0.7rem !important; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ip-mute); }
+.cf-parts, .cf-hist { width: auto !important; max-width: none !important; margin: 0 !important; }
+.cf-parts td, .cf-parts th, .cf-hist td, .cf-hist th { white-space: nowrap; padding: 6px 10px !important; }
+.cf-det .cf-why { max-width: none; }
+.cf-mid i.pos { border-radius: 0 999px 999px 0 !important; } .cf-mid i.neg { border-radius: 999px 0 0 999px !important; }
+.ip-bartrack i { border-radius: 0 999px 999px 0; }
+.rp-ev { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--ip-mute); font-weight: 600; } .rp-ev .ip-sel { max-width: 240px; }
+/* (update 820) Overview pop-ups */
+.ip-popwrap { position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: center; align-items: flex-start; padding: 6vh 16px 16px; max-width: none; }
+.ip-pop-back { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+.ip-pop { position: relative; width: min(820px, 100%); max-height: 86vh; overflow-y: auto; background: var(--ip-card); border: 1px solid var(--ip-rule); border-radius: 16px; padding: 16px 18px; box-shadow: 0 24px 60px rgba(0,0,0,0.5); }
+.ip-pop-h { margin: 0 32px 10px 0; font-size: 1.15rem; color: var(--ip-ink); }
+.ip-pop-x { position: absolute; top: 8px; right: 10px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: transparent; color: var(--ip-mute); font-size: 1.4rem; cursor: pointer; }
+.ip-pop-x:hover { color: var(--ip-ink); }
+.ip-pop .td-chart { max-width: none; }
+.ip-click { cursor: pointer; border-radius: 6px; } .ip-click:hover { background: color-mix(in srgb, var(--ip-gold) 8%, transparent); }
+.ip-formlist { list-style: none; padding: 0; margin: 6px 0; } .ip-formlist li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 6px; font-size: 0.86rem; }
+.ip-formlist li .ip-chev { color: var(--ip-mute); }
+.ip-bag { margin-top: 12px; } .ip-bag .ip-t td { white-space: nowrap; }
+.ip-grid.ip-grid-2 { grid-template-columns: 1.25fr 1fr; }
+@media (max-width: 1000px) { .ip-grid.ip-grid-2 { grid-template-columns: 1fr; } }
+.ip-popstats { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; } .ip-popstats .ip-tile { flex: 1 1 140px; }
+.ip-pop .ip-barrow { grid-template-columns: minmax(12em, 18em) 1fr 3.4em; } .ip-pop .ip-barrow > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-ev span { white-space: nowrap; }
+.bw-t .bw-course { white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+/* (update 820) Home: "Show more" under Form, Player Spotlight, Where to Improve and Results & Milestones */
+.td-more-btn { border: 1px solid var(--td-rule2); background: transparent; color: var(--td-ink); border-radius: 999px; padding: 6px 16px; font: 600 0.8rem var(--td-sans); cursor: pointer; }
+.td-more-btn:hover { border-color: var(--td-gold); color: var(--td-gold); }

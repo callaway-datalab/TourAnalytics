@@ -243,7 +243,7 @@ export async function render(main, { previewClient } = {}) {
   const ROLE = roleOf();
   roleLbl.textContent = selfKey ? "Your edition" : `${{ admin: "Admin", analyst: "Analyst", caddy: "Caddie", coach: "Coach" }[ROLE] || "Coach"}’s edition`;
   // (update 731) a phone: equipment stories for 2 players at most (each loads that player's own rounds)
-  let GEARN = 14; /* (update 802: every favorite on a computer, not the first 6; 808: all 12 favorites and you) */ import("../fieldCache.js").then((m) => { if (m.isLiteDevice?.()) GEARN = 2; }).catch(() => {});
+  let GEARN = 14; /* (update 802: every favorite on a computer, not the first 6; 808: all 12 favorites and you) */ (() => { try { if (matchMedia("(hover: none) and (pointer: coarse)").matches) GEARN = 4; } catch { /* */ } })(); /* (update 820: only a phone holds fewer; a big stats file on a computer no longer cut it to 2, which left Equipment with one player) */ void import("../fieldCache.js").catch(() => {});
   let keys = [];
 
   // ---- the highlights ----
@@ -262,7 +262,7 @@ export async function render(main, { previewClient } = {}) {
   const CATW = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" };
   const ordN = (r) => (r === 1 ? "No. 1" : `${r}${["th", "st", "nd", "rd"][((r % 100) - 20) % 10] || ["th", "st", "nd", "rd"][r % 100] || "th"}`);
   const rkName = (c) => (c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase());
-  const sur = (k) => { const w = String(nameOf(k)).split(/\s+/).filter((x) => x && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(x)); return w.at(-1) || nameOf(k); };
+  const sur = (k) => firstOf(k); // (update 820: "van Rooyen", as firstOf (the surname) does)
   const cls = (v) => (v > 0.005 ? "up" : v < -0.005 ? "down" : "");
   // headline, number and the kicker over it, for each kind of highlight (a player's own Home: the card's own wording)
   function dress(h) {
@@ -553,7 +553,7 @@ export async function render(main, { previewClient } = {}) {
   // (update 780) Course Strategy in three parts: the players' history here, the skills that matter here, and how to play
   // the holes (up to 3 each)
   const cgOf = (h) => (/^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(skill|mix)|^up-att$/.test(h.id) ? "skill" : "hole"); // (update 804: a hole (where the top 10 win it) is hole strategy)
-  let courseShuf = 0; const secShuf = {}, secSeen = {}; // (update 797/801: the sections' shuffles)
+  let courseShuf = 0; const secShuf = {}, secSeen = {}, secMore = {}; const MORE3 = ["form", "spot", "focus", "res"]; // (update 820: 3 at a time, "Show more" for 3 more) // (update 797/801: the sections' shuffles)
   const courseGroups = (list, shown = []) => el("div", { class: "td-cgroups" }, [["player", "Player History"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3); shown.push(...xs); void courseShuf;
     return xs.length ? el("div", { class: "td-cgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-cols" }, xs.map(column))]) : null; }));
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
@@ -596,15 +596,18 @@ export async function render(main, { previewClient } = {}) {
         mine = [...fresh, ...old.slice(r0), ...old.slice(0, r0)]; }
       const pick = [], byK = new Map(), grpShown = []; // up to 6 (2 a player first, when there are several)
       const nIn = (i2) => rest.filter((h) => SEC_OF[h.kind] === i2).length, eqSF = nIn("spot") && nIn("focus") ? Math.min(6, Math.max(2, Math.min(nIn("spot"), nIn("focus")))) : 6; /* (update 780: the pair about the same length) */
-      const cap = id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : PAIR.includes(id) ? eqSF : 6; /* (update 736: more briefs) */
+      const cap = MORE3.includes(id) ? 3 + 3 * (secMore[id] || 0) : id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : PAIR.includes(id) ? eqSF : 6; /* (update 736: more briefs) */
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
       const content = id === "gear" ? el("div", { class: "td-stack" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine, grpShown) : id === "course" ? courseGroups(mine, grpShown) : el("div", { class: "td-cols" }, pick.map(column));
       const shuf = (() => { const b = el("button", { type: "button", class: "td-shuf", title: "Show other stories", "aria-label": `Shuffle ${title}` }, "↻ Shuffle"); /* (update 801: every section) */
         b.addEventListener("click", () => { if (id === "fact") { factShuf++; factMemo = null; } else secShuf[id] = (secShuf[id] || 0) + 1; drawFeed(collect()); requestAnimationFrame(() => document.getElementById(`td-${id}`)?.scrollIntoView({ block: "nearest" })); }); return b; })();
-      secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), shuf, sub ? el("span", {}, sub) : null]), content]));
-      if (PAIR.includes(id)) pairRest.set(id, { box: content, more: mine.filter((h) => !pick.includes(h)) }); /* (update 789: to even the pair up) */
+      // (update 820) 3 stories to start (Form, Player Spotlight, Where to Improve, Results & Milestones): "Show more" adds 3 more each press
+      const moreB = MORE3.includes(id) && mine.length > pick.length ? (() => { const left = mine.filter((h) => !pick.includes(h)), b = el("button", { type: "button", class: "td-more-btn" }, `Show more (${left.length})`);
+        b.addEventListener("click", () => { secMore[id] = (secMore[id] || 0) + 1; for (const h of left.splice(0, 3)) { content.appendChild(column(h)); pick.push(h); } secSeen[id] = new Set(pick.map((h) => h.id)); if (left.length) b.textContent = `Show more (${left.length})`; else b.remove(); }); return el("div", { class: "td-more-row" }, b); })() : null;
+      secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), shuf, sub ? el("span", {}, sub) : null]), content, moreB]));
+      if (PAIR.includes(id) && !MORE3.includes(id)) pairRest.set(id, { box: content, more: mine.filter((h) => !pick.includes(h)) }); /* (update 789: to even the pair up) */
       secSeen[id] = new Set((grpShown.length ? grpShown : pick).map((h) => h.id));
     }
     // (update 780) laid out in order: full-width sections on their own; Player Spotlight and Where to Improve side by side;

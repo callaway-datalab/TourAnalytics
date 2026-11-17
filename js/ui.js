@@ -422,7 +422,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
   setPages(() => [["Home", "#/home", "", "today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
     ["Overview", "stats:overview", "Stats", "player dossier profile report"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
-    ["Practice", "stats:practice:practice", "Stats · Practice & Goals", "drills sessions range"], ["Practice Week", "stats:practice:week", "Stats · Practice & Goals", "plan drills"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
+    ["Custom Practice", "stats:practice:practice", "Stats · Practice & Goals", "practice drills sessions range"], ["Recommended Practice", "stats:practice:week", "Stats · Practice & Goals", "practice week plan drills next event"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
     ["What's in the Bag", "#/witb", "", "witb clubs equipment gear"], ["Chat", admin ? "#/admin/questions" : "#/questions", "", "questions messages"], ["Profile", "#/account", "Account", "settings password"]]
     .map(([label, href, group, words]) => ({ label, href, group, words })));
   const searchBtn = el("button", { type: "button", class: "hdr-icon search-btn", "aria-label": "Search (Ctrl+K)", title: "Search players, pages, courses (Ctrl+K)" }, [icon("search")]);

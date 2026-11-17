@@ -1,0 +1,13 @@
+<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<script type="importmap">{"imports": {"http://localhost:8765/js/firebase-init.js": "http://localhost:8765/__mock/firebaseInit.js", "http://localhost:8765/js/auth.js": "http://localhost:8765/__mock/auth.js", "http://localhost:8765/js/preview.js": "http://localhost:8765/__mock/preview.js", "http://localhost:8765/js/store.js": "http://localhost:8765/__mock/store.js", "http://localhost:8765/js/watchlist.js": "http://localhost:8765/__mock/watchlist.js", "http://localhost:8765/js/reportGen.js": "http://localhost:8765/__mock/reportGen.js", "http://localhost:8765/js/courseHeat.js": "http://localhost:8765/__mock/courseHeat.js", "http://localhost:8765/js/courseRaw.js": "http://localhost:8765/__mock/courseRaw.js", "http://localhost:8765/js/liveData.js": "http://localhost:8765/__mock/liveData.js", "http://localhost:8765/js/fieldStore.js": "http://localhost:8765/__mock/fieldStore.js", "http://localhost:8765/js/fieldCache.js": "http://localhost:8765/__mock/fieldCache.js", "http://localhost:8765/js/callie.js": "http://localhost:8765/__mock/callie.js", "http://localhost:8765/js/practice/plan.js": "http://localhost:8765/__mock/plan.js"}, "scopes": {"http://localhost:8765/js/views/": {"http://localhost:8765/js/sg.js": "http://localhost:8765/__mock/sgShim.js"}}}</script>
+<link rel="stylesheet" href="css/style.css"><link rel="stylesheet" href="css/light.css"><link rel="stylesheet" href="css/daily.css"></head>
+<body><main id="app" class="container" style="padding:12px"></main>
+<script type="module">
+import { fullRounds, key } from "./__mock/fixture.js";
+const D = await import("./js/sgDetail.js");
+const app = document.getElementById("app");
+const rounds = fullRounds(key("Sam Burns")).filter((r) => r.tour === "PGA").map((r) => ({ ...r, course: r.event === "PGA Championship" ? (r.year === "2025" ? "Quail Hollow Club" : "Aronimink Golf Club") : r.event + " Course" }));
+const perRoundOf = (rs, c) => rs.reduce((t, r) => t + r.shots.reduce((u, s) => u + (!c || s.cat === c ? s.sg : 0), 0), 0) / rs.length;
+const S = { st: {}, perRoundOf, panelBox: (t, kids) => { const d = document.createElement("section"); d.className = "panel"; const h = document.createElement("h3"); h.textContent = t; d.append(h, ...kids.filter(Boolean)); return d; }, draw: () => {} };
+app.append(D.bestWorstBox(S, rounds)); window.__ready = true;
+</script></body></html>

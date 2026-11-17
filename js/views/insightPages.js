@@ -42,3 +42,14 @@ export function playerBar(who, current, onPick) {
 }
 export const card = (title, color, body, cls0 = "") => el("section", { class: `ip-card ${cls0}`, style: `--ipc:${color}` }, [el("p", { class: "ip-kick" }, title), ...[].concat(body)]);
 export const samp = (t) => el("p", { class: "ip-samp" }, t);
+/** (update 820) a pop-up over the page: a title, anything inside, × / Esc / a tap outside to close */
+export function popup(title, body, kick = "") {
+  document.querySelector(".ip-popwrap")?.remove();
+  const close = () => { wrap.remove(); removeEventListener("keydown", esc); };
+  const esc = (e) => { if (e.key === "Escape") close(); };
+  const x = el("button", { type: "button", class: "ip-pop-x", "aria-label": "Close" }, "×"); x.addEventListener("click", close);
+  const back = el("div", { class: "ip-pop-back" }); back.addEventListener("click", close);
+  const wrap = el("div", { class: "ip ip-popwrap" }, [back, el("section", { class: "ip-pop", role: "dialog", "aria-modal": "true", "aria-label": title }, [x, kick ? el("p", { class: "ip-kick" }, kick) : null, el("h3", { class: "ip-pop-h" }, title), ...[].concat(body)])]);
+  document.body.append(wrap); addEventListener("keydown", esc); x.focus();
+  return close;
+}

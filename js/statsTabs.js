@@ -9,7 +9,7 @@ export async function fill(box, kind, me, { st }) {
   if (kind === "overview") { const m = await import("./views/dossier.js"); return m.overview(box, me.key, name); }
   if (kind === "fit") { const m = await import("./views/courseFit.js"); return m.fitTab(box, me.key, name); }
   // Practice & Goals: three parts, one at a time (the plan for the week first)
-  const PARTS = [["week", "Practice week"], ["practice", "Practice sessions"], ["goals", "Goals"]];
+  const PARTS = [["week", "Recommended Practice"], ["practice", "Custom Practice"], ["goals", "Goals"]];
   const body = el("div", { class: "st-pg-body" });
   const pills = el("div", { class: "ip-pills st-pg-pills", role: "group", "aria-label": "Practice & Goals" });
   const show = async (sub) => { st.pgSub = sub;

@@ -134,3 +134,51 @@ export async function loadCourse(meta, labelRounds) {
     return courseProfile(meta, rows, labelsFrom(labelRounds), clientKey); })();
   courseMemo.set(k, p); p.catch(() => courseMemo.delete(k)); return p;
 }
+
+// (update 819) Course Fit's room to gain, (update 820) shared with Recommended Practice
+export const evName = (e) => String(e || "").replace(/\s+\d{4}$/, "").trim();
+
+/** every tournament on a tour: { name, yrs, n (player-weeks), perYr, small, sd {cat}, room {cat: × usual, shrunk} } */
+const SHRINK = 60; // player-weeks at which a tournament's own spread counts half (and the tour's usual, half)
+export function eventRoom(field, tour) {
+  const by = new Map(); // event → year|player → rounds
+  for (const p of field) for (const r of p.rounds) { if (tour && r.tour !== tour) continue; const e = evName(r.event); if (!e) continue;
+    const m = by.get(e) || by.set(e, new Map()).get(e), k = `${yrOf(r)}|${p.key}`; (m.get(k) || m.set(k, []).get(k)).push(r); }
+  const evs = [];
+  for (const [name, m] of by) {
+    const weeks = [...m].map(([k, rs]) => ({ yr: k.split("|")[0], v: Object.fromEntries(CATS.map((c) => [c, rs.reduce((t, r) => t + inCat(r, c), 0) / rs.length])) }));
+    if (weeks.length < 20) continue; // too few on record
+    const yrs = [...new Set(weeks.map((w) => w.yr))].sort();
+    // the spread within each year (a year's conditions shift everyone alike), pooled over the years
+    const sd = Object.fromEntries(CATS.map((c) => { let ss = 0, df = 0; for (const y of yrs) { const xs = weeks.filter((w) => w.yr === y).map((w) => w.v[c]); if (xs.length < 3) continue; const mu = xs.reduce((t, x) => t + x, 0) / xs.length; ss += xs.reduce((t, x) => t + (x - mu) ** 2, 0); df += xs.length - 1; } return [c, df > 0 ? Math.sqrt(ss / df) : null]; }));
+    if (CATS.some((c) => sd[c] == null)) continue;
+    evs.push({ name, yrs, n: weeks.length, perYr: weeks.length / yrs.length, sd });
+  }
+  // the tour's usual spread in each part: every tournament's, weighted by its player-weeks
+  const usual = Object.fromEntries(CATS.map((c) => { const w = evs.reduce((t, e) => t + e.n, 0); return [c, w ? Math.sqrt(evs.reduce((t, e) => t + e.n * e.sd[c] ** 2, 0) / w) : null]; }));
+  const mid = [...evs.map((e) => e.perYr)].sort((a, b) => a - b)[Math.floor(evs.length / 2)] || 0; // (a small field: well under the tour's usual field in the file)
+  for (const e of evs) { const k = e.n / (e.n + SHRINK); e.small = e.perYr < 0.6 * mid;
+    e.raw = Object.fromEntries(CATS.map((c) => [c, usual[c] ? e.sd[c] / usual[c] : 1]));
+    e.room = Object.fromEntries(CATS.map((c) => [c, Math.min(1.8, Math.max(0.5, 1 + (e.raw[c] - 1) * k))])); }
+  return { evs, usual, mid };
+}
+
+
+/** (update 820) a player's weeks at one tournament, every year in the stats file: { yr, course, rounds, sg (a round), cat {c: a round},
+ *  pos (their place in that week's field by strokes gained, ties shared), of (the field in the file), cut (2 rounds or fewer while others played 4) } */
+export function eventHistory(field, key, name, tour) {
+  const weeks = new Map(); // year → [{ key, rs }]
+  for (const p of field) for (const r of p.rounds) { if (tour && r.tour !== tour) continue; if (evName(r.event) !== name) continue;
+    const y = yrOf(r), m = weeks.get(y) || weeks.set(y, new Map()).get(y); (m.get(p.key) || m.set(p.key, []).get(p.key)).push(r); }
+  const out = [];
+  for (const [yr, m] of weeks) { const mine = m.get(key); if (!mine) continue;
+    const all = [...m].map(([k, rs]) => ({ k, sum: rs.reduce((t, r) => t + tot(r), 0), n: rs.length })), most = Math.max(...all.map((x) => x.n));
+    // full weeks first (everyone who played every round), by strokes gained; then the rest
+    all.sort((a, b) => (b.n === most) - (a.n === most) || b.sum - a.sum); const i = all.findIndex((x) => x.k === key), me = all[i];
+    const pos = me.n === most ? 1 + all.filter((x) => x.n === most && x.sum > me.sum + 1e-9).length : null;
+    const tied = me.n === most && all.filter((x) => x.n === most && Math.abs(x.sum - me.sum) < 1e-9).length > 1;
+    out.push({ yr, course: mine.find((r) => r.course)?.course || null, rounds: mine.length, sg: me.sum / mine.length, cat: Object.fromEntries(CATS.map((c) => [c, mine.reduce((t, r) => t + inCat(r, c), 0) / mine.length])),
+      pos, tied, of: all.length, cut: me.n < most && most >= 3, eventLevel: mine.some((r) => r.eventLevel) }); }
+  return out.sort((a, b) => b.yr.localeCompare(a.yr));
+}
+

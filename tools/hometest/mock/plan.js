@@ -12,3 +12,4 @@ export function goalText(d) {
   const tail = { lag: " inside 3 ft", fairway: " fairways", ...(d.cat === "ARG" ? { green: " onto the green" } : {}), green: " greens", bunker: " inside 10 ft" }[d.kind] || "";
   return `${verb} ${d.goal} of ${d.reps}${tail}`; }
 export const deletePlanItem = async () => {}; export const planOwner = () => "me"; export const goalSource = () => "";
+export const drillLine = () => ""; export const goalStatsFor = () => null; export const practiceOpen = () => false; export const nounOf = () => "shots"; export const planFor = async () => []; export const setScore = () => 0; export const setMet = () => false; export const bestOf = () => null; export const activeSecs = () => 0; export const addedText = () => ""; export const mmss = () => "0:00"; export const midOf = () => 0;

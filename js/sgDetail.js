@@ -372,6 +372,8 @@ export function productTrend(S, mine, cat, toggles) {
     g.rounds++; for (const s of rd.shots) { g.sg += s.sg; const p = prodOf(s, kind); if (p) g.prods.set(p, (g.prods.get(p) || 0) + (s.w || 1)); }
   });
   const list = [...groups.values()].map((g) => ({ ...g, value: g.sg / g.rounds, top: [...g.prods].sort((a, b) => b[1] - a[1])[0]?.[0] || null }));
+  // (update 820) more than one season picked: each tournament's year under its bar too ("Masters '25")
+  if (new Set(list.map((g) => g.year)).size > 1) for (const g of list) if (g.short && g.year) g.short = `${g.short} '${String(g.year).slice(2)}`;
   const used = new Map(); for (const g of list) for (const [p, n] of g.prods) used.set(p, (used.get(p) || 0) + n);
   // (update 302) each product's average: strokes gained a round with it (these shots), over the rounds it was used in
   const avgOf = new Map();
@@ -487,7 +489,13 @@ export function panelBox(S, title, content, size = "") {
    the game, best to worst; the best 3 and worst 3 averaged, and the part of the game that differs most between them (what
    drives the good weeks). Home's "What wins" story is this table with the season picked. */
 export function bestWorstBox(S, mine) {
-  const ev = new Map(); for (const rd of mine || []) { if (!rd.event) continue; const k = `${rd.event}|${String(rd.year || String(rd.date || "").slice(0, 4))}`; (ev.get(k) || ev.set(k, { key: k, name: rd.event, rs: [] }).get(k)).rs.push(rd); }
+  // (update 820) one row a tournament at a course, every season picked together (the PGA Championship moves: a row for
+  // each course it was played on); the Course column says where, the Years column when
+  const yrOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4)), evN = (e) => String(e || "").replace(/\s+\d{4}$/, "").trim();
+  const ckey = (c) => String(c || "").toLowerCase().replace(/&/g, " ").replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w && !["golf", "club", "course", "links", "gl", "gc", "cc", "country", "the", "and", "resort"].includes(w)).join(" ");
+  const ev = new Map(); for (const rd of mine || []) { if (!rd.event) continue; const k = `${evN(rd.event)}|${ckey(rd.course)}`;
+    const e = ev.get(k) || ev.set(k, { key: k, name: evN(rd.event), course: rd.course || null, rs: [], yrs: new Set(), last: null }).get(k); e.rs.push(rd); e.yrs.add(yrOf(rd)); if (!e.course && rd.course) e.course = rd.course;
+    const yk = `${rd.event}|${yrOf(rd)}`; if (!e.last || yrOf(rd) > e.last.split("|").at(-1)) e.last = yk; }
   const CATS = [["OTT", "Off-the-Tee"], ["APP", "Approach"], ["ARG", "Around"], ["PUTT", "Putting"]];
   // (update 777) every tournament listed (a one-round week too, marked); the best 3 and worst 3 only from weeks of 2+ rounds
   const full = (e) => e.rs.length >= 2 || e.rs.some((r) => r.eventLevel);
@@ -498,15 +506,15 @@ export function bestWorstBox(S, mine) {
   const cls = (v) => (v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
   const cell = (v, strong) => el("td", { class: `num ${cls(v)}${strong ? " strong" : ""}` }, fmtSG(v));
   // (update 765) a tournament opens in Tournament Results
-  const open = (r) => { S.st.view2 = "results"; S.st.resKey = r.key; S.st.resRound = null; S.st.resHole = null; S.draw(); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const body = rows.map((r, i) => el("tr", { class: `bw-row${top.includes(r) ? " bw-top" : bot.includes(r) ? " bw-bot" : ""}${full(r) ? "" : " bw-one"}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "num muted", title: full(r) ? null : "One round on record: not counted in the best or worst 3" }, full(r) ? String(r.rs.length) : `${r.rs.length}*`), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
+  const open = (r) => { S.st.view2 = "results"; S.st.resKey = r.last || r.key; S.st.resRound = null; S.st.resHole = null; S.draw(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const body = rows.map((r, i) => el("tr", { class: `bw-row${top.includes(r) ? " bw-top" : bot.includes(r) ? " bw-bot" : ""}${full(r) ? "" : " bw-one"}`, role: "button", tabindex: "0", title: `Open ${r.name} in Tournament Results`, onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter") open(r); } }, [el("td", {}, `${i + 1}. ${r.name}`), el("td", { class: "bw-course" }, r.course || "—"), el("td", { class: "muted" }, [...r.yrs].sort().map((y) => `'${y.slice(2)}`).join(", ")), el("td", { class: "num muted", title: full(r) ? null : "One round on record: not counted in the best or worst 3" }, full(r) ? String(r.rs.length) : `${r.rs.length}*`), cell(r.tot, true), ...CATS.map(([c]) => cell(r.c[c], false))]));
   const lead = diff[0];
   const foot = [
-    el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, a round"), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
-    el("tr", { class: "bw-sum" }, [el("td", {}, "Worst 3, a round"), el("td", {}), cell(mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).b))]),
-    el("tr", { class: "bw-sum bw-diff" }, [el("td", {}, "Difference"), el("td", {}), cell(mean(top, (x) => x.tot) - mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => { const x = diff.find((y) => y.c === c); return el("td", { class: `num ${x === lead ? "bw-lead" : ""}` }, fmtSG(x.d)); })])];
+    el("tr", { class: "bw-sum" }, [el("td", {}, "Best 3, a round"), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).a))]),
+    el("tr", { class: "bw-sum" }, [el("td", {}, "Worst 3, a round"), el("td", {}), el("td", {}), el("td", {}), cell(mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => cell(diff.find((x) => x.c === c).b))]),
+    el("tr", { class: "bw-sum bw-diff" }, [el("td", {}, "Difference"), el("td", {}), el("td", {}), el("td", {}), cell(mean(top, (x) => x.tot) - mean(bot, (x) => x.tot), true), ...CATS.map(([c]) => { const x = diff.find((y) => y.c === c); return el("td", { class: `num ${x === lead ? "bw-lead" : ""}` }, fmtSG(x.d)); })])];
   return S.panelBox("Best & worst tournaments", [
     infoTip("Each tournament in the selection: strokes gained a round, best to worst. A week with only one round on record (marked *) is listed but not counted in the best or worst 3. The best 3 (green) and worst 3 (red) are averaged at the bottom: the part of the game with the biggest difference is what drives the good weeks. Change the season or tour in Filters to see it for another stretch."),
     el("p", { class: "small" }, [el("strong", {}, `${lead.l === "Around" ? "Around-the-Green" : lead.l} drives the good weeks`), `: ${fmtSG(lead.a)} a round in the best 3, ${fmtSG(lead.b)} in the worst 3 (${fmtSG(lead.d)}).`]),
-    el("div", { class: "table-scroll" }, el("table", { class: "plain bw-t" }, [el("thead", {}, el("tr", {}, ["Tournament", "Rds", "Total", ...CATS.map(([, l]) => l)].map((x, i) => el("th", { class: i ? "num" : null }, x)))), el("tbody", {}, body), el("tfoot", {}, foot)]))], "full");
+    el("div", { class: "table-scroll" }, el("table", { class: "plain bw-t" }, [el("thead", {}, el("tr", {}, ["Tournament", "Course", "Years", "Rds", "Total", ...CATS.map(([, l]) => l)].map((x, i) => el("th", { class: i > 2 ? "num" : null }, x)))), el("tbody", {}, body), el("tfoot", {}, foot)]))], "full");
 }
