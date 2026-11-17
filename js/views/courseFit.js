@@ -21,7 +21,7 @@ const { evName, eventRoom } = PI; // (update 820: shared with Recommended Practi
 export async function fitTab(box, key, name) {
   mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted ip-wait" }, `Ranking every tournament for ${name}…`)));
   const wrap = box.firstChild, st = window.__authState || {}, last = lastName(name), self = PI.isSelfKey(key); // (update 834: your own: "you", "your")
-  const poss = self ? "your" : `${last}\u2019s`, Poss = self ? "Your" : `${last}\u2019s`;
+  const poss = self ? "your" : `${last}\u2019${/s$/i.test(last) ? "" : "s"}`, Poss = self ? "Your" : poss; // (update 838: "Burns’", not "Burns’s")
   const [{ field }, rounds] = await Promise.all([PI.loadField(st).catch(() => ({ field: [] })), PI.loadShots(key, name)]);
   const fp = field.find((p) => p.key === key), base = rounds.length ? rounds : fp?.rounds || [];
   if (!base.length) { mount(wrap, el("p", { class: "muted" }, `No rounds on record for ${name}.`)); return; }
@@ -44,7 +44,7 @@ export async function fitTab(box, key, name) {
     const edgeTxt = Math.abs(big.edge) < 0.01 ? `${Poss} game is worth about the same here as in a normal week.`
       : big.me >= 0 ? `${Poss} ${part(big.c)}, a strength (${sg2(big.me)} per round in a normal week), is worth ${Math.abs(big.edge).toFixed(2)} ${big.edge >= 0 ? "more" : "less"} here.`
       : `${Poss} ${part(big.c)}, a weakness (${sg2(big.me)} per round in a normal week), costs ${Math.abs(big.edge).toFixed(2)} ${big.edge < 0 ? "more" : "less"} here.`;
-    return `Most room to gain here: ${part(most.c)} (${xx(most.room)} usual). Least: ${part(least.c)} (${xx(least.room)}). ${edgeTxt}`; };
+    return `Here, ${part(most.c)} matters most (${xx(most.room)} as much as in a normal week) and ${part(least.c)} least (${xx(least.room)}). ${edgeTxt}`; }; // (update 838: plain words)
   const max = Math.max(0.01, ...rows.map((r) => Math.abs(r.eff)));
   // (update 820) opened: why, the parts, and their own weeks there (every year in the stats file), side by side
   // the official finish when the results are in; else their place by strokes gained among the file's players (marked ≈)
@@ -60,10 +60,10 @@ export async function fitTab(box, key, name) {
       : el("p", { class: "muted" }, `${self ? "You haven't" : `${last} hasn't`} played it on record.`);
     return el("div", { class: "cf-det" }, [el("p", { class: "cf-why" }, why(r)), r.small ? el("p", { class: "cf-small" }, `Small field (about ${Math.round(r.perYr)} players a year in the file, against about ${Math.round(mid)} usually; likely no cut): a rough guide.`) : null,
       el("div", { class: "cf-cols" }, [
-        el("div", {}, [el("p", { class: "cf-sub" }, "What the tournament asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part of the game", "Room to gain", self ? "You normally" : `${last} normally`, "Edge here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
+        el("div", {}, [el("p", { class: "cf-sub" }, "What the tournament asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part of the game", "Impact here vs usual", self ? "You normally" : `${last} normally`, "What it's worth here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
           el("tbody", {}, r.parts.map((x) => el("tr", {}, [el("td", {}, PI.CATN[x.c]), el("td", { class: "num strong" }, [xx(x.room), el("span", { class: "cf-arrow" }, x.room > 1.03 ? " ▲" : x.room < 0.97 ? " ▼" : "")]), el("td", { class: `num ${cls(x.me)}` }, `${sg2(x.me)} per round`), el("td", { class: `num strong ${cls(x.edge)}` }, sg2(x.edge))])))])]),
         el("div", {}, [el("p", { class: "cf-sub" }, `${self ? "You" : last} at ${theE(r.name)}`), hist])]),
-      el("p", { class: "muted small" }, `Room to gain: how far the field spread out in each part here (${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}) against a normal ${tour || "tour"} week, 1.00× being usual. Edge here: ${Poss} normal week in that part × (room − 1). Projected there: ${sg2(r.fit)} strokes gained per round.${H.length ? " Finish: the official finish where the results are in (≈: their place by strokes gained among those who played every round, until the results are in). SG rank: their rank that week by strokes gained per round, among everyone in the stats file, whatever rounds they played. The parts are strokes gained per round." : ""}`)]); };
+      el("p", { class: "muted small" }, `Impact vs usual: how far the field spread out in each part here (${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}) against a normal ${tour || "tour"} week, 1.00× being usual. What it's worth here: ${Poss} normal week in that part × (impact − 1). Projected there: ${sg2(r.fit)} strokes gained per round.${H.length ? " Finish: the official finish where the results are in (≈: their place by strokes gained among those who played every round, until the results are in). SG rank: their rank that week by strokes gained per round, among everyone in the stats file, whatever rounds they played. The parts are strokes gained per round." : ""}`)]); };
   const table = el("div", { class: "ip-tw" }, el("table", { class: "ip-t cf-t" }, [
     el("thead", {}, el("tr", {}, ["#", "Tournament", "Fit vs a normal week", "", "Rounds there"].map((h, i) => el("th", { class: i === 2 || i === 4 ? "num" : null }, h)))),
     el("tbody", {}, rows.flatMap((r, i) => { const open = el("tr", { class: "cf-open", hidden: true }, el("td", { colspan: "5" }, null));
@@ -74,11 +74,11 @@ export async function fitTab(box, key, name) {
       const toggle = () => { const on = open.hidden; if (on && !open.firstChild.firstChild) open.firstChild.append(detail(r)); open.hidden = !on; tr.classList.toggle("on", on); tr.setAttribute("aria-expanded", String(on)); };
       tr.addEventListener("click", toggle); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
       return [tr, open]; }))]));
-  const lead = (r) => { const big = [...r.parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge))[0]; return `${part(big.c)} has ${xx(big.room)} the usual room to gain (${self ? "" : `${last}: `}${sg2(big.me)} per round)`; };
+  const lead = (r) => { const big = [...r.parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge))[0]; return PI.fitWords(big, self ? "your" : `${last}’s`.replace(/s’s$/, "s’"), self ? "" : last); }; // (update 838: plain words)
   const best = rows.slice(0, 3), worst = rows.slice(-3).reverse();
   mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#64d2ff" }, `Course Fit · ${tour || ""} ${year}`.trim()), el("h2", { class: "ip-h" }, `Where ${poss} game fits best`)])),
     el("div", { class: "ip-grid2" }, [card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round better suited than a normal week; ${lead(r)}`])))),
       card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round; ${lead(r)}`]))))]),
     table,
-    samp(`Room to gain: strokes gained only exists because players differ, so where the field spreads out more in a part of the game there's more for a good player to gain, and where everyone does about the same (easy greens, short putts) there's less. For each tournament and part: the spread of that week's field (every year in the stats file) against a normal ${tour || "tour"} week, pulled toward usual when there are few player-weeks. Fit vs a normal week: ${Poss} ${year} season in each part (${P.n} rounds) × (room − 1), added up, strokes per round. It shows where there's more room, not why (the shot-by-shot data could, for courses in Strategy Maps). A guide to fit, not a forecast.`)]);
+    samp(`Impact vs usual: strokes gained only exists because players differ, so where the field spreads out more in a part of the game there's more for a good player to gain, and where everyone does about the same (easy greens, short putts) there's less. For each tournament and part: the spread of that week's field (every year in the stats file) against a normal ${tour || "tour"} week, pulled toward usual when there are few player-weeks. Fit vs a normal week: ${Poss} ${year} season in each part (${P.n} rounds) × (impact − 1), added up, strokes per round. It shows where there's more room, not why (the shot-by-shot data could, for courses in Strategy Maps). A guide to fit, not a forecast.`)]);
 }

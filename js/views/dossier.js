@@ -13,7 +13,7 @@ import { setCurrent, openStatsTab, lastName } from "../current.js";
 export async function render() {
   const m = /[?&]player=([^&]+)/.exec(location.hash); if (m) setCurrent({ key: decodeURIComponent(m[1]) });
   const f = /[?&]focus=([^&]+)/.exec(location.hash); try { if (f) sessionStorage.setItem("ta.ovFocus", decodeURIComponent(f[1])); } catch { /* */ }
-  openStatsTab("overview");
+  location.hash = "#/home"; // (update 838: the overview is on Home now)
 }
 
 /** a + beside the name: add them to your favorites (★ once they are; tap to take them off) */
@@ -182,18 +182,18 @@ export async function overview(box, key, name, opts = {}) { // (update 837) opts
     if (!ev.name) { mount(fitBox, [head, el("p", { class: "muted" }, "No schedule for this tour yet: pick a tournament with Change.")]); return; }
     const parts = E ? PI.CATS.map((c) => ({ c, room: E.room[c], me: P.cat[c] || 0, edge: (P.cat[c] || 0) * (E.room[c] - 1) })) : null, eff = parts ? parts.reduce((t, x) => t + x.edge, 0) : null;
     const roomBox = parts ? [el("h3", { class: "ip-h3" }, [`Fit vs a normal week: `, el("b", { class: cls(eff) }, `${sg2(eff)} strokes per round`)]),
-      el("ul", { class: "ip-bul" }, [...parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge)).map((x) => el("li", {}, [`${PI.CATN[x.c]}: ${x.room.toFixed(2)}× the usual room to gain; ${self ? "you" : nameS} ${sg2(x.me)} per round normally → `, el("b", { class: cls(x.edge) }, sg2(x.edge))])))]
+      el("ul", { class: "ip-bul" }, [...parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge)).map((x) => el("li", {}, [(() => { const t = PI.fitWords(x, self ? "your" : `${nameS}’s`.replace(/s’s$/, "s’"), self ? "" : nameS); return t[0].toUpperCase() + t.slice(1); })(), "; worth ", el("b", { class: cls(x.edge) }, `${sg2(x.edge)} per round`), " here against a normal week"]) /* (update 838: plain words) */))]
       : [el("p", { class: "muted" }, `No ${ev.name} on record in the stats file yet, so no fit from it.`)];
     mount(fitBox, [head, ...roomBox, el("div", { class: "ip-fit-course" }, el("p", { class: "muted small" }, "Looking for the course in Strategy Maps…"))]);
     const meta = PI.heatCourseFor(heatL, ev), box2 = fitBox.querySelector(".ip-fit-course");
     const C = meta ? await PI.loadCourse(meta, [P.rs]).catch(() => null) : null;
     const goFit = el("button", { type: "button", class: "ip-link" }, `Every tournament for ${self ? "you" : nameS} →`); goFit.addEventListener("click", () => openStatsTab("fit"));
-    if (!C) { mount(box2, [goFit, samp(`${E ? `Room to gain: how far the field spread out in each part at ${/^the\s/i.test(ev.name) ? ev.name : `the ${ev.name}`} (${E.n} player-weeks) against a normal week. ` : ""}${meta ? `${meta.name}'s shots couldn't be read.` : "Its course isn't in Strategy Maps with shots, so there's no distance detail."}`)]); return; }
+    if (!C) { mount(box2, [goFit, samp(`${E ? `Impact vs usual: how far the field spread out in each part at ${/^the\s/i.test(ev.name) ? ev.name : `the ${ev.name}`} (${E.n} player-weeks) against a normal week. ` : ""}${meta ? `${meta.name}'s shots couldn't be read.` : "Its course isn't in Strategy Maps with shots, so there's no distance detail."}`)]); return; }
     const fit = PI.fitFor(P, C, key, name), yrsT = C.yrs.length > 1 ? `${C.yrs[0]}-${C.yrs.at(-1).slice(2)}` : C.yrs[0] || "";
     mount(box2, [el("p", { class: "cf-sub" }, `At ${meta.name}, by distance`),
       el("ul", { class: "ip-bul" }, [...fit.key3.map((x) => el("li", {}, [`${PI.CATN[x.c]} from ${x.l} (${Math.round(x.share * 100)}% of what wins here; ${x.att.toFixed(1)} ${x.c === "PUTT" ? "putts" : x.c === "ARG" ? "chips and pitches" : "approaches"} per round from there): ${nameS} `, el("b", { class: cls(x.me) }, x.me == null ? "not enough shots" : `${sg3(x.me)} a shot`), `, the top 10 there ${sg3(x.top)} (strokes gained a shot)`])),
         el("li", {}, fit.hereRds ? `${fit.hereRds} rounds there on record` : "No rounds there on record")]), goFit,
-      samp(`Room to gain: the field's spread in each part there against a normal week (stats file). Distances: every round on record at ${meta.name} (${yrsT}, ${C.nRds} rounds), the top 10 against the rest`)]);
+      samp(`Impact vs usual: the field's spread in each part there against a normal week (stats file). Distances: every round on record at ${meta.name} (${yrsT}, ${C.nRds} rounds), the top 10 against the rest`)]);
   };
   // Change: the schedule's coming events first, then any tournament on record in the schedule's order (update 836)
   const pickEvent = async (ev) => {

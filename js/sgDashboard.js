@@ -211,7 +211,8 @@ export function sgDashboard(container, opts) {
         let tries = 0; const t = setInterval(() => { tries++; const hs = [...container.querySelectorAll("h3, .fx-eyebrow")].filter((h) => h.textContent.trim().toLowerCase().startsWith(String(pre.scroll).toLowerCase()));
           if (hs.length) { clearInterval(t); hs[0].scrollIntoView({ behavior: "smooth", block: "start" }); } else if (tries > 40) clearInterval(t); }, 250); } } } catch { /* */ }
   // (update 833) the view: ?view= in the address (Stats' row of pages), else what a preset asked for; switched in place
-  { const qv = new URLSearchParams(location.hash.split("?")[1] || "").get("view"); if (qv) st.view2 = qv; else if (st.view2 && !opts.entered && !opts.emptyNote) { try { const h = location.hash.split("?"), q = new URLSearchParams(h[1] || ""); q.set("view", st.view2); history.replaceState(history.state, "", `${h[0]}?${q}`); } catch { /* */ } }
+  { const qv = new URLSearchParams(location.hash.split("?")[1] || "").get("view"); if (qv) st.view2 = qv === "overview" ? "full" : qv; /* (update 838: no Overview on Stats) */ else if (st.view2 && !opts.entered && !opts.emptyNote) { try { const h = location.hash.split("?"), q = new URLSearchParams(h[1] || ""); q.set("view", st.view2); history.replaceState(history.state, "", `${h[0]}?${q}`); } catch { /* */ } }
+    if (!st.view2 || st.view2 === "overview") st.view2 = "full"; // (update 838: Player Stats is what Stats opens on)
     container.classList.add("st-host"); import("./ui.js").then((m) => m.syncStatsNav()).catch(() => {});
     const onView = (e) => { if (!container.isConnected) { removeEventListener("ta-stats-view", onView); return; } st.view2 = e.detail.view; if (e.detail.sub) st.pgSub = e.detail.sub; draw(); window.scrollTo({ top: 0 }); };
     addEventListener("ta-stats-view", onView); }
@@ -411,7 +412,7 @@ export function sgDashboard(container, opts) {
     const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "focus"); // (update 505: Full stats unless Focus is picked)
     const resultsOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "results"); // (update 756: Tournament Results)
     // (update 817) Overview (the player's page: what Stats opens on), Course Fit (every course for them), Practice & Goals
-    const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice", "compare", "bag"].includes(st.view2) ? st.view2 : ["full", "focus", "results"].includes(st.view2) ? null : "overview") : null;
+    const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice", "compare", "bag"].includes(st.view2) ? st.view2 : null) : null; // (update 838: Player Stats (full) unless another page is picked; no Overview)
     const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
     const focusMine = focusOn ? nz(applyFilters(me.rounds, noShotF)) : null;
     const focusField = focusOn ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...rankF, cats: [], lie: [], dist: [], club: [], gear: [] })) })) : null;

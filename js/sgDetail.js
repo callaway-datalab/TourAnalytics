@@ -293,7 +293,7 @@ async function saveProductChange(S, { kind, g, from, to, edits, status }) {
   status.textContent = "Saving\u2026";
   try {
     const pe = await import("./productEdits.js");
-    await pe.saveProductEdit(S.me.key, { ...(prior ? { id: prior.id } : {}), event: g.event, year: g.year, pk: kind, kinds, from: prior ? prior.from ?? null : from, to, label: g.label });
+    await pe.saveProductEdit(S.me.key, { ...(prior ? { id: prior.id } : {}), event: g.event, year: g.year, pk: kind, kinds, from: prior ? prior.from ?? null : from, to, label: g.label }, S.me.label || S.me.name || ""); // (update 838: the admin is told)
     status.textContent = "Saved. Reloading so every page uses it\u2026"; location.reload();
   } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that. Only the admin and the player\u2019s team can change products (and the productEdits rule must be published)."; }
 }
@@ -319,7 +319,7 @@ export function productEditPanel(S, { kind, g, order, nameOf, colorOf, edits }) 
   });
   const mine = edits.filter((e) => e.event === g.event && String(e.year) === String(g.year));
   const undo = mine.length ? el("button", { type: "button", class: "link danger small" }, "Undo the change here (back to the data)") : null;
-  undo?.addEventListener("click", async () => { undo.disabled = true; status.textContent = "Saving\u2026"; try { const pe = await import("./productEdits.js"); for (const e of mine) await pe.removeProductEdit(S.me.key, e.id); status.textContent = "Done. Reloading\u2026"; location.reload(); } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that."; undo.disabled = false; } });
+  undo?.addEventListener("click", async () => { undo.disabled = true; status.textContent = "Saving\u2026"; try { const pe = await import("./productEdits.js"); for (const e of mine) await pe.removeProductEdit(S.me.key, e.id, S.me.label || S.me.name || ""); status.textContent = "Done. Reloading\u2026"; location.reload(); } catch (err) { console.error(err); status.textContent = "Couldn\u2019t save that."; undo.disabled = false; } });
   draw();
   const parts = [el("div", { class: "pe-head" }, [el("strong", {}, g.label), mine.length ? el("span", { class: "muted small" }, " \u00b7 changed by hand") : null]),
     el("p", { class: "pe-lab" }, here.length > 1 ? "Replace" : "Now"),

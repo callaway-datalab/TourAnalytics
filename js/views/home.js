@@ -390,7 +390,7 @@ export async function render(main, { previewClient } = {}) {
   function howOf(h) {
     const x = h.x || {}, t = h.id.split("-")[0], k = h.k, SY = seasonYr(), tourT = tourPick && tourPick !== ALL ? tourName(tourPick) : "All tours";
     const who = k ? nameOf(k) : "", cN = (c) => (c && c !== "TOTAL" ? CATN[c] : "All categories (SG: Total)");
-    const stats = (more) => [`Open Stats${who ? ` with ${who} picked` : ""} (Full stats at the top).`, `Filters: Season ${SY} · Tour ${tourT}${more ? ` · ${more}` : ""}.`];
+    const stats = (more) => [`Open Stats${who ? ` with ${who} picked` : ""} (Player Stats at the top).`, `Filters: Season ${SY} · Tour ${tourT}${more ? ` · ${more}` : ""}.`];
     const board = (c, more) => [`Open Leaderboards.`, `Filters: Season ${SY} · Tour ${tourT} · Part of the game: ${cN(c)}${more ? ` · ${more}` : ""}.`, who ? `Find ${who} in the Rankings table (the rank is their row).` : "The Rankings table is the leaderboard."];
     const sp = h.id.startsWith("sp-") ? h.id.split("-")[1] : null;
     if (sp === "drives") return { steps: [...stats("Strokes Gained · All categories"), "Scroll to Best & worst tournaments: every tournament best to worst, each part of the game beside it.", "The bottom rows average the best 3 and the worst 3; the highlighted Difference is what drives the good weeks."],
@@ -613,7 +613,7 @@ export async function render(main, { previewClient } = {}) {
     return [...m].filter(([, a]) => a[1] >= 15).map(([q, a]) => ({ q, c: q.split("|")[0], d: q.split("|").slice(1).join("|"), v: a[0] / rs.length, shots: a[1] })).sort((a, b) => dkey(a.d) - dkey(b.d)); };
   const distStory = (k, o, kick) => ({ id: `ds-${o.q}-${k}`, k, kind: "Rank", kick, title: `${isMe(k) ? "You rank" : `${nameOf(k)} ranks`} ${o.r === 1 ? "1st" : ordN(o.r)} of ${o.n} on tour in ${rngName(o.c, o.d)}`,
     detail: `${sg2(o.v)} strokes gained per round (${Math.round(o.shots)} shots) in ${seasonYr()} · ${o.r > 1 ? `the leader, ${nameOf(o.list[0][0])}: ${sg2(o.list[0][1])}` : `next best, ${nameOf(o.list[1][0])}: ${sg2(o.list[1][1])}`}`,
-    board: { rows: o.list.map(([kk, v, n]) => [kk, v, `${sg2(v)} (${Math.round(n)} shots)`]), title: `Strokes gained per round, ${rngName(o.c, o.d)}, ${seasonYr()}` }, to: "Stats · Full stats", run: () => toStats(k, { view2: "full", year: [seasonYr()], span: 0 }, null, null) });
+    board: { rows: o.list.map(([kk, v, n]) => [kk, v, `${sg2(v)} (${Math.round(n)} shots)`]), title: `Strokes gained per round, ${rngName(o.c, o.d)}, ${seasonYr()}` }, to: "Stats · Player Stats", run: () => toStats(k, { view2: "full", year: [seasonYr()], span: 0 }, null, null) });
   function fixedSides(k, news0) {
     const SY = seasonYr(), R = ranksFor(SY).by, r = R.TOTAL?.get(k), n = R["TOTAL#"], season = sgRounds(rawOf(playerOf(k))).filter((x) => yrOf(x) === SY);
     const strat = news0.find((h) => h.id === "up-strat");
@@ -645,7 +645,7 @@ export async function render(main, { previewClient } = {}) {
   }
   // Player Spotlight / Where to Improve: the 3 distances they rank best / worst in on tour (their own best / worst by strokes
   // gained per round until the field's detail is in)
-  const rngCard = (k, o, good) => { const h = o.r ? distStory(k, o, good ? "Strength" : "Room to improve") : { id: `ds-${o.q}-${k}`, k, kind: "Spotlight", kick: CATN[o.c], title: rngName(o.c, o.d), detail: `${sg2(o.v)} strokes gained per round (${Math.round(o.shots)} shots) in ${seasonYr()}`, to: "Stats · Full stats", run: () => toStats(k, { view2: "full", year: [seasonYr()], span: 0 }, null, null) };
+  const rngCard = (k, o, good) => { const h = o.r ? distStory(k, o, good ? "Strength" : "Room to improve") : { id: `ds-${o.q}-${k}`, k, kind: "Spotlight", kick: CATN[o.c], title: rngName(o.c, o.d), detail: `${sg2(o.v)} strokes gained per round (${Math.round(o.shots)} shots) in ${seasonYr()}`, to: "Stats · Player Stats", run: () => toStats(k, { view2: "full", year: [seasonYr()], span: 0 }, null, null) };
     return tap(el("article", { class: "td-col td-rng" }, [el("div", { class: `td-kick${good ? "" : " down"}` }, CATN[o.c]), el("h3", {}, o.c === "OTT" ? `Off the tee: ${o.d}` : `${CATN[o.c]} from ${o.d}`),
       o.r ? el("div", { class: `td-big ${good ? "up" : "down"}` }, `#${o.r}`) : el("div", { class: `td-big ${cls(o.v)}` }, sg2(o.v)),
       el("p", {}, o.r ? `of ${o.n} on tour · ${sg2(o.v)} per round (${Math.round(o.shots)} shots)` : `strokes gained per round (${Math.round(o.shots)} shots)`), more(h)]), h); };
@@ -732,8 +732,14 @@ export async function render(main, { previewClient } = {}) {
     if (lead?.id && LEADS.has(lead.kind)) try { localStorage.setItem(FPK, JSON.stringify({ lead: lead.id, side: fp.slice(1).map((h) => h.id) })); for (let i = localStorage.length - 1; i >= 0; i--) { const kk = localStorage.key(i); if (kk?.startsWith("ta.front|") && !kk.startsWith(`ta.front|${HALF}|`)) localStorage.removeItem(kk); } } catch { /* */ }
     // (update 837) the biggest mover leads; the next 4 beside it, or (fewer, or one player) the fixed four about them
     const movers = shownKeys().map((k) => formAll.get(k)).filter(Boolean).sort((a, b) => Math.abs(b.x.d) - Math.abs(a.x.d));
-    const moverMode = movers.length > 0, leadM = moverMode ? movers[0] : lead, sideM = !moverMode ? fp.slice(1) : movers.length >= 5 && !selfKey && !solo() ? movers.slice(1, 5) : fixedSides(movers[0].k, news0);
-    const subjK = movers[0]?.k || selfKey || shownKeys()[0] || null;
+    // (update 838) and a new club or ball with enough rounds to judge, switched to fairly recently: in the same running, by
+    // the size of its difference (strokes gained per round in its part of the game) against a form change's
+    const eqRipe = sorted.filter((h) => h.id.startsWith("eq-") && h.x?.ripe && shownKeys().includes(h.k));
+    const pool = [...movers.map((h) => [h, Math.abs(h.x.d)]), ...eqRipe.map((h) => [h, Math.abs(h.x.dd)])].sort((a, b) => b[1] - a[1]).map((x) => x[0]);
+    if (window.__homeTest) window.__homeTest.eqRipe = eqRipe.map((h) => `${h.id} ${h.x.dd.toFixed(2)} since ${h.x.since}`); // (the test page)
+    const moverMode = pool.length > 0, leadM = moverMode ? pool[0] : lead, others = pool.slice(1);
+    const sideM = !moverMode ? fp.slice(1) : others.length >= 4 && !selfKey && !solo() ? others.slice(0, 4) : [...others.filter((h) => h.id.startsWith("eq-")), ...fixedSides(leadM.k, news0)].slice(0, 4);
+    const subjK = leadM?.k || selfKey || shownKeys()[0] || null;
     const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [], pairRest = new Map();
     for (const id of orderNow()) {
       if (["spot", "focus", "rank", "bestwk"].includes(id)) { const s0 = newSec(id, subjK); if (s0) secs.push(s0); continue; } // (update 837)
@@ -789,7 +795,7 @@ export async function render(main, { previewClient } = {}) {
     // today (tap one for the story); a favorite with nothing new today still gets a card, saying so
     const todayEl = (() => { const ks = selfKey ? [selfKey] : picked.size ? [...picked] : favs.filter((k, i, a) => a.indexOf(k) === i); if (!ks.length) return null; const per = ks.length === 1 ? 5 : 3;
       const cards = ks.map((k) => { const hs = sorted.filter((h) => h.k === k && h.kind !== "Fact").slice(0, per);
-        const open = el("button", { type: "button", class: "td-today-go" }, "Overview →"); open.addEventListener("click", () => toStats(k, { view2: "overview", year: [], span: 0 }, null, null));
+        const open = el("button", { type: "button", class: "td-today-go" }, "Player Stats →"); open.addEventListener("click", () => toStats(k, { view2: "full", year: [], span: 0 }, null, null));
         // (update 824) the next event they're entered in (the live feed's fields), when there is one
         const ent = fieldsPI ? ["R", "H"].flatMap((c) => fieldsPI.fieldEventsSync(nameOf(k), c) || []).sort((a, b) => String(a.start).localeCompare(String(b.start)))[0] : null;
         const entEl = ent ? el("p", { class: "td-today-ent" }, `Entered: ${ent.name}${ent.start ? ` · ${new Date(`${ent.start}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}`) : null;
@@ -1395,8 +1401,11 @@ export async function render(main, { previewClient } = {}) {
       const sdv = (a) => { if (a.length < 2) return 0; const m = a.reduce((t, v) => t + v, 0) / a.length; return Math.sqrt(a.reduce((t, v) => t + (v - m) ** 2, 0) / (a.length - 1)); };
       const first = A.ev === 1, tStat = Math.abs(A.v - B.v) / Math.max(1e-6, Math.sqrt(sdv(A.vals) ** 2 / A.n + sdv(B.vals) ** 2 / B.n));
       const sure = first || (A.n >= 8 && B.n >= 8 && tStat >= 1.65); // (update 807: a one-round first event shows too) // (update 805: every recent switch shows; one not yet clear is said to be too early to call)
+      // (update 838) ready for the front page: past its first event, 8+ rounds with each and a clear difference, and the
+      // switch fairly recent (its first event within 120 days of their latest round)
+      const since = String(evs[j].end || "").slice(0, 10), lastD = String(rs.at(-1).date || "").slice(0, 10), ripe = sure && !first && !!since && (Date.parse(lastD) - Date.parse(since)) / 864e5 <= 120;
       const dd = A.v - B.v, where = tourPick && tourPick !== ALL ? `every ${tourName(tourPick)} round in ${seasonYr()}` : `every round in ${seasonYr()}`;
-      out.push({ id: `eq-${k}-${pill}`, k, x: { pill, neu: nm(neu), old: nm(old), A, B, c, dd, where, first, sure, all }, kind: "Equipment", score: (first ? 6 : sure ? 7 : 5) + Math.abs(dd) * 2, title: `New ${KIND_WORD[pill] || "club"}: ${nm(neu)}, ${sg2(dd)} per round ${COL_IN[c]}`,
+      out.push({ id: `eq-${k}-${pill}`, k, x: { pill, neu: nm(neu), old: nm(old), A, B, c, dd, where, first, sure, all, since, ripe }, kind: "Equipment", score: (first ? 6 : sure ? 7 : 5) + Math.abs(dd) * 2, title: `New ${KIND_WORD[pill] || "club"}: ${nm(neu)}, ${sg2(dd)} per round ${COL_IN[c]}`,
         detail: `${first ? "Only one event so far, so it’s early: " : ""}${sg2(A.v)} per round over ${plural(A.n, "round")} (${plural(A.ev, "tournament")}) with it, against ${sg2(B.v)} over ${plural(B.n, "round")} (${plural(B.ev, "tournament")}) with the ${nm(old)} · ${where}, as the product table on Stats counts it`,
         to: "Stats · SG Trends by Product", run: () => toStats(k, { view2: "full", productKind: pill, year: [seasonYr()], span: 0, cats: [] }, "SG Trends by Product", EX.product(`How is the new ${KIND_WORD[pill] || "club"} working?`, pill)) });
     }

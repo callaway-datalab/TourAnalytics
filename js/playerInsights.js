@@ -139,6 +139,16 @@ export async function loadCourse(meta, labelRounds) {
   courseMemo.set(k, p); p.catch(() => courseMemo.delete(k)); return p;
 }
 
+// (update 838) Course Fit in plain words: how much a part of the game counts at a tournament against a normal week (its
+// "room to gain"), and what that does to this player's strength or weakness in it. x: { c, room, me (their normal week,
+// strokes gained per round) }; his: "your" / "Burns'"; who: "" (yourself) or "Burns"
+export function fitWords(x, his, who = "") {
+  const p = CATN[x.c].toLowerCase(), r = x.room, gap = Math.abs(r - 1), how = gap >= 0.2 ? "largely" : gap >= 0.1 ? "somewhat" : "slightly";
+  const strong = (x.me || 0) >= 0, tag = `(${who ? `${who}: ` : ""}${(x.me >= 0 ? "+" : "−") + Math.abs(x.me || 0).toFixed(2)} per round)`;
+  if (gap < 0.03) return `${p} matters about as much as usual here, so ${his} ${p} counts the same ${tag}`;
+  if (r > 1) return `${p} is ${r.toFixed(2)}× as impactful as usual, so ${his} ${p} ${strong ? `strength goes ${how === "slightly" ? "a little" : "even"} further` : `weakness is ${how} more costly`} ${tag}`;
+  return `${p} is only ${r.toFixed(2)}× as impactful as usual, so ${his} ${p} ${strong ? `strength is ${how} neutralized` : `weakness ${how === "largely" ? "hardly matters" : "matters less"}`} ${tag}`;
+}
 // (update 819) Course Fit's room to gain, (update 820) shared with Recommended Practice
 export const evName = (e) => String(e || "").replace(/\s+\d{4}$/, "").trim();
 

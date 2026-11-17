@@ -158,8 +158,8 @@ const sectionsFor = (kind) => {
 const NAV = { admin: [["#/admin/clients", "people", "User Access", ["admin-clients", "admin-datasets"]]] };
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
 // (update 833) Stats' views, its row of pages; the one showing is ?view= in the address (Overview when there's none)
-export const STATS_VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Comparisons"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
-export const statsViewNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "overview";
+export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Comparisons"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
+export const statsViewNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "full";
 const itemOn = (item, routeId) => {
   const [, , routes, opt = {}] = item;
   if (!routes.includes(routeId)) return false;
@@ -472,7 +472,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
 
   // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
   setPages(() => [["Home", "#/home", "", "today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
-    ["Overview", "stats:overview", "Stats", "player dossier profile report"], ["Comparisons", "stats:compare", "Stats", "versus side by side products compare comparisons"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
+["Comparisons", "stats:compare", "Stats", "versus side by side products compare comparisons"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
     ["Custom Practice", "stats:practice:practice", "Stats · Practice & Goals", "practice drills sessions range"], ["Recommended Practice", "stats:practice:week", "Stats · Practice & Goals", "practice week plan drills next event"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
     ["What's in the Bag", "stats:bag", "Stats", "witb clubs equipment gear bag"], ["Chat & support", state.isAdmin ? "#/admin/questions" : "#/questions", "", "report an issue question feature request help chat"], ["Profile", "#/account", "Account", "settings password"]]
     .map(([label, href, group, words]) => ({ label, href, group, words })));
