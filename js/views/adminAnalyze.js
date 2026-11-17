@@ -572,7 +572,7 @@ export async function render(main, { flash, routeId }) {
       if (dash) dash.update({ me: meFrom() });
       else refresh(); // simple comparison: redraw with the highlight (rows are cached)
     }
-  }, ids, meKey, { follow: true }); // (update 816: the current player)
+  }, ids, meKey, { follow: !board }); // (update 816: the current player) (update 818: not on the Leaderboards: they stay a leaderboard, the player lit)
   mount(pickerBox, picker.node);
   if (dash) dash.update({ field: fieldPlayers, me: meFrom() });
   // Player Stats starts blank: just the search (or on the player tapped on the Leaderboards)

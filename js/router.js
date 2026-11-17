@@ -309,6 +309,7 @@ async function render() {
     import("./perf.js").then((p) => p.bootLog(`page ${routeId}: drawn${performance?.memory ? ` \u00b7 ${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : ""}`)).catch(() => {}); // (update 556: memory, where the browser says)
     if (gen !== renderGen) { if (typeof cleanup === "function") cleanup(); return; }
     currentCleanup = cleanup;
+    if (["admin-analyze", "leaderboards", "live"].includes(routeId)) import("./highlight.js").then((m) => m.highlightPlayer(main)).catch(() => {}); // (update 818: the header's player lit on the leaderboards)
     restoreScroll(backY); // (update 816: Back keeps your place)
     // (after the page has drawn: the next frame)
     requestAnimationFrame(() => import("./perf.js").then((p) => p.markPage(`#${raw.split("?")[0]}`, performance.now() - t0)).catch(() => {}));

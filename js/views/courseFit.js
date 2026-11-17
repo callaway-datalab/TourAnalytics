@@ -52,24 +52,29 @@ export async function fitTab(box, key, name) {
     const parts = PI.CATS.map((c) => ({ c, w: d.share[c], avg: avgShare[c], me: P.cat[c] || 0, gain: (d.share[c] - avgShare[c]) * (P.cat[c] || 0) })).sort((a, b) => b.w - a.w);
     const eff = parts.reduce((t, x) => t + x.gain, 0);
     return { ...d, fit: season + eff, eff, here: here.length, hereSg: here.length ? here.reduce((t, r) => t + tot(r), 0) / here.length : null, parts }; }).sort((a, b) => b.eff - a.eff);
-  const lo = Math.min(...rows.map((r) => r.eff)), hi = Math.max(...rows.map((r) => r.eff)), span = Math.max(0.01, hi - lo);
   const pc = (v) => `${Math.round(v * 100)}%`;
   const why = (r) => { const big = [...r.parts].sort((x, y) => Math.abs(y.w - y.avg) - Math.abs(x.w - x.avg))[0], helps = [...r.parts].sort((x, y) => Math.abs(y.gain) - Math.abs(x.gain))[0];
     return `${PI.CATN[r.parts[0].c]} decides ${pc(r.parts[0].w)} here (${pc(r.parts[0].avg)} at an average ${tour || "tour"} event)${big.c !== r.parts[0].c ? `; ${PI.CATN[big.c].toLowerCase()} ${pc(big.w)} (usually ${pc(big.avg)})` : ""}. ${last}’s ${PI.CATN[helps.c].toLowerCase()}, ${sg2(helps.me)} a round, ${helps.gain >= 0 ? "helps" : "hurts"} most here (${sg2(helps.gain)}).`; };
-  const rowEl = (r, i) => el("div", { class: `cf-row${i < 3 ? " top" : ""}` }, [
-    el("span", { class: "cf-rk" }, String(i + 1)),
-    el("div", { class: "cf-main" }, [el("div", { class: "cf-line" }, [el("b", {}, r.name), el("span", { class: "cf-meta" }, `${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]} · ${r.n} player-weeks`)]),
-      el("p", { class: "cf-why" }, why(r))]),
-    el("div", { class: "cf-nums" }, [el("span", { class: "ip-bartrack cf-bar" }, el("i", { class: r.eff >= 0 ? "pos" : "neg", style: `width:${Math.max(4, Math.round(((r.eff - lo) / span) * 100))}%` })),
-      el("span", { class: "cf-n" }, [el("b", { class: cls(r.eff) }, sg2(r.eff)), el("small", {}, " course effect")]),
-      el("span", { class: "cf-n" }, [el("b", { class: cls(r.fit) }, sg2(r.fit)), el("small", {}, " projected a round")]),
-      el("span", { class: "cf-n muted" }, r.here ? `${r.here} rounds there: ${sg2(r.hereSg)} a round` : "Not played there")])]);
+  // (update 818) one table, every tournament by course effect; tap a row for everything behind it
+  const max = Math.max(0.01, ...rows.map((r) => Math.abs(r.eff)));
+  const detail = (r) => el("div", { class: "cf-det" }, [el("p", {}, why(r)),
+    el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part of the game", "Decides here", "At an average event", `${last} a round`, "Effect a round"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
+      el("tbody", {}, r.parts.map((x) => el("tr", {}, [el("td", {}, PI.CATN[x.c]), el("td", { class: "num strong" }, pc(x.w)), el("td", { class: "num muted" }, pc(x.avg)), el("td", { class: `num ${cls(x.me)}` }, sg2(x.me)), el("td", { class: `num strong ${cls(x.gain)}` }, sg2(x.gain))])))]),
+    el("p", { class: "muted small" }, `Projected there: ${sg2(r.fit)} strokes gained a round (the season, ${sg2(season)}, plus the course effect). ${r.here ? `${last} on record there: ${r.here} rounds, ${sg2(r.hereSg)} a round.` : `${last} hasn't played it on record.`} Based on ${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}.`)]);
+  const table = el("div", { class: "ip-tw" }, el("table", { class: "ip-t cf-t" }, [
+    el("thead", {}, el("tr", {}, ["#", "Tournament", "Course effect a round", "", "Rounds there"].map((h, i) => el("th", { class: i === 2 || i === 4 ? "num" : null }, h)))),
+    el("tbody", {}, rows.flatMap((r, i) => { const open = el("tr", { class: "cf-open", hidden: true }, el("td", { colspan: "5" }, null));
+      const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name]),
+        el("td", { class: `num strong ${cls(r.eff)}` }, sg2(r.eff)),
+        el("td", { class: "cf-bart" }, el("span", { class: "cf-mid" }, el("i", { class: r.eff >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(r.eff) / max) * 50)}%` }))),
+        el("td", { class: "num muted" }, r.here ? String(r.here) : "—")]);
+      const toggle = () => { const on = open.hidden; if (on && !open.firstChild.firstChild) open.firstChild.append(detail(r)); open.hidden = !on; tr.classList.toggle("on", on); tr.setAttribute("aria-expanded", String(on)); };
+      tr.addEventListener("click", toggle); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+      return [tr, open]; }))]));
   const best = rows.slice(0, 3), worst = rows.slice(-3).reverse();
   mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#64d2ff" }, `Course Fit · ${tour || ""} ${year}`.trim()), el("h2", { class: "ip-h" }, `Where ${last}’s game fits best`)])),
     el("div", { class: "ip-grid2" }, [card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} a round against ${last}’s season; ${PI.CATN[r.parts[0].c].toLowerCase()} decides ${pc(r.parts[0].w)} (usually ${pc(r.parts[0].avg)})`])))),
       card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} a round; ${PI.CATN[r.parts[0].c].toLowerCase()} decides ${pc(r.parts[0].w)} (usually ${pc(r.parts[0].avg)})`]))))]),
-    (() => { const list = el("div", { class: "cf-list" }, rows.slice(0, 10).map(rowEl)); if (rows.length <= 10) return list;
-      const more = el("button", { type: "button", class: "ip-link" }, `Show all ${rows.length} tournaments`); more.addEventListener("click", () => { list.replaceChildren(...rows.map(rowEl)); more.remove(); });
-      return el("div", {}, [list, more]); })(),
+    table,
     samp(`For each tournament: the top 10 each year against the rest of the field, strokes gained a round in each part of the game, as shares of what separates them (all years in the stats file). Course effect: ${last}’s ${year} season in each part (${P.n} rounds) × how much more (or less) that part decides this tournament than an average ${tour || "tour"} event, added up, in strokes a round; ranked by it. Projected: the season (${sg2(season)} a round) plus the course effect. A guide to fit, not a forecast: form, the field and the weather move results more.`)]);
 }

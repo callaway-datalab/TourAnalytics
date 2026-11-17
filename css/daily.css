@@ -556,3 +556,18 @@ body.pal-open { overflow: hidden; }
 @media (max-width: 640px) { .cf-row { grid-template-columns: 2em minmax(0, 1fr); } .cf-nums { grid-column: 2; } }
 .cf-nums { grid-template-columns: 1fr 1fr; column-gap: 10px; } .cf-nums .cf-bar, .cf-nums .cf-n:last-child { grid-column: 1 / -1; }
 .ip.st-pg-top { padding: 0; }
+/* (update 818) the header's player, lit on the leaderboards (Follow → Historical and Live) */
+tr.is-cur > td, tr.is-cur > th { background: color-mix(in srgb, var(--gold) 20%, transparent) !important; font-weight: 700; }
+tr.is-cur > td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+li.is-cur, .lv-row.is-cur, .lb-row.is-cur, .ti-row.is-cur, .is-cur-cell { background: color-mix(in srgb, var(--gold) 20%, transparent); border-radius: 6px; font-weight: 700; }
+/* (update 818) Course Fit: one table, a row opens its details */
+.cf-t .cf-tr { cursor: pointer; } .cf-t .cf-tr:hover td { background: color-mix(in srgb, var(--ip-gold) 8%, transparent); }
+.cf-t .cf-tr.on td { background: color-mix(in srgb, var(--ip-gold) 12%, transparent); border-bottom-color: transparent; }
+.cf-caret { display: inline-block; width: 1.1em; color: var(--ip-mute); transition: transform 0.15s; } .cf-tr.on .cf-caret { transform: rotate(90deg); color: var(--ip-gold); }
+.cf-bart { width: 30%; min-width: 120px; }
+.cf-mid { position: relative; display: block; height: 8px; border-radius: 999px; background: var(--ip-card2); }
+.cf-mid::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--ip-mute); }
+.cf-mid i { position: absolute; top: 0; bottom: 0; border-radius: 999px; } .cf-mid i.pos { left: 50%; background: var(--ip-up); } .cf-mid i.neg { right: 50%; background: var(--ip-down); }
+.cf-open > td { padding: 4px 12px 14px 36px !important; background: color-mix(in srgb, var(--ip-gold) 5%, transparent); }
+.cf-det p { margin: 6px 0; font-size: 0.86rem; line-height: 1.45; } .cf-parts { max-width: 640px; margin: 6px 0; }
+@media (max-width: 640px) { .cf-bart { display: none; } .cf-open > td { padding-left: 12px !important; } }

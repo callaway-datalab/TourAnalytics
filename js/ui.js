@@ -130,18 +130,23 @@ const sectionsFor = (kind) => {
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     // (update 817) the Player Dossier (Overview), Course Fit and Practice & Goals are tabs on Stats now
     ["Compare", "#/comparisons", ["comparisons"]], // (update 205: Deep Dives; 209: Compare)
-    ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
-    ["Event Feed", "#/live", ["live"]],
+    // (update 818) Leaderboards and the Event Feed are their own header, Follow
     ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], {}], // (update 817: from Play) // (update 611: in Analyze, after Leaderboards; no longer in the top bar)
     // (update 209) no Product Usage tab: product usage is in Compare (staff can compare products across everyone)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
   // (update 817) Play is Enter New Round only (Course Prep is under Analyze; Practice, Practice Week and Goals are a tab on Stats)
+  // (update 818) Follow: the leaderboards (Historical) and the Event Feed (Live)
+  const followItems = [
+    ["Historical", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
+    ["Live", "#/live", ["live"]],
+  ];
   const planItems = [
     ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]],
   ];
   return [
     { id: "data", label: "Analyze", icon: "data", items: dataItems },
+    { id: "follow", label: "Follow", icon: "live", items: followItems },
     { id: "plan", label: "Play", icon: "doc", items: planItems },
   ];
 };
@@ -366,7 +371,7 @@ export function holdToTalk(b, onHold = () => {}) {
 
 // (update 816) Search's extra words for each page, so "sg" or "drills" finds the right one
 const WORDS = { Stats: "strokes gained sg radar season form", "Player Dossier": "player profile report overview pdf", "Course Fit": "suits who next event projection",
-  Compare: "versus side by side products", Leaderboards: "rank ranking field", "Event Feed": "live tournament scores", "Enter New Round": "add round entry scorecard",
+  Compare: "versus side by side products", Historical: "leaderboards rank ranking field follow", Live: "event feed live tournament scores follow", "Enter New Round": "add round entry scorecard",
   "Course Prep": "maps strategy holes course report", Practice: "drills sessions range", "Practice Week": "plan drills schedule", Goals: "targets" };
 /** (update 816) the current player in the header: tap for their Dossier, × to let go of them */
 const playerOnly = () => { const st = window.__authState; return !!(st?.profile?.clientKey && !st.isAdmin && !st.isTeam); }; // a player is always themself
@@ -427,6 +432,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
     el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("home"), el("span", {}, "Home")]),
     data ? el("a", { href: data.items[0][1], "aria-current": data === onSec ? "page" : null }, [icon("data"), el("span", {}, data.label)]) : null,
+    (() => { const f = secs.find((x) => x.id === "follow"); return f ? el("a", { href: f.items[0][1], "aria-current": f === onSec ? "page" : null }, [icon("live"), el("span", {}, f.label)]) : null; })(),
     (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })(),
     plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/practice", "aria-current": plan === onSec ? "page" : null }, [icon("doc"), el("span", {}, plan.label)]) : null,
   ]);
