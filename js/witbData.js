@@ -53,7 +53,7 @@ export async function tourBag(key, name) {
   const nowKey = new Set(clubs.map((c) => `${c.label}|${c.brand} ${c.model}`.trim()));
   const car = new Map();
   for (const r of rounds) { const seen = new Map(); for (const s of r.shots || []) { const lbl = s.club || null; if (!lbl) continue; const gi = s.gear ? gearInfo(s.gear) : {}, kind = s.gear ? String(s.gear).split("|")[0] : null, k = `${lbl}|${`${gi.brand || ""} ${gi.model || ""}`.trim()}`;
-      if (!car.has(k)) { const w = witbClub(lbl, kind); car.set(k, { label: lbl, cat: w?.cat || null, type: w?.type || null, brand: gi.brand || "", model: gi.model || "", rounds: 0, sg: 0, yrs: new Set() }); }
+      if (!car.has(k)) { const w = witbClub(lbl, kind); car.set(k, { label: lbl, cat: w?.cat || null, type: w?.type || null, kind: kind || null, brand: gi.brand || "", model: gi.model || "", rounds: 0, sg: 0, yrs: new Set() }); } // (update 831: kind: the data's own kind, e.g. Non-Driver)
       seen.set(k, (seen.get(k) || 0) + (s.sg || 0)); }
     for (const [k, v] of seen) { const o = car.get(k); o.rounds++; o.sg += v; o.yrs.add(PI.yrOf(r)); } }
   const career = [...car.values()].map((o) => { const y = [...o.yrs].sort(); return { ...o, sg: o.rounds ? o.sg / o.rounds : null, seasons: y.length > 1 ? `${y[0]}-${String(y.at(-1)).slice(2)}` : y[0] || "", last: y.at(-1) || "", inBag: nowKey.has(`${o.label}|${`${o.brand} ${o.model}`.trim()}`) }; });

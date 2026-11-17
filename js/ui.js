@@ -55,7 +55,7 @@ export function icon(name) {
   const paths = {
     home: "M3 9.5 10 3l7 6.5V17H12v-4H8v4H3z",
     rank: "M2 2.5h16v3.2H2zM2 7.5h3.4v2.6H2zm5 0h11v2.6H7zM2 11.5h3.4v2.6H2zm5 0h11v2.6H7zM2 15.5h3.4v2.6H2zm5 0h11v2.6H7z", // (update 828: Leaderboards, a rankings table)
-    ball: "M10 1.6a8.4 8.4 0 1 1 0 16.8a8.4 8.4 0 1 1 0-16.8zM7 5.55a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9zM11 4.85a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9zM14 7.6499999999999995a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9zM8.2 9.25a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9zM11.8 10.25a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9zM6 12.05a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9zM9.6 13.450000000000001a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9zM13.6 12.65a0.95 0.95 0 1 1 0 1.9a0.95 0.95 0 1 1 0-1.9z", // (update 828: Play, a golf ball, its dimples cut out)
+    flag: "M5.2 1.8h1.5v14.6H5.2zM6.7 2.2l8.6 3.4-8.6 3.5zM1.8 17.4c0-1.1 2.9-1.9 6.4-1.9s6.4.8 6.4 1.9-2.9 1.9-6.4 1.9-6.4-.8-6.4-1.9zm2.6 0c.9.5 2.2.7 3.8.7s2.9-.2 3.8-.7c-.9-.5-2.2-.7-3.8-.7s-2.9.2-3.8.7z", // (update 831: Play, a golf flag in its hole)
     search: "M8.5 2a6.5 6.5 0 0 1 5.2 10.4l4.2 4.2-1.4 1.4-4.2-4.2A6.5 6.5 0 1 1 8.5 2zm0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z",
     plus: "M9 3h2v6h6v2h-6v6H9v-6H3V9h6z",
     star: "M10 2.2l2.4 5 5.4.6-4 3.7 1.1 5.4L10 14.2l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z",
@@ -88,7 +88,7 @@ export function icon(name) {
   }
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", paths[name] || "");
-  if (name === "bag" || name === "robot" || name === "ball") path.setAttribute("fill-rule", "evenodd"); // (the pocket, and the robot's face, are cut-outs)
+  if (name === "bag" || name === "robot" || name === "flag") path.setAttribute("fill-rule", "evenodd"); // (the pocket, and the robot's face, are cut-outs)
   svg.appendChild(path);
   return svg;
 }
@@ -150,7 +150,7 @@ const sectionsFor = (kind) => {
   return [
     { id: "data", label: "Stats", icon: "data", items: dataItems }, // (update 827: was Analyze)
     { id: "follow", label: "Leaderboards", icon: "rank", items: followItems }, // (update 827: was Follow)
-    { id: "plan", label: "Play", icon: "ball", items: planItems },
+    { id: "plan", label: "Play", icon: "flag", items: planItems },
   ];
 };
 // (Player Access also holds Upload Data for the admin)
@@ -441,7 +441,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
     el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("home"), el("span", {}, "Home")]),
     data ? el("a", { href: data.items[0][1], "aria-current": data === onSec ? "page" : null }, [icon("data"), el("span", {}, data.label)]) : null,
-    plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/entry", "aria-current": plan === onSec ? "page" : null }, [icon(plan.icon || "ball"), el("span", {}, plan.label)]) : null,
+    plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/entry", "aria-current": plan === onSec ? "page" : null }, [icon(plan.icon || "flag"), el("span", {}, plan.label)]) : null,
     fol ? el("a", { href: fol.items[0][1], "aria-current": fol === onSec ? "page" : null }, [icon(fol.icon || "rank"), el("span", {}, fol.label)]) : null,
     srch,
   ]);

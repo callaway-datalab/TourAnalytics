@@ -24,15 +24,20 @@ function tourCard(key, name, onData) {
     if (!T || !T.clubs.length) { box.hidden = true; onData?.(null); return; }
     const fmt = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
     // (update 830) the whole career, grouped as My Bag is (Drivers, Fairway woods … Putters, then the balls); the ones in the bag now lit
-    const GROUPS = [["Driver", "Drivers"], ["Fairway Wood", "Fairway woods"], ["Hybrid", "Hybrids"], ["Iron", "Irons"], ["Wedge", "Wedges"], ["Putter", "Putters"], [null, "Other clubs"]];
+    // (update 831) the data's own kinds: Drivers apart from Non-Drivers (woods and irons off the tee), Irons apart from Wedges;
+    // each group best first by strokes gained a round, the values coloured
+    const GROUPS = [["Driver", "Drivers"], ["Non-Driver", "Non-Drivers"], ["Fairway Wood", "Fairway woods"], ["Hybrid", "Hybrids"], ["Iron", "Irons"], ["Wedge", "Wedges"], ["Putter", "Putters"], [null, "Other clubs"]];
+    const KNOWN = new Set(GROUPS.map(([g]) => g).filter(Boolean)), groupOf = (c) => (c.kind && KNOWN.has(c.kind) ? c.kind : c.cat && KNOWN.has(c.cat) ? c.cat : null);
+    const bySg = (a, b) => (b.sg ?? -99) - (a.sg ?? -99);
+    const sgTd = (v) => el("td", { class: "num strong", style: v == null ? "" : `color:${sgColor(v)}` }, fmt(v));
     const rows = [];
     // irons of the same model are a set, one row ("4 Iron–PW set"), as My Bag shows them
     const setsOf = (list) => { const by = new Map(); for (const c of list) { const k = `${c.brand} ${c.model}`.trim().toLowerCase(); (by.get(k) || by.set(k, []).get(k)).push(c); }
       const out = []; for (const xs of by.values()) { if (xs.length < 2) { out.push(...xs); continue; } out.push({ ...xs[0], label: `${xs[0].label}\u2013${xs.at(-1).label} set`, rounds: Math.max(...xs.map((x) => x.rounds)), sg: xs.reduce((t, x) => t + (x.sg || 0) * x.rounds, 0) / Math.max(1, xs.reduce((t, x) => t + x.rounds, 0)), seasons: (() => { const y = [...new Set(xs.flatMap((x) => [...(x.yrs || [])]))].sort(); return y.length > 1 ? `${y[0]}-${String(y.at(-1)).slice(2)}` : y[0] || xs[0].seasons; })(), inBag: xs.some((x) => x.inBag), n: xs.length }); }
-      return out.sort((a, b) => b.inBag - a.inBag || String(b.last).localeCompare(String(a.last)) || b.rounds - a.rounds); };
-    for (const [cat, title] of GROUPS) { const list0 = T.career.filter((c) => (cat ? c.cat === cat : !c.cat)); if (!list0.length) continue; const list = cat === "Iron" ? setsOf(list0) : list0;
+      return out.sort(bySg); };
+    for (const [cat, title] of GROUPS) { const list0 = T.career.filter((c) => groupOf(c) === cat); if (!list0.length) continue; const list = cat === "Iron" ? setsOf(list0) : [...list0].sort(bySg);
       rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "5", scope: "colgroup" }, [title, el("span", { class: "club-group-n" }, ` ${list.length}`)])));
-      for (const c of list) rows.push(el("tr", { class: `club-row${c.inBag ? " in-bag" : ""}` }, [el("td", { class: "c-club" }, [el("strong", {}, c.label), c.inBag ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null]), el("td", {}, `${c.brand} ${c.model}`.trim() || "\u2014"), el("td", { class: "num" }, c.seasons), el("td", { class: "num" }, String(c.rounds)), el("td", { class: "num" }, fmt(c.sg))])); }
+      for (const c of list) rows.push(el("tr", { class: `club-row${c.inBag ? " in-bag" : ""}` }, [el("td", { class: "c-club" }, [el("strong", {}, c.label), c.inBag ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null]), el("td", {}, `${c.brand} ${c.model}`.trim() || "\u2014"), el("td", { class: "num" }, c.seasons), el("td", { class: "num" }, String(c.rounds)), sgTd(c.sg)])); }
     if (T.balls.length) { rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "5", scope: "colgroup" }, ["Balls", el("span", { class: "club-group-n" }, ` ${T.balls.length}`)])));
       for (const b of T.balls) rows.push(el("tr", { class: `club-row${b.inBag ? " in-bag" : ""}` }, [el("td", { class: "c-club" }, [el("strong", {}, "Ball"), b.inBag ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null]), el("td", {}, b.model), el("td", { class: "num" }, b.seasons), el("td", { class: "num" }, String(b.rounds)), el("td", { class: "num" }, "")])); }
     mount(box, [el("h3", {}, "On tour, from the stats data"), el("p", { class: "muted small" }, `Every club and ball ${name} has used on record. In bag: what they hit at ${T.events.join(", ")} (each club's model from the latest event it was used at).`),

@@ -253,12 +253,15 @@ export async function render(main, { previewClient } = {}) {
   const UPCOMING = { name: "The American Express", re: /american express|amex\b/i, course: /pete dye stadium|pga west|la quinta/i, not: /sawgrass|tpc/i }; /* (update 737: the Pete Dye Stadium Course at PGA West) */ /* (update 736) */
   // ---- (update 731) the newspaper ----
   const SEC = { res: ["Results & Milestones", "The week’s best and worst"], form: ["Form", "The last 12 rounds against the 12 before"], gear: ["Equipment", "New in the bag"],
-    rank: ["Rankings", ""], fact: ["Did You Know?", ""], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", `Up next: ${UPCOMING.name}`] };
-  const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot", Fact: "fact" };
+    rank: ["Ranks", "Where they stand on tour"], fact: ["Did You Know?", ""], bestwk: ["Best Week", "Their best weeks of the season: overall, each part of the game, each distance"], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", `Up next: ${UPCOMING.name}`] };
+  const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot", Fact: "fact", "Best week": "bestwk" };
   // (update 780) Player Spotlight beside Where to Improve, then Equipment, Rankings and Results & Milestones as a row of three
   const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "form", "spot", "focus", "gear", "res", "prac", "tour"] : ["fact", "form", "spot", "focus", "gear", "res", "next", "course", "prac", "tour"];
   const PAIR = ["spot", "focus"], TRIO = []; // (update 821: no Rankings; Equipment full width, two a row) // (update 789: Equipment beside Rankings; Results & Milestones full width below)
-  const FULL = new Set(["form", "tour", "course", "fact", "res", "gear"]);
+  const FULL = new Set(["form", "tour", "course", "fact", "res", "gear", "rank", "bestwk"]);
+  // (update 831) one player (picked in the header, or a player's own Home): no Did You Know; Ranks and Best Week in its place
+  const solo = () => !!selfKey || picked.size === 1;
+  const orderNow = () => (solo() ? ORDER.flatMap((id) => (id === "fact" ? ["rank", "bestwk"] : [id])) : ORDER);
   const CATW = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" };
   const ordN = (r) => (r === 1 ? "No. 1" : `${r}${["th", "st", "nd", "rd"][((r % 100) - 20) % 10] || ["th", "st", "nd", "rd"][r % 100] || "th"}`);
   const rkName = (c) => (c === "TOTAL" ? "strokes gained" : CATN[c].toLowerCase());
@@ -583,13 +586,24 @@ export async function render(main, { previewClient } = {}) {
       const others = news0.filter((h) => h !== nl).slice(0, 14).map((h) => [Math.random(), h]).sort((a, b) => a[0] - b[0]).map((x) => x[1]); if (nl) news = [nl, ...others, ...news0.filter((h) => h !== nl && !others.includes(h))]; }
     const keptLead = kept?.lead && byIdN.get(kept.lead);
     if (keptLead) news = [keptLead, ...news0.filter((h) => h !== keptLead)];
+    // (update 831) one player: the lead is always a milestone or a trend, the most striking either way (the best or the
+    // worst news); beside it 1-2 of their ranks, how to play the next course, and What wins (else another trend or milestone)
+    let soloSide = null;
+    if (solo()) { const big = (h) => h.score + Math.abs(Number(h.x?.d ?? h.x?.v ?? 0)) * 0.5, TM = (h) => h.k && ["Milestone", "Trend", "Slide"].includes(h.kind);
+      const leadS = (keptLead && TM(keptLead) ? keptLead : null) || [...news0].filter(TM).sort((a, b) => big(b) - big(a))[0];
+      if (leadS) { const ranks = news0.filter((h) => h.kind === "Rank" && h.k).slice(0, 2), strat = news0.find((h) => h.id === "up-strat") || news0.find((h) => h.kind === "Course" && !h.k);
+        const third = news0.find((h) => /drives/.test(h.id) && h !== leadS) || news0.find((h) => TM(h) && h !== leadS);
+        soloSide = [...ranks, strat, third].filter(Boolean);
+        news = [leadS, ...soloSide, ...news0.filter((h) => h !== leadS && !ranks.includes(h) && h !== strat && h !== third)]; kept = null; } }
     const lead = news[0] || sorted[0], fp = [lead], used = new Set([SEC_OF[lead.kind]]);
-    if (keptLead) for (const id of kept.side || []) { const h = byIdN.get(id); if (h && !fp.includes(h) && fp.length < 4) { fp.push(h); used.add(SEC_OF[h.kind]); } }
+    if (soloSide) { for (const h of soloSide) if (!fp.includes(h)) fp.push(h); while (fp.length < 4) fp.push(null); } // (update 831: just those, in that order)
+    if (keptLead && kept) for (const id of kept.side || []) { const h = byIdN.get(id); if (h && !fp.includes(h) && fp.length < 4) { fp.push(h); used.add(SEC_OF[h.kind]); } }
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h) && !used.has(SEC_OF[h.kind])) { fp.push(h); used.add(SEC_OF[h.kind]); } }
     for (const h of news.slice(1)) { if (fp.length >= 4) break; if (!fp.includes(h)) fp.push(h); }
+    for (let i = fp.length - 1; i >= 0; i--) if (fp[i] == null) fp.splice(i, 1); // (update 831: one player's side column holds only its own stories)
     if (lead?.id && LEADS.has(lead.kind)) try { localStorage.setItem(FPK, JSON.stringify({ lead: lead.id, side: fp.slice(1).map((h) => h.id) })); for (let i = localStorage.length - 1; i >= 0; i--) { const kk = localStorage.key(i); if (kk?.startsWith("ta.front|") && !kk.startsWith(`ta.front|${HALF}|`)) localStorage.removeItem(kk); } } catch { /* */ }
     const rest = sorted /* (update 732: front-page stories run in their own section too, so every section shows) */, many = picked.size !== 1 && keys.length > 1, secs = [], pairRest = new Map();
-    for (const id of ORDER) {
+    for (const id of orderNow()) {
       let mine = rest.filter((h) => SEC_OF[h.kind] === id); if (!mine.length) continue;
       // (update 801) every section's shuffle: the stories not shown last time first, the ones shown after them (turned
       // round by the number of presses), so each press changes the section
@@ -597,11 +611,12 @@ export async function render(main, { previewClient } = {}) {
         mine = [...fresh, ...old.slice(r0), ...old.slice(0, r0)]; }
       const pick = [], byK = new Map(), grpShown = []; // up to 6 (2 a player first, when there are several)
       const nIn = (i2) => rest.filter((h) => SEC_OF[h.kind] === i2).length, eqSF = nIn("spot") && nIn("focus") ? Math.min(6, Math.max(2, Math.min(nIn("spot"), nIn("focus")))) : 6; /* (update 780: the pair about the same length) */
-      const cap = MORE3.includes(id) ? STEP(id) * (1 + (secMore[id] || 0)) : id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : PAIR.includes(id) ? eqSF : 6; /* (update 736: more briefs) */
+      if (solo() && id === "fact") continue; // (update 831)
+      const cap = MORE3.includes(id) ? STEP(id) * (1 + (secMore[id] || 0)) : id === "tour" || id === "course" ? 9 : id === "fact" ? 8 : id === "bestwk" ? 8 : id === "rank" ? 4 : PAIR.includes(id) ? eqSF : 6; /* (update 736: more briefs) */
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], sub = id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
-      const content = id === "gear" ? el("div", { class: "td-gear2" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine, grpShown) : id === "course" ? courseGroups(mine, grpShown) : el("div", { class: "td-cols" }, pick.map(column));
+      const content = id === "gear" ? el("div", { class: "td-gear2" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" || id === "bestwk" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine, grpShown) : id === "course" ? courseGroups(mine, grpShown) : el("div", { class: "td-cols" }, pick.map(column));
       const shuf = (() => { const b = el("button", { type: "button", class: "td-shuf", title: "Show other stories", "aria-label": `Shuffle ${title}` }, "↻ Shuffle"); /* (update 801: every section) */
         b.addEventListener("click", () => { if (id === "fact") { factShuf++; factMemo = null; } else secShuf[id] = (secShuf[id] || 0) + 1; drawFeed(collect()); requestAnimationFrame(() => document.getElementById(`td-${id}`)?.scrollIntoView({ block: "nearest" })); }); return b; })();
       // (update 820) 3 stories to start (Form, Player Spotlight, Where to Improve, Results & Milestones): "Show more" adds 3 more each press
@@ -622,7 +637,7 @@ export async function render(main, { previewClient } = {}) {
     const group = (ids) => { const xs = ids.map((i2) => byId.get(i2)).filter(Boolean); xs.forEach((x) => done.add(x)); if (!xs.length) return;
       if (xs.length === 1) { xs[0].classList.add("full"); laid.push(xs[0]); return; }
       laid.push(el("div", { class: xs.length === 3 ? "td-three" : "td-two td-pair" }, xs.map((x) => el("div", { class: "td-stackc" }, [x])))); };
-    for (const id of ORDER) { const x = byId.get(id); if (!x || done.has(x)) continue;
+    for (const id of orderNow()) { const x = byId.get(id); if (!x || done.has(x)) continue;
       if (PAIR.includes(id)) { flush(); group(PAIR); continue; }
       if (TRIO.includes(id)) { flush(); group(TRIO); continue; }
       if (FULL.has(id)) { flush(); x.classList.add("full"); laid.push(x); done.add(x); continue; }
@@ -1345,8 +1360,26 @@ export async function render(main, { previewClient } = {}) {
       document.body.appendChild(wrap); draw(); setTimeout(() => qIn.focus(), 50);
     });
   }
+  // (update 831) Best Week, for one player: their best week of the season overall, in each part of the game and from each of
+  // the data's distance ranges (their own shots), strokes gained a round, each against their season average
+  function bestWeeks(k) {
+    const pl = playerOf(k), own = (gearData.get(k) || []).filter((r) => (ownP?.key === k || onTour(r)) && yrOf(r) === seasonYr());
+    const base = own.length ? own : (pl ? rawOf(pl).filter((r) => yrOf(r) === seasonYr()) : []); if (!base.length) return [];
+    const evs = eventsOf(base).filter((e) => e.rs.length >= 2 || e.rs.some((r) => r.eventLevel)); if (evs.length < 3) return [];
+    const out = [], me = isMe(k), P = me ? "Your" : poss(nameOf(k));
+    const push = (id, lbl, f, n0) => { const vals = evs.map((e) => [e, avgOf(e.rs, f)]).filter((x) => x[1] != null), b = [...vals].sort((a, c) => c[1] - a[1])[0]; if (!b || b[1] <= 0) return;
+      const seas = avgOf(base, f) ?? 0; out.push({ id: `bw-${id}-${k}`, k, kind: "Best week", score: (id === "tot" ? 12 : id.startsWith("d-") ? 8 : 10) + Math.min(1, b[1] - seas) * 0.1, kick: "Best week", fx: { big: sg2(b[1]), small: "a round", lbl: `${lbl} · ${fullEv(b[0].event)}` },
+        title: `${P} best ${lbl.toLowerCase()} week of ${seasonYr()}: ${sg2(b[1])} a round at ${fullEv(b[0].event)}`, detail: `${sg2(b[1])} strokes gained a round ${n0 || ""}at ${fullEv(b[0].event)}, against ${sg2(seas)} over the season`.replace("  ", " "), x: { v: b[1] } }); };
+    push("tot", "Overall", tot);
+    for (const c of ["OTT", "APP", "ARG", "PUTT"]) push(c, CATW[c][0].toUpperCase() + CATW[c].slice(1), (r) => inCat(r, c), `${CAT_IN[c]} `);
+    if (own.length) { const dists = new Map(); for (const r of own) for (const s0 of r.shots || []) if (s0.dist && s0.cat !== "OTT") dists.set(`${s0.cat}|${s0.dist}`, (dists.get(`${s0.cat}|${s0.dist}`) || 0) + (s0.w || 1));
+      const per0 = [...dists].filter(([, n]) => n >= 25).map(([kk]) => kk), per = per0.filter((kk) => per0.filter((x) => x.split("|")[0] === kk.split("|")[0]).length > 1); // (a part of the game with one range: its own card says it)
+      const cand = []; for (const kk of per) { const [c, d] = kk.split("|"), f = (r) => (r.shots || []).reduce((t, s0) => t + (s0.cat === c && s0.dist === d ? s0.sg || 0 : 0), 0); const n0 = out.length; push(`d-${c}-${d}`, `${c === "PUTT" ? "Putting" : c === "ARG" ? "Short game" : "Approach"} from ${d}`, f); if (out.length > n0) cand.push(out.pop()); }
+      out.push(...cand.sort((a, b) => b.x.v - a.x.v).slice(0, 4)); }
+    return out;
+  }
   const collect = () => { const shown = shownKeys().slice(0, selfKey ? 1 : GEARN);
-    return [...highlightsAll(), ...shown.flatMap((k) => (gearData.has(k) ? [...gearHighlights(k), ...detailSpots(k)] : [])), ...practice]; };
+    return [...highlightsAll(), ...shown.flatMap((k) => (gearData.has(k) ? [...gearHighlights(k), ...detailSpots(k)] : [])), ...(solo() ? shownKeys().slice(0, 1).flatMap(bestWeeks) : []), ...practice]; };
   async function refresh() {
     const my = ++gen; drawPills(); drawFeed(collect());
     for (const k of shownKeys().slice(0, selfKey ? 1 : GEARN)) { if (gearData.has(k)) continue; await loadGear(k); if (my !== gen) return; drawFeed(collect()); }

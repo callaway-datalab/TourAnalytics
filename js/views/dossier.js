@@ -101,8 +101,10 @@ export async function overview(box, key, name) {
   function allRanges() {
     // (update 823) by part of the game, then distance, nearest first ("<5 ft", "5-10 ft" … ">25 ft"; "Bunker" last)
     const dk = (d) => { const t = String(d); if (/bunker|sand/i.test(t)) return 1e6; const m = /([<>])?\s*(\d+(?:\.\d+)?)/.exec(t); if (!m) return 5e5; return m[1] === "<" ? -1 : m[1] === ">" ? Number(m[2]) + 0.5 : Number(m[2]); };
-    const all = P.ranges.filter((o) => o.n >= 10).sort((a, b) => PI.CATS.indexOf(a.c) - PI.CATS.indexOf(b.c) || dk(a.d) - dk(b.d)), mx2 = Math.max(0.01, ...all.map((o) => Math.abs(o.rd)));
-    const close = popup("Every distance range", [el("p", { class: "muted small" }, "Strokes gained a round from each range (10+ shots), by part of the game and distance. Tap one for more."), ...PI.CATS.filter((c) => all.some((o) => o.c === c)).flatMap((c) => [el("p", { class: "cf-sub" }, PI.CATN[c]),
+    // (update 831) longest first within each part of the game (bunker shots last), off the tee as it was
+    const dDesc = (o) => (/bunker|sand/i.test(String(o.d)) ? 1e9 : -dk(o.d));
+    const all = P.ranges.filter((o) => o.n >= 10).sort((a, b) => PI.CATS.indexOf(a.c) - PI.CATS.indexOf(b.c) || (a.c === "OTT" ? dk(a.d) - dk(b.d) : dDesc(a) - dDesc(b))), mx2 = Math.max(0.01, ...all.map((o) => Math.abs(o.rd)));
+    const close = popup("Every distance range", [el("p", { class: "muted small" }, "Strokes gained a round from each range (10+ shots), by part of the game, longest first. Tap one for more."), ...PI.CATS.filter((c) => all.some((o) => o.c === c)).flatMap((c) => [el("p", { class: "cf-sub" }, PI.CATN[c]),
       el("div", { class: "ip-bars" }, all.filter((o) => o.c === c).map((o) => clickable(el("div", { class: "ip-barrow ip-click" }, [el("span", {}, o.d), el("span", { class: "ip-bartrack" }, el("i", { class: o.rd >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(o.rd) / mx2) * 100)}%` })), el("b", { class: cls(o.rd) }, sg2(o.rd)), el("span", { class: "ip-barn" }, `${sg3(o.shot)} a shot · ${Math.round(o.n)} shots${o.n < 25 ? " · few shots" : ""}`)]), () => { close(); rangePop(o); })))])], `${name} · ${year}`);
   }
   function gearPop(g) {
