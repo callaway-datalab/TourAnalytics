@@ -68,8 +68,8 @@ export function profile(rounds, { year, tour = null, field = [], key = null } = 
     const uses = (s) => valOf(s, kind) === cur, rds = rs.filter((r) => (r.shots || []).some(uses)), c = KIND_CAT[kind];
     // (update 825) every model of that kind on record (all their rounds on this tour), each by strokes gained a round in its
     // part with it (8+ rounds to be ranked): how many they've tried, and where the one in the bag now ranks among them
-    const tried = new Map(); for (const r of all) { const per = new Map(); for (const sh of r.shots || []) { const v = valOf(sh, kind); if (v) per.set(v, (per.get(v) || 0) + (!c || sh.cat === c ? sh.sg || 0 : 0)); } for (const [v, x] of per) { const o = tried.get(v) || tried.set(v, { sg: 0, n: 0 }).get(v); o.sg += x; o.n++; } }
-    const rankable = [...tried].filter(([, o]) => o.n >= 8).map(([v, o]) => [v, o.sg / o.n]).sort((a, b) => b[1] - a[1]), rk = rankable.findIndex(([v]) => v === cur);
+    const tried = new Map(); for (const r of rs) { /* (update 826: the season on the page, as everything else here) */ const per = new Map(); for (const sh of r.shots || []) { const v = valOf(sh, kind); if (v) per.set(v, (per.get(v) || 0) + (!c || sh.cat === c ? sh.sg || 0 : 0)); } for (const [v, x] of per) { const o = tried.get(v) || tried.set(v, { sg: 0, n: 0 }).get(v); o.sg += x; o.n++; } }
+    const rankable = [...tried].filter(([, o]) => o.n >= 4).map(([v, o]) => [v, o.sg / o.n]).sort((a, b) => b[1] - a[1]), rk = rankable.findIndex(([v]) => v === cur);
     gear.push({ kind, model: modelOf(cur), tried: tried.size, rank: rk >= 0 ? rk + 1 : null, ranked: rankable.length, cat: c || "TOTAL", rd: rds.length ? rds.reduce((t, r) => t + (r.shots || []).reduce((u, s) => u + (uses(s) && (!c || s.cat === c) ? s.sg || 0 : 0), 0), 0) / rds.length : null, n: rds.length, isNew: j > 0 && i - j <= 8, was: j > 0 ? modelOf(top[j - 1]) : null }); }
   const tours = [...new Set(rounds.map((r) => r.tour).filter(Boolean))];
   return { rs, all, n: rs.length, ev: evs.length, evs, tot: avg(rs, tot), cat, ranks, form, ranges, leaks, strengths, gear, tours };

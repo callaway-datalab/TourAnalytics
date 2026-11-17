@@ -66,9 +66,9 @@ export async function overview(box, key, name) {
     P.ranges.length > rows.length ? (() => { const b = el("button", { type: "button", class: "ip-link" }, `Show all (${P.ranges.filter((o) => o.n >= 10).length} ranges)`); b.addEventListener("click", allRanges); return b; })() : null,
     samp(`${year} season, ${P.n} rounds · a range needs 25+ shots`)]);
   // the bag (clubs, the Non-Driver off the tee, and the ball)
-  const bagCard = card("In the bag", "#ff9f0a", P.gear.length ? [el("table", { class: "ip-t" }, [el("thead", {}, el("tr", {}, ["Club", "Model", "SG a round", "Rounds", "Tried", "Rank"].map((h, i) => el("th", { class: i >= 2 ? "num" : null, title: i === 4 ? "How many models of that club they've used, on record" : i === 5 ? "Where the one in the bag now ranks among them by strokes gained a round (models with 8+ rounds)" : null }, h)))),
-    el("tbody", {}, P.gear.map((g) => clickable(el("tr", { class: "ip-click" }, [el("td", {}, g.kind), el("td", {}, [g.model, g.isNew ? el("span", { class: "ip-new" }, "new") : null, g.isNew && g.was ? el("span", { class: "ip-was" }, ` (was ${g.was})`) : null]), el("td", { class: `num ${cls(g.rd)}` }, sg2(g.rd)), el("td", { class: "num" }, String(g.n)), el("td", { class: "num" }, String(g.tried)), el("td", { class: "num strong", title: g.rank ? null : "Under 8 rounds with it: not ranked yet" }, g.rank ? `${g.rank}/${g.ranked}` : "—")]), () => gearPop(g))))]),
-    samp(`Strokes gained a round with each, over the rounds it was used (${year}): a club in its own part of the game (off the tee for the Driver and Non-Driver), the ball on every shot. Tried: the models of each on record; Rank: the one in the bag now among those with 8+ rounds, by strokes gained a round`)] : [el("p", { class: "muted" }, "No clubs in this player's data.")]);
+  const bagCard = card("In the bag", "#ff9f0a", P.gear.length ? [el("table", { class: "ip-t" }, [el("thead", {}, el("tr", {}, ["Club", "Model", "SG a round", "Rounds", "Tried", "Rank"].map((h, i) => el("th", { class: i >= 2 ? "num" : null, title: i === 4 ? `How many models of that club they've used in ${year}` : i === 5 ? "Where the one in the bag now ranks among them by strokes gained a round (models with 4+ rounds)" : null }, h)))),
+    el("tbody", {}, P.gear.map((g) => clickable(el("tr", { class: "ip-click" }, [el("td", {}, g.kind), el("td", {}, [g.model, g.isNew ? el("span", { class: "ip-new" }, "new") : null, g.isNew && g.was ? el("span", { class: "ip-was" }, ` (was ${g.was})`) : null]), el("td", { class: `num ${cls(g.rd)}` }, sg2(g.rd)), el("td", { class: "num" }, String(g.n)), el("td", { class: "num" }, String(g.tried)), el("td", { class: "num strong", title: g.rank ? null : "Under 4 rounds with it: not ranked yet" }, g.rank ? `${g.rank}/${g.ranked}` : "—")]), () => gearPop(g))))]),
+    samp(`Strokes gained a round with each, over the rounds it was used (${year}): a club in its own part of the game (off the tee for the Driver and Non-Driver), the ball on every shot. Tried: the models of each used in ${year}; Rank: the one in the bag now among those with 4+ rounds, by strokes gained a round`)] : [el("p", { class: "muted" }, "No clubs in this player's data.")]);
   // (update 825) a part of the game's form in each of its distance ranges: lately against before, strokes gained a round
   function formRanges(c) {
     const by = (rs) => { const m = new Map(); for (const r of rs) for (const sh of r.shots || []) { if (sh.cat !== c || !sh.dist) continue; const o = m.get(sh.dist) || m.set(sh.dist, { sg: 0, n: 0 }).get(sh.dist); o.sg += sh.sg || 0; o.n += sh.w || 1; } return m; };
@@ -109,21 +109,30 @@ export async function overview(box, key, name) {
     const kindOf = (gr) => String(gr || "").split("|")[0], modelOf = (gr) => String(gr || "").split("|").slice(1).join("|");
     const valOf = (s) => (g.kind === "Ball" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear && kindOf(s.gear) === g.kind ? s.gear : null);
     const c = g.cat === "TOTAL" ? null : g.cat;
-    const evs = P.evs.map((e) => { const m = new Map(); for (const r of e.rs) for (const s of r.shots || []) { const v = valOf(s); if (v) m.set(v, (m.get(v) || 0) + 1); } const top = [...m].sort((a, b) => b[1] - a[1])[0]?.[0];
+    // (update 826) every model used in the season on the page, as Tried and Rank count them
+    // (update 826) the season on the page (as Tried and Rank count it)
+    const allEv = P.evs, multiYr = false;
+    const evs = allEv.map((e) => { const m = new Map(); for (const r of e.rs) for (const s of r.shots || []) { const v = valOf(s); if (v) m.set(v, (m.get(v) || 0) + 1); } const top = [...m].sort((a, b) => b[1] - a[1])[0]?.[0];
       const sgv = e.rs.reduce((t, r) => t + (r.shots || []).reduce((u, s) => u + (valOf(s) && (!c || s.cat === c) ? s.sg || 0 : 0), 0), 0) / Math.max(1, e.rs.length);
       return top ? { e, model: modelOf(top), sg: sgv, n: e.rs.length } : null; }).filter(Boolean);
-    const byModel = new Map(); for (const x of evs) { const m = byModel.get(x.model) || byModel.set(x.model, { sg: 0, n: 0, ev: 0 }).get(x.model); m.sg += x.sg * x.n; m.n += x.n; m.ev++; }
+    const byModel = new Map(); for (const r of P.rs) { const per = new Map(); for (const s of r.shots || []) { const v = valOf(s); if (v) per.set(v, (per.get(v) || 0) + (!c || s.cat === c ? s.sg || 0 : 0)); }
+      for (const [v, x] of per) { const mdl = modelOf(v), o = byModel.get(mdl) || byModel.set(mdl, { sg: 0, n: 0, evs: new Set(), yrs: new Set() }).get(mdl); o.sg += x; o.n++; o.evs.add(`${r.event}|${PI.yrOf(r)}`); o.yrs.add(PI.yrOf(r)); } }
+    const ranked = [...byModel].filter(([, o]) => o.n >= 4).sort((a, b) => b[1].sg / b[1].n - a[1].sg / a[1].n).map(([m]) => m);
+    const models = [...byModel].sort((a, b) => (ranked.includes(a[0]) ? ranked.indexOf(a[0]) : 99) - (ranked.includes(b[0]) ? ranked.indexOf(b[0]) : 99) || b[1].n - a[1].n);
+    const MC = ["m-a", "m-b", "m-c", "m-d", "m-e", "m-f"], colorOrder = [g.model, ...models.map(([m]) => m).filter((m) => m !== g.model)], mc = (m) => MC[colorOrder.indexOf(m)] || "m-o";
+    const shown = evs.slice(-24);
     popup(`${g.kind}: ${g.model}`, [
       el("p", {}, [`Strokes gained ${c ? PI.CATN[c].toLowerCase() : "in total"} a round with it: `, el("b", { class: cls(g.rd) }, sg2(g.rd)), ` over ${g.n} rounds in ${year}.`, g.isNew && g.was ? ` New in the bag lately (was ${g.was}).` : ""]),
-      byModel.size > 1 ? el("p", { class: "cf-sub" }, "Each model this season") : null,
-      byModel.size > 1 ? el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Model", "Events", "Rounds", "SG a round"].map((h, i) => el("th", { class: i ? "num" : null }, h)))), el("tbody", {}, [...byModel].map(([mdl, m]) => el("tr", {}, [el("td", {}, mdl), el("td", { class: "num" }, String(m.ev)), el("td", { class: "num" }, String(m.n)), el("td", { class: `num strong ${cls(m.sg / m.n)}` }, sg2(m.sg / m.n))])))]) : null,
-      el("p", { class: "cf-sub" }, "Event by event, strokes gained a round"),
-      // (update 823) a bar an event, each model its own colour, with the key under it
-      (() => { const MC = ["m-a", "m-b", "m-c", "m-d", "m-e", "m-f"], models = [g.model, ...[...byModel.keys()].filter((m) => m !== g.model)], mc = (m) => MC[models.indexOf(m)] || "m-o";
-        const svg = CH.barSvg(evs.map((x) => ({ v: x.sg, label: `${PI.evName(x.e.event)} ${x.e.year} · ${x.model} · ${x.n} rounds`, short: PI.evName(x.e.event).replace(/^the\s+/i, "").split(" ").slice(0, 2).join(" "), cls: mc(x.model) })), { note: "By event" });
-        return el("div", { class: "td ip-chartbox" }, svg ? [svg, el("div", { class: "td-legend" }, models.map((m) => el("span", { class: mc(m) }, m)))] : el("p", { class: "muted" }, "Too few events to chart."));
+      el("p", { class: "cf-sub" }, `Every model in ${year} (${byModel.size} tried)`),
+      el("div", { class: "ip-tw ip-tw0" }, el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["", "Model", "Events", "Rounds", "SG a round", "Rank"].map((h, i) => el("th", { class: i > 2 ? "num" : null }, h)))),
+        el("tbody", {}, models.map(([mdl, o]) => el("tr", { class: mdl === g.model ? "ip-now" : null }, [el("td", {}, el("i", { class: `td-sw ${mc(mdl)}` })), el("td", {}, [mdl, mdl === g.model ? el("span", { class: "ip-new" }, "in the bag") : null]), el("td", { class: "num" }, String(o.evs.size)), el("td", { class: "num" }, String(o.n)), el("td", { class: `num strong ${cls(o.sg / o.n)}` }, sg2(o.sg / o.n)), el("td", { class: "num strong" }, ranked.includes(mdl) ? `${ranked.indexOf(mdl) + 1}/${ranked.length}` : "—")])))])),
+      el("p", { class: "cf-sub" }, `Event by event, strokes gained a round${evs.length > shown.length ? ` (the last ${shown.length} events)` : ""}`),
+      // (update 823) a bar an event, each model its own colour, with the key under it (update 826: room for the names under the bars)
+      (() => { const used = [...new Set(shown.map((x) => x.model))];
+        const svg = CH.barSvg(shown.map((x) => ({ v: x.sg, label: `${PI.evName(x.e.event)} ${x.e.year} · ${x.model} · ${x.n} rounds`, short: `${PI.evName(x.e.event).replace(/^the\s+/i, "").split(" ").slice(0, 2).join(" ")}${multiYr ? ` '${String(x.e.year).slice(2)}` : ""}`, cls: mc(x.model) })), { note: "By event" });
+        return el("div", { class: "td ip-chartbox ip-gearchart" }, svg ? [svg, el("div", { class: "td-legend" }, colorOrder.filter((m) => used.includes(m)).map((m) => el("span", { class: mc(m) }, m)))] : el("p", { class: "muted" }, "Too few events to chart."));
       })(),
-      samp(`The model used most at each event; strokes gained a round ${c ? `in ${PI.CATN[c].toLowerCase()} on the shots hit with it` : "on every shot, with that ball"}`)], `In the bag · ${name}`);
+      samp(`Every ${tour || ""} round in ${year}: strokes gained a round ${c ? `in ${PI.CATN[c].toLowerCase()} on the shots hit with each model` : "on every shot, with each ball"}, over the rounds it was used. Rank: among the models with 4+ rounds. The chart: the model used most at each event`)], `In the bag · ${name}`);
   }
   const fitBox = card("Next event fit", "#64d2ff", el("p", { class: "muted" }, "Loading the course…"), "ip-fit");
   mount(wrap, [head(`${tour || ""} ${year}`.trim()), tiles, el("div", { class: "ip-grid ip-grid-2" }, [formCard, goesCard]), el("div", { class: "ip-bag" }, bagCard), fitBox,
