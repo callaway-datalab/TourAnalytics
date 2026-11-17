@@ -19,6 +19,16 @@ export const isDpwt = (t) => /^(dpwt|dp world tour)$/i.test(String(t || "").trim
 // (update 679) "All": every tour together (PGA TOUR, Korn Ferry, DP World Tour); any DP World Tour in it: event level for everything
 export const ALL_TOURS = "__all";
 
+// (update 817) the Overview, Course Fit and Practice & Goals tabs: each drawn once a player and kept (the dashboard redraws often)
+const tabMemo = new Map();
+function statsTab(kind, me, st, opts) {
+  const sub = kind === "practice" ? st.pgSub || "week" : "", k = `${kind}|${me.key}`;
+  if (tabMemo.has(k)) return tabMemo.get(k);
+  const box = el("div", { class: "st-tab" }, el("p", { class: "muted center" }, "Loading…"));
+  if (tabMemo.size > 6) tabMemo.delete(tabMemo.keys().next().value); tabMemo.set(k, box);
+  import("./statsTabs.js").then((m) => m.fill(box, kind, me, { sub, st, previewClient: opts.previewClient || null, redraw: () => { tabMemo.delete(k); opts.redraw?.(); } })).catch((e) => { console.error(e); mount(box, el("p", { class: "muted center" }, "Couldn’t open this just now.")); });
+  return box;
+}
 export function sgDashboard(container, opts) {
   // (sgDashboard split) S: what the section modules read and write of this page's state and helpers, live
   const S = {
@@ -395,6 +405,8 @@ export function sgDashboard(container, opts) {
     // the field over the same rounds
     const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "focus"); // (update 505: Full stats unless Focus is picked)
     const resultsOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "results"); // (update 756: Tournament Results)
+    // (update 817) Overview (the player's page: what Stats opens on), Course Fit (every course for them), Practice & Goals
+    const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice"].includes(st.view2) ? st.view2 : ["full", "focus", "results"].includes(st.view2) ? null : "overview") : null;
     const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
     const focusMine = focusOn ? nz(applyFilters(me.rounds, noShotF)) : null;
     const focusField = focusOn ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...rankF, cats: [], lie: [], dist: [], club: [], gear: [] })) })) : null;
@@ -424,8 +436,8 @@ export function sgDashboard(container, opts) {
       // (update 471) a player's strokes gained: Focus / Full stats first; Focus has its own part-of-the-game pills
       // in place of the filters
       focusOn || resultsOn ? sgFocus.focusSwitch(S) : me && isSG() && !opts.emptyNote ? sgFocus.focusSwitch(S) : null,
-      focusOn || resultsOn ? null : filtersPanel(opt),
-      focusOn || resultsOn ? null : rangeChip(), // (update 322)
+      focusOn || resultsOn || tabOn ? null : filtersPanel(opt),
+      focusOn || resultsOn || tabOn ? null : rangeChip(), // (update 322)
       el("div", { class: "sg-panel" }, (() => {
         // nothing to show (no player picked, or no rounds yet): the same Filters panel, and why it's empty
         if (opts.emptyNote) return [el("section", { class: "panel sg-empty-note" }, el("p", { class: "empty center" }, opts.emptyNote))];
@@ -434,6 +446,7 @@ export function sgDashboard(container, opts) {
         if (!me && st.statWanted === "form1") return [formBoard(slicedField)]; // (update 333: #1 Form)
         // (update 470) a player's strokes gained: Focus (the short story) or Full stats (everything), switched at the top
         // (update 756) Tournament Results: every tournament on this tour (any year), each against that week's field
+        if (tabOn) return [statsTab(tabOn, me, st, opts)]; // (update 817)
         if (resultsOn) return sgResults.resultsView(S, nz(applyFilters(me.rounds, { tour: f.tour })), field.map((p) => ({ key: p.key, rounds: applyFilters(p.rounds, { tour: f.tour }) })));
         if (focusOn) { const fv = [].concat(sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour })))), sb = sgSummary.steadyBox(S, slicedField);
           // (update 767) Ability vs Consistency up beside the radar (one above the other on a phone)

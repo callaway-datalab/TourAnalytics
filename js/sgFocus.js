@@ -365,8 +365,10 @@ export function focusView(S, mine, slicedField, f = {}, everyYear = null) {
 
 /** The Focus / Full stats switch. */
 export function focusSwitch(S) {
-  const st = S.st, now = st.view2 === "focus" || st.view2 === "results" ? st.view2 : "full"; // (update 505: Full stats first, and what Stats opens on; 756: Tournament Results)
-  const seg = el("div", { class: "seg seg-sm fx-switch", role: "group", "aria-label": "Stats view" }, [["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"]].map(([v, l]) => {
+  // (update 817) Overview first (and what Stats opens on), then Full stats, Focus, Tournament Results, Course Fit, Practice & Goals
+  const VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"], ["fit", "Course Fit"], ["practice", "Practice & Goals"]];
+  const st = S.st, now = VIEWS.some(([v]) => v === st.view2) ? st.view2 : "overview";
+  const seg = el("div", { class: "seg seg-sm fx-switch", role: "group", "aria-label": "Stats view" }, VIEWS.map(([v, l]) => {
     const cur = now === v;
     const b = el("button", { type: "button", class: `seg-btn${cur ? " on" : ""}`, "aria-pressed": String(cur) }, l);
     b.addEventListener("click", () => { if (!cur) { st.view2 = v; S.draw(); } });

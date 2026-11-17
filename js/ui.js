@@ -128,20 +128,17 @@ const sectionsFor = (kind) => {
       admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"]],
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
-    ["Player Dossier", "#/dossier", ["dossier"]], // (update 815)
-    ["Course Fit", "#/course-fit", ["course-fit"]], // (update 815)
+    // (update 817) the Player Dossier (Overview), Course Fit and Practice & Goals are tabs on Stats now
     ["Compare", "#/comparisons", ["comparisons"]], // (update 205: Deep Dives; 209: Compare)
     ["Leaderboards", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
-    ["Event Feed", "#/live", ["live"]], // (update 611: in Analyze, after Leaderboards; no longer in the top bar)
+    ["Event Feed", "#/live", ["live"]],
+    ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], {}], // (update 817: from Play) // (update 611: in Analyze, after Leaderboards; no longer in the top bar)
     // (update 209) no Product Usage tab: product usage is in Compare (staff can compare products across everyone)
   ];
   // (update 160) Course Prep (course reports, maps, history and simulated rounds), Enter New Round, Practice, Goals
+  // (update 817) Play is Enter New Round only (Course Prep is under Analyze; Practice, Practice Week and Goals are a tab on Stats)
   const planItems = [
-    ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]], // (update 292: first, and what Play opens on)
-    ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], {}], // (update 522: open to everyone)
-    ["Practice", "#/practice", ["practice"], {}],
-    ["Practice Week", "#/practice-week", ["practice-week"], {}], // (update 815) // (update 372: open to everyone; Course Prep is still the admin's)
-    ["Goals", admin ? "#/admin/goals" : "#/goals", admin ? ["admin-goals"] : ["goals"]],
+    ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]],
   ];
   return [
     { id: "data", label: "Analyze", icon: "data", items: dataItems },
@@ -374,9 +371,12 @@ const WORDS = { Stats: "strokes gained sg radar season form", "Player Dossier": 
 /** (update 816) the current player in the header: tap for their Dossier, × to let go of them */
 const playerOnly = () => { const st = window.__authState; return !!(st?.profile?.clientKey && !st.isAdmin && !st.isTeam); }; // a player is always themself
 function paintChip(n, c) {
-  n.hidden = !c || playerOnly(); if (n.hidden) { n.replaceChildren(); n.removeAttribute("title"); return; } n.title = `${c.label}: picked on every page`;
-  const a = el("a", { class: "cur-go", href: `#/dossier?player=${encodeURIComponent(c.key)}` }, [el("i", { "aria-hidden": "true" }), lastName(c.label)]);
-  const x = el("button", { type: "button", class: "cur-x", "aria-label": `Stop following ${c.label}` }, "×"); x.addEventListener("click", () => setCurrent(null));
+  // (update 817) the one place a player is picked: "Pick a player" until there is one; then their name (tap to switch) and ×
+  n.hidden = playerOnly(); if (n.hidden) { n.replaceChildren(); return; }
+  if (!c) { const b = el("button", { type: "button", class: "cur-go cur-pick" }, [el("i", { "aria-hidden": "true" }), "Pick a player"]); b.addEventListener("click", () => openPalette("", { pick: true })); n.classList.add("empty"); n.replaceChildren(b); n.title = "Pick a player: every page opens on them"; return; }
+  n.classList.remove("empty"); n.title = `${c.label}: the player on every page (tap to switch)`;
+  const a = el("button", { type: "button", class: "cur-go" }, [el("i", { "aria-hidden": "true" }), lastName(c.label)]); a.addEventListener("click", () => openPalette("", { pick: true }));
+  const x = el("button", { type: "button", class: "cur-x", "aria-label": `Clear ${c.label}` }, "×"); x.addEventListener("click", () => setCurrent(null));
   n.replaceChildren(a, x);
 }
 function curChip() { const n = el("span", { class: "cur-chip" }); paintChip(n, currentPlayer()); return n; }
@@ -416,6 +416,8 @@ export function renderShell(root, { previewClient, currentRoute }) {
 
   // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
   setPages(() => [["Home", "#/home", "", "today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
+    ["Overview", "stats:overview", "Stats", "player dossier profile report"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
+    ["Practice", "stats:practice:practice", "Stats · Practice & Goals", "drills sessions range"], ["Practice Week", "stats:practice:week", "Stats · Practice & Goals", "plan drills"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
     ["What's in the Bag", "#/witb", "", "witb clubs equipment gear"], ["Chat", admin ? "#/admin/questions" : "#/questions", "", "questions messages"], ["Profile", "#/account", "Account", "settings password"]]
     .map(([label, href, group, words]) => ({ label, href, group, words })));
   const searchBtn = el("button", { type: "button", class: "hdr-icon search-btn", "aria-label": "Search (Ctrl+K)", title: "Search players, pages, courses (Ctrl+K)" }, [icon("search")]);
@@ -427,7 +429,6 @@ export function renderShell(root, { previewClient, currentRoute }) {
     data ? el("a", { href: data.items[0][1], "aria-current": data === onSec ? "page" : null }, [icon("data"), el("span", {}, data.label)]) : null,
     (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })(),
     plan ? el("a", { href: plan.items.find((it) => !it[3]?.soon && !it[3]?.off)?.[1] || "#/practice", "aria-current": plan === onSec ? "page" : null }, [icon("doc"), el("span", {}, plan.label)]) : null,
-    el("a", { href: "#/entry", class: "botbar-plus", "aria-label": "Enter a new round" }, [icon("plus"), el("span", {}, "Round")]),
   ]);
   const rail = el("aside", { class: "rail" }, [
     el("a", { class: "brand", href: "#/home" }, [logoImg(), portalName]),

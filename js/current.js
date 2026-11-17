@@ -26,4 +26,17 @@ export function autoPlayer() {
   return cur;
 }
 /** last name for short labels (never a first name alone) */
-export const lastName = (label) => String(label || "").replace(/\s*\(.*\)\s*$/, "").split(" ").filter((w) => !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(w)).at(-1) || label;
+export const lastName = (label) => { const w = String(label || "").replace(/\s*\(.*\)\s*$/, "").split(/\s+/).filter((x) => x && !/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(x)); if (!w.length) return label;
+  let i = w.length - 1; while (i > 1 && /^(van|von|der|den|de|da|di|du|la|le|del|dos|ter|mac)$/i.test(w[i - 1])) i--; return w.slice(i).join(" "); }; // ("van Rooyen")
+/** (update 817) open Stats on one of its tabs (overview, full, focus, results, fit, practice) for the header's player;
+ *  sub: the Practice & Goals tab's part (practice, week, goals) */
+export function statsHref() {
+  const st = window.__authState || {}, pv = window.__previewClient;
+  if (st.isAdmin && !pv) return "#/admin/player-stats";
+  if (!st.isAdmin && st.isTeam && !pv) return "#/player-stats";
+  return "#/dashboard";
+}
+export function openStatsTab(view2, sub = null) {
+  try { sessionStorage.setItem("ta.statsPreset", JSON.stringify({ at: Date.now(), st: { view2, ...(sub ? { pgSub: sub } : {}) } })); } catch { /* */ }
+  const h = statsHref(); if (location.hash === h) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = h;
+}

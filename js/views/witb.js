@@ -40,7 +40,7 @@ export async function render(main, { flash, previewClient }) {
     const go = (key) => { const h = key ? `#/witb?player=${encodeURIComponent(key)}` : "#/witb"; if (location.hash !== h) location.hash = h; };
     // (update 185) "My bag" is the first entry in the list; no separate button or label
     const ME = "__mybag";
-    const pp = playerPicker(new Map([[ME, "My bag"], ...players]), (p) => go(p && p.key !== ME ? p.key : null), new Map([[ME, " "]]), ME, { follow: !playerKey }); // (update 816)
+    const pp = playerPicker(new Map([[ME, "My bag"], ...players]), (p) => go(p && p.key !== ME ? p.key : null), new Map([[ME, " "]]), ME);
     const inp = pp.node.querySelector("input");
     if (inp) inp.placeholder = "My bag \u00b7 type a player\u2019s name\u2026";
     if (playerKey) pp.preset(playerKey);

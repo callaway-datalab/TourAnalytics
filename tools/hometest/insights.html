@@ -7,6 +7,9 @@ const q = new URLSearchParams(location.search), pg = q.get("p") || "dossier";
 if (q.has("light")) document.documentElement.dataset.theme = "light";
 const { key } = await import("./__mock/fixture.js");
 if (q.get("who")) history.replaceState(null, "", `#/${pg}?player=${encodeURIComponent(key(q.get("who")))}${q.get("focus") ? `&focus=${encodeURIComponent(q.get("focus"))}` : ""}`);
+if (q.get("tab")) { const k = key(q.get("who") || "Sam Burns"); localStorage.setItem("ta.current", JSON.stringify({ key: k, label: q.get("who") || "Sam Burns" }));
+  const m = await import("./js/statsTabs.js"); window.__authState = { isAdmin: true, user: { uid: "admin1" }, profile: { name: "Charlie Test" } };
+  await m.fill(document.getElementById("app"), q.get("tab"), { key: k, label: q.get("who") || "Sam Burns" }, { st: {} }); window.__ready = true; throw "done"; }
 const mod = await import(`./js/views/${{ dossier: "dossier", fit: "courseFit", week: "practiceWeek" }[pg]}.js`);
 window.addEventListener("error", (e) => { (window.__errs ||= []).push(String(e.message)); });
 window.addEventListener("unhandledrejection", (e) => { (window.__errs ||= []).push(String(e.reason?.stack || e.reason)); });

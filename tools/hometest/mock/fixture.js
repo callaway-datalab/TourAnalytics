@@ -22,7 +22,7 @@ for (const p of players) { const evs = p.tour === "PGA" ? PGA_EV : DP_EV, rs = [
       const swingIron = p.name === "Sam Burns" && yr === 2026 && ei >= evs.length - 2 ? IRONS[1] : IRONS[0], drv = p.name === "Erik van Rooyen" && yr === 2026 && ei >= 12 ? DRIVERS[1] : DRIVERS[0];
       const add = (cat, dist, n, mean, gear) => { for (let s = 0; s < n; s++) shots.push({ cat, sg: (mean + gauss() * 0.35) / n * 1, w: 1, dist, lie: cat === "PUTT" ? "green" : rnd() < 0.7 ? "fairway" : "rough", gear, ball: "Chrome Tour" }); };
       const day = gauss() * p.sd * 0.35;
-      add("OTT", rnd() < 0.8 ? "Driver" : "Non-Driver", 14, p.sk.OTT + day * 0.25 + trend, `Driver|${drv}`);
+      { const nd = rnd() >= 0.8; add("OTT", nd ? "Non-Driver" : "Driver", 14, p.sk.OTT + day * 0.25 + trend, nd ? "Non-Driver|Callaway Elyte 3 Wood" : `Driver|${drv}`); }
       for (const ds of APP) add("APP", ds, 1 + Math.floor(rnd() * 3), (p.sk.APP + day * 0.3 + trend) / 4, `Iron|${swingIron}`);
       add("ARG", ARG[0], 4, p.sk.ARG + day * 0.15, "Wedge|Callaway Opus 56");
       for (const ds of PUTT) add("PUTT", ds, 1 + Math.floor(rnd() * 3), (p.sk.PUTT + day * 0.3 + trend) / 6, "Putter|Odyssey Ai-ONE");

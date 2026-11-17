@@ -526,3 +526,33 @@ body.pal-open { overflow: hidden; }
   .pal { padding-top: 12px; } .pal-card { max-height: 80vh; } .pal-row { flex-wrap: wrap; } .pal-main { flex: 1 1 100%; } .pal-quick { padding: 0 0 6px 10px; justify-content: flex-start; }
 }
 @media print { .botbar, .cur-chip, .search-btn { display: none !important; } }
+/* (update 817) Today: a card for each favorite */
+.td-today-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.td-today-go { background: none; border: 0; padding: 0; color: var(--td-gold); font: 600 0.78rem var(--td-sans); cursor: pointer; white-space: nowrap; }
+.td-today-none { margin: 4px 0 0; color: var(--td-mute); font-size: 0.88rem; }
+/* (update 817) a page's player search is out of sight once the header has a player: so is its box */
+.analyze-picker:has(> .player-picker[hidden]), .ps-find:has(.player-picker[hidden]), .team-player-search:has(.player-picker[hidden]) { display: none; }
+.player-picker[hidden] { display: none !important; }
+.rail .cur-chip button.cur-go { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; background: none; border: 0; color: inherit; font: 600 0.82rem var(--font-body, Inter, system-ui, sans-serif); cursor: pointer; }
+.cur-chip.empty { border-style: dashed; } .cur-chip.empty i { background: transparent; border: 1px solid currentColor; } .cur-chip.empty .cur-go { padding-right: 12px; opacity: 0.85; }
+
+/* (update 817) Stats' Overview, Course Fit and Practice & Goals tabs */
+.ip.ip-embed { padding: 0 0 24px; max-width: none; }
+.ip-head-slim { padding-top: 0; }
+.ip-head-slim .ip-h { font-size: clamp(1.3rem, 2.4vw, 1.7rem); display: flex; align-items: center; gap: 10px; }
+.ip-fav { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--ip-rule); background: transparent; color: var(--ip-ink); font: 700 1.05rem/1 var(--font-body, Inter, system-ui, sans-serif); cursor: pointer; }
+.ip-fav:hover { border-color: var(--ip-gold); color: var(--ip-gold); } .ip-fav.on { color: var(--ip-gold); border-color: var(--ip-gold); }
+.ip button.ip-link { background: transparent; cursor: pointer; }
+.st-tab { margin-top: 12px; }
+.st-pg-pills { margin: 0 0 12px; }
+.cf-list { display: grid; gap: 8px; margin: 12px 0; }
+.cf-row { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) minmax(220px, 300px); gap: 12px; align-items: center; background: var(--ip-card); border: 1px solid var(--ip-rule); border-radius: 12px; padding: 10px 14px; }
+.cf-row.top { border-left: 3px solid var(--ip-up); }
+.cf-rk { font-weight: 800; color: var(--ip-mute); font-size: 1.05rem; }
+.cf-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; } .cf-line b { font-size: 0.98rem; }
+.cf-meta { font-size: 0.74rem; color: var(--ip-mute); }
+.cf-why { margin: 4px 0 0; font-size: 0.82rem; color: var(--ip-soft); line-height: 1.45; }
+.cf-nums { display: grid; gap: 3px; font-size: 0.8rem; font-variant-numeric: tabular-nums; } .cf-n b { font-size: 0.95rem; } .cf-n small { color: var(--ip-mute); }
+@media (max-width: 640px) { .cf-row { grid-template-columns: 2em minmax(0, 1fr); } .cf-nums { grid-column: 2; } }
+.cf-nums { grid-template-columns: 1fr 1fr; column-gap: 10px; } .cf-nums .cf-bar, .cf-nums .cf-n:last-child { grid-column: 1 / -1; }
+.ip.st-pg-top { padding: 0; }

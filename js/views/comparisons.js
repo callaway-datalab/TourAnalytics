@@ -436,7 +436,7 @@ export async function render(main) {
     let adder = null;
     const rest = new Map(players.filter(([k]) => !startPicks.some((p) => p.key === k)));
     if (rest.size && (!one || !picksP.length) && picksP.length < MAX_SEL) {
-      const pp = playerPicker(rest, (p) => { if (!p) return; startPicks = one ? [{ key: p.key, label: p.label }] : [...startPicks, { key: p.key, label: p.label }]; draw(); });
+      const pp = playerPicker(rest, (p) => { if (!p) return; startPicks = one ? [{ key: p.key, label: p.label }] : [...startPicks, { key: p.key, label: p.label }]; draw(); }, new Map(), null, { standalone: true }); // (update 817: adds a player; the header keeps its own)
       const inp = pp.node.querySelector("input");
       if (inp) inp.placeholder = picksP.length ? "\uff0b Add another player\u2026" : "\uff0b Add a player\u2026";
       adder = el("div", { class: "cmp-pl-add" }, pp.node);
@@ -826,7 +826,7 @@ export async function render(main) {
         if (!p) return;
         if (!room(Math.max(1, sels.length), Math.max(1, list.length) + 1)) { flashNote(`Up to ${MAX_SEL} on the charts: take a pick off first, then add ${p.label}.`); const i0 = pp.node.querySelector("input"); if (i0) i0.value = ""; return; }
         setChosen([...list, { key: p.key, label: p.label }]);
-      });
+      }, new Map(), null, { standalone: true }); // (update 817)
       const inp = pp.node.querySelector("input");
       if (inp) inp.placeholder = "\uff0b Add a player\u2026";
       adder = el("div", { class: "cmp-pl-add" }, pp.node);

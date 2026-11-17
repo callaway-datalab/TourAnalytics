@@ -2,7 +2,7 @@
 // a course; Enter opens the top result. A player opens their Dossier (and becomes the current player); the small links
 // beside them open their Stats, Compare, Practice, Practice Week or Bag instead. Arrows move, Esc closes.
 import { el, mount } from "./ui.js";
-import { setCurrent, currentPlayer } from "./current.js";
+import { setCurrent, currentPlayer, openStatsTab, statsHref as statsLink } from "./current.js";
 
 let pagesFn = () => [], box = null, idx = null, idxAt = 0;
 /** ui.js hands over the pages this person's menus show: [{ label, href, group }] */
@@ -24,14 +24,15 @@ async function index() {
 const score = (text, q) => { const t = String(text || "").toLowerCase(); if (!q) return 1; if (t.startsWith(q)) return 100 - t.length / 100; if (t.split(/[\s·,-]+/).some((w) => w.startsWith(q))) return 80 - t.length / 100; const i = t.indexOf(q); if (i >= 0) return 60 - i / 10;
   let j = 0; for (const ch of t) if (ch === q[j]) j++; return j === q.length ? 20 - t.length / 100 : 0; };
 
-function go(href, p = null) { if (p) setCurrent({ key: p.key, label: p.label }); close(); if (location.hash === href) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = href; try { import("./perf.js").then((m) => m.clickPath?.("search", href)).catch(() => {}); } catch { /* */ } }
+function go(href, p = null) { if (p) setCurrent({ key: p.key, label: p.label }); close(); if (href.startsWith("stats:")) { const [, v, sub] = href.split(":"); openStatsTab(v, sub || null); return; } if (location.hash === href) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = href; try { import("./perf.js").then((m) => m.clickPath?.("search", href)).catch(() => {}); } catch { /* */ } }
 function close() { if (!box) return; box.remove(); box = null; document.body.classList.remove("pal-open"); }
 
-export async function openPalette(q0 = "") {
+/** (update 817) pick: the header's player picker: players only; a pick becomes the player on every page (the page stays) */
+export async function openPalette(q0 = "", { pick = false } = {}) {
   if (box) { box.querySelector("input")?.focus(); return; }
-  const input = el("input", { type: "search", class: "pal-in", placeholder: "Search players, pages, courses…", "aria-label": "Search", autocomplete: "off", enterkeyhint: "go", role: "combobox", "aria-expanded": "true", "aria-controls": "pal-list" });
+  const input = el("input", { type: "search", class: "pal-in", placeholder: pick ? "Pick a player…" : "Search players, pages, courses…", "aria-label": "Search", autocomplete: "off", enterkeyhint: "go", role: "combobox", "aria-expanded": "true", "aria-controls": "pal-list" });
   const list = el("div", { class: "pal-list", id: "pal-list", role: "listbox" }, el("p", { class: "pal-msg" }, "Loading…"));
-  const hint = el("p", { class: "pal-hint" }, ["↑↓ to move · Enter to open · Esc to close", el("span", {}, " · a player opens their Dossier and stays picked on every page")]);
+  const hint = el("p", { class: "pal-hint" }, pick ? "↑↓ to move · Enter to pick · Esc to close · the player you pick is the player on every page" : ["↑↓ to move · Enter to open · Esc to close", el("span", {}, " · a player opens their Overview and is picked on every page")]);
   box = el("div", { class: "pal", role: "dialog", "aria-modal": "true", "aria-label": "Search" }, [el("div", { class: "pal-back" }), el("div", { class: "pal-card" }, [input, list, hint])]);
   box.querySelector(".pal-back").addEventListener("click", close);
   document.body.append(box); document.body.classList.add("pal-open"); input.value = q0; input.focus();
@@ -40,9 +41,9 @@ export async function openPalette(q0 = "") {
   const draw = async () => {
     const I = await index(); if (!box) return;
     const q = input.value.trim().toLowerCase(), cur = currentPlayer();
-    const P = I.players.map((p) => ({ ...p, s: q ? score(p.label, q) : (p.key === cur?.key ? 3 : p.self ? 2.5 : p.fav ? 2 : 0) })).filter((p) => p.s > 0).sort((a, b) => b.s - a.s || String(a.label).localeCompare(String(b.label))).slice(0, q ? 6 : 6);
-    const G = pages.map((p) => ({ kind: "page", ...p, s: score(`${p.label} ${p.group || ""} ${p.words || ""}`, q) })).filter((p) => p.s > 0).sort((a, b) => b.s - a.s).slice(0, q ? 6 : 8);
-    const C = q ? I.courses.map((c) => ({ ...c, s: Math.max(score(c.label, q), score(c.sub, q) * 0.9) })).filter((c) => c.s > 0).sort((a, b) => b.s - a.s).slice(0, 4) : [];
+    const P = I.players.map((p) => ({ ...p, s: q ? score(p.label, q) : (p.key === cur?.key ? 3 : p.self ? 2.5 : p.fav ? 2 : 0) })).filter((p) => p.s > 0).sort((a, b) => b.s - a.s || String(a.label).localeCompare(String(b.label))).slice(0, pick ? (q ? 20 : 14) : 6);
+    const G = pick ? [] : pages.map((p) => ({ kind: "page", ...p, s: score(`${p.label} ${p.group || ""} ${p.words || ""}`, q) })).filter((p) => p.s > 0).sort((a, b) => b.s - a.s).slice(0, q ? 6 : 8);
+    const C = q && !pick ? I.courses.map((c) => ({ ...c, s: Math.max(score(c.label, q), score(c.sub, q) * 0.9) })).filter((c) => c.s > 0).sort((a, b) => b.s - a.s).slice(0, 4) : [];
     // the best match leads, whatever its kind
     const groups = [["Players", P], ["Pages", G], ["Courses", C]].filter(([, l]) => l.length).sort((a, b) => (q ? b[1][0].s - a[1][0].s : 0));
     rows = groups.flatMap(([, l]) => l); at = Math.min(at, Math.max(0, rows.length - 1));
@@ -51,15 +52,16 @@ export async function openPalette(q0 = "") {
   };
   const row = (r, i) => {
     const on = i === at, base = { class: `pal-row${on ? " on" : ""}`, role: "option", "aria-selected": String(on), id: `pal-${i}` };
+    if (r.kind === "player" && pick) { const n = el("div", base, el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.key === currentPlayer()?.key ? "Picked now" : r.self ? "You" : r.fav ? "★ Favorite" : "")]));
+      n.querySelector(".pal-main").addEventListener("click", () => { setCurrent({ key: r.key, label: r.label }); close(); try { import("./perf.js").catch(() => {}); } catch { /* */ } }); return n; }
     if (r.kind === "player") {
       const enc = encodeURIComponent(r.key), q = (h) => `${h}?player=${enc}`;
-      const quick = [["Stats", r.statsHref], ["Compare", q("#/comparisons")], ["Practice", q("#/practice")], ["Week", q("#/practice-week")], ["Bag", q("#/witb")]];
-      const n = el("div", base, [el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.self ? "You · Dossier" : `${r.fav ? "★ " : ""}Dossier`)]),
+      const quick = [["Full stats", "stats:full"], ["Course Fit", "stats:fit"], ["Practice", "stats:practice:week"], ["Compare", q("#/comparisons")], ["Bag", q("#/witb")]];
+      const n = el("div", base, [el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.self ? "You · Overview" : `${r.fav ? "★ " : ""}Overview`)]),
         el("span", { class: "pal-quick" }, quick.map(([l, h]) => { const a = el("button", { type: "button", class: "pal-q" }, l); a.addEventListener("click", (e) => { e.stopPropagation(); go(h, r); }); return a; }))]);
-      n.querySelector(".pal-main").addEventListener("click", () => go(q("#/dossier"), r)); return n; }
-    if (r.kind === "course") { const n = el("div", base, [el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.sub || "Course")]),
-      el("span", { class: "pal-quick" }, [r.raw ? (() => { const a = el("button", { type: "button", class: "pal-q" }, "Course Fit"); a.addEventListener("click", (e) => { e.stopPropagation(); go(`#/course-fit?course=${encodeURIComponent(r.id)}`); }); return a; })() : null])]);
-      n.querySelector(".pal-main").addEventListener("click", () => go(r.raw ? `#/course-fit?course=${encodeURIComponent(r.id)}` : "#/course-prep")); return n; }
+      n.querySelector(".pal-main").addEventListener("click", () => go("stats:overview", r)); return n; }
+    if (r.kind === "course") { const n = el("div", base, el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.sub || "Course")]));
+      n.querySelector(".pal-main").addEventListener("click", () => go("#/course-prep")); return n; } // (update 817: Course Fit is the player's: every course for them)
     const n = el("div", base, el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.group || "")]));
     n.querySelector(".pal-main").addEventListener("click", () => go(r.href)); return n;
   };

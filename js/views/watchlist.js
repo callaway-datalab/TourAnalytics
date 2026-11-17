@@ -123,7 +123,7 @@ export async function render(main, { previewClient }) {
   if (myKey && multi) labels.set(myKey, youLabel); // (update 177: one player's own page keeps their name)
   await loadWatch(true);
   let prefs = watchPrefs();
-  const picker = multi ? playerPicker(labels, (p) => { import("../perf.js").then((m) => m.bootLog(`watchlist search picked ${p?.key || "none"}`)).catch(() => {}); if (!p) return; const now = watchPrefs().players || []; if (!now.includes(p.key)) { prefs = { ...watchPrefs(), players: [...now, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }, new Map(), null, { autoPick: false }) : null;
+  const picker = multi ? playerPicker(labels, (p) => { import("../perf.js").then((m) => m.bootLog(`watchlist search picked ${p?.key || "none"}`)).catch(() => {}); if (!p) return; const now = watchPrefs().players || []; if (!now.includes(p.key)) { prefs = { ...watchPrefs(), players: [...now, p.key] }; saveWatch({ players: prefs.players }); draw(); } setTimeout(() => { const i = pickerBox.querySelector("input"); if (i) i.value = ""; }, 0); }, new Map(), null, { autoPick: false, standalone: true }) : null; // (update 817: adds favorites)
   const pickerBox = el("div", { class: "wl-add" }, picker ? [picker.node] : []);
   { const i = picker?.node.querySelector("input"); if (i) i.placeholder = "Add a player to the Watchlist\u2026"; } // (update 556)
   // (update 556) the Tour filter at the top (in place of a tour switch on each card): null = every tour

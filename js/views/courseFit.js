@@ -1,60 +1,75 @@
-// (update 815) Course Fit: who suits a course. What wins there (the top 10's edge over the rest of the field in each of the
-// data's distance ranges, strokes gained a shot, × how often each comes up there), then each player's projected strokes
-// gained a round there: their season a shot in each range × how often it comes up there, plus their driving. Ranked, with
-// the key ranges against the top 10 and their own rounds there. The next event's course to start; any course with shots.
+// (update 817) Course Fit, one player: every tournament on their main tour ranked by how well their game suits it, and why.
+// For each tournament (every year on record in the stats file): how much each part of the game separated the top 10 from
+// the rest of that week's field, strokes gained a round, as shares of the whole. A player's fit there is their season,
+// each part weighted by how much it decides that tournament (an even split, a quarter each, gives back their season).
+// Course effect: the fit minus their season, what the tournament's demands do for them. Their own record there beside it.
+// It's Stats' Course Fit tab; the old #/course-fit address opens Stats on it.
 import { el, mount } from "../ui.js";
 import * as PI from "../playerInsights.js";
-import { whoCanBePicked, card, samp, sg2, sg3, cls, ord } from "./insightPages.js";
+import { card, samp, sg2, cls } from "./insightPages.js";
+import { openStatsTab, lastName } from "../current.js";
 
-export async function render(main, { previewClient = null } = {}) {
-  const wrap = el("div", { class: "ip" }, el("p", { class: "muted" }, "Loading…")); mount(main, wrap);
-  const who = await whoCanBePicked(previewClient);
-  const list = (await import("../courseHeat.js").then((m) => m.listHeatCourses()).catch(() => [])).filter((c) => c.rawChunks).sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  const want = new URLSearchParams(location.hash.split("?")[1] || "").get("course"); // (update 816: from Search)
-  let meta = list.find((c) => c.id === want) || PI.nextCourse(list) || list[0] || null, alive = true, run = 0;
-  window.addEventListener("hashchange", () => { alive = false; }, { once: true });
-  const players = (who.self ? [who.self] : who.favs.length ? who.favs : [...who.labels.keys()]).slice(0, 14);
-  const fieldP = PI.loadField(who.state).catch(() => ({ field: [] }));
+export function render() { openStatsTab("fit"); }
 
-  async function draw() {
-    const my = ++run;
-    const sel = el("select", { class: "ip-sel", "aria-label": "Course" }, list.map((c) => el("option", { value: c.id }, c.name))); if (meta) sel.value = meta.id;
-    sel.addEventListener("change", () => { meta = list.find((c) => c.id === sel.value) || meta; draw(); });
-    const head = el("header", { class: "ip-head" }, [el("div", {}, [el("p", { class: "ip-kick", style: "color:#64d2ff" }, `Course fit${meta && PI.nextCourse(list)?.id === meta.id ? ` · next event: ${PI.NEXT.name}` : ""}`), el("h1", { class: "ip-h" }, meta ? `Who suits ${meta.name}?` : "Course Fit")]), el("div", { class: "ip-ctl" }, list.length ? [sel] : [])]);
-    if (!meta) { mount(wrap, [head, el("p", { class: "muted" }, "No course in Strategy Maps has its shots uploaded yet.")]); return; }
-    const status = el("p", { class: "muted ip-wait" }, "Reading your players’ shots…");
-    mount(wrap, [head, status]);
-    // each player's shots (one after another; a phone holds a few at a time). (update 816) The course is read as soon as the
-    // first player is in, and the table fills in as each player arrives, best fit first, instead of waiting for everyone.
-    const { field } = await fieldP, profs = []; let C = null;
-    for (const [i, k] of players.entries()) { if (!alive || my !== run) return;
-      const name = who.labels.get(k) || k.replace(/^c_/, ""), rounds = await PI.loadShots(k, name); if (!alive || my !== run) return;
-      if (rounds.length) { const tours = [...new Set(rounds.map((r) => r.tour).filter(Boolean))], tour = [...tours].sort((a, b) => rounds.filter((r) => r.tour === b).length - rounds.filter((r) => r.tour === a).length)[0] || null;
-        const years = [...new Set(rounds.filter((r) => !tour || r.tour === tour).map(PI.yrOf))].sort(), year = years.at(-1);
-        profs.push({ k, name, P: PI.profile(rounds, { year, tour, field, key: k }), year, tour }); }
-      if (!C && profs.length) { mount(status, `Reading ${meta.name}’s shots…`); C = await PI.loadCourse(meta, profs.map((p) => p.P.rs)).catch((e) => { console.warn(e); return null; }); if (!alive || my !== run) return;
-        if (!C || !C.ranges.length) { mount(status, `${meta.name}'s shots couldn't be read, or there aren't enough by distance yet.`); return; } }
-      if (C) paint(C, profs, i + 1 < players.length ? `Reading shots: ${i + 1} of ${players.length} players…` : null); }
-    if (!C) mount(status, "None of these players has shot-by-shot rounds yet.");
-    function paint(C, profs, more) {
-    const rows = profs.map((p) => ({ ...p, fit: PI.fitFor(p.P, C, p.k, p.name) })).filter((r) => r.fit.coverage >= 0.3).sort((a, b) => b.fit.proj - a.fit.proj);
-    const key3 = C.ranges.filter((x) => x.share > 0).slice(0, 3), yrsT = C.yrs.length > 1 ? `${C.yrs[0]}-${C.yrs.at(-1).slice(2)}` : C.yrs[0] || "";
-    const chips = el("div", { class: "ip-chips" }, [el("b", {}, "What wins here:"), ...C.ranges.filter((x) => x.share >= 0.05).slice(0, 5).map((x, i) => el("span", { class: `ip-chip${i === 0 ? " on" : ""}` }, `${PI.CATN[x.c]} ${x.l} · ${Math.round(x.share * 100)}%`))]);
-    const lo = Math.min(0, ...rows.map((r) => r.fit.proj)), hi = Math.max(0.01, ...rows.map((r) => r.fit.proj));
-    const table = el("div", { class: "ip-tw" }, el("table", { class: "ip-t ip-fit-t" }, [
-      el("thead", {}, el("tr", {}, ["#", "Player", "Fit", "Projected SG a round", "Course effect", ...key3.map((x) => `${PI.CATN[x.c].replace("Around-the-Green", "Short game")} ${x.l}`), "Rounds here", "Based on"].map((h, i) => el("th", { class: i >= 3 ? "num" : null }, h)))),
-      el("tbody", {}, rows.map((r, i) => el("tr", { class: i === 0 ? "top" : null }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, el("a", { href: `#/dossier?player=${encodeURIComponent(r.k)}` }, r.name)),
-        el("td", {}, el("span", { class: "ip-bartrack ip-fitbar" }, el("i", { class: "fit", style: `width:${Math.round(((r.fit.proj - lo) / (hi - lo || 1)) * 100)}%` }))),
-        el("td", { class: `num strong ${cls(r.fit.proj)}` }, sg2(r.fit.proj)), el("td", { class: `num ${cls(r.fit.vsSeason)}` }, sg2(r.fit.vsSeason)),
-        ...key3.map((x) => { const m = r.fit.key3.find((y) => y.k === x.k); return el("td", { class: `num ${m?.me != null && x.top != null ? (m.me >= x.top ? "pos" : "") : "muted"}` }, m?.me == null ? "—" : sg3(m.me)); }),
-        el("td", { class: "num" }, r.fit.hereRds ? String(r.fit.hereRds) : "—"), el("td", { class: "num muted" }, `${r.year} · ${Math.round(r.fit.coverage * 100)}%`)])))]));
-    const best = rows[0], gapRow = rows.map((r) => ({ r, g: key3[0] && r.fit.key3[0]?.me != null && key3[0].top != null ? key3[0].top - r.fit.key3[0].me : null })).filter((x) => x.g != null).sort((a, b) => b.g - a.g)[0];
-    const notes = el("div", { class: "ip-grid2" }, [
-      best ? card("Best fit", "#64d2ff", el("p", {}, [el("b", {}, best.name), ` projects ${sg2(best.fit.proj)} strokes gained a round here (${sg2(best.fit.vsSeason)} against their season)${best.fit.key3[0]?.me != null ? `, with ${sg3(best.fit.key3[0].me)} a shot from ${key3[0].l} (the top 10 here: ${sg3(key3[0].top)})` : ""}.`])) : null,
-      gapRow ? card("Biggest gap to close", "#d4b483", el("p", {}, [el("b", {}, gapRow.r.name), ` is ${gapRow.g.toFixed(3)} strokes a shot short of the top 10 in ${({ APP: "approach", ARG: "short game", PUTT: "putting" })[key3[0].c]} from ${key3[0].l}, the range that decides this course (${key3[0].att.toFixed(1)} ${({ APP: "approaches", ARG: "chips and pitches", PUTT: "putts" })[key3[0].c]} a round from there). `, el("a", { href: `#/practice-week?player=${encodeURIComponent(gapRow.r.k)}` }, "Plan the week →")])) : null]);
-    mount(wrap, [head, more ? el("p", { class: "muted ip-more" }, more) : null, chips, rows.length ? table : el("p", { class: "muted" }, "Not enough shots by distance for these players."), notes,
-      samp(`Course: every round on record at ${meta.name} (${yrsT}, ${C.nRds} rounds); the top 10 each year against the rest, strokes gained a shot in the data's own ranges. Projected: each player's latest season on their main tour, with their own shots a round in each part of the game but the course's mix of distances, plus their driving. Course effect: projected minus their season average (what the course's mix does for them). "Based on" is how much of the course's shots by distance their data covers (30% at least to be listed). Key ranges in green: at or above the top 10's level.`)]);
-    }
+const tot = (r) => (r.shots || []).reduce((t, s) => t + (s.sg || 0), 0);
+const inCat = (r, c) => (r.shots || []).reduce((t, s) => t + (s.cat === c ? s.sg || 0 : 0), 0);
+const evName = (e) => String(e || "").replace(/\s+\d{4}$/, "").trim();
+
+/** every tournament on a tour: { name, yrs, n (player-weeks), share {cat: 0-1}, edge {cat: strokes a round} } */
+function eventDemands(field, tour) {
+  const by = new Map(); // event → year|player → rounds
+  for (const p of field) for (const r of p.rounds) { if (tour && r.tour !== tour) continue; const e = evName(r.event); if (!e) continue;
+    const m = by.get(e) || by.set(e, new Map()).get(e), k = `${PI.yrOf(r)}|${p.key}`; (m.get(k) || m.set(k, []).get(k)).push(r); }
+  const out = [];
+  for (const [name, m] of by) {
+    const weeks = [...m].map(([k, rs]) => ({ yr: k.split("|")[0], key: k.split("|").slice(1).join("|"), rs, sum: rs.reduce((t, r) => t + tot(r), 0) }));
+    if (weeks.length < 20) continue; // too few in the field on record
+    const top = new Set(); for (const yr of new Set(weeks.map((w) => w.yr))) weeks.filter((w) => w.yr === yr).sort((a, b) => b.sum - a.sum).slice(0, 10).forEach((w) => top.add(w));
+    const mean = (ws, c) => { let a = 0, n = 0; for (const w of ws) for (const r of w.rs) { a += inCat(r, c); n++; } return n ? a / n : 0; };
+    const T = weeks.filter((w) => top.has(w)), R = weeks.filter((w) => !top.has(w)); if (T.length < 5 || R.length < 5) continue;
+    const edge = Object.fromEntries(PI.CATS.map((c) => [c, mean(T, c) - mean(R, c)])), pos = PI.CATS.reduce((t, c) => t + Math.max(0, edge[c]), 0); if (pos <= 0) continue;
+    out.push({ name, yrs: [...new Set(weeks.map((w) => w.yr))].sort(), n: weeks.length, edge, share: Object.fromEntries(PI.CATS.map((c) => [c, Math.max(0, edge[c]) / pos])) });
   }
-  draw();
+  return out;
+}
+
+export async function fitTab(box, key, name) {
+  mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted ip-wait" }, `Ranking every tournament for ${name}…`)));
+  const wrap = box.firstChild, st = window.__authState || {}, last = lastName(name);
+  const [{ field }, rounds] = await Promise.all([PI.loadField(st).catch(() => ({ field: [] })), PI.loadShots(key, name)]);
+  const fp = field.find((p) => p.key === key), base = rounds.length ? rounds : fp?.rounds || [];
+  if (!base.length) { mount(wrap, el("p", { class: "muted" }, `No rounds on record for ${name}.`)); return; }
+  const tour = [...new Set(base.map((r) => r.tour).filter(Boolean))].sort((a, b) => base.filter((r) => r.tour === b).length - base.filter((r) => r.tour === a).length)[0] || null;
+  const year = [...new Set(base.filter((r) => !tour || r.tour === tour).map(PI.yrOf))].sort().at(-1);
+  const P = PI.profile(base, { year, tour, field, key }), season = PI.CATS.reduce((t, c) => t + (P.cat[c] || 0), 0);
+  const D = eventDemands(field, tour);
+  if (!D.length) { mount(wrap, el("p", { class: "muted" }, `Not enough of the ${tour || "tour"}'s tournaments in the stats file to rank yet.`)); return; }
+  // their own record at each tournament (every year, their own file or the stats file)
+  const mine = (fp?.rounds || base).filter((r) => !tour || r.tour === tour);
+  // the tour's usual mix (every tournament's shares, averaged): a tournament's effect is how its mix differs from that
+  const avgShare = Object.fromEntries(PI.CATS.map((c) => [c, D.reduce((t, d) => t + d.share[c], 0) / D.length]));
+  const rows = D.map((d) => { const here = mine.filter((r) => evName(r.event) === d.name);
+    const parts = PI.CATS.map((c) => ({ c, w: d.share[c], avg: avgShare[c], me: P.cat[c] || 0, gain: (d.share[c] - avgShare[c]) * (P.cat[c] || 0) })).sort((a, b) => b.w - a.w);
+    const eff = parts.reduce((t, x) => t + x.gain, 0);
+    return { ...d, fit: season + eff, eff, here: here.length, hereSg: here.length ? here.reduce((t, r) => t + tot(r), 0) / here.length : null, parts }; }).sort((a, b) => b.eff - a.eff);
+  const lo = Math.min(...rows.map((r) => r.eff)), hi = Math.max(...rows.map((r) => r.eff)), span = Math.max(0.01, hi - lo);
+  const pc = (v) => `${Math.round(v * 100)}%`;
+  const why = (r) => { const big = [...r.parts].sort((x, y) => Math.abs(y.w - y.avg) - Math.abs(x.w - x.avg))[0], helps = [...r.parts].sort((x, y) => Math.abs(y.gain) - Math.abs(x.gain))[0];
+    return `${PI.CATN[r.parts[0].c]} decides ${pc(r.parts[0].w)} here (${pc(r.parts[0].avg)} at an average ${tour || "tour"} event)${big.c !== r.parts[0].c ? `; ${PI.CATN[big.c].toLowerCase()} ${pc(big.w)} (usually ${pc(big.avg)})` : ""}. ${last}’s ${PI.CATN[helps.c].toLowerCase()}, ${sg2(helps.me)} a round, ${helps.gain >= 0 ? "helps" : "hurts"} most here (${sg2(helps.gain)}).`; };
+  const rowEl = (r, i) => el("div", { class: `cf-row${i < 3 ? " top" : ""}` }, [
+    el("span", { class: "cf-rk" }, String(i + 1)),
+    el("div", { class: "cf-main" }, [el("div", { class: "cf-line" }, [el("b", {}, r.name), el("span", { class: "cf-meta" }, `${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]} · ${r.n} player-weeks`)]),
+      el("p", { class: "cf-why" }, why(r))]),
+    el("div", { class: "cf-nums" }, [el("span", { class: "ip-bartrack cf-bar" }, el("i", { class: r.eff >= 0 ? "pos" : "neg", style: `width:${Math.max(4, Math.round(((r.eff - lo) / span) * 100))}%` })),
+      el("span", { class: "cf-n" }, [el("b", { class: cls(r.eff) }, sg2(r.eff)), el("small", {}, " course effect")]),
+      el("span", { class: "cf-n" }, [el("b", { class: cls(r.fit) }, sg2(r.fit)), el("small", {}, " projected a round")]),
+      el("span", { class: "cf-n muted" }, r.here ? `${r.here} rounds there: ${sg2(r.hereSg)} a round` : "Not played there")])]);
+  const best = rows.slice(0, 3), worst = rows.slice(-3).reverse();
+  mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#64d2ff" }, `Course Fit · ${tour || ""} ${year}`.trim()), el("h2", { class: "ip-h" }, `Where ${last}’s game fits best`)])),
+    el("div", { class: "ip-grid2" }, [card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} a round against ${last}’s season; ${PI.CATN[r.parts[0].c].toLowerCase()} decides ${pc(r.parts[0].w)} (usually ${pc(r.parts[0].avg)})`])))),
+      card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} a round; ${PI.CATN[r.parts[0].c].toLowerCase()} decides ${pc(r.parts[0].w)} (usually ${pc(r.parts[0].avg)})`]))))]),
+    (() => { const list = el("div", { class: "cf-list" }, rows.slice(0, 10).map(rowEl)); if (rows.length <= 10) return list;
+      const more = el("button", { type: "button", class: "ip-link" }, `Show all ${rows.length} tournaments`); more.addEventListener("click", () => { list.replaceChildren(...rows.map(rowEl)); more.remove(); });
+      return el("div", {}, [list, more]); })(),
+    samp(`For each tournament: the top 10 each year against the rest of the field, strokes gained a round in each part of the game, as shares of what separates them (all years in the stats file). Course effect: ${last}’s ${year} season in each part (${P.n} rounds) × how much more (or less) that part decides this tournament than an average ${tour || "tour"} event, added up, in strokes a round; ranked by it. Projected: the season (${sg2(season)} a round) plus the course effect. A guide to fit, not a forecast: form, the field and the weather move results more.`)]);
 }

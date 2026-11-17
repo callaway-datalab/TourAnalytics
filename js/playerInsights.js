@@ -59,12 +59,14 @@ export function profile(rounds, { year, tour = null, field = [], key = null } = 
   const leaks = [...solid].sort((a, b) => a.rd - b.rd).filter((o) => o.rd < 0), strengths = [...solid].sort((a, b) => b.rd - a.rd).filter((o) => o.rd > 0);
   // the bag: each kind of club's model used most at the latest event, its strokes gained in its part of the game a round
   // (the rounds it was used in), and whether it came in during the last 9 events
-  const KIND_CAT = { Driver: "OTT", "Fairway Wood": "OTT", Hybrid: "APP", Iron: "APP", Wedge: "ARG", Putter: "PUTT" };
+  // (update 817) Non-Driver tee shots (a fairway wood or iron off the tee) and the ball too: the ball is judged on every shot
+  const KIND_CAT = { Driver: "OTT", "Non-Driver": "OTT", "Fairway Wood": "OTT", Hybrid: "APP", Iron: "APP", Wedge: "ARG", Putter: "PUTT", Ball: null };
   const kindOf = (gr) => String(gr || "").split("|")[0], modelOf = (gr) => String(gr || "").split("|").slice(1).join("|") || String(gr || "");
-  const gear = []; for (const kind of Object.keys(KIND_CAT)) { const top = evs.map((e) => { const m = new Map(); for (const r of e.rs) for (const s of r.shots || []) if (s.gear && kindOf(s.gear) === kind) m.set(s.gear, (m.get(s.gear) || 0) + 1); return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] || null; });
+  const valOf = (s, kind) => (kind === "Ball" ? (s.ball ? `Ball|${s.ball}` : null) : s.gear && kindOf(s.gear) === kind ? s.gear : null);
+  const gear = []; for (const kind of Object.keys(KIND_CAT)) { const top = evs.map((e) => { const m = new Map(); for (const r of e.rs) for (const s of r.shots || []) { const v = valOf(s, kind); if (v) m.set(v, (m.get(v) || 0) + 1); } return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] || null; });
     let i = top.length - 1; while (i >= 0 && !top[i]) i--; if (i < 0) continue; const cur = top[i]; let j = i; while (j > 0 && (top[j - 1] === cur || !top[j - 1])) j--;
-    const rds = rs.filter((r) => (r.shots || []).some((s) => s.gear === cur)), c = KIND_CAT[kind];
-    gear.push({ kind, model: modelOf(cur), cat: c, rd: rds.length ? rds.reduce((t, r) => t + (r.shots || []).reduce((u, s) => u + (s.gear === cur && s.cat === c ? s.sg || 0 : 0), 0), 0) / rds.length : null, n: rds.length, isNew: j > 0 && i - j <= 8, was: j > 0 ? modelOf(top[j - 1]) : null }); }
+    const uses = (s) => valOf(s, kind) === cur, rds = rs.filter((r) => (r.shots || []).some(uses)), c = KIND_CAT[kind];
+    gear.push({ kind, model: modelOf(cur), cat: c || "TOTAL", rd: rds.length ? rds.reduce((t, r) => t + (r.shots || []).reduce((u, s) => u + (uses(s) && (!c || s.cat === c) ? s.sg || 0 : 0), 0), 0) / rds.length : null, n: rds.length, isNew: j > 0 && i - j <= 8, was: j > 0 ? modelOf(top[j - 1]) : null }); }
   const tours = [...new Set(rounds.map((r) => r.tour).filter(Boolean))];
   return { rs, all, n: rs.length, ev: evs.length, evs, tot: avg(rs, tot), cat, ranks, form, ranges, leaks, strengths, gear, tours };
 }

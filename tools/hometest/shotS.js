@@ -20,8 +20,12 @@ const { chromium } = require("playwright"); const out = process.argv[2];
   await pg.keyboard.press("Control+k"); await pg.keyboard.type("amex"); await pg.waitForTimeout(500);
   log("amex →", await pg.$$eval(".pal-row .pal-main b", (n) => n.map((x) => x.textContent)));
   await pg.keyboard.press("Escape");
+  // 3b. the chip opens the player picker; a pick changes the header player without leaving the page
+  await pg.click(".cur-chip .cur-go"); await pg.waitForTimeout(400); await pg.keyboard.type("mcki"); await pg.waitForTimeout(400);
+  log("pick mode rows:", await pg.$$eval(".pal-row .pal-main b", (n) => n.map((x) => x.textContent))); await pg.keyboard.press("Enter"); await pg.waitForTimeout(300);
+  log("after pick:", await pg.evaluate(() => location.hash), await pg.textContent(".cur-chip"));
   // 4. chip × clears
-  await pg.click(".cur-x"); log("after ×:", await pg.evaluate(() => localStorage.getItem("ta.current")), "chip hidden:", await pg.evaluate(() => document.querySelector(".cur-chip").hidden));
+  await pg.click(".cur-x"); log("after ×:", await pg.evaluate(() => localStorage.getItem("ta.current")), "chip:", await pg.textContent(".cur-chip"));
   log("errs1", JSON.stringify(errs)); await pg.close();
   // 5. focus from a Home story
   [pg, errs] = await page(1280, "http://localhost:8765/__shell.html?p=dossier&cur=Sam%20Burns");
