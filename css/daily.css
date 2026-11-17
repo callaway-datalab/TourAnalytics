@@ -627,3 +627,42 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
 .ip-bio { margin: 4px 0 0; font-size: 0.82rem; color: var(--ip-mute); }
 .cf-tag.cf-in { color: var(--ip-up); border-color: color-mix(in srgb, var(--ip-up) 50%, transparent); }
 .td-today-ent { margin: 2px 0 6px; font: 600 0.78rem var(--td-sans); color: var(--td-up); }
+
+/* (update 825) Best & worst tournaments: smaller so every column fits; tap a heading to sort */
+.bw-t { font-size: 0.78rem; } .bw-t th, .bw-t td { padding: 6px 7px !important; white-space: nowrap; }
+.bw-t th.bw-sort { cursor: pointer; user-select: none; } .bw-t th.bw-sort:hover, .bw-t th.bw-sort.on { color: var(--gold); }
+.bw-t .bw-arr { font-size: 0.65rem; } .bw-t .bw-course { max-width: 190px; }
+.bw-t td:first-child { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) { .bw-t { font-size: 0.72rem; } .bw-t th, .bw-t td { padding: 5px 5px !important; } .bw-t td:first-child { max-width: 150px; } .bw-t .bw-course { max-width: 120px; } }
+
+/* (update 825) Overview: Form and Where the strokes go the same height */
+.ip-grid.ip-grid-2 { align-items: stretch; } .ip-grid.ip-grid-2 > .ip-card { height: 100%; box-sizing: border-box; }
+.ip-fr .ip-frbar { width: 30%; min-width: 90px; }
+
+/* (update 825) phones: pop-ups full screen, tables scroll sideways inside their card, no text squeezed */
+@media (max-width: 640px) {
+  .ip-popwrap { padding: 0; align-items: stretch; }
+  .ip-pop { width: 100%; max-height: none; height: 100%; border-radius: 0; padding: 14px 14px 80px; }
+  .ip-pop .ip-barrow { grid-template-columns: minmax(7em, 10em) 1fr 3.2em; }
+  .ip-card .ip-t, .ip-pop .ip-t, .cf-hist, .cf-parts { display: block; overflow-x: auto; white-space: nowrap; max-width: 100%; }
+  .ip-bag .ip-t td, .ip-bag .ip-t th { padding: 6px 6px; font-size: 0.78rem; }
+  .ip-popstats .ip-tile { flex: 1 1 calc(50% - 8px); }
+  .ip-evlist { grid-template-columns: 1fr; }
+  .ip-fit-head { flex-wrap: wrap; } .ip-fit .ip-bul { columns: 1; }
+  .cf-cols { flex-direction: column; } .cf-cols > div { width: 100%; }
+  .cf-t td, .cf-t th { padding: 6px 6px !important; font-size: 0.8rem; }
+  .rp-ev { flex-wrap: wrap; } .rp-ev .ip-sel { max-width: 100%; }
+  .ip-ctl { width: 100%; } .ip-ctl .ip-pills { flex-wrap: wrap; }
+  .ip-week { grid-template-columns: 1fr; }
+  .td-gear2 { grid-template-columns: 1fr; } .td-gear .td-tape { display: block; overflow-x: auto; }
+  .td-today-g { grid-template-columns: 1fr; }
+  .st-pg-pills { flex-wrap: wrap; }
+}
+@media (max-width: 640px) {
+  .cf-t th:nth-child(4), .cf-t th:nth-child(5), .cf-t .cf-tr > td:nth-child(5) { display: none; }
+  .cf-t th:nth-child(3) { white-space: normal; }
+  .cf-t td:nth-child(2) { white-space: normal; }
+  .cf-open > td { white-space: normal; }
+  .cf-det { max-width: calc(100vw - 48px); }
+  .ip-bag .ip-t td:nth-child(2) { white-space: normal; min-width: 130px; }
+}

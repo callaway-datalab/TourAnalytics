@@ -66,7 +66,11 @@ export function profile(rounds, { year, tour = null, field = [], key = null } = 
   const gear = []; for (const kind of Object.keys(KIND_CAT)) { const top = evs.map((e) => { const m = new Map(); for (const r of e.rs) for (const s of r.shots || []) { const v = valOf(s, kind); if (v) m.set(v, (m.get(v) || 0) + 1); } return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] || null; });
     let i = top.length - 1; while (i >= 0 && !top[i]) i--; if (i < 0) continue; const cur = top[i]; let j = i; while (j > 0 && (top[j - 1] === cur || !top[j - 1])) j--;
     const uses = (s) => valOf(s, kind) === cur, rds = rs.filter((r) => (r.shots || []).some(uses)), c = KIND_CAT[kind];
-    gear.push({ kind, model: modelOf(cur), cat: c || "TOTAL", rd: rds.length ? rds.reduce((t, r) => t + (r.shots || []).reduce((u, s) => u + (uses(s) && (!c || s.cat === c) ? s.sg || 0 : 0), 0), 0) / rds.length : null, n: rds.length, isNew: j > 0 && i - j <= 8, was: j > 0 ? modelOf(top[j - 1]) : null }); }
+    // (update 825) every model of that kind on record (all their rounds on this tour), each by strokes gained a round in its
+    // part with it (8+ rounds to be ranked): how many they've tried, and where the one in the bag now ranks among them
+    const tried = new Map(); for (const r of all) { const per = new Map(); for (const sh of r.shots || []) { const v = valOf(sh, kind); if (v) per.set(v, (per.get(v) || 0) + (!c || sh.cat === c ? sh.sg || 0 : 0)); } for (const [v, x] of per) { const o = tried.get(v) || tried.set(v, { sg: 0, n: 0 }).get(v); o.sg += x; o.n++; } }
+    const rankable = [...tried].filter(([, o]) => o.n >= 8).map(([v, o]) => [v, o.sg / o.n]).sort((a, b) => b[1] - a[1]), rk = rankable.findIndex(([v]) => v === cur);
+    gear.push({ kind, model: modelOf(cur), tried: tried.size, rank: rk >= 0 ? rk + 1 : null, ranked: rankable.length, cat: c || "TOTAL", rd: rds.length ? rds.reduce((t, r) => t + (r.shots || []).reduce((u, s) => u + (uses(s) && (!c || s.cat === c) ? s.sg || 0 : 0), 0), 0) / rds.length : null, n: rds.length, isNew: j > 0 && i - j <= 8, was: j > 0 ? modelOf(top[j - 1]) : null }); }
   const tours = [...new Set(rounds.map((r) => r.tour).filter(Boolean))];
   return { rs, all, n: rs.length, ev: evs.length, evs, tot: avg(rs, tot), cat, ranks, form, ranges, leaks, strengths, gear, tours };
 }
@@ -239,7 +243,9 @@ export const ensureBios = () => loadInto("bios.json");
 export function officialSync(eventName, year, playerName, code) {
   const R = got(`results/${code}-${year}.json`); if (!R?.events) return null;
   const evs = Object.values(R.events), nm = matchEventName(eventName, evs.map((e) => e.name)); if (!nm) return null;
-  const e = evs.find((x) => x.name === nm), k = nameKey(playerName), row = e?.rows?.find((r) => nameKey(r.name) === k);
+  // (update 825) by the PGA Tour id when the player's label carries one ("Name (12345)"), else by name
+  const pid = (/\((\d+)\)\s*$/.exec(String(playerName || "")) || [])[1], e = evs.find((x) => x.name === nm), k = nameKey(String(playerName || "").replace(/\s*\([^)]*\)\s*$/, ""));
+  const row = (pid && e?.rows?.find((r) => String(r.pid) === pid)) || e?.rows?.find((r) => nameKey(r.name) === k);
   return row ? { pos: row.pos, total: row.total, event: e.name, of: e.rows.length } : { pos: null, event: e.name, missing: true };
 }
 /** the coming events a player is entered in: [{ name, start, end, course }] (sorted), or null when the fields aren't in */

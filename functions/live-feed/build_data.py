@@ -257,6 +257,10 @@ def _spend():
 def api_extras(today, sched_rows):
     """sched_rows: {tour: [schedule rows, this year and next]}"""
     seen_pids = {}
+    # (update 825) everyone's full name by player id (players.json, written at the start of this run): the leaderboard's own
+    # name field may be short or "Last, First", so the portal matches on these
+    full = {str(p.get("player_id")): p.get("name") for p in (read(OUT / "players.json") or []) if p.get("player_id")}
+    named = lambda rows: [{**r, "name": full.get(str(r.get("pid")), r.get("name"))} for r in rows]
     for tour in TOURS:
         for year in (today.year - 1, today.year):
             path = OUT / "results" / f"{tour}-{year}.json"
@@ -269,6 +273,11 @@ def api_extras(today, sched_rows):
                 except Exception as e:
                     print(f"  {tour} {year} schedule: {type(e).__name__}: {e}", file=sys.stderr)
             changed = False
+            for e in evs.values():
+                fixed = named(e.get("rows", []))
+                if fixed != e.get("rows"):
+                    e["rows"] = fixed
+                    changed = True
             for ev in rows:
                 tid, st = ev.get("t_id"), ev.get("start")
                 if not tid or not st or st > str(today):
@@ -279,7 +288,7 @@ def api_extras(today, sched_rows):
                 if not _spend():
                     break
                 try:
-                    lb = pga.get_leaderboard(tid)
+                    lb = named(pga.get_leaderboard(tid))
                 except Exception as e:
                     print(f"  results {tid}: {type(e).__name__}: {e}", file=sys.stderr)
                     continue
@@ -308,7 +317,7 @@ def api_extras(today, sched_rows):
             if not _spend():
                 break
             try:
-                players = pga.get_field(ev["year"], ev["t_num"], tour)
+                players = named(pga.get_field(ev["year"], ev["t_num"], tour))
             except Exception as e:
                 print(f"  field {tid}: {type(e).__name__}: {e}", file=sys.stderr)
                 continue
@@ -339,7 +348,7 @@ def api_extras(today, sched_rows):
         except Exception as e:
             print(f"  bio {pid}: {type(e).__name__}: {e}", file=sys.stderr)
             continue
-        bp[pid] = {**(b or {"name": seen_pids[pid]}), "at": str(today)}
+        bp[pid] = {**(b or {}), "name": full.get(pid) or (b or {}).get("name") or seen_pids[pid], "at": str(today)}
         bchanged = True
     if bchanged:
         write(OUT / "bios.json", bios)
