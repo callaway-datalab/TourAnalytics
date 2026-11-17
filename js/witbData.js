@@ -48,5 +48,18 @@ export async function tourBag(key, name) {
   clubs.sort((a, b) => clubRank(a.type && a.cat ? (a.cat === "Driver" ? `Driver ${a.type}` : a.cat === "Wedge" ? `${a.type} wedge` : a.type) : a.label) - clubRank(b.type && b.cat ? (b.cat === "Driver" ? `Driver ${b.type}` : b.cat === "Wedge" ? `${b.type} wedge` : b.type) : b.label));
   const bm = new Map(); for (const r of recentRs) for (const s of r.shots || []) if (s.ball) bm.set(s.ball, (bm.get(s.ball) || 0) + 1);
   const ball = [...bm].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-  return { year, tour, events: recent.map((e) => `${PI.evName(e.event)} ${e.year}`), clubs, ball };
+  // (update 830) the whole career: every club and model they've hit, on every tour and season on record, each with its
+  // seasons, rounds and strokes gained a round; the ones in the bag now (above) marked, and every ball
+  const nowKey = new Set(clubs.map((c) => `${c.label}|${c.brand} ${c.model}`.trim()));
+  const car = new Map();
+  for (const r of rounds) { const seen = new Map(); for (const s of r.shots || []) { const lbl = s.club || null; if (!lbl) continue; const gi = s.gear ? gearInfo(s.gear) : {}, kind = s.gear ? String(s.gear).split("|")[0] : null, k = `${lbl}|${`${gi.brand || ""} ${gi.model || ""}`.trim()}`;
+      if (!car.has(k)) { const w = witbClub(lbl, kind); car.set(k, { label: lbl, cat: w?.cat || null, type: w?.type || null, brand: gi.brand || "", model: gi.model || "", rounds: 0, sg: 0, yrs: new Set() }); }
+      seen.set(k, (seen.get(k) || 0) + (s.sg || 0)); }
+    for (const [k, v] of seen) { const o = car.get(k); o.rounds++; o.sg += v; o.yrs.add(PI.yrOf(r)); } }
+  const career = [...car.values()].map((o) => { const y = [...o.yrs].sort(); return { ...o, sg: o.rounds ? o.sg / o.rounds : null, seasons: y.length > 1 ? `${y[0]}-${String(y.at(-1)).slice(2)}` : y[0] || "", last: y.at(-1) || "", inBag: nowKey.has(`${o.label}|${`${o.brand} ${o.model}`.trim()}`) }; });
+  const lblOf = (c) => (c.type && c.cat ? (c.cat === "Driver" ? (c.type === "Driver" ? "Driver" : `Driver ${c.type}`) : c.cat === "Wedge" ? (c.type === "Wedge" ? "Wedge" : `${c.type} wedge`) : c.type) : c.label);
+  career.sort((a, b) => clubRank(lblOf(a)) - clubRank(lblOf(b)) || (b.inBag - a.inBag) || String(b.last).localeCompare(String(a.last)) || b.rounds - a.rounds);
+  const balls = new Map(); for (const r of rounds) { const s0 = new Set(); for (const s of r.shots || []) if (s.ball) s0.add(s.ball); for (const b of s0) { const o = balls.get(b) || balls.set(b, { model: b, rounds: 0, yrs: new Set() }).get(b); o.rounds++; o.yrs.add(PI.yrOf(r)); } }
+  const ballList = [...balls.values()].map((o) => { const y = [...o.yrs].sort(); return { model: o.model, rounds: o.rounds, seasons: y.length > 1 ? `${y[0]}-${String(y.at(-1)).slice(2)}` : y[0] || "", inBag: o.model === ball }; }).sort((a, b) => b.inBag - a.inBag || b.rounds - a.rounds);
+  return { year, tour, events: recent.map((e) => `${PI.evName(e.event)} ${e.year}`), clubs, ball, career, balls: ballList };
 }

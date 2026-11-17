@@ -23,15 +23,25 @@ function tourCard(key, name, onData) {
   tourBag(key, name).then((T) => {
     if (!T || !T.clubs.length) { box.hidden = true; onData?.(null); return; }
     const fmt = (v) => (v == null ? "\u2014" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
-    mount(box, [el("h3", {}, `On tour, from the stats data`), el("p", { class: "muted small" }, `The clubs ${name} hit at ${T.events.join(", ")} (${T.tour || ""} ${T.year}), each with the model hit most with it there.`),
-      el("div", { class: "table-scroll" }, el("table", { class: "plain club-table witb-tour-t" }, [el("thead", {}, el("tr", {}, ["Club", "Brand / model", `Rounds in ${T.year}`, "SG a round"].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))),
-        el("tbody", {}, [...T.clubs.map((c) => el("tr", {}, [el("td", {}, el("strong", {}, c.label)), el("td", {}, `${c.brand} ${c.model}`.trim() || "\u2014"), el("td", { class: "num" }, String(c.rounds)), el("td", { class: "num" }, fmt(c.sg))])),
-          T.ball ? el("tr", {}, [el("td", {}, el("strong", {}, "Ball")), el("td", {}, T.ball), el("td", { class: "num" }, ""), el("td", { class: "num" }, "")]) : null])]))]);
+    // (update 830) the whole career, grouped as My Bag is (Drivers, Fairway woods … Putters, then the balls); the ones in the bag now lit
+    const GROUPS = [["Driver", "Drivers"], ["Fairway Wood", "Fairway woods"], ["Hybrid", "Hybrids"], ["Iron", "Irons"], ["Wedge", "Wedges"], ["Putter", "Putters"], [null, "Other clubs"]];
+    const rows = [];
+    // irons of the same model are a set, one row ("4 Iron–PW set"), as My Bag shows them
+    const setsOf = (list) => { const by = new Map(); for (const c of list) { const k = `${c.brand} ${c.model}`.trim().toLowerCase(); (by.get(k) || by.set(k, []).get(k)).push(c); }
+      const out = []; for (const xs of by.values()) { if (xs.length < 2) { out.push(...xs); continue; } out.push({ ...xs[0], label: `${xs[0].label}\u2013${xs.at(-1).label} set`, rounds: Math.max(...xs.map((x) => x.rounds)), sg: xs.reduce((t, x) => t + (x.sg || 0) * x.rounds, 0) / Math.max(1, xs.reduce((t, x) => t + x.rounds, 0)), seasons: (() => { const y = [...new Set(xs.flatMap((x) => [...(x.yrs || [])]))].sort(); return y.length > 1 ? `${y[0]}-${String(y.at(-1)).slice(2)}` : y[0] || xs[0].seasons; })(), inBag: xs.some((x) => x.inBag), n: xs.length }); }
+      return out.sort((a, b) => b.inBag - a.inBag || String(b.last).localeCompare(String(a.last)) || b.rounds - a.rounds); };
+    for (const [cat, title] of GROUPS) { const list0 = T.career.filter((c) => (cat ? c.cat === cat : !c.cat)); if (!list0.length) continue; const list = cat === "Iron" ? setsOf(list0) : list0;
+      rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "5", scope: "colgroup" }, [title, el("span", { class: "club-group-n" }, ` ${list.length}`)])));
+      for (const c of list) rows.push(el("tr", { class: `club-row${c.inBag ? " in-bag" : ""}` }, [el("td", { class: "c-club" }, [el("strong", {}, c.label), c.inBag ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null]), el("td", {}, `${c.brand} ${c.model}`.trim() || "\u2014"), el("td", { class: "num" }, c.seasons), el("td", { class: "num" }, String(c.rounds)), el("td", { class: "num" }, fmt(c.sg))])); }
+    if (T.balls.length) { rows.push(el("tr", { class: "club-group" }, el("th", { colspan: "5", scope: "colgroup" }, ["Balls", el("span", { class: "club-group-n" }, ` ${T.balls.length}`)])));
+      for (const b of T.balls) rows.push(el("tr", { class: `club-row${b.inBag ? " in-bag" : ""}` }, [el("td", { class: "c-club" }, [el("strong", {}, "Ball"), b.inBag ? el("span", { class: "tag type-player bag-tag" }, "In bag") : null]), el("td", {}, b.model), el("td", { class: "num" }, b.seasons), el("td", { class: "num" }, String(b.rounds)), el("td", { class: "num" }, "")])); }
+    mount(box, [el("h3", {}, "On tour, from the stats data"), el("p", { class: "muted small" }, `Every club and ball ${name} has used on record. In bag: what they hit at ${T.events.join(", ")} (each club's model from the latest event it was used at).`),
+      el("div", { class: "table-scroll" }, el("table", { class: "plain club-table witb-tour-t" }, [el("thead", {}, el("tr", {}, ["Club", "Brand / model", "Seasons", "Rounds", "SG a round"].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))), el("tbody", {}, rows)]))]);
     onData?.(T);
-  }).catch(() => { box.hidden = true; onData?.(null); });
+  }).catch((e) => { console.warn(e); box.hidden = true; onData?.(null); });
   return box;
 }
-export async function render(main, { flash, previewClient, playerKey: givenKey = null, playerLabel = null, embedded = false }) {
+export async function render(main, { flash, previewClient, playerKey: givenKey = null, playerLabel = null, embedded = false, mine = false }) {
   const state = getState();
   // Whose bag: your own, or (the admin in someone's portal) that player's or team member's. Theirs is shown
   // as it is: only they can change it.
@@ -40,7 +50,7 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
   // (update 183) anyone with players (a coach, a caddie, an analyst, the admin) can look at each player's bag;
   // only the player and their caddie can change it
   if (givenKey && givenKey === myEntryKey(state)) givenKey = null; // (update 829: "Me": your own bag)
-  const pickedKey = givenKey || new URLSearchParams(location.hash.split("?")[1] || "").get("player"); // (update 829: Stats' tab hands its player over)
+  const pickedKey = mine ? null : givenKey || new URLSearchParams(location.hash.split("?")[1] || "").get("player"); // (update 829: Stats' tab hands its player over)
   const previewing = state.isAdmin && (team.preview || (previewClient && !previewClient.self && !previewClient.role));
   let players = [];
   if (!previewing) {
@@ -371,15 +381,20 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
   // (update 828) the stats data's bag for this player; an empty bag that can be changed is filled from it (once)
   const dataKey = viewing ? entryKey : state.profile?.clientKey || null, dataName = viewing || state.profile?.name || "You";
   let tourT = null, filled = false;
+  // (update 830) the list gets their whole career's clubs; the bag, the ones in it now
   const fillFrom = (T, quiet) => {
     if (readOnly || !T || !loaded) return false;
-    const add = []; for (const c of T.clubs) { if (!c.cat || !c.type) continue; const x = { id: newClubId(), cat: c.cat, type: c.type, brand: c.brand, model: c.model, note: "From the stats data" };
-      if (!library.some((y) => sameClub(y, x)) && !add.some((y) => y.cat === x.cat && y.type === x.type)) add.push(x); }
-    if (!add.length) { if (!quiet) flash("Every club in the stats data is already in the list.", "info"); return false; }
-    library = [...library, ...add]; inBag = [...new Set([...inBag, ...add.map((c) => c.id)])].slice(0, MAX_CLUBS); draw(); save();
-    flash(`${add.length} clubs added from the stats data${add.length < T.clubs.length ? ` (${T.clubs.length - add.length} couldn\u2019t be matched to a club or were there already)` : ""}.`, "info");
+    const same = (a, b) => a.cat === b.cat && a.type === b.type && String(a.brand || "").toLowerCase() === String(b.brand || "").toLowerCase() && String(a.model || "").toLowerCase() === String(b.model || "").toLowerCase();
+    const add = [], bagNow = [];
+    for (const c of T.career) { if (!c.cat || !c.type) continue; const x = { id: newClubId(), cat: c.cat, type: c.type, brand: c.brand, model: c.model, note: "From the stats data" };
+      const have = library.find((y) => same(y, x)) || add.find((y) => same(y, x)); if (have) { if (c.inBag) bagNow.push(have.id); continue; }
+      add.push(x); if (c.inBag) bagNow.push(x.id); }
+    if (!add.length && bagNow.every((id) => inBag.includes(id))) { if (!quiet) flash("Every club in the stats data is already in the list.", "info"); return false; }
+    library = [...library, ...add]; inBag = [...new Set([...inBag, ...bagNow])].slice(0, MAX_CLUBS); draw(); save();
+    const skipped = T.career.filter((c) => !c.cat || !c.type).length;
+    flash(`${add.length} clubs added to the list from the stats data, ${bagNow.length} of them in the bag${skipped ? ` (${skipped} couldn\u2019t be matched to a club)` : ""}.`, "info");
     return true; };
-  const tourBox = tourCard(dataKey, dataName, (T) => { tourT = T; if (T && !readOnly) { const b = el("button", { type: "button", class: "btn ghost witb-fill" }, "Add these to the list and the bag"); b.addEventListener("click", () => fillFrom(T, false)); tourBox.append(b); }
+  const tourBox = tourCard(dataKey, dataName, (T) => { tourT = T; if (T && !readOnly) { const b = el("button", { type: "button", class: "btn ghost witb-fill" }, "Add the career to the list (and today\u2019s clubs to the bag)"); b.addEventListener("click", () => fillFrom(T, false)); tourBox.append(b); }
     if (T && !filled && loaded && !library.length) { filled = true; fillFrom(T, true); } });
 
   mount(main, [

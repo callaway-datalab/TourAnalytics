@@ -9,7 +9,18 @@ export async function fill(box, kind, me, { st }) {
   if (kind === "overview") { const m = await import("./views/dossier.js"); return m.overview(box, me.key, name); }
   if (kind === "fit") { const m = await import("./views/courseFit.js"); return m.fitTab(box, me.key, name); }
   // (update 829) What's in the Bag, for the player Stats has
-  if (kind === "bag") { const inner = el("div", { class: "st-bag" }); mount(box, inner); try { await (await import("./views/witb.js")).render(inner, { flash, previewClient: pv, playerKey: me.key, playerLabel: name, embedded: true }); } catch (e) { console.error(e); mount(inner, el("p", { class: "muted center" }, "Couldn’t open What’s in the Bag just now.")); } return; }
+  // (update 829) What's in the Bag, for the player Stats has; (update 830) and a switch to your own bag ("My bag")
+  if (kind === "bag") {
+    const st0 = window.__authState || {}, myKey = st0.isAdmin && !st0.profile?.clientKey ? `a_${st0.user?.uid}` : st0.profile?.clientKey;
+    const isPlayer = !st0.isAdmin && !st0.isTeam && st0.profile?.kind !== "analyst", canMine = !isPlayer && !pv && me.key !== myKey;
+    const inner = el("div", { class: "st-bag" }), sw = el("div", { class: "ip ip-embed st-pg-top" });
+    const show = async (mine) => {
+      if (canMine) mount(sw, el("div", { class: "ip-pills st-pg-pills", role: "group", "aria-label": "Whose bag" }, [[false, `${name}’s bag`], [true, "My bag"]].map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === mine ? " on" : ""}`, "aria-pressed": String(v === mine) }, l); b.addEventListener("click", () => { if (v !== mine) show(v); }); return b; })));
+      mount(inner, el("p", { class: "muted center" }, "Loading…"));
+      try { await (await import("./views/witb.js")).render(inner, { flash, previewClient: pv, playerKey: mine ? null : me.key, playerLabel: name, embedded: true, mine }); }
+      catch (e) { console.error(e); mount(inner, el("p", { class: "muted center" }, "Couldn’t open What’s in the Bag just now.")); } };
+    mount(box, [sw, inner]); await show(false); return;
+  }
   // (update 827) Compare, on the Stats page (it opens on the header's player, as on its own page)
   if (kind === "compare") { const inner = el("div", { class: "st-cmp" }); mount(box, inner); try { await (await import("./views/comparisons.js")).render(inner, { previewClient: pv, flash, routeId: "comparisons" }); } catch (e) { console.error(e); mount(inner, el("p", { class: "muted center" }, "Couldn’t open Compare just now.")); } return; }
   // Practice & Goals: three parts, one at a time (the plan for the week first)
