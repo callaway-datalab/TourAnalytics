@@ -970,3 +970,4 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
 .pal-star { margin-left: auto; flex: none; width: 36px; height: 36px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--gold, #d4b483) 55%, transparent); background: transparent; color: var(--gold, #d4b483); font-size: 1.15rem; line-height: 1; cursor: pointer; }
 .pal-star:hover { background: color-mix(in srgb, var(--gold, #d4b483) 14%, transparent); } .pal-star.on { background: color-mix(in srgb, var(--gold, #d4b483) 22%, transparent); }
 .pal-row:has(.pal-star) { display: flex; align-items: center; gap: 10px; } .pal-row:has(.pal-star) .pal-main { flex: 1; min-width: 0; }
+.td-place { color: var(--td-gold) !important; font-weight: 600; font-size: 0.92rem !important; } /* (update 852) a form story's place on tour */
