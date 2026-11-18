@@ -559,7 +559,10 @@ export async function drawHeat(ctx, course) {
   const zm = { z: 1, tx: 0, ty: 0, moved: false };
   let sharpT = null;
   function clampZoom() { const w = stage.clientWidth, h = stage.clientHeight; zm.z = Math.max(1, Math.min(6, zm.z)); zm.tx = Math.min(0, Math.max(w - w * zm.z, zm.tx)); zm.ty = Math.min(0, Math.max(h - h * zm.z, zm.ty)); }
-  function applyZoom(sharpen = true) {
+  // (update 849) Show / Hide Past Shots in the top corner away from the green (the pin's side of the map), over the dark
+  function placePast() { if (pastBtn.hidden || !pinNow || pinNow.x == null) return; try { const [px] = screenOf(pinNow.x, pinNow.y), w = stage.getBoundingClientRect().width; if (!w) return;
+    const right = px < w / 2; pastBtn.style.left = right ? "auto" : "8px"; pastBtn.style.right = right ? "8px" : "auto"; } catch { /* */ } }
+  function applyZoom(sharpen = true) { requestAnimationFrame(placePast);
     zoomBox.style.transform = `translate(${zm.tx}px, ${zm.ty}px) scale(${zm.z})`;
     stage.classList.toggle("zoomed", zm.z > 1.001); zFit.hidden = zm.z <= 1.001; zOut.disabled = zm.z <= 1.001; zIn.disabled = zm.z >= 6;
     placeDot();
@@ -661,10 +664,10 @@ export async function drawHeat(ctx, course) {
     const n = Object.values(h || {}).reduce((t, v) => t + v, 0); if (!n) return null;
     const avg = Object.entries(h).reduce((t, [k, v]) => t + Number(k) * v, 0) / n; // (doubles and worse counted as +2)
     const ks = ["-2", "-1", "0", "1", "2"].filter((k) => h[k]);
-    const detail = `${n} ${n === 1 ? "round" : "rounds"} \u00b7 ${ks.map((k) => `${SC[k]} ${h[k]}`).join(", ")}`; // (update 505: no avg)
+    const detail = `${n} ${n === 1 ? "sample" : "samples"} \u00b7 ${ks.map((k) => `${SC[k]} ${h[k]}`).join(", ")}`; // (update 505: no avg)
     const bar = el("span", { class: "sh-hb" }, ks.map((k) => { const p = (100 * h[k]) / n; return el("i", { style: `width:${p}%;background:${scColor(Number(k))}`, class: k === "0" ? "par" : null }, p >= 14 ? `${Math.round(p)}%` : ""); }));
     const row = el("button", { type: "button", class: "sh-hl", title: detail, "aria-label": `${label}: ${detail}` }, [
-      el("span", { class: "sh-hl-k" }, [label, el("small", {}, `${n} rds`)]), bar,
+      el("span", { class: "sh-hl-k" }, [label, el("small", {}, `${n} ${n === 1 ? "sample" : "samples"}`)]), bar,
       el("span", { class: `sh-hl-avg ${avg > 0.005 ? "neg" : avg < -0.005 ? "pos" : ""}` }, [el("small", {}, "Avg Score"), el("strong", {}, (par + avg).toFixed(2))])]); // (update 504)
     const more = el("div", { class: "muted small sh-hl-more", hidden: true }, detail);
     row.addEventListener("click", () => { more.hidden = !more.hidden; });
@@ -688,7 +691,7 @@ export async function drawHeat(ctx, course) {
     }
     const shown = lines.filter(Boolean);
     mount(hist, shown.length ? [...shown, histKey()] : null);
-    pastBtn.hidden = !(isP() && mine.length);
+    pastBtn.hidden = !(isP() && mine.length); requestAnimationFrame(placePast); // (update 849)
     pastBtn.textContent = st.showPast ? "Hide Past Shots" : `Show Past Shots (${mine.length})`;
     pastBtn.classList.toggle("on", !!st.showPast);
   }

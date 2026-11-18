@@ -54,6 +54,8 @@ let robotN = 0;
 export function icon(name) {
   const paths = {
     home: "M3 9.5 10 3l7 6.5V17H12v-4H8v4H3z",
+    // (update 849) Your Report: a paper scroll (rolled ends, lines of text)
+    report: "M5 2.5h9.5a2.5 2.5 0 0 1 2.5 2.5v.5h-2.5V5a.5.5 0 0 0-1 0v10.5A2.5 2.5 0 0 1 11 18H4.5A2.5 2.5 0 0 1 2 15.5V15h2.5V5A2.5 2.5 0 0 1 5 2.5zm1.8 4v1.4h5.4V6.5zm0 3v1.4h5.4V9.5zm0 3v1.4h3.6v-1.4zM12.6 4.5H6.4v10.9a2.4 2.4 0 0 1-.2.6H11a.5.5 0 0 0 .5-.5V5c0-.2 0-.3.1-.5z",
     rank: "M2 2.5h16v3.2H2zM2 7.5h3.4v2.6H2zm5 0h11v2.6H7zM2 11.5h3.4v2.6H2zm5 0h11v2.6H7zM2 15.5h3.4v2.6H2zm5 0h11v2.6H7z", // (update 828: Leaderboards, a rankings table)
     flag: "M5.2 1.8h1.5v14.6H5.2zM6.7 2.2l8.6 3.4-8.6 3.5zM1.8 17.4c0-1.1 2.9-1.9 6.4-1.9s6.4.8 6.4 1.9-2.9 1.9-6.4 1.9-6.4-.8-6.4-1.9zm2.6 0c.9.5 2.2.7 3.8.7s2.9-.2 3.8-.7c-.9-.5-2.2-.7-3.8-.7s-2.9.2-3.8.7z", // (update 831: Play, a golf flag in its hole)
     search: "M8.5 2a6.5 6.5 0 0 1 5.2 10.4l4.2 4.2-1.4 1.4-4.2-4.2A6.5 6.5 0 1 1 8.5 2zm0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z",
@@ -446,7 +448,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const kind = admin ? "admin" : team ? "team" : "client";
   // top bar: (Player Access,) Analyze, Play — each opens on its first page
   const secs = sectionsFor(kind), onSec = secs.find((sec) => sec.items.some((it) => itemOn(it, currentRoute)));
-  const items = [/* (update 832: User Access is in the ☰ menu) */ ["#/home", "home", "Home", ["home"]] /* (update 610) */, ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
+  const items = [/* (update 832: User Access is in the ☰ menu) */ ["#/home", "home", "Your Report", ["home"]] /* (update 849: was Home) */ /* (update 610) */, ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 
@@ -471,7 +473,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   ];
 
   // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
-  setPages(() => [["Home", "#/home", "", "today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
+  setPages(() => [["Your Report", "#/home", "", "home today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
 ["Comparisons", "stats:compare", "Stats", "versus side by side products compare comparisons"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
     ["Custom Practice", "stats:practice:practice", "Stats · Practice & Goals", "practice drills sessions range"], ["Recommended Practice", "stats:practice:week", "Stats · Practice & Goals", "practice week plan drills next event"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
     ["What's in the Bag", "stats:bag", "Stats", "witb clubs equipment gear bag"], ["Chat & support", state.isAdmin ? "#/admin/questions" : "#/questions", "", "report an issue question feature request help chat"], ["Profile", "#/account", "Account", "settings password"]]
@@ -483,14 +485,17 @@ export function renderShell(root, { previewClient, currentRoute }) {
   void searchBtn;
   const plan = secs.find((x) => x.id === "plan"), data = secs.find((x) => x.id === "data");
   const fol = secs.find((x) => x.id === "follow");
+  // (update 849) Cal AI: opens (or closes) Cal's small panel over the bar
+  const botCal = (() => { const b = el("button", { type: "button", class: "botbar-cal", "aria-label": "Cal AI" }, [icon("calface"), el("span", {}, "Cal AI")]);
+    b.addEventListener("click", () => import("./callie.js").then((m) => (document.documentElement.classList.contains("cal-open") ? m.closeCallie?.() : m.openCallie())).catch((err) => console.error(err))); return b; })();
   const srch = (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })();
   // (update 829) Home, Stats, Play, Leaderboards, Search
   const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
-    el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("home"), el("span", {}, "Home")]),
+    el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("report"), el("span", {}, "Your Report")]), /* (update 849) */
     ...[[data, "data"], [plan, plan?.icon || "flag"], [fol, fol?.icon || "rank"]].map(([sec, ic]) => { if (!sec) return null;
       const b = el("a", { href: sec.items[0][1], "aria-current": sec === onSec ? "page" : null, role: "button", "aria-haspopup": "true" }, [icon(ic), el("span", {}, sec.label)]);
       b.addEventListener("click", (e) => { e.preventDefault(); openBotPop(sec, b); }); return b; }),
-    srch,
+    calAllowed() ? botCal : srch, /* (update 849: Cal AI in Search's place on the phone's bar) */
   ]);
   const rail = el("aside", { class: "rail" }, [
     el("a", { class: "brand", href: "#/home" }, [logoImg(), portalName]),
@@ -621,7 +626,7 @@ export function infoTip(content, label = "What this means") {
 export function siteLinks() {
   const kind = shellKind(), admin = kind === "admin", out = [];
   if (admin) out.push({ label: "User Access", href: "#/admin/clients", section: "" }, { label: "Upload Data", href: "#/admin/datasets", section: "User Access" });
-  out.push({ label: "Home", href: "#/home", section: "" });
+  out.push({ label: "Your Report", href: "#/home", section: "" });
   for (const sec of sectionsFor(kind)) for (const it of sec.items) if (!it[3]?.off) out.push({ label: it[0], href: it[1], section: sec.label });
   out.push({ label: "WITB", href: "#/witb", section: "" }, { label: "Chat", href: admin ? "#/admin/questions" : "#/questions", section: "" }, { label: "Profile", href: "#/account", section: "" });
   return out;

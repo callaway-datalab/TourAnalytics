@@ -95,8 +95,8 @@ export function drawPrepMenu(ctx, course) {
     el("p", { class: "muted" }, [course.location, course.par.length ? `${course.par.length} holes · par ${par}${yds ? ` · ${yds.toLocaleString()} yds` : ""}` : null].filter(Boolean).join(" · ")),
     el("div", { class: "cp-opts" }, [
       course.heat ? opt("Strategy Maps", "Where to aim and what to stay away from on every hole and pin, from the tour\u2019s scoring (and your own game)", el("span", { class: "cp-opt-n" }, `${Object.keys(course.heat.holes || {}).length || course.heat.par?.length || ""} holes`), () => ctx.go({ name: "prepHeat", course })) : null, // (update 456)
-      course.heat?.shotLevel ? opt("Course Insights", "The course report: scores to beat, each hole\u2019s shot values, the aggressiveness index, against the Top 10, the worse tee miss and up & down by miss", null, () => ctx.go({ name: "prepInsights", course })) : null, // (update 488)
-      opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })),
+      course.heat?.shotLevel ? opt("Course Insights & History", "The course report and your history here, together: scores to beat, the shots you\u2019ll face (weighted to your game), each hole, against the Top 10, and your rounds here", null, () => ctx.go({ name: "prepInsights", course })) : null, // (update 488)
+      course.heat?.shotLevel ? null : opt("Course History", "Your numbers at this course, from the stats", null, () => ctx.go({ name: "prepHistory", course })), /* (update 849: in Course Insights when the course has shot data) */
       /* (update 510) a course only from your own rounds (not in the tour data, no hole images): just its history */
       course.heat || course.holeMaps ? opt("Simulate Round", "Play it on the range, shot by shot", null, () => ctx.go({ name: "prepCourse", course })) : null,
     ]),
@@ -256,7 +256,7 @@ export async function drawHistory(ctx, course) {
   show();
 }
 
-function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() }, detail = null, redraw = () => {}) {
+export function historyBody(course, who, { rounds, field, ds }, ui = { open: new Set() }, detail = null, redraw = () => {}) {
   if (!ds && !rounds.length) return el("section", { class: "panel" }, el("p", { class: "empty" }, `No stats file or entered rounds for ${who.label} yet.`)); // (update 511: entered rounds count)
   const anyCourse = rounds.some((rd) => rd.course);
   const here = rounds.filter((rd) => sameCourse(rd.course, course.name));

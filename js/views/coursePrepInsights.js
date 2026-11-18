@@ -7,7 +7,7 @@
 import { el, mount, infoTip, icon } from "../ui.js";
 import { BRAND, TAG, readCard, readFor, playerAim, playerProfileFrom } from "../calRead.js"; // (update 589)
 import { heatData, listHeatCourses, withMerges, pinsOn, pinLabel } from "../courseHeat.js";
-import { pickWho, playerData } from "./coursePrepExtras.js";
+import { pickWho, playerData, historyBody } from "./coursePrepExtras.js";
 import { playerTrails, trailSG, bucketOf, ATT_B, skillsOf } from "../courseShots.js";
 
 const SC = { e: ["Eagle+", "#1f4fd1"], b: ["Birdie", "#8fd3ff"], p: ["Par", "#f2f2f2"], g: ["Bogey+", "#ff9f43"] };
@@ -51,10 +51,13 @@ export async function drawInsights(ctx, course) {
     const drawHoles = () => mount(holesSec, holesBlock(H, S, name, (h) => { st.hole = st.hole === h ? null : h; drawHoles(); }, (h) => ctx.go({ name: "prepHeat", course: { ...course, startHole: h } })));
     drawHoles();
     // (update 594) a player picked: Cal's Read aims for their driving and their best approach range
-    let prof = null;
-    if (who) { const me = who; try { prof = await playerProfileFrom((await playerData(me.key)).rounds, me.label); } catch { prof = null; } if (who !== me) return; }
+    let prof = null, pd = null;
+    if (who) { const me = who; try { pd = await playerData(me.key); prof = await playerProfileFrom(pd.rounds, me.label); } catch { prof = null; } if (who !== me) return; }
     const toMap = (h, pin = null) => ctx.go({ name: "prepHeat", course: { ...course, startHole: h, ...(pin ? { startPin: pin, calCircles: true } : {}) } }); // (update 592: a pin's read: that pin, Cal's circles on)
-    mount(body, [scores(I), plan(H, openHole), strategy(I, holeNums, toMap, meta, data, prof), holesSec, faced(S, all, name), ...vsTop(H, S, name, first, openHole)].filter(Boolean));
+    // (update 849) Course History is on this page now: the player's own rounds here (their finishes, each part of the game, against the field here)
+    const histSec = who && pd ? el("section", { class: "ci2-hist" }, [el("h2", { class: "ci2-h" }, `${who.label.toUpperCase()} AT ${course.name.toUpperCase()}`), historyBody(course, who, pd)]) : null;
+    if (histSec && pd?.ds) { const me = who; import("../fieldStore.js").then((m) => m.getFieldDetail(pd.ds.id, pd.ds.uploadedAt?.toMillis?.() ?? 0)).then((rr) => { if (who !== me || !rr?.players?.length || !histSec.isConnected) return; const ui = { open: new Set() }; const redo = () => mount(histSec, [histSec.firstChild, historyBody(course, me, pd, ui, rr.players, redo)]); redo(); }).catch(() => {}); }
+    mount(body, [scores(I), faced2(I, all, meta, S, who && mine ? who.label : null, who ? { label: who.label, rounds: pd?.rounds || [] } : null), plan(H, openHole), histSec, strategy(I, holeNums, toMap, meta, data, prof), holesSec, ...vsTop(H, S, name, first, openHole)].filter(Boolean));
   }
   ready = true;
   await draw();
@@ -208,6 +211,44 @@ function faced(S, all, name) {
     `${S.field ? "The field’s" : `${name}’s`} shots here by distance (not tee shots on par 4s and 5s), against the average of the ${all.length} courses with shot data: points of the share of shots. Practice the ones that come up more.`);
 }
 
+/* ---------------- (update 849) the shots you'll face: every distance, in extra (or fewer) shots per round, weighted to the player ----------------
+   The course's effect on each distance: the field's shots per round here against the average course with shot data (its
+   share of all shots, at this course's number of shots per round). A player's expected shots here: their own usual shots per
+   round from each distance (their driving length and their game already in them: a long hitter's approaches are shorter, a
+   great iron player has more short putts) times that effect. Tap a distance for the numbers behind it. */
+function faced2(I, all, meta, S, hereName, P) {
+  const tour = {}; for (const c of all) if (c.id !== meta.id) for (const [b, n] of Object.entries(c.attempts || {})) tour[b] = (tour[b] || 0) + n;
+  const tt = Object.values(tour).reduce((a, b) => a + b, 0), fR = I.sg?.fieldRounds || 0, fieldHere = I.attempts || {}, fhT = Object.values(fieldHere).reduce((a, b) => a + b, 0);
+  if (!tt || !fR || !fhT) return null;
+  const hereTot = fhT / fR, pr = (b) => (fieldHere[b] || 0) / fR, tourPr = (b) => ((tour[b] || 0) / tt) * hereTot, eff = (b) => (tourPr(b) > 0.02 ? Math.max(0.3, Math.min(3, pr(b) / tourPr(b))) : 1);
+  // the player's usual shots per round from each distance (their last 40 rounds with shots), in this page's ranges
+  const ftB = (d) => (d < 5 ? "3-5 ft" : d < 10 ? "5-10 ft" : d < 15 ? "10-15 ft" : d < 20 ? "15-20 ft" : d < 25 ? "20-25 ft" : ">25 ft");
+  const ydB = (d) => (d < 30 ? "<30 yds" : d < 50 ? "30-50 yds" : d < 100 ? "50-100 yds" : d < 120 ? "100-120 yds" : d < 140 ? "120-140 yds" : d < 160 ? "140-160 yds" : d < 180 ? "160-180 yds" : d < 200 ? "180-200 yds" : d < 220 ? "200-220 yds" : ">220 yds");
+  const toB = (sh) => { if (!sh.dist || sh.cat === "OTT") return null; const t = String(sh.dist).trim(), m = /(\d+(?:\.\d+)?)/.exec(t); if (!m) return null; const d = Number(m[1]) + (/^</.test(t) ? -0.5 : 0.5); return /ft/i.test(t) || sh.cat === "PUTT" ? ftB(d) : ydB(d); };
+  let mineN = null, nR = 0; if (P?.rounds?.length) { const rs = P.rounds.filter((r) => !r.eventLevel && (r.shots || []).some((x) => x.dist)).sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(-40); nR = rs.length;
+    if (nR >= 6) { mineN = {}; for (const r of rs) for (const sh of r.shots || []) { const b = toB(sh); if (b) mineN[b] = (mineN[b] || 0) + (sh.w || 1); } for (const b in mineN) mineN[b] /= nR; } }
+  const hereAct = hereName && S && !S.field && S.rounds ? Object.fromEntries(Object.entries(S.attempts || {}).map(([b, n]) => [b, n / S.rounds])) : null;
+  const rows = ATT_B.map((b) => { const norm = mineN ? mineN[b] || 0 : tourPr(b), exp = mineN ? (mineN[b] || 0) * eff(b) : pr(b); return { b, fieldHere: pr(b), fieldTour: tourPr(b), eff: eff(b), norm, exp, d: exp - norm, act: hereAct ? hereAct[b] || 0 : null }; }).filter((x) => x.fieldHere + x.fieldTour > 0.05);
+  if (!rows.length) return null;
+  const mx = Math.max(0.05, ...rows.map((x) => Math.abs(x.d))), who = P?.label ? (mineN ? P.label.split(" ").at(-1) : null) : null, f2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+  const detail = (x) => el("div", { class: "ci3-det" }, [
+    el("div", {}, [el("span", {}, "The field, an average course"), el("b", {}, `${x.fieldTour.toFixed(2)} per round`)]), el("div", {}, [el("span", {}, "The field, here"), el("b", {}, [`${x.fieldHere.toFixed(2)} per round`, el("small", {}, ` (×${x.eff.toFixed(2)} an average course)`)])]),
+    mineN ? el("div", {}, [el("span", {}, `${P.label}, usually`), el("b", {}, `${x.norm.toFixed(2)} per round`)]) : null,
+    mineN ? el("div", {}, [el("span", {}, `${P.label}, expected here`), el("b", {}, `${x.exp.toFixed(2)} per round`)]) : null,
+    x.act != null ? el("div", {}, [el("span", {}, `${hereName}, in their rounds here (${S.rounds})`), el("b", {}, `${x.act.toFixed(2)} per round`)]) : null]);
+  const list = el("div", { class: "ci3-rows" }); let open = null;
+  for (const x of rows) { const row = el("button", { type: "button", class: "ci3-row", "aria-expanded": "false" }, [el("span", { class: "ci3-k" }, x.b), el("span", { class: "ci3-bar" }, el("i", { class: x.d >= 0 ? "pos" : "neg", style: `width:${((Math.abs(x.d) / mx) * 50).toFixed(1)}%;${x.d >= 0 ? "left:50%" : `left:${(50 - (Math.abs(x.d) / mx) * 50).toFixed(1)}%`}` })), el("strong", { class: x.d >= 0.005 ? "pos" : x.d <= -0.005 ? "neg" : "" }, f2(x.d))]);
+    const det = detail(x); det.hidden = true;
+    row.addEventListener("click", () => { const on = det.hidden; if (open && open !== det) { open.hidden = true; open.previousSibling?.setAttribute("aria-expanded", "false"); } det.hidden = !on; row.setAttribute("aria-expanded", String(on)); open = on ? det : null; });
+    list.append(row, det); }
+  const up = [...rows].sort((a, b) => b.d - a.d)[0], dn = [...rows].sort((a, b) => a.d - b.d)[0], groupD = (re) => rows.filter((x) => re.test(x.b)).reduce((t, x) => t + x.d, 0);
+  const lead = el("p", { class: "ci3-lead" }, [mineN ? `${P.label}: ` : "The field: ", up && up.d > 0.02 ? [el("b", { class: "pos" }, `${f2(up.d)} per round`), ` from ${up.b}`] : "no distance comes up much more", dn && dn.d < -0.02 ? ["; ", el("b", { class: "neg" }, `${f2(dn.d)}`), ` from ${dn.b}`] : "",
+    `. Approaches over 140 yds ${f2(groupD(/^(140|160|180|200)-|>220/))}, putts outside 15 ft ${f2(groupD(/^(15|20)-|>25 ft/))} per round.`]);
+  return sec("SHOTS YOU’LL FACE", [lead, el("div", { class: "ci3-head" }, [el("span", {}, "Distance"), el("span", {}, mineN ? `Extra shots per round for ${who}` : "Extra shots per round, here against an average course"), el("span", {}, "")]), list],
+    mineN ? `Weighted to ${P.label}'s game: their own shots per round from each distance (last ${nR} rounds with shot detail, so their driving length and how close their approaches finish are in it), times how much more or less often the field faces that distance here than at the average of the ${all.length - 1} other courses with shot data. Tap a distance for the numbers.`
+      : `The field's shots per round from each distance here against the average of the ${all.length - 1} other courses with shot data (not tee shots on par 4s and 5s). Pick a player to weight it to their game. Tap a distance for the numbers.`, "ci3-faced");
+}
+
 /* ---------------- against the Top 10: where they gain, where the subject holds up ---------------- */
 function vsTop(H, S, name, first, openHole) {
   const holes = H.map((x) => { const a = x.me?.n ? x.me.sum / x.me.n : null, t = x.top?.n ? x.top.sum / x.top.n : null; return { ...x, v: a != null && t != null ? t - a : null }; }).filter((x) => x.v != null);
@@ -226,3 +267,4 @@ function vsTop(H, S, name, first, openHole) {
   return [sec("AGAINST THE TOP 10", [el("div", { class: "ci2-pair2" }, [part("Holes", all(holes, (x) => `Hole ${x.h}`, (x) => openHole(x.h))), part("Skills", all(dists, (x) => x.b))])],
     "Negative values (Red) indicate losing strokes vs average Top 10 finishers; Positive values (Green) indicate gaining strokes vs average Top 10 finishers")];
 }
+export { faced2 as __faced2 }; // (test pages only)

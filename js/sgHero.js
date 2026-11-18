@@ -79,10 +79,10 @@ export function heroBox(S, mine, slicedField, f) {
             // (update 681) always the rounds (each row is a round, even in a DP World Tour file that gives each event's value on
             // every round), and always the events beside it
             (() => { const t = `${mine.length.toLocaleString()} round${mine.length === 1 ? "" : "s"}`;
-              return S.eventView || S.unit === "event" ? el("span", { class: "hero-chip" }, t) /* (update 523: DP World Tour: no round-by-round list) */ : S.chipBtn("hero-chip", t, "Show every round", () => S.tournamentsPopup(ordered, slicedField, "Rounds")); })(),
+              return S.eventView || S.unit === "event" ? el("span", { class: "hero-chip" }, t) /* (update 523: DP World Tour: no round-by-round list) */ : (() => { const b = S.chipBtn("hero-chip", t, "Show every round", () => S.tournamentsPopup(ordered, slicedField, "Rounds")); if (S.st.openRounds) { delete S.st.openRounds; setTimeout(() => { if (b.isConnected) b.click(); }, 400); } return b; })() /* (update 849: Home's "find it yourself" opens it) */; })(),
             // (update 175) Events: each tournament, their average there and where it placed
             (() => { const n = new Set(ordered.map((rd) => `${rd.event}|${S.yearOf(rd)}`)).size;
-              return S.chipBtn("hero-chip", `${n} Event${n === 1 ? "" : "s"}`, "Show every tournament", () => S.eventsPopup(ordered, slicedField, r, "event")); })(),
+              return (() => { const b = S.chipBtn("hero-chip", `${n} Event${n === 1 ? "" : "s"}`, "Show every tournament", () => S.eventsPopup(ordered, slicedField, r, "event")); if (S.st.openEvents) { delete S.st.openEvents; setTimeout(() => { if (b.isConnected) b.click(); }, 400); } return b; })(); })(), /* (update 849) */
             form ? (() => { const b = S.chipBtn(`hero-chip ${form[1]}`, `Form: ${form[0]}`, "Show the form", () => S.formPopup(ordered, form[2])); // (update 671: its colour, and its meaning in the pop-up)
               if (form[2]?.color) { b.style.background = form[2].color; b.style.color = "#0b0b0d"; } return b; })() : null,
           ]),
@@ -396,6 +396,20 @@ export function rankPopup(S) {
 }
 // The hero chart's table (update 158) and the rounds pill's (update 159): every round, newest at the top, the
 // player's number in it and where it ranked among everyone in the field who played that round.
+// (update 849) a bar for each round (or event), oldest on the left: strokes gained green above zero and red below (any other stat gold)
+function barStrip(S, items, what) {
+  if (items.length < 2) return null;
+  const NS = "http://www.w3.org/2000/svg", mk = (t, a, txt) => { const n = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) n.setAttribute(k, v); if (txt != null) n.textContent = txt; return n; };
+  const vs = items.map((x) => x.v).filter((v) => v != null && Number.isFinite(v)); if (vs.length < 2) return null;
+  const sg = S.isSG(), lo = sg ? Math.min(0, ...vs) : Math.min(...vs), hi = sg ? Math.max(0, ...vs) : Math.max(...vs), W = 640, H = 150, L = 40, T = 10, B = 22, sc = (H - T - B) / (hi - lo || 1), y = (v) => T + (hi - v) * sc, bw = (W - L - 6) / items.length;
+  const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", class: "hp-strip", role: "img", "aria-label": `Every ${what}, oldest first` });
+  for (const v of sg ? [hi, 0, lo] : [hi, lo]) { svg.append(mk("line", { x1: L, x2: W - 4, y1: y(v).toFixed(1), y2: y(v).toFixed(1), class: v === 0 ? "hp-zero" : "hp-grid" })); svg.append(mk("text", { x: L - 5, y: (y(v) + 3).toFixed(1), "text-anchor": "end", class: "hp-tx" }, S.fmtV(v))); }
+  const base = sg ? y(0) : y(lo);
+  items.forEach((x, i) => { if (x.v == null || !Number.isFinite(x.v)) return; const top = Math.min(base, y(x.v)), h = Math.max(1, Math.abs(y(x.v) - base));
+    const r = mk("rect", { x: (L + i * bw + bw * 0.15).toFixed(1), y: top.toFixed(1), width: Math.max(1, bw * 0.7).toFixed(1), height: h.toFixed(1), rx: Math.min(2, bw * 0.2).toFixed(1), class: sg ? (x.v >= 0 ? "hp-up" : "hp-down") : "hp-gold" }); r.append(mk("title", {}, `${x.label}: ${S.fmtV(x.v)}`)); svg.append(r); });
+  svg.append(mk("text", { x: L, y: H - 6, class: "hp-tx" }, items[0].short || "")); svg.append(mk("text", { x: W - 4, y: H - 6, "text-anchor": "end", class: "hp-tx" }, items.at(-1).short || ""));
+  return el("div", { class: "hp-stripw" }, svg);
+}
 export function tournamentsPopup(S, ordered, slicedField = [], eyebrow = null) {
   const sameRound = (x, rd) => x.event === rd.event && S.yearOf(x) === S.yearOf(rd) && (rd.roundNo ? x.roundNo === rd.roundNo : x.date === rd.date);
   const rankCell = (rd) => {
@@ -413,6 +427,7 @@ export function tournamentsPopup(S, ordered, slicedField = [], eyebrow = null) {
   };
   const events = new Set(ordered.map((rd) => `${rd.event}|${S.yearOf(rd)}`)).size;
   S.popup(eyebrow || `${S.isSG() ? "SG" : S.def.label} trend`, S.me.label, `${S.rw(ordered.length)} \u00b7 ${events} ${events === 1 ? "tournament" : "tournaments"} \u00b7 newest first`, [
+    barStrip(S, ordered.map((rd) => ({ v: S.metric([rd]), label: `${rd.event}${rd.roundNo ? ` R${rd.roundNo}` : ""} (${shortDate(new Date(Date.parse(rd.date) || 0))})`, short: shortDate(new Date(Date.parse(rd.date) || 0)) })), "round"), // (update 849)
     el("div", { class: "table-scroll hero-tourn-scroll" }, S.roundsTable([...ordered].reverse(), { rank: rankCell })),
     infoTip(`Rank: where that ${S.unit} placed among everyone in the field who played it.`),
   ], S.unit === "event" ? "Tournaments" : "Rounds");
@@ -448,6 +463,7 @@ export function eventsPopup(S, ordered, slicedField, now, view = "rolling") {
       return S.isSG() && x.rs.some((rd) => (rd.shots || []).some((y) => y.cat)) ? S.openRow(tr, 3 + (S.unit === "event" ? 0 : 1) + (S.showRanks ? 1 : 0), () => S.sgBreakdown(x.rs)) : [tr]; })),
   ]);
   S.popup(rolling ? `${S.isSG() ? "SG" : S.def.label} history` : "Events", S.me.label, `${rows.length} ${rows.length === 1 ? "tournament" : "tournaments"} \u00b7 ${S.rw(ordered.length)} \u00b7 newest first`, [
+    rolling ? null : barStrip(S, [...rows].reverse().map((x) => ({ v: x.v, label: `${x.event} (${shortDate(new Date(Date.parse(x.end) || 0))})`, short: shortDate(new Date(Date.parse(x.end) || 0)) })), "event"), // (update 849)
     el("div", { class: "table-scroll hero-tourn-scroll" }, table),
     el("p", { class: "muted small" }, !S.showRanks ? (rolling ? "Season Avg: everything up to the end of that tournament in this selection." : `Event Avg: ${S.isSG() ? "strokes gained per round" : S.def.label} at that tournament.`) : rolling
       ? "Season Avg and Season Rank: everything up to the end of that tournament in this selection, ranked as on the chart (the same Min. rounds)."

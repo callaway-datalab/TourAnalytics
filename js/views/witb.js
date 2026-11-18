@@ -478,7 +478,7 @@ export async function render(main, { flash, previewClient, playerKey: givenKey =
       : caddieFor ? el("header", { class: "page-head" }, [el("h1", {}, `${viewing}\u2019s bag`), picker, el("p", { class: "muted" }, [`Every club ${viewing} has played. As their caddie you can change it: tap a club to put it in the bag or take it out. `, status])])
       : el("header", { class: "page-head" }, [el("h1", {}, "What's in the bag"), picker, el("p", { class: "muted" }, ["Every club you've played. Tap one to put it in your bag or take it out. ", status])]),
     /* (update 842: the stats data's clubs are in All clubs now) */
-    readOnly ? null : el("section", { class: "panel bag-panel" }, [el("h3", {}, "Add a club"), addForm, setToggle]),
+    readOnly ? null : el("details", { class: "panel bag-panel witb-add" }, [el("summary", {}, el("h3", {}, "Add a club")), addForm, setToggle]), /* (update 849: folded away until opened) */
     el("section", { class: `panel bag-panel${readOnly ? " witb-readonly" : ""}` }, [el("div", { class: "witb-allhead" }, [el("h3", {}, "All clubs"), editBtn]), el("p", { class: "muted small" }, "Every club on record: the list, and every club and ball in the stats data (marked On tour now when it's in their latest events). Tour numbers come from the stats data; own numbers from the rounds entered."), listBox]),
     el("section", { class: "panel bag-panel your-bag" }, [bagTitle, bagBox]),
   ]);

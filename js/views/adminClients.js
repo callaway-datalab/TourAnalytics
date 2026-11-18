@@ -752,7 +752,7 @@ export async function render(main, { flash }) {
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Analyst Chat", "Player Chat", "Coaching", "Sign-ins", "Last sign-in", ""].map((h) => el("th", {}, h)))),
+      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Analyst Chat", "Player Chat", "Coaching", "Sign-ins", "Last sign-in", "Account created", ""].map((h) => el("th", {}, h)))), /* (update 849: Account created) */
       el("tbody", {}, rows.flatMap(({ inv, user, grants, typeLabels, email, status, teamOf, teamOfMake }) => { const tr = el("tr", { class: "code-row" }, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
@@ -766,6 +766,7 @@ export async function render(main, { flash }) {
         el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, caToggle(inv, user)), el("td", { class: "cal-cell" }, pcToggle(inv, user)), el("td", { class: "cal-cell" }, coachToggle(inv, user)),
         el("td", { class: "num" }, user ? num(signSince ? signSince.get(user.uid) || 0 : user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")), /* (update 842: since the reset) */
         el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
+        el("td", { class: "nowrap" }, (user?.createdAt || inv.usedAt) ? formatWhen(user?.createdAt || inv.usedAt) : el("span", { class: "muted" }, "\u2014")), /* (update 849) */
         el("td", { class: "actions" }, codeActions(inv, user, grants)),
       ]);
       // (update 290) on a phone only Name, User Type and Status show; tapping the person opens the rest underneath
@@ -774,6 +775,7 @@ export async function render(main, { flash }) {
         line("Code", el("code", {}, formatCode(inv.code))), line("Email", email || "\u2014"), line("Team of", teamOfMake()),
         line("Cal", calToggle(inv, user)), line("Analyst chat", caToggle(inv, user)), line("Player chat", pcToggle(inv, user)), line("Coaching", coachToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
         line("Last sign-in", user?.lastSignInAt ? formatWhen(user.lastSignInAt) : user ? "Not yet" : "\u2014"),
+        line("Account created", (user?.createdAt || inv.usedAt) ? formatWhen(user?.createdAt || inv.usedAt) : "\u2014"), /* (update 849) */
         el("div", { class: "cd-actions" }, codeActions(inv, user, grants)),
       ])));
       tr.addEventListener("click", (e) => {
