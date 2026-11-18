@@ -1965,14 +1965,17 @@ export async function render(main) {
     const rsOf = (p) => sgRounds(roundsOfKey(p.key)).map((rd) => ({ ...rd, pk: rd.pk || p.key }));
     const all = pool.flatMap(rsOf);
     // (update 219) each tournament: the first one back after a break (879: any week off), or the 2nd / 3rd+ in a row
-    weekTag = new Map();
+    weekTag = new Map(); const weekWhy = new Map(); // (update 880) why each event got its week: the event played before it, and how long before
     for (const p of pool) {
       // (update 878) each event's date is its first round's (it was whichever round came last in the list, so an event about
       // two weeks after the one before could flip between "2nd" and "3rd+ week in a row" from one load to the next)
       const first = new Map(); for (const rd of all) { if (rd.pk !== p.key) continue; const k = evk(rd), d = String(rd.date || "").slice(0, 10); if (d && (!first.has(k) || d < first.get(k))) first.set(k, d); }
       const evs = [...first.entries()].sort((a, b) => a[1].localeCompare(b[1]));
       let run = 0, prev = null;
-      for (const [k, d] of evs) { const t = Date.parse(d); run = prev != null && t - prev <= 10 * 864e5 ? run + 1 : 1; /* (update 879) back-to-back weeks only (first rounds about 7 days apart): any week off restarts it as "First event back" */ prev = t; weekTag.set(`${p.key}|${k}`, WEEKS[Math.min(run, 3) - 1]); }
+      let prevK = null;
+      for (const [k, d] of evs) { const t = Date.parse(d), gapD = prev != null ? Math.round((t - prev) / 864e5) : null;
+        weekWhy.set(`${p.key}|${k}`, gapD == null ? "Their first event on record" : `Their event before: ${String(prevK).split("|")[0]} ${String(prevK).split("|")[1] || ""}, first round ${gapD} days earlier (10 or fewer: the week before, so in a row; more: a week or more off, so first event back)`); prevK = k;
+        run = prev != null && t - prev <= 10 * 864e5 ? run + 1 : 1; /* (update 879) back-to-back weeks only (first rounds about 7 days apart): any week off restarts it as "First event back" */ prev = t; weekTag.set(`${p.key}|${k}`, WEEKS[Math.min(run, 3) - 1]); }
     }
     const dims = PLACE.filter(([, , f]) => new Set(all.map(f).filter(Boolean)).size > 1);
     if (!dims.length) return el("section", { class: "panel cmp-empty" }, el("p", { class: "muted" }, "Not enough variety in these rounds to rank."));
@@ -2010,7 +2013,7 @@ export async function render(main) {
       const det = el("div", { class: "cmp-place-det" }, el("table", { class: "cmp-table cmp-place-t" }, [
         el("thead", {}, el("tr", {}, [el("th", {}, placeDim === "tournaments" ? "Year" : "Tournament"), el("th", { class: "num" }, "Rds"), finishes.size ? el("th", { class: "num", title: "Finish: by SG: Total among those who played every round; MC = fewer rounds" }, "Fin") : null, el("th", { class: "num" }, "SG/rd"), el("th", { class: "ph-hide" }, placeDim === "rounds" ? "Date" : "Each round")])),
         el("tbody", {}, visits.map((rds) => { const v = rds.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / rds.length, f = finishOf(rds[0].pk, rds[0]);
-          return el("tr", {}, [el("td", {}, [placeDim === "tournaments" ? yr(rds[0]) : `${rds[0].event || "\u2014"} ${yr(rds[0])}`, many ? el("span", { class: "muted small" }, ` \u00b7 ${pname(rds[0].pk)}`) : null, placeDim === "tournaments" && rds[0].course ? el("span", { class: "muted small" }, ` \u00b7 ${rds[0].course}`) : null]),
+          return el("tr", { title: placeDim === "weeks" ? weekWhy.get(`${rds[0].pk}|${evk(rds[0])}`) || null : null }, [el("td", {}, [placeDim === "tournaments" ? yr(rds[0]) : `${rds[0].event || "\u2014"} ${yr(rds[0])}`, many ? el("span", { class: "muted small" }, ` \u00b7 ${pname(rds[0].pk)}`) : null, placeDim === "tournaments" && rds[0].course ? el("span", { class: "muted small" }, ` \u00b7 ${rds[0].course}`) : null]),
             el("td", { class: "num" }, String(rds.length)), finishes.size ? el("td", { class: `num cmp-fin${f === "MC" ? " mc" : ""}` }, f) : null, el("td", { class: `num strong ${tone(v)}` }, fmtSG(v)),
             el("td", { class: "ph-hide cmp-rd-chips" }, placeDim === "rounds" ? dateTxt(rds[0].date) : (() => { /* (update 877) a slot for each round (R1 under R1 on every row); a round not played: an empty slot */
               const byN = new Map(rds.map((rd) => [Number(rd.roundNo) || 0, rd])), nMax = Math.max(4, ...byN.keys()), odd = rds.filter((rd) => !(Number(rd.roundNo) >= 1));
