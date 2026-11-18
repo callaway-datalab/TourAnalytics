@@ -884,7 +884,8 @@ export async function render(main, { previewClient } = {}) {
     // (update 848) one player: beside the hero, their At a glance (rounds in the green, best run, biggest upside, steadiest)
     const glK = solo() ? selfKey || [...picked][0] || leadM?.k : null, glSide = glK ? glanceFacts(glK) : [];
     // (update 855) three beside the hero, not four
-    const sideM = glSide.length ? [...glSide, ...fixedSides(glK, news0)].slice(0, 3) : !moverMode ? fp.slice(1, 4) : others.length >= 3 && !selfKey && !solo() ? others.slice(0, 3) : [...others.filter((h) => h.id.startsWith("eq-")), ...fixedSides(leadM.k, news0)].slice(0, 3);
+    const side4 = glSide.length ? [...glSide, ...fixedSides(glK, news0)].slice(0, 4) : !moverMode ? fp.slice(1, 5) : others.length >= 3 && !selfKey && !solo() ? others.slice(0, 4) : [...others.filter((h) => h.id.startsWith("eq-")), ...fixedSides(leadM.k, news0)].slice(0, 4);
+    const sideM = side4.slice(0, 3), side4th = side4[3] || null; // (update 856: a fourth only beside a really tall hero)
     const subjK = leadM?.k || selfKey || shownKeys()[0] || null;
     // (update 839) the sections, built for the page (one player: all of theirs; several: Around the Tour only) and, inside
     // each favorite's row in Your favorites, for that player (their stories, and the next course's)
@@ -947,8 +948,8 @@ export async function render(main, { previewClient } = {}) {
     const sideEl = el("aside", { class: "td-side" }, sideM.map(brief));
     // (update 795) a lead taller than the stories beside it: more of the day's stories down the side (up to 3 more) until
     // they come out about even
-    requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (true || innerWidth <= 860 || moverMode) return; /* (update 855: always three, never topped up) */ const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
-      for (let n = 0; n < 3 && more2.length; n++) { if (leadEl.offsetHeight - used() < 170) break; sideEl.appendChild(brief(more2.shift())); } });
+    requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (innerWidth <= 860 || !side4th) return; void more2; /* (update 856: three, and the fourth only when the hero is much taller) */ const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
+      if (leadEl.offsetHeight - used() >= 220) sideEl.appendChild(brief(side4th)); });
     mount(frontBox, el("section", { class: "td-front", id: "td-front" }, [leadEl, sideEl])); // (update 837: at the very top)
     mount(feed, [el("div", { class: "td-grid" }, laid), solo() && subjK ? pdfCard(subjK) : null]); // (update 839: no Today) (update 849: and their PDF report at the end)
     // (update 789) Player Spotlight and Where to Improve about the same length: stories added to the shorter one (as many as
