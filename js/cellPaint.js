@@ -10,7 +10,7 @@ const num = (t) => { const m = String(t || "").replace(/[−–]/g, "-").replace
 function paintTable(table) {
   // which columns are differences, from the header
   const heads = [...(table.querySelector("thead tr")?.children || [])];
-  const diffCols = new Set(heads.map((th, i) => (/^(diff|difference|change)$/i.test(th.textContent.trim()) ? i : -1)).filter((i) => i >= 0));
+  const diffCols = new Set(heads.map((th, i) => (/^(diff|difference|change|diff from winner|diff from top 10)$/i.test(th.textContent.trim()) ? i : -1) /* (update 864: Course History's Diff from Winner too) */).filter((i) => i >= 0));
   if (!diffCols.size) return;
   const cols = new Map(); // column index -> [{ td, v }]
   for (const tr of table.querySelectorAll("tbody tr")) {

@@ -1112,3 +1112,9 @@ html[data-theme="light"] .cf-tag.cf-sh { color: #0a6e99; }
 .ent-sample { margin: 14px 0 0; } .ent-sample-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .td-my .td-my-t th, .td-my .td-my-t td { text-align: left !important; background: none !important; } .td-my .td-my-t .num { text-align: right !important; }
 .td-my .td-my-t tbody tr:nth-child(even) td { background: rgba(255,255,255,0.025) !important; }
+
+/* (update 864) Shots you'll face: a heading for each part of the game */
+.ci3-grp { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 12px 0 2px; padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--line, #2a2a2e) 90%, transparent); font: 700 0.7rem var(--font-body, Inter, sans-serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted, #8e8e93); }
+.ci3-grp:first-child { margin-top: 2px; }
+.ci3-grp b { font-size: 0.8rem; letter-spacing: 0; text-transform: none; } .ci3-grp b.pos { color: #30d158; } .ci3-grp b.neg { color: #ff453a; }
+@media (max-width: 640px) { .ci3-head span:first-child { white-space: nowrap; font-size: 0.56rem; letter-spacing: 0.04em; } }

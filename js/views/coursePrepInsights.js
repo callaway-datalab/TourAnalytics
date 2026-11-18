@@ -245,7 +245,13 @@ function faced2(I, all, meta, S, hereName, P) {
     mineN ? el("div", {}, [el("span", {}, `${P.label}, expected here`), el("b", {}, `${x.exp.toFixed(2)} per round`)]) : null,
     x.act != null ? el("div", {}, [el("span", {}, `${hereName}, in their rounds here (${S.rounds})`), el("b", {}, `${x.act.toFixed(2)} per round`)]) : null]);
   const list = el("div", { class: "ci3-rows" }); let open = null;
-  for (const x of rows) { const row = el("button", { type: "button", class: "ci3-row", "aria-expanded": "false" }, [el("span", { class: "ci3-k" }, x.b), el("span", { class: "ci3-bar" }, el("i", { class: x.d >= 0 ? "pos" : "neg", style: `width:${((Math.abs(x.d) / mx) * 50).toFixed(1)}%;${x.d >= 0 ? "left:50%" : `left:${(50 - (Math.abs(x.d) / mx) * 50).toFixed(1)}%`}` })), el("strong", { class: x.d >= 0.005 ? "pos" : x.d <= -0.005 ? "neg" : "" }, f2(x.d))]);
+  // (update 864) in their parts of the game: approach, around the green (inside 50 yds), putting; each with its total
+  const grpOf = (b) => (/ft/.test(b) ? "PUTT" : /^<30|^30-50/.test(b) ? "ARG" : "APP"), GN = { APP: "Approach", ARG: "Around the green", PUTT: "Putting" };
+  const ordered = ["APP", "ARG", "PUTT"].flatMap((g) => rows.filter((x) => grpOf(x.b) === g));
+  let lastG = null;
+  for (const x of ordered) {
+    const g = grpOf(x.b); if (g !== lastG) { lastG = g; const tot = rows.filter((y) => grpOf(y.b) === g).reduce((t, y) => t + y.d, 0);
+      list.append(el("div", { class: "ci3-grp" }, [el("span", {}, GN[g]), el("b", { class: tot >= 0.005 ? "pos" : tot <= -0.005 ? "neg" : "" }, `${f2(tot)} per round`)])); } const row = el("button", { type: "button", class: "ci3-row", "aria-expanded": "false" }, [el("span", { class: "ci3-k" }, x.b), el("span", { class: "ci3-bar" }, el("i", { class: x.d >= 0 ? "pos" : "neg", style: `width:${((Math.abs(x.d) / mx) * 50).toFixed(1)}%;${x.d >= 0 ? "left:50%" : `left:${(50 - (Math.abs(x.d) / mx) * 50).toFixed(1)}%`}` })), el("strong", { class: x.d >= 0.005 ? "pos" : x.d <= -0.005 ? "neg" : "" }, f2(x.d))]);
     const det = detail(x); det.hidden = true;
     row.addEventListener("click", () => { const on = det.hidden; if (open && open !== det) { open.hidden = true; open.previousSibling?.setAttribute("aria-expanded", "false"); } det.hidden = !on; row.setAttribute("aria-expanded", String(on)); open = on ? det : null; });
     list.append(row, det); }

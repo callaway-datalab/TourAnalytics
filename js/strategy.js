@@ -331,11 +331,14 @@ export function strategyOf(recs, par, geo = {}) {
     };
     // (update 625) ranked on an average pulled toward the average of every miss when there are few (8 misses' worth), so a
     // spot of 9 doesn't beat one of 26 by luck; the tip still says the spot's own average
-    const allAvg = mean(missPts.map(pv)), adj = (g) => (g.n * (g.hi ?? g.avg) + MIN_N * allAvg) / (g.n + MIN_N); // (update 718: on its worst nudge)
+    // (update 864) ranked on the average Cal shows (not its worst nudge: a left bunker at 4.43 lost to a fairway spot at 4.60
+    // because nudged 3 yds it read worse); the nudge is now a safety check: a spot that gets 0.35 or more worse a few yards
+    // off can't be the best or second best miss
+    const allAvg = mean(missPts.map(pv)), adj = (g) => (g.n * g.avg + MIN_N * allAvg) / (g.n + MIN_N), shaky = (g) => g.hi != null && g.hi - g.avg >= 0.35;
     const byAvg = [...named].sort((a, b) => adj(a) - adj(b) || b.n - a.n), pick = [];
     // (update 724) the best and 2nd best (safe to aim at, apart); then the worst: the worst-scoring spot of every spot with
     // MIN_N or more (its average pulled toward every miss's by its size, so 16 misses at 4.81 beats 8 at 4.75), apart from both
-    for (const g of byAvg) { if (pick.length >= 2) break; if (risky(g)) continue; if (pick.every((x) => apart(x, g))) pick.push(g); }
+    for (const g of byAvg) { if (pick.length >= 2) break; if (risky(g) || shaky(g)) continue; if (pick.every((x) => apart(x, g))) pick.push(g); }
     if (pick.length === 2) {
       const adjW = (g) => (g.n * g.avg + MIN_N * allAvg) / (g.n + MIN_N);
       const pool = [...named, ...(cand.some((g) => g.mem.length < MIN_T) ? [] : nameAll(gen(MIN_N, R_SET)))];
