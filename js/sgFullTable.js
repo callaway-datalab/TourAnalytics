@@ -554,7 +554,9 @@ export function fullStatTable(S, mine, cat, slicedField = [], mode = "table") {
       const rk = { rankOf: P.rankOf, of: P.N, formRank }; // (update 455: the what-if's season rank)
       // (update 455) the best stretch picked (tapped in the line above): the last N rounds against it
       if (S.st.pathStretch === (cat || "")) {
-        const bs = S.longestStretches(S.lastSliced || [], cat).find((r) => r.p.key === S.me.key);
+        let bs = S.longestStretches(S.lastSliced || [], cat).find((r) => r.p.key === S.me.key);
+        // (update 876) a stretch length typed in: their best run of that many rounds in a row instead
+        const edN = S.st.bsN?.[cat || ""]; if (edN) { const seq = S.stretchSeq(season, cat); if (seq.length >= edN) { let sum = 0, bestS = -Infinity, at = 0; seq.forEach((x, i) => { sum += x.t; if (i >= edN) sum -= seq[i - edN].t; if (i >= edN - 1 && sum > bestS) { bestS = sum; at = i - edN + 1; } }); bs = { ...(bs || {}), n: edN, rds: seq.slice(at, at + edN).map((x) => x.rd) }; } }
         if (bs?.rds?.length) { const sigR = (rd) => `${String(rd.date || "")}|${rd.event || ""}|${rd.roundNo || ""}`; const ids = new Set(bs.rds.map(sigR)); const kept = season.filter((rd) => ids.has(sigR(rd))); return S.pathBack(kept.length ? kept : bs.rds, season, cat, null, { best: true, rk }); }
       }
       // (update 442) no card picked: their last N rounds against the rest of their rounds; a card picked: against that

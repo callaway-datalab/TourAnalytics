@@ -629,8 +629,8 @@ export function profileLine0(S, mine, cat, rows) {
   if (edN && P?.bestN?.(edN)) {
     const b = P.bestN(edN), rk = P.rankOf(b.avg), whenE = b.from === b.to ? S.shortDay(b.from) : `${S.shortDay(b.from)} \u2013 ${S.shortDay(b.to)}`;
     const back = el("button", { type: "button", class: "link bs-n-reset", title: "Back to their elite stretch" }, "reset"); back.addEventListener("click", () => { delete S.st.bsN[ck]; S.draw(); });
-    return el("p", { class: "bs-profile" }, [el("strong", {}, `${lead} `), el("span", { class: "muted" }, [
-      "Their best stretch of ", nIn, ` ${edN === 1 ? "round" : "rounds in a row"}: `, (() => { /* (update 875) the dates open the pop-up: every round, this stretch's picked out */
+    return el("p", { class: `bs-profile${bsOn ? " bs-on" : ""}` }, [el("strong", {}, `${lead} `), el("span", { class: "muted" }, [
+      "Their ", bsBtn, " of ", nIn, ` ${edN === 1 ? "round" : "rounds in a row"}: `, (() => { /* (update 875) the dates open the pop-up: every round, this stretch's picked out */
         const l = el("button", { type: "button", class: "link bs-stretch-link", title: "Every round, with this stretch picked out" }, whenE);
         l.addEventListener("click", () => S.stretchPopup({ ...mineRow, n: edN, from: b.from, to: b.to }, cat, whenE, null, null)); return l; })(), `, ${b.avg >= 0 ? "+" : "\u2212"}${Math.abs(b.avg).toFixed(2)} per round, good enough for ${rk === 1 ? LEVELS[1] : `${S.ordinal(rk)} on Tour`} (of ${P.N}). `, back])]);
   }
