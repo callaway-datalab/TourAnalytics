@@ -1489,7 +1489,7 @@ export async function render(main, { previewClient } = {}) {
     const fAvg = new Map(); for (const t of T) { const o = fAvg.get(t.h) || fAvg.set(t.h, [0, 0]).get(t.h); o[0] += t.s; o[1]++; }
     const ply = new Map(); // (keyOf: above)
     for (const t of T) { const pk = keyOf(t.who), P = ply.get(pk) || ply.set(pk, { nm: t.nm, cat: { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }, rds: new Set(), holes: new Map(), notes: [] }).get(pk);
-      P.rds.add(`${t.yr}|${t.rd}`); const hh = P.holes.get(t.h) || P.holes.set(t.h, [0, 0, t.par]).get(t.h); hh[0] += t.s; hh[1]++;
+      P.rds.add(`${t.yr}|${t.rd}`); const hh = P.holes.get(t.h) || P.holes.set(t.h, [0, 0, t.par, 0, 0]).get(t.h); hh[0] += t.s; hh[1]++; if (t.s <= -1) hh[3]++; if (t.s >= 1) hh[4]++; /* (update 859: birdies and bogeys too) */
       const sg1 = sgOfT(t); for (let i = 0; i < t.qs.length; i++) if (sg1[i] != null) { const c1 = catOfQ(t.qs[i]); P.cat[c1] += sg1[i]; (P.n ||= {})[c1] = (P.n[c1] || 0) + 1; const bk = bandOf(t.qs[i], t.par); if (bk) { (P.band ||= {})[bk] = (P.band[bk] || 0) + sg1[i]; (P.bandN ||= {})[bk] = (P.bandN[bk] || 0) + 1; } }
       if ((t.par || 4) >= 5 && t.s <= -1) { const q2 = t.qs.find((q) => q.st === 2), q3 = t.qs.find((q) => q.st === 3), gs = goShare.get(t.h);
         if (q2 && q3 && q2.d != null && q2.d <= 300 && gs != null) { const g = goOf(arr7(q2), arr7(q3), t.par, null);
@@ -1530,18 +1530,30 @@ export async function render(main, { previewClient } = {}) {
       const ce = R0.catEdge || [], top = ce[0], low = ce.at(-1);
       const bands = Object.keys(R0.bandTopR || {}).filter((b0) => R0.bandRestR?.[b0] != null).map((b0) => ({ b: b0, d: R0.bandTopR[b0] - R0.bandRestR[b0] })).sort((a, b) => b.d - a.d), kb = bands[0];
       const bl = (b0) => { const [c0, rest0] = String(b0).split("|"); return c0 === "OTT" ? `driving on ${rest0.replace(/ tee shots$/, "s").toLowerCase()}` : `${CW[c0]} from ${rest0}`; };
-      const H = R0.holesR || [], par = H.reduce((t, o) => t + (o.avg || 0), 0), birdR = H.reduce((t, o) => t + o.b, 0), bogR = H.reduce((t, o) => t + o.g, 0);
-      const tough = [...H].sort((a, b) => (b.avg - b.par) - (a.avg - a.par))[0], easy = [...H].sort((a, b) => (a.avg - a.par) - (b.avg - b.par))[0], pm1 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+      const H = R0.holesR || [], toParR = H.reduce((t, o) => t + (o.avg || 0), 0), parT = H.reduce((t, o) => t + (o.par || 0), 0), birdR = H.reduce((t, o) => t + o.b, 0), bogR = H.reduce((t, o) => t + o.g, 0);
+      /* (update 859) a hole's avg is already its score to par (the data's own to-par column): no par to take off again */ const tough = [...H].sort((a, b) => b.avg - a.avg)[0], easy = [...H].sort((a, b) => a.avg - b.avg)[0], pm1 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
       if (top) out.push({ id: "up-talk", k: null, kind: "Course", score: 5.4, title: `${U.name} is a ${CW[top[0]].replace(/^the /, "")} week`,
         detail: [`The top 10 here gain ${p2(top[1])} per round more than the rest of the field in ${CATN[top[0]].toLowerCase()}, the most of any part of the game`,
           kb ? `The skill that decides it: ${bl(kb.b)}, worth ${p2(kb.d)} per round between the top 10 and the rest` : null,
           low ? `It matters least in ${CATN[low[0]].toLowerCase()} (${p2(low[1])} per round)` : null].filter(Boolean).join(" · "),
         x: { skill: { cat: top[0], perRound: true, who: "Rest of the field", where: `at ${U.name}`, bands: cats.map((c0) => `CAT|${CATN[c0]}`), a: Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catRest?.[c0] ?? 0])), top: Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catTop?.[c0] ?? 0])) } },
         to: "Course Prep · Course Insights", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) });
-      if (H.length >= 9) out.push({ id: "up-fun", k: null, kind: "Course", score: 5.35, title: `How ${c.name} plays`,
-        detail: [`The field averages ${pm1(par - H.reduce((t, o) => t + o.par, 0))} to par per round over these ${H.length} holes`, `${birdR.toFixed(1)} birdies and ${bogR.toFixed(1)} bogeys a round`,
-          tough ? `Toughest: No. ${tough.h} (par ${tough.par}), ${pm1(tough.avg - tough.par)} a round, ${Math.round(tough.g * 100)}% bogey or worse` : null,
-          easy ? `Easiest: No. ${easy.h} (par ${easy.par}), ${pm1(easy.avg - easy.par)}, ${Math.round(easy.b * 100)}% birdie or better` : null].filter(Boolean).join(" · "),
+      // (update 859) one player shown: how the course plays for them (their own shots here), beside the field
+      const one = shownKeys().length === 1 ? shownKeys()[0] : null, P1 = one ? R0.ply?.get(one) || R0.plyName?.get(nmKey(nameOf(one))) : null;
+      const myH = P1 ? [...P1.holes].map(([h, o]) => ({ h, par: o[2], n: o[1], avg: o[0] / o[1], b: (o[3] || 0) / o[1], g: (o[4] || 0) / o[1], f: H.find((x) => x.h === h) })).filter((x) => x.f) : [];
+      if (one && P1 && P1.rds.size >= 2 && myH.length >= 9) { const me1 = isMe(one), S1 = me1 ? "You" : nameOf(one), Pw1 = me1 ? "your" : "their";
+        const myTP = myH.reduce((t, x) => t + x.avg, 0), fTP = myH.reduce((t, x) => t + x.f.avg, 0), myB = myH.reduce((t, x) => t + x.b, 0), myG = myH.reduce((t, x) => t + x.g, 0), fB = myH.reduce((t, x) => t + x.f.b, 0), fG = myH.reduce((t, x) => t + x.f.g, 0);
+        const ok = myH.filter((x) => x.n >= 2), worst = [...ok].sort((a, b) => (b.avg - b.f.avg) - (a.avg - a.f.avg))[0], best = [...ok].sort((a, b) => (a.avg - a.f.avg) - (b.avg - b.f.avg))[0];
+        out.push({ id: "up-fun", k: null, kind: "Course", score: 5.35, title: `How ${c.name} plays for ${me1 ? "you" : nameOf(one)}`,
+          detail: [`${S1} ${me1 ? "average" : "averages"} ${pm1(myTP)} to par per round over these ${myH.length} holes (${P1.rds.size} rounds on record here), against the field's ${pm1(fTP)}: ${myTP <= fTP ? `${(fTP - myTP).toFixed(2)} a round better` : `${(myTP - fTP).toFixed(2)} a round worse`}`,
+            `${myB.toFixed(1)} birdies and ${myG.toFixed(1)} bogeys a round (the field: ${fB.toFixed(1)} and ${fG.toFixed(1)})`,
+            worst ? `Toughest for ${me1 ? "you" : "them"}: No. ${worst.h} (par ${worst.par}), ${pm1(worst.avg)} to par on average against the field's ${pm1(worst.f.avg)} (${worst.n} plays)` : null,
+            best && best !== worst ? `Best for ${me1 ? "you" : "them"}: No. ${best.h} (par ${best.par}), ${pm1(best.avg)} to par against the field's ${pm1(best.f.avg)} (${best.n} plays)` : null].filter(Boolean).join(" · "),
+          to: "Course Prep · Strategy Maps", run: () => toHole(c.id, worst?.h || 1, EX.course(`How does ${c.name} play for ${Pw1 === "your" ? "me" : nameOf(one)}?`)) }); }
+      else if (H.length >= 9) out.push({ id: "up-fun", k: null, kind: "Course", score: 5.35, title: `How ${c.name} plays${one ? ` (the field: no shots of ${isMe(one) ? "yours" : nameOf(one)} here on record)` : ""}`,
+        detail: [`The field averages ${pm1(toParR)} to par per round over these ${H.length} holes (${(parT + toParR).toFixed(1)} strokes, par ${parT})`, `${birdR.toFixed(1)} birdies and ${bogR.toFixed(1)} bogeys a round`,
+          tough ? `Toughest: No. ${tough.h} (par ${tough.par}), plays ${pm1(tough.avg)} to par on average (${(tough.par + tough.avg).toFixed(2)} strokes), ${Math.round(tough.g * 100)}% bogey or worse` : null,
+          easy ? `Easiest: No. ${easy.h} (par ${easy.par}), plays ${pm1(easy.avg)} to par on average (${(easy.par + easy.avg).toFixed(2)} strokes), ${Math.round(easy.b * 100)}% birdie or better` : null].filter(Boolean).join(" · "),
         to: "Course Prep · Strategy Maps", run: () => toHole(c.id, tough?.h || 1, EX.course(`How does ${c.name} play?`)) }); }
     if (c && upRaw?.id === c.id) { const R0 = upRaw, pc = (v) => `${Math.round(v * 100)}%`, pm3 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
       const H = [...R0.holesR].sort((a, b) => b.idx - a.idx), atk = H[0], dfd = H.at(-1);

@@ -218,11 +218,15 @@ export async function pickWho(ctx, onPick) {
   } else if (team.isTeam) {
     const names = teamLabels(team.teamAccess);
     const keys = Object.keys(team.teamAccess).sort((a, b) => (names.get(a) || a).localeCompare(names.get(b) || b));
-    const pref = ctx.previewClient && team.teamAccess[ctx.previewClient.key] ? ctx.previewClient.key : keys[0];
+    // (update 859) the header's player first (one of theirs), and a new pick in the header switches the page to them
+    const { currentPlayer, onCurrent, setCurrent } = await import("../current.js"), hc = currentPlayer();
+    const pref = hc && team.teamAccess[hc.key] ? hc.key : ctx.previewClient && team.teamAccess[ctx.previewClient.key] ? ctx.previewClient.key : keys[0];
+    let selRef = null, lastK = pref;
+    const off = onCurrent((c) => { if (!selRef || !selRef.isConnected) { off(); return; } /* (this page's picker gone: stop following) */ if (!c || !team.teamAccess[c.key] || c.key === lastK) return; lastK = c.key; selRef.value = c.key; onPick({ key: c.key, label: names.get(c.key) || c.label || c.key }); });
     who = pref ? { key: pref, label: names.get(pref) || pref } : null;
     if (keys.length > 1) {
       const sel = el("select", { "aria-label": "Player" }, keys.map((k) => el("option", { value: k, selected: k === pref }, names.get(k) || k)));
-      sel.addEventListener("change", () => onPick({ key: sel.value, label: names.get(sel.value) || sel.value }));
+      selRef = sel; sel.addEventListener("change", () => { const p = { key: sel.value, label: names.get(sel.value) || sel.value }; lastK = p.key; setCurrent(p); onPick(p); });
       node = el("label", { class: "inline-select" }, ["Player", sel]);
     }
   } else if (state.profile?.clientKey) who = { key: state.profile.clientKey, label: state.profile.name || "You" };
