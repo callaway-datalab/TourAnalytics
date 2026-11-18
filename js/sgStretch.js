@@ -114,7 +114,9 @@ export function ladderRows(S, mine, cat) {
   const shareFor = (target) => { let k = 0, sum = 0; for (let i = 0; i < desc.length; i++) { sum += desc[i]; if (rankOf(sum / (i + 1)) <= target) k = i + 1; else break; } return { k, of: desc.length, pct: desc.length ? k / desc.length : 0 }; };
   const out = [1, 10, 25, 50].map((target) => ({ ...rung(target), share: shareFor(target) }));
   // (update 348) for the profile: every round (best first), how to rank an average, the field size, the overall rank
-  out.prof = { desc, rankOf, N: others.length + 1, seasonRank, field: [...others].sort((a, b) => b - a), avg: pre.at(-1) / seq.length };
+  out.prof = { desc, rankOf, N: others.length + 1, seasonRank, field: [...others].sort((a, b) => b - a), avg: pre.at(-1) / seq.length,
+    // (update 874) their best run of n rounds in a row: its average and dates (the stretch length typed in under the boxes)
+    max: seq.length, bestN: (n) => { if (!(n >= 1 && n <= seq.length)) return null; const b = bestM(n); return { n, avg: b.avg, from: seq[b.at].rd.date, to: seq[b.at + n - 1].rd.date }; } };
   return out;
   function rung(target) {
     if (seasonRank <= target) return { target, already: true, rank: seasonRank };
@@ -619,6 +621,17 @@ export function profileLine0(S, mine, cat, rows) {
   const bsOn = S.st.pathStretch === (cat || "") && !!mineRow.rds?.length;
   const bsBtn = el("button", { type: "button", class: `link bs-best-btn${bsOn ? " on" : ""}`, "aria-pressed": String(bsOn), title: bsOn ? "Compare the last rounds with the rest again" : "Compare the last rounds with this stretch in the table below" }, "best stretch");
   bsBtn.addEventListener("click", () => { if (bsOn) S.st.pathStretch = null; else { S.st.pathStretch = cat || ""; if (S.st.vsRank === "peak") { S.st.vsRank = null; S.st.ladderT = null; } } S.draw(); });
+  // (update 874) the stretch's length can be typed in: their best run of that many rounds in a row, and where its average
+  // would rank on tour ("good enough for 12th on Tour"); the line about everyone's longest is only for the elite stretch itself
+  const P = rows.prof, ck = cat || "", edN = S.st.bsN?.[ck] ?? null, nNow = edN && P?.bestN?.(edN) ? edN : mineRow.n;
+  const nIn = el("input", { type: "number", class: "bs-n-in", min: "1", max: String(P?.max || mineRow.n), value: String(nNow), "aria-label": "Rounds in a row", title: "Type a number of rounds" });
+  nIn.addEventListener("change", () => { const v = Math.round(Number(nIn.value)); S.st.bsN = { ...(S.st.bsN || {}) }; if (!(v >= 1) || v === mineRow.n || !P?.bestN?.(v)) delete S.st.bsN[ck]; else S.st.bsN[ck] = v; setTimeout(() => S.draw(), 0); }); /* (after the box lets go of the focus) */
+  if (edN && P?.bestN?.(edN)) {
+    const b = P.bestN(edN), rk = P.rankOf(b.avg), whenE = b.from === b.to ? S.shortDay(b.from) : `${S.shortDay(b.from)} \u2013 ${S.shortDay(b.to)}`;
+    const back = el("button", { type: "button", class: "link bs-n-reset", title: "Back to their elite stretch" }, "reset"); back.addEventListener("click", () => { delete S.st.bsN[ck]; S.draw(); });
+    return el("p", { class: "bs-profile" }, [el("strong", {}, `${lead} `), el("span", { class: "muted" }, [
+      "Their best stretch of ", nIn, ` ${edN === 1 ? "round" : "rounds in a row"}: ${whenE}, ${b.avg >= 0 ? "+" : "\u2212"}${Math.abs(b.avg).toFixed(2)} per round, good enough for ${rk === 1 ? LEVELS[1] : `${S.ordinal(rk)} on Tour`} (of ${P.N}). `, back])]);
+  }
   return el("p", { class: `bs-profile${bsOn ? " bs-on" : ""}` }, [el("strong", {}, `${lead} `), el("span", { class: "muted" }, [
-    "Their ", bsBtn, `: ${mineRow.n} ${mineRow.n === 1 ? "round" : "rounds in a row"}, `, link, `, enough on ${mineRow.n === 1 ? "its" : "their"} own for ${LEVELS[1]}. That\u2019s the ${place === 1 ? "longest" : `${S.ordinal(place)}-longest`} elite stretch of ${withN} capable ${withN === 1 ? "player" : "players"}.`])]);
+    "Their ", bsBtn, ": ", nIn, ` ${mineRow.n === 1 ? "round" : "rounds in a row"}, `, link, `, enough on ${mineRow.n === 1 ? "its" : "their"} own for ${LEVELS[1]}. That\u2019s the ${place === 1 ? "longest" : `${S.ordinal(place)}-longest`} elite stretch of ${withN} capable ${withN === 1 ? "player" : "players"}.`])]);
 }

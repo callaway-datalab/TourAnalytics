@@ -358,8 +358,14 @@ export function productTrend(S, mine, cat, toggles) {
     if (cat === "OTT" && ottBand[kind]) return ottBand[kind].test(String(s.dist || "")) && !!s.gear;
     return !!s.gear && S.PROD_KINDS[kind].includes(gearInfo(s.gear).kind);
   };
-  const kinds = S.PROD_FOR[cat || ""] || S.PROD_FOR[""];
-  const has = kinds.filter((k) => mine.some((rd) => rd.shots.some((s) => fits(s, k))));
+  const kinds0 = S.PROD_FOR[cat || ""] || S.PROD_FOR[""];
+  // (update 874) only the kinds the filters leave: a Distance picked (Driver …) keeps the products for it alone (no Non-Driver,
+  // Irons or Balls with Driver picked), and a kind with no shots in this selection isn't offered at all
+  const dsel = (S.st.dist || []).map((d) => String(d).split("|").slice(1).join("|")).filter(Boolean);
+  const kindOk = (k) => !dsel.length || (ottBand[k] ? dsel.some((d) => ottBand[k].test(d)) : k !== "Balls" && !(cat === "OTT"));
+  const has0 = kinds0.filter((k) => mine.some((rd) => rd.shots.some((s) => fits(s, k))));
+  const kinds = kinds0.filter((k) => has0.includes(k) && kindOk(k)).length ? kinds0.filter((k) => has0.includes(k) && kindOk(k)) : kinds0.filter(kindOk).length ? kinds0.filter(kindOk) : kinds0;
+  const has = kinds.filter((k) => has0.includes(k));
   if (!has.includes(S.st.productKind)) S.st.productKind = has[0] || kinds[0];
   const kind = S.st.productKind;
   const pills = el("div", { class: "subnav small trend-kinds", role: "radiogroup", "aria-label": "Product type" }, kinds.map((k) => {
