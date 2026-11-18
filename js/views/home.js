@@ -223,7 +223,7 @@ export async function render(main, { previewClient } = {}) {
   // the last 20 rounds as little bars), filled in as the data comes in
   // (update 846) the cards' strokes gained and form coloured on a scale across the cards shown: best green, worst red
   const favGrad = () => { for (const g of ["sg", "fm"]) { const els = [...ovTop.querySelectorAll(`[data-g="${g}"]`)], vs = els.map((x) => Number(x.dataset.v)).filter(Number.isFinite), lo = Math.min(...vs), hi = Math.max(...vs);
-    for (const x of els) { const v = Number(x.dataset.v); x.style.color = !Number.isFinite(v) ? "" : hi === lo ? gradC(v > 0 ? 0.6 : v < 0 ? -0.6 : 0) : gradC(((v - lo) / (hi - lo)) * 2 - 1); } } };
+    for (const x of els) { const v = Number(x.dataset.v); x.style.color = !Number.isFinite(v) ? "" : gradC(divV(v, vs)); } void lo; void hi; } }; // (update 853: diverging at 0)
   const fillHead = (k) => { const hb = headBoxes.get(k); if (!hb) return; try {
     // (update 847) the DP World Tour's numbers are a value an event (eventLevel): counted as events, its bars an event each
     const SY = seasonYr(), raw = sgRounds(rawOf(playerOf(k))), byEv = raw.length > 0 && raw.every((r) => r.eventLevel), all = byEv ? eventsOf(raw).map((e) => ({ ...e.rs[0], shots: [{ cat: "x", sg: avgOf(e.rs, tot) }], date: e.end })) : raw.filter((r) => !r.eventLevel), rs = all.filter((r) => yrOf(r) === SY);
@@ -738,8 +738,8 @@ export async function render(main, { previewClient } = {}) {
     const own = [...tb.rows].filter((x) => !x.hidden && !rows.includes(x) && (!focus || x.classList.contains("td-rk-on") || x.classList.contains("td-rk-tot")));
     for (const tr of own) for (const td of tr.cells) { if (td.dataset.v != null) td.style.color = sgSt(Number(td.dataset.v), scOf(tr.className)).replace("color:", ""); else if (td.dataset.r != null) { const q = Number(td.dataset.r); td.style.color = gradC(1 - 2 * Math.min(1, Math.max(0, q))); } }
     const cols = new Map(); for (const tr of rows) [...tr.cells].forEach((td, i) => { if (td.dataset.v != null || td.dataset.r != null) (cols.get(i) || cols.set(i, []).get(i)).push(td); });
-    for (const tds of cols.values()) { const isR = tds[0].dataset.r != null, vs = tds.map((td) => Number(isR ? td.dataset.r : td.dataset.v)).filter(Number.isFinite), lo = Math.min(...vs), hi = Math.max(...vs);
-      for (const td of tds) { const v = Number(isR ? td.dataset.r : td.dataset.v); if (!Number.isFinite(v) || hi === lo) { td.style.color = ""; continue; } const t = ((v - lo) / (hi - lo)) * 2 - 1; td.style.color = gradC(isR ? -t : t); } }
+    for (const tds of cols.values()) { const isR = tds[0].dataset.r != null, vs = tds.map((td) => Number(isR ? td.dataset.r : td.dataset.v)).filter(Number.isFinite);
+      for (const td of tds) { const v = Number(isR ? td.dataset.r : td.dataset.v); if (!Number.isFinite(v)) { td.style.color = ""; continue; } td.style.color = gradC(isR ? divR(v, vs) : divV(v, vs)); } } // (update 853: diverging at 0 / the median)
     for (const tr of tb.rows) if (tr.hidden || (!rows.includes(tr) && !own.includes(tr))) for (const td of tr.cells) if (td.dataset.v != null || td.dataset.r != null) td.style.color = ""; };
   const expander = (tr, subs) => { if (!subs.length) return; tr.classList.add("td-rk-cat"); tr.setAttribute("role", "button"); tr.tabIndex = 0; subs.forEach((s) => { s.hidden = true; });
     tr._subs = subs;
@@ -751,7 +751,13 @@ export async function render(main, { previewClient } = {}) {
   // (update 842) colours on a scale: red through a neutral grey to green, by how big the number is (strokes gained per round:
   // its own scale for SG: Total, a part of the game and a distance) or where the rank sits in the field
   const mixC = (a, b, t) => { const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)), A = p(a), B = p(b); return `rgb(${A.map((x, i) => Math.round(x + (B[i] - x) * t)).join(",")})`; };
-  const gradC = (t) => (t >= 0 ? mixC("#a1a1a6", "#30d158", Math.min(1, t)) : mixC("#a1a1a6", "#ff453a", Math.min(1, -t)));
+  // (update 853) the middle: grey, 0 (or the median) reads as neutral
+  const neutralC = () => (document.documentElement.getAttribute("data-theme") === "light" ? "#8e8e93" : "#a1a1a6"); // (grey in the middle, as asked)
+  const gradC = (t) => (t >= 0 ? mixC(neutralC(), "#30d158", Math.min(1, t)) : mixC(neutralC(), "#ff453a", Math.min(1, -t)));
+  // (update 853) diverging scales: strokes gained from 0 (positives white to green, scaled to the biggest positive in view;
+  // negatives white to red, to the biggest negative); ranks from the tour's median (better green, worse red) the same way
+  const divV = (v, vs) => { if (v == null || !Number.isFinite(v) || Math.abs(v) < 0.005) return 0; const mx = v > 0 ? Math.max(...vs.filter((x) => x > 0)) : Math.max(...vs.filter((x) => x < 0).map((x) => -x)); return mx > 0 ? (v > 0 ? v / mx : v / mx) : 0; };
+  const divR = (q, qs) => { if (q == null || !Number.isFinite(q) || Math.abs(q - 0.5) < 0.005) return 0; const mx = q < 0.5 ? Math.max(...qs.filter((x) => x < 0.5).map((x) => 0.5 - x)) : Math.max(...qs.filter((x) => x > 0.5).map((x) => x - 0.5)); return mx > 0 ? (q < 0.5 ? (0.5 - q) / mx : -(q - 0.5) / mx) : 0; };
   const sgSt = (v, sc) => (v == null || !Number.isFinite(v) ? "" : `color:${gradC(Math.max(-1, Math.min(1, v / sc)))}`);
   const rkSt = (r, n) => (!r || !n ? "" : `color:${gradC(n > 1 ? 1 - (2 * (r - 1)) / (n - 1) : 0)}`);
   const scOf = (cl) => (/tot/.test(cl) ? 1.5 : /sub/.test(cl) ? 0.3 : 0.75);
