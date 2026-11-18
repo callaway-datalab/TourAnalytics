@@ -971,3 +971,29 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
 .pal-star:hover { background: color-mix(in srgb, var(--gold, #d4b483) 14%, transparent); } .pal-star.on { background: color-mix(in srgb, var(--gold, #d4b483) 22%, transparent); }
 .pal-row:has(.pal-star) { display: flex; align-items: center; gap: 10px; } .pal-row:has(.pal-star) .pal-main { flex: 1; min-width: 0; }
 .td-place { color: var(--td-gold) !important; font-weight: 600; font-size: 0.92rem !important; } /* (update 852) a form story's place on tour */
+/* (update 854) Your Report's pop-up: centred and laid out, never bigger than the screen (it shrinks to fit; see openPop) */
+.td.td-popwrap { padding: 12px; }
+.td-pop { max-height: none !important; overflow: visible; width: min(900px, calc(100vw - 24px)) !important; padding: 22px 28px 18px !important; text-align: center; border-radius: 18px !important; }
+.td-pop.td-pop-scrolls { overflow-y: auto; }
+.td-pop > .td-kick { text-align: center; }
+.td-pop > h2 { margin: 6px 40px 6px !important; text-align: center; font-size: clamp(1.3rem, 3vw, 1.85rem) !important; }
+.td-pop .td-big { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 0 6px !important; }
+.td-pop .td-big .td-cap { display: block; max-width: 560px; margin: 0 auto; font-size: 0.82rem !important; line-height: 1.4; color: var(--td-mute); }
+.td-pop .td-pop-deck { max-width: 620px; margin: 4px auto 14px !important; text-align: center; }
+.td-pop ul.td-pop-deck { display: inline-block; text-align: left; }
+.td-pop-body { display: grid; gap: 18px 28px; align-items: center; justify-items: center; margin: 6px 0 10px; }
+.td-pop-body.two { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.td-pop-body > * { width: 100%; max-width: 560px; margin: 0 auto !important; }
+.td-pop-body .td-chart { max-width: 560px !important; }
+.td-pop-body .td-chart .mc-radar, .td-pop-body svg.mc-radar { max-width: 300px !important; margin: 0 auto; display: block; }
+.td-pop-body .td-legend { justify-content: center; }
+.td-pop-body table { margin: 0 auto; }
+.td-pop-body .td-tape th:first-child, .td-pop-body .td-tape td:first-child { text-align: left; }
+.td-pop-foot { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 8px; }
+.td-pop-foot .td-pop-go { margin-top: 0 !important; }
+.td-pop .td-how { width: 100%; max-width: 620px; text-align: left; border: 1px dashed var(--td-rule2); border-radius: 12px; padding: 8px 14px; }
+.td-pop .td-how > summary { cursor: pointer; list-style: none; text-align: center; } .td-pop .td-how > summary::-webkit-details-marker { display: none; }
+.td-pop .td-how > summary::after { content: " ▸"; } .td-pop .td-how[open] > summary::after { content: " ▾"; }
+.td-pop .td-how ol { margin: 8px 0 2px; padding-left: 20px; font-size: 0.86rem; }
+@media (max-width: 860px) { .td.td-popwrap { place-items: center !important; padding: 8px; } .td-pop { width: calc(100vw - 16px) !important; border-radius: 16px !important; padding: 18px 16px 14px !important; } .td-pop-body.two { grid-template-columns: 1fr; } }
+.td.td-popwrap { inset: 0 !important; margin: 0 !important; max-width: none !important; } .td-pop-place { margin: -6px auto 10px !important; text-align: center; }
