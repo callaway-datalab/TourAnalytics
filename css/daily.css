@@ -1202,3 +1202,14 @@ html[data-theme="light"] .sd-pop { background: #fff; border-color: rgba(0,0,0,0.
 .bs-n-in { width: 3.4em; padding: 1px 4px; margin: 0 2px; border-radius: 6px; border: 1px solid rgba(240,180,64,0.6); background: transparent; color: inherit; font: inherit; font-weight: 700; text-align: center; }
 .bs-n-reset { margin-left: 4px; }
 .bs-profile .bs-n-in { display: inline-block !important; width: 3.6em !important; min-width: 0 !important; height: auto !important; padding: 0 4px !important; vertical-align: baseline; font-size: inherit !important; }
+
+/* (update 875) number boxes without the up / down arrows; "Last" centred with its box */
+.peak-len, .bs-n-in, .hb-min-in { -moz-appearance: textfield; appearance: textfield; }
+.peak-len::-webkit-outer-spin-button, .peak-len::-webkit-inner-spin-button,
+.bs-n-in::-webkit-outer-spin-button, .bs-n-in::-webkit-inner-spin-button,
+.hb-min-in::-webkit-outer-spin-button, .hb-min-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+th.bs-lastn { white-space: nowrap; }
+th.bs-lastn .peak-len { vertical-align: middle !important; position: relative; top: 1px; margin-left: 4px !important; }
+th.bs-lastn .bs-lastn-w { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+th.bs-lastn .bs-lastn-w > span { line-height: 1; }
+th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }

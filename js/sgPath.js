@@ -296,7 +296,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
       hypoLine(),
       infoTip(`${lv ? `${lvHead} rounds: their best ${elite.length}, which together reach ${LEVELS[lv.T]}. ` : ""}Each row is strokes gained per round: the last ${N} rounds, the level\u2019s rounds, and the difference: the last ${N} less the level\u2019s rounds (red: behind the level there, so there\u2019s something to gain; green: already ahead). #1 to #${gaps.length || 5} mark the biggest gaps. Tap a part of the game for its distances, and a distance for the takeaway, target and practice.`),
       el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table sg-full-t bs-path-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num bs-lastn" }, ["Last ", nIn]), el("th", { class: "num", title: best ? `Their best stretch: ${elite.length} rounds in a row` : rest ? `Their other ${season.length - N} rounds` : `${lvHead} rounds` }, lvShort), el("th", { class: "num" }, "Diff")])),
+        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num bs-lastn" }, el("span", { class: "bs-lastn-w" }, [el("span", {}, "Last"), nIn])), el("th", { class: "num", title: best ? `Their best stretch: ${elite.length} rounds in a row` : rest ? `Their other ${season.length - N} rounds` : `${lvHead} rounds` }, lvShort), el("th", { class: "num" }, "Diff")])),
         el("tbody", {}, body)])),
     ]);
   }
