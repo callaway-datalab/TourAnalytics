@@ -317,8 +317,10 @@ export function strategyOf(recs, par, geo = {}) {
     const nameAll = (cs) => cs.map((g) => ({ ...g, k: `${sideOf(g.mem)}|${lieMost(g.mem)}`, n: g.mem.length, cx: g.x, cy: g.y }));
     const named = nameAll(cand);
     // (update 719) and the circles themselves apart on the map: overlapping by 2 yds at most (just touching is fine)
+    // (update 865) circles of different lies may overlap: each counts only its own lie (a fairway circle reaching into a
+    // bunker isn't that bunker), so only circles of the same lie have to be apart
     const apart = (a, b) => { const s0 = new Set(a.mem.map((p) => p.r)); const d = Math.hypot(a.cx - b.cx, a.cy - b.cy), over = (a.ry + b.ry) * geo.ppy - d;
-      return b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n) && over <= 2 * geo.ppy; }; // (update 724: two places can share a name, "long in the rough", when they're apart)
+      return b.mem.filter((p) => s0.has(p.r)).length < 0.5 * Math.min(a.n, b.n) && (over <= 2 * geo.ppy || lieMost(a.mem) !== lieMost(b.mem)); }; // (update 724: two places can share a name, "long in the rough", when they're apart)
     // (update 618) a place to aim has to be safe to aim at: not a sliver of rough or fairway beside a bunker that only
     // scored well by luck. Within 6 yds of a spot's middle, if a quarter or more of all the misses (any lie) are in a
     // bunker, it can't be the best or second best miss (it can still be the worst)
@@ -357,8 +359,9 @@ export function strategyOf(recs, par, geo = {}) {
   // (update 725) and every way of finding them (spots, or misses grouped by side and lie): best first, each circle kept only
   // when it overlaps every circle already kept by 2 yds at most
   const circOf = (g) => (g.at ? g.at("ok") : circ(g.rs, apPt, "ok", TEE_LIM));
+  const lieK = (g) => String(g?.k || "").split("|")[1] || null; // (update 865: a spot's lie, from its name key)
   const separate = (list) => { if (!list) return null; const out = [], cs = [];
-    for (const g of list) { const c = circOf(g); if (c && cs.some((d) => (c[2] + d[2]) - Math.hypot(c[0] - d[0], c[1] - d[1]) > 2 * PPY)) continue; out.push(g); if (c) cs.push(c); }
+    for (const g of list) { const c = circOf(g), L = lieK(g); if (c && cs.some(([d, L2]) => (!L || !L2 || L === L2) && (c[2] + d[2]) - Math.hypot(c[0] - d[0], c[1] - d[1]) > 2 * PPY)) continue; out.push(g); if (c) cs.push([c, L]); }
     return out.length >= 2 ? out : null; };
   const order = separate(ordered(spotOrder)) || separate(ordered(combos.length >= 2 ? combos.map((g) => ({ ...g, lab: lab(g.k) })) : null)) || separate(ordered(bySide.length >= 2 ? bySide : null));
     if (order) {
