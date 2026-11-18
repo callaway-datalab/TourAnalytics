@@ -39,7 +39,7 @@ export function detailBlocks(S, mine, slicedField) {
       return a;
     })),
   ]);
-  if (prodOn) { blocks.push(S.productTrend(mine, cat, toggles)); return blocks; }
+  if (prodOn || mine.length) { blocks.push(S.productTrend(mine, cat, toggles)); return blocks; } // (update 857: SG Trends by Product for every year; a season without product data shows its bars in grey) void prodOn;
   const t = trend(mine, cat || null, S.st.trendBy);
   // Each round / event / month / year: the best result there (Top 1), the average of the best few (Top 10 …)
   // or of everyone (All), among the players who played it, this player included (so if they had the best
@@ -369,7 +369,10 @@ export function productTrend(S, mine, cat, toggles) {
     return a;
   }));
   // the rounds, with only this kind's shots (rounds without any left out)
-  const rs = mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => fits(s, kind)) })).filter((rd) => rd.shots.length);
+  let rs = mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => fits(s, kind)) })).filter((rd) => rd.shots.length);
+  // (update 857) rounds with no product recorded (an older season): every tournament still, in grey, with a note
+  const noProd = !rs.length;
+  if (noProd) rs = mine.map((rd) => ({ ...rd, shots: rd.shots.filter((s) => !cat || s.cat === cat) })).filter((rd) => rd.shots.length);
   if (!rs.length) return S.panelBox("SG Trends by Product", [pills, el("p", { class: "muted small" }, "No product information on these shots: products come from Enter New Round (with WITB) or a club column in an uploaded file.")], "full");
   // grouped as SG Trends groups (round, event, month or year)
   const keyOf = (rd, i) => { const d = localDay(rd.date), ok = !isNaN(d);
@@ -414,8 +417,9 @@ export function productTrend(S, mine, cat, toggles) {
     });
     return el("div", { class: "prod-cmp-row" }, [b, order.length > 8 ? el("span", { class: "muted small" }, " (the 8 most used)") : null]);
   })() : null;
-  return S.panelBox("SG Trends by Product", [pills, legend, S.chartBox((c, as) => S.barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
-    title: `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
+  const noProdNote = noProd ? el("p", { class: "muted small" }, `No product information on these rounds, so every tournament's strokes gained per round ${cat ? `(${cat === "OTT" ? "off the tee" : cat === "APP" ? "approach" : cat === "ARG" ? "around the green" : "putting"}) ` : ""}is shown in grey. Products come from Enter New Round (with WITB) or a club column in an uploaded file.`) : null;
+  return S.panelBox("SG Trends by Product", [pills, noProd ? noProdNote : legend, S.chartBox((c, as) => S.barChart(c, list.map((g) => g.label), list.map((g) => g.value), {
+    title: noProd ? "SG / round" : `SG / round (${kind === "Balls" ? "every shot" : `${kind.toLowerCase()} shots`})`, as: "bar", colors: list.map((g) => colorOf(g.top)),
     shortLabels: list.map((g) => g.short), allTicks: TB === "event", // (update 711: every event named)
     onBarClick: editOn ? (i) => { EDIT.ev = evKey(list[i]); S.draw(); } : null,
     tooltip: (i) => { const g = list[i], all = [...g.prods].sort((a, b) => b[1] - a[1]);
@@ -424,7 +428,7 @@ export function productTrend(S, mine, cat, toggles) {
       const ed = editOf(g);
       return [when, TB === "round" ? g.event : `${g.rounds} ${g.rounds === 1 ? "round" : "rounds"}`, ...all.map(([p, n]) => `${nameOf(p)}${editedTo.has(p) && ed.some((e) => e.to === p) ? " *" : ""}${all.length > 1 ? ` (${Math.round(n)} shot${Math.round(n) === 1 ? "" : "s"})` : ""}`),
         ...ed.map((e) => `* changed by hand${e.from ? ` (was ${nameOf(e.from)})` : " (none was recorded)"}`)].filter(Boolean); },
-  }), "wide", "trend-prod"), editBox, table, toCmp], "full");
+  }), "wide", "trend-prod"), noProd ? null : editBox, noProd ? null : table, noProd ? null : toCmp], "full");
 }
 /*
  * (update 514) Each product's numbers, under the chart: its rounds (the rounds it was used in) and, by kind:

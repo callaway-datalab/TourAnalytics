@@ -997,3 +997,10 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
 .td-pop .td-how ol { margin: 8px 0 2px; padding-left: 20px; font-size: 0.86rem; }
 @media (max-width: 860px) { .td.td-popwrap { place-items: center !important; padding: 8px; } .td-pop { width: calc(100vw - 16px) !important; border-radius: 16px !important; padding: 18px 16px 14px !important; } .td-pop-body.two { grid-template-columns: 1fr; } }
 .td.td-popwrap { inset: 0 !important; margin: 0 !important; max-width: none !important; } .td-pop-place { margin: -6px auto 10px !important; text-align: center; }
+/* (update 857) phones: Best Week's open part of the game lit as whole cards (not cell by cell) */
+@media (max-width: 640px) {
+  .td .td-bw tbody.td-rk-focus tr.td-rk-on td, .td .td-bw tbody.td-rk-focus tr.td-rk-cat.open td { background: none !important; box-shadow: none !important; padding-left: 0 !important; }
+  .td .td-bw tbody.td-rk-focus tr.td-rk-on { background: color-mix(in srgb, var(--td-gold) 7%, transparent); box-shadow: inset 3px 0 0 var(--td-gold); border-radius: 8px; padding-left: 12px; margin: 2px 0; }
+  .td .td-bw tbody.td-rk-focus tr.td-rk-cat.open { background: color-mix(in srgb, var(--td-gold) 15%, transparent); }
+  .td .td-bw tbody.td-rk-focus tr.td-rk-sub.td-rk-on { padding-left: 22px; }
+}

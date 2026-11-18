@@ -795,15 +795,19 @@ export async function render(main, { previewClient } = {}) {
       const tr = el("tr", { class: cl }, [el("td", {}, lbl), el("td", {}, fullEv(b[0].event)), el("td", { class: "v", ...dv(b[1]) }, sg2(b[1])), el("td", { class: "r", ...(okR ? { "data-r": String((i + 1) / at.length) } : {}) }, okR ? `${i + 1} of ${at.length}` : "—"),
         el("td", { class: "v", ...dv(usual.v) }, usual.v == null ? "—" : sg2(usual.v)), el("td", { class: "r", ...(usual.r ? { "data-r": String(usual.r / (usual.n || 1)) } : {}) }, usual.r ? `${usual.r} of ${usual.n}` : "—")]);
       // (update 842) a distance: tap for every event's number in it, as bars
-      if (/sub/.test(cl)) { tr.title = "Every event in it, as bars"; tr.addEventListener("click", (e) => { e.stopPropagation(); evBarsPop(tr.dataset.full || lbl, f, b[0]); }); }
+      if (/sub/.test(cl)) { tr.title = "Every event in it, as bars"; tr.addEventListener("click", (e) => { e.stopPropagation(); evBarsPop(tr.dataset.full || lbl, f, b[0], { bestV: b[1], wk: okR ? `${i + 1} of ${at.length}` : null, usual, nR: useDet ? dr.length : sum.length }); }); } // (update 857: the table's own numbers in the pop-up)
       return tr; };
     // (update 842) a distance range's strokes gained per round at each event this season, a bar each (the best week bright)
-    const evBarsPop = async (lbl, f, bestE) => { const { popup } = await import("./insightPages.js");
+    const evBarsPop = async (lbl, f, bestE, info = {}) => { const { popup } = await import("./insightPages.js");
       const items = evs.map((e) => { const v = avgOf(e.rs, f); return v == null ? null : { v, label: `${fullEv(e.event)} (${e.rs.length} rounds)`, short: shortEv(e.event), hot: e === bestE }; }).filter(Boolean);
       barWide = true; const svg = barSvg(items, { note: `${lbl} by event` }); barWide = false;
       const cN = /^(<|>)?\s*\d/.test(lbl) ? null : lbl, avg = avgOf(items, (x) => x.v);
       popup(`${lbl}: every event of ${SY}`, [svg ? el("div", { class: "td ip-chartbox" }, el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `Strokes gained per round · ${items.length} events`), svg])) : el("p", { class: "muted" }, "Not enough events to chart."),
-        el("p", {}, [`Best: `, el("b", {}, fullEv(bestE.event)), ` · average over the events: `, el("b", { style: sgSt(avg, 0.3) }, `${sg2(avg)} per round`)]), el("p", { class: "ip-samp" }, `${cN || "Strokes gained per round from this distance"}, ${nameOf(k)}, each event of ${SY} with 2+ rounds`)], `Best week · ${nameOf(k)}`); };
+        // (update 857) the same numbers as the row: the best week (and its rank that week) and the usual (the season's
+        // strokes gained per round over every round, and its tour rank), not an average of the bars
+        el("p", {}, [`Best week: `, el("b", {}, fullEv(bestE.event)), ", ", el("b", { style: sgSt(info.bestV, 0.3) }, `${sg2(info.bestV ?? avg)} per round`), info.wk ? ` (${info.wk} that week)` : ""]),
+        info.usual?.v != null ? el("p", {}, [`Usual: `, el("b", { style: sgSt(info.usual.v, 0.3) }, `${sg2(info.usual.v)} per round`), ` over the season (${info.nR} rounds)`, info.usual.r ? `, ${ord1(info.usual.r)} of ${info.usual.n} on tour` : ""]) : null,
+        el("p", { class: "ip-samp" }, `${cN || "Strokes gained per round from this distance"}, ${nameOf(k)}: each event of ${SY} with 2+ rounds as a bar (per round there). The usual is every round of the season together, so it can differ from the bars' middle.`)], `Best week · ${nameOf(k)}`); };
     const tb = el("tbody", {}, [line("SG: Total", tot, false, { v: avgOf(sum, tot), r: R.TOTAL?.get(k), n: R["TOTAL#"] }, "td-rk-tot")].filter(Boolean));
     for (const c of cats) { const f = (r) => inCat(r, c), tr = line(CATN[c], f, false, { v: avgOf(sum, f), r: R[c]?.get(k), n: R[`${c}#`] }); if (!tr) continue;
       const subs = dr.length ? ownRanges(k, c).map((o) => { const fr = (r) => (r.shots || []).reduce((t, s0) => t + (s0.cat === c && s0.dist === o.d ? s0.sg || 0 : 0), 0), dRk = distRank(k, o.q);
