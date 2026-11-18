@@ -860,3 +860,26 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
   .td-fav-av { width: 36px; height: 36px; font-size: 0.8rem; }
 }
 @media (max-width: 640px) { .td-ov-head { flex-wrap: wrap; } .td-ov-head h2 { white-space: nowrap; } }
+/* (update 846) Your favorites: a section like the others; each card a button to the player's pages */
+[data-sec="fav"] { --sec: #ff9f0a; } html[data-theme="light"] [data-sec="fav"] { --sec: #c46a00; }
+.td-ov .td-favsec { margin: 8px 0 18px; }
+.td-favs { display: grid; gap: 8px; margin-top: 10px; }
+.td-ov button.td-fav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px; width: 100%; margin: 0; padding: 12px 16px; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.td-ov button.td-fav:hover .td-fav-id strong { color: var(--td-gold); }
+.td-ov button.td-fav:hover .td-ov-chev { color: var(--td-gold); transform: translateX(2px); }
+.td-ov button.td-fav:focus-visible { outline: 2px solid var(--td-gold); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .td-ov button.td-fav { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding: 10px 12px; }
+  .td-ov button.td-fav .td-fav-stats { grid-column: 1 / -1; justify-content: space-between; gap: 10px; } .td-ov button.td-fav .td-ov-chev { grid-row: 1; grid-column: 3; }
+}
+/* (update 846) Skill Importance's chart: a row for each distance, the player's bar and the top 10's from a centre line */
+.td-skill .td-sk-rows { display: grid; gap: 6px; margin: 8px 0; }
+.td-sk-row { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); align-items: center; gap: 10px; }
+.td-sk-l { font: 600 0.78rem var(--td-sans); color: var(--td-soft); white-space: nowrap; }
+.td-sk-bar { position: relative; height: 14px; margin: 2px 0; background: linear-gradient(to right, transparent calc(50% - 0.5px), var(--td-rule2) calc(50% - 0.5px), var(--td-rule2) calc(50% + 0.5px), transparent calc(50% + 0.5px)); }
+.td-sk-bar i { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; }
+.td-sk-bar.me i { background: #8e8e93; } .td-sk-bar.top i { background: var(--td-gold); }
+.td-sk-bar span { position: absolute; right: 0; top: 50%; transform: translateY(-50%); font: 700 0.7rem var(--td-sans); font-variant-numeric: tabular-nums; }
+.td-sk-bar span.up { color: var(--td-up); } .td-sk-bar span.down { color: var(--td-down); }
+.td-sk-bar { padding-right: 0; margin-right: 4.2em; } .td-sk-bar span { right: -4.2em; }
+.td-sk-bar.me i { background: #4da3ff; } .td-sk-bar.top i { background: #f0b440; } html[data-theme="light"] .td-sk-bar.me i { background: #1f5fbf; }

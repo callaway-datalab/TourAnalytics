@@ -6,7 +6,7 @@
 // the admin any player, and the tour.
 import { el, mount, calAllowed, holdToTalk, icon } from "../ui.js";
 import { getState } from "../auth.js";
-import { setCurrent, currentPlayer, onCurrent } from "../current.js"; // (update 817: a story's player becomes the header's player)
+import { setCurrent, currentPlayer, onCurrent, openStatsTab } from "../current.js"; // (update 817: a story's player becomes the header's player)
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { detectColumns, isShotData, summaryPlayers, gearInfo, STAT_DEFS } from "../sg.js";
@@ -221,39 +221,46 @@ export async function render(main, { previewClient } = {}) {
   let playerBuild = null; const secBoxes = new Map(), headBoxes = new Map();
   // (update 845) a favorite's card: the line under the name and their numbers (strokes gained total and its tour rank, form,
   // the last 20 rounds as little bars), filled in as the data comes in
+  // (update 846) the cards' strokes gained and form coloured on a scale across the cards shown: best green, worst red
+  const favGrad = () => { for (const g of ["sg", "fm"]) { const els = [...ovTop.querySelectorAll(`[data-g="${g}"]`)], vs = els.map((x) => Number(x.dataset.v)).filter(Number.isFinite), lo = Math.min(...vs), hi = Math.max(...vs);
+    for (const x of els) { const v = Number(x.dataset.v); x.style.color = !Number.isFinite(v) ? "" : hi === lo ? gradC(v > 0 ? 0.6 : v < 0 ? -0.6 : 0) : gradC(((v - lo) / (hi - lo)) * 2 - 1); } } };
   const fillHead = (k) => { const hb = headBoxes.get(k); if (!hb) return; try {
-    const SY = seasonYr(), all = sgRounds(rawOf(playerOf(k))).filter((r) => !r.eventLevel), rs = all.filter((r) => yrOf(r) === SY);
+    // (update 847) the DP World Tour's numbers are a value an event (eventLevel): counted as events, its bars an event each
+    const SY = seasonYr(), raw = sgRounds(rawOf(playerOf(k))), byEv = raw.length > 0 && raw.every((r) => r.eventLevel), all = byEv ? eventsOf(raw).map((e) => ({ ...e.rs[0], shots: [{ cat: "x", sg: avgOf(e.rs, tot) }], date: e.end })) : raw.filter((r) => !r.eventLevel), rs = all.filter((r) => yrOf(r) === SY);
     const tn = tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour";
     if (!rs.length) { hb.sub.textContent = field.length ? `No rounds on ${tourPick && tourPick !== ALL ? `the ${tn}` : "record"} in ${SY}` : "Loading…"; mount(hb.stats, []); return; }
     const R = ranksFor(SY).by, rk = R.TOTAL?.get(k), n = R["TOTAL#"], av = avgOf(rs, tot), fm = formAll.get(k)?.x;
     const ent = fieldsPI ? ["R", "H"].flatMap((c) => fieldsPI.fieldEventsSync(nameOf(k), c) || []).sort((a, b) => String(a.start).localeCompare(String(b.start)))[0] : null;
-    hb.sub.textContent = [tn, `${rs.length} rounds in ${SY}`, ent ? `Next: ${fullEv(ent.name)}` : null].filter(Boolean).join(" · ");
+    hb.sub.textContent = [tn, `${rs.length} ${byEv ? "events" : "rounds"} in ${SY}`, ent ? `Next: ${fullEv(ent.name)}` : null].filter(Boolean).join(" · ");
     const last = all.slice(-20), mx = Math.max(0.5, ...last.map((r) => Math.abs(tot(r)))), W = 100, H = 30, bw = W / Math.max(1, last.length);
     const svg = mk0("svg", { viewBox: `0 0 ${W} ${H}`, class: "td-fav-spark", "aria-hidden": "true" }); svg.append(mk0("line", { x1: 0, x2: W, y1: H / 2, y2: H / 2, class: "td-fav-zero" }));
     last.forEach((r, i) => { const v = tot(r), h = Math.max(1, (Math.abs(v) / mx) * (H / 2 - 1)); svg.append(mk0("rect", { x: (i * bw + bw * 0.15).toFixed(1), y: (v >= 0 ? H / 2 - h : H / 2).toFixed(1), width: (bw * 0.7).toFixed(1), height: h.toFixed(1), rx: 0.8, class: v >= 0 ? "up" : "down" })); });
-    const stat = (big, lab, c0) => el("div", { class: "td-fav-stat" }, [el("strong", { class: c0 || "" }, big), el("span", {}, lab)]);
-    mount(hb.stats, [stat(sg2(av), rk ? `SG: Total · ${ord1(rk)} of ${n}` : "SG: Total per round", cls(av)),
-      fm ? stat(`${fm.d >= 0 ? "▲" : "▼"} ${Math.abs(fm.d).toFixed(2)}`, `form, last ${fm.n}${/event/.test(fm.FL || "") ? " events" : ""}`, cls(fm.d)) : null,
+    const stat = (big, lab, g, v) => el("div", { class: "td-fav-stat" }, [el("strong", { "data-g": g, "data-v": String(v) }, big), el("span", {}, lab)]);
+    mount(hb.stats, [stat(sg2(av), rk ? `SG: Total · ${ord1(rk)} of ${n}` : "SG: Total per round", "sg", av),
+      fm ? stat(`${fm.d >= 0 ? "▲" : "▼"} ${Math.abs(fm.d).toFixed(2)}`, `form, last ${fm.n}${/event/.test(fm.FL || "") ? " events" : ""}`, "fm", fm.d) : null,
       el("div", { class: "td-fav-sparkw", title: "The last 20 rounds, strokes gained total" }, svg)]);
   } catch (e) { console.warn("favorite card", e); } }; // (update 839) a favorite's row: its sections' box
   const fillSecs = (k) => { const b = secBoxes.get(k); if (!b || !playerBuild) return; const r0 = playerBuild(k);
     mount(b, r0.laid.length ? el("div", { class: "td-grid" }, r0.laid) : el("p", { class: "td-wait" }, "No stories about them yet.")); };
-  const ovKeys = () => (selfKey ? [selfKey] : picked.size ? [...picked] : (favs.length ? favs : keys).filter((k, i, a) => a.indexOf(k) === i));
+  const hasSeason = (k) => { try { const SY = seasonYr(); return !field.length || sgRounds(rawOf(playerOf(k))).some((r) => yrOf(r) === SY); } catch { return true; } };
+  const ovKeys = () => (selfKey ? [selfKey] : picked.size ? [...picked] : (favs.length ? favs : keys).filter((k, i, a) => a.indexOf(k) === i).filter(hasSeason)); // (update 847: none without rounds on the tour picked)
   const ovTop = el("section", { class: "td-ov" }), frontBox = el("div", { class: "td-frontbox" }); // (update 837: the front page above it)
   async function drawOvTop() {
     const ks = ovKeys();
-    const sig = ks.join(","); if (ovTop.dataset.sig === sig) return; ovTop.dataset.sig = sig; secBoxes.clear(); headBoxes.clear();
+    const sig = `${ks.join(",")}|${tourPick}`; if (ovTop.dataset.sig === sig) return; ovTop.dataset.sig = sig; secBoxes.clear(); headBoxes.clear();
     if (!ks.length) { mount(ovTop, []); return; }
-    if (ks.length === 1) { mount(ovTop, []); return; } // (update 841: no overview on Home; one player's sections are the page's)
-    mount(ovTop, [el("div", { class: "td-ov-head" }, [el("h2", {}, favs.length ? "Your favorites" : "Your players"), el("span", {}, "Tap a player for their stories")]),
-      ...ks.map((k) => { const secB = el("div", { class: "td-ov-secs" });
+    if (selfKey || picked.size) { mount(ovTop, []); return; } // (update 847: one player picked (or your own); a filtered list of one still shows) // (update 841: no overview on Home; one player's sections are the page's)
+    // (update 846) a section like the others; each card opens that player's pages, as picking them in Search does
+    mount(ovTop, el("section", { class: "td-sec full td-favsec", id: "td-fav", "data-sec": "fav" }, [el("div", { class: "td-sh" }, [el("h2", {}, favs.length ? "Your favorites" : "Your players"), el("span", {}, "Tap a player to open their pages")]),
+      el("div", { class: "td-favs" }, ks.map((k) => {
         // (update 845) a card: initials, the name and a line under it (tour, rounds, next event), then their numbers
         const nm = nameOf(k), ini = nm.split(/\s+/).filter(Boolean).map((w) => w[0]).filter((ch) => /[A-Z]/.test(ch)).slice(0, 1).concat(nm.split(/\s+/).filter(Boolean).slice(-1).map((w) => w[0].toUpperCase())).join("");
         const hb = { sub: el("span", { class: "td-fav-sub" }, ""), stats: el("div", { class: "td-fav-stats" }) }; headBoxes.set(k, hb);
-        const det = el("details", { class: "td-ov-p td-fav" }, [el("summary", {}, [el("span", { class: "td-fav-av", "aria-hidden": "true", style: `--h:${Math.round(hash(nm) * 360)}` }, ini),
-          el("div", { class: "td-fav-id" }, [el("strong", {}, nm), hb.sub]), hb.stats, el("span", { class: "td-ov-chev", "aria-hidden": "true" }, "›")]), secB]); // (update 841: their sections only, no overview)
-        secBoxes.set(k, secB); fillHead(k);
-        det.addEventListener("toggle", () => { if (det.open) fillSecs(k); }); return det; })]); // (update 839: and their sections)
+        const card = el("button", { type: "button", class: "td-fav", title: `Open ${nm}'s pages` }, [el("span", { class: "td-fav-av", "aria-hidden": "true", style: `--h:${Math.round(hash(nm) * 360)}` }, ini),
+          el("div", { class: "td-fav-id" }, [el("strong", {}, nm), hb.sub]), hb.stats, el("span", { class: "td-ov-chev", "aria-hidden": "true" }, "›")]);
+        card.addEventListener("click", () => { setCurrent({ key: k, label: nm }); openStatsTab("full"); });
+        fillHead(k); return card; }))]));
+    favGrad();
   }
   mount(root, [ // (update 839: the Daily Tour Report and its headings first, then the front page, Your favorites, the sections)
     el("header", { class: "td-mast" }, el("h1", {}, ["Daily Tour ", el("i", {}, "Report")]) /* (update 776) */), /* (update 750: was "The Daily Tour") */
@@ -546,7 +553,15 @@ export async function render(main, { previewClient } = {}) {
   function chartFor(h) { try {
     const t = h.id.split("-")[0], x = h.x || {};
     // (update 797) a skill at the course: the player against the top 10 in each part of the game (strokes gained per round)
-    if (x.skill?.bands?.length) { const sk = x.skill, g = groupBars(sk.bands.map((b0) => ({ label: String(b0).replace(/^\w+\|/, "").replace(/ tee shots$/, ""), a: sk.a[b0] ?? 0, b: sk.top[b0] ?? 0 })), { la: sk.who, lb: "Top 10", fmt: (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3) }); /* (update 799: that part of the game by distance; 803: a shot, 3 decimals) */
+    if (x.skill?.bands?.length) { const sk = x.skill, lbl0 = (b0) => String(b0).replace(/^\w+\|/, "").replace(/ tee shots$/, ""), f3 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3);
+      // (update 846) readable at any width: a row for each distance, two bars from a centre line
+      const absV = sk.bands.flatMap((b0) => [Math.abs(sk.a[b0] ?? 0), Math.abs(sk.top[b0] ?? 0)]).sort((p0, q0) => q0 - p0);
+      const mxS = Math.max(0.001, absV[1] && absV[0] > absV[1] * 2.5 ? absV[1] * 1.3 : absV[0] || 0); // (one outlier doesn't flatten the rest: its bar runs to the edge)
+      const barS = (v, c0) => { v = v ?? 0; const w = Math.min(50, (Math.abs(v) / mxS) * 50); return el("div", { class: `td-sk-bar ${c0}` }, [el("i", { style: `width:${w.toFixed(1)}%;${v >= 0 ? "left:50%" : `left:${(50 - w).toFixed(1)}%`}` }), el("span", { class: v >= 0 ? "up" : "down" }, f3(v))]); };
+      return el("div", { class: "td-chart td-skill" }, [el("div", { class: "td-kick mute" }, `${CATN[sk.cat]} by distance · strokes gained a shot ${sk.where}`),
+        el("div", { class: "td-sk-rows" }, sk.bands.map((b0) => el("div", { class: "td-sk-row" }, [el("span", { class: "td-sk-l" }, lbl0(b0)), el("div", {}, [barS(sk.a[b0], "me"), barS(sk.top[b0], "top")])]))),
+        el("div", { class: "td-legend" }, [el("span", { class: "gray" }, sk.who), el("span", { class: "gold" }, "Top 10")])]);
+      const g = 0 && groupBars(sk.bands.map((b0) => ({ label: String(b0).replace(/^\w+\|/, "").replace(/ tee shots$/, ""), a: sk.a[b0] ?? 0, b: sk.top[b0] ?? 0 })), { la: sk.who, lb: "Top 10", fmt: (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3) }); /* (update 799: that part of the game by distance; 803: a shot, 3 decimals) */
       return g ? el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `${CATN[sk.cat]} by distance · strokes gained a shot ${sk.where}`), g, el("div", { class: "td-legend" }, [el("span", { class: "gray" }, sk.who), el("span", { class: "gold" }, "Top 10")])]) : null; }
     if (t === "fm" && x.ra && x.rb) return el("div", { class: "td-chart" }, [radarSvg(cats.map((c0) => CSHORT[c0]), [{ vals: x.rb, cls: "a", label: `The ${x.n} before` }, { vals: x.ra, cls: "b", label: `The last ${x.FL}` }]), el("div", { class: "td-legend" }, [el("span", { class: "gold" }, `Last ${x.FL}`), el("span", { class: "gray" }, `${x.FL} before`)])]);
     if (t === "fd" && x.lastR) return formRounds(x, x.c); /* (update 805: a range's form, round by round) */
@@ -854,11 +869,13 @@ export async function render(main, { previewClient } = {}) {
       run.push(x); done.add(x); }
     flush();
     return { secs, laid, pairRest }; };
-    const multiFav = ovKeys().length > 1;
-    const { secs, laid, pairRest } = buildSecs(multiFav ? ["tour"] : orderNow(), sorted, subjK);
+    const multiFav = !selfKey && !picked.size && (favs.length ? favs : keys).length > 1; // (update 847)
+    // (update 846) several players: the course's Skill Importance and Hole Strategy (and This Week) on the page, above Around the Tour
+    const pageRest = multiFav ? sorted.filter((h) => SEC_OF[h.kind] === "tour" || (SEC_OF[h.kind] === "course" && cgOf(h) !== "player") || (SEC_OF[h.kind] === "next" && !h.k)) : sorted;
+    const { secs, laid, pairRest } = buildSecs(multiFav ? ["next", "course", "tour"] : orderNow(), pageRest, subjK);
     playerBuild = (k) => buildSecs(PLAYER_IDS, sorted.filter((h) => h.k === k || (!h.k && ["course", "next"].includes(SEC_OF[h.kind]))), k, `-${String(k).replace(/[^a-z0-9]/gi, "")}`);
     for (const [k, b] of secBoxes) if (b.closest("details")?.open) fillSecs(k);
-    for (const k of headBoxes.keys()) fillHead(k); // (update 845)
+    drawOvTop().catch(() => {}); for (const k of headBoxes.keys()) fillHead(k); favGrad(); // (update 845) (847: the list again for the tour picked)
     shownLead = lead?.id || null;
     const reB = el("button", { type: "button", class: "td-shuf td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻ Shuffle") /* (update 790: as Did You Know's) */;
     reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
