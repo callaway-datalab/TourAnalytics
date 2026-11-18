@@ -636,9 +636,9 @@ export function openDirectory() {
   document.querySelector(".sd-wrap")?.remove();
   const st = window.__authState || {}, kind = shellKind(), admin = kind === "admin";
   const groups = new Map(), add = (g, label, href, note = "") => (groups.get(g) || groups.set(g, []).get(g)).push({ label, href, note });
-  add("Your Report", "Your Tour Report", "#/home", "The front page: your players' stories, the next event's course strategy, around the tour");
+  add("Your Report", "Your Tour Report", "#/home"); // (update 871: no descriptions)
   for (const sec of sectionsFor(kind)) for (const it of sec.items) if (!it[3]?.off) add(sec.label, it[0], it[1]);
-  for (const y of groups.get("Play") || []) if (y.label === "Course Prep") y.note = "Course Insights & History, Strategy Maps and reports: pick a course, then its page";
+
   add("Account", "Profile", "#/account"); add("Account", st.isAdmin || st.profile?.kind === "analyst" ? "Chat" : "Chat & support", st.isAdmin ? "#/admin/questions" : "#/questions");
   if (st.isAdmin || st.profile?.kind === "analyst") add("Account", "Bulk Reports", "#/bulk-reports");
   if (admin) { add("Admin", "User Access", "#/admin/clients"); add("Admin", "Upload Data", "#/admin/datasets"); add("Admin", "Goals (every player)", "#/admin/goals"); add("Admin", "Documents", "#/admin/documents"); }
@@ -646,15 +646,61 @@ export function openDirectory() {
   const x = el("button", { type: "button", class: "sd-x", "aria-label": "Close" }, "\u00d7"); x.addEventListener("click", close);
   const q = el("input", { type: "search", class: "sd-q", placeholder: "Find a page", "aria-label": "Find a page" });
   const body = el("div", { class: "sd-body" });
+  // (update 871) typing also finds the parts of pages (Best Stretches on Player Stats, the Leaderboard on Tournament Results …):
+  // the ones every page has, and every heading seen on a page since (learned as you go); a tap opens the page there
+  const viewHref = (v) => { for (const sec of sectionsFor(kind)) for (const it of sec.items) if (it[3]?.view === v) return it[1]; return null; };
   const draw = () => { const t = q.value.trim().toLowerCase();
-    mount(body, [...groups].map(([g, xs]) => { const ys = xs.filter((y) => !t || `${g} ${y.label} ${y.note}`.toLowerCase().includes(t)); if (!ys.length) return null;
-      return el("section", { class: "sd-grp" }, [el("h3", {}, g), el("ul", {}, ys.map((y) => { const a = el("a", { href: y.href }, [el("b", {}, y.label), y.note ? el("span", {}, y.note) : null]); a.addEventListener("click", () => setTimeout(close, 0)); return el("li", {}, a); }))]); }).filter(Boolean)); };
+    const secs = t.length >= 2 ? siteSections(viewHref).filter((x) => `${x.text} ${x.alias || ""} ${x.page}`.toLowerCase().includes(t)).slice(0, 14) : [];
+    mount(body, [secs.length ? el("section", { class: "sd-grp sd-found" }, [el("h3", {}, "On the pages"), el("ul", {}, secs.map((x) => { const a = el("a", { href: x.href }, [el("b", {}, x.text), el("span", {}, x.page)]);
+      a.addEventListener("click", (e) => { e.preventDefault(); close(); goToSection(x.href, x.text, x.view, x.sel); }); return el("li", {}, a); }))]) : null, ...[...groups].map(([g, xs]) => { const ys = xs.filter((y) => !t || `${g} ${y.label} ${y.note}`.toLowerCase().includes(t)); if (!ys.length) return null;
+      return el("section", { class: "sd-grp" }, [el("h3", {}, g), el("ul", {}, ys.map((y) => { const a = el("a", { href: y.href }, [el("b", {}, y.label), y.note ? el("span", {}, y.note) : null]); a.addEventListener("click", () => setTimeout(close, 0)); return el("li", {}, a); }))]); })].filter(Boolean)); };
   q.addEventListener("input", draw); draw();
   const wrap = el("div", { class: "sd-wrap", role: "dialog", "aria-label": "Site Directory" }, el("div", { class: "sd-pop" }, [el("div", { class: "sd-head" }, [el("h2", {}, "Site Directory"), x]), q, body]));
   wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } });
   document.body.append(wrap); setTimeout(() => q.focus(), 0);
 }
+
+// (update 871) the parts of pages: the ones every page has (seeded), and the headings seen on pages since (kept on this device)
+const SEED_SECTIONS = [
+  ["full", "Player Stats", "Summary"], ["full", "Player Stats", "Best Stretches", "best stretch elite stretch #1 level elite round share", ".sg-full-top"], ["full", "Player Stats", "Getting better or worse?", "trend form"],
+  ["full", "Player Stats", "SG Trends", "strokes gained trend"], ["full", "Player Stats", "SG Trends by Product", "equipment club ball"], ["full", "Player Stats", "Tournaments", "events"],
+  ["full", "Player Stats", "Best & worst tournaments", "best week worst week"], ["full", "Player Stats", "Ability vs Consistency", "steadiness"], ["full", "Player Stats", "Where you stand", "rank"],
+  ["results", "Tournament Results", "Leaderboard", "finish"], ["results", "Tournament Results", "Scorecard", "holes"], ["fit", "Course Fit", "Best fits", "toughest fits"],
+  ["compare", "Comparisons", "Players", "compare"], ["bag", "What's in the Bag", "All clubs", "witb equipment"], ["practice", "Practice & Goals", "Recommended practice", "drills"],
+];
+const IDX_KEY = "ta.siteIdx";
+function learnedSections() { try { return JSON.parse(localStorage.getItem(IDX_KEY) || "[]"); } catch { return []; } }
+function siteSections(viewHref) {
+  const out = [], seen = new Set(), push = (x) => { const k = `${x.text.toLowerCase()}|${x.page}`; if (seen.has(k) || !x.href) return; seen.add(k); out.push(x); };
+  for (const [v, page, text, alias, sel] of SEED_SECTIONS) push({ text, page, alias, href: viewHref(v), view: v, sel });
+  for (const x of learnedSections()) push(x);
+  return out;
+}
+/** open a page and scroll to a heading on it (Stats: its view, then the heading, as Home's links do) */
+export function goToSection(href, text, view = null, sel = null) {
+  try { if (view) sessionStorage.setItem("ta.statsPreset", JSON.stringify({ at: Date.now(), st: { view2: view }, ...(sel ? {} : { scroll: text }) })); sessionStorage.setItem("ta.find", JSON.stringify({ at: Date.now(), text, sel })); } catch { /* */ }
+  if (location.hash === href) { window.dispatchEvent(new HashChangeEvent("hashchange")); } else location.hash = href;
+  findSoon();
+}
+const HEAD_SEL = "h1, h2, h3, .fx-eyebrow, .td-tg-h, .td-sh h2, summary, .sec-title";
+function findSoon() {
+  let f = null; try { f = JSON.parse(sessionStorage.getItem("ta.find") || "null"); } catch { /* */ } if (!f || Date.now() - f.at > 20000) return;
+  let n = 0; const t = setInterval(() => { n++; const want = String(f.text).toLowerCase();
+    const hit = f.sel ? document.querySelector(`#main ${f.sel}`) : [...document.querySelectorAll(`#main ${HEAD_SEL.split(", ").join(", #main ")}`)].find((h) => h.textContent.trim().toLowerCase().startsWith(want));
+    if (hit) { clearInterval(t); try { sessionStorage.removeItem("ta.find"); } catch { /* */ } hit.scrollIntoView({ behavior: "smooth", block: "start" }); const box = hit.closest("section, .panel, article") || hit; box.classList.add("sd-flash"); setTimeout(() => box.classList.remove("sd-flash"), 2400); }
+    else if (n > 60) clearInterval(t); }, 250);
+}
+// learn the headings on each page opened (a few seconds after it draws), so the Site Directory can find them later
+{ const page = () => { const h = location.hash.split("?")[0], links = (() => { try { return siteLinks(); } catch { return []; } })(), v = new URLSearchParams(location.hash.split("?")[1] || "").get("view");
+    const l = links.find((x) => x.href.split("?")[0] === h && (!v || x.href.includes(`view=${v}`))) || links.find((x) => x.href.split("?")[0] === h); return l?.label || h.replace(/^#\//, ""); };
+  const learn = () => { try { const main = document.getElementById("main"); if (!main) return; const href = location.hash || "#/home", pg = page(), v = new URLSearchParams(href.split("?")[1] || "").get("view") || null;
+    const got = [...main.querySelectorAll(HEAD_SEL)].map((x) => x.textContent.trim().replace(/\s+/g, " ")).filter((x) => x.length >= 3 && x.length <= 60 && !/^[ⓘ×▸▾]/.test(x));
+    if (!got.length) return; const cur = learnedSections().filter((x) => !(x.href === href && got.includes(x.text)));
+    const add = [...new Set(got)].map((text) => ({ text, page: pg, href, view: /^#\/(dashboard|player-stats|admin\/player-stats)/.test(href) ? v || "full" : null }));
+    localStorage.setItem(IDX_KEY, JSON.stringify([...add, ...cur].slice(0, 600))); } catch { /* */ } };
+  const later = () => { setTimeout(learn, 3000); setTimeout(learn, 9000); findSoon(); };
+  addEventListener("hashchange", later); if (document.readyState === "complete") later(); else addEventListener("load", later); }
 
 /** (update 643) every page someone can open from the menus, for Cal to take them there: [{ label, href, section }] */
 export function siteLinks() {
