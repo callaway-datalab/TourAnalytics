@@ -123,14 +123,15 @@ const sectionsFor = (kind) => {
   const admin = kind === "admin", player = kind === "client";
   // (update 164) Watchlist: anyone with more than one player (Home for a player, or one player's coach)
   const multi = admin || (kind === "team" && teamCount() > 1);
+  const statsItem = ([v, label]) => [label, `${admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard"}?view=${v}`,
+    admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"], { view: v }];
   const dataItems = [
     // (update 292) the Watchlist is the first page of Analyze (and what Analyze opens on)
     // (update 609) the Watchlist is off the menu for now; (610) Home is its own header link, left of Analyze
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     // (update 505) Watchlist, Stats, Compare, Leaderboards
     // (update 833) Stats' views are its row of pages (the tabs that were on the page): each opens Stats on that view
-    ...STATS_VIEWS.map(([v, label]) => [label, `${admin ? "#/admin/player-stats" : kind === "team" && teamCount() > 1 ? "#/player-stats" : "#/dashboard"}?view=${v}`,
-      admin ? ["admin-player-stats"] : ["dashboard", "dataset", "player-stats"], { view: v }]),
+    ...STATS_VIEWS.filter(([v]) => !PLAY_VIEWS.includes(v)).map(statsItem), // (update 858: What's in the Bag and Practice & Goals are under Play)
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     // (update 817) the Player Dossier (Overview), Course Fit and Practice & Goals are tabs on Stats now
@@ -149,6 +150,7 @@ const sectionsFor = (kind) => {
   const planItems = [
     ["Enter New Round", "#/entry", ["entry", "entry-new", "entry-round"]],
     ["Course Prep", "#/course-prep", admin ? ["course-prep", "admin-documents", "admin-reports-view"] : ["course-prep"], {}], // (update 827)
+    ...STATS_VIEWS.filter(([v]) => PLAY_VIEWS.includes(v)).map(statsItem), // (update 858: still Stats' own views, listed under Play)
   ];
   return [
     { id: "data", label: "Stats", icon: "data", items: dataItems }, // (update 827: was Analyze)
@@ -161,6 +163,10 @@ const NAV = { admin: [["#/admin/clients", "people", "User Access", ["admin-clien
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
 // (update 833) Stats' views, its row of pages; the one showing is ?view= in the address (Overview when there's none)
 export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Comparisons"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
+// (update 858) What's in the Bag and Practice & Goals are listed under Play (they're still Stats' views)
+export const PLAY_VIEWS = ["bag", "practice"];
+/** (update 858) can Stats switch from the view showing to `view` in place? Only within the same header (Stats or Play), so the header and its row of pages redraw when it changes */
+export const sameStatsHeader = (view) => PLAY_VIEWS.includes(view) === PLAY_VIEWS.includes(statsViewNow());
 export const statsViewNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "full";
 const itemOn = (item, routeId) => {
   const [, , routes, opt = {}] = item;
@@ -187,7 +193,7 @@ function viewLink(a, view) {
   if (!view) return a;
   a.dataset.view = view;
   a.addEventListener("click", (e) => {
-    if (!document.querySelector(".st-host")) return; // (Stats isn't showing: a normal link)
+    if (!document.querySelector(".st-host") || !sameStatsHeader(view)) return; // (Stats isn't showing, or it's under the other header: a normal link)
     e.preventDefault(); history.replaceState(history.state, "", a.getAttribute("href"));
     window.dispatchEvent(new CustomEvent("ta-stats-view", { detail: { view } })); syncStatsNav(); closeBotPop();
   });
