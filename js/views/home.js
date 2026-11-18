@@ -685,7 +685,19 @@ export async function render(main, { previewClient } = {}) {
   // player's record and how the course plays for them; Skill Importance: what kind of week it is and what wins
   const cgOf = (h) => (/^up-(att|agg)$/.test(h.id) ? "talk" : /* (update 869: how the course plays (the field's): Course Strategy) */ /^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(talk|skill|mix)/.test(h.id) ? "skill" : "hole"); // (update 804: a hole (where the top 10 win it) is hole strategy)
   let courseShuf = 0; const secShuf = {}, secSeen = {}, secMore = {}; const MORE3 = ["form", "spot", "focus", "res", "gear"]; const STEP = (id) => (id === "gear" ? 4 : 3); // (update 821: Equipment 4 at a time) // (update 820: 3 at a time, "Show more" for 3 more) // (update 797/801: the sections' shuffles)
-  const courseGroups = (list, shown = []) => el("div", { class: "td-cgroups" }, [["talk", "Talking Points"], ["player", "Player Outlook"], ["skill", "Skill Importance"], ["hole", "Course Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3); shown.push(...xs); void courseShuf;
+  // (update 870) each group's three: Skill Importance the part of the game first, then its distances; Hole Strategy the holes
+  // and pins to take advantage of and to worry about (the best chance, the costliest miss, then the next of either)
+  const pick3 = (g, xs) => {
+    if (g === "skill") return [...xs].sort((a, b) => (a.id === "up-talk" ? 0 : 1) - (b.id === "up-talk" ? 0 : 1)).slice(0, 3);
+    if (g !== "hole") return xs.slice(0, 3);
+    const first = (ids, pool) => { for (const id of ids) { const h = pool.find((x) => x.id === id || x.id.startsWith(`${id}-`)); if (h) return h; } return null; };
+    const GOOD = ["up-attack", "up-golay", "up-easy", "up-pars"], BAD = ["up-side", "up-defend", "up-hard", "up-fw", "up-top10"];
+    const out = [], left = () => xs.filter((x) => !out.includes(x));
+    const a = first(GOOD, xs); if (a) out.push(a); const b = first(BAD, left()); if (b) out.push(b);
+    const c = first(BAD, left()) || first(GOOD, left()); if (c) out.push(c);
+    for (const x of left()) { if (out.length >= 3) break; out.push(x); }
+    return out.slice(0, 3); };
+  const courseGroups = (list, shown = []) => el("div", { class: "td-cgroups" }, [["talk", "Talking Points"], ["player", "Player Outlook"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const xs = pick3(g, list.filter((h) => cgOf(h) === g)); shown.push(...xs); void courseShuf;
     return xs.length ? el("div", { class: "td-cgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-cols" }, xs.map(column))]) : null; }));
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
   // (update 740) a different paper every day: each story's place moves a little with the date (the evergreen ones, about a
@@ -1634,7 +1646,8 @@ export async function render(main, { previewClient } = {}) {
     // (update 849) Talking points: what to say if someone asks about the course this week (no player in them; per round)
     if (c && upRaw?.id === c.id) { const R0 = upRaw, CW = { OTT: "driving", APP: "approach play", ARG: "the short game", PUTT: "putting" }, p2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
       const ce = R0.catEdge || [], top = ce[0], low = ce.at(-1);
-      const bands = Object.keys(R0.bandTopR || {}).filter((b0) => R0.bandRestR?.[b0] != null).map((b0) => ({ b: b0, d: R0.bandTopR[b0] - R0.bandRestR[b0] })).sort((a, b) => b.d - a.d), kb = bands[0];
+      // (update 870) the skill that decides it, in the stats data's own ranges (as the What wins chart), not the course file's bands
+      const bands = ["APP", "ARG", "PUTT"].flatMap((c0) => (courseBands(R0, c0, null, -1) || []).filter((b0) => b0.top != null && b0.rest != null).map((b0) => ({ b: `${c0}|${b0.l}`, d: b0.top - b0.rest }))).sort((a, b) => b.d - a.d), kb = bands[0];
       const bl = (b0) => { const [c0, rest0] = String(b0).split("|"); return c0 === "OTT" ? `driving on ${rest0.replace(/ tee shots$/, "s").toLowerCase()}` : `${CW[c0]} from ${rest0}`; };
       const H = R0.holesR || [], toParR = H.reduce((t, o) => t + (o.avg || 0), 0), parT = H.reduce((t, o) => t + (o.par || 0), 0), birdR = H.reduce((t, o) => t + o.b, 0), bogR = H.reduce((t, o) => t + o.g, 0);
       /* (update 859) a hole's avg is already its score to par (the data's own to-par column): no par to take off again */ const tough = [...H].sort((a, b) => b.avg - a.avg)[0], easy = [...H].sort((a, b) => a.avg - b.avg)[0], pm1 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
@@ -1660,7 +1673,7 @@ export async function render(main, { previewClient } = {}) {
             worst ? `Toughest for ${me1 ? "you" : firstOf(one)}: No. ${worst.h} (par ${worst.par}), ${pm1(worst.avg)} to par on average against the field's ${pm1(worst.f.avg)} (${worst.n} plays)` : null,
             best && best !== worst ? `Best for ${me1 ? "you" : firstOf(one)}: No. ${best.h} (par ${best.par}), ${pm1(best.avg)} to par against the field's ${pm1(best.f.avg)} (${best.n} plays)` : null].filter(Boolean).join(" · "),
           to: "Course Prep · Strategy Maps", run: () => toHole(c.id, worst?.h || 1, EX.course(`How does ${c.name} play for ${Pw1 === "your" ? "me" : nameOf(one)}?`)) }); }
-      else if (H.length >= 9) out.push({ id: "up-fun", k: null, kind: "Course", score: 5.35, title: `How ${c.name} plays${one ? ` (the field: no shots of ${isMe(one) ? "yours" : nameOf(one)} here on record)` : ""}`,
+      else if (false && H.length >= 9) out.push({ id: "up-fun", /* (update 870: removed) */ k: null, kind: "Course", score: 5.35, title: `How ${c.name} plays${one ? ` (the field: no shots of ${isMe(one) ? "yours" : nameOf(one)} here on record)` : ""}`,
         detail: [`The field averages ${pm1(toParR)} to par per round over these ${H.length} holes (${(parT + toParR).toFixed(1)} strokes, par ${parT})`, `${birdR.toFixed(1)} birdies and ${bogR.toFixed(1)} bogeys a round`,
           tough ? `Toughest: No. ${tough.h} (par ${tough.par}), plays ${pm1(tough.avg)} to par on average (${(tough.par + tough.avg).toFixed(2)} strokes), ${Math.round(tough.g * 100)}% bogey or worse` : null,
           easy ? `Easiest: No. ${easy.h} (par ${easy.par}), plays ${pm1(easy.avg)} to par on average (${(easy.par + easy.avg).toFixed(2)} strokes), ${Math.round(easy.b * 100)}% birdie or better` : null].filter(Boolean).join(" · "),

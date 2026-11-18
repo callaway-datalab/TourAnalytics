@@ -217,7 +217,7 @@ addEventListener("hashchange", () => closeBotPop());
 // (update 836) the phone's back button (or back swipe) closes an open pop-up instead of leaving the page, so a pop-up can
 // always be closed even if its × is out of reach. Opening one adds a history step on the same address; closing it any other
 // way takes that step back off (only while still on that address, so a link followed from a pop-up is never undone).
-{ const POP_SEL = ".ip-popwrap, .gx-pop-overlay, .td-popwrap, .tr-popwrap, .ps-modal-wrap, .ah-sheet-wrap, .ax-wrap, .botpop";
+{ const POP_SEL = ".ip-popwrap, .gx-pop-overlay, .td-popwrap, .tr-popwrap, .ps-modal-wrap, .ah-sheet-wrap, .ax-wrap, .botpop, .sd-wrap"; /* (update 870: the Site Directory) */
   let pushed = false, at = "";
   const watch = () => new MutationObserver(() => { const open = document.querySelector(POP_SEL);
     if (open && !pushed) { try { history.pushState({ ...(history.state || {}), taPop: 1 }, "", location.href); pushed = true; at = location.href; } catch { /* */ } }
@@ -283,6 +283,7 @@ function accountMenu(state) {
     finally { note.hidden = false; reset.disabled = false; }
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
+    el("button", { class: "menu-item menu-dir", type: "button", role: "menuitem", onClick: () => { setOpen(false); openDirectory(); } }, "Site Directory"), // (update 870)
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     state.isAdmin && !window.__previewClient && !getPreviewTeam() ? el("a", { class: "menu-item", href: "#/admin/clients", role: "menuitem" }, "User Access") : null, // (update 832: from the top bar)
     state.isAdmin || state.profile?.kind === "analyst" ? el("a", { class: "menu-item menu-bulk", href: "#/bulk-reports", role: "menuitem" }, "Bulk Reports") : null, // (update 740)
@@ -628,6 +629,31 @@ document.addEventListener("click", () => requestAnimationFrame(keepPanelsOnScree
 export function infoTip(content, label = "What this means") {
   const paras = (Array.isArray(content) && content.every((x) => typeof x === "string") ? content : [content]).filter((x) => x != null && x !== "");
   return el("details", { class: "bs-help info-tip" }, [el("summary", { "aria-label": label, title: label }, "ⓘ"), ...paras.map((x) => el("p", { class: "muted small" }, x))]);
+}
+
+/** (update 870) Site Directory (☰ menu): every main page and its pages, grouped as the menus are; a tap goes there */
+export function openDirectory() {
+  document.querySelector(".sd-wrap")?.remove();
+  const st = window.__authState || {}, kind = shellKind(), admin = kind === "admin";
+  const groups = new Map(), add = (g, label, href, note = "") => (groups.get(g) || groups.set(g, []).get(g)).push({ label, href, note });
+  add("Your Report", "Your Tour Report", "#/home", "The front page: your players' stories, the next event's course strategy, around the tour");
+  for (const sec of sectionsFor(kind)) for (const it of sec.items) if (!it[3]?.off) add(sec.label, it[0], it[1]);
+  for (const y of groups.get("Play") || []) if (y.label === "Course Prep") y.note = "Course Insights & History, Strategy Maps and reports: pick a course, then its page";
+  add("Account", "Profile", "#/account"); add("Account", st.isAdmin || st.profile?.kind === "analyst" ? "Chat" : "Chat & support", st.isAdmin ? "#/admin/questions" : "#/questions");
+  if (st.isAdmin || st.profile?.kind === "analyst") add("Account", "Bulk Reports", "#/bulk-reports");
+  if (admin) { add("Admin", "User Access", "#/admin/clients"); add("Admin", "Upload Data", "#/admin/datasets"); add("Admin", "Goals (every player)", "#/admin/goals"); add("Admin", "Documents", "#/admin/documents"); }
+  const close = () => wrap.remove();
+  const x = el("button", { type: "button", class: "sd-x", "aria-label": "Close" }, "\u00d7"); x.addEventListener("click", close);
+  const q = el("input", { type: "search", class: "sd-q", placeholder: "Find a page", "aria-label": "Find a page" });
+  const body = el("div", { class: "sd-body" });
+  const draw = () => { const t = q.value.trim().toLowerCase();
+    mount(body, [...groups].map(([g, xs]) => { const ys = xs.filter((y) => !t || `${g} ${y.label} ${y.note}`.toLowerCase().includes(t)); if (!ys.length) return null;
+      return el("section", { class: "sd-grp" }, [el("h3", {}, g), el("ul", {}, ys.map((y) => { const a = el("a", { href: y.href }, [el("b", {}, y.label), y.note ? el("span", {}, y.note) : null]); a.addEventListener("click", () => setTimeout(close, 0)); return el("li", {}, a); }))]); }).filter(Boolean)); };
+  q.addEventListener("input", draw); draw();
+  const wrap = el("div", { class: "sd-wrap", role: "dialog", "aria-label": "Site Directory" }, el("div", { class: "sd-pop" }, [el("div", { class: "sd-head" }, [el("h2", {}, "Site Directory"), x]), q, body]));
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } });
+  document.body.append(wrap); setTimeout(() => q.focus(), 0);
 }
 
 /** (update 643) every page someone can open from the menus, for Cal to take them there: [{ label, href, section }] */

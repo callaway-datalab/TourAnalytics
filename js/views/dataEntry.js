@@ -72,7 +72,7 @@ function renderList(main, viewing = null) {
   const myKey = viewing ? viewing.key : myEntryKey(state);
   const list = el("div", { class: "entry-list" });
   // (update 863) the admin's own rounds: 10 sample rounds at the tour's courses (to try the pages with), and a way to take them out
-  const sampleBox = el("div", { class: "ent-sample", hidden: !(state.isAdmin && !viewing) }), sampleMsg = el("p", { class: "muted small", role: "status" }); let busy = false;
+  const sampleBox = el("div", { class: "ent-sample", hidden: !(state.isAdmin && !viewing) }), sampleMsg = el("p", { class: "muted small", role: "status" }); let busy = false, lastRounds = []; /* (update 870: declared before it's first read) */
   const drawSample = () => { if (sampleBox.hidden) return; const nS = lastRounds.filter((r) => r.sample).length;
     const add = el("button", { type: "button", class: "btn ghost small" }, "Add 10 sample rounds"), rem = nS ? el("button", { type: "button", class: "btn ghost small" }, `Remove the ${nS} sample round${nS === 1 ? "" : "s"}`) : null;
     add.disabled = busy; if (rem) rem.disabled = busy;
@@ -94,7 +94,6 @@ function renderList(main, viewing = null) {
       return a; })(),
     list, sampleBox,
   ]);
-  let lastRounds = [];
   const draw = (rounds) => { lastRounds = rounds; drawSample();
     if (!rounds.length) { mount(list, el("p", { class: "empty center" }, "No rounds yet. Start one above \u2014 it takes a minute to set up.")); return; }
     const row = (r) => {
