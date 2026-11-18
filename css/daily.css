@@ -1196,3 +1196,5 @@ html[data-theme="light"] .sd-pop { background: #fff; border-color: rgba(0,0,0,0.
   .rail .rail-foot .account { margin-left: 6px; margin-right: -4px; }
   .rail .rail-foot .account-btn.hdr-icon { justify-content: flex-end !important; }
 }
+/* (update 873) Cal's guide: a link to each place */
+.cal-guide { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 10px; }

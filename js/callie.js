@@ -6,7 +6,7 @@
 //   intent "player":  one to three players' numbers, by season, event, round, part of the game, distance, lie or club
 //   intent "field":   who leads (or trails) a tour in strokes gained or a stat, over a period, with enough rounds
 //   intent "compare": set up in Compare (the plan goes with it, so there's no second AI call)
-import { el, mount, icon, analystAllowed, siteLinks } from "./ui.js";
+import { el, mount, icon, analystAllowed, siteLinks, statsViewHref, learnedHeadings, goToSection } from "./ui.js";
 import { getState } from "./auth.js";
 import { effectiveTeam } from "./preview.js";
 import { teamLabels, plainName } from "./names.js";
@@ -679,6 +679,9 @@ async function ask(question) {
     // (update 644) "I just hit a 5 iron to the green, 25 ft left": the next shot in your round in progress
     { const shot = await shotFromTalk(question).catch(() => null);
       if (shot) { const { href, ...msg } = shot; reply({ ...msg, strat: true }); if (href) setTimeout(() => goShot(href), 700); return; } }
+    // (update 873) "where / how do I find a player's peak?": where on the site it is (the closest places, how to get there),
+    // even when there's no exact page for it, and an offer to look again
+    { const g = await guideAnswer(question).catch((e) => { console.warn("guide", e); return null; }); if (g) return reply({ ...g, strat: true }); }
     // (update 643) "start a new round", "take me to practice": the page, opened for them
     { const nav = isStrategyQ(question) || isPinReply(question) || isStratReply(question) ? null : navAnswer(question);
       // (update 685) Enter New Round, not asked for a new one: the round in progress, when there is one
@@ -827,6 +830,9 @@ function draw() {
       continue;
     }
     const go = m.go ? el("a", { class: "link small cal-go", href: m.go.href }, m.go.label) : null;
+    // (update 873) the guide's places: each opens its page at that part (and closes Cal)
+    const guide = m.guide?.length ? el("div", { class: "cal-guide" }, m.guide.map((g) => { const a = el("a", { class: "link small cal-go", href: g.href }, g.label);
+      a.addEventListener("click", (e) => { e.preventDefault(); closeCallie(); goToSection(g.href, g.head, g.view, g.sel); }); return a; })) : null;
     // (update 304) a question Cal couldn't answer: hand it to a person (Chat, with Callaway Analyst, the message written)
     const st0 = getState(), staffer = st0.isAdmin || st0.profile?.kind === "analyst";
     const askQ = m.q || [...chat].slice(0, chat.indexOf(m)).reverse().find((x) => x.who === "me")?.text || "";
@@ -845,7 +851,7 @@ function draw() {
     if (go && m.go.nav) go.addEventListener("click", () => closeCallie()); // (update 643)
     if (go && m.go.plan) go.addEventListener("click", () => { try { sessionStorage.setItem("callie.plan", JSON.stringify(m.go.plan)); } catch { /* */ } }); // (update 264: Compare opens with this plan, no second AI call)
     const choices = m.choices?.length ? el("div", { class: "cal-choices" }, m.choices.map((o) => { const b = el("button", { type: "button", class: "cmp-chip small cal-choice", title: o.bands.join(" + ") }, [o.label, o.bands.join(" + ") !== o.label ? el("span", { class: "cmp-chip-n" }, o.bands.join(" + ")) : null]); b.addEventListener("click", () => choose(o)); return b; })) : null;
-    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table || m.read ? " wide" : ""}` }, [...rich(m.text), choices, m.read ? readCard(m.read, m.read.where, { compact: true }) : null, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd, notIt]));
+    items.push(el("div", { class: `cal-msg callie${m.err ? " err" : ""}${m.table || m.read ? " wide" : ""}` }, [...rich(m.text), guide, choices, m.read ? readCard(m.read, m.read.where, { compact: true }) : null, m.table ? tableOf(m.table) : null, m.note ? el("p", { class: "muted small cal-based" }, m.note) : null, go, fwd, notIt]));
   }
   if (busy) items.push(el("div", { class: "cal-msg callie cal-typing", "aria-label": "Cal is working it out" }, [el("i"), el("i"), el("i")]));
   mount(log, items);
@@ -999,6 +1005,23 @@ const PAGES = [
 ];
 const NAV_GO = /\b(take me|bring me|go(ing)? (to|back)|navigate|open|show me|get me to|jump to|switch to|let me|i want to|i'?d like to|i need to|start|enter|add|log|record)\b/i;
 const NAV_ASK = /^\s*(where|how|what|which|can|is|are|do)\b/i;
+// (update 873) Cal's guide to the site (siteGuide.js), plus the headings seen on pages since (learned as they open)
+async function guideAnswer(q) {
+  const G = await import("./siteGuide.js"); if (!G.GUIDE_Q.test(q)) return null;
+  const st = getState(), admin = !!st.isAdmin;
+  const learned = (() => { try { return learnedHeadings().slice(0, 300).map((x) => ({ name: x.text, where: x.page, href: x.href, view: x.view, head: x.text, what: "", keys: x.text })); } catch { return []; } })();
+  const hits = G.matchFeatures(q, learned), best = hits[0]?.score || 0;
+  const pickF = []; for (const h of hits) { if (pickF.length >= 3 || h.score < Math.max(2, best - 3)) break; if (!pickF.some((x) => x.name === h.f.name)) pickF.push(h.f); }
+  const hrefOf = (f) => (f.view ? statsViewHref(f.view) : admin && f.adminHref ? f.adminHref : f.href);
+  const open = pickF.filter((f) => hrefOf(f));
+  if (!open.length) {
+    const pages = siteLinks().slice(0, 12).map((p) => p.label).join(", ");
+    return { text: `I couldn’t place that on the site. The pages are: ${pages}. Tell me a bit more about what you want to see (a player, a stat, a course) and I’ll point you to it, or ask me the question itself and I’ll try to answer it.` };
+  }
+  const [a, ...rest] = open, line = (f) => `${String(f.where).endsWith(f.name) ? `**${f.where}**` : `**${f.name}** on **${f.where}**`}${f.what ? `: ${f.what}` : ""}`;
+  const text = [`The best place for that: ${line(a)}.`, rest.length ? `Also worth a look: ${rest.map(line).join("; ")}.` : "", "Let me know if that’s not what you’re looking for and I’ll find something closer."].filter(Boolean).join("\n\n");
+  return { text, guide: open.map((f) => ({ label: `Open ${f.name} →`, href: hrefOf(f), view: f.view || null, sel: f.sel || null, head: f.head || f.name })) };
+}
 function navAnswer(q) {
   const t = String(q || "").trim(), words = t.split(/\s+/).length;
   const hit = PAGES.find(([, re]) => re.test(t));

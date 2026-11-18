@@ -217,7 +217,7 @@ addEventListener("hashchange", () => closeBotPop());
 // (update 836) the phone's back button (or back swipe) closes an open pop-up instead of leaving the page, so a pop-up can
 // always be closed even if its × is out of reach. Opening one adds a history step on the same address; closing it any other
 // way takes that step back off (only while still on that address, so a link followed from a pop-up is never undone).
-{ const POP_SEL = ".ip-popwrap, .gx-pop-overlay, .td-popwrap, .tr-popwrap, .ps-modal-wrap, .ah-sheet-wrap, .ax-wrap, .botpop, .sd-wrap"; /* (update 870: the Site Directory) */
+{ const POP_SEL = ".ip-popwrap, .gx-pop-overlay, .td-popwrap, .tr-popwrap, .ps-modal-wrap, .ah-sheet-wrap, .ax-wrap, .botpop"; /* (update 870: the Site Directory) */
   let pushed = false, at = "";
   const watch = () => new MutationObserver(() => { const open = document.querySelector(POP_SEL);
     if (open && !pushed) { try { history.pushState({ ...(history.state || {}), taPop: 1 }, "", location.href); pushed = true; at = location.href; } catch { /* */ } }
@@ -489,10 +489,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const searchBtn = el("button", { type: "button", class: "hdr-icon search-btn", "aria-label": "Search (Ctrl+K)", title: "Search players, pages, courses (Ctrl+K)" }, [icon("search")]);
   searchBtn.addEventListener("click", () => openPalette());
   // (update 829) the top bar: the player picker, Cal and the ☰ menu (Chat & support and What's in the Bag moved: the menu, a Stats tab)
-  // (update 872) the Site Directory as a magnifying glass in the top bar (between the player and the ☰ menu on a phone)
-  const dirBtn = el("button", { type: "button", class: "dir-btn", "aria-label": "Search the site", title: "Search the site: every page and its sections" }, [icon("search")]);
-  dirBtn.addEventListener("click", () => openDirectory());
-  footItems.splice(0, footItems.length, curChip(), callieButton(), dirBtn, accountMenu(state));
+  footItems.splice(0, footItems.length, curChip(), callieButton(), accountMenu(state)); // (update 873: no Site Directory: Cal finds things)
   void searchBtn;
   const plan = secs.find((x) => x.id === "plan"), data = secs.find((x) => x.id === "data");
   const fol = secs.find((x) => x.id === "follow");
@@ -633,35 +630,10 @@ export function infoTip(content, label = "What this means") {
   return el("details", { class: "bs-help info-tip" }, [el("summary", { "aria-label": label, title: label }, "ⓘ"), ...paras.map((x) => el("p", { class: "muted small" }, x))]);
 }
 
-/** (update 870) Site Directory (☰ menu): every main page and its pages, grouped as the menus are; a tap goes there */
-export function openDirectory() {
-  document.querySelector(".sd-wrap")?.remove();
-  const st = window.__authState || {}, kind = shellKind(), admin = kind === "admin";
-  const groups = new Map(), add = (g, label, href, note = "") => (groups.get(g) || groups.set(g, []).get(g)).push({ label, href, note });
-  add("Your Report", "Your Tour Report", "#/home"); // (update 871: no descriptions)
-  for (const sec of sectionsFor(kind)) for (const it of sec.items) if (!it[3]?.off) add(sec.label, it[0], it[1]);
-
-  add("Account", "Profile", "#/account"); add("Account", st.isAdmin || st.profile?.kind === "analyst" ? "Chat" : "Chat & support", st.isAdmin ? "#/admin/questions" : "#/questions");
-  if (st.isAdmin || st.profile?.kind === "analyst") add("Account", "Bulk Reports", "#/bulk-reports");
-  if (admin) { add("Admin", "User Access", "#/admin/clients"); add("Admin", "Upload Data", "#/admin/datasets"); add("Admin", "Goals (every player)", "#/admin/goals"); add("Admin", "Documents", "#/admin/documents"); }
-  const close = () => wrap.remove();
-  const x = el("button", { type: "button", class: "sd-x", "aria-label": "Close" }, "\u00d7"); x.addEventListener("click", close);
-  const q = el("input", { type: "search", class: "sd-q", placeholder: "Find a page", "aria-label": "Find a page" });
-  const body = el("div", { class: "sd-body" });
-  // (update 871) typing also finds the parts of pages (Best Stretches on Player Stats, the Leaderboard on Tournament Results …):
-  // the ones every page has, and every heading seen on a page since (learned as you go); a tap opens the page there
-  const viewHref = (v) => { for (const sec of sectionsFor(kind)) for (const it of sec.items) if (it[3]?.view === v) return it[1]; return null; };
-  const draw = () => { const t = q.value.trim().toLowerCase();
-    const secs = t.length >= 2 ? siteSections(viewHref).filter((x) => `${x.text} ${x.alias || ""} ${x.page}`.toLowerCase().includes(t)).slice(0, 14) : [];
-    mount(body, [secs.length ? el("section", { class: "sd-grp sd-found" }, [el("h3", {}, "On the pages"), el("ul", {}, secs.map((x) => { const a = el("a", { href: x.href }, [el("b", {}, x.text), el("span", {}, x.page)]);
-      a.addEventListener("click", (e) => { e.preventDefault(); close(); goToSection(x.href, x.text, x.view, x.sel); }); return el("li", {}, a); }))]) : null, ...[...groups].map(([g, xs]) => { const ys = xs.filter((y) => !t || `${g} ${y.label} ${y.note}`.toLowerCase().includes(t)); if (!ys.length) return null;
-      return el("section", { class: "sd-grp" }, [el("h3", {}, g), el("ul", {}, ys.map((y) => { const a = el("a", { href: y.href }, [el("b", {}, y.label), y.note ? el("span", {}, y.note) : null]); a.addEventListener("click", () => setTimeout(close, 0)); return el("li", {}, a); }))]); })].filter(Boolean)); };
-  q.addEventListener("input", draw); draw();
-  const wrap = el("div", { class: "sd-wrap", role: "dialog", "aria-label": "Site Directory" }, el("div", { class: "sd-pop" }, [el("div", { class: "sd-head" }, [el("h2", {}, "Site Directory"), x]), q, body]));
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
-  addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } });
-  document.body.append(wrap); setTimeout(() => q.focus(), 0);
-}
+/** (update 873) a Stats view's address in this portal (for Cal's guide) */
+export function statsViewHref(v) { for (const sec of sectionsFor(shellKind())) for (const it of sec.items) if (it[3]?.view === v) return it[1]; return null; }
+/** (update 873) the headings seen on pages (learned as pages open), for Cal's guide */
+export function learnedHeadings() { return learnedSections(); }
 
 // (update 871) the parts of pages: the ones every page has (seeded), and the headings seen on pages since (kept on this device)
 const SEED_SECTIONS = [
