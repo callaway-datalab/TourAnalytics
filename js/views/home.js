@@ -413,11 +413,12 @@ export async function render(main, { previewClient } = {}) {
     if (t === "eq" && h.k && gearData.has(h.k)) { // the player's own rounds, by tournament: that kind of club's shots, by model
       const x = h.x, val = (s0) => (x.pill === "Balls" ? (s0.ball ? `Ball|${s0.ball}` : null) : s0.gear && KIND_PILL[gearInfo(s0.gear).kind] === x.pill ? s0.gear : null); /* (update 743: only that kind of club, so the model is the one the story is about) */
       const nmOf = (g) => { const gi = gearInfo(g); return `${gi.brand} ${gi.model}`.trim() || g; };
-      const rs = (gearData.get(h.k) || []).filter((r) => (ownP?.key === h.k || onTour(r)) && yrOf(r) === seasonYr()); const evs = eventsOf(rs).slice(-14);
+      const rs = (gearData.get(h.k) || []).filter((r) => (ownP?.key === h.k || onTour(r)) && yrOf(r) === seasonYr()); const evs = eventsOf(rs); // (update 851: every tournament of the season, as the table under it counts, not the last 14)
       const items = evs.map((e) => { const m = new Map(); let sgs = 0, n = 0; for (const r of e.rs) { let any = false; for (const s0 of r.shots) { const g = val(s0); if (!g) continue; const nm2 = nmOf(g); if (nm2 !== x.neu && nm2 !== x.old && x.pill !== "Balls") { /* another model */ } m.set(nm2, (m.get(nm2) || 0) + (s0.w || 1)); any = true; if (!x.c || s0.cat === x.c) sgs += s0.sg; } if (any) n++; } /* (that kind of club's shots only, as the product table) */
         const topM = [...m].sort((a2, b2) => b2[1] - a2[1])[0]?.[0]; return n ? { v: sgs / n, label: `${e.event} ${e.year} · ${topM || ""}`, short: shortEv(e.event), cls: (x.all || []).find((m) => m.nm === topM)?.cls || (topM === x.neu ? "m-a" : topM === x.old ? "m-b" : "m-o") } : null; }).filter(Boolean);
       const svg = barSvg(items, { note: "By tournament" }); if (!svg) return null;
-      return [el("div", { class: "td-kick mute" }, `Strokes gained per round ${COL_IN[x.c]}, tournament by tournament`), svg, el("div", { class: "td-legend" }, (x.all || [{ nm: x.neu, cls: "m-a" }, { nm: x.old, cls: "m-b" }]).map((m) => el("span", { class: m.cls }, m.nm))) /* (update 757: the bars' own colors) (update 821: every model) */];
+      const shownC = new Set(items.map((it) => it.cls)); // (update 851) the legend: only the models that colour a bar
+      return [el("div", { class: "td-kick mute" }, `Strokes gained per round ${COL_IN[x.c]}, tournament by tournament`), svg, el("div", { class: "td-legend" }, (x.all || [{ nm: x.neu, cls: "m-a" }, { nm: x.old, cls: "m-b" }]).filter((m) => shownC.has(m.cls)).map((m) => el("span", { class: m.cls }, m.nm))) /* (update 757: the bars' own colors) (update 821: every model) */];
     }
     if (!h.k) return null;
     const p = playerOf(h.k), rs = sgRounds(rawOf(p)).filter((r) => yrOf(r) === seasonYr()); if (!rs.length) return null;
