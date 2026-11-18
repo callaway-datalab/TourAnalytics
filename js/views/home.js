@@ -29,6 +29,9 @@ export async function render(main, { previewClient } = {}) {
   const admin = state.isAdmin && !team.preview && !previewClient;
   const teamKeys = team.isTeam ? Object.keys(team.teamAccess) : [];
   const selfKey = !admin && !team.isTeam ? previewClient?.key || state.profile?.clientKey || null : null;
+  // (update 863) a coach or caddie with one player: Home is always that player (as a player's own Home is theirs); with
+  // several: those players only (their favorites, set for them)
+  const lockKey = !admin && team.isTeam && teamKeys.length === 1 ? teamKeys[0] : null;
   const staff = !selfKey, analyst = state.profile?.kind === "analyst";
   const store = await import("../store.js");
   const root = el("div", { class: "ah td" });
@@ -64,7 +67,7 @@ export async function render(main, { previewClient } = {}) {
   const cmpBase = (k) => `#/comparisons?player=${encodeURIComponent(k)}${tourPick && tourPick !== ALL ? `&tour=${encodeURIComponent(tourPick)}` : ""}`; // (update 729: Compare on the same tour)
 
   // ---- the data (filled in as it arrives) ----
-  let field = [], years = [], heat = null, next = null, ownP = null, dsRef = null, detail = null; // (update 749) detail: { tour, by: Map(key → rounds with each shot's distance and lie) } // (update 742) ownP: { key, rounds, own }: the signed-in person's own entered rounds
+  let field = [], years = [], heat = null, next = null, ownP = null, dsRef = null, detail = null, ownAll = []; // (update 863) ownAll: every round you've entered (any holes, quick ones too) // (update 749) detail: { tour, by: Map(key → rounds with each shot's distance and lie) } // (update 742) ownP: { key, rounds, own }: the signed-in person's own entered rounds
   const playerOf = (k) => (ownP && k === ownP.key ? ownP : field.find((p) => p.key === k));
   const heatP = import("../courseHeat.js").then((m) => m.listHeatCourses()).then((l) => (heat = (l || []).filter((c) => c.par?.length))).catch(() => (heat = []));
   const yrOf = (rd) => String(rd.year || String(rd.date || "").slice(0, 4));
@@ -246,6 +249,7 @@ export async function render(main, { previewClient } = {}) {
   const ovKeys = () => (selfKey ? [selfKey] : picked.size ? [...picked] : (favs.length ? favs : keys).filter((k, i, a) => a.indexOf(k) === i).filter(hasSeason)); // (update 847: none without rounds on the tour picked)
   const ovTop = el("section", { class: "td-ov" }), frontBox = el("div", { class: "td-frontbox" }); // (update 837: the front page above it)
   async function drawOvTop() {
+    if (isFresh()) { mount(ovTop, []); ovTop.dataset.sig = ""; return; } // (update 863: a new account's page has no favorites row)
     const ks = ovKeys();
     const sig = `${ks.join(",")}|${tourPick}`; if (ovTop.dataset.sig === sig) return; ovTop.dataset.sig = sig; secBoxes.clear(); headBoxes.clear();
     if (!ks.length) { mount(ovTop, []); return; }
@@ -853,8 +857,86 @@ export async function render(main, { previewClient } = {}) {
     if (!content) return null;
     return el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}${sfx}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, SEC[id][0]), sub ? el("span", {}, sub) : null]), content]);
   }
+  // ---- (update 863) a new account: no favorites and no players of your own (a coach's players count) ----
+  // The page: the players on each tour, ranked, to search and star (Pick your players), the next event's Course Strategy
+  // and Around the Tour. Starring one keeps you here; "See your Tour Report" switches to your favorites.
+  const isFresh = () => staff && !selfKey && !keys.filter((k) => k !== ownKey).length && !picked.size && !(team.isTeam && teamKeys.length);
+  let freshQ = "", freshAdded = new Set();
+  function freshPlayers() {
+    const SY = seasonYr(), R = ranksFor(SY).by, rk = R.TOTAL || new Map(), nR = R["TOTAL#"] || rk.size;
+    const ps = field.map((p) => { const rs = rawOf(p).filter((r) => yrOf(r) === SY); return rs.length ? { k: p.key, name: nameOf(p.key), rs, n: rs.length, ev: rs.every((r) => r.eventLevel), v: avgOf(rs, tot), rk: rk.get(p.key) || null } : null; }).filter(Boolean)
+      .sort((a, b) => (a.rk ?? 1e9) - (b.rk ?? 1e9) || b.v - a.v);
+    const favNow = new Set([...favs, ...freshAdded]);
+    const list = el("div", { class: "td-pl-list", role: "list" }), cnt = el("span", { class: "td-pl-n" });
+    const go = el("button", { type: "button", class: "td-pl-go", hidden: !favNow.size }, "See your Tour Report \u2192");
+    const paint = () => { const q = freshQ.trim().toLowerCase(), xs = ps.filter((x) => !q || x.name.toLowerCase().includes(q));
+      cnt.textContent = `${xs.length} player${xs.length === 1 ? "" : "s"}${tourPick && tourPick !== ALL ? ` on the ${tourName(tourPick)}` : ""} · ${SY}`;
+      go.hidden = !favNow.size; go.textContent = `See your Tour Report (${favNow.size} favorite${favNow.size === 1 ? "" : "s"}) \u2192`;
+      mount(list, xs.length ? xs.map((x) => { const on = favNow.has(x.k), star = el("button", { type: "button", class: `td-pl-star${on ? " on" : ""}`, "aria-pressed": String(on), "aria-label": `${on ? "Remove" : "Add"} ${x.name} ${on ? "from" : "to"} your favorites` }, on ? "\u2605" : "\u2606");
+        star.addEventListener("click", async () => { star.disabled = true;
+          try { const wl = await import("../watchlist.js"); await wl.loadWatch().catch(() => {}); await wl.toggleFavorite(x.k); const now = (wl.watchPrefs().players || []).includes(x.k);
+            if (now) { favNow.add(x.k); freshAdded.add(x.k); } else { favNow.delete(x.k); freshAdded.delete(x.k); favs = favs.filter((k) => k !== x.k); } labels.set(x.k, x.name); paint(); }
+          catch (e) { console.error(e); alert("Couldn\u2019t update your favorites just now."); star.disabled = false; } });
+        return el("div", { class: `td-pl-row${on ? " on" : ""}`, role: "listitem" }, [el("span", { class: "td-pl-rk" }, x.rk ? String(x.rk) : "\u2014"), el("span", { class: "td-pl-nm" }, x.name),
+          el("span", { class: `td-pl-v ${x.v >= 0 ? "up" : "down"}`, title: "Strokes gained total per round this season" }, sg2(x.v)), el("span", { class: "td-pl-r" }, `${x.n} ${x.ev ? "ev" : "rds"}`), star]); })
+        : el("p", { class: "td-wait" }, field.length ? "No players match." : "Loading the players\u2026")); };
+    const search = el("input", { type: "search", class: "td-pl-q", placeholder: "Search players", "aria-label": "Search players", value: freshQ });
+    search.addEventListener("input", () => { freshQ = search.value; paint(); });
+    go.addEventListener("click", () => { favs = [...new Set([...favs, ...freshAdded])]; keys = [...new Set([...keys, ...favs])].slice(0, 12); freshAdded = new Set(); focus ||= keys[0] || null; window.scrollTo({ top: 0 }); refresh(); drawOvTop().catch(() => {}); });
+    paint();
+    return el("section", { class: "td-sec full td-pl", id: "td-players", "data-sec": "players" }, [el("div", { class: "td-sh" }, [el("h2", {}, "Pick your players"), el("span", {}, "Ranked by strokes gained per round this season · tap \u2606 to add a favorite")]),
+      el("div", { class: "td-pl-top" }, [search, cnt]), list, el("p", { class: "td-pl-foot" }, [`Rank: strokes gained total per round among the ${nR} players with enough rounds; \u2014 not enough rounds yet.`]), go]);
+  }
+  function drawFresh(sorted) {
+    mount(frontBox, []); mount(ovTop, []); ovTop.dataset.sig = "";
+    const crs = sorted.filter((h) => SEC_OF[h.kind] === "course" && !h.k && cgOf(h) !== "player"), trs = sorted.filter((h) => SEC_OF[h.kind] === "tour");
+    const sec = (id, title, sub, content, extra = null) => el("section", { class: "td-sec full", id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), extra, sub ? el("span", {}, sub) : null]), content]);
+    const chg = (() => { const b = el("button", { type: "button", class: "td-shuf td-chg" }, "Change event"); b.addEventListener("click", () => changeEvent().catch((e) => console.warn(e))); return b; })();
+    const secs = [freshPlayers(), crs.length ? sec("course", "Next Event Course Strategy", `Up next: ${UPCOMING.name}`, courseGroups(crs), chg) : null, trs.length ? sec("tour", "Around the Tour", "Briefs", tourGroups(trs)) : null].filter(Boolean);
+    mount(feed, [ownKey && ownAll.length ? myGame() : null, el("div", { class: "td-grid" }, secs)]);
+    const go2 = (id) => document.getElementById(`td-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    mount(secNav, secs.map((x) => { const id = x.dataset.sec, a2 = el("a", { href: "#", "data-sec": id }, x.querySelector("h2")?.textContent || id); a2.addEventListener("click", (e) => { e.preventDefault(); go2(id); }); return a2; }));
+  }
+  // ---- (update 863) "Me": your own game from whatever you've entered (part of one round is enough), against the tour ----
+  function myGame() {
+    const rs = ownAll, holesOf = (r) => r.basic?.holes || new Set((r.shots || []).map((x) => x.hole)).size;
+    const H = rs.reduce((t, r) => t + holesOf(r), 0), shotRs = rs.filter((r) => r.shots?.length), sH = shotRs.reduce((t, r) => t + new Set(r.shots.map((x) => x.hole)).size, 0), per18 = (v, h) => (h ? (v / h) * 18 : null);
+    const sc = rs.reduce((t, r) => t + (r.basic?.score || 0), 0), par = rs.reduce((t, r) => t + (r.basic?.par || 0), 0), scH = rs.reduce((t, r) => t + (r.basic?.holes || 0), 0);
+    const b = (k) => rs.reduce((t, r) => t + (r.basic?.[k] || 0), 0), pc = (a, n) => (n ? `${Math.round((a / n) * 100)}%` : "\u2014");
+    const allShots = shotRs.flatMap((r) => r.shots), sgT = allShots.reduce((t, x) => t + x.sg, 0);
+    // where each part would rank on the tour picked (this season's players with enough rounds, strokes gained per round)
+    // (the tour picked, else, for your own Practice rounds, the tour with the most rounds in the stats file)
+    const tc = new Map(); for (const p of field) for (const r of p.rounds || []) if (!r.eventLevel) tc.set(tourOf(r), (tc.get(tourOf(r)) || 0) + 1);
+    const TM = tourPick && tourPick !== ALL && tc.has(tourPick) ? tourPick : [...tc].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const SYs = [...new Set(field.flatMap((p) => (p.rounds || []).filter((r) => tourOf(r) === TM).map(yrOf)))].sort().at(-1);
+    const tourRs = field.map((p) => (p.rounds || []).filter((r) => yrOf(r) === SYs && tourOf(r) === TM && !r.eventLevel)).filter((x) => x.length >= 8);
+    const rankOn = (v, f) => { if (v == null || !tourRs.length) return null; const vals = tourRs.map((x) => avgOf(x, f)); return { rk: 1 + vals.filter((y) => y > v).length, of: vals.length }; };
+    const tile = (big, lab, sub = "") => el("div", { class: "td-my-tile" }, [el("strong", {}, big), el("span", {}, lab), sub ? el("small", {}, sub) : null]);
+    const toParV = scH ? per18(sc - par, scH) : null, sgR = per18(sgT, sH), rT = rankOn(sgR, tot);
+    const tiles = [tile(String(rs.length), rs.length === 1 ? "round entered" : "rounds entered", `${H} hole${H === 1 ? "" : "s"}`),
+      toParV != null ? tile(`${toParV >= 0 ? "+" : "\u2212"}${Math.abs(toParV).toFixed(1)}`, "to par per 18 holes", `${sc - par >= 0 ? "+" : "\u2212"}${Math.abs(sc - par)} over ${scH} holes`) : null,
+      sgR != null ? tile(sg2(sgR), "strokes gained per round", rT ? `${sH < 36 ? "\u2248" : "about "}${ord1(rT.rk)} of ${rT.of} on the ${TM ? tourName(TM) : "tour"} (${SYs})` : `${sH} holes with shots`) : null,
+      b("fwyN") ? tile(pc(b("fwy"), b("fwyN")), "fairways", `${b("fwy")} of ${b("fwyN")}`) : null, scH ? tile(pc(b("gir"), scH), "greens in regulation", `${b("gir")} of ${scH}`) : null,
+      b("puttHoles") ? tile((b("putts") / b("puttHoles") * 18).toFixed(1), "putts per 18 holes", `${b("putts")} putts, ${b("puttHoles")} holes`) : null].filter(Boolean);
+    const parts = sH ? cats.map((c) => { const xs = allShots.filter((x) => x.cat === c); if (!xs.length) return null; const v = per18(xs.reduce((t, x) => t + x.sg, 0), sH), R2 = rankOn(v, (r) => inCat(r, c));
+      return el("tr", {}, [el("td", {}, CATN[c]), el("td", { class: `num strong ${v >= 0 ? "up" : "down"}` }, sg2(v)), el("td", { class: "num" }, sg2(xs.reduce((t, x) => t + x.sg, 0) / xs.length)), el("td", { class: "num" }, String(xs.length)), el("td", { class: "num muted" }, R2 ? `${sH < 36 ? "\u2248" : ""}${ord1(R2.rk)} of ${R2.of}` : "\u2014")]); }).filter(Boolean) : [];
+    const byD = new Map(); for (const x of allShots) if (x.dist) { const o = byD.get(`${x.cat}|${x.dist}`) || byD.set(`${x.cat}|${x.dist}`, { c: x.cat, d: x.dist, n: 0, v: 0 }).get(`${x.cat}|${x.dist}`); o.n++; o.v += x.sg; }
+    const ds = [...byD.values()].filter((o) => o.n >= 3).map((o) => ({ ...o, a: o.v / o.n })).sort((a, b) => b.a - a.a), best = ds.slice(0, 2), worst = ds.slice(-2).reverse().filter((o) => !best.includes(o));
+    const dTxt = (o) => `${CATN[o.c]}, ${String(o.d).replace(/^Par (\d) tee shots$/, "tee shots on par $1s")}: ${sg2(o.a)} a shot (${o.n} shots)`;
+    const rows = [...rs].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 8).map((r) => { const h = holesOf(r), tp = r.basic?.holes ? r.basic.score - r.basic.par : null, sh = r.shots?.length ? new Set(r.shots.map((x) => x.hole)).size : 0;
+      return el("tr", {}, [el("td", {}, String(r.date || "").slice(0, 10)), el("td", {}, r.course || r.event || "\u2014"), el("td", { class: "num" }, String(h)), el("td", { class: "num strong" }, tp == null ? "\u2014" : `${tp >= 0 ? "+" : "\u2212"}${Math.abs(tp)}`), el("td", { class: "num" }, sh ? sg2(per18(tot(r), sh)) : "\u2014")]); });
+    const tbl = (head, body, cls = "") => el("div", { class: "td-my-tw" }, el("table", { class: `td-my-t ${cls}` }, [el("thead", {}, el("tr", {}, head.map((t, i) => el("th", { class: i ? "num" : null }, t)))), el("tbody", {}, body)]));
+    return el("section", { class: "td-sec full td-my", id: "td-mine", "data-sec": "mine" }, [el("div", { class: "td-sh" }, [el("h2", {}, "Your game so far"), el("span", {}, rs.length < 5 ? "From what you've entered: more rounds make it sharper" : "From the rounds you've entered")]),
+      el("div", { class: "td-my-tiles" }, tiles),
+      parts.length ? el("div", {}, [el("h3", { class: "td-my-h" }, "Each part of the game"), tbl(["Part", "SG per round", "SG a shot", "Shots", "On tour"], parts),
+        el("p", { class: "td-my-note" }, `Strokes gained against the tour's baseline, per round: your total over the holes with shots, scaled to 18 holes (${sH} so far). On tour: where that would rank among the ${TM ? tourName(TM) : "tour"}'s ${SYs} players with 8+ rounds${sH < 36 ? " (\u2248: under two rounds' worth of holes, a rough guide only)" : ""}.`)]) : null,
+      best.length ? el("ul", { class: "td-my-ul" }, [...best.map((o) => el("li", { class: "up" }, `Best: ${dTxt(o)}`)), ...worst.map((o) => el("li", { class: "down" }, `Costliest: ${dTxt(o)}`))]) : null,
+      el("h3", { class: "td-my-h" }, rs.length === 1 ? "Your round" : "Your rounds"), tbl(["Date", "Course", "Holes", "To par", "SG per 18"], rows)]);
+  }
   function drawFeed(items) { lastItems = items;
     const seen = new Set(), sorted = items.filter((x) => x && !seen.has(x.id) && seen.add(x.id)).map((x) => ({ ...x, score: x.kind === "Fact" ? x.score : x.score + jit(x.id, x.ever ? 1.6 : 0.6) })) /* (update 791: facts keep their shuffled order) */.sort((a, b) => b.score - a.score);
+    if (isFresh()) { drawFresh(sorted); return; } // (update 863) no favorites, no players of your own: Around the Tour, the next event and the players to pick from
+    if (!sorted.length && solo() && ownKey && picked.has(ownKey) && ownAll.length) { mount(secNav, []); mount(frontBox, []); mount(feed, myGame()); return; } // (update 863: your rounds, before there's any story)
     if (!sorted.length) { mount(secNav, []); mount(frontBox, []); mount(feed, el("p", { class: "td-wait" }, staff && !keys.length ? "Add players to your favorites (the + beside a player's name on Stats › Overview) and their stories will run here every day." : tourPick && tourPick !== ALL ? `Nothing new on the ${tourName(tourPick)} today. Try another tour, or All.` : "Stories will run here once rounds are in.")); return; }
     // the front page: the lead, and the next three (from other sections where there are some)
     // (update 779) the lead changes every 12 hours (local time): one of the top 6 stories, a different one each half day
@@ -965,7 +1047,8 @@ export async function render(main, { previewClient } = {}) {
     requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (innerWidth <= 860 || !side4th) return; void more2; /* (update 856: three, and the fourth only when the hero is much taller) */ const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
       if (leadEl.offsetHeight - used() >= 220) sideEl.appendChild(brief(side4th)); });
     mount(frontBox, el("section", { class: "td-front", id: "td-front" }, [leadEl, sideEl])); // (update 837: at the very top)
-    mount(feed, [el("div", { class: "td-grid" }, laid), solo() && subjK ? pdfCard(subjK) : null]); // (update 839: no Today) (update 849: and their PDF report at the end)
+    const meNow = solo() && ownKey && (picked.has(ownKey) || subjK === ownKey) && ownAll.length; // (update 863) "Me": your own game, from whatever you've entered
+    mount(feed, [meNow ? myGame() : null, el("div", { class: "td-grid" }, laid), solo() && subjK ? pdfCard(subjK) : null]); // (update 839: no Today) (update 849: and their PDF report at the end)
     // (update 789) Player Spotlight and Where to Improve about the same length: stories added to the shorter one (as many as
     // it has) until it reaches the other
     requestAnimationFrame(() => { const a = pairRest.get("spot"), b = pairRest.get("focus"); if (!a || !b) return;
@@ -1762,7 +1845,7 @@ export async function render(main, { previewClient } = {}) {
   const pill = (on, label, fn, cls = "") => { const b = el("button", { type: "button", class: `hl-pill${on ? " on" : ""}${cls}`, "aria-pressed": String(!!on) }, label); b.addEventListener("click", fn); return b; };
   function drawPills() {
     // (update 845) only the tours the players on Home play: yours, the one picked in the header, else the favorites
-    const selK = selfKey ? [selfKey] : picked.size ? [...picked] : keys, cnt = new Map(), src = selK.length ? field.filter((p) => selK.includes(p.key)) : field;
+    const selK = selfKey ? [selfKey] : picked.size ? [...picked] : isFresh() ? [] /* (update 863: every tour's players) */ : keys, cnt = new Map(), src = selK.length ? field.filter((p) => selK.includes(p.key)) : field;
     const srcR = [...src.map((p) => p.rounds), ...(ownP && selK.includes(ownP.key) && !src.some((p) => p.key === ownP.key) ? [ownP.rounds] : [])];
     for (const rs of srcR) for (const rd of rs) cnt.set(tourOf(rd), (cnt.get(tourOf(rd)) || 0) + 1);
     const tours = [...cnt].sort((a, b) => b[1] - a[1]).map(([t]) => t);
@@ -1781,7 +1864,12 @@ export async function render(main, { previewClient } = {}) {
   const playsTour = (k) => !tourPick || tourPick === ALL || !field.length || (ownP && k === ownP.key) || (playerOf(k)?.rounds || []).some((rd) => tourOf(rd) === tourPick);
   const shownKeys = () => (picked.size ? [...picked] : keys.filter(playsTour));
   // (update 822) the header's player is Home's player: picked there, Home is about them alone; cleared, every favorite again
-  const syncPicked = () => { picked.clear(); const c = staff && !selfKey ? currentPlayer() : null; if (!c?.key) return;
+  const syncPicked = () => { picked.clear(); const c0 = staff && !selfKey ? currentPlayer() : null;
+    // (update 863) a coach or caddie: only their own players (or "Me"); one player: always them
+    const allowed = (k) => admin || !team.isTeam || teamKeys.includes(k) || k === ownKey;
+    const c = c0?.key && allowed(c0.key) ? c0 : lockKey ? { key: lockKey, label: labels.get(lockKey) || lockKey } : null;
+    if (lockKey && (!c0?.key || !allowed(c0.key))) setTimeout(() => setCurrent({ key: lockKey, label: labels.get(lockKey) || lockKey }), 0);
+    if (!c?.key) return;
     picked.add(c.key); if (!keys.includes(c.key)) keys = [...keys, c.key]; if (!labels.has(c.key) && c.label) labels.set(c.key, c.label); focus = c.key; };
   const setTour = (t) => { tourTouched = true; if (tourPick === t) return; tourPick = t; tmemo.clear(); rankMemo = null; refresh(); loadDetail().catch(() => {}); }; // (tbMemo is keyed by tour)
   // (update 740) a tap picks a player, or unpicks one already picked; All: none picked (everyone)
@@ -1845,6 +1933,8 @@ export async function render(main, { previewClient } = {}) {
     else {
       if (admin) await playersList();
       let fav = []; try { const wl = await import("../watchlist.js"); await wl.loadWatch(true).catch(() => {}); fav = wl.watchPrefs().players || []; } catch { /* */ }
+      // (update 863) a coach or caddie with several players: all of them are favorites (saved so every page has them)
+      if (!admin && team.isTeam && teamKeys.length > 1) { const miss = teamKeys.filter((k) => !fav.includes(k)); if (miss.length) { fav = [...fav, ...miss]; import("../watchlist.js").then((wl) => wl.saveWatch({ players: fav })).catch((e) => console.warn("auto favorites", e)); } }
       favs = admin ? fav : fav.filter((k) => teamKeys.includes(k));
       keys = admin ? fav : [...fav.filter((k) => teamKeys.includes(k)), ...teamKeys.filter((k) => !fav.includes(k))];
       keys = keys.slice(0, 12); focus ||= keys[0] || null;
@@ -1858,6 +1948,7 @@ export async function render(main, { previewClient } = {}) {
     syncPicked(); drawTabs(); drawOvTop().catch((e) => console.warn(e));
     { const off = onCurrent(() => { if (!main.isConnected) { off(); return; } syncPicked(); drawTabs(); refresh(); drawOvTop().catch(() => {}); }); }
     if (ownKey) { try { const { loadSource } = await import("../reportGen.js"); const d = await loadSource("entered", ownKey, myName || "Me").catch(() => null), rs = (d?.me?.rounds || []).filter((r) => r.shots?.length);
+      ownAll = (d?.me?.rounds || []).filter((r) => r.shots?.length || r.basic?.holes); if (ownAll.length && !labels.has(ownKey)) labels.set(ownKey, myName || "Me"); /* (update 863: even part of one round) */
       if (rs.length) { ownP = { key: ownKey, name: myName || "Me", rounds: rs, own: true }; labels.set(ownKey, myName || "Me"); gearData.set(ownKey, rs); gearP.set(ownKey, Promise.resolve()); if (!keys.includes(ownKey)) keys = [ownKey, ...keys]; } } catch (e) { console.warn("own rounds", e); } }
     await nextP; await heatP; /* (update 736: the courses, for Course Insights & Strategy) */
     refresh();

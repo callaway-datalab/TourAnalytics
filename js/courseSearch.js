@@ -67,7 +67,7 @@ export async function townAt(at) {
  *   history: [{ name, location, holes, date }] from your earlier rounds (newest first)
  *   onPick({ name, location, holes? })
  */
-export function courseCombobox(input, { history = [], onPick }) {
+export function courseCombobox(input, { history = [], tour = [], onPick }) { // (update 863) tour: the tour's courses (scorecards with Tour tees)
   const listId = "course-list-" + Math.random().toString(36).slice(2, 7);
   input.setAttribute("role", "combobox");
   input.setAttribute("aria-autocomplete", "list");
@@ -95,7 +95,8 @@ export function courseCombobox(input, { history = [], onPick }) {
           const li = el("li", { class: "combo-item" + (i === active ? " on" : ""), role: "option", id: `${listId}-${i}`, "aria-selected": i === active ? "true" : "false" }, [
             el("strong", {}, it.name), it.location ? el("span", { class: "muted" }, it.location) : null,
             it.dist != null && it.dist < 999 ? el("span", { class: "muted combo-dist" }, `${it.dist < 10 ? it.dist.toFixed(1) : Math.round(it.dist)} mi`) : null,
-            it.holes ? el("span", { class: "combo-tag" }, "scorecard saved") : null,
+            it.note ? el("span", { class: "muted" }, it.note) : null,
+            it.tourCard ? el("span", { class: "combo-tag combo-tour" }, "Tour tees") : it.holes ? el("span", { class: "combo-tag" }, "scorecard saved") : null,
           ]);
           // pick on a real tap or click (so dragging to scroll the list doesn't pick anything);
           // mousedown is held back so the box keeps focus on a computer
@@ -118,9 +119,11 @@ export function courseCombobox(input, { history = [], onPick }) {
     const text = input.value.trim();
     const t = text.toLowerCase();
     const first = { title: "Your courses", items: mine(t) };
+    // (update 863) the tour's courses, after yours (with nothing typed, a few; typing, every match)
+    const tourG = { title: "Tour courses", items: tour.filter((h) => !first.items.some((m) => m.name.toLowerCase() === h.name.toLowerCase()) && (!t || h.name.toLowerCase().includes(t) || (h.note || "").toLowerCase().includes(t))).slice(0, t ? 12 : 4) };
     clearTimeout(timer);
-    if (text.length < 3 && !near) { draw([first], text ? "Keep typing to search all courses\u2026" : (navigator.geolocation ? null : null)); return; }
-    draw([first], "Searching\u2026");
+    if (text.length < 3 && !near) { draw([first, tourG], text ? "Keep typing to search all courses\u2026" : (navigator.geolocation ? null : null)); return; }
+    draw([first, tourG], "Searching\u2026");
     const my = ++seq;
     // Near you, with nothing typed (or a few letters): the courses around you, closest first.
     if (near && text.length < 3) {
@@ -129,22 +132,22 @@ export function courseCombobox(input, { history = [], onPick }) {
           nearby = nearby || await coursesNear(near);
           if (my !== seq) return;
           const hits = nearby.filter((c) => !t || c.name.toLowerCase().includes(t));
-          draw([first, { title: "Near you", items: hits }], hits.length ? null : "No golf courses found within 30 miles.");
-        } catch { if (my === seq) draw([first], "Couldn't look up courses near you right now \u2014 just type the name."); }
+          draw([first, tourG, { title: "Near you", items: hits }], hits.length ? null : "No golf courses found within 30 miles.");
+        } catch { if (my === seq) draw([first, tourG], "Couldn't look up courses near you right now \u2014 just type the name."); }
       })();
       return;
     }
     timer = setTimeout(async () => {
       try {
-        const found = (await searchCourses(text, near)).filter((c) => !first.items.some((m) => m.name.toLowerCase() === c.name.toLowerCase()));
+        const found = (await searchCourses(text, near)).filter((c) => ![...first.items, ...tourG.items].some((m) => m.name.toLowerCase() === c.name.toLowerCase()));
         if (my !== seq) return;
         // near you and typing: courses around you that match come first
         const close2 = near && nearby ? nearby.filter((c) => c.name.toLowerCase().includes(t)) : [];
         const rest = found.filter((c) => !close2.some((n) => n.name.toLowerCase() === c.name.toLowerCase()));
-        draw([first, ...(close2.length ? [{ title: "Near you", items: close2 }] : []), { title: near ? "In your area" : "All courses", items: rest }],
-          close2.length || rest.length || first.items.length ? null : "No courses found \u2014 just type the name.");
+        draw([first, tourG, ...(close2.length ? [{ title: "Near you", items: close2 }] : []), { title: near ? "In your area" : "All courses", items: rest }],
+          close2.length || rest.length || first.items.length || tourG.items.length ? null : "No courses found \u2014 just type the name.");
       } catch {
-        if (my === seq) draw([first], "Course search isn't available right now \u2014 just type the name.");
+        if (my === seq) draw([first, tourG], "Course search isn't available right now \u2014 just type the name.");
       }
     }, 300);
   };

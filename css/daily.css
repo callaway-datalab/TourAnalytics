@@ -1075,3 +1075,40 @@ html[data-theme="light"] .cf-shots { background: rgba(0,0,0,0.025); border-color
 .cf-tag.cf-sh { background: rgba(100,210,255,0.15); color: #64d2ff; }
 html[data-theme="light"] .cf-tag.cf-sh { color: #0a6e99; }
 @media (max-width: 600px) { .fs-ul { font-size: 0.82rem; padding-left: 1em; } .cf-shots { padding: 10px; } }
+
+/* (update 863) a new account's Home: Pick your players (ranked, searchable, ☆ to favorite) */
+.td-pl-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 8px; }
+.td-pl-q { flex: 1 1 220px; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--td-rule2, rgba(255,255,255,0.14)); background: transparent; color: inherit; font: inherit; }
+.td-pl-n { font: 600 0.72rem var(--td-sans); color: var(--td-soft); letter-spacing: 0.04em; }
+.td-pl-list { max-height: 420px; overflow-y: auto; border-top: 1px solid var(--td-rule2, rgba(255,255,255,0.12)); overscroll-behavior: contain; }
+.td-pl-row { display: grid; grid-template-columns: 2.6em minmax(0, 1fr) 4.2em 4.4em 2.4em; align-items: center; gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--td-rule, rgba(255,255,255,0.07)); }
+.td-pl-row.on { background: rgba(240,180,64,0.07); }
+.td-pl-rk { font: 700 0.8rem var(--td-sans); color: var(--td-soft); text-align: right; font-variant-numeric: tabular-nums; }
+.td-pl-nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-pl-v { font: 700 0.85rem var(--td-sans); text-align: right; font-variant-numeric: tabular-nums; } .td-pl-v.up { color: var(--td-up); } .td-pl-v.down { color: var(--td-down); }
+.td-pl-r { font-size: 0.74rem; color: var(--td-soft); text-align: right; white-space: nowrap; }
+.td-pl-star { border: 0; background: none; color: var(--td-soft); font-size: 1.25rem; line-height: 1; cursor: pointer; padding: 2px; }
+.td-pl-star.on { color: #f0b440; }
+.td-pl-foot { font-size: 0.72rem; color: var(--td-soft); margin: 8px 0 0; }
+.td-pl-go { margin-top: 10px; padding: 10px 16px; border-radius: 999px; border: 0; background: #f0b440; color: #1a1a1a; font: 700 0.9rem var(--td-sans); cursor: pointer; }
+@media (max-width: 560px) { .td-pl-row { grid-template-columns: 2.2em minmax(0, 1fr) 3.8em 2.2em; } .td-pl-r { display: none; } .td-pl-list { max-height: 360px; } }
+
+/* (update 863) "Me": your game so far */
+.td-my-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.td-my-tile { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--td-rule2, rgba(255,255,255,0.12)); }
+.td-my-tile strong { font: 800 1.4rem var(--td-sans); font-variant-numeric: tabular-nums; } .td-my-tile span { font-size: 0.78rem; font-weight: 600; } .td-my-tile small { font-size: 0.7rem; color: var(--td-soft); }
+.td-my-h { margin: 12px 0 4px; font: 700 0.7rem var(--td-sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--td-soft); }
+.td-my-tw { overflow-x: auto; }
+.td-my-t { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.td-my-t th { font: 700 0.62rem var(--td-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--td-soft); text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--td-rule2, rgba(255,255,255,0.12)); }
+.td-my-t td { padding: 6px; border-bottom: 1px solid var(--td-rule, rgba(255,255,255,0.07)); } .td-my-t .num { text-align: right; font-variant-numeric: tabular-nums; }
+.td-my-t .up { color: var(--td-up); } .td-my-t .down { color: var(--td-down); }
+.td-my-note { font-size: 0.72rem; color: var(--td-soft); margin: 6px 0 0; }
+.td-my-ul { margin: 10px 0 0; padding-left: 1.1em; font-size: 0.86rem; display: grid; gap: 3px; } .td-my-ul .up::marker { color: var(--td-up); } .td-my-ul .down::marker { color: var(--td-down); }
+@media (max-width: 560px) { .td-my-t { font-size: 0.76rem; } .td-my-t th, .td-my-t td { padding: 5px 3px; } .td-my-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* (update 863) Enter New Round: the tour's courses, and the sample rounds */
+.combo-tag.combo-tour { background: rgba(100,210,255,0.15); color: #64d2ff; }
+.ent-sample { margin: 14px 0 0; } .ent-sample-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.td-my .td-my-t th, .td-my .td-my-t td { text-align: left !important; background: none !important; } .td-my .td-my-t .num { text-align: right !important; }
+.td-my .td-my-t tbody tr:nth-child(even) td { background: rgba(255,255,255,0.025) !important; }

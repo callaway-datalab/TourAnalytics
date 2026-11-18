@@ -71,6 +71,19 @@ function renderList(main, viewing = null) {
   const state = getState();
   const myKey = viewing ? viewing.key : myEntryKey(state);
   const list = el("div", { class: "entry-list" });
+  // (update 863) the admin's own rounds: 10 sample rounds at the tour's courses (to try the pages with), and a way to take them out
+  const sampleBox = el("div", { class: "ent-sample", hidden: !(state.isAdmin && !viewing) }), sampleMsg = el("p", { class: "muted small", role: "status" }); let busy = false;
+  const drawSample = () => { if (sampleBox.hidden) return; const nS = lastRounds.filter((r) => r.sample).length;
+    const add = el("button", { type: "button", class: "btn ghost small" }, "Add 10 sample rounds"), rem = nS ? el("button", { type: "button", class: "btn ghost small" }, `Remove the ${nS} sample round${nS === 1 ? "" : "s"}`) : null;
+    add.disabled = busy; if (rem) rem.disabled = busy;
+    add.addEventListener("click", async () => { busy = true; add.disabled = true;
+      try { const [{ listHeatCourses }, S] = await Promise.all([import("../courseHeat.js"), import("../sampleRounds.js")]);
+        const n = await S.addSampleRounds({ playerKey: myKey, playerLabel: myName(state), ownerUid: state.user.uid, ownerName: state.profile?.name || state.user.email || "", metas: await listHeatCourses(true), onStatus: (t) => { sampleMsg.textContent = t; } });
+        sampleMsg.textContent = `Added ${n} sample rounds (Tour tees). They're marked as samples, so you can take them out again here.`; busy = false; drawSample(); }
+      catch (e) { console.error(e); sampleMsg.textContent = e.message || "Couldn\u2019t add the sample rounds."; busy = false; drawSample(); } });
+    rem?.addEventListener("click", async () => { busy = true; rem.disabled = true; try { const S = await import("../sampleRounds.js"); const n = await S.removeSampleRounds(myKey, lastRounds); sampleMsg.textContent = `Removed ${n} sample rounds.`; } catch (e) { console.error(e); sampleMsg.textContent = "Couldn\u2019t remove them just now."; } busy = false; drawSample(); });
+    mount(sampleBox, [el("div", { class: "ent-sample-btns" }, [add, rem]), sampleMsg]); };
+  drawSample();
   mount(main, [
     // (update 615) a hero tile to start a round: a flag on a green, a line on what it does, a big gold +
     (() => { const a = el("a", { class: "ent-hero", href: "#/entry/new" }, [
@@ -79,9 +92,10 @@ function renderList(main, viewing = null) {
       el("span", { class: "ent-plus", "aria-hidden": "true" }, "+")]);
       a.querySelector(".ent-art").innerHTML = '<svg viewBox="0 0 120 120"><ellipse cx="60" cy="96" rx="46" ry="13" fill="#3e8e3a"/><ellipse cx="60" cy="94" rx="40" ry="10" fill="#5fae4d"/><path d="M60 92 V22" stroke="#f5f5f7" stroke-width="3" stroke-linecap="round"/><path d="M61 23 l30 11 -30 11 z" fill="#d4b483"/><circle cx="60" cy="93" r="3.5" fill="#0b0b0d"/></svg>';
       return a; })(),
-    list,
+    list, sampleBox,
   ]);
-  const draw = (rounds) => {
+  let lastRounds = [];
+  const draw = (rounds) => { lastRounds = rounds; drawSample();
     if (!rounds.length) { mount(list, el("p", { class: "empty center" }, "No rounds yet. Start one above \u2014 it takes a minute to set up.")); return; }
     const row = (r) => {
       const { score, thru, par } = roundTotals(r);
@@ -371,10 +385,14 @@ async function renderNew(main, flash, viewing = null) {
 
   // Course: type-ahead from your past courses and OpenStreetMap; picking one fills the location, and a
   // course you've played before also refills its scorecard.
-  const [pastRounds, savedCards] = await Promise.all([
+  const [pastRounds, savedCards, tourMetas] = await Promise.all([
     new Promise((res) => { const un = watchPlayerRounds(player.key, (r) => { res(r); setTimeout(() => un(), 0); }); }),
     myCourseCards(state.user?.uid),
+    import("../courseHeat.js").then((m) => m.listHeatCourses()).catch(() => []), // (update 863: the tour's courses)
   ]);
+  // (update 863) every tour course with a full scorecard (par for each hole, yards from the shot data), its tees "Tour"
+  const tourCourses = await import("../sampleRounds.js").then((S) => S.tourCards(tourMetas).map((c) => ({ name: c.name, location: "", tees: "Tour", tourCard: true, note: c.events.slice(0, 2).join(", "),
+    saved: { tees: { Tour: c.holes.map((h) => h.yards ?? null) }, lastTees: "Tour" }, holes: c.holes }))).catch(() => []);
   // your saved scorecards first (they keep every set of tees you've entered), then courses from your rounds
   const fromCards = savedCards.map((c) => ({ name: c.name, location: c.location || "", tees: c.lastTees || "", saved: c,
     holes: Array.from({ length: c.holes || 18 }, (_, i) => ({ n: i + 1, par: c.par?.[i] ?? 4, hcp: c.hcp?.[i] ?? null, yards: (c.tees?.[c.lastTees] || [])[i] ?? null })) }));
@@ -382,6 +400,7 @@ async function renderNew(main, flash, viewing = null) {
   const courseHist = [...fromCards, ...courseHistory(pastRounds).filter((c) => !seen.has(c.name.trim().toLowerCase()))];
   const courseBox = courseCombobox(course, {
     history: courseHist, // (update 270: the same list, so a deleted card leaves the suggestions at once)
+    tour: tourCourses,
     onPick: (c) => {
       if (c.location) locationIn.value = c.location;
       if (c.tees && !teesIn.value) teesIn.value = c.tees;
@@ -395,7 +414,7 @@ async function renderNew(main, flash, viewing = null) {
         const pick = cardTees.findIndex((t) => t.name === (c.saved?.lastTees || c.tees));
         if (pick >= 0) { teeSelect.value = String(pick); applyTee(pick); drawTeeSelect(); }
         drawCount(); drawGrid();
-        photoStatus.textContent = c.saved ? `Scorecard filled from your saved card${cardTees.length > 1 ? `: ${cardTees.length} sets of tees, pick yours above` : ""}. Check it's still right.`
+        photoStatus.textContent = c.tourCard ? "Scorecard filled from the tour's course (par and the Tour tees' yards from its shot data). Check it before you start." : c.saved ? `Scorecard filled from your saved card${cardTees.length > 1 ? `: ${cardTees.length} sets of tees, pick yours above` : ""}. Check it's still right.`
           : `Scorecard filled from your round here on ${c.date}. Check it's the same tees.`;
         lastSavedKey = cardKey(); // (nothing new to save yet)
       }

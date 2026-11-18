@@ -439,8 +439,10 @@ function paintChip(n, c) {
   if (!c) { const b = el("button", { type: "button", class: "cur-go cur-pick" }, [el("i", { "aria-hidden": "true" }), "Pick a player"]); b.addEventListener("click", () => openPalette("", { pick: true })); n.classList.add("empty"); n.replaceChildren(b); n.title = "Pick a player: every page opens on them"; return; }
   n.classList.remove("empty"); n.title = `${c.label}: the player on every page (tap to switch)`;
   const a = el("button", { type: "button", class: "cur-go" }, [el("i", { "aria-hidden": "true" }), lastName(c.label)]); a.addEventListener("click", () => openPalette("", { pick: true }));
-  const x = el("button", { type: "button", class: "cur-x", "aria-label": `Clear ${c.label}` }, "×"); x.addEventListener("click", () => setCurrent(null));
-  n.replaceChildren(a, x);
+  // (update 863) a coach or caddie with one player: always them (no ×; the picker offers only them and "Me")
+  const st0 = window.__authState || {}, tk = st0.isAdmin ? [] : Object.keys(effectiveTeam(st0).teamAccess || {}), locked = tk.length === 1 && c.key === tk[0];
+  const x = locked ? null : el("button", { type: "button", class: "cur-x", "aria-label": `Clear ${c.label}` }, "×"); x?.addEventListener("click", () => setCurrent(null));
+  n.replaceChildren(...[a, x].filter(Boolean));
 }
 function curChip() { const n = el("span", { class: "cur-chip" }); paintChip(n, currentPlayer()); return n; }
 onCurrent((c) => { for (const n of document.querySelectorAll(".cur-chip")) paintChip(n, c); });
