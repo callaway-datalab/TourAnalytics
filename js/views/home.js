@@ -883,7 +883,8 @@ export async function render(main, { previewClient } = {}) {
     const moverMode = pool.length > 0, leadM = moverMode ? pool[0] : lead, others = pool.slice(1);
     // (update 848) one player: beside the hero, their At a glance (rounds in the green, best run, biggest upside, steadiest)
     const glK = solo() ? selfKey || [...picked][0] || leadM?.k : null, glSide = glK ? glanceFacts(glK) : [];
-    const sideM = glSide.length ? [...glSide, ...fixedSides(glK, news0)].slice(0, 4) : !moverMode ? fp.slice(1) : others.length >= 4 && !selfKey && !solo() ? others.slice(0, 4) : [...others.filter((h) => h.id.startsWith("eq-")), ...fixedSides(leadM.k, news0)].slice(0, 4);
+    // (update 855) three beside the hero, not four
+    const sideM = glSide.length ? [...glSide, ...fixedSides(glK, news0)].slice(0, 3) : !moverMode ? fp.slice(1, 4) : others.length >= 3 && !selfKey && !solo() ? others.slice(0, 3) : [...others.filter((h) => h.id.startsWith("eq-")), ...fixedSides(leadM.k, news0)].slice(0, 3);
     const subjK = leadM?.k || selfKey || shownKeys()[0] || null;
     // (update 839) the sections, built for the page (one player: all of theirs; several: Around the Tour only) and, inside
     // each favorite's row in Your favorites, for that player (their stories, and the next course's)
@@ -946,7 +947,7 @@ export async function render(main, { previewClient } = {}) {
     const sideEl = el("aside", { class: "td-side" }, sideM.map(brief));
     // (update 795) a lead taller than the stories beside it: more of the day's stories down the side (up to 3 more) until
     // they come out about even
-    requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (innerWidth <= 860 || moverMode) return; const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
+    requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (true || innerWidth <= 860 || moverMode) return; /* (update 855: always three, never topped up) */ const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
       for (let n = 0; n < 3 && more2.length; n++) { if (leadEl.offsetHeight - used() < 170) break; sideEl.appendChild(brief(more2.shift())); } });
     mount(frontBox, el("section", { class: "td-front", id: "td-front" }, [leadEl, sideEl])); // (update 837: at the very top)
     mount(feed, [el("div", { class: "td-grid" }, laid), solo() && subjK ? pdfCard(subjK) : null]); // (update 839: no Today) (update 849: and their PDF report at the end)
