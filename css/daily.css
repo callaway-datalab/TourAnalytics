@@ -1213,3 +1213,6 @@ th.bs-lastn .peak-len { vertical-align: middle !important; position: relative; t
 th.bs-lastn .bs-lastn-w { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
 th.bs-lastn .bs-lastn-w > span { line-height: 1; }
 th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }
+/* (update 877) Comparisons, where they play best: each round in its own column */
+.cmp-rd-slots { display: grid; gap: 6px; align-items: center; justify-items: center; width: 100%; }
+.cmp-rd-slot { display: flex; justify-content: center; min-width: 0; }

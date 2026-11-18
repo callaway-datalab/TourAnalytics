@@ -152,10 +152,12 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
   const share = (rs, f) => (rs.length ? rs.filter(f).length / rs.length : 0);
   const when = [];
   const rE = share(elite, (rd) => rested.has(evKey(rd))), rA = share(season, (rd) => rested.has(evKey(rd)));
-  if (Math.abs(rE - rA) >= 0.15 && evs.length > 4) when.push(`${Math.round(rE * 100)}% of ${NN.kept} came after a week or more off, against ${Math.round(rA * 100)}% of all rounds${rE > rA ? ": rest seems to help" : ": they play their best when playing in a run of events"}.`);
+  // (update 877) always both lines (when there are enough rounds and events), each saying whether there's a pattern or not
+  const ofK = `of the rounds in their ${NN.kept}`;
+  if (evs.length > 4 && elite.length >= 3) when.push(`${Math.round(rE * 100)}% ${ofK} came after a week or more off, against ${Math.round(rA * 100)}% of all their rounds${Math.abs(rE - rA) < 0.15 ? ": about the same, so rest doesn\u2019t seem to matter" : rE > rA ? ": rest seems to help" : ": they play their best when playing in a run of events"}.`);
   const early = (rd) => Number(rd.roundNo) === 1 || Number(rd.roundNo) === 2;
   const eE = share(elite, early), eA = share(season, early);
-  if (Math.abs(eE - eA) >= 0.15) when.push(`${Math.round(eE * 100)}% of ${NN.kept} were Round 1 or 2, against ${Math.round(eA * 100)}% of all rounds${eE > eA ? ": they start well and fade, so weekend rounds are where to look" : ": they finish strong; the opening rounds are what to sharpen"}.`);
+  if (elite.length >= 3) when.push(`${Math.round(eE * 100)}% ${ofK} were Round 1 or 2, against ${Math.round(eA * 100)}% of all their rounds${Math.abs(eE - eA) < 0.15 ? ": about the same, so no early or late pattern" : eE > eA ? ": they start well and fade, so weekend rounds are where to look" : ": they finish strong; the opening rounds are what to sharpen"}.`);
   // (update 342) where Practice is open: add a drill (or all of them) to the practice plan, with a goal for each
   const shown = there ? [] : prios.flatMap((p) => p.drills);
   const sig = (x) => `${S.me?.key}|${x.drill.kind}|${x.drill.dist || ""}|${x.drill.lie || ""}`;
@@ -303,8 +305,7 @@ export function pathBack(S, elite, season, cat, lv = null, { rest = false, best 
   // (update 442) always open, right under the best-stretch line: just the table (and when the kept rounds happen)
   return el("div", { class: "bs-path bs-path-flat" }, [
     pathTable(),
-    when.length ? el("p", { class: "bs-sub bs-sub2" }, `When the ${NN.kept} happen`) : null,
-    when.length ? el("ul", { class: "bs-list" }, when.map((t) => el("li", {}, t))) : null,
+    /* (update 877) no "When the best stretch happen" lines */
     canAdd ? status : null,
   ]);
 }

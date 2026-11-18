@@ -128,6 +128,7 @@ export async function render(main) {
   const rawOfKey = (k) => (k === player?.key ? data.rounds : others.get(`${k}|${source}`) || []);
   // (update 222) the Tour filter: only the rounds on the tours picked (none picked = every tour), everywhere on the page
   let tourSel = new Set(q.get("tour") ? [q.get("tour")] : []); // (update 729: a link can pick the tour, as Home does)
+  let tourTouched = !!q.get("tour"); // (update 841) until a tour chip is tapped, the tour with the most rounds for the players picked
   const tourCache = new Map();
   // (update 244) Leave out: tournaments (a year's playing of one), date ranges and round numbers, taken out of every
   // player's rounds everywhere on the page (every selection, leaderboard, table and report)
@@ -153,12 +154,14 @@ export async function render(main) {
     for (const p of ps) { const mine = new Set(); for (const rd of sgRounds(rawOfKey(p.key))) if (rd.tour) { counts.set(rd.tour, (counts.get(rd.tour) || 0) + 1); mine.add(rd.tour); } if (mine.size > 1) oneMulti = true; }
     const withEvery = ps.some((p) => p.key === EVERY) || productsOnly;
     void withEvery; void oneMulti; // (update 546: shown whenever the selections cover more than one tour, between players too)
+    // (update 841) not All tours by default: the tour the players picked have the most rounds on (again whenever the players change, until a chip is tapped)
+    if (!tourTouched && counts.size >= 2) { const top = [...counts].sort((a, b) => b[1] - a[1])[0][0]; if (!(tourSel.size === 1 && tourSel.has(top))) { tourSel = new Set([top]); allMemo = null; setTimeout(() => { if (data) opts = options(allRounds()); draw(); }, 0); } }
     if (counts.size < 2 && !tourSel.size) { if (tourSel.size) { tourSel = new Set(); allMemo = null; setTimeout(() => { if (data) opts = options(allRounds()); draw(); }, 0); } return null; }
     const pill = (on, label, n, click) => { const b = el("button", { type: "button", class: `cmp-chip small${on ? " on" : ""}`, "aria-pressed": String(on) }, [on ? el("span", { class: "cmp-chip-tick", "aria-hidden": "true" }, "\u2713") : null, label, n != null ? el("span", { class: "cmp-chip-n" }, `${n.toLocaleString()} rds`) : null]); b.addEventListener("click", click); return b; };
     const redo = () => { allMemo = null; if (data) opts = options(allRounds()); draw(); };
     return el("div", { class: "panel cmp-tourbar" }, [el("span", { class: "cmp-chip-gt" }, "Tour"),
-      el("div", { class: "cmp-chips" }, [pill(!tourSel.size, "All tours", null, () => { tourSel = new Set(); redo(); }),
-        ...[...counts].sort((a, b) => b[1] - a[1]).map(([t, n]) => pill(tourSel.has(t), t, n, () => { tourSel.has(t) ? tourSel.delete(t) : tourSel.add(t); redo(); }))])]);
+      el("div", { class: "cmp-chips" }, [pill(!tourSel.size, "All tours", null, () => { tourTouched = true; tourSel = new Set(); redo(); }),
+        ...[...counts].sort((a, b) => b[1] - a[1]).map(([t, n]) => pill(tourSel.has(t), t, n, () => { tourTouched = true; tourSel.has(t) ? tourSel.delete(t) : tourSel.add(t); redo(); }))])]);
   }
   let exclOpen = false, exclQ = "", exclBy = "events";
   function leaveOutBar() {
@@ -2006,7 +2009,10 @@ export async function render(main) {
         el("tbody", {}, visits.map((rds) => { const v = rds.reduce((t, rd) => t + rdSG(rd, "TOTAL"), 0) / rds.length, f = finishOf(rds[0].pk, rds[0]);
           return el("tr", {}, [el("td", {}, [placeDim === "tournaments" ? yr(rds[0]) : `${rds[0].event || "\u2014"} ${yr(rds[0])}`, many ? el("span", { class: "muted small" }, ` \u00b7 ${pname(rds[0].pk)}`) : null, placeDim === "tournaments" && rds[0].course ? el("span", { class: "muted small" }, ` \u00b7 ${rds[0].course}`) : null]),
             el("td", { class: "num" }, String(rds.length)), finishes.size ? el("td", { class: `num cmp-fin${f === "MC" ? " mc" : ""}` }, f) : null, el("td", { class: `num strong ${tone(v)}` }, fmtSG(v)),
-            el("td", { class: "ph-hide cmp-rd-chips" }, placeDim === "rounds" ? dateTxt(rds[0].date) : [...rds].sort((a, b) => Number(a.roundNo || 0) - Number(b.roundNo || 0)).map((rd) => el("span", { class: `cmp-rd-chip ${tone(rdSG(rd, "TOTAL"))}` }, `R${rd.roundNo || "?"} ${fmtSG(rdSG(rd, "TOTAL"))}`)))]); })),
+            el("td", { class: "ph-hide cmp-rd-chips" }, placeDim === "rounds" ? dateTxt(rds[0].date) : (() => { /* (update 877) a slot for each round (R1 under R1 on every row); a round not played: an empty slot */
+              const byN = new Map(rds.map((rd) => [Number(rd.roundNo) || 0, rd])), nMax = Math.max(4, ...byN.keys()), odd = rds.filter((rd) => !(Number(rd.roundNo) >= 1));
+              return el("div", { class: "cmp-rd-slots", style: `grid-template-columns: repeat(${nMax}, minmax(0, 1fr))` }, [...Array.from({ length: nMax }, (_, i) => { const rd = byN.get(i + 1); return el("span", { class: "cmp-rd-slot" }, rd ? el("span", { class: `cmp-rd-chip ${tone(rdSG(rd, "TOTAL"))}` }, `R${i + 1} ${fmtSG(rdSG(rd, "TOTAL"))}`) : null); }),
+                ...odd.map((rd) => el("span", { class: "cmp-rd-slot" }, el("span", { class: `cmp-rd-chip ${tone(rdSG(rd, "TOTAL"))}` }, `R? ${fmtSG(rdSG(rd, "TOTAL"))}`)))]); })())]); })),
       ]));
       return [row, whyBox(x, all), det];
     });
