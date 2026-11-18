@@ -828,3 +828,35 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
 .rail .rail-foot .account-btn.hdr-icon { width: 1.75rem !important; min-width: 0 !important; justify-content: flex-start !important; padding: 0 !important; }
 @media (max-width: 640px) { .rail > .brand { font-size: 0.72rem !important; letter-spacing: 0.16em !important; gap: 0.45rem !important; } }
 @media (max-width: 380px) { .rail > .brand { font-size: 0.66rem !important; letter-spacing: 0.12em !important; } }
+/* (update 845) the open part of the game stands out: the rest of the table faded right back, the open rows lit and edged in gold */
+.td .td-rk tbody.td-rk-focus tr:not(.td-rk-on) { opacity: 0.18; }
+.td .td-rk tbody.td-rk-focus tr:not(.td-rk-on):hover { opacity: 0.45; }
+.td .td-rk tbody.td-rk-focus tr.td-rk-on td { background: color-mix(in srgb, var(--td-gold) 7%, transparent); }
+.td .td-rk tbody.td-rk-focus tr.td-rk-on td:first-child { box-shadow: inset 3px 0 0 var(--td-gold); }
+.td .td-rk tbody.td-rk-focus tr.td-rk-cat.open td { background: color-mix(in srgb, var(--td-gold) 16%, transparent); font-weight: 800; color: var(--td-ink); }
+.td .td-rk tbody.td-rk-focus tr.td-rk-cat.open td:first-child { padding-left: 8px; }
+.td .td-rk tbody.td-rk-focus tr.td-rk-sub.td-rk-on td:first-child { padding-left: 26px; }
+/* (update 845) Best Week: its own colour and dot */
+[data-sec="bestwk"] { --sec: #64d2ff; } html[data-theme="light"] [data-sec="bestwk"] { --sec: #0a7ea8; }
+/* (update 845) Your favorites as cards */
+.td-ov .td-fav { border: 1px solid var(--td-rule); border-radius: 14px; background: color-mix(in srgb, var(--td-ink) 3%, transparent); margin: 8px 0; transition: border-color 0.15s, background 0.15s; }
+.td-ov .td-fav:hover { border-color: color-mix(in srgb, var(--td-gold) 45%, transparent); background: color-mix(in srgb, var(--td-gold) 5%, transparent); }
+.td-ov .td-fav[open] { border-color: color-mix(in srgb, var(--td-gold) 60%, transparent); }
+.td-ov .td-fav > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px 16px; }
+.td-fav-av { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font: 800 0.9rem var(--td-sans); letter-spacing: 0.02em; color: #111;
+  background: linear-gradient(135deg, hsl(var(--h) 45% 72%), hsl(calc(var(--h) + 40) 50% 55%)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--td-gold) 35%, transparent); }
+.td-fav-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.td-fav-id strong { font-size: 1.05rem; } .td-fav-sub { font: 500 0.78rem var(--td-sans); color: var(--td-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-fav-stats { display: flex; align-items: center; gap: 18px; }
+.td-fav-stat { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 70px; }
+.td-fav-stat strong { font: 800 1.1rem var(--td-sans); font-variant-numeric: tabular-nums; } .td-fav-stat strong.up { color: var(--td-up); } .td-fav-stat strong.down { color: var(--td-down); }
+.td-fav-stat span { font: 600 0.66rem var(--td-sans); color: var(--td-mute); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+.td-fav-sparkw { width: 100px; } .td-fav-spark { width: 100px; height: 30px; display: block; }
+.td-fav-spark rect.up { fill: var(--td-up); opacity: 0.85; } .td-fav-spark rect.down { fill: var(--td-down); opacity: 0.85; } .td-fav-zero { stroke: var(--td-rule2); stroke-width: 0.6; }
+.td-ov .td-fav .td-ov-secs { padding: 0 12px 12px; }
+@media (max-width: 640px) {
+  .td-ov .td-fav > summary { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding: 10px 12px; }
+  .td-fav-stats { grid-column: 1 / -1; justify-content: space-between; gap: 10px; } .td-ov .td-fav > summary .td-ov-chev { grid-row: 1; grid-column: 3; }
+  .td-fav-av { width: 36px; height: 36px; font-size: 0.8rem; }
+}
+@media (max-width: 640px) { .td-ov-head { flex-wrap: wrap; } .td-ov-head h2 { white-space: nowrap; } }

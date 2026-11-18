@@ -218,19 +218,41 @@ export async function render(main, { previewClient } = {}) {
   const edition = el("span", {}, ""), nextLine = el("a", { class: "td-live", href: "#/live", title: "Open the Event Feed" }, ""), /* (update 734: this week’s event: a link to the Event Feed) */ roleLbl = el("span", { class: "td-top-r" }, "");
   // (update 836) Stats' Overview at the top of Home: one player (you, or the one picked in the header) in full; several
   // (favorites, or a coach's players) as a row each, closed, with the name: a tap opens that player's Overview
-  let playerBuild = null; const secBoxes = new Map(); // (update 839) a favorite's row: its sections' box
+  let playerBuild = null; const secBoxes = new Map(), headBoxes = new Map();
+  // (update 845) a favorite's card: the line under the name and their numbers (strokes gained total and its tour rank, form,
+  // the last 20 rounds as little bars), filled in as the data comes in
+  const fillHead = (k) => { const hb = headBoxes.get(k); if (!hb) return; try {
+    const SY = seasonYr(), all = sgRounds(rawOf(playerOf(k))).filter((r) => !r.eventLevel), rs = all.filter((r) => yrOf(r) === SY);
+    const tn = tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour";
+    if (!rs.length) { hb.sub.textContent = field.length ? `No rounds on ${tourPick && tourPick !== ALL ? `the ${tn}` : "record"} in ${SY}` : "Loading…"; mount(hb.stats, []); return; }
+    const R = ranksFor(SY).by, rk = R.TOTAL?.get(k), n = R["TOTAL#"], av = avgOf(rs, tot), fm = formAll.get(k)?.x;
+    const ent = fieldsPI ? ["R", "H"].flatMap((c) => fieldsPI.fieldEventsSync(nameOf(k), c) || []).sort((a, b) => String(a.start).localeCompare(String(b.start)))[0] : null;
+    hb.sub.textContent = [tn, `${rs.length} rounds in ${SY}`, ent ? `Next: ${fullEv(ent.name)}` : null].filter(Boolean).join(" · ");
+    const last = all.slice(-20), mx = Math.max(0.5, ...last.map((r) => Math.abs(tot(r)))), W = 100, H = 30, bw = W / Math.max(1, last.length);
+    const svg = mk0("svg", { viewBox: `0 0 ${W} ${H}`, class: "td-fav-spark", "aria-hidden": "true" }); svg.append(mk0("line", { x1: 0, x2: W, y1: H / 2, y2: H / 2, class: "td-fav-zero" }));
+    last.forEach((r, i) => { const v = tot(r), h = Math.max(1, (Math.abs(v) / mx) * (H / 2 - 1)); svg.append(mk0("rect", { x: (i * bw + bw * 0.15).toFixed(1), y: (v >= 0 ? H / 2 - h : H / 2).toFixed(1), width: (bw * 0.7).toFixed(1), height: h.toFixed(1), rx: 0.8, class: v >= 0 ? "up" : "down" })); });
+    const stat = (big, lab, c0) => el("div", { class: "td-fav-stat" }, [el("strong", { class: c0 || "" }, big), el("span", {}, lab)]);
+    mount(hb.stats, [stat(sg2(av), rk ? `SG: Total · ${ord1(rk)} of ${n}` : "SG: Total per round", cls(av)),
+      fm ? stat(`${fm.d >= 0 ? "▲" : "▼"} ${Math.abs(fm.d).toFixed(2)}`, `form, last ${fm.n}${/event/.test(fm.FL || "") ? " events" : ""}`, cls(fm.d)) : null,
+      el("div", { class: "td-fav-sparkw", title: "The last 20 rounds, strokes gained total" }, svg)]);
+  } catch (e) { console.warn("favorite card", e); } }; // (update 839) a favorite's row: its sections' box
   const fillSecs = (k) => { const b = secBoxes.get(k); if (!b || !playerBuild) return; const r0 = playerBuild(k);
     mount(b, r0.laid.length ? el("div", { class: "td-grid" }, r0.laid) : el("p", { class: "td-wait" }, "No stories about them yet.")); };
   const ovKeys = () => (selfKey ? [selfKey] : picked.size ? [...picked] : (favs.length ? favs : keys).filter((k, i, a) => a.indexOf(k) === i));
   const ovTop = el("section", { class: "td-ov" }), frontBox = el("div", { class: "td-frontbox" }); // (update 837: the front page above it)
   async function drawOvTop() {
     const ks = ovKeys();
-    const sig = ks.join(","); if (ovTop.dataset.sig === sig) return; ovTop.dataset.sig = sig; secBoxes.clear();
+    const sig = ks.join(","); if (ovTop.dataset.sig === sig) return; ovTop.dataset.sig = sig; secBoxes.clear(); headBoxes.clear();
     if (!ks.length) { mount(ovTop, []); return; }
     if (ks.length === 1) { mount(ovTop, []); return; } // (update 841: no overview on Home; one player's sections are the page's)
     mount(ovTop, [el("div", { class: "td-ov-head" }, [el("h2", {}, favs.length ? "Your favorites" : "Your players"), el("span", {}, "Tap a player for their stories")]),
-      ...ks.map((k) => { const secB = el("div", { class: "td-ov-secs" }), det = el("details", { class: "td-ov-p" }, [el("summary", {}, [el("strong", {}, nameOf(k)), el("span", { class: "td-ov-chev", "aria-hidden": "true" }, "›")]), secB]); // (update 841: their sections only, no overview)
-        secBoxes.set(k, secB);
+      ...ks.map((k) => { const secB = el("div", { class: "td-ov-secs" });
+        // (update 845) a card: initials, the name and a line under it (tour, rounds, next event), then their numbers
+        const nm = nameOf(k), ini = nm.split(/\s+/).filter(Boolean).map((w) => w[0]).filter((ch) => /[A-Z]/.test(ch)).slice(0, 1).concat(nm.split(/\s+/).filter(Boolean).slice(-1).map((w) => w[0].toUpperCase())).join("");
+        const hb = { sub: el("span", { class: "td-fav-sub" }, ""), stats: el("div", { class: "td-fav-stats" }) }; headBoxes.set(k, hb);
+        const det = el("details", { class: "td-ov-p td-fav" }, [el("summary", {}, [el("span", { class: "td-fav-av", "aria-hidden": "true", style: `--h:${Math.round(hash(nm) * 360)}` }, ini),
+          el("div", { class: "td-fav-id" }, [el("strong", {}, nm), hb.sub]), hb.stats, el("span", { class: "td-ov-chev", "aria-hidden": "true" }, "›")]), secB]); // (update 841: their sections only, no overview)
+        secBoxes.set(k, secB); fillHead(k);
         det.addEventListener("toggle", () => { if (det.open) fillSecs(k); }); return det; })]); // (update 839: and their sections)
   }
   mount(root, [ // (update 839: the Daily Tour Report and its headings first, then the front page, Your favorites, the sections)
@@ -663,12 +685,23 @@ export async function render(main, { previewClient } = {}) {
       el("p", {}, o.r ? `of ${o.n} on tour · ${sg2(o.v)} per round (${Math.round(o.shots)} shots)` : `strokes gained per round (${Math.round(o.shots)} shots)`), more(h)]), h); };
   const chev = () => el("span", { class: "td-rk-chev", "aria-hidden": "true" }, "▸");
   // (update 842) one part of the game open at a time: the rest of the table greys out until it's closed
+  // (update 845) each column's colours scaled to the rows in view only: the open part of the game and its distances, else
+  // the rows shown (best green, worst red, the middle grey); strokes gained by value, ranks by place
+  const recolor = (tb) => { if (!tb) return; const focus = tb.classList.contains("td-rk-focus");
+    // like with like: closed, the parts of the game (not SG: Total); open, just its distances (not the part's own row)
+    const rows = [...tb.rows].filter((x) => !x.hidden && (focus ? x.classList.contains("td-rk-on") && x.classList.contains("td-rk-sub") : !x.classList.contains("td-rk-tot") && !x.classList.contains("td-rk-sub")));
+    const own = [...tb.rows].filter((x) => !x.hidden && !rows.includes(x) && (!focus || x.classList.contains("td-rk-on") || x.classList.contains("td-rk-tot")));
+    for (const tr of own) for (const td of tr.cells) { if (td.dataset.v != null) td.style.color = sgSt(Number(td.dataset.v), scOf(tr.className)).replace("color:", ""); else if (td.dataset.r != null) { const q = Number(td.dataset.r); td.style.color = gradC(1 - 2 * Math.min(1, Math.max(0, q))); } }
+    const cols = new Map(); for (const tr of rows) [...tr.cells].forEach((td, i) => { if (td.dataset.v != null || td.dataset.r != null) (cols.get(i) || cols.set(i, []).get(i)).push(td); });
+    for (const tds of cols.values()) { const isR = tds[0].dataset.r != null, vs = tds.map((td) => Number(isR ? td.dataset.r : td.dataset.v)).filter(Number.isFinite), lo = Math.min(...vs), hi = Math.max(...vs);
+      for (const td of tds) { const v = Number(isR ? td.dataset.r : td.dataset.v); if (!Number.isFinite(v) || hi === lo) { td.style.color = ""; continue; } const t = ((v - lo) / (hi - lo)) * 2 - 1; td.style.color = gradC(isR ? -t : t); } }
+    for (const tr of tb.rows) if (tr.hidden || (!rows.includes(tr) && !own.includes(tr))) for (const td of tr.cells) if (td.dataset.v != null || td.dataset.r != null) td.style.color = ""; };
   const expander = (tr, subs) => { if (!subs.length) return; tr.classList.add("td-rk-cat"); tr.setAttribute("role", "button"); tr.tabIndex = 0; subs.forEach((s) => { s.hidden = true; });
     tr._subs = subs;
     const tog = () => { const tb0 = tr.parentElement, open = subs[0].hidden;
       if (tb0) for (const o of tb0.querySelectorAll("tr.td-rk-cat.open")) if (o !== tr) { o.classList.remove("open"); (o._subs || []).forEach((s) => { s.hidden = true; }); }
       subs.forEach((s) => { s.hidden = !open; }); tr.classList.toggle("open", open);
-      if (tb0) { tb0.classList.toggle("td-rk-focus", open); for (const x of tb0.rows) x.classList.toggle("td-rk-on", open && (x === tr || subs.includes(x))); } };
+      if (tb0) { tb0.classList.toggle("td-rk-focus", open); for (const x of tb0.rows) x.classList.toggle("td-rk-on", open && (x === tr || subs.includes(x))); recolor(tb0); } };
     tr.addEventListener("click", tog); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") tog(); }); };
   // (update 842) colours on a scale: red through a neutral grey to green, by how big the number is (strokes gained per round:
   // its own scale for SG: Total, a part of the game and a distance) or where the rank sits in the field
@@ -680,11 +713,12 @@ export async function render(main, { previewClient } = {}) {
   // Ranks: strokes gained total and each part of the game, each opening to its distance ranges
   function rankTable(k) {
     const SY = seasonYr(), R = ranksFor(SY).by, rs = sgRounds(rawOf(playerOf(k))).filter((r) => yrOf(r) === SY); if (!rs.length) return null;
-    const row = (lbl, v, r, n, cl = "") => el("tr", { class: cl }, [el("td", {}, lbl), el("td", { class: "v", style: sgSt(v, scOf(cl)) }, v == null ? "—" : sg2(v)), el("td", { class: "r", style: rkSt(r, n) }, r ? `${r} of ${n}` : "—")]);
+    const row = (lbl, v, r, n, cl = "") => el("tr", { class: cl }, [el("td", {}, lbl), el("td", { class: "v", ...(v != null ? { "data-v": String(v) } : {}) }, v == null ? "—" : sg2(v)), el("td", { class: "r", ...(r ? { "data-r": String(r / (n || 1)) } : {}) }, r ? `${r} of ${n}` : "—")]);
     const tb = el("tbody", {}, [row("SG: Total", avgOf(rs, tot), R.TOTAL?.get(k), R["TOTAL#"], "td-rk-tot")]);
     for (const c of cats) { const ds = distsOf(k, c), tr = row([ds.length ? chev() : null, CATN[c]], avgOf(rs, (r) => inCat(r, c)), R[c]?.get(k), R[`${c}#`]);
       const subs = ds.map((o) => { const t = row(o.d, o.v, o.r, o.n, "td-rk-sub"); t.addEventListener("click", () => openPop(distStory(k, o, "Tour rank"))); return t; });
       tb.append(tr, ...subs); expander(tr, subs); }
+    recolor(tb); // (update 845)
     return el("div", {}, [el("div", { class: "td-tw" }, el("table", { class: "td-box td-rk" }, [el("thead", {}, el("tr", {}, ["Category / distance range", "SG per round", "Tour rank"].map((t2) => el("th", {}, t2)))), tb])),
       el("p", { class: "td-note" }, distBoard() ? "Tap a part of the game for its distance ranges, and a range for its leaderboard. Ranked among the players with enough rounds (a range: 15+ shots)." : "The distance ranges open once the field’s shot detail has loaded.")]);
   }
@@ -699,8 +733,9 @@ export async function render(main, { previewClient } = {}) {
       return out.sort((a, b) => b[1] - a[1]); };
     const line = (lbl, f, useDet, usual, cl = "") => { const b = evs.map((e) => [e, avgOf(e.rs, f)]).filter((x) => x[1] != null).sort((a, c) => c[1] - a[1])[0]; if (!b) return null;
       const at = atEv(b[0], f, useDet), i = at.findIndex((x) => x[0] === k);
-      const tr = el("tr", { class: cl }, [el("td", {}, lbl), el("td", {}, fullEv(b[0].event)), el("td", { class: "v", style: sgSt(b[1], scOf(cl)) }, sg2(b[1])), el("td", { class: "r", style: i >= 0 && at.length >= 5 ? rkSt(i + 1, at.length) : "" }, i >= 0 && at.length >= 5 ? `${i + 1} of ${at.length}` : "—"),
-        el("td", { class: "v", style: sgSt(usual.v, scOf(cl)) }, usual.v == null ? "—" : sg2(usual.v)), el("td", { class: "r", style: rkSt(usual.r, usual.n) }, usual.r ? `${usual.r} of ${usual.n}` : "—")]);
+      const okR = i >= 0 && at.length >= 5, dv = (v) => (v != null && Number.isFinite(v) ? { "data-v": String(v) } : {});
+      const tr = el("tr", { class: cl }, [el("td", {}, lbl), el("td", {}, fullEv(b[0].event)), el("td", { class: "v", ...dv(b[1]) }, sg2(b[1])), el("td", { class: "r", ...(okR ? { "data-r": String((i + 1) / at.length) } : {}) }, okR ? `${i + 1} of ${at.length}` : "—"),
+        el("td", { class: "v", ...dv(usual.v) }, usual.v == null ? "—" : sg2(usual.v)), el("td", { class: "r", ...(usual.r ? { "data-r": String(usual.r / (usual.n || 1)) } : {}) }, usual.r ? `${usual.r} of ${usual.n}` : "—")]);
       // (update 842) a distance: tap for every event's number in it, as bars
       if (/sub/.test(cl)) { tr.title = "Every event in it, as bars"; tr.addEventListener("click", (e) => { e.stopPropagation(); evBarsPop(tr.dataset.full || lbl, f, b[0]); }); }
       return tr; };
@@ -716,6 +751,7 @@ export async function render(main, { previewClient } = {}) {
       const subs = dr.length ? ownRanges(k, c).map((o) => { const fr = (r) => (r.shots || []).reduce((t, s0) => t + (s0.cat === c && s0.dist === o.d ? s0.sg || 0 : 0), 0), dRk = distRank(k, o.q);
         const t0 = line(o.d, fr, true, { v: o.v, r: dRk?.r, n: dRk?.n }, "td-rk-sub"); if (t0) t0.dataset.full = rngName(c, o.d); return t0; }).filter(Boolean) : [];
       if (subs.length) tr.firstChild.prepend(chev()); tb.append(tr, ...subs); expander(tr, subs); }
+    recolor(tb); // (update 845)
     return el("div", {}, [el("div", { class: "td-tw" }, el("table", { class: "td-box td-rk td-bw" }, [el("thead", {}, el("tr", {}, ["Category / distance range", "Best week", "Per round", "Rank that week", "Usual per round", "Usual rank"].map((t2) => el("th", {}, t2)))), tb])),
       el("p", { class: "td-note" }, `${isMe(k) ? "Your" : poss(nameOf(k))} best tournament of ${SY} in each (2+ rounds there), strokes gained per round; its rank among that week's field, and ${isMe(k) ? "your" : "their"} season average and tour rank beside it. Tap a part of the game for its distance ranges.`)]);
   }
@@ -796,7 +832,7 @@ export async function render(main, { previewClient } = {}) {
       // (update 820) 3 stories to start (Form, Player Spotlight, Where to Improve, Results & Milestones): "Show more" adds 3 more each press
       const moreB = MORE3.includes(id) && mine.length > pick.length ? (() => { const left = mine.filter((h) => !pick.includes(h)), b = el("button", { type: "button", class: "td-more-btn" }, `Show more (${left.length})`);
         b.addEventListener("click", () => { secMore[sk] = (secMore[sk] || 0) + 1; for (const h of left.splice(0, STEP(id))) { content.appendChild(id === "gear" ? gearStory(h) : column(h)); pick.push(h); } secSeen[sk] = new Set(pick.map((h) => h.id)); if (left.length) b.textContent = `Show more (${left.length})`; else b.remove(); }); return el("div", { class: "td-more-row" }, b); })() : null;
-      secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}${sfx}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), shuf, sub ? el("span", {}, sub) : null]), content, moreB]));
+      secs.push(el("section", { class: `td-sec${FULL.has(id) ? " full" : ""}`, id: `td-${id}${sfx}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), /* (update 845: no Shuffle) */ sub ? el("span", {}, sub) : null]), content, moreB]));
       if (PAIR.includes(id) && !MORE3.includes(id)) pairRest.set(id, { box: content, more: mine.filter((h) => !pick.includes(h)) }); /* (update 789: to even the pair up) */
       secSeen[sk] = new Set((grpShown.length ? grpShown : pick).map((h) => h.id));
     }
@@ -822,10 +858,11 @@ export async function render(main, { previewClient } = {}) {
     const { secs, laid, pairRest } = buildSecs(multiFav ? ["tour"] : orderNow(), sorted, subjK);
     playerBuild = (k) => buildSecs(PLAYER_IDS, sorted.filter((h) => h.k === k || (!h.k && ["course", "next"].includes(SEC_OF[h.kind]))), k, `-${String(k).replace(/[^a-z0-9]/gi, "")}`);
     for (const [k, b] of secBoxes) if (b.closest("details")?.open) fillSecs(k);
+    for (const k of headBoxes.keys()) fillHead(k); // (update 845)
     shownLead = lead?.id || null;
     const reB = el("button", { type: "button", class: "td-shuf td-reroll", title: "Show other top stories", "aria-label": "Show other top stories" }, "↻ Shuffle") /* (update 790: as Did You Know's) */;
     reB.addEventListener("click", (e) => { e.stopPropagation(); reroll = true; if (lastItems) drawFeed(lastItems); document.getElementById("td-front")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
-    const leadEl = leadStory(leadM); if (!moverMode) leadEl.prepend(reB); /* (update 791: the shuffle at the top; 837: not with the biggest mover) */
+    const leadEl = leadStory(leadM); void reB; /* (update 845: no Shuffle) */ /* (update 791: the shuffle at the top; 837: not with the biggest mover) */
     const sideEl = el("aside", { class: "td-side" }, sideM.map(brief));
     // (update 795) a lead taller than the stories beside it: more of the day's stories down the side (up to 3 more) until
     // they come out about even
@@ -987,7 +1024,7 @@ export async function render(main, { previewClient } = {}) {
         // their best week this season in each part of the game
         const pl = F.all.find((p) => p.k === k); if (!pl) continue; const evs = eventsOf(pl.rs).filter((e) => e.rs.length >= 2);
         if (evs.length >= 4) for (const c of cats) { const b = evs.map((e) => [e, avgOf(e.rs, (r) => inCat(r, c))]).sort((a, b) => b[1] - a[1])[0];
-          if (b && b[1] > 0.5) cand.push({ fx: { big: sg2(b[1]), small: "per round", lbl: `Best ${CATW[c]} week · ${fullEv(b[0].event)}` }, id: `fx-wk-${c}-${k}`, k, kick: "Best week", title: `${me ? "Your" : poss(nameOf(k))} best ${CATW[c]} week of ${SY}: ${sg2(b[1])} per round at ${b[0].event}`, detail: `Strokes gained ${CAT_IN[c]}, over ${b[0].rs.length} rounds there`, run: () => toStats(k, { view2: "full", year: [SY], span: 0 }, "Tournaments", null), to: "Stats · Tournaments" }); }
+          if (false && b && b[1] > 0.5) cand.push({ fx: { big: sg2(b[1]), small: "per round", lbl: `Best ${CATW[c]} week · ${fullEv(b[0].event)}` }, id: `fx-wk-${c}-${k}`, k, kick: "Best week", title: `${me ? "Your" : poss(nameOf(k))} best ${CATW[c]} week of ${SY}: ${sg2(b[1])} per round at ${b[0].event}`, detail: `Strokes gained ${CAT_IN[c]}, over ${b[0].rs.length} rounds there`, run: () => toStats(k, { view2: "full", year: [SY], span: 0 }, "Tournaments", null), to: "Stats · Tournaments" }); }
         // a single round among the season's best on tour (any part of the game)
         for (const c of ["TOTAL", ...cats]) { const f = c === "TOTAL" ? tot : (r) => inCat(r, c), mine = pl.rs.filter((r) => !r.eventLevel).map((r) => [r, f(r)]).sort((a, b) => b[1] - a[1])[0]; if (!mine) continue;
           let better = 0; for (const p of F.all) for (const r of p.rs) if (!r.eventLevel && f(r) > mine[1]) { better++; if (better > 10) break; }
@@ -1119,7 +1156,7 @@ export async function render(main, { previewClient } = {}) {
     return out;
   }
   function highlightsAll() {
-    const out = [];
+    const out = []; formAll.clear(); // (update 845: a player's form on the tour picked only)
     for (const k of shownKeys()) out.push(...highlightsFor(k));
     // this week's tournament, with its strategy maps (caddies first)
     if (next?.heat) out.push({ id: "next", k: null, kind: "Next event", score: ROLE === "caddy" ? 9 : 5.5, title: `${next.live ? "On now" : "Coming up"}: ${next.name}`, detail: "Cal’s targets for every hole: where to aim off the tee and where to miss the green", to: "Course Prep · Strategy Maps", run: () => toHole(next.heat, 1, EX.course(`How should I play ${next.name}?`)) });
@@ -1526,8 +1563,10 @@ export async function render(main, { previewClient } = {}) {
   let favs = [], practice = [], gen = 0;
   const pill = (on, label, fn, cls = "") => { const b = el("button", { type: "button", class: `hl-pill${on ? " on" : ""}${cls}`, "aria-pressed": String(!!on) }, label); b.addEventListener("click", fn); return b; };
   function drawPills() {
-    const cnt = new Map(), src = keys.length ? field.filter((p) => keys.includes(p.key)) : field;
-    for (const p of src) for (const rd of p.rounds) cnt.set(tourOf(rd), (cnt.get(tourOf(rd)) || 0) + 1);
+    // (update 845) only the tours the players on Home play: yours, the one picked in the header, else the favorites
+    const selK = selfKey ? [selfKey] : picked.size ? [...picked] : keys, cnt = new Map(), src = selK.length ? field.filter((p) => selK.includes(p.key)) : field;
+    const srcR = [...src.map((p) => p.rounds), ...(ownP && selK.includes(ownP.key) && !src.some((p) => p.key === ownP.key) ? [ownP.rounds] : [])];
+    for (const rs of srcR) for (const rd of rs) cnt.set(tourOf(rd), (cnt.get(tourOf(rd)) || 0) + 1);
     const tours = [...cnt].sort((a, b) => b[1] - a[1]).map(([t]) => t);
     if (tourPick !== ALL && !tours.includes(tourPick)) { tourPick = tours[0] ?? null; tmemo.clear(); }
     // (update 841) one player (yours, or picked in the header): the tour they've played the most, until a tour is tapped
@@ -1595,7 +1634,7 @@ export async function render(main, { previewClient } = {}) {
     return out;
   }
   const collect = () => { const shown = shownKeys().slice(0, selfKey ? 1 : GEARN);
-    return [...highlightsAll(), ...shownKeys().flatMap(glanceFacts) /* (update 841) */, ...shown.flatMap((k) => (gearData.has(k) ? [...gearHighlights(k), ...detailSpots(k)] : [])), ...(solo() ? shownKeys().slice(0, 1).flatMap(bestWeeks) : []), ...practice]; };
+    return [...highlightsAll(), ...shownKeys().flatMap(glanceFacts) /* (update 841) */, ...shown.flatMap((k) => (gearData.has(k) ? [...gearHighlights(k), ...detailSpots(k)] : [])), /* (update 845: Best Week has its own section) */ ...practice]; };
   async function refresh() {
     const my = ++gen; drawPills(); drawFeed(collect());
     for (const k of shownKeys().slice(0, selfKey ? 1 : GEARN)) { if (gearData.has(k)) continue; await loadGear(k); if (my !== gen) return; drawFeed(collect()); }
