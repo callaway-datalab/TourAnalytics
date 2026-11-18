@@ -603,13 +603,14 @@ export async function render(main, { previewClient } = {}) {
         el("div", { class: "td-legend" }, [el("span", { class: "gray" }, A.mine ? "Expected here vs usual, a round" : "Here vs tour, a round")])]);
       return attBox; }
     // (update 866) each hole's aggressiveness index (birdie-or-better % less bogey-or-worse %); (update 867) the field's, a card of its own
-    if (x.agg?.rows?.length) { const G = { ...x.agg, who: null };
-      const mxA = Math.max(0.2, ...G.rows.flatMap((o) => [Math.abs(o.f), Math.abs(o.me ?? 0)])), pc = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.round(Math.abs(v) * 100)}`;
-      const barA = (v, c0) => { if (v == null) return el("div", { class: `td-sk-bar ${c0} td-agg-none` }, el("span", {}, "\u2014")); const w = Math.min(50, (Math.abs(v) / mxA) * 50); return el("div", { class: `td-sk-bar ${c0}` }, [el("i", { style: `width:${w.toFixed(1)}%;${v >= 0 ? "left:50%" : `left:${(50 - w).toFixed(1)}%`}` }), el("span", { class: v >= 0.005 ? "up" : v <= -0.005 ? "down" : "" }, pc(v))]); };
-      const aggBox = el("div", { class: "td-chart td-agg" }, [el("div", { class: "td-kick mute" }, "Aggressiveness by hole · birdie or better % less bogey or worse %"),
-        el("div", { class: "td-sk-rows" }, G.rows.map((o) => el("div", { class: "td-sk-row td-agg-row" }, [el("span", { class: "td-sk-l" }, `No. ${o.h} \u00b7 P${o.par}`), el("div", {}, [G.who ? barA(o.me, "me") : null, barA(o.f, "top")])]))),
-        el("div", { class: "td-legend" }, [G.who ? el("span", { class: "gray" }, `${G.who} (2+ plays)`) : null, el("span", { class: "gold" }, "The field")])]);
-      return aggBox; }
+    if (x.agg?.rows?.length) { const G = x.agg, mxA = Math.max(0.2, ...G.rows.map((o) => Math.abs(o.f))), pcA = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.round(Math.abs(v) * 100)}`, pc0 = (v) => `${Math.round(v * 100)}%`;
+      // (update 868) each hole: its index as a bar (birdie or better % minus bogey or worse %), the two percentages, and a ⚠ on the blow-up holes
+      const barA = (v) => { const w = Math.min(50, (Math.abs(v) / mxA) * 50); return el("div", { class: "td-sk-bar top" }, el("i", { style: `width:${w.toFixed(1)}%;${v >= 0 ? "left:50%" : `left:${(50 - w).toFixed(1)}%`}` })); };
+      return el("div", { class: "td-chart td-agg" }, [el("div", { class: "td-kick mute" }, "Aggressiveness by hole · birdie or better % minus bogey or worse % · the field"),
+        el("div", { class: "td-agg-row td-agg-head" }, [el("span", {}, "Hole"), el("span", {}, ""), el("span", {}, "Index"), el("span", {}, "Birdie+"), el("span", {}, "Bogey+")]),
+        el("div", { class: "td-agg-rows" }, G.rows.map((o) => el("div", { class: `td-agg-row${o.blow ? " blow" : ""}`, title: o.blow ? `Blow-up hole: ${pc0(o.d2)} double bogey or worse` : null }, [el("span", { class: "td-sk-l" }, [`No. ${o.h} \u00b7 P${o.par}`, o.blow ? el("b", { class: "td-agg-warn" }, " \u26a0") : null]), barA(o.f),
+          el("span", { class: `td-agg-v ${o.f >= 0.005 ? "up" : o.f <= -0.005 ? "down" : ""}` }, pcA(o.f)), el("span", { class: "td-agg-p" }, pc0(o.b)), el("span", { class: "td-agg-p" }, [pc0(o.g), o.blow ? el("small", {}, ` \u00b7 ${pc0(o.d2)} dbl+`) : null])]))),
+        el("div", { class: "td-legend" }, [el("span", { class: "gold" }, "The field"), G.rows.some((o) => o.blow) ? el("span", { class: "td-agg-lg" }, "\u26a0 Blow-up hole: 6%+ double bogey or worse") : null])]); }
     // (update 797) a skill at the course: the player against the top 10 in each part of the game (strokes gained per round)
     if (x.skill?.bands?.length) { const sk = x.skill, lbl0 = (b0) => String(b0).replace(/^\w+\|/, "").replace(/ tee shots$/, ""), f3 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(sk.perRound ? 2 : 3);
       // (update 846) readable at any width: a row for each distance, two bars from a centre line
@@ -1547,8 +1548,8 @@ export async function render(main, { previewClient } = {}) {
     greens.sort((a, b) => a - b); const toGo = greens.length ? greens[Math.floor(greens.length / 2)] < 2.6 : true;
     const T = [...trails.values()].filter((t) => t.s != null); for (const t of T) t.qs.sort((a, b) => a.st - b.st);
     // each hole: birdie (or better) and bogey (or worse) rates; the attack / defend index (birdies per bogey)
-    const byH = new Map(); for (const t of T) { const o = byH.get(t.h) || byH.set(t.h, { h: t.h, par: t.par, n: 0, bird: 0, bog: 0, sum: 0 }).get(t.h); o.n++; o.sum += t.s; if (t.s <= -1) o.bird++; if (t.s >= 1) o.bog++; }
-    const holesR = [...byH.values()].filter((o) => o.n >= 40).map((o) => ({ ...o, b: o.bird / o.n, g: o.bog / o.n, avg: o.sum / o.n, idx: (o.bird / o.n) / Math.max(0.01, o.bog / o.n) }));
+    const byH = new Map(); for (const t of T) { const o = byH.get(t.h) || byH.set(t.h, { h: t.h, par: t.par, n: 0, bird: 0, bog: 0, dbl: 0, sum: 0 }).get(t.h); o.n++; o.sum += t.s; if (t.s <= -1) o.bird++; if (t.s >= 1) o.bog++; if (t.s >= 2) o.dbl++; } /* (update 868: doubles or worse too) */
+    const holesR = [...byH.values()].filter((o) => o.n >= 40).map((o) => ({ ...o, b: o.bird / o.n, g: o.bog / o.n, d2: o.dbl / o.n, avg: o.sum / o.n, idx: (o.bird / o.n) / Math.max(0.01, o.bog / o.n) }));
     // the top 10 each year (of those who played every round), against the rest: by hole and by part of the game
     const tot = new Map(); for (const t of T) { const k = `${t.who}|${t.yr}`, o = tot.get(k) || tot.set(k, { who: t.who, yr: t.yr, s: 0, rds: new Set(), holes: 0 }).get(k); o.s += t.s; o.rds.add(t.rd); o.holes++; }
     const top = new Set(); const byYr = new Map(); for (const o of tot.values()) (byYr.get(o.yr) || byYr.set(o.yr, []).get(o.yr)).push(o);
@@ -1710,9 +1711,14 @@ export async function render(main, { previewClient } = {}) {
           // the player's own where they've played it (2+ plays)
           // (update 867: the field's only, and a card of its own)
           const HA = (R0.holesR || []).slice().sort((a, b) => a.h - b.h);
-          if (HA.length >= 9) { const rowsA = HA.map((o) => ({ h: o.h, par: o.par, f: o.b - o.g, b: o.b, g: o.g })), byA = [...rowsA].sort((a, b) => b.f - a.f), hi = byA[0], lo = byA.at(-1), pcA = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.round(Math.abs(v) * 100)}`;
-            out.push({ id: "up-agg", k: null, kind: "Course", score: 4.85, x: { agg: { rows: rowsA } }, title: `Attack No. ${hi.h}, hold back on No. ${lo.h}`,
-              detail: `Aggressiveness (birdie or better % less bogey or worse %, the field's): No. ${hi.h} (par ${hi.par}) ${pcA(hi.f)}, ${Math.round(hi.b * 100)}% birdie or better · No. ${lo.h} (par ${lo.par}) ${pcA(lo.f)}, ${Math.round(lo.g * 100)}% bogey or worse · every hole below`,
+          if (HA.length >= 9) { const rowsA = HA.map((o) => ({ h: o.h, par: o.par, f: o.b - o.g, b: o.b, g: o.g, d2: o.d2 || 0 })), byA = [...rowsA].sort((a, b) => b.f - a.f), hi = byA[0], lo = byA.at(-1), pcA = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.round(Math.abs(v) * 100)}`;
+            // (update 868) the blow-up holes: the most doubles or worse (6% of plays or more), up to 3
+            const blow = [...rowsA].filter((o) => o.d2 >= 0.06).sort((a, b) => b.d2 - a.d2).slice(0, 3); for (const o of blow) o.blow = true; const pc0 = (v) => `${Math.round(v * 100)}%`;
+            out.push({ id: "up-agg", k: null, kind: "Course", score: 4.85, title: `Attack No. ${hi.h}, hold back on No. ${lo.h}`,
+              x: { agg: { rows: rowsA } }, detail: [`No. ${hi.h} (par ${hi.par}): the field makes birdie or better ${pc0(hi.b)} of the time and bogey or worse ${pc0(hi.g)}, an aggressiveness index of ${pcA(hi.f)}`,
+                `No. ${lo.h} (par ${lo.par}): ${pc0(lo.b)} birdie or better, ${pc0(lo.g)} bogey or worse (${pcA(lo.f)})`,
+                blow.length ? `Blow-up holes to avoid: ${blow.map((o) => `No. ${o.h} (${pc0(o.d2)} double bogey or worse)`).join(", ")}` : "No blow-up holes: none has 6% or more doubles or worse",
+                "Aggressiveness index: birdie or better % minus bogey or worse %, the field's, every hole below"].join(" · "),
               to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, hi.h, EX.hole(`How should I play hole ${hi.h}?`)) }); }
           if (up && DV(up) >= 0.3 && rows.length >= 4) out.push({ id: "up-att", k: null, kind: "Course", score: 4.86, x: { att: { rows, mine: nOwn ? (isMe(one) ? "You" : nameOf(one)) : null } },
             title: `Expect more ${WH[up.cat]} from ${lb(up)} at ${U.name}`,

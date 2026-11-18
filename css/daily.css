@@ -1125,3 +1125,24 @@ html[data-theme="light"] .cf-tag.cf-sh { color: #0a6e99; }
 .td-agg .td-sk-bar { height: 11px; margin: 1px 3em 1px 0; } .td-agg .td-sk-bar span { right: -3em; font-size: 0.66rem; }
 .td-agg-none span { color: var(--td-soft); }
 @media (max-width: 860px) { .td-att2 { grid-template-columns: 1fr; gap: 16px; } }
+
+/* (update 868) the course charts fill their card: the shots you'll face and each hole's aggressiveness (index, birdie+ %, bogey+ %, blow-ups) */
+.td .td-chart.td-att, .td .td-chart.td-agg, .td .td-col .td-chart.td-att, .td .td-col .td-chart.td-agg { max-width: none; }
+.td-att-row { grid-template-columns: 7em minmax(0, 1fr) 6em !important; }
+.td-att-row .td-sk-bar { margin-right: 3.4em; } .td-att-row .td-sk-bar span { right: -3.4em; }
+.td-agg-rows { display: grid; gap: 2px; margin: 6px 0 8px; }
+.td-agg-row { display: grid; grid-template-columns: 6.6em minmax(0, 1fr) 3.4em 3.8em 7.4em; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 6px; font-size: 0.8rem; }
+.td-agg-row .td-sk-bar { margin: 0; height: 14px; }
+.td-agg-head { font: 700 0.6rem var(--td-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--td-soft); padding-bottom: 0; }
+.td-agg-head span:nth-child(n+3), .td-agg-v, .td-agg-p { text-align: right; font-variant-numeric: tabular-nums; }
+.td-agg-v { font-weight: 800; } .td-agg-v.up { color: var(--td-up); } .td-agg-v.down { color: var(--td-down); }
+.td-agg-p { color: var(--td-soft); white-space: nowrap; } .td-agg-p small { color: #ff6b5f; font-weight: 700; }
+.td-agg-row.blow { background: rgba(255,69,58,0.12); box-shadow: inset 3px 0 0 #ff453a; }
+.td-agg-warn { color: #ff6b5f; }
+.td-agg-lg { color: #ff6b5f; font-weight: 600; }
+@media (max-width: 560px) { .td-agg-row { grid-template-columns: 5.4em minmax(0, 1fr) 2.8em 3em 3.4em; gap: 5px; font-size: 0.72rem; } .td-agg-p small { display: none; } }
+.td-agg .td-agg-row { grid-template-columns: 6.6em minmax(0, 1fr) 3.4em 3.8em 7.4em !important; }
+.td-agg .td-agg-row .td-sk-bar { margin: 0 !important; }
+@media (max-width: 560px) { .td-agg .td-agg-row { grid-template-columns: 5.4em minmax(0, 1fr) 2.8em 3em 3.4em !important; } }
+.td-agg .td-agg-row { grid-template-columns: 7em minmax(0, 1fr) 3.4em 3.8em 9.4em !important; } .td-agg-p { white-space: nowrap; }
+@media (max-width: 560px) { .td-agg .td-agg-row { grid-template-columns: 6.2em minmax(0, 1fr) 2.9em 3.1em 3.1em !important; gap: 4px; } .td-agg-head { font-size: 0.5rem; letter-spacing: 0.02em; } .td-agg-row .td-sk-l { white-space: nowrap; overflow: hidden; } }
