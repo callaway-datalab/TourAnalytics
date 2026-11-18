@@ -12,6 +12,7 @@ const theE = (n) => (/^the\s/i.test(String(n || "")) ? n : `the ${n}`); // (upda
 import * as PI from "../playerInsights.js";
 import { card, samp, sg2, cls } from "./insightPages.js";
 import { openStatsTab, lastName } from "../current.js";
+import { fitShotsBlock } from "./fitShotsView.js"; // (update 862)
 
 export function render() { openStatsTab("fit"); }
 
@@ -33,12 +34,18 @@ export async function fitTab(box, key, name) {
   const code = PI.tourCodeOf(tour); await Promise.all([PI.ensureFields().catch(() => null), code ? PI.ensureResults(code, [...new Set(D.flatMap((d) => d.yrs))]).catch(() => null) : null]);
   const enteredIn = code ? (PI.fieldEventsSync(name, code) || []) : [], entered = (n) => enteredIn.find((e) => PI.matchEventName(e.name, [n]));
   if (!D.length) { mount(wrap, el("p", { class: "muted" }, `Not enough of the ${tour || "tour"}'s tournaments in the stats file to rank yet.`)); return; }
+  // (update 862) the shot files: a tournament whose course has shot data adds what the player's misses (off the tee, the
+  // approach) and blow-ups are worth there; each capped at ±0.75 a round so one course's quirks can't swamp the rest
+  let metas = [], prof = null, usual = null, FS = null;
+  try { const [{ listHeatCourses }, M] = await Promise.all([import("../courseHeat.js"), import("../courseFitShots.js")]); FS = M; metas = (await listHeatCourses()).filter(M.hasFit); if (metas.length) { prof = M.missProfile(key, metas); usual = M.usualExposure(metas); } } catch (e) { console.warn("course fit shots", e); }
+  const cap = (v) => Math.max(-0.75, Math.min(0.75, v || 0));
+  const shotFor = (n) => { if (!FS || !prof) return null; const m = FS.metaForEvent(metas, n, PI.matchEventName); if (!m) return null; const mf = FS.missFit(prof, m.fit, usual); mf.tee = cap(mf.tee); mf.app = cap(mf.app); mf.blow = cap(mf.blow); mf.total = mf.tee + mf.app + mf.blow; return { meta: m, mf }; };
   // their own record at each tournament (every year, their own file or the stats file)
   const mine = (fp?.rounds || base).filter((r) => !tour || r.tour === tour);
   const rows = D.map((d) => { const here = mine.filter((r) => evName(r.event) === d.name);
     const parts = PI.CATS.map((c) => ({ c, room: d.room[c], me: P.cat[c] || 0, edge: (P.cat[c] || 0) * (d.room[c] - 1) }));
-    const eff = parts.reduce((t, x) => t + x.edge, 0);
-    return { ...d, fit: season + eff, eff, here: here.length, hereSg: here.length ? here.reduce((t, r) => t + tot(r), 0) / here.length : null, parts }; }).sort((a, b) => b.eff - a.eff);
+    const eff0 = parts.reduce((t, x) => t + x.edge, 0), sh = shotFor(d.name), eff = eff0 + (sh ? sh.mf.total : 0);
+    return { ...d, fit: season + eff, eff, eff0, sh, here: here.length, hereSg: here.length ? here.reduce((t, r) => t + tot(r), 0) / here.length : null, parts }; }).sort((a, b) => b.eff - a.eff);
   const xx = (v) => `${v.toFixed(2)}×`, part = (c) => PI.CATN[c].toLowerCase();
   const why = (r) => { const most = [...r.parts].sort((a, b) => b.room - a.room)[0], least = [...r.parts].sort((a, b) => a.room - b.room)[0], big = [...r.parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge))[0];
     const edgeTxt = Math.abs(big.edge) < 0.01 ? `${Poss} game is worth about the same here as in a normal week.`
@@ -58,7 +65,10 @@ export async function fitTab(box, key, name) {
     const hist = H.length ? el("table", { class: "ip-t cf-hist" }, [el("thead", {}, el("tr", {}, ["Year", "Course", "Finish", "SG rank", H.some((h) => h.eventLevel) ? "Events" : "Rounds", "SG per round", ...PI.CATS.map((c) => ({ OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT" })[c])].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))),
       el("tbody", {}, H.map((h) => el("tr", {}, [el("td", {}, h.yr), el("td", {}, h.course || "—"), el("td", { class: "num strong" }, fin(h, r.name)), el("td", { class: "num" }, sgRk(h)), el("td", { class: "num" }, String(h.rounds)), el("td", { class: `num strong ${cls(h.sg)}` }, sg2(h.sg)), ...PI.CATS.map((c) => el("td", { class: `num ${cls(h.cat[c])}` }, sg2(h.cat[c])))])))])
       : el("p", { class: "muted" }, `${self ? "You haven't" : `${last} hasn't`} played it on record.`);
-    return el("div", { class: "cf-det" }, [el("p", { class: "cf-why" }, why(r)), r.small ? el("p", { class: "cf-small" }, `Small field (about ${Math.round(r.perYr)} players a year in the file, against about ${Math.round(mid)} usually; likely no cut): a rough guide.`) : null,
+    const shBlock = r.sh ? el("div", { class: "cf-shots" }, [el("p", { class: "cf-sub" }, `From the shot data at ${r.sh.meta.name}`),
+      el("p", { class: "muted small" }, `Fit vs a normal week ${sg2(r.eff)}: the parts of the game ${sg2(r.eff0)}, ${poss} misses off the tee ${sg2(r.sh.mf.tee)}, approaches ${sg2(r.sh.mf.app)}, blow-ups ${sg2(r.sh.mf.blow)}.`),
+      fitShotsBlock(r.sh.meta, { prof, mf: r.sh.mf, who: last, self })]) : el("p", { class: "muted small cf-noshots" }, "No shot data for this course yet: the fit is from the stats file's parts of the game only.");
+    return el("div", { class: "cf-det" }, [el("p", { class: "cf-why" }, why(r)), shBlock, r.small ? el("p", { class: "cf-small" }, `Small field (about ${Math.round(r.perYr)} players a year in the file, against about ${Math.round(mid)} usually; likely no cut): a rough guide.`) : null,
       el("div", { class: "cf-cols" }, [
         el("div", {}, [el("p", { class: "cf-sub" }, "What the tournament asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part of the game", "Impact here vs usual", self ? "You normally" : `${last} normally`, "What it's worth here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
           el("tbody", {}, r.parts.map((x) => el("tr", {}, [el("td", {}, PI.CATN[x.c]), el("td", { class: "num strong" }, [xx(x.room), el("span", { class: "cf-arrow" }, x.room > 1.03 ? " ▲" : x.room < 0.97 ? " ▼" : "")]), el("td", { class: `num ${cls(x.me)}` }, `${sg2(x.me)} per round`), el("td", { class: `num strong ${cls(x.edge)}` }, sg2(x.edge))])))])]),
@@ -67,14 +77,18 @@ export async function fitTab(box, key, name) {
   const table = el("div", { class: "ip-tw" }, el("table", { class: "ip-t cf-t" }, [
     el("thead", {}, el("tr", {}, ["#", "Tournament", "Fit vs a normal week", "", "Rounds there"].map((h, i) => el("th", { class: i === 2 || i === 4 ? "num" : null }, h)))),
     el("tbody", {}, rows.flatMap((r, i) => { const open = el("tr", { class: "cf-open", hidden: true }, el("td", { colspan: "5" }, null));
-      const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name, r.small ? el("span", { class: "cf-tag", title: "Small field: a rough guide" }, "small field") : null, (() => { const e = entered(r.name); return e ? el("span", { class: "cf-tag cf-in", title: `${name} is in the field${e.start ? ` (${e.start})` : ""}` }, "✓ entered") : null; })()]),
+      const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name, r.small ? el("span", { class: "cf-tag", title: "Small field: a rough guide" }, "small field") : null, r.sh ? el("span", { class: "cf-tag cf-sh", title: "Includes the shot data: misses and blow-up holes" }, "shot data") : null, (() => { const e = entered(r.name); return e ? el("span", { class: "cf-tag cf-in", title: `${name} is in the field${e.start ? ` (${e.start})` : ""}` }, "✓ entered") : null; })()]),
         el("td", { class: `num strong ${cls(r.eff)}` }, sg2(r.eff)),
         el("td", { class: "cf-bart" }, el("span", { class: "cf-mid" }, el("i", { class: r.eff >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(r.eff) / max) * 50)}%` }))),
         el("td", { class: "num muted" }, r.here ? String(r.here) : "—")]);
       const toggle = () => { const on = open.hidden; if (on && !open.firstChild.firstChild) open.firstChild.append(detail(r)); open.hidden = !on; tr.classList.toggle("on", on); tr.setAttribute("aria-expanded", String(on)); };
       tr.addEventListener("click", toggle); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
       return [tr, open]; }))]));
-  const lead = (r) => { const big = [...r.parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge))[0]; return PI.fitWords(big, self ? "your" : `${last}’s`.replace(/s’s$/, "s’"), self ? "" : last); }; // (update 838: plain words)
+  const lead = (r) => { const big = [...r.parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge))[0];
+    // (update 862) the shot data's part, when it's the bigger: their misses (or blow-ups) there
+    if (r.sh && Math.abs(r.sh.mf.total) > Math.abs(big.edge)) { const m = r.sh.mf, k = [["tee", "misses off the tee"], ["app", "approach misses"], ["blow", "blow-ups"]].sort((a, b) => Math.abs(m[b[0]]) - Math.abs(m[a[0]]))[0];
+      return `${self ? "your" : poss} ${k[1]} ${m[k[0]] >= 0 ? "suit" : "hurt"} ${self ? "you" : "them"} there (${sg2(m[k[0]])} a round)${m.holes[0]?.cost > 0.05 && m[k[0]] < 0 ? `, most on No. ${m.holes[0].h}` : ""}`; }
+    return PI.fitWords(big, self ? "your" : `${last}’s`.replace(/s’s$/, "s’"), self ? "" : last); }; // (update 838: plain words)
   const best = rows.slice(0, 3), worst = rows.slice(-3).reverse();
   mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#64d2ff" }, `Course Fit · ${tour || ""} ${year}`.trim()), el("h2", { class: "ip-h" }, `Where ${poss} game fits best`)])),
     el("div", { class: "ip-grid2" }, [card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round better suited than a normal week; ${lead(r)}`])))),

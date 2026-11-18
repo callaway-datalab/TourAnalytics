@@ -57,7 +57,15 @@ export async function drawInsights(ctx, course) {
     // (update 849) Course History is on this page now: the player's own rounds here (their finishes, each part of the game, against the field here)
     const histSec = who && pd ? el("section", { class: "ci2-hist" }, [el("h2", { class: "ci2-h" }, `${who.label.toUpperCase()} AT ${course.name.toUpperCase()}`), historyBody(course, who, pd)]) : null;
     if (histSec && pd?.ds) { const me = who; import("../fieldStore.js").then((m) => m.getFieldDetail(pd.ds.id, pd.ds.uploadedAt?.toMillis?.() ?? 0)).then((rr) => { if (who !== me || !rr?.players?.length || !histSec.isConnected) return; const ui = { open: new Set() }; const redo = () => mount(histSec, [histSec.firstChild, historyBody(course, me, pd, ui, rr.players, redo)]); redo(); }).catch(() => {}); }
-    mount(body, [scores(I), faced2(I, all, meta, S, who && mine ? who.label : null, who ? { label: who.label, rounds: pd?.rounds || [] } : null), plan(H, openHole), histSec, strategy(I, holeNums, toMap, meta, data, prof), holesSec, ...vsTop(H, S, name, first, openHole)].filter(Boolean));
+    // (update 862) how the course is won (better shots or more of them; a few holes or everywhere) and, with a player picked,
+    // how their misses from every course on record suit it
+    let fitSec = null;
+    try { const FS = await import("../courseFitShots.js"), m0 = all.find((x) => x.id === meta.id) || meta;
+      if (FS.hasFit(m0)) { const metas = all.filter(FS.hasFit), prof = who ? FS.missProfile(who.key, metas) : null, mf = prof ? FS.missFit(prof, m0.fit, FS.usualExposure(metas)) : null, self = !!(who && /\(me\)$|^You$/.test(who.label));
+        const { fitShotsBlock } = await import("./fitShotsView.js"), b = fitShotsBlock(m0, { prof, mf, who: who ? who.label : null, self });
+        if (b) fitSec = sec(who ? `HOW ${who.label.toUpperCase()} FITS` : "HOW IT'S WON", [b], who ? null : "Pick a player to see how their misses suit it."); }
+      else if (ctx.state?.isAdmin && meta.rawChunks) fitSec = sec("HOW IT'S WON", [el("p", { class: "muted" }, "Press Rebuild maps (Upload Data › Strategy Maps) to work out how this course is won and how each player's misses suit it.")]); } catch (e) { console.warn("fit shots", e); }
+    mount(body, [scores(I), faced2(I, all, meta, S, who && mine ? who.label : null, who ? { label: who.label, rounds: pd?.rounds || [] } : null), fitSec, plan(H, openHole), histSec, strategy(I, holeNums, toMap, meta, data, prof), holesSec, ...vsTop(H, S, name, first, openHole)].filter(Boolean));
   }
   ready = true;
   await draw();

@@ -1061,3 +1061,17 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
   .witb-e-t input { width: 100%; box-sizing: border-box; }
 }
 @media (max-width: 640px) { .club-table.witb-merged td.c-club, .club-table.witb-tour-t td.c-club { text-align: left !important; } .witb-e-t tr { padding: 8px 10px; box-sizing: border-box; } }
+
+/* (update 862) the shot data's read of a course: why the top 10 win, where, and a player's misses (Course Fit and Course Insights) */
+.fs { display: grid; gap: 14px; }
+.fs-blk h4 { margin: 0 0 6px; font: 700 0.72rem var(--font-body, Inter, sans-serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted, #8e8e93); }
+.fs-ul { margin: 0; padding-left: 1.1em; display: grid; gap: 5px; font-size: 0.88rem; line-height: 1.45; }
+.fs-ul b { font-weight: 650; }
+.fs-ul .pos { color: var(--pos, #30d158); font-weight: 700; } .fs-ul .neg { color: var(--neg, #ff453a); font-weight: 700; }
+.fs-me { border-left: 3px solid #64d2ff; padding-left: 10px; }
+.fs-note { margin: 6px 0 0; font-size: 0.74rem; color: var(--muted, #8e8e93); line-height: 1.4; }
+.cf-shots { margin: 10px 0 14px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
+html[data-theme="light"] .cf-shots { background: rgba(0,0,0,0.025); border-color: rgba(0,0,0,0.08); }
+.cf-tag.cf-sh { background: rgba(100,210,255,0.15); color: #64d2ff; }
+html[data-theme="light"] .cf-tag.cf-sh { color: #0a6e99; }
+@media (max-width: 600px) { .fs-ul { font-size: 0.82rem; padding-left: 1em; } .cf-shots { padding: 10px; } }

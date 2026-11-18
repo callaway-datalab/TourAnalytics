@@ -358,13 +358,18 @@ export function courseInsights(C) {
     const hb = holeBoards(shots, pins, H?.par || 4); hbMemo.set(h, hb); return hb;
   };
   const holes = {}, attempts = {}, sgF = {}, sgT = {}, rF = new Set(), rT = new Set();
-  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, ps: {}, land: [], sp: {} };
+  // (update 862) Course Fit from the shots: attempts in the strokes-gained ranges (the field's, the Top 10's) so the Top 10's
+  // edge can be split into more of a shot against better at it; each player's misses (off the tee: left / fairway / right;
+  // the approach: on the green, or its miss side), holes played and doubles, kept small with the course for every page
+  const cF = {}, cT = {}, missP = {}, mp = (k) => missP[k] || (missP[k] = { t: [0, 0, 0], a: {}, h: 0, d: 0 });
+  for (const [h, H] of C.holes) holes[h] = { par: parOf(h), field: sc5(), top: sc5(), dbl: [0, 0, 0], app: {}, fwy: {}, gir: {}, go: {}, drive: {}, ud: {}, udp: {}, drivep: {}, ps: {}, land: [], sp: {} };
   for (const [key, t, qs] of all) {
     const X = holes[t.h]; if (!X) continue;
     const par = X.par, isTop = top.has(`${key}|${t.y}`), rk = `${key}|${t.y}|${t.r}`;
     for (const q of qs) { const b = bucketOf(q, par, false); if (b) attempts[b] = (attempts[b] || 0) + 1; }
     rF.add(rk); if (isTop) rT.add(rk);
     const one = {}; trailSG({ ...t, shots: qs }, par, E, one);
+    for (const q of qs) { const b = bucketOf(q, par, true); if (b) { cF[b] = (cF[b] || 0) + 1; if (isTop) cT[b] = (cT[b] || 0) + 1; } } // (update 862)
     for (const [b, v] of Object.entries(one)) { sgF[b] = (sgF[b] || 0) + v; if (isTop) sgT[b] = (sgT[b] || 0) + v; }
     const at = (k) => qs.find((q) => q[0] === k);
     // where approaches missed the green: the first shot played from off the green within 30 yards (after a shot from
@@ -390,8 +395,12 @@ export function courseInsights(C) {
         // a bunker within 3): not a place to aim for
         || !!(m && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.greenDist && HB?.bunkerDist && HB.greenDist(m.nq[1], m.nq[2]) <= 6 && HB.bunkerDist(m.nq[1], m.nq[2]) <= 4 && (!HB.bunkerBehind || HB.bunkerBehind(m.nq[1], m.nq[2], 4))); // (update 635: only when the bunker is behind it: in front of a bunker, not beside one) // (update 619: 6 and 4 yds, from 4 and 3) // (update 602: within about a yard of the green's outline; the outline sits a little inside the true edge)
       (X.sp[t.p] || (X.sp[t.p] = [])).push({ s: t.s, qs, side: fringe ? null : side, mLie: m && !fringe ? LIES[m.nq[3]] : null, apIdx, ...(fringe ? { fringe: true } : {}),
-        ...(m && !fringe && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.bunkerBehind?.(m.nq[1], m.nq[2], 5) ? { bb: 1 } : {}) }); } // (update 635: bb, a bunker behind it within 5 yds)
+        ...(m && !fringe && (m.nq[3] === 1 || m.nq[3] === 2) && HB?.bunkerBehind?.(m.nq[1], m.nq[2], 5) ? { bb: 1 } : {}) }); 
+      // (update 862) the approach's outcome: on the green, or its miss side (a fringe miss isn't counted either way)
+      { const onG = apIdx != null && qs[apIdx + 1]?.[3] === 4, ak = m && side && !fringe ? side : !m && onG ? "G" : null;
+        if (ak) { add2(X.app, ak, t.s); const P = mp(key); P.a[ak] = (P.a[ak] || 0) + 1; } } } // (update 635: bb, a bunker behind it within 5 yds)
     addSc(X.field, t.s); if (isTop) addSc(X.top, t.s);
+    { const P = mp(key); P.h++; if (t.s >= 2) { P.d++; X.dbl[0]++; X.dbl[1] += t.s; if (isTop) X.dbl[2]++; } } // (update 862: doubles or worse)
     // (update 508) and the same for its pin
     const PS = X.ps[t.p] || (X.ps[t.p] = { field: sc5(), top: sc5(), fwy: {}, gir: {}, go: {}, land: [] });
     addSc(PS.field, t.s); if (isTop) addSc(PS.top, t.s);
@@ -403,7 +412,7 @@ export function courseInsights(C) {
     const q1 = at(1), fw = mid(fAcc, t.h);
     let dd = null; // (update 494: from where the drive finished)
     if (q1 && q2 && q2[3] !== 4) { if (q2[3] === 1) dd = "C"; else if (fw) { const lat = (fw[0] - q1[1]) * (q2[2] - q1[2]) - (fw[1] - q1[2]) * (q2[1] - q1[1]); dd = lat < 0 ? "L" : lat > 0 ? "R" : null; } }
-    if (par >= 4 && dd) { add2(X.drive, dd, s); add2(X.drivep[t.p] || (X.drivep[t.p] = {}), dd, s); } // (update 492: and per pin)
+    if (par >= 4 && dd) { mp(key).t["LCR".indexOf(dd)]++; /* (update 862) */ add2(X.drive, dd, s); add2(X.drivep[t.p] || (X.drivep[t.p] = {}), dd, s); } // (update 492: and per pin)
     if (par >= 4 && q1 && q2 && q2[3] === 1) { X.land.push([q1[1], q1[2], q2[1], q2[2]]); PS.land.push([q1[1], q1[2], q2[1], q2[2]]); }
   }
   const out = {};
@@ -434,10 +443,12 @@ export function courseInsights(C) {
       try { for (const [pp, recs] of Object.entries(X.sp || {})) { const P = HP?.get(pp) || HP?.get(Number(pp)); const r = strategyOf(recs, X.par, { ...geo, pin: P?.pn ? [P.px / P.pn, P.py / P.pn] : null }); if (r) o[pp] = r; }
         const all = strategyOf(Object.values(X.sp || {}).flat(), X.par, geo); if (all) o["*"] = all; } catch (err) { console.warn("Strategy insights", err); }
       return o; };
-    out[h] = { strategy, _strat: stratLater, pinAuto, par: X.par, field: fx(X.field), top: fx(X.top), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]), ...(HB.marks ? { mk: HB.marks.map((m) => [r1(m[0]), r1(m[1])]) } : {}) }; } return o; })(), widths };
+    out[h] = { strategy, _strat: stratLater, pinAuto, par: X.par, field: fx(X.field), top: fx(X.top), dbl: X.dbl, app: f2(X.app), fwy: f2(X.fwy), gir: f2(X.gir), go: f2(X.go), drive: f2(X.drive), drivePins: Object.fromEntries(Object.entries(X.drivep).map(([pp, o]) => [pp, f2(o)])), ud: X.ud, udPins: X.udp, pinStats, udBoards: (() => { const HB = hbOf(Number(h)) || hbOf(h), o = {}; if (HB) for (const pp of Object.keys(X.udp)) { const B = HB.boardOf(pp); if (B) o[pp] = { gx: r1(B.gx), gy: r1(B.gy), ux: r4(B.ux), uy: r4(B.uy), a0: r1(B.a0), a1: r1(B.a1), l0: r1(B.l0), l1: r1(B.l1), rx: r1(B.ref[0]), ry: r1(B.ref[1]), ...(HB.marks ? { mk: HB.marks.map((m) => [r1(m[0]), r1(m[1])]) } : {}) }; } return o; })(), widths };
   }
   const r4o = (o) => Object.fromEntries(Object.entries(o).map(([kk, v]) => [kk, r4(v)]));
-  return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top] };
+  // (update 862) Course Fit's summary (kept on the course's own record too: small, read for every course at once)
+  const fit = { v: 1, rF: rF.size, rT: rT.size, sgF: r4o(sgF), sgT: r4o(sgT), cF, cT, holes: Object.fromEntries(Object.entries(out).map(([h, X]) => [h, { par: X.par, f: [X.field.n, X.field.sum], t: [X.top.n, X.top.sum], dbl: X.dbl, drive: X.drive, app: X.app }])), miss: missP };
+  return { events, holes: out, attempts, sg: { field: r4o(sgF), top: r4o(sgT), fieldRounds: rF.size, topRounds: rT.size, E }, top: [...top], fit };
 }
 
 /** Reads shot rows (a slice at a time) and keeps only what the maps need. */
@@ -579,7 +590,7 @@ export async function uploadShotCourses(list, onStatus = () => {}, { into = null
     const holesN = Object.keys(c.data.holes).map(Number), n = Math.max(0, ...holesN);
     const par = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.par || old?.par?.[i] || null), yards = Array.from({ length: n }, (_, i) => c.data.holes[i + 1]?.yards || old?.yards?.[i] || null);
     const zones = Object.values(c.data.holes).reduce((t, h) => t + Object.values(h.pins).reduce((u, p) => u + p.rows.length, 0), 0);
-    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(bn ? { courseNum: bn } : {}), courseNums: nums, events: c.events || [], attempts: c.data.insights?.attempts || {}, /* (update 488: for the attempt distribution against every course) */ par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true,
+    await setDoc(doc(db, "courseHeat", id), { name: c.name, ...(bn ? { courseNum: bn } : {}), courseNums: nums, events: c.events || [], attempts: c.data.insights?.attempts || {}, ...(c.data.insights?.fit ? { fit: c.data.insights.fit } : {}), /* (update 862: Course Fit's summary) */ /* (update 488: for the attempt distribution against every course) */ par, yards, dataChunks: chunks, dataBytes: json.length, dataAt: new Date(), zones, players, years: c.years, shotLevel: true,
       // (update 561) every pin's name from where it sits on the green (the course's own names, typed by hand, still come first)
       pinAuto: Object.fromEntries(Object.entries(c.data.insights?.holes || {}).flatMap(([h, X]) => Object.entries(X.pinAuto || {}).map(([pid, nm]) => [`${h}|${pid}`, nm]))) }, { merge: true });
   }
