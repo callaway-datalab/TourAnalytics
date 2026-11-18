@@ -1439,7 +1439,7 @@ export async function render(main, { previewClient } = {}) {
     const trails = new Map(), teeXY = new Map(), pinXY = new Map(), greens = [];
     for (const r of rows) { const h = num(r[6]), st = num(r[10]), x = num(r[13]), y = num(r[14]); if (!h || st == null) continue;
       const pid = String(r[8] ?? "1").trim() || "1", who = r[4] != null && r[4] !== "" ? r[4] : r[3], lie = CH.lieName(r[9]) || "other";
-      const q = { h, st, par: num(r[7]), pid, who, yr: String(r[0] ?? ""), rd: String(r[5] ?? ""), lie, x, y, v: num(r[15]), d: num(r[18]) };
+      const q = { h, st, par: num(r[7]), pid, who, yr: String(r[0] ?? ""), rd: String(r[5] ?? ""), lie, x, y, v: num(r[15]), d: num(r[21]) ?? num(r[18]) }; /* (update 861) the file's true_distance (the real distance to the hole), as Strategy Maps use; its 'distance' isn't */
       if (lie === "green" && q.v != null) greens.push(q.v);
       const tk = `${h}|${who}|${q.yr}|${q.rd}`; let T = trails.get(tk); if (!T) { T = { h, pid, who, nm: r[3] != null ? String(r[3]) : "", yr: q.yr, rd: q.rd, par: q.par, qs: [], s: null }; trails.set(tk, T); } T.qs.push(q);
       if (num(r[12]) === 1) { const sf = num(r[11]); T.s = sf != null ? Math.round(sf) : q.par ? st - q.par : null; }
@@ -1458,7 +1458,7 @@ export async function render(main, { previewClient } = {}) {
     const hEdge = new Map(); for (const t of T) { const o = hEdge.get(t.h) || hEdge.set(t.h, [0, 0, 0, 0]).get(t.h); if (isTop(t)) { o[0] += t.s; o[1]++; } else { o[2] += t.s; o[3]++; } }
     const edges = [...hEdge].filter(([, o]) => o[1] >= 10 && o[3] >= 30).map(([h, o]) => ({ h, d: o[0] / o[1] - o[2] / o[3] })).sort((a, b) => a.d - b.d);
     const E = expectModel(T), sgMemo = new Map(), sgOfT = (t) => sgMemo.get(t) || sgMemo.set(t, shotSG(t, E)).get(t); void toGo; // (update 761: not the file's scoring_avg, which can be the player's own strokes left)
-    const catOfQ = (q) => (q.lie === "green" ? "PUTT" : q.st === 1 && (q.par || 4) >= 4 ? "OTT" : q.d != null && q.d <= 30 ? "ARG" : "APP");
+    const catOfQ = (q) => (q.lie === "green" ? "PUTT" : q.st === 1 && (q.par || 4) >= 4 ? "OTT" : q.d != null && q.d < 50 ? "ARG" : "APP"); /* (update 861: within 50 yds is around the green, as the stats data's 30-50 yds) */
     // (update 799) a shot's distance range in its part of the game (the course's yards; feet on the green)
     const bandOf = (q, par) => { const c0 = catOfQ(q), d = q.d; if (c0 === "OTT") return `OTT|Par ${par || 4} tee shots`; if (d == null) return null;
       if (c0 === "APP") return `APP|${d < 75 ? "30-75" : d < 125 ? "75-125" : d < 175 ? "125-175" : d < 225 ? "175-225" : "225+"} yds`;
