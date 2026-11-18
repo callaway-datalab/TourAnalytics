@@ -1216,3 +1216,6 @@ th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }
 /* (update 877) Comparisons, where they play best: each round in its own column */
 .cmp-rd-slots { display: grid; gap: 6px; align-items: center; justify-items: center; width: 100%; }
 .cmp-rd-slot { display: flex; justify-content: center; min-width: 0; }
+/* (update 882) Recommended practice: tick the sessions to add */
+.rp-day { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; } .rp-tick { width: 16px; height: 16px; accent-color: var(--ipc, #f0b440); margin: 0; }
+.ip-sess.off { opacity: 0.45; }
