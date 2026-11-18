@@ -600,17 +600,18 @@ export async function render(main, { previewClient } = {}) {
         ...cats0.map((c0) => el("div", { class: "td-att-cat" }, [el("div", { class: "td-att-h" }, CN[c0] || c0),
           el("div", { class: "td-sk-rows" }, A.rows.filter((q) => q.cat === c0).map((q) => el("div", { class: "td-sk-row td-att-row" }, [el("span", { class: "td-sk-l" }, lb(q.b)), bar(dOf(q)),
             el("span", { class: "td-att-n" }, A.mine ? `${q.mineH.toFixed(1)} vs ${q.mineU.toFixed(1)}` : `${q.here.toFixed(1)} vs ${q.tour.toFixed(1)}`)])))])),
-        el("div", { class: "td-legend" }, [el("span", { class: "gray" }, A.mine ? "Expected here vs usual, a round" : "Here vs tour, a round")])]);
+      ]); // (update 869: no legend: the heading says what the bars are)
       return attBox; }
     // (update 866) each hole's aggressiveness index (birdie-or-better % less bogey-or-worse %); (update 867) the field's, a card of its own
     if (x.agg?.rows?.length) { const G = x.agg, mxA = Math.max(0.2, ...G.rows.map((o) => Math.abs(o.f))), pcA = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.round(Math.abs(v) * 100)}`, pc0 = (v) => `${Math.round(v * 100)}%`;
       // (update 868) each hole: its index as a bar (birdie or better % minus bogey or worse %), the two percentages, and a ⚠ on the blow-up holes
       const barA = (v) => { const w = Math.min(50, (Math.abs(v) / mxA) * 50); return el("div", { class: "td-sk-bar top" }, el("i", { style: `width:${w.toFixed(1)}%;${v >= 0 ? "left:50%" : `left:${(50 - w).toFixed(1)}%`}` })); };
+      // (update 869) a table, so the headings sit over their columns; "Difference"; no legend but the blow-up note
       return el("div", { class: "td-chart td-agg" }, [el("div", { class: "td-kick mute" }, "Aggressiveness by hole · birdie or better % minus bogey or worse % · the field"),
-        el("div", { class: "td-agg-row td-agg-head" }, [el("span", {}, "Hole"), el("span", {}, ""), el("span", {}, "Index"), el("span", {}, "Birdie+"), el("span", {}, "Bogey+")]),
-        el("div", { class: "td-agg-rows" }, G.rows.map((o) => el("div", { class: `td-agg-row${o.blow ? " blow" : ""}`, title: o.blow ? `Blow-up hole: ${pc0(o.d2)} double bogey or worse` : null }, [el("span", { class: "td-sk-l" }, [`No. ${o.h} \u00b7 P${o.par}`, o.blow ? el("b", { class: "td-agg-warn" }, " \u26a0") : null]), barA(o.f),
-          el("span", { class: `td-agg-v ${o.f >= 0.005 ? "up" : o.f <= -0.005 ? "down" : ""}` }, pcA(o.f)), el("span", { class: "td-agg-p" }, pc0(o.b)), el("span", { class: "td-agg-p" }, [pc0(o.g), o.blow ? el("small", {}, ` \u00b7 ${pc0(o.d2)} dbl+`) : null])]))),
-        el("div", { class: "td-legend" }, [el("span", { class: "gold" }, "The field"), G.rows.some((o) => o.blow) ? el("span", { class: "td-agg-lg" }, "\u26a0 Blow-up hole: 6%+ double bogey or worse") : null])]); }
+        el("table", { class: "td-agg-t" }, [el("thead", {}, el("tr", {}, [el("th", {}, "Hole"), el("th", { class: "bar" }, ""), el("th", { class: "num" }, "Difference"), el("th", { class: "num" }, "Birdie+"), el("th", { class: "num" }, "Bogey+")])),
+          el("tbody", {}, G.rows.map((o) => el("tr", { class: o.blow ? "blow" : null, title: o.blow ? `Blow-up hole: ${pc0(o.d2)} double bogey or worse` : null }, [el("td", { class: "td-agg-h" }, [`No. ${o.h} \u00b7 P${o.par}`, o.blow ? el("b", { class: "td-agg-warn" }, " \u26a0") : null]),
+            el("td", { class: "bar" }, barA(o.f)), el("td", { class: `num td-agg-v ${o.f >= 0.005 ? "up" : o.f <= -0.005 ? "down" : ""}` }, pcA(o.f)), el("td", { class: "num td-agg-p" }, pc0(o.b)), el("td", { class: "num td-agg-p" }, [pc0(o.g), o.blow ? el("small", {}, ` \u00b7 ${pc0(o.d2)} dbl+`) : null])])))]),
+        G.rows.some((o) => o.blow) ? el("p", { class: "td-agg-lg" }, "\u26a0 Blow-up hole: 6% or more double bogey or worse") : null]); }
     // (update 797) a skill at the course: the player against the top 10 in each part of the game (strokes gained per round)
     if (x.skill?.bands?.length) { const sk = x.skill, lbl0 = (b0) => String(b0).replace(/^\w+\|/, "").replace(/ tee shots$/, ""), f3 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(sk.perRound ? 2 : 3);
       // (update 846) readable at any width: a row for each distance, two bars from a centre line
@@ -682,9 +683,9 @@ export async function render(main, { previewClient } = {}) {
   // the holes (up to 3 each)
   // (update 867) Talking Points: how the course plays, the shots you'll face and each hole's aggressiveness; Player Outlook: a
   // player's record and how the course plays for them; Skill Importance: what kind of week it is and what wins
-  const cgOf = (h) => (/^up-(att|agg|fun)$/.test(h.id) ? "talk" : /^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(talk|skill|mix)/.test(h.id) ? "skill" : "hole"); // (update 804: a hole (where the top 10 win it) is hole strategy)
+  const cgOf = (h) => (/^up-(att|agg)$/.test(h.id) ? "talk" : /* (update 869: how the course plays (the field's): Course Strategy) */ /^up-(me|holes|horses)/.test(h.id) ? "player" : /^up-(talk|skill|mix)/.test(h.id) ? "skill" : "hole"); // (update 804: a hole (where the top 10 win it) is hole strategy)
   let courseShuf = 0; const secShuf = {}, secSeen = {}, secMore = {}; const MORE3 = ["form", "spot", "focus", "res", "gear"]; const STEP = (id) => (id === "gear" ? 4 : 3); // (update 821: Equipment 4 at a time) // (update 820: 3 at a time, "Show more" for 3 more) // (update 797/801: the sections' shuffles)
-  const courseGroups = (list, shown = []) => el("div", { class: "td-cgroups" }, [["talk", "Talking Points"], ["player", "Player Outlook"], ["skill", "Skill Importance"], ["hole", "Hole Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3); shown.push(...xs); void courseShuf;
+  const courseGroups = (list, shown = []) => el("div", { class: "td-cgroups" }, [["talk", "Talking Points"], ["player", "Player Outlook"], ["skill", "Skill Importance"], ["hole", "Course Strategy"]].map(([g, t]) => { const xs = list.filter((h) => cgOf(h) === g).slice(0, 3); shown.push(...xs); void courseShuf;
     return xs.length ? el("div", { class: "td-cgroup" }, [el("p", { class: "td-kick td-tg-h" }, t), el("div", { class: "td-cols" }, xs.map(column))]) : null; }));
   const wire = (h) => { const d = dress(h); return tap(el("div", { class: "td-wire-i" }, [el("b", {}, d.hl), el("p", {}, d.num ? `${d.num} ${d.cap}` : d.deck)]), h); };
   // (update 740) a different paper every day: each story's place moves a little with the date (the evergreen ones, about a
@@ -1610,7 +1611,7 @@ export async function render(main, { previewClient } = {}) {
   function courseBits() {
     const out = [], U = UPCOMING, isU = (r) => U.re.test(String(r.event || ""));
     const c = heat?.find((h) => (h.events || []).some((e) => U.re.test(e.name)) && !U.not.test(h.name)) || heat?.find((h) => U.course.test(h.name) && !U.not.test(h.name));
-    out.push({ id: "up-strat", k: null, kind: "Course", score: ROLE === "caddy" ? 8.8 : 5.2, title: `How to play ${c?.name || U.name}`, detail: c ? `Cal’s targets for every hole: where to aim off the tee and where to miss the green, from every shot the field has hit there` : `Strategy maps and course insights for ${U.name}`,
+    if (false) out.push({ id: "up-strat", k: null, kind: "Course", /* (update 869: removed: it said nothing the cards below don't) */ score: ROLE === "caddy" ? 8.8 : 5.2, title: `How to play ${c?.name || U.name}`, detail: c ? `Cal’s targets for every hole: where to aim off the tee and where to miss the green, from every shot the field has hit there` : `Strategy maps and course insights for ${U.name}`,
       to: c ? "Course Prep · Strategy Maps" : "Course Prep", run: () => (c ? toHole(c.id, 1, EX.course(`How should I play ${U.name}?`)) : go("#/course-prep", EX.course(`How should I play ${U.name}?`))) });
     // (update 737) the course's key holes, from the strategy maps' scoring (every shot the field has hit there)
     if (c && upHoles?.id === c.id && upHoles.holes.length >= 9 && !c.rawChunks) { /* (update 746: a course with its shots on record: their read only, on a phone too) */ /* (update 744: the shots' own read replaces this when it's loaded) */ const H = upHoles.holes, pm = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`, hn = (x) => `No. ${x.h} (par ${x.par}${x.yds ? `, ${x.yds} yds` : ""})`;
@@ -1748,8 +1749,9 @@ export async function render(main, { previewClient } = {}) {
     const yrBoards = [...byYrU].map(([y, m]) => [y, [...m].filter(([, rs]) => rs.length >= 3).map(([kk, rs]) => [kk, perRound(rs)]).sort((a, b) => b[1] - a[1])]).filter(([, l]) => l.length >= 8); // (update 786: a smaller field on record still gives a winner's number)
     const winV = yrBoards.length ? yrBoards.reduce((t, [, l]) => t + l[0][1], 0) / yrBoards.length : null, t10V = yrBoards.length ? yrBoards.reduce((t, [, l]) => t + l[Math.min(9, l.length - 1)][1], 0) / yrBoards.length : null;
     const paceOf = (v) => (yrBoards.length ? Math.round(yrBoards.reduce((t, [, l]) => t + l.filter((x) => x[1] > v).length + 1, 0) / yrBoards.length) : null);
-    for (const k of shownKeys().slice(0, 4)) { const x = hist.find((h0) => h0.k === k); if (!x) continue;
+    for (const k of shownKeys().slice(0, 4)) { const x = hist.find((h0) => h0.k === k);
       const me = isMe(k), S = me ? "You" : sur(k), Pw = me ? "your" : poss(sur(k)), he = me ? "you" : "they";
+      if (x) { // (update 869) their record here only when they've played it; What wins (below) either way
       const byYr = new Map(); for (const r of x.rs) { const y = yrOf(r); (byYr.get(y) || byYr.set(y, []).get(y)).push(r); }
       const bestY = [...byYr].map(([y, rs]) => [y, perRound(rs)]).sort((a, b) => b[1] - a[1])[0], evNames = [...new Set(x.rs.map((r) => r.event))];
       // their usual: every other event in the same years; this event's place among them
@@ -1762,6 +1764,7 @@ export async function render(main, { previewClient } = {}) {
       out.push({ id: `up-me-${k}`, k, kind: "Course", score: 5.35 + Math.abs(diff || 0) * 0.1, x: { v: x.v }, title: `${me ? "Your" : poss(nameOf(k))} record at ${U.name}: ${sg2(x.v)} strokes gained per round${pace ? `, a ${ordS(pace)}-place pace` : ""}`,
         detail: [verdict, nEv > 3 ? `${ordS(evRank)} best of ${nEv} events on ${Pw} schedule` : "", winV != null ? `The average winner here: ${sg2(winV)} strokes gained per round (a top 10: ${sg2(t10V)})${x.v >= t10V ? `; ${he} have played at top-10 level here` : `; ${he} are ${(t10V - x.v).toFixed(2)} per round short of a top 10`}` : "", hereRank ? `${ordS(hereRank[0])} of ${hereRank[1]} players with 4+ rounds here` : "", `${x.rs.length} rounds here over ${x.yrs} year${x.yrs === 1 ? "" : "s"}${bestY && byYr.size > 1 ? `; ${me ? "your" : "their"} best year at ${U.name}: ${bestY[0]} (${sg2(bestY[1])} per round)` : ""}`].filter(Boolean).join(" · "),
         to: "Stats · Tournaments", run: () => toStats(k, { view2: "full", year: [], span: 0, event: evNames }, "Tournaments", null) });
+      }
       if (!(c && upRaw?.id === c.id)) continue;
       const R0 = upRaw, P = R0.ply.get(k) || R0.plyName.get(nmKey(nameOf(k))), cat0 = [...R0.catEdge].sort((a, b) => b[1] - a[1]);
       // the skills that win here: the top 10's edge over the rest, by part of the game, against theirs (here when they have
@@ -1769,15 +1772,15 @@ export async function render(main, { previewClient } = {}) {
       const mine = P && P.rds.size >= 2 ? Object.fromEntries(cats.map((c0) => [c0, P.cat[c0] / P.rds.size])) : null;
       const seasonRs = (playerOf(k) ? sgRounds(rawOf(playerOf(k))) : []).filter((r) => yrOf(r) === seasonYr()), theirs = mine || (seasonRs.length >= 8 ? Object.fromEntries(cats.map((c0) => [c0, avgOf(seasonRs, (r) => inCat(r, c0))])) : null);
       // (update 780) short: the skill that wins here, the player's number in it against the top 10's, and the biggest gap
-      if (theirs && cat0.length) { const key = cat0[0][0], gap = R0.catTop[key] - theirs[key], gaps = cats.map((c0) => [c0, R0.catTop[c0] - theirs[c0]]).sort((a, b) => b[1] - a[1]), src = mine ? "here" : `in ${seasonYr()} (no shots of ${Pw} here on record)`;
+      if (cat0.length) { const th = (c0) => (mine ? mine[c0] : R0.catRest?.[c0] ?? 0) /* (update 869: not played here: the field's) */, key = cat0[0][0], gap = R0.catTop[key] - th(key), gaps = cats.map((c0) => [c0, R0.catTop[c0] - th(c0)]).sort((a, b) => b[1] - a[1]), src = mine ? "here" : `in ${seasonYr()} (no shots of ${Pw} here on record)`;
         // (update 799) that part of the game by distance: the player's shots here (else the rest of the field) against the top 10's
         const yrsT = R0.yrs.length ? (R0.yrs.length === 1 ? R0.yrs[0] : `${R0.yrs[0]}-${R0.yrs.at(-1).slice(2)}`) : "", CB = courseBands(R0, key, P?.pk || null, mine ? P.rds.size : -1) || []; /* (update 867: per round) */
-        const mineB = mine && CB.some((b0) => b0.me != null) ? Object.fromEntries(CB.filter((b0) => b0.me != null).map((b0) => [b0.l, b0.me])) : null, seasB = mineB ? null : seasonBands(k, key, seasonYr(), true); /* (update 801: no shots here: their season; 809: the data's ranges) */
+        const mineB = mine && CB.some((b0) => b0.me != null) ? Object.fromEntries(CB.filter((b0) => b0.me != null).map((b0) => [b0.l, b0.me])) : null, seasB = null; /* (update 869: not played here: the field's, not their season) */ /* (update 801: no shots here: their season; 809: the data's ranges) */
         out.push({ id: `up-skill-${k}`, k, kind: "Course", x: { skill: { cat: key, perRound: true, perDist: true, bands: CB.filter((b0) => b0.top != null).map((b0) => b0.l), a: mineB || seasB || Object.fromEntries(CB.map((b0) => [b0.l, b0.rest])), top: Object.fromEntries(CB.map((b0) => [b0.l, b0.top])), who: mineB ? (me ? "You" : S) : seasB ? `${me ? "You" : S}, ${seasonYr()} season` : "Rest of the field", where: mineB || !seasB ? `at ${U.name}, ${yrsT}` : `(top 10: at ${U.name}, ${yrsT})` } }, score: 5.3, title: `What wins at ${U.name}: ${CATN[key]}`,
           detail: (() => { const tS = R0.shotTop[key], rS = R0.shotRest[key], pS = mine && P?.n?.[key] ? P.cat[key] / P.n[key] : (() => { const rs1 = (gearData.get(k) || detail?.by.get(k) || []).filter((r) => yrOf(r) === seasonYr() && !r.eventLevel); let a = 0, n = 0; for (const r of rs1) for (const s0 of r.shots || []) if (s0.cat === key) { a += s0.sg; n += s0.w || 1; } return n >= 20 ? a / n : null; })();
             void tS; void rS; void pS; // (update 867: per round, as the chart)
-            const tR = R0.catTop?.[key], rR = R0.catRest?.[key], pR = mine ? mine[key] : theirs?.[key];
-            return `Strokes gained per round ${CAT_IN[key]} (every round at ${U.name} on record, ${yrsT}): the top 10 ${sg2(tR)}, the rest of the field ${sg2(rR)} · ${me ? "You" : S}: ${pR == null ? "not enough shots on record" : `${sg2(pR)} per round ${mine ? `here (${P.rds.size} rounds)` : `on the ${seasonYr()} season (no shots of ${Pw} at ${U.name} on record)`}${tR - pR > 0.005 ? `, ${(tR - pR).toFixed(2)} a round short of the top 10` : ", at top-10 level"}`}`; })(),
+            const tR = R0.catTop?.[key], rR = R0.catRest?.[key], pR = mine ? mine[key] : null;
+            return `Strokes gained per round ${CAT_IN[key]} (every round at ${U.name} on record, ${yrsT}): the top 10 ${sg2(tR)}, the rest of the field ${sg2(rR)} · ${pR == null ? `${me ? "You haven't" : `${S} hasn't`} played here on record: the chart is the rest of the field` : `${me ? "You" : S}: ${sg2(pR)} per round here (${P.rds.size} rounds)${tR - pR > 0.005 ? `, ${(tR - pR).toFixed(2)} a round short of the top 10` : ", at top-10 level"}`}`; })(),
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) }); }
       // their own holes: best and worst against the field, and a par 5 played against the grain
       if (P) { const hs = [...P.holes].filter(([, o]) => o[1] >= 8).map( /* (update 781: 8+ plays of a hole, not 2) */([h, o]) => { const f = R0.fAvg.get(h); return f && f[1] >= 20 ? { h, par: o[2], n: o[1], d: o[0] / o[1] - f[0] / f[1] } : null; }).filter(Boolean).sort((a, b) => a.d - b.d);
