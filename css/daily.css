@@ -1186,3 +1186,13 @@ html[data-theme="light"] .sd-pop { background: #fff; border-color: rgba(0,0,0,0.
 /* (update 871) Site Directory: the parts of pages found, and the one landed on */
 .sd-found { grid-column: 1 / -1; } .sd-found ul { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .sd-flash { outline: 2px solid #f0b440; outline-offset: 4px; border-radius: 10px; transition: outline-color 0.6s; }
+
+/* (update 872) the Site Directory's magnifying glass in the top bar; on a phone the ☰ sits a little further right */
+.dir-btn { background: none; border: 0; cursor: pointer; padding: 6px; display: inline-flex; align-items: center; justify-content: center; color: inherit; border-radius: 999px; }
+.dir-btn:hover, .dir-btn:focus-visible { background: rgba(127,127,127,0.18); }
+.rail .dir-btn svg { display: inline-block !important; width: 1.2rem; height: 1.2rem; fill: currentColor; }
+@media (max-width: 760px) {
+  .rail .rail-foot .dir-btn { padding: 4px; margin: 0 2px; }
+  .rail .rail-foot .account { margin-left: 6px; margin-right: -4px; }
+  .rail .rail-foot .account-btn.hdr-icon { justify-content: flex-end !important; }
+}

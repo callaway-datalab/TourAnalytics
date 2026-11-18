@@ -283,7 +283,6 @@ function accountMenu(state) {
     finally { note.hidden = false; reset.disabled = false; }
   });
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
-    el("button", { class: "menu-item menu-dir", type: "button", role: "menuitem", onClick: () => { setOpen(false); openDirectory(); } }, "Site Directory"), // (update 870)
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     state.isAdmin && !window.__previewClient && !getPreviewTeam() ? el("a", { class: "menu-item", href: "#/admin/clients", role: "menuitem" }, "User Access") : null, // (update 832: from the top bar)
     state.isAdmin || state.profile?.kind === "analyst" ? el("a", { class: "menu-item menu-bulk", href: "#/bulk-reports", role: "menuitem" }, "Bulk Reports") : null, // (update 740)
@@ -490,7 +489,10 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const searchBtn = el("button", { type: "button", class: "hdr-icon search-btn", "aria-label": "Search (Ctrl+K)", title: "Search players, pages, courses (Ctrl+K)" }, [icon("search")]);
   searchBtn.addEventListener("click", () => openPalette());
   // (update 829) the top bar: the player picker, Cal and the ☰ menu (Chat & support and What's in the Bag moved: the menu, a Stats tab)
-  footItems.splice(0, footItems.length, curChip(), callieButton(), accountMenu(state));
+  // (update 872) the Site Directory as a magnifying glass in the top bar (between the player and the ☰ menu on a phone)
+  const dirBtn = el("button", { type: "button", class: "dir-btn", "aria-label": "Search the site", title: "Search the site: every page and its sections" }, [icon("search")]);
+  dirBtn.addEventListener("click", () => openDirectory());
+  footItems.splice(0, footItems.length, curChip(), callieButton(), dirBtn, accountMenu(state));
   void searchBtn;
   const plan = secs.find((x) => x.id === "plan"), data = secs.find((x) => x.id === "data");
   const fol = secs.find((x) => x.id === "follow");
