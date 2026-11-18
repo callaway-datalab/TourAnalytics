@@ -1964,12 +1964,15 @@ export async function render(main) {
     const pool = ps.length ? ps : inPlay();
     const rsOf = (p) => sgRounds(roundsOfKey(p.key)).map((rd) => ({ ...rd, pk: rd.pk || p.key }));
     const all = pool.flatMap(rsOf);
-    // (update 219) each tournament: the first one back after a break (3+ weeks off), or the 2nd / 3rd+ in a row
+    // (update 219) each tournament: the first one back after a break (879: any week off), or the 2nd / 3rd+ in a row
     weekTag = new Map();
     for (const p of pool) {
-      const evs = [...new Map(all.filter((rd) => rd.pk === p.key).map((rd) => [evk(rd), rd.date])).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+      // (update 878) each event's date is its first round's (it was whichever round came last in the list, so an event about
+      // two weeks after the one before could flip between "2nd" and "3rd+ week in a row" from one load to the next)
+      const first = new Map(); for (const rd of all) { if (rd.pk !== p.key) continue; const k = evk(rd), d = String(rd.date || "").slice(0, 10); if (d && (!first.has(k) || d < first.get(k))) first.set(k, d); }
+      const evs = [...first.entries()].sort((a, b) => a[1].localeCompare(b[1]));
       let run = 0, prev = null;
-      for (const [k, d] of evs) { const t = Date.parse(d); run = prev != null && t - prev < 17 * 864e5 ? run + 1 : 1; prev = t; weekTag.set(`${p.key}|${k}`, WEEKS[Math.min(run, 3) - 1]); }
+      for (const [k, d] of evs) { const t = Date.parse(d); run = prev != null && t - prev <= 10 * 864e5 ? run + 1 : 1; /* (update 879) back-to-back weeks only (first rounds about 7 days apart): any week off restarts it as "First event back" */ prev = t; weekTag.set(`${p.key}|${k}`, WEEKS[Math.min(run, 3) - 1]); }
     }
     const dims = PLACE.filter(([, , f]) => new Set(all.map(f).filter(Boolean)).size > 1);
     if (!dims.length) return el("section", { class: "panel cmp-empty" }, el("p", { class: "muted" }, "Not enough variety in these rounds to rank."));
