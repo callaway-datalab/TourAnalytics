@@ -1200,8 +1200,13 @@ export async function render(main, { previewClient } = {}) {
   // (update 809) the distance ranges the data itself uses for a part of the game ("140-160 yds", "<30 yds", ">25 ft"), read
   // from the players' shots; a course's shots go in the range that holds their distance, so every card uses the same ranges
   const rngLbl = (t) => { t = String(t); let m = /(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/.exec(t); if (m) return [Number(m[1]), Number(m[2])]; m = /^\s*[<≤]\s*(\d+)/.exec(t); if (m) return [0, Number(m[1])]; m = /^\s*[>≥]\s*(\d+)|(\d+)\s*\+/.exec(t); if (m) return [Number(m[1] || m[2]), 1e9]; return null; };
-  const dataLabels = (c) => { const seen = new Map(); const add = (rs0) => { for (const r of rs0 || []) for (const s0 of r.shots || []) if (s0.cat === c && s0.dist && !seen.has(s0.dist)) seen.set(s0.dist, rngLbl(s0.dist)); };
-    for (const rs0 of gearData.values()) add(rs0); if (detail?.by) for (const rs0 of detail.by.values()) add(rs0); return [...seen].filter(([, g]) => g).sort((a, b) => a[1][0] - b[1][0] || a[1][1] - b[1][1]); };
+  // (update 860) the stats data's own ranges only: not the rounds entered by hand (Enter New Round buckets differently:
+  // 50-75 yds, 200-225 yds), and only ranges with real use (1%+ of that part of the game's shots)
+  const dataLabels = (c) => { const seen = new Map(), cnt = new Map(); let tot = 0; const add = (rs0) => { for (const r of rs0 || []) for (const s0 of r.shots || []) if (s0.cat === c && s0.dist) { tot++; cnt.set(s0.dist, (cnt.get(s0.dist) || 0) + 1); if (!seen.has(s0.dist)) seen.set(s0.dist, rngLbl(s0.dist)); } };
+    for (const [k0, rs0] of gearData) if (!(ownP && k0 === ownP.key)) add(rs0); if (detail?.by) for (const [k0, rs0] of detail.by) if (!(ownP && k0 === ownP.key)) add(rs0);
+    const keep = [...seen].filter(([l, g]) => g && (cnt.get(l) || 0) >= Math.max(3, tot * 0.01)).sort((a, b) => (cnt.get(b[0]) || 0) - (cnt.get(a[0]) || 0)), out0 = [];
+    for (const x of keep) if (!out0.some((y) => x[1][0] < y[1][1] && y[1][0] < x[1][1])) out0.push(x); /* (a range overlapping a more used one: another way of bucketing, dropped) */
+    return out0.sort((a, b) => a[1][0] - b[1][0] || a[1][1] - b[1][1]); };
   const lblFor = (labs, d) => labs.find(([, g]) => d >= g[0] && d < g[1])?.[0] || null;
   // the course's shots in those ranges: strokes gained a shot for the top 10, the rest and one player, and attempts per round
   function courseBands(R0, c, pk) { const labs = dataLabels(c); if (!labs.length) return null; const acc = new Map(), get = (l) => acc.get(l) || acc.set(l, { t: [0, 0], r: [0, 0], p: [0, 0], n: 0 }).get(l);
@@ -1532,7 +1537,7 @@ export async function render(main, { previewClient } = {}) {
       const bl = (b0) => { const [c0, rest0] = String(b0).split("|"); return c0 === "OTT" ? `driving on ${rest0.replace(/ tee shots$/, "s").toLowerCase()}` : `${CW[c0]} from ${rest0}`; };
       const H = R0.holesR || [], toParR = H.reduce((t, o) => t + (o.avg || 0), 0), parT = H.reduce((t, o) => t + (o.par || 0), 0), birdR = H.reduce((t, o) => t + o.b, 0), bogR = H.reduce((t, o) => t + o.g, 0);
       /* (update 859) a hole's avg is already its score to par (the data's own to-par column): no par to take off again */ const tough = [...H].sort((a, b) => b.avg - a.avg)[0], easy = [...H].sort((a, b) => a.avg - b.avg)[0], pm1 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
-      if (top) out.push({ id: "up-talk", k: null, kind: "Course", score: 5.4, title: `${U.name} is a ${CW[top[0]].replace(/^the /, "")} week`,
+      if (top) out.push({ id: "up-talk", k: null, kind: "Course", score: 5.4, title: `${U.name} is ${/^[aeiou]/i.test(CW[top[0]].replace(/^the /, "")) ? "an" : "a"} ${CW[top[0]].replace(/^the /, "")} week` /* (update 860: "an approach play week") */,
         detail: [`The top 10 here gain ${p2(top[1])} per round more than the rest of the field in ${CATN[top[0]].toLowerCase()}, the most of any part of the game`,
           kb ? `The skill that decides it: ${bl(kb.b)}, worth ${p2(kb.d)} per round between the top 10 and the rest` : null,
           low ? `It matters least in ${CATN[low[0]].toLowerCase()} (${p2(low[1])} per round)` : null].filter(Boolean).join(" · "),
@@ -1582,16 +1587,26 @@ export async function render(main, { previewClient } = {}) {
           const one = shownKeys().length === 1 ? shownKeys()[0] : null, own = {}; let nOwn = 0;
           if (one) { const rs1 = (gearData.get(one) || detail?.by?.get(one) || []).filter((r) => yrOf(r) === SYm && !r.eventLevel && (ownP?.key === one || onTour(r)));
             if (rs1.length >= 8) { nOwn = rs1.length; for (const r of rs1) for (const s0 of r.shots || []) if (s0.dist && ACATS.includes(s0.cat)) { const kk = key2(s0.cat, s0.dist); own[kk] = (own[kk] || 0) + (s0.w || 1); } for (const b in own) own[b] /= nOwn; } }
+          const ownG = {}; for (const kk in own) { const c0 = kk.slice(0, kk.indexOf("|")), g0 = (c0 === "ARG" ? "APP" : c0) + kk.slice(kk.indexOf("|")); ownG[g0] = (ownG[g0] || 0) + own[kk]; }
           const rows = [];
-          for (const c0 of ACATS) for (const b0 of courseBands(R0, c0, null) || []) { const kk = key2(c0, b0.l), tour = tourAtt[kk]; if (tour == null || tour < 0.05) continue;
-            const ratio = b0.att / tour, mineU = nOwn ? own[kk] || 0 : null, mineH = mineU != null ? mineU * ratio : null;
+          // (update 860) approach and short game on one distance scale: the course calls a shot from 30-50 yds an approach,
+          // the stats data may call it the short game, so each shot goes to the data's range for its distance, whichever part
+          const GRP = (c0) => (c0 === "ARG" ? "APP" : c0), labsG = { APP: [...dataLabels("APP").map((l) => [...l, "APP"]), ...dataLabels("ARG").map((l) => [...l, "ARG"])].sort((a, b) => a[1][0] - b[1][0] || a[1][1] - b[1][1]), PUTT: dataLabels("PUTT").map((l) => [...l, "PUTT"]) };
+          const tourG = {}; for (const kk in tourAtt) { const [c0, b0] = [kk.slice(0, kk.indexOf("|")), kk.slice(kk.indexOf("|") + 1)]; const g0 = GRP(c0) + "|" + b0; tourG[g0] = (tourG[g0] || 0) + tourAtt[kk]; }
+          const hereG = new Map(); for (const [c1, d] of R0.shotsC || []) { const g = GRP(c1), L = labsG[g]; if (!L) continue; const hit = L.find(([, rg]) => d >= rg[0] && d < rg[1]); if (hit) hereG.set(g + "|" + hit[0], (hereG.get(g + "|" + hit[0]) || 0) + 1); }
+          const bandsAll = []; for (const g of ["APP", "PUTT"]) for (const [l, , c0] of labsG[g]) { const n = hereG.get(g + "|" + l) || 0; if (n >= 10 && !bandsAll.some((x) => x.g === g && x.l === l)) bandsAll.push({ g, c0, l, att: n / Math.max(1, R0.nRds) }); }
+          for (const b0 of bandsAll) { const c0 = b0.c0, kk = key2(b0.g, b0.l), tour = tourG[kk]; if (tour == null || tour < 0.05) continue;
+            const ratio = b0.att / tour, mineU = nOwn ? ownG[kk] || 0 : null, mineH = mineU != null ? mineU * ratio : null;
             rows.push({ cat: c0, b: b0.l, here: b0.att, tour, d: b0.att - tour, ratio, mineU, mineH, dm: mineU != null ? mineH - mineU : null }); }
-          const diffs = rows.filter((x) => x.cat === "APP").sort((a, b) => b.d - a.d), big = [...rows].sort((a, b) => b.d - a.d);
+          const DV = (x) => (nOwn ? x.dm : x.d), diffs = rows.filter((x) => x.cat === "APP").sort((a, b) => DV(b) - DV(a)), big = [...rows].sort((a, b) => DV(b) - DV(a));
           const WH = { OTT: "tee shots", APP: "approaches", ARG: "chips and pitches", PUTT: "putts" };
-          const up = diffs[0]?.d >= 0.3 ? diffs[0] : big[0], dn = big.at(-1), lb = (x) => String(x.b).replace(/^\w+\|/, "").replace(/ tee shots$/, "");
-          if (up && up.d >= 0.3 && rows.length >= 4) out.push({ id: "up-att", k: null, kind: "Course", score: 4.86, x: { att: { rows, mine: nOwn ? (isMe(one) ? "You" : nameOf(one)) : null } },
+          const up = DV(diffs[0] || { d: 0, dm: 0 }) >= 0.3 ? diffs[0] : big[0], dn = big.at(-1), lb = (x) => String(x.b).replace(/^\w+\|/, "").replace(/ tee shots$/, "");
+          const whoA = nOwn ? (isMe(one) ? "You" : nameOf(one)) : null, hv = (x) => (nOwn ? x.mineH : x.here), uv = (x) => (nOwn ? x.mineU : x.tour), vs = nOwn ? `in ${whoA === "You" ? "your" : "their"} usual week` : "on tour this season";
+          const line = (x, rng = true) => `${hv(x).toFixed(1)} per round${rng ? ` from ${lb(x)}` : ""} here, against ${uv(x).toFixed(1)} ${vs}`;
+          if (up && DV(up) >= 0.3 && rows.length >= 4) out.push({ id: "up-att", k: null, kind: "Course", score: 4.86, x: { att: { rows, mine: nOwn ? (isMe(one) ? "You" : nameOf(one)) : null } },
             title: `Expect more ${WH[up.cat]} from ${lb(up)} at ${U.name}`,
-            detail: `The field hits ${up.here.toFixed(1)} per round from ${lb(up)} here, against ${up.tour.toFixed(1)} on tour this season: ${up.d.toFixed(1)} more per round${dn && dn.d <= -0.3 ? ` · fewer ${WH[dn.cat]} from ${lb(dn)}: ${dn.here.toFixed(1)} per round here, against ${dn.tour.toFixed(1)} on tour` : ""} · every distance below`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
+            /* (update 860) the same numbers as the chart under it: the player's when one is shown, else the field's */
+            detail: `${whoA ? `${whoA} can expect` : "The field hits"} ${line(up)}: ${DV(up).toFixed(1)} more per round${dn && DV(dn) <= -0.3 ? ` · fewer ${WH[dn.cat]} from ${lb(dn)}: ${line(dn, false)}` : ""} · every distance below`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
       // (update 747) the par 5 where going for it (or laying up) matters most
       if (R0.goLay?.length) { const g = R0.goLay[0], go = g.d > 0;
         out.push({ id: "up-golay", hole: g.h, cid: c.id, k: null, kind: "Course", score: 4.88, title: `No. ${g.h}: ${go ? "go for it in two" : "lay up"}, ${Math.abs(g.d).toFixed(2)} strokes a hole lower`, detail: `Average score to par (lower is better). Went for the green with the second shot: ${pm3(g.ga)} (${g.go.length} players) · laid up: ${pm3(g.la)} (${g.lay.length}) · from within 300 yds${R0.goLay[1] ? ` · also No. ${R0.goLay[1].h}: ${R0.goLay[1].d > 0 ? "go for it" : "lay up"} (${Math.abs(R0.goLay[1].d).toFixed(2)})` : ""}`,
