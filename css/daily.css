@@ -965,3 +965,8 @@ tr.open .td-rk-chev { transform: rotate(90deg); }
 .ci3-det[hidden] { display: none; } .ci3-det div { display: flex; justify-content: space-between; gap: 10px; } .ci3-det span { color: var(--muted, #8e8e93); } .ci3-det small { color: var(--muted, #8e8e93); margin-left: 6px; }
 .ci2-hist { margin: 12px 0; }
 @media (max-width: 640px) { .ci3-head, .ci3-row { grid-template-columns: 5.6em minmax(0, 1fr) 3.6em; gap: 8px; } .ci3-k { font-size: 0.8rem; } }
+/* (update 850) Search: a star on the player picked now, to make them a favorite */
+.pal-row { position: relative; }
+.pal-star { margin-left: auto; flex: none; width: 36px; height: 36px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--gold, #d4b483) 55%, transparent); background: transparent; color: var(--gold, #d4b483); font-size: 1.15rem; line-height: 1; cursor: pointer; }
+.pal-star:hover { background: color-mix(in srgb, var(--gold, #d4b483) 14%, transparent); } .pal-star.on { background: color-mix(in srgb, var(--gold, #d4b483) 22%, transparent); }
+.pal-row:has(.pal-star) { display: flex; align-items: center; gap: 10px; } .pal-row:has(.pal-star) .pal-main { flex: 1; min-width: 0; }

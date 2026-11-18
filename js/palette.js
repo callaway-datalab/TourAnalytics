@@ -55,7 +55,16 @@ export async function openPalette(q0 = "", { pick = false } = {}) {
   const row = (r, i) => {
     const on = i === at, base = { class: `pal-row${on ? " on" : ""}`, role: "option", "aria-selected": String(on), id: `pal-${i}` };
     if (r.kind === "player" && pick) { const n = el("div", base, el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.key === currentPlayer()?.key ? "Picked now" : r.me ? "Your own entered rounds" : r.self ? "You" : r.fav ? "★ Favorite" : "")]));
-      n.querySelector(".pal-main").addEventListener("click", () => { setCurrent({ key: r.key, label: r.label }); close(); try { import("./perf.js").catch(() => {}); } catch { /* */ } }); return n; }
+      n.querySelector(".pal-main").addEventListener("click", () => { setCurrent({ key: r.key, label: r.label }); close(); try { import("./perf.js").catch(() => {}); } catch { /* */ } });
+      // (update 850) the player picked now: a star to make them a favorite (or not) right here (the admin and Callaway's people)
+      const st0 = window.__authState || {};
+      if (r.key === currentPlayer()?.key && !r.me && !r.self && (st0.isAdmin || st0.isTeam)) { const star = el("button", { type: "button", class: `pal-star${r.fav ? " on" : ""}` });
+        const paint = () => { star.textContent = r.fav ? "★" : "☆"; star.classList.toggle("on", !!r.fav); star.title = r.fav ? `${r.label} is a favorite (tap to take them off)` : `Make ${r.label} a favorite`; star.setAttribute("aria-label", star.title); const sub = n.querySelector(".pal-sub"); if (sub) sub.textContent = r.fav ? "Picked now · ★ Favorite" : "Picked now"; };
+        star.addEventListener("click", async (e) => { e.stopPropagation(); star.disabled = true;
+          try { const wl = await import("./watchlist.js"); await wl.loadWatch().catch(() => {}); await wl.toggleFavorite(r.key); r.fav = (wl.watchPrefs().players || []).includes(r.key); idx = null; } catch (err) { console.warn(err); }
+          star.disabled = false; paint(); });
+        n.append(star); paint(); }
+      return n; }
     if (r.kind === "player") {
       const enc = encodeURIComponent(r.key), q = (h) => `${h}?player=${enc}`;
       const quick = [["Your Report", "#/home"], ["Course Fit", "stats:fit"], ["Practice", "stats:practice:week"], ["Comparisons", q("#/comparisons")], ["Bag", q("#/witb")]];
