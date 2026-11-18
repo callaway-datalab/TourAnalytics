@@ -1118,3 +1118,10 @@ html[data-theme="light"] .cf-tag.cf-sh { color: #0a6e99; }
 .ci3-grp:first-child { margin-top: 2px; }
 .ci3-grp b { font-size: 0.8rem; letter-spacing: 0; text-transform: none; } .ci3-grp b.pos { color: #30d158; } .ci3-grp b.neg { color: #ff453a; }
 @media (max-width: 640px) { .ci3-head span:first-child { white-space: nowrap; font-size: 0.56rem; letter-spacing: 0.04em; } }
+
+/* (update 866) Expect more …: the shots you'll face beside each hole's aggressiveness index */
+.td-att2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.td-agg .td-sk-rows { gap: 3px; } .td-agg-row { grid-template-columns: 5.6em minmax(0, 1fr) !important; }
+.td-agg .td-sk-bar { height: 11px; margin: 1px 3em 1px 0; } .td-agg .td-sk-bar span { right: -3em; font-size: 0.66rem; }
+.td-agg-none span { color: var(--td-soft); }
+@media (max-width: 860px) { .td-att2 { grid-template-columns: 1fr; gap: 16px; } }

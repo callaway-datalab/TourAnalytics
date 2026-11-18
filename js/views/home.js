@@ -596,11 +596,19 @@ export async function render(main, { previewClient } = {}) {
       const dOf = (q) => (A.mine ? q.dm : q.d), absA = A.rows.map((q) => Math.abs(dOf(q))).sort((p0, q0) => q0 - p0), mx = Math.max(0.2, absA[1] && absA[0] > absA[1] * 2.5 ? absA[1] * 1.3 : absA[0] || 0); /* (one outlier doesn't flatten the rest) */
       const bar = (v) => { const w = Math.min(50, (Math.abs(v) / mx) * 50); return el("div", { class: "td-sk-bar me" }, [el("i", { style: `width:${w.toFixed(1)}%;${v >= 0 ? "left:50%" : `left:${(50 - w).toFixed(1)}%`}` }), el("span", { class: v >= 0.05 ? "up" : v <= -0.05 ? "down" : "" }, `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}`)]); };
       const cats0 = [...new Set(A.rows.map((q) => q.cat))];
-      return el("div", { class: "td-chart td-att" }, [el("div", { class: "td-kick mute" }, A.mine ? `Shots ${A.mine === "You" ? "you'll" : `${A.mine} will`} face here · per round, against ${A.mine === "You" ? "your" : "their"} usual week` : "Shots the field faces here · per round, against a usual week on tour"),
+      const attBox = el("div", { class: "td-chart td-att" }, [el("div", { class: "td-kick mute" }, A.mine ? `Shots ${A.mine === "You" ? "you'll" : `${A.mine} will`} face here · per round, against ${A.mine === "You" ? "your" : "their"} usual week` : "Shots the field faces here · per round, against a usual week on tour"),
         ...cats0.map((c0) => el("div", { class: "td-att-cat" }, [el("div", { class: "td-att-h" }, CN[c0] || c0),
           el("div", { class: "td-sk-rows" }, A.rows.filter((q) => q.cat === c0).map((q) => el("div", { class: "td-sk-row td-att-row" }, [el("span", { class: "td-sk-l" }, lb(q.b)), bar(dOf(q)),
             el("span", { class: "td-att-n" }, A.mine ? `${q.mineH.toFixed(1)} vs ${q.mineU.toFixed(1)}` : `${q.here.toFixed(1)} vs ${q.tour.toFixed(1)}`)])))])),
-        el("div", { class: "td-legend" }, [el("span", { class: "gray" }, A.mine ? "Expected here vs usual, a round" : "Here vs tour, a round")])]); }
+        el("div", { class: "td-legend" }, [el("span", { class: "gray" }, A.mine ? "Expected here vs usual, a round" : "Here vs tour, a round")])]);
+      // (update 866) the other half: each hole's aggressiveness index (birdie-or-better % less bogey-or-worse %)
+      const G = x.agg; if (!G?.rows?.length) return attBox;
+      const mxA = Math.max(0.2, ...G.rows.flatMap((o) => [Math.abs(o.f), Math.abs(o.me ?? 0)])), pc = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.round(Math.abs(v) * 100)}`;
+      const barA = (v, c0) => { if (v == null) return el("div", { class: `td-sk-bar ${c0} td-agg-none` }, el("span", {}, "\u2014")); const w = Math.min(50, (Math.abs(v) / mxA) * 50); return el("div", { class: `td-sk-bar ${c0}` }, [el("i", { style: `width:${w.toFixed(1)}%;${v >= 0 ? "left:50%" : `left:${(50 - w).toFixed(1)}%`}` }), el("span", { class: v >= 0.005 ? "up" : v <= -0.005 ? "down" : "" }, pc(v))]); };
+      const aggBox = el("div", { class: "td-chart td-agg" }, [el("div", { class: "td-kick mute" }, "Aggressiveness by hole · birdie or better % less bogey or worse %"),
+        el("div", { class: "td-sk-rows" }, G.rows.map((o) => el("div", { class: "td-sk-row td-agg-row" }, [el("span", { class: "td-sk-l" }, `No. ${o.h} \u00b7 P${o.par}`), el("div", {}, [G.who ? barA(o.me, "me") : null, barA(o.f, "top")])]))),
+        el("div", { class: "td-legend" }, [G.who ? el("span", { class: "gray" }, `${G.who} (2+ plays)`) : null, el("span", { class: "gold" }, "The field")])]);
+      return el("div", { class: "td-att2" }, [attBox, aggBox]); }
     // (update 797) a skill at the course: the player against the top 10 in each part of the game (strokes gained per round)
     if (x.skill?.bands?.length) { const sk = x.skill, lbl0 = (b0) => String(b0).replace(/^\w+\|/, "").replace(/ tee shots$/, ""), f3 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(sk.perRound ? 2 : 3);
       // (update 846) readable at any width: a row for each distance, two bars from a centre line
@@ -1046,6 +1054,10 @@ export async function render(main, { previewClient } = {}) {
     // they come out about even
     requestAnimationFrame(() => { const more2 = news.filter((h) => !fp.includes(h) && h.kind !== "Fact"); if (innerWidth <= 860 || !side4th) return; void more2; /* (update 856: three, and the fourth only when the hero is much taller) */ const used = () => (sideEl.lastElementChild ? sideEl.lastElementChild.getBoundingClientRect().bottom - sideEl.getBoundingClientRect().top : 0); /* (the aside is stretched to the lead's height: measure its stories) */
       if (leadEl.offsetHeight - used() >= 220) sideEl.appendChild(brief(side4th)); });
+    // (update 866) no real story about a player to lead with (no mover, no result, trend, rank or new club: you with a round or
+    // two, or no favorites): no top section at all, rather than course notes the Course Strategy section below repeats
+    const heroOk = moverMode || (leadM && leadM.k && LEADS.has(leadM.kind));
+    if (!heroOk) mount(frontBox, []); else
     mount(frontBox, el("section", { class: "td-front", id: "td-front" }, [leadEl, sideEl])); // (update 837: at the very top)
     const meNow = solo() && ownKey && (picked.has(ownKey) || subjK === ownKey) && ownAll.length; // (update 863) "Me": your own game, from whatever you've entered
     mount(feed, [meNow ? myGame() : null, el("div", { class: "td-grid" }, laid), solo() && subjK ? pdfCard(subjK) : null]); // (update 839: no Today) (update 849: and their PDF report at the end)
@@ -1620,14 +1632,18 @@ export async function render(main, { previewClient } = {}) {
       const bl = (b0) => { const [c0, rest0] = String(b0).split("|"); return c0 === "OTT" ? `driving on ${rest0.replace(/ tee shots$/, "s").toLowerCase()}` : `${CW[c0]} from ${rest0}`; };
       const H = R0.holesR || [], toParR = H.reduce((t, o) => t + (o.avg || 0), 0), parT = H.reduce((t, o) => t + (o.par || 0), 0), birdR = H.reduce((t, o) => t + o.b, 0), bogR = H.reduce((t, o) => t + o.g, 0);
       /* (update 859) a hole's avg is already its score to par (the data's own to-par column): no par to take off again */ const tough = [...H].sort((a, b) => b.avg - a.avg)[0], easy = [...H].sort((a, b) => a.avg - b.avg)[0], pm1 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+      // (update 859) one player shown (and update 866: their own numbers in the talking points' chart when they've played here)
+      const one = shownKeys().length === 1 ? shownKeys()[0] : null, P1 = one ? R0.ply?.get(one) || R0.plyName?.get(nmKey(nameOf(one))) : null;
+      const P1ok = !!(P1 && P1.rds.size >= 2), whoA = P1ok ? (isMe(one) ? "You" : `${firstOf(one)}, ${P1.rds.size} rounds here`) : "Rest of the field";
+      const chartA = P1ok ? Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, (P1.cat[c0] || 0) / P1.rds.size])) : Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catRest?.[c0] ?? 0]));
       if (top) out.push({ id: "up-talk", k: null, kind: "Course", score: 5.4, title: `${U.name} is ${/^[aeiou]/i.test(CW[top[0]].replace(/^the /, "")) ? "an" : "a"} ${CW[top[0]].replace(/^the /, "")} week` /* (update 860: "an approach play week") */,
         detail: [`The top 10 here gain ${p2(top[1])} per round more than the rest of the field in ${CATN[top[0]].toLowerCase()}, the most of any part of the game`,
           kb ? `The skill that decides it: ${bl(kb.b)}, worth ${p2(kb.d)} per round between the top 10 and the rest` : null,
-          low ? `It matters least in ${CATN[low[0]].toLowerCase()} (${p2(low[1])} per round)` : null].filter(Boolean).join(" · "),
-        x: { skill: { cat: top[0], perRound: true, who: "Rest of the field", where: `at ${U.name}`, bands: cats.map((c0) => `CAT|${CATN[c0]}`), a: Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catRest?.[c0] ?? 0])), top: Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catTop?.[c0] ?? 0])) } },
+          low ? `It matters least in ${CATN[low[0]].toLowerCase()} (${p2(low[1])} per round)` : null,
+          P1ok ? `${isMe(one) ? "You" : firstOf(one)} here (${P1.rds.size} rounds): ${p2((P1.cat[top[0]] || 0) / P1.rds.size)} per round in ${CATN[top[0]].toLowerCase()}, against the top 10's ${p2(R0.catTop?.[top[0]] ?? 0)}` : null].filter(Boolean).join(" · "),
+        x: { skill: { cat: top[0], perRound: true, who: whoA, where: `at ${U.name}`, bands: cats.map((c0) => `CAT|${CATN[c0]}`), a: chartA, top: Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catTop?.[c0] ?? 0])) } },
         to: "Course Prep · Course Insights", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) });
       // (update 859) one player shown: how the course plays for them (their own shots here), beside the field
-      const one = shownKeys().length === 1 ? shownKeys()[0] : null, P1 = one ? R0.ply?.get(one) || R0.plyName?.get(nmKey(nameOf(one))) : null;
       const myH = P1 ? [...P1.holes].map(([h, o]) => ({ h, par: o[2], n: o[1], avg: o[0] / o[1], b: (o[3] || 0) / o[1], g: (o[4] || 0) / o[1], f: H.find((x) => x.h === h) })).filter((x) => x.f) : [];
       if (one && P1 && P1.rds.size >= 2 && myH.length >= 9) { const me1 = isMe(one), S1 = me1 ? "You" : nameOf(one), Pw1 = me1 ? "your" : "their";
         const myTP = myH.reduce((t, x) => t + x.avg, 0), fTP = myH.reduce((t, x) => t + x.f.avg, 0), myB = myH.reduce((t, x) => t + x.b, 0), myG = myH.reduce((t, x) => t + x.g, 0), fB = myH.reduce((t, x) => t + x.f.b, 0), fG = myH.reduce((t, x) => t + x.f.g, 0);
@@ -1635,8 +1651,8 @@ export async function render(main, { previewClient } = {}) {
         out.push({ id: "up-fun", k: null, kind: "Course", score: 5.35, title: `How ${c.name} plays for ${me1 ? "you" : nameOf(one)}`,
           detail: [`${S1} ${me1 ? "average" : "averages"} ${pm1(myTP)} to par per round over these ${myH.length} holes (${P1.rds.size} rounds on record here), against the field's ${pm1(fTP)}: ${myTP <= fTP ? `${(fTP - myTP).toFixed(2)} a round better` : `${(myTP - fTP).toFixed(2)} a round worse`}`,
             `${myB.toFixed(1)} birdies and ${myG.toFixed(1)} bogeys a round (the field: ${fB.toFixed(1)} and ${fG.toFixed(1)})`,
-            worst ? `Toughest for ${me1 ? "you" : "them"}: No. ${worst.h} (par ${worst.par}), ${pm1(worst.avg)} to par on average against the field's ${pm1(worst.f.avg)} (${worst.n} plays)` : null,
-            best && best !== worst ? `Best for ${me1 ? "you" : "them"}: No. ${best.h} (par ${best.par}), ${pm1(best.avg)} to par against the field's ${pm1(best.f.avg)} (${best.n} plays)` : null].filter(Boolean).join(" · "),
+            worst ? `Toughest for ${me1 ? "you" : firstOf(one)}: No. ${worst.h} (par ${worst.par}), ${pm1(worst.avg)} to par on average against the field's ${pm1(worst.f.avg)} (${worst.n} plays)` : null,
+            best && best !== worst ? `Best for ${me1 ? "you" : firstOf(one)}: No. ${best.h} (par ${best.par}), ${pm1(best.avg)} to par against the field's ${pm1(best.f.avg)} (${best.n} plays)` : null].filter(Boolean).join(" · "),
           to: "Course Prep · Strategy Maps", run: () => toHole(c.id, worst?.h || 1, EX.course(`How does ${c.name} play for ${Pw1 === "your" ? "me" : nameOf(one)}?`)) }); }
       else if (H.length >= 9) out.push({ id: "up-fun", k: null, kind: "Course", score: 5.35, title: `How ${c.name} plays${one ? ` (the field: no shots of ${isMe(one) ? "yours" : nameOf(one)} here on record)` : ""}`,
         detail: [`The field averages ${pm1(toParR)} to par per round over these ${H.length} holes (${(parT + toParR).toFixed(1)} strokes, par ${parT})`, `${birdR.toFixed(1)} birdies and ${bogR.toFixed(1)} bogeys a round`,
@@ -1686,7 +1702,11 @@ export async function render(main, { previewClient } = {}) {
           const up = DV(diffs[0] || { d: 0, dm: 0 }) >= 0.3 ? diffs[0] : big[0], dn = big.at(-1), lb = (x) => String(x.b).replace(/^\w+\|/, "").replace(/ tee shots$/, "");
           const whoA = nOwn ? (isMe(one) ? "You" : nameOf(one)) : null, hv = (x) => (nOwn ? x.mineH : x.here), uv = (x) => (nOwn ? x.mineU : x.tour), vs = nOwn ? `in ${whoA === "You" ? "your" : "their"} usual week` : "on tour this season";
           const line = (x, rng = true) => `${hv(x).toFixed(1)} per round${rng ? ` from ${lb(x)}` : ""} here, against ${uv(x).toFixed(1)} ${vs}`;
-          if (up && DV(up) >= 0.3 && rows.length >= 4) out.push({ id: "up-att", k: null, kind: "Course", score: 4.86, x: { att: { rows, mine: nOwn ? (isMe(one) ? "You" : nameOf(one)) : null } },
+          // (update 866) beside it: each hole's aggressiveness (birdies or better less bogeys or worse, % of plays): the field's, and
+          // the player's own where they've played it (2+ plays)
+          const PA = one ? R0.ply?.get(one) || R0.plyName?.get(nmKey(nameOf(one))) : null, HA = (R0.holesR || []).slice().sort((a, b) => a.h - b.h);
+          const agg = HA.length >= 9 ? { who: PA && PA.rds.size >= 2 ? (isMe(one) ? "You" : firstOf(one)) : null, rows: HA.map((o) => { const m = PA?.holes?.get(o.h); return { h: o.h, par: o.par, f: o.b - o.g, me: m && m[1] >= 2 ? ((m[3] || 0) - (m[4] || 0)) / m[1] : null, n: m?.[1] || 0 }; }) } : null;
+          if (up && DV(up) >= 0.3 && rows.length >= 4) out.push({ id: "up-att", k: null, kind: "Course", score: 4.86, x: { att: { rows, mine: nOwn ? (isMe(one) ? "You" : nameOf(one)) : null }, agg },
             title: `Expect more ${WH[up.cat]} from ${lb(up)} at ${U.name}`,
             /* (update 860) the same numbers as the chart under it: the player's when one is shown, else the field's */
             detail: `${whoA ? `${whoA} can expect` : "The field hits"} ${line(up)}: ${DV(up).toFixed(1)} more per round${dn && DV(dn) <= -0.3 ? ` · fewer ${WH[dn.cat]} from ${lb(dn)}: ${line(dn, false)}` : ""} · every distance below`, to: "Practice", run: () => go("#/practice", EX.practice("Practice for this week")) }); } }
@@ -1920,7 +1940,7 @@ export async function render(main, { previewClient } = {}) {
     return out;
   }
   const collect = () => { const shown = shownKeys().slice(0, selfKey ? 1 : GEARN);
-    return [...highlightsAll(), ...shownKeys().flatMap(glanceFacts) /* (update 841) */, ...(solo() ? [] : tourLeaders()) /* (update 849) */, ...shown.flatMap((k) => (gearData.has(k) ? [...gearHighlights(k), ...detailSpots(k)] : [])), /* (update 845: Best Week has its own section) */ ...practice]; };
+    return [...highlightsAll(), ...shownKeys().flatMap(glanceFacts) /* (update 841) */, ...(solo() ? [] : shownKeys().length ? tourLeaders().map((h, i) => ({ ...h, score: 2.9 - i * 0.01 })) : tourLeaders()) /* (update 849) (update 866: with favorites, the tour's leaders only fill in after your players' facts) */, ...shown.flatMap((k) => (gearData.has(k) ? [...gearHighlights(k), ...detailSpots(k)] : [])), /* (update 845: Best Week has its own section) */ ...practice]; };
   async function refresh() {
     const my = ++gen; drawPills(); drawFeed(collect());
     for (const k of shownKeys().slice(0, selfKey ? 1 : GEARN)) { if (gearData.has(k)) continue; await loadGear(k); if (my !== gen) return; drawFeed(collect()); }
