@@ -74,7 +74,12 @@ export function scoutModel(B) {
   function scout(k) {
     if (memo.has(k)) return memo.get(k);
     const mine = byKey.get(k) || [], cur = mine.at(-1); if (!cur) { memo.set(k, null); return null; }
-    const cands = pool.filter((x) => x.k !== k).map((x) => ({ x, d: dist(cur, x) })).sort((a, b) => a.d - b.d);
+    // (update 908) level first: only seasons ranked about where his is (the same share of the way down that season's
+    // leaderboard, ±5% of the field to start, wider only when there are fewer than 12), then the closest game among them
+    const pc0 = cur.rank / cur.of; let band = 0.05, near = [];
+    while (band <= 0.31) { near = pool.filter((x) => x.k !== k && Math.abs(x.rank / x.of - pc0) <= band); if (near.length >= 12) break; band += 0.03; }
+    const cands = near.map((x) => ({ x, d: dist(cur, x) })).sort((a, b) => a.d - b.d);
+    const levelBand = { lo: Math.max(1, Math.round((pc0 - band) * cur.of)), hi: Math.min(cur.of, Math.round((pc0 + band) * cur.of)) };
     const comps = cands.slice(0, 25).map((c) => ({ ...c, sim: simOf(c.d), w: Math.max(0.05, 1 - c.d / (dRef * 1.25)) }));
     const wSum = comps.reduce((t, c) => t + c.w, 0), effN = wSum ? wSum ** 2 / comps.reduce((t, c) => t + c.w ** 2, 0) : 0;
     const proj = project(cur), wC = Math.min(0.5, effN / 40) * (comps.length ? 1 : 0);
@@ -85,7 +90,7 @@ export function scoutModel(B) {
       tools: Object.fromEntries(CATS.map((c) => [c, gradeOf(cur[c], c)])), projRank: rankLike(proj), ceilRank: rankLike(proj + 0.84 * fit.s), bestRank: rankLike(proj + 1.2816 * fit.s), worstRank: rankLike(proj - 1.2816 * fit.s), /* (update 903: the range, as ranks) */ refY, refN: refOf.sg.length };
     // before the breakout: past seasons most like this one that came the year before a top-10 season (not already top 10)
     const pre = pool.filter((x) => x.k !== k && x.next.rank <= 10 && x.rank > 10).map((x) => ({ x, d: dist(cur, x) })).sort((a, b) => a.d - b.d).slice(0, 3).map((c) => ({ ...c, sim: simOf(c.d) }));
-    const out = { cur, mine, comps, effN, proj, lo: proj - 1.2816 * fit.s, hi: proj + 1.2816 * fit.s, odds, grades, pre, wC };
+    const out = { levelBand, cur, mine, comps, effN, proj, lo: proj - 1.2816 * fit.s, hi: proj + 1.2816 * fit.s, odds, grades, pre, wC };
     memo.set(k, out); return out; }
   // fast risers: rolling 24-round strokes gained now against a year ago, against the round-to-round noise
   const rdSd = sd(P.flatMap((p) => p.rs.map((r) => (r.shots || []).reduce((t, s) => t + (s.sg || 0), 0))).slice(0, 50000));
