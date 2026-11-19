@@ -1312,3 +1312,20 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
 .ib .ib-acts .ib-claim { border-color: #30d158; color: #30d158; } .ib .ib-acts .ib-claim:hover { background: rgba(48,209,88,0.12); }
 .sc .sc-rankline { margin: 2px 0 10px; font-size: 1rem; } .sc .sc-rankline b { font-size: 1.15rem; color: #ffcc00; }
 .ac-greyed input { opacity: 0.3; cursor: not-allowed; } /* (update 895) Analyst: Employees only */
+/* (update 900) Scouting on phones: cards, a sort menu, tighter ratings */
+.sc .sc-g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .sc .sc-g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 0; }
+.sc .sc-pcs { display: grid; gap: 8px; margin: 8px 0; }
+.sc .sc-pc, .sc .sc-sea, .sc .sc-comp { display: grid; gap: 6px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.25); background: rgba(255,255,255,0.03); color: inherit; font: inherit; }
+.sc .sc-pc { cursor: pointer; } .sc .sc-pc.on { border-color: #bf5af2; background: rgba(191,90,242,0.10); }
+.sc .sc-pc-top { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; } .sc .sc-pc-top > strong { font-size: 1rem; } .sc .sc-pc-top > :last-child { margin-left: auto; }
+.sc .sc-pc-g { display: inline-flex; align-items: baseline; gap: 2px; } .sc .sc-pc-g .sc-g { font-size: 1.05rem; min-width: 1.6em; text-align: center; }
+.sc .sc-pc-yrs, .sc .sc-pc-chips { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 0.86rem; } .sc .sc-pc-chips > * { padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.06); }
+.sc .sc-sea-cats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; } .sc .sc-sea-cats > span { display: grid; text-align: center; font-size: 0.85rem; }
+.sc .sc-sortsel { width: 100%; margin: 4px 0 2px; } .sc .sc-more { width: 100%; }
+@media (max-width: 640px) {
+  .sc .sc-gbox { padding: 6px 2px; } .sc .sc-gbox .sc-g { font-size: 1.25rem; } .sc .sc-gl { font-size: 0.6rem; letter-spacing: 0.03em; } .sc .sc-gbox small { font-size: 0.68rem; }
+  .sc .sc-ctl { gap: 6px; } .sc .sc-ctl > * { flex: 1 1 100%; max-width: none; } .sc .sc-ctl .ip-pills { flex: 1 1 auto; }
+  .sc .sc-rankline { font-size: 0.92rem; } .sc .sc-odd { grid-template-columns: 4.2em minmax(0, 1fr) 3em; }
+  .sc .sc-parts { display: flex; overflow-x: auto; flex-wrap: nowrap; } .sc .sc-parts .ip-pill { flex: none; }
+}
+.sc .sc-pc-top small, .sc .sc-pc-yrs small, .sc .sc-pc-chips small, .sc .sc-pc-g small { display: inline !important; }
