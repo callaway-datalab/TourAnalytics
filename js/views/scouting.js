@@ -100,7 +100,7 @@ export async function scoutTab(box, key0, name0) {
     const minSel = el("select", { class: "ip-sel", "aria-label": "Seasons ranked" }, [1, 2, 3].map((n) => el("option", { value: String(n), ...(n === minSeasons ? { selected: true } : {}) }, n === 1 ? "Any players" : `${n}+ seasons ranked`)));
     minSel.addEventListener("change", () => { minSeasons = Number(minSel.value); drawBoard(); });
     const detail = el("div", { class: "sc-detail" }), boardBox = el("div", {});
-    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v905")]), el("h2", { class: "ip-h" }, "Scouting"),
+    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v906")]), el("h2", { class: "ip-h" }, "Scouting"),
       el("p", { class: "muted" }, "How good is a player, is he getting better, and where is he likely to finish next season? Pick a player below for a plain-English report.")])),
       // (update 903) how to read it, in three lines
       el("div", { class: "sc-how" }, [el("strong", {}, "How to read this page"), el("ul", {}, [
@@ -283,7 +283,7 @@ export async function scoutTab(box, key0, name0) {
       const list = [...fcs].sort((a, b) => pos[predH].get(a.key) - pos[predH].get(b.key)), qq = q.trim().toLowerCase(), shownL = list.filter((f) => !qq || f.name.toLowerCase().includes(qq));
       const pills = el("div", { class: "ip-pills" }, yrs.map((y, h) => { const b = el("button", { type: "button", class: `ip-pill${h === predH ? " on" : ""}` }, `End of ${y}`); b.addEventListener("click", () => { predH = h; drawPred(); }); return b; }));
       const rowOf = (f) => B.rows.find((x) => x.k === f.key), nowR = (f) => M.scout(f.key)?.cur.rank ?? null;
-      const cellY = (f, h) => [el("b", {}, ord(pos[h].get(f.key))), el("small", { class: "muted" }, ` ${sg2(f.years[h].total)}`)];
+      const cellY = (f, h) => [el("b", {}, ord(f.years[h].rank)), el("small", { class: "muted" }, ` ${sg2(f.years[h].total)}`)]; // (update 906: the forecaster's own place, as everywhere)
       const pick = (f) => { sel = f.key; drawDetail(); detail.scrollIntoView({ behavior: "smooth", block: "start" }); };
       const note = samp(`Each player's predicted strokes gained per round for the season, and where that puts him on the ${tour || "tour"}'s leaderboard (1st = the best predicted season). Built by the same forecaster as Comparisons' Future Outlook: recent seasons weighted most, every round adjusted for how strong its field was, pulled toward the tour average by how much data there is, and an age curve, all learned from this file and checked on seasons it hadn't seen. Each season further out is less certain.`);
       if (PH()) { mount(boardBox, card("Predicted leaderboards", "#64d2ff", [pills, el("div", { class: "sc-pcs" }, shownL.slice(0, shown).map((f) => { const b = el("button", { type: "button", class: `sc-pc${f.key === sel ? " on" : ""}` }, [

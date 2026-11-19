@@ -542,11 +542,16 @@ export function forecastPlayer(model, key, { chances: withChances = true } = {})
     // (update 441) where a score would rank in a season: everyone else's season spread as one season's luck makes it
     // (the next-season spread, every year: a season in 2029 isn't luckier than one in 2027, only harder to foresee)
     const rankAt = (v) => Math.max(1, Math.round(1 + sc * others.reduce((t, x) => t + ncdf((x.v - v) / Math.max(1e-6, x.sd1 || x.sd || pr.sd)), 0)));
-    const rank = rankAt(pr.total);
-    // the rank at the top and the bottom of their likely range
-    const sdL = pr.sdLevel ?? pr.sd, rankHi = rankAt(pr.total + 0.6745 * sdL), rankLo = rankAt(pr.total - 0.6745 * sdL);
+    // (update 906) the rank shown is the place on the predicted leaderboard: everyone ordered by their best-guess season.
+    // The luck-weighted rank above (the average finish once every player's ups and downs are counted) squeezed every good
+    // player toward the middle (in a field of 190 even the second-best player's average finish is near 13th), which read as
+    // "no one but the best will be top 10". It's kept as rankExp; the luck lives in the chances (top 10 / 50 / 100) and the range.
+    const posAt = (v) => Math.max(1, Math.round(1 + sc * others.reduce((t, x) => t + (x.v > v ? 1 : 0), 0)));
+    const rank = posAt(pr.total), rankExp = rankAt(pr.total);
+    // the place at the top and the bottom of their likely level
+    const sdL = pr.sdLevel ?? pr.sd, rankHi = posAt(pr.total + 0.6745 * sdL), rankLo = posAt(pr.total - 0.6745 * sdL);
     const ch = withChances ? model.chances(key, h, pr.total, pr.sd) : { top10: null, top50: null, top100: null };
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 0.6745 * (pr.sdLevel ?? pr.sd), hi: pr.total + 0.6745 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 0.6745 * (pr.sdLevel ?? pr.sd), hi: pr.total + 0.6745 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankExp, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
   }
   // (update 426) on the tour picked, raw, as the report's season table shows them (not field-adjusted), so the numbers match
   const lastS = hist.at(-1), prev = hist.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
