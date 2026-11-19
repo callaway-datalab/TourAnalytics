@@ -394,9 +394,15 @@ function learn(D, { tour = null } = {}) {
   const ageOpt = ageErrN >= 600 ? AGE_OPTS[ageErr.indexOf(Math.min(...ageErr))] : { kc: 0, sh: 0 };
   // (update 440) the user's settings: age trusted fully at every age, and trend-following. What the data alone would
   // have picked is kept for comparison (both checked on the same unseen seasons)
-  const ageK = 0, ageSh = 0, dataAgeK = ageOpt.kc;
+  const ageSh = 0, dataAgeK = ageOpt.kc;
   const cmpErr = [1, 2, 3].map((h) => { const R = resid[h]; if (R.length < 10) return null; let u = 0, d = 0, w = 0; for (const x of R) { const dv = x.preds ? x.preds[AGE_OPTS.indexOf(ageOpt)] : x.act - x.r; u += Math.abs(x.act - x.uPred); d += Math.abs(x.act - dv); w++; } return { yours: u / w, dataOnly: d / w }; });
-  for (const h of [1, 2, 3]) for (const x of resid[h]) { x.r = x.act - x.uPred; x.z = x.r / x.sd; }
+  // (update 909) whichever predicted the unseen seasons better is used: the settings from update 440 (age trusted fully,
+  // a recent trend carried forward) or what the data picks on its own (age trusted by how much data each age has, no
+  // trend). Carrying a trend forward and a fully-trusted age curve lifted young and improving players too far (a player
+  // with a handful of rounds projected into the top 20 three seasons out)
+  const sumY = cmpErr.reduce((t, c) => t + (c?.yours || 0), 0), sumD = cmpErr.reduce((t, c) => t + (c?.dataOnly || 0), 0);
+  const useData = cmpErr.some(Boolean) && sumD <= sumY, ageK = useData ? ageOpt.kc : 0, TREND_ON = useData ? 0 : 1;
+  for (const h of [1, 2, 3]) for (const x of resid[h]) { const pv = useData && x.preds ? x.preds[AGE_OPTS.indexOf(ageOpt)] : x.uPred; x.r = x.act - pv; x.z = x.r / x.sd; }
   const trustAt = (age) => trustOf(M, ageK)[ageIdx(age)];
   // (update 433) the signals: standardized, then added one at a time while they make the unseen seasons' forecasts
   // better (each season held out in turn, the effects learned on the others); only those are kept
@@ -461,7 +467,7 @@ function learn(D, { tour = null } = {}) {
     const p = typeof key === "number" ? key : D.players.findIndex((x) => x.key === key);
     if (p < 0) return null;
     const id = `${p}|${h}`; if (projMemo.has(id)) return projMemo.get(id);
-    const pr = projectWith(M, p, Number(lastYear) + h, ageK, ageSh, 1);
+    const pr = projectWith(M, p, Number(lastYear) + h, ageK, ageSh, TREND_ON);
     let out = null;
     if (pr) { const sg = sigAddOf(p, h); out = { ...pr, total: pr.total + sg.add, sigAdd: sg.add, sigParts: sg.parts }; out.sd = sdOf(out, typicalN, h); out.sdLevel = levelK[h - 1] * Math.sqrt(pr.varLevel); }
     projMemo.set(id, out); return out;
@@ -500,7 +506,7 @@ function learn(D, { tour = null } = {}) {
   const ageCurve = (age) => Object.fromEntries(CATS.map((c, i) => { const g = M.curves?.[i]; if (!g || ageK === Infinity) return [c, 0]; const ia = ageIdx(age), w0 = trustAt(age); return [c, M.b[i] * (w0 * g[ia] + (1 - w0) * g.wide[ia] - (ageSh ? 0 : g.mean || 0))]; }));
   const sharedDrift = M.curves ? M.curves.reduce((t, g, i) => t + M.b[i] * (g.mean || 0), 0) : 0;
   const params = {
-    kind: "marcel", sig2Tot, choices: { trendFade: TREND_FADE, ageFull: true, dataAgeK, cmp: cmpErr }, cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
+    kind: "marcel", sig2Tot, choices: { trendFade: TREND_FADE, ageFull: !useData, trendOn: !!TREND_ON, useData, dataAgeK, cmp: cmpErr }, cats, carry: Object.fromEntries(CATS.map((c) => [c, cats[c].carry])), typicalN, outOfSample, kappa,
     field: { events: M.F.events, spread: M.F.spread },
     age: { shared: sharedDrift, k: ageK, none: ageK === Infinity, trust: Object.fromEntries([22, 26, 30, 34, 38, 42, 46, 50].map((a) => [a, trustAt(a)])), sharedOn: !!ageSh, tried: ageErrN >= 600 ? AGE_K.map((k) => ({ k, rmse: Math.sqrt(Math.min(...AGE_OPTS.map((o, i) => (o.kc === k ? ageErr[i] : Infinity))) / ageErrN) })) : null, players: M.useAge ? M.age.players : 0, pairs: M.useAge ? M.age.pts : 0, method: "delta",
       at: Object.fromEntries([24, 28, 32, 36, 40].map((a) => [a, CATS.reduce((t, c) => t + ageCurve(a)[c], 0)])) },
@@ -566,6 +572,8 @@ export function forecastPlayer(model, key, { chances: withChances = true } = {})
     lastYear: lastS?.year ?? null, lastTot: lastS?.total ?? null, usualTot: careerTot, usualFrom: prev[0]?.year ?? null, usualTo: prev.at(-1)?.year ?? null, lastPutt: lastS?.cats.PUTT ?? null,
     swing, ballStriking: lastS ? lastS.cats.OTT + lastS.cats.APP : null,
     fewRounds: (lastS?.n || 0) < model.typicalN / 2, noBirth: !birth,
+    // (update 909) little of his own data on this tour: his last two seasons here add up to less than a typical season
+    thin: hist.filter((s0) => Number(s0.year) >= Number(lastYear) - 1).reduce((t, s0) => t + s0.n, 0) < model.typicalN, toursRounds: hist.filter((s0) => Number(s0.year) >= Number(lastYear) - 1).reduce((t, s0) => t + s0.n, 0),
   };
   const lastH = hist.at(-1);
   const now = lastH?.year === lastYear ? { ...lastH, ...(model.nowRank?.(p) || {}) } : null;
