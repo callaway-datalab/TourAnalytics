@@ -286,6 +286,13 @@ export function officialBoard(eventName, year, code) {
   const e = evs.find((x) => x.name === nm), tid = Object.keys(R.events).find((k) => R.events[k] === e); return e?.rows?.length ? { tid, name: e.name, final: e.final !== false, rows: e.rows } : null;
 }
 /** (update 844) how many events a saved results file holds (null: no file saved for that tour and year) */
+/** (update 916) every finished event's scorecards and official board, for the clutch numbers: [{ tid, name, year, cards, board }] */
+export async function clutchEvents(codes = ["R", "H"], years = []) {
+  await Promise.all(codes.map((c) => ensureResults(c, years).catch(() => null)));
+  const list = []; for (const c of codes) for (const y of years) { const R = got(`results/${c}-${y}.json`); for (const [tid, e] of Object.entries(R?.events || {})) if (e?.final !== false && e?.rows?.length) list.push({ tid, name: e.name, year: String(y), board: e.rows, code: c }); }
+  const out = []; for (let i = 0; i < list.length; i += 8) { const part = list.slice(i, i + 8); const got8 = await Promise.all(part.map((x) => loadCards(x.tid))); part.forEach((x, j) => { if (got8[j]?.rounds) out.push({ ...x, cards: got8[j] }); }); }
+  return out;
+}
 export function resultsInfo(code, year) { const R = got(`results/${code}-${year}.json`); return R?.events ? Object.keys(R.events).length : null; }
 /** the coming events a player is entered in: [{ name, start, end, course }] (sorted), or null when the fields aren't in */
 export function fieldEventsSync(playerName, code) {

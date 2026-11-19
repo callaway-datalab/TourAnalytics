@@ -126,6 +126,12 @@ export async function scoutTab(box, key0, name0) {
       out = { T, pairs, a, b, fit, nP, nT, eq }; }
     bridgeMemo.set(T, out); return out; }
   const pgaEq = (T, rank, nOf) => { const br = bridge(T); return br ? br.eq(rank, nOf) : null; };
+  // (update 916) clutch: from every saved scorecard (PGA Tour and Korn Ferry), by name to this page's players
+  let CL = null; function ensureClutch() { if (CL) return CL; CL = { busy: true, byName: new Map(), list: [] };
+    Promise.all([import("../clutch.js"), PI.clutchEvents(["R", "H"], [Number(lastYAll) - 2, Number(lastYAll) - 1, Number(lastYAll)])]).then(([M0, evs]) => { const P0 = M0.clutchFrom(evs); CL.events = evs.length; CL.list = [...P0.values()]; for (const o of CL.list) CL.byName.set(PI.nameKey(o.name), o); CL.fmt = M0.clutchFmt; })
+      .catch((e) => { console.warn("clutch", e); CL.err = true; }).finally(() => { CL.busy = false; if (wrap.isConnected) draw(); });
+    return CL; }
+  const clutchOf = (nm) => ensureClutch().byName.get(PI.nameKey(nm)) || null;
   function pickKey(k) { sel = k; if (mainTour.get(k)) tour = mainTour.get(k); draw(); requestAnimationFrame(() => wrap.querySelector(".sc-detail")?.scrollIntoView({ behavior: "smooth", block: "start" })); }
   function draw() {
     const B = build(tour), { years, lastY } = B, M = modelOf(tour), T1 = M.tiers[0], T2 = M.tiers[1];
@@ -141,7 +147,7 @@ export async function scoutTab(box, key0, name0) {
         el("li", {}, [el("b", {}, "Rising / Slipping"), ` = his last ${ROLL} rounds compared with a year ago.`]),
         el("li", {}, [el("b", {}, "Next season"), " = his predicted finish on the PGA Tour, wherever he plays now (every tour's results are put on one scale by how strong its fields are)."])])]),
       detail, partPills(), boardBox]);
-    function partPills() { return el("div", { class: "ip-pills sc-parts" }, [["board", "Every player"], ["pred", "Predictions (3 seasons)"], ["risers", "Biggest improvers"], ["how", "The math"]].map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === part ? " on" : ""}`, "aria-pressed": String(v === part) }, l); b.addEventListener("click", () => { part = v; draw(); }); return b; })); }
+    function partPills() { return el("div", { class: "ip-pills sc-parts" }, [["board", "Every player"], ["pred", "Predictions (3 seasons)"], ["risers", "Biggest improvers"], ["clutch", "Clutch"], ["how", "The math"]].map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === part ? " on" : ""}`, "aria-pressed": String(v === part) }, l); b.addEventListener("click", () => { part = v; draw(); }); return b; })); }
 
     // (update 903) the board, simply: path of year-end ranks, rank now, direction, next season's best guess, top-10 chance
     function drawBoard() {
@@ -243,6 +249,10 @@ export async function scoutTab(box, key0, name0) {
         if (parts.length) { const b0 = parts[0], w0 = parts.at(-1);
           if (q(crk[b0]) <= 0.35 && !flags.some((f) => f[1].includes(ord(crk[b0])))) flags.push(["g", `Best at ${NM[b0]} (${ord(crk[b0])} on tour)`, `Strokes gained ${sg2(cur[b0])} per round${so}.`]);
           if (q(crk[w0]) >= 0.6 && !flags.some((f) => f[1].includes(ord(crk[w0])))) flags.push(["r", `Weakest at ${NM[w0]} (${ord(crk[w0])} on tour)`, `Strokes gained ${sg2(cur[w0])} per round${so}: the first place to look for improvement.`]); } }
+      // (update 916) under pressure, from the scorecards
+      { const o = clutchOf(r.nm), f = ensureClutch().fmt;
+        if (o && f) { if (o.label) flags.push([o.label.k === "fader" ? "r" : "g", `${o.label.t}`, `${o.label.why}.`]);
+          else if (o.contN >= 2) flags.push(["a", `In contention ${o.contN} time${o.contN === 1 ? "" : "s"}, ${o.contWins} win${o.contWins === 1 ? "" : "s"}`, `Final rounds then: ${f(o.contGain)} against the field, ${f(o.clutchRaw)} against his usual round (see the Clutch tab).`]); } }
       const comp8 = sc.comps.slice(0, 8), up8 = comp8.filter((c) => c.x.next.rank < c.x.rank).length;
       if (comp8.length >= 6 && up8 >= 6) flags.push(["g", `Similar players usually improved (${up8} of ${comp8.length})`, `Players at his level with a game like his mostly moved up the next season.`]);
       if (comp8.length >= 6 && up8 <= 2) flags.push(["r", `Similar players usually got worse (${comp8.length - up8} of ${comp8.length})`, `Players at his level with a game like his mostly dropped the next season.`]);
@@ -323,6 +333,32 @@ export async function scoutTab(box, key0, name0) {
         el("li", {}, [el("b", {}, "Before the breakout. "), "The past seasons most like a player's latest that came the year before a top-10 season (from outside the top 10): the paths successful players took."]),
         el("li", {}, [el("b", {}, "Limits. "), `The file covers ${B.years[0]}-${B.years.at(-1)}: comps and odds learn from those seasons only (${M.pool.length} player-seasons with a season after them), so they get sharper as seasons are added. The current season counts as it stands so far.`])])]), bridgeCard]);
     }
+    // (update 916) the clutch board: final rounds in contention against a player's usual round, 54-hole leads, wins from behind
+    let clSort = "clutch";
+    function drawClutch() {
+      const C0 = ensureClutch(), f = C0.fmt || ((v) => String(v));
+      if (C0.busy) { mount(boardBox, card("Clutch", "#ff9f0a", el("p", { class: "muted ta-loading" }, "Reading every tournament's scorecards…"))); return; }
+      if (C0.err || !C0.list.length) { mount(boardBox, card("Clutch", "#ff9f0a", el("p", { class: "muted" }, "No scorecards yet: the live feed saves them from update 915 on (redeploy it and give it a few runs)."))); return; }
+      const list = C0.list.filter((o) => o.contN >= 1 || o.leads >= 1);
+      const val = (o) => (clSort === "clutch" ? -(o.clutch ?? -9) : clSort === "cont" ? -o.contN : clSort === "lead" ? -(o.leads ? o.leadWins / o.leads + o.leads / 100 : -1) : clSort === "behind" ? -o.winsBehind : clSort === "blown" ? -o.blown.length : clSort === "wins" ? -o.wins : o.name);
+      list.sort((a, b) => { const x = val(a), y = val(b); return typeof x === "string" ? x.localeCompare(y) : x - y; });
+      const key0 = (o) => allRows().find((r) => PI.nameKey(r.nm) === PI.nameKey(o.name))?.k, pick = (o) => { const k = key0(o); if (k) pickKey(k); };
+      const lab = (o) => (o.label ? el("span", { class: `sc-cl sc-cl-${o.label.k}`, title: o.label.why }, o.label.t) : el("span", { class: "muted" }, "—"));
+      const SORTS = [["clutch", "Clutch (rises to it first)"], ["cont", "Most times in contention"], ["wins", "Most wins"], ["lead", "Best with the 54-hole lead"], ["behind", "Most wins from behind"], ["blown", "Most leads let slip"], ["nm", "Name"]];
+      const sortSel = el("select", { class: "ip-sel sc-sortsel", "aria-label": "Sort by" }, SORTS.map(([k, l]) => el("option", { value: k, ...(k === clSort ? { selected: true } : {}) }, `Sort: ${l}`))); sortSel.addEventListener("change", () => { clSort = sortSel.value; drawClutch(); });
+      const note = samp(`From ${C0.events} tournaments' scorecards (PGA Tour and Korn Ferry, the last three seasons). In contention: within 3 shots of the lead going into the final round. Clutch: his final rounds in contention against his usual round (both as strokes better than that day's field), pulled toward 0 when there are only a few (three average rounds added), so one hot Sunday doesn't make a closer. Back nine: holes 10-18 of those final rounds against the field. 54-hole leads include shared ones. Let slip: 2+ clear at some point in a final round he didn't win. Small numbers: golf gives each player only a handful of these a year, so read the labels as tendencies, not verdicts.`);
+      if (PH()) { mount(boardBox, card("Clutch · who delivers when it counts", "#ff9f0a", [sortSel, el("div", { class: "sc-pcs" }, list.slice(0, shown).map((o) => { const b = el("button", { type: "button", class: "sc-pc" }, [
+          el("div", { class: "sc-pc-top" }, [el("strong", {}, o.name), lab(o)]),
+          el("div", { class: "sc-pc-yrs" }, [el("span", {}, ["Clutch ", el("b", { class: (o.clutch ?? 0) >= 0 ? "pos" : "neg" }, f(o.clutch))]), el("span", {}, ["In contention ", el("b", {}, `${o.contN}×`)]), el("span", {}, ["Wins ", el("b", {}, String(o.wins))])]),
+          el("div", { class: "sc-pc-chips" }, [el("span", {}, `54-hole leads ${o.leadWins}/${o.leads}`), el("span", {}, `From behind ${o.winsBehind}`), o.blown.length ? el("span", { class: "neg" }, `Let slip ${o.blown.length}`) : null])]); b.addEventListener("click", () => pick(o)); return b; })), note])); return; }
+      const rows = list.slice(0, 300).map((o) => { const tr = el("tr", { class: "sc-row", tabindex: "0" }, [el("td", { class: "sc-nm" }, o.name), el("td", {}, lab(o)),
+        el("td", { class: `num strong ${(o.clutch ?? 0) >= 0.005 ? "pos" : (o.clutch ?? 0) <= -0.005 ? "neg" : ""}`, title: o.clutchRaw != null ? `Unadjusted: ${f(o.clutchRaw)} (usual round ${f(o.usual)}, final rounds in contention ${f(o.contGain)})` : "" }, f(o.clutch)),
+        el("td", { class: "num" }, String(o.contN)), el("td", { class: "num" }, o.contGain != null ? f(o.contGain) : "—"), el("td", { class: "num" }, o.b9Gain != null ? f(o.b9Gain) : "—"),
+        el("td", { class: "num" }, String(o.wins)), el("td", { class: "num" }, o.leads ? `${o.leadWins} of ${o.leads}` : "—"), el("td", { class: "num" }, o.winsBehind ? `${o.winsBehind} (up to ${o.maxBackWon} back)` : "—"),
+        el("td", { class: `num ${o.blown.length ? "neg" : ""}`, title: o.blown.map((b) => `${b.ev} ${b.year}: ${b.margin} clear after No. ${b.hole}, finished ${b.pos}`).join("\n") }, o.blown.length ? String(o.blown.length) : "—")]);
+        tr.addEventListener("click", () => pick(o)); return tr; });
+      mount(boardBox, card("Clutch · who delivers when it counts", "#ff9f0a", [sortSel, el("div", { class: "ip-tw sc-tw" }, el("table", { class: "ip-t sc-t" }, [el("thead", {}, el("tr", {}, ["Player", "Type", "Clutch", "In contention", "Final round vs field", "Back nine vs field", "Wins", "54-hole leads won", "Wins from behind", "Leads let slip"].map((h0, i) => el("th", { class: i > 1 ? "num" : null }, h0)))), el("tbody", {}, rows)])), note]));
+    }
     // (update 905) the predicted leaderboards: every player's predicted finish at the end of each of the next three seasons
     let predH = 0;
     function drawPred() {
@@ -348,7 +384,7 @@ export async function scoutTab(box, key0, name0) {
           el("tbody", {}, shownL.slice(0, 300).map((f) => { const tr = el("tr", { class: `sc-row${f.key === sel ? " on" : ""}`, tabindex: "0" }, [el("td", { class: "num strong" }, String(pos[predH].get(f.key))), el("td", { class: "sc-nm" }, [f.name, thin(f) ? el("span", { class: "sc-thin", title: `Only ${thinN(f.key)} rounds on record in the last two seasons: this projection leans heavily on the tour average` }, " *") : null]), el("td", { class: "num" }, f.age != null ? String(Math.floor(f.age)) : "—"),
             el("td", { class: "num" }, nowTxt(f)), el("td", { class: "num" }, card0(f) != null ? pc(card0(f)) : "—"), ...[0, 1, 2].map((h) => el("td", { class: `num${h === predH ? " sc-predon" : ""}` }, cellY(f, h)))]); tr.addEventListener("click", () => pick(f)); void rowOf; return tr; }))])), note]));
     }
-    drawDetail(); if (part === "risers") drawRisers(); else if (part === "how") drawHow(); else if (part === "pred") drawPred(); else drawBoard();
+    drawDetail(); if (part === "risers") drawRisers(); else if (part === "how") drawHow(); else if (part === "pred") drawPred(); else if (part === "clutch") drawClutch(); else drawBoard();
   }
   draw();
 }

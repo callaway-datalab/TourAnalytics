@@ -1361,3 +1361,6 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
 .tr-rl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; } .tr-rl-c { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid rgba(128,128,128,0.25); border-radius: 10px; } .tr-rl-c b { font-size: 1rem; }
 .tr-race-svg { width: 100%; height: auto; display: block; } .tr-grid { stroke: rgba(128,128,128,0.22); } .tr-ax { fill: var(--muted, #8e8e93); font-size: 11px; } .tr-lbl { font-size: 12px; font-weight: 700; }
 .tr-lb-t td.tr-rd { color: var(--muted, #c7c7cc); font-variant-numeric: tabular-nums; }
+/* (update 916) Clutch labels */
+.sc .sc-cl { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+.sc .sc-cl-closer, .sc .sc-cl-riser { background: rgba(48,209,88,0.16); color: #30d158; } .sc .sc-cl-fader { background: rgba(255,69,58,0.16); color: #ff453a; } .sc .sc-cl-chaser { background: rgba(100,210,255,0.16); color: #64d2ff; }
