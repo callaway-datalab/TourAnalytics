@@ -202,12 +202,19 @@ export function eventHistory(field, key, name, tour) {
 // (update 823) The next event: the schedule (the live feed saves it: PGA Tour R and Korn Ferry H, this year and next; the
 // DP World Tour has none yet), the next one not finished on the player's tour unless another was picked (kept for the player
 // on this device, shared by Overview's Next Event Fit and Recommended Practice). A schedule name matched to the stats file's.
-const normEv = (n) => String(n || "").toLowerCase().replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/, "").replace(/^the\s+/, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+const normEv = (n) => String(n || "").toLowerCase().replace(/\./g, "") /* (update 913: "U.S. Open" → "us open", not "u s open") */.replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/, "").replace(/^the\s+/, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+// (update 913) words every other event shares: a match needs a word of its own in common, not just "Open" ("U.S. Open"
+// had been matching the Texas Open, so its leaderboard showed another week's)
+const EV_GENERIC = new Set(["open", "championship", "classic", "invitational", "tournament", "golf", "cup", "tour", "pga", "the", "of", "at", "and", "presented", "by", "in", "challenge", "series", "national", "pro", "am"]);
 export function matchEventName(name, names) {
   const a = normEv(name); if (!a) return null; if (/masters/.test(a)) return names.find((n) => /masters/i.test(n)) || null;
   const exact = names.find((n) => normEv(n) === a); if (exact) return exact;
-  const toks = (s) => new Set(s.split(" ").filter((w) => w.length > 2)), A = toks(a);
-  let best = null, bs = 0; for (const n of names) { const B = toks(normEv(n)); const inter = [...A].filter((w) => B.has(w)).length, j = inter / Math.max(1, new Set([...A, ...B]).size); if (j > bs) { bs = j; best = n; } }
+  // the majors by their usual names
+  const alias = (x) => (/\b(open championship|british open)\b|^open$/.test(x) ? "the open" : /\b(us open|united states open)\b/.test(x) ? "us open" : /\bpga championship\b/.test(x) && !/senior|womens|players/.test(x) ? "pga championship" : /\bplayers championship\b|^players$/.test(x) ? "players" : null);
+  const aa = alias(a); if (aa) return names.find((n) => alias(normEv(n)) === aa) || null;
+  const toks = (s) => new Set(s.split(" ").filter((w) => w.length >= 2)), A = toks(a), own = (S) => [...S].filter((w) => !EV_GENERIC.has(w));
+  let best = null, bs = 0; for (const n of names) { const B = toks(normEv(n)); if (alias(normEv(n))) continue; const ownIn = own(A).filter((w) => B.has(w)).length; if (!ownIn) continue;
+    const inter = [...A].filter((w) => B.has(w)).length, j = inter / Math.max(1, new Set([...A, ...B]).size); if (j > bs) { bs = j; best = n; } }
   return bs >= 0.5 ? best : null;
 }
 const tourCode = (tour) => (/korn|kft|^h$/i.test(String(tour || "")) ? "H" : /dp|euro|dpwt/i.test(String(tour || "")) ? null : "R");
@@ -276,6 +283,8 @@ export function officialBoard(eventName, year, code) {
   const evs = Object.values(R.events), nm = matchEventName(eventName, evs.map((e) => e.name)); if (!nm) return null;
   const e = evs.find((x) => x.name === nm); return e?.rows?.length ? { name: e.name, final: e.final !== false, rows: e.rows } : null;
 }
+/** (update 844) how many events a saved results file holds (null: no file saved for that tour and year) */
+export function resultsInfo(code, year) { const R = got(`results/${code}-${year}.json`); return R?.events ? Object.keys(R.events).length : null; }
 /** the coming events a player is entered in: [{ name, start, end, course }] (sorted), or null when the fields aren't in */
 export function fieldEventsSync(playerName, code) {
   const F = got("fields.json"); if (!F?.tours) return null; const k = nameKey(playerName);
